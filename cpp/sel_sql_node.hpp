@@ -72,6 +72,17 @@ class SNode {
   // A clist built in one go, for a caller with nothing left to append.
   static SNodePtr clist(Pos pos, std::vector<std::pair<std::string, SNodePtr>> entries);
 
+  // A copy of `n` marked CLOSED: it was written at the outermost scope (a
+  // helper's right-hand side, an indexed assignment's value), so when it is
+  // inlined at a use site inside an aggregate its free names mean what they
+  // meant where it was written, never a binder that happens to share the name
+  // (CPP-C23, sql-translation.md §7.4 rule 3). Shallow: the children are shared.
+  static SNodePtr closed(const SNodePtr& n);
+  // An immutable snapshot of a clist as it stands: the keys and the (already
+  // closed) values, sharing the values.
+  static SNodePtr clist_copy(const SNode& c);
+  bool is_closed() const { return closed_; }
+
   T t() const { return t_; }
   Pos pos() const { return pos_; }
 
@@ -111,6 +122,7 @@ class SNode {
   SNode() = default;
 
   T t_ = T::Num;
+  bool closed_ = false;
   Pos pos_;
   NodePtr origin_;
   std::vector<SNodePtr> kids_;

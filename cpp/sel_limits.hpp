@@ -6,6 +6,11 @@ namespace sel_limits {
 inline constexpr long long MAX_DEPTH = 200;   // §6.4: parser nesting and evaluation nesting, each; exceeding either is E_DEPTH
 inline constexpr long long MAX_INT_DIGITS = 1000000;   // §6.4: integer digits of a number; beyond it E_RANGE
 inline constexpr long long MAX_FRAC_DIGITS = 1000000;   // §6.4: fractional digits of a number; beyond it E_RANGE
+inline constexpr long long MAX_TEXT_LEN = 16777216;   // §6.4: code points of a TEXT value, bytes of a BIN value, that an operation may build; beyond it E_RANGE
+inline constexpr long long MAX_COLLECTION = 1000000;   // §6.4: children of a collection an operation may build (`,`, LIST, RECORD, SPLIT, BTL, LINK); beyond it E_RANGE
+inline constexpr long long MAX_REGEX_PATTERN = 65535;   // §7.8: code points of a regex pattern; beyond it E_REGEX_SYNTAX
+inline constexpr long long MAX_REGEX_GROUPS = 1000;   // §7.8: groups (capturing and non-capturing) in a regex pattern; beyond it E_REGEX_SYNTAX
+inline constexpr long long MAX_SQL_NODES = 250000;   // §6.4: nodes of the expression the SQL translator renders, an inlined or unrolled subtree counted once per occurrence; beyond it E_SQL_SIZE (sql/errors.md)
 inline constexpr long long DIV_SCALE = 10;   // §5.3: fractional digits long division runs to before rounding half away from zero
 
 // The language's error codes and the phase that raises each: 'compile', 'run' or 'both'.
@@ -31,8 +36,8 @@ inline const ErrorCode ERROR_CODES[] = {
   {"E_NULL", "run"},
   {"E_EXPECT_SYMBOL", "run"},
   {"E_DIV_ZERO", "run"},
-  {"E_UTF8", "run"},
-  {"E_RANGE", "run"},
+  {"E_UTF8", "both"},
+  {"E_RANGE", "both"},
   {"E_BAD_ARG", "run"},
   {"E_LEN_MISMATCH", "run"},
   {"E_ABORT", "run"},

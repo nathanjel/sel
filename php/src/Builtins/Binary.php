@@ -23,7 +23,13 @@ final class Binary
             'fn' => static fn (Args $a): Value => Value::int(strlen($a->bytes(0)))]);
 
         Registry::define(['name' => 'TO_UTF8', 'min' => 1, 'max' => 1,
-            'fn' => static fn (Args $a): Value => Value::bin($a->bytes(0))]);
+            'fn' => static function (Args $a): Value {
+                $b = $a->bytes(0);
+                if (strlen($b) > \Sel\Limits::MAX_TEXT_LEN) {
+                    fail('E_RANGE', 'TO_UTF8 result would be longer than ' . \Sel\Limits::MAX_TEXT_LEN, $a->pos);
+                }
+                return Value::bin($b);
+            }]);
 
         Registry::define(['name' => 'FROM_UTF8', 'min' => 1, 'max' => 1,
             'fn' => static function (Args $a): Value {
@@ -33,7 +39,13 @@ final class Binary
             }]);
 
         Registry::define(['name' => 'TO_HEX', 'min' => 1, 'max' => 1,
-            'fn' => static fn (Args $a): Value => Value::text(bin2hex($a->bytes(0)))]);
+            'fn' => static function (Args $a): Value {
+                $b = $a->bytes(0);
+                if (2 * strlen($b) > \Sel\Limits::MAX_TEXT_LEN) {
+                    fail('E_RANGE', 'TO_HEX result would be longer than ' . \Sel\Limits::MAX_TEXT_LEN, $a->pos);
+                }
+                return Value::text(bin2hex($b));
+            }]);
 
         Registry::define(['name' => 'FROM_HEX', 'min' => 1, 'max' => 1,
             'fn' => static function (Args $a): Value {
@@ -50,16 +62,11 @@ final class Binary
         Registry::define(['name' => 'ENCODE_BASE64', 'min' => 1, 'max' => 1,
             'fn' => static function (Args $a): Value {
                 $b = $a->bytes(0);
-                $out = '';
-                for ($i = 0, $n = strlen($b); $i < $n; $i += 3) {
-                    $x = (ord($b[$i]) << 16)
-                        | (($i + 1 < $n ? ord($b[$i + 1]) : 0) << 8)
-                        | ($i + 2 < $n ? ord($b[$i + 2]) : 0);
-                    $out .= self::B64[($x >> 18) & 63] . self::B64[($x >> 12) & 63];
-                    $out .= $i + 1 < $n ? self::B64[($x >> 6) & 63] : '=';
-                    $out .= $i + 2 < $n ? self::B64[$x & 63] : '=';
+                if (4 * intdiv(strlen($b) + 2, 3) > \Sel\Limits::MAX_TEXT_LEN) {
+                    fail('E_RANGE', 'ENCODE_BASE64 result would be longer than ' . \Sel\Limits::MAX_TEXT_LEN, $a->pos);
                 }
-                return Value::text($out);
+                // The standard alphabet with padding: what the loop this replaces wrote.
+                return Value::text(base64_encode($b));
             }]);
 
         // Strict: padding is required and any character outside the alphabet fails.
@@ -123,22 +130,36 @@ final class Binary
         Registry::define(['name' => 'BTL', 'min' => 1, 'max' => 1,
             'fn' => static function (Args $a): Value {
                 $b = $a->bytes(0);
+                Utf8::checkCount(strlen($b), $a->pos, 'BTL result');
                 $out = [];
-                for ($i = 0, $n = strlen($b); $i < $n; $i++) {
-                    $out[] = Value::int(ord($b[$i]));
+                if ($b !== '') {
+                    foreach (unpack('C*', $b) as $byte) {
+                        $out[] = Value::int($byte);
+                    }
                 }
                 return Value::list($out);
             }]);
 
+        // LTB: a list of byte values, each a whole number 0..255 of any scale
+        // (`1.0` and "1.0" are the byte 1), to a BIN. An empty list is the empty
+        // BIN; a fractional element is E_NOT_INT and one outside 0..255 E_RANGE
+        // (spec §7.7).
         Registry::define(['name' => 'LTB', 'min' => 1, 'max' => 1,
             'fn' => static function (Args $a): Value {
                 $v = $a->val(0);
+                if ($v->kind === Value::NONE && $v->size() === 0) {
+                    return Value::bin('');
+                }
                 $items = $v->size() > 0 ? $v->values() : [$v];
                 $out = '';
                 foreach ($items as $i => $item) {
                     $d = $item->asDecimal($a->posOf(0));
-                    $n = (int) $d['digits'];
-                    if ($d['scale'] !== 0 || $d['neg'] || $n > 255) {
+                    if (!\Sel\Dec::isInteger($d)) {
+                        $k = $i + 1;
+                        fail('E_NOT_INT', "LTB element {$k} is not a whole number", $a->posOf(0));
+                    }
+                    $n = \Sel\Dec::toInt($d);
+                    if ($n < 0 || $n > 255) {
                         $k = $i + 1;
                         fail('E_RANGE', "LTB element {$k} is not a byte value", $a->posOf(0));
                     }

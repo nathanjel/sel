@@ -23,7 +23,7 @@ LINKED := conformance batch e2e sel api
 # Kept apart from LINKED so that list keeps meaning "sel.hpp alone is enough";
 # this one means "a second translation unit can see the tree", which is what
 # sel_ast.hpp exists for and what the SEL->SQL layer will need.
-INTERNAL := ast
+INTERNAL := ast regex_verdict
 # Whitebox tools, which include the translation unit to reach the decimal core
 # and the other internals. They must not also link it.
 WHITEBOX := check-decimal
@@ -213,6 +213,27 @@ asan: $(BUILD)/unit-asan $(BUILD)/conformance-asan $(BUILD)/sqlunit-asan $(BUILD
 	cd .. && cpp/$(BUILD)/conformance-asan
 	$(BUILD)/sqlunit-asan
 	cd .. && cpp/$(BUILD)/sqlt-asan
+
+# The thread sanitizer, for the one promise the SQL layer makes about threads:
+# translate() may run on several threads once the map is registered (T10,
+# CPP-C12). It has its own object directory: TSan and ASan cannot share objects.
+TSAN_FLAGS := -std=c++23 -O1 -g -fsanitize=thread -fno-omit-frame-pointer
+TSAN_DIR   := $(BUILD)/tsan
+TSAN_SRCS  := sel.cpp $(SQL_SRCS)
+TSAN_OBJS  := $(addprefix $(TSAN_DIR)/,$(TSAN_SRCS:.cpp=.o))
+
+$(TSAN_DIR):
+	mkdir -p $(TSAN_DIR)
+
+$(TSAN_OBJS): $(TSAN_DIR)/%.o: %.cpp $(SQL_HDRS) sel.hpp | $(TSAN_DIR)
+	$(CXX) $(TSAN_FLAGS) -c -o $@ $<
+
+$(BUILD)/sql-race-tsan: tests/sql_race.cpp $(TSAN_OBJS) | $(BUILD)
+	$(CXX) $(TSAN_FLAGS) -pthread -o $@ $< $(TSAN_OBJS)
+
+.PHONY: tsan
+tsan: $(BUILD)/sql-race-tsan
+	$(BUILD)/sql-race-tsan
 
 clean:
 	rm -rf $(BUILD)

@@ -1,0 +1,165 @@
+% Regressions from the Go implementation review, 2026-09-29.
+% Expected behavior is shared by all hosts. Concurrency is tested in Go.
+
+### name: record.shape.nul-boundaries
+--- note
+Distinct key tuples with equal NUL-joined bytes must retain distinct shapes (§3). Equal field counts avoid relying on a host crash to detect the collision.
+--- source
+A = RECORD("a\u{0}b", 11, "c", 12); RECORD("a", 21, "b\u{0}c", 22)["a"]
+--- expect
+num 21
+===
+
+### name: record.shape.nul-field-count
+--- note
+A single key containing NUL must not reuse the shape of two separate keys.
+--- source
+A = RECORD("d", 1, "e", 2); RECORD("d\u{0}e", 3)["d\u{0}e"]
+--- expect
+num 3
+===
+
+### name: integer.width.power
+--- note
+Size arguments must be checked or clamped before conversion to a machine integer (§6.4 and the individual built-in contract).
+--- source
+POWER(2,18446744073709551616)
+--- expect
+error E_RANGE
+===
+
+### name: integer.width.round
+--- note
+Size arguments must be checked or clamped before conversion to a machine integer (§6.4 and the individual built-in contract).
+--- source
+ROUND(1.25,18446744073709551616)
+--- expect
+error E_RANGE
+===
+
+### name: integer.width.negative-round
+--- note
+Size arguments must be checked or clamped before conversion to a machine integer (§6.4 and the individual built-in contract).
+--- source
+ROUND(1.25,-18446744073709551616)
+--- expect
+error E_RANGE
+===
+
+### name: integer.width.left
+--- note
+Size arguments must be checked or clamped before conversion to a machine integer (§6.4 and the individual built-in contract).
+--- source
+LEFT("abc",18446744073709551617)
+--- expect
+text "abc"
+===
+
+### name: integer.width.take
+--- note
+Size arguments must be checked or clamped before conversion to a machine integer (§6.4 and the individual built-in contract).
+--- source
+TAKE((1,2,3),18446744073709551617)
+--- expect
+tree -{"1"=t"1", "2"=t"2", "3"=t"3"}
+===
+
+### name: integer.width.drop
+--- note
+Size arguments must be checked or clamped before conversion to a machine integer (§6.4 and the individual built-in contract).
+--- source
+DROP((1,2,3),18446744073709551617)
+--- expect
+none
+===
+
+### name: recovery.depth.coalesce-undefined
+--- note
+Two hundred shallow iterations do not add nesting. Caught missing-value errors must restore evaluation depth (§6.4).
+--- source
+SUM(MAP((1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1), MISSING ?? 0), _)
+--- expect
+num 0
+===
+
+### name: recovery.depth.vacuous-undefined
+--- note
+Two hundred shallow iterations do not add nesting. Caught missing-value errors must restore evaluation depth (§6.4).
+--- source
+SUM(MAP((1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1), MISSING ??? 0), _)
+--- expect
+num 0
+===
+
+### name: recovery.depth.coalesce-key
+--- note
+Two hundred shallow iterations do not add nesting. Caught missing-value errors must restore evaluation depth (§6.4).
+--- source
+SUM(MAP((1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1), RECORD("present",1)["absent"] ?? 0), _)
+--- expect
+num 0
+===
+
+### name: recovery.scope.sort
+--- note
+Aggregate bindings end when evaluation exits, including a missing-value error recovered by ?? (§6.1).
+--- source
+(SORT((1,2), X, MISSING) ?? 0); X
+--- expect
+error E_UNDEF_VAR
+===
+
+### name: recovery.scope.sort-shadow
+--- note
+After recovery, the original context binding is visible again.
+--- source
+X = 99; (SORT((1,2), X, MISSING) ??? 0); X
+--- expect
+num 99
+===
+
+### name: recovery.scope.top
+--- note
+Aggregate bindings end when evaluation exits, including a missing-value error recovered by ?? (§6.1).
+--- source
+(TOP((1,2), X, MISSING, 1) ?? 0); X
+--- expect
+error E_UNDEF_VAR
+===
+
+### name: recovery.scope.top-shadow
+--- note
+After recovery, the original context binding is visible again.
+--- source
+X = 99; (TOP((1,2), X, MISSING, 1) ??? 0); X
+--- expect
+num 99
+===
+
+### name: recovery.scope.bucket
+--- note
+Aggregate bindings end when evaluation exits, including a missing-value error recovered by ?? (§6.1).
+--- source
+(BUCKET((1,2), MISSING) ?? 0); _
+--- expect
+error E_UNDEF_VAR
+===
+
+### name: recovery.scope.bucket-shadow
+--- note
+After recovery, the original context binding is visible again.
+--- source
+_ = 99; (BUCKET((1,2), MISSING) ??? 0); _
+--- expect
+num 99
+===
+
+### name: recovery.scope.assignment
+--- note
+A recovered aggregate must not leave a binder that forbids a later assignment.
+--- source
+(SORT((1,2), X, MISSING) ?? 0); X = 7; X
+--- expect
+num 7
+===
+

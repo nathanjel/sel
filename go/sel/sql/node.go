@@ -27,7 +27,19 @@ type CListEntry struct {
 	Val *SNode
 }
 
+// VarScope says how a variable read found its name. Stage 1 knows the lexical
+// scope, and the translator must not have to guess it again: an inlined helper's
+// reads are the caller's outer names, whatever binder they end up under.
+type VarScope uint8
+
+const (
+	VarScopeUnknown VarScope = iota // built outside stage 1: resolve as before
+	VarScopeFree                    // no binder in scope names it: a binding
+	VarScopeBound                   // an enclosing binder names it
+)
+
 type SNode struct {
+	VarScope VarScope
 	T       SNodeType
 	Pos     Pos
 	Origin  *sel.Node

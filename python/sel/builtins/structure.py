@@ -1,4 +1,5 @@
 
+from .._budget import check_collection
 from ..errors import SelError, fail
 from ..lexer import ascii_upper
 
@@ -42,19 +43,27 @@ define('INDEXES', 1, 1,
 
 define('HAS', 2, 2, fn=lambda args, ctx: Value.bool(args.val(0).has(args.text(1))))
 
-define('LIST', 0, INF,
-       fn=lambda args, ctx: Value._list_owned([args.val(i) for i in range(args.count())]))
+# LIST and RECORD collect like `,` does, so they copy what they collect (SPEC 3.4)
+# and the copy is one level down, where a value past the cap is refused at this
+# call rather than at 0:0 by whatever walks it later.
+def _list(args, ctx):
+    check_collection(args.count(), args.pos)
+    return Value._list_owned([args.val(i).clone(args.pos, 2) for i in range(args.count())])
+
+
+define('LIST', 0, INF, fn=_list)
 
 
 def _record(args, ctx):
     count = args.count()
     if count == 0:
         return Value.none()
+    check_collection(count // 2, args.pos)
     shape = args.record_shape
     if shape is not None:
-        return Value._from_shape(shape, [args.val(i + 1) for i in range(0, count, 2)])
+        return Value._from_shape(shape, [args.val(i + 1).clone(args.pos, 2) for i in range(0, count, 2)])
     keys = [args.text(i) for i in range(0, count, 2)]
-    values = [args.val(i + 1) for i in range(0, count, 2)]
+    values = [args.val(i + 1).clone(args.pos, 2) for i in range(0, count, 2)]
     return Value._record_owned(keys, values)
 
 
@@ -92,7 +101,9 @@ def _select_cols(args, ctx):
     value = args.val(0)
     if value.is_null():
         return Value._list_owned([])
-    columns = [args.text(i) for i in range(1, args.count())]
+    # A record has one field per name: a column named twice is kept once, at its
+    # first place (the fast path below built duplicate keys).
+    columns = list(dict.fromkeys(args.text(i) for i in range(1, args.count())))
     if (value.is_list and value.storage is not None
             and value.storage and value.storage[0].shape is not None):
         sample_shape = value.storage[0].shape
@@ -147,27 +158,42 @@ define('DEDUPE', 1, 1, fn=_dedupe)
 # --- relational links ------------------------------------------------------
 
 def expr_depends_only_on(node, allowed):
-    if node is None:
-        return True
-    if node.t == 'var':
-        return _upper_name(node.name) in allowed
-    if node.t == 'index':
-        return expr_depends_only_on(node.obj, allowed) and expr_depends_only_on(node.idx, allowed)
-    if node.t == 'call':
-        return all(expr_depends_only_on(item, allowed) for item in node.args)
-    if node.t == 'bin':
-        return expr_depends_only_on(node.l, allowed) and expr_depends_only_on(node.r, allowed)
-    if node.t == 'un':
-        return expr_depends_only_on(node.x, allowed)
-    if node.t == 'assign':
-        return expr_depends_only_on(node.target, allowed) and expr_depends_only_on(node.value, allowed)
-    if node.t in ('seq', 'list'):
-        return all(expr_depends_only_on(item, allowed) for item in node.items)
+    """Iterative for the reason node_contains_var is (builtins/aggregate.py): a
+    join predicate can be a chain as deep as the source is long."""
+    stack = [node]
+    while stack:
+        n = stack.pop()
+        if n is None:
+            continue
+        t = n.t
+        if t == 'var':
+            if _upper_name(n.name) not in allowed:
+                return False
+        elif t == 'index':
+            stack.append(n.obj)
+            stack.append(n.idx)
+        elif t == 'call':
+            stack.extend(n.args)
+        elif t == 'bin':
+            stack.append(n.l)
+            stack.append(n.r)
+        elif t == 'un':
+            stack.append(n.x)
+        elif t == 'assign':
+            stack.append(n.target)
+            stack.append(n.value)
+        elif t in ('seq', 'list'):
+            stack.extend(n.items)
     return True
 
 
 def try_extract_equi_keys(node, b1, b2):
     if node is None or node.t != 'bin' or node.op not in ('==', '$=='):
+        return None
+    # The right binder shadows the left when both are spelled alike (SPEC 7.4):
+    # every occurrence names the right element, so neither operand is "the left
+    # side" and no key can be extracted -- the general path decides.
+    if _upper_name(b1) == _upper_name(b2):
         return None
     left_names = {_upper_name(b1), _upper_name(b1.lower()), '_1', '_'}
     right_names = {_upper_name(b2), _upper_name(b2.lower()), '_2'}
@@ -1191,6 +1217,7 @@ def _link(args, ctx, left_join):
                     # would have.
                     skip = rejected if (rejected is not None and asked == 0) else None
                     if skip is None:
+                        check_collection(len(output) + len(matches), args.pos)
                         project_many(row, matches, output)
                         if keys is not None:
                             keys.extend([str(p) for p in range(position, position + len(matches))])
@@ -1201,11 +1228,13 @@ def _link(args, ctx, left_join):
                                 dropped[0] = True
                                 position += 1
                                 continue
+                            check_collection(len(output) + 1, args.pos)
                             output.append(project(row, right))
                             if keys is not None:
                                 keys.append(str(position))
                             position += 1
                 elif left_join:
+                    check_collection(len(output) + 1, args.pos)
                     output.append(project(row, None))
                     if keys is not None:
                         keys.append(str(position))
@@ -1239,9 +1268,11 @@ def _link(args, ctx, left_join):
                     frame['_2'] = right
                     if args.eval_node(predicate).as_bool(predicate.pos):
                         matched[0] = True
+                        check_collection(len(output) + 1, args.pos)
                         output.append(project(left, right))
 
                 if left_join and not matched[0]:
+                    check_collection(len(output) + 1, args.pos)
                     output.append(project(left, None))
         finally:
             ctx.pop_frame()

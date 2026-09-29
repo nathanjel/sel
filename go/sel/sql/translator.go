@@ -9,6 +9,7 @@ import (
 
 	"github.com/nathanjel/sel/go/internal/decimal"
 	"github.com/nathanjel/sel/go/internal/limits"
+	"github.com/nathanjel/sel/go/internal/manifest"
 	"github.com/nathanjel/sel/go/internal/utf8"
 	"github.com/nathanjel/sel/go/sel"
 )
@@ -320,8 +321,10 @@ func (t *Translator) binder(name string) *Binder {
 }
 
 func (t *Translator) variable(n *SNode) *Fragment {
-	if bound := t.binder(n.Str); bound != nil {
-		return t.fromBinder(bound, n)
+	if n.VarScope != VarScopeFree {
+		if bound := t.binder(n.Str); bound != nil {
+			return t.fromBinder(bound, n)
+		}
 	}
 
 	b := t.bindings.Get(n.Str, n.Pos)
@@ -595,10 +598,21 @@ func (t *Translator) rowField(row *RowModel, label string, key string, n *SNode)
 	return t.columnRef(qualified)
 }
 
+// atScope renders what a binder holds in the scope it was written in.
+func (t *Translator) atScope(b *Binder, render func() *Fragment) *Fragment {
+	if !b.Scoped || b.Scope > len(t.frames) {
+		return render()
+	}
+	saved := t.frames
+	t.frames = t.frames[:b.Scope:b.Scope]
+	defer func() { t.frames = saved }()
+	return render()
+}
+
 func (t *Translator) fromBinder(b *Binder, n *SNode) *Fragment {
 	switch b.Shape {
 	case BinderShapeNode:
-		return t.node(b.Node)
+		return t.atScope(b, func() *Fragment { return t.node(b.Node) })
 	case BinderShapeKey:
 		var frame Frame
 		frameSet(&frame, b.GroupBinder, BinderRow(b.Relation))
@@ -760,7 +774,7 @@ func (t *Translator) indexBinder(b *Binder, name string, key string, n *SNode) *
 				fmt.Sprintf("%s[%q] is not a key of that element", name, key),
 				n.Pos)
 		}
-		return t.node(elem)
+		return t.atScope(b, func() *Fragment { return t.node(elem) })
 	}
 	Refuse("E_SQL_SHAPE",
 		fmt.Sprintf("%s names a single column, which has no parts to index", name),
@@ -1381,7 +1395,9 @@ func (t *Translator) relationSlots(rel RelationSpec) SlotMap {
 		corr = s
 	}
 	if rel.Correlate != "" {
-		corr = rel.Correlate
+		// An application expression: a top-level OR in it must not change the
+		// meaning of the AND the template puts after it (sql/MAP.md §5).
+		corr = "(" + rel.Correlate + ")"
 	}
 	return SlotMap{
 		Pair[string, []Slot]{Key: "from", Val: []Slot{StringSlot(from)}},
@@ -1436,7 +1452,7 @@ func (t *Translator) valueElements(b *Binding, pos Pos) []Pair[string, Binder] {
 
 func (t *Translator) inOperator(n *SNode) *Fragment {
 	rhs := n.R()
-	rhsIsFreeVar := rhs.T == SNodeVar && t.binder(rhs.Str) == nil
+	rhsIsFreeVar := rhs.T == SNodeVar && (rhs.VarScope == VarScopeFree || t.binder(rhs.Str) == nil)
 
 	if rhsIsFreeVar && t.bindings.Has(rhs.Str) {
 		b := t.bindings.Get(rhs.Str, rhs.Pos)
@@ -1734,6 +1750,7 @@ func (t *Translator) call(n *SNode) *Fragment {
 		}
 	}
 
+	t.requireBinderName(n)
 	if aggregatesSet[name] {
 		return t.aggregate(n)
 	}
@@ -1777,6 +1794,26 @@ func (t *Translator) call(n *SNode) *Fragment {
 		out.Canonical = true
 	}
 	return out
+}
+
+// requireBinderName refuses, where it stands, a binding function whose binder
+// position holds something that is not a name. SEL reaches the same program at
+// run time as E_EXPECT_SYMBOL, so it compiles and arrives here; the answer is a
+// refusal at that expression, whatever the statement form around it (GO-C2).
+func (t *Translator) requireBinderName(n *SNode) {
+	if n.Origin == nil || n.Spec == nil || !n.Spec.Binds {
+		return
+	}
+	form := sel.BindingForm(n.Str, n.Origin.Items, n.Spec)
+	if form == nil {
+		return
+	}
+	for i, sc := range form.Scopes {
+		if sc == manifest.ScopeBinder && i < len(n.Kids) && !IsBinderName(n.Kids[i]) {
+			Refuse("E_SQL_SHAPE",
+				fmt.Sprintf("the binder of %s must be a bare name", n.Str), n.Kids[i].Pos)
+		}
+	}
 }
 
 func (t *Translator) hostCall(n *SNode) *Fragment {
@@ -1922,7 +1959,7 @@ func (t *Translator) classify(src *SNode) Source {
 		for i, kid := range src.Kids {
 			out.Elements = append(out.Elements, Pair[string, Binder]{
 				Key: strconv.Itoa(i + 1),
-				Val: BinderNode(kid),
+				Val: BinderNodeAt(kid, len(t.frames)),
 			})
 		}
 		return out
@@ -1931,7 +1968,7 @@ func (t *Translator) classify(src *SNode) Source {
 		for i, kid := range src.Kids {
 			out.Elements = append(out.Elements, Pair[string, Binder]{
 				Key: src.Keys[i],
-				Val: BinderNode(kid),
+				Val: BinderNodeAt(kid, len(t.frames)),
 			})
 		}
 		return out
@@ -1940,6 +1977,11 @@ func (t *Translator) classify(src *SNode) Source {
 		if bound := t.binder(src.Str); bound != nil {
 			switch bound.Shape {
 			case BinderShapeNode:
+				if bound.Scoped && bound.Scope <= len(t.frames) {
+					saved := t.frames
+					t.frames = t.frames[:bound.Scope:bound.Scope]
+					defer func() { t.frames = saved }()
+				}
 				return t.classify(bound.Node)
 			case BinderShapeNone:
 				Refuse("E_SQL_SHAPE", bound.Reason, src.Pos)
@@ -1995,7 +2037,7 @@ func (t *Translator) classify(src *SNode) Source {
 	if src.T == SNodeCall {
 		t.node(src)
 	}
-	out.Elements = append(out.Elements, Pair[string, Binder]{Key: "1", Val: BinderNode(src)})
+	out.Elements = append(out.Elements, Pair[string, Binder]{Key: "1", Val: BinderNodeAt(src, len(t.frames))})
 	out.ScalarRule = true
 	return out
 }
@@ -2004,9 +2046,6 @@ func (t *Translator) withElement(src Source, binderName string, elem Binder, key
 	var frame Frame
 	frameSet(&frame, binderName, elem)
 	frameSet(&frame, "_K", BinderNode(Leaf(litNode(sel.NodeText, key, false, n.Pos))))
-	for _, f := range src.Filters {
-		frameSet(&frame, f.Binder, elem)
-	}
 	t.frames = append(t.frames, frame)
 	defer func() {
 		t.frames = t.frames[:len(t.frames)-1]
@@ -2032,9 +2071,6 @@ func (t *Translator) withRow(src Source, binderName string, render func() *Fragm
 	var frame Frame
 	frameSet(&frame, binderName, row)
 	frameSet(&frame, "_K", BinderNone("a row of a relation has no key: SQL rows are unordered and unkeyed unless the schema says otherwise, and guessing which column is the key is not something this layer does"))
-	for _, f := range src.Filters {
-		frameSet(&frame, f.Binder, row)
-	}
 	t.frames = append(t.frames, frame)
 	defer func() {
 		t.frames = t.frames[:len(t.frames)-1]
@@ -2140,7 +2176,32 @@ func aggReturns(name string) SqlKind {
 	return KindList
 }
 
-func (t *Translator) aggBody(name string, body *SNode, src Source, n *SNode) *Fragment {
+// filterPredicate renders a FILTER's predicate in its own scope: the enclosing
+// scope plus the FILTER's binder for the element, and nothing of the aggregate
+// it feeds. Every binder is local to the expression it is written for; folding
+// them all into one frame let a predicate read the body's binder, and the body
+// read the predicate's (LISP-C7, PHP-C30).
+func (t *Translator) filterPredicate(f SourceFilter, binderName string) *Fragment {
+	top := t.frames[len(t.frames)-1]
+	var frame Frame
+	for _, kv := range top {
+		if kv.Key == binderName {
+			frameSet(&frame, f.Binder, kv.Val)
+		}
+	}
+	for _, kv := range top {
+		if kv.Key == "_K" {
+			frameSet(&frame, "_K", kv.Val)
+		}
+	}
+	saved := t.frames
+	n := len(saved) - 1
+	t.frames = append(saved[:n:n], frame)
+	defer func() { t.frames = saved }()
+	return t.node(f.Node)
+}
+
+func (t *Translator) aggBody(name string, binderName string, body *SNode, src Source, n *SNode) *Fragment {
 	q := t.node(body)
 	if name == "SUM" {
 		t.requireNum(q, body.Pos, name)
@@ -2149,7 +2210,7 @@ func (t *Translator) aggBody(name string, body *SNode, src Source, n *SNode) *Fr
 	}
 
 	for _, f := range src.Filters {
-		p := t.requireBool(t.node(f.Node), f.Node.Pos, "FILTER")
+		p := t.requireBool(t.filterPredicate(f, binderName), f.Node.Pos, "FILTER")
 		if name == "SUM" {
 			q = t.caseWhen(p, q, t.literal(sel.NewTextOwned("0"), KindNum), n.Pos)
 		} else if name == "ALL" {
@@ -2202,7 +2263,7 @@ func (t *Translator) aggregate(n *SNode) *Fragment {
 
 	if src.Shape == SourceShapeRelation {
 		rendered := t.withRow(src, binderName, func() *Fragment {
-			return t.aggBody(name, bodyNode, src, n)
+			return t.aggBody(name, binderName, bodyNode, src, n)
 		})
 		return t.relationAggregate(name, *src.Relation, rendered, n)
 	}
@@ -2212,7 +2273,7 @@ func (t *Translator) aggregate(n *SNode) *Fragment {
 		key := kv.Key
 		elem := kv.Val
 		parts = append(parts, t.withElement(src, binderName, elem, key, n, func() *Fragment {
-			return t.aggBody(name, bodyNode, src, n)
+			return t.aggBody(name, binderName, bodyNode, src, n)
 		}))
 	}
 
@@ -2242,7 +2303,7 @@ func (t *Translator) count(n *SNode) *Fragment {
 		body := Leaf(litNode(sel.NodeNum, "1", false, n.Pos))
 		if src.Shape == SourceShapeRelation {
 			rendered := t.withRow(src, "_", func() *Fragment {
-				return t.aggBody("SUM", body, src, n)
+				return t.aggBody("SUM", "_", body, src, n)
 			})
 			return t.relationAggregate("SUM", *src.Relation, rendered, n)
 		}
@@ -2251,7 +2312,7 @@ func (t *Translator) count(n *SNode) *Fragment {
 			key := kv.Key
 			elem := kv.Val
 			parts = append(parts, t.withElement(src, "_", elem, key, n, func() *Fragment {
-				return t.aggBody("SUM", body, src, n)
+				return t.aggBody("SUM", "_", body, src, n)
 			}))
 		}
 		if len(parts) == 0 {

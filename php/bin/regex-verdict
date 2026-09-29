@@ -1,0 +1,27 @@
+#!/usr/bin/env php
+<?php
+// Driver for tools/check-regex-ambiguity-diff.py: one pattern per line on stdin,
+// one verdict per line on stdout -- `A` (accepted by the validator) or `R`
+// (refused with E_REGEX_SYNTAX). Any other outcome prints `X:<what>`. A last
+// argument `i` checks under the i flag.
+//
+//   php php/bin/regex-verdict [i] < patterns.txt
+
+declare(strict_types=1);
+
+ini_set('memory_limit', '1G');
+require_once __DIR__ . '/../src/bootstrap.php';
+
+$ic = ($argv[1] ?? '') === 'i';
+$lines = explode("\n", stream_get_contents(STDIN));
+if (end($lines) === '') array_pop($lines);
+$out = [];
+foreach ($lines as $pattern) {
+    try {
+        \Sel\Builtins\Regex::validate($pattern, ['line' => 1, 'col' => 1, 'offset' => 0], $ic);
+        $out[] = 'A';
+    } catch (\Sel\SelError $e) {
+        $out[] = $e->code === 'E_REGEX_SYNTAX' ? 'R' : 'X:' . $e->code;
+    }
+}
+echo implode("\n", $out), "\n";

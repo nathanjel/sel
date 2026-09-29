@@ -24,8 +24,8 @@ def check_sized_int(d: D.Dec, name: str, arg_num: int, limit: int, what: str, po
 
 define('ABS', 1, 1, fn=lambda a, ctx: Value.num(D.abs_(a.dec(0))))
 define('SIGN', 1, 1, fn=lambda a, ctx: Value.int(D.sign(a.dec(0))))
-define('CEIL', 1, 1, fn=lambda a, ctx: Value.num(D.ceil(a.dec(0))))
-define('FLOOR', 1, 1, fn=lambda a, ctx: Value.num(D.floor(a.dec(0))))
+define('CEIL', 1, 1, fn=lambda a, ctx: Value.num(D.ceil(a.dec(0), a.pos)))
+define('FLOOR', 1, 1, fn=lambda a, ctx: Value.num(D.floor(a.dec(0), a.pos)))
 define('TRUNC', 1, 1, fn=lambda a, ctx: Value.num(D.trunc(a.dec(0))))
 define('CANON', 1, 1, fn=lambda a, ctx: Value.num(D.trim_scale(a.dec(0))))
 

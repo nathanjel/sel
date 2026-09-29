@@ -26,12 +26,14 @@ argument's, not the call's.
 | `E_SYNTAX` | the token stream does not parse; includes non-associative comparison chains such as `a < b < c` |
 | `E_UNTERMINATED` | a text literal or an interpolation `{` is not closed before end of source |
 | `E_ESCAPE` | an unrecognised `\x` escape in a quoted literal |
+| `E_UTF8` | the source is not valid UTF-8 (or, through a host API that takes text, holds a lone surrogate); reported at the first invalid unit, counted in code points like every position |
+| `E_RANGE` | a `\u{…}` escape in a quoted literal names a code point above U+10FFFF or in D800–DFFF |
 | `E_RESERVED` | a reserved word used as a variable name or aggregate binder |
 | `E_BAD_ASSIGN` | assignment target is not an identifier followed by zero or more index operations |
 | `E_UNKNOWN_FUNC` | a call to a name that is not in the function table |
 | `E_ARITY` | argument count outside the function's declared minimum and maximum, or failing an extra rule it declares — `COND` requires an odd count, `LINK` and `LINK_LEFT` exactly three or five |
 | `E_DEPTH` | parser nesting exceeded the implementation limit; every nesting construct counts, prefix `NOT` and `-` included (§6.4) |
-| `E_REGEX_SYNTAX` | a regex literal pattern uses syntax outside the portable subset |
+| `E_REGEX_SYNTAX` | a regex literal pattern uses syntax outside the portable subset, is outside the structural limits (group depth, group count, pattern length, `{n}` bounds), or is exponentially ambiguous (§7.8); the offset is unspecified for the last two and is never asserted by a test |
 
 `E_ARITY` and `E_UNKNOWN_FUNC` are compile-time because the function table is
 fixed — there is no `DEFUN`. Catching them before the rule ever runs is most of
@@ -71,7 +73,7 @@ built at run time is validated when the call executes.
 |---|---|
 | `E_DIV_ZERO` | `/` or `%` with a zero divisor |
 | `E_UTF8` | invalid UTF-8: in source, in BIN being decoded to TEXT, or a lone surrogate being encoded |
-| `E_RANGE` | a value outside its permitted range — code point above U+10FFFF or in D800–DFFF, byte outside 0–255, negative length or count |
+| `E_RANGE` | a value outside its permitted range — code point above U+10FFFF or in D800–DFFF, byte outside 0–255, negative length or count, a text longer than 16 777 216 code points (or BIN bytes) or a collection of more than 1 000 000 children built by an operation (§6.4) |
 | `E_BAD_ARG` | an argument is well-typed but unusable: empty `SPLIT` separator, odd-length or non-hex `FROM_HEX`, malformed base64, `i` flag on a non-ASCII pattern; at the host boundary (§8), a constructor called with something it does not take — key and value counts that differ, a repeated list key, a malformed decimal, a float, a native value with no conversion — and `toNative` of a value with no native form |
 | `E_LEN_MISMATCH` | `BAND`/`BOR`/`BXOR` on BIN operands of different lengths |
 

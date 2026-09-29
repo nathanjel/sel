@@ -144,7 +144,6 @@ inline const Form FORMS[] = {
   {"ANY", 2, {Scope::Outer, Scope::Inner, Scope::Outer, Scope::Outer, Scope::Outer}, -1, 0, {"_", "_K", nullptr, nullptr}, 2},
   {"ANY", 3, {Scope::Outer, Scope::Binder, Scope::Inner, Scope::Outer, Scope::Outer}, -1, 0, {"_K", nullptr, nullptr, nullptr}, 1},
   {"BUCKET", 2, {Scope::Outer, Scope::Inner, Scope::Outer, Scope::Outer, Scope::Outer}, -1, 0, {"_", "_K", nullptr, nullptr}, 2},
-  {"BUCKET", 3, {Scope::Outer, Scope::Binder, Scope::Inner, Scope::Outer, Scope::Outer}, 1, 1, {"_K", nullptr, nullptr, nullptr}, 1},
   {"BUCKET", 3, {Scope::Outer, Scope::Inner, Scope::Inner, Scope::Outer, Scope::Outer}, -1, 0, {"_", "_K", nullptr, nullptr}, 2},
   {"BUCKET", 4, {Scope::Outer, Scope::Binder, Scope::Inner, Scope::Inner, Scope::Outer}, -1, 0, {"_K", nullptr, nullptr, nullptr}, 1},
   {"FILTER", 2, {Scope::Outer, Scope::Inner, Scope::Outer, Scope::Outer, Scope::Outer}, -1, 0, {"_", "_K", nullptr, nullptr}, 2},
@@ -181,6 +180,6 @@ inline const Form FORMS[] = {
   {"TOP_DESC", 4, {Scope::Outer, Scope::Binder, Scope::Inner, Scope::Outer, Scope::Outer}, -1, 0, {"_K", nullptr, nullptr, nullptr}, 1},
 };
 
-inline constexpr int FORM_COUNT = 40;
+inline constexpr int FORM_COUNT = 39;
 
 }  // namespace sel_builtin_manifest

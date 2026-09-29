@@ -103,6 +103,17 @@ ctx.set('TOTAL', Value.num('59.97'));
 say('program.run.reads.context', evaluate('TOTAL > 10.00', ctx).dump());
 evaluate('SEEN = TOTAL * 2', ctx);
 say('program.run.mutates.context', ctx.get('SEEN').asText());
+
+// A BOOL a host hands in is an ordinary value: a program that assigns into it
+// changes that one value and nothing else. PHP kept two shared instances behind
+// Value::bool() and a run that wrote a child into one poisoned TRUE for the whole
+// process (PHP-C1). Two contexts, each holding its own TRUE, then a fresh TRUE.
+{
+  const a = Value.none(); a.set('FLAG', Value.bool(true));
+  const b = Value.none(); b.set('FLAG', Value.bool(true));
+  compile('FLAG["k"] = 1; 0').run(a);
+  say('bool.isolated.between.contexts', String(b.get('FLAG').size()) + ' ' + String(Value.bool(true).size()) + ' ' + evaluate('COUNT(TRUE)').asText());
+}
 say('registry.count', String(functionNames().length));
 say('registry.sorted.first', functionNames()[0]);
 

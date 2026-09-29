@@ -27,6 +27,7 @@ const OUTPUTS = {
   cpp: 'cpp/sel_math_ops.hpp',
   lisp: 'lisp/src/math-ops.lisp',
   go: 'go/internal/mathops/math_ops.go',
+  rust: 'rust/src/math_ops.rs',
   docs: 'docs/internals/math-ops.md',
 };
 
@@ -201,6 +202,46 @@ function renderGo(ops) {
   return l.join('\n');
 }
 
+function renderRust(ops) {
+  const l = [
+    `// ${HEADER}`,
+    '//',
+    '// What the math plan compiles: Operators maps a binary operator token and',
+    '// Prefix a prefix operator name to a symbolic operation; Builtins',
+    '// maps a builtin name to {op, arity, aux}. Ops lists every',
+    '// operation; the optimizer maps each to its own native OpCode.',
+    '',
+    '#[derive(Clone, Copy, Debug, PartialEq, Eq)]',
+    'pub enum MathArity {',
+    '    One,',
+    '    Two,',
+    '    Fold,',
+    '}',
+    '',
+    '#[derive(Clone, Copy, Debug, PartialEq, Eq)]',
+    'pub struct BuiltinSpec {',
+    '    pub op: &\'static str,',
+    '    pub arity: MathArity,',
+    '    pub aux: Option<usize>,',
+    '}',
+    '',
+    'pub const OPERATORS: &[(&str, &str)] = &[',
+  ];
+  for (const o of ops) if (o.kind === 'operator') l.push(`    ("${o.token}", "${o.name}"),`);
+  l.push('];', '', 'pub const PREFIX: &[(&str, &str)] = &[');
+  for (const o of ops) if (o.kind === 'prefix') l.push(`    ("${o.token}", "${o.name}"),`);
+  l.push('];', '', 'pub const BUILTINS: &[(&str, BuiltinSpec)] = &[');
+  for (const o of ops) if (o.kind === 'builtin') {
+    const arity = o.arity === 'fold' ? 'MathArity::Fold' : o.arity === 1 ? 'MathArity::One' : 'MathArity::Two';
+    const aux = o.aux === null ? 'None' : `Some(${o.aux})`;
+    l.push(`    ("${o.token}", BuiltinSpec { op: "${o.name}", arity: ${arity}, aux: ${aux} }),`);
+  }
+  l.push('];', '', 'pub const OPS: &[&str] = &[');
+  for (const o of ops) l.push(`    "${o.name}",`);
+  l.push('];', '');
+  return l.join('\n');
+}
+
 function renderDocs(ops) {
   const l = [`<!-- ${HEADER} -->`, '# Math-plan operations', '',
     'The operations every host\'s math plan compiles, from the authored manifest',
@@ -222,7 +263,8 @@ function renderDocs(ops) {
 const ops = load();
 const rendered = {
   js: renderJs(ops), python: renderPython(ops), php: renderPhp(ops),
-  cpp: renderCpp(ops), lisp: renderLisp(ops), go: renderGo(ops), docs: renderDocs(ops),
+  cpp: renderCpp(ops), lisp: renderLisp(ops), go: renderGo(ops),
+  rust: renderRust(ops), docs: renderDocs(ops),
 };
 if (process.argv.includes('--check')) {
   let stale = 0;

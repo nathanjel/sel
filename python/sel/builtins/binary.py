@@ -11,16 +11,35 @@ the four cores can be read against each other.
 
 import re
 
+from .._budget import check_collection, check_text
 from ..errors import fail
 from ..registry import define
 from ..utf8 import bytes_to_hex, decode_utf8
-from ..value import Value
+from .. import decimal as D
+from ..value import NONE, TEXT, Value
 
 define('BLEN', 1, 1, fn=lambda a, ctx: Value.int(len(a.bytes(0))))
-define('TO_UTF8', 1, 1, fn=lambda a, ctx: Value.bin(a.bytes(0)))
+def _to_utf8(a, ctx):
+    v = a.val(0).scalar_source(a.pos_of(0))
+    if v.kind == TEXT:
+        # Every code point is at least one byte, so a text over the cap is
+        # refused without encoding it; below it the encoding is at most 4x.
+        check_text(len(v.scalar), a.pos)
+    b = a.bytes(0)
+    check_text(len(b), a.pos)
+    return Value.bin(b)
+
+
+define('TO_UTF8', 1, 1, fn=_to_utf8)
 define('FROM_UTF8', 1, 1,
        fn=lambda a, ctx: Value.text(decode_utf8(a.bytes(0), a.pos_of(0))))
-define('TO_HEX', 1, 1, fn=lambda a, ctx: Value.text(bytes_to_hex(a.bytes(0))))
+def _to_hex(a, ctx):
+    b = a.bytes(0)
+    check_text(len(b) * 2, a.pos)
+    return Value.text(bytes_to_hex(b))
+
+
+define('TO_HEX', 1, 1, fn=_to_hex)
 
 # .fullmatch() for the reason in sel/decimal.py. This one happens to be safe
 # with .match() because the slice is always exactly two characters, but the
@@ -51,6 +70,7 @@ _B64_INDEX = {ch: i for i, ch in enumerate(_B64)}
 
 def _encode_base64(a, ctx):
     b = a.bytes(0)
+    check_text((len(b) + 2) // 3 * 4, a.pos)
     out = []
     for i in range(0, len(b), 3):
         n = (b[i] << 16) \
@@ -129,18 +149,28 @@ def _crc32(a, ctx):
 
 define('CRC32', 1, 1, fn=_crc32)
 
-define('BTL', 1, 1,
-       fn=lambda a, ctx: Value._list_owned([Value.int(b) for b in a.bytes(0)]))
+def _btl(a, ctx):
+    b = a.bytes(0)
+    check_collection(len(b), a.pos)
+    return Value._list_owned([Value.int(x) for x in b])
+
+
+define('BTL', 1, 1, fn=_btl)
 
 
 def _ltb(a, ctx):
     v = a.val(0)
+    if v.kind == NONE and v.size() == 0:
+        return Value.bin(b'')                      # LTB of an empty list (SPEC 7.7)
     items = v.values() if v.size() > 0 else [v]
+    check_collection(len(items), a.pos)
     out = bytearray(len(items))
     for i, item in enumerate(items):
         d = item.as_decimal(a.pos_of(0))
-        n = -d.digits if d.neg else d.digits
-        if d.scale != 0 or n < 0 or n > 255:
+        if not D.is_integer(d):
+            fail('E_NOT_INT', f'LTB element {i + 1} must be a whole number', a.pos_of(0))
+        n = D.to_safe_int(d)
+        if n < 0 or n > 255:
             fail('E_RANGE', f'LTB element {i + 1} is not a byte value', a.pos_of(0))
         out[i] = n
     return Value.bin(bytes(out))

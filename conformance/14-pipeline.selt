@@ -225,3 +225,47 @@ error E_ARITY at 1:6
 --- expect
 error E_ARITY at 1:6
 ===
+### name: pipe.placeholder.repeated
+--- note
+Every top-level bare `_` is replaced by the piped value, not only the first (SPEC grammar, pipelines). Go once stopped after the first, leaving the second a variable read.
+--- source
+3 .> MAX(_, _)
+--- expect
+num 3
+===
+
+### name: pipe.placeholder.repeated-three
+--- note
+Three placeholders, all replaced.
+--- source
+3 .> MAX(_, _, _)
+--- expect
+num 3
+===
+
+### name: pipe.placeholder.repeated-evaluates-once-per-placeholder
+--- note
+The replacement is textual, so the piped expression is evaluated once per placeholder, in argument order: the side effect runs twice and N ends at 2.
+--- source
+N = 0; (N = N + 1) .> MAX(_, _) & "/" & N
+--- expect
+text "2/2"
+===
+
+### name: pipe.placeholder.below-min-arity-is-a-plain-argument
+--- note
+SUBSTR needs two arguments, so `SUBSTR(_)` has too few for the placeholder rule to apply: the piped value is prepended and the `_` stays a variable read.
+--- source
+"abc" .> SUBSTR(_)
+--- expect
+error E_UNDEF_VAR at 1:17
+===
+
+### name: pipe.placeholder.binding-function-is-not-substituted
+--- note
+A binding built-in never substitutes: its second argument is the binder name, so a `_` there is not a placeholder and the piped value is always prepended.
+--- source
+(1,2,3) .> FILTER((4,5,6), _)
+--- expect
+error E_EXPECT_SYMBOL at 1:20
+===

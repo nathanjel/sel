@@ -336,6 +336,9 @@ func IdentityLossBeforeGrouping(node *SNode, needed *NeededFields) bool {
 	return false
 }
 
+// binderConstant prefixes the names of binders a constant aggregate introduced.
+const binderConstant = "\x00"
+
 func IsConstant(n *SNode, bound map[string]bool) bool {
 	if n == nil {
 		return false
@@ -344,7 +347,16 @@ func IsConstant(n *SNode, bound map[string]bool) bool {
 	case SNodeNum, SNodeText, SNodeBool:
 		return true
 	case SNodeVar:
-		return bound != nil && bound[n.Str]
+		if bound == nil {
+			return false
+		}
+		// A binder is not the value binding that happens to share its name: a
+		// read stage 1 found bound is constant only if a constant aggregate bound
+		// it (binderConstant), never because a binding of that name is a value.
+		if n.VarScope == VarScopeBound {
+			return bound[binderConstant+n.Str]
+		}
+		return bound[n.Str]
 	case SNodeUn:
 		return IsConstant(n.L(), bound)
 	case SNodeBin:
@@ -392,9 +404,11 @@ func constantCall(n *SNode, bound map[string]bool) bool {
 			return false
 		}
 		inner[args[1].Str] = true
+		inner[binderConstant+args[1].Str] = true
 		body = 2
 	} else {
 		inner["_"] = true
+		inner[binderConstant+"_"] = true
 	}
 
 	for i := body; i < len(args); i++ {

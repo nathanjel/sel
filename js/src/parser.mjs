@@ -207,8 +207,17 @@ class Parser {
       }
 
       if (assoc === 'R') {
-        const right = this.parseTerm(bp);
-        left = { t: 'bin', op: t.value, l: left, r: right, pos: t };
+        // Counted like an assignment (SPEC §6.4): `??` and `???` are the other
+        // right-associative operators, and their right side recurses without
+        // passing through parseSequence or parsePrimary. Uncounted, a few
+        // thousand of them reached the host's own stack instead of E_DEPTH.
+        this.enter(t);
+        try {
+          const right = this.parseTerm(bp);
+          left = { t: 'bin', op: t.value, l: left, r: right, pos: t };
+        } finally {
+          this.leave();
+        }
         continue;
       }
 
@@ -414,6 +423,7 @@ function finishCall(nameTok, spec, args) {
     const problem = spec.arityError(count);
     if (problem) fail('E_ARITY', problem, nameTok);
   }
+  if (spec.compileCheck) spec.compileCheck(args);
   return { t: 'call', name: spec.name, spec, args, pos: nameTok,
     recordShape: prepareRecordShape(spec.name, args) };
 }

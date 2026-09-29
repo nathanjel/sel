@@ -74,13 +74,38 @@ definition is a host that would silently lack a builtin the others have."
     (when missing
       (error "spec/builtins.json names builtins this host never defined: ~{~a~^, ~}" missing))))
 
+(defvar *shipped-builtins* nil
+  "The names the library itself defines, fixed once they have loaded. An
+application may add functions and replace its own, never these.")
+
 (defun register-builtin (name min max fn &key (lazy nil) (binds nil) (arity-error nil) (overwrite t))
-  "Register or redefine a custom builtin function in the SEL runtime."
-  (let ((upper (string-upcase name)))
+  "Register (or, with OVERWRITE, redefine) an application's function, lazy or
+binding forms included -- the lower-level sibling of REGISTER-FUNCTION. It is
+held to the same rules: a well-formed name that is not a reserved word, an arity
+0 <= MIN <= MAX, a function to run, and never the name of a builtin the library
+ships (`COUNT` cannot become 42 for the whole process). Anything else signals a
+plain ERROR. OVERWRITE NIL also refuses the name of an earlier registration."
+  (unless (and (stringp name) (plusp (length name))
+               (let ((c (char name 0))) (or (char<= #\A c #\Z) (char<= #\a c #\z)))
+               (every (lambda (c) (or (char<= #\A c #\Z) (char<= #\a c #\z)
+                                      (char<= #\0 c #\9) (char= c #\_)))
+                      name))
+    (error "SEL function name must be ASCII letters, digits and _, starting with a letter: ~s" name))
+  (let ((upper (string-upcase name))
+        (max (or max min)))
+    (when (reservedp upper)
+      (error "~a is a reserved word" upper))
+    (when (member upper *shipped-builtins* :test #'string=)
+      (error "~a is a builtin; a registered function cannot replace it" upper))
+    (unless (and (integerp min) (or (integerp max) (eql max +variadic+)) (<= 0 min)
+                 (or (eql max +variadic+) (<= min max)))
+      (error "SEL function ~a: arity must be whole numbers with 0 <= min <= max" upper))
+    (unless (functionp fn)
+      (error "SEL function ~a: fn is not a function" upper))
     (when (and (not overwrite) (gethash upper *registry*))
       (error "SEL function ~a defined twice" upper))
     (setf (gethash upper *registry*)
-          (make-spec upper min (or max min) lazy binds arity-error fn))))
+          (make-spec upper min max lazy binds arity-error fn))))
 
 (defun registry-lookup (name)
   (gethash (string-upcase name) *registry*))

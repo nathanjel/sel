@@ -20,6 +20,20 @@ final class Utf8
      */
     public static function validate(string $b, ?array $pos = null): void
     {
+        $bad = self::firstInvalid($b);
+        if ($bad !== null) {
+            fail('E_UTF8', $bad[1], $pos);
+        }
+    }
+
+    /**
+     * The first invalid unit of `$b`: its byte index (the start of the bad
+     * sequence) and a message, or null if the string is valid UTF-8.
+     *
+     * @return array{0:int,1:string}|null
+     */
+    public static function firstInvalid(string $b): ?array
+    {
         $n = strlen($b);
         $i = 0;
         while ($i < $n) {
@@ -45,12 +59,11 @@ final class Utf8
             } elseif ($c === 0xf4) {
                 $need = 3; $lo = 0x80; $hi = 0x8f;      // cap at U+10FFFF
             } else {
-                fail('E_UTF8', sprintf('invalid start byte 0x%x at byte %d', $c, $i), $pos);
-                return;
+                return [$i, sprintf('invalid start byte 0x%x at byte %d', $c, $i)];
             }
 
             if ($i + $need >= $n) {
-                fail('E_UTF8', "truncated sequence at byte {$i}", $pos);
+                return [$i, "truncated sequence at byte {$i}"];
             }
             for ($k = 1; $k <= $need; $k++) {
                 $cc = ord($b[$i + $k]);
@@ -58,13 +71,66 @@ final class Utf8
                 $max = $k === 1 ? $hi : 0xbf;
                 if ($cc < $min || $cc > $max) {
                     $at = $i + $k;
-                    fail('E_UTF8', "invalid continuation byte at byte {$at}", $pos);
+                    return [$i, "invalid continuation byte at byte {$at}"];
                 }
             }
             $i += $need + 1;
         }
+        return null;
     }
 
+    /**
+     * The position of byte index `$byte` in `$b` as every other position is
+     * counted: code points, 1-based line and column, LF the only line end. The
+     * prefix before `$byte` must be valid UTF-8 (it is when `$byte` came from
+     * firstInvalid).
+     *
+     * @return array{line:int,col:int,offset:int}
+     */
+    public static function positionAtByte(string $b, int $byte): array
+    {
+        $offset = 0;
+        $line = 1;
+        $lineStart = 0;
+        for ($i = 0; $i < $byte; $i++) {
+            $c = ord($b[$i]);
+            if (($c & 0xc0) === 0x80) {
+                continue;               // a continuation byte: same code point
+            }
+            if ($c === 0x0a) {
+                $line++;
+                $lineStart = $offset + 1;
+            }
+            $offset++;
+        }
+        return ['line' => $line, 'col' => $offset - $lineStart + 1, 'offset' => $offset];
+    }
+
+
+    /**
+     * ASCII case folding, the only kind SEL has (UPPER and LOWER are ASCII-only
+     * by decision, and identifiers are ASCII by construction). PHP's own
+     * strtoupper/strtolower/strcasecmp are locale-dependent before 8.2 —
+     * composer.json still allows 8.1 — so an application that called
+     * setlocale(LC_CTYPE, 'tr_TR.ISO-8859-9') would have `i` fold to a non-ASCII
+     * byte and identifiers stop matching. strtr with a fixed table never asks
+     * the locale, and is as fast.
+     */
+    public static function upper(string $s): string
+    {
+        return strtr($s, 'abcdefghijklmnopqrstuvwxyz', 'ABCDEFGHIJKLMNOPQRSTUVWXYZ');
+    }
+
+    public static function lower(string $s): string
+    {
+        return strtr($s, 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz');
+    }
+
+    /** ASCII-case-insensitive comparison, negative / zero / positive like strcmp. */
+    public static function casecmp(string $a, string $b): int
+    {
+        return strcmp(self::lower($a), self::lower($b));
+    }
 
     /**
      * Splits valid UTF-8 into single-code-point strings. The lexer and the text
@@ -87,9 +153,79 @@ final class Utf8
         return $out;
     }
 
+    /** Is every byte below 0x80? Then bytes and code points are the same thing. */
+    public static function isAscii(string $s): bool
+    {
+        return !preg_match('/[\x80-\xff]/', $s);
+    }
+
+    /**
+     * Code points in valid UTF-8, without materialising them: a text at the
+     * length cap (spec §6.4) is 16 million of them, and an array of that many
+     * one-character strings is gigabytes.
+     */
     public static function length(string $s): int
     {
-        return count(self::chars($s));
+        $n = strlen($s);
+        if (self::isAscii($s)) return $n;
+        // Every code point has exactly one byte that is not a continuation byte.
+        $count = 0;
+        for ($i = 0; $i < $n; $i += 1 << 20) {
+            $chunk = substr($s, $i, 1 << 20);
+            $count += strlen($chunk) - (int) preg_match_all('/[\x80-\xbf]/', $chunk);
+        }
+        return $count;
+    }
+
+    /**
+     * The byte offset reached by advancing `$cps` code points from byte `$from`,
+     * clamped to the end of the string.
+     */
+    public static function advance(string $s, int $cps, int $from = 0): int
+    {
+        $n = strlen($s);
+        if ($cps <= 0) return $from;
+        if (self::isAscii($from === 0 ? $s : substr($s, $from))) {
+            return $cps >= $n - $from ? $n : $from + $cps;
+        }
+        $i = $from;
+        while ($cps > 0 && $i < $n) {
+            $c = ord($s[$i]);
+            $i += $c < 0x80 ? 1 : ($c < 0xe0 ? 2 : ($c < 0xf0 ? 3 : 4));
+            $cps--;
+        }
+        return min($i, $n);
+    }
+
+    /** Substring by code points: `$start` 0-based, `$len` null for the rest. */
+    public static function slice(string $s, int $start, ?int $len = null): string
+    {
+        $from = self::advance($s, $start);
+        if ($len === null) return substr($s, $from);
+        return substr($s, $from, self::advance($s, $len, $from) - $from);
+    }
+
+    /**
+     * Raises E_RANGE when a text or binary value would be longer than the cap
+     * (spec §6.4, MAX_TEXT_LEN), at the node that builds it. `$bytes` is the
+     * byte length, which bounds the code point length from above, so only a
+     * candidate over the cap pays for counting.
+     *
+     * @param array<string,mixed>|null $pos
+     */
+    public static function checkTextLen(int $bytes, ?array $pos, string $what, ?string $s = null, bool $isText = true): void
+    {
+        if ($bytes <= Limits::MAX_TEXT_LEN) return;
+        if ($isText && $s !== null && self::length($s) <= Limits::MAX_TEXT_LEN) return;
+        fail('E_RANGE', "{$what} would be longer than " . Limits::MAX_TEXT_LEN, $pos);
+    }
+
+    /** Raises E_RANGE when a collection an operation builds would have more children than the cap. @param array<string,mixed>|null $pos */
+    public static function checkCount(int $n, ?array $pos, string $what): void
+    {
+        if ($n > Limits::MAX_COLLECTION) {
+            fail('E_RANGE', "{$what} would have more than " . Limits::MAX_COLLECTION . ' elements', $pos);
+        }
     }
 
     /** @return list<int> */

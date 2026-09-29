@@ -97,4 +97,35 @@ sqlmap.reset();
 say('host.spell.after-reset', attempt(() => Sql.translate(compile('HSLUG(T)'), 'postgresql', HOST)));
 say('host.spell.after-reset.local', evaluate('HSLUG("A")').asText());
 
+// --- rendering and registration state (T10) ------------------------------------
+// The questions a snapshot of ONE translation cannot ask: what an unknown render
+// mode does when there is nothing to bind, and whether a refused dialect stays
+// refused. `refuses` collapses the host's own error classes, which differ, to the
+// one thing the contract says: the call did not produce SQL.
+const refuses = (fn) => {
+  try {
+    fn();
+    return 'accepted';
+  } catch (e) {
+    if (e instanceof Error) return 'refused';
+    throw e;
+  }
+};
+const ONE = { C: Binding.column('c', 't', 'NUM') };
+const zero = Sql.translate(compile('C > C'), 'mariadb', ONE);
+const one = Sql.translate(compile('C > 1'), 'mariadb', ONE);
+say('render.mode.valid.zero-slots', refuses(() => zero.asValue('params')));
+say('render.mode.bogus.zero-slots', refuses(() => zero.asValue('bogus')));
+say('render.mode.bogus.zero-slots.condition', refuses(() => zero.asCondition('bogus')));
+say('render.mode.bogus.with-slot', refuses(() => Sql.translate(compile('C > "x"'), 'mariadb', ONE).asValue('bogus')));
+say('render.mode.bogus.literal-number', refuses(() => one.asValue('bogus')));
+sqlmap.defineDialect('probe-badguard', { extends: 'postgresql', version: '16', lexical: {
+  numericGuard: "CASE WHEN ({textCast:0} ~ '^.*$') THEN CAST({0} AS NUMERIC) ELSE NULL END" } });
+const NAMED = { N: Binding.column('n', 't', 'TEXT') };
+for (const k of [1, 2, 3]) {
+  say(`guard.reuse.${k}`, refuses(() => Sql.translate(compile('N + 1'), 'probe-badguard', NAMED)));
+}
+sqlmap.reset();
+say('guard.reuse.after-reset', refuses(() => Sql.translate(compile('N + 1'), 'probe-badguard', NAMED)));
+
 process.stdout.write(out.join('\n') + '\n');

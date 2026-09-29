@@ -516,6 +516,13 @@ function unwindThroughHelpers(result, defs, literals) {
     source = inner.source;
     steps = [...inner.steps, ...steps];
   }
+  // The source the loop stopped at reads the catalogue's binding when its name is
+  // also a helper's (the helper was written `ORDERS = ORDERS .> DROP(2)`): mark
+  // it, so wrapping the pipeline in the helpers again does not inline the helper
+  // into the very read that was its own definition (PHP-C34 -- DROP twice).
+  if (source && source.t === 'var' && defs.has(source.name)) {
+    source = { ...source, binding: true };
+  }
   return { source, steps };
 }
 
@@ -524,7 +531,9 @@ function unwindThroughHelpers(result, defs, literals) {
 function readNames(node, out = new Set()) {
   if (!node) return out;
   if (node.t === 'var') {
-    out.add(node.name);
+    // A read of the BINDING, reached by unwinding through a helper of the same
+    // name (`ORDERS = ORDERS .> DROP(2)`), is not a read of that helper.
+    if (!node.binding) out.add(node.name);
     return out;
   }
   if (node.args) node.args.forEach((item) => readNames(item, out));

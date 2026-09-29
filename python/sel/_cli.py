@@ -16,6 +16,7 @@ from __future__ import annotations
 import sys
 
 from . import SelError, Value, compile as sel_compile, function_names
+from .utf8 import decode_source
 
 
 def show(v: Value) -> str:
@@ -31,6 +32,20 @@ def show(v: Value) -> str:
 
 def _report(e: SelError) -> None:
     sys.stderr.write(f'{e.code} at line {e.line} column {e.col}: {e.message}\n')
+
+
+def _read_line(prompt: str) -> str:
+    """One REPL line, read as bytes and decoded strictly (SPEC 2). A terminal gets
+    `input()`'s line editing, and its text has already been decoded by the
+    interpreter, so only a lone surrogate can be left for the lexer to reject."""
+    if sys.stdin.isatty():
+        return input(prompt)
+    sys.stdout.write(prompt)
+    sys.stdout.flush()
+    raw = sys.stdin.buffer.readline()
+    if not raw:
+        raise EOFError
+    return decode_source(raw.rstrip(b'\n'))
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -49,12 +64,20 @@ def main(argv: list[str] | None = None) -> int:
             return 2
         source = args[1]
     elif args:
+        # Bytes, decoded by the project's strict codec: the native text layer
+        # would translate CRLF and CR to LF (changing the program) and raise a
+        # UnicodeDecodeError instead of E_UTF8 (SPEC 2).
         try:
-            with open(args[0], encoding='utf-8') as fh:
-                source = fh.read()
+            with open(args[0], 'rb') as fh:
+                data = fh.read()
         except OSError as e:
             sys.stderr.write(f'sel: {e}\n')
             return 2
+        try:
+            source = decode_source(data)
+        except SelError as e:
+            _report(e)
+            return 1
 
     if source is not None:
         try:
@@ -72,10 +95,13 @@ def main(argv: list[str] | None = None) -> int:
     root = Value.none()
     while True:
         try:
-            line = input('sel> ')
+            line = _read_line('sel> ')
         except (EOFError, KeyboardInterrupt):
             print()
             return 0
+        except SelError as e:
+            _report(e)
+            continue
         if not line.strip():
             continue
         try:

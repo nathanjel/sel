@@ -120,6 +120,11 @@ func NewListOwned(items []*Value) *Value {
 }
 
 func NewListWithKeys(items []*Value, keys []string) *Value {
+	// A public constructor: key and value counts that differ are a malformed call
+	// (SPEC §8), not something to truncate or index past.
+	if len(items) != len(keys) {
+		fail("E_BAD_ARG", "list keys and values differ in count", Pos{})
+	}
 	cp := make([]*Value, len(items))
 	copy(cp, items)
 	k := make([]string, len(keys))
@@ -445,12 +450,19 @@ func (v *Value) AsDecimal(pos Pos) *decimal.Dec {
 	return d
 }
 
+// notNumeric is what LooksNumeric's parse aborts with; nothing else escapes it.
+type notNumeric struct{}
+
 func (v *Value) LooksNumeric() bool {
 	if v.Kind == KindNone && v.Size() == 0 {
 		return false
 	}
 	defer func() {
-		recover()
+		if r := recover(); r != nil {
+			if _, ok := r.(notNumeric); !ok && !isSelPanic(r) {
+				panic(r)
+			}
+		}
 	}()
 	s := v.ScalarSource(Pos{})
 	if s.Kind != KindText {
@@ -460,7 +472,7 @@ func (v *Value) LooksNumeric() bool {
 		return true
 	}
 	d := decimal.Parse(s.strVal, utf8.Pos{}, func(code, msg string, pos utf8.Pos) {
-		panic(code)
+		panic(notNumeric{})
 	})
 	if d != nil {
 		s.decVal = d
@@ -699,7 +711,11 @@ func (v *Value) Elements() []Entry {
 		return out
 	}
 	if len(v.entries) > 0 {
-		return v.entries
+		// A snapshot, like the two shaped forms above: a body that assigns
+		// into the record it is iterating must not change what is visited.
+		out := make([]Entry, len(v.entries))
+		copy(out, v.entries)
+		return out
 	}
 	if v.Kind != KindNone {
 		return []Entry{{Key: "1", Val: v}}

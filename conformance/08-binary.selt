@@ -152,7 +152,7 @@ error E_RANGE
 --- source
 LTB((65, 1.5))
 --- expect
-error E_RANGE
+error E_NOT_INT
 ===
 ### name: bin.roundtrip-btl-ltb
 --- source

@@ -4,7 +4,7 @@ package sel
 
 import (
 	"sort"
-	"sync"
+	"sync/atomic"
 
 	"github.com/nathanjel/sel/go/internal/manifest"
 )
@@ -12,8 +12,12 @@ import (
 type Program struct {
 	source      string
 	ast         *Node
-	physicalAst *Node
-	physOnce    sync.Once
+	// The optimised tree, built on first use. An atomic pointer rather than a
+	// sync.Once: a panic inside the optimizer counts a Once as done and every
+	// later Run would evaluate a nil tree. Here a failed build leaves the
+	// pointer unset, so the panic reaches the caller and the next Run builds
+	// again (two racing first Runs may both build; the trees are equivalent).
+	physicalAst atomic.Pointer[Node]
 }
 
 func NewProgram(source string, ast *Node) *Program {
@@ -54,10 +58,12 @@ func (p *Program) AST() *Node {
 }
 
 func (p *Program) PhysicalAST() *Node {
-	p.physOnce.Do(func() {
-		p.physicalAst = OptimizeAST(p.ast)
-	})
-	return p.physicalAst
+	if t := p.physicalAst.Load(); t != nil {
+		return t
+	}
+	t := OptimizeAST(p.ast)
+	p.physicalAst.CompareAndSwap(nil, t)
+	return p.physicalAst.Load()
 }
 
 func (p *Program) Run(ctx *Value) (result *Value, err error) {

@@ -100,6 +100,10 @@
           "table": "oi",
           "column": "value",
           "type": "TEXT"
+        },
+        "VALUEU": {
+          "table": "oi",
+          "column": "value"
         }
       }
     },
@@ -135,25 +139,34 @@
       "kind": "column",
       "table": "o",
       "column": "code"
+    },
+    "CODE_X": {
+      "kind": "column",
+      "table": "o",
+      "column": "code",
+      "type": "TEXT",
+      "exact": true
     }
   },
   "context": {
-    "query": "SELECT id, credit_limit, code, code AS code_u FROM o ORDER BY id",
+    "query": "SELECT id, credit_limit, code, code AS code_u, code AS code_x FROM o ORDER BY id",
     "key": "id",
     "columns": {
       "credit_limit": "CREDIT_LIMIT",
       "code": "CODE",
-      "code_u": "CODE_U"
+      "code_u": "CODE_U",
+      "code_x": "CODE_X"
     },
     "children": {
       "ITEMS": {
-        "query": "SELECT order_id, qty, price, sku, value FROM order_items ORDER BY order_id, sku",
+        "query": "SELECT order_id, qty, price, sku, value, value AS value_u FROM order_items ORDER BY order_id, sku",
         "parent": "order_id",
         "columns": {
           "qty": "QTY",
           "price": "PRICE",
           "sku": "SKU",
-          "value": "VALUE"
+          "value": "VALUE",
+          "value_u": "VALUEU"
         }
       },
       "SKUS": {
@@ -399,6 +412,131 @@
       "sel": "(CODE ??? \"empty\") $== \"empty\"",
       "expect": [
         4
+      ]
+    },
+    {
+      "name": "min over a numeric column and a numeric literal",
+      "why": "SQLite's multi-argument min() ranks every number below every text value, so a literal emitted as '60' loses to nothing: min(100.0, '60') is 100.0, and MIN(CREDIT_LIMIT, 60) > 70 selected orders SEL says are at most 60 (GO-C17). The OR arm keeps the rule discriminating.",
+      "sel": "MIN(CREDIT_LIMIT, 60) > 70 OR CREDIT_LIMIT < 20",
+      "expect": [
+        2
+      ]
+    },
+    {
+      "name": "max over a numeric column and a numeric literal",
+      "why": "The mirror: max(500.0, '60') is '60' in SQLite, so MAX(CREDIT_LIMIT, 60) > 400 selected nothing where SEL selects order 3 (GO-C17).",
+      "sel": "MAX(CREDIT_LIMIT, 60) > 400",
+      "expect": [
+        3
+      ]
+    },
+    {
+      "name": "exact text column against a numeric item",
+      "why": "An `exact` column skips the byte cast on the column, so a NUMBER item beside it must be cast to text too: bare `code = 25` makes MariaDB/MySQL compare numerically ('25/298' = 25 is TRUE by numeric prefix) and SQLite compare under the column's affinity, matches SEL refuses (SEL's IN is EQL: structural, '25' IN (\"a\", 25) is TRUE only for the row holding exactly '25') (PY-C20, CPP-C30, LISP-C25).",
+      "sel": "CODE_X IN (\"a\", 25)",
+      "expect": [
+        1
+      ]
+    },
+    {
+      "name": "conditional over an undeclared column, guarded as a whole",
+      "why": "`??` replaces only NULL, so 'x' stays 'x' and SEL raises E_NOT_NUM. A guard placed on the LEAF, COALESCE(guard(code), '1'), turns 'x' into NULL and then into '1', and `+ 1 > 0` selects order 3 where SEL selects nothing for it. The guard has to wrap the whole conditional (docs/internals/sql-kinds.md 5a). Orders 1 and 5 hold '25' and '30'; 2 ('25/298'), 3 ('x') and 4 ('') are refused rows.",
+      "sel": "(CODE_U ?? \"1\") + 1 > 0",
+      "expect": [
+        1,
+        5
+      ],
+      "refuse": {
+        "sqlite": "E_SQL_UNSUPPORTED"
+      },
+      "raises": [
+        2,
+        3,
+        4
+      ]
+    },
+    {
+      "name": "sum over an undeclared field, all or nothing",
+      "why": "SUM skips NULL and the layer wraps COALESCE(SUM(..), 0) around it, so a per-element guard turns a refused element into a missing one: order 1 (values 'x', '9') would be 9 and order 2 ('n/a') would be 0, both >= 0, where SEL raises E_NOT_NUM for both. The guarded form makes the whole SUM NULL when any element fails the numeric test (docs/internals/sql-kinds.md 5a). Order 3 has no lines (0), order 4 sums to 4 and order 5 to 3.",
+      "sel": "SUM(ITEMS, _[\"VALUEU\"]) >= 0",
+      "expect": [
+        3,
+        4,
+        5
+      ],
+      "refuse": {
+        "sqlite": "E_SQL_UNSUPPORTED"
+      },
+      "raises": [
+        1,
+        2
+      ]
+    },
+    {
+      "name": "scope: an inlined helper is not captured by a later binder",
+      "why": "JS-C26, CPP-C23. X = CREDIT_LIMIT + 1 is written where CREDIT_LIMIT is the column, so inside the body CREDIT_LIMIT < X compares the element with the column plus one and only order 3 (500) holds for the element 200. Substituting by name lets the binder capture X's free name: every element is below itself plus one and every order is selected.",
+      "sel": "X = CREDIT_LIMIT + 1; ALL((5, 60, 200), CREDIT_LIMIT, CREDIT_LIMIT < X)",
+      "expect": [
+        3
+      ]
+    },
+    {
+      "name": "scope: a helper read inside a same-named binder body keeps the column",
+      "why": "JS-C26. X = CREDIT_LIMIT is the column; the binder that reuses the name shadows it only in its own body, where X still means the column. Captured, X > 60 is constantly FALSE.",
+      "sel": "X = CREDIT_LIMIT; ALL((5,6), CREDIT_LIMIT, X > 60)",
+      "expect": [
+        1,
+        3
+      ]
+    },
+    {
+      "name": "scope: a FILTER's binder is not in scope in the consuming aggregate",
+      "why": "PHP-C30, LISP-C7. The FILTER binder is named like the column, so leaking it into the body would compare each element with itself; the body's CREDIT_LIMIT is the column and only order 3 exceeds 400.",
+      "sel": "ALL(FILTER((40,60,400), CREDIT_LIMIT, CREDIT_LIMIT > 50), Y, Y < CREDIT_LIMIT)",
+      "expect": [
+        3
+      ]
+    },
+    {
+      "name": "scope: an indexed-assignment list is copied, not aliased",
+      "why": "GO-C4. X = R copies (spec 3.4); R[2] = 0 afterwards is not in X, so COUNT(X) is 1. Aliased it is 2 and the rule selects nothing.",
+      "sel": "R[1] = CREDIT_LIMIT; X = R; R[2] = 0; COUNT(X) == 1 AND CREDIT_LIMIT > 20",
+      "expect": [
+        1,
+        3,
+        4,
+        5
+      ]
+    },
+    {
+      "name": "scope: a binder reusing the row binder's name in an inner list",
+      "why": "PY-C18, PHP-C29 over a relation. The inner list's I[\"QTY\"] is the OUTER row; the inner body's I is the inner element. It equals ANY(ITEMS, I, I[\"QTY\"] > 1).",
+      "sel": "ANY(ITEMS, I, ALL((I[\"QTY\"], 2), I, I > 1))",
+      "expect": [
+        1,
+        2,
+        4,
+        5
+      ]
+    },
+    {
+      "name": "scope: an inner list mixing the outer row and an outer column",
+      "why": "The list reads the outer row's QTY and the order's CREDIT_LIMIT, the body a fresh binder; orders 2 and 5 have a line of quantity 5 or more.",
+      "sel": "ANY(ITEMS, I, ALL((I[\"QTY\"], CREDIT_LIMIT), Q, Q >= 5))",
+      "expect": [
+        2,
+        5
+      ]
+    },
+    {
+      "name": "scope: _K in an inner list is the OUTER element's key",
+      "why": "JS-C7, PHP-C29. The outer iterations are \"1\" and \"2\"; the inner list's _K is that key, not the inner binder's, so the second iteration holds \"2\" and the body is TRUE. Using the inner key \"1\" in both halves makes it constantly FALSE; the AND keeps the rule from selecting every order. Text comparison only, so every dialect can translate it.",
+      "sel": "ANY((0,0), ANY((_K, \"zz\"), c, c $== \"2\")) AND CREDIT_LIMIT > 20",
+      "expect": [
+        1,
+        3,
+        4,
+        5
       ]
     }
   ]

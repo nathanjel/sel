@@ -44,43 +44,55 @@
                 (vector-push-extend (logior #x80 (logand c #x3f)) out))))
     (coerce out '(simple-array octet (*)))))
 
-(defun decode-utf8 (bytes &optional at)
+(defun decode-utf8 (bytes &optional at source)
   "Decode BYTES as UTF-8, or raise E_UTF8. Strict: rejects overlong forms,
 surrogates, values above U+10FFFF and truncated sequences. No replacement
-characters, ever."
+characters, ever.
+
+With SOURCE true the bytes are a program's source text (spec/SPEC.md section 2),
+and a failure carries a position of its own instead of AT: the first invalid
+unit's, counted in code points of the valid prefix like every other position --
+line and column by LF only, offset from the start. The unit is the start of the
+invalid sequence, so an overlong or truncated one is reported where it begins."
   (let ((out (make-string-output-stream))
         (n (length bytes))
-        (i 0))
-    (loop while (< i n) do
-      (let ((b (aref bytes i)))
-        (if (< b #x80)
-            (progn (write-char (code-char b) out) (incf i))
-            (let (need cp lo hi)
-              (cond
-                ((<= #xc2 b #xdf) (setf need 1 cp (logand b #x1f) lo #x80 hi #xbf))
-                ((= b #xe0) (setf need 2 cp 0 lo #xa0 hi #xbf))
-                ((<= #xe1 b #xec) (setf need 2 cp (logand b #x0f) lo #x80 hi #xbf))
-                ((= b #xed) (setf need 2 cp #x0d lo #x80 hi #x9f))
-                ((<= #xee b #xef) (setf need 2 cp (logand b #x0f) lo #x80 hi #xbf))
-                ((= b #xf0) (setf need 3 cp 0 lo #x90 hi #xbf))
-                ((<= #xf1 b #xf3) (setf need 3 cp (logand b #x07) lo #x80 hi #xbf))
-                ((= b #xf4) (setf need 3 cp 4 lo #x80 hi #x8f))
-                (t (fail "E_UTF8"
-                         (format nil "invalid start byte 0x~(~2,'0x~) at byte ~d" b i)
-                         at)))
-              (when (>= (+ i need) n)
-                (fail "E_UTF8" (format nil "truncated sequence at byte ~d" i) at))
-              (loop for k from 1 to need
-                    for c = (aref bytes (+ i k))
-                    for min = (if (= k 1) lo #x80)
-                    for max = (if (= k 1) hi #xbf)
-                    do (when (or (< c min) (> c max))
-                         (fail "E_UTF8"
-                               (format nil "invalid continuation byte at byte ~d" (+ i k))
-                               at))
-                       (setf cp (logior (ash cp 6) (logand c #x3f))))
-              (write-char (code-char cp) out)
-              (incf i (1+ need))))))
+        (i 0)
+        (cps 0)                         ; code points decoded so far
+        (line 1)
+        (line-start 0))
+    (flet ((bad (message)
+             (fail "E_UTF8" message
+                   (if source (make-pos line (1+ (- cps line-start)) cps) at))))
+      (loop while (< i n) do
+        (let ((b (aref bytes i)))
+          (if (< b #x80)
+              (progn (write-char (code-char b) out)
+                     (incf i)
+                     (incf cps)
+                     (when (= b 10) (incf line) (setf line-start cps)))
+              (let (need cp lo hi)
+                (cond
+                  ((<= #xc2 b #xdf) (setf need 1 cp (logand b #x1f) lo #x80 hi #xbf))
+                  ((= b #xe0) (setf need 2 cp 0 lo #xa0 hi #xbf))
+                  ((<= #xe1 b #xec) (setf need 2 cp (logand b #x0f) lo #x80 hi #xbf))
+                  ((= b #xed) (setf need 2 cp #x0d lo #x80 hi #x9f))
+                  ((<= #xee b #xef) (setf need 2 cp (logand b #x0f) lo #x80 hi #xbf))
+                  ((= b #xf0) (setf need 3 cp 0 lo #x90 hi #xbf))
+                  ((<= #xf1 b #xf3) (setf need 3 cp (logand b #x07) lo #x80 hi #xbf))
+                  ((= b #xf4) (setf need 3 cp 4 lo #x80 hi #x8f))
+                  (t (bad (format nil "invalid start byte 0x~(~2,'0x~) at byte ~d" b i))))
+                (when (>= (+ i need) n)
+                  (bad (format nil "truncated sequence at byte ~d" i)))
+                (loop for k from 1 to need
+                      for c = (aref bytes (+ i k))
+                      for min = (if (= k 1) lo #x80)
+                      for max = (if (= k 1) hi #xbf)
+                      do (when (or (< c min) (> c max))
+                           (bad (format nil "invalid continuation byte at byte ~d" (+ i k))))
+                         (setf cp (logior (ash cp 6) (logand c #x3f))))
+                (write-char (code-char cp) out)
+                (incf i (1+ need))
+                (incf cps))))))
     (get-output-stream-string out)))
 
 (defun bytes-to-hex (bytes)

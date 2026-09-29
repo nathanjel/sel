@@ -4,8 +4,10 @@ package decimal
 
 import (
 	"fmt"
+	"math"
 	"math/big"
 	"strings"
+	"sync"
 
 	"github.com/nathanjel/sel/go/internal/limits"
 	"github.com/nathanjel/sel/go/internal/utf8"
@@ -58,6 +60,7 @@ func Make(neg bool, digits *big.Int, scale int32) *Dec {
 }
 
 var (
+	pow10Mu          sync.RWMutex
 	pow10Cache       = make(map[int]*big.Int)
 	pow10Weight      = 0
 	pow10CacheMaxExp = 1000000
@@ -69,11 +72,20 @@ func Pow10(k int) *big.Int {
 	if k >= 0 && k <= 18 {
 		return pow10List[k]
 	}
-	if v, ok := pow10Cache[k]; ok {
-		return v
+	pow10Mu.RLock()
+	cached, ok := pow10Cache[k]
+	pow10Mu.RUnlock()
+	if ok {
+		return cached
 	}
 	v := new(big.Int).Exp(tenBig, big.NewInt(int64(k)), nil)
 	if k >= 0 && k <= pow10CacheMaxExp {
+		pow10Mu.Lock()
+		defer pow10Mu.Unlock()
+		// Another evaluator may have filled this entry while we computed it.
+		if cached, ok := pow10Cache[k]; ok {
+			return cached
+		}
 		if len(pow10Cache) >= pow10CacheMax || pow10Weight+k > pow10CacheDigits {
 			pow10Cache = make(map[int]*big.Int)
 			pow10Weight = 0
@@ -206,11 +218,13 @@ func TrimScale(d *Dec) *Dec {
 
 func FromInt(n int64) *Dec {
 	neg := n < 0
-	absVal := n
+	// Negate in uint64: -math.MinInt64 does not fit an int64 and wraps to
+	// itself, which used to produce a Dec that formatted as "--9223372036854775808".
+	abs := uint64(n)
 	if neg {
-		absVal = -n
+		abs = -abs
 	}
-	return Make(neg, big.NewInt(absVal), 0)
+	return Make(neg, new(big.Int).SetUint64(abs), 0)
 }
 
 func IsZero(d *Dec) bool {
@@ -245,6 +259,14 @@ func IsInteger(d *Dec) bool {
 
 func ToSafeInt(d *Dec) int64 {
 	t := Trunc(d)
+	// Saturate before narrowing. Consumers either reject a bounded argument
+	// or clamp a count to the available input; wrapping defeats both contracts.
+	if !t.Digits.IsInt64() {
+		if t.Neg {
+			return math.MinInt64
+		}
+		return math.MaxInt64
+	}
 	val := t.Digits.Int64()
 	if t.Neg {
 		return -val
@@ -409,7 +431,10 @@ func Trunc(d *Dec) *Dec {
 	return Make(d.Neg, q, 0)
 }
 
-func Floor(d *Dec) *Dec {
+// Floor and Ceil can add one to the integer part (a carry out of the last
+// digit), so a value already at the integer-digit cap can leave it: they take
+// the call's position and fail like Round, and Guard the result.
+func Floor(d *Dec, pos Pos, fail FailFunc) *Dec {
 	if d.Scale == 0 {
 		return d
 	}
@@ -420,10 +445,10 @@ func Floor(d *Dec) *Dec {
 	if d.Neg && r.Sign() != 0 {
 		q.Add(q, oneBig)
 	}
-	return Make(d.Neg, q, 0)
+	return Guard(Make(d.Neg, q, 0), pos, fail)
 }
 
-func Ceil(d *Dec) *Dec {
+func Ceil(d *Dec, pos Pos, fail FailFunc) *Dec {
 	if d.Scale == 0 {
 		return d
 	}
@@ -434,7 +459,7 @@ func Ceil(d *Dec) *Dec {
 	if !d.Neg && r.Sign() != 0 {
 		q.Add(q, oneBig)
 	}
-	return Make(d.Neg, q, 0)
+	return Guard(Make(d.Neg, q, 0), pos, fail)
 }
 
 func Power(a *Dec, n int, pos Pos, fail FailFunc) *Dec {

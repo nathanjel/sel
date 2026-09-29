@@ -1,0 +1,274 @@
+# T02: Exact decimal arithmetic and limits
+
+[Worklist](../README.md) · [Test harness and completion rules](../00-tests.md)
+
+- [ ] **T02 — Create and run this shared regression family across JS, PHP, Python, C++, Lisp and Go.**
+
+**Destination:** `decimal oracle drivers, tools/check-decimal.*, conformance arithmetic/limits files and host numeric-constructor probes`.
+
+**Required cases and assertions:** Use an independent integer/rational oracle for division, remainder, multiplication, ROUND and POWER. Include scales 18/19, int64 and int128 boundaries (both signs), the exact half-rounding boundary, divisor spellings 1/0.1/1.0, leading zeros, negative zero, carry across the digit cap, and scale gaps. Run PHP with and without GMP; run C++ under UBSan; exercise Go MinInt64 and Lisp printer bindings. Check canonical text, exact value, sign, scale, error code and position. Inject stale/malformed native decimal caches through public constructors; neither cached representation nor the ambient host configuration may alter arithmetic.
+
+**Contract prerequisite:** Document host-integer conversion and process-global numeric settings. Internal algorithm changes must retain exact decimal rules; no approximate arithmetic may serve as the expected result.
+
+The entries below are scenario requirements, grouped by reporting host for traceability. Merge equivalent repros into one named shared fixture, and record all covered IDs in its note/coverage ledger. Retain every distinct variant. These are report-derived observations and proposed expectations; resolve them against the spec before making them golden. “None” in an original conformance-gap field means missing coverage, not no testing work.
+
+## JS report scenarios
+
+<a id="js-c20"></a>
+
+### JS-C20: `Value.num` accepts a decimal record with a non-boolean `neg`, producing wrong arithmetic
+
+Source: [JS-C20](../../js-code-review.md). Report labels: [medium] [confirmed].
+
+**Scenario / reported observation:**
+
+`Value.num({digits:5n, scale:0})` then `A + 5` gives `0` (expected 10). `Value.num({neg:1, digits:5n, scale:0})` then `A * -1` gives `-5` (expected 5). `Value.num({neg:'yes',digits:5n,scale:0}).scalar` is `-5`.
+
+**Additional fixture requirements from the report:** API probe: `Value.num` with a missing/non-boolean sign is E_BAD_ARG.
+
+**Completion record:** named fixture(s), spec-backed expected result/error/phase, all-six-host run matrix, and any platform-only adapter are required for JS-C20.
+
+<a id="js-c33"></a>
+
+### JS-C33: `Value.num(decimal)` keeps the caller's object, so mutating it afterwards changes the Value
+
+Source: [JS-C33](../../js-code-review.md). Report labels: [low] [confirmed].
+
+**Scenario / reported observation:**
+
+`const d={neg:false,digits:5n,scale:0}; const v=Value.num(d); d.digits=99999n; d.scale=2; v.scalar` gives `999.99` (expected `5`).
+
+**Completion record:** named fixture(s), spec-backed expected result/error/phase, all-six-host run matrix, and any platform-only adapter are required for JS-C33.
+
+<a id="js-c38"></a>
+
+### JS-C38: `_MAX_INT_BITS = 3321929` is a hand-typed copy of a generated limit
+
+Source: [JS-C38](../../js-code-review.md). Report labels: [low] [unconfirmed as a defect; latent].
+
+**Scenario / reported observation:**
+
+the `guard()` prefilter `(digits >> 3321928) !== 0n` is sound only for MAX_INT_DIGITS = 1,000,000. `MAX_INT_DIGITS` is generated (`_limits.mjs`), this constant does not follow it. If the limit changes and is regenerated, a value could pass the prefilter and skip the exact test. The current constant was verified correct at the boundary; nothing ties the two.
+
+**Additional fixture requirements from the report:** boundary cases exist in 10-limits.selt; nothing ties the constant.
+
+**Triage:** reproduce the claimed defect under the stated platform/configuration first; record evidence if it is unreachable, already fixed, or a contract/documentation issue.
+
+**Completion record:** named fixture(s), spec-backed expected result/error/phase, all-six-host run matrix, and any platform-only adapter are required for JS-C38.
+
+## PHP report scenarios
+
+<a id="php-c17"></a>
+
+### PHP-C17: `mulAbs` limb accumulators overflow to float -> uncaught `TypeError`
+
+Source: [PHP-C17](../../php-code-review.md). Report labels: [medium] [confirmed, no-GMP only].
+
+**Scenario / reported observation:**
+
+Dec API, `scratchpad/php2/mul_overflow.php`): `$a = Dec::parse(str_repeat('9',300000).'.'.str_repeat('9',350000)); Dec::mul($a,$a);` after ~3 min: `PHP Warning: The float 9.22339907765E+18 is not representable as an int` then `TypeError: intdiv(): Argument #1 ($num1) must be of type int, float given`. With GMP the same call returns in 0.9 s. (A CLI repro would need a 1.3 MB source file; not built.)
+
+**Additional fixture requirements from the report:** a no-GMP unit test with two 646k-digit operands (slow) or a direct limb-bound assertion.
+
+**Completion record:** named fixture(s), spec-backed expected result/error/phase, all-six-host run matrix, and any platform-only adapter are required for PHP-C17.
+
+<a id="php-c40"></a>
+
+### PHP-C40: `Dec::cmp` fast path ignores `nativeNeg`; `Dec::checked` trusts a supplied native cache
+
+Source: [PHP-C40](../../php-code-review.md). Report labels: [low] [confirmed].
+
+**Scenario / reported observation:**
+
+`php2/forged2.php`): `$d = Dec::parse('5'); $d['neg']=true;` context X=Value::num($d), Y=3: `X < Y` -> FALSE (expected TRUE), `MIN(X,Y)` -> 3 (expected -5), text prints -5.
+
+**Additional fixture requirements from the report:** ; host-API only, hand-edited descriptors.
+
+**Completion record:** named fixture(s), spec-backed expected result/error/phase, all-six-host run matrix, and any platform-only adapter are required for PHP-C40.
+
+<a id="php-c41"></a>
+
+### PHP-C41: ext-gmp paths parse digit strings with base auto-detection (octal)
+
+Source: [PHP-C41](../../php-code-review.md). Report labels: [low] [confirmed for un-normalised descriptors].
+
+**Scenario / reported observation:**
+
+`scratchpad/php2/octal.php` (`php` vs `php -n`).
+
+**Completion record:** named fixture(s), spec-backed expected result/error/phase, all-six-host run matrix, and any platform-only adapter are required for PHP-C41.
+
+## PYTHON report scenarios
+
+<a id="py-c25"></a>
+
+### PY-C25: `import sel` overrides the deployer's `int_max_str_digits`, and a limit set afterwards leaks a raw `ValueError`
+
+Source: [PY-C25](../../python-code-review.md). Report labels: [low-medium] [confirmed; re-verified by synthesizer].
+
+**Scenario / reported observation:**
+
+`python3 -X int_max_str_digits=5000 -c "import sys, sel; print(sys.get_int_max_str_digits())"` -> `2000000` (synthesizer: confirmed). `import sel, sys; sys.set_int_max_str_digits(5000); sel.evaluate('9'*6000 + ' + 1')` -> `ValueError: Exceeds the limit (5000 digits) for integer string conversion` (also `POWER(10,5000) + 1`, `LEN(POWER(10,5000))`).
+
+**Additional fixture requirements from the report:** not expressible in `.selt`; python/tests case that lowers the limit.
+
+**Completion record:** named fixture(s), spec-backed expected result/error/phase, all-six-host run matrix, and any platform-only adapter are required for PY-C25.
+
+<a id="py-c29"></a>
+
+### PY-C29: The decimal oracle is not independent for `/` and `%` and never reaches interesting magnitudes
+
+Source: [PY-C29](../../python-code-review.md). Report labels: [low] [confirmed].
+
+**Scenario / reported observation:**
+
+it re-implements the cores' divmod-and-round algorithm (same `divmod(n * 1010, den)`, same `2 * r >= den`); operands at most 12 integer digits and scale <= 6; no tie cases for `/`, no scale gaps, no zero-result-sign cases, nothing near digit caps; `round` uses n in 0..8. Hand cases in `python/tests/test_decimal_native.py` do use `Decimal.quantize(ROUND_HALF_UP)`, the right shape.
+
+**Completion record:** named fixture(s), spec-backed expected result/error/phase, all-six-host run matrix, and any platform-only adapter are required for PY-C29.
+
+## CPP report scenarios
+
+<a id="cpp-c14"></a>
+
+### CPP-C14: `dec_get_limbs` / `dec_get_digits` mutate `const Dec` through `const_cast`, including file-scope `const Dec DEC_ZERO`
+
+Source: [CPP-C14](../../cpp-code-review.md). Report labels: [low] [unconfirmed as a bug; code smell].
+
+**Scenario / reported observation:**
+
+writing through a `const_cast` to an object defined const is UB. Benign today (`DEC_ZERO` is only copied), and `Dec::digits`/`limbs` are already `mutable`, so the casts are redundant. It would race if a shared `Node::dec` were ever asked for digits from two threads; today only local copies are.
+
+**Triage:** reproduce the claimed defect under the stated platform/configuration first; record evidence if it is unreachable, already fixed, or a contract/documentation issue.
+
+**Completion record:** named fixture(s), spec-backed expected result/error/phase, all-six-host run matrix, and any platform-only adapter are required for CPP-C14.
+
+<a id="cpp-c20"></a>
+
+### CPP-C20: `dec_mul` silently rounds both operands to 18 fractional digits when both have scale over 18 (POWER inherits it)
+
+Source: [CPP-C20](../../cpp-code-review.md). Report labels: [high] [confirmed].
+
+**Scenario / reported observation:**
+
+`cpp/build/sel -e 'POWER(1.05, 30)'` gives `4.321942375150662009268185637251557948`; expected (JS/Python) `4.321942375150662009157288198886473341473378241062164306640625`. `0.1234567890123456789 * 0.1234567890123456789` gives `0.015241578753238836774881877789971041`; expected `0.01524157875323883675019051998750190521`. `POWER(0.5, 100)` gives `0.000000000000000000000000000000000000`; expected `0.00000000000000000000000000000078886090522101180541172856528278622967`. Oracle: 951 of 59,982 wide-range cases fail before the fix.
+
+**Additional fixture requirements from the report:** Suggest cases `POWER(1.05, 30)`, `0.1234567890123456789 * 0.1234567890123456789`, `POWER(0.5, 100)`, and a decimal-oracle mode with scales above 18 (see "Suggested fix order").
+
+**Completion record:** named fixture(s), spec-backed expected result/error/phase, all-six-host run matrix, and any platform-only adapter are required for CPP-C20.
+
+<a id="cpp-c21"></a>
+
+### CPP-C21: `ROUND` and `/` return the wrong value when the remainder exceeds 2^126 (signed `__int128` overflow in `2 * r`, UB)
+
+Source: [CPP-C21](../../cpp-code-review.md). Report labels: [high] [confirmed].
+
+**Scenario / reported observation:**
+
+`cpp/build/sel -e 'ROUND(0.90000000000000000000000000000000000000, 0)'` prints `0` (JS `1`). `ROUND(0.99999999999999999999999999999999999999, 0)` prints `0`. `8600000000000000000000000000.0000000000 / 99999999999999999999999999999999999999` prints `0.0000000000` (JS `0.0000000001`). Oracle: 4 division and 4 round mismatches in 6,000 random cases.
+
+**Additional fixture requirements from the report:** Suggest `ROUND(0.99999999999999999999999999999999999999, 0)` => `1` and the division above.
+
+**Completion record:** named fixture(s), spec-backed expected result/error/phase, all-six-host run matrix, and any platform-only adapter are required for CPP-C21.
+
+<a id="cpp-c22"></a>
+
+### CPP-C22: Numeric equi-join fast key is wrong for decimals beyond int64: false matches and missed matches
+
+Source: [CPP-C22](../../cpp-code-review.md). Report labels: [high] [confirmed].
+
+**Scenario / reported observation:**
+
+- False match (cpp-5): `A = LIST(RECORD("k","100000000000000000000000.0")); B = LIST(RECORD("k","1000000000000000000000000")); COUNT(LINK(A, B, a["k"] == b["k"]))` gives `1` (a joined row; 1e23 matched with 1e24!); JS/PHP/Python return an empty result. `"100000000000000000000000.0" == "1000000000000000000000000"` is FALSE in C++ itself.
+  - Missed match (cpp-5): `A = LIST(RECORD("k","12345678901234567890.50")); B = LIST(RECORD("k","12345678901234567890.5")); COUNT(LINK(A, B, a["k"] == b["k"]))` gives `0` (JS `1`). Also `"123456789012345678900.0"` vs `"123456789012345678900"` gives `0` (JS `1`).
+  - Missed match (cpp-2): `X = LIST(RECORD("id", 12345678901234567890.0)); Y = LIST(RECORD("id", 12345678901234567890, "name", "ann")); COUNT(LINK(X, Y, L, R, L["id"] == R["id"]))` gives `0` (JS/Python `1`).
+  - Adding `AND TRUE` to the predicate forces the nested loop and gives the right answer, so the result depends on whether the optimiser can extract an equi-join.
+
+**Additional fixture requirements from the report:** Suggest `rel.link.equi-join-numeric-key-beyond-int64-trailing-zero-spelling` (both directions). cpp-5's random 6-seed differential did not hit it; the fuzzer needs a generator that produces the same value with different trailing zeros at 19-38 digits.
+
+**Completion record:** named fixture(s), spec-backed expected result/error/phase, all-six-host run matrix, and any platform-only adapter are required for CPP-C22.
+
+<a id="cpp-c24"></a>
+
+### CPP-C24: Division/modulo by a divisor whose digit string is exactly "1" goes wrong once the dividend is beyond int128
+
+Source: [CPP-C24](../../cpp-code-review.md). Report labels: [medium] [confirmed].
+
+**Scenario / reported observation:**
+
+cpp vs JS): `A=1000000000000000000000000000000000000000000; A / 1` gives `1000000000000000000000000000000000000000000.0000000000` vs `1000000000000000000000000000000000000000000`. `A=-1000000000000000000000000000000000000000000; A % 1` gives `-0` vs `0` (then `B $== "0"` is FALSE). `33089435705329677516 / 0.000000001` gives `33089435705329677516000000000.0000000000` vs `33089435705329677516000000000`. `5 / 0.0000000000000000000000000000000000001` gives a trailing `.0000000000`. Oracle: 236 mismatches in 23,906 targeted cases, all this class.
+
+**Additional fixture requirements from the report:** Suggest `(-1000000000000000000000000000000000000000000) % 1` => `0` and the `/ 1` case.
+
+**Completion record:** named fixture(s), spec-backed expected result/error/phase, all-six-host run matrix, and any platform-only adapter are required for CPP-C24.
+
+<a id="cpp-c41"></a>
+
+### CPP-C41: `INT128_MIN` mantissa is reachable and negation/abs/format on it are UB; comparisons afterwards are wrong
+
+Source: [CPP-C41](../../cpp-code-review.md). Report labels: [low] [confirmed].
+
+**Scenario / reported observation:**
+
+`A=-9223372036854775808; B=18446744073709551616; C=A*B; ABS(C) > 0` gives cpp `FALSE`, JS `TRUE`. `D=-C; D<0` gives cpp `TRUE`, JS `FALSE`. (Variables, because literals fold to the digit form and hide it.)
+
+**Additional fixture requirements from the report:** Suggest the two expressions above.
+
+**Completion record:** named fixture(s), spec-backed expected result/error/phase, all-six-host run matrix, and any platform-only adapter are required for CPP-C41.
+
+## LISP report scenarios
+
+<a id="lisp-c22"></a>
+
+### LISP-C22: `dec-format` (every number rendered to text) is corrupted when the embedder binds `*print-radix*`
+
+Source: [LISP-C22](../../lisp-code-review.md). Report labels: [medium] [confirmed].
+
+**Scenario / reported observation:**
+
+`(let ((*print-radix* t)) (value-scalar (make-num "1.50")))` -> `15.0.`; `(sel::dec-format (sel::dec-parse "12345"))` -> `"12345."`.
+
+**Additional fixture requirements from the report:** (unit test only; add a `lisp/tests/unit.lisp` case).
+
+**Completion record:** named fixture(s), spec-backed expected result/error/phase, all-six-host run matrix, and any platform-only adapter are required for LISP-C22.
+
+<a id="lisp-c45"></a>
+
+### LISP-C45: `make-int` uses a double-float constant
+
+Source: [LISP-C45](../../lisp-code-review.md). Report labels: [low] [confirmed, no observable effect].
+
+**Scenario / reported observation:**
+
+only a bit-length prefilter (s2 checked it cannot cause a false accept/reject), but it is the only float in the numeric core and the project rule is absolute.
+
+**Additional fixture requirements from the report:** n/a.
+
+**Completion record:** named fixture(s), spec-backed expected result/error/phase, all-six-host run matrix, and any platform-only adapter are required for LISP-C45.
+
+## GO report scenarios
+
+<a id="go-c12"></a>
+
+### GO-C12: CEIL/FLOOR of a maximum-size number build a 1,000,001-digit value with no E_RANGE
+
+Source: [GO-C12](../../go-code-review.md). Report labels: [medium] [confirmed].
+
+**Scenario / reported observation:**
+
+`LEN(FLOOR("-" & REPEAT("9",1000000) & ".5"))` -> Go 1000002 vs E_RANGE. `ROUND(REPEAT("9",1000000) & ".5", 0)` is `E_RANGE` at column 5 in all four hosts (expected model).
+
+**Additional fixture requirements from the report:** (`10-limits.selt` has no CEIL/FLOOR case). Add `limit.ceil.carry` = `CEIL(REPEAT("9",1000000) & ".5")` => `!E_RANGE` at the CEIL call, plus the FLOOR negative twin.
+
+**Completion record:** named fixture(s), spec-backed expected result/error/phase, all-six-host run matrix, and any platform-only adapter are required for GO-C12.
+
+<a id="go-c42"></a>
+
+### GO-C42: `FromInt(math.MinInt64)` builds a corrupt Dec
+
+Source: [GO-C42](../../go-code-review.md). Report labels: [low] [confirmed, latent].
+
+**Scenario / reported observation:**
+
+scratch unit test: `Format(FromInt(math.MinInt64))` -> `--9223372036854775808`.
+
+**Completion record:** named fixture(s), spec-backed expected result/error/phase, all-six-host run matrix, and any platform-only adapter are required for GO-C42.

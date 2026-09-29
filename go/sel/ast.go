@@ -1,6 +1,8 @@
 package sel
 
 import (
+	"sync/atomic"
+
 	"github.com/nathanjel/sel/go/internal/decimal"
 )
 
@@ -65,10 +67,12 @@ type Node struct {
 	R     *Node
 	Items []*Node
 
-	Dec       *decimal.Dec
-	Shape     *RecordShape
-	Spec      *Spec
-	SlotCache *SlotCache
+	Dec   *decimal.Dec
+	Shape *RecordShape
+	Spec  *Spec
+	// The holder is shared safely when optimizers copy a node. Each load must
+	// use one immutable snapshot for both the shape check and slot lookup.
+	SlotCache *atomic.Pointer[SlotCache]
 
 	MathPlan *MathPlan
 
@@ -76,5 +80,9 @@ type Node struct {
 }
 
 func NewNode(t NodeType, pos Pos) *Node {
-	return &Node{T: t, Pos: pos}
+	n := &Node{T: t, Pos: pos}
+	if t == NodeIndex {
+		n.SlotCache = new(atomic.Pointer[SlotCache])
+	}
+	return n
 }

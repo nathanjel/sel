@@ -40,6 +40,7 @@ func pad(args *Args, left bool) *Value {
 	if len(sRunes) >= width {
 		return NewTextOwned(string(sRunes))
 	}
+	checkTextLen(int64(width), args.Name()+"'s result", args.Pos())
 	need := width - len(sRunes)
 	padding := make([]rune, need)
 	for i := 0; i < need; i++ {
@@ -164,6 +165,11 @@ func init() {
 			if needle == "" {
 				fail("E_BAD_ARG", "REPLACE needle must not be empty", args.PosOf(0))
 			}
+			if n := strings.Count(hay, needle); n > 0 && len(repl) > len(needle) {
+				// Length after the replacement, before it is built (SPEC §6.4).
+				grown := satAdd(runeLen(hay), satMul(int64(n), runeLen(repl)-runeLen(needle)))
+				checkTextLen(grown, "REPLACE's result", args.Pos())
+			}
 			return NewText(strings.ReplaceAll(hay, needle, repl))
 		},
 	})
@@ -178,6 +184,7 @@ func init() {
 			if sep == "" {
 				fail("E_BAD_ARG", "SPLIT separator must not be empty", args.PosOf(1))
 			}
+			checkCollection(int64(strings.Count(hay, sep))+1, "SPLIT's result", args.Pos())
 			parts := strings.Split(hay, sep)
 			vals := make([]*Value, len(parts))
 			for i, p := range parts {
@@ -252,6 +259,12 @@ func init() {
 		Fn: func(args *Args, ctx *Context) *Value {
 			s := args.Text(0)
 			n := args.NonNegInt(1)
+			// The result is measured, not the argument: an empty text repeated
+			// any number of times is empty (SPEC §6.4).
+			if s == "" || n == 0 {
+				return NewText("")
+			}
+			checkTextLen(satMul(runeLen(s), n), "REPEAT's result", args.Pos())
 			return NewText(strings.Repeat(s, int(n)))
 		},
 	})

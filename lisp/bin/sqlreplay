@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Rebuilds the shipped dialect map through the public API and diffs it.
 here="$(cd "$(dirname "$0")" && pwd)"
-exec sbcl --noinform --disable-debugger --non-interactive \
+exec sbcl --dynamic-space-size 4GB --noinform --disable-debugger --non-interactive \
   --load "$here/boot.lisp" \
   --load "$here/sqlreplay.lisp" \
   --eval '(sb-ext:exit :code (sel-sqlreplay:main))' \

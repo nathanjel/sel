@@ -921,7 +921,14 @@ func PlanHybrid(program *sel.Program, dialect string, bindings *Bindings, option
 			func() {
 				defer func() {
 					if r := recover(); r != nil {
-						skip = true
+						// Only a refusal (SqlError) or a SEL error skips this
+						// split; a Go runtime panic is a bug and must surface.
+						switch r.(type) {
+						case *SqlError, SqlError, *sel.SelError:
+							skip = true
+						default:
+							panic(r)
+						}
 					}
 				}()
 				norm := Normalise(prefixAst, constNames, constRoot)

@@ -17,7 +17,7 @@ from dataclasses import dataclass
 import re
 
 from .errors import Pos, fail
-from .utf8 import to_code_points
+from .utf8 import check_source
 
 OPERATORS = [
     '???', '??',
@@ -61,6 +61,10 @@ def _is_space(c: str) -> bool:
     return c in ' \t\r\n'
 
 
+# The kinds of work lex_range keeps on its explicit stack.
+_T_RANGE, _T_PART, _T_CLOSE, _T_END = 0, 1, 2, 3
+
+
 @dataclass(slots=True)
 class Token:
     type: str
@@ -70,9 +74,12 @@ class Token:
 
 class Lexer:
     def __init__(self, source: str) -> None:
-        to_code_points(source, None)      # validate; rejects lone surrogates
+        check_source(source)      # rejects lone surrogates, positioned (SPEC 2)
         self.chars = source
         self.n = len(source)
+        # brace_ends[i] is the index just past the '}' matching the '{' at i,
+        # once some scan has established it. See match_brace.
+        self.brace_ends: dict[int, int] = {}
         self.line_starts = [0]
         for i, ch in enumerate(source):
             if ch == '\n':
@@ -95,6 +102,46 @@ class Lexer:
         return out
 
     def lex_range(self, frm: int, to: int, out: list[Token]) -> None:
+        """Lex chars[frm:to] into `out`. Interpolation nests without bound, so
+        this is a loop over an explicit stack of tasks rather than a recursion:
+        a literal pushes what it still has to emit (its parts, each interior
+        range, the closers) and the loop pops them in source order. Nothing here
+        can therefore reach the host's own stack, however deep the braces go.
+        """
+        stack: list[tuple] = [(_T_RANGE, frm, to, None)]
+        while stack:
+            task = stack.pop()
+            kind = task[0]
+            if kind == _T_RANGE:
+                self.lex_tokens(task[1], task[2], out, stack, task[3])
+            elif kind == _T_PART:
+                self.emit_part(task[1], task[2], task[3], out, stack)
+            elif kind == _T_CLOSE:
+                _, mark, pfrom, pto, bal = task
+                # An interpolation that lexed to nothing: `{}`, `{ }`, `{# c\n}`.
+                if len(out) == mark + 1:
+                    fail('E_SYNTAX', 'empty interpolation {}', self.pos_at(pfrom))
+                # ... and one whose parentheses do not close inside the braces.
+                if bal:
+                    fail('E_SYNTAX', f'unclosed {bal[-1]} in interpolation',
+                         self.pos_at(pto))
+                out.append(Token('op', ')', self.pos_at(pto)))
+            else:
+                out.append(Token('op', ')', task[1]))
+
+    def lex_tokens(self, frm: int, to: int, out: list[Token], stack: list[tuple],
+                   bal: list[str] | None) -> None:
+        """The flat part of lex_range. A quoted literal with parts ends the run:
+        the tasks it pushes come first, and the rest of the range resumes after
+        them.
+
+        `bal` is the stack of parentheses and brackets open so far in an
+        interpolation body (None at the top level, where the parser does the
+        balancing). A body is spliced into the surrounding tokens as `( body )`,
+        so a body that closes what it never opened, or leaves something open,
+        would change the meaning of the text around it; each body has to balance
+        inside its own braces.
+        """
         i = frm
         while i < to:
             c = self.chars[i]
@@ -137,19 +184,53 @@ class Lexer:
                 continue
 
             if c == '"':
-                i = self.lex_quoted(i, to, out)
-                continue
+                parts, nxt = self.scan_quoted(i, to)
+                if len(parts) == 1:
+                    out.append(Token('text', parts[0][1], pos))
+                    i = nxt
+                    continue
+                # `( "seg" & expr & "seg" )`: the opener now, the rest as tasks,
+                # the remainder of this range underneath them.
+                out.append(Token('op', '(', pos))
+                stack.append((_T_RANGE, nxt, to, bal))
+                stack.append((_T_END, pos))
+                for k in range(len(parts) - 1, -1, -1):
+                    stack.append((_T_PART, parts[k], k, pos))
+                return
             if c == "'":
                 i = self.lex_raw(i, to, out)
                 continue
 
             op = self.match_operator(i, to)
             if op:
+                if bal is not None:
+                    if op == '(' or op == '[':
+                        bal.append(op)
+                    elif op == ')' or op == ']':
+                        if not bal or (bal.pop() == '(') != (op == ')'):
+                            fail('E_SYNTAX', f'unbalanced {op} in interpolation', pos)
                 out.append(Token('op', op, pos))
                 i += len(op)
                 continue
 
             fail('E_SYNTAX', f'unexpected character {c!r}', pos)
+
+    def emit_part(self, part: tuple, index: int, pos: Pos, out: list[Token],
+                  stack: list[tuple]) -> None:
+        """One part of an interpolated literal: the `&` before it, then either
+        its text or `( interior )`, the interior being a range of its own.
+        """
+        if index > 0:
+            out.append(Token('op', '&', pos))
+        if part[0] == 'text':
+            out.append(Token('text', part[1], pos))
+            return
+        _, pfrom, pto = part
+        mark = len(out)
+        bal: list[str] = []
+        out.append(Token('op', '(', self.pos_at(pfrom)))
+        stack.append((_T_CLOSE, mark, pfrom, pto, bal))
+        stack.append((_T_RANGE, pfrom, pto, bal))
 
     def match_operator(self, i: int, to: int) -> str | None:
         for op in OPERATORS:
@@ -181,7 +262,11 @@ class Lexer:
             i += 1
         fail('E_UNTERMINATED', 'unterminated raw text literal', pos)
 
-    def lex_quoted(self, start: int, to: int, out: list[Token]) -> int:
+    def scan_quoted(self, start: int, to: int) -> tuple[list[tuple], int]:
+        """Read a quoted literal into its parts and the index just past its
+        closing quote, emitting nothing. Every `{...}` is skipped by
+        match_brace, so the interior is not read here, only located.
+        """
         pos = self.pos_at(start)
         parts: list[tuple] = []
         buf: list[str] = []
@@ -192,8 +277,7 @@ class Lexer:
 
             if c == '"':
                 parts.append(('text', ''.join(buf)))
-                self.emit_parts(parts, pos, out)
-                return i + 1
+                return parts, i + 1
 
             if c == '\\':
                 text, nxt = self.read_escape(i, to)
@@ -245,50 +329,68 @@ class Lexer:
     def match_brace(self, i: int, to: int) -> int:
         """Index just past the matching '}'. Nested literals are skipped so that
         a brace inside a string inside an interpolation does not close it.
+
+        One pass with an explicit stack of what is open (a brace, a string), not
+        a recursion through the strings, and every brace it closes is remembered
+        in brace_ends. The second half is what keeps the lexer linear: a literal
+        nested d deep is located by its parent and again by each of its own
+        ancestors' interiors being lexed, and without the memo each of those
+        locate-passes re-read everything below it. If anything is unterminated
+        the innermost open construct is the one reported, which is where the
+        recursion used to fail.
         """
-        pos = self.pos_at(i)
-        depth = 0
+        memo = self.brace_ends.get(i)
+        if memo is not None:
+            return memo
+        chars = self.chars
+        # [is_string, start, brace depth]
+        opened: list[list] = [[False, i, 0]]
         j = i
-        while j < to:
-            c = self.chars[j]
+        while True:
+            top = opened[-1]
+            if j >= to:
+                fail('E_UNTERMINATED',
+                     'unterminated text literal' if top[0] else 'unterminated { in text literal',
+                     self.pos_at(top[1]))
+            c = chars[j]
+            if top[0]:
+                if c == '\\':
+                    j += 2
+                    continue
+                if c == '"':
+                    opened.pop()
+                    j += 1
+                    continue
+                if c == '{':
+                    opened.append([False, j, 0])
+                    continue
+                j += 1
+                continue
             if c == '"':
-                j = self.skip_quoted(j, to)
+                opened.append([True, j, 0])
+                j += 1
                 continue
             if c == "'":
                 j = self.skip_raw(j, to)
                 continue
             if c == '{':
-                depth += 1
+                top[2] += 1
                 j += 1
                 continue
             if c == '}':
-                depth -= 1
+                top[2] -= 1
                 j += 1
-                if depth == 0:
-                    return j
+                if top[2] == 0:
+                    self.brace_ends[top[1]] = j
+                    opened.pop()
+                    if not opened:
+                        return j
                 continue
             if c == '#':
-                while j < to and self.chars[j] != '\n':
+                while j < to and chars[j] != '\n':
                     j += 1
                 continue
             j += 1
-        fail('E_UNTERMINATED', 'unterminated { in text literal', pos)
-
-    def skip_quoted(self, j: int, to: int) -> int:
-        pos = self.pos_at(j)
-        j += 1
-        while j < to:
-            c = self.chars[j]
-            if c == '\\':
-                j += 2
-                continue
-            if c == '"':
-                return j + 1
-            if c == '{':
-                j = self.match_brace(j, to)
-                continue
-            j += 1
-        fail('E_UNTERMINATED', 'unterminated text literal', pos)
 
     def skip_raw(self, j: int, to: int) -> int:
         pos = self.pos_at(j)
@@ -301,30 +403,6 @@ class Lexer:
                 return j + 1
             j += 1
         fail('E_UNTERMINATED', 'unterminated raw text literal', pos)
-
-    def emit_parts(self, parts: list[tuple], pos: Pos, out: list[Token]) -> None:
-        """A literal with no interpolation is one token. Otherwise it becomes the
-        tokens of `( "seg" & expr & "seg" )` — empty segments included, so the
-        result always goes through `&` and obeys §5.2.
-        """
-        if len(parts) == 1:
-            out.append(Token('text', parts[0][1], pos))
-            return
-        out.append(Token('op', '(', pos))
-        for k, part in enumerate(parts):
-            if k > 0:
-                out.append(Token('op', '&', pos))
-            if part[0] == 'text':
-                out.append(Token('text', part[1], pos))
-            else:
-                _, frm, to = part
-                mark = len(out)
-                out.append(Token('op', '(', self.pos_at(frm)))
-                self.lex_range(frm, to, out)
-                if len(out) == mark + 1:
-                    fail('E_SYNTAX', 'empty interpolation {}', self.pos_at(frm))
-                out.append(Token('op', ')', self.pos_at(to)))
-        out.append(Token('op', ')', pos))
 
 
 def ascii_upper(s: str) -> str:

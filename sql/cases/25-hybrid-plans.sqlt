@@ -143,8 +143,12 @@ SELECT `_sub1`.`id` AS `id` FROM (SELECT `o`.* FROM `orders` `o` LIMIT 1) `_sub1
 ### name: plan.hybrid.fallthrough-keeps-downstream-steps
 --- note
 The MAP fall-through: the pushable half of the RECORD is projected in SQL and
-every step AFTER the MAP goes with it, so the TAKE lands in the statement even
-though it is written after the step that stays in memory.
+the custom half stays in memory. The TAKE written AFTER the MAP stays behind it
+too: run() evaluates the local half on every row before the TAKE cuts the list,
+so a raising local pair (this one always raises) must not be hidden by a LIMIT
+in the statement (contract of T11, docs/internals/sql-translation.md 12.1;
+sql/cases/51-hybrid-parity.sqlt `plan.errors.*`). The projection is all the
+statement carries.
 --- dialect
 mariadb
 --- bindings
@@ -156,7 +160,7 @@ hybrid
 --- tables
 orders
 --- expect
-SELECT `o`.`id` AS `id` FROM `orders` `o` LIMIT 3
+SELECT `o`.`id` AS `id` FROM `orders` `o`
 ===
 
 ### name: plan.hybrid.longest-prefix
@@ -587,7 +591,7 @@ hybrid
 --- tables
 orders
 --- expect
-SELECT `o`.`customer_id` AS `cid` FROM `orders` `o` LIMIT 3
+SELECT `o`.`customer_id` AS `cid` FROM `orders` `o`
 ===
 
 ### name: plan.fallthrough.expression-pair-passes-through-by-key
@@ -605,7 +609,7 @@ hybrid
 --- tables
 orders
 --- expect
-SELECT (`o`.`amount` + 1) AS `plus` FROM `orders` `o` LIMIT 3
+SELECT (`o`.`amount` + 1) AS `plus` FROM `orders` `o`
 ===
 
 ### name: plan.fallthrough.downstream-bucket-stays-in-memory
@@ -1721,7 +1725,7 @@ pure_sql
 orders
 order_items
 --- expect
-SELECT `o`.* FROM `orders` `o` WHERE EXISTS (SELECT 1 FROM `order_items` `oi` WHERE `oi`.`order_id` = `o`.`id` AND ((`oi`.`qty` > 0)) IS TRUE) LIMIT 1
+SELECT `o`.* FROM `orders` `o` WHERE EXISTS (SELECT 1 FROM `order_items` `oi` WHERE (`oi`.`order_id` = `o`.`id`) AND ((`oi`.`qty` > 0)) IS TRUE) LIMIT 1
 ===
 ### name: plan.bindings.correlated-relation-in-the-prefix-of-a-hybrid
 --- note
@@ -1738,7 +1742,7 @@ hybrid
 orders
 order_items
 --- expect
-SELECT `o`.* FROM `orders` `o` WHERE EXISTS (SELECT 1 FROM `order_items` `oi` WHERE `oi`.`order_id` = `o`.`id` AND ((`oi`.`qty` > 0)) IS TRUE) ORDER BY `o`.`id` ASC
+SELECT `o`.* FROM `orders` `o` WHERE EXISTS (SELECT 1 FROM `order_items` `oi` WHERE (`oi`.`order_id` = `o`.`id`) AND ((`oi`.`qty` > 0)) IS TRUE) ORDER BY `o`.`id` ASC
 ===
 ### name: plan.bindings.correlated-relation-only-in-the-continuation
 --- note
@@ -1777,7 +1781,7 @@ pure_sql
 orders
 cms_fields
 --- expect
-SELECT `o`.* FROM `orders` `o` WHERE (EXISTS (SELECT 1 FROM `cms_fields` `g` WHERE `g`.`cmsid` = `o`.`id` AND (`g`.`fname` = 'x')) AND EXISTS (SELECT 1 FROM `cms_fields` `g` WHERE `g`.`cmsid` = `o`.`id` AND (((`g`.`fname` = 'x') AND (CAST(`g`.`fname` AS CHAR) COLLATE utf8mb4_nopad_bin = CAST('x' AS CHAR) COLLATE utf8mb4_nopad_bin))) IS TRUE)) LIMIT 1
+SELECT `o`.* FROM `orders` `o` WHERE (EXISTS (SELECT 1 FROM `cms_fields` `g` WHERE (`g`.`cmsid` = `o`.`id`) AND (`g`.`fname` = 'x')) AND EXISTS (SELECT 1 FROM `cms_fields` `g` WHERE (`g`.`cmsid` = `o`.`id`) AND (((`g`.`fname` = 'x') AND (CAST(`g`.`fname` AS CHAR) COLLATE utf8mb4_nopad_bin = CAST('x' AS CHAR) COLLATE utf8mb4_nopad_bin))) IS TRUE)) LIMIT 1
 ===
 ### name: plan.bindings.columns-in-a-body
 --- note

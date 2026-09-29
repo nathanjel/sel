@@ -206,6 +206,27 @@ export class Emit {
     return new Fragment(this.fill(guard, [f], pos), 'NUM', this._dialect);
   }
 
+  // The guard, taken apart: `{ test, cast }` for an operand a SUM has to read as
+  // a whole. A per-element guard is unsound under SUM, which skips NULL: one bad
+  // element would vanish from the total, and an all-bad column would sum to the
+  // COALESCE's 0 where SEL raises E_NOT_NUM. The caller asks the test of every
+  // row instead (docs/internals/sql-kinds.md §5a).
+  numericGuardSplit(f, pos = null) {
+    map.checkNumericGuard(this._dialect);
+    const guard = this.lex('numericGuard');
+    const m = typeof guard === 'string' ? /^CASE WHEN (.*) THEN (.*) ELSE NULL END$/s.exec(guard) : null;
+    if (m === null) {
+      refuse('E_SQL_UNSUPPORTED',
+        `dialect ${this._dialect} has no way to ask whether a value is a number, `
+        + 'so a SUM over a body it has not been told is numeric cannot be guarded; '
+        + 'declare the binding NUM if the column really is numeric', pos);
+    }
+    return {
+      test: new Fragment(this.fill(m[1], [f], pos), 'BOOL', this._dialect),
+      cast: new Fragment(this.fill(m[2], [f], pos), 'NUM', this._dialect),
+    };
+  }
+
   // An operand of a byte comparison: cast to a character type, then given the
   // dialect's binary collation.
   //

@@ -17,6 +17,10 @@ func readCorpus(scanner *bufio.Scanner) []string {
 	var cur []string
 	started := false
 
+	// A corpus line is a whole program, and the stress corpus has programs of
+	// megabytes: the scanner's default 64 KB token limit ended the read silently
+	// and every record after it (or all of them) vanished as an E_SYNTAX.
+	scanner.Buffer(make([]byte, 0, 1<<20), 1<<30)
 	for scanner.Scan() {
 		line := scanner.Text()
 		if strings.HasPrefix(line, "### ") {
@@ -30,6 +34,10 @@ func readCorpus(scanner *bufio.Scanner) []string {
 		if started {
 			cur = append(cur, line)
 		}
+	}
+	if err := scanner.Err(); err != nil {
+		fmt.Fprintf(os.Stderr, "cannot read corpus: %v\n", err)
+		os.Exit(2)
 	}
 	if started {
 		records = append(records, cur)

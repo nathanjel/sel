@@ -86,3 +86,28 @@ def test_optimiser_garbage_is_bounded_and_collected_when_the_pause_ends():
     assert gc.isenabled()
     assert gc.collect() < 50
     assert gc.collect() == 0
+
+
+def test_collector_is_enabled_after_concurrent_runs():
+    # PY-C2: the pause's enter/exit were an unlocked check-then-act on process
+    # globals, so a second thread entering between `gc.disable()` and the
+    # increment read the collector as already off and left it off for good.
+    import sys
+    import threading
+    program = sel.compile('1 + 1')
+    interval = sys.getswitchinterval()
+    sys.setswitchinterval(1e-6)
+    try:
+        for _ in range(30):
+            barrier = threading.Barrier(4)
+
+            def work():
+                barrier.wait()
+                for _ in range(300):
+                    program.run({})
+            threads = [threading.Thread(target=work) for _ in range(4)]
+            [t.start() for t in threads]
+            [t.join() for t in threads]
+            assert gc.isenabled()
+    finally:
+        sys.setswitchinterval(interval)

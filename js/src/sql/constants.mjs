@@ -284,6 +284,15 @@ export function refuseAsSel(e, n) {
   // pos in this host IS the token object, so an equivalent literal is what a
   // reconstructed Pos would be elsewhere.
   const pos = e.line > 0 ? { line: e.line, col: e.col, offset: e.offset } : n.pos;
+  // Depth is the translation's limit, not SEL judging the expression invalid: a
+  // constant chain past the evaluator's cap is the same E_SQL_DEPTH a column
+  // chain gets (errors.md), and blaming SEL for evaluating something it
+  // evaluates fine misdescribes it.
+  if (e.code === 'E_DEPTH') {
+    refuse('E_SQL_DEPTH',
+      `this expression nests deeper than SEL will evaluate (${e.message}), so there `
+      + 'is nothing to translate', pos);
+  }
   refuse('E_SQL_INVALID',
     `SEL rejects this expression (${e.code}: ${e.message}), so there is nothing `
     + 'to translate; a database would answer something rather than fail', pos);

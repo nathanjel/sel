@@ -46,6 +46,24 @@ SNodePtr SNode::rewritten(NodePtr shape, std::vector<SNodePtr> kids) {
   return out;
 }
 
+SNodePtr SNode::closed(const SNodePtr& n) {
+  // A clist is a mutable handle a later append must reach, so it is never
+  // copied; its VALUES are closed one by one where they are appended.
+  if (n->closed_ || n->t_ == T::CList) return n;
+  auto out = std::shared_ptr<SNode>(new SNode(*n));
+  out->closed_ = true;
+  return out;
+}
+
+SNodePtr SNode::clist_copy(const SNode& c) {
+  auto out = std::shared_ptr<SNode>(new SNode);
+  out->t_ = T::CList;
+  out->pos_ = c.pos_;
+  out->keys_ = c.keys_;
+  out->kids_ = c.kids_;
+  return out;
+}
+
 std::shared_ptr<SNode> SNode::new_clist(Pos pos) {
   auto out = std::shared_ptr<SNode>(new SNode);
   out->t_ = T::CList;

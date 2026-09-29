@@ -31,6 +31,7 @@ const OUTPUTS = {
   cpp: 'cpp/sel_builtin_manifest.hpp',
   lisp: 'lisp/src/builtin-manifest.lisp',
   go: 'go/internal/manifest/builtins.go',
+  rust: 'rust/src/manifest/builtins.rs',
   docs: 'docs/reference/builtins.md',
 };
 
@@ -522,12 +523,99 @@ function renderGo(entries) {
   return lines.join('\n');
 }
 
+function renderRust(entries) {
+  const lines = [
+    `// ${HEADER}`,
+    '//',
+    '// One entry per builtin: min, max (None when variadic), lazy, binds, and',
+    '// the extra arity rule as a validator function or None.',
+    '',
+    '#![allow(non_snake_case, unpredictable_function_pointer_comparisons)]',
+    '',
+    '#[derive(Clone, Copy, Debug, PartialEq, Eq)]',
+    'pub struct Entry {',
+    '    pub name: &\'static str,',
+    '    pub min: usize,',
+    '    pub max: Option<usize>,',
+    '    pub lazy: bool,',
+    '    pub binds: bool,',
+    '    pub arity_error: Option<fn(usize) -> Option<String>>,',
+    '}',
+    '',
+    '#[derive(Clone, Copy, Debug, PartialEq, Eq)]',
+    'pub enum Scope {',
+    '    Outer,',
+    '    Binder,',
+    '    Inner,',
+    '}',
+    '',
+    '#[derive(Clone, Copy, Debug, PartialEq, Eq)]',
+    'pub enum WhenKind {',
+    '    None,',
+    '    Name,',
+    '    Text,',
+    '}',
+    '',
+    '#[derive(Clone, Debug)]',
+    'pub struct Form {',
+    '    pub name: &\'static str,',
+    '    pub count: usize,',
+    '    pub scopes: &\'static [Scope],',
+    '    pub when_arg: Option<usize>,',
+    '    pub when_kind: WhenKind,',
+    '    pub binds: &\'static [&\'static str],',
+    '}',
+    '',
+  ];
+
+  for (const e of entries) {
+    if (!e.parity && !e.allowed) continue;
+    const [before, after] = e.message.split('{count}');
+    const test = e.parity
+      ? `n % 2 ${e.parity === 'odd' ? '== 0' : '!= 0'}`
+      : `!(${e.allowed.map((c) => `n == ${c}`).join(' || ')})`;
+    lines.push(
+      `fn arity_${e.name}(n: usize) -> Option<String> {`,
+      `    if ${test} {`,
+      `        Some(format!("{}{}{}", ${JSON.stringify(before)}, n, ${JSON.stringify(after)}))`,
+      '    } else {',
+      '        None',
+      '    }',
+      '}',
+      '',
+    );
+  }
+
+  lines.push('pub const BUILTINS: &[(&str, Entry)] = &[');
+  for (const e of entries) {
+    const rule = e.parity || e.allowed ? `Some(arity_${e.name})` : 'None';
+    const maxVal = e.max === null ? 'None' : `Some(${e.max})`;
+    lines.push(`    ("${e.name}", Entry { name: "${e.name}", min: ${e.min}, max: ${maxVal}, lazy: ${e.lazy}, binds: ${e.binds}, arity_error: ${rule} }),`);
+  }
+  lines.push('];', '', 'pub const BINDING_FORMS: &[(&str, &[Form])] = &[');
+  for (const e of entries) {
+    if (!e.forms) continue;
+    lines.push(`    ("${e.name}", &[`);
+    for (const f of e.forms) {
+      const scopes = f.roles.map((r) => `Scope::${{ outer: 'Outer', binder: 'Binder', inner: 'Inner' }[scopeOf(r)]}`);
+      const whenArg = f.when ? `Some(${f.when.arg})` : 'None';
+      const whenKind = f.when ? (f.when.is === 'name' ? 'WhenKind::Name' : 'WhenKind::Text') : 'WhenKind::None';
+      const binds = f.binds.map((b) => JSON.stringify(b)).join(', ');
+      lines.push(`        Form { name: "${e.name}", count: ${f.roles.length}, scopes: &[${scopes.join(', ')}], when_arg: ${whenArg}, when_kind: ${whenKind}, binds: &[${binds}] },`);
+    }
+    lines.push('    ]),');
+  }
+  lines.push('];', '');
+  return lines.join('\n');
+}
+
 // ---------------------------------------------------------------------------
 
 const entries = load();
 const rendered = {
   js: renderJs(entries), python: renderPython(entries), php: renderPhp(entries),
-  cpp: renderCpp(entries), lisp: renderLisp(entries), go: renderGo(entries), docs: renderDocs(entries),
+  cpp: renderCpp(entries), lisp: renderLisp(entries), go: renderGo(entries),
+  rust: renderRust(entries), docs: renderDocs(entries),
 };
 
 if (process.argv.includes('--check')) {

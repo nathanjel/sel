@@ -1,0 +1,497 @@
+% T10 (2026-09-29 review remediation): registration that must keep refusing,
+% templates that must keep their bytes, and the rendering questions a snapshot
+% of one translation cannot see. Every runner translates each case a second
+% time on the SAME bindings and program object and requires the same outcome
+% (the "reuse twin", the way `--- as statement` has its translateStatement twin),
+% so a case that refuses once and then silently accepts fails here without a
+% case of its own -- which is exactly how a memoise-before-check looks.
+
+### name: register.guard.refused-on-every-use-lacking-the-pattern
+--- note
+sql/MAP.md section 7, rule 10 at run time: a `numericGuard` that does not carry
+the numeral pattern of the dialect's `ISNUM` raises the registration error every
+time the guard is used. JS-C24, PHP-C49, PY-C49, CPP-C36 and LISP-C42 marked the
+dialect as checked BEFORE checking it, so the first translation was refused and
+every later one emitted the SQL the check had rejected. The runner's second
+translation of this case is what asserts the refusal repeats.
+--- dialect
+pgbad
+--- register
+[{"dialect": "pgbad", "extends": "postgresql", "version": "16",
+  "lexical": {"numericGuard": "CASE WHEN ({textCast:0} ~ '^.*$') THEN CAST({0} AS NUMERIC) ELSE NULL END"}}]
+--- bindings
+{"NAME": {"kind": "column", "table": "o", "column": "name", "type": "TEXT"}}
+--- source
+NAME + 1
+--- throws
+LogicException
+===
+
+### name: register.guard.refused-on-every-use-wrong-pattern
+--- note
+The same rule with a guard that has a pattern, but not the numeral grammar.
+--- dialect
+mdbad
+--- register
+[{"dialect": "mdbad", "extends": "mariadb", "version": "10.5",
+  "lexical": {"numericGuard": "CASE WHEN ({0} REGEXP 'x') THEN CAST({0} AS DECIMAL(65,10)) ELSE NULL END"}}]
+--- bindings
+{"X": {"kind": "column", "table": "o", "column": "x", "type": "UNKNOWN"}}
+--- source
+X > 5
+--- throws
+LogicException
+===
+
+### name: register.guard.a-sound-guard-is-accepted-every-time
+--- note
+CONTROL for the two above: the shipped guard, registered as a derived dialect,
+translates, and translates again (the runner's twin) to the same bytes.
+--- dialect
+pgok
+--- register
+[{"dialect": "pgok", "extends": "postgresql", "version": "16"}]
+--- bindings
+{"NAME": {"kind": "column", "table": "o", "column": "name", "type": "TEXT"}}
+--- source
+NAME + 1
+--- expect
+(CAST(CASE WHEN (CAST("o"."name" AS TEXT) ~ '^-?[0-9]+(\.[0-9]+)?$') THEN CAST("o"."name" AS NUMERIC) ELSE NULL END AS NUMERIC) + CAST(1 AS NUMERIC))
+===
+
+### name: register.template.non-ascii-bytes-are-kept
+--- note
+GO-C24: Emit.Fill copied a template one BYTE at a time as a character, so every
+byte of a multi-byte character above U+007F came out as a separate code point
+(`Ã©`, `Å¼`). A template is UTF-8 text and is copied as such.
+--- dialect
+mariadb
+--- register
+[{"define": ["mariadb", "funcs", "UPPER", {"tpl": "F({0}, 'é ż ć 𝄞')", "ret": "TEXT"}]}]
+--- bindings
+{"NAME": {"kind": "column", "table": "o", "column": "name", "type": "TEXT"}}
+--- source
+UPPER(NAME)
+--- expect
+F(`o`.`name`, 'é ż ć 𝄞')
+===
+
+### name: register.template.non-ascii-bytes-are-kept-in-a-literal-template
+--- note
+The same through a template that carries a literal of its own alongside a bound
+argument, so the argument's own text (also non-ASCII) is not confused with it.
+--- dialect
+sqlite
+--- register
+[{"define": ["sqlite", "funcs", "UPPER", {"tpl": "MY_CRC('zażółć', {0})", "ret": "TEXT"}]}]
+--- source
+UPPER("źdźbło")
+--- expect
+MY_CRC('zażółć', 'źdźbło')
+===
+
+### name: register.template.empty-tail-list-emits-nothing
+--- note
+sql/MAP.md section 4 spells `{n:}` "arguments n onward, joined with `, `". With
+no argument at n or beyond the join is over nothing and emits nothing; it is not
+a refusal (GO-C39a: Go refused it as neither an argument nor a lexical entry).
+--- dialect
+mariadb
+--- register
+[{"define": ["mariadb", "funcs", "UPPER", {"tpl": "F({0}, {1:})", "ret": "TEXT"}]}]
+--- bindings
+{"NAME": {"kind": "column", "table": "o", "column": "name", "type": "TEXT"}}
+--- source
+UPPER(NAME)
+--- expect
+F(`o`.`name`, )
+===
+
+### name: register.template.empty-lexical-value-emits-nothing
+--- note
+`null` withdraws a lexical key (sql/MAP.md section 3); the empty string is a
+value, and it fills as nothing. GO-C39b: Go refused `valStr == ""` as if it
+were withdrawn.
+--- dialect
+mdempty
+--- register
+[{"dialect": "mdempty", "extends": "mariadb", "version": "10.5", "lexical": {"textCollate": ""}},
+ {"define": ["mdempty", "funcs", "UPPER", {"tpl": "F({0}{textCollate})", "ret": "TEXT"}]}]
+--- bindings
+{"NAME": {"kind": "column", "table": "o", "column": "name", "type": "TEXT"}}
+--- source
+UPPER(NAME)
+--- expect
+F(`o`.`name`)
+===
+
+### name: mode.params.order-follows-the-statement-not-the-source
+--- note
+Parameters are numbered in the order the placeholders APPEAR in the statement.
+A LINK renders its ON condition before the WHERE that follows it, so the value
+of the second stage is bound first: `params` is `yy, zz`, not the `zz, yy` of
+the program's text. Every slot has a value and every value a slot (the runner
+checks that for each case), so a statement rendered and thrown away shows here.
+--- dialect
+mariadb
+--- bindings
+{"R": {"kind": "relation", "from": "r", "alias": "r", "fields": {"A": {"column": "a", "type": "NUM"}, "N": {"column": "n", "type": "TEXT"}}},
+ "S": {"kind": "relation", "from": "s", "alias": "s", "fields": {"A": {"column": "a", "type": "NUM"}, "M": {"column": "m", "type": "TEXT"}}}}
+--- mode
+params
+--- as
+statement
+--- source
+R .> FILTER(_["N"] $== "zz") .> LINK(S, _1["A"] == _2["A"] AND _2["M"] $== "yy") .> MAP(RECORD("n", _["N"], "m", _["M"]))
+--- expect
+SELECT `r`.`n` AS `n`, `s`.`m` AS `m` FROM `r` `r` INNER JOIN `s` `s` ON ((`r`.`a` = `s`.`a`) AND (CAST(`s`.`m` AS CHAR) COLLATE utf8mb4_nopad_bin = CAST(? AS CHAR) COLLATE utf8mb4_nopad_bin)) WHERE (CAST(`r`.`n` AS CHAR) COLLATE utf8mb4_nopad_bin = CAST(? AS CHAR) COLLATE utf8mb4_nopad_bin)
+--- params
+t"yy", t"zz"
+===
+
+### name: mode.params.no-orphan-slot-through-sort-take-link
+--- note
+CPP-C57 and LISP-C40: a statement with a literal in a FILTER before a SORT, a TAKE and a
+LINK is validated once as a prefix and discarded, and the slots of that pass
+stayed in `params`: three values bound for two slots, so an application binding
+`params` sends a parameter the statement has no place for. The runner asserts,
+for every case, that every slot has a value and every value has a slot.
+--- dialect
+mariadb
+--- bindings
+{"R": {"kind": "relation", "from": "r", "alias": "r", "fields": {"A": {"column": "a", "type": "NUM"}, "N": {"column": "n", "type": "TEXT"}}},
+ "S": {"kind": "relation", "from": "s", "alias": "s", "fields": {"A": {"column": "a", "type": "NUM"}, "M": {"column": "m", "type": "TEXT"}}}}
+--- mode
+params
+--- as
+statement
+--- source
+R .> FILTER(_["N"] $== "zz") .> SORT_BY(_["N"]) .> TAKE(3) .> LINK(S, _1["A"] == _2["A"] AND _2["M"] $== "yy") .> MAP(RECORD("n", _["N"], "m", _["M"]))
+--- expect
+SELECT `_sub1`.`n` AS `n`, `s`.`m` AS `m` FROM (SELECT `r`.* FROM `r` `r` WHERE (CAST(`n` AS CHAR) COLLATE utf8mb4_nopad_bin = CAST(? AS CHAR) COLLATE utf8mb4_nopad_bin) ORDER BY CAST(`n` AS CHAR) COLLATE utf8mb4_nopad_bin ASC LIMIT 3) `_sub1` INNER JOIN `s` `s` ON ((`_sub1`.`a` = `s`.`a`) AND (CAST(`s`.`m` AS CHAR) COLLATE utf8mb4_nopad_bin = CAST(? AS CHAR) COLLATE utf8mb4_nopad_bin))
+--- params
+t"zz", t"yy"
+===
+
+### name: stmt.derived.wrapped-columns-keep-a-fixed-order
+--- note
+GO-C18: the derived table a TAKE puts under a LINK lists the relation's columns,
+and Go listed them in the order it happened to range over a map, so the same
+program gave a different select list on different runs. The columns come out in
+the binding's declaration order. The runner translates this case five times, and a
+Go map order that changes between calls makes one of them differ.
+--- dialect
+mariadb
+--- bindings
+{"ITEMS": {"kind": "relation", "from": "items", "alias": "i", "fields": {"PRICE": {"column": "price", "type": "NUM"}, "QTY": {"column": "qty", "type": "NUM"}, "NAME": {"column": "name", "type": "TEXT"}, "SKU": {"column": "sku", "type": "TEXT"}}},
+ "TAGS": {"kind": "relation", "from": "tags", "alias": "t", "fields": {"TAG": {"column": "tag", "type": "TEXT"}, "W": {"column": "w", "type": "NUM"}}}}
+--- as
+statement
+--- source
+ITEMS .> TAKE(5) .> LINK(TAGS, a, b, a["NAME"] $== b["TAG"])
+--- expect
+SELECT `_sub1`.`price`, `_sub1`.`qty`, `_sub1`.`name`, `_sub1`.`sku`, `t`.`tag`, `t`.`w` FROM (SELECT `i`.* FROM `items` `i` LIMIT 5) `_sub1` INNER JOIN `tags` `t` ON (CAST(`_sub1`.`name` AS CHAR) COLLATE utf8mb4_nopad_bin = CAST(`t`.`tag` AS CHAR) COLLATE utf8mb4_nopad_bin)
+===
+
+### name: bind.column.statement-is-not-a-column-type
+--- note
+PY-C44: a column holds a NUM, TEXT, BOOL, BIN or UNKNOWN value (docs/internals/
+sql-translation.md, kinds). STATEMENT and LIST are what a whole fragment can be;
+a binding declared as one made `Fragment.kind` answer STATEMENT for a column.
+--- dialect
+mariadb
+--- bindings
+{"C": {"kind": "column", "table": "o", "column": "c", "type": "STATEMENT"}}
+--- source
+C
+--- error
+E_SQL_BINDING
+===
+
+### name: bind.column.list-is-not-a-column-type
+--- dialect
+mariadb
+--- bindings
+{"C": {"kind": "column", "table": "o", "column": "c", "type": "LIST"}}
+--- source
+C
+--- error
+E_SQL_BINDING
+===
+
+### name: register.dialect.text-escape-must-escape-the-quote
+--- note
+JS-C25, PHP-C37, PY-C50, CPP-C53, LISP-C36: a textEscape of `{"\\": "\\\\"}` on a
+MariaDB base escapes the backslash and nothing else, so `x' OR '1'='1` came out
+as `'x' OR '1'='1'` inline. Decided: refused at registration.
+--- dialect
+my-nobs
+--- register
+[{"dialect": "my-nobs", "extends": "mariadb", "version": "10.5", "lexical": {"textEscape": {"\\": "\\\\"}}}]
+--- bindings
+{"S": {"kind": "column", "table": "o", "column": "s", "type": "TEXT"}}
+--- source
+S $== "x' OR '1'='1"
+--- throws
+LogicException
+===
+
+### name: register.dialect.empty-text-escape-is-refused
+--- note
+CPP-C53, LISP-C36, PHP-C37: an empty textEscape (or one dropped with null) on a
+base that doubles quotes leaves every literal unescaped. R1.
+--- dialect
+sqlite-noesc
+--- register
+[{"dialect": "sqlite-noesc", "extends": "sqlite", "version": "3.48", "lexical": {"textEscape": {}}}]
+--- source
+"a' OR 1=1 --"
+--- throws
+LogicException
+===
+
+### name: register.dialect.escape-character-must-escape-itself
+--- note
+PHP-C37: `textEscape {"'": "\\'"}` on a MySQL-family base escapes the quote with a
+backslash but does not touch a backslash in the input, so the input `\'` becomes
+`\\'` -- an escaped backslash followed by a quote that terminates the literal.
+R1: an escape character must itself be a key.
+--- dialect
+my-badbs
+--- register
+[{"dialect": "my-badbs", "extends": "mariadb", "version": "10.5", "lexical": {"textEscape": {"'": "\\'"}}}]
+--- source
+"a\\' OR 1=1 --"
+--- throws
+LogicException
+===
+
+### name: register.dialect.text-quote-must-differ-from-identifier-quote
+--- note
+PHP-C37, PY-C50: `textQuote: "` on ansi makes a text literal look like a quoted
+identifier. R1: textQuote differs from identQuote.
+--- dialect
+dq
+--- register
+[{"dialect": "dq", "extends": "ansi", "version": "1", "lexical": {"textQuote": "\""}}]
+--- source
+"a\" OR 1=1 --"
+--- throws
+LogicException
+===
+
+% Rule R2 (program-supplied identifiers). An alias or column name that comes from a
+% SEL TEXT literal -- a RECORD key, a SELECT_COLS name -- is held to the rules a
+% binding's own names already meet: not empty, no NUL. The refusal is
+% E_SQL_UNSUPPORTED at the literal (the SQL layer cannot spell it); binding
+% construction keeps E_SQL_BINDING. On PostgreSQL an alias is also refused when
+% it is longer than 63 bytes and another alias shares its 63-byte prefix (the
+% server truncates and the two collide).
+
+### name: alias.record-key-with-nul
+--- note
+PHP-C53, PY-C43, CPP-C58, GO-C37: `AS "a<NUL>b"` reached the statement on every dialect.
+--- dialect
+postgresql
+--- bindings
+{"ITEMS": {"kind": "relation", "from": "items", "alias": "i", "fields": {"PRICE": {"column": "price", "type": "NUM"}}}}
+--- as
+statement
+--- source
+ITEMS .> MAP(RECORD("a\u{0}b", _["PRICE"]))
+--- error
+E_SQL_UNSUPPORTED 1:21
+===
+
+### name: alias.record-key-empty
+--- note
+PHP-C54, PY-C43, GO-C37: `AS ""` is refused by PostgreSQL and MariaDB.
+--- dialect
+postgresql
+--- bindings
+{"ITEMS": {"kind": "relation", "from": "items", "alias": "i", "fields": {"PRICE": {"column": "price", "type": "NUM"}}}}
+--- as
+statement
+--- source
+ITEMS .> MAP(RECORD("", _["PRICE"]))
+--- error
+E_SQL_UNSUPPORTED 1:21
+===
+
+### name: alias.select-cols-name-with-nul
+--- note
+PY-C43, JS-C57: SELECT_COLS names on a relation with no declared fields bypass the allow-list and the NUL check.
+--- dialect
+postgresql
+--- bindings
+{"ITEMS": {"kind": "relation", "from": "items", "alias": "i", "fields": {}}}
+--- as
+statement
+--- source
+ITEMS .> SELECT_COLS("PRICE", "a\u{0}b")
+--- error
+E_SQL_UNSUPPORTED 1:31
+===
+
+### name: alias.pg-truncated-aliases-collide
+--- note
+PHP-C54: PostgreSQL truncates an identifier to 63 bytes, so two 71-character keys
+sharing their first 63 bytes name one column and SEL's two record keys become one.
+--- dialect
+postgresql
+--- bindings
+{"ITEMS": {"kind": "relation", "from": "items", "alias": "i", "fields": {"PRICE": {"column": "price", "type": "NUM"}}}}
+--- as
+statement
+--- source
+ITEMS .> MAP(RECORD("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaX1", _["PRICE"], "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaX2", _["PRICE"]))
+--- error
+E_SQL_UNSUPPORTED 1:102
+===
+
+% Rule R3 (NUL in a text literal). A TEXT value containing U+0000 is refused by
+% the SQL layer in every mode: PostgreSQL cannot store it, a C-string client API
+% truncates the statement at it, and no dialect has a portable spelling. The
+% refusal is E_SQL_UNSUPPORTED at the literal.
+
+### name: lex.text.nul-is-refused-in-every-mode
+--- note
+GO-C43, PHP-C53, LISP-C41: the NUL byte was emitted raw in inline mode; params mode
+hands it to the driver, which then decides. R3 refuses both.
+--- dialect
+mariadb
+--- bindings
+{"S": {"kind": "column", "table": "o", "column": "s", "type": "TEXT"}}
+--- source
+S $== "a\u{0}b"
+--- error
+E_SQL_UNSUPPORTED 1:7
+===
+
+% Rule R4 (raw fields are opaque). A binding declared `raw` is a SQL expression the
+% application wrote against the relation's own alias. It survives FILTER, MAP and
+% aggregates over the relation; anything that would have to NAME it as a column --
+% SELECT_COLS, or a derived table a TAKE/SORT_BY/LIMIT wraps the relation in --
+% is refused E_SQL_SHAPE at the reference.
+
+### name: bind.raw-field.select-cols-refuses
+--- note
+JS-C28, CPP-C32: `SELECT i.total` for a raw field that has no column of that name.
+--- dialect
+mariadb
+--- bindings
+{"ITEMS": {"kind": "relation", "from": "items", "alias": "i", "fields": {"ID": {"column": "id", "type": "NUM"}, "TOTAL": {"kind": "raw", "raw": "i.price * i.qty", "type": "NUM"}}}}
+--- as
+statement
+--- source
+ITEMS .> SELECT_COLS("TOTAL")
+--- error
+E_SQL_SHAPE 1:22
+===
+
+### name: bind.raw-field.across-a-derived-table-refuses
+--- note
+JS-C28, CPP-C32: after SORT_BY .> TAKE the relation is a derived table that has no TOTAL column.
+--- dialect
+mariadb
+--- bindings
+{"ITEMS": {"kind": "relation", "from": "items", "alias": "i", "fields": {"ID": {"column": "id", "type": "NUM"}, "TOTAL": {"kind": "raw", "raw": "i.price * i.qty", "type": "NUM"}}}}
+--- as
+statement
+--- source
+ITEMS .> SORT_BY(_["ID"]) .> TAKE(2) .> FILTER(_["TOTAL"] > 5)
+--- error
+E_SQL_SHAPE 1:49
+===
+
+% Rule R5 (case-colliding names). SEL identifiers are upper-cased, so two binding
+% names -- or two fields of one relation -- that differ only by ASCII case are the
+% same name. Binding construction refuses them: E_SQL_BINDING.
+
+### name: bind.relation.fields-differing-only-by-case
+--- note
+CPP-C55, PY-C44, PHP-C57: C++ kept the first, Python the last, PHP the last.
+--- dialect
+mariadb
+--- bindings
+{"R": {"kind": "relation", "from": "t", "alias": "t", "fields": {"A": {"column": "x", "type": "NUM"}, "a": {"column": "y", "type": "NUM"}}}}
+--- source
+ANY(R, I, I["A"] > 0)
+--- error
+E_SQL_BINDING
+===
+
+### name: bind.names-differing-only-by-case
+--- dialect
+mariadb
+--- bindings
+{"x": {"kind": "column", "table": "o", "column": "a", "type": "NUM"}, "X": {"kind": "column", "table": "o", "column": "b", "type": "NUM"}}
+--- source
+X > 1
+--- error
+E_SQL_BINDING
+===
+
+% Rule R6 (correlate is an expression): the application's `correlate` is spliced
+% into the aggregate templates parenthesised, so a top-level OR in it cannot change
+% the meaning of the AND that follows. The default (no correlate: `lexical.true`)
+% is not parenthesised.
+
+### name: agg.correlate.is-parenthesised
+--- note
+CPP-C56: `oi.a=o.id OR oi.b=o.id AND (body)` binds the AND to the second operand only.
+--- dialect
+mariadb
+--- bindings
+{"ITEMS": {"kind": "relation", "from": "oi", "alias": "oi", "correlate": {"raw": "oi.a=o.id OR oi.b=o.id"}, "fields": {"QTY": {"table": "oi", "column": "qty", "type": "NUM"}}}}
+--- source
+ANY(ITEMS, I, I["QTY"] > 0)
+--- expect
+EXISTS (SELECT 1 FROM `oi` `oi` WHERE (oi.a=o.id OR oi.b=o.id) AND ((`oi`.`qty` > 0)) IS TRUE)
+===
+
+### name: register.dialect.correct-pairing-is-accepted
+--- note
+CONTROL for the four refusals above: a registered escape map that doubles the
+quote (and escapes the backslash, as a MySQL-family server needs) is accepted, and
+translates to the same bytes every time.
+--- dialect
+my-ok
+--- register
+[{"dialect": "my-ok", "extends": "mariadb", "version": "10.5", "lexical": {"textEscape": {"\\": "\\\\", "'": "''"}}}]
+--- source
+"it's"
+--- expect
+'it''s'
+===
+
+### name: register.dialect.redefinition-with-the-same-parent-replaces
+--- note
+Re-registering a dialect name with the SAME `extends` replaces the earlier
+registration: the second lexical override wins and nothing of the first remains.
+--- dialect
+redef
+--- register
+[{"dialect": "redef", "extends": "mariadb", "version": "10.5", "lexical": {"textCollate": " COLLATE utf8mb4_bin"}},
+ {"dialect": "redef", "extends": "mariadb", "version": "10.5", "lexical": {"textCollate": " COLLATE utf8mb4_0900_bin"}}]
+--- source
+"A" $== "a"
+--- expect
+(CAST('A' AS CHAR) COLLATE utf8mb4_0900_bin = CAST('a' AS CHAR) COLLATE utf8mb4_0900_bin)
+===
+
+### name: register.dialect.redefinition-with-a-different-parent-is-refused
+--- note
+A name already registered under one parent cannot be re-pointed at another:
+cases already translated through it would silently change meaning. A startup
+mistake, so the host's own error type like every other refused registration.
+--- dialect
+redef2
+--- register
+[{"dialect": "redef2", "extends": "mariadb", "version": "10.5"},
+ {"dialect": "redef2", "extends": "postgresql", "version": "16"}]
+--- source
+1 + 1
+--- throws
+LogicException
+===

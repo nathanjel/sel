@@ -23,7 +23,7 @@ PROJECTED = 'projected'  # the record a bucket's projection built, after it:
 
 
 class Binder:
-    __slots__ = ('shape', 'payload', 'reason', 'model')
+    __slots__ = ('shape', 'payload', 'reason', 'model', 'env')
 
     # Mirrored as class attributes so `Binder.ROW` works the way `Value.BOOL`
     # does, which is the spelling every host reads the same.
@@ -44,6 +44,12 @@ class Binder:
         # or a joined row whose promoted fields and nested records a read
         # resolves against. None where the row is just its relation's.
         self.model: Any = None
+        # A NODE binder's lexical environment: the frames in force where the list
+        # it came from was WRITTEN. An element is evaluated there, not where it
+        # happens to be read -- `ANY((0, 0), ALL((_K, 5), I, ...))` reads the OUTER
+        # `_K` in the inner list, and `ALL((A, 1), I, ALL((5, 6), A, I > 0))` reads
+        # the column A, not the inner binder that shares its name.
+        self.env: Any = None
 
     @staticmethod
     def node(node: Any) -> 'Binder':

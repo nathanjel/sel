@@ -97,8 +97,13 @@
         (setf (value-children-internal v) entries
               (value-tail v) (last entries)
               (value-count v) (record-shape-size shape))
+        ;; A PRIVATE index, key -> cons cell. The shape's own key map is key ->
+        ;; storage position and is shared by every value of that shape; using
+        ;; it here answered %value-cell with an integer, and adding a key to a
+        ;; 16-field record wrote its cell into the shared map, so the next record
+        ;; built from those 16 keys inherited a key it never had (LISP-C2).
         (when (>= (value-count v) +index-threshold+)
-          (setf (value-index v) (record-shape-key-map shape)))))))
+          (%build-index v))))))
 
 (defun ensure-list-children (v)
   (when (and (value-is-list v) (value-storage v) (null (value-children-internal v)))
@@ -199,12 +204,22 @@ a negative zero loses its sign (spec §8; review 2026-09-28 HOST-13, HOST-14)."
     (t (bad-arg "not a number: expected a decimal string or a DEC, not ~(~a~)" (type-of d)))))
 
 (defvar *int-cap* nil "10^MAX_INT_DIGITS, built on first use.")
+(defvar *int-guard-bits* nil
+  "The bit length below which an integer is surely under the digit cap: the bit
+length of 10^(MAX_INT_DIGITS-1), less one. Integer arithmetic only -- a
+floating constant here was the one float in the numeric core, and it had to be
+kept in step with the limit by hand.")
+
+(defun int-guard-bits ()
+  (or *int-guard-bits*
+      (setf *int-guard-bits* (1- (integer-length (expt 10 (1- +max-int-digits+)))))))
 
 (defun make-int (n)
   (unless (integerp n) (bad-arg "not a whole number: ~a" n))
   ;; A native integer obeys the digit cap like the same digits in source (spec
   ;; §6.4); the bit-length test keeps an ordinary integer off the bignum compare.
-  (when (and (> (integer-length n) (floor (* (1- +max-int-digits+) 3.3219280948873626d0)))
+  (when (and (> (integer-length n) 64)          ; nothing under 20 digits can trip the cap
+             (> (integer-length n) (int-guard-bits))
              (>= (abs n) (or *int-cap* (setf *int-cap* (expt 10 +max-int-digits+)))))
     (fail "E_RANGE" (format nil "number has more than ~D integer digits" +max-int-digits+)))
   (let ((d (dec-from-int n)))
@@ -640,6 +655,12 @@ same keys in the same order, pairwise EQL."
 
 ;;; --- host convenience ------------------------------------------------------
 
+(defun proper-list-p (x)
+  "True for a finite NIL-terminated list; a dotted or circular one is refused
+rather than left to signal a CL TYPE-ERROR half way through a conversion."
+  (handler-case (and (list-length x) t)
+    (type-error () nil)))
+
 (defun from-native (x)
   "Convert CL data to a SEL value. Floats are refused outright: they have no
 exact decimal form, and SEL has no floating point. Pass a string instead."
@@ -662,14 +683,19 @@ exact decimal form, and SEL has no floating point. Pass a string instead."
     ((vector (unsigned-byte 8)) (make-bin x))
     ;; A plain list is a SEL list, keyed from 1 — so ITEMS[1] means the first
     ;; line on every host. An alist is a keyed value.
-    (cons (if (and (consp (first x)) (stringp (car (first x))))
-              (let* ((keys (mapcar (lambda (pair)
+    (cons (unless (proper-list-p x)
+            (bad-arg "cannot convert a dotted or circular list to SEL"))
+          (if (and (consp (first x)) (stringp (car (first x))))
+              (let* ((_ (unless (every (lambda (e) (and (consp e) (stringp (car e)))) x)
+                          (bad-arg "cannot convert a list mixing keyed pairs with other elements to SEL")))
+                     (keys (mapcar (lambda (pair)
                                      (let ((k (car pair)))
                                        (unless (valid-utf8-string-p k)
                                          (fail "E_UTF8" "key carries an unpaired surrogate"))
                                        (copy-seq k)))
                                    x))
                      (n (length keys)))
+                (declare (ignore _))
                 (if (= (length (remove-duplicates keys :test #'string=)) n)
                     (let* ((shape (get-record-shape keys))
                            (storage (make-array n)))

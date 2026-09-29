@@ -27,6 +27,7 @@ require_once __DIR__ . '/Builtins/Structure.php';
 require_once __DIR__ . '/Builtins/Text.php';
 require_once __DIR__ . '/Builtins/Number.php';
 require_once __DIR__ . '/Builtins/Binary.php';
+require_once __DIR__ . '/Builtins/RegexAmbiguity.php';
 require_once __DIR__ . '/Builtins/Regex.php';
 require_once __DIR__ . '/Builtins/NullOps.php';
 

@@ -270,6 +270,48 @@ def run_case(c: dict) -> str | None:
     except Exception as e:                                    # noqa: BLE001
         thrown = e
 
+    # The reuse twin. The same program and bindings are translated again, several
+    # times, and every translation must give the first one's outcome: the same
+    # SQL, or the same refusal at the same place, or the same kind of startup
+    # error. A translator that keeps state between calls -- a dialect marked as
+    # checked before it was checked, a parameter list that grows -- passes one
+    # translation and fails here (T10: JS-C24, PHP-C49, PY-C49, CPP-C36,
+    # LISP-C42, GO-C18).
+    if program is not None and bindings is not None:
+        def describe(sql_, error_, thrown_):
+            if thrown_ is not None:
+                return f'{type(thrown_).__name__} ({thrown_})'
+            if error_ is not None:
+                return f'{error_.code} at {error_.line}:{error_.col}'
+            return repr(sql_)
+        for k in range(4):
+            sql2 = error2 = thrown2 = None
+            try:
+                frag2 = Sql.translate(program, dialect, bindings, options)
+                if as_ == 'condition':
+                    sql2 = frag2.as_condition(mode)
+                elif as_ == 'statement':
+                    sql2 = frag2.as_statement(mode)
+                else:
+                    sql2 = frag2.as_value(mode)
+            except SqlError as e:
+                error2 = e
+            except SelError as e:
+                return f'translating again: the source did not compile: {e}'
+            except Exception as e:                            # noqa: BLE001
+                thrown2 = e
+            if thrown is not None:
+                same = thrown2 is not None and type(thrown2) is type(thrown)
+            elif error is not None:
+                same = (error2 is not None and error2.code == error.code
+                        and error2.line == error.line and error2.col == error.col)
+            else:
+                same = thrown2 is None and error2 is None and sql2 == sql
+            if not same:
+                return ('translating again on the same program and bindings gave '
+                        f'{describe(sql2, error2, thrown2)} where the first translation gave '
+                        f'{describe(sql, error, thrown)} (repeat {k + 1})')
+
     # A malformed map or binding is a mistake in the application's startup and
     # raises the host's own error type; a rule that cannot be translated raises
     # SqlError. Keeping the two apart is why `throws` exists as its own outcome

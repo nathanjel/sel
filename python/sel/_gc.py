@@ -19,7 +19,13 @@ runs for long in one thread delays cycle collection for the others by that
 long -- a query's duration.
 """
 import gc
+import threading
 
+# Process-global state, so every read-modify-write of it is under one lock. It
+# was not, and a second thread entering between `gc.disable()` and the increment
+# saw `_depth == 0`, read the collector as already off, and overwrote `_resume`
+# with False -- so the last exit never turned it back on, for the whole process.
+_lock = threading.Lock()
 _depth = 0
 _resume = False
 
@@ -29,16 +35,18 @@ class bulk_allocation:
 
     def __enter__(self):
         global _depth, _resume
-        if _depth == 0:
-            _resume = gc.isenabled()
-            if _resume:
-                gc.disable()
-        _depth += 1
+        with _lock:
+            if _depth == 0:
+                _resume = gc.isenabled()
+                if _resume:
+                    gc.disable()
+            _depth += 1
         return self
 
     def __exit__(self, exc_type, exc, tb):
         global _depth
-        _depth -= 1
-        if _depth == 0 and _resume:
-            gc.enable()
+        with _lock:
+            _depth -= 1
+            if _depth == 0 and _resume:
+                gc.enable()
         return False

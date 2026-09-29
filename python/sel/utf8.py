@@ -47,6 +47,40 @@ def to_code_points(s: str, pos: Pos | None = None) -> list[int]:
         return out
 
 
+def _pos_after(prefix: str) -> Pos:
+    """The position of the code point that follows `prefix`: line and column count
+    from 1 and offsets from 0, all in code points, and only LF ends a line."""
+    nl = prefix.rfind('\n')
+    return Pos(prefix.count('\n') + 1, len(prefix) - nl, len(prefix))
+
+
+def check_source(source: str) -> None:
+    """E_UTF8 at the first lone surrogate of a source string, positioned like any
+    other error (SPEC 2): counted in code points, so a str -- whose length already
+    is that count -- needs no decoding to find where it is."""
+    if source.isascii():
+        return
+    for i, ch in enumerate(source):
+        c = ord(ch)
+        if 0xD800 <= c <= 0xDFFF:
+            which = 'high' if c <= 0xDBFF else 'low'
+            fail('E_UTF8', f'unpaired {which} surrogate', _pos_after(source[:i]))
+
+
+def decode_source(data: bytes) -> str:
+    """Source bytes to text, for a caller that reads a file or a stream. Strict, and
+    nothing else: no replacement character, no newline translation. Invalid UTF-8
+    is E_UTF8 positioned at the first invalid unit, counted in the code points of
+    the valid prefix (SPEC 2)."""
+    try:
+        return data.decode('utf-8', errors='strict')
+    except UnicodeDecodeError:
+        pass
+    at = _first_invalid(data)
+    prefix = data[:at].decode('utf-8', errors='strict') if at is not None else ''
+    fail('E_UTF8', 'invalid UTF-8 in source', _pos_after(prefix))
+
+
 def encode_utf8(s: str, pos: Pos | None = None) -> bytes:
     try:
         return s.encode('utf-8')
@@ -67,8 +101,30 @@ def decode_utf8(data: bytes, pos: Pos | None = None) -> str:
     return _decode_utf8_diagnostic(data, pos)
 
 
+def _first_invalid(data: bytes) -> int | None:
+    """The byte index at which the first invalid sequence starts, or None."""
+    bad = _scan(data)
+    return None if bad is None else bad.at
+
+
+class _Invalid:
+    __slots__ = ('at', 'message')
+
+    def __init__(self, at: int, message: str) -> None:
+        self.at = at
+        self.message = message
+
+
 def _decode_utf8_diagnostic(data: bytes, pos: Pos | None) -> str:
-    """Original decoder, retained for the precise first invalid byte diagnostic."""
+    """The precise first invalid byte diagnostic, as a SEL error."""
+    bad = _scan(data)
+    # Raised outside any except block: no host exception is chained into it.
+    fail('E_UTF8', bad.message if bad else 'invalid UTF-8 byte sequence', pos)
+
+
+def _scan(data: bytes) -> '_Invalid | None':
+    """The first bad sequence, or None. Returned rather than raised so the SEL
+    error built from it carries no chained host exception."""
     n = len(data)
     i = 0
     while i < n:
@@ -93,19 +149,19 @@ def _decode_utf8_diagnostic(data: bytes, pos: Pos | None) -> str:
         elif b == 0xF4:
             need, cp, lo, hi = 3, 4, 0x80, 0x8F          # cap at U+10FFFF
         else:
-            fail('E_UTF8', f'invalid start byte 0x{b:x} at byte {i}', pos)
+            return _Invalid(i, f'invalid start byte 0x{b:x} at byte {i}')
 
         if i + need >= n:
-            fail('E_UTF8', f'truncated sequence at byte {i}', pos)
+            return _Invalid(i, f'truncated sequence at byte {i}')
         for k in range(1, need + 1):
             c = data[i + k]
             lo_k = lo if k == 1 else 0x80
             hi_k = hi if k == 1 else 0xBF
             if c < lo_k or c > hi_k:
-                fail('E_UTF8', f'invalid continuation byte at byte {i + k}', pos)
+                return _Invalid(i, f'invalid continuation byte at byte {i + k}')
             cp = (cp << 6) | (c & 0x3F)
         i += need + 1
-    fail('E_UTF8', 'invalid UTF-8 byte sequence', pos)
+    return None
 
 
 def bytes_to_hex(data: bytes) -> str:

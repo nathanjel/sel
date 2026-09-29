@@ -267,8 +267,15 @@ class Parser:
                 continue
 
             if assoc == 'R':
-                right = self.parse_term(bp)
-                left = Node('bin', t.pos, op=t.value, l=left, r=right)
+                # Counted like an assignment (SPEC 6.4): `??` and `???` are the
+                # other right-associative operators, and their right side recurses
+                # without passing through parse_sequence or parse_primary.
+                self.enter(t.pos)
+                try:
+                    right = self.parse_term(bp)
+                    left = Node('bin', t.pos, op=t.value, l=left, r=right)
+                finally:
+                    self.leave()
                 continue
 
             if assoc == 'N':
@@ -441,6 +448,9 @@ class Parser:
         return _finish_call(name_tok, spec, args)
 
 
+_REGEX_FUNCTIONS = frozenset(['RMATCH', 'RFIND', 'RGROUPS', 'RREPLACE'])
+
+
 def _finish_call(name_tok: Token, spec: Spec, args: list[Node]) -> Node:
     """The compile-time arity rule (spec 6.2, SEL-0002) and the call node, in
     one place for both call forms; the pipeline form has already placed its
@@ -452,6 +462,10 @@ def _finish_call(name_tok: Token, spec: Spec, args: list[Node]) -> Node:
         problem = spec.arity_error(count)
         if problem:
             fail('E_ARITY', problem, name_tok.pos)
+    if spec.name in _REGEX_FUNCTIONS:
+        # A literal pattern is checked now (SPEC 7.8), even where it never runs.
+        from .builtins.regex import check_literal
+        check_literal(spec.name, args)
     return Node('call', name_tok.pos, name=spec.name, spec=spec, args=args,
                 record_shape=_prepare_record_shape(spec.name, args))
 

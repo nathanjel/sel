@@ -127,6 +127,7 @@ impl_conformance() {
     python) PYTHONPATH="$PWD/python" python3 python/bin/conformance.py "$@" ;;
     python-wheel) "$SEL_PY_WHEEL_BIN" python/bin/conformance.py "$@" ;;
     go)   go/build/conformance "$@" ;;
+    rust) rust/build/conformance "$@" ;;
     *)    echo "unknown implementation: $impl" >&2; return 2 ;;
   esac
 }
@@ -146,6 +147,7 @@ impl_batch() {
     python) PYTHONPATH="$PWD/python" python3 python/bin/batch.py "$@" ;;
     python-wheel) "$SEL_PY_WHEEL_BIN" python/bin/batch.py "$@" ;;
     go)   go/build/batch "$@" ;;
+    rust) rust/build/batch "$@" ;;
     *)    echo "unknown implementation: $impl" >&2; return 2 ;;
   esac
 }
@@ -201,6 +203,7 @@ impl_e2e() {
     python) PYTHONPATH="$PWD/python" python3 examples/e2e.py "$@" ;;
     python-wheel) "$SEL_PY_WHEEL_BIN" examples/e2e.py "$@" ;;
     go)   go/build/e2e "$@" ;;
+    rust) rust/build/e2e "$@" ;;
     *)    echo "unknown implementation: $impl" >&2; return 2 ;;
   esac
 }
@@ -223,6 +226,27 @@ impl_deps() {
     python) PYTHONPATH="$PWD/python" python3 -m sel --deps "$@" ;;
     python-wheel) "$SEL_PY_WHEEL_BIN" -m sel --deps "$@" ;;
     go)   go/build/sel --deps "$@" ;;
+    rust) rust/build/sel --deps "$@" ;;
+    *)    echo "unknown implementation: $impl" >&2; return 2 ;;
+  esac
+}
+
+# The host's command line, run on a source file: what a person (or a build
+# script) actually types. tools/check-cli-source.sh feeds it byte-exact files.
+impl_cli() {
+  local impl="$1"; shift
+  case "$impl" in
+    js)   node js/bin/sel.mjs "$@" ;;
+    js-bundle) SEL_JS_ENTRY="$PWD/dist/sel.mjs" node js/bin/sel.mjs "$@" ;;
+    js-bundle-min) SEL_JS_ENTRY="$PWD/dist/sel.min.mjs" node js/bin/sel.mjs "$@" ;;
+    # shellcheck disable=SC2086
+    php)  sel_php $SEL_PHP_FLAGS php/bin/sel "$@" ;;
+    cpp)  cpp/build/sel "$@" ;;
+    lisp) lisp/bin/sel "$@" ;;
+    python) PYTHONPATH="$PWD/python" python3 -m sel "$@" ;;
+    python-wheel) "$SEL_PY_WHEEL_BIN" -m sel "$@" ;;
+    go)   go/build/sel "$@" ;;
+    rust) rust/build/sel "$@" ;;
     *)    echo "unknown implementation: $impl" >&2; return 2 ;;
   esac
 }
@@ -241,6 +265,7 @@ impl_sqlapi() {
     python) PYTHONPATH="$PWD/python" python3 python/bin/sqlapi "$@" ;;
     python-wheel) "$SEL_PY_WHEEL_BIN" python/bin/sqlapi "$@" ;;
     go)   go/build/sqlapi "$@" ;;
+    rust) rust/build/sqlapi "$@" ;;
     *)    echo "unknown implementation: $impl" >&2; return 2 ;;
   esac
 }
@@ -257,6 +282,7 @@ impl_api() {
     python) PYTHONPATH="$PWD/python" python3 python/bin/api.py "$@" ;;
     python-wheel) "$SEL_PY_WHEEL_BIN" python/bin/api.py "$@" ;;
     go)   go/build/api "$@" ;;
+    rust) rust/build/api "$@" ;;
     *)    echo "unknown implementation: $impl" >&2; return 2 ;;
   esac
 }
@@ -276,6 +302,7 @@ impl_decimal() {
     # ships verbatim. Running it twice would test the same code.
     python-wheel) echo "python-wheel: decimal core is python/sel/decimal.py, covered above" ;;
     go)   go/build/check-decimal "$@" ;;
+    rust) rust/build/check_decimal "$@" ;;
     *)    echo "unknown implementation: $impl" >&2; return 2 ;;
   esac
 }
@@ -301,6 +328,7 @@ impl_sql() {
     # importable, so this grades the installed wheel and not the source tree.
     python-wheel) "$SEL_PY_WHEEL_BIN" python/bin/sqlt "$@" ;;
     go)   go/build/sqlt "$@" ;;
+    rust) rust/build/sqlt "$@" ;;
     *)    echo "unknown implementation: $impl" >&2; return 2 ;;
   esac
 }
@@ -333,6 +361,7 @@ impl_sqlreplay() {
     python) PYTHONPATH="$PWD/python" python3 python/bin/sqlreplay "$@" ;;
     python-wheel) "$SEL_PY_WHEEL_BIN" python/bin/sqlreplay "$@" ;;
     go)   go/build/sqlreplay "$@" ;;
+    rust) rust/build/map_replay "$@" ;;
     *)    echo "unknown implementation: $impl" >&2; return 2 ;;
   esac
 }
@@ -349,6 +378,7 @@ impl_sqlfuzz() {
     python) PYTHONPATH="$PWD/python" python3 python/bin/sqlfuzz "$@" ;;
     python-wheel) "$SEL_PY_WHEEL_BIN" python/bin/sqlfuzz "$@" ;;
     go)   go/build/sqlfuzz "$@" ;;
+    rust) return 0 ;;
     *)    echo "unknown implementation: $impl" >&2; return 2 ;;
   esac
 }
@@ -361,7 +391,7 @@ impl_oracle() {
     # oracle measures whether the MAP means what SEL means, and the map is data
     # every host consumes unchanged, so a second harness would ask one server
     # the same question twice.
-    js|js-bundle|js-bundle-min|cpp|lisp|go) return 0 ;;
+    js|js-bundle|js-bundle-min|cpp|lisp|go|rust) return 0 ;;
     python|python-wheel) return 0 ;;            # M6
     *)    echo "unknown implementation: $impl" >&2; return 2 ;;
   esac
@@ -373,7 +403,7 @@ impl_sqldoc() {
   local impl="$1"; shift
   case "$impl" in
     php)  sel_php php/bin/sqldoc "$@" ;;
-    js|js-bundle|js-bundle-min|cpp|lisp|go) return 0 ;;   # a property of the design doc
+    js|js-bundle|js-bundle-min|cpp|lisp|go|rust) return 0 ;;   # a property of the design doc
     python|python-wheel) return 0 ;;
     *)    echo "unknown implementation: $impl" >&2; return 2 ;;
   esac
@@ -411,7 +441,8 @@ impl_unit() {
     cpp)    { [ -x cpp/build/unit ] && cpp/build/unit; } &&
             { [ -x cpp/build/sqlunit ] && cpp/build/sqlunit; } ;;
     lisp)   lisp/bin/test ;;
-    go)     (cd go && go test ./...) ;;
+    go)     (cd go && go test -race ./...) ;;
+    rust)   (cd rust && cargo test) ;;
     *)      echo "unknown implementation: $impl" >&2; return 2 ;;
   esac
 }
@@ -477,8 +508,18 @@ impl_available() {
       [ -x go/build/conformance ] || return 1
       go_newest="$(find go/build -maxdepth 1 -type f -executable -printf '%T@ %p\n' \
         2>/dev/null | sort -rn | head -1 | cut -d' ' -f2-)"
+      # *_test.go is not built into any binary in build/: editing a test must not
+      # mark the Go host stale, which silently dropped it from every tool that
+      # asks for two hosts (check-api.sh said "need at least two, have: js").
       [ -n "$go_newest" ] && [ -z "$(find go -path go/build -prune -o \
-        -name '*.go' -newer "$go_newest" -print -quit 2>/dev/null)" ] ;;
+        -name '*.go' ! -name '*_test.go' -newer "$go_newest" -print -quit 2>/dev/null)" ] ;;
+    rust)
+      command -v cargo >/dev/null 2>&1 || return 1
+      [ -x rust/build/conformance ] || return 1
+      rust_newest="$(find rust/build -maxdepth 1 -type f -executable -printf '%T@ %p\n' \
+        2>/dev/null | sort -rn | head -1 | cut -d' ' -f2-)"
+      [ -n "$rust_newest" ] && [ -z "$(find rust -path rust/build -prune -o -path rust/target -prune -o \
+        -name '*.rs' -newer "$rust_newest" -print -quit 2>/dev/null)" ] ;;
     *)    return 1 ;;
   esac
 }
@@ -489,9 +530,28 @@ impl_available() {
 available_impls() {
   local out=""
   for impl in $SEL_IMPLS; do
-    impl_available "$impl" && out="$out $impl"
+    if impl_available "$impl"; then
+      out="$out $impl"
+    else
+      impl_skip_note "$impl"
+    fi
   done
   echo "${out# }"
+}
+
+# One line on stderr when a host that HAS a build is dropped because the build is
+# older than its sources. A host that was never built stays quiet (a fresh clone
+# without a toolchain would repeat it for every tool), but a stale build is a
+# mistake the caller can fix, and dropping it silently made tools compare fewer
+# hosts than the roster said.
+impl_skip_note() {
+  case "$1" in
+    cpp)  [ -x cpp/build/conformance ] && echo "note: cpp skipped: cpp/build is older than its sources (run: make -C cpp)" >&2 ;;
+    go)   [ -x go/build/conformance ] && echo "note: go skipped: go/build is older than its sources (run: make -C go)" >&2 ;;
+    rust) [ -x rust/build/conformance ] && echo "note: rust skipped: rust/build is older than its sources" >&2 ;;
+    js-bundle|js-bundle-min) [ -f dist/sel.mjs ] && echo "note: $1 skipped: dist/ is older than js/src (run: npm run build)" >&2 ;;
+  esac
+  return 0
 }
 
 # What is being skipped, and why, for the one place that should say so.

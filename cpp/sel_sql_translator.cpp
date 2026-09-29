@@ -326,7 +326,21 @@ Translator::Begun Translator::begin(const NodePtr& ast) {
 
   // Stage 1 and nothing else: the translator renders the tree it is handed;
   // the planner is the one place that optimises first.
+  if (getenv("SQLDBG")) {
+    std::function<void(const Node&, int)> d2 = [&](const Node& n, int d) {
+      fprintf(stderr, "RAW %*st=%d s=%s pos=%d:%d\n", d*2, "", (int)n.t, n.s.c_str(), n.pos.line, n.pos.col);
+      if (n.l) d2(*n.l, d+1); if (n.r) d2(*n.r, d+1); for (auto& k : n.items) d2(*k, d+1);
+    };
+    d2(*ast, 0);
+  }
   SNodePtr normalised = normalise(ast, const_names_, const_root_);
+  if (getenv("SQLDBG")) {
+    std::function<void(const SNode&, int)> dump = [&](const SNode& n, int d) {
+      fprintf(stderr, "%*s%s %s pos=%d:%d closed=%d\n", d*2, "", std::string(node_kind_name(n.t())).c_str(), n.s().c_str(), n.pos().line, n.pos().col, (int)n.is_closed());
+      for (auto& k : n.kids()) dump(*k, d+1);
+    };
+    dump(*normalised, 0);
+  }
   auto plan = analyze_pipeline(normalised);
   return {std::move(normalised), std::move(plan)};
 }
@@ -405,9 +419,37 @@ Fragment Translator::node(const SNodePtr& n) {
     ~Pop() { --*d; }
   } pop{&depth_};
 
+  // A closed subtree (an inlined helper) is translated at the outermost scope:
+  // no binder written around its use site can capture its free names.
+  if (n->is_closed() && !frames_.empty()) {
+    ScopeCut cut(this, 0);
+    return node_in_scope(n);
+  }
+  return node_in_scope(n);
+}
+
+const std::set<std::string>& Translator::visible_consts() {
+  if (const_names_.empty()) return const_names_;
+  bool shadowed = false;
+  for (const Frame& frame : frames_) {
+    for (const auto& [k, b] : frame) {
+      (void)b;
+      if (!const_names_.count(k)) continue;
+      if (!shadowed) { eff_consts_ = const_names_; shadowed = true; }
+      eff_consts_.erase(k);
+    }
+  }
+  return shadowed ? eff_consts_ : const_names_;
+}
+
+Fragment Translator::node_in_scope(const SNodePtr& n) {
   const bool compound = n->t() == SNode::T::Bin || n->t() == SNode::T::Un ||
                         n->t() == SNode::T::Call;
-  if (!compound || !is_constant(*n, const_names_)) return dispatch(n);
+  if (!compound) return dispatch(n);
+  // A binder that reuses the name of a constant `value` binding is the ELEMENT
+  // inside its body, not the constant (JS-C53): it is not constant there, so it
+  // must not be folded, validated against the constant, or left unguarded.
+  if (!is_constant(*n, visible_consts())) return dispatch(n);
 
   // Ask SEL whether the expression is VALID before asking the map whether it is
   // translatable -- and at EVERY compound node, not just the outermost.
@@ -791,10 +833,16 @@ Fragment Translator::row_field(const RowModelPtr& row, const std::string& label,
 
 Fragment Translator::from_binder(const Binder& b, const SNode& n) {
   switch (b.shape()) {
-    case Binder::Shape::Node:
+    case Binder::Shape::Node: {
       // Re-enters the whole walk on the element, so the depth counter and the
-      // constant validation apply to the inlined element too.
+      // constant validation apply to the inlined element too -- in the scope
+      // the element was WRITTEN in, not inside the aggregate that binds it.
+      if (b.scope() != Binder::kUnscoped && b.scope() < frames_.size()) {
+        ScopeCut cut(this, b.scope());
+        return node(b.as_node());
+      }
       return node(b.as_node());
+    }
     case Binder::Shape::Key: {
       // Inside a row already: bind the key's own binder to that row and render
       // the key there, then collate it exactly as the GROUP BY does.
@@ -971,6 +1019,10 @@ Fragment Translator::index_binder(const Binder& b, const std::string& name,
     if (!elem) {
       refuse("E_SQL_BINDING",
              name + "[\"" + key + "\"] is not a key of that element", n.pos());
+    }
+    if (b.scope() != Binder::kUnscoped && b.scope() < frames_.size()) {
+      ScopeCut cut(this, b.scope());
+      return node(elem);
     }
     return node(elem);
   }
@@ -1184,12 +1236,24 @@ void Translator::require_not_bool_operand(const Fragment& f, Pos pos,
          pos);
 }
 
+// JOIN takes text (`&`'s rules, spec §5.2/§7.5): a BOOL or BIN element or
+// separator is E_NOT_TEXT in SEL. Concatenating a server's spelling of it
+// ('1', 'true', a byte string) would answer where SEL refuses (PY-C19).
+void Translator::require_join_text(const Fragment& f, Pos pos, const std::string& what) {
+  if (f.kind() != SqlKind::Bool && f.kind() != SqlKind::Bin) return;
+  refuse("E_SQL_SHAPE",
+         what + " is " + (f.kind() == SqlKind::Bool ? "a BOOL" : "a BIN") +
+             ", and JOIN reads its elements and separator as text; SEL answers "
+             "E_NOT_TEXT rather than spelling it",
+         pos);
+}
+
 // An operand in a numeric position whose value is knowable here.
 //
 // See require_numeric in sel_sql_stage1.hpp for why refusing loses nothing, and
 // for why it is never keyed on a declared kind.
 void Translator::require_numeric_constant(const SNode& n) {
-  if (is_constant(n, const_names_)) require_numeric(n, const_root_);
+  if (is_constant(n, visible_consts())) require_numeric(n, const_root_);
 }
 
 // Wrap an operand the numeric context cannot be sure of.
@@ -1200,7 +1264,7 @@ void Translator::require_numeric_constant(const SNode& n) {
 // left is what could not be settled at translation time: columns, raw, relation
 // fields.
 Fragment Translator::guard_numeric(const Fragment& f, const SNode& n) {
-  if (is_constant(n, const_names_)) return f;
+  if (is_constant(n, visible_consts())) return f;
   // numeric_operand hands an unguarded NUM back untouched and wraps anything
   // else; the other hosts test the result's identity, which a value cannot.
   const bool wraps = f.kind() != SqlKind::Num || f.guard();
@@ -1248,7 +1312,7 @@ void Translator::coerce_scale_limits(std::span<const SNode* const> operands) {
   const std::optional<std::int32_t> cap = numeric_cast_scale();
   if (!cap) return;
   for (const SNode* operand : operands) {
-    if (is_constant(*operand, const_names_)) {
+    if (is_constant(*operand, visible_consts())) {
       if (constant_scale(*operand, const_root_) > *cap) {
         scale_limited(operand->pos(), "this constant is read as a number");
       }
@@ -1651,8 +1715,10 @@ Translator::SlotMap Translator::relation_slots(const RelationSpec& rel) {
   if (rel.alias && !rel.alias->empty()) from += " " + emit_.ident(*rel.alias);
   // An uncorrelated relation is a subquery over the whole table, which is legal
   // and occasionally what you want.
-  const std::string corr =
-      rel.correlate ? *rel.correlate : std::string(lex_text(dialect_, "true"));
+  // An application's own correlate is parenthesised: `a OR b AND (body)` binds
+  // the AND to the second operand only (CPP-C56). The default TRUE stays bare.
+  const std::string corr = rel.correlate ? "(" + *rel.correlate + ")"
+                                         : std::string(lex_text(dialect_, "true"));
   return {{"from", {Slot{from}}}, {"corr", {Slot{corr}}}};
 }
 
@@ -2310,6 +2376,19 @@ void frame_set(std::vector<std::pair<std::string, Binder>>& frame,
 }  // namespace
 
 Translator::Source Translator::classify(const SNodePtr& src) {
+  Source out = classify_impl(src);
+  // Every static element was written in the scope that is open now, which is
+  // OUTSIDE the aggregate about to bind it (unless it came out of a binder that
+  // already knows its own scope).
+  for (auto& [key, elem] : out.elements) {
+    if (elem.shape() == Binder::Shape::Node && elem.scope() == Binder::kUnscoped) {
+      elem.set_scope(frames_.size());
+    }
+  }
+  return out;
+}
+
+Translator::Source Translator::classify_impl(const SNodePtr& src) {
   Source out;
   if (src->t() == SNode::T::Call) {
     const std::string name = src->s();
@@ -2346,8 +2425,15 @@ Translator::Source Translator::classify(const SNodePtr& src) {
   if (src->t() == SNode::T::Var) {
     if (const Binder* bound = binder(src->s())) {
       switch (bound->shape()) {
-        case Binder::Shape::Node:
+        case Binder::Shape::Node: {
+          // The bound element is a node written in ITS scope: its own
+          // elements are classified there.
+          if (bound->scope() != Binder::kUnscoped && bound->scope() < frames_.size()) {
+            ScopeCut cut(this, bound->scope());
+            return classify(bound->as_node());
+          }
           return classify(bound->as_node());
+        }
         case Binder::Shape::None:
           refuse("E_SQL_SHAPE", bound->reason(), src->pos());
         // A bucket's members are iterated by COUNT and SUM alone (call()), as
@@ -2433,21 +2519,24 @@ Fragment Translator::with_element(const Source& src, const std::string& binder_n
                                   const Binder& elem, const std::string& key,
                                   const SNode& n,
                                   const std::function<Fragment()>& render) {
+  (void)src;
   std::vector<std::pair<std::string, Binder>> frame;
   frame_set(frame, binder_name, elem);
   // `_K` names a TEXT literal of the element's key, which becomes a parameter
   // slot when rendered.
-  frame_set(frame, "_K",
-            Binder::node(SNode::leaf(lit_node(NT::Text, key, false, n.pos()))));
-  // Every absorbed FILTER's binder names the SAME element, which is what makes
-  // absorption three lines rather than a substitution pass.
-  for (const Filter& f : src.filters) frame_set(frame, f.binder, elem);
-
+  Binder key_binder = Binder::node(SNode::leaf(lit_node(NT::Text, key, false, n.pos())));
+  frame_set(frame, "_K", key_binder);
+  // An absorbed FILTER's binder names the same element, but ONLY inside the
+  // FILTER's own predicate: agg_body renders each predicate in the scope
+  // outside this frame plus that one binder (elem_ctx_), so it neither leaks
+  // into the body nor sees the aggregate's binder.
+  elem_ctx_.push_back({frames_.size(), elem, key_binder});
   frames_.push_back(std::move(frame));
   struct Pop {
     std::vector<Frame>* f;
-    ~Pop() { f->pop_back(); }
-  } pop{&frames_};
+    std::vector<ElemCtx>* c;
+    ~Pop() { f->pop_back(); c->pop_back(); }
+  } pop{&frames_, &elem_ctx_};
   return render();
 }
 
@@ -2458,8 +2547,11 @@ Fragment Translator::with_row(const Source& src, const std::string& binder_name,
   // FROM shadows the outer one, so the predicate is constantly false and every
   // server answered [] where SEL answers rows. Bindings::check_aliases dedupes
   // across DISTINCT binding names, and this is one name, so it could never fire.
-  for (const Frame& frame : frames_) {
-    for (const auto& [k, b] : frame) {
+  std::vector<const Frame*> open;
+  for (const Frame& frame : frames_) open.push_back(&frame);
+  for (const auto& hidden : cut_) for (const Frame& frame : hidden) open.push_back(&frame);
+  for (const Frame* frame_ptr : open) {
+    for (const auto& [k, b] : *frame_ptr) {
       (void)k;
       if (b.shape() == Binder::Shape::Row &&
           relation_alias(b.as_row()) == alias) {
@@ -2486,12 +2578,13 @@ Fragment Translator::with_row(const Source& src, const std::string& binder_name,
   }
   std::vector<std::pair<std::string, Binder>> frame;
   frame_set(frame, binder_name, row);
-  frame_set(frame, "_K",
-            Binder::none("a row of a relation has no key: SQL rows are "
-                         "unordered and unkeyed unless the schema says "
-                         "otherwise, and guessing which column is the key is "
-                         "not something this layer does"));
-  for (const Filter& f : src.filters) frame_set(frame, f.binder, row);
+  Binder row_key = Binder::none("a row of a relation has no key: SQL rows are "
+                                "unordered and unkeyed unless the schema says "
+                                "otherwise, and guessing which column is the key is "
+                                "not something this layer does");
+  frame_set(frame, "_K", row_key);
+  // Each absorbed FILTER's binder is the same row inside its own predicate only
+  // (see with_element).
   // After a LINK only the row is in scope (spec §7.4): the binders are scoped
   // to its predicate, and the evaluator raises E_UNDEF_VAR for `C["id"]` in
   // a later step -- the joined row carries them as keys, not as names. This
@@ -2499,11 +2592,13 @@ Fragment Translator::with_row(const Source& src, const std::string& binder_name,
   // every join for every later step, so `FILTER(C["id"] > 1)` translated
   // where `run()` fails (review 2026-09-15 finding W2).
 
+  elem_ctx_.push_back({frames_.size(), row, row_key});
   frames_.push_back(std::move(frame));
   struct Pop {
     std::vector<Frame>* f;
-    ~Pop() { f->pop_back(); }
-  } pop{&frames_};
+    std::vector<ElemCtx>* c;
+    ~Pop() { f->pop_back(); c->pop_back(); }
+  } pop{&frames_, &elem_ctx_};
   return render();
 }
 
@@ -2585,6 +2680,21 @@ Fragment Translator::with_join_binders(const RelationalPlan& plan,
 
 Fragment Translator::agg_body(const std::string& name, const SNodePtr& body,
                               const Source& src, const SNode& n) {
+  // A FILTER's predicate sees the scope outside the aggregate and its own
+  // binder, and nothing else.
+  const auto render_filter = [&](const Filter& f) {
+    const ElemCtx ctx = elem_ctx_.back();
+    ScopeCut cut(this, ctx.outer);
+    Frame frame;
+    frame_set(frame, f.binder, ctx.elem);
+    frame_set(frame, "_K", ctx.key);
+    frames_.push_back(std::move(frame));
+    struct Pop {
+      std::vector<Frame>* f;
+      ~Pop() { f->pop_back(); }
+    } pop{&frames_};
+    return require_bool(node(f.body), f.body->pos(), "FILTER");
+  };
   Fragment q = node(body);
   if (name == "SUM") require_num(q, body->pos(), name);
   else require_bool(q, body->pos(), name);
@@ -2597,7 +2707,7 @@ Fragment Translator::agg_body(const std::string& name, const SNodePtr& body,
   // and bindings() walks the text, so the two orders differ here by
   // construction.
   for (const Filter& f : src.filters) {
-    const Fragment p = require_bool(node(f.body), f.body->pos(), "FILTER");
+    const Fragment p = render_filter(f);
     if (name == "SUM") {
       q = case_when(p, q, literal(Value::num("0"), SqlKind::Num), n.pos());
     } else if (name == "ALL") {
@@ -2763,6 +2873,14 @@ Fragment Translator::has(const SNode& n) {
 
 Fragment Translator::join_aggregate(const SNode& n) {
   const Source src = classify(n.kids()[0]);
+  // FILTER yields a list; ALL, ANY, SUM and COUNT absorb it (§7.5) and JOIN
+  // does not. Dropping the FILTER joined the WHOLE list (LISP-C6).
+  if (!src.filters.empty()) {
+    refuse("E_SQL_SHAPE",
+           "JOIN over a FILTER would have to know which elements the filter "
+           "kept; only ALL, ANY, SUM and COUNT absorb a FILTER",
+           n.kids()[0]->pos());
+  }
 
   if (src.shape == Source::Shape::Relation) {
     const RelationSpec& rel = *src.relation;
@@ -2776,11 +2894,14 @@ Fragment Translator::join_aggregate(const SNode& n) {
              n.pos());
     }
     const Fragment body = column_ref(*scalar);
+    require_join_text(body, n.pos(), "a JOIN element");
     const std::string skel = skeleton("join", n.pos());
     // The separator is rendered only after the skeleton is known to exist.
+    const Fragment sep = node(n.kids()[1]);
+    require_join_text(sep, n.kids()[1]->pos(), "the JOIN separator");
     SlotMap slots = merge_slots(
         relation_slots(rel),
-        SlotMap{{"body", {Slot{body}}}, {"sep", {Slot{node(n.kids()[1])}}}});
+        SlotMap{{"body", {Slot{body}}}, {"sep", {Slot{sep}}}});
     return Fragment(fill_named(skel, slots, n.pos()), SqlKind::Text, dialect_);
   }
 
@@ -2788,11 +2909,15 @@ Fragment Translator::join_aggregate(const SNode& n) {
   for (const auto& [key, elem] : src.elements) {
     // Rendered afresh per gap, never spliced twice: N-1 separators means N-1
     // identical bound values, which is correct.
-    if (!parts.empty()) parts.push_back(node(n.kids()[1]));
+    if (!parts.empty()) {
+      parts.push_back(node(n.kids()[1]));
+      require_join_text(parts.back(), n.kids()[1]->pos(), "the JOIN separator");
+    }
     const Binder held = elem;
     parts.push_back(with_element(src, "_", held, key, n, [&] {
       return from_binder(held, n);
     }));
+    require_join_text(parts.back(), n.pos(), "a JOIN element");
   }
   if (parts.empty()) return literal(Value::text(""), SqlKind::Text);
   if (parts.size() == 1) return parts[0];
@@ -3036,6 +3161,7 @@ std::optional<RelationalPlan> Translator::analyze_pipeline(const SNodePtr& ast) 
   plan.correlate = rel.correlate;
 
   std::reverse(steps.begin(), steps.end());
+  if (getenv("SQLDBG")) { for (auto& st : steps) fprintf(stderr, "STEP %s at %d\n", st->s().c_str(), st->pos().col); }
 
   for (const auto& step : steps) {
     const std::string& name = step->s();
@@ -3658,7 +3784,7 @@ Fragment Translator::compile_statement(const RelationalPlan& plan) {
   if (plan.correlate && !plan.correlate->empty()) {
     Fragment::Part cp;
     cp.is_slot = false;
-    cp.sql = *plan.correlate;
+    cp.sql = "(" + *plan.correlate + ")";
     cond_parts.push_back({cp});
   }
   in_where_ = true;

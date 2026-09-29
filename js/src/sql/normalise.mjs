@@ -6,6 +6,7 @@
 // expression it held, and anything that cannot be is refused with a position.
 
 import { MAX_DEPTH } from '../eval.mjs';
+import { MAX_SQL_NODES } from '../_limits.mjs';
 import { bindingForm } from '../registry.mjs';
 import * as constants from './constants.mjs';
 import { refuse } from './errors.mjs';
@@ -37,6 +38,7 @@ export function run(ast, constNames = null, ctx = null) {
   // Object.prototype name, so `constructor = 1; constructor` would inline a
   // function.
   const defs = new Map();
+  defs.constNames = constNames ?? new Map();
 
   // Counting starts where the evaluator's count would stand: the `;` sequence
   // costs a level and each assignment it inlines one more (spec §6.4), so
@@ -79,6 +81,12 @@ function record(s, defs, constNames, ctx, depth = 0) {
   const name = t.name;
 
   const value = substitute(s.value, defs, [], depth);
+  // A helper's text is shared where it is read, so `X1 = X0 + X0; X2 = X1 + X1;
+  // ...` is small as a graph and exponential as a tree, and the constant test just
+  // below walks the tree. Its expanded size is known cheaply, node by node, and a
+  // definition already past the translator's budget is refused here rather than
+  // after that walk (E_SQL_SIZE; docs/internals/sql-translation.md §7.4).
+  expandedSize(value, defs.sizes ??= new Map(), s.pos);
 
   // Validated here, and only here, because after this the subtree may be gone: a
   // definition nothing reads is dropped, so `A = 1 / 0; TRUE` translated to
@@ -149,8 +157,14 @@ function substitute(node, defs, bound, depth = 0) {
   }
   const t = node.t;
   if (t === 'var') {
-    if (bound.includes(node.name)) return node;
-    return defs.has(node.name) ? defs.get(node.name) : node;
+    if (node.binding || bound.includes(node.name)) return node;
+    if (!defs.has(node.name)) return node;
+    const def = defs.get(node.name);
+    // A read is a value, not a reference (spec §3.4): a keyed list read here is
+    // what it holds NOW, so a later `R[2] = 6` must not reach a `X = R` written
+    // before it, nor a write through X reach R. The entries' values are
+    // immutable nodes, so copying the list of entries is a copy (GO-C4).
+    return def.t === 'clist' ? new CList(def.pos, def.entries.map(([k, v]) => [k, v])) : def;
   }
 
   if (t === 'num' || t === 'text' || t === 'bool') return node;
@@ -195,13 +209,41 @@ function substitute(node, defs, bound, depth = 0) {
     // see, is the manifest's decision (bindingForm), shared with dependencies().
     // A binder argument is a name, not a read of one, and stays as written.
     const form = bindingForm(node.name, node.args, node.spec);
-    const inner = form ? [...bound, ...form.binds] : bound;
-    const args = node.args.map((arg, i) => {
+    // A named binder is renamed apart before anything is inlined under it. A
+    // definition is written where it is written and read where it is read, and a
+    // free name in it means what it meant at the assignment: `X2 = A; ALL((5, 6),
+    // A, X2 > 0)` must read the column A in X2, not the element. Renaming the
+    // binder, and every read of it in the body that is still its own, leaves no
+    // name for the inlined text to be captured by (JS-C26).
+    let args = node.args;
+    let binds = form ? form.binds : [];
+    if (form) {
+      const fresh = new Map();
+      args = args.map((arg, i) => {
+        if (form.scopes[i] !== 'binder' || arg.t !== 'var') return arg;
+        // Only when something could be captured: a definition that could be
+        // inlined below mentions the name, or the name is a value binding the
+        // constant test would otherwise still see under the binder. Anything else
+        // is left as written.
+        if (!defs.constNames.has(arg.name)
+            && ![...defs.values()].some((def) => mentions(def, arg.name))) return arg;
+        const apart = `${arg.name}\u0001${defs.freshCounter = (defs.freshCounter ?? 0) + 1}`;
+        fresh.set(arg.name, apart);
+        return { ...arg, name: apart };
+      });
+      if (fresh.size > 0) {
+        args = args.map((arg, i) => (form.scopes[i] === 'inner'
+          ? renameFree(arg, fresh) : arg));
+        binds = binds.map((b) => fresh.get(b) ?? b);
+      }
+    }
+    const inner = form ? [...bound, ...binds] : bound;
+    const out = args.map((arg, i) => {
       const scope = form ? form.scopes[i] : 'outer';
       if (scope === 'binder') return arg;
       return substitute(arg, defs, scope === 'inner' ? inner : bound, d);
     });
-    return { ...node, args };
+    return { ...node, args: out };
   }
 
   return node;
@@ -235,4 +277,85 @@ function flatten(items, defs, bound, depth = 0) {
     out.push(s);
   }
   return out;
+}
+
+// Rename the free reads of each name in `map` (old -> new) inside `node`, leaving
+// alone any read that a nested binder of the same name captures.
+function renameFree(node, map) {
+  const t = node.t;
+  if (t === 'var') return map.has(node.name) ? { ...node, name: map.get(node.name) } : node;
+  if (t === 'un') return { ...node, x: renameFree(node.x, map) };
+  if (t === 'bin') return { ...node, l: renameFree(node.l, map), r: renameFree(node.r, map) };
+  if (t === 'index') return { ...node, obj: renameFree(node.obj, map), idx: renameFree(node.idx, map) };
+  if (t === 'list') return { ...node, items: node.items.map((x) => renameFree(x, map)) };
+  if (t === 'clist') {
+    const c = new CList(node.pos, node.entries.map(([k, v]) => [k, renameFree(v, map)]));
+    return c;
+  }
+  if (t === 'call') {
+    const form = bindingForm(node.name, node.args, node.spec);
+    const shadowed = form ? form.binds : [];
+    let innerMap = map;
+    if (shadowed.some((b) => map.has(b))) {
+      innerMap = new Map([...map].filter(([k]) => !shadowed.includes(k)));
+    }
+    const args = node.args.map((arg, i) => {
+      const scope = form ? form.scopes[i] : 'outer';
+      if (scope === 'binder') return arg;
+      return renameFree(arg, scope === 'inner' ? innerMap : map);
+    });
+    return { ...node, args };
+  }
+  return node;
+}
+
+// Does the name occur anywhere in the node (a superset of "occurs free")?
+function mentions(node, name) {
+  if (!node) return false;
+  const t = node.t;
+  if (t === 'var') return node.name === name;
+  if (t === 'un') return mentions(node.x, name);
+  if (t === 'bin') return mentions(node.l, name) || mentions(node.r, name);
+  if (t === 'index') return mentions(node.obj, name) || mentions(node.idx, name);
+  if (t === 'list') return node.items.some((x) => mentions(x, name));
+  if (t === 'clist') return node.entries.some(([, v]) => mentions(v, name));
+  if (t === 'call') return node.args.some((x) => mentions(x, name));
+  return false;
+}
+
+// The size of `node` counted as a tree, from a memo keyed by node identity, so a
+// subtree shared n times is measured once. Iterative; refuses past the budget.
+function expandedSize(root, memo, pos) {
+  const stack = [[root, false]];
+  while (stack.length > 0) {
+    const [node, done] = stack.pop();
+    if (!node || memo.has(node)) continue;
+    const kids = children(node);
+    if (!done) {
+      stack.push([node, true]);
+      for (const k of kids) if (k && !memo.has(k)) stack.push([k, false]);
+      continue;
+    }
+    let size = 1;
+    for (const k of kids) size += k ? (memo.get(k) ?? 1) : 0;
+    if (size > MAX_SQL_NODES) {
+      refuse('E_SQL_SIZE',
+        `this definition expands to more than ${MAX_SQL_NODES} nodes once every read of `
+        + 'a helper is counted', pos);
+    }
+    memo.set(node, size);
+  }
+  return memo.get(root) ?? 1;
+}
+
+function children(node) {
+  switch (node.t) {
+    case 'un': return [node.x];
+    case 'bin': return [node.l, node.r];
+    case 'index': return [node.obj, node.idx];
+    case 'list': return node.items;
+    case 'clist': return node.entries.map(([, v]) => v);
+    case 'call': return node.args;
+    default: return [];
+  }
 }

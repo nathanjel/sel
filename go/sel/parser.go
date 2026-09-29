@@ -4,6 +4,7 @@ package sel
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/nathanjel/sel/go/internal/decimal"
 )
@@ -241,7 +242,11 @@ func (p *Parser) parseTerm(minBp int) *Node {
 		}
 
 		if assoc == 'R' {
+			// Counted like an assignment (SPEC §6.4): `??` and `???` are the
+			// other right-associative operators.
+			p.enter(t.Pos)
 			right := p.parseTerm(bp)
+			p.leave()
 			n := NewNode(NodeBin, t.Pos)
 			n.S = t.Value
 			n.L = left
@@ -359,7 +364,6 @@ func (p *Parser) parsePipeStep(left *Node) *Node {
 			if arg.T == NodeVar && arg.S == "_" && !arg.Grouped {
 				args[i] = left
 				hasPlaceholder = true
-				break
 			}
 		}
 	}
@@ -463,6 +467,31 @@ func finishCall(nameTok Token, spec *Spec, args []*Node) *Node {
 		problem := spec.ArityError(count)
 		if problem != "" {
 			fail("E_ARITY", problem, nameTok.Pos)
+		}
+	}
+	// A literal pattern is checked when the program is compiled, not when the
+	// call runs, so a bad one in a branch that never executes is still refused
+	// (SPEC §7.8). A computed pattern is checked when it is used.
+	switch spec.Name {
+	case "RMATCH", "RFIND", "RGROUPS", "RREPLACE":
+		if len(args) > 0 && args[0].T == NodeText {
+			// The ambiguity analysis folds case under `i`, so a literal flag is
+			// part of what is checked. A non-ASCII pattern under `i` is E_BAD_ARG
+			// when the call runs (compileRegex), not a syntax question here.
+			flagAt := 2
+			if spec.Name == "RREPLACE" {
+				flagAt = 3
+			}
+			ic := len(args) > flagAt && args[flagAt].T == NodeText && strings.Contains(args[flagAt].S, "i")
+			if ic {
+				for _, r := range args[0].S {
+					if r > 0x7F {
+						ic = false
+						break
+					}
+				}
+			}
+			parseRegexIC(args[0].S, ic, args[0].Pos)
 		}
 	}
 	n := NewNode(NodeCall, nameTok.Pos)

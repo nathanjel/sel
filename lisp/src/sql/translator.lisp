@@ -27,6 +27,11 @@
   (const-names '() :type list)
   (const-root nil)
   (depth 0 :type fixnum)
+  ;; Nodes dispatched so far, charged again on every re-entry of an inlined or
+  ;; unrolled subtree: the E_SQL_SIZE budget (docs/internals/sql-translation.md
+  ;; 7.4). Counted here, before constant folding or rendering, so a refusal costs
+  ;; work bounded by the limit and not by what the program would expand to.
+  (nodes 0 :type fixnum)
   (statement-plan nil)
   (in-where nil :type boolean))
 
@@ -95,6 +100,12 @@ a binder over a variable."
 ;;; --- the walk -------------------------------------------------------------
 
 (defun walk-node (tr n)
+  (when (> (incf (translator-nodes tr)) sel::+limit-max-sql-nodes+)
+    (refuse "E_SQL_SIZE"
+            (format nil "this program expands to more than ~a nodes of SQL once ~
+its helpers and static lists are inlined; SEL evaluates it without the ~
+expansion, but a database cannot be asked to parse it"
+                    sel::+limit-max-sql-nodes+)))
   ;; Bounded at the evaluator's own limit. Nothing bounded it, so a flat chain
   ;; of 201 terms over a column translated -- and the evaluator answers E_DEPTH
   ;; for that same expression.
@@ -881,21 +892,30 @@ neither; SEL answers E_NOT_TEXT here rather than spelling it 1 or true" where)
 (defun unify-kinds (fs pos)
   "The one kind a set of branches all produce.
 
-UNKNOWN unifies with anything: that is what it is for. Two KNOWN kinds that
-differ are another matter, and used to yield UNKNOWN as well. They cannot: SQL
-types the whole CASE, and there is no rendering of the result that agrees with
-SEL's. IF(TRUE, TRUE, \"A-1\") is the one the fuzz lane found."
-  (let ((kind nil))
-    (dolist (f fs (or kind :unknown))
+Two KNOWN kinds that differ cannot be unified: SQL types the whole CASE, and
+there is no rendering of the result that agrees with SEL's.
+IF(TRUE, TRUE, \"A-1\") is the one the fuzz lane found.
+
+And an UNKNOWN branch keeps the whole result UNKNOWN. It used to unify with
+anything, which let a declared TEXT default LAUNDER an undeclared column: in
+`IF(p, F, TRUE) AND TRUE` the CASE was called BOOL because its else was, and the
+database was then asked to evaluate `F` as a boolean where SEL would raise
+E_NOT_BOOL for a text. UNKNOWN is a fact about what the value might be, and a
+branch that might be anything makes the result might-be-anything -- so the guard
+of whatever position consumes it fires (docs/internals/sql-kinds.md 5)."
+  (let ((kind nil) (unknown nil))
+    (dolist (f fs)
       (let ((k (fragment-kind f)))
-        (unless (eq k :unknown)
-          (cond ((null kind) (setf kind k))
-                ((not (eq kind k))
-                 (refuse "E_SQL_SHAPE"
-                         (format nil "these branches produce different kinds — ~
+        (if (eq k :unknown)
+            (setf unknown t)
+            (cond ((null kind) (setf kind k))
+                  ((not (eq kind k))
+                   (refuse "E_SQL_SHAPE"
+                           (format nil "these branches produce different kinds — ~
 ~a and ~a — and SQL gives the whole expression one type, which cannot match ~
 SEL's for both" (kind-name kind) (kind-name k))
-                         pos))))))))
+                           pos))))))
+    (if unknown :unknown (or kind :unknown))))
 
 (defun ret-kind (entry args pos)
   (let ((ret (getf entry :ret)))
@@ -1006,17 +1026,36 @@ argument(s)" what d n)
       (%fragment (emit-fill d (template-of tr entry args variant what pos) args pos)
                  (ret-kind entry args pos) d))))
 
-(defun fold-pairwise (tr op parts pos)
-  "Left-associative, through the operator's OWN template, so an unrolled
-aggregate and a hand-written chain produce identical bytes. Never called with an
-empty list: each caller supplies its aggregate's identity value instead, and
-those differ per aggregate."
+(defconstant +balanced-fold-above+ 256)
+
+(defun fold-left (tr op parts pos)
   (let ((acc (first parts)))
     (dolist (nxt (rest parts) acc)
       ;; Recomputed at EVERY step from the accumulator's CURRENT kind: for `&`
       ;; the accumulator becomes BIN as soon as any operand is, and stays BIN.
       (let ((pair (list acc nxt)))
         (setf acc (apply-entry tr :ops op pair pos (variant-for op pair)))))))
+
+(defun fold-balanced (tr op parts n pos)
+  "Above 256 operands a left fold is a tree N deep, and the servers cap expression
+depth (SQLite 1000, MariaDB/MySQL by thread stack). The split is exact and
+deterministic so every host renders the same bytes: the left half is the first
+ceil(n/2) operands (docs/internals/sql-translation.md 7.1). Recursion depth is
+log2 n."
+  (if (<= n +balanced-fold-above+)
+      (fold-left tr op parts pos)
+      (let* ((k (ceiling n 2))
+             (left (fold-balanced tr op (subseq parts 0 k) k pos))
+             (right (fold-balanced tr op (subseq parts k) (- n k) pos))
+             (pair (list left right)))
+        (apply-entry tr :ops op pair pos (variant-for op pair)))))
+
+(defun fold-pairwise (tr op parts pos)
+  "Left-associative up to 256 operands, balanced above that, through the
+operator's OWN template, so an unrolled aggregate and a hand-written chain produce
+identical bytes. Never called with an empty list: each caller supplies its
+aggregate's identity value instead, and those differ per aggregate."
+  (fold-balanced tr op parts (length parts) pos))
 
 ;;; --- operators ------------------------------------------------------------
 
@@ -1214,7 +1253,12 @@ occasionally what you want."
     (when (and alias (plusp (length alias)))
       (setf from (concatenate 'string from " " (emit-ident d alias))))
     (list (cons "from" (list from))
-          (cons "corr" (list (or corr (lex-text d "true")))))))
+          ;; A correlate the application supplied is parenthesised (CPP-C56): it is
+          ;; spliced before `AND body`, so `a = o.id OR b = o.id` would bind the
+          ;; AND to its second operand alone. The default TRUE stays bare.
+          (cons "corr" (list (if corr
+                                 (concatenate 'string "(" corr ")")
+                                 (lex-text d "true")))))))
 
 ;;; --- conditionals ---------------------------------------------------------
 
@@ -1866,10 +1910,18 @@ from \"1\", and SQL has no row position to compare against")))
     (push frame (translator-frames tr))
     (unwind-protect (funcall render) (pop (translator-frames tr)))))
 
-(defun agg-body (tr name body src n)
+(defun agg-body (tr name body src n &optional unrolled)
   (let ((q (walk-node tr body)))
     (if (equal name "SUM")
-        (require-num q (snode-pos body) name)
+        (progn
+          (require-num q (snode-pos body) name)
+          ;; A body nobody has vouched for is a numeric position like any other
+          ;; (docs/internals/sql-kinds.md 5a). In an UNROLL the elements are added
+          ;; with `+`, NULL propagates through it, so the plain operand guard is
+          ;; enough; a relation or group SUM is guarded as a whole instead
+          ;; (GUARDED-SUM), because SUM skips NULL.
+          (when (and unrolled (eq (fragment-kind q) :unknown))
+            (setf q (guard-numeric tr q body))))
         (require-bool q (snode-pos body) name))
     ;; Filters are innermost-first and each wraps the accumulator, so the
     ;; OUTERMOST filter ends up the OUTERMOST wrapper.
@@ -1891,7 +1943,32 @@ from \"1\", and SQL has no row position to compare against")))
                               (snode-pos n)))
                 (t (apply-entry tr :ops "AND" (list p q) (snode-pos n)))))))))
 
+(defun guarded-sum-skeleton (tr tpl body pos)
+  "The all-or-nothing form of a SUM whose body is UNKNOWN (docs/internals/
+sql-kinds.md 5a): the sum is NULL unless EVERY element passes the numeric test.
+`SUM` skips NULL and the layer's COALESCE(SUM(..), 0) turns nothing-left into 0,
+so guarding each element would let a refused element vanish. Returns the template
+with the body slot split into {test} and {body}, and the two fragments."
+  (multiple-value-bind (test cast) (split-numeric-guard (translator-dialect tr) body pos)
+    (let ((old "COALESCE(SUM({body}), 0)"))
+      (unless (search old tpl)
+        (bad "the sum skeleton has no ~a, so it cannot be guarded as a whole" old))
+      (values (replace-all tpl old
+                           "CASE WHEN COUNT(*) = COUNT(CASE WHEN ({test}) THEN 1 END) THEN COALESCE(SUM({body}), 0) ELSE NULL END")
+              test cast))))
+
 (defun relation-aggregate (tr name rel body n)
+  (when (and (equal name "SUM") (eq (fragment-kind body) :unknown))
+    (multiple-value-bind (tpl test cast)
+        (guarded-sum-skeleton tr (skeleton tr (agg-skeleton name) (snode-pos n))
+                              body (snode-pos n))
+      (return-from relation-aggregate
+        (%fragment (fill-named tr tpl
+                               (merge-slots (relation-slots tr rel)
+                                            (list (cons "test" (list test))
+                                                  (cons "body" (list cast))))
+                               (snode-pos n))
+                   (agg-returns name) (translator-dialect tr)))))
   (let ((is-separate (or (equal (getf rel :prefilter) "separate")
                          (and (null (getf rel :prefilter)) (fragment-separate-prefilter body)))))
     (if (and (equal name "ANY") (fragment-prefilter body) is-separate)
@@ -1932,7 +2009,7 @@ can only be the thing another aggregate iterates" name)
                                 n)))
         (let ((parts (loop for cell in (source-elements src)
                            collect (with-element tr src binder-name (cdr cell) (car cell) n
-                                                 (lambda () (agg-body tr name body src n))))))
+                                                 (lambda () (agg-body tr name body src n t))))))
           (cond
             ;; Spec §7.3's empty cases.
             ((null parts)
@@ -2010,9 +2087,27 @@ expression here knows" (snode-pos n)))
                                            t))
                     :bool))))
 
+(defun require-joinable (f pos)
+  "JOIN concatenates text and numbers, as `&` does; a BOOL or BIN element or
+separator has no SQL rendering that agrees with SEL's (docs/internals/
+sql-kinds.md 5), and a refusal is the only honest answer (LISP-C24, PY-C19)."
+  (when (member (fragment-kind f) '(:bool :bin))
+    (refuse "E_SQL_SHAPE"
+            (format nil "JOIN joins text and numbers, and this is ~a"
+                    (kind-name (fragment-kind f)))
+            pos))
+  f)
+
 (defun translate-join (tr n)
   (let ((src (classify tr (first (sel::node-items n))))
         (sep-node (second (sel::node-items n))))
+    ;; FILTER yields a list, and only ALL, ANY, SUM and COUNT absorb it (docs
+    ;; 7.5). JOIN used to drop the filter and join the whole list (LISP-C6).
+    (when (source-filters src)
+      (refuse "E_SQL_SHAPE"
+              "JOIN over a FILTER is not translated: only ALL, ANY, SUM and COUNT ~
+absorb one, and dropping it would join elements SEL leaves out"
+              (snode-pos (first (sel::node-items n)))))
     (when (eq (source-shape src) :relation)
       (let* ((rel (source-relation src))
              (scalar (getf rel :scalar))
@@ -2024,7 +2119,7 @@ expression here knows" (snode-pos n)))
           (refuse "E_SQL_SHAPE"
                   "JOIN over a relation needs the binding to name a \"scalar\" field"
                   (snode-pos n)))
-        (let ((body (column-ref tr (cdr cell)))
+        (let ((body (require-joinable (column-ref tr (cdr cell)) (snode-pos n)))
               ;; The separator is rendered only after the skeleton is known to
               ;; exist.
               (skel (skeleton tr "join" (snode-pos n))))
@@ -2032,17 +2127,21 @@ expression here knows" (snode-pos n)))
             (%fragment (fill-named tr skel
                                    (merge-slots (relation-slots tr rel)
                                                 (list (cons "body" (list body))
-                                                      (cons "sep" (list (walk-node tr sep-node)))))
+                                                      (cons "sep" (list (require-joinable
+                                                                         (walk-node tr sep-node)
+                                                                         (snode-pos sep-node))))))
                                    (snode-pos n))
                        :text (translator-dialect tr))))))
     (let ((parts '()))
       (dolist (cell (source-elements src))
         ;; Rendered afresh per gap, never spliced twice: N-1 separators means N-1
         ;; identical bound values, which is correct.
-        (when parts (push (walk-node tr sep-node) parts))
+        (when parts (push (require-joinable (walk-node tr sep-node) (snode-pos sep-node)) parts))
         (let ((held (cdr cell)))
-          (push (with-element tr src "_" held (car cell) n
-                              (lambda () (from-binder tr held n)))
+          (push (require-joinable
+                 (with-element tr src "_" held (car cell) n
+                               (lambda () (from-binder tr held n)))
+                 (snode-pos n))
                 parts)))
       (setf parts (nreverse parts))
       (cond ((null parts) (make-literal tr (sel:make-text "") :text))
@@ -2052,6 +2151,17 @@ expression here knows" (snode-pos n)))
             (t (fold-pairwise tr "&" parts (snode-pos n)))))))
 
 ;;; --- IN -------------------------------------------------------------------
+
+(defun require-comparable-scalar (f pos)
+  "IN over a relation compares text: a BOOL or BIN needle (or column) has no
+SQL rendering that agrees with SEL's, and the list form refuses the same kinds
+(`F IN (T, T)`), so this does too."
+  (when (member (fragment-kind f) '(:bool :bin))
+    (refuse "E_SQL_SHAPE"
+            (format nil "IN over a relation compares text, and this is ~a"
+                    (kind-name (fragment-kind f)))
+            pos))
+  f)
 
 (defun translate-in (tr n)
   (let* ((rhs (sel::node-r n))
@@ -2094,9 +2204,13 @@ projected column as a relation with that one field." (sel::node-s rhs) (length f
                               ;; TEXT-OPERAND is applied unconditionally -- there
                               ;; is no two-BIN skip as in TRANSLATE-BINARY.
                               (list (cons "needle" (list (emit-text-operand
-                                                          d (walk-node tr (sel::node-l n)))))
+                                                          d (require-comparable-scalar
+                                                             (walk-node tr (sel::node-l n))
+                                                             (snode-pos (sel::node-l n))))))
                                     (cons "body" (list (emit-text-operand
-                                                        d (column-ref tr (cdr cell)))))))
+                                                        d (require-comparable-scalar
+                                                           (column-ref tr (cdr cell))
+                                                           (snode-pos rhs)))))))
                              (snode-pos n))
                  :bool d)))))))
     ;; --- element collection. NIL and an empty list are DIFFERENT states: no
@@ -2140,7 +2254,13 @@ projected column as a relation with that one field." (sel::node-s rhs) (length f
 SQL counterpart" (snode-pos e)))
             ;; RAW, not NEEDLE: needle's kind is always TEXT after the cast.
             (require-comparable-kinds raw f "IN" (snode-pos e))
-            (let ((item (if is-exact f (emit-text-operand d f))))
+            ;; A declared `exact` column opts out of the cast and keeps its own
+            ;; collation, but a NUMBER item beside it is still cast: bare
+            ;; `t = 3` compares numerically on MariaDB and MySQL, where
+            ;; 'x' = 0 and '25/298' = 25 (PY-C20, CPP-C30, LISP-C25).
+            (let ((item (if (and is-exact (not (eq (fragment-kind f) :num)))
+                            f
+                            (emit-text-operand d f))))
               ;; The map key is EQL with variant text; the IN entry is not used here.
               (push (apply-entry tr :ops "EQL" (list needle item)
                                  (snode-pos e) "text")
@@ -2153,6 +2273,8 @@ SQL counterpart" (snode-pos e)))
 ;; The optimizer's list, not a second copy: one vocabulary of pipeline
 ;; operators per host, or the planner and the translator drift apart.
 
+(defconstant +max-slice-count+ 9223372036854775807)
+
 (defun eval-int-param (tr n op)
   (when (clist-p n)
     (refuse "E_SQL_SHAPE" (format nil "~a count cannot contain dynamic lists" op) (snode-pos n)))
@@ -2162,11 +2284,15 @@ SQL counterpart" (snode-pos e)))
       (refuse "E_NOT_NUM" (format nil "~a count must be a number" op) (snode-pos n)))
     (let ((d (handler-case (sel::as-dec val (snode-pos n))
                (sel:sel-error (e) (refuse-as-sel e n)))))
-      (unless (zerop (sel::dec-scale d))
+      ;; A whole number written with a scale (2.0, 0.0, -0) is that number: SEL's
+      ;; own TAKE accepts it, so the translator does (docs 11.6).
+      (unless (sel::dec-integerp d)
         (refuse "E_NOT_INT" (format nil "~a count must be an integer" op) (snode-pos n)))
-      (when (sel::dec-neg d)
+      (when (and (sel::dec-neg d) (not (sel::dec-zerop d)))
         (refuse "E_RANGE" (format nil "~a count cannot be negative" op) (snode-pos n)))
-      (sel::dec-to-int d))))
+      ;; Clamped to 2^63 - 1, the largest count every target accepts: a count past
+      ;; the end of a list is all of it (TAKE) or none of it (DROP) in SEL.
+      (min (sel::dec-to-int d) +max-slice-count+))))
 
 (defun analyze-sort-step (tr step plan)
   (let* ((name (sel::node-s step))
@@ -2873,19 +2999,16 @@ FILTER between: SQL keeps a bucket's members only for the projection that ends t
                    (refuse "E_ARITY" "DROP takes 2 arguments" pos))
                  (let ((off (eval-int-param tr (second args) "DROP")))
                    ;; DROP consumes the bounded slice, not the original source.
-                   ;; Keep sums within the exact integer range shared by hosts;
-                   ;; a derived boundary preserves larger offsets without addition.
+                   ;; Offsets merge first and the SUM is clamped to 2^63 - 1 (docs
+                   ;; 11.6): DROP(2^63-1) .> DROP(1) is the offset 2^63-1, never a
+                   ;; wrapped or nested one.
                    (let ((skipped (if (relational-plan-limit plan)
                                       (min off (relational-plan-limit plan)) off)))
-                     (if (> (or (relational-plan-offset plan) 0)
-                            (- 9007199254740991 skipped))
-                         (setf plan (wrap-plan-as-derived-table tr plan)
-                               (relational-plan-offset plan) off)
-                         (progn
-                           (when (relational-plan-limit plan)
-                             (decf (relational-plan-limit plan) skipped))
-                           (setf (relational-plan-offset plan)
-                                 (+ (or (relational-plan-offset plan) 0) skipped)))))))
+                     (when (relational-plan-limit plan)
+                       (decf (relational-plan-limit plan) skipped))
+                     (setf (relational-plan-offset plan)
+                           (min (+ (or (relational-plan-offset plan) 0) skipped)
+                                +max-slice-count+)))))
 
                 ((member sname '("SORT" "SORT_DESC" "SORT_BY" "TOP" "TOP_DESC" "TOP_BY") :test #'equal)
                  ;; A sort after a LIMIT or OFFSET sorts the rows that survived
@@ -3055,7 +3178,8 @@ field is on both sides, and the binders are nested records")
           (let ((cond-parts '()))
             (when (and (relational-plan-correlate plan)
                        (plusp (length (relational-plan-correlate plan))))
-              (push (list (relational-plan-correlate plan)) cond-parts))
+              (push (list (concatenate 'string "(" (relational-plan-correlate plan) ")"))
+                    cond-parts))
             (setf (translator-in-where tr) t)
             (unwind-protect
                  (dolist (filter (relational-plan-filters plan))

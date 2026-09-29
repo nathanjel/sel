@@ -23,7 +23,7 @@ final class Registry
      */
     public static function define(array $spec): void
     {
-        $name = strtoupper($spec['name']);
+        $name = \Sel\Utf8::upper($spec['name']);
         if (isset(self::$table[$name])) {
             throw new \LogicException("SEL function {$name} defined twice");
         }
@@ -97,7 +97,7 @@ final class Registry
      */
     public static function bindingForm(string $name, array $args): ?array
     {
-        $upper = strtoupper($name);
+        $upper = \Sel\Utf8::upper($name);
         $forms = BuiltinManifest::FORMS[$upper] ?? null;
         if ($forms === null) {
             $spec = self::$table[$upper] ?? null;
@@ -157,7 +157,7 @@ final class Registry
             throw new \InvalidArgumentException(
                 "SEL function name must be ASCII letters, digits and _, starting with a letter: {$name}");
         }
-        $key = strtoupper($name);
+        $key = \Sel\Utf8::upper($name);
         if (in_array($key, Lexer::RESERVED, true)) {
             throw new \InvalidArgumentException("{$key} is a reserved word");
         }
@@ -195,7 +195,7 @@ final class Registry
      */
     public static function hostArity(string $name): ?array
     {
-        $key = strtoupper($name);
+        $key = \Sel\Utf8::upper($name);
         if (!isset(self::$host[$key])) {
             return null;
         }
@@ -204,7 +204,7 @@ final class Registry
 
     public static function lookup(string $name): ?array
     {
-        return self::$table[strtoupper($name)] ?? null;
+        return self::$table[\Sel\Utf8::upper($name)] ?? null;
     }
 
     /** @return list<string> */

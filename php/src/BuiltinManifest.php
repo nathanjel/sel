@@ -113,7 +113,6 @@ final class BuiltinManifest
         ],
         'BUCKET' => [
             [['outer', 'inner'], null, ['_', '_K']],
-            [['outer', 'binder', 'inner'], [1, 'name'], ['_K']],
             [['outer', 'inner', 'inner'], null, ['_', '_K']],
             [['outer', 'binder', 'inner', 'inner'], null, ['_K']],
         ],

@@ -10,6 +10,7 @@ Unicode whitespace set, and str.find would be right but is spelled out for the
 same reason the byte comparison is.
 """
 
+from .._budget import check_collection, check_text
 from ..errors import fail
 from ..registry import define
 from ..value import Value
@@ -70,6 +71,9 @@ def _replace(a, ctx):
     hay = a.text(2)
     if needle == '':
         fail('E_BAD_ARG', 'REPLACE needle must not be empty', a.pos_of(0))
+    if len(repl) > len(needle):
+        # The result is measured before it is built (SPEC 6.4).
+        check_text(len(hay) + hay.count(needle) * (len(repl) - len(needle)), a.pos)
     return Value.text(hay.replace(needle, repl))
 
 
@@ -81,6 +85,7 @@ def _split(a, ctx):
     sep = a.text(1)
     if sep == '':
         fail('E_BAD_ARG', 'SPLIT separator must not be empty', a.pos_of(1))
+    check_collection(hay.count(sep) + 1, a.pos)
     return Value._list_owned([Value.text(p) for p in hay.split(sep)])
 
 
@@ -125,7 +130,17 @@ define('LOWER', 1, 1, fn=lambda a, ctx: Value.text(_ascii_case(a.text(0), False)
 
 define('BACKWARDS', 1, 1, fn=lambda a, ctx: Value.text(a.text(0)[::-1]))
 
-define('REPEAT', 2, 2, fn=lambda a, ctx: Value.text(a.text(0) * a.non_neg_int(1)))
+def _repeat(a, ctx):
+    s = a.text(0)
+    n = a.non_neg_int(1)
+    # An empty result is never too large, whatever the count (SPEC 6.4).
+    if s == '' or n == 0:
+        return Value.text('')
+    check_text(len(s) * n, a.pos)
+    return Value.text(s * n)
+
+
+define('REPEAT', 2, 2, fn=_repeat)
 
 
 def _pad(a, left: bool):
@@ -136,8 +151,9 @@ def _pad(a, left: bool):
         fail('E_BAD_ARG', 'pad fill must not be empty', a.pos_of(2))
     if len(s) >= width:
         return Value.text(s)
+    check_text(width, a.pos)
     need = width - len(s)
-    padding = ''.join(fill[i % len(fill)] for i in range(need))
+    padding = (fill * (need // len(fill) + 1))[:need]
     return Value.text(padding + s if left else s + padding)
 
 

@@ -95,6 +95,12 @@ class Binder {
   };
 
   static Binder node(SNodePtr n);
+  // How many frames were in scope where this element was WRITTEN: an element
+  // is evaluated there, not inside the aggregate that iterates it (a static
+  // list's elements are written outside the binder they are bound to).
+  static constexpr std::size_t kUnscoped = static_cast<std::size_t>(-1);
+  std::size_t scope() const { return scope_; }
+  void set_scope(std::size_t n) { scope_ = n; }
   static Binder column(ColumnSpec c);
   static Binder row(std::shared_ptr<const RelationSpec> r);
   static Binder none(std::string reason);
@@ -123,6 +129,7 @@ class Binder {
   Binder() = default;
   Shape shape_ = Shape::None;
   RowModelPtr model_;
+  std::size_t scope_ = kUnscoped;
   SNodePtr node_;
   ColumnSpec column_;
   std::shared_ptr<const RelationSpec> relation_;
@@ -248,6 +255,10 @@ class Translator {
   using Frame = std::vector<std::pair<std::string, Binder>>;
 
   Fragment node(const SNodePtr& n);
+  Fragment node_in_scope(const SNodePtr& n);
+  // The constant names visible at this point: a binder reusing a constant
+  // binding's name shadows it.
+  const std::set<std::string>& visible_consts();
   Fragment dispatch(const SNodePtr& n);
 
   // The ONLY writer of params_ and param_kinds_.
@@ -289,6 +300,7 @@ class Translator {
   const Fragment& require_num(const Fragment& f, Pos pos, const std::string& where);
   // Void: the callers do not rebind.
   void require_not_bool(const Fragment& f, Pos pos, const std::string& where);
+  void require_join_text(const Fragment& f, Pos pos, const std::string& what);
   void require_not_bool_operand(const Fragment& f, Pos pos, const std::string& where);
   // Takes the NODE and not the Fragment, which is the whole point of it: the
   // guards above ask what the binding *declared*, and this asks what the
@@ -349,6 +361,7 @@ class Translator {
   };
 
   Source classify(const SNodePtr& src);
+  Source classify_impl(const SNodePtr& src);
   Fragment aggregate(const SNode& n);
   Fragment agg_body(const std::string& name, const SNodePtr& body,
                     const Source& src, const SNode& n);
@@ -425,8 +438,43 @@ class Translator {
   // Fragment reports, and the .sqlt cases can see that.
   std::vector<std::string> caveats_;
   std::vector<Frame> frames_;
+  // Frames a ScopeCut has taken out of view, outermost cut first. Nothing reads
+  // a name through them, but the self-nested-relation check has to see them.
+  std::vector<std::vector<Frame>> cut_;
+  // The element the innermost aggregate is rendering, for its FILTERs: each
+  // predicate is rendered in the scope OUTSIDE the aggregate plus its own
+  // binder, and nothing else.
+  struct ElemCtx {
+    std::size_t outer;   // frames_.size() before the aggregate's frame
+    Binder elem;
+    Binder key;
+  };
+  std::vector<ElemCtx> elem_ctx_;
+  // Hides frames_[keep..) for the lifetime of the object.
+  struct ScopeCut {
+    Translator* t;
+    std::vector<Frame> saved;
+    std::size_t keep;
+    ScopeCut(Translator* t_, std::size_t n) : t(t_), keep(n) {
+      if (n < t->frames_.size()) {
+        saved.assign(std::make_move_iterator(t->frames_.begin() + static_cast<std::ptrdiff_t>(n)),
+                     std::make_move_iterator(t->frames_.end()));
+        t->frames_.resize(n);
+      }
+      t->cut_.push_back({});
+      for (const Frame& f : saved) t->cut_.back().push_back(f);
+    }
+    ~ScopeCut() {
+      t->cut_.pop_back();
+      t->frames_.resize(std::min(t->frames_.size(), keep));
+      for (Frame& f : saved) t->frames_.push_back(std::move(f));
+    }
+    ScopeCut(const ScopeCut&) = delete;
+    ScopeCut& operator=(const ScopeCut&) = delete;
+  };
 
   std::set<std::string> const_names_;
+  std::set<std::string> eff_consts_;
   sel::Value const_root_ = sel::Value::none();
   int depth_ = 0;
   const RelationalPlan* statement_plan_ = nullptr;

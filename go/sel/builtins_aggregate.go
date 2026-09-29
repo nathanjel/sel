@@ -80,72 +80,52 @@ func aggregateWalk(args *Args, ctx *Context, visit visitFunc, bodyOverride *Node
 	return nil
 }
 
-func compareValues(a, b *Value) int {
-	aNull := a.IsNull()
-	bNull := b.IsNull()
-	if aNull && bNull {
+// sortRank is the kind rank of the total order (spec §7.3): NULL < BOOL <
+// numeric-looking text and numbers < other TEXT < BIN < lists and records.
+func sortRank(v *Value) int {
+	if v.IsNull() {
 		return 0
 	}
-	if aNull {
-		return -1
-	}
-	if bNull {
+	switch v.Kind {
+	case KindBool:
 		return 1
-	}
-
-	aNum := a.LooksNumeric()
-	bNum := b.LooksNumeric()
-	if aNum && bNum {
-		return decimal.Cmp(a.AsDecimal(Pos{}), b.AsDecimal(Pos{}))
-	}
-
-	if a.Kind == KindBool && b.Kind == KindBool {
-		av := 0
-		if a.boolVal {
-			av = 1
-		}
-		bv := 0
-		if b.boolVal {
-			bv = 1
-		}
-		if av < bv {
-			return -1
-		}
-		if av > bv {
-			return 1
-		}
-		return 0
-	}
-
-	if (a.Kind == KindText || a.Kind == KindBin) && (b.Kind == KindText || b.Kind == KindBin) {
-		return bytes.Compare(a.AsBytes(Pos{}), b.AsBytes(Pos{}))
-	}
-
-	rank := func(v *Value) int {
-		if v.IsNull() {
-			return 0
-		}
-		if v.Kind == KindBool {
-			return 1
-		}
+	case KindBin:
+		return 4
+	case KindText:
 		if v.LooksNumeric() {
 			return 2
 		}
-		if v.Kind == KindText {
-			return 3
-		}
-		if v.Kind == KindBin {
-			return 4
-		}
-		return 5
+		return 3
 	}
-	ra := rank(a)
-	rb := rank(b)
-	if ra < rb {
-		return -1
-	}
-	if ra > rb {
+	return 5
+}
+
+// compareValues is the total order every sort, TOP and bucket key uses. Values
+// of one rank compare within it (numbers by exact decimal value, text and BIN
+// bytewise, FALSE before TRUE); values of different ranks compare by rank.
+// Equal values tie, and the caller keeps input order for a tie.
+func compareValues(a, b *Value) int {
+	ra, rb := sortRank(a), sortRank(b)
+	if ra != rb {
+		if ra < rb {
+			return -1
+		}
 		return 1
+	}
+	switch ra {
+	case 1:
+		av, bv := 0, 0
+		if a.boolVal {
+			av = 1
+		}
+		if b.boolVal {
+			bv = 1
+		}
+		return av - bv
+	case 2:
+		return decimal.Cmp(a.AsDecimal(Pos{}), b.AsDecimal(Pos{}))
+	case 3, 4:
+		return bytes.Compare(a.AsBytes(Pos{}), b.AsBytes(Pos{}))
 	}
 	return 0
 }
@@ -158,18 +138,54 @@ type sortItem struct {
 
 func doSort(args *Args, ctx *Context, forcedDir string) *Value {
 	val := args.Val(0)
+
+	count := args.Count()
+	direction := forcedDir
+	if direction == "" {
+		direction = "ASC"
+	}
+
+	// The form, the binder and the direction are arguments like any other: they
+	// are evaluated and checked whether or not the list has anything in it
+	// (spec §7.4), so an empty list cannot hide a bad direction.
+	binder := "_"
+	var body *Node
+	if count == 2 {
+		body = args.Node(1)
+	} else if count == 3 {
+		if forcedDir != "" {
+			binder = args.Symbol(1)
+			body = args.Node(2)
+		} else if args.Node(2).T == NodeText {
+			body = args.Node(1)
+			direction = utf8.AsciiUpper(args.Text(2))
+		} else if args.IsSymbol(1) {
+			binder = args.Symbol(1)
+			body = args.Node(2)
+			direction = "ASC"
+		} else {
+			body = args.Node(1)
+			direction = utf8.AsciiUpper(args.Text(2))
+		}
+	} else if count == 4 {
+		binder = args.Symbol(1)
+		body = args.Node(2)
+		direction = utf8.AsciiUpper(args.Text(3))
+	}
+	if count > 1 && direction != "ASC" && direction != "DESC" {
+		posIdx := 2
+		if count == 4 {
+			posIdx = 3
+		}
+		fail("E_BAD_ARG", "sort direction must be 'ASC' or 'DESC'", args.PosOf(posIdx))
+	}
+
 	if val.IsNull() {
 		return NewListOwned(nil)
 	}
 	ents := val.Elements()
 	if len(ents) == 0 {
 		return NewListOwned(nil)
-	}
-
-	count := args.Count()
-	direction := forcedDir
-	if direction == "" {
-		direction = "ASC"
 	}
 
 	var indexed []sortItem
@@ -179,39 +195,6 @@ func doSort(args *Args, ctx *Context, forcedDir string) *Value {
 			indexed[i] = sortItem{item: e.Val, key: e.Val, idx: i}
 		}
 	} else {
-		binder := "_"
-		var body *Node
-		if count == 2 {
-			body = args.Node(1)
-		} else if count == 3 {
-			if forcedDir != "" {
-				binder = args.Symbol(1)
-				body = args.Node(2)
-			} else if args.Node(2).T == NodeText {
-				body = args.Node(1)
-				direction = utf8.AsciiUpper(args.Text(2))
-			} else if args.IsSymbol(1) {
-				binder = args.Symbol(1)
-				body = args.Node(2)
-				direction = "ASC"
-			} else {
-				body = args.Node(1)
-				direction = utf8.AsciiUpper(args.Text(2))
-			}
-		} else { // 4
-			binder = args.Symbol(1)
-			body = args.Node(2)
-			direction = utf8.AsciiUpper(args.Text(3))
-		}
-
-		if direction != "ASC" && direction != "DESC" {
-			posIdx := 2
-			if count == 4 {
-				posIdx = 3
-			}
-			fail("E_BAD_ARG", "sort direction must be 'ASC' or 'DESC'", args.PosOf(posIdx))
-		}
-
 		needsK := nodeContainsVar(body, "_K")
 		frame := map[string]*Value{binder: nil}
 		if needsK {
@@ -243,7 +226,8 @@ func doSort(args *Args, ctx *Context, forcedDir string) *Value {
 
 	out := make([]*Value, len(indexed))
 	for i, x := range indexed {
-		out[i] = x.item
+		// SPEC §3.4: SORT copies what it collects.
+		out[i] = x.item.CloneAt(2, args.Pos())
 	}
 	return NewListOwned(out)
 }
@@ -251,9 +235,6 @@ func doSort(args *Args, ctx *Context, forcedDir string) *Value {
 func doTop(args *Args, ctx *Context, forcedDir string) *Value {
 	val := args.Val(0)
 	limit := int(args.NonNegInt(args.Count() - 1))
-	if limit == 0 || val.IsNull() || val.Size() == 0 {
-		return NewListOwned(nil)
-	}
 
 	sortCount := args.Count() - 1
 	binder := "_"
@@ -297,7 +278,15 @@ func doTop(args *Args, ctx *Context, forcedDir string) *Value {
 		fail("E_BAD_ARG", "sort direction must be 'ASC' or 'DESC'", args.PosOf(dirIdx))
 	}
 
+	// TOP is TAKE(SORT(...), n): the direction is checked and the keys evaluated
+	// whatever n is, and only an empty or NULL source has nothing to sort.
+	if val.IsNull() {
+		return NewListOwned(nil)
+	}
 	ents := val.Elements()
+	if len(ents) == 0 {
+		return NewListOwned(nil)
+	}
 	needsK := body != nil && nodeContainsVar(body, "_K")
 	frame := map[string]*Value{}
 	if binder != "" {
@@ -340,7 +329,8 @@ func doTop(args *Args, ctx *Context, forcedDir string) *Value {
 	}
 	out := make([]*Value, limit)
 	for i := 0; i < limit; i++ {
-		out[i] = items[i].item
+		// SPEC §3.4: TOP follows SORT and copies what it collects.
+		out[i] = items[i].item.CloneAt(2, args.Pos())
 	}
 	return NewListOwned(out)
 }
@@ -363,9 +353,11 @@ type bucketGroup struct {
 
 func doBucket(args *Args, ctx *Context) *Value {
 	val := args.Val(0)
-	if val.IsNull() || val.Size() == 0 {
+	if val.IsNull() {
 		return NewListOwned(nil)
 	}
+	// A scalar is a one-element list (spec §7.3), so emptiness is asked of the
+	// elements and not of the children.
 	ents := val.Elements()
 	if len(ents) == 0 {
 		return NewListOwned(nil)
@@ -394,6 +386,7 @@ func doBucket(args *Args, ctx *Context) *Value {
 	}
 
 	table := make(map[uint64][]*bucketGroup)
+	byText := make(map[string]*bucketGroup)
 	var groups []*bucketGroup
 
 	ctx.PushFrame(frame)
@@ -406,6 +399,20 @@ func doBucket(args *Args, ctx *Context) *Value {
 		keyStr := ""
 		if aggNode == nil {
 			keyStr = bucketKeyText(groupKey, keyNode.Pos)
+		}
+		if aggNode == nil {
+			// The two-argument form keys a RECORD, and a record key is text: two
+			// keys with the same text are one group whatever their structure
+			// (spec §7.3). Grouping them by identity, as the three-argument form
+			// does, made the second group overwrite the first in the result.
+			if g, ok := byText[keyStr]; ok {
+				g.rows = append(g.rows, e.Val)
+			} else {
+				g := &bucketGroup{key: groupKey, keyStr: keyStr, rows: []*Value{e.Val}}
+				byText[keyStr] = g
+				groups = append(groups, g)
+			}
+			continue
 		}
 		h := groupKey.StructuralHash()
 		bucket := table[h]
@@ -431,7 +438,8 @@ func doBucket(args *Args, ctx *Context) *Value {
 		for _, g := range groups {
 			rowsCopy := make([]*Value, len(g.rows))
 			for i, r := range g.rows {
-				rowsCopy[i] = r.Clone()
+				// The rows sit in a list inside the result record: level 3.
+				rowsCopy[i] = r.CloneAt(3, args.Pos())
 			}
 			out.Set(g.keyStr, NewListOwned(rowsCopy))
 		}
@@ -446,7 +454,7 @@ func doBucket(args *Args, ctx *Context) *Value {
 	for i, g := range groups {
 		aggFrame[binder] = NewListOwned(g.rows)
 		aggFrame["_K"] = g.key
-		out[i] = args.EvalNode(aggNode)
+		out[i] = args.EvalNode(aggNode).CloneAt(2, args.Pos())
 	}
 	return NewListOwned(out)
 }
@@ -674,6 +682,12 @@ func extractJoinEqui(node *Node, b1, b2 string) *joinEqui {
 	if node == nil || node.T != NodeBin || (node.S != "==" && node.S != "$==") {
 		return nil
 	}
+	// One name for both sides: the right binder shadows the left (spec §7.4), so
+	// every read of it is the right row and there is no left-only key to extract.
+	// The general path answers that; the fast path must not.
+	if utf8.AsciiUpper(b1) == utf8.AsciiUpper(b2) {
+		return nil
+	}
 	leftNames := map[string]bool{
 		utf8.AsciiUpper(b1): true,
 		"_1":                true,
@@ -721,6 +735,9 @@ func canonicalJoinKey(v *Value, numeric bool) joinKey {
 		func() {
 			defer func() {
 				if r := recover(); r != nil {
+					if !isSelPanic(r) {
+						panic(r)
+					}
 					d = nil
 				}
 			}()
@@ -761,6 +778,9 @@ func canonicalJoinKey(v *Value, numeric bool) joinKey {
 	func() {
 		defer func() {
 			if r := recover(); r != nil {
+				if !isSelPanic(r) {
+					panic(r)
+				}
 				b = nil
 			}
 		}()
@@ -805,6 +825,9 @@ func evalBoolSafely(args *Args, conjunct *Node, ctx *Context) (keep bool, errOcc
 	d := ctx.Depth
 	defer func() {
 		if r := recover(); r != nil {
+			if !isSelPanic(r) {
+				panic(r)
+			}
 			ctx.Depth = d
 			errOccurred = true
 		}
@@ -1204,6 +1227,8 @@ func doLink(args *Args, ctx *Context, leftJoin bool) *Value {
 		}
 
 		emit := func(joined *Value) {
+			// A join's rows are a collection an operation builds (SPEC §6.4).
+			checkCollection(int64(position), "the join", args.Pos())
 			if numbered {
 				keyedEntries = append(keyedEntries, Entry{Key: strconv.Itoa(position), Val: joined})
 			} else {
@@ -1346,11 +1371,13 @@ func doLink(args *Args, ctx *Context, leftJoin bool) *Value {
 
 			if args.EvalNode(predicate).AsBool(predicate.Pos) {
 				matched = true
+				checkCollection(int64(len(output))+1, "the join", args.Pos())
 				output = append(output, projector.project(left, right))
 			}
 		}
 
 		if leftJoin && !matched {
+			checkCollection(int64(len(output))+1, "the join", args.Pos())
 			output = append(output, projector.project(left, nil))
 		}
 	}
@@ -1408,7 +1435,9 @@ func init() {
 		Fn: func(args *Args, ctx *Context) *Value {
 			var out []*Value
 			aggregateWalk(args, ctx, func(r *Value, k string, item *Value, body *Node) *Value {
-				out = append(out, r)
+				// SPEC §3.4: an aggregate copies what it collects. The copy sits one
+				// level down, inside the list being built.
+				out = append(out, r.CloneAt(2, args.Pos()))
 				return nil
 			}, nil)
 			return NewListOwned(out)
@@ -1506,7 +1535,7 @@ func init() {
 			if isDense {
 				aggregateWalk(args, ctx, func(r *Value, key string, item *Value, body *Node) *Value {
 					if r.AsBool(body.Pos) {
-						storage = append(storage, item)
+						storage = append(storage, item.CloneAt(2, args.Pos()))
 						if needsCustomKeys {
 							keys = append(keys, strconv.Itoa(origIdx))
 						}
@@ -1526,7 +1555,7 @@ func init() {
 				expectedIndex := 1
 				aggregateWalk(args, ctx, func(r *Value, key string, item *Value, body *Node) *Value {
 					if r.AsBool(body.Pos) {
-						storage = append(storage, item)
+						storage = append(storage, item.CloneAt(2, args.Pos()))
 						if !needsCustomKeys && key != strconv.Itoa(expectedIndex) {
 							needsCustomKeys = true
 							keys = make([]string, len(storage)-1)
@@ -1573,8 +1602,22 @@ func init() {
 			sep := args.Text(1)
 			ents := args.Val(0).Elements()
 			parts := make([]string, len(ents))
+			total := int64(0)
+			sepLen := runeLen(sep)
 			for i, e := range ents {
 				parts[i] = e.Val.AsText(args.PosOf(0))
+				total = satAdd(total, int64(len(parts[i])))
+				if i > 0 {
+					total = satAdd(total, int64(len(sep)))
+				}
+			}
+			// Bytes bound code points from above: count exactly only past the cap.
+			if total > maxTextLen {
+				exact := satMul(int64(len(ents)-1), sepLen)
+				for _, p := range parts {
+					exact = satAdd(exact, runeLen(p))
+				}
+				checkTextLen(exact, "JOIN's result", args.Pos())
 			}
 			return NewTextOwned(strings.Join(parts, sep))
 		},

@@ -27,13 +27,20 @@ export class Binder {
   static GROUP = GROUP;
   static PROJECTED = PROJECTED;
 
-  constructor(shape, payload, reason = null) {
+  constructor(shape, payload, reason = null, scope = null) {
     this.shape = shape;
     this.payload = payload;
     this.reason = reason;
+    // For a NODE: how many frames were open where the node was WRITTEN. The node
+    // is rendered later, inside frames its own text never saw, and a name in it
+    // means what it meant where it was written -- so it is rendered against that
+    // many frames and no more (lexical scope; docs/internals/sql-translation.md §7.4).
+    // Without it an element `A` was captured by an inner binder that happened to
+    // be called A.
+    this.scope = scope;
   }
 
-  static node(node) { return new Binder(NODE, node); }
+  static node(node, scope = null) { return new Binder(NODE, node, null, scope); }
 
   static column(column) { return new Binder(COLUMN, column); }
 

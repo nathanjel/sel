@@ -44,11 +44,21 @@ for impl in $IMPLS; do
 done
 # Agreement alone passes a defect every host shares -- the canonical flag was
 # dropped by every host's top-level translate at once, and parity was green.
-# These lines are the contract's values, pinned (SEL-0058).
+# These lines are the contract's values, pinned (SEL-0058). The render.* and
+# guard.reuse.* lines are T10's: an unknown render mode is refused even when the
+# fragment has no slot to bind, and a dialect whose numericGuard was refused is
+# refused again on every later use, and after a reset.
 for want in 'fragment.canon.postgresql.kind = NUM' 'fragment.canon.postgresql.canonical = true' \
             'fragment.canon.mariadb.kind = TEXT' 'fragment.canon.mariadb.canonical = true' \
             'fragment.canon.sqlite.canonical = true' 'fragment.canon.sqlite.caveats = decimal-float' \
-            'fragment.abs.postgresql.canonical = false'; do
+            'fragment.abs.postgresql.canonical = false' \
+            'render.mode.valid.zero-slots = accepted' \
+            'render.mode.bogus.zero-slots = refused' \
+            'render.mode.bogus.zero-slots.condition = refused' \
+            'render.mode.bogus.with-slot = refused' \
+            'render.mode.bogus.literal-number = refused' \
+            'guard.reuse.1 = refused' 'guard.reuse.2 = refused' 'guard.reuse.3 = refused' \
+            'guard.reuse.after-reset = refused'; do
   if ! sed 's/^[0-9]* //' "$WORK/$REF.txt" | grep -qxF "$want"; then
     echo "SQL API: $REF does not report \`$want\`"
     status=1

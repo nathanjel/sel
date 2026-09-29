@@ -164,7 +164,7 @@ ISNUM's probe -- catch it and answer no."
 
 (defun dec-format (d)
   (let ((sign (if (dec-neg d) "-" ""))
-        (s (write-to-string (dec-digits d) :base 10))
+        (s (write-to-string (dec-digits d) :base 10 :radix nil))
         (scale (dec-scale d)))
     (if (zerop scale)
         (concatenate 'string sign s)
@@ -414,21 +414,25 @@ ISNUM's probe -- catch it and answer no."
       d
       (dec-make (dec-neg d) (truncate (dec-digits d) (pow10 (dec-scale d))) 0)))
 
-(defun dec-floor (d)
+;;; FLOOR and CEIL can carry: a maximum-size 999...9.5 rounds up to a number one
+;;; digit past the cap, so the result goes through DEC-GUARD at the call.
+(defun dec-floor (d &optional at)
   (if (zerop (dec-scale d))
       d
       (multiple-value-bind (q r) (truncate (dec-digits d) (pow10 (dec-scale d)))
-        (dec-make (dec-neg d)
-                  (if (and (dec-neg d) (not (zerop r))) (1+ q) q)
-                  0))))
+        (dec-guard (dec-make (dec-neg d)
+                             (if (and (dec-neg d) (not (zerop r))) (1+ q) q)
+                             0)
+                   at))))
 
-(defun dec-ceil (d)
+(defun dec-ceil (d &optional at)
   (if (zerop (dec-scale d))
       d
       (multiple-value-bind (q r) (truncate (dec-digits d) (pow10 (dec-scale d)))
-        (dec-make (dec-neg d)
-                  (if (and (not (dec-neg d)) (not (zerop r))) (1+ q) q)
-                  0))))
+        (dec-guard (dec-make (dec-neg d)
+                             (if (and (not (dec-neg d)) (not (zerop r))) (1+ q) q)
+                             0)
+                   at))))
 
 ;;; N must be a non-negative integer; the result scale is scale(x) * n, which
 ;;; falls out of repeated multiplication.

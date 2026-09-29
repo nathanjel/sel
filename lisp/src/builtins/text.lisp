@@ -64,15 +64,25 @@ signalling — LEFT and SUBSTR are specified to return fewer characters."
           (hay (args-text a 2)))
       (when (zerop (length needle))
         (fail "E_BAD_ARG" "REPLACE needle must not be empty" (args-pos-of a 0)))
-      ;; All occurrences, left to right, non-overlapping.
-      (%text (with-output-to-string (out)
-               (let ((i 0))
-                 (loop for at = (search needle hay :start2 i)
-                       while at
-                       do (write-string (subseq hay i at) out)
-                          (write-string repl out)
-                          (setf i (+ at (length needle))))
-                 (write-string (subseq hay i) out)))))))
+      ;; All occurrences, left to right, non-overlapping. The result's length is
+      ;; worked out as the occurrences are found, and the call refused the moment
+      ;; it passes the cap, before the text is built (SPEC 6.4).
+      (let ((size (length hay))
+            (i 0)
+            (found '()))
+        (loop for at = (search needle hay :start2 i)
+              while at
+              do (push at found)
+                 (setf i (+ at (length needle)))
+                 (incf size (- (length repl) (length needle)))
+                 (check-text-cap size (args-pos a)))
+        (%text (with-output-to-string (out)
+                 (let ((i 0))
+                   (dolist (at (nreverse found))
+                     (write-string hay out :start i :end at)
+                     (write-string repl out)
+                     (setf i (+ at (length needle))))
+                   (write-string hay out :start i))))))))
 
 (define-builtin "SPLIT" 2 2
   (lambda (a ctx)
@@ -82,11 +92,14 @@ signalling — LEFT and SUBSTR are specified to return fewer characters."
       (when (zerop (length sep))
         (fail "E_BAD_ARG" "SPLIT separator must not be empty" (args-pos-of a 1)))
       (let ((parts '())
+            (count 0)
             (i 0))
         (loop for at = (search sep hay :start2 i)
               while at
-              do (push (%text (subseq hay i at)) parts)
+              do (check-collection-cap (incf count) (args-pos a))
+                 (push (%text (subseq hay i at)) parts)
                  (setf i (+ at (length sep))))
+        (check-collection-cap (1+ count) (args-pos a))
         (push (%text (subseq hay i)) parts)
         (make-list-value (nreverse parts))))))
 
@@ -132,8 +145,16 @@ signalling — LEFT and SUBSTR are specified to return fewer characters."
     (declare (ignore ctx))
     (let ((s (args-text a 0))
           (n (args-non-neg-int a 1)))
-      (%text (with-output-to-string (out)
-               (dotimes (i n) (write-string s out)))))))
+      ;; Empty text repeated any number of times is empty, at once: only a result
+      ;; that would be too long is refused, and a count is not a result.
+      (if (or (zerop n) (zerop (length s)))
+          (%text "")
+          (let ((total (* n (length s))))
+            (check-text-cap total (args-pos a))
+            (let ((out (make-string total)))
+              (loop for at from 0 below total by (length s)
+                    do (replace out s :start1 at))
+              (%text out)))))))
 
 (defun pad-text (a left)
   (let* ((s (args-text a 0))
@@ -143,7 +164,7 @@ signalling — LEFT and SUBSTR are specified to return fewer characters."
       (fail "E_BAD_ARG" "pad fill must not be empty" (args-pos-of a 2)))
     (if (>= (length s) width)
         (%text s)
-        (let* ((need (- width (length s)))
+        (let* ((need (progn (check-text-cap width (args-pos a)) (- width (length s))))
                (padding (with-output-to-string (out)
                           (dotimes (i need)
                             (write-char (char fill (mod i (length fill))) out)))))

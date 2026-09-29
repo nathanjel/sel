@@ -526,14 +526,18 @@ local first; `eval_binary` says so in a comment for the next person.
 so a mutation made by a later sub-expression is visible through a reference
 obtained earlier (§3.4) — `A[A["k"] = "k"]` finds the key its own index
 expression just created. Every host aliases by default and copies where the
-spec says (§3.4): `,` collecting a child, `,` collecting a value, and the
-assignment store. The spec also has the aggregates copy what they collect; C++
-does (`MAP` and `FILTER` clone), PHP's `FILTER` does, and the other hosts alias
-there — which no program can tell apart, because a binder cannot be assigned
-(`E_BAD_ASSIGN`), so nothing can write through the alias. That is exactly why
-`LAZY_RECORD` had to go (review 2026-09-15 finding R): a record whose fields
-were evaluated on first read made that copy observable, and the hosts split on
-it. There are no lazy values. If you add a built-in that stores one value inside
+spec says: the table in §3.4 is the list — `=`, `,`, `LIST`, `RECORD` and the §7.3
+aggregates (`MAP`, `FILTER`, `SORT*`, `BUCKET`, `TOP*`) copy what they collect;
+`TAKE`, `DROP` and `DISTINCT` return a fresh container that holds the source's own
+elements. That the aggregate copy is *observable* is easy to miss, because a
+binder cannot be assigned (`E_BAD_ASSIGN`) — but the aggregated *source variable*
+can, from inside the body or from a sibling expression: `X = LIST(RECORD("k",1));
+MAP(X, _)[(X[1]["k"] = 9; 1)]["k"]` is `1` when MAP copied and `9` when it
+aliased, and hosts split on exactly that until review 2026-09-29. Copy sites are
+covered by `conformance/25-value-ownership.selt`, and that file is where a new one
+gets its case. This is also why `LAZY_RECORD` had to go (review 2026-09-15
+finding R): a record whose fields were evaluated on first read made a copy
+observable, and the hosts split on it. There are no lazy values. If you add a built-in that stores one value inside
 another, it belongs on that list, and if you add a copy anywhere else you have
 invented a divergence.
 

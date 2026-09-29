@@ -169,6 +169,26 @@ position of the SEL node responsible; `try_*` returns nothing instead.
 a malformed dialect or entry — is the host's own start-up error, never an SQL
 error, so `try_translate` cannot swallow it.
 
+## Server modes the inline output assumes
+
+`inline` and `debug` output spell a text value as a SQL literal, and a literal is
+only right under the server's default string syntax. SEL does not ask the server
+which mode it is in, so the assumption is stated here:
+
+| Dialect | Assumed setting | If your server differs |
+|---|---|---|
+| `mariadb`, `mysql` | `NO_BACKSLASH_ESCAPES` is **off**: `\` escapes inside `'…'` | with it on, a value ending in `\'` ends the literal early: use `params` mode |
+| `postgresql` | `standard_conforming_strings = on` (the default since 9.1) | with it off, `\` escapes inside `'…'`: use `params` mode |
+| `sqlite` | none; `''` is the only escape | — |
+
+`params` mode binds every value and is unaffected, which is why the examples in
+this documentation use it. A text value that contains U+0000 is refused in every
+mode. When you register a dialect of your own, its quote and escape settings must
+belong together (the quote is one character, differs from the identifier quote,
+and its escape leaves it inside the literal); a pairing that would let a value end
+the literal is refused when you register it. See
+[the map reference](../sql/MAP.md#31-quote-and-escape-pairing-and-the-server-modes-it-assumes).
+
 ## Caveats
 
 A caveat marks a spelling that is mapped but not exact. The vocabulary is closed,

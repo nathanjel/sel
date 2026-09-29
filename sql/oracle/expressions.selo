@@ -786,3 +786,64 @@ POWER("2", "3")
 "5" * "2"
 "5" % "2"
 -"5"
+
+% --- hostile text literals: quotes, backslashes, comment markers ---------------
+%
+% T10 (2026-09-29 review): every dialect renders a text literal by its own
+% `textQuote` and `textEscape`, and getting the pairing wrong is an injection, not
+% a formatting nit (sql/MAP.md section 3). The .sqlt cases assert the bytes the
+% shipped dialects emit; only a server can say the literal still parses back to
+% the text the rule wrote. MariaDB and MySQL read `\` as an escape under their
+% default sql_mode and PostgreSQL and SQLite do not, so the same source text must
+% survive both readings. Each expression answers with a number or a hex string, so
+% a literal that broke out of its quotes is a syntax error or a wrong answer, not
+% a shifted comparison. Run 2026-09-29 against the pinned servers of
+% tools/oracle-db.sh -- mariadb:11.8, mysql:8.4 (default sql_mode, so `\` is an
+% escape), postgres:17 (standard_conforming_strings on, the default since 9.1),
+% SQLite 3.51.2 -- all four agree. `standard_conforming_strings = off` and
+% `NO_BACKSLASH_ESCAPES` are configurations sql/MAP.md does not model; see the
+% open question in the T10 report.
+
+### entry: mixed:hostile-text-literals
+LEN("it's")
+LEN("'")
+LEN("''")
+LEN("\\")
+LEN("\\'")
+LEN("a\\")
+TO_HEX(TO_UTF8("it's"))
+TO_HEX(TO_UTF8("\\' OR 1=1 --"))
+TO_HEX(TO_UTF8("'; DROP TABLE t; --"))
+TO_HEX(TO_UTF8("a\\b'c\"d"))
+TO_HEX(TO_UTF8("100% _sure_"))
+"a'b" $== "a'b"
+"a\\" $== "a\\"
+"\\'" $!= "'"
+"x' OR '1'='1" $== "x' OR '1'='1"
+
+% --- T09: exact decimal arithmetic through text literals and wide literals ------
+%
+% A text literal in an arithmetic position is a SEL number (spec 4), and MariaDB
+% and MySQL evaluate a bare quoted string in arithmetic as DOUBLE, so "0.1" + "0.2"
+% is not 0.3 there unless the translator casts it (PHP-C33). A decimal literal
+% wider than DECIMAL(65) is a DOUBLE on the MySQL family too (PHP-C52), and
+% SQLite compares storage classes, not numbers, in its multi-argument MIN/MAX
+% (GO-C17). SEL's answers are exact in all three.
+
+### entry: mixed:text-literal-arithmetic-is-exact
+"0.1" + "0.2" == 0.3
+"0.1" + 0.2 == 0.3
+0.1 + "0.2" == 0.3
+"0.1" * 3 == 0.3
+"1.10" + "2.20" == 3.3
+"0.1" * "3" == 0.3
+
+### entry: mixed:min-max-over-quoted-numbers
+MIN("10", 9) == 9
+MAX("10", "9") == 10
+MIN(10, "9") == 9
+MAX(2.5, "1") == 2.5
+
+### entry: mixed:wide-decimal-literals
+999999999999999999999999999999999999999999999999999999999999999999 + 1 == 1000000000000000000000000000000000000000000000000000000000000000000
+9999999999999999999999999999999999999999999999999999999999999999999999 + 1 == 9999999999999999999999999999999999999999999999999999999999999999999999

@@ -117,7 +117,7 @@ NodePtr build_pipeline(NodePtr source, const std::vector<NodePtr>& steps);
 // answers 1 for '٣' REGEXP '^\d$' where SEL answers FALSE. A second copy in the
 // SQL layer would be a second thing to keep in step, and it would fail silently
 // when the two drifted.
-std::string validate_pattern(const std::string& pattern, Pos pos);
+std::string validate_pattern(const std::string& pattern, Pos pos, bool ignore_case = false);
 
 // Read a value in numeric context, and raise what SEL raises when it is not a
 // number: E_NOT_NUM for a non-TEXT scalar or a text that is not a numeral,

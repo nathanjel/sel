@@ -100,7 +100,6 @@ export const BINDING_FORMS = Object.freeze({
   ],
   BUCKET: [
     { scopes: ["outer", "inner"], when: null, binds: ["_", "_K"] },
-    { scopes: ["outer", "binder", "inner"], when: { arg: 1, is: "name" }, binds: ["_K"] },
     { scopes: ["outer", "inner", "inner"], when: null, binds: ["_", "_K"] },
     { scopes: ["outer", "binder", "inner", "inner"], when: null, binds: ["_K"] },
   ],

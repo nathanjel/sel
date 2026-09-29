@@ -422,7 +422,7 @@ final class Hybrid
                         'SUM' => true, 'AVG' => true, 'MIN' => true, 'MAX' => true,
                         'RECORD' => true, 'LIST' => true];
             if (!isset($special[$node['name']])) {
-                $entry = Map::entry($dialect, 'funcs', strtoupper($node['name']));
+                $entry = Map::entry($dialect, 'funcs', \Sel\Utf8::upper($node['name']));
                 if ($entry === Map::MISSING || $entry === null || is_string($entry)) return true;
             }
             foreach ($node['args'] ?? [] as $item) {
@@ -448,14 +448,14 @@ final class Hybrid
     // (`SORT_BY(s, s["name"])`).
     private static function fieldReferences(?array $node, ?string $binder = '_'): array
     {
-        $wanted = $binder === null ? null : array_map('strtoupper', [$binder, '_', '_1', '_2']);
+        $wanted = $binder === null ? null : array_map([\Sel\Utf8::class, 'upper'], [$binder, '_', '_1', '_2']);
         $out = [];
         $seen = [];
         $visit = function (?array $item) use (&$visit, &$out, &$seen, $wanted): void {
             if ($item === null) return;
             if (($item['t'] ?? null) === 'index' && ($item['obj']['t'] ?? null) === 'var'
                 && ($item['idx']['t'] ?? null) === 'text'
-                && ($wanted === null || in_array(strtoupper($item['obj']['name']), $wanted, true))) {
+                && ($wanted === null || in_array(\Sel\Utf8::upper($item['obj']['name']), $wanted, true))) {
                 $key = (string) $item['idx']['v'];
                 if (!isset($seen[$key])) {
                     $seen[$key] = true;
@@ -490,10 +490,10 @@ final class Hybrid
      */
     private static function readsWholeRow(?array $node, string $binder): bool
     {
-        $wanted = array_map('strtoupper', [$binder, '_', '_1', '_2']);
+        $wanted = array_map([\Sel\Utf8::class, 'upper'], [$binder, '_', '_1', '_2']);
         $visit = function (?array $item) use (&$visit, $wanted): bool {
             if ($item === null) return false;
-            if (($item['t'] ?? null) === 'var' && in_array(strtoupper($item['name']), $wanted, true)) return true;
+            if (($item['t'] ?? null) === 'var' && in_array(\Sel\Utf8::upper($item['name']), $wanted, true)) return true;
             if (($item['t'] ?? null) === 'index' && ($item['obj']['t'] ?? null) === 'var'
                 && ($item['idx']['t'] ?? null) === 'text') {
                 // A field read; the object is not a whole-row read.
@@ -519,7 +519,7 @@ final class Hybrid
         $value = $pair['value'];
         return ($value['t'] ?? null) === 'index' && ($value['obj']['t'] ?? null) === 'var'
             && ($value['idx']['t'] ?? null) === 'text'
-            && strtoupper($value['obj']['name']) === strtoupper($binder)
+            && \Sel\Utf8::upper($value['obj']['name']) === \Sel\Utf8::upper($binder)
             && (string) $value['idx']['v'] === (string) $pair['key']['v'];
     }
 
@@ -605,18 +605,18 @@ final class Hybrid
             if (self::isOwnFieldRead($pair, $details['binder'])) $own[] = (string) $pair['key']['v'];
         }
         // "Case" here is ASCII case, as everywhere in SEL -- strtoupper is.
-        $projectedFolded = array_map('strtoupper', $projected);
+        $projectedFolded = array_map([\Sel\Utf8::class, 'upper'], $projected);
         $dependencies = [];
         $dependenciesFolded = [];
         foreach ($custom as $pair) foreach (self::fieldReferences($pair['value'], $details['binder']) as $field) {
             if (in_array($field, $projected, true)) {
                 if (!in_array($field, $own, true)) return null;
-            } elseif (in_array(strtoupper($field), $projectedFolded, true)) {
+            } elseif (in_array(\Sel\Utf8::upper($field), $projectedFolded, true)) {
                 return null;
             } elseif (!in_array($field, $dependencies, true)) {
                 // Two dependencies must not differ only by case either.
-                if (in_array(strtoupper($field), $dependenciesFolded, true)) return null;
-                $dependenciesFolded[] = strtoupper($field);
+                if (in_array(\Sel\Utf8::upper($field), $dependenciesFolded, true)) return null;
+                $dependenciesFolded[] = \Sel\Utf8::upper($field);
                 $dependencies[] = $field;
             }
         }

@@ -1,0 +1,878 @@
+% Text, binary and output budgets (family T07). Every expectation is derived from the SPEC:
+% §6.4 for the caps (text 16 777 216 code points / bytes, collection 1 000 000 children, E_RANGE at
+% the node that builds the value, measured from lengths before allocation), §7.5-§7.7 and §7.9 for
+% the builtins. Cases are small: giant operands are built with REPEAT/SPLIT/doubling, never written out.
+% Boundary cases at the cap allocate up to 16 MB of text per host; run them under a memory limit.
+
+### name: budget.text.repeat-at-cap
+--- note
+The text cap (SPEC 6.4) is 16 777 216 code points. A result exactly at the cap is an ordinary value.
+--- source
+LEN(REPEAT("a", 16777216))
+--- expect
+num 16777216
+===
+
+### name: budget.text.repeat-past-cap
+--- note
+One code point past the cap is E_RANGE at the call, worked out from the lengths before anything is built.
+--- source
+REPEAT("a", 16777217)
+--- expect
+error E_RANGE at 1:1
+===
+
+### name: budget.text.repeat-multibyte-at-cap
+--- note
+The cap counts the RESULT's code points, not the count argument: two code points times 8 388 608.
+--- source
+LEN(REPEAT("ab", 8388608))
+--- expect
+num 16777216
+===
+
+### name: budget.text.repeat-multibyte-past-cap
+--- note
+...and one more copy crosses it.
+--- source
+REPEAT("ab", 8388609)
+--- expect
+error E_RANGE at 1:1
+===
+
+### name: budget.text.repeat-astral-counts-code-points
+--- note
+TEXT is measured in code points: nine million U+1F600 are 9 000 000, though 18 000 000 UTF-16 units and 36 000 000 UTF-8 bytes, both over the cap. A host that measured its own representation would refuse this legal value.
+--- source
+LEN(REPEAT("\u{1F600}", 9000000))
+--- expect
+num 9000000
+===
+
+### name: budget.text.repeat-huge-count
+--- note
+A count no machine integer holds is refused, not clamped, truncated or overflowed (it once wrapped to 1000 in JS's 32-bit shift and raised host RangeError/MemoryError/OverflowError elsewhere).
+--- source
+REPEAT("ab", 99999999999999999999)
+--- expect
+error E_RANGE at 1:1
+===
+
+### name: budget.text.repeat-huge-count-400-digits
+--- note
+A 401-digit count, the same way.
+--- source
+REPEAT("a", 1 & REPEAT("0", 400))
+--- expect
+error E_RANGE at 1:1
+===
+
+### name: budget.text.repeat-empty-huge-count
+--- note
+The result is what is measured: empty text repeated any number of times is empty, and quickly. C++ took 27 s to say so for 4 000 000 000 and Python raised OverflowError for 10^30.
+--- source
+REPEAT("", 99999999999999999999)
+--- expect
+text ""
+===
+
+### name: budget.text.repeat-empty-huge-count-400-digits
+--- note
+A 401-digit count of empty text.
+--- source
+LEN(REPEAT("", 1 & REPEAT("0", 400)))
+--- expect
+num 0
+===
+
+### name: budget.text.repeat-zero-count
+--- note
+Zero copies of a long text is empty; nothing is built.
+--- source
+LEN(REPEAT(REPEAT("a", 1000), 0))
+--- expect
+num 0
+===
+
+### name: budget.text.repeat-argument-error-before-cap
+--- note
+Arguments are evaluated first (SPEC 6.2): the division by zero is found before the count is looked at.
+--- source
+REPEAT(1/0, 99999999999999999999)
+--- expect
+error E_DIV_ZERO at 1:9
+===
+
+### name: budget.text.repeat-coercion-error-before-cap
+--- note
+Then coerced, left to right, and only then is the cap checked: the BOOL first argument is E_NOT_TEXT at the argument, not E_RANGE for the count.
+--- source
+REPEAT(TRUE, 99999999999999999999)
+--- expect
+error E_NOT_TEXT at 1:8
+===
+
+### name: budget.text.padl-at-cap
+--- note
+PADL pads to exactly n code points: n at the cap is legal.
+--- source
+LEN(PADL("a", 16777216, "x"))
+--- expect
+num 16777216
+===
+
+### name: budget.text.padl-past-cap
+--- note
+n past the cap is E_RANGE at the call.
+--- source
+PADL("a", 16777217, "x")
+--- expect
+error E_RANGE at 1:1
+===
+
+### name: budget.text.padr-at-cap
+--- note
+PADR the same.
+--- source
+LEN(PADR("a", 16777216, "xy"))
+--- expect
+num 16777216
+===
+
+### name: budget.text.padr-past-cap
+--- note
+PADR the same, past.
+--- source
+PADR("a", 16777217, "xy")
+--- expect
+error E_RANGE at 1:1
+===
+
+### name: budget.text.padl-huge-width
+--- note
+A width no machine integer holds.
+--- source
+PADL("abc", 99999999999999999999999, "x")
+--- expect
+error E_RANGE at 1:1
+===
+
+### name: budget.text.padr-huge-width-400-digits
+--- note
+A 401-digit width.
+--- source
+PADR("abc", 1 & REPEAT("0", 400), "x")
+--- expect
+error E_RANGE at 1:1
+===
+
+### name: budget.text.pad-shorter-than-text-is-unchanged
+--- note
+No truncation and no fill when the text is already long enough: the result is measured, so a small width is legal beside any fill.
+--- source
+PADL("abc", 2, "xyz")
+--- expect
+text "abc"
+===
+
+### name: budget.text.pad-exact-width-is-unchanged
+--- note
+Width equal to the length: unchanged.
+--- source
+PADR("abc", 3, "x")
+--- expect
+text "abc"
+===
+
+### name: budget.text.pad-empty-fill-is-bad-arg
+--- note
+An empty fill can never reach the width: E_BAD_ARG at the fill argument, on every host.
+--- source
+PADL("abc", 6, "")
+--- expect
+error E_BAD_ARG at 1:16
+===
+
+### name: budget.text.pad-astral-fill-cut-to-fit
+--- note
+Fill is repeated and cut to fit in code points: two pad positions from a two-code-point fill is the whole fill.
+--- source
+PADL("\u{1F600}", 3, "\u{E9}\u{1F600}")
+--- expect
+text "é😀😀"
+===
+
+### name: budget.text.concat-past-cap
+--- note
+`&` is capped like the rest: E_RANGE at the operator, after both operands are built.
+--- source
+REPEAT("a", 16777216) & "b"
+--- expect
+error E_RANGE at 1:23
+===
+
+### name: budget.text.concat-at-cap
+--- note
+...and exactly at the cap it is fine.
+--- source
+LEN(REPEAT("a", 16777215) & "b")
+--- expect
+num 16777216
+===
+
+### name: budget.text.doubling-at-cap
+--- note
+Twenty-four doublings of one character are exactly 2^24 = 16 777 216 code points: legal.
+--- source
+S = "a"; S = S & S; S = S & S; S = S & S; S = S & S; S = S & S; S = S & S; S = S & S; S = S & S; S = S & S; S = S & S; S = S & S; S = S & S; S = S & S; S = S & S; S = S & S; S = S & S; S = S & S; S = S & S; S = S & S; S = S & S; S = S & S; S = S & S; S = S & S; S = S & S; LEN(S)
+--- expect
+num 16777216
+===
+
+### name: budget.text.doubling-past-cap
+--- note
+The twenty-fifth doubling of a 256-byte-ish program is 33 554 432: E_RANGE at that statement's `&`, in milliseconds. It exhausted the heap of every host in its own way (JS-C41, GO-C14, PHP-C6).
+--- source
+S = "a"; S = S & S; S = S & S; S = S & S; S = S & S; S = S & S; S = S & S; S = S & S; S = S & S; S = S & S; S = S & S; S = S & S; S = S & S; S = S & S; S = S & S; S = S & S; S = S & S; S = S & S; S = S & S; S = S & S; S = S & S; S = S & S; S = S & S; S = S & S; S = S & S; S = S & S; LEN(S)
+--- expect
+error E_RANGE at 1:280
+===
+
+### name: budget.bin.concat-past-cap
+--- note
+BIN is measured in bytes, with the same cap.
+--- source
+TO_UTF8(REPEAT("a", 16777216)) & TO_UTF8("b")
+--- expect
+error E_RANGE at 1:32
+===
+
+### name: budget.bin.concat-at-cap
+--- note
+...and at the cap.
+--- source
+BLEN(TO_UTF8(REPEAT("a", 16777215)) & TO_UTF8("b"))
+--- expect
+num 16777216
+===
+
+### name: budget.text.join-at-cap
+--- note
+JOIN of a million one-character elements with an empty separator: 1 000 000 code points.
+--- source
+LEN(JOIN(SPLIT(REPEAT("a,", 999999) & "a", ","), ""))
+--- expect
+num 1000000
+===
+
+### name: budget.text.join-past-cap-by-separators
+--- note
+The separators count: 1 000 000 elements and 999 999 separators of 17 is 17 999 983 code points, over the cap.
+--- source
+JOIN(SPLIT(REPEAT("a,", 999999) & "a", ","), REPEAT("b", 17))
+--- expect
+error E_RANGE at 1:1
+===
+
+### name: budget.text.join-fan-out-huge
+--- note
+A hundred separators of ten million is a billion code points, refused from the lengths without building any of it (GO-C11).
+--- source
+JOIN(SPLIT(REPEAT("a,", 100) & "a", ","), REPEAT("b", 10000000))
+--- expect
+error E_RANGE at 1:1
+===
+
+### name: budget.text.replace-long-replacement
+--- note
+A 200 000-code-point replacement (JS raised an uncaught RangeError from its argument spread above about 125 000).
+--- source
+LEN(REPLACE("a", REPEAT("b", 200000), "a"))
+--- expect
+num 200000
+===
+
+### name: budget.text.replace-long-result-under-cap
+--- note
+One hundred copies of a 200 000-code-point replacement is 10 000 000: fine.
+--- source
+LEN(REPLACE("a", REPEAT("b", 200000), REPEAT("a", 50)))
+--- expect
+num 10000000
+===
+
+### name: budget.text.replace-past-cap
+--- note
+Two hundred copies would be 40 000 000 code points: E_RANGE at the call.
+--- source
+REPLACE("a", REPEAT("b", 200000), REPEAT("a", 200))
+--- expect
+error E_RANGE at 1:1
+===
+
+### name: budget.text.split-long-separator
+--- note
+A 200 000-code-point separator splits once.
+--- source
+COUNT(SPLIT("a" & REPEAT("b", 200000) & "c", REPEAT("b", 200000)))
+--- expect
+num 2
+===
+
+### name: budget.text.split-long-separator-partial
+--- note
+A partial separator at the end is not a separator.
+--- source
+COUNT(SPLIT(REPEAT("a", 300000), REPEAT("a", 200000)))
+--- expect
+num 2
+===
+
+### name: budget.text.rreplace-many-matches
+--- note
+A million replacements of one code point by two: 1 000 000 code points (PHP fataled at 500 000 matches).
+--- source
+LEN(RREPLACE("a", "bb", REPEAT("a", 500000)))
+--- expect
+num 1000000
+===
+
+### name: budget.text.rreplace-past-cap
+--- note
+Forty code points for each of 500 000 matches is 20 000 000: E_RANGE at the call.
+--- source
+RREPLACE("a", REPEAT("b", 40), REPEAT("a", 500000))
+--- expect
+error E_RANGE at 1:1
+===
+
+### name: budget.text.replace-multibyte
+--- note
+Multibyte and astral inputs are measured in code points.
+--- source
+LEN(REPLACE("\u{1F600}", "\u{E9}", "a\u{1F600}b\u{1F600}"))
+--- expect
+num 4
+===
+
+### name: budget.text.to-hex-at-cap
+--- note
+TO_HEX doubles: 8 388 608 bytes are 16 777 216 hex digits.
+--- source
+LEN(TO_HEX(TO_UTF8(REPEAT("a", 8388608))))
+--- expect
+num 16777216
+===
+
+### name: budget.text.to-hex-past-cap
+--- note
+...and one more byte crosses the cap: E_RANGE at TO_HEX.
+--- source
+TO_HEX(TO_UTF8(REPEAT("a", 8388609)))
+--- expect
+error E_RANGE at 1:1
+===
+
+### name: budget.text.base64-at-cap
+--- note
+ENCODE_BASE64 grows by four thirds: 12 582 912 bytes are exactly 16 777 216 characters.
+--- source
+LEN(ENCODE_BASE64(TO_UTF8(REPEAT("a", 12582912))))
+--- expect
+num 16777216
+===
+
+### name: budget.text.base64-past-cap
+--- note
+Three more bytes are four more characters.
+--- source
+ENCODE_BASE64(TO_UTF8(REPEAT("a", 12582915)))
+--- expect
+error E_RANGE at 1:1
+===
+
+### name: budget.bin.to-utf8-at-cap
+--- note
+TO_UTF8's BIN is measured in bytes: 4 194 304 code points of U+1F600 are exactly 16 777 216 bytes.
+--- source
+BLEN(TO_UTF8(REPEAT("\u{1F600}", 4194304)))
+--- expect
+num 16777216
+===
+
+### name: budget.bin.to-utf8-past-cap
+--- note
+One more code point is four more bytes over the BIN cap, though the TEXT it came from is far under the text cap.
+--- source
+TO_UTF8(REPEAT("\u{1F600}", 4194305))
+--- expect
+error E_RANGE at 1:1
+===
+
+### name: budget.collection.split-at-cap
+--- note
+A collection an operation builds may have 1 000 000 children.
+--- source
+COUNT(SPLIT(REPEAT("a,", 999999) & "a", ","))
+--- expect
+num 1000000
+===
+
+### name: budget.collection.split-past-cap
+--- note
+1 000 001 pieces: E_RANGE at the SPLIT call (JOIN of the result was a 4 TB allocation in Go).
+--- source
+COUNT(SPLIT(REPEAT("a,", 1000000) & "a", ","))
+--- expect
+error E_RANGE at 1:7
+===
+
+### name: budget.collection.doubling-at-cap
+--- note
+Eighteen doublings of two elements are 2^19 = 524 288: legal.
+--- source
+A = (1, 2); A = (A, A); A = (A, A); A = (A, A); A = (A, A); A = (A, A); A = (A, A); A = (A, A); A = (A, A); A = (A, A); A = (A, A); A = (A, A); A = (A, A); A = (A, A); A = (A, A); A = (A, A); A = (A, A); A = (A, A); A = (A, A); COUNT(A)
+--- expect
+num 524288
+===
+
+### name: budget.collection.doubling-past-cap
+--- note
+The nineteenth is 1 048 576 children: E_RANGE at the `,` list node (its first operand), where a 256-byte program used to exhaust 500 MB of heap (JS-C41, GO-C14, PHP-C6).
+--- source
+A = (1, 2); A = (A, A); A = (A, A); A = (A, A); A = (A, A); A = (A, A); A = (A, A); A = (A, A); A = (A, A); A = (A, A); A = (A, A); A = (A, A); A = (A, A); A = (A, A); A = (A, A); A = (A, A); A = (A, A); A = (A, A); A = (A, A); A = (A, A); COUNT(A)
+--- expect
+error E_RANGE at 1:234
+===
+
+### name: budget.collection.comma-flatten-past-cap
+--- note
+`,` flattens list operands, so two lists of 600 000 are 1 200 000 children: E_RANGE at the list node, at its first operand.
+--- source
+COUNT((SPLIT(REPEAT("a,", 599999) & "a", ","), SPLIT(REPEAT("a,", 599999) & "a", ",")))
+--- expect
+error E_RANGE at 1:8
+===
+
+### name: budget.collection.btl-past-cap
+--- note
+BTL builds one child per byte.
+--- source
+COUNT(BTL(TO_UTF8(REPEAT("a", 1000001))))
+--- expect
+error E_RANGE at 1:7
+===
+
+### name: budget.collection.btl-at-cap
+--- note
+...a million bytes are a million children.
+--- source
+COUNT(BTL(TO_UTF8(REPEAT("a", 1000000))))
+--- expect
+num 1000000
+===
+
+### name: budget.collection.link-past-cap
+--- note
+LINK's fan-out is a collection an operation builds: 1001 x 1000 = 1 001 000 rows is E_RANGE at the LINK call.
+--- source
+A = SPLIT(REPEAT("a,", 1000) & "a", ","); B = SPLIT(REPEAT("b,", 999) & "b", ","); COUNT(LINK(A, B, TRUE))
+--- expect
+error E_RANGE at 1:90
+===
+
+### name: budget.collection.link-under-cap-control
+--- note
+The control: 100 x 100 rows.
+--- source
+A = SPLIT(REPEAT("a,", 99) & "a", ","); B = SPLIT(REPEAT("b,", 99) & "b", ","); COUNT(LINK(A, B, TRUE))
+--- expect
+num 10000
+===
+
+### name: budget.collection.function-of-a-large-input-is-not-capped
+--- note
+A function that returns no more than it was given is not capped: FILTER over a million-element collection built exactly at the cap is fine.
+--- source
+COUNT(FILTER(SPLIT(REPEAT("a,", 999999) & "a", ","), _ $== "a"))
+--- expect
+num 1000000
+===
+
+### name: bin.ltb.empty-list
+--- note
+An empty list is the empty BIN (SPEC 7.7), so BTL and LTB are inverse for the empty input too: it was E_NO_SCALAR on every host.
+--- source
+BLEN(LTB(BTL("")))
+--- expect
+num 0
+===
+
+### name: bin.ltb.empty-list-literal
+--- note
+LTB(LIST()) is the same value.
+--- source
+TO_HEX(LTB(LIST()))
+--- expect
+text ""
+===
+
+### name: bin.ltb.roundtrip
+--- note
+The control: a non-empty round trip.
+--- source
+TO_HEX(LTB(BTL(TO_UTF8("h\u{E9}"))))
+--- expect
+text "68c3a9"
+===
+
+### name: bin.ltb.scaled-integral-byte
+--- note
+An integral value of any scale is a byte value, as it is for LEFT("abc", 1.0): 1.0 is byte 1. Go alone accepted it; the other hosts raised E_RANGE for a value inside 0..255.
+--- source
+TO_HEX(LTB(LIST(65, 1.0)))
+--- expect
+text "4101"
+===
+
+### name: bin.ltb.scaled-integral-byte-text
+--- note
+Text that reads as an integral number is read as one.
+--- source
+TO_HEX(LTB(LIST("1.0")))
+--- expect
+text "01"
+===
+
+### name: bin.ltb.scaled-integral-byte-255
+--- note
+The top of the range with a scale.
+--- source
+TO_HEX(LTB(LIST(255.00)))
+--- expect
+text "ff"
+===
+
+### name: bin.ltb.scaled-integral-past-range
+--- note
+256.0 is integral and outside 0..255.
+--- source
+LTB(LIST(256.0))
+--- expect
+error E_RANGE at 1:5
+===
+
+### name: bin.ltb.fractional-byte
+--- note
+A fractional value is not an integer: E_NOT_INT, at the list argument like the range error.
+--- source
+LTB(LIST(1.5))
+--- expect
+error E_NOT_INT at 1:5
+===
+
+### name: bin.ltb.byte-above-range
+--- note
+256 is E_RANGE.
+--- source
+LTB(LIST(256))
+--- expect
+error E_RANGE at 1:5
+===
+
+### name: bin.ltb.byte-below-range
+--- note
+-1 is E_RANGE.
+--- source
+LTB(LIST(-1))
+--- expect
+error E_RANGE at 1:5
+===
+
+### name: null.path.empty-path-is-the-target
+--- note
+The empty path names no key and yields the target itself (SPEC 7.9); every host already agreed and none tested it.
+--- source
+PATH(RECORD("k", 5), "") EQL RECORD("k", 5)
+--- expect
+bool TRUE
+===
+
+### name: null.path.empty-path-with-default
+--- note
+A default never applies to the empty path.
+--- source
+PATH(RECORD("", 5), "", 9) EQL RECORD("", 5)
+--- expect
+bool TRUE
+===
+
+### name: null.path.empty-key-reached-with-get
+--- note
+A child keyed "" is reached with GET.
+--- source
+GET(RECORD("", 5), "")
+--- expect
+num 5
+===
+
+### name: null.path.empty-key-index
+--- note
+...and by index.
+--- source
+RECORD("", 5)[""]
+--- expect
+num 5
+===
+
+### name: null.path.dotted-key-is-unreachable
+--- note
+A key containing a dot cannot be addressed by PATH: it is split.
+--- source
+IS_NULL(PATH(RECORD("a.b", 5), "a.b"))
+--- expect
+bool TRUE
+===
+
+### name: null.path.nested
+--- note
+The control: nested keys.
+--- source
+PATH(RECORD("a", RECORD("b", 7)), "a.b")
+--- expect
+num 7
+===
+
+### name: budget.bin.from-utf8.truncated
+--- note
+A truncated sequence is E_UTF8, at the argument that produced the BIN.
+--- source
+FROM_UTF8(FROM_HEX("c3"))
+--- expect
+error E_UTF8 at 1:11
+===
+
+### name: bin.from-utf8.overlong
+--- note
+An overlong encoding is E_UTF8, at the argument that produced the BIN.
+--- source
+FROM_UTF8(FROM_HEX("c080"))
+--- expect
+error E_UTF8 at 1:11
+===
+
+### name: bin.from-utf8.encoded-surrogate
+--- note
+An encoded surrogate is E_UTF8, at the argument that produced the BIN.
+--- source
+FROM_UTF8(FROM_HEX("eda080"))
+--- expect
+error E_UTF8 at 1:11
+===
+
+### name: bin.from-utf8.above-max
+--- note
+A code point above U+10FFFF is E_UTF8, at the argument that produced the BIN.
+--- source
+FROM_UTF8(FROM_HEX("f4908080"))
+--- expect
+error E_UTF8 at 1:11
+===
+
+### name: bin.from-utf8.bare-continuation
+--- note
+A bare continuation byte is E_UTF8, at the argument that produced the BIN.
+--- source
+FROM_UTF8(FROM_HEX("80"))
+--- expect
+error E_UTF8 at 1:11
+===
+
+### name: bin.from-utf8.valid
+--- note
+The control: valid multibyte and astral bytes decode.
+--- source
+LEN(FROM_UTF8(FROM_HEX("c3a9f09f9880")))
+--- expect
+num 2
+===
+
+### name: text.char.surrogate
+--- note
+A lone surrogate cannot be encoded: E_RANGE at the argument.
+--- source
+CHAR(55296)
+--- expect
+error E_RANGE at 1:6
+===
+
+### name: text.char.above-max
+--- note
+Nor can a value above U+10FFFF.
+--- source
+CHAR(1114112)
+--- expect
+error E_RANGE at 1:6
+===
+
+### name: bin.from-hex.multibyte-digit
+--- note
+A multibyte character where a hex digit belongs is E_BAD_ARG at the argument; the diagnostic must not carry half a character (C++ put a lone 0xC3 in its message).
+--- source
+FROM_HEX("\u{E9}1")
+--- expect
+error E_BAD_ARG at 1:10
+===
+
+### name: budget.bin.from-hex.odd-length
+--- note
+An odd number of digits.
+--- source
+FROM_HEX("abc")
+--- expect
+error E_BAD_ARG at 1:10
+===
+
+### name: bin.base64.multibyte-character
+--- note
+The same for base64.
+--- source
+DECODE_BASE64("\u{E9}==")
+--- expect
+error E_BAD_ARG at 1:15
+===
+
+### name: bin.base64.padding-required
+--- note
+Padding is required.
+--- source
+DECODE_BASE64("QQ")
+--- expect
+error E_BAD_ARG at 1:15
+===
+
+### name: bin.base64.padded
+--- note
+The control.
+--- source
+TO_HEX(DECODE_BASE64("QQ=="))
+--- expect
+text "41"
+===
+
+### name: bin.base64.roundtrip-multibyte
+--- note
+Multibyte round trip.
+--- source
+ENCODE_BASE64(TO_UTF8("\u{E9}"))
+--- expect
+text "w6k="
+===
+
+### name: text.left.huge-count
+--- note
+Counts clamp to the length of the text at any magnitude: LEFT("abc", 2^63-1) is abc (a 32-bit `long` would read -1 and give "").
+--- source
+LEFT("abc", 9223372036854775807)
+--- expect
+text "abc"
+===
+
+### name: text.left.count-past-32-bits
+--- note
+2^32 as a count.
+--- source
+LEFT("abc", 4294967296)
+--- expect
+text "abc"
+===
+
+### name: text.right.huge-count
+--- note
+RIGHT the same.
+--- source
+RIGHT("abc", 9223372036854775807)
+--- expect
+text "abc"
+===
+
+### name: text.left.count-400-digits
+--- note
+A 401-digit count clamps too (PHP returned the empty text).
+--- source
+LEFT("abc", 1 & REPEAT("0", 400))
+--- expect
+text "abc"
+===
+
+### name: text.right.count-400-digits
+--- note
+RIGHT with a 401-digit count.
+--- source
+RIGHT("abc", 1 & REPEAT("0", 400))
+--- expect
+text "abc"
+===
+
+### name: text.substr.huge-length
+--- note
+A length clamps.
+--- source
+SUBSTR("abc", 2, 9223372036854775807)
+--- expect
+text "bc"
+===
+
+### name: text.substr.huge-start
+--- note
+A start beyond the end is the empty text.
+--- source
+SUBSTR("abc", 9223372036854775807)
+--- expect
+text ""
+===
+
+### name: text.substr.start-400-digits
+--- note
+A 401-digit start.
+--- source
+SUBSTR("abc", 1 & REPEAT("0", 400))
+--- expect
+text ""
+===
+
+### name: text.find.huge-start
+--- note
+A start beyond the end finds nothing (PHP raised E_RANGE for a 401-digit start).
+--- source
+FIND("b", "abc", 1 & REPEAT("0", 400))
+--- expect
+num 0
+===
+
+### name: text.find.start-past-end
+--- note
+The control: a start just past the end.
+--- source
+FIND("b", "abc", 4)
+--- expect
+num 0
+===
+
+### name: text.find.offset-counts-code-points
+--- note
+FIND offsets are 1-based code points, astral and multibyte alike.
+--- source
+FIND("\u{E9}", "a\u{E9}\u{1F600}\u{E9}", 3)
+--- expect
+num 4
+===
+
+### name: text.left.astral
+--- note
+Code-point lengths: two code points of a\u{1F600}\u{E9} are a and the emoji.
+--- source
+LEFT("a\u{1F600}\u{E9}", 2)
+--- expect
+text "a😀"
+===

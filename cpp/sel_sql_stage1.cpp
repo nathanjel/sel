@@ -89,7 +89,11 @@ SNodePtr substitute(const NodePtr& node, Defs& defs,
         if (b == node->s) return SNode::leaf(node);
       }
       auto it = defs.find(node->s);
-      return it == defs.end() ? SNode::leaf(node) : it->second.get();
+      if (it == defs.end()) return SNode::leaf(node);
+      // Assignment COPIES (spec §3.4): a read of an indexed list is the list as
+      // it stands NOW, so a later `R[2] = ..` does not reach what read it.
+      if (it->second.is_clist()) return SNode::clist_copy(*it->second.clist);
+      return it->second.get();
     }
     case NT::Num:
     case NT::Text:
@@ -201,7 +205,15 @@ void record(const NodePtr& s, Defs& defs, const std::set<std::string>& const_nam
                     "variable changing, so each name may be written once",
              s->pos);
     }
-    defs[name].node = std::move(value);
+    if (value->t() == SNode::T::CList) {
+      // `X = R` with R a keyed list: X is its own list from here on, and a later
+      // `X[k] = ..` appends to X alone.
+      auto copy = SNode::new_clist(value->pos());
+      for (std::size_t i = 0; i < value->kids().size(); ++i) copy->append(value->keys()[i], value->kids()[i]);
+      defs[name].clist = std::move(copy);
+      return;
+    }
+    defs[name].node = SNode::closed(value);
     return;
   }
   if (keys.size() > 1) {
@@ -227,7 +239,7 @@ void record(const NodePtr& s, Defs& defs, const std::set<std::string>& const_nam
              s->pos);
     }
   }
-  it->second.clist->append(key, std::move(value));
+  it->second.clist->append(key, SNode::closed(value));
 }
 
 bool constant_call(const SNode& n, const std::set<std::string>& bound) {

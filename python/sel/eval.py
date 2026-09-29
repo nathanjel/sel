@@ -9,6 +9,7 @@ from __future__ import annotations
 from typing import Any
 
 from . import decimal as D
+from ._budget import check_collection, check_text
 from .errors import MAX_DEPTH, Pos, SelError, fail
 from .math_plan import MathPlan, OpCode
 from .parser import Node
@@ -36,6 +37,7 @@ _ROUND = OpCode.ROUND
 _POWER = OpCode.POWER
 _MIN = OpCode.MIN
 _MAX = OpCode.MAX
+_COERCE = OpCode.COERCE
 
 
 class Context:
@@ -174,55 +176,79 @@ def eval_node(node: Node, ctx: Context) -> Value:
 
 
 def _eval_math_plan(plan: MathPlan, ctx: Context) -> Value:
+    """Runs a math plan as a pure optimisation of the plain tree (SPEC 6.2).
+
+    A variable or leaf is loaded as the VALUE, not a decimal: the operation that
+    consumes it coerces it, after every operand has been evaluated -- so a later
+    operand's error is found before an earlier operand's coercion error, and a
+    mutation by a later operand is visible through a variable read earlier
+    (SPEC 3.4). Operations coerce their operands left to right, as the plain
+    tree does. Slots produced by an operation already hold decimals.
+    """
     scratchpad: list[Any] = [None] * plan.scratchpad_size
+    slot_pos = plan.slot_pos
+    Dec = D.Dec
+
+    def dec(i: int) -> Any:
+        x = scratchpad[i]
+        if x.__class__ is Dec:
+            return x
+        return x.as_decimal(slot_pos[i])
+
     for step in plan.steps:
         op = step.op
         if op == _LOAD_VAR:
             val = ctx.lookup(step.name)
             if val is None:
                 fail('E_UNDEF_VAR', f'undefined variable {step.name}', step.pos)
-            scratchpad[step.dst] = val.as_decimal(step.pos)
+            scratchpad[step.dst] = val
         elif op == _LOAD_CONST:
             scratchpad[step.dst] = step.const_val
         elif op == _LOAD_LEAF:
-            val = eval_node(step.leaf_node, ctx)
-            scratchpad[step.dst] = val.as_decimal(step.leaf_node.pos)
+            scratchpad[step.dst] = eval_node(step.leaf_node, ctx)
+        elif op == _COERCE:
+            scratchpad[step.dst] = dec(step.src1)
         elif op == _ADD:
-            scratchpad[step.dst] = D.add(scratchpad[step.src1], scratchpad[step.src2], step.pos)
+            a = dec(step.src1); b = dec(step.src2)
+            scratchpad[step.dst] = D.add(a, b, step.pos)
         elif op == _SUB:
-            scratchpad[step.dst] = D.sub(scratchpad[step.src1], scratchpad[step.src2], step.pos)
+            a = dec(step.src1); b = dec(step.src2)
+            scratchpad[step.dst] = D.sub(a, b, step.pos)
         elif op == _MUL:
-            scratchpad[step.dst] = D.mul(scratchpad[step.src1], scratchpad[step.src2], step.pos)
+            a = dec(step.src1); b = dec(step.src2)
+            scratchpad[step.dst] = D.mul(a, b, step.pos)
         elif op == _DIV:
-            scratchpad[step.dst] = D.div(scratchpad[step.src1], scratchpad[step.src2], step.pos)
+            a = dec(step.src1); b = dec(step.src2)
+            scratchpad[step.dst] = D.div(a, b, step.pos)
         elif op == _MOD:
-            scratchpad[step.dst] = D.mod(scratchpad[step.src1], scratchpad[step.src2], step.pos)
+            a = dec(step.src1); b = dec(step.src2)
+            scratchpad[step.dst] = D.mod(a, b, step.pos)
         elif op == _NEG:
-            scratchpad[step.dst] = D.negate(scratchpad[step.src1])
+            scratchpad[step.dst] = D.negate(dec(step.src1))
         elif op == _ABS:
-            scratchpad[step.dst] = D.abs_(scratchpad[step.src1])
+            scratchpad[step.dst] = D.abs_(dec(step.src1))
         elif op == _SIGN:
-            s = D.sign(scratchpad[step.src1])
+            s = D.sign(dec(step.src1))
             scratchpad[step.dst] = D.make(s < 0, abs(s), 0)
         elif op == _CEIL:
-            scratchpad[step.dst] = D.ceil(scratchpad[step.src1])
+            scratchpad[step.dst] = D.ceil(dec(step.src1))
         elif op == _FLOOR:
-            scratchpad[step.dst] = D.floor(scratchpad[step.src1])
+            scratchpad[step.dst] = D.floor(dec(step.src1))
         elif op == _TRUNC:
-            scratchpad[step.dst] = D.trunc(scratchpad[step.src1])
+            scratchpad[step.dst] = D.trunc(dec(step.src1))
         elif op == _ROUND:
-            n = check_sized_int(scratchpad[step.src2], 'ROUND', 2, MAX_SCALE, 'ROUND scale', step.aux_pos)
-            scratchpad[step.dst] = D.round(scratchpad[step.src1], n, step.pos)
+            x = dec(step.src1); e = dec(step.src2)
+            n = check_sized_int(e, 'ROUND', 2, MAX_SCALE, 'ROUND scale', step.aux_pos)
+            scratchpad[step.dst] = D.round(x, n, step.pos)
         elif op == _POWER:
-            n = check_sized_int(scratchpad[step.src2], 'POWER', 2, MAX_POWER, 'POWER exponent', step.aux_pos)
-            scratchpad[step.dst] = D.power(scratchpad[step.src1], n, step.pos)
+            x = dec(step.src1); e = dec(step.src2)
+            n = check_sized_int(e, 'POWER', 2, MAX_POWER, 'POWER exponent', step.aux_pos)
+            scratchpad[step.dst] = D.power(x, n, step.pos)
         elif op == _MIN:
-            a = scratchpad[step.src1]
-            b = scratchpad[step.src2]
+            a = dec(step.src1); b = dec(step.src2)
             scratchpad[step.dst] = b if D.cmp(b, a) < 0 else a
         elif op == _MAX:
-            a = scratchpad[step.src1]
-            b = scratchpad[step.src2]
+            a = dec(step.src1); b = dec(step.src2)
             scratchpad[step.dst] = b if D.cmp(b, a) > 0 else a
     return Value.num(scratchpad[plan.output_slot])
 
@@ -315,6 +341,9 @@ def _eval_list(node: Node, ctx: Context) -> Value:
     for item in node.items:
         v = eval_node(item, ctx)
         if v.kind == NONE and v.size() > 0:
+            # Checked before the children are copied, so a doubling never builds
+            # what it refuses (SPEC 6.4).
+            check_collection(len(values) + v.size(), node.pos)
             # Keep list literals on the flat storage path.  Calling set() for
             # each element first creates numeric keys and then has to retain an
             # ordered dict; the evaluator already knows the final list length,
@@ -326,9 +355,12 @@ def _eval_list(node: Node, ctx: Context) -> Value:
                 children = v.children.values()
             else:
                 children = ()
-            values.extend(child.clone() for child in children)
+            # Held one level down, and a value past the cap is refused here, at
+            # the node that built it (SPEC 3.4), not at 0:0 by whatever walks it.
+            values.extend(child.clone(node.pos, 2) for child in children)
         else:
-            values.append(v.clone())
+            values.append(v.clone(node.pos, 2))
+        check_collection(len(values), node.pos)
     return Value._list_owned(values)
 
 
@@ -392,7 +424,7 @@ def _eval_binary(node: Node, ctx: Context) -> Value:
         return Value.num(D.mod(a, b, node.pos))
 
     if op == '&':
-        return _concat(l, r, lp, rp)
+        return _concat(l, r, lp, rp, node.pos)
 
     if op in ('==', '!=', '<', '<=', '>', '>='):
         a = l.as_decimal(lp); b = r.as_decimal(rp)
@@ -466,7 +498,7 @@ def _compare_result(op: str, c: int, pos: Pos) -> bool:
     fail('E_SYNTAX', f'unknown comparison operator {op}', pos)
 
 
-def _concat(l: Value, r: Value, lp: Pos, rp: Pos) -> Value:
+def _concat(l: Value, r: Value, lp: Pos, rp: Pos, pos: Pos) -> Value:
     """TEXT & TEXT stays TEXT; anything involving BIN becomes BIN (§5.2)."""
     lv = l.scalar_source(lp)
     rv = r.scalar_source(rp)
@@ -475,9 +507,12 @@ def _concat(l: Value, r: Value, lp: Pos, rp: Pos) -> Value:
     if rv.kind == BOOL:
         fail('E_NOT_TEXT', 'cannot concatenate a boolean', rp)
     if lv.kind == TEXT and rv.kind == TEXT:
+        # The length the result would have is refused before it is built (SPEC 6.4).
+        check_text(len(lv.scalar) + len(rv.scalar), pos)
         return Value.text(lv.scalar + rv.scalar)
     a = l.as_bytes(lp)
     b = r.as_bytes(rp)
+    check_text(len(a) + len(b), pos)
     return Value.bin(a + b)
 
 
@@ -508,7 +543,10 @@ def _eval_assign(node: Node, ctx: Context) -> Value:
     key = path[-1]
 
     if node.op == '=':
-        value = eval_node(node.value, ctx).clone(node.pos)
+        # The value lands len(path) levels down, so its own nesting starts there
+        # and the sum is what the cap applies to (SPEC 6.4), reported at the
+        # target -- not just the path, which is all this used to count.
+        value = eval_node(node.value, ctx).clone(node.target.pos, len(path))
     else:
         current = _walk_create(ctx, path, len(path) - 1).get(key)
         if current is None:
@@ -517,7 +555,7 @@ def _eval_assign(node: Node, ctx: Context) -> Value:
         bin_op = _COMPOUND[node.op]
         tp, vp = node.target.pos, node.value.pos
         if bin_op == '&':
-            value = _concat(current, rhs, tp, vp)
+            value = _concat(current, rhs, tp, vp, node.pos)
         else:
             a = current.as_decimal(tp)
             b = rhs.as_decimal(vp)

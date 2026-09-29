@@ -5,6 +5,7 @@ once per element, which is the same move IF makes, repeated.
 from functools import cmp_to_key
 
 from .. import decimal as D
+from .._budget import check_text
 from ..errors import fail
 from ..eval import bytes_compare
 from ..parser import Node
@@ -25,22 +26,35 @@ def shape(args):
 
 
 def node_contains_var(node, name):
-    if node is None:
-        return False
-    if node.t == 'var':
-        return node.name.upper() == name.upper()
-    if node.t == 'index':
-        return node_contains_var(node.obj, name) or node_contains_var(node.idx, name)
-    if node.t == 'call':
-        return any(node_contains_var(item, name) for item in node.args)
-    if node.t == 'bin':
-        return node_contains_var(node.l, name) or node_contains_var(node.r, name)
-    if node.t == 'un':
-        return node_contains_var(node.x, name)
-    if node.t == 'assign':
-        return node_contains_var(node.target, name) or node_contains_var(node.value, name)
-    if node.t in ('seq', 'list'):
-        return any(node_contains_var(item, name) for item in node.items)
+    """Whether NODE reads the variable `name`. Iterative: a body is a tree the
+    source can make as deep as it is long (a flat chain of 5,000 `+` inside an
+    aggregate), and a recursive walk of it ran into the interpreter's frame limit
+    before the evaluator's own depth cap could report E_DEPTH (PY-C1, site e)."""
+    upper = name.upper()
+    stack = [node]
+    while stack:
+        n = stack.pop()
+        if n is None:
+            continue
+        t = n.t
+        if t == 'var':
+            if n.name.upper() == upper:
+                return True
+        elif t == 'index':
+            stack.append(n.obj)
+            stack.append(n.idx)
+        elif t == 'call':
+            stack.extend(n.args)
+        elif t == 'bin':
+            stack.append(n.l)
+            stack.append(n.r)
+        elif t == 'un':
+            stack.append(n.x)
+        elif t == 'assign':
+            stack.append(n.target)
+            stack.append(n.value)
+        elif t in ('seq', 'list'):
+            stack.extend(n.items)
     return False
 
 
@@ -59,7 +73,11 @@ def walk(args, ctx, visit, body_override=None):
         frame['_K'] = None
     ctx.push_frame(frame)
     try:
-        for key, item in iter_elements(args.val(0)):
+        # A snapshot (SPEC 7.3): the elements are fixed before the first body runs,
+        # so a body that adds a key, appends, or overwrites a later element does
+        # not change what is visited. What is inside an element is not copied, and
+        # a change made there is seen.
+        for key, item in list(iter_elements(args.val(0))):
             frame[binder] = item
             if '_K' in frame:
                 frame['_K'] = Value.text(key)
@@ -83,11 +101,38 @@ def _any(args, ctx):
     return short if short is not None else Value.bool(False)
 
 
+# Calls that always return a value of their own -- a computed scalar, or a
+# container built from copies -- so an aggregate collecting their result has
+# nothing to copy. Everything else (a variable, an index, IF, COND, `??` ...)
+# can hand back a value that is also reachable from the context, and is copied.
+_FRESH_CALLS = frozenset({
+    'LIST', 'RECORD', 'COUNT', 'LEN', 'UPPER', 'LOWER', 'ABS', 'ROUND', 'FLOOR',
+    'CEIL', 'TRUNC', 'TRIM', 'JOIN', 'SUBSTR', 'LEFT', 'RIGHT',
+})
+
+
+def _is_fresh(node) -> bool:
+    t = node.t
+    if t == 'un':
+        return True
+    if t == 'bin':
+        return node.op not in ('??', '???')
+    if t == 'call':
+        return node.name in _FRESH_CALLS
+    return False
+
+
+def collected(value, body, args):
+    """What an aggregate stores in its result (SPEC 3.4): a copy, one level down,
+    unless the body's node cannot have produced anything shared."""
+    return value if _is_fresh(body) else value.clone(args.pos, 2)
+
+
 def _map(args, ctx):
     out = []
 
     def visit(r, k, i, body):
-        out.append(r)
+        out.append(collected(r, body, args))
         return None
 
     walk(args, ctx, visit)
@@ -140,24 +185,32 @@ def _leading_field_conjuncts(body, binder):
     out = []
     for c in conjuncts:
         fields = set()
-        def reads_only_fields(n):
-            if n is None:
-                return True
-            if n.t == 'index':
-                if (n.obj is not None and n.obj.t == 'var' and n.obj.name in names
-                        and n.idx is not None and n.idx.t == 'text'):
-                    fields.add(ascii_upper(n.idx.v))
-                    return True
-                if n.obj is not None and n.obj.t == 'index':
-                    return reads_only_fields(n.obj) and reads_only_fields(n.idx)
-                return False
-            if n.t in ('num', 'text', 'bool'):
-                return True
-            if n.t == 'bin':
-                return reads_only_fields(n.l) and reads_only_fields(n.r)
-            if n.t == 'un':
-                return reads_only_fields(n.x)
-            return False
+        def reads_only_fields(root):
+            # Iterative: a conjunct can be a chain as deep as the source is long.
+            stack = [root]
+            while stack:
+                n = stack.pop()
+                if n is None:
+                    continue
+                if n.t == 'index':
+                    if (n.obj is not None and n.obj.t == 'var' and n.obj.name in names
+                            and n.idx is not None and n.idx.t == 'text'):
+                        fields.add(ascii_upper(n.idx.v))
+                    elif n.obj is not None and n.obj.t == 'index':
+                        stack.append(n.obj)
+                        stack.append(n.idx)
+                    else:
+                        return False
+                elif n.t in ('num', 'text', 'bool'):
+                    continue
+                elif n.t == 'bin':
+                    stack.append(n.l)
+                    stack.append(n.r)
+                elif n.t == 'un':
+                    stack.append(n.x)
+                else:
+                    return False
+            return True
         ok = reads_only_fields(c) and bool(fields)
         total = None
         if c.t == 'bin' and (c.op in _TEXT_COMPARE or c.op in _NUM_COMPARE):
@@ -266,7 +319,7 @@ def _filter(args, ctx):
         def visit(r, key, item, body):
             nonlocal needs_custom_keys, keys, orig_idx
             if keep(r, body):
-                storage.append(item)
+                storage.append(item.clone(args.pos, 2))
                 if needs_custom_keys:
                     keys.append(str(orig_idx))
             else:
@@ -280,7 +333,7 @@ def _filter(args, ctx):
         def visit(r, key, item, body):
             nonlocal needs_custom_keys, keys, expected_index
             if keep(r, body):
-                storage.append(item)
+                storage.append(item.clone(args.pos, 2))
                 if not needs_custom_keys and str(key) != str(expected_index):
                     needs_custom_keys = True
                     keys = [str(j + 1) for j in range(len(storage) - 1)]
@@ -310,6 +363,10 @@ def _join(args, ctx):
     """Strict, not an aggregate: its second argument is a separator, not a body."""
     sep = args.text(1)
     parts = [item.as_text(args.pos_of(0)) for _, item in elements(args.val(0))]
+    # The joined length is refused before it is built (SPEC 6.4); an empty
+    # result is never too large.
+    if parts:
+        check_text(sum(map(len, parts)) + len(sep) * (len(parts) - 1), args.pos)
     return Value.text(sep.join(parts))
 
 
@@ -321,57 +378,52 @@ define('SUM', 2, 3, lazy=True, binds=True, fn=_sum)
 define('JOIN', 2, 2, fn=_join)
 
 
-def compare_values(a: Value, b: Value) -> int:
-    a_null = a.is_null()
-    b_null = b.is_null()
-    if a_null and b_null:
+def _sort_rank(v: Value) -> int:
+    """The kind rank of SPEC 7.3's total order: NULL < BOOL < numeric-looking text
+    and numbers < every other text < BIN. Anything else (a value with children and
+    no scalar) ranks last and ties with its own kind."""
+    if v.is_null():
         return 0
-    if a_null:
-        return -1
-    if b_null:
+    if v.kind == 'BOOL':
         return 1
+    if v.looks_numeric():
+        return 2
+    if v.kind == 'TEXT':
+        return 3
+    if v.kind == 'BIN':
+        return 4
+    return 5
 
-    a_num = a.looks_numeric()
-    b_num = b.looks_numeric()
-    if a_num and b_num:
+
+def compare_values(a: Value, b: Value) -> int:
+    """One total order (SPEC 7.3): by kind rank first, then within the rank --
+    BOOL FALSE before TRUE, numbers by exact decimal value (so `"007"` ties with
+    `"7"`), other text and BIN by their bytes. It is transitive, which the old
+    pairwise rules were not: "10" < "1a" and "1a" < "9" by bytes, but "9" < "10"
+    as numbers, and no sort of that list was well defined."""
+    ra = _sort_rank(a)
+    rb = _sort_rank(b)
+    if ra != rb:
+        return (ra > rb) - (ra < rb)
+    if ra == 2:
         return D.cmp(a.as_decimal(), b.as_decimal())
-
-    if a.kind == 'BOOL' and b.kind == 'BOOL':
+    if ra == 1:
         av = 1 if a.scalar else 0
         bv = 1 if b.scalar else 0
         return (av > bv) - (av < bv)
-
-    if a.kind in ('TEXT', 'BIN') and b.kind in ('TEXT', 'BIN'):
+    if ra == 3 or ra == 4:
         return bytes_compare(a.as_bytes(), b.as_bytes())
-
-    def rank(v):
-        if v.is_null():
-            return 0
-        if v.kind == 'BOOL':
-            return 1
-        if v.looks_numeric():
-            return 2
-        if v.kind == 'TEXT':
-            return 3
-        if v.kind == 'BIN':
-            return 4
-        return 5
-
-    ra = rank(a)
-    rb = rank(b)
-    return (ra > rb) - (ra < rb)
+    return 0
 
 
 def do_sort(args, ctx, forced_dir):
     val = args.val(0)
-    if val.is_null():
-        return Value._list_owned([])
-    ents = elements(val)
-    if not ents:
-        return Value._list_owned([])
+    ents = [] if val.is_null() else elements(val)
 
     count = args.count()
     if count == 1:
+        if not ents:
+            return Value._list_owned([])
         direction = forced_dir or 'ASC'
         indexed = [{'item': item, 'key': item, 'idx': idx} for idx, (_, item) in enumerate(ents)]
     else:
@@ -404,6 +456,11 @@ def do_sort(args, ctx, forced_dir):
         if direction not in ('ASC', 'DESC'):
             pos_idx = 3 if count == 4 else 2
             fail('E_BAD_ARG', "sort direction must be 'ASC' or 'DESC'", args.pos_of(pos_idx))
+        # The direction is an argument like any other (SPEC 7.4): it was checked
+        # above whether or not there is anything to sort, an empty list and NULL
+        # included, so a rule's validity does not depend on its data.
+        if not ents:
+            return Value._list_owned([])
 
         indexed = []
         for idx, (k, item) in enumerate(ents):
@@ -421,7 +478,7 @@ def do_sort(args, ctx, forced_dir):
         return c if c != 0 else (x['idx'] - y['idx'])
 
     indexed.sort(key=cmp_to_key(cmp_func))
-    return Value._list_owned([x['item'] for x in indexed])
+    return Value._list_owned([x['item'].clone(args.pos, 2) for x in indexed])
 
 
 define('SORT', 1, 3, lazy=True, binds=True, fn=lambda args, ctx: do_sort(args, ctx, 'ASC'))
@@ -432,8 +489,6 @@ define('SORT_BY', 2, 4, lazy=True, binds=True, fn=lambda args, ctx: do_sort(args
 def do_top(args, ctx, forced_dir):
     value = args.val(0)
     limit = args.non_neg_int(args.count() - 1)
-    if limit == 0 or (value.kind == NONE and value.size() == 0):
-        return Value._list_owned([])
 
     sort_count = args.count() - 1
     binder = '_'
@@ -467,6 +522,10 @@ def do_top(args, ctx, forced_dir):
         direction_index = 3 if sort_count == 4 else 2
         fail('E_BAD_ARG', "sort direction must be 'ASC' or 'DESC'",
              args.pos_of(direction_index))
+    # Count and direction were evaluated and checked above whatever the list holds
+    # (SPEC 7.4); only now may an empty result be returned.
+    if limit == 0 or (value.kind == NONE and value.size() == 0):
+        return Value._list_owned([])
 
     def compare(a, b):
         c = compare_values(a['key'], b['key'])
@@ -540,7 +599,7 @@ def do_top(args, ctx, forced_dir):
             consume(key, item)
 
     heap.sort(key=cmp_to_key(compare))
-    return Value._list_owned([entry['item'] for entry in heap])
+    return Value._list_owned([entry['item'].clone(args.pos, 2) for entry in heap])
 
 
 define('TOP', 2, 4, lazy=True, binds=True, fn=lambda args, ctx: do_top(args, ctx, 'ASC'))
@@ -558,9 +617,8 @@ def _bucket_key_text(key: Value, pos) -> str:
 
 def do_bucket(args, ctx):
     val = args.val(0)
-    if val.is_null() or val.size() == 0:
-        return Value._list_owned([])
-    entries = elements(val)
+    # A scalar is a one-element list, NULL and an empty list are empty (SPEC 7.3).
+    entries = [] if val.is_null() else elements(val)
     if not entries:
         return Value._list_owned([])
 
@@ -583,6 +641,7 @@ def do_bucket(args, ctx):
     if needs_k:
         frame['_K'] = None
     table = {}
+    index_table = {}
     groups = []
 
     def process(key, item, index):
@@ -594,7 +653,19 @@ def do_bucket(args, ctx):
         # verbatim, and refused the way indexing refuses it -- never collapsed
         # onto a string that stands for every list, record or NULL. The
         # projected spelling has no map to key and groups by identity instead.
-        key_str = _bucket_key_text(group_key, key_node.pos) if agg_node is None else ''
+        if agg_node is None:
+            # The key IS its text: two members whose keys read alike are one group
+            # even when the keys differ in structure, and every member is kept.
+            key_str = _bucket_key_text(group_key, key_node.pos)
+            group = index_table.get(key_str)
+            if group is None:
+                group = {'key': group_key, 'key_str': key_str, 'rows': [item]}
+                index_table[key_str] = group
+                groups.append(group)
+            else:
+                group['rows'].append(item)
+            return
+        key_str = ''
         hashed = structural_hash(group_key)
         bucket = table.get(hashed)
         if bucket is None:
@@ -620,7 +691,7 @@ def do_bucket(args, ctx):
     if agg_node is None:
         out = Value.none()
         for g in groups:
-            out.set(g['key_str'], Value._list_owned([row.clone() for row in g['rows']]))
+            out.set(g['key_str'], Value._list_owned([row.clone(args.pos, 3) for row in g['rows']]))
         return out
 
     out = []
@@ -630,7 +701,7 @@ def do_bucket(args, ctx):
         for g in groups:
             aggregate_frame[binder] = Value._list_owned(g['rows'])
             aggregate_frame['_K'] = g['key']
-            out.append(args.eval_node(agg_node))
+            out.append(collected(args.eval_node(agg_node), agg_node, args))
     finally:
         ctx.pop_frame()
     return Value._list_owned(out)

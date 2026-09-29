@@ -194,6 +194,34 @@ declare the binding NUM if the column really is numeric" dialect)
                     pos))
           (%fragment (emit-fill dialect guard (list f) pos) :num dialect)))))
 
+(defun split-numeric-guard (dialect f &optional pos)
+  "The numeric guard's two halves, for a SUM that has to be guarded ALL OR NOTHING
+(docs/internals/sql-kinds.md 5a): the TEST that asks whether F is a number, and
+the CAST that reads it as one. Both are cut out of the dialect's own numericGuard
+template -- `CASE WHEN (<test>) THEN <cast> ELSE NULL END` -- so there is one
+spelling of each and a dialect that changes it changes both forms. Refuses
+exactly where EMIT-NUMERIC-OPERAND does."
+  (check-numeric-guard dialect)
+  (let ((guard (dialect-lexical dialect "numericGuard"))
+        (head "CASE WHEN (") (mid ") THEN ") (tail " ELSE NULL END"))
+    (unless (stringp guard)
+      (refuse "E_SQL_UNSUPPORTED"
+              (format nil "dialect ~a has no way to ask whether a value is a ~
+number, so an operand it has not been told is one cannot be read as one here; ~
+declare the binding NUM if the column really is numeric" dialect)
+              pos))
+    (let ((m (search mid guard)))
+      (unless (and m (eql 0 (search head guard))
+                   (eql (- (length guard) (length tail)) (search tail guard :from-end t)))
+        (bad "dialect ~a's numericGuard is not CASE WHEN (<test>) THEN <cast> ELSE NULL END, ~
+so it cannot be split into the halves an aggregate needs" dialect))
+      (values (%fragment (emit-fill dialect (subseq guard (length head) m) (list f) pos)
+                         :bool dialect)
+              (%fragment (emit-fill dialect
+                                    (subseq guard (+ m (length mid)) (- (length guard) (length tail)))
+                                    (list f) pos)
+                         :num dialect)))))
+
 (defun emit-text-operand (dialect f)
   "An operand of a byte comparison: cast to a character type, then given the
 dialect's binary collation.

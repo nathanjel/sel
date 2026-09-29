@@ -27,6 +27,37 @@ final class Dec
         1, 10, 100, 1000, 10000, 100000, 1000000, 10000000, 100000000, 1000000000
     ];
 
+    /**
+     * A digit string as a GMP number, in base 10. `gmp_add("010", ...)` on a
+     * bare string detects the base from the prefix, so "010" is octal 8 and "0x1"
+     * is hex: harmless for the canonical digits every SEL number carries, wrong
+     * for the un-normalised descriptor a host can hand in (PHP-C41).
+     */
+    private static function gmpInt(string $digits): \GMP
+    {
+        return gmp_init($digits, 10);
+    }
+
+    /**
+     * Test hook: false makes every operation take the pure-PHP digit-string
+     * paths on a machine that has ext-gmp; null goes back to asking the runtime.
+     * There is no reason to call it outside a test.
+     */
+    public static function forceGmp(?bool $on): void
+    {
+        self::$hasGmp = $on === null ? null : ($on && extension_loaded('gmp'));
+    }
+
+    /**
+     * How many rows of the limb product may add into the accumulators before
+     * they are carried. A row adds at most (10^7 - 1)^2 < 10^14 to a slot, and
+     * PHP turns an integer overflow into a float, so a slot must never see more
+     * than PHP_INT_MAX / 10^14 = 92,233 of them: past that the result was a
+     * float and the next intdiv() an uncaught TypeError (PHP-C17). Public so a
+     * test can lower it to force the carry every row.
+     */
+    public static int $mulCarryEvery = 50000;
+
     private static function hasGmp(): bool
     {
         if (self::$hasGmp === null) {
@@ -66,7 +97,7 @@ final class Dec
     private static function addAbs(string $a, string $b): string
     {
         if (self::hasGmp()) {
-            return gmp_strval(gmp_add($a, $b));
+            return gmp_strval(gmp_add(self::gmpInt($a), self::gmpInt($b)));
         }
 
         $la = strlen($a);
@@ -113,7 +144,7 @@ final class Dec
     private static function subAbs(string $a, string $b): string
     {
         if (self::hasGmp()) {
-            return gmp_strval(gmp_sub($a, $b));
+            return gmp_strval(gmp_sub(self::gmpInt($a), self::gmpInt($b)));
         }
 
         $la = strlen($a);
@@ -159,7 +190,7 @@ final class Dec
             return '0';
         }
         if (self::hasGmp()) {
-            return gmp_strval(gmp_mul($a, $b));
+            return gmp_strval(gmp_mul(self::gmpInt($a), self::gmpInt($b)));
         }
 
         $la = strlen($a);
@@ -214,6 +245,17 @@ final class Dec
             if ($ai === 0) continue;
             for ($j = 0; $j < $nb; $j++) {
                 $acc[$i + $j] += $ai * $limbsB[$j];
+            }
+            if (($i + 1) % self::$mulCarryEvery === 0) {
+                // Ripple every slot back under 10^7. A partial sum is below the
+                // full product, which fits the na + nb slots, so no carry
+                // leaves the array.
+                $c = 0;
+                for ($k = 0, $m = $na + $nb; $k < $m; $k++) {
+                    $t = $acc[$k] + $c;
+                    $acc[$k] = $t % 10000000;
+                    $c = intdiv($t, 10000000);
+                }
             }
         }
 
@@ -279,7 +321,7 @@ final class Dec
         }
 
         if (self::hasGmp()) {
-            [$q, $r] = gmp_div_qr($a, $b);
+            [$q, $r] = gmp_div_qr(self::gmpInt($a), self::gmpInt($b));
             return [gmp_strval($q), gmp_strval($r)];
         }
 
@@ -452,7 +494,12 @@ final class Dec
         }
         $digits = ltrim($d['digits'], '0');
         if ($digits === '') $digits = '0';
-        if ($digits === $d['digits'] && ($digits !== '0' || !$d['neg']) && array_key_exists('native', $d)) {
+        // A native cache the caller supplied is trusted only when it still
+        // describes these very fields (PHP-C40): edit `neg` or `digits` after
+        // parse() and the cache is stale, and the fast paths would read it.
+        if ($digits === $d['digits'] && ($digits !== '0' || !$d['neg']) && array_key_exists('native', $d)
+            && ($d['nativeDigits'] ?? null) === $d['digits'] && ($d['nativeNeg'] ?? null) === $d['neg']
+            && $d['native'] === self::parseMantissa($d['neg'], $d['digits'])) {
             return self::guard($d, null);
         }
         return self::guard(self::make($d['neg'], $digits, $d['scale']), null);
@@ -592,7 +639,11 @@ final class Dec
     public static function toInt(array $d): int
     {
         $t = self::trunc($d);
-        $v = (int) $t['digits'];
+        // Saturating: a value past the machine integer is PHP_INT_MAX (or its
+        // negation), never the 0 that (int) gives a string PHP reads as INF.
+        $digits = $t['digits'];
+        $over = strlen($digits) > 19 || (strlen($digits) === 19 && strcmp($digits, '9223372036854775807') > 0);
+        $v = $over ? PHP_INT_MAX : (int) $digits;
         return $t['neg'] ? -$v : $v;
     }
 
@@ -686,7 +737,9 @@ final class Dec
         if ($a['scale'] === 0 && $b['scale'] === 0
             && isset($a['native'], $b['native'])
             && ($a['nativeDigits'] ?? null) === $a['digits']
-            && ($b['nativeDigits'] ?? null) === $b['digits']) {
+            && ($b['nativeDigits'] ?? null) === $b['digits']
+            && ($a['nativeNeg'] ?? null) === $a['neg']
+            && ($b['nativeNeg'] ?? null) === $b['neg']) {
             return $a['native'] <=> $b['native'];
         }
         if (self::isZero($a) && self::isZero($b)) {
@@ -797,26 +850,29 @@ final class Dec
      * @param array{neg:bool,digits:string,scale:int} $d
      * @return array{neg:bool,digits:string,scale:int}
      */
-    public static function floor(array $d): array
+    public static function floor(array $d, ?array $pos = null): array
     {
         if ($d['scale'] === 0) {
             return $d;
         }
         [$q, $r] = self::divModAbs($d['digits'], self::pow10($d['scale']));
-        return self::make($d['neg'], $d['neg'] && $r !== '0' ? self::addAbs($q, '1') : $q, 0);
+        // Rounding away from zero carries: -99.5 floors to -100, a digit wider,
+        // and past the digit cap that is E_RANGE at the call, not at 0:0 when
+        // the result is next checked.
+        return self::guard(self::make($d['neg'], $d['neg'] && $r !== '0' ? self::addAbs($q, '1') : $q, 0), $pos);
     }
 
     /**
      * @param array{neg:bool,digits:string,scale:int} $d
      * @return array{neg:bool,digits:string,scale:int}
      */
-    public static function ceil(array $d): array
+    public static function ceil(array $d, ?array $pos = null): array
     {
         if ($d['scale'] === 0) {
             return $d;
         }
         [$q, $r] = self::divModAbs($d['digits'], self::pow10($d['scale']));
-        return self::make($d['neg'], !$d['neg'] && $r !== '0' ? self::addAbs($q, '1') : $q, 0);
+        return self::guard(self::make($d['neg'], !$d['neg'] && $r !== '0' ? self::addAbs($q, '1') : $q, 0), $pos);
     }
 
     /**

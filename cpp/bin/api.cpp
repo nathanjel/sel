@@ -130,6 +130,15 @@ int main() {
   say("program.run.reads.context", evaluate("TOTAL > 10.00", ctx).dump());
   evaluate("SEEN = TOTAL * 2", ctx);
   say("program.run.mutates.context", ctx.get("SEEN")->as_text());
+
+  // A BOOL a host hands in is an ordinary value (see tools/api.mjs, PHP-C1).
+  {
+    Value a = Value::none(); a.set("FLAG", Value::boolean(true));
+    Value bb = Value::none(); bb.set("FLAG", Value::boolean(true));
+    compile("FLAG[\"k\"] = 1; 0").run(a);
+    say("bool.isolated.between.contexts", std::to_string(bb.get("FLAG")->size()) + " " +
+        std::to_string(Value::boolean(true).size()) + " " + evaluate("COUNT(TRUE)").as_text());
+  }
   say("registry.count", std::to_string(function_names().size()));
   say("registry.sorted.first", function_names()[0]);
 

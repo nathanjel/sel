@@ -138,6 +138,9 @@ done
 # and with js on the roster the PHP check never ran (review 2026-09-15).
 case " $IMPLS " in *" js "*) step "JS optimizer" sel_slot node tools/check-js-optimizer.mjs ;; esac
 case " $IMPLS " in *" php "*) step "PHP optimizer" sel_slot sel_php tools/check-php-optimizer.php ;; esac
+case " $IMPLS " in *" js "*) step "JS plain vs optimised" sel_slot node tools/check-eval-equivalence.mjs ;; esac
+case " $IMPLS " in *" php "*) step "PHP plain vs optimised" sel_slot sel_php tools/check-eval-equivalence.php ;; esac
+case " $IMPLS " in *" python "*) step "Python plain vs optimised" sel_slot env PYTHONPATH="$PWD/python" python3 tools/check-eval-equivalence.py ;; esac
 case " $IMPLS " in *" js "*) step "JS decimal guard" sel_slot node tools/check-js-decimal-guard.mjs ;; esac
 case " $IMPLS " in *" js "*) step "JS runtime isolation and records" sel_slot node tools/check-js-runtime.mjs ;; esac
 case " $IMPLS " in *" js-bundle "*) step "JS bundle runtime isolation" sel_slot node tools/check-js-runtime.mjs dist/sel.mjs ;; esac
@@ -201,6 +204,8 @@ step "package contents: user docs only" sel_slot ./tools/check-package-docs.sh
 # built and installed, and cpp/test_package linked against the install.
 step "C++ package, as installed" sel_slot ./tools/check-cpp-package.sh
 step "host API parity" ./tools/check-api.sh
+step "CLI source bytes" ./tools/check-cli-source.sh
+step "regex ambiguity reference" bash -c "python3 tools/regex-ambiguity-ref.py --self-check >/dev/null && python3 tools/regex-ambiguity-ref.py --cases conformance/28-regex-portability.selt >/dev/null && python3 tools/regex-ambiguity-ref.py --cases conformance/28b-regex-ambiguity.selt >/dev/null && python3 tools/gen-regex-ambiguity-cases.py --check"
 step "host SQL API parity" ./tools/check-sqlapi.sh
 step "documentation examples" ./tools/check-docs.sh
 step "worked examples, every host" ./tools/check-examples.sh

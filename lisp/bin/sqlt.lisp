@@ -226,6 +226,43 @@ optimiser, and after the physical optimiser RUN uses."
       (suite-error (e) (error e))
       (error (e) (setf thrown e)))
 
+    ;; The reuse twin. The same program and bindings are translated again,
+    ;; several times, and every translation must give the first one's outcome:
+    ;; the same SQL, or the same refusal at the same place, or a startup error
+    ;; again. A translator that keeps state between calls -- a dialect marked as
+    ;; checked before it was checked, a parameter list that grows -- passes one
+    ;; translation and fails here (T10: JS-C24, PHP-C49, PY-C49, CPP-C36,
+    ;; LISP-C42, GO-C18).
+    (when (and program binds)
+      (flet ((describe-outcome (sql err thrown)
+               (cond (thrown (format nil "a signalled ~a (~a)" (type-of thrown) thrown))
+                     (err (format nil "~a at ~a:~a" (sql-error-code err)
+                                  (sql-error-line err) (sql-error-col err)))
+                     (t (format nil "~s" sql)))))
+        (dotimes (k 4)
+          (let ((sql2 nil) (err2 nil) (thrown2 nil))
+            (handler-case
+                (let ((f2 (translate program dialect binds (list :strict (getf c :strict)))))
+                  (setf sql2 (cond ((equal as "condition") (as-condition f2 mode))
+                                   ((equal as "statement") (as-statement f2 mode))
+                                   (t (as-value f2 mode)))))
+              (sql-error (e) (setf err2 e))
+              (sel:sel-error (e)
+                (return-from run-case
+                  (format nil "translating again: the source did not compile: ~a" e)))
+              (suite-error (e) (error e))
+              (error (e) (setf thrown2 e)))
+            (unless (cond (thrown (and thrown2 (eq (type-of thrown2) (type-of thrown))))
+                          (err (and err2
+                                    (equal (sql-error-code err2) (sql-error-code err))
+                                    (eql (sql-error-line err2) (sql-error-line err))
+                                    (eql (sql-error-col err2) (sql-error-col err))))
+                          (t (and (null thrown2) (null err2) (equal sql2 sql))))
+              (return-from run-case
+                (format nil "translating again on the same program and bindings gave ~a where the first translation gave ~a (repeat ~a)"
+                        (describe-outcome sql2 err2 thrown2)
+                        (describe-outcome sql err thrown) (1+ k))))))))
+
     (when (getf c :throws)
       (unless (throws-known-p (getf c :throws))
         (suite-fail "~a: no Lisp equivalent is recorded for --- throws ~a"

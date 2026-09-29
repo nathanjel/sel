@@ -5,309 +5,51 @@ package sel
 import (
 	"fmt"
 	"regexp"
-	"strconv"
 	"strings"
 	"sync"
+	"unicode/utf8"
 )
 
-const maxQuantifier = 65535
-
-var expandOutside = map[byte]string{
-	'd': "[0-9]", 'D': "[^0-9]",
-	'w': "[0-9A-Za-z_]", 'W': "[^0-9A-Za-z_]",
-	's': "[ \\t\\n\\r\\f\\x0b]", 'S': "[^ \\t\\n\\r\\f\\x0b]",
-}
-
-var expandInside = map[byte]string{
-	'd': "0-9", 'w': "0-9A-Za-z_", 's': " \\t\\n\\r\\f\\x0b",
-}
-
-var controlEscapes = map[byte]bool{
-	'n': true, 'r': true, 't': true, 'f': true,
-}
-
-var syntaxChars = map[byte]bool{
-	'^': true, '$': true, '\\': true, '.': true, '*': true, '+': true, '?': true,
-	'(': true, ')': true, '[': true, ']': true, '{': true, '}': true, '|': true, '/': true,
-}
-
-func badRegex(message, pattern string, at int, pos Pos) {
-	fail("E_REGEX_SYNTAX", fmt.Sprintf("%s (at offset %d of /%s/)", message, at, pattern), pos)
-}
-
-func rejectEscape(e byte, pattern string, at int, pos Pos) {
-	if e == 'b' || e == 'B' {
-		badRegex(fmt.Sprintf("\\%c is not portable — word boundaries depend on the engine's idea of a word character, which differs. Use an explicit class such as (^|[^0-9A-Za-z_])", e), pattern, at, pos)
-	}
-	if e == 'v' {
-		badRegex("\\v is not portable — PCRE reads it as any vertical whitespace and ECMAScript as U+000B", pattern, at, pos)
-	}
-	if e >= '0' && e <= '9' {
-		badRegex("backreferences are not portable", pattern, at, pos)
-	}
-	if e == 'p' || e == 'P' {
-		badRegex("\\p{...} is not portable", pattern, at, pos)
-	}
-	if e == 'A' || e == 'z' || e == 'Z' || e == 'G' || e == 'K' {
-		badRegex(fmt.Sprintf("\\%c is not portable — use ^ and $", e), pattern, at, pos)
-	}
-	badRegex(fmt.Sprintf("unsupported escape \\%c", e), pattern, at, pos)
-}
-
-// ValidatePattern validates against the SEL portable regex subset and expands character classes.
+// ValidatePattern validates against the SEL portable regex subset and returns
+// the portable source: the pattern with \d \w \s expanded to explicit ASCII
+// classes (§7.8). It raises E_REGEX_SYNTAX at pos.
 func ValidatePattern(pattern string, pos Pos) string {
-	n := len(pattern)
-	var out strings.Builder
-	i := 0
-
-	for i < n {
-		c := pattern[i]
-
-		if c == '\\' {
-			if i+1 >= n {
-				badRegex("trailing backslash", pattern, i, pos)
-			}
-			e := pattern[i+1]
-			if exp, ok := expandOutside[e]; ok {
-				out.WriteString(exp)
-				i += 2
-				continue
-			}
-			if controlEscapes[e] || syntaxChars[e] {
-				out.WriteByte(c)
-				out.WriteByte(e)
-				i += 2
-				continue
-			}
-			rejectEscape(e, pattern, i, pos)
-		}
-
-		if c == '[' {
-			text, nxt := validateClass(pattern, i, pos)
-			out.WriteString(text)
-			i = nxt
-			continue
-		}
-
-		if c == '(' {
-			if i+1 < n && pattern[i+1] == '?' {
-				nxt := byte(0)
-				if i+2 < n {
-					nxt = pattern[i+2]
-				}
-				if nxt == ':' {
-					out.WriteString("(?:")
-					i += 3
-					continue
-				}
-				kind := "this group type"
-				if nxt == '=' || nxt == '!' {
-					kind = "lookahead"
-				} else if nxt == '<' {
-					kind = "lookbehind and named groups"
-				} else if nxt == '>' {
-					kind = "atomic groups"
-				}
-				badRegex(fmt.Sprintf("%s is not portable — only (?: ) is", kind), pattern, i, pos)
-			}
-			out.WriteByte('(')
-			i++
-			continue
-		}
-
-		if c == '{' {
-			end := afterQuantifier(pattern, validateBraces(pattern, i, pos), pos)
-			out.WriteString(pattern[i:end])
-			i = end
-			continue
-		}
-
-		if c == '*' || c == '+' || c == '?' {
-			end := afterQuantifier(pattern, i+1, pos)
-			out.WriteString(pattern[i:end])
-			i = end
-			continue
-		}
-
-		if c == '}' {
-			badRegex("unmatched } — escape it as \\}", pattern, i, pos)
-		}
-		if c == ']' {
-			badRegex("unmatched ] — escape it as \\]", pattern, i, pos)
-		}
-
-		out.WriteByte(c)
-		i++
-	}
-	return out.String()
+	return portableSource(parseRegex(pattern, pos))
 }
 
-func afterQuantifier(p string, i int, pos Pos) int {
-	if i < len(p) && p[i] == '+' {
-		badRegex("possessive quantifiers are not portable", p, i, pos)
-	}
-	if i < len(p) && p[i] == '?' {
-		return i + 1
-	}
-	return i
+// ValidatePatternFlags is ValidatePattern for a pattern that runs with the `i`
+// flag when ignoreCase is set: the exponential-ambiguity rule folds case, so its
+// verdict depends on the flag.
+func ValidatePatternFlags(pattern string, ignoreCase bool, pos Pos) string {
+	return portableSource(parseRegexIC(pattern, ignoreCase, pos))
 }
 
-func validateBraces(p string, start int, pos Pos) int {
-	i := start + 1
-	loStart := i
-	for i < len(p) && p[i] >= '0' && p[i] <= '9' {
-		i++
-	}
-	if i == loStart {
-		badRegex("{ must begin a quantifier such as {2,4} — escape it as \\{", p, start, pos)
-	}
-	lo, _ := strconv.Atoi(p[loStart:i])
-	hasHi := false
-	hi := 0
-	if i < len(p) && p[i] == ',' {
-		i++
-		hiStart := i
-		for i < len(p) && p[i] >= '0' && p[i] <= '9' {
-			i++
-		}
-		if i > hiStart {
-			hasHi = true
-			hi, _ = strconv.Atoi(p[hiStart:i])
-		}
-	}
-	if i >= len(p) || p[i] != '}' {
-		badRegex("malformed quantifier", p, start, pos)
-	}
-	if lo > maxQuantifier || (hasHi && hi > maxQuantifier) {
-		badRegex(fmt.Sprintf("quantifier bound exceeds the maximum of %d", maxQuantifier), p, start, pos)
-	}
-	if hasHi && hi < lo {
-		badRegex(fmt.Sprintf("quantifier {%d,%d} is empty — the upper bound is below the lower one", lo, hi), p, start, pos)
-	}
-	return i + 1
-}
-
-func validateClass(p string, start int, pos Pos) (string, int) {
-	i := start + 1
-	var out strings.Builder
-	out.WriteByte('[')
-	if i < len(p) && p[i] == '^' {
-		out.WriteByte('^')
-		i++
-	}
-	if i+1 < len(p) && p[i] == '[' && p[i+1] == ':' {
-		badRegex("POSIX classes such as [[:alpha:]] are not portable", p, i, pos)
-	}
-	count := 0
-	for i < len(p) {
-		c := p[i]
-		if c == ']' {
-			if count == 0 {
-				badRegex("empty character class — write \\] for a literal bracket", p, start, pos)
-			}
-			out.WriteByte(']')
-			return out.String(), i + 1
-		}
-		count++
-		if c == '\\' {
-			if i+1 >= len(p) {
-				badRegex("trailing backslash in character class", p, i, pos)
-			}
-			e := p[i+1]
-			if exp, ok := expandInside[e]; ok {
-				out.WriteString(exp)
-				i += 2
-				continue
-			}
-			if e == 'D' || e == 'W' || e == 'S' {
-				badRegex(fmt.Sprintf("\\%c inside a character class cannot be expressed portably — negate the whole class instead", e), p, i, pos)
-			}
-			if controlEscapes[e] || syntaxChars[e] || e == '-' {
-				out.WriteByte(c)
-				out.WriteByte(e)
-				i += 2
-				continue
-			}
-			rejectEscape(e, p, i, pos)
-		}
-		out.WriteByte(c)
-		i++
-	}
-	badRegex("unterminated character class", p, start, pos)
-	return "", i
-}
-
-func lowerAnchors(src string) string {
-	var out strings.Builder
-	i := 0
-	n := len(src)
-	inClass := false
-	for i < n {
-		c := src[i]
-		if c == '\\' && i+1 < n {
-			out.WriteString(src[i : i+2])
-			i += 2
-			continue
-		}
-		if inClass {
-			if c == ']' {
-				inClass = false
-			}
-			out.WriteByte(c)
-			i++
-			continue
-		}
-		if c == '[' {
-			inClass = true
-			out.WriteByte(c)
-			i++
-			if i < n && src[i] == '^' {
-				out.WriteByte('^')
-				i++
-			}
-			continue
-		}
-		if c == '^' {
-			out.WriteString("\\A")
-			i++
-			continue
-		}
-		if c == '$' {
-			out.WriteString("\\z")
-			i++
-			continue
-		}
-		out.WriteByte(c)
-		i++
-	}
-	return out.String()
-}
+// The compiled-pattern cache is bounded (§7.8): 256 patterns, the oldest
+// evicted, so a rule that builds a pattern per row cannot grow it without limit.
+const regexCacheSize = 256
 
 type compiledRegex struct {
 	re         *regexp.Regexp
+	tail       *regexp.Regexp // the same pattern with ^ never matching, for a search resumed past offset 0
 	ignoreCase bool
-	unmatchable bool
-	minLen     int
 }
 
 var (
-	regexMu    sync.RWMutex
+	regexMu    sync.Mutex
 	regexCache = make(map[string]*compiledRegex)
+	regexOrder []string
 )
 
 func compileRegex(pattern, flags string, flagPos, patPos Pos) (*compiledRegex, bool) {
 	ignoreCase := false
-	for i := 0; i < len(flags); i++ {
-		ch := flags[i]
-		f := ch
-		if f >= 'A' && f <= 'Z' {
-			f += 32
-		}
-		if f == 'i' {
+	for _, ch := range flags {
+		// Only a lowercase i is a flag: not I, not U+0130 or U+0131, not the
+		// Kelvin sign that a case-insensitive engine folds to k (§7.8).
+		if ch == 'i' {
 			ignoreCase = true
 			continue
 		}
-		if f == 'm' || f == 's' {
+		if ch == 'm' || ch == 's' || ch == 'M' || ch == 'S' {
 			fail("E_BAD_ARG", fmt.Sprintf("flag %q is not offered — SEL always matches . against any character and anchors ^ $ to the whole subject", string(ch)), flagPos)
 		}
 		fail("E_BAD_ARG", fmt.Sprintf("unknown regex flag %q", string(ch)), flagPos)
@@ -322,42 +64,41 @@ func compileRegex(pattern, flags string, flagPos, patPos Pos) (*compiledRegex, b
 	}
 
 	key := fmt.Sprintf("%v:%s", ignoreCase, pattern)
-	regexMu.RLock()
+	regexMu.Lock()
 	if c, ok := regexCache[key]; ok {
-		regexMu.RUnlock()
+		regexMu.Unlock()
 		return c, ignoreCase
 	}
-	regexMu.RUnlock()
+	regexMu.Unlock()
 
-	validated := ValidatePattern(pattern, patPos)
-	lowered := lowerAnchors(validated)
-
+	tree := parseRegexIC(pattern, ignoreCase, patPos)
 	prefix := "(?s)"
 	if ignoreCase {
 		prefix += "(?i)"
 	}
-	rx, err := regexp.Compile(prefix + lowered)
-	var cr *compiledRegex
-	if err != nil {
-		// Check if it's due to huge repetition count that RE2 refuses but SEL validated
-		if strings.Contains(err.Error(), "repeat count") {
-			cr = &compiledRegex{
-				unmatchable: true,
-				minLen:      1001,
-				ignoreCase:  ignoreCase,
-			}
-		} else {
-			fail("E_REGEX_SYNTAX", fmt.Sprintf("%v in /%s/", err, pattern), patPos)
+	compile := func(startDead bool) (*regexp.Regexp, bool) {
+		src, hasStart := emitRE2(tree, startDead, pattern, patPos)
+		rx, err := regexp.Compile(prefix + src)
+		if err != nil {
+			fail("E_REGEX_SYNTAX", fmt.Sprintf("this engine cannot compile the pattern (%v) in /%s/", err, clipPattern(pattern)), patPos)
 		}
-	} else {
-		cr = &compiledRegex{
-			re:         rx,
-			ignoreCase: ignoreCase,
-		}
+		return rx, hasStart
+	}
+	rx, hasStart := compile(false)
+	cr := &compiledRegex{re: rx, tail: rx, ignoreCase: ignoreCase}
+	if hasStart {
+		cr.tail, _ = compile(true)
 	}
 
 	regexMu.Lock()
-	regexCache[key] = cr
+	if _, ok := regexCache[key]; !ok {
+		if len(regexOrder) >= regexCacheSize {
+			delete(regexCache, regexOrder[0])
+			regexOrder = regexOrder[1:]
+		}
+		regexCache[key] = cr
+		regexOrder = append(regexOrder, key)
+	}
 	regexMu.Unlock()
 
 	return cr, ignoreCase
@@ -383,51 +124,62 @@ type regexMatch struct {
 	groups  [][2]int // startCp, endCp for each submatch (-1 if didn't participate)
 }
 
-func findMatches(cr *compiledRegex, subjectRunes, searchRunes []rune) []regexMatch {
-	if cr.unmatchable {
-		return nil
-	}
+// findMatches walks the subject left to right (§7.8). At each position it takes
+// the leftmost match; after an empty match at s the scan resumes at s+1, having
+// copied that code point through, and after a non-empty match it resumes at the
+// match end, where an empty match is allowed. Go's own FindAll drops an empty
+// match that abuts the one before it, which is the one thing this walk differs in.
+func findMatches(cr *compiledRegex, subjectRunes, searchRunes []rune, limit int) []regexMatch {
 	searchStr := string(searchRunes)
-	allIdx := cr.re.FindAllStringSubmatchIndex(searchStr, -1)
-	if len(allIdx) == 0 {
-		return nil
-	}
-
-	// Build byte-offset to rune-index map for searchStr
-	byteToRune := make([]int, len(searchStr)+1)
-	curRune := 0
+	// runeAt maps a byte offset of searchStr to its code point index.
+	runeAt := make([]int32, len(searchStr)+1)
+	curRune := int32(0)
 	for byteOff := range searchStr {
-		byteToRune[byteOff] = curRune
+		runeAt[byteOff] = curRune
 		curRune++
 	}
-	byteToRune[len(searchStr)] = curRune
+	runeAt[len(searchStr)] = curRune
 
 	var matches []regexMatch
-	lastEnd := -1
-	for _, m := range allIdx {
-		start := byteToRune[m[0]]
-		end := byteToRune[m[1]]
-		if end == start && start == lastEnd {
-			continue
+	pos := 0 // byte offset of the current scan position
+	for pos <= len(searchStr) {
+		re := cr.re
+		if pos > 0 {
+			re = cr.tail
 		}
-		lastEnd = end
-
+		m := re.FindStringSubmatchIndex(searchStr[pos:])
+		if m == nil {
+			break
+		}
 		numGroups := len(m) / 2
 		groups := make([][2]int, numGroups)
 		for g := 0; g < numGroups; g++ {
-			gs := m[2*g]
-			ge := m[2*g+1]
+			gs, ge := m[2*g], m[2*g+1]
 			if gs < 0 || ge < 0 {
 				groups[g] = [2]int{-1, -1}
 			} else {
-				groups[g] = [2]int{byteToRune[gs], byteToRune[ge]}
+				groups[g] = [2]int{int(runeAt[pos+gs]), int(runeAt[pos+ge])}
 			}
 		}
+		start, end := pos+m[0], pos+m[1]
 		matches = append(matches, regexMatch{
-			startCp: start,
-			endCp:   end,
+			startCp: int(runeAt[start]),
+			endCp:   int(runeAt[end]),
 			groups:  groups,
 		})
+		if limit > 0 && len(matches) >= limit {
+			break
+		}
+		if end > start {
+			pos = end
+			continue
+		}
+		// An empty match: step over one code point.
+		if end >= len(searchStr) {
+			break
+		}
+		_, w := utf8.DecodeRuneInString(searchStr[end:])
+		pos = end + w
 	}
 	return matches
 }
@@ -492,7 +244,7 @@ func init() {
 		Max:  3,
 		Fn: func(args *Args, ctx *Context) *Value {
 			cr, orig, search := regexArgs(args, 0, 1, 2)
-			matches := findMatches(cr, orig, search)
+			matches := findMatches(cr, orig, search, 1)
 			return NewBool(len(matches) > 0)
 		},
 	})
@@ -503,7 +255,7 @@ func init() {
 		Max:  3,
 		Fn: func(args *Args, ctx *Context) *Value {
 			cr, orig, search := regexArgs(args, 0, 1, 2)
-			matches := findMatches(cr, orig, search)
+			matches := findMatches(cr, orig, search, 1)
 			if len(matches) == 0 {
 				return NewInt(0)
 			}
@@ -517,7 +269,7 @@ func init() {
 		Max:  3,
 		Fn: func(args *Args, ctx *Context) *Value {
 			cr, orig, search := regexArgs(args, 0, 1, 2)
-			matches := findMatches(cr, orig, search)
+			matches := findMatches(cr, orig, search, 1)
 			if len(matches) == 0 {
 				return NewNone()
 			}
@@ -554,7 +306,7 @@ func init() {
 			if ignoreCase {
 				searchRunes = foldSubject(origRunes)
 			}
-			matches := findMatches(cr, origRunes, searchRunes)
+			matches := findMatches(cr, origRunes, searchRunes, 0)
 			if len(matches) == 0 {
 				return NewTextOwned(subj)
 			}
@@ -566,11 +318,18 @@ func init() {
 
 			var out strings.Builder
 			last := 0
+			built := int64(0) // code points written so far (SPEC §6.4)
 			for _, m := range matches {
 				out.WriteString(string(origRunes[last:m.startCp]))
-				out.WriteString(expandRepl(repl, m, numGroups, origRunes, args.PosOf(1)))
+				built += int64(m.startCp - last)
+				piece := expandRepl(repl, m, numGroups, origRunes, args.PosOf(1))
+				built = satAdd(built, runeLen(piece))
+				checkTextLen(built, "RREPLACE's result", args.Pos())
+				out.WriteString(piece)
 				last = m.endCp
 			}
+			built += int64(len(origRunes) - last)
+			checkTextLen(built, "RREPLACE's result", args.Pos())
 			out.WriteString(string(origRunes[last:]))
 			return NewTextOwned(out.String())
 		},

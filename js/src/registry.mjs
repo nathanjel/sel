@@ -40,6 +40,10 @@ export function bindingForm(name, args, spec = lookup(name)) {
 
 const table = new Map();
 
+// Names a host registered (register / registerFunction): the only ones that may
+// be replaced.
+const hostNames = new Set();
+
 // The shipped table is authored once, in spec/builtins.json, and rendered into
 // _builtin_manifest.mjs. define() is how the shipped builtins register, so a
 // name the manifest knows is held to it: min/max/lazy/binds must agree, and the
@@ -92,17 +96,24 @@ export function register(nameOrSpec, min, max, fn, options = {}) {
     ? { ...options, name: nameOrSpec, min, max, fn }
     : nameOrSpec;
   const name = spec.name.toUpperCase();
+  // A shipped builtin is not replaceable (JS-C42): the optimiser and the math
+  // plan classify a call by its name, so a replacement would run in some
+  // contexts and be ignored in others. Only a host's own names go through here.
+  if (RESERVED.has(name)) throw new RangeError(`${name} is a reserved word`);
+  if (Object.prototype.hasOwnProperty.call(BUILTIN_MANIFEST, name)
+      || (table.has(name) && !hostNames.has(name))) {
+    throw new RangeError(`${name} is a builtin; a host function cannot replace it`);
+  }
   if (spec.overwrite === false && table.has(name)) {
     throw new Error(`SEL function ${name} defined twice`);
   }
   table.set(name, makeSpec(spec));
+  hostNames.add(name);
   return table.get(name);
 }
 
 export const registerBuiltin = register;
 
-// Names registered through registerFunction(), which alone may be replaced.
-const hostNames = new Set();
 
 // An application's own strict function (spec/SPEC.md §8.1). It adds to the
 // language and never changes it: a builtin's name or a reserved word is
@@ -155,6 +166,9 @@ function makeSpec(spec) {
     // Optional extra arity rule, checked at compile time after min/max. Returns
     // a message when the count is wrong, or null when it is fine.
     arityError: spec.arityError || null,
+    // Optional compile-time check of the call's argument NODES (a literal regex
+    // pattern is validated when the program compiles, not when it runs).
+    compileCheck: spec.compileCheck || null,
     fn: spec.fn,
   };
 }

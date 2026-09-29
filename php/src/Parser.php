@@ -268,6 +268,20 @@ final class Parser
         }
     }
 
+    /**
+     * dismantle() every node of a list, by reference (a foreach copy would be
+     * separated and leave the original deep -- see parseSequence).
+     *
+     * @param array<int|string,array<string,mixed>> $nodes
+     */
+    private static function dismantleAll(array &$nodes): void
+    {
+        foreach ($nodes as &$node) {
+            self::dismantle($node);
+        }
+        unset($node);
+    }
+
     // --- entry --------------------------------------------------------------
 
     /** @return array<string,mixed> */
@@ -275,6 +289,9 @@ final class Parser
     {
         $node = $this->parseSequence();
         if (!$this->atEof()) {
+            // The whole tree is abandoned: a flat chain of a few hundred thousand
+            // operators, then a stray `)`, freed recursively on unwind (PHP-C15).
+            self::dismantle($node);
             $t = $this->peek();
             fail('E_SYNTAX', 'unexpected ' . self::describe($t), $t);
         }
@@ -407,8 +424,16 @@ final class Parser
             }
 
             if ($assoc === 'R') {
-                $right = $this->parseTerm($bp);
-                $left = ['t' => 'bin', 'op' => $t['value'], 'l' => $left, 'r' => $right, 'pos' => $t];
+                // Counted like an assignment (SPEC §6.4): `??` and `???` are the
+                // other right-associative operators, and their right side
+                // recurses without passing through parseSequence or parsePrimary.
+                $this->enter($t);
+                try {
+                    $right = $this->parseTerm($bp);
+                    $left = ['t' => 'bin', 'op' => $t['value'], 'l' => $left, 'r' => $right, 'pos' => $t];
+                } finally {
+                    $this->leave();
+                }
                 continue;
             }
 
@@ -417,6 +442,7 @@ final class Parser
                 $after = $this->peek();
                 $afterEntry = self::infixEntry($after);
                 if ($afterEntry !== null && $afterEntry[1] === 'N') {
+                    self::dismantle($right);   // $left is the caller's, by reference
                     fail(
                         'E_SYNTAX',
                         "comparison operators do not chain — parenthesise, as in (a {$t['value']} b) AND (b {$after['value']} c)",
@@ -490,24 +516,36 @@ final class Parser
     private function parsePostfix(): array
     {
         $node = $this->parsePrimary();
-        while ($this->atOp('[') || $this->atOp('.>')) {
-            if ($this->atOp('[')) {
-                $br = $this->next();
-                $this->enter($br);
-                try {
-                    $idx = $this->parseSequence();
-                    $this->expectOp(']');
-                    $node = ['t' => 'index', 'obj' => $node, 'idx' => $idx, 'pos' => $br];
-                    if (($idx['t'] ?? null) === 'text') {
-                        $node['slotCache'] = new SlotCache();
+        try {
+            while ($this->atOp('[') || $this->atOp('.>')) {
+                if ($this->atOp('[')) {
+                    $br = $this->next();
+                    $this->enter($br);
+                    $idx = null;
+                    try {
+                        $idx = $this->parseSequence();
+                        $this->expectOp(']');
+                        $node = ['t' => 'index', 'obj' => $node, 'idx' => $idx, 'pos' => $br];
+                        if (($idx['t'] ?? null) === 'text') {
+                            $node['slotCache'] = new SlotCache();
+                        }
+                    } catch (\Throwable $e) {
+                        if ($idx !== null) {
+                            self::dismantle($idx);
+                        }
+                        throw $e;
+                    } finally {
+                        $this->leave();
                     }
-                } finally {
-                    $this->leave();
+                } else {
+                    $this->next();
+                    $node = $this->parsePipeStep($node);
                 }
-            } else {
-                $this->next();
-                $node = $this->parsePipeStep($node);
             }
+        } catch (\Throwable $e) {
+            // What the postfix loop had built so far is abandoned with the parse.
+            self::dismantle($node);
+            throw $e;
         }
         return $node;
     }
@@ -530,11 +568,33 @@ final class Parser
                 $this->next();
             } else {
                 $inner = $this->parseSequence();
-                $this->expectOp(')');
+                try {
+                    $this->expectOp(')');
+                } catch (\Throwable $e) {
+                    self::dismantle($inner);
+                    throw $e;
+                }
                 $args = ($inner['t'] === 'list' && empty($inner['grouped'])) ? $inner['items'] : [$inner];
+                unset($inner);
             }
         }
 
+        try {
+            return $this->finishPipeStep($left, $nameTok, $args);
+        } catch (\Throwable $e) {
+            self::dismantleAll($args);
+            throw $e;
+        }
+    }
+
+    /**
+     * @param array<string,mixed> $left
+     * @param array<string,mixed> $nameTok
+     * @param list<array<string,mixed>> $args
+     * @return array<string,mixed>
+     */
+    private function finishPipeStep(array $left, array $nameTok, array $args): array
+    {
         $spec = Registry::lookup($nameTok['value']);
         if ($spec === null) {
             fail('E_UNKNOWN_FUNC', "unknown function {$nameTok['value']}", $nameTok);
@@ -599,7 +659,12 @@ final class Parser
                     fail('E_SYNTAX', 'empty parentheses', $t);
                 }
                 $inner = $this->parseSequence();
-                $this->expectOp(')');
+                try {
+                    $this->expectOp(')');
+                } catch (\Throwable $e) {
+                    self::dismantle($inner);
+                    throw $e;
+                }
                 // Marked so that F((1,2)) passes one list rather than two arguments.
                 $inner['grouped'] = true;
                 return $inner;
@@ -621,15 +686,26 @@ final class Parser
             $args = [];
         } else {
             $inner = $this->parseSequence();
-            $this->expectOp(')');
+            try {
+                $this->expectOp(')');
+            } catch (\Throwable $e) {
+                self::dismantle($inner);
+                throw $e;
+            }
             $args = ($inner['t'] === 'list' && empty($inner['grouped'])) ? $inner['items'] : [$inner];
+            unset($inner);
         }
 
-        $spec = Registry::lookup($nameTok['value']);
-        if ($spec === null) {
-            fail('E_UNKNOWN_FUNC', "unknown function {$nameTok['value']}", $nameTok);
+        try {
+            $spec = Registry::lookup($nameTok['value']);
+            if ($spec === null) {
+                fail('E_UNKNOWN_FUNC', "unknown function {$nameTok['value']}", $nameTok);
+            }
+            return self::finishCall($nameTok, $spec, $args);
+        } catch (\Throwable $e) {
+            self::dismantleAll($args);
+            throw $e;
         }
-        return self::finishCall($nameTok, $spec, $args);
     }
 
     /** @param array<string,mixed> $spec */
@@ -643,6 +719,9 @@ final class Parser
      * @param list<array<string,mixed>> $args
      * @return array<string,mixed>
      */
+    /** The calls that take a regex pattern first, and the index of their flags argument. */
+    private const REGEX_CALLS = ['RMATCH' => 2, 'RFIND' => 2, 'RGROUPS' => 2, 'RREPLACE' => 3];
+
     private static function finishCall(array $nameTok, array $spec, array $args): array
     {
         $count = count($args);
@@ -654,6 +733,18 @@ final class Parser
             if ($problem !== null) {
                 fail('E_ARITY', $problem, $nameTok);
             }
+        }
+        // A literal regex pattern is validated NOW (spec §7.8), so a bad one in a
+        // branch that never runs is still refused when the program compiles.
+        if (isset(self::REGEX_CALLS[$spec['name']]) && ($args[0]['t'] ?? null) === 'text') {
+            $flagIndex = self::REGEX_CALLS[$spec['name']];
+            $flags = null;
+            if ($count <= $flagIndex) {
+                $flags = '';
+            } elseif (($args[$flagIndex]['t'] ?? null) === 'text') {
+                $flags = (string) $args[$flagIndex]['v'];
+            }
+            \Sel\Builtins\Regex::checkLiteral((string) $args[0]['v'], $flags, $args[0]['pos']);
         }
         return ['t' => 'call', 'name' => $spec['name'], 'spec' => $spec, 'args' => $args,
             'pos' => $nameTok, 'recordShape' => self::prepareRecordShape($spec['name'], $args)];

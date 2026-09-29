@@ -414,8 +414,14 @@ Definitions literal_helpers(const std::vector<NodePtr>& leading) {
 
 // The pipeline the planner probes: the result unwound, and where its source
 // is a helper, that helper's definition unwound in turn.
+//
+// `rebound` collects the helpers whose definition was unwound INTO the steps and
+// whose own name is the source that is left: `ORDERS = ORDERS .> DROP(2)` reads
+// the ORDERS binding once, so what is left is that binding and the helper's
+// assignment must not be carried along a second time (PHP-C34).
 std::pair<NodePtr, std::vector<NodePtr>> unwind_through_helpers(
-    const NodePtr& result, const Definitions& defs, const Definitions& literals) {
+    const NodePtr& result, const Definitions& defs, const Definitions& literals,
+    std::set<std::string>* rebound = nullptr) {
   auto [source, steps] = unwind_pipeline(inline_literals(result, literals));
   std::set<std::string> seen;
   while (source && source->t == NT::Var && defs.count(source->s) != 0 &&
@@ -424,6 +430,9 @@ std::pair<NodePtr, std::vector<NodePtr>> unwind_through_helpers(
     auto inner = unwind_pipeline(inline_literals(defs.at(source->s), literals));
     source = inner.first;
     steps.insert(steps.begin(), inner.second.begin(), inner.second.end());
+  }
+  if (rebound && source && source->t == NT::Var && seen.count(source->s) != 0) {
+    rebound->insert(source->s);
   }
   return {source, steps};
 }
@@ -469,7 +478,24 @@ std::vector<NodePtr> referenced_assignments(const std::vector<NodePtr>& leading,
 // `node` behind the assignments it depends on, as the program wrote them -- a
 // seq the translator's stage 1 inlines and the evaluator runs in order -- or
 // `node` itself when it depends on none.
-NodePtr with_helpers(const std::vector<NodePtr>& leading, const NodePtr& node) {
+std::size_t count_reads(const NodePtr& node, const std::string& name) {
+  if (!node) return 0;
+  std::size_t n = node->t == NT::Var && node->s == name ? 1 : 0;
+  n += count_reads(node->l, name) + count_reads(node->r, name);
+  for (const NodePtr& item : node->items) n += count_reads(item, name);
+  return n;
+}
+
+NodePtr with_helpers(const std::vector<NodePtr>& leading_all, const NodePtr& node,
+                     const std::set<std::string>& rebound = {}) {
+  // A rebound helper (see unwind_through_helpers) is already IN the steps: its
+  // assignment is dropped when the tree reads its name only as the source.
+  std::vector<NodePtr> leading;
+  leading.reserve(leading_all.size());
+  for (const NodePtr& s : leading_all) {
+    if (rebound.count(assigned_name(s)) != 0 && count_reads(node, assigned_name(s)) <= 1) continue;
+    leading.push_back(s);
+  }
   const std::vector<NodePtr> kept = referenced_assignments(leading, node);
   if (kept.empty()) return node;
   auto seq = std::make_shared<Node>();
@@ -489,8 +515,9 @@ struct Helpers {
   const Definitions& defs;
   const Bindings& bindings;
   ConstScope& scope;
+  std::set<std::string> rebound = {};
 
-  NodePtr wrap(const NodePtr& node) const { return with_helpers(leading, node); }
+  NodePtr wrap(const NodePtr& node) const { return with_helpers(leading, node, rebound); }
 
   // The physical sources of a wrapped tree are read off what the translator
   // renders: stage 1's tree, where an assignment a binder shadows is gone.
@@ -772,7 +799,8 @@ HybridPlan Sql::plan_hybrid(const Program& program, const std::string& dialect,
     return node && node->t == NT::Var && checked.has(node->s) &&
            checked.get(node->s, node->pos).kind() == Binding::Kind::Relation;
   };
-  const auto unwound = unwind_through_helpers(parts.result, defs, literals);
+  std::set<std::string> rebound;
+  const auto unwound = unwind_through_helpers(parts.result, defs, literals, &rebound);
   if (unwound.second.empty() || !is_relation(unwound.first)) {
     return pure_memory_plan(program, dialect, checked);
   }
@@ -781,7 +809,7 @@ HybridPlan Sql::plan_hybrid(const Program& program, const std::string& dialect,
   auto [source, steps] = unwind_pipeline(optimized);
   if (steps.empty() || !is_relation(source)) return pure_memory_plan(program, dialect, checked);
 
-  const Helpers helpers{parts.leading, defs, checked, scope};
+  const Helpers helpers{parts.leading, defs, checked, scope, rebound};
 
   // The whole pipeline, unless its rows would be a bucket's keys: the
   // translator renders a bare bucket as its keys, and a plan that pushes the

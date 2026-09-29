@@ -239,6 +239,12 @@ class Value {
   // reported when one is supplied, the same convention as as_text().
   Value clone(Pos pos = {}) const;
 
+  // clone(), for a value that is about to be stored `levels` levels below the
+  // root of another: the depth cap counts the whole path, so a value that is
+  // legal alone can be one level too deep where it is going. E_DEPTH is
+  // reported at `pos`, the node that would build the too-deep value.
+  Value clone_below(int levels, Pos pos = {}) const;
+
   bool has_dec() const;
   const Dec& dec_ref() const;
   void set_dec(const Dec& d) const;

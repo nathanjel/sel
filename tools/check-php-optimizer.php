@@ -455,4 +455,43 @@ foreach ([
     check($seen['params'] === 't"hay-",t"needle"', "runner contract: bindings in placeholder order, got {$seen['params']}");
 }
 
+// --- T04: an optimisation is invisible (SPEC 6.2) --------------------------
+/** @return array{0:string,1:?int,2:?int} outcome of running SOURCE (plain tree vs optimised) */
+function outcome(string $source, bool $plain): array
+{
+    $program = Sel::compile($source);
+    try {
+        $ctx = new \Sel\Context(\Sel\Value::none());
+        $v = $plain
+            ? \Sel\Evaluator::evalNode($program->ast, $ctx)
+            : $program->run([]);
+        return ['value ' . $v->dump(), null, null];
+    } catch (\Sel\SelError $e) {
+        return [$e->code, $e->line, $e->col];
+    }
+}
+foreach ([
+    'MAX(TRUE, U)', 'MIN(1, "x", Y)', 'ROUND("x", Y)', '"abc" + 1/0', 'A = "x"; A + B',
+    'A = 1; A + LEN((A = 10; "ab"))',
+    'LIST(1,2) .> SORT_BY(_ + 1) .> TAKE(0)', 'LIST(RECORD("a",1)) .> SORT_BY(_["z"]) .> TAKE(-1)',
+    'LIST(1,2,3) .> FILTER(1 / (_ - 3) < 0) .> FILTER(_)',
+    'NOT TAKE(TAKE(LIST(1), 3), 2)', 'NOT DROP(DROP(LIST(1),1),1)', 'NOT FILTER(LIST(1), TRUE)',
+    'X = LIST(1); NOT TAKE(SORT(X), 1)', 'C = 0; LIST(3,1,2) .> SORT_BY(_ + (C = C + 1)) .> TAKE(C)',
+] as $source) {
+    check(outcome($source, true) === outcome($source, false), "optimised run differs from the plain tree: {$source}");
+}
+// Fusion is limited to a literal count of at least one.
+check(step_names(optimized_steps('LIST(3,1,2) .> SORT() .> TAKE(2)')) === ['TOP'], 'SORT + TAKE(2) still fuses');
+check(step_names(optimized_steps('LIST(3,1,2) .> SORT() .> TAKE(0)')) === ['SORT', 'TAKE'], 'SORT + TAKE(0) does not fuse');
+check(step_names(optimized_steps('LIST(3,1,2) .> SORT() .> TAKE(N)')) === ['SORT', 'TAKE'], 'SORT + TAKE(variable) does not fuse');
+check(step_names(optimized_steps('LIST(3,1,2) .> SORT() .> TAKE(1.5)')) === ['SORT', 'TAKE'], 'SORT + TAKE(1.5) does not fuse');
+// A bare variable or literal is not a predicate that cannot raise.
+check(step_names(optimized_steps('LIST(1,2) .> FILTER(_ > 0) .> FILTER(_)')) === ['FILTER', 'FILTER'], 'FILTER + FILTER(_) is not fused');
+check(step_names(optimized_steps('LIST(1,2) .> FILTER(_ > 0) .> FILTER(TRUE)')) === ['FILTER'], 'a TRUE predicate still disappears');
+// PHP-C14: the pipeline unwind is linear in the number of stages.
+$t0 = microtime(true);
+$long = Sel::compile('LIST(1,2)' . str_repeat(' .> SORT', 150) . ' .> COUNT()');
+Optimizer::unwindPipeline($long->ast);
+check(microtime(true) - $t0 < 2.0, 'unwindPipeline is linear');
+
 echo "PHP optimizer checks: {$checks} passed\n";

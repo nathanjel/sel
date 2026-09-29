@@ -1,8 +1,19 @@
 #!/usr/bin/env bash
 # See sel.lisp beside this wrapper. Run from the repository root.
+#
+# Every argument is handed to Lisp base64-encoded ("b64:...") rather than as it
+# was typed. SBCL decodes argv with the locale's UTF-8 *before* any of our code
+# runs, and on an invalid byte it prints a warning, sets *posix-argv* to NIL and
+# falls into the REPL -- so `sel -e "$(printf '"a\xffb"')"` never reached the
+# strict codec that raises E_UTF8 (spec/SPEC.md section 2). Ascii survives the
+# trip; sel.lisp decodes the arguments back to octets.
 here="$(cd "$(dirname "$0")" && pwd)"
-exec sbcl --noinform --disable-debugger --non-interactive \
+args=()
+for a in "$@"; do
+  args+=("b64:$(printf '%s' "$a" | base64 -w0)")
+done
+exec sbcl --dynamic-space-size 4GB --noinform --disable-debugger --non-interactive \
   --load "$here/boot.lisp" \
   --load "$here/sel.lisp" \
   --eval '(sel-cli:main)' \
-  --end-toplevel-options "$@"
+  --end-toplevel-options "${args[@]}"

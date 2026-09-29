@@ -163,7 +163,17 @@ def _substitute(node: Any, defs: dict[str, Any], bound: list[str],
     if t == 'var':
         if node.name in bound:
             return node
-        return defs.get(node.name, node)
+        d = defs.get(node.name)
+        if d is None:
+            return node
+        # A definition is read where it was WRITTEN, at the top of the program,
+        # outside every binder. Spliced under one whose name it reads, the name
+        # would resolve to the binder instead (`X = A; ALL(L, A, X > 0)`), so a
+        # definition that mentions a name in scope here keeps its own scope, as a
+        # `scoped` node the translator evaluates outside every frame.
+        if bound and _mentions(d, bound):
+            return Node('scoped', d.pos, x=d)
+        return d
 
     if t in ('num', 'text', 'bool'):
         return node
@@ -216,6 +226,35 @@ def _substitute(node: Any, defs: dict[str, Any], bound: list[str],
         return dataclasses.replace(node, args=args)
 
     return node
+
+
+def _mentions(node: Any, names: list[str]) -> bool:
+    """Whether ``node`` reads any of ``names`` anywhere -- more names than it reads
+    freely, since a binder of its own is not excluded, which only means a
+    definition is scoped when it did not need to be."""
+    want = set(names)
+    stack = [node]
+    while stack:
+        n = stack.pop()
+        t = n.t
+        if t == 'var':
+            if n.name in want:
+                return True
+        elif t == 'un':
+            stack.append(n.x)
+        elif t == 'bin':
+            stack.extend((n.l, n.r))
+        elif t == 'index':
+            stack.extend((n.obj, n.idx))
+        elif t == 'list':
+            stack.extend(n.items)
+        elif t == 'clist':
+            stack.extend(v for _k, v in n.entries)
+        elif t == 'scoped':
+            stack.append(n.x)
+        elif t == 'call':
+            stack.extend(n.args)
+    return False
 
 
 def _flatten(items: list[Any], defs: dict[str, Any], bound: list[str],

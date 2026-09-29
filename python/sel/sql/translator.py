@@ -11,6 +11,7 @@ partial output.
 
 from __future__ import annotations
 
+import contextlib
 import re
 from typing import Any, Callable
 
@@ -125,6 +126,10 @@ EQL_CLASS = {'NUM': 'text', 'TEXT': 'text', 'BOOL': 'bool', 'BIN': 'bin'}
 _NUMERIC_OPS = ('==', '!=', '<', '<=', '>', '>=')
 _TEXTUAL_OPS = ('$==', '$!=', '$<', '$<=', '$>', '$>=', 'EQL')
 _BYTE_COMPARISONS = ('$==', '$!=', '$<', '$<=', '$>', '$>=', 'EQL', 'IN')
+INT64_MAX = 9223372036854775807
+# The key of a frame's own element, under a name no SEL program can spell.
+ELEM = '\0elem'
+BALANCED_FOLD = 256
 _REGEX_AT = {'RMATCH': 0, 'RFIND': 0, 'RREPLACE': 0, 'RGROUPS': 0}
 
 
@@ -200,8 +205,7 @@ class Translator:
             refuse('E_SQL_SHAPE', 'expected a relational query or pipeline')
         return self.compile_statement(plan)
 
-    @staticmethod
-    def _record_fields(node: Node) -> list[tuple[str, Node]]:
+    def _record_fields(self, node: Node) -> list[tuple[str, Node]]:
         """The (name, value) pairs of a RECORD(k, v, ...) call, refusing what the
         evaluator would: an odd count at the call, a name that is not a text
         literal at the name. The planner reads RECORD in three places -- a
@@ -210,12 +214,30 @@ class Translator:
         if len(node.args) % 2:
             refuse('E_ARITY', 'RECORD takes an even number of arguments', node.pos)
         fields: list[tuple[str, Node]] = []
+        seen: dict[bytes, str] = {}
         for i in range(0, len(node.args), 2):
             key = node.args[i]
             if key.t != 'text':
                 refuse('E_BAD_ARG', 'RECORD field names must be string literals', key.pos)
+            self._check_alias(key.v, key.pos, seen)
             fields.append((key.v, node.args[i + 1]))
         return fields
+
+    def _check_alias(self, name: str, pos: Pos, seen: dict[str, str]) -> None:
+        """An output name that comes from a SEL text literal is held to the rules a
+        binding's own names meet: not empty, no NUL, and on PostgreSQL not the same
+        as another in its first 63 bytes, because the server truncates both to one
+        name (sql/MAP.md §3.1)."""
+        if name == '' or '\0' in name:
+            refuse('E_SQL_UNSUPPORTED',
+                   'an output column name must not be empty or contain a NUL', pos)
+        if 'postgresql' in _map.chain(self.dialect):
+            short = name.encode('utf-8')[:63]
+            if short in seen and seen[short] != name:
+                refuse('E_SQL_UNSUPPORTED',
+                       f'{name[:20]}... and {seen[short][:20]}... are the same name to '
+                       'PostgreSQL, which keeps 63 bytes of an identifier', pos)
+            seen[short] = name
 
     # --- the walk ------------------------------------------------------------
 
@@ -259,7 +281,7 @@ class Translator:
                    'evaluator answers E_DEPTH for it', n.pos)
         try:
             if n.t not in ('bin', 'un', 'call') \
-                    or not _constants.is_constant(n, self.const_names):
+                    or not _constants.is_constant(n, self._consts()):
                 return self._dispatch(n)
 
             f = self._dispatch(n)
@@ -273,6 +295,7 @@ class Translator:
         if t == 'num':
             return self._literal(Value.num(n.v), 'NUM')
         if t == 'text':
+            self._require_no_nul(n.v, n.pos)
             return self._literal(Value.text(n.v), 'TEXT')
         if t == 'bool':
             return self._literal(Value.bool(n.v), 'BOOL')
@@ -290,7 +313,25 @@ class Translator:
                    'aggregate iterates', n.pos)
         if t == 'call':
             return self._call(n)
+        if t == 'scoped':
+            # Not a level of nesting: the evaluator has no such node.
+            self.depth -= 1
+            try:
+                with self._env([]):
+                    return self._node(n.x)
+            finally:
+                self.depth += 1
         refuse('E_SQL_SHAPE', f'cannot translate a {t} node', n.pos)
+
+    @staticmethod
+    def _require_no_nul(text: str, pos: Pos) -> None:
+        """A TEXT value holding NUL is refused in every mode: PostgreSQL cannot
+        hold it, and a C-string client truncates the statement at it (sql/MAP.md
+        §3.1)."""
+        if '\0' in text:
+            refuse('E_SQL_UNSUPPORTED',
+                   'this text contains a NUL character, which no dialect can carry '
+                   'in a text value', pos)
 
     def _literal(self, v: Value, kind: str) -> Fragment:
         """Every literal becomes a parameter slot; §9 of docs/internals/sql-translation.md.
@@ -331,7 +372,10 @@ class Translator:
                        f'{n.name} is bound to an empty value, which is not a SQL '
                        'value; only an aggregate can be given an empty binding',
                        n.pos)
-            return self._literal(v, _declared_kind(b, v))
+            kind_v = _declared_kind(b, v)
+            if kind_v == 'TEXT':
+                self._require_no_nul(v.scalar or '', n.pos)
+            return self._literal(v, kind_v)
         if kind in ('columns', 'relation'):
             refuse('E_SQL_SHAPE',
                    f'{n.name} is bound as a {kind}, which names a set of values '
@@ -483,9 +527,19 @@ class Translator:
             refuse('E_SQL_SHAPE',
                    f'{label}["{key}"] is a field of the right side of a LINK_LEFT, which a row '
                    'with no match does not have; read it through the right binder', n.pos)
+        self._require_readable(f['spec'], label, key, n.pos)
         if f['spec'].get('raw') is not None or not f['qualify']:
             return self._column_ref(f['spec'])
         return self._column_ref({**f['spec'], 'table': f['table']})
+
+    @staticmethod
+    def _require_readable(spec: dict[str, Any], label: str, key: str, pos: Pos) -> None:
+        if spec.get('lost_raw'):
+            refuse('E_SQL_SHAPE',
+                   f'{label}["{key}"] is a raw field, an expression over the '
+                   "relation's own alias, and the derived table this pipeline "
+                   'reads from has no such column; put the step that needs it '
+                   'before the one that wraps the relation', pos)
 
     def _join_rows(self, plan: RelationalPlan) -> dict[str, Any]:
         """The rows of a statement's joins as SEL has them (spec §7.4 "Joined
@@ -718,12 +772,27 @@ class Translator:
                            f"{len(b['fields'])} fields, so SEL reads its rows as maps "
                            'and a scalar can never equal one. Bind the projected '
                            'column as a relation with that one field.', rhs.pos)
+                # The needle's kind is checked against the column's, exactly as
+                # the list and scalar spellings check theirs: SEL answers a BOOL
+                # or BIN needle FALSE against a TEXT column, and a byte
+                # comparison under a text cast would answer TRUE for `TRUE IN S`
+                # over a column holding 'TRUE' (docs/internals/sql-kinds.md §5).
+                # The skeleton first: a dialect that withdrew it answers for the
+                # gap, not for whatever the needle happens to be wrong about.
+                skel = self._skeleton('inRelation', n.pos)
+                needle = self._node(n.l)
+                column = self._column_ref(b['fields'][scalar])
+                if needle.kind in ('BOOL', 'BIN'):
+                    refuse('E_SQL_SHAPE',
+                           f'IN over {rhs.name} compares the needle with a text '
+                           f'column, and this needle is {needle.kind}, which is '
+                           'never equal to text in SEL', n.l.pos)
+                _require_comparable_kinds(needle, column, 'IN', n.pos)
                 return Fragment(
-                    self._fill_named(self._skeleton('inRelation', n.pos),
+                    self._fill_named(skel,
                                      _slots(self._relation_slots(b), {
-                                         'needle': [self.emit.text_operand(self._node(n.l))],
-                                         'body': [self.emit.text_operand(
-                                             self._column_ref(b['fields'][scalar]))],
+                                         'needle': [self.emit.text_operand(needle)],
+                                         'body': [self.emit.text_operand(column)],
                                      }), n.pos),
                     'BOOL', self.dialect)
 
@@ -780,7 +849,10 @@ class Translator:
                        'IN over a list of lists is structural in SEL and has no SQL '
                        'counterpart', e.pos)
             _require_comparable_kinds(raw, f, 'IN', e.pos)
-            item = f if is_exact else self.emit.text_operand(f)
+            # An exact column keeps its own collation, so a TEXT item is bare --
+            # but a NUMBER item beside it is still cast: `t = 3` would compare
+            # numerically and match '3.0' and '3abc' (docs/internals/sql-kinds.md).
+            item = f if (is_exact and f.kind != 'NUM') else self.emit.text_operand(f)
             tests.append(self._apply('ops', 'EQL',
                                      [needle, item], e.pos, 'text'))
         return self.fold_pairwise('OR', tests, n.pos)
@@ -790,6 +862,17 @@ class Translator:
         same path a hand-written chain takes, so an unrolled aggregate and a
         written-out chain produce the same bytes.
         """
+        # Above BALANCED_FOLD operands the tree is balanced, not left-leaning
+        # (docs/internals/sql-translation.md §7.1): a left fold over n operands is
+        # n levels deep and the servers refuse depth. The split is
+        # m = ceil(n / 2), recursively, so a half above the threshold splits
+        # again; the recursion is bounded by log2(n) levels.
+        if len(parts) > BALANCED_FOLD:
+            m = (len(parts) + 1) // 2
+            acc = self.fold_pairwise(op, parts[:m], pos)
+            other = self.fold_pairwise(op, parts[m:], pos)
+            return self._apply('ops', op, [acc, other], pos,
+                               self._variant_for(op, [acc, other]))
         acc = parts[0]
         for nxt in parts[1:]:
             acc = self._apply('ops', op, [acc, nxt], pos,
@@ -818,7 +901,17 @@ class Translator:
                     src = {'relation': group.payload, 'filters': [], 'pos': n.pos}
                     inner = self._with_row(src, n.args[1].name if has_custom_binder else '_',
                                            lambda: self._node(body_node))
-                    return Fragment([f"COALESCE(SUM({''.join(inner.parts)}), 0)"], 'NUM', self.dialect)
+                    # The same rules as a relation's SUM body: a declared TEXT or
+                    # BOOL field is refused, an undeclared one is read all or
+                    # nothing (PHP-C27).
+                    if _constants.is_constant(body_node, self._consts()):
+                        self._require_numeric_constant(body_node)
+                    else:
+                        inner = self._require_num(inner, body_node.pos, 'SUM')
+                    inner = self._guard_sum(inner, body_node, True)
+                    if inner.whole_sum:
+                        return inner
+                    return Fragment(['COALESCE(SUM(', *inner.parts, '), 0)'], 'NUM', self.dialect)
 
         if name in AGGREGATES:
             return self._aggregate(n)
@@ -1110,6 +1203,32 @@ class Translator:
                 return frame[name]
         return None
 
+    @contextlib.contextmanager
+    def _env(self, env: list | None):
+        """Run the walk in another lexical environment: the frames an element (or
+        an inlined definition) was written under, in place of the ones its reader
+        happens to be inside. Absent, nothing changes."""
+        if env is None:
+            yield
+            return
+        saved = self.frames
+        self.frames = list(env)
+        try:
+            yield
+        finally:
+            self.frames = saved
+
+    def _consts(self) -> dict[str, bool]:
+        """The constant names in force here: the value bindings, less any a binder
+        in scope shadows. `ALL(L, V, V + 1 > 0)` reads its own V, not the binding
+        that happens to share the name, so V is no constant inside it."""
+        if not self.const_names or not self.frames:
+            return self.const_names
+        hidden = {k for f in self.frames for k in f if k in self.const_names}
+        if not hidden:
+            return self.const_names
+        return {k: v for k, v in self.const_names.items() if k not in hidden}
+
     def _group_key(self, src: dict[str, Any], group: dict[str, Any], projected: bool = False) -> Fragment:
         """A group key, rendered as the GROUP BY expression itself -- wherever
         it appears: the clause, the ``_K`` projection, a HAVING. A TEXT key is
@@ -1177,7 +1296,8 @@ class Translator:
 
     def _from_binder(self, b: Binder, n: Node) -> Fragment:
         if b.shape == Binder.NODE:
-            return self._node(b.payload)
+            with self._env(b.env):
+                return self._node(b.payload)
         if b.shape == Binder.KEY:
             # Inside a row already: bind the key's own binder to that row and
             # render the key there, then collate it exactly as the GROUP BY does.
@@ -1297,6 +1417,7 @@ class Translator:
                 refuse('E_SQL_BINDING',
                        f'{name}["{key}"] is not a field of that relation' + tail, n.pos)
             field_spec = b.payload['fields'][field]
+            self._require_readable(field_spec, name, key, n.pos)
             if field_spec.get('raw') is not None:
                 return self._column_ref(field_spec)
             if (self.statement_plan is not None
@@ -1314,10 +1435,27 @@ class Translator:
                f'{name} names a single column, which has no parts to index', n.pos)
 
     def _source(self, src: Any, call: Node) -> dict[str, Any]:
+        """`_source_raw`, and every element it created remembers the frames in
+        force here: the list was written at this point, and its elements are
+        evaluated there whenever they are read (docs/internals/sql-translation.md
+        §7.4, lexical scope)."""
+        res = self._source_raw(src, call)
+        env = list(self.frames)
+        for e in (res.get('elements') or {}).values():
+            if e.shape == Binder.NODE and e.env is None:
+                e.env = env
+        return res
+
+    def _source_raw(self, src: Any, call: Node) -> dict[str, Any]:
         """Classify an aggregate's first argument into one of the three shapes,
         absorbing any FILTER on the way through. Recursive, so
         ``FILTER(FILTER(L, p1), p2)`` conjoins both predicates over L.
         """
+        if src.t == 'scoped':
+            # An inlined definition: read where it was written, outside every
+            # binder the use site is inside.
+            with self._env([]):
+                return self._source(src.x, call)
         if src.t == 'call' and src.name == 'FILTER':
             f_binder, f_body = _agg_shape(src)
             inner = self._source(src.args[0], call)
@@ -1345,7 +1483,8 @@ class Translator:
             bound = self._binder(src.name)
             if bound is not None:
                 if bound.shape == Binder.NODE:
-                    return self._source(bound.payload, call)
+                    with self._env(bound.env):
+                        return self._source(bound.payload, call)
                 if bound.shape == Binder.NONE:
                     refuse('E_SQL_SHAPE', str(bound.reason), src.pos)
                 # A bucket's members are iterated by COUNT and SUM alone
@@ -1484,7 +1623,9 @@ class Translator:
              else self._require_bool(q, body.pos, name))
 
         for f in src['filters']:
-            p = self._require_bool(self._node(f['body']), f['body'].pos, 'FILTER')
+            p = self._require_bool(
+                self._in_filter_scope(f, lambda f=f: self._node(f['body'])),
+                f['body'].pos, 'FILTER')
             if name == 'SUM':
                 q = self._case_when(p, q, self._literal(Value.num('0'), 'NUM'), n.pos)
                 continue
@@ -1493,7 +1634,68 @@ class Translator:
                                 [self._apply('ops', 'NOT', [p], n.pos), q], n.pos)
             else:
                 q = self._apply('ops', 'AND', [p, q], n.pos)
+        if name == 'SUM':
+            q = self._guard_sum(q, body, src.get('shape') == 'relation')
         return q
+
+    def _in_filter_scope(self, f: dict[str, Any], render: Callable[[], Fragment]) -> Fragment:
+        """Render an absorbed FILTER's predicate where the evaluator would: its own
+        binder names the element, `_K` is that element's key, and the aggregate's
+        binder -- which the FILTER, being evaluated first, has never heard of --
+        is not in scope."""
+        frame = self.frames[-1]
+        elem = frame[ELEM]
+        scope = {f['binder']: elem, '_K': frame['_K'], ELEM: elem}
+        saved = self.frames
+        self.frames = saved[:-1] + [scope]
+        try:
+            return render()
+        finally:
+            self.frames = saved
+
+    def _guard_sum(self, q: Fragment, body: Node, whole: bool) -> Fragment:
+        """A SUM body nobody has vouched for is read as a number (docs/internals/
+        sql-kinds.md §5a).
+
+        Over a ``columns`` or static unroll the body is one operand of a chain of
+        ``+``, where NULL propagates, so the plain operand guard is enough. Over a
+        relation or a group the server's SUM *skips* NULL, and this translator's own
+        ``COALESCE(SUM(...), 0)`` turns an all-NULL sum into 0, so guarding each
+        element would make a refused element vanish; the guard is all or nothing:
+        every element must pass, or the value is NULL."""
+        if q.kind != 'UNKNOWN' or _constants.is_constant(body, self._consts()):
+            return q
+        if not whole:
+            return self._guard_numeric(q, body)
+        test_tpl, cast_tpl = self._guard_halves(body.pos)
+        self._scale_limited(body.pos, 'this operand is read as a number')
+        test = self.emit.fill(test_tpl, [q], body.pos)
+        cast = self.emit.fill(cast_tpl, [q], body.pos)
+        out = Fragment(['CASE WHEN COUNT(*) = COUNT(CASE WHEN ', *test,
+                        ' THEN 1 END) THEN COALESCE(SUM(', *cast,
+                        '), 0) ELSE NULL END'], 'NUM', self.dialect)
+        out.whole_sum = True
+        return out
+
+    def _guard_halves(self, pos: Pos) -> tuple[str, str]:
+        """The dialect's ``numericGuard`` template split into the test and the
+        cast it is made of: ``CASE WHEN <test> THEN <cast> ELSE NULL END``. The
+        all-or-nothing SUM needs the two apart. A dialect that cannot ask whether a
+        value is a number refuses here exactly as the operand guard does."""
+        _map.check_numeric_guard(self.dialect)
+        guard = self.emit.lex('numericGuard')
+        if not isinstance(guard, str):
+            refuse('E_SQL_UNSUPPORTED',
+                   f'dialect {self.dialect} has no way to ask whether a value is a '
+                   'number, so an undeclared SUM body cannot be read as one here; '
+                   'declare the binding NUM if the column really is numeric', pos)
+        m = re.fullmatch(r'CASE WHEN (.+?) THEN (.+) ELSE NULL END', guard, re.S)
+        if m is None:
+            refuse('E_SQL_UNSUPPORTED',
+                   f"dialect {self.dialect}'s numericGuard is not shaped "
+                   '`CASE WHEN <test> THEN <cast> ELSE NULL END`, so it cannot be '
+                   'split for a SUM', pos)
+        return m.group(1), m.group(2)
 
     def _with_element(self, src: dict[str, Any], binder_name: str, elem: Binder,
                       key: str, n: Node, render: Callable[[], Fragment]) -> Fragment:
@@ -1502,9 +1704,12 @@ class Translator:
         Every absorbed FILTER's binder is bound to the same element, which is what
         makes absorption three lines rather than a substitution pass -- see §7.5.
         """
-        frame = {binder_name: elem, '_K': Binder.node(_lit_node('text', key, n.pos))}
-        for f in src['filters']:
-            frame[f['binder']] = elem
+        # Only the aggregate's own binder and `_K` are in scope for its body. An
+        # absorbed FILTER's binder names the element for ITS predicate alone
+        # (_in_filter_scope), so `ANY(FILTER(V, a, a > 1), q, a < 9)` has no `a`
+        # in the body -- as the evaluator, where the FILTER is a call of its own.
+        frame = {binder_name: elem, '_K': Binder.node(_lit_node('text', key, n.pos)),
+                 ELEM: elem}
         self.frames.append(frame)
         try:
             return render()
@@ -1551,9 +1756,7 @@ class Translator:
                                'unordered and unkeyed unless the schema says '
                                'otherwise, and guessing which column is the key '
                                'is not something this layer does')
-        frame = {binder_name: row, '_K': k_binder}
-        for f in src['filters']:
-            frame[f['binder']] = row
+        frame = {binder_name: row, '_K': k_binder, ELEM: row}
         # After a LINK only the row is in scope (spec §7.4): the binders are
         # scoped to its predicate, and the evaluator raises E_UNDEF_VAR for
         # ``C["id"]`` in a later step -- the joined row carries them as keys,
@@ -1644,9 +1847,18 @@ class Translator:
                                  _slots(self._relation_slots(rel), {'body': [body]}), n.pos),
                 AGG_RETURNS[name], self.dialect)
             return self._apply('ops', 'AND', [pre, main], n.pos)
+        skel = self._skeleton(AGG_SKELETON[name], n.pos)
+        if getattr(body, 'whole_sum', False):
+            # The body already is the whole `... COALESCE(SUM(x), 0) ...`
+            # expression, so it replaces that in the skeleton.
+            marker = 'COALESCE(SUM({body}), 0)'
+            if marker not in skel:
+                refuse('E_SQL_UNSUPPORTED',
+                       f"the SUM skeleton of dialect {self.dialect} does not contain "
+                       f'{marker}, so an all-or-nothing guard has nowhere to go', n.pos)
+            skel = skel.replace(marker, '{body}')
         return Fragment(
-            self._fill_named(self._skeleton(AGG_SKELETON[name], n.pos),
-                             _slots(self._relation_slots(rel), {'body': [body]}), n.pos),
+            self._fill_named(skel, _slots(self._relation_slots(rel), {'body': [body]}), n.pos),
             AGG_RETURNS[name], self.dialect)
 
     def _relation_slots(self, rel: dict[str, Any]) -> dict[str, list[str]]:
@@ -1661,8 +1873,12 @@ class Translator:
         if rel.get('alias'):
             out += ' ' + self.emit.ident(str(rel['alias']))
         corr = rel.get('correlate')
+        # A supplied correlate is parenthesised wherever it is spliced: it is the
+        # application's own text, and one containing OR would otherwise absorb the
+        # AND the skeleton joins it with (sql/MAP.md §5). The default TRUE is ours
+        # and stays bare.
         return {'from': [out],
-                'corr': [str(corr['raw']) if corr else str(self.emit.lex('true'))]}
+                'corr': [f"({corr['raw']})" if corr else str(self.emit.lex('true'))]}
 
     def _count(self, n: Node) -> Fragment:
         src = self._source(n.args[0], n)
@@ -1734,11 +1950,14 @@ class Translator:
                        'JOIN over a relation needs the binding to name a "scalar" '
                        'field', n.pos)
             body = self._column_ref(rel['fields'][scalar])
+            self._require_joinable(body, n.pos, 'an element')
             skel = self._skeleton('join', n.pos)      # refuses with the map's reason
+            sep = self._node(n.args[1])
+            self._require_joinable(sep, n.args[1].pos, 'the separator')
             return Fragment(
                 self._fill_named(skel, _slots(self._relation_slots(rel),
                                               {'body': [body],
-                                               'sep': [self._node(n.args[1])]}), n.pos),
+                                               'sep': [sep]}), n.pos),
                 'TEXT', self.dialect)
 
         parts: list[Fragment] = []
@@ -1746,13 +1965,28 @@ class Translator:
             if parts:
                 # Rendered per gap, not once and reused: see the note in
                 # _in_operator on why splicing one Fragment twice breaks `params`.
-                parts.append(self._node(n.args[1]))
-            parts.append(self._with_element(
+                sep = self._node(n.args[1])
+                self._require_joinable(sep, n.args[1].pos, 'the separator')
+                parts.append(sep)
+            piece = self._with_element(
                 src, '_', elem, str(key), n,
-                lambda e=elem: self._from_binder(e, n)))
+                lambda e=elem: self._from_binder(e, n))
+            self._require_joinable(piece, n.pos, 'an element')
+            parts.append(piece)
         if not parts:
             return self._literal(Value.text(''), 'TEXT')
         return parts[0] if len(parts) == 1 else self.fold_pairwise('&', parts, n.pos)
+
+    def _require_joinable(self, f: Fragment, pos: Pos, what: str) -> None:
+        """JOIN is `&` over text (spec §7.5 and §5.2): a BOOL is not text for it,
+        and a BIN would make the result BIN where the SQL rendering is text. Both
+        translated before, into a concatenation whose bytes SEL never produces
+        (docs/internals/sql-kinds.md §5). A BOOL or BIN column, literal or
+        binding element is refused wherever it stands."""
+        if f.kind in ('BOOL', 'BIN'):
+            refuse('E_SQL_SHAPE',
+                   f'JOIN reads {what} as text and this is {f.kind}, which SEL '
+                   'refuses there and SQL would silently convert', pos)
 
     def _case_when(self, cond: Fragment, then: Fragment, else_: Fragment,
                    pos: Pos) -> Fragment:
@@ -1875,7 +2109,7 @@ class Translator:
         for the repeated slot. What is left is what could not be settled at
         translation time: columns, raw, relation fields.
         """
-        if _constants.is_constant(n, self.const_names):
+        if _constants.is_constant(n, self._consts()):
             return f
         guarded = self.emit.numeric_operand(f, n.pos)
         if guarded is not f:
@@ -1910,7 +2144,7 @@ class Translator:
         if cap is None:
             return
         for _f, node in pairs:
-            if _constants.is_constant(node, self.const_names):
+            if _constants.is_constant(node, self._consts()):
                 if _constants.constant_scale(node, self.const_ctx) > cap:
                     self._scale_limited(node.pos, 'this constant is read as a number')
             else:
@@ -1925,7 +2159,7 @@ class Translator:
         for why refusing loses nothing, and for why it is never keyed on a
         declared kind.
         """
-        if _constants.is_constant(n, self.const_names):
+        if _constants.is_constant(n, self._consts()):
             _constants.require_numeric(n, self.const_ctx)
 
     def _require_not_bool(self, f: Fragment, pos: Pos, where: str) -> None:
@@ -2161,6 +2395,10 @@ class Translator:
                 'table': alias,
                 'type': self._output_field_type(plan, name),
             }
+            if source_field is not None and source_field.get('raw') is not None:
+                # A raw field is an application expression against the relation's
+                # own alias; the derived table has no such column to read.
+                fields[ascii_upper(name)]['lost_raw'] = True
             canon_kind = self._output_canon_kind(plan, name)
             if canon_kind is not None:
                 fields[ascii_upper(name)]['type'] = canon_kind
@@ -2189,11 +2427,19 @@ class Translator:
         if not val.looks_numeric() or val.is_null():
             refuse('E_NOT_NUM', f'{op} count must be a number', n.pos)
         d = val.as_decimal(n.pos)
+        # A count written with a scale is a whole number when its fractional
+        # digits are all zero (`TAKE(2.0)` is 2, as in SEL), and `-0` is zero.
+        digits = d.digits
         if d.scale != 0:
-            refuse('E_NOT_INT', f'{op} count must be an integer', n.pos)
-        if d.neg:
+            if digits % (10 ** d.scale) != 0:
+                refuse('E_NOT_INT', f'{op} count must be an integer', n.pos)
+            digits //= 10 ** d.scale
+        if d.neg and digits != 0:
             refuse('E_RANGE', f'{op} count cannot be negative', n.pos)
-        return d.digits
+        # Every server's LIMIT and OFFSET stop at a signed 64-bit integer, and a
+        # list is never that long, so a larger count says the same thing as the
+        # largest one (docs/internals/sql-translation.md §11.6).
+        return min(digits, INT64_MAX)
 
     def _bucket_projection(self, plan: RelationalPlan, binder: str,
                            aggregate_node: Node | None) -> None:
@@ -2359,10 +2605,12 @@ class Translator:
                 items = (column_args[0].items if len(column_args) == 1
                          and column_args[0].t == 'list' else column_args)
                 columns = []
+                seen_names: dict[bytes, str] = {}
                 for item in items:
                     if item.t != 'text':
                         refuse('E_BAD_ARG', 'SELECT_COLS column names must be string literals', item.pos)
                     column = item.v
+                    self._check_alias(column, item.pos, seen_names)
                     field_name = ascii_upper(column)
                     matches = 0
                     if field_name in (plan.source_relation.get('fields') or {}):
@@ -2375,6 +2623,12 @@ class Translator:
                                f"column '{column}' is ambiguous across joined tables; qualify with a table alias",
                                item.pos)
                     fields = plan.source_relation.get('fields') or {}
+                    picked = fields.get(field_name)
+                    if picked is not None and (picked.get('raw') is not None
+                                               or picked.get('lost_raw')):
+                        refuse('E_SQL_SHAPE',
+                               f"column '{column}' is a raw field, an expression, and "
+                               'SELECT_COLS names columns of the relation', item.pos)
                     if fields and matches == 0:
                         refuse('E_SQL_SHAPE',
                                f"relation {plan.source_name} has no field '{column}'; the relation declares "
@@ -2431,13 +2685,9 @@ class Translator:
                 # Consume the bounded slice. Avoid sums beyond the exact
                 # integer range shared by hosts by retaining a SQL boundary.
                 skipped = offset if plan.limit is None else min(offset, plan.limit)
-                if (plan.offset or 0) > 9007199254740991 - skipped:
-                    plan = self._wrap_plan_as_derived_table(plan)
-                    plan.offset = offset
-                else:
-                    if plan.limit is not None:
-                        plan.limit -= skipped
-                    plan.offset = (plan.offset or 0) + skipped
+                if plan.limit is not None:
+                    plan.limit -= skipped
+                plan.offset = min((plan.offset or 0) + skipped, INT64_MAX)
 
             elif name in ('SORT', 'SORT_DESC', 'SORT_BY', 'TOP', 'TOP_DESC', 'TOP_BY'):
                 # A sort after a LIMIT or OFFSET sorts the rows that survived
@@ -2469,7 +2719,13 @@ class Translator:
                 # other hosts did not (review 2026-09-28 SQL-10).
                 if (plan.order_by or plan.projections is not None
                         or plan.select_cols is not None or plan.group_by is not None):
+                    # Rendered to be refused early, and discarded: the values it
+                    # bound go with it, or the slots it numbered are never emitted
+                    # and every later one is renumbered past them.
+                    mark = len(self.params)
                     self.compile_statement(plan)
+                    del self.params[mark:]
+                    del self.param_kinds[mark:]
                 plan = self._ensure_derived(plan, self._plan_has_rows_above)
                 if len(args) not in (3, 5):
                     refuse('E_ARITY', f'{name} takes 3 or 5 arguments', step.pos)
@@ -2924,8 +3180,10 @@ def _unify(fs: list[Fragment], pos: Pos | None = None) -> str:
     The rule is one line: known-kind branches must agree.
     """
     kind = None
+    unknown = False
     for f in fs:
         if f.kind == 'UNKNOWN':
+            unknown = True
             continue
         if kind is None:
             kind = f.kind
@@ -2934,7 +3192,11 @@ def _unify(fs: list[Fragment], pos: Pos | None = None) -> str:
                    f'these branches produce different kinds — {kind} and {f.kind} — '
                    'and SQL gives the whole expression one type, which cannot match '
                    "SEL's for both", pos)
-    return kind or 'UNKNOWN'
+    # A kind nobody vouched for does not become certain by sitting beside one
+    # that is: the CASE / COALESCE yields whatever ANY branch yields, so a branch
+    # that is UNKNOWN makes the whole result UNKNOWN (docs/internals/sql-kinds.md
+    # §5). The known branches still had to agree above.
+    return 'UNKNOWN' if unknown else (kind or 'UNKNOWN')
 
 
 def _declared_kind(b: dict[str, Any], v: Value) -> str:

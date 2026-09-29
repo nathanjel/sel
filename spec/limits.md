@@ -1,6 +1,6 @@
 # The limits and error catalogue — `spec/limits.json`
 
-The four normative numbers (§6.4's depth cap and value caps, §5.3's division
+The normative numbers (§6.4's depth cap and value caps, §5.3's division
 scale) and the language's error identifiers, in one machine-readable file.
 
 **It is not a second authority.** `spec/SPEC.md` and `spec/errors.md` define
@@ -26,6 +26,8 @@ neither be raised unlisted nor listed unraised.
 
 What stays out, on purpose: host budgets that are not language facts — cache
 sizes, freelist pools, shape-interning caps, the SQL layer's per-dialect
-limits. `conformance/10-limits.selt` and the API probes keep their literal
+limits. (`MAX_SQL_NODES` is here because it is a fact of the translator's
+contract, not of any host: every host's translator must refuse at the same
+size.) `conformance/10-limits.selt` and the API probes keep their literal
 `200`s: those are independent oracles of the same fact, and an oracle that
 read its expected answer from the manifest it is checking would prove nothing.

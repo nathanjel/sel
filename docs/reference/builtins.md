@@ -16,7 +16,7 @@ defines the semantics; this table only says what the function table knows.
 | `BACKWARDS` | `BACKWARDS(x)` | 1 | strict | §7.5 |
 | `BLEN` | `BLEN(x)` | 1 | strict | §7.7 |
 | `BTL` | `BTL(x)` | 1 | strict | §7.7 |
-| `BUCKET` | `BUCKET(list, [binder,] key)`<br>`BUCKET(list, [binder,] key, proj)` | 2–4 | lazy, binds | §7.3 |
+| `BUCKET` | `BUCKET(list, key)`<br>`BUCKET(list, key, proj)`<br>`BUCKET(list, binder, key, proj)` | 2–4 | lazy, binds | §7.3 |
 | `CANON` | `CANON(x)` | 1 | strict | §7.6 |
 | `CEIL` | `CEIL(x)` | 1 | strict | §7.6 |
 | `CHAR` | `CHAR(n)` | 1 | strict | §7.5 |
@@ -103,7 +103,6 @@ guard says which form a count takes when two would fit.
 | `ANY` | source, body |  | `_` `_K` |
 | `ANY` | source, binder, body |  | `_K` |
 | `BUCKET` | source, key |  | `_` `_K` |
-| `BUCKET` | source, binder, key | argument 2 is a bare name | `_K` |
 | `BUCKET` | source, key, proj |  | `_` `_K` |
 | `BUCKET` | source, binder, key, proj |  | `_K` |
 | `FILTER` | source, body |  | `_` `_K` |

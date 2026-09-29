@@ -26,7 +26,7 @@ class Fragment:
 
     __slots__ = ('parts', 'params', 'param_kinds', 'kind', 'dialect', 'caveats',
                  'exact', 'sargable', 'guard', 'prefilter', 'separate_prefilter',
-                 'canonical')
+                 'canonical', 'whole_sum')
 
     def __init__(self, parts: list[Any], kind: str, dialect: str,
                  params: list[Value] | None = None,
@@ -55,6 +55,10 @@ class Fragment:
         # per-value scale (PostgreSQL), TEXT where it cannot (the MySQL family,
         # SQLite, ansi) -- and text is what SQL sorts by its bytes.
         self.canonical: bool = False
+        # A SUM body already wrapped in its all-or-nothing guard: the whole
+        # `CASE WHEN COUNT(*) = COUNT(...) THEN COALESCE(SUM(...), 0) ELSE NULL END`,
+        # which stands where the skeleton's own `COALESCE(SUM({body}), 0)` did.
+        self.whole_sum: bool = False
 
     def as_value(self, mode: str = 'inline') -> str:
         """Usable in a select list, GROUP BY, ORDER BY or HAVING. Any kind but

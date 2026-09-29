@@ -346,6 +346,49 @@ function run_case(array $c): ?string
         }
     }
 
+    // The reuse twin. The same program and bindings are translated again, several
+    // times, and every translation must give the first one's outcome: the same
+    // SQL, or the same refusal at the same place, or the same kind of startup
+    // error. A translator that keeps state between calls -- a dialect marked as
+    // checked before it was checked, a parameter list that grows -- passes one
+    // translation and fails here (T10: JS-C24, PHP-C49, PY-C49, CPP-C36,
+    // LISP-C42, GO-C18).
+    if ($program !== null && $bindings !== null) {
+        $describe = static fn (?string $s, ?SqlError $e, ?\Throwable $t): string => $t !== null
+            ? get_class($t) . " ({$t->getMessage()})"
+            : ($e !== null ? "{$e->code} at {$e->line}:{$e->col}" : var_export($s, true));
+        for ($k = 0; $k < 4; $k++) {
+            $sql2 = null;
+            $error2 = null;
+            $thrown2 = null;
+            try {
+                $frag2 = Sql::translate($program, $dialect, $bindings, $options);
+                $sql2 = match ($as) {
+                    'condition' => $frag2->asCondition($mode),
+                    'statement' => $frag2->asStatement($mode),
+                    default => $frag2->asValue($mode),
+                };
+            } catch (SqlError $e) {
+                $error2 = $e;
+            } catch (SelError $e) {
+                return "translating again: the source did not compile: {$e}";
+            } catch (\Throwable $e) {
+                $thrown2 = $e;
+            }
+            $same = $thrown !== null
+                ? $thrown2 !== null && get_class($thrown2) === get_class($thrown)
+                : ($error !== null
+                    ? $error2 !== null && $error2->code === $error->code
+                        && $error2->line === $error->line && $error2->col === $error->col
+                    : $thrown2 === null && $error2 === null && $sql2 === $sql);
+            if (!$same) {
+                return 'translating again on the same program and bindings gave '
+                    . $describe($sql2, $error2, $thrown2) . ' where the first translation gave '
+                    . $describe($sql, $error, $thrown) . ' (repeat ' . ($k + 1) . ')';
+            }
+        }
+    }
+
     // A malformed map or binding is a mistake in the application's startup and
     // raises the host's own error type; a rule that cannot be translated raises
     // SqlError. Keeping the two apart is why `throws` exists as its own outcome

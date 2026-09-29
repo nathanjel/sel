@@ -1,9 +1,10 @@
-import { Value, RecordShape, NONE, TEXT, structuralHash, internRecordShape } from '../value.mjs';
+import { Value, RecordShape, NONE, TEXT, structuralHash, scalarKey, internRecordShape } from '../value.mjs';
 import * as D from '../decimal.mjs';
 import { define } from '../registry.mjs';
 import { BUILTIN_MANIFEST } from '../_builtin_manifest.mjs';
-import { SelError, fail } from '../errors.mjs';
+import { SelError, fail, MAX_DEPTH } from '../errors.mjs';
 import { asciiUpper } from '../lexer.mjs';
+import { checkCollection } from '../budget.mjs';
 
 // Names compare ASCII-case-insensitively (spec §2, §7.4): only a-z move.
 // toUpperCase folds "ß" to "SS" and "ſ" to "S", which made distinct field names
@@ -59,7 +60,7 @@ define({
 
 define({
   name: 'LIST', min: 0, max: Infinity,
-  fn: (args) => Value.listOwned(Array.from({ length: args.count() }, (_, i) => args.val(i).clone())),
+  fn: (args) => Value.listOwned(Array.from({ length: args.count() }, (_, i) => args.val(i).cloneAt(2, args.pos))),
 });
 
 function recordWithShape(args, shape) {
@@ -70,7 +71,7 @@ function recordWithShape(args, shape) {
   const values = [];
   for (let i = 0; i < args.count(); i += 2) {
     keys.push(args.text(i));
-    values.push(args.val(i + 1).clone());
+    values.push(args.val(i + 1).cloneAt(2, args.pos));
   }
   if (shape.size === keys.length) {
     let i = 0;
@@ -84,7 +85,7 @@ function recordFromArgs(args) {
   if (args.recordShape) return recordWithShape(args, args.recordShape);
   const entries = [];
   for (let i = 0; i < args.count(); i += 2) {
-    entries.push([args.text(i), args.val(i + 1).clone()]);
+    entries.push([args.text(i), args.val(i + 1).cloneAt(2, args.pos)]);
   }
   return Value.fromEntriesOwned(entries);
 }
@@ -138,8 +139,16 @@ function doDedupe(args) {
   const value = args.val(0);
   if (value.isNull()) return Value.list([]);
   const buckets = new Map();
+  const seen = new Set();
   const out = [];
   for (const [, item] of elements(value)) {
+    // A value with no children is identified exactly, by its kind and scalar,
+    // in constant time whatever the hash would have said.
+    const exact = scalarKey(item);
+    if (exact !== null) {
+      if (!seen.has(exact)) { seen.add(exact); out.push(item); }
+      continue;
+    }
     const hash = structuralHash(item);
     const bucket = buckets.get(hash) || [];
     if (!bucket.some((existing) => item.eql(existing))) {
@@ -156,23 +165,35 @@ define({ name: 'DEDUPE', min: 1, max: 1, fn: doDedupe });
 
 // --- relational links ------------------------------------------------------
 
-function exprDependsOnlyOn(node, allowed) {
-  if (!node) return true;
-  switch (node.t) {
-    case 'var': return allowed.has(upperName(node.name));
-    case 'index': return exprDependsOnlyOn(node.obj, allowed) && exprDependsOnlyOn(node.idx, allowed);
-    case 'call': return node.args.every((item) => exprDependsOnlyOn(item, allowed));
-    case 'bin': return exprDependsOnlyOn(node.l, allowed) && exprDependsOnlyOn(node.r, allowed);
-    case 'un': return exprDependsOnlyOn(node.x, allowed);
-    case 'assign': return exprDependsOnlyOn(node.target, allowed)
-      && exprDependsOnlyOn(node.value, allowed);
-    case 'seq': return node.items.every((item) => exprDependsOnlyOn(item, allowed));
-    default: return true;
+// Iterative, not recursive: the expression is as deep as its source is long
+// (SPEC 6.4), and the answer must not depend on how deep, or a key that the
+// evaluator would accept -- or reject with E_DEPTH at a pinned node -- would be
+// planned differently past some length.
+function exprDependsOnlyOn(root, allowed) {
+  const stack = [root];
+  while (stack.length > 0) {
+    const node = stack.pop();
+    if (!node) continue;
+    switch (node.t) {
+      case 'var': if (!allowed.has(upperName(node.name))) return false; break;
+      case 'index': stack.push(node.obj, node.idx); break;
+      case 'call': for (const item of node.args) stack.push(item); break;
+      case 'bin': stack.push(node.l, node.r); break;
+      case 'un': stack.push(node.x); break;
+      case 'assign': stack.push(node.target, node.value); break;
+      case 'seq': case 'list': for (const item of node.items) stack.push(item); break;
+      default: break;
+    }
   }
+  return true;
 }
 
 function tryExtractEquiKeys(node, b1, b2) {
   if (!node || node.t !== 'bin' || (node.op !== '==' && node.op !== '$==')) return null;
+  // Two binders of one name: the right one shadows the left (SPEC 7.4), so a
+  // read of that name is the right element on BOTH sides of the comparison and
+  // there is no left key to extract. The general path evaluates it as written.
+  if (upperName(b1) === upperName(b2)) return null;
   const leftNames = new Set([b1, b1.toLowerCase(), '_1', '_'].map((x) => upperName(x)));
   const rightNames = new Set([b2, b2.toLowerCase(), '_2'].map((x) => upperName(x)));
   if (exprDependsOnlyOn(node.l, leftNames) && exprDependsOnlyOn(node.r, rightNames)) {
@@ -208,11 +229,18 @@ function canonicalJoinKey(value, numeric) {
     try { d = value.asDecimal(null); } catch (e) { if (e instanceof SelError) return JOIN_BAD; throw e; }
     // One key per number, as `==` compares it (spec §7.4): trailing fraction
     // zeros and a negative zero are representation, not value.
-    let digits = d.digits;
-    let scale = d.scale;
-    if (digits === 0n) return '0';
-    while (scale > 0 && digits % 10n === 0n) { digits /= 10n; scale--; }
-    return D.format({ neg: d.neg, digits, scale });
+    if (d.digits === 0n) return '0';
+    // Format once, then trim the zeros off the TEXT: dividing the BigInt by ten a
+    // zero at a time was quadratic in the number of trailing zeros, and a
+    // fraction may have a million digits (JS-C15).
+    let text = D.format(d);
+    if (d.scale > 0) {
+      let end = text.length;
+      while (end > 0 && text.charCodeAt(end - 1) === 48) end--;
+      if (text.charCodeAt(end - 1) === 46) end--;
+      text = text.slice(0, end);
+    }
+    return text;
   }
   let bytes;
   try { bytes = value.asBytes(null); } catch (e) { if (e instanceof SelError) return JOIN_BAD; throw e; }
@@ -561,19 +589,25 @@ function flatRow(row, binderNames) {
 // function may do anything), no ABORT. Such a node may be evaluated out of
 // order -- the right source of a join before the left -- which is what lets a
 // FILTER's conjuncts travel down a chain of joins.
-function pureSource(node) {
-  if (!node) return true;
-  switch (node.t) {
-    case 'var': case 'num': case 'text': case 'bool': return true;
-    case 'index': return pureSource(node.obj) && pureSource(node.idx);
-    case 'bin': return pureSource(node.l) && pureSource(node.r);
-    case 'un': return pureSource(node.x);
-    case 'list': return node.items.every(pureSource);
-    case 'call':
-      if (!Object.prototype.hasOwnProperty.call(BUILTIN_MANIFEST, node.name) || node.name === 'ABORT') return false;
-      return node.args.every(pureSource);
-    default: return false;
+function pureSource(root) {
+  const stack = [root];
+  while (stack.length > 0) {
+    const node = stack.pop();
+    if (!node) continue;
+    switch (node.t) {
+      case 'var': case 'num': case 'text': case 'bool': break;
+      case 'index': stack.push(node.obj, node.idx); break;
+      case 'bin': stack.push(node.l, node.r); break;
+      case 'un': stack.push(node.x); break;
+      case 'list': for (const item of node.items) stack.push(item); break;
+      case 'call':
+        if (!Object.prototype.hasOwnProperty.call(BUILTIN_MANIFEST, node.name) || node.name === 'ABORT') return false;
+        for (const item of node.args) stack.push(item);
+        break;
+      default: return false;
+    }
   }
+  return true;
 }
 
 // The conjuncts a join may test before it joins, in stage order, and where
@@ -620,8 +654,10 @@ function truncateStages(stages, stop) {
 // NODE with every `r["orders"]` -- a read through the left binder's own name
 // (NAMES, upper-cased) on the element BINDER -- replaced by the element: on
 // the left rows themselves the joined row's member of that name is the row.
-function readSelf(node, names, binder) {
+function readSelf(node, names, binder, depth = 1) {
   if (!node) return null;
+  // Past the depth cap the node is kept as it is: the evaluator reports the depth.
+  if (depth > MAX_DEPTH) return node;
   if (node.t === 'index' && node.obj && node.obj.t === 'var' && node.obj.name === binder
       && node.idx && node.idx.t === 'text' && names.has(upperName(node.idx.v))) {
     return { t: 'var', name: binder, pos: node.pos };
@@ -630,10 +666,10 @@ function readSelf(node, names, binder) {
   delete copy.mathPlan;          // a compiled plan of the original reads the original
   delete copy.recordShape;
   for (const slot of ['l', 'r', 'x', 'obj', 'idx', 'target', 'value']) {
-    if (node[slot]) copy[slot] = readSelf(node[slot], names, binder);
+    if (node[slot]) copy[slot] = readSelf(node[slot], names, binder, depth + 1);
   }
-  if (node.args) copy.args = node.args.map((a) => readSelf(a, names, binder));
-  if (node.items) copy.items = node.items.map((a) => readSelf(a, names, binder));
+  if (node.args) copy.args = node.args.map((a) => readSelf(a, names, binder, depth + 1));
+  if (node.items) copy.items = node.items.map((a) => readSelf(a, names, binder, depth + 1));
   return copy;
 }
 
@@ -898,6 +934,8 @@ function doLink(args, ctx, leftJoin) {
   const project = makeJoinProjector(b1, b2, nullRight);
   const equi = tryExtractEquiKeys(predicate, b1, b2);
   const output = [];
+  // A join builds a collection: its rows are capped (SPEC 6.4), at the call.
+  const capRows = (n) => checkCollection(n, args.pos, `${args.name} result`);
   const each = forEachCollectionItem;
 
   // The pre-filter, decided from the rows themselves (see stageWalk). On a
@@ -1107,6 +1145,7 @@ function doLink(args, ctx, leftJoin) {
             if (skip === null || !skip.has(matches[i])) {
               const joined = project(row, matches[i]);
               if (keyed !== null) keyed.set(String(position), joined); else output.push(joined);
+              capRows(keyed !== null ? position : output.length);
             } else {
               dropped = true;
             }
@@ -1115,6 +1154,7 @@ function doLink(args, ctx, leftJoin) {
         } else if (leftJoin) {
           const joined = project(row, null);
           if (keyed !== null) keyed.set(String(position), joined); else output.push(joined);
+              capRows(keyed !== null ? position : output.length);
           position++;
         }
       });
@@ -1145,9 +1185,10 @@ function doLink(args, ctx, leftJoin) {
           if (args.evalNode(predicate).asBool(predicate.pos)) {
             matched = true;
             output.push(project(left, right));
+            capRows(output.length);
           }
         });
-        if (leftJoin && !matched) output.push(project(left, null));
+        if (leftJoin && !matched) { output.push(project(left, null)); capRows(output.length); }
       });
     } finally {
       ctx.popFrame();

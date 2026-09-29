@@ -22,6 +22,11 @@ type Binder struct {
 	GroupNode   *SNode
 	Projections []RelationalProjection
 	Model       *RowModel
+	// Scoped says Node was written in the scope that had Scope frames open, and
+	// is read there: an element of a static list belongs to the aggregate the
+	// list is written in, not to the one that iterates it (GO-C? JS-C7).
+	Scoped bool
+	Scope  int
 }
 
 func NewBinderNode(n *SNode) *Binder {
@@ -78,6 +83,10 @@ func NewBinderProjected(r *RelationSpec, projections []RelationalProjection) *Bi
 
 func BinderNode(n *SNode) Binder {
 	return Binder{Shape: BinderShapeNode, Node: n}
+}
+
+func BinderNodeAt(n *SNode, scope int) Binder {
+	return Binder{Shape: BinderShapeNode, Node: n, Scoped: true, Scope: scope}
 }
 
 func BinderColumn(c ColumnSpec) Binder {

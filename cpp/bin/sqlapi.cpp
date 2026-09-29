@@ -88,6 +88,7 @@ int main() {
   // The registration order, the caveat, strict mode, a LIST argument, a builder,
   // reset() and a re-registration, through this host's own spelling of the API.
   using sel::sql::Fragment;
+  using sel::sql::DialectSpec;
   using sel::sql::Map;
   using sel::sql::Section;
   using sel::sql::Sql;
@@ -154,6 +155,48 @@ int main() {
   say("host.spell.after-reset",
       attempt([&] { Sql::translate(sel::compile("HSLUG(T)"), "postgresql", host); }));
   say("host.spell.after-reset.local", sel::evaluate("HSLUG(\"A\")").as_text());
+
+  // --- rendering and registration state (T10) ----------------------------------
+  // The questions a snapshot of ONE translation cannot ask: what an unknown render
+  // mode does when there is nothing to bind, and whether a refused dialect stays
+  // refused. `refuses` collapses the host's own error classes, which differ, to
+  // the one thing the contract says: the call did not produce SQL. Here the render
+  // mode is an enum, so an unknown NAME is refused where a name becomes a mode.
+  auto refuses = [](const std::function<void()>& fn) -> std::string {
+    try {
+      fn();
+      return "accepted";
+    } catch (const std::exception&) {
+      return "refused";
+    }
+  };
+  auto mode_named = [](const std::string& name) {
+    auto m = sel::sql::mode_from_name(name);
+    if (!m) throw std::invalid_argument("unknown render mode " + name);
+    return *m;
+  };
+  sel::sql::Bindings one({{"C", Binding::column("c", "t", SqlKind::Num)}});
+  Fragment zero = Sql::translate(sel::compile("C > C"), "mariadb", one);
+  Fragment onelit = Sql::translate(sel::compile("C > 1"), "mariadb", one);
+  say("render.mode.valid.zero-slots", refuses([&] { zero.as_value(mode_named("params")); }));
+  say("render.mode.bogus.zero-slots", refuses([&] { zero.as_value(mode_named("bogus")); }));
+  say("render.mode.bogus.zero-slots.condition", refuses([&] { zero.as_condition(mode_named("bogus")); }));
+  say("render.mode.bogus.with-slot", refuses([&] {
+        Sql::translate(sel::compile("C > \"x\""), "mariadb", one).as_value(mode_named("bogus"));
+      }));
+  say("render.mode.bogus.literal-number", refuses([&] { onelit.as_value(mode_named("bogus")); }));
+  Map::define_dialect("probe-badguard",
+                      DialectSpec::extending("postgresql").version("16").lexical(
+                          "numericGuard",
+                          "CASE WHEN ({textCast:0} ~ '^.*$') THEN CAST({0} AS NUMERIC) ELSE NULL END"));
+  sel::sql::Bindings named({{"N", Binding::column("n", "t", SqlKind::Text)}});
+  for (int k = 1; k <= 3; ++k) {
+    say("guard.reuse." + std::to_string(k),
+        refuses([&] { Sql::translate(sel::compile("N + 1"), "probe-badguard", named); }));
+  }
+  Map::reset();
+  say("guard.reuse.after-reset",
+      refuses([&] { Sql::translate(sel::compile("N + 1"), "probe-badguard", named); }));
 
   std::cout << join(out, "\n") << "\n";
   return 0;

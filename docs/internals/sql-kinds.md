@@ -3,7 +3,7 @@
 What the SEL→SQL layer promises about expressions SEL itself will not evaluate,
 and what it has to do to keep that promise.
 
-Status: **built for operators, not for function arguments.** The numeric and
+Status: **built for operators and bare aggregate bodies (§5a), not for function arguments.** The numeric and
 bool operator cells are done (§8); the function-argument family of §4.1a is not,
 and until it is the warrant holds for operators and not for calls. Everything
 measured here was measured — the server behaviour against the
@@ -75,7 +75,7 @@ Every context by declared kind. **Bold** = the warrant is broken today.
 | `AND` `OR` `XOR` `NOT`, `IF` cond | refuse | refuse | refuse | emit | refuse |
 | `EQL` | coerce, sound | coerce, sound | coerce, sound | refuse | refuse |
 | numeric function argument | emit | **emit bare** | **emit bare** | refuse | refuse |
-| a bare aggregate body | emit | refuse | **emit bare** | refuse | refuse |
+| a bare aggregate body | emit | refuse | guarded as a whole (§5a); refuse where untestable | refuse | refuse |
 
 Text coercion is sound because SEL numbers **are** text (spec §4), so `$==` over
 a NUM column genuinely agrees. There is nothing to guard there.
@@ -135,37 +135,32 @@ LEFT("abc", T)
 Identical for TEXT and UNKNOWN. On dialects that cannot ask whether a value is a
 number (SQLite, ANSI), the translation is refused rather than emitting unguarded SQL.
 
-A **bare aggregate body** is the remaining hole wearing a similar hat. The same
-program twice: first with `QTY` declared `TEXT`, then with it undeclared.
+A **bare aggregate body** was the last hole, and is closed (§5a). The same
+program, first with `QTY` declared `TEXT`, then with it undeclared, then declared
+`NUM`:
 
-```sel-case notaddressed.an-aggregate-body-declared-text-is-refused
+```sel-case warrant.sum.a-declared-text-body-is-refused
 SUM(ITEMS, _["QTY"])
     E_SQL_SHAPE
 ```
 
-```sel-case notaddressed.an-undeclared-aggregate-body-is-not-guarded
+```sel-case warrant.sum.unknown-body-is-guarded-as-a-whole
 SUM(ITEMS, _["QTY"])
-    (SELECT COALESCE(SUM(`oi`.`qty`), 0) FROM `oi` `oi` WHERE `oi`.`o`=`o`.`id`)
+    (SELECT CASE WHEN COUNT(*) = COUNT(CASE WHEN (`oi`.`qty` REGEXP '\\A-?[0-9]+(\\.[0-9]+)?\\z') THEN 1 END) THEN COALESCE(SUM(CAST(`oi`.`qty` AS DECIMAL(65,10))), 0) ELSE NULL END FROM `oi` `oi` WHERE (`oi`.`o`=`o`.`id`))
+```
+
+```sel-case warrant.sum.declared-num-body-is-not-guarded
+SUM(ITEMS, _["QTY"])
+    (SELECT COALESCE(SUM(`oi`.`qty`), 0) FROM `oi` `oi` WHERE (`oi`.`o`=`o`.`id`))
 ```
 
 SEL raises E_NOT_NUM for a non-numeric element and MariaDB sums numeric
-prefixes, so an undeclared field matches rows SEL refuses. A declared TEXT field
-is refused by the aggregate's own kind check -- it is only UNKNOWN that passes,
-exactly as in the bool cell before §8 closed it.
-
-**The workaround for bare aggregate bodies.** Put the operand in an
-arithmetic expression and the operand guard fires on it:
-
-```sel-case notaddressed.times-one-reaches-the-guard
-SUM(ITEMS, _["QTY"] * 1)
-    (SELECT COALESCE(SUM((CASE WHEN (`oi`.`qty` REGEXP '\\A-?[0-9]+(\\.[0-9]+)?\\z') THEN CAST(`oi`.`qty` AS DECIMAL(65,10)) ELSE NULL END * 1)), 0) FROM `oi` `oi` WHERE `oi`.`o`=`o`.`id`)
-```
-
-`* 1` and `+ 0` are value-preserving in SEL, scale included -- `"5.00"` stays
-`5.00` and `"0.1"` stays `0.1`, measured -- so the rule means the same thing and
-gains the guard. It is a workaround and reads as one; it is written down because
-the alternative is that somebody who needs the guarantee today has no way to
-get it.
+prefixes, so an undeclared field used to match rows SEL refuses. A declared TEXT
+field is refused by the aggregate's own kind check; an UNKNOWN one is now a
+numeric position like any other, guarded on the servers that can ask and refused
+on SQLite and ANSI, which cannot (`warrant.sum.unknown-body-sqlite-refuses`).
+The guard is *all or nothing* for a `SUM`; §5a says why the operand guard alone
+is not enough there.
 
 ### 4.2 Why the bool cell breaks it, and worse
 
@@ -235,6 +230,61 @@ The map already says so in its own words:
 
 So the absence of `funcs.ISNUM` in a dialect is the refusal signal, using the
 map's existing convention rather than a new one.
+
+### 5a. What the guard is, byte for byte
+
+The guard is a contract, not an implementation detail: hosts must agree on it to
+the byte, because a translation that differs by one parenthesis is a different
+rule to anyone who pinned it. For an operand fragment `X` in a numeric position
+that is not known to be NUM:
+
+```
+MariaDB, MySQL   CASE WHEN (X REGEXP '\\A-?[0-9]+(\\.[0-9]+)?\\z') THEN CAST(X AS DECIMAL(65,10)) ELSE NULL END
+PostgreSQL       CASE WHEN (CAST(X AS TEXT) ~ '^-?[0-9]+(\.[0-9]+)?$') THEN CAST(X AS NUMERIC) ELSE NULL END
+SQLite, ANSI     none: E_SQL_UNSUPPORTED
+```
+
+**`X` is the operand's own fragment, exactly as it renders, written twice.** No
+parentheses are added around it: a binary result already carries its own, and a
+function call or `CASE` needs none inside `REGEXP` or `CAST(… AS …)`. This is
+`warrant.raw.the-guard-evaluates-it-twice`'s bargain, and `params` mode binds
+the operand's parameters once per occurrence.
+
+**The guard wraps the whole operand, never a leaf inside it.** For a conditional
+that matters: `(U ?? 1) + 1 > 0` over `u = 'abc'` must be E_NOT_NUM, because `??`
+replaces only NULL. Guarding the leaf, `COALESCE(guard(u), 1)`, turns `'abc'` into
+NULL and then into `1`, and the comparison is TRUE for a row SEL refuses.
+`IF`, `COND`, `??`, `???` and `COALESCE` give an UNKNOWN result when any value
+branch is UNKNOWN, so the guard sits outside them:
+
+```sel-case warrant.numeric.coalesce-over-an-undeclared-column-is-guarded
+(U ?? 1) + 1 > 0
+    ((CASE WHEN (COALESCE(`u`, 1) REGEXP '\\A-?[0-9]+(\\.[0-9]+)?\\z') THEN CAST(COALESCE(`u`, 1) AS DECIMAL(65,10)) ELSE NULL END + 1) > 0)
+```
+
+`sql/oracle/rows.json` witnesses it on the four servers ("conditional over an
+undeclared column, guarded as a whole"): a leaf guard fails there, not only in a
+byte diff.
+
+**A `SUM` guard is all or nothing.** `SUM` skips NULL, and the translator's own
+`COALESCE(SUM(…), 0)` turns an empty sum into 0, so guarding each element makes a
+refused element vanish: `'x'` and `'9'` sum to 9, and a group of only `'n/a'` to
+0, where SEL raises. The relation and group forms are therefore
+
+```
+CASE WHEN COUNT(*) = COUNT(CASE WHEN (<test of B>) THEN 1 END)
+     THEN COALESCE(SUM(<cast of B>), 0) ELSE NULL END
+```
+
+— `COUNT(*)` counts every element, the inner `COUNT` those that pass the test, so
+one element that fails, or is NULL (SEL: `E_NO_SCALAR`), makes the whole value
+NULL. A `columns` unroll needs no such form: it is a chain of `+`, NULL
+propagates through it, and `warrant.sum.unknown-column-in-a-columns-unroll-is-guarded`
+pins the plain operand guard. **Open:** a `SUM` body that is *compound* (`_["QTY"] * 1`)
+gets the operand guard inside the `SUM` and has the skip-NULL hole; the old
+"times one" workaround for bare bodies is withdrawn with the hole it worked around,
+and closing this one needs the same all-or-nothing wrapper generalised to any
+body that contains a guard.
 
 ## 6. Four exclusions
 

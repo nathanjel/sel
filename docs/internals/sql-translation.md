@@ -649,6 +649,7 @@ Relational database optimizers require expressions over indexed columns to be *s
   - String equality, inequality, and ordering comparisons (`$==`, `$!=`, `$<`, `$<=`, `$>`, `$>=`) omit defensive `CAST(... AS CHAR)` and `COLLATE` wrapping.
   - The translator emits bare comparisons (`col = 'val'`), enabling index seeks across MariaDB, MySQL, PostgreSQL, and SQLite.
   - In `x IN ("a", "b")` expansions over literal lists, each comparison is emitted uncast (`((col = 'a') OR (col = 'b'))`), enabling B-tree index range scans.
+  - `exact` opts out of the cast and of the collation wrapping **on the column only**: the column's own collation applies, and that is the caller's assertion above. It does not make a non-text operand text. A NUMBER item beside an `exact` column (`x IN ("a", 3)`, `x IN (1, 2)`, `x IN (N, M)` over numeric columns) is cast the way `EQL` casts a number — `CAST(3 AS CHAR) COLLATE utf8mb4_nopad_bin` on MariaDB and MySQL, `CAST(3 AS TEXT)` on the others — because a bare `col = 3` makes MariaDB, MySQL and SQLite compare *numerically* (`'3.0' = 3`, `'3abc' = 3` are true) and select rows whose text SEL's structural `IN` does not match (`sql/oracle/rows.json`, "exact text column against a numeric item"). Text items stay uncast.
 - **`sargable: bool = false`**: For case-insensitive columns (e.g. MySQL `_ci` collations):
   - On MariaDB and MySQL, emits a coarse equality prefilter combined with the exact binary check: `((col = 'val') AND (CAST(col AS CHAR) COLLATE utf8mb4_nopad_bin = CAST('val' AS CHAR) COLLATE utf8mb4_nopad_bin))`. The database query engine uses the index for the coarse equality prefilter to discard non-matching rows, executing the exact collation check only on candidate rows.
   - On PostgreSQL and SQLite, retains the exact comparison without a coarse prefilter. SQLite explicitly uses `COLLATE BINARY`: column-level `NOCASE` and `RTRIM` declarations survive a cast and must be overridden.
@@ -1025,6 +1026,35 @@ need a new lexical key spelled two ways (`CONCAT(a, b, c)` here, `(a || b || c)`
 elsewhere). The nesting is ugly and the alternative is map surface for one
 function.
 
+**Above 256 operands the fold is balanced.** A pairwise-left fold over n operands
+is n levels deep, and servers refuse depth: SQLite stops at an expression tree of
+1000 ("Expression tree is too large (maximum depth 1000)"), MariaDB and MySQL
+overrun their thread stack in a `SUM` unroll at about 900 terms, and PostgreSQL
+runs out of memory parsing 5000. So the unroll's operand list is folded by this
+rule, which is the whole specification of the tree:
+
+```
+fold(ops)   = ops[0]                              when n = 1
+            = leftfold(ops)                       when 2 <= n <= 256
+            = combine(fold(ops[0 .. m)), fold(ops[m .. n)))   when n > 256,
+              with m = ceil(n / 2)                (the left half is the larger)
+leftfold    = combine(combine(combine(ops[0], ops[1]), ops[2]), ...)
+combine(a, b) = the operator's own binary template over the two fragments
+```
+
+At 256 operands or fewer nothing changes byte for byte. The rule is recursive, so
+each half above 256 splits again and each half at or below 256 is a plain
+left fold: 257 operands are a left half of 129 and a right half of 128, each a
+left fold; 600 are 300 + 300, each split again into 150 + 150. The depth is
+therefore at most 256 + ceil(log2(n / 256)) — 264 for a 65,535-operand list. It applies to exactly the unrolls whose template
+is associative: the `OR` of `x IN (list)` and of `ANY`, the `AND` of `ALL`, the
+`+` of `SUM`, and the concat of `JOIN` — where the operand list is the
+interleaved pieces `e1, sep, e2, sep, …, en` (2n − 1 of them), so `JOIN` balances
+above 256 *pieces*. It does not apply to a chain the author wrote, which the
+parser already caps (§6.4 of the spec), nor to anything not associative.
+Parameters in `params` mode are numbered in operand order, left to right, which
+the split preserves.
+
 **Nesting falls out.** The binder names an element, and if that element is
 itself a list node the inner aggregate simply dispatches on it again:
 
@@ -1199,6 +1229,76 @@ so a bare reference reads well, not a projection of a wide one.
 
 Binders shadow, and nested aggregates shadow independently, exactly as spec
 §7.3 requires of the evaluator.
+
+**Lexical scope is the contract, and substitution must respect it.** Three rules
+follow from "exactly as the evaluator", each pinned by
+`sql/cases/48-scope-and-slots.sqlt`, whose expectations are the translations of
+alpha-equivalent controls (the capturing binder renamed):
+
+1. **A static list's elements are evaluated where the list is written.** In
+   `ANY((0,0), ALL((_K, 5), I, I > 1))` the `_K` is the *outer* element's key; the
+   inner binder does not exist yet in the list, only in the body. The same goes
+   for an element that names the binder (`ANY((X, 2), X, X > 1)`: the list's `X`
+   is the column).
+2. **A binder is local to its body.** A `FILTER`'s binder is not in scope in the
+   aggregate that consumes the filtered list, nor in a sibling `FILTER`, and a
+   read of it there is `E_SQL_UNBOUND` at the read, as `E_UNDEF_VAR` is in SEL.
+   A binder that reuses the name of a column, a `value` binding or a helper
+   shadows it inside its body and nowhere else.
+3. **An inlined definition keeps the scope it was written in** (rule 4 of §6):
+   `X = Y + 1; ALL((1,2,3), Y, Y > X)` compares each element with the *column*
+   `Y` plus one, because `X` was written where `Y` was the column. A stage 1 that
+   substitutes by *name* lets the later binder capture the free names of the
+   definition; it must substitute by *binding* (rename the binder, or carry the
+   environment), and it must do the same for the static-list elements of rule 1.
+
+Two smaller consequences the same cases pin. `X = R; R[2] = 6` copies (spec
+§3.4): a `clist` recorded for `R` is not shared with `X`, so `COUNT(X)` is the
+count `R` had when `X` was assigned. And a helper that rebinds a relation name
+(`ORDERS = ORDERS .> DROP(2)`) reads the *binding* once: the later use is the
+helper, and the pipeline is not applied twice.
+
+**What an aggregate may consume.** `FILTER` yields a list; `ALL`, `ANY`, `SUM`
+and `COUNT` absorb it (§7.5) and nothing else does, so `JOIN(FILTER(...), sep)`
+is `E_SQL_SHAPE` at the `FILTER`. It must not translate as a `JOIN` of the
+unfiltered list.
+
+**The size budget: `E_SQL_SIZE`.** Helper reuse is inlined as a tree, so a
+program of *n* short statements can render 2^*n* nodes (`A1 = A0 + A0; ...`;
+JS-C8, PHP-C32, PY-C6, CPP-C17, LISP-C23, GO-C20), and nested aggregates over
+static lists multiply the same way, while SEL evaluates the same program in
+linear time. The translator therefore counts, and refuses past
+`MAX_SQL_NODES` (250 000, `spec/limits.json`) with `E_SQL_SIZE` (`sql/errors.md`).
+
+*What is counted.* One per **node dispatched** by the translation walk — the
+same site that keeps the depth counter for `E_SQL_DEPTH` — and a subtree is
+charged **again on every re-entry**: once per read of an inlined helper, once per
+unrolled element of an aggregate over a static list or `columns` binding, once
+per binder read that re-enters an element. A leaf costs 1 (a literal, a binding
+read, `_K`); an operator, call or index costs 1 plus what its operands cost; an
+unrolled fold over *n* elements costs the *n* instances of its body plus the *n* −
+1 joining operators. Constructs the pinned cases do not exercise (a `CASE` guard a
+dialect adds, a cast a template wraps around an operand) are the dialect's
+spelling of a node and are not charged: the count is a function of the SEL tree
+and the bindings, never of the dialect or the mode, so every host refuses at the
+same size in every dialect. The pinned cases keep a factor-of-two margin on each
+side so that a handful of nodes of accounting difference between hosts cannot
+move them: `48-scope-and-slots.sqlt` pins the refusals and a small accepted
+control, and `tools/check-sql-budgets.sh` holds the acceptance near the limit.
+
+*When it is counted.* **As the nodes are dispatched, before any work that is
+proportional to the expanded size** — before constant folding hands a subtree to
+SEL's evaluator (§11.4), before kind inference, before rendering — and the walk
+stops at the first node over the limit. The work a refusal costs is then bounded
+by the limit, not by what the program would have expanded to; a host that counts
+after rendering has not implemented a budget, it has implemented a slower way to
+run out of memory. Planning (`planHybrid`) uses the same walk, so a program over
+the limit is not pushed down whole and is never an exception.
+
+Worked sizes (a column base `N`, `X0 = N; X1 = X0 + X0; ...`, result `Xk > 0`):
+the result costs 2^(k+1) + 1, so `k = 16` (131 073) translates and `k = 18`
+(524 289) is `E_SQL_SIZE`. The nested form `ALL((A,A), V1, ALL((V1,V1), V2, ...
+Vn > 0))` costs 2^(n+2) − 1: `n = 15` translates, `n = 17` is refused.
 
 ### 7.5 `FILTER` absorption
 
@@ -2168,6 +2268,35 @@ four mutations as "caught by sqldoc" while `sqldoc` was red on the unmutated
 tree and would have reported anything as caught. It now refuses to run on a red
 baseline.
 
+### 11.6 Counts: `TAKE` and `DROP`
+
+A count is a SEL number and is rendered exactly, digit for digit, never through
+a host's float or machine integer: `TAKE(9007199254740993)` is
+`LIMIT 9007199254740993` on every host. A count SEL accepts is one the
+translator accepts, so a whole number written with a scale (`2.0`, `0.0`, `-0`)
+is that number — SEL's `TAKE((1,2,3), 2.0)` is the first two — and only a
+fractional or negative count is refused, with SEL's own code at the count's
+position (`E_NOT_INT`, `E_RANGE`; `sql/errors.md`).
+
+The targets accept different ranges: PostgreSQL and SQLite stop at
+9223372036854775807 (2^63 − 1) for both `LIMIT` and `OFFSET`; MariaDB and MySQL
+accept 18446744073709551615 (2^64 − 1). SEL has no limit, and a count past the
+end of any list is *all* of it (`TAKE`) or *none* of it (`DROP`). So the rendered
+count is **clamped to 9223372036854775807**, on every dialect: a value the
+servers all accept, and one that no table this layer can be pointed at can
+exceed. `TAKE(99999999999999999999999)` is `LIMIT 9223372036854775807`.
+Verified on the four pinned servers (`tools/check-sql-limits.php`): each returns
+every row for a clamped `TAKE` and none for a clamped `DROP`.
+
+Two rules keep the clamp honest. It is applied to the **merged** count — slices
+merge first (`DROP(a) .> DROP(b)` is an offset of `a + b`), so
+`DROP(9223372036854775807) .> DROP(1)` is the offset `9223372036854775807`, not
+a wrapped or refused one. And it never touches the MariaDB/MySQL sentinel
+`LIMIT 18446744073709551615` the translator itself emits in front of an
+`OFFSET` with no `TAKE` (`sql/cases/28-slice-overflow.sqlt`): that is not a
+user count, it is MariaDB's spelling of "no limit", and it is 2^64 − 1 by
+construction.
+
 ---
 
 ## 12. Using it
@@ -2440,16 +2569,60 @@ The ordinary prefix planner promises:
 - **The MAP fall-through keeps the rows it splits over.** When a `MAP`'s
   `RECORD` mixes translatable pairs with pairs SQL has no spelling for, the
   translatable pairs are projected in SQL and the rest is computed on the rows
-  that come back — provided every step after the `MAP` keeps those rows as they
-  are (`FILTER`, `SORT_BY`, `TOP_BY`, `TAKE`, `DROP`) and reads only the
-  projected keys. A step that changes the row shape (`MAP`, `SELECT_COLS`,
-  `LINK`, `BUCKET`), a whole-row comparison (`DEDUPE`, `DISTINCT`, the keyless
-  sorts), a downstream read of a dependency column SEL's row no longer has, a
-  custom pair that reads the row itself (`GET(_, "name")`, `COUNT(_)`), or a
+  that come back. The statement carries that projection and nothing that cuts
+  or reorders the rows behind it: a `FILTER`, a `TAKE`, a `DROP`, a sort or a
+  `TOP_BY` written after the `MAP` stays in the continuation, because `run()`
+  evaluates the local pairs on EVERY row first and a pair that raises on a row
+  the LIMIT or WHERE would have dropped must still raise (T11, below:
+  *errors are not hidden*). Steps written BEFORE the `MAP` are the prefix
+  as usual. A step that changes the row shape (`MAP`, `SELECT_COLS`, `LINK`,
+  `BUCKET`), a whole-row comparison (`DEDUPE`, `DISTINCT`, the keyless sorts),
+  a downstream read of a dependency column SEL's row no longer has, a custom
+  pair that reads the row itself (`GET(_, "name")`, `COUNT(_)`) or `_K`, or a
   dependency whose name a projected pair already uses for something else, all
-  move the split before the `MAP` instead. The continuation passes a
-  projected pair through *by key* — `"cid", _["customer_id"]` comes back as
-  `cid` and is read as `cid`, `_["amount"] + 1` is not added twice.
+  move the split before the `MAP` instead. The continuation passes a projected
+  pair through *by key* — `"cid", _["customer_id"]` comes back as `cid` and is
+  read as `cid`, `_["amount"] + 1` is not added twice.
+- **A plan is held to `run()` on four counts** (T11; `sql/cases/51-hybrid-parity.sqlt`
+  pins the plans, `sql/oracle/hybrid.json` executes them on SQLite, MariaDB,
+  MySQL and PostgreSQL through `php/bin/sqlo hybrid`, and
+  `tools/check-hybrid-parity.{mjs,py}` do the same for the JS and Python hosts):
+  - **Row keys.** SEL's FILTER keeps its input's keys and every other step
+    renumbers from `"1"` (spec §7.3); the database answers a *rowset* numbered
+    `1..n`. So a boundary directly after a `FILTER` hands the continuation
+    renumbered rows, and is legal only where the continuation cannot tell: a
+    renumbering step comes first and nothing reads `_K` before it. Otherwise
+    the prefix ends before the `FILTER` (for `ORDERS .> FILTER(…) .> FILTER(
+    <no SQL spelling>)` and for a `_K` read after the `FILTER`, nothing pushes
+    down: `pure_memory`). A `pure_sql` plan answers the rowset itself: its rows
+    are numbered `1..n` where `run()` keeps a trailing FILTER's keys, so the
+    contract compares its rows in order and not their keys; a caller who needs
+    SEL's retained keys runs the rule in memory.
+  - **Errors are not hidden.** What `run()` raises the plan raises — same
+    code, same position — or the plan is `pure_memory`. A row-cutting step
+    (`FILTER`, `TAKE`, `DROP`, a sort, `TOP_BY`) is never pushed in front of a
+    local half that can raise, and a sort key or a `MAP` body that raises on a
+    row is evaluated on every row in SEL. (SQL's own answers to division by
+    zero and the like are the map's declared caveats, not this rule.)
+  - **The caller's context.** `execute_hybrid` never mutates the context it is
+    given, whatever the classification: a SQL prefix cannot perform a helper's
+    assignment, so no plan can promise `run()`'s side effect, and a `pure_memory`
+    plan runs on a private copy for the same reason. Variables the caller
+    holds stay readable by the continuation (Go once replaced the context with
+    an empty record), and unrelated ones are preserved.
+  - **Order.** No plan relies on a database's natural row order: a program
+    that observes an order names a unique `ORDER BY` key, and the contract
+    tests do the same. A sort's `ORDER BY` survives the steps after it — a
+    `GROUP BY` keeps its groups in the order of first appearance in the sorted
+    input, a `LINK` keeps the left order, a `TOP_BY` keeps its ties in the
+    earlier sort's order — and SQL text that leans on an inner `ORDER BY`
+    surviving an outer one is not a translation of SEL's stable sort.
+  - **Names.** A joined row in a continuation carries the left side under its
+    own name (`ORDERS`, `orders`), never `_INPUT`; a literal helper that shares
+    a name with an explicit binder of the 4- and 5-argument forms is not
+    inlined into the binder slot; and `source_tables` reports only what the
+    prefix reads — a binder or an assignment target named like a relation is
+    not a table.
 - **A value a grouping or a whole-row comparison reads keeps SEL's identity.**
   `BUCKET`, `DEDUPE` and `DISTINCT` tell values apart by structure, where SQL
   compares by its own equality, which can merge values SEL keeps distinct:

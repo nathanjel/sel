@@ -131,7 +131,7 @@ own ([Extending SEL](extending.md)).
 | `TOP(list, [binder,] [body,] n)` / `TOP_DESC(…)` | the first `n` of `SORT` / `SORT_DESC` |
 | `TOP_BY(list, [binder,] key, "DESC", n)` | the first `n` by `key`; the direction, when given as text, comes **before** `n` |
 
-Numbers sort as numbers and text by its UTF-8 bytes. Every sort is **stable**:
+Numbers sort as numbers and text by its UTF-8 bytes. Across kinds the order is `NULL`, then `BOOL` (`FALSE` before `TRUE`), then numbers and numeric-looking text by value, then every other text, then `BIN`: `"9"` sorts before `"10"`, which sorts before `"1a"`. Every sort is **stable**:
 equal keys keep their order, so a second sort breaks the ties the first one
 left:
 

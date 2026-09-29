@@ -1,0 +1,774 @@
+% Value ownership: what is copied, what is aliased, and what a warm cache must
+% never remember (spec/SPEC.md §3.4, §5.8, §5.9, §6.4; review 2026-09-29, family T03).
+%
+% Every expectation is derived from the spec, not from what a host printed. The
+% rule, in one line: assignment copies, `,` copies what it collects, the §7.3
+% aggregates copy what they collect, nothing else copies -- and a list a function
+% returns is always a NEW container, whatever it does about its elements.
+%
+% Observing a copy needs a mutation between the moment a value is yielded and the
+% moment it is read, which is what the index-expression idiom `X[(mutate; key)]`
+% gives (§3.4): the base is yielded first, the index expression mutates the
+% source, and the pending read then finds whatever the base still shares.
+%
+% Cases that a spec decision has not yet settled (does LIST/RECORD copy its
+% arguments; do TAKE/DROP/DISTINCT/TOP/LINK copy their elements) are deliberately
+% absent -- see the family's open questions in docs/interim/2026-09-29/worklist.
+
+### name: alias.comma-copies-a-child
+--- note
+A child contributed by `,` is copied (§3.4, §5.9): the mutation made by the second
+operand must not show through the first. PHP once kept the child, and answered 99
+where every other host answered 1 (PHP-C2).
+--- source
+A = RECORD("a", RECORD("b",1)); (A, A["a"]["b"] = 99)[1]["b"]
+--- expect
+num 1
+===
+
+### name: alias.comma-copies-a-value
+--- note
+A value with a scalar of its own contributes itself, and `,` copies it too. A is
+text "x" with a child "k"; the second operand rewrites the child's child.
+--- source
+A = "x"; A["k"] = RECORD("b",1); (A, A["k"]["b"] = 99)[1]["k"]["b"]
+--- expect
+num 1
+===
+
+### name: alias.comma-copies-flattened-children
+--- note
+Both operands are lists whose children are contributed one by one; every child is
+copied, so the list built from `X, X` is independent of X.
+--- source
+X = LIST(RECORD("k",1)); (X, X)[(X[1]["k"] = 9; 1)]["k"]
+--- expect
+num 1
+===
+
+### name: alias.comma-is-a-new-container
+--- note
+CONTROL. The list `,` builds is a new container: replacing one of X's children
+afterwards does not change it.
+--- source
+A = LIST(1,2,3); (A, 4)[(A[1] = 9; "1")]
+--- expect
+num 1
+===
+
+### name: alias.aggregate-copies.map
+--- note
+`MAP(X, _)` collects X's element into its result, and §3.4 has the aggregates copy what
+they collect: the element mutated through X while the result is still pending is
+not the element the result holds. The hosts disagreed (contributing.md's claim
+that the copy cannot be observed is false, GO-C27, CPP-C42, LISP-C35).
+--- source
+X = LIST(RECORD("k",1)); MAP(X, _)[(X[1]["k"] = 9; 1)]["k"]
+--- expect
+num 1
+===
+
+### name: alias.aggregate-copies.filter
+--- note
+`FILTER(X, TRUE)` collects X's element into its result, and §3.4 has the aggregates copy what
+they collect: the element mutated through X while the result is still pending is
+not the element the result holds. The hosts disagreed (contributing.md's claim
+that the copy cannot be observed is false, GO-C27, CPP-C42, LISP-C35).
+--- source
+X = LIST(RECORD("k",1)); FILTER(X, TRUE)[(X[1]["k"] = 9; 1)]["k"]
+--- expect
+num 1
+===
+
+### name: alias.aggregate-copies.sort
+--- note
+`SORT(X)` collects X's element into its result, and §3.4 has the aggregates copy what
+they collect: the element mutated through X while the result is still pending is
+not the element the result holds. The hosts disagreed (contributing.md's claim
+that the copy cannot be observed is false, GO-C27, CPP-C42, LISP-C35).
+--- source
+X = LIST(RECORD("k",1)); SORT(X)[(X[1]["k"] = 9; 1)]["k"]
+--- expect
+num 1
+===
+
+### name: alias.aggregate-copies.sort-body
+--- note
+`SORT(X, 1)` collects X's element into its result, and §3.4 has the aggregates copy what
+they collect: the element mutated through X while the result is still pending is
+not the element the result holds. The hosts disagreed (contributing.md's claim
+that the copy cannot be observed is false, GO-C27, CPP-C42, LISP-C35).
+--- source
+X = LIST(RECORD("k",1)); SORT(X, 1)[(X[1]["k"] = 9; 1)]["k"]
+--- expect
+num 1
+===
+
+### name: alias.aggregate-copies.sort-desc
+--- note
+`SORT_DESC(X, 1)` collects X's element into its result, and §3.4 has the aggregates copy what
+they collect: the element mutated through X while the result is still pending is
+not the element the result holds. The hosts disagreed (contributing.md's claim
+that the copy cannot be observed is false, GO-C27, CPP-C42, LISP-C35).
+--- source
+X = LIST(RECORD("k",1)); SORT_DESC(X, 1)[(X[1]["k"] = 9; 1)]["k"]
+--- expect
+num 1
+===
+
+### name: alias.aggregate-copies.sort-by
+--- note
+`SORT_BY(X, 1)` collects X's element into its result, and §3.4 has the aggregates copy what
+they collect: the element mutated through X while the result is still pending is
+not the element the result holds. The hosts disagreed (contributing.md's claim
+that the copy cannot be observed is false, GO-C27, CPP-C42, LISP-C35).
+--- source
+X = LIST(RECORD("k",1)); SORT_BY(X, 1)[(X[1]["k"] = 9; 1)]["k"]
+--- expect
+num 1
+===
+
+### name: alias.aggregate-copies.bucket-two-argument
+--- note
+BUCKET's two-argument spelling groups the elements into lists inside a record; the
+members it collects are copies (§3.4).
+--- source
+X = LIST(RECORD("k",1)); BUCKET(X, 1)["1"][(X[1]["k"] = 9; 1)]["k"]
+--- expect
+num 1
+===
+
+### name: alias.aggregate-copies.bucket-three-argument
+--- note
+The three-argument spelling collects one projection per group; here the projection
+is the member list, and what it collected is copied.
+--- source
+X = LIST(RECORD("k",1)); BUCKET(X, 1, _)[(X[1]["k"] = 9; 1)][1]["k"]
+--- expect
+num 1
+===
+
+### name: alias.aggregate-copies.bucket-by-field
+--- note
+The same with a key read from the element, the shape a report actually writes.
+--- source
+X = LIST(RECORD("k",1)); BUCKET(X, _["k"], _)[(X[1]["k"] = 9; 1)][1]["k"]
+--- expect
+num 1
+===
+
+### name: alias.aggregate-copies.body-mutates-source-during-iteration
+--- note
+The body assigns into the source while MAP is collecting: the first result is
+what the body returned for element 1, and element 2's mutation is not visible in
+it (both hosts and spec agree the result is a snapshot of what was collected).
+--- source
+R = LIST(RECORD("id",1), RECORD("id",2)); MAP(R, (R[2]["id"] = 99; _))[(R[1]["id"] = 7; 1)]["id"]
+--- expect
+num 1
+===
+
+### name: struct.take.result-is-a-new-list
+--- note
+A list a function returns is a new container: replacing A's first child while
+`TAKE(A,2)` is still pending must not change what the result holds. Go's TAKE and DROP
+returned a slice of A's backing array and showed the 9 (GO-C7).
+--- source
+A = LIST(1,2,3); TAKE(A,2)[(A[1] = 9; "1")]
+--- expect
+num 1
+===
+
+### name: struct.drop.result-is-a-new-list
+--- note
+A list a function returns is a new container: replacing A's first child while
+`DROP(A,0)` is still pending must not change what the result holds. Go's TAKE and DROP
+returned a slice of A's backing array and showed the 9 (GO-C7).
+--- source
+A = LIST(1,2,3); DROP(A,0)[(A[1] = 9; "1")]
+--- expect
+num 1
+===
+
+### name: struct.distinct.result-is-a-new-list
+--- note
+A list a function returns is a new container: replacing A's first child while
+`DISTINCT(A)` is still pending must not change what the result holds. Go's TAKE and DROP
+returned a slice of A's backing array and showed the 9 (GO-C7).
+--- source
+A = LIST(1,2,3); DISTINCT(A)[(A[1] = 9; "1")]
+--- expect
+num 1
+===
+
+### name: struct.filter.result-is-a-new-list
+--- note
+A list a function returns is a new container: replacing A's first child while
+`FILTER(A, TRUE)` is still pending must not change what the result holds. Go's TAKE and DROP
+returned a slice of A's backing array and showed the 9 (GO-C7).
+--- source
+A = LIST(1,2,3); FILTER(A, TRUE)[(A[1] = 9; "1")]
+--- expect
+num 1
+===
+
+### name: struct.map.result-is-a-new-list
+--- note
+A list a function returns is a new container: replacing A's first child while
+`MAP(A, _)` is still pending must not change what the result holds. Go's TAKE and DROP
+returned a slice of A's backing array and showed the 9 (GO-C7).
+--- source
+A = LIST(1,2,3); MAP(A, _)[(A[1] = 9; "1")]
+--- expect
+num 1
+===
+
+### name: struct.sort.result-is-a-new-list
+--- note
+A list a function returns is a new container: replacing A's first child while
+`SORT(A)` is still pending must not change what the result holds. Go's TAKE and DROP
+returned a slice of A's backing array and showed the 9 (GO-C7).
+--- source
+A = LIST(1,2,3); SORT(A)[(A[1] = 9; "1")]
+--- expect
+num 1
+===
+
+### name: struct.sort-by.result-is-a-new-list
+--- note
+A list a function returns is a new container: replacing A's first child while
+`SORT_BY(A, _)` is still pending must not change what the result holds. Go's TAKE and DROP
+returned a slice of A's backing array and showed the 9 (GO-C7).
+--- source
+A = LIST(1,2,3); SORT_BY(A, _)[(A[1] = 9; "1")]
+--- expect
+num 1
+===
+
+### name: struct.top.result-is-a-new-list
+--- note
+A list a function returns is a new container: replacing A's first child while
+`TOP(A, 2)` is still pending must not change what the result holds. Go's TAKE and DROP
+returned a slice of A's backing array and showed the 9 (GO-C7).
+--- source
+A = LIST(1,2,3); TOP(A, 2)[(A[1] = 9; "1")]
+--- expect
+num 1
+===
+
+### name: struct.bucket.result-is-a-new-list
+--- note
+A list a function returns is a new container: replacing A's first child while
+`BUCKET(A, 1)["1"]` is still pending must not change what the result holds. Go's TAKE and DROP
+returned a slice of A's backing array and showed the 9 (GO-C7).
+--- source
+A = LIST(1,2,3); BUCKET(A, 1)["1"][(A[1] = 9; "1")]
+--- expect
+num 1
+===
+
+### name: struct.take.detached-from-source
+--- note
+GO-C7's own repro: TAKE's result is dumped after the source was assigned to.
+--- source
+A = LIST(1,2,3); LIST(TAKE(A,2), A[1] = 9)
+--- expect
+tree -{"1"=-{"1"=t"1", "2"=t"2"}, "2"=t"9"}
+===
+
+### name: struct.drop.detached-from-source
+--- note
+The DROP twin of struct.take.detached-from-source.
+--- source
+A = LIST(1,2,3); LIST(DROP(A,1), A[2] = 9)
+--- expect
+tree -{"1"=-{"1"=t"2", "2"=t"3"}, "2"=t"9"}
+===
+
+### name: struct.drop.detached-from-source-pending-read
+--- note
+The pending-read form: DROP's result is read after A's second child was replaced.
+--- source
+A = LIST(1,2,3); DROP(A,1)[(A[2] = 9; "1")]
+--- expect
+num 2
+===
+
+### name: cache.decimal.reassigned-variable
+--- note
+A variable that held numeric-looking text and was used as a number is reassigned
+non-numeric text: nothing about the old text may be remembered.
+--- source
+A = "12"; B = ISNUM(A); N = A + 1; A = "abc"; ISNUM(A)
+--- expect
+bool FALSE
+===
+
+### name: cache.decimal.reassigned-child
+--- note
+The same through an index assignment, where the child is replaced in a shared
+container after arithmetic warmed its decimal.
+--- source
+R = RECORD("a","12"); N = R["a"] + 1; R["a"] = "abc"; ISNUM(R["a"])
+--- expect
+bool FALSE
+===
+
+### name: cache.decimal.reassigned-child-arithmetic
+--- note
+And arithmetic on the replaced child fails at the use, not with the old number.
+--- source
+R = RECORD("a","12"); N = R["a"] + 1; R["a"] = "abc"; R["a"] + 1
+--- expect
+error E_NOT_NUM at 1:56
+===
+
+### name: cache.decimal.scalar-with-children-reassigned
+--- note
+A scalar that gained a child and was used as a number, then replaced.
+--- source
+A = "5"; A["k"] = 1; X = A + 1; A = "x"; ISNUM(A)
+--- expect
+bool FALSE
+===
+
+### name: cache.identity.distinct-after-mutation
+--- note
+DISTINCT warmed the record's identity hash; mutating the record must be seen by
+the next DISTINCT.
+--- source
+R = RECORD("a",1,"b",2); K = COUNT(DISTINCT(LIST(R, RECORD("a",1,"b",2)))); R["a"] = 5; K & "/" & COUNT(DISTINCT(LIST(R, RECORD("a",1,"b",2))))
+--- expect
+text "1/2"
+===
+
+### name: cache.identity.eql-after-mutation
+--- note
+EQL after one side changed.
+--- source
+R = RECORD("a",1); S = RECORD("a",1); X = IF(R EQL S, "eq", "ne"); S["a"] = 2; X & "/" & IF(R EQL S, "eq", "ne")
+--- expect
+text "eq/ne"
+===
+
+### name: cache.identity.bucket-after-added-key
+--- note
+BUCKET groups by identity; a key added to one member afterwards splits the group.
+--- source
+R = RECORD("a",1); S = RECORD("a",1); X = COUNT(BUCKET(LIST(R,S), _, COUNT(_))); S["b"] = 2; X & "/" & COUNT(BUCKET(LIST(R,S), _, COUNT(_)))
+--- expect
+text "1/2"
+===
+
+### name: cache.identity.shared-element-after-mutation
+--- note
+The same element twice: identical until it is mutated, and then it is still one
+element (the second list holds a different record, so the count is 2).
+--- source
+R = RECORD("k",1); D1 = COUNT(DISTINCT(LIST(R, R))); R["k"] = 2; D1 & "/" & COUNT(DISTINCT(LIST(R, RECORD("k", 1))))
+--- expect
+text "1/2"
+===
+
+### name: cache.order.reassigning-a-key-keeps-its-position
+--- note
+Iteration order is insertion order, and overwriting a key does not move it.
+--- source
+R = RECORD("b",1,"a",2); R["b"] = 3; JOIN(INDEXES(R), ",") & "/" & R["b"]
+--- expect
+text "b,a/3"
+===
+
+### name: cache.sort.after-element-replaced
+--- note
+SORT warmed each element's numeric look; the replaced element sorts as text.
+--- source
+L = LIST("10", 9); X = SORT(L); L[1] = "abc"; JOIN(SORT(L), ",")
+--- expect
+text "9,abc"
+===
+
+### name: alias.assignment-copies-nested-children
+--- note
+CONTROL. Assignment deep-copies (§5.8): S does not share R's nested child.
+--- source
+R = RECORD("a", RECORD("b", 1)); S = R; S["a"]["b"] = 2; R["a"]["b"]
+--- expect
+num 1
+===
+
+### name: record.shape.width-14-assigned-key-does-not-leak
+--- note
+A 14-field record gains a key; a record built afterwards from the same 14 keys
+has exactly those keys and not the added one. Lisp's shape table was corrupted
+from 16 fields (LISP-C2). Cases run in one process, so a shape poisoned here is
+seen by the cases below.
+--- source
+R = RECORD("K1", 1, "K2", 2, "K3", 3, "K4", 4, "K5", 5, "K6", 6, "K7", 7, "K8", 8, "K9", 9, "K10", 10, "K11", 11, "K12", 12, "K13", 13, "K14", 14); R["Z"] = 5; S = RECORD("K1", 1, "K2", 2, "K3", 3, "K4", 4, "K5", 5, "K6", 6, "K7", 7, "K8", 8, "K9", 9, "K10", 10, "K11", 11, "K12", 12, "K13", 13, "K14", 14); HAS(S, "Z")
+--- expect
+bool FALSE
+===
+
+### name: record.shape.width-14-count-and-read
+--- note
+The same records read back: count 14, the last field present, and the key the
+first record gained absent (E_NO_KEY at the index).
+--- source
+R = RECORD("K1", 1, "K2", 2, "K3", 3, "K4", 4, "K5", 5, "K6", 6, "K7", 7, "K8", 8, "K9", 9, "K10", 10, "K11", 11, "K12", 12, "K13", 13, "K14", 14); R["Z"] = 5; S = RECORD("K1", 1, "K2", 2, "K3", 3, "K4", 4, "K5", 5, "K6", 6, "K7", 7, "K8", 8, "K9", 9, "K10", 10, "K11", 11, "K12", 12, "K13", 13, "K14", 14); COUNT(S) & "/" & S["K14"]
+--- expect
+text "14/14"
+===
+
+### name: record.shape.width-14-missing-key-is-e-no-key
+--- note
+Reading the added key from a fresh record is the ordinary E_NO_KEY, never a host
+array-index failure.
+--- source
+R = RECORD("K1", 1, "K2", 2, "K3", 3, "K4", 4, "K5", 5, "K6", 6, "K7", 7, "K8", 8, "K9", 9, "K10", 10, "K11", 11, "K12", 12, "K13", 13, "K14", 14); R["Z"] = 5; S = RECORD("K1", 1, "K2", 2, "K3", 3, "K4", 4, "K5", 5, "K6", 6, "K7", 7, "K8", 8, "K9", 9, "K10", 10, "K11", 11, "K12", 12, "K13", 13, "K14", 14); S["Z"]
+--- expect
+error E_NO_KEY at 1:310
+===
+
+### name: record.shape.width-15-assigned-key-does-not-leak
+--- note
+A 15-field record gains a key; a record built afterwards from the same 15 keys
+has exactly those keys and not the added one. Lisp's shape table was corrupted
+from 16 fields (LISP-C2). Cases run in one process, so a shape poisoned here is
+seen by the cases below.
+--- source
+R = RECORD("K1", 1, "K2", 2, "K3", 3, "K4", 4, "K5", 5, "K6", 6, "K7", 7, "K8", 8, "K9", 9, "K10", 10, "K11", 11, "K12", 12, "K13", 13, "K14", 14, "K15", 15); R["Z"] = 5; S = RECORD("K1", 1, "K2", 2, "K3", 3, "K4", 4, "K5", 5, "K6", 6, "K7", 7, "K8", 8, "K9", 9, "K10", 10, "K11", 11, "K12", 12, "K13", 13, "K14", 14, "K15", 15); HAS(S, "Z")
+--- expect
+bool FALSE
+===
+
+### name: record.shape.width-15-count-and-read
+--- note
+The same records read back: count 15, the last field present, and the key the
+first record gained absent (E_NO_KEY at the index).
+--- source
+R = RECORD("K1", 1, "K2", 2, "K3", 3, "K4", 4, "K5", 5, "K6", 6, "K7", 7, "K8", 8, "K9", 9, "K10", 10, "K11", 11, "K12", 12, "K13", 13, "K14", 14, "K15", 15); R["Z"] = 5; S = RECORD("K1", 1, "K2", 2, "K3", 3, "K4", 4, "K5", 5, "K6", 6, "K7", 7, "K8", 8, "K9", 9, "K10", 10, "K11", 11, "K12", 12, "K13", 13, "K14", 14, "K15", 15); COUNT(S) & "/" & S["K15"]
+--- expect
+text "15/15"
+===
+
+### name: record.shape.width-15-missing-key-is-e-no-key
+--- note
+Reading the added key from a fresh record is the ordinary E_NO_KEY, never a host
+array-index failure.
+--- source
+R = RECORD("K1", 1, "K2", 2, "K3", 3, "K4", 4, "K5", 5, "K6", 6, "K7", 7, "K8", 8, "K9", 9, "K10", 10, "K11", 11, "K12", 12, "K13", 13, "K14", 14, "K15", 15); R["Z"] = 5; S = RECORD("K1", 1, "K2", 2, "K3", 3, "K4", 4, "K5", 5, "K6", 6, "K7", 7, "K8", 8, "K9", 9, "K10", 10, "K11", 11, "K12", 12, "K13", 13, "K14", 14, "K15", 15); S["Z"]
+--- expect
+error E_NO_KEY at 1:332
+===
+
+### name: record.shape.width-16-assigned-key-does-not-leak
+--- note
+A 16-field record gains a key; a record built afterwards from the same 16 keys
+has exactly those keys and not the added one. Lisp's shape table was corrupted
+from 16 fields (LISP-C2). Cases run in one process, so a shape poisoned here is
+seen by the cases below.
+--- source
+R = RECORD("K1", 1, "K2", 2, "K3", 3, "K4", 4, "K5", 5, "K6", 6, "K7", 7, "K8", 8, "K9", 9, "K10", 10, "K11", 11, "K12", 12, "K13", 13, "K14", 14, "K15", 15, "K16", 16); R["Z"] = 5; S = RECORD("K1", 1, "K2", 2, "K3", 3, "K4", 4, "K5", 5, "K6", 6, "K7", 7, "K8", 8, "K9", 9, "K10", 10, "K11", 11, "K12", 12, "K13", 13, "K14", 14, "K15", 15, "K16", 16); HAS(S, "Z")
+--- expect
+bool FALSE
+===
+
+### name: record.shape.width-16-count-and-read
+--- note
+The same records read back: count 16, the last field present, and the key the
+first record gained absent (E_NO_KEY at the index).
+--- source
+R = RECORD("K1", 1, "K2", 2, "K3", 3, "K4", 4, "K5", 5, "K6", 6, "K7", 7, "K8", 8, "K9", 9, "K10", 10, "K11", 11, "K12", 12, "K13", 13, "K14", 14, "K15", 15, "K16", 16); R["Z"] = 5; S = RECORD("K1", 1, "K2", 2, "K3", 3, "K4", 4, "K5", 5, "K6", 6, "K7", 7, "K8", 8, "K9", 9, "K10", 10, "K11", 11, "K12", 12, "K13", 13, "K14", 14, "K15", 15, "K16", 16); COUNT(S) & "/" & S["K16"]
+--- expect
+text "16/16"
+===
+
+### name: record.shape.width-16-missing-key-is-e-no-key
+--- note
+Reading the added key from a fresh record is the ordinary E_NO_KEY, never a host
+array-index failure.
+--- source
+R = RECORD("K1", 1, "K2", 2, "K3", 3, "K4", 4, "K5", 5, "K6", 6, "K7", 7, "K8", 8, "K9", 9, "K10", 10, "K11", 11, "K12", 12, "K13", 13, "K14", 14, "K15", 15, "K16", 16); R["Z"] = 5; S = RECORD("K1", 1, "K2", 2, "K3", 3, "K4", 4, "K5", 5, "K6", 6, "K7", 7, "K8", 8, "K9", 9, "K10", 10, "K11", 11, "K12", 12, "K13", 13, "K14", 14, "K15", 15, "K16", 16); S["Z"]
+--- expect
+error E_NO_KEY at 1:354
+===
+
+### name: record.shape.width-17-assigned-key-does-not-leak
+--- note
+A 17-field record gains a key; a record built afterwards from the same 17 keys
+has exactly those keys and not the added one. Lisp's shape table was corrupted
+from 16 fields (LISP-C2). Cases run in one process, so a shape poisoned here is
+seen by the cases below.
+--- source
+R = RECORD("K1", 1, "K2", 2, "K3", 3, "K4", 4, "K5", 5, "K6", 6, "K7", 7, "K8", 8, "K9", 9, "K10", 10, "K11", 11, "K12", 12, "K13", 13, "K14", 14, "K15", 15, "K16", 16, "K17", 17); R["Z"] = 5; S = RECORD("K1", 1, "K2", 2, "K3", 3, "K4", 4, "K5", 5, "K6", 6, "K7", 7, "K8", 8, "K9", 9, "K10", 10, "K11", 11, "K12", 12, "K13", 13, "K14", 14, "K15", 15, "K16", 16, "K17", 17); HAS(S, "Z")
+--- expect
+bool FALSE
+===
+
+### name: record.shape.width-17-count-and-read
+--- note
+The same records read back: count 17, the last field present, and the key the
+first record gained absent (E_NO_KEY at the index).
+--- source
+R = RECORD("K1", 1, "K2", 2, "K3", 3, "K4", 4, "K5", 5, "K6", 6, "K7", 7, "K8", 8, "K9", 9, "K10", 10, "K11", 11, "K12", 12, "K13", 13, "K14", 14, "K15", 15, "K16", 16, "K17", 17); R["Z"] = 5; S = RECORD("K1", 1, "K2", 2, "K3", 3, "K4", 4, "K5", 5, "K6", 6, "K7", 7, "K8", 8, "K9", 9, "K10", 10, "K11", 11, "K12", 12, "K13", 13, "K14", 14, "K15", 15, "K16", 16, "K17", 17); COUNT(S) & "/" & S["K17"]
+--- expect
+text "17/17"
+===
+
+### name: record.shape.width-17-missing-key-is-e-no-key
+--- note
+Reading the added key from a fresh record is the ordinary E_NO_KEY, never a host
+array-index failure.
+--- source
+R = RECORD("K1", 1, "K2", 2, "K3", 3, "K4", 4, "K5", 5, "K6", 6, "K7", 7, "K8", 8, "K9", 9, "K10", 10, "K11", 11, "K12", 12, "K13", 13, "K14", 14, "K15", 15, "K16", 16, "K17", 17); R["Z"] = 5; S = RECORD("K1", 1, "K2", 2, "K3", 3, "K4", 4, "K5", 5, "K6", 6, "K7", 7, "K8", 8, "K9", 9, "K10", 10, "K11", 11, "K12", 12, "K13", 13, "K14", 14, "K15", 15, "K16", 16, "K17", 17); S["Z"]
+--- expect
+error E_NO_KEY at 1:376
+===
+
+### name: record.shape.width-20-assigned-key-does-not-leak
+--- note
+A 20-field record gains a key; a record built afterwards from the same 20 keys
+has exactly those keys and not the added one. Lisp's shape table was corrupted
+from 16 fields (LISP-C2). Cases run in one process, so a shape poisoned here is
+seen by the cases below.
+--- source
+R = RECORD("K1", 1, "K2", 2, "K3", 3, "K4", 4, "K5", 5, "K6", 6, "K7", 7, "K8", 8, "K9", 9, "K10", 10, "K11", 11, "K12", 12, "K13", 13, "K14", 14, "K15", 15, "K16", 16, "K17", 17, "K18", 18, "K19", 19, "K20", 20); R["Z"] = 5; S = RECORD("K1", 1, "K2", 2, "K3", 3, "K4", 4, "K5", 5, "K6", 6, "K7", 7, "K8", 8, "K9", 9, "K10", 10, "K11", 11, "K12", 12, "K13", 13, "K14", 14, "K15", 15, "K16", 16, "K17", 17, "K18", 18, "K19", 19, "K20", 20); HAS(S, "Z")
+--- expect
+bool FALSE
+===
+
+### name: record.shape.width-20-count-and-read
+--- note
+The same records read back: count 20, the last field present, and the key the
+first record gained absent (E_NO_KEY at the index).
+--- source
+R = RECORD("K1", 1, "K2", 2, "K3", 3, "K4", 4, "K5", 5, "K6", 6, "K7", 7, "K8", 8, "K9", 9, "K10", 10, "K11", 11, "K12", 12, "K13", 13, "K14", 14, "K15", 15, "K16", 16, "K17", 17, "K18", 18, "K19", 19, "K20", 20); R["Z"] = 5; S = RECORD("K1", 1, "K2", 2, "K3", 3, "K4", 4, "K5", 5, "K6", 6, "K7", 7, "K8", 8, "K9", 9, "K10", 10, "K11", 11, "K12", 12, "K13", 13, "K14", 14, "K15", 15, "K16", 16, "K17", 17, "K18", 18, "K19", 19, "K20", 20); COUNT(S) & "/" & S["K20"]
+--- expect
+text "20/20"
+===
+
+### name: record.shape.width-20-missing-key-is-e-no-key
+--- note
+Reading the added key from a fresh record is the ordinary E_NO_KEY, never a host
+array-index failure.
+--- source
+R = RECORD("K1", 1, "K2", 2, "K3", 3, "K4", 4, "K5", 5, "K6", 6, "K7", 7, "K8", 8, "K9", 9, "K10", 10, "K11", 11, "K12", 12, "K13", 13, "K14", 14, "K15", 15, "K16", 16, "K17", 17, "K18", 18, "K19", 19, "K20", 20); R["Z"] = 5; S = RECORD("K1", 1, "K2", 2, "K3", 3, "K4", 4, "K5", 5, "K6", 6, "K7", 7, "K8", 8, "K9", 9, "K10", 10, "K11", 11, "K12", 12, "K13", 13, "K14", 14, "K15", 15, "K16", 16, "K17", 17, "K18", 18, "K19", 19, "K20", 20); S["Z"]
+--- expect
+error E_NO_KEY at 1:442
+===
+
+### name: record.shape.awkward-keys-width-17-assigned-key-does-not-leak
+--- note
+Seventeen keys, among them numeric-looking, empty and NUL-bearing ones, are all
+distinct keys (§3.3: an index key is its scalar verbatim). A key added to one such
+record must not appear in the next.
+--- source
+R = RECORD("1", 1, "01", 2, "1.0", 3, "", 4, "a\u{0}b", 5, "a", 6, "b", 7, "c", 8, "d", 9, "e", 10, "f", 11, "g", 12, "h", 13, "i", 14, "j", 15, "k", 16, "l", 17); R["Z"] = 5; S = RECORD("1", 1, "01", 2, "1.0", 3, "", 4, "a\u{0}b", 5, "a", 6, "b", 7, "c", 8, "d", 9, "e", 10, "f", 11, "g", 12, "h", 13, "i", 14, "j", 15, "k", 16, "l", 17); COUNT(S) & "/" & IF(HAS(S, "Z"), "z", "-") & "/" & IF(HAS(S, ""), "e", "-") & "/" & IF(HAS(S, "01"), "n", "-")
+--- expect
+text "17/-/e/n"
+===
+
+### name: record.shape.awkward-keys-width-17-order
+--- note
+Insertion order survives for keys that look like numbers, are empty, or contain a
+NUL: the first key is "1", the second "01", the fourth the empty string, the fifth a three-character key with a NUL in it.
+--- source
+S = RECORD("1", 1, "01", 2, "1.0", 3, "", 4, "a\u{0}b", 5, "a", 6, "b", 7, "c", 8, "d", 9, "e", 10, "f", 11, "g", 12, "h", 13, "i", 14, "j", 15, "k", 16, "l", 17); INDEXES(S)[1] & "|" & INDEXES(S)[2] & "|" & INDEXES(S)[4] & "|" & LEN(INDEXES(S)[5])
+--- expect
+text "1|01||3"
+===
+
+### name: lim.assign-depth-target-plus-value
+--- note
+§6.4: a value's nesting is capped at 200 and the error is reported at the assignment
+target. The check has to count the path to the target PLUS the depth of what is
+stored there: A is 151 levels (150 brackets over a leaf), and storing it 50 levels
+down makes 201. Every host counted only the path and let the value be built --
+the error then surfaced, unpositioned (0:0), the first time something walked it
+(PY-C30, LISP-C33). The column is the outermost bracket of B's target.
+--- source
+A[1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1] = 1; B[1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1] = A; 7
+--- expect
+error E_DEPTH at 1:606
+===
+
+### name: lim.assign-depth-target-plus-value-just-under
+--- note
+One level less is exactly 200 and an ordinary program.
+--- source
+A[1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1] = 1; B[1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1] = A; 7
+--- expect
+num 7
+===
+
+### name: lim.assign-depth-value-plus-one-level
+--- note
+A is 200 levels deep (199 brackets) and legal; storing it one level down is 201.
+Path length 1, value depth 200: the two halves of the sum are each within the cap.
+--- source
+A[1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1] = 1; B[1] = A; 7
+--- expect
+error E_DEPTH at 1:606
+===
+
+### name: lim.assign-depth-value-at-the-cap
+--- note
+CONTROL: storing that 200-level value at the root of another variable is fine.
+--- source
+A[1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1] = 1; B = A; 7
+--- expect
+num 7
+===
+
+### name: alias.list-copies-an-element
+--- note
+LIST collects like `,` and copies what it collects (§3.4 table): the element replaced through X while the list is pending is not the element the list holds.
+--- source
+X = LIST(RECORD("k",1)); LIST(X[1])[(X[1]["k"] = 9; 1)]["k"]
+--- expect
+num 1
+===
+
+### name: alias.list-copies-a-list-argument
+--- note
+The same for an argument that is itself a list: LIST does not flatten it, and holds a copy.
+--- source
+X = LIST(RECORD("k",1)); LIST(X)[(X[1]["k"] = 9; 1)][1]["k"]
+--- expect
+num 1
+===
+
+### name: alias.record-copies-a-value
+--- note
+RECORD collects its values like `,` does and copies each.
+--- source
+X = LIST(RECORD("k",1)); RECORD("r", X[1])["r"][(X[1]["k"] = 9; "k")]
+--- expect
+num 1
+===
+
+### name: alias.record-copies-a-list-value
+--- note
+A list stored as a record's value is copied whole.
+--- source
+X = LIST(RECORD("k",1)); RECORD("r", X)["r"][(X[1]["k"] = 9; 1)]["k"]
+--- expect
+num 1
+===
+
+### name: alias.aggregate-copies.top
+--- note
+`TOP(X, 1)` is SORT/SORT_BY followed by TAKE as one step and copies exactly as they do (§3.4 table); every host aliased.
+--- source
+X = LIST(RECORD("k",1)); TOP(X, 1)[(X[1]["k"] = 9; 1)]["k"]
+--- expect
+num 1
+===
+
+### name: alias.aggregate-copies.top-body
+--- note
+`TOP(X, 1, 1)` is SORT/SORT_BY followed by TAKE as one step and copies exactly as they do (§3.4 table); every host aliased.
+--- source
+X = LIST(RECORD("k",1)); TOP(X, 1, 1)[(X[1]["k"] = 9; 1)]["k"]
+--- expect
+num 1
+===
+
+### name: alias.aggregate-copies.top-desc
+--- note
+`TOP_DESC(X, 1, 1)` is SORT/SORT_BY followed by TAKE as one step and copies exactly as they do (§3.4 table); every host aliased.
+--- source
+X = LIST(RECORD("k",1)); TOP_DESC(X, 1, 1)[(X[1]["k"] = 9; 1)]["k"]
+--- expect
+num 1
+===
+
+### name: alias.aggregate-copies.top-by
+--- note
+`TOP_BY(X, 1, 1)` is SORT/SORT_BY followed by TAKE as one step and copies exactly as they do (§3.4 table); every host aliased.
+--- source
+X = LIST(RECORD("k",1)); TOP_BY(X, 1, 1)[(X[1]["k"] = 9; 1)]["k"]
+--- expect
+num 1
+===
+
+### name: alias.collection-aliases.take
+--- note
+CONTROL for the other half of the table: `TAKE(X, 1)` returns a new container (struct.* pins that) whose elements ARE the source's elements, so a change to one shows through the result. An implementation that copies here disagrees with §3.4 just as one that does not copy in a §7.3 aggregate does.
+--- source
+X = LIST(RECORD("k",1)); TAKE(X, 1)[(X[1]["k"] = 9; 1)]["k"]
+--- expect
+num 9
+===
+
+### name: alias.collection-aliases.drop
+--- note
+CONTROL for the other half of the table: `DROP(X, 0)` returns a new container (struct.* pins that) whose elements ARE the source's elements, so a change to one shows through the result. An implementation that copies here disagrees with §3.4 just as one that does not copy in a §7.3 aggregate does.
+--- source
+X = LIST(RECORD("k",1)); DROP(X, 0)[(X[1]["k"] = 9; 1)]["k"]
+--- expect
+num 9
+===
+
+### name: alias.collection-aliases.distinct
+--- note
+CONTROL for the other half of the table: `DISTINCT(X)` returns a new container (struct.* pins that) whose elements ARE the source's elements, so a change to one shows through the result. An implementation that copies here disagrees with §3.4 just as one that does not copy in a §7.3 aggregate does.
+--- source
+X = LIST(RECORD("k",1)); DISTINCT(X)[(X[1]["k"] = 9; 1)]["k"]
+--- expect
+num 9
+===
+
+### name: alias.collection-aliases.dedupe
+--- note
+CONTROL for the other half of the table: `DEDUPE(X)` returns a new container (struct.* pins that) whose elements ARE the source's elements, so a change to one shows through the result. An implementation that copies here disagrees with §3.4 just as one that does not copy in a §7.3 aggregate does.
+--- source
+X = LIST(RECORD("k",1)); DEDUPE(X)[(X[1]["k"] = 9; 1)]["k"]
+--- expect
+num 9
+===
+
+### name: lim.constructor-depth-list
+--- note
+A is 200 levels (199 brackets over a leaf) and legal. LIST(A) holds a copy of it one level down: 201, past the cap. The error is reported at the node that built the value -- the LIST call, column 605 -- not at 0:0 when something later walks it, and not at an unrelated assignment target (§3.4).
+--- source
+A[1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1] = 1; LIST(A); 7
+--- expect
+error E_DEPTH at 1:605
+===
+
+### name: lim.constructor-depth-list-assigned
+--- note
+Here the built value is also assigned: the constructor is what fails, before the assignment ever sees it, so the position is the LIST call and not the target B.
+--- source
+A[1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1] = 1; B = LIST(A); 7
+--- expect
+error E_DEPTH at 1:609
+===
+
+### name: lim.constructor-depth-record
+--- note
+The same through RECORD, which collects its value like `,` does.
+--- source
+A[1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1] = 1; RECORD("k", A); 7
+--- expect
+error E_DEPTH at 1:605
+===
+
+### name: lim.constructor-depth-comma
+--- note
+And through `,`: A has a scalar of its own, so it contributes itself, one level down. The list node is positioned at its first operand.
+--- source
+A = 1; A[1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1] = 1; (A, 2); 7
+--- expect
+error E_DEPTH at 1:613
+===
+
+### name: lim.constructor-depth-just-under
+--- note
+CONTROL: one level shallower (199 brackets is 200 levels; 198 makes A 199 and LIST(A) exactly 200) is an ordinary program.
+--- source
+A[1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1] = 1; LIST(A); 7
+--- expect
+num 7
+===

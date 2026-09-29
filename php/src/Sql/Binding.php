@@ -254,10 +254,18 @@ final class Binding
             // strtoupper, which is ASCII-only in PHP and so matches
             // sel.registry's ascii_upper on the Python side. str.upper()
             // there would fold "ß" to "SS" and change the key's length.
-            $out[strtoupper((string) $name)] = $b->spec;
+            $upper = \Sel\Utf8::upper((string) $name);
+            // SEL names are upper-cased, so two fields that differ only by ASCII case
+            // are one name; silently keeping the last is a guess (sql/MAP.md 3.1).
+            if (array_key_exists($upper, $out)) {
+                throw new SqlError('E_SQL_BINDING',
+                    "two fields of a relation binding differ only by case ({$name}); SEL "
+                    . 'reads them as one name');
+            }
+            $out[$upper] = $b->spec;
         }
         if ($scalar !== null) {
-            $key = strtoupper($scalar);
+            $key = \Sel\Utf8::upper($scalar);
             if (!isset($out[$key])) {
                 throw new SqlError('E_SQL_BINDING',
                     "a relation binding names {$scalar} as its scalar, which is not "
@@ -326,9 +334,14 @@ final class Binding
     /** @param mixed $type */
     private static function checkType($type): void
     {
-        if (!is_string($type) || !in_array($type, Fragment::KINDS, true)) {
+        // What a column or value can hold: LIST and STATEMENT are what a whole
+        // fragment can be, and a binding declared as one made the kind of a column
+        // answer STATEMENT.
+        $allowed = ['NUM', 'TEXT', 'BOOL', 'BIN', 'UNKNOWN'];
+        if (!is_string($type) || !in_array($type, $allowed, true)) {
             throw new SqlError('E_SQL_BINDING',
-                "a binding has type {$type}; use one of " . implode(', ', Fragment::KINDS));
+                'a binding has type ' . (is_string($type) ? $type : get_debug_type($type))
+                . '; use one of ' . implode(', ', $allowed));
         }
     }
 
@@ -370,7 +383,7 @@ final class Binding
      */
     private static function checkCollation(string $c): array
     {
-        $lower = strtolower($c);
+        $lower = \Sel\Utf8::lower($c);
         if ($lower === 'binary' || $lower === 'exact') {
             return [true, false];
         }
@@ -397,7 +410,7 @@ final class Binding
                 'a binding prefilter must be a string or boolean, and this is '
                 . get_debug_type($p));
         }
-        $lower = strtolower($p);
+        $lower = \Sel\Utf8::lower($p);
         if ($lower === 'separate' || $lower === 'splitsargable' || $lower === 'split_sargable') {
             return 'separate';
         }

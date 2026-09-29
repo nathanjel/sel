@@ -30,6 +30,11 @@ class OpCode(IntEnum):
     POWER = 16
     MIN = 17
     MAX = 18
+    # Internal to this host, not in the manifest: coerce a loaded Value to a
+    # decimal in place. Emitted where copy propagation drops the operation that
+    # would have coerced it, so the coercion still happens at the same point in
+    # the order as in the plain tree (SPEC 6.2, evaluate then coerce).
+    COERCE = 19
 
 
 @dataclass(slots=True)
@@ -50,6 +55,10 @@ class MathPlan:
     steps: list[Step]
     output_slot: int
     scratchpad_size: int
+    # Position of the source node a slot was loaded from, for the slots that
+    # hold an UNCOERCED Value (variables and leaves). Every other slot holds a
+    # decimal already.
+    slot_pos: list
 
 
 # The vocabulary -- which source nodes compile, to which operation, with how
@@ -81,6 +90,11 @@ def compile_math_plan(root: Node) -> MathPlan | None:
 
     steps: list[Step] = []
     slot_count = 0
+    # Slots that hold a loaded Value, not yet a decimal: it is coerced by the
+    # operation that consumes it, after every operand has been evaluated (SPEC
+    # 6.2 -- evaluate, then coerce), and it is read as the Value itself, so a
+    # mutation by a later operand is visible through it (SPEC 3.4).
+    value_slots: dict[int, Any] = {}
 
     def alloc_slot() -> int:
         nonlocal slot_count
@@ -96,6 +110,7 @@ def compile_math_plan(root: Node) -> MathPlan | None:
         if node.t == 'var':
             slot = alloc_slot()
             steps.append(Step(op=OpCode.LOAD_VAR, dst=slot, name=node.name, pos=node.pos))
+            value_slots[slot] = node.pos
             return slot, None
 
         # 2. Number literal
@@ -127,32 +142,42 @@ def compile_math_plan(root: Node) -> MathPlan | None:
 
             op = node.op
 
+            def keep(slot: int, const: Any, operand: Node) -> tuple[int, Any]:
+                # The identity operation is dropped, but not the coercion it
+                # would have done: `x + 0` with a text `x` is still E_NOT_NUM,
+                # at this point in the order and not when something later
+                # consumes the slot.
+                if slot in value_slots:
+                    steps.append(Step(op=OpCode.COERCE, dst=slot, src1=slot,
+                                      pos=value_slots.pop(slot)))
+                return slot, const
+
             # Copy propagation for identity operations:
             # Rule 1: x + 0 (scale == 0) -> slot_l
             if op == '+' and const_r is not None and D.is_zero(const_r) and const_r.scale == 0:
                 if node.r.t == 'num' and steps and steps[-1].dst == slot_r:
                     steps.pop()
-                return slot_l, const_l
+                return keep(slot_l, const_l, node.l)
 
             # Rule 2: 0 + x (scale == 0) -> slot_r
             if op == '+' and const_l is not None and D.is_zero(const_l) and const_l.scale == 0:
-                return slot_r, const_r
+                return keep(slot_r, const_r, node.r)
 
             # Rule 3: x - 0 (scale == 0) -> slot_l
             if op == '-' and const_r is not None and D.is_zero(const_r) and const_r.scale == 0:
                 if node.r.t == 'num' and steps and steps[-1].dst == slot_r:
                     steps.pop()
-                return slot_l, const_l
+                return keep(slot_l, const_l, node.l)
 
             # Rule 4: x * 1 (scale == 0) -> slot_l
             if op == '*' and const_r is not None and not const_r.neg and const_r.digits == 1 and const_r.scale == 0:
                 if node.r.t == 'num' and steps and steps[-1].dst == slot_r:
                     steps.pop()
-                return slot_l, const_l
+                return keep(slot_l, const_l, node.l)
 
             # Rule 5: 1 * x (scale == 0) -> slot_r
             if op == '*' and const_l is not None and not const_l.neg and const_l.digits == 1 and const_l.scale == 0:
-                return slot_r, const_r
+                return keep(slot_r, const_r, node.r)
 
             dst = alloc_slot()
             op_code = _NATIVE[_OPERATORS[op]]
@@ -199,19 +224,20 @@ def compile_math_plan(root: Node) -> MathPlan | None:
                 steps.append(Step(op=op_code, dst=dst, src1=res_arg0[0], src2=res_arg1[0],
                                   pos=node.pos, aux_pos=args[aux].pos if aux is not None else None))
                 return dst, None
-            # fold: one or more operands, combined pairwise left to right
+            # fold: one or more operands, combined pairwise left to right. Every
+            # operand is evaluated before the first is coerced (SPEC 6.2).
             if len(args) < 1:
                 return None
-            res_prev = emit(args[0], depth + 1)
-            if res_prev is None:
-                return None
-            curr_slot = res_prev[0]
-            for k in range(1, len(args)):
-                res_next = emit(args[k], depth + 1)
-                if res_next is None:
+            slots = []
+            for a in args:
+                res_a = emit(a, depth + 1)
+                if res_a is None:
                     return None
+                slots.append(res_a[0])
+            curr_slot = slots[0]
+            for k in range(1, len(args)):
                 dst = alloc_slot()
-                steps.append(Step(op=op_code, dst=dst, src1=curr_slot, src2=res_next[0], pos=node.pos))
+                steps.append(Step(op=op_code, dst=dst, src1=curr_slot, src2=slots[k], pos=node.pos))
                 curr_slot = dst
             return curr_slot, None
 
@@ -228,6 +254,7 @@ def compile_math_plan(root: Node) -> MathPlan | None:
         # 7. Leaves (variables already handled, numbers already handled)
         slot = alloc_slot()
         steps.append(Step(op=OpCode.LOAD_LEAF, dst=slot, leaf_node=node, pos=node.pos))
+        value_slots[slot] = node.pos
         return slot, None
 
     res = emit(root, 1)
@@ -237,4 +264,14 @@ def compile_math_plan(root: Node) -> MathPlan | None:
     if not steps:
         return None
 
-    return MathPlan(steps=steps, output_slot=output_slot, scratchpad_size=slot_count)
+    # A slot still holding a Value at the end (an identity operation dropped by
+    # copy propagation on the output) is coerced by one last step.
+    if output_slot in value_slots:
+        steps.append(Step(op=OpCode.COERCE, dst=output_slot, src1=output_slot,
+                          pos=value_slots.pop(output_slot)))
+    slot_pos = [None] * slot_count
+    for st in steps:
+        if st.op in (OpCode.LOAD_VAR, OpCode.LOAD_LEAF):
+            slot_pos[st.dst] = st.pos
+    return MathPlan(steps=steps, output_slot=output_slot, scratchpad_size=slot_count,
+                    slot_pos=slot_pos)

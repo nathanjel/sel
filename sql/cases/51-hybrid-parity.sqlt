@@ -1,0 +1,250 @@
+# The hybrid planner, held to `run()`: what a split may hide (T11).
+#
+# 25-hybrid-plans.sqlt pins how the planner CLASSIFIES and what the prefix says.
+# These pin the four things a classification must not lose, each found by
+# executing the plan and comparing it with run() (sql/oracle/hybrid.json runs the
+# same programs on real servers; docs/internals/sql-translation.md 12.1):
+#
+#   row keys      SPEC 7.3: FILTER keeps its input's keys, every other step
+#                 renumbers from 1, and the database answers a ROWSET numbered
+#                 1..n. A boundary right after a FILTER therefore hands the
+#                 continuation renumbered rows: legal only when the continuation
+#                 cannot observe the keys (a renumbering step comes first and no
+#                 `_K` is read before it). Otherwise the prefix ends before the
+#                 FILTER -- for these programs, nothing pushes down.
+#   errors        run() evaluates a MAP's body on every row before a later
+#                 TAKE, DROP or sort cuts the list: a local half that can raise
+#                 keeps every row-cutting step behind it.
+#   binders       a literal helper that shares a name with an explicit binder
+#                 is a different name, and a split before a LINK keeps the
+#                 join's left side under its own name (SPEC 7.4).
+#   tables        `source_tables` names what the prefix reads: a binder or an
+#                 assignment target named like a relation reads nothing.
+
+### name: plan.keys.filter-then-key-reader-is-not-a-split-point
+--- note
+The MAP's second pair reads `_K` and has no SQL spelling, so the MAP would be split; the rows the continuation would see are the SQL rowset (1, 2, ...), where run() has the FILTER's keys (3, 4, ...). The boundary after the FILTER is not key-safe, and nothing before it can be pushed either, so the plan is pure memory. JS-C22, PY-C22, CPP-C33, PHP-C8, LISP-C8, LISP-C27.
+--- dialect
+mariadb
+--- bindings
+{"ORDERS": {"kind": "relation", "from": "orders", "alias": "o", "fields": {"ID": {"table": "o", "column": "id", "type": "NUM"}, "CUSTOMER_ID": {"table": "o", "column": "customer_id", "type": "NUM"}, "AMOUNT": {"table": "o", "column": "amount", "type": "NUM"}, "NAME": {"table": "o", "column": "name", "type": "TEXT"}}}, "CUSTOMERS": {"kind": "relation", "from": "customers", "alias": "c", "fields": {"ID": {"table": "c", "column": "id", "type": "NUM"}, "NAME": {"table": "c", "column": "name", "type": "TEXT"}}}}
+--- source
+ORDERS .> FILTER(_["id"] > 2) .> MAP(RECORD("i", _["id"], "k", _K))
+--- plan
+pure_memory
+--- tables
+orders
+===
+
+### name: plan.keys.filter-then-unsupported-filter-is-pure-memory
+--- note
+The result of this pipeline IS the rows the second FILTER keeps, under their original keys: split after the first FILTER and they would come back renumbered. Two FILTERs fuse before planning, and a fused FILTER with an unrenderable conjunct stays whole. JS-C22, CPP-C33, PY-C22, PHP-C8.
+--- dialect
+mariadb
+--- bindings
+{"ORDERS": {"kind": "relation", "from": "orders", "alias": "o", "fields": {"ID": {"table": "o", "column": "id", "type": "NUM"}, "CUSTOMER_ID": {"table": "o", "column": "customer_id", "type": "NUM"}, "AMOUNT": {"table": "o", "column": "amount", "type": "NUM"}, "NAME": {"table": "o", "column": "name", "type": "TEXT"}}}, "CUSTOMERS": {"kind": "relation", "from": "customers", "alias": "c", "fields": {"ID": {"table": "c", "column": "id", "type": "NUM"}, "NAME": {"table": "c", "column": "name", "type": "TEXT"}}}}
+--- source
+ORDERS .> FILTER(_["id"] > 2) .> FILTER(COUNT(SPLIT(_["name"], "a")) > 1)
+--- plan
+pure_memory
+--- tables
+orders
+===
+
+### name: plan.keys.split-after-a-sort-may-end-in-a-filter
+--- note
+CONTROL. The sort renumbers, so the rowset the database returns IS the sorted list with its own ordinals, and a continuation FILTER retains exactly those: keys the same as run()'s, and the split is safe.
+--- dialect
+mariadb
+--- bindings
+{"ORDERS": {"kind": "relation", "from": "orders", "alias": "o", "fields": {"ID": {"table": "o", "column": "id", "type": "NUM"}, "CUSTOMER_ID": {"table": "o", "column": "customer_id", "type": "NUM"}, "AMOUNT": {"table": "o", "column": "amount", "type": "NUM"}, "NAME": {"table": "o", "column": "name", "type": "TEXT"}}}, "CUSTOMERS": {"kind": "relation", "from": "customers", "alias": "c", "fields": {"ID": {"table": "c", "column": "id", "type": "NUM"}, "NAME": {"table": "c", "column": "name", "type": "TEXT"}}}}
+--- source
+ORDERS .> SORT_BY(_["id"]) .> FILTER(COUNT(SPLIT(_["name"], "a")) > 1)
+--- plan
+hybrid
+--- tables
+orders
+--- expect
+SELECT `o`.* FROM `orders` `o` ORDER BY `o`.`id` ASC
+===
+
+### name: plan.keys.split-after-a-filter-then-a-sort-is-safe
+--- note
+CONTROL. A FILTER in the prefix is fine when a renumbering step follows it inside the prefix: the boundary is after the sort.
+--- dialect
+mariadb
+--- bindings
+{"ORDERS": {"kind": "relation", "from": "orders", "alias": "o", "fields": {"ID": {"table": "o", "column": "id", "type": "NUM"}, "CUSTOMER_ID": {"table": "o", "column": "customer_id", "type": "NUM"}, "AMOUNT": {"table": "o", "column": "amount", "type": "NUM"}, "NAME": {"table": "o", "column": "name", "type": "TEXT"}}}, "CUSTOMERS": {"kind": "relation", "from": "customers", "alias": "c", "fields": {"ID": {"table": "c", "column": "id", "type": "NUM"}, "NAME": {"table": "c", "column": "name", "type": "TEXT"}}}}
+--- source
+ORDERS .> FILTER(_["id"] > 2) .> SORT_BY(_["id"]) .> FILTER(COUNT(SPLIT(_["name"], "a")) > 1)
+--- plan
+hybrid
+--- tables
+orders
+--- expect
+SELECT `o`.* FROM `orders` `o` WHERE (`o`.`id` > 2) ORDER BY `o`.`id` ASC
+===
+
+### name: plan.errors.take-behind-a-map-that-can-raise-stays-local
+--- note
+The MAP's local half raises on row 5 and run() evaluates it on every row before TAKE cuts the list to two. The statement therefore carries the pushable projection and the sort but NOT the LIMIT; the TAKE runs in memory after the MAP. (The old expectation, plan.hybrid.fallthrough-keeps-downstream-steps, pushed the LIMIT and lost the error.) JS-C23, PY-C47, CPP-C34, LISP-C30, PHP-C36.
+--- dialect
+mariadb
+--- bindings
+{"ORDERS": {"kind": "relation", "from": "orders", "alias": "o", "fields": {"ID": {"table": "o", "column": "id", "type": "NUM"}, "CUSTOMER_ID": {"table": "o", "column": "customer_id", "type": "NUM"}, "AMOUNT": {"table": "o", "column": "amount", "type": "NUM"}, "NAME": {"table": "o", "column": "name", "type": "TEXT"}}}, "CUSTOMERS": {"kind": "relation", "from": "customers", "alias": "c", "fields": {"ID": {"table": "c", "column": "id", "type": "NUM"}, "NAME": {"table": "c", "column": "name", "type": "TEXT"}}}}
+--- source
+ORDERS .> SORT_BY(_["id"]) .> MAP(RECORD("i", _["id"], "z", IF(_["id"] > 4, ABORT("x"), 1))) .> TAKE(2)
+--- plan
+hybrid
+--- tables
+orders
+--- expect
+SELECT `o`.`id` AS `i`, `o`.`id` AS `id` FROM `orders` `o` ORDER BY `o`.`id` ASC
+===
+
+### name: plan.errors.drop-behind-a-map-that-can-raise-stays-local
+--- note
+The same with DROP: a row-cutting step never crosses a local half that can raise.
+--- dialect
+mariadb
+--- bindings
+{"ORDERS": {"kind": "relation", "from": "orders", "alias": "o", "fields": {"ID": {"table": "o", "column": "id", "type": "NUM"}, "CUSTOMER_ID": {"table": "o", "column": "customer_id", "type": "NUM"}, "AMOUNT": {"table": "o", "column": "amount", "type": "NUM"}, "NAME": {"table": "o", "column": "name", "type": "TEXT"}}}, "CUSTOMERS": {"kind": "relation", "from": "customers", "alias": "c", "fields": {"ID": {"table": "c", "column": "id", "type": "NUM"}, "NAME": {"table": "c", "column": "name", "type": "TEXT"}}}}
+--- source
+ORDERS .> SORT_BY(_["id"]) .> MAP(RECORD("i", _["id"], "z", IF(_["id"] > 4, ABORT("x"), 1))) .> DROP(1)
+--- plan
+hybrid
+--- tables
+orders
+--- expect
+SELECT `o`.`id` AS `i`, `o`.`id` AS `id` FROM `orders` `o` ORDER BY `o`.`id` ASC
+===
+
+### name: plan.errors.sort-and-take-behind-a-map-that-can-raise-stay-local
+--- note
+A re-sort and a limit behind the MAP cannot make row 5 disappear either.
+--- dialect
+mariadb
+--- bindings
+{"ORDERS": {"kind": "relation", "from": "orders", "alias": "o", "fields": {"ID": {"table": "o", "column": "id", "type": "NUM"}, "CUSTOMER_ID": {"table": "o", "column": "customer_id", "type": "NUM"}, "AMOUNT": {"table": "o", "column": "amount", "type": "NUM"}, "NAME": {"table": "o", "column": "name", "type": "TEXT"}}}, "CUSTOMERS": {"kind": "relation", "from": "customers", "alias": "c", "fields": {"ID": {"table": "c", "column": "id", "type": "NUM"}, "NAME": {"table": "c", "column": "name", "type": "TEXT"}}}}
+--- source
+ORDERS .> SORT_BY(_["id"]) .> MAP(RECORD("i", _["id"], "z", IF(_["id"] > 4, ABORT("x"), 1))) .> SORT_BY(_["i"], "DESC") .> TAKE(1)
+--- plan
+hybrid
+--- tables
+orders
+--- expect
+SELECT `o`.`id` AS `i`, `o`.`id` AS `id` FROM `orders` `o` ORDER BY `o`.`id` ASC
+===
+
+### name: plan.errors.take-before-the-map-is-pushed
+--- note
+CONTROL. The TAKE is written BEFORE the MAP: rows past it never reach the MAP in run() either, so the LIMIT belongs to the statement.
+--- dialect
+mariadb
+--- bindings
+{"ORDERS": {"kind": "relation", "from": "orders", "alias": "o", "fields": {"ID": {"table": "o", "column": "id", "type": "NUM"}, "CUSTOMER_ID": {"table": "o", "column": "customer_id", "type": "NUM"}, "AMOUNT": {"table": "o", "column": "amount", "type": "NUM"}, "NAME": {"table": "o", "column": "name", "type": "TEXT"}}}, "CUSTOMERS": {"kind": "relation", "from": "customers", "alias": "c", "fields": {"ID": {"table": "c", "column": "id", "type": "NUM"}, "NAME": {"table": "c", "column": "name", "type": "TEXT"}}}}
+--- source
+ORDERS .> SORT_BY(_["id"]) .> TAKE(2) .> MAP(RECORD("i", _["id"], "z", IF(_["id"] > 4, ABORT("x"), 1)))
+--- plan
+hybrid
+--- tables
+orders
+--- expect
+SELECT `_sub1`.`id` AS `i`, `_sub1`.`id` AS `id` FROM (SELECT `o`.* FROM `orders` `o` ORDER BY `o`.`id` ASC LIMIT 2) `_sub1`
+===
+
+### name: plan.binders.split-before-a-link-keeps-the-prefix-to-the-link
+--- note
+The predicate has no SQL spelling, so the LINK stays in memory behind the sorted, limited rows. (The joined row's left side must still be named ORDERS, not `_INPUT`: an executing check, sql/oracle/hybrid.json `binder.split-before-a-link-keeps-the-left-name`; the plan itself is this.) PHP-C9, PY-C23, LISP-C29, GO-C22.
+--- dialect
+mariadb
+--- bindings
+{"ORDERS": {"kind": "relation", "from": "orders", "alias": "o", "fields": {"ID": {"table": "o", "column": "id", "type": "NUM"}, "CUSTOMER_ID": {"table": "o", "column": "customer_id", "type": "NUM"}, "AMOUNT": {"table": "o", "column": "amount", "type": "NUM"}, "NAME": {"table": "o", "column": "name", "type": "TEXT"}}}, "CUSTOMERS": {"kind": "relation", "from": "customers", "alias": "c", "fields": {"ID": {"table": "c", "column": "id", "type": "NUM"}, "NAME": {"table": "c", "column": "name", "type": "TEXT"}}}}
+--- source
+ORDERS .> SORT_BY(_["id"]) .> TAKE(4) .> LINK(CUSTOMERS, _1["customer_id"] == _2["id"] AND COUNT(SPLIT(_1["name"], "a")) > 0)
+--- plan
+hybrid
+--- tables
+orders
+--- expect
+SELECT `o`.* FROM `orders` `o` ORDER BY `o`.`id` ASC LIMIT 4
+===
+
+### name: plan.binders.literal-helper-named-like-an-explicit-sort-binder
+--- note
+N is a literal helper AND the sort's binder. Inlining the literal into the binder slot made the planner hand the translator `SORT_BY(5, 5["id"], "DESC")` and downgrade a pure SQL pipeline to memory. PY-C24, LISP-C28.
+--- dialect
+mariadb
+--- bindings
+{"ORDERS": {"kind": "relation", "from": "orders", "alias": "o", "fields": {"ID": {"table": "o", "column": "id", "type": "NUM"}, "CUSTOMER_ID": {"table": "o", "column": "customer_id", "type": "NUM"}, "AMOUNT": {"table": "o", "column": "amount", "type": "NUM"}, "NAME": {"table": "o", "column": "name", "type": "TEXT"}}}, "CUSTOMERS": {"kind": "relation", "from": "customers", "alias": "c", "fields": {"ID": {"table": "c", "column": "id", "type": "NUM"}, "NAME": {"table": "c", "column": "name", "type": "TEXT"}}}}
+--- source
+N = 5; ORDERS .> FILTER(_["id"] > 1) .> SORT_BY(N, N["id"], "DESC") .> TAKE(2)
+--- plan
+pure_sql
+--- tables
+orders
+--- expect
+SELECT `o`.* FROM `orders` `o` WHERE (`o`.`id` > 1) ORDER BY `o`.`id` DESC LIMIT 2
+===
+
+### name: plan.tables.a-binder-named-like-a-relation-reads-nothing
+--- note
+`ORDERS` here names the element of the MAP, not the bound relation: nothing reads a table, so `source_tables` is empty. PHP-C55, LISP-C43.
+--- dialect
+mariadb
+--- bindings
+{"ORDERS": {"kind": "relation", "from": "orders", "alias": "o", "fields": {"ID": {"table": "o", "column": "id", "type": "NUM"}, "CUSTOMER_ID": {"table": "o", "column": "customer_id", "type": "NUM"}, "AMOUNT": {"table": "o", "column": "amount", "type": "NUM"}, "NAME": {"table": "o", "column": "name", "type": "TEXT"}}}, "CUSTOMERS": {"kind": "relation", "from": "customers", "alias": "c", "fields": {"ID": {"table": "c", "column": "id", "type": "NUM"}, "NAME": {"table": "c", "column": "name", "type": "TEXT"}}}}
+--- source
+LIST(1) .> MAP(ORDERS, ORDERS)
+--- plan
+pure_memory
+--- tables
+
+===
+
+### name: plan.tables.a-map-binder-named-like-a-relation
+--- note
+The same through the three-argument MAP over a list literal.
+--- dialect
+mariadb
+--- bindings
+{"ORDERS": {"kind": "relation", "from": "orders", "alias": "o", "fields": {"ID": {"table": "o", "column": "id", "type": "NUM"}, "CUSTOMER_ID": {"table": "o", "column": "customer_id", "type": "NUM"}, "AMOUNT": {"table": "o", "column": "amount", "type": "NUM"}, "NAME": {"table": "o", "column": "name", "type": "TEXT"}}}, "CUSTOMERS": {"kind": "relation", "from": "customers", "alias": "c", "fields": {"ID": {"table": "c", "column": "id", "type": "NUM"}, "NAME": {"table": "c", "column": "name", "type": "TEXT"}}}}
+--- source
+MAP(LIST(1, 2), ORDERS, ORDERS + 1)
+--- plan
+pure_memory
+--- tables
+
+===
+
+### name: plan.tables.an-assignment-target-named-like-a-relation
+--- note
+`ORDERS = LIST(1)` makes ORDERS a variable of the program for the rest of it, so COUNT(ORDERS) reads no table. PHP-C55.
+--- dialect
+mariadb
+--- bindings
+{"ORDERS": {"kind": "relation", "from": "orders", "alias": "o", "fields": {"ID": {"table": "o", "column": "id", "type": "NUM"}, "CUSTOMER_ID": {"table": "o", "column": "customer_id", "type": "NUM"}, "AMOUNT": {"table": "o", "column": "amount", "type": "NUM"}, "NAME": {"table": "o", "column": "name", "type": "TEXT"}}}, "CUSTOMERS": {"kind": "relation", "from": "customers", "alias": "c", "fields": {"ID": {"table": "c", "column": "id", "type": "NUM"}, "NAME": {"table": "c", "column": "name", "type": "TEXT"}}}}
+--- source
+ORDERS = LIST(1); COUNT(ORDERS)
+--- plan
+pure_memory
+--- tables
+
+===
+
+### name: plan.tables.a-filter-binder-named-like-another-relation
+--- note
+CUSTOMERS is the FILTER's binder over ORDERS: only `orders` is read. PY-C48.
+--- dialect
+mariadb
+--- bindings
+{"ORDERS": {"kind": "relation", "from": "orders", "alias": "o", "fields": {"ID": {"table": "o", "column": "id", "type": "NUM"}, "CUSTOMER_ID": {"table": "o", "column": "customer_id", "type": "NUM"}, "AMOUNT": {"table": "o", "column": "amount", "type": "NUM"}, "NAME": {"table": "o", "column": "name", "type": "TEXT"}}}, "CUSTOMERS": {"kind": "relation", "from": "customers", "alias": "c", "fields": {"ID": {"table": "c", "column": "id", "type": "NUM"}, "NAME": {"table": "c", "column": "name", "type": "TEXT"}}}}
+--- source
+ORDERS .> FILTER(CUSTOMERS, CUSTOMERS["id"] > 1)
+--- plan
+pure_sql
+--- tables
+orders
+--- expect
+SELECT `o`.* FROM `orders` `o` WHERE (`o`.`id` > 1)
+===

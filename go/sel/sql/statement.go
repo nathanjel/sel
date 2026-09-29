@@ -1065,7 +1065,7 @@ func (t *Translator) CompileStatement(plan *RelationalPlan) *Fragment {
 	// 3. WHERE clause
 	var condParts [][]Part
 	if plan.Correlate != "" {
-		condParts = append(condParts, []Part{{Sql: plan.Correlate}})
+		condParts = append(condParts, []Part{{Sql: "(" + plan.Correlate + ")"}})
 	}
 	t.inWhere = true
 	for _, filter := range plan.Filters {

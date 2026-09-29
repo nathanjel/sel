@@ -7,7 +7,7 @@
 GO ?= go
 BUILD ?= build
 
-BINARIES := conformance batch e2e sel api check-decimal sqlapi sqlreplay sqlt sqlfuzz mandelbrot scale-bench
+BINARIES := conformance batch e2e sel api check-decimal sqlapi sqlreplay sqlt sqlfuzz mandelbrot scale-bench regexverdict
 
 TARGETS := $(addprefix $(BUILD)/,$(BINARIES))
 
@@ -63,8 +63,12 @@ $(BUILD)/scale-bench: $(shell find . -name '*.go' -not -path './build/*')
 	@mkdir -p $(BUILD)
 	$(GO) build -o $@ ./bin/scale-bench
 
+$(BUILD)/regexverdict: $(shell find . -name '*.go' -not -path './build/*')
+	@mkdir -p $(BUILD)
+	$(GO) build -o $@ ./bin/regexverdict
+
 test: all
-	$(GO) test ./...
+	$(GO) test -race ./...
 	./$(BUILD)/conformance ../conformance/*.selt
 	./$(BUILD)/sqlt
 

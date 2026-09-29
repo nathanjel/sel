@@ -120,6 +120,46 @@ final class Translator
         return $fields;
     }
 
+    /**
+     * recordFields() for a projection that becomes SQL aliases: a name a program
+     * writes as a text literal is held to what a binding's own names already meet
+     * (sql/MAP.md 3.1) -- not empty, no NUL -- and on PostgreSQL two aliases that
+     * agree in their first 63 bytes are one column to the server, so one result key
+     * where SEL has two. Refused at the literal, E_SQL_UNSUPPORTED.
+     *
+     * @param array<string,mixed> $node
+     * @return list<array{0:string,1:array<string,mixed>}>
+     */
+    private function recordFieldsChecked(array $node): array
+    {
+        $fields = self::recordFields($node);
+        $seen = [];
+        foreach ($fields as $i => [$alias]) {
+            $pos = $node['args'][$i * 2]['pos'];
+            $this->checkAliasName($alias, $pos);
+            if (in_array('postgresql', Map::chain($this->dialect), true)) {
+                $cut = substr($alias, 0, 63);
+                if (isset($seen[$cut]) && $seen[$cut] !== $alias) {
+                    refuse('E_SQL_UNSUPPORTED',
+                        'two field names share their first 63 bytes, which PostgreSQL '
+                        . 'truncates to one column name', $pos);
+                }
+                $seen[$cut] = $alias;
+            }
+        }
+        return $fields;
+    }
+
+    /** @param array{line:int,col:int,offset:int} $pos */
+    private function checkAliasName(string $alias, array $pos): void
+    {
+        if ($alias === '' || str_contains($alias, "\0")) {
+            refuse('E_SQL_UNSUPPORTED',
+                'a column name that is empty or holds a NUL cannot be quoted by any '
+                . 'dialect', $pos);
+        }
+    }
+
     /** @param array<string,mixed> $ast */
     public function translate(array $ast): Fragment
     {
@@ -213,12 +253,35 @@ final class Translator
         }
     }
 
+    /**
+     * Concatenate strings and part lists into one part list, merging neighbouring
+     * strings.
+     *
+     * @param list<string|list<string|int>> $pieces
+     * @return list<string|int>
+     */
+    private static function joinParts(array $pieces): array
+    {
+        $out = [];
+        foreach ($pieces as $piece) {
+            foreach (is_array($piece) ? $piece : [$piece] as $p) {
+                $last = count($out) - 1;
+                if (is_string($p) && $last >= 0 && is_string($out[$last])) {
+                    $out[$last] .= $p;
+                } else {
+                    $out[] = $p;
+                }
+            }
+        }
+        return $out;
+    }
+
     /** @param array<string,mixed> $n */
     private function dispatch(array $n): Fragment
     {
         return match ($n['t']) {
             'num' => $this->literal(Value::num($n['v']), 'NUM'),
-            'text' => $this->literal(Value::text($n['v']), 'TEXT'),
+            'text' => $this->literal(Value::text($n['v']), 'TEXT', $n['pos']),
             'bool' => $this->literal(Value::bool($n['v']), 'BOOL'),
             'var' => $this->variable($n),
             'index' => $this->index($n),
@@ -242,8 +305,15 @@ final class Translator
      * gives TEXT, and no later stage has to guess which of the two a value that
      * happens to read as a number came from.
      */
-    private function literal(Value $v, string $kind): Fragment
+    private function literal(Value $v, string $kind, ?array $pos = null): Fragment
     {
+        // A TEXT value holding NUL is refused in every mode (sql/MAP.md 3.1):
+        // PostgreSQL cannot hold it and a C-string client truncates the statement
+        // at it, so no dialect has a portable spelling.
+        if ($v->isText() && str_contains($v->asText(), "\0")) {
+            refuse('E_SQL_UNSUPPORTED', 'a text value holding NUL cannot be sent to '
+                . 'any SQL server', $pos ?? ['line' => 1, 'col' => 1, 'offset' => 0]);
+        }
         $this->params[] = $v;
         $this->paramKinds[] = $kind === 'UNKNOWN' || $kind === 'LIST' ? 'TEXT' : $kind;
         return new Fragment([count($this->params)], $kind, $this->dialect);
@@ -283,7 +353,7 @@ final class Translator
                         . 'value; only an aggregate can be given an empty binding',
                         $n['pos']);
                 }
-                return $this->literal($v, self::declaredKind($b, $v));
+                return $this->literal($v, self::declaredKind($b, $v), $n['pos']);
 
             case 'columns':
             case 'relation':
@@ -381,7 +451,7 @@ final class Translator
                 refuse('E_SQL_SHAPE',
                     "{$obj['name']}[\"{$key}\"] is a list, not a SQL value", $n['pos']);
             }
-            return $this->literal($child, self::declaredKind($b, $child));
+            return $this->literal($child, self::declaredKind($b, $child), $n['pos']);
         }
         refuse('E_SQL_SHAPE',
             "{$obj['name']} is bound as a column, which has no parts to index",
@@ -563,7 +633,7 @@ final class Translator
             && $this->bindings->has($rhs['name'])) {
             $b = $this->bindings->get($rhs['name'], $rhs['pos']);
             if ($b['kind'] === 'relation') {
-                $scalar = isset($b['scalar']) ? strtoupper((string) $b['scalar']) : null;
+                $scalar = isset($b['scalar']) ? \Sel\Utf8::upper((string) $b['scalar']) : null;
                 if ($scalar === null || !isset($b['fields'][$scalar])) {
                     refuse('E_SQL_SHAPE',
                         "IN over {$rhs['name']} needs the binding to name a \"scalar\" "
@@ -656,7 +726,10 @@ final class Translator
                     . 'counterpart', $e['pos']);
             }
             self::requireComparableKinds($raw, $f, 'IN', $e['pos']);
-            $item = $isExact ? $f : $this->emit->textOperand($f);
+            // An exact needle stays bare only against another text: a NUMBER item beside
+            // it makes the server compare numerically ('3.0' = 3 is TRUE), a match SEL
+            // refuses, so that item is cast the way EQL casts a number.
+            $item = ($isExact && $f->kind !== 'NUM') ? $f : $this->emit->textOperand($f);
             $tests[] = $this->apply('ops', 'EQL',
                 [$needle, $item], $e['pos'], 'text');
         }
@@ -705,7 +778,21 @@ final class Translator
                     $src = ['relation' => $group->payload, 'filters' => [], 'pos' => $n['pos']];
                     $inner = $this->withRow($src, $hasCustomBinder ? $n['args'][1]['name'] : '_',
                         fn (): Fragment => $this->node($bodyNode));
-                    return new Fragment(['COALESCE(SUM(' . implode('', $inner->parts) . '), 0)'], 'NUM', $this->dialect);
+                    $this->requireNumericConstant($bodyNode);
+                    $inner = $this->requireNum($inner, $bodyNode['pos'], 'SUM');
+                    // The body's own parts are spliced -- never joined into a string,
+                    // which replaced every literal in it by its slot number (PHP-C7).
+                    if ($inner->kind === 'UNKNOWN') {
+                        [$test, $cast] = $this->emit->numericGuardParts($inner, $bodyNode['pos']);
+                        $this->scaleLimited($bodyNode['pos'], 'this operand is read as a number');
+                        $parts = self::joinParts(['CASE WHEN COUNT(*) = COUNT(CASE WHEN ', $test,
+                            ' THEN 1 END) THEN COALESCE(SUM(', $cast,
+                            '), 0) ELSE NULL END']);
+                    } else {
+                        $parts = self::joinParts(['COALESCE(SUM(', $inner->parts, '), 0)']);
+                    }
+                    return new Fragment($parts, 'NUM', $this->dialect,
+                        $inner->params, $inner->paramKinds, $inner->caveats);
                 }
             }
         }
@@ -947,8 +1034,8 @@ final class Translator
         $plan = $this->statementPlan;
         if ($plan !== null) {
             if ($relation === $plan->sourceRelation
-                && ($name === null || in_array(strtoupper($name), array_map(
-                    static fn ($item): string => strtoupper((string) $item),
+                && ($name === null || in_array(\Sel\Utf8::upper($name), array_map(
+                    static fn ($item): string => \Sel\Utf8::upper((string) $item),
                     array_filter([$plan->sourceName, $plan->sourceAlias, ...array_merge([], ...array_map(
                         static fn ($join) => $join->leftNames, $plan->joins))], static fn ($item): bool => $item !== null)
                 ), true))) {
@@ -958,8 +1045,8 @@ final class Translator
                 $names = [$join->sourceName, $join->sourceAlias, ...$join->rightNames, '_' . ($index + 2)];
                 $names = array_filter($names, static fn ($item): bool => $item !== null);
                 if ($relation === $join->sourceRelation
-                    && ($name === null || in_array(strtoupper($name), array_map(
-                        static fn ($item): string => strtoupper((string) $item), $names), true))) {
+                    && ($name === null || in_array(\Sel\Utf8::upper($name), array_map(
+                        static fn ($item): string => \Sel\Utf8::upper((string) $item), $names), true))) {
                     return $join->sourceAlias ?? self::relationAlias($relation);
                 }
             }
@@ -1027,7 +1114,7 @@ final class Translator
     /** @return array{spec:array<string,mixed>,table:string,qualify:bool,optional:bool}|null */
     private function rowFieldSpec(RowModel $row, string $key): ?array
     {
-        $u = strtoupper($key);
+        $u = \Sel\Utf8::upper($key);
         if ($row->side) {
             $spec = $row->relation['fields'][$u] ?? null;
             return $spec === null ? null
@@ -1056,7 +1143,7 @@ final class Translator
         }
         $f = $this->rowFieldSpec($row, $key);
         if ($f === null) {
-            if (!$row->side && isset($row->dropped[strtoupper($key)])) {
+            if (!$row->side && isset($row->dropped[\Sel\Utf8::upper($key)])) {
                 refuse('E_SQL_SHAPE', "field \"{$key}\" is ambiguous across joined relations", $n['pos']);
             }
             $known = array_map('strval', array_keys($row->side ? ($row->relation['fields'] ?? []) : $row->promoted));
@@ -1072,6 +1159,7 @@ final class Translator
             refuse('E_SQL_SHAPE', "{$label}[\"{$key}\"] is a field of the right side of a LINK_LEFT, "
                 . 'which a row with no match does not have; read it through the right binder', $n['pos']);
         }
+        self::refuseLostRaw($f['spec'], $n['pos']);
         if (isset($f['spec']['raw']) || !$f['qualify']) {
             return $this->columnRef($f['spec']);
         }
@@ -1114,7 +1202,7 @@ final class Translator
                     continue;
                 }
                 foreach ($names as $name) {
-                    if (array_key_exists(strtoupper($name), $el->relation['fields'] ?? [])) {
+                    if (array_key_exists(\Sel\Utf8::upper($name), $el->relation['fields'] ?? [])) {
                         refuse('E_SQL_SHAPE', "{$name} names a LINK side that has a field of that name too, "
                             . 'which SEL binds instead of the row; rename the binder', $join->pos);
                     }
@@ -1130,8 +1218,8 @@ final class Translator
             foreach (['_2', ...$rightNames] as $k) {
                 $row->nested[$k] = $right;
             }
-            $leftKeys = array_fill_keys(array_map('strtoupper', self::rowKeys($leftEl)), true);
-            $rightKeys = array_fill_keys(array_map('strtoupper', self::rowKeys($right)), true);
+            $leftKeys = array_fill_keys(array_map([\Sel\Utf8::class, 'upper'], self::rowKeys($leftEl)), true);
+            $rightKeys = array_fill_keys(array_map([\Sel\Utf8::class, 'upper'], self::rowKeys($right)), true);
             foreach (self::scalarFields($leftEl) as [$u, $f]) {
                 if (isset($rightKeys[$u])) {
                     $row->dropped[$u] = true;
@@ -1177,7 +1265,7 @@ final class Translator
     {
         $out = [];
         foreach ($names as $name) {
-            foreach ([$name, strtolower($name)] as $k) {
+            foreach ([$name, \Sel\Utf8::lower($name)] as $k) {
                 if (!in_array($k, $out, true)) {
                     $out[] = $k;
                 }
@@ -1363,7 +1451,7 @@ final class Translator
         // E_BAD_ARG. An empty flag string is dropped so the two-argument
         // template applies.
         $text = (string) $flags['v'];
-        if ($text !== '' && strtolower($text) !== 'i') {
+        if ($text !== '' && \Sel\Utf8::lower($text) !== 'i') {
             refuse('E_SQL_UNSUPPORTED',
                 "{$n['name']} accepts only the i flag here, and SEL accepts only i "
                 . 'at all; ' . \Sel\Value::quoteDump($text) . ' is not it',
@@ -1610,7 +1698,7 @@ final class Translator
                         . count($rel['fields']) . ' fields, which is a map in SEL and '
                         . 'not one value; name the field you mean', $n['pos']);
                 }
-                $scalar = isset($rel['scalar']) ? strtoupper((string) $rel['scalar']) : null;
+                $scalar = isset($rel['scalar']) ? \Sel\Utf8::upper((string) $rel['scalar']) : null;
                 if ($scalar === null || !isset($rel['fields'][$scalar])) {
                     refuse('E_SQL_SHAPE',
                         "{$n['name']} names a row, and the relation does not say which "
@@ -1618,6 +1706,7 @@ final class Translator
                         . '"scalar", or index the field you want', $n['pos']);
                 }
                 $field = $rel['fields'][$scalar];
+                self::refuseLostRaw($field, $n['pos']);
                 if (isset($field['raw']) || $this->statementPlan === null) {
                     return $this->columnRef($field);
                 }
@@ -1660,7 +1749,7 @@ final class Translator
             }
             if ($proj === null) {
                 foreach ($projections as $candidate) {
-                    if ($candidate['alias'] !== null && strtoupper($candidate['alias']) === strtoupper($key)) {
+                    if ($candidate['alias'] !== null && \Sel\Utf8::upper($candidate['alias']) === \Sel\Utf8::upper($key)) {
                         $proj = $candidate;
                         break;
                     }
@@ -1694,7 +1783,7 @@ final class Translator
             if ($b->model !== null) {
                 return $this->rowField($b->model, ['t' => 'var', 'name' => $name], $key, $n);
             }
-            $field = strtoupper($key);
+            $field = \Sel\Utf8::upper($key);
             if (!isset($b->payload['fields'][$field])) {
                 $known = array_keys($b->payload['fields']);
                 sort($known);
@@ -1704,7 +1793,17 @@ final class Translator
                     $n['pos']);
             }
             $fieldSpec = $b->payload['fields'][$field];
+            self::refuseLostRaw($fieldSpec, $n['pos']);
             if (isset($fieldSpec['raw'])) {
+                // A raw field is an expression written against the relation's own
+                // alias; across a derived table there is no such alias and no column
+                // of that name to read (sql/MAP.md 3.1).
+                if ($this->statementPlan !== null && $this->statementPlan->sourceSubquery !== null) {
+                    refuse('E_SQL_SHAPE',
+                        "{$name}[\"{$key}\"] is a raw expression, and a derived table that a "
+                        . 'LIMIT, OFFSET or sort wrapped the relation in has no column to read '
+                        . 'it from', $n['pos']);
+                }
                 return $this->columnRef($fieldSpec);
             }
             if ($this->statementPlan !== null
@@ -1957,7 +2056,7 @@ final class Translator
 
         if ($src['shape'] === 'relation') {
             $rendered = $this->withRow($src, $binderName,
-                fn (): Fragment => $this->aggBody($name, $body, $src, $n));
+                fn (): Fragment => $this->aggBody($name, $body, $src, $n, $name === 'SUM'));
             return $this->relationAggregate($name, $src['relation'], $rendered, $n);
         }
 
@@ -1990,12 +2089,22 @@ final class Translator
      * @param array<string,mixed> $src
      * @param array<string,mixed> $n
      */
-    private function aggBody(string $name, array $body, array $src, array $n): Fragment
+    private function aggBody(string $name, array $body, array $src, array $n,
+                             bool $wholeSum = false): Fragment
     {
         $q = $this->node($body);
+        $this->requireNumericConstantIfSum($name, $body);
         $q = $name === 'SUM'
             ? $this->requireNum($q, $body['pos'], $name)
             : $this->requireBool($q, $body['pos'], $name);
+        // A body of unknown kind is a numeric position and is guarded. Over a
+        // relation the whole SUM is guarded instead (all or nothing), so the body
+        // is left as it is for relationAggregate(); over a list or columns the
+        // elements are a chain of `+`, NULL propagates through it, and guarding
+        // each operand is sound.
+        if ($name === 'SUM' && !$wholeSum && $q->kind === 'UNKNOWN') {
+            $q = $this->guardNumeric($q, $body);
+        }
 
         foreach ($src['filters'] as $filter) {
             $p = $this->requireBool($this->node($filter['body']), $filter['body']['pos'], 'FILTER');
@@ -2008,6 +2117,14 @@ final class Translator
                 : $this->apply('ops', 'AND', [$p, $q], $n['pos']);
         }
         return $q;
+    }
+
+    /** @param array<string,mixed> $body */
+    private function requireNumericConstantIfSum(string $name, array $body): void
+    {
+        if ($name === 'SUM') {
+            $this->requireNumericConstant($body);
+        }
     }
 
     /**
@@ -2138,6 +2255,9 @@ final class Translator
      */
     private function relationAggregate(string $name, array $rel, Fragment $body, array $n): Fragment
     {
+        if ($name === 'SUM' && $body->kind === 'UNKNOWN') {
+            return $this->guardedRelationSum($rel, $body, $n);
+        }
         $isSeparate = (($rel['prefilter'] ?? null) === 'separate')
             || (($rel['prefilter'] ?? null) === null && $body->separatePrefilter);
         if ($name === 'ANY' && $body->prefilter !== null && $isSeparate) {
@@ -2158,6 +2278,38 @@ final class Translator
     }
 
     /**
+     * SUM over a relation whose body is of unknown kind: NULL unless EVERY element
+     * passes the numeric test (docs/internals/sql-kinds.md 5a). The skeleton's
+     * `COALESCE(SUM({body}), 0)` is replaced by the guarded whole; COUNT(*) counts
+     * every element and the inner COUNT those that pass (a NULL element does not:
+     * SEL raises E_NO_SCALAR for a NONE).
+     *
+     * @param array<string,mixed> $rel
+     * @param array<string,mixed> $n
+     */
+    private function guardedRelationSum(array $rel, Fragment $body, array $n): Fragment
+    {
+        [$test, $cast] = $this->emit->numericGuardParts($body, $n['pos']);
+        $this->scaleLimited($n['pos'], 'this operand is read as a number');
+        $tpl = $this->skeleton('sum', $n['pos']);
+        $needle = 'COALESCE(SUM({body}), 0)';
+        if (!str_contains($tpl, $needle)) {
+            refuse('E_SQL_UNSUPPORTED',
+                "the sum skeleton of dialect {$this->dialect} is not built on {$needle}, so "
+                . 'it cannot be guarded as a whole', $n['pos']);
+        }
+        $tpl = str_replace($needle,
+            'CASE WHEN COUNT(*) = COUNT(CASE WHEN {bodyTest} THEN 1 END) THEN '
+            . 'COALESCE(SUM({bodyCast}), 0) ELSE NULL END', $tpl);
+        $slots = self::slots($this->relationSlots($rel), [
+            'bodyTest' => [new Fragment($test, 'UNKNOWN', $this->dialect, $body->params, $body->paramKinds)],
+            'bodyCast' => [new Fragment($cast, 'UNKNOWN', $this->dialect, $body->params, $body->paramKinds)],
+        ]);
+        return new Fragment($this->fillNamed($tpl, $slots, $n['pos']), 'NUM', $this->dialect,
+            $body->params, $body->paramKinds, $body->caveats);
+    }
+
+    /**
      * `{from}` is the table and alias, or a query the binding carries; `{corr}`
      * is the join back to the outer row, or the dialect's TRUE when the binding
      * has none — an uncorrelated relation is a subquery over the whole table,
@@ -2175,7 +2327,9 @@ final class Translator
             $from .= ' ' . $this->emit->ident((string) $rel['alias']);
         }
         return ['from' => [$from],
-                'corr' => [(string) ($rel['correlate']['raw'] ?? $this->emit->lex('true'))]];
+                'corr' => [isset($rel['correlate']['raw'])
+                    ? '(' . (string) $rel['correlate']['raw'] . ')'
+                    : $this->emit->lex('true')]];
     }
 
     /** @param array<string,mixed> $n */
@@ -2261,7 +2415,7 @@ final class Translator
         $src = $this->source($n['args'][0], $n);
         if ($src['shape'] === 'relation') {
             $rel = $src['relation'];
-            $scalar = isset($rel['scalar']) ? strtoupper((string) $rel['scalar']) : null;
+            $scalar = isset($rel['scalar']) ? \Sel\Utf8::upper((string) $rel['scalar']) : null;
             if ($scalar === null || !isset($rel['fields'][$scalar])) {
                 refuse('E_SQL_SHAPE',
                     'JOIN over a relation needs the binding to name a "scalar" field',
@@ -2576,8 +2730,14 @@ final class Translator
     private static function unify(array $fs, ?array $pos = null): string
     {
         $kind = null;
+        $unknown = false;
         foreach ($fs as $f) {
             if ($f->kind === 'UNKNOWN') {
+                // A branch of unknown kind makes the WHOLE conditional unknown: taking
+                // the first known kind laundered `U ?? 1` into a NUM and `IF(F, U, TRUE)`
+                // into a BOOL, and the numeric and boolean guards a column of unknown
+                // kind gets were skipped (sql-kinds.md 5a).
+                $unknown = true;
                 continue;
             }
             if ($kind === null) {
@@ -2589,7 +2749,7 @@ final class Translator
                     . "match SEL's for both", $pos);
             }
         }
-        return $kind ?? 'UNKNOWN';
+        return $unknown ? 'UNKNOWN' : ($kind ?? 'UNKNOWN');
     }
 
     /**
@@ -3036,7 +3196,7 @@ final class Translator
         $relations = [$plan->sourceRelation];
         foreach ($plan->joins as $join) $relations[] = $join->sourceRelation;
         foreach ($relations as $rel) {
-            $field = $rel['fields'][strtoupper($name)] ?? null;
+            $field = $rel['fields'][\Sel\Utf8::upper($name)] ?? null;
             if ($field !== null) $matches[] = $field;
         }
         return count($matches) === 1 && !($matches[0]['guard'] ?? false) && !isset($matches[0]['raw'])
@@ -3071,26 +3231,32 @@ final class Translator
         foreach ($this->outputFieldNames($plan) as $name) {
             $sourceField = null;
             if ($plan->projections === null && $plan->selectCols === null) {
-                $sourceField = $plan->sourceRelation['fields'][strtoupper($name)] ?? null;
+                $sourceField = $plan->sourceRelation['fields'][\Sel\Utf8::upper($name)] ?? null;
                 if ($sourceField === null) {
                     foreach ($plan->joins as $join) {
-                        $sourceField = $join->sourceRelation['fields'][strtoupper($name)] ?? null;
+                        $sourceField = $join->sourceRelation['fields'][\Sel\Utf8::upper($name)] ?? null;
                         if ($sourceField !== null) {
                             break;
                         }
                     }
                 }
             }
-            $fields[strtoupper($name)] = [
+            $fields[\Sel\Utf8::upper($name)] = [
                 'kind' => 'column',
                 'column' => $sourceField['column'] ?? $name,
                 'table' => $alias,
                 'type' => $this->outputFieldType($plan, $name),
             ];
+            if (isset($sourceField['raw'])) {
+                // The derived table selects `alias.*`, and a raw expression is not a
+                // column of that table: reading it across the wrap is refused
+                // (sql/MAP.md 3.1), where it used to name a column that is not there.
+                $fields[\Sel\Utf8::upper($name)]['lostRaw'] = true;
+            }
             $canonKind = $this->outputCanonKind($plan, $name);
             if ($canonKind !== null) {
-                $fields[strtoupper($name)]['type'] = $canonKind;
-                $fields[strtoupper($name)]['canonical'] = true;
+                $fields[\Sel\Utf8::upper($name)]['type'] = $canonKind;
+                $fields[\Sel\Utf8::upper($name)]['canonical'] = true;
             }
         }
         $derived = new RelationalPlan();
@@ -3110,6 +3276,19 @@ final class Translator
             $derived->bucket = 'sealed';
         }
         return $derived;
+    }
+
+    /**
+     * @param array<string,mixed> $spec
+     * @param array{line:int,col:int,offset:int} $pos
+     */
+    private static function refuseLostRaw(array $spec, array $pos): void
+    {
+        if (!empty($spec['lostRaw'])) {
+            refuse('E_SQL_SHAPE', 'this field is a raw expression, and the derived table '
+                . 'that a LIMIT, OFFSET or sort wrapped the relation in has no column to '
+                . 'read it from', $pos);
+        }
     }
 
     private function ensureDerived(RelationalPlan $plan, bool $condition): RelationalPlan
@@ -3180,7 +3359,7 @@ final class Translator
         if ($aggNode !== null) {
             if ($aggNode['t'] === 'call' && $aggNode['name'] === 'RECORD') {
                 $projections = [];
-                foreach (self::recordFields($aggNode) as [$alias, $vNode]) {
+                foreach ($this->recordFieldsChecked($aggNode) as [$alias, $vNode]) {
                     $actualNode = $vNode;
                     // _K is the key, which was written against the KEY's binder --
                     // the MAP spelling may name the group differently, so the
@@ -3260,9 +3439,11 @@ final class Translator
         $plan->sourceRelation = $b;
         $plan->sourceTable = $b['from'];
         $plan->sourceAlias = $b['alias'] ?? null;
+        // A supplied correlate is a host-written condition: parenthesised whole, so an
+        // OR inside it cannot bind looser than the AND it is joined to (sql/MAP.md 5).
         $plan->correlate = isset($b['correlate']['raw'])
-            ? (string) $b['correlate']['raw']
-            : (isset($b['correlate']) && is_string($b['correlate']) ? $b['correlate'] : null);
+            ? '(' . (string) $b['correlate']['raw'] . ')'
+            : (isset($b['correlate']) && is_string($b['correlate']) ? '(' . $b['correlate'] . ')' : null);
 
         $steps = array_reverse($steps);
 
@@ -3375,7 +3556,7 @@ final class Translator
                             ];
                         }
                     } elseif ($keyNode['t'] === 'call' && $keyNode['name'] === 'RECORD') {
-                        foreach (self::recordFields($keyNode) as [$alias, $value]) {
+                        foreach ($this->recordFieldsChecked($keyNode) as [$alias, $value]) {
                             $groupBy[] = [
                                 'alias' => $alias,
                                 'binder' => $binder,
@@ -3416,7 +3597,12 @@ final class Translator
                             refuse('E_BAD_ARG', 'SELECT_COLS column names must be string literals', $item['pos']);
                         }
                         $col = $item['v'];
-                        $uc = strtoupper($col);
+                        $this->checkAliasName($col, $item['pos']);
+                        $uc = \Sel\Utf8::upper($col);
+                        if (isset($plan->sourceRelation['fields'][$uc]['raw'])) {
+                            refuse('E_SQL_SHAPE', "field '{$col}' is a raw expression; SELECT_COLS "
+                                . 'would have to name it as a column, and it has none', $item['pos']);
+                        }
                         $matches = isset($plan->sourceRelation['fields'][$uc]) ? 1 : 0;
                         foreach ($plan->joins as $join) {
                             if (isset($join->sourceRelation['fields'][$uc])) {
@@ -3467,7 +3653,7 @@ final class Translator
 
                     if ($expr['t'] === 'call' && $expr['name'] === 'RECORD') {
                         $projections = [];
-                        foreach (self::recordFields($expr) as [$alias, $value]) {
+                        foreach ($this->recordFieldsChecked($expr) as [$alias, $value]) {
                             $projections[] = ['alias' => $alias, 'binder' => $binder, 'node' => $value];
                         }
                         $plan->projections = $projections;
@@ -3507,13 +3693,12 @@ final class Translator
                     $off = $this->evalIntParam($args[1], 'DROP');
                     // Consume the bounded slice; retain a SQL boundary for large sums.
                     $skipped = $plan->limit === null ? $off : min($off, $plan->limit);
-                    if (($plan->offset ?? 0) > 9007199254740991 - $skipped) {
-                        $plan = $this->wrapPlanAsDerivedTable($plan);
-                        $plan->offset = $off;
-                    } else {
-                        if ($plan->limit !== null) $plan->limit -= $skipped;
-                        $plan->offset = ($plan->offset ?? 0) + $skipped;
-                    }
+                    // Offsets add saturating at the largest count (never wrapping into
+                    // a derived table): the merged offset is exact below it and clamped
+                    // at it, which every server takes (docs 11.6).
+                    if ($plan->limit !== null) $plan->limit -= $skipped;
+                    $have = $plan->offset ?? 0;
+                    $plan->offset = $have > PHP_INT_MAX - $skipped ? PHP_INT_MAX : $have + $skipped;
                     break;
 
                 case 'SORT':
@@ -3607,7 +3792,7 @@ final class Translator
                         $open[] = $j->sourceAlias;
                     }
                     foreach ($open as $alias) {
-                        if (strtoupper((string) $alias) === strtoupper((string) $join->sourceAlias)) {
+                        if (\Sel\Utf8::upper((string) $alias) === \Sel\Utf8::upper((string) $join->sourceAlias)) {
                             refuse('E_SQL_SHAPE', "{$rightNode['name']} would be joined under the table alias "
                                 . "{$join->sourceAlias}, which this statement already uses; bind the relation "
                                 . 'a second time under another alias', $rightNode['pos']);
@@ -3636,13 +3821,31 @@ final class Translator
             refuse('E_NOT_NUM', "{$op} count must be a number", $n['pos']);
         }
         $d = $val->asDecimal($n['pos']);
-        if ($d['scale'] !== 0) {
-            refuse('E_NOT_INT', "{$op} count must be an integer", $n['pos']);
-        }
         if (\Sel\Dec::cmp($d, \Sel\Dec::zero()) < 0) {
             refuse('E_RANGE', "{$op} count cannot be negative", $n['pos']);
         }
-        return (int) $d['digits'];
+        // A whole number written with a scale (`2.0`, `0.0`) is a count: SEL accepts
+        // it, so the translator must not claim otherwise. Only a real fraction is
+        // E_NOT_INT (SPEC 7.4).
+        $digits = (string) $d['digits'];
+        $scale = (int) $d['scale'];
+        if ($scale > 0) {
+            $digits = str_pad($digits, $scale + 1, '0', STR_PAD_LEFT);
+            if (rtrim(substr($digits, -$scale), '0') !== '') {
+                refuse('E_NOT_INT', "{$op} count must be an integer", $n['pos']);
+            }
+            $digits = substr($digits, 0, -$scale);
+        }
+        $digits = ltrim($digits, '0');
+        // Past the largest count every server takes, the count is that count: a table
+        // with 2^63 rows does not exist, so the answer is unchanged (docs 11.6).
+        if ($digits === '') {
+            return 0;
+        }
+        if (strlen($digits) > 19 || (strlen($digits) === 19 && strcmp($digits, '9223372036854775807') > 0)) {
+            return PHP_INT_MAX;
+        }
+        return (int) $digits;
     }
 
     /**
@@ -3723,7 +3926,7 @@ final class Translator
             if ($args[2]['t'] === 'text') {
                 $binder = '_';
                 $key = $args[1];
-                $dir = strtoupper($args[2]['v']);
+                $dir = \Sel\Utf8::upper($args[2]['v']);
             } elseif (Constants::isBinderName($args[1])) {
                 $binder = $args[1]['name'];
                 $key = $args[2];
@@ -3743,7 +3946,7 @@ final class Translator
             if ($args[3]['t'] !== 'text') {
                 refuse('E_BAD_ARG', "sort direction must be 'ASC' or 'DESC'", $args[3]['pos']);
             }
-            $dir = strtoupper($args[3]['v']);
+            $dir = \Sel\Utf8::upper($args[3]['v']);
         } else {
             refuse('E_ARITY', 'SORT_BY takes 2 to 4 arguments', $step['pos']);
         }
@@ -3817,7 +4020,7 @@ final class Translator
                         $parts[] = ', ';
                     }
                     $first = false;
-                    $uc = strtoupper($col);
+                    $uc = \Sel\Utf8::upper($col);
                     $fSpec = $plan->sourceRelation['fields'][$uc] ?? null;
                     $owner = $plan->sourceRelation;
                     if ($fSpec === null) {

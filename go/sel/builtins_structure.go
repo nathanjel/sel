@@ -46,7 +46,8 @@ func init() {
 		Fn: func(args *Args, ctx *Context) *Value {
 			items := make([]*Value, args.Count())
 			for i := 0; i < args.Count(); i++ {
-				items[i] = args.Val(i)
+				// SPEC §3.4: LIST copies its arguments, like `,`.
+				items[i] = args.Val(i).CloneAt(2, args.Pos())
 			}
 			return NewListOwned(items)
 		},
@@ -65,7 +66,8 @@ func init() {
 			values := make([]*Value, count/2)
 			for i := 0; i < count; i += 2 {
 				keys[i/2] = args.Text(i)
-				values[i/2] = args.Val(i + 1)
+				// SPEC §3.4: RECORD copies its values, like `,`.
+				values[i/2] = args.Val(i + 1).CloneAt(2, args.Pos())
 			}
 			shape := args.RecordShape()
 			if shape != nil && reflect.DeepEqual(shape.Keys, keys) {
@@ -96,7 +98,8 @@ func init() {
 				if count > len(val.storage) {
 					count = len(val.storage)
 				}
-				return NewListOwned(val.storage[:count])
+				// A fresh container (SPEC §3.4): the result must not share A's backing array.
+				return NewList(val.storage[:count])
 			}
 			ents := val.Elements()
 			if count > len(ents) {
@@ -124,7 +127,7 @@ func init() {
 				if count > len(val.storage) {
 					count = len(val.storage)
 				}
-				return NewListOwned(val.storage[count:])
+				return NewList(val.storage[count:])
 			}
 			ents := val.Elements()
 			if count > len(ents) {

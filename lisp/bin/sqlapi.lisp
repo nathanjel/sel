@@ -119,6 +119,38 @@
   (say "host.spell.after-reset" (attempt (host-translate "HSLUG(T)" "postgresql")))
   (say "host.spell.after-reset.local" (sel:as-text (sel:evaluate "HSLUG(\"A\")"))))
 
+;;; --- rendering and registration state (T10) ----------------------------------
+;;; The questions a snapshot of ONE translation cannot ask: what an unknown render
+;;; mode does when there is nothing to bind, and whether a refused dialect stays
+;;; refused. REFUSES collapses the host's own condition classes, which differ, to
+;;; the one thing the contract says: the call did not produce SQL.
+
+(defmacro refuses (&body body)
+  `(handler-case (progn ,@body "accepted")
+     (error () "refused")))
+
+(defun render-state-probes ()
+  (let* ((one (list (cons "C" (binding-column "c" "t" :num))))
+         (zero (translate (sel:compile-source "C > C") "mariadb" one))
+         (onelit (translate (sel:compile-source "C > 1") "mariadb" one)))
+    (say "render.mode.valid.zero-slots" (refuses (as-value zero :params)))
+    (say "render.mode.bogus.zero-slots" (refuses (as-value zero :bogus)))
+    (say "render.mode.bogus.zero-slots.condition" (refuses (as-condition zero :bogus)))
+    (say "render.mode.bogus.with-slot"
+         (refuses (as-value (translate (sel:compile-source "C > \"x\"") "mariadb" one) :bogus)))
+    (say "render.mode.bogus.literal-number" (refuses (as-value onelit :bogus))))
+  (define-dialect "probe-badguard"
+    (list :extends "postgresql" :version "16"
+          :lexical (list (cons "numericGuard"
+                               "CASE WHEN ({textCast:0} ~ '^.*$') THEN CAST({0} AS NUMERIC) ELSE NULL END"))))
+  (let ((named (list (cons "N" (binding-column "n" "t" :text)))))
+    (dolist (k '(1 2 3))
+      (say (format nil "guard.reuse.~a" k)
+           (refuses (translate (sel:compile-source "N + 1") "probe-badguard" named))))
+    (map-reset)
+    (say "guard.reuse.after-reset"
+         (refuses (translate (sel:compile-source "N + 1") "probe-badguard" named)))))
+
 (defun main ()
   (setf *probes* '() *probe-n* 0)
   (probe "sql" "ORDERS .> FILTER(_[\"AMOUNT\"] > 10) .> MAP(RECORD(\"id\", _[\"ID\"], \"amount\", _[\"AMOUNT\"]))")
@@ -129,5 +161,6 @@
   (fragment-probe "canon.sqlite" "sqlite" "CANON(1.50)")
   (fragment-probe "abs.postgresql" "postgresql" "ABS(1.50)")
   (host-spelling-probes)
+  (render-state-probes)
   (format t "~{~a~%~}" (reverse *probes*))
   (sb-ext:exit :code 0))

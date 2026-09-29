@@ -11,6 +11,7 @@
 import { toCodePoints } from '../utf8.mjs';
 import { validate as regexValidate } from '../builtins/regex.mjs';
 import { SelError } from '../errors.mjs';
+import { MAX_SQL_NODES } from '../_limits.mjs';
 import { evalNode, MAX_DEPTH, Context } from '../eval.mjs';
 import { asciiUpper } from '../lexer.mjs';
 import { hostArity } from '../registry.mjs';
@@ -44,6 +45,12 @@ function listKey(k) {
 }
 
 // Lowered by stage 2; none of them is a `funcs` entry. See sql/MAP.md §4.
+// The largest LIMIT/OFFSET every dialect's server accepts.
+const INT64_MAX = 9223372036854775807n;
+
+// Above this many operands an unrolled associative fold is a balanced tree.
+const FOLD_LEFT = 256;
+
 const AGGREGATES = ['ALL', 'ANY', 'MAP', 'FILTER', 'SUM', 'JOIN'];
 // The optimiser's list, not a second copy: one vocabulary of pipeline operators
 // per host, or the planner and the translator drift apart.
@@ -131,6 +138,8 @@ export class Translator {
     this.constCtx = null;
     // Walk depth, counted exactly as evalNode counts evaluation nesting.
     this.depth = 0;
+    // Nodes dispatched so far, against MAX_SQL_NODES (E_SQL_SIZE).
+    this.nodeCount = 0;
     this.statementPlan = null;
     this.inWhere = false;
     this.subqueryCounter = 0;
@@ -152,6 +161,7 @@ export class Translator {
     this.caveats = new Set();
     this.frames = [];
     this.depth = 0;
+    this.nodeCount = 0;
     this.subqueryCounter = 0;
     [this.constNames, this.constCtx] = constants.scope(this.bindings);
     // Stage 1 and nothing else: the translator renders the tree it is handed.
@@ -235,7 +245,22 @@ export class Translator {
   // PHP rendered it, and Python happened to die of its own stack at around 510
   // terms, which is an implementation accident rather than a decision. The guard
   // reads eval's MAX_DEPTH rather than repeating 200, so the two cannot drift.
+  // The size of what has been walked, charged as it is walked: a subtree is
+  // charged again for every occurrence (an inlined helper read, an unrolled
+  // element), so a program that expands to millions of nodes is refused after
+  // MAX_SQL_NODES of work and not after rendering all of them (§7.4).
+  charge(nodes, pos) {
+    this.nodeCount += nodes;
+    if (this.nodeCount > MAX_SQL_NODES) {
+      refuse('E_SQL_SIZE',
+        `this program expands to more than ${MAX_SQL_NODES} nodes once every helper `
+        + 'read and every unrolled element is counted, and the translation stops '
+        + 'there', pos);
+    }
+  }
+
   node(n) {
+    this.charge(1, n.pos);
     this.depth += 1;
     if (this.depth > MAX_DEPTH) {
       this.depth -= 1;
@@ -782,11 +807,26 @@ export class Translator {
             + 'so SEL reads its rows as maps and a scalar can never equal one. Bind '
             + 'the projected column as a relation with that one field.', rhs.pos);
         }
+        // Compared as `==` compares: a BOOL or BIN needle (or column) has no
+        // portable spelling against text, so it is refused as a list's is
+        // (`F IN (T, T)`), not cast to a string and matched.
+        // The skeleton first: a dialect gap is named before whatever the operands
+        // happen to be wrong about (11-registration: withdrawn-refuses-before-...).
+        const inSkeleton = this.skeleton('inRelation', n.pos);
+        const needle = this.node(n.l);
+        const column = this.columnRef(b.fields[scalar]);
+        for (const [f, at] of [[needle, n.l.pos], [column, rhs.pos]]) {
+          if (f.kind === 'BOOL' || f.kind === 'BIN') {
+            refuse('E_SQL_SHAPE',
+              `IN over ${rhs.name} compares ${f.kind === 'BOOL' ? 'a boolean' : 'binary data'} `
+              + 'with text, which SQL would coerce and SEL never equates', at);
+          }
+        }
         return new Fragment(
-          this.fillNamed(this.skeleton('inRelation', n.pos),
+          this.fillNamed(inSkeleton,
             slots(this.relationSlots(b), {
-              needle: [this.emit.textOperand(this.node(n.l))],
-              body: [this.emit.textOperand(this.columnRef(b.fields[scalar]))],
+              needle: [this.emit.textOperand(needle)],
+              body: [this.emit.textOperand(column)],
             }), n.pos),
           'BOOL', this.dialect);
       }
@@ -845,7 +885,10 @@ export class Translator {
           e.pos);
       }
       requireComparableKinds(raw, f, 'IN', e.pos);
-      const item = isExact ? f : this.emit.textOperand(f);
+      // A declared-exact needle is left bare, so it uses the column's own
+      // collation; an item that is a NUMBER is still cast, or the server compares
+      // as numbers (`'25/298' = 25` is true on MariaDB) where SEL says FALSE.
+      const item = isExact && f.kind !== 'NUM' ? f : this.emit.textOperand(f);
       tests.push(this.apply('ops', 'EQL',
         [needle, item], e.pos, 'text'));
     }
@@ -855,7 +898,23 @@ export class Translator {
   // Fold fragments pairwise-left through an operator's own template — the same
   // path a hand-written chain takes, so an unrolled aggregate and a written-out
   // chain produce the same bytes.
+  // Every caller is an unroll of an associative operator, which is what makes
+  // the shape free to choose: a plain left fold up to FOLD_LEFT operands
+  // (byte-for-byte what it always was), and above that a balanced tree, the left
+  // half the larger (docs/internals/sql-translation.md §7.1). A left fold n deep
+  // is n levels of expression, and servers refuse depth.
   foldPairwise(op, parts, pos) {
+    this.charge(parts.length - 1, pos);   // the joining operators (§7.4)
+    return this.foldTree(op, parts, pos);
+  }
+
+  foldTree(op, parts, pos) {
+    if (parts.length > FOLD_LEFT) {
+      const m = Math.ceil(parts.length / 2);
+      const l = this.foldTree(op, parts.slice(0, m), pos);
+      const r = this.foldTree(op, parts.slice(m), pos);
+      return this.apply('ops', op, [l, r], pos, this.variantFor(op, [l, r]));
+    }
     let acc = parts[0];
     for (const nxt of parts.slice(1)) {
       acc = this.apply('ops', op, [acc, nxt], pos, this.variantFor(op, [acc, nxt]));
@@ -885,9 +944,17 @@ export class Translator {
           const hasCustomBinder = n.args.length === 3 && constants.isBinderName(n.args[1]);
           const bodyNode = hasCustomBinder ? n.args[2] : n.args[1];
           const src = { relation: group.payload, filters: [], pos: n.pos };
-          const inner = this.withRow(src, hasCustomBinder ? n.args[1].name : '_',
+          // The body keeps its parameter slots: its parts are strings AND slot
+          // numbers, and joining them as text wrote a slot number where the
+          // literal was (PHP-C7: `SUM(x * 2)` became `SUM(x * 1)`).
+          let inner = this.withRow(src, hasCustomBinder ? n.args[1].name : '_',
             () => this.node(bodyNode));
-          return new Fragment([`COALESCE(SUM(${inner.parts.join('')}), 0)`], 'NUM', this.dialect);
+          this.requireNumericConstant(bodyNode);
+          inner = this.requireNum(inner, bodyNode.pos, 'SUM');
+          inner = this.sumBody(inner, bodyNode, true);
+          if (inner.sumTest) return this.sumOverRows(inner);
+          return new Fragment(['COALESCE(SUM(', ...inner.parts, '), 0)'], 'NUM', this.dialect,
+            inner.params, inner.paramKinds, inner.caveats);
         }
       }
     }
@@ -1195,6 +1262,19 @@ export class Translator {
   // characters — and the third needs the dialect's operator templates, which a
   // tree rewrite has no access to.
 
+  // Run `render` with only the first `scope` frames open: the scope a node was
+  // written in (Binder.scope). `null` is the current scope.
+  inScope(scope, render) {
+    if (scope === null || scope >= this.frames.length) return render();
+    const saved = this.frames;
+    this.frames = saved.slice(0, scope);
+    try {
+      return render();
+    } finally {
+      this.frames = saved;
+    }
+  }
+
   binder(name) {
     for (let i = this.frames.length - 1; i >= 0; i -= 1) {
       if (this.frames[i].has(name)) return this.frames[i].get(name);
@@ -1203,7 +1283,7 @@ export class Translator {
   }
 
   fromBinder(b, n) {
-    if (b.shape === Binder.NODE) return this.node(b.payload);
+    if (b.shape === Binder.NODE) return this.inScope(b.scope, () => this.node(b.payload));
     if (b.shape === Binder.KEY) {
       // Inside a row already: bind the key's own binder to that row and
       // render the key there, then collate it exactly as the GROUP BY does.
@@ -1369,12 +1449,14 @@ export class Translator {
     // evaluator answers 0.
     if (src.t === 'list') {
       const m = new Map();
-      src.items.forEach((item, i) => m.set(String(i + 1), Binder.node(item)));
+      const scope = this.frames.length;
+      src.items.forEach((item, i) => m.set(String(i + 1), Binder.node(item, scope)));
       return staticSource(m);
     }
     if (src.t === 'clist') {
       const m = new Map();
-      for (const [k, v] of src.entries) m.set(k, Binder.node(v));
+      const scope = this.frames.length;
+      for (const [k, v] of src.entries) m.set(k, Binder.node(v, scope));
       return staticSource(m);
     }
 
@@ -1445,7 +1527,7 @@ export class Translator {
     // a scalar to 0 without rendering it, and IF(TRUE, LIST(1, 2), 3) is a
     // list SEL counts as 2 -- a refusal, not a 0.
     if (src.t === 'call') this.node(src);
-    return staticSource(new Map([['1', Binder.node(src)]]), true);
+    return staticSource(new Map([['1', Binder.node(src, this.frames.length)]]), true);
   }
 
   // A `value` binding holds Values, not AST nodes, so its children are
@@ -1524,9 +1606,11 @@ export class Translator {
     let q = this.node(body);
     q = name === 'SUM' ? this.requireNum(q, body.pos, name)
       : this.requireBool(q, body.pos, name);
+    if (name === 'SUM') q = this.sumBody(q, body, src.shape === 'relation');
 
     for (const f of src.filters) {
-      const p = this.requireBool(this.node(f.body), f.body.pos, 'FILTER');
+      const p = this.requireBool(this.filterScope(f, () => this.node(f.body)),
+        f.body.pos, 'FILTER');
       if (name === 'SUM') {
         q = this.caseWhen(p, q, this.literal(Value.num('0'), 'NUM'), n.pos);
         continue;
@@ -1545,16 +1629,37 @@ export class Translator {
   // Every absorbed FILTER's binder is bound to the same element, which is what
   // makes absorption three lines rather than a substitution pass — see §7.5.
   withElement(src, binderName, elem, key, n, render) {
+    const keyBinder = Binder.node(litNode('text', key, n.pos));
     const frame = new Map([
       [binderName, elem],
-      ['_K', Binder.node(litNode('text', key, n.pos))],
+      ['_K', keyBinder],
     ]);
-    for (const f of src.filters) frame.set(f.binder, elem);
+    // What a FILTER predicate binds is the predicate's own: aggBody renders each
+    // one in a frame of its own, from this (see filterScope).
+    frame.elemScope = { target: elem, key: keyBinder };
     this.frames.push(frame);
     try {
       return render();
     } finally {
       this.frames.pop();
+    }
+  }
+
+  // Render an absorbed FILTER's predicate: with the enclosing frames, the
+  // FILTER's own binder (and `_K`) bound to the element, and NOT the aggregate's
+  // frame -- neither the aggregate's binder nor a sibling FILTER's is in scope in
+  // it (spec §7.3; SEL raises E_UNDEF_VAR there, this raises E_SQL_UNBOUND).
+  filterScope(f, render) {
+    const top = this.frames[this.frames.length - 1];
+    const es = top === undefined ? undefined : top.elemScope;
+    if (es === undefined) return render();
+    const saved = this.frames;
+    this.frames = saved.slice(0, -1);
+    this.frames.push(new Map([[f.binder, es.target], ['_K', es.key]]));
+    try {
+      return render();
+    } finally {
+      this.frames = saved;
     }
   }
 
@@ -1600,7 +1705,7 @@ export class Translator {
         + 'and unkeyed unless the schema says otherwise, and guessing which column '
         + 'is the key is not something this layer does')],
     ]);
-    for (const f of src.filters) frame.set(f.binder, row);
+    frame.elemScope = { target: row, key: frame.get('_K') };
     // After a LINK only the row is in scope (spec §7.4): the binders are scoped
     // to its predicate, and the evaluator raises E_UNDEF_VAR for `C["id"]` in
     // a later step -- the joined row carries them as keys, not as names. This
@@ -1651,6 +1756,22 @@ export class Translator {
         AGG_RETURNS[name], this.dialect);
       return this.apply('ops', 'AND', [pre, main], n.pos);
     }
+    if (name === 'SUM' && body.sumTest) {
+      const tpl = this.skeleton('sum', n.pos);
+      const sumExpr = 'COALESCE(SUM({body}), 0)';
+      if (!tpl.includes(sumExpr)) {
+        refuse('E_SQL_UNSUPPORTED',
+          `dialect ${this.dialect}'s sum skeleton has a shape a guarded SUM cannot `
+          + 'be built from', n.pos);
+      }
+      const guarded = tpl.replace(sumExpr,
+        'CASE WHEN COUNT(*) = COUNT(CASE WHEN {test} THEN 1 END) THEN '
+        + `${sumExpr} ELSE NULL END`);
+      return new Fragment(
+        this.fillNamed(guarded,
+          slots(this.relationSlots(rel), { body: [body], test: [body.sumTest] }), n.pos),
+        AGG_RETURNS[name], this.dialect);
+    }
     return new Fragment(
       this.fillNamed(this.skeleton(AGG_SKELETON[name], n.pos),
         slots(this.relationSlots(rel), { body: [body] }), n.pos),
@@ -1667,7 +1788,10 @@ export class Translator {
       ? String(frm.raw) : this.emit.ident(String(frm));
     if (rel.alias) out += ` ${this.emit.ident(String(rel.alias))}`;
     const corr = rel.correlate ?? null;
-    return { from: [out], corr: [corr ? String(corr.raw) : String(this.emit.lex('true'))] };
+    // A supplied correlation is host-written SQL, and it is spliced next to `AND`
+    // and `IS TRUE`: an `a OR b` in it would take the whole WHERE with it, so it is
+    // always parenthesised. The default `true` is ours and stays bare (sql/MAP.md §5).
+    return { from: [out], corr: [corr ? `(${String(corr.raw)})` : String(this.emit.lex('true'))] };
   }
 
   count(n) {
@@ -1738,8 +1862,28 @@ export class Translator {
   // Folded pairwise through the dialect's own concatenation, because `&` is what
   // SEL's JOIN is, and a variadic concat would need a lexical key spelled two
   // ways for the sake of one function.
+  // JOIN's pieces are text or numbers (spec §7.3): a BOOL or BIN element or
+  // separator is refused, not rendered through CONCAT as a 1 or a byte string
+  // (§5a of docs/internals/sql-kinds.md).
+  joinPiece(f, pos, what) {
+    if (f.kind === 'BOOL' || f.kind === 'BIN') {
+      refuse('E_SQL_SHAPE',
+        `JOIN's ${what} is ${f.kind === 'BOOL' ? 'a boolean' : 'binary'}, and JOIN joins `
+        + 'text and numbers', pos);
+    }
+    return f;
+  }
+
   joinAggregate(n) {
     const src = this.source(n.args[0], n);
+    // FILTER yields a list; only ALL, ANY, SUM and COUNT absorb one
+    // (docs/internals/sql-translation.md §7.5). JOIN over it used to drop the
+    // predicate and join the whole list.
+    if (src.filters.length > 0) {
+      refuse('E_SQL_SHAPE',
+        'JOIN over a FILTER would have to know at translation time which elements the '
+        + 'filter kept', n.args[0].pos);
+    }
     if (src.shape === 'relation') {
       const rel = src.relation;
       const scalar = (rel.scalar ?? null) !== null ? asciiUpper(String(rel.scalar)) : null;
@@ -1747,11 +1891,12 @@ export class Translator {
         refuse('E_SQL_SHAPE',
           'JOIN over a relation needs the binding to name a "scalar" field', n.pos);
       }
-      const body = this.columnRef(rel.fields[scalar]);
+      const body = this.joinPiece(this.columnRef(rel.fields[scalar]), n.args[0].pos, 'element');
       const skel = this.skeleton('join', n.pos);      // refuses with the map's reason
       return new Fragment(
         this.fillNamed(skel, slots(this.relationSlots(rel),
-          { body: [body], sep: [this.node(n.args[1])] }), n.pos),
+          { body: [body],
+            sep: [this.joinPiece(this.node(n.args[1]), n.args[1].pos, 'separator')] }), n.pos),
         'TEXT', this.dialect);
     }
 
@@ -1760,10 +1905,10 @@ export class Translator {
       if (parts.length > 0) {
         // Rendered per gap, not once and reused: see the note in inOperator on
         // why splicing one Fragment twice breaks `params`.
-        parts.push(this.node(n.args[1]));
+        parts.push(this.joinPiece(this.node(n.args[1]), n.args[1].pos, 'separator'));
       }
-      parts.push(this.withElement(src, '_', elem, String(key), n,
-        () => this.fromBinder(elem, n)));
+      parts.push(this.joinPiece(this.withElement(src, '_', elem, String(key), n,
+        () => this.fromBinder(elem, n)), n.args[0].pos, 'element'));
     }
     if (parts.length === 0) return this.literal(Value.text(''), 'TEXT');
     return parts.length === 1 ? parts[0] : this.foldPairwise('&', parts, n.pos);
@@ -1993,6 +2138,27 @@ export class Translator {
     refuse('E_SQL_SHAPE',
       `${where} needs a BOOL here and this is ${f.kind}; SEL has no truthiness, so `
       + 'neither does its translation', pos);
+  }
+
+  // A SUM body whose kind the binding did not declare is guarded as a number
+  // (§5a). Over a relation the rows are added by the server, so the guard is asked
+  // of every row at once -- the fragment carries the test beside the cast, and the
+  // skeleton wraps the sum. Over an unrolled list the sum is the elements added
+  // with `+`, where NULL propagates, so the ordinary operand guard is sound.
+  sumBody(q, bodyNode, overRows) {
+    if (q.kind !== 'UNKNOWN' || constants.isConstant(bodyNode, this.constNames)) return q;
+    if (!overRows) return this.guardNumeric(q, bodyNode);
+    const { test, cast } = this.emit.numericGuardSplit(q, bodyNode.pos);
+    this.scaleLimited(bodyNode.pos, 'this operand is read as a number');
+    cast.sumTest = test;
+    return cast;
+  }
+
+  // The SUM select-list expression for a body that carries a `sumTest`.
+  sumOverRows(body) {
+    return new Fragment(['CASE WHEN COUNT(*) = COUNT(CASE WHEN ', ...body.sumTest.parts,
+      ' THEN 1 END) THEN COALESCE(SUM(', ...body.parts, '), 0) ELSE NULL END'],
+    'NUM', this.dialect);
   }
 
   // SUM's counterpart to requireBool, and it parts company with it on UNKNOWN.
@@ -2532,7 +2698,7 @@ export class Translator {
             refuse('E_ARITY', 'TAKE takes 2 arguments', step.pos);
           }
           const lim = this.evalIntParam(args[1], 'TAKE');
-          plan.limit = plan.limit === null ? lim : Math.min(plan.limit, lim);
+          plan.limit = plan.limit === null || lim < plan.limit ? lim : plan.limit;
           break;
         }
 
@@ -2541,15 +2707,12 @@ export class Translator {
             refuse('E_ARITY', 'DROP takes 2 arguments', step.pos);
           }
           const off = this.evalIntParam(args[1], 'DROP');
-          // Consume the bounded slice; retain a SQL boundary for large sums.
-          const skipped = plan.limit === null ? off : Math.min(off, plan.limit);
-          if ((plan.offset ?? 0) > Number.MAX_SAFE_INTEGER - skipped) {
-            plan = this.wrapPlanAsDerivedTable(plan);
-            plan.offset = off;
-          } else {
-            if (plan.limit !== null) plan.limit -= skipped;
-            plan.offset = (plan.offset ?? 0) + skipped;
-          }
+          // Consume the bounded slice. The offsets of consecutive DROPs add, and
+          // the sum is clamped like a count: past int64 it is the same OFFSET.
+          const skipped = plan.limit === null || off < plan.limit ? off : plan.limit;
+          if (plan.limit !== null) plan.limit -= skipped;
+          const merged = (plan.offset ?? 0n) + skipped;
+          plan.offset = merged > INT64_MAX ? INT64_MAX : merged;
           break;
         }
 
@@ -2660,14 +2823,24 @@ export class Translator {
     if (!val.looksNumeric() || val.isNull()) {
       refuse('E_NOT_NUM', `${op} count must be a number`, n.pos);
     }
+    // A whole number written with a scale (`2.0`) is a whole number, as SEL reads it
+    // (spec §7.4); only a fractional part is E_NOT_INT. And `-0` is zero.
     const d = val.asDecimal(n.pos);
+    let whole = BigInt(d.digits);
     if (d.scale !== 0) {
-      refuse('E_NOT_INT', `${op} count must be an integer`, n.pos);
+      const unit = 10n ** BigInt(d.scale);
+      if (whole % unit !== 0n) {
+        refuse('E_NOT_INT', `${op} count must be an integer`, n.pos);
+      }
+      whole /= unit;
     }
-    if (d.neg) {
+    if (d.neg && whole !== 0n) {
       refuse('E_RANGE', `${op} count cannot be negative`, n.pos);
     }
-    return Number(d.digits);
+    // A count is a BigInt and is clamped at the largest LIMIT/OFFSET every server
+    // takes (docs/internals/sql-translation.md §11.6): past it the answer is the
+    // whole list, whatever the exact number, so 2^63 and 10^23 are the same TAKE.
+    return whole > INT64_MAX ? INT64_MAX : whole;
   }
 
   analyzeSortStep(step, plan) {
@@ -2677,7 +2850,7 @@ export class Translator {
     const count = isTop ? args.length - 1 : args.length;
     if (isTop) {
       const limit = this.evalIntParam(args[args.length - 1], name);
-      plan.limit = plan.limit === null ? limit : Math.min(plan.limit, limit);
+      plan.limit = plan.limit === null || limit < plan.limit ? limit : plan.limit;
     }
 
     if (name === 'SORT' || name === 'SORT_DESC' || name === 'TOP' || name === 'TOP_DESC') {
@@ -2917,7 +3090,7 @@ export class Translator {
       // 3. WHERE clause
       const condParts = [];
       if (plan.correlate) {
-        condParts.push([plan.correlate]);
+        condParts.push([`(${plan.correlate})`]);
       }
       this.inWhere = true;
       try {
@@ -3142,10 +3315,18 @@ function retKind(entry, args, pos = null) {
 // `IF(p, 1, "x")` goes the same way for the same reason.
 //
 // The rule is one line: known-kind branches must agree.
+//
+// And an UNKNOWN branch keeps the whole result UNKNOWN. It used to be skipped, so
+// `IF(P, U, 1)` was NUM because the branch that knew said so, and the value that
+// reached a numeric position unguarded was a column nobody had declared: the kind
+// was laundered by the branch beside it (docs/internals/sql-kinds.md §5). The
+// result is exactly as certain as its least certain branch, so an operand
+// position guards it as a whole and a BOOL position refuses it.
 function unify(fs, pos = null) {
   let kind = null;
+  let unknown = false;
   for (const f of fs) {
-    if (f.kind === 'UNKNOWN') continue;
+    if (f.kind === 'UNKNOWN') { unknown = true; continue; }
     if (kind === null) kind = f.kind;
     else if (kind !== f.kind) {
       refuse('E_SQL_SHAPE',
@@ -3154,7 +3335,7 @@ function unify(fs, pos = null) {
         pos);
     }
   }
-  return kind ?? 'UNKNOWN';
+  return unknown ? 'UNKNOWN' : (kind ?? 'UNKNOWN');
 }
 
 // The kind of a value supplied by the host, which is the one place the num/text

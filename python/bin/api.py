@@ -115,6 +115,12 @@ ctx.set('TOTAL', Value.num('59.97'))
 say('program.run.reads.context', evaluate('TOTAL > 10.00', ctx).dump())
 evaluate('SEEN = TOTAL * 2', ctx)
 say('program.run.mutates.context', ctx.get('SEEN').as_text())
+
+# A BOOL a host hands in is an ordinary value (see tools/api.mjs, PHP-C1).
+_a = Value.none(); _a.set('FLAG', Value.bool(True))
+_b = Value.none(); _b.set('FLAG', Value.bool(True))
+sel_compile('FLAG["k"] = 1; 0').run(_a)
+say('bool.isolated.between.contexts', f"{_b.get('FLAG').size()} {Value.bool(True).size()} {evaluate('COUNT(TRUE)').as_text()}")
 say('registry.count', str(len(function_names())))
 say('registry.sorted.first', function_names()[0])
 

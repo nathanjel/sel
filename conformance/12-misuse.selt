@@ -768,7 +768,7 @@ error E_RANGE at 1:6
 --- source
 LTB((1.5))
 --- expect
-error E_RANGE at 1:6
+error E_NOT_INT at 1:6
 ===
 ### name: mis.domain.round-scale-cap
 --- source

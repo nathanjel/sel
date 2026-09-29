@@ -44,13 +44,20 @@ function pairUp(keys, values) {
 // The decimal form Value.num takes besides a string: well formed, within the
 // digit caps, and canonical -- a negative zero loses its sign, as "-0" does
 // through D.parse (spec §8; review 2026-09-28 HOST-13, HOST-14).
+//
+// The Value keeps its own copy: it held the caller's object, so changing `digits`
+// or `scale` afterwards changed the Value (spec §8, "the boundary copies"). And
+// `neg` has to be a boolean -- a missing or truthy-looking one used to be read as
+// whatever `!!` made of it, so `{ digits: 5n, scale: 0 }` was -5 in one place and
+// 5 in another.
 function checkDecimal(d) {
-  if (d === null || typeof d !== 'object' || typeof d.digits !== 'bigint' || d.digits < 0n
+  if (d === null || typeof d !== 'object' || typeof d.neg !== 'boolean'
+      || typeof d.digits !== 'bigint' || d.digits < 0n
       || !Number.isSafeInteger(d.scale) || d.scale < 0) {
-    badArg('not a decimal: expected { neg, digits: a non-negative bigint, scale: a non-negative integer }');
+    badArg('not a decimal: expected { neg: a boolean, digits: a non-negative bigint, scale: a non-negative integer }');
   }
   D.guard(d, null);
-  return d.digits === 0n && d.neg ? { ...d, neg: false } : d;
+  return { neg: d.digits === 0n ? false : d.neg, digits: d.digits, scale: d.scale };
 }
 
 let INT_CAP = null;
@@ -147,6 +154,9 @@ export class Value {
 
   set scalar(s) {
     this._scalar = s;
+    // A number's parsed form is a cache of its text: with the text changed, the
+    // old digits would keep answering ISNUM, arithmetic and EQL.
+    this._decimal = null;
   }
 
   // The kind constants, mirrored as statics so `Value.BOOL` works the way
@@ -613,18 +623,26 @@ export class Value {
     if (depth > MAX_DEPTH) fail('E_DEPTH', 'value nested too deeply', null);
     if (x === null || x === undefined) return Value.null();
     if (typeof x === 'boolean') return Value.bool(x);
-    if (typeof x === 'number') {
-      if (!Number.isFinite(x)) badArg('a non-finite number has no SEL value');
-      return Value.text(nativeNumberToDecimal(x));
-    }
+    if (typeof x === 'number') return Value.text(nativeNumberToDecimal(x));
     // Through Value.int, which holds the integer digit cap (review
     // 2026-09-28 HOST-11): the text of the bigint skipped it.
     if (typeof x === 'bigint') return Value.int(x);
     if (typeof x === 'string') return Value.text(x);
     if (x instanceof Uint8Array) return Value.bin(x);
-    if (Array.isArray(x)) return Value.listOwned(x.map((e) => Value.fromNativeAt(e, depth + 1)));
+    // Array.from, not x.map: map keeps a sparse array's holes, and a list with
+    // empty slots in its storage fails on first use with a TypeError. A hole
+    // reads as undefined, which is NULL, as an explicit undefined does.
+    if (Array.isArray(x)) return Value.listOwned(Array.from(x, (e) => Value.fromNativeAt(e, depth + 1)));
     if (x instanceof Value) return x;
     if (typeof x === 'object') {
+      // A plain object is a record. Anything else with own enumerable keys or
+      // none -- Date, Map, Set, ArrayBuffer, a typed array, a class instance --
+      // has no conversion (spec §8), and reading its keys made it a record that
+      // was empty (so NULL) or keyed "0", "1", ....
+      const proto = Object.getPrototypeOf(x);
+      if (proto !== Object.prototype && proto !== null) {
+        badArg(`cannot convert ${Object.prototype.toString.call(x)} to SEL`);
+      }
       const entries = Object.keys(x).map((key) => { checkText(key); return [String(key), Value.fromNativeAt(x[key], depth + 1)]; });
       return Value.fromEntriesOwned(entries);
     }
@@ -642,8 +660,26 @@ export class Value {
     if (this.size() === 0) return scalar === null || this.kind !== BIN ? scalar : scalar.slice();
     // Every key an own property, "__proto__" included: `obj[k] = v` would set
     // the prototype instead (review 2026-09-25 HOST-01).
+    //
+    // A JS object enumerates array-index keys ("0", "2", "10") first and in
+    // ascending order whatever order they were added in, so a record whose keys
+    // are not already in that order cannot come back from fromNative as it went:
+    // such a value has no native form (spec §8, "every v toNative accepts"), and
+    // raising is honest where reordering would silently break the inverse. Its
+    // entries() keep the order.
     const obj = {};
+    let lastIndex = -1;
+    let sawOther = false;
     for (const [k, v] of this.entries()) {
+      const at = arrayIndex(k);
+      if (at >= 0) {
+        if (sawOther || at <= lastIndex) {
+          fail('E_BAD_ARG', 'a record whose position-like keys are not first and ascending has no native form; JS objects reorder them (use entries())', null);
+        }
+        lastIndex = at;
+      } else {
+        sawOther = true;
+      }
       const child = v.toNativeAt(depth + 1);
       if (k === '__proto__') Object.defineProperty(obj, k, { value: child, enumerable: true, writable: true, configurable: true });
       else obj[k] = child;
@@ -690,8 +726,33 @@ export function structuralHash(value, depth = 1) {
   return h >>> 0;
 }
 
+// Per process, so a hash cannot be aimed at in advance: FNV-1a is invertible, and
+// a few hundred kilobytes of chosen strings shared one hash and made every
+// DEDUPE/BUCKET insert scan the whole bucket (JS-C14). Callers only ever use the
+// hash to pick a bucket and still compare with eql, so a per-run value changes
+// no answer -- and a value with no children never reaches the hash at all
+// (scalarKey below).
+const HASH_SEED = (Math.random() * 0x100000000) >>> 0;
+
+// An exact identity key for a value with no children -- what eql compares: the
+// kind and the scalar. Null for a value with children, which is hashed.
+export function scalarKey(value) {
+  if (value.size() !== 0) return null;
+  switch (value.kind) {
+    case TEXT: return 't' + value.scalar;
+    case BOOL: return value.scalar ? 'T' : 'F';
+    case BIN: {
+      let key = 'b';
+      const bytes = value.scalar;
+      for (let i = 0; i < bytes.length; i++) key += String.fromCharCode(bytes[i]);
+      return key;
+    }
+    default: return 'n';
+  }
+}
+
 function stringHash(s) {
-  let h = 2166136261;
+  let h = (2166136261 ^ HASH_SEED) >>> 0;
   for (let i = 0; i < s.length; i++) {
     h ^= s.charCodeAt(i);
     h = Math.imul(h, 16777619);
@@ -707,11 +768,25 @@ function mixHash(a, b) {
 // conversion has to be pinned down. Integers pass through exactly; anything with
 // a fraction goes via its shortest round-trip form, which is what the author
 // literally wrote in source.
+//
+// Only whole numbers: spec §8 lists a float among the things a constructor does
+// not take, and PHP and Python refuse one. JS cannot tell `3` from `3.0`, so a
+// whole-valued double is accepted; a fraction is not, because 0.1 + 0.2 is
+// 0.30000000000000004 and turning that into a decimal is the silent guess §8
+// exists to prevent. Pass a string ("0.1") or a decimal record for a fraction.
 function nativeNumberToDecimal(x) {
+  if (!Number.isFinite(x)) badArg('a non-finite number has no SEL value');
   const s = String(x);
   if (/^-?\d+$/.test(s)) return s;
-  if (/^-?\d+\.\d+$/.test(s)) return s;
-  badArg(`number ${s} has no exact decimal form; pass a string instead`);
+  badArg(`number ${s} is a float, which has no exact decimal form; pass a string instead`);
+}
+
+// The value of a key JS treats as an array index (canonical decimal, below 2^32 - 1),
+// or -1.
+function arrayIndex(key) {
+  if (!/^(0|[1-9][0-9]{0,9})$/.test(key)) return -1;
+  const n = Number(key);
+  return n < 4294967295 ? n : -1;
 }
 
 const DUMP_ESCAPES = { '\\': '\\\\', '"': '\\"', '\n': '\\n', '\t': '\\t', '\r': '\\r' };

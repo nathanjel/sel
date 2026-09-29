@@ -153,3 +153,36 @@ one — that case is the durable part of the fix.
 Before adding a case, check that its source is not already in the suite under
 another name: names are checked for uniqueness by the runner, sources are not,
 and a duplicate pair survived in the suite for exactly that reason.
+
+`26-evaluation-order.selt` pins what an optimiser must not change: the order in which a strict function's arguments are evaluated and then checked (SPEC 7.1), that a value yielded is not a snapshot (3.4), that `SORT`/`SORT_BY` plus `TAKE` evaluate keys before the count and still evaluate them for a count of zero (7.4), that FILTER steps fuse without reordering errors, that an error under an operator keeps the failing node's position (6.3), that a rewrite adds no evaluation depth (6.4), and that a caught failure leaves nothing behind. Where the spec does not decide an order (a binary operator's operands) there is deliberately no case.
+
+`23-runtime-regressions.selt` covers record keys containing NUL, size arguments
+beyond machine integer width, and depth/scope restoration after caught errors.
+Go cache concurrency is covered separately by `go/sel/concurrency_test.go`;
+`cd go && make test` and the Go unit lane in `tools/check.sh` use `go test -race`
+to enable these tests and detect unsynchronized cache access.
+
+`24-decimal-boundaries.selt` is **generated** (`tools/gen-decimal-cases.py`) from the
+exact-rational oracle `tools/decimal-oracle-exact.py`: every operator and ROUND / CEIL /
+FLOOR / TRUNC / POWER at the magnitudes the decimal cores were found wrong at (scale 18/19,
+int64 / uint64 / int128 boundaries with both signs, remainders past 2^126, divisor spellings
+1, 1.0, 0.1 and 1e-N, half-way ties, negative zero, the carry across the digit cap). Edit
+the generator, not the file; `tools/gen-decimal-cases.py --check` fails when it is stale.
+
+`25-value-ownership.selt` pins who copies and who aliases (`alias.*`, `struct.*`),
+what a warm decimal or identity cache must not remember (`cache.*`), record
+shapes of 14–20 fields with awkward keys (`record.shape.*`; the cases run in one
+process, so a poisoned shape shows up in the cases after it) and the value-depth
+cap for a target plus the value stored under it (`lim.assign-depth-target-*`).
+Only what spec §3.4/§5.8/§5.9/§7.3 decide is pinned there: assignment, `,` and the
+§7.3 aggregates copy what they collect, and every list a function returns is a new
+container. Whether `LIST`/`RECORD` and the §7.4 structure functions copy their
+elements is not pinned until the spec says.
+
+`27-relational-edges.selt` covers the edges of the aggregates, the sorts, `BUCKET` and `LINK`: iteration over a snapshot of the source while the body mutates it, a scalar as a one-element list for the sorts, `TOP*` and `BUCKET`, direction and count evaluated even for an empty list, `TOP` equal to `TAKE` of `SORT` for every count, `BUCKET` group keys (index keys in two arguments, identity in three), `SELECT_COLS` with a repeated name, and equi-join keys against the per-pair path. Where the spec does not yet order mixed numeric-looking and other text, the cases assert only what any total order must satisfy (permutation independence, idempotence, `TOP` = `TAKE(SORT)`).
+
+`29-text-binary-budgets.selt` pins the text and collection caps of SPEC §6.4 (16 777 216 code points / bytes, 1 000 000 children, `E_RANGE` at the node that builds the value, measured from lengths before allocation) at the cap, one past it, and for counts no machine integer holds, through `REPEAT`, `PADL`/`PADR`, `&`, `JOIN`, `REPLACE`, `RREPLACE`, `SPLIT`, `TO_HEX`, `ENCODE_BASE64`, `TO_UTF8`, `BTL`, `,` and `LINK`; and the binary/text boundary cases beside them (`LTB` of an empty list and of integral-but-scaled bytes, `PATH` with an empty path, `E_UTF8` and `E_BAD_ARG` diagnostics, 401-digit counts in `LEFT`/`SUBSTR`/`FIND`). The boundary cases build up to 16 MB of text each; that a *refusal* is cheap and survives a small machine is checked by `tools/check-budgets.sh`, which runs the worst requests one process each under a memory and time ceiling. Interpolation (`"{S}{S}"`) is capped through its `&` chain but has no case: which node it is positioned at is not stated by the spec.
+
+`28-regex-portability.selt` holds what SPEC §7.8 decides about the portable regex subset, and holds every host to it: quantified anchors, class escapes as range endpoints, POSIX bracket forms (`[:`, `[.`, `[=`) anywhere in a class, PCRE verbs, the nullable-loop-body and optional-capture-in-a-loop rejections, the group-depth (200), group-count (1 000) and pattern-length (65 535) caps, counted repeats up to 65 535 with *matching* subjects (a FALSE-only case hides an engine that turned the repeat into "never matches"), literal patterns checked at compile time, `i` as the only flag, `RREPLACE`'s empty-match walk, and long subjects that must answer correctly rather than FALSE, 0 or unchanged text. Patterns are raw `'…'` literals because `{` in `"…"` is interpolation. A case that can crash a host (a 50 000-deep pattern) makes that host's whole run die: run it per case with `tools/check-regex-resources.py`'s bounded child processes. Catastrophic backtracking is in the next file.
+
+`28b-regex-ambiguity.selt` is **generated** (`tools/gen-regex-ambiguity-cases.py`) from the lists in `tools/regex-ambiguity-ref.py`, the reference for SPEC §7.8's exponential-ambiguity refusal (a static rule over a position automaton). It pins 35 patterns that must be refused (`(a+)+$`, `(a|aa)+$`, `(.+)+x`, `(?:\d|\d\d)+$` …), the three pairs the `i` flag turns from accepted to refused, the ambiguity-budget boundaries (`(a|a)` ×8 accepted, ×9 refused; `a?` ×7 against ×8), structural errors the real parser now owns, and 46 patterns that must *not* be refused — real validation rules and unambiguous look-alikes (`(?:foo|foobar)*`, `^(?:ab|a)*$`, `(\d+,)+`) — whose match results come from Python's `re`. Patterns are literals and the subjects short, so it is compile-time validation being tested; the whole set is checked against the reference (`tools/regex-ambiguity-ref.py --self-check`, `--cases FILE`) before it is written, and `--check` on the generator fails if the file is stale. Running the reference alone does not need a host.

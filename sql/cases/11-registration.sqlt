@@ -64,7 +64,9 @@ mariadb
 --- note
 Escaping is a single left-to-right pass with the longest rule tried first, so
 a two-character rule fires before the one-character rule that is its prefix.
-No shipped dialect has a multi-character escape key -- mariadb maps ' and \\,
+(The map also carries the quote and backslash entries a registered dialect
+must have -- sql/MAP.md section 3, "pairing" -- so the case is not refused at
+registration.) No shipped dialect has a multi-character escape key -- mariadb maps ' and \\,
 both one character -- so the rule is a no-op on shipped data and nothing
 asserted it until a mutation reversing the sort walked through the whole
 suite. A registered dialect is the only place it can be seen.
@@ -72,7 +74,7 @@ suite. A registered dialect is the only place it can be seen.
 longest
 --- register
 [{"dialect": "longest", "extends": "mariadb", "version": "10.5",
-  "lexical": {"textEscape": {"ab": "<AB>", "a": "<A>"}}}]
+  "lexical": {"textEscape": {"ab": "<AB>", "a": "<A>", "\\": "\\\\", "'": "''"}}}]
 --- source
 "ab"
 --- expect

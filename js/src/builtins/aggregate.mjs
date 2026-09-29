@@ -2,10 +2,11 @@
 // once per element, which is the same move IF makes, repeated.
 
 import * as D from '../decimal.mjs';
-import { Value, NONE, structuralHash } from '../value.mjs';
+import { Value, NONE, structuralHash, scalarKey } from '../value.mjs';
 import { define } from '../registry.mjs';
 import { bytesCompare } from '../utf8.mjs';
 import { fail } from '../errors.mjs';
+import { cpLength, checkText, MAX_TEXT_LEN } from '../budget.mjs';
 // The direction and field names fold ASCII-only (review 2026-09-25 SEM-05):
 // toUpperCase took "deſc" for DESC.
 import { asciiUpper } from '../lexer.mjs';
@@ -27,19 +28,29 @@ function elements(value) {
   return value.kind === NONE ? [] : [['1', value]];
 }
 
+// Whether `node` mentions the variable `name`. Iterative, with an explicit
+// stack: spec 6.4 says a walk of a tree needs its own bound, since `1+1+1+...`
+// builds a tree as deep as it is long, and a recursion here ran out of the
+// host's stack on a body of about ten thousand terms before the evaluator --
+// which runs next, and counts -- could report E_DEPTH.
 function nodeContainsVar(node, name) {
-  if (!node) return false;
-  switch (node.t) {
-    case 'var': return node.name.toUpperCase() === name.toUpperCase();
-    case 'index': return nodeContainsVar(node.obj, name) || nodeContainsVar(node.idx, name);
-    case 'call': return node.args.some((item) => nodeContainsVar(item, name));
-    case 'bin': return nodeContainsVar(node.l, name) || nodeContainsVar(node.r, name);
-    case 'un': return nodeContainsVar(node.x, name);
-    case 'assign': return nodeContainsVar(node.target, name)
-      || nodeContainsVar(node.value, name);
-    case 'seq': case 'list': return node.items.some((item) => nodeContainsVar(item, name));
-    default: return false;
+  const want = name.toUpperCase();
+  const stack = [node];
+  while (stack.length > 0) {
+    const n = stack.pop();
+    if (!n) continue;
+    switch (n.t) {
+      case 'var': if (n.name.toUpperCase() === want) return true; break;
+      case 'index': stack.push(n.obj, n.idx); break;
+      case 'call': for (const item of n.args) stack.push(item); break;
+      case 'bin': stack.push(n.l, n.r); break;
+      case 'un': stack.push(n.x); break;
+      case 'assign': stack.push(n.target, n.value); break;
+      case 'seq': case 'list': for (const item of n.items) stack.push(item); break;
+      default: break;
+    }
   }
+  return false;
 }
 
 // Runs `visit` per element with the binder and _K in scope. Returning a value
@@ -60,30 +71,33 @@ function walk(args, ctx, visit, bodyOverride = null) {
       if (needsK) frame.set('_K', Value.text(key));
       return visit(args.evalNode(body), key, item, body);
     };
-    // Match Lisp's vector fast paths: read the packed storage directly and
-    // reuse the binder frame. `entries()` is intentionally reserved for the
-    // host-facing snapshot API because its pair arrays create avoidable GC in
-    // MAP/FILTER/SUM over large relations.
+    // The walk visits a SNAPSHOT of the collection taken here (spec §7.3): what a
+    // body appends, adds, overwrites or replaces in the source is not seen by the
+    // elements still to come, only a change made INSIDE an element is. The
+    // snapshot is a copy of the references -- the packed storage or entry list
+    // is sliced, the child map's pairs listed -- so a body that grows the source
+    // can neither extend the walk nor invalidate what it is standing on.
     if (collection.storage !== null) {
+      const items = collection.storage.slice();
       if (collection.isList) {
-        for (let i = 0; i < collection.storage.length; i++) {
-          const result = visitItem(String(i + 1), collection.storage[i]);
+        for (let i = 0; i < items.length; i++) {
+          const result = visitItem(String(i + 1), items[i]);
           if (result !== undefined) return result;
         }
       } else {
         const keys = collection.shape.keys;
-        for (let i = 0; i < collection.storage.length; i++) {
-          const result = visitItem(keys[i], collection.storage[i]);
+        for (let i = 0; i < items.length; i++) {
+          const result = visitItem(keys[i], items[i]);
           if (result !== undefined) return result;
         }
       }
     } else if (collection.children) {
-      for (const [key, item] of collection.children) {
+      for (const [key, item] of Array.from(collection.children)) {
         const result = visitItem(key, item);
         if (result !== undefined) return result;
       }
     } else if (collection._entries !== null) {
-      for (const [key, item] of collection._entries) {
+      for (const [key, item] of collection._entries.slice()) {
         const result = visitItem(key, item);
         if (result !== undefined) return result;
       }
@@ -119,7 +133,9 @@ define({
   name: 'MAP', min: 2, max: 3, lazy: true, binds: true,
   fn: (args, ctx) => {
     const out = [];
-    walk(args, ctx, (r) => { out.push(r); return undefined; });
+    // The collectors copy what they collect (spec §3.4): an element the body
+    // returned by reference -- `MAP(X, _)` -- must not stay live in X.
+    walk(args, ctx, (r) => { out.push(r.cloneAt(2, args.pos)); return undefined; });
     return Value.listOwned(out);
   },
 });
@@ -154,17 +170,23 @@ export function leadingFieldConjuncts(body, binder) {
   const literalKind = (n) => (n && n.t === 'num' ? 'NUM' : n && n.t === 'text' ? 'TEXT' : null);
   return conjuncts.map((c) => {
     const fields = new Set();
-    const readsOnlyFields = (n) => {
-      if (!n) return true;
-      if (n.t === 'index') {
-        if (bareRead(n)) { fields.add(asciiUpper(n.idx.v)); return true; }
-        if (n.obj && n.obj.t === 'index') return readsOnlyFields(n.obj) && readsOnlyFields(n.idx);
+    // Iterative, like nodeContainsVar: a conjunct is as deep as its source is long.
+    const readsOnlyFields = (root) => {
+      const stack = [root];
+      while (stack.length > 0) {
+        const n = stack.pop();
+        if (!n) continue;
+        if (n.t === 'index') {
+          if (bareRead(n)) { fields.add(asciiUpper(n.idx.v)); continue; }
+          if (n.obj && n.obj.t === 'index') { stack.push(n.obj, n.idx); continue; }
+          return false;
+        }
+        if (n.t === 'num' || n.t === 'text' || n.t === 'bool') continue;
+        if (n.t === 'bin') { stack.push(n.l, n.r); continue; }
+        if (n.t === 'un') { stack.push(n.x); continue; }
         return false;
       }
-      if (n.t === 'num' || n.t === 'text' || n.t === 'bool') return true;
-      if (n.t === 'bin') return readsOnlyFields(n.l) && readsOnlyFields(n.r);
-      if (n.t === 'un') return readsOnlyFields(n.x);
-      return false;
+      return true;
     };
     const ok = readsOnlyFields(c) && fields.size > 0;
     let total = null;
@@ -236,7 +258,7 @@ define({
       bodyOverride = rest.reduce((l, r) => ({ t: 'bin', op: 'AND', l, r, pos: l.pos }));
     }
     walk(args, ctx, (r, key, item, body) => {
-      if (r.asBool(body.pos)) out.set(key, item);
+      if (r.asBool(body.pos)) out.set(key, item.cloneAt(2, args.pos));
       return undefined;
     }, bodyOverride);
     return out;
@@ -262,60 +284,71 @@ define({
     const sep = args.text(1);
     const parts = [];
     for (const [, item] of elements(args.val(0))) parts.push(item.asText(args.posOf(0)));
+    // The length is known before the result is built (SPEC 6.4): the parts and
+    // the separators between them. An empty result is never too large.
+    if (parts.length > 0) {
+      let units = sep.length * (parts.length - 1);
+      for (const p of parts) units += p.length;
+      if (units > MAX_TEXT_LEN) {
+        let size = cpLength(sep) * (parts.length - 1);
+        for (const p of parts) size += cpLength(p);
+        checkText(size, args.pos, 'JOIN result');
+      }
+    }
     return Value.text(parts.join(sep));
   },
 });
 
-function compareValues(a, b) {
-  const aNull = a.isNull();
-  const bNull = b.isNull();
-  if (aNull && bNull) return 0;
-  if (aNull) return -1;
-  if (bNull) return 1;
+// The total order of SPEC §7.3, one rank per kind: NULL < BOOL (FALSE before
+// TRUE) < numeric-looking text and numbers, by exact decimal value < every other
+// TEXT, bytewise < BIN, bytewise. Equal keys tie, and the sort keeps their input
+// order. The old comparator took the first branch that applied to a PAIR (both
+// numeric: by value; else both text: bytes), so a number was below one text and
+// above another that sorted below it -- not an order at all.
+function sortRank(v) {
+  if (v.isNull()) return 0;
+  if (v.kind === 'BOOL') return 1;
+  if (v.looksNumeric()) return 2;
+  if (v.kind === 'TEXT') return 3;
+  if (v.kind === 'BIN') return 4;
+  return 5;
+}
 
-  const aNum = a.looksNumeric();
-  const bNum = b.looksNumeric();
-  if (aNum && bNum) {
-    return D.cmp(a.asDecimal(), b.asDecimal());
-  }
-
-  if (a.kind === 'BOOL' && b.kind === 'BOOL') {
-    const av = a.scalar ? 1 : 0;
-    const bv = b.scalar ? 1 : 0;
-    return av - bv;
-  }
-
-  if ((a.kind === 'TEXT' || a.kind === 'BIN') && (b.kind === 'TEXT' || b.kind === 'BIN')) {
-    return bytesCompare(a.asBytes(), b.asBytes());
-  }
-
-  const rank = (v) => {
-    if (v.isNull()) return 0;
-    if (v.kind === 'BOOL') return 1;
-    if (v.looksNumeric()) return 2;
-    if (v.kind === 'TEXT') return 3;
-    if (v.kind === 'BIN') return 4;
-    return 5;
+// A key with its rank and comparable form worked out once, not per comparison.
+function keyInfo(key) {
+  const rk = sortRank(key);
+  return {
+    key,
+    rk,
+    dec: rk === 2 ? key.asDecimal() : null,
+    bytes: rk === 3 || rk === 4 ? key.asBytes() : null,
+    flag: rk === 1 ? (key.scalar ? 1 : 0) : 0,
   };
-  return rank(a) - rank(b);
+}
+
+function compareInfo(a, b) {
+  if (a.rk !== b.rk) return a.rk - b.rk;
+  switch (a.rk) {
+    case 1: return a.flag - b.flag;
+    case 2: return D.cmp(a.dec, b.dec);
+    case 3: case 4: return bytesCompare(a.bytes, b.bytes);
+    default: return 0;
+  }
 }
 
 function doSort(args, ctx, forcedDir) {
   const val = args.val(0);
-  if (val.isNull()) return Value.list([]);
-  const entries = elements(val);
-  if (entries.length === 0) return Value.list([]);
+  const entries = val.isNull() ? [] : elements(val);
 
   const count = args.count();
   let dir;
   let indexed;
+  let binder;
+  let body;
 
   if (count === 1) {
     dir = forcedDir || 'ASC';
-    indexed = entries.map(([, item], idx) => ({ item, key: item, idx }));
   } else {
-    let binder;
-    let body;
     if (count === 2) {
       binder = '_';
       body = args.node(1);
@@ -348,7 +381,14 @@ function doSort(args, ctx, forcedDir) {
       const posIdx = count === 4 ? 3 : 2;
       fail('E_BAD_ARG', "sort direction must be 'ASC' or 'DESC'", args.posOf(posIdx));
     }
+  }
+  // The direction was evaluated and checked above whether or not there is
+  // anything to sort (SPEC 7.4): an empty list does not excuse a bad one.
+  if (entries.length === 0) return Value.list([]);
 
+  if (count === 1) {
+    indexed = entries.map(([, item], idx) => ({ item, info: keyInfo(item), idx }));
+  } else {
     indexed = entries.map(([k, item], idx) => {
       const frame = new Map([[binder, item], ['_K', Value.text(k)]]);
       ctx.pushFrame(frame);
@@ -358,23 +398,22 @@ function doSort(args, ctx, forcedDir) {
       } finally {
         ctx.popFrame();
       }
-      return { item, key: evalKey, idx };
+      return { item, info: keyInfo(evalKey), idx };
     });
   }
 
   indexed.sort((x, y) => {
-    let c = compareValues(x.key, y.key);
+    let c = compareInfo(x.info, y.info);
     if (dir === 'DESC') c = -c;
     return c !== 0 ? c : (x.idx - y.idx);
   });
 
-  return Value.listOwned(indexed.map((x) => x.item.clone()));
+  return Value.listOwned(indexed.map((x) => x.item.cloneAt(2, args.pos)));
 }
 
 function doTop(args, ctx, forcedDir) {
   const value = args.val(0);
   const limit = args.nonNegInt(args.count() - 1);
-  if (limit === 0 || (value.kind === NONE && value.size() === 0)) return Value.list([]);
 
   const sortCount = args.count() - 1;
   let binder = '_';
@@ -409,9 +448,11 @@ function doTop(args, ctx, forcedDir) {
     const directionIndex = sortCount === 4 ? 3 : 2;
     fail('E_BAD_ARG', "sort direction must be 'ASC' or 'DESC'", args.posOf(directionIndex));
   }
+  // Count and direction are evaluated and checked first, empty source or not.
+  if (limit === 0 || (value.kind === NONE && value.size() === 0)) return Value.list([]);
 
   const compare = (a, b) => {
-    let c = compareValues(a.key, b.key);
+    let c = compareInfo(a.info, b.info);
     if (dir === 'DESC') c = -c;
     return c !== 0 ? c : a.idx - b.idx;
   };
@@ -445,13 +486,13 @@ function doTop(args, ctx, forcedDir) {
   const consume = (key, item) => {
     let candidate;
     if (binder === null) {
-      candidate = { item, key: item, idx };
+      candidate = { item, info: keyInfo(item), idx };
     } else {
       const frame = new Map([[binder, item]]);
       if (needsK) frame.set('_K', Value.text(key));
       ctx.pushFrame(frame);
       try {
-        candidate = { item, key: args.evalNode(body), idx };
+        candidate = { item, info: keyInfo(args.evalNode(body)), idx };
       } finally {
         ctx.popFrame();
       }
@@ -465,15 +506,20 @@ function doTop(args, ctx, forcedDir) {
       siftDown(0);
     }
   };
+  // A snapshot, like every aggregate's walk (SPEC 7.3): a key body that appends
+  // to the source neither extends the walk nor moves what it stands on.
   if (value.isList && value.storage !== null) {
-    for (let i = 0; i < value.storage.length; i++) consume(String(i + 1), value.storage[i]);
+    const items = value.storage.slice();
+    for (let i = 0; i < items.length; i++) consume(String(i + 1), items[i]);
   } else if (value.shape) {
-    for (let i = 0; i < value.storage.length; i++) consume(value.shape.keys[i], value.storage[i]);
+    const items = value.storage.slice();
+    for (let i = 0; i < items.length; i++) consume(value.shape.keys[i], items[i]);
   } else {
     for (const [key, item] of elements(value)) consume(key, item);
   }
   heap.sort(compare);
-  return Value.listOwned(heap.map((entry) => entry.item));
+  // Copied like SORT's (spec §3.4): TOP is SORT and TAKE in one pass.
+  return Value.listOwned(heap.map((entry) => entry.item.cloneAt(2, args.pos)));
 }
 
 define({
@@ -517,7 +563,9 @@ function bucketKeyText(key, pos) {
 
 function doBucket(args, ctx) {
   const value = args.val(0);
-  if (value.isNull() || value.size() === 0) return Value.list([]);
+  // NULL and an empty collection group nothing; a scalar is a one-element list
+  // (SPEC 3.2), so it makes one group.
+  if (value.kind === NONE && value.size() === 0) return Value.list([]);
 
   const count = args.count();
   let binder = '_';
@@ -538,6 +586,8 @@ function doBucket(args, ctx) {
   const frame = new Map([[binder, null]]);
   if (needsK) frame.set('_K', null);
   const table = new Map();
+  const byText = new Map();
+  const byScalar = new Map();
   const groups = [];
   const process = (key, item, index) => {
     frame.set(binder, item);
@@ -548,6 +598,25 @@ function doBucket(args, ctx) {
     // string that stands for every list, record or NULL. The projected
     // spelling has no map to key and groups by identity instead.
     const keyString = aggregateNode === null ? bucketKeyText(groupKey, keyNode.pos) : '';
+    if (aggregateNode === null) {
+      // The key IS its text: two keys with the same text are one group, whatever
+      // structure their values have, and none of their rows is lost.
+      const same = byText.get(keyString);
+      if (same) { same.rows.push(item); return; }
+      const group = { key: groupKey, keyString, rows: [item] };
+      byText.set(keyString, group);
+      groups.push(group);
+      return;
+    }
+    const exact = scalarKey(groupKey);
+    if (exact !== null) {
+      const same = byScalar.get(exact);
+      if (same) { same.rows.push(item); return; }
+      const group = { key: groupKey, keyString, rows: [item] };
+      byScalar.set(exact, group);
+      groups.push(group);
+      return;
+    }
     const hash = structuralHash(groupKey);
     const bucket = table.get(hash) || [];
     const existing = bucket.find((group) => group.key.eql(groupKey));
@@ -572,7 +641,7 @@ function doBucket(args, ctx) {
   if (aggregateNode === null) {
     const out = Value.none();
     for (const group of groups) {
-      out.set(group.keyString, Value.listOwned(group.rows.map((row) => row.clone())));
+      out.set(group.keyString, Value.listOwned(group.rows.map((row) => row.cloneAt(3, args.pos))));
     }
     return out;
   }
@@ -584,7 +653,7 @@ function doBucket(args, ctx) {
     for (const group of groups) {
       aggregateFrame.set(binder, Value.listOwned(group.rows));
       aggregateFrame.set('_K', group.key);
-      out.push(args.evalNode(aggregateNode));
+      out.push(args.evalNode(aggregateNode).cloneAt(2, args.pos));
     }
   } finally {
     ctx.popFrame();

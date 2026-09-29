@@ -92,6 +92,15 @@ $ctx->set('TOTAL', Value::num('59.97'));
 say('program.run.reads.context', Sel::evaluate('TOTAL > 10.00', $ctx)->dump());
 Sel::evaluate('SEEN = TOTAL * 2', $ctx);
 say('program.run.mutates.context', $ctx->get('SEEN')->asText());
+
+// A BOOL a host hands in is an ordinary value (see tools/api.mjs): PHP-C1 kept
+// two shared instances behind Value::bool() and one run poisoned TRUE process-wide.
+{
+    $one = Value::none(); $one->set('FLAG', Value::bool(true));
+    $two = Value::none(); $two->set('FLAG', Value::bool(true));
+    Sel::compile('FLAG["k"] = 1; 0')->run($one);
+    say('bool.isolated.between.contexts', $two->get('FLAG')->size() . ' ' . Value::bool(true)->size() . ' ' . Sel::evaluate('COUNT(TRUE)')->asText());
+}
 say('registry.count', (string) count(Sel::functionNames()));
 say('registry.sorted.first', Sel::functionNames()[0]);
 

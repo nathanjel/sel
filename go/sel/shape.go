@@ -1,6 +1,7 @@
 package sel
 
 import (
+	"strconv"
 	"strings"
 	"sync"
 )
@@ -37,7 +38,14 @@ func NewRecordShape(keys []string) *RecordShape {
 }
 
 func InternRecordShape(keys []string) *RecordShape {
-	sig := strings.Join(keys, "\x00")
+	// Length prefixes preserve boundaries even when keys contain NUL or colons.
+	var signature strings.Builder
+	for _, key := range keys {
+		signature.WriteString(strconv.Itoa(len(key)))
+		signature.WriteByte(':')
+		signature.WriteString(key)
+	}
+	sig := signature.String()
 	shapeMu.RLock()
 	if s, ok := shapeCache[sig]; ok {
 		shapeMu.RUnlock()

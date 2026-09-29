@@ -9,6 +9,7 @@
 import { readFileSync } from 'node:fs';
 import { createInterface } from 'node:readline';
 import { compile, Value, SelError, functionNames } from '../src/sel.mjs';
+import { decodeSource } from '../src/utf8.mjs';
 
 function show(v) {
   if (v.size() === 0) {
@@ -35,7 +36,16 @@ if (args[0] === '--functions') {
 
 let source = null;
 if (args[0] === '-e') source = args[1];
-else if (args.length > 0) source = readFileSync(args[0], 'utf8');
+// Bytes in, strictly: no replacement character, no newline translation. An
+// invalid file is E_UTF8 at its first bad byte (SPEC §2), not a mangled program.
+else if (args.length > 0) {
+  try {
+    source = decodeSource(readFileSync(args[0]));
+  } catch (e) {
+    report(e);
+    process.exit(1);
+  }
+}
 
 if (source !== null) {
   try {
@@ -52,9 +62,7 @@ if (source !== null) {
 } else {
   // REPL: one context for the whole session, so assignments persist.
   const root = Value.none();
-  const rl = createInterface({ input: process.stdin, output: process.stdout, prompt: 'sel> ' });
-  rl.prompt();
-  rl.on('line', (line) => {
+  const evalLine = (line) => {
     if (line.trim()) {
       try {
         console.log(show(compile(line).run(root)));
@@ -62,7 +70,30 @@ if (source !== null) {
         report(e);
       }
     }
+  };
+  if (process.stdin.isTTY) {
+    const rl = createInterface({ input: process.stdin, output: process.stdout, prompt: 'sel> ' });
     rl.prompt();
-  });
-  rl.on('close', () => process.stdout.write('\n'));
+    rl.on('line', (line) => { evalLine(line); rl.prompt(); });
+    rl.on('close', () => process.stdout.write('\n'));
+  } else {
+    // A pipe carries bytes, and readline would decode them leniently on the way
+    // in. Split on LF ourselves and decode each line strictly.
+    let pending = Buffer.alloc(0);
+    const flush = (bytes) => {
+      try { evalLine(decodeSource(bytes)); } catch (e) { report(e); }
+    };
+    process.stdin.on('data', (chunk) => {
+      pending = Buffer.concat([pending, chunk]);
+      let nl;
+      while ((nl = pending.indexOf(10)) >= 0) {
+        flush(pending.subarray(0, nl));
+        pending = pending.subarray(nl + 1);
+      }
+    });
+    process.stdin.on('end', () => {
+      if (pending.length > 0) flush(pending);
+      process.stdout.write('\n');
+    });
+  }
 }

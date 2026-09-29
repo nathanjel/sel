@@ -53,21 +53,56 @@ MAX_FRAC_DIGITS = _limits.MAX_FRAC_DIGITS
 # for numbers that are actually near the cap.
 _MAX_INT_BITS = 3321929
 
-# CPython refuses int<->str conversion above 4300 digits by default — a guard
-# against quadratic conversion, and a host policy, not SEL's answer. Under it a
-# number this language admits could not be lexed or rendered at all: the Python
-# host raised a ValueError out of the lexer for a 4301-digit literal that the
-# other four hosts evaluated. Raised to exactly what SEL admits and no further.
+# CPython refuses int<->str conversion above 4300 digits by default (and above
+# whatever the deployer set with -X int_max_str_digits or sys.set_int_max_str_digits)
+# -- a guard against quadratic conversion, and a host policy, not SEL's answer.
+# Under it a number this language admits could not be lexed or rendered at all.
 #
-# This mutates a process-global interpreter setting from inside a library, which
-# is worth stating plainly. It is done in the one direction that cannot weaken a
-# choice the application made: 0 means "unlimited" and is left alone, and a
-# limit already above what SEL needs is left alone too.
-_NEEDED_STR_DIGITS = MAX_INT_DIGITS + MAX_FRAC_DIGITS
-if hasattr(sys, 'set_int_max_str_digits'):  # 3.11+
-    _current = sys.get_int_max_str_digits()
-    if _current != 0 and _current < _NEEDED_STR_DIGITS:
-        sys.set_int_max_str_digits(_NEEDED_STR_DIGITS)
+# This module used to raise that process-global limit at import, which overrode
+# a choice the application had made, and a limit set afterwards leaked a raw
+# ValueError out of the first long number. Neither is acceptable in a library:
+# the two conversions below are exact for any size and never depend on the
+# setting. The fast path is the interpreter's own conversion; only when it
+# refuses does the recursive one run, splitting until each piece is under the
+# smallest limit CPython allows (640 digits).
+_SAFE_DIGITS = 500
+
+
+def _int_from_digits(text: str) -> int:
+    """int(text) for an ASCII digit string of any length."""
+    if len(text) <= _SAFE_DIGITS:
+        return int(text)
+    try:
+        return int(text)
+    except ValueError:      # over the interpreter's digit limit
+        pass
+    return _int_split(text)
+
+
+def _int_split(text: str) -> int:
+    n = len(text)
+    if n <= _SAFE_DIGITS:
+        return int(text)
+    low = n // 2
+    return _int_split(text[:n - low]) * (10 ** low) + _int_split(text[n - low:])
+
+
+def _digits_of(value: int) -> str:
+    """str(value) for a non-negative int of any size."""
+    try:
+        return str(value)
+    except ValueError:      # over the interpreter's digit limit
+        pass
+    return _str_split(value, _num_digits(value))
+
+
+def _str_split(value: int, width: int) -> str:
+    """Exactly `width` digits, zero-padded on the left."""
+    if width <= _SAFE_DIGITS:
+        return str(value).rjust(width, '0')
+    low = width // 2
+    high, rest = divmod(value, 10 ** low)
+    return _str_split(high, width - low) + _str_split(rest, low)
 
 
 @dataclass(frozen=True, slots=True)
@@ -180,14 +215,14 @@ def parse(text: str, pos: Pos | None = None) -> Dec | None:
         fail('E_RANGE', f'number has more than {MAX_FRAC_DIGITS} fractional digits', pos)
     if len(stripped) - len(frac_part) > MAX_INT_DIGITS:
         fail('E_RANGE', f'number has more than {MAX_INT_DIGITS} integer digits', pos)
-    return make(neg, int(stripped), len(frac_part))
+    return make(neg, _int_from_digits(stripped), len(frac_part))
 
 
 def format(d: Dec) -> str:  # noqa: A001 - mirrors format() in the other hosts
     sign = '-' if d.neg else ''
     if d.scale == 0:
-        return sign + str(d.digits)
-    body = str(d.digits).rjust(d.scale + 1, '0')
+        return sign + _digits_of(d.digits)
+    body = _digits_of(d.digits).rjust(d.scale + 1, '0')
     return sign + body[:len(body) - d.scale] + '.' + body[len(body) - d.scale:]
 
 
@@ -200,11 +235,11 @@ def trim_scale(d: Dec) -> Dec:
         return make(False, 0, 0)
     if d.scale == 0:
         return d
-    text = str(d.digits)
+    text = _digits_of(d.digits)
     zeros = min(d.scale, len(text) - len(text.rstrip('0')))
     if zeros == 0:
         return d
-    return make(d.neg, int(text[:len(text) - zeros]), d.scale - zeros)
+    return make(d.neg, _int_from_digits(text[:len(text) - zeros]), d.scale - zeros)
 
 
 def from_int(n: int) -> Dec:
@@ -344,18 +379,20 @@ def trunc(d: Dec) -> Dec:
     return make(d.neg, d.digits // _pow10(d.scale), 0)
 
 
-def floor(d: Dec) -> Dec:
+def floor(d: Dec, pos: Pos | None = None) -> Dec:
     if d.scale == 0:
         return d
     q, r = divmod(d.digits, _pow10(d.scale))
-    return make(d.neg, q + 1 if d.neg and r != 0 else q, 0)
+    # Rounding away from zero carries: 99.5 floored for a negative is -100, a
+    # digit wider, and at the integer-digit cap that is one too many.
+    return guard(make(d.neg, q + 1 if d.neg and r != 0 else q, 0), pos)
 
 
-def ceil(d: Dec) -> Dec:
+def ceil(d: Dec, pos: Pos | None = None) -> Dec:
     if d.scale == 0:
         return d
     q, r = divmod(d.digits, _pow10(d.scale))
-    return make(d.neg, q + 1 if not d.neg and r != 0 else q, 0)
+    return guard(make(d.neg, q + 1 if not d.neg and r != 0 else q, 0), pos)
 
 
 def power(a: Dec, n: int, pos: Pos | None = None) -> Dec:

@@ -101,6 +101,9 @@ func hoistLiteral(child *Node, pos Pos) *Node {
 func tryDec(fn func() *decimal.Dec) (res *decimal.Dec) {
 	defer func() {
 		if r := recover(); r != nil {
+			if !isSelPanic(r) {
+				panic(r)
+			}
 			res = nil
 		}
 	}()
@@ -517,6 +520,9 @@ func optRenameVar(node *Node, oldName string, newName string) *Node {
 		return nil
 	}
 	cp := copyNode(node)
+	// A compiled plan names the old binder in its loads; the copy is renamed, so
+	// the plan is stale and the copy is evaluated as a tree (or planned again).
+	cp.MathPlan = nil
 	if cp.T == NodeVar && upperName(cp.S) == upperName(oldName) {
 		cp.S = newName
 	}
@@ -560,6 +566,27 @@ func optCannotRaise(node *Node, binder string, logical bool) bool {
 	default:
 		return false
 	}
+}
+
+func optPositiveLiteral(node *Node) bool {
+	n, ok := optNumericLiteral(node)
+	return ok && n >= 1
+}
+
+// optFilterPredicateCannotRaise: a FILTER predicate must be a BOOL, so a bare
+// number, text, NULL or variable raises E_NOT_BOOL however harmless it looks as
+// a value. Only a provably boolean expression is safe to fuse behind another.
+func optFilterPredicateCannotRaise(node *Node, binder string, logical bool) bool {
+	if node == nil {
+		return false
+	}
+	switch node.T {
+	case NodeBool:
+		return true
+	case NodeNum, NodeText, NodeNull, NodeVar, NodeIndex:
+		return false
+	}
+	return optCannotRaise(node, binder, logical)
 }
 
 func optMapCannotRaise(step *Node, logical bool) bool {
@@ -606,7 +633,9 @@ func optLogicalSteps(source *Node, current []*Node, logical bool) []*Node {
 					if right < minVal {
 						minVal = right
 					}
-					merged := copyNode(first)
+					// The merged step is the outer one: an error the enclosing
+					// operator reports about its value is positioned at it (§6.3).
+					merged := copyNode(second)
 					merged.Items = []*Node{first.Items[0], optNum(decimal.Format(decimal.FromInt(minVal)), decimal.FromInt(minVal), second.Items[1].Pos)}
 					next = append(next, merged)
 					i += 2
@@ -621,7 +650,7 @@ func optLogicalSteps(source *Node, current []*Node, logical bool) []*Node {
 				right, okR := optNumericLiteral(second.Items[1])
 				if okL && okR && left <= math.MaxInt64-right {
 					sumVal := left + right
-					merged := copyNode(first)
+					merged := copyNode(second)
 					merged.Items = []*Node{first.Items[0], optNum(decimal.Format(decimal.FromInt(sumVal)), decimal.FromInt(sumVal), second.Items[1].Pos)}
 					next = append(next, merged)
 					i += 2
@@ -630,8 +659,12 @@ func optLogicalSteps(source *Node, current []*Node, logical bool) []*Node {
 				}
 			}
 
-			// SORT... + TAKE -> TOP...
+			// SORT... + TAKE -> TOP..., only for a numeric literal count of at
+			// least 1 (SPEC §6.2): the sort evaluates every key before the count
+			// is looked at, TAKE(0) included, and a count that is an expression
+			// may fail or have effects that the fused form would run first.
 			if second != nil && second.S == "TAKE" && len(second.Items) == 2 &&
+				optPositiveLiteral(second.Items[1]) &&
 				(first.S == "SORT" || first.S == "SORT_DESC" || first.S == "SORT_BY") {
 				topName := "TOP"
 				if first.S == "SORT_DESC" {
@@ -640,6 +673,7 @@ func optLogicalSteps(source *Node, current []*Node, logical bool) []*Node {
 					topName = "TOP_BY"
 				}
 				fused := copyNode(first)
+				fused.Pos = second.Pos
 				fused.S = topName
 				fused.Spec = Lookup(topName)
 				fused.Items = append(fused.Items, second.Items[1])
@@ -742,7 +776,7 @@ func optLogicalSteps(source *Node, current []*Node, logical bool) []*Node {
 			if second != nil && first.S == "FILTER" && second.S == "FILTER" {
 				left := getOptFilterInfo(first)
 				right := getOptFilterInfo(second)
-				if left.valid && right.valid && optCannotRaise(right.predicate, right.binder, logical) {
+				if left.valid && right.valid && optFilterPredicateCannotRaise(right.predicate, right.binder, logical) {
 					rightPred := right.predicate
 					if upperName(left.binder) != upperName(right.binder) {
 						rightPred = optRenameVar(right.predicate, right.binder, left.binder)
@@ -753,6 +787,7 @@ func optLogicalSteps(source *Node, current []*Node, logical bool) []*Node {
 					combined.R = rightPred
 
 					merged := copyNode(first)
+					merged.Pos = second.Pos
 					if left.explicitBinder {
 						merged.Items = []*Node{first.Items[0], first.Items[1], combined}
 					} else {
@@ -768,7 +803,9 @@ func optLogicalSteps(source *Node, current []*Node, logical bool) []*Node {
 			// DISTINCT/DEDUPE + DISTINCT/DEDUPE
 			if second != nil && (first.S == "DISTINCT" || first.S == "DEDUPE") &&
 				(second.S == "DISTINCT" || second.S == "DEDUPE") {
-				next = append(next, first)
+				kept := copyNode(first)
+				kept.Pos = second.Pos
+				next = append(next, kept)
 				i += 2
 				changed = true
 				continue
@@ -779,9 +816,22 @@ func optLogicalSteps(source *Node, current []*Node, logical bool) []*Node {
 			if first.S == "FILTER" && filter.valid && filter.predicate != nil &&
 				filter.predicate.T == NodeBool && filter.predicate.B &&
 				(len(next) > 0 || i > 0 || optSourceIsList(source)) {
-				i++
-				changed = true
-				continue
+				if i == len(current)-1 {
+					// The last step: what survives is what the enclosing
+					// operator sees, so it takes this step's position.
+					if len(next) > 0 {
+						prev := copyNode(next[len(next)-1])
+						prev.Pos = first.Pos
+						next[len(next)-1] = prev
+						i++
+						changed = true
+						continue
+					}
+				} else {
+					i++
+					changed = true
+					continue
+				}
 			}
 
 			next = append(next, first)
@@ -831,6 +881,10 @@ type emitResult struct {
 	slot     uint16
 	isConst  bool
 	constVal *decimal.Dec
+	// raw: the slot holds an evaluated operand that has not been coerced yet
+	// (a variable or leaf load). Whoever consumes it coerces it; a rewrite that
+	// hands the slot on without consuming it has to coerce it first.
+	raw bool
 }
 
 func compileMathPlan(root *Node) *MathPlan {
@@ -839,11 +893,28 @@ func compileMathPlan(root *Node) *MathPlan {
 	}
 
 	plan := &MathPlan{}
-	var slotCount uint16
+	var slotCount int
+	// Slots are 16-bit: a program that needs more (a 33,000-argument MAX) is
+	// not planned and runs the ordinary way, rather than wrapping around and
+	// indexing outside the scratchpad.
+	overflow := false
 	allocSlot := func() uint16 {
+		if slotCount >= math.MaxUint16 {
+			overflow = true
+			return 0
+		}
 		s := slotCount
 		slotCount++
-		return s
+		return uint16(s)
+	}
+	// coerced makes an operand that a rewrite is about to pass through without
+	// an operation into a coerced one, at the point the plain tree would have.
+	coerced := func(r *emitResult, pos Pos) *emitResult {
+		if !r.raw {
+			return r
+		}
+		plan.Steps = append(plan.Steps, MathStep{Op: "COERCE", Dst: r.slot, Src1: r.slot, Pos: pos})
+		return &emitResult{slot: r.slot}
 	}
 
 	var emit func(node *Node, depth int) *emitResult
@@ -860,7 +931,7 @@ func compileMathPlan(root *Node) *MathPlan {
 				Name: node.S,
 				Pos:  node.Pos,
 			})
-			return &emitResult{slot: slot, isConst: false}
+			return &emitResult{slot: slot, isConst: false, raw: true}
 		}
 
 		if node.T == NodeNum {
@@ -904,29 +975,29 @@ func compileMathPlan(root *Node) *MathPlan {
 				if node.R.T == NodeNum && len(plan.Steps) > 0 && plan.Steps[len(plan.Steps)-1].Dst == resR.slot {
 					plan.Steps = plan.Steps[:len(plan.Steps)-1]
 				}
-				return resL
+				return coerced(resL, node.L.Pos)
 			}
 			// Rule 2: 0 + x
 			if op == "+" && resL.isConst && decimal.IsZero(resL.constVal) && resL.constVal.Scale == 0 {
-				return resR
+				return coerced(resR, node.R.Pos)
 			}
 			// Rule 3: x - 0
 			if op == "-" && resR.isConst && decimal.IsZero(resR.constVal) && resR.constVal.Scale == 0 {
 				if node.R.T == NodeNum && len(plan.Steps) > 0 && plan.Steps[len(plan.Steps)-1].Dst == resR.slot {
 					plan.Steps = plan.Steps[:len(plan.Steps)-1]
 				}
-				return resL
+				return coerced(resL, node.L.Pos)
 			}
 			// Rule 4: x * 1
 			if op == "*" && resR.isConst && !resR.constVal.Neg && resR.constVal.Digits.Cmp(big.NewInt(1)) == 0 && resR.constVal.Scale == 0 {
 				if node.R.T == NodeNum && len(plan.Steps) > 0 && plan.Steps[len(plan.Steps)-1].Dst == resR.slot {
 					plan.Steps = plan.Steps[:len(plan.Steps)-1]
 				}
-				return resL
+				return coerced(resL, node.L.Pos)
 			}
 			// Rule 5: 1 * x
 			if op == "*" && resL.isConst && !resL.constVal.Neg && resL.constVal.Digits.Cmp(big.NewInt(1)) == 0 && resL.constVal.Scale == 0 {
-				return resR
+				return coerced(resR, node.R.Pos)
 			}
 
 			dst := allocSlot()
@@ -1008,16 +1079,21 @@ func compileMathPlan(root *Node) *MathPlan {
 				if len(args) < 1 {
 					return nil
 				}
-				res0 := emit(args[0], depth+1)
-				if res0 == nil {
-					return nil
-				}
-				currSlot := res0.slot
-				for k := 1; k < len(args); k++ {
-					resNext := emit(args[k], depth+1)
-					if resNext == nil {
+				// Every argument is evaluated before the first is coerced
+				// (SPEC §6.2), so all the loads come before the first fold step.
+				resArgs := make([]*emitResult, len(args))
+				for k := range args {
+					resArgs[k] = emit(args[k], depth+1)
+					if resArgs[k] == nil {
 						return nil
 					}
+				}
+				if len(args) == 1 {
+					return coerced(resArgs[0], args[0].Pos)
+				}
+				currSlot := resArgs[0].slot
+				for k := 1; k < len(args); k++ {
+					resNext := resArgs[k]
 					dst := allocSlot()
 					plan.Steps = append(plan.Steps, MathStep{
 						Op:   bSpec.Op,
@@ -1046,15 +1122,15 @@ func compileMathPlan(root *Node) *MathPlan {
 			LeafNode: node,
 			Pos:      node.Pos,
 		})
-		return &emitResult{slot: slot, isConst: false}
+		return &emitResult{slot: slot, isConst: false, raw: true}
 	}
 
 	res := emit(root, 1)
-	if res == nil || len(plan.Steps) == 0 {
+	if res == nil || overflow || len(plan.Steps) == 0 {
 		return nil
 	}
 	plan.OutputSlot = res.slot
-	plan.ScratchpadSize = slotCount
+	plan.ScratchpadSize = uint16(slotCount)
 	return plan
 }
 

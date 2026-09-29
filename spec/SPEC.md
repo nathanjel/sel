@@ -34,7 +34,15 @@ JS frontend. It prefers failing loudly over coercing quietly.
 
 ## 2. Source text
 
-Source is UTF-8. Invalid UTF-8 in source is `E_UTF8` at the offending byte.
+Source is UTF-8. Invalid UTF-8 in source is `E_UTF8`, reported at the first
+invalid unit: the position counts the code points that precede it, like every
+other position, so `1 +` newline `"a\xffb"` fails at line 2, column 4, offset 7.
+Through a host API that takes text rather than bytes, the invalid unit is a lone
+surrogate, and the position is counted the same way. A host that reads source
+from a file or a command line must read it as bytes — no replacement character,
+no newline translation — and hand it over unchanged: `CR` and `CRLF` inside a
+literal are part of the literal, and a `CR` is not a line end (`#` comments and
+line numbers both end at `LF` only).
 
 ### 2.1 Comments
 
@@ -104,6 +112,13 @@ This is a lexer pass, not a runtime feature; the resulting tree contains no trac
 of it. Braces nest, and braces inside a string literal within the expression do
 not terminate it. An unterminated `{` is `E_UNTERMINATED`. `{}` with nothing in
 it is `E_SYNTAX`.
+
+The expression inside the braces is its own unit: its parentheses and brackets
+must balance *within* the braces. A closer with no opener in the body
+(`"{1) + (2}"`) is `E_SYNTAX` at that closer, and an opener still open at the
+closing `}` (`"{(1}"`) is `E_SYNTAX` at that `}`. Without the rule the body is
+spliced into the surrounding tokens as it stands, and an unbalanced one changes
+the meaning of the text around it.
 
 Interpolation lowers to `&` and obeys §5.2 exactly — there is no separate rule.
 Leading and trailing segments are kept even when empty, so `"{A}"` becomes
@@ -187,12 +202,33 @@ rule covers an aggregate binder, which names the element rather than a copy of
 it, and the compound assignment forms, which hold their target across the
 evaluation of the right-hand side.
 
-**Assignment is the only operation that copies.** `=` deep-copies its
-right-hand side (§5.7), which is what stops two variables from sharing
-structure, and `,` (§5.9) and the aggregates copy what they collect for the same
-reason. Nothing else copies — an implementation that copies anywhere else will
-disagree with this section, and an implementation that copies nowhere will
-disagree with §5.7.
+**Only assignment and the collectors copy.** `=` deep-copies its right-hand
+side (§5.8), which is what stops two variables from sharing structure, and the
+operations that *collect* values into a new one copy what they collect for the
+same reason. Nothing else copies — an implementation that copies anywhere else
+will disagree with this section, and an implementation that copies nowhere will
+disagree with §5.8. The rule is a table, not a judgement call:
+
+| Operation | Container | Elements it collects |
+|---|---|---|
+| `=` (§5.8) | the stored value | **copied** (deep) |
+| `,` (§5.9) | new | **copied** |
+| `LIST`, `RECORD` (§7.4) | new | **copied**, as `,` does |
+| the §7.3 aggregates — `MAP`, `FILTER`, `SORT`, `SORT_DESC`, `SORT_BY`, `BUCKET` (both spellings), `TOP`, `TOP_DESC`, `TOP_BY` | new | **copied** |
+| `TAKE`, `DROP`, `DISTINCT`, `DEDUPE` (§7.4) | new | **aliased** — the result's elements are the source's elements |
+| a variable, an index, an aggregate binder, `IF`/`COND`, `(…)` | — | not collected: the value itself |
+
+**A list a function returns is always a new container.** Whatever a function
+does about its elements, its result never shares a backing list, array or map
+with its source: assigning into the source afterwards, or replacing one of its
+children, must not change a result already produced (`TAKE(A, 2)` after
+`A[1] = 9`). This is separate from the element column above, which is about the
+elements themselves. `LINK` and `LINK_LEFT` build new rows and are not in the
+table; what their rows hold is not yet specified beyond §7.4's description.
+
+A value's *depth* (§6.4) is checked where a copy or a construction makes it: an
+assignment reports `E_DEPTH` at its target, and a constructor — `,`, `LIST`,
+`RECORD` — that builds a value past the cap reports it at the node that built it.
 
 **Rebinding a variable does not affect a value already yielded.** `A = …` makes
 the name refer to a different value; a reference obtained before it still refers
@@ -469,6 +505,22 @@ Evaluation is strictly left to right wherever both operands are evaluated. The
 only operators that skip evaluation are `AND` and `OR`. The only functions that
 skip or repeat evaluation are `IF` and the aggregates.
 
+**Evaluate, then coerce.** An operator or function evaluates *all* the operands
+it takes, left to right, and only then coerces and checks them. `"abc" + 1/0` is
+therefore `E_DIV_ZERO` at the division, not `E_NOT_NUM` at `"abc"`; `A + B` with
+`A` text and `B` undefined is `E_UNDEF_VAR`. An evaluation error in a later
+operand is always found before a coercion error in an earlier one. An optimiser
+(the math plans included) is a pure optimisation of this order: it may not
+coerce an operand earlier than the plain tree would, nor change which error is
+reported or where.
+
+**A fused pipeline stage costs what the unfused stages cost.** `SORT` followed
+by `TAKE`, or `FILTER` inside `FILTER`, may be fused, but the fused form spends
+the same evaluation depth, evaluates the same keys before the same count, and
+raises the same first error as the plain tree (`SORT_BY` keys are evaluated —
+and may fail — before a bad count is looked at, and `TAKE(0)` still evaluates
+them). A count is fused only when it is a numeric literal of at least 1.
+
 ### 6.3 Errors
 
 Evaluation stops at the first failure. An error carries a stable code, a human
@@ -488,7 +540,7 @@ guard, not a language feature.
 **What each construct costs is part of the contract, not an implementation
 detail.** A parenthesis, a call's parentheses and an index bracket each cost two
 levels — the construct's own and the sequence inside it — while a prefix
-operator and an assignment cost one. Those numbers are what
+operator, an assignment and a `??` or `???` cost one. Those numbers are what
 `conformance/10-limits.selt` pins, at exact columns, and they are what makes
 `E_DEPTH` land in the same place on every host. The index bracket is the one
 that drifted: it recurses from outside the rule that counts, so four hosts
@@ -502,6 +554,33 @@ thousand times raised a host-level `RangeError` on the JS host and **segfaulted
 the C++ one**, which is precisely the failure this cap exists to prevent. The
 error is reported at the operator that crossed the limit, not at the start of
 the chain.
+
+**A pipeline step's parentheses cost one level, not two.** `x .> f(a, b)` is a
+call, but it is reached from the postfix loop, beside an index bracket, rather
+than through the rule that charges a call its own level, so only the sequence
+inside pays. Every host has always agreed on that number, so it is pinned
+(`lim.pipe-depth`) rather than changed. A *chain* of steps nests nothing — it is
+a left-leaning tree as deep as it is long, and the evaluator's count decides it
+like any other chain — but a host must not fail on a chain that stays under the
+cap.
+
+**The right-associative operators are counted like the prefix ones.** `??` and
+`???` recurse into their right operand exactly as an assignment does, so a chain
+of them nests as deeply as it is long: `1 ?? 1 ?? …` is a chain of nested nodes
+in a source that has no parenthesis in it. Each operator costs one level, charged
+at the operator, and the error is reported where the limit is crossed — on the
+primary after the 199th `??`, because the primary counts a level of its own.
+Uncounted, the chain reached the host's own stack (a segfault on C++, a
+`RangeError` on JS, a `RecursionError` on Python) while the two hosts that
+survived answered `1`, which is the disagreement the cap exists to prevent.
+
+**Interpolation nests without a cost of its own in the lexer.** A literal inside
+an interpolation inside a literal is lexed iteratively and in time linear in the
+source, so however deep the braces go the answer is decided by the parser's
+count: each level of interpolation is a parenthesis around a parenthesis, and
+`E_DEPTH` is raised where that count is crossed — at `1:101` for
+`"{"{"{…1…}"}"}"` nested fifty deep — unless the lexer finds an error of its own
+first, in which case that error wins, as it does everywhere.
 
 **`dependencies()` is capped by the evaluation depth and raises the same
 `E_DEPTH` at the same node.** It walks the tree without evaluating it, so it is
@@ -529,6 +608,8 @@ leaf up, nothing knows how deep it will end up, so the cap is enforced by the
 operations that walk it rather than by the one that adds a child. Such a value
 can be held; it cannot be copied, compared, dumped or converted.
 
+**An index over a bare variable costs one level, not two.** `A["a"]` where `A` is a plain variable reads the variable in place: the index node is charged, the variable under it is not. This is what makes a body such as `FILTER(T, A["a"] == 1 AND …)` run to the same length everywhere; an aggregate's body, predicate or key expression is otherwise charged only the ordinary node levels — entering the binder scope adds none. A fused pair of stages (§6.2) spends what the two would.
+
 **A depth counts nesting in the source; a walk of the tree counts nodes.** The
 two are the same number for `((((1))))` and wildly different for `1+1+1+…`,
 which nests nothing and yet builds a tree as deep as it is long. A cap on the
@@ -548,7 +629,7 @@ own. A tree that reaches the cap is left as written and evaluated as written;
 `conformance/10-limits.selt` pins both sides of the boundary for a chain the
 optimiser could fold.
 
-Three arguments name a size rather than a value, and a large one asks for more
+Each of these names a size rather than a value, and a large one asks for more
 work or more memory than any host has. Each is capped, and exceeding the cap is
 an ordinary SEL error rather than a host failure:
 
@@ -557,6 +638,8 @@ an ordinary SEL error rather than a host failure:
 | `ROUND(x, n)` scale | 1 000 000 | `E_RANGE` |
 | `POWER(x, n)` exponent | 100 000 | `E_RANGE` |
 | a regex quantifier bound, as in `a{n}` or `a{n,m}` | 65 535 | `E_REGEX_SYNTAX` |
+| a regex pattern's code points | 65 535 | `E_REGEX_SYNTAX` |
+| the groups in a regex pattern | 1 000 | `E_REGEX_SYNTAX` |
 
 The quantifier cap is PCRE2's own hard limit rather than a number of SEL's
 choosing: above 65 535 PCRE refuses to compile the pattern at all, so no cap
@@ -599,6 +682,64 @@ The cap is checked wherever a number is built, not where it is rendered.
 refused at an intermediate step and the value that would exhaust memory is never
 allocated.
 
+**Text and collections are capped too.** A rule can build a large value out of a
+small program without ever naming a size: `A = (A, A)` thirty times is a
+billion elements, `S = S & S` thirty times is a billion characters, and
+`REPEAT("ab", 10000000000)` says it outright. Every host then fails in its own way — a
+raw `RangeError`, an out-of-memory abort no program can catch, a fatal that ends the
+process, a hang — and which of them depends on how much memory the box happens to
+have. So the size of what an operation *builds* is capped, in the same vocabulary as
+every other mistake:
+
+| Value | Cap | Beyond it |
+|---|---|---|
+| a TEXT value's code points, a BIN value's bytes | 16 777 216 | `E_RANGE` |
+| the children of a collection an operation builds | 1 000 000 | `E_RANGE` |
+
+The SQL translator (`docs/internals/sql-translation.md`, an opt-in layer and not
+part of the language) has a size cap of its own, for the same reason: helper
+reuse and nested aggregates over static lists are inlined and unrolled as a tree,
+so a program of *n* short statements can render 2^*n* nodes, which SEL itself
+evaluates in linear time.
+
+| Value | Cap | Beyond it |
+|---|---|---|
+| the nodes of a translated SQL expression | 250 000 | `E_SQL_SIZE` |
+
+`E_SQL_SIZE` is a translator error (`sql/errors.md`), not a language one: the rule
+is still a valid SEL program, it is refused for pushdown and evaluated the ordinary
+way. How the nodes are counted is the translator's contract
+(`docs/internals/sql-translation.md` §7.4).
+
+The text cap is what every host can hold in its widest representation within a few
+hundred megabytes — sixteen million code points is 64 MB as UTF-32 (Lisp), 32 MB as
+UTF-16 (JS) and at most 64 MB as UTF-8 (PHP, Python's compact strings, Go, C++) — and
+sixteen times the number cap above, so a rule can still build any legal number as
+text. The collection cap is the number cap's own figure: a million rows is more than a
+validation rule reads.
+
+The caps apply to the operations whose result can be larger than what they were
+given, and to nothing else. Text and BIN: `REPEAT`, `PADL`, `PADR`, `&` and the
+interpolation that lowers to it, `JOIN`, `REPLACE`, `RREPLACE`, `TO_HEX`,
+`ENCODE_BASE64` and `TO_UTF8` (whose bytes can outnumber the code points it was
+given four to one). Collections: `,`, `LIST`, `RECORD`, `SPLIT`, `BTL`, `LINK` and
+`LINK_LEFT`. A function that returns no more than it was given — `MAP`, `FILTER`,
+`SORT`, `TAKE`, `LEFT`, `TRIM`, `DECODE_BASE64` and the rest — is not capped, so a
+host may pass a rule a larger collection than a rule can build and the rule can still
+read it. Like a value's depth, a value beyond a cap can be held; it cannot be built
+from.
+
+The check is on the *length the result would have*, worked out from the lengths of the
+operands before anything is allocated, so a request for 10^30 copies is refused without
+a byte of it existing — and a count too large for the host's own integer is refused
+the same way and not clamped, truncated or overflowed. Where the result is empty, no
+count is too large: `REPEAT("", 99999999999999999999)` is `""`, because the result
+is measured and not the argument. (A count that only *clamps* is not an error at all:
+`LEFT("abc", 99999999999999999999)` is `abc`.) The error is reported at the node that builds
+the value — the call, the `&` operator, or the list node of a `,` — exactly as the
+constructor depth rule in §3.4 positions it, after every argument has been evaluated
+and coerced (§6.2) and before any of the result is built.
+
 A numeral too long to hold is `E_RANGE` wherever it appears — as a literal, as
 the result of arithmetic, or as text that arithmetic reads. It is not
 `E_NOT_NUM`: every character of it is a digit, and "not a number" would be
@@ -622,6 +763,14 @@ A function is declared **strict** or **lazy**. A strict function's arguments are
 all evaluated, left to right, before the body runs. A lazy function receives the
 argument nodes and evaluates what it chooses. Only `IF` and the aggregates are
 lazy. An application's own functions (§8.1) are always strict.
+
+Only then does the body look at the values: it coerces and checks its arguments
+in argument order, so with two bad arguments the error is the first one's, and an
+error in a later argument's *evaluation* is found before any earlier argument is
+coerced — `MAX(TRUE, U)` is `E_UNDEF_VAR` for the unbound `U`, not `E_NOT_NUM`
+for the BOOL. An implementation that compiles a call into something faster (a
+math plan) must keep that order: what it may not do is coerce an operand as it
+loads it.
 
 ### 7.2 Control
 
@@ -670,8 +819,23 @@ its first argument, in insertion order.
 | `SORT(list [, body])` | list sorted ascending; `body` optional (defaults to element itself). |
 | `SORT_DESC(list [, body])` | list sorted descending; `body` optional (defaults to element itself). |
 | `SORT_BY(list, [binder,] key [, dir])` | list sorted by evaluated `key`; optional `dir` (`"ASC"` or `"DESC"`, default `"ASC"`). |
-| `BUCKET(list, [binder,] key)` | the elements grouped by evaluated `key`: a record whose keys are the group keys, in order of first appearance, each holding the list of its members (renumbered from `"1"`). |
-| `BUCKET(list, [binder,] key, proj)` | one `proj` result per group, as a list; within `proj`, the binder is the group's member list and `_K` its key. |
+| `BUCKET(list, key)` | the elements grouped by evaluated `key`: a record whose keys are the group keys, in order of first appearance, each holding the list of its members (renumbered from `"1"`). |
+| `BUCKET(list, key, proj)`, `BUCKET(list, binder, key, proj)` | one `proj` result per group, as a list; in `key` `_` is the element and within `proj` it is the group's member list, `_K` being the key; the four-argument spelling names both with its binder. |
+
+**The sort order.** `SORT`, `SORT_DESC`, `SORT_BY` and the `TOP` family order
+values by one total order, taken on the element (or on its key), by *kind*
+first: `NULL` < `BOOL` (`FALSE` < `TRUE`) < **numeric-looking text** and numbers
+< every **other** text < `BIN`. Numeric-looking text is text matching §4's
+number grammar — `"10"`, `"007"`, `"-0"`, `"2.50"` — and is ordered by exact
+decimal value, a number and the text spelling it being the same value; values
+that are equal in value (`"-0"` and `"0"`, `"007"` and `"7"`, `"2.5"` and
+`"2.50"`) tie. Text that is not a number (`""`, `" 2"`, `"1a"`, `"1e3"`) is
+ordered by its UTF-8 bytes, `BIN` by its bytes. The sorts are **stable**: values
+that tie keep their input order, in both directions — a descending sort reverses
+the order of *unequal* values and keeps the ties as they were. The order is
+transitive, so the result does not depend on the sort algorithm, on the order
+of the input beyond ties, or on whether `SORT` and `TAKE` were fused into `TOP`.
+`SORT("10", "9", "1a")` is `9, 10, 1a`.
 
 **Keys are part of the value.** `FILTER` is the one step that keeps its input's
 keys; every other aggregate, and every list function of §7.4, renumbers from
@@ -698,6 +862,18 @@ An SQL backend must preserve this identity independently of a column's default
 collation: case folding or ignoring trailing spaces must not merge distinct
 text keys. Projection through an intermediate relation does not relax this
 requirement; when identity cannot be proved, grouping must remain local.
+
+**An aggregate visits a snapshot.** The elements an aggregate visits — and the
+keys it reads for `_K` — are those its first argument had when the aggregate
+started: the sequence of children is fixed before the first body runs. A key the
+body adds to the source is not visited, a child it overwrites is still visited
+as it was, and rebinding the source's variable changes nothing. The elements
+themselves are the same values the source holds (§3.4: a binder names its
+element, it is not a copy of it), so a mutation *inside* a later element is seen
+when that element's turn comes. No host may read the source's live children
+while the body can change them: doing so was a use after free in C++, an
+uncaught `TypeError` (or an unbounded loop) in JS, Python and PHP, and an answer
+that differed between hosts.
 
 Within a body, `_` is bound to the element and `_K` to its key.
 
@@ -741,6 +917,14 @@ failure.
 from that bounded result; it cannot restore elements excluded by the `TAKE`.
 For example, `LIST(1, 2, 3) .> TAKE(2) .> DROP(1)` contains only `2`, and
 `LIST(1, 2, 3) .> TAKE(1) .> DROP(2)` is empty.
+
+**Direction and count are always evaluated.** `SORT_BY`'s direction and the
+`TOP` family's count and direction are arguments like any other: they are
+evaluated once, and rejected when wrong (`E_BAD_ARG` for a direction that is not
+`"ASC"` or `"DESC"`, `E_RANGE` or `E_NOT_INT` for a bad count), whether or not
+the list has anything to sort — an empty list and `NULL` included. A rule's
+validity does not depend on its data. The direction is checked before any key is
+evaluated.
 
 **A count of zero still evaluates the list.** `TAKE(list, 0)`, `DROP`, and the
 `TOP` family with `n` of `0` evaluate `list` before answering the empty list,
@@ -794,6 +978,17 @@ left element outer, right element inner. With no right elements `pred` is never
 evaluated: an unmatched `LINK_LEFT` row costs no evaluation of it, and a `LINK`
 over an empty side is the empty list whatever `pred` would have done.
 
+**A join key is compared as the comparison compares it.** The matching by key
+is an optimisation of the per-pair evaluation and cannot be seen: two numbers
+are equal when `==` says so however they are spelled (`12345678901234567890.50`
+and `…890.5`, beyond any machine integer), a number past the digit cap (§6.4) is
+`E_RANGE` at the operand — the left one first, as the comparison coerces — and a
+predicate that reads both binders on one side, through a `,` list, a `;`
+sequence or an assignment, is not a keyed comparison at all. Appending `AND
+TRUE` to a predicate never changes the rows of the join. (What a name bound on
+both sides means when the two binders are spelled alike is not specified: only
+that the two evaluation paths agree.)
+
 **A `FILTER` after a `LINK` is evaluated as written.** An implementation may
 test a conjunct of the `FILTER`'s predicate against one side's elements before
 the join, to join fewer rows, but the program's value is that of evaluating the
@@ -840,8 +1035,8 @@ Positions are **1-based**, and `0` means "not found". Lengths and positions coun
 | `TRIM(x)` / `LTRIM(x)` / `RTRIM(x)` | strips space, tab, CR, LF |
 | `UPPER(x)` / `LOWER(x)` | **ASCII only** — see below |
 | `BACKWARDS(x)` | code points reversed |
-| `REPEAT(x, n)` | `n` copies, `n >= 0` |
-| `PADL(x, n, fill)` / `PADR(x, n, fill)` | pad to `n` code points; no truncation if longer |
+| `REPEAT(x, n)` | `n` copies, `n >= 0`; `E_RANGE` when the result would exceed the text cap (§6.4), whatever the size of `n` — and `""` for empty `x` |
+| `PADL(x, n, fill)` / `PADR(x, n, fill)` | pad to exactly `n` code points with `fill` repeated and cut to fit; no truncation if `x` is longer; an empty `fill` is `E_BAD_ARG`; `E_RANGE` when `n` exceeds the text cap (§6.4) |
 | `CHAR(n)` | the code point `n` as TEXT |
 | `CODE(x)` | code point of the first character |
 
@@ -888,7 +1083,7 @@ result, and the third would make the conformance suite meaningless.
 | `DECODE_BASE64(x)` | BIN — padding required, `E_BAD_ARG` on any invalid character |
 | `CRC32(x)` | TEXT — CRC-32/ISO-HDLC as 8 lower-case hex digits |
 | `BTL(x)` | list of byte values 0–255 |
-| `LTB(list)` | BIN from a list of byte values; `E_RANGE` outside 0–255 |
+| `LTB(list)` | BIN from a list of byte values, each an integer 0–255 (an integral value of any scale is one: `1.0`, `"65"`); `E_RANGE` outside 0–255, `E_NOT_INT` for a fractional one. An empty list is the empty BIN, so `LTB(BTL(x))` returns `x` for every BIN `x` |
 
 Functions taking BIN accept TEXT and encode it as UTF-8 first.
 
@@ -913,9 +1108,39 @@ and negation, the escapes `\d \D \w \W \s \S`, the control escapes `\n \r \t \f`
 escaped metacharacters, quantifiers `* + ? {n} {n,} {n,m}` and their lazy `?`
 forms, groups `( )`, non-capturing groups `(?: )`, and alternation `|`.
 
-**Rejected:** POSIX classes `[[:alpha:]]`, `\p{…}`, backreferences, lookahead and
+**Rejected:** POSIX classes `[[:alpha:]]` — and their collating `[.x.]` and
+equivalence `[=x=]` forms, wherever they stand in a class, not only first —
+`\p{…}`, backreferences, lookahead and
 lookbehind, atomic groups, possessive quantifiers, inline modifiers `(?i)`,
 `\A \z \Z \G \K`, conditionals, recursion, and the three below.
+
+- **A quantified anchor**: `^*`, `$+`, `^{2}`, `a$?`. PCRE, ECMAScript and Python
+  refuse it, so the intersection does.
+- **PCRE verbs**: `(*FAIL)`, `(*ACCEPT)`, `(*UTF8)`, `(*COMMIT)` and every other
+  `(*` — ECMAScript reads it as a quantifier with nothing to repeat.
+- **A class escape as a range endpoint**: `[+-\d]`, `[\d-z]`, `[a-\s]`. PCRE takes
+  the hyphen literally and ECMAScript refuses; a hyphen first or last in a class
+  is a literal and is accepted (`[\d-]`, `[-\d]`).
+- **A loop whose body can match the empty string**: `(a*)*`, `(?:a?)+`, `(|a)+`,
+  `(a*?)+`, `(?:^)*`, `(?:a*){2,3}`. A *loop* is a quantifier whose maximum is above
+  1 (`*`, `+`, `{n,}`, `{n,m}` with `m` > 1); `?`, `{0,1}` and `{1}` are not loops,
+  so `(\d*)?` stays legal. PCRE-style and ECMAScript engines disagree on both the
+  captures and the overall match of an empty iteration, and the difference reaches
+  `RREPLACE`, `RFIND` and `RGROUPS`.
+- **A loop holding a capture that need not take part in every iteration**:
+  `(?:(a)|b)*`, `(?:(a)|(b))+`, `(?:(a)?b)+`, `(?:x(a)?)+` — a capture under an
+  alternation with other branches, or under a quantifier whose minimum is 0, inside
+  the loop's body.
+  PCRE keeps the last value the capture had, ECMAScript resets it each iteration.
+  Inside a quantified group every capture must therefore take part in every
+  iteration; `(a|b)+`, `((a)b)+` and `(\d+,)+` are unaffected, and the capture
+  keeps its value from the last iteration.
+- **A pattern that nests groups deeper than 200** (`MAX_DEPTH`, capturing and
+  non-capturing alike), **is longer than 65 535 code points** (`MAX_REGEX_PATTERN`),
+  **or holds more than 1 000 groups** (`MAX_REGEX_GROUPS`). Each host's engine has
+  its own limits for these (PCRE refuses depth 251, SRELL 257, RE2 a large
+  program), and some hosts recursed until they crashed; the language states one.
+  `{n}` bounds are capped at 65 535 as before.
 
 - **`\b` and `\B`.** A word boundary is defined in terms of the engine's notion of
   a word character, and the two engines disagree — PHP's `u` modifier enables
@@ -977,6 +1202,96 @@ differ most:
    `$`; every other character is literal. This avoids PCRE's `\1` and JS's
    `` $& ``, `` $' `` and `` $` ``.
 
+**Refused for its running time: exponential ambiguity.** A backtracking engine
+(every host's, except Go's) takes time exponential in the subject on a pattern
+that can match some word in exponentially many ways — `^(a+)+$` on `aaaa…a!` — and
+the hosts disagreed about the outcome: minutes, an aborted process, `FALSE`. The
+subset therefore refuses such patterns at compile time, by one static rule that
+every host implements identically (`tools/regex-ambiguity-ref.py` is the reference;
+`conformance/28b-regex-ambiguity.selt` pins it). Only exponential ambiguity is
+refused; polynomial ambiguity (`a*a*$`, `(.*),(.*),(.*)`) is accepted on purpose.
+Because the rule needs the shape of the pattern and the folding of `i`, the
+validator is a real parser that builds a tree, its signature gains the
+ignore-case flag, and a host that caches validated or compiled patterns keys the
+cache by pattern *and* flag.
+
+*The tree.* Groups are transparent (capturing or not); `^`, `$` and the empty
+pattern are the empty node; a letter is one node holding a set of code points,
+kept as sorted, merged ranges — a literal, `.` (every code point), an escape
+(`\d \w \s \D \W \S`, as §7.8 rewrites them), or a class (positive members
+first, then negated). Under `i` the set is *folded before it is negated*: each
+ASCII letter gains its other case, `k`/`K` gain U+212A and `s`/`S` gain U+017F
+(simple case folding, as `re.icase.*` pins). Lazy quantifiers are analysed as
+greedy: laziness changes which match is found, not which words match.
+
+*Repeats.* `x{0}` is the empty node. A repeat whose maximum is finite and at most
+8 is **unrolled**: `lo` copies of `x` followed by a nested chain of `hi − lo`
+optional copies, each copy analysed afresh (`a{2,4}` is `a a (a (a)?)?`).
+Any other repeat — unbounded, or a maximum above 8 — is analysed as **one copy of
+`x` with wrap-around edges**, its counts ignored.
+
+*The position automaton.* Every letter node, in source order, is a *position*
+(numbered from 1; 0 is the start). For each node compute whether it is nullable,
+its `first` and `last` position lists, and `minlen`/`maxlen` (saturating at 2^40;
+a loop's `maxlen` is 2^40 unless its body's is 0). A concatenation adds, for
+every consecutive pair of items, the *follow edges* `last(left) → first(right)`
+(with `first` and `last` extended through nullable items, as usual). A loop adds
+the wrap edges `last(x) → first(x)`. The start has an edge to every position of
+`first(whole pattern)`. Position `p` *reads* its set `cls(p)` when entered; a
+*cycle* is a strongly connected component with an edge inside it.
+
+*Refused, first cause that applies:*
+
+1. **The same follow edge generated twice.** Every edge `(p, q)` is generated once
+   by a concatenation or a loop; if a second generation produces the same edge, the
+   pattern is refused, with one exception: an edge generated *only* by loops whose
+   body has a fixed length (`minlen = maxlen`, 0 < that < 2^40) is allowed any
+   number of times. So `(a+)+` (the outer loop's body has no fixed length) is
+   refused while `(a{300}){300}` (both bodies are one letter and 300 letters) is
+   not. A loop over a fixed-length body cannot split a word two ways.
+2. **Exponential ambiguity in a cycle** (EDA). Build, inside each cycle, the pair
+   graph: nodes `(p, r)`, an edge `(p, r) → (p′, r′)` when `p′` follows `p`, `r′`
+   follows `r`, all four are in the same cycle, and `cls(p′) ∩ cls(r′)` is not empty
+   (one input character moves both). Seeds are the diagonal pairs `(q, q)`. If a
+   pair `(p, r)` with `p ≠ r` is reachable from a seed *and* reaches a diagonal pair,
+   two different paths run from a state back to a state on the same word: refused.
+3. **A nullable choice inside a loop.** An alternation with two or more nullable
+   branches, or `?` (`{0,1}`) over a body that is nullable, inside the body of a
+   loop, is refused. (Outside a loop it costs budget, below.)
+4. **The ambiguity budget.** Sum, over the whole pattern, of: for an alternation
+   with `k ≥ 2` nullable branches outside a loop, `⌈log2 k⌉`; for `?` over a
+   nullable body outside a loop, 1; and for each position **outside every cycle**,
+   *including the start*, that has two or more successors, `⌈log2 m⌉` where `m` is the
+   largest number of its successors' sets that share one code point (only when
+   `m ≥ 2`). More than 16 is refused. This bounds the ways finite choices can
+   multiply: `(a|a)` eight times then `x` is accepted, nine times is refused;
+   `a?` seven times then `b` is accepted, eight times is refused.
+5. **The analysis would be too large.** More than 2^17 positions, more than 2^18
+   follow edges, a sum over edges of the number of ranges at the target above 2^21,
+   or more than 2^20 units of pair-graph work (each visited pair `(p, r)` costs
+   `d(p) · d(r)`, `d` being a position's number of successors in its own cycle):
+   refused. The caps are closed-form so every host reaches them at the same
+   pattern. They are far above anything the size caps above let through.
+
+Two consequences worth stating. Patterns that are unambiguous but *look*
+ambiguous — `(?:foo|foobar)*`, `^(?:ab|a)*$`, `(\d+,)+` — are accepted. And the
+rule refuses some patterns that are in fact harmless: `(?:a{300}b?){300}`,
+`(?:a+){9}` and a chain of more than 7–8 `a?` are false rejections, accepted as
+the price of a rule that is decidable, identical everywhere and cheap; write the
+loop body with a fixed length, or fewer copies. A refusal is `E_REGEX_SYNTAX`; its
+offset is unspecified and never asserted.
+
+**`RREPLACE` walks the matches left to right.** After an *empty* match at code
+point *s* the scan resumes at *s*+1, copying the code point at *s* through
+unchanged; after a *non-empty* match it resumes at the match's end, where an empty
+match is allowed. Nobody retries a non-empty match at the position of an empty
+one: `RREPLACE('b*?', "-", "abb")` is `-a-b-b-`, `RREPLACE('a*', "-", "baac")` is
+`-b--c-`.
+
+**Pattern caches are bounded.** A host that caches compiled patterns keeps at most
+256 of them and evicts the oldest first; patterns come from data, and an unbounded
+cache is a memory leak the caller cannot see.
+
 A capture that did not participate in the match yields TEXT `""`.
 
 ### 7.9 Safety and Null
@@ -987,7 +1302,7 @@ A capture that did not participate in the match yields TEXT `""`.
 | `IS_NOT_NULL(x)` | BOOL — `TRUE` if `x` is not NULL, `FALSE` otherwise. |
 | `COALESCE(a, b, …)` | first non-null argument, or NULL if all are null. Evaluates arguments lazily. |
 | `GET(target, key [, default])` | reads `target[key]`; yields `default` (or NULL) if absent or target is NULL. |
-| `PATH(target, path_str [, default])` | walks dot-separated child keys in memory; yields `default` (or NULL) if any key is absent. |
+| `PATH(target, path_str [, default])` | walks dot-separated child keys in memory; yields `default` (or NULL) if any key is absent. The empty path names no key and yields `target` itself, so a child keyed `""` is reached with `GET`, and a key containing `.` is not reachable by `PATH` at all. |
 | `IS_BLANK(x)` | BOOL — `TRUE` if `x` is NULL, empty text `""`, whitespace-only text, or an empty list. |
 | `IS_PRESENT(x)` | BOOL — inverse of `IS_BLANK(x)`. |
 
@@ -1076,6 +1391,12 @@ The one exception is a host whose native map cannot tell a record from a list:
 a PHP array keyed `0 … n-1` is a list, so a record keyed `"0" … "n-1"` comes
 back from PHP as a list keyed `"1" … "n"`. Lisp, whose `NIL` is both false and
 the empty list, spells `FALSE` as `:false`.
+A host whose native map reorders position-like keys (a JS object lists `"0"`,
+`"1"` … first, in ascending order, whatever the insertion order) may not be able
+to carry a record whose position-like keys are not first and ascending: there
+`toNative` raises `E_BAD_ARG` instead of returning data that would come back in
+another order. Such a host offers an entry-list form (`entries`/`fromEntries`)
+that round-trips any order.
 
 **Branching on kind uses the predicates.** The kind *values* are a string in JS
 and Python, a class constant in PHP, an enum in C++ and a keyword in Lisp, so

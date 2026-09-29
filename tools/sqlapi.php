@@ -114,4 +114,34 @@ Map::reset();
 say('host.spell.after-reset', $attempt(fn () => Sql::translate(Sel::compile('HSLUG(T)'), 'postgresql', $host)));
 say('host.spell.after-reset.local', Sel::evaluate('HSLUG("A")')->asText());
 
+// --- rendering and registration state (T10) ------------------------------------
+// The questions a snapshot of ONE translation cannot ask: what an unknown render
+// mode does when there is nothing to bind, and whether a refused dialect stays
+// refused. `refuses` collapses the host's own error classes, which differ, to the
+// one thing the contract says: the call did not produce SQL.
+$refuses = function (callable $fn): string {
+    try {
+        $fn();
+        return 'accepted';
+    } catch (\Throwable $e) {
+        return 'refused';
+    }
+};
+$one = ['C' => Binding::column('c', 't', 'NUM')];
+$zero = Sql::translate(Sel::compile('C > C'), 'mariadb', $one);
+$onelit = Sql::translate(Sel::compile('C > 1'), 'mariadb', $one);
+say('render.mode.valid.zero-slots', $refuses(fn () => $zero->asValue('params')));
+say('render.mode.bogus.zero-slots', $refuses(fn () => $zero->asValue('bogus')));
+say('render.mode.bogus.zero-slots.condition', $refuses(fn () => $zero->asCondition('bogus')));
+say('render.mode.bogus.with-slot', $refuses(fn () => Sql::translate(Sel::compile('C > "x"'), 'mariadb', $one)->asValue('bogus')));
+say('render.mode.bogus.literal-number', $refuses(fn () => $onelit->asValue('bogus')));
+Map::defineDialect('probe-badguard', ['extends' => 'postgresql', 'version' => '16', 'lexical' => [
+    'numericGuard' => "CASE WHEN ({textCast:0} ~ '^.*$') THEN CAST({0} AS NUMERIC) ELSE NULL END"]]);
+$named = ['N' => Binding::column('n', 't', 'TEXT')];
+foreach ([1, 2, 3] as $k) {
+    say("guard.reuse.$k", $refuses(fn () => Sql::translate(Sel::compile('N + 1'), 'probe-badguard', $named)));
+}
+Map::reset();
+say('guard.reuse.after-reset', $refuses(fn () => Sql::translate(Sel::compile('N + 1'), 'probe-badguard', $named)));
+
 echo implode("\n", $out), "\n";

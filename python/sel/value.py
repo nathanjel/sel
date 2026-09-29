@@ -145,6 +145,8 @@ def _check_decimal(d: Any) -> Any:
 def _list_index(key: str, length: int) -> int:
     if not isinstance(key, str) or _LIST_KEY.fullmatch(key) is None:
         return -1
+    if len(key) > 18:       # no list is that long; and int() of a longer digit
+        return -1           # string can exceed the interpreter's own limit
     index = int(key) - 1
     return index if 0 <= index < length else -1
 
@@ -257,6 +259,10 @@ class Value:
     @scalar.setter
     def scalar(self, val: Any) -> None:
         self._scalar = val
+        # The text is the value; a decimal parsed from the previous text is a
+        # cache of it and is stale the moment the text changes -- arithmetic,
+        # comparison and EQL all read the cache first.
+        self._dec_val = None
 
     # --- kind predicates ------------------------------------------------------
     #
@@ -618,7 +624,7 @@ class Value:
 
     # --- copying --------------------------------------------------------------
 
-    def clone(self, pos: Pos | None = None) -> Value:
+    def clone(self, pos: Pos | None = None, depth: int = 1) -> Value:
         """Assignment copies by value: two variables never share structure (§5.7).
 
 A value's nesting is the third thing spec/SPEC.md §6.4 caps, after the
@@ -636,7 +642,7 @@ is refused. `pos` is reported when the caller has one -- the evaluator knows
 which node asked -- and is None for a call from host code, the same convention
 as as_text().
         """
-        return self._clone_at(1, pos)
+        return self._clone_at(depth, pos)
 
     def _clone_at(self, depth: int, pos: Pos | None) -> Value:
         if depth > MAX_DEPTH:

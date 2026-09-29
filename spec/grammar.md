@@ -125,8 +125,9 @@ second expression entry point.
 `x .> f(...)` or `x .> f` rewrites into a call to `f`:
 - If `f` is given without parentheses (`x .> f`) or with empty parentheses (`x .> f()`), `x` becomes its sole argument: `f(x)`.
 - If arguments are provided (`x .> f(a, b)`):
-  - If the number of provided arguments is at least `f`'s minimum arity and one of the top-level arguments is the bare placeholder `_`, that placeholder is replaced by `x`.
+  - If the number of provided arguments is at least `f`'s minimum arity and one of the top-level arguments is the bare placeholder `_`, that placeholder is replaced by `x`. Every top-level bare `_` is replaced, not only the first, and the replacement is textual: `x` is evaluated once per placeholder, in argument order, so `(N = N + 1) .> MAX(_, _)` increments `N` twice.
   - Otherwise, `x` is prepended as the first argument: `f(x, a, b)`.
+  - A function that binds a name (`FILTER`, `MAP`, `SORT_BY`, and the rest of the binding built-ins) never substitutes: its `_` is the binder, not a placeholder, so `x` is always prepended and `(1,2,3) .> FILTER(_ % 2 == 0)` keeps its binder.
 - If the right-hand side is not an identifier or function call, it is rejected with `E_SYNTAX`.
 Because `.>` is part of `postfix`, it binds with highest precedence alongside indexing `[ ]`, allowing expressions like `x .> f() > 0` and `a .> f() AND b .> g()` without parenthesising the pipeline.
 
@@ -147,6 +148,8 @@ make `"{A}"` yield `A` itself, so a literal could evaluate to a list or a boolea
 and skip the checks `&` performs. Two no-op concatenations are the cheaper side of
 that trade. The parse tree retains no other evidence that interpolation occurred.
 
-`{}` with an empty body is `E_SYNTAX`.
+`{}` with an empty body is `E_SYNTAX`. The body's parentheses and brackets must
+balance within the braces: a stray closer is `E_SYNTAX` at the closer, an opener
+still open at the `}` is `E_SYNTAX` at the `}`.
 
 Raw `'…'` literals are not scanned for interpolation.

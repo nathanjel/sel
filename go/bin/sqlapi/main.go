@@ -207,5 +207,53 @@ func main() {
 
 	say("host.spell.after-reset.local", sel.MustEval("HSLUG(\"A\")", nil).AsText(sel.Pos{}))
 
+	// --- rendering and registration state (T10) ----------------------------------
+	// The questions a snapshot of ONE translation cannot ask: what an unknown
+	// render mode does when there is nothing to bind, and whether a refused
+	// dialect stays refused. refuses collapses the host's own failure classes,
+	// which differ, to the one thing the contract says: the call did not produce
+	// SQL. Here a mode is an int, so an unknown NAME is refused where a name
+	// becomes a mode (ModeFromName).
+	refuses := func(fn func()) (res string) {
+		defer func() {
+			if r := recover(); r != nil {
+				res = "refused"
+			}
+		}()
+		fn()
+		return "accepted"
+	}
+	one := sql.NewBindings(map[string]*sql.Binding{
+		"C": sql.ColumnBinding("c", "t", sql.KindNum, false, false, false, "", "", false),
+	})
+	zero := sql.MustTranslate(sel.MustCompile("C > C"), "mariadb", one, sql.Options{})
+	onelit := sql.MustTranslate(sel.MustCompile("C > 1"), "mariadb", one, sql.Options{})
+	say("render.mode.valid.zero-slots", refuses(func() { zero.AsValue(sql.ModeFromName("params")) }))
+	say("render.mode.bogus.zero-slots", refuses(func() { zero.AsValue(sql.ModeFromName("bogus")) }))
+	say("render.mode.bogus.zero-slots.condition", refuses(func() { zero.AsCondition(sql.ModeFromName("bogus")) }))
+	say("render.mode.bogus.with-slot", refuses(func() {
+		sql.MustTranslate(sel.MustCompile("C > \"x\""), "mariadb", one, sql.Options{}).AsValue(sql.ModeFromName("bogus"))
+	}))
+	say("render.mode.bogus.literal-number", refuses(func() { onelit.AsValue(sql.ModeFromName("bogus")) }))
+	sql.DefineDialect("probe-badguard", map[string]interface{}{
+		"extends": "postgresql",
+		"version": "16",
+		"lexical": map[string]interface{}{
+			"numericGuard": "CASE WHEN ({textCast:0} ~ '^.*$') THEN CAST({0} AS NUMERIC) ELSE NULL END",
+		},
+	})
+	named := sql.NewBindings(map[string]*sql.Binding{
+		"N": sql.ColumnBinding("n", "t", sql.KindText, false, false, false, "", "", false),
+	})
+	for k := 1; k <= 3; k++ {
+		say(fmt.Sprintf("guard.reuse.%d", k), refuses(func() {
+			sql.MustTranslate(sel.MustCompile("N + 1"), "probe-badguard", named, sql.Options{})
+		}))
+	}
+	sql.Reset()
+	say("guard.reuse.after-reset", refuses(func() {
+		sql.MustTranslate(sel.MustCompile("N + 1"), "probe-badguard", named, sql.Options{})
+	}))
+
 	fmt.Println(strings.Join(out, "\n"))
 }

@@ -57,6 +57,15 @@ func Fail(code string, message string, pos Pos) {
 }
 
 // fail raises a SelError by panic. Recovered at top-level API boundaries.
+// isSelPanic reports whether a recovered value is a SEL error. Every probe that
+// swallows a failure ("does this coerce?", "can this be folded?") swallows only
+// that: a Go runtime error (nil dereference, index out of range) recovered by a
+// blanket recover() would be kept as "an error" and hidden from the tests.
+func isSelPanic(r any) bool {
+	_, ok := r.(*SelError)
+	return ok
+}
+
 func fail(code string, message string, pos Pos) {
 	Fail(code, message, pos)
 }

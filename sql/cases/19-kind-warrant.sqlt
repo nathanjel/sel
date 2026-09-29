@@ -192,7 +192,7 @@ mariadb
 --- source
 ANY(ITEMS, _["QTY"] == 25)
 --- expect
-EXISTS (SELECT 1 FROM `oi` `oi` WHERE `oi`.`o`=`o`.`id` AND ((CASE WHEN (`oi`.`qty` REGEXP '\\A-?[0-9]+(\\.[0-9]+)?\\z') THEN CAST(`oi`.`qty` AS DECIMAL(65,10)) ELSE NULL END = 25)) IS TRUE)
+EXISTS (SELECT 1 FROM `oi` `oi` WHERE (`oi`.`o`=`o`.`id`) AND ((CASE WHEN (`oi`.`qty` REGEXP '\\A-?[0-9]+(\\.[0-9]+)?\\z') THEN CAST(`oi`.`qty` AS DECIMAL(65,10)) ELSE NULL END = 25)) IS TRUE)
 ### name: warrant.numeric.abs-over-a-text-column
 --- note
 docs/internals/sql-kinds.md §4.1a. Every function that reads an argument as a number
@@ -274,11 +274,9 @@ LEFT("abc", T)
 --- expect
 LEFT('abc', CASE WHEN (`t` REGEXP '\\A-?[0-9]+(\\.[0-9]+)?\\z') THEN CAST(`t` AS DECIMAL(65,10)) ELSE NULL END)
 ===
-### name: notaddressed.an-aggregate-body-declared-text-is-refused
+### name: warrant.sum.a-declared-text-body-is-refused
 --- note
-The bare aggregate body wears the same hat. A DECLARED text field is refused by
-the aggregate's own kind check -- requireNum -- so only UNKNOWN passes, exactly
-as in the bool cell before the operator work closed it.
+A bare aggregate body is a numeric position. A DECLARED text field is refused by the aggregate's own kind check -- requireNum -- on the relation path and on the group path alike.
 --- dialect
 mariadb
 --- bindings
@@ -288,7 +286,9 @@ SUM(ITEMS, _["QTY"])
 --- error
 E_SQL_SHAPE
 ===
-### name: notaddressed.an-undeclared-aggregate-body-is-not-guarded
+### name: warrant.sum.unknown-body-is-guarded-as-a-whole
+--- note
+An UNKNOWN aggregate body is a numeric position (docs/internals/sql-kinds.md 5a) and is guarded ALL OR NOTHING: the SUM is NULL unless every element passes the numeric test. A per-element guard is not enough. SUM skips NULL and the layer's COALESCE(SUM(..), 0) turns "nothing left" into 0, so a row holding 'x' and '9' would sum to 9, and a row holding only 'n/a' to 0, where SEL raises E_NOT_NUM for both -- a definite answer for a row SEL refuses. COUNT(*) counts every element; the inner COUNT counts those that pass (a NULL element does not: SEL raises E_NO_SCALAR for a NONE). Names the operand twice, like every guard (warrant.raw.the-guard-evaluates-it-twice). (GO-C16, PHP-C27)
 --- dialect
 mariadb
 --- bindings
@@ -296,21 +296,67 @@ mariadb
 --- source
 SUM(ITEMS, _["QTY"])
 --- expect
-(SELECT COALESCE(SUM(`oi`.`qty`), 0) FROM `oi` `oi` WHERE `oi`.`o`=`o`.`id`)
+(SELECT CASE WHEN COUNT(*) = COUNT(CASE WHEN (`oi`.`qty` REGEXP '\\A-?[0-9]+(\\.[0-9]+)?\\z') THEN 1 END) THEN COALESCE(SUM(CAST(`oi`.`qty` AS DECIMAL(65,10))), 0) ELSE NULL END FROM `oi` `oi` WHERE (`oi`.`o`=`o`.`id`))
 ===
-### name: notaddressed.times-one-reaches-the-guard
+### name: warrant.sum.unknown-body-is-guarded-as-a-whole.postgresql
 --- note
-The workaround §4.1a offers, and the reason it is worth writing down: `* 1` is
-value-preserving in SEL, scale included, and it puts the operand through
-binary(), which is where guardNumeric lives.
+The same on PostgreSQL, through its own numeric test and cast (warrant.numeric.postgresql-asks-through-a-text-cast). SUM("qty") over text is a type error there, which is loud and acceptable, but the guarded form is what makes an UNKNOWN field usable.
+--- dialect
+postgresql
+--- bindings
+{"ITEMS": {"kind": "relation", "from": "oi", "alias": "oi", "fields": {"QTY": {"table": "oi", "column": "qty"}}, "correlate": "\"oi\".\"o\"=\"o\".\"id\""}}
+--- source
+SUM(ITEMS, _["QTY"])
+--- expect
+(SELECT CASE WHEN COUNT(*) = COUNT(CASE WHEN (CAST("oi"."qty" AS TEXT) ~ '^-?[0-9]+(\.[0-9]+)?$') THEN 1 END) THEN COALESCE(SUM(CAST("oi"."qty" AS NUMERIC)), 0) ELSE NULL END FROM "oi" "oi" WHERE ("oi"."o"="o"."id"))
+===
+### name: warrant.sum.unknown-body-sqlite-refuses
+--- note
+SQLite has no numeric test (warrant.numeric.sqlite-cannot-ask-and-refuses), so an UNKNOWN body is refused; declaring the field NUM translates it again. Measured on SQLite: SUM of 'abc' is 0.0, a definite answer where SEL raises. (GO-C16)
+--- dialect
+sqlite
+--- bindings
+{"ITEMS": {"kind": "relation", "from": "oi", "alias": "oi", "fields": {"QTY": {"table": "oi", "column": "qty"}}, "correlate": "\"oi\".\"o\"=\"o\".\"id\""}}
+--- source
+SUM(ITEMS, _["QTY"])
+--- error
+E_SQL_UNSUPPORTED
+===
+### name: warrant.sum.declared-num-body-is-not-guarded
+--- note
+CONTROL: a field declared NUM is the application's promise and is emitted as before.
 --- dialect
 mariadb
 --- bindings
-{"ITEMS": {"kind": "relation", "from": "oi", "alias": "oi", "fields": {"QTY": {"table": "oi", "column": "qty"}}, "correlate": "`oi`.`o`=`o`.`id`"}}
+{"ITEMS": {"kind": "relation", "from": "oi", "alias": "oi", "fields": {"QTY": {"table": "oi", "column": "qty", "type": "NUM"}}, "correlate": "`oi`.`o`=`o`.`id`"}}
 --- source
-SUM(ITEMS, _["QTY"] * 1)
+SUM(ITEMS, _["QTY"])
 --- expect
-(SELECT COALESCE(SUM((CASE WHEN (`oi`.`qty` REGEXP '\\A-?[0-9]+(\\.[0-9]+)?\\z') THEN CAST(`oi`.`qty` AS DECIMAL(65,10)) ELSE NULL END * 1)), 0) FROM `oi` `oi` WHERE `oi`.`o`=`o`.`id`)
+(SELECT COALESCE(SUM(`oi`.`qty`), 0) FROM `oi` `oi` WHERE (`oi`.`o`=`o`.`id`))
+===
+### name: warrant.sum.unknown-column-in-a-columns-unroll-is-guarded
+--- note
+A `columns` unroll is a chain of plain operands, and NULL propagates through `+`, so a per-operand guard IS sound here: one refused column makes the sum NULL. (GO-C16: was `(`u` + `n`)`.)
+--- dialect
+mariadb
+--- bindings
+{"COLS": {"kind": "columns", "items": [{"column": "u"}, {"column": "n", "type": "NUM"}]}}
+--- source
+SUM(COLS, _)
+--- expect
+(CASE WHEN (`u` REGEXP '\\A-?[0-9]+(\\.[0-9]+)?\\z') THEN CAST(`u` AS DECIMAL(65,10)) ELSE NULL END + `n`)
+===
+### name: warrant.sum.unknown-column-in-a-columns-unroll-sqlite-refuses
+--- note
+(GO-C16: SQLite answered 1 for u='abc', n=1, where SEL raises.)
+--- dialect
+sqlite
+--- bindings
+{"COLS": {"kind": "columns", "items": [{"column": "u"}, {"column": "n", "type": "NUM"}]}}
+--- source
+SUM(COLS, _)
+--- error
+E_SQL_UNSUPPORTED
 ===
 ### name: warrant.raw.the-guard-evaluates-it-twice
 --- note

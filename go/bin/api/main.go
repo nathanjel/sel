@@ -125,6 +125,15 @@ func main() {
 	say("program.run.reads.context", eval("TOTAL > 10.00", ctx).Dump())
 	eval("SEEN = TOTAL * 2", ctx)
 	say("program.run.mutates.context", ctx.Get("SEEN").AsText(sel.Pos{}))
+	// A BOOL a host hands in is an ordinary value (see tools/api.mjs, PHP-C1).
+	{
+		a, bb := sel.NewNone(), sel.NewNone()
+		a.Set("FLAG", sel.NewBool(true))
+		bb.Set("FLAG", sel.NewBool(true))
+		eval(`FLAG["k"] = 1; 0`, a)
+		say("bool.isolated.between.contexts", fmt.Sprintf("%d %d %s", bb.Get("FLAG").Size(),
+			sel.NewBool(true).Size(), eval("COUNT(TRUE)").AsText(sel.Pos{})))
+	}
 	say("registry.count", fmt.Sprintf("%d", len(sel.FunctionNames())))
 	say("registry.sorted.first", sel.FunctionNames()[0])
 
@@ -219,13 +228,13 @@ func main() {
 		}{
 			{"error.host.dec.fraccap", func() { numFromDec(decSpec{false, "1", 1000001}) }},
 			{"error.host.dec.negscale", func() { numFromDec(decSpec{false, "7", -1}) }},
+			// Through the public constructors: a record key is validated by Set, and
+			// a keyed list whose keys and values differ in count is malformed.
 			{"error.host.key.utf8", func() {
-				utf8.ValidateText(string([]byte{'a', 0xed, 0xa0, 0x80}), utf8.Pos{}, func(c, m string, p utf8.Pos) {
-					panic(&sel.SelError{Code: c, Message: m})
-				})
+				sel.NewNone().Set("a\xff", sel.NewText("1"))
 			}},
 			{"error.host.malformed", func() {
-				panic(&sel.SelError{Code: "E_BAD_ARG", Message: "malformed argument"})
+				sel.NewListWithKeys([]*sel.Value{sel.NewText("1")}, []string{})
 			}},
 		}
 

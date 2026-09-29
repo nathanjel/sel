@@ -142,6 +142,12 @@
     (declare (type fixnum size num-steps)
              (type simple-vector scratchpad steps)
              (dynamic-extent scratchpad))
+    (macrolet ((opnd (slot pos)
+                 ;; A slot holds either a Dec an operation produced or a value a
+                 ;; load left as evaluated; the latter is coerced here, where the
+                 ;; plain tree coerces it.
+                 `(let ((x (svref scratchpad ,slot)))
+                    (if (dec-p x) x (as-dec x ,pos)))))
     (loop for i from 0 below num-steps
           do (let* ((step (svref steps i))
                     (op (math-step-op step))
@@ -155,8 +161,9 @@
                     (unless v
                       (fail "E_UNDEF_VAR" (format nil "undefined variable ~a" (math-step-name step))
                             (math-step-pos step)))
-                    (setf (svref scratchpad dst)
-                          (as-dec v (math-step-pos step)))))
+                    ;; Stored as evaluated; the operation that consumes it coerces
+                    ;; it (SPEC 6.2, evaluate then coerce).
+                    (setf (svref scratchpad dst) v)))
 
                  (:load-const
                   (setf (svref scratchpad dst) (math-step-const-val step)))
@@ -164,65 +171,69 @@
                  (:load-leaf
                   (let* ((leaf (math-step-leaf-node step))
                          (v (eval-node leaf ctx)))
-                    (setf (svref scratchpad dst)
-                          (as-dec v (node-pos leaf)))))
+                    (setf (svref scratchpad dst) v)))
+
+                 (:coerce
+                  (setf (svref scratchpad dst)
+                        (opnd (math-step-src1 step) (math-step-pos1 step))))
 
                  (:add
                   (setf (svref scratchpad dst)
-                        (dec-add (svref scratchpad (math-step-src1 step))
-                                 (svref scratchpad (math-step-src2 step))
+                        (dec-add (opnd (math-step-src1 step) (math-step-pos1 step))
+                                 (opnd (math-step-src2 step) (math-step-pos2 step))
                                  (math-step-pos step))))
 
                  (:sub
                   (setf (svref scratchpad dst)
-                        (dec-sub (svref scratchpad (math-step-src1 step))
-                                 (svref scratchpad (math-step-src2 step))
+                        (dec-sub (opnd (math-step-src1 step) (math-step-pos1 step))
+                                 (opnd (math-step-src2 step) (math-step-pos2 step))
                                  (math-step-pos step))))
 
                  (:mul
                   (setf (svref scratchpad dst)
-                        (dec-mul (svref scratchpad (math-step-src1 step))
-                                 (svref scratchpad (math-step-src2 step))
+                        (dec-mul (opnd (math-step-src1 step) (math-step-pos1 step))
+                                 (opnd (math-step-src2 step) (math-step-pos2 step))
                                  (math-step-pos step))))
 
                  (:div
                   (setf (svref scratchpad dst)
-                        (dec-div (svref scratchpad (math-step-src1 step))
-                                 (svref scratchpad (math-step-src2 step))
+                        (dec-div (opnd (math-step-src1 step) (math-step-pos1 step))
+                                 (opnd (math-step-src2 step) (math-step-pos2 step))
                                  (math-step-pos step))))
 
                  (:mod
                   (setf (svref scratchpad dst)
-                        (dec-mod (svref scratchpad (math-step-src1 step))
-                                 (svref scratchpad (math-step-src2 step))
+                        (dec-mod (opnd (math-step-src1 step) (math-step-pos1 step))
+                                 (opnd (math-step-src2 step) (math-step-pos2 step))
                                  (math-step-pos step))))
 
                  (:neg
                   (setf (svref scratchpad dst)
-                        (dec-negate (svref scratchpad (math-step-src1 step)))))
+                        (dec-negate (opnd (math-step-src1 step) (math-step-pos1 step)))))
 
                  (:abs
                   (setf (svref scratchpad dst)
-                        (dec-abs (svref scratchpad (math-step-src1 step)))))
+                        (dec-abs (opnd (math-step-src1 step) (math-step-pos1 step)))))
 
                  (:sign
-                  (let ((s (dec-sign (svref scratchpad (math-step-src1 step)))))
+                  (let ((s (dec-sign (opnd (math-step-src1 step) (math-step-pos1 step)))))
                     (setf (svref scratchpad dst) (dec-from-int s))))
 
                  (:ceil
                   (setf (svref scratchpad dst)
-                        (dec-ceil (svref scratchpad (math-step-src1 step)))))
+                        (dec-ceil (opnd (math-step-src1 step) (math-step-pos1 step)) (math-step-pos step))))
 
                  (:floor
                   (setf (svref scratchpad dst)
-                        (dec-floor (svref scratchpad (math-step-src1 step)))))
+                        (dec-floor (opnd (math-step-src1 step) (math-step-pos1 step)) (math-step-pos step))))
 
                  (:trunc
                   (setf (svref scratchpad dst)
-                        (dec-trunc (svref scratchpad (math-step-src1 step)))))
+                        (dec-trunc (opnd (math-step-src1 step) (math-step-pos1 step)))))
 
                  (:round
-                  (let ((d2 (svref scratchpad (math-step-src2 step))))
+                  (let* ((d1 (opnd (math-step-src1 step) (math-step-pos1 step)))
+                         (d2 (opnd (math-step-src2 step) (math-step-pos2 step))))
                     (unless (dec-integerp d2)
                       (fail "E_NOT_INT" "ROUND argument 2 must be a whole number" (math-step-aux-pos step)))
                     (let ((n (dec-to-int d2)))
@@ -231,10 +242,11 @@
                       (when (> n 1000000)
                         (fail "E_RANGE" (format nil "ROUND scale ~d exceeds the maximum of 1000000" n) (math-step-aux-pos step)))
                       (setf (svref scratchpad dst)
-                            (dec-round (svref scratchpad (math-step-src1 step)) n (math-step-pos step))))))
+                            (dec-round d1 n (math-step-pos step))))))
 
                  (:power
-                  (let ((d2 (svref scratchpad (math-step-src2 step))))
+                  (let* ((d1 (opnd (math-step-src1 step) (math-step-pos1 step)))
+                         (d2 (opnd (math-step-src2 step) (math-step-pos2 step))))
                     (unless (dec-integerp d2)
                       (fail "E_NOT_INT" "POWER argument 2 must be a whole number" (math-step-aux-pos step)))
                     (let ((n (dec-to-int d2)))
@@ -243,17 +255,17 @@
                       (when (> n 100000)
                         (fail "E_RANGE" (format nil "POWER exponent ~d exceeds the maximum of 100000" n) (math-step-aux-pos step)))
                       (setf (svref scratchpad dst)
-                            (dec-power (svref scratchpad (math-step-src1 step)) n (math-step-pos step))))))
+                            (dec-power d1 n (math-step-pos step))))))
 
                  (:min
-                  (let ((a (svref scratchpad (math-step-src1 step)))
-                        (b (svref scratchpad (math-step-src2 step))))
+                  (let ((a (opnd (math-step-src1 step) (math-step-pos1 step)))
+                        (b (opnd (math-step-src2 step) (math-step-pos2 step))))
                     (setf (svref scratchpad dst) (if (minusp (dec-cmp b a)) b a))))
 
                  (:max
-                  (let ((a (svref scratchpad (math-step-src1 step)))
-                        (b (svref scratchpad (math-step-src2 step))))
-                    (setf (svref scratchpad dst) (if (plusp (dec-cmp b a)) b a)))))))
+                  (let ((a (opnd (math-step-src1 step) (math-step-pos1 step)))
+                        (b (opnd (math-step-src2 step) (math-step-pos2 step))))
+                    (setf (svref scratchpad dst) (if (plusp (dec-cmp b a)) b a))))))))
     (make-num (svref scratchpad (math-plan-output-slot plan)))))
 
 (defun eval-dispatch (node ctx)
@@ -270,7 +282,17 @@
                (node-pos node))))
 
     (:index
-     (let* ((obj (eval-node (node-l node) ctx))
+     ;; An index over a bare variable reads the variable in place: the index costs
+     ;; its level and the variable none (SPEC 6.4). Every host reads it that way,
+     ;; so `A["a"] AND A["a"] AND ...` reaches the cap one level later than
+     ;; counting the variable as a node of its own would; the boundary is pinned
+     ;; by lim.eval-depth.aggregate-body-*.
+     (let* ((l (node-l node))
+            (obj (if (eq (node-kind l) :var)
+                     (or (ctx-lookup ctx (node-s l))
+                         (fail "E_UNDEF_VAR" (format nil "undefined variable ~a" (node-s l))
+                               (node-pos l)))
+                     (eval-node l ctx)))
             (r (node-r node))
             (key (if (eq (node-kind r) :text)
                      (node-s r)
@@ -305,10 +327,13 @@
         (n 0))
     (dolist (item (node-items node) out)
       (let ((v (eval-node item ctx)))
+        ;; The cap counts what the list WILL hold, the flattened children of a
+        ;; collection operand included, and is checked before they are copied.
+        (check-collection-cap (+ n (max 1 (value-size v))) (node-pos node))
         (if (and (eq (value-kind v) :none) (plusp (value-size v)))
             (dolist (child (value-values v))
-              (value-set out (format nil "~d" (incf n)) (value-copy child)))
-            (value-set out (format nil "~d" (incf n)) (value-copy v)))))))
+              (value-set out (format nil "~d" (incf n)) (value-copy-at child 2 (node-pos node))))
+            (value-set out (format nil "~d" (incf n)) (value-copy-at v 2 (node-pos node))))))))
 
 (defun eval-unary (node ctx)
   (let ((v (eval-node (node-l node) ctx)))
@@ -334,15 +359,19 @@
         (t (fail "E_SYNTAX" (format nil "unknown comparison operator ~a" op) pos))))
 
 ;;; TEXT & TEXT stays TEXT; anything involving BIN becomes BIN (§5.2).
-(defun sel-concat (l r lp rp)
+(defun sel-concat (l r lp rp &optional pos)
   (let ((lv (scalar-source l lp))
         (rv (scalar-source r rp)))
     (when (eq (value-kind lv) :bool) (fail "E_NOT_TEXT" "cannot concatenate a boolean" lp))
     (when (eq (value-kind rv) :bool) (fail "E_NOT_TEXT" "cannot concatenate a boolean" rp))
     (if (and (eq (value-kind lv) :text) (eq (value-kind rv) :text))
-        (%text (concatenate 'string (value-scalar lv) (value-scalar rv)))
+        (let ((a (value-scalar lv))
+              (b (value-scalar rv)))
+          (check-text-cap (+ (length a) (length b)) pos)
+          (%text (concatenate 'string a b)))
         (let ((a (as-bytes l lp))
               (b (as-bytes r rp)))
+          (check-text-cap (+ (length a) (length b)) pos)
           (make-bin (concatenate '(vector (unsigned-byte 8)) a b))))))
 
 (defun value-in (needle hay)
@@ -402,7 +431,7 @@
                            ((string= op "/") (dec-div a b (node-pos node)))
                            (t (dec-mod a b (node-pos node)))))))
 
-        ((string= op "&") (sel-concat l r lp rp))
+        ((string= op "&") (sel-concat l r lp rp (node-pos node)))
 
         ((string= op "EQL") (make-bool (value-eql l r (node-pos node))))
         ((string= op "IN") (make-bool (value-in l r)))
@@ -505,7 +534,10 @@
          (upto (1- (length path)))
          (value
            (if (string= (node-s node) "=")
-               (value-copy (eval-node (node-r node) ctx) (node-pos node))
+               ;; The stored value sits at the end of PATH, so its own nesting
+               ;; counts from there: target path plus value depth is what the
+               ;; cap bounds (§6.4), reported at the target like the path alone.
+               (value-copy-at (eval-node (node-r node) ctx) (length path) (node-pos (node-l node)))
                (let ((current (value-get (walk-create ctx path upto) key)))
                  (unless current
                    (fail "E_UNDEF_VAR"
@@ -516,7 +548,7 @@
                        (tp (node-pos (node-l node)))
                        (vp (node-pos (node-r node))))
                    (if (char= binop #\&)
-                       (sel-concat current rhs tp vp)
+                       (sel-concat current rhs tp vp (node-pos node))
                        (let* ((a (as-dec current tp))
                               (b (as-dec rhs vp)))
                          (make-num (case binop

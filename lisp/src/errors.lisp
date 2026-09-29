@@ -42,3 +42,22 @@
 ;;; this file loads before every other and none loads before it, and because the
 ;;; number and the E_DEPTH it raises are the same fact.
 (defconstant +max-depth+ +limit-max-depth+)   ; spec/limits.json, checked against the spec text
+
+
+;;; The size caps of SPEC 6.4. A result that would be longer than MAX_TEXT_LEN
+;;; (code points of TEXT, bytes of BIN) or hold more than MAX_COLLECTION children
+;;; is E_RANGE at the node that builds it, decided from the length the result
+;;; WOULD have, before anything is allocated: a host that allocates first dies on
+;;; the request it was meant to refuse. An empty result is never too large, and
+;;; callers arrange that a count that merely clamps never reaches these.
+(defun check-text-cap (len pos)
+  (when (> len +limit-max-text-len+)
+    (fail "E_RANGE"
+          (format nil "the result would be longer than ~d" +limit-max-text-len+)
+          pos)))
+
+(defun check-collection-cap (n pos)
+  (when (> n +limit-max-collection+)
+    (fail "E_RANGE"
+          (format nil "the result would have more than ~d elements" +limit-max-collection+)
+          pos)))

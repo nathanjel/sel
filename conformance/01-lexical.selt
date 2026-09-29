@@ -222,3 +222,84 @@ error E_SYNTAX at 1:5
 --- expect
 error E_SYNTAX at 1:5
 ===
+
+### name: lex.interp.unbalanced-close
+--- note
+An interpolation body is its own unit: its parentheses must balance inside the
+braces (SPEC §2). Spliced raw, `"{1) + (2}"` closed the parenthesis the lexer
+opens around the body and reopened one of its own, and evaluated to 3. The
+error is at the stray closer.
+--- source
+"{1) + (2}"
+--- expect
+error E_SYNTAX at 1:4
+===
+
+### name: lex.interp.unbalanced-close-in-call
+--- note
+The same splice inside an argument list turned one argument into two:
+`COUNT("{1), (2}")` was 2.
+--- source
+COUNT("{1), (2}")
+--- expect
+error E_SYNTAX at 1:10
+===
+
+### name: lex.interp.unbalanced-close-discards-text
+--- note
+Before the rule the literal text around the body was silently dropped as well:
+`"a{1);(2}"` was 2.
+--- source
+"a{1);(2}"
+--- expect
+error E_SYNTAX at 1:5
+===
+
+### name: lex.interp.unbalanced-open
+--- note
+An opener still open at the closing brace is `E_SYNTAX` at that brace. It used
+to be an error only by accident, at the end of the input, because the missing
+parenthesis was found there.
+--- source
+"{(1}"
+--- expect
+error E_SYNTAX at 1:5
+===
+
+### name: lex.interp.unbalanced-bracket-mismatch
+--- note
+Brackets balance separately from parentheses: a `]` cannot close a `(`.
+--- source
+"{(1]}"
+--- expect
+error E_SYNTAX at 1:5
+===
+
+### name: lex.interp.unbalanced-inner-first
+--- note
+A nested literal's body is checked when that literal is lexed, before the
+enclosing body has finished, so the innermost error is the one reported.
+--- source
+"{ (1 + "x{(}") }"
+--- expect
+error E_SYNTAX at 1:13
+===
+
+### name: lex.interp.balanced-nested
+--- note
+The control: balanced bodies, including a nested literal with its own
+parentheses inside a parenthesised body, are unaffected.
+--- source
+"{(1) + "{(2)}"}"
+--- expect
+text "3"
+===
+
+### name: lex.interp.balanced-with-index
+--- note
+Brackets inside a body balance like parentheses.
+--- source
+A = (10, 20); "{A[2]}"
+--- expect
+text "20"
+===

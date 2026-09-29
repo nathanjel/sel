@@ -88,9 +88,9 @@ func main() {
 				}
 				got = decimal.Format(decimal.Round(a, places, dummyPos, failFn))
 			case "floor":
-				got = decimal.Format(decimal.Floor(a))
+				got = decimal.Format(decimal.Floor(a, dummyPos, failFn))
 			case "ceil":
-				got = decimal.Format(decimal.Ceil(a))
+				got = decimal.Format(decimal.Ceil(a, dummyPos, failFn))
 			case "trunc":
 				got = decimal.Format(decimal.Trunc(a))
 			default:

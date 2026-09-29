@@ -70,6 +70,7 @@ export class Value {
   static bin(b: Uint8Array | ArrayLike<number>): Value;
   static bool(b: boolean): Value;
   /** A decimal string ("007" becomes "7"), or a decimal in SEL's own form. */
+  /** A decimal record must have a boolean `neg`; it is copied. */
   static num(d: string | Decimal): Value;
   static int(n: number | bigint): Value;
   static list(values: Value[]): Value;
@@ -105,9 +106,14 @@ export class Value {
   dump(): string;
   dumpAt(depth: number): string;
 
+  /** Plain objects, arrays (holes are NULL), strings, booleans, bigints, whole numbers,
+   * Uint8Array, null/undefined. A fraction (a float), a Date, Map, Set, typed array
+   * other than Uint8Array or a class instance is E_BAD_ARG (spec §8). */
   static fromNative(x: any): Value;
   static fromNativeAt(x: any, depth: number): Value;
 
+  /** A record whose position-like keys ("0", "2", "10") are not first and ascending has
+   * no native form (a JS object would reorder them): E_BAD_ARG. Use entries() for it. */
   toNative(): any;
   toNativeAt(depth: number): any;
 }

@@ -8,6 +8,27 @@
 
 import { fail } from './errors.mjs';
 
+// --- source positions ---------------------------------------------------------
+
+// Passed as `pos` where the text being decoded IS the program source: an invalid
+// unit is then reported where it stands (SPEC §2), counted in code points of the
+// valid prefix, rather than with no position at all.
+export const SOURCE = Symbol('source');
+
+// The line, column and offset of the code point that would come next after `cps`
+// (the code points decoded so far), all in code points, 1-based line and column.
+function positionAfter(cps) {
+  let line = 1, lineStart = 0;
+  for (let i = 0; i < cps.length; i++) {
+    if (cps[i] === 10) { line++; lineStart = i + 1; }
+  }
+  return { line, col: cps.length - lineStart + 1, offset: cps.length };
+}
+
+function at(pos, cps) {
+  return pos === SOURCE ? positionAfter(cps) : pos;
+}
+
 // --- code points ------------------------------------------------------------
 
 // A JS string with an unpaired surrogate has no UTF-8 encoding, so it cannot be
@@ -18,11 +39,11 @@ export function toCodePoints(str, pos) {
     const c = str.charCodeAt(i);
     if (c >= 0xd800 && c <= 0xdbff) {
       const d = i + 1 < str.length ? str.charCodeAt(i + 1) : 0;
-      if (d < 0xdc00 || d > 0xdfff) fail('E_UTF8', 'unpaired high surrogate', pos);
+      if (d < 0xdc00 || d > 0xdfff) fail('E_UTF8', 'unpaired high surrogate', at(pos, out));
       out.push(0x10000 + ((c - 0xd800) << 10) + (d - 0xdc00));
       i++;
     } else if (c >= 0xdc00 && c <= 0xdfff) {
-      fail('E_UTF8', 'unpaired low surrogate', pos);
+      fail('E_UTF8', 'unpaired low surrogate', at(pos, out));
     } else {
       out.push(c);
     }
@@ -63,6 +84,12 @@ export function encodeUtf8(str, pos) {
   return Uint8Array.from(out);
 }
 
+// The bytes of a source file as source text: strict, no replacement character,
+// no newline translation, and an invalid unit is E_UTF8 at its position.
+export function decodeSource(bytes) {
+  return decodeUtf8(bytes, SOURCE);
+}
+
 // Strict: rejects overlong forms, surrogates, values above U+10FFFF and
 // truncated sequences. No replacement characters, ever.
 export function decodeUtf8(bytes, pos) {
@@ -93,18 +120,18 @@ export function decodeUtf8(bytes, pos) {
     } else if (b === 0xf4) {
       need = 3; cp = 4; lo = 0x80; hi = 0x8f;      // cap at U+10FFFF
     } else {
-      fail('E_UTF8', `invalid start byte 0x${b.toString(16)} at byte ${i}`, pos);
+      fail('E_UTF8', `invalid start byte 0x${b.toString(16)} at byte ${i}`, at(pos, cps));
     }
 
     if (i + need >= n) {
-      fail('E_UTF8', `truncated sequence at byte ${i}`, pos);
+      fail('E_UTF8', `truncated sequence at byte ${i}`, at(pos, cps));
     }
     for (let k = 1; k <= need; k++) {
       const c = bytes[i + k];
       const min = k === 1 ? lo : 0x80;
       const max = k === 1 ? hi : 0xbf;
       if (c < min || c > max) {
-        fail('E_UTF8', `invalid continuation byte at byte ${i + k}`, pos);
+        fail('E_UTF8', `invalid continuation byte at byte ${i + k}`, at(pos, cps));
       }
       cp = (cp << 6) | (c & 0x3f);
     }

@@ -91,6 +91,14 @@ semi-seq|eval|400000|'1' + ';1' * N
 prefix-neg|eval|400000|'-' * N + '1'
 prefix-not|eval|400000|'NOT ' * N + 'TRUE'
 assign-chain|eval|400000|'A=' * N + '1'
+coalesce-chain|eval|300000|'1' + ' ?? 1' * N
+vacuous-chain|eval|300000|'1' + ' ??? 1' * N
+coalesce-null-chain|eval|300000|'NULL' + ' ?? NULL' * N + ' ?? 5'
+interp-nest|eval|100000|'"{' * N + '1' + '}"' * N
+interp-unterminated|eval|1000000|'"{' * N
+interp-stray-closers|eval|100000|'"{' + '1' + ')' * N + '}"'
+pipe-chain|eval|200000|'LIST(1,2)' + ' .> SORT' * N
+pipe-nest|eval|100000|'1' + ' .> MAX(1' * N + ')' * N
 nested-paren|eval|400000|'(' * N + '1' + ')' * N
 nested-index|eval|200000|'a[' * N + '1' + ']' * N
 value-deep-write|eval|200000|'A' + '[1]' * N + '=1; B = A; C = (B EQL A); C'

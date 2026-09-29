@@ -19,9 +19,9 @@
 (define-builtin "SIGN" 1 1
   (lambda (a ctx) (declare (ignore ctx)) (make-int (dec-sign (args-dec a 0)))))
 (define-builtin "CEIL" 1 1
-  (lambda (a ctx) (declare (ignore ctx)) (make-num (dec-ceil (args-dec a 0)))))
+  (lambda (a ctx) (declare (ignore ctx)) (make-num (dec-ceil (args-dec a 0) (args-pos a)))))
 (define-builtin "FLOOR" 1 1
-  (lambda (a ctx) (declare (ignore ctx)) (make-num (dec-floor (args-dec a 0)))))
+  (lambda (a ctx) (declare (ignore ctx)) (make-num (dec-floor (args-dec a 0) (args-pos a)))))
 (define-builtin "TRUNC" 1 1
   (lambda (a ctx) (declare (ignore ctx)) (make-num (dec-trunc (args-dec a 0)))))
 (define-builtin "CANON" 1 1

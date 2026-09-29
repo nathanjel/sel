@@ -220,7 +220,15 @@ def _make_relation(base: dict[str, Any], alias: Any, fields: Any,
                            'column binding')
         # ascii_upper, matching PHP's strtoupper: str.upper() would fold "ß" to
         # "SS" and change the key's length.
-        out[ascii_upper(str(name))] = b.spec
+        key = ascii_upper(str(name))
+        # Two fields whose names differ only by ASCII case are one SEL name (a
+        # binder's field lookup is case-insensitive), so the second would silently
+        # replace the first.
+        if key in out:
+            raise SqlError('E_SQL_BINDING',
+                           f'the fields of a relation binding include {name}, which '
+                           'differs from another field only by case')
+        out[key] = b.spec
     if scalar is not None and ascii_upper(scalar) not in out:
         raise SqlError('E_SQL_BINDING',
                        f'a relation binding names {scalar} as its scalar, which is '
@@ -261,11 +269,17 @@ def _check_name(what: str, v: Any) -> None:
                        'dialect can quote')
 
 
+# What a column can be. LIST and STATEMENT are fragment kinds -- what an
+# expression may yield mid-translation -- and no column holds either; declared as
+# one, the guards read them as certain and the operand went to the server bare.
+COLUMN_TYPES = tuple(k for k in FRAGMENT_KINDS if k not in ('LIST', 'STATEMENT'))
+
+
 def _check_type(t: Any) -> None:
-    if not isinstance(t, str) or t not in FRAGMENT_KINDS:
+    if not isinstance(t, str) or t not in COLUMN_TYPES:
         raise SqlError('E_SQL_BINDING',
                        f'a binding has type {t}; use one of '
-                       + ', '.join(FRAGMENT_KINDS))
+                       + ', '.join(COLUMN_TYPES))
 
 
 def _check_numeric(where: str, v: Value) -> None:

@@ -30,7 +30,7 @@ func init() {
 		Min:  1,
 		Max:  1,
 		Fn: func(args *Args, ctx *Context) *Value {
-			return NewNum(decimal.Ceil(args.Dec(0)))
+			return NewNum(decimal.Ceil(args.Dec(0), args.Pos(), fail))
 		},
 	})
 
@@ -39,7 +39,7 @@ func init() {
 		Min:  1,
 		Max:  1,
 		Fn: func(args *Args, ctx *Context) *Value {
-			return NewNum(decimal.Floor(args.Dec(0)))
+			return NewNum(decimal.Floor(args.Dec(0), args.Pos(), fail))
 		},
 	})
 
@@ -66,8 +66,11 @@ func init() {
 		Min:  2,
 		Max:  2,
 		Fn: func(args *Args, ctx *Context) *Value {
+			// Argument 1 is coerced before argument 2 (SPEC §6.2: strictly left
+			// to right once every argument has been evaluated).
+			x := args.Dec(0)
 			scale := CheckSizedInt(args.Dec(1), "ROUND", 2, MaxScale, "ROUND scale", args.PosOf(1))
-			return NewNum(decimal.Round(args.Dec(0), scale, args.Pos(), fail))
+			return NewNum(decimal.Round(x, scale, args.Pos(), fail))
 		},
 	})
 
@@ -76,8 +79,9 @@ func init() {
 		Min:  2,
 		Max:  2,
 		Fn: func(args *Args, ctx *Context) *Value {
+			x := args.Dec(0)
 			exp := CheckSizedInt(args.Dec(1), "POWER", 2, MaxPower, "POWER exponent", args.PosOf(1))
-			return NewNum(decimal.Power(args.Dec(0), exp, args.Pos(), fail))
+			return NewNum(decimal.Power(x, exp, args.Pos(), fail))
 		},
 	})
 

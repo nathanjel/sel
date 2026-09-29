@@ -127,10 +127,10 @@ check_group "sql dialect map" "node tools/gen-sql-map.mjs" \
   -- \
   php/src/Sql/MapData.php python/sel/sql/_map.py js/src/sql/_map.mjs \
   cpp/sel_sql_map_data.cpp lisp/src/sql/map-data.lisp \
-  go/sel/sql/map_data_gen.go \
+  go/sel/sql/map_data_gen.go rust/src/sql/map_data.rs \
   php/bin/MapReplay.php python/bin/map_replay.py js/bin/map-replay.mjs \
   cpp/bin/map_replay.cpp lisp/bin/map-replay.lisp \
-  go/bin/sqlreplay/replay_data_gen.go
+  go/bin/sqlreplay/replay_data_gen.go rust/src/bin/map_replay_data.rs
 
 # The builtin manifest: names, arities, extra arity rules and lazy/binds flags,
 # authored once and rendered into the table each host checks itself against at
@@ -142,6 +142,7 @@ check_group "builtin manifest" "node tools/gen-builtins.mjs" \
   js/src/_builtin_manifest.mjs python/sel/_builtin_manifest.py \
   php/src/BuiltinManifest.php cpp/sel_builtin_manifest.hpp \
   lisp/src/builtin-manifest.lisp go/internal/manifest/builtins.go \
+  rust/src/manifest/builtins.rs \
   docs/reference/builtins.md
 
 # The math-operation manifest: what the native math plans compile, authored
@@ -151,6 +152,7 @@ check_group "math-operation manifest" "node tools/gen-math-ops.mjs" \
   -- \
   js/src/_math_ops.mjs python/sel/_math_ops.py php/src/MathOps.php \
   cpp/sel_math_ops.hpp lisp/src/math-ops.lisp go/internal/mathops/math_ops.go \
+  rust/src/math_ops.rs \
   docs/internals/math-ops.md
 
 # The limits and error catalogue, checked against the spec text and rendered
@@ -160,6 +162,7 @@ check_group "limits and error catalogue" "node tools/gen-limits.mjs" \
   -- \
   js/src/_limits.mjs python/sel/_limits.py php/src/Limits.php \
   cpp/sel_limits.hpp lisp/src/limits.lisp go/internal/limits/limits.go \
+  rust/src/limits.rs \
   docs/reference/limits.md
 
 # The SQL case tables, so a clone can run the suite without Node.
@@ -168,7 +171,7 @@ check_group "sql case data" "node tools/gen-sql-cases.mjs" \
   -- \
   php/bin/CaseData.php python/bin/case_data.py js/bin/case-data.mjs \
   cpp/bin/case_data.cpp lisp/bin/case-data.lisp \
-  go/bin/sqlt/case_data_gen.go
+  go/bin/sqlt/case_data_gen.go rust/src/bin/sqlt/case_data.rs
 
 # The support desk's PostgreSQL seed, rendered from the SEL program that
 # examples/memory-complex runs in memory: stale, and the two examples would be

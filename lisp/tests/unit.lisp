@@ -1322,8 +1322,10 @@ X .> MAP(COUNT(X) + _[\"id\"]
          (phys (sel:program-physical-ast prog))
          (plan (sel::node-math-plan phys)))
     (is (not (null plan)))
-    ;; Only 1 step: LOAD_VAR
-    (is (= 1 (length (sel::math-plan-steps plan))))
+    ;; Two steps: LOAD_VAR, and the coercion the elided `+ 0` would have done --
+    ;; where it would have done it, so an error in a later operand is still found
+    ;; after it (SPEC 6.2, evaluate then coerce).
+    (is (= 2 (length (sel::math-plan-steps plan))))
     (let ((ctx (sel:make-none)))
       (sel:value-set ctx "X" (sel:make-num "42"))
       (is (string= "42" (sel:as-text (sel:run prog ctx))))
@@ -1345,7 +1347,7 @@ X .> MAP(COUNT(X) + _[\"id\"]
          (phys (sel:program-physical-ast prog))
          (plan (sel::node-math-plan phys)))
     (is (not (null plan)))
-    (is (= 1 (length (sel::math-plan-steps plan))))
+    (is (= 2 (length (sel::math-plan-steps plan))))
     (let ((ctx (sel:make-none)))
       (sel:value-set ctx "X" (sel:make-num "7"))
       (is (string= "7" (sel:as-text (sel:run prog ctx))))))
@@ -1355,7 +1357,7 @@ X .> MAP(COUNT(X) + _[\"id\"]
          (phys (sel:program-physical-ast prog))
          (plan (sel::node-math-plan phys)))
     (is (not (null plan)))
-    (is (= 1 (length (sel::math-plan-steps plan))))
+    (is (= 2 (length (sel::math-plan-steps plan))))
     (let ((ctx (sel:make-none)))
       (sel:value-set ctx "X" (sel:make-num "5"))
       (is (string= "5" (sel:as-text (sel:run prog ctx))))))
@@ -1600,3 +1602,450 @@ run of the program that built it, not a value set with the caller's string."
         (a (sel:from-native (list (cons "x" "1") (cons "y" "2")))))
     (is (string= "t\"1\"" (sel:value-dump (sel:run p (list (cons "A" a) (cons "K" "x"))))))
     (is (string= "t\"2\"" (sel:value-dump (sel:run p (list (cons "A" a) (cons "K" "y"))))))))
+
+;;; --- E_UTF8 in source carries a position (spec/SPEC.md section 2; LISP-C31) ---
+
+(defun utf8-error-position (fn)
+  "(code line col offset) of the sel-error FN signals, or :none."
+  (handler-case (progn (funcall fn) :none)
+    (sel:sel-error (e) (list (sel:sel-error-code e) (sel:sel-error-line e)
+                             (sel:sel-error-col e) (sel:sel-error-offset e)))))
+
+(defun source-octets (&rest bytes)
+  (make-array (length bytes) :element-type '(unsigned-byte 8) :initial-contents bytes))
+
+(test source-utf8-error-position
+  ;; An invalid unit is reported where its sequence starts, counted in code
+  ;; points of the valid prefix, with lines ending at LF only.
+  (flet ((at (&rest bytes)
+           (utf8-error-position (lambda () (sel::decode-utf8 (apply #'source-octets bytes) nil t)))))
+    (is (equal '("E_UTF8" 1 1 0) (at #xff)))
+    (is (equal '("E_UTF8" 1 3 2) (at #x22 #x61 #xff #x62)))
+    ;; a two-byte character before it counts once
+    (is (equal '("E_UTF8" 1 3 2) (at #x22 #xc5 #x82 #xff)))
+    ;; line 2, after LF; a CR is not a line end
+    (is (equal '("E_UTF8" 2 4 7) (at #x31 #x20 #x2b #x0a #x20 #x22 #x61 #xff)))
+    (is (equal '("E_UTF8" 2 2 4) (at #x61 #x0d #x0a #x62 #xff)))
+    (is (equal '("E_UTF8" 1 4 3) (at #x61 #x0d #x0d #xff)))
+    ;; truncated, overlong, encoded surrogate, above U+10FFFF: at the start byte
+    (is (equal '("E_UTF8" 1 2 1) (at #x22 #xe2 #x82)))
+    (is (equal '("E_UTF8" 1 2 1) (at #x22 #xc0 #x80 #x22)))
+    (is (equal '("E_UTF8" 1 2 1) (at #x22 #xed #xa0 #x80 #x22)))
+    (is (equal '("E_UTF8" 1 2 1) (at #x22 #xf4 #x90 #x80 #x80)))
+    ;; a valid string decodes, and the failure position is NOT used without :source
+    (is (string= "zażółć" (sel::decode-utf8 (sel::encode-utf8 "zażółć") nil t)))
+    (is (equal '("E_UTF8" 0 0 0)
+               (utf8-error-position (lambda () (sel::decode-utf8 (source-octets #xff))))))))
+
+(test source-lone-surrogate-position
+  (flet ((at (string) (utf8-error-position (lambda () (sel:compile-source string)))))
+    (is (equal '("E_UTF8" 1 5 4)
+               (at (concatenate 'string "1 + " (string (code-char #xd800))))))
+    (is (equal '("E_UTF8" 2 2 5)
+               (at (concatenate 'string "1 +" (string #\Newline) " "
+                                (string (code-char #xdc00)) "2"))))))
+
+(defun run-cli (shell-line)
+  "Stdout+stderr of SHELL-LINE run from the repository root, and the exit code."
+  (let* ((root (merge-pathnames "../" (asdf:system-source-directory :sel-lang)))
+         (out (make-string-output-stream))
+         (p (sb-ext:run-program "/bin/bash" (list "-c" shell-line)
+                                :directory root :output out :error out :input nil)))
+    (values (string-trim '(#\Newline) (get-output-stream-string out))
+            (sb-ext:process-exit-code p))))
+
+(defun starts-with-p (prefix s)
+  (and (>= (length s) (length prefix)) (string= prefix s :end2 (length prefix))))
+
+(test cli-reads-source-as-bytes
+  (flet ((cli (printf-body &optional (how "file"))
+           ;; PRINTF-BODY is a printf format for the source bytes.
+           (run-cli (if (string= how "file")
+                        (format nil "f=$(mktemp); printf '~a' > $f; lisp/bin/sel $f; rc=$?; rm -f $f; exit $rc" printf-body)
+                        (format nil "lisp/bin/sel -e \"$(printf '~a')\"" printf-body)))))
+    (dolist (how '("file" "arg"))
+      (is (starts-with-p "E_UTF8 at line 2 column 4:" (cli "1 +\\n \"a\\xffb\"" how))
+          "invalid byte on line 2 (~a)" how)
+      (is (starts-with-p "E_UTF8 at line 1 column 2:" (cli "\"\\xe2\\x82" how))
+          "truncated sequence (~a)" how))
+    ;; CRLF and CR inside a literal are part of it; a CR is not a line end
+    (is (string= "4" (cli "LEN(\"a\\r\\nb\")")))
+    (is (starts-with-p "E_SYNTAX at line 2 column 1:" (cli "A = 1 # c\\r+ 2\\r\\nA")))))
+
+;;; --- T02/T03 review batch (2026-09-29) --------------------------------------
+
+(defun scalar-of (source) (sel::value-scalar (sel:evaluate source)))
+
+(test dec-format-ignores-the-embedders-printer-variables
+  ;; LISP-C22: with *print-radix* bound, every number rendered to text came out as
+  ;; "12345." -- the embedder's setting leaking into a language rule.
+  (let ((*print-radix* t) (*print-base* 16) (*read-base* 16))
+    (is (string= "12345" (sel::dec-format (sel::dec-parse "12345"))))
+    (is (string= "1.50" (sel::value-scalar (sel::make-num "1.50"))))
+    (is (string= "-255.5" (sel::dec-format (sel::dec-parse "-255.5"))))
+    (is (string= "1000000000000000000000000000000"
+                 (sel::dec-format (sel::dec-parse "1000000000000000000000000000000"))))
+    (is (string= "0.0000000001" (scalar-of "1 / 10000000000")))
+    (is (string= "256" (sel::value-scalar (sel::make-int 256))))))
+
+(test make-int-cap-guard-uses-integers-only
+  ;; LISP-C45: the bit-length prefilter must agree with the digit cap exactly at
+  ;; the boundary, and must not be a float constant.
+  (is (null (nth-value 1 (ignore-errors (sel::make-int (1- (expt 10 1000000)))))))
+  (raises "E_RANGE" (sel::make-int (expt 10 1000000)))
+  (raises "E_RANGE" (sel::make-int (- (expt 10 1000000))))
+  (is (integerp (sel::int-guard-bits)))
+  (is (<= (expt 2 (sel::int-guard-bits)) (expt 10 999999))))
+
+(test ceil-and-floor-carry-past-the-digit-cap-is-positioned
+  ;; A maximum-size 999...9.5 carries into one digit too many; the error is at
+  ;; the call (1:1), not at 0:0.
+  (dolist (fn '("CEIL" "FLOOR"))
+    (let ((sign (if (string= fn "FLOOR") "\"-\" & " "")))
+      (is (equal '("E_RANGE" 1 1)
+                 (handler-case (progn (sel:evaluate (format nil "~a(~aREPEAT(\"9\",1000000) & \".5\")" fn sign)) nil)
+                   (sel:sel-error (e) (list (sel:sel-error-code e) (sel:sel-error-line e) (sel:sel-error-col e)))))))))
+
+(test record-with-16-fields-does-not-poison-the-shape-cache
+  ;; LISP-C2: adding a key to a 16-field record wrote a cons cell into the shape's
+  ;; shared key map, so a later record built from the same 16 keys claimed the
+  ;; added key and reading it failed with an array-index error.
+  (let ((keys (loop for i from 1 to 16 collect (format nil "K~d" i))))
+    (flet ((build () (format nil "RECORD(~{\"~a\", 1~^, ~})" keys)))
+      (is (string= "FALSE" (dump-of (format nil "R = ~a; R[\"Z\"] = 5; S = ~a; HAS(S, \"Z\")" (build) (build)))))
+      (raises "E_NO_KEY" (sel:evaluate (format nil "R = ~a; R[\"Z\"] = 5; S = ~a; S[\"Z\"]" (build) (build))))
+      (is (string= "17" (scalar-of (format nil "R = ~a; R[\"Z\"] = 5; COUNT(R)" (build)))))
+      (is (string= "5" (scalar-of (format nil "R = ~a; R[\"Z\"] = 5; R[\"Z\"]" (build))))))))
+
+(test aggregates-copy-what-they-collect
+  ;; §3.4: MAP/FILTER/SORT*/TOP*/BUCKET results share nothing with the source.
+  (dolist (src '("X = LIST(RECORD(\"k\",1)); MAP(X, _)[(X[1][\"k\"] = 9; 1)][\"k\"]"
+                 "X = LIST(RECORD(\"k\",1)); FILTER(X, TRUE)[(X[1][\"k\"] = 9; 1)][\"k\"]"
+                 "X = LIST(RECORD(\"k\",1)); SORT(X)[(X[1][\"k\"] = 9; 1)][\"k\"]"
+                 "X = LIST(RECORD(\"k\",1)); SORT_BY(X, 1)[(X[1][\"k\"] = 9; 1)][\"k\"]"
+                 "X = LIST(RECORD(\"k\",1)); TOP(X, 1)[(X[1][\"k\"] = 9; 1)][\"k\"]"
+                 "X = LIST(RECORD(\"k\",1)); BUCKET(X, _[\"k\"], _)[(X[1][\"k\"] = 9; 1)][1][\"k\"]"))
+    (is (string= "1" (scalar-of src)) "~a" src))
+  ;; and the half of the table that aliases elements still does
+  (is (string= "9" (scalar-of "X = LIST(RECORD(\"k\",1)); TAKE(X, 1)[(X[1][\"k\"] = 9; 1)][\"k\"]"))))
+
+(test assignment-and-constructors-count-value-depth
+  ;; LISP-C33: target path plus the depth of the stored value is what the cap
+  ;; bounds; a constructor is reported at its own node.
+  (flet ((chain (n) (format nil "~{~a~}" (make-list n :initial-element "[1]"))))
+    (is (string= "7" (scalar-of (format nil "A~a = 1; B~a = A; 7" (chain 150) (chain 49)))))
+    (raises "E_DEPTH" (sel:evaluate (format nil "A~a = 1; B~a = A; 7" (chain 150) (chain 50))))
+    (raises "E_DEPTH" (sel:evaluate (format nil "A~a = 1; LIST(A); 7" (chain 199))))
+    (is (string= "7" (scalar-of (format nil "A~a = 1; LIST(A); 7" (chain 198)))))
+    (raises "E_DEPTH" (sel:evaluate (format nil "A~a = 1; RECORD(\"k\", A); 7" (chain 199))))
+    (raises "E_DEPTH" (sel:evaluate (format nil "A = 1; A~a = 1; (A, 2); 7" (chain 199))))))
+
+(test from-native-refuses-malformed-lists-with-e-bad-arg
+  ;; LISP-C32: never a CL TYPE-ERROR.
+  (raises "E_BAD_ARG" (sel:from-native '(("a" . 1) 5)))
+  (raises "E_BAD_ARG" (sel:from-native '(("a" . 1) (2 . 3))))
+  (raises "E_BAD_ARG" (sel:from-native (list* 1 2 3)))
+  (raises "E_BAD_ARG" (sel:from-native '((1 . 2))))
+  (raises "E_BAD_ARG" (sel:from-native (list (cons "a" 1) nil)))
+  (let ((circular (list 1 2)))
+    (setf (cdr (last circular)) circular)
+    (raises "E_BAD_ARG" (sel:from-native circular)))
+  ;; the controls still convert
+  (is (string= "-{\"a\"=t\"1\", \"b\"=t\"2\"}"
+               (sel:value-dump (sel:from-native '(("a" . 1) ("b" . 2))))))
+  (is (= 3 (sel:value-size (sel:from-native '(1 2 3))))))
+
+(test register-builtin-is-guarded
+  ;; LISP-C34: register-builtin used to replace any function, COUNT included,
+  ;; for the whole process, and skipped every check register-function makes.
+  (flet ((count-still-counts ()
+           (is (string= "3" (sel:as-text (sel:evaluate "COUNT(LIST(1,2,3))"))))))
+    (signals error (sel:register-builtin "count" 1 1 (lambda (a c) (declare (ignore a c)) (sel:make-int 42))))
+    (signals error (sel:register-builtin "COUNT" 1 1 (lambda (a c) (declare (ignore a c)) (sel:make-int 42)) :overwrite t))
+    (count-still-counts)
+    (signals error (sel:register-builtin "NOT" 1 1 (lambda (a c) (declare (ignore a c)) (sel:make-int 1))))   ; reserved
+    (signals error (sel:register-builtin "1BAD" 1 1 (lambda (a c) (declare (ignore a c)) (sel:make-int 1))))  ; malformed
+    (signals error (sel:register-builtin "GUARD_ARITY" 2 1 (lambda (a c) (declare (ignore a c)) (sel:make-int 1))))
+    (signals error (sel:register-builtin "GUARD_FN" 1 1 :not-a-function))
+    ;; A new name works; it can be replaced by its owner, and not with :overwrite nil.
+    (sel:register-builtin "GUARD_OWN" 0 0 (lambda (a c) (declare (ignore a c)) (sel:make-int 1)))
+    (is (string= "1" (sel:as-text (sel:evaluate "GUARD_OWN()"))))
+    (sel:register-builtin "GUARD_OWN" 0 0 (lambda (a c) (declare (ignore a c)) (sel:make-int 2)))
+    (is (string= "2" (sel:as-text (sel:evaluate "GUARD_OWN()"))))
+    (signals error (sel:register-builtin "GUARD_OWN" 0 0 (lambda (a c) (declare (ignore a c)) (sel:make-int 3))
+                                         :overwrite nil))
+    (is (string= "2" (sel:as-text (sel:evaluate "GUARD_OWN()"))))
+    (count-still-counts)))
+
+(test join-state-does-not-outlive-a-caught-error
+  ;; LISP-C44 (unconfirmed as a defect; hardening): the prefilter a FILTER hands a
+  ;; join and the report a join hands back live in the context. An error caught
+  ;; by `??` between the two must leave neither behind.
+  (let* ((ctx-root (sel:evaluate "RECORD('L', LIST(RECORD('k', 1), RECORD('k', 2)), 'R', LIST(RECORD('k', 1)))"))
+         (ctx (sel::make-context ctx-root))
+         (prog (sel:compile-source
+                "FILTER(LINK(LINK(L, R, _1['k'] == _2['k']), NOSUCH, _1['k'] == _2['k']), TRUE) ?? 0")))
+    (sel::eval-node (sel:program-physical-ast prog) ctx)
+    (is (null (sel::context-join-prefilter ctx)))
+    (is (null (sel::context-join-prefilter-report ctx)))
+    ;; and the same context still evaluates a join normally afterwards
+    (let ((again (sel::eval-node (sel:program-physical-ast
+                                  (sel:compile-source "COUNT(LINK(L, R, _1['k'] == _2['k']))"))
+                                 ctx)))
+      (is (string= "1" (sel:as-text again))))))
+
+(test aggregate-sort-of-a-scalar-is-one-element
+  ;; A scalar is one element (SPEC 7.3): SORT/SORT_BY/TOP* of it evaluate the key
+  ;; and return a one-element list, where the Lisp host returned an empty list.
+  (is (string= "1" (sel:as-text (sel:evaluate "5 .> SORT() .> COUNT()"))))
+  (is (string= "1" (sel:as-text (sel:evaluate "5 .> SORT_BY(_) .> COUNT()"))))
+  (is (string= "1" (sel:as-text (sel:evaluate "5 .> TOP_BY(_, 1) .> COUNT()"))))
+  (is (string= "0" (sel:as-text (sel:evaluate "NULL .> SORT() .> COUNT()"))))
+  (is (string= "0" (sel:as-text (sel:evaluate "LIST() .> SORT_BY(_) .> COUNT()"))))
+  (raises "E_NO_KEY" (sel:evaluate "5 .> SORT_BY(_['z']) .> TAKE(0)")))
+
+(test math-plan-evaluates-then-coerces
+  ;; LISP-C13 / SPEC 6.2: every operand is evaluated before any is coerced, in
+  ;; the plan as in the tree; the plan is a pure optimisation.
+  (flet ((code-at (source)
+           (handler-case (progn (sel:evaluate source) nil)
+             (sel:sel-error (e) (list (sel:sel-error-code e) (sel:sel-error-col e))))))
+    (is (equal '("E_UNDEF_VAR" 11) (code-at "MAX(TRUE, U)")))
+    (is (equal '("E_UNDEF_VAR" 13) (code-at "MIN(1, \"x\", U)")))
+    (is (equal '("E_DIV_ZERO" 11) (code-at "\"abc\" + (1/0)")))
+    ;; the coercion that a copy-propagated `x + 0` would have done still happens,
+    ;; at the operand, before a later operand is evaluated
+    (is (equal '("E_NOT_NUM" 1) (code-at "\"x\" + 0 + U")))
+    ;; a variable read is the value itself: a later operand's mutation is seen
+    (is (string= "12" (sel:as-text (sel:evaluate "A = LIST(1,2); A + LEN((A[1] = 10))"))))))
+
+(test optimizer-keeps-error-order-and-positions
+  (flet ((code-at (source)
+           (handler-case (progn (sel:evaluate source) nil)
+             (sel:sel-error (e) (list (sel:sel-error-code e) (sel:sel-error-col e))))))
+    ;; FILTER+FILTER: a second predicate that can be E_NOT_BOOL is not fused
+    (is (equal '("E_DIV_ZERO" 25) (code-at "LIST(1,2,3) .> FILTER(1 / (_ - 3) < 0) .> FILTER(_)")))
+    ;; SORT_BY + TAKE fuses only for a literal count >= 1; keys are evaluated first
+    (is (equal '("E_NO_KEY" 33) (code-at "LIST(RECORD('a',1)) .> SORT_BY(_['z']) .> TAKE(0)")))
+    (is (equal '("E_NO_KEY" 33) (code-at "LIST(RECORD('a',1)) .> SORT_BY(_['z']) .> TAKE(U)")))
+    ;; a parent reports an error at the node it saw, not at a fused replacement
+    (is (equal '("E_NOT_BOOL" 5) (code-at "NOT TAKE(TAKE(LIST(1), 3), 2)")))
+    (is (equal '("E_NOT_BOOL" 5) (code-at "NOT FILTER(LIST(1), TRUE)")))
+    ;; TAKE(n) with a literal count still becomes TOP_BY
+    (let ((opt (sel:optimize-ast (sel:program-ast
+                                  (sel:compile-source "DATA .> SORT_BY(_['x']) .> TAKE(5)")))))
+      (is (string= "TOP_BY" (sel::node-s opt))))
+    (let ((opt (sel:optimize-ast (sel:program-ast
+                                  (sel:compile-source "DATA .> SORT_BY(_['x']) .> TAKE(0)")))))
+      (is (string= "TAKE" (sel::node-s opt))))))
+
+(test index-over-a-variable-costs-no-level-for-the-variable
+  ;; SPEC 6.4 / lim.eval-depth.aggregate-body-*: `A["a"] + A["a"] + ...` reaches
+  ;; the cap one level later than counting the variable as a node would.
+  (flet ((chain (n) (format nil "T = RECORD('a', 1); ~{~a~^ + ~}"
+                            (loop repeat n collect "T['a']"))))
+    (is (string= "198" (sel:as-text (sel:evaluate (chain 198)))))
+    (raises "E_DEPTH" (sel:evaluate (chain 400)))))
+
+(test plain-and-optimised-evaluation-agree
+  ;; T00-B for this host: the same source through the plain parse tree
+  ;; (program-ast, evaluated as written) and through run (the optimised physical
+  ;; tree, math plans included) must give the same value dump, or the same error
+  ;; code and position, and leave the same final context -- twice on one program.
+  (flet ((outcome (fn source)
+           (let* ((root (sel:evaluate "RECORD('T', LIST(RECORD('a',1), RECORD('a',2)), 'S', 'x', 'N', 5)"))
+                  (ctx (sel::make-context root))
+                  (result (handler-case
+                              (sel:value-dump (funcall fn (sel:compile-source source) ctx))
+                            (sel:sel-error (e)
+                              (list (sel:sel-error-code e) (sel:sel-error-line e) (sel:sel-error-col e))))))
+             (list result (sel:value-dump root)))))
+    (let ((plain (lambda (prog ctx) (sel::eval-node (sel:program-ast prog) ctx)))
+          (optimised (lambda (prog ctx) (sel::eval-node (sel:program-physical-ast prog) ctx))))
+      (dolist (source '("N + 1" "S + 1" "S + N" "MAX(TRUE, U)" "MIN(1, S, U)" "ROUND(S, U)" "ROUND(N, S)"
+                        "POWER(N, S)" "S + 0" "0 + S" "N * 1" "S * 1" "(S + 0) + U" "-S" "ABS(S)"
+                        "N + LEN((N = 7))" "A = 1; A + (A = 2)"
+                        "T .> SORT_BY(_['a']) .> TAKE(1)" "T .> SORT_BY(_['z']) .> TAKE(0)"
+                        "T .> SORT_BY(_['a']) .> TAKE(U)" "T .> SORT_BY(_['a'], 'DESC') .> TAKE(1)"
+                        "T .> FILTER(1 / (_['a'] - 2) < 0) .> FILTER(_)"
+                        "T .> FILTER(_['a'] > 0) .> FILTER(_['a'] < 2)"
+                        "NOT TAKE(TAKE(T, 2), 1)" "NOT FILTER(T, TRUE)" "T .> FILTER(TRUE) .> TAKE(1)"
+                        "T .> MAP(RECORD('b', _['a'])) .> SORT_BY(_['zz']) .> FILTER(FALSE) .> TAKE(1)"
+                        "S .> SORT() .> COUNT()" "N .> SORT_BY(_['z']) .> TAKE(0)"))
+        (is (equal (outcome plain source) (outcome optimised source))
+            "~a: plain and optimised evaluation differ" source)
+        ;; and a second run of the same Program object is no different
+        (let* ((prog (sel:compile-source source)))
+          (is (equal (outcome (lambda (p c) (declare (ignore p)) (sel::eval-node (sel:program-physical-ast prog) c)) source)
+                     (outcome (lambda (p c) (declare (ignore p)) (sel::eval-node (sel:program-physical-ast prog) c)) source))))))))
+
+;;; --- T05 / T06 / T07 (relational edges, regex portability, size caps) ---------
+
+(defun code-of (source)
+  "The error code and position a program ends in, or its dump when it does not."
+  (handler-case (dump-of source)
+    (sel:sel-error (e) (list (sel:sel-error-code e) (sel:sel-error-line e) (sel:sel-error-col e)))))
+
+(test aggregates-visit-a-snapshot-of-their-source
+  ;; SPEC 7.3: a key the body adds is not visited (the walk used to chase the live
+  ;; child chain and exhaust the heap), and a child it overwrites is visited as it
+  ;; was.
+  (is (string= "2" (sel:as-text (sel:evaluate "A = (1, 2); COUNT(MAP(A, A[COUNT(A) + 1] = 0))"))))
+  (is (string= "3" (sel:as-text (sel:evaluate "R = RECORD(\"a\", 1); R[\"b\"] = 2; R[\"c\"] = 3; COUNT(MAP(R, R[_K & \"x\"] = 1))"))))
+  (is (string= "3" (sel:as-text (sel:evaluate "R = RECORD(\"a\", 1, \"b\", 2); SUM(R, x, (R[\"b\"] = 10; x))"))))
+  (is (string= "1,2" (sel:as-text (sel:evaluate "A = (1, 2); JOIN(MAP(A, (A[2] = 9; _)), \",\")")))))
+
+(test total-order-ranks-kinds-then-compares-within-a-rank
+  ;; SPEC 7.3: NULL < BOOL < numeric-looking text < other text < BIN, so a mixed
+  ;; list sorts the same whatever order it is handed over in.
+  (is (string= "9,10,,1a"
+               (sel:as-text (sel:evaluate "JOIN(SORT(LIST(\"10\", \"9\", \"1a\", \"\")), \",\")"))))
+  (is (string= "9,10,,1a"
+               (sel:as-text (sel:evaluate "JOIN(SORT(LIST(\"1a\", \"\", \"9\", \"10\")), \",\")"))))
+  (is (< (sel::compare-values (sel:make-int 5) (sel::%text "a")) 0))
+  (is (< (sel::compare-values (sel::%text "a") (sel:make-bin (coerce #(0) '(vector (unsigned-byte 8))))) 0))
+  (is (zerop (sel::compare-values (sel::%text "007") (sel:make-int 7)))))
+
+(test sort-direction-and-top-count-are-checked-on-an-empty-list
+  ;; SPEC 7.4: evaluated and rejected whatever the list holds.
+  (is (equal '("E_BAD_ARG" 1 25) (code-of "SORT_BY(LIST(), _[\"k\"], \"X\")")))
+  (is (equal '("E_BAD_ARG" 1 18) (code-of "SORT_BY(NULL, _, \"X\")")))
+  (is (equal '("E_BAD_ARG" 1 19) (code-of "TOP_BY(LIST(), _, \"X\", 1)")))
+  ;; a huge count is the whole list, not a make-array failure
+  (is (string= "3" (sel:as-text (sel:evaluate "COUNT(TOP(LIST(3, 1, 2), 1000000000000000000000000000000))")))))
+
+(test bucket-two-argument-groups-by-index-key-text
+  (is (string= "2,2"
+               (sel:as-text (sel:evaluate
+                             "R = BUCKET(LIST(RECORD(\"k\", 1), RECORD(\"k\", \"1\"), RECORD(\"k\", 2)), _[\"k\"]); JOIN(LIST(COUNT(R), COUNT(R[\"1\"])), \",\")"))))
+  ;; a scalar is one element
+  (is (string= "1" (sel:as-text (sel:evaluate "COUNT(BUCKET(5, _))"))))
+  ;; identity grouping survives a decimal cache warmed by arithmetic
+  (is (string= "3" (sel:as-text (sel:evaluate
+                                 "X = \"5\"; Y = X * 1; JOIN(BUCKET(LIST(X, \"5\", 5), _, COUNT(_)), \",\")")))))
+
+(test join-keys-and-binders
+  ;; one binder name on both sides is one name: the right shadows the left, so no
+  ;; key is taken from the left row
+  (is (string= "4" (sel:as-text (sel:evaluate "P = LIST(RECORD(\"k\", 1), RECORD(\"k\", 1)); Q = LIST(RECORD(\"k\", 1), RECORD(\"k\", 1)); COUNT(LINK(P, Q, x, x, x[\"k\"] == x[\"k\"]))"))))
+  ;; an operand that reads both binders through `,` `;` or `=` is not one-sided
+  (is (string= "1" (sel:as-text (sel:evaluate "LINK(LIST(RECORD(\"k\", 1)), LIST(RECORD(\"k\", 1)), (_1[\"k\"], _2[\"k\"]) == _1[\"k\"]) .> COUNT"))))
+  (is (string= "2" (sel:as-text (sel:evaluate "R = LIST(RECORD(\"id\", 1)); S = LIST(RECORD(\"id\", 2), RECORD(\"id\", 3)); COUNT(LINK(R, S, A, B, (N = B[\"id\"]) == B[\"id\"]))"))))
+  ;; a key past the digit cap is E_RANGE on the fast path, as `==` is
+  (is (equal "E_RANGE"
+             (first (code-of "BIG = PADL(\"9\", 1000005, \"9\"); LINK(LIST(RECORD(\"a\", \"1\")), LIST(RECORD(\"b\", BIG)), _1[\"a\"] == _2[\"b\"]) .> COUNT()")))))
+
+(test regex-shape-rules
+  (flet ((bad (pattern) (is (equal "E_REGEX_SYNTAX" (first (code-of (format nil "RMATCH('~a', \"a\")" pattern)))) "~a" pattern))
+         (ok (pattern) (is (equal "T" (string-upcase (let ((v (code-of (format nil "IS_NULL(RGROUPS('~a', \"\")) OR TRUE" pattern)))) (if (listp v) "ERR" "T")))) "~a" pattern)))
+    ;; P1: nullable loop bodies
+    (dolist (p '("(a*)*" "(?:a?)+" "(|a)+" "(a*?)+" "(?:^)*a" "(?:a*){2,3}")) (bad p))
+    (dolist (p '("(\\d*)?" "(?:a|b)+" "(a*)")) (ok p))
+    ;; P2: a loop's captures must all take part in every iteration
+    (dolist (p '("(?:(a)|b)*" "(?:(a)|(b))+" "(?:(a)?b)+" "(?:x(a)?)+")) (bad p))
+    (dolist (p '("(a|b)+" "((a)b)+" "(\\d+,)+")) (ok p))
+    ;; quantified anchors, POSIX bracket forms, class escapes as range ends
+    (dolist (p '("^*" "$+" "^{2}" "a$?" "[[:alpha:]]" "[a[:digit:]" "[[.x.]]" "[a[=x=]]"
+                 "[+-\\d]" "[\\d-z]" "[\\w-.]" "[a-\\s]"))
+      (bad p))
+    (dolist (p '("[[.]" "[\\d-]" "[-\\d]" "[\\w.-]" "[\\d.]")) (ok p))))
+
+(test regex-limits-and-flags
+  (is (equal "E_REGEX_SYNTAX" (first (code-of "RMATCH(REPEAT('(?:', 201) & 'a' & REPEAT(')', 201), \"a\")"))))
+  (is (equal "TRUE" (dump-of-bool "RMATCH(REPEAT('(?:', 200) & 'a' & REPEAT(')', 200), \"a\")")))
+  (is (equal "E_REGEX_SYNTAX" (first (code-of "RMATCH('^' & REPEAT('(a)', 1001) & '$', REPEAT(\"a\", 1001))"))))
+  (is (equal "E_REGEX_SYNTAX" (first (code-of "RMATCH('^' & REPEAT('a', 65535) & '$', REPEAT(\"a\", 65535))"))))
+  ;; `i` and nothing else: not `I`
+  (is (equal "E_BAD_ARG" (first (code-of "RMATCH('a', \"a\", \"I\")"))))
+  ;; a literal pattern is checked when the program is compiled
+  (raises "E_REGEX_SYNTAX" (sel:compile-source "IF(FALSE, RMATCH('(?=a)', \"a\"), 1)"))
+  (raises "E_REGEX_SYNTAX" (sel:compile-source "\"a\" .> RMATCH('^*', _)"))
+  (is (sel:compile-source "IF(FALSE, RMATCH(P, \"a\"), 1)")))
+
+(defun ax-verdict (pattern &optional ic)
+  "The exponential-ambiguity rule (SPEC 7.8) alone: :ACCEPT or :REJECT."
+  (handler-case (progn (sel::check-regex-pattern pattern ic nil nil) :accept)
+    (sel:sel-error (e)
+      (if (string= (sel:sel-error-code e) "E_REGEX_SYNTAX") :reject (error e)))))
+
+(test regex-exponential-ambiguity
+  ;; LISP-C19: cl-ppcre backtracks, so `(a+)+$` on a long non-match ran for minutes.
+  ;; The rule refuses such a pattern when the program compiles.
+  (dolist (p '("(a+)+$" "(a|aa)+$" "(a|b|ab)*c" "(.+)+x" "([a-z]+)*$" "(\\w+\\s?)*$"
+               "(?:x|xx|xxx)+y" "(a+){2,}$" "(?:a{1,20}){1,20}b" "(?:(?:a*)?c)*d"
+               "(?:a|a)*$" "^(?:a|b|ab)+$"))
+    (is (eq :reject (ax-verdict p)) "~a" p))
+  (dolist (p '("(\\d+,)+" "(?:ab|cd)*" "(\\w+\\s)*" "([a-z]+-)*[a-z]+" "(?:a|b)*" "a*b*c*"
+               "^(?:ab|a)*$" "(?:foo|foobar)*" "^(a{300}){300}$" "(?:a{60000}){60000}"
+               "^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$" "a*a*$" ""))
+    (is (eq :accept (ax-verdict p)) "~a" p))
+  ;; `i` folds the sets before the analysis: these overlap only under it
+  (dolist (p '("(?:a|A)+$" "(?:[a-z]|[A-Z])+$" "^[a-z]*(?:[a-c]|[A-C])+$"))
+    (is (eq :reject (ax-verdict p t)) "~a (i)" p)
+    (is (eq :accept (ax-verdict p nil)) "~a" p))
+  ;; the ambiguity budget: exactly at the limit, and one step over
+  (flet ((rep (s n) (apply #'concatenate 'string (loop repeat n collect s))))
+    (is (eq :accept (ax-verdict (concatenate 'string (rep "(a|a)" 8) "x"))))
+    (is (eq :reject (ax-verdict (concatenate 'string (rep "(a|a)" 9) "x"))))
+    (is (eq :accept (ax-verdict (concatenate 'string (rep "(?:|)" 16) "x"))))
+    (is (eq :reject (ax-verdict (concatenate 'string (rep "(?:|)" 17) "x"))))
+    (is (eq :accept (ax-verdict (concatenate 'string (rep "a?" 7) "b"))))
+    (is (eq :reject (ax-verdict (concatenate 'string (rep "a?" 8) "b")))))
+  (is (eq :accept (ax-verdict "(?:a|a){1,8}$")))
+  (is (eq :reject (ax-verdict "(?:a|a){1,9}$")))
+  ;; through the language: refused at compile time, in a branch that never runs
+  (raises "E_REGEX_SYNTAX" (sel:compile-source "IF(FALSE, RMATCH('(a+)+$', \"a\"), 1)"))
+  (raises "E_REGEX_SYNTAX" (sel:compile-source "IF(FALSE, RMATCH('*a', \"a\"), 1)"))
+  ;; and the hostile subject that used to hang is now an error, at once
+  (let ((start (get-internal-real-time)))
+    (is (equal "E_REGEX_SYNTAX"
+               (first (code-of "RMATCH('^(a+)+$', REPEAT(\"a\", 40) & \"!\")"))))
+    (is (< (/ (- (get-internal-real-time) start) internal-time-units-per-second) 5)))
+  ;; the analysis itself is bounded on big legal patterns
+  (let ((start (get-internal-real-time)))
+    (is (eq :accept (ax-verdict (make-string 60000 :initial-element #\a))))
+    (is (< (/ (- (get-internal-real-time) start) internal-time-units-per-second) 10))))
+
+(defun dump-of-bool (source) (if (eq t (sel::value-scalar (sel:evaluate source))) "TRUE" (dump-of source)))
+
+(test regex-cache-is-bounded
+  (clrhash sel::*regex-cache*)
+  (setf sel::*regex-cache-order* '())
+  (dotimes (i 400)
+    (sel:evaluate (format nil "RMATCH('a{~d}', \"a\")" (1+ i))))
+  (is (<= (hash-table-count sel::*regex-cache*) 256))
+  (is (= (hash-table-count sel::*regex-cache*) (length sel::*regex-cache-order*))))
+
+(test regex-anchor-then-dotstar-and-long-subjects
+  ;; cl-ppcre's dotall `.*` loses the empty match after an end anchor
+  (is (equal "TRUE" (dump-of-bool "RMATCH('$.*', \"abc\")")))
+  (is (string= "4" (sel:as-text (sel:evaluate "RFIND('$.*', \"abc\")"))))
+  ;; a match whose recursion outgrows the default stack is run again on a big one
+  (is (equal "TRUE" (dump-of-bool "RMATCH('^(?:ab|a)*$', REPEAT(\"ab\", 60000))")))
+  (is (equal "TRUE" (dump-of-bool "RMATCH('^(a){20000}$', REPEAT(\"a\", 20000))"))))
+
+(test size-caps-refuse-before-allocating
+  ;; SPEC 6.4: E_RANGE at the node that builds the value, from the length it would
+  ;; have; an empty result is never too large.
+  (is (equal '("E_RANGE" 1 1) (code-of "REPEAT(\"a\", 16777217)")))
+  (is (equal '("E_RANGE" 1 1) (code-of "REPEAT(\"a\", 99999999999999999999999999999)")))
+  (is (string= "" (sel:as-text (sel:evaluate "REPEAT(\"\", 99999999999999999999999999999)"))))
+  (is (string= "16777216" (sel:as-text (sel:evaluate "LEN(REPEAT(\"a\", 16777216))"))))
+  (is (equal '("E_RANGE" 1 1) (code-of "PADL(\"a\", 16777217, \"x\")")))
+  (is (equal '("E_RANGE" 1 23) (code-of "REPEAT(\"a\", 16777216) & \"b\"")))
+  (is (equal '("E_RANGE" 1 1) (code-of "REPLACE(\"a\", REPEAT(\"b\", 4000000), REPEAT(\"a\", 5))")) "no growth here, so no error"))
+
+(test collection-caps
+  (is (equal '("E_RANGE" 1 7) (code-of "COUNT(SPLIT(REPEAT(\"a,\", 1000000) & \"a\", \",\"))")))
+  (is (string= "1000000" (sel:as-text (sel:evaluate "COUNT(SPLIT(REPEAT(\"a,\", 999999) & \"a\", \",\"))"))))
+  (is (equal '("E_RANGE" 1 7) (code-of "COUNT(BTL(TO_UTF8(REPEAT(\"a\", 1000001))))")))
+  (is (equal '("E_RANGE" 1 8)
+             (code-of "COUNT((SPLIT(REPEAT(\"a,\", 599999) & \"a\", \",\"), SPLIT(REPEAT(\"a,\", 599999) & \"a\", \",\")))"))))
+
+(test ltb-of-empty-and-scaled-integral-values
+  (is (string= "0" (sel:as-text (sel:evaluate "BLEN(LTB(BTL(\"\")))"))))
+  (is (string= "" (sel:as-text (sel:evaluate "TO_HEX(LTB(LIST()))"))))
+  (is (string= "4101" (sel:as-text (sel:evaluate "TO_HEX(LTB(LIST(65, 1.0)))"))))
+  (is (string= "ff" (sel:as-text (sel:evaluate "TO_HEX(LTB(LIST(255.00)))"))))
+  (is (equal '("E_NOT_INT" 1 5) (code-of "LTB(LIST(1.5))")))
+  (is (equal '("E_RANGE" 1 5) (code-of "LTB(LIST(256.0))"))))

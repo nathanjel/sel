@@ -72,9 +72,18 @@ def define_dialect(name: str, spec: dict[str, Any]) -> None:
     Raises RuntimeError, not SqlError: a malformed registration is a mistake in
     the application's startup, and ``try_translate`` must not swallow it.
     """
+    replacing = False
     if exists(name):
-        raise RuntimeError(
-            f'SQL dialect {name} is already defined; a name means one dialect')
+        # The same name under the same parent replaces the application's own
+        # earlier registration (a start-up that runs twice, a test that resets);
+        # a shipped dialect, or another parent, is a different dialect under an
+        # old name, and translations already made through it would silently change
+        # meaning (sql/MAP.md §3.1).
+        previous = _extra.get(name)
+        if previous is None or 'extends' not in spec or previous['extends'] != spec['extends']:
+            raise RuntimeError(
+                f'SQL dialect {name} is already defined; a name means one dialect')
+        replacing = True
 
     # The keys a dialect declaration carries, and nothing else. `ops`, `funcs`
     # and `skel` are NOT among them -- they are defined one entry at a time with
@@ -132,8 +141,55 @@ def define_dialect(name: str, spec: dict[str, Any]) -> None:
     for k, v in lexical.items():
         _check_lexical(str(k), v, f'SQL dialect {name}')
 
+    before = _extra.get(name)
     _extra[name] = {'extends': extends, 'version': version,
                     'target': target, 'lexical': lexical}
+    try:
+        _check_pairing(name)
+    except RuntimeError:
+        # A refused registration leaves nothing behind: no half-defined dialect
+        # for a later translation to find.
+        if before is None:
+            del _extra[name]
+        else:
+            _extra[name] = before
+        raise
+    if replacing:
+        _guard_checked.discard(name)
+    # A new dialect can inherit a guard memo taken before it existed only by name;
+    # a replaced parent chain is handled by dropping the whole memo.
+    _guard_checked.clear()
+
+
+def _check_pairing(name: str) -> None:
+    """sql/MAP.md §3.1: textQuote, textEscape and identQuote are a set. Checked
+    after inheritance, because a dialect that changes one key inherits the others
+    and the mismatch is between the two."""
+    quote = lexical(name, 'textQuote')
+    ident = lexical(name, 'identQuote')
+    escape = lexical(name, 'textEscape')
+    where = f'SQL dialect {name}'
+    if not isinstance(quote, str) or len(quote) != 1:
+        raise RuntimeError(f'{where} has a textQuote that is not exactly one '
+                           'character; a quote that is not a character cannot quote')
+    if quote == ident:
+        raise RuntimeError(f'{where} uses {quote!r} as both textQuote and identQuote; '
+                           'a text literal could then close an identifier')
+    if not isinstance(escape, dict) or '' in escape:
+        raise RuntimeError(f'{where} has no usable textEscape; an inline text '
+                           'literal could not be escaped')
+    to = escape.get(quote)
+    if to is None:
+        raise RuntimeError(f'{where} has a textEscape with no entry for its textQuote '
+                           f'{quote!r}, so a quote inside a literal would end it')
+    doubled = to == quote + quote
+    escaped = (len(to) == 2 and to[1] == quote
+               and escape.get(to[0]) == to[0] + to[0])
+    if not (doubled or escaped):
+        raise RuntimeError(f'{where} escapes its textQuote as {to!r}, which does not '
+                           'leave a quote inside the literal: it must be the quote '
+                           'doubled, or an escape character followed by the quote '
+                           'where the escape character itself maps to two of itself')
 
 
 def define(dialect: str, section: str, key: str, entry: Any) -> None:
@@ -282,30 +338,34 @@ def check_numeric_guard(dialect: str) -> None:
     """
     if dialect in _guard_checked:
         return
-    _guard_checked.add(dialect)
     guard = lexical(dialect, 'numericGuard')
     if not isinstance(guard, str):
+        _guard_checked.add(dialect)
         return
     isnum = entry(dialect, 'funcs', 'ISNUM')
     tpl = isnum.get('tpl') if isinstance(isnum, dict) else None
     if not isinstance(tpl, str):
-        raise ValueError(
+        raise RuntimeError(
             f'SQL dialect {dialect} declares a numericGuard but maps no funcs.ISNUM '
             'with a template for it to agree with; the two ask the same question '
             'and sql/MAP.md section 7 rule 10 is that one place defines a thing')
     want = _quoted_runs(tpl)
     if not want:
-        raise ValueError(
+        raise RuntimeError(
             f'SQL dialect {dialect} maps a funcs.ISNUM that carries no quoted '
             'pattern, so its numericGuard has nothing to agree with')
     got = set(_quoted_runs(guard))
     missing = [w for w in want if w not in got]
     if missing:
-        raise ValueError(
+        raise RuntimeError(
             f'SQL dialect {dialect} declares a numericGuard that does not carry '
             + ', '.join(f"'{m}'" for m in missing)
             + ', which its funcs.ISNUM tests; they ask the same question, and a '
             'guard that asks a different one answers for rows SEL refuses')
+    # Only a guard that passed is remembered: memoising before the check made the
+    # first translation refuse and every later one emit what the check had refused
+    # (JS-C24, PHP-C49, PY-C49).
+    _guard_checked.add(dialect)
 
 
 def lexical(dialect: str, key: str) -> Any:

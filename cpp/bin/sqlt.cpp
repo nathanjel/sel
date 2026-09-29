@@ -250,6 +250,54 @@ std::string run_case(const SqlCase& c, const std::string& dialect) {
     have_thrown = true;
   }
 
+  // The reuse twin. The same program and bindings are translated again, several
+  // times, and every translation must give the first one's outcome: the same
+  // SQL, or the same refusal at the same place, or a startup error again. A
+  // translator that keeps state between calls -- a dialect marked as checked
+  // before it was checked, a parameter list that grows -- passes one translation
+  // and fails here (T10: JS-C24, PHP-C49, PY-C49, CPP-C36, LISP-C42, GO-C18).
+  if (program && bindings) {
+    auto describe = [](bool has_thrown, const std::string& what, bool has_error,
+                       const SqlError& e, const std::string& text) {
+      if (has_thrown) return "a throw (" + what + ")";
+      if (has_error) return e.str();
+      return "\"" + text + "\"";
+    };
+    for (int k = 0; k < 4; ++k) {
+      bool again_sql = false, again_error = false, again_thrown = false;
+      std::string sql2, what2;
+      SqlError error2("", "");
+      try {
+        Fragment f2 = Sql::translate(*program, dialect, *bindings, options);
+        sql2 = as_ == "condition" ? f2.as_condition(*mode)
+             : (as_ == "statement" ? f2.as_statement(*mode)
+                                   : f2.as_value(*mode));
+        again_sql = true;
+      } catch (const SqlError& e) {
+        error2 = e;
+        again_error = true;
+      } catch (const sel::SelError& e) {
+        return "translating again: the source did not compile: " + e.str();
+      } catch (const std::exception& e) {
+        what2 = e.what();
+        again_thrown = true;
+      }
+      bool same;
+      if (have_thrown) same = again_thrown;
+      else if (have_error) {
+        same = again_error && error2.code() == error.code() &&
+               error2.line() == error.line() && error2.col() == error.col();
+      } else same = again_sql && sql2 == sql;
+      if (!same) {
+        return "translating again on the same program and bindings gave " +
+               describe(again_thrown, what2, again_error, error2, sql2) +
+               " where the first translation gave " +
+               describe(have_thrown, thrown_what, have_error, error, sql) +
+               " (repeat " + std::to_string(k + 1) + ")";
+      }
+    }
+  }
+
   if (c.throws) {
     if (!throws_is_known(c.throws)) {
       throw SuiteError(std::string(c.at) + ": no C++ equivalent is recorded for "

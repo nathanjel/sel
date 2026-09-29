@@ -232,6 +232,52 @@ Four of these are load-bearing rather than cosmetic:
   after aligning scale, so `"5.00" == "5"` is `TRUE`; SQL's `=` between two text
   columns compares text. §4.3 says exactly when the cast is applied.
 
+### 3.1 Quote and escape pairing, and the server modes it assumes
+
+`textQuote`, `textEscape` and `identQuote` are a **set**, not three keys: a
+registered dialect that changes one without the others makes every inline text
+literal injectable. `defineDialect` therefore refuses, with the startup-error
+class of §4.5½ and before any literal is rendered, a dialect (after inheritance)
+where:
+
+- `textQuote` is not exactly one character, or equals `identQuote`;
+- `textEscape` has an empty key, or none for `textQuote`;
+- the `textEscape` entry for `textQuote` does not leave a quote *inside* the
+  literal: it must be the quote doubled (`''`) or an escape character `E` followed
+  by the quote, where `E` is itself a key mapping to `E E`.
+
+(A `textEscape` given as a whole object replaces the inherited one — keys are
+inherited, values are not merged — so an override must carry the quote entry and
+the backslash entry the server needs.) The same holds on re-registration: a name
+already registered under one `extends` cannot be registered under another (the
+same parent replaces the earlier registration).
+
+**Server modes assumed.** Inline text literals are correct only under the server's
+default string syntax, and the map does not detect a server configured otherwise:
+
+| Dialect | Assumed | If the server differs |
+|---|---|---|
+| `mariadb`, `mysql` | `NO_BACKSLASH_ESCAPES` **off** (`\` is an escape) | with it on, `\'` ends the literal — use `params` mode |
+| `postgresql` | `standard_conforming_strings = on` (the default since 9.1) | with it off, `\` escapes inside `'…'` — use `params` mode |
+| `sqlite` | none; `'…'` is the only escape | — |
+
+`params` mode binds values and is unaffected. This is a stated assumption of the
+inline rendering, not a caveat on an entry (§4.6 — a caveat is per map entry and
+lets the oracle stop checking it; this holds for every text literal).
+
+**What a program may name.** An alias or column that comes from a SEL text
+literal — a `RECORD` key, a `SELECT_COLS` name — is held to the rules a binding's
+own names already meet: it is not empty and holds no NUL, else `E_SQL_UNSUPPORTED`
+at the literal; on PostgreSQL two aliases whose first 63 bytes agree are also
+refused, because the server truncates them to one name. A TEXT value holding NUL
+is refused in **every** mode, `E_SQL_UNSUPPORTED` at the literal (PostgreSQL cannot
+hold it and a C-string client truncates at it). Binding names that differ only by
+ASCII case (two bindings, or two fields of one relation) are the same SEL name and
+are refused, `E_SQL_BINDING`; a `raw` field is an application expression against
+the relation's own alias, so `SELECT_COLS`, or a derived table a `TAKE`/`SORT_BY`
+puts the relation in (which has no such column), refuses it, `E_SQL_SHAPE` at the
+reference.
+
 ---
 
 ## 4. `ops` and `funcs`
@@ -679,8 +725,10 @@ which is the conservative reading.
 folding, allowing database optimizers (such as MariaDB and MySQL) to recognize clean
 composite equality predicates for B-tree index seek and semijoin decorrelation.
 
-`{corr}` fills with the binding's `correlate`, or with `lexical.true` when the
-binding omits one; an uncorrelated relation is a subquery over the whole table,
+`{corr}` fills with the binding's `correlate` **in parentheses** — it is an
+application expression, and a top-level `OR` in it must not change the meaning of
+the `AND` the template puts after it (`WHERE (a = o.id OR b = o.id) AND …`) — or
+with `lexical.true`, unparenthesised, when the binding omits one; an uncorrelated relation is a subquery over the whole table,
 which is legal and occasionally what you want.
 
 ---

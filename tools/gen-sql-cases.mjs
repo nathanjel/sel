@@ -147,7 +147,7 @@ const isObj = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 // A Call is emitted as `Binding::name(a, b)` in PHP and `Binding.name(a, b)` in
 // Python. Arguments are either literal values or nested Calls.
 const call = (name, args) => ({ __call: name, args });
-const raw = (php, py, js, cpp, lisp, go) => ({ __raw: true, php, py, js, cpp, lisp, go });
+const raw = (php, py, js, cpp, lisp, go, rust) => ({ __raw: true, php, py, js, cpp, lisp, go, rust });
 
 function bindingCall(b, where) {
   if (!isObj(b) || b.kind === undefined) {
@@ -239,24 +239,25 @@ function valueCall(v, where) {
     fail(where, `write ${v} as a string and declare "type": "NUM"; a JSON number `
               + 'does not survive every host');
     return raw('Value::none()', 'Value.none()', 'Value.none()', 'Value::none()',
-               '(sel:make-none)', 'sel.NewNone()');
+               '(sel:make-none)', 'sel.NewNone()', 'Value::none()');
   }
   if (v === null || v === undefined) {
     return raw('Value::none()', 'Value.none()', 'Value.none()', 'Value::none()',
-               '(sel:make-none)', 'sel.NewNone()');
+               '(sel:make-none)', 'sel.NewNone()', 'Value::none()');
   }
   if (typeof v === 'boolean') {
-    // C++ spells it `boolean`, because `bool` is a keyword there.
     return raw(`Value::bool(${v})`, `Value.bool(${v ? 'True' : 'False'})`,
                `Value.bool(${v})`, `Value::boolean(${v})`,
                `(sel:make-bool ${v ? 't' : 'nil'})`,
-               `sel.NewBool(${v})`);
+               `sel.NewBool(${v})`,
+               `Value::bool(${v})`);
   }
   if (typeof v === 'string') {
     return raw(`Value::text(${phpStr(v)})`, `Value.text(${pyStr(v)})`,
                `Value.text(${jsStr(v)})`, `Value::text(${cppStr(v)})`,
                `(sel:make-text ${lispStr(v)})`,
-               `sel.NewText(${goStr(v)})`);
+               `sel.NewText(${goStr(v)})`,
+               `Value::text_owned(${rustStr(v)}.to_string())`);
   }
   if (isObj(v) && Object.keys(v).length === 1 && typeof v.bin === 'string') {
     // JSON has no byte string, so the corpus spells one as {"bin": "<hex>"}.
@@ -266,7 +267,8 @@ function valueCall(v, where) {
                `Value.bin(binFromHex(${jsStr(v.bin)}))`,
                `Value::bin(bin_from_hex(${cppStr(v.bin)}))`,
                `(sel:make-bin (bin-from-hex ${lispStr(v.bin)}))`,
-               `binFromHex(${goStr(v.bin)})`);
+               `binFromHex(${goStr(v.bin)})`,
+               `bin_from_hex(${rustStr(v.bin)})`);
   }
   // A list or a map of further values.
   const parts = Array.isArray(v)
@@ -284,7 +286,9 @@ function valueCall(v, where) {
     '(value-tree (list ' + parts.map(([k, x]) =>
       '(cons ' + (k === null ? 'nil' : lispStr(k)) + ' ' + lispArg(x) + ')').join(' ') + '))',
     'valueTree([]treeItem{' + parts.map(([k, x]) =>
-      '{key: ' + (k === null ? 'nil' : `strPtr(${goStr(k)})`) + ', val: ' + (x.__raw ? x.go : goBinding(x)) + '}').join(', ') + '})');
+      '{key: ' + (k === null ? 'nil' : `strPtr(${goStr(k)})`) + ', val: ' + (x.__raw ? x.go : goBinding(x)) + '}').join(', ') + '})',
+    'value_tree(vec![' + parts.map(([k, x]) =>
+      'TreeItem { key: ' + (k === null ? 'None' : `Some(${rustStr(k)}.to_string())`) + ', val: ' + (x.__raw ? x.rust : rustBinding(x)) + ' }').join(', ') + '])');
 }
 
 // --- emitters ---------------------------------------------------------------
@@ -1282,9 +1286,283 @@ function emitGo(cases) {
     + `var sqlCases = []SqlCase{\n${rows.join('\n')}\n}\n`;
 }
 
-const OUTPUTS = [['php/bin/CaseData.php', emitPhp], ['python/bin/case_data.py', emitPython],
-  ['js/bin/case-data.mjs', emitJs], ['cpp/bin/case_data.cpp', emitCpp],
-  ['lisp/bin/case-data.lisp', emitLispCases], ['go/bin/sqlt/case_data_gen.go', emitGo]];
+function rustStr(s) {
+  if (s === null || s === undefined) return '""';
+  let out = '"';
+  for (const ch of String(s)) {
+    if (ch === '\\') out += '\\\\';
+    else if (ch === '"') out += '\\"';
+    else if (ch === '\n') out += '\\n';
+    else if (ch === '\r') out += '\\r';
+    else if (ch === '\t') out += '\\t';
+    else {
+      const code = ch.codePointAt(0);
+      if (code < 0x20 || code === 0x7f) {
+        out += '\\x' + code.toString(16).padStart(2, '0');
+      } else {
+        out += ch;
+      }
+    }
+  }
+  out += '"';
+  return out;
+}
+
+function rustOptStr(v) {
+  if (v === null || v === undefined) return 'None';
+  return `Some(${rustStr(v)})`;
+}
+
+function rustName(v, what) {
+  if (typeof v !== 'string') throw new Unrepresentable(`${what} that is ${shapeOf(v)}`);
+  return rustStr(v);
+}
+
+function rustOptName(v, what) {
+  if (v === null || v === undefined) return '""';
+  return rustName(v, what);
+}
+
+function rustKind(t) {
+  if (t === null || t === undefined) return 'SqlKind::Unknown';
+  if (typeof t !== 'string') throw new Unrepresentable(`a binding type that is ${shapeOf(t)}`);
+  const k = { NUM: 'Num', TEXT: 'Text', BOOL: 'Bool', BIN: 'Bin',
+              UNKNOWN: 'Unknown', LIST: 'List' }[t];
+  if (!k) throw new Unrepresentable(`the binding type ${JSON.stringify(t)}`);
+  return `SqlKind::${k}`;
+}
+
+function rustBinding(v) {
+  if (v?.__call === 'withUniqueKey') return `${rustBinding(v.args[0])}.with_unique_key(${rustName(v.args[1], 'a unique key')})`;
+  if (v === null || v === undefined || typeof v === 'string') {
+    throw new Unrepresentable(`a binding that is ${shapeOf(v)}`);
+  }
+  if (v.__raw) return v.rust || v.go;
+  if (!v.__call) throw new Unrepresentable(`a binding shape that is ${shapeOf(v)}`);
+
+  switch (v.__call) {
+    case 'column': {
+      const [col, table, type, exact, sargable, guard, collation, prefilter] = v.args;
+      const c = rustName(col, 'a column name');
+      const t = rustOptName(table, 'a table name');
+      const k = rustKind(type);
+      const e = exact ? 'true' : 'false';
+      const s = sargable ? 'true' : 'false';
+      const g = guard ? 'true' : 'false';
+      const pref = (prefilter !== undefined && prefilter !== null) ? rustStr(prefilter) : '""';
+      return `bind_col(${c}, ${t}, ${k}, ${e}, ${s}, ${g}, ${pref})`;
+    }
+    case 'raw': {
+      const [sql, type, exact, sargable, guard, collation, prefilter] = v.args;
+      const s = rustName(sql, 'a raw column');
+      const k = rustKind(type);
+      const e = exact ? 'true' : 'false';
+      const sarg = sargable ? 'true' : 'false';
+      const g = guard ? 'true' : 'false';
+      const pref = (prefilter !== undefined && prefilter !== null) ? rustStr(prefilter) : '""';
+      return `bind_raw(${s}, ${k}, ${e}, ${sarg}, ${g}, ${pref})`;
+    }
+    case 'columns':
+      return `bind_columns(vec![${v.args.map(rustBinding).join(', ')}])`;
+    case 'relation':
+    case 'relationQuery': {
+      const [from, alias, fields, scalar, corr, prefilter] = v.args;
+      const fn = v.__call === 'relation' ? 'bind_relation' : 'bind_relation_query';
+      if (fields === null || fields === undefined || Array.isArray(fields)
+          || typeof fields !== 'object' || fields.__call || fields.__raw) {
+        throw new Unrepresentable(`relation fields that are ${shapeOf(fields)}`);
+      }
+      const f = Object.entries(fields)
+        .map(([k, b]) => `FieldEntry { name: ${rustStr(k)}.to_string(), binding: ${rustBinding(b)} }`).join(', ');
+      const pref = (prefilter !== undefined && prefilter !== null) ? rustStr(prefilter) : '""';
+      const sc = rustStr(scalar ?? '');
+      const cr = rustName(corr ?? '', 'a correlation');
+      const al = rustName(alias ?? '', 'an alias');
+      const fr = rustName(from, 'a table name');
+      return `${fn}(${fr}, ${al}, vec![${f}], ${sc}, ${cr}, ${pref})`;
+    }
+    case 'value': {
+      const [val, type] = v.args;
+      const t = (type === null || type === undefined) ? 'None' : `Some(${rustKind(type)})`;
+      return `bind_value(${rustBinding(val)}, ${t})`;
+    }
+  }
+  throw new Unrepresentable(`the binding constructor ${v.__call}`);
+}
+
+function rustRegister(ops) {
+  return ops.map((op) => {
+    if (op === null || typeof op !== 'object') {
+      throw new Unrepresentable(`a register op that is ${shapeOf(op)}`);
+    }
+    if ('define' in op) {
+      const a = op.define;
+      if (!Array.isArray(a) || a.length !== 4) {
+        throw new Unrepresentable(`a define that is ${shapeOf(a)}`);
+      }
+      const [dialect, section, key, entry] = a;
+      if (!['ops', 'funcs', 'skel'].includes(section)) {
+        throw new Unrepresentable(`the map section ${JSON.stringify(section)}`);
+      }
+      return `    sel_lang::sql::define(${rustStr(dialect)}, ${rustStr(section)}, ${rustStr(key)}, &serde_json::from_str::<serde_json::Value>(${JSON.stringify(JSON.stringify(entry))}).unwrap());`;
+    }
+    if ('dialect' in op) {
+      const cleanOp = Object.fromEntries(Object.entries(op).filter(([k]) => k !== 'dialect'));
+      return `    sel_lang::sql::define_dialect(${rustStr(op.dialect)}, &serde_json::from_str::<serde_json::Value>(${JSON.stringify(JSON.stringify(cleanOp))}).unwrap());`;
+    }
+    if ('function' in op) {
+      const f = op.function;
+      if (!Array.isArray(f) || f.length !== 3 || typeof f[0] !== 'string'
+          || !Number.isInteger(f[1]) || !Number.isInteger(f[2])) {
+        throw new Unrepresentable(`a function op that is ${shapeOf(f)}`);
+      }
+      return `    let _ = sel_lang::register_function(${rustStr(f[0])}, ${f[1]}, ${f[2]}, |_args| Ok(sel_lang::Value::text_owned(String::new())));`;
+    }
+    throw new Unrepresentable('a register op with neither define, dialect nor function');
+  }).join('\n');
+}
+
+function emitRust(cases) {
+  const bodies = [];
+  const rows = [];
+
+  cases.forEach((c, i) => {
+    let unrep = null;
+    let binds = '';
+    let reg = '';
+    try {
+      binds = Object.entries(c.bindingCalls)
+        .map(([n, x]) => `        m.insert(${rustStr(n)}.to_string(), ${rustBinding(x)});`).join('\n');
+    } catch (e) {
+      if (!(e instanceof Unrepresentable)) throw e;
+      unrep = e.why;
+    }
+    if (unrep === null && c.registerData !== null && c.registerData !== undefined) {
+      try {
+        reg = rustRegister(c.registerData);
+      } catch (e) {
+        if (!(e instanceof Unrepresentable)) throw e;
+        unrep = e.why;
+      }
+    }
+
+    if (unrep !== null && !c.error && !c.throws) {
+      throw new Error(
+        `${c.at}: case ${c.name} cannot be written with the Rust constructors `
+        + `(${unrep}) and does not assert a refusal, so Rust would lose the coverage `
+        + 'rather than move it to compile time.');
+    }
+
+    const fn = `c${i}`;
+    if (unrep === null) {
+      bodies.push(`fn ${fn}_bind() -> HashMap<String, Binding> {\n    let mut m = HashMap::new();\n${binds}\n    m\n}`);
+      if (reg) bodies.push(`fn ${fn}_reg() {\n${reg}\n}`);
+    }
+
+    const tablesStr = c.tableList === null ? '&[]' : `&[${(c.tableList ?? []).map((s) => rustStr(s)).join(', ')}]`;
+
+    const f = [
+      `name: ${rustStr(c.name)}`,
+      `at: ${rustStr(c.at)}`,
+      `dialect: ${rustStr(c.dialect ?? '')}`,
+      `source: ${rustStr(c.source ?? '')}`,
+      `expect: ${rustOptStr(c.expect)}`,
+      `error: ${rustOptStr(c.error)}`,
+      `throws: ${rustOptStr(c.throws)}`,
+      `params: ${rustOptStr(c.params)}`,
+      `as_mode: ${rustOptStr(c.as)}`,
+      `mode: ${rustOptStr(c.mode)}`,
+      `strict: ${c.optionsData && c.optionsData.strict ? 'true' : 'false'}`,
+      `plan: ${rustOptStr(c.plan)}`,
+      `has_tables: ${c.tableList !== null ? 'true' : 'false'}`,
+      `tables: ${tablesStr}`,
+      `unrepresentable: ${unrep === null ? 'None' : `Some(${rustStr(unrep)})`}`,
+      `register_fn: ${unrep === null && reg ? `Some(${fn}_reg)` : 'None'}`,
+      `bindings_fn: ${unrep === null ? `Some(${fn}_bind)` : 'None'}`,
+    ];
+    rows.push(`    SqlCase {\n        ${f.join(',\n        ')},\n    },`);
+  });
+
+  return `// ${BANNER.join('\n// ')}\n\n`
+    + `use std::collections::HashMap;\n`
+    + `use sel_lang::{Pos, Value};\n`
+    + `use sel_lang::sql::{\n`
+    + `    Binding, FieldEntry, SqlKind,\n`
+    + `};\n\n`
+    + `#[derive(Clone)]\n`
+    + `pub struct TreeItem {\n    pub key: Option<String>,\n    pub val: Value,\n}\n\n`
+    + `pub fn bin_from_hex(hex_str: &str) -> Value {\n`
+    + `    let mut bytes = Vec::with_capacity(hex_str.len() / 2);\n`
+    + `    for i in (0..hex_str.len()).step_by(2) {\n`
+    + `        bytes.push(u8::from_str_radix(&hex_str[i..i + 2], 16).unwrap_or(0));\n`
+    + `    }\n`
+    + `    Value::bin(&bytes)\n`
+    + `}\n\n`
+    + `pub fn value_tree(items: Vec<TreeItem>) -> Value {\n`
+    + `    let v = Value::list(vec![]);\n`
+    + `    let mut i = 0;\n`
+    + `    for it in items {\n`
+    + `        let k = match it.key {\n`
+    + `            Some(k) => k,\n`
+    + `            None => {\n`
+    + `                i += 1;\n`
+    + `                i.to_string()\n`
+    + `            }\n`
+    + `        };\n`
+    + `        let _ = v.set(&k, it.val, Pos::default());\n`
+    + `    }\n`
+    + `    v\n`
+    + `}\n\n`
+    + `fn bind_col(col: &str, table: &str, typ: SqlKind, exact: bool, sargable: bool, guard: bool, prefilter: &str) -> Binding {\n`
+    + `    Binding::column(col, table, typ, exact, sargable, guard, "", prefilter, false)\n`
+    + `}\n\n`
+    + `fn bind_raw(raw: &str, typ: SqlKind, exact: bool, sargable: bool, guard: bool, prefilter: &str) -> Binding {\n`
+    + `    Binding::raw(raw, typ, exact, sargable, guard, "", prefilter, false)\n`
+    + `}\n\n`
+    + `fn bind_columns(items: Vec<Binding>) -> Binding {\n`
+    + `    Binding::columns(items)\n`
+    + `}\n\n`
+    + `fn bind_relation(from: &str, alias: &str, fields: Vec<FieldEntry>, scalar: &str, correlate: &str, prefilter: &str) -> Binding {\n`
+    + `    Binding::relation(from, alias, fields, scalar, correlate, prefilter, false)\n`
+    + `}\n\n`
+    + `fn bind_relation_query(query: &str, alias: &str, fields: Vec<FieldEntry>, scalar: &str, correlate: &str, prefilter: &str) -> Binding {\n`
+    + `    Binding::relation_query(query, alias, fields, scalar, correlate, prefilter, false)\n`
+    + `}\n\n`
+    + `fn bind_value(val: Value, typ: Option<SqlKind>) -> Binding {\n`
+    + `    Binding::value(val, typ)\n`
+    + `}\n\n`
+    + `${bodies.join('\n\n')}\n\n`
+    + `pub struct SqlCase {\n`
+    + `    pub name: &'static str,\n`
+    + `    pub at: &'static str,\n`
+    + `    pub dialect: &'static str,\n`
+    + `    pub source: &'static str,\n`
+    + `    pub expect: Option<&'static str>,\n`
+    + `    pub error: Option<&'static str>,\n`
+    + `    pub throws: Option<&'static str>,\n`
+    + `    pub params: Option<&'static str>,\n`
+    + `    pub as_mode: Option<&'static str>,\n`
+    + `    pub mode: Option<&'static str>,\n`
+    + `    pub strict: bool,\n`
+    + `    pub plan: Option<&'static str>,\n`
+    + `    pub has_tables: bool,\n`
+    + `    pub tables: &'static [&'static str],\n`
+    + `    pub unrepresentable: Option<&'static str>,\n`
+    + `    pub register_fn: Option<fn()>,\n`
+    + `    pub bindings_fn: Option<fn() -> HashMap<String, Binding>>,\n`
+    + `}\n\n`
+    + `pub const SQL_CASES: &[SqlCase] = &[\n${rows.join('\n')}\n];\n`;
+}
+
+const OUTPUTS = [
+  ['php/bin/CaseData.php', emitPhp],
+  ['python/bin/case_data.py', emitPython],
+  ['js/bin/case-data.mjs', emitJs],
+  ['cpp/bin/case_data.cpp', emitCpp],
+  ['lisp/bin/case-data.lisp', emitLispCases],
+  ['go/bin/sqlt/case_data_gen.go', emitGo],
+  ['rust/src/bin/sqlt/case_data.rs', emitRust],
+];
 const check = process.argv.includes('--check');
 let stale = 0;
 // Unchanged content is not rewritten, so a no-op run leaves every timestamp

@@ -100,7 +100,6 @@
         ("ANY" (:outer :inner) nil ("_" "_K"))
         ("ANY" (:outer :binder :inner) nil ("_K"))
         ("BUCKET" (:outer :inner) nil ("_" "_K"))
-        ("BUCKET" (:outer :binder :inner) (1 :name) ("_K"))
         ("BUCKET" (:outer :inner :inner) nil ("_" "_K"))
         ("BUCKET" (:outer :binder :inner :inner) nil ("_K"))
         ("FILTER" (:outer :inner) nil ("_" "_K"))

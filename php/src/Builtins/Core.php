@@ -70,7 +70,7 @@ final class Core
                 $n = $a->count();
                 $out = [];
                 for ($i = 0; $i < $n; $i++) {
-                    $out[] = $a->val($i);
+                    $out[] = $a->val($i)->copyBelow(1, $a->pos);
                 }
                 return Value::list($out);
             }]);
@@ -82,7 +82,7 @@ final class Core
                 if ($a->recordShape !== null) {
                     $values = [];
                     for ($i = 1; $i < $n; $i += 2) {
-                        $values[] = $a->val($i);
+                        $values[] = $a->val($i)->copyBelow(1, $a->pos);
                     }
                     return Value::fromShape($a->recordShape, $values);
                 }
@@ -90,7 +90,7 @@ final class Core
                 $values = [];
                 for ($i = 0; $i < $n; $i += 2) {
                     $keys[] = $a->text($i);
-                    $values[] = $a->val($i + 1);
+                    $values[] = $a->val($i + 1)->copyBelow(1, $a->pos);
                 }
                 return Value::record($keys, $values);
             }]);
@@ -206,51 +206,52 @@ final class Core
      */
     public static function compareValues(Value $a, Value $b): int
     {
-        $aNull = $a->isNull();
-        $bNull = $b->isNull();
-        if ($aNull && $bNull) return 0;
-        if ($aNull) return -1;
-        if ($bNull) return 1;
-
-        $aNum = $a->looksNumeric();
-        $bNum = $b->looksNumeric();
-        if ($aNum && $bNum) {
-            return Dec::cmp($a->asDecimal(), $b->asDecimal());
+        // One total order (spec §7.3): rank by kind first, then compare inside a
+        // rank. NULL < BOOL (FALSE < TRUE) < numeric-looking text and numbers by
+        // exact value < every other TEXT bytewise < BIN bytewise. Ranking BEFORE
+        // comparing is what makes it transitive: comparing numeric text with other
+        // text bytewise while ranking it below them was not (`"10" < "1a"` but
+        // `"9" > "1a"` and `"9" < "10"`).
+        $ra = self::sortRank($a);
+        $rb = self::sortRank($b);
+        if ($ra !== $rb) return $ra <=> $rb;
+        switch ($ra) {
+            case 0:
+                return 0;
+            case 1:
+                return ((int) (bool) $a->getScalar()) <=> ((int) (bool) $b->getScalar());
+            case 2:
+                return Dec::cmp($a->asDecimal(), $b->asDecimal());
+            case 3:
+            case 4:
+                return strcmp($a->asBytes(), $b->asBytes());
+            default:
+                return 0;
         }
+    }
 
-        if ($a->kind === Value::BOOL && $b->kind === Value::BOOL) {
-            return ((int) (bool) $a->getScalar()) <=> ((int) (bool) $b->getScalar());
-        }
-
-        if (($a->kind === Value::TEXT || $a->kind === Value::BIN) &&
-            ($b->kind === Value::TEXT || $b->kind === Value::BIN)) {
-            return strcmp($a->asBytes(), $b->asBytes());
-        }
-
-        $rank = static function (Value $v): int {
-            if ($v->isNull()) return 0;
-            if ($v->kind === Value::BOOL) return 1;
-            if ($v->looksNumeric()) return 2;
-            if ($v->kind === Value::TEXT) return 3;
-            if ($v->kind === Value::BIN) return 4;
-            return 5;
-        };
-        return $rank($a) <=> $rank($b);
+    private static function sortRank(Value $v): int
+    {
+        if ($v->isNull()) return 0;
+        if ($v->kind === Value::BOOL) return 1;
+        if ($v->looksNumeric()) return 2;
+        if ($v->kind === Value::TEXT) return 3;
+        if ($v->kind === Value::BIN) return 4;
+        return 5;
     }
 
     private static function doSort(Args $a, Context $ctx, ?string $forcedDir): Value
     {
         $val = $a->val(0);
-        if ($val->isNull()) {
-            return Value::list([]);
-        }
         $count = $a->count();
         if ($count === 1) {
+            if ($val->isNull()) return Value::list([]);
             $dir = $forcedDir ?? 'ASC';
             $indexed = [];
             $idx = 0;
-            $val->forEachElement(static function (string $key, Value $item) use (&$indexed, &$idx): void {
-                $indexed[] = ['item' => $item, 'key' => $item, 'idx' => $idx++];
+            $pos = $a->pos;
+            $val->forEachElement(static function (string $key, Value $item) use (&$indexed, &$idx, $pos): void {
+                $indexed[] = ['item' => $item->copyBelow(1, $pos), 'key' => $item, 'idx' => $idx++];
             });
         } else {
             if ($count === 2) {
@@ -265,7 +266,7 @@ final class Core
                 } elseif ($a->node(2)['t'] === 'text') {
                     $binder = '_';
                     $body = $a->node(1);
-                    $dir = strtoupper($a->text(2));
+                    $dir = \Sel\Utf8::upper($a->text(2));
                 } elseif ($a->isSymbol(1)) {
                     $binder = $a->symbol(1);
                     $body = $a->node(2);
@@ -273,18 +274,21 @@ final class Core
                 } else {
                     $binder = '_';
                     $body = $a->node(1);
-                    $dir = strtoupper($a->text(2));
+                    $dir = \Sel\Utf8::upper($a->text(2));
                 }
             } else {
                 $binder = $a->symbol(1);
                 $body = $a->node(2);
-                $dir = strtoupper($a->text(3));
+                $dir = \Sel\Utf8::upper($a->text(3));
             }
 
             if ($dir !== 'ASC' && $dir !== 'DESC') {
                 $posIdx = $count === 4 ? 3 : 2;
                 fail('E_BAD_ARG', "sort direction must be 'ASC' or 'DESC'", $a->posOf($posIdx));
             }
+            // The direction is an argument like any other (spec §7.4): it is
+            // checked above whether or not there is anything to sort.
+            if ($val->isNull()) return Value::list([]);
 
             $indexed = [];
             $idx = 0;
@@ -303,7 +307,7 @@ final class Core
                         $ctx->setFrameValue('_K', $frame['_K']);
                     }
                     $evalKey = $a->evalNode($body);
-                    $indexed[] = ['item' => $item, 'key' => $evalKey, 'idx' => $idx++];
+                    $indexed[] = ['item' => $item->copyBelow(1, $a->pos), 'key' => $evalKey, 'idx' => $idx++];
                 });
             } finally {
                 $ctx->popFrame();
@@ -351,24 +355,32 @@ final class Core
         $ctx->pushFrame($frame);
         $topFrame = &$ctx->frames[count($ctx->frames) - 1];
         try {
-            if ($value->isList && $value->storage !== null) {
-                if ($value->listKeys !== null) {
-                    foreach ($value->storage as $i => $item) {
+            // Snapshot (spec §7.3): every container read below is from a local
+            // copy taken before the body first runs, so a body that appends,
+            // adds a key or overwrites a later element does not change what is
+            // visited. Copy-on-write makes the copies free until a write.
+            $listKeys = $value->listKeys;
+            $storage = $value->storage;
+            $shapeKeys = $value->shape?->keys;
+            $children = $value->children;
+            if ($value->isList && $storage !== null) {
+                if ($listKeys !== null) {
+                    foreach ($storage as $i => $item) {
                         if ($result !== null) break;
-                        $key = $value->listKeys[$i];
+                        $key = $listKeys[$i];
                         $topFrame[$binder] = $item;
                         if ($needsK) $topFrame['_K'] = Value::text($key);
                         $result = $visit($a->evalNode($body), $key, $item, $body);
                     }
                 } elseif (!$needsK) {
                     $key = 1;
-                    foreach ($value->storage as $item) {
+                    foreach ($storage as $item) {
                         if ($result !== null) break;
                         $topFrame[$binder] = $item;
                         $result = $visit($a->evalNode($body), $key++, $item, $body);
                     }
                 } else {
-                    foreach ($value->storage as $i => $item) {
+                    foreach ($storage as $i => $item) {
                         if ($result !== null) break;
                         $key = (string) ($i + 1);
                         $topFrame[$binder] = $item;
@@ -376,16 +388,16 @@ final class Core
                         $result = $visit($a->evalNode($body), $key, $item, $body);
                     }
                 }
-            } elseif ($value->shape !== null && $value->storage !== null) {
-                foreach ($value->shape->keys as $i => $key) {
+            } elseif ($shapeKeys !== null && $storage !== null) {
+                foreach ($shapeKeys as $i => $key) {
                     if ($result !== null) break;
-                    $item = $value->storage[$i];
+                    $item = $storage[$i];
                     $topFrame[$binder] = $item;
                     if ($needsK) $topFrame['_K'] = Value::text($key);
                     $result = $visit($a->evalNode($body), $key, $item, $body);
                 }
-            } elseif ($value->size() > 0 && $value->children !== null) {
-                foreach ($value->children as $key => $item) {
+            } elseif ($children !== null && $value->size() > 0) {
+                foreach ($children as $key => $item) {
                     if ($result !== null) break;
                     $keyStr = (string) $key;
                     $topFrame[$binder] = $item;
@@ -408,7 +420,7 @@ final class Core
     {
         if ($node === null) return false;
         if (($node['t'] ?? null) === 'var') {
-            return strcasecmp((string) ($node['name'] ?? ''), $name) === 0;
+            return \Sel\Utf8::casecmp((string) ($node['name'] ?? ''), $name) === 0;
         }
         foreach (['args', 'items'] as $key) {
             foreach ($node[$key] ?? [] as $child) {
@@ -442,8 +454,9 @@ final class Core
         Registry::define(['name' => 'MAP', 'min' => 2, 'max' => 3, 'lazy' => true, 'binds' => true,
             'fn' => static function (Args $a, Context $ctx): Value {
                 $out = [];
-                self::walk($a, $ctx, static function (Value $r) use (&$out): ?Value {
-                    $out[] = $r;
+                $pos = $a->pos;
+                self::walk($a, $ctx, static function (Value $r) use (&$out, $pos): ?Value {
+                    $out[] = $r->copyBelow(1, $pos);
                     return null;
                 });
                 return Value::list($out);
@@ -513,11 +526,12 @@ final class Core
                         }
                     }
                 }
+                $pos = $a->pos;
                 self::walk($a, $ctx, static function (Value $r, string|int $key, Value $item, array $body) use (
-                    &$storage, &$keys, &$needsCustomKeys, &$expectedIndex
+                    &$storage, &$keys, &$needsCustomKeys, &$expectedIndex, $pos
                 ): ?Value {
                     if ($r->asBool($body['pos'])) {
-                        $storage[] = $item;
+                        $storage[] = $item->copyBelow(1, $pos);
                         // The key as written, not (int) of it: "1x", "01" and
                         // " 1" all cast to 1 (review 2026-09-25 SEM-09).
                         $inPlace = is_int($key) ? $key === $expectedIndex : $key === (string) $expectedIndex;
@@ -552,9 +566,22 @@ final class Core
             'fn' => static function (Args $a): Value {
                 $sep = $a->text(1);
                 $parts = [];
-                $a->val(0)->forEachElement(static function (string $key, Value $item) use (&$parts, $a, $sep): void {
-                    $parts[] = $item->asText($a->posOf(0));
+                $bytes = 0;
+                $a->val(0)->forEachElement(static function (string $key, Value $item) use (&$parts, &$bytes, $a): void {
+                    $part = $item->asText($a->posOf(0));
+                    $parts[] = $part;
+                    $bytes += strlen($part);
                 });
+                // The result's size is known before it is built: refuse it at the
+                // call (spec §6.4). The byte length bounds the code point length.
+                $bytes += strlen($sep) * max(0, count($parts) - 1);
+                if ($bytes > \Sel\Limits::MAX_TEXT_LEN) {
+                    $cps = \Sel\Utf8::length($sep) * max(0, count($parts) - 1);
+                    foreach ($parts as $part) $cps += \Sel\Utf8::length($part);
+                    if ($cps > \Sel\Limits::MAX_TEXT_LEN) {
+                        fail('E_RANGE', 'JOIN result would be longer than ' . \Sel\Limits::MAX_TEXT_LEN, $a->pos);
+                    }
+                }
                 return Value::text(implode($sep, $parts));
             }]);
     }

@@ -323,6 +323,26 @@ def cannot_raise(node, binder: str, logical: bool) -> bool:
     return False
 
 
+_BOOL_OPS = frozenset(('==', '!=', '<', '<=', '>', '>=', '$==', '$!=', '$<', '$<=', '$>', '$>=',
+                       'AND', 'OR'))
+
+
+def predicate_cannot_raise(node, binder: str, logical: bool) -> bool:
+    """`cannot_raise` for a FILTER predicate, which must also come out BOOL: a
+    bare variable, `_K`, a number, a text or NULL never raises when read but is
+    E_NOT_BOOL as a predicate, so a fusion that moved it before an earlier
+    predicate's later rows changed which error came first (PHP-C11)."""
+    if node is None:
+        return True
+    if node.t == 'bool':
+        return True
+    if node.t == 'bin' and node.op in _BOOL_OPS:
+        return cannot_raise(node, binder, logical)
+    if node.t == 'un' and node.op == 'NOT':
+        return cannot_raise(node, binder, logical)
+    return False
+
+
 def map_cannot_raise(step: Node, logical: bool) -> bool:
     """Every field a MAP computes (or its whole body) cannot raise."""
     details = map_details(step)
@@ -437,6 +457,11 @@ def step_arg_options(step: Node, index: int, options: dict[str, Any]) -> dict[st
     return options
 
 
+def fusable_take_count(node: Node | None) -> bool:
+    n = numeric_literal(node)
+    return n is not None and n >= 1
+
+
 def logical_steps(source: Node | None, steps: list[Node],
                   options: dict[str, Any] | None = None) -> list[Node]:
     options = options or {}
@@ -470,9 +495,14 @@ def logical_steps(source: Node | None, steps: list[Node],
                     i += 2
                     changed = True
                     continue
+            # Fused only for a numeric literal count of at least 1 (SPEC 6.2):
+            # the fused TOP evaluates its count before the keys run, and a
+            # count of 0 or less returns before looking at them, so anything
+            # that is not a literal >= 1 has to run as SORT then TAKE.
             if (second is not None and second.name == 'TAKE'
                     and first.name in ('SORT', 'SORT_DESC', 'SORT_BY')
-                    and len(second.args) == 2):
+                    and len(second.args) == 2
+                    and fusable_take_count(second.args[1])):
                 top_name = 'TOP' if first.name == 'SORT' else 'TOP_DESC' if first.name == 'SORT_DESC' else 'TOP_BY'
                 merged = copy_node(first)
                 merged.name = top_name
@@ -498,8 +528,8 @@ def logical_steps(source: Node | None, steps: list[Node],
                     and second.name == 'FILTER' and not step_reads_key(second)
                     and keys_renumbered_by(current[i + 2] if i + 2 < len(current) else None)
                     and cannot_raise(sort_details(first)['key'], sort_details(first)['binder'] or '_', logical)
-                    and (logical or cannot_raise(filter_details(second)['predicate'],
-                                                 filter_details(second)['binder'], False))):
+                    and (logical or predicate_cannot_raise(filter_details(second)['predicate'],
+                                                           filter_details(second)['binder'], False))):
                 next_steps.extend((second, first))
                 i += 2
                 changed = True
@@ -535,7 +565,7 @@ def logical_steps(source: Node | None, steps: list[Node],
                 left, right = filter_details(first), filter_details(second)
                 # Fused, the second predicate runs on a row before the first has
                 # seen the rows after it: only one that cannot raise.
-                if not left['valid'] or not right['valid'] or not cannot_raise(right['predicate'], right['binder'], logical):
+                if not left['valid'] or not right['valid'] or not predicate_cannot_raise(right['predicate'], right['binder'], logical):
                     next_steps.append(first)
                     i += 1
                     continue
@@ -563,7 +593,11 @@ def logical_steps(source: Node | None, steps: list[Node],
             first_filter = filter_details(first) if first.name == 'FILTER' else None
             if (first_filter is not None and first_filter['valid']
                     and first_filter['predicate'].t == 'bool' and first_filter['predicate'].v
-                    and (next_steps or i > 0 or source_is_list(source))):
+                    and (next_steps or i > 0 or source_is_list(source))
+                    # In memory a FILTER(x, TRUE) that would be the only step is
+                    # kept: dropping it leaves the source standing for the call,
+                    # and the source reports at its own position.
+                    and (logical or next_steps or i + 1 < len(current))):
                 changed = True
                 i += 1
                 continue
@@ -607,7 +641,13 @@ def optimize_tree(node: Node | None, physical: bool, depth: int = 1,
                 if step.name == 'FILTER':
                     following = final_steps[index + 1] if index + 1 < len(final_steps) else None
                     step.args[-1].keys_unobserved = keys_renumbered_by(following)
-        return build_pipeline(optimized_source, final_steps)
+        root = build_pipeline(optimized_source, final_steps)
+        if physical and final_steps:
+            # A fused or dropped step leaves a node standing for the whole call:
+            # it reports where the call it replaced would have (SPEC 6.3, the
+            # node that actually failed), not where its first stage began.
+            root.pos = node.pos
+        return root
 
     is_curr_math = is_math_op(node)
     next_in_math = is_curr_math

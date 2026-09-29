@@ -35,13 +35,18 @@ final class Bindings
                     . '; build one with Binding::column(), ::columns(), ::relation(), '
                     . '::relationQuery(), ::raw() or ::value()');
             }
-            $this->map[strtoupper((string) $name)] = $b->spec;
+            $key = \Sel\Utf8::upper((string) $name);
+            if (isset($this->map[$key])) {
+                throw new SqlError('E_SQL_BINDING',
+                    "two bindings differ only by case ({$name}); SEL reads them as one name");
+            }
+            $this->map[$key] = $b->spec;
         }
     }
 
     public function has(string $name): bool
     {
-        return isset($this->map[strtoupper($name)]);
+        return isset($this->map[\Sel\Utf8::upper($name)]);
     }
 
     /**
@@ -50,7 +55,7 @@ final class Bindings
      */
     public function get(string $name, ?array $pos = null): array
     {
-        $key = strtoupper($name);
+        $key = \Sel\Utf8::upper($name);
         if (!isset($this->map[$key])) {
             $known = array_keys($this->map);
             sort($known);

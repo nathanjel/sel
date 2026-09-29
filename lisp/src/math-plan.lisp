@@ -33,13 +33,19 @@
 (defparameter +math-builtins+
   (loop for (nil kind token) in *math-op-data* when (eq kind :builtin) collect token))
 
-(defstruct (math-step (:constructor make-math-step (op dst &key (src1 0) (src2 0) pos aux-pos (name "") const-val leaf-node)))
+(defstruct (math-step (:constructor make-math-step (op dst &key (src1 0) (src2 0) pos aux-pos pos1 pos2 (name "") const-val leaf-node)))
   (op :add :type keyword)
   (dst 0 :type fixnum)
   (src1 0 :type fixnum)
   (src2 0 :type fixnum)
   pos
   aux-pos
+  ;; The positions of the operand NODES, for the coercion an operation does when
+  ;; it runs. A load stores the value as evaluated and coerces nothing (SPEC 6.2,
+  ;; evaluate then coerce): the operation coerces its operands, left first, once
+  ;; every operand has been evaluated, exactly as the plain tree does.
+  pos1
+  pos2
   (name "" :type string)
   const-val
   leaf-node)
@@ -62,10 +68,21 @@
     (return-from compile-math-plan nil))
 
   (let ((steps nil)
-        (slot-count 0))
+        (slot-count 0)
+        (raw-slots nil))     ; slots holding a value as evaluated, not yet coerced
     (labels ((alloc-slot ()
                (prog1 slot-count
                  (incf slot-count)))
+             (raw-p (slot) (member slot raw-slots))
+             ;; A slot handed on WITHOUT an operation (`x + 0` is `x`) must still
+             ;; be coerced where the operation would have coerced it, or a later
+             ;; operand's error would be found first.
+             (coerced (slot pos)
+               (if (raw-p slot)
+                   (let ((dst (alloc-slot)))
+                     (push (make-math-step :coerce dst :src1 slot :pos1 pos) steps)
+                     dst)
+                   slot))
              (emit (node depth)
                (when (> depth +max-depth+)
                  (return-from compile-math-plan nil))
@@ -76,6 +93,7 @@
                                           :name (node-s node)
                                           :pos (node-pos node))
                           steps)
+                    (push slot raw-slots)
                     (values slot nil)))
 
                  (:num
@@ -108,14 +126,14 @@
                                            steps
                                            (= (math-step-dst (first steps)) slot-r))
                                   (pop steps))
-                                (return-from emit (values slot-l const-l)))
+                                (return-from emit (values (coerced slot-l (node-pos (node-l node))) const-l)))
 
                               ;; Rule 2: 0 + x (scale == 0) -> slot-r
                               (when (and (string= op "+")
                                          const-l
                                          (dec-zerop const-l)
                                          (zerop (dec-scale const-l)))
-                                (return-from emit (values slot-r const-r)))
+                                (return-from emit (values (coerced slot-r (node-pos (node-r node))) const-r)))
 
                               ;; Rule 3: x - 0 (scale == 0) -> slot-l
                               (when (and (string= op "-")
@@ -126,7 +144,7 @@
                                            steps
                                            (= (math-step-dst (first steps)) slot-r))
                                   (pop steps))
-                                (return-from emit (values slot-l const-l)))
+                                (return-from emit (values (coerced slot-l (node-pos (node-l node))) const-l)))
 
                               ;; Rule 4: x * 1 (scale == 0) -> slot-l
                               (when (and (string= op "*")
@@ -138,7 +156,7 @@
                                            steps
                                            (= (math-step-dst (first steps)) slot-r))
                                   (pop steps))
-                                (return-from emit (values slot-l const-l)))
+                                (return-from emit (values (coerced slot-l (node-pos (node-l node))) const-l)))
 
                               ;; Rule 5: 1 * x (scale == 0) -> slot-r
                               (when (and (string= op "*")
@@ -146,14 +164,16 @@
                                          (not (dec-neg const-l))
                                          (= (dec-digits const-l) 1)
                                          (zerop (dec-scale const-l)))
-                                (return-from emit (values slot-r const-r)))
+                                (return-from emit (values (coerced slot-r (node-pos (node-r node))) const-r)))
 
                               (let ((dst (alloc-slot))
                                     (opcode (math-op-keyword (first (math-op-entry :operator op)))))
                                 (push (make-math-step opcode dst
                                                       :src1 slot-l
                                                       :src2 slot-r
-                                                      :pos (node-pos node))
+                                                      :pos (node-pos node)
+                                                      :pos1 (node-pos (node-l node))
+                                                      :pos2 (node-pos (node-r node)))
                                       steps)
                                 (values dst nil))))))
                       (return-from compile-math-plan nil)))
@@ -167,7 +187,8 @@
                           (let ((dst (alloc-slot)))
                             (push (make-math-step (math-op-keyword (first (math-op-entry :prefix (node-s node)))) dst
                                                   :src1 slot-x
-                                                  :pos (node-pos node))
+                                                  :pos (node-pos node)
+                                                  :pos1 (node-pos (node-l node)))
                                   steps)
                             (values dst nil))))
                       (return-from compile-math-plan nil)))
@@ -190,7 +211,9 @@
                               (multiple-value-bind (slot-arg const-arg) (emit (first args) (1+ depth))
                                 (declare (ignore const-arg))
                                 (let ((dst (alloc-slot)))
-                                  (push (make-math-step opcode dst :src1 slot-arg :pos (node-pos node)) steps)
+                                  (push (make-math-step opcode dst :src1 slot-arg :pos (node-pos node)
+                                                              :pos1 (node-pos (first args)))
+                                        steps)
                                   (values dst nil))))
                              ((eql arity 2)
                               (unless (= (length args) 2) (return-from compile-math-plan nil))
@@ -202,22 +225,32 @@
                                     (push (make-math-step opcode dst
                                                           :src1 slot-0 :src2 slot-1
                                                           :pos (node-pos node)
+                                                          :pos1 (node-pos (first args))
+                                                          :pos2 (node-pos (second args))
                                                           :aux-pos (and aux (node-pos (nth aux args))))
                                           steps)
                                     (values dst nil)))))
                              (t ; fold: one or more operands, combined pairwise left to right
                               (unless (>= (length args) 1) (return-from compile-math-plan nil))
-                              (multiple-value-bind (curr-slot const-0) (emit (first args) (1+ depth))
-                                (declare (ignore const-0))
+                              ;; Every argument is evaluated before any is coerced (SPEC
+                              ;; 7.1), so all of them load first and the pairwise chain runs
+                              ;; over the slots.
+                              (let ((slots (loop for arg in args
+                                                 collect (values (emit arg (1+ depth)))))
+                                    (curr-slot nil))
+                                (setf curr-slot (if (rest args)
+                                                    (first slots)
+                                                    (coerced (first slots) (node-pos (first args)))))
                                 (loop for arg in (rest args)
-                                      do (multiple-value-bind (next-slot const-next) (emit arg (1+ depth))
-                                           (declare (ignore const-next))
-                                           (let ((dst (alloc-slot)))
-                                             (push (make-math-step opcode dst
-                                                                   :src1 curr-slot :src2 next-slot
-                                                                   :pos (node-pos node))
-                                                   steps)
-                                             (setf curr-slot dst))))
+                                      for next-slot in (rest slots)
+                                      do (let ((dst (alloc-slot)))
+                                           (push (make-math-step opcode dst
+                                                                 :src1 curr-slot :src2 next-slot
+                                                                 :pos (node-pos node)
+                                                                 :pos1 (node-pos (first args))
+                                                                 :pos2 (node-pos arg))
+                                                 steps)
+                                           (setf curr-slot dst)))
                                 (values curr-slot nil)))))))
 
                       ((member name '("IF" "COND") :test #'string=)
@@ -229,6 +262,7 @@
                                                :leaf-node node
                                                :pos (node-pos node))
                                steps)
+                         (push slot raw-slots)
                          (values slot nil))))))
 
                  ((:assign :seq :list)
@@ -240,10 +274,12 @@
                                           :leaf-node node
                                           :pos (node-pos node))
                           steps)
+                    (push slot raw-slots)
                     (values slot nil))))))
 
       (multiple-value-bind (output-slot const-root) (emit root 1)
         (declare (ignore const-root))
+        (setf output-slot (coerced output-slot (node-pos root)))
         (unless steps (return-from compile-math-plan nil))
         (make-math-plan (coerce (nreverse steps) 'simple-vector)
                         output-slot

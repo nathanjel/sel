@@ -2,16 +2,32 @@ import { fail } from '../errors.mjs';
 import { Value } from '../value.mjs';
 import { define } from '../registry.mjs';
 import { bytesToHex, decodeUtf8 } from '../utf8.mjs';
+import { checkText, checkCollection } from '../budget.mjs';
+import * as D from '../decimal.mjs';
 
 define({ name: 'BLEN', min: 1, max: 1, fn: (a) => Value.int(a.bytes(0).length) });
-define({ name: 'TO_UTF8', min: 1, max: 1, fn: (a) => Value.bin(a.bytes(0)) });
+define({
+  name: 'TO_UTF8', min: 1, max: 1,
+  fn: (a) => {
+    const b = a.bytes(0);
+    checkText(b.length, a.pos, 'TO_UTF8 result');
+    return Value.bin(b);
+  },
+});
 
 define({
   name: 'FROM_UTF8', min: 1, max: 1,
   fn: (a) => Value.text(decodeUtf8(a.bytes(0), a.posOf(0))),
 });
 
-define({ name: 'TO_HEX', min: 1, max: 1, fn: (a) => Value.text(bytesToHex(a.bytes(0))) });
+define({
+  name: 'TO_HEX', min: 1, max: 1,
+  fn: (a) => {
+    const b = a.bytes(0);
+    checkText(b.length * 2, a.pos, 'TO_HEX result');
+    return Value.text(bytesToHex(b));
+  },
+});
 
 define({
   name: 'FROM_HEX', min: 1, max: 1,
@@ -41,6 +57,7 @@ define({
   name: 'ENCODE_BASE64', min: 1, max: 1,
   fn: (args) => {
     const b = args.bytes(0);
+    checkText(4 * Math.ceil(b.length / 3), args.pos, 'ENCODE_BASE64 result');
     let out = '';
     for (let i = 0; i < b.length; i += 3) {
       const n = (b[i] << 16) | ((i + 1 < b.length ? b[i + 1] : 0) << 8) | (i + 2 < b.length ? b[i + 2] : 0);
@@ -111,19 +128,30 @@ define({
 
 define({
   name: 'BTL', min: 1, max: 1,
-  fn: (args) => Value.list(Array.from(args.bytes(0)).map((b) => Value.int(b))),
+  fn: (args) => {
+    const b = args.bytes(0);
+    checkCollection(b.length, args.pos, 'BTL result');
+    return Value.list(Array.from(b).map((x) => Value.int(x)));
+  },
 });
 
 define({
   name: 'LTB', min: 1, max: 1,
   fn: (args) => {
     const v = args.val(0);
+    // An empty list (or NULL) is the empty BIN, so LTB(BTL(x)) is x for every
+    // BIN x, the empty one included; a scalar is a one-element list.
+    if (v.size() === 0 && (v.isList || v.isNull())) return Value.binOwned(new Uint8Array(0));
     const items = v.size() > 0 ? v.values() : [v];
     const out = new Uint8Array(items.length);
     items.forEach((item, i) => {
+      // An integral value of any scale is a byte candidate (`1.0`, `"65"`).
       const d = item.asDecimal(args.posOf(0));
-      const n = Number(d.digits) * (d.neg ? -1 : 1);
-      if (d.scale !== 0 || n < 0 || n > 255) {
+      if (!D.isInteger(d)) {
+        fail('E_NOT_INT', `LTB element ${i + 1} must be a whole number`, args.posOf(0));
+      }
+      const n = D.toSafeInt(d);
+      if (n < 0 || n > 255) {
         fail('E_RANGE', `LTB element ${i + 1} is not a byte value`, args.posOf(0));
       }
       out[i] = n;

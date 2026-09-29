@@ -351,6 +351,83 @@ func runCase(c SqlCase, dialect string) (problem string, sErr error) {
 		haveSql = true
 	}()
 
+	// The reuse twin. The same program and bindings are translated again,
+	// several times, and every translation must give the first one's outcome:
+	// the same SQL, or the same refusal at the same place, or a startup error
+	// again. A translator that keeps state between calls -- a dialect marked as
+	// checked before it was checked, a map iterated in a different order each
+	// time, a parameter list that grows -- passes one translation and fails here
+	// (T10: JS-C24, PHP-C49, PY-C49, CPP-C36, LISP-C42, GO-C18).
+	if prog != nil && binds != nil {
+		describe := func(sqlText string, e *sql.SqlError, thrown string, sqlOK bool) string {
+			switch {
+			case thrown != "":
+				return "a throw (" + thrown + ")"
+			case e != nil:
+				return fmt.Sprintf("%s at %d:%d", e.Code, e.Line(), e.Col())
+			case sqlOK:
+				return fmt.Sprintf("%q", sqlText)
+			}
+			return "nothing"
+		}
+		for k := 0; k < 4; k++ {
+			var (
+				sql2    string
+				err2    *sql.SqlError
+				thrown2 string
+				ok2     bool
+			)
+			func() {
+				defer func() {
+					if r := recover(); r != nil {
+						if se, ok := r.(*sql.SqlError); ok {
+							err2 = se
+						} else if se, ok := r.(sql.SqlError); ok {
+							err2 = &se
+						} else {
+							thrown2 = fmt.Sprintf("%v", r)
+						}
+					}
+				}()
+				f2, tErr := sql.Translate(prog, dialect, binds, opts)
+				if tErr != nil {
+					if se, ok := tErr.(*sql.SqlError); ok {
+						err2 = se
+						return
+					}
+					thrown2 = tErr.Error()
+					return
+				}
+				switch as {
+				case "condition":
+					sql2 = f2.AsCondition(mode)
+				case "statement":
+					sql2 = f2.AsStatement(mode)
+				default:
+					sql2 = f2.AsValue(mode)
+				}
+				ok2 = true
+			}()
+			var same bool
+			switch {
+			case haveThrown:
+				same = thrown2 != ""
+			case haveError:
+				same = err2 != nil && err2.Code == sqlErr.Code && err2.Line() == sqlErr.Line() && err2.Col() == sqlErr.Col()
+			default:
+				same = thrown2 == "" && err2 == nil && ok2 && sql2 == sqlStr
+			}
+			if !same {
+				var firstErr *sql.SqlError
+				if haveError {
+					firstErr = sqlErr
+				}
+				return fmt.Sprintf("translating again on the same program and bindings gave %s where the first translation gave %s (repeat %d)",
+					describe(sql2, err2, thrown2, ok2), describe(sqlStr, firstErr, thrownWhat, haveSql), k+1), nil
+			}
+		}
+	}
+
 	if c.Throws != nil {
 		if !throwsIsKnown(*c.Throws) {
 			return "", suiteError{msg: fmt.Sprintf("%s: no Go equivalent is recorded for --- throws %s", c.At, *c.Throws)}

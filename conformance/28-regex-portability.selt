@@ -1,0 +1,988 @@
+% Portable regex: the parts of SPEC 7.8 that are already decided, held to every host.
+%
+% Family T06 of the 2026-09-29 review remediation. Every case's expectation is
+% derived from spec/SPEC.md 7.8, spec/errors.md and spec/limits.json, never from a
+% host's output. Patterns are raw '...' literals because `{` in "..." is
+% interpolation. Catastrophic backtracking is pinned separately, in
+% conformance/28b-regex-ambiguity.selt; tools/check-regex-resources.py runs the
+% bounded child-process probes (a suite must not hang).
+
+### name: re.reject.quantified-anchor.1
+--- note
+SPEC 7.8: the subset is the intersection of what every engine accepts. ECMAScript-with-u, PCRE and Python reject a quantifier applied to an anchor; cl-ppcre and RE2-style engines accepted it, so the subset checker has to reject it itself rather than delegate (LISP-C11, GO-C28, JS-C45, CPP-C49).
+--- source
+RMATCH('^*', "aaa")
+--- expect
+error E_REGEX_SYNTAX
+===
+
+### name: re.reject.quantified-anchor.2
+--- note
+SPEC 7.8: the subset is the intersection of what every engine accepts. ECMAScript-with-u, PCRE and Python reject a quantifier applied to an anchor; cl-ppcre and RE2-style engines accepted it, so the subset checker has to reject it itself rather than delegate (LISP-C11, GO-C28, JS-C45, CPP-C49).
+--- source
+RMATCH('$+', "aaa")
+--- expect
+error E_REGEX_SYNTAX
+===
+
+### name: re.reject.quantified-anchor.3
+--- note
+SPEC 7.8: the subset is the intersection of what every engine accepts. ECMAScript-with-u, PCRE and Python reject a quantifier applied to an anchor; cl-ppcre and RE2-style engines accepted it, so the subset checker has to reject it itself rather than delegate (LISP-C11, GO-C28, JS-C45, CPP-C49).
+--- source
+RMATCH('^{2}', "aaa")
+--- expect
+error E_REGEX_SYNTAX
+===
+
+### name: re.reject.quantified-anchor.4
+--- note
+SPEC 7.8: the subset is the intersection of what every engine accepts. ECMAScript-with-u, PCRE and Python reject a quantifier applied to an anchor; cl-ppcre and RE2-style engines accepted it, so the subset checker has to reject it itself rather than delegate (LISP-C11, GO-C28, JS-C45, CPP-C49).
+--- source
+RMATCH('^+?', "aaa")
+--- expect
+error E_REGEX_SYNTAX
+===
+
+### name: re.reject.quantified-anchor.5
+--- note
+SPEC 7.8: the subset is the intersection of what every engine accepts. ECMAScript-with-u, PCRE and Python reject a quantifier applied to an anchor; cl-ppcre and RE2-style engines accepted it, so the subset checker has to reject it itself rather than delegate (LISP-C11, GO-C28, JS-C45, CPP-C49).
+--- source
+RMATCH('a$+', "aaa")
+--- expect
+error E_REGEX_SYNTAX
+===
+
+### name: re.reject.quantified-anchor.6
+--- note
+SPEC 7.8: the subset is the intersection of what every engine accepts. ECMAScript-with-u, PCRE and Python reject a quantifier applied to an anchor; cl-ppcre and RE2-style engines accepted it, so the subset checker has to reject it itself rather than delegate (LISP-C11, GO-C28, JS-C45, CPP-C49).
+--- source
+RMATCH('$?', "aaa")
+--- expect
+error E_REGEX_SYNTAX
+===
+
+### name: re.reject.quantified-anchor.7
+--- note
+SPEC 7.8: the subset is the intersection of what every engine accepts. ECMAScript-with-u, PCRE and Python reject a quantifier applied to an anchor; cl-ppcre and RE2-style engines accepted it, so the subset checker has to reject it itself rather than delegate (LISP-C11, GO-C28, JS-C45, CPP-C49).
+--- source
+RMATCH('${0}', "aaa")
+--- expect
+error E_REGEX_SYNTAX
+===
+
+### name: re.reject.quantified-anchor.8
+--- note
+SPEC 7.8: the subset is the intersection of what every engine accepts. ECMAScript-with-u, PCRE and Python reject a quantifier applied to an anchor; cl-ppcre and RE2-style engines accepted it, so the subset checker has to reject it itself rather than delegate (LISP-C11, GO-C28, JS-C45, CPP-C49).
+--- source
+RMATCH('^{2}a', "aaa")
+--- expect
+error E_REGEX_SYNTAX
+===
+
+### name: re.reject.class-escape-range-endpoint.1
+--- note
+A class escape cannot be a range endpoint: ECMAScript-with-u rejects it and PCRE reads the hyphen literally, so the two disagree and the intersection is a rejection. Rewriting `\d` to `0-9` in place used to turn the neighbouring hyphen into an accidental range (`[+-\d]` matched `,` and not `5`) (PHP-C18, JS-C43, CPP-C49, GO-C31).
+--- source
+RMATCH('[+-\d]', "5")
+--- expect
+error E_REGEX_SYNTAX
+===
+
+### name: re.reject.class-escape-range-endpoint.2
+--- note
+A class escape cannot be a range endpoint: ECMAScript-with-u rejects it and PCRE reads the hyphen literally, so the two disagree and the intersection is a rejection. Rewriting `\d` to `0-9` in place used to turn the neighbouring hyphen into an accidental range (`[+-\d]` matched `,` and not `5`) (PHP-C18, JS-C43, CPP-C49, GO-C31).
+--- source
+RMATCH('[\d-z]', "5")
+--- expect
+error E_REGEX_SYNTAX
+===
+
+### name: re.reject.class-escape-range-endpoint.3
+--- note
+A class escape cannot be a range endpoint: ECMAScript-with-u rejects it and PCRE reads the hyphen literally, so the two disagree and the intersection is a rejection. Rewriting `\d` to `0-9` in place used to turn the neighbouring hyphen into an accidental range (`[+-\d]` matched `,` and not `5`) (PHP-C18, JS-C43, CPP-C49, GO-C31).
+--- source
+RMATCH('[\s-x]', "5")
+--- expect
+error E_REGEX_SYNTAX
+===
+
+### name: re.reject.class-escape-range-endpoint.4
+--- note
+A class escape cannot be a range endpoint: ECMAScript-with-u rejects it and PCRE reads the hyphen literally, so the two disagree and the intersection is a rejection. Rewriting `\d` to `0-9` in place used to turn the neighbouring hyphen into an accidental range (`[+-\d]` matched `,` and not `5`) (PHP-C18, JS-C43, CPP-C49, GO-C31).
+--- source
+RMATCH('[\w-a]', "5")
+--- expect
+error E_REGEX_SYNTAX
+===
+
+### name: re.reject.class-escape-range-endpoint.5
+--- note
+A class escape cannot be a range endpoint: ECMAScript-with-u rejects it and PCRE reads the hyphen literally, so the two disagree and the intersection is a rejection. Rewriting `\d` to `0-9` in place used to turn the neighbouring hyphen into an accidental range (`[+-\d]` matched `,` and not `5`) (PHP-C18, JS-C43, CPP-C49, GO-C31).
+--- source
+RMATCH('[a-\s]', "5")
+--- expect
+error E_REGEX_SYNTAX
+===
+
+### name: re.reject.class-escape-range-endpoint.6
+--- note
+A class escape cannot be a range endpoint: ECMAScript-with-u rejects it and PCRE reads the hyphen literally, so the two disagree and the intersection is a rejection. Rewriting `\d` to `0-9` in place used to turn the neighbouring hyphen into an accidental range (`[+-\d]` matched `,` and not `5`) (PHP-C18, JS-C43, CPP-C49, GO-C31).
+--- source
+RMATCH('[\w-.]', "5")
+--- expect
+error E_REGEX_SYNTAX
+===
+
+### name: re.reject.class-escape-range-endpoint.7
+--- note
+A class escape cannot be a range endpoint: ECMAScript-with-u rejects it and PCRE reads the hyphen literally, so the two disagree and the intersection is a rejection. Rewriting `\d` to `0-9` in place used to turn the neighbouring hyphen into an accidental range (`[+-\d]` matched `,` and not `5`) (PHP-C18, JS-C43, CPP-C49, GO-C31).
+--- source
+RMATCH('[!-\w]', "5")
+--- expect
+error E_REGEX_SYNTAX
+===
+
+### name: re.accept.class-escape-with-literal-hyphen-at-the-edge
+--- note
+CONTROL for the group above: a hyphen that is first or last in the class is a literal in every engine, next to an escape or not.
+--- source
+RMATCH('^[\d-]$', "-") AND RMATCH('^[-\d]$', "-") AND RMATCH('^[\w.-]$', "-") AND RMATCH('^[\d-]$', "7")
+--- expect
+bool TRUE
+===
+
+### name: re.accept.class-escape-plus-punctuation
+--- note
+CONTROL: an escape followed by ordinary members is expanded in place.
+--- source
+RMATCH('^[\d.]$', ".") AND NOT RMATCH('^[\d.]$', "x")
+--- expect
+bool TRUE
+===
+
+### name: re.reject.posix-class-anywhere.1
+--- note
+SPEC 7.8 rejects POSIX classes, and a `[:name:]` is one wherever it stands in the class. PHP raised for `[a[:digit:]` while four hosts matched it as a literal class (JS-C18, PHP-C19).
+--- source
+RMATCH('[a[:alpha:]]', "a")
+--- expect
+error E_REGEX_SYNTAX
+===
+
+### name: re.reject.posix-class-anywhere.2
+--- note
+SPEC 7.8 rejects POSIX classes, and a `[:name:]` is one wherever it stands in the class. PHP raised for `[a[:digit:]` while four hosts matched it as a literal class (JS-C18, PHP-C19).
+--- source
+RMATCH('[a[:digit:]', "a")
+--- expect
+error E_REGEX_SYNTAX
+===
+
+### name: re.reject.posix-class-anywhere.3
+--- note
+SPEC 7.8 rejects POSIX classes, and a `[:name:]` is one wherever it stands in the class. PHP raised for `[a[:digit:]` while four hosts matched it as a literal class (JS-C18, PHP-C19).
+--- source
+RMATCH('[x[:^alpha:]]', "a")
+--- expect
+error E_REGEX_SYNTAX
+===
+
+### name: re.reject.posix-class-anywhere.4
+--- note
+SPEC 7.8 rejects POSIX classes, and a `[:name:]` is one wherever it stands in the class. PHP raised for `[a[:digit:]` while four hosts matched it as a literal class (JS-C18, PHP-C19).
+--- source
+RMATCH('[[:alpha:]a]', "a")
+--- expect
+error E_REGEX_SYNTAX
+===
+
+### name: re.reject.pcre-verb.1
+--- note
+`(*` is not in the subset: ECMAScript reads it as a quantifier with nothing to repeat. PCRE verbs changed what PHP matched (`a(*ACCEPT)b` matched `ac`) (PHP-C4, CPP-C49).
+--- source
+RMATCH('(*FAIL)', "ac")
+--- expect
+error E_REGEX_SYNTAX
+===
+
+### name: re.reject.pcre-verb.2
+--- note
+`(*` is not in the subset: ECMAScript reads it as a quantifier with nothing to repeat. PCRE verbs changed what PHP matched (`a(*ACCEPT)b` matched `ac`) (PHP-C4, CPP-C49).
+--- source
+RMATCH('a(*ACCEPT)b', "ac")
+--- expect
+error E_REGEX_SYNTAX
+===
+
+### name: re.reject.pcre-verb.3
+--- note
+`(*` is not in the subset: ECMAScript reads it as a quantifier with nothing to repeat. PCRE verbs changed what PHP matched (`a(*ACCEPT)b` matched `ac`) (PHP-C4, CPP-C49).
+--- source
+RMATCH('(*UTF8)a', "ac")
+--- expect
+error E_REGEX_SYNTAX
+===
+
+### name: re.reject.pcre-verb.4
+--- note
+`(*` is not in the subset: ECMAScript reads it as a quantifier with nothing to repeat. PCRE verbs changed what PHP matched (`a(*ACCEPT)b` matched `ac`) (PHP-C4, CPP-C49).
+--- source
+RMATCH('(*COMMIT)a', "ac")
+--- expect
+error E_REGEX_SYNTAX
+===
+
+### name: re.reject.pcre-verb.5
+--- note
+`(*` is not in the subset: ECMAScript reads it as a quantifier with nothing to repeat. PCRE verbs changed what PHP matched (`a(*ACCEPT)b` matched `ac`) (PHP-C4, CPP-C49).
+--- source
+RMATCH('(*ANY)a', "ac")
+--- expect
+error E_REGEX_SYNTAX
+===
+
+### name: re.reject.pcre-verb.6
+--- note
+`(*` is not in the subset: ECMAScript reads it as a quantifier with nothing to repeat. PCRE verbs changed what PHP matched (`a(*ACCEPT)b` matched `ac`) (PHP-C4, CPP-C49).
+--- source
+RMATCH('(*LIMIT_MATCH=1)a', "ac")
+--- expect
+error E_REGEX_SYNTAX
+===
+
+### name: re.flag.uppercase-i-is-not-i
+--- note
+SPEC 7.8: 'Flags: `i` and nothing else.' Uppercase `I` was accepted everywhere through each host's own case folding (JS-C44, LISP-C37).
+--- source
+RMATCH('a', "A", "I")
+--- expect
+error E_BAD_ARG
+===
+
+### name: re.flag.dotted-capital-i-is-not-a-flag
+--- note
+U+0130 lower-cases to `i` under some case mappings; the flag test is ASCII-only (LISP-C37).
+--- source
+RMATCH('a', "A", "\u{130}")
+--- expect
+error E_BAD_ARG
+===
+
+### name: re.flag.dotless-i-is-not-a-flag
+--- note
+U+0131 upper-cases to `I`; same rule.
+--- source
+RMATCH('a', "A", "\u{131}")
+--- expect
+error E_BAD_ARG
+===
+
+### name: re.flag.kelvin-sign-is-not-a-flag
+--- note
+U+212A lower-cases to `k`, not `i`, but no non-ASCII character is a flag.
+--- source
+RMATCH('a', "a", "\u{212A}")
+--- expect
+error E_BAD_ARG
+===
+
+### name: re.flag.lowercase-i-still-works
+--- note
+CONTROL.
+--- source
+RMATCH('^a+$', "AaA", "i")
+--- expect
+bool TRUE
+===
+
+### name: re.repeat.1001-matches
+--- note
+Counted repeats above 1000 silently became `never matches` in Go (RE2's own cap); the subset says the cap is 65535 (GO-C1).
+--- source
+RMATCH('^a{1001}$', REPEAT("a", 1001))
+--- expect
+bool TRUE
+===
+
+### name: re.repeat.1000-times-2-matches
+--- note
+GO-C1: a product of counted repeats, each below the cap.
+--- source
+RMATCH('^(?:a{1000}){2}$', REPEAT("a", 2000))
+--- expect
+bool TRUE
+===
+
+### name: re.repeat.open-ended-1001
+--- note
+GO-C1: `{n,}` above 1000.
+--- source
+RMATCH('^a{1001,}$', REPEAT("a", 1001))
+--- expect
+bool TRUE
+===
+
+### name: re.repeat.upper-bound-2000-matches-empty
+--- note
+GO-C1.
+--- source
+RMATCH('^a{0,2000}$', "")
+--- expect
+bool TRUE
+===
+
+### name: re.repeat.upper-bound-5000-finds
+--- note
+GO-C1: RFIND through the same bound.
+--- source
+RFIND('b{2,5000}', "abb")
+--- expect
+num 2
+===
+
+### name: re.repeat.leading-zeros
+--- note
+`{00001}` is `{1}` in every engine that accepts it; Go turned it into `never matches` (GO-C1).
+--- source
+RMATCH('^a{00001}$', "a")
+--- expect
+bool TRUE
+===
+
+### name: re.repeat.300-times-300
+--- note
+GO-C1: 90,000 characters through nested counted repeats.
+--- source
+RMATCH('^(a{300}){300}$', REPEAT("a", 90000))
+--- expect
+bool TRUE
+===
+
+### name: re.repeat.at-the-cap-with-a-matching-subject
+--- note
+re.quantifier.bound-at-the-cap only proves FALSE; a matching subject is what shows the cap is honoured rather than silently turned into `never matches`.
+--- source
+RMATCH('^a{65535}$', REPEAT("a", 65535))
+--- expect
+bool TRUE
+===
+
+### name: re.repeat.at-the-cap-one-short-of-a-match
+--- note
+The same pattern on one character less is FALSE, not an error.
+--- source
+RMATCH('^a{65535}$', REPEAT("a", 65534))
+--- expect
+bool FALSE
+===
+
+### name: re.repeat.beyond-the-cap-lower-bound
+--- note
+The cap applies to either bound of a range.
+--- source
+RMATCH('a{65536,}', "a")
+--- expect
+error E_REGEX_SYNTAX
+===
+
+### name: re.repeat.beyond-the-cap-upper-bound
+--- note
+
+--- source
+RMATCH('a{1,65536}', "a")
+--- expect
+error E_REGEX_SYNTAX
+===
+
+### name: re.literal.checked-at-compile-time.1
+--- note
+SPEC 7.8 and errors.md: a literal pattern is checked at compile time, so a bad one is `E_REGEX_SYNTAX` even in a branch that never runs. Every host used to validate lazily, at the call (PY-C35, CPP-C28).
+--- source
+IF(FALSE, RMATCH('(?=a)', "a"), 1)
+--- expect
+error E_REGEX_SYNTAX
+===
+
+### name: re.literal.checked-at-compile-time.2
+--- note
+SPEC 7.8 and errors.md: a literal pattern is checked at compile time, so a bad one is `E_REGEX_SYNTAX` even in a branch that never runs. Every host used to validate lazily, at the call (PY-C35, CPP-C28).
+--- source
+IF(FALSE, RFIND('(?=a)', "a"), 1)
+--- expect
+error E_REGEX_SYNTAX
+===
+
+### name: re.literal.checked-at-compile-time.3
+--- note
+SPEC 7.8 and errors.md: a literal pattern is checked at compile time, so a bad one is `E_REGEX_SYNTAX` even in a branch that never runs. Every host used to validate lazily, at the call (PY-C35, CPP-C28).
+--- source
+IF(FALSE, RREPLACE('(?=a)', "-", "a"), 1)
+--- expect
+error E_REGEX_SYNTAX
+===
+
+### name: re.literal.checked-at-compile-time.4
+--- note
+SPEC 7.8 and errors.md: a literal pattern is checked at compile time, so a bad one is `E_REGEX_SYNTAX` even in a branch that never runs. Every host used to validate lazily, at the call (PY-C35, CPP-C28).
+--- source
+IF(FALSE, RGROUPS('(?=a)', "a"), 1)
+--- expect
+error E_REGEX_SYNTAX
+===
+
+### name: re.literal.checked-at-compile-time.5
+--- note
+SPEC 7.8 and errors.md: a literal pattern is checked at compile time, so a bad one is `E_REGEX_SYNTAX` even in a branch that never runs. Every host used to validate lazily, at the call (PY-C35, CPP-C28).
+--- source
+IF(FALSE, RMATCH("(?=a)", "a"), 1)
+--- expect
+error E_REGEX_SYNTAX
+===
+
+### name: re.computed-pattern.checked-only-when-executed
+--- note
+errors.md: a pattern built at run time is validated when the call executes, so the same bad pattern in a dead branch is fine.
+--- source
+IF(FALSE, RMATCH("(?=" & "a)", "a"), 1)
+--- expect
+num 1
+===
+
+### name: re.computed-pattern.checked-when-executed
+--- note
+... and an error when it does run.
+--- source
+IF(TRUE, RMATCH("(?=" & "a)", "a"), 1)
+--- expect
+error E_REGEX_SYNTAX
+===
+
+### name: re.anchor.end-then-dotstar.match
+--- note
+`$` matches at the end of the subject and `.*` then matches the empty rest; cl-ppcre never matched `\z.*` (LISP-C10).
+--- source
+RMATCH('$.*', "abc")
+--- expect
+bool TRUE
+===
+
+### name: re.anchor.end-then-dotstar.find
+--- note
+
+--- source
+RFIND('$.*', "abc")
+--- expect
+num 4
+===
+
+### name: re.anchor.end-then-dotstar.replace
+--- note
+
+--- source
+RREPLACE('$.*', "!", "abc")
+--- expect
+text "abc!"
+===
+
+### name: re.class.open-bracket-member
+--- note
+`[[]` is a valid class with `[` in it; Python's re warned (FutureWarning, an exception under -W error) (PY-C33).
+--- source
+RMATCH('^[[]$', "[")
+--- expect
+bool TRUE
+===
+
+### name: re.class.ampersands-are-literal
+--- note
+`&&` is a literal pair in every subset engine; Python warned about set operations (PY-C33).
+--- source
+RMATCH('^[a&&b]$', "&")
+--- expect
+bool TRUE
+===
+
+### name: re.class.bars-are-literal
+--- note
+
+--- source
+RMATCH('^[a||b]$', "|")
+--- expect
+bool TRUE
+===
+
+### name: re.class.tildes-are-literal
+--- note
+
+--- source
+RMATCH('^[a~~b]$', "~")
+--- expect
+bool TRUE
+===
+
+### name: re.class.double-hyphen-is-a-reversed-range
+--- note
+`a--b` is the range a..`-`, out of order, in every engine.
+--- source
+RMATCH('[a--b]', "a")
+--- expect
+error E_REGEX_SYNTAX
+===
+
+### name: re.replace.empty-match-abutting-a-match
+--- note
+A zero-width match at the position where the previous match ended IS a match (ECMAScript, PCRE and Python agree): `a*` on `baac` matches empty at 0, `aa` at 1, empty at 3, empty at 4. Go's regexp dropped the abutting one (GO-C10).
+--- source
+RREPLACE('a*', "-", "baac")
+--- expect
+text "-b--c-"
+===
+
+### name: re.replace.empty-match-abutting-a-match-space
+--- note
+GO-C10.
+--- source
+RREPLACE('\s*', "_", "a b")
+--- expect
+text "_a__b_"
+===
+
+### name: re.replace.empty-match-abutting-with-capture
+--- note
+GO-C10, with a group and a non-ASCII class.
+--- source
+RREPLACE('(b*|[é-ü])', "<$0|$1>", "baac")
+--- expect
+text "<b|b><|>a<|>a<|>c<|>"
+===
+
+### name: re.long-subject.match
+--- note
+PCRE's backtrack/JIT limits turned `^(?:a|b)*$` on 60,000 characters into FALSE in PHP while the other hosts said TRUE: a resource failure must never masquerade as a result (PHP-C3).
+--- source
+RMATCH('^(?:a|b)*$', REPEAT("a", 60000))
+--- expect
+bool TRUE
+===
+
+### name: re.long-subject.find
+--- note
+PHP-C3.
+--- source
+RFIND('(?:a|b)*c', REPEAT("a", 60000) & "c")
+--- expect
+num 1
+===
+
+### name: re.long-subject.replace
+--- note
+PHP-C3: the text came back unchanged.
+--- source
+LEN(RREPLACE('^(?:a|b)*$', "X", REPEAT("a", 60000)))
+--- expect
+num 1
+===
+
+### name: re.long-subject.groups
+--- note
+PHP-C3.
+--- source
+COUNT(RGROUPS('^(?:a|b)*$', REPEAT("a", 60000)))
+--- expect
+num 1
+===
+
+### name: re.long-subject.alternation-prefix-of-another
+--- note
+cl-ppcre exhausted its control stack on `^(?:ab|a)*$` over 30,000 characters (LISP-C3).
+--- source
+RMATCH('^(?:ab|a)*$', REPEAT("a", 30000))
+--- expect
+bool TRUE
+===
+
+### name: re.long-subject.captured-alternation
+--- note
+The same shape with a capture, whose per-iteration bookkeeping is what deepens the recursion.
+--- source
+RMATCH('^(a|b)*$', REPEAT("ab", 30000))
+--- expect
+bool TRUE
+===
+
+### name: re.long-subject.counted-capture
+--- note
+cl-ppcre: `^(a){20000}$` (LISP-C3).
+--- source
+RMATCH('^(a){20000}$', REPEAT("a", 20000))
+--- expect
+bool TRUE
+===
+### name: re.reject.nullable-loop-body.1
+--- note
+SPEC 7.8: a group whose body can match the empty string may not be quantified. PCRE/Python/cl-ppcre and ECMAScript disagree on both the captures and the overall match of an empty iteration (PY-C4, LISP-C18, CPP-C27, GO-C30); C++ already rejects `(?:^)+`.
+--- source
+RMATCH('(a*)*', "aab")
+--- expect
+error E_REGEX_SYNTAX
+===
+### name: re.reject.nullable-loop-body.2
+--- note
+SPEC 7.8: a group whose body can match the empty string may not be quantified. PCRE/Python/cl-ppcre and ECMAScript disagree on both the captures and the overall match of an empty iteration (PY-C4, LISP-C18, CPP-C27, GO-C30); C++ already rejects `(?:^)+`.
+--- source
+RMATCH('(?:a?)+', "aab")
+--- expect
+error E_REGEX_SYNTAX
+===
+
+### name: re.reject.nullable-loop-body.3
+--- note
+SPEC 7.8: a group whose body can match the empty string may not be quantified. PCRE/Python/cl-ppcre and ECMAScript disagree on both the captures and the overall match of an empty iteration (PY-C4, LISP-C18, CPP-C27, GO-C30); C++ already rejects `(?:^)+`.
+--- source
+RMATCH('(|a)+', "aab")
+--- expect
+error E_REGEX_SYNTAX
+===
+
+### name: re.reject.nullable-loop-body.4
+--- note
+SPEC 7.8: a group whose body can match the empty string may not be quantified. PCRE/Python/cl-ppcre and ECMAScript disagree on both the captures and the overall match of an empty iteration (PY-C4, LISP-C18, CPP-C27, GO-C30); C++ already rejects `(?:^)+`.
+--- source
+RMATCH('(a*?)+', "aab")
+--- expect
+error E_REGEX_SYNTAX
+===
+
+### name: re.reject.nullable-loop-body.5
+--- note
+SPEC 7.8: a group whose body can match the empty string may not be quantified. PCRE/Python/cl-ppcre and ECMAScript disagree on both the captures and the overall match of an empty iteration (PY-C4, LISP-C18, CPP-C27, GO-C30); C++ already rejects `(?:^)+`.
+--- source
+RMATCH('(?:(a)|b?)*', "aab")
+--- expect
+error E_REGEX_SYNTAX
+===
+
+### name: re.reject.nullable-loop-body.6
+--- note
+SPEC 7.8: a group whose body can match the empty string may not be quantified. PCRE/Python/cl-ppcre and ECMAScript disagree on both the captures and the overall match of an empty iteration (PY-C4, LISP-C18, CPP-C27, GO-C30); C++ already rejects `(?:^)+`.
+--- source
+RMATCH('(?:^)*a', "aab")
+--- expect
+error E_REGEX_SYNTAX
+===
+
+### name: re.reject.nullable-loop-body.7
+--- note
+SPEC 7.8: a group whose body can match the empty string may not be quantified. PCRE/Python/cl-ppcre and ECMAScript disagree on both the captures and the overall match of an empty iteration (PY-C4, LISP-C18, CPP-C27, GO-C30); C++ already rejects `(?:^)+`.
+--- source
+RMATCH('(a|)+b', "aab")
+--- expect
+error E_REGEX_SYNTAX
+===
+
+### name: re.reject.optional-capture-in-loop.1
+--- note
+SPEC 7.8: inside a quantified group every capture must take part in every iteration; otherwise PCRE keeps the last value and ECMAScript resets it (PHP-C21, PY-C4, CPP-C27, LISP-C18, GO-C30).
+--- source
+RGROUPS('(?:(a)|b)*', "abab")
+--- expect
+error E_REGEX_SYNTAX
+===
+
+### name: re.reject.optional-capture-in-loop.2
+--- note
+SPEC 7.8: inside a quantified group every capture must take part in every iteration; otherwise PCRE keeps the last value and ECMAScript resets it (PHP-C21, PY-C4, CPP-C27, LISP-C18, GO-C30).
+--- source
+RGROUPS('(?:(a)|(b))+', "abab")
+--- expect
+error E_REGEX_SYNTAX
+===
+
+### name: re.reject.optional-capture-in-loop.3
+--- note
+SPEC 7.8: inside a quantified group every capture must take part in every iteration; otherwise PCRE keeps the last value and ECMAScript resets it (PHP-C21, PY-C4, CPP-C27, LISP-C18, GO-C30).
+--- source
+RGROUPS('((a)|(b))*', "abab")
+--- expect
+error E_REGEX_SYNTAX
+===
+
+### name: re.reject.optional-capture-in-loop.4
+--- note
+SPEC 7.8: inside a quantified group every capture must take part in every iteration; otherwise PCRE keeps the last value and ECMAScript resets it (PHP-C21, PY-C4, CPP-C27, LISP-C18, GO-C30).
+--- source
+RGROUPS('(?:(a)?b)+', "abab")
+--- expect
+error E_REGEX_SYNTAX
+===
+
+### name: re.reject.optional-capture-in-loop.5
+--- note
+SPEC 7.8: inside a quantified group every capture must take part in every iteration; otherwise PCRE keeps the last value and ECMAScript resets it (PHP-C21, PY-C4, CPP-C27, LISP-C18, GO-C30).
+--- source
+RGROUPS('(?:(a)|b){2}', "abab")
+--- expect
+error E_REGEX_SYNTAX
+===
+
+### name: re.groups.loop-capture-last-iteration
+--- note
+CONTROL: a capture that always participates keeps its LAST iteration in every engine.
+--- source
+RGROUPS('(a|b)+', "ab")
+--- expect
+tree -{"1"=t"ab", "2"=t"b"}
+===
+
+### name: re.groups.loop-nested-captures
+--- note
+CONTROL for P2.
+--- source
+RGROUPS('((a)b)+', "abab")
+--- expect
+tree -{"1"=t"abab", "2"=t"ab", "3"=t"a"}
+===
+
+### name: re.groups.counted-loop-capture
+--- note
+CONTROL for P2.
+--- source
+RGROUPS('(\d)-(\d)', "1-2")
+--- expect
+tree -{"1"=t"1-2", "2"=t"1", "3"=t"2"}
+===
+
+### name: re.replace.lazy-empty-then-nonempty
+--- note
+SPEC 7.8: after an EMPTY match at s the scan resumes at s+1 (one code point, copied through); after a non-empty match it resumes at its end, where an empty match is allowed. That is what JS, Python and Lisp do; PHP and C++ retry a non-empty match at the same position (`-a-----`) (PHP-C20, CPP-C26).
+--- source
+RREPLACE('b*?', "-", "abb")
+--- expect
+text "-a-b-b-"
+===
+
+### name: re.replace.alternation-empty-first
+--- note
+SPEC 7.8 (RREPLACE walks the matches left to right).
+--- source
+RREPLACE('(?:|a)', "-", "aa")
+--- expect
+text "-a-a-"
+===
+
+### name: re.replace.lazy-star-on-aab
+--- note
+SPEC 7.8 (RREPLACE walks the matches left to right).
+--- source
+RREPLACE('a*?', "-", "aab")
+--- expect
+text "-a-a-b-"
+===
+
+### name: re.replace.optional-lazy
+--- note
+SPEC 7.8 (RREPLACE walks the matches left to right).
+--- source
+COUNT(SPLIT(RREPLACE('x??', "-", "xx"), "-"))
+--- expect
+num 4
+===
+
+### name: re.limits.group-depth-at-the-cap
+--- note
+SPEC 7.8: group nesting is capped at MAX_DEPTH (200) in the shared validator, so acceptance does not depend on PCRE (refuses 251), SRELL (257) or Python's recursion (JS-C19, PY-C15, PHP-C45, CPP-C50).
+--- source
+RMATCH(REPEAT('(?:', 200) & 'a' & REPEAT(')', 200), "a")
+--- expect
+bool TRUE
+===
+
+### name: re.limits.group-depth-past-the-cap
+--- note
+
+--- source
+RMATCH(REPEAT('(?:', 201) & 'a' & REPEAT(')', 201), "a")
+--- expect
+error E_REGEX_SYNTAX
+===
+
+### name: re.limits.capturing-group-depth-at-the-cap
+--- note
+Capturing and non-capturing groups share the one depth.
+--- source
+RMATCH(REPEAT('(', 200) & 'a' & REPEAT(')', 200), "a")
+--- expect
+bool TRUE
+===
+
+### name: re.limits.capturing-group-depth-past-the-cap
+--- note
+
+--- source
+RMATCH(REPEAT('(', 201) & 'a' & REPEAT(')', 201), "a")
+--- expect
+error E_REGEX_SYNTAX
+===
+
+### name: re.limits.group-depth-far-past-the-cap
+--- note
+A 50,000-deep pattern recursed Python and Lisp to a host crash; it is `E_REGEX_SYNTAX` at the cap like any other.
+--- source
+RMATCH(REPEAT('(?:', 50000) & 'a' & REPEAT(')', 50000), "a")
+--- expect
+error E_REGEX_SYNTAX
+===
+
+### name: re.limits.group-depth-checked-at-compile-time
+--- note
+A literal pattern past the cap is caught at compile time, in a branch that never runs.
+--- source
+IF(FALSE, RMATCH('(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:(?:a)))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))', "a"), 1)
+--- expect
+error E_REGEX_SYNTAX
+===
+
+### name: re.limits.group-count-at-the-cap
+--- note
+SPEC 7.8: at most MAX_REGEX_GROUPS (1000) groups in a pattern. (CPP-C50: compile time was super-linear in the number of groups, and RE2 refuses large programs.)
+--- source
+RMATCH('^' & REPEAT('(a)', 1000) & '$', REPEAT("a", 1000))
+--- expect
+bool TRUE
+===
+
+### name: re.limits.group-count-past-the-cap
+--- note
+
+--- source
+RMATCH('^' & REPEAT('(a)', 1001) & '$', REPEAT("a", 1001))
+--- expect
+error E_REGEX_SYNTAX
+===
+
+### name: re.limits.non-capturing-groups-count
+--- note
+Non-capturing groups count toward the same cap.
+--- source
+RMATCH('^' & REPEAT('(?:a)', 1001) & '$', REPEAT("a", 1001))
+--- expect
+error E_REGEX_SYNTAX
+===
+
+### name: re.limits.sequential-groups-do-not-nest
+--- note
+1000 groups in a row nest one deep: the depth cap and the count cap are separate rules.
+--- source
+RMATCH('^' & REPEAT('(?:a)', 1000) & '$', REPEAT("a", 1000))
+--- expect
+bool TRUE
+===
+
+### name: re.limits.pattern-length-at-the-cap
+--- note
+SPEC 7.8: at most MAX_REGEX_PATTERN (65 535) code points in a pattern.
+--- source
+RMATCH('^' & REPEAT('a', 65533) & '$', REPEAT("a", 65533))
+--- expect
+bool TRUE
+===
+
+### name: re.limits.pattern-length-past-the-cap
+--- note
+
+--- source
+RMATCH('^' & REPEAT('a', 65535) & '$', REPEAT("a", 65535))
+--- expect
+error E_REGEX_SYNTAX
+===
+
+### name: re.limits.pattern-length-counts-code-points
+--- note
+The cap is in code points, not bytes or UTF-16 units: 32,000 two-byte letters are far under it.
+--- source
+RMATCH('^' & REPEAT('ż', 32000) & '$', REPEAT("ż", 32000))
+--- expect
+bool TRUE
+===
+
+### name: re.limits.repeat-product-is-not-a-program-size
+--- note
+`a{n}` bounds are capped individually at 65 535 and a pattern's length at 65 535 code points; the product of nested counts is not a limit the language states. It must not be a host failure: it is a value or ... FALSE here, because the subject is one `a`.
+--- source
+RMATCH('(?:a{60000}){60000}', "a")
+--- expect
+bool FALSE
+===
+
+### name: re.reject.collating-element-anywhere
+--- note
+SPEC 7.8: POSIX bracket forms include `[.x.]` (JS-C18, PHP-C19).
+--- source
+RMATCH('[a[.x.]]', "a")
+--- expect
+error E_REGEX_SYNTAX
+===
+
+### name: re.reject.collating-element-first
+--- note
+
+--- source
+RMATCH('[[.x.]]', "x")
+--- expect
+error E_REGEX_SYNTAX
+===
+
+### name: re.reject.equivalence-class-anywhere
+--- note
+`[=x=]`, same rule.
+--- source
+RMATCH('[a[=x=]]', "a")
+--- expect
+error E_REGEX_SYNTAX
+===
+
+### name: re.reject.equivalence-class-first
+--- note
+
+--- source
+RMATCH('[[=x=]]', "x")
+--- expect
+error E_REGEX_SYNTAX
+===
+
+### name: re.accept.bracket-then-dot-in-class
+--- note
+CONTROL: `[` and `.` in a class that do not form a POSIX bracket are literals.
+--- source
+RMATCH('^[[.]$', ".") AND RMATCH('^[[=]$', "=") AND RMATCH('^[.[]$', "[")
+--- expect
+bool TRUE
+===
+
+### name: re.accept.nested-loop-with-a-nonnullable-body
+--- note
+CONTROL for the nullable-body rule: nesting loops is fine when every body must consume.
+--- source
+RMATCH('^(?:a+b)+$', "aabab")
+--- expect
+bool TRUE
+===
+
+### name: re.accept.optional-group-outside-a-loop
+--- note
+CONTROL: an optional group that is not inside a quantified group keeps its ordinary meaning in every engine.
+--- source
+RGROUPS('^(a)?b$', "b")
+--- expect
+tree -{"1"=t"b", "2"=t""}
+===
+
+### name: re.accept.empty-alternative-outside-a-loop
+--- note
+CONTROL: an empty alternative is fine when the group is not quantified.
+--- source
+RMATCH('^(?:a|)b$', "b")
+--- expect
+bool TRUE
+===
+

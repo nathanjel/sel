@@ -102,7 +102,6 @@ BINDING_FORMS = {
     ),
     'BUCKET': (
         (('outer', 'inner'), None, ('_', '_K')),
-        (('outer', 'binder', 'inner'), (1, 'name'), ('_K',)),
         (('outer', 'inner', 'inner'), None, ('_', '_K')),
         (('outer', 'binder', 'inner', 'inner'), None, ('_K',)),
     ),

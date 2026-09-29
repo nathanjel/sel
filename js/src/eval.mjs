@@ -7,6 +7,7 @@ import { fail, MAX_DEPTH } from './errors.mjs';
 import * as D from './decimal.mjs';
 import { Value, NONE, TEXT, BOOL } from './value.mjs';
 import { bytesCompare } from './utf8.mjs';
+import { cpLength, checkText, checkCollection, MAX_TEXT_LEN } from './budget.mjs';
 import { OpCode } from './math_plan.mjs';
 import { checkSizedInt, MAX_SCALE, MAX_POWER } from './builtins/number.mjs';
 
@@ -137,6 +138,15 @@ const DEC_NEG_ONE = { neg: true, digits: 1n, scale: 0 };
 const DEC_ZERO = { neg: false, digits: 0n, scale: 0 };
 const DEC_ONE = { neg: false, digits: 1n, scale: 0 };
 
+// A slot holds either a decimal (an operation's result, a constant) or the VALUE
+// a load produced. The operation that consumes it coerces it, at the position of
+// the node it came from -- after every operand has been evaluated, and left
+// before right, which is the order the plain tree uses (SPEC 6.2). Coercing at
+// load time instead made the plan report E_NOT_NUM for `"abc" + 1/0` where the
+// plain tree reports E_DIV_ZERO, and read a variable at load time as a snapshot
+// where the plain tree reads it when the operator runs (SPEC 3.4).
+const asNum = (x, pos) => (x instanceof Value ? x.asDecimal(pos) : x);
+
 export function evalMathPlan(plan, ctx) {
   const scratchpad = new Array(plan.scratchpadSize);
   for (let i = 0; i < plan.steps.length; i++) {
@@ -145,71 +155,82 @@ export function evalMathPlan(plan, ctx) {
       case OpCode.LOAD_VAR: {
         const val = ctx.lookup(step.name);
         if (val === undefined) fail('E_UNDEF_VAR', `undefined variable ${step.name}`, step.pos);
-        scratchpad[step.dst] = val.asDecimal(step.pos);
+        scratchpad[step.dst] = val;
         break;
       }
       case OpCode.LOAD_CONST:
         scratchpad[step.dst] = step.constVal;
         break;
-      case OpCode.LOAD_LEAF: {
-        const val = evalNode(step.leafNode, ctx);
-        scratchpad[step.dst] = val.asDecimal(step.leafNode.pos);
+      case OpCode.LOAD_LEAF:
+        scratchpad[step.dst] = evalNode(step.leafNode, ctx);
+        break;
+      case OpCode.ADD: {
+        const a = asNum(scratchpad[step.src1], step.p1), b = asNum(scratchpad[step.src2], step.p2);
+        scratchpad[step.dst] = D.add(a, b, step.pos);
         break;
       }
-      case OpCode.ADD:
-        scratchpad[step.dst] = D.add(scratchpad[step.src1], scratchpad[step.src2], step.pos);
+      case OpCode.SUB: {
+        const a = asNum(scratchpad[step.src1], step.p1), b = asNum(scratchpad[step.src2], step.p2);
+        scratchpad[step.dst] = D.sub(a, b, step.pos);
         break;
-      case OpCode.SUB:
-        scratchpad[step.dst] = D.sub(scratchpad[step.src1], scratchpad[step.src2], step.pos);
+      }
+      case OpCode.MUL: {
+        const a = asNum(scratchpad[step.src1], step.p1), b = asNum(scratchpad[step.src2], step.p2);
+        scratchpad[step.dst] = D.mul(a, b, step.pos);
         break;
-      case OpCode.MUL:
-        scratchpad[step.dst] = D.mul(scratchpad[step.src1], scratchpad[step.src2], step.pos);
+      }
+      case OpCode.DIV: {
+        const a = asNum(scratchpad[step.src1], step.p1), b = asNum(scratchpad[step.src2], step.p2);
+        scratchpad[step.dst] = D.div(a, b, step.pos);
         break;
-      case OpCode.DIV:
-        scratchpad[step.dst] = D.div(scratchpad[step.src1], scratchpad[step.src2], step.pos);
+      }
+      case OpCode.MOD: {
+        const a = asNum(scratchpad[step.src1], step.p1), b = asNum(scratchpad[step.src2], step.p2);
+        scratchpad[step.dst] = D.mod(a, b, step.pos);
         break;
-      case OpCode.MOD:
-        scratchpad[step.dst] = D.mod(scratchpad[step.src1], scratchpad[step.src2], step.pos);
-        break;
+      }
       case OpCode.NEG:
-        scratchpad[step.dst] = D.negate(scratchpad[step.src1]);
+        scratchpad[step.dst] = D.negate(asNum(scratchpad[step.src1], step.p1));
         break;
       case OpCode.ABS:
-        scratchpad[step.dst] = D.abs(scratchpad[step.src1]);
+        scratchpad[step.dst] = D.abs(asNum(scratchpad[step.src1], step.p1));
+        break;
+      case OpCode.ABS_IDENTITY:
+        scratchpad[step.dst] = asNum(scratchpad[step.src1], step.p1);
         break;
       case OpCode.SIGN: {
-        const s = D.sign(scratchpad[step.src1]);
+        const s = D.sign(asNum(scratchpad[step.src1], step.p1));
         scratchpad[step.dst] = s < 0 ? DEC_NEG_ONE : (s === 0 ? DEC_ZERO : DEC_ONE);
         break;
       }
       case OpCode.CEIL:
-        scratchpad[step.dst] = D.ceil(scratchpad[step.src1]);
+        scratchpad[step.dst] = D.ceil(asNum(scratchpad[step.src1], step.p1), step.pos);
         break;
       case OpCode.FLOOR:
-        scratchpad[step.dst] = D.floor(scratchpad[step.src1]);
+        scratchpad[step.dst] = D.floor(asNum(scratchpad[step.src1], step.p1), step.pos);
         break;
       case OpCode.TRUNC:
-        scratchpad[step.dst] = D.trunc(scratchpad[step.src1]);
+        scratchpad[step.dst] = D.trunc(asNum(scratchpad[step.src1], step.p1));
         break;
       case OpCode.ROUND: {
-        const n = checkSizedInt(scratchpad[step.src2], 'ROUND', 2, MAX_SCALE, 'ROUND scale', step.auxPos);
-        scratchpad[step.dst] = D.round(scratchpad[step.src1], n, step.pos);
+        const x = asNum(scratchpad[step.src1], step.p1);
+        const n = checkSizedInt(asNum(scratchpad[step.src2], step.p2), 'ROUND', 2, MAX_SCALE, 'ROUND scale', step.auxPos);
+        scratchpad[step.dst] = D.round(x, n, step.pos);
         break;
       }
       case OpCode.POWER: {
-        const n = checkSizedInt(scratchpad[step.src2], 'POWER', 2, MAX_POWER, 'POWER exponent', step.auxPos);
-        scratchpad[step.dst] = D.power(scratchpad[step.src1], n, step.pos);
+        const x = asNum(scratchpad[step.src1], step.p1);
+        const n = checkSizedInt(asNum(scratchpad[step.src2], step.p2), 'POWER', 2, MAX_POWER, 'POWER exponent', step.auxPos);
+        scratchpad[step.dst] = D.power(x, n, step.pos);
         break;
       }
       case OpCode.MIN: {
-        const a = scratchpad[step.src1];
-        const b = scratchpad[step.src2];
+        const a = asNum(scratchpad[step.src1], step.p1), b = asNum(scratchpad[step.src2], step.p2);
         scratchpad[step.dst] = D.cmp(b, a) < 0 ? b : a;
         break;
       }
       case OpCode.MAX: {
-        const a = scratchpad[step.src1];
-        const b = scratchpad[step.src2];
+        const a = asNum(scratchpad[step.src1], step.p1), b = asNum(scratchpad[step.src2], step.p2);
         scratchpad[step.dst] = D.cmp(b, a) > 0 ? b : a;
         break;
       }
@@ -236,7 +257,18 @@ function evalDispatch(node, ctx) {
     }
 
     case 'index': {
-      const obj = evalNode(node.obj, ctx);
+      // An index over a bare variable reads the variable in place: the index
+      // costs its level and the variable none. Every host reads it that way (the
+      // fast path), so the limit in `A["a"] AND A["a"] AND ...` is one level
+      // deeper than counting the variable as a node of its own would put it;
+      // the boundary is pinned by lim.eval-depth.aggregate-body-*.
+      let obj;
+      if (node.obj.t === 'var') {
+        obj = ctx.lookup(node.obj.name);
+        if (obj === undefined) fail('E_UNDEF_VAR', `undefined variable ${node.obj.name}`, node.obj.pos);
+      } else {
+        obj = evalNode(node.obj, ctx);
+      }
       const key = node.idx.t === 'text' ? node.idx.v : evalNode(node.idx, ctx).asText(node.idx.pos);
       const child = obj.get(key);
       if (child === undefined) fail('E_NO_KEY', `no key ${JSON.stringify(key)}`, node.pos);
@@ -273,9 +305,11 @@ function evalList(node, ctx) {
   for (const item of node.items) {
     const v = evalNode(item, ctx);
     if (v.kind === NONE && v.size() > 0) {
-      for (const child of v.values()) out.push(child.clone());
+      checkCollection(out.length + v.size(), node.pos, '`,` result');
+      for (const child of v.values()) out.push(child.cloneAt(2, node.pos));
     } else {
-      out.push(v.clone());
+      checkCollection(out.length + 1, node.pos, '`,` result');
+      out.push(v.cloneAt(2, node.pos));
     }
   }
   return Value.listOwned(out);
@@ -325,7 +359,7 @@ function evalBinary(node, ctx) {
     case '/': return Value.num(D.div(l.asDecimal(lp), r.asDecimal(rp), node.pos));
     case '%': return Value.num(D.mod(l.asDecimal(lp), r.asDecimal(rp), node.pos));
 
-    case '&': return concat(l, r, lp, rp);
+    case '&': return concat(l, r, lp, rp, node.pos);
 
     case '==': case '!=': case '<': case '<=': case '>': case '>=': {
       const c = D.cmp(l.asDecimal(lp), r.asDecimal(rp));
@@ -368,12 +402,18 @@ function compareResult(op, c, pos) {
 }
 
 // TEXT & TEXT stays TEXT; anything involving BIN becomes BIN (§5.2).
-function concat(l, r, lp, rp) {
+function concat(l, r, lp, rp, pos) {
   const lv = l.scalarSource(lp), rv = r.scalarSource(rp);
   if (lv.kind === BOOL) fail('E_NOT_TEXT', 'cannot concatenate a boolean', lp);
   if (rv.kind === BOOL) fail('E_NOT_TEXT', 'cannot concatenate a boolean', rp);
-  if (lv.kind === TEXT && rv.kind === TEXT) return Value.text(lv.scalar + rv.scalar);
+  if (lv.kind === TEXT && rv.kind === TEXT) {
+    // Code units bound code points, so the exact count is only taken near the cap.
+    const units = lv.scalar.length + rv.scalar.length;
+    if (units > MAX_TEXT_LEN) checkText(cpLength(lv.scalar) + cpLength(rv.scalar), pos, '& result');
+    return Value.text(lv.scalar + rv.scalar);
+  }
   const a = l.asBytes(lp), b = r.asBytes(rp);
+  checkText(a.length + b.length, pos, '& result');
   const out = new Uint8Array(a.length + b.length);
   out.set(a, 0);
   out.set(b, a.length);
@@ -407,7 +447,11 @@ function evalAssign(node, ctx) {
 
   let value;
   if (node.op === '=') {
-    value = evalNode(node.value, ctx).clone(node.pos);
+    // The copy is made at the depth it will stand at: the path to the target
+    // plus the value's own nesting is what SPEC 6.4 caps, and the error is the
+    // assignment target's. `path` counts the variable and every bracket, so the
+    // stored value's root is `path.length` levels down.
+    value = evalNode(node.value, ctx).cloneAt(path.length, node.target.pos);
   } else {
     const current = walkCreate(ctx, path, path.length - 1).get(key);
     if (current === undefined) {
@@ -417,7 +461,7 @@ function evalAssign(node, ctx) {
     const binOp = COMPOUND[node.op];
     const tp = node.target.pos, vp = node.value.pos;
     if (binOp === '&') {
-      value = concat(current, rhs, tp, vp);
+      value = concat(current, rhs, tp, vp, node.pos);
     } else {
       const a = current.asDecimal(tp), b = rhs.asDecimal(vp);
       const r = binOp === '+' ? D.add(a, b, node.pos)

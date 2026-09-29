@@ -139,6 +139,7 @@ re-trigger which rule."
 
 ;;; Every shipped builtin is loaded by now; the manifest must not name one more.
 (assert-builtin-manifest-covered)
+(setf *shipped-builtins* (loop for k being the hash-keys of *registry* collect k))
 
 ;;; --- host functions (spec/SPEC.md §8.1) --------------------------------------
 

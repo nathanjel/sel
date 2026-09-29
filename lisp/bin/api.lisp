@@ -101,6 +101,14 @@
     (say "program.run.reads.context" (sel:value-dump (sel:evaluate "TOTAL > 10.00" ctx)))
     (sel:evaluate "SEEN = TOTAL * 2" ctx)
     (say "program.run.mutates.context" (sel:as-text (sel:value-get ctx "SEEN"))))
+  ;; A BOOL a host hands in is an ordinary value (see tools/api.mjs, PHP-C1).
+  (let ((a (sel:make-none)) (b (sel:make-none)))
+    (sel:value-set a "FLAG" (sel:make-bool t))
+    (sel:value-set b "FLAG" (sel:make-bool t))
+    (sel:run (sel:compile-source "FLAG[\"k\"] = 1; 0") a)
+    (say "bool.isolated.between.contexts"
+         (format nil "~d ~d ~a" (sel:value-size (sel:value-get b "FLAG")) (sel:value-size (sel:make-bool t))
+                 (sel:as-text (sel:evaluate "COUNT(TRUE)")))))
   (say "registry.count" (format nil "~d" (length (sel:function-names))))
   (say "registry.sorted.first" (first (sel:function-names)))
 

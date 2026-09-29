@@ -1,0 +1,1385 @@
+% Aggregates, ordering, grouping and joins: the edges (T05, review of 2026-09-29).
+%
+% Every expectation is derived from spec/SPEC.md (7.3 aggregates, 7.4 structure,
+% 3.4 identity, 6.4 limits), not from a host's output. Where the spec leaves a
+% question open -- the order of mixed numeric-looking and other text, the
+% meaning of same-named join binders, BUCKET's binder spelling -- the case
+% asserts only what holds under EVERY consistent answer: idempotence, that a
+% permutation of the input cannot change a sort, TOP == TAKE(SORT), and that a
+% join does not depend on whether the optimiser found an equi-join.
+
+% Iteration is over a SNAPSHOT of the source's children (SPEC 7.3)
+
+### name: agg.snapshot.append-to-list-map
+--- note
+An aggregate visits the elements its source had when it started. A key the body adds is not visited, and a child the body overwrites is still visited as it was; the element itself, as the binder names it, is the same value (3.4), so a mutation INSIDE an element is seen. The report cases crashed JS (TypeError/heap), Python, PHP and C++ (use after free) and the hosts disagreed on the live/snapshot answer.
+--- source
+A = (1, 2); COUNT(MAP(A, A[COUNT(A) + 1] = 0))
+--- expect
+num 2
+===
+### name: agg.snapshot.append-to-list-side-effect-runs-per-element
+--- note
+An aggregate visits the elements its source had when it started. A key the body adds is not visited, and a child the body overwrites is still visited as it was; the element itself, as the binder names it, is the same value (3.4), so a mutation INSIDE an element is seen. The report cases crashed JS (TypeError/heap), Python, PHP and C++ (use after free) and the hosts disagreed on the live/snapshot answer.
+--- source
+A = (1, 2); MAP(A, A[COUNT(A) + 1] = 0); COUNT(A)
+--- expect
+num 4
+===
+### name: agg.snapshot.append-to-list-filter
+--- note
+An aggregate visits the elements its source had when it started. A key the body adds is not visited, and a child the body overwrites is still visited as it was; the element itself, as the binder names it, is the same value (3.4), so a mutation INSIDE an element is seen. The report cases crashed JS (TypeError/heap), Python, PHP and C++ (use after free) and the hosts disagreed on the live/snapshot answer.
+--- source
+A = (1, 2); COUNT(FILTER(A, (A[COUNT(A) + 1] = 0; TRUE)))
+--- expect
+num 2
+===
+### name: agg.snapshot.append-to-list-sum
+--- note
+An aggregate visits the elements its source had when it started. A key the body adds is not visited, and a child the body overwrites is still visited as it was; the element itself, as the binder names it, is the same value (3.4), so a mutation INSIDE an element is seen. The report cases crashed JS (TypeError/heap), Python, PHP and C++ (use after free) and the hosts disagreed on the live/snapshot answer.
+--- source
+A = (1, 2); SUM(A, (A[COUNT(A) + 1] = 0; 1))
+--- expect
+num 2
+===
+### name: agg.snapshot.append-to-list-all
+--- note
+An aggregate visits the elements its source had when it started. A key the body adds is not visited, and a child the body overwrites is still visited as it was; the element itself, as the binder names it, is the same value (3.4), so a mutation INSIDE an element is seen. The report cases crashed JS (TypeError/heap), Python, PHP and C++ (use after free) and the hosts disagreed on the live/snapshot answer.
+--- source
+A = (1, 2); ALL(A, (A[COUNT(A) + 1] = 0; TRUE)); COUNT(A)
+--- expect
+num 4
+===
+### name: agg.snapshot.append-to-list-any
+--- note
+An aggregate visits the elements its source had when it started. A key the body adds is not visited, and a child the body overwrites is still visited as it was; the element itself, as the binder names it, is the same value (3.4), so a mutation INSIDE an element is seen. The report cases crashed JS (TypeError/heap), Python, PHP and C++ (use after free) and the hosts disagreed on the live/snapshot answer.
+--- source
+A = (1, 2); ANY(A, (A[COUNT(A) + 1] = 0; FALSE)); COUNT(A)
+--- expect
+num 4
+===
+### name: agg.snapshot.append-to-list-sort-by-key
+--- note
+An aggregate visits the elements its source had when it started. A key the body adds is not visited, and a child the body overwrites is still visited as it was; the element itself, as the binder names it, is the same value (3.4), so a mutation INSIDE an element is seen. The report cases crashed JS (TypeError/heap), Python, PHP and C++ (use after free) and the hosts disagreed on the live/snapshot answer.
+--- source
+A = (1, 2); COUNT(SORT_BY(A, (A[COUNT(A) + 1] = 0; _)))
+--- expect
+num 2
+===
+### name: agg.snapshot.append-to-list-top-by-key
+--- note
+An aggregate visits the elements its source had when it started. A key the body adds is not visited, and a child the body overwrites is still visited as it was; the element itself, as the binder names it, is the same value (3.4), so a mutation INSIDE an element is seen. The report cases crashed JS (TypeError/heap), Python, PHP and C++ (use after free) and the hosts disagreed on the live/snapshot answer.
+--- source
+A = (1, 2); COUNT(TOP_BY(A, (A[COUNT(A) + 1] = 0; _), 5))
+--- expect
+num 2
+===
+### name: agg.snapshot.append-to-list-bucket-key
+--- note
+An aggregate visits the elements its source had when it started. A key the body adds is not visited, and a child the body overwrites is still visited as it was; the element itself, as the binder names it, is the same value (3.4), so a mutation INSIDE an element is seen. The report cases crashed JS (TypeError/heap), Python, PHP and C++ (use after free) and the hosts disagreed on the live/snapshot answer.
+--- source
+A = (1, 2); COUNT(BUCKET(A, (A[COUNT(A) + 1] = 0; _)))
+--- expect
+num 2
+===
+### name: agg.snapshot.append-to-list-bucket-projection
+--- note
+An aggregate visits the elements its source had when it started. A key the body adds is not visited, and a child the body overwrites is still visited as it was; the element itself, as the binder names it, is the same value (3.4), so a mutation INSIDE an element is seen. The report cases crashed JS (TypeError/heap), Python, PHP and C++ (use after free) and the hosts disagreed on the live/snapshot answer.
+--- source
+A = (1, 2); COUNT(BUCKET(A, _, (A[COUNT(A) + 1] = 0; COUNT(_))))
+--- expect
+num 2
+===
+### name: agg.snapshot.add-named-key-to-list
+--- note
+An aggregate visits the elements its source had when it started. A key the body adds is not visited, and a child the body overwrites is still visited as it was; the element itself, as the binder names it, is the same value (3.4), so a mutation INSIDE an element is seen. The report cases crashed JS (TypeError/heap), Python, PHP and C++ (use after free) and the hosts disagreed on the live/snapshot answer.
+--- source
+A = LIST(1, 2, 3); COUNT(MAP(A, (A["k"] = 1; _)))
+--- expect
+num 3
+===
+### name: agg.snapshot.add-key-to-record
+--- note
+An aggregate visits the elements its source had when it started. A key the body adds is not visited, and a child the body overwrites is still visited as it was; the element itself, as the binder names it, is the same value (3.4), so a mutation INSIDE an element is seen. The report cases crashed JS (TypeError/heap), Python, PHP and C++ (use after free) and the hosts disagreed on the live/snapshot answer.
+--- source
+A = RECORD("a", 1); COUNT(MAP(A, (A["b"] = 2; _)))
+--- expect
+num 1
+===
+### name: agg.snapshot.add-key-per-element-to-record
+--- note
+An aggregate visits the elements its source had when it started. A key the body adds is not visited, and a child the body overwrites is still visited as it was; the element itself, as the binder names it, is the same value (3.4), so a mutation INSIDE an element is seen. The report cases crashed JS (TypeError/heap), Python, PHP and C++ (use after free) and the hosts disagreed on the live/snapshot answer. Reported as a JS heap exhaustion: every visit adds a key.
+--- source
+R = RECORD("a", 1); R["b"] = 2; R["c"] = 3; COUNT(MAP(R, R[_K & "x"] = 1))
+--- expect
+num 3
+===
+### name: agg.snapshot.add-key-record-sum-binder
+--- note
+An aggregate visits the elements its source had when it started. A key the body adds is not visited, and a child the body overwrites is still visited as it was; the element itself, as the binder names it, is the same value (3.4), so a mutation INSIDE an element is seen. The report cases crashed JS (TypeError/heap), Python, PHP and C++ (use after free) and the hosts disagreed on the live/snapshot answer.
+--- source
+R = RECORD("a", 1, "b", 2); SUM(R, x, (R["c"] = 10; x))
+--- expect
+num 3
+===
+### name: agg.snapshot.add-key-record-map-binder
+--- note
+An aggregate visits the elements its source had when it started. A key the body adds is not visited, and a child the body overwrites is still visited as it was; the element itself, as the binder names it, is the same value (3.4), so a mutation INSIDE an element is seen. The report cases crashed JS (TypeError/heap), Python, PHP and C++ (use after free) and the hosts disagreed on the live/snapshot answer.
+--- source
+R = RECORD("a", 1, "b", 2); COUNT(MAP(R, x, (R["c"] = x; x)))
+--- expect
+num 2
+===
+### name: agg.snapshot.add-key-record-filter-binder
+--- note
+An aggregate visits the elements its source had when it started. A key the body adds is not visited, and a child the body overwrites is still visited as it was; the element itself, as the binder names it, is the same value (3.4), so a mutation INSIDE an element is seen. The report cases crashed JS (TypeError/heap), Python, PHP and C++ (use after free) and the hosts disagreed on the live/snapshot answer.
+--- source
+R = RECORD("a", 1, "b", 2); COUNT(FILTER(R, x, (R["c"] = x; TRUE)))
+--- expect
+num 2
+===
+### name: agg.snapshot.add-key-record-sort-by
+--- note
+An aggregate visits the elements its source had when it started. A key the body adds is not visited, and a child the body overwrites is still visited as it was; the element itself, as the binder names it, is the same value (3.4), so a mutation INSIDE an element is seen. The report cases crashed JS (TypeError/heap), Python, PHP and C++ (use after free) and the hosts disagreed on the live/snapshot answer.
+--- source
+R = RECORD("a", 1, "b", 2); COUNT(SORT_BY(R, x, (R["c"] = x; x)))
+--- expect
+num 2
+===
+### name: agg.snapshot.add-keys-to-entries-backed-record-filter
+--- note
+An aggregate visits the elements its source had when it started. A key the body adds is not visited, and a child the body overwrites is still visited as it was; the element itself, as the binder names it, is the same value (3.4), so a mutation INSIDE an element is seen. The report cases crashed JS (TypeError/heap), Python, PHP and C++ (use after free) and the hosts disagreed on the live/snapshot answer. A record built key by key (no RECORD call) is the entries-backed shape in several hosts; C++ dereferenced a freed slot here.
+--- source
+R["a"] = 1; R["b"] = 2; R["c"] = 3; COUNT(FILTER(R, (R["z" & _K] = 1; TRUE)))
+--- expect
+num 3
+===
+### name: agg.snapshot.add-keys-to-entries-backed-record-sort-by
+--- note
+An aggregate visits the elements its source had when it started. A key the body adds is not visited, and a child the body overwrites is still visited as it was; the element itself, as the binder names it, is the same value (3.4), so a mutation INSIDE an element is seen. The report cases crashed JS (TypeError/heap), Python, PHP and C++ (use after free) and the hosts disagreed on the live/snapshot answer.
+--- source
+R["a"] = 1; R["b"] = 2; R["c"] = 3; COUNT(SORT_BY(R, (R["z" & _K] = 1; 1)))
+--- expect
+num 3
+===
+### name: agg.snapshot.add-keys-to-entries-backed-record-bucket
+--- note
+An aggregate visits the elements its source had when it started. A key the body adds is not visited, and a child the body overwrites is still visited as it was; the element itself, as the binder names it, is the same value (3.4), so a mutation INSIDE an element is seen. The report cases crashed JS (TypeError/heap), Python, PHP and C++ (use after free) and the hosts disagreed on the live/snapshot answer.
+--- source
+R["a"] = 1; R["b"] = 2; R["c"] = 3; COUNT(BUCKET(R, (R["z" & _K] = 1; _)))
+--- expect
+num 3
+===
+### name: agg.snapshot.add-key-to-four-key-record-filter
+--- note
+An aggregate visits the elements its source had when it started. A key the body adds is not visited, and a child the body overwrites is still visited as it was; the element itself, as the binder names it, is the same value (3.4), so a mutation INSIDE an element is seen. The report cases crashed JS (TypeError/heap), Python, PHP and C++ (use after free) and the hosts disagreed on the live/snapshot answer.
+--- source
+R["a"] = 1; R["b"] = 2; R["c"] = 3; R["d"] = 4; COUNT(FILTER(R, (R["z"] = 1) > 0))
+--- expect
+num 4
+===
+### name: agg.snapshot.overwrite-later-element-map
+--- note
+The body overwrites a LATER child of the list it is visiting. The snapshot still visits it as it was. Hosts split three and three: cpp/js/python answered 99, php/lisp/go answered the old value; entries-backed records were live in Go only.
+--- source
+A = LIST(1, 2, 3); MAP(A, IF(_K == "1", (A[3] = 99), _)) .> JOIN(",")
+--- expect
+text "99,2,3"
+===
+### name: agg.snapshot.overwrite-later-element-sum
+--- note
+The body overwrites a LATER child of the list it is visiting. The snapshot still visits it as it was. Hosts split three and three: cpp/js/python answered 99, php/lisp/go answered the old value; entries-backed records were live in Go only.
+--- source
+A = LIST(1, 2, 3); SUM(A, IF(_K == "1", (A[3] = 99), _))
+--- expect
+num 104
+===
+### name: agg.snapshot.overwrite-later-element-filter
+--- note
+The body overwrites a LATER child of the list it is visiting. The snapshot still visits it as it was. Hosts split three and three: cpp/js/python answered 99, php/lisp/go answered the old value; entries-backed records were live in Go only.
+--- source
+X = LIST(1, 2, 3); FILTER(X, (X[2] = 99; TRUE)) .> JOIN(",")
+--- expect
+text "1,2,3"
+===
+### name: agg.snapshot.overwrite-later-element-bucket-keys
+--- note
+The body overwrites a LATER child of the list it is visiting. The snapshot still visits it as it was. Hosts split three and three: cpp/js/python answered 99, php/lisp/go answered the old value; entries-backed records were live in Go only.
+--- source
+X = LIST(1, 2, 3); BUCKET(X, (X[3] = 0; _)) .> INDEXES .> JOIN(",")
+--- expect
+text "1,2,3"
+===
+### name: agg.snapshot.overwrite-later-element-in-range-map
+--- note
+The body overwrites a LATER child of the list it is visiting. The snapshot still visits it as it was. Hosts split three and three: cpp/js/python answered 99, php/lisp/go answered the old value; entries-backed records were live in Go only.
+--- source
+A = LIST(1, 2, 3); MAP(A, (A[3] = 100) + _) .> JOIN(",")
+--- expect
+text "101,102,103"
+===
+### name: agg.snapshot.overwrite-later-record-field-shaped
+--- note
+The body overwrites a LATER child of the list it is visiting. The snapshot still visits it as it was. Hosts split three and three: cpp/js/python answered 99, php/lisp/go answered the old value; entries-backed records were live in Go only.
+--- source
+R = RECORD("a", 1, "b", 2); MAP(R, (R["b"] = 99; _)) .> JOIN(",")
+--- expect
+text "1,2"
+===
+### name: agg.snapshot.overwrite-later-record-field-entries-backed
+--- note
+The body overwrites a LATER child of the list it is visiting. The snapshot still visits it as it was. Hosts split three and three: cpp/js/python answered 99, php/lisp/go answered the old value; entries-backed records were live in Go only.
+--- source
+R["a"] = 1; R["b"] = 2; MAP(R, (R["b"] = 99; _)) .> JOIN(",")
+--- expect
+text "1,2"
+===
+### name: agg.snapshot.overwrite-last-record-field-three-keys
+--- note
+The body overwrites a LATER child of the list it is visiting. The snapshot still visits it as it was. Hosts split three and three: cpp/js/python answered 99, php/lisp/go answered the old value; entries-backed records were live in Go only.
+--- source
+R = RECORD("a", 1); R["b"] = 2; R["c"] = 3; MAP(R, (R["c"] = 100) + _) .> JOIN(",")
+--- expect
+text "101,102,103"
+===
+### name: agg.snapshot.replacing-the-source-variable-changes-nothing
+--- note
+Rebinding the variable is not a mutation of the value already being visited (3.4).
+--- source
+A = LIST(1, 2, 3); MAP(A, (A = LIST(9, 9, 9); _)) .> JOIN(",")
+--- expect
+text "1,2,3"
+===
+### name: agg.snapshot.mutation-inside-an-element-is-seen
+--- note
+The binder names the element (3.4): a mutation inside a later element is visible when it is visited.
+--- source
+A = LIST(RECORD("x", 1), RECORD("x", 2)); MAP(A, (A[2]["x"] = 50; _["x"])) .> JOIN(",")
+--- expect
+text "1,50"
+===
+
+% A scalar is a one-element list; NULL is an empty one (SPEC 7.3)
+
+### name: sort.scalar-is-one-element-list
+--- note
+A first argument with no children is a one-element list when it has a scalar and an empty list when it is NONE (7.3), for every aggregate. The sorts, TOP* and BUCKET treated a scalar as empty in most hosts (lisp/go for TOP, five hosts for BUCKET); C++ alone followed the text.
+--- source
+SORT("str")
+--- expect
+tree -{"1"=t"str"}
+===
+### name: sort-desc.scalar-is-one-element-list
+--- note
+A first argument with no children is a one-element list when it has a scalar and an empty list when it is NONE (7.3), for every aggregate. The sorts, TOP* and BUCKET treated a scalar as empty in most hosts (lisp/go for TOP, five hosts for BUCKET); C++ alone followed the text.
+--- source
+SORT_DESC(5)
+--- expect
+tree -{"1"=t"5"}
+===
+### name: sort-by.scalar-is-one-element-list
+--- note
+A first argument with no children is a one-element list when it has a scalar and an empty list when it is NONE (7.3), for every aggregate. The sorts, TOP* and BUCKET treated a scalar as empty in most hosts (lisp/go for TOP, five hosts for BUCKET); C++ alone followed the text.
+--- source
+SORT_BY(5, _)
+--- expect
+tree -{"1"=t"5"}
+===
+### name: sort-by.scalar-body-runs-on-the-scalar
+--- note
+A first argument with no children is a one-element list when it has a scalar and an empty list when it is NONE (7.3), for every aggregate. The sorts, TOP* and BUCKET treated a scalar as empty in most hosts (lisp/go for TOP, five hosts for BUCKET); C++ alone followed the text.
+--- source
+SORT_BY(5, _["z"])
+--- expect
+error E_NO_KEY at 1:13
+===
+### name: top.scalar-is-one-element-list
+--- note
+A first argument with no children is a one-element list when it has a scalar and an empty list when it is NONE (7.3), for every aggregate. The sorts, TOP* and BUCKET treated a scalar as empty in most hosts (lisp/go for TOP, five hosts for BUCKET); C++ alone followed the text.
+--- source
+TOP("s", 1)
+--- expect
+tree -{"1"=t"s"}
+===
+### name: top.scalar-source-with-count
+--- note
+A first argument with no children is a one-element list when it has a scalar and an empty list when it is NONE (7.3), for every aggregate. The sorts, TOP* and BUCKET treated a scalar as empty in most hosts (lisp/go for TOP, five hosts for BUCKET); C++ alone followed the text.
+--- source
+TOP(5, 3)
+--- expect
+tree -{"1"=t"5"}
+===
+### name: top-desc.scalar-is-one-element-list
+--- note
+A first argument with no children is a one-element list when it has a scalar and an empty list when it is NONE (7.3), for every aggregate. The sorts, TOP* and BUCKET treated a scalar as empty in most hosts (lisp/go for TOP, five hosts for BUCKET); C++ alone followed the text.
+--- source
+TOP_DESC(5, 3)
+--- expect
+tree -{"1"=t"5"}
+===
+### name: top-by.scalar-is-one-element-list
+--- note
+A first argument with no children is a one-element list when it has a scalar and an empty list when it is NONE (7.3), for every aggregate. The sorts, TOP* and BUCKET treated a scalar as empty in most hosts (lisp/go for TOP, five hosts for BUCKET); C++ alone followed the text.
+--- source
+TOP_BY(5, X, X, 3)
+--- expect
+tree -{"1"=t"5"}
+===
+### name: top.scalar-with-body
+--- note
+A first argument with no children is a one-element list when it has a scalar and an empty list when it is NONE (7.3), for every aggregate. The sorts, TOP* and BUCKET treated a scalar as empty in most hosts (lisp/go for TOP, five hosts for BUCKET); C++ alone followed the text.
+--- source
+TOP("s", _, 1)
+--- expect
+tree -{"1"=t"s"}
+===
+### name: top.scalar-count-zero
+--- note
+A first argument with no children is a one-element list when it has a scalar and an empty list when it is NONE (7.3), for every aggregate. The sorts, TOP* and BUCKET treated a scalar as empty in most hosts (lisp/go for TOP, five hosts for BUCKET); C++ alone followed the text.
+--- source
+COUNT(TOP(5, 0))
+--- expect
+num 0
+===
+### name: bucket.scalar-is-one-element-list
+--- note
+A first argument with no children is a one-element list when it has a scalar and an empty list when it is NONE (7.3), for every aggregate. The sorts, TOP* and BUCKET treated a scalar as empty in most hosts (lisp/go for TOP, five hosts for BUCKET); C++ alone followed the text.
+--- source
+BUCKET("abc", _)
+--- expect
+tree -{"abc"=-{"1"=t"abc"}}
+===
+### name: bucket.scalar-projection-counts-one
+--- note
+A first argument with no children is a one-element list when it has a scalar and an empty list when it is NONE (7.3), for every aggregate. The sorts, TOP* and BUCKET treated a scalar as empty in most hosts (lisp/go for TOP, five hosts for BUCKET); C++ alone followed the text.
+--- source
+BUCKET("abc", _, COUNT(_))
+--- expect
+tree -{"1"=t"1"}
+===
+### name: bucket.scalar-projection-member-list
+--- note
+A first argument with no children is a one-element list when it has a scalar and an empty list when it is NONE (7.3), for every aggregate. The sorts, TOP* and BUCKET treated a scalar as empty in most hosts (lisp/go for TOP, five hosts for BUCKET); C++ alone followed the text.
+--- source
+BUCKET(5, _, _)
+--- expect
+tree -{"1"=-{"1"=t"5"}}
+===
+### name: bucket.scalar-projection-count-of-groups
+--- note
+A first argument with no children is a one-element list when it has a scalar and an empty list when it is NONE (7.3), for every aggregate. The sorts, TOP* and BUCKET treated a scalar as empty in most hosts (lisp/go for TOP, five hosts for BUCKET); C++ alone followed the text.
+--- source
+COUNT(BUCKET("abc", _, _))
+--- expect
+num 1
+===
+### name: sort-take.scalar-source-through-a-variable
+--- note
+A first argument with no children is a one-element list when it has a scalar and an empty list when it is NONE (7.3), for every aggregate. The sorts, TOP* and BUCKET treated a scalar as empty in most hosts (lisp/go for TOP, five hosts for BUCKET); C++ alone followed the text. The fused and the unfused spelling must agree.
+--- source
+X = 5; TAKE(SORT_BY(X, _), 1)
+--- expect
+tree -{"1"=t"5"}
+===
+### name: sort.scalar-pushdown-through-filter-and-map
+--- note
+A first argument with no children is a one-element list when it has a scalar and an empty list when it is NONE (7.3), for every aggregate. The sorts, TOP* and BUCKET treated a scalar as empty in most hosts (lisp/go for TOP, five hosts for BUCKET); C++ alone followed the text.
+--- source
+S = "str"; S .> SORT .> FILTER(TRUE) .> MAP(_)
+--- expect
+tree -{"1"=t"str"}
+===
+### name: sort.scalar-then-filter-non-bool-is-an-error
+--- note
+A first argument with no children is a one-element list when it has a scalar and an empty list when it is NONE (7.3), for every aggregate. The sorts, TOP* and BUCKET treated a scalar as empty in most hosts (lisp/go for TOP, five hosts for BUCKET); C++ alone followed the text. The one element reaches FILTER, whose predicate is not BOOL: optimised or not, E_NOT_BOOL at the predicate.
+--- source
+S = "str"; S .> SORT .> FILTER(1) .> TAKE(5)
+--- expect
+error E_NOT_BOOL at 1:32
+===
+### name: sort.null-is-an-empty-list
+--- note
+A first argument with no children is a one-element list when it has a scalar and an empty list when it is NONE (7.3), for every aggregate. The sorts, TOP* and BUCKET treated a scalar as empty in most hosts (lisp/go for TOP, five hosts for BUCKET); C++ alone followed the text.
+--- source
+COUNT(SORT(NULL))
+--- expect
+num 0
+===
+### name: sort.empty-text-is-a-one-element-list
+--- note
+A first argument with no children is a one-element list when it has a scalar and an empty list when it is NONE (7.3), for every aggregate. The sorts, TOP* and BUCKET treated a scalar as empty in most hosts (lisp/go for TOP, five hosts for BUCKET); C++ alone followed the text. The empty string is a scalar.
+--- source
+COUNT(SORT(""))
+--- expect
+num 1
+===
+### name: sort.empty-list
+--- note
+An empty list sorts to an empty list.
+--- source
+COUNT(SORT(LIST()))
+--- expect
+num 0
+===
+### name: bucket.null-is-an-empty-list
+--- note
+A first argument with no children is a one-element list when it has a scalar and an empty list when it is NONE (7.3), for every aggregate. The sorts, TOP* and BUCKET treated a scalar as empty in most hosts (lisp/go for TOP, five hosts for BUCKET); C++ alone followed the text.
+--- source
+COUNT(BUCKET(NULL, _))
+--- expect
+num 0
+===
+### name: bucket.empty-text-key
+--- note
+The empty string is a key like any other.
+--- source
+BUCKET(LIST("a", ""), _) .> INDEXES .> JOIN("|")
+--- expect
+text "a|"
+===
+
+% Direction and count are always evaluated and checked (SPEC 7.4)
+
+### name: sort-by.bad-direction-on-an-empty-list
+--- note
+SORT_BY's direction and TOP's count are arguments like any other: they are evaluated, and rejected when wrong, whether or not the list has anything to sort. PHP did; JS, Python, Lisp and C++ skipped them for an empty list, which made a rule's validity depend on its data.
+--- source
+SORT_BY(LIST(), _ + 0, "X")
+--- expect
+error E_BAD_ARG at 1:24
+===
+### name: sort-by.bad-direction-on-a-null-source
+--- note
+SORT_BY's direction and TOP's count are arguments like any other: they are evaluated, and rejected when wrong, whether or not the list has anything to sort. PHP did; JS, Python, Lisp and C++ skipped them for an empty list, which made a rule's validity depend on its data.
+--- source
+SORT_BY(NULL, _, "UP")
+--- expect
+error E_BAD_ARG at 1:18
+===
+### name: sort-by.non-text-direction-on-an-empty-list
+--- note
+SORT_BY's direction and TOP's count are arguments like any other: they are evaluated, and rejected when wrong, whether or not the list has anything to sort. PHP did; JS, Python, Lisp and C++ skipped them for an empty list, which made a rule's validity depend on its data.
+--- source
+SORT_BY(LIST(), _ + 0, 1)
+--- expect
+error E_BAD_ARG at 1:24
+===
+### name: sort-by.good-direction-on-an-empty-list
+--- note
+SORT_BY's direction and TOP's count are arguments like any other: they are evaluated, and rejected when wrong, whether or not the list has anything to sort. PHP did; JS, Python, Lisp and C++ skipped them for an empty list, which made a rule's validity depend on its data.
+--- source
+COUNT(SORT_BY(LIST(), _, "DESC"))
+--- expect
+num 0
+===
+### name: sort-by.direction-error-precedes-key-error-on-a-non-empty-list
+--- note
+SORT_BY's direction and TOP's count are arguments like any other: they are evaluated, and rejected when wrong, whether or not the list has anything to sort. PHP did; JS, Python, Lisp and C++ skipped them for an empty list, which made a rule's validity depend on its data. The key is evaluated per element, the direction once, before any of them.
+--- source
+SORT_BY(LIST(1), 1 / 0, "UP")
+--- expect
+error E_BAD_ARG at 1:25
+===
+### name: top-by.bad-direction-on-an-empty-list
+--- note
+SORT_BY's direction and TOP's count are arguments like any other: they are evaluated, and rejected when wrong, whether or not the list has anything to sort. PHP did; JS, Python, Lisp and C++ skipped them for an empty list, which made a rule's validity depend on its data.
+--- source
+TOP_BY(LIST(), _, "UP", 1)
+--- expect
+error E_BAD_ARG at 1:19
+===
+### name: top.count-error-on-an-empty-list
+--- note
+SORT_BY's direction and TOP's count are arguments like any other: they are evaluated, and rejected when wrong, whether or not the list has anything to sort. PHP did; JS, Python, Lisp and C++ skipped them for an empty list, which made a rule's validity depend on its data.
+--- source
+TOP(LIST(), 1 / 0)
+--- expect
+error E_DIV_ZERO at 1:15
+===
+### name: top.negative-count-on-an-empty-list
+--- note
+SORT_BY's direction and TOP's count are arguments like any other: they are evaluated, and rejected when wrong, whether or not the list has anything to sort. PHP did; JS, Python, Lisp and C++ skipped them for an empty list, which made a rule's validity depend on its data.
+--- source
+TOP(LIST(), -1)
+--- expect
+error E_RANGE at 1:13
+===
+### name: top.fractional-count-on-an-empty-list
+--- note
+SORT_BY's direction and TOP's count are arguments like any other: they are evaluated, and rejected when wrong, whether or not the list has anything to sort. PHP did; JS, Python, Lisp and C++ skipped them for an empty list, which made a rule's validity depend on its data.
+--- source
+TOP(LIST(), 1.5)
+--- expect
+error E_NOT_INT at 1:13
+===
+### name: top-desc.count-error-on-a-null-source
+--- note
+SORT_BY's direction and TOP's count are arguments like any other: they are evaluated, and rejected when wrong, whether or not the list has anything to sort. PHP did; JS, Python, Lisp and C++ skipped them for an empty list, which made a rule's validity depend on its data.
+--- source
+TOP_DESC(NULL, 1 / 0)
+--- expect
+error E_DIV_ZERO at 1:18
+===
+
+% TOP(n) is TAKE(SORT, n) for every n, including huge ones (SPEC 7.4)
+
+### name: top-by.equals-take-of-sort-by.n-0
+--- note
+TOP_BY is 'the first n of SORT_BY, as one step': same rows, same keys, same tie order (the sorts are stable), for n below, at and past the size.
+--- source
+L = LIST(RECORD("k", 3, "id", "a"), RECORD("k", 1, "id", "b"), RECORD("k", 3, "id", "c"), RECORD("k", 2, "id", "d"), RECORD("k", 1, "id", "e")); TOP_BY(L, _["k"], 0) EQL TAKE(SORT_BY(L, _["k"]), 0)
+--- expect
+bool TRUE
+===
+### name: top-by-desc.equals-take-of-sort-by-desc.n-0
+--- note
+The same for the descending spelling, where a tie keeps its input order too.
+--- source
+L = LIST(RECORD("k", 3, "id", "a"), RECORD("k", 1, "id", "b"), RECORD("k", 3, "id", "c"), RECORD("k", 2, "id", "d"), RECORD("k", 1, "id", "e")); TOP_BY(L, _["k"], "DESC", 0) EQL TAKE(SORT_BY(L, _["k"], "DESC"), 0)
+--- expect
+bool TRUE
+===
+### name: top-by.equals-take-of-sort-by.n-1
+--- note
+TOP_BY is 'the first n of SORT_BY, as one step': same rows, same keys, same tie order (the sorts are stable), for n below, at and past the size.
+--- source
+L = LIST(RECORD("k", 3, "id", "a"), RECORD("k", 1, "id", "b"), RECORD("k", 3, "id", "c"), RECORD("k", 2, "id", "d"), RECORD("k", 1, "id", "e")); TOP_BY(L, _["k"], 1) EQL TAKE(SORT_BY(L, _["k"]), 1)
+--- expect
+bool TRUE
+===
+### name: top-by-desc.equals-take-of-sort-by-desc.n-1
+--- note
+The same for the descending spelling, where a tie keeps its input order too.
+--- source
+L = LIST(RECORD("k", 3, "id", "a"), RECORD("k", 1, "id", "b"), RECORD("k", 3, "id", "c"), RECORD("k", 2, "id", "d"), RECORD("k", 1, "id", "e")); TOP_BY(L, _["k"], "DESC", 1) EQL TAKE(SORT_BY(L, _["k"], "DESC"), 1)
+--- expect
+bool TRUE
+===
+### name: top-by.equals-take-of-sort-by.n-3
+--- note
+TOP_BY is 'the first n of SORT_BY, as one step': same rows, same keys, same tie order (the sorts are stable), for n below, at and past the size.
+--- source
+L = LIST(RECORD("k", 3, "id", "a"), RECORD("k", 1, "id", "b"), RECORD("k", 3, "id", "c"), RECORD("k", 2, "id", "d"), RECORD("k", 1, "id", "e")); TOP_BY(L, _["k"], 3) EQL TAKE(SORT_BY(L, _["k"]), 3)
+--- expect
+bool TRUE
+===
+### name: top-by-desc.equals-take-of-sort-by-desc.n-3
+--- note
+The same for the descending spelling, where a tie keeps its input order too.
+--- source
+L = LIST(RECORD("k", 3, "id", "a"), RECORD("k", 1, "id", "b"), RECORD("k", 3, "id", "c"), RECORD("k", 2, "id", "d"), RECORD("k", 1, "id", "e")); TOP_BY(L, _["k"], "DESC", 3) EQL TAKE(SORT_BY(L, _["k"], "DESC"), 3)
+--- expect
+bool TRUE
+===
+### name: top-by.equals-take-of-sort-by.n-5
+--- note
+TOP_BY is 'the first n of SORT_BY, as one step': same rows, same keys, same tie order (the sorts are stable), for n below, at and past the size.
+--- source
+L = LIST(RECORD("k", 3, "id", "a"), RECORD("k", 1, "id", "b"), RECORD("k", 3, "id", "c"), RECORD("k", 2, "id", "d"), RECORD("k", 1, "id", "e")); TOP_BY(L, _["k"], 5) EQL TAKE(SORT_BY(L, _["k"]), 5)
+--- expect
+bool TRUE
+===
+### name: top-by-desc.equals-take-of-sort-by-desc.n-5
+--- note
+The same for the descending spelling, where a tie keeps its input order too.
+--- source
+L = LIST(RECORD("k", 3, "id", "a"), RECORD("k", 1, "id", "b"), RECORD("k", 3, "id", "c"), RECORD("k", 2, "id", "d"), RECORD("k", 1, "id", "e")); TOP_BY(L, _["k"], "DESC", 5) EQL TAKE(SORT_BY(L, _["k"], "DESC"), 5)
+--- expect
+bool TRUE
+===
+### name: top-by.equals-take-of-sort-by.n-6
+--- note
+TOP_BY is 'the first n of SORT_BY, as one step': same rows, same keys, same tie order (the sorts are stable), for n below, at and past the size.
+--- source
+L = LIST(RECORD("k", 3, "id", "a"), RECORD("k", 1, "id", "b"), RECORD("k", 3, "id", "c"), RECORD("k", 2, "id", "d"), RECORD("k", 1, "id", "e")); TOP_BY(L, _["k"], 6) EQL TAKE(SORT_BY(L, _["k"]), 6)
+--- expect
+bool TRUE
+===
+### name: top-by-desc.equals-take-of-sort-by-desc.n-6
+--- note
+The same for the descending spelling, where a tie keeps its input order too.
+--- source
+L = LIST(RECORD("k", 3, "id", "a"), RECORD("k", 1, "id", "b"), RECORD("k", 3, "id", "c"), RECORD("k", 2, "id", "d"), RECORD("k", 1, "id", "e")); TOP_BY(L, _["k"], "DESC", 6) EQL TAKE(SORT_BY(L, _["k"], "DESC"), 6)
+--- expect
+bool TRUE
+===
+### name: sort-by.desc-ties-keep-input-order
+--- note
+Every sort is stable, the descending ones included: equal keys keep their order.
+--- source
+LIST(RECORD("k", 3, "id", "a"), RECORD("k", 1, "id", "b"), RECORD("k", 3, "id", "c"), RECORD("k", 2, "id", "d"), RECORD("k", 1, "id", "e")) .> SORT_BY(_["k"], "DESC") .> MAP(_["id"]) .> JOIN("")
+--- expect
+text "acdbe"
+===
+### name: sort-by.asc-ties-keep-input-order
+--- note
+Ascending: ties in input order.
+--- source
+LIST(RECORD("k", 3, "id", "a"), RECORD("k", 1, "id", "b"), RECORD("k", 3, "id", "c"), RECORD("k", 2, "id", "d"), RECORD("k", 1, "id", "e")) .> SORT_BY(_["k"]) .> MAP(_["id"]) .> JOIN("")
+--- expect
+text "bedac"
+===
+### name: top.huge-count-is-the-whole-list
+--- note
+A count is a size, not an allocation: 10^30 asks for everything there is. Lisp allocated an N-element heap up front (a TYPE-ERROR at 10^30, heap exhaustion at 10^9).
+--- source
+LIST(3, 1, 2) .> TOP(1000000000000000000000000000000) .> COUNT()
+--- expect
+num 3
+===
+### name: top.count-one-billion-is-the-whole-list
+--- note
+The same at a count that fits a machine word.
+--- source
+COUNT(TOP(LIST(3, 1, 2), 1000000000))
+--- expect
+num 3
+===
+### name: top-by.huge-count-is-the-whole-list
+--- note
+The keyed spelling.
+--- source
+LIST(3, 1, 2) .> TOP_BY(_, 1000000000000000000000000000000) .> COUNT()
+--- expect
+num 3
+===
+### name: top-desc.huge-count-is-the-whole-list
+--- note
+The descending spelling.
+--- source
+LIST(3, 1, 2) .> TOP_DESC(1000000000000000000000000000000) .> JOIN(",")
+--- expect
+text "3,2,1"
+===
+
+% The sort order: one total order over every kind (SPEC 7.3)
+
+### name: sort.total-order-of-every-kind
+--- note
+The order (7.3): by kind NULL < BOOL (FALSE < TRUE) < numeric-looking text, by exact decimal value < every other TEXT, bytewise < BIN, bytewise. Values that compare equal keep their input order; a descending sort reverses unequal ranks but keeps ties in input order. `"10"`, `"9"` and `"1a"` used to sort five different ways on six hosts. `" 2"` (leading space) and `"1e3"` (no exponent form) are not numbers (4); `"-0"`, `"0"` tie at zero and `"007"`, `"7"` at seven, in input order.
+--- source
+SORT(LIST("10", "9", "1a", "", " 2", "-0", "1e3", "007", "7", "0", FROM_HEX("00ff"), TRUE, FALSE, NULL))
+--- expect
+tree -{"1"=-, "2"=FALSE, "3"=TRUE, "4"=t"-0", "5"=t"0", "6"=t"007", "7"=t"7", "8"=t"9", "9"=t"10", "10"=t"", "11"=t" 2", "12"=t"1a", "13"=t"1e3", "14"=b00ff}
+===
+### name: sort-desc.total-order-of-every-kind
+--- note
+The order (7.3): by kind NULL < BOOL (FALSE < TRUE) < numeric-looking text, by exact decimal value < every other TEXT, bytewise < BIN, bytewise. Values that compare equal keep their input order; a descending sort reverses unequal ranks but keeps ties in input order. `"10"`, `"9"` and `"1a"` used to sort five different ways on six hosts. Descending reverses the unequal ranks; the tied pairs (`"-0"`, `"0"`) and (`"007"`, `"7"`) stay in input order.
+--- source
+SORT_DESC(LIST("10", "9", "1a", "", " 2", "-0", "1e3", "007", "7", "0", FROM_HEX("00ff"), TRUE, FALSE, NULL))
+--- expect
+tree -{"1"=b00ff, "2"=t"1e3", "3"=t"1a", "4"=t" 2", "5"=t"", "6"=t"10", "7"=t"9", "8"=t"007", "9"=t"7", "10"=t"-0", "11"=t"0", "12"=TRUE, "13"=FALSE, "14"=-}
+===
+### name: sort.numbers-and-numeric-text-are-one-rank
+--- note
+The order (7.3): by kind NULL < BOOL (FALSE < TRUE) < numeric-looking text, by exact decimal value < every other TEXT, bytewise < BIN, bytewise. Values that compare equal keep their input order; a descending sort reverses unequal ranks but keeps ties in input order. `"10"`, `"9"` and `"1a"` used to sort five different ways on six hosts. A number and the text spelling it are the same value.
+--- source
+SORT(LIST("10", 9, "9.5", 10)) .> MAP(_) .> JOIN(",")
+--- expect
+text "9,9.5,10,10"
+===
+### name: sort.numeric-text-before-other-text
+--- note
+The order (7.3): by kind NULL < BOOL (FALSE < TRUE) < numeric-looking text, by exact decimal value < every other TEXT, bytewise < BIN, bytewise. Values that compare equal keep their input order; a descending sort reverses unequal ranks but keeps ties in input order. `"10"`, `"9"` and `"1a"` used to sort five different ways on six hosts.
+--- source
+LIST("10", "9", "1a") .> SORT() .> JOIN(",")
+--- expect
+text "9,10,1a"
+===
+### name: sort-desc.other-text-before-numeric-text
+--- note
+The order (7.3): by kind NULL < BOOL (FALSE < TRUE) < numeric-looking text, by exact decimal value < every other TEXT, bytewise < BIN, bytewise. Values that compare equal keep their input order; a descending sort reverses unequal ranks but keeps ties in input order. `"10"`, `"9"` and `"1a"` used to sort five different ways on six hosts.
+--- source
+LIST("10", "9", "1a") .> SORT_DESC() .> JOIN(",")
+--- expect
+text "1a,10,9"
+===
+### name: sort.numeric-text-by-value-not-bytes
+--- note
+The order (7.3): by kind NULL < BOOL (FALSE < TRUE) < numeric-looking text, by exact decimal value < every other TEXT, bytewise < BIN, bytewise. Values that compare equal keep their input order; a descending sort reverses unequal ranks but keeps ties in input order. `"10"`, `"9"` and `"1a"` used to sort five different ways on six hosts.
+--- source
+LIST("100", "20", "3", "-5", "2.50", "2.5") .> SORT() .> JOIN(",")
+--- expect
+text "-5,2.50,2.5,3,20,100"
+===
+### name: sort.other-text-is-bytewise
+--- note
+The order (7.3): by kind NULL < BOOL (FALSE < TRUE) < numeric-looking text, by exact decimal value < every other TEXT, bytewise < BIN, bytewise. Values that compare equal keep their input order; a descending sort reverses unequal ranks but keeps ties in input order. `"10"`, `"9"` and `"1a"` used to sort five different ways on six hosts. Code-point order above U+FFFF included.
+--- source
+LIST("b", "B", "a1", "\u{1F600}", "\u{FF5E}", "") .> SORT() .> JOIN(",")
+--- expect
+text ",B,a1,b,～,😀"
+===
+### name: sort-by.key-ranks-like-the-elements
+--- note
+The order (7.3): by kind NULL < BOOL (FALSE < TRUE) < numeric-looking text, by exact decimal value < every other TEXT, bytewise < BIN, bytewise. Values that compare equal keep their input order; a descending sort reverses unequal ranks but keeps ties in input order. `"10"`, `"9"` and `"1a"` used to sort five different ways on six hosts.
+--- source
+LIST("x", "10", "9") .> SORT_BY(_) .> JOIN(",")
+--- expect
+text "9,10,x"
+===
+### name: sort-by.desc-mixed-keys-keep-ties-in-input-order
+--- note
+The order (7.3): by kind NULL < BOOL (FALSE < TRUE) < numeric-looking text, by exact decimal value < every other TEXT, bytewise < BIN, bytewise. Values that compare equal keep their input order; a descending sort reverses unequal ranks but keeps ties in input order. `"10"`, `"9"` and `"1a"` used to sort five different ways on six hosts.
+--- source
+LIST(RECORD("k", "1", "n", "a"), RECORD("k", "a", "n", "b"), RECORD("k", "1.0", "n", "c"), RECORD("k", "1", "n", "d")) .> SORT_BY(_["k"], "DESC") .> MAP(_["n"]) .> JOIN("")
+--- expect
+text "bacd"
+===
+### name: sort.every-permutation-has-the-same-rank-sequence
+--- note
+The order (7.3): by kind NULL < BOOL (FALSE < TRUE) < numeric-looking text, by exact decimal value < every other TEXT, bytewise < BIN, bytewise. Values that compare equal keep their input order; a descending sort reverses unequal ranks but keeps ties in input order. `"10"`, `"9"` and `"1a"` used to sort five different ways on six hosts. Eight permutations of the fourteen values, compared by the sequence of kinds and values with the numeric ties spelled by value: no permutation changes the answer.
+--- source
+X = SORT(LIST("10", "9", "1a", "", " 2", "-0", "1e3", "007", "7", "0", FROM_HEX("00ff"), TRUE, FALSE, NULL)) .> MAP(IF(_ EQL NULL, "N", IF(_ EQL FALSE, "F", IF(_ EQL TRUE, "T", IF(_ EQL FROM_HEX("00ff"), "B", IF(ISNUM(_), "n" & (_ + 0), "s" & _)))))) .> JOIN(","); (SORT(LIST(NULL, FALSE, TRUE, FROM_HEX("00ff"), "0", "7", "007", "1e3", "-0", " 2", "", "1a", "9", "10")) .> MAP(IF(_ EQL NULL, "N", IF(_ EQL FALSE, "F", IF(_ EQL TRUE, "T", IF(_ EQL FROM_HEX("00ff"), "B", IF(ISNUM(_), "n" & (_ + 0), "s" & _)))))) .> JOIN(",")) $== X AND (SORT(LIST("1e3", "7", FALSE, "-0", "0", "1a", "10", "9", "", NULL, " 2", TRUE, "007", FROM_HEX("00ff"))) .> MAP(IF(_ EQL NULL, "N", IF(_ EQL FALSE, "F", IF(_ EQL TRUE, "T", IF(_ EQL FROM_HEX("00ff"), "B", IF(ISNUM(_), "n" & (_ + 0), "s" & _)))))) .> JOIN(",")) $== X AND (SORT(LIST("0", "7", TRUE, "10", " 2", FALSE, "-0", "9", "007", FROM_HEX("00ff"), "", "1a", "1e3", NULL)) .> MAP(IF(_ EQL NULL, "N", IF(_ EQL FALSE, "F", IF(_ EQL TRUE, "T", IF(_ EQL FROM_HEX("00ff"), "B", IF(ISNUM(_), "n" & (_ + 0), "s" & _)))))) .> JOIN(",")) $== X AND (SORT(LIST(" 2", "9", "0", "1a", "", "7", NULL, FROM_HEX("00ff"), "-0", "007", "10", TRUE, "1e3", FALSE)) .> MAP(IF(_ EQL NULL, "N", IF(_ EQL FALSE, "F", IF(_ EQL TRUE, "T", IF(_ EQL FROM_HEX("00ff"), "B", IF(ISNUM(_), "n" & (_ + 0), "s" & _)))))) .> JOIN(",")) $== X AND (SORT(LIST("-0", FALSE, TRUE, " 2", "10", NULL, "007", "1e3", "9", "1a", "7", "", FROM_HEX("00ff"), "0")) .> MAP(IF(_ EQL NULL, "N", IF(_ EQL FALSE, "F", IF(_ EQL TRUE, "T", IF(_ EQL FROM_HEX("00ff"), "B", IF(ISNUM(_), "n" & (_ + 0), "s" & _)))))) .> JOIN(",")) $== X AND (SORT(LIST(NULL, "-0", "007", "1e3", FROM_HEX("00ff"), "9", "", "0", FALSE, "10", "7", " 2", "1a", TRUE)) .> MAP(IF(_ EQL NULL, "N", IF(_ EQL FALSE, "F", IF(_ EQL TRUE, "T", IF(_ EQL FROM_HEX("00ff"), "B", IF(ISNUM(_), "n" & (_ + 0), "s" & _)))))) .> JOIN(",")) $== X AND (SORT(LIST("1e3", "0", FALSE, FROM_HEX("00ff"), "7", "", "9", " 2", "1a", TRUE, "10", "-0", NULL, "007")) .> MAP(IF(_ EQL NULL, "N", IF(_ EQL FALSE, "F", IF(_ EQL TRUE, "T", IF(_ EQL FROM_HEX("00ff"), "B", IF(ISNUM(_), "n" & (_ + 0), "s" & _)))))) .> JOIN(",")) $== X
+--- expect
+bool TRUE
+===
+### name: sort.idempotent-every-kind
+--- note
+SORT(SORT(x)) is SORT(x).
+--- source
+S = SORT(LIST("10", "9", "1a", "", " 2", "-0", "1e3", "007", "7", "0", FROM_HEX("00ff"), TRUE, FALSE, NULL)); S EQL SORT(S)
+--- expect
+bool TRUE
+===
+### name: sort-desc.idempotent-every-kind
+--- note
+The descending twin.
+--- source
+S = SORT_DESC(LIST("10", "9", "1a", "", " 2", "-0", "1e3", "007", "7", "0", FROM_HEX("00ff"), TRUE, FALSE, NULL)); S EQL SORT_DESC(S)
+--- expect
+bool TRUE
+===
+### name: top.every-kind-equals-take-of-sort.n-0
+--- note
+TOP(L, n) is the first n of SORT(L).
+--- source
+L = LIST("10", "9", "1a", "", " 2", "-0", "1e3", "007", "7", "0", FROM_HEX("00ff"), TRUE, FALSE, NULL); TOP(L, 0) EQL TAKE(SORT(L), 0)
+--- expect
+bool TRUE
+===
+### name: top-desc.every-kind-equals-take-of-sort-desc.n-0
+--- note
+The descending spelling.
+--- source
+L = LIST("10", "9", "1a", "", " 2", "-0", "1e3", "007", "7", "0", FROM_HEX("00ff"), TRUE, FALSE, NULL); TOP_DESC(L, 0) EQL TAKE(SORT_DESC(L), 0)
+--- expect
+bool TRUE
+===
+### name: top.every-kind-equals-take-of-sort.n-1
+--- note
+TOP(L, n) is the first n of SORT(L).
+--- source
+L = LIST("10", "9", "1a", "", " 2", "-0", "1e3", "007", "7", "0", FROM_HEX("00ff"), TRUE, FALSE, NULL); TOP(L, 1) EQL TAKE(SORT(L), 1)
+--- expect
+bool TRUE
+===
+### name: top-desc.every-kind-equals-take-of-sort-desc.n-1
+--- note
+The descending spelling.
+--- source
+L = LIST("10", "9", "1a", "", " 2", "-0", "1e3", "007", "7", "0", FROM_HEX("00ff"), TRUE, FALSE, NULL); TOP_DESC(L, 1) EQL TAKE(SORT_DESC(L), 1)
+--- expect
+bool TRUE
+===
+### name: top.every-kind-equals-take-of-sort.n-4
+--- note
+TOP(L, n) is the first n of SORT(L).
+--- source
+L = LIST("10", "9", "1a", "", " 2", "-0", "1e3", "007", "7", "0", FROM_HEX("00ff"), TRUE, FALSE, NULL); TOP(L, 4) EQL TAKE(SORT(L), 4)
+--- expect
+bool TRUE
+===
+### name: top-desc.every-kind-equals-take-of-sort-desc.n-4
+--- note
+The descending spelling.
+--- source
+L = LIST("10", "9", "1a", "", " 2", "-0", "1e3", "007", "7", "0", FROM_HEX("00ff"), TRUE, FALSE, NULL); TOP_DESC(L, 4) EQL TAKE(SORT_DESC(L), 4)
+--- expect
+bool TRUE
+===
+### name: top.every-kind-equals-take-of-sort.n-14
+--- note
+TOP(L, n) is the first n of SORT(L).
+--- source
+L = LIST("10", "9", "1a", "", " 2", "-0", "1e3", "007", "7", "0", FROM_HEX("00ff"), TRUE, FALSE, NULL); TOP(L, 14) EQL TAKE(SORT(L), 14)
+--- expect
+bool TRUE
+===
+### name: top-desc.every-kind-equals-take-of-sort-desc.n-14
+--- note
+The descending spelling.
+--- source
+L = LIST("10", "9", "1a", "", " 2", "-0", "1e3", "007", "7", "0", FROM_HEX("00ff"), TRUE, FALSE, NULL); TOP_DESC(L, 14) EQL TAKE(SORT_DESC(L), 14)
+--- expect
+bool TRUE
+===
+### name: top.every-kind-equals-take-of-sort.n-15
+--- note
+TOP(L, n) is the first n of SORT(L).
+--- source
+L = LIST("10", "9", "1a", "", " 2", "-0", "1e3", "007", "7", "0", FROM_HEX("00ff"), TRUE, FALSE, NULL); TOP(L, 15) EQL TAKE(SORT(L), 15)
+--- expect
+bool TRUE
+===
+### name: top-desc.every-kind-equals-take-of-sort-desc.n-15
+--- note
+The descending spelling.
+--- source
+L = LIST("10", "9", "1a", "", " 2", "-0", "1e3", "007", "7", "0", FROM_HEX("00ff"), TRUE, FALSE, NULL); TOP_DESC(L, 15) EQL TAKE(SORT_DESC(L), 15)
+--- expect
+bool TRUE
+===
+### name: sort-by.every-kind-key-equals-plain-sort
+--- note
+SORT_BY with the element as its key is SORT.
+--- source
+L = LIST("10", "9", "1a", "", " 2", "-0", "1e3", "007", "7", "0", FROM_HEX("00ff"), TRUE, FALSE, NULL); SORT_BY(L, _) EQL SORT(L)
+--- expect
+bool TRUE
+===
+### name: sort.twelve-element-list-from-the-report
+--- note
+The order (7.3): by kind NULL < BOOL (FALSE < TRUE) < numeric-looking text, by exact decimal value < every other TEXT, bytewise < BIN, bytewise. Values that compare equal keep their input order; a descending sort reverses unequal ranks but keeps ties in input order. `"10"`, `"9"` and `"1a"` used to sort five different ways on six hosts.
+--- source
+LIST("1a", "x", "100", "1b", "9", "10", "2", "5", "30", "3b", "4", "33") .> SORT() .> JOIN(",")
+--- expect
+text "2,4,5,9,10,30,33,100,1a,1b,3b,x"
+===
+### name: sort-desc.twelve-element-list-from-the-report
+--- note
+The order (7.3): by kind NULL < BOOL (FALSE < TRUE) < numeric-looking text, by exact decimal value < every other TEXT, bytewise < BIN, bytewise. Values that compare equal keep their input order; a descending sort reverses unequal ranks but keeps ties in input order. `"10"`, `"9"` and `"1a"` used to sort five different ways on six hosts.
+--- source
+LIST("1a", "x", "100", "1b", "9", "10", "2", "5", "30", "3b", "4", "33") .> SORT_DESC() .> JOIN(",")
+--- expect
+text "x,3b,1b,1a,100,33,30,10,9,5,4,2"
+===
+### name: sort.twelve-element-list-take-four-is-the-prefix
+--- note
+The order (7.3): by kind NULL < BOOL (FALSE < TRUE) < numeric-looking text, by exact decimal value < every other TEXT, bytewise < BIN, bytewise. Values that compare equal keep their input order; a descending sort reverses unequal ranks but keeps ties in input order. `"10"`, `"9"` and `"1a"` used to sort five different ways on six hosts. The fused TOP and the sort-then-TAKE agree.
+--- source
+L = LIST("1a", "x", "100", "1b", "9", "10", "2", "5", "30", "3b", "4", "33"); S = SORT(L); JOIN(TAKE(S, 4), ",") $== JOIN(TOP(L, 4), ",")
+--- expect
+bool TRUE
+===
+
+% BUCKET keys: index keys in two arguments, identity in three (SPEC 7.3)
+
+### name: bucket.two-arg-same-key-text-different-structure
+--- note
+In the two-argument spelling the group key is an INDEX KEY (3.3): the key's scalar, verbatim. A value that carries a scalar and children is still that scalar, so two of them with different children and the same text are one group, and every member is kept. All six hosts kept only the last.
+--- setup
+A = "x"; A["k"] = 1; B = "x"; B["k"] = 2
+--- source
+BUCKET(LIST(A, B, "x"), _)
+--- expect
+tree -{"x"=-{"1"=t"x"{"k"=t"1"}, "2"=t"x"{"k"=t"2"}, "3"=t"x"}}
+===
+### name: bucket.two-arg-same-key-text-keeps-every-row
+--- note
+In the two-argument spelling the group key is an INDEX KEY (3.3): the key's scalar, verbatim. A value that carries a scalar and children is still that scalar, so two of them with different children and the same text are one group, and every member is kept. All six hosts kept only the last.
+--- setup
+A = "x"; A["k"] = 1; B = "x"; B["k"] = 2
+--- source
+R = LIST(A, "x", A) .> BUCKET(_); JOIN(LIST(COUNT(R), COUNT(R["x"])), ",")
+--- expect
+text "1,3"
+===
+### name: bucket.two-arg-same-key-text-first-appearance-order
+--- note
+In the two-argument spelling the group key is an INDEX KEY (3.3): the key's scalar, verbatim. A value that carries a scalar and children is still that scalar, so two of them with different children and the same text are one group, and every member is kept. All six hosts kept only the last.
+--- setup
+A = "x"; A["k"] = 1; B = "x"; B["k"] = 2
+--- source
+R = LIST("a", A, "b", B, "x") .> BUCKET(_); INDEXES(R) .> JOIN(",")
+--- expect
+text "a,x,b"
+===
+### name: bucket.two-arg-bare-record-spelling
+--- note
+In the two-argument spelling the group key is an INDEX KEY (3.3): the key's scalar, verbatim. A value that carries a scalar and children is still that scalar, so two of them with different children and the same text are one group, and every member is kept. All six hosts kept only the last.
+--- source
+x = "a"; x["k"] = 1; y = "a"; y["k"] = 2; BUCKET(LIST(x, y), _)
+--- expect
+tree -{"a"=-{"1"=t"a"{"k"=t"1"}, "2"=t"a"{"k"=t"2"}}}
+===
+### name: bucket.three-arg-same-text-different-structure-is-three-groups
+--- note
+In the three-argument spelling the group key is compared by IDENTITY (3.4) and may be any value: equal spelling with different structure is a different key.
+--- setup
+A = "x"; A["k"] = 1; B = "x"; B["k"] = 2
+--- source
+BUCKET(LIST(A, B, "x"), _, COUNT(_)) .> JOIN(",")
+--- expect
+text "1,1,1"
+===
+### name: bucket.three-arg-identity-groups-repeats
+--- note
+In the three-argument spelling the group key is compared by IDENTITY (3.4) and may be any value: equal spelling with different structure is a different key.
+--- setup
+A = "x"; A["k"] = 1; B = "x"; B["k"] = 2
+--- source
+LIST(A, "x", A) .> BUCKET(_, COUNT(_)) .> JOIN(",")
+--- expect
+text "2,1"
+===
+### name: bucket.three-arg-numbers-are-not-normalised
+--- note
+In the three-argument spelling the group key is compared by IDENTITY (3.4) and may be any value: equal spelling with different structure is a different key. `"1"` and `"1.0"` are different keys (5.4).
+--- source
+BUCKET(LIST("1", "1.0", "1"), _, COUNT(_)) .> JOIN(",")
+--- expect
+text "2,1"
+===
+### name: bucket.two-arg-numbers-are-not-normalised
+--- note
+Index keys are verbatim (3.3): `"1"` and `"1.0"` are two keys.
+--- source
+BUCKET(LIST("1", "1.0", "1"), _) .> INDEXES .> JOIN(",")
+--- expect
+text "1,1.0"
+===
+### name: bucket.warm-cache-text-key
+--- note
+A decimal cache warmed on a value must not change which group it falls in (Lisp split equal text keys into separate groups once `X * 1` had been evaluated).
+--- source
+X = "5"; Y = X * 1; JOIN(BUCKET(LIST(X, "5", 5), _, COUNT(_)), ",")
+--- expect
+text "3"
+===
+### name: bucket.warm-cache-leading-zero-key
+--- note
+A decimal cache warmed on a value must not change which group it falls in (Lisp split equal text keys into separate groups once `X * 1` had been evaluated).
+--- source
+X = "01"; Y = X + 0; JOIN(BUCKET(LIST(X, "01", "1"), _, COUNT(_)), ",")
+--- expect
+text "2,1"
+===
+### name: bucket.warm-cache-trailing-zero-key
+--- note
+A decimal cache warmed on a value must not change which group it falls in (Lisp split equal text keys into separate groups once `X * 1` had been evaluated).
+--- source
+X = "1.0"; Y = X + 0; JOIN(BUCKET(LIST(X, "1.0"), _, COUNT(_)), ",")
+--- expect
+text "2"
+===
+### name: bucket.warm-cache-record-key-three-arg
+--- note
+A decimal cache warmed on a value must not change which group it falls in (Lisp split equal text keys into separate groups once `X * 1` had been evaluated).
+--- source
+R = LIST(RECORD("k", "1"), RECORD("k", "1"), RECORD("k", "2")); x = ANY(R, _["k"] > 0); BUCKET(R, _["k"], COUNT(_))
+--- expect
+tree -{"1"=t"2", "2"=t"1"}
+===
+### name: bucket.warm-cache-record-key-two-arg-keeps-the-rows
+--- note
+A decimal cache warmed on a value must not change which group it falls in (Lisp split equal text keys into separate groups once `X * 1` had been evaluated).
+--- source
+R = LIST(RECORD("k", "1"), RECORD("k", "1"), RECORD("k", "2")); x = ANY(R, _["k"] > 0); BUCKET(R, _["k"]) .> MAP(COUNT(_)) .> JOIN(",")
+--- expect
+text "2,1"
+===
+### name: bucket.empty-record-key-K
+--- note
+`_K` is the element's key. An element whose record key is the empty string has `_K` equal to the empty string, not an invented counter.
+--- source
+BUCKET(RECORD("", 5, "x", 6), IF(_K $== "", "empty", "other"))
+--- expect
+tree -{"empty"=-{"1"=t"5"}, "other"=-{"1"=t"6"}}
+===
+### name: bucket.empty-record-key-K-as-key
+--- note
+`_K` is the element's key. An element whose record key is the empty string has `_K` equal to the empty string, not an invented counter.
+--- source
+BUCKET(RECORD("", 5, "x", 6, "y", 7), _K) .> INDEXES .> JOIN("|")
+--- expect
+text "|x|y"
+===
+### name: map.empty-record-key-K-control
+--- note
+The control: MAP already read the empty key correctly everywhere.
+--- source
+MAP(RECORD("", 5, "x", 6), _K) .> JOIN("|")
+--- expect
+text "|x"
+===
+### name: bucket.three-arg-bool-key-groups-by-identity
+--- note
+In the three-argument spelling the group key is any value compared by identity (3.4), `_K` is that value, BIN and BOOL included; in the two-argument spelling those keys are E_NOT_TEXT.
+--- source
+LIST(1, 2, 3, 4) .> BUCKET(_ > 2, COUNT(_)) .> JOIN(",")
+--- expect
+text "2,2"
+===
+### name: bucket.three-arg-bool-key-is-the-value
+--- note
+In the three-argument spelling the group key is any value compared by identity (3.4), `_K` is that value, BIN and BOOL included; in the two-argument spelling those keys are E_NOT_TEXT.
+--- source
+LIST(1, 2, 3) .> BUCKET(_ > 1, _K)
+--- expect
+tree -{"1"=FALSE, "2"=TRUE}
+===
+### name: bucket.three-arg-bin-key-groups-by-identity
+--- note
+In the three-argument spelling the group key is any value compared by identity (3.4), `_K` is that value, BIN and BOOL included; in the two-argument spelling those keys are E_NOT_TEXT.
+--- source
+LIST("a", "b", "a") .> BUCKET(TO_UTF8(_), COUNT(_)) .> JOIN(",")
+--- expect
+text "2,1"
+===
+### name: bucket.three-arg-bin-key-is-the-value
+--- note
+In the three-argument spelling the group key is any value compared by identity (3.4), `_K` is that value, BIN and BOOL included; in the two-argument spelling those keys are E_NOT_TEXT.
+--- source
+BUCKET(LIST("a", "b"), TO_UTF8(_), _K) EQL LIST(TO_UTF8("a"), TO_UTF8("b"))
+--- expect
+bool TRUE
+===
+### name: bucket.three-arg-bin-and-text-of-the-same-bytes-are-two-groups
+--- note
+In the three-argument spelling the group key is any value compared by identity (3.4), `_K` is that value, BIN and BOOL included; in the two-argument spelling those keys are E_NOT_TEXT. Identity separates kinds: the BIN `61` and the text `"a"` are different keys.
+--- source
+LIST("a", TO_UTF8("a")) .> BUCKET(_, COUNT(_)) .> JOIN(",")
+--- expect
+text "1,1"
+===
+### name: bucket.three-arg-null-key-is-a-group
+--- note
+In the three-argument spelling the group key is any value compared by identity (3.4), `_K` is that value, BIN and BOOL included; in the two-argument spelling those keys are E_NOT_TEXT. A NULL key is a key.
+--- source
+COUNT(BUCKET(LIST(1, 2), NULL, _))
+--- expect
+num 1
+===
+### name: bucket.three-arg-list-key-groups-by-all-fields
+--- note
+In the three-argument spelling the group key is any value compared by identity (3.4), `_K` is that value, BIN and BOOL included; in the two-argument spelling those keys are E_NOT_TEXT.
+--- source
+LIST(RECORD("a", 1, "b", 1), RECORD("a", 1, "b", 2), RECORD("a", 1, "b", 1)) .> BUCKET(LIST(_["a"], _["b"]), COUNT(_)) .> JOIN(",")
+--- expect
+text "2,1"
+===
+### name: bucket.two-arg-null-key
+--- note
+A NULL group key is E_NULL, reported at the key expression (7.3).
+--- source
+BUCKET(LIST(1), NULL)
+--- expect
+error E_NULL at 1:17
+===
+### name: bucket.two-arg-bool-key
+--- note
+A boolean key is E_NOT_TEXT at the key expression.
+--- source
+BUCKET(LIST(1), TRUE)
+--- expect
+error E_NOT_TEXT at 1:17
+===
+### name: bucket.two-arg-list-key
+--- note
+A list or record key is E_NOT_TEXT at the key expression.
+--- source
+BUCKET(LIST(1), LIST(1, 2))
+--- expect
+error E_NOT_TEXT at 1:17
+===
+### name: bucket.two-arg-projection-equivalence
+--- note
+`BUCKET(list, key) .> MAP(proj)` is the three-argument spelling for every key the two-argument one accepts (7.3).
+--- source
+L = LIST(RECORD("c", "b", "n", 1), RECORD("c", "a", "n", 2), RECORD("c", "b", "n", 3)); BUCKET(L, _["c"]) .> MAP(SUM(_, _["n"])) EQL BUCKET(L, _["c"], SUM(_, _["n"]))
+--- expect
+bool TRUE
+===
+
+% SELECT_COLS with a repeated column name
+
+### name: select-cols.repeated-column-uniform-rows
+--- note
+A record has one field per name: naming a column twice keeps it once. Python's fast path built duplicate keys (COUNT 3).
+--- source
+R = SELECT_COLS(LIST(RECORD("a", 1, "b", 2)), "a", "a", "b"); COUNT(R[1])
+--- expect
+num 2
+===
+### name: select-cols.repeated-column-last
+--- note
+The repeat need not be adjacent.
+--- source
+R = SELECT_COLS(LIST(RECORD("a", 1, "b", 2)), "a", "b", "a"); COUNT(R[1])
+--- expect
+num 2
+===
+### name: select-cols.repeated-column-values
+--- note
+The repeated column keeps its value.
+--- source
+R = SELECT_COLS(LIST(RECORD("a", 1, "b", 2)), "a", "b", "a"); R[1]["a"] + R[1]["b"]
+--- expect
+num 3
+===
+### name: select-cols.repeated-column-non-uniform-rows
+--- note
+Rows of different shapes take the same rule.
+--- source
+SELECT_COLS(LIST(RECORD("a", 1, "b", 2), RECORD("b", 3, "a", 4)), "a", "b", "a") .> MAP(COUNT(_)) .> JOIN(",")
+--- expect
+text "2,2"
+===
+### name: select-cols.repeated-column-indexes-do-not-repeat
+--- note
+No key appears twice in a projected row.
+--- source
+SELECT_COLS(LIST(RECORD("a", 1, "b", 2)), "b", "a", "b") .> MAP(COUNT(INDEXES(_))) .> JOIN(",")
+--- expect
+text "2"
+===
+
+% LINK: what the optimiser finds must not change the answer (SPEC 7.4)
+
+### name: link.equi-numeric-key-beyond-int64-not-equal
+--- note
+A `LINK` whose predicate is one comparison reading one binder on each side may be matched by key; every other predicate is evaluated per pair. Appending `AND TRUE` turns the first into the second and must never change the rows. 10^23 and 10^24 are different numbers: C++ joined them (a fast key that overflowed).
+--- setup
+A = LIST(RECORD("k", "100000000000000000000000.0")); B = LIST(RECORD("k", "1000000000000000000000000"))
+--- source
+COUNT(LINK(A, B, a["k"] == b["k"]))
+--- expect
+num 0
+===
+### name: link.equi-numeric-key-beyond-int64-not-equal-general-path
+--- note
+A `LINK` whose predicate is one comparison reading one binder on each side may be matched by key; every other predicate is evaluated per pair. Appending `AND TRUE` turns the first into the second and must never change the rows.
+--- setup
+A = LIST(RECORD("k", "100000000000000000000000.0")); B = LIST(RECORD("k", "1000000000000000000000000"))
+--- source
+COUNT(LINK(A, B, a["k"] == b["k"] AND TRUE))
+--- expect
+num 0
+===
+### name: link.equi-numeric-key-trailing-zero-spelling
+--- note
+A `LINK` whose predicate is one comparison reading one binder on each side may be matched by key; every other predicate is evaluated per pair. Appending `AND TRUE` turns the first into the second and must never change the rows. The same number, `.50` and `.5`, beyond int64: C++ missed the match.
+--- setup
+A = LIST(RECORD("k", "12345678901234567890.50")); B = LIST(RECORD("k", "12345678901234567890.5"))
+--- source
+COUNT(LINK(A, B, a["k"] == b["k"]))
+--- expect
+num 1
+===
+### name: link.equi-numeric-key-trailing-zero-spelling-reversed
+--- note
+A `LINK` whose predicate is one comparison reading one binder on each side may be matched by key; every other predicate is evaluated per pair. Appending `AND TRUE` turns the first into the second and must never change the rows. The other direction.
+--- setup
+A = LIST(RECORD("k", "12345678901234567890.50")); B = LIST(RECORD("k", "12345678901234567890.5"))
+--- source
+COUNT(LINK(B, A, b["k"] == a["k"]))
+--- expect
+num 1
+===
+### name: link.equi-numeric-key-trailing-zero-spelling-general-path
+--- note
+A `LINK` whose predicate is one comparison reading one binder on each side may be matched by key; every other predicate is evaluated per pair. Appending `AND TRUE` turns the first into the second and must never change the rows.
+--- setup
+A = LIST(RECORD("k", "12345678901234567890.50")); B = LIST(RECORD("k", "12345678901234567890.5"))
+--- source
+COUNT(LINK(A, B, a["k"] == b["k"] AND TRUE))
+--- expect
+num 1
+===
+### name: link.equi-numeric-key-integer-with-point-zero
+--- note
+A `LINK` whose predicate is one comparison reading one binder on each side may be matched by key; every other predicate is evaluated per pair. Appending `AND TRUE` turns the first into the second and must never change the rows.
+--- setup
+A = LIST(RECORD("k", "123456789012345678900.0")); B = LIST(RECORD("k", "123456789012345678900"))
+--- source
+COUNT(LINK(A, B, a["k"] == b["k"]))
+--- expect
+num 1
+===
+### name: link.equi-numeric-key-number-literals-five-argument-form
+--- note
+A `LINK` whose predicate is one comparison reading one binder on each side may be matched by key; every other predicate is evaluated per pair. Appending `AND TRUE` turns the first into the second and must never change the rows. Number literals, not text, on both sides.
+--- setup
+X = LIST(RECORD("id", 12345678901234567890.0)); Y = LIST(RECORD("id", 12345678901234567890, "name", "ann"))
+--- source
+COUNT(LINK(X, Y, L, R, L["id"] == R["id"]))
+--- expect
+num 1
+===
+### name: link.equi-text-key-case-is-significant
+--- note
+A `LINK` whose predicate is one comparison reading one binder on each side may be matched by key; every other predicate is evaluated per pair. Appending `AND TRUE` turns the first into the second and must never change the rows. `$==` compares bytes.
+--- setup
+A = LIST(RECORD("k", "Ab")); B = LIST(RECORD("k", "aB"))
+--- source
+COUNT(LINK(A, B, a["k"] $== b["k"]))
+--- expect
+num 0
+===
+### name: link.equi-key-over-digit-cap
+--- note
+An equi-join key is compared as `==` compares it, so a numeric key past the digit cap raises E_RANGE (6.4) on both paths; the fast path returned 0 or a match instead.
+--- setup
+BIG = PADL("9", 1000005, "9")
+--- source
+LINK(LIST(RECORD("a", "1")), LIST(RECORD("b", BIG)), _1["a"] == _2["b"]) .> COUNT()
+--- expect
+error E_RANGE at 1:67
+===
+### name: link.equi-key-over-digit-cap-general-path
+--- note
+An equi-join key is compared as `==` compares it, so a numeric key past the digit cap raises E_RANGE (6.4) on both paths; the fast path returned 0 or a match instead.
+--- setup
+BIG = PADL("9", 1000005, "9")
+--- source
+LINK(LIST(RECORD("a", "1")), LIST(RECORD("b", BIG)), _1["a"] == _2["b"] AND TRUE) .> COUNT()
+--- expect
+error E_RANGE at 1:67
+===
+### name: link.equi-key-over-digit-cap-both-sides
+--- note
+An equi-join key is compared as `==` compares it, so a numeric key past the digit cap raises E_RANGE (6.4) on both paths; the fast path returned 0 or a match instead. Equal giant keys on both sides are still E_RANGE, not a match.
+--- setup
+O = LIST(RECORD("k", REPEAT("9", 1000001))); C = LIST(RECORD("k", REPEAT("9", 1000001)))
+--- source
+LINK(O, C, _1["k"] == _2["k"]) .> COUNT()
+--- expect
+error E_RANGE at 1:14
+===
+### name: link.same-binder-name-both-sides
+--- note
+The right binder shadows the left (7.4): when both binders are spelled alike, every occurrence names the RIGHT element, so the predicate reads one element per pair and the join is decided by the general path. A fast path must not extract a key from a comparison whose two sides read the same binder name, and appending `AND TRUE` must not change the answer. `x["k"] == x["k"]` is true for every pair: 2 x 2.
+--- setup
+P = LIST(RECORD("k", 1), RECORD("k", 2)); Q = LIST(RECORD("k", 1), RECORD("k", 3))
+--- source
+COUNT(LINK(P, Q, x, x, x["k"] == x["k"]))
+--- expect
+num 4
+===
+### name: link.same-binder-name-both-sides-general-path
+--- note
+The right binder shadows the left (7.4): when both binders are spelled alike, every occurrence names the RIGHT element, so the predicate reads one element per pair and the join is decided by the general path. A fast path must not extract a key from a comparison whose two sides read the same binder name, and appending `AND TRUE` must not change the answer.
+--- setup
+P = LIST(RECORD("k", 1), RECORD("k", 2)); Q = LIST(RECORD("k", 1), RECORD("k", 3))
+--- source
+COUNT(LINK(P, Q, x, x, x["k"] == x["k"] AND TRUE))
+--- expect
+num 4
+===
+### name: link.same-relation-name-both-sides
+--- note
+The right binder shadows the left (7.4): when both binders are spelled alike, every occurrence names the RIGHT element, so the predicate reads one element per pair and the join is decided by the general path. A fast path must not extract a key from a comparison whose two sides read the same binder name, and appending `AND TRUE` must not change the answer.
+--- setup
+X = LIST(RECORD("k", 1), RECORD("k", 2))
+--- source
+COUNT(LINK(X, X, x["k"] == x["k"]))
+--- expect
+num 4
+===
+### name: link.same-relation-name-both-sides-general-path
+--- note
+The right binder shadows the left (7.4): when both binders are spelled alike, every occurrence names the RIGHT element, so the predicate reads one element per pair and the join is decided by the general path. A fast path must not extract a key from a comparison whose two sides read the same binder name, and appending `AND TRUE` must not change the answer.
+--- setup
+X = LIST(RECORD("k", 1), RECORD("k", 2))
+--- source
+COUNT(LINK(X, X, x["k"] == x["k"] AND TRUE))
+--- expect
+num 4
+===
+### name: link.self-join-same-name-reads-only-the-right-element
+--- note
+The right binder shadows the left (7.4): when both binders are spelled alike, every occurrence names the RIGHT element, so the predicate reads one element per pair and the join is decided by the general path. A fast path must not extract a key from a comparison whose two sides read the same binder name, and appending `AND TRUE` must not change the answer. `T["id"] == T["mgr"]` is then a test on the right element alone, and no element has id equal to mgr.
+--- setup
+T = LIST(RECORD("id", 1, "mgr", 2), RECORD("id", 2, "mgr", 1), RECORD("id", 3, "mgr", 9))
+--- source
+COUNT(LINK(T, T, T["id"] == T["mgr"]))
+--- expect
+num 0
+===
+### name: link.self-join-same-name-general-path
+--- note
+The right binder shadows the left (7.4): when both binders are spelled alike, every occurrence names the RIGHT element, so the predicate reads one element per pair and the join is decided by the general path. A fast path must not extract a key from a comparison whose two sides read the same binder name, and appending `AND TRUE` must not change the answer.
+--- setup
+T = LIST(RECORD("id", 1, "mgr", 2), RECORD("id", 2, "mgr", 1), RECORD("id", 3, "mgr", 9))
+--- source
+COUNT(LINK(T, T, T["id"] == T["mgr"] AND TRUE))
+--- expect
+num 0
+===
+### name: link.self-join-same-name-when-a-row-matches-itself
+--- note
+The right binder shadows the left (7.4): when both binders are spelled alike, every occurrence names the RIGHT element, so the predicate reads one element per pair and the join is decided by the general path. A fast path must not extract a key from a comparison whose two sides read the same binder name, and appending `AND TRUE` must not change the answer. One element has id equal to mgr, so it matches every left element: 3.
+--- setup
+T = LIST(RECORD("id", 1, "mgr", 2), RECORD("id", 2, "mgr", 2), RECORD("id", 3, "mgr", 9))
+--- source
+COUNT(LINK(T, T, T["id"] == T["mgr"]))
+--- expect
+num 3
+===
+### name: link.distinct-binder-names-still-use-the-key
+--- note
+The control: with two different binder names the predicate is a keyed comparison and finds the self-join pairs.
+--- setup
+T = LIST(RECORD("id", 1, "mgr", 2), RECORD("id", 2, "mgr", 1), RECORD("id", 3, "mgr", 9))
+--- source
+COUNT(LINK(T, T, A, B, A["id"] == B["mgr"]))
+--- expect
+num 2
+===
+### name: link.comma-list-operand-reading-both-binders
+--- note
+A side of the comparison that reads BOTH binders (through a `,` list or a `;` sequence) is not one-sided, so the join is evaluated per pair and no binder is unbound. JS and Lisp classified it as one-sided and raised a spurious E_UNDEF_VAR.
+--- source
+LINK(LIST(RECORD("k", 1)), LIST(RECORD("k", 1)), (_1["k"], _2["k"]) == _1["k"]) .> COUNT
+--- expect
+num 1
+===
+### name: link.comma-list-on-the-right-reading-both-binders
+--- note
+A side of the comparison that reads BOTH binders (through a `,` list or a `;` sequence) is not one-sided, so the join is evaluated per pair and no binder is unbound. JS and Lisp classified it as one-sided and raised a spurious E_UNDEF_VAR.
+--- source
+LINK(LIST(RECORD("k", 1)), LIST(RECORD("k", 1)), _1["k"] == (_2["k"], _1["k"])) .> COUNT
+--- expect
+num 1
+===
+### name: link.comma-list-on-the-right-general-path-agrees
+--- note
+A side of the comparison that reads BOTH binders (through a `,` list or a `;` sequence) is not one-sided, so the join is evaluated per pair and no binder is unbound. JS and Lisp classified it as one-sided and raised a spurious E_UNDEF_VAR.
+--- source
+LINK(LIST(RECORD("k", 1)), LIST(RECORD("k", 1)), _1["k"] == (_2["k"], _1["k"]) AND TRUE) .> COUNT
+--- expect
+num 1
+===
+### name: link.sequence-operand-reading-both-binders
+--- note
+A side of the comparison that reads BOTH binders (through a `,` list or a `;` sequence) is not one-sided, so the join is evaluated per pair and no binder is unbound. JS and Lisp classified it as one-sided and raised a spurious E_UNDEF_VAR. The sequence is the right binder's id, which equals the right side for every pair.
+--- source
+R = LIST(RECORD("id", 1)); S = LIST(RECORD("id", 2), RECORD("id", 3)); COUNT(LINK(R, S, A, B, (A["id"]; B["id"]) == B["id"]))
+--- expect
+num 2
+===
+### name: link.sequence-operand-ending-in-the-left-binder
+--- note
+A side of the comparison that reads BOTH binders (through a `,` list or a `;` sequence) is not one-sided, so the join is evaluated per pair and no binder is unbound. JS and Lisp classified it as one-sided and raised a spurious E_UNDEF_VAR. The value of the sequence is the last expression, the left id 1, never equal to 2 or 3.
+--- source
+R = LIST(RECORD("id", 1)); S = LIST(RECORD("id", 2), RECORD("id", 3)); COUNT(LINK(R, S, A, B, (B["id"]; A["id"]) == B["id"]))
+--- expect
+num 0
+===
+### name: link.count-of-comma-list-operand
+--- note
+A side of the comparison that reads BOTH binders (through a `,` list or a `;` sequence) is not one-sided, so the join is evaluated per pair and no binder is unbound. JS and Lisp classified it as one-sided and raised a spurious E_UNDEF_VAR.
+--- source
+R = LIST(RECORD("id", 1)); S = LIST(RECORD("id", 2), RECORD("id", 3)); COUNT(LINK(R, S, A, B, COUNT((A["id"], B["id"])) == B["id"]))
+--- expect
+num 1
+===
+### name: link.assignment-operand-on-both-sides
+--- note
+A side of the comparison that reads BOTH binders (through a `,` list or a `;` sequence) is not one-sided, so the join is evaluated per pair and no binder is unbound. JS and Lisp classified it as one-sided and raised a spurious E_UNDEF_VAR. An assignment inside the predicate reads the binder it names on both sides.
+--- source
+R = LIST(RECORD("id", 1)); S = LIST(RECORD("id", 2), RECORD("id", 3)); COUNT(LINK(R, S, A, B, (N = B["id"]) == B["id"]))
+--- expect
+num 2
+===

@@ -23,8 +23,17 @@ export const DIV_SCALE = LIMITS.DIV_SCALE;   // spec/limits.json
 export const MAX_INT_DIGITS = LIMITS.MAX_INT_DIGITS;
 export const MAX_FRAC_DIGITS = LIMITS.MAX_FRAC_DIGITS;
 
-const _MAX_INT_BITS = 3321929;
-const _INT_LIMIT_SHIFT = BigInt(_MAX_INT_BITS - 1);
+// guard()'s prefilter: a magnitude below 2^S has fewer than MAX_INT_DIGITS + 1
+// digits whatever its scale, so it needs no exact digit count. S must satisfy
+// 2^S <= 10^MAX_INT_DIGITS, and the largest such S is one less than the bit
+// length of 10^MAX_INT_DIGITS. It is derived from the generated limit rather
+// than typed in (it was 3321928 written out by hand), so regenerating
+// spec/limits.json with another cap cannot leave the prefilter sound only for
+// the old one. Computed on first use: 10^MAX_INT_DIGITS is a million-digit power.
+export function intLimitShift(maxIntDigits) {
+  return BigInt(bitLength(10n ** BigInt(maxIntDigits)) - 1);
+}
+let _intLimitShift = null;
 const _FAST_BOUND = 10n ** 18n;
 
 const POW10_TABLE = [1n];
@@ -84,7 +93,8 @@ export function guard(d, pos) {
   if (d.digits > _FAST_BOUND) {
     // A shift past the magnitude returns zero without rendering its digits.
     // Only values near the cap need the exact digit count (and its hex string).
-    if ((d.digits >> _INT_LIMIT_SHIFT) !== 0n && numDigits(d.digits) - d.scale > MAX_INT_DIGITS) {
+    _intLimitShift ??= intLimitShift(MAX_INT_DIGITS);
+    if ((d.digits >> _intLimitShift) !== 0n && numDigits(d.digits) - d.scale > MAX_INT_DIGITS) {
       fail('E_RANGE', `number has more than ${MAX_INT_DIGITS} integer digits`, pos);
     }
   }
@@ -264,22 +274,26 @@ export function trunc(d) {
   return make(d.neg, d.digits / pow10(d.scale), 0);
 }
 
-export function floor(d) {
+// FLOOR and CEIL can carry: 999...9.5 rounds up to 1000...0, one digit longer
+// than any number that was allowed in. The result is held to the digit cap here,
+// at the call's position, like ROUND's -- left to Value.num it was refused too,
+// but with no position at all (0:0).
+export function floor(d, pos = null) {
   if (d.scale === 0) return d;
   const p = pow10(d.scale);
   let q = d.digits / p;
   const r = d.digits % p;
   if (d.neg && r !== 0n) q += 1n;
-  return make(d.neg, q, 0);
+  return guard(make(d.neg, q, 0), pos);
 }
 
-export function ceil(d) {
+export function ceil(d, pos = null) {
   if (d.scale === 0) return d;
   const p = pow10(d.scale);
   let q = d.digits / p;
   const r = d.digits % p;
   if (!d.neg && r !== 0n) q += 1n;
-  return make(d.neg, q, 0);
+  return guard(make(d.neg, q, 0), pos);
 }
 
 // n must be a non-negative integer; the result scale is scale(x) * n, which

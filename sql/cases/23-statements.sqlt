@@ -300,7 +300,7 @@ statement
 --- source
 ITEMS .> FILTER(_["total"] > 10)
 --- expect
-SELECT `i`.* FROM `items` `i` WHERE i.order_id = o.id AND (`i`.`total` > 10)
+SELECT `i`.* FROM `items` `i` WHERE (i.order_id = o.id) AND (`i`.`total` > 10)
 ===
 
 ### name: stmt.params.mode

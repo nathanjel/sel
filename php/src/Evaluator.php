@@ -43,8 +43,25 @@ final class Evaluator
     private const DEC_ONE = ['neg' => false, 'digits' => '1', 'scale' => 0];
 
     /**
-     * @param array{steps:list<array<string,mixed>>,outputSlot:int,scratchpadSize:int} $plan
+     * @param array{steps:list<array<string,mixed>>,outputSlot:int,outputPos:array<string,mixed>|null,scratchpadSize:int} $plan
      */
+    /**
+     * A scratchpad slot holds either a decimal a step computed or the Value a
+     * load produced. The Value is coerced here, when an operation consumes it,
+     * and not when it was loaded: SPEC 6.2 evaluates every operand first and
+     * only then coerces, left to right, so a later operand's evaluation error
+     * must be found before an earlier operand's coercion error, and an operand
+     * mutated by a later one is seen as it stands at the operation.
+     *
+     * @param array<string,mixed>|Value $slot
+     * @param array<string,mixed>|null $pos
+     * @return array{neg:bool,digits:string,scale:int}
+     */
+    private static function operand(array|Value $slot, ?array $pos): array
+    {
+        return $slot instanceof Value ? $slot->asDecimal($pos) : $slot;
+    }
+
     public static function evalMathPlan(array $plan, Context $ctx): Value
     {
         $scratchpad = [];
@@ -55,51 +72,52 @@ final class Evaluator
                     if ($val === null) {
                         fail('E_UNDEF_VAR', "undefined variable {$step['name']}", $step['pos']);
                     }
-                    $scratchpad[$step['dst']] = $val->asDecimal($step['pos']);
+                    $scratchpad[$step['dst']] = $val;
                     break;
                 case MathOpCode::LOAD_CONST:
                     $scratchpad[$step['dst']] = $step['constVal'];
                     break;
                 case MathOpCode::LOAD_LEAF:
                     $val = self::evalNode($step['leafNode'], $ctx);
-                    $scratchpad[$step['dst']] = $val->asDecimal($step['leafNode']['pos']);
+                    $scratchpad[$step['dst']] = $val;
                     break;
                 case MathOpCode::ADD:
-                    $scratchpad[$step['dst']] = Dec::add($scratchpad[$step['src1']], $scratchpad[$step['src2']], $step['pos']);
+                    $scratchpad[$step['dst']] = Dec::add(self::operand($scratchpad[$step['src1']], $step['p1']), self::operand($scratchpad[$step['src2']], $step['p2']), $step['pos']);
                     break;
                 case MathOpCode::SUB:
-                    $scratchpad[$step['dst']] = Dec::sub($scratchpad[$step['src1']], $scratchpad[$step['src2']], $step['pos']);
+                    $scratchpad[$step['dst']] = Dec::sub(self::operand($scratchpad[$step['src1']], $step['p1']), self::operand($scratchpad[$step['src2']], $step['p2']), $step['pos']);
                     break;
                 case MathOpCode::MUL:
-                    $scratchpad[$step['dst']] = Dec::mul($scratchpad[$step['src1']], $scratchpad[$step['src2']], $step['pos']);
+                    $scratchpad[$step['dst']] = Dec::mul(self::operand($scratchpad[$step['src1']], $step['p1']), self::operand($scratchpad[$step['src2']], $step['p2']), $step['pos']);
                     break;
                 case MathOpCode::DIV:
-                    $scratchpad[$step['dst']] = Dec::div($scratchpad[$step['src1']], $scratchpad[$step['src2']], $step['pos']);
+                    $scratchpad[$step['dst']] = Dec::div(self::operand($scratchpad[$step['src1']], $step['p1']), self::operand($scratchpad[$step['src2']], $step['p2']), $step['pos']);
                     break;
                 case MathOpCode::MOD:
-                    $scratchpad[$step['dst']] = Dec::mod($scratchpad[$step['src1']], $scratchpad[$step['src2']], $step['pos']);
+                    $scratchpad[$step['dst']] = Dec::mod(self::operand($scratchpad[$step['src1']], $step['p1']), self::operand($scratchpad[$step['src2']], $step['p2']), $step['pos']);
                     break;
                 case MathOpCode::NEG:
-                    $scratchpad[$step['dst']] = Dec::negate($scratchpad[$step['src1']]);
+                    $scratchpad[$step['dst']] = Dec::negate(self::operand($scratchpad[$step['src1']], $step['p1']));
                     break;
                 case MathOpCode::ABS:
-                    $scratchpad[$step['dst']] = Dec::abs($scratchpad[$step['src1']]);
+                    $scratchpad[$step['dst']] = Dec::abs(self::operand($scratchpad[$step['src1']], $step['p1']));
                     break;
                 case MathOpCode::SIGN:
-                    $s = Dec::sign($scratchpad[$step['src1']]);
+                    $s = Dec::sign(self::operand($scratchpad[$step['src1']], $step['p1']));
                     $scratchpad[$step['dst']] = $s < 0 ? self::DEC_NEG_ONE : ($s === 0 ? self::DEC_ZERO : self::DEC_ONE);
                     break;
                 case MathOpCode::CEIL:
-                    $scratchpad[$step['dst']] = Dec::ceil($scratchpad[$step['src1']]);
+                    $scratchpad[$step['dst']] = Dec::ceil(self::operand($scratchpad[$step['src1']], $step['p1']));
                     break;
                 case MathOpCode::FLOOR:
-                    $scratchpad[$step['dst']] = Dec::floor($scratchpad[$step['src1']]);
+                    $scratchpad[$step['dst']] = Dec::floor(self::operand($scratchpad[$step['src1']], $step['p1']));
                     break;
                 case MathOpCode::TRUNC:
-                    $scratchpad[$step['dst']] = Dec::trunc($scratchpad[$step['src1']]);
+                    $scratchpad[$step['dst']] = Dec::trunc(self::operand($scratchpad[$step['src1']], $step['p1']));
                     break;
                 case MathOpCode::ROUND:
-                    $d2 = $scratchpad[$step['src2']];
+                    $d1 = self::operand($scratchpad[$step['src1']], $step['p1']);
+                    $d2 = self::operand($scratchpad[$step['src2']], $step['p2']);
                     if (!Dec::isInteger($d2)) {
                         fail('E_NOT_INT', 'ROUND argument 2 must be a whole number', $step['auxPos']);
                     }
@@ -110,10 +128,11 @@ final class Evaluator
                     if ($n > 1000000) {
                         fail('E_RANGE', "ROUND scale {$n} exceeds the maximum of 1000000", $step['auxPos']);
                     }
-                    $scratchpad[$step['dst']] = Dec::round($scratchpad[$step['src1']], $n, $step['pos']);
+                    $scratchpad[$step['dst']] = Dec::round($d1, $n, $step['pos']);
                     break;
                 case MathOpCode::POWER:
-                    $d2 = $scratchpad[$step['src2']];
+                    $d1 = self::operand($scratchpad[$step['src1']], $step['p1']);
+                    $d2 = self::operand($scratchpad[$step['src2']], $step['p2']);
                     if (!Dec::isInteger($d2)) {
                         fail('E_NOT_INT', 'POWER argument 2 must be a whole number', $step['auxPos']);
                     }
@@ -124,21 +143,21 @@ final class Evaluator
                     if ($n > 100000) {
                         fail('E_RANGE', "POWER exponent {$n} exceeds the maximum of 100000", $step['auxPos']);
                     }
-                    $scratchpad[$step['dst']] = Dec::power($scratchpad[$step['src1']], $n, $step['pos']);
+                    $scratchpad[$step['dst']] = Dec::power($d1, $n, $step['pos']);
                     break;
                 case MathOpCode::MIN:
-                    $a = $scratchpad[$step['src1']];
-                    $b = $scratchpad[$step['src2']];
+                    $a = self::operand($scratchpad[$step['src1']], $step['p1']);
+                    $b = self::operand($scratchpad[$step['src2']], $step['p2']);
                     $scratchpad[$step['dst']] = Dec::cmp($b, $a) < 0 ? $b : $a;
                     break;
                 case MathOpCode::MAX:
-                    $a = $scratchpad[$step['src1']];
-                    $b = $scratchpad[$step['src2']];
+                    $a = self::operand($scratchpad[$step['src1']], $step['p1']);
+                    $b = self::operand($scratchpad[$step['src2']], $step['p2']);
                     $scratchpad[$step['dst']] = Dec::cmp($b, $a) > 0 ? $b : $a;
                     break;
             }
         }
-        return Value::num($scratchpad[$plan['outputSlot']]);
+        return Value::num(self::operand($scratchpad[$plan['outputSlot']], $plan['outputPos']));
     }
 
     /** @param array<string,mixed> $node */
@@ -250,14 +269,22 @@ final class Evaluator
         $out = [];
         foreach ($node['items'] as $item) {
             $v = self::evalNode($item, $ctx);
+            // `,` collects, so it copies what it collects (spec §3.4): the list
+            // never shares an element with the values it was built from, and a
+            // value that would end up past the depth cap is refused here, at the
+            // list node, not at 0:0 when something later walks it.
             if ($v->kind === Value::NONE && $v->size() > 0) {
+                // Refused before the children are copied (spec §6.4): a list that
+                // flattens past the collection cap is not built.
+                Utf8::checkCount(count($out) + $v->size(), $node['pos'], 'the list');
                 foreach ($v->values() as $child) {
-                    $out[] = $child;
+                    $out[] = $child->copyBelow(1, $node['pos']);
                 }
             } else {
-                $out[] = $v;
+                $out[] = $v->copyBelow(1, $node['pos']);
             }
         }
+        Utf8::checkCount(count($out), $node['pos'], 'the list');
         return Value::list($out);
     }
 
@@ -317,7 +344,7 @@ final class Evaluator
             case '/': return Value::num(Dec::div($l->asDecimal($lp), $r->asDecimal($rp), $node['pos']));
             case '%': return Value::num(Dec::mod($l->asDecimal($lp), $r->asDecimal($rp), $node['pos']));
 
-            case '&': return self::concat($l, $r, $lp, $rp);
+            case '&': return self::concat($l, $r, $lp, $rp, $node['pos']);
 
             case '==': case '!=': case '<': case '<=': case '>': case '>=':
                 return Value::bool(self::compareResult($op, Dec::cmp($l->asDecimal($lp), $r->asDecimal($rp)), $node['pos']));
@@ -369,7 +396,7 @@ final class Evaluator
      * @param array<string,mixed> $lp
      * @param array<string,mixed> $rp
      */
-    private static function concat(Value $l, Value $r, array $lp, array $rp): Value
+    private static function concat(Value $l, Value $r, array $lp, array $rp, array $opPos): Value
     {
         $lv = $l->scalarSource($lp);
         $rv = $r->scalarSource($rp);
@@ -380,9 +407,23 @@ final class Evaluator
             fail('E_NOT_TEXT', 'cannot concatenate a boolean', $rp);
         }
         if ($lv->kind === Value::TEXT && $rv->kind === Value::TEXT) {
-            return Value::text((string) $lv->scalar . (string) $rv->scalar);
+            $ls = (string) $lv->scalar;
+            $rs = (string) $rv->scalar;
+            // The length is checked before the result is built (spec §6.4); the
+            // byte length bounds the code point length, so only a candidate over
+            // the cap is counted.
+            if (strlen($ls) + strlen($rs) > Limits::MAX_TEXT_LEN
+                && Utf8::length($ls) + Utf8::length($rs) > Limits::MAX_TEXT_LEN) {
+                fail('E_RANGE', 'concatenation would be longer than ' . Limits::MAX_TEXT_LEN, $opPos);
+            }
+            return Value::text($ls . $rs);
         }
-        return Value::bin($l->asBytes($lp) . $r->asBytes($rp));
+        $lb = $l->asBytes($lp);
+        $rb = $r->asBytes($rp);
+        if (strlen($lb) + strlen($rb) > Limits::MAX_TEXT_LEN) {
+            fail('E_RANGE', 'concatenation would be longer than ' . Limits::MAX_TEXT_LEN, $opPos);
+        }
+        return Value::bin($lb . $rb);
     }
 
     private static function isIn(Value $needle, Value $hay): bool
@@ -424,7 +465,9 @@ final class Evaluator
         $key = $path[count($path) - 1];
 
         if ($node['op'] === '=') {
-            $value = self::evalNode($node['value'], $ctx)->copy($node['pos']);
+            // Stored `count($path) - 1` levels down, so its own depth is checked
+            // from there (spec §3.4, §6.4): path plus value, reported at the target.
+            $value = self::evalNode($node['value'], $ctx)->copyBelow(count($path) - 1, $node['pos']);
         } else {
             $current = self::walkCreate($ctx, $path, count($path) - 1)->get($key);
             if ($current === null) {
@@ -435,7 +478,7 @@ final class Evaluator
             $tp = $node['target']['pos'];
             $vp = $node['value']['pos'];
             if ($binOp === '&') {
-                $value = self::concat($current, $rhs, $tp, $vp);
+                $value = self::concat($current, $rhs, $tp, $vp, $node['pos']);
             } else {
                 $a = $current->asDecimal($tp);
                 $b = $rhs->asDecimal($vp);
@@ -494,9 +537,12 @@ final class Evaluator
         $chain = [];
         $n = $target;
         while ($n['t'] === 'index') {
-            array_unshift($chain, $n['idx']);
+            // Appended and reversed once: array_unshift moves every element, so a
+            // 40,000-bracket target cost ten seconds (PHP-C14).
+            $chain[] = $n['idx'];
             $n = $n['obj'];
         }
+        $chain = array_reverse($chain);
 
         if ($ctx->isBound($n['name'])) {
             fail(

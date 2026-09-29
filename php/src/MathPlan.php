@@ -68,7 +68,7 @@ final class MathPlan
 
     /**
      * @param array<string,mixed> $root
-     * @return array{steps:list<array<string,mixed>>,outputSlot:int,scratchpadSize:int}|null
+     * @return array{steps:list<array<string,mixed>>,outputSlot:int,outputPos:array<string,mixed>,scratchpadSize:int}|null
      */
     public static function compile(array $root): ?array
     {
@@ -93,7 +93,7 @@ final class MathPlan
                     'name' => $node['name'],
                     'pos' => $node['pos'],
                 ];
-                return ['slot' => $slot, 'constVal' => null];
+                return ['slot' => $slot, 'constVal' => null, 'pos' => $node['pos']];
             }
 
             if ($t === 'num') {
@@ -113,7 +113,7 @@ final class MathPlan
                     'constVal' => $dec,
                     'pos' => $node['pos'],
                 ];
-                return ['slot' => $slot, 'constVal' => $dec];
+                return ['slot' => $slot, 'constVal' => $dec, 'pos' => $node['pos']];
             }
 
             if ($t === 'bin' && isset(self::MATH_BINARY_OPS[$node['op']])) {
@@ -163,9 +163,11 @@ final class MathPlan
                     'dst' => $dst,
                     'src1' => $resL['slot'],
                     'src2' => $resR['slot'],
+                    'p1' => $resL['pos'],
+                    'p2' => $resR['pos'],
                     'pos' => $node['pos'],
                 ];
-                return ['slot' => $dst, 'constVal' => null];
+                return ['slot' => $dst, 'constVal' => null, 'pos' => $node['pos']];
             }
 
             if ($t === 'un' && isset(self::MATH_UNARY_OPS[$node['op']])) {
@@ -177,9 +179,10 @@ final class MathPlan
                     'op' => self::native(self::MATH_UNARY_OPS[$node['op']]),
                     'dst' => $dst,
                     'src1' => $resX['slot'],
+                    'p1' => $resX['pos'],
                     'pos' => $node['pos'],
                 ];
-                return ['slot' => $dst, 'constVal' => null];
+                return ['slot' => $dst, 'constVal' => null, 'pos' => $node['pos']];
             }
 
             // Math builtins: operand count, fold and error positions from the
@@ -193,8 +196,8 @@ final class MathPlan
                     $resArg = $emit($args[0], $depth + 1);
                     if ($resArg === null) return null;
                     $dst = $allocSlot();
-                    $steps[] = ['op' => $opCode, 'dst' => $dst, 'src1' => $resArg['slot'], 'pos' => $node['pos']];
-                    return ['slot' => $dst, 'constVal' => null];
+                    $steps[] = ['op' => $opCode, 'dst' => $dst, 'src1' => $resArg['slot'], 'p1' => $resArg['pos'], 'pos' => $node['pos']];
+                    return ['slot' => $dst, 'constVal' => null, 'pos' => $node['pos']];
                 }
                 if ($arity === 2) {
                     if (count($args) !== 2) return null;
@@ -203,24 +206,29 @@ final class MathPlan
                     $res1 = $emit($args[1], $depth + 1);
                     if ($res1 === null) return null;
                     $dst = $allocSlot();
-                    $step = ['op' => $opCode, 'dst' => $dst, 'src1' => $res0['slot'], 'src2' => $res1['slot'], 'pos' => $node['pos']];
+                    $step = ['op' => $opCode, 'dst' => $dst, 'src1' => $res0['slot'], 'src2' => $res1['slot'], 'p1' => $res0['pos'], 'p2' => $res1['pos'], 'pos' => $node['pos']];
                     if ($aux !== null) $step['auxPos'] = $args[$aux]['pos'];
                     $steps[] = $step;
-                    return ['slot' => $dst, 'constVal' => null];
+                    return ['slot' => $dst, 'constVal' => null, 'pos' => $node['pos']];
                 }
-                // fold: one or more operands, combined pairwise left to right
+                // fold: one or more operands, combined pairwise left to right.
+                // Every operand is loaded BEFORE the first pair is combined: a
+                // strict function evaluates all its arguments and only then
+                // checks them (SPEC 6.2), so MIN(1, "x", Y) reports Y.
                 if (count($args) < 1) return null;
-                $res0 = $emit($args[0], $depth + 1);
-                if ($res0 === null) return null;
-                $currSlot = $res0['slot'];
-                for ($k = 1, $numArgs = count($args); $k < $numArgs; $k++) {
-                    $resNext = $emit($args[$k], $depth + 1);
-                    if ($resNext === null) return null;
-                    $dst = $allocSlot();
-                    $steps[] = ['op' => $opCode, 'dst' => $dst, 'src1' => $currSlot, 'src2' => $resNext['slot'], 'pos' => $node['pos']];
-                    $currSlot = $dst;
+                $resArgs = [];
+                foreach ($args as $arg) {
+                    $resArg = $emit($arg, $depth + 1);
+                    if ($resArg === null) return null;
+                    $resArgs[] = $resArg;
                 }
-                return ['slot' => $currSlot, 'constVal' => null];
+                $curr = $resArgs[0];
+                for ($k = 1, $numArgs = count($resArgs); $k < $numArgs; $k++) {
+                    $dst = $allocSlot();
+                    $steps[] = ['op' => $opCode, 'dst' => $dst, 'src1' => $curr['slot'], 'src2' => $resArgs[$k]['slot'], 'p1' => $curr['pos'], 'p2' => $resArgs[$k]['pos'], 'pos' => $node['pos']];
+                    $curr = ['slot' => $dst, 'constVal' => null, 'pos' => $node['pos']];
+                }
+                return $curr;
             }
 
             if ($t === 'bin' || $t === 'un') return null;
@@ -234,7 +242,7 @@ final class MathPlan
                 'leafNode' => $node,
                 'pos' => $node['pos'],
             ];
-            return ['slot' => $slot, 'constVal' => null];
+            return ['slot' => $slot, 'constVal' => null, 'pos' => $node['pos']];
         };
 
         $res = $emit($root, 1);
@@ -243,6 +251,7 @@ final class MathPlan
         return [
             'steps' => $steps,
             'outputSlot' => $res['slot'],
+            'outputPos' => $res['pos'],
             'scratchpadSize' => $slotCount,
         ];
     }

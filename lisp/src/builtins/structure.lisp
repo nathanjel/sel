@@ -27,7 +27,7 @@
     (declare (ignore ctx))
     (make-list-value
      (loop for i below (args-count a)
-           collect (value-copy (args-val a i))))))
+           collect (value-copy-at (args-val a i) 2 (args-pos a))))))
 
 (define-builtin "RECORD" 0 +variadic+
   (lambda (a ctx)
@@ -44,11 +44,11 @@
                        (storage (make-array num-fields)))
                   (loop for i from 0 below n by 2
                         for slot-idx from 0
-                        do (setf (svref storage slot-idx) (value-copy (args-val a (1+ i)))))
+                        do (setf (svref storage slot-idx) (value-copy-at (args-val a (1+ i)) 2 (args-pos a))))
                   (%make-shaped-value shape storage))
                 (let ((rec (make-none)))
                   (loop for i from 0 below n by 2
-                        do (value-set rec (args-text a i) (value-copy (args-val a (1+ i)))))
+                        do (value-set rec (args-text a i) (value-copy-at (args-val a (1+ i)) 2 (args-pos a))))
                   rec)))))))   ; even count: spec/builtins.json
 
 (define-builtin "TAKE" 2 2
@@ -190,7 +190,16 @@
                    (:un
                     (walk (node-l n)))
                    (:group
-                    (walk (node-l n)))))))
+                    (walk (node-l n)))
+                   ;; A `,` list, a `;` sequence and an assignment read whatever
+                   ;; their parts read -- an assignment's target included, which it
+                   ;; reads as a variable: skipping them let an operand over BOTH
+                   ;; binders pass for one-sided (LISP-C16).
+                   ((:list :seq)
+                    (dolist (item (node-items n)) (walk item)))
+                   (:assign
+                    (walk (node-l n))
+                    (walk (node-r n)))))))
       (walk node)
       all-ok)))
 
@@ -198,10 +207,14 @@
   "Checks if PRED-NODE is an equality comparison between an expression on B1 and an expression on B2.
 Returns (values left-expr right-expr is-numeric swapped) or NIL; SWAPPED is true
 when the operator's left operand reads the right side."
+  ;; Two binders of one name are one name: the right shadows the left (SPEC 7.4),
+  ;; so an operand written over it reads the right element only, and no key can be
+  ;; taken from the left row. The general path answers.
   (when (and pred-node
              (node-p pred-node)
              (eq (node-kind pred-node) :bin)
-             (member (node-s pred-node) '("==" "$==") :test #'string=))
+             (member (node-s pred-node) '("==" "$==") :test #'string=)
+             (not (string-equal b1 b2)))
     (let ((l (node-l pred-node))
           (r (node-r pred-node))
           (is-numeric (string= (node-s pred-node) "=="))
@@ -222,7 +235,11 @@ when the operator's left operand reads the right side."
 (defun canonical-numeric-string (sc)
   (declare (type string sc))
   (let ((len (length sc)))
+    ;; The shortcut is for numbers the digit cap allows: past it the text is not a
+    ;; number at all, and `==` raises E_RANGE on it (SPEC 6.4), so the key must not
+    ;; pass for a plain integer.
     (if (and (plusp len)
+             (<= len +max-int-digits+)
              (or (char/= (char sc 0) #\0) (= len 1))
              (loop for i from 0 below len
                    always (char<= #\0 (char sc i) #\9)))
@@ -1011,8 +1028,19 @@ carry is promoted from neither, spec §7.4)."
                                         obligations))))))
         (unwind-protect (args-val a 0)
           (setf (context-join-prefilter ctx) nil))))
-    (do-link-rows a ctx is-left prefilter stages deep above above-keys b1-names b2-names
-                  right-side obligations)))
+    ;; However this join ends, an error caught above it (`??`) must not leave a
+    ;; prefilter or a report in the context for an unrelated join later in the
+    ;; same run to pick up: they are consumed by the join they were meant for, and
+    ;; only a normal return proves that one was (LISP-C44, a hardening rule).
+    (let ((completed nil))
+      (unwind-protect
+           (multiple-value-prog1
+               (do-link-rows a ctx is-left prefilter stages deep above above-keys b1-names b2-names
+                             right-side obligations)
+             (setf completed t))
+        (unless completed
+          (setf (context-join-prefilter ctx) nil
+                (context-join-prefilter-report ctx) nil))))))
 
 (defun do-link-rows (a ctx is-left prefilter stages deep above above-keys b1-names b2-names
                      right-side obligations)
@@ -1075,7 +1103,8 @@ carry is promoted from neither, spec §7.4)."
                (null-r2 (when is-left
                           (let ((rec (make-null-record sample-r2 b2)))
                             (unless (value-null-p rec) rec))))
-               (out '()))
+               (out '())
+               (nout 0))      ; rows joined so far, for the MAX_COLLECTION cap
           (let* ((facts (list nil))
                  (projector (make-join-projector b1 b2 null-r2 facts)))
             (multiple-value-bind (left-expr right-expr is-numeric swapped)
@@ -1225,6 +1254,7 @@ carry is promoted from neither, spec §7.4)."
                                                      (return 2)))))
                                        (unless keep (return 1)))))
                                  (emit (joined)
+                                   (check-collection-cap (incf nout) (args-pos a))
                                    (if numbered
                                        (push (cons (format nil "~d" position) joined) keyed)
                                        (push joined out))
@@ -1344,9 +1374,11 @@ carry is promoted from neither, spec §7.4)."
                                      (setf (cdr b2-cell) r2 (cdr b2-low-cell) r2 (cdr b2-2-cell) r2)
                                      (when (as-bool (args-eval a pred-node) (node-pos pred-node))
                                        (setf matched t)
-                                       (push (funcall projector r1 r2) out)))))
+                                       (progn (check-collection-cap (incf nout) (args-pos a))
+                                              (push (funcall projector r1 r2) out))))))
                                (when (and is-left (not matched))
-                                 (push (funcall projector r1 nil) out))))
+                                 (progn (check-collection-cap (incf nout) (args-pos a))
+                                        (push (funcall projector r1 nil) out)))))
                         (ctx-pop-frame ctx))))))
             (make-list-value (nreverse out))))))))
 

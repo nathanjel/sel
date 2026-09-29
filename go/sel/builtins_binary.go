@@ -35,7 +35,9 @@ func init() {
 		Min:  1,
 		Max:  1,
 		Fn: func(args *Args, ctx *Context) *Value {
-			return NewBin(args.Bytes(0))
+			b := args.Bytes(0)
+			checkTextLen(int64(len(b)), "TO_UTF8's result", args.Pos())
+			return NewBin(b)
 		},
 	})
 
@@ -56,7 +58,9 @@ func init() {
 		Min:  1,
 		Max:  1,
 		Fn: func(args *Args, ctx *Context) *Value {
-			return NewTextOwned(hex.EncodeToString(args.Bytes(0)))
+			b := args.Bytes(0)
+			checkTextLen(satMul(int64(len(b)), 2), "TO_HEX's result", args.Pos())
+			return NewTextOwned(hex.EncodeToString(b))
 		},
 	})
 
@@ -90,6 +94,7 @@ func init() {
 		Max:  1,
 		Fn: func(args *Args, ctx *Context) *Value {
 			b := args.Bytes(0)
+			checkTextLen(satMul((int64(len(b))+2)/3, 4), "ENCODE_BASE64's result", args.Pos())
 			var out []byte
 			for i := 0; i < len(b); i += 3 {
 				b0 := uint32(b[i])
@@ -182,6 +187,7 @@ func init() {
 		Max:  1,
 		Fn: func(args *Args, ctx *Context) *Value {
 			b := args.Bytes(0)
+			checkCollection(int64(len(b)), "BTL's result", args.Pos())
 			items := make([]*Value, len(b))
 			for i, v := range b {
 				items[i] = NewInt(int64(v))
@@ -199,14 +205,20 @@ func init() {
 			var items []*Value
 			if v.Size() > 0 {
 				items = v.Values()
+			} else if v.Kind == KindNone {
+				// An empty list (or NULL, which is the same value) is the empty BIN,
+				// so LTB(BTL(x)) returns x for every BIN x (SPEC §7.7).
+				items = nil
 			} else {
 				items = []*Value{v}
 			}
 			out := make([]byte, len(items))
 			for i, item := range items {
 				d := item.AsDecimal(args.PosOf(0))
+				// An integral value of any scale is a whole number (1.0, "1.0");
+				// a fractional one is not an integer at all.
 				if !decimal.IsInteger(d) {
-					fail("E_RANGE", fmt.Sprintf("LTB element %d is not a byte value", i+1), args.PosOf(0))
+					fail("E_NOT_INT", fmt.Sprintf("LTB element %d must be a whole number", i+1), args.PosOf(0))
 				}
 				n := decimal.ToSafeInt(d)
 				if n < 0 || n > 255 {

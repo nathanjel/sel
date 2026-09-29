@@ -177,6 +177,16 @@
 
       (t node))))
 
+(defun keep-last-step-pos (steps pos)
+  "STEPS with the last one carrying POS, the position of the pipeline's original
+outermost step. A parent that rejects the pipeline's value reports the error at
+that node, and a fused or reordered replacement must not move it (GO-C33)."
+  (if (and steps (not (eq (node-pos (car (last steps))) pos)))
+      (let ((copy (copy-node-shallow (car (last steps)))))
+        (setf (node-pos copy) pos)
+        (append (butlast steps) (list copy)))
+      steps))
+
 (defun build-pipeline-ast (root steps)
   (let ((curr root))
     (dolist (step steps curr)
@@ -431,6 +441,11 @@ fold, as in the other hosts (a negative count is the evaluator's error)."
 (defparameter +safe-logical-ops+
   '("==" "!=" "<" "<=" ">" ">=" "$==" "$!=" "$<" "$<=" "$>" "$>=" "AND" "OR" "+" "-" "*"))
 
+(defvar *shape-fields* :relation
+  "What the rows a rewrite looks at are: :RELATION, the bound relation's own
+rows (a typed-column read cannot raise), or the list of field names a preceding
+MAP RECORD(...) gave them -- a read of any other name would raise E_NO_KEY.")
+
 (defun cannot-raise-p (node binder logical)
   (cond
     ((null node) t)
@@ -441,12 +456,38 @@ fold, as in the other hosts (a negative count is the evaluator's error)."
                  (or (string= name "_K") (string= name (ascii-upcase binder)))))
          (:index (and logical (node-l node) (eq (node-kind (node-l node)) :var)
                       (string= (ascii-upcase (node-s (node-l node))) (ascii-upcase binder))
-                      (node-r node) (eq (node-kind (node-r node)) :text)))
+                      (node-r node) (eq (node-kind (node-r node)) :text)
+                      (or (eq *shape-fields* :relation)
+                          (member (node-s (node-r node)) *shape-fields* :test #'string=))))
          (:bin (and logical (member (node-s node) +safe-logical-ops+ :test #'string=)
                     (cannot-raise-p (node-l node) binder logical)
                     (cannot-raise-p (node-r node) binder logical)))
          (:un (and logical (string= (node-s node) "NOT") (cannot-raise-p (node-l node) binder logical)))
          (t nil)))))
+
+;; Whether NODE, used as a FILTER predicate, is certain to yield a BOOL for every
+;; row: cannot-raise-p is about the expression, this is about its VALUE too. A
+;; bare binder, a literal number or text, NULL and _K cannot raise as
+;; expressions, but as predicates each is E_NOT_BOOL -- and a FILTER fused behind
+;; another would raise it before the first FILTER had seen its later rows
+;; (PHP-C11, LISP-C14).
+(defparameter +comparison-ops+
+  '("==" "!=" "<" "<=" ">" ">=" "$==" "$!=" "$<" "$<=" "$>" "$>="))
+
+(defun predicate-cannot-raise-p (node binder logical)
+  (and node (node-p node)
+       (case (node-kind node)
+         (:bool t)
+         (:bin (let ((op (node-s node)))
+                 (cond ((member op +comparison-ops+ :test #'string=)
+                        (cannot-raise-p node binder logical))
+                       ((member op '("AND" "OR") :test #'string=)
+                        (and (predicate-cannot-raise-p (node-l node) binder logical)
+                             (predicate-cannot-raise-p (node-r node) binder logical)))
+                       (t nil))))
+         (:un (and (string= (node-s node) "NOT")
+                   (predicate-cannot-raise-p (node-l node) binder logical)))
+         (t nil))))
 
 (defun map-cannot-raise-p (map-step logical)
   "Every field a MAP computes (or its whole body) cannot raise."
@@ -495,7 +536,12 @@ everywhere else)."
                (node-items fused) (list (first (node-items s1)) num-node))
          (values (list fused) 2)))
       ;; SORT / SORT_DESC / SORT_BY + TAKE -> TOP / TOP_DESC / TOP_BY
-      ((and s2 (string= n2 "TAKE") (= (length (node-items s2)) 2) (sort-step-p s1))
+      ;; Only for a numeric literal count of at least 1 (SPEC 6.2): the sort keys
+      ;; are evaluated before the count is looked at, and TAKE(0) still evaluates
+      ;; them, so a count that is an expression (it may fail, or have effects) or
+      ;; zero keeps the two steps.
+      ((and s2 (string= n2 "TAKE") (= (length (node-items s2)) 2) (sort-step-p s1)
+            (let ((k (try-parse-int-literal (second (node-items s2))))) (and k (>= k 1))))
        (let* ((top-name (cond ((string= n1 "SORT") "TOP")
                               ((string= n1 "SORT_DESC") "TOP_DESC")
                               (t "TOP_BY")))
@@ -552,7 +598,7 @@ everywhere else)."
       ;; after it.
       ((and s2 (string= n1 "FILTER") (string= n2 "FILTER")
             (valid-filter-p s1) (valid-filter-p s2)
-            (multiple-value-bind (binder pred) (filter-body s2) (cannot-raise-p pred binder logical)))
+            (multiple-value-bind (binder pred) (filter-body s2) (predicate-cannot-raise-p pred binder logical)))
        (let* ((args1 (node-items s1))
               (args2 (node-items s2))
               (b1 (if (= (length args1) 3) (node-s (second args1)) "_"))
@@ -582,9 +628,35 @@ everywhere else)."
                             (third (node-items s1))
                             (second (node-items s1)))))
               (and pred (eq (node-kind pred) :bool) (node-b pred)))
-            (or (plusp i) (source-is-list-p source)))
+            (or (plusp i) (source-is-list-p source))
+            ;; Not as the only step: what is left must still carry the position a
+            ;; parent reports an error at (`NOT FILTER(LIST(1), TRUE)` fails at the
+            ;; FILTER); KEEP-LAST-STEP-POS moves the last step's position onto
+            ;; whatever step ends up last, but a pipeline with none has no step.
+            (or s2 (plusp i)))
        (values '() 1))
       (t nil))))
+
+(defun rows-shape (steps-newest-first)
+  "What the rows are after STEPS (newest first): :RELATION while every step keeps
+the rows it is given, else the field names of the last MAP if it builds RECORDs
+with literal keys, else :UNKNOWN."
+  (let ((shaper (find-if-not #'row-preserving-step-p steps-newest-first)))
+    (cond ((null shaper) :relation)
+          ((string= (node-s shaper) "MAP")
+           (let* ((args (node-items shaper))
+                  (body (if (= (length args) 3) (third args) (second args))))
+             (if (and body (node-p body) (eq (node-kind body) :call) (string= (node-s body) "RECORD")
+                      (loop for (k) on (node-items body) by #'cddr
+                            always (and k (eq (node-kind k) :text))))
+                 (loop for (k) on (node-items body) by #'cddr collect (node-s k))
+                 :unknown)))
+          (t :unknown))))
+
+(defun row-preserving-step-p (step)
+  (member (node-s step) '("FILTER" "SORT" "SORT_DESC" "SORT_BY" "TOP" "TOP_DESC" "TOP_BY"
+                          "TAKE" "DROP" "DISTINCT" "DEDUPE")
+          :test #'string=))
 
 (defun optimize-logical-pipeline-steps (source curr-steps &optional (logical t))
   "Tier 1: Engine-agnostic logical relational rewrites on flat pipeline steps,
@@ -592,7 +664,8 @@ as one left-to-right sweep over the pairs of adjacent steps, repeated to a
 fixed point -- the same sweep, in the same rule order, as the other four
 hosts. SOURCE is what the first step reads, which only the FILTER(TRUE) rule
 needs."
-  (let ((changed t))
+  (let ((changed t)
+        (original-last (car (last curr-steps))))
     (loop while changed do
       (setf changed nil)
       (let ((new-steps '())
@@ -602,7 +675,15 @@ needs."
           (let ((s1 (nth i curr-steps))
                 (s2 (when (< (1+ i) len) (nth (1+ i) curr-steps)))
                 (s3 (when (< (+ i 2) len) (nth (+ i 2) curr-steps))))
-            (multiple-value-bind (replacement consumed) (logical-step-pair source i s1 s2 s3 logical)
+            (multiple-value-bind (replacement consumed)
+                ;; A typed-column read cannot raise only while the rows are still
+                ;; the bound relation's, or a field a preceding MAP RECORD built:
+                ;; after BUCKET, SELECT_COLS, LINK or a MAP of another shape they
+                ;; are whatever that step built (LISP-C14).
+                (let* ((shape (rows-shape new-steps))
+                       (*shape-fields* shape))
+                  (logical-step-pair source i s1 s2 s3
+                                     (and logical (not (eq shape :unknown)))))
               (if consumed
                   (progn
                     (dolist (r replacement) (push r new-steps))
@@ -612,7 +693,9 @@ needs."
                     (push s1 new-steps)
                     (incf i 1))))))
         (setf curr-steps (nreverse new-steps))))
-    curr-steps))
+    ;; Never a pipeline of nothing: a chain of FILTER(TRUE) may all be identities,
+    ;; and the last of them stays.
+    (or curr-steps (and original-last (list original-last)))))
 
 (defun optimize-inmemory-pipeline-steps (source curr-steps)
   "Tier 2: In-memory physical rewrites, extending Tier 1."
@@ -691,9 +774,11 @@ copy would only be a second object the translator has to recognise."
                                                    (optimize-tree item physical (1+ depth) nil)))))
                        copy))))
          (build-pipeline-ast opt-source
-                             (if physical
-                                 (optimize-inmemory-pipeline-steps opt-source opt-steps)
-                                 (optimize-logical-pipeline-steps opt-source opt-steps))))))
+                             (keep-last-step-pos
+                              (if physical
+                                  (optimize-inmemory-pipeline-steps opt-source opt-steps)
+                                  (optimize-logical-pipeline-steps opt-source opt-steps))
+                              (node-pos node))))))
     (t (let* ((copy (optimize-children node physical depth in-math))
               (folded (if *fold-constants* (fold-node copy) copy)))
          (when (and physical (not in-math) (is-math-op-p folded))

@@ -37,7 +37,13 @@ class Bindings:
                                '.relation(), .relation_query(), .raw() or .value()')
             # ascii_upper, not str.upper(): the latter folds "ß" to "SS" and
             # changes the name's length, where PHP's strtoupper is ASCII-only.
-            self._map[ascii_upper(str(name))] = b.spec
+            key = ascii_upper(str(name))
+            if key in self._map:
+                raise SqlError('E_SQL_BINDING',
+                               f'the bindings include {name}, which differs from '
+                               'another binding only by case; SEL names are read '
+                               'without regard to it')
+            self._map[key] = b.spec
 
     def has(self, name: str) -> bool:
         return ascii_upper(name) in self._map

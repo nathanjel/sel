@@ -4,6 +4,11 @@
     "MAX_DEPTH":       { "value": 200,     "spec": "§6.4", "meaning": "parser nesting and evaluation nesting, each; exceeding either is E_DEPTH" },
     "MAX_INT_DIGITS":  { "value": 1000000, "spec": "§6.4", "meaning": "integer digits of a number; beyond it E_RANGE" },
     "MAX_FRAC_DIGITS": { "value": 1000000, "spec": "§6.4", "meaning": "fractional digits of a number; beyond it E_RANGE" },
+    "MAX_TEXT_LEN":    { "value": 16777216, "spec": "§6.4", "meaning": "code points of a TEXT value, bytes of a BIN value, that an operation may build; beyond it E_RANGE" },
+    "MAX_COLLECTION":  { "value": 1000000,  "spec": "§6.4", "meaning": "children of a collection an operation may build (`,`, LIST, RECORD, SPLIT, BTL, LINK); beyond it E_RANGE" },
+    "MAX_REGEX_PATTERN": { "value": 65535, "spec": "§7.8", "meaning": "code points of a regex pattern; beyond it E_REGEX_SYNTAX" },
+    "MAX_REGEX_GROUPS":  { "value": 1000,  "spec": "§7.8", "meaning": "groups (capturing and non-capturing) in a regex pattern; beyond it E_REGEX_SYNTAX" },
+    "MAX_SQL_NODES":     { "value": 250000, "spec": "§6.4", "meaning": "nodes of the expression the SQL translator renders, an inlined or unrolled subtree counted once per occurrence; beyond it E_SQL_SIZE (sql/errors.md)" },
     "DIV_SCALE":       { "value": 10,      "spec": "§5.3", "meaning": "fractional digits long division runs to before rounding half away from zero" }
   },
   "errors": {
@@ -27,8 +32,8 @@
     "E_NULL":          { "phase": "run" },
     "E_EXPECT_SYMBOL": { "phase": "run" },
     "E_DIV_ZERO":      { "phase": "run" },
-    "E_UTF8":          { "phase": "run" },
-    "E_RANGE":         { "phase": "run" },
+    "E_UTF8":          { "phase": "both" },
+    "E_RANGE":         { "phase": "both" },
     "E_BAD_ARG":       { "phase": "run" },
     "E_LEN_MISMATCH":  { "phase": "run" },
     "E_ABORT":         { "phase": "run" }

@@ -161,7 +161,6 @@ var BindingForms = map[string][]Form{
 	},
 	"BUCKET": {
 		{Name: "BUCKET", Count: 2, Scopes: []Scope{ScopeOuter, ScopeInner}, WhenArg: -1, WhenKind: WhenNone, Binds: []string{"_", "_K"}},
-		{Name: "BUCKET", Count: 3, Scopes: []Scope{ScopeOuter, ScopeBinder, ScopeInner}, WhenArg: 1, WhenKind: WhenName, Binds: []string{"_K"}},
 		{Name: "BUCKET", Count: 3, Scopes: []Scope{ScopeOuter, ScopeInner, ScopeInner}, WhenArg: -1, WhenKind: WhenNone, Binds: []string{"_", "_K"}},
 		{Name: "BUCKET", Count: 4, Scopes: []Scope{ScopeOuter, ScopeBinder, ScopeInner, ScopeInner}, WhenArg: -1, WhenKind: WhenNone, Binds: []string{"_K"}},
 	},

@@ -48,9 +48,13 @@ give `\1` and `\g<name>` meaning inside a user-supplied replacement string.
 
 import re
 
+from .._budget import check_text
+from .._stack import recursion_budget
+from .._limits import MAX_DEPTH, MAX_REGEX_GROUPS, MAX_REGEX_PATTERN
 from ..errors import fail
 from ..registry import define
 from ..value import Value
+from . import _regex_ambiguity as _amb
 
 # \d, \w and \s are rewritten into explicit ASCII classes rather than passed
 # through, so the guarantee is structural instead of dependent on a library flag.
@@ -91,18 +95,97 @@ def _reject_escape(e, pattern, at, pos):
     _bad(f'unsupported escape \\{e}', pattern, at, pos)
 
 
-def validate(pattern, pos=None):
+class _Node:
+    """One node of the pattern's tree. `validate()` builds it as it reads, so the
+    structural rules below are checked on a real parse, and the static analyses
+    that follow (the exponential-ambiguity rule, SPEC 7.8) have the tree to walk.
+
+    kind      'set' (one code point from `ranges`, negated or not), 'anchor'
+              (`^` `$`), 'cat', 'alt', 'rep' or 'group'
+    nullable  can match the empty string
+    must/may  the capture numbers that take part in EVERY match of the node /
+              in SOME match of it
+    """
+    __slots__ = ('kind', 'kids', 'lo', 'hi', 'nullable', 'must', 'may', 'ranges', 'neg',
+                 'pre')
+
+    def __init__(self, kind, kids=(), lo=1, hi=1, nullable=False,
+                 must=frozenset(), may=frozenset(), ranges=(), neg=False, pre=False):
+        self.kind = kind
+        self.kids = kids
+        self.lo = lo
+        self.hi = hi
+        self.nullable = nullable
+        self.must = must
+        self.may = may
+        self.ranges = ranges
+        self.neg = neg
+        # A negated escape (\D \W \S) is negated BEFORE the `i` fold; a negated
+        # class ([^...]) is folded first and negated after (SPEC 7.8).
+        self.pre = pre
+
+
+_EMPTY = frozenset()
+_ALL_RANGES = ((0, 0x10FFFF),)
+_DIGIT = ((0x30, 0x39),)
+_WORD = ((0x30, 0x39), (0x41, 0x5A), (0x5F, 0x5F), (0x61, 0x7A))
+_SPACE = ((0x09, 0x0D), (0x20, 0x20))     # \t \n \v \f \r and space, as expanded
+_CLASS_ESCAPE_RANGES = {'d': _DIGIT, 'w': _WORD, 's': _SPACE}
+_CONTROL = {'n': 10, 'r': 13, 't': 9, 'f': 12}
+
+
+def _cat(items):
+    if len(items) == 1:
+        return items[0]
+    must = _EMPTY
+    may = _EMPTY
+    for it in items:
+        if it.may:
+            may = may | it.may
+            must = must | it.must
+    return _Node('cat', items, nullable=all(it.nullable for it in items), must=must, may=may)
+
+
+def _alt(branches):
+    if len(branches) == 1:
+        return branches[0]
+    must = branches[0].must
+    may = _EMPTY
+    for b in branches:
+        must = must & b.must
+        may = may | b.may
+    return _Node('alt', branches, nullable=any(b.nullable for b in branches),
+                 must=must, may=may)
+
+
+def validate(pattern, pos=None, ignore_case=False):
     """Validates and rewrites in one pass, returning source that means the same
     thing to every engine. Every host runs this, so every host compiles the
-    identical pattern.
+    identical pattern. It is also a real parser: the pattern's tree is built as
+    it goes (`parse()` returns it) and the structural rules that need one — a
+    quantified anchor, a loop over something that can match nothing, a capture
+    that need not take part in every iteration, nesting depth, group count — are
+    decided here (SPEC 7.8). Iterative: the depth it reads is data.
     """
+    return parse(pattern, pos, ignore_case)[0]
+
+
+def parse(pattern, pos=None, ignore_case=False):
+    """Returns (rewritten source, tree)."""
     p = pattern
     n = len(p)
+    if n > MAX_REGEX_PATTERN:
+        _bad(f'pattern is longer than {MAX_REGEX_PATTERN} code points', pattern, 0, pos)
     out = []
     i = 0
+    groups = 0
+    # One frame per open group: its finished branches, the items of the branch
+    # being read, and its capture number (0 for a non-capturing group).
+    stack = [([], [], 0, 0)]
 
     while i < n:
         c = p[i]
+        cat = stack[-1][1]
 
         if c == '\\':
             if i + 1 >= n:
@@ -110,43 +193,101 @@ def validate(pattern, pos=None):
             e = p[i + 1]
             if e in EXPAND_OUTSIDE:
                 out.append(EXPAND_OUTSIDE[e])
+                cat.append(_Node('set', ranges=_CLASS_ESCAPE_RANGES[e.lower()], neg=e.isupper(),
+                                 pre=True))
                 i += 2
                 continue
             if e in CONTROL_ESCAPES or e in SYNTAX_CHARS:
                 out.append(c + e)
+                cp = _CONTROL[e] if e in CONTROL_ESCAPES else ord(e)
+                cat.append(_Node('set', ranges=((cp, cp),)))
                 i += 2
                 continue
             _reject_escape(e, pattern, i, pos)
 
         if c == '[':
-            text, nxt = _validate_class(p, i, pattern, pos)
+            text, nxt, ranges, neg = _validate_class(p, i, pattern, pos)
             out.append(text)
+            cat.append(_Node('set', ranges=ranges, neg=neg))
             i = nxt
             continue
 
         if c == '(':
+            capture = 0
             if i + 1 < n and p[i + 1] == '?':
                 nxt = p[i + 2] if i + 2 < n else ''
                 if nxt == ':':
                     out.append('(?:')
                     i += 3
-                    continue
-                kind = ('lookahead' if nxt in ('=', '!')
-                        else 'lookbehind and named groups' if nxt == '<'
-                        else 'atomic groups' if nxt == '>'
-                        else 'this group type')
-                _bad(f'{kind} is not portable — only (?: ) is', pattern, i, pos)
-            out.append('(')
+                else:
+                    kind = ('lookahead' if nxt in ('=', '!')
+                            else 'lookbehind and named groups' if nxt == '<'
+                            else 'atomic groups' if nxt == '>'
+                            else 'this group type')
+                    _bad(f'{kind} is not portable — only (?: ) is', pattern, i, pos)
+            elif i + 1 < n and p[i + 1] == '*':
+                _bad('PCRE verbs such as (*FAIL) are not portable', pattern, i, pos)
+            else:
+                out.append('(')
+                i += 1
+                capture = groups + 1
+            groups += 1
+            if groups > MAX_REGEX_GROUPS:
+                _bad(f'more than {MAX_REGEX_GROUPS} groups', pattern, i, pos)
+            if len(stack) > MAX_DEPTH:
+                _bad(f'groups nested deeper than {MAX_DEPTH}', pattern, i, pos)
+            stack.append(([], [], capture, 0))
+            continue
+
+        if c == ')':
+            if len(stack) == 1:
+                _bad('unmatched ) — escape it as \\)', pattern, i, pos)
+            branches, items, capture, _ = stack.pop()
+            branches.append(_cat(tuple(items)) if items else _Node('cat', (), nullable=True))
+            body = _alt(tuple(branches))
+            must, may = body.must, body.may
+            if capture:
+                must = must | {capture}
+                may = may | {capture}
+            stack[-1][1].append(_Node('group', (body,), nullable=body.nullable,
+                                      must=must, may=may))
+            out.append(')')
             i += 1
             continue
 
-        if c == '{':
-            end = _after_quantifier(p, _validate_braces(p, i, pattern, pos), pattern, pos)
-            out.append(p[i:end])
-            i = end
+        if c == '|':
+            branches, items, _, _ = stack[-1]
+            branches.append(_cat(tuple(items)) if items else _Node('cat', (), nullable=True))
+            stack[-1] = (branches, [], stack[-1][2], 0)
+            out.append('|')
+            i += 1
             continue
-        if c in ('*', '+', '?'):
-            end = _after_quantifier(p, i + 1, pattern, pos)
+
+        if c == '{' or c in ('*', '+', '?'):
+            if c == '{':
+                end, lo, hi = _validate_braces(p, i, pattern, pos)
+            else:
+                end, lo, hi = i + 1, (1 if c == '+' else 0), (1 if c == '?' else None)
+            end = _after_quantifier(p, end, pattern, pos)
+            if not cat:
+                _bad('nothing to repeat', pattern, i, pos)
+            last = cat[-1]
+            if last.kind == 'anchor':
+                _bad('an anchor cannot be quantified', pattern, i, pos)
+            if last.kind == 'rep':
+                _bad('multiple repeat', pattern, i, pos)
+            if hi is None or hi > 1:
+                # A loop. SPEC 7.8: the engines disagree about an empty iteration
+                # and about a capture that skipped one, so neither is portable.
+                if last.nullable:
+                    _bad('a loop whose body can match the empty string is not portable',
+                         pattern, i, pos)
+                if last.may != last.must:
+                    _bad('a capture inside a loop must take part in every iteration',
+                         pattern, i, pos)
+            cat[-1] = _Node('rep', (last,), lo=lo, hi=hi,
+                            nullable=(lo == 0 or last.nullable),
+                            must=(_EMPTY if lo == 0 else last.must), may=last.may)
             out.append(p[i:end])
             i = end
             continue
@@ -155,9 +296,73 @@ def validate(pattern, pos=None):
         if c == ']':
             _bad('unmatched ] — escape it as \\]', pattern, i, pos)
 
+        if c == '^' or c == '$':
+            cat.append(_Node('anchor', nullable=True))
+        elif c == '.':
+            cat.append(_Node('set', ranges=_ALL_RANGES))
+        else:
+            cp = ord(c)
+            cat.append(_Node('set', ranges=((cp, cp),)))
         out.append(c)
         i += 1
-    return ''.join(out)
+
+    if len(stack) > 1:
+        _bad('missing )', pattern, n, pos)
+    branches, items, _, _ = stack[0]
+    branches.append(_cat(tuple(items)) if items else _Node('cat', (), nullable=True))
+    tree = _alt(tuple(branches))
+    _check_ambiguity(pattern, tree, ignore_case, pos)
+    return ''.join(out), tree
+
+
+# The analysis is a function of (pattern, flag) alone, so a pattern it has
+# accepted is remembered (bounded, oldest evicted): a literal pattern is checked
+# when the program compiles and again when it first runs.
+_accepted = {}
+_ACCEPTED_MAX = 256
+
+
+def _check_ambiguity(pattern, tree, ignore_case, pos):
+    """SPEC 7.8, 'Refused for its running time': exponential ambiguity. Runs on
+    the tree `parse` just built, after every structural rule has passed."""
+    key = (ignore_case, pattern)
+    if key in _accepted:
+        return
+    try:
+        with recursion_budget():
+            _amb.analyse(_to_analysis(tree, ignore_case))
+    except _amb.Reject as e:
+        _bad(str(e), pattern, 0, pos)
+    if len(_accepted) >= _ACCEPTED_MAX:
+        _accepted.pop(next(iter(_accepted)))
+    _accepted[key] = True
+
+
+def _to_analysis(node, ic):
+    """The parse tree in the analysis's own vocabulary (EPS LET CAT ALT GRP REP)."""
+    k = node.kind
+    if k == 'set':
+        rs = _amb.norm(node.ranges)
+        if node.neg and node.pre:
+            rs = _amb.negate(rs)
+        if ic:
+            rs = _amb.fold(rs)
+        if node.neg and not node.pre:
+            rs = _amb.negate(rs)
+        return _amb.N('LET', rs)
+    if k == 'anchor':
+        return _amb.N('EPS')
+    if k == 'cat':
+        if not node.kids:
+            return _amb.N('EPS')
+        return _amb.N('CAT', [_to_analysis(x, ic) for x in node.kids])
+    if k == 'alt':
+        return _amb.N('ALT', [_to_analysis(x, ic) for x in node.kids])
+    if k == 'group':
+        return _amb.N('GRP', _to_analysis(node.kids[0], ic))
+    if k == 'rep':
+        return _amb.N('REP', _to_analysis(node.kids[0], ic), node.lo, node.hi)
+    raise AssertionError(k)
 
 
 def _after_quantifier(p, i, pattern, pos):
@@ -176,6 +381,7 @@ def _validate_braces(p, start, pattern, pos):
     engine: PCRE2 and SRELL reject a huge repeat count as a syntax error while
     ECMAScript and cl-ppcre accept it and never match, and cl-ppcre also accepts
     the empty {2,1}. Python accepts both, so this check is what stops it.
+    Returns (index past the quantifier, lo, hi) with hi None when open-ended.
     """
     i = start + 1
     lo_start = i
@@ -185,14 +391,13 @@ def _validate_braces(p, start, pattern, pos):
         _bad('{ must begin a quantifier such as {2,4} — escape it as \\{',
              pattern, start, pos)
     lo = int(p[lo_start:i])
-    hi = None
+    hi = lo
     if i < len(p) and p[i] == ',':
         i += 1
         hi_start = i
         while i < len(p) and '0' <= p[i] <= '9':
             i += 1
-        if i > hi_start:
-            hi = int(p[hi_start:i])
+        hi = int(p[hi_start:i]) if i > hi_start else None
     if i >= len(p) or p[i] != '}':
         _bad('malformed quantifier', pattern, start, pos)
     if lo > MAX_QUANTIFIER or (hi is not None and hi > MAX_QUANTIFIER):
@@ -201,48 +406,79 @@ def _validate_braces(p, start, pattern, pos):
     if hi is not None and hi < lo:
         _bad(f'quantifier {{{lo},{hi}}} is empty — the upper bound is below the '
              'lower one', pattern, start, pos)
-    return i + 1
+    return i + 1, lo, hi
+
+
+def _class_item(p, i, pattern, pos):
+    """One member of a class at p[i]: returns (source text, ranges, is_escape,
+    next index). `is_escape` is true for \\d \\w \\s, which stand for a set and so
+    cannot be the end of a range."""
+    c = p[i]
+    if c == '\\':
+        if i + 1 >= len(p):
+            _bad('trailing backslash in character class', pattern, i, pos)
+        e = p[i + 1]
+        if e in EXPAND_INSIDE:
+            return EXPAND_INSIDE[e], _CLASS_ESCAPE_RANGES[e], True, i + 2
+        if e in ('D', 'W', 'S'):
+            _bad(f'\\{e} inside a character class cannot be expressed portably '
+                 '— negate the whole class instead', pattern, i, pos)
+        if e in CONTROL_ESCAPES or e in SYNTAX_CHARS or e == '-':
+            cp = _CONTROL[e] if e in CONTROL_ESCAPES else ord(e)
+            return c + e, ((cp, cp),), False, i + 2
+        _reject_escape(e, pattern, i, pos)
+    cp = ord(c)
+    return c, ((cp, cp),), False, i + 1
 
 
 def _validate_class(p, start, pattern, pos):
-    """Returns (rewritten text, index just past the closing ']')."""
+    """Returns (rewritten text, index just past the closing ']', ranges, negated)."""
+    n = len(p)
     i = start + 1
     out = ['[']
-    if i < len(p) and p[i] == '^':
+    neg = False
+    if i < n and p[i] == '^':
         out.append('^')
+        neg = True
         i += 1
-    if i + 1 < len(p) and p[i] == '[' and p[i + 1] == ':':
+    if i + 1 < n and p[i] == '[' and p[i + 1] == ':':
         _bad('POSIX classes such as [[:alpha:]] are not portable', pattern, i, pos)
+    ranges = []
     # `]` always closes the class. PCRE treats a leading `]` as a literal while
     # ECMAScript reads `[]` as an empty class, so neither spelling is portable.
     count = 0
-    while i < len(p):
+    while i < n:
         c = p[i]
         if c == ']':
             if count == 0:
                 _bad('empty character class — write \\] for a literal bracket',
                      pattern, start, pos)
             out.append(']')
-            return ''.join(out), i + 1
+            return ''.join(out), i + 1, tuple(ranges), neg
         count += 1
-        if c == '\\':
-            if i + 1 >= len(p):
-                _bad('trailing backslash in character class', pattern, i, pos)
-            e = p[i + 1]
-            if e in EXPAND_INSIDE:
-                out.append(EXPAND_INSIDE[e])
-                i += 2
-                continue
-            if e in ('D', 'W', 'S'):
-                _bad(f'\\{e} inside a character class cannot be expressed portably '
-                     '— negate the whole class instead', pattern, i, pos)
-            if e in CONTROL_ESCAPES or e in SYNTAX_CHARS or e == '-':
-                out.append(c + e)
-                i += 2
-                continue
-            _reject_escape(e, pattern, i, pos)
-        out.append(c)
-        i += 1
+        if c == '[' and i + 1 < n and p[i + 1] in ':.=' and \
+                p.find(p[i + 1] + ']', i + 2) >= 0:
+            _bad('POSIX bracket forms ([:x:], [.x.], [=x=]) are not portable',
+                 pattern, i, pos)
+        text, rs, is_escape, nxt = _class_item(p, i, pattern, pos)
+        # A hyphen with something after it (other than the closing bracket) makes a
+        # range of this member and the next. PCRE takes `[\\d-z]` as a literal
+        # hyphen and ECMAScript refuses it, so a class escape at either end is out.
+        if nxt + 1 < n and p[nxt] == '-' and p[nxt + 1] != ']':
+            if is_escape:
+                _bad('a class escape cannot start a range', pattern, i, pos)
+            rtext, rrs, r_escape, after = _class_item(p, nxt + 1, pattern, pos)
+            if r_escape:
+                _bad('a class escape cannot end a range', pattern, nxt + 1, pos)
+            if rrs[0][0] < rs[0][0]:
+                _bad('character class range is reversed', pattern, i, pos)
+            out.append(text + '-' + rtext)
+            ranges.append((rs[0][0], rrs[0][0]))
+            i = after
+            continue
+        out.append(text)
+        ranges.extend(rs)
+        i = nxt
     _bad('unterminated character class', pattern, start, pos)
 
 
@@ -268,6 +504,13 @@ def _lower_anchors(src: str) -> str:
         if in_class:
             if c == ']':
                 in_class = False
+            # `[`, `&&`, `||`, `~~` inside a set are reserved for future set
+            # operations: Python warns (FutureWarning) that their meaning may
+            # change. In SEL they are literals, so they are escaped here. This is
+            # the only place the rewrite differs from the other hosts', because
+            # the others' engines do not warn.
+            elif c in '[&|~':
+                out.append('\\')
             out.append(c)
             i += 1
             continue
@@ -309,21 +552,28 @@ def _group_text(m, i, original):
     return original[start:end]
 
 
+_CACHE_MAX = 256                       # SPEC 7.8: bounded, oldest evicted first
 _cache: dict[tuple, re.Pattern] = {}
 
 
-def _compile(pattern, flags, pos, pat_pos):
+def _flags(flags, pos):
+    """`i` and nothing else (SPEC 7.8): not `I`, not U+0130 or U+212A, which
+    str.lower() would have folded onto it."""
     ignore_case = False
     for ch in flags:
-        f = ch.lower()
-        if f == 'i':
+        if ch == 'i':
             ignore_case = True
             continue
-        if f in ('m', 's'):
+        if ch in ('m', 's', 'M', 'S'):
             fail('E_BAD_ARG',
                  f'flag "{ch}" is not offered — SEL always matches . against any '
                  'character and anchors ^ $ to the whole subject', pos)
         fail('E_BAD_ARG', f'unknown regex flag "{ch}"', pos)
+    return ignore_case
+
+
+def _compile(pattern, flags, pos, pat_pos):
+    ignore_case = _flags(flags, pos)
 
     if ignore_case:
         for ch in pattern:
@@ -335,7 +585,7 @@ def _compile(pattern, flags, pos, pat_pos):
     key = (ignore_case, pattern)
     rx = _cache.get(key)
     if rx is None:
-        source = _lower_anchors(validate(pattern, pat_pos))
+        source = _lower_anchors(validate(pattern, pat_pos, ignore_case))
         opts = re.DOTALL
         if ignore_case:
             opts |= re.IGNORECASE | re.ASCII
@@ -343,8 +593,34 @@ def _compile(pattern, flags, pos, pat_pos):
             rx = re.compile(source, opts)
         except re.error as e:
             fail('E_REGEX_SYNTAX', f'{e} in /{pattern}/', pat_pos)
+        except (RecursionError, OverflowError, MemoryError):
+            fail('E_REGEX_SYNTAX', f'the pattern is too large for the engine: /{pattern[:40]}/',
+                 pat_pos)
+        if len(_cache) >= _CACHE_MAX:
+            _cache.pop(next(iter(_cache)))
         _cache[key] = rx
     return rx, ignore_case
+
+
+def check_literal(name, args):
+    """Compile-time check of a literal pattern (SPEC 7.8): a pattern that is a
+    plain text literal is validated when the program is compiled, so a bad one is
+    E_REGEX_SYNTAX even where it is never run. A pattern that is computed can only
+    be checked when it runs. The flags are read only if they are literal too, and
+    an invalid flag is left to the run-time E_BAD_ARG."""
+    if not args or args[0].t != 'text':
+        return
+    flag_i = 3 if name == 'RREPLACE' else 2
+    ignore_case = False
+    if len(args) > flag_i:
+        f = args[flag_i]
+        if f.t != 'text' or any(ch != 'i' for ch in f.v):
+            return
+        ignore_case = 'i' in f.v
+    pattern = args[0].v
+    if ignore_case and not pattern.isascii():
+        return
+    validate(pattern, args[0].pos, ignore_case)
 
 
 def _matches(rx, subject):
@@ -448,9 +724,14 @@ def _rreplace(a, ctx):
     # length-preserving, so the same offsets index both.
     out = []
     last = 0
+    total = 0
     for m in _matches(rx, haystack):
         out.append(subject[last:m.start()])
-        out.append(_expand(repl, m, rx, subject, a.pos_of(1)))
+        piece = _expand(repl, m, rx, subject, a.pos_of(1))
+        out.append(piece)
+        # The result is measured as it grows and refused past the cap (SPEC 6.4).
+        total += m.start() - last + len(piece)
+        check_text(total + (len(subject) - m.end()), a.pos)
         last = m.end()
     out.append(subject[last:])
     return Value.text(''.join(out))

@@ -35,13 +35,29 @@ func EvalNode(node *Node, ctx *Context) *Value {
 		fail("E_DEPTH", "evaluation nested too deeply", node.Pos)
 	}
 
+	// Restore dynamic evaluation state on every exit, including a panic that
+	// a surrounding coalescing operator or join prefilter catches.
+	frames := ctx.Frames
+	completed := false
+	defer func() {
+		ctx.Depth--
+		ctx.Frames = frames
+		if !completed {
+			// A join's prefilter state is handed from a LINK to its parent on
+			// a normal return; on a panic that a `??` or a join probe catches,
+			// nothing will consume it, and the next unrelated LINK must not
+			// find it there.
+			ctx.JoinPrefilter = nil
+			ctx.JoinPrefilterReport = nil
+		}
+	}()
 	var res *Value
 	if node.MathPlan != nil {
 		res = evalMathPlan(node.MathPlan, ctx)
 	} else {
 		res = dispatch(node, ctx)
 	}
-	ctx.Depth--
+	completed = true
 	return res
 }
 
@@ -81,8 +97,10 @@ func dispatch(node *Node, ctx *Context) *Value {
 		literal := node.R.T == NodeText
 		var key string
 		if literal {
-			if node.SlotCache != nil && obj.shape == node.SlotCache.Shape {
-				return obj.storage[node.SlotCache.Slot]
+			if node.SlotCache != nil {
+				if cache := node.SlotCache.Load(); cache != nil && obj.shape == cache.Shape {
+					return obj.storage[cache.Slot]
+				}
 			}
 			key = node.R.S
 		} else {
@@ -91,8 +109,8 @@ func dispatch(node *Node, ctx *Context) *Value {
 
 		if obj.shape != nil {
 			if idx, ok := obj.shape.KeyMap[key]; ok {
-				if literal {
-					node.SlotCache = &SlotCache{Shape: obj.shape, Slot: idx}
+				if literal && node.SlotCache != nil {
+					node.SlotCache.Store(&SlotCache{Shape: obj.shape, Slot: idx})
 				}
 				return obj.storage[idx]
 			}
@@ -143,18 +161,27 @@ func evalList(node *Node, ctx *Context) *Value {
 	var values []*Value
 	for _, item := range node.Items {
 		v := EvalNode(item, ctx)
+		// The children the list will hold, counted before any are copied
+		// (SPEC §6.4): A = (A, A) thirty times must end in E_RANGE, not memory.
+		if v.Kind == KindNone && v.Size() > 0 {
+			checkCollection(satAdd(int64(len(values)), int64(v.Size())), "the list", node.Pos)
+		} else {
+			checkCollection(int64(len(values))+1, "the list", node.Pos)
+		}
 		if v.Kind == KindNone && v.Size() > 0 {
 			if v.storage != nil {
 				for _, child := range v.storage {
-					values = append(values, child.CloneAt(1, item.Pos))
+					values = append(values, child.CloneAt(2, node.Pos))
 				}
 			} else {
 				for _, e := range v.entries {
-					values = append(values, e.Val.CloneAt(1, item.Pos))
+					values = append(values, e.Val.CloneAt(2, node.Pos))
 				}
 			}
 		} else {
-			values = append(values, v.CloneAt(1, item.Pos))
+			// The list being built is level 1; what it holds starts at level 2, and a
+			// too-deep value is reported at the list node (SPEC §3.4, §6.4).
+			values = append(values, v.CloneAt(2, node.Pos))
 		}
 	}
 	return NewListOwned(values)
@@ -237,7 +264,7 @@ func evalBinary(node *Node, ctx *Context) *Value {
 		return NewNum(decimal.Mod(a, b, node.Pos, fail))
 
 	case "&":
-		return concat(l, r, lp, rp)
+		return concat(l, r, lp, rp, node.Pos)
 
 	case "==", "!=", "<", "<=", ">", ">=":
 		a := l.AsDecimal(lp)
@@ -323,7 +350,7 @@ func compareResult(op string, c int, pos Pos) bool {
 	}
 }
 
-func concat(l, r *Value, lp, rp Pos) *Value {
+func concat(l, r *Value, lp, rp, at Pos) *Value {
 	lv := l.ScalarSource(lp)
 	rv := r.ScalarSource(rp)
 	if lv.Kind == KindBool {
@@ -333,10 +360,17 @@ func concat(l, r *Value, lp, rp Pos) *Value {
 		fail("E_NOT_TEXT", "cannot concatenate a boolean", rp)
 	}
 	if lv.Kind == KindText && rv.Kind == KindText {
-		return NewTextOwned(lv.Scalar() + rv.Scalar())
+		ls, rs := lv.Scalar(), rv.Scalar()
+		// Measured before it is built (SPEC §6.4). Bytes bound code points from
+		// above, so the exact count is only needed when the bytes are past the cap.
+		if int64(len(ls))+int64(len(rs)) > maxTextLen {
+			checkTextLen(runeLen(ls)+runeLen(rs), "the result of &", at)
+		}
+		return NewTextOwned(ls + rs)
 	}
 	a := l.AsBytes(lp)
 	b := r.AsBytes(rp)
+	checkTextLen(int64(len(a))+int64(len(b)), "the result of &", at)
 	res := make([]byte, len(a)+len(b))
 	copy(res, a)
 	copy(res[len(a):], b)
@@ -395,7 +429,10 @@ func evalAssign(node *Node, ctx *Context) *Value {
 
 	var value *Value
 	if node.S == "=" {
-		value = EvalNode(node.R, ctx).CloneAt(1, node.Pos)
+		// The stored value sits len(path) levels down (the variable plus each
+		// bracket), so its depth is counted from there: path plus value must fit
+		// the cap, and the error is reported at the target (SPEC §6.4).
+		value = EvalNode(node.R, ctx).CloneAt(len(path), node.L.Pos)
 	} else {
 		current := walkCreate(ctx, path, len(path)-1).Get(key)
 		if current == nil {
@@ -405,7 +442,7 @@ func evalAssign(node *Node, ctx *Context) *Value {
 		binOp := compoundOps[node.S]
 		tp, vp := node.L.Pos, node.R.Pos
 		if binOp == "&" {
-			value = concat(current, rhs, tp, vp)
+			value = concat(current, rhs, tp, vp, node.Pos)
 		} else {
 			a := current.AsDecimal(tp)
 			b := rhs.AsDecimal(vp)
@@ -479,84 +516,111 @@ func resolveTarget(target *Node, ctx *Context) []string {
 	return path
 }
 
+// mathSlot is one scratchpad cell of a math plan. A loaded operand is kept as
+// the Value it evaluated to and is coerced only when an operation consumes it:
+// SPEC §6.2 evaluates every operand first and coerces afterwards, so the plan
+// must not turn a load into a coercion (an error in a later operand comes
+// first, and a later operand's side effect on an earlier one's value is seen).
+type mathSlot struct {
+	d   *decimal.Dec
+	v   *Value
+	pos Pos
+}
+
+func (s *mathSlot) dec() *decimal.Dec {
+	if s.d == nil {
+		s.d = s.v.AsDecimal(s.pos)
+	}
+	return s.d
+}
+
 func evalMathPlan(plan *MathPlan, ctx *Context) *Value {
-	scratchpad := make([]*decimal.Dec, plan.ScratchpadSize)
-	for _, step := range plan.Steps {
+	slots := make([]mathSlot, plan.ScratchpadSize)
+	for si := range plan.Steps {
+		step := &plan.Steps[si]
 		switch step.Op {
 		case "LOAD_VAR":
 			val := ctx.Lookup(step.Name)
 			if val == nil {
 				fail("E_UNDEF_VAR", fmt.Sprintf("undefined variable %s", step.Name), step.Pos)
 			}
-			scratchpad[step.Dst] = val.AsDecimal(step.Pos)
+			slots[step.Dst] = mathSlot{v: val, pos: step.Pos}
 
 		case "LOAD_CONST":
-			scratchpad[step.Dst] = step.ConstVal
+			slots[step.Dst] = mathSlot{d: step.ConstVal}
 
 		case "LOAD_LEAF":
 			val := EvalNode(step.LeafNode, ctx)
-			scratchpad[step.Dst] = val.AsDecimal(step.LeafNode.Pos)
+			slots[step.Dst] = mathSlot{v: val, pos: step.LeafNode.Pos}
+
+		case "COERCE":
+			slots[step.Dst].dec()
 
 		case "ADD":
-			scratchpad[step.Dst] = decimal.Add(scratchpad[step.Src1], scratchpad[step.Src2], step.Pos, fail)
+			a, b := slots[step.Src1].dec(), slots[step.Src2].dec()
+			slots[step.Dst] = mathSlot{d: decimal.Add(a, b, step.Pos, fail)}
 
 		case "SUB":
-			scratchpad[step.Dst] = decimal.Sub(scratchpad[step.Src1], scratchpad[step.Src2], step.Pos, fail)
+			a, b := slots[step.Src1].dec(), slots[step.Src2].dec()
+			slots[step.Dst] = mathSlot{d: decimal.Sub(a, b, step.Pos, fail)}
 
 		case "MUL":
-			scratchpad[step.Dst] = decimal.Mul(scratchpad[step.Src1], scratchpad[step.Src2], step.Pos, fail)
+			a, b := slots[step.Src1].dec(), slots[step.Src2].dec()
+			slots[step.Dst] = mathSlot{d: decimal.Mul(a, b, step.Pos, fail)}
 
 		case "DIV":
-			scratchpad[step.Dst] = decimal.Div(scratchpad[step.Src1], scratchpad[step.Src2], step.Pos, fail)
+			a, b := slots[step.Src1].dec(), slots[step.Src2].dec()
+			slots[step.Dst] = mathSlot{d: decimal.Div(a, b, step.Pos, fail)}
 
 		case "MOD":
-			scratchpad[step.Dst] = decimal.Mod(scratchpad[step.Src1], scratchpad[step.Src2], step.Pos, fail)
+			a, b := slots[step.Src1].dec(), slots[step.Src2].dec()
+			slots[step.Dst] = mathSlot{d: decimal.Mod(a, b, step.Pos, fail)}
 
 		case "NEG":
-			scratchpad[step.Dst] = decimal.Negate(scratchpad[step.Src1])
+			slots[step.Dst] = mathSlot{d: decimal.Negate(slots[step.Src1].dec())}
 
 		case "ABS":
-			scratchpad[step.Dst] = decimal.Abs(scratchpad[step.Src1])
+			slots[step.Dst] = mathSlot{d: decimal.Abs(slots[step.Src1].dec())}
 
 		case "SIGN":
-			s := decimal.Sign(scratchpad[step.Src1])
-			scratchpad[step.Dst] = decimal.FromInt(int64(s))
+			s := decimal.Sign(slots[step.Src1].dec())
+			slots[step.Dst] = mathSlot{d: decimal.FromInt(int64(s))}
 
 		case "CEIL":
-			scratchpad[step.Dst] = decimal.Ceil(scratchpad[step.Src1])
+			slots[step.Dst] = mathSlot{d: decimal.Ceil(slots[step.Src1].dec(), step.Pos, fail)}
 
 		case "FLOOR":
-			scratchpad[step.Dst] = decimal.Floor(scratchpad[step.Src1])
+			slots[step.Dst] = mathSlot{d: decimal.Floor(slots[step.Src1].dec(), step.Pos, fail)}
 
 		case "TRUNC":
-			scratchpad[step.Dst] = decimal.Trunc(scratchpad[step.Src1])
+			slots[step.Dst] = mathSlot{d: decimal.Trunc(slots[step.Src1].dec())}
 
 		case "ROUND":
-			scale := CheckSizedInt(scratchpad[step.Src2], "ROUND", 2, MaxScale, "ROUND scale", step.AuxPos)
-			scratchpad[step.Dst] = decimal.Round(scratchpad[step.Src1], scale, step.Pos, fail)
+			x := slots[step.Src1].dec()
+			scale := CheckSizedInt(slots[step.Src2].dec(), "ROUND", 2, MaxScale, "ROUND scale", step.AuxPos)
+			slots[step.Dst] = mathSlot{d: decimal.Round(x, scale, step.Pos, fail)}
 
 		case "POWER":
-			exp := CheckSizedInt(scratchpad[step.Src2], "POWER", 2, MaxPower, "POWER exponent", step.AuxPos)
-			scratchpad[step.Dst] = decimal.Power(scratchpad[step.Src1], exp, step.Pos, fail)
+			x := slots[step.Src1].dec()
+			exp := CheckSizedInt(slots[step.Src2].dec(), "POWER", 2, MaxPower, "POWER exponent", step.AuxPos)
+			slots[step.Dst] = mathSlot{d: decimal.Power(x, exp, step.Pos, fail)}
 
 		case "MIN":
-			a := scratchpad[step.Src1]
-			b := scratchpad[step.Src2]
+			a, b := slots[step.Src1].dec(), slots[step.Src2].dec()
 			if decimal.Cmp(b, a) < 0 {
-				scratchpad[step.Dst] = b
+				slots[step.Dst] = mathSlot{d: b}
 			} else {
-				scratchpad[step.Dst] = a
+				slots[step.Dst] = mathSlot{d: a}
 			}
 
 		case "MAX":
-			a := scratchpad[step.Src1]
-			b := scratchpad[step.Src2]
+			a, b := slots[step.Src1].dec(), slots[step.Src2].dec()
 			if decimal.Cmp(b, a) > 0 {
-				scratchpad[step.Dst] = b
+				slots[step.Dst] = mathSlot{d: b}
 			} else {
-				scratchpad[step.Dst] = a
+				slots[step.Dst] = mathSlot{d: a}
 			}
 		}
 	}
-	return NewNum(scratchpad[plan.OutputSlot])
+	return NewNum(slots[plan.OutputSlot].dec())
 }

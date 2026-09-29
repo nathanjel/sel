@@ -133,12 +133,30 @@ operand in ARGS. Every refusal reports the name token."
     (when (spec-arity-error spec)
       (let ((problem (funcall (spec-arity-error spec) count)))
         (when problem (fail "E_ARITY" problem (token-pos name-tok)))))
+    (check-literal-regex-pattern spec args)
     (let ((n (make-node :call (token-pos name-tok))))
       (setf (node-s n) (spec-name spec)
             (node-spec n) spec
             (node-items n) args
             (node-record-shape n) (prepare-record-shape n))
       n)))
+
+(defun check-literal-regex-pattern (spec args)
+  "A regex call whose pattern is a text literal is checked when the program is
+compiled (SPEC 7.8), not when the call happens to run: `IF(FALSE, RMATCH('(?=a)',
+s), 1)` is refused, so a rule's validity never depends on which branch its data
+takes. A literal flags argument is checked with it; any other flags argument is
+left to the run."
+  (let ((name (spec-name spec)))
+    (when (member name '("RMATCH" "RFIND" "RREPLACE" "RGROUPS") :test #'string=)
+      (let* ((flag-index (if (string= name "RREPLACE") 3 2))
+             (pattern (first args))
+             (flags (nth flag-index args)))
+        (when (and pattern (eq (node-kind pattern) :text))
+          (funcall 'regex-literal-check (node-s pattern)
+                   (and flags (eq (node-kind flags) :text) (node-s flags))
+                   (node-pos pattern)
+                   (if flags (node-pos flags) (node-pos pattern))))))))
 
 (defun arity-text (spec)
   (let ((plural (if (= (spec-min spec) 1) "" "s")))
@@ -265,7 +283,10 @@ operand in ARGS. Every refusal reports the name token."
                              (node-l n) left
                              (node-r n) value)
                        (setf left n))))
-                 (setf left (bin-node tok left (parse-term p bp)))))
+                 ;; Counted like an assignment (SPEC 6.4): `??` and `???` are the
+                 ;; other right-associative operators.
+                 (with-depth (p (token-pos tok))
+                   (setf left (bin-node tok left (parse-term p bp))))))
 
             ((char= assoc #\N)
              ;; Deliberately non-associative, and the E_SYNTAX is reported at the

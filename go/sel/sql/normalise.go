@@ -111,13 +111,17 @@ func substituteNode(node *sel.Node, defs map[string]*SNode, bound []string, dept
 	case sel.NodeVar:
 		for _, b := range bound {
 			if b == node.S {
-				return Leaf(node)
+				leaf := Leaf(node)
+				leaf.VarScope = VarScopeBound
+				return leaf
 			}
 		}
 		if def, ok := defs[node.S]; ok {
-			return def
+			return snapshot(def)
 		}
-		return Leaf(node)
+		leaf := Leaf(node)
+		leaf.VarScope = VarScopeFree
+		return leaf
 
 	case sel.NodeNum, sel.NodeText, sel.NodeBool, sel.NodeNull:
 		return Leaf(node)
@@ -165,7 +169,15 @@ func substituteNode(node *sel.Node, defs map[string]*SNode, bound []string, dept
 				scope = form.Scopes[i]
 			}
 			if scope == manifest.ScopeBinder {
-				args = append(args, Leaf(arg))
+				// A bare name stays as written. Anything else is kept whole, so
+				// the translator can refuse it where it stands: a child-less copy
+				// of an index or call reached the translator as a node with no
+				// parts and crashed it (GO-C2).
+				if arg.T == sel.NodeVar {
+					args = append(args, Leaf(arg))
+				} else {
+					args = append(args, substituteNode(arg, defs, bound, d))
+				}
 			} else if scope == manifest.ScopeInner {
 				args = append(args, substituteNode(arg, defs, inner, d))
 			} else {
@@ -193,4 +205,17 @@ func flattenNodes(items []*sel.Node, defs map[string]*SNode, bound []string, dep
 		}
 	}
 	return out
+}
+
+// snapshot is what reading a helper yields. An indexed assignment appends to
+// the list it names in place, so a read that kept the pointer would see writes
+// made after it; SEL's assignment copies (spec §3.4/§5.7), and so does this
+// (GO-C4). The entries are values nobody mutates, so the copy is one level.
+func snapshot(def *SNode) *SNode {
+	if def == nil || def.T != SNodeCList {
+		return def
+	}
+	entries := make([]CListEntry, len(def.Entries))
+	copy(entries, def.Entries)
+	return CList(def.Pos, entries)
 }

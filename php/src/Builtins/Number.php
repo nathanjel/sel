@@ -33,9 +33,9 @@ final class Number
         Registry::define(['name' => 'SIGN', 'min' => 1, 'max' => 1,
             'fn' => static fn (Args $a): Value => Value::int(Dec::sign($a->dec(0)))]);
         Registry::define(['name' => 'CEIL', 'min' => 1, 'max' => 1,
-            'fn' => static fn (Args $a): Value => Value::num(Dec::ceil($a->dec(0)))]);
+            'fn' => static fn (Args $a): Value => Value::num(Dec::ceil($a->dec(0), $a->pos))]);
         Registry::define(['name' => 'FLOOR', 'min' => 1, 'max' => 1,
-            'fn' => static fn (Args $a): Value => Value::num(Dec::floor($a->dec(0)))]);
+            'fn' => static fn (Args $a): Value => Value::num(Dec::floor($a->dec(0), $a->pos))]);
         Registry::define(['name' => 'TRUNC', 'min' => 1, 'max' => 1,
             'fn' => static fn (Args $a): Value => Value::num(Dec::trunc($a->dec(0)))]);
         Registry::define(['name' => 'CANON', 'min' => 1, 'max' => 1,

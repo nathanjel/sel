@@ -9,6 +9,14 @@
 
 declare(strict_types=1);
 
+// conformance/29 runs operations AT the language's size caps (spec §6.4: 16 777 216
+// code points of text, 1 000 000 collection elements). A PHP Value costs ~255
+// bytes, so a million-element list needs 250-500 MB — more than the default
+// 128 MB memory_limit, which PHP enforces with an uncatchable fatal error. This is
+// the test runner's budget, not the library's: an application that builds such
+// values sets its own limit.
+ini_set('memory_limit', '1G');
+
 require_once __DIR__ . '/../src/bootstrap.php';
 
 use Sel\Sel;
@@ -229,6 +237,10 @@ foreach ($files as $file) {
         } else {
             $failures[] = $c + ['problem' => $problem];
         }
+        // A case at a size cap holds up to a million Values; do not carry one into
+        // the next case (which builds its own) or wait for the collector to notice.
+        unset($value, $error, $root, $e);
+        gc_collect_cycles();
     }
 }
 

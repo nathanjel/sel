@@ -31,6 +31,9 @@ import { Sql, SqlError, map as sqlmap } from '../src/sql/index.mjs';
 import { optimizeAstInMemory } from '../src/optimizer.mjs';
 import { SQL_CASES } from './case-data.mjs';
 
+// How many extra translations the reuse twin makes of each case.
+const REUSE_REPEATS = 4;
+
 // A malformed suite. Not a failing case — a suite that cannot be run.
 class SuiteError extends Error {}
 
@@ -212,6 +215,40 @@ function runCase(c) {
     else if (e instanceof SqlError) error = e;
     else if (e instanceof SelError) return `the source did not compile: ${e}`;
     else thrown = e;
+  }
+
+  // The reuse twin. The same program and bindings are translated again, several
+  // times, and every translation must give the first one's outcome: the same
+  // SQL, or the same refusal at the same place, or the same kind of startup
+  // error. A translator that keeps state between calls -- a dialect marked as
+  // checked before it was checked, a map iterated in a different order each
+  // time, a parameter list that grows -- passes a single translation and fails
+  // here (T10: JS-C24, PHP-C49, PY-C49, CPP-C36, LISP-C42, GO-C18).
+  if (program !== null && bindings !== null) {
+    const outcome = (o) => (o.thrown ? `${o.thrown.constructor.name} (${o.thrown.message})`
+      : o.error ? `${o.error.code} at ${o.error.line}:${o.error.col}` : JSON.stringify(o.sql));
+    const first = { sql, error, thrown };
+    for (let k = 0; k < REUSE_REPEATS; k += 1) {
+      const again = { sql: null, error: null, thrown: null };
+      try {
+        const f2 = Sql.translate(program, dialect, bindings, options);
+        again.sql = as === 'condition' ? f2.asCondition(mode)
+          : as === 'statement' ? f2.asStatement(mode)
+          : f2.asValue(mode);
+      } catch (e) {
+        if (e instanceof SqlError) again.error = e;
+        else if (e instanceof SelError) return `translating again: the source did not compile: ${e}`;
+        else again.thrown = e;
+      }
+      const same = (first.thrown ? again.thrown !== null && again.thrown.constructor === first.thrown.constructor
+        : first.error ? again.error !== null && again.error.code === first.error.code
+          && again.error.line === first.error.line && again.error.col === first.error.col
+        : again.thrown === null && again.error === null && again.sql === first.sql);
+      if (!same) {
+        return `translating again on the same program and bindings gave ${outcome(again)} `
+          + `where the first translation gave ${outcome(first)} (repeat ${k + 1})`;
+      }
+    }
   }
 
   // A malformed map or binding is a mistake in the application's startup and

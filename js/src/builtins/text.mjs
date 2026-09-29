@@ -6,6 +6,7 @@ import { fail } from '../errors.mjs';
 import { Value } from '../value.mjs';
 import { define } from '../registry.mjs';
 import { toCodePoints, fromCodePoints } from '../utf8.mjs';
+import { cpLength, checkText, checkCollection } from '../budget.mjs';
 
 const cps = (s) => toCodePoints(s, null);
 
@@ -65,40 +66,33 @@ define({
 define({
   name: 'REPLACE', min: 3, max: 3,
   fn: (args) => {
-    const needle = cps(args.text(0));
-    const repl = cps(args.text(1));
-    const hay = cps(args.text(2));
-    if (needle.length === 0) fail('E_BAD_ARG', 'REPLACE needle must not be empty', args.posOf(0));
-    const out = [];
-    let i = 0;
-    for (;;) {
-      const at = indexOfCp(hay, needle, i);
-      if (at < 0) break;
-      for (let k = i; k < at; k++) out.push(hay[k]);
-      out.push(...repl);
-      i = at + needle.length;
+    const needle = args.text(0);
+    const repl = args.text(1);
+    const hay = args.text(2);
+    if (needle === '') fail('E_BAD_ARG', 'REPLACE needle must not be empty', args.posOf(0));
+    // Well-formed UTF-16 is searched by code units without ever matching half
+    // of a pair, so the string forms are exact; the result length is known from
+    // the piece count before the result is built (SPEC 6.4), and nothing here
+    // spreads a code point array into an argument list.
+    const pieces = hay.split(needle);
+    const matches = pieces.length - 1;
+    if (matches > 0) {
+      const size = cpLength(hay) + matches * (cpLength(repl) - cpLength(needle));
+      checkText(size, args.pos, 'REPLACE result');
     }
-    for (let k = i; k < hay.length; k++) out.push(hay[k]);
-    return Value.text(fromCodePoints(out));
+    return Value.text(pieces.join(repl));
   },
 });
 
 define({
   name: 'SPLIT', min: 2, max: 2,
   fn: (args) => {
-    const hay = cps(args.text(0));
-    const sep = cps(args.text(1));
-    if (sep.length === 0) fail('E_BAD_ARG', 'SPLIT separator must not be empty', args.posOf(1));
-    const parts = [];
-    let i = 0;
-    for (;;) {
-      const at = indexOfCp(hay, sep, i);
-      if (at < 0) break;
-      parts.push(Value.text(fromCodePoints(hay.slice(i, at))));
-      i = at + sep.length;
-    }
-    parts.push(Value.text(fromCodePoints(hay.slice(i))));
-    return Value.list(parts);
+    const hay = args.text(0);
+    const sep = args.text(1);
+    if (sep === '') fail('E_BAD_ARG', 'SPLIT separator must not be empty', args.posOf(1));
+    const pieces = hay.split(sep);
+    checkCollection(pieces.length, args.pos, 'SPLIT result');
+    return Value.list(pieces.map((piece) => Value.text(piece)));
   },
 });
 
@@ -137,7 +131,15 @@ define({
 
 define({
   name: 'REPEAT', min: 2, max: 2,
-  fn: (args) => Value.text(args.text(0).repeat(args.nonNegInt(1))),
+  fn: (args) => {
+    const text = args.text(0);
+    const count = args.nonNegInt(1);
+    // An empty text repeated any number of times is empty, and a count of zero
+    // is empty text of any length (SPEC 6.4: an empty result is never too large).
+    if (text === '' || count === 0) return Value.text('');
+    checkText(cpLength(text) * count, args.pos, 'REPEAT result');
+    return Value.text(text.repeat(count));
+  },
 });
 
 function pad(args, left) {
@@ -146,10 +148,15 @@ function pad(args, left) {
   const fill = cps(args.text(2));
   if (fill.length === 0) fail('E_BAD_ARG', 'pad fill must not be empty', args.posOf(2));
   if (c.length >= width) return Value.text(fromCodePoints(c));
+  checkText(width, args.pos, 'PAD result');
   const need = width - c.length;
-  const padding = [];
-  while (padding.length < need) padding.push(fill[padding.length % fill.length]);
-  return Value.text(fromCodePoints(left ? padding.concat(c) : c.concat(padding)));
+  // Whole cycles of the fill, then the part of one that fits: an astral fill
+  // is cut between code points, never inside one.
+  const fillText = fromCodePoints(fill);
+  const padding = fillText.repeat(Math.floor(need / fill.length))
+    + fromCodePoints(fill.slice(0, need % fill.length));
+  const text = fromCodePoints(c);
+  return Value.text(left ? padding + text : text + padding);
 }
 
 define({ name: 'PADL', min: 3, max: 3, fn: (a) => pad(a, true) });

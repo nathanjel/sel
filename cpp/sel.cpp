@@ -94,8 +94,24 @@ using CodePoints = std::vector<char32_t>;
 
 // Strict: rejects overlong forms, surrogates, values above U+10FFFF and
 // truncated sequences. No replacement characters, ever.
-CodePoints decode_utf8(std::string_view bytes, Pos pos = {}) {
+//
+// With `is_source`, an invalid sequence is reported where it starts, at the
+// position (line, col, offset) counted in the code points of the valid prefix
+// before it -- the same unit every other position uses (SPEC §2); a line ends at
+// LF only. Otherwise the error carries `pos`, the caller's own position.
+CodePoints decode_utf8(std::string_view bytes, Pos pos = {}, bool is_source = false) {
   CodePoints cps;
+  auto at = [&](const CodePoints& prefix) {
+    Pos p;
+    p.line = 1;
+    std::size_t line_start = 0;
+    for (std::size_t k = 0; k < prefix.size(); k++) {
+      if (prefix[k] == U'\n') { p.line++; line_start = k + 1; }
+    }
+    p.col = static_cast<int>(prefix.size() - line_start) + 1;
+    p.offset = prefix.size();
+    return p;
+  };
   cps.reserve(bytes.size());
   const std::size_t n = bytes.size();
   std::size_t i = 0;
@@ -128,18 +144,20 @@ CodePoints decode_utf8(std::string_view bytes, Pos pos = {}) {
       char buf[3];
       std::snprintf(buf, sizeof buf, "%02x", b);
       fail("E_UTF8", "invalid start byte 0x" + std::string(buf) + " at byte " +
-                         std::to_string(i), pos);
+                         std::to_string(i), is_source ? at(cps) : pos);
     }
 
     if (i + static_cast<std::size_t>(need) >= n) {
-      fail("E_UTF8", "truncated sequence at byte " + std::to_string(i), pos);
+      fail("E_UTF8", "truncated sequence at byte " + std::to_string(i),
+           is_source ? at(cps) : pos);
     }
     for (int k = 1; k <= need; k++) {
       const unsigned char c = static_cast<unsigned char>(bytes[i + k]);
       const unsigned char min = k == 1 ? lo : 0x80;
       const unsigned char max = k == 1 ? hi : 0xbf;
       if (c < min || c > max) {
-        fail("E_UTF8", "invalid continuation byte at byte " + std::to_string(i + k), pos);
+        fail("E_UTF8", "invalid continuation byte at byte " + std::to_string(i + k),
+             is_source ? at(cps) : pos);
       }
       cp = (cp << 6) | (c & 0x3f);
     }
@@ -231,6 +249,13 @@ constexpr long long DIV_SCALE = sel_limits::DIV_SCALE;   // spec/limits.json
 // scale cap: a shared budget would have shrunk what the spec already sanctions.
 constexpr long long MAX_INT_DIGITS = sel_limits::MAX_INT_DIGITS;
 constexpr long long MAX_FRAC_DIGITS = sel_limits::MAX_FRAC_DIGITS;
+// For sizes that are products of a count and a length (spec §6.4 caps): wide enough
+// that the product cannot itself overflow before it is compared with the cap.
+__extension__ typedef unsigned __int128 u128;
+constexpr long long MAX_TEXT_LEN = sel_limits::MAX_TEXT_LEN;
+constexpr long long MAX_COLLECTION = sel_limits::MAX_COLLECTION;
+constexpr long long MAX_REGEX_PATTERN = sel_limits::MAX_REGEX_PATTERN;
+constexpr long long MAX_REGEX_GROUPS = sel_limits::MAX_REGEX_GROUPS;
 
 // Upper bounds on the arguments that name a size, from spec/SPEC.md §6.4's
 // first table. These are not the same as the value caps above: they bound what
@@ -260,14 +285,28 @@ enum class MathOp : uint8_t {
   Round,
   Power,
   Min,
-  Max
+  Max,
+  // Not in the manifest: coerces a still-uncoerced load in place, for a
+  // copy-propagated operand (`x + 0`, `1 * x`) that no arithmetic step would
+  // otherwise ever look at.
+  Coerce
 };
 
+// A plan's slots are 32-bit: a MIN or MAX fold allocates two slots per argument
+// and the depth cap does not bound how many arguments there are, so 16 bits
+// wrapped at 32,769 of them and the executor wrote past its scratchpad.
 struct MathStep {
   MathOp op = MathOp::LoadVar;
-  uint16_t dst = 0;
-  uint16_t src1 = 0;
-  uint16_t src2 = 0;
+  uint32_t dst = 0;
+  uint32_t src1 = 0;
+  uint32_t src2 = 0;
+  // Operands that a load produced are still the values that were loaded
+  // (spec §6.2, evaluate then coerce): the step coerces them, left to right,
+  // when it runs, at the position of the operand's own node.
+  bool raw1 = false;
+  bool raw2 = false;
+  Pos src1_pos;
+  Pos src2_pos;
   Pos pos;
   Pos aux_pos;
   std::string name;
@@ -277,8 +316,8 @@ struct MathStep {
 
 struct MathPlan {
   std::vector<MathStep> steps;
-  uint16_t output_slot = 0;
-  uint16_t scratchpad_size = 0;
+  uint32_t output_slot = 0;
+  uint32_t scratchpad_size = 0;
 };
 
 namespace {
@@ -626,7 +665,9 @@ bool divmod_abs(const std::string& a, const std::string& b, std::string& q, std:
         r = strip(a);
       } else {
         q = a.substr(0, a.size() - k);
-        r = strip(a.substr(a.size() - k));
+        // k == 0 (dividing by exactly "1") leaves an empty tail, and an empty
+        // string is not the remainder "0": callers compare against it.
+        r = k == 0 ? std::string("0") : strip(a.substr(a.size() - k));
       }
       return true;
     }
@@ -675,7 +716,7 @@ std::string pow10(long long k) {
 const std::vector<uint32_t>& dec_get_limbs(const Dec& d) {
   if (!d.limbs.empty()) return d.limbs;
   if (d.small) {
-    std::vector<uint32_t>& l = const_cast<Dec&>(d).limbs;
+    std::vector<uint32_t>& l = d.limbs;
     __uint128_t mag = d.mantissa < 0 ? static_cast<__uint128_t>(-(d.mantissa))
                                            : static_cast<__uint128_t>(d.mantissa);
     if (mag == 0) {
@@ -689,10 +730,10 @@ const std::vector<uint32_t>& dec_get_limbs(const Dec& d) {
     return d.limbs;
   }
   if (!d.digits.empty()) {
-    const_cast<Dec&>(d).limbs = string_to_limbs(d.digits);
+    d.limbs = string_to_limbs(d.digits);
     return d.limbs;
   }
-  const_cast<Dec&>(d).limbs = {0};
+  d.limbs = {0};
   return d.limbs;
 }
 
@@ -701,19 +742,29 @@ const std::string& dec_get_digits(const Dec& d) {
   if (d.small) {
     __uint128_t mag = d.mantissa < 0 ? static_cast<__uint128_t>(-(d.mantissa))
                                            : static_cast<__uint128_t>(d.mantissa);
-    const_cast<Dec&>(d).digits = dec_digits_from_magnitude(mag);
+    d.digits = dec_digits_from_magnitude(mag);
     return d.digits;
   }
   if (!d.limbs.empty()) {
-    const_cast<Dec&>(d).digits = limbs_to_string(d.limbs);
+    d.digits = limbs_to_string(d.limbs);
     return d.digits;
   }
-  const_cast<Dec&>(d).digits = "0";
+  d.digits = "0";
   return d.digits;
 }
 
 Dec dec_from_mantissa(__int128_t mantissa, long long scale) {
   Dec d;
+  // -2^127 is the one mantissa whose negation, absolute value and digit
+  // extraction overflow (signed UB). It is held as digits instead, so no small
+  // mantissa ever has to be negated safely: the small range is symmetric.
+  if (mantissa == std::numeric_limits<__int128_t>::min()) {
+    d.neg = true;
+    d.scale = static_cast<std::int32_t>(scale);
+    d.small = false;
+    d.digits = dec_digits_from_magnitude(static_cast<__uint128_t>(1) << 127);
+    return d;
+  }
   d.neg = mantissa < 0;
   d.scale = static_cast<std::int32_t>(scale);
   d.small = true;
@@ -731,8 +782,7 @@ Dec dec_from_limbs(bool neg, std::vector<uint32_t> limbs, long long scale) {
     for (size_t i = limbs.size(); i > 0; --i) {
       mag = mag * BASE_10E9 + limbs[i - 1];
     }
-    const __uint128_t limit = neg ? (static_cast<__uint128_t>(1) << 127)
-                                        : static_cast<__uint128_t>(~((static_cast<__uint128_t>(1)) << 127));
+    const __uint128_t limit = static_cast<__uint128_t>(~((static_cast<__uint128_t>(1)) << 127));
     if (mag <= limit) {
       __int128_t mantissa = neg ? -static_cast<__int128_t>(mag) : static_cast<__int128_t>(mag);
       return dec_from_mantissa(mantissa, scale);
@@ -748,9 +798,8 @@ Dec dec_from_limbs(bool neg, std::vector<uint32_t> limbs, long long scale) {
 
 std::optional<__int128_t> dec_small_mantissa(const std::string& digits, bool neg) {
   if (digits.size() > 38) return std::nullopt;
-  const __uint128_t limit =
-      neg ? (static_cast<__uint128_t>(1) << 127)
-          : static_cast<__uint128_t>(~((static_cast<__uint128_t>(1)) << 127));
+  // The same limit either way: -2^127 is not a small mantissa (dec_from_mantissa).
+  const __uint128_t limit = static_cast<__uint128_t>(~((static_cast<__uint128_t>(1)) << 127));
   __uint128_t magnitude = 0;
   for (const char ch : digits) {
     const unsigned digit = static_cast<unsigned>(ch - '0');
@@ -758,9 +807,6 @@ std::optional<__int128_t> dec_small_mantissa(const std::string& digits, bool neg
     magnitude = magnitude * 10 + digit;
   }
   if (!neg) return static_cast<__int128_t>(magnitude);
-  if (magnitude == (static_cast<__uint128_t>(1) << 127)) {
-    return static_cast<__int128_t>(magnitude);
-  }
   return -static_cast<__int128_t>(magnitude);
 }
 
@@ -1030,22 +1076,8 @@ Dec dec_add(const Dec& a, const Dec& b, Pos pos = {}) {
 
 Dec dec_sub(const Dec& a, const Dec& b, Pos pos = {}) { return dec_add(a, dec_negate(b), pos); }
 
-Dec dec_round(const Dec& d, long long n, Pos pos);
-
 Dec dec_mul(const Dec& a, const Dec& b, Pos pos = {}) {
   if (a.small && b.small && a.scale <= MAX_FRAC_DIGITS - b.scale) {
-    if (a.scale > 18 && b.scale > 18 &&
-        !(a.mantissa == 1 || a.mantissa == -1) &&
-        !(b.mantissa == 1 || b.mantissa == -1)) {
-      Dec a_norm = dec_round(a, 18, pos);
-      Dec b_norm = dec_round(b, 18, pos);
-      if (a_norm.small && b_norm.small) {
-        __int128_t prod;
-        if (!__builtin_mul_overflow(a_norm.mantissa, b_norm.mantissa, &prod)) {
-          return dec_guard(dec_from_mantissa(prod, static_cast<long long>(a_norm.scale) + b_norm.scale), pos);
-        }
-      }
-    }
     const long long prod_scale = static_cast<long long>(a.scale) + b.scale;
     if (prod_scale <= 38) {
       __int128_t prod;
@@ -1119,7 +1151,7 @@ Dec dec_div(const Dec& a, const Dec& b, Pos pos = {}) {
           __int128_t signed_q = neg ? -q : q;
           return dec_guard(dec_from_mantissa(signed_q, scale), pos);
         } else {
-          if (2 * r >= den) q++;
+          if (r >= den - r) q++;  // 2*r overflows past 2^126
           __int128_t signed_q = neg ? -q : q;
           return dec_guard(dec_from_mantissa(signed_q, DIV_SCALE), pos);
         }
@@ -1194,7 +1226,7 @@ Dec dec_round(const Dec& d, long long n, Pos pos = {}) {
     __int128_t abs_m = d.mantissa < 0 ? -d.mantissa : d.mantissa;
     __int128_t q = abs_m / p;
     __int128_t r = abs_m % p;
-    if (2 * r >= p) q++;
+    if (r >= p - r) q++;    // 2*r overflows past 2^126
     __int128_t signed_q = d.neg ? -q : q;
     return dec_guard(dec_from_mantissa(signed_q, n), pos);
   }
@@ -1217,7 +1249,7 @@ Dec dec_trunc(const Dec& d) {
   return dec_make(d.neg, q, 0);
 }
 
-Dec dec_floor(const Dec& d) {
+Dec dec_floor(const Dec& d, Pos pos = {}) {
   if (d.scale == 0) return d;
   if (d.small && d.scale <= 38) {
     __int128_t p = POW10_128[d.scale];
@@ -1228,10 +1260,12 @@ Dec dec_floor(const Dec& d) {
   }
   std::string q, r;
   divmod_abs(dec_get_digits(d), pow10(d.scale), q, r);
-  return dec_make(d.neg, d.neg && r != "0" ? add_abs(q, "1") : q, 0);
+  // A carry can widen the integer part past the cap (FLOOR of -99..9.5): the
+  // result is checked where it is built, at the call.
+  return dec_guard(dec_make(d.neg, d.neg && r != "0" ? add_abs(q, "1") : q, 0), pos);
 }
 
-Dec dec_ceil(const Dec& d) {
+Dec dec_ceil(const Dec& d, Pos pos = {}) {
   if (d.scale == 0) return d;
   if (d.small && d.scale <= 38) {
     __int128_t p = POW10_128[d.scale];
@@ -1242,7 +1276,7 @@ Dec dec_ceil(const Dec& d) {
   }
   std::string q, r;
   divmod_abs(dec_get_digits(d), pow10(d.scale), q, r);
-  return dec_make(d.neg, !d.neg && r != "0" ? add_abs(q, "1") : q, 0);
+  return dec_guard(dec_make(d.neg, !d.neg && r != "0" ? add_abs(q, "1") : q, 0), pos);
 }
 
 // True when the value has no fractional part left after its scale is honoured.
@@ -1348,10 +1382,15 @@ std::shared_ptr<const RecordShape> intern_record_shape(std::vector<std::string> 
 std::shared_ptr<const RecordShape> prepare_record_shape(const Node& node) {
   if (node.s != "RECORD" || node.items.empty() || node.items.size() % 2) return {};
   std::vector<std::string> keys;
+  keys.reserve(node.items.size() / 2);
+  // A set, not std::find over the growing vector: n literal keys cost n^2/2
+  // compares that way, seconds for a 650 KB rule, before anything runs.
+  std::unordered_set<std::string_view> seen;
+  seen.reserve(node.items.size() / 2);
   for (std::size_t i = 0; i < node.items.size(); i += 2) {
     if (node.items[i]->t != NT::Text) return {};
     const auto& key = node.items[i]->s;
-    if (std::find(keys.begin(), keys.end(), key) != keys.end()) return {};
+    if (!seen.insert(std::string_view(key)).second) return {};
     keys.push_back(key);
   }
   return intern_record_shape(std::move(keys));
@@ -1555,6 +1594,8 @@ Value Value::clone_at(int depth, Pos pos) const {
 }
 
 Value Value::clone(Pos pos) const { return clone_at(1, pos); }
+
+Value Value::clone_below(int levels, Pos pos) const { return clone_at(1 + levels, pos); }
 
 // Iterative, for the reason Node's destructor is: destroying a child is usually
 // the last reference to it, so freeing a deep tree recursed once per level and
@@ -2361,9 +2402,10 @@ class Lexer {
  public:
   explicit Lexer(const std::string& source) {
     // Decoding here also validates the source: bad UTF-8 is E_UTF8 at the
-    // offending byte rather than a silently mangled token.
-    chars_ = decode_utf8(source);
+    // first invalid unit rather than a silently mangled token.
+    chars_ = decode_utf8(source, Pos{}, true);
     n_ = chars_.size();
+    brace_ends_.assign(n_, 0);
     line_starts_.push_back(0);
     for (std::size_t i = 0; i < n_; i++) {
       if (chars_[i] == U'\n') line_starts_.push_back(i + 1);
@@ -2381,6 +2423,12 @@ class Lexer {
   CodePoints chars_;
   std::size_t n_ = 0;
   std::vector<std::size_t> line_starts_;
+  // brace_ends_[i] is the index just past the '}' matching the '{' at i, once
+  // some scan has established it (0 = not yet). See match_brace.
+  std::vector<std::uint32_t> brace_ends_;
+  // One stack of open '(' / '[' per interpolation body (see lex_tokens), indexed
+  // by Task::bal. Grows by one entry per interpolation, so it stays linear.
+  std::vector<std::vector<char>> bals_;
 
   Pos pos_at(std::size_t offset) const {
     std::size_t lo = 0, hi = line_starts_.size() - 1;
@@ -2399,7 +2447,70 @@ class Lexer {
     return encode_utf8(std::span<const char32_t>(chars_).subspan(from, to - from));
   }
 
+  struct Part {
+    bool is_expr = false;
+    std::string text;
+    std::size_t from = 0, to = 0;
+  };
+
+  // The kinds of work lex_range keeps on its explicit stack.
+  enum class TK { Range, Part, Close, End };
+  struct Task {
+    TK k = TK::Range;
+    std::size_t i = 0, to = 0;   // Range
+    Part part;                   // Part, Close
+    std::size_t index = 0;       // Part
+    std::size_t mark = 0;        // Close
+    long bal = -1;               // Range, Close: index into bals_, -1 at top level
+    Pos pos;                     // Part, End
+  };
+
+  // Lexes chars_[from, to) into `out`. Interpolation nests without bound, so
+  // this is a loop over an explicit stack of tasks rather than a recursion: a
+  // literal pushes what it still has to emit (its parts, each interior range,
+  // the closers) and the loop pops them in source order. Nothing here can
+  // therefore reach the host's own stack, however deep the braces go.
   void lex_range(std::size_t from, std::size_t to, std::vector<Token>& out) {
+    std::vector<Task> stack;
+    {
+      Task t;
+      t.k = TK::Range; t.i = from; t.to = to;
+      stack.push_back(std::move(t));
+    }
+    bals_.clear();
+    while (!stack.empty()) {
+      Task task = std::move(stack.back());
+      stack.pop_back();
+      switch (task.k) {
+        case TK::Range: lex_tokens(task.i, task.to, out, stack, task.bal); break;
+        case TK::Part: emit_part(task, out, stack); break;
+        case TK::Close:
+          // An interpolation that lexed to nothing: `{}`, `{ }`, `{# c\n}`.
+          if (out.size() == task.mark + 1) {
+            fail("E_SYNTAX", "empty interpolation {}", pos_at(task.part.from));
+          }
+          // ... and one whose parentheses do not close inside the braces.
+          if (!bals_[static_cast<std::size_t>(task.bal)].empty()) {
+            fail("E_SYNTAX", "unclosed parenthesis in interpolation", pos_at(task.part.to));
+          }
+          out.push_back(Token{Tok::Op, ")", pos_at(task.part.to)});
+          break;
+        case TK::End: out.push_back(Token{Tok::Op, ")", task.pos}); break;
+      }
+    }
+  }
+
+  // The flat part of lex_range. A quoted literal with parts ends the run: the
+  // tasks it pushes come first, and the rest of the range resumes after them.
+  //
+  // `bal` names the stack of parentheses and brackets open so far in an
+  // interpolation body (-1 at the top level, where the parser does the
+  // balancing). A body is spliced into the surrounding tokens as `( body )`, so
+  // a body that closes what it never opened, or leaves something open, would
+  // change the meaning of the text around it; each body has to balance inside
+  // its own braces. Only the body's own tokens count, not those of nested literals.
+  void lex_tokens(std::size_t from, std::size_t to, std::vector<Token>& out,
+                  std::vector<Task>& stack, long bal) {
     std::size_t i = from;
     while (i < to) {
       const char32_t c = chars_[i];
@@ -2439,17 +2550,80 @@ class Lexer {
         continue;
       }
 
-      if (c == U'"') { i = lex_quoted(i, to, out); continue; }
+      if (c == U'"') {
+        std::size_t next = 0;
+        std::vector<Part> parts = scan_quoted(i, to, next);
+        if (parts.size() == 1) {
+          out.push_back(Token{Tok::Text, parts[0].text, pos});
+          i = next;
+          continue;
+        }
+        // `( "seg" & expr & "seg" )`: the opener now, the rest as tasks, the
+        // remainder of this range underneath them.
+        out.push_back(Token{Tok::Op, "(", pos});
+        {
+          Task t;
+          t.k = TK::Range; t.i = next; t.to = to; t.bal = bal;
+          stack.push_back(std::move(t));
+        }
+        {
+          Task t;
+          t.k = TK::End; t.pos = pos;
+          stack.push_back(std::move(t));
+        }
+        for (std::size_t k = parts.size(); k-- > 0;) {
+          Task t;
+          t.k = TK::Part; t.part = std::move(parts[k]); t.index = k; t.pos = pos;
+          stack.push_back(std::move(t));
+        }
+        return;
+      }
       if (c == U'\'') { i = lex_raw(i, to, out); continue; }
 
       const std::string op = match_operator(i, to);
       if (!op.empty()) {
+        if (bal >= 0) {
+          std::vector<char>& open = bals_[static_cast<std::size_t>(bal)];
+          if (op == "(" || op == "[") {
+            open.push_back(op[0]);
+          } else if (op == ")" || op == "]") {
+            if (open.empty() || (open.back() == '(') != (op == ")")) {
+              fail("E_SYNTAX", "unbalanced " + op + " in interpolation", pos);
+            }
+            open.pop_back();
+          }
+        }
         out.push_back(Token{Tok::Op, op, pos});
         i += op.size();
         continue;
       }
 
       fail("E_SYNTAX", "unexpected character \"" + slice(i, i + 1) + "\"", pos);
+    }
+  }
+
+  // One part of an interpolated literal: the `&` before it, then either its text
+  // or `( interior )`, the interior being a range of its own.
+  void emit_part(Task& task, std::vector<Token>& out, std::vector<Task>& stack) {
+    if (task.index > 0) out.push_back(Token{Tok::Op, "&", task.pos});
+    if (!task.part.is_expr) {
+      out.push_back(Token{Tok::Text, task.part.text, task.pos});
+      return;
+    }
+    const std::size_t mark = out.size();
+    const long bal = static_cast<long>(bals_.size());
+    bals_.emplace_back();
+    out.push_back(Token{Tok::Op, "(", pos_at(task.part.from)});
+    {
+      Task t;
+      t.k = TK::Close; t.mark = mark; t.bal = bal;
+      t.part = Part{true, "", task.part.from, task.part.to};
+      stack.push_back(std::move(t));
+    }
+    {
+      Task t;
+      t.k = TK::Range; t.i = task.part.from; t.to = task.part.to; t.bal = bal;
+      stack.push_back(std::move(t));
     }
   }
 
@@ -2489,13 +2663,10 @@ class Lexer {
     fail("E_UNTERMINATED", "unterminated raw text literal", pos);
   }
 
-  struct Part {
-    bool is_expr = false;
-    std::string text;
-    std::size_t from = 0, to = 0;
-  };
-
-  std::size_t lex_quoted(std::size_t start, std::size_t to, std::vector<Token>& out) {
+  // Reads a quoted literal into its parts and the index just past its closing
+  // quote (`next`), emitting nothing. Every `{...}` is skipped by match_brace,
+  // so the interior is not read here, only located.
+  std::vector<Part> scan_quoted(std::size_t start, std::size_t to, std::size_t& next_out) {
     const Pos pos = pos_at(start);
     std::vector<Part> parts;
     std::string buf;
@@ -2506,8 +2677,8 @@ class Lexer {
 
       if (c == U'"') {
         parts.push_back(Part{false, buf, 0, 0});
-        emit_parts(parts, pos, out);
-        return i + 1;
+        next_out = i + 1;
+        return parts;
       }
 
       if (c == U'\\') {
@@ -2579,33 +2750,51 @@ class Lexer {
 
   // Returns the index just past the matching '}'. Nested literals are skipped so
   // that a brace inside a string inside an interpolation does not close it.
+  //
+  // One pass with an explicit stack of what is open (a brace, a string), not a
+  // recursion through the strings, and every brace it closes is remembered in
+  // brace_ends_. The second half is what keeps the lexer linear: a literal
+  // nested d deep is located by its parent and again by each of its own
+  // ancestors' interiors being lexed, and without the memo each of those
+  // locate-passes re-read everything below it. If anything is unterminated the
+  // innermost open construct is the one reported, which is where the recursion
+  // used to fail.
   std::size_t match_brace(std::size_t i, std::size_t to) {
-    const Pos pos = pos_at(i);
-    int depth = 0;
+    if (brace_ends_[i] != 0) return brace_ends_[i];
+    struct Open { bool str; std::size_t at; int depth; };
+    std::vector<Open> open;
+    open.push_back(Open{false, i, 0});
     std::size_t j = i;
-    while (j < to) {
+    for (;;) {
+      Open& top = open.back();
+      if (j >= to) {
+        fail("E_UNTERMINATED",
+             top.str ? "unterminated text literal" : "unterminated { in text literal",
+             pos_at(top.at));
+      }
       const char32_t c = chars_[j];
-      if (c == U'"') { j = skip_quoted(j, to); continue; }
+      if (top.str) {
+        if (c == U'\\') { j += 2; continue; }
+        if (c == U'"') { open.pop_back(); j++; continue; }
+        if (c == U'{') { open.push_back(Open{false, j, 0}); continue; }
+        j++;
+        continue;
+      }
+      if (c == U'"') { open.push_back(Open{true, j, 0}); j++; continue; }
       if (c == U'\'') { j = skip_raw(j, to); continue; }
-      if (c == U'{') { depth++; j++; continue; }
-      if (c == U'}') { depth--; j++; if (depth == 0) return j; continue; }
+      if (c == U'{') { top.depth++; j++; continue; }
+      if (c == U'}') {
+        top.depth--; j++;
+        if (top.depth == 0) {
+          brace_ends_[top.at] = static_cast<std::uint32_t>(j);
+          open.pop_back();
+          if (open.empty()) return j;
+        }
+        continue;
+      }
       if (c == U'#') { while (j < to && chars_[j] != U'\n') j++; continue; }
       j++;
     }
-    fail("E_UNTERMINATED", "unterminated { in text literal", pos);
-  }
-
-  std::size_t skip_quoted(std::size_t j, std::size_t to) {
-    const Pos pos = pos_at(j);
-    j++;
-    while (j < to) {
-      const char32_t c = chars_[j];
-      if (c == U'\\') { j += 2; continue; }
-      if (c == U'"') return j + 1;
-      if (c == U'{') { j = match_brace(j, to); continue; }
-      j++;
-    }
-    fail("E_UNTERMINATED", "unterminated text literal", pos);
   }
 
   std::size_t skip_raw(std::size_t j, std::size_t to) {
@@ -2619,32 +2808,6 @@ class Lexer {
       j++;
     }
     fail("E_UNTERMINATED", "unterminated raw text literal", pos);
-  }
-
-  // A literal with no interpolation is one token. Otherwise it becomes the
-  // tokens of `( "seg" & expr & "seg" )` — empty segments included, so the
-  // result always goes through `&` and obeys §5.2.
-  void emit_parts(const std::vector<Part>& parts, Pos pos, std::vector<Token>& out) {
-    if (parts.size() == 1) {
-      out.push_back(Token{Tok::Text, parts[0].text, pos});
-      return;
-    }
-    out.push_back(Token{Tok::Op, "(", pos});
-    for (std::size_t k = 0; k < parts.size(); k++) {
-      if (k > 0) out.push_back(Token{Tok::Op, "&", pos});
-      if (!parts[k].is_expr) {
-        out.push_back(Token{Tok::Text, parts[k].text, pos});
-      } else {
-        const std::size_t mark = out.size();
-        out.push_back(Token{Tok::Op, "(", pos_at(parts[k].from)});
-        lex_range(parts[k].from, parts[k].to, out);
-        if (out.size() == mark + 1) {
-          fail("E_SYNTAX", "empty interpolation {}", pos_at(parts[k].from));
-        }
-        out.push_back(Token{Tok::Op, ")", pos_at(parts[k].to)});
-      }
-    }
-    out.push_back(Token{Tok::Op, ")", pos});
   }
 };
 
@@ -2911,6 +3074,11 @@ class Parser {
           continue;
         }
 
+        // Counted like an assignment (SPEC §6.4): `??` and `???` are the other
+        // right-associative operators, and their right side recurses through
+        // neither parse_sequence nor parse_primary.
+        enter(t.pos);
+        const Leave leave_guard{this};
         auto n = make(NT::Bin, t.pos);
         n->s = t.value;
         n->l = left;
@@ -3153,6 +3321,19 @@ class Parser {
       const std::string problem = spec->arity_error(count);
       if (!problem.empty()) fail("E_ARITY", problem, name_tok.pos);
     }
+    // A regex pattern that is a literal is checked NOW (spec §7.8): a bad one in a
+    // branch that never runs is still a bad program. A computed pattern is checked
+    // when it is used. The flag argument is read only to know whether `i` is on,
+    // which the ambiguity analysis needs; a bad flag is still E_BAD_ARG at run time.
+    if (spec->name == "RMATCH" || spec->name == "RFIND" || spec->name == "RGROUPS" ||
+        spec->name == "RREPLACE") {
+      const std::size_t flag_at = spec->name == "RREPLACE" ? 3 : 2;
+      if (!args.empty() && args[0]->t == NT::Text) {
+        bool ic = false;
+        if (args.size() > flag_at && args[flag_at]->t == NT::Text) ic = args[flag_at]->s.find('i') != std::string::npos;
+        (void)validate_pattern(args[0]->s, args[0]->pos, ic);
+      }
+    }
     auto n = make(NT::Call, name_tok.pos);
     n->s = spec->name;
     n->spec = spec;
@@ -3244,7 +3425,13 @@ struct Context {
   // an error, and whether it dropped any (SEL-0052, SEL-0054).
   std::optional<JoinPrefilter> join_prefilter;
   std::optional<JoinReport> join_prefilter_report;
+  // The frames of the math plans running now, one after another. A plan's slots
+  // are addressed by index, never by pointer or reference held across a step
+  // that can evaluate: a load may run a whole nested plan, which grows both
+  // vectors (CPP-C3). The raw vector holds what the plan's loads produced until
+  // an arithmetic step coerces it.
   std::vector<Dec> math_scratchpad;
+  std::vector<std::optional<Value>> math_raw;
   size_t math_scratchpad_top = 0;
 
   explicit Context(Value& r) : root(&r) {}
@@ -3377,24 +3564,55 @@ bool compare_result(const std::string& op, int c, Pos pos) {
   fail("E_SYNTAX", "unknown comparison operator " + op, pos);
 }
 
-// TEXT & TEXT stays TEXT; anything involving BIN becomes BIN (§5.2).
-Value concat(const Value& l, const Value& r, Pos lp, Pos rp) {
+// Code points in a UTF-8 string that is already known to be valid.
+std::size_t cp_count(const std::string& s) {
+  std::size_t n = 0;
+  for (const unsigned char c : s) {
+    if ((c & 0xC0) != 0x80) n++;
+  }
+  return n;
+}
+
+// The size caps of spec §6.4: what an operation BUILDS is measured before any of
+// it is allocated, and past MAX_TEXT_LEN (code points of TEXT, bytes of BIN) or
+// MAX_COLLECTION (children) it is E_RANGE at the node that builds it. Lengths
+// arrive as u128 so that `count * length` cannot itself overflow.
+void cap_text(u128 n, Pos pos) {
+  if (n > static_cast<u128>(MAX_TEXT_LEN)) {
+    fail("E_RANGE", "result would be longer than " + std::to_string(MAX_TEXT_LEN) + " units", pos);
+  }
+}
+
+void cap_collection(u128 n, Pos pos) {
+  if (n > static_cast<u128>(MAX_COLLECTION)) {
+    fail("E_RANGE", "collection would have more than " + std::to_string(MAX_COLLECTION) + " children",
+         pos);
+  }
+}
+
+// TEXT & TEXT stays TEXT; anything involving BIN becomes BIN (§5.2). `opos` is the
+// operator, where a result past the length cap is reported.
+Value concat(const Value& l, const Value& r, Pos lp, Pos rp, Pos opos) {
   const Value& lv = l.scalar_source(lp);
   const Value& rv = r.scalar_source(rp);
   if (lv.kind() == Kind::Bool) fail("E_NOT_TEXT", "cannot concatenate a boolean", lp);
   if (rv.kind() == Kind::Bool) fail("E_NOT_TEXT", "cannot concatenate a boolean", rp);
   if (lv.kind() == Kind::Text && rv.kind() == Kind::Text) {
+    cap_text(static_cast<u128>(cp_count(lv.scalar())) + cp_count(rv.scalar()), opos);
     return make_text(lv.scalar() + rv.scalar());
   }
   const std::string a = l.as_bytes(lp);   // sequenced: left before right
   const std::string b = r.as_bytes(rp);
+  cap_text(static_cast<u128>(a.size()) + b.size(), opos);
   return make_bin(a + b);
 }
 
-bool is_in(const Value& needle, const Value& hay) {
-  if (hay.size() == 0) return hay.eql(needle);
+// `pos` is where an E_DEPTH from walking a value nested past the cap is
+// reported: the operator, as EQL reports it, never 0:0 (spec §6.3).
+bool is_in(const Value& needle, const Value& hay, Pos pos) {
+  if (hay.size() == 0) return hay.eql(needle, pos);
   for (const auto& e : hay.entries()) {
-    if (e.second.eql(needle)) return true;
+    if (e.second.eql(needle, pos)) return true;
   }
   return false;
 }
@@ -3422,13 +3640,18 @@ Value eval_list(const Node& node, Context& ctx) {
   out.reserve(node.items.size());
   for (const auto& item : node.items) {
     Value v = eval_node(*item, ctx);
+    // Measured before it is collected (spec §6.4): a chain of `(A, A)` is a
+    // doubling and must stop at the cap, not at the host's memory.
+    cap_collection(static_cast<u128>(out.size()) +
+                       ((v.kind() == Kind::None && v.size() > 0) ? v.size() : 1),
+                   node.pos);
     if (v.kind() == Kind::None && v.size() > 0) {
       // Cloned, not aliased: `,` copies what it collects (§5.9), so the list it
       // builds does not share structure with the values that fed it. Two of the
       // five places anything in this file clones — js/src/eval.mjs:163,165.
-      for (const auto& child : v.entries()) out.push_back(child.second.clone());
+      for (const auto& child : v.entries()) out.push_back(child.second.clone_below(1, node.pos));
     } else {
-      out.push_back(v.clone());
+      out.push_back(v.clone_below(1, node.pos));
     }
   }
   return Value::list(std::move(out));
@@ -3503,10 +3726,10 @@ Value eval_binary(const Node& node, Context& ctx) {
     return make_num(dec_mod(a, b, node.pos));
   }
 
-  if (op == "&") return concat(l, r, lp, rp);
+  if (op == "&") return concat(l, r, lp, rp, node.pos);
 
   if (op == "EQL") return Value::boolean(l.eql(r, node.pos));
-  if (op == "IN") return Value::boolean(is_in(l, r));
+  if (op == "IN") return Value::boolean(is_in(l, r, node.pos));
   if (op == "XOR") {
     const bool a = l.as_bool(lp);
     const bool b = r.as_bool(rp);
@@ -3629,7 +3852,7 @@ Value eval_assign(const Node& node, Context& ctx) {
       const char binop = node.s[0];
 
       if (binop == '&') {
-        value = concat(target_value, rhs, tp, vp);
+        value = concat(target_value, rhs, tp, vp, node.pos);
       } else {
         const Dec a = as_dec(target_value, tp);
         const Dec b = as_dec(rhs, vp);
@@ -3643,7 +3866,10 @@ Value eval_assign(const Node& node, Context& ctx) {
         }
         value = make_num(std::move(res));
       }
-      *current = value;
+      // Re-derived after the right-hand side ran (§5.7): it may have created a
+      // variable, and the root's child vector moved, so the pointer taken before
+      // it is dangling. The store lands where the name is now, not where it was.
+      ctx.root->set(var_name, value);
       return value;
     }
   }
@@ -3662,7 +3888,11 @@ Value eval_assign(const Node& node, Context& ctx) {
     // side, and `A[1] = A` would answer with the A the store had just mutated
     // instead of the value that was assigned. js/src/eval.mjs:262 clones in
     // exactly this position, for exactly this reason.
-    value = eval_node(*node.r, ctx).clone(node.pos);
+    //
+    // The depth cap counts the path to the target as well as the value (§6.4):
+    // `path.size() - 1` levels of index sit above where it lands, and the error is
+    // the target's, not the assignment's.
+    value = eval_node(*node.r, ctx).clone_below(static_cast<int>(path.size()) - 1, node.l->pos);
   } else {
     const Value* current = walk_create(ctx, path, path.size() - 1)->get(key);
     if (!current) fail("E_UNDEF_VAR", node.s + " needs an existing target", node.l->pos);
@@ -3673,7 +3903,7 @@ Value eval_assign(const Node& node, Context& ctx) {
     const char binop = node.s[0];
 
     if (binop == '&') {
-      value = concat(target_value, rhs, tp, vp);
+      value = concat(target_value, rhs, tp, vp, node.pos);
     } else {
       const Dec a = as_dec(target_value, tp);
       const Dec b = as_dec(rhs, vp);
@@ -3716,7 +3946,19 @@ Value eval_dispatch(const Node& node, Context& ctx) {
     }
 
     case NT::Index: {
-      const Value obj = eval_node(*node.l, ctx);
+      // An index over a bare variable reads the variable in place: the index
+      // costs its level and the variable none, so the limit in
+      // `A["a"] AND A["a"] AND ...` sits one level deeper than counting the
+      // variable as a node of its own would put it (pinned by
+      // lim.eval-depth.aggregate-body-*; every host reads it that way).
+      Value obj;
+      if (node.l->t == NT::Var) {
+        const Value* v = ctx.lookup(node.l->s);
+        if (!v) fail("E_UNDEF_VAR", "undefined variable " + node.l->s, node.l->pos);
+        obj = *v;
+      } else {
+        obj = eval_node(*node.l, ctx);
+      }
       if (node.r->t == NT::Text) {
         const Value* child = obj.get(node.r->s);
         if (!child) fail("E_NO_KEY", "no key " + quote_dump(node.r->s), node.pos);
@@ -3755,99 +3997,155 @@ Value eval_dispatch(const Node& node, Context& ctx) {
   fail("E_SYNTAX", "cannot evaluate node", node.pos);
 }
 
-Value eval_math_plan(const MathPlan& plan, Context& ctx) {
-  const size_t base = ctx.math_scratchpad_top;
-  if (base + plan.scratchpad_size > ctx.math_scratchpad.size()) {
-    ctx.math_scratchpad.resize(std::max(base + plan.scratchpad_size, ctx.math_scratchpad.size() * 2 + 32));
+// Gives the frame's scratchpad slots back on every exit, a throw included: a
+// caught error (`??` swallows E_UNDEF_VAR and E_NO_KEY) used to leave the top
+// advanced, so each one permanently consumed a plan's worth of slots (CPP-C19).
+struct MathFrame {
+  Context& ctx;
+  const MathPlan& plan;
+  size_t base;
+  MathFrame(Context& c, const MathPlan& p) : ctx(c), plan(p), base(c.math_scratchpad_top) {
+    const size_t need = base + plan.scratchpad_size;
+    if (need > ctx.math_scratchpad.size()) {
+      const size_t grown = std::max(need, ctx.math_scratchpad.size() * 2 + 32);
+      ctx.math_scratchpad.resize(grown);
+      ctx.math_raw.resize(grown);
+    }
+    ctx.math_scratchpad_top = need;
   }
-  ctx.math_scratchpad_top += plan.scratchpad_size;
-  Dec* scratchpad = ctx.math_scratchpad.data() + base;
+  ~MathFrame() {
+    for (const MathStep& step : plan.steps) {
+      if (step.op == MathOp::LoadVar || step.op == MathOp::LoadLeaf) ctx.math_raw[base + step.dst].reset();
+    }
+    ctx.math_scratchpad_top = base;
+  }
+  MathFrame(const MathFrame&) = delete;
+  MathFrame& operator=(const MathFrame&) = delete;
+};
+
+Value eval_math_plan(const MathPlan& plan, Context& ctx) {
+  const MathFrame frame(ctx, plan);
+  const size_t base = frame.base;
+  // Every access goes through the context vectors by index: LoadLeaf evaluates
+  // a subtree, which may run another plan and reallocate them.
+  const auto slot = [&](uint32_t i) -> Dec& { return ctx.math_scratchpad[base + i]; };
+  // An operand: the coerced number, or the raw load coerced now (spec §6.2).
+  const auto operand = [&](uint32_t i, bool raw, const Pos& pos) -> const Dec& {
+    if (raw) {
+      std::optional<Value>& r = ctx.math_raw[base + i];
+      slot(i) = as_dec(*r, pos);
+      r.reset();
+    }
+    return slot(i);
+  };
 
   for (const MathStep& step : plan.steps) {
     switch (step.op) {
       case MathOp::LoadVar: {
         const Value* v = ctx.lookup(step.name);
         if (!v) fail("E_UNDEF_VAR", "undefined variable " + step.name, step.pos);
-        scratchpad[step.dst] = as_dec(*v, step.pos);
+        ctx.math_raw[base + step.dst] = *v;
         break;
       }
       case MathOp::LoadConst: {
-        scratchpad[step.dst] = step.const_val;
+        slot(step.dst) = step.const_val;
         break;
       }
       case MathOp::LoadLeaf: {
         Value val = eval_node(*step.leaf_node, ctx);
-        scratchpad[step.dst] = as_dec(val, step.leaf_node->pos);
+        ctx.math_raw[base + step.dst] = std::move(val);
         break;
       }
-      case MathOp::Add:
-        scratchpad[step.dst] = dec_add(scratchpad[step.src1], scratchpad[step.src2], step.pos);
+      case MathOp::Coerce: {
+        const Dec& a = operand(step.src1, step.raw1, step.src1_pos);
+        slot(step.dst) = a;
         break;
-      case MathOp::Sub:
-        scratchpad[step.dst] = dec_sub(scratchpad[step.src1], scratchpad[step.src2], step.pos);
+      }
+      case MathOp::Add: {
+        const Dec& a = operand(step.src1, step.raw1, step.src1_pos);
+        const Dec& b = operand(step.src2, step.raw2, step.src2_pos);
+        slot(step.dst) = dec_add(a, b, step.pos);
         break;
-      case MathOp::Mul:
-        scratchpad[step.dst] = dec_mul(scratchpad[step.src1], scratchpad[step.src2], step.pos);
+      }
+      case MathOp::Sub: {
+        const Dec& a = operand(step.src1, step.raw1, step.src1_pos);
+        const Dec& b = operand(step.src2, step.raw2, step.src2_pos);
+        slot(step.dst) = dec_sub(a, b, step.pos);
         break;
-      case MathOp::Div:
-        scratchpad[step.dst] = dec_div(scratchpad[step.src1], scratchpad[step.src2], step.pos);
+      }
+      case MathOp::Mul: {
+        const Dec& a = operand(step.src1, step.raw1, step.src1_pos);
+        const Dec& b = operand(step.src2, step.raw2, step.src2_pos);
+        slot(step.dst) = dec_mul(a, b, step.pos);
         break;
-      case MathOp::Mod:
-        scratchpad[step.dst] = dec_mod(scratchpad[step.src1], scratchpad[step.src2], step.pos);
+      }
+      case MathOp::Div: {
+        const Dec& a = operand(step.src1, step.raw1, step.src1_pos);
+        const Dec& b = operand(step.src2, step.raw2, step.src2_pos);
+        slot(step.dst) = dec_div(a, b, step.pos);
         break;
+      }
+      case MathOp::Mod: {
+        const Dec& a = operand(step.src1, step.raw1, step.src1_pos);
+        const Dec& b = operand(step.src2, step.raw2, step.src2_pos);
+        slot(step.dst) = dec_mod(a, b, step.pos);
+        break;
+      }
       case MathOp::Neg:
-        scratchpad[step.dst] = dec_negate(scratchpad[step.src1]);
+        slot(step.dst) = dec_negate(operand(step.src1, step.raw1, step.src1_pos));
         break;
       case MathOp::Abs:
-        scratchpad[step.dst] = dec_abs(scratchpad[step.src1]);
+        slot(step.dst) = dec_abs(operand(step.src1, step.raw1, step.src1_pos));
         break;
       case MathOp::Sign:
-        scratchpad[step.dst] = dec_from_int(dec_sign(scratchpad[step.src1]));
+        slot(step.dst) = dec_from_int(dec_sign(operand(step.src1, step.raw1, step.src1_pos)));
         break;
       case MathOp::Ceil:
-        scratchpad[step.dst] = dec_ceil(scratchpad[step.src1]);
+        slot(step.dst) = dec_ceil(operand(step.src1, step.raw1, step.src1_pos), step.pos);
         break;
       case MathOp::Floor:
-        scratchpad[step.dst] = dec_floor(scratchpad[step.src1]);
+        slot(step.dst) = dec_floor(operand(step.src1, step.raw1, step.src1_pos), step.pos);
         break;
       case MathOp::Trunc:
-        scratchpad[step.dst] = dec_trunc(scratchpad[step.src1]);
+        slot(step.dst) = dec_trunc(operand(step.src1, step.raw1, step.src1_pos));
         break;
       case MathOp::Round: {
-        const Dec& d2 = scratchpad[step.src2];
+        // The value first, then the scale: the first argument's coercion error
+        // is reported before the second's (spec §6.2, §7.1).
+        const Dec& x = operand(step.src1, step.raw1, step.src1_pos);
+        const Dec& d2 = operand(step.src2, step.raw2, step.src2_pos);
         if (!dec_is_integer(d2)) fail("E_NOT_INT", "ROUND argument 2 must be a whole number", step.aux_pos);
         const long long n = dec_to_int(d2);
         if (n < 0) fail("E_RANGE", "ROUND argument 2 must not be negative", step.aux_pos);
         if (n > MAX_SCALE) fail("E_RANGE", "ROUND scale " + std::to_string(n) + " exceeds the maximum of " + std::to_string(MAX_SCALE), step.aux_pos);
-        scratchpad[step.dst] = dec_round(scratchpad[step.src1], n, step.pos);
+        slot(step.dst) = dec_round(x, n, step.pos);
         break;
       }
       case MathOp::Power: {
-        const Dec& d2 = scratchpad[step.src2];
+        const Dec& x = operand(step.src1, step.raw1, step.src1_pos);
+        const Dec& d2 = operand(step.src2, step.raw2, step.src2_pos);
         if (!dec_is_integer(d2)) fail("E_NOT_INT", "POWER argument 2 must be a whole number", step.aux_pos);
         const long long n = dec_to_int(d2);
         if (n < 0) fail("E_RANGE", "POWER argument 2 must not be negative", step.aux_pos);
         if (n > MAX_POWER) fail("E_RANGE", "POWER exponent " + std::to_string(n) + " exceeds the maximum of " + std::to_string(MAX_POWER), step.aux_pos);
-        scratchpad[step.dst] = dec_power(scratchpad[step.src1], n, step.pos);
+        slot(step.dst) = dec_power(x, n, step.pos);
         break;
       }
       case MathOp::Min: {
-        const Dec& a = scratchpad[step.src1];
-        const Dec& b = scratchpad[step.src2];
-        scratchpad[step.dst] = dec_cmp(b, a) < 0 ? b : a;
+        const Dec& a = operand(step.src1, step.raw1, step.src1_pos);
+        const Dec& b = operand(step.src2, step.raw2, step.src2_pos);
+        slot(step.dst) = dec_cmp(b, a) < 0 ? b : a;
         break;
       }
       case MathOp::Max: {
-        const Dec& a = scratchpad[step.src1];
-        const Dec& b = scratchpad[step.src2];
-        scratchpad[step.dst] = dec_cmp(b, a) > 0 ? b : a;
+        const Dec& a = operand(step.src1, step.raw1, step.src1_pos);
+        const Dec& b = operand(step.src2, step.raw2, step.src2_pos);
+        slot(step.dst) = dec_cmp(b, a) > 0 ? b : a;
         break;
       }
     }
   }
-  Value out = make_num(std::move(scratchpad[plan.output_slot]));
-  ctx.math_scratchpad_top = base;
-  return out;
+  return make_num(std::move(slot(plan.output_slot)));
 }
 
 }  // namespace
@@ -3882,14 +4180,14 @@ namespace {
 CodePoints cps_of(const std::string& s) { return decode_utf8(s); }
 
 // 0-based code point index of `needle` in `hay`, or -1.
-long index_of_cp(const CodePoints& hay, const CodePoints& needle, long from) {
-  const long n = static_cast<long>(needle.size());
+long long index_of_cp(const CodePoints& hay, const CodePoints& needle, long long from) {
+  const long long n = static_cast<long long>(needle.size());
   // `from` comes from a user-supplied count and can be enormous; returning
   // early keeps `i + n` below the overflow that UBSan flags.
-  if (from < 0 || from > static_cast<long>(hay.size())) return -1;
-  for (long i = from; i + n <= static_cast<long>(hay.size()); i++) {
+  if (from < 0 || from > static_cast<long long>(hay.size())) return -1;
+  for (long long i = from; i + n <= static_cast<long long>(hay.size()); i++) {
     bool ok = true;
-    for (long j = 0; j < n; j++) {
+    for (long long j = 0; j < n; j++) {
       if (hay[i + j] != needle[j]) { ok = false; break; }
     }
     if (ok) return i;
@@ -3897,9 +4195,9 @@ long index_of_cp(const CodePoints& hay, const CodePoints& needle, long from) {
   return -1;
 }
 
-std::string slice_cp(const CodePoints& c, long from, long to) {
-  from = std::max(0L, std::min(from, static_cast<long>(c.size())));
-  to = std::max(from, std::min(to, static_cast<long>(c.size())));
+std::string slice_cp(const CodePoints& c, long long from, long long to) {
+  from = std::max(0LL, std::min(from, static_cast<long long>(c.size())));
+  to = std::max(from, std::min(to, static_cast<long long>(c.size())));
   return encode_utf8(std::span<const char32_t>(c).subspan(from, to - from));
 }
 
@@ -3965,6 +4263,32 @@ template <typename Fn>
 void for_each_collection_value(const Value& value, Fn&& fn) {
   const std::size_t count = collection_size(value);
   for (std::size_t i = 0; i < count; i++) fn(collection_item(value, i));
+}
+
+// What an aggregate visits is a SNAPSHOT of the collection taken when it starts
+// (spec §7.3): the element handles, and the keys if a body asks for `_K`. A body
+// may assign into the very collection it is walking -- append a key, add one,
+// overwrite a later element, replace the variable -- and none of that changes
+// what is visited. Holding `const Value&` into the live storage instead was a
+// use-after-free the moment the body grew it: the storage moved under the
+// reference. Handles are shared, not deep-copied, so mutation *inside* an element
+// is still seen, as the spec says.
+struct Snapshot {
+  std::vector<Value> items;
+  std::vector<std::string> keys;   // filled only when asked for
+  std::size_t size() const { return items.size(); }
+};
+
+Snapshot take_snapshot(const Value& value, bool want_keys) {
+  Snapshot snap;
+  const std::size_t count = collection_size(value);
+  snap.items.reserve(count);
+  for (std::size_t i = 0; i < count; i++) snap.items.push_back(collection_item(value, i));
+  if (want_keys) {
+    snap.keys.reserve(count);
+    for (std::size_t i = 0; i < count; i++) snap.keys.push_back(collection_key(value, i));
+  }
+  return snap;
 }
 
 std::string upper_name(std::string name) {
@@ -4409,30 +4733,49 @@ struct JoinProjector {
   }
 };
 
-bool expr_depends_only(const Node& node, const std::set<std::string>& allowed) {
-  switch (node.t) {
-    case NT::Var: return allowed.count(upper_name(node.s)) != 0;
-    case NT::Index: return expr_depends_only(*node.l, allowed) && expr_depends_only(*node.r, allowed);
-    case NT::Call:
-    case NT::Seq:
-    case NT::List:
-      for (const NodePtr& item : node.items) {
-        if (!expr_depends_only(*item, allowed)) return false;
-      }
-      return true;
-    case NT::Un: return expr_depends_only(*node.l, allowed);
-    case NT::Bin:
-    case NT::Assign: return expr_depends_only(*node.l, allowed) && expr_depends_only(*node.r, allowed);
-    default: return true;
+// The walkers below run over a body BEFORE the evaluator has looked at it, so
+// they see a tree the depth cap has not yet had a chance to refuse: `1+1+...`
+// builds a left-deep tree as long as the source with no nesting the parser
+// counts (spec §6.4: a walk of the tree counts nodes). They therefore use an
+// explicit stack, and answer exactly however deep the tree is; the evaluator
+// still raises E_DEPTH at the 201st node if it ever gets that far.
+bool expr_depends_only(const Node& root, const std::set<std::string>& allowed) {
+  std::vector<const Node*> todo{&root};
+  while (!todo.empty()) {
+    const Node* node = todo.back();
+    todo.pop_back();
+    if (!node) continue;
+    switch (node->t) {
+      case NT::Var:
+        if (allowed.count(upper_name(node->s)) == 0) return false;
+        break;
+      case NT::Index: case NT::Bin: case NT::Assign:
+        todo.push_back(node->l.get());
+        todo.push_back(node->r.get());
+        break;
+      case NT::Call: case NT::Seq: case NT::List:
+        for (const NodePtr& item : node->items) todo.push_back(item.get());
+        break;
+      case NT::Un:
+        todo.push_back(node->l.get());
+        break;
+      default: break;
+    }
   }
+  return true;
 }
 
-bool node_contains_var(const Node& node, std::string_view wanted) {
-  if (node.t == NT::Var && upper_name(node.s) == upper_name(std::string(wanted))) return true;
-  if (node.l && node_contains_var(*node.l, wanted)) return true;
-  if (node.r && node_contains_var(*node.r, wanted)) return true;
-  for (const NodePtr& item : node.items) {
-    if (item && node_contains_var(*item, wanted)) return true;
+bool node_contains_var(const Node& root, std::string_view wanted) {
+  const std::string upper_wanted = upper_name(std::string(wanted));
+  std::vector<const Node*> todo{&root};
+  while (!todo.empty()) {
+    const Node* node = todo.back();
+    todo.pop_back();
+    if (!node) continue;
+    if (node->t == NT::Var && upper_name(node->s) == upper_wanted) return true;
+    if (node->l) todo.push_back(node->l.get());
+    if (node->r) todo.push_back(node->r.get());
+    for (const NodePtr& item : node->items) if (item) todo.push_back(item.get());
   }
   return false;
 }
@@ -4447,6 +4790,10 @@ struct JoinEqui {
 std::optional<JoinEqui> extract_join_equi(const Node& node, const std::string& b1,
                                           const std::string& b2) {
   if (node.t != NT::Bin || (node.s != "==" && node.s != "$==")) return std::nullopt;
+  // With the same name on both sides the right binder shadows the left (spec
+  // §7.4): every read of the name is the RIGHT element, so there is no left key
+  // to extract, and the general path -- which binds the right last -- answers.
+  if (upper_name(b1) == upper_name(b2)) return std::nullopt;
   const std::set<std::string> left{upper_name(b1), "_1", "_"};
   const std::set<std::string> right{upper_name(b2), "_2"};
   if (expr_depends_only(*node.l, left) && expr_depends_only(*node.r, right)) {
@@ -4546,7 +4893,12 @@ std::optional<FastJoinKey> make_fast_join_key(const Value& value, bool numeric) 
       key.type = FastJoinKey::Type::BigDec;
       key.neg = neg;
       key.scale = s;
+      // The digits of the mantissa AFTER the trailing zeros were dropped to
+      // reach `s`: 12345678901234567890.50 and ...890.5 are one number and must
+      // be one key. (Dropping the zeros from the scale but not the digits made
+      // 1e23 spelled with a `.0` collide with 1e24.)
       key.text = dec_get_digits(d);
+      for (int32_t t = d.scale; t > s && !key.text.empty(); --t) key.text.pop_back();
       return key;
     } else {
       std::string digits = dec_get_digits(d);
@@ -5271,6 +5623,9 @@ Value do_link(Args& a, Context& ctx, bool left_join) {
           return;
         }
         const auto emit = [&](Value joined) {
+          // The rows a join builds are capped as they appear (spec §6.4).
+          cap_collection(static_cast<u128>(numbered ? keyed.size() : output.size()) + 1,
+                         a.pos());
           if (numbered) keyed.emplace_back(std::to_string(position), std::move(joined));
           else output.push_back(std::move(joined));
           ++position;
@@ -5323,10 +5678,14 @@ Value do_link(Args& a, Context& ctx, bool left_join) {
           set_frame(ctx.frames.back(), "_2", right);
           if (a.eval(*predicate).as_bool(predicate->pos)) {
             matched = true;
+            cap_collection(static_cast<u128>(output.size()) + 1, a.pos());
             output.push_back(projector(left, &right));
           }
         });
-        if (left_join && !matched) output.push_back(projector(left, nullptr));
+        if (left_join && !matched) {
+          cap_collection(static_cast<u128>(output.size()) + 1, a.pos());
+          output.push_back(projector(left, nullptr));
+        }
       });
     } catch (...) {
       ctx.frames.pop_back();
@@ -5366,10 +5725,11 @@ void register_structure() {
               }});
 
   define(Spec{"LIST", 0, VARIADIC, false, false, nullptr, [](Args& a, Context&) -> Value {
+                cap_collection(static_cast<u128>(a.count()), a.pos());
                 std::vector<Value> out;
                 out.reserve(a.count());
                 for (int i = 0; i < a.count(); i++) {
-                  out.push_back(a.val(i).clone());
+                  out.push_back(a.val(i).clone_below(1, a.pos()));
                 }
                 return Value::list(std::move(out));
               }});
@@ -5378,8 +5738,9 @@ void register_structure() {
               [](Args& a, Context&) -> Value {
                 Value rec = Value::none();
                 const int n = a.count();
+                cap_collection(static_cast<u128>(n / 2), a.pos());
                 for (int i = 0; i < n; i += 2) {
-                  rec.set(a.text(i), a.val(i + 1).clone());
+                  rec.set(a.text(i), a.val(i + 1).clone_below(1, a.pos()));
                 }
                 if (a.record_shape() && a.record_shape()->keys == rec.keys()) {
                   std::vector<Value> values;
@@ -5451,12 +5812,13 @@ void register_structure() {
                 if (val.is_null()) return Value::list({});
                 std::unordered_map<std::uint64_t, std::vector<Value>> buckets;
                 std::vector<Value> out;
+                const Pos call_pos = a.pos();   // where a too-deep element is reported
                 for_each_collection_value(val, [&](const Value& item) {
-                  const std::uint64_t hash = item.structural_hash();
+                  const std::uint64_t hash = item.structural_hash(call_pos);
                   auto& bucket = buckets[hash];
                   bool found = false;
                   for (const Value& existing : bucket) {
-                    if (item.eql(existing)) {
+                    if (item.eql(existing, call_pos)) {
                       found = true;
                       break;
                     }
@@ -5509,18 +5871,26 @@ std::vector<JoinConjunct> leading_field_conjuncts(const Node& body, const std::s
     JoinConjunct entry;
     entry.node = c;
     entry.binder = binder;
-    std::function<bool(const Node*)> reads_only_fields = [&](const Node* n) -> bool {
-      if (!n) return true;
-      switch (n->t) {
-        case NT::Index:
-          if (bare_read(n)) { entry.fields.insert(upper_name(n->r->s)); return true; }
-          if (n->l && n->l->t == NT::Index) return reads_only_fields(n->l.get()) && reads_only_fields(n->r.get());
-          return false;
-        case NT::Num: case NT::Text: case NT::Bool: return true;
-        case NT::Bin: return reads_only_fields(n->l.get()) && reads_only_fields(n->r.get());
-        case NT::Un: return reads_only_fields(n->l.get());
-        default: return false;
+    // Iterative for the reason given at expr_depends_only: a conjunct is an
+    // arbitrary expression, and a flat chain in one is as deep as it is long.
+    const auto reads_only_fields = [&](const Node* root) -> bool {
+      std::vector<const Node*> todo{root};
+      while (!todo.empty()) {
+        const Node* n = todo.back();
+        todo.pop_back();
+        if (!n) continue;
+        switch (n->t) {
+          case NT::Index:
+            if (bare_read(n)) { entry.fields.insert(upper_name(n->r->s)); break; }
+            if (n->l && n->l->t == NT::Index) { todo.push_back(n->l.get()); todo.push_back(n->r.get()); break; }
+            return false;
+          case NT::Num: case NT::Text: case NT::Bool: break;
+          case NT::Bin: todo.push_back(n->l.get()); todo.push_back(n->r.get()); break;
+          case NT::Un: todo.push_back(n->l.get()); break;
+          default: return false;
+        }
       }
+      return true;
     };
     entry.field_only = reads_only_fields(c) && !entry.fields.empty();
     if (!entry.field_only) entry.fields.clear();
@@ -5552,8 +5922,8 @@ std::optional<Value> walk(Args& a, Context& ctx, Visitor&& visit, const Node* bo
   const Node& body = body_override ? *body_override : a.node(three ? 2 : 1);
   const bool needs_k = node_contains_var(body, "_K");
 
-  const Value& coll = a.val(0);
-  const std::size_t count = collection_size(coll);
+  const Snapshot snap = take_snapshot(a.val(0), needs_k);
+  const std::size_t count = snap.size();
   if (count == 0) return std::nullopt;
 
   std::vector<std::pair<std::string, Value>> frame;
@@ -5565,10 +5935,10 @@ std::optional<Value> walk(Args& a, Context& ctx, Visitor&& visit, const Node* bo
   std::optional<Value> stopped;
   try {
     for (std::size_t i = 0; i < count; ++i) {
-      const Value& item = collection_item(coll, i);
+      const Value& item = snap.items[i];
       ctx.frames.back()[0].second = item;
       if (needs_k) {
-        ctx.frames.back()[1].second = make_text(collection_key(coll, i));
+        ctx.frames.back()[1].second = make_text(snap.keys[i]);
       }
       std::optional<Value> result = visit(a.eval(body), i, item, body);
       if (result.has_value()) {
@@ -5584,48 +5954,43 @@ std::optional<Value> walk(Args& a, Context& ctx, Visitor&& visit, const Node* bo
   return stopped;
 }
 
+// The total order of spec §7.3, by KIND first: NULL < BOOL (FALSE < TRUE) <
+// numeric-looking text and numbers (by exact decimal value) < every other TEXT
+// (bytewise) < BIN (bytewise). Comparing two values by whichever rule happened to
+// fit the pair -- numbers by value when both look numeric, bytes otherwise -- was
+// not an order at all: "10" < "1a" < "9" < "10" cycles, and what a sort returned
+// depended on the input's order. A rank per kind makes it transitive; equal
+// values tie, and the callers' stable sort keeps them in input order.
+int value_rank(const Value& v) {
+  if (v.is_null()) return 0;
+  if (v.kind() == Kind::Bool) return 1;
+  if (v.kind() == Kind::Text && v.looks_numeric()) return 2;
+  if (v.kind() == Kind::Text) return 3;
+  if (v.kind() == Kind::Bin) return 4;
+  return 5;   // a list or record: not an orderable scalar, all alike
+}
+
 int compare_values(const Value& a, const Value& b) {
-  const bool a_null = a.is_null();
-  const bool b_null = b.is_null();
-  if (a_null && b_null) return 0;
-  if (a_null) return -1;
-  if (b_null) return 1;
-
-  const bool a_num = a.looks_numeric();
-  const bool b_num = b.looks_numeric();
-  if (a_num && b_num) {
-    const Dec da = as_dec(a, Pos{});
-    const Dec db = as_dec(b, Pos{});
-    return dec_cmp(da, db);
+  const int ra = value_rank(a);
+  const int rb = value_rank(b);
+  if (ra != rb) return (ra > rb) - (ra < rb);
+  switch (ra) {
+    case 1: {
+      const int av = a.boolean_scalar() ? 1 : 0;
+      const int bv = b.boolean_scalar() ? 1 : 0;
+      return (av > bv) - (av < bv);
+    }
+    case 2: return dec_cmp(as_dec(a, Pos{}), as_dec(b, Pos{}));
+    case 3:
+    case 4: {
+      const std::string& as = a.as_bytes();
+      const std::string& bs = b.as_bytes();
+      if (as < bs) return -1;
+      if (as > bs) return 1;
+      return 0;
+    }
+    default: return 0;
   }
-
-  if (a.kind() == Kind::Bool && b.kind() == Kind::Bool) {
-    const int av = a.boolean_scalar() ? 1 : 0;
-    const int bv = b.boolean_scalar() ? 1 : 0;
-    return (av > bv) - (av < bv);
-  }
-
-  if ((a.kind() == Kind::Text || a.kind() == Kind::Bin) &&
-      (b.kind() == Kind::Text || b.kind() == Kind::Bin)) {
-    const std::string& as = a.as_bytes();
-    const std::string& bs = b.as_bytes();
-    if (as < bs) return -1;
-    if (as > bs) return 1;
-    return 0;
-  }
-
-  auto rank = [](const Value& v) -> int {
-    if (v.is_null()) return 0;
-    if (v.kind() == Kind::Bool) return 1;
-    if (v.looks_numeric()) return 2;
-    if (v.kind() == Kind::Text) return 3;
-    if (v.kind() == Kind::Bin) return 4;
-    return 5;
-  };
-
-  const int ra = rank(a);
-  const int rb = rank(b);
-  return (ra > rb) - (ra < rb);
 }
 
 struct SortEntry {
@@ -5636,9 +6001,9 @@ struct SortEntry {
 
 Value do_sort(Args& a, Context& ctx, std::optional<std::string> forced_dir) {
   const Value& val = a.val(0);
-  if (val.is_null()) return Value::list({});
-  const std::size_t source_size = collection_size(val);
-  if (source_size == 0) return Value::list({});
+  // Nothing to sort still means the direction is read and checked (spec §7.4).
+  const bool nothing_to_sort = val.is_null() || collection_size(val) == 0;
+  const std::size_t source_size = nothing_to_sort ? 0 : collection_size(val);
 
   const int count = a.count();
   std::string direction;
@@ -5647,8 +6012,10 @@ Value do_sort(Args& a, Context& ctx, std::optional<std::string> forced_dir) {
 
   if (count == 1) {
     direction = forced_dir.value_or("ASC");
+    if (nothing_to_sort) return Value::list({});
+    const Snapshot snap = take_snapshot(val, false);
     for (std::size_t i = 0; i < source_size; i++) {
-      const Value& item = collection_item(val, i);
+      const Value& item = snap.items[i];
       Value detached = item.clone();
       // The comparator only reads the key. Keep one detached tree and give the
       // output item and comparison key handles to that same immutable snapshot;
@@ -5697,8 +6064,10 @@ Value do_sort(Args& a, Context& ctx, std::optional<std::string> forced_dir) {
       const int pos_idx = (count == 4) ? 3 : 2;
       fail("E_BAD_ARG", "sort direction must be 'ASC' or 'DESC'", a.pos_of(pos_idx));
     }
+    if (nothing_to_sort) return Value::list({});
 
     const bool needs_k = node_contains_var(*body, "_K");
+    const Snapshot snap = take_snapshot(val, needs_k);
     std::vector<std::pair<std::string, Value>> frame;
     frame.reserve(needs_k ? 2 : 1);
     frame.emplace_back(binder, Value::none());
@@ -5707,13 +6076,13 @@ Value do_sort(Args& a, Context& ctx, std::optional<std::string> forced_dir) {
 
     try {
       for (std::size_t i = 0; i < source_size; i++) {
-        const Value& item = collection_item(val, i);
+        const Value& item = snap.items[i];
         ctx.frames.back()[0].second = item;
         if (needs_k) {
-          ctx.frames.back()[1].second = make_text(collection_key(val, i));
+          ctx.frames.back()[1].second = make_text(snap.keys[i]);
         }
         Value eval_key = a.eval(*body);
-        indexed.push_back({item, std::move(eval_key), i});
+        indexed.push_back({item.clone(), std::move(eval_key), i});   // collected: copied (§3.4)
       }
     } catch (...) {
       ctx.frames.pop_back();
@@ -5747,7 +6116,9 @@ Value do_top(Args& a, Context& ctx, std::optional<std::string> forced_dir) {
   const Value& value = a.val(0);
   const long long limit = a.non_neg_int(a.count() - 1);
   const std::size_t source_size = collection_size(value);
-  if (limit == 0 || source_size == 0) return Value::list({});
+  // An empty result still validates its direction (spec §7.4): the arguments are
+  // all evaluated and checked, whatever there is to sort.
+  const bool nothing_to_do = limit == 0 || source_size == 0;
 
   const int sort_count = a.count() - 1;
   std::string binder = "_";
@@ -5782,6 +6153,7 @@ Value do_top(Args& a, Context& ctx, std::optional<std::string> forced_dir) {
     const int direction_index = sort_count == 4 ? 3 : 2;
     fail("E_BAD_ARG", "sort direction must be 'ASC' or 'DESC'", a.pos_of(direction_index));
   }
+  if (nothing_to_do) return Value::list({});
 
   const auto compare = [&direction](const TopEntry& lhs, const TopEntry& rhs) {
     int c = compare_values(lhs.key, rhs.key);
@@ -5829,25 +6201,35 @@ Value do_top(Args& a, Context& ctx, std::optional<std::string> forced_dir) {
   }
 
   std::size_t index = 0;
+  const Snapshot snap = take_snapshot(value, needs_k);
   try {
     for (std::size_t i = 0; i < source_size; i++) {
-      const Value& item = collection_item(value, i);
+      const Value& item = snap.items[i];
       TopEntry candidate;
-      candidate.item = item;
+      candidate.item = item;    // copied below, only if the candidate is admitted
       candidate.idx = index;
       if (body) {
         ctx.frames.back()[0].second = item;
         if (needs_k) {
-          ctx.frames.back()[1].second = make_text(collection_key(value, i));
+          ctx.frames.back()[1].second = make_text(snap.keys[i]);
         }
         candidate.key = a.eval(*body);
       } else {
         candidate.key = item;
       }
+      // What TOP keeps it collects, so it keeps a copy (§3.4) -- taken here, when
+      // the candidate is admitted, not at the end: a later body may assign into
+      // the source. Without a body the key is the item, and reads the copy.
+      auto detach = [&body](TopEntry& c) {
+        c.item = c.item.clone();
+        if (!body) c.key = c.item;
+      };
       if (heap.size() < k) {
+        detach(candidate);
         heap.push_back(std::move(candidate));
         sift_up(heap.size() - 1);
       } else if (worse(heap.front(), candidate)) {
+        detach(candidate);
         heap.front() = std::move(candidate);
         sift_down(0);
       }
@@ -5900,6 +6282,7 @@ Value do_bucket(Args& a, Context& ctx) {
   // collisions and preserves SEL's exact EQL semantics for keys such as 1 and
   // 1.0.
   std::unordered_map<std::uint64_t, std::vector<std::size_t>> group_buckets;
+  std::unordered_map<std::string, std::size_t> bare_groups;
   const bool needs_k_key = node_contains_var(*key_node, "_K");
   std::vector<std::pair<std::string, Value>> frame;
   frame.reserve(needs_k_key ? 2 : 1);
@@ -5907,12 +6290,13 @@ Value do_bucket(Args& a, Context& ctx) {
   if (needs_k_key) frame.emplace_back("_K", Value::none());
   ctx.frames.push_back(std::move(frame));
 
+  const Snapshot snap = take_snapshot(val, needs_k_key);
   try {
     for (std::size_t i = 0; i < source_size; i++) {
-      const Value& item = collection_item(val, i);
+      const Value& item = snap.items[i];
       ctx.frames.back()[0].second = item;
       if (needs_k_key) {
-        ctx.frames.back()[1].second = make_text(collection_key(val, i));
+        ctx.frames.back()[1].second = make_text(snap.keys[i]);
       }
       Value eval_key = a.eval(*key_node);
 
@@ -5931,22 +6315,32 @@ Value do_bucket(Args& a, Context& ctx) {
       }
 
       int found = -1;
-      const std::uint64_t hash = eval_key.structural_hash();
-      const auto candidates = group_buckets.find(hash);
-      if (candidates != group_buckets.end()) {
-        for (const std::size_t g_idx : candidates->second) {
-          if (groups[g_idx].key.eql(eval_key)) {
-            found = static_cast<int>(g_idx);
-            break;
+      std::uint64_t hash = 0;
+      if (!agg_node) {
+        // A bare bucket groups by the INDEX KEY, the text -- not by identity: two
+        // elements whose keys read "x" share a group whatever else they hold
+        // (spec §7.3), and the output map has one entry per key text.
+        const auto same = bare_groups.find(key_str);
+        if (same != bare_groups.end()) found = static_cast<int>(same->second);
+      } else {
+        hash = eval_key.structural_hash(key_node->pos);
+        const auto candidates = group_buckets.find(hash);
+        if (candidates != group_buckets.end()) {
+          for (const std::size_t g_idx : candidates->second) {
+            if (groups[g_idx].key.eql(eval_key, key_node->pos)) {
+              found = static_cast<int>(g_idx);
+              break;
+            }
           }
         }
       }
 
       if (found >= 0) {
-        groups[found].rows.push_back(item);
+        groups[found].rows.push_back(item.clone());   // collected: copied (§3.4)
       } else {
-        groups.push_back(GroupEntry{std::move(eval_key), std::move(key_str), {item}});
-        group_buckets[hash].push_back(groups.size() - 1);
+        if (!agg_node) bare_groups.emplace(key_str, groups.size());
+        groups.push_back(GroupEntry{std::move(eval_key), std::move(key_str), {item.clone()}});
+        if (agg_node) group_buckets[hash].push_back(groups.size() - 1);
       }
     }
   } catch (...) {
@@ -6010,7 +6404,9 @@ void register_aggregates() {
                 std::vector<Value> out;
                 walk(a, ctx, [&out](const Value& r, std::size_t, const Value&,
                                     const Node&) -> std::optional<Value> {
-                  out.push_back(r);
+                  // Collected, so copied (§3.4): a body that returns `_` hands
+                  // back the source's own element, which the result must not share.
+                  out.push_back(r.clone());
                   return std::nullopt;
                 });
                 return Value::list(std::move(out));
@@ -6092,7 +6488,7 @@ void register_aggregates() {
                 std::vector<Value::Entry> entries;
                 walk(a, ctx, [&entries, &coll](const Value& r, std::size_t idx, const Value& item,
                                                const Node& body) -> std::optional<Value> {
-                  if (r.as_bool(body.pos)) entries.emplace_back(collection_key(coll, idx), item);
+                  if (r.as_bool(body.pos)) entries.emplace_back(collection_key(coll, idx), item.clone());  // collected: copied (§3.4)
                   return std::nullopt;
                 }, override_body.get());
                 if (entries.empty()) {
@@ -6116,13 +6512,24 @@ void register_aggregates() {
   // Strict, not an aggregate: its second argument is a separator, not a body.
   define(Spec{"JOIN", 2, 2, false, false, nullptr, [](Args& a, Context&) -> Value {
                 const std::string sep = a.text(1);
+                // Every item is coerced first, then the result is measured, then
+                // it is built (spec §6.4): a 10^7-code-point separator across a
+                // hundred items is refused without being assembled.
+                std::vector<std::string> items;
+                u128 total = 0;
+                for_each_collection_value(a.val(0), [&](const Value& item) {
+                  items.push_back(item.as_text(a.pos_of(0)));
+                  total += cp_count(items.back());
+                });
+                if (items.size() > 1) total += static_cast<u128>(items.size() - 1) * cp_count(sep);
+                cap_text(total, a.pos());
                 std::string out;
                 bool first = true;
-                for_each_collection_value(a.val(0), [&](const Value& item) {
+                for (const std::string& item : items) {
                   if (!first) out += sep;
-                  out += item.as_text(a.pos_of(0));
+                  out += item;
                   first = false;
-                });
+                }
                 return make_text(out);
               }});
 
@@ -6174,7 +6581,7 @@ bool is_sel_space(char32_t c) {
 
 std::string trim_text(const std::string& s, bool left, bool right) {
   const CodePoints c = cps_of(s);
-  long a = 0, b = static_cast<long>(c.size());
+  long long a = 0, b = static_cast<long long>(c.size());
   if (left) while (a < b && is_sel_space(c[a])) a++;
   if (right) while (b > a && is_sel_space(c[b - 1])) b--;
   return slice_cp(c, a, b);
@@ -6186,6 +6593,7 @@ Value pad(Args& a, bool left) {
   const CodePoints fill = cps_of(a.text(2));
   if (fill.empty()) fail("E_BAD_ARG", "pad fill must not be empty", a.pos_of(2));
   if (static_cast<long long>(c.size()) >= width) return make_text(encode_utf8(c));
+  cap_text(static_cast<u128>(width), a.pos());   // the result is exactly `width` long
   const std::size_t need = static_cast<std::size_t>(width) - c.size();
   CodePoints padding;
   while (padding.size() < need) padding.push_back(fill[padding.size() % fill.size()]);
@@ -6208,14 +6616,14 @@ void register_text() {
 
   define(Spec{"LEFT", 2, 2, false, false, nullptr, [](Args& a, Context&) -> Value {
                 const CodePoints c = cps_of(a.text(0));
-                return make_text(slice_cp(c, 0, static_cast<long>(a.non_neg_int(1))));
+                return make_text(slice_cp(c, 0, static_cast<long long>(a.non_neg_int(1))));
               }});
 
   define(Spec{"RIGHT", 2, 2, false, false, nullptr, [](Args& a, Context&) -> Value {
                 const CodePoints c = cps_of(a.text(0));
-                const long n = static_cast<long>(a.non_neg_int(1));
-                return make_text(slice_cp(c, static_cast<long>(c.size()) - n,
-                                          static_cast<long>(c.size())));
+                const long long n = static_cast<long long>(a.non_neg_int(1));
+                return make_text(slice_cp(c, static_cast<long long>(c.size()) - n,
+                                          static_cast<long long>(c.size())));
               }});
 
   define(Spec{"SUBSTR", 2, 3, false, false, nullptr, [](Args& a, Context&) -> Value {
@@ -6224,27 +6632,27 @@ void register_text() {
                 if (start < 1) {
                   fail("E_RANGE", "SUBSTR start is 1-based and must be at least 1", a.pos_of(1));
                 }
-                const long from = static_cast<long>(start - 1);
-                const long size = static_cast<long>(c.size());
+                const long long from = static_cast<long long>(start - 1);
+                const long long size = static_cast<long long>(c.size());
                 if (a.count() == 2) return make_text(slice_cp(c, from, size));
                 // Clamped rather than added: non_neg_int saturates at LLONG_MAX,
                 // so `from + n` is signed overflow (UB) for a huge length, and
                 // the other hosts simply return the rest of the string.
                 const long long n = a.non_neg_int(2);
-                const long to = (n >= static_cast<long long>(size - from)) ? size : from + static_cast<long>(n);
+                const long long to = (n >= static_cast<long long>(size - from)) ? size : from + static_cast<long long>(n);
                 return make_text(slice_cp(c, from, to));
               }});
 
   define(Spec{"FIND", 2, 3, false, false, nullptr, [](Args& a, Context&) -> Value {
                 const CodePoints needle = cps_of(a.text(0));
                 const CodePoints hay = cps_of(a.text(1));
-                long from = 0;
+                long long from = 0;
                 if (a.count() == 3) {
                   const long long f = a.integer(2);
                   if (f < 1) {
                     fail("E_RANGE", "FIND start is 1-based and must be at least 1", a.pos_of(2));
                   }
-                  from = static_cast<long>(f - 1);
+                  from = static_cast<long long>(f - 1);
                 }
                 if (needle.empty()) fail("E_BAD_ARG", "FIND needle must not be empty", a.pos_of(0));
                 return make_int(index_of_cp(hay, needle, from) + 1);
@@ -6257,14 +6665,28 @@ void register_text() {
                 if (needle.empty()) {
                   fail("E_BAD_ARG", "REPLACE needle must not be empty", a.pos_of(0));
                 }
+                // Matches are counted first so the result's length is known (and
+                // capped, spec §6.4) before any of it is built.
+                {
+                  u128 matches = 0;
+                  long long j = 0;
+                  for (;;) {
+                    const long long at = index_of_cp(hay, needle, j);
+                    if (at < 0) break;
+                    matches++;
+                    j = at + static_cast<long long>(needle.size());
+                  }
+                  const u128 base = hay.size() - matches * needle.size();
+                  cap_text(base + matches * repl.size(), a.pos());
+                }
                 CodePoints out;
-                long i = 0;
+                long long i = 0;
                 for (;;) {
-                  const long at = index_of_cp(hay, needle, i);
+                  const long long at = index_of_cp(hay, needle, i);
                   if (at < 0) break;
                   out.insert(out.end(), hay.begin() + i, hay.begin() + at);
                   out.insert(out.end(), repl.begin(), repl.end());
-                  i = at + static_cast<long>(needle.size());
+                  i = at + static_cast<long long>(needle.size());
                 }
                 out.insert(out.end(), hay.begin() + i, hay.end());
                 return make_text(encode_utf8(out));
@@ -6277,14 +6699,15 @@ void register_text() {
                   fail("E_BAD_ARG", "SPLIT separator must not be empty", a.pos_of(1));
                 }
                 std::vector<Value> parts;
-                long i = 0;
+                long long i = 0;
                 for (;;) {
-                  const long at = index_of_cp(hay, sep, i);
+                  const long long at = index_of_cp(hay, sep, i);
                   if (at < 0) break;
+                  cap_collection(static_cast<u128>(parts.size()) + 2, a.pos());
                   parts.push_back(make_text(slice_cp(hay, i, at)));
-                  i = at + static_cast<long>(sep.size());
+                  i = at + static_cast<long long>(sep.size());
                 }
-                parts.push_back(make_text(slice_cp(hay, i, static_cast<long>(hay.size()))));
+                parts.push_back(make_text(slice_cp(hay, i, static_cast<long long>(hay.size()))));
                 return Value::list(std::move(parts));
               }});
 
@@ -6313,8 +6736,15 @@ void register_text() {
 
   define(Spec{"REPEAT", 2, 2, false, false, nullptr, [](Args& a, Context&) -> Value {
                 const std::string s = a.text(0);
-                const long long n = a.non_neg_int(1);
+                const long long n = a.non_neg_int(1);   // saturates: a huge count is still 'huge'
+                // Measured, not run (spec §6.4). An empty result is never too
+                // large, whatever the count: REPEAT("", 10^30) is "" and does not
+                // loop 10^30 times.
+                if (s.empty() || n == 0) return make_text("");
+                cap_text(static_cast<u128>(cp_count(s)) * static_cast<unsigned long long>(n),
+                         a.pos());
                 std::string out;
+                out.reserve(s.size() * static_cast<std::size_t>(n));
                 for (long long i = 0; i < n; i++) out += s;
                 return make_text(out);
               }});
@@ -6352,10 +6782,10 @@ void register_numbers() {
                 return make_int(dec_sign(a.dec(0)));
               }});
   define(Spec{"CEIL", 1, 1, false, false, nullptr, [](Args& a, Context&) -> Value {
-                return make_num(dec_ceil(a.dec(0)));
+                return make_num(dec_ceil(a.dec(0), a.pos()));
               }});
   define(Spec{"FLOOR", 1, 1, false, false, nullptr, [](Args& a, Context&) -> Value {
-                return make_num(dec_floor(a.dec(0)));
+                return make_num(dec_floor(a.dec(0), a.pos()));
               }});
   define(Spec{"TRUNC", 1, 1, false, false, nullptr, [](Args& a, Context&) -> Value {
                 return make_num(dec_trunc(a.dec(0)));
@@ -6370,6 +6800,11 @@ void register_numbers() {
                 // — a plausible wrong answer, the worst failure this project
                 // can produce — and a wrapped negative scale then built a
                 // string of length SIZE_MAX and escaped as std::length_error.
+                //
+                // The first argument is coerced before the second is checked:
+                // the strict lane is left to right (spec §6.2), and the planned
+                // spelling of the same call already was.
+                const Dec x = a.dec(0);
                 const long long n = a.non_neg_int(1);
                 if (n > MAX_SCALE) {
                   fail("E_RANGE",
@@ -6377,9 +6812,10 @@ void register_numbers() {
                            std::to_string(MAX_SCALE),
                        a.pos_of(1));
                 }
-                return make_num(dec_round(a.dec(0), n, a.pos()));
+                return make_num(dec_round(x, n, a.pos()));
               }});
   define(Spec{"POWER", 2, 2, false, false, nullptr, [](Args& a, Context&) -> Value {
+                const Dec x = a.dec(0);
                 const long long n = a.non_neg_int(1);
                 if (n > MAX_POWER) {
                   fail("E_RANGE",
@@ -6387,7 +6823,7 @@ void register_numbers() {
                            std::to_string(MAX_POWER),
                        a.pos_of(1));
                 }
-                return make_num(dec_power(a.dec(0), n, a.pos()));
+                return make_num(dec_power(x, n, a.pos()));
               }});
 
   define(Spec{"MIN", 1, VARIADIC, false, false, nullptr, [](Args& a, Context&) -> Value {
@@ -6449,7 +6885,9 @@ void register_binary() {
               }});
 
   define(Spec{"TO_UTF8", 1, 1, false, false, nullptr, [](Args& a, Context&) -> Value {
-                return make_bin(a.bytes(0));
+                const std::string& b = a.bytes(0);
+                cap_text(b.size(), a.pos());   // 4 bytes per astral code point: BIN can outnumber TEXT
+                return make_bin(b);
               }});
 
   define(Spec{"FROM_UTF8", 1, 1, false, false, nullptr, [](Args& a, Context&) -> Value {
@@ -6459,7 +6897,9 @@ void register_binary() {
               }});
 
   define(Spec{"TO_HEX", 1, 1, false, false, nullptr, [](Args& a, Context&) -> Value {
-                return make_text(to_hex(a.bytes(0)));
+                const std::string& b = a.bytes(0);
+                cap_text(static_cast<u128>(b.size()) * 2, a.pos());
+                return make_text(to_hex(b));
               }});
 
   define(Spec{"FROM_HEX", 1, 1, false, false, nullptr, [](Args& a, Context&) -> Value {
@@ -6472,7 +6912,9 @@ void register_binary() {
                   const int hi = hex_value(s[i * 2]);
                   const int lo = hex_value(s[i * 2 + 1]);
                   if (hi < 0 || lo < 0) {
-                    fail("E_BAD_ARG", "FROM_HEX: \"" + s.substr(i * 2, 2) + "\" is not hex",
+                    // The position, not the text: slicing bytes put half a UTF-8
+                    // sequence into the message (CPP-C52), and the input is data.
+                    fail("E_BAD_ARG", "FROM_HEX: byte " + std::to_string(i * 2 + 1) + " is not a hex digit pair",
                          a.pos_of(0));
                   }
                   out[i] = static_cast<char>((hi << 4) | lo);
@@ -6482,6 +6924,7 @@ void register_binary() {
 
   define(Spec{"ENCODE_BASE64", 1, 1, false, false, nullptr, [](Args& a, Context&) -> Value {
                 const std::string& b = a.bytes(0);
+                cap_text(static_cast<u128>((b.size() + 2) / 3) * 4, a.pos());
                 std::string out;
                 for (std::size_t i = 0; i < b.size(); i += 3) {
                   const unsigned n =
@@ -6519,7 +6962,7 @@ void register_binary() {
                     if (padding > 0) fail("E_BAD_ARG", "misplaced base64 padding", pos);
                     const int v = b64_index(ch);
                     if (v < 0) {
-                      fail("E_BAD_ARG", std::string("invalid base64 character \"") + ch + "\"", pos);
+                      fail("E_BAD_ARG", "invalid base64 character at byte " + std::to_string(i + k + 1), pos);
                     }
                     quad[k] = v;
                   }
@@ -6546,6 +6989,7 @@ void register_binary() {
 
   define(Spec{"BTL", 1, 1, false, false, nullptr, [](Args& a, Context&) -> Value {
                 std::vector<Value> out;
+                cap_collection(a.bytes(0).size(), a.pos());
                 for (char ch : a.bytes(0)) {
                   out.push_back(make_int(static_cast<unsigned char>(ch)));
                 }
@@ -6557,14 +7001,19 @@ void register_binary() {
                 std::vector<Value> items;
                 if (v.size() > 0) {
                   for (const auto& e : v.entries()) items.push_back(e.second);
-                } else {
-                  items.push_back(v);
+                } else if (!(v.kind() == Kind::None && v.size() == 0)) {
+                  items.push_back(v);   // a scalar is one element; NULL and the empty list are none (§7.7)
                 }
                 std::string out(items.size(), '\0');
                 for (std::size_t i = 0; i < items.size(); i++) {
                   const Dec d = as_dec(items[i], a.pos_of(0));
+                  // A byte is an integer *value*: 1.0 and "255.00" qualify, 1.5 does not.
+                  if (!dec_is_integer(d)) {
+                    fail("E_NOT_INT", "LTB element " + std::to_string(i + 1) + " must be a whole number",
+                         a.pos_of(0));
+                  }
                   const long long n = dec_to_int(d);
-                  if (d.scale != 0 || n < 0 || n > 255) {
+                  if (n < 0 || n > 255) {
                     fail("E_RANGE", "LTB element " + std::to_string(i + 1) + " is not a byte value",
                          a.pos_of(0));
                   }
@@ -6699,15 +7148,36 @@ std::size_t validate_braces(const CodePoints& p, std::size_t start, const std::s
   return i + 1;
 }
 
+// PCRE2's rule for a POSIX bracket form (`[:alpha:]`, `[.x.]`, `[=x=]`): at a `[`
+// followed by one of `:` `.` `=` inside a class, scan on for that same character
+// followed by `]`; an unescaped `]` seen first means it was only a literal `[`
+// and `.`/`:`/`=` (`[[.]` is a class of two characters). Every engine agrees on
+// the literal reading and refuses the other, so the subset refuses it wherever it
+// stands, not only first.
+bool starts_posix_form(const CodePoints& p, std::size_t at) {
+  if (at + 1 >= p.size() || p[at] != U'[') return false;
+  const char32_t x = p[at + 1];
+  if (x != U':' && x != U'.' && x != U'=') return false;
+  for (std::size_t j = at + 2; j < p.size(); j++) {
+    if (p[j] == U'\\') { j++; continue; }
+    if (p[j] == U']') return false;
+    if (p[j] == x && j + 1 < p.size() && p[j + 1] == U']') return true;
+  }
+  return false;
+}
+
 // Returns the rewritten text; `next` receives the index just past the closing ']'.
 std::string validate_class(const CodePoints& p, std::size_t start, const std::string& pattern,
                            Pos pos, std::size_t& next) {
   std::size_t i = start + 1;
   std::string out = "[";
   if (i < p.size() && p[i] == U'^') { out += "^"; i++; }
-  if (i + 1 < p.size() && p[i] == U'[' && p[i + 1] == U':') {
-    bad_regex("POSIX classes such as [[:alpha:]] are not portable", pattern, i, pos);
-  }
+  // What the previous member of the class was, for the range rule below: a
+  // class escape (\d \w \s) cannot be either end of a range -- PCRE takes the
+  // hyphen literally and ECMAScript refuses -- while a hyphen first or last is
+  // literal and fine.
+  enum class Prev { None, Char, ClassEscape };
+  Prev prev = Prev::None;
   // `]` always closes the class. PCRE treats a leading `]` as a literal while
   // ECMAScript reads `[]` as an empty class, so neither spelling is portable —
   // write `\]` instead.
@@ -6721,14 +7191,34 @@ std::string validate_class(const CodePoints& p, std::size_t start, const std::st
       next = i + 1;
       return out + "]";
     }
+    if (starts_posix_form(p, i)) {
+      bad_regex("POSIX classes such as [[:alpha:]] are not portable", pattern, i, pos);
+    }
     count++;
+    if (c == U'-' && prev != Prev::None && i + 1 < p.size() && p[i + 1] != U']') {
+      // A range operator. Its left end must be a single character...
+      if (prev == Prev::ClassEscape) {
+        bad_regex("a class escape cannot start a range — write the hyphen last or first", pattern, i,
+                  pos);
+      }
+      // ...and so must its right end.
+      if (p[i + 1] == U'\\' && i + 2 < p.size() && expand_inside().count(p[i + 2])) {
+        bad_regex("a class escape cannot end a range — write the hyphen last or first", pattern, i,
+                  pos);
+      }
+    }
     if (c == U'\\') {
       if (i + 1 >= p.size()) {
         bad_regex("trailing backslash in character class", pattern, i, pos);
       }
       const char32_t e = p[i + 1];
       auto it = expand_inside().find(e);
-      if (it != expand_inside().end()) { out += it->second; i += 2; continue; }
+      if (it != expand_inside().end()) {
+        out += it->second;
+        i += 2;
+        prev = Prev::ClassEscape;
+        continue;
+      }
       if (e == U'D' || e == U'W' || e == U'S') {
         bad_regex(std::string("\\") + static_cast<char>(e) +
                       " inside a character class cannot be expressed portably — negate the whole "
@@ -6739,15 +7229,748 @@ std::string validate_class(const CodePoints& p, std::size_t start, const std::st
         encode_cp(out, c);
         encode_cp(out, e);
         i += 2;
+        prev = Prev::Char;
         continue;
       }
       reject_escape(e, pattern, i, pos);
     }
     encode_cp(out, c);
     i++;
+    prev = Prev::Char;
   }
   bad_regex("unterminated character class", pattern, start, pos);
 }
+
+// --- the pattern tree (spec §7.8) -------------------------------------------
+//
+// The rewriting pass above and below validates tokens; this parses the same
+// pattern into a tree, because three of the rules are about SHAPE -- a loop whose
+// body can match the empty string, a capture that need not take part in every
+// iteration, groups nested past the cap -- and the exponential-ambiguity analysis
+// that follows in a later change needs the tree too. Groups are kept (capturing or
+// not); everything a letter-like token stands for is an Atom, an anchor or an
+// empty pattern is Empty.
+using RxRanges = std::vector<std::pair<char32_t, char32_t>>;   // sorted, merged, inclusive
+
+struct RxNode {
+  enum class K { Empty, Anchor, Atom, Cat, Alt, Group, Repeat };
+  K k = K::Empty;
+  bool capture = false;    // Group
+  long long lo = 1;        // Repeat
+  long long hi = 1;        // Repeat; -1 = unbounded
+  std::vector<int> kids;
+  RxRanges set;            // Atom: the code points it reads (folded under `i`)
+  bool nullable = true;    // the measures below are filled in by RxParser::measure
+  long long minlen = 0;
+  long long maxlen = 0;
+};
+
+constexpr long long RX_SAT = 1LL << 40;   // saturation of minlen/maxlen (spec §7.8)
+constexpr char32_t RX_MAX_CP = 0x10FFFF;
+
+// --- code point sets ------------------------------------------------------------
+RxRanges rx_norm(RxRanges rs) {
+  std::sort(rs.begin(), rs.end());
+  RxRanges out;
+  for (const auto& r : rs) {
+    if (!out.empty() && r.first <= out.back().second + 1) {
+      if (r.second > out.back().second) out.back().second = r.second;
+    } else {
+      out.push_back(r);
+    }
+  }
+  return out;
+}
+
+RxRanges rx_negate(const RxRanges& in) {
+  const RxRanges rs = rx_norm(in);
+  RxRanges out;
+  char32_t next = 0;
+  bool done = false;
+  for (const auto& r : rs) {
+    if (r.first > next) out.emplace_back(next, r.first - 1);
+    if (r.second >= RX_MAX_CP) { done = true; break; }
+    next = r.second + 1;
+  }
+  if (!done && next <= RX_MAX_CP) out.emplace_back(next, RX_MAX_CP);
+  return out;
+}
+
+bool rx_has(const RxRanges& rs, char32_t c) {
+  for (const auto& r : rs) if (r.first <= c && c <= r.second) return true;
+  return false;
+}
+
+// `i`: simple case folding restricted to what an ASCII pattern can reach -- the
+// ASCII case mirror, plus U+212A with k/K and U+017F with s/S (spec §7.8).
+RxRanges rx_fold(const RxRanges& rs) {
+  RxRanges all = rs;
+  for (const auto& r : rs) {
+    const char32_t ulo = std::max<char32_t>(r.first, 0x41), uhi = std::min<char32_t>(r.second, 0x5A);
+    if (ulo <= uhi) all.emplace_back(ulo + 32, uhi + 32);
+    const char32_t llo = std::max<char32_t>(r.first, 0x61), lhi = std::min<char32_t>(r.second, 0x7A);
+    if (llo <= lhi) all.emplace_back(llo - 32, lhi - 32);
+  }
+  all = rx_norm(std::move(all));
+  if (rx_has(all, U'k') || rx_has(all, U'K')) all.emplace_back(0x212A, 0x212A);
+  if (rx_has(all, U's') || rx_has(all, U'S')) all.emplace_back(0x17F, 0x17F);
+  return rx_norm(std::move(all));
+}
+
+bool rx_intersects(const RxRanges& x, const RxRanges& y) {
+  std::size_t i = 0, j = 0;
+  while (i < x.size() && j < y.size()) {
+    if (x[i].second < y[j].first) i++;
+    else if (y[j].second < x[i].first) j++;
+    else return true;
+  }
+  return false;
+}
+
+// The largest number of the given sets that share one code point. Closings sort
+// before openings at a shared point, so adjacent ranges do not count as overlap.
+int rx_max_cover(const std::vector<const RxRanges*>& sets) {
+  std::vector<std::pair<char32_t, int>> ev;
+  for (const RxRanges* s : sets) {
+    for (const auto& r : *s) {
+      ev.emplace_back(r.first, 1);
+      ev.emplace_back(r.second + 1, -1);
+    }
+  }
+  std::sort(ev.begin(), ev.end());
+  int best = 0, cur = 0;
+  for (const auto& e : ev) {
+    cur += e.second;
+    best = std::max(best, cur);
+  }
+  return best;
+}
+
+const RxRanges& rx_class_set(char32_t e) {
+  static const RxRanges digit{{U'0', U'9'}};
+  static const RxRanges word{{U'0', U'9'}, {U'A', U'Z'}, {U'_', U'_'}, {U'a', U'z'}};
+  static const RxRanges space{{0x09, 0x0D}, {0x20, 0x20}};   // [ \t\n\r\f\x0b]
+  return e == U'd' ? digit : e == U'w' ? word : space;
+}
+
+char32_t rx_control(char32_t e) {
+  return e == U'n' ? 10 : e == U'r' ? 13 : e == U't' ? 9 : 12;   // \f
+}
+
+struct RxTree {
+  std::vector<RxNode> nodes;
+  int root = -1;
+};
+
+class RxParser {
+ public:
+  RxParser(const CodePoints& p, const std::string& pattern, Pos pos, bool ignore_case)
+      : p_(p), pattern_(pattern), pos_(pos), ic_(ignore_case) {}
+
+  RxTree parse() {
+    tree_.root = alternation(0);
+    if (i_ < p_.size()) bad_regex("unmatched )", pattern_, i_, pos_);
+    return std::move(tree_);
+  }
+
+ private:
+  const CodePoints& p_;
+  const std::string& pattern_;
+  Pos pos_;
+  bool ic_;
+  std::size_t i_ = 0;
+  std::size_t groups_ = 0;
+  RxTree tree_;
+
+  int make(RxNode::K k) {
+    RxNode n;
+    n.k = k;
+    tree_.nodes.push_back(std::move(n));
+    const int id = static_cast<int>(tree_.nodes.size()) - 1;
+    if (k == RxNode::K::Empty || k == RxNode::K::Anchor || k == RxNode::K::Atom) measure(id);
+    return id;
+  }
+
+  // nullable / minlen / maxlen of node `id` from its kids (already measured).
+  void measure(int id) {
+    RxNode& n = tree_.nodes[static_cast<std::size_t>(id)];
+    auto kid = [&](std::size_t j) -> const RxNode& { return tree_.nodes[static_cast<std::size_t>(n.kids[j])]; };
+    switch (n.k) {
+      case RxNode::K::Empty:
+      case RxNode::K::Anchor: n.nullable = true; n.minlen = n.maxlen = 0; break;
+      case RxNode::K::Atom: n.nullable = false; n.minlen = n.maxlen = 1; break;
+      case RxNode::K::Cat: {
+        n.nullable = true;
+        long long mn = 0, mx = 0;
+        for (std::size_t j = 0; j < n.kids.size(); j++) {
+          n.nullable = n.nullable && kid(j).nullable;
+          mn = std::min(RX_SAT, mn + kid(j).minlen);
+          mx = std::min(RX_SAT, mx + kid(j).maxlen);
+        }
+        n.minlen = mn;
+        n.maxlen = mx;
+        break;
+      }
+      case RxNode::K::Alt: {
+        n.nullable = false;
+        long long mn = RX_SAT, mx = 0;
+        for (std::size_t j = 0; j < n.kids.size(); j++) {
+          n.nullable = n.nullable || kid(j).nullable;
+          mn = std::min(mn, kid(j).minlen);
+          mx = std::max(mx, kid(j).maxlen);
+        }
+        n.minlen = mn;
+        n.maxlen = mx;
+        break;
+      }
+      case RxNode::K::Group:
+        n.nullable = kid(0).nullable;
+        n.minlen = kid(0).minlen;
+        n.maxlen = kid(0).maxlen;
+        break;
+      case RxNode::K::Repeat: {
+        const RxNode& x = kid(0);
+        n.nullable = n.lo == 0 || x.nullable;
+        n.minlen = std::min(RX_SAT, n.lo * x.minlen);
+        if (n.hi == 0 || x.maxlen == 0) n.maxlen = 0;
+        else if (n.hi == -1) n.maxlen = RX_SAT;
+        else n.maxlen = std::min(RX_SAT, n.hi * x.maxlen);
+        break;
+      }
+    }
+  }
+
+  int atom_of(RxRanges set) {
+    set = rx_norm(std::move(set));
+    if (ic_) set = rx_fold(set);
+    const int a = make(RxNode::K::Atom);
+    tree_.nodes[static_cast<std::size_t>(a)].set = std::move(set);
+    return a;
+  }
+
+  // One member of a class, at p_[i_]: a code point (escape or plain), or -1 with
+  // `cls` holding \d \w \s. The pattern already passed validate_class.
+  long long class_member(RxRanges* cls) {
+    const char32_t c = p_[i_];
+    if (c != U'\\') { i_++; return static_cast<long long>(c); }
+    const char32_t e = p_[i_ + 1];
+    i_ += 2;
+    if (e == U'd' || e == U'w' || e == U's') {
+      const RxRanges& r = rx_class_set(e);
+      cls->insert(cls->end(), r.begin(), r.end());
+      return -1;
+    }
+    if (is_control_escape(e)) return static_cast<long long>(rx_control(e));
+    return static_cast<long long>(e);
+  }
+
+  bool at(char32_t c) const { return i_ < p_.size() && p_[i_] == c; }
+
+  int alternation(int depth) {
+    std::vector<int> branches{concatenation(depth)};
+    while (at(U'|')) {
+      i_++;
+      branches.push_back(concatenation(depth));
+    }
+    if (branches.size() == 1) return branches[0];
+    const int alt = make(RxNode::K::Alt);
+    tree_.nodes[alt].kids = std::move(branches);
+    measure(alt);
+    return alt;
+  }
+
+  int concatenation(int depth) {
+    std::vector<int> items;
+    while (i_ < p_.size() && p_[i_] != U'|' && p_[i_] != U')') items.push_back(repeated(depth));
+    if (items.empty()) return make(RxNode::K::Empty);
+    if (items.size() == 1) return items[0];
+    const int cat = make(RxNode::K::Cat);
+    tree_.nodes[cat].kids = std::move(items);
+    measure(cat);
+    return cat;
+  }
+
+  static bool is_quantifier_start(char32_t c) {
+    return c == U'*' || c == U'+' || c == U'?' || c == U'{';
+  }
+
+  // One atom and the quantifier after it, if any.
+  int repeated(int depth) {
+    if (is_quantifier_start(p_[i_])) bad_regex("nothing to repeat", pattern_, i_, pos_);
+    const int atom = primary(depth);
+    if (i_ >= p_.size() || !is_quantifier_start(p_[i_])) return atom;
+    const std::size_t at_q = i_;
+    if (tree_.nodes[atom].k == RxNode::K::Anchor) {
+      bad_regex("an anchor cannot be quantified", pattern_, at_q, pos_);
+    }
+    long long lo = 0, hi = -1;
+    const char32_t q = p_[i_];
+    if (q == U'*') { i_++; }
+    else if (q == U'+') { lo = 1; i_++; }
+    else if (q == U'?') { hi = 1; i_++; }
+    else {
+      i_++;   // '{'; the rewriting pass has already validated the form and the bounds
+      lo = read_bound(p_, i_);
+      hi = lo;
+      if (at(U',')) {
+        i_++;
+        const std::size_t hs = i_;
+        const long long h = read_bound(p_, i_);
+        hi = (i_ > hs) ? h : -1;
+      }
+      i_++;   // '}'
+    }
+    if (at(U'?')) i_++;   // lazy: which match is found, not which words match
+    if (i_ < p_.size() && is_quantifier_start(p_[i_])) {
+      bad_regex("nothing to repeat", pattern_, i_, pos_);
+    }
+    const int rep = make(RxNode::K::Repeat);
+    tree_.nodes[rep].lo = lo;
+    tree_.nodes[rep].hi = hi;
+    tree_.nodes[rep].kids = {atom};
+    measure(rep);
+    return rep;
+  }
+
+  int primary(int depth) {
+    const char32_t c = p_[i_];
+    if (c == U'(') {
+      if (depth + 1 > MAX_DEPTH) {
+        bad_regex("groups nested deeper than " + std::to_string(MAX_DEPTH), pattern_, i_, pos_);
+      }
+      if (++groups_ > static_cast<std::size_t>(MAX_REGEX_GROUPS)) {
+        bad_regex("more than " + std::to_string(MAX_REGEX_GROUPS) + " groups", pattern_, i_, pos_);
+      }
+      bool capture = true;
+      i_++;
+      if (at(U'?')) { capture = false; i_ += 2; }   // `(?:`, the only `(?` the pass above lets by
+      const int inner = alternation(depth + 1);
+      if (!at(U')')) bad_regex("unterminated group", pattern_, i_, pos_);
+      i_++;
+      const int g = make(RxNode::K::Group);
+      tree_.nodes[g].capture = capture;
+      tree_.nodes[g].kids = {inner};
+      measure(g);
+      return g;
+    }
+    if (c == U'[') {
+      // Validated by validate_class already; read its members into a set. The set
+      // is folded before it is negated (spec §7.8).
+      i_++;
+      const bool negated = at(U'^');
+      if (negated) i_++;
+      RxRanges rs;
+      while (i_ < p_.size() && p_[i_] != U']') {
+        const long long lo = class_member(&rs);
+        if (lo < 0) continue;   // a class escape: a set, never a range end
+        if (at(U'-') && i_ + 1 < p_.size() && p_[i_ + 1] != U']') {
+          i_++;
+          const long long hi = class_member(&rs);
+          rs.emplace_back(static_cast<char32_t>(lo), static_cast<char32_t>(hi < 0 ? lo : hi));
+        } else {
+          rs.emplace_back(static_cast<char32_t>(lo), static_cast<char32_t>(lo));
+        }
+      }
+      i_++;
+      rs = rx_norm(std::move(rs));
+      if (ic_) rs = rx_fold(rs);
+      if (negated) rs = rx_negate(rs);
+      const int a = make(RxNode::K::Atom);
+      tree_.nodes[static_cast<std::size_t>(a)].set = std::move(rs);
+      return a;
+    }
+    if (c == U'\\') {
+      const char32_t e = p_[i_ + 1];
+      i_ += 2;
+      if (e == U'd' || e == U'w' || e == U's') return atom_of(rx_class_set(e));
+      if (e == U'D' || e == U'W' || e == U'S') {
+        return atom_of(rx_negate(rx_class_set(static_cast<char32_t>(e + 32))));
+      }
+      const char32_t cp = is_control_escape(e) ? rx_control(e) : e;
+      return atom_of({{cp, cp}});
+    }
+    i_++;
+    if (c == U'^' || c == U'$') return make(RxNode::K::Anchor);
+    if (c == U'.') return atom_of({{0, RX_MAX_CP}});
+    return atom_of({{c, c}});
+  }
+};
+
+bool rx_nullable(const RxTree& t, int n) {
+  const RxNode& x = t.nodes[static_cast<std::size_t>(n)];
+  switch (x.k) {
+    case RxNode::K::Empty:
+    case RxNode::K::Anchor: return true;
+    case RxNode::K::Atom: return false;
+    case RxNode::K::Cat:
+      for (const int k : x.kids) if (!rx_nullable(t, k)) return false;
+      return true;
+    case RxNode::K::Alt:
+      for (const int k : x.kids) if (rx_nullable(t, k)) return true;
+      return false;
+    case RxNode::K::Group: return rx_nullable(t, x.kids[0]);
+    case RxNode::K::Repeat: return x.lo == 0 || rx_nullable(t, x.kids[0]);
+  }
+  return false;
+}
+
+// True when a capture inside `n` need not take part every time `n` is entered:
+// it sits under an alternation with other branches, or under a quantifier whose
+// minimum is 0.
+bool rx_optional_capture(const RxTree& t, int n, bool optional) {
+  const RxNode& x = t.nodes[static_cast<std::size_t>(n)];
+  switch (x.k) {
+    case RxNode::K::Empty:
+    case RxNode::K::Anchor:
+    case RxNode::K::Atom: return false;
+    case RxNode::K::Cat:
+      for (const int k : x.kids) if (rx_optional_capture(t, k, optional)) return true;
+      return false;
+    case RxNode::K::Alt:
+      for (const int k : x.kids) if (rx_optional_capture(t, k, true)) return true;
+      return false;
+    case RxNode::K::Group:
+      if (x.capture && optional) return true;
+      return rx_optional_capture(t, x.kids[0], optional);
+    case RxNode::K::Repeat: return rx_optional_capture(t, x.kids[0], optional || x.lo == 0);
+  }
+  return false;
+}
+
+// The shape rules of §7.8, over the whole tree. A loop is a quantifier whose
+// maximum is above 1; `?`, `{0,1}` and `{1}` are not loops.
+void check_loops(const RxTree& t, const std::string& pattern, Pos pos) {
+  // The tree is at most MAX_DEPTH groups deep, but a Cat/Alt/Repeat layer sits
+  // between groups, so walk with an explicit stack anyway.
+  std::vector<int> work{t.root};
+  while (!work.empty()) {
+    const int n = work.back();
+    work.pop_back();
+    const RxNode& x = t.nodes[static_cast<std::size_t>(n)];
+    if (x.k == RxNode::K::Repeat && (x.hi == -1 || x.hi > 1)) {
+      if (rx_nullable(t, x.kids[0])) {
+        bad_regex("a loop whose body can match the empty string is not portable", pattern, 0, pos);
+      }
+      if (rx_optional_capture(t, x.kids[0], false)) {
+        bad_regex("a capture inside a loop must take part in every iteration", pattern, 0, pos);
+      }
+    }
+    for (const int k : x.kids) work.push_back(k);
+  }
+}
+
+
+// --- exponential ambiguity (spec §7.8 "Refused for its running time") -----------
+//
+// A Glushkov position automaton over the tree, then the refusals in the order the
+// spec gives them. tools/regex-ambiguity-ref.py is the reference this is a
+// port of: every count, cap and verdict is the same, and every walk here is a
+// loop over explicit work lists or a recursion no deeper than the tree.
+constexpr int RX_UNROLL = 8;
+constexpr long long RX_P_MAX = 1LL << 17;   // positions
+constexpr long long RX_E_MAX = 1LL << 18;   // follow edges
+constexpr long long RX_D_MAX = 1LL << 21;   // sum over edges of the ranges at the target
+constexpr long long RX_Q_MAX = 1LL << 20;   // pair-graph work
+constexpr long long RX_AMB_MAX = 16;
+
+int rx_ceil_log2(long long k) {   // k >= 2
+  int c = 0;
+  for (long long v = k - 1; v > 0; v >>= 1) c++;
+  return c;
+}
+
+class RxAnalysis {
+ public:
+  RxAnalysis(const RxTree& t, const std::string& pattern, Pos pos)
+      : t_(t), pattern_(pattern), pos_(pos) {
+    cls_.push_back(nullptr);   // position 0 is the start, reading nothing
+    succ_.emplace_back();
+  }
+
+  void run() {
+    Walked w = walk(t_.root, false);
+    succ_[0] = w.f;
+    build_components();
+    // The budget: choices outside every cycle, the start included.
+    for (std::size_t p = 0; p < succ_.size(); p++) {
+      if (cyc_[p] || succ_[p].size() < 2) continue;
+      std::vector<const RxRanges*> sets;
+      for (const int q : succ_[p]) sets.push_back(cls_[static_cast<std::size_t>(q)]);
+      const int m = rx_max_cover(sets);
+      if (m >= 2) {
+        amb_ += rx_ceil_log2(m);
+        if (amb_ > RX_AMB_MAX) refuse("ambiguity budget exceeded");
+      }
+    }
+    exponential_ambiguity();
+  }
+
+ private:
+  struct Walked {
+    bool nl = true;
+    std::vector<int> f, l;
+  };
+  // An item of a concatenation: a tree node, or (node < 0) the nested optional
+  // chain of `chain` more optional copies of node `x` -- the unrolled tail of a
+  // counted repeat, OPT(CAT[x, OPT(CAT[x, ...])]).
+  struct Item {
+    int node;
+    int chain;
+    int x;
+  };
+
+  const RxTree& t_;
+  const std::string& pattern_;
+  Pos pos_;
+  std::vector<const RxRanges*> cls_;
+  std::vector<std::vector<int>> succ_;
+  std::unordered_map<unsigned long long, bool> tag_;
+  long long e_ = 0, d_ = 0, amb_ = 0;
+  std::vector<int> comp_;
+  std::vector<char> cyc_;
+
+  [[noreturn]] void refuse(const std::string& why) const {
+    bad_regex("the pattern is refused for its running time: " + why, pattern_, 0, pos_);
+  }
+
+  const RxNode& node(int n) const { return t_.nodes[static_cast<std::size_t>(n)]; }
+
+  void join(const std::vector<int>& L, const std::vector<int>& F, bool sync) {
+    e_ += static_cast<long long>(L.size()) * static_cast<long long>(F.size());
+    long long ranges = 0;
+    for (const int q : F) ranges += static_cast<long long>(cls_[static_cast<std::size_t>(q)]->size());
+    d_ += static_cast<long long>(L.size()) * ranges;
+    if (e_ > RX_E_MAX || d_ > RX_D_MAX) refuse("the analysis is too large");
+    for (const int a : L) {
+      for (const int b : F) {
+        const unsigned long long key = (static_cast<unsigned long long>(a) << 32) | static_cast<unsigned>(b);
+        auto it = tag_.find(key);
+        if (it != tag_.end()) {
+          if (it->second && sync) continue;
+          refuse("the same follow edge is generated twice");
+        }
+        tag_.emplace(key, sync);
+        succ_[static_cast<std::size_t>(a)].push_back(b);
+      }
+    }
+  }
+
+  void eps(int k, bool inloop) {
+    if (k <= 0) return;
+    if (inloop) refuse("a nullable choice inside a loop");
+    amb_ += k;
+    if (amb_ > RX_AMB_MAX) refuse("ambiguity budget exceeded");
+  }
+
+  Walked walk_items(const std::vector<Item>& items, bool inloop) {
+    Walked out;   // nl = true, f = l = {}
+    for (const Item& it : items) {
+      Walked w = walk_item(it, inloop);
+      join(out.l, w.f, false);
+      if (out.nl) out.f.insert(out.f.end(), w.f.begin(), w.f.end());
+      if (w.nl) out.l.insert(out.l.end(), w.l.begin(), w.l.end());
+      else out.l = std::move(w.l);
+      out.nl = out.nl && w.nl;
+    }
+    return out;
+  }
+
+  Walked walk_item(const Item& it, bool inloop) {
+    if (it.node >= 0) return walk(it.node, inloop);
+    if (it.chain == 0) return Walked{};   // EPS
+    Walked w = walk_items({Item{it.x, 0, -1}, Item{-1, it.chain - 1, it.x}}, inloop);
+    w.nl = true;   // OPT: optional, no cost of its own
+    return w;
+  }
+
+  Walked walk(int n, bool inloop) {
+    const RxNode& x = node(n);
+    switch (x.k) {
+      case RxNode::K::Empty:
+      case RxNode::K::Anchor: return Walked{};
+      case RxNode::K::Atom: {
+        if (static_cast<long long>(cls_.size()) >= RX_P_MAX) refuse("the analysis is too large");
+        cls_.push_back(&x.set);
+        succ_.emplace_back();
+        Walked w;
+        w.nl = false;
+        w.f = {static_cast<int>(cls_.size()) - 1};
+        w.l = w.f;
+        return w;
+      }
+      case RxNode::K::Group: return walk(x.kids[0], inloop);
+      case RxNode::K::Alt: {
+        long long k_null = 0;
+        for (const int b : x.kids) if (node(b).nullable) k_null++;
+        if (k_null >= 2) eps(rx_ceil_log2(k_null), inloop);
+        Walked out;
+        out.nl = k_null > 0;
+        for (const int b : x.kids) {
+          Walked w = walk(b, inloop);
+          out.f.insert(out.f.end(), w.f.begin(), w.f.end());
+          out.l.insert(out.l.end(), w.l.begin(), w.l.end());
+        }
+        return out;
+      }
+      case RxNode::K::Cat: {
+        std::vector<Item> items;
+        items.reserve(x.kids.size());
+        for (const int k : x.kids) items.push_back(Item{k, 0, -1});
+        return walk_items(items, inloop);
+      }
+      case RxNode::K::Repeat: {
+        const int xi = x.kids[0];
+        const RxNode& body = node(xi);
+        if (x.hi == 0) return Walked{};
+        if (x.hi != -1 && x.hi <= RX_UNROLL) {
+          if (x.lo == 0 && x.hi == 1 && body.nullable) eps(1, inloop);
+          std::vector<Item> items;
+          for (long long j = 0; j < x.lo; j++) items.push_back(Item{xi, 0, -1});
+          items.push_back(Item{-1, static_cast<int>(x.hi - x.lo), xi});
+          return walk_items(items, inloop);
+        }
+        Walked w = walk(xi, true);
+        join(w.l, w.f, body.minlen == body.maxlen && body.maxlen > 0 && body.maxlen < RX_SAT);
+        w.nl = x.lo == 0 || body.nullable;
+        return w;
+      }
+    }
+    return Walked{};
+  }
+
+  // Iterative Tarjan: component id per position, and whether it lies on a cycle.
+  void build_components() {
+    const std::size_t n = succ_.size();
+    std::vector<int> index(n, -1), low(n, 0), stack;
+    std::vector<char> on(n, 0);
+    comp_.assign(n, -1);
+    int counter = 0, ncomp = 0;
+    std::vector<std::pair<int, std::size_t>> work;
+    for (std::size_t root = 0; root < n; root++) {
+      if (index[root] != -1) continue;
+      work.assign(1, {static_cast<int>(root), 0});
+      index[root] = low[root] = counter++;
+      stack.push_back(static_cast<int>(root));
+      on[root] = 1;
+      while (!work.empty()) {
+        const int v = work.back().first;
+        const std::size_t ei = work.back().second;
+        const auto vu = static_cast<std::size_t>(v);
+        if (ei < succ_[vu].size()) {
+          work.back().second = ei + 1;
+          const int w = succ_[vu][ei];
+          const auto wu = static_cast<std::size_t>(w);
+          if (index[wu] == -1) {
+            index[wu] = low[wu] = counter++;
+            stack.push_back(w);
+            on[wu] = 1;
+            work.emplace_back(w, 0);
+          } else if (on[wu]) {
+            low[vu] = std::min(low[vu], index[wu]);
+          }
+        } else {
+          work.pop_back();
+          if (!work.empty()) {
+            const auto u = static_cast<std::size_t>(work.back().first);
+            low[u] = std::min(low[u], low[vu]);
+          }
+          if (low[vu] == index[vu]) {
+            for (;;) {
+              const int w = stack.back();
+              stack.pop_back();
+              on[static_cast<std::size_t>(w)] = 0;
+              comp_[static_cast<std::size_t>(w)] = ncomp;
+              if (w == v) break;
+            }
+            ncomp++;
+          }
+        }
+      }
+    }
+    std::vector<int> size(static_cast<std::size_t>(ncomp), 0);
+    for (std::size_t v = 0; v < n; v++) size[static_cast<std::size_t>(comp_[v])]++;
+    cyc_.assign(n, 0);
+    for (std::size_t v = 0; v < n; v++) {
+      bool self = false;
+      for (const int w : succ_[v]) if (static_cast<std::size_t>(w) == v) self = true;
+      cyc_[v] = size[static_cast<std::size_t>(comp_[v])] > 1 || self;
+    }
+  }
+
+  // Two different paths from a state back to a state on one word: a pair (p, r)
+  // with p != r that a diagonal pair reaches and that reaches a diagonal pair,
+  // stepping only inside one cycle on characters both positions read.
+  void exponential_ambiguity() {
+    const std::size_t n = succ_.size();
+    std::vector<long long> insc(n, -1);
+    auto d = [&](int p) {
+      long long& v = insc[static_cast<std::size_t>(p)];
+      if (v < 0) {
+        v = 0;
+        for (const int q : succ_[static_cast<std::size_t>(p)]) {
+          if (comp_[static_cast<std::size_t>(q)] == comp_[static_cast<std::size_t>(p)]) v++;
+        }
+      }
+      return v;
+    };
+    std::unordered_map<unsigned long long, int> id;
+    std::vector<std::pair<int, int>> nodes;
+    std::vector<std::vector<int>> fwd;
+    auto intern = [&](int p, int r) {
+      const unsigned long long key = (static_cast<unsigned long long>(p) << 32) | static_cast<unsigned>(r);
+      auto it = id.find(key);
+      if (it != id.end()) return std::make_pair(it->second, false);
+      const int k = static_cast<int>(nodes.size());
+      id.emplace(key, k);
+      nodes.emplace_back(p, r);
+      fwd.emplace_back();
+      return std::make_pair(k, true);
+    };
+    std::vector<int> todo;
+    for (std::size_t q = 0; q < n; q++) {
+      if (cyc_[q] && !cls_[q]->empty()) todo.push_back(intern(static_cast<int>(q), static_cast<int>(q)).first);
+    }
+    long long q_work = 0;
+    while (!todo.empty()) {
+      const int k = todo.back();
+      todo.pop_back();
+      const int p = nodes[static_cast<std::size_t>(k)].first, r = nodes[static_cast<std::size_t>(k)].second;
+      q_work += d(p) * d(r);
+      if (q_work > RX_Q_MAX) refuse("the analysis is too large");
+      const int c = comp_[static_cast<std::size_t>(p)];
+      for (const int p2 : succ_[static_cast<std::size_t>(p)]) {
+        if (comp_[static_cast<std::size_t>(p2)] != c) continue;
+        for (const int r2 : succ_[static_cast<std::size_t>(r)]) {
+          if (comp_[static_cast<std::size_t>(r2)] != c) continue;
+          if (!rx_intersects(*cls_[static_cast<std::size_t>(p2)], *cls_[static_cast<std::size_t>(r2)])) continue;
+          const auto [k2, fresh] = intern(p2, r2);
+          fwd[static_cast<std::size_t>(k)].push_back(k2);
+          if (fresh) todo.push_back(k2);
+        }
+      }
+    }
+    std::vector<std::vector<int>> rev(nodes.size());
+    for (std::size_t u = 0; u < fwd.size(); u++) {
+      for (const int v : fwd[u]) rev[static_cast<std::size_t>(v)].push_back(static_cast<int>(u));
+    }
+    std::vector<char> back(nodes.size(), 0);
+    std::vector<int> stack;
+    for (std::size_t k = 0; k < nodes.size(); k++) {
+      if (nodes[k].first == nodes[k].second) { back[k] = 1; stack.push_back(static_cast<int>(k)); }
+    }
+    while (!stack.empty()) {
+      const int v = stack.back();
+      stack.pop_back();
+      for (const int u : rev[static_cast<std::size_t>(v)]) {
+        if (!back[static_cast<std::size_t>(u)]) { back[static_cast<std::size_t>(u)] = 1; stack.push_back(u); }
+      }
+    }
+    for (std::size_t k = 0; k < nodes.size(); k++) {
+      if (back[k] && nodes[k].first != nodes[k].second) refuse("exponential ambiguity");
+    }
+  }
+};
+
 
 }  // namespace
 
@@ -6756,9 +7979,12 @@ std::string validate_class(const CodePoints& p, std::size_t start, const std::st
 // pattern -- and the SEL→SQL translator is a fifth caller from another
 // translation unit, which is why it is declared in sel_ast.hpp and defined at
 // namespace scope rather than in the anonymous namespace above.
-std::string validate_pattern(const std::string& pattern, Pos pos) {
+std::string validate_pattern(const std::string& pattern, Pos pos, bool ignore_case) {
   const CodePoints p = decode_utf8(pattern, pos);
   const std::size_t n = p.size();
+  if (n > static_cast<std::size_t>(MAX_REGEX_PATTERN)) {
+    bad_regex("pattern longer than " + std::to_string(MAX_REGEX_PATTERN) + " code points", "", 0, pos);
+  }
   std::string out;
   std::size_t i = 0;
 
@@ -6787,6 +8013,9 @@ std::string validate_pattern(const std::string& pattern, Pos pos) {
     }
 
     if (c == U'(') {
+      if (i + 1 < n && p[i + 1] == U'*') {
+        bad_regex("PCRE verbs such as (*FAIL) are not portable", pattern, i, pos);
+      }
       if (i + 1 < n && p[i + 1] == U'?') {
         if (i + 2 < n && p[i + 2] == U':') { out += "(?:"; i += 3; continue; }
         const char32_t k = i + 2 < n ? p[i + 2] : U'\0';
@@ -6819,6 +8048,13 @@ std::string validate_pattern(const std::string& pattern, Pos pos) {
     encode_cp(out, c);
     i++;
   }
+  // Token by token the pattern is legal; now its shape (spec §7.8).
+  {
+    RxParser parser(p, pattern, pos, ignore_case);
+    const RxTree tree = parser.parse();
+    check_loops(tree, pattern, pos);
+    RxAnalysis(tree, pattern, pos).run();
+  }
   return out;
 }
 
@@ -6826,17 +8062,47 @@ namespace {
 
 using Regex = srell::u32regex;
 
+constexpr std::size_t REGEX_CACHE_MAX = 256;   // spec §7.8: bounded pattern cache
+
+// The compiled-pattern cache. A named object rather than function statics so a
+// unit test can look at how many entries it holds.
+struct RegexCacheState {
+  std::mutex mutex;
+  std::map<std::string, Regex> map;
+  std::deque<std::string> order;   // insertion order, oldest first
+};
+
+RegexCacheState& regex_cache_state() {
+  static RegexCacheState state;
+  return state;
+}
+
+// The engine can refuse a search of its own accord (complexity, a program too
+// large for it). That is a resource limit, and it must come out as a SEL error
+// -- never an uncaught exception that ends the host process, and never a quiet
+// FALSE. Everything that searches goes through here.
+template <class F>
+auto guarded_search(Pos pos, F&& f) -> decltype(f()) {
+  try {
+    return f();
+  } catch (const srell::regex_error& e) {
+    fail("E_REGEX_SYNTAX", std::string("the pattern exceeds the regex engine's limits: ") + e.what(), pos);
+  }
+}
+
 // Compiled patterns are cached: a rule inside an aggregate compiles its pattern
 // once per element otherwise.
 Regex& compile_regex(const std::string& pattern, const std::string& flags, Pos flag_pos,
                      Pos pat_pos) {
   bool ignore_case = false;
   for (char32_t ch : decode_utf8(flags, flag_pos)) {
-    const char32_t f = (ch >= U'A' && ch <= U'Z') ? ch + 32 : ch;
+    // `i` and nothing else: an uppercase `I` (or U+0130, U+0131, U+212A) is not
+    // the flag, whatever a permissive engine would make of it (spec §7.8).
+    const char32_t f = ch;
     if (f == U'i') { ignore_case = true; continue; }
     std::string s;
     encode_cp(s, ch);
-    if (f == U'm' || f == U's') {
+    if (f == U'm' || f == U's' || f == U'M' || f == U'S') {
       fail("E_BAD_ARG",
            "flag \"" + s +
                "\" is not offered — SEL always matches . against any character and anchors ^ $ to "
@@ -6862,20 +8128,31 @@ Regex& compile_regex(const std::string& pattern, const std::string& flags, Pos f
   // thread pool. Concurrent std::map insertion is memory corruption, not a
   // stale-value race. ThreadSanitizer caught this on four threads compiling
   // distinct patterns.
-  static std::mutex cache_mutex;
-  static std::map<std::string, Regex> cache;
-  std::lock_guard<std::mutex> lock(cache_mutex);
+  RegexCacheState& state = regex_cache_state();
+  std::map<std::string, Regex>& cache = state.map;
+  // Bounded (spec §7.8): patterns come from data, and an unbounded cache is a
+  // leak the caller cannot see. At most REGEX_CACHE_MAX, oldest evicted first.
+  // std::map never moves its nodes, so the reference handed out stays valid until
+  // its own entry is evicted -- 256 insertions later, by which time the call that
+  // asked for it has finished with it.
+  std::deque<std::string>& cache_order = state.order;
+  std::lock_guard<std::mutex> lock(state.mutex);
   const std::string key = (ignore_case ? "i " : " ") + pattern;
   auto it = cache.find(key);
   if (it != cache.end()) return it->second;
 
-  const std::string source = validate_pattern(pattern, pat_pos);
+  const std::string source = validate_pattern(pattern, pat_pos, ignore_case);
   auto opts = srell::regex_constants::ECMAScript | srell::regex_constants::dotall;
   if (ignore_case) opts |= srell::regex_constants::icase;
   try {
     // The source is UTF-8; SRELL's u32regex wants code points.
     const CodePoints cps = decode_utf8(source, pat_pos);
     Regex re(std::u32string(cps.begin(), cps.end()), opts);
+    if (cache.size() >= REGEX_CACHE_MAX) {
+      cache.erase(cache_order.front());
+      cache_order.pop_front();
+    }
+    cache_order.push_back(key);
     return cache.emplace(key, std::move(re)).first->second;
   } catch (const srell::regex_error& e) {
     fail("E_REGEX_SYNTAX", std::string(e.what()) + " in /" + pattern + "/", pat_pos);
@@ -6932,13 +8209,15 @@ std::string expand_replacement(const std::string& repl, const srell::u32smatch& 
 void register_regex() {
   define(Spec{"RMATCH", 2, 3, false, false, nullptr, [](Args& a, Context&) -> Value {
                 RegexCall c = regex_args(a, 0, 1, 2);
-                return Value::boolean(srell::regex_search(c.subject, *c.re));
+                return Value::boolean(guarded_search(a.pos(), [&] { return srell::regex_search(c.subject, *c.re); }));
               }});
 
   define(Spec{"RFIND", 2, 3, false, false, nullptr, [](Args& a, Context&) -> Value {
                 RegexCall c = regex_args(a, 0, 1, 2);
                 srell::u32smatch m;
-                if (!srell::regex_search(c.subject, m, *c.re)) return make_int(0);
+                if (!guarded_search(a.pos(), [&] { return srell::regex_search(c.subject, m, *c.re); })) {
+                  return make_int(0);
+                }
                 // Offsets are already code points, because the subject is u32.
                 return make_int(static_cast<long long>(m.position(0)) + 1);
               }});
@@ -6946,7 +8225,9 @@ void register_regex() {
   define(Spec{"RGROUPS", 2, 3, false, false, nullptr, [](Args& a, Context&) -> Value {
                 RegexCall c = regex_args(a, 0, 1, 2);
                 srell::u32smatch m;
-                if (!srell::regex_search(c.subject, m, *c.re)) return Value::none();
+                if (!guarded_search(a.pos(), [&] { return srell::regex_search(c.subject, m, *c.re); })) {
+                  return Value::none();
+                }
                 std::vector<Value> out;
                 for (std::size_t i = 0; i < m.size(); i++) {
                   if (!m[i].matched) {
@@ -6968,26 +8249,46 @@ void register_regex() {
                 const Pos flag_pos = a.count() > 3 ? a.pos_of(3) : a.pos();
                 Regex& re = compile_regex(pattern, flags, flag_pos, a.pos_of(0));
 
-                // regex_iterator, not a loop over regex_search on shrinking
-                // substrings: re-searching from an offset would let `^` match
-                // there, and SEL anchors ^ and $ to the ends of the whole
-                // subject. The iterator also handles zero-width matches the way
-                // a global ECMAScript match does.
+                // The walk of spec §7.8: left to right; after an EMPTY match at s the
+                // scan resumes at s+1 with the code point at s copied through, after
+                // a non-empty one at its end, where an empty match is allowed. A
+                // regex_iterator would retry a non-empty match at the position of
+                // an empty one, which is the difference the other engines make.
+                // Each search starts at `s` but treats everything before it as
+                // context (match_prev_avail), so `^` still means the start of the
+                // whole subject and not of the rest of it.
                 std::u32string out;
                 std::size_t last = 0;
-                srell::u32sregex_iterator it(subject.cbegin(), subject.cend(), re);
-                const srell::u32sregex_iterator end;
-                for (; it != end; ++it) {
-                  const srell::u32smatch& m = *it;
-                  const std::size_t at = static_cast<std::size_t>(m.position(0));
+                std::size_t s = 0;
+                const std::size_t n = subject.size();
+                while (s <= n) {
+                  srell::u32smatch m;
+                  const auto flags = s > 0 ? srell::regex_constants::match_prev_avail
+                                           : srell::regex_constants::match_default;
+                  if (!guarded_search(a.pos(), [&] {
+                        return srell::regex_search(subject.cbegin() + static_cast<std::ptrdiff_t>(s),
+                                                   subject.cend(), m, re, flags);
+                      })) {
+                    break;
+                  }
+                  const std::size_t at = s + static_cast<std::size_t>(m.position(0));
                   const std::size_t len = static_cast<std::size_t>(m.length(0));
                   out += subject.substr(last, at - last);
                   const std::string piece = expand_replacement(repl, m, a.pos_of(1));
                   const CodePoints pc = decode_utf8(piece, a.pos_of(1));
                   out.append(pc.begin(), pc.end());
-                  last = at + len;
+                  cap_text(out.size(), a.pos());   // spec §6.4: stop growing at the cap
+                  if (len == 0) {
+                    if (at >= n) { last = at; break; }
+                    out.push_back(subject[at]);
+                    last = at + 1;
+                    s = at + 1;
+                  } else {
+                    last = at + len;
+                    s = last;
+                  }
                 }
-                out += subject.substr(std::min(last, subject.size()));
+                out += subject.substr(std::min(last, n));
                 return make_text(encode_utf8(std::span<const char32_t>(out.data(), out.size())));
               }});
 }
@@ -7239,13 +8540,16 @@ std::pair<NodePtr, std::vector<NodePtr>> opt_unwind(const NodePtr& root) {
   return {current, steps};
 }
 
-NodePtr opt_build_pipeline(NodePtr source, const std::vector<NodePtr>& steps) {
+NodePtr opt_build_pipeline(NodePtr source, const std::vector<NodePtr>& steps,
+                           const Pos* last_pos = nullptr) {
   NodePtr current = std::move(source);
-  for (const NodePtr& step : steps) {
+  for (std::size_t k = 0; k < steps.size(); k++) {
+    const NodePtr& step = steps[k];
     auto next = opt_copy(step);
     next->items.clear();
     next->items.push_back(current);
     next->items.insert(next->items.end(), step->items.begin() + 1, step->items.end());
+    if (last_pos && k + 1 == steps.size()) next->pos = *last_pos;
     current = std::move(next);
   }
   return current;
@@ -7590,6 +8894,31 @@ bool opt_cannot_raise(const NodePtr& node, const std::string& binder, bool logic
   }
 }
 
+// Whether a FILTER predicate cannot raise: opt_cannot_raise says the pieces
+// cannot, but a predicate must also BE a boolean, or the filter raises
+// E_NOT_BOOL on its first row -- `_`, `_K`, a number, text or NULL all pass
+// opt_cannot_raise and all raise there. Only a boolean literal, a comparison
+// (logical path) or AND/OR/NOT over such, is safe to move or to fuse.
+bool opt_predicate_cannot_raise(const NodePtr& node, const std::string& binder, bool logical) {
+  static const std::set<std::string> compare_ops{"==", "!=", "<", "<=", ">", ">=", "$==", "$!=", "$<", "$<=",
+                                                 "$>", "$>="};
+  if (!node) return false;
+  switch (node->t) {
+    case NT::Bool: return true;
+    case NT::Bin:
+      if (node->s == "AND" || node->s == "OR") {
+        return opt_predicate_cannot_raise(node->l, binder, logical) &&
+               opt_predicate_cannot_raise(node->r, binder, logical);
+      }
+      return logical && compare_ops.count(node->s) > 0 && opt_cannot_raise(node->l, binder, logical) &&
+             opt_cannot_raise(node->r, binder, logical);
+    case NT::Un:
+      return node->s == "NOT" && opt_predicate_cannot_raise(node->l, binder, logical);
+    default:
+      return false;
+  }
+}
+
 // Every field a MAP computes (or its whole body) cannot raise.
 bool opt_map_cannot_raise(const Node& step, bool logical) {
   const OptMapInfo info = opt_map_info(step);
@@ -7618,6 +8947,7 @@ std::vector<NodePtr> opt_logical_steps(const NodePtr& source, std::vector<NodePt
         const auto right = opt_numeric_literal((*second)->items[1]);
         if (left && right) {
           auto merged = opt_copy(first);
+          merged->pos = (*second)->pos;   // the merged step is the result of the later one
           merged->items = {first->items[0], opt_num(std::to_string(std::min(*left, *right)), (*second)->items[1]->pos)};
           next.push_back(std::move(merged));
           i += 2;
@@ -7631,6 +8961,7 @@ std::vector<NodePtr> opt_logical_steps(const NodePtr& source, std::vector<NodePt
         const auto right = opt_numeric_literal((*second)->items[1]);
         if (left && right && *left <= std::numeric_limits<long long>::max() - *right) {
           auto merged = opt_copy(first);
+          merged->pos = (*second)->pos;
           merged->items = {first->items[0], opt_num(std::to_string(*left + *right), (*second)->items[1]->pos)};
           next.push_back(std::move(merged));
           i += 2;
@@ -7638,10 +8969,16 @@ std::vector<NodePtr> opt_logical_steps(const NodePtr& source, std::vector<NodePt
           continue;
         }
       }
+      // Fused only for a numeric literal count of at least 1 (spec §6.2): the
+      // fused step evaluates its count before the key, so a count that can
+      // raise -- or a TAKE(0), which still evaluates the keys unfused -- would
+      // change which error is reported.
       if (second && (*second)->s == "TAKE" && (*second)->items.size() == 2 &&
-          (first->s == "SORT" || first->s == "SORT_DESC" || first->s == "SORT_BY")) {
+          (first->s == "SORT" || first->s == "SORT_DESC" || first->s == "SORT_BY") &&
+          opt_numeric_literal((*second)->items[1]).value_or(0) >= 1) {
         const std::string top_name = first->s == "SORT" ? "TOP" : first->s == "SORT_DESC" ? "TOP_DESC" : "TOP_BY";
         auto fused = opt_copy(first);
+        fused->pos = (*second)->pos;
         fused->s = top_name;
         fused->spec = registry_lookup(top_name);
         fused->items.push_back((*second)->items[1]);
@@ -7669,7 +9006,7 @@ std::vector<NodePtr> opt_logical_steps(const NodePtr& source, std::vector<NodePt
           (*second)->s == "FILTER" && !opt_step_reads_key(**second) &&
           opt_keys_renumbered_by(third) &&
           opt_cannot_raise(opt_sort_info(*first).key, opt_sort_info(*first).binder, logical) &&
-          (logical || opt_cannot_raise(opt_filter_info(**second).predicate, opt_filter_info(**second).binder, false))) {
+          (logical || opt_predicate_cannot_raise(opt_filter_info(**second).predicate, opt_filter_info(**second).binder, false))) {
         next.push_back(*second);
         next.push_back(first);
         i += 2;
@@ -7717,11 +9054,12 @@ std::vector<NodePtr> opt_logical_steps(const NodePtr& source, std::vector<NodePt
         const OptFilterInfo right = opt_filter_info(**second);
         // Fused, the second predicate runs on a row before the first has seen
         // the rows after it: only one that cannot raise may be fused.
-        if (left.valid && right.valid && opt_cannot_raise(right.predicate, right.binder, logical)) {
+        if (left.valid && right.valid && opt_predicate_cannot_raise(right.predicate, right.binder, logical)) {
           const NodePtr right_pred = upper_name(left.binder) == upper_name(right.binder)
               ? right.predicate : opt_rename_var(right.predicate, right.binder, left.binder);
           const NodePtr predicate = opt_combine_and({left.predicate, right_pred}, left.predicate->pos);
           auto merged = opt_copy(first);
+          merged->pos = (*second)->pos;
           merged->items = left.explicit_binder
               ? std::vector<NodePtr>{first->items[0], first->items[1], predicate}
               : std::vector<NodePtr>{first->items[0], predicate};
@@ -7818,30 +9156,44 @@ const sel_math_ops::Op* math_op_for(const Node& node) {
 bool is_math_op(const Node& node) { return math_op_for(node) != nullptr; }
 
 struct EmitResult {
-  uint16_t slot = 0;
+  uint32_t slot = 0;
   bool is_const = false;
   Dec const_val;
+  // The slot still holds what a load produced, not a number; coerced by the
+  // first step that reads it, at raw_pos (its own node).
+  bool raw = false;
+  Pos raw_pos;
 };
+
+// More slots than this and the tree evaluator runs the expression instead.
+constexpr uint32_t MAX_PLAN_SLOTS = 1u << 22;
 
 std::shared_ptr<const MathPlan> opt_compile_math_plan(const NodePtr& root) {
   if (!root || !is_math_op(*root)) return nullptr;
 
   auto plan = std::make_shared<MathPlan>();
-  uint16_t slot_count = 0;
-  const auto alloc_slot = [&slot_count]() -> uint16_t { return slot_count++; };
+  uint32_t slot_count = 0;
+  const auto alloc_slot = [&slot_count]() -> uint32_t { return slot_count++; };
+  // Operand bookkeeping for a step: which operands are still raw loads.
+  const auto set_src1 = [](MathStep& st, const EmitResult& r) {
+    st.src1 = r.slot; st.raw1 = r.raw; st.src1_pos = r.raw_pos;
+  };
+  const auto set_src2 = [](MathStep& st, const EmitResult& r) {
+    st.src2 = r.slot; st.raw2 = r.raw; st.src2_pos = r.raw_pos;
+  };
 
   const auto emit = [&](auto& self, const NodePtr& node, int depth) -> std::optional<EmitResult> {
-    if (!node || depth > MAX_DEPTH) return std::nullopt;
+    if (!node || depth > MAX_DEPTH || slot_count > MAX_PLAN_SLOTS) return std::nullopt;
 
     if (node->t == NT::Var) {
-      const uint16_t slot = alloc_slot();
+      const uint32_t slot = alloc_slot();
       MathStep step;
       step.op = MathOp::LoadVar;
       step.dst = slot;
       step.name = node->s;
       step.pos = node->pos;
       plan->steps.push_back(std::move(step));
-      return EmitResult{slot, false, {}};
+      return EmitResult{slot, false, {}, true, node->pos};
     }
 
     if (node->t == NT::Num) {
@@ -7851,14 +9203,14 @@ std::shared_ptr<const MathPlan> opt_compile_math_plan(const NodePtr& root) {
       } else if (!dec_parse(node->s, dec, node->pos)) {
         return std::nullopt;
       }
-      const uint16_t slot = alloc_slot();
+      const uint32_t slot = alloc_slot();
       MathStep step;
       step.op = MathOp::LoadConst;
       step.dst = slot;
       step.const_val = dec;
       step.pos = node->pos;
       plan->steps.push_back(std::move(step));
-      return EmitResult{slot, true, dec};
+      return EmitResult{slot, true, dec, false, {}};
     }
 
     if (node->t == NT::Bin && (node->s == "+" || node->s == "-" || node->s == "*" || node->s == "/" || node->s == "%")) {
@@ -7870,62 +9222,77 @@ std::shared_ptr<const MathPlan> opt_compile_math_plan(const NodePtr& root) {
 
       const std::string& op = node->s;
 
+      // A copy-propagated operand that is still a raw load would never be
+      // looked at by any step; it is coerced here, at the point the plain
+      // tree coerces it, so a later operand's error cannot get in front.
+      const auto propagate = [&](const EmitResult& kept) -> EmitResult {
+        if (!kept.raw) return kept;
+        const uint32_t dst = alloc_slot();
+        MathStep step;
+        step.op = MathOp::Coerce;
+        step.dst = dst;
+        set_src1(step, kept);
+        step.pos = node->pos;
+        plan->steps.push_back(std::move(step));
+        return EmitResult{dst, false, {}, false, {}};
+      };
+
       // Copy propagation:
       // x + 0
       if (op == "+" && res_r->is_const && dec_is_zero(res_r->const_val) && res_r->const_val.scale == 0) {
         if (node->r->t == NT::Num && !plan->steps.empty() && plan->steps.back().dst == res_r->slot) {
           plan->steps.pop_back();
         }
-        return res_l;
+        return propagate(*res_l);
       }
       // 0 + x
       if (op == "+" && res_l->is_const && dec_is_zero(res_l->const_val) && res_l->const_val.scale == 0) {
-        return res_r;
+        return propagate(*res_r);
       }
       // x - 0
       if (op == "-" && res_r->is_const && dec_is_zero(res_r->const_val) && res_r->const_val.scale == 0) {
         if (node->r->t == NT::Num && !plan->steps.empty() && plan->steps.back().dst == res_r->slot) {
           plan->steps.pop_back();
         }
-        return res_l;
+        return propagate(*res_l);
       }
       // x * 1
       if (op == "*" && res_r->is_const && !res_r->const_val.neg && dec_get_digits(res_r->const_val) == "1" && res_r->const_val.scale == 0) {
         if (node->r->t == NT::Num && !plan->steps.empty() && plan->steps.back().dst == res_r->slot) {
           plan->steps.pop_back();
         }
-        return res_l;
+        return propagate(*res_l);
       }
       // 1 * x
       if (op == "*" && res_l->is_const && !res_l->const_val.neg && dec_get_digits(res_l->const_val) == "1" && res_l->const_val.scale == 0) {
-        return res_r;
+        return propagate(*res_r);
       }
 
-      const uint16_t dst = alloc_slot();
+      const uint32_t dst = alloc_slot();
       const MathOp op_code = math_op_native(math_op_for(*node)->name);
 
       MathStep step;
       step.op = op_code;
       step.dst = dst;
-      step.src1 = res_l->slot;
-      step.src2 = res_r->slot;
+      set_src1(step, *res_l);
+      set_src2(step, *res_r);
       step.pos = node->pos;
       plan->steps.push_back(std::move(step));
-      return EmitResult{dst, false, {}};
+      return EmitResult{dst, false, {}, false, {}};
     }
 
     if (node->t == NT::Un && is_math_op(*node)) {
       if (!node->l) return std::nullopt;
       const auto res_x = self(self, node->l, depth + 1);
       if (!res_x) return std::nullopt;
-      const uint16_t dst = alloc_slot();
+      const uint32_t dst = alloc_slot();
       MathStep step;
       step.op = math_op_native(math_op_for(*node)->name);
       step.dst = dst;
-      step.src1 = res_x->slot;
+      set_src1(step, *res_x);
       step.pos = node->pos;
       plan->steps.push_back(std::move(step));
-      return EmitResult{dst, false, {}};
+      return EmitResult{dst, false, {}, false, {}};
     }
 
     // Math builtins: operand count, fold and error positions from the manifest
@@ -7938,14 +9305,14 @@ std::shared_ptr<const MathPlan> opt_compile_math_plan(const NodePtr& root) {
         if (args.size() != 1) return std::nullopt;
         const auto res_arg = self(self, args[0], depth + 1);
         if (!res_arg) return std::nullopt;
-        const uint16_t dst = alloc_slot();
+        const uint32_t dst = alloc_slot();
         MathStep step;
         step.op = op_code;
         step.dst = dst;
-        step.src1 = res_arg->slot;
+        set_src1(step, *res_arg);
         step.pos = node->pos;
         plan->steps.push_back(std::move(step));
-        return EmitResult{dst, false, {}};
+        return EmitResult{dst, false, {}, false, {}};
       }
       if (entry->arity == 2) {
         if (args.size() != 2) return std::nullopt;
@@ -7953,50 +9320,67 @@ std::shared_ptr<const MathPlan> opt_compile_math_plan(const NodePtr& root) {
         if (!res0) return std::nullopt;
         const auto res1 = self(self, args[1], depth + 1);
         if (!res1) return std::nullopt;
-        const uint16_t dst = alloc_slot();
+        const uint32_t dst = alloc_slot();
         MathStep step;
         step.op = op_code;
         step.dst = dst;
-        step.src1 = res0->slot;
-        step.src2 = res1->slot;
+        set_src1(step, *res0);
+        set_src2(step, *res1);
         step.pos = node->pos;
         if (entry->aux >= 0) step.aux_pos = args[static_cast<std::size_t>(entry->aux)]->pos;
         plan->steps.push_back(std::move(step));
-        return EmitResult{dst, false, {}};
+        return EmitResult{dst, false, {}, false, {}};
       }
-      // fold: one or more operands, combined pairwise left to right
+      // fold: one or more operands, combined pairwise left to right. Every
+      // argument is evaluated before the first is coerced (a strict function
+      // evaluates its arguments, then checks them), so all the loads come first.
       if (args.empty()) return std::nullopt;
-      const auto res0 = self(self, args[0], depth + 1);
-      if (!res0) return std::nullopt;
-      uint16_t curr_slot = res0->slot;
-      for (std::size_t k = 1; k < args.size(); k++) {
-        const auto res_next = self(self, args[k], depth + 1);
-        if (!res_next) return std::nullopt;
-        const uint16_t dst = alloc_slot();
+      std::vector<EmitResult> operands;
+      operands.reserve(args.size());
+      for (const NodePtr& arg : args) {
+        const auto res = self(self, arg, depth + 1);
+        if (!res) return std::nullopt;
+        operands.push_back(*res);
+      }
+      EmitResult curr = operands[0];
+      if (operands.size() == 1) {
+        // MAX(x) is x, coerced.
+        if (!curr.raw) return curr;
+        const uint32_t dst = alloc_slot();
+        MathStep step;
+        step.op = MathOp::Coerce;
+        step.dst = dst;
+        set_src1(step, curr);
+        step.pos = node->pos;
+        plan->steps.push_back(std::move(step));
+        return EmitResult{dst, false, {}, false, {}};
+      }
+      for (std::size_t k = 1; k < operands.size(); k++) {
+        const uint32_t dst = alloc_slot();
         MathStep step;
         step.op = op_code;
         step.dst = dst;
-        step.src1 = curr_slot;
-        step.src2 = res_next->slot;
+        set_src1(step, curr);
+        set_src2(step, operands[k]);
         step.pos = node->pos;
         plan->steps.push_back(std::move(step));
-        curr_slot = dst;
+        curr = EmitResult{dst, false, {}, false, {}};
       }
-      return EmitResult{curr_slot, false, {}};
+      return curr;
     }
 
     if (node->t == NT::Bin || node->t == NT::Un) return std::nullopt;
     if (node->t == NT::Assign || node->t == NT::Seq || node->t == NT::List) return std::nullopt;
     if (node->t == NT::Call && (node->s == "IF" || node->s == "COND")) return std::nullopt;
 
-    const uint16_t slot = alloc_slot();
+    const uint32_t slot = alloc_slot();
     MathStep step;
     step.op = MathOp::LoadLeaf;
     step.dst = slot;
     step.leaf_node = node;
     step.pos = node->pos;
     plan->steps.push_back(std::move(step));
-    return EmitResult{slot, false, {}};
+    return EmitResult{slot, false, {}, true, node->pos};
   };
 
   const auto res = emit(emit, root, 1);
@@ -8031,7 +9415,18 @@ NodePtr opt_tree(const NodePtr& node, bool physical, int depth, bool fold = true
     }
     std::vector<NodePtr> final_steps = opt_logical_steps(optimized_source, std::move(optimized_steps), !physical);
     if (physical) final_steps = opt_inmemory_steps(optimized_source, std::move(final_steps));
-    return opt_build_pipeline(std::move(optimized_source), final_steps);
+    // Whatever the rewrites did, the pipeline's value is still the value of the
+    // node that was written outermost, and a consumer that objects to it (NOT,
+    // an index, an assignment) reports that node's position (spec §6.3). A
+    // fused, swapped or dropped step must not move it.
+    if (final_steps.empty()) {
+      auto carrier = std::make_shared<Node>();
+      carrier->t = NT::Seq;
+      carrier->pos = node->pos;
+      carrier->items.push_back(std::move(optimized_source));
+      return carrier;
+    }
+    return opt_build_pipeline(std::move(optimized_source), final_steps, &node->pos);
   }
 
   const bool is_curr_math = is_math_op(*node);

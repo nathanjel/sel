@@ -221,6 +221,39 @@ final class Emit
     }
 
     /**
+     * The two halves of the numeric guard for an operand that SUM adds up, so SUM
+     * can be guarded ALL OR NOTHING (docs/internals/sql-kinds.md 5a): the test that
+     * says whether the value is a number, and the cast that reads it as one. A
+     * per-element guard is unsound for SUM, which skips NULL and turns "nothing
+     * left" into 0 -- one element that is not a number would just be left out.
+     *
+     * The guard template is `CASE WHEN <test> THEN <cast> ELSE NULL END`; refused
+     * as unsupported where the dialect has no guard (SQLite, ansi) or a guard that
+     * does not have that shape, since it cannot be split.
+     *
+     * @param array{line:int,col:int,offset:int}|null $pos
+     * @return array{0:list<string|int>,1:list<string|int>}
+     */
+    public function numericGuardParts(Fragment $f, ?array $pos = null): array
+    {
+        Map::checkNumericGuard($this->dialect);
+        $guard = $this->lex('numericGuard');
+        if (!is_string($guard)) {
+            refuse('E_SQL_UNSUPPORTED',
+                "dialect {$this->dialect} has no way to ask whether a value is a "
+                . 'number, so a sum over an operand it has not been told is one '
+                . 'cannot be guarded here; declare the binding NUM if the column '
+                . 'really is numeric', $pos);
+        }
+        if (preg_match('/\ACASE WHEN (.*?) THEN (.*) ELSE NULL END\z/s', $guard, $m) !== 1) {
+            refuse('E_SQL_UNSUPPORTED',
+                "the numericGuard of dialect {$this->dialect} is not CASE WHEN … THEN … ELSE "
+                . 'NULL END, so a SUM cannot be guarded as a whole from it', $pos);
+        }
+        return [$this->fill($m[1], [$f], $pos), $this->fill($m[2], [$f], $pos)];
+    }
+
+    /**
      * An operand of a byte comparison: cast to a character type, then given the
      * dialect's binary collation.
      *

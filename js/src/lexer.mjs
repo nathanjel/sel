@@ -9,7 +9,7 @@
 // never learns that interpolation exists.
 
 import { fail } from './errors.mjs';
-import { toCodePoints, fromCodePoints } from './utf8.mjs';
+import { toCodePoints, fromCodePoints, SOURCE } from './utf8.mjs';
 
 export const OPERATORS = [
   '???', '??',
@@ -32,12 +32,18 @@ const isAlpha = (c) => (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || c ===
 const isIdent = (c) => isAlpha(c) || isDigit(c);
 const isSpace = (c) => c === ' ' || c === '\t' || c === '\r' || c === '\n';
 
+// The kinds of work lexRange keeps on its explicit stack.
+const T_RANGE = 0, T_PART = 1, T_CLOSE = 2, T_END = 3;
+
 class Lexer {
   constructor(source) {
     // Splitting on code points also validates the source: a lone surrogate here
     // is E_UTF8 rather than a silently mangled token.
-    this.chars = toCodePoints(source, null).map((c) => fromCodePoints([c]));
+    this.chars = toCodePoints(source, SOURCE).map((c) => fromCodePoints([c]));
     this.n = this.chars.length;
+    // braceEnds[i] is the index just past the '}' matching the '{' at i, once
+    // some scan has established it (0 = not yet). See matchBrace.
+    this.braceEnds = new Int32Array(this.n);
     this.lineStarts = [0];
     for (let i = 0; i < this.n; i++) {
       if (this.chars[i] === '\n') this.lineStarts.push(i + 1);
@@ -62,7 +68,45 @@ class Lexer {
     return out;
   }
 
+  // Lexes chars[from, to) into `out`. Interpolation nests without bound, so this
+  // is a loop over an explicit stack of tasks rather than a recursion: a literal
+  // pushes what it still has to emit (its parts, each interior range, the
+  // closers) and the loop pops them in source order. Nothing here can therefore
+  // reach the host's own stack, however deep the braces go.
   lexRange(from, to, out) {
+    const stack = [{ k: T_RANGE, i: from, to, bal: null }];
+    while (stack.length > 0) {
+      const task = stack.pop();
+      switch (task.k) {
+        case T_RANGE: this.lexTokens(task.i, task.to, out, stack, task.bal); break;
+        case T_PART: this.emitPart(task, out, stack); break;
+        case T_CLOSE: {
+          // An interpolation that lexed to nothing: `{}`, `{ }`, `{# c\n}`.
+          if (out.length === task.mark + 1) {
+            fail('E_SYNTAX', 'empty interpolation {}', this.posAt(task.part.from));
+          }
+          // ... and one whose parentheses do not close inside the braces.
+          if (task.bal.length > 0) {
+            fail('E_SYNTAX', `unclosed ${task.bal[task.bal.length - 1].op} in interpolation`,
+              this.posAt(task.part.to));
+          }
+          out.push({ type: 'op', value: ')', ...this.posAt(task.part.to) });
+          break;
+        }
+        case T_END: out.push({ type: 'op', value: ')', ...task.pos }); break;
+      }
+    }
+  }
+
+  // The flat part of lexRange. A quoted literal with parts ends the run: the
+  // tasks it pushes come first, and the rest of the range resumes after them.
+  //
+  // `bal` is the stack of parentheses and brackets open so far in an interpolation
+  // body (null at the top level, where the parser does the balancing). A body is
+  // spliced into the surrounding tokens as `( body )`, so a body that closes what
+  // it never opened, or leaves something open, would change the meaning of the
+  // text around it; each body has to balance inside its own braces.
+  lexTokens(from, to, out, stack, bal) {
     let i = from;
     while (i < to) {
       const c = this.chars[i];
@@ -97,11 +141,37 @@ class Lexer {
         continue;
       }
 
-      if (c === '"') { i = this.lexQuoted(i, to, out); continue; }
+      if (c === '"') {
+        const { parts, next } = this.scanQuoted(i, to);
+        if (parts.length === 1) {
+          out.push({ type: 'text', value: parts[0].value, ...pos });
+          i = next;
+          continue;
+        }
+        // `( "seg" & expr & "seg" )`: the opener now, the rest as tasks, the
+        // remainder of this range underneath them.
+        out.push({ type: 'op', value: '(', ...pos });
+        stack.push({ k: T_RANGE, i: next, to, bal });
+        stack.push({ k: T_END, pos });
+        for (let k = parts.length - 1; k >= 0; k--) {
+          stack.push({ k: T_PART, part: parts[k], index: k, pos });
+        }
+        return;
+      }
       if (c === "'") { i = this.lexRaw(i, to, out); continue; }
 
       const op = this.matchOperator(i, to);
       if (op) {
+        if (bal !== null) {
+          if (op === '(' || op === '[') {
+            bal.push({ op });
+          } else if (op === ')' || op === ']') {
+            const open = bal.pop();
+            if (open === undefined || (open.op === '(') !== (op === ')')) {
+              fail('E_SYNTAX', `unbalanced ${op} in interpolation`, pos);
+            }
+          }
+        }
         out.push({ type: 'op', value: op, ...pos });
         i += op.length;
         continue;
@@ -109,6 +179,22 @@ class Lexer {
 
       fail('E_SYNTAX', `unexpected character ${JSON.stringify(c)}`, pos);
     }
+  }
+
+  // One part of an interpolated literal: the `&` before it, then either its text
+  // or `( interior )`, the interior being a range of its own.
+  emitPart(task, out, stack) {
+    const { part, index, pos } = task;
+    if (index > 0) out.push({ type: 'op', value: '&', ...pos });
+    if (part.kind === 'text') {
+      out.push({ type: 'text', value: part.value, ...pos });
+      return;
+    }
+    const mark = out.length;
+    const bal = [];
+    out.push({ type: 'op', value: '(', ...this.posAt(part.from) });
+    stack.push({ k: T_CLOSE, mark, part, bal });
+    stack.push({ k: T_RANGE, i: part.from, to: part.to, bal });
   }
 
   matchOperator(i, to) {
@@ -144,7 +230,10 @@ class Lexer {
     fail('E_UNTERMINATED', 'unterminated raw text literal', pos);
   }
 
-  lexQuoted(start, to, out) {
+  // Reads a quoted literal into its parts and the index just past its closing
+  // quote, emitting nothing. Every `{...}` is skipped by matchBrace, so the
+  // interior is not read here, only located.
+  scanQuoted(start, to) {
     const pos = this.posAt(start);
     const parts = [];
     let buf = '';
@@ -155,8 +244,7 @@ class Lexer {
 
       if (c === '"') {
         parts.push({ kind: 'text', value: buf });
-        this.emitParts(parts, pos, out);
-        return i + 1;
+        return { parts, next: i + 1 };
       }
 
       if (c === '\\') {
@@ -211,33 +299,48 @@ class Lexer {
 
   // Returns the index just past the matching '}'. Nested literals are skipped so
   // that a brace inside a string inside an interpolation does not close it.
+  //
+  // One pass with an explicit stack of what is open (a brace, a string), not a
+  // recursion through the strings, and every brace it closes is remembered in
+  // braceEnds. The second half is what keeps the lexer linear: a literal nested
+  // d deep is located by its parent and again by each of its own ancestors'
+  // interiors being lexed, and without the memo each of those locate-passes
+  // re-read everything below it. If anything is unterminated the innermost open
+  // construct is the one reported, which is where the recursion used to fail.
   matchBrace(i, to) {
-    const pos = this.posAt(i);
-    let depth = 0;
+    if (this.braceEnds[i] !== 0) return this.braceEnds[i];
+    const open = [{ str: false, at: i, depth: 0 }];
     let j = i;
-    while (j < to) {
+    for (;;) {
+      const top = open[open.length - 1];
+      if (j >= to) {
+        fail('E_UNTERMINATED',
+          top.str ? 'unterminated text literal' : 'unterminated { in text literal',
+          this.posAt(top.at));
+      }
       const c = this.chars[j];
-      if (c === '"') { j = this.skipQuoted(j, to); continue; }
+      if (top.str) {
+        if (c === '\\') { j += 2; continue; }
+        if (c === '"') { open.pop(); j++; continue; }
+        if (c === '{') { open.push({ str: false, at: j, depth: 0 }); continue; }
+        j++;
+        continue;
+      }
+      if (c === '"') { open.push({ str: true, at: j }); j++; continue; }
       if (c === "'") { j = this.skipRaw(j, to); continue; }
-      if (c === '{') { depth++; j++; continue; }
-      if (c === '}') { depth--; j++; if (depth === 0) return j; continue; }
+      if (c === '{') { top.depth++; j++; continue; }
+      if (c === '}') {
+        top.depth--; j++;
+        if (top.depth === 0) {
+          this.braceEnds[top.at] = j;
+          open.pop();
+          if (open.length === 0) return j;
+        }
+        continue;
+      }
       if (c === '#') { while (j < to && this.chars[j] !== '\n') j++; continue; }
       j++;
     }
-    fail('E_UNTERMINATED', 'unterminated { in text literal', pos);
-  }
-
-  skipQuoted(j, to) {
-    const pos = this.posAt(j);
-    j++;
-    while (j < to) {
-      const c = this.chars[j];
-      if (c === '\\') { j += 2; continue; }
-      if (c === '"') return j + 1;
-      if (c === '{') { j = this.matchBrace(j, to); continue; }
-      j++;
-    }
-    fail('E_UNTERMINATED', 'unterminated text literal', pos);
   }
 
   skipRaw(j, to) {
@@ -251,32 +354,6 @@ class Lexer {
       j++;
     }
     fail('E_UNTERMINATED', 'unterminated raw text literal', pos);
-  }
-
-  // A literal with no interpolation is one token. Otherwise it becomes the
-  // tokens of `( "seg" & expr & "seg" )` — empty segments included, so the
-  // result always goes through `&` and obeys §5.2.
-  emitParts(parts, pos, out) {
-    if (parts.length === 1) {
-      out.push({ type: 'text', value: parts[0].value, ...pos });
-      return;
-    }
-    out.push({ type: 'op', value: '(', ...pos });
-    parts.forEach((part, k) => {
-      if (k > 0) out.push({ type: 'op', value: '&', ...pos });
-      if (part.kind === 'text') {
-        out.push({ type: 'text', value: part.value, ...pos });
-      } else {
-        const mark = out.length;
-        out.push({ type: 'op', value: '(', ...this.posAt(part.from) });
-        this.lexRange(part.from, part.to, out);
-        if (out.length === mark + 1) {
-          fail('E_SYNTAX', 'empty interpolation {}', this.posAt(part.from));
-        }
-        out.push({ type: 'op', value: ')', ...this.posAt(part.to) });
-      }
-    });
-    out.push({ type: 'op', value: ')', ...pos });
   }
 }
 

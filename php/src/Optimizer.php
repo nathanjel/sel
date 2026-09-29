@@ -65,10 +65,10 @@ final class Optimizer
         while (($current['t'] ?? null) === 'call'
             && in_array($current['name'], self::PIPELINE_OPS, true)
             && !empty($current['args'])) {
-            array_unshift($steps, $current);
+            $steps[] = $current;
             $current = $current['args'][0];
         }
-        return ['source' => $current, 'steps' => $steps];
+        return ['source' => $current, 'steps' => array_reverse($steps)];
     }
 
     /** @param array<string,mixed> $source @param list<array<string,mixed>> $steps */
@@ -106,7 +106,11 @@ final class Optimizer
                 }
                 $steps[] = $copy;
             }
-            $steps = self::logicalSteps($source, $steps, $options + ['logical' => !$physical]);
+            $sourcePos = null;
+            $steps = self::logicalSteps($source, $steps, $options + ['logical' => !$physical], $sourcePos);
+            if ($sourcePos !== null) {
+                $source['pos'] = $sourcePos;
+            }
             if ($physical) {
                 // A tree fact the evaluator's join pre-filter needs (SEL-0050):
                 // whether anything can see the keys a FILTER's result carries.
@@ -348,7 +352,7 @@ final class Optimizer
      * @param array<string,mixed> $options
      * @return list<array<string,mixed>>
      */
-    private static function logicalSteps(array $source, array $steps, array $options): array
+    private static function logicalSteps(array $source, array $steps, array $options, ?array &$sourcePos = null): array
     {
         $logical = (bool) ($options['logical'] ?? false);
         $changed = true;
@@ -368,6 +372,7 @@ final class Optimizer
                     $right = self::numericLiteral($second['args'][1]);
                     if ($left !== null && $right !== null) {
                         $merged = self::copyNode($first);
+                        $merged['pos'] = $second['pos'];   // the node that produces the value fails, not its first stage
                         $merged['args'] = [$first['args'][0], self::numNode((string) min($left, $right), $second['args'][1]['pos'])];
                         $next[] = $merged;
                         $i++;
@@ -381,6 +386,7 @@ final class Optimizer
                     $right = self::numericLiteral($second['args'][1]);
                     if ($left !== null && $right !== null && $left <= PHP_INT_MAX - $right) {
                         $merged = self::copyNode($first);
+                        $merged['pos'] = $second['pos'];
                         $merged['args'] = [$first['args'][0], self::numNode((string) ($left + $right), $second['args'][1]['pos'])];
                         $next[] = $merged;
                         $i++;
@@ -390,10 +396,16 @@ final class Optimizer
                 }
                 if ($second !== null && $secondName === 'TAKE'
                     && in_array($firstName, ['SORT', 'SORT_DESC', 'SORT_BY'], true)
-                    && count($second['args']) === 2) {
+                    && count($second['args']) === 2
+                    // Fused only for a numeric literal count of at least 1 (SPEC
+                    // 6.2): the fused TOP evaluates the count -- and validates it --
+                    // before the keys, and TOP(..., 0) skips them, so any other
+                    // count, or a 0, changes which error is raised, or whether one is.
+                    && (self::numericLiteral($second['args'][1]) ?? 0) >= 1) {
                     $topName = $firstName === 'SORT' ? 'TOP'
                         : ($firstName === 'SORT_DESC' ? 'TOP_DESC' : 'TOP_BY');
                     $merged = self::copyNode($first);
+                    $merged['pos'] = $second['pos'];
                     $merged['name'] = $topName;
                     $merged['spec'] = Registry::lookup($topName);
                     $merged['args'] = array_merge($first['args'], [$second['args'][1]]);
@@ -410,6 +422,7 @@ final class Optimizer
                         && !self::readsRowOrKey($details['predicate'], $details['binder'])
                         && self::keysRenumberedBy($steps[$i + 2] ?? null)
                         && self::mapCannotRaise($first, $logical)) {
+                        [$first['pos'], $second['pos']] = [$second['pos'], $first['pos']];
                         $next[] = $second;
                         $next[] = $first;
                         $i++;
@@ -421,7 +434,8 @@ final class Optimizer
                     && $secondName === 'FILTER' && !self::stepReadsKey($second)
                     && self::keysRenumberedBy($steps[$i + 2] ?? null)
                     && self::cannotRaise(self::sortDetails($first)['key'], self::sortDetails($first)['binder'] ?? '_', $logical)
-                    && ($logical || self::cannotRaise(self::filterDetails($second)['predicate'], self::filterDetails($second)['binder'], false))) {
+                    && ($logical || self::predicateCannotRaise(self::filterDetails($second)['predicate'], self::filterDetails($second)['binder'], false))) {
+                    [$first['pos'], $second['pos']] = [$second['pos'], $first['pos']];
                     $next[] = $second;
                     $next[] = $first;
                     $i++;
@@ -434,6 +448,7 @@ final class Optimizer
                     if ($details['valid'] && $refs !== [] && self::allIn($refs, self::selectFields($first))
                         && !self::readsRowOrKey($details['predicate'], $details['binder'])
                         && self::keysRenumberedBy($steps[$i + 2] ?? null)) {
+                        [$first['pos'], $second['pos']] = [$second['pos'], $first['pos']];
                         $next[] = $second;
                         $next[] = $first;
                         $i++;
@@ -453,6 +468,7 @@ final class Optimizer
                         && !self::readsRowOrKey($details['key'], $details['binder'] ?? '_')
                         && self::mapCannotRaise($first, $logical)
                         && self::cannotRaise($details['key'], $details['binder'] ?? '_', $logical)) {
+                        [$first['pos'], $second['pos']] = [$second['pos'], $first['pos']];
                         $next[] = $second;
                         $next[] = $first;
                         $i++;
@@ -466,11 +482,12 @@ final class Optimizer
                     $right = self::filterDetails($second);
                     // Fused, the second predicate runs on a row before the first
                     // has seen the rows after it: only one that cannot raise.
-                    if ($left['valid'] && $right['valid'] && self::cannotRaise($right['predicate'], $right['binder'], $logical)) {
-                        $predicate = strcasecmp($right['binder'], $left['binder']) === 0
+                    if ($left['valid'] && $right['valid'] && self::predicateCannotRaise($right['predicate'], $right['binder'], $logical)) {
+                        $predicate = \Sel\Utf8::casecmp($right['binder'], $left['binder']) === 0
                             ? $right['predicate']
                             : self::renameVar($right['predicate'], $right['binder'], $left['binder']);
                         $merged = self::copyNode($first);
+                        $merged['pos'] = $second['pos'];
                         $and = ['t' => 'bin', 'op' => 'AND', 'l' => $left['predicate'],
                                 'r' => $predicate, 'pos' => $left['predicate']['pos']];
                         $merged['args'] = $left['explicit']
@@ -498,6 +515,14 @@ final class Optimizer
                     && ($filter['predicate']['t'] ?? null) === 'bool'
                     && $filter['predicate']['v'] === true
                     && ($next !== [] || $i > 0 || self::sourceIsList($source))) {
+                    // The value this stage produced is now the previous stage's
+                    // (or the source's), and a parent that rejects it reports the
+                    // position of the node that produced it: the eliminated one.
+                    if ($next !== []) {
+                        $next[count($next) - 1]['pos'] = $first['pos'];
+                    } else {
+                        $sourcePos = $first['pos'];
+                    }
                     $changed = true;
                     continue;
                 }
@@ -536,11 +561,11 @@ final class Optimizer
             case 'num': case 'text': case 'bool': case 'null':
                 return true;
             case 'var':
-                $name = strtoupper((string) $node['name']);
-                return $name === '_K' || $name === strtoupper($binder);
+                $name = \Sel\Utf8::upper((string) $node['name']);
+                return $name === '_K' || $name === \Sel\Utf8::upper($binder);
             case 'index':
                 return $logical && ($node['obj']['t'] ?? null) === 'var'
-                    && strcasecmp((string) $node['obj']['name'], $binder) === 0
+                    && \Sel\Utf8::casecmp((string) $node['obj']['name'], $binder) === 0
                     && ($node['idx']['t'] ?? null) === 'text';
             case 'bin':
                 return $logical && in_array($node['op'], self::SAFE_LOGICAL_OPS, true)
@@ -550,6 +575,27 @@ final class Optimizer
                 return $logical && $node['op'] === 'NOT' && self::cannotRaise($node['x'] ?? null, $binder, $logical);
             default:
                 return false;
+        }
+    }
+
+    /**
+     * cannotRaise for an expression FILTER will take as its predicate. FILTER
+     * then requires a BOOL, so a number, text, NULL, `_K` or the binder itself,
+     * which cannot raise as an expression, raises E_NOT_BOOL as a predicate: a
+     * fusion (or a swap) that treated a bare variable as harmless ran the second
+     * predicate before the first had seen the rows after it and reported the
+     * wrong error (PHP-C11). Only a BOOL literal is known to pass; the rest
+     * defers to cannotRaise, whose logical-path forms are all boolean.
+     *
+     * @param array<string,mixed>|null $node
+     */
+    private static function predicateCannotRaise(?array $node, string $binder, bool $logical): bool
+    {
+        if ($node === null) return false;
+        switch ($node['t'] ?? null) {
+            case 'bool': return true;
+            case 'num': case 'text': case 'null': case 'var': return false;
+            default: return self::cannotRaise($node, $binder, $logical);
         }
     }
 
@@ -605,7 +651,7 @@ final class Optimizer
             $value = $body['args'][$i + 1];
             if (($key['t'] ?? null) === 'text' && ($value['t'] ?? null) === 'index'
                 && ($value['obj']['t'] ?? null) === 'var'
-                && strcasecmp($value['obj']['name'], $details['binder']) === 0
+                && \Sel\Utf8::casecmp($value['obj']['name'], $details['binder']) === 0
                 && ($value['idx']['t'] ?? null) === 'text'
                 && $value['idx']['v'] === $key['v']) {
                 $fields[] = $key['v'];
@@ -657,7 +703,7 @@ final class Optimizer
             if ($item === null) return;
             if (($item['t'] ?? null) === 'index' && ($item['obj']['t'] ?? null) === 'var'
                 && ($item['idx']['t'] ?? null) === 'text'
-                && in_array(strtoupper($item['obj']['name']), array_map('strtoupper', [$binder, '_', '_1', '_2']), true)) {
+                && in_array(\Sel\Utf8::upper($item['obj']['name']), array_map([\Sel\Utf8::class, 'upper'], [$binder, '_', '_1', '_2']), true)) {
                 $result[] = (string) $item['idx']['v'];
             }
             self::forEachChild($item, $visit);
@@ -676,11 +722,11 @@ final class Optimizer
      */
     private static function readsVar(?array $node, array $names): bool
     {
-        $wanted = array_map('strtoupper', $names);
+        $wanted = array_map([\Sel\Utf8::class, 'upper'], $names);
         $found = false;
         $visit = function (?array $item) use (&$visit, &$found, $wanted): void {
             if ($item === null || $found) return;
-            if (($item['t'] ?? null) === 'var' && in_array(strtoupper($item['name']), $wanted, true)) {
+            if (($item['t'] ?? null) === 'var' && in_array(\Sel\Utf8::upper($item['name']), $wanted, true)) {
                 $found = true;
                 return;
             }
@@ -801,7 +847,7 @@ final class Optimizer
     private static function renameVar(array $node, string $old, string $new): array
     {
         $copy = self::copyNode($node);
-        if (($copy['t'] ?? null) === 'var' && strcasecmp($copy['name'], $old) === 0) $copy['name'] = $new;
+        if (($copy['t'] ?? null) === 'var' && \Sel\Utf8::casecmp($copy['name'], $old) === 0) $copy['name'] = $new;
         foreach (['args', 'items'] as $key) {
             if (isset($copy[$key])) $copy[$key] = array_map(
                 static fn (array $child): array => self::renameVar($child, $old, $new), $copy[$key]);

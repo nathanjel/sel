@@ -67,7 +67,12 @@ final class Map
 
     public static function defineDialect(string $name, array $spec): void
     {
-        if (self::exists($name)) {
+        // A name means one dialect. A shipped one cannot be registered again; one an
+        // application registered may be registered again under the SAME parent, which
+        // replaces it, but never under another (cases already translated through it
+        // would silently change meaning). sql/MAP.md 3.1.
+        $previous = self::$extra[$name] ?? null;
+        if (self::exists($name) && $previous === null) {
             throw new \LogicException(
                 "SQL dialect {$name} is already defined; a name means one dialect");
         }
@@ -129,12 +134,76 @@ final class Map
         foreach ($lexical as $k => $v) {
             self::checkLexical((string) $k, $v, "SQL dialect {$name}");
         }
+        if ($previous !== null && $previous['extends'] !== $extends) {
+            throw new \LogicException("SQL dialect {$name} is already registered extending "
+                . var_export($previous['extends'], true) . '; it cannot be registered '
+                . 'again extending ' . var_export($extends, true));
+        }
         self::$extra[$name] = [
             'extends' => $extends,
             'version' => $version,
             'target' => $target,
             'lexical' => $lexical,
         ];
+        // The three quoting keys are a set (sql/MAP.md 3.1): checked on what the
+        // dialect resolves to after inheritance, and undone if it does not hold.
+        try {
+            self::checkQuotePairing($name);
+        } catch (\LogicException $e) {
+            if ($previous === null) {
+                unset(self::$extra[$name]);
+            } else {
+                self::$extra[$name] = $previous;
+            }
+            throw $e;
+        }
+        unset(self::$guardChecked[$name]);
+    }
+
+    /**
+     * textQuote, textEscape and identQuote are a set, not three keys (sql/MAP.md
+     * 3.1): a registered dialect that changes one without the others makes every
+     * inline text literal injectable. Refused at registration, before any literal
+     * is rendered.
+     */
+    private static function checkQuotePairing(string $name): void
+    {
+        $where = "SQL dialect {$name}";
+        $q = self::lexical($name, 'textQuote');
+        $iq = self::lexical($name, 'identQuote');
+        $esc = self::lexical($name, 'textEscape');
+        if (is_string($q)) {
+            if (preg_match('/\A.\z/su', $q) !== 1) {
+                throw new \LogicException("{$where} sets textQuote to something that is not "
+                    . 'exactly one character');
+            }
+            if ($q === $iq) {
+                throw new \LogicException("{$where} uses the same character for textQuote "
+                    . 'and identQuote; a text literal would read as an identifier');
+            }
+            if (!is_array($esc)) {
+                throw new \LogicException("{$where} has no textEscape; a quote inside a text "
+                    . 'literal would end it');
+            }
+            if (array_key_exists('', $esc)) {
+                throw new \LogicException("{$where}'s textEscape has an empty key");
+            }
+            if (!array_key_exists($q, $esc)) {
+                throw new \LogicException("{$where}'s textEscape has no entry for the "
+                    . 'textQuote; the quote would end the literal');
+            }
+            $to = (string) $esc[$q];
+            if ($to !== $q . $q) {
+                // An escape character E followed by the quote, E itself escaped as EE.
+                $e = substr($to, 0, strlen($to) - strlen($q));
+                if (substr($to, -strlen($q)) !== $q || $e === ''
+                    || !array_key_exists($e, $esc) || (string) $esc[$e] !== $e . $e) {
+                    throw new \LogicException("{$where}'s textEscape for the textQuote does "
+                        . 'not keep the quote inside the literal: it must be the quote doubled, '
+                        . 'or an escape character that is itself escaped, followed by the quote');
+                }
+            }
+        }
     }
 
     /**
@@ -161,7 +230,7 @@ final class Map
         // the translator looks up verbatim — upper-casing those stored a
         // registered skeleton under a key nothing ever reads, which made the
         // documented escape hatch silently dead.
-        $stored = $section === 'funcs' ? strtoupper($key) : $key;
+        $stored = $section === 'funcs' ? \Sel\Utf8::upper($key) : $key;
         self::$overlay[$dialect][$section][$stored] = $entry;
         $arity = $section === 'funcs' ? Registry::hostArity($stored) : null;
         if ($arity !== null) {
@@ -331,9 +400,12 @@ final class Map
         if (isset(self::$guardChecked[$dialect])) {
             return;
         }
-        self::$guardChecked[$dialect] = true;
+        // Marked checked only once every check below has passed: set first, the first
+        // translation threw and every later one silently used the mismatching guard
+        // (PHP-C49).
         $guard = self::lexical($dialect, 'numericGuard');
         if (!is_string($guard)) {
+            self::$guardChecked[$dialect] = true;
             return;
         }
         $isnum = self::entry($dialect, 'funcs', 'ISNUM');
@@ -361,6 +433,7 @@ final class Map
                 . ", which its funcs.ISNUM tests; they ask the same question, and a guard "
                 . 'that asks a different one answers for rows SEL refuses');
         }
+        self::$guardChecked[$dialect] = true;
     }
 
     /** @return list<string> */
@@ -546,7 +619,7 @@ final class Map
         // `funcs` keys are SEL function names and case-insensitive; ops and skel
         // keys are looked up verbatim, which is why define() upper-cases only the
         // first. Registering `and` or `Case` used to be silently dead.
-        if ($section === 'funcs' && !isset($rules['funcArity'][strtoupper($key)])
+        if ($section === 'funcs' && !isset($rules['funcArity'][\Sel\Utf8::upper($key)])
             && Registry::hostArity($key) === null) {
             throw new \LogicException("{$key} is neither a SEL function this layer maps nor a "
                 . 'registered host function. A host function is registered '
@@ -674,7 +747,7 @@ final class Map
             // range, and the list is refused for the reason it is actually wrong.
             [$min, $max] = $section === 'ops'
                 ? $rules['opArity'][$key]
-                : ($host ?? $rules['funcArity'][strtoupper($key)]);
+                : ($host ?? $rules['funcArity'][\Sel\Utf8::upper($key)]);
             if (isset($entry['arity'])) {
                 $min = max($min, $entry['arity'][0]);
                 $max = $max === null ? $entry['arity'][1]

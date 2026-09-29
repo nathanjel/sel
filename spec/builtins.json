@@ -140,20 +140,6 @@
         {
           "roles": [
             "source",
-            "binder",
-            "key"
-          ],
-          "when": {
-            "arg": 1,
-            "is": "name"
-          },
-          "binds": [
-            "_K"
-          ]
-        },
-        {
-          "roles": [
-            "source",
             "key",
             "proj"
           ],
@@ -175,8 +161,9 @@
         }
       ],
       "signatures": [
-        "BUCKET(list, [binder,] key)",
-        "BUCKET(list, [binder,] key, proj)"
+        "BUCKET(list, key)",
+        "BUCKET(list, key, proj)",
+        "BUCKET(list, binder, key, proj)"
       ],
       "spec": "§7.3"
     },

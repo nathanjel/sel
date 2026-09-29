@@ -20,6 +20,22 @@
                    (node-contains-var-p (node-r node) var-name)))
       (t nil))))
 
+(defun snapshot-source (v)
+  "The elements V has now, as a container of its own (SPEC 7.3): an aggregate
+visits what its source held when it started, so a key the body adds is not
+visited and a child it overwrites is still visited as it was. The ELEMENTS are
+the source's own values -- the binder names the element itself (3.4), so a
+mutation inside one is seen -- only the container is copied."
+  (let ((c (copy-structure v)))
+    (when (value-storage v)
+      (setf (value-storage c) (copy-seq (the simple-vector (value-storage v)))))
+    (when (value-children-internal v)
+      (let ((pairs (mapcar (lambda (e) (cons (car e) (cdr e))) (value-children-internal v))))
+        (setf (value-children-internal c) pairs
+              (value-tail c) (last pairs))))
+    (setf (value-index c) nil)
+    c))
+
 (defvar *index-string-cache*
   (let ((vec (make-array 10001 :initial-element nil)))
     (loop for i from 1 to 10000
@@ -55,7 +71,7 @@ given, is evaluated in place of the written body."
   (let* ((three (= (args-count a) 3))
          (binder (if three (args-symbol a 1) "_"))
          (body (or body-override (args-node a (if three 2 1))))
-         (val (args-val a 0)))
+         (val (snapshot-source (args-val a 0))))
     (unless (or (value-null-p val)
                 (and (eq (value-kind val) :none) (zerop (value-size val))))
       (let* ((needs-k (node-contains-var-p body "_K"))
@@ -126,8 +142,10 @@ given, is evaluated in place of the written body."
     (let ((out '()))
       (aggregate-walk a ctx
                       (lambda (r key item body)
-                        (declare (ignore key item body))
-                        (push r out)
+                        (declare (ignore key item))
+                        ;; Copied as it is collected (§3.4): the result shares nothing
+                        ;; with the source, or with what the body returned.
+                        (push (value-copy r (node-pos body)) out)
                         nil))
       (make-list-value (nreverse out))))
   :lazy t :binds t)
@@ -199,7 +217,7 @@ given, is evaluated in place of the written body."
         (aggregate-walk a ctx
                         (lambda (r key item body)
                           (when (as-bool r (node-pos body))
-                            (push (cons key item) pairs))
+                            (push (cons key (value-copy item (node-pos body))) pairs))
                           nil)
                         t body-override)
         (if (null pairs)
@@ -222,56 +240,54 @@ given, is evaluated in place of the written body."
 (define-builtin "JOIN" 2 2
   (lambda (a ctx)
     (declare (ignore ctx))
-    (let ((sep (args-text a 1))
-          (at (args-pos-of a 0))
-          (val (args-val a 0)))
+    (let* ((sep (args-text a 1))
+           (at (args-pos-of a 0))
+           (val (args-val a 0))
+           (parts (mapcar (lambda (e) (as-text e at))
+                          (cond ((and (value-is-list val) (value-storage val))
+                                 (coerce (value-storage val) 'list))
+                                (t (mapcar #'cdr (aggregate-elements val))))))
+           ;; The joined length, worked out from the parts and refused past the
+           ;; cap before the text is built (SPEC 6.4).
+           (total (if parts
+                      (+ (reduce #'+ parts :key #'length)
+                         (* (length sep) (1- (length parts))))
+                      0)))
+      (check-text-cap total (args-pos a))
       (%text (with-output-to-string (out)
-               (cond
-                 ((and (value-is-list val) (value-storage val))
-                  (let ((storage (value-storage val)))
-                    (loop for i from 0 below (length storage)
-                          for first = t then nil
-                          do (unless first (write-string sep out))
-                             (write-string (as-text (svref storage i) at) out))))
-                 (t
-                  (loop for (key . item) in (aggregate-elements val)
-                        for first = t then nil
-                        do (progn key)
-                           (unless first (write-string sep out))
-                           (write-string (as-text item at) out)))))))))
+               (loop for part in parts
+                     for first = t then nil
+                     do (unless first (write-string sep out))
+                        (write-string part out)))))))
+
+(defun sort-rank (v)
+  "The kind rank of SPEC 7.3's total order: NULL < BOOL < numeric-looking text
+(numbers included) < all other TEXT < BIN < anything else."
+  (cond ((value-null-p v) 0)
+        ((eq (value-kind v) :bool) 1)
+        ((looks-numeric v) 2)
+        ((eq (value-kind v) :text) 3)
+        ((eq (value-kind v) :bin) 4)
+        (t 5)))
 
 (defun compare-values (a b)
-  (let ((a-null (value-null-p a))
-        (b-null (value-null-p b)))
+  "Three-way comparison in SPEC 7.3's total order: by kind rank, then within a
+rank -- FALSE before TRUE, numbers by exact value, other text and BIN bytewise.
+Every pair of values compares, and transitively, so a sort cannot depend on the
+order it is handed its elements."
+  (let ((ra (sort-rank a))
+        (rb (sort-rank b)))
     (cond
-      ((and a-null b-null) 0)
-      (a-null -1)
-      (b-null 1)
+      ((< ra rb) -1)
+      ((> ra rb) 1)
       (t
-       (let ((a-num (looks-numeric a))
-             (b-num (looks-numeric b)))
-         (cond
-           ((and a-num b-num)
-            (dec-cmp (as-dec a) (as-dec b)))
-           ((and (eq (value-kind a) :bool) (eq (value-kind b) :bool))
-            (let ((av (if (value-scalar a) 1 0))
+       (case ra
+         (1 (let ((av (if (value-scalar a) 1 0))
                   (bv (if (value-scalar b) 1 0)))
               (cond ((< av bv) -1) ((> av bv) 1) (t 0))))
-           ((and (member (value-kind a) '(:text :bin))
-                 (member (value-kind b) '(:text :bin)))
-            (bytes-compare (as-bytes a) (as-bytes b)))
-           (t
-            (flet ((rank (v)
-                     (cond
-                       ((value-null-p v) 0)
-                       ((eq (value-kind v) :bool) 1)
-                       ((looks-numeric v) 2)
-                       ((eq (value-kind v) :text) 3)
-                       ((eq (value-kind v) :bin) 4)
-                       (t 5))))
-              (let ((ra (rank a))
-                    (rb (rank b)))
-                (cond ((< ra rb) -1) ((> ra rb) 1) (t 0)))))))))))
+         (2 (dec-cmp (as-dec a) (as-dec b)))
+         ((3 4) (bytes-compare (as-bytes a) (as-bytes b)))
+         (t 0))))))
 
 (defun make-bounded-heap (capacity greater-p)
   (let ((arr (make-array capacity :initial-element nil))
@@ -315,10 +331,19 @@ given, is evaluated in place of the written body."
   key
   (idx 0 :type fixnum))
 
+;;; SORT and its variants collect the elements into a new list, and §3.4 has the
+;;; aggregates copy what they collect: the copy is made as the element is
+;;; collected, so the result never shares structure with the source.
+(defun make-copied-sort-item (item key idx)
+  (make-sort-item (value-copy item) key idx))
+
 (defun do-sort (a ctx forced-dir)
   (let ((val (args-val a 0)))
-    (if (or (value-null-p val) (zerop (value-size val)))
-        (make-list-value nil)
+    ;; A scalar is one element (SPEC 7.3), so its sort key is evaluated -- only
+    ;; NULL and an empty list have nothing to sort.
+    ;; The direction is always evaluated and checked, even when there is nothing to
+    ;; sort (SPEC 7.4): a bad one is an error whatever the list holds.
+    (let ((empty (or (value-null-p val) (and (zerop (value-size val)) (eq (value-kind val) :none)))))
         (let* ((count (args-count a))
                direction
                binder
@@ -357,7 +382,9 @@ given, is evaluated in place of the written body."
                   (let ((pos-idx (if (= count 4) 3 2)))
                     (fail "E_BAD_ARG" "sort direction must be 'ASC' or 'DESC'"
                           (args-pos-of a pos-idx))))))
-          (let* ((desc (string= direction "DESC"))
+          (when empty (return-from do-sort (make-list-value nil)))
+          (let* ((val (snapshot-source val))
+                 (desc (string= direction "DESC"))
                  (needs-k (and body (node-contains-var-p body "_K")))
                  (binder-cell (cons binder nil))
                  (k-cell (when needs-k (cons "_K" nil)))
@@ -370,12 +397,12 @@ given, is evaluated in place of the written body."
                      (setf indexed
                            (loop for i from 0 below (length storage)
                                  for item = (svref storage i)
-                                 collect (make-sort-item item item i)))))
+                                 collect (make-copied-sort-item item item i)))))
                   (t
                    (setf indexed
                          (loop for (nil . item) in (aggregate-elements val)
                                for idx from 0
-                               collect (make-sort-item item item idx)))))
+                               collect (make-copied-sort-item item item idx)))))
                 (progn
                   (ctx-push-frame ctx frame)
                   (unwind-protect
@@ -388,7 +415,7 @@ given, is evaluated in place of the written body."
                                         do (setf (cdr binder-cell) item)
                                            (when needs-k
                                              (setf (cdr k-cell) (format-index-text (1+ i))))
-                                        collect (make-sort-item item (args-eval a body) i)))))
+                                        collect (make-copied-sort-item item (args-eval a body) i)))))
                          ((value-shape val)
                           (let* ((shape (value-shape val))
                                  (storage (value-storage val))
@@ -400,7 +427,7 @@ given, is evaluated in place of the written body."
                                         do (setf (cdr binder-cell) item)
                                            (when needs-k
                                              (setf (cdr k-cell) (%text k)))
-                                        collect (make-sort-item item (args-eval a body) i)))))
+                                        collect (make-copied-sort-item item (args-eval a body) i)))))
                          (t
                           (setf indexed
                                 (loop for (k . item) in (aggregate-elements val)
@@ -408,7 +435,7 @@ given, is evaluated in place of the written body."
                                       do (setf (cdr binder-cell) item)
                                          (when needs-k
                                            (setf (cdr k-cell) (%text k)))
-                                      collect (make-sort-item item (args-eval a body) idx)))))
+                                      collect (make-copied-sort-item item (args-eval a body) idx)))))
                     (ctx-pop-frame ctx))))
             (setf indexed
                   (stable-sort indexed
@@ -428,8 +455,10 @@ given, is evaluated in place of the written body."
   (let* ((count (args-count a))
          (val (args-val a 0))
          (limit (args-non-neg-int a (1- count))))
-    (if (or (zerop limit) (zerop (value-size val)))
-        (make-list-value nil)
+    ;; Direction and count are always evaluated and checked (SPEC 7.4), whatever
+    ;; the list holds; only then may an empty list or a zero count end the call.
+    (let ((empty (or (zerop limit) (value-null-p val)
+                     (and (zerop (value-size val)) (eq (value-kind val) :none)))))
         (let* ((sort-count (1- count))
                direction
                binder
@@ -468,7 +497,9 @@ given, is evaluated in place of the written body."
                   (let ((pos-idx (if (= sort-count 4) 3 2)))
                     (fail "E_BAD_ARG" "sort direction must be 'ASC' or 'DESC'"
                           (args-pos-of a pos-idx))))))
-          (let* ((desc (string= direction "DESC"))
+          (when empty (return-from do-top-sort (make-list-value nil)))
+          (let* ((val (snapshot-source val))
+                 (desc (string= direction "DESC"))
                  (greater-fn (if desc
                                  (lambda (x y)
                                    (let ((c (compare-values (sort-item-key x) (sort-item-key y))))
@@ -481,7 +512,7 @@ given, is evaluated in place of the written body."
                  (k-cell (when needs-k (cons "_K" nil)))
                  (frame (if needs-k (list binder-cell k-cell) (list binder-cell))))
             (multiple-value-bind (push-item get-items)
-                (make-bounded-heap limit greater-fn)
+                (make-bounded-heap (min limit (max 1 (value-size val))) greater-fn)
               (if (= sort-count 1)
                   (cond
                     ((and (value-is-list val) (value-storage val))
@@ -522,8 +553,8 @@ given, is evaluated in place of the written body."
                                   do (setf (cdr binder-cell) item)
                                      (when needs-k
                                        (setf (cdr k-cell) (%text k)))
-                                     (funcall push-item (make-sort-item item (args-eval a body) idx))))))
-                      (ctx-pop-frame ctx)))
+                                     (funcall push-item (make-sort-item item (args-eval a body) idx)))))
+                      (ctx-pop-frame ctx))))
               (let ((items (funcall get-items)))
                 (setf items (stable-sort items
                                          (lambda (x y)
@@ -533,9 +564,11 @@ given, is evaluated in place of the written body."
                                                  (progn
                                                    (when desc (setf c (- c)))
                                                    (< c 0)))))))
+                ;; The survivors only are copied (§3.4): TOP collects n elements, and
+                ;; copying the rest would be the cost of a full SORT.
                 (make-list-value
                  (loop for x in items
-                       collect (sort-item-item x))))))))))
+                       collect (value-copy (sort-item-item x)))))))))))
 
 (define-builtin "SORT" 1 3
   (lambda (a ctx) (do-sort a ctx "ASC"))
@@ -567,19 +600,14 @@ given, is evaluated in place of the written body."
   (rows '() :type list))
 
 (defun eval-key-hash (v)
+  ;; The hash must agree with VALUE-EQL, which compares text by spelling (a number
+  ;; and the text spelt the same are one key, and a decimal cache warmed on one of
+  ;; them by arithmetic changes nothing). So it hashes the spelling, never the
+  ;; cache: hashing the decimal fields put `X` and `"5"` in different buckets once
+  ;; `X * 1` had been evaluated (LISP-C1).
   (let ((k (value-kind v)))
     (case k
-      (:text
-       (let ((dec (value-dec-val v)))
-         (if dec
-             (logxor (sxhash k)
-                     (if (dec-neg dec) 1 0)
-                     (sxhash (dec-scale dec))
-                     (sxhash (dec-digits dec)))
-             (let ((s (value-scalar v)))
-               (if (stringp s)
-                   (logxor (sxhash k) (sxhash s))
-                   (sxhash k))))))
+      (:text (logxor (sxhash k) (sxhash (value-scalar v))))
       (:bool
        (if (value-scalar v) 12345 67890))
       (:none 0)
@@ -599,8 +627,10 @@ given, is evaluated in place of the written body."
     (as-text v pos)))
 
 (defun do-bucket (a ctx)
-  (let* ((val (args-val a 0)))
-    (if (or (value-null-p val) (zerop (value-size val)))
+  (let* ((val (snapshot-source (args-val a 0))))
+    ;; A scalar is one element (SPEC 7.3); only NULL and an empty list have none.
+    (if (or (value-null-p val)
+            (and (zerop (value-size val)) (eq (value-kind val) :none)))
         (make-list-value nil)
         (let* ((count (args-count a))
                (binder (if (= count 4) (args-symbol a 1) "_"))
@@ -632,9 +662,17 @@ given, is evaluated in place of the written body."
                                (key-str (if (null agg-node)
                                             (bucket-key-text eval-key (node-pos key-node))
                                             ""))
-                               (h (bucket-key-hash eval-key))
+                               ;; The bare spelling groups by the index key it has just
+                               ;; been given (spec 3.3, 7.3): two keys with the same
+                               ;; text are one group whatever their structure. The
+                               ;; projected spelling groups by identity.
+                               (h (if (null agg-node) (sxhash key-str) (bucket-key-hash eval-key)))
                                (bucket (gethash h groups-table))
-                               (found (find-if (lambda (g) (value-eql (group-entry-key g) eval-key)) bucket)))
+                               (found (find-if (lambda (g)
+                                                 (if (null agg-node)
+                                                     (string= (group-entry-key-str g) key-str)
+                                                     (value-eql (group-entry-key g) eval-key)))
+                                               bucket)))
                           (if found
                               (push item (group-entry-rows found))
                               (let* ((new-g (make-group-entry eval-key key-str)))
@@ -678,7 +716,7 @@ given, is evaluated in place of the written body."
                          (setf (cdr agg-binder-cell) (make-list-value (group-entry-rows g))
                                (cdr agg-k-cell) (group-entry-key g))
                          (let ((res (args-eval a agg-node)))
-                           (push res out)))
+                           (push (value-copy res (node-pos agg-node)) out)))
                     (ctx-pop-frame ctx)))
                 (make-list-value (nreverse out))))))))
 

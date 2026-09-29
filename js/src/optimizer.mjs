@@ -267,6 +267,38 @@ function mapCannotRaise(step, logical) {
   return cannotRaise(body, binder, logical);
 }
 
+// A FILTER predicate that cannot raise: it has to be boolean-valued as well as
+// free of failing reads, because a bare variable, a number or a text is exactly
+// what E_NOT_BOOL is raised for (`FILTER(_)` over numbers). Only what is boolean
+// by construction qualifies -- a boolean literal, or a comparison / AND / OR /
+// NOT over operands that cannot raise (the last only where the caller says the
+// data is typed, `logical`).
+function predicateCannotRaise(node, binder, logical) {
+  if (!node) return false;
+  if (node.t === 'bool') return true;
+  if (node.t === 'bin' || node.t === 'un') return cannotRaise(node, binder, logical);
+  return false;
+}
+
+// How deep an expression goes, its root counted as 1, and never more than `cap`
+// + 1 (the walk stops there), so it is bounded whatever the source's length.
+function boundedDepth(root, cap) {
+  let deepest = 0;
+  let level = [root];
+  while (level.length > 0 && deepest <= cap) {
+    deepest++;
+    const next = [];
+    for (const node of level) {
+      if (!node || typeof node !== 'object') continue;
+      if (node.args) next.push(...node.args);
+      if (node.items) next.push(...node.items);
+      for (const key of ['l', 'r', 'x', 'obj', 'idx', 'value']) if (node[key]) next.push(node[key]);
+    }
+    level = next;
+  }
+  return deepest;
+}
+
 function mapHasComputedFields(step) {
   const { body } = mapDetails(step);
   if (!body || body.t !== 'call' || body.name !== 'RECORD') return true;
@@ -381,9 +413,15 @@ function logicalSteps(source, steps, options = {}) {
           continue;
         }
       }
+      // Fused only for a numeric literal count of at least 1 (SPEC 6.2): the
+      // plain tree evaluates every sort key, and may fail on one, before it looks
+      // at the count, and a count that is an expression may have effects the keys
+      // would see. A literal 0 is left as SORT then TAKE, which still evaluates
+      // the keys of an empty result.
       if (second && second.name === 'TAKE'
           && ['SORT', 'SORT_DESC', 'SORT_BY'].includes(first.name)
-          && second.args.length === 2) {
+          && second.args.length === 2
+          && (numericLiteral(second.args[1]) ?? 0) >= 1) {
         const topName = first.name === 'SORT' ? 'TOP' : first.name === 'SORT_DESC' ? 'TOP_DESC' : 'TOP_BY';
         next.push(copyNode({ ...first, name: topName, spec: lookup(topName), args: [...first.args, second.args[1]] }));
         i++;
@@ -445,7 +483,16 @@ function logicalSteps(source, steps, options = {}) {
         const left = filterDetails(first), right = filterDetails(second);
         // Fused, the second predicate runs on a row before the first has seen
         // the rows after it: only one that cannot raise may be fused.
-        if (!left.valid || !right.valid || !cannotRaise(right.predicate, right.binder, options.logical)) {
+        if (!left.valid || !right.valid || !predicateCannotRaise(right.predicate, right.binder, options.logical)) {
+          next.push(first);
+          continue;
+        }
+        // Fused, the second predicate sits one level deeper than it did: the
+        // AND that joins them. A fused pair must spend what the two stages spent
+        // (SPEC 6.4), so a predicate that reaches the cap that way stays a
+        // second FILTER.
+        if (second.stepDepth !== undefined
+            && second.stepDepth + boundedDepth(right.predicate, MAX_DEPTH) + 1 > MAX_DEPTH) {
           next.push(first);
           continue;
         }
@@ -507,8 +554,11 @@ function optimizeTree(node, physical, depth = 1, options = {}, inMath = false) {
   if (node.t === 'call' && PIPELINE_OPS.has(node.name)) {
     const { source, steps } = unwindPipeline(node);
     const optimizedSource = optimizeTree(source, physical, depth + 1, options, false);
-    const optimizedSteps = steps.map((step) => {
+    const optimizedSteps = steps.map((step, index) => {
       const copy = copyNode(step);
+      // Where this step stands in the tree as written, for the rules that would
+      // deepen a subtree (FILTER fusion): the outermost step is the node itself.
+      copy.stepDepth = depth + (steps.length - 1 - index);
       copy.args = [copy.args[0], ...copy.args.slice(1).map((item, offset) =>
         optimizeTree(item, physical, depth + 1, stepArgOptions(step, offset + 1, options), false))];
       return copy;
@@ -529,7 +579,13 @@ function optimizeTree(node, physical, depth = 1, options = {}, inMath = false) {
         }
       });
     }
-    return buildPipeline(optimizedSource, finalSteps);
+    // Whatever the rewrites did, the pipeline's outermost node is still the one
+    // an operator over it sees, so it keeps the position of the call it replaces
+    // (spec 6.3: the node that actually failed). A source that is a bare variable
+    // is left alone, being a leaf that can fail at its own column.
+    const built = buildPipeline(optimizedSource, finalSteps);
+    if (built.pos === node.pos || (finalSteps.length === 0 && built.t === 'var')) return built;
+    return { ...built, pos: node.pos };
   }
 
   const isCurrMath = isMathOp(node);

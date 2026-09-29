@@ -23,6 +23,7 @@ from .parser import Node, parse
 from .registry import names as _names, binding_form as _binding_form
 from .registry import register_function
 from ._gc import bulk_allocation as _bulk_allocation
+from ._stack import recursion_budget as _recursion_budget
 from .value import BIN, BOOL, NONE, TEXT, Value
 
 __all__ = [
@@ -59,13 +60,25 @@ class Program:
         self._physical_of: Node | None = None
 
     def run(self, context: Any = None) -> Value:
-        """`context` may be a Value, a plain dict, or omitted. Returns a Value;
-        the context is mutated in place by any assignments the program performs.
+        """`context` may be a Value, a plain dict (or list), or omitted/None for an
+        empty one. Returns a Value. A Value context is mutated in place by the
+        program's assignments; a dict or list is converted, so the caller's own
+        object is not. Anything else -- a number, text, bytes, a boolean, and in
+        particular a falsy one such as 0 or "" -- is E_BAD_ARG: it is not a
+        context, and `run(1.5)` was already refused while `run(0.0)` quietly
+        ran against an empty one.
         """
-        root = context if isinstance(context, Value) else Value.from_native(context or {})
+        if isinstance(context, Value):
+            root = context
+        elif context is None:
+            root = Value.from_native({})
+        elif isinstance(context, (dict, list, tuple)):
+            root = Value.from_native(context)
+        else:
+            fail('E_BAD_ARG', f'a context is a Value, a dict or a list, not {type(context).__name__}', None)
         # The cyclic collector is paused for the run (sel/_gc.py): a run builds
         # rows, never cycles, and every pass the collector made found nothing.
-        with _bulk_allocation():
+        with _recursion_budget(), _bulk_allocation():
             return eval_node(self.physical_ast(), _Context(root))
 
     def physical_ast(self) -> Node:
@@ -87,7 +100,8 @@ class Program:
         """
         reads: set[str] = set()
         assigned: set[str] = set()
-        _collect(self.ast, frozenset(), reads, assigned, 1)
+        with _recursion_budget():
+            _collect(self.ast, frozenset(), reads, assigned, 1)
         return sorted(n for n in reads if n not in assigned)
 
 
@@ -178,7 +192,8 @@ def compile(source: str) -> Program:   # noqa: A001 - mirrors compile() in every
     """Parse and check `source`. Raises SelError on a syntax error, an unknown
     function name or a wrong argument count — all three are compile time.
     """
-    return Program(source, parse(source))
+    with _recursion_budget():
+        return Program(source, parse(source))
 
 
 def evaluate(source: str, context: Any = None) -> Value:

@@ -4,7 +4,17 @@
   (lambda (a ctx) (declare (ignore ctx)) (make-int (length (args-bytes a 0)))))
 
 (define-builtin "TO_UTF8" 1 1
-  (lambda (a ctx) (declare (ignore ctx)) (make-bin (args-bytes a 0))))
+  (lambda (a ctx)
+    (declare (ignore ctx))
+    ;; The encoded length is at most four bytes a code point: refuse from the
+    ;; character count before building the bytes (SPEC 6.4).
+    (let ((v (args-val a 0)))
+      (when (and (eq (value-kind v) :text) (stringp (value-scalar v)))
+        (check-text-cap (loop for c across (value-scalar v)
+                              sum (let ((n (char-code c)))
+                                    (cond ((< n #x80) 1) ((< n #x800) 2) ((< n #x10000) 3) (t 4))))
+                        (args-pos a))))
+    (make-bin (args-bytes a 0))))
 
 (define-builtin "FROM_UTF8" 1 1
   (lambda (a ctx)
@@ -12,7 +22,11 @@
     (%text (decode-utf8 (args-bytes a 0) (args-pos-of a 0)))))
 
 (define-builtin "TO_HEX" 1 1
-  (lambda (a ctx) (declare (ignore ctx)) (%text (bytes-to-hex (args-bytes a 0)))))
+  (lambda (a ctx)
+    (declare (ignore ctx))
+    (let ((b (args-bytes a 0)))
+      (check-text-cap (* 2 (length b)) (args-pos a))
+      (%text (bytes-to-hex b)))))
 
 (define-builtin "FROM_HEX" 1 1
   (lambda (a ctx)
@@ -39,6 +53,7 @@
   (lambda (a ctx)
     (declare (ignore ctx))
     (let ((b (args-bytes a 0)))
+      (check-text-cap (* 4 (ceiling (length b) 3)) (args-pos a))
       (%text (with-output-to-string (out)
                (loop for i from 0 below (length b) by 3
                      for n = (logior (ash (aref b i) 16)
@@ -114,20 +129,30 @@
 (define-builtin "BTL" 1 1
   (lambda (a ctx)
     (declare (ignore ctx))
-    (make-list-value (loop for b across (args-bytes a 0) collect (make-int b)))))
+    (let ((bytes (args-bytes a 0)))
+      (check-collection-cap (length bytes) (args-pos a))
+      (make-list-value (loop for b across bytes collect (make-int b))))))
 
 (define-builtin "LTB" 1 1
   (lambda (a ctx)
     (declare (ignore ctx))
     (let* ((v (args-val a 0))
            (at (args-pos-of a 0))
-           (items (if (plusp (value-size v)) (value-values v) (list v)))
+           ;; An empty list is no bytes, an empty BIN (SPEC 7.7); a scalar is one.
+           (items (cond ((plusp (value-size v)) (value-values v))
+                        ((and (eq (value-kind v) :none) (zerop (value-size v))) '())
+                        (t (list v))))
            (out (make-array (length items) :element-type '(unsigned-byte 8))))
       (loop for item in items
             for i from 0
             do (let* ((d (as-dec item at))
                       (n (dec-to-int d)))
-                 (when (or (/= (dec-scale d) 0) (minusp n) (> n 255))
+                 ;; A number is a byte when it is a whole number in 0..255 whatever
+                 ;; its scale (`1.0`, "1.0"); a fraction is not a whole number.
+                 (when (and (/= (dec-scale d) 0)
+                            (/= 0 (dec-cmp d (%make-dec (minusp n) (abs n) 0))))
+                   (fail "E_NOT_INT" (format nil "LTB element ~d is not a whole number" (1+ i)) at))
+                 (when (or (minusp n) (> n 255))
                    (fail "E_RANGE" (format nil "LTB element ~d is not a byte value" (1+ i)) at))
                  (setf (aref out i) n)))
       (make-bin out))))

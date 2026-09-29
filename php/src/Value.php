@@ -133,7 +133,7 @@ final class RecordShape
             if (self::$instrumentation) self::$stats['alias_hits']++;
             return $cached;
         }
-        $lower = strtolower($tableName);
+        $lower = \Sel\Utf8::lower($tableName);
         $addLower = $lower !== $tableName && !isset($this->keyMap[$lower]);
         $keys = $this->keys;
         $keys[] = $tableName;
@@ -233,13 +233,36 @@ final class Value
         return new self(self::NONE, null, false);
     }
 
-    public static function text(string $s): self
+    /**
+     * The public constructors take `mixed` and check by hand: a scalar type
+     * declaration turns a wrong argument into the host's own TypeError (strict
+     * callers) or a silent coercion (`int(1.5)`, `text(5)`; non-strict ones), and
+     * spec §8 says a malformed call is E_BAD_ARG, never the host's exception.
+     *
+     * @param mixed $s
+     */
+    public static function text($s): self
     {
+        if (!is_string($s)) {
+            self::badCall('text', 'a string', $s);
+        }
         self::checkText($s);
         return new self(self::TEXT, $s);
     }
 
     /** A key entering from host code (spec §8): valid UTF-8, like every text. */
+    /** @param mixed $x */
+    private static function describe($x): string
+    {
+        return get_debug_type($x);
+    }
+
+    /** @param mixed $got */
+    private static function badCall(string $ctor, string $wants, $got): never
+    {
+        fail('E_BAD_ARG', "Value::{$ctor} takes {$wants}, not " . self::describe($got), null);
+    }
+
     public static function checkKey(string $key): void
     {
         self::checkText($key);
@@ -257,19 +280,41 @@ final class Value
         }
     }
 
-    public static function bin(string $b): self
+    /**
+     * @param mixed $b a string of bytes, or a list of whole numbers 0..255
+     */
+    public static function bin($b): self
     {
+        if (is_array($b)) {
+            $bytes = '';
+            foreach ($b as $n) {
+                if (!is_int($n) || $n < 0 || $n > 255) {
+                    fail('E_BAD_ARG', 'bin takes whole numbers 0..255, not ' . self::describe($n), null);
+                }
+                $bytes .= chr($n);
+            }
+            return new self(self::BIN, $bytes);
+        }
+        if (!is_string($b)) {
+            self::badCall('bin', 'a string or a list of bytes', $b);
+        }
         return new self(self::BIN, $b);
     }
 
-    private static ?self $valTrue = null;
-    private static ?self $valFalse = null;
-
-    public static function bool(bool $b): self
+    /**
+     * A fresh value every time. The two BOOL values used to be shared
+     * flyweights, and a Value is mutable (`set`, the `scalar` setter, a
+     * host's own `$v->children[...]`), so one program's assignment into TRUE
+     * changed TRUE for every other program in the process (PHP-C1). The
+     * allocation is what every other kind pays.
+     */
+    /** @param mixed $b */
+    public static function bool($b): self
     {
-        return $b
-            ? (self::$valTrue ??= new self(self::BOOL, true))
-            : (self::$valFalse ??= new self(self::BOOL, false));
+        if (!is_bool($b)) {
+            self::badCall('bool', 'a bool', $b);
+        }
+        return new self(self::BOOL, $b);
     }
 
     /** @param array{neg:bool,digits:string,scale:int}|string $d */
@@ -291,22 +336,34 @@ final class Value
         if ($parsed === null) {
             fail('E_NOT_NUM', 'not a number: ' . json_encode($d));
         }
-        $v = new self(self::TEXT, $d);
+        // The scalar is derived from the parsed decimal, not kept as typed:
+        // "007" is 7 and "-0" is 0 (spec §4, §8), and a caller that spelled it
+        // otherwise still gets one canonical text (PHP-C10, a 0.9.2 regression).
+        $v = new self(self::TEXT, null);
         $v->decVal = $parsed;
         return $v;
     }
 
-    public static function int(int $n): self
+    /** @param mixed $n */
+    public static function int($n): self
     {
-        $v = new self(self::TEXT, (string) $n);
-        $v->decVal = Dec::fromInt($n);
-        return $v;
+        if (!is_int($n)) {
+            self::badCall('int', 'an int', $n);
+        }
+        // The decimal is NOT built here: it is derived from the scalar text on the
+        // first arithmetic that needs it (asDecimal caches it). Eager, it was an
+        // array per integer — 440 bytes on top of the object's 255 — and a list of
+        // a million bytes (BTL at the collection cap) took 675 MB.
+        return new self(self::TEXT, (string) $n);
     }
 
     /** Builds a list keyed "1".."n" (or preserved keys). Used by `,` and by list-returning built-ins. */
     /** @param list<Value> $values @param list<string>|null $keys */
-    public static function list(array $values, ?array $keys = null): self
+    public static function list($values, $keys = null): self
     {
+        if (!is_array($values) || ($keys !== null && !is_array($keys))) {
+            self::badCall('list', 'an array of Values (and an array of keys, or null)', is_array($values) ? $keys : $values);
+        }
         foreach ($values as $item) {
             if (!$item instanceof self) {
                 fail('E_BAD_ARG', 'a list is built from Values, not ' . get_debug_type($item), null);
@@ -376,8 +433,11 @@ final class Value
      * @param list<string> $keys
      * @param list<Value> $values
      */
-    public static function record(array $keys, array $values): self
+    public static function record($keys, $values): self
     {
+        if (!is_array($keys) || !is_array($values)) {
+            self::badCall('record', 'an array of keys and an array of Values', is_array($keys) ? $values : $keys);
+        }
         if (count($keys) !== count($values)) {
             fail('E_BAD_ARG', count($keys) . ' key(s) and ' . count($values) . ' value(s) do not pair up', null);
         }
@@ -411,6 +471,19 @@ final class Value
         return $v;
     }
 
+    /**
+     * An entry's key: text, or a whole number spelled as text. `null` used to
+     * become "" and an array "Array"; neither is a key.
+     *
+     * @param mixed $key
+     */
+    private static function entryKey($key): string
+    {
+        if (is_string($key)) return $key;
+        if (is_int($key)) return (string) $key;
+        fail('E_BAD_ARG', 'a key must be a string or an int, not ' . self::describe($key), null);
+    }
+
     /** @param list<array{0:string,1:Value}> $entries */
     public static function fromEntries(array $entries, bool $isList = false): self
     {
@@ -423,7 +496,7 @@ final class Value
                 if (!is_array($entry) || count($entry) !== 2) {
                     fail('E_BAD_ARG', 'an entry must be a [key, value] pair', null);
                 }
-                $key = (string) $entry[0];
+                $key = self::entryKey($entry[0]);
                 $values[] = $entry[1];
                 $keys[] = $key;
                 if (!$needsCustomKeys && $key !== (string) $expectedIndex) {
@@ -439,7 +512,7 @@ final class Value
             if (!is_array($entry) || count($entry) !== 2) {
                 fail('E_BAD_ARG', 'an entry must be a [key, value] pair', null);
             }
-            $key = (string) $entry[0];
+            $key = self::entryKey($entry[0]);
             $keys[] = $key;
             $values[] = $entry[1];
         }
@@ -624,9 +697,13 @@ final class Value
     {
         if ($this->isNull()) return;
         if ($this->isList && $this->storage !== null) {
-            if ($this->listKeys !== null) {
+            // Every read below is from a local copy taken before the first
+            // callback (spec §7.3: an aggregate visits a snapshot). PHP arrays are
+            // copy-on-write, so the copy is free until the callback writes.
+            $keys = $this->listKeys;
+            if ($keys !== null) {
                 foreach ($this->storage as $i => $item) {
-                    $callback($this->listKeys[$i], $item);
+                    $callback($keys[$i], $item);
                 }
             } else {
                 foreach ($this->storage as $i => $item) {
@@ -636,8 +713,9 @@ final class Value
             return;
         }
         if ($this->shape !== null && $this->storage !== null) {
+            $storage = $this->storage;
             foreach ($this->shape->keys as $i => $key) {
-                $callback($key, $this->storage[$i]);
+                $callback($key, $storage[$i]);
             }
             return;
         }
@@ -809,7 +887,7 @@ final class Value
     {
         $v = $this->scalarSource($pos);
         if ($v->kind !== self::TEXT) {
-            fail('E_NOT_NUM', 'expected a number, got ' . strtolower($v->kind), $pos);
+            fail('E_NOT_NUM', 'expected a number, got ' . \Sel\Utf8::lower($v->kind), $pos);
         }
         if ($v->decVal !== null) {
             return $v->decVal;
@@ -863,6 +941,19 @@ final class Value
     public function copy(?array $pos = null): Value
     {
         return $this->copyAt(1, $pos);
+    }
+
+    /**
+     * A copy made to be stored `$below` levels down: an assignment to a target
+     * whose path is that long, or a collector holding the value as one of its
+     * elements (`$below` = 1). The value's own depth is checked from there, so a
+     * 200-level value is refused one level down, at `$pos` (spec §3.4, §6.4).
+     *
+     * @param array<string,mixed>|null $pos
+     */
+    public function copyBelow(int $below, ?array $pos = null): Value
+    {
+        return $this->copyAt($below + 1, $pos);
     }
 
     /** @param array<string,mixed>|null $pos */
@@ -1050,22 +1141,22 @@ final class Value
         return $s . '{' . implode(', ', $parts) . '}';
     }
 
+    /** @var array<string,string>|null */
+    private static ?array $dumpEscapes = null;
+
     public static function quoteDump(string $s): string
     {
-        $out = '"';
-        foreach (Utf8::chars($s) as $ch) {
-            $out .= match ($ch) {
-                '\\' => '\\\\',
-                '"' => '\\"',
-                "\n" => '\\n',
-                "\t" => '\\t',
-                "\r" => '\\r',
-                default => ord($ch[0]) < 0x20
-                    ? sprintf('\\u%04x', Utf8::ord($ch))
-                    : $ch,
-            };
+        // Byte-level: every character that needs an escape is ASCII, and no ASCII
+        // byte occurs inside a multi-byte character. (This split the text into an
+        // array of characters first — gigabytes for a text at the length cap.)
+        if (self::$dumpEscapes === null) {
+            $map = ['\\' => '\\\\', '"' => '\\"', "\n" => '\\n', "\t" => '\\t', "\r" => '\\r'];
+            for ($i = 0; $i < 0x20; $i++) {
+                if (!isset($map[chr($i)])) $map[chr($i)] = sprintf('\\u%04x', $i);
+            }
+            self::$dumpEscapes = $map;
         }
-        return $out . '"';
+        return '"' . strtr($s, self::$dumpEscapes) . '"';
     }
 
     // --- host convenience ---------------------------------------------------

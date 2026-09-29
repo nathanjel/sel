@@ -30,13 +30,23 @@ second reporting channel, no `explain()` API.
 | Code | Raised when |
 |---|---|
 | `E_SQL_DIALECT` | the named dialect does not exist, is a base rather than a target, or is below an entry's `since` |
-| `E_SQL_UNSUPPORTED` | an operator or function has no mapping in this dialect — or has one carrying a `caveat` while `strict` is set |
+| `E_SQL_UNSUPPORTED` | an operator or function has no mapping in this dialect — or has one carrying a `caveat` while `strict` is set Also a program-supplied alias or column that is empty or holds NUL, two PostgreSQL aliases sharing 63 bytes, and a TEXT value holding NUL (`sql/MAP.md` §3.1). |
 | `E_SQL_UNBOUND` | a variable is read that the bindings do not name |
-| `E_SQL_BINDING` | a binding is malformed, names an unknown field, or collides with another relation's alias. *Malformed* is checked rather than assumed: a `column`, `raw` or `table` that is not a string, an identifier that is empty or contains a NUL, an alias that is not a string, and a `value` declaring `type: NUM` whose text is not SEL's canonical form for that number |
+| `E_SQL_BINDING` | a binding is malformed, names an unknown field, or collides with another relation's alias. *Malformed* is checked rather than assumed: a `column`, `raw` or `table` that is not a string, an identifier that is empty or contains a NUL, an alias that is not a string, and a `value` declaring `type: NUM` whose text is not SEL's canonical form for that number Also two binding or field names that differ only by ASCII case (`sql/MAP.md` §3.1). |
 | `E_SQL_ASSIGN` | stage 1 refuses an assignment or a sequence: compound assignment, reassignment, a read before the write, an assignment inside an aggregate body or a call argument, a non-constant index on the target, or a non-assignment before the result expression |
 | `E_SQL_INVALID` | every argument is knowable and SEL rejects the expression: an out-of-range length or position, a fractional count, text that is not a number, a zero divisor. *Knowable* means a literal, a scalar `value` binding, or an assignment over those. The message carries SEL's own code and the position is SEL's own innermost failing node |
 | `E_SQL_DEPTH` | the expression nests deeper than SEL will evaluate. The limit is the evaluator's own `MAX_DEPTH`, read from there and not copied, so a rule that translates is a rule that evaluates |
-| `E_SQL_SHAPE` | a list where a scalar is required; `_K` inside a relation body; a non-BOOL where a condition is required; an aggregate over something that is neither a list, a `columns` binding nor a `relation` binding; `asCondition()` on a non-BOOL fragment. Also every place a **row of a multi-field relation** is treated as one value, because it is a map in SEL: a bare `_`, `IN`, `COUNT`, `HAS`, indexing by position, and iterating it. `HAS` over a relation is refused outright — a relation's keys are positions, and the answer needs the row count |
+| `E_SQL_SIZE` | the expression the translator would render has more than `MAX_SQL_NODES` (250 000, from `spec/limits.json`) nodes, an inlined helper or an unrolled element counted once per occurrence (docs/internals/sql-translation.md §7.4). The check runs as the nodes are dispatched and stops at the first node over the limit, so the work done is bounded by the limit and not by the size the program would have expanded to. It carries no position: it blames the whole rule, not a node of it, like a plan refusal. A rule past it is not wrong; it is evaluated the ordinary way |
+| `E_SQL_SHAPE` | a list where a scalar is required; `_K` inside a relation body; a non-BOOL where a condition is required; an aggregate over something that is neither a list, a `columns` binding nor a `relation` binding; `asCondition()` on a non-BOOL fragment. Also every place a **row of a multi-field relation** is treated as one value, because it is a map in SEL: a bare `_`, `IN`, `COUNT`, `HAS`, indexing by position, and iterating it. `HAS` over a relation is refused outright — a relation's keys are positions, and the answer needs the row count Also a `raw` field named by `SELECT_COLS` or read across a derived table (`sql/MAP.md` §3.1). |
+
+**Statement counts raise SEL's own codes.** A `TAKE` or `DROP` count that SEL
+rejects is refused with SEL's code at the count's position and not with an
+`E_SQL_*` code: `E_NOT_INT` for a fractional count (`TAKE(1.5)`), `E_RANGE` for a
+negative one (`TAKE(-1)`). A count SEL accepts is never refused: a whole number
+with a scale (`2.0`) translates, and a count past 9223372036854775807 is clamped
+to it (docs/internals/sql-translation.md §11.6). `E_NOT_INT` and `E_RANGE` are
+therefore members of this layer's vocabulary for that one place, and nowhere
+else.
 
 ---
 
