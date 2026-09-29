@@ -334,5 +334,22 @@ say('host.fn.refuse.not-callable', _r)
 register_function('HOST_OOB', 1, 2, lambda a: Value.text(a.text(1) if a.count() > 1 else a.text(5)))
 say('host.fn.arg.out-of-range', code(lambda: evaluate('HOST_OOB("x")')))
 
+
+# --- T12 (CPP-C15): a host-supplied value nested past the cap, handed to RECORD beside a
+# key that is not text. Arguments are evaluated first and coerced after (spec/SPEC.md §6.2),
+# so the key's E_NOT_TEXT wins; copying the over-deep value (E_DEPTH) happens only once the
+# arguments are known good. C++ built the pair in one expression and let the copy run first.
+def _at(ctx, src):
+    try:
+        sel_compile(src).run(ctx)
+        return 'no error'
+    except SelError as e:
+        return f'{e.code} {e.line}:{e.col}'
+
+
+_deep = Value.none()
+_deep.set('V', _nest(300))
+say('program.run.over-deep-host-value.key-error-first', f"{_at(_deep, 'RECORD(TRUE, V)')}|{_at(_deep, 'RECORD(\"k\", V)')}")
+
 sys.stdout.reconfigure(encoding='utf-8', newline='\n')
 sys.stdout.write('\n'.join(out) + '\n')

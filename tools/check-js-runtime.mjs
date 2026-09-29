@@ -299,6 +299,26 @@ expectOk('JS-C36: entries() keeps the order toNative cannot', () => {
   const v = compile('RECORD("b", 1, "2", 2, "a", 3)').run({});
   assert.equal(Value.fromEntries(v.entries()).dump(), v.dump());
 });
+// Gate triage: a value with children and no scalar sorts by scalar context (SPEC 3.2/7.3).
+{
+  const { evaluate } = await import('../js/src/sel.mjs');
+  const rows = 'LIST(RECORD("k", 3, "v", "c"), RECORD("k", 1, "v", "a"), RECORD("k", 2, "v", "b"))';
+  const ties = 'LIST(RECORD("k", 1, "v", "a"), RECORD("k", 2, "v", "b"), RECORD("k", 1.0, "v", "c"), RECORD("k", "1", "v", "d"))';
+  const joined = (e) => evaluate(`JOIN(MAP(${e}, _["v"]), ",")`).scalar;
+  expectOk('records sort by their first field', () => {
+    assert.equal(joined(`${rows} .> SORT()`), 'a,b,c');
+    assert.equal(joined(`${rows} .> SORT_DESC()`), 'c,b,a');
+  });
+  expectOk('tied records keep input order in both directions', () => {
+    assert.equal(joined(`${ties} .> SORT()`), 'a,c,d,b');
+    assert.equal(joined(`${ties} .> SORT_DESC()`), 'b,a,c,d');
+    assert.equal(joined(`${ties} .> TOP_DESC(4)`), 'b,a,c,d');
+  });
+  expectOk('a record ranks by the kind of its first field', () => {
+    assert.equal(joined('LIST(RECORD("k", "b", "v", "b"), RECORD("k", 5, "v", "n"), RECORD("k", "a", "v", "a")) .> SORT()'), 'n,a,b');
+    assert.equal(joined('LIST(RECORD("k", 5, "v", "n"), RECORD("k", TRUE, "v", "t"), RECORD("k", FALSE, "v", "f")) .> SORT()'), 'f,t,n');
+  });
+}
 // JS-C38: the digit-cap prefilter is derived from the limit, not typed in.
 {
   const { intLimitShift } = await import('../js/src/decimal.mjs');
@@ -726,6 +746,78 @@ a*a*$
     for (const pat of ['a'.repeat(65535), '(?:ab){65535}', `${'(a|b)'.repeat(400)}`, '[a-z]'.repeat(30000)]) verdict(pat);
     assert.ok(Date.now() - t0 < 8000, 'slow analysis');
   });
+}
+
+// --- T12: host API contract (spec/SPEC.md §8): flow-sensitive dependencies(),
+// non-source input, the host-function argument reader, command-line misuse ----
+{
+  const { registerFunction } = await import('../js/src/sel.mjs');
+  const deps = (src) => compile(src).dependencies().join(' ') || '-';
+  const cases = [
+    ['A + 1; A = 2', 'A'],                          // read before the assignment
+    ['A = 1; A + B', 'B'],                          // assigned first: not a dependency
+    ['X += 1', 'X'],                                // op= reads its target
+    ['A[1] += 1', 'A'],
+    ['A[1] = 2', '-'],                              // plain A[k]=x creates A, reads only the index
+    ['A[I] = 2', 'I'],
+    ['A = A + 1', 'A'],                             // the right side runs before the store
+    ['IF(X, A = 1, 0); A', 'A X'],                  // one arm assigns
+    ['IF(X, A = 1, A = 2); A', 'X'],                // both arms assign
+    ['IF(X, A = 1); A', 'A X'],                     // two-argument IF has an empty else
+    ['X AND (A = 1); A', 'A X'],                    // right side of AND is conditional
+    ['X OR (A = 1); A', 'A X'],
+    ['X ?? (A = 1); A', 'A X'],
+    ['X ??? (A = 1); A', 'A X'],
+    ['MAP(L, A = _); A', 'A L'],                    // an aggregate body may never run
+    ['COND(X, A = 1, Y, A = 2, A = 3); A', 'X Y'],  // every outcome, default included, assigns
+    ['COND(X, A = 1, Y, A = 2, 0); A', 'A X Y'],
+    ['LEFT("abc", (N = 2)); N', '-'],               // a strict argument always runs
+    ['COALESCE(X, (A = 1), 2); A', 'A X'],          // later COALESCE arguments are conditional
+    ['GET(T, "k", (A = 1)); A', 'A T'],             // GET's default is conditional
+    ['A = 1; MAP(L, A + _)', 'L'],                  // definite before the body
+    ['ALL(I, IT, IT > 0)', 'I'],                    // binders are not variables
+  ];
+  for (const [src, want] of cases) {
+    expectOk(`T12 dependencies: ${src} => ${want}`, () => assert.equal(deps(src), want));
+  }
+  expectOk('T12 dependencies keeps its E_DEPTH cap and position', () => {
+    const src = 'A' + '+A'.repeat(300);
+    const e = (() => { try { deps(src); } catch (x) { return x; } return null; })();
+    assert.ok(e && e.code === 'E_DEPTH', 'want E_DEPTH');
+  });
+  for (const bad of [12, null, undefined, {}, ['1'], 1n, Symbol.iterator, Buffer.from('1')]) {
+    expectCode(`T12 compile(${typeof bad === 'symbol' ? 'symbol' : String(bad)}) is E_BAD_ARG`, 'E_BAD_ARG', () => compile(bad));
+  }
+  registerFunction('T12_OOB', 1, 3, (a) => a.text(2));
+  registerFunction('T12_OOB_VAL', 1, 3, (a) => a.val(7));
+  registerFunction('T12_OOB_POS', 1, 3, (a) => { a.posOf(-1); return Value.text('x'); });
+  registerFunction('T12_OOB_SYM', 1, 3, (a) => { a.symbol(4); return Value.text('x'); });
+  for (const src of ['T12_OOB("x")', 'T12_OOB_VAL("x")', 'T12_OOB_POS("x")', 'T12_OOB_SYM("x")']) {
+    expectOk(`T12 host argument read past the count: ${src}`, () => {
+      let e = null;
+      try { compile(src).run(Value.none()); } catch (x) { e = x; }
+      assert.ok(e && e.code === 'E_BAD_ARG', `want E_BAD_ARG, got ${e && (e.code || e.name)}`);
+      assert.equal(e.line, 1);          // positioned at the call
+    });
+  }
+  expectOk('T12 a host function may still read an argument the call does have', () => {
+    registerFunction('T12_OK', 1, 2, (a) => Value.text(a.count() > 1 ? a.text(1) : a.text(0)));
+    assert.equal(compile('T12_OK("a", "b")').run(Value.none()).scalar, 'b');
+    assert.equal(compile('T12_OK("a")').run(Value.none()).scalar, 'a');
+  });
+  // The command line: one plain line on stderr, no stack trace, a small non-zero status.
+  const cli = resolve('js/bin/sel.mjs');
+  const missing = join(tmpdir(), 'sel-no-such-dir', 'no-such-file.sel');
+  for (const [label, argv] of [['-e without operand', ['-e']], ['--deps -e without operand', ['--deps', '-e']],
+    ['a missing file', [missing]], ['an unknown option', ['--no-such-flag']]]) {
+    expectOk(`T12 CLI misuse: ${label}`, () => {
+      const r = spawnSync(process.execPath, [cli, ...argv], { encoding: 'utf8', input: '' });
+      assert.ok(r.status > 0 && r.status < 128, `status ${r.status}`);
+      assert.equal(r.stdout, '');
+      assert.ok(r.stderr.trim().split('\n').length === 1, `not one line: ${r.stderr}`);
+      assert.ok(!/node:|file:\/\/\/|Error:|at .*\(/.test(r.stderr), `stack trace: ${r.stderr}`);
+    });
+  }
 }
 
 if (boundary.length) {

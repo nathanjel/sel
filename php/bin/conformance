@@ -15,7 +15,7 @@ declare(strict_types=1);
 // 128 MB memory_limit, which PHP enforces with an uncatchable fatal error. This is
 // the test runner's budget, not the library's: an application that builds such
 // values sets its own limit.
-ini_set('memory_limit', '1G');
+if (ini_get('memory_limit') !== '-1') ini_set('memory_limit', '1G');   // a caller's -d memory_limit=-1 stands
 
 require_once __DIR__ . '/../src/bootstrap.php';
 

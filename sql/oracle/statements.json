@@ -152,7 +152,14 @@
     {
       "name": "bounded slice bucket",
       "ordered": false,
-      "sel": "ITEMS .> SORT_BY(_[\"id\"]) .> TAKE(2) .> DROP(1) .> BUCKET(_[\"cat\"], RECORD(\"cat\", _K, \"n\", COUNT(_)))"
+      "sel": "ITEMS .> SORT_BY(_[\"id\"]) .> TAKE(2) .> DROP(1) .> BUCKET(_[\"cat\"], RECORD(\"cat\", _K, \"n\", COUNT(_)))",
+      "refuse": {
+        "mariadb": "E_SQL_SHAPE",
+        "mysql": "E_SQL_SHAPE",
+        "postgresql": "E_SQL_SHAPE",
+        "sqlite": "E_SQL_SHAPE"
+      },
+      "why": "SEL lists a bucket's groups in the order their first member appears in the sorted list, and a GROUP BY returns its groups in no order: a LIMIT beside the ORDER BY decides which rows survive, not the order the groups come back in, so the sort does not survive the BUCKET (docs/internals/sql-translation.md 12.1, 'Order'). The statement is refused at the BUCKET; the hybrid lane runs the grouping in memory over the sorted rows"
     },
     {
       "name": "bounded slice empty-input",

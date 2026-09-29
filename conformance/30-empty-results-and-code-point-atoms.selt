@@ -1,0 +1,73 @@
+% Cases found while bringing up the Rust host (2026-09-30). Each one is a place
+% where a host answered differently from the others and no case said which was
+% right; the answers below are what JS, PHP, Python, C++, Lisp and Go agree on.
+
+% --- FILTER always answers a list container ------------------------------------
+
+### name: agg.filter.scalar-source-keeping-nothing-is-not-null
+--- note
+SPEC 7.3: FILTER's result is a list. A scalar source is its own single child, and when the predicate drops it the answer is the empty list, which is not NULL (a host built the result as a record and returned NULL for no entries).
+--- source
+IS_NULL(FILTER(5, _ > 7))
+--- expect
+bool FALSE
+===
+
+### name: agg.filter.record-source-keeping-nothing-is-not-null
+--- source
+IS_NULL(FILTER(RECORD("a", 1), _ > 7))
+--- expect
+bool FALSE
+===
+
+### name: agg.filter.empty-result-skips-coalesce
+--- note
+`??` only replaces NULL; an empty list is a value.
+--- source
+COUNT(FILTER(5, FALSE) ?? LIST(1, 2))
+--- expect
+text "0"
+===
+
+### name: agg.filter.empty-result-has-no-scalar
+--- note
+The empty list has neither a scalar nor children, which is E_NO_SCALAR, not E_NULL.
+--- source
+FILTER(RECORD("a", 1), _ > 7) $<= "a"
+--- expect
+error E_NO_SCALAR at 1:1
+===
+
+% --- A quantifier binds to a whole code point -----------------------------------
+
+### name: re.reject.nullable-loop-body.non-ascii-literal
+--- note
+SPEC 7.8: a loop whose body can match the empty string is refused. `é?` is an optional single code point; a structure check that steps through the pattern by bytes binds the `?` to the last byte of `é` only and wrongly sees a body that must match something.
+--- source
+RFIND('(?:é?)+', "a")
+--- expect
+error E_REGEX_SYNTAX at 1:7
+===
+
+### name: re.reject.nullable-loop-body.astral-literal
+--- source
+RFIND('(😀?)*', "a")
+--- expect
+error E_REGEX_SYNTAX at 1:7
+===
+
+### name: re.reject.nullable-loop-body.non-ascii-counted
+--- source
+RFIND('a(?:😀{0,2})+', "a")
+--- expect
+error E_REGEX_SYNTAX at 1:7
+===
+
+### name: re.accept.non-ascii-loop-that-must-consume
+--- note
+The same shapes are fine when the body has to match at least one code point.
+--- source
+RFIND('(?:é|a)(?:é|a)*b', "ééab")
+--- expect
+text "1"
+===

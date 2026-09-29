@@ -26,9 +26,9 @@
 
 set -uo pipefail
 # PHP holds a Value in ~255 bytes, so a collection near MAX_COLLECTION needs about
-# a gigabyte there (docs/usage: PHP memory_limit); the check asks for it rather than
+# a gigabyte or more there (docs/usage: "PHP memory"); the check asks for it rather than
 # grading the host's default 128M.
-export SEL_PHP_FLAGS="${SEL_PHP_FLAGS:--d memory_limit=1G}"
+export SEL_PHP_FLAGS="${SEL_PHP_FLAGS:--d memory_limit=-1}"
 cd "$(dirname "$0")/.."
 . tools/impls.sh
 

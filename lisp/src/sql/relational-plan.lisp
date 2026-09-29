@@ -26,6 +26,10 @@
   (source-table "")
   (source-alias nil)
   (source-subquery nil)
+  ;; A derived table with no LIMIT beside its ORDER BY does not keep the order, so a
+  ;; step that needs the rows in that order (a BUCKET's groups, a LINK's rows, a
+  ;; later sort's ties) cannot be built on it.
+  (order-dropped nil)
   (correlate nil)
   (joins '() :type list)
   (distinct nil :type boolean)

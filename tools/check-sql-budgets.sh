@@ -80,7 +80,7 @@ failures=0
 for corpus in "$WORK"/*.selc; do
   name="$(basename "$corpus" .selc)"
   for impl in $(available_impls); do
-    case "$impl" in js-bundle|js-bundle-min|python-wheel|rust) continue ;; esac
+    case "$impl" in js-bundle|js-bundle-min|python-wheel) continue ;; esac
     out="$( ( ulimit -v 6291456 2>/dev/null; timeout "$CEILING" bash -c ". tools/impls.sh; impl_sqlfuzz $impl '$corpus' mariadb" ) 2>&1 | head -c 4000)"
     rc=$?
     # PIPESTATUS is lost through the subshell; a timeout or a signal shows as no output.
@@ -101,7 +101,7 @@ declare -A seen
 for corpus in "$WORK"/*.size; do
   name="$(basename "$corpus" .size)"
   for impl in $(available_impls); do
-    case "$impl" in js-bundle|js-bundle-min|python-wheel|rust) continue ;; esac
+    case "$impl" in js-bundle|js-bundle-min|python-wheel) continue ;; esac
     out="$WORK/$name.$impl.out"
     ( ulimit -v 6291456 2>/dev/null; timeout $((CEILING * 4)) bash -c ". tools/impls.sh; impl_sqlfuzz $impl '$corpus' mariadb" ) > "$out" 2>&1
     if [ ! -s "$out" ]; then

@@ -606,21 +606,19 @@ def check_literal(name, args):
     """Compile-time check of a literal pattern (SPEC 7.8): a pattern that is a
     plain text literal is validated when the program is compiled, so a bad one is
     E_REGEX_SYNTAX even where it is never run. A pattern that is computed can only
-    be checked when it runs. The flags are read only if they are literal too, and
-    an invalid flag is left to the run-time E_BAD_ARG."""
+    be checked when it runs. The flags narrow the check only when they are literal
+    and contain an `i`; a flags argument that is computed, unknown or invalid is
+    taken as no flags and left to the run-time E_BAD_ARG -- it never stops the
+    pattern being checked, so a bad pattern beside a bad flag is the pattern's
+    error, at compile time, on every host."""
     if not args or args[0].t != 'text':
         return
     flag_i = 3 if name == 'RREPLACE' else 2
     ignore_case = False
     if len(args) > flag_i:
         f = args[flag_i]
-        if f.t != 'text' or any(ch != 'i' for ch in f.v):
-            return
-        ignore_case = 'i' in f.v
-    pattern = args[0].v
-    if ignore_case and not pattern.isascii():
-        return
-    validate(pattern, args[0].pos, ignore_case)
+        ignore_case = f.t == 'text' and 'i' in f.v
+    validate(args[0].v, args[0].pos, ignore_case)
 
 
 def _matches(rx, subject):

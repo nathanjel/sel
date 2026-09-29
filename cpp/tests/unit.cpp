@@ -11,7 +11,9 @@
 
 #include "../sel.cpp"
 
+#include <atomic>
 #include <chrono>
+#include <thread>
 #include <filesystem>
 #include <fstream>
 #include <algorithm>
@@ -393,6 +395,119 @@ void test_host_api() {
     selt::eq(e.code(), std::string("E_UNDEF_VAR"), "error code");
     selt::eq(e.line(), 2, "error line");
     selt::eq(e.col(), 3, "error column");
+  }
+}
+
+// T12 (CPP-C44, CPP-C13, CPP-C11, CPP-C15): the flow-sensitive dependencies()
+// contract (spec/SPEC.md §8), the host-function argument reader, registration
+// beside compilation, and RECORD's key-before-copy order.
+std::string deps_of(const std::string& src) {
+  std::string out;
+  for (const std::string& d : compile(src).dependencies()) out += (out.empty() ? "" : " ") + d;
+  return out.empty() ? "-" : out;
+}
+
+void test_dependencies_flow_and_host_boundary() {
+  selt::section("T12 dependencies, host arguments, registration");
+
+  // A read that can happen before a DEFINITE assignment is a dependency.
+  selt::eq(deps_of("A + 1; A = 2"), std::string("A"), "read before assign");
+  selt::eq(deps_of("X += 1"), std::string("X"), "a compound assignment reads its target");
+  selt::eq(deps_of("A[1] += 1"), std::string("A"), "an indexed compound assignment reads its target");
+  selt::eq(deps_of("A[1] = 2"), std::string("-"), "a plain indexed assignment creates A");
+  selt::eq(deps_of("A[K] = 2"), std::string("K"), "and reads only its index");
+  selt::eq(deps_of("A = A + 1"), std::string("A"), "the right side runs before the store");
+  selt::eq(deps_of("A = 1; A + B"), std::string("B"), "assign then read");
+
+  // Only an assignment that is certain to run counts.
+  selt::eq(deps_of("IF(X, A = 1, 0); A"), std::string("A X"), "one branch is not enough");
+  selt::eq(deps_of("IF(X, A = 1, A = 2); A"), std::string("X"), "both branches assign");
+  selt::eq(deps_of("X AND (A = 1); A"), std::string("A X"), "the right side of AND may not run");
+  selt::eq(deps_of("X OR (A = 1); A"), std::string("A X"), "nor OR");
+  selt::eq(deps_of("X ?? (A = 1); A"), std::string("A X"), "nor ??");
+  selt::eq(deps_of("X ??? (A = 1); A"), std::string("A X"), "nor ???");
+  selt::eq(deps_of("MAP(L, A = _); A"), std::string("A L"), "an aggregate body may run zero times");
+  selt::eq(deps_of("COND(X, A = 1, Y, A = 2, A = 3); A"), std::string("X Y"),
+           "COND with a default that every branch assigns");
+  selt::eq(deps_of("COND(X, A = 1, Y, A = 2, 0); A"), std::string("A X Y"),
+           "a COND default that does not");
+  selt::eq(deps_of("LEFT(\"abc\", (N = 2)); N"), std::string("-"), "an argument's assignment is definite");
+  selt::eq(deps_of("IF(X, 1, 2)"), std::string("X"), "a plain conditional");
+  selt::eq(deps_of("(A = 1) AND A"), std::string("-"), "AND's right side sees its left side's assignment");
+  selt::eq(deps_of("ALL(L, I, I > LIM)"), std::string("L LIM"), "binders are not dependencies");
+
+  // The cap stays: dependencies() of a program that could not be evaluated.
+  {
+    std::string deep = "A";
+    for (int i = 0; i < 300; i++) deep += "+A";
+    selt::raises("E_DEPTH", [&] { compile(deep).dependencies(); }, "dependencies keep the depth cap");
+  }
+
+  // CPP-C13: a host function that reads an argument the call does not have.
+  register_function("T12_OPT", 1, 2, [](HostArgs& a) { return a.val(a.count() > 1 ? 1 : 5); });
+  register_function("T12_OPT_TEXT", 1, 2, [](HostArgs& a) { return Value::text(a.text(3)); });
+  register_function("T12_OPT_POS", 1, 2, [](HostArgs& a) { a.pos_of(-1); return Value::text("x"); });
+  selt::raises("E_BAD_ARG", [] { compile("T12_OPT(1)").run(); }, "an argument read past the count is E_BAD_ARG");
+  selt::raises("E_BAD_ARG", [] { compile("T12_OPT_TEXT(1)").run(); }, "text() reads are checked too");
+  selt::raises("E_BAD_ARG", [] { compile("T12_OPT_POS(1)").run(); }, "and pos_of");
+  selt::eq(dump_of("T12_OPT(1, 2)"), std::string("t\"2\""), "an argument the call has is read normally");
+  try {
+    compile("1 + T12_OPT(1)").run();
+    selt::ok(false, "expected E_BAD_ARG");
+  } catch (const SelError& e) {
+    selt::eq(e.line(), 1, "the error is at the call: line");
+    selt::eq(e.col(), 5, "the error is at the call: column");
+  }
+
+  // CPP-C11: registering while other threads compile and run.
+  register_function("T12_RACE", 0, 1, [](HostArgs&) { return Value::text("v0"); });
+  {
+    std::atomic<bool> stop{false};
+    std::atomic<int> bad{0};
+    std::vector<std::thread> readers;
+    for (int t = 0; t < 3; ++t) {
+      readers.emplace_back([&] {
+        while (!stop.load()) {
+          try {
+            Value ctx = Value::none();
+            const Value v = compile("T12_RACE(1)").run(ctx);
+            if (v.scalar().empty() || v.scalar()[0] != 'v') bad++;
+          } catch (...) {
+            bad++;
+          }
+        }
+      });
+    }
+    for (int i = 0; i < 200; ++i) {
+      const std::string tag = "v" + std::to_string(i + 1);
+      register_function("T12_RACE", 0, 1, [tag](HostArgs&) { return Value::text(tag); });
+      (void)function_names();
+    }
+    stop = true;
+    for (auto& th : readers) th.join();
+    selt::eq(bad.load(), 0, "registering beside compiling threads is safe");
+  }
+
+  // CPP-C15: the key is checked before the value is copied.
+  {
+    Value v = Value::text("x");
+    for (int i = 0; i < 300; i++) {
+      Value p = Value::none();
+      p.set("1", v);
+      v = p;
+    }
+    Value ctx = Value::none();
+    ctx.set("V", v);
+    const auto at = [&](const std::string& src) {
+      try {
+        compile(src).run(ctx);
+        return std::string("no error");
+      } catch (const SelError& e) {
+        return e.code() + " " + std::to_string(e.line()) + ":" + std::to_string(e.col());
+      }
+    };
+    selt::eq(at("RECORD(TRUE, V)"), std::string("E_NOT_TEXT 1:8"), "RECORD: the key's error comes first");
+    selt::eq(at("RECORD(\"k\", V)"), std::string("E_DEPTH 1:1"), "RECORD: a good key then meets the depth cap");
   }
 }
 
@@ -1333,6 +1448,22 @@ void test_regex_ambiguity() {
   selt::eq(verdict_ic(many, false), std::string("ok"), "5000 distinct alternatives");
 }
 
+// Gate triage: a value with children and no scalar sorts by scalar context
+// (spec §3.2 / §7.3): a record by its first field, ties in input order.
+void test_records_sort_by_first_field() {
+  selt::section("records sort by scalar context");
+  const std::string rows = "LIST(RECORD(\"k\", 3, \"v\", \"c\"), RECORD(\"k\", 1, \"v\", \"a\"), RECORD(\"k\", 2, \"v\", \"b\"))";
+  const std::string ties = "LIST(RECORD(\"k\", 1, \"v\", \"a\"), RECORD(\"k\", 2, \"v\", \"b\"), RECORD(\"k\", 1.0, \"v\", \"c\"), RECORD(\"k\", \"1\", \"v\", \"d\"))";
+  auto join = [](const std::string& e) { return "JOIN(MAP(" + e + ", _[\"v\"]), \",\")"; };
+  selt::eq(dump_of(join(rows + " .> SORT()")), std::string("t\"a,b,c\""), "asc");
+  selt::eq(dump_of(join(rows + " .> SORT_DESC()")), std::string("t\"c,b,a\""), "desc");
+  selt::eq(dump_of(join(ties + " .> SORT()")), std::string("t\"a,c,d,b\""), "ties asc");
+  selt::eq(dump_of(join(ties + " .> SORT_DESC()")), std::string("t\"b,a,c,d\""), "ties desc");
+  selt::eq(dump_of(join(ties + " .> TOP_DESC(4)")), std::string("t\"b,a,c,d\""), "top desc ties");
+  selt::eq(dump_of(join("LIST(RECORD(\"k\", 5, \"v\", \"n\"), RECORD(\"k\", TRUE, \"v\", \"t\"), RECORD(\"k\", FALSE, \"v\", \"f\")) .> SORT()")),
+           std::string("t\"f,t,n\""), "bool rank");
+}
+
 void test_regex_walk_cache_and_limits() {
   selt::section("regex walk, cache, engine limits");
   // The RREPLACE walk of spec §7.8: after an empty match at s the scan resumes at
@@ -1455,7 +1586,9 @@ int main() {
   test_join_keys();
   test_regex_shapes();
   test_regex_ambiguity();
+  test_records_sort_by_first_field();
   test_regex_walk_cache_and_limits();
   test_size_caps();
+  test_dependencies_flow_and_host_boundary();
   return selt::report("cpp unit");
 }

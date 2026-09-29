@@ -1220,8 +1220,34 @@ func (t *Translator) foldPairwise(op string, parts []*Fragment, pos Pos) *Fragme
 	return acc
 }
 
+// arithmeticOperand: an operand that is a constant TEXT holding a number, in an
+// arithmetic position, is that number (PHP-C33): SEL computes with it exactly, and
+// MariaDB and MySQL would read the quoted string as a DOUBLE. It is translated as the
+// numeric literal it stands for. The text was translated first (its SQL kind is only
+// known then), so the slots it bound are taken back, or `params` mode would report a
+// value bound that no placeholder uses.
+func (t *Translator) arithmeticOperand(n *SNode) *Fragment {
+	mark := len(t.params)
+	f := t.node(n)
+	if f.Kind != KindText || !IsConstant(n, t.constNames) {
+		return f
+	}
+	text, ok := NumericTextConstant(n, t.constRoot)
+	if !ok {
+		return f
+	}
+	t.params = t.params[:mark]
+	t.paramKinds = t.paramKinds[:mark]
+	return t.node(Leaf(litNode(sel.NodeNum, text, false, n.Pos)))
+}
+
 func (t *Translator) unary(n *SNode) *Fragment {
-	x := t.node(n.L())
+	var x *Fragment
+	if n.Str == "NOT" {
+		x = t.node(n.L())
+	} else {
+		x = t.arithmeticOperand(n.L())
+	}
 	if n.Str == "NOT" {
 		x = t.requireBool(x, n.L().Pos, "NOT")
 	} else {
@@ -1237,8 +1263,14 @@ func (t *Translator) binary(n *SNode) *Fragment {
 		return t.inOperator(n)
 	}
 
-	l := t.node(n.L())
-	r := t.node(n.R())
+	var l, r *Fragment
+	if arithmeticOpsSet[op] {
+		l = t.arithmeticOperand(n.L())
+		r = t.arithmeticOperand(n.R())
+	} else {
+		l = t.node(n.L())
+		r = t.node(n.R())
+	}
 
 	if op == "AND" || op == "OR" || op == "XOR" {
 		l = t.requireBool(l, n.L().Pos, op)
@@ -1844,7 +1876,14 @@ func (t *Translator) call(n *SNode) *Fragment {
 	rewritten := t.rewriteRegex(n)
 	var args []*Fragment
 	for i, arg := range rewritten.Kids {
-		f := t.node(arg)
+		// MIN and MAX compare their arguments as numbers: a numeric text constant is
+		// the number, as in arithmetic (PHP-C33).
+		var f *Fragment
+		if name == "MIN" || name == "MAX" {
+			f = t.arithmeticOperand(arg)
+		} else {
+			f = t.node(arg)
+		}
 		if f.Kind == KindList {
 			Refuse("E_SQL_SHAPE",
 				fmt.Sprintf("argument to %s is a list, and a SQL expression is a scalar", name),

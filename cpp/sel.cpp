@@ -41,6 +41,7 @@
 #include <limits>
 #include <map>
 #include <mutex>
+#include <shared_mutex>
 #include <set>
 #include <span>
 #include <stdexcept>
@@ -2330,9 +2331,19 @@ std::vector<std::shared_ptr<const Spec>>& retired_host_specs() {
   return v;
 }
 
+// Registering while other threads compile or run is safe (spec §8.1): every
+// access to the host table and to the retired list is under this lock. A Spec a
+// reader has been handed stays valid after it is replaced, because the replaced
+// one is retired rather than freed.
+std::shared_mutex& host_table_mutex() {
+  static std::shared_mutex m;
+  return m;
+}
+
 const Spec* registry_lookup(const std::string& name) {
   auto it = table().find(name);
   if (it != table().end()) return &it->second;
+  std::shared_lock<std::shared_mutex> lock(host_table_mutex());
   auto h = host_table().find(name);
   return h == host_table().end() ? nullptr : h->second.get();
 }
@@ -5740,7 +5751,11 @@ void register_structure() {
                 const int n = a.count();
                 cap_collection(static_cast<u128>(n / 2), a.pos());
                 for (int i = 0; i < n; i += 2) {
-                  rec.set(a.text(i), a.val(i + 1).clone_below(1, a.pos()));
+                  // The key is coerced into a local first: argument evaluation order is
+                  // unspecified, and the copy below can raise E_DEPTH for an over-deep
+                  // host value, which must not beat the key's own E_NOT_TEXT (CPP-C15).
+                  const std::string key = a.text(i);
+                  rec.set(key, a.val(i + 1).clone_below(1, a.pos()));
                 }
                 if (a.record_shape() && a.record_shape()->keys == rec.keys()) {
                   std::vector<Value> values;
@@ -5961,30 +5976,47 @@ std::optional<Value> walk(Args& a, Context& ctx, Visitor&& visit, const Node* bo
 // not an order at all: "10" < "1a" < "9" < "10" cycles, and what a sort returned
 // depended on the input's order. A rank per kind makes it transitive; equal
 // values tie, and the callers' stable sort keeps them in input order.
-int value_rank(const Value& v) {
-  if (v.is_null()) return 0;
-  if (v.kind() == Kind::Bool) return 1;
-  if (v.kind() == Kind::Text && v.looks_numeric()) return 2;
-  if (v.kind() == Kind::Text) return 3;
-  if (v.kind() == Kind::Bin) return 4;
-  return 5;   // a list or record: not an orderable scalar, all alike
+// A value with children and no scalar of its own is ordered by what scalar
+// context makes of it (spec §3.2: its first child, recursively): a record sorts by
+// its first field and ranks by that field's kind. nullptr when the chain ends in
+// nothing (NULL). NULL itself answers without throwing -- a sort key that is NULL
+// is common (`_["k"] ?? NULL`) and would otherwise cost an exception per compare.
+const Value* sort_leaf(const Value& v) {
+  if (v.kind() != Kind::None) return &v;
+  if (v.is_null()) return nullptr;
+  try {
+    return &v.scalar_source(Pos{});
+  } catch (const SelError&) {
+    return nullptr;
+  }
 }
 
-int compare_values(const Value& a, const Value& b) {
-  const int ra = value_rank(a);
-  const int rb = value_rank(b);
+int value_rank(const Value* v) {
+  if (!v || v->is_null()) return 0;
+  if (v->kind() == Kind::Bool) return 1;
+  if (v->kind() == Kind::Text && v->looks_numeric()) return 2;
+  if (v->kind() == Kind::Text) return 3;
+  if (v->kind() == Kind::Bin) return 4;
+  return 5;
+}
+
+int compare_values(const Value& av_in, const Value& bv_in) {
+  const Value* pa = sort_leaf(av_in);
+  const Value* pb = sort_leaf(bv_in);
+  const int ra = value_rank(pa);
+  const int rb = value_rank(pb);
   if (ra != rb) return (ra > rb) - (ra < rb);
   switch (ra) {
     case 1: {
-      const int av = a.boolean_scalar() ? 1 : 0;
-      const int bv = b.boolean_scalar() ? 1 : 0;
+      const int av = pa->boolean_scalar() ? 1 : 0;
+      const int bv = pb->boolean_scalar() ? 1 : 0;
       return (av > bv) - (av < bv);
     }
-    case 2: return dec_cmp(as_dec(a, Pos{}), as_dec(b, Pos{}));
+    case 2: return dec_cmp(as_dec(*pa, Pos{}), as_dec(*pb, Pos{}));
     case 3:
     case 4: {
-      const std::string& as = a.as_bytes();
-      const std::string& bs = b.as_bytes();
+      const std::string& as = pa->as_bytes();
+      const std::string& bs = pb->as_bytes();
       if (as < bs) return -1;
       if (as > bs) return 1;
       return 0;
@@ -8381,39 +8413,98 @@ void register_builtins() {
 // the five hosts spell this identically. It is capped at the same MAX_DEPTH the
 // evaluator uses and trips at the same node, so a program whose dependencies
 // cannot be computed is exactly a program that could not have been evaluated.
+//
+// What it computes is flow-sensitive (spec/SPEC.md §8): a variable is a
+// dependency when some read of it can happen before the program has DEFINITELY
+// assigned it, in evaluation order. `definite` is that set as the walk goes: an
+// assignment adds its target once its right side has run, but only where the
+// assignment is certain to run -- so a branch of IF or COND, the right side of
+// AND, OR, `??` and `???`, and an aggregate's body each walk a COPY, and only
+// what every branch of an IF/COND assigns survives the join.
 void collect(const Node* node, std::set<std::string>& bound, std::set<std::string>& reads,
-             std::set<std::string>& assigned, int depth) {
+             std::set<std::string>& definite, int depth) {
   if (!node) return;
   if (depth > MAX_DEPTH) fail("E_DEPTH", "expression nested too deeply", node->pos);
+  const auto read = [&](const std::string& name) {
+    if (!bound.count(name) && !definite.count(name)) reads.insert(name);
+  };
+  const auto intersect = [](const std::set<std::string>& a, const std::set<std::string>& b) {
+    std::set<std::string> out;
+    for (const std::string& x : a) {
+      if (b.count(x)) out.insert(x);
+    }
+    return out;
+  };
   switch (node->t) {
     case NT::Var:
-      if (!bound.count(node->s)) reads.insert(node->s);
+      read(node->s);
       return;
 
     case NT::Assign: {
       const Node* target = node->l.get();
       const Node* t = target;
+      std::vector<const Node*> indexes;
       while (t->t == NT::Index) {
-        collect(t->r.get(), bound, reads, assigned, depth + 1);
+        indexes.push_back(t->r.get());
         t = t->l.get();
       }
-      // `A = x` defines A; `A[k] = x` and `A += x` also read it.
-      if (target->t != NT::Var || node->s != "=") {
-        if (!bound.count(t->s)) reads.insert(t->s);
+      // The index expressions run once, left to right, before the right side.
+      for (auto it = indexes.rbegin(); it != indexes.rend(); ++it) {
+        collect(*it, bound, reads, definite, depth + 1);
       }
-      assigned.insert(t->s);
-      collect(node->r.get(), bound, reads, assigned, depth + 1);
+      // `A = x` and `A[k] = x` create A (and read only the indexes); `A += x`
+      // and `A[k] += x` read the target's current value first.
+      if (node->s != "=") read(t->s);
+      collect(node->r.get(), bound, reads, definite, depth + 1);
+      definite.insert(t->s);
       return;
     }
 
     case NT::Call: {
+      if (node->s == "IF" && node->items.size() >= 2) {
+        collect(node->items[0].get(), bound, reads, definite, depth + 1);
+        std::set<std::string> then_set = definite;
+        collect(node->items[1].get(), bound, reads, then_set, depth + 1);
+        std::set<std::string> else_set = definite;
+        if (node->items.size() > 2) collect(node->items[2].get(), bound, reads, else_set, depth + 1);
+        definite = intersect(then_set, else_set);
+        return;
+      }
+      if (node->s == "COND" && !node->items.empty()) {
+        // Conditions run in order, each only when the earlier ones were false;
+        // whatever ran so far is definite for what follows. Each value, and the
+        // default, runs alone.
+        std::set<std::string> joined;
+        bool have = false;
+        const auto join = [&](const std::set<std::string>& branch) {
+          joined = have ? intersect(joined, branch) : branch;
+          have = true;
+        };
+        const std::size_t n = node->items.size();
+        std::size_t i = 0;
+        for (; i + 1 < n; i += 2) {
+          collect(node->items[i].get(), bound, reads, definite, depth + 1);
+          std::set<std::string> branch = definite;
+          collect(node->items[i + 1].get(), bound, reads, branch, depth + 1);
+          join(branch);
+        }
+        if (i < n) {
+          std::set<std::string> branch = definite;
+          collect(node->items[i].get(), bound, reads, branch, depth + 1);
+          join(branch);
+        } else {
+          join(definite);   // no default: falling through assigns nothing new
+        }
+        definite = joined;
+        return;
+      }
       // Which arguments run inside the binder, and what they see, is decided
       // once, by binding_form() over the manifest's forms (spec/builtins.md).
       // No form -- a strict function, or a count the evaluator would refuse --
       // and every argument is read where the call stands.
       const auto form = binding_form(node->s, node->items, node->spec);
       if (!form) {
-        for (const auto& arg : node->items) collect(arg.get(), bound, reads, assigned, depth + 1);
+        for (const auto& arg : node->items) collect(arg.get(), bound, reads, definite, depth + 1);
         return;
       }
       std::optional<std::set<std::string>> inner;
@@ -8425,9 +8516,12 @@ void collect(const Node* node, std::set<std::string>& bound, std::set<std::strin
             inner = bound;
             for (const auto& b : form->binds) inner->insert(b);
           }
-          collect(node->items[i].get(), *inner, reads, assigned, depth + 1);
+          // The body may run any number of times, or never: it assigns nothing
+          // definite, but reads what has been assigned by now.
+          std::set<std::string> body = definite;
+          collect(node->items[i].get(), *inner, reads, body, depth + 1);
         } else {
-          collect(node->items[i].get(), bound, reads, assigned, depth + 1);
+          collect(node->items[i].get(), bound, reads, definite, depth + 1);
         }
       }
       return;
@@ -8435,17 +8529,30 @@ void collect(const Node* node, std::set<std::string>& bound, std::set<std::strin
 
     case NT::Seq:
     case NT::List:
-      for (const auto& item : node->items) collect(item.get(), bound, reads, assigned, depth + 1);
+      for (const auto& item : node->items) collect(item.get(), bound, reads, definite, depth + 1);
       return;
 
     case NT::Index:
-    case NT::Bin:
-      collect(node->l.get(), bound, reads, assigned, depth + 1);
-      collect(node->r.get(), bound, reads, assigned, depth + 1);
+      collect(node->l.get(), bound, reads, definite, depth + 1);
+      collect(node->r.get(), bound, reads, definite, depth + 1);
       return;
 
+    case NT::Bin: {
+      collect(node->l.get(), bound, reads, definite, depth + 1);
+      // The right side of AND, OR, `??` and `???` may never run.
+      const bool short_circuit =
+          node->s == "AND" || node->s == "OR" || node->s == "??" || node->s == "???";
+      if (short_circuit) {
+        std::set<std::string> rhs = definite;
+        collect(node->r.get(), bound, reads, rhs, depth + 1);
+      } else {
+        collect(node->r.get(), bound, reads, definite, depth + 1);
+      }
+      return;
+    }
+
     case NT::Un:
-      collect(node->l.get(), bound, reads, assigned, depth + 1);
+      collect(node->l.get(), bound, reads, definite, depth + 1);
       return;
 
     default:
@@ -9553,14 +9660,9 @@ Value Program::run() const {
 }
 
 std::vector<std::string> Program::dependencies() const {
-  std::set<std::string> bound, reads, assigned;
-  collect(ast_.get(), bound, reads, assigned, 1);
-  std::vector<std::string> out;
-  for (const std::string& r : reads) {
-    if (!assigned.count(r)) out.push_back(r);
-  }
-  std::sort(out.begin(), out.end());
-  return out;
+  std::set<std::string> bound, reads, definite;
+  collect(ast_.get(), bound, reads, definite, 1);
+  return std::vector<std::string>(reads.begin(), reads.end());   // a std::set: already sorted
 }
 
 Program compile(const std::string& source) { return Program(source, parse(source)); }
@@ -9573,18 +9675,38 @@ std::vector<std::string> function_names() {
   ensure_registered();
   std::vector<std::string> out;
   for (const auto& [name, spec] : table()) out.push_back(name);
-  for (const auto& [name, spec] : host_table()) out.push_back(name);
+  {
+    std::shared_lock<std::shared_mutex> lock(host_table_mutex());
+    for (const auto& [name, spec] : host_table()) out.push_back(name);
+  }
   std::sort(out.begin(), out.end());
   return out;
 }
 
 int HostArgs::count() const { return args_.count(); }
-const Value& HostArgs::val(int i) { return args_.val(i); }
-const std::string& HostArgs::text(int i) { return args_.text(i); }
-bool HostArgs::boolean(int i) { return args_.boolean(i); }
-long long HostArgs::integer(int i) { return args_.integer(i); }
-long long HostArgs::non_neg_int(int i) { return args_.non_neg_int(i); }
-Pos HostArgs::pos_of(int i) const { return args_.pos_of(i); }
+
+// An argument the call does not have is E_BAD_ARG at the call (spec §8.1), never
+// a read past the end of the argument vector: a function registered with
+// min < max that reads an optional argument without testing count() used to get
+// a heap-buffer-overflow (CPP-C13).
+static void host_arg_in_range(const Args& args, int i) {
+  if (i < 0 || i >= args.count()) {
+    fail("E_BAD_ARG",
+         "a host function read argument " + std::to_string(i + 1) + " but the call has " +
+             std::to_string(args.count()),
+         args.pos());
+  }
+}
+
+const Value& HostArgs::val(int i) { host_arg_in_range(args_, i); return args_.val(i); }
+const std::string& HostArgs::text(int i) { host_arg_in_range(args_, i); return args_.text(i); }
+bool HostArgs::boolean(int i) { host_arg_in_range(args_, i); return args_.boolean(i); }
+long long HostArgs::integer(int i) { host_arg_in_range(args_, i); return args_.integer(i); }
+long long HostArgs::non_neg_int(int i) { host_arg_in_range(args_, i); return args_.non_neg_int(i); }
+Pos HostArgs::pos_of(int i) const {
+  host_arg_in_range(args_, i);
+  return args_.pos_of(i);
+}
 
 void register_function(const std::string& name, int min, int max, HostFunction fn) {
   ensure_registered();
@@ -9611,6 +9733,7 @@ void register_function(const std::string& name, int min, int max, HostFunction f
   spec->min = min;
   spec->max = max;
   spec->host = std::make_shared<const HostFunction>(std::move(fn));
+  std::unique_lock<std::shared_mutex> lock(host_table_mutex());
   auto& slot = host_table()[key];
   if (slot) retired_host_specs().push_back(slot);
   slot = std::move(spec);

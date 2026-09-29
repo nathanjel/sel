@@ -523,5 +523,25 @@ func main() {
 		say("host.fn.arg.out-of-range", r)
 	}
 
+	// --- T12 (CPP-C15): a host-supplied value nested past the cap, handed to RECORD beside a
+	// key that is not text. Arguments are evaluated first and coerced after (spec/SPEC.md §6.2),
+	// so the key's E_NOT_TEXT wins; copying the over-deep value (E_DEPTH) happens only once the
+	// arguments are known good. C++ built the pair in one expression and let the copy run first.
+	{
+		ctx := sel.NewNone()
+		ctx.Set("V", nest(300))
+		at := func(src string) string {
+			_, err := sel.MustCompile(src).Run(ctx)
+			if err == nil {
+				return "no error"
+			}
+			if se, ok := err.(*sel.SelError); ok {
+				return fmt.Sprintf("%s %d:%d", se.Code, se.Line(), se.Col())
+			}
+			return "host:error"
+		}
+		say("program.run.over-deep-host-value.key-error-first", at("RECORD(TRUE, V)")+"|"+at("RECORD(\"k\", V)"))
+	}
+
 	os.Stdout.WriteString(strings.Join(out, "\n") + "\n")
 }

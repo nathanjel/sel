@@ -316,4 +316,22 @@ say('host.fn.refuse.not-callable', $r);
 Sel::registerFunction('HOST_OOB', 1, 2, static fn (\Sel\Args $a): Value => $a->count() > 1 ? Value::text($a->text(1)) : Value::text($a->text(5)));
 say('host.fn.arg.out-of-range', $code(static fn () => Sel::evaluate('HOST_OOB("x")')));
 
+
+// --- T12 (CPP-C15): a host-supplied value nested past the cap, handed to RECORD beside a
+// key that is not text. Arguments are evaluated first and coerced after (spec/SPEC.md §6.2),
+// so the key's E_NOT_TEXT wins; copying the over-deep value (E_DEPTH) happens only once the
+// arguments are known good. C++ built the pair in one expression and let the copy run first.
+{
+    $ctx = Value::none();
+    $ctx->set('V', nest(300));
+    $at = static function (string $src) use ($ctx): string {
+        try {
+            Sel::compile($src)->run($ctx);
+            return 'no error';
+        } catch (SelError $e) {
+            return "{$e->code} {$e->line}:{$e->col}";
+        }
+    };
+    say('program.run.over-deep-host-value.key-error-first', $at('RECORD(TRUE, V)') . '|' . $at('RECORD("k", V)'));
+}
 echo implode("\n", $out), "\n";

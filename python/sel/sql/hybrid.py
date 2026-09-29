@@ -780,17 +780,31 @@ def _latest_field_name(node):
             and node.obj.t == 'var' and node.obj.name == '_' and node.idx.t == 'text' else None)
 
 
+def _is_link(step: Node) -> bool:
+    return step.name in ('LINK', 'LINK_LEFT')
+
+
+def _needs_left_name(remaining: list[Node], prefix: list[Node]) -> bool:
+    """A 3-argument LINK in the continuation, with no LINK before it in the prefix:
+    its joined row names the left side after the variable the pipeline started from
+    (spec 7.4), and the continuation's input is `_INPUT`."""
+    return (not any(_is_link(step) for step in prefix)
+            and any(_is_link(step) and len(step.args) == 3 for step in remaining))
+
+
 def _keep_left_name(remaining: list[Node], prefix: list[Node], source: Node) -> list[Node]:
     """A LINK left in memory behind a SQL prefix still names its left side as the
     program wrote it. SEL's joined row holds the left side under the name of the
     variable the pipeline started from (spec §7.4), and the continuation's input
     is `_INPUT`, so a bare three-argument LINK would carry it under that: a read
-    of `_["ORDERS"]` would be E_NO_KEY where run() answers. It is rewritten to the
-    five-argument form that names both sides (PHP-C9, PY-C23, LISP-C29)."""
-    first = remaining[0]
-    if (first.name not in ('LINK', 'LINK_LEFT') or len(first.args) != 3
-            or source is None or source.t != 'var'
-            or any(step.name in ('LINK', 'LINK_LEFT') for step in prefix)):
+    of `_["ORDERS"]` would be E_NO_KEY where run() answers. The first LINK of the
+    continuation -- wherever it falls, not only when it comes first -- is rewritten
+    to the five-argument form that names both sides (PHP-C9, PY-C23, LISP-C29)."""
+    if source is None or source.t != 'var' or not _needs_left_name(remaining, prefix):
+        return remaining
+    at = next(i for i, step in enumerate(remaining) if _is_link(step))
+    first = remaining[at]
+    if len(first.args) != 3:
         return remaining
     right = first.args[1]
     if right.t != 'var':
@@ -799,7 +813,7 @@ def _keep_left_name(remaining: list[Node], prefix: list[Node], source: Node) -> 
     rewritten.args = [first.args[0], right,
                       Node('var', first.pos, name=source.name),
                       Node('var', first.pos, name=right.name), first.args[2]]
-    return [rewritten, *remaining[1:]]
+    return [*remaining[:at], rewritten, *remaining[at + 1:]]
 
 
 def _try_latest_member(source, steps, dialect, catalog, opts, helpers):
@@ -984,6 +998,16 @@ def _plan_hybrid(program: Program, dialect: str,
                 continue
         sql = _try_statement(prefix_ast, dialect, catalog, opts)
         if sql is None:
+            continue
+        # A step that also READS the source variable's name (a self-join: `ORDERS .>
+        # TAKE(4) .> LINK(ORDERS, ...)`) would find the sorted-and-cut rows where run()
+        # finds the whole relation once the continuation's LINK is named after it. That
+        # split is not made; the join stays in memory, over the relation. The same
+        # rule in every host.
+        if _needs_left_name(steps[count:], steps[:count]) and (
+                source is None or source.t != 'var'
+                or any(source.name in _read_names(arg)
+                       for step in steps[count:] for arg in step.args[1:])):
             continue
         remaining = _keep_left_name(steps[count:], steps[:count], source)
         input_node = Node('var', remaining[0].pos, name='_INPUT')

@@ -521,7 +521,7 @@
       "alpha",
       "gamma",
       "Alpha",
-      "ïnü"
+      "\u00efn\u00fc"
      ],
      "c": [
       "ann",
@@ -558,6 +558,67 @@
      "x": [
       "1",
       "1"
+     ]
+    }
+   }
+  },
+  {
+   "name": "binder.self-join-does-not-shadow-the-right-side",
+   "sel": "ORDERS .> SORT_BY(_[\"id\"]) .> TAKE(4) .> LINK(ORDERS, O, P, O[\"id\"] + 4 == P[\"id\"] AND COUNT(SPLIT(O[\"name\"], \"a\")) > 0) .> MAP(RECORD(\"o\", _[\"O\"][\"id\"], \"p\", _[\"P\"][\"id\"]))",
+   "note": "The left side of a LINK is the truncated prefix and the right side is the WHOLE relation of the same name. A continuation that rebinds the source name to the SQL rows before the LINK would also replace the right side, and the join would find no partner for rows 1-4 in ids 5-8 (gate fuzz seed 20260905: only Go kept such a program in memory).",
+   "expect": {
+    "fields": {
+     "o": [
+      "1",
+      "2",
+      "3",
+      "4"
+     ],
+     "p": [
+      "5",
+      "6",
+      "7",
+      "8"
+     ]
+    }
+   }
+  },
+  {
+   "name": "order.bucket-over-sorted-and-limited",
+   "sel": "ORDERS .> SORT_BY(_[\"id\"], \"DESC\") .> TAKE(6) .> BUCKET(_[\"customer_id\"], RECORD(\"c\", _K, \"n\", COUNT(_)))",
+   "note": "A LIMIT beside the ORDER BY keeps WHICH rows survive, not the order a GROUP BY over them returns its groups in: SEL lists the groups in the order their first member appears in the sorted list (12, 11, 9). No host may push the BUCKET into SQL (gate review; see sql/cases 51 stmt.order.*): the sorted, limited rows come from the database and the grouping runs in memory.",
+   "expect": {
+    "fields": {
+     "c": [
+      "12",
+      "11",
+      "9"
+     ],
+     "n": [
+      "2",
+      "2",
+      "2"
+     ]
+    }
+   }
+  },
+  {
+   "name": "binder.link-later-in-the-continuation-keeps-the-left-name",
+   "sel": "ORDERS .> SORT_BY(_[\"id\"]) .> TAKE(4) .> FILTER(COUNT(SPLIT(_[\"name\"], \"a\")) > 0) .> LINK(CUSTOMERS, _1[\"customer_id\"] == _2[\"id\"]) .> MAP(RECORD(\"n\", _[\"ORDERS\"][\"name\"], \"c\", _[\"CUSTOMERS\"][\"name\"]))",
+   "note": "The split falls before the FILTER (SPLIT has no SQL), so the LINK is not the first step of the continuation. A joined row names its left side after the variable its pipeline STARTED from (spec 7.4): the continuation is fed `_INPUT`, so a host that renames the source only when the LINK comes first would answer E_NO_KEY on `_[\\\"ORDERS\\\"]` where run() answers.",
+   "expect": {
+    "fields": {
+     "n": [
+      "alpha",
+      "gamma",
+      "Alpha",
+      "\u00efn\u00fc"
+     ],
+     "c": [
+      "ann",
+      "ann",
+      "bob",
+      "bob"
      ]
     }
    }

@@ -124,7 +124,7 @@ func (t *Translator) requireOrderSurvives(plan *RelationalPlan, step string, pos
 		Refuse("E_SQL_SHAPE",
 			fmt.Sprintf("%s after a join would cut rows in an order the join does not keep from the sort before it", step), pos)
 	}
-	if step == "BUCKET" && hasSort(plan) {
+	if step == "BUCKET" && (len(plan.OrderBy) > 0 || plan.OrderDropped) {
 		Refuse("E_SQL_SHAPE",
 			fmt.Sprintf("%s after a sort would depend on a database keeping the sort's order through it, which SQL does not promise", step), pos)
 	}
@@ -255,6 +255,8 @@ func (t *Translator) ensureDerived(plan *RelationalPlan, needed bool) *Relationa
 	derived.SourceTable = ""
 	derived.SourceAlias = alias
 	derived.SourceSubquery = inner
+	derived.OrderDropped = inner.OrderDropped ||
+		(len(inner.OrderBy) > 0 && inner.Limit == nil && inner.Offset == nil)
 
 	var rootName *string
 	if len(inner.Joins) == 0 {
@@ -635,6 +637,10 @@ func (t *Translator) AnalyzePipeline(ast *SNode) *RelationalPlan {
 			if plan.Projections == nil && plan.SelectCols == nil {
 				Refuse("E_SQL_SHAPE", "DISTINCT requires an explicit typed projection", step.Pos)
 			}
+			// DISTINCT keeps the FIRST element of each run in sorted order; SQL's `SELECT DISTINCT proj ... ORDER BY <column not in proj>` is refused by PostgreSQL (42P10) and MySQL 8 (3065) and answers with an unspecified representative row on MariaDB. A loud refusal is acceptable and a silent misordering is not, so the step stays in memory (CPP-C60).
+			if len(plan.OrderBy) > 0 {
+				Refuse("E_SQL_SHAPE", "DISTINCT after a sort keeps the first of each run in sorted order, which SELECT DISTINCT ... ORDER BY does not promise; run the DISTINCT in memory", step.Pos)
+			}
 			plan.Distinct = true
 
 		case "TAKE":
@@ -677,13 +683,13 @@ func (t *Translator) AnalyzePipeline(ast *SNode) *RelationalPlan {
 			plan.Offset = &newOff
 
 		case "SORT", "SORT_DESC", "SORT_BY", "TOP", "TOP_DESC", "TOP_BY":
-			if hasSort(plan) && plan.GroupBy == nil && (plan.Projections != nil || plan.SelectCols != nil) {
-				// SEL's sorts are stable: rows this sort ties keep the order the
-				// earlier sort gave them. A projection in between wraps the earlier
-				// ORDER BY in a derived table, whose order an outer ORDER BY does
-				// not promise to keep, and the earlier keys are no longer columns
-				// of the projected rows.
-				Refuse("E_SQL_SHAPE", "a sort after a projection would lose the tie order the sort before it gave the rows", step.Pos)
+			// Sorts are stable, so an earlier sort is the later one's tie-break; a derived
+			// table with no LIMIT beside its ORDER BY does not keep it, and its keys may
+			// not even be columns the outer level can name.
+			wraps := plan.Limit != nil || plan.Offset != nil ||
+				(plan.GroupBy == nil && (plan.Projections != nil || plan.SelectCols != nil || plan.Distinct))
+			if (wraps && len(plan.OrderBy) > 0 && plan.Limit == nil && plan.Offset == nil) || plan.OrderDropped {
+				Refuse("E_SQL_SHAPE", "a sort over a projection of sorted rows loses the earlier sort, which is its tie-break: a derived table does not keep an ORDER BY", step.Pos)
 			}
 			needDerived := plan.Limit != nil || plan.Offset != nil ||
 				(plan.GroupBy == nil && (plan.Projections != nil || plan.SelectCols != nil || plan.Distinct))
@@ -705,6 +711,15 @@ func (t *Translator) AnalyzePipeline(ast *SNode) *RelationalPlan {
 				_ = t.CompileStatement(plan)
 				t.params = t.params[:nParams]
 				t.paramKinds = t.paramKinds[:nParams]
+			}
+			// A join returns its rows in no order, and SEL's are the left list's: rows
+			// sorted with no LIMIT beside the ORDER BY (which a derived table drops)
+			// cannot pass through a JOIN carrying their sort. After the earlier steps'
+			// own refusals, which come first as written.
+			if plan.OrderDropped || (len(plan.OrderBy) > 0 && plan.Limit == nil && plan.Offset == nil) {
+				Refuse("E_SQL_SHAPE",
+					fmt.Sprintf("a %s over sorted rows would return them in no order, where SEL has the left list's order", name),
+					step.Pos)
 			}
 			needDerived := t.planHasRowsAbove(plan)
 			plan = t.ensureDerived(plan, needDerived)

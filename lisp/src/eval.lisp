@@ -72,10 +72,26 @@
       a)))
 
 (defun args-count (a) (length (args-nodes a)))
-(defun args-node (a i) (svref (args-nodes a) i))
+
+(defun args-refuse-index (a i)
+  "A registered function asked for an argument its call does not have (spec/SPEC.md
+8.1): E_BAD_ARG at the call, never a host condition."
+  (fail "E_BAD_ARG"
+        (format nil "~a has ~d argument~:p, and argument ~d was asked for"
+                (args-name a) (args-count a) i)
+        (args-pos a)))
+
+(declaim (inline args-node))
+(defun args-node (a i)
+  (let ((nodes (args-nodes a)))
+    (if (and (typep i 'fixnum) (<= 0 i) (< i (length nodes)))
+        (svref nodes i)
+        (args-refuse-index a i))))
+
 (defun args-pos-of (a i) (node-pos (args-node a i)))
 
 (defun args-val (a i)
+  (args-node a i)                       ; the range check, before the cache read
   (let ((cached (aref (args-cache a) i)))
     (if (eq cached :unset)
         (setf (aref (args-cache a) i) (eval-node (args-node a i) (args-ctx a)))

@@ -67,3 +67,18 @@ func TestJoinWithOneBinderNameForBothSidesUsesTheRightRow(t *testing.T) {
 	expectDump(t, `P = LIST(RECORD("k", 1), RECORD("k", 2)); `+
 		`Q = LIST(RECORD("k", 1), RECORD("k", 2)); COUNT(LINK(P, Q, x, x, x["k"] == x["k"]))`, `t"4"`)
 }
+
+// Gate triage: a value with children and no scalar sorts by scalar context
+// (spec §3.2 / §7.3): a record by its first field, ties in input order.
+func TestRecordsSortByTheirFirstFieldAndTiesKeepInputOrder(t *testing.T) {
+	rows := `LIST(RECORD("k", 3, "v", "c"), RECORD("k", 1, "v", "a"), RECORD("k", 2, "v", "b"))`
+	ties := `LIST(RECORD("k", 1, "v", "a"), RECORD("k", 2, "v", "b"), RECORD("k", 1.0, "v", "c"), RECORD("k", "1", "v", "d"))`
+	join := func(e string) string { return `JOIN(MAP(` + e + `, _["v"]), ",")` }
+	expectDump(t, join(rows+` .> SORT()`), `t"a,b,c"`)
+	expectDump(t, join(rows+` .> SORT_DESC()`), `t"c,b,a"`)
+	expectDump(t, join(ties+` .> SORT()`), `t"a,c,d,b"`)
+	expectDump(t, join(ties+` .> SORT_DESC()`), `t"b,a,c,d"`)
+	expectDump(t, join(ties+` .> TOP_DESC(4)`), `t"b,a,c,d"`)
+	expectDump(t, join(`LIST(RECORD("k", "b", "v", "b"), RECORD("k", 5, "v", "n"), RECORD("k", "a", "v", "a")) .> SORT()`), `t"n,a,b"`)
+	expectDump(t, join(`LIST(RECORD("k", 5, "v", "n"), RECORD("k", TRUE, "v", "t"), RECORD("k", FALSE, "v", "f")) .> SORT()`), `t"f,t,n"`)
+}

@@ -25,6 +25,13 @@ function report(e) {
   process.stderr.write(`${e.code} at line ${e.line} column ${e.col}: ${e.message}\n`);
 }
 
+// A file that cannot be read (missing, a directory, unreadable) or an option that
+// names no file: one plain line on stderr and exit status 1, not a stack trace.
+function cannotRead(path, e) {
+  process.stderr.write(`sel: cannot read ${path}: ${e && e.code ? e.code : 'error'}\n`);
+  process.exit(1);
+}
+
 const argv = process.argv.slice(2);
 const wantDeps = argv.includes('--deps');
 const args = argv.filter((a) => a !== '--deps');
@@ -35,12 +42,24 @@ if (args[0] === '--functions') {
 }
 
 let source = null;
-if (args[0] === '-e') source = args[1];
+if (args[0] === '-e') {
+  if (args.length < 2) {
+    process.stderr.write('sel: -e needs an expression\n');
+    process.exit(2);
+  }
+  source = args[1];
+}
 // Bytes in, strictly: no replacement character, no newline translation. An
 // invalid file is E_UTF8 at its first bad byte (SPEC §2), not a mangled program.
 else if (args.length > 0) {
+  let bytes;
   try {
-    source = decodeSource(readFileSync(args[0]));
+    bytes = readFileSync(args[0]);
+  } catch (e) {
+    cannotRead(args[0], e);
+  }
+  try {
+    source = decodeSource(bytes);
   } catch (e) {
     report(e);
     process.exit(1);

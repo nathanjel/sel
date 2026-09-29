@@ -241,7 +241,7 @@ def main(argv):
         # first version of this script did, and it scored three mutations as
         # holes that the suite catches immediately.
         shutil.copytree(ROOT, tree, ignore=shutil.ignore_patterns(
-            '.git', 'node_modules', 'build', 'dist', '.venv*', '__pycache__'))
+            '.git', 'node_modules', 'build', 'dist', 'target', '.venv*', '__pycache__'))
         try:
             # Each mutation gets its OWN tree at its own path, which is what
             # keeps the Lisp lane honest as well as the C++ one: ASDF keys its

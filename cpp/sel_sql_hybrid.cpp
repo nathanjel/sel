@@ -984,6 +984,33 @@ HybridPlan Sql::plan_hybrid(const Program& program, const std::string& dialect,
         continue;
       }
     }
+    // A 3-argument LINK names the left side of its joined row after the variable the
+    // pipeline started from, wherever in the continuation it falls (spec 7.4), so the
+    // rows are fed to the continuation under that name. A step that also READS the
+    // name (a self-join: `ORDERS .> TAKE(4) .> LINK(ORDERS, ...)`) would find the
+    // sorted-and-cut rows where run() finds the whole relation: that split is not
+    // made, and the join stays in memory, over the relation. The same rule in every
+    // host; a LINK in the prefix has already named its sides.
+    const auto is_link = [](const NodePtr& st) { return st->s == "LINK" || st->s == "LINK_LEFT"; };
+    bool needs_rebind = false;
+    {
+      bool prefix_links = false;
+      for (std::size_t k = 0; k < count; ++k) prefix_links = prefix_links || is_link(steps[k]);
+      for (std::size_t k = count; k < steps.size() && !prefix_links; ++k) {
+        if (is_link(steps[k]) && steps[k]->items.size() == 3) needs_rebind = true;
+      }
+    }
+    if (needs_rebind) {
+      bool reads_source = source->t != NT::Var;
+      for (std::size_t k = count; k < steps.size() && !reads_source; ++k) {
+        for (std::size_t a = 1; a < steps[k]->items.size() && !reads_source; ++a) {
+          std::set<std::string> names;
+          read_names(steps[k]->items[a], names);
+          reads_source = names.count(source->s) != 0;
+        }
+      }
+      if (reads_source) continue;
+    }
     const Program prefix_program("", prefix_ast);
     auto sql = Sql::try_translate_statement(prefix_program, dialect, checked, options);
     if (!sql) continue;
@@ -991,9 +1018,11 @@ HybridPlan Sql::plan_hybrid(const Program& program, const std::string& dialect,
     std::vector<NodePtr> remaining(steps.begin() + static_cast<std::ptrdiff_t>(count),
                                    steps.end());
     const Pos continuation_pos = remaining.front()->pos;
+    const std::string feed = needs_rebind ? source->s : "_INPUT";
     const NodePtr continuation_ast =
-        helpers.wrap(build_pipeline(var_node("_INPUT", continuation_pos), remaining));
+        helpers.wrap(build_pipeline(var_node(feed, continuation_pos), remaining));
     HybridPlan plan;
+    plan.continuation_source_var = feed;
     plan.dialect = dialect;
     plan.sql_statement = std::move(*sql);
     plan.sql_prefix_ast = prefix_ast;

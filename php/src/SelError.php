@@ -38,6 +38,32 @@ final class SelError extends \Exception
         $this->offset = $pos['offset'] ?? 0;
     }
 
+    /**
+     * An error that goes through a queue, a session or a cache must come back with its
+     * code and position (PY-C16's PHP equivalent): Exception's own serialisation does
+     * not round-trip this class, whose `code` is a string and whose `line` is a
+     * source line, not the file line Exception uses it for.
+     *
+     * @return array{code:string,message:string,line:int,col:int,offset:int}
+     */
+    public function __serialize(): array
+    {
+        return [
+            'code' => $this->code, 'message' => $this->getMessage(),
+            'line' => $this->line, 'col' => $this->col, 'offset' => $this->offset,
+        ];
+    }
+
+    /** @param array<string,mixed> $data */
+    public function __unserialize(array $data): void
+    {
+        $this->code = (string) ($data['code'] ?? '');
+        $this->message = (string) ($data['message'] ?? '');
+        $this->line = (int) ($data['line'] ?? 0);
+        $this->col = (int) ($data['col'] ?? 0);
+        $this->offset = (int) ($data['offset'] ?? 0);
+    }
+
     public function __toString(): string
     {
         return "{$this->code} at {$this->line}:{$this->col}: {$this->getMessage()}";

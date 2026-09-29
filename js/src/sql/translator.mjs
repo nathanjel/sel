@@ -716,8 +716,25 @@ export class Translator {
       + 'before the query runs', idx.pos);
   }
 
+  // An operand that is a constant TEXT holding a number, in an arithmetic position, is
+  // that number (PHP-C33): SEL computes with it exactly, and MariaDB and MySQL would
+  // read the quoted string as a DOUBLE. It is translated as the numeric literal it
+  // stands for. The text was translated first (its SQL kind is only known then), so
+  // the slots it bound are taken back, or `params` mode would report a value bound
+  // that no placeholder uses.
+  arithmeticOperand(n) {
+    const mark = this.params.length;
+    const f = this.node(n);
+    if (f.kind !== 'TEXT' || !constants.isConstant(n, this.constNames)) return f;
+    const text = constants.numericTextConstant(n, this.constCtx);
+    if (text === null) return f;
+    this.params.length = mark;
+    this.paramKinds.length = mark;
+    return this.node(litNode('num', text, n.pos));
+  }
+
   unary(n) {
-    let x = this.node(n.x);
+    let x = n.op === 'NOT' ? this.node(n.x) : this.arithmeticOperand(n.x);
     if (n.op === 'NOT') {
       x = this.requireBool(x, n.x.pos, 'NOT');
     } else {
@@ -738,8 +755,9 @@ export class Translator {
 
     if (op === 'IN') return this.inOperator(n);
 
-    let l = this.node(n.l);
-    let r = this.node(n.r);
+    const arith = ['+', '-', '*', '/', '%'].includes(op);
+    let l = arith ? this.arithmeticOperand(n.l) : this.node(n.l);
+    let r = arith ? this.arithmeticOperand(n.r) : this.node(n.r);
 
     if (op === 'AND' || op === 'OR' || op === 'XOR') {
       l = this.requireBool(l, n.l.pos, op);
@@ -1037,7 +1055,9 @@ export class Translator {
     const args = [];
     for (let i = 0; i < n.args.length; i++) {
       const arg = n.args[i];
-      let f = this.node(arg);
+      // MIN and MAX compare their arguments as numbers: a numeric text constant is the
+      // number, as in arithmetic (PHP-C33).
+      let f = name === 'MIN' || name === 'MAX' ? this.arithmeticOperand(arg) : this.node(arg);
       if (f.kind === 'LIST') {
         refuse('E_SQL_SHAPE',
           `argument to ${name} is a list, and a SQL expression is a scalar`, arg.pos);
@@ -2647,7 +2667,7 @@ export class Translator {
           // survive, so the plan is refused here and a hybrid plan keeps the
           // sorted rows in SQL and groups them in memory (JS-C59).
           if (plan.orderBy.length > 0 || plan.orderDropped) {
-            refuse('E_SQL_UNSUPPORTED',
+            refuse('E_SQL_SHAPE',
               'a BUCKET over sorted rows would return its groups in no order, where SEL '
               + 'has them in the order of their first member in the sorted list', step.pos);
           }
@@ -2814,6 +2834,10 @@ export class Translator {
           if (plan.projections === null && plan.selectCols === null) {
             refuse('E_SQL_SHAPE', 'DISTINCT requires an explicit typed projection', step.pos);
           }
+          // DISTINCT keeps the FIRST element of each run in sorted order; SQL's `SELECT DISTINCT proj ... ORDER BY <column not in proj>` is refused by PostgreSQL (42P10) and MySQL 8 (3065) and answers with an unspecified representative row on MariaDB. A loud refusal is acceptable and a silent misordering is not, so the step stays in memory (CPP-C60).
+          if (plan.orderBy.length > 0) {
+            refuse('E_SQL_SHAPE', 'DISTINCT after a sort keeps the first of each run in sorted order, which SELECT DISTINCT ... ORDER BY does not promise; run the DISTINCT in memory', step.pos);
+          }
           plan.distinct = true;
           break;
 
@@ -2862,7 +2886,7 @@ export class Translator {
             if ((wraps && candidate.orderBy.length > 0
                 && candidate.limit === null && candidate.offset === null)
                 || candidate.orderDropped) {
-              refuse('E_SQL_UNSUPPORTED',
+              refuse('E_SQL_SHAPE',
                 'a sort over a projection of sorted rows loses the earlier sort, which is '
                 + 'its tie-break: a derived table does not keep an ORDER BY', step.pos);
             }
@@ -2901,7 +2925,7 @@ export class Translator {
           // earlier steps' own refusals, which come first as written.
           if (plan.orderDropped
               || (plan.orderBy.length > 0 && plan.limit === null && plan.offset === null)) {
-            refuse('E_SQL_UNSUPPORTED',
+            refuse('E_SQL_SHAPE',
               'a LINK over sorted rows would return them in no order, where SEL has the '
               + 'left list\'s order', step.pos);
           }

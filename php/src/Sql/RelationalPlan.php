@@ -79,6 +79,12 @@ final class RelationalPlan
     public string|array $sourceTable = '';
     public ?string $sourceAlias = null;
     public ?RelationalPlan $sourceSubquery = null;
+    /**
+     * A derived table with no LIMIT beside its ORDER BY does not keep the order, so a
+     * step that needs the rows in that order (a BUCKET's groups, a LINK's rows, a
+     * later sort's ties) cannot be built on it.
+     */
+    public bool $orderDropped = false;
     public ?string $correlate = null;
     /** @var list<JoinPlan> */
     public array $joins = [];

@@ -82,8 +82,31 @@ func aggregateWalk(args *Args, ctx *Context, visit visitFunc, bodyOverride *Node
 
 // sortRank is the kind rank of the total order (spec §7.3): NULL < BOOL <
 // numeric-looking text and numbers < other TEXT < BIN < lists and records.
+// sortLeaf is the value scalar context reads (spec §3.2: the first child,
+// recursively), so a record sorts by its first field and ranks by that field's
+// kind. nil when the chain ends in nothing (NULL). It walks without raising: a
+// NULL key is common and a panic per comparison would be slow.
+func sortLeaf(v *Value) *Value {
+	guard := 0
+	for v.Kind == KindNone {
+		if v.IsNull() || v.Size() == 0 {
+			return nil
+		}
+		if v.storage != nil {
+			v = v.storage[0]
+		} else {
+			v = v.entries[0].Val
+		}
+		guard++
+		if guard > 1000 {
+			return nil
+		}
+	}
+	return v
+}
+
 func sortRank(v *Value) int {
-	if v.IsNull() {
+	if v == nil || v.IsNull() {
 		return 0
 	}
 	switch v.Kind {
@@ -105,6 +128,7 @@ func sortRank(v *Value) int {
 // bytewise, FALSE before TRUE); values of different ranks compare by rank.
 // Equal values tie, and the caller keeps input order for a tie.
 func compareValues(a, b *Value) int {
+	a, b = sortLeaf(a), sortLeaf(b)
 	ra, rb := sortRank(a), sortRank(b)
 	if ra != rb {
 		if ra < rb {

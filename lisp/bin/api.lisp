@@ -297,5 +297,24 @@
       (lambda (a) (sel:make-text (sel:args-text a (if (> (sel:args-count a) 1) 1 5)))))
     (say "host.fn.arg.out-of-range" (code (lambda () (sel:evaluate "HOST_OOB(\"x\")")))))
 
+
+  ;; --- T12 (CPP-C15): a host-supplied value nested past the cap, handed to RECORD beside a
+  ;; key that is not text. Arguments are evaluated first and coerced after (spec/SPEC.md 6.2),
+  ;; so the key's E_NOT_TEXT wins; copying the over-deep value (E_DEPTH) happens only once the
+  ;; arguments are known good. C++ built the pair in one expression and let the copy run first.
+  (let ((ctx (sel:make-none))
+        (v (sel:make-text "x")))
+    (dotimes (i 300)
+      (let ((p (sel:make-none)))
+        (sel:value-set p "1" v)
+        (setf v p)))
+    (sel:value-set ctx "V" v)
+    (flet ((at (src)
+             (handler-case (progn (sel:run (sel:compile-source src) ctx) "no error")
+               (sel:sel-error (e) (format nil "~a ~d:~d" (sel:sel-error-code e)
+                                          (sel:sel-error-line e) (sel:sel-error-col e))))))
+      (say "program.run.over-deep-host-value.key-error-first"
+           (format nil "~a|~a" (at "RECORD(TRUE, V)") (at "RECORD(\"k\", V)")))))
+
   (format t "~{~a~%~}" (reverse *probes*))
   (sb-ext:exit :code 0))

@@ -148,6 +148,9 @@ case " $IMPLS " in *" js "*) step "JS runtime isolation and records" sel_slot no
 case " $IMPLS " in *" js-bundle "*) step "JS bundle runtime isolation" sel_slot node tools/check-js-runtime.mjs dist/sel.mjs ;; esac
 case " $IMPLS " in *" js-bundle-min "*) step "JS minified runtime isolation" sel_slot node tools/check-js-runtime.mjs dist/sel.min.mjs ;; esac
 case " $IMPLS " in *" php "*) step "PHP runtime" sel_slot sel_php tools/check-php-runtime.php ;; esac
+case " $IMPLS " in *" php "*) step "PHP integration" sel_slot sel_php tools/check-php-integration.php ;; esac
+case " $IMPLS " in *" php "*) step "PHP 8.1 (oldest supported)" sel_slot tools/check-php-version.sh ;; esac
+case " $IMPLS " in *" cpp "*) step "C++ registry race (TSan)" sel_slot make -C cpp tsan-registry ;; esac
 case " $IMPLS " in *" js "*) step "JS metadata" sel_slot node tools/metadata/js.mjs ;; esac
 case " $IMPLS " in *" php "*) step "PHP metadata" sel_slot sel_php tools/metadata/php.php ;; esac
 case " $IMPLS " in *" python "*) step "Python metadata" sel_slot python3 tools/metadata/python.py ;; esac

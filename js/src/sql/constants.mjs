@@ -24,6 +24,7 @@
 import { SelError } from '../errors.mjs';
 import { Context, evalNode } from '../eval.mjs';
 import { Value } from '../value.mjs';
+import { format as formatDecimal } from '../decimal.mjs';
 import { refuse } from './errors.mjs';
 import { asciiUpper } from '../lexer.mjs';
 
@@ -265,6 +266,23 @@ export function requireNumeric(n, ctx = null) {
   } catch (e) {
     refuseAsSel(e, n);
   }
+}
+
+// The canonical spelling of a constant that is TEXT holding a number, or null when it
+// is anything else (or SEL refuses it: the operand's own translation reports that).
+// PHP-C33: in arithmetic SEL computes with such a text exactly, and MariaDB and MySQL
+// would convert the quoted string to DOUBLE (`'0.1' + '0.2' = 0.3` is false there), so
+// the translator spells it as the exact numeric literal it stands for.
+export function numericTextConstant(n, ctx = null) {
+  let v;
+  try {
+    v = evalNode(n, ctx ?? new Context());
+  } catch (e) {
+    if (e instanceof SelError) return null;
+    throw e;
+  }
+  if (!v.isText() || !v.looksNumeric()) return null;
+  return formatDecimal(v.asDecimal(n.pos));
 }
 
 // The number of fractional digits of a constant already known to be a number

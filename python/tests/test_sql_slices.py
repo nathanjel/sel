@@ -4,7 +4,7 @@ import sqlite3
 import pytest
 
 from sel import Value, compile
-from sel.sql import Binding, Sql
+from sel.sql import Binding, Sql, SqlError
 
 
 @pytest.mark.parametrize('counts', [
@@ -46,7 +46,19 @@ def test_slice_rows_and_hybrid(counts, tail, empty, strict):
         assert Sql.execute_hybrid(plan, run_sql, context.clone()).dump() == expected
         # The derived FILTER is an intentional SQLite refusal; the hybrid
         # assertion above still checks its continuation against SEL.
-        if 'FILTER' not in tail:
+        if 'BUCKET' in tail:
+            # A GROUP BY returns its groups in no order, and SEL's are in the order of
+            # their first member in the sorted list: the sort's ORDER BY must survive
+            # the steps after it (docs/internals/sql-translation.md 12.1, "Order"), and
+            # a LIMIT beside it does not change what the GROUP BY does to the groups. So
+            # the statement is refused at the BUCKET, and the hybrid plan above (already
+            # held to SEL's answer) groups the sorted rows in memory. The fixture has one
+            # group, which cannot show the order; the refusal is the contract.
+            with pytest.raises(SqlError) as refusal:
+                Sql.translate_statement(program, 'sqlite', bindings, {'strict': strict})
+            assert refusal.value.code == 'E_SQL_SHAPE'
+            assert plan.sql_statement is not None and not plan.pure_sql
+        elif 'FILTER' not in tail:
             statement = Sql.translate_statement(program, 'sqlite', bindings, {'strict': strict})
             assert run_sql(statement.as_statement(), []).dump() == expected
             assert run_sql(statement.as_statement('params'), statement.bindings()).dump() == expected

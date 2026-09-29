@@ -212,6 +212,11 @@ final class Core
         // comparing is what makes it transitive: comparing numeric text with other
         // text bytewise while ranking it below them was not (`"10" < "1a"` but
         // `"9" > "1a"` and `"9" < "10"`).
+        // A value with children and no scalar of its own is ordered by what scalar
+        // context makes of it (§3.2: its first child, recursively): a record sorts
+        // by its first field and ranks by that field's kind.
+        $a = self::sortLeaf($a);
+        $b = self::sortLeaf($b);
         $ra = self::sortRank($a);
         $rb = self::sortRank($b);
         if ($ra !== $rb) return $ra <=> $rb;
@@ -230,9 +235,20 @@ final class Core
         }
     }
 
-    private static function sortRank(Value $v): int
+    /** The value scalar context reads; null when the chain ends in nothing (NULL). */
+    private static function sortLeaf(Value $v): ?Value
     {
-        if ($v->isNull()) return 0;
+        if ($v->kind !== Value::NONE) return $v;
+        try {
+            return $v->scalarSource(null);
+        } catch (\Sel\SelError $e) {
+            return null;
+        }
+    }
+
+    private static function sortRank(?Value $v): int
+    {
+        if ($v === null || $v->isNull()) return 0;
         if ($v->kind === Value::BOOL) return 1;
         if ($v->looksNumeric()) return 2;
         if ($v->kind === Value::TEXT) return 3;

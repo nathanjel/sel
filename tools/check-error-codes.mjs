@@ -14,10 +14,11 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const HOSTS = {
   js: ['js/src', '.mjs'], python: ['python/sel', '.py'], php: ['php/src', '.php'],
   cpp: ['cpp', '.cpp', '.hpp'], lisp: ['lisp/src', '.lisp'],
+  go: ['go', '.go'], rust: ['rust/src', '.rs'],
 };
 // How a host spells a raise. Generated map data is skipped: it quotes codes as
 // data, not as raises.
-const RAISE = /(?:fail|refuse)\(\s*['"](E_[A-Z0-9_]+)['"]|\((?:fail|refuse) "(E_[A-Z0-9_]+)"|SelError\(\s*['"](E_[A-Z0-9_]+)['"]|SqlError\(\s*['"](E_[A-Z0-9_]+)['"]|make-sel-error "(E_[A-Z0-9_]+)"/g;
+const RAISE = /(?:[Ff]ail|[Rr]efuse)\(\s*['"](E_[A-Z0-9_]+)['"]|\((?:fail|refuse) "(E_[A-Z0-9_]+)"|SelError\(\s*['"](E_[A-Z0-9_]+)['"]|SqlError\(\s*['"](E_[A-Z0-9_]+)['"]|make-sel-error "(E_[A-Z0-9_]+)"|(?:SelError|SqlError|Self)::new\(\s*"(E_[A-Z0-9_]+)"/g;
 const SKIP = /_map\.|MapData|map-data|_limits\.|Limits\.php|sel_limits|limits\.lisp|case[-_]data|CaseData|map[-_]replay|MapReplay/;
 
 function files(dir, exts) {

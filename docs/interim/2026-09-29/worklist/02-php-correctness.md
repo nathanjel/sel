@@ -838,7 +838,7 @@ Each task starts by reproducing the report against the current tree, then lands 
 
 <a id="c-php-c38"></a>
 
-- [ ] **C-PHP-C38 — Resolve PHP-C38.** `Program::dependencies()` is order-insensitive: a variable read before it is assigned is not reported
+- [x] **C-PHP-C38 — Resolve PHP-C38.** `Program::dependencies()` is order-insensitive: a variable read before it is assigned is not reported
 
   **[PHP-C38](../php-code-review.md) — [low] [confirmed; re-verified by synthesizer] `Program::dependencies()` is order-insensitive: a variable read before it is assigned is not reported**
 
@@ -850,9 +850,11 @@ Each task starts by reproducing the report against the current tree, then lands 
 
   Done when every linked scenario passes on all applicable lanes; code/position, mutation, ordering and repeat-use behavior satisfy the shared contract. Record commit and fixture IDs here.
 
+  Closed 2026-09-29 — six hosts agree on 107 API probes (24 pinned); race/TSan/-race lanes green
+
 <a id="c-php-c48"></a>
 
-- [ ] **C-PHP-C48 — Resolve PHP-C48.** Cosmetic: error message text differs from other hosts
+- [x] **C-PHP-C48 — Resolve PHP-C48.** Cosmetic: error message text differs from other hosts
 
   **[PHP-C48](../php-code-review.md) — [low] [confirmed] Cosmetic: error message text differs from other hosts**
 
@@ -863,3 +865,5 @@ Each task starts by reproducing the report against the current tree, then lands 
   Regression prerequisite: [T12 / PHP-C48](tests/12-integration.md#php-c48).
 
   Done when every linked scenario passes on all applicable lanes; code/position, mutation, ordering and repeat-use behavior satisfy the shared contract. Record commit and fixture IDs here.
+
+  Closed 2026-09-29 — no defect (spec: tests assert code+position only)

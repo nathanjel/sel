@@ -196,9 +196,17 @@ final class Hybrid
             }
             $remaining = array_slice($steps, $count);
             if (self::splitShowsKeys($prefixSteps, $remaining)) continue;
+            // The rows reach a continuation with a 3-argument LINK under the source's own name
+            // (wherever the LINK falls), so a step that also READS that name (a self-join: `ORDERS .> TAKE(4) .> LINK(ORDERS, …)`)
+            // would find the truncated rows where run() finds the whole relation. That
+            // split is not made; the join stays in memory, over the relation.
+            if (self::needsLeftName($prefixSteps, $remaining)
+                && (($source['t'] ?? '') !== 'var'
+                    || self::stepsReadName($remaining, (string) $source['name']))) continue;
             $sql = self::tryStatement($prefixAst, $dialect, $catalog, $options);
             if ($sql === null) continue;
-            $continuationAst = $helpers['wrap'](self::continuationPipeline($source, $remaining));
+            $continuationAst = $helpers['wrap'](self::continuationPipeline(
+                $source, $remaining, self::needsLeftName($prefixSteps, $remaining)));
             return new HybridPlan([
                 'dialect' => $dialect,
                 'sqlStatement' => $sql,
@@ -222,14 +230,63 @@ final class Hybrid
      * @param list<array<string,mixed>> $remaining
      * @return array<string,mixed>
      */
-    private static function continuationPipeline(array $source, array $remaining): array
+    /**
+     * Whether the continuation holds a 3-argument LINK whose joined row would name its
+     * left side `_INPUT`: no LINK before it in the prefix (which has already named its
+     * sides), and a LINK with three arguments (five name both sides). Spec 7.4; the
+     * same rule in every host.
+     *
+     * @param list<array<string,mixed>> $prefix
+     * @param list<array<string,mixed>> $remaining
+     */
+    private static function needsLeftName(array $prefix, array $remaining): bool
+    {
+        foreach ($prefix as $step) {
+            if (in_array($step['name'] ?? '', ['LINK', 'LINK_LEFT'], true)) return false;
+        }
+        foreach ($remaining as $step) {
+            if (in_array($step['name'] ?? '', ['LINK', 'LINK_LEFT'], true)
+                && count($step['args'] ?? []) === 3) return true;
+        }
+        return false;
+    }
+
+    /**
+     * Whether any of the pipeline steps reads the variable `$name` in an argument (the
+     * step's own first argument is its input, not a read).
+     *
+     * @param list<array<string,mixed>> $steps
+     */
+    private static function stepsReadName(array $steps, string $name): bool
+    {
+        foreach ($steps as $step) {
+            foreach (array_slice($step['args'] ?? [], 1) as $arg) {
+                if (self::nodeReadsName($arg, $name)) return true;
+            }
+        }
+        return false;
+    }
+
+    /** @param array<string,mixed>|null $node */
+    private static function nodeReadsName(?array $node, string $name): bool
+    {
+        if ($node === null) return false;
+        if (($node['t'] ?? '') === 'var') return ($node['name'] ?? '') === $name;
+        foreach (['args', 'items'] as $key) {
+            foreach ($node[$key] ?? [] as $item) {
+                if (is_array($item) && self::nodeReadsName($item, $name)) return true;
+            }
+        }
+        foreach (['l', 'r', 'x', 'obj', 'idx', 'target', 'value'] as $key) {
+            if (isset($node[$key]) && is_array($node[$key]) && self::nodeReadsName($node[$key], $name)) return true;
+        }
+        return false;
+    }
+
+    private static function continuationPipeline(array $source, array $remaining, bool $nameLeft): array
     {
         $input = ['t' => 'var', 'name' => '_INPUT', 'pos' => $remaining[0]['pos']];
-        $links = false;
-        foreach ($remaining as $step) {
-            if (in_array($step['name'] ?? '', ['LINK', 'LINK_LEFT'], true)) $links = true;
-        }
-        if (!$links) return Optimizer::buildPipeline($input, $remaining);
+        if (!$nameLeft) return Optimizer::buildPipeline($input, $remaining);
         $named = ['t' => 'var', 'name' => $source['name'], 'pos' => $remaining[0]['pos']];
         return ['t' => 'seq', 'pos' => $remaining[0]['pos'], 'items' => [
             ['t' => 'assign', 'op' => '=', 'target' => $named, 'value' => $input, 'pos' => $remaining[0]['pos']],

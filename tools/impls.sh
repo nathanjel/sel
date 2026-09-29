@@ -378,7 +378,7 @@ impl_sqlfuzz() {
     python) PYTHONPATH="$PWD/python" python3 python/bin/sqlfuzz "$@" ;;
     python-wheel) "$SEL_PY_WHEEL_BIN" python/bin/sqlfuzz "$@" ;;
     go)   go/build/sqlfuzz "$@" ;;
-    rust) return 0 ;;
+    rust) rust/build/sqlfuzz "$@" ;;
     *)    echo "unknown implementation: $impl" >&2; return 2 ;;
   esac
 }
@@ -442,7 +442,7 @@ impl_unit() {
             { [ -x cpp/build/sqlunit ] && cpp/build/sqlunit; } ;;
     lisp)   lisp/bin/test ;;
     go)     (cd go && go test -race ./...) ;;
-    rust)   (cd rust && cargo test) ;;
+    rust)   (cd rust && cargo test && bash tests/build_integration.sh) ;;
     *)      echo "unknown implementation: $impl" >&2; return 2 ;;
   esac
 }
@@ -515,11 +515,12 @@ impl_available() {
         -name '*.go' ! -name '*_test.go' -newer "$go_newest" -print -quit 2>/dev/null)" ] ;;
     rust)
       command -v cargo >/dev/null 2>&1 || return 1
-      [ -x rust/build/conformance ] || return 1
-      rust_newest="$(find rust/build -maxdepth 1 -type f -executable -printf '%T@ %p\n' \
-        2>/dev/null | sort -rn | head -1 | cut -d' ' -f2-)"
-      [ -n "$rust_newest" ] && [ -z "$(find rust -path rust/build -prune -o -path rust/target -prune -o \
-        -name '*.rs' -newer "$rust_newest" -print -quit 2>/dev/null)" ] ;;
+      local rust_bin
+      for rust_bin in conformance sqlt map_replay check_decimal batch e2e sel sqlapi api regex_verdict scale_bench sqlfuzz; do
+        [ -x "rust/build/$rust_bin" ] || return 1
+      done
+      [ -f rust/build/inputs.sha256 ] || return 1
+      cmp -s rust/build/inputs.sha256 <(bash rust/build-inputs.sh) ;;
     *)    return 1 ;;
   esac
 }
@@ -548,7 +549,7 @@ impl_skip_note() {
   case "$1" in
     cpp)  [ -x cpp/build/conformance ] && echo "note: cpp skipped: cpp/build is older than its sources (run: make -C cpp)" >&2 ;;
     go)   [ -x go/build/conformance ] && echo "note: go skipped: go/build is older than its sources (run: make -C go)" >&2 ;;
-    rust) [ -x rust/build/conformance ] && echo "note: rust skipped: rust/build is older than its sources" >&2 ;;
+    rust) [ -x rust/build/conformance ] && echo "note: rust skipped: rust/build is incomplete or differs from its build inputs" >&2 ;;
     js-bundle|js-bundle-min) [ -f dist/sel.mjs ] && echo "note: $1 skipped: dist/ is older than js/src (run: npm run build)" >&2 ;;
   esac
   return 0

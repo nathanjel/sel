@@ -806,7 +806,7 @@ Each task starts by reproducing the report against the current tree, then lands 
 
 <a id="c-cpp-c11"></a>
 
-- [ ] **C-CPP-C11 — Resolve CPP-C11.** `register_function` mutates the host table with no lock while `compile()` reads it
+- [x] **C-CPP-C11 — Resolve CPP-C11.** `register_function` mutates the host table with no lock while `compile()` reads it
 
   **[CPP-C11](../cpp-code-review.md) — [low] [confirmed by reading; not run under TSan] `register_function` mutates the host table with no lock while `compile()` reads it**
 
@@ -820,9 +820,11 @@ Each task starts by reproducing the report against the current tree, then lands 
 
   Done when every linked scenario passes on all applicable lanes; code/position, mutation, ordering and repeat-use behavior satisfy the shared contract. Record commit and fixture IDs here.
 
+  Closed 2026-09-29 — six hosts agree on 107 API probes (24 pinned); race/TSan/-race lanes green
+
 <a id="c-cpp-c13"></a>
 
-- [ ] **C-CPP-C13 — Resolve CPP-C13.** `HostArgs::val/text/...` with index at or above `count()` is undefined behaviour
+- [x] **C-CPP-C13 — Resolve CPP-C13.** `HostArgs::val/text/...` with index at or above `count()` is undefined behaviour
 
   **[CPP-C13](../cpp-code-review.md) — [low] [confirmed] `HostArgs::val/text/...` with index at or above `count()` is undefined behaviour**
 
@@ -834,9 +836,11 @@ Each task starts by reproducing the report against the current tree, then lands 
 
   Done when every linked scenario passes on all applicable lanes; code/position, mutation, ordering and repeat-use behavior satisfy the shared contract. Record commit and fixture IDs here.
 
+  Closed 2026-09-29 — six hosts agree on 107 API probes (24 pinned); race/TSan/-race lanes green
+
 <a id="c-cpp-c15"></a>
 
-- [ ] **C-CPP-C15 — Resolve CPP-C15.** `RECORD` builds `rec.set(a.text(i), a.val(i + 1).clone())` in one expression
+- [x] **C-CPP-C15 — Resolve CPP-C15.** `RECORD` builds `rec.set(a.text(i), a.val(i + 1).clone())` in one expression
 
   **[CPP-C15](../cpp-code-review.md) — [low] [unconfirmed] `RECORD` builds `rec.set(a.text(i), a.val(i + 1).clone())` in one expression**
 
@@ -850,9 +854,11 @@ Each task starts by reproducing the report against the current tree, then lands 
 
   Done when every linked scenario passes on all applicable lanes; code/position, mutation, ordering and repeat-use behavior satisfy the shared contract. Record commit and fixture IDs here.
 
+  Closed 2026-09-29 — six hosts agree on 107 API probes (24 pinned); race/TSan/-race lanes green
+
 <a id="c-cpp-c44"></a>
 
-- [ ] **C-CPP-C44 — Resolve CPP-C44.** `dependencies()` is "read anywhere minus assigned anywhere", not "read without having assigned it first"
+- [x] **C-CPP-C44 — Resolve CPP-C44.** `dependencies()` is "read anywhere minus assigned anywhere", not "read without having assigned it first"
 
   **[CPP-C44](../cpp-code-review.md) — [low] [confirmed, all five hosts] `dependencies()` is "read anywhere minus assigned anywhere", not "read without having assigned it first"**
 
@@ -863,3 +869,5 @@ Each task starts by reproducing the report against the current tree, then lands 
   Regression prerequisite: [T12 / CPP-C44](tests/12-integration.md#cpp-c44).
 
   Done when every linked scenario passes on all applicable lanes; code/position, mutation, ordering and repeat-use behavior satisfy the shared contract. Record commit and fixture IDs here.
+
+  Closed 2026-09-29 — six hosts agree on 107 API probes (24 pinned); race/TSan/-race lanes green

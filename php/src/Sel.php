@@ -112,18 +112,19 @@ final class Program
     }
 
     /**
-     * Every variable the program reads without having assigned it first, found
-     * statically. Only possible because SEL has no dynamic symbol operator; this
-     * is what tells a frontend which inputs should re-trigger which rule.
+     * Every variable the program can read before it has DEFINITELY assigned it, in
+     * evaluation order (spec/SPEC.md §8), found statically. Only possible because
+     * SEL has no dynamic symbol operator; this is what tells a frontend which
+     * inputs should re-trigger which rule.
      *
      * @return list<string>
      */
     public function dependencies(): array
     {
         $reads = [];
-        $assigned = [];
-        self::collect($this->ast, [], $reads, $assigned, 1);
-        $out = array_values(array_diff(array_keys($reads), array_keys($assigned)));
+        $defined = [];
+        self::collect($this->ast, [], $reads, $defined, 1);
+        $out = array_keys($reads);
         sort($out);
         return $out;
     }
@@ -142,104 +143,215 @@ final class Program
      * and tripping at the same node, so a program whose dependencies cannot be
      * computed is exactly a program that could not have been evaluated.
      *
+     * FLOW-SENSITIVE (§8): `$defined` is the set of names definitely assigned on
+     * every path that reaches the node being walked, so it is threaded through the
+     * walk in evaluation order. What is not always evaluated runs on a COPY of it
+     * whose additions are dropped (or, for the branches of IF and COND, merged by
+     * intersection): the right side of AND, OR, `??`, `???`, the later arguments of
+     * COALESCE, GET and PATH, and every body an aggregate runs per element (there
+     * may be none).
+     *
      * @param array<string,mixed> $node
-     * @param array<string,bool> $bound
+     * @param array<string,bool> $bound names bound by an enclosing aggregate
      * @param array<string,bool> $reads
-     * @param array<string,bool> $assigned
+     * @param array<string,bool> $defined
      */
     private static function collect(
         array $node,
         array $bound,
         array &$reads,
-        array &$assigned,
+        array &$defined,
         int $depth,
     ): void {
         if ($depth > MAX_DEPTH) {
             fail('E_DEPTH', 'expression nested too deeply', $node['pos']);
         }
+        $d = $depth + 1;
         switch ($node['t']) {
             case 'var':
-                if (!isset($bound[$node['name']])) {
-                    $reads[$node['name']] = true;
+                $name = $node['name'];
+                if (!isset($bound[$name]) && !isset($defined[$name])) {
+                    $reads[$name] = true;
                 }
                 return;
 
             case 'assign':
                 $target = $node['target'];
+                $indexes = [];
                 while ($target['t'] === 'index') {
-                    self::collect($target['idx'], $bound, $reads, $assigned, $depth + 1);
+                    $indexes[] = $target['idx'];
                     $target = $target['obj'];
                 }
-                // `A = x` defines A; `A[k] = x` and `A += x` also read it.
-                if ($node['target']['t'] !== 'var' || $node['op'] !== '=') {
-                    if (!isset($bound[$target['name']])) {
-                        $reads[$target['name']] = true;
-                    }
+                // Index expressions evaluate once, in source order, before the right side.
+                foreach (array_reverse($indexes) as $idx) {
+                    self::collect($idx, $bound, $reads, $defined, $d);
                 }
-                $assigned[$target['name']] = true;
-                self::collect($node['value'], $bound, $reads, $assigned, $depth + 1);
+                $name = $target['name'];
+                // `A op= x` and `A[k] op= x` read their target; `A = x` and `A[k] = x` do not
+                // (the latter creates A).
+                if ($node['op'] !== '=' && !isset($bound[$name]) && !isset($defined[$name])) {
+                    $reads[$name] = true;
+                }
+                self::collect($node['value'], $bound, $reads, $defined, $d);
+                $defined[$name] = true;
                 return;
 
             case 'call':
-                // Which arguments run inside the binder, and what they see, is
-                // decided once, by Registry::bindingForm over the manifest's
-                // forms (spec/builtins.md). No form -- a strict function, or a
-                // count the evaluator would refuse -- and every argument is
-                // read where the call stands.
-                $form = Registry::bindingForm($node['name'] ?? '', $node['args']);
-                if ($form === null) {
-                    foreach ($node['args'] as $arg) self::collect($arg, $bound, $reads, $assigned, $depth + 1);
-                    return;
-                }
-                $inner = null;
-                foreach ($node['args'] as $i => $arg) {
-                    $scope = $form['scopes'][$i];
-                    if ($scope === 'binder') continue;
-                    if ($scope === 'inner') {
-                        if ($inner === null) {
-                            $inner = $bound;
-                            foreach ($form['binds'] as $b) $inner[$b] = true;
-                        }
-                        self::collect($arg, $inner, $reads, $assigned, $depth + 1);
-                    } else {
-                        self::collect($arg, $bound, $reads, $assigned, $depth + 1);
-                    }
-                }
+                self::collectCall($node, $bound, $reads, $defined, $d);
                 return;
 
             case 'seq':
             case 'list':
                 foreach ($node['items'] as $item) {
-                    self::collect($item, $bound, $reads, $assigned, $depth + 1);
+                    self::collect($item, $bound, $reads, $defined, $d);
                 }
                 return;
 
             case 'index':
-                self::collect($node['obj'], $bound, $reads, $assigned, $depth + 1);
-                self::collect($node['idx'], $bound, $reads, $assigned, $depth + 1);
+                self::collect($node['obj'], $bound, $reads, $defined, $d);
+                self::collect($node['idx'], $bound, $reads, $defined, $d);
                 return;
 
             case 'bin':
-                self::collect($node['l'], $bound, $reads, $assigned, $depth + 1);
-                self::collect($node['r'], $bound, $reads, $assigned, $depth + 1);
+                self::collect($node['l'], $bound, $reads, $defined, $d);
+                if (in_array($node['op'], ['AND', 'OR', '??', '???'], true)) {
+                    $rhs = $defined;   // may not run: its assignments are not definite
+                    self::collect($node['r'], $bound, $reads, $rhs, $d);
+                } else {
+                    self::collect($node['r'], $bound, $reads, $defined, $d);
+                }
                 return;
 
             case 'un':
-                self::collect($node['x'], $bound, $reads, $assigned, $depth + 1);
+                self::collect($node['x'], $bound, $reads, $defined, $d);
                 return;
         }
+    }
+
+    /**
+     * A call. Which arguments run inside the binder, and what they see, is decided
+     * once, by Registry::bindingForm over the manifest's forms (spec/builtins.md).
+     * No form -- a strict function, or a count the evaluator would refuse -- and
+     * every argument is read where the call stands, except for the lazy functions
+     * that are not aggregates (IF, COND, COALESCE, GET, PATH).
+     *
+     * @param array<string,mixed> $node
+     * @param array<string,bool> $bound
+     * @param array<string,bool> $reads
+     * @param array<string,bool> $defined
+     */
+    private static function collectCall(array $node, array $bound, array &$reads, array &$defined, int $d): void
+    {
+        $name = $node['name'] ?? '';
+        $args = $node['args'];
+        $form = Registry::bindingForm($name, $args);
+        if ($form !== null) {
+            $inner = null;
+            foreach ($args as $i => $arg) {
+                $scope = $form['scopes'][$i];
+                if ($scope === 'binder') continue;
+                if ($scope === 'inner') {
+                    if ($inner === null) {
+                        $inner = $bound;
+                        foreach ($form['binds'] as $b) $inner[$b] = true;
+                    }
+                    $body = $defined;   // runs once per element: possibly never
+                    self::collect($arg, $inner, $reads, $body, $d);
+                } else {
+                    self::collect($arg, $bound, $reads, $defined, $d);
+                }
+            }
+            return;
+        }
+        switch ($name) {
+            case 'IF':
+                if (count($args) >= 1) self::collect($args[0], $bound, $reads, $defined, $d);
+                $ends = [];
+                foreach (array_slice($args, 1) as $arg) {
+                    $branch = $defined;
+                    self::collect($arg, $bound, $reads, $branch, $d);
+                    $ends[] = $branch;
+                }
+                // A missing else branch yields NULL and assigns nothing.
+                if (count($args) < 3) $ends[] = $defined;
+                $defined = self::intersect($ends, $defined);
+                return;
+
+            case 'COND':
+                // Conditions run in order until one holds; each value runs only on its own path.
+                $ends = [];
+                $n = count($args);
+                for ($i = 0; $i + 1 < $n; $i += 2) {
+                    self::collect($args[$i], $bound, $reads, $defined, $d);
+                    $branch = $defined;
+                    self::collect($args[$i + 1], $bound, $reads, $branch, $d);
+                    $ends[] = $branch;
+                }
+                if ($n % 2 === 1) {
+                    $branch = $defined;
+                    self::collect($args[$n - 1], $bound, $reads, $branch, $d);
+                    $ends[] = $branch;
+                } else {
+                    $ends[] = $defined;   // no default: NULL, nothing more assigned
+                }
+                $defined = self::intersect($ends, $defined);
+                return;
+
+            case 'COALESCE':
+                foreach ($args as $i => $arg) {
+                    if ($i === 0) {
+                        self::collect($arg, $bound, $reads, $defined, $d);
+                    } else {
+                        $rest = $defined;
+                        self::collect($arg, $bound, $reads, $rest, $d);
+                    }
+                }
+                return;
+
+            case 'GET':
+            case 'PATH':
+                foreach ($args as $i => $arg) {
+                    if ($i < 2) {
+                        self::collect($arg, $bound, $reads, $defined, $d);
+                    } else {
+                        $dflt = $defined;   // the default runs only when the key is absent
+                        self::collect($arg, $bound, $reads, $dflt, $d);
+                    }
+                }
+                return;
+        }
+        foreach ($args as $arg) {
+            self::collect($arg, $bound, $reads, $defined, $d);
+        }
+    }
+
+    /**
+     * @param list<array<string,bool>> $sets
+     * @param array<string,bool> $fallback
+     * @return array<string,bool>
+     */
+    private static function intersect(array $sets, array $fallback): array
+    {
+        if ($sets === []) return $fallback;
+        $out = array_shift($sets);
+        foreach ($sets as $set) $out = array_intersect_key($out, $set);
+        return $out;
     }
 }
 
 final class Sel
 {
-    public static function compile(string $source): Program
+    /** @param mixed $source anything but a string is E_BAD_ARG (spec/SPEC.md §8) */
+    public static function compile($source): Program
     {
+        if (!is_string($source)) {
+            fail('E_BAD_ARG', 'compile takes the source text as a string, not ' . get_debug_type($source));
+        }
         return new Program($source, Parser::parse($source));
     }
 
     /** @param Value|array<mixed>|null $context */
-    public static function evaluate(string $source, $context = null): Value
+    public static function evaluate($source, $context = null): Value
     {
         return self::compile($source)->run($context);
     }

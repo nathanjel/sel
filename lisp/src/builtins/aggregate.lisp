@@ -260,10 +260,19 @@ given, is evaluated in place of the written body."
                      do (unless first (write-string sep out))
                         (write-string part out)))))))
 
+(defun sort-leaf (v)
+  "The value scalar context reads (SPEC 3.2: the first child, recursively), so a
+record sorts by its first field and ranks by that field's kind. NIL when the
+chain ends in nothing (NULL)."
+  (if (not (eq (value-kind v) :none))
+      v
+      (handler-case (scalar-source v nil)
+        (sel-error () nil))))
+
 (defun sort-rank (v)
   "The kind rank of SPEC 7.3's total order: NULL < BOOL < numeric-looking text
-(numbers included) < all other TEXT < BIN < anything else."
-  (cond ((value-null-p v) 0)
+(numbers included) < all other TEXT < BIN."
+  (cond ((or (null v) (value-null-p v)) 0)
         ((eq (value-kind v) :bool) 1)
         ((looks-numeric v) 2)
         ((eq (value-kind v) :text) 3)
@@ -275,8 +284,10 @@ given, is evaluated in place of the written body."
 rank -- FALSE before TRUE, numbers by exact value, other text and BIN bytewise.
 Every pair of values compares, and transitively, so a sort cannot depend on the
 order it is handed its elements."
-  (let ((ra (sort-rank a))
-        (rb (sort-rank b)))
+  (let* ((a (sort-leaf a))
+         (b (sort-leaf b))
+         (ra (sort-rank a))
+         (rb (sort-rank b)))
     (cond
       ((< ra rb) -1)
       ((> ra rb) 1)

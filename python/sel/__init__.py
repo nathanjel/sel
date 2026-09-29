@@ -93,20 +93,19 @@ class Program:
         return self._physical
 
     def dependencies(self) -> list[str]:
-        """Every variable the program reads without having assigned it first,
-        found statically. Only possible because SEL has no dynamic symbol
-        operator; this is what tells a frontend which inputs should re-trigger
-        which rule.
+        """Every variable the program can read before it has definitely assigned
+        it, found statically (spec/SPEC.md 8). Only possible because SEL has no
+        dynamic symbol operator; this is what tells a frontend which inputs should
+        re-trigger which rule.
         """
         reads: set[str] = set()
-        assigned: set[str] = set()
         with _recursion_budget():
-            _collect(self.ast, frozenset(), reads, assigned, 1)
-        return sorted(n for n in reads if n not in assigned)
+            _collect(self.ast, frozenset(), frozenset(), reads, 1)
+        return sorted(reads)
 
 
-def _collect(node: Node | None, bound: frozenset, reads: set, assigned: set,
-             depth: int) -> None:
+def _collect(node: Node | None, bound: frozenset, defs: frozenset, reads: set,
+             depth: int) -> frozenset:
     """The static walk of the tree, and the third thing in each host that recurses
 over it. spec/SPEC.md 6.4 caps the other two -- the parser's nesting and the
 evaluator's -- and says why: uncounted recursion over a tree the source can
@@ -119,32 +118,61 @@ there is nothing to release on the way out -- which is also what lets the five
 hosts spell this identically. Capped at the same MAX_DEPTH the evaluator uses
 and tripping at the same node, so a program whose dependencies cannot be
 computed is exactly a program that could not have been evaluated.
+
+FLOW. The walk goes in evaluation order and carries `defs`, the names definitely
+assigned so far, and returns it as it stands afterwards (SPEC 8): a read of a name
+that is neither bound nor in `defs` is a dependency. What runs conditionally
+(the right side of AND / OR / ?? / ???, the branches of IF and COND, an aggregate's
+per-element expressions) contributes to `defs` only where every path assigns it.
     """
     if node is None:
-        return
+        return defs
     if depth > MAX_DEPTH:
         fail('E_DEPTH', 'expression nested too deeply', node.pos)
     t = node.t
+    d1 = depth + 1
 
     if t == 'var':
-        if node.name not in bound:
+        if node.name not in bound and node.name not in defs:
             reads.add(node.name)
-        return
+        return defs
 
     if t == 'assign':
         target = node.target
+        idxs = []
         while target.t == 'index':
-            _collect(target.idx, bound, reads, assigned, depth + 1)
+            idxs.append(target.idx)
             target = target.obj
-        # `A = x` defines A; `A[k] = x` and `A += x` also read it.
-        if node.target.t != 'var' or node.op != '=':
-            if target.name not in bound:
+        # Index expressions run in source order, before the right side.
+        for idx in reversed(idxs):
+            defs = _collect(idx, bound, defs, reads, d1)
+        # `A = x` defines A and `A[k] = x` creates it, so neither reads it;
+        # `A op= x` and `A[k] op= x` do.
+        if node.op != '=':
+            if target.name not in bound and target.name not in defs:
                 reads.add(target.name)
-        assigned.add(target.name)
-        _collect(node.value, bound, reads, assigned, depth + 1)
-        return
+        defs = _collect(node.value, bound, defs, reads, d1)
+        return defs | {target.name}
 
     if t == 'call':
+        name = (node.name or '').upper()
+        if name == 'IF' and len(node.args) == 3:
+            defs = _collect(node.args[0], bound, defs, reads, d1)
+            a = _collect(node.args[1], bound, defs, reads, d1)
+            b = _collect(node.args[2], bound, defs, reads, d1)
+            return a & b
+        if name == 'COND' and len(node.args) % 2 == 1:
+            args = node.args
+            paths = []
+            state = defs
+            for k in range(0, len(args) - 1, 2):
+                state = _collect(args[k], bound, state, reads, d1)
+                paths.append(_collect(args[k + 1], bound, state, reads, d1))
+            paths.append(_collect(args[-1], bound, state, reads, d1))
+            out = paths[0]
+            for extra in paths[1:]:
+                out = out & extra
+            return out
         # Which arguments run inside the binder, and what they see, is decided
         # once, by binding_form() over the manifest's forms (spec/builtins.md).
         # No form -- a strict function, or a count the evaluator would refuse
@@ -152,8 +180,8 @@ computed is exactly a program that could not have been evaluated.
         form = _binding_form(node.name or '', node.args, node.spec)
         if form is None:
             for a in node.args:
-                _collect(a, bound, reads, assigned, depth + 1)
-            return
+                defs = _collect(a, bound, defs, reads, d1)
+            return defs
         scopes, binds = form
         inner = None
         for i, arg in enumerate(node.args):
@@ -163,35 +191,43 @@ computed is exactly a program that could not have been evaluated.
             if scope == 'inner':
                 if inner is None:
                     inner = bound | frozenset(binds)
-                _collect(arg, inner, reads, assigned, depth + 1)
+                # Runs once per element, possibly never: what it assigns is
+                # not definite outside the call.
+                _collect(arg, inner, defs, reads, d1)
             else:
-                _collect(arg, bound, reads, assigned, depth + 1)
-        return
+                defs = _collect(arg, bound, defs, reads, d1)
+        return defs
 
     if t in ('seq', 'list'):
         for item in node.items:
-            _collect(item, bound, reads, assigned, depth + 1)
-        return
+            defs = _collect(item, bound, defs, reads, d1)
+        return defs
 
     if t == 'index':
-        _collect(node.obj, bound, reads, assigned, depth + 1)
-        _collect(node.idx, bound, reads, assigned, depth + 1)
-        return
+        defs = _collect(node.obj, bound, defs, reads, d1)
+        return _collect(node.idx, bound, defs, reads, d1)
 
     if t == 'bin':
-        _collect(node.l, bound, reads, assigned, depth + 1)
-        _collect(node.r, bound, reads, assigned, depth + 1)
-        return
+        defs = _collect(node.l, bound, defs, reads, d1)
+        if node.op in ('AND', 'OR', '??', '???'):
+            _collect(node.r, bound, defs, reads, d1)
+            return defs
+        return _collect(node.r, bound, defs, reads, d1)
 
     if t == 'un':
-        _collect(node.x, bound, reads, assigned, depth + 1)
-        return
+        return _collect(node.x, bound, defs, reads, d1)
+
+    return defs
 
 
 def compile(source: str) -> Program:   # noqa: A001 - mirrors compile() in every host
     """Parse and check `source`. Raises SelError on a syntax error, an unknown
     function name or a wrong argument count — all three are compile time.
     """
+    if not isinstance(source, str):
+        # Not source at all (spec/SPEC.md 8): a bytes, a number, None. A caller's
+        # mistake, reported as ours rather than as whatever the lexer chokes on.
+        fail('E_BAD_ARG', f'compile takes program text, not {type(source).__name__}')
     with _recursion_budget():
         return Program(source, parse(source))
 

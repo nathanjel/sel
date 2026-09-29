@@ -660,7 +660,7 @@ Each task starts by reproducing the report against the current tree, then lands 
 
 <a id="c-lisp-c12"></a>
 
-- [ ] **C-LISP-C12 — Resolve LISP-C12.** Process-global mutable hash tables are unsynchronised: concurrent use errors out or returns wrong records
+- [x] **C-LISP-C12 — Resolve LISP-C12.** Process-global mutable hash tables are unsynchronised: concurrent use errors out or returns wrong records
 
   **[LISP-C12](../lisp-code-review.md) — [medium] [confirmed] Process-global mutable hash tables are unsynchronised: concurrent use errors out or returns wrong records**
 
@@ -673,3 +673,5 @@ Each task starts by reproducing the report against the current tree, then lands 
   Contract gate: settle the relevant rule in the shared test family before choosing among the report’s proposed behaviors.
 
   Done when every linked scenario passes on all applicable lanes; code/position, mutation, ordering and repeat-use behavior satisfy the shared contract. Record commit and fixture IDs here.
+
+  Closed 2026-09-29 — six hosts agree on 107 API probes (24 pinned); race/TSan/-race lanes green

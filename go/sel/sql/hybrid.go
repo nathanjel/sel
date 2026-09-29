@@ -231,6 +231,23 @@ func readsName(steps []*sel.Node, name string) bool {
 	return false
 }
 
+// needsLeftName says whether a continuation holds a 3-argument LINK whose joined row
+// would name its left side `_INPUT`: no LINK before it in the prefix (which has
+// already named its sides), and a LINK with three arguments (five name both sides).
+func needsLeftName(prefix, remaining []*sel.Node) bool {
+	for _, step := range prefix {
+		if step.S == "LINK" || step.S == "LINK_LEFT" {
+			return false
+		}
+	}
+	for _, step := range remaining {
+		if (step.S == "LINK" || step.S == "LINK_LEFT") && len(step.Items) == 3 {
+			return true
+		}
+	}
+	return false
+}
+
 // sortedRowsJoined says whether steps[:count] joins rows a SEL sort ordered.
 func sortedRowsJoined(steps []*sel.Node, count int) bool {
 	sorted := false
@@ -1113,8 +1130,14 @@ func PlanHybrid(program *sel.Program, dialect string, bindings *Bindings, option
 		if sortedRowsJoined(steps, count) {
 			continue
 		}
-		linkNext := steps[count].S == "LINK" || steps[count].S == "LINK_LEFT"
-		if linkNext && (source.T != sel.NodeVar || readsName(steps[count:], source.S)) {
+		// A 3-argument LINK names the left side of its joined row after the variable
+		// the pipeline started from, wherever in the continuation it falls (spec 7.4,
+		// GO-C22), so the rows are bound to that name first. A step that also READS the
+		// name (a self-join) would find the truncated rows where run() finds the whole
+		// relation: that split is not made. The same rule in every host; a LINK in the
+		// prefix has already named its sides.
+		needsRebind := needsLeftName(steps[:count], steps[count:])
+		if needsRebind && (source.T != sel.NodeVar || readsName(steps[count:], source.S)) {
 			continue
 		}
 		prefixAst := helpers.wrap(sel.BuildPipeline(source, steps[:count]))
@@ -1150,7 +1173,7 @@ func PlanHybrid(program *sel.Program, dialect string, bindings *Bindings, option
 
 		remaining := steps[count:]
 		continuationAst := helpers.wrap(sel.BuildPipeline(varNode("_INPUT", remaining[0].Pos), remaining))
-		if linkNext {
+		if needsRebind {
 			// A joined row names its left side after the relation it came from
 			// (ORDERS, orders), never after `_INPUT` (spec §7.4, GO-C22): the
 			// rows are bound to that name for the continuation, which reads it

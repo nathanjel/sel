@@ -163,7 +163,10 @@ func TestSizeBudgetRefusesAHugeExpansionQuicklyAndAcceptsBelowIt(t *testing.T) {
 	for _, base := range []string{"N", "1"} {
 		start := time.Now()
 		wantCode(t, refusal(t, "mariadb", doubling(40, base), col, false), "E_SQL_SIZE")
-		if d := time.Since(start); d > 5*time.Second {
+		// A walk that ignored the budget would need days for 2^40 nodes, so a generous
+		// ceiling still proves it stopped, and holds up on a box running many jobs
+		// (the gate measured 5.3 s here under load; unloaded it is well under one).
+		if d := time.Since(start); d > 60*time.Second {
 			t.Fatalf("refusing a 2^40 expansion over %q took %v; the walk must stop at the budget", base, d)
 		}
 	}

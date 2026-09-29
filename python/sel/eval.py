@@ -6,7 +6,7 @@ failed, carrying that node's position, and no layer rewrites it.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, NoReturn
 
 from . import decimal as D
 from ._budget import check_collection, check_text
@@ -104,13 +104,26 @@ class Args:
     def count(self) -> int:
         return len(self.nodes)
 
+    def _oob(self, i: int) -> NoReturn:
+        # A registered host function read an argument the call does not have
+        # (spec/SPEC.md 8.1): a SEL error at the call, never the host's own
+        # IndexError -- and never Python's negative indexing answering for it.
+        fail('E_BAD_ARG',
+             f'{self.name} has no argument {i} (the call has {len(self.nodes)})', self.pos)
+
     def node(self, i: int) -> Node:
+        if i < 0 or i >= len(self.nodes):
+            self._oob(i)
         return self.nodes[i]
 
     def pos_of(self, i: int) -> Pos:
+        if i < 0 or i >= len(self.nodes):
+            self._oob(i)
         return self.nodes[i].pos
 
     def val(self, i: int) -> Value:
+        if i < 0 or i >= len(self.nodes):
+            self._oob(i)
         if self._vals[i] is None:
             self._vals[i] = eval_node(self.nodes[i], self.ctx)
         return self._vals[i]

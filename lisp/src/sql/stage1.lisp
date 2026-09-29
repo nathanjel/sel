@@ -166,6 +166,19 @@ operand, and the two would drift."
     (sel:sel-error (e) (refuse-as-sel e n)))
   (values))
 
+(defun numeric-text-constant (n root)
+  "The canonical spelling of a constant that is TEXT holding a number, or NIL when it
+is anything else (or SEL refuses it: the operand's own translation reports that).
+PHP-C33: in arithmetic SEL computes with such a text exactly, and MariaDB and MySQL
+would convert the quoted string to DOUBLE (`'0.1' + '0.2' = 0.3` is false there), so
+the translator spells it as the exact numeric literal it stands for."
+  (handler-case
+      (let ((v (sel:run (sel::%make-program "" n) root)))
+        (and (sel::value-text-p v)
+             (sel::looks-numeric v)
+             (sel::dec-format (sel::as-dec v (snode-pos n)))))
+    (sel:sel-error () nil)))
+
 (defun constant-scale (n root)
   "The number of fractional digits of a constant already known to be a number
 (REQUIRE-NUMERIC-CONSTANT ran first)."

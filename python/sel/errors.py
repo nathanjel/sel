@@ -34,6 +34,17 @@ class SelError(Exception):
     def __str__(self) -> str:
         return f'{self.code} at {self.line}:{self.col}: {self.message}'
 
+    def __reduce__(self):
+        # Exception's default reduce replays `args`, which holds only the
+        # message, so pickle, copy and deepcopy -- and a ProcessPoolExecutor
+        # carrying the error to its parent -- failed on the three-argument
+        # constructor. Rebuild from the fields instead.
+        return (_rebuild, (self.code, self.message, self.line, self.col, self.offset))
+
+
+def _rebuild(code: str, message: str, line: int, col: int, offset: int) -> 'SelError':
+    return SelError(code, message, Pos(line, col, offset))
+
 
 def fail(code: str, message: str, pos: Pos | None = None) -> NoReturn:
     """Raise at the innermost point of failure. Nothing wraps this on the way out."""

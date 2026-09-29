@@ -210,6 +210,10 @@ struct RelationalPlan {
   std::string source_table;
   std::optional<std::string> source_alias;
   std::shared_ptr<const RelationalPlan> source_subquery;
+  // A derived table with no LIMIT beside its ORDER BY does not keep the order, so a
+  // step that needs the rows in that order (a BUCKET's groups, a LINK's rows, a
+  // later sort's ties) cannot be built on it.
+  bool order_dropped = false;
   std::vector<RelationalJoin> joins;
   std::optional<std::string> correlate;
   bool distinct = false;
@@ -310,6 +314,7 @@ class Translator {
   // Transforms rather than checks: the operand comes back wrapped, so every
   // caller has to assign the result.
   Fragment guard_numeric(const Fragment& f, const SNode& n);
+  Fragment arithmetic_operand(const SNodePtr& n);
   // scale-limit (sql/MAP.md §3): where the dialect's numericCast keeps a fixed
   // number of fractional digits, a value read through it may lose some.
   std::optional<std::int32_t> numeric_cast_scale() const;

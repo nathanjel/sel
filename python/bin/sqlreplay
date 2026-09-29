@@ -92,7 +92,7 @@ def main() -> int:
     try:
         Sql.translate(sel_compile('T == 25'), guard_name,
                       {'T': Binding.column('t', None, 'TEXT')})
-    except ValueError:
+    except RuntimeError:                       # the startup-error class (sql/MAP.md 4.5)
         refused = True
     except Exception as e:                     # noqa: BLE001
         problems.append('numericGuard disagreeing with ISNUM raised '
@@ -117,7 +117,7 @@ def main() -> int:
     stale = False
     try:
         Sql.translate(program, memo_name, text_col)
-    except ValueError:
+    except RuntimeError:                       # the startup-error class (sql/MAP.md 4.5)
         stale = True
     except Exception as e:                     # noqa: BLE001
         problems.append(f'a redefined ISNUM raised {type(e).__name__} rather than '

@@ -1,6 +1,7 @@
 package sql
 
 import (
+	"github.com/nathanjel/sel/go/internal/decimal"
 	"fmt"
 	"strings"
 
@@ -503,6 +504,39 @@ func requireNumericNode(n *SNode, root *sel.Value) {
 		}()
 		val.AsDecimal(n.Pos)
 	}()
+}
+
+// NumericTextConstant is the canonical spelling of a constant that is TEXT holding a
+// number, and "" with false when it is anything else (or SEL refuses it: the operand's
+// own translation reports that). PHP-C33: in arithmetic SEL computes with such a text
+// exactly, and MariaDB and MySQL would convert the quoted string to DOUBLE
+// (`'0.1' + '0.2' = 0.3` is false there), so the translator spells it as the exact
+// numeric literal it stands for.
+func NumericTextConstant(n *SNode, root *sel.Value) (text string, ok bool) {
+	node := n.ToNode()
+	if node == nil {
+		return "", false
+	}
+	if root == nil {
+		root = sel.NewNull()
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			if _, isSel := r.(*sel.SelError); isSel {
+				text, ok = "", false
+				return
+			}
+			panic(r)
+		}
+	}()
+	val, err := sel.NewProgram("", node).Run(root)
+	if err != nil {
+		return "", false
+	}
+	if !val.IsText() || !val.LooksNumeric() {
+		return "", false
+	}
+	return decimal.Format(val.AsDecimal(n.Pos)), true
 }
 
 func ConstantScale(n *SNode, root *sel.Value) int {

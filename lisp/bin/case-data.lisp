@@ -6192,6 +6192,246 @@
    :register nil
    :bindings (lambda () (list (cons "T" (binding-column "t" nil :text)))))
   (list
+   :name "const.arith.numeric-text-is-the-number.add.mariadb"
+   :at "16-constants.sqlt:630"
+   :dialect "mariadb"
+   :source "\"0.1\" + \"0.2\" == 0.3"
+   :expect "((0.1 + 0.2) = 0.3)"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list )))
+  (list
+   :name "const.arith.numeric-text-is-the-number.max.mariadb"
+   :at "16-constants.sqlt:639"
+   :dialect "mariadb"
+   :source "MAX(\"10\", \"9\") == 10"
+   :expect "(GREATEST(10, 9) = 10)"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list )))
+  (list
+   :name "const.arith.numeric-text-is-the-number.folded-call.mariadb"
+   :at "16-constants.sqlt:648"
+   :dialect "mariadb"
+   :source "LTRIM(\"41\") + 1"
+   :expect "(41 + 1)"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list )))
+  (list
+   :name "const.arith.numeric-text-is-the-number.unary.mariadb"
+   :at "16-constants.sqlt:657"
+   :dialect "mariadb"
+   :source "-\"5\" + 1"
+   :expect "((-5) + 1)"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list )))
+  (list
+   :name "const.arith.numeric-text-is-the-number.scale-kept.mariadb"
+   :at "16-constants.sqlt:666"
+   :dialect "mariadb"
+   :source "\"1.10\" + 2 > 3"
+   :expect "((1.10 + 2) > 3)"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list )))
+  (list
+   :name "const.arith.numeric-text-is-the-number.add.postgresql"
+   :at "16-constants.sqlt:675"
+   :dialect "postgresql"
+   :source "\"0.1\" + \"0.2\" == 0.3"
+   :expect "((CAST(0.1 AS NUMERIC) + CAST(0.2 AS NUMERIC)) = 0.3)"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list )))
+  (list
+   :name "const.arith.numeric-text-is-the-number.max.postgresql"
+   :at "16-constants.sqlt:684"
+   :dialect "postgresql"
+   :source "MAX(\"10\", \"9\") == 10"
+   :expect "(greatest(10, 9) = 10)"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list )))
+  (list
+   :name "const.arith.numeric-text-is-the-number.folded-call.postgresql"
+   :at "16-constants.sqlt:693"
+   :dialect "postgresql"
+   :source "LTRIM(\"41\") + 1"
+   :expect "(CAST(41 AS NUMERIC) + CAST(1 AS NUMERIC))"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list )))
+  (list
+   :name "const.arith.numeric-text-is-the-number.unary.postgresql"
+   :at "16-constants.sqlt:702"
+   :dialect "postgresql"
+   :source "-\"5\" + 1"
+   :expect "(CAST((-CAST(5 AS NUMERIC)) AS NUMERIC) + CAST(1 AS NUMERIC))"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list )))
+  (list
+   :name "const.arith.numeric-text-is-the-number.scale-kept.postgresql"
+   :at "16-constants.sqlt:711"
+   :dialect "postgresql"
+   :source "\"1.10\" + 2 > 3"
+   :expect "((CAST(1.10 AS NUMERIC) + CAST(2 AS NUMERIC)) > 3)"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list )))
+  (list
+   :name "const.arith.numeric-text-is-the-number.add.sqlite"
+   :at "16-constants.sqlt:720"
+   :dialect "sqlite"
+   :source "\"0.1\" + \"0.2\" == 0.3"
+   :expect "(CAST(('0.1' + '0.2') AS NUMERIC) = CAST('0.3' AS NUMERIC))"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list )))
+  (list
+   :name "const.arith.numeric-text-is-the-number.max.sqlite"
+   :at "16-constants.sqlt:729"
+   :dialect "sqlite"
+   :source "MAX(\"10\", \"9\") == 10"
+   :expect "(CAST(max(CAST('10' AS NUMERIC), CAST('9' AS NUMERIC)) AS NUMERIC) = CAST('10' AS NUMERIC))"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list )))
+  (list
+   :name "const.arith.numeric-text-is-the-number.folded-call.sqlite"
+   :at "16-constants.sqlt:738"
+   :dialect "sqlite"
+   :source "LTRIM(\"41\") + 1"
+   :expect "('41' + '1')"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list )))
+  (list
+   :name "const.arith.numeric-text-is-the-number.unary.sqlite"
+   :at "16-constants.sqlt:747"
+   :dialect "sqlite"
+   :source "-\"5\" + 1"
+   :expect "((-'5') + '1')"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list )))
+  (list
+   :name "const.arith.numeric-text-is-the-number.scale-kept.sqlite"
+   :at "16-constants.sqlt:756"
+   :dialect "sqlite"
+   :source "\"1.10\" + 2 > 3"
+   :expect "(CAST(('1.10' + '2') AS NUMERIC) > CAST('3' AS NUMERIC))"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list )))
+  (list
    :name "pin.mariadb.decode-base64"
    :at "17-caveat-pins.sqlt:15"
    :dialect "mariadb"
@@ -20435,4 +20675,84 @@ ORDERS .> TAKE(1)"
    :plan "pure_sql"
    :tables (list "orders")
    :register nil
-   :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num)) (cons "CUSTOMER_ID" (binding-column "customer_id" "o" :num)) (cons "AMOUNT" (binding-column "amount" "o" :num)) (cons "NAME" (binding-column "name" "o" :text))) nil nil)) (cons "CUSTOMERS" (binding-relation "customers" "c" (list (cons "ID" (binding-column "id" "c" :num)) (cons "NAME" (binding-column "name" "c" :text))) nil nil)))))))
+   :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num)) (cons "CUSTOMER_ID" (binding-column "customer_id" "o" :num)) (cons "AMOUNT" (binding-column "amount" "o" :num)) (cons "NAME" (binding-column "name" "o" :text))) nil nil)) (cons "CUSTOMERS" (binding-relation "customers" "c" (list (cons "ID" (binding-column "id" "c" :num)) (cons "NAME" (binding-column "name" "c" :text))) nil nil)))))
+  (list
+   :name "stmt.order.the-order-rule-comes-before-a-bad-key"
+   :at "51-hybrid-parity.sqlt:258"
+   :dialect "mariadb"
+   :source "ORDERS .> SORT_BY(_[\"id\"], \"DESC\") .> BUCKET(_[\"nope\"])"
+   :expect nil
+   :error "E_SQL_SHAPE 1:39"
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num)) (cons "NAME" (binding-column "name" "o" :text))) nil nil)))))
+  (list
+   :name "stmt.order.the-order-rule-comes-before-a-bare-row-key"
+   :at "51-hybrid-parity.sqlt:273"
+   :dialect "mariadb"
+   :source "ORDERS .> SORT_BY(_[\"id\"], \"DESC\") .> BUCKET(_)"
+   :expect nil
+   :error "E_SQL_SHAPE 1:39"
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num)) (cons "NAME" (binding-column "name" "o" :text))) nil nil)))))
+  (list
+   :name "stmt.order.bucket-after-a-sort-is-refused-at-the-step"
+   :at "51-hybrid-parity.sqlt:288"
+   :dialect "mariadb"
+   :source "ORDERS .> SORT_BY(_[\"id\"], \"DESC\") .> BUCKET(_[\"name\"])"
+   :expect nil
+   :error "E_SQL_SHAPE 1:39"
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num)) (cons "NAME" (binding-column "name" "o" :text))) nil nil)))))
+  (list
+   :name "stmt.order.bucket-after-two-sorts-is-refused-at-the-step"
+   :at "51-hybrid-parity.sqlt:303"
+   :dialect "mariadb"
+   :source "ORDERS .> SORT_BY(_[\"id\"], \"DESC\") .> SORT_BY(_[\"name\"], \"DESC\") .> BUCKET(_[\"name\"])"
+   :expect nil
+   :error "E_SQL_SHAPE 1:69"
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num)) (cons "NAME" (binding-column "name" "o" :text))) nil nil)))))
+  (list
+   :name "stmt.order.distinct-after-a-sort-is-refused-at-the-step"
+   :at "51-hybrid-parity.sqlt:318"
+   :dialect "mariadb"
+   :source "ORDERS .> SORT_BY(_[\"id\"], \"DESC\") .> SELECT_COLS(\"name\") .> DISTINCT()"
+   :expect nil
+   :error "E_SQL_SHAPE 1:62"
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num)) (cons "NAME" (binding-column "name" "o" :text))) nil nil)))))))

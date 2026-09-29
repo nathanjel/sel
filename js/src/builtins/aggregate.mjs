@@ -5,7 +5,7 @@ import * as D from '../decimal.mjs';
 import { Value, NONE, structuralHash, scalarKey } from '../value.mjs';
 import { define } from '../registry.mjs';
 import { bytesCompare } from '../utf8.mjs';
-import { fail } from '../errors.mjs';
+import { fail, SelError } from '../errors.mjs';
 import { cpLength, checkText, MAX_TEXT_LEN } from '../budget.mjs';
 // The direction and field names fold ASCII-only (review 2026-09-25 SEM-05):
 // toUpperCase took "deſc" for DESC.
@@ -306,7 +306,7 @@ define({
 // numeric: by value; else both text: bytes), so a number was below one text and
 // above another that sorted below it -- not an order at all.
 function sortRank(v) {
-  if (v.isNull()) return 0;
+  if (v === null || v.isNull()) return 0;
   if (v.kind === 'BOOL') return 1;
   if (v.looksNumeric()) return 2;
   if (v.kind === 'TEXT') return 3;
@@ -314,15 +314,30 @@ function sortRank(v) {
   return 5;
 }
 
+// A value with children and no scalar of its own is ordered by what scalar
+// context makes of it (SPEC 3.2: its first child, recursively), so a record
+// sorts by its first field and ranks by that field's kind. A chain that ends in
+// nothing is NULL.
+function sortLeaf(key) {
+  if (key.kind !== NONE) return key;
+  try {
+    return key.scalarSource(null);
+  } catch (e) {
+    if (e instanceof SelError) return null;
+    throw e;
+  }
+}
+
 // A key with its rank and comparable form worked out once, not per comparison.
 function keyInfo(key) {
-  const rk = sortRank(key);
+  const leaf = sortLeaf(key);
+  const rk = sortRank(leaf);
   return {
     key,
     rk,
-    dec: rk === 2 ? key.asDecimal() : null,
-    bytes: rk === 3 || rk === 4 ? key.asBytes() : null,
-    flag: rk === 1 ? (key.scalar ? 1 : 0) : 0,
+    dec: rk === 2 ? leaf.asDecimal() : null,
+    bytes: rk === 3 || rk === 4 ? leaf.asBytes() : null,
+    flag: rk === 1 ? (leaf.scalar ? 1 : 0) : 0,
   };
 }
 

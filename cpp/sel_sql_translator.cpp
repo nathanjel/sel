@@ -330,21 +330,7 @@ Translator::Begun Translator::begin(const NodePtr& ast) {
 
   // Stage 1 and nothing else: the translator renders the tree it is handed;
   // the planner is the one place that optimises first.
-  if (getenv("SQLDBG")) {
-    std::function<void(const Node&, int)> d2 = [&](const Node& n, int d) {
-      fprintf(stderr, "RAW %*st=%d s=%s pos=%d:%d\n", d*2, "", (int)n.t, n.s.c_str(), n.pos.line, n.pos.col);
-      if (n.l) d2(*n.l, d+1); if (n.r) d2(*n.r, d+1); for (auto& k : n.items) d2(*k, d+1);
-    };
-    d2(*ast, 0);
-  }
   SNodePtr normalised = normalise(ast, const_names_, const_root_);
-  if (getenv("SQLDBG")) {
-    std::function<void(const SNode&, int)> dump = [&](const SNode& n, int d) {
-      fprintf(stderr, "%*s%s %s pos=%d:%d closed=%d\n", d*2, "", std::string(node_kind_name(n.t())).c_str(), n.s().c_str(), n.pos().line, n.pos().col, (int)n.is_closed());
-      for (auto& k : n.kids()) dump(*k, d+1);
-    };
-    dump(*normalised, 0);
-  }
   auto plan = analyze_pipeline(normalised);
   return {std::move(normalised), std::move(plan)};
 }
@@ -1581,7 +1567,7 @@ Fragment Translator::fold_pairwise(const std::string& op,
 // --- operators ---------------------------------------------------------------
 
 Fragment Translator::unary(const SNode& n) {
-  Fragment x = node(n.l());
+  Fragment x = n.s() == "NOT" ? node(n.l()) : arithmetic_operand(n.l());
   if (n.s() == "NOT") {
     x = require_bool(x, n.l()->pos(), "NOT");
   } else {
@@ -1606,8 +1592,9 @@ Fragment Translator::binary(const SNode& n) {
   if (op == "IN") return in_operator(n);
 
   // Strictly left then right: parameter slots are numbered in this order.
-  Fragment l = node(n.l());
-  Fragment r = node(n.r());
+  const bool arith = contains(ARITHMETIC_OPS, op);
+  Fragment l = arith ? arithmetic_operand(n.l()) : node(n.l());
+  Fragment r = arith ? arithmetic_operand(n.r()) : node(n.r());
 
   if (op == "AND" || op == "OR" || op == "XOR") {
     l = require_bool(l, n.l()->pos(), op);
@@ -1732,6 +1719,24 @@ Map merge_slots(Map a, const Map& b) {
 }
 
 }  // namespace
+
+// An operand that is a constant TEXT holding a number, in an arithmetic position, is that
+// number (PHP-C33): SEL computes with it exactly, and MariaDB and MySQL would read the
+// quoted string as a DOUBLE. It is translated as the numeric literal it stands for. The
+// text was translated first (its SQL kind is only known then), so the slots it bound are
+// taken back, or `params` mode would report a value bound that no placeholder uses.
+Fragment Translator::arithmetic_operand(const SNodePtr& n) {
+  const std::size_t mark = params_.size();
+  const std::size_t kinds = param_kinds_.size();
+  Fragment f = node(n);
+  if (f.kind() != SqlKind::Text || !is_constant(*n, visible_consts(), const_memo_.get())) return f;
+  const std::optional<std::string> text = numeric_text_constant(*n, const_root_);
+  if (!text) return f;
+  params_.resize(mark);
+  param_kinds_.resize(kinds);
+  return node(SNode::leaf(lit_node(NT::Num, *text, false, n->pos())));
+}
+
 
 std::string Translator::skeleton(const std::string& name, Pos pos) {
   const Entry* s = Map::entry(dialect_, Section::Skel, name);
@@ -2303,7 +2308,9 @@ Fragment Translator::call(const SNodePtr& n) {
   // render order.
   for (size_t i = 0; i < rewritten->kids().size(); ++i) {
     const SNodePtr& arg = rewritten->kids()[i];
-    Fragment f = node(arg);
+    // MIN and MAX compare their arguments as numbers: a numeric text constant is the
+    // number, as in arithmetic (PHP-C33).
+    Fragment f = (name == "MIN" || name == "MAX") ? arithmetic_operand(arg) : node(arg);
     if (f.kind() == SqlKind::List) {
       refuse("E_SQL_SHAPE",
              "argument to " + name + " is a list, and a SQL expression is a scalar",
@@ -3266,6 +3273,10 @@ RelationalPlan Translator::ensure_derived(RelationalPlan plan, bool needed) {
   derived.source_relation.from = alias;
   derived.source_relation.alias = alias;
   derived.source_subquery = std::move(inner);
+  derived.order_dropped = derived.source_subquery->order_dropped ||
+                          (!derived.source_subquery->order_by.empty() &&
+                           !derived.source_subquery->limit.has_value() &&
+                           !derived.source_subquery->offset.has_value());
   // Still named after the pipeline's variable, until a LINK has joined.
   if (derived.source_subquery->joins.empty()) derived.root_name = derived.source_subquery->root_name;
   if (derived.source_subquery->bucket != RelationalPlan::Bucket::None) {
@@ -3370,7 +3381,6 @@ std::optional<RelationalPlan> Translator::analyze_pipeline(const SNodePtr& ast) 
   plan.correlate = rel.correlate;
 
   std::reverse(steps.begin(), steps.end());
-  if (getenv("SQLDBG")) { for (auto& st : steps) fprintf(stderr, "STEP %s at %d\n", st->s().c_str(), st->pos().col); }
 
   for (const auto& step : steps) {
     const std::string& name = step->s();
@@ -3432,6 +3442,18 @@ std::optional<RelationalPlan> Translator::analyze_pipeline(const SNodePtr& ast) 
         refuse("E_SQL_SHAPE",
                "a BUCKET over buckets: SQL keeps a bucket's members only for the "
                "projection that ends the grouping",
+               step->pos());
+      }
+      // Groups appear in order of their first member, and the members were sorted:
+      // a GROUP BY returns its groups in no order at all, and the ORDER BY beneath
+      // it is dropped by the servers. The sort cannot survive, so the step is
+      // refused here, at the call and before its arguments (the first refusal in
+      // source order), and a hybrid plan keeps the sorted rows in SQL and groups
+      // them in memory.
+      if (!plan.order_by.empty() || plan.order_dropped) {
+        refuse("E_SQL_SHAPE",
+               "a BUCKET over sorted rows would return its groups in no order, where SEL "
+               "has them in the order of their first member in the sorted list",
                step->pos());
       }
       const bool need_derived = plan_has_rows_above(plan);
@@ -3636,6 +3658,17 @@ std::optional<RelationalPlan> Translator::analyze_pipeline(const SNodePtr& ast) 
           plan.limit.has_value() || plan.offset.has_value() ||
           (!plan.group_by.has_value() &&
            (plan.projections.has_value() || plan.select_cols.has_value() || plan.distinct));
+      // Sorts are stable, so an earlier sort is the later one's tie-break; a derived
+      // table with no LIMIT beside its ORDER BY does not keep it, and its keys may
+      // not even be columns the outer level can name.
+      if ((need_derived && !plan.order_by.empty() && !plan.limit.has_value() &&
+           !plan.offset.has_value()) ||
+          plan.order_dropped) {
+        refuse("E_SQL_SHAPE",
+               "a sort over a projection of sorted rows loses the earlier sort, which is "
+               "its tie-break: a derived table does not keep an ORDER BY",
+               step->pos());
+      }
       plan = ensure_derived(std::move(plan), need_derived);
       const std::size_t before = plan.order_by.size();
       analyze_sort_step(step, plan);
@@ -3665,6 +3698,17 @@ std::optional<RelationalPlan> Translator::analyze_pipeline(const SNodePtr& ast) 
         params_.resize(slots);
         param_kinds_.resize(kinds);
         caveats_ = caveats;
+      }
+      // A join returns its rows in no order, and SEL's are the left list's: rows
+      // sorted with no LIMIT beside the ORDER BY (which a derived table drops)
+      // cannot pass through a JOIN carrying their sort. After the earlier steps'
+      // own refusals, which come first as written.
+      if (plan.order_dropped ||
+          (!plan.order_by.empty() && !plan.limit.has_value() && !plan.offset.has_value())) {
+        refuse("E_SQL_SHAPE",
+               "a " + name + " over sorted rows would return them in no order, where SEL has "
+               "the left list's order",
+               step->pos());
       }
       const bool need_derived = plan_has_rows_above(plan);
       plan = ensure_derived(std::move(plan), need_derived);

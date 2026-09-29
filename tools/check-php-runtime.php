@@ -2,7 +2,7 @@
 declare(strict_types=1);
 // The budget checks below build values at the language's size caps (conformance/29):
 // a million-element list is 250-500 MB of PHP objects, over the default 128M limit.
-ini_set('memory_limit', '1G');
+if (ini_get('memory_limit') !== '-1') ini_set('memory_limit', '1G');   // a caller's -d memory_limit=-1 stands
 require __DIR__ . '/../php/src/bootstrap.php';
 use Sel\Dec;
 use Sel\Value;
@@ -661,6 +661,47 @@ $expect('a hybrid plan never mutates the caller context, and reads no table for 
 $expect('an integer Value builds its decimal lazily', function () {
     $v = Value::int(7);
     return $v->decVal === null && Dec::format($v->asDecimal()) === '7';
+});
+$expect('records sort by scalar context and tied records keep input order (SPEC 3.2 / 7.3)', function () {
+    $rows = 'LIST(RECORD("k", 3, "v", "c"), RECORD("k", 1, "v", "a"), RECORD("k", 2, "v", "b"))';
+    $ties = 'LIST(RECORD("k", 1, "v", "a"), RECORD("k", 2, "v", "b"), RECORD("k", 1.0, "v", "c"), RECORD("k", "1", "v", "d"))';
+    $j = fn(string $e): string => \Sel\Sel::evaluate('JOIN(MAP(' . $e . ', _["v"]), ",")')->scalar;
+    return $j($rows . ' .> SORT()') === 'a,b,c'
+        && $j($rows . ' .> SORT_DESC()') === 'c,b,a'
+        && $j($ties . ' .> SORT()') === 'a,c,d,b'
+        && $j($ties . ' .> SORT_DESC()') === 'b,a,c,d'
+        && $j($ties . ' .> TOP_DESC(4)') === 'b,a,c,d';
+});
+// --- T12: flow-sensitive dependencies(), E_BAD_ARG at the host boundary (SPEC §8, §8.1).
+$deps = fn(string $src): string => implode(' ', \Sel\Sel::compile($src)->dependencies());
+$expect('dependencies(): a read before the definite assignment is a dependency', fn() =>
+    $deps('A + 1; A = 2') === 'A' && $deps('A = 1; A + B') === 'B' && $deps('A = A + 1') === 'A');
+$expect('dependencies(): op= and A[k] op= read their target, A[k] = x creates it', fn() =>
+    $deps('X += 1') === 'X' && $deps('A[1] += 1') === 'A' && $deps('A[1] = 2') === '' && $deps('A[1] = 2; A') === '');
+$expect('dependencies(): conditional, short-circuit and aggregate assignments are not definite', fn() =>
+    $deps('IF(X, A = 1, 0); A') === 'A X' && $deps('IF(X, A = 1, A = 2); A') === 'X'
+    && $deps('X AND (A = 1); A') === 'A X' && $deps('X ?? (A = 1); A') === 'A X'
+    && $deps('MAP(L, A = _); A') === 'A L' && $deps('COND(X, A = 1, Y, A = 2, A = 3); A') === 'X Y'
+    && $deps('COALESCE(X, A = 1); A') === 'A X'
+    && $deps('GET(T, "k", A = 1); A') === 'A T');
+$expect('dependencies(): an assignment in an argument is definite for what follows', fn() =>
+    $deps('LEFT("abc", (N = 2)); N') === '');
+$expect('dependencies() keeps its E_DEPTH cap on a long flat chain', function () {
+    try { \Sel\Sel::compile('A' . str_repeat('+A', 5000))->dependencies(); } catch (SelError $e) { return $e->code === 'E_DEPTH'; }
+    return false;
+});
+$expect('compile() of a non-string is E_BAD_ARG, not a TypeError', function () {
+    foreach ([12, null, ['1'], 1.5, new stdClass] as $bad) {
+        try { \Sel\Sel::compile($bad); return false; } catch (SelError $e) { if ($e->code !== 'E_BAD_ARG') return false; }
+    }
+    return true;
+});
+$expect('reading an argument a host function was not given is E_BAD_ARG', function () {
+    \Sel\Sel::registerFunction('T12_OOB', 1, 2, static fn (\Sel\Args $a): Value => Value::text($a->text(5)));
+    foreach (['T12_OOB("x")', 'T12_OOB("x", "y")'] as $src) {
+        try { \Sel\Sel::evaluate($src); return false; } catch (SelError $e) { if ($e->code !== 'E_BAD_ARG') return false; }
+    }
+    return true;
 });
 if ($boundary) {
     fwrite(STDERR, 'PHP runtime: ' . count($boundary) . " host-boundary contract(s) broken:\n  " . implode("\n  ", $boundary) . "\n");

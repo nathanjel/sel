@@ -837,6 +837,12 @@ transitive, so the result does not depend on the sort algorithm, on the order
 of the input beyond ties, or on whether `SORT` and `TAKE` were fused into `TOP`.
 `SORT("10", "9", "1a")` is `9, 10, 1a`.
 
+The value that is ordered is the one scalar context reads (§3.2): an element or
+key with children and no scalar of its own is ordered by its first child,
+recursively, and ranks by that child's kind. A list of records therefore sorts by
+each record's first field, records whose first fields are equal tie, and a chain
+that ends in nothing is `NULL`.
+
 **Keys are part of the value.** `FILTER` is the one step that keeps its input's
 keys; every other aggregate, and every list function of §7.4, renumbers from
 `"1"`. A pipeline's keys are those its steps produce in the order written, and
@@ -1411,6 +1417,25 @@ without evaluating it. This is possible only because SEL has no dynamic symbol
 operator, and it is how a frontend knows which inputs should re-trigger which
 rule.
 
+**The analysis follows evaluation order.** A variable is a dependency if some read
+of it can occur before the program has *definitely* assigned it. An assignment is
+definite only if it runs whatever the data: one inside a branch of `IF` or `COND`
+counts only when every branch makes it (a `COND` with no default does not), and
+one in the right side of `AND`, `OR`, `??` or `???`, or in an aggregate's body, is
+never definite. `op=` (`X += 1`, `A &= "x"`) and `A[k] op= x` read their target; a
+plain `A[k] = x` creates `A` and reads only the index expression. So
+`A + 1; A = 2` depends on `A`, `A = 1; A + B` on `B` alone, and
+`IF(X, A = 1, 0); A` on `X` and `A`. A program that would raise `E_UNDEF_VAR` for a
+name the host did not supply always reports that name; reporting a name the run
+turns out not to need is allowed, and missing one it does is not.
+
+**Input the API cannot take is `E_BAD_ARG`.** Source that is not text, a native
+value with no conversion (§8, `fromNative`), a fractional number where the host
+has floats, and a function that is not callable are refused with `E_BAD_ARG`
+(a host whose type system cannot express the call says so and is exempt); a bad
+*registration* (§8.1) is the host's startup-error class instead. A host never
+answers such input with its own exception, a crash, or an unrelated `SelError`.
+
 ### 8.1 Host functions
 
 An application may add functions of its own to the table:
@@ -1460,6 +1485,16 @@ Lisp.
   argument error rather than as a `SelError`: a malformed or reserved name, a
   builtin's name, an arity outside the bounds above, or an `fn` that is not
   callable.
+- **Reading an argument the call does not have is `E_BAD_ARG`.** The accessor
+  raises it at the call's position for an index at or above the count (a function
+  declared `1..2` that reads argument 5), rather than reading past the arguments or
+  failing with the host's own index error.
+- **Registration is safe beside running programs.** Registering or replacing a
+  function while other threads compile or run programs is safe in every host that
+  has threads: the table is synchronised internally, and a program in flight keeps
+  the entry it was compiled against. A host without threads states that it is not
+  applicable. Sharing one `Program` between threads is a separate promise, made per
+  host in its own documentation.
 
 ---
 

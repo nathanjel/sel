@@ -10,6 +10,8 @@
 # spec says. The T12 family (docs/interim/2026-09-29/worklist/tests/12-integration.md)
 # added the flow-sensitive dependencies() contract (spec/SPEC.md §8), Program reuse,
 # non-source / non-native input as E_BAD_ARG, and the host-function argument reader.
+# The dependencies() contract is PROPOSED in the T12 report (flow-sensitive: a variable is a
+# dependency when a read can happen before it is definitely assigned); the pins encode it.
 
 pin program.deps.read-before-assign = A
 pin program.deps.compound-assign-reads = X
@@ -31,9 +33,9 @@ pin program.reuse.two-contexts = 2 11 3 12
 pin error.compile.non-string = E_BAD_ARG
 pin value.native.unsupported = E_BAD_ARG
 pin value.native.fraction = E_BAD_ARG
-na  error.compile.non-string cpp go
-na  value.native.unsupported cpp go
-na  value.native.fraction cpp go
+na  error.compile.non-string cpp go rust
+na  value.native.unsupported cpp go rust
+na  value.native.fraction cpp go rust
 
 pin host.fn.refuse.not-callable = refused
 pin host.fn.arg.out-of-range = E_BAD_ARG
@@ -41,3 +43,8 @@ pin host.fn.arg.out-of-range = E_BAD_ARG
 pin bool.isolated.between.contexts = 0 0 0
 pin ctor.num.canonicalises = t"7"
 pin error.host.malformed = E_BAD_ARG
+
+pin program.run.over-deep-host-value.key-error-first = E_NOT_TEXT 1:8|E_DEPTH 1:1
+
+# Rust register_function is generic over Fn: a non-callable value cannot type-check.
+na  host.fn.refuse.not-callable rust

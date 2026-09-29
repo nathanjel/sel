@@ -468,13 +468,13 @@ whether they are the rows the same rule selects in memory:
              params gift, gift, gift, web
              rows   4, 12, 20 | same as in memory: TRUE
    COUNT(ITEMS) >= 3 AND ALL(ITEMS, I, I["qty"] > 0)
-             sql    (((SELECT COUNT(*) FROM "order_items" "i" WHERE "i"."order_id" = "o"."id") >= 3) AND NOT EXISTS (SELECT 1 FROM "order_items" "i" WHERE "i"."order_id" = "o"."id" AND (("i"."qty" > 0)) IS NOT TRUE))
+             sql    (((SELECT COUNT(*) FROM "order_items" "i" WHERE ("i"."order_id" = "o"."id")) >= 3) AND NOT EXISTS (SELECT 1 FROM "order_items" "i" WHERE ("i"."order_id" = "o"."id") AND (("i"."qty" > 0)) IS NOT TRUE))
              rows   1, 2, 6, 9, 13, 14, 17, 18 | same as in memory: TRUE
    SUM(ITEMS, I, I["qty"] * I["price"]) != TOTAL
-             sql    ((SELECT COALESCE(SUM((CAST("i"."qty" AS NUMERIC) * CAST("i"."price" AS NUMERIC))), 0) FROM "order_items" "i" WHERE "i"."order_id" = "o"."id") <> "o"."total")
+             sql    ((SELECT COALESCE(SUM((CAST("i"."qty" AS NUMERIC) * CAST("i"."price" AS NUMERIC))), 0) FROM "order_items" "i" WHERE ("i"."order_id" = "o"."id")) <> "o"."total")
              rows   3, 10, 17 | same as in memory: TRUE
    ANY(ITEMS, I, LEFT(I["sku"], 3) $== "GM-")
-             sql    EXISTS (SELECT 1 FROM "order_items" "i" WHERE "i"."order_id" = "o"."id" AND ((CAST(left(CAST("i"."sku" AS TEXT), CAST(3 AS INTEGER)) AS TEXT) COLLATE "C" = CAST('GM-' AS TEXT) COLLATE "C")) IS TRUE)
+             sql    EXISTS (SELECT 1 FROM "order_items" "i" WHERE ("i"."order_id" = "o"."id") AND ((CAST(left(CAST("i"."sku" AS TEXT), CAST(3 AS INTEGER)) AS TEXT) COLLATE "C" = CAST('GM-' AS TEXT) COLLATE "C")) IS TRUE)
              params GM-
              rows   1, 2, 6, 7, 9, 12, 13, 14, 17, 19 | same as in memory: TRUE
 ```

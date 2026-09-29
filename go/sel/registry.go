@@ -5,6 +5,7 @@ package sel
 import (
 	"fmt"
 	"regexp"
+	"sort"
 	"sync"
 
 	"github.com/nathanjel/sel/go/internal/manifest"
@@ -66,7 +67,38 @@ func stringsJoin(elems []string, sep string) string {
 	return s
 }
 
+// The manifest (spec/builtins.json) names every built-in; each is defined by some
+// module's init. Definition-by-definition mismatches are refused in Define, but a
+// name no module defined would only surface as an unknown function at parse time.
+// So the first lookup, by which every init has run, checks coverage once and keeps
+// refusing if it failed (GO-C41; JS does the same in assertManifestCovered).
+var (
+	manifestOnce    sync.Once
+	manifestMissing string
+)
+
+func assertManifestCovered() {
+	manifestOnce.Do(func() {
+		registryMu.RLock()
+		defer registryMu.RUnlock()
+		var missing []string
+		for name := range manifest.Builtins {
+			if _, ok := funcTable[name]; !ok {
+				missing = append(missing, name)
+			}
+		}
+		if len(missing) > 0 {
+			sort.Strings(missing)
+			manifestMissing = fmt.Sprintf("spec/builtins.json names %s but no module defines it", stringsJoin(missing, ", "))
+		}
+	})
+	if manifestMissing != "" {
+		panic(manifestMissing)
+	}
+}
+
 func Lookup(name string) *Spec {
+	assertManifestCovered()
 	key := utf8.AsciiUpper(name)
 	registryMu.RLock()
 	defer registryMu.RUnlock()
@@ -142,6 +174,11 @@ func RegisterFunction(name string, min, max int, fn func(args *Args) *Value) {
 	key := utf8.AsciiUpper(name)
 	if _, isRes := reserved[key]; isRes {
 		panic(fmt.Sprintf("%s is a reserved word", key))
+	}
+	// SPEC 8: a non-callable function is refused when it is registered (the host's
+	// startup-error class), never left to panic later inside Run.
+	if fn == nil {
+		panic(fmt.Sprintf("SEL function %s: the function must be callable, got nil", key))
 	}
 	registryMu.Lock()
 	defer registryMu.Unlock()

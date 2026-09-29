@@ -668,7 +668,7 @@ Each task starts by reproducing the report against the current tree, then lands 
 
 <a id="c-go-c6"></a>
 
-- [ ] **C-GO-C6 — Resolve GO-C6.** Read-only evaluation writes lazy caches into shared input Values (data race, possible torn string read)
+- [x] **C-GO-C6 — Resolve GO-C6.** Read-only evaluation writes lazy caches into shared input Values (data race, possible torn string read)
 
   **[GO-C6](../go-code-review.md) — [medium] [confirmed] Read-only evaluation writes lazy caches into shared input Values (data race, possible torn string read)**
 
@@ -682,9 +682,11 @@ Each task starts by reproducing the report against the current tree, then lands 
 
   Done when every linked scenario passes on all applicable lanes; code/position, mutation, ordering and repeat-use behavior satisfy the shared contract. Record commit and fixture IDs here.
 
+  Closed 2026-09-29 — six hosts agree on 107 API probes (24 pinned); race/TSan/-race lanes green
+
 <a id="c-go-c36"></a>
 
-- [ ] **C-GO-C36 — Resolve GO-C36.** `RegisterFunction` accepts a nil function
+- [x] **C-GO-C36 — Resolve GO-C36.** `RegisterFunction` accepts a nil function
 
   **[GO-C36](../go-code-review.md) — [low] [confirmed] `RegisterFunction` accepts a nil function**
 
@@ -696,9 +698,11 @@ Each task starts by reproducing the report against the current tree, then lands 
 
   Done when every linked scenario passes on all applicable lanes; code/position, mutation, ordering and repeat-use behavior satisfy the shared contract. Record commit and fixture IDs here.
 
+  Closed 2026-09-29 — six hosts agree on 107 API probes (24 pinned); race/TSan/-race lanes green
+
 <a id="c-go-c41"></a>
 
-- [ ] **C-GO-C41 — Resolve GO-C41.** "Manifest names never defined" is checked only under `go test`, not at load
+- [x] **C-GO-C41 — Resolve GO-C41.** "Manifest names never defined" is checked only under `go test`, not at load
 
   **[GO-C41](../go-code-review.md) — [low] [confirmed] "Manifest names never defined" is checked only under `go test`, not at load**
 
@@ -709,3 +713,5 @@ Each task starts by reproducing the report against the current tree, then lands 
   Regression prerequisite: [T12 / GO-C41](tests/12-integration.md#go-c41).
 
   Done when every linked scenario passes on all applicable lanes; code/position, mutation, ordering and repeat-use behavior satisfy the shared contract. Record commit and fixture IDs here.
+
+  Closed 2026-09-29 — six hosts agree on 107 API probes (24 pinned); race/TSan/-race lanes green

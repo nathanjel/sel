@@ -1383,3 +1383,92 @@ R = LIST(RECORD("id", 1)); S = LIST(RECORD("id", 2), RECORD("id", 3)); COUNT(LIN
 --- expect
 num 2
 ===
+
+### name: sort.record-orders-by-its-first-field
+--- note
+A value with children and no scalar of its own is ordered by what scalar context makes of it (SPEC 3.2: its first child, recursively), so a record sorts by its first field; found by the differential fuzz, where C++ and Go treated every record as a tie.
+--- source
+JOIN(MAP(LIST(RECORD("k", 3, "v", "c"), RECORD("k", 1, "v", "a"), RECORD("k", 2, "v", "b")) .> SORT(), _["v"]), ",")
+--- expect
+text "a,b,c"
+===
+### name: sort-desc.record-orders-by-its-first-field
+--- note
+A value with children and no scalar of its own is ordered by what scalar context makes of it (SPEC 3.2: its first child, recursively), so a record sorts by its first field; found by the differential fuzz, where C++ and Go treated every record as a tie.
+--- source
+JOIN(MAP(LIST(RECORD("k", 3, "v", "c"), RECORD("k", 1, "v", "a"), RECORD("k", 2, "v", "b")) .> SORT_DESC(), _["v"]), ",")
+--- expect
+text "c,b,a"
+===
+### name: sort-desc.record-ties-keep-input-order
+--- note
+Records with an equal first field tie (1 and 1.0 and "1" are one value): a descending sort keeps them in input order and reverses only the unequal ones.
+--- source
+JOIN(MAP(LIST(RECORD("k", 1, "v", "a"), RECORD("k", 2, "v", "b"), RECORD("k", 1.0, "v", "c"), RECORD("k", "1", "v", "d")) .> SORT_DESC(), _["v"]), ",")
+--- expect
+text "b,a,c,d"
+===
+### name: sort.record-ties-keep-input-order
+--- note
+The ascending twin of sort-desc.record-ties-keep-input-order.
+--- source
+JOIN(MAP(LIST(RECORD("k", 1, "v", "a"), RECORD("k", 2, "v", "b"), RECORD("k", 1.0, "v", "c"), RECORD("k", "1", "v", "d")) .> SORT(), _["v"]), ",")
+--- expect
+text "a,c,d,b"
+===
+### name: sort.record-with-text-first-field-sorts-as-text
+--- note
+The record's first field is text that is not a number, so it sorts bytewise among the other text, after every number.
+--- source
+JOIN(MAP(LIST(RECORD("k", "b", "v", "b"), RECORD("k", 5, "v", "n"), RECORD("k", "a", "v", "a")) .> SORT(), _["v"]), ",")
+--- expect
+text "n,a,b"
+===
+### name: sort.record-with-bool-first-field-ranks-as-bool
+--- note
+The record's first field is a BOOL, so it ranks as one: below numbers, FALSE before TRUE.
+--- source
+JOIN(MAP(LIST(RECORD("k", 5, "v", "n"), RECORD("k", TRUE, "v", "t"), RECORD("k", FALSE, "v", "f")) .> SORT(), _["v"]), ",")
+--- expect
+text "f,t,n"
+===
+### name: sort.nested-record-follows-the-first-child-down
+--- note
+Scalar context recurses: a record whose first child is a record is ordered by that record's first field.
+--- source
+JOIN(MAP(LIST(RECORD("k", RECORD("x", 2), "v", "b"), RECORD("k", RECORD("x", 1), "v", "a")) .> SORT(), _["v"]), ",")
+--- expect
+text "a,b"
+===
+### name: top-desc.record-ties-keep-input-order
+--- note
+TOP_DESC obeys the same tie rule as SORT_DESC.
+--- source
+JOIN(MAP(LIST(RECORD("k", 1, "v", "a"), RECORD("k", 2, "v", "b"), RECORD("k", 1, "v", "c")) .> TOP_DESC(3), _["v"]), ",")
+--- expect
+text "b,a,c"
+===
+### name: sort-by.desc-tied-keys-keep-input-order
+--- note
+SORT_BY with a descending direction keeps tied keys in input order (a key of 1 and one of 1.0 are equal).
+--- source
+JOIN(MAP(LIST(RECORD("k", 1, "v", "a"), RECORD("k", 2, "v", "b"), RECORD("k", 1.0, "v", "c")) .> SORT_BY(_["k"], "DESC"), _["v"]), ",")
+--- expect
+text "b,a,c"
+===
+### name: sort-by.desc-null-keys-tie
+--- note
+Keys that are NULL (a missing-key default via ??) are all equal, and rank below everything: descending puts the other keys first and keeps the NULLs in input order.
+--- source
+JOIN(MAP(LIST(RECORD("v", "a"), RECORD("k", 1, "v", "b"), RECORD("v", "c")) .> SORT_BY(_["k"] ?? NULL, "DESC"), _["v"]), ",")
+--- expect
+text "b,a,c"
+===
+### name: top-by.desc-ties-keep-input-order
+--- note
+TOP_BY with a descending direction keeps tied keys in input order.
+--- source
+JOIN(MAP(LIST(RECORD("k", 1, "v", "a"), RECORD("k", 2, "v", "b"), RECORD("k", 1, "v", "c")) .> TOP_BY(_["k"], "DESC", 3), _["v"]), ",")
+--- expect
+text "b,a,c"
+===

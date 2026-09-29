@@ -986,3 +986,60 @@ RMATCH('^(?:a|)b$', "b")
 bool TRUE
 ===
 
+
+### name: literal.bad-pattern-beside-a-bad-flag.rmatch
+--- note
+Found by the differential fuzz: Python left the whole compile-time pattern check out whenever a literal flags argument was invalid, so it answered the run-time E_BAD_ARG while every other host refused the pattern. A literal pattern is checked when the program compiles (SPEC 7.8); a flags argument that is unknown or invalid never stops that check (it is taken as no flags and left to the run-time E_BAD_ARG), so a bad pattern beside a bad flag is the PATTERN's error, at the pattern literal.
+--- source
+RMATCH('\p{L}', " 2", "x")
+--- expect
+error E_REGEX_SYNTAX at 1:8
+===
+### name: literal.bad-pattern-beside-a-bad-flag.rgroups
+--- note
+Found by the differential fuzz: Python left the whole compile-time pattern check out whenever a literal flags argument was invalid, so it answered the run-time E_BAD_ARG while every other host refused the pattern. A literal pattern is checked when the program compiles (SPEC 7.8); a flags argument that is unknown or invalid never stops that check (it is taken as no flags and left to the run-time E_BAD_ARG), so a bad pattern beside a bad flag is the PATTERN's error, at the pattern literal.
+--- source
+RGROUPS('(?=a)', "", "x")
+--- expect
+error E_REGEX_SYNTAX at 1:9
+===
+### name: literal.bad-pattern-beside-a-bad-flag.rreplace
+--- note
+Found by the differential fuzz: Python left the whole compile-time pattern check out whenever a literal flags argument was invalid, so it answered the run-time E_BAD_ARG while every other host refused the pattern. A literal pattern is checked when the program compiles (SPEC 7.8); a flags argument that is unknown or invalid never stops that check (it is taken as no flags and left to the run-time E_BAD_ARG), so a bad pattern beside a bad flag is the PATTERN's error, at the pattern literal.
+--- source
+RREPLACE('[[:alpha:]]', "-", "abc", "m")
+--- expect
+error E_REGEX_SYNTAX at 1:10
+===
+### name: literal.bad-pattern-beside-a-bad-flag.inside-an-index
+--- note
+Found by the differential fuzz: Python left the whole compile-time pattern check out whenever a literal flags argument was invalid, so it answered the run-time E_BAD_ARG while every other host refused the pattern. A literal pattern is checked when the program compiles (SPEC 7.8); a flags argument that is unknown or invalid never stops that check (it is taken as no flags and left to the run-time E_BAD_ARG), so a bad pattern beside a bad flag is the PATTERN's error, at the pattern literal.
+--- source
+B = "a"; B[RMATCH('(?=a)', "Zażółć", "x")]
+--- expect
+error E_REGEX_SYNTAX at 1:19
+===
+### name: literal.bad-pattern-beside-a-bad-flag.in-a-dead-branch
+--- note
+Found by the differential fuzz: Python left the whole compile-time pattern check out whenever a literal flags argument was invalid, so it answered the run-time E_BAD_ARG while every other host refused the pattern. A literal pattern is checked when the program compiles (SPEC 7.8); a flags argument that is unknown or invalid never stops that check (it is taken as no flags and left to the run-time E_BAD_ARG), so a bad pattern beside a bad flag is the PATTERN's error, at the pattern literal. The branch is never taken; the refusal is at compile time all the same.
+--- source
+IF(FALSE, RMATCH('(?=a)', "x", "x"), 1)
+--- expect
+error E_REGEX_SYNTAX at 1:18
+===
+### name: literal.bad-flag-beside-a-good-pattern-is-a-run-time-error
+--- note
+The control: a valid pattern with an unknown flag compiles, and the flag is refused when the call runs, at the flag.
+--- source
+RMATCH("a", "a", "x")
+--- expect
+error E_BAD_ARG at 1:18
+===
+### name: literal.bad-flag-in-a-dead-branch-is-never-reached
+--- note
+The same control in a branch that is not taken: nothing is raised.
+--- source
+IF(FALSE, RMATCH("a", "a", "x"), 1)
+--- expect
+num 1
+===

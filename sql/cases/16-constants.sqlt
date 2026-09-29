@@ -624,3 +624,141 @@ LEFT(T, -1)
 --- expect
 LEFT(`t`, (-1))
 ===
+
+% PHP-C33 (gate fuzz, seed 20260905): a constant TEXT that is a number, in an arithmetic position (+ - * / %, unary minus, MIN and MAX arguments), is spelled as the exact numeric literal it stands for -- MariaDB and MySQL would read the quoted string as a DOUBLE ('0.1' + '0.2' = 0.3 is false there); the executing evidence is sql/oracle/expressions.selo. SQLite keeps the text and the dialect's numeric cast handles it.
+
+### name: const.arith.numeric-text-is-the-number.add.mariadb
+--- dialect
+mariadb
+--- source
+"0.1" + "0.2" == 0.3
+--- expect
+((0.1 + 0.2) = 0.3)
+===
+
+### name: const.arith.numeric-text-is-the-number.max.mariadb
+--- dialect
+mariadb
+--- source
+MAX("10", "9") == 10
+--- expect
+(GREATEST(10, 9) = 10)
+===
+
+### name: const.arith.numeric-text-is-the-number.folded-call.mariadb
+--- dialect
+mariadb
+--- source
+LTRIM("41") + 1
+--- expect
+(41 + 1)
+===
+
+### name: const.arith.numeric-text-is-the-number.unary.mariadb
+--- dialect
+mariadb
+--- source
+-"5" + 1
+--- expect
+((-5) + 1)
+===
+
+### name: const.arith.numeric-text-is-the-number.scale-kept.mariadb
+--- dialect
+mariadb
+--- source
+"1.10" + 2 > 3
+--- expect
+((1.10 + 2) > 3)
+===
+
+### name: const.arith.numeric-text-is-the-number.add.postgresql
+--- dialect
+postgresql
+--- source
+"0.1" + "0.2" == 0.3
+--- expect
+((CAST(0.1 AS NUMERIC) + CAST(0.2 AS NUMERIC)) = 0.3)
+===
+
+### name: const.arith.numeric-text-is-the-number.max.postgresql
+--- dialect
+postgresql
+--- source
+MAX("10", "9") == 10
+--- expect
+(greatest(10, 9) = 10)
+===
+
+### name: const.arith.numeric-text-is-the-number.folded-call.postgresql
+--- dialect
+postgresql
+--- source
+LTRIM("41") + 1
+--- expect
+(CAST(41 AS NUMERIC) + CAST(1 AS NUMERIC))
+===
+
+### name: const.arith.numeric-text-is-the-number.unary.postgresql
+--- dialect
+postgresql
+--- source
+-"5" + 1
+--- expect
+(CAST((-CAST(5 AS NUMERIC)) AS NUMERIC) + CAST(1 AS NUMERIC))
+===
+
+### name: const.arith.numeric-text-is-the-number.scale-kept.postgresql
+--- dialect
+postgresql
+--- source
+"1.10" + 2 > 3
+--- expect
+((CAST(1.10 AS NUMERIC) + CAST(2 AS NUMERIC)) > 3)
+===
+
+### name: const.arith.numeric-text-is-the-number.add.sqlite
+--- dialect
+sqlite
+--- source
+"0.1" + "0.2" == 0.3
+--- expect
+(CAST(('0.1' + '0.2') AS NUMERIC) = CAST('0.3' AS NUMERIC))
+===
+
+### name: const.arith.numeric-text-is-the-number.max.sqlite
+--- dialect
+sqlite
+--- source
+MAX("10", "9") == 10
+--- expect
+(CAST(max(CAST('10' AS NUMERIC), CAST('9' AS NUMERIC)) AS NUMERIC) = CAST('10' AS NUMERIC))
+===
+
+### name: const.arith.numeric-text-is-the-number.folded-call.sqlite
+--- dialect
+sqlite
+--- source
+LTRIM("41") + 1
+--- expect
+('41' + '1')
+===
+
+### name: const.arith.numeric-text-is-the-number.unary.sqlite
+--- dialect
+sqlite
+--- source
+-"5" + 1
+--- expect
+((-'5') + '1')
+===
+
+### name: const.arith.numeric-text-is-the-number.scale-kept.sqlite
+--- dialect
+sqlite
+--- source
+"1.10" + 2 > 3
+--- expect
+(CAST(('1.10' + '2') AS NUMERIC) > CAST('3' AS NUMERIC))
+===
+

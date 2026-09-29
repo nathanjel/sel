@@ -70,11 +70,22 @@ export class Args {
   }
 
   count() { return this.nodes.length; }
-  node(i) { return this.nodes[i]; }
-  posOf(i) { return this.nodes[i].pos; }
+
+  // An argument the call does not have. A host function is handed these
+  // accessors and may ask for any index (spec/SPEC.md 8.1): the answer is
+  // E_BAD_ARG at the call, never a TypeError from reading past the array.
+  at(i) {
+    const n = this.nodes[i];
+    if (n === undefined) {
+      fail('E_BAD_ARG', `${this.name}: no argument ${Number.isInteger(i) ? i + 1 : String(i)} (the call has ${this.nodes.length})`, this.pos);
+    }
+    return n;
+  }
+  node(i) { return this.at(i); }
+  posOf(i) { return this.at(i).pos; }
 
   val(i) {
-    if (this._vals[i] === undefined) this._vals[i] = evalNode(this.nodes[i], this.ctx);
+    if (this._vals[i] === undefined) this._vals[i] = evalNode(this.at(i), this.ctx);
     return this._vals[i];
   }
 
@@ -106,7 +117,7 @@ export class Args {
   // Requires the argument to be a bare identifier in the source — the AST shape
   // check that gives aggregates their three-argument binder form.
   symbol(i) {
-    const n = this.nodes[i];
+    const n = this.at(i);
     if (n.t !== 'var' || n.grouped) {
       fail('E_EXPECT_SYMBOL', `${this.name} argument ${i + 1} must be a plain name`, n.pos);
     }
@@ -114,7 +125,7 @@ export class Args {
   }
 
   isSymbol(i) {
-    const n = this.nodes[i];
+    const n = this.at(i);
     return n.t === 'var' && !n.grouped;
   }
 }

@@ -770,7 +770,7 @@ Each task starts by reproducing the report against the current tree, then lands 
 
 <a id="c-py-c16"></a>
 
-- [ ] **C-PY-C16 — Resolve PY-C16.** `SelError` cannot be pickled or copied: one error kills a `ProcessPoolExecutor`
+- [x] **C-PY-C16 — Resolve PY-C16.** `SelError` cannot be pickled or copied: one error kills a `ProcessPoolExecutor`
 
   **[PY-C16](../python-code-review.md) — [medium] [confirmed; re-verified by synthesizer] `SelError` cannot be pickled or copied: one error kills a `ProcessPoolExecutor`**
 
@@ -782,9 +782,11 @@ Each task starts by reproducing the report against the current tree, then lands 
 
   Done when every linked scenario passes on all applicable lanes; code/position, mutation, ordering and repeat-use behavior satisfy the shared contract. Record commit and fixture IDs here.
 
+  Closed 2026-09-29 — six hosts agree on 107 API probes (24 pinned); race/TSan/-race lanes green
+
 <a id="c-py-c31"></a>
 
-- [ ] **C-PY-C31 — Resolve PY-C31.** `dependencies()` is order-insensitive, contradicting its own docstring (all five hosts)
+- [x] **C-PY-C31 — Resolve PY-C31.** `dependencies()` is order-insensitive, contradicting its own docstring (all five hosts)
 
   **[PY-C31](../python-code-review.md) — [low] [confirmed] `dependencies()` is order-insensitive, contradicting its own docstring (all five hosts)**
 
@@ -795,3 +797,5 @@ Each task starts by reproducing the report against the current tree, then lands 
   Regression prerequisite: [T12 / PY-C31](tests/12-integration.md#py-c31).
 
   Done when every linked scenario passes on all applicable lanes; code/position, mutation, ordering and repeat-use behavior satisfy the shared contract. Record commit and fixture IDs here.
+
+  Closed 2026-09-29 — six hosts agree on 107 API probes (24 pinned); race/TSan/-race lanes green

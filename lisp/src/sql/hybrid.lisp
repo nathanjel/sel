@@ -284,6 +284,32 @@ own, so a caller sees the same tree whichever way the plan went."
                     :continuation-ast (sel:program-ast program)
                     :source-tables (source-tables (sel:program-ast program) bindings)))
 
+(defun link-step-p (st)
+  (member (sel::node-s st) '("LINK" "LINK_LEFT") :test #'equal))
+
+(defun needs-left-name-p (prefix remaining)
+  "Whether the continuation holds a 3-argument LINK whose joined row would name its
+left side `_INPUT`: no LINK before it in the prefix (which has already named its
+sides), and a LINK with three arguments (five name both sides). Spec 7.4; the same
+rule in every host."
+  (and (notany #'link-step-p prefix)
+       (some (lambda (st) (and (link-step-p st) (= (length (sel::node-items st)) 3)))
+             remaining)))
+
+(defun split-reads-source-p (source-node steps k)
+  "Whether a split at step K would need the source variable's name for the LINK's left
+side AND a step of the continuation also READS that name (a self-join: `ORDERS .>
+TAKE(4) .> LINK(ORDERS, ...)`). The rows reach the continuation under the source's own
+name, so that step would find the sorted-and-cut rows where run() finds the whole
+relation. That split is not made; the join stays in memory, over the relation."
+  (and (needs-left-name-p (subseq steps 0 k) (subseq steps k))
+       (or (not (eq (sel::node-kind source-node) :var))
+           (let ((root-name (sel::node-s source-node)))
+             (some (lambda (st)
+                     (some (lambda (a) (member root-name (read-names a) :test #'equal))
+                           (rest (sel::node-items st))))
+                   (subseq steps k))))))
+
 (defun plan-hybrid (program dialect &optional bindings options)
   "Analyzes PROGRAM and splits it into a maximal SQL pushdown prefix and an in-memory continuation.
 Returns a HYBRID-PLAN struct. OPTIONS is a plist; :strict reaches the translator."
@@ -384,7 +410,7 @@ Returns a HYBRID-PLAN struct. OPTIONS is a plist; :strict reaches the translator
                                               (not (identity-loss-before-grouping-p (normalise prefix-ast names root) t))
                                             (sql-error () nil)))
                                       (try-translate-statement prefix-prog dialect bindings options))))
-                      (when frag
+                      (when (and frag (not (split-reads-source-p source-node steps k)))
                         (let* ((rem-steps (subseq steps k))
                                ;; A LINK names its left side after the variable the
                                ;; pipeline starts from (spec 7.4), so a continuation
@@ -393,18 +419,9 @@ Returns a HYBRID-PLAN struct. OPTIONS is a plist; :strict reaches the translator
                                ;; the joined row and `_["ORDERS"]` would be E_NO_KEY
                                ;; (PHP-C9, PY-C23, LISP-C29, GO-C22). Only where no
                                ;; remaining step reads that name as something else.
-                               (link-p (some (lambda (st) (member (sel::node-s st) '("LINK" "LINK_LEFT")
-                                                                  :test #'equal))
-                                             rem-steps))
+                               (link-p (needs-left-name-p (subseq steps 0 k) rem-steps))
                                (root-name (sel::node-s source-node))
-                               (cont-var (if (and link-p
-                                                  (notany (lambda (st)
-                                                            (some (lambda (a) (member root-name (read-names a)
-                                                                                      :test #'equal))
-                                                                  (rest (sel::node-items st))))
-                                                          rem-steps))
-                                             root-name
-                                             input-var))
+                               (cont-var (if link-p root-name input-var))
                                (cont-root (let ((v (sel::make-node :var (sel::node-pos (first rem-steps)))))
                                             (setf (sel::node-s v) cont-var)
                                             v))

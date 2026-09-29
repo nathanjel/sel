@@ -248,3 +248,85 @@ orders
 --- expect
 SELECT `o`.* FROM `orders` `o` WHERE (`o`.`id` > 1)
 ===
+
+% Refusal precedence in a pipeline (gate fuzz, seed 20260905): the first refusal in SOURCE ORDER
+% wins, and a step is written before its arguments -- so the step-level rule about a sort's order is
+% answered at the step, before an error inside that step's key is looked at. Four hosts answered
+% the argument first; JS and Go answered as written, and so do all six now. An order-loss refusal is
+% E_SQL_SHAPE at the step's own call (its name token).
+
+### name: stmt.order.the-order-rule-comes-before-a-bad-key
+--- note
+The key names a field the relation does not have. Both that and the sort BUCKET would lose are refusals; the BUCKET call is written first, so its refusal is the answer.
+--- dialect
+mariadb
+--- bindings
+{"ORDERS": {"kind": "relation", "from": "orders", "alias": "o", "fields": {"ID": {"table": "o", "column": "id", "type": "NUM"}, "NAME": {"table": "o", "column": "name", "type": "TEXT"}}}}
+--- as
+statement
+--- source
+ORDERS .> SORT_BY(_["id"], "DESC") .> BUCKET(_["nope"])
+--- error
+E_SQL_SHAPE 1:39
+===
+
+### name: stmt.order.the-order-rule-comes-before-a-bare-row-key
+--- note
+A bare `_` as the key is E_SQL_SHAPE at the `_`; the order rule at the call is written first and wins.
+--- dialect
+mariadb
+--- bindings
+{"ORDERS": {"kind": "relation", "from": "orders", "alias": "o", "fields": {"ID": {"table": "o", "column": "id", "type": "NUM"}, "NAME": {"table": "o", "column": "name", "type": "TEXT"}}}}
+--- as
+statement
+--- source
+ORDERS .> SORT_BY(_["id"], "DESC") .> BUCKET(_)
+--- error
+E_SQL_SHAPE 1:39
+===
+
+### name: stmt.order.bucket-after-a-sort-is-refused-at-the-step
+--- note
+Nothing is wrong with the arguments; GROUP BY would lose the sort's order, so the statement is refused with E_SQL_SHAPE at the BUCKET call (the name token). Four hosts answered 0:0 and JS answered E_SQL_UNSUPPORTED.
+--- dialect
+mariadb
+--- bindings
+{"ORDERS": {"kind": "relation", "from": "orders", "alias": "o", "fields": {"ID": {"table": "o", "column": "id", "type": "NUM"}, "NAME": {"table": "o", "column": "name", "type": "TEXT"}}}}
+--- as
+statement
+--- source
+ORDERS .> SORT_BY(_["id"], "DESC") .> BUCKET(_["name"])
+--- error
+E_SQL_SHAPE 1:39
+===
+
+### name: stmt.order.bucket-after-two-sorts-is-refused-at-the-step
+--- note
+The same after two sorts.
+--- dialect
+mariadb
+--- bindings
+{"ORDERS": {"kind": "relation", "from": "orders", "alias": "o", "fields": {"ID": {"table": "o", "column": "id", "type": "NUM"}, "NAME": {"table": "o", "column": "name", "type": "TEXT"}}}}
+--- as
+statement
+--- source
+ORDERS .> SORT_BY(_["id"], "DESC") .> SORT_BY(_["name"], "DESC") .> BUCKET(_["name"])
+--- error
+E_SQL_SHAPE 1:69
+===
+
+### name: stmt.order.distinct-after-a-sort-is-refused-at-the-step
+--- note
+DISTINCT keeps the first of each run in sorted order; SELECT DISTINCT ... ORDER BY does not promise that (PostgreSQL and MySQL 8 refuse the ORDER BY column outside the projection, MariaDB answers an unspecified row), so the statement is refused with E_SQL_SHAPE at the DISTINCT step and the hybrid plan runs it in memory (CPP-C60; gate fuzz: only C++ had it).
+--- dialect
+mariadb
+--- bindings
+{"ORDERS": {"kind": "relation", "from": "orders", "alias": "o", "fields": {"ID": {"table": "o", "column": "id", "type": "NUM"}, "NAME": {"table": "o", "column": "name", "type": "TEXT"}}}}
+--- as
+statement
+--- source
+ORDERS .> SORT_BY(_["id"], "DESC") .> SELECT_COLS("name") .> DISTINCT()
+--- error
+E_SQL_SHAPE 1:62
+===
+

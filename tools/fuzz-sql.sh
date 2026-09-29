@@ -48,7 +48,7 @@ status=0
 SQL_HOSTS=""
 for impl in $(available_impls); do
   case "$impl" in
-    php|js|cpp|lisp|python|python-wheel|go) SQL_HOSTS="$SQL_HOSTS $impl" ;;
+    php|js|cpp|lisp|python|python-wheel|go|rust) SQL_HOSTS="$SQL_HOSTS $impl" ;;
   esac
 done
 

@@ -6,7 +6,7 @@ from functools import cmp_to_key
 
 from .. import decimal as D
 from .._budget import check_text
-from ..errors import fail
+from ..errors import SelError, fail
 from ..eval import bytes_compare
 from ..parser import Node
 from ..registry import define
@@ -378,11 +378,22 @@ define('SUM', 2, 3, lazy=True, binds=True, fn=_sum)
 define('JOIN', 2, 2, fn=_join)
 
 
-def _sort_rank(v: Value) -> int:
+def _sort_leaf(v: Value):
+    """The value scalar context reads (SPEC 3.2: the first child, recursively), so
+    a record sorts by its first field and ranks by that field's kind. None when the
+    chain ends in nothing (NULL)."""
+    if v.kind != 'NONE':
+        return v
+    try:
+        return v.scalar_source(None)
+    except SelError:
+        return None
+
+
+def _sort_rank(v) -> int:
     """The kind rank of SPEC 7.3's total order: NULL < BOOL < numeric-looking text
-    and numbers < every other text < BIN. Anything else (a value with children and
-    no scalar) ranks last and ties with its own kind."""
-    if v.is_null():
+    and numbers < every other text < BIN."""
+    if v is None or v.is_null():
         return 0
     if v.kind == 'BOOL':
         return 1
@@ -401,6 +412,8 @@ def compare_values(a: Value, b: Value) -> int:
     `"7"`), other text and BIN by their bytes. It is transitive, which the old
     pairwise rules were not: "10" < "1a" and "1a" < "9" by bytes, but "9" < "10"
     as numbers, and no sort of that list was well defined."""
+    a = _sort_leaf(a)
+    b = _sort_leaf(b)
     ra = _sort_rank(a)
     rb = _sort_rank(b)
     if ra != rb:

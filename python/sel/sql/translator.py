@@ -18,6 +18,7 @@ from typing import Any, Callable
 from .. import registry as _registry
 from .. import utf8
 from ..builtins import regex as _regex
+from .. import decimal as _decimal
 from ..errors import Pos, SelError
 from ..eval import Context, MAX_DEPTH, eval_node
 from .._limits import MAX_SQL_NODES
@@ -655,8 +656,29 @@ class Translator:
                'an index must be a constant here: the column it names has to be '
                'known before the query runs', idx.pos)
 
+    def _arithmetic_operand(self, n: Node) -> Fragment:
+        """An operand that is a constant TEXT holding a number, in an arithmetic position,
+        is that number (PHP-C33): SEL computes with it exactly, and MariaDB and MySQL
+        would read the quoted string as a DOUBLE. It is translated as the numeric
+        literal it stands for. The text was translated first (its SQL kind is only known
+        then), so the slots it bound are taken back, or `params` mode would report a
+        value bound that no placeholder uses."""
+        mark = len(self.params)
+        f = self._node(n)
+        if f.kind != 'TEXT' or not _constants.is_constant(n, self.const_names):
+            return f
+        try:
+            v = eval_node(n, self.const_ctx if self.const_ctx is not None else Context())
+        except SelError:
+            return f             # refused by the constant check, with SEL's own code
+        if not v.is_text() or not v.looks_numeric():
+            return f
+        del self.params[mark:]
+        del self.param_kinds[mark:]
+        return self._node(_lit_node('num', _decimal.format(v.as_decimal(n.pos)), n.pos))
+
     def _unary(self, n: Node) -> Fragment:
-        x = self._node(n.x)
+        x = self._node(n.x) if n.op == 'NOT' else self._arithmetic_operand(n.x)
         if n.op == 'NOT':
             x = self._require_bool(x, n.x.pos, 'NOT')
         else:
@@ -677,8 +699,9 @@ class Translator:
         if op == 'IN':
             return self._in_operator(n)
 
-        l = self._node(n.l)
-        r = self._node(n.r)
+        arith = op in ('+', '-', '*', '/', '%')
+        l = self._arithmetic_operand(n.l) if arith else self._node(n.l)
+        r = self._arithmetic_operand(n.r) if arith else self._node(n.r)
 
         if op in ('AND', 'OR', 'XOR'):
             l = self._require_bool(l, n.l.pos, op)
@@ -977,7 +1000,9 @@ class Translator:
 
         args = []
         for i, arg in enumerate(n.args):
-            f = self._node(arg)
+            # MIN and MAX compare their arguments as numbers: a numeric text constant is
+            # the number, as in arithmetic (PHP-C33).
+            f = self._arithmetic_operand(arg) if name in ('MIN', 'MAX') else self._node(arg)
             if f.kind == 'LIST':
                 refuse('E_SQL_SHAPE',
                        f'argument to {name} is a list, and a SQL expression is a '
@@ -2466,6 +2491,8 @@ class Translator:
         derived.source_table = ''
         derived.source_alias = alias
         derived.source_subquery = plan
+        derived.order_dropped = plan.order_dropped or (
+            bool(plan.order_by) and plan.limit is None and plan.offset is None)
         # Still named after the pipeline's variable, until a LINK has joined.
         derived.root_name = None if plan.joins else plan.root_name
         if plan.bucket is not None:
@@ -2613,6 +2640,16 @@ class Translator:
                 if plan.bucket is not None:
                     refuse('E_SQL_SHAPE', "a BUCKET over buckets: SQL keeps a bucket's members "
                            'only for the projection that ends the grouping', step.pos)
+                # Groups appear in order of their first member, and the members were
+                # sorted: a GROUP BY returns its groups in no order at all, and the
+                # ORDER BY beneath it is dropped by the servers. The sort cannot
+                # survive, so the step is refused here, at the call and before its
+                # arguments (the first refusal in source order), and a hybrid plan
+                # keeps the sorted rows in SQL and groups them in memory.
+                if plan.order_by or plan.order_dropped:
+                    refuse('E_SQL_SHAPE', 'a BUCKET over sorted rows would return its groups in no order, '
+                           'where SEL has them in the order of their first member in the sorted list',
+                           step.pos)
                 plan = self._ensure_derived(plan, self._plan_has_rows_above)
                 if len(args) == 2:
                     binder, key_node, aggregate_node = '_', args[1], None
@@ -2726,6 +2763,9 @@ class Translator:
                     candidate.limit is not None or candidate.offset is not None)
                 if plan.projections is None and plan.select_cols is None:
                     refuse('E_SQL_SHAPE', 'DISTINCT requires an explicit typed projection', step.pos)
+                # DISTINCT keeps the FIRST element of each run in sorted order; SQL's `SELECT DISTINCT proj ... ORDER BY <column not in proj>` is refused by PostgreSQL (42P10) and MySQL 8 (3065) and answers with an unspecified representative row on MariaDB. A loud refusal is acceptable and a silent misordering is not, so the step stays in memory (CPP-C60).
+                if plan.order_by:
+                    refuse('E_SQL_SHAPE', 'DISTINCT after a sort keeps the first of each run in sorted order, which SELECT DISTINCT ... ORDER BY does not promise; run the DISTINCT in memory', step.pos)
                 plan.distinct = True
 
             elif name == 'TAKE':
@@ -2753,11 +2793,20 @@ class Translator:
                 # earlier one is the later one's tie-breaker, and the later
                 # one's keys go FIRST in the ORDER BY (review 2026-09-15
                 # finding V).
-                plan = self._ensure_derived(plan, lambda candidate:
-                    candidate.limit is not None or candidate.offset is not None
-                    or (candidate.group_by is None and bool(
-                        candidate.projections is not None or candidate.select_cols is not None
-                        or candidate.distinct)))
+                def _wraps(candidate):
+                    return (candidate.limit is not None or candidate.offset is not None
+                            or (candidate.group_by is None and bool(
+                                candidate.projections is not None or candidate.select_cols is not None
+                                or candidate.distinct)))
+                # Sorts are stable, so an earlier sort is the later one's tie-break; a
+                # derived table with no LIMIT beside its ORDER BY does not keep it, and
+                # its keys may not even be columns the outer level can name.
+                if ((_wraps(plan) and plan.order_by and plan.limit is None and plan.offset is None)
+                        or plan.order_dropped):
+                    refuse('E_SQL_SHAPE', 'a sort over a projection of sorted rows loses the earlier '
+                           "sort, which is its tie-break: a derived table does not keep an ORDER BY",
+                           step.pos)
+                plan = self._ensure_derived(plan, _wraps)
                 before = len(plan.order_by)
                 self._analyze_sort_step_extended(step, plan)
                 added = plan.order_by[before:]
@@ -2782,6 +2831,13 @@ class Translator:
                     self.compile_statement(plan)
                     del self.params[mark:]
                     del self.param_kinds[mark:]
+                # A join returns its rows in no order, and SEL's are the left list's:
+                # rows sorted with no LIMIT beside the ORDER BY (which a derived table
+                # drops) cannot pass through a JOIN carrying their sort. After the
+                # earlier steps' own refusals, which come first as written.
+                if plan.order_dropped or (plan.order_by and plan.limit is None and plan.offset is None):
+                    refuse('E_SQL_SHAPE', f'a {name} over sorted rows would return them in no order, '
+                           "where SEL has the left list's order", step.pos)
                 plan = self._ensure_derived(plan, self._plan_has_rows_above)
                 if len(args) not in (3, 5):
                     refuse('E_ARITY', f'{name} takes 3 or 5 arguments', step.pos)

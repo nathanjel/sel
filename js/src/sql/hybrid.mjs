@@ -855,13 +855,23 @@ export function planHybrid(program, dialect, bindings = null, options = null) {
     const sql = tryStatement(prefixAst, dialect, catalog, opts);
     if (sql === null) continue;
     const remaining = steps.slice(count);
-    // A LINK names the two sides of the row it builds after the variables it
-    // joined: the left side is the pipeline's own source variable. A continuation
-    // that starts at a LINK is therefore read from that variable, or the joined row
-    // would carry the left side under `_INPUT` where run() has it under ORDERS
-    // (PHP-C9).
-    const startsAtLink = remaining[0].name === 'LINK' || remaining[0].name === 'LINK_LEFT';
-    const feed = startsAtLink ? source.name : inputVar;
+    // A 3-argument LINK names the two sides of the row it builds after the variables it
+    // joined: the left side is the pipeline's own source variable, wherever in the
+    // continuation the LINK falls (spec 7.4; PHP-C9). The rows are therefore fed to the
+    // continuation under that name, or the joined row would carry the left side under
+    // `_INPUT` where run() has it under ORDERS. A step that also READS that name (a
+    // self-join `ORDERS .> TAKE(4) .> LINK(ORDERS, ...)`) would find the truncated rows
+    // where run() finds the whole relation, so that split is not made: the join stays in
+    // memory, over the relation. The same rule in every host; a LINK in the prefix has
+    // already named its sides.
+    const isLink = (step) => step.name === 'LINK' || step.name === 'LINK_LEFT';
+    const needsRebind = !prefixSteps.some(isLink)
+      && remaining.some((step) => isLink(step) && step.args.length === 3);
+    if (needsRebind && (source.t !== 'var'
+        || remaining.some((step) => (step.args ?? []).slice(1).some((a) => readNames(a).has(source.name))))) {
+      continue;
+    }
+    const feed = needsRebind ? source.name : inputVar;
     const input = { t: 'var', name: feed, pos: remaining[0].pos };
     const continuationAst = helpers.wrap(buildPipeline(input, remaining));
     return new HybridPlan({

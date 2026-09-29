@@ -62,6 +62,10 @@ type RelationalPlan struct {
 	Correlate      string
 	// OrderLostByJoin: a sort under a join is not the order of the joined rows.
 	OrderLostByJoin bool
+	// OrderDropped: a derived table with no LIMIT beside its ORDER BY does not keep the
+	// order, so a step that needs the rows in that order (a BUCKET's groups, a LINK's
+	// rows, a later sort's ties) cannot be built on it.
+	OrderDropped bool
 	Distinct        bool
 	SelectCols      []string
 	Projections     []RelationalProjection

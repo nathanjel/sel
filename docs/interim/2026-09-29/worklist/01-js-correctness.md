@@ -860,7 +860,7 @@ Each task starts by reproducing the report against the current tree, then lands 
 
 <a id="c-js-c29"></a>
 
-- [ ] **C-JS-C29 — Resolve JS-C29.** Public entry points leak host exceptions for non-string input
+- [x] **C-JS-C29 — Resolve JS-C29.** Public entry points leak host exceptions for non-string input
 
   **[JS-C29](../js-code-review.md) — [low] [confirmed] Public entry points leak host exceptions for non-string input**
 
@@ -872,9 +872,11 @@ Each task starts by reproducing the report against the current tree, then lands 
 
   Done when every linked scenario passes on all applicable lanes; code/position, mutation, ordering and repeat-use behavior satisfy the shared contract. Record commit and fixture IDs here.
 
+  Closed 2026-09-29 — six hosts agree on 107 API probes (24 pinned); race/TSan/-race lanes green
+
 <a id="c-js-c40"></a>
 
-- [ ] **C-JS-C40 — Resolve JS-C40.** `Program.dependencies()` is order-insensitive and drops variables read before, or only conditionally after, an assignment
+- [x] **C-JS-C40 — Resolve JS-C40.** `Program.dependencies()` is order-insensitive and drops variables read before, or only conditionally after, an assignment
 
   **[JS-C40](../js-code-review.md) — [low] [confirmed] `Program.dependencies()` is order-insensitive and drops variables read before, or only conditionally after, an assignment**
 
@@ -887,3 +889,5 @@ Each task starts by reproducing the report against the current tree, then lands 
   Contract gate: settle the relevant rule in the shared test family before choosing among the report’s proposed behaviors.
 
   Done when every linked scenario passes on all applicable lanes; code/position, mutation, ordering and repeat-use behavior satisfy the shared contract. Record commit and fixture IDs here.
+
+  Closed 2026-09-29 — six hosts agree on 107 API probes (24 pinned); race/TSan/-race lanes green

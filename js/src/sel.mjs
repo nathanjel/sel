@@ -44,14 +44,14 @@ export class Program {
     return this._physical;
   }
 
-  // Every variable the program reads without having assigned it first, found
+  // Every variable some read of which can happen before the program has
+  // DEFINITELY assigned it, in evaluation order (spec/SPEC.md §8), found
   // statically. Only possible because SEL has no dynamic symbol operator; this
   // is what tells a frontend which inputs should re-trigger which rule.
   dependencies() {
     const reads = new Set();
-    const assigned = new Set();
-    collect(this.ast, new Set(), reads, assigned, 1);
-    return Array.from(reads).filter((n) => !assigned.has(n)).sort();
+    collect(this.ast, new Set(), new Set(), reads, 1);
+    return Array.from(reads).sort();
   }
 }
 
@@ -63,41 +63,59 @@ export class Program {
 // raised an uncaught RangeError, which is not a SEL error at all.
 //
 // The depth rides as a parameter rather than as a counter with a guard, because
-// there is nothing to release on the way out -- which is also what lets the five
+// there is nothing to release on the way out -- which is also what lets the
 // hosts spell this identically. Capped at the same MAX_DEPTH the evaluator uses
 // and tripping at the same node, so a program whose dependencies cannot be
 // computed is exactly a program that could not have been evaluated.
-function collect(node, bound, reads, assigned, depth) {
+//
+// FLOW-SENSITIVE (§8): `done` is the set of names definitely assigned so far on
+// every path that reaches this node. A read of a name that is neither bound nor
+// in `done` is a dependency, whether or not it is later assigned. The walk
+// follows evaluation order; a region that may not run (the right side of AND, OR,
+// `??`, `???`, the arms of IF and COND, later COALESCE arguments, GET's default,
+// an aggregate body) is walked on a copy, and only what every arm assigns joins
+// `done` afterwards.
+function collect(node, bound, done, reads, depth) {
   if (!node || typeof node !== 'object') return;
   if (depth > MAX_DEPTH) fail('E_DEPTH', 'expression nested too deeply', node.pos);
+  const walk = (n, b = bound, d = done) => collect(n, b, d, reads, depth + 1);
   switch (node.t) {
     case 'var':
-      if (!bound.has(node.name)) reads.add(node.name);
+      if (!bound.has(node.name) && !done.has(node.name)) reads.add(node.name);
       return;
 
     case 'assign': {
+      // Index expressions run first, in order, then the right side; then the
+      // store. `A = x` defines A; `A[k] = x` creates A and reads only the index;
+      // `A += x` and `A[k] += x` also read their target.
       let target = node.target;
       while (target.t === 'index') {
-        collect(target.idx, bound, reads, assigned, depth + 1);
+        walk(target.idx);
         target = target.obj;
       }
-      // `A = x` defines A; `A[k] = x` and `A += x` also read it.
-      if (node.target.t !== 'var' || node.op !== '=') {
-        if (!bound.has(target.name)) reads.add(target.name);
+      walk(node.value);
+      if (node.op !== '=') {
+        if (!bound.has(target.name) && !done.has(target.name)) reads.add(target.name);
       }
-      assigned.add(target.name);
-      collect(node.value, bound, reads, assigned, depth + 1);
+      if (!bound.has(target.name)) done.add(target.name);
       return;
     }
 
     case 'call': {
+      const name = (node.name || '').toUpperCase();
       // Which arguments run inside the binder, and what they see, is decided
       // once, by bindingForm() over the manifest's forms (spec/builtins.md).
       // No form -- a strict function, or a count the evaluator would refuse --
-      // and every argument is read where the call stands.
+      // and every argument is read where the call stands, in order.
       const form = bindingForm(node.name || '', node.args, node.spec);
       if (!form) {
-        for (const a of node.args) collect(a, bound, reads, assigned, depth + 1);
+        if (name === 'IF' || name === 'COND') return collectBranches(node, name, bound, done, reads, depth);
+        node.args.forEach((arg, i) => {
+          // The first argument always runs; COALESCE's later ones and GET/PATH's
+          // default only when the earlier ones leave room for them.
+          const optional = (name === 'COALESCE' && i > 0) || ((name === 'GET' || name === 'PATH') && i > 1);
+          if (optional) walk(arg, bound, new Set(done)); else walk(arg);
+        });
         return;
       }
       let inner = null;
@@ -109,35 +127,85 @@ function collect(node, bound, reads, assigned, depth) {
             inner = new Set(bound);
             for (const b of form.binds) inner.add(b);
           }
-          collect(arg, inner, reads, assigned, depth + 1);
+          // A body may run once per element, or never: what it assigns is not
+          // definite afterwards.
+          walk(arg, inner, new Set(done));
         } else {
-          collect(arg, bound, reads, assigned, depth + 1);
+          walk(arg);
         }
       });
       return;
     }
 
     case 'seq': case 'list':
-      for (const item of node.items) collect(item, bound, reads, assigned, depth + 1);
+      for (const item of node.items) walk(item);
       return;
 
     case 'index':
-      collect(node.obj, bound, reads, assigned, depth + 1);
-      collect(node.idx, bound, reads, assigned, depth + 1);
+      walk(node.obj);
+      walk(node.idx);
       return;
 
-    case 'bin':
-      collect(node.l, bound, reads, assigned, depth + 1);
-      collect(node.r, bound, reads, assigned, depth + 1);
+    case 'bin': {
+      const op = node.op;
+      walk(node.l);
+      if (op === 'AND' || op === 'OR' || op === '??' || op === '???') {
+        walk(node.r, bound, new Set(done));
+      } else {
+        walk(node.r);
+      }
       return;
+    }
 
     case 'un':
-      collect(node.x, bound, reads, assigned, depth + 1);
+      walk(node.x);
       return;
   }
 }
 
+// IF and COND: the condition(s) that decide run in order along the path where
+// every earlier one was false; each arm runs from the state after its own
+// condition; what is definite afterwards is what EVERY outcome assigned (COND's
+// last argument is its default, so it always has an outcome; a two-argument IF
+// has an empty else).
+function collectBranches(node, name, bound, done, reads, depth) {
+  const walkIn = (n, d) => collect(n, bound, d, reads, depth + 1);
+  const args = node.args;
+  const outcomes = [];
+  let cur = new Set(done);
+  if (name === 'IF') {
+    if (args.length > 0) walkIn(args[0], cur);
+    for (let i = 1; i < args.length; i++) {
+      const arm = new Set(cur);
+      walkIn(args[i], arm);
+      outcomes.push(arm);
+    }
+    if (args.length < 3) outcomes.push(new Set(cur));
+  } else {
+    const pairs = Math.floor(args.length / 2);
+    for (let k = 0; k < pairs; k++) {
+      walkIn(args[2 * k], cur);
+      const arm = new Set(cur);
+      walkIn(args[2 * k + 1], arm);
+      outcomes.push(arm);
+    }
+    if (args.length % 2 === 1) {
+      walkIn(args[args.length - 1], cur);
+      outcomes.push(cur);
+    } else {
+      outcomes.push(cur);
+    }
+  }
+  // Definite afterwards: assigned in every outcome.
+  if (outcomes.length > 0) {
+    for (const n of outcomes[0]) if (outcomes.every((o) => o.has(n))) done.add(n);
+  }
+}
+
 export function compile(source) {
+  // Source is text (SPEC §8): anything else is a misuse of the API, not a syntax
+  // error in a program that was never given.
+  if (typeof source !== 'string') fail('E_BAD_ARG', 'compile: the source must be a string', null);
   return new Program(source, parse(source));
 }
 

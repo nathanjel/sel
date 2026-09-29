@@ -26,14 +26,24 @@ export const MAX_FRAC_DIGITS = LIMITS.MAX_FRAC_DIGITS;
 // guard()'s prefilter: a magnitude below 2^S has fewer than MAX_INT_DIGITS + 1
 // digits whatever its scale, so it needs no exact digit count. S must satisfy
 // 2^S <= 10^MAX_INT_DIGITS, and the largest such S is one less than the bit
-// length of 10^MAX_INT_DIGITS. It is derived from the generated limit rather
-// than typed in (it was 3321928 written out by hand), so regenerating
-// spec/limits.json with another cap cannot leave the prefilter sound only for
-// the old one. Computed on first use: 10^MAX_INT_DIGITS is a million-digit power.
+// length of 10^MAX_INT_DIGITS, which is floor(N * log2(10)). It is derived from
+// the generated limit rather than typed in (it was 3321928 written out by
+// hand), so regenerating spec/limits.json with another cap cannot leave the
+// prefilter sound only for the old one.
+//
+// Worked out in fixed-point integer arithmetic (log2(10) to 38 decimals) rather
+// than from 10^N, which is a million-digit power that costs ~80 ms to build and
+// render: this runs once, at load, and guard() then only reads a constant. The
+// margin is enormous: N * log2(10) is never within 1e-30 of an integer for a
+// cap below 1e9, and for a larger cap the exact definition is used.
+const LOG2_10_FIXED = 332192809488736234787031942948939017586n;   // log2(10) * 10^38
+const FIXED_ONE = 10n ** 38n;
 export function intLimitShift(maxIntDigits) {
-  return BigInt(bitLength(10n ** BigInt(maxIntDigits)) - 1);
+  const n = BigInt(maxIntDigits);
+  if (n >= 1000000000n) return BigInt(bitLength(10n ** n) - 1);
+  return (n * LOG2_10_FIXED) / FIXED_ONE;
 }
-let _intLimitShift = null;
+const _intLimitShift = intLimitShift(MAX_INT_DIGITS);
 const _FAST_BOUND = 10n ** 18n;
 
 const POW10_TABLE = [1n];
@@ -93,7 +103,6 @@ export function guard(d, pos) {
   if (d.digits > _FAST_BOUND) {
     // A shift past the magnitude returns zero without rendering its digits.
     // Only values near the cap need the exact digit count (and its hex string).
-    _intLimitShift ??= intLimitShift(MAX_INT_DIGITS);
     if ((d.digits >> _intLimitShift) !== 0n && numDigits(d.digits) - d.scale > MAX_INT_DIGITS) {
       fail('E_RANGE', `number has more than ${MAX_INT_DIGITS} integer digits`, pos);
     }

@@ -568,6 +568,34 @@ std::cout << "   " << join(sel::compile(
 </details>
 <!-- /tabs -->
 
+The answer follows evaluation order (spec §8): a name is reported when some read of
+it can happen before the rule has definitely assigned it. So a rule that reads `A`
+and assigns it later reports `A`; one that assigns `A` first reports only what else
+it reads; and an assignment inside one branch of an `IF`, on the right of `AND`,
+`OR` or `??`, or in an aggregate's body does not count as an assignment for a read
+after it. `X += 1` and `A[k] += x` read their target. It is safe to over-report
+and never to under-report, which is what a form re-checking on change needs.
+
+## Host functions and threads
+
+`register_function` / `registerFunction` may be called while other threads compile
+or run programs; the function table is synchronised in every host that has threads,
+and a program already compiled keeps the function it was compiled against. Reading
+an argument the call does not have (a function declared with one or two arguments
+asking for the fifth) is `E_BAD_ARG`, and a registration that is not callable, or a
+name that is not allowed, is refused when registering, in each host's own
+argument-error class.
+
+## PHP memory
+
+A PHP `Value` costs a few hundred bytes, so a rule that builds a collection near
+the language's cap (`MAX_COLLECTION`, one million elements) needs `memory_limit`
+of at least 1G on PHP 8.5, and roughly two to three times that on PHP 8.1. Text is
+kept as bytes and is not the problem: a 16-million-character text is about that
+many bytes. The default 128M is enough for everything below a few hundred thousand
+elements. The repository's own budget and PHP 8.1 lanes run with
+`memory_limit=-1`.
+
 ## The API side by side
 
 | | Python | JavaScript | PHP | C++ | Common Lisp |

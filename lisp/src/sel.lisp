@@ -34,6 +34,8 @@
 (defun compile-source (source)
   "Compile SOURCE, raising SEL-ERROR on any compile-time failure: syntax, an
 unknown function, a wrong argument count, a non-portable regex literal."
+  (unless (stringp source)
+    (fail "E_BAD_ARG" (format nil "the source of a program is text, not ~a" (type-of source))))
   (%make-program source (parse-source source)))
 
 (defun run (program &optional context)
@@ -50,8 +52,19 @@ is mutated in place by any assignment the program performs."
 
 ;;; --- dependencies ----------------------------------------------------------
 
-(defun collect-deps (node bound reads assigned depth)
-  "BOUND, READS and ASSIGNED are hash tables keyed by name.
+(defun copy-name-table (table)
+  (let ((out (make-hash-table :test #'equal)))
+    (maphash (lambda (k v) (setf (gethash k out) v)) table)
+    out))
+
+(defun collect-deps (node bound reads def depth)
+  "BOUND, READS and DEF are hash tables keyed by name. BOUND holds the binder
+names in scope. DEF holds the names DEFINITELY assigned so far, in evaluation
+order, on the path being walked: a read of a name that is neither bound nor in
+DEF is a dependency (spec/SPEC.md 8). The walk mutates DEF as it goes, and an
+argument that may not run (a branch, the right side of AND/OR/??/???, an
+aggregate body) is walked against a copy, so what it assigns is not definite
+afterwards; a name assigned on every branch is.
 
 The static walk of the tree, and the third thing in each host that recurses
 over it. spec/SPEC.md 6.4 caps the other two -- the parser's nesting and the
@@ -68,73 +81,129 @@ computed is exactly a program that could not have been evaluated."
   (when node
     (when (> depth +max-depth+)
       (fail "E_DEPTH" "expression nested too deeply" (node-pos node)))
-    (case (node-kind node)
-      (:var
-       (unless (gethash (node-s node) bound)
-         (setf (gethash (node-s node) reads) t)))
+    (flet ((walk (n) (collect-deps n bound reads def (1+ depth)))
+           (maybe (n)
+             ;; May not run: its assignments are not definite afterwards.
+             (collect-deps n bound reads (copy-name-table def) (1+ depth)))
+           (read-name (name)
+             (unless (or (gethash name bound) (gethash name def))
+               (setf (gethash name reads) t))))
+      (case (node-kind node)
+        (:var (read-name (node-s node)))
 
-      (:assign
-       (let ((target (node-l node))
-             (n (node-l node)))
-         (loop while (eq (node-kind n) :index)
-               do (collect-deps (node-r n) bound reads assigned (1+ depth))
-                  (setf n (node-l n)))
-         ;; `A = x` defines A; `A[k] = x` and `A += x` also read it.
-         (when (or (not (eq (node-kind target) :var))
-                   (not (string= (node-s node) "=")))
-           (unless (gethash (node-s n) bound)
-             (setf (gethash (node-s n) reads) t)))
-         (setf (gethash (node-s n) assigned) t)
-         (collect-deps (node-r node) bound reads assigned (1+ depth))))
+        (:assign
+         (let ((n (node-l node))
+               (indexes '()))
+           (loop while (eq (node-kind n) :index)
+                 do (push (node-r n) indexes)
+                    (setf n (node-l n)))
+           ;; `A += x` and `A[k] += x` read A first; `A = x` defines it and
+           ;; `A[k] = x` creates it, reading only the index.
+           (unless (string= (node-s node) "=")
+             (read-name (node-s n)))
+           ;; Index expressions run once, in order, before the right side.
+           (dolist (idx indexes) (walk idx))
+           (walk (node-r node))
+           (setf (gethash (node-s n) def) t)))
 
-      (:call
-       ;; Which arguments run inside the binder, and what they see, is decided
-       ;; once, by BINDING-FORM over the manifest's forms (spec/builtins.md).
-       ;; No form -- a strict function, or a count the evaluator would refuse
-       ;; -- and every argument is read where the call stands.
-       (let ((items (node-items node)))
-         (multiple-value-bind (scopes binds) (binding-form (node-s node) items (node-spec node))
-           (if (null scopes)
-               (dolist (arg items) (collect-deps arg bound reads assigned (1+ depth)))
-               (let ((inner nil))
-                 (loop for scope in scopes
-                       for arg in items
-                       do (case scope
-                            (:binder nil)
-                            (:inner
-                             (unless inner
-                               (setf inner (copy-name-table bound))
-                               (dolist (b binds) (setf (gethash b inner) t)))
-                             (collect-deps arg inner reads assigned (1+ depth)))
-                            (t (collect-deps arg bound reads assigned (1+ depth))))))))))
+        (:call
+         (let ((items (node-items node))
+               (name (node-s node)))
+           (cond
+             ((and (string= name "IF") (<= 2 (length items) 3))
+              (walk (first items))
+              (let ((a (copy-name-table def))
+                    (b (copy-name-table def)))
+                (collect-deps (second items) bound reads a (1+ depth))
+                (when (third items)
+                  (collect-deps (third items) bound reads b (1+ depth)))
+                (merge-definite def a b)))
+             ((and (string= name "COND") (oddp (length items)) (>= (length items) 3))
+              (walk-cond-pairs items bound reads def (1+ depth)))
+             ((member name '("COALESCE" "GET" "PATH") :test #'string=)
+              ;; Lazy, and only the first argument is certain to run.
+              (when items (walk (first items)))
+              (dolist (arg (rest items)) (maybe arg)))
+             (t
+              ;; Which arguments run inside the binder, and what they see, is
+              ;; decided once, by BINDING-FORM over the manifest's forms
+              ;; (spec/builtins.md). No form -- a strict function, or a count
+              ;; the evaluator would refuse -- and every argument is read where
+              ;; the call stands.
+              (multiple-value-bind (scopes binds) (binding-form name items (node-spec node))
+                (if (null scopes)
+                    (dolist (arg items) (walk arg))
+                    (let ((inner nil))
+                      (loop for scope in scopes
+                            for arg in items
+                            do (case scope
+                                 (:binder nil)
+                                 (:inner
+                                  (unless inner
+                                    (setf inner (copy-name-table bound))
+                                    (dolist (b binds) (setf (gethash b inner) t)))
+                                  ;; Once per element, possibly never.
+                                  (collect-deps arg inner reads (copy-name-table def) (1+ depth)))
+                                 (t (walk arg)))))))))))
 
-      ((:seq :list)
-       (dolist (item (node-items node)) (collect-deps item bound reads assigned (1+ depth))))
+        ((:seq :list)
+         (dolist (item (node-items node)) (walk item)))
 
-      ((:index :bin)
-       (collect-deps (node-l node) bound reads assigned (1+ depth))
-       (collect-deps (node-r node) bound reads assigned (1+ depth)))
+        (:index
+         (walk (node-l node))
+         (walk (node-r node)))
 
-      (:un (collect-deps (node-l node) bound reads assigned (1+ depth)))
+        (:bin
+         (let ((op (node-s node)))
+           (walk (node-l node))
+           (if (member op '("AND" "OR" "??" "???") :test #'string=)
+               (maybe (node-r node))
+               (walk (node-r node)))))
 
-      (t nil))))
+        (:un (walk (node-l node)))
 
-(defun copy-name-table (table)
+        (t nil)))))
+
+(defun intersect-names (a b)
   (let ((out (make-hash-table :test #'equal)))
-    (maphash (lambda (k v) (setf (gethash k out) v)) table)
+    (maphash (lambda (k v) (declare (ignore v))
+               (when (gethash k b) (setf (gethash k out) t)))
+             a)
     out))
 
+(defun merge-definite (def a b)
+  "Add to DEF the names both A and B (each an extension of DEF) assigned."
+  (maphash (lambda (k v) (declare (ignore v)) (setf (gethash k def) t))
+           (intersect-names a b)))
+
+(defun walk-cond-pairs (items bound reads def depth)
+  "COND's conditions run in order and only the matching result runs, so what is
+definite afterwards is what every outcome assigns, together with the conditions
+that had to be evaluated to reach it. ITEMS is condition/result pairs and a
+final default."
+  (labels ((outcomes (rest from)
+             ;; The definite set after the outcomes REST can take, as a new table.
+             (let ((c (copy-name-table from)))
+               (if (null (cdr rest))
+                   (progn (collect-deps (car rest) bound reads c depth) c)
+                   (progn
+                     (collect-deps (first rest) bound reads c depth)
+                     (let ((v (copy-name-table c)))
+                       (collect-deps (second rest) bound reads v depth)
+                       (intersect-names v (outcomes (cddr rest) c))))))))
+    (maphash (lambda (k v) (declare (ignore v)) (setf (gethash k def) t))
+             (outcomes items def))))
+
 (defun dependencies (program)
-  "Every variable PROGRAM reads without having assigned it first, found
-statically and returned sorted in upper case. Possible only because SEL has no
-dynamic symbol operator; this is how a frontend knows which inputs should
-re-trigger which rule."
+  "Every variable PROGRAM can read before it has definitely assigned it, found
+statically (spec/SPEC.md 8) and returned sorted in upper case. Possible only
+because SEL has no dynamic symbol operator; this is how a frontend knows which
+inputs should re-trigger which rule."
   (let ((bound (make-hash-table :test #'equal))
         (reads (make-hash-table :test #'equal))
-        (assigned (make-hash-table :test #'equal)))
-    (collect-deps (program-ast program) bound reads assigned 1)
-    (sort (loop for name being the hash-keys of reads
-                unless (gethash name assigned) collect name)
+        (def (make-hash-table :test #'equal)))
+    (collect-deps (program-ast program) bound reads def 1)
+    (sort (loop for name being the hash-keys of reads collect name)
           #'string<)))
 
 ;;; Every shipped builtin is loaded by now; the manifest must not name one more.

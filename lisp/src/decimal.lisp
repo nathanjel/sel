@@ -32,7 +32,13 @@
 (defvar *pow10-table*
   (coerce (loop for i from 0 to 18 collect (expt 10 i)) 'simple-vector))
 
-(defvar *pow10-cache* (make-hash-table :test 'eql))
+;;; Shared by every thread: a SYNCHRONIZED table (a probe is safe beside an insert)
+;;; and one lock around the bounded-generation bookkeeping, whose count/weight/
+;;; clear/insert steps are a read-modify-write of four things at once. Without
+;;; both, threads doing arithmetic at many scales corrupted the table and lost
+;;; the weight (LISP-C12).
+(defvar *pow10-cache* (make-hash-table :test 'eql :synchronized t))
+(defvar *pow10-lock* (sb-thread:make-mutex :name "sel pow10 cache"))
 (defconstant +pow10-cache-entries+ 64)
 (defconstant +pow10-cache-max-exponent+ 1000000)
 (defconstant +pow10-cache-digits+ 1048576)
@@ -49,12 +55,13 @@
             (when (<= 0 k +pow10-cache-max-exponent+)
               ;; A bounded generation avoids maintaining an LRU list in the
               ;; arithmetic hot path. Oversized powers are never retained.
-              (when (or (>= (hash-table-count *pow10-cache*) +pow10-cache-entries+)
-                        (> (+ *pow10-cache-weight* k) +pow10-cache-digits+))
-                (clrhash *pow10-cache*)
-                (setf *pow10-cache-weight* 0))
-              (setf (gethash k *pow10-cache*) value)
-              (incf *pow10-cache-weight* k))
+              (sb-thread:with-mutex (*pow10-lock*)
+                (when (or (>= (hash-table-count *pow10-cache*) +pow10-cache-entries+)
+                          (> (+ *pow10-cache-weight* k) +pow10-cache-digits+))
+                  (clrhash *pow10-cache*)
+                  (setf *pow10-cache-weight* 0))
+                (setf (gethash k *pow10-cache*) value)
+                (incf *pow10-cache-weight* k)))
             value))))
 
 (defun num-digits (n)

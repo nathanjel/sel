@@ -572,10 +572,40 @@ final class Translator
         };
     }
 
+    /**
+     * An operand that is a constant TEXT holding a number, in an arithmetic position, is
+     * that number (PHP-C33): SEL computes with it exactly, and MariaDB and MySQL would
+     * read the quoted string as a DOUBLE. It is translated as the numeric literal it
+     * stands for. The text was translated first (its SQL kind is only known then), so
+     * the slots it bound are taken back, or `params` mode would report a value bound
+     * that no placeholder uses.
+     *
+     * @param array<string,mixed> $n
+     */
+    private function arithmeticOperand(array $n): Fragment
+    {
+        $mark = count($this->params);
+        $f = $this->node($n);
+        if ($f->kind !== 'TEXT' || !Constants::isConstant($n, $this->liveConstNames())) {
+            return $f;
+        }
+        try {
+            $v = \Sel\Evaluator::evalNode($n, $this->constCtx ?? new \Sel\Context());
+        } catch (\Sel\SelError) {
+            return $f;           // refused by the constant check, with SEL's own code
+        }
+        if (!$v->isText() || !$v->looksNumeric()) {
+            return $f;
+        }
+        $this->params = array_slice($this->params, 0, $mark);
+        $this->paramKinds = array_slice($this->paramKinds, 0, $mark);
+        return $this->node(['t' => 'num', 'v' => \Sel\Dec::format($v->asDecimal($n['pos'])), 'pos' => $n['pos']]);
+    }
+
     /** @param array<string,mixed> $n */
     private function unary(array $n): Fragment
     {
-        $x = $this->node($n['x']);
+        $x = $n['op'] === 'NOT' ? $this->node($n['x']) : $this->arithmeticOperand($n['x']);
         if ($n['op'] === 'NOT') {
             $x = $this->requireBool($x, $n['x']['pos'], 'NOT');
         } else {
@@ -587,7 +617,7 @@ final class Translator
             // therefore not a check. The guard below is a different matter: it
             // fires on a NON-constant operand, which is exactly what node()
             // cannot see.
-            $x = $this->guardNumeric($x, $n['x'], true);
+            $x = $this->guardNumeric($x, $n['x']);
         }
         return $this->apply('ops', $n['op'], [$x], $n['pos']);
     }
@@ -601,8 +631,9 @@ final class Translator
             return $this->inOperator($n);
         }
 
-        $l = $this->node($n['l']);
-        $r = $this->node($n['r']);
+        $arith = in_array($op, ['+', '-', '*', '/', '%'], true);
+        $l = $arith ? $this->arithmeticOperand($n['l']) : $this->node($n['l']);
+        $r = $arith ? $this->arithmeticOperand($n['r']) : $this->node($n['r']);
 
         if (in_array($op, ['AND', 'OR', 'XOR'], true)) {
             $l = $this->requireBool($l, $n['l']['pos'], $op);
@@ -627,9 +658,8 @@ final class Translator
             // And an operand nobody has vouched for is wrapped so that a value
             // SEL would refuse becomes NULL rather than a number the server
             // invented. A NUM operand passes through untouched.
-            $arith = in_array($op, ['+', '-', '*', '/', '%'], true);
-            $l = $this->guardNumeric($l, $n['l'], $arith);
-            $r = $this->guardNumeric($r, $n['r'], $arith);
+            $l = $this->guardNumeric($l, $n['l']);
+            $r = $this->guardNumeric($r, $n['r']);
         }
         // The `$` family and `&`, not EQL and IN: those two are structural and
         // `TRUE EQL TRUE` is TRUE, while `"x" $== TRUE` is E_NOT_BIN.
@@ -946,7 +976,7 @@ final class Translator
 
         $args = [];
         foreach ($n['args'] as $i => $arg) {
-            $f = $this->node($arg);
+            $f = $name === 'MIN' || $name === 'MAX' ? $this->arithmeticOperand($arg) : $this->node($arg);
             if ($f->kind === 'LIST') {
                 refuse('E_SQL_SHAPE',
                     "argument to {$name} is a list, and a SQL expression is a scalar",
@@ -958,7 +988,7 @@ final class Translator
                 // MIN and MAX compare their arguments as numbers, so a numeric text
                 // constant is the number (as in arithmetic): PostgreSQL rejects MAX('10',
                 // '9') == 10 outright, and the MySQL family would compare the strings.
-                $f = $this->guardNumeric($f, $arg, $name === 'MIN' || $name === 'MAX');
+                $f = $this->guardNumeric($f, $arg);
             }
             $args[] = $f;
         }
@@ -3068,24 +3098,9 @@ final class Translator
      *
      * @param array<string,mixed> $n
      */
-    private function guardNumeric(Fragment $f, array $n, bool $arithmetic = false): Fragment
+    private function guardNumeric(Fragment $f, array $n): Fragment
     {
         if (Constants::isConstant($n, $this->liveConstNames())) {
-            // A constant TEXT that is a number, in an arithmetic position, is that number:
-            // SEL computes with it exactly. Left as a quoted string, MariaDB and MySQL
-            // convert it to DOUBLE for `+ - * / %` (`'0.1' + '0.2' = 0.3` is false
-            // there), so it is spelled as the exact numeric literal it stands for
-            // (PHP-C33).
-            if ($arithmetic && $f->kind === 'TEXT') {
-                try {
-                    $v = \Sel\Evaluator::evalNode($n, $this->constCtx ?? new \Sel\Context());
-                } catch (\Sel\SelError) {
-                    return $f;           // refused by the constant check, with SEL's own code
-                }
-                if ($v->isText() && $v->looksNumeric()) {
-                    return $this->literal(Value::num(\Sel\Dec::format($v->asDecimal($n['pos']))), 'NUM', $n['pos']);
-                }
-            }
             return $f;
         }
         $guarded = $this->emit->numericOperand($f, $n['pos']);
@@ -3561,6 +3576,8 @@ final class Translator
         $derived->sourceAlias = $alias;
         $derived->sourceSubquery = $plan;
         // Still named after the pipeline's variable, until a LINK has joined.
+        $derived->orderDropped = $plan->orderDropped
+            || ($plan->orderBy !== [] && $plan->limit === null && $plan->offset === null);
         $derived->rootName = $plan->joins !== [] ? null : $plan->rootName;
         if ($plan->bucket !== null) {
             $derived->bucket = 'sealed';
@@ -3805,6 +3822,16 @@ final class Translator
                     if ($plan->bucket !== null) {
                         refuse('E_SQL_SHAPE', "a BUCKET over buckets: SQL keeps a bucket's members only for the projection that ends the grouping", $step['pos']);
                     }
+                    // Groups appear in order of their first member, and the members were
+                    // sorted: a GROUP BY returns its groups in no order at all, and the
+                    // ORDER BY beneath it is dropped by the servers. The sort cannot
+                    // survive, so the step is refused here, at the call and before its
+                    // arguments (the first refusal in source order), and a hybrid plan
+                    // keeps the sorted rows in SQL and groups them in memory.
+                    if ($plan->orderBy !== [] || $plan->orderDropped) {
+                        refuse('E_SQL_SHAPE', 'a BUCKET over sorted rows would return its groups in no order, '
+                            . 'where SEL has them in the order of their first member in the sorted list', $step['pos']);
+                    }
                     $plan = $this->ensureDerived($plan, $this->planHasRowsAbove($plan));
                     if (count($args) === 2) {
                         $binder = '_';
@@ -3965,6 +3992,10 @@ final class Translator
                     if ($plan->projections === null && $plan->selectCols === null) {
                         refuse('E_SQL_SHAPE', 'DISTINCT requires an explicit typed projection', $step['pos']);
                     }
+                    // DISTINCT keeps the FIRST element of each run in sorted order; SQL's `SELECT DISTINCT proj ... ORDER BY <column not in proj>` is refused by PostgreSQL (42P10) and MySQL 8 (3065) and answers with an unspecified representative row on MariaDB. A loud refusal is acceptable and a silent misordering is not, so the step stays in memory (CPP-C60).
+                    if ($plan->orderBy !== []) {
+                        refuse('E_SQL_SHAPE', 'DISTINCT after a sort keeps the first of each run in sorted order, which SELECT DISTINCT ... ORDER BY does not promise; run the DISTINCT in memory', $step['pos']);
+                    }
                     $plan->distinct = true;
                     break;
 
@@ -4004,11 +4035,19 @@ final class Translator
                     // sorts are stable, so the earlier one is the later one's
                     // tie-breaker, and the later one's keys go FIRST in the
                     // ORDER BY (review 2026-09-15 finding V).
-                    $plan = $this->ensureDerived($plan,
-                        $plan->limit !== null || $plan->offset !== null
+                    $wraps = $plan->limit !== null || $plan->offset !== null
                         || ($plan->groupBy === null
                             && ($plan->projections !== null || $plan->selectCols !== null
-                                || $plan->distinct)));
+                                || $plan->distinct));
+                    // Sorts are stable, so an earlier sort is the later one's tie-break; a
+                    // derived table with no LIMIT beside its ORDER BY does not keep it, and
+                    // its keys may not even be columns the outer level can name.
+                    if (($wraps && $plan->orderBy !== [] && $plan->limit === null && $plan->offset === null)
+                        || $plan->orderDropped) {
+                        refuse('E_SQL_SHAPE', 'a sort over a projection of sorted rows loses the earlier sort, '
+                            . 'which is its tie-break: a derived table does not keep an ORDER BY', $step['pos']);
+                    }
+                    $plan = $this->ensureDerived($plan, $wraps);
                     $before = count($plan->orderBy);
                     $this->analyzeSortStep($step, $plan);
                     $added = array_slice($plan->orderBy, $before);
@@ -4043,6 +4082,15 @@ final class Translator
                         $this->paramKinds = $keepKinds;
                         $this->caveats = $keepCaveats;
                         $this->nodes = $keepNodes;
+                    }
+                    // A join returns its rows in no order, and SEL's are the left list's:
+                    // rows sorted with no LIMIT beside the ORDER BY (which a derived table
+                    // drops) cannot pass through a JOIN carrying their sort. After the
+                    // earlier steps' own refusals, which come first as written.
+                    if ($plan->orderDropped
+                        || ($plan->orderBy !== [] && $plan->limit === null && $plan->offset === null)) {
+                        refuse('E_SQL_SHAPE', 'a ' . $name . ' over sorted rows would return them in no order, '
+                            . "where SEL has the left list's order", $step['pos']);
                     }
                     $plan = $this->ensureDerived($plan, $this->planHasRowsAbove($plan));
                     if (count($args) !== 3 && count($args) !== 5) {

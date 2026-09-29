@@ -77,10 +77,24 @@ not UTF-8 is still openable by SBCL's own (utf-8 with replacement) path handling
                       (vector-push-extend b line))))
     (and any (coerce line '(simple-array (unsigned-byte 8) (*))))))
 
-(defun main ()
+(defun usage-error (control &rest args)
+  "A misused command line: one plain line on stderr, status 2, nothing on stdout
+(never an unhandled-condition banner)."
+  (format *error-output* "sel: ~?~%" control args)
+  (finish-output *error-output*)
+  (sb-ext:exit :code 2 :abort t))
+
+(defun main-1 ()
   (let* ((all (mapcar #'argument-octets (script-args)))
          (want-deps (find "--deps" all :key #'octets-ascii :test #'equal))
          (args (remove "--deps" all :key #'octets-ascii :test #'equal)))
+
+    (let ((flag (and (first args) (octets-ascii (first args)))))
+      (when (and (equal flag "-e") (null (second args)))
+        (usage-error "-e needs an expression"))
+      (when (and flag (> (length flag) 1) (char= (char flag 0) #\-)
+                 (not (member flag '("-e" "--functions") :test #'string=)))
+        (usage-error "unknown option ~a" flag)))
 
     (when (equal (and (first args) (octets-ascii (first args))) "--functions")
       (format t "~{~a~%~}" (sel:function-names))
@@ -89,7 +103,12 @@ not UTF-8 is still openable by SBCL's own (utf-8 with replacement) path handling
     (let ((source (cond ((and (equal (and (first args) (octets-ascii (first args))) "-e")
                               (second args))
                          (second args))
-                        ((first args) (read-file-octets (octets-path (first args))))
+                        ((first args)
+                         (handler-case (read-file-octets (octets-path (first args)))
+                           (file-error ()
+                             (usage-error "cannot read ~a" (octets-path (first args))))
+                           (stream-error ()
+                             (usage-error "cannot read ~a" (octets-path (first args))))))
                         (t nil))))
       (if source
           (handler-case
@@ -115,3 +134,8 @@ not UTF-8 is still openable by SBCL's own (utf-8 with replacement) path handling
                         (format t "~a~%" (show (sel:run (sel:compile-source text) root)))))
                   (sel:sel-error (e) (report e))))))))
     (sb-ext:exit :code 0)))
+
+(defun main ()
+  ;; A reader that goes away (`sel --functions | head`) is not an error of ours.
+  (handler-case (main-1)
+    (sb-int:broken-pipe () (sb-ext:exit :code 0 :abort t))))

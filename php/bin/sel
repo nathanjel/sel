@@ -45,11 +45,28 @@ if (($args[0] ?? '') === '--functions') {
     exit(0);
 }
 
+// Misuse is a controlled refusal: one plain line on stderr, nothing on stdout,
+// a small non-zero status -- never a PHP warning or a status of 255.
+function usage(string $message): void
+{
+    fwrite(STDERR, "sel: {$message}\n");
+    exit(2);
+}
+
 $source = null;
 if (($args[0] ?? '') === '-e') {
-    $source = $args[1] ?? '';
+    if (!isset($args[1])) {
+        usage('-e needs an expression');
+    }
+    $source = $args[1];
 } elseif ($args) {
+    if (!is_file($args[0]) || !is_readable($args[0])) {
+        usage("cannot read {$args[0]}");
+    }
     $source = file_get_contents($args[0]);
+    if ($source === false) {
+        usage("cannot read {$args[0]}");
+    }
 }
 
 if ($source !== null) {

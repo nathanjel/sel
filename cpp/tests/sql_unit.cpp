@@ -287,6 +287,66 @@ int main() {
     }
   }
 
+  // A joined row names its left side after the variable the pipeline started from
+  // (spec 7.4), so a continuation whose LINK is NOT its first step must still be fed
+  // the rows under that name -- and a step that also reads the name (a self-join) must
+  // not be split off, or it would read the cut rows where run() reads the relation.
+  // The database is stood in for by the SQL prefix's own AST evaluated in memory. Also
+  // pinned here: a sorted, limited relation is never grouped in SQL (the GROUP BY would
+  // lose the groups' order), the grouping runs in memory over rows SQL sorted.
+  {
+    const Bindings link_bindings({{"ORDERS", Binding::relation(
+        "orders", "o",
+        {{"ID", Binding::column("id", "o", SqlKind::Num)},
+         {"CUSTOMER_ID", Binding::column("customer_id", "o", SqlKind::Num)},
+         {"NAME", Binding::column("name", "o", SqlKind::Text)}})},
+        {"CUSTOMERS", Binding::relation(
+        "customers", "c",
+        {{"ID", Binding::column("id", "c", SqlKind::Num)},
+         {"NAME", Binding::column("name", "c", SqlKind::Text)}})}});
+    const sel::Value link_orders = sel::evaluate(
+        "LIST(RECORD('id', '1', 'customer_id', '7', 'name', 'alpha'), "
+        "RECORD('id', '2', 'customer_id', '7', 'name', 'gamma'), "
+        "RECORD('id', '3', 'customer_id', '9', 'name', 'Alpha'), "
+        "RECORD('id', '4', 'customer_id', '9', 'name', 'delta'), "
+        "RECORD('id', '5', 'customer_id', '11', 'name', 'zeta'), "
+        "RECORD('id', '6', 'customer_id', '11', 'name', 'eta'))");
+    const sel::Value link_customers = sel::evaluate(
+        "LIST(RECORD('id', '7', 'name', 'ann'), RECORD('id', '9', 'name', 'bob'), "
+        "RECORD('id', '11', 'name', 'cy'))");
+    const Shape link_shapes[] = {
+        {"ORDERS .> SORT_BY(_[\"id\"]) .> TAKE(4) .> FILTER(COUNT(SPLIT(_[\"name\"], \"a\")) > 0) .> LINK(CUSTOMERS, _1[\"customer_id\"] == _2[\"id\"]) .> MAP(RECORD(\"n\", _[\"ORDERS\"][\"name\"], \"c\", _[\"CUSTOMERS\"][\"name\"]))", "hybrid"},
+        {"ORDERS .> SORT_BY(_[\"id\"]) .> TAKE(4) .> LINK(CUSTOMERS, _1[\"customer_id\"] == _2[\"id\"] AND COUNT(SPLIT(_1[\"name\"], \"a\")) > 0) .> MAP(RECORD(\"n\", _[\"ORDERS\"][\"name\"], \"c\", _[\"CUSTOMERS\"][\"name\"]))", "hybrid"},
+        {"ORDERS .> SORT_BY(_[\"id\"]) .> TAKE(4) .> LINK(ORDERS, O, P, O[\"id\"] + 2 == P[\"id\"] AND COUNT(SPLIT(O[\"name\"], \"a\")) > 0) .> MAP(RECORD(\"o\", _[\"O\"][\"id\"], \"p\", _[\"P\"][\"id\"]))", "hybrid"},
+        {"ORDERS .> SORT_BY(_[\"id\"], \"DESC\") .> TAKE(5) .> BUCKET(_[\"customer_id\"], RECORD(\"c\", _K, \"n\", COUNT(_)))", "hybrid"},
+    };
+    for (const Shape& shape : link_shapes) {
+      const sel::Program program = sel::compile(shape.source);
+      const sel::sql::HybridPlan plan = Sql::plan_hybrid(program, "mariadb", link_bindings);
+      const std::string kind = plan.pure_sql ? "pure_sql" : plan.pure_memory ? "pure_memory" : "hybrid";
+      if (kind != shape.kind) {
+        std::cerr << shape.source << ": expected a " << shape.kind << " plan, got " << kind << "\n";
+        return 1;
+      }
+      const auto context = [&] {
+        sel::Value c = sel::Value::none();
+        c.set("ORDERS", link_orders);
+        c.set("CUSTOMERS", link_customers);
+        return c;
+      };
+      const auto prefix_in_memory = [&](const std::string&, const std::vector<sel::Value>&) {
+        sel::Value c = context();
+        return sel::Program("", plan.sql_prefix_ast).run(c);
+      };
+      const std::string want = outcome([&] { sel::Value c = context(); return program.run(c); });
+      const std::string got = outcome([&] { return Sql::execute_hybrid(plan, prefix_in_memory, context()); });
+      if (got != want) {
+        std::cerr << shape.source << ": the executed plan answers " << got << ", run() " << want << "\n";
+        return 1;
+      }
+    }
+  }
+
   // The runner contract (finding AK): the statement in `params` mode with
   // `bindings()` in placeholder order -- text literals as `?`, numbers inlined
   // -- in every host, so a driver binds what it is handed as it is. Lisp handed

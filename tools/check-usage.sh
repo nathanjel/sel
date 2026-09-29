@@ -5,6 +5,8 @@
 #
 #   tools/check-usage.sh                  every category with a LIVE marker
 #   tools/check-usage.sh sql-star sql-eav only these
+#   SEL_RECORD=1 tools/check-usage.sh     rewrite examples/*/output.txt from what the hosts print,
+#                                         when they agree and the change is intended
 #
 # WHY A LANE OF ITS OWN. tools/check-examples.sh runs examples that need nothing
 # but the host. These need PostgreSQL, MariaDB and SQLite, and a driver for each
@@ -94,9 +96,17 @@ if [ "${1:-}" = "--inside" ]; then
     # changed.
     if [ -n "$ref" ] && [ -f "examples/$cat/output.txt" ] \
        && ! diff -u "examples/$cat/output.txt" "$WORK/$cat.$ref" > "$WORK/$cat.output.diff"; then
-      printf 'FAIL %s: the hosts no longer print examples/%s/output.txt (--- recorded, +++ %s)\n' "$cat" "$cat" "$ref"
-      sed 's/^/       /' "$WORK/$cat.output.diff" | head -20
-      status=1
+      if [ -n "${SEL_RECORD:-}" ] && [ "$agreed" -eq "$(echo $HOSTS | wc -w)" ]; then
+        # SEL_RECORD=1: the hosts agree with each other and the change is intended
+        # (a translation changed by design), so the transcript is rewritten from
+        # what they print. Never on a disagreement; that is the failure to look at.
+        cat "$WORK/$cat.$ref" > "examples/$cat/output.txt"
+        printf 'recorded %s: examples/%s/output.txt rewritten from %s\n' "$cat" "$cat" "$ref"
+      else
+        printf 'FAIL %s: the hosts no longer print examples/%s/output.txt (--- recorded, +++ %s)\n' "$cat" "$cat" "$ref"
+        sed 's/^/       /' "$WORK/$cat.output.diff" | head -20
+        status=1
+      fi
     fi
     printf 'usage: %-15s %d hosts agree (%s)\n' "$cat" "$agreed" "$HOSTS"
   done
@@ -166,4 +176,5 @@ done
 docker run --rm --network host -u "$(id -u):$(id -g)" -v "$ROOT:$ROOT" -w "$ROOT" \
   -e SEL_DB_HOST=127.0.0.1 -e SEL_DB_USER=sel -e SEL_DB_PASSWORD="$PASS" \
   -e SEL_DB_POSTGRESQL_PORT="$PG_PORT" -e SEL_DB_MARIADB_PORT="$MARIA_PORT" \
+  -e SEL_RECORD="${SEL_RECORD:-}" \
   "$IMAGE" tools/check-usage.sh --inside $CATEGORIES

@@ -40,19 +40,31 @@ final class Args
     /** @return array<string,mixed> */
     public function node(int $i): array
     {
-        return $this->nodes[$i];
+        return $this->nodes[$i] ?? $this->missing($i);
     }
 
     /** @return array<string,mixed> */
     public function posOf(int $i): array
     {
-        return $this->nodes[$i]['pos'];
+        return $this->nodes[$i]['pos'] ?? $this->missing($i);
+    }
+
+    /**
+     * Reading an argument the call does not have is the caller's misuse, and it is
+     * E_BAD_ARG at the call (spec/SPEC.md §8.1), never a PHP warning or a TypeError.
+     *
+     * @return never
+     */
+    private function missing(int $i): never
+    {
+        $n = count($this->nodes);
+        fail('E_BAD_ARG', "{$this->name} was called with {$n} argument(s); argument index {$i} does not exist", $this->pos);
     }
 
     public function val(int $i): Value
     {
         if (!isset($this->vals[$i])) {
-            $this->vals[$i] = Evaluator::evalNode($this->nodes[$i], $this->ctx);
+            $this->vals[$i] = Evaluator::evalNode($this->nodes[$i] ?? $this->missing($i), $this->ctx);
         }
         return $this->vals[$i];
     }
@@ -114,7 +126,7 @@ final class Args
      */
     public function symbol(int $i): string
     {
-        $n = $this->nodes[$i];
+        $n = $this->nodes[$i] ?? $this->missing($i);
         if ($n['t'] !== 'var' || !empty($n['grouped'])) {
             $k = $i + 1;
             fail('E_EXPECT_SYMBOL', "{$this->name} argument {$k} must be a plain name", $n['pos']);
@@ -124,7 +136,7 @@ final class Args
 
     public function isSymbol(int $i): bool
     {
-        $n = $this->nodes[$i];
+        $n = $this->nodes[$i] ?? $this->missing($i);
         return $n['t'] === 'var' && empty($n['grouped']);
     }
 }

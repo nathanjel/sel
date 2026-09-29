@@ -28,6 +28,15 @@ func NewArgs(node *Node, ctx *Context) *Args {
 	}
 }
 
+// has refuses an argument the call does not have: SPEC 8.1, a registered function
+// that reads past the count gets E_BAD_ARG at the call, not an index-out-of-range
+// panic that escapes Run.
+func (a *Args) has(i int) {
+	if i < 0 || i >= len(a.nodes) {
+		fail("E_BAD_ARG", fmt.Sprintf("%s was called with %d argument(s) and read argument %d", a.name, len(a.nodes), i+1), a.pos)
+	}
+}
+
 func (a *Args) Count() int {
 	return len(a.nodes)
 }
@@ -45,14 +54,17 @@ func (a *Args) Ctx() *Context {
 }
 
 func (a *Args) Node(i int) *Node {
+	a.has(i)
 	return a.nodes[i]
 }
 
 func (a *Args) PosOf(i int) Pos {
+	a.has(i)
 	return a.nodes[i].Pos
 }
 
 func (a *Args) Val(i int) *Value {
+	a.has(i)
 	if a.vals[i] == nil {
 		a.vals[i] = EvalNode(a.nodes[i], a.ctx)
 	}
@@ -96,6 +108,7 @@ func (a *Args) NonNegInt(i int) int64 {
 }
 
 func (a *Args) Symbol(i int) string {
+	a.has(i)
 	n := a.nodes[i]
 	if n.T != NodeVar || n.Grouped {
 		fail("E_EXPECT_SYMBOL", fmt.Sprintf("%s argument %d must be a plain name", a.name, i+1), n.Pos)
@@ -104,6 +117,7 @@ func (a *Args) Symbol(i int) string {
 }
 
 func (a *Args) IsSymbol(i int) bool {
+	a.has(i)
 	n := a.nodes[i]
 	return n.T == NodeVar && !n.Grouped
 }

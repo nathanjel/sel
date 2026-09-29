@@ -81,25 +81,59 @@ func (p *Program) Run(ctx *Value) (result *Value, err error) {
 	return EvalNode(target, c), nil
 }
 
+// Dependencies returns the variables the program reads before it has definitely
+// assigned them (SPEC 8). The walk follows evaluation order and carries the set of
+// names definitely assigned so far; an assignment counts as definite only if it runs
+// whatever the data: never inside the right side of AND/OR/??/??? or in an aggregate
+// body, and inside IF/COND only when every branch makes it.
 func (p *Program) Dependencies() []string {
 	reads := make(map[string]bool)
-	assigned := make(map[string]bool)
 	bound := make(map[string]bool)
-	collectDependencies(p.ast, bound, reads, assigned, 1)
+	collectDependencies(p.ast, bound, reads, map[string]bool{}, 1)
 
-	var out []string
+	out := make([]string, 0, len(reads))
 	for r := range reads {
-		if !assigned[r] {
-			out = append(out, r)
-		}
+		out = append(out, r)
 	}
 	sort.Strings(out)
 	return out
 }
 
-func collectDependencies(node *Node, bound map[string]bool, reads map[string]bool, assigned map[string]bool, depth int) {
+func copyNames(m map[string]bool) map[string]bool {
+	out := make(map[string]bool, len(m)+2)
+	for k := range m {
+		out[k] = true
+	}
+	return out
+}
+
+// meetNames is the intersection: what every path definitely assigned.
+func meetNames(sets []map[string]bool) map[string]bool {
+	out := make(map[string]bool)
+	if len(sets) == 0 {
+		return out
+	}
+	for k := range sets[0] {
+		all := true
+		for _, o := range sets[1:] {
+			if !o[k] {
+				all = false
+				break
+			}
+		}
+		if all {
+			out[k] = true
+		}
+	}
+	return out
+}
+
+// collectDependencies walks node in evaluation order. def is the set of names
+// definitely assigned before it; the return value is the set after it. def is
+// never mutated in place, so a caller that needs the "before" set keeps it.
+func collectDependencies(node *Node, bound map[string]bool, reads map[string]bool, def map[string]bool, depth int) map[string]bool {
 	if node == nil {
-		return
+		return def
 	}
 	if depth > MAX_DEPTH {
 		fail("E_DEPTH", "expression nested too deeply", node.Pos)
@@ -107,32 +141,82 @@ func collectDependencies(node *Node, bound map[string]bool, reads map[string]boo
 
 	switch node.T {
 	case NodeVar:
-		if !bound[node.S] {
+		if !bound[node.S] && !def[node.S] {
 			reads[node.S] = true
 		}
+		return def
 
 	case NodeAssign:
-		target := node.L
-		for target.T == NodeIndex {
-			collectDependencies(target.R, bound, reads, assigned, depth+1)
-			target = target.L
+		// The index expressions of a target run once, in order, before the right side
+		// (SPEC 5.7); a compound assignment also reads its target first.
+		root := node.L
+		var idx []*Node
+		for root.T == NodeIndex {
+			idx = append(idx, root.R)
+			root = root.L
 		}
-		if node.L.T != NodeVar || node.S != "=" {
-			if !bound[target.S] {
-				reads[target.S] = true
+		if node.S != "=" {
+			if !bound[root.S] && !def[root.S] {
+				reads[root.S] = true
 			}
 		}
-		assigned[target.S] = true
-		collectDependencies(node.R, bound, reads, assigned, depth+1)
+		for i := len(idx) - 1; i >= 0; i-- {
+			def = collectDependencies(idx[i], bound, reads, def, depth+1)
+		}
+		def = collectDependencies(node.R, bound, reads, def, depth+1)
+		if !def[root.S] {
+			def = copyNames(def)
+			def[root.S] = true
+		}
+		return def
 
 	case NodeCall:
+		switch node.S {
+		case "IF":
+			// IF(cond, then [, else]): the condition always runs; a branch is definite
+			// only if both make the assignment (a missing else makes none).
+			if len(node.Items) >= 2 {
+				def = collectDependencies(node.Items[0], bound, reads, def, depth+1)
+				thenDef := collectDependencies(node.Items[1], bound, reads, def, depth+1)
+				elseDef := def
+				if len(node.Items) >= 3 {
+					elseDef = collectDependencies(node.Items[2], bound, reads, def, depth+1)
+				}
+				return meetNames([]map[string]bool{thenDef, elseDef})
+			}
+		case "COND":
+			// COND(c1, v1, c2, v2, ..., [default]): conditions run in order until one
+			// matches; with no default, the fall-through path assigns only what the
+			// conditions did.
+			var paths []map[string]bool
+			cur := def
+			n := len(node.Items)
+			for i := 0; i+1 < n; i += 2 {
+				cur = collectDependencies(node.Items[i], bound, reads, cur, depth+1)
+				paths = append(paths, collectDependencies(node.Items[i+1], bound, reads, cur, depth+1))
+			}
+			if n%2 == 1 {
+				paths = append(paths, collectDependencies(node.Items[n-1], bound, reads, cur, depth+1))
+			} else {
+				paths = append(paths, cur)
+			}
+			if len(paths) > 0 {
+				return meetNames(paths)
+			}
+			return cur
+		}
+
 		form := BindingForm(node.S, node.Items, node.Spec)
 		if form == nil {
 			for _, a := range node.Items {
-				collectDependencies(a, bound, reads, assigned, depth+1)
+				def = collectDependencies(a, bound, reads, def, depth+1)
 			}
-			return
+			return def
 		}
+		// Which arguments run inside the binder, and what they see, is decided once, by
+		// the manifest's forms. An argument outside the binder runs once, in order; one
+		// inside runs per element (possibly zero times), so what it assigns is never
+		// definite afterwards.
 		var inner map[string]bool
 		for i, arg := range node.Items {
 			scope := form.Scopes[i]
@@ -149,28 +233,37 @@ func collectDependencies(node *Node, bound map[string]bool, reads map[string]boo
 						inner[b] = true
 					}
 				}
-				collectDependencies(arg, inner, reads, assigned, depth+1)
+				collectDependencies(arg, inner, reads, copyNames(def), depth+1)
 			} else {
-				collectDependencies(arg, bound, reads, assigned, depth+1)
+				def = collectDependencies(arg, bound, reads, def, depth+1)
 			}
 		}
+		return def
 
 	case NodeSeq, NodeList:
 		for _, item := range node.Items {
-			collectDependencies(item, bound, reads, assigned, depth+1)
+			def = collectDependencies(item, bound, reads, def, depth+1)
 		}
+		return def
 
 	case NodeIndex:
-		collectDependencies(node.L, bound, reads, assigned, depth+1)
-		collectDependencies(node.R, bound, reads, assigned, depth+1)
+		def = collectDependencies(node.L, bound, reads, def, depth+1)
+		return collectDependencies(node.R, bound, reads, def, depth+1)
 
 	case NodeBin:
-		collectDependencies(node.L, bound, reads, assigned, depth+1)
-		collectDependencies(node.R, bound, reads, assigned, depth+1)
+		def = collectDependencies(node.L, bound, reads, def, depth+1)
+		switch node.S {
+		case "AND", "OR", "??", "???":
+			// The right side may not run, so nothing it assigns is definite.
+			collectDependencies(node.R, bound, reads, copyNames(def), depth+1)
+			return def
+		}
+		return collectDependencies(node.R, bound, reads, def, depth+1)
 
 	case NodeUn:
-		collectDependencies(node.L, bound, reads, assigned, depth+1)
+		return collectDependencies(node.L, bound, reads, def, depth+1)
 	}
+	return def
 }
 
 func Eval(source string, ctx *Value) (*Value, error) {

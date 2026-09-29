@@ -2344,3 +2344,71 @@ non-NIL results (each worker returns NIL when it saw nothing wrong)."
                      (unless (string= (sel:as-text (sel:evaluate "SUM((1, 2, 3), _ * 2)")) "12")
                        (return "the working client saw a wrong answer"))))))))
     (is (null problems) "~{~a~%~}" (subseq problems 0 (min 3 (length problems))))))
+
+
+;;; Gate triage: a value with children and no scalar sorts by scalar context
+;;; (spec 3.2 / 7.3): a record by its first field, ties in input order.
+(test records-sort-by-their-first-field-and-ties-keep-input-order
+  (flet ((joined (e)
+           (sel:as-text (sel:evaluate (format nil "JOIN(MAP(~a, _[\"v\"]), \",\")" e))))
+         (rows () "LIST(RECORD(\"k\", 3, \"v\", \"c\"), RECORD(\"k\", 1, \"v\", \"a\"), RECORD(\"k\", 2, \"v\", \"b\"))")
+         (ties () "LIST(RECORD(\"k\", 1, \"v\", \"a\"), RECORD(\"k\", 2, \"v\", \"b\"), RECORD(\"k\", 1.0, \"v\", \"c\"), RECORD(\"k\", \"1\", \"v\", \"d\"))"))
+    (is (string= "a,b,c" (joined (format nil "~a .> SORT()" (rows)))))
+    (is (string= "c,b,a" (joined (format nil "~a .> SORT_DESC()" (rows)))))
+    (is (string= "a,c,d,b" (joined (format nil "~a .> SORT()" (ties)))))
+    (is (string= "b,a,c,d" (joined (format nil "~a .> SORT_DESC()" (ties)))))
+    (is (string= "b,a,c,d" (joined (format nil "~a .> TOP_DESC(4)" (ties)))))))
+
+;;; --- T12 host API (2026-09-29) ------------------------------------------------
+
+(defun deps-of (source)
+  (sel:dependencies (sel:compile-source source)))
+
+(test dependencies-are-flow-sensitive
+  ;; spec/SPEC.md 8: a variable is a dependency when a read can happen before it
+  ;; has DEFINITELY been assigned, in evaluation order.
+  (is (equal '("A") (deps-of "A + 1; A = 2")))
+  (is (equal '("X") (deps-of "X += 1")))
+  (is (equal '("A") (deps-of "A[1] += 1")))
+  (is (null (deps-of "A[1] = 2")))
+  (is (equal '("A") (deps-of "A = A + 1")))
+  (is (equal '("B") (deps-of "A = 1; A + B")))
+  (is (equal '("A" "X") (deps-of "IF(X, A = 1, 0); A")))
+  (is (equal '("X") (deps-of "IF(X, A = 1, A = 2); A")))
+  (is (equal '("A" "X") (deps-of "X AND (A = 1); A")))
+  (is (equal '("A" "X") (deps-of "X ?? (A = 1); A")))
+  (is (equal '("A" "L") (deps-of "MAP(L, A = _); A")))
+  (is (equal '("X" "Y") (deps-of "COND(X, A = 1, Y, A = 2, A = 3); A")))
+  (is (null (deps-of "LEFT(\"abc\", (N = 2)); N")))
+  ;; a name assigned inside a body is definite for the rest of that body
+  (is (equal '("L") (deps-of "MAP(L, (B = _; B))")))
+  ;; a condition that always runs makes its assignment definite in both branches
+  (is (null (deps-of "IF((C = TRUE), C, C)"))))
+
+(test compile-source-refuses-non-text-with-bad-arg
+  (dolist (bad (list 12 nil :sym '(1 2) 1.5d0))
+    (handler-case (progn (sel:compile-source bad) (fail "compiled ~s" bad))
+      (sel:sel-error (e) (is (string= "E_BAD_ARG" (sel:sel-error-code e)))))))
+
+(test host-function-argument-out-of-range-is-bad-arg
+  (sel:register-function "T12_PEEK" 0 1
+                         (lambda (a) (sel::args-val a 5)))
+  (unwind-protect
+       (progn
+         (handler-case (sel:evaluate "T12_PEEK(1)")
+           (sel:sel-error (e) (is (string= "E_BAD_ARG" (sel:sel-error-code e)))))
+         (handler-case (sel:evaluate "T12_PEEK()")
+           (sel:sel-error (e) (is (string= "E_BAD_ARG" (sel:sel-error-code e))))))
+    (remhash "T12_PEEK" sel::*registry*)
+    (remhash "T12_PEEK" sel::*host-functions*)))
+
+(test cli-misuse-is-one-plain-diagnostic
+  (dolist (line '("lisp/bin/sel -e"
+                  "lisp/bin/sel --deps -e"
+                  "lisp/bin/sel /no/such/dir/no-such-file.sel"
+                  "lisp/bin/sel --no-such-flag"))
+    (multiple-value-bind (out rc) (run-cli line)
+      (is (member rc '(1 2)) "~a: exit ~a" line rc)
+      (is (starts-with-p "sel: " out) "~a: ~a" line out)
+      (is (not (search "Unhandled" out)) "~a: ~a" line out)
+      (is (not (search "SB-" out)) "~a: ~a" line out))))

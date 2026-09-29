@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"sync/atomic"
 
 	"github.com/nathanjel/sel/go/internal/decimal"
 	"github.com/nathanjel/sel/go/internal/utf8"
@@ -48,6 +49,14 @@ type Value struct {
 	binVal  []byte
 	decVal  *decimal.Dec
 
+	// Derived caches. strVal and decVal above are fixed when a Value is built;
+	// what a READ derives from them (the text of a number, the number in a
+	// text) is published here through atomic pointers, so goroutines running
+	// programs over one shared read-only context never write a plain field
+	// (GO-C6). A duplicate compute is benign: both results are identical.
+	strCache atomic.Pointer[string]
+	decCache atomic.Pointer[decimal.Dec]
+
 	// Fast path for shaped records and lists
 	shape    *RecordShape
 	storage  []*Value
@@ -61,7 +70,12 @@ type Value struct {
 
 func (v *Value) Scalar() string {
 	if v.Kind == KindText && v.strVal == "" && v.decVal != nil {
-		v.strVal = decimal.Format(v.decVal)
+		if p := v.strCache.Load(); p != nil {
+			return *p
+		}
+		str := decimal.Format(v.decVal)
+		v.strCache.Store(&str)
+		return str
 	}
 	return v.strVal
 }
@@ -442,11 +456,14 @@ func (v *Value) AsDecimal(pos Pos) *decimal.Dec {
 	if s.decVal != nil {
 		return s.decVal
 	}
+	if d := s.decCache.Load(); d != nil {
+		return d
+	}
 	d := decimal.Parse(s.strVal, utf8.Pos(pos), fail)
 	if d == nil {
 		fail("E_NOT_NUM", fmt.Sprintf("not a number: %q", s.strVal), pos)
 	}
-	s.decVal = d
+	s.decCache.Store(d)
 	return d
 }
 
@@ -468,14 +485,14 @@ func (v *Value) LooksNumeric() bool {
 	if s.Kind != KindText {
 		return false
 	}
-	if s.decVal != nil {
+	if s.decVal != nil || s.decCache.Load() != nil {
 		return true
 	}
 	d := decimal.Parse(s.strVal, utf8.Pos{}, func(code, msg string, pos utf8.Pos) {
 		panic(notNumeric{})
 	})
 	if d != nil {
-		s.decVal = d
+		s.decCache.Store(d)
 		return true
 	}
 	return false

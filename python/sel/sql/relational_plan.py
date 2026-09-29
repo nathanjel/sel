@@ -29,6 +29,10 @@ class RelationalPlan:
         self.source_table: Any = ''
         self.source_alias: str | None = None
         self.source_subquery: RelationalPlan | None = None
+        # A derived table with no LIMIT beside its ORDER BY does not keep the order, so a
+        # step that needs the rows in that order (a BUCKET's groups, a LINK's rows, a
+        # later sort's ties) cannot be built on it.
+        self.order_dropped: bool = False
         self.joins: list[JoinPlan] = []
         self.correlate: str | None = None
         self.distinct: bool = False

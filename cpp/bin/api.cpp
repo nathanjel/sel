@@ -4,6 +4,9 @@
 
 #include "../sel.hpp"
 
+#include <sys/wait.h>
+#include <unistd.h>
+
 #include <algorithm>
 #include <functional>
 #include <iomanip>
@@ -371,23 +374,66 @@ int main() {
     say("host.fn.refuse.not-callable", r);
   }
   // Reading an argument the call does not have is undefined behaviour in this host
-  // today (CPP-C13) and can take the process down: flush everything so far, so a
-  // crash here shows up as one missing line instead of an empty report.
-  std::cout << join(out, "\n") << "\n" << std::flush;
-  out.clear();
+  // today (CPP-C13) and can take the process down. Ask in a child process, so a crash
+  // is reported as this one probe's answer ("host:signal N") and the rest of the report
+  // still prints.
   register_function("HOST_OOB", 1, 2, [](HostArgs& a) { return Value::text(a.text(a.count() > 1 ? 1 : 5)); });
   {
     std::string r = "no error";
-    try {
-      evaluate("HOST_OOB(\"x\")");
-    } catch (const SelError& e) {
-      r = e.code();
-    } catch (const std::exception&) {
-      r = "host:exception";
+    int fd[2];
+    if (pipe(fd) == 0) {
+      std::cout.flush();
+      const pid_t pid = fork();
+      if (pid == 0) {
+        close(fd[0]);
+        std::string code = "no error";
+        try {
+          evaluate("HOST_OOB(\"x\")");
+        } catch (const SelError& e) {
+          code = e.code();
+        } catch (const std::exception&) {
+          code = "host:exception";
+        }
+        const ssize_t w = write(fd[1], code.data(), code.size());
+        (void)w;
+        _exit(0);
+      }
+      close(fd[1]);
+      char buf[128];
+      const ssize_t n = read(fd[0], buf, sizeof buf);
+      close(fd[0]);
+      int status = 0;
+      waitpid(pid, &status, 0);
+      if (WIFSIGNALED(status)) r = "host:signal " + std::to_string(WTERMSIG(status));
+      else if (n > 0) r.assign(buf, static_cast<std::size_t>(n));
     }
     say("host.fn.arg.out-of-range", r);
   }
 
-  if (!out.empty()) std::cout << join(out, "\n") << "\n";
+  // --- T12 (CPP-C15): a host-supplied value nested past the cap, handed to RECORD beside a
+  // key that is not text. Arguments are evaluated first and coerced after (spec/SPEC.md §6.2),
+  // so the key's E_NOT_TEXT wins; copying the over-deep value (E_DEPTH) happens only once the
+  // arguments are known good. C++ built the pair in one expression and let the copy run first.
+  {
+    Value v = Value::text("x");
+    for (int i = 0; i < 300; i++) {
+      Value p = Value::none();
+      p.set("1", v);
+      v = p;
+    }
+    Value ctx = Value::none();
+    ctx.set("V", v);
+    const auto at = [&](const std::string& src) {
+      try {
+        compile(src).run(ctx);
+        return std::string("no error");
+      } catch (const SelError& e) {
+        return e.code() + " " + std::to_string(e.line()) + ":" + std::to_string(e.col());
+      }
+    };
+    say("program.run.over-deep-host-value.key-error-first", at("RECORD(TRUE, V)") + "|" + at("RECORD(\"k\", V)"));
+  }
+
+  std::cout << join(out, "\n") << "\n";
   return 0;
 }

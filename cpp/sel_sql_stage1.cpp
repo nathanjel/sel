@@ -503,6 +503,19 @@ void require_numeric(const SNode& n, sel::Value& root) {
   }
 }
 
+std::optional<std::string> numeric_text_constant(const SNode& n, sel::Value& root) {
+  const NodePtr node = n.to_node();
+  if (!node) return std::nullopt;
+  try {
+    const Value v = Program("", node).run(root);
+    if (!v.is_text()) return std::nullopt;
+    require_number(v, n.pos());
+    return Value::num(v.as_text(n.pos())).as_text(n.pos());
+  } catch (const SelError&) {
+    return std::nullopt;
+  }
+}
+
 std::int32_t constant_scale(const SNode& n, sel::Value& root) {
   const NodePtr node = n.to_node();
   if (!node) return 0;   // unreachable: is_constant refuses anything with a clist

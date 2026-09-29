@@ -32,7 +32,8 @@
   (key-map (make-hash-table :test #'equal) :type hash-table)
   (size 0 :type fixnum))
 
-(defvar *shape-cache* (make-hash-table :test #'equal))
+(defvar *shape-cache* (make-hash-table :test #'equal :synchronized t))
+(defvar *shape-lock* (sb-thread:make-mutex :name "sel record shape cache"))
 (defconstant +shape-cache-entries+ 256)
 (defconstant +shape-cache-max-keys+ 256)
 (defconstant +shape-cache-max-chars+ 16384)
@@ -51,9 +52,10 @@
           (when (and (<= sz +shape-cache-max-keys+)
                      (<= (loop for key in canonical sum (length key))
                          +shape-cache-max-chars+))
-            (when (>= (hash-table-count *shape-cache*) +shape-cache-entries+)
-              (clrhash *shape-cache*))
-            (setf (gethash canonical *shape-cache*) shape))
+            (sb-thread:with-mutex (*shape-lock*)
+              (when (>= (hash-table-count *shape-cache*) +shape-cache-entries+)
+                (clrhash *shape-cache*))
+              (setf (gethash canonical *shape-cache*) shape)))
           shape))))
 
 (defstruct (value (:constructor %make-value-raw (kind %scalar children-internal tail count index is-list shape storage dec-val)))

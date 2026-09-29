@@ -1092,8 +1092,31 @@ aggregate's identity value instead, and those differ per aggregate."
 
 ;;; --- operators ------------------------------------------------------------
 
+(defun arithmetic-operand (tr n)
+  "An operand that is a constant TEXT holding a number, in an arithmetic position, is
+that number (PHP-C33): SEL computes with it exactly, and MariaDB and MySQL would read
+the quoted string as a DOUBLE. It is translated as the numeric literal it stands for.
+The text was translated first (its SQL kind is only known then), so the slots it
+bound are taken back, or `params` mode would report a value bound that no
+placeholder uses."
+  (let* ((params (translator-params tr))
+         (kinds (translator-param-kinds tr))
+         (f (walk-node tr n)))
+    (if (and (eq (fragment-kind f) :text)
+             (is-constant n (translator-const-names tr)))
+        (let ((text (numeric-text-constant n (translator-const-root tr))))
+          (if text
+              (progn
+                (setf (translator-params tr) params
+                      (translator-param-kinds tr) kinds)
+                (walk-node tr (lit-node :num text nil (snode-pos n))))
+              f))
+        f)))
+
 (defun translate-unary (tr n)
-  (let ((x (walk-node tr (sel::node-l n)))
+  (let ((x (if (equal (sel::node-s n) "NOT")
+               (walk-node tr (sel::node-l n))
+               (arithmetic-operand tr (sel::node-l n))))
         (op (sel::node-s n)))
     (if (equal op "NOT")
         (setf x (require-bool x (snode-pos (sel::node-l n)) "NOT"))
@@ -1114,8 +1137,9 @@ aggregate's identity value instead, and those differ per aggregate."
   (let ((op (sel::node-s n)))
     (when (equal op "IN") (return-from translate-binary (translate-in tr n)))
     ;; Strictly left then right: parameter slots are numbered in this order.
-    (let ((l (walk-node tr (sel::node-l n)))
-          (r (walk-node tr (sel::node-r n)))
+    (let* ((arith (member op +arithmetic-ops+ :test #'equal))
+           (l (if arith (arithmetic-operand tr (sel::node-l n)) (walk-node tr (sel::node-l n))))
+           (r (if arith (arithmetic-operand tr (sel::node-r n)) (walk-node tr (sel::node-r n))))
           (lpos (snode-pos (sel::node-l n)))
           (rpos (snode-pos (sel::node-r n))))
       (when (member op '("AND" "OR" "XOR") :test #'equal)
@@ -1574,7 +1598,11 @@ value a SQL expression can be" (snode-pos n)))
                        for i from 0
                        ;; Left to right, and the order is load-bearing: slot
                        ;; numbers are allocated in render order.
-                       for f = (walk-node tr arg)
+                       ;; MIN and MAX compare their arguments as numbers: a numeric text
+                       ;; constant is the number, as in arithmetic (PHP-C33).
+                       for f = (if (member name '("MIN" "MAX") :test #'equal)
+                                   (arithmetic-operand tr arg)
+                                   (walk-node tr arg))
                        do (when (eq (fragment-kind f) :list)
                             (refuse "E_SQL_SHAPE"
                                     (format nil "argument to ~a is a list, and a ~
@@ -2608,6 +2636,11 @@ dialect's CANON kind -- the map entry's ret, NUM or TEXT."
      :source-table sub-alias
      :source-alias sub-alias
      :source-subquery plan
+     :order-dropped (or (relational-plan-order-dropped plan)
+                        (and (relational-plan-order-by plan)
+                             (null (relational-plan-limit plan))
+                             (null (relational-plan-offset plan))
+                             t))
      ;; Still named after the pipeline's variable, until a LINK has joined.
      :root-name (if (relational-plan-joins plan) nil (relational-plan-root-name plan))
      :bucket (and (relational-plan-bucket plan) :sealed))))
@@ -2893,6 +2926,17 @@ can say about a bucket on its own."
                    (refuse "E_SQL_SHAPE"
                            "a BUCKET over buckets: SQL keeps a bucket's members only for the projection that ends the grouping"
                            pos))
+                 ;; Groups appear in order of their first member, and the members
+                 ;; were sorted: a GROUP BY returns its groups in no order at all,
+                 ;; and the ORDER BY beneath it is dropped by the servers. The sort
+                 ;; cannot survive, so the step is refused here, at the call and
+                 ;; before its arguments (the first refusal in source order), and a
+                 ;; hybrid plan keeps the sorted rows in SQL and groups them in
+                 ;; memory.
+                 (when (or (relational-plan-order-by plan) (relational-plan-order-dropped plan))
+                   (refuse "E_SQL_SHAPE"
+                           "a BUCKET over sorted rows would return its groups in no order, where SEL has them in the order of their first member in the sorted list"
+                           pos))
                  (when (or (relational-plan-group-by plan)
                            (relational-plan-projections plan)
                            (relational-plan-select-cols plan)
@@ -2962,6 +3006,18 @@ can say about a bucket on its own."
                      (compile-statement tr plan)
                      (setf (translator-params tr) params
                            (translator-param-kinds tr) kinds)))
+                 ;; A join returns its rows in no order, and SEL's are the left
+                 ;; list's: rows sorted with no LIMIT beside the ORDER BY (which a
+                 ;; derived table drops) cannot pass through a JOIN carrying their
+                 ;; sort. After the earlier steps' own refusals, which come first
+                 ;; as written.
+                 (when (or (relational-plan-order-dropped plan)
+                           (and (relational-plan-order-by plan)
+                                (null (relational-plan-limit plan))
+                                (null (relational-plan-offset plan))))
+                   (refuse "E_SQL_SHAPE"
+                           (format nil "a ~a over sorted rows would return them in no order, where SEL has the left list's order" sname)
+                           pos))
                  (when (or (relational-plan-group-by plan)
                            (relational-plan-projections plan)
                            (relational-plan-select-cols plan)
@@ -3145,6 +3201,9 @@ FILTER between: SQL keeps a bucket's members only for the projection that ends t
                  (unless (or (relational-plan-projections plan)
                              (relational-plan-select-cols plan))
                    (refuse "E_SQL_SHAPE" "DISTINCT requires an explicit typed projection" pos))
+                 ;; DISTINCT keeps the FIRST element of each run in sorted order; SQL's `SELECT DISTINCT proj ... ORDER BY <column not in proj>` is refused by PostgreSQL (42P10) and MySQL 8 (3065) and answers with an unspecified representative row on MariaDB. A loud refusal is acceptable and a silent misordering is not, so the step stays in memory (CPP-C60).
+                 (when (relational-plan-order-by plan)
+                   (refuse "E_SQL_SHAPE" "DISTINCT after a sort keeps the first of each run in sorted order, which SELECT DISTINCT ... ORDER BY does not promise; run the DISTINCT in memory" pos))
                  (setf (relational-plan-distinct plan) t))
 
                 ((equal sname "TAKE")
@@ -3180,13 +3239,25 @@ FILTER between: SQL keeps a bucket's members only for the projection that ends t
                  ;; the sorts are stable, so the earlier one is the later one's
                  ;; tie-breaker, and the later one's keys go FIRST in the ORDER
                  ;; BY (review 2026-09-15 finding V).
-                 (when (or (relational-plan-limit plan)
-                           (relational-plan-offset plan)
-                           (and (not (relational-plan-group-by plan))
-                                (or (relational-plan-projections plan)
-                                    (relational-plan-select-cols plan)
-                                    (relational-plan-distinct plan))))
-                   (setf plan (wrap-plan-as-derived-table tr plan)))
+                 (let ((wraps (or (relational-plan-limit plan)
+                                  (relational-plan-offset plan)
+                                  (and (not (relational-plan-group-by plan))
+                                       (or (relational-plan-projections plan)
+                                           (relational-plan-select-cols plan)
+                                           (relational-plan-distinct plan))))))
+                   ;; Sorts are stable, so an earlier sort is the later one's
+                   ;; tie-break; a derived table with no LIMIT beside its ORDER BY
+                   ;; does not keep it, and its keys may not even be columns the
+                   ;; outer level can name.
+                   (when (or (and wraps (relational-plan-order-by plan)
+                                  (null (relational-plan-limit plan))
+                                  (null (relational-plan-offset plan)))
+                             (relational-plan-order-dropped plan))
+                     (refuse "E_SQL_SHAPE"
+                             "a sort over a projection of sorted rows loses the earlier sort, which is its tie-break: a derived table does not keep an ORDER BY"
+                             pos))
+                   (when wraps
+                     (setf plan (wrap-plan-as-derived-table tr plan))))
                  (let ((before (length (relational-plan-order-by plan))))
                    (analyze-sort-step tr step plan)
                    (setf (relational-plan-order-by plan)

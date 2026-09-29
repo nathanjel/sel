@@ -2616,9 +2616,29 @@ The ordinary prefix planner promises:
     `GROUP BY` keeps its groups in the order of first appearance in the sorted
     input, a `LINK` keeps the left order, a `TOP_BY` keeps its ties in the
     earlier sort's order — and SQL text that leans on an inner `ORDER BY`
-    surviving an outer one is not a translation of SEL's stable sort.
+    surviving an outer one is not a translation of SEL's stable sort. The
+    statement is therefore refused with `E_SQL_SHAPE`, at the call of the step
+    that would lose the order: a `BUCKET`, a `LINK` or a `DISTINCT`/`DEDUPE`
+    over sorted rows, and a sort over a projection of sorted rows. A `LIMIT`
+    beside the `ORDER BY` decides *which* rows survive, not the order a `GROUP
+    BY` or a join then returns them in, so it does not lift the refusal; the
+    planner keeps the sorted rows in SQL and runs the step in memory (JS used to
+    answer `E_SQL_UNSUPPORTED` here, and a host that nested the sort in a
+    derived table answered the step in engine order).
+  - **First refusal in source order.** A pipeline is checked step by step as
+    written, and a step's own rule is asked before its arguments are looked at:
+    `ORDERS .> SORT_BY(…) .> BUCKET(_["nope"])` is refused for the `BUCKET` over
+    sorted rows, at the `BUCKET`, and not for the unknown field in its key. Every
+    host answers the same code at the same position (`stmt.order.*` in
+    `sql/cases/51-hybrid-parity.sqlt`; the SQL fuzz lane compares them).
   - **Names.** A joined row in a continuation carries the left side under its
-    own name (`ORDERS`, `orders`), never `_INPUT`; a literal helper that shares
+    own name (`ORDERS`, `orders`), never `_INPUT`, wherever in the continuation
+    the 3-argument `LINK` falls — not only when it is the first step (a `LINK`
+    that already has one in the prefix, or that names its sides itself with five
+    arguments, needs no help). A step of that continuation that also *reads* the
+    source's name (a self-join over the cut rows, `ORDERS .> TAKE(4) .> LINK(ORDERS,
+    …)`) would find the truncated rows where `run()` finds the whole relation, so
+    that split is not made and the join stays in memory; a literal helper that shares
     a name with an explicit binder of the 4- and 5-argument forms is not
     inlined into the binder slot; and `source_tables` reports only what the
     prefix reads — a binder or an assignment target named like a relation is
