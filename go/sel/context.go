@@ -2,19 +2,12 @@
 
 package sel
 
-type PrefilterState struct {
-	Conjuncts []*Node
-	Dropped   bool
-	Errored   bool
-	Passed    []bool
-}
-
 type Context struct {
 	Root                *Value
 	Frames              []map[string]*Value
 	Depth               int
-	JoinPrefilter       *PrefilterState
-	JoinPrefilterReport *PrefilterState
+	JoinPrefilter       *JoinPrefilter
+	JoinPrefilterReport *JoinReport
 }
 
 func NewContext(root *Value) *Context {

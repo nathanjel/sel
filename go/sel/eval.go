@@ -34,14 +34,15 @@ func EvalNode(node *Node, ctx *Context) *Value {
 		ctx.Depth--
 		fail("E_DEPTH", "evaluation nested too deeply", node.Pos)
 	}
-	defer func() {
-		ctx.Depth--
-	}()
 
+	var res *Value
 	if node.MathPlan != nil {
-		return evalMathPlan(node.MathPlan, ctx)
+		res = evalMathPlan(node.MathPlan, ctx)
+	} else {
+		res = dispatch(node, ctx)
 	}
-	return dispatch(node, ctx)
+	ctx.Depth--
+	return res
 }
 
 func dispatch(node *Node, ctx *Context) *Value {

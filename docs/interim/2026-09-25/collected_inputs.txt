@@ -1,0 +1,251 @@
+sel
+
+Python 
+  1. [High] Computed indexes can return a stale field. python/sel/eval.py:273 reuses a cached record slot before evaluating the
+     index expression. MAP(LIST("x","y"), RECORD("x",1,"y",2)[_]) returns [1,1] in Python; the expected result is [1,2]. Reusing a
+     compiled program can also return the previous run’s field.
+
+  2. [High] SQL translation maps a left join binder to the right table. python/sel/sql/translator.py:420 associates both explicit
+     binders with the joined source. For MAP(_["SS"]["VAL"]) after LINK(S, SS, X, …), in-memory evaluation returned 7, while the
+     emitted SQL selected s.val and SQLite returned 9. The same mapping appears in other hosts; this needs a shared fix.
+
+  3. [Medium] TOP_BY loses preserved list keys. python/sel/builtins/aggregate.py:537 renumbers packed filtered lists when supplying
+     _K. TOP_BY(FILTER(LIST(1,2,3), _ > 1), _K $== "2", 1) returns 2 in Python; the specified result, and JavaScript’s result, is
+     3.
+
+  4. [Medium] Unicode case folding creates a SQL qualifier that does not exist in memory. python/sel/sql/translator.py:428 uses
+     Python’s str.upper(), treating ß as SS. A read through _["ß"] raises E_NO_KEY in memory but translates as the SS binder in
+     SQL. PHP correctly refuses that translation, so this also loses host parity.
+
+JS
+
+ 1. High — toNative() drops __proto__ fields. js/src/value.mjs:548 writes record keys into {}. A fromNative() → toNative() round
+     trip loses an own __proto__ key; if its value is a record, it also changes the returned object’s prototype.
+
+  2. Medium — joins discard distinct Unicode field names. js/src/builtins/structure.mjs:305 uses full Unicode uppercasing where the
+     spec requires ASCII case comparison. Joining fields ß and SS, then reading the promoted ß field, raises E_NO_KEY in
+     JavaScript; PHP returns its value. I reproduced this in Python too, so it adds a finding to the earlier Python review.
+
+  3. Medium — binary inputs can change after ingestion or be silently altered. js/src/value.mjs:145 retains an input Uint8Array, so
+     changing the caller’s array changes the SEL value. It also converts Value.bin([256]) to b00 and Value.bin([-1]) to bff; Python
+     rejects both with E_RANGE.
+
+  4. Medium — invalid UTF-16 enters TEXT values. js/src/value.mjs:144 accepts a lone surrogate through Value.text() and
+     Value.fromNative(). Python rejects the same input with E_UTF8, while JavaScript can carry the invalid text until a later
+     operation fails.
+
+The PHP implementation has three findings:
+
+  1. High — FILTER changes some record keys. php/src/Builtins/Core.php:525 casts a key to an integer before deciding whether to
+     preserve it. FILTER(RECORD("1x", 10), _ > 0) returns key "1" in PHP; JavaScript preserves "1x". The same comparison appears in
+     Value::fromEntries() (php/src/Value.php:353).
+
+  2. Medium — native round trips lose collection keys. php/src/Value.php:1097 exports every list as a packed PHP array. Passing a
+     filtered list with keys "2","3" through toNative() and fromNative() changes them to "1","2". A record keyed "0","1" is
+     likewise read back as a list keyed "1","2".
+
+  3. Medium — Value::text() accepts invalid UTF-8. php/src/Value.php:217 accepts "\xFF" even though the host interface contract
+     (spec/SPEC.md:1017) requires E_UTF8 at construction. fromNative() validates this input; the direct constructor does not. This
+     is related to the JavaScript text constructor finding.
+
+The C++ review found two high-impact issues:
+
+  1. Equijoins can miss matches or suppress errors. The fast key conversion in cpp/sel.cpp:4332 drops BIN values for $== and treats
+     invalid numeric values as “no match.” A BIN containing a should match TEXT "a", but COUNT(LINK(...)) returns 0 instead of 1. A
+     numeric join on "bad" == 1 returns 0 instead of E_NOT_NUM.
+
+  2. Filter pushdown can hide earlier failures. The rewrites in cpp/sel.cpp:7403 move FILTER ahead of MAP or SORT. For LIST(2,1) .>
+     SORT(_, IF(_ == 2, ABORT("sort"), _)) .> FILTER(_ == 1) .> MAP(_), C++ returns [1]; executing the steps in their written order
+     raises E_ABORT. A similar MAP case suppresses E_DIV_ZERO.
+
+The Common Lisp review found four additional issues:
+
+  1. High — mutable host data can change or corrupt values. Value construction (lisp/src/value.lisp:154) retains caller-owned
+     strings and octet vectors. After from-native builds a record, changing its original key from "a" to "b" makes the dump show
+     "b" while value-has finds neither key. Changing a validated text string to an unpaired surrogate causes a later, unrelated
+     TO_UTF8 call to raise E_UTF8.
+
+  2. Medium — native integers bypass the digit cap. make-int (lisp/src/value.lisp:178) does not apply the decimal guard. from-
+     native(10^1,000,000) accepts a 1,000,001-digit value, and A == A returns TRUE; the specified result is E_RANGE. The Python
+     integer constructor appears to share this gap.
+
+  3. Medium — DEDUPE can bypass the nesting cap. value-hash (lisp/src/value.lisp:498) returns 0 past the depth limit. With one
+     over-deep item supplied through host context, COUNT(DEDUPE(A)) returns 1; dumping that same item raises the required E_DEPTH.
+
+  4. Medium — native round-trips collapse distinct values. to-native/from-native (lisp/src/value.lisp:604) map FALSE, an empty
+     list, and NULL to NIL. Round-tripping either of the first two yields NULL.
+
+### Highlights of Key Findings
+
+  1. Cross-Cutting Architectural Duplications (All 5 Hosts):
+      • is_vacuous() / is_null() Redundancy: In all 5 implementations (Value.isVacuous, Value::isVacuous, Value.is_vacuous,
+      Value::is_vacuous, value-vacuous-p), the initial is_null() check is completely subsumed by the immediately following kind
+      == NONE && size() == 0 check.
+      • first_collection_item() Redundancy: Redundant is_null() prefix before kind == NONE && size() == 0 across all hosts.
+      • do_sort() and do_top() Branch Redundancy: In all 5 hosts (aggregate.mjs:325, Core.php:260, aggregate.py:393,
+      sel.cpp:5454, aggregate.lisp:340), the 3-argument text branch has a 100% identical body to the final fallback else branch.
+      • Optimizer sort_details() Fallthrough: The sort_count == 3 branch is an exact subset of the following general variable
+      branch with identical assignment bodies.
+      • PATH Redundancy: cur.get(seg) followed by an is null / undefined check is impossible after cur.has(seg) was verified;
+      fallback returns are duplicated in all hosts.
+      • ?? and ??? Evaluator Boilerplate: Identical try/catch/handler blocks duplicated in eval_binary.
+  2. Language-Specific Dead & Unused Code:
+      • JavaScript:
+          • Dead this; statements in isNone()`, `isText()`, `isBin()`, `isBool().
+          • Unused imports & re-exports for decodeUtf8` and `toCodePoints.
+          • Deprecated unused RecordShape.aliasCache.
+          • Dead || constR.digits === '1' check in math_plan.mjs:106 (digits is strictly native BigInt).
+          • Orphaned docblock for isBinderName in constants.mjs:42.
+      • PHP:
+          • Uncalled private methods Optimizer::callNode and Builtins\Core::elements.
+          • Unused use statements in Structure.php:12, Bindings.php:12, and sqlt:20.
+          • Misplaced docblock for isBinderName in Constants.php:54.
+          • Redundant property aliasing ($kind and $type) on JoinPlan.
+      • Python:
+          • Dead target checks in non-assign AST branches in optimizer.py:579, 614.
+          • Unused probe imports across python/bin/.
+      • Common Lisp:
+          • Variable check bug in do-link: first-r2` checks `val1` instead of `val2.
+
+
+  ──────
+  ### Suggested Follow-Up Refactoring Tasks
+
+  The artifact outlines 4 phased, zero-to-low risk tasks:
+
+  1. Task 1: Dead Statements & Unused Imports/Helpers (Zero Risk) — Purge this;, uncalled private PHP methods, unused imports,
+  and fix misplaced docblocks.
+  2. Task 2: Optimizer & AST Dead Branch Cleanup (Low Risk) — Remove unreachable copy.target branches and deduplicate
+  sort_details().
+  3. Task 3: Cross-Host Builtin Deduplication (Low Risk) — Unify identical branches in is_vacuous(), first_collection_item(),
+  do_sort(), do_top(), PATH, and fix Lisp do-link.
+  4. Task 4: Evaluator & SQL Binding Deduplication (Medium Risk) — Extract shared helper for ??/??? and SQL collation/prefilter
+  options parsing.
+
+  ### 1. Add small, normative SEL cases
+
+  These belong chiefly in aggregates (conformance/06-aggregates.selt), relational (conformance/15-relational.selt), joined rows
+  (conformance/16-joined-rows.selt), and structural identity (conformance/21-structural-hash-identity.selt). Each should assert the
+  result or error directly; host agreement is insufficient.
+
+   Gap                                        Minimal case and expected outcome           Useful variants
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   Python’s cached computed record index      MAP(LIST("x","y"), RECORD("x",1,"y",2)      Reverse the key order; use three keys;
+                                              [_]) → values 1,2                           repeat the lookup against differently
+                                                                                          shaped records.
+  ─────────────────────────────────────────  ──────────────────────────────────────────  ──────────────────────────────────────────
+   Sparse keys lost by TOP_BY                 TOP_BY(FILTER(LIST(1,2,3), _ > 1), _K       Use "DESC" → 2; use an explicit binder;
+                                              $== "2", 1) → 3                             start from a record with nonconsecutive
+                                                                                          keys. Existing tests cover key
+                                                                                          preservation and TOP_BY separately, but
+                                                                                          not their interaction.
+  ─────────────────────────────────────────  ──────────────────────────────────────────  ──────────────────────────────────────────
+   ß/SS collision in joined-row promotion     A=LIST(RECORD("ß",1));                      Read "SS" → 2; swap sides; use
+                                              B=LIST(RECORD("SS",2)); A .> LINK(B,        LINK_LEFT; include both fields in a
+                                              TRUE) .> MAP(_["ß"]) → 1                    later record projection.
+  ─────────────────────────────────────────  ──────────────────────────────────────────  ─── ─────────────────────────────────────────  ──────────────────────────────────────────  ──────────────────────────────────────────
+   Equijoin hash path disagrees with its      Join a BIN TO_UTF8("a") against TEXT "a"    Swap sides; compare two BIN values; use
+   comparator                                 using $== → one pair                        LINK_LEFT. For ==, "bad" against 1 must
+                                                                                          raise E_NOT_NUM, including when the
+                                                                                          invalid key is on the right. Add a
+                                                                                          control case wrapping the same
+                                                                                          comparison in IF(comparison,TRUE,FALSE);
+                                                                                          the optimized and ordinary predicates
+                                                                                          must agree.
+  ─────────────────────────────────────────  ──────────────────────────────────────────  ──────────────────────────────────────────
+   Optimizer suppresses an earlier error      LIST(2,1) .> SORT(_, IF(_ == 2,             A MAP that computes 1/(_["id"]-2) before
+                                              ABORT("sort"), _)) .> FILTER(_ == 1) .>     a FILTER drops that row must raise
+                                              MAP(_) → E_ABORT                            E_DIV_ZERO. Cover SORT_BY, TOP_BY
+                                                                                          fusion, and a final renumbering step.
+
+  The last row is distinct from the existing strict-record cases in conformance/15-relational.selt:410: those established that
+  unused fields are evaluated, but do not consistently force a movable FILTER to preserve an error from a preceding SORT or
+  computed MAP. The examples above currently expose that gap: the direct JS pipelines return a value, while binding the SORT or MAP
+  result to a variable first raises the specified error.
+
+  For each error case, first pin the code, then pin its source position after confirming the normative position. That keeps the
+  initial regression focused on the processing outcome while retaining the suite’s stronger error-position contract.
+
+  ### 2. Test SQL binding with both a string oracle and a database oracle
+
+  Add cases to sql/cases/26-links.sqlt with the same field name on both sides and different values. For example, put ID=1, VAL=7 in
+  relation R and ID=1, VAL=9 in S, then translate:
+
+  R .> LINK(S, SS, X, SS["ID"] == X["ID"])
+    .> MAP(RECORD("picked", _["SS"]["VAL"]))
+
+  picked must come from R and equal 7; _["X"]["VAL"] must yield 9. Pin the actual SQL alias in .sqlt cases. Include left/right
+  reversal, _1/_2, named relation binders, LINK_LEFT, and a filter before the projection. Cases that read only a uniquely named
+  field will not reveal this mix-up.
+
+  Then extend sql/oracle/statements.json and its loader in php/bin/sqlo:735 to load two relation contexts from the database
+  fixture. Compare the projected SEL value with executed SQL for every supported dialect, both inline and prepared. At present that
+  oracle runs PHP’s translator only (tools/impls.sh:346); to cover a unanimous translator defect, have each host emit its SQL into
+  the existing PHP database executor, or give each host an equivalent execution lane. Exact SQL snapshots alone could all agree on
+  the wrong alias.
+
+  Add separate SQL binding cases for "ß" and "SS". They should establish that field lookup does not use Unicode full uppercasing to
+  merge distinct SEL keys. If a dialect cannot preserve that distinction safely, the translator should refuse explicitly rather
+  than select another field.
+
+
+  ### 3. Pin host-boundary behavior locally
+
+  Several findings cannot be expressed by .selt, whose setup is SEL source rather than native host data. Add assertions to JS
+  runtime checks (tools/check-js-runtime.mjs), PHP runtime checks (tools/check-php-runtime.php), Python unit tests (python/tests/
+  test_unit.py), and Lisp unit tests (lisp/tests/unit.lisp).
+
+  - JS objects: Convert a record with an own "__proto__" field to native data. Assert Object.hasOwn(result,"__proto__"), its value,
+    and absence of an inherited role; then round-trip through fromNative. Repeat nested inside a list or record. The current JS
+    runtime test checks dump() for "__proto__", but never toNative().
+
+  - JS binary and text inputs: Mutate a Uint8Array after Value.bin(bytes) and assert the Value remains unchanged. Test byte inputs
+    -1, 255, 256, and nonintegers; reject out-of-range values rather than wrap them. Test a lone surrogate through Value.text and
+    fromNative for E_UTF8, with a valid supplementary character as the control.
+
+  - PHP conversion: Round-trip a filtered list retaining keys "2" and "3" and a record with numeric-looking string keys. Compare
+    SEL dumps before and after, as well as the native array shape. Test Value::fromEntries with "1x"/"1y" and Value::text on
+    malformed UTF-8.
+
+  - Lisp ownership: Mutate each caller-owned string key, text string, and byte vector after constructing a Value; also mutate
+    native data returned by to-native. The original Value’s lookup, dump, hash, and binary content must remain stable. The key test
+    is especially important because mutating a hash-table key can make it unreachable under both its old and new spelling.
+
+  - Numeric limits: Test make-int/from-native in Lisp and Value.int/from_native in Python at the 1,000,000-digit boundary and one
+    digit beyond it; the latter must raise E_RANGE. Keep the expensive boundary test in a defined slow lane if necessary, but make
+    it part of a required gate.
+
+  - Lisp hash depth: Construct a host-side Value nested just below and just beyond MAX_DEPTH, then call DEDUPE and DISTINCT without
+    dumping the input first. The overdeep case must raise E_DEPTH; a COUNT(DEDUPE(...)) assertion prevents a later dump from being
+    the first operation to catch it.
+
+  - Lisp native booleans: Round-trip FALSE and NULL independently and assert their kinds. The native NIL ambiguity needs an
+    explicit representation contract. Empty LIST() and NULL already have the same empty NONE structure in SEL, so they do not need
+    a separate SEL-equality assertion.
+
+  Also test Python’s computed-index cache by running one compiled Program twice with different context keys; separate .selt cases
+  compile separately and cannot detect state retained across runs.
+
+
+    ### 4. Add focused parity and metamorphic families
+
+  Extend the independent joined-row model (tools/join-rows-oracle/gen.py) with Unicode field pairs, BIN/TEXT join keys, and invalid
+  numeric keys. Its present generator draws equality keys from integers and NULL, so it cannot reach the comparator defects. Have
+  the model predict errors as well as successful rows, and require a nonzero count of each targeted category in every generated
+  corpus.
+
+  Generalize the approach in join-filter-oracle (tools/join-filter-oracle/run.sh): generate each pipeline both as written and with
+  each stage assigned to a helper variable. Compare a host with itself before comparing hosts. This catches FILTER/SORT/MAP
+  rewrites shared by all implementations; normalize error positions relative to the corresponding source segment, as that oracle
+  already does for joins. Use deliberately failing expressions as well as successful rows and sparse-key observations.
+
+  Finally, add targeted families and coverage counters to tools/gen-programs.mjs and the SQL fuzzer: computed keys that change
+  between rows, sparse _K followed by TOP_BY, Unicode key pairs, direct equijoin comparisons, and error-producing operations before
+  filters. A random combination of existing ASCII fields and short pipelines is too unlikely to create these shapes. Require every
+  family to appear at least once, and retain the minimized examples as permanent conformance cases.
+
+  I would implement the small .selt and .sqlt cases first, then the host API assertions, then the two-relation SQL oracle and
+  focused generators. This gives each reported failure a direct regression test while the broader variants look for nearby defects.
+  This was a test-suite review; I did not change files or run the full gate.
+
+

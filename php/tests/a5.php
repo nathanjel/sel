@@ -52,8 +52,11 @@ check_a5($list->toNative() === [
     ['id' => '2', 'name' => 'two'],
 ], 'packed list direct materialization');
 $listFallback = Value::list([Value::text('first')]);
-$listFallback->set('extra', Value::text('second'));
+$listFallback->set('2', Value::text('second'));
 check_a5($listFallback->toNative() === ['first', 'second'], 'fallback list materialization');
+$listSparse = Value::list([Value::text('first')]);
+$listSparse->set('extra', Value::text('second'));
+check_a5($listSparse->toNative() === [1 => 'first', 'extra' => 'second'], 'sparse list materialization');
 
 $nativeRows = [
     ['prepared_id' => 1, 'prepared_name' => 'one'],
@@ -103,7 +106,7 @@ $emptyRight = Sel::compile(
     'LIST(RECORD("id", 1)) .> LINK_LEFT(LIST(), _1["id"] == _2["id"])',
 )->run();
 check_a5($emptyRight->isList && $emptyRight->size() === 1
-    && $emptyRight->toNative()[0]['_2']['_2'] === null, 'left join empty-right null row');
+    && $emptyRight->toNative()[0]['_2'] === null, 'left join empty-right null row');
 $heterogeneousJoin = Sel::compile(
     'LIST(RECORD("id", 1, "left", "a"), RECORD("id", 2, "left", "b", "extra", "x"))'
     . ' .> LINK(LIST(RECORD("id", 1, "right", "r"), RECORD("id", 2, "right", "s")), '
@@ -130,8 +133,8 @@ $source = 'LIST(RECORD("id", 1, "l", "a"), RECORD("id", 2, "l", "b"))'
     . ' .> LINK_LEFT(LIST(RECORD("id", 2, "r", "x"), RECORD("id", 3, "r", "y")),'
     . ' _1["id"] == _2["id"])';
 $joined = Sel::compile($source)->run();
-check_a5($joined->dump() === '-{"1"=-{"_1"=-{"id"=t"1", "l"=t"a"}, "_2"=-{"id"=-, "r"=-, "_2"=-}, "l"=t"a"}, '
-    . '"2"=-{"_1"=-{"id"=t"2", "l"=t"b"}, "_2"=-{"id"=t"2", "r"=t"x", "_2"=-{"id"=t"2", "r"=t"x"}}, '
+check_a5($joined->dump() === '-{"1"=-{"_1"=-{"id"=t"1", "l"=t"a"}, "_2"=-{"id"=-, "r"=-}, "l"=t"a"}, '
+    . '"2"=-{"_1"=-{"id"=t"2", "l"=t"b"}, "_2"=-{"id"=t"2", "r"=t"x"}, '
     . '"l"=t"b", "r"=t"x"}}', 'join projector preserves Lisp output');
 check_a5($joined->storage !== null && array_is_list($joined->storage), 'join result storage is packed');
 check_a5($joined->storage[0]->shape !== null && $joined->storage[1]->shape !== null, 'join rows use shared shapes');

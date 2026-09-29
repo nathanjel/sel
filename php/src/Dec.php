@@ -683,6 +683,12 @@ final class Dec
      */
     public static function cmp(array $a, array $b): int
     {
+        if ($a['scale'] === 0 && $b['scale'] === 0
+            && isset($a['native'], $b['native'])
+            && ($a['nativeDigits'] ?? null) === $a['digits']
+            && ($b['nativeDigits'] ?? null) === $b['digits']) {
+            return $a['native'] <=> $b['native'];
+        }
         if (self::isZero($a) && self::isZero($b)) {
             return 0;
         }

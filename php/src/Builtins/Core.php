@@ -70,22 +70,27 @@ final class Core
                 $n = $a->count();
                 $out = [];
                 for ($i = 0; $i < $n; $i++) {
-                    $out[] = $a->val($i)->copy();
+                    $out[] = $a->val($i);
                 }
                 return Value::list($out);
             }]);
 
         Registry::define(['name' => 'RECORD', 'min' => 0, 'max' => PHP_INT_MAX,
             'fn' => static function (Args $a): Value {
+                $n = $a->count();
+                if ($n === 0) return Value::none();
+                if ($a->recordShape !== null) {
+                    $values = [];
+                    for ($i = 1; $i < $n; $i += 2) {
+                        $values[] = $a->val($i);
+                    }
+                    return Value::fromShape($a->recordShape, $values);
+                }
                 $keys = [];
                 $values = [];
-                $n = $a->count();
                 for ($i = 0; $i < $n; $i += 2) {
                     $keys[] = $a->text($i);
-                    $values[] = $a->val($i + 1)->copy();
-                }
-                if ($a->recordShape !== null && $a->recordShape->keys === $keys) {
-                    return Value::fromShape($a->recordShape, $values);
+                    $values[] = $a->val($i + 1);
                 }
                 return Value::record($keys, $values);
             }]);
@@ -355,12 +360,19 @@ final class Core
                         if ($needsK) $topFrame['_K'] = Value::text($key);
                         $result = $visit($a->evalNode($body), $key, $item, $body);
                     }
+                } elseif (!$needsK) {
+                    $key = 1;
+                    foreach ($value->storage as $item) {
+                        if ($result !== null) break;
+                        $topFrame[$binder] = $item;
+                        $result = $visit($a->evalNode($body), $key++, $item, $body);
+                    }
                 } else {
                     foreach ($value->storage as $i => $item) {
                         if ($result !== null) break;
-                        $key = $needsK ? (string) ($i + 1) : ($i + 1);
+                        $key = (string) ($i + 1);
                         $topFrame[$binder] = $item;
-                        if ($needsK) $topFrame['_K'] = Value::text((string) $key);
+                        $topFrame['_K'] = Value::text($key);
                         $result = $visit($a->evalNode($body), $key, $item, $body);
                     }
                 }
@@ -372,7 +384,7 @@ final class Core
                     if ($needsK) $topFrame['_K'] = Value::text($key);
                     $result = $visit($a->evalNode($body), $key, $item, $body);
                 }
-            } elseif ($value->size() > 0) {
+            } elseif ($value->size() > 0 && $value->children !== null) {
                 foreach ($value->children as $key => $item) {
                     if ($result !== null) break;
                     $keyStr = (string) $key;
@@ -392,7 +404,7 @@ final class Core
     }
 
     /** @param array<string,mixed>|null $node */
-    private static function containsVar(?array $node, string $name): bool
+    public static function containsVar(?array $node, string $name): bool
     {
         if ($node === null) return false;
         if (($node['t'] ?? null) === 'var') {

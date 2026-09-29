@@ -10,6 +10,57 @@ whose notes were never written fails the check before the tag is cut.
 Each entry ends with the three lanes that gate a release: conformance cases
 (every host runs all of them), SQL translation cases, and mutations caught.
 
+## 0.9.2 — 2026-09-29
+
+PHP host performance optimization, cutting execution time across multi-stage
+relational pipelines by over 2.2x (and up to 2.6x with OPcache JIT) while
+reducing heap allocation and peak memory usage by over 4.5x:
+
+  - **Specialized unrolled join projection**:
+    - `compileJoinProjector` generates specialized, unrolled PHP projection
+      closures on demand for `(leftShape, rightShape)` pairs, eliminating the
+      per-row interpreted opcode loops and multi-way branch checks during `LINK`
+      and `LINK_LEFT`.
+    - Added batch `many()` projector helper to stream matching right rows directly
+      into output buffers, eliminating thousands of closure call frames.
+    - Memoized compiled join projectors keyed by left shape, right shape, and
+      match status. Total `LINK` join latency across scale pipelines dropped
+      from 2,522 ms to ~800 ms.
+  - **Monomorphic inline slot caching**:
+    - Record index reads (`_['field']`) now cache the matched `RecordShape` and
+      slot offset on the AST node. Repeated access hits the cache directly,
+      bypassing hash-table string lookups into `$shape->keyMap` in favour of
+      direct `$obj->storage[$slot]` array indexing.
+    - Added variable base lookup fast-path when base is `_` or `_1`.
+  - **Allocation and memory reduction**:
+    - Removed defensive `->copy()` calls in `RECORD`, `LIST`, and unprojected
+      `BUCKET`.
+    - `RECORD` now skips redundant text extraction and key comparisons when its
+      `recordShape` is statically resolved.
+    - Flyweight singletons for boolean values (`true`, `false`) and empty/null
+      instances (`null()`, `none()`), eliminating hundreds of thousands of heap
+      allocations per scale query.
+    - Converted `Value::$children` to nullable (`?array`), eliminating child map
+      array overhead on shaped records.
+    - `Value::int()` and `Value::num()` populate scalar string representations
+      directly.
+    - Paused cyclic garbage collection during query execution (`gc_disable()` /
+      `gc_enable()`) in `Sel::run`, eliminating recursive Zend GC root buffer
+      scans over acyclic record graphs.
+  - **Predicate and pipeline fast-paths**:
+    - `BUCKET` conditionally omits `_K` allocation when `_K` is not referenced
+      in the grouping expression.
+    - Native integer comparison fast-path in `Dec::cmp` using `<=>` when both
+      scale-0 operands fit in 64-bit signed integers.
+    - Flat list iteration fast-path in `Core::walk` when `_K` is not needed.
+    - In `MathPlan`, removed per-evaluation `array_fill` allocations.
+  - **Bug fixes**:
+    - Fixed hybrid SQL planner MAP projection rewriting where modified RECORD
+      nodes retained outdated AST `recordShape` metadata.
+
+Lanes: 1073 conformance cases in every host; 1065 SQL translation cases in
+every host; all SQL optimizer dialect oracles passed.
+
 ## 0.9.1 — 2026-09-28
 
 0.9.0 was prepared and never released: a second review found gaps in it, and

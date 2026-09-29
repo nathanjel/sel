@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"runtime/pprof"
 	"strconv"
 	"time"
 
@@ -51,6 +52,15 @@ func main() {
 	if rStr := os.Getenv("MANDEL_RUNS"); rStr != "" {
 		if r, err := strconv.Atoi(rStr); err == nil {
 			runs = r
+		}
+	}
+
+	if prof := os.Getenv("MANDEL_CPUPROFILE"); prof != "" {
+		f, err := os.Create(prof)
+		if err == nil {
+			defer f.Close()
+			pprof.StartCPUProfile(f)
+			defer pprof.StopCPUProfile()
 		}
 	}
 

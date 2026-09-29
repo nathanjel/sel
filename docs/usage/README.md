@@ -59,7 +59,7 @@ import { Sql, Binding } from 'sel-lang/sql';                     // the SQL laye
 ```html
 <!-- In a browser, nothing to install: the standalone bundle from a CDN (no SQL layer) -->
 <script type="module">
-  import { compile, evaluate } from 'https://cdn.jsdelivr.net/npm/sel-lang@0.9.1/dist/sel.min.mjs';
+  import { compile, evaluate } from 'https://cdn.jsdelivr.net/npm/sel-lang@0.9.2/dist/sel.min.mjs';
 </script>
 ```
 
@@ -82,7 +82,7 @@ use Sel\Sql\Sql;                     // the SQL layer: also require php/src/Sql/
 <summary>C++</summary>
 
 ```sh
-vcpkg install sel-lang               # or: conan install --requires sel-lang/0.9.1
+vcpkg install sel-lang               # or: conan install --requires sel-lang/0.9.2
                                      # or copy cpp/sel.hpp, sel_ast.hpp, sel_limits.hpp,
                                      # sel_math_ops.hpp, sel_builtin_manifest.hpp, sel.cpp,
                                      # sel_optimizer.cpp and third_party/srell/, and compile sel.cpp

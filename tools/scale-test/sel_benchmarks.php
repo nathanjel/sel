@@ -351,7 +351,7 @@ function representation_counts(Value $value, array &$counts): void
     elseif ($value->size() > 0) $counts['fallback_records']++;
     if ($value->storage !== null) {
         foreach ($value->storage as $child) representation_counts($child, $counts);
-    } else {
+    } elseif ($value->children !== null) {
         foreach ($value->children as $child) representation_counts($child, $counts);
     }
 }

@@ -1,0 +1,120 @@
+### name: zprobe.p01-ss-left
+--- dialect
+sqlite
+--- bindings
+{"R": {"kind": "relation", "from": "r", "alias": "r", "fields": {"ID": {"column": "id", "type": "NUM"}, "VAL": {"column": "val", "type": "NUM"}}}, "S": {"kind": "relation", "from": "s", "alias": "s", "fields": {"ID": {"column": "id", "type": "NUM"}, "VAL": {"column": "val", "type": "NUM"}}}}
+--- as
+statement
+--- source
+R .> LINK(S, SS, X, SS["ID"] == X["ID"]) .> MAP(RECORD("picked", _["SS"]["VAL"]))
+--- expect
+SELECT "r"."val" AS "picked" FROM "r" "r" INNER JOIN "s" "s" ON (CAST("r"."id" AS NUMERIC) = CAST("s"."id" AS NUMERIC))
+===
+### name: zprobe.p02-x-right
+--- dialect
+sqlite
+--- bindings
+{"R": {"kind": "relation", "from": "r", "alias": "r", "fields": {"ID": {"column": "id", "type": "NUM"}, "VAL": {"column": "val", "type": "NUM"}}}, "S": {"kind": "relation", "from": "s", "alias": "s", "fields": {"ID": {"column": "id", "type": "NUM"}, "VAL": {"column": "val", "type": "NUM"}}}}
+--- as
+statement
+--- source
+R .> LINK(S, SS, X, SS["ID"] == X["ID"]) .> MAP(RECORD("picked", _["X"]["VAL"]))
+--- expect
+SELECT "s"."val" AS "picked" FROM "r" "r" INNER JOIN "s" "s" ON (CAST("r"."id" AS NUMERIC) = CAST("s"."id" AS NUMERIC))
+===
+### name: zprobe.p03-a-left
+--- dialect
+sqlite
+--- bindings
+{"R": {"kind": "relation", "from": "r", "alias": "r", "fields": {"ID": {"column": "id", "type": "NUM"}, "VAL": {"column": "val", "type": "NUM"}}}, "S": {"kind": "relation", "from": "s", "alias": "s", "fields": {"ID": {"column": "id", "type": "NUM"}, "VAL": {"column": "val", "type": "NUM"}}}}
+--- as
+statement
+--- source
+R .> LINK(S, A, B, A["ID"] == B["ID"]) .> MAP(RECORD("picked", _["A"]["VAL"]))
+--- expect
+SELECT "r"."val" AS "picked" FROM "r" "r" INNER JOIN "s" "s" ON (CAST("r"."id" AS NUMERIC) = CAST("s"."id" AS NUMERIC))
+===
+### name: zprobe.p04-left-join
+--- dialect
+sqlite
+--- bindings
+{"R": {"kind": "relation", "from": "r", "alias": "r", "fields": {"ID": {"column": "id", "type": "NUM"}, "VAL": {"column": "val", "type": "NUM"}}}, "S": {"kind": "relation", "from": "s", "alias": "s", "fields": {"ID": {"column": "id", "type": "NUM"}, "VAL": {"column": "val", "type": "NUM"}}}}
+--- as
+statement
+--- source
+R .> LINK_LEFT(S, A, B, A["ID"] == B["ID"]) .> MAP(RECORD("picked", _["A"]["VAL"]))
+--- expect
+SELECT "r"."val" AS "picked" FROM "r" "r" LEFT JOIN "s" "s" ON (CAST("r"."id" AS NUMERIC) = CAST("s"."id" AS NUMERIC))
+===
+### name: zprobe.p05-reversed
+--- dialect
+sqlite
+--- bindings
+{"R": {"kind": "relation", "from": "r", "alias": "r", "fields": {"ID": {"column": "id", "type": "NUM"}, "VAL": {"column": "val", "type": "NUM"}}}, "S": {"kind": "relation", "from": "s", "alias": "s", "fields": {"ID": {"column": "id", "type": "NUM"}, "VAL": {"column": "val", "type": "NUM"}}}}
+--- as
+statement
+--- source
+S .> LINK(R, A, B, A["ID"] == B["ID"]) .> MAP(RECORD("picked", _["A"]["VAL"]))
+--- expect
+SELECT "s"."val" AS "picked" FROM "s" "s" INNER JOIN "r" "r" ON (CAST("s"."id" AS NUMERIC) = CAST("r"."id" AS NUMERIC))
+===
+### name: zprobe.p06-filter-first
+--- dialect
+sqlite
+--- bindings
+{"R": {"kind": "relation", "from": "r", "alias": "r", "fields": {"ID": {"column": "id", "type": "NUM"}, "VAL": {"column": "val", "type": "NUM"}}}, "S": {"kind": "relation", "from": "s", "alias": "s", "fields": {"ID": {"column": "id", "type": "NUM"}, "VAL": {"column": "val", "type": "NUM"}}}}
+--- as
+statement
+--- source
+R .> LINK(S, A, B, A["ID"] == B["ID"]) .> FILTER(_["A"]["VAL"] > 5) .> MAP(RECORD("picked", _["B"]["VAL"]))
+--- expect
+SELECT "s"."val" AS "picked" FROM "r" "r" INNER JOIN "s" "s" ON (CAST("r"."id" AS NUMERIC) = CAST("s"."id" AS NUMERIC)) WHERE ("r"."val" > 5)
+===
+### name: zprobe.p07-relation-name
+--- dialect
+sqlite
+--- bindings
+{"R": {"kind": "relation", "from": "r", "alias": "r", "fields": {"ID": {"column": "id", "type": "NUM"}, "VAL": {"column": "val", "type": "NUM"}}}, "S": {"kind": "relation", "from": "s", "alias": "s", "fields": {"ID": {"column": "id", "type": "NUM"}, "VAL": {"column": "val", "type": "NUM"}}}}
+--- as
+statement
+--- source
+R .> LINK(S, _1["ID"] == _2["ID"]) .> MAP(RECORD("picked", _["R"]["VAL"], "other", _["S"]["VAL"]))
+--- expect
+SELECT "r"."val" AS "picked", "s"."val" AS "other" FROM "r" "r" INNER JOIN "s" "s" ON (CAST("r"."id" AS NUMERIC) = CAST("s"."id" AS NUMERIC))
+===
+### name: zprobe.p08-positional
+--- dialect
+sqlite
+--- bindings
+{"R": {"kind": "relation", "from": "r", "alias": "r", "fields": {"ID": {"column": "id", "type": "NUM"}, "VAL": {"column": "val", "type": "NUM"}}}, "S": {"kind": "relation", "from": "s", "alias": "s", "fields": {"ID": {"column": "id", "type": "NUM"}, "VAL": {"column": "val", "type": "NUM"}}}}
+--- as
+statement
+--- source
+R .> LINK(S, _1["ID"] == _2["ID"]) .> MAP(RECORD("picked", _["_1"]["VAL"]))
+--- expect
+SELECT "r"."val" AS "picked" FROM "r" "r" INNER JOIN "s" "s" ON (CAST("r"."id" AS NUMERIC) = CAST("s"."id" AS NUMERIC))
+===
+### name: zprobe.p09-eszett
+--- dialect
+sqlite
+--- bindings
+{"R": {"kind": "relation", "from": "r", "alias": "r", "fields": {"ID": {"column": "id", "type": "NUM"}, "VAL": {"column": "val", "type": "NUM"}}}, "S": {"kind": "relation", "from": "s", "alias": "s", "fields": {"ID": {"column": "id", "type": "NUM"}, "VAL": {"column": "val", "type": "NUM"}}}}
+--- as
+statement
+--- source
+R .> LINK(S, SS, X, SS["ID"] == X["ID"]) .> MAP(RECORD("picked", _["ß"]["VAL"]))
+--- expect
+E_SQL_REFUSED
+===
+### name: zprobe.p10-long-s
+--- dialect
+sqlite
+--- bindings
+{"R": {"kind": "relation", "from": "r", "alias": "r", "fields": {"ID": {"column": "id", "type": "NUM"}, "VAL": {"column": "val", "type": "NUM"}}}, "S": {"kind": "relation", "from": "s", "alias": "s", "fields": {"ID": {"column": "id", "type": "NUM"}, "VAL": {"column": "val", "type": "NUM"}}}}
+--- as
+statement
+--- source
+R .> LINK(S, SS, X, SS["ID"] == X["ID"]) .> MAP(RECORD("picked", _["ſS"]["VAL"]))
+--- expect
+E_SQL_REFUSED
+===

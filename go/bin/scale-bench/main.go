@@ -7,6 +7,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"runtime/pprof"
 	"sort"
 	"strconv"
 	"strings"
@@ -254,7 +255,23 @@ func main() {
 	runsFlag := flag.Int("runs", 3, "number of measured runs")
 	warmupsFlag := flag.Int("warmups", 1, "number of warmups")
 	outputFlag := flag.String("output", "", "optional output report file")
+	onlyFlag := flag.String("only", "", "only run scenario with id or number")
+	cpuprofileFlag := flag.String("cpuprofile", "", "write cpu profile to file")
 	flag.Parse()
+
+	if *cpuprofileFlag != "" {
+		f, err := os.Create(*cpuprofileFlag)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "could not create CPU profile: %v\n", err)
+			os.Exit(1)
+		}
+		defer f.Close()
+		if err := pprof.StartCPUProfile(f); err != nil {
+			fmt.Fprintf(os.Stderr, "could not start CPU profile: %v\n", err)
+			os.Exit(1)
+		}
+		defer pprof.StopCPUProfile()
+	}
 
 	registerBenchmarkBuiltins()
 
@@ -286,6 +303,9 @@ func main() {
 	allPassed := true
 
 	for _, sc := range reference {
+		if *onlyFlag != "" && sc.ID != *onlyFlag && !strings.HasSuffix(sc.ID, *onlyFlag) {
+			continue
+		}
 		tComp := time.Now()
 		prog, err := sel.Compile(sc.Query)
 		if err != nil {

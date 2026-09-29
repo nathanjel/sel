@@ -1,0 +1,95 @@
+FAIL zplan.q01  (97-zplan.sqlt:1)
+     expected a pure_memory plan, got pure_sql
+FAIL zplan.q02  (97-zplan.sqlt:13)
+     expected a pure_memory plan, got pure_sql
+FAIL zplan.q03  (97-zplan.sqlt:25)
+     expected a pure_memory plan, got pure_sql
+FAIL zalias.a01  (98-zalias.sqlt:1)
+     got:  SELECT "ra"."rv" AS "v" FROM "rtab" "ra" INNER JOIN "stab" "sa" ON (CAST("ra"."id" AS NUMERIC) = CAST("sa"."id" AS NUMERIC))
+     want: ?
+FAIL zalias.a02  (98-zalias.sqlt:13)
+     got:  SELECT "ra"."rv" AS "v" FROM "rtab" "ra" INNER JOIN "stab" "sa" ON (CAST("ra"."id" AS NUMERIC) = CAST("sa"."id" AS NUMERIC))
+     want: ?
+FAIL zalias.a03  (98-zalias.sqlt:25)
+     got:  SELECT "ra"."rv" AS "v" FROM "rtab" "ra" INNER JOIN "stab" "sa" ON (CAST("ra"."id" AS NUMERIC) = CAST("sa"."id" AS NUMERIC))
+     want: ?
+FAIL zalias.a04  (98-zalias.sqlt:37)
+     expected SQL, got E_SQL_UNBOUND (RA is read by this rule but no binding says where it lives; bound names are R, S)
+FAIL zprobe.p01-reported  (99-zprobe.sqlt:1)
+     got:  SELECT "t"."tv" AS "v" FROM "r" "r" INNER JOIN "s" "s" ON (CAST("r"."id" AS NUMERIC) = CAST("s"."id" AS NUMERIC)) INNER JOIN "t" "t" ON (CAST("r"."id" AS NUMERIC) = CAST("t"."tid" AS NUMERIC))
+     want: ?
+FAIL zprobe.p02-left-only-field  (99-zprobe.sqlt:13)
+     got:  SELECT "t"."tv" AS "v" FROM "r" "r" INNER JOIN "s" "s" ON (CAST("r"."id" AS NUMERIC) = CAST("s"."id" AS NUMERIC)) INNER JOIN "t" "t" ON (CAST("r"."rv" AS NUMERIC) = CAST("t"."tid" AS NUMERIC))
+     want: ?
+FAIL zprobe.p03-right-only-field  (99-zprobe.sqlt:25)
+     expected SQL, got E_SQL_BINDING (A["sv"] is not a field of that relation; it has ID, RV)
+FAIL zprobe.p04-nested-left  (99-zprobe.sqlt:37)
+     got:  SELECT "t"."tv" AS "v" FROM "r" "r" INNER JOIN "s" "s" ON (CAST("r"."id" AS NUMERIC) = CAST("s"."id" AS NUMERIC)) INNER JOIN "t" "t" ON (CAST("r"."id" AS NUMERIC) = CAST("t"."tid" AS NUMERIC))
+     want: ?
+FAIL zprobe.p05-nested-right  (99-zprobe.sqlt:49)
+     got:  SELECT "t"."tv" AS "v" FROM "r" "r" INNER JOIN "s" "s" ON (CAST("r"."id" AS NUMERIC) = CAST("s"."id" AS NUMERIC)) INNER JOIN "t" "t" ON (CAST("s"."id" AS NUMERIC) = CAST("t"."tid" AS NUMERIC))
+     want: ?
+FAIL zprobe.p06-source-name-binder  (99-zprobe.sqlt:61)
+     got:  SELECT "t"."tv" AS "v" FROM "r" "r" INNER JOIN "s" "s" ON (CAST("r"."id" AS NUMERIC) = CAST("s"."id" AS NUMERIC)) INNER JOIN "t" "t" ON (CAST("r"."id" AS NUMERIC) = CAST("t"."tid" AS NUMERIC))
+     want: ?
+FAIL zprobe.p07-stale-first-binder  (99-zprobe.sqlt:73)
+     expected SQL, got E_SQL_UNBOUND (X is read by this rule but no binding says where it lives; bound names are R, S, T)
+FAIL zprobe.p08-underscore1  (99-zprobe.sqlt:85)
+     got:  SELECT "t"."tv" AS "v" FROM "r" "r" INNER JOIN "s" "s" ON (CAST("r"."id" AS NUMERIC) = CAST("s"."id" AS NUMERIC)) INNER JOIN "t" "t" ON (CAST("r"."id" AS NUMERIC) = CAST("t"."tid" AS NUMERIC))
+     want: ?
+FAIL zprobe.p09-left-join-chain  (99-zprobe.sqlt:97)
+     got:  SELECT "t"."tv" AS "v" FROM "r" "r" LEFT JOIN "s" "s" ON (CAST("r"."id" AS NUMERIC) = CAST("s"."id" AS NUMERIC)) INNER JOIN "t" "t" ON (CAST("r"."id" AS NUMERIC) = CAST("t"."tid" AS NUMERIC))
+     want: ?
+FAIL zprobe.p10-second-left-join  (99-zprobe.sqlt:109)
+     got:  SELECT "t"."tv" AS "v" FROM "r" "r" INNER JOIN "s" "s" ON (CAST("r"."id" AS NUMERIC) = CAST("s"."id" AS NUMERIC)) LEFT JOIN "t" "t" ON (CAST("r"."id" AS NUMERIC) = CAST("t"."tid" AS NUMERIC))
+     want: ?
+FAIL zprobe.p11-map-ambiguous-after-chain  (99-zprobe.sqlt:121)
+     expected SQL, got E_SQL_SHAPE (column 'id' is ambiguous across joined tables; qualify with table alias)
+FAIL zprobe.p12-map-nested-after-chain  (99-zprobe.sqlt:133)
+     got:  SELECT "r"."rv" AS "v" FROM "r" "r" INNER JOIN "s" "s" ON (CAST("r"."id" AS NUMERIC) = CAST("s"."id" AS NUMERIC)) INNER JOIN "t" "t" ON (CAST("r"."rv" AS NUMERIC) = CAST("t"."tid" AS NUMERIC))
+     want: ?
+FAIL zprobe.p13-filter-after-chain  (99-zprobe.sqlt:145)
+     expected SQL, got E_SQL_SHAPE (column 'id' is ambiguous across joined tables; qualify with table alias)
+FAIL zprobe.p14-right-binder-reused-name  (99-zprobe.sqlt:157)
+     got:  SELECT "t"."tv" AS "v" FROM "r" "r" INNER JOIN "s" "s" ON (CAST("r"."id" AS NUMERIC) = CAST("s"."id" AS NUMERIC)) INNER JOIN "t" "t" ON (CAST("r"."id" AS NUMERIC) = CAST("t"."tid" AS NUMERIC))
+     want: ?
+FAIL zprobe.p15-left-binder-reused-name  (99-zprobe.sqlt:169)
+     got:  SELECT "t"."tv" AS "v" FROM "r" "r" INNER JOIN "s" "s" ON (CAST("r"."id" AS NUMERIC) = CAST("s"."id" AS NUMERIC)) INNER JOIN "t" "t" ON (CAST("r"."id" AS NUMERIC) = CAST("t"."tid" AS NUMERIC))
+     want: ?
+FAIL zprobe.p16-single-join-control  (99-zprobe.sqlt:181)
+     got:  SELECT "s"."sv" AS "v" FROM "r" "r" INNER JOIN "s" "s" ON (CAST("r"."id" AS NUMERIC) = CAST("s"."id" AS NUMERIC))
+     want: ?
+FAIL zprobe.p17-left-join-right-only-field  (99-zprobe.sqlt:193)
+     got:  SELECT "s"."sv" AS "v" FROM "r" "r" LEFT JOIN "s" "s" ON (CAST("r"."id" AS NUMERIC) = CAST("s"."id" AS NUMERIC))
+     want: ?
+FAIL zprobe.p18-left-join-nested-right  (99-zprobe.sqlt:205)
+     got:  SELECT "s"."sv" AS "v" FROM "r" "r" LEFT JOIN "s" "s" ON (CAST("r"."id" AS NUMERIC) = CAST("s"."id" AS NUMERIC))
+     want: ?
+FAIL zprobe.p19-three-way-no-clash  (99-zprobe.sqlt:217)
+     got:  SELECT "s"."sv" AS "v" FROM "r" "r" INNER JOIN "t" "t" ON (CAST("r"."rv" AS NUMERIC) = CAST("t"."tid" AS NUMERIC)) INNER JOIN "s" "s" ON (CAST("r"."id" AS NUMERIC) = CAST("s"."id" AS NUMERIC))
+     want: ?
+FAIL zprobe.p20-map-nested-ambiguous  (99-zprobe.sqlt:229)
+     got:  SELECT "r"."id" AS "v" FROM "r" "r" INNER JOIN "s" "s" ON (CAST("r"."id" AS NUMERIC) = CAST("s"."id" AS NUMERIC)) INNER JOIN "t" "t" ON (CAST("r"."rv" AS NUMERIC) = CAST("t"."tid" AS NUMERIC))
+     want: ?
+FAIL zprobe.p21-map-nested-right-only  (99-zprobe.sqlt:241)
+     expected SQL, got E_SQL_BINDING (A["sv"] is not a field of that relation)
+FAIL zprobe.p22-map-source-name-after-chain  (99-zprobe.sqlt:253)
+     got:  SELECT "r"."id" AS "v" FROM "r" "r" INNER JOIN "s" "s" ON (CAST("r"."id" AS NUMERIC) = CAST("s"."id" AS NUMERIC)) INNER JOIN "t" "t" ON (CAST("r"."rv" AS NUMERIC) = CAST("t"."tid" AS NUMERIC))
+     want: ?
+FAIL zprobe.p23-single-5arg-map-source-name  (99-zprobe.sqlt:265)
+     got:  SELECT "r"."rv" AS "v" FROM "r" "r" INNER JOIN "s" "s" ON (CAST("r"."id" AS NUMERIC) = CAST("s"."id" AS NUMERIC))
+     want: ?
+FAIL zprobe.p24-single-5arg-map-right-name  (99-zprobe.sqlt:277)
+     got:  SELECT "s"."sv" AS "v" FROM "r" "r" INNER JOIN "s" "s" ON (CAST("r"."id" AS NUMERIC) = CAST("s"."id" AS NUMERIC))
+     want: ?
+FAIL zprobe.p25-single-5arg-pred-source-name  (99-zprobe.sqlt:289)
+     got:  SELECT "s"."sv" AS "v" FROM "r" "r" INNER JOIN "s" "s" ON (CAST("r"."id" AS NUMERIC) = CAST("s"."id" AS NUMERIC))
+     want: ?
+FAIL zprobe.p26-single-5arg-pred-right-name  (99-zprobe.sqlt:301)
+     got:  SELECT "s"."sv" AS "v" FROM "r" "r" INNER JOIN "s" "s" ON (CAST("r"."id" AS NUMERIC) = CAST("s"."id" AS NUMERIC))
+     want: ?
+FAIL zprobe.p27-single-3arg-map-source-name  (99-zprobe.sqlt:313)
+     got:  SELECT "r"."rv" AS "v" FROM "r" "r" INNER JOIN "s" "s" ON (CAST("r"."id" AS NUMERIC) = CAST("s"."id" AS NUMERIC))
+     want: ?
+
+0 passed (0 also checked against a mirrored dialect), 34 failed, 0 suite errors

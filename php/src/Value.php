@@ -15,6 +15,12 @@ declare(strict_types=1);
 
 namespace Sel;
 
+final class SlotCache
+{
+    public ?RecordShape $shape = null;
+    public int $slot = -1;
+}
+
 final class RecordShape
 {
     /** @var array<string,self> */
@@ -160,8 +166,8 @@ final class Value
     public string $kind;
     /** @var string|bool|null */
     private $scalar = null;
-    /** @var array<array-key, Value> */
-    public array $children = [];
+    /** @var array<array-key, Value>|null */
+    public ?array $children = null;
     public bool $isList = false;
     public ?RecordShape $shape = null;
     /** @var list<Value>|null */
@@ -256,9 +262,14 @@ final class Value
         return new self(self::BIN, $b);
     }
 
+    private static ?self $valTrue = null;
+    private static ?self $valFalse = null;
+
     public static function bool(bool $b): self
     {
-        return new self(self::BOOL, $b);
+        return $b
+            ? (self::$valTrue ??= new self(self::BOOL, true))
+            : (self::$valFalse ??= new self(self::BOOL, false));
     }
 
     /** @param array{neg:bool,digits:string,scale:int}|string $d */
@@ -280,14 +291,14 @@ final class Value
         if ($parsed === null) {
             fail('E_NOT_NUM', 'not a number: ' . json_encode($d));
         }
-        $v = new self(self::TEXT, null);
+        $v = new self(self::TEXT, $d);
         $v->decVal = $parsed;
         return $v;
     }
 
     public static function int(int $n): self
     {
-        $v = new self(self::TEXT, null);
+        $v = new self(self::TEXT, (string) $n);
         $v->decVal = Dec::fromInt($n);
         return $v;
     }
@@ -531,7 +542,7 @@ final class Value
 
     public function size(): int
     {
-        return $this->storage !== null ? count($this->storage) : count($this->children);
+        return $this->storage !== null ? count($this->storage) : ($this->children !== null ? count($this->children) : 0);
     }
 
     public function has(string $key): bool
@@ -549,7 +560,7 @@ final class Value
             $index = self::listIndex($key, count($this->storage));
             return $index >= 0;
         }
-        return array_key_exists($key, $this->children);
+        return $this->children !== null && array_key_exists($key, $this->children);
     }
 
     public function get(string $key): ?Value
@@ -569,7 +580,7 @@ final class Value
             $index = self::listIndex($key, count($this->storage));
             return $index < 0 ? null : $this->storage[$index];
         }
-        if (!array_key_exists($key, $this->children)) {
+        if ($this->children === null || !array_key_exists($key, $this->children)) {
             return null;
         }
         return $this->children[$key];
@@ -587,7 +598,7 @@ final class Value
             }
             return array_map(static fn (int $i): string => (string) ($i + 1), array_keys($this->storage));
         }
-        return array_map('strval', array_keys($this->children));
+        return $this->children !== null ? array_map('strval', array_keys($this->children)) : [];
     }
 
     /** @return list<Value> */
@@ -596,7 +607,7 @@ final class Value
         if ($this->storage !== null) {
             return $this->storage;
         }
-        return array_values($this->children);
+        return $this->children !== null ? array_values($this->children) : [];
     }
 
     /**
@@ -631,7 +642,9 @@ final class Value
             return;
         }
         if ($this->size() > 0) {
-            foreach ($this->children as $key => $item) $callback((string) $key, $item);
+            if ($this->children !== null) {
+                foreach ($this->children as $key => $item) $callback((string) $key, $item);
+            }
             return;
         }
         if ($this->kind !== Value::NONE) $callback('1', $this);
@@ -659,8 +672,10 @@ final class Value
             }
             return $out;
         }
-        foreach ($this->children as $k => $v) {
-            $out[] = [(string) $k, $v];
+        if ($this->children !== null) {
+            foreach ($this->children as $k => $v) {
+                $out[] = [(string) $k, $v];
+            }
         }
         return $out;
     }
@@ -872,8 +887,11 @@ final class Value
         }
         $out = new self($this->kind, $this->scalar, $this->isList);
         $out->decVal = $this->decVal;
-        foreach ($this->children as $k => $v) {
-            $out->children[$k] = $v->copyAt($depth + 1, $pos);
+        if ($this->children !== null) {
+            $out->children = [];
+            foreach ($this->children as $k => $v) {
+                $out->children[$k] = $v->copyAt($depth + 1, $pos);
+            }
         }
         return $out;
     }
@@ -936,11 +954,13 @@ final class Value
             }
             return;
         }
-        foreach ($this->children as $key => $value) {
-            $key = (string) $key;
-            hash_update($hash, strlen($key) . ':' . $key . '=');
-            $value->updateStructuralHash($hash, $depth + 1);
-            hash_update($hash, ';');
+        if ($this->children !== null) {
+            foreach ($this->children as $key => $value) {
+                $key = (string) $key;
+                hash_update($hash, strlen($key) . ':' . $key . '=');
+                $value->updateStructuralHash($hash, $depth + 1);
+                hash_update($hash, ';');
+            }
         }
     }
 
@@ -1162,7 +1182,7 @@ final class Value
             }
             return $out;
         }
-        if ($this->isList && $this->storage === null && array_keys($this->children) === range(1, count($this->children))) {
+        if ($this->isList && $this->storage === null && $this->children !== null && array_keys($this->children) === range(1, count($this->children))) {
             $out = [];
             foreach ($this->children as $value) {
                 $out[] = $value->toNativeAt($depth + 1);
@@ -1194,8 +1214,10 @@ final class Value
             }
             return $out;
         }
-        foreach ($this->children as $key => $value) {
-            $out[$key] = $value->toNativeAt($depth + 1);
+        if ($this->children !== null) {
+            foreach ($this->children as $key => $value) {
+                $out[$key] = $value->toNativeAt($depth + 1);
+            }
         }
         return $out;
     }

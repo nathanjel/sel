@@ -1,0 +1,39 @@
+text(lone) [control]                   ERR E_UTF8 E_UTF8 at 0:0: unpaired high surrogate
+from_native({lone:1}) [control]        ERR E_UTF8 E_UTF8 at 0:0: unpaired high surrogate
+none().set(lone) [control]             ERR E_UTF8 E_UTF8 at 0:0: unpaired high surrogate
+shaped([lone],[1])                     OK -{"a\ud800"=t"1"}
+record([lone],[1])                     OK -{"a\ud800"=t"1"}
+record([lone],[1]) → INDEXES           ERR E_UTF8 E_UTF8 at 0:0: unpaired high surrogate
+from_entries([(lone,1)])               OK -{"a\ud800"=t"1"}
+list([1],[lone]) keys                  OK -{"a\ud800"=t"1"}
+record fewer values                    ERR IndexError list index out of range
+record fewer values → run X["b"]       ERR IndexError list index out of range
+record extra values                    OK -{"a"=t"1"}
+record extra values size()             OK 2
+shaped duplicate keys                  OK -{"a"=t"1", "a"=t"2"}
+record duplicate keys                  OK -{"a"=t"1", "a"=t"2"}
+list keys count mismatch               OK -{"1"=t"1"}
+list duplicate keys                    OK -{"5"=t"1", "5"=t"2"}
+bin([True])                            OK b01
+bin([True,False])                      OK b0100
+from_native bytes [control]            OK b01
+bin([1.0])                             ERR E_RANGE E_RANGE at 0:0: not a sequence of bytes: 'float' object cannot be inte
+bin(bytearray) copy?                   OK 'n/a'
+num(Dec scale 1000001)                 OK t"0.0000000000000000000000000000000000000000000000000000000000000000000000000000
+int(10**1000000) [control]             ERR E_RANGE E_RANGE at 0:0: number has more than 1000000 integer digits
+from_native(10**1000000)               ERR E_RANGE E_RANGE at 0:0: number has more than 1000000 integer digits
+run ctx X=10**1000000                  ERR E_RANGE E_RANGE at 0:0: number has more than 1000000 integer digits
+from_native(10**5000) (>4300 str limit) OK 5004
+run ctx 10**5000 → X+1                 OK 5004
+num("1"*1000001)                       ERR E_RANGE E_RANGE at 0:0: number has more than 1000000 integer digits
+record: mutate caller values           OK -{"k1"=t"X", "k2"=t"2"}
+shaped: mutate caller values+keys      OK -{"k1"=t"X", "k2"=t"2"}
+list: mutate caller list               OK -{"1"=t"X", "2"=t"Y"}
+list: mutate caller keys               OK -{"9"=t"1"}
+from_entries: mutate caller            OK -{"a"=t"1"}
+bin(bytearray) mutate                  OK b01
+Traceback (most recent call last):
+  File "/tmp/claude-1001/-home-nathan-workspaces-nth-sel/7de8ec84-1e87-40e4-9fd1-1f6ea31c441b/scratchpad/r2/host-py.py", line 47, in <module>
+    v = Value.from_native({'a': ['x']}); n = v.to_native(); n['a'].append('y'); T('to_native mutate', lambda: v)
+                                                            ^^^^^^^^^^^^^
+AttributeError: 'dict' object has no attribute 'append'

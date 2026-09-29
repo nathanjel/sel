@@ -80,7 +80,17 @@ final class Program
     public function run($context = null): Value
     {
         $root = $context instanceof Value ? $context : Value::fromNative($context ?? []);
-        return Evaluator::evalNode($this->physicalAst(), new Context($root));
+        $wasGcEnabled = gc_enabled();
+        if ($wasGcEnabled) {
+            gc_disable();
+        }
+        try {
+            return Evaluator::evalNode($this->physicalAst(), new Context($root));
+        } finally {
+            if ($wasGcEnabled) {
+                gc_enable();
+            }
+        }
     }
 
     /**

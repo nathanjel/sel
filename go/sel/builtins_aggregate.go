@@ -692,17 +692,29 @@ func extractJoinEqui(node *Node, b1, b2 string) *joinEqui {
 	return nil
 }
 
+type joinKeyType int
+
+const (
+	keyTypeNull joinKeyType = iota
+	keyTypeBad
+	keyTypeInt64
+	keyTypeDec
+	keyTypeStr
+)
+
 type joinKey struct {
-	isBad   bool
-	badVal  *Value
-	isNull  bool
-	numVal  *decimal.Dec
-	byteVal string
+	kType  joinKeyType
+	intVal int64
+	strVal string
+	scale  int32
+	isBad  bool
+	isNull bool
+	badVal *Value
 }
 
 func canonicalJoinKey(v *Value, numeric bool) joinKey {
 	if v == nil || v.IsNull() {
-		return joinKey{isNull: true}
+		return joinKey{isNull: true, kType: keyTypeNull}
 	}
 	if numeric {
 		var d *decimal.Dec
@@ -715,9 +727,35 @@ func canonicalJoinKey(v *Value, numeric bool) joinKey {
 			d = v.AsDecimal(Pos{})
 		}()
 		if d == nil {
-			return joinKey{isBad: true, badVal: v}
+			return joinKey{isBad: true, kType: keyTypeBad, badVal: v}
 		}
-		return joinKey{numVal: decimal.TrimScale(d)}
+		if d.Digits != nil && d.Digits.IsInt64() {
+			m := d.Digits.Int64()
+			s := d.Scale
+			if m == 0 {
+				return joinKey{kType: keyTypeInt64, intVal: 0}
+			}
+			for s > 0 && m%10 == 0 {
+				m /= 10
+				s--
+			}
+			if d.Neg {
+				m = -m
+			}
+			if s == 0 {
+				return joinKey{kType: keyTypeInt64, intVal: m}
+			}
+			return joinKey{kType: keyTypeDec, intVal: m, scale: s}
+		}
+		trimmed := decimal.TrimScale(d)
+		if trimmed.Digits != nil && trimmed.Digits.IsInt64() && trimmed.Scale == 0 {
+			m := trimmed.Digits.Int64()
+			if trimmed.Neg {
+				m = -m
+			}
+			return joinKey{kType: keyTypeInt64, intVal: m}
+		}
+		return joinKey{kType: keyTypeStr, strVal: decimal.Format(trimmed)}
 	}
 	var b []byte
 	func() {
@@ -729,9 +767,9 @@ func canonicalJoinKey(v *Value, numeric bool) joinKey {
 		b = v.AsBytes(Pos{})
 	}()
 	if b == nil {
-		return joinKey{isBad: true, badVal: v}
+		return joinKey{isBad: true, kType: keyTypeBad, badVal: v}
 	}
-	return joinKey{byteVal: string(b)}
+	return joinKey{kType: keyTypeStr, strVal: string(b)}
 }
 
 type joinFacts struct {
@@ -763,10 +801,153 @@ func coerceJoinOperand(numeric bool, v *Value, node *Node) {
 	}
 }
 
+func evalBoolSafely(args *Args, conjunct *Node, ctx *Context) (keep bool, errOccurred bool) {
+	d := ctx.Depth
+	defer func() {
+		if r := recover(); r != nil {
+			ctx.Depth = d
+			errOccurred = true
+		}
+	}()
+	return args.EvalNode(conjunct).AsBool(conjunct.Pos), false
+}
+
 func doLink(args *Args, ctx *Context, leftJoin bool) *Value {
+	prefilter := ctx.JoinPrefilter
+	ctx.JoinPrefilter = nil
+
 	count := args.Count()
 	if count != 3 && count != 5 {
 		fail("E_ARITY", fmt.Sprintf("%s takes 3 or 5 arguments, got %d", args.Name(), count), args.Pos())
+	}
+
+	leftNode := args.Node(0)
+	rightNode := args.Node(1)
+
+	var stages []JoinStage
+	var above []*JoinSideFacts
+	var obligations []JoinObligation
+	deep := false
+	if prefilter != nil {
+		stages = prefilter.Stages
+		deep = prefilter.Deep
+		above = prefilter.Above
+		obligations = prefilter.Obligations
+	}
+
+	aboveKeysCache := make(map[int]map[string]bool)
+	aboveKeys := func(stage JoinStage) map[string]bool {
+		if k, ok := aboveKeysCache[stage.Above]; ok {
+			return k
+		}
+		k := make(map[string]bool)
+		for i := 0; i < stage.Above && i < len(above); i++ {
+			for name := range above[i].Keys {
+				k[name] = true
+			}
+		}
+		aboveKeysCache[stage.Above] = k
+		return k
+	}
+
+	aboveOf := func(stage JoinStage) []*JoinSideFacts {
+		n := stage.Above
+		if n > len(above) {
+			n = len(above)
+		}
+		return above[:n]
+	}
+
+	boundName := func(n *Node, fallback string) string {
+		name := singleRelationName(n)
+		if name == "" {
+			return fallback
+		}
+		return name
+	}
+
+	var b1Names, b2Names []string
+	if count == 5 {
+		b1Names = []string{args.Symbol(2), "_1"}
+		b2Names = []string{args.Symbol(3), "_2"}
+	} else {
+		b1Names = []string{boundName(leftNode, "_1"), "_1"}
+		b2Names = []string{boundName(rightNode, "_2"), "_2"}
+	}
+
+	jb1 := boundName(leftNode, "_1")
+	jb2 := boundName(rightNode, "_2")
+	predNode := args.Node(2)
+	if count == 5 {
+		jb1 = args.Symbol(2)
+		jb2 = args.Symbol(3)
+		predNode = args.Node(4)
+	}
+
+	jequi := extractJoinEqui(predNode, jb1, jb2)
+	var rightSide *JoinSideFacts
+
+	ownedByLeft := func(fields map[string]bool, stage JoinStage) bool {
+		upper := aboveKeys(stage)
+		for f := range fields {
+			if rightSide.Keys[f] || upper[f] {
+				return false
+			}
+		}
+		return true
+	}
+	nothingRight := func(fields map[string]bool, stage JoinStage) bool {
+		return false
+	}
+
+	isJoinOrFilter := func(n *Node) bool {
+		return n != nil && n.T == NodeCall && (n.S == "LINK" || n.S == "LINK_LEFT" || n.S == "FILTER")
+	}
+
+	if deep && len(stages) > 0 && jequi != nil && isJoinOrFilter(leftNode) && joinPureSource(leftNode) && joinPureSource(rightNode) {
+		rightFirst := args.Val(1)
+		rightSide = newJoinSideFacts(rightFirst, joinRowKeys(rightFirst, b2Names), leftJoin, b2Names)
+		totalBelow := func(reqs []JoinTotalReq, stage JoinStage) bool {
+			return joinTotality(reqs, nil, rightSide, aboveOf(stage))
+		}
+		_, stop := joinStageWalk(stages, ownedByLeft, totalBelow, nothingRight)
+		handed := joinTruncateStages(stages, stop)
+		for i := range handed {
+			handed[i].Above++
+		}
+		if len(handed) > 0 {
+			sides := append([]*JoinSideFacts{rightSide}, above...)
+			lowerB1 := strings.ToLower(jb1)
+			rowNames := map[string]bool{jb1: true, lowerB1: true, "_1": true, "_": true}
+			ownKey := JoinObligation{
+				Key:      jequi.leftExpr,
+				RowNames: rowNames,
+				Outer:    len(above) + 1,
+			}
+			obs := append([]JoinObligation{ownKey}, obligations...)
+			ctx.JoinPrefilter = &JoinPrefilter{
+				Stages:      handed,
+				Deep:        true,
+				Above:       sides,
+				Obligations: obs,
+			}
+		}
+		func() {
+			defer func() {
+				ctx.JoinPrefilter = nil
+			}()
+			args.Val(0)
+		}()
+	}
+
+	leftVal := args.Val(0)
+	rightVal := args.Val(1)
+	below := ctx.JoinPrefilterReport
+	ctx.JoinPrefilterReport = nil
+
+	if below != nil && below.Dropped && (leftVal.IsNull() || len(leftVal.Elements()) == 0) {
+		leftVal = args.EvalNode(leftNode)
+		below = nil
 	}
 
 	b1 := "_1"
@@ -788,9 +969,6 @@ func doLink(args *Args, ctx *Context, leftJoin bool) *Value {
 		predicate = args.Node(4)
 	}
 
-	leftVal := args.Val(0)
-	rightVal := args.Val(1)
-
 	if leftVal.IsNull() {
 		return NewListOwned(nil)
 	}
@@ -811,6 +989,7 @@ func doLink(args *Args, ctx *Context, leftJoin bool) *Value {
 		nullRight = makeNullRecord(sampleRight, b2)
 	}
 
+	projector := newJoinProjector(b1, b2, nullRight)
 	equi := extractJoinEqui(predicate, b1, b2)
 	if equi != nil && len(rightEnts) > 0 {
 		rFrame := map[string]*Value{
@@ -819,8 +998,10 @@ func doLink(args *Args, ctx *Context, leftJoin bool) *Value {
 			strings.ToLower(b2): nil,
 		}
 		ctx.PushFrame(rFrame)
-		buckets := make(map[string][]*Value)
+		buckets := make(map[joinKey][]*Value)
 		var facts joinFacts
+		flatTest := newJoinFlatTest(b1, b2)
+		rightFlat := true
 		for _, rEntry := range rightEnts {
 			right := ensureRowTableAlias(rEntry.Val, b2)
 			rFrame[b2] = right
@@ -839,16 +1020,148 @@ func doLink(args *Args, ctx *Context, leftJoin bool) *Value {
 						facts.bad = k.badVal
 					}
 				} else {
-					keyStr := k.byteVal
-					if equi.numeric {
-						keyStr = decimal.Format(k.numVal)
-					}
-					buckets[keyStr] = append(buckets[keyStr], right)
+					buckets[k] = append(buckets[k], right)
 				}
 				facts.live = true
 			}
+			if rightFlat && !flatTest.isFlat(right) {
+				rightFlat = false
+			}
 		}
+		projector.rightFlat = rightFlat
 		ctx.PopFrame()
+
+		var prefix []*Node
+		var rightPrefix []*Node
+		leftBeforeRight := -1
+		var binders []string
+		report := &JoinReport{
+			Applied: make(map[*Node]bool),
+			Dropped: below != nil && below.Dropped,
+		}
+
+		rightNames := func(stage JoinStage) map[string]bool {
+			names := map[string]bool{utf8.AsciiUpper(b2): true}
+			if stage.Above == 0 {
+				names["_2"] = true
+			}
+			return names
+		}
+		rightOk := !leftJoin && utf8.AsciiUpper(b1) != utf8.AsciiUpper(b2)
+		rightHere := func(fields map[string]bool, stage JoinStage) bool {
+			if !rightOk {
+				return false
+			}
+			names := rightNames(stage)
+			upper := aboveKeys(stage)
+			for f := range fields {
+				if !names[f] || upper[f] {
+					return false
+				}
+			}
+			return true
+		}
+
+		if prefilter != nil {
+			if rightSide == nil {
+				rightSide = newJoinSideFacts(rightVal, joinRowKeys(rightVal, b2Names), leftJoin, b2Names)
+			}
+			for _, stage := range stages {
+				binders = append(binders, stage.Binder)
+			}
+			leftSide := newJoinSideFacts(leftVal, joinRowKeys(leftVal, b1Names), false, b1Names)
+			totalHere := func(reqs []JoinTotalReq, stage JoinStage) bool {
+				return joinTotality(reqs, leftSide, rightSide, aboveOf(stage))
+			}
+			ownedHere := func(fields map[string]bool, stage JoinStage) bool {
+				upper := aboveKeys(stage)
+				for f := range fields {
+					if rightSide.Keys[f] || upper[f] {
+						return false
+					}
+				}
+				return true
+			}
+			safe := len(obligations) == 0 || joinKeysSafe(obligations, leftSide, rightSide, above)
+			selfNames := map[string]bool{utf8.AsciiUpper(b1): true, "_1": true}
+			var walkApplied []JoinApplied
+			if safe {
+				walkApplied, _ = joinStageWalk(stages, ownedHere, totalHere, rightHere)
+			}
+			for _, applied := range walkApplied {
+				c := applied.Conjunct
+				report.Applied[c.Node] = true
+				if below != nil && !below.Errored && below.Applied[c.Node] {
+					continue
+				}
+				if applied.Right {
+					if leftBeforeRight < 0 {
+						leftBeforeRight = len(prefix)
+					}
+					rightPrefix = append(rightPrefix, joinReadSelf(c.Node, rightNames(*applied.Stage), c.Binder))
+					continue
+				}
+				node := c.Node
+				for f := range c.Fields {
+					if selfNames[f] && !leftSide.First[f] {
+						node = joinReadSelf(c.Node, selfNames, c.Binder)
+						break
+					}
+				}
+				prefix = append(prefix, node)
+			}
+		}
+
+		rejected := make(map[*Value]bool)
+		rejecting := len(rightPrefix) > 0
+		if rejecting {
+			rFilterFrame := make(map[string]*Value, len(binders))
+			for _, b := range binders {
+				rFilterFrame[b] = nil
+			}
+			ctx.PushFrame(rFilterFrame)
+			before := report.Errored
+			report.Errored = false
+			for _, rRows := range buckets {
+				for _, right := range rRows {
+					for _, b := range binders {
+						rFilterFrame[b] = right
+					}
+					for _, conjunct := range rightPrefix {
+						keep, errOccurred := evalBoolSafely(args, conjunct, ctx)
+						if errOccurred {
+							report.Errored = true
+							break
+						}
+						if !keep {
+							rejected[right] = true
+							break
+						}
+					}
+				}
+			}
+			ctx.PopFrame()
+			if report.Errored && leftBeforeRight >= 0 {
+				prefix = prefix[:leftBeforeRight]
+			}
+			report.Errored = report.Errored || before
+		}
+
+		numbered := (len(prefix) > 0 || rejecting) && !deep
+		var keyedEntries []Entry
+		dropped := false
+		position := 1
+
+		var fastField string
+		if len(prefix) > 0 && deep {
+			el := equi.leftExpr
+			if el.T == NodeIndex && el.L != nil && el.L.T == NodeVar && el.R != nil && el.R.T == NodeText {
+				owner := utf8.AsciiUpper(el.L.S)
+				if owner == utf8.AsciiUpper(b1) || owner == "_1" || owner == "_" {
+					fastField = el.R.S
+				}
+			}
+		}
 
 		var output []*Value
 		lFrame := map[string]*Value{
@@ -857,42 +1170,150 @@ func doLink(args *Args, ctx *Context, leftJoin bool) *Value {
 			"_":                 nil,
 			strings.ToLower(b1): nil,
 		}
+		for _, b := range binders {
+			lFrame[b] = nil
+		}
 		ctx.PushFrame(lFrame)
 		defer ctx.PopFrame()
 
+		setRow := func(row *Value) {
+			lFrame[b1] = row
+			lFrame["_1"] = row
+			lFrame["_"] = row
+			if lowerB1 := strings.ToLower(b1); lowerB1 != b1 {
+				lFrame[lowerB1] = row
+			}
+			for _, b := range binders {
+				lFrame[b] = row
+			}
+		}
+
+		verdict := func(conjuncts []*Node, row *Value) int {
+			setRow(row)
+			for _, conjunct := range conjuncts {
+				keep, errOccurred := evalBoolSafely(args, conjunct, ctx)
+				if errOccurred {
+					report.Errored = true
+					return 2
+				}
+				if !keep {
+					return 1
+				}
+			}
+			return 0
+		}
+
+		emit := func(joined *Value) {
+			if numbered {
+				keyedEntries = append(keyedEntries, Entry{Key: strconv.Itoa(position), Val: joined})
+			} else {
+				output = append(output, joined)
+			}
+			position++
+		}
+
 		for _, lEntry := range leftEnts {
 			left := ensureRowTableAlias(lEntry.Val, b1)
-			lFrame[b1] = left
-			lFrame["_1"] = left
-			lFrame["_"] = left
-			if lowerB1 := strings.ToLower(b1); lowerB1 != b1 {
-				lFrame[lowerB1] = left
+			asked := -1
+			if fastField != "" && left.Has(fastField) {
+				asked = verdict(prefix, left)
+				if asked == 1 {
+					fieldVal := left.Get(fastField)
+					checkJoinPair(equi, canonicalJoinKey(fieldVal, equi.numeric), facts)
+					dropped = true
+					continue
+				}
 			}
+
+			setRow(left)
 			lKeyVal := args.EvalNode(equi.leftExpr)
 			lk := canonicalJoinKey(lKeyVal, equi.numeric)
 			checkJoinPair(equi, lk, facts)
 
-			matched := false
+			var rRows []*Value
+			var hasBucket bool
 			if !lk.isNull && !lk.isBad {
-				keyStr := lk.byteVal
-				if equi.numeric {
-					keyStr = decimal.Format(lk.numVal)
-				}
-				if rRows, ok := buckets[keyStr]; ok {
-					matched = true
-					for _, rRow := range rRows {
-						output = append(output, makeJoinedRow(left, rRow, b1, b2, nullRight))
-					}
+				rRows, hasBucket = buckets[lk]
+			}
+
+			if asked < 0 {
+				if len(prefix) > 0 {
+					asked = verdict(prefix, left)
+				} else {
+					asked = 0
 				}
 			}
-			if leftJoin && !matched {
-				output = append(output, makeJoinedRow(left, nil, b1, b2, nullRight))
+
+			if asked == 1 {
+				dropped = true
+				if numbered {
+					if hasBucket {
+						position += len(rRows)
+					} else if leftJoin {
+						position++
+					}
+				}
+				continue
+			}
+
+			if hasBucket {
+				skip := rejecting && asked == 0
+				for _, rRow := range rRows {
+					if skip && rejected[rRow] {
+						dropped = true
+						position++
+						continue
+					}
+					emit(projector.project(left, rRow))
+				}
+			} else if leftJoin {
+				emit(projector.project(left, nil))
+			}
+		}
+
+		report.Dropped = report.Dropped || dropped
+		if prefilter != nil {
+			ctx.JoinPrefilterReport = report
+		}
+
+		if numbered {
+			if dropped && len(keyedEntries) > 0 {
+				items := make([]*Value, len(keyedEntries))
+				keys := make([]string, len(keyedEntries))
+				for i, e := range keyedEntries {
+					items[i] = e.Val
+					keys[i] = e.Key
+				}
+				return NewListWithKeys(items, keys)
+			}
+			if !dropped {
+				for _, e := range keyedEntries {
+					output = append(output, e.Val)
+				}
 			}
 		}
 		return NewListOwned(output)
 	}
 
+	report := &JoinReport{
+		Dropped: below != nil && below.Dropped,
+	}
+	if prefilter != nil {
+		ctx.JoinPrefilterReport = report
+	}
+
 	var output []*Value
+	flatTest := newJoinFlatTest(b1, b2)
+	rightFlat := true
+	for _, rEntry := range rightEnts {
+		right := ensureRowTableAlias(rEntry.Val, b2)
+		if rightFlat && !flatTest.isFlat(right) {
+			rightFlat = false
+			break
+		}
+	}
+	projector.rightFlat = rightFlat
+
 	frame := map[string]*Value{
 		b1:                  nil,
 		"_1":                nil,
@@ -925,12 +1346,12 @@ func doLink(args *Args, ctx *Context, leftJoin bool) *Value {
 
 			if args.EvalNode(predicate).AsBool(predicate.Pos) {
 				matched = true
-				output = append(output, makeJoinedRow(left, right, b1, b2, nullRight))
+				output = append(output, projector.project(left, right))
 			}
 		}
 
 		if leftJoin && !matched {
-			output = append(output, makeJoinedRow(left, nil, b1, b2, nullRight))
+			output = append(output, projector.project(left, nil))
 		}
 	}
 
@@ -1001,7 +1422,81 @@ func init() {
 		Lazy:  true,
 		Binds: true,
 		Fn: func(args *Args, ctx *Context) *Value {
-			inVal := args.Val(0)
+			written := args.Node(args.Count() - 1)
+			handed := ctx.JoinPrefilter
+			ctx.JoinPrefilter = nil
+
+			src := args.Node(0)
+			var ownNodes []*Node
+			overJoin := false
+			if src != nil && src.T == NodeCall && (src.S == "LINK" || src.S == "LINK_LEFT") {
+				overJoin = true
+				three := args.Count() == 3
+				binder := "_"
+				if three {
+					binder = args.Symbol(1)
+				}
+				own := leadingFieldConjuncts(written, binder)
+				for _, c := range own {
+					ownNodes = append(ownNodes, c.Node)
+				}
+				blocked := len(own) > 0 && !own[0].FieldOnly && !own[0].HasTotal
+				var pre JoinPrefilter
+				if !blocked {
+					pre.Stages = append(pre.Stages, JoinStage{Binder: binder, Conjuncts: own, Above: 0})
+				}
+				if handed != nil && !blocked {
+					pre.Stages = append(pre.Stages, handed.Stages...)
+					pre.Above = handed.Above
+					pre.Obligations = handed.Obligations
+				}
+				if handed != nil {
+					pre.Deep = true
+				} else {
+					pre.Deep = written.KeysUnobserved
+				}
+				if len(pre.Stages) > 0 {
+					ctx.JoinPrefilter = &pre
+				}
+			}
+
+			var inVal *Value
+			func() {
+				defer func() {
+					ctx.JoinPrefilter = nil
+				}()
+				inVal = args.Val(0)
+			}()
+
+			report := ctx.JoinPrefilterReport
+			ctx.JoinPrefilterReport = nil
+			if report != nil && handed != nil {
+				ctx.JoinPrefilterReport = report
+			}
+
+			var overrideBody *Node
+			if overJoin && report != nil && !report.Errored {
+				var rest []*Node
+				for _, n := range ownNodes {
+					if !report.Applied[n] {
+						rest = append(rest, n)
+					}
+				}
+				if len(rest) < len(ownNodes) {
+					if len(rest) == 0 {
+						return inVal
+					}
+					overrideBody = rest[0]
+					for i := 1; i < len(rest); i++ {
+						andNode := NewNode(NodeBin, overrideBody.Pos)
+						andNode.S = "AND"
+						andNode.L = overrideBody
+						andNode.R = rest[i]
+						overrideBody = andNode
+					}
+				}
+			}
+
 			isDense := inVal.isList && inVal.storage != nil && inVal.listKeys == nil
 			var storage []*Value
 			var keys []string
@@ -1026,7 +1521,7 @@ func init() {
 					}
 					origIdx++
 					return nil
-				}, nil)
+				}, overrideBody)
 			} else {
 				expectedIndex := 1
 				aggregateWalk(args, ctx, func(r *Value, key string, item *Value, body *Node) *Value {
@@ -1045,7 +1540,7 @@ func init() {
 						expectedIndex++
 					}
 					return nil
-				}, nil)
+				}, overrideBody)
 			}
 			if needsCustomKeys {
 				return NewListWithKeys(storage, keys)

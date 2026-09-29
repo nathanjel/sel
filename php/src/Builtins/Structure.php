@@ -73,7 +73,7 @@ final class Structure
         if ($value->shape !== null && $value->storage !== null && $value->storage !== []) {
             return $value->storage[0];
         }
-        if ($value->size() > 0) {
+        if ($value->size() > 0 && $value->children !== null) {
             foreach ($value->children as $item) return $item;
         }
         return $value;
@@ -610,84 +610,127 @@ final class Structure
      * after another, so the plan whose left checks it passed is tried first
      * without repeating them.
      */
-    private static function makeJoinProjector(string $b1, string $b2, ?Value $nullRight): callable
-    {
-        $plans = [];
-        // The last pair's shapes, its builder and the left row that builder
-        // was last checked against (or built from), and the key of the plans
-        // for those shapes. Plain variables, and fields read in place rather
-        // than through locals: an object a variable lets go of while it is
-        // still referenced is a candidate root for PHP's cycle collector, and
-        // one per field per row makes the collector run often (SEL-0053).
-        $lastLeft = $lastBuild = $pairL = $pairR = $pairKey = null;
-        $pairMatched = false;
-        // A plan's builder: the row, or null when the pair breaks the plan's
-        // assumptions -- with CHECKLEFT, that each left field is (or is not)
-        // a nested record as it was; and always, that a right field it copies
-        // (promotes) is a non-NULL scalar, and that one it leaves out for
-        // being NULL or a record still is one. Each field is checked as it is
-        // copied: op 0 copies a left field that was not a nested record, op 4
-        // one that was; the left fields the row leaves out are checked apart
-        // (lrest: slot => nested). (The right fields are checked pair by
-        // pair: a pass over the right rows to learn they are all flat, as JS,
-        // C++ and Lisp make, saves PHP nothing measurable.)
-        $builder = static function (array $plan): \Closure {
-            $ops = $plan['ops'];
-            $slots = $plan['slots'];
-            $shape = $plan['shape'];
-            $rkept = $plan['rkept'];
-            $lnested = $plan['lnested'];
-            $lrest = $lnested;
-            foreach ($ops as $i => $op) {
-                if ($op === 0) {
-                    if ($lnested[$slots[$i]]) $ops[$i] = 4;
-                    unset($lrest[$slots[$i]]);
+    /**
+     * @param array<string,mixed> $plan
+     * @return array{build:\Closure, many:\Closure}
+     */
+    private static function compileSpecializedJoinProjector(
+        array $plan,
+        RecordShape $shape,
+        RecordShape $rshape
+    ): array {
+        $ops = $plan['ops'];
+        $slots = $plan['slots'];
+        $rkept = $plan['rkept'];
+        $lnested = $plan['lnested'];
+        $lrest = $lnested;
+        foreach ($ops as $i => $op) {
+            if ($op === 0) {
+                if ($lnested[$slots[$i]]) $ops[$i] = 4;
+                unset($lrest[$slots[$i]]);
+            }
+        }
+
+        $elements = [];
+        foreach ($ops as $i => $op) {
+            $slot = $slots[$i];
+            if ($op === 0 || $op === 4) {
+                $elements[] = "\$ls[{$slot}]";
+            } elseif ($op === 1) {
+                $elements[] = "\$rs[{$slot}]";
+            } elseif ($op === 2) {
+                $elements[] = "\$left";
+            } else {
+                $elements[] = "\$rside";
+            }
+        }
+        $elementsStr = implode(', ', $elements);
+
+        $lchecks = [];
+        foreach ($ops as $i => $op) {
+            $slot = $slots[$i];
+            if ($op === 0) {
+                $lchecks[] = "if (\$ls[{$slot}]->kind === 'NONE' && !\$ls[{$slot}]->isList && \$ls[{$slot}]->size() > 0) return false;";
+            } elseif ($op === 4) {
+                $lchecks[] = "if (\$ls[{$slot}]->kind !== 'NONE' || \$ls[{$slot}]->isList || \$ls[{$slot}]->size() === 0) return false;";
+            }
+        }
+        foreach ($lrest as $slot => $nested) {
+            if ($nested) {
+                $lchecks[] = "if (\$ls[{$slot}]->kind !== 'NONE' || \$ls[{$slot}]->isList || \$ls[{$slot}]->size() === 0) return false;";
+            } else {
+                $lchecks[] = "if (\$ls[{$slot}]->kind === 'NONE' && !\$ls[{$slot}]->isList && \$ls[{$slot}]->size() > 0) return false;";
+            }
+        }
+        $lchecksStr = $lchecks === [] ? '' : implode("\n            ", $lchecks);
+        $lchecksBuildStr = $lchecks === [] ? '' : str_replace('return false;', 'return null;', $lchecksStr);
+
+        $rchecks = [];
+        $rguards = [];
+        foreach ($ops as $i => $op) {
+            if ($op === 1) {
+                $slot = $slots[$i];
+                $rchecks[] = "if (\$rs[{$slot}]->kind === 'NONE' && !\$rs[{$slot}]->isList) return null;";
+                $rguards[] = "(\$rs[{$slot}]->kind !== 'NONE' || \$rs[{$slot}]->isList)";
+            }
+        }
+        foreach ($rkept as $rk) {
+            $rchecks[] = "if (\$rs[{$rk}]->kind !== 'NONE' || \$rs[{$rk}]->isList) return null;";
+            $rguards[] = "(\$rs[{$rk}]->kind === 'NONE' && !\$rs[{$rk}]->isList)";
+        }
+        $rchecksStr = $rchecks === [] ? '' : implode("\n        ", $rchecks);
+        $rguardCond = $rguards === [] ? 'true' : implode(' && ', $rguards);
+
+        $code = "return [
+            'checkLeft' => static function (\\Sel\\Value \$left): bool {
+                \$ls = \$left->storage;
+                {$lchecksStr}
+                return true;
+            },
+            'build' => static function (\\Sel\\Value \$left, \\Sel\\Value \$rside, bool \$checkLeft) use (\$shape): ?\\Sel\\Value {
+                \$ls = \$left->storage;
+                if (\$checkLeft) {
+                    {$lchecksBuildStr}
+                }
+                \$rs = \$rside->storage;
+                {$rchecksStr}
+                return \\Sel\\Value::fromShape(\$shape, [{$elementsStr}]);
+            },
+            'many' => static function (\\Sel\\Value \$left, array \$rights, array &\$output, callable \$project) use (\$shape, \$rshape): void {
+                \$ls = \$left->storage;
+                foreach (\$rights as \$rside) {
+                    if (\$rside->shape === \$rshape) {
+                        \$rs = \$rside->storage;
+                        if ({$rguardCond}) {
+                            \$output[] = \\Sel\\Value::fromShape(\$shape, [{$elementsStr}]);
+                            continue;
+                        }
+                    }
+                    \$output[] = \$project(\$left, \$rside);
                 }
             }
-            return static function (Value $left, Value $rside, bool $checkLeft)
-                use ($ops, $slots, $shape, $lrest, $rkept): ?Value {
-                $ls = $left->storage;
-                $rs = $rside->storage;
-                $storage = [];
-                foreach ($ops as $i => $op) {
-                    if ($op === 0) {
-                        if ($checkLeft && $ls[$slots[$i]]->kind === Value::NONE && !$ls[$slots[$i]]->isList
-                                && ($ls[$slots[$i]]->storage ?? $ls[$slots[$i]]->children) !== []) return null;
-                        $storage[] = $ls[$slots[$i]];
-                    } elseif ($op === 1) {
-                        if ($rs[$slots[$i]]->kind === Value::NONE && !$rs[$slots[$i]]->isList) return null;
-                        $storage[] = $rs[$slots[$i]];
-                    } elseif ($op === 4) {
-                        if ($checkLeft && ($ls[$slots[$i]]->kind !== Value::NONE || $ls[$slots[$i]]->isList
-                                || ($ls[$slots[$i]]->storage ?? $ls[$slots[$i]]->children) === [])) return null;
-                        $storage[] = $ls[$slots[$i]];
-                    } else {
-                        $storage[] = $op === 2 ? $left : $rside;
-                    }
-                }
-                if ($checkLeft) {
-                    foreach ($lrest as $i => $nested) {
-                        if (($ls[$i]->kind === Value::NONE && !$ls[$i]->isList
-                                && ($ls[$i]->storage ?? $ls[$i]->children) !== []) !== $nested) return null;
-                    }
-                }
-                foreach ($rkept as $i) {
-                    if ($rs[$i]->kind !== Value::NONE || $rs[$i]->isList) return null;
-                }
-                return Value::fromShape($shape, $storage);
-            };
-        };
-        return static function (Value $left, ?Value $right) use (&$plans, &$lastLeft, &$lastBuild, &$pairL, &$pairR, &$pairKey, &$pairMatched, $builder, $b1, $b2, $nullRight): Value {
+        ];";
+
+        return eval($code);
+    }
+
+    private static function makeJoinProjector(string $b1, string $b2, ?Value $nullRight): JoinProjector
+    {
+        $plans = [];
+        $lastLeft = $lastBuild = $lastMany = $lastCheckLeft = $pairL = $pairR = $pairKey = null;
+        $pairMatched = false;
+
+        $project = static function (Value $left, ?Value $right) use (
+            &$plans, &$lastLeft, &$lastBuild, &$lastMany, &$lastCheckLeft, &$pairL, &$pairR, &$pairKey, &$pairMatched, $b1, $b2, $nullRight
+        ): Value {
             $rside = $right ?? $nullRight;
             if ($left->shape === null || $left->storage === null || $rside === null
                     || $rside->shape === null || $rside->storage === null) {
                 return self::makeJoinedRow($left, $right, $b1, $b2, $nullRight);
             }
             $matched = $right !== null;
-            // The same shapes as the last pair: its builder first, checking
-            // the left row only when it is a new one.
             if ($pairL === $left->shape && $pairR === $rside->shape && $pairMatched === $matched) {
-                $row = $lastBuild($left, $rside, $lastLeft !== $left);
+                $row = ($lastBuild['build'])($left, $rside, $lastLeft !== $left);
                 if ($row !== null) {
                     if ($lastLeft !== $left) $lastLeft = $left;
                     return $row;
@@ -696,21 +739,20 @@ final class Structure
             } else {
                 $key = spl_object_id($left->shape) . ':' . spl_object_id($rside->shape) . ':' . ($matched ? 1 : 0);
             }
-            foreach ($plans[$key] ?? [] as $build) {
-                $row = $build($left, $rside, true);
+            foreach ($plans[$key] ?? [] as $entry) {
+                $row = ($entry['build'])($left, $rside, true);
                 if ($row !== null) {
-                    $lastLeft = $left; $lastBuild = $build;
+                    $lastLeft = $left; $lastBuild = $entry;
+                    if ($matched) {
+                        $lastMany = $entry['many'];
+                        $lastCheckLeft = $entry['checkLeft'];
+                    }
                     $pairL = $left->shape; $pairR = $rside->shape; $pairMatched = $matched; $pairKey = $key;
                     return $row;
                 }
             }
             $plan = self::rowPlan($left, $rside, $matched, $b1, $b2);
             $plan['lnested'] = array_map([self::class, 'leftNested'], $left->storage);
-            // Right fields the left does not name that were left out for being
-            // NULL or records: they must still be, for the plan to hold. (A
-            // scalar left out because its name is already a key of the row
-            // stays out whatever it holds; so does one named like a binder
-            // key, which the binder holds.)
             $leftNames = [];
             foreach ($left->shape->keys as $k) $leftNames[strtoupper((string) $k)] = true;
             $binderNames = array_flip([...self::binderKeys($b1, '_1'), ...self::binderKeys($b2, '_2')]);
@@ -725,12 +767,39 @@ final class Structure
                 }
             }
             $plan['rkept'] = $kept;
-            $build = $builder($plan);
-            $plans[$key][] = $build;
-            $lastLeft = $left; $lastBuild = $build;
+            $entry = self::compileSpecializedJoinProjector($plan, $plan['shape'], $rside->shape);
+            $plans[$key][] = $entry;
+            $lastLeft = $left; $lastBuild = $entry;
+            if ($matched) {
+                $lastMany = $entry['many'];
+                $lastCheckLeft = $entry['checkLeft'];
+            }
             $pairL = $left->shape; $pairR = $rside->shape; $pairMatched = $matched; $pairKey = $key;
-            return $build($left, $rside, false);
+            return ($entry['build'])($left, $rside, false);
         };
+
+        $manyBatch = static function (Value $left, array $rights, array &$output) use (
+            &$lastMany, &$lastCheckLeft, &$pairL, &$pairR, &$pairMatched, $project
+        ): void {
+            if (empty($rights)) return;
+            $r0 = $rights[0];
+            if ($pairMatched && $pairL === $left->shape && $pairR === $r0->shape && $lastMany !== null && ($lastCheckLeft)($left)) {
+                ($lastMany)($left, $rights, $output, $project);
+                return;
+            }
+            $output[] = $project($left, $r0);
+            $count = count($rights);
+            if ($count === 1) return;
+            if ($pairMatched && $pairL === $left->shape && $lastMany !== null && ($lastCheckLeft)($left)) {
+                ($lastMany)($left, array_slice($rights, 1), $output, $project);
+                return;
+            }
+            for ($i = 1; $i < $count; $i++) {
+                $output[] = $project($left, $rights[$i]);
+            }
+        };
+
+        return new JoinProjector($project, $manyBatch);
     }
 
     // --- the join pre-filter (SEL-0049, SEL-0050, SEL-0052) -----------------
@@ -935,7 +1004,7 @@ final class Structure
             foreach ($value->storage as $item) $callback($item);
             return;
         }
-        if ($value->size() > 0) {
+        if ($value->size() > 0 && $value->children !== null) {
             foreach ($value->children as $item) $callback($item);
             return;
         }
@@ -1156,7 +1225,7 @@ final class Structure
                 foreach ($value->storage as $item) $callback($item);
                 return;
             }
-            if ($value->size() > 0) {
+            if ($value->size() > 0 && $value->children !== null) {
                 foreach ($value->children as $item) $callback($item);
                 return;
             }
@@ -1407,15 +1476,20 @@ final class Structure
                             // row: its joined rows raise in the FILTER, in
                             // order, where they would have.
                             $skip = ($rejected !== null && $asked === 0) ? $rejected : null;
-                            foreach ($matches as $right) {
-                                if ($skip !== null && isset($skip[spl_object_id($right)])) {
-                                    $dropped = true;
+                            if ($skip === null && $keys === null) {
+                                $project->many($row, $matches, $output);
+                                $position += count($matches);
+                            } else {
+                                foreach ($matches as $right) {
+                                    if ($skip !== null && isset($skip[spl_object_id($right)])) {
+                                        $dropped = true;
+                                        $position++;
+                                        continue;
+                                    }
+                                    $output[] = $project($row, $right);
+                                    if ($keys !== null) $keys[] = (string) $position;
                                     $position++;
-                                    continue;
                                 }
-                                $output[] = $project($row, $right);
-                                if ($keys !== null) $keys[] = (string) $position;
-                                $position++;
                             }
                         } elseif ($leftJoin) {
                             $output[] = $project($row, null);
@@ -1440,7 +1514,7 @@ final class Structure
                         self::checkJoinPair($equi, $key, $facts);
                         $matches = $key === null || is_array($key) ? null : ($buckets[$key] ?? null);
                         if ($matches !== null) {
-                            foreach ($matches as $right) $output[] = $project($row, $right);
+                            $project->many($row, $matches, $output);
                         } elseif ($leftJoin) {
                             $output[] = $project($row, null);
                         }
@@ -1452,7 +1526,7 @@ final class Structure
                         self::checkJoinPair($equi, $key, $facts);
                         $matches = $key === null || is_array($key) ? null : ($buckets[$key] ?? null);
                         if ($matches !== null) {
-                            foreach ($matches as $right) $output[] = $project($row, $right);
+                            $project->many($row, $matches, $output);
                         } elseif ($leftJoin) {
                             $output[] = $project($row, null);
                         }
@@ -1475,7 +1549,7 @@ final class Structure
                         self::checkJoinPair($equi, $key, $facts);
                         $matches = $key === null || is_array($key) ? null : ($buckets[$key] ?? null);
                         if ($matches !== null) {
-                            foreach ($matches as $right) $output[] = $project($row, $right);
+                            $project->many($row, $matches, $output);
                         } elseif ($leftJoin) {
                             $output[] = $project($row, null);
                         }
@@ -1667,17 +1741,21 @@ final class Structure
 
         $groups = [];
         $buckets = [];
-        $frame = [$binder => Value::none(), '_K' => Value::none()];
+        $needsK = Core::containsVar($keyNode, '_K');
+        $frame = [$binder => Value::none()];
+        if ($needsK) $frame['_K'] = Value::none();
         $ctx->pushFrame($frame);
         try {
             $index = 0;
             $value->forEachElement(function (string $key, Value $item) use (
-                &$index, &$frame, &$groups, &$buckets, $a, $ctx, $keyNode, $aggregateNode, $binder,
+                &$index, &$frame, &$groups, &$buckets, $a, $ctx, $keyNode, $aggregateNode, $binder, $needsK,
             ): void {
                 $frame[$binder] = $item;
-                $frame['_K'] = Value::text($key === '' ? (string) (++$index) : $key);
-                $ctx->setFrameValue($binder, $frame[$binder]);
-                $ctx->setFrameValue('_K', $frame['_K']);
+                $ctx->setFrameValue($binder, $item);
+                if ($needsK) {
+                    $frame['_K'] = Value::text($key === '' ? (string) (++$index) : $key);
+                    $ctx->setFrameValue('_K', $frame['_K']);
+                }
                 $groupKey = $a->evalNode($keyNode);
                 // A bare bucket's key is an index key (spec §3.3): the scalar,
                 // verbatim, and refused the way indexing refuses it -- never
@@ -1708,7 +1786,7 @@ final class Structure
         if ($aggregateNode === null) {
             $out = Value::none();
             foreach ($groups as $group) {
-                $out->set($group['keyString'], Value::list(array_map(static fn (Value $row): Value => $row->copy(), $group['rows'])));
+                $out->set($group['keyString'], Value::list($group['rows']));
             }
             return $out;
         }
@@ -1727,6 +1805,28 @@ final class Structure
             $ctx->popFrame();
         }
         return Value::list($out);
+    }
+}
+
+final class JoinProjector
+{
+    /** @param \Closure(Value, ?Value): Value $project */
+    /** @param \Closure(Value, list<Value>, list<Value>&): void $manyBatch */
+    public function __construct(
+        public \Closure $project,
+        public \Closure $manyBatch,
+    ) {
+    }
+
+    public function __invoke(Value $left, ?Value $right): Value
+    {
+        return ($this->project)($left, $right);
+    }
+
+    /** @param list<Value> $rights @param list<Value> $output */
+    public function many(Value $left, array $rights, array &$output): void
+    {
+        ($this->manyBatch)($left, $rights, $output);
     }
 }
 
@@ -1759,7 +1859,7 @@ final class JoinSideFacts
         $firstRow = null;
         if ($value->storage !== null && $value->storage !== [] && ($value->isList || $value->shape !== null)) {
             $firstRow = $value->storage[0];
-        } elseif ($value->size() > 0) {
+        } elseif ($value->size() > 0 && $value->children !== null) {
             foreach ($value->children as $item) { $firstRow = $item; break; }
         }
         if ($firstRow !== null) foreach ($firstRow->keys() as $k) $this->first[strtoupper($k)] = true;

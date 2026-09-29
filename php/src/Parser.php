@@ -498,6 +498,9 @@ final class Parser
                     $idx = $this->parseSequence();
                     $this->expectOp(']');
                     $node = ['t' => 'index', 'obj' => $node, 'idx' => $idx, 'pos' => $br];
+                    if (($idx['t'] ?? null) === 'text') {
+                        $node['slotCache'] = new SlotCache();
+                    }
                 } finally {
                     $this->leave();
                 }

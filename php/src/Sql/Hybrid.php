@@ -629,10 +629,11 @@ final class Hybrid
             $key = ['t' => 'text', 'v' => $field, 'pos' => $steps[$mapIndex]['pos']];
             $obj = ['t' => 'var', 'name' => $details['binder'], 'pos' => $steps[$mapIndex]['pos']];
             $rewrittenArgs[] = $key;
-            $rewrittenArgs[] = ['t' => 'index', 'obj' => $obj, 'idx' => $key, 'pos' => $steps[$mapIndex]['pos']];
+            $rewrittenArgs[] = ['t' => 'index', 'obj' => $obj, 'idx' => $key, 'pos' => $steps[$mapIndex]['pos'], 'slotCache' => new \Sel\SlotCache()];
         }
         $record = $details['body'];
         $record['args'] = $rewrittenArgs;
+        $record['recordShape'] = null;
         $map = $steps[$mapIndex];
         $map['args'] = $details['explicit']
             ? [$map['args'][0], $map['args'][1], $record]
@@ -651,7 +652,7 @@ final class Hybrid
             $continuationArgs[] = $pair['key'];
             if (isset($pushableAt[$i])) {
                 $obj = ['t' => 'var', 'name' => $details['binder'], 'pos' => $pair['value']['pos']];
-                $continuationArgs[] = ['t' => 'index', 'obj' => $obj, 'idx' => $pair['key'], 'pos' => $pair['value']['pos']];
+                $continuationArgs[] = ['t' => 'index', 'obj' => $obj, 'idx' => $pair['key'], 'pos' => $pair['value']['pos'], 'slotCache' => new \Sel\SlotCache()];
             } else {
                 $continuationArgs[] = $pair['value'];
             }

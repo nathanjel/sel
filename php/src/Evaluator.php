@@ -47,7 +47,7 @@ final class Evaluator
      */
     public static function evalMathPlan(array $plan, Context $ctx): Value
     {
-        $scratchpad = array_fill(0, $plan['scratchpadSize'], null);
+        $scratchpad = [];
         foreach ($plan['steps'] as $step) {
             switch ($step['op']) {
                 case MathOpCode::LOAD_VAR:
@@ -169,10 +169,38 @@ final class Evaluator
                 return $v;
 
             case 'index':
-                $obj = self::evalNode($node['obj'], $ctx);
-                $key = ($node['idx']['t'] ?? null) === 'text'
+                $objNode = $node['obj'];
+                if (($objNode['t'] ?? null) === 'var') {
+                    $obj = $ctx->lookup($objNode['name']);
+                    if ($obj === null) {
+                        fail('E_UNDEF_VAR', "undefined variable {$objNode['name']}", $objNode['pos']);
+                    }
+                } else {
+                    $obj = self::evalNode($objNode, $ctx);
+                }
+
+                $cache = $node['slotCache'] ?? null;
+                if ($cache !== null && $obj->shape !== null && $obj->shape === $cache->shape) {
+                    return $obj->storage[$cache->slot];
+                }
+
+                $isLiteral = ($node['idx']['t'] ?? null) === 'text';
+                $key = $isLiteral
                     ? $node['idx']['v']
                     : self::evalNode($node['idx'], $ctx)->asText($node['idx']['pos']);
+
+                if ($isLiteral && $obj->shape !== null) {
+                    $index = $obj->shape->keyMap[$key] ?? null;
+                    if ($index !== null) {
+                        if ($cache !== null) {
+                            $cache->shape = $obj->shape;
+                            $cache->slot = $index;
+                        }
+                        return $obj->storage[$index];
+                    }
+                    fail('E_NO_KEY', 'no key ' . json_encode($key), $node['pos']);
+                }
+
                 $child = $obj->get($key);
                 if ($child === null) {
                     fail('E_NO_KEY', 'no key ' . json_encode($key), $node['pos']);
@@ -224,10 +252,10 @@ final class Evaluator
             $v = self::evalNode($item, $ctx);
             if ($v->kind === Value::NONE && $v->size() > 0) {
                 foreach ($v->values() as $child) {
-                    $out[] = $child->copy();
+                    $out[] = $child;
                 }
             } else {
-                $out[] = $v->copy();
+                $out[] = $v;
             }
         }
         return Value::list($out);

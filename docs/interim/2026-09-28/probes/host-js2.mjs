@@ -1,0 +1,12 @@
+import { Value } from '../wt2/js/src/sel.mjs';
+import * as D from '../wt2/js/src/decimal.mjs';
+const T = (name, f) => { let r; try { r = f(); r = 'OK ' + (r instanceof Value ? r.dump().slice(0, 70) : JSON.stringify(r)?.slice(0, 70)); } catch (e) { r = 'ERR ' + (e.code || e.constructor.name) + ' ' + String(e.message).slice(0, 60); } console.log(name.padEnd(34), r); };
+T('fromEntries isList keys "5","7"', () => Value.fromEntries([['5', Value.text('a')], ['7', Value.text('b')]], true));
+T('num(5) (number, not string)', () => Value.num(5));
+T('num(D.parse("1") shape)', () => JSON.stringify(D.parse('1'), (k, v) => typeof v === 'bigint' ? v.toString() + 'n' : v));
+const one = D.parse('1');
+T('num({...one, scale:1000001})', () => Value.num({ ...one, scale: 1000001 }));
+T('int(1e21 number)', () => Value.int(1e21));
+T('int(1.5)', () => Value.int(1.5));
+T('int(NaN)', () => Value.int(NaN));
+T('fromNative(2**53+1 number)', () => Value.fromNative(2 ** 53 + 1));

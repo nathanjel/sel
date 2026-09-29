@@ -50,11 +50,11 @@ def _record(args, ctx):
     count = args.count()
     if count == 0:
         return Value.none()
+    shape = args.record_shape
+    if shape is not None:
+        return Value._from_shape(shape, [args.val(i + 1) for i in range(0, count, 2)])
     keys = [args.text(i) for i in range(0, count, 2)]
     values = [args.val(i + 1) for i in range(0, count, 2)]
-    shape = args.record_shape
-    if shape is not None and shape.keys == tuple(keys):
-        return Value._from_shape(shape, values)
     return Value._record_owned(keys, values)
 
 

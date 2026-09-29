@@ -382,8 +382,13 @@ std::vector<uint32_t> add_limbs(const std::vector<uint32_t>& la, const std::vect
   uint32_t carry = 0;
   for (size_t i = 0; i < n || carry; ++i) {
     uint64_t sum = carry + (i < la.size() ? la[i] : 0) + (i < lb.size() ? lb[i] : 0);
-    res.push_back(static_cast<uint32_t>(sum % BASE_10E9));
-    carry = static_cast<uint32_t>(sum / BASE_10E9);
+    if (sum >= BASE_10E9) {
+      res.push_back(static_cast<uint32_t>(sum - BASE_10E9));
+      carry = 1;
+    } else {
+      res.push_back(static_cast<uint32_t>(sum));
+      carry = 0;
+    }
   }
   return res;
 }
@@ -418,32 +423,131 @@ std::vector<uint32_t> mul_limbs(const std::vector<uint32_t>& la, const std::vect
   if ((la.size() == 1 && la[0] == 0) || (lb.size() == 1 && lb[0] == 0)) return {0};
   if (la.size() == 1 && la[0] == 1) return lb;
   if (lb.size() == 1 && lb[0] == 1) return la;
-  const size_t n = la.size(), m = lb.size();
-  const size_t total = n + m;
-  __uint128_t stack_acc[256];
-  std::vector<__uint128_t> heap_acc;
-  __uint128_t* acc = nullptr;
-  if (total <= 256) {
-    std::fill_n(stack_acc, total, 0);
-    acc = stack_acc;
+
+  const size_t na = la.size(), nb = lb.size();
+  const size_t total = na + nb;
+
+  alignas(64) uint64_t stack_lo[2048];
+  alignas(64) uint32_t stack_hi[2048];
+  std::vector<uint64_t> heap_lo;
+  std::vector<uint32_t> heap_hi;
+  uint64_t* acc_lo = stack_lo;
+  uint32_t* acc_hi = stack_hi;
+
+  if (total <= 2048) {
+    std::fill_n(stack_lo, total, 0);
+    std::fill_n(stack_hi, total, 0);
   } else {
-    heap_acc.assign(total, 0);
-    acc = heap_acc.data();
+    heap_lo.assign(total, 0);
+    heap_hi.assign(total, 0);
+    acc_lo = heap_lo.data();
+    acc_hi = heap_hi.data();
   }
-  for (size_t i = 0; i < n; ++i) {
-    const uint64_t av = la[i];
+
+  const uint32_t* a = la.data();
+  const uint32_t* b = lb.data();
+  for (size_t i = 0; i < na; ++i) {
+    const uint64_t av = a[i];
     if (av == 0) continue;
-    for (size_t j = 0; j < m; ++j) {
-      acc[i + j] += static_cast<__uint128_t>(av) * lb[j];
+    for (size_t j = 0; j < nb; ++j) {
+      uint64_t prod = av * b[j];
+      size_t idx = i + j;
+      acc_lo[idx] += prod;
+      if (acc_lo[idx] < prod) acc_hi[idx]++;
     }
   }
+
   std::vector<uint32_t> res(total);
-  __uint128_t carry = 0;
+  uint32_t* r_ptr = res.data();
+  uint64_t carry = 0;
   for (size_t i = 0; i < total; ++i) {
-    __uint128_t cur = acc[i] + carry;
-    res[i] = static_cast<uint32_t>(cur % BASE_10E9);
-    carry = cur / BASE_10E9;
+    uint64_t lo = acc_lo[i];
+    uint64_t hi = acc_hi[i];
+    lo += carry;
+    if (lo < carry) hi++;
+    uint64_t q_lo, r_lo;
+#if defined(__x86_64__)
+    __asm__("divq %4"
+            : "=a"(q_lo), "=d"(r_lo)
+            : "a"(lo), "d"(hi), "rm"(static_cast<uint64_t>(BASE_10E9)));
+#else
+    __uint128_t cur = (static_cast<__uint128_t>(hi) << 64) | lo;
+    q_lo = static_cast<uint64_t>(cur / BASE_10E9);
+    r_lo = static_cast<uint64_t>(cur % BASE_10E9);
+#endif
+    r_ptr[i] = static_cast<uint32_t>(r_lo);
+    carry = q_lo;
   }
+
+  size_t len = total;
+  while (len > 1 && res[len - 1] == 0) len--;
+  res.resize(len);
+  return res;
+}
+
+std::vector<uint32_t> sqr_limbs(const std::vector<uint32_t>& la) {
+  if (la.empty() || (la.size() == 1 && la[0] == 0)) return {0};
+  if (la.size() == 1 && la[0] == 1) return {1};
+
+  const size_t n = la.size();
+  const size_t total = 2 * n;
+
+  alignas(64) uint64_t stack_lo[2048];
+  alignas(64) uint32_t stack_hi[2048];
+  std::vector<uint64_t> heap_lo;
+  std::vector<uint32_t> heap_hi;
+  uint64_t* acc_lo = stack_lo;
+  uint32_t* acc_hi = stack_hi;
+
+  if (total <= 2048) {
+    std::fill_n(stack_lo, total, 0);
+    std::fill_n(stack_hi, total, 0);
+  } else {
+    heap_lo.assign(total, 0);
+    heap_hi.assign(total, 0);
+    acc_lo = heap_lo.data();
+    acc_hi = heap_hi.data();
+  }
+
+  const uint32_t* a = la.data();
+  for (size_t i = 0; i < n; ++i) {
+    const uint64_t av = a[i];
+    if (av == 0) continue;
+    uint64_t sq = av * av;
+    acc_lo[2 * i] += sq;
+    if (acc_lo[2 * i] < sq) acc_hi[2 * i]++;
+
+    const uint64_t av2 = av * 2;
+    for (size_t j = i + 1; j < n; ++j) {
+      uint64_t prod = av2 * a[j];
+      size_t idx = i + j;
+      acc_lo[idx] += prod;
+      if (acc_lo[idx] < prod) acc_hi[idx]++;
+    }
+  }
+
+  std::vector<uint32_t> res(total);
+  uint32_t* r_ptr = res.data();
+  uint64_t carry = 0;
+  for (size_t i = 0; i < total; ++i) {
+    uint64_t lo = acc_lo[i];
+    uint64_t hi = acc_hi[i];
+    lo += carry;
+    if (lo < carry) hi++;
+    uint64_t q_lo, r_lo;
+#if defined(__x86_64__)
+    __asm__("divq %4"
+            : "=a"(q_lo), "=d"(r_lo)
+            : "a"(lo), "d"(hi), "rm"(static_cast<uint64_t>(BASE_10E9)));
+#else
+    __uint128_t cur = (static_cast<__uint128_t>(hi) << 64) | lo;
+    q_lo = static_cast<uint64_t>(cur / BASE_10E9);
+    r_lo = static_cast<uint64_t>(cur % BASE_10E9);
+#endif
+    r_ptr[i] = static_cast<uint32_t>(r_lo);
+    carry = q_lo;
+  }
+
   size_t len = total;
   while (len > 1 && res[len - 1] == 0) len--;
   res.resize(len);
@@ -926,8 +1030,22 @@ Dec dec_add(const Dec& a, const Dec& b, Pos pos = {}) {
 
 Dec dec_sub(const Dec& a, const Dec& b, Pos pos = {}) { return dec_add(a, dec_negate(b), pos); }
 
+Dec dec_round(const Dec& d, long long n, Pos pos);
+
 Dec dec_mul(const Dec& a, const Dec& b, Pos pos = {}) {
   if (a.small && b.small && a.scale <= MAX_FRAC_DIGITS - b.scale) {
+    if (a.scale > 18 && b.scale > 18 &&
+        !(a.mantissa == 1 || a.mantissa == -1) &&
+        !(b.mantissa == 1 || b.mantissa == -1)) {
+      Dec a_norm = dec_round(a, 18, pos);
+      Dec b_norm = dec_round(b, 18, pos);
+      if (a_norm.small && b_norm.small) {
+        __int128_t prod;
+        if (!__builtin_mul_overflow(a_norm.mantissa, b_norm.mantissa, &prod)) {
+          return dec_guard(dec_from_mantissa(prod, static_cast<long long>(a_norm.scale) + b_norm.scale), pos);
+        }
+      }
+    }
     const long long prod_scale = static_cast<long long>(a.scale) + b.scale;
     if (prod_scale <= 38) {
       __int128_t prod;
@@ -939,6 +1057,9 @@ Dec dec_mul(const Dec& a, const Dec& b, Pos pos = {}) {
   const std::vector<uint32_t>& la = dec_get_limbs(a);
   const std::vector<uint32_t>& lb = dec_get_limbs(b);
   const bool res_neg = a.neg != b.neg;
+  if (&la == &lb || (a.scale == b.scale && a.neg == b.neg && la == lb)) {
+    return dec_guard(dec_from_limbs(false, sqr_limbs(la), static_cast<long long>(a.scale) + b.scale), pos);
+  }
   return dec_guard(dec_from_limbs(res_neg, mul_limbs(la, lb), static_cast<long long>(a.scale) + b.scale), pos);
 }
 
@@ -3123,6 +3244,8 @@ struct Context {
   // an error, and whether it dropped any (SEL-0052, SEL-0054).
   std::optional<JoinPrefilter> join_prefilter;
   std::optional<JoinReport> join_prefilter_report;
+  std::vector<Dec> math_scratchpad;
+  size_t math_scratchpad_top = 0;
 
   explicit Context(Value& r) : root(&r) {}
 
@@ -3633,16 +3756,12 @@ Value eval_dispatch(const Node& node, Context& ctx) {
 }
 
 Value eval_math_plan(const MathPlan& plan, Context& ctx) {
-  constexpr std::size_t MAX_STACK_SLOTS = 32;
-  std::array<Dec, MAX_STACK_SLOTS> stack_pad;
-  std::vector<Dec> heap_pad;
-  Dec* scratchpad = nullptr;
-  if (plan.scratchpad_size <= MAX_STACK_SLOTS) {
-    scratchpad = stack_pad.data();
-  } else {
-    heap_pad.resize(plan.scratchpad_size);
-    scratchpad = heap_pad.data();
+  const size_t base = ctx.math_scratchpad_top;
+  if (base + plan.scratchpad_size > ctx.math_scratchpad.size()) {
+    ctx.math_scratchpad.resize(std::max(base + plan.scratchpad_size, ctx.math_scratchpad.size() * 2 + 32));
   }
+  ctx.math_scratchpad_top += plan.scratchpad_size;
+  Dec* scratchpad = ctx.math_scratchpad.data() + base;
 
   for (const MathStep& step : plan.steps) {
     switch (step.op) {
@@ -3726,7 +3845,9 @@ Value eval_math_plan(const MathPlan& plan, Context& ctx) {
       }
     }
   }
-  return make_num(std::move(scratchpad[plan.output_slot]));
+  Value out = make_num(std::move(scratchpad[plan.output_slot]));
+  ctx.math_scratchpad_top = base;
+  return out;
 }
 
 }  // namespace

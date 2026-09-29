@@ -153,7 +153,7 @@ The package is `sel-lang` everywhere:
 pip install sel-lang
 npm install sel-lang
 composer require nathanjel/sel-lang
-vcpkg install sel-lang            # or: conan install --requires sel-lang/0.9.1
+vcpkg install sel-lang            # or: conan install --requires sel-lang/0.9.2
 (ql:quickload :sel-lang)          # Quicklisp / Ultralisp
 ```
 
@@ -162,7 +162,7 @@ npm package — a standalone module, without the SQL layer:
 
 ```html
 <script type="module">
-  import { evaluate } from 'https://cdn.jsdelivr.net/npm/sel-lang@0.9.1/dist/sel.min.mjs';
+  import { evaluate } from 'https://cdn.jsdelivr.net/npm/sel-lang@0.9.2/dist/sel.min.mjs';
 </script>
 ```
 
