@@ -17,10 +17,27 @@
                      (sql-error-col c) (sql-error-message c))))
   (:documentation "One class, one message. No diagnostics object, no EXPLAIN."))
 
+(defun tidy-message (message)
+  "Call sites write long messages with FORMAT's `~<newline>` continuation, and
+REFUSE does not call FORMAT -- so twenty-odd refusals said `~` and a line break in
+the middle of a sentence (LISP-C38). Only that directive is processed: a message is
+not a control string, and a `~` in a name a user wrote must survive."
+  (if (not (search (format nil "~~~%") message))
+      message
+      (with-output-to-string (out)
+        (let ((i 0) (n (length message)))
+          (loop while (< i n)
+                do (if (and (char= (char message i) #\~) (< (1+ i) n)
+                            (char= (char message (1+ i)) #\Newline))
+                       (progn (incf i 2)
+                              (loop while (and (< i n) (member (char message i) '(#\Space #\Tab)))
+                                    do (incf i)))
+                       (progn (write-char (char message i) out) (incf i))))))))
+
 (defun refuse (code message &optional pos)
   "Signal at the point of failure. Nothing wraps this on the way out, the same
 rule spec/errors.md sets for the evaluator."
-  (error 'sql-error :code code :message message
+  (error 'sql-error :code code :message (tidy-message message)
                     :line (if pos (sel::pos-line pos) 0)
                     :col (if pos (sel::pos-col pos) 0)
                     :offset (if pos (sel::pos-offset pos) 0)))

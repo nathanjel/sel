@@ -725,10 +725,10 @@ int replay_register() {
               "ROUND", EntrySpec::tpl("round({0}, {1})", "NUM").caveat("decimal-float"));
   ++calls;
   Map::define("sqlite~replay", Section::Funcs,
-              "MIN", EntrySpec::tpl("min({*})", "NUM").caveat("decimal-float"));
+              "MIN", EntrySpec::by_count({{"1", "min({0})"}, {"*", "min({numericCast:*})"}}, "NUM").caveat("decimal-float"));
   ++calls;
   Map::define("sqlite~replay", Section::Funcs,
-              "MAX", EntrySpec::tpl("max({*})", "NUM").caveat("decimal-float"));
+              "MAX", EntrySpec::by_count({{"1", "max({0})"}, {"*", "max({numericCast:*})"}}, "NUM").caveat("decimal-float"));
   ++calls;
   Map::define("sqlite~replay", Section::Funcs,
               "POWER", EntrySpec::tpl("pow({0}, {1})", "NUM").caveat("power-float"));

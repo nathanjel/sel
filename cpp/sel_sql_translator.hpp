@@ -375,6 +375,7 @@ class Translator {
                           const std::function<Fragment()>& render);
   Fragment with_row(const Source& src, const std::string& binder_name,
                     const std::function<Fragment()>& render);
+  Fragment sum_whole(const Fragment& body, Pos pos);
   Fragment relation_aggregate(const std::string& name, const RelationSpec& rel,
                               const Fragment& body, const SNode& n);
   Fragment count(const SNode& n);
@@ -477,6 +478,11 @@ class Translator {
   std::set<std::string> eff_consts_;
   sel::Value const_root_ = sel::Value::none();
   int depth_ = 0;
+  long long nodes_ = 0;
+  std::set<const SNode*> validated_;
+  std::set<const SNode*> numeric_ok_;
+  // is_constant over the shared helper trees, once per (node, visible names).
+  std::unique_ptr<ConstMemo, void (*)(ConstMemo*)> const_memo_{nullptr, free_const_memo};
   const RelationalPlan* statement_plan_ = nullptr;
   bool in_where_ = false;
   int subquery_counter_ = 0;

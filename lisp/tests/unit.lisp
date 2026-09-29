@@ -597,8 +597,15 @@ b\"c\\d")))
       (is (not (null (search "\"orders\".\"status\"" sql))))
       (is (not (null (search "\"_sub1\"" sql))))
       (is (not (null (search "GROUP BY CAST(\"_sub1\".\"cat\" AS TEXT) COLLATE \"C\"" sql))))
-      (is (not (null (search "HAVING (COALESCE(SUM(\"_sub1\".\"line_total\"), 0) >= 200)" sql))))
-      (is (not (null (search "ORDER BY COALESCE(SUM(\"_sub1\".\"line_total\"), 0) DESC" sql))))
+      ;; The derived table's `line_total` is a computed column of no declared type,
+      ;; so the SUM over it is guarded ALL OR NOTHING (docs/internals/sql-kinds.md
+      ;; 5a): NULL unless every element is a number, and the HAVING and the ORDER BY
+      ;; carry the same aggregate.
+      (is (not (null (search "HAVING (CASE WHEN COUNT(*) = COUNT(" sql))))
+      ;; PostgreSQL adds up the GUARDED cast (its bad CAST is an error, not NULL)
+      (is (not (null (search "THEN COALESCE(SUM(CASE WHEN (CAST(\"_sub1\".\"line_total\" AS TEXT) ~ " sql))))
+      (is (not (null (search "ELSE NULL END), 0) ELSE NULL END >= 200)" sql))))
+      (is (not (null (search "ORDER BY CASE WHEN COUNT(*) = COUNT(" sql))))
       (is (not (null (search "LIMIT 5" sql)))))
     ;; Verify hybrid execution
     (let* ((mock-db (lambda (sql params)
@@ -2049,3 +2056,291 @@ run of the program that built it, not a value set with the caller's string."
   (is (string= "ff" (sel:as-text (sel:evaluate "TO_HEX(LTB(LIST(255.00)))"))))
   (is (equal '("E_NOT_INT" 1 5) (code-of "LTB(LIST(1.5))")))
   (is (equal '("E_RANGE" 1 5) (code-of "LTB(LIST(256.0))"))))
+
+;;; --- the SQL layer's scope, kind, registration and hybrid contracts (T08-T11) -
+
+(defun sql-value (source dialect &optional bindings)
+  (sel.sql:as-value (sel.sql:translate (sel:compile-source source) dialect bindings)))
+
+(defun sql-code (source dialect &optional bindings)
+  "The SQL error code a program is refused with, or the text it translates to."
+  (handler-case (sql-value source dialect bindings)
+    (sel.sql:sql-error (e) (sel.sql:sql-error-code e))))
+
+(defun sql-col (name table &optional (type :num))
+  (cons name (sel.sql:binding-column (string-downcase name) table type)))
+
+(test sql-size-budget-counts-the-expansion
+  ;; E_SQL_SIZE is charged as nodes are dispatched, so a doubling helper chain
+  ;; refuses without ever building the expansion.
+  (flet ((doubling (k)
+           (with-output-to-string (s)
+             (write-string "X0 = N; " s)
+             (loop for i from 1 to k do (format s "X~D = X~D + X~D; " i (1- i) (1- i)))
+             (format s "X~D > 0" k))))
+    (let ((b (list (sql-col "N" "t"))))
+      (is (eq :ok (handler-case (progn (sql-value (doubling 3) "mariadb" b) :ok)
+                    (sel.sql:sql-error () :refused))))
+      (is (equal "E_SQL_SIZE" (sql-code (doubling 17) "mariadb" b))))))
+
+(defun max-paren-depth (s)
+  (let ((d 0) (m 0))
+    (loop for c across s
+          do (case c (#\( (incf d) (setf m (max m d))) (#\) (decf d))))
+    m))
+
+(test sql-fold-balances-above-256-operands
+  (flet ((any-of (n)
+           (format nil "ANY((~{~a~^, ~}), _ > 0)" (loop repeat n collect "N"))))
+    (let ((b (list (sql-col "N" "t"))))
+      ;; at 256 it is the left fold: as deep as it is long
+      (is (> (max-paren-depth (sql-value (any-of 256) "mariadb" b)) 250))
+      ;; above 256 the split is the first ceil(n/2), recursively: depth ~ log2 n
+      (is (< (max-paren-depth (sql-value (any-of 600) "mariadb" b)) 300))
+      (is (< (max-paren-depth (sql-value (any-of 257) "mariadb" b)) 300)))))
+
+(test sql-counts-clamp-and-accept-a-scale
+  (let ((b (list (cons "ITEMS" (sel.sql:binding-relation "items")))))
+    (flet ((stmt (src)
+             (handler-case
+                 (sel.sql:as-statement
+                  (sel.sql:translate-statement (sel:compile-source src) "postgresql" b))
+               (sel.sql:sql-error (e) (sel.sql:sql-error-code e)))))
+      (is (search "LIMIT 9223372036854775807" (stmt "ITEMS .> TAKE(99999999999999999999999)")))
+      (is (search "LIMIT 2" (stmt "ITEMS .> TAKE(2.0)")))
+      (is (search "OFFSET 9223372036854775807"
+                  (stmt "ITEMS .> DROP(9223372036854775807) .> DROP(1)")))
+      (is (equal "E_NOT_INT" (stmt "ITEMS .> TAKE(1.5)")))
+      (is (equal "E_RANGE" (stmt "ITEMS .> TAKE(-1)"))))))
+
+(test sql-conditional-does-not-launder-an-undeclared-branch
+  ;; A declared default must not make an UNKNOWN branch BOOL: the database would
+  ;; then read the undeclared column as a boolean where SEL raises E_NOT_BOOL.
+  (let ((b (list (cons "F" (sel.sql:binding-column "f"))
+                 (cons "P" (sel.sql:binding-column "p" nil :bool)))))
+    (is (equal "E_SQL_SHAPE" (sql-code "IF(P, F, TRUE) AND TRUE" "mariadb" b)))
+    (is (equal "E_SQL_SHAPE" (sql-code "COALESCE(F, TRUE) AND TRUE" "mariadb" b)))))
+
+(test sql-scope-is-lexical
+  (let ((b (list (sql-col "A" "t") (sql-col "Y" "t"))))
+    ;; a definition keeps the scope it was written in: the later binder A must not
+    ;; capture it (renamed, not inlined by name)
+    (is (equal (sql-value "X2 = A; ALL((5,6), B, X2 > 0)" "mariadb" b)
+               (sql-value "X2 = A; ALL((5,6), A, X2 > 0)" "mariadb" b)))
+    (is (equal (sql-value "X = Y + 1; ALL((1,2,3), Z, Z > X)" "mariadb" b)
+               (sql-value "X = Y + 1; ALL((1,2,3), Y, Y > X)" "mariadb" b)))
+    ;; a list element is evaluated where the list is written: `_K` is the outer key
+    (is (equal (sql-value "ALL((\"1\", 5), I, I > 1) OR ALL((\"2\", 5), I, I > 1)" "mariadb" b)
+               (sql-value "ANY((0,0), ALL((_K, 5), I, I > 1))" "mariadb" b)))
+    ;; and an element that names its own binder is the outer name, not itself
+    (is (equal (sql-value "ANY((A + 1, 2), C, C > 0)" "mariadb" b)
+               (sql-value "ANY((A + 1, 2), A, A > 0)" "mariadb" b)))
+    ;; a FILTER's binder does not exist outside its predicate
+    (is (equal "E_SQL_UNBOUND"
+               (sql-code "ANY(FILTER(V, a, a > 1), q, a > 0)" "mariadb"
+                         (list (cons "V" (sel.sql:binding-columns
+                                          (sel.sql:binding-column "a" "x" :num)
+                                          (sel.sql:binding-column "b" "x" :num))))))))
+  ;; a binder named like a value binding shadows it (no constant validation)
+  (let ((b (list (cons "V" (sel.sql:binding-value (sel:make-text "abc")))
+                 (sql-col "A" "t" :unknown))))
+    (is (stringp (sql-value "ALL((A, 2), V, V + 1 > 0)" "mariadb" b)))))
+
+(test sql-assignment-copies
+  (is (equal "1" (sql-value "R[1] = 5; X = R; R[2] = 6; COUNT(X)" "mariadb")))
+  (is (equal "1" (sql-value "R[1] = 5; X = R; X[2] = 7; COUNT(R)" "mariadb"))))
+
+(test sql-join-refuses-what-and-would-not-render
+  (let ((b (list (cons "T" (sel.sql:binding-column "t" nil :bool)))))
+    (is (equal "E_SQL_SHAPE" (sql-code "JOIN((T, \"x\"), \",\")" "mariadb" b))))
+  (is (equal "E_SQL_SHAPE" (sql-code "JOIN(FILTER((\"a\",\"b\"), _ $== \"a\"), \",\")" "mariadb"))))
+
+(test sql-registration-pairing-and-replacement
+  (unwind-protect
+       (progn
+         ;; a textEscape that does not escape the quote is refused at registration,
+         ;; and the name is not left registered
+         (signals error
+           (sel.sql:define-dialect "t-bad-esc"
+             '(:extends "mariadb" :version "10.5"
+               :lexical (("textEscape" . (("\\" . "\\\\")))))))
+         (is (not (sel.sql::dialect-exists-p "t-bad-esc")))
+         ;; textQuote equal to identQuote is refused
+         (signals error
+           (sel.sql:define-dialect "t-dq"
+             '(:extends "ansi" :version "1" :lexical (("textQuote" . "\"")))))
+         (is (not (sel.sql::dialect-exists-p "t-dq")))
+         ;; the same name under the same parent replaces; under another it is refused
+         (sel.sql:define-dialect "t-rep" '(:extends "mariadb" :version "10.5"))
+         (sel.sql:define-dialect "t-rep" '(:extends "mariadb" :version "10.6"))
+         (is (equal "10.6" (sel.sql::dialect-version "t-rep")))
+         (signals error (sel.sql:define-dialect "t-rep" '(:extends "sqlite" :version "3.1")))
+         (signals error (sel.sql:define-dialect "mariadb" '(:extends "ansi" :version "1"))))
+    (sel.sql:map-reset)))
+
+(test sql-numeric-guard-is-checked-on-every-use
+  ;; The check used to be remembered before it passed, so only the first use of a
+  ;; dialect with a wrong guard refused.
+  (unwind-protect
+       (progn
+         (sel.sql:define-dialect "t-badguard"
+           '(:extends "mariadb" :version "10.5"
+             :lexical (("numericGuard" . "CASE WHEN ({0} REGEXP 'x') THEN {0} ELSE NULL END"))))
+         (let ((b (list (sel.sql:binding-column "c"))) ; UNKNOWN: needs the guard
+               (p (sel:compile-source "C + 1 > 0")))
+           (dotimes (i 3)
+             (is (handler-case (progn (sel.sql:translate p "t-badguard" b) nil)
+                   (sel.sql:sql-error () t)
+                   (error () t))))))
+    (sel.sql:map-reset)))
+
+(test sql-program-supplied-names-are-vetted
+  (let ((b (list (cons "ITEMS" (sel.sql:binding-relation "items")))))
+    (flet ((stmt (src d)
+             (handler-case
+                 (sel.sql:as-statement (sel.sql:translate-statement (sel:compile-source src) d b))
+               (sel.sql:sql-error (e) (sel.sql:sql-error-code e)))))
+      (is (equal "E_SQL_UNSUPPORTED" (stmt "ITEMS .> MAP(RECORD(\"\", _[\"PRICE\"]))" "postgresql")))
+      (is (equal "E_SQL_UNSUPPORTED" (stmt "ITEMS .> MAP(RECORD(\"a\\u{0}b\", _[\"PRICE\"]))" "postgresql")))
+      (is (equal "E_SQL_UNSUPPORTED" (stmt "ITEMS .> SELECT_COLS(\"PRICE\", \"a\\u{0}b\")" "postgresql")))))
+  (is (equal "E_SQL_UNSUPPORTED"
+             (sql-code "S $== \"a\\u{0}b\"" "mariadb" (list (sql-col "S" "o" :text))))))
+
+(test sql-binding-names-and-types
+  (signals sel.sql:sql-error
+    (sel.sql::make-bindings (list (cons "x" (sel.sql:binding-column "a"))
+                                 (cons "X" (sel.sql:binding-column "b")))))
+  (signals sel.sql:sql-error
+    (sel.sql:binding-relation "t" "t" (list (cons "A" (sel.sql:binding-column "x"))
+                                            (cons "a" (sel.sql:binding-column "y")))))
+  (signals sel.sql:sql-error (sel.sql:binding-column "c" "o" :list)))
+
+(test sql-supplied-correlate-is-parenthesised
+  (let ((b (list (cons "ITEMS" (sel.sql:binding-relation
+                                "oi" "oi" (list (cons "QTY" (sel.sql:binding-column "qty" "oi" :num)))
+                                nil "oi.a=o.id OR oi.b=o.id")))))
+    (is (search "WHERE (oi.a=o.id OR oi.b=o.id) AND"
+                (sql-value "ANY(ITEMS, I, I[\"QTY\"] > 0)" "mariadb" b)))))
+
+(test sql-source-tables-respect-scope
+  (let ((b (sel.sql::make-bindings
+            (list (cons "ORDERS" (sel.sql:binding-relation "orders" "o"))
+                  (cons "CUSTOMERS" (sel.sql:binding-relation "customers" "c"))))))
+    (flet ((tables (src)
+             (sel.sql::source-tables (sel:program-ast (sel:compile-source src)) b)))
+      (is (equal '() (tables "LIST(1) .> MAP(ORDERS, ORDERS)")))
+      (is (equal '() (tables "ORDERS = LIST(1); COUNT(ORDERS)")))
+      (is (equal '("orders") (tables "ORDERS .> FILTER(CUSTOMERS, CUSTOMERS[\"id\"] > 1)")))
+      (is (equal '("orders") (tables "ORDERS = ORDERS .> DROP(2); ORDERS .> TAKE(3)"))))))
+
+(test sql-hybrid-self-shadowing-helper-runs-once
+  ;; ORDERS = ORDERS .> DROP(2) unwinds INTO the pipeline; carrying the assignment
+  ;; in front of it as well would inline it a second time and DROP twice.
+  (let* ((b (list (cons "ORDERS" (sel.sql:binding-relation "orders" "o"))))
+         (plan (sel.sql:plan-hybrid
+                (sel:compile-source "ORDERS = ORDERS .> DROP(2); ORDERS .> TAKE(3)") "mariadb" b)))
+    (is (sel.sql:hybrid-plan-pure-sql-p plan))
+    (is (search "OFFSET 2" (sel.sql:as-statement (sel.sql::hybrid-plan-sql-statement plan))))
+    (is (not (search "OFFSET 4" (sel.sql:as-statement (sel.sql::hybrid-plan-sql-statement plan)))))))
+
+(test sql-hybrid-pure-memory-runs-on-a-copy
+  (let* ((plan (sel.sql:plan-hybrid (sel:compile-source "A = 1; A") "mariadb"))
+         (ctx (sel:from-native (list (cons "K" "v")))))
+    (is (sel.sql:hybrid-plan-pure-memory-p plan))
+    (sel.sql:execute-hybrid plan (lambda (&rest args) (declare (ignore args)) nil) ctx)
+    (is (null (sel:value-get ctx "A")) "the caller's context was written into")))
+
+(test sql-refusal-messages-carry-no-format-continuations
+  ;; LISP-C38: `~<newline>` is FORMAT's line continuation; REFUSE does not call
+  ;; FORMAT, so the tilde and the line break used to reach the message.
+  (let ((msg (handler-case (sql-value "(1, 2)" "mariadb")
+               (sel.sql:sql-error (e) (sel.sql:sql-error-message e)))))
+    (is (stringp msg))
+    (is (not (find #\~ msg)))
+    (is (not (find #\Newline msg)))))
+
+;;; --- T12 (LISP-C12): process-global caches under threads ------------------------
+;;;
+;;; The record-shape table, the decimal caches and the regex/alias caches are
+;;; process-global. A host embedded in a threaded server compiles and runs from
+;;; several threads at once; with unsynchronised hash tables that gave SBCL's
+;;; "Unsafe concurrent operations", corrupt chains, and -- worst -- the wrong
+;;; record shape (a silently wrong E_NO_KEY). Each worker uses DISTINCT programs
+;;; so the caches are written, not merely read. SBCL without threads skips these.
+
+#+sb-thread
+(defun run-threads (n fn)
+  "Run FN (called with the worker number) in N threads at once; return the list of
+non-NIL results (each worker returns NIL when it saw nothing wrong)."
+  (let ((barrier (sb-thread:make-semaphore))
+        (threads '()))
+    (dotimes (i n)
+      (let ((i i))
+        (push (sb-thread:make-thread
+               (lambda ()
+                 (sb-thread:wait-on-semaphore barrier)
+                 (handler-case (funcall fn i)
+                   (error (e) (format nil "worker ~d: ~a" i e)))))
+              threads)))
+    (sb-thread:signal-semaphore barrier n)
+    (remove nil (mapcar #'sb-thread:join-thread threads))))
+
+#+sb-thread
+(test threads-compile-distinct-record-programs
+  (let ((problems
+          (run-threads
+           8 (lambda (w)
+               (dotimes (k 1500)
+                 (let* ((key (format nil "b~d_~d" w k))
+                        (v (sel:evaluate
+                            (format nil "RECORD(\"a~d\",1,\"~a\",2)[\"~a\"]" k key key))))
+                   (unless (string= (sel:as-text v) "2")
+                     (return (format nil "worker ~d: wrong value ~a for ~a"
+                                     w (sel:as-text v) key)))))))))
+    (is (null problems) "~{~a~%~}" (subseq problems 0 (min 3 (length problems))))))
+
+#+sb-thread
+(test threads-decimal-arithmetic-at-many-scales
+  (let ((problems
+          (run-threads
+           6 (lambda (w)
+               (dotimes (k 600)
+                 (let* ((scale (+ 19 (mod (+ (* w 37) k) 300)))
+                        (v (sel:evaluate
+                            (format nil "ROUND(1, ~d) + ROUND(1, ~d)" scale scale)))
+                        (want (format nil "2.~a" (make-string scale :initial-element #\0))))
+                   (unless (string= (sel:as-text v) want)
+                     (return (format nil "worker ~d scale ~d: ~a" w scale (sel:as-text v))))))))))
+    (is (null problems) "~{~a~%~}" (subseq problems 0 (min 3 (length problems))))))
+
+#+sb-thread
+(test threads-regex-and-shared-program
+  (let* ((program (sel:compile-source "IF(RMATCH('^[a-z]+[0-9]{2}$', X), \"T\", \"F\") & \"|\" & LEN(X)"))
+         (problems
+           (run-threads
+            6 (lambda (w)
+                (dotimes (k 400)
+                  ;; distinct patterns fill the regex cache; the shared program is read by all
+                  (let ((own (sel:evaluate (format nil "RMATCH('^w~d_~d[a-z]$', \"w~d_~dx\")" w k w k)))
+                        (ctx (sel:from-native (list (cons "X" (format nil "ab~2,'0d" (mod k 100)))))))
+                    (unless (sel:value-bool-p own) (return "regex result is not BOOL"))
+                    (unless (string= (sel:as-text (sel:run program ctx)) "T|4")
+                      (return (format nil "worker ~d: shared program answered ~a" w
+                                      (sel:as-text (sel:run program ctx)))))))))))
+    (is (null problems) "~{~a~%~}" (subseq problems 0 (min 3 (length problems))))))
+
+#+sb-thread
+(test threads-two-clients-one-failing
+  (let ((problems
+          (run-threads
+           4 (lambda (w)
+               (dotimes (k 300)
+                 (if (evenp w)
+                     (handler-case (progn (sel:evaluate "MAP((1, 2), _ / 0)")
+                                          (return "no error from a failing program"))
+                       (sel:sel-error (e)
+                         (unless (string= (sel:sel-error-code e) "E_DIV_ZERO")
+                           (return (format nil "wrong code ~a" (sel:sel-error-code e))))))
+                     (unless (string= (sel:as-text (sel:evaluate "SUM((1, 2, 3), _ * 2)")) "12")
+                       (return "the working client saw a wrong answer"))))))))
+    (is (null problems) "~{~a~%~}" (subseq problems 0 (min 3 (length problems))))))

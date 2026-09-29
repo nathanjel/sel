@@ -898,7 +898,10 @@ raises."
 would say about the pattern, said when the program is compiled, so a pattern in a
 branch that never runs is still refused. FLAGS is NIL when the flags argument is
 absent or not a literal."
-  (let ((ic (if flags (check-regex-flags flags flag-pos) nil)))
+  ;; An unknown flag, or `i` beside a non-ASCII pattern, is the RUN-TIME E_BAD_ARG
+  ;; (SPEC 7.8): here only a valid `i` over an ASCII pattern narrows the analysis, as
+  ;; in the other hosts, whose compile-time check reads the flag the same way.
+  (let ((ic (and flags (equal flags "i") (every (lambda (c) (< (char-code c) 128)) pattern))))
     (check-regex-pattern pattern ic flag-pos pattern-pos)))
 
 (defun compile-regex (pattern flags flag-pos pat-pos)

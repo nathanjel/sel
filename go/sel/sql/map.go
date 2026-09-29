@@ -455,14 +455,80 @@ type DialectSpec struct {
 	Lexical map[string]interface{} `json:"lexical"`
 }
 
+// DefineDialect registers a dialect. Registration errors are panics, the
+// host's startup-error class, never a SqlError: TryTranslate must not swallow
+// them. A name registered again under the SAME parent replaces the earlier
+// registration; under another parent it is refused, because cases already
+// translated through it would silently change meaning.
 func DefineDialect(name string, spec map[string]interface{}) {
+	prev, hadPrev := defineDialectLocked(name, spec)
+	ok := false
+	defer func() {
+		if ok {
+			return
+		}
+		r := recover()
+		mapMu.Lock()
+		if hadPrev {
+			extra[name] = prev
+		} else {
+			delete(extra, name)
+		}
+		guardChecked = make(map[string]bool)
+		mapMu.Unlock()
+		panic(r)
+	}()
+	checkQuoting(name)
+	ok = true
+}
+
+// checkQuoting holds a registered dialect's quoting to what an inline literal
+// needs (sql/MAP.md §3.1): a one-character text quote that is not the
+// identifier quote, and an escape map that covers the quote, and covers the
+// backslash whenever a backslash is what escapes it. Refused here, once, and
+// not at every use, which a hostile program could then keep trying.
+func checkQuoting(name string) {
+	tq, _ := Lexical(name, "textQuote").(string)
+	iq, _ := Lexical(name, "identQuote").(string)
+	if tq == "" {
+		return
+	}
+	if len([]rune(tq)) != 1 {
+		panic(fmt.Sprintf("SQL dialect %s sets textQuote to %q; a quote is one character", name, tq))
+	}
+	if tq == iq {
+		panic(fmt.Sprintf("SQL dialect %s uses %q for both text and identifiers; a text literal would read as a quoted identifier", name, tq))
+	}
+	var esc map[string]interface{}
+	switch m := Lexical(name, "textEscape").(type) {
+	case map[string]interface{}:
+		esc = m
+	case map[string]string:
+		esc = make(map[string]interface{}, len(m))
+		for k, v := range m {
+			esc[k] = v
+		}
+	}
+	rep, ok := esc[tq].(string)
+	if !ok || rep == "" {
+		panic(fmt.Sprintf("SQL dialect %s has no textEscape entry for its text quote %s, so a value containing one would end the literal; map it (doubling it is the portable spelling)", name, tq))
+	}
+	if strings.HasPrefix(rep, "\\") {
+		if bs, ok := esc["\\"].(string); !ok || bs != "\\\\" {
+			panic(fmt.Sprintf("SQL dialect %s escapes the quote with a backslash but does not map the backslash to two, so an input ending in a backslash would swallow the escape", name))
+		}
+	}
+}
+
+func defineDialectLocked(name string, spec map[string]interface{}) (*DialectRecord, bool) {
 	mapMu.Lock()
 	defer mapMu.Unlock()
 	ensureInit()
 
-	if extra[name] != nil || shippedDialects[name] != nil {
+	if shippedDialects[name] != nil {
 		panic(fmt.Sprintf("SQL dialect %s is already defined; a name means one dialect", name))
 	}
+	prev := extra[name]
 
 	var unknown []string
 	allowed := map[string]bool{"extends": true, "version": true, "target": true, "lexical": true}
@@ -547,6 +613,15 @@ func DefineDialect(name string, spec map[string]interface{}) {
 		checkLexical(k, v, fmt.Sprintf("SQL dialect %s", name))
 	}
 
+	if prev != nil {
+		same := (prev.Extends == nil && ext == nil) || (prev.Extends != nil && ext != nil && *prev.Extends == *ext)
+		if !same {
+			panic(fmt.Sprintf("SQL dialect %s is already registered under another parent; a name means one dialect", name))
+		}
+		delete(overlay, name)
+		delete(hostArities, name)
+		guardChecked = make(map[string]bool)
+	}
 	extra[name] = &DialectRecord{
 		Name:    name,
 		Extends: ext,
@@ -557,6 +632,7 @@ func DefineDialect(name string, spec map[string]interface{}) {
 		Funcs:   make(map[string]*EntryRecord),
 		Skel:    make(map[string]*EntryRecord),
 	}
+	return prev, prev != nil
 }
 
 func Define(dialect, section, key string, entry interface{}) {
@@ -647,12 +723,12 @@ func CheckNumericGuard(dialect string) {
 		mapMu.Unlock()
 		return
 	}
-	guardChecked[dialect] = true
 	mapMu.Unlock()
 
 	guard := Lexical(dialect, "numericGuard")
 	guardStr, ok := guard.(string)
 	if !ok {
+		markGuardChecked(dialect)
 		return
 	}
 
@@ -687,6 +763,15 @@ func CheckNumericGuard(dialect string) {
 	if len(missing) > 0 {
 		panic(fmt.Sprintf("SQL dialect %s declares a numericGuard that does not carry %s, which its funcs.ISNUM tests; they ask the same question, and a guard that asks a different one answers for rows SEL refuses", dialect, strings.Join(missing, ", ")))
 	}
+	// Marked only once it has passed: a dialect that fails the check fails it on
+	// every use, not just the first (JS-C24, PHP-C49, PY-C49, CPP-C36, LISP-C42).
+	markGuardChecked(dialect)
+}
+
+func markGuardChecked(dialect string) {
+	mapMu.Lock()
+	guardChecked[dialect] = true
+	mapMu.Unlock()
 }
 
 func checkLexical(key string, v interface{}, where string) {

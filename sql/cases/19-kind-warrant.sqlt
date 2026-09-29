@@ -300,7 +300,7 @@ SUM(ITEMS, _["QTY"])
 ===
 ### name: warrant.sum.unknown-body-is-guarded-as-a-whole.postgresql
 --- note
-The same on PostgreSQL, through its own numeric test and cast (warrant.numeric.postgresql-asks-through-a-text-cast). SUM("qty") over text is a type error there, which is loud and acceptable, but the guarded form is what makes an UNKNOWN field usable.
+The same on PostgreSQL, through its own numeric test and cast (warrant.numeric.postgresql-asks-through-a-text-cast). SUM("qty") over text is a type error there, which is loud and acceptable, but the guarded form is what makes an UNKNOWN field usable. PostgreSQL evaluates the cast of every row before the enclosing CASE decides, and casting 'x' to NUMERIC is an error there, so the SUM argument is the guarded cast itself (measured: a plain SUM(CAST(..)) failed with 22P02 on a row holding 'x').
 --- dialect
 postgresql
 --- bindings
@@ -308,7 +308,7 @@ postgresql
 --- source
 SUM(ITEMS, _["QTY"])
 --- expect
-(SELECT CASE WHEN COUNT(*) = COUNT(CASE WHEN (CAST("oi"."qty" AS TEXT) ~ '^-?[0-9]+(\.[0-9]+)?$') THEN 1 END) THEN COALESCE(SUM(CAST("oi"."qty" AS NUMERIC)), 0) ELSE NULL END FROM "oi" "oi" WHERE ("oi"."o"="o"."id"))
+(SELECT CASE WHEN COUNT(*) = COUNT(CASE WHEN (CAST("oi"."qty" AS TEXT) ~ '^-?[0-9]+(\.[0-9]+)?$') THEN 1 END) THEN COALESCE(SUM(CASE WHEN (CAST("oi"."qty" AS TEXT) ~ '^-?[0-9]+(\.[0-9]+)?$') THEN CAST("oi"."qty" AS NUMERIC) ELSE NULL END), 0) ELSE NULL END FROM "oi" "oi" WHERE ("oi"."o"="o"."id"))
 ===
 ### name: warrant.sum.unknown-body-sqlite-refuses
 --- note

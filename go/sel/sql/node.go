@@ -39,17 +39,20 @@ const (
 )
 
 type SNode struct {
-	VarScope VarScope
-	T       SNodeType
-	Pos     Pos
-	Origin  *sel.Node
-	Str     string
-	BoolVal bool
-	Grouped bool
-	Spec    *sel.Spec
-	Kids    []*SNode
-	Keys    []string
-	Entries []CListEntry
+	VarScope       VarScope
+	size           int64 // memo of Size; 0 = not yet computed
+	valid, numeric bool  // Validate / RequireNumeric already passed for this big subtree
+	constMemo      uint8 // memo of IsConstant for a large shared subtree: 1 yes, 2 no
+	T              SNodeType
+	Pos            Pos
+	Origin         *sel.Node
+	Str            string
+	BoolVal        bool
+	Grouped        bool
+	Spec           *sel.Spec
+	Kids           []*SNode
+	Keys           []string
+	Entries        []CListEntry
 }
 
 func Leaf(n *sel.Node) *SNode {
@@ -190,4 +193,31 @@ func (s *SNode) ToNode() *sel.Node {
 	}
 
 	return copyNode
+}
+
+// sizeSaturation keeps Size finite for a helper chain that doubles at every step:
+// such a tree is 2^n nodes, and only its being over the budget matters.
+const sizeSaturation = int64(1) << 40
+
+// Size is the number of nodes the tree has when every shared subtree is counted
+// once per occurrence, which is what the translator's walk will see (and charge,
+// MAX_SQL_NODES). Computed once per node, over the shared structure, so it costs
+// what the source costs and not what its expansion does.
+func (s *SNode) Size() int64 {
+	if s == nil {
+		return 0
+	}
+	if s.size != 0 {
+		return s.size
+	}
+	total := int64(1)
+	for _, k := range s.Kids {
+		total += k.Size()
+		if total > sizeSaturation {
+			total = sizeSaturation
+			break
+		}
+	}
+	s.size = total
+	return total
 }

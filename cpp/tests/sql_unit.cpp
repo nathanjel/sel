@@ -2,9 +2,12 @@
 
 #include "../sel.hpp"
 #include "../sel_sql.hpp"
+#include "../sel_sql_map.hpp"
 
+#include <chrono>
 #include <iostream>
 #include <string>
+#include <thread>
 #include <vector>
 
 namespace {
@@ -330,6 +333,143 @@ int main() {
     }
   }
 
-  std::cout << "cpp SQL advanced: 85/85 checks passed\n";
+  // --- the remediation wave (2026-09-29: T08 scope, T09 kinds, T10 rendering,
+  // T11 hybrid). Each block names the finding it holds.
+  {
+    int wave = 0;
+    const auto fail = [&](const std::string& what, const std::string& got, const std::string& want) {
+      std::cerr << "wave: " << what << "\n got:  " << got << "\n want: " << want << "\n";
+      wave = 1;
+    };
+    const auto col = [](const char* c, SqlKind k) { return Binding::column(c, std::string("t"), k); };
+    const Bindings wb({{"N", col("n", SqlKind::Num)},
+                       {"U", col("u", SqlKind::Unknown)},
+                       {"Y", col("y", SqlKind::Num)},
+                       {"ITEMS", Binding::relation(
+                            "oi", std::string("oi"),
+                            {{"QTY", Binding::column("qty", std::string("oi"), SqlKind::Unknown)}},
+                            std::nullopt, std::string("oi.a=o.id OR oi.b=o.id"))}});
+    const auto expr = [&](const std::string& source, const std::string& dialect = "mariadb") {
+      try {
+        return Sql::translate(sel::compile(source), dialect, wb).as_value();
+      } catch (const sel::sql::SqlError& e) {
+        return std::string("ERR ") + e.code();
+      }
+    };
+    const auto check = [&](const std::string& what, const std::string& got, const std::string& want) {
+      if (got != want) fail(what, got, want);
+    };
+
+    // CPP-C23: a helper keeps the scope it was written in; a binder that reuses
+    // a free name of the helper does not capture it.
+    check("def not captured by a binder",
+          expr("X = Y + 1; ALL((1, 2), Y, Y > X)"),
+          "((1 > (`t`.`y` + 1)) AND (2 > (`t`.`y` + 1)))");
+    // CPP-C56: a supplied correlate is parenthesised.
+    check("correlate parenthesised",
+          expr("ANY(ITEMS, I, I[\"QTY\"] > 0)").find("WHERE (oi.a=o.id OR oi.b=o.id) AND") != std::string::npos
+              ? "parenthesised" : "bare",
+          "parenthesised");
+    // CPP-C29: UNKNOWN through IF is UNKNOWN, so it is guarded, not laundered.
+    check("IF cannot launder", expr("IF(N > 0, U, 1) + 1 == 2").find("REGEXP") != std::string::npos ? "guarded" : "bare",
+          "guarded");
+    // §5a: an UNKNOWN relation SUM body is guarded all or nothing; SQLite refuses.
+    check("SUM guarded as a whole",
+          expr("SUM(ITEMS, _[\"QTY\"])").find("COUNT(*) = COUNT(CASE WHEN") != std::string::npos ? "whole" : "plain",
+          "whole");
+    check("SUM refused on sqlite", expr("SUM(ITEMS, _[\"QTY\"])", "sqlite"), "ERR E_SQL_UNSUPPORTED");
+    // CPP-C59/§11.6: counts are exact, clamped at 2^63 - 1, and a scale on a whole
+    // number is fine.
+    {
+      const Bindings rb({{"R", orders()}});
+      const auto stmt = [&](const std::string& source) {
+        try { return Sql::translate_statement(sel::compile(source), "postgresql", rb).as_statement(); }
+        catch (const sel::sql::SqlError& e) { return std::string("ERR ") + e.code(); }
+      };
+      check("take with a scale", stmt("R .> TAKE(2.0)"), "SELECT \"o\".* FROM \"orders\" \"o\" LIMIT 2");
+      check("take clamped", stmt("R .> TAKE(99999999999999999999999)"),
+            "SELECT \"o\".* FROM \"orders\" \"o\" LIMIT 9223372036854775807");
+      check("drop merged and clamped",
+            stmt("R .> DROP(9223372036854775807) .> DROP(1)"),
+            "SELECT \"o\".* FROM \"orders\" \"o\" OFFSET 9223372036854775807");
+      check("a fractional count is still refused", stmt("R .> TAKE(1.5)"), "ERR E_NOT_INT");
+      // CPP-C60: DISTINCT after a sort stays in memory (refused here).
+      check("distinct after a sort", stmt("R .> SORT_BY(_[\"ID\"]) .> MAP(RECORD(\"a\", _[\"CUSTOMER_ID\"])) .> DISTINCT"),
+            "ERR E_SQL_SHAPE");
+    }
+    // CPP-C17/C10: a doubling helper chain is refused by the size budget in
+    // bounded time, and a long chain by depth -- neither is exponential or a crash.
+    {
+      std::string doubling = "X0 = N;";
+      for (int i = 1; i <= 40; ++i) doubling += " X" + std::to_string(i) + " = X" + std::to_string(i - 1) + " + X" + std::to_string(i - 1) + ";";
+      doubling += " X40 > 0";
+      const auto t0 = std::chrono::steady_clock::now();
+      check("doubling chain refused", expr(doubling), "ERR E_SQL_SIZE");
+      const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                          std::chrono::steady_clock::now() - t0).count();
+      if (ms > 20000) fail("doubling chain took too long", std::to_string(ms) + " ms", "< 20000 ms");
+      std::string chain = "X0 = 1;";
+      for (int i = 1; i <= 250; ++i) chain += " X" + std::to_string(i) + " = X" + std::to_string(i - 1) + " + 1;";
+      chain += " X250 > 0";
+      check("long constant chain refused by depth", expr(chain), "ERR E_SQL_DEPTH");
+    }
+    // CPP-C36/CPP-C12: a bad numericGuard is refused on EVERY use, not just the
+    // first, and registration is safe under translation threads (tsan lane).
+    {
+      sel::sql::Map::define_dialect(
+          "wave-evil", sel::sql::DialectSpec::extending("mariadb").lexical(
+                           "numericGuard",
+                           "CASE WHEN ({0} REGEXP 'x') THEN CAST({0} AS DECIMAL(65,10)) ELSE NULL END"));
+      int refused = 0;
+      for (int i = 0; i < 3; ++i) {
+        try {
+          (void)Sql::translate(sel::compile("U + 1 > 0"), "wave-evil", wb);
+        } catch (const std::logic_error&) {
+          ++refused;
+        } catch (const std::runtime_error&) {
+          ++refused;
+        }
+      }
+      if (refused != 3) fail("guard refused on every use", std::to_string(refused), "3");
+    }
+    // CPP-C53: registration refuses a textEscape that leaves a quote in the literal.
+    {
+      bool refused = false;
+      try {
+        sel::sql::Map::define_dialect(
+            "wave-noescape", sel::sql::DialectSpec::extending("sqlite").lexical_escapes("textEscape", {}));
+      } catch (const std::exception&) {
+        refused = true;
+      }
+      if (!refused) fail("empty textEscape refused at registration", "accepted", "refused");
+    }
+    // CPP-C54: a pure-memory plan runs on a copy of the caller's context.
+    {
+      const Bindings rb({{"ORDERS", orders()}});
+      const sel::Program p = sel::compile("Y = 5; ORDERS .> SORT_BY(REPEAT(\"a\", 2)) .> MAP(RECORD(\"y\", Y))");
+      const auto plan = Sql::plan_hybrid(p, "mariadb", rb);
+      sel::Value context = sel::Value::none();
+      context.set("ORDERS", sel::Value::list({}));
+      (void)Sql::execute_hybrid(plan, [](const std::string&, const std::vector<sel::Value>&) {
+        return sel::Value::list({});
+      }, context);
+      if (context.has("Y")) fail("execute_hybrid mutated the caller's context", "Y is set", "Y is not set");
+    }
+    // CPP-C35: a FILTER is not hoisted above a SORT_BY whose key can raise.
+    {
+      const Bindings rb({{"ORDERS", orders()}});
+      const auto kind = [&](const std::string& source) {
+        const auto plan = Sql::plan_hybrid(sel::compile(source), "mariadb", rb);
+        return plan.pure_sql ? "pure_sql" : plan.pure_memory ? "pure_memory" : "hybrid";
+      };
+      check("undeclared sort key stays in memory",
+            kind("ORDERS .> SORT_BY(_[\"nokey\"]) .> FILTER(_[\"ID\"] > 100) .> TAKE(5)"), "pure_memory");
+      check("declared sort key still hoists",
+            kind("ORDERS .> SORT_BY(_[\"ID\"]) .> FILTER(_[\"ID\"] > 100) .> TAKE(5)"), "pure_sql");
+    }
+    if (wave != 0) return 1;
+  }
+
+  std::cout << "cpp SQL advanced and remediation wave: all checks passed\n";
   return 0;
 }

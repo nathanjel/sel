@@ -166,7 +166,7 @@ ANY(("1","zz"), c, c $== "2") OR ANY(("2","zz"), c, c $== "2")
 
 ### name: agg.scope.outer-key-compared-in-inner-body
 --- note
-The inner BODY reads the outer `_K` too.
+The inner BODY reads the INNER key: `_K` is the innermost aggregate's key (SEL: ALL(("a","b"), o, ANY((_K, "zz"), c, c $== _K)) is FALSE), while the outer key in the inner LIST is still the outer one.
 --- dialect
 mariadb
 --- bindings
@@ -174,7 +174,7 @@ mariadb
 --- source
 ALL(("a","b"), o, ANY((_K, "zz"), c, c $== _K))
 --- expect
-(((CAST('1' AS CHAR) COLLATE utf8mb4_nopad_bin = CAST('1' AS CHAR) COLLATE utf8mb4_nopad_bin) OR (CAST('zz' AS CHAR) COLLATE utf8mb4_nopad_bin = CAST('1' AS CHAR) COLLATE utf8mb4_nopad_bin)) AND ((CAST('2' AS CHAR) COLLATE utf8mb4_nopad_bin = CAST('2' AS CHAR) COLLATE utf8mb4_nopad_bin) OR (CAST('zz' AS CHAR) COLLATE utf8mb4_nopad_bin = CAST('2' AS CHAR) COLLATE utf8mb4_nopad_bin)))
+(((CAST('1' AS CHAR) COLLATE utf8mb4_nopad_bin = CAST('1' AS CHAR) COLLATE utf8mb4_nopad_bin) OR (CAST('zz' AS CHAR) COLLATE utf8mb4_nopad_bin = CAST('2' AS CHAR) COLLATE utf8mb4_nopad_bin)) AND ((CAST('2' AS CHAR) COLLATE utf8mb4_nopad_bin = CAST('1' AS CHAR) COLLATE utf8mb4_nopad_bin) OR (CAST('zz' AS CHAR) COLLATE utf8mb4_nopad_bin = CAST('2' AS CHAR) COLLATE utf8mb4_nopad_bin)))
 ===
 
 ### name: agg.scope.outer-key-compared-in-inner-body-control
@@ -185,9 +185,9 @@ mariadb
 --- bindings
 {}
 --- source
-ANY(("1","zz"), c, c $== "1") AND ANY(("2","zz"), c, c $== "2")
+ANY(("1","zz"), c, c $== _K) AND ANY(("2","zz"), c, c $== _K)
 --- expect
-(((CAST('1' AS CHAR) COLLATE utf8mb4_nopad_bin = CAST('1' AS CHAR) COLLATE utf8mb4_nopad_bin) OR (CAST('zz' AS CHAR) COLLATE utf8mb4_nopad_bin = CAST('1' AS CHAR) COLLATE utf8mb4_nopad_bin)) AND ((CAST('2' AS CHAR) COLLATE utf8mb4_nopad_bin = CAST('2' AS CHAR) COLLATE utf8mb4_nopad_bin) OR (CAST('zz' AS CHAR) COLLATE utf8mb4_nopad_bin = CAST('2' AS CHAR) COLLATE utf8mb4_nopad_bin)))
+(((CAST('1' AS CHAR) COLLATE utf8mb4_nopad_bin = CAST('1' AS CHAR) COLLATE utf8mb4_nopad_bin) OR (CAST('zz' AS CHAR) COLLATE utf8mb4_nopad_bin = CAST('2' AS CHAR) COLLATE utf8mb4_nopad_bin)) AND ((CAST('2' AS CHAR) COLLATE utf8mb4_nopad_bin = CAST('1' AS CHAR) COLLATE utf8mb4_nopad_bin) OR (CAST('zz' AS CHAR) COLLATE utf8mb4_nopad_bin = CAST('2' AS CHAR) COLLATE utf8mb4_nopad_bin)))
 ===
 
 ### name: agg.scope.outer-key-in-join-source

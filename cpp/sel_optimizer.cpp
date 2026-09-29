@@ -8,6 +8,13 @@
 // duplicating the evaluator or exposing the decimal core.
 
 NodePtr optimize_ast_logical(const NodePtr& ast) { return opt_root(ast, false); }
+NodePtr optimize_ast_logical(const NodePtr& ast, const std::set<std::string>& declared_fields) {
+  struct Reset {
+    ~Reset() { tl_opt_declared = nullptr; tl_opt_shape_known = false; }
+  } reset;
+  tl_opt_declared = &declared_fields;
+  return opt_root(ast, false);
+}
 NodePtr optimize_ast_in_memory(const NodePtr& ast) { return opt_root(ast, true); }
 NodePtr optimize_ast(const NodePtr& ast) { return optimize_ast_in_memory(ast); }
 

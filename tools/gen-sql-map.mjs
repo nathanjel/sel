@@ -334,8 +334,10 @@ function expandLexical(tpl, lexical, where) {
         out += tpl.slice(i, end + 1);
       } else if (arg === null || arg === '') {
         out += val;
+      } else if (arg === '*') {
+        out += '{*}';                 // {key:*}: the lexical template around every argument
       } else if (!/^[0-9]+$/.test(arg)) {
-        fail(where, `{${body}} — the part after the colon must be an argument index`);
+        fail(where, `{${body}} — the part after the colon must be an argument index or *`);
       } else {
         // The lexical template's own {0} becomes the caller's argument index.
         out += val.replace(/\{0\}/g, `{${arg}}`);

@@ -22,8 +22,10 @@
 //     way to the optimiser gave the same key two meanings across hosts.
 
 import { Program, Value } from '../sel.mjs';
+import { MAX_DEPTH } from '../eval.mjs';
 import { optimizeAstLogical, unwindPipeline, buildPipeline, PIPELINE_OPS } from '../optimizer.mjs';
 import { asciiUpper } from '../lexer.mjs';
+import { bindingForm } from '../registry.mjs';
 import * as sqlmap from './map.mjs';
 import * as constants from './constants.mjs';
 import * as normalise from './normalise.mjs';
@@ -91,9 +93,14 @@ function physicalSource(binding) {
 function sourceTables(ast, bindings) {
   const out = [];
   const seen = new Set();
-  const visit = (node) => {
+  // `bound` is the names in scope that are NOT the catalogue's: an aggregate's
+  // binder over its body, and a variable the program assigned, for the rest of
+  // the program. A read of one reads no table, whatever a relation of that name is
+  // bound to.
+  const visit = (node, bound) => {
     if (!node) return;
-    if (node.t === 'var' && bindings.has(node.name)) {
+    if (node.t === 'var') {
+      if (bound.has(node.name) || !bindings.has(node.name)) return;
       const binding = bindings.get(node.name, node.pos);
       if (binding.kind === 'relation') {
         const table = physicalSource(binding);
@@ -104,17 +111,54 @@ function sourceTables(ast, bindings) {
       }
       return;
     }
-    if (node.args) node.args.forEach(visit);
-    if (node.items) node.items.forEach(visit);
-    if (node.l) visit(node.l);
-    if (node.r) visit(node.r);
-    if (node.x) visit(node.x);
-    if (node.obj) visit(node.obj);
-    if (node.idx) visit(node.idx);
-    if (node.target) visit(node.target);
-    if (node.value) visit(node.value);
+    if (node.t === 'seq') {
+      // One set for the whole sequence, grown in place: a copy per assignment is
+      // quadratic in a chain of helpers.
+      let scope = bound;
+      let owned = false;
+      for (const item of node.items) {
+        visit(item, scope);
+        if (item.t === 'assign') {
+          let root = item.target;
+          while (root && root.t === 'index') root = root.obj;
+          if (root && root.t === 'var') {
+            if (!owned) { scope = new Set(bound); owned = true; }
+            scope.add(root.name);
+          }
+        }
+      }
+      return;
+    }
+    if (node.t === 'assign') {
+      // The right side and the indexes of the target; the target's own name is a
+      // write, not a read.
+      visit(node.value, bound);
+      let t = node.target;
+      while (t && t.t === 'index') { visit(t.idx, bound); t = t.obj; }
+      return;
+    }
+    if (node.t === 'call') {
+      const form = bindingForm(node.name, node.args, node.spec);
+      if (form !== null) {
+        const inner = new Set([...bound, ...form.binds]);
+        node.args.forEach((arg, i) => {
+          const scope = form.scopes[i];
+          if (scope === 'binder') return;
+          visit(arg, scope === 'inner' ? inner : bound);
+        });
+        return;
+      }
+    }
+    if (node.args) node.args.forEach((n) => visit(n, bound));
+    if (node.items) node.items.forEach((n) => visit(n, bound));
+    if (node.entries) node.entries.forEach(([, v]) => visit(v, bound));
+    if (node.l) visit(node.l, bound);
+    if (node.r) visit(node.r, bound);
+    if (node.x) visit(node.x, bound);
+    if (node.obj) visit(node.obj, bound);
+    if (node.idx) visit(node.idx, bound);
   };
-  visit(ast);
+  visit(ast, new Set());
   return out;
 }
 
@@ -234,7 +278,41 @@ function collectFieldReferences(node, binder = '_') {
 // the whole-row comparisons (DEDUPE, DISTINCT, the keyless sorts) would compare
 // the dependency columns SQL carries where SEL compares the custom values.
 // FILTER retains ordinal keys that SQL rows plus the local MAP cannot restore.
+// The rows the database returns are a rowset numbered 1..n. run() has those keys
+// only when the last step that decides them renumbers: every step except FILTER
+// does (a sort, TAKE, DROP, DISTINCT, MAP, BUCKET, LINK, ... all build a fresh
+// list), and a FILTER keeps the keys its rows had in the list it read. So a split
+// directly after a FILTER (with nothing renumbering in between) hands the
+// continuation different keys than run() has -- the plan is unsafe whenever the
+// continuation can observe them: it reads `_K` before something renumbers, or the
+// keys are the answer itself.
+const KEY_RETAINING = new Set(['FILTER']);
 const FALLTHROUGH_DOWNSTREAM = new Set(['SORT_BY', 'TOP_BY', 'TAKE', 'DROP']);
+
+function argsReadKey(step) {
+  let found = false;
+  const visit = (n) => {
+    if (found || !n) return;
+    if (n.t === 'var') { if (n.name === '_K') found = true; return; }
+    if (n.args) n.args.forEach(visit);
+    if (n.items) n.items.forEach(visit);
+    if (n.entries) n.entries.forEach(([, v]) => visit(v));
+    for (const c of [n.l, n.r, n.x, n.obj, n.idx]) visit(c);
+  };
+  step.args.slice(1).forEach(visit);
+  return found;
+}
+
+function keysObservable(prefixSteps, continuationSteps) {
+  let retained = false;
+  for (const step of prefixSteps) retained = KEY_RETAINING.has(step.name);
+  if (!retained) return false;
+  for (const step of continuationSteps) {
+    if (argsReadKey(step)) return true;
+    if (!KEY_RETAINING.has(step.name)) return false;   // renumbers: the keys stop here
+  }
+  return true;                                          // the retained keys are the value
+}
 
 // Whether `node` reads the row itself -- the binder outside an index with a
 // text key, as in `GET(_, "name")` or `COUNT(_)` -- which no projected column
@@ -311,22 +389,29 @@ function tryPlanFallthrough(source, steps, dialect, catalog, options, helpers) {
   // itself cannot be served by any column.
   if (custom.some((pair) => readsWholeRow(pair.value, details.binder))) return null;
 
-  // Every step after the MAP goes into the SQL, so each must keep the rows as
-  // they are, and may read only what SEL's rows have after the MAP: the
-  // pushable keys. The custom keys are not in the SQL; a dependency column is
-  // in the SQL but not in SEL's row.
+  // Every step after the MAP stays in memory, behind the MAP's custom half: that
+  // half runs over every row the SQL returns, and it can raise on a row a later
+  // TAKE, DROP or FILTER would have cut -- run() evaluates the MAP first and
+  // reports it. A row-cutting step never crosses a local half that can raise, and
+  // nothing here can prove a call with no SQL spelling cannot.
+  //
+  // Eligibility is unchanged -- only steps that keep the rows as they are, reading
+  // only the projected keys, may follow: a step that reshapes them (BUCKET, another
+  // MAP, SELECT_COLS, LINK) would hand the custom half rows that are no longer its
+  // input -- but none of them is pushed into the statement any more.
   const downstream = steps.slice(mapIndex + 1);
   if (downstream.some((step) => !FALLTHROUGH_DOWNSTREAM.has(step.name))) return null;
   const projected = new Set(pushable.map((pair) => String(pair.key.v)));
   for (const step of downstream) {
-    // args[0] is the step's input -- the pipeline so far -- not its own text;
-    // the step binds the row under a name of its own, so any read counts.
     for (const arg of step.args.slice(1)) {
       for (const field of collectFieldReferences(arg, null)) {
         if (!projected.has(field)) return null;
       }
     }
   }
+  // The continuation starts at the MAP, and the split is directly after whatever
+  // precedes it: a FILTER there hands it a renumbered rowset.
+  if (keysObservable(steps.slice(0, mapIndex), steps.slice(mapIndex))) return null;
 
   // A dependency may share a projected column only when that column IS the
   // field: `"customer_id", _["amount"]` projects amount under the name the
@@ -368,9 +453,7 @@ function tryPlanFallthrough(source, steps, dialect, catalog, options, helpers) {
     args: details.explicit
       ? [mapStep.args[0], mapStep.args[1], rewrittenRecord]
       : [mapStep.args[0], rewrittenRecord] };
-  const rewrittenSteps = [
-    ...steps.slice(0, mapIndex), rewrittenMap, ...steps.slice(mapIndex + 1),
-  ];
+  const rewrittenSteps = [...steps.slice(0, mapIndex), rewrittenMap];
   const rewrittenAst = helpers.wrap(buildPipeline(source, rewrittenSteps));
   const sql = tryStatement(rewrittenAst, dialect, catalog, options);
   if (sql === null) return null;
@@ -390,10 +473,11 @@ function tryPlanFallthrough(source, steps, dialect, catalog, options, helpers) {
     }
   }
   const continuationRecord = { ...details.body, args: continuationArgs };
-  const continuationAst = helpers.wrap({ ...mapStep,
+  const continuationMap = { ...mapStep,
     args: details.explicit
       ? [input, mapStep.args[1], continuationRecord]
-      : [input, continuationRecord] });
+      : [input, continuationRecord] };
+  const continuationAst = helpers.wrap(buildPipeline(input, [continuationMap, ...downstream]));
   return new HybridPlan({
     dialect,
     sqlStatement: sql,
@@ -477,16 +561,17 @@ function inlineLiterals(node, literals, bound = []) {
   if (t === 'list' || t === 'seq') return { ...node, items: node.items.map((item) => inline(item)) };
   if (t === 'assign') return { ...node, value: inline(node.value) };
   if (t === 'call') {
-    const inner = [...bound];
-    const binds = node.spec != null && node.spec.binds;
-    if (binds) {
-      inner.push('_K');
-      inner.push(node.args.length === 3 && constants.isBinderName(node.args[1])
-        ? node.args[1].name : '_');
-    }
+    // Which argument runs where is the manifest's decision (registry.bindingForm),
+    // as in stage 1: a binder position is a name, never a read, and an inner
+    // argument sees the binders' names. Only the `3 args, name in position 1`
+    // shape used to be recognised, which inlined a literal helper into the binder
+    // slot of a 4-argument SORT_BY and turned a pure SQL pipeline into memory.
+    const form = bindingForm(node.name, node.args, node.spec);
+    const inner = form ? [...bound, ...form.binds] : bound;
     const args = node.args.map((arg, i) => {
-      if (binds && i === 1 && node.args.length === 3 && constants.isBinderName(arg)) return arg;
-      return inline(arg, i === 0 ? bound : inner);
+      const scope = form ? form.scopes[i] : 'outer';
+      if (scope === 'binder') return arg;
+      return inline(arg, scope === 'inner' ? inner : bound);
     });
     return { ...node, args };
   }
@@ -547,19 +632,21 @@ function readNames(node, out = new Set()) {
 // The leading assignments `node` depends on, in program order: those whose
 // name it reads, and those THEY read, transitively.
 function referencedAssignments(leading, node) {
-  const needed = readNames(node);
-  let grew = true;
-  while (grew) {
-    grew = false;
-    for (const s of leading) {
-      if (!needed.has(assignedName(s))) continue;
-      for (const name of readNames(s.value)) {
-        if (!needed.has(name)) {
-          needed.add(name);
-          grew = true;
-        }
-      }
-    }
+  // A worklist over names, so each assignment is read once: a fixpoint that
+  // rescans every statement per round is quadratic in a chain of helpers.
+  const byName = new Map();
+  for (const s of leading) {
+    const name = assignedName(s);
+    if (!byName.has(name)) byName.set(name, []);
+    byName.get(name).push(s);
+  }
+  const needed = new Set();
+  const work = [...readNames(node)];
+  while (work.length > 0) {
+    const name = work.pop();
+    if (needed.has(name)) continue;
+    needed.add(name);
+    for (const s of byName.get(name) ?? []) work.push(...readNames(s.value));
   }
   return leading.filter((s) => needed.has(assignedName(s)));
 }
@@ -578,6 +665,58 @@ function withHelpers(leading, node) {
 function pureMemoryPlan(program, dialect, catalog) {
   return new HybridPlan({ dialect, pureMemory: true, continuationProgram: program,
     continuationAst: program.ast, sourceTables: sourceTables(program.ast, catalog) });
+}
+
+// A tree taller than four times the evaluator's depth cannot be run by it (the
+// evaluator answers E_DEPTH) and cannot be walked recursively by the planner
+// without finding the host's stack -- `dependencies()` was capped for exactly
+// this. Measured iteratively; such a program is a pure-memory plan, whose
+// continuation raises what run() raises.
+function tooDeepToPlan(ast) {
+  const limit = 4 * MAX_DEPTH;
+  const stack = [[ast, 1]];
+  while (stack.length > 0) {
+    const [node, depth] = stack.pop();
+    if (!node) continue;
+    if (depth > limit) return true;
+    for (const c of [node.l, node.r, node.x, node.obj, node.idx, node.target, node.value]) {
+      if (c) stack.push([c, depth + 1]);
+    }
+    for (const list of [node.args, node.items]) {
+      if (list) for (const c of list) stack.push([c, depth + 1]);
+    }
+  }
+  return false;
+}
+
+// The relations a too-deep tree reads, first use first: the same answer as
+// sourceTables where no name is shadowed, from an iterative walk.
+function flatSourceTables(ast, catalog) {
+  const out = [];
+  const seen = new Set();
+  const stack = [ast];
+  const pending = [];
+  while (stack.length > 0) {
+    const node = stack.pop();
+    if (!node) continue;
+    if (node.t === 'var') {
+      if (catalog.has(node.name)) {
+        const b = catalog.get(node.name, node.pos);
+        if (b.kind === 'relation') {
+          const table = physicalSource(b);
+          if (!seen.has(table)) { seen.add(table); out.push(table); }
+        }
+      }
+      continue;
+    }
+    pending.length = 0;
+    for (const list of [node.items, node.args]) if (list) pending.push(...list);
+    for (const c of [node.l, node.r, node.x, node.obj, node.idx, node.target, node.value]) {
+      if (c) pending.push(c);
+    }
+    for (let i = pending.length - 1; i >= 0; i--) stack.push(pending[i]);
+  }
+  return out;
 }
 
 function latestFieldName(n) {
@@ -643,6 +782,10 @@ export function planHybrid(program, dialect, bindings = null, options = null) {
   // found.
   sqlmap.requireTarget(dialect);
   catalog.checkAliases();
+  if (tooDeepToPlan(program.ast)) {
+    return new HybridPlan({ dialect, pureMemory: true, continuationProgram: program,
+      continuationAst: program.ast, sourceTables: flatSourceTables(program.ast, catalog) });
+  }
 
   // Stage 1 first, exactly as the translator runs it, for its verdict. A
   // program stage 1 refuses -- `A += 1; ...`, a bare statement before the
@@ -699,6 +842,7 @@ export function planHybrid(program, dialect, bindings = null, options = null) {
   for (let count = steps.length - 1; count >= 1; count--) {
     const prefixSteps = steps.slice(0, count);
     if (rowsAreNotTheValue(prefixSteps)) continue;
+    if (keysObservable(prefixSteps, steps.slice(count))) continue;
     const prefixAst = helpers.wrap(buildPipeline(source, prefixSteps));
     if (identityBarrier) {
       try {
@@ -711,7 +855,14 @@ export function planHybrid(program, dialect, bindings = null, options = null) {
     const sql = tryStatement(prefixAst, dialect, catalog, opts);
     if (sql === null) continue;
     const remaining = steps.slice(count);
-    const input = { t: 'var', name: inputVar, pos: remaining[0].pos };
+    // A LINK names the two sides of the row it builds after the variables it
+    // joined: the left side is the pipeline's own source variable. A continuation
+    // that starts at a LINK is therefore read from that variable, or the joined row
+    // would carry the left side under `_INPUT` where run() has it under ORDERS
+    // (PHP-C9).
+    const startsAtLink = remaining[0].name === 'LINK' || remaining[0].name === 'LINK_LEFT';
+    const feed = startsAtLink ? source.name : inputVar;
+    const input = { t: 'var', name: feed, pos: remaining[0].pos };
     const continuationAst = helpers.wrap(buildPipeline(input, remaining));
     return new HybridPlan({
       dialect,
@@ -719,7 +870,7 @@ export function planHybrid(program, dialect, bindings = null, options = null) {
       sqlPrefixAst: prefixAst,
       continuationAst,
       continuationProgram: new Program('', continuationAst),
-      continuationSourceVar: inputVar,
+      continuationSourceVar: feed,
       sourceTables: helpers.tables(prefixAst),
     });
   }
@@ -729,7 +880,13 @@ export function planHybrid(program, dialect, bindings = null, options = null) {
 
 export function executeHybrid(plan, dbRunner, context = null) {
   if (!(plan instanceof HybridPlan)) throw new TypeError('executeHybrid expects a HybridPlan');
-  if (plan.pureMemory) return plan.continuationProgram.run(context);
+  // The caller's context is never written, whatever the classification: a program
+  // that assigns (`A += 1`) would leave A in it, and which plans do depends on how
+  // the planner split them -- an accident, not a contract.
+  if (plan.pureMemory) {
+    return plan.continuationProgram.run(
+      context instanceof Value ? context.clone() : Value.fromNative(context || {}));
+  }
   const runSql = () => {
     const fragment = plan.sqlStatement;
     return dbRunner(fragment.asStatement('params'), fragment.bindings());

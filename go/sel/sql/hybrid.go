@@ -5,6 +5,7 @@ package sql
 import (
 	"fmt"
 
+	"github.com/nathanjel/sel/go/internal/manifest"
 	"github.com/nathanjel/sel/go/internal/utf8"
 	"github.com/nathanjel/sel/go/sel"
 )
@@ -71,17 +72,29 @@ var sqlSpecialCalls = map[string]bool{
 }
 
 func containsUnsupportedSql(node *sel.Node, dialect string, defs map[string]*sel.Node, seen map[string]bool) bool {
+	return containsUnsupportedMemo(node, dialect, defs, seen, make(map[string]bool))
+}
+
+// containsUnsupportedMemo remembers each helper's verdict: a helper read twice
+// by the next one (`H1 = H0 + H0`) was walked twice per level, 2^n in all
+// (GO-C21).
+func containsUnsupportedMemo(node *sel.Node, dialect string, defs map[string]*sel.Node, seen map[string]bool, memo map[string]bool) bool {
 	if node == nil {
 		return false
 	}
 	if node.T == sel.NodeVar && defs != nil {
 		if def, ok := defs[node.S]; ok && !seen[node.S] {
+			if v, done := memo[node.S]; done {
+				return v
+			}
 			innerSeen := make(map[string]bool)
 			for k, v := range seen {
 				innerSeen[k] = v
 			}
 			innerSeen[node.S] = true
-			return containsUnsupportedSql(def, dialect, defs, innerSeen)
+			v := containsUnsupportedMemo(def, dialect, defs, innerSeen, memo)
+			memo[node.S] = v
+			return v
 		}
 	}
 	if node.T == sel.NodeCall {
@@ -99,19 +112,22 @@ func containsUnsupportedSql(node *sel.Node, dialect string, defs map[string]*sel
 			}
 		}
 		for _, item := range node.Items {
-			if containsUnsupportedSql(item, dialect, defs, seen) {
+			if containsUnsupportedMemo(item, dialect, defs, seen, memo) {
 				return true
 			}
 		}
+		// The arguments have been visited; falling through to the generic
+		// walk below visited them a second time at every call level.
+		return false
 	}
-	if node.L != nil && containsUnsupportedSql(node.L, dialect, defs, seen) {
+	if node.L != nil && containsUnsupportedMemo(node.L, dialect, defs, seen, memo) {
 		return true
 	}
-	if node.R != nil && containsUnsupportedSql(node.R, dialect, defs, seen) {
+	if node.R != nil && containsUnsupportedMemo(node.R, dialect, defs, seen, memo) {
 		return true
 	}
 	for _, item := range node.Items {
-		if containsUnsupportedSql(item, dialect, defs, seen) {
+		if containsUnsupportedMemo(item, dialect, defs, seen, memo) {
 			return true
 		}
 	}
@@ -149,6 +165,88 @@ func joinRowsLackBinders(steps []*sel.Node, count int) bool {
 	return joined
 }
 
+// readsKey says whether a step's own expressions read `_K`: the position (or
+// key) of the row they are handed.
+func readsKey(step *sel.Node) bool {
+	var found func(n *sel.Node) bool
+	found = func(n *sel.Node) bool {
+		if n == nil {
+			return false
+		}
+		if n.T == sel.NodeVar && n.S == "_K" {
+			return true
+		}
+		if found(n.L) || found(n.R) {
+			return true
+		}
+		for _, c := range n.Items {
+			if found(c) {
+				return true
+			}
+		}
+		return false
+	}
+	for i := 1; i < len(step.Items); i++ {
+		if found(step.Items[i]) {
+			return true
+		}
+	}
+	return false
+}
+
+// splitObservesKeys says whether the continuation of a split after steps[:count]
+// can tell the database's rows from the evaluator's. FILTER keeps its input's
+// keys and every other step renumbers from "1" (spec §7.3); a database answers a
+// rowset numbered 1..n. A prefix that ends in a renumbering step hands over
+// exactly that numbering. One that ends in a FILTER hands over renumbered rows
+// where run() has kept keys, which nothing can tell only if a renumbering step
+// comes first and nothing reads `_K` before it (or at it).
+func splitObservesKeys(steps []*sel.Node, count int) bool {
+	if count < 1 || steps[count-1].S != "FILTER" {
+		return false
+	}
+	for _, step := range steps[count:] {
+		if readsKey(step) {
+			return true
+		}
+		if step.S != "FILTER" {
+			return false
+		}
+	}
+	return true
+}
+
+// readsName says whether any step reads the variable `name` in its own
+// expressions (its pipeline input excluded).
+func readsName(steps []*sel.Node, name string) bool {
+	for _, step := range steps {
+		for i := 1; i < len(step.Items); i++ {
+			names := make(map[string]bool)
+			readNames(step.Items[i], names)
+			if names[name] {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// sortedRowsJoined says whether steps[:count] joins rows a SEL sort ordered.
+func sortedRowsJoined(steps []*sel.Node, count int) bool {
+	sorted := false
+	for _, step := range steps[:count] {
+		switch step.S {
+		case "SORT", "SORT_DESC", "SORT_BY", "TOP", "TOP_DESC", "TOP_BY":
+			sorted = true
+		case "LINK", "LINK_LEFT":
+			if sorted {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 func rowsAreNotTheValue(steps []*sel.Node, count int) bool {
 	return bucketRowsAreKeys(steps, count) || joinRowsLackBinders(steps, count)
 }
@@ -160,36 +258,78 @@ func physicalSource(b *Binding) string {
 	return b.Relation.From.Table
 }
 
+// sourceTables lists the physical sources a tree reads: a name that a binder or
+// an earlier assignment owns at that point is not a relation, however the
+// bindings spell it (a MAP binder called ORDERS reads nothing).
 func sourceTables(ast *sel.Node, bindings *Bindings) []string {
 	var out []string
 	seen := make(map[string]bool)
-	var visit func(n *sel.Node)
-	visit = func(n *sel.Node) {
+	assigned := make(map[string]bool)
+	var visit func(n *sel.Node, bound []string)
+	visit = func(n *sel.Node, bound []string) {
 		if n == nil {
 			return
 		}
-		if n.T == sel.NodeVar && bindings.Has(n.S) {
-			b := bindings.Get(n.S, n.Pos)
-			if b.Kind == BindingKindRelation {
-				table := physicalSource(b)
-				if !seen[table] {
-					seen[table] = true
-					out = append(out, table)
+		switch n.T {
+		case sel.NodeVar:
+			if containsString(bound, n.S) || assigned[n.S] {
+				return
+			}
+			if bindings.Has(n.S) {
+				b := bindings.Get(n.S, n.Pos)
+				if b.Kind == BindingKindRelation {
+					table := physicalSource(b)
+					if !seen[table] {
+						seen[table] = true
+						out = append(out, table)
+					}
 				}
+			}
+			return
+		case sel.NodeAssign:
+			// The right side reads what the name meant before; the name is a
+			// helper from here on, and its target is not a read.
+			visit(n.R, bound)
+			target := n.L
+			for target != nil && target.T == sel.NodeIndex {
+				visit(target.R, bound)
+				target = target.L
+			}
+			if target != nil && target.T == sel.NodeVar {
+				assigned[target.S] = true
+			}
+			return
+		case sel.NodeCall:
+			form := sel.BindingForm(n.S, n.Items, n.Spec)
+			inner := bound
+			if form != nil {
+				inner = append(append([]string{}, bound...), form.Binds...)
+			}
+			for i, child := range n.Items {
+				if form != nil && i < len(form.Scopes) {
+					switch form.Scopes[i] {
+					case manifest.ScopeBinder:
+						continue
+					case manifest.ScopeInner:
+						visit(child, inner)
+						continue
+					}
+				}
+				visit(child, bound)
 			}
 			return
 		}
 		if n.L != nil {
-			visit(n.L)
+			visit(n.L, bound)
 		}
 		if n.R != nil {
-			visit(n.R)
+			visit(n.R, bound)
 		}
 		for _, child := range n.Items {
-			visit(child)
+			visit(child, bound)
 		}
 	}
-	visit(ast)
+	visit(ast, nil)
 	return out
 }
 
@@ -269,27 +409,27 @@ func inlineLiterals(node *sel.Node, literals map[string]*sel.Node, bound []strin
 		return cp
 	}
 	if t == sel.NodeCall {
+		// Scopes come from the binding form, so a binder in any spelling (the
+		// four- and five-argument forms too) is left as the name it is, and what
+		// it binds is in scope in the body: a literal helper named like a binder
+		// was inlined into the binder slot (PY-C24, LISP-C28).
+		form := sel.BindingForm(node.S, node.Items, node.Spec)
 		inner := append([]string{}, bound...)
-		binds := node.Spec != nil && node.Spec.Binds
-		namedBinder := len(node.Items) == 3 && node.Items[1] != nil && node.Items[1].T == sel.NodeVar && !node.Items[1].Grouped
-		if binds {
-			inner = append(inner, "_K")
-			if namedBinder {
-				inner = append(inner, node.Items[1].S)
-			} else {
-				inner = append(inner, "_")
-			}
+		if form != nil {
+			inner = append(inner, form.Binds...)
 		}
 		cp := copyAstNode(node)
 		cp.Items = make([]*sel.Node, len(node.Items))
 		for i, item := range node.Items {
-			if binds && i == 1 && namedBinder {
-				cp.Items[i] = item
-				continue
-			}
 			scope := bound
-			if i > 0 {
-				scope = inner
+			if form != nil && i < len(form.Scopes) {
+				switch form.Scopes[i] {
+				case manifest.ScopeBinder:
+					cp.Items[i] = item
+					continue
+				case manifest.ScopeInner:
+					scope = inner
+				}
 			}
 			cp.Items[i] = inlineChild(item, scope)
 		}
@@ -312,7 +452,13 @@ func literalHelpers(leading []*sel.Node) map[string]*sel.Node {
 	return literals
 }
 
-func unwindThroughHelpers(result *sel.Node, defs map[string]*sel.Node, literals map[string]*sel.Node) (*sel.Node, []*sel.Node) {
+// unwindThroughHelpers reads the pipeline the result is written through. The
+// second result names the helpers whose definitions it unwound into the pipeline:
+// their assignments are spent, and must not be carried in front of the tree as
+// well, or `ORDERS = ORDERS .> DROP(2); ORDERS .> TAKE(3)` applies the DROP twice
+// (once unwound, once when stage 1 inlines the helper at the source's read;
+// PHP-C34).
+func unwindThroughHelpers(result *sel.Node, defs map[string]*sel.Node, literals map[string]*sel.Node) (*sel.Node, []*sel.Node, map[string]bool) {
 	source, steps := sel.UnwindPipeline(inlineLiterals(result, literals, nil))
 	seen := make(map[string]bool)
 	for source != nil && source.T == sel.NodeVar && defs[source.S] != nil && !seen[source.S] {
@@ -321,7 +467,7 @@ func unwindThroughHelpers(result *sel.Node, defs map[string]*sel.Node, literals 
 		source = innerSrc
 		steps = append(innerSteps, steps...)
 	}
-	return source, steps
+	return source, steps, seen
 }
 
 func readNames(node *sel.Node, out map[string]bool) {
@@ -343,23 +489,36 @@ func readNames(node *sel.Node, out map[string]bool) {
 	}
 }
 
+// referencedAssignments keeps the assignments the node reads, and those they
+// read in turn, in the order the program wrote them. A worklist over the names,
+// each assignment's reads taken once: the fixed-point loop it replaced went round
+// once per link of a helper chain, and a chain of 20,000 was quadratic (GO-C21).
 func referencedAssignments(leading []*sel.Node, node *sel.Node) []*sel.Node {
+	byName := make(map[string][]*sel.Node)
+	for _, s := range leading {
+		name := assignedName(s)
+		byName[name] = append(byName[name], s)
+	}
 	needed := make(map[string]bool)
-	readNames(node, needed)
-	grew := true
-	for grew {
-		grew = false
-		for _, s := range leading {
-			targetName := assignedName(s)
-			if !needed[targetName] {
-				continue
-			}
+	var queue []string
+	read := make(map[string]bool)
+	readNames(node, read)
+	for name := range read {
+		queue = append(queue, name)
+	}
+	for len(queue) > 0 {
+		name := queue[len(queue)-1]
+		queue = queue[:len(queue)-1]
+		if needed[name] {
+			continue
+		}
+		needed[name] = true
+		for _, s := range byName[name] {
 			reads := make(map[string]bool)
 			readNames(s.R, reads)
-			for name := range reads {
-				if !needed[name] {
-					needed[name] = true
-					grew = true
+			for r := range reads {
+				if !needed[r] {
+					queue = append(queue, r)
 				}
 			}
 		}
@@ -700,6 +859,14 @@ func tryPlanFallthrough(source *sel.Node, steps []*sel.Node, dialect string, cat
 		if readsWholeRow(pair.Val, details.binder) {
 			return nil
 		}
+		if pair.Val != nil && readsKey(&sel.Node{Items: []*sel.Node{nil, pair.Val}}) {
+			return nil
+		}
+	}
+	// A split after a FILTER hands over renumbered rows; the MAP renumbers them
+	// again, but only a boundary the continuation cannot tell is legal.
+	if mapIndex > 0 && splitObservesKeys(steps[:mapIndex+1], mapIndex) {
+		return nil
 	}
 
 	var projected []string
@@ -777,7 +944,10 @@ func tryPlanFallthrough(source *sel.Node, steps []*sel.Node, dialect string, cat
 	rewrittenSteps := make([]*sel.Node, 0, len(steps))
 	rewrittenSteps = append(rewrittenSteps, steps[:mapIndex]...)
 	rewrittenSteps = append(rewrittenSteps, rewrittenMap)
-	rewrittenSteps = append(rewrittenSteps, steps[mapIndex+1:]...)
+	// Nothing behind the MAP goes into the statement: a FILTER, TAKE, DROP or sort
+	// there would cut or reorder the rows the local half is evaluated on, and
+	// run() evaluates it on every one of them first, so a pair that raises on a
+	// row the LIMIT would have dropped must still raise.
 
 	rewrittenAst := helpers.wrap(sel.BuildPipeline(source, rewrittenSteps))
 	rewrittenProg := sel.NewProgram("", rewrittenAst)
@@ -811,7 +981,7 @@ func tryPlanFallthrough(source *sel.Node, steps []*sel.Node, dialect string, cat
 	}
 	continuationMap.Items = append(continuationMap.Items, continuationRecord)
 
-	continuationAst := helpers.wrap(continuationMap)
+	continuationAst := helpers.wrap(sel.BuildPipeline(continuationMap, steps[mapIndex+1:]))
 	continuationProg := sel.NewProgram("", continuationAst)
 
 	return &HybridPlan{
@@ -865,9 +1035,25 @@ func PlanHybrid(program *sel.Program, dialect string, bindings *Bindings, option
 		return node != nil && node.T == sel.NodeVar && checked.Has(node.S) && checked.Get(node.S, node.Pos).Kind == BindingKindRelation
 	}
 
-	unwoundSource, unwoundSteps := unwindThroughHelpers(partsResult, defs, literals)
+	unwoundSource, unwoundSteps, consumed := unwindThroughHelpers(partsResult, defs, literals)
 	if len(unwoundSteps) == 0 || !isRelation(unwoundSource) {
 		return pureMemoryPlan(program, dialect, checked)
+	}
+	// A spent helper the steps still read cannot be dropped from the tree without
+	// changing what they read; that program stays in memory.
+	for name := range consumed {
+		if readsName(unwoundSteps, name) {
+			return pureMemoryPlan(program, dialect, checked)
+		}
+	}
+	if len(consumed) > 0 {
+		var kept []*sel.Node
+		for _, st := range partsLeading {
+			if !consumed[assignedName(st)] {
+				kept = append(kept, st)
+			}
+		}
+		partsLeading = kept
 	}
 
 	optimized := sel.OptimizeAstLogical(sel.BuildPipeline(unwoundSource, unwoundSteps))
@@ -915,6 +1101,22 @@ func PlanHybrid(program *sel.Program, dialect string, bindings *Bindings, option
 		if rowsAreNotTheValue(steps, count) {
 			continue
 		}
+		// The continuation may not be able to tell the database's rows from the
+		// evaluator's (keys), and a LINK that starts it would name the joined row's
+		// left side `_INPUT` where run() names it after the relation.
+		if splitObservesKeys(steps, count) {
+			continue
+		}
+		// A join does not keep its left input's order, and what the continuation
+		// does next (a TAKE, a DROP, anything that reads positions) would see the
+		// database's order rather than the sort's: the join stays in memory.
+		if sortedRowsJoined(steps, count) {
+			continue
+		}
+		linkNext := steps[count].S == "LINK" || steps[count].S == "LINK_LEFT"
+		if linkNext && (source.T != sel.NodeVar || readsName(steps[count:], source.S)) {
+			continue
+		}
 		prefixAst := helpers.wrap(sel.BuildPipeline(source, steps[:count]))
 		if identityBarrier {
 			skip := false
@@ -948,6 +1150,20 @@ func PlanHybrid(program *sel.Program, dialect string, bindings *Bindings, option
 
 		remaining := steps[count:]
 		continuationAst := helpers.wrap(sel.BuildPipeline(varNode("_INPUT", remaining[0].Pos), remaining))
+		if linkNext {
+			// A joined row names its left side after the relation it came from
+			// (ORDERS, orders), never after `_INPUT` (spec §7.4, GO-C22): the
+			// rows are bound to that name for the continuation, which reads it
+			// from nothing else (checked above).
+			bind := sel.NewNode(sel.NodeAssign, remaining[0].Pos)
+			bind.S = "="
+			bind.L = varNode(source.S, remaining[0].Pos)
+			bind.R = varNode("_INPUT", remaining[0].Pos)
+			pipe := sel.BuildPipeline(varNode(source.S, remaining[0].Pos), remaining)
+			seq := sel.NewNode(sel.NodeSeq, remaining[0].Pos)
+			seq.Items = []*sel.Node{bind, pipe}
+			continuationAst = helpers.wrap(seq)
+		}
 		continuationProg := sel.NewProgram("", continuationAst)
 
 		return &HybridPlan{
@@ -971,7 +1187,13 @@ func ExecuteHybrid(plan *HybridPlan, dbRunner DbRunner, context *sel.Value) (*se
 		if plan.ContinuationProgram == nil {
 			return nil, fmt.Errorf("pure-memory hybrid plan has no continuation program")
 		}
-		return plan.ContinuationProgram.Run(context)
+		// On a private copy: a SQL prefix cannot perform a helper's assignment, so
+		// no plan can promise run()'s side effect on the caller's context, and a
+		// pure-memory plan does not get to be the exception.
+		if context == nil || context.IsNull() {
+			return plan.ContinuationProgram.Run(sel.NewRecordFromEntries(nil))
+		}
+		return plan.ContinuationProgram.Run(context.Clone())
 	}
 	if plan.SqlStatement == nil {
 		return nil, fmt.Errorf("SQL hybrid plan has no SQL statement")
@@ -987,7 +1209,10 @@ func ExecuteHybrid(plan *HybridPlan, dbRunner DbRunner, context *sel.Value) (*se
 		return nil, fmt.Errorf("hybrid plan has no continuation program")
 	}
 	var continuationContext *sel.Value
-	if context == nil || context.IsNone() {
+	// IsNone is the kind of every list and record too; the test for "no value" is
+	// IsNull, and using the wrong one threw away every variable the caller held
+	// (GO-C5).
+	if context == nil || context.IsNull() {
 		continuationContext = sel.NewRecordFromEntries(nil)
 	} else {
 		continuationContext = context.Clone()

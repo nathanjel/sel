@@ -134,6 +134,15 @@ final class Hybrid
             && $catalog->has($node['name'])
             && ($catalog->get($node['name'], $node['pos'])['kind'] ?? null) === 'relation';
         $unwound = self::unwindThroughHelpers($result, $defs, $literals);
+        // A helper unwound through whose name is also the pipeline's source
+        // (`ORDERS = ORDERS .> DROP(2); ORDERS .> TAKE(3)`): its definition is now in
+        // the steps, and keeping the assignment in front of the tree as well applies
+        // it twice, since the tree still reads the name.
+        if (($unwound['source']['t'] ?? null) === 'var' && ($unwound['consumed'][$unwound['source']['name']] ?? false)) {
+            $sourceName = $unwound['source']['name'];
+            $leading = array_values(array_filter($leading,
+                static fn (array $st): bool => ($st['target']['t'] ?? null) !== 'var' || $st['target']['name'] !== $sourceName));
+        }
         if ($unwound['steps'] === [] || !$isRelation($unwound['source'])) {
             return self::pureMemoryPlan($program, $dialect, $catalog);
         }
@@ -185,11 +194,11 @@ final class Hybrid
                     continue;
                 }
             }
+            $remaining = array_slice($steps, $count);
+            if (self::splitShowsKeys($prefixSteps, $remaining)) continue;
             $sql = self::tryStatement($prefixAst, $dialect, $catalog, $options);
             if ($sql === null) continue;
-            $remaining = array_slice($steps, $count);
-            $input = ['t' => 'var', 'name' => '_INPUT', 'pos' => $remaining[0]['pos']];
-            $continuationAst = $helpers['wrap'](Optimizer::buildPipeline($input, $remaining));
+            $continuationAst = $helpers['wrap'](self::continuationPipeline($source, $remaining));
             return new HybridPlan([
                 'dialect' => $dialect,
                 'sqlStatement' => $sql,
@@ -201,6 +210,31 @@ final class Hybrid
         }
 
         return self::pureMemoryPlan($program, $dialect, $catalog);
+    }
+
+    /**
+     * The continuation's pipeline over the rows the database returned. Its source is
+     * `_INPUT`, which is not the name SEL gives a joined row's left side: a LINK
+     * names it after the pipeline's source variable (SPEC 7.4), so when a LINK is in
+     * the continuation the rows are first assigned to the relation's own name.
+     *
+     * @param array<string,mixed> $source
+     * @param list<array<string,mixed>> $remaining
+     * @return array<string,mixed>
+     */
+    private static function continuationPipeline(array $source, array $remaining): array
+    {
+        $input = ['t' => 'var', 'name' => '_INPUT', 'pos' => $remaining[0]['pos']];
+        $links = false;
+        foreach ($remaining as $step) {
+            if (in_array($step['name'] ?? '', ['LINK', 'LINK_LEFT'], true)) $links = true;
+        }
+        if (!$links) return Optimizer::buildPipeline($input, $remaining);
+        $named = ['t' => 'var', 'name' => $source['name'], 'pos' => $remaining[0]['pos']];
+        return ['t' => 'seq', 'pos' => $remaining[0]['pos'], 'items' => [
+            ['t' => 'assign', 'op' => '=', 'target' => $named, 'value' => $input, 'pos' => $remaining[0]['pos']],
+            Optimizer::buildPipeline($named, $remaining),
+        ]];
     }
 
     /**
@@ -315,9 +349,18 @@ final class Hybrid
     {
         $out = [];
         $seen = [];
-        $visit = function (?array $node) use (&$visit, &$out, &$seen, $bindings): void {
+        // Scope-aware, as stage 1 is: an aggregate's binder is not a read of a
+        // relation that happens to share its name, and neither is a name the program
+        // assigns (`ORDERS = LIST(1); COUNT(ORDERS)` reads no table). The set only
+        // grows as the walk goes, which for the sequential order of a seq is the order
+        // the evaluator sees.
+        $assigned = [];
+        $visit = function (?array $node, array $bound) use (&$visit, &$out, &$seen, &$assigned, $bindings): void {
             if ($node === null) return;
-            if (($node['t'] ?? null) === 'var' && $bindings->has($node['name'])) {
+            $t = $node['t'] ?? null;
+            if ($t === 'var') {
+                if (isset($assigned[$node['name']]) || in_array($node['name'], $bound, true)
+                    || !$bindings->has($node['name'])) return;
                 $binding = $bindings->get($node['name'], $node['pos'] ?? null);
                 if (($binding['kind'] ?? null) === 'relation') {
                     $table = self::physicalSource($binding);
@@ -328,12 +371,33 @@ final class Hybrid
                 }
                 return;
             }
-            foreach (['args', 'items'] as $key) foreach ($node[$key] ?? [] as $item) $visit($item);
+            if ($t === 'assign') {
+                // The right-hand side is read before the target exists.
+                $visit($node['value'] ?? null, $bound);
+                $target = $node['target'] ?? null;
+                while (($target['t'] ?? null) === 'index') {
+                    $visit($target['idx'] ?? null, $bound);
+                    $target = $target['obj'];
+                }
+                if (($target['t'] ?? null) === 'var') $assigned[$target['name']] = true;
+                return;
+            }
+            if ($t === 'call') {
+                $form = \Sel\Registry::bindingForm($node['name'], $node['args']);
+                $inner = $form === null ? $bound : array_merge($bound, $form['binds'], ['_K']);
+                foreach ($node['args'] as $i => $arg) {
+                    $scope = $form === null ? 'outer' : $form['scopes'][$i];
+                    if ($scope === 'binder') continue;
+                    $visit($arg, $scope === 'inner' ? $inner : $bound);
+                }
+                return;
+            }
+            foreach (['args', 'items'] as $key) foreach ($node[$key] ?? [] as $item) $visit($item, $bound);
             foreach (['l', 'r', 'x', 'obj', 'idx', 'target', 'value'] as $key) {
-                if (isset($node[$key]) && is_array($node[$key])) $visit($node[$key]);
+                if (isset($node[$key]) && is_array($node[$key])) $visit($node[$key], $bound);
             }
         };
-        $visit($ast);
+        $visit($ast, []);
         return $out;
     }
 
@@ -399,7 +463,40 @@ final class Hybrid
      */
     private static function rowsAreNotTheValue(array $steps): bool
     {
-        return self::bucketRowsAreKeys($steps) || self::joinRowsLackBinders($steps);
+        return self::bucketRowsAreKeys($steps) || self::joinRowsLackBinders($steps)
+            || self::orderIsLost($steps);
+    }
+
+    /**
+     * Whether an explicit sort's order would not survive a later step in SQL. SEL's
+     * result is in the order the sort gave it, and a database promises nothing about
+     * the order of rows once they pass through a derived table into a join, a group
+     * or a second sort's tie-break: a BUCKET's groups come out in first-appearance
+     * order in SEL and in engine order in SQL, a LINK's rows are the left's order
+     * then the right's, and a later sort keeps the earlier sort's order among its
+     * ties, which is gone once a projection hid the earlier key. A prefix that ends
+     * before that step is exact; one that includes it answers in another order
+     * (docs/internals/sql-translation.md 12.1, "Order"; PHP-C35).
+     *
+     * @param list<array<string,mixed>> $steps
+     */
+    private static function orderIsLost(array $steps): bool
+    {
+        $sorted = false;
+        $projected = false;
+        foreach ($steps as $step) {
+            $name = $step['name'] ?? '';
+            if (in_array($name, ['SORT', 'SORT_DESC', 'SORT_BY', 'TOP', 'TOP_DESC', 'TOP_BY'], true)) {
+                if ($sorted && $projected) return true;
+                $sorted = true;
+                $projected = false;
+            } elseif ($sorted && in_array($name, ['MAP', 'SELECT_COLS'], true)) {
+                $projected = true;
+            } elseif ($sorted && in_array($name, ['BUCKET', 'LINK', 'LINK_LEFT'], true)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
@@ -471,15 +568,52 @@ final class Hybrid
         return $out;
     }
 
-    // The steps the MAP fall-through may push past the MAP. Each keeps the rows
-    // as they are -- the same records, fewer or reordered -- so the custom half
-    // of the projection still runs over its own input. A step that changes the
-    // row shape (MAP, SELECT_COLS, LINK, BUCKET) would put it over something
-    // else, and the whole-row comparisons (DEDUPE, DISTINCT, the keyless sorts)
-    // would compare the dependency columns SQL carries where SEL compares the
-    // custom values.
-    // FILTER retains ordinal keys that SQL rows plus the local MAP cannot restore.
-    private const FALLTHROUGH_DOWNSTREAM = ['SORT_BY', 'TOP_BY', 'TAKE', 'DROP'];
+
+    /**
+     * Do the rows a step list leaves carry retained keys? FILTER keeps its input's
+     * keys, every other step renumbers from 1 (SPEC 7.3), so the rows are keyed by
+     * something SQL cannot say exactly when the last thing that happened to them was
+     * a FILTER. The database answers a ROWSET numbered 1..n.
+     *
+     * @param list<array<string,mixed>> $steps
+     */
+    private static function retainsKeys(array $steps): bool
+    {
+        $retained = false;
+        foreach ($steps as $step) $retained = ($step['name'] ?? '') === 'FILTER';
+        return $retained;
+    }
+
+    /** Does the node read a key (`_K`), under any binder? @param array<string,mixed>|null $node */
+    private static function readsKey(?array $node): bool
+    {
+        if ($node === null) return false;
+        if (($node['t'] ?? null) === 'var' && $node['name'] === '_K') return true;
+        foreach (['args', 'items'] as $key) foreach ($node[$key] ?? [] as $item) if (self::readsKey($item)) return true;
+        foreach (['l', 'r', 'x', 'obj', 'idx', 'target', 'value'] as $key) {
+            if (isset($node[$key]) && is_array($node[$key]) && self::readsKey($node[$key])) return true;
+        }
+        return false;
+    }
+
+    /**
+     * May a split at this point be seen? A boundary right after a FILTER hands the
+     * continuation rows the database numbered 1..n where run() has the retained keys:
+     * legal only when nothing on the far side can observe the difference -- no step
+     * reads `_K` before a renumbering step comes, and one does come (or the result
+     * would BE the retained-key rows).
+     *
+     * @param list<array<string,mixed>> $prefix @param list<array<string,mixed>> $remaining
+     */
+    private static function splitShowsKeys(array $prefix, array $remaining): bool
+    {
+        if (!self::retainsKeys($prefix)) return false;
+        foreach ($remaining as $step) {
+            foreach (array_slice($step['args'], 1) as $arg) if (self::readsKey($arg)) return true;
+            if (($step['name'] ?? '') !== 'FILTER') return false;
+        }
+        return true;
+    }
 
     /**
      * Whether `$node` reads the row itself -- the binder outside an index with
@@ -546,6 +680,12 @@ final class Hybrid
                 'body' => $body, 'pairs' => $pairs];
     }
 
+    // The steps that may follow a MAP fall-through: each keeps the rows as they are --
+    // the same records, fewer or reordered -- so the custom half of the projection
+    // still runs over its own input. They run in the continuation, after the MAP's
+    // local half, and are never pushed into the SQL (see tryPlanFallthrough).
+    private const FALLTHROUGH_DOWNSTREAM = ['SORT_BY', 'TOP_BY', 'TAKE', 'DROP'];
+
     /** @param array{defs:array<string,array<string,mixed>>,wrap:callable,tables:callable} $helpers */
     private static function tryPlanFallthrough(array $source, array $steps, string $dialect,
                                                 Bindings $catalog, array $options, array $helpers): ?HybridPlan
@@ -576,22 +716,33 @@ final class Hybrid
         // itself cannot be served by any column.
         foreach ($custom as $pair) if (self::readsWholeRow($pair['value'], $details['binder'])) return null;
 
-        // Every step after the MAP goes into the SQL, so each must keep the rows
-        // as they are, and may read only what SEL's rows have after the MAP: the
-        // pushable keys. The custom keys are not in the SQL; a dependency column
-        // is in the SQL but not in SEL's row.
+        // Every step after the MAP stays in the continuation, behind the MAP's local
+        // half. run() evaluates a MAP's body on EVERY row before a later TAKE, DROP or
+        // sort cuts the list, so a row-cutting step pushed into the SQL past a local
+        // half that can raise hides an error SEL raises (docs/internals/sql-translation.md
+        // 12.1). They were pushed while each kept the rows as they were; that is not
+        // the property that matters.
         $downstream = array_slice($steps, $mapIndex + 1);
+        // What may follow the MAP in the continuation and keep the plan a split AFTER it:
+        // steps that keep the rows as they are, reading only what SEL's rows have after
+        // the MAP -- the pushable keys. Anything else moves the split before the MAP.
         foreach ($downstream as $step) if (!in_array($step['name'], self::FALLTHROUGH_DOWNSTREAM, true)) return null;
         $projected = array_map(static fn (array $pair): string => (string) $pair['key']['v'], $pushable);
         foreach ($downstream as $step) {
-            // args[0] is the step's input -- the pipeline so far -- not its own
-            // text; the step binds the row under a name of its own, so any read
-            // counts.
+            // args[0] is the step's input -- the pipeline so far -- not its own text;
+            // the step binds the row under a name of its own, so any read counts.
             foreach (array_slice($step['args'], 1) as $arg) {
                 foreach (self::fieldReferences($arg, null) as $field) {
                     if (!in_array($field, $projected, true)) return null;
                 }
             }
+        }
+        // The custom half reads the keys of the rows the MAP is given. SQL numbers the
+        // rows it returns 1..n, and SEL's are the retained keys of a FILTER before the
+        // MAP: a `_K` in the custom half is only the same number when nothing before
+        // the MAP retained keys.
+        foreach ($custom as $pair) {
+            if (self::readsKey($pair['value']) && self::retainsKeys(array_slice($steps, 0, $mapIndex))) return null;
         }
 
         // A dependency may share a projected column only when that column IS
@@ -638,7 +789,7 @@ final class Hybrid
         $map['args'] = $details['explicit']
             ? [$map['args'][0], $map['args'][1], $record]
             : [$map['args'][0], $record];
-        $rewrittenSteps = array_merge(array_slice($steps, 0, $mapIndex), [$map], array_slice($steps, $mapIndex + 1));
+        $rewrittenSteps = array_merge(array_slice($steps, 0, $mapIndex), [$map]);
         $rewrittenAst = $helpers['wrap'](Optimizer::buildPipeline($source, $rewrittenSteps));
         $sql = self::tryStatement($rewrittenAst, $dialect, $catalog, $options);
         if ($sql === null) return null;
@@ -663,7 +814,7 @@ final class Hybrid
         $continuationMap['args'] = $details['explicit']
             ? [$input, $continuationMap['args'][1], $continuationRecord]
             : [$input, $continuationRecord];
-        $continuationAst = $helpers['wrap']($continuationMap);
+        $continuationAst = $helpers['wrap'](Optimizer::buildPipeline($continuationMap, $downstream));
         return new HybridPlan([
             'dialect' => $dialect,
             'sqlStatement' => $sql,
@@ -793,21 +944,22 @@ final class Hybrid
             return $node;
         }
         if ($t === 'call') {
-            $inner = $bound;
-            $binds = !empty($node['spec']['binds']);
-            $argc = count($node['args']);
-            if ($binds) {
-                $inner[] = '_K';
-                $inner[] = $argc === 3 && Constants::isBinderName($node['args'][1])
-                    ? $node['args'][1]['name'] : '_';
-            }
+            // Which arguments run inside the binder, and which are the binder's own
+            // NAME, is the manifest's decision (Registry::bindingForm), as in stage 1:
+            // reading it off the argument count alone missed the four- and
+            // five-argument forms, so a literal helper spelled like an explicit binder
+            // (`N = 5; ... SORT_BY(N, N["id"], "DESC")`) was inlined into the binder
+            // slot and downgraded a pure SQL pipeline to memory.
+            $form = \Sel\Registry::bindingForm($node['name'], $node['args']);
+            $inner = $form === null ? $bound : array_merge($bound, $form['binds'], ['_K']);
             $args = [];
             foreach ($node['args'] as $i => $arg) {
-                if ($binds && $i === 1 && $argc === 3 && Constants::isBinderName($arg)) {
+                $scope = $form === null ? 'outer' : $form['scopes'][$i];
+                if ($scope === 'binder') {
                     $args[] = $arg;
                     continue;
                 }
-                $args[] = self::inlineLiterals($arg, $literals, $i === 0 ? $bound : $inner);
+                $args[] = self::inlineLiterals($arg, $literals, $scope === 'inner' ? $inner : $bound);
             }
             $node['args'] = $args;
             return $node;
@@ -840,7 +992,7 @@ final class Hybrid
      *
      * @param array<string,mixed> $result
      * @param array<string,array<string,mixed>> $defs @param array<string,array<string,mixed>> $literals
-     * @return array{source:array<string,mixed>,steps:list<array<string,mixed>>}
+     * @return array{source:array<string,mixed>,steps:list<array<string,mixed>>,consumed:array<string,bool>}
      */
     private static function unwindThroughHelpers(array $result, array $defs, array $literals): array
     {
@@ -848,13 +1000,15 @@ final class Hybrid
         $source = $unwound['source'];
         $steps = $unwound['steps'];
         $seen = [];
+        $consumed = [];
         while (($source['t'] ?? null) === 'var' && isset($defs[$source['name']]) && !isset($seen[$source['name']])) {
+            $consumed[$source['name']] = true;
             $seen[$source['name']] = true;
             $inner = Optimizer::unwindPipeline(self::inlineLiterals($defs[$source['name']], $literals));
             $source = $inner['source'];
             $steps = array_merge($inner['steps'], $steps);
         }
-        return ['source' => $source, 'steps' => $steps];
+        return ['source' => $source, 'steps' => $steps, 'consumed' => $consumed];
     }
 
     /**
@@ -889,18 +1043,15 @@ final class Hybrid
     private static function referencedAssignments(array $leading, array $node): array
     {
         $needed = self::readNames($node);
-        $grew = true;
-        while ($grew) {
-            $grew = false;
-            foreach ($leading as $s) {
-                if (!isset($needed[self::assignedName($s)])) continue;
-                foreach (self::readNames($s['value']) as $name => $_) {
-                    if (!isset($needed[$name])) {
-                        $needed[$name] = true;
-                        $grew = true;
-                    }
-                }
-            }
+        // One backward pass: an assignment reads only names written before it (stage 1
+        // refuses a read before the write), so by the time the walk reaches a statement
+        // everything that reads its name has already been seen. The fixpoint it
+        // replaces re-scanned every statement each time the set grew -- quadratic on a
+        // chain of thousands of helpers.
+        for ($i = count($leading) - 1; $i >= 0; $i--) {
+            $s = $leading[$i];
+            if (!isset($needed[self::assignedName($s)])) continue;
+            foreach (self::readNames($s['value']) as $name => $_) $needed[$name] = true;
         }
         return array_values(array_filter($leading,
             static fn (array $s): bool => isset($needed[self::assignedName($s)])));
@@ -934,7 +1085,10 @@ final class Hybrid
             if ($plan->continuationProgram === null) {
                 throw new \LogicException('a pure-memory hybrid plan has no program');
             }
-            return $plan->continuationProgram->run($context);
+            // On a copy, as the hybrid path does: a program that assigns must not write
+            // into the caller's context because the planner sent all of it to memory.
+            $memoryRoot = $context instanceof Value ? $context->copy() : Value::fromNative($context ?? []);
+            return $plan->continuationProgram->run($memoryRoot);
         }
         if ($plan->sqlStatement === null) {
             throw new \LogicException('a SQL hybrid plan has no statement');

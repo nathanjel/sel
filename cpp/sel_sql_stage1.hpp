@@ -71,7 +71,14 @@ bool identity_loss_before_grouping(const SNodePtr& n, bool needed = false);
 // inside `n` counts as bound, so `ALL((1, 2), _ > 0)` is constant and
 // `ALL(ITEMS, _ > 0)` is not -- the same rule the evaluator applies, which is
 // what lets the whole node be handed to it.
-bool is_constant(const SNode& n, const std::set<std::string>& bound);
+// Memo for is_constant over a DAG: helper reuse shares subtrees, and asking the
+// question of a shared node once per PATH to it is exponential in the chain
+// length. Keyed by the node and the bound set it was asked under; valid only
+// while the nodes it names are alive, so a caller keeps one per stage.
+struct ConstMemo;
+ConstMemo* new_const_memo();
+void free_const_memo(ConstMemo* m);
+bool is_constant(const SNode& n, const std::set<std::string>& bound, ConstMemo* memo = nullptr);
 
 // Evaluate `n` the way SEL would, and refuse the translation if SEL refuses.
 //

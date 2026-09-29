@@ -1,0 +1,43 @@
+# Expected answers for tools/check-api.sh, one contract per line.
+#
+#   pin <probe> = <value>        every host that answers the probe must print exactly this
+#   na  <probe> <host>...        these hosts may print `n/a (<reason>)` for the probe: the
+#                                situation cannot be posed in their type system. Any other
+#                                host printing n/a, or a listed host answering with a value
+#                                that is not the pin, fails. A reason is mandatory.
+#
+# Agreement between hosts is not enough (all of them can share a bug); a pin is what the
+# spec says. The T12 family (docs/interim/2026-09-29/worklist/tests/12-integration.md)
+# added the flow-sensitive dependencies() contract (spec/SPEC.md §8), Program reuse,
+# non-source / non-native input as E_BAD_ARG, and the host-function argument reader.
+
+pin program.deps.read-before-assign = A
+pin program.deps.compound-assign-reads = X
+pin program.deps.index-compound-reads = A
+pin program.deps.index-assign-vivifies = -
+pin program.deps.self-assign-reads = A
+pin program.deps.assign-then-read = B
+pin program.deps.conditional-assign = A X
+pin program.deps.both-branches-assign = X
+pin program.deps.and-rhs-assign = A X
+pin program.deps.coalesce-rhs-assign = A X
+pin program.deps.aggregate-body-assign = A L
+pin program.deps.cond-with-default-assigns = X Y
+pin program.deps.assign-in-argument = -
+
+pin program.reuse.after-error = E_DIV_ZERO 1:3|t"2"|E_DIV_ZERO 1:3
+pin program.reuse.two-contexts = 2 11 3 12
+
+pin error.compile.non-string = E_BAD_ARG
+pin value.native.unsupported = E_BAD_ARG
+pin value.native.fraction = E_BAD_ARG
+na  error.compile.non-string cpp go
+na  value.native.unsupported cpp go
+na  value.native.fraction cpp go
+
+pin host.fn.refuse.not-callable = refused
+pin host.fn.arg.out-of-range = E_BAD_ARG
+
+pin bool.isolated.between.contexts = 0 0 0
+pin ctor.num.canonicalises = t"7"
+pin error.host.malformed = E_BAD_ARG

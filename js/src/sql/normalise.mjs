@@ -310,21 +310,26 @@ function renameFree(node, map) {
 }
 
 // Does the name occur anywhere in the node (a superset of "occurs free")?
-function mentions(node, name) {
-  if (!node) return false;
-  const t = node.t;
-  if (t === 'var') return node.name === name;
-  if (t === 'un') return mentions(node.x, name);
-  if (t === 'bin') return mentions(node.l, name) || mentions(node.r, name);
-  if (t === 'index') return mentions(node.obj, name) || mentions(node.idx, name);
-  if (t === 'list') return node.items.some((x) => mentions(x, name));
-  if (t === 'clist') return node.entries.some(([, v]) => mentions(v, name));
-  if (t === 'call') return node.args.some((x) => mentions(x, name));
+// Iterative, and each node at most once: a definition is shared where it is read.
+function mentions(root, name) {
+  const seen = new Set();
+  const stack = [root];
+  while (stack.length > 0) {
+    const node = stack.pop();
+    if (!node || seen.has(node)) continue;
+    seen.add(node);
+    if (node.t === 'var') { if (node.name === name) return true; continue; }
+    stack.push(...children(node));
+  }
   return false;
 }
 
-// The size of `node` counted as a tree, from a memo keyed by node identity, so a
-// subtree shared n times is measured once. Iterative; refuses past the budget.
+// The size of `node` counted as a tree, and its height, from a memo keyed by node
+// identity, so a subtree shared n times is measured once. Iterative. Refuses past
+// the size budget (E_SQL_SIZE) and past four times the evaluator's depth (E_SQL_DEPTH):
+// the translation refuses anything over MAX_DEPTH itself, precisely, when it walks
+// the tree -- but stage 1 and the constant test walk it first, recursively, and a
+// tree tens of thousands deep would find the host's stack before that walk.
 function expandedSize(root, memo, pos) {
   const stack = [[root, false]];
   while (stack.length > 0) {
@@ -337,15 +342,27 @@ function expandedSize(root, memo, pos) {
       continue;
     }
     let size = 1;
-    for (const k of kids) size += k ? (memo.get(k) ?? 1) : 0;
+    let height = 0;
+    for (const k of kids) {
+      if (!k) continue;
+      const m = memo.get(k) ?? [1, 1];
+      size += m[0];
+      if (m[1] > height) height = m[1];
+    }
+    height += 1;
+    if (height > 4 * MAX_DEPTH) {
+      refuse('E_SQL_DEPTH',
+        `this expression nests deeper than SEL will evaluate (${MAX_DEPTH}), so there `
+        + 'is nothing to translate; the evaluator answers E_DEPTH for it', pos);
+    }
     if (size > MAX_SQL_NODES) {
       refuse('E_SQL_SIZE',
         `this definition expands to more than ${MAX_SQL_NODES} nodes once every read of `
         + 'a helper is counted', pos);
     }
-    memo.set(node, size);
+    memo.set(node, [size, height]);
   }
-  return memo.get(root) ?? 1;
+  return memo.get(root)?.[0] ?? 1;
 }
 
 function children(node) {

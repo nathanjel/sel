@@ -310,7 +310,7 @@ Each task starts by reproducing the report against the current tree, then lands 
 
 <a id="c-lisp-c3"></a>
 
-- [ ] **C-LISP-C3 — Resolve LISP-C3, LISP-C10, LISP-C11, LISP-C18, LISP-C19, LISP-C37.** Coordinate the related changes below at their shared implementation surface.
+- [x] **C-LISP-C3 — Resolve LISP-C3, LISP-C10, LISP-C11, LISP-C18, LISP-C19, LISP-C37.** Coordinate the related changes below at their shared implementation surface.
 
   **[LISP-C3](../lisp-code-review.md) — [high] [confirmed, 2 of 4 triggers re-verified by synthesizer] cl-ppcre stack exhaustion or runaway recursion escapes as an uncaught host condition**
 
@@ -366,6 +366,8 @@ Each task starts by reproducing the report against the current tree, then lands 
 
   Done when every linked scenario passes on all applicable lanes; code/position, mutation, ordering and repeat-use behavior satisfy the shared contract. Record commit and fixture IDs here.
 
+  Closed 2026-09-29 — 116/116 on all six hosts; 0 mismatches vs reference over 24k-80k random patterns per host; resource probes clean; all six hosts pass files 27-29 (P5 ambiguity cases 28b pending)
+
 ## Text, binary and output budgets
 
 <a id="c-lisp-c20"></a>
@@ -390,7 +392,7 @@ Each task starts by reproducing the report against the current tree, then lands 
 
 <a id="c-lisp-c6"></a>
 
-- [ ] **C-LISP-C6 — Resolve LISP-C6, LISP-C7.** Coordinate the related changes below at their shared implementation surface.
+- [x] **C-LISP-C6 — Resolve LISP-C6, LISP-C7.** Coordinate the related changes below at their shared implementation surface.
 
   **[LISP-C6](../lisp-code-review.md) — [high] [confirmed] SQL: `JOIN` over a FILTERed static list silently drops the FILTER**
 
@@ -410,9 +412,11 @@ Each task starts by reproducing the report against the current tree, then lands 
 
   Done when every linked scenario passes on all applicable lanes; code/position, mutation, ordering and repeat-use behavior satisfy the shared contract. Record commit and fixture IDs here.
 
+  Closed 2026-09-29 — all six hosts sqlt 1265/1265 with reuse twin; oracle/hybrid lanes agree on SQLite (+ MariaDB/MySQL/PostgreSQL for PHP); PY-C1 site f closed
+
 <a id="c-lisp-c23"></a>
 
-- [ ] **C-LISP-C23 — Resolve LISP-C23.** SQL: exponential time/output from a tiny program (assignment substitution builds a DAG that is walked as a tree)
+- [x] **C-LISP-C23 — Resolve LISP-C23.** SQL: exponential time/output from a tiny program (assignment substitution builds a DAG that is walked as a tree)
 
   **[LISP-C23](../lisp-code-review.md) — [medium] [confirmed; cross-host] SQL: exponential time/output from a tiny program (assignment substitution builds a DAG that is walked as a tree)**
 
@@ -424,11 +428,13 @@ Each task starts by reproducing the report against the current tree, then lands 
 
   Done when every linked scenario passes on all applicable lanes; code/position, mutation, ordering and repeat-use behavior satisfy the shared contract. Record commit and fixture IDs here.
 
+  Closed 2026-09-29 — all six hosts sqlt 1265/1265 with reuse twin; oracle/hybrid lanes agree on SQLite (+ MariaDB/MySQL/PostgreSQL for PHP); PY-C1 site f closed
+
 ## SQL kinds, numeric fidelity and server limits
 
 <a id="c-lisp-c24"></a>
 
-- [ ] **C-LISP-C24 — Resolve LISP-C24.** SQL: UNKNOWN laundered to NUM by kind unification bypasses the numeric guard
+- [x] **C-LISP-C24 — Resolve LISP-C24.** SQL: UNKNOWN laundered to NUM by kind unification bypasses the numeric guard
 
   **[LISP-C24](../lisp-code-review.md) — [medium] [confirmed; cross-host] SQL: UNKNOWN laundered to NUM by kind unification bypasses the numeric guard**
 
@@ -440,9 +446,11 @@ Each task starts by reproducing the report against the current tree, then lands 
 
   Done when every linked scenario passes on all applicable lanes; code/position, mutation, ordering and repeat-use behavior satisfy the shared contract. Record commit and fixture IDs here.
 
+  Closed 2026-09-29 — all six hosts sqlt 1265/1265 with reuse twin; oracle/hybrid lanes agree on SQLite (+ MariaDB/MySQL/PostgreSQL for PHP); PY-C1 site f closed
+
 <a id="c-lisp-c25"></a>
 
-- [ ] **C-LISP-C25 — Resolve LISP-C25.** SQL: `IN (numeric literals)` on an EXACT text column compares bare `x = 1`
+- [x] **C-LISP-C25 — Resolve LISP-C25.** SQL: `IN (numeric literals)` on an EXACT text column compares bare `x = 1`
 
   **[LISP-C25](../lisp-code-review.md) — [medium] [confirmed by reading; not run against a server] SQL: `IN (numeric literals)` on an EXACT text column compares bare `x = 1`**
 
@@ -454,9 +462,11 @@ Each task starts by reproducing the report against the current tree, then lands 
 
   Done when every linked scenario passes on all applicable lanes; code/position, mutation, ordering and repeat-use behavior satisfy the shared contract. Record commit and fixture IDs here.
 
+  Closed 2026-09-29 — all six hosts sqlt 1265/1265 with reuse twin; oracle/hybrid lanes agree on SQLite (+ MariaDB/MySQL/PostgreSQL for PHP); PY-C1 site f closed
+
 <a id="c-lisp-c39"></a>
 
-- [ ] **C-LISP-C39 — Resolve LISP-C39.** SQL: TAKE/DROP counts are emitted as arbitrary-size integers
+- [x] **C-LISP-C39 — Resolve LISP-C39.** SQL: TAKE/DROP counts are emitted as arbitrary-size integers
 
   **[LISP-C39](../lisp-code-review.md) — [low] [confirmed; JS also diverges] SQL: TAKE/DROP counts are emitted as arbitrary-size integers**
 
@@ -468,11 +478,13 @@ Each task starts by reproducing the report against the current tree, then lands 
 
   Done when every linked scenario passes on all applicable lanes; code/position, mutation, ordering and repeat-use behavior satisfy the shared contract. Record commit and fixture IDs here.
 
+  Closed 2026-09-29 — all six hosts sqlt 1265/1265 with reuse twin; oracle/hybrid lanes agree on SQLite (+ MariaDB/MySQL/PostgreSQL for PHP); PY-C1 site f closed
+
 ## SQL bindings, dialects, fragments and rendering
 
 <a id="c-lisp-c36"></a>
 
-- [ ] **C-LISP-C36 — Resolve LISP-C36, LISP-C42.** Coordinate the related changes below at their shared implementation surface.
+- [x] **C-LISP-C36 — Resolve LISP-C36, LISP-C42.** Coordinate the related changes below at their shared implementation surface.
 
   **[LISP-C36](../lisp-code-review.md) — [low] [confirmed; needs an application-registered dialect] Missing or incomplete `textEscape` emits unescaped inline text (SQL injection class)**
 
@@ -492,9 +504,11 @@ Each task starts by reproducing the report against the current tree, then lands 
 
   Done when every linked scenario passes on all applicable lanes; code/position, mutation, ordering and repeat-use behavior satisfy the shared contract. Record commit and fixture IDs here.
 
+  Closed 2026-09-29 — all six hosts sqlt 1265/1265 with reuse twin; oracle/hybrid lanes agree on SQLite (+ MariaDB/MySQL/PostgreSQL for PHP); PY-C1 site f closed
+
 <a id="c-lisp-c38"></a>
 
-- [ ] **C-LISP-C38 — Resolve LISP-C38.** About 21 SQL refusal messages contain a literal `~` + newline
+- [x] **C-LISP-C38 — Resolve LISP-C38.** About 21 SQL refusal messages contain a literal `~` + newline
 
   **[LISP-C38](../lisp-code-review.md) — [low] [confirmed] About 21 SQL refusal messages contain a literal `~` + newline**
 
@@ -506,9 +520,11 @@ Each task starts by reproducing the report against the current tree, then lands 
 
   Done when every linked scenario passes on all applicable lanes; code/position, mutation, ordering and repeat-use behavior satisfy the shared contract. Record commit and fixture IDs here.
 
+  Closed 2026-09-29 — all six hosts sqlt 1265/1265 with reuse twin; oracle/hybrid lanes agree on SQLite (+ MariaDB/MySQL/PostgreSQL for PHP); PY-C1 site f closed
+
 <a id="c-lisp-c40"></a>
 
-- [ ] **C-LISP-C40 — Resolve LISP-C40, LISP-C41.** Coordinate the related changes below at their shared implementation surface.
+- [x] **C-LISP-C40 — Resolve LISP-C40, LISP-C41.** Coordinate the related changes below at their shared implementation surface.
 
   **[LISP-C40](../lisp-code-review.md) — [low] [confirmed; JS reports the same] SQL: parameter slots of a discarded validation pass stay in `fragment-params`**
 
@@ -530,11 +546,13 @@ Each task starts by reproducing the report against the current tree, then lands 
 
   Done when every linked scenario passes on all applicable lanes; code/position, mutation, ordering and repeat-use behavior satisfy the shared contract. Record commit and fixture IDs here.
 
+  Closed 2026-09-29 — all six hosts sqlt 1265/1265 with reuse twin; oracle/hybrid lanes agree on SQLite (+ MariaDB/MySQL/PostgreSQL for PHP); PY-C1 site f closed
+
 ## Hybrid execution, keys, order and context
 
 <a id="c-lisp-c8"></a>
 
-- [ ] **C-LISP-C8 — Resolve LISP-C8.** Hybrid: a fall-through MAP whose custom pair reads `_K` is evaluated over renumbered SQL rows
+- [x] **C-LISP-C8 — Resolve LISP-C8.** Hybrid: a fall-through MAP whose custom pair reads `_K` is evaluated over renumbered SQL rows
 
   **[LISP-C8](../lisp-code-review.md) — [high] [confirmed] Hybrid: a fall-through MAP whose custom pair reads `_K` is evaluated over renumbered SQL rows**
 
@@ -546,9 +564,11 @@ Each task starts by reproducing the report against the current tree, then lands 
 
   Done when every linked scenario passes on all applicable lanes; code/position, mutation, ordering and repeat-use behavior satisfy the shared contract. Record commit and fixture IDs here.
 
+  Closed 2026-09-29 — all six hosts sqlt 1265/1265 with reuse twin; oracle/hybrid lanes agree on SQLite (+ MariaDB/MySQL/PostgreSQL for PHP); PY-C1 site f closed
+
 <a id="c-lisp-c26"></a>
 
-- [ ] **C-LISP-C26 — Resolve LISP-C26.** SQL: SORT/TOP(_BY) followed by LINK is not wrapped in a derived table (Lisp); JS and Python wrap it
+- [x] **C-LISP-C26 — Resolve LISP-C26.** SQL: SORT/TOP(_BY) followed by LINK is not wrapped in a derived table (Lisp); JS and Python wrap it
 
   **[LISP-C26](../lisp-code-review.md) — [medium] [confirmed divergence; direction unclear] SQL: SORT/TOP(_BY) followed by LINK is not wrapped in a derived table (Lisp); JS and Python wrap it**
 
@@ -562,9 +582,11 @@ Each task starts by reproducing the report against the current tree, then lands 
 
   Done when every linked scenario passes on all applicable lanes; code/position, mutation, ordering and repeat-use behavior satisfy the shared contract. Record commit and fixture IDs here.
 
+  Closed 2026-09-29 — all six hosts sqlt 1265/1265 with reuse twin; oracle/hybrid lanes agree on SQLite (+ MariaDB/MySQL/PostgreSQL for PHP); PY-C1 site f closed
+
 <a id="c-lisp-c27"></a>
 
-- [ ] **C-LISP-C27 — Resolve LISP-C27, LISP-C28, LISP-C29, LISP-C30.** Coordinate the related changes below at their shared implementation surface.
+- [x] **C-LISP-C27 — Resolve LISP-C27, LISP-C28, LISP-C29, LISP-C30.** Coordinate the related changes below at their shared implementation surface.
 
   **[LISP-C27](../lisp-code-review.md) — [medium] [confirmed] Hybrid: a split after a key-retaining FILTER hands the continuation renumbered rows**
 
@@ -602,9 +624,11 @@ Each task starts by reproducing the report against the current tree, then lands 
 
   Done when every linked scenario passes on all applicable lanes; code/position, mutation, ordering and repeat-use behavior satisfy the shared contract. Record commit and fixture IDs here.
 
+  Closed 2026-09-29 — all six hosts sqlt 1265/1265 with reuse twin; oracle/hybrid lanes agree on SQLite (+ MariaDB/MySQL/PostgreSQL for PHP); PY-C1 site f closed
+
 <a id="c-lisp-c43"></a>
 
-- [ ] **C-LISP-C43 — Resolve LISP-C43.** `source-tables` over-reports a binder that shadows a relation name
+- [x] **C-LISP-C43 — Resolve LISP-C43.** `source-tables` over-reports a binder that shadows a relation name
 
   **[LISP-C43](../lisp-code-review.md) — [low] [confirmed] `source-tables` over-reports a binder that shadows a relation name**
 
@@ -615,6 +639,8 @@ Each task starts by reproducing the report against the current tree, then lands 
   Regression prerequisite: [T11 / LISP-C43](tests/11-hybrid.md#lisp-c43).
 
   Done when every linked scenario passes on all applicable lanes; code/position, mutation, ordering and repeat-use behavior satisfy the shared contract. Record commit and fixture IDs here.
+
+  Closed 2026-09-29 — all six hosts sqlt 1265/1265 with reuse twin; oracle/hybrid lanes agree on SQLite (+ MariaDB/MySQL/PostgreSQL for PHP); PY-C1 site f closed
 
 <a id="c-lisp-c47"></a>
 

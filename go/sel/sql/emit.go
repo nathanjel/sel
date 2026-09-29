@@ -289,8 +289,15 @@ func (e *Emit) Fill(tpl string, args []*Fragment, pos Pos, expanding map[string]
 			continue
 		}
 		if tpl[i] != '{' {
-			push(string(tpl[i]))
-			i++
+			// The whole run up to the next brace, as bytes: converting one byte
+			// at a time re-encoded every byte of a multi-byte character as if it
+			// were a code point (GO-C24).
+			j := i + 1
+			for j < nTpl && tpl[j] != '{' && tpl[j] != '}' {
+				j++
+			}
+			push(tpl[i:j])
+			i = j
 			continue
 		}
 		end := strings.IndexByte(tpl[i:], '}')
@@ -308,7 +315,12 @@ func (e *Emit) Fill(tpl string, args []*Fragment, pos Pos, expanding map[string]
 		}
 		if strings.HasSuffix(slot, ":") {
 			frmStr := slot[:len(slot)-1]
-			if frm, ok := slotRegex(frmStr); ok && frm >= 0 && frm < len(args) {
+			if frm, ok := slotRegex(frmStr); ok && frm >= 0 {
+				// A tail starting past the last argument is the empty list, and
+				// emits nothing (GO-C39).
+				if frm > len(args) {
+					frm = len(args)
+				}
 				joinSub(args[frm:])
 				continue
 			}
@@ -333,7 +345,7 @@ func (e *Emit) Fill(tpl string, args []*Fragment, pos Pos, expanding map[string]
 
 		val := e.Lex(key)
 		valStr, ok := val.(string)
-		if !ok || valStr == "" {
+		if !ok {
 			Refuse("E_SQL_UNSUPPORTED", fmt.Sprintf("a template used {%s}, which is neither an argument nor a lexical entry of dialect %s", slot, e.dialect), pos)
 		}
 
@@ -346,25 +358,38 @@ func (e *Emit) Fill(tpl string, args []*Fragment, pos Pos, expanding map[string]
 			Refuse("E_SQL_UNSUPPORTED", fmt.Sprintf("the %s lexical entry of dialect %s expands into itself, so filling it would never finish", key, e.dialect), pos)
 		}
 
-		castArg, isCastArg := slotRegex(argStr)
-		if key == "binaryCast" && isCastArg && castArg < len(args) && args[castArg].Kind == KindBin {
-			splice(args[castArg])
-			continue
+		// {key:*} is {key:n} for every argument, joined with ", " (sql/MAP.md 4.2).
+		each := []string{argStr}
+		if argStr == "*" {
+			each = each[:0]
+			for n := range args {
+				each = append(each, fmt.Sprintf("%d", n))
+			}
 		}
+		for at, one := range each {
+			if at > 0 {
+				push(", ")
+			}
+			castArg, isCastArg := slotRegex(one)
+			if key == "binaryCast" && isCastArg && castArg < len(args) && args[castArg].Kind == KindBin {
+				splice(args[castArg])
+				continue
+			}
 
-		deeper := make(map[string]bool)
-		for k := range expanding {
-			deeper[k] = true
-		}
-		deeper[key] = true
+			deeper := make(map[string]bool)
+			for k := range expanding {
+				deeper[k] = true
+			}
+			deeper[key] = true
 
-		subTpl := FillSlot(valStr, "{0}", "{"+argStr+"}")
-		subParts := e.Fill(subTpl, args, pos, deeper)
-		for _, p := range subParts {
-			if !p.IsSlot {
-				push(p.Sql)
-			} else {
-				parts = append(parts, p)
+			subTpl := FillSlot(valStr, "{0}", "{"+one+"}")
+			subParts := e.Fill(subTpl, args, pos, deeper)
+			for _, p := range subParts {
+				if !p.IsSlot {
+					push(p.Sql)
+				} else {
+					parts = append(parts, p)
+				}
 			}
 		}
 	}

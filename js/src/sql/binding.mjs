@@ -183,7 +183,15 @@ function makeRelation(base, alias, fields, scalar, correlate, prefilter = null) 
     }
     // asciiUpper, matching PHP's strtoupper: toUpperCase would fold "ß" to "SS"
     // and change the key's length.
-    out[asciiUpper(String(name))] = b.spec;
+    const upper = asciiUpper(String(name));
+    // Names are matched case-insensitively (SEL upper-cases a program's), so two
+    // fields that differ only by case are one name with two meanings: the second
+    // silently replaced the first.
+    if (Object.hasOwn(out, upper)) {
+      throw new SqlError('E_SQL_BINDING',
+        `the relation binding has two fields named ${upper} once case is ignored`);
+    }
+    out[upper] = b.spec;
   }
   if (scalar !== null && scalar !== undefined && !Object.hasOwn(out, asciiUpper(scalar))) {
     throw new SqlError('E_SQL_BINDING',
@@ -219,10 +227,16 @@ function checkName(what, v) {
   }
 }
 
+// The kinds a binding may DECLARE: what a column holds. LIST and STATEMENT are
+// kinds of fragment a translation can produce, not of a column, and a column
+// declared as one refused nothing at binding time and failed later, somewhere
+// else, as a shape error.
+const DECLARABLE = FRAGMENT_KINDS.filter((k) => k !== 'LIST' && k !== 'STATEMENT');
+
 function checkType(t) {
-  if (typeof t !== 'string' || !FRAGMENT_KINDS.includes(t)) {
+  if (typeof t !== 'string' || !DECLARABLE.includes(t)) {
     throw new SqlError('E_SQL_BINDING',
-      `a binding has type ${t}; use one of ${FRAGMENT_KINDS.join(', ')}`);
+      `a binding has type ${t}; use one of ${DECLARABLE.join(', ')}`);
   }
 }
 

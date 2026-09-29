@@ -25,7 +25,7 @@ translation time. See docs/internals/sql-translation.md §11.4.
 from __future__ import annotations
 
 from ..errors import Pos, SelError
-from ..eval import Context, eval_node
+from ..eval import Context, MAX_DEPTH, eval_node
 from ..parser import Node
 from ..value import Value
 from .errors import refuse
@@ -178,41 +178,52 @@ def scope(bindings) -> tuple[dict[str, bool], Context]:
     return names, Context(root)
 
 
-def is_constant(n: Node, bound: dict[str, bool] | None = None) -> bool:
+def is_constant(n: Node, bound: dict[str, bool] | None = None, depth: int = 0) -> bool:
     """Whether every leaf under ``n`` is a literal.
 
     A binder an aggregate introduces inside ``n`` counts as bound, so
     ``ALL((1, 2), _ > 0)`` is constant and ``ALL(ITEMS, _ > 0)`` is not. That is
     the same rule the evaluator applies, which is what lets the whole node be
     handed to it below.
+
+    Bounded at the evaluator's own depth, like every other walk of a tree the
+    source can make deep: a helper chain stage 1 inlines is a tree as deep as the
+    chain is long, though the evaluator never nests it, and this walk reached the
+    host's stack before the translator's own guard (E_SQL_DEPTH) could refuse it.
+    A subtree past the cap is answered "not constant", which validates nothing --
+    and the translation is refused for its depth in any case.
     """
+    if depth > MAX_DEPTH:
+        return False
     bound = bound or {}
+    d = depth + 1
     t = n.t
     if t in ('num', 'text', 'bool'):
         return True
     if t == 'var':
         return n.name in bound
     if t == 'un':
-        return is_constant(n.x, bound)
+        return is_constant(n.x, bound, d)
     if t == 'bin':
-        return is_constant(n.l, bound) and is_constant(n.r, bound)
+        return is_constant(n.l, bound, d) and is_constant(n.r, bound, d)
     if t == 'index':
-        return is_constant(n.obj, bound) and is_constant(n.idx, bound)
+        return is_constant(n.obj, bound, d) and is_constant(n.idx, bound, d)
     if t == 'clist':
         # Stage 1 builds this one; the evaluator has never seen it and cannot
         # evaluate it. Nothing containing one is checkable.
         return False
     if t == 'list':
-        return all(is_constant(item, bound) for item in n.items)
+        return all(is_constant(item, bound, d) for item in n.items)
     if t == 'call':
-        return _constant_call(n, bound)
+        return _constant_call(n, bound, d)
     # assign and seq are gone by now (stage 1), and an unknown node type is not
     # something to guess about: not constant, so nothing is validated and the
-    # walk refuses it in the ordinary way.
+    # walk refuses it in the ordinary way. A `scoped` definition is one such:
+    # it is read outside the frames it is used in, so it is never folded here.
     return False
 
 
-def _constant_call(n: Node, bound: dict[str, bool]) -> bool:
+def _constant_call(n: Node, bound: dict[str, bool], depth: int = 0) -> bool:
     """The binding form is the only reason this is not three lines.
 
     ``MAP(list, X, X + 1)`` names its binder in argument 1 and uses it in
@@ -222,9 +233,9 @@ def _constant_call(n: Node, bound: dict[str, bool]) -> bool:
     """
     args = n.args
     if not (n.spec is not None and n.spec.binds):
-        return all(is_constant(a, bound) for a in args)
+        return all(is_constant(a, bound, depth) for a in args)
 
-    if not is_constant(args[0], bound):
+    if not is_constant(args[0], bound, depth):
         return False
     inner = dict(bound)
     body = 1
@@ -236,7 +247,7 @@ def _constant_call(n: Node, bound: dict[str, bool]) -> bool:
         body = 2
     else:
         inner['_'] = True
-    return all(is_constant(args[i], inner) for i in range(body, len(args)))
+    return all(is_constant(args[i], inner, depth) for i in range(body, len(args)))
 
 
 def validate(n: Node, ctx: Context | None = None) -> None:
@@ -304,6 +315,13 @@ def refuse_as_sel(e: SelError, n: Node) -> None:
     has to change.
     """
     pos = Pos(e.line, e.col, e.offset) if e.line > 0 else n.pos
+    if e.code == 'E_DEPTH':
+        # SEL evaluates this fine as far as it is asked to; what is refused is the
+        # nesting of the expression being translated, which is E_SQL_DEPTH's whole
+        # meaning (sql/errors.md), not an invalid expression (JS-C54 d).
+        refuse('E_SQL_DEPTH',
+               'this expression nests deeper than SEL will evaluate, so there is '
+               'nothing to translate; the evaluator answers E_DEPTH for it', pos)
     refuse('E_SQL_INVALID',
            f'SEL rejects this expression ({e.code}: {e.message}), so there is '
            'nothing to translate; a database would answer something rather '

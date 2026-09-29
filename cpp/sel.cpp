@@ -8871,6 +8871,17 @@ NodePtr opt_rename_var(const NodePtr& node, const std::string& old_name, const s
 // columns, so a field read through the binder cannot raise either, nor a
 // comparison, AND/OR/NOT or + - * over such reads; `/` and `%`, calls and
 // anything else may. The in-memory path has no schema.
+// What the SQL planner tells the LOGICAL optimizer about the rows: the field
+// names its source relation declares, and whether the row shape is still the
+// source's at the step being considered. A field read `_["f"]` cannot raise only
+// for a declared field of an unchanged row; for anything else it can raise
+// E_NO_KEY, and a rewrite that stops it being evaluated for some rows (a FILTER
+// hoisted above a SORT_BY whose key it is) hides the error `run()` reports
+// (CPP-C35). Unset -- the physical optimizer, or a caller with no relation --
+// keeps the historical assumption (a read of the binder is taken as safe).
+thread_local const std::set<std::string>* tl_opt_declared = nullptr;
+thread_local bool tl_opt_shape_known = false;
+
 bool opt_cannot_raise(const NodePtr& node, const std::string& binder, bool logical) {
   static const std::set<std::string> safe_ops{"==", "!=", "<", "<=", ">", ">=", "$==", "$!=", "$<", "$<=",
                                               "$>", "$>=", "AND", "OR", "+", "-", "*"};
@@ -8882,8 +8893,16 @@ bool opt_cannot_raise(const NodePtr& node, const std::string& binder, bool logic
       return name == "_K" || name == upper_name(binder);
     }
     case NT::Index:
-      return logical && node->l && node->l->t == NT::Var && upper_name(node->l->s) == upper_name(binder) &&
-             node->r && node->r->t == NT::Text;
+      if (!(logical && node->l && node->l->t == NT::Var && upper_name(node->l->s) == upper_name(binder) &&
+            node->r && node->r->t == NT::Text)) {
+        return false;
+      }
+      // With a relation's fields known (the SQL planner), a read is safe only for
+      // a declared field of a row whose shape is still the source's. Without them
+      // (a caller that only asked for the logical rewrite) the historical
+      // assumption stands.
+      return tl_opt_declared == nullptr ||
+             (tl_opt_shape_known && tl_opt_declared->count(upper_name(node->r->s)) > 0);
     case NT::Bin:
       return logical && safe_ops.count(node->s) > 0 && opt_cannot_raise(node->l, binder, logical) &&
              opt_cannot_raise(node->r, binder, logical);
@@ -8941,6 +8960,17 @@ std::vector<NodePtr> opt_logical_steps(const NodePtr& source, std::vector<NodePt
       const NodePtr& first = current[i];
       const NodePtr* second = i + 1 < current.size() ? &current[i + 1] : nullptr;
       const NodePtr* third = i + 2 < current.size() ? &current[i + 2] : nullptr;
+      // The row is the source's while every step before this one keeps its shape.
+      tl_opt_shape_known = true;
+      for (std::size_t k = 0; k < i; ++k) {
+        const std::string& name = current[k]->s;
+        if (name != "FILTER" && name != "SORT" && name != "SORT_DESC" && name != "SORT_BY" &&
+            name != "TOP" && name != "TOP_DESC" && name != "TOP_BY" && name != "TAKE" &&
+            name != "DROP" && name != "DISTINCT" && name != "DEDUPE") {
+          tl_opt_shape_known = false;
+          break;
+        }
+      }
       if (second && (*second)->s == "TAKE" && first->s == "TAKE" && first->items.size() == 2 &&
           (*second)->items.size() == 2) {
         const auto left = opt_numeric_literal(first->items[1]);

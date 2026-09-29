@@ -73,6 +73,7 @@ type Translator struct {
 	constNames      map[string]bool
 	constRoot       *sel.Value
 	depth           int
+	nodes           int64
 	statementPlan   *RelationalPlan
 	inWhere         bool
 	subqueryCounter int
@@ -201,6 +202,7 @@ func (t *Translator) Begin(ast *sel.Node) Begun {
 	t.caveats = nil
 	t.frames = nil
 	t.depth = 0
+	t.nodes = 0
 	t.subqueryCounter = 0
 
 	constNames, constRoot := constScope(t.bindings)
@@ -239,6 +241,16 @@ func (t *Translator) addCaveat(name string) {
 }
 
 func (t *Translator) node(n *SNode) *Fragment {
+	// One per node dispatched, again on every re-entry (an inlined helper read
+	// twice, an unrolled element, a binder read), and before any work that costs
+	// what the expansion does: a refusal costs at most the budget
+	// (docs/internals/sql-translation.md 7.4, MAX_SQL_NODES).
+	t.nodes++
+	if t.nodes > limits.MAX_SQL_NODES {
+		Refuse("E_SQL_SIZE",
+			fmt.Sprintf("this rule expands to more than %d nodes once its helpers are inlined and its lists unrolled; SEL evaluates it in a fraction of that, but the SQL would be the size of what it expands to", limits.MAX_SQL_NODES),
+			n.Pos)
+	}
 	t.depth++
 	if t.depth > limits.MAX_DEPTH {
 		t.depth--
@@ -269,6 +281,7 @@ func (t *Translator) dispatch(n *SNode) *Fragment {
 		}
 		return t.literal(sel.NewNumExact(n.Str, dec), KindNum)
 	case SNodeText:
+		t.requireNoNul(n.Str, n.Pos)
 		return t.literal(sel.NewTextOwned(n.Str), KindText)
 	case SNodeBool:
 		return t.literal(sel.NewBool(n.BoolVal), KindBool)
@@ -287,6 +300,16 @@ func (t *Translator) dispatch(n *SNode) *Fragment {
 	}
 	Refuse("E_SQL_SHAPE", fmt.Sprintf("cannot translate a %s node", n.T), n.Pos)
 	return nil
+}
+
+// requireNoNul refuses a text value with a NUL in it, in every render mode. A
+// C-string client API truncates an inline statement at the NUL, and a driver
+// that sends parameters may do the same; SEL text may hold U+0000, SQL text
+// cannot portably (GO-C43).
+func (t *Translator) requireNoNul(s string, pos Pos) {
+	if strings.ContainsRune(s, 0) {
+		Refuse("E_SQL_UNSUPPORTED", "a text value containing a NUL cannot be sent to a SQL server portably", pos)
+	}
 }
 
 func (t *Translator) literal(v *sel.Value, kind SqlKind) *Fragment {
@@ -342,6 +365,9 @@ func (t *Translator) variable(n *SNode) *Fragment {
 			Refuse("E_SQL_SHAPE",
 				fmt.Sprintf("%s is bound to an empty value, which is not a SQL value; only an aggregate can be given an empty binding", n.Str),
 				n.Pos)
+		}
+		if v.IsText() {
+			t.requireNoNul(v.Scalar(), n.Pos)
 		}
 		return t.literal(v, declaredKind(b, v))
 	case BindingKindColumns, BindingKindRelation:
@@ -590,6 +616,9 @@ func (t *Translator) rowField(row *RowModel, label string, key string, n *SNode)
 			fmt.Sprintf("%s[%q] is a field of the right side of a LINK_LEFT, which a row with no match does not have; read it through the right binder", label, key),
 			n.Pos)
 	}
+	if f.Spec.Unavailable != "" {
+		Refuse("E_SQL_SHAPE", f.Spec.Unavailable, n.Pos)
+	}
 	if f.Spec.IsRaw || !f.Qualify {
 		return t.columnRef(f.Spec)
 	}
@@ -753,6 +782,9 @@ func (t *Translator) indexBinder(b *Binder, name string, key string, n *SNode) *
 		rel := b.Relation
 		field := utf8.AsciiUpper(key)
 		if f := rel.Field(field); f != nil {
+			if f.Unavailable != "" {
+				Refuse("E_SQL_SHAPE", f.Unavailable, n.Pos)
+			}
 			return t.relationColumn(rel, *f)
 		}
 		var known []string
@@ -855,8 +887,10 @@ func requireComparableKinds(l, r *Fragment, op string, pos Pos) {
 
 func unify(fs []*Fragment, pos Pos) SqlKind {
 	var kind *SqlKind
+	sawUnknown := false
 	for _, f := range fs {
 		if f.Kind == KindUnknown {
+			sawUnknown = true
 			continue
 		}
 		if kind == nil {
@@ -870,7 +904,11 @@ func unify(fs []*Fragment, pos Pos) SqlKind {
 				pos)
 		}
 	}
-	if kind == nil {
+	// UNKNOWN does not unify with anything: a branch nobody vouched for makes the
+	// whole conditional something nobody vouched for, so it keeps its guard (or is
+	// refused where no guard can be written) instead of inheriting the kind of the
+	// branch beside it (GO-C15, JS-C27, PHP-C28, CPP-C29, LISP-C24).
+	if kind == nil || sawUnknown {
 		return KindUnknown
 	}
 	return *kind
@@ -1161,7 +1199,19 @@ func (t *Translator) apply(section string, key string, args []*Fragment, pos Pos
 	return NewFragment(parts, rk, t.dialect, nil, nil, nil)
 }
 
+// foldPairwise combines the operands of an unroll through the operator's own
+// binary template: left to right up to 256 operands (byte for byte what a
+// hand-written chain renders), and above that a balanced tree, the left half the
+// larger, each half folded again. A left fold n deep is a tree servers refuse:
+// SQLite stops at depth 1000, MariaDB and MySQL overrun their stack at about 900
+// terms, PostgreSQL runs out of memory at 5000 (docs/internals/sql-translation.md
+// 7.1).
 func (t *Translator) foldPairwise(op string, parts []*Fragment, pos Pos) *Fragment {
+	if len(parts) > 256 {
+		m := (len(parts) + 1) / 2
+		pair := []*Fragment{t.foldPairwise(op, parts[:m], pos), t.foldPairwise(op, parts[m:], pos)}
+		return t.apply("ops", op, pair, pos, t.variantFor(op, pair))
+	}
 	acc := parts[0]
 	for i := 1; i < len(parts); i++ {
 		pair := []*Fragment{acc, parts[i]}
@@ -1473,11 +1523,22 @@ func (t *Translator) inOperator(n *SNode) *Fragment {
 					rhs.Pos)
 			}
 			skel := t.skeleton("inRelation", n.Pos)
+			needleFrag := t.node(n.L())
+			column := t.columnRef(*scalar)
+			// The kinds have to be comparable, as they do for `x IN (list)`: a BOOL
+			// or BIN needle against a TEXT column matches the rows whose text is
+			// '1' or 'true', or spells the same bytes.
+			if needleFrag.Kind == KindBool || needleFrag.Kind == KindBin {
+				Refuse("E_SQL_SHAPE",
+					fmt.Sprintf("IN over %s compares a %s with its rows, which SEL answers FALSE for every text; SQL would compare spellings", rhs.Str, needleFrag.Kind),
+					n.L().Pos)
+			}
+			requireComparableKinds(needleFrag, column, "IN", n.Pos)
 			slots := mergeSlots(
 				t.relationSlots(rel),
 				SlotMap{
-					Pair[string, []Slot]{Key: "needle", Val: []Slot{FragmentSlot(t.emit.TextOperand(t.node(n.L())))}},
-					Pair[string, []Slot]{Key: "body", Val: []Slot{FragmentSlot(t.emit.TextOperand(t.columnRef(*scalar)))}},
+					Pair[string, []Slot]{Key: "needle", Val: []Slot{FragmentSlot(t.emit.TextOperand(needleFrag))}},
+					Pair[string, []Slot]{Key: "body", Val: []Slot{FragmentSlot(t.emit.TextOperand(column))}},
 				},
 			)
 			parts := t.fillNamed(skel, slots, n.Pos)
@@ -1532,7 +1593,10 @@ func (t *Translator) inOperator(n *SNode) *Fragment {
 		}
 		requireComparableKinds(raw, f, "IN", e.Pos)
 		item := f
-		if !isExact {
+		if !isExact || f.Kind != KindText {
+			// An exact column compares as itself, but a NUMBER beside it is
+			// still spelled as text, or the server would compare by numeric
+			// prefix ('25/298' = 25).
 			item = t.emit.TextOperand(f)
 		}
 		args := []*Fragment{needle, item}
@@ -1739,13 +1803,17 @@ func (t *Translator) call(n *SNode) *Fragment {
 				inner := t.withRow(src, binderName, func() *Fragment {
 					return t.node(bodyNode)
 				})
-				var sqlBuilder strings.Builder
-				sqlBuilder.WriteString("COALESCE(SUM(")
-				for _, pt := range inner.Parts {
-					sqlBuilder.WriteString(pt.Sql)
+				t.requireNumericConstant(bodyNode)
+				t.requireNum(inner, bodyNode.Pos, "SUM")
+				if inner.Kind == KindUnknown {
+					return t.allOrNothingSum(inner, bodyNode.Pos)
 				}
-				sqlBuilder.WriteString("), 0)")
-				return NewFragment([]Part{{Sql: sqlBuilder.String()}}, KindNum, t.dialect, nil, nil, nil)
+				// The body's parts are spliced, slots and all: joining their SQL
+				// text dropped every literal in it (GO-C3).
+				parts := []Part{{Sql: "COALESCE(SUM("}}
+				parts = append(parts, inner.Parts...)
+				parts = append(parts, Part{Sql: "), 0)"})
+				return NewFragment(parts, KindNum, t.dialect, inner.Params, inner.ParamKinds, inner.Caveats)
 			}
 		}
 	}
@@ -2205,6 +2273,12 @@ func (t *Translator) aggBody(name string, binderName string, body *SNode, src So
 	q := t.node(body)
 	if name == "SUM" {
 		t.requireNum(q, body.Pos, name)
+		// A body nobody vouched for is checked like any operand of `+` when the
+		// sum is an unroll. Over a relation the whole sum is guarded instead, all
+		// or nothing (sql-kinds.md §5a), by relationAggregate.
+		if q.Kind == KindUnknown && src.Shape != SourceShapeRelation {
+			q = t.guardNumeric(q, body)
+		}
 	} else {
 		t.requireBool(q, body.Pos, name)
 	}
@@ -2225,7 +2299,68 @@ func (t *Translator) aggBody(name string, binderName string, body *SNode, src So
 	return q
 }
 
+// numericTestAndCast is the pair the numeric guard is made of, for a body that
+// has to be tested once for the whole aggregate and cast once per element.
+func (t *Translator) numericTestAndCast(body *Fragment, pos Pos) (*Fragment, *Fragment) {
+	CheckNumericGuard(t.dialect)
+	test := t.apply("funcs", "ISNUM", []*Fragment{body}, pos, nil)
+	tpl, ok := t.emit.Lex("numericCast").(string)
+	if !ok || tpl == "" {
+		Refuse("E_SQL_UNSUPPORTED", fmt.Sprintf("dialect %s has no numeric cast", t.dialect), pos)
+	}
+	cast := NewFragment(t.emit.Fill(tpl, []*Fragment{body}, pos, nil), KindNum, t.dialect, body.Params, body.ParamKinds, body.Caveats)
+	// PostgreSQL evaluates the cast for every row before the enclosing CASE
+	// chooses, and casting 'x' to NUMERIC is an error there (22P02), not a NULL:
+	// so the SUM adds up the guarded cast, and the outer test discards it as
+	// before (sql-kinds.md 5a).
+	for _, d := range Chain(t.dialect) {
+		if d == "postgresql" {
+			cast = t.emit.NumericOperand(body, pos)
+			break
+		}
+	}
+	return test, cast
+}
+
+// allOrNothingSum is the SUM of a body nobody vouched for (sql-kinds.md §5a):
+//
+//	CASE WHEN COUNT(*) = COUNT(CASE WHEN <test> THEN 1 END)
+//	     THEN COALESCE(SUM(<cast>), 0) ELSE NULL END
+//
+// SUM skips NULL, and COALESCE turns an empty sum into 0, so guarding each element
+// would make a refused element vanish; one that fails the test, or is NULL, makes
+// the whole value NULL, where SEL raises. Refused where the dialect cannot test.
+func (t *Translator) allOrNothingSum(body *Fragment, pos Pos) *Fragment {
+	test, cast := t.numericTestAndCast(body, pos)
+	parts := []Part{{Sql: "CASE WHEN COUNT(*) = COUNT(CASE WHEN "}}
+	parts = append(parts, test.Parts...)
+	parts = append(parts, Part{Sql: " THEN 1 END) THEN COALESCE(SUM("})
+	parts = append(parts, cast.Parts...)
+	parts = append(parts, Part{Sql: "), 0) ELSE NULL END"})
+	var params []*sel.Value
+	var kinds []SqlKind
+	params = append(params, test.Params...)
+	params = append(params, cast.Params...)
+	kinds = append(kinds, test.ParamKinds...)
+	kinds = append(kinds, cast.ParamKinds...)
+	return NewFragment(parts, KindNum, t.dialect, params, kinds, test.Caveats)
+}
+
 func (t *Translator) relationAggregate(name string, rel RelationSpec, body *Fragment, n *SNode) *Fragment {
+	if name == "SUM" && body.Kind == KindUnknown {
+		whole := t.allOrNothingSum(body, n.Pos)
+		skel := t.skeleton("sum", n.Pos)
+		const plain = "COALESCE(SUM({body}), 0)"
+		if !strings.Contains(skel, plain) {
+			Refuse("E_SQL_UNSUPPORTED", fmt.Sprintf("dialect %s spells SUM in a way the all-or-nothing guard cannot be written into", t.dialect), n.Pos)
+		}
+		skel = strings.Replace(skel, plain, "{body}", 1)
+		slots := mergeSlots(
+			t.relationSlots(rel),
+			SlotMap{Pair[string, []Slot]{Key: "body", Val: []Slot{FragmentSlot(whole)}}},
+		)
+		return NewFragment(t.fillNamed(skel, slots, n.Pos), aggReturns(name), t.dialect, nil, nil, nil)
+	}
 	isSeparate := (rel.Prefilter == "separate") || (rel.Prefilter == "" && body.SeparatePrefilter)
 	if name == "ANY" && body.Prefilter != nil && isSeparate {
 		preSlots := mergeSlots(
@@ -2366,8 +2501,23 @@ func (t *Translator) has(n *SNode) *Fragment {
 	return t.literal(sel.NewBool(found), KindBool)
 }
 
+// requireJoinText: JOIN takes text, under `&`'s rules (spec §5.2/§7.5); a BOOL or
+// a BIN, as an element or as the separator, is E_NOT_TEXT in SEL and refused here
+// rather than concatenated as whatever a server spells it (PY-C19, PHP-C31).
+func (t *Translator) requireJoinText(f *Fragment, pos Pos, what string) {
+	if f.Kind == KindBool || f.Kind == KindBin {
+		Refuse("E_SQL_SHAPE",
+			fmt.Sprintf("JOIN takes text and this %s is a %s; SEL answers E_NOT_TEXT rather than spelling it", what, f.Kind), pos)
+	}
+}
+
 func (t *Translator) joinAggregate(n *SNode) *Fragment {
 	src := t.classify(n.Kids[0])
+	if len(src.Filters) > 0 {
+		Refuse("E_SQL_SHAPE",
+			"JOIN over a FILTER would have to know which elements the filter kept; FILTER is absorbed by ALL, ANY, SUM and COUNT, and JOIN is not one of them",
+			n.Kids[0].Pos)
+	}
 
 	if src.Shape == SourceShapeRelation {
 		rel := *src.Relation
@@ -2381,12 +2531,15 @@ func (t *Translator) joinAggregate(n *SNode) *Fragment {
 				n.Pos)
 		}
 		body := t.columnRef(*scalar)
+		t.requireJoinText(body, n.Pos, "element")
+		sep := t.node(n.Kids[1])
+		t.requireJoinText(sep, n.Kids[1].Pos, "separator")
 		skel := t.skeleton("join", n.Pos)
 		slots := mergeSlots(
 			t.relationSlots(rel),
 			SlotMap{
 				Pair[string, []Slot]{Key: "body", Val: []Slot{FragmentSlot(body)}},
-				Pair[string, []Slot]{Key: "sep", Val: []Slot{FragmentSlot(t.node(n.Kids[1]))}},
+				Pair[string, []Slot]{Key: "sep", Val: []Slot{FragmentSlot(sep)}},
 			},
 		)
 		return NewFragment(t.fillNamed(skel, slots, n.Pos), KindText, t.dialect, nil, nil, nil)
@@ -2397,12 +2550,16 @@ func (t *Translator) joinAggregate(n *SNode) *Fragment {
 		key := kv.Key
 		elem := kv.Val
 		if len(parts) > 0 {
-			parts = append(parts, t.node(n.Kids[1]))
+			sep := t.node(n.Kids[1])
+			t.requireJoinText(sep, n.Kids[1].Pos, "separator")
+			parts = append(parts, sep)
 		}
 		held := elem
-		parts = append(parts, t.withElement(src, "_", held, key, n, func() *Fragment {
+		piece := t.withElement(src, "_", held, key, n, func() *Fragment {
 			return t.fromBinder(&held, n)
-		}))
+		})
+		t.requireJoinText(piece, n.Pos, "element")
+		parts = append(parts, piece)
 	}
 	if len(parts) == 0 {
 		return t.literal(sel.NewTextOwned(""), KindText)

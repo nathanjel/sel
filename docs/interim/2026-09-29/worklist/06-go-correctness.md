@@ -394,7 +394,7 @@ Each task starts by reproducing the report against the current tree, then lands 
 
 <a id="c-go-c2"></a>
 
-- [ ] **C-GO-C2 — Resolve GO-C2.** SQL: a non-name binder argument becomes a child-less node and nil-derefs the translator
+- [x] **C-GO-C2 — Resolve GO-C2.** SQL: a non-name binder argument becomes a child-less node and nil-derefs the translator
 
   **[GO-C2](../go-code-review.md) — [high] [confirmed] SQL: a non-name binder argument becomes a child-less node and nil-derefs the translator**
 
@@ -406,9 +406,11 @@ Each task starts by reproducing the report against the current tree, then lands 
 
   Done when every linked scenario passes on all applicable lanes; code/position, mutation, ordering and repeat-use behavior satisfy the shared contract. Record commit and fixture IDs here.
 
+  Closed 2026-09-29 — all six hosts sqlt 1265/1265 with reuse twin; oracle/hybrid lanes agree on SQLite (+ MariaDB/MySQL/PostgreSQL for PHP); PY-C1 site f closed
+
 <a id="c-go-c3"></a>
 
-- [ ] **C-GO-C3 — Resolve GO-C3.** SQL: `SUM(<group>, body)` inside a BUCKET projection drops every literal and emits invalid SQL
+- [x] **C-GO-C3 — Resolve GO-C3.** SQL: `SUM(<group>, body)` inside a BUCKET projection drops every literal and emits invalid SQL
 
   **[GO-C3](../go-code-review.md) — [high] [confirmed] SQL: `SUM(<group>, body)` inside a BUCKET projection drops every literal and emits invalid SQL**
 
@@ -420,9 +422,11 @@ Each task starts by reproducing the report against the current tree, then lands 
 
   Done when every linked scenario passes on all applicable lanes; code/position, mutation, ordering and repeat-use behavior satisfy the shared contract. Record commit and fixture IDs here.
 
+  Closed 2026-09-29 — all six hosts sqlt 1265/1265 with reuse twin; oracle/hybrid lanes agree on SQLite (+ MariaDB/MySQL/PostgreSQL for PHP); PY-C1 site f closed
+
 <a id="c-go-c4"></a>
 
-- [ ] **C-GO-C4 — Resolve GO-C4.** SQL stage 1 aliases indexed-assignment lists: a later write to the source changes an earlier copy
+- [x] **C-GO-C4 — Resolve GO-C4.** SQL stage 1 aliases indexed-assignment lists: a later write to the source changes an earlier copy
 
   **[GO-C4](../go-code-review.md) — [high] [confirmed] SQL stage 1 aliases indexed-assignment lists: a later write to the source changes an earlier copy**
 
@@ -434,9 +438,11 @@ Each task starts by reproducing the report against the current tree, then lands 
 
   Done when every linked scenario passes on all applicable lanes; code/position, mutation, ordering and repeat-use behavior satisfy the shared contract. Record commit and fixture IDs here.
 
+  Closed 2026-09-29 — all six hosts sqlt 1265/1265 with reuse twin; oracle/hybrid lanes agree on SQLite (+ MariaDB/MySQL/PostgreSQL for PHP); PY-C1 site f closed
+
 <a id="c-go-c20"></a>
 
-- [ ] **C-GO-C20 — Resolve GO-C20.** SQL: assignment inlining is exponential in program size (documented DoS; SEL evaluates the same program linearly)
+- [x] **C-GO-C20 — Resolve GO-C20.** SQL: assignment inlining is exponential in program size (documented DoS; SEL evaluates the same program linearly)
 
   **[GO-C20](../go-code-review.md) — [medium] [confirmed] SQL: assignment inlining is exponential in program size (documented DoS; SEL evaluates the same program linearly)**
 
@@ -450,11 +456,13 @@ Each task starts by reproducing the report against the current tree, then lands 
 
   Done when every linked scenario passes on all applicable lanes; code/position, mutation, ordering and repeat-use behavior satisfy the shared contract. Record commit and fixture IDs here.
 
+  Closed 2026-09-29 — all six hosts sqlt 1265/1265 with reuse twin; oracle/hybrid lanes agree on SQLite (+ MariaDB/MySQL/PostgreSQL for PHP); PY-C1 site f closed
+
 ## SQL kinds, numeric fidelity and server limits
 
 <a id="c-go-c15"></a>
 
-- [ ] **C-GO-C15 — Resolve GO-C15, GO-C16, GO-C17.** Coordinate the related changes below at their shared implementation surface.
+- [x] **C-GO-C15 — Resolve GO-C15, GO-C16, GO-C17.** Coordinate the related changes below at their shared implementation surface.
 
   **[GO-C15](../go-code-review.md) — [medium] [confirmed] SQL: UNKNOWN "unifies with anything", so an undeclared column routed through IF/COND/`??`/`???` skips the numeric guard**
 
@@ -482,9 +490,11 @@ Each task starts by reproducing the report against the current tree, then lands 
 
   Done when every linked scenario passes on all applicable lanes; code/position, mutation, ordering and repeat-use behavior satisfy the shared contract. Record commit and fixture IDs here.
 
+  Closed 2026-09-29 — all six hosts sqlt 1265/1265 with reuse twin; oracle/hybrid lanes agree on SQLite (+ MariaDB/MySQL/PostgreSQL for PHP); PY-C1 site f closed
+
 <a id="c-go-c38"></a>
 
-- [ ] **C-GO-C38 — Resolve GO-C38.** SQL: TAKE/DROP counts - Go refuses beyond int64 with a non-registry code; JS silently loses precision beyond 2^53
+- [x] **C-GO-C38 — Resolve GO-C38.** SQL: TAKE/DROP counts - Go refuses beyond int64 with a non-registry code; JS silently loses precision beyond 2^53
 
   **[GO-C38](../go-code-review.md) — [low] [confirmed] SQL: TAKE/DROP counts - Go refuses beyond int64 with a non-registry code; JS silently loses precision beyond 2^53**
 
@@ -496,11 +506,13 @@ Each task starts by reproducing the report against the current tree, then lands 
 
   Done when every linked scenario passes on all applicable lanes; code/position, mutation, ordering and repeat-use behavior satisfy the shared contract. Record commit and fixture IDs here.
 
+  Closed 2026-09-29 — all six hosts sqlt 1265/1265 with reuse twin; oracle/hybrid lanes agree on SQLite (+ MariaDB/MySQL/PostgreSQL for PHP); PY-C1 site f closed
+
 ## SQL bindings, dialects, fragments and rendering
 
 <a id="c-go-c18"></a>
 
-- [ ] **C-GO-C18 — Resolve GO-C18.** SQL: derived-table column order is nondeterministic between runs (Go map iteration)
+- [x] **C-GO-C18 — Resolve GO-C18.** SQL: derived-table column order is nondeterministic between runs (Go map iteration)
 
   **[GO-C18](../go-code-review.md) — [medium] [confirmed] SQL: derived-table column order is nondeterministic between runs (Go map iteration)**
 
@@ -512,9 +524,11 @@ Each task starts by reproducing the report against the current tree, then lands 
 
   Done when every linked scenario passes on all applicable lanes; code/position, mutation, ordering and repeat-use behavior satisfy the shared contract. Record commit and fixture IDs here.
 
+  Closed 2026-09-29 — all six hosts sqlt 1265/1265 with reuse twin; oracle/hybrid lanes agree on SQLite (+ MariaDB/MySQL/PostgreSQL for PHP); PY-C1 site f closed
+
 <a id="c-go-c19"></a>
 
-- [ ] **C-GO-C19 — Resolve GO-C19.** SQL: `ColumnBinding`/`RawBinding` ignore `collation`, `splitSargable`, and do not validate `prefilter`
+- [x] **C-GO-C19 — Resolve GO-C19.** SQL: `ColumnBinding`/`RawBinding` ignore `collation`, `splitSargable`, and do not validate `prefilter`
 
   **[GO-C19](../go-code-review.md) — [medium] [confirmed] SQL: `ColumnBinding`/`RawBinding` ignore `collation`, `splitSargable`, and do not validate `prefilter`**
 
@@ -526,9 +540,11 @@ Each task starts by reproducing the report against the current tree, then lands 
 
   Done when every linked scenario passes on all applicable lanes; code/position, mutation, ordering and repeat-use behavior satisfy the shared contract. Record commit and fixture IDs here.
 
+  Closed 2026-09-29 — all six hosts sqlt 1265/1265 with reuse twin; oracle/hybrid lanes agree on SQLite (+ MariaDB/MySQL/PostgreSQL for PHP); PY-C1 site f closed
+
 <a id="c-go-c24"></a>
 
-- [ ] **C-GO-C24 — Resolve GO-C24, GO-C39.** Coordinate the related changes below at their shared implementation surface.
+- [x] **C-GO-C24 — Resolve GO-C24, GO-C39.** Coordinate the related changes below at their shared implementation surface.
 
   **[GO-C24](../go-code-review.md) — [medium/low] [confirmed] `Emit.Fill` mangles non-ASCII bytes in templates (`string(tpl[i])`)**
 
@@ -548,9 +564,11 @@ Each task starts by reproducing the report against the current tree, then lands 
 
   Done when every linked scenario passes on all applicable lanes; code/position, mutation, ordering and repeat-use behavior satisfy the shared contract. Record commit and fixture IDs here.
 
+  Closed 2026-09-29 — all six hosts sqlt 1265/1265 with reuse twin; oracle/hybrid lanes agree on SQLite (+ MariaDB/MySQL/PostgreSQL for PHP); PY-C1 site f closed
+
 <a id="c-go-c37"></a>
 
-- [ ] **C-GO-C37 — Resolve GO-C37.** SQL: aliases derived from the program (RECORD keys, SELECT_COLS names) bypass the empty/NUL identifier checks that bindings get
+- [x] **C-GO-C37 — Resolve GO-C37.** SQL: aliases derived from the program (RECORD keys, SELECT_COLS names) bypass the empty/NUL identifier checks that bindings get
 
   **[GO-C37](../go-code-review.md) — [low] [confirmed] SQL: aliases derived from the program (RECORD keys, SELECT_COLS names) bypass the empty/NUL identifier checks that bindings get**
 
@@ -561,6 +579,8 @@ Each task starts by reproducing the report against the current tree, then lands 
   Regression prerequisite: [T10 / GO-C37](tests/10-sql-rendering.md#go-c37).
 
   Done when every linked scenario passes on all applicable lanes; code/position, mutation, ordering and repeat-use behavior satisfy the shared contract. Record commit and fixture IDs here.
+
+  Closed 2026-09-29 — all six hosts sqlt 1265/1265 with reuse twin; oracle/hybrid lanes agree on SQLite (+ MariaDB/MySQL/PostgreSQL for PHP); PY-C1 site f closed
 
 <a id="c-go-c40"></a>
 
@@ -578,7 +598,7 @@ Each task starts by reproducing the report against the current tree, then lands 
 
 <a id="c-go-c43"></a>
 
-- [ ] **C-GO-C43 — Resolve GO-C43.** SQL: NUL in an inline text literal is emitted raw
+- [x] **C-GO-C43 — Resolve GO-C43.** SQL: NUL in an inline text literal is emitted raw
 
   **[GO-C43](../go-code-review.md) — [low] [unconfirmed effect] SQL: NUL in an inline text literal is emitted raw**
 
@@ -592,11 +612,13 @@ Each task starts by reproducing the report against the current tree, then lands 
 
   Done when every linked scenario passes on all applicable lanes; code/position, mutation, ordering and repeat-use behavior satisfy the shared contract. Record commit and fixture IDs here.
 
+  Closed 2026-09-29 — all six hosts sqlt 1265/1265 with reuse twin; oracle/hybrid lanes agree on SQLite (+ MariaDB/MySQL/PostgreSQL for PHP); PY-C1 site f closed
+
 ## Hybrid execution, keys, order and context
 
 <a id="c-go-c5"></a>
 
-- [ ] **C-GO-C5 — Resolve GO-C5.** `ExecuteHybrid` throws away the caller's whole context (`IsNone()` is true for every list/record)
+- [x] **C-GO-C5 — Resolve GO-C5.** `ExecuteHybrid` throws away the caller's whole context (`IsNone()` is true for every list/record)
 
   **[GO-C5](../go-code-review.md) — [high] [confirmed] `ExecuteHybrid` throws away the caller's whole context (`IsNone()` is true for every list/record)**
 
@@ -608,9 +630,11 @@ Each task starts by reproducing the report against the current tree, then lands 
 
   Done when every linked scenario passes on all applicable lanes; code/position, mutation, ordering and repeat-use behavior satisfy the shared contract. Record commit and fixture IDs here.
 
+  Closed 2026-09-29 — all six hosts sqlt 1265/1265 with reuse twin; oracle/hybrid lanes agree on SQLite (+ MariaDB/MySQL/PostgreSQL for PHP); PY-C1 site f closed
+
 <a id="c-go-c21"></a>
 
-- [ ] **C-GO-C21 — Resolve GO-C21.** `containsUnsupportedSql` visits every call's arguments twice: hybrid planner time is exponential in call nesting
+- [x] **C-GO-C21 — Resolve GO-C21.** `containsUnsupportedSql` visits every call's arguments twice: hybrid planner time is exponential in call nesting
 
   **[GO-C21](../go-code-review.md) — [medium] [confirmed] `containsUnsupportedSql` visits every call's arguments twice: hybrid planner time is exponential in call nesting**
 
@@ -622,9 +646,11 @@ Each task starts by reproducing the report against the current tree, then lands 
 
   Done when every linked scenario passes on all applicable lanes; code/position, mutation, ordering and repeat-use behavior satisfy the shared contract. Record commit and fixture IDs here.
 
+  Closed 2026-09-29 — all six hosts sqlt 1265/1265 with reuse twin; oracle/hybrid lanes agree on SQLite (+ MariaDB/MySQL/PostgreSQL for PHP); PY-C1 site f closed
+
 <a id="c-go-c22"></a>
 
-- [ ] **C-GO-C22 — Resolve GO-C22.** A hybrid split before a LINK changes the joined row (binder names), so hybrid != pure memory
+- [x] **C-GO-C22 — Resolve GO-C22.** A hybrid split before a LINK changes the joined row (binder names), so hybrid != pure memory
 
   **[GO-C22](../go-code-review.md) — [medium] [confirmed, cross-host: JS behaves identically] A hybrid split before a LINK changes the joined row (binder names), so hybrid != pure memory**
 
@@ -635,6 +661,8 @@ Each task starts by reproducing the report against the current tree, then lands 
   Regression prerequisite: [T11 / GO-C22](tests/11-hybrid.md#go-c22).
 
   Done when every linked scenario passes on all applicable lanes; code/position, mutation, ordering and repeat-use behavior satisfy the shared contract. Record commit and fixture IDs here.
+
+  Closed 2026-09-29 — all six hosts sqlt 1265/1265 with reuse twin; oracle/hybrid lanes agree on SQLite (+ MariaDB/MySQL/PostgreSQL for PHP); PY-C1 site f closed
 
 ## Host integration, concurrency and tooling
 

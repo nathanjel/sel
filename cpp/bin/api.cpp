@@ -297,6 +297,97 @@ int main() {
     say("host.fn.replace", early.run().as_text() + " " + evaluate("HOST_V()").as_text());
   }
 
-  std::cout << join(out, "\n") << "\n";
+  // --- T12: dependencies() is FLOW-SENSITIVE (spec/SPEC.md §8): a variable is a
+  // dependency when some read of it can happen before the program has definitely
+  // assigned it, in evaluation order. Assignments under a condition, a short
+  // circuit, `??` or an aggregate body are not definite; `op=` and `A[k] op= x`
+  // read their target; a plain `A[k] = x` creates A and reads only the index.
+  const auto deps = [](const std::string& src) {
+    const std::string joined = join(compile(src).dependencies(), " ");
+    return joined.empty() ? std::string("-") : joined;
+  };
+  say("program.deps.read-before-assign", deps("A + 1; A = 2"));
+  say("program.deps.compound-assign-reads", deps("X += 1"));
+  say("program.deps.index-compound-reads", deps("A[1] += 1"));
+  say("program.deps.index-assign-vivifies", deps("A[1] = 2"));
+  say("program.deps.self-assign-reads", deps("A = A + 1"));
+  say("program.deps.assign-then-read", deps("A = 1; A + B"));
+  say("program.deps.conditional-assign", deps("IF(X, A = 1, 0); A"));
+  say("program.deps.both-branches-assign", deps("IF(X, A = 1, A = 2); A"));
+  say("program.deps.and-rhs-assign", deps("X AND (A = 1); A"));
+  say("program.deps.coalesce-rhs-assign", deps("X ?? (A = 1); A"));
+  say("program.deps.aggregate-body-assign", deps("MAP(L, A = _); A"));
+  say("program.deps.cond-with-default-assigns", deps("COND(X, A = 1, Y, A = 2, A = 3); A"));
+  say("program.deps.assign-in-argument", deps("LEFT(\"abc\", (N = 2)); N"));
+
+  // --- T12: a Program is reusable: after a caught error it runs again, and two
+  // contexts are independent whatever the interleaving.
+  {
+    const Program divide = compile("A / B");
+    Value bad = Value::none();
+    compile("A = 1; B = 0; 0").run(bad);
+    Value good = Value::none();
+    compile("A = 6; B = 3; 0").run(good);
+    const auto attempt = [&](Value& ctx) {
+      try {
+        return divide.run(ctx).dump();
+      } catch (const SelError& e) {
+        return e.code() + " " + std::to_string(e.line()) + ":" + std::to_string(e.col());
+      }
+    };
+    const std::string first = attempt(bad);
+    const std::string second = attempt(good);
+    const std::string third = attempt(bad);
+    say("program.reuse.after-error", first + "|" + second + "|" + third);
+    const Program bump = compile("X = X + 1");
+    Value a = Value::none();
+    compile("X = 1; 0").run(a);
+    Value c = Value::none();
+    compile("X = 10; 0").run(c);
+    const std::string r1 = bump.run(a).as_text();
+    const std::string r2 = bump.run(c).as_text();
+    const std::string r3 = bump.run(a).as_text();
+    const std::string r4 = bump.run(c).as_text();
+    say("program.reuse.two-contexts", r1 + " " + r2 + " " + r3 + " " + r4);
+  }
+
+  // --- T12: input the API cannot take is E_BAD_ARG, never a host exception or a
+  // different SEL error (spec/SPEC.md §8). This host is statically typed: source
+  // is a std::string and there is no native conversion, so the first three cannot
+  // be posed; they print n/a with the reason, and tools/check-api.sh leaves an
+  // n/a line out of the diff for that host.
+  say("error.compile.non-string", "n/a (source is a std::string)");
+  say("value.native.unsupported", "n/a (no native conversion)");
+  say("value.native.fraction", "n/a (no native conversion)");
+  {
+    std::string r = "accepted";
+    try {
+      register_function("bad", 0, 0, HostFunction{});
+    } catch (const SelError& e) {
+      r = "SelError " + e.code();
+    } catch (const std::exception&) {
+      r = "refused";
+    }
+    say("host.fn.refuse.not-callable", r);
+  }
+  // Reading an argument the call does not have is undefined behaviour in this host
+  // today (CPP-C13) and can take the process down: flush everything so far, so a
+  // crash here shows up as one missing line instead of an empty report.
+  std::cout << join(out, "\n") << "\n" << std::flush;
+  out.clear();
+  register_function("HOST_OOB", 1, 2, [](HostArgs& a) { return Value::text(a.text(a.count() > 1 ? 1 : 5)); });
+  {
+    std::string r = "no error";
+    try {
+      evaluate("HOST_OOB(\"x\")");
+    } catch (const SelError& e) {
+      r = e.code();
+    } catch (const std::exception&) {
+      r = "host:exception";
+    }
+    say("host.fn.arg.out-of-range", r);
+  }
+
+  if (!out.empty()) std::cout << join(out, "\n") << "\n";
   return 0;
 }

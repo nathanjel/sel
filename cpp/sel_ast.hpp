@@ -26,6 +26,7 @@
 #include <cstring>
 #include <memory>
 #include <optional>
+#include <set>
 #include <string>
 #include <utility>
 #include <vector>
@@ -90,6 +91,10 @@ using NodePtr = std::shared_ptr<const Node>;
 // the public Value/Program API.
 const Spec* lookup_builtin(const std::string& name);
 NodePtr optimize_ast_logical(const NodePtr& ast);
+// The planner's spelling: `declared_fields` are the (upper-cased) field names the
+// pipeline's source relation declares, which is what lets a field read count as
+// unable to raise (see tl_opt_declared in sel.cpp).
+NodePtr optimize_ast_logical(const NodePtr& ast, const std::set<std::string>& declared_fields);
 NodePtr optimize_ast_in_memory(const NodePtr& ast);
 NodePtr optimize_ast(const NodePtr& ast);
 

@@ -472,7 +472,7 @@ Each task starts by reproducing the report against the current tree, then lands 
 
 <a id="c-php-c7"></a>
 
-- [ ] **C-PHP-C7 — Resolve PHP-C7.** `SUM(g, body)` inside a BUCKET projection emits parameter slot numbers instead of literals
+- [x] **C-PHP-C7 — Resolve PHP-C7.** `SUM(g, body)` inside a BUCKET projection emits parameter slot numbers instead of literals
 
   **[PHP-C7](../php-code-review.md) — [high] [confirmed; not re-verified] `SUM(g, body)` inside a BUCKET projection emits parameter slot numbers instead of literals**
 
@@ -484,9 +484,11 @@ Each task starts by reproducing the report against the current tree, then lands 
 
   Done when every linked scenario passes on all applicable lanes; code/position, mutation, ordering and repeat-use behavior satisfy the shared contract. Record commit and fixture IDs here.
 
+  Closed 2026-09-29 — all six hosts sqlt 1265/1265 with reuse twin; oracle/hybrid lanes agree on SQLite (+ MariaDB/MySQL/PostgreSQL for PHP); PY-C1 site f closed
+
 <a id="c-php-c29"></a>
 
-- [ ] **C-PHP-C29 — Resolve PHP-C29.** A static-list element that mentions `_K` is evaluated in the inner aggregate's scope
+- [x] **C-PHP-C29 — Resolve PHP-C29.** A static-list element that mentions `_K` is evaluated in the inner aggregate's scope
 
   **[PHP-C29](../php-code-review.md) — [medium] [confirmed] A static-list element that mentions `_K` is evaluated in the inner aggregate's scope**
 
@@ -498,9 +500,11 @@ Each task starts by reproducing the report against the current tree, then lands 
 
   Done when every linked scenario passes on all applicable lanes; code/position, mutation, ordering and repeat-use behavior satisfy the shared contract. Record commit and fixture IDs here.
 
+  Closed 2026-09-29 — all six hosts sqlt 1265/1265 with reuse twin; oracle/hybrid lanes agree on SQLite (+ MariaDB/MySQL/PostgreSQL for PHP); PY-C1 site f closed
+
 <a id="c-php-c30"></a>
 
-- [ ] **C-PHP-C30 — Resolve PHP-C30.** A FILTER's binder name is bound in the aggregate body's scope
+- [x] **C-PHP-C30 — Resolve PHP-C30.** A FILTER's binder name is bound in the aggregate body's scope
 
   **[PHP-C30](../php-code-review.md) — [medium] [confirmed] A FILTER's binder name is bound in the aggregate body's scope**
 
@@ -512,9 +516,11 @@ Each task starts by reproducing the report against the current tree, then lands 
 
   Done when every linked scenario passes on all applicable lanes; code/position, mutation, ordering and repeat-use behavior satisfy the shared contract. Record commit and fixture IDs here.
 
+  Closed 2026-09-29 — all six hosts sqlt 1265/1265 with reuse twin; oracle/hybrid lanes agree on SQLite (+ MariaDB/MySQL/PostgreSQL for PHP); PY-C1 site f closed
+
 <a id="c-php-c32"></a>
 
-- [ ] **C-PHP-C32 — Resolve PHP-C32.** No bound on generated-SQL size: 20 short assignments produce 8 MB / 17 s (2^n blow-up), also in hybrid planning
+- [x] **C-PHP-C32 — Resolve PHP-C32.** No bound on generated-SQL size: 20 short assignments produce 8 MB / 17 s (2^n blow-up), also in hybrid planning
 
   **[PHP-C32](../php-code-review.md) — [medium] [confirmed] No bound on generated-SQL size: 20 short assignments produce 8 MB / 17 s (2^n blow-up), also in hybrid planning**
 
@@ -526,9 +532,11 @@ Each task starts by reproducing the report against the current tree, then lands 
 
   Done when every linked scenario passes on all applicable lanes; code/position, mutation, ordering and repeat-use behavior satisfy the shared contract. Record commit and fixture IDs here.
 
+  Closed 2026-09-29 — all six hosts sqlt 1265/1265 with reuse twin; oracle/hybrid lanes agree on SQLite (+ MariaDB/MySQL/PostgreSQL for PHP); PY-C1 site f closed
+
 <a id="c-php-c34"></a>
 
-- [ ] **C-PHP-C34 — Resolve PHP-C34.** Helper that rebinds a relation name is applied twice (`ORDERS = ORDERS .> DROP(2); ORDERS .> TAKE(3)`)
+- [x] **C-PHP-C34 — Resolve PHP-C34.** Helper that rebinds a relation name is applied twice (`ORDERS = ORDERS .> DROP(2); ORDERS .> TAKE(3)`)
 
   **[PHP-C34](../php-code-review.md) — [medium] [confirmed] Helper that rebinds a relation name is applied twice (`ORDERS = ORDERS .> DROP(2); ORDERS .> TAKE(3)`)**
 
@@ -540,11 +548,13 @@ Each task starts by reproducing the report against the current tree, then lands 
 
   Done when every linked scenario passes on all applicable lanes; code/position, mutation, ordering and repeat-use behavior satisfy the shared contract. Record commit and fixture IDs here.
 
+  Closed 2026-09-29 — all six hosts sqlt 1265/1265 with reuse twin; oracle/hybrid lanes agree on SQLite (+ MariaDB/MySQL/PostgreSQL for PHP); PY-C1 site f closed
+
 ## SQL kinds, numeric fidelity and server limits
 
 <a id="c-php-c27"></a>
 
-- [ ] **C-PHP-C27 — Resolve PHP-C27, PHP-C28, PHP-C31.** Coordinate the related changes below at their shared implementation surface.
+- [x] **C-PHP-C27 — Resolve PHP-C27, PHP-C28, PHP-C31.** Coordinate the related changes below at their shared implementation surface.
 
   **[PHP-C27](../php-code-review.md) — [medium] [confirmed] Group-path `SUM(g, body)` skips every kind check the relation path applies**
 
@@ -572,9 +582,11 @@ Each task starts by reproducing the report against the current tree, then lands 
 
   Done when every linked scenario passes on all applicable lanes; code/position, mutation, ordering and repeat-use behavior satisfy the shared contract. Record commit and fixture IDs here.
 
+  Closed 2026-09-29 — all six hosts sqlt 1265/1265 with reuse twin; oracle/hybrid lanes agree on SQLite (+ MariaDB/MySQL/PostgreSQL for PHP); PY-C1 site f closed
+
 <a id="c-php-c33"></a>
 
-- [ ] **C-PHP-C33 — Resolve PHP-C33.** Text-literal operands of arithmetic are emitted as bare quoted strings, which MariaDB/MySQL evaluate as DOUBLE
+- [x] **C-PHP-C33 — Resolve PHP-C33.** Text-literal operands of arithmetic are emitted as bare quoted strings, which MariaDB/MySQL evaluate as DOUBLE
 
   **[PHP-C33](../php-code-review.md) — [medium] [unconfirmed: needs a MariaDB/MySQL server] Text-literal operands of arithmetic are emitted as bare quoted strings, which MariaDB/MySQL evaluate as DOUBLE**
 
@@ -588,9 +600,11 @@ Each task starts by reproducing the report against the current tree, then lands 
 
   Done when every linked scenario passes on all applicable lanes; code/position, mutation, ordering and repeat-use behavior satisfy the shared contract. Record commit and fixture IDs here.
 
+  Closed 2026-09-29 — all six hosts sqlt 1265/1265 with reuse twin; oracle/hybrid lanes agree on SQLite (+ MariaDB/MySQL/PostgreSQL for PHP); PY-C1 site f closed
+
 <a id="c-php-c50"></a>
 
-- [ ] **C-PHP-C50 — Resolve PHP-C50.** TAKE/DROP counts written as whole numbers with a scale are refused with E_NOT_INT by the translator
+- [x] **C-PHP-C50 — Resolve PHP-C50.** TAKE/DROP counts written as whole numbers with a scale are refused with E_NOT_INT by the translator
 
   **[PHP-C50](../php-code-review.md) — [low] [confirmed, all hosts] TAKE/DROP counts written as whole numbers with a scale are refused with E_NOT_INT by the translator**
 
@@ -601,6 +615,8 @@ Each task starts by reproducing the report against the current tree, then lands 
   Regression prerequisite: [T09 / PHP-C50](tests/09-sql-kinds.md#php-c50).
 
   Done when every linked scenario passes on all applicable lanes; code/position, mutation, ordering and repeat-use behavior satisfy the shared contract. Record commit and fixture IDs here.
+
+  Closed 2026-09-29 — all six hosts sqlt 1265/1265 with reuse twin; oracle/hybrid lanes agree on SQLite (+ MariaDB/MySQL/PostgreSQL for PHP); PY-C1 site f closed
 
 <a id="c-php-c51"></a>
 
@@ -634,7 +650,7 @@ Each task starts by reproducing the report against the current tree, then lands 
 
 <a id="c-php-c58"></a>
 
-- [ ] **C-PHP-C58 — Resolve PHP-C58.** An IN list or unrolled aggregate of about 1000 or more elements translates but fails at run time
+- [x] **C-PHP-C58 — Resolve PHP-C58.** An IN list or unrolled aggregate of about 1000 or more elements translates but fails at run time
 
   **[PHP-C58](../php-code-review.md) — [low] [confirmed on SQLite] An IN list or unrolled aggregate of about 1000 or more elements translates but fails at run time**
 
@@ -646,11 +662,13 @@ Each task starts by reproducing the report against the current tree, then lands 
 
   Done when every linked scenario passes on all applicable lanes; code/position, mutation, ordering and repeat-use behavior satisfy the shared contract. Record commit and fixture IDs here.
 
+  Closed 2026-09-29 — all six hosts sqlt 1265/1265 with reuse twin; oracle/hybrid lanes agree on SQLite (+ MariaDB/MySQL/PostgreSQL for PHP); PY-C1 site f closed
+
 ## SQL bindings, dialects, fragments and rendering
 
 <a id="c-php-c37"></a>
 
-- [ ] **C-PHP-C37 — Resolve PHP-C37, PHP-C49.** Coordinate the related changes below at their shared implementation surface.
+- [x] **C-PHP-C37 — Resolve PHP-C37, PHP-C49.** Coordinate the related changes below at their shared implementation surface.
 
   **[PHP-C37](../php-code-review.md) — [medium] [confirmed] `Map::defineDialect` accepts quote/escape pairs that make text literals injectable**
 
@@ -670,9 +688,11 @@ Each task starts by reproducing the report against the current tree, then lands 
 
   Done when every linked scenario passes on all applicable lanes; code/position, mutation, ordering and repeat-use behavior satisfy the shared contract. Record commit and fixture IDs here.
 
+  Closed 2026-09-29 — all six hosts sqlt 1265/1265 with reuse twin; oracle/hybrid lanes agree on SQLite (+ MariaDB/MySQL/PostgreSQL for PHP); PY-C1 site f closed
+
 <a id="c-php-c53"></a>
 
-- [ ] **C-PHP-C53 — Resolve PHP-C53, PHP-C54.** Coordinate the related changes below at their shared implementation surface.
+- [x] **C-PHP-C53 — Resolve PHP-C53, PHP-C54.** Coordinate the related changes below at their shared implementation surface.
 
   **[PHP-C53](../php-code-review.md) — [low] [confirmed] NUL characters reach the server (RECORD-key aliases, inline TEXT literals); small binding-validation gaps**
 
@@ -693,6 +713,8 @@ Each task starts by reproducing the report against the current tree, then lands 
   Evidence gate: confirm on the named platform/configuration; otherwise record a supported non-defect/already-fixed disposition and retain the applicable invariant test.
 
   Done when every linked scenario passes on all applicable lanes; code/position, mutation, ordering and repeat-use behavior satisfy the shared contract. Record commit and fixture IDs here.
+
+  Closed 2026-09-29 — all six hosts sqlt 1265/1265 with reuse twin; oracle/hybrid lanes agree on SQLite (+ MariaDB/MySQL/PostgreSQL for PHP); PY-C1 site f closed
 
 <a id="c-php-c56"></a>
 
@@ -730,7 +752,7 @@ Each task starts by reproducing the report against the current tree, then lands 
 
 <a id="c-php-c8"></a>
 
-- [ ] **C-PHP-C8 — Resolve PHP-C8.** Hybrid split on a key-retaining FILTER loses SEL's row keys: continuation `_K` / result keys differ from pure memory
+- [x] **C-PHP-C8 — Resolve PHP-C8.** Hybrid split on a key-retaining FILTER loses SEL's row keys: continuation `_K` / result keys differ from pure memory
 
   **[PHP-C8](../php-code-review.md) — [high] [confirmed] Hybrid split on a key-retaining FILTER loses SEL's row keys: continuation `_K` / result keys differ from pure memory**
 
@@ -742,9 +764,11 @@ Each task starts by reproducing the report against the current tree, then lands 
 
   Done when every linked scenario passes on all applicable lanes; code/position, mutation, ordering and repeat-use behavior satisfy the shared contract. Record commit and fixture IDs here.
 
+  Closed 2026-09-29 — all six hosts sqlt 1265/1265 with reuse twin; oracle/hybrid lanes agree on SQLite (+ MariaDB/MySQL/PostgreSQL for PHP); PY-C1 site f closed
+
 <a id="c-php-c9"></a>
 
-- [ ] **C-PHP-C9 — Resolve PHP-C9.** LINK in the hybrid continuation renames the left binder to `_INPUT` (spec 7.4 violation)
+- [x] **C-PHP-C9 — Resolve PHP-C9.** LINK in the hybrid continuation renames the left binder to `_INPUT` (spec 7.4 violation)
 
   **[PHP-C9](../php-code-review.md) — [high] [confirmed] LINK in the hybrid continuation renames the left binder to `_INPUT` (spec 7.4 violation)**
 
@@ -756,9 +780,11 @@ Each task starts by reproducing the report against the current tree, then lands 
 
   Done when every linked scenario passes on all applicable lanes; code/position, mutation, ordering and repeat-use behavior satisfy the shared contract. Record commit and fixture IDs here.
 
+  Closed 2026-09-29 — all six hosts sqlt 1265/1265 with reuse twin; oracle/hybrid lanes agree on SQLite (+ MariaDB/MySQL/PostgreSQL for PHP); PY-C1 site f closed
+
 <a id="c-php-c35"></a>
 
-- [ ] **C-PHP-C35 — Resolve PHP-C35.** Pure-SQL plans do not preserve SEL's order through SORT_BY .> LINK (and BUCKET group order)
+- [x] **C-PHP-C35 — Resolve PHP-C35.** Pure-SQL plans do not preserve SEL's order through SORT_BY .> LINK (and BUCKET group order)
 
   **[PHP-C35](../php-code-review.md) — [medium] [confirmed on SQLite; unconfirmed on MariaDB] Pure-SQL plans do not preserve SEL's order through SORT_BY .> LINK (and BUCKET group order)**
 
@@ -772,9 +798,11 @@ Each task starts by reproducing the report against the current tree, then lands 
 
   Done when every linked scenario passes on all applicable lanes; code/position, mutation, ordering and repeat-use behavior satisfy the shared contract. Record commit and fixture IDs here.
 
+  Closed 2026-09-29 — all six hosts sqlt 1265/1265 with reuse twin; oracle/hybrid lanes agree on SQLite (+ MariaDB/MySQL/PostgreSQL for PHP); PY-C1 site f closed
+
 <a id="c-php-c36"></a>
 
-- [ ] **C-PHP-C36 — Resolve PHP-C36.** Hybrid/optimiser reorders and pushes steps ahead of local work, suppressing errors SEL would raise
+- [x] **C-PHP-C36 — Resolve PHP-C36.** Hybrid/optimiser reorders and pushes steps ahead of local work, suppressing errors SEL would raise
 
   **[PHP-C36](../php-code-review.md) — [medium] [confirmed] Hybrid/optimiser reorders and pushes steps ahead of local work, suppressing errors SEL would raise**
 
@@ -788,9 +816,11 @@ Each task starts by reproducing the report against the current tree, then lands 
 
   Done when every linked scenario passes on all applicable lanes; code/position, mutation, ordering and repeat-use behavior satisfy the shared contract. Record commit and fixture IDs here.
 
+  Closed 2026-09-29 — all six hosts sqlt 1265/1265 with reuse twin; oracle/hybrid lanes agree on SQLite (+ MariaDB/MySQL/PostgreSQL for PHP); PY-C1 site f closed
+
 <a id="c-php-c55"></a>
 
-- [ ] **C-PHP-C55 — Resolve PHP-C55.** `sourceTables` over-reports (binders and assignment targets named like a relation)
+- [x] **C-PHP-C55 — Resolve PHP-C55.** `sourceTables` over-reports (binders and assignment targets named like a relation)
 
   **[PHP-C55](../php-code-review.md) — [low] [confirmed] `sourceTables` over-reports (binders and assignment targets named like a relation)**
 
@@ -801,6 +831,8 @@ Each task starts by reproducing the report against the current tree, then lands 
   Regression prerequisite: [T11 / PHP-C55](tests/11-hybrid.md#php-c55).
 
   Done when every linked scenario passes on all applicable lanes; code/position, mutation, ordering and repeat-use behavior satisfy the shared contract. Record commit and fixture IDs here.
+
+  Closed 2026-09-29 — all six hosts sqlt 1265/1265 with reuse twin; oracle/hybrid lanes agree on SQLite (+ MariaDB/MySQL/PostgreSQL for PHP); PY-C1 site f closed
 
 ## Host integration, concurrency and tooling
 

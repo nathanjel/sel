@@ -31,7 +31,13 @@ export class Bindings {
       }
       // asciiUpper, not toUpperCase: the latter folds "ß" to "SS" and changes the
       // name's length, where PHP's strtoupper is ASCII-only.
-      this._map.set(asciiUpper(String(name)), b.spec);
+      const upper = asciiUpper(String(name));
+      if (this._map.has(upper)) {
+        throw new SqlError('E_SQL_BINDING',
+          `two bindings are named ${upper} once case is ignored, and the second `
+          + 'would silently replace the first');
+      }
+      this._map.set(upper, b.spec);
     }
   }
 

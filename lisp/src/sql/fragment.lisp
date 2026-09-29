@@ -63,7 +63,16 @@ the 256 single-byte values then failed."
   (let ((k (nth (1- slot) (fragment-param-kinds f))))
     (and k (member k '(:num :bool :bin)) t)))
 
+(defun check-render-mode (mode)
+  "An unknown mode is a caller's mistake and is refused whether or not the
+fragment has a slot to render: a fragment with no parameter reached the join
+loop without ever consulting the mode, so `:bogus` was accepted on exactly the
+statements where it could not be seen (PHP-C57, PY-C46)."
+  (unless (member mode '(:inline :params :debug))
+    (bad "render mode ~s is not one of :inline, :params or :debug" mode)))
+
 (defun frag-join (f mode)
+  (check-render-mode mode)
   (let ((nth 0))
     (with-output-to-string (out)
       (dolist (p (fragment-parts f))

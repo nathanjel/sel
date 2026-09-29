@@ -66,7 +66,11 @@ const has = (obj, key) => obj != null && Object.hasOwn(obj, key);
 const DIALECT_KEYS = ['extends', 'version', 'target', 'lexical'];
 
 export function defineDialect(name, spec) {
-  if (exists(name)) {
+  // A registered dialect may be declared again under the same parent -- the
+  // later declaration replaces it -- but a name never changes what it extends,
+  // and a shipped dialect is not redefined at all: a name means one lineage.
+  const previous = extra.has(name) ? extra.get(name) : null;
+  if (exists(name) && (previous === null || previous.extends !== (spec.extends ?? null))) {
     throw new Error(`SQL dialect ${name} is already defined; a name means one dialect`);
   }
   // The keys a dialect declaration carries, and nothing else. `ops`, `funcs` and
@@ -131,7 +135,42 @@ export function defineDialect(name, spec) {
     checkLexical(String(k), v, `SQL dialect ${name}`);
   }
 
+  checkTextPairing(name, lexical_, ext);
+  if (previous !== null) guardChecked.delete(name);
   extra.set(name, { extends: ext, version, target, lexical: lexical_ });
+}
+
+// The quote and the escape that goes with it (sql/MAP.md §3.1). A text literal is
+// the one place a value becomes SQL, so a dialect whose quote is not one character,
+// is the identifier quote too, or whose escape does not neutralise the quote (or
+// does with a backslash the escape never doubles) turns every text value into an
+// injection. Refused when the dialect is declared, resolved through what it
+// extends, so a registration cannot be the way in.
+function checkTextPairing(name, own, ext) {
+  const eff = (key) => (has(own, key) ? own[key] : (ext === null ? null : lexical(ext, key)));
+  const quote = eff('textQuote');
+  const identQuote = eff('identQuote');
+  const escape = eff('textEscape');
+  const fail = (why) => {
+    throw new Error(`SQL dialect ${name}: ${why} (sql/MAP.md §3.1)`);
+  };
+  if (typeof quote !== 'string' || [...quote].length !== 1) {
+    fail('textQuote must be exactly one character');
+  }
+  if (quote === identQuote) fail('textQuote must differ from identQuote');
+  if (escape === null || typeof escape !== 'object' || Array.isArray(escape)
+      || Object.keys(escape).length === 0) {
+    fail('textEscape must be a non-empty map that escapes the quote');
+  }
+  if (Object.keys(escape).some((k) => k === '')) fail('textEscape has an empty key');
+  const q = escape[quote];
+  if (typeof q !== 'string' || (q !== quote + quote && q !== `\\${quote}`)) {
+    fail('textEscape must escape the quote, by doubling it or with a backslash');
+  }
+  const usesBackslash = Object.values(escape).some((v) => typeof v === 'string' && v.startsWith('\\'));
+  if (usesBackslash && escape['\\'] !== '\\\\') {
+    fail('textEscape uses a backslash escape but does not double the backslash itself');
+  }
 }
 
 // Define or withdraw one entry.
@@ -226,9 +265,10 @@ function quotedRuns(tpl) {
 // USED, everything either side of the rule is registered.
 export function checkNumericGuard(dialect) {
   if (guardChecked.has(dialect)) return;
-  guardChecked.add(dialect);
+  // Marked as checked only AFTER it has passed. Marking first made the first use
+  // raise and every later one emit the SQL the check had refused (JS-C24).
   const guard = lexical(dialect, 'numericGuard');
-  if (typeof guard !== 'string') return;
+  if (typeof guard !== 'string') { guardChecked.add(dialect); return; }
   const isnum = entry(dialect, 'funcs', 'ISNUM');
   const tpl = isnum && typeof isnum === 'object' ? isnum.tpl : null;
   if (typeof tpl !== 'string') {
@@ -249,6 +289,7 @@ export function checkNumericGuard(dialect) {
       + 'tests; they ask the same question, and a guard that asks a different one '
       + 'answers for rows SEL refuses');
   }
+  guardChecked.add(dialect);
 }
 
 // --- lookup ------------------------------------------------------------------

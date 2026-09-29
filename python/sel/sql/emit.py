@@ -358,17 +358,22 @@ class Emit:
                 refuse('E_SQL_UNSUPPORTED',
                        f'the {key} lexical entry of dialect {self._dialect} expands '
                        'into itself, so filling it would never finish', pos)
-            cast_arg = _slot_index(arg) if key == 'binaryCast' else None
-            if (cast_arg is not None and cast_arg < len(args)
-                    and isinstance(args[cast_arg], Fragment)
-                    and args[cast_arg].kind == 'BIN'):
-                splice(args[cast_arg])
-                continue
-            deeper = set(expanding or ())
-            deeper.add(key)
-            for p in self.fill(val.replace('{0}', '{' + arg + '}'), args, pos, deeper):
-                if isinstance(p, str):
-                    push(p)
-                else:
-                    parts.append(p)
+            # {key:*} is {key:n} for every argument, joined with ', ' (sql/MAP.md 4.2).
+            each = [str(n) for n in range(len(args))] if arg == '*' else [arg]
+            for at, one in enumerate(each):
+                if at > 0:
+                    push(', ')
+                cast_arg = _slot_index(one) if key == 'binaryCast' else None
+                if (cast_arg is not None and cast_arg < len(args)
+                        and isinstance(args[cast_arg], Fragment)
+                        and args[cast_arg].kind == 'BIN'):
+                    splice(args[cast_arg])
+                    continue
+                deeper = set(expanding or ())
+                deeper.add(key)
+                for p in self.fill(val.replace('{0}', '{' + one + '}'), args, pos, deeper):
+                    if isinstance(p, str):
+                        push(p)
+                    else:
+                        parts.append(p)
         return parts

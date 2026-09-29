@@ -47,6 +47,16 @@ dialect can quote" what))))
             (format nil "a binding has type ~s; use one of ~{~a~^, ~}"
                     type (mapcar #'kind-name +kinds+)))))
 
+(defun check-column-type (type)
+  "A column holds one scalar, so LIST and STATEMENT are kinds an expression can
+have and a column cannot: declaring one only ever produced a refusal far from the
+line that wrote it (or none at all)."
+  (check-binding-type type)
+  (when (member type '(:list :statement))
+    (refuse "E_SQL_BINDING"
+            (format nil "a column cannot have type ~a: a column holds one scalar"
+                    (kind-name type)))))
+
 (defun check-numeric (where v)
   "Every scalar reachable from a NUM-typed value binding."
   (when (plusp (sel:value-size v))
@@ -124,7 +134,7 @@ because no dialect can be asked whether a column is boolean. A column used as a
 condition has to say so here."
   (check-name "column" column)
   (when table (check-name "table" table))
-  (check-binding-type type)
+  (check-column-type type)
   (%binding :column (column-flags (list :column column :table table :type type)
                                   exact sargable guard collation prefilter split-sargable)))
 
@@ -138,7 +148,7 @@ in a map by accident."
   (check-string "a raw column binding" sql)
   (when (zerop (length sql))
     (refuse "E_SQL_BINDING" "a raw column binding cannot be empty"))
-  (check-binding-type type)
+  (check-column-type type)
   (%binding :column (column-flags (list :raw sql :type type)
                                   exact sargable guard collation prefilter split-sargable)))
 
@@ -158,7 +168,7 @@ item ~a is not one" i)))
     (%binding :columns (list :items (nreverse out)))))
 
 (defun %make-relation (from from-raw-p alias fields scalar correlate &optional prefilter)
-  (let ((out '()))
+  (let ((out '()) (spelled '()))
     (dolist (cell fields)
       (let ((name (car cell)) (b (cdr cell)))
         (unless (and (binding-p b) (eq (binding-kind b) :column))
@@ -168,6 +178,13 @@ column binding" name)))
         ;; ASCII-UPCASE once, here, so every consumer looks a field up the same
         ;; way. A Unicode upper-caser would fold "ß" to "SS" and change the
         ;; key's length.
+        (let* ((key (sel::ascii-upcase name))
+               (prior (cdr (assoc key spelled :test #'equal))))
+          (when (and prior (not (equal prior name)))
+            (refuse "E_SQL_BINDING"
+                    (format nil "the fields ~a and ~a of a relation binding differ ~
+only by case, and SEL reads them as one name" prior name)))
+          (push (cons key name) spelled))
         (push (cons (sel::ascii-upcase name) (binding-spec b)) out)))
     (setf out (nreverse out))
     (when scalar (check-string "a relation binding's scalar" scalar))
@@ -240,7 +257,7 @@ different one of two colliding relations."
   (order '() :type list))
 
 (defun make-bindings (alist)
-  (let ((sorted '()) (order '()))
+  (let ((sorted '()) (order '()) (spelled '()))
     (dolist (cell alist)
       (let* ((key (sel::ascii-upcase (car cell)))
              (existing (assoc key sorted :test #'equal)))
@@ -249,6 +266,15 @@ different one of two colliding relations."
                   (format nil "the binding for ~a is not a binding; build one ~
 with BINDING-COLUMN, -COLUMNS, -RELATION, -RELATION-QUERY, -RAW or -VALUE"
                           (car cell))))
+        ;; Two names that differ only by ASCII case are ONE SEL name (identifiers are
+        ;; upper-cased) and are refused rather than silently keeping one of them:
+        ;; C++ kept the first, Python and PHP the last (sql/MAP.md 3.1, R5).
+        (let ((prior (cdr (assoc key spelled :test #'equal))))
+          (when (and prior (not (equal prior (car cell))))
+            (refuse "E_SQL_BINDING"
+                    (format nil "the bindings ~a and ~a differ only by case, and SEL ~
+reads them as one name" prior (car cell))))
+          (unless prior (push (cons key (car cell)) spelled)))
         ;; A duplicate name keeps its FIRST position and takes the LAST value,
         ;; which is what assigning into a dict twice does.
         (if existing
@@ -312,9 +338,21 @@ being reported as an unbound variable."
   ;; statement's row (WITH-ROW) or a LINK predicate's side (WITH-JOIN-BINDERS).
   ;; A read through it resolves against the keys that row really has. NIL for
   ;; the row of any other relation.
-  (model nil))
+  (model nil)
+  ;; A :node binder's LEXICAL scope: the frames in force where the node was
+  ;; WRITTEN. :CURRENT means "whatever is in force where it is read" -- right for
+  ;; a node the translator builds itself, wrong for a list element, which is
+  ;; evaluated in the scope of the list and not in the scope of the aggregate body
+  ;; that happens to read it (`ANY((A, 2), A, ...)`: the `A` in the list is the
+  ;; outer one). Reading an element with the body's frames let an inner binder
+  ;; capture it, and a binder named like its own list element recurse until
+  ;; E_SQL_DEPTH.
+  (env :current))
 
-(defun binder-node (node) (%binder :node node))
+(defun binder-node (node &optional (env :current))
+  (let ((b (%binder :node node)))
+    (setf (binder-env b) env)
+    b))
 ;; The key of the group being rendered: the group-by entry and the row binder,
 ;; rendered as the GROUP BY expression itself.
 (defun binder-key (group row) (%binder :key (list group row)))

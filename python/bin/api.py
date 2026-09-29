@@ -262,5 +262,77 @@ early = sel_compile('HOST_V()')
 register_function('HOST_V', 0, 0, lambda a: Value.text('new'))
 say('host.fn.replace', f"{early.run().as_text()} {evaluate('HOST_V()').as_text()}")
 
+# --- T12: dependencies() is FLOW-SENSITIVE (spec/SPEC.md §8): a variable is a
+# dependency when some read of it can happen before the program has definitely
+# assigned it, in evaluation order. Assignments under a condition, a short
+# circuit, `??` or an aggregate body are not definite; `op=` and `A[k] op= x`
+# read their target; a plain `A[k] = x` creates A and reads only the index.
+def deps(src):
+    return ' '.join(sel_compile(src).dependencies()) or '-'
+
+
+say('program.deps.read-before-assign', deps('A + 1; A = 2'))
+say('program.deps.compound-assign-reads', deps('X += 1'))
+say('program.deps.index-compound-reads', deps('A[1] += 1'))
+say('program.deps.index-assign-vivifies', deps('A[1] = 2'))
+say('program.deps.self-assign-reads', deps('A = A + 1'))
+say('program.deps.assign-then-read', deps('A = 1; A + B'))
+say('program.deps.conditional-assign', deps('IF(X, A = 1, 0); A'))
+say('program.deps.both-branches-assign', deps('IF(X, A = 1, A = 2); A'))
+say('program.deps.and-rhs-assign', deps('X AND (A = 1); A'))
+say('program.deps.coalesce-rhs-assign', deps('X ?? (A = 1); A'))
+say('program.deps.aggregate-body-assign', deps('MAP(L, A = _); A'))
+say('program.deps.cond-with-default-assigns', deps('COND(X, A = 1, Y, A = 2, A = 3); A'))
+say('program.deps.assign-in-argument', deps('LEFT("abc", (N = 2)); N'))
+
+# --- T12: a Program is reusable: after a caught error it runs again, and two
+# contexts are independent whatever the interleaving.
+_divide = sel_compile('A / B')
+_bad = Value.none(); sel_compile('A = 1; B = 0; 0').run(_bad)
+_good = Value.none(); sel_compile('A = 6; B = 3; 0').run(_good)
+
+
+def _attempt(ctx):
+    try:
+        return _divide.run(ctx).dump()
+    except SelError as e:
+        return f'{e.code} {e.line}:{e.col}'
+
+
+say('program.reuse.after-error', '|'.join([_attempt(_bad), _attempt(_good), _attempt(_bad)]))
+_bump = sel_compile('X = X + 1')
+_a = Value.none(); sel_compile('X = 1; 0').run(_a)
+_c = Value.none(); sel_compile('X = 10; 0').run(_c)
+say('program.reuse.two-contexts', ' '.join(v.as_text() for v in (_bump.run(_a), _bump.run(_c), _bump.run(_a), _bump.run(_c))))
+
+
+# --- T12: input the API cannot take is E_BAD_ARG, never a host exception or a
+# different SEL error (spec/SPEC.md §8). Statically typed hosts cannot be handed
+# a non-string source or a value of no native form, so they print n/a and the
+# reason; tools/check-api.sh leaves an n/a line out of the diff for that host.
+def code(f):
+    try:
+        f()
+        return 'no error'
+    except SelError as e:
+        return e.code
+    except Exception as e:                                     # noqa: BLE001
+        return f'host:{type(e).__name__}'
+
+
+say('error.compile.non-string', code(lambda: sel_compile(12)))
+say('value.native.unsupported', code(lambda: Value.from_native(object())))
+say('value.native.fraction', code(lambda: Value.from_native(1.5)))
+try:
+    register_function('bad', 0, 0, None)
+    _r = 'accepted'
+except SelError as e:
+    _r = f'SelError {e.code}'
+except Exception:                                               # noqa: BLE001
+    _r = 'refused'
+say('host.fn.refuse.not-callable', _r)
+register_function('HOST_OOB', 1, 2, lambda a: Value.text(a.text(1) if a.count() > 1 else a.text(5)))
+say('host.fn.arg.out-of-range', code(lambda: evaluate('HOST_OOB("x")')))
+
 sys.stdout.reconfigure(encoding='utf-8', newline='\n')
 sys.stdout.write('\n'.join(out) + '\n')

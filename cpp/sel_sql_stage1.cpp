@@ -25,7 +25,7 @@ const std::string* constant_key(const SNode& idx) {
   return nullptr;
 }
 
-bool constant_call(const SNode& n, const std::set<std::string>& bound);
+bool constant_call(const SNode& n, const std::set<std::string>& bound, ConstMemo* memo);
 
 // --- substitution ------------------------------------------------------------
 
@@ -93,6 +93,18 @@ SNodePtr substitute(const NodePtr& node, Defs& defs,
       // Assignment COPIES (spec §3.4): a read of an indexed list is the list as
       // it stands NOW, so a later `R[2] = ..` does not reach what read it.
       if (it->second.is_clist()) return SNode::clist_copy(*it->second.clist);
+      // The definition is spliced in whole, and what it brings is charged by its
+      // height, not by walking it: a helper chain N deep is a tree N deep, and
+      // past the evaluator's own limit there is nothing to translate (the
+      // translated expression's nesting, E_SQL_DEPTH -- not SEL rejecting it).
+      if (depth + it->second.node->height() - 1 > MAX_DEPTH) {
+        refuse("E_SQL_DEPTH",
+               "this expression nests deeper than SEL will evaluate (" +
+                   std::to_string(MAX_DEPTH) +
+                   ") once the helpers it reads are written in, so there is "
+                   "nothing to translate",
+               node->pos);
+      }
       return it->second.get();
     }
     case NT::Num:
@@ -153,7 +165,7 @@ SNodePtr substitute(const NodePtr& node, Defs& defs,
 // the ASSIGN's position, which is its target's position -- not the `=` and not
 // the statement start.
 void record(const NodePtr& s, Defs& defs, const std::set<std::string>& const_names,
-            sel::Value& root, int depth) {
+            sel::Value& scratch, ConstMemo* memo, int depth) {
   if (s->t != NT::Assign) {
     refuse("E_SQL_ASSIGN",
            "only assignments may come before the result expression; this "
@@ -196,7 +208,19 @@ void record(const NodePtr& s, Defs& defs, const std::set<std::string>& const_nam
   // `TRUE` and every server answered TRUE where SEL raises E_DIV_ZERO. An
   // indexed assignment builds a clist, which the constant test refuses to walk
   // and COUNT/HAS never render, so `R[1] = 1 / 0; COUNT(R)` was 1.
-  if (is_constant(*value, const_names)) validate(*value, root);
+  //
+  // Asked of the ORIGINAL statement, run in a scratch copy of the constants that
+  // earlier constant statements have already assigned into: the evaluator
+  // reads a helper's value, it does not re-expand its definition. Asking it of
+  // the inlined tree (`validate(*value)`) re-walked a shared helper once per
+  // path to it, which is exponential for `A1 = A0 + A0; ...` (CPP-C17).
+  if (is_constant(*value, const_names, memo)) {
+    try {
+      Program("", s).run(scratch);
+    } catch (const SelError& e) {
+      refuse_as_sel(e, *value);
+    }
+  }
 
   if (keys.empty()) {
     if (defs.count(name)) {
@@ -242,7 +266,7 @@ void record(const NodePtr& s, Defs& defs, const std::set<std::string>& const_nam
   it->second.clist->append(key, SNode::closed(value));
 }
 
-bool constant_call(const SNode& n, const std::set<std::string>& bound) {
+bool constant_call(const SNode& n, const std::set<std::string>& bound, ConstMemo* memo) {
   // The binding form is the only reason this is not three lines. `MAP(list, X,
   // X + 1)` names its binder in argument 1 and uses it in argument 2; the
   // two-argument form binds `_` implicitly. Neither name is a free variable, so
@@ -251,11 +275,11 @@ bool constant_call(const SNode& n, const std::set<std::string>& bound) {
   const auto& args = n.kids();
   if (!(n.spec() != nullptr && n.spec()->binds)) {
     for (const SNodePtr& a : args) {
-      if (!is_constant(*a, bound)) return false;
+      if (!is_constant(*a, bound, memo)) return false;
     }
     return true;
   }
-  if (args.empty() || !is_constant(*args[0], bound)) return false;
+  if (args.empty() || !is_constant(*args[0], bound, memo)) return false;
   std::set<std::string> inner = bound;
   std::size_t body = 1;
   if (args.size() >= 3) {
@@ -267,7 +291,7 @@ bool constant_call(const SNode& n, const std::set<std::string>& bound) {
     inner.insert("_");
   }
   for (std::size_t i = body; i < args.size(); ++i) {
-    if (!is_constant(*args[i], inner)) return false;
+    if (!is_constant(*args[i], inner, memo)) return false;
   }
   return true;
 }
@@ -402,7 +426,14 @@ bool is_binder_name(const SNode& n) {
   return n.t() == SNode::T::Var && !n.grouped();
 }
 
-bool is_constant(const SNode& n, const std::set<std::string>& bound) {
+struct ConstMemo {
+  std::map<std::pair<const SNode*, std::string>, bool> seen;
+};
+ConstMemo* new_const_memo() { return new ConstMemo; }
+void free_const_memo(ConstMemo* m) { delete m; }
+
+static bool is_constant_uncached(const SNode& n, const std::set<std::string>& bound,
+                                 ConstMemo* memo) {
   switch (n.t()) {
     case SNode::T::Num:
     case SNode::T::Text:
@@ -412,27 +443,38 @@ bool is_constant(const SNode& n, const std::set<std::string>& bound) {
     case SNode::T::Var:
       return bound.count(n.s()) != 0;
     case SNode::T::Un:
-      return is_constant(*n.l(), bound);
+      return is_constant(*n.l(), bound, memo);
     case SNode::T::Bin:
     case SNode::T::Index:
-      return is_constant(*n.l(), bound) && is_constant(*n.r(), bound);
+      return is_constant(*n.l(), bound, memo) && is_constant(*n.r(), bound, memo);
     case SNode::T::CList:
       // Stage 1 builds this one; the evaluator has never seen it and cannot
       // evaluate it. Nothing containing one is checkable.
       return false;
     case SNode::T::List:
       for (const SNodePtr& item : n.kids()) {
-        if (!is_constant(*item, bound)) return false;
+        if (!is_constant(*item, bound, memo)) return false;
       }
       return true;
     case SNode::T::Call:
-      return constant_call(n, bound);
+      return constant_call(n, bound, memo);
     default:
       // assign and seq are gone by now, and an unknown node is not something to
       // guess about: not constant, so nothing is validated and the walk refuses
       // it in the ordinary way.
       return false;
   }
+}
+
+bool is_constant(const SNode& n, const std::set<std::string>& bound, ConstMemo* memo) {
+  if (!memo || n.kids().empty()) return is_constant_uncached(n, bound, memo);
+  std::string key;
+  for (const std::string& b : bound) { key += b; key += '\x01'; }
+  const auto at = memo->seen.find({&n, key});
+  if (at != memo->seen.end()) return at->second;
+  const bool r = is_constant_uncached(n, bound, memo);
+  memo->seen.emplace(std::make_pair(&n, std::move(key)), r);
+  return r;
 }
 
 void validate(const SNode& n, sel::Value& root) {
@@ -508,7 +550,9 @@ SNodePtr normalise(const NodePtr& ast, const std::set<std::string>& const_names,
   // before either guard looks, which is why they must be charged up front.
   const int base = ast->t == NT::Seq ? 1 : 0;
   Defs defs;
-  for (const NodePtr& s : stmts) record(s, defs, const_names, root, base + 1);
+  sel::Value scratch = root.clone();
+  std::unique_ptr<ConstMemo, void (*)(ConstMemo*)> memo(new_const_memo(), free_const_memo);
+  for (const NodePtr& s : stmts) record(s, defs, const_names, scratch, memo.get(), base + 1);
   return substitute(result, defs, {}, base);
 }
 

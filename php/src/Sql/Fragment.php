@@ -209,6 +209,13 @@ final class Fragment
 
     private function join(string $mode): string
     {
+        // The mode is checked before the parts are walked: a fragment with no slot
+        // never reached the `match` below, so `asValue('bogus')` was accepted on it
+        // and refused on the same rule with a parameter (PHP-C57).
+        if (!in_array($mode, ['inline', 'params', 'debug'], true)) {
+            throw new \InvalidArgumentException(
+                "unknown render mode {$mode}; use inline, params or debug");
+        }
         $out = '';
         $nth = 0;                       // position in bindings(), not slot id
         foreach ($this->parts as $p) {

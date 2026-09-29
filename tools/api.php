@@ -246,4 +246,74 @@ $early = Sel::compile('HOST_V()');
 Sel::registerFunction('HOST_V', 0, 0, static fn ($a) => Value::text('new'));
 say('host.fn.replace', $early->run()->asText() . ' ' . Sel::evaluate('HOST_V()')->asText());
 
+// --- T12: dependencies() is FLOW-SENSITIVE (spec/SPEC.md §8): a variable is a
+// dependency when some read of it can happen before the program has definitely
+// assigned it, in evaluation order. Assignments under a condition, a short
+// circuit, `??` or an aggregate body are not definite; `op=` and `A[k] op= x`
+// read their target; a plain `A[k] = x` creates A and reads only the index.
+$deps = static fn (string $src): string => implode(' ', Sel::compile($src)->dependencies()) ?: '-';
+say('program.deps.read-before-assign', $deps('A + 1; A = 2'));
+say('program.deps.compound-assign-reads', $deps('X += 1'));
+say('program.deps.index-compound-reads', $deps('A[1] += 1'));
+say('program.deps.index-assign-vivifies', $deps('A[1] = 2'));
+say('program.deps.self-assign-reads', $deps('A = A + 1'));
+say('program.deps.assign-then-read', $deps('A = 1; A + B'));
+say('program.deps.conditional-assign', $deps('IF(X, A = 1, 0); A'));
+say('program.deps.both-branches-assign', $deps('IF(X, A = 1, A = 2); A'));
+say('program.deps.and-rhs-assign', $deps('X AND (A = 1); A'));
+say('program.deps.coalesce-rhs-assign', $deps('X ?? (A = 1); A'));
+say('program.deps.aggregate-body-assign', $deps('MAP(L, A = _); A'));
+say('program.deps.cond-with-default-assigns', $deps('COND(X, A = 1, Y, A = 2, A = 3); A'));
+say('program.deps.assign-in-argument', $deps('LEFT("abc", (N = 2)); N'));
+
+// --- T12: a Program is reusable: after a caught error it runs again, and two
+// contexts are independent whatever the interleaving.
+{
+    $divide = Sel::compile('A / B');
+    $bad = Value::none(); Sel::compile('A = 1; B = 0; 0')->run($bad);
+    $good = Value::none(); Sel::compile('A = 6; B = 3; 0')->run($good);
+    $attempt = static function (Value $ctx) use ($divide): string {
+        try {
+            return $divide->run($ctx)->dump();
+        } catch (SelError $e) {
+            return "{$e->code} {$e->line}:{$e->col}";
+        }
+    };
+    say('program.reuse.after-error', implode('|', [$attempt($bad), $attempt($good), $attempt($bad)]));
+    $bump = Sel::compile('X = X + 1');
+    $a = Value::none(); Sel::compile('X = 1; 0')->run($a);
+    $c = Value::none(); Sel::compile('X = 10; 0')->run($c);
+    say('program.reuse.two-contexts', implode(' ', [$bump->run($a)->asText(), $bump->run($c)->asText(),
+        $bump->run($a)->asText(), $bump->run($c)->asText()]));
+}
+
+// --- T12: input the API cannot take is E_BAD_ARG, never a host exception or a
+// different SEL error (spec/SPEC.md §8). Statically typed hosts cannot be handed
+// a non-string source or a value of no native form, so they print n/a and the
+// reason; tools/check-api.sh leaves an n/a line out of the diff for that host.
+$code = static function (callable $f): string {
+    try {
+        $f();
+        return 'no error';
+    } catch (SelError $e) {
+        return $e->code;
+    } catch (\Throwable $e) {
+        return 'host:' . (new \ReflectionClass($e))->getShortName();
+    }
+};
+say('error.compile.non-string', $code(static fn () => Sel::compile(12)));
+say('value.native.unsupported', $code(static fn () => Value::fromNative(static fn () => 1)));
+say('value.native.fraction', $code(static fn () => Value::fromNative(1.5)));
+try {
+    Sel::registerFunction('bad', 0, 0, null);
+    $r = 'accepted';
+} catch (SelError $e) {
+    $r = "SelError {$e->code}";
+} catch (\Throwable $e) {
+    $r = 'refused';
+}
+say('host.fn.refuse.not-callable', $r);
+Sel::registerFunction('HOST_OOB', 1, 2, static fn (\Sel\Args $a): Value => $a->count() > 1 ? Value::text($a->text(1)) : Value::text($a->text(5)));
+say('host.fn.arg.out-of-range', $code(static fn () => Sel::evaluate('HOST_OOB("x")')));
+
 echo implode("\n", $out), "\n";

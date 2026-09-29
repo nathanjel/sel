@@ -60,17 +60,19 @@ type RelationalPlan struct {
 	SourceSubquery *RelationalPlan
 	Joins          []RelationalJoin
 	Correlate      string
-	Distinct       bool
-	SelectCols     []string
-	Projections    []RelationalProjection
-	Filters        []RelationalFilter
-	GroupBy        []RelationalGroup
-	Bucket         BucketState
-	BareKey        bool
-	Having         []RelationalFilter
-	OrderBy        []RelationalOrder
-	Limit          *int64
-	Offset         *int64
+	// OrderLostByJoin: a sort under a join is not the order of the joined rows.
+	OrderLostByJoin bool
+	Distinct        bool
+	SelectCols      []string
+	Projections     []RelationalProjection
+	Filters         []RelationalFilter
+	GroupBy         []RelationalGroup
+	Bucket          BucketState
+	BareKey         bool
+	Having          []RelationalFilter
+	OrderBy         []RelationalOrder
+	Limit           *int64
+	Offset          *int64
 }
 
 func NewRelationalPlan() *RelationalPlan {

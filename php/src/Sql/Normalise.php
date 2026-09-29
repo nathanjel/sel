@@ -13,6 +13,34 @@ namespace Sel\Sql;
 final class Normalise
 {
     /**
+     * What a subtree costs once every inlined helper read is expanded, counted as
+     * the walk goes (sql/errors.md E_SQL_SIZE). A helper read is the helper's whole
+     * expression again, so `A1 = A0 + A0; A2 = A1 + A1; ...` is linear to evaluate
+     * and 2^n to render -- and to WALK, so it has to be counted here, before
+     * anything (the constant test, the validator) visits the expansion. PHP arrays
+     * share the subtree, which is why stage 1 itself stays cheap.
+     */
+    private static int $size = 0;
+    /** Whether an over-limit count refuses now (the result) or is only recorded (a definition). */
+    private static bool $refusing = true;
+    /** @var array<string,int> expanded size of each definition, by name */
+    private static array $defSizes = [];
+    /** @var array<string,bool> whether each definition is a constant expression, by name */
+    private static array $defConst = [];
+
+    private static function charge(int $nodes): void
+    {
+        // Saturating: a chain of a hundred doublings must not overflow the counter.
+        self::$size = min(self::$size + $nodes, 1 << 40);
+        if (self::$refusing && self::$size > \Sel\Limits::MAX_SQL_NODES) {
+            refuse('E_SQL_SIZE',
+                'the expression this rule would translate to has more than '
+                . \Sel\Limits::MAX_SQL_NODES . ' nodes once its helpers are expanded, '
+                . 'though SEL evaluates it in linear time; it is evaluated the ordinary way');
+        }
+    }
+
+    /**
      * @param array<string,mixed> $ast
      * @param array<string,bool>  $constNames value-binding names, Constants::scope
      * @return array<string,mixed>
@@ -31,9 +59,15 @@ final class Normalise
         // Stage 1 removes both wrappers before either guard looks, which is
         // why they must be charged up front.
         $base = $ast['t'] === 'seq' ? 1 : 0;
+        self::$defSizes = [];
+        self::$defConst = [];
         foreach ($stmts as $s) {
             self::record($s, $defs, $constNames, $ctx, $base + 1);
         }
+        // Only what is READ is translated: a definition nothing reads is dropped, so
+        // its own size is not the rule's. The result's count is the rule's.
+        self::$size = 0;
+        self::$refusing = true;
         return self::substitute($result, $defs, [], $base);
     }
 
@@ -79,7 +113,14 @@ final class Normalise
         }
         $name = $t['name'];
 
+        // A definition's expanded size is recorded, not refused: it only matters if
+        // something reads it (the result's count refuses then), and the constant test
+        // below must not walk an expansion past the limit.
+        self::$size = 0;
+        self::$refusing = false;
         $value = self::substitute($s['value'], $defs, [], $depth);
+        self::$refusing = true;
+        $valueSize = self::$size;
 
         // Validated here, and only here, because after this the subtree may be
         // gone: a definition nothing reads is dropped, so `A = 1 / 0; TRUE`
@@ -89,7 +130,8 @@ final class Normalise
         // `R[1] = 1 / 0; COUNT(R)` was `1`. §11.4's fourth bullet says a
         // constant subtree is checked wherever it appears; these were the two
         // places it did not appear by the time anything looked.
-        if (Constants::isConstant($value, $constNames)) {
+        $isConstant = Constants::isConstant($value, $constNames);
+        if ($valueSize <= \Sel\Limits::MAX_SQL_NODES && $isConstant) {
             Constants::validate($value, $ctx);
         }
 
@@ -101,6 +143,8 @@ final class Normalise
                     $s['pos']);
             }
             $defs[$name] = $value;
+            self::$defSizes[$name] = $valueSize;
+            self::$defConst[$name] = $isConstant;
             return;
         }
 
@@ -131,6 +175,7 @@ final class Normalise
             }
         }
         $defs[$name]['entries'][] = [$key, $value];
+        self::$defSizes[$name] = (self::$defSizes[$name] ?? 1) + $valueSize;
     }
 
     /** The literal key an index expression names, or null when it is not one. */
@@ -169,12 +214,26 @@ final class Normalise
                 . \Sel\MAX_DEPTH . '), so there is nothing to translate; '
                 . 'the evaluator answers E_DEPTH for it', $node['pos']);
         }
+        self::charge(1);
         switch ($node['t']) {
             case 'var':
                 if (in_array($node['name'], $bound, true)) {
                     return $node;
                 }
-                return $defs[$node['name']] ?? $node;
+                if (isset($defs[$node['name']])) {
+                    // The node counted above is replaced by the whole definition.
+                    self::charge(max(0, (self::$defSizes[$node['name']] ?? 1) - 1));
+                    // Marked as inlined: the definition was written at the top of the
+                    // rule, outside every binder, so its free names must not be
+                    // captured by a binder of the same name where it is used.
+                    $inlined = $defs[$node['name']];
+                    $inlined['inl'] = true;
+                    if (isset(self::$defConst[$node['name']])) {
+                        $inlined['k'] = self::$defConst[$node['name']];
+                    }
+                    return $inlined;
+                }
+                return $node;
 
             case 'num':
             case 'text':

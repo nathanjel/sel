@@ -217,10 +217,17 @@ declare the binding NUM if the column really is numeric" dialect)
 so it cannot be split into the halves an aggregate needs" dialect))
       (values (%fragment (emit-fill dialect (subseq guard (length head) m) (list f) pos)
                          :bool dialect)
-              (%fragment (emit-fill dialect
-                                    (subseq guard (+ m (length mid)) (- (length guard) (length tail)))
-                                    (list f) pos)
-                         :num dialect)))))
+              (if (member "postgresql" (dialect-chain dialect) :test #'equal)
+                  ;; PostgreSQL evaluates the cast for EVERY row before the
+                  ;; enclosing CASE chooses, and casting 'x' to NUMERIC is an error
+                  ;; there (22P02), not NULL: the SUM adds up the GUARDED cast, and
+                  ;; the outer test discards the sum exactly as before
+                  ;; (warrant.sum.unknown-body-is-guarded-as-a-whole.postgresql).
+                  (%fragment (emit-fill dialect guard (list f) pos) :num dialect)
+                  (%fragment (emit-fill dialect
+                                        (subseq guard (+ m (length mid)) (- (length guard) (length tail)))
+                                        (list f) pos)
+                             :num dialect))))))
 
 (defun emit-text-operand (dialect f)
   "An operand of a byte comparison: cast to a character type, then given the
@@ -331,15 +338,24 @@ of dialect ~a expands into itself, so filling it would never finish" key dialect
                                          ;; and applied unconditionally; this is the
                                          ;; one whose input kind decides whether it
                                          ;; means anything.
-                                         (let ((ca (and (equal key "binaryCast")
-                                                        (slot-index arg))))
-                                           (if (and ca (< ca (length args))
-                                                    (eq (fragment-kind (nth ca args)) :bin))
-                                               (splice (nth ca args))
-                                               (dolist (p (emit-fill
-                                                           dialect
-                                                           (replace-all val "{0}"
-                                                                        (format nil "{~a}" arg))
-                                                           args pos (cons key expanding)))
-                                                 (if (stringp p) (push-str p) (push p parts)))))))))))))))))
+                                         ;; {key:*} is {key:n} for every argument, joined
+                                         ;; with ", " (sql/MAP.md 4.2).
+                                         (let ((each (if (equal arg "*")
+                                                         (loop for n below (length args)
+                                                               collect (format nil "~d" n))
+                                                         (list arg))))
+                                          (loop for one in each
+                                                for at from 0
+                                                do (when (> at 0) (push-str ", "))
+                                                   (let ((ca (and (equal key "binaryCast")
+                                                                  (slot-index one))))
+                                                     (if (and ca (< ca (length args))
+                                                              (eq (fragment-kind (nth ca args)) :bin))
+                                                         (splice (nth ca args))
+                                                         (dolist (p (emit-fill
+                                                                     dialect
+                                                                     (replace-all val "{0}"
+                                                                                  (format nil "{~a}" one))
+                                                                     args pos (cons key expanding)))
+                                                           (if (stringp p) (push-str p) (push p parts)))))))))))))))))))
       (nreverse parts)))))

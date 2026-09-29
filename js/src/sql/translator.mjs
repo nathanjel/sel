@@ -14,7 +14,7 @@ import { SelError } from '../errors.mjs';
 import { MAX_SQL_NODES } from '../_limits.mjs';
 import { evalNode, MAX_DEPTH, Context } from '../eval.mjs';
 import { asciiUpper } from '../lexer.mjs';
-import { hostArity } from '../registry.mjs';
+import { bindingForm, hostArity } from '../registry.mjs';
 import { Value, quoteDump } from '../value.mjs';
 import * as constants from './constants.mjs';
 import * as map from './map.mjs';
@@ -197,21 +197,55 @@ export class Translator {
     return this.compileStatement(plan);
   }
 
+  // A name from the program that becomes a column alias (a RECORD key, a
+  // SELECT_COLS name) must be a name a server can be given: not empty, and with no
+  // NUL, which a C-string driver would end the alias at. Refused at the literal.
+  static checkAliasName(name, pos) {
+    if (name === '' || name.includes('\u0000')) {
+      refuse('E_SQL_UNSUPPORTED',
+        name === '' ? 'an empty name cannot be a column alias'
+          : 'a NUL in a name cannot be sent as a column alias', pos);
+    }
+  }
+
+  // PostgreSQL cuts an identifier to 63 bytes: two record keys that differ only
+  // past that are one column there and two keys in SEL.
+  checkTruncation(seen, name, pos) {
+    if (!map.chain(this.dialect).includes('postgresql')) return;
+    let bytes = 0;
+    let cut = '';
+    for (const ch of name) {
+      const n = Buffer.byteLength(ch);
+      if (bytes + n > 63) break;
+      bytes += n;
+      cut += ch;
+    }
+    if (seen.has(cut) && seen.get(cut) !== name) {
+      refuse('E_SQL_UNSUPPORTED',
+        'two names that differ only after PostgreSQL\'s 63-byte identifier limit would '
+        + 'become one column alias', pos);
+    }
+    seen.set(cut, name);
+  }
+
   // The [name, value] pairs of a RECORD(k, v, …) call, refusing what the
   // evaluator would: an odd count at the call, a name that is not a text
   // literal at the name. The planner reads RECORD in three places -- a
   // bucket's projection, a bucket's key, a MAP's projection -- and each used
   // to walk the pairs itself.
-  static recordFields(node) {
+  static recordFields(node, translator = null) {
     if (node.args.length % 2 !== 0) {
       refuse('E_ARITY', 'RECORD takes an even number of arguments', node.pos);
     }
     const fields = [];
+    const truncated = new Map();
     for (let i = 0; i < node.args.length; i += 2) {
       const key = node.args[i];
       if (key.t !== 'text') {
         refuse('E_BAD_ARG', 'RECORD field names must be string literals', key.pos);
       }
+      Translator.checkAliasName(key.v, key.pos);
+      if (translator !== null) translator.checkTruncation(truncated, key.v, key.pos);
       fields.push([key.v, node.args[i + 1]]);
     }
     return fields;
@@ -285,7 +319,16 @@ export class Translator {
   dispatch(n) {
     const t = n.t;
     if (t === 'num') return this.literal(Value.num(n.v), 'NUM');
-    if (t === 'text') return this.literal(Value.text(n.v), 'TEXT');
+    if (t === 'text') {
+      // A NUL ends a C string, and drivers pass parameters and statements through
+      // one: the literal would arrive cut short, in `params` mode as much as in
+      // `inline`. Refused in every mode, at the literal.
+      if (n.v.includes('\u0000')) {
+        refuse('E_SQL_UNSUPPORTED',
+          'a text literal holding a NUL cannot be sent to a database as text', n.pos);
+      }
+      return this.literal(Value.text(n.v), 'TEXT');
+    }
     if (t === 'bool') return this.literal(Value.bool(n.v), 'BOOL');
     if (t === 'var') return this.variable(n);
     if (t === 'index') return this.index(n);
@@ -308,6 +351,14 @@ export class Translator {
   // and no later stage has to guess which of the two a value that happens to read
   // as a number came from.
   literal(v, kind) {
+    // Refused when it is created, not when it is rendered: emit.literal raises the
+    // same code, but only from asValue(), after tryTranslate() has handed back a
+    // fragment -- a translation that succeeded and then could not be used.
+    if (v.isNone() && v.size() === 0) {
+      refuse('E_SQL_BINDING',
+        'a value binding holding no value cannot be a SQL literal; only an '
+        + 'aggregate can be given an empty binding', null);
+    }
     this.params.push(v);
     this.paramKinds.push(kind === 'UNKNOWN' || kind === 'LIST' ? 'TEXT' : kind);
     return new Fragment([this.params.length], kind, this.dialect);
@@ -572,6 +623,11 @@ export class Translator {
       refuse('E_SQL_SHAPE',
         `${label}["${key}"] is a field of the right side of a LINK_LEFT, which a row with no match `
         + 'does not have; read it through the right binder', n.pos);
+    }
+    if (f.spec.unreadable) {
+      refuse('E_SQL_SHAPE',
+        `${label}["${key}"] is a raw SQL expression of the table beneath this derived `
+        + 'table, and a derived table does not expose it as a column', n.pos);
     }
     if (f.spec.raw !== undefined || !f.qualify) return this.columnRef(f.spec);
     return this.columnRef({ ...f.spec, table: f.table });
@@ -959,6 +1015,8 @@ export class Translator {
       }
     }
 
+    this.requireNamedBinders(n);
+
     if (AGGREGATES.includes(name)) return this.aggregate(n);
     if (name === 'COUNT') return this.count(n);
     if (name === 'HAS') return this.has(n);
@@ -995,6 +1053,21 @@ export class Translator {
     const out = this.apply('funcs', name, args, n.pos);
     if (name === 'CANON') out.canonical = true;
     return out;
+  }
+
+  // A binder position holds a name (the manifest's 'binder' scope). Anything else
+  // is refused here, at that expression, whatever the call is later refused for:
+  // the statement forms reached it through a nil in some hosts and a different
+  // code in others (GO-C2).
+  requireNamedBinders(n) {
+    const form = bindingForm(n.name, n.args, n.spec);
+    if (form === null) return;
+    form.scopes.forEach((scope, i) => {
+      if (scope === 'binder' && !constants.isBinderName(n.args[i])) {
+        refuse('E_SQL_SHAPE',
+          `the binder of ${n.name} must be a bare name, not an expression`, n.args[i].pos);
+      }
+    });
   }
 
   // A call to an application's own function (sql/MAP.md §4.7).
@@ -1408,6 +1481,11 @@ export class Translator {
           `${name}["${key}"] is not a field of that relation${tail}`, n.pos);
       }
       const fieldSpec = b.payload.fields[field];
+      if (fieldSpec.unreadable) {
+        refuse('E_SQL_SHAPE',
+          `${name}["${key}"] is a raw SQL expression of the table beneath this derived `
+          + 'table, and a derived table does not expose it as a column', n.pos);
+      }
       if (fieldSpec.raw !== undefined) return this.columnRef(fieldSpec);
       if (this.statementPlan !== null && (this.statementPlan.joins?.length || this.statementPlan.sourceSubquery)) {
         return this.columnRef({ ...fieldSpec, table: this.relationTableAlias(b.payload, name) });
@@ -1561,6 +1639,13 @@ export class Translator {
       refuse('E_SQL_SHAPE',
         'a BIN element of a value binding has no literal node to become; bind it as '
         + 'a column, or convert it before translating', pos);
+    }
+    if (v.isNone()) {
+      // A NULL element: SEL's asText would raise E_NULL, a SelError that
+      // tryTranslate does not catch (JS-C54b). It is a binding problem, and a
+      // refusal.
+      refuse('E_SQL_BINDING',
+        'a value binding holds a NULL element, which has no SQL literal', pos);
     }
     return litNode(b.type === 'NUM' ? 'num' : 'text', v.asText(pos), pos);
   }
@@ -1769,7 +1854,7 @@ export class Translator {
         + `${sumExpr} ELSE NULL END`);
       return new Fragment(
         this.fillNamed(guarded,
-          slots(this.relationSlots(rel), { body: [body], test: [body.sumTest] }), n.pos),
+          slots(this.relationSlots(rel), { body: [this.sumCast(body)], test: [body.sumTest] }), n.pos),
         AGG_RETURNS[name], this.dialect);
     }
     return new Fragment(
@@ -2154,10 +2239,22 @@ export class Translator {
     return cast;
   }
 
+  // The argument SUM adds up in the all-or-nothing form. PostgreSQL evaluates the
+  // cast of EVERY row before the enclosing CASE decides the sum is NULL, and its
+  // cast of 'x' to NUMERIC is an error, not a NULL: there the cast is guarded
+  // itself, so a row that is not a number reaches SUM as NULL and the outer test
+  // turns the whole sum into NULL. The MySQL family casts a non-number to 0 with a
+  // warning, which the outer test already discards (docs/internals/sql-kinds.md 5a).
+  sumCast(body) {
+    if (!map.chain(this.dialect).includes('postgresql')) return body;
+    return new Fragment(['CASE WHEN ', ...body.sumTest.parts, ' THEN ', ...body.parts,
+      ' ELSE NULL END'], body.kind, this.dialect);
+  }
+
   // The SUM select-list expression for a body that carries a `sumTest`.
   sumOverRows(body) {
     return new Fragment(['CASE WHEN COUNT(*) = COUNT(CASE WHEN ', ...body.sumTest.parts,
-      ' THEN 1 END) THEN COALESCE(SUM(', ...body.parts, '), 0) ELSE NULL END'],
+      ' THEN 1 END) THEN COALESCE(SUM(', ...this.sumCast(body).parts, '), 0) ELSE NULL END'],
     'NUM', this.dialect);
   }
 
@@ -2333,6 +2430,9 @@ export class Translator {
       }
       fields[asciiUpper(name)] = {
         kind: 'column', column: sourceField?.column ?? name, table: alias, type: this.outputFieldType(plan, name),
+        // A raw field is host SQL over the inner table's own columns: there is no
+        // column of that name for the derived table to hand outward.
+        ...(sourceField && sourceField.raw != null ? { unreadable: true } : {}),
       };
       const canonKind = this.outputCanonKind(plan, name);
       if (canonKind !== null) {
@@ -2346,6 +2446,11 @@ export class Translator {
     derived.sourceTable = '';
     derived.sourceAlias = alias;
     derived.sourceSubquery = plan;
+    // A derived table with no LIMIT beside its ORDER BY does not keep the order: a
+    // step that needs the rows in that order (a BUCKET's groups, a LINK's rows, a
+    // later sort's ties) cannot be built on it.
+    derived.orderDropped = plan.orderDropped
+      || (plan.orderBy.length > 0 && plan.limit === null && plan.offset === null);
     // Still named after the pipeline's variable, until a LINK has joined.
     derived.rootName = plan.joins?.length ? null : (plan.rootName ?? null);
     if (plan.bucket !== null) derived.bucket = 'sealed';
@@ -2407,7 +2512,7 @@ export class Translator {
     if (aggNode !== null) {
       if (aggNode.t === 'call' && aggNode.name === 'RECORD') {
         const projections = [];
-        for (const [alias, vNode] of Translator.recordFields(aggNode)) {
+        for (const [alias, vNode] of Translator.recordFields(aggNode, this)) {
           let actualNode = vNode;
           // _K is the key, which was written against the KEY's binder -- the
           // MAP spelling may name the group differently, so the projection
@@ -2536,6 +2641,16 @@ export class Translator {
           if (plan.bucket !== null) {
             refuse('E_SQL_SHAPE', 'a BUCKET over buckets: SQL keeps a bucket\'s members only for the projection that ends the grouping', step.pos);
           }
+          // Groups appear in order of their first member, and the members were
+          // sorted: a GROUP BY returns its groups in no order at all, and the
+          // ORDER BY beneath it is dropped by the servers. The sort cannot
+          // survive, so the plan is refused here and a hybrid plan keeps the
+          // sorted rows in SQL and groups them in memory (JS-C59).
+          if (plan.orderBy.length > 0 || plan.orderDropped) {
+            refuse('E_SQL_UNSUPPORTED',
+              'a BUCKET over sorted rows would return its groups in no order, where SEL '
+              + 'has them in the order of their first member in the sorted list', step.pos);
+          }
           plan = this.ensureDerived(plan, (candidate) => this.planHasRowsAbove(candidate));
           let binder;
           let keyNode;
@@ -2578,7 +2693,7 @@ export class Translator {
               });
             }
           } else if (keyNode.t === 'call' && keyNode.name === 'RECORD') {
-            for (const [alias, value] of Translator.recordFields(keyNode)) {
+            for (const [alias, value] of Translator.recordFields(keyNode, this)) {
               groupBy.push({ alias, binder, node: value, pos: value.pos ?? step.pos });
             }
           } else {
@@ -2615,6 +2730,7 @@ export class Translator {
               refuse('E_BAD_ARG', 'SELECT_COLS column names must be string literals', item.pos);
             }
             const col = item.v;
+            Translator.checkAliasName(col, item.pos);
             const uc = asciiUpper(col);
             let matches = 0;
             if (plan.sourceRelation.fields && Object.hasOwn(plan.sourceRelation.fields, uc)) matches += 1;
@@ -2630,6 +2746,14 @@ export class Translator {
               refuse('E_SQL_SHAPE',
                 `relation ${plan.sourceName} has no field '${col}'; the relation declares `
                 + Object.keys(plan.sourceRelation.fields).join(', '), item.pos);
+            }
+            for (const rel of [plan.sourceRelation, ...(plan.joins ?? []).map((j) => j.sourceRelation)]) {
+              const f = rel?.fields?.[uc];
+              if (f && f.raw != null) {
+                refuse('E_SQL_SHAPE',
+                  `SELECT_COLS names '${col}', a raw SQL field, which has no column to `
+                  + 'select by name', item.pos);
+              }
             }
             cols.push(col);
           }
@@ -2668,7 +2792,7 @@ export class Translator {
           plan = this.ensureDerived(plan, (candidate) => this.planNeedsWrapBeforeMap(candidate));
 
           if (expr.t === 'call' && expr.name === 'RECORD') {
-            plan.projections = Translator.recordFields(expr)
+            plan.projections = Translator.recordFields(expr, this)
               .map(([alias, value]) => ({ alias, binder, node: value }));
           } else {
             plan.projections = [
@@ -2728,10 +2852,22 @@ export class Translator {
           // after a sort does not wrap: the sorts are stable, so the earlier
           // one is the later one's tie-breaker, and the later one's keys go
           // FIRST in the ORDER BY (review 2026-09-15 finding V).
-          plan = this.ensureDerived(plan, (candidate) =>
-            candidate.limit !== null || candidate.offset !== null
+          plan = this.ensureDerived(plan, (candidate) => {
+            const wraps = candidate.limit !== null || candidate.offset !== null
               || (candidate.groupBy === null && Boolean(candidate.projections || candidate.selectCols
-                || candidate.distinct)));
+                || candidate.distinct));
+            // Sorts are stable, so an earlier sort is the later one's tie-break; a
+            // derived table with no LIMIT beside its ORDER BY does not keep it, and
+            // its keys may not even be columns the outer level can name.
+            if ((wraps && candidate.orderBy.length > 0
+                && candidate.limit === null && candidate.offset === null)
+                || candidate.orderDropped) {
+              refuse('E_SQL_UNSUPPORTED',
+                'a sort over a projection of sorted rows loses the earlier sort, which is '
+                + 'its tie-break: a derived table does not keep an ORDER BY', step.pos);
+            }
+            return wraps;
+          });
           {
             const before = plan.orderBy.length;
             this.analyzeSortStep(step, plan);
@@ -2751,7 +2887,23 @@ export class Translator {
           // the widened SQL fuzzer found the other hosts did not (review
           // 2026-09-28 SQL-10).
           if (plan.orderBy.length || plan.projections || plan.selectCols || plan.groupBy) {
+            // Rendered for its refusals only and discarded: the slots it bound go
+            // with it, or `params` mode reports a value bound that no placeholder
+            // uses (and the driver binds one too many).
+            const slots = this.params.length;
             this.compileStatement(plan);
+            this.params.length = slots;
+            this.paramKinds.length = slots;
+          }
+          // A join returns its rows in no order, and SEL's are the left list's:
+          // rows sorted with no LIMIT beside the ORDER BY (which a derived table
+          // drops) cannot pass through a JOIN carrying their sort. After the
+          // earlier steps' own refusals, which come first as written.
+          if (plan.orderDropped
+              || (plan.orderBy.length > 0 && plan.limit === null && plan.offset === null)) {
+            refuse('E_SQL_UNSUPPORTED',
+              'a LINK over sorted rows would return them in no order, where SEL has the '
+              + 'left list\'s order', step.pos);
           }
           plan = this.ensureDerived(plan, (candidate) => this.planHasRowsAbove(candidate));
           if (args.length !== 3 && args.length !== 5) {

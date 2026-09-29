@@ -32,6 +32,9 @@ type ColumnSpec struct {
 	Prefilter     string
 	SplitSargable bool
 	Canonical     bool
+	// Unavailable is why a derived table has no column for this field: a raw
+	// field is an expression, and a subquery does not carry it forward.
+	Unavailable string
 }
 
 type RelationFrom struct {
@@ -110,11 +113,59 @@ func checkNumeric(where string, v *sel.Value) {
 	}
 }
 
+// columnFlags folds what the application may say about a column's comparison:
+// a collation spelling into the exact/sargable flags, a split-sargable request
+// into the `separate` prefilter, and validates the spellings, as the dynamic
+// hosts' bindings do (GO-C19). Before this the typed constructors stored all of
+// it raw: `collation="sargable"` did nothing and `prefilter="bogus"` was accepted.
+func columnFlags(exact, sargable bool, collation, prefilter string, splitSargable bool) (bool, bool, string) {
+	if collation != "" {
+		switch strings.ToLower(collation) {
+		case "binary", "exact":
+			exact = true
+		case "sargable", "prefilter":
+			sargable = true
+		case "default", "none":
+		default:
+			Refuse("E_SQL_BINDING", fmt.Sprintf("unknown collation '%s'; use 'binary', 'exact', 'sargable', or 'default'", collation), Pos{})
+		}
+	}
+	if splitSargable && prefilter == "" {
+		prefilter = "separate"
+	}
+	return exact, sargable, checkPrefilter(prefilter)
+}
+
+// checkPrefilter normalises the spellings of a prefilter strategy and refuses
+// the rest.
+func checkPrefilter(p string) string {
+	switch strings.ToLower(p) {
+	case "":
+		return ""
+	case "separate", "splitsargable", "split_sargable":
+		return "separate"
+	case "inline":
+		return "inline"
+	}
+	Refuse("E_SQL_BINDING", fmt.Sprintf("unknown prefilter '%s'; use 'separate' or 'inline'", p), Pos{})
+	return ""
+}
+
+// checkColumnType: a column holds a scalar. LIST and STATEMENT are kinds of
+// expression the translator produces, and no database column has them.
+func checkColumnType(typ SqlKind) {
+	if typ == KindList || typ == KindStatement {
+		Refuse("E_SQL_BINDING", fmt.Sprintf("a column cannot have type %s; a column holds one scalar (NUM, TEXT, BOOL, BIN), or nothing is declared", typ), Pos{})
+	}
+}
+
 func ColumnBinding(column, table string, typ SqlKind, exact, sargable, guard bool, collation, prefilter string, splitSargable bool) *Binding {
+	checkColumnType(typ)
 	checkName("column", column)
 	if table != "" {
 		checkName("table", table)
 	}
+	exact, sargable, prefilter = columnFlags(exact, sargable, collation, prefilter, splitSargable)
 	return &Binding{
 		Kind: BindingKindColumn,
 		Column: ColumnSpec{
@@ -132,9 +183,11 @@ func ColumnBinding(column, table string, typ SqlKind, exact, sargable, guard boo
 }
 
 func RawBinding(sqlStr string, typ SqlKind, exact, sargable, guard bool, collation, prefilter string, splitSargable bool) *Binding {
+	checkColumnType(typ)
 	if sqlStr == "" {
 		Refuse("E_SQL_BINDING", "a raw column binding cannot be empty", Pos{})
 	}
+	exact, sargable, prefilter = columnFlags(exact, sargable, collation, prefilter, splitSargable)
 	return &Binding{
 		Kind: BindingKindColumn,
 		Column: ColumnSpec{
@@ -193,6 +246,7 @@ func RelationQueryBinding(query, alias string, fields interface{}, scalar, corre
 }
 
 func makeRelation(from RelationFrom, alias string, fields interface{}, scalar, correlate, prefilter string) *Binding {
+	prefilter = checkPrefilter(prefilter)
 	fieldSpecs := make(map[string]ColumnSpec)
 	var fieldOrder []string
 
@@ -203,15 +257,29 @@ func makeRelation(from RelationFrom, alias string, fields interface{}, scalar, c
 				Refuse("E_SQL_BINDING", fmt.Sprintf("the field %s of a relation binding must be a column binding", fe.Name), Pos{})
 			}
 			uc := utf8.AsciiUpper(fe.Name)
+			if _, dup := fieldSpecs[uc]; dup {
+				Refuse("E_SQL_BINDING", fmt.Sprintf("the fields of a relation binding include %s twice (names are compared upper-cased)", uc), Pos{})
+			}
 			fieldSpecs[uc] = fe.Binding.Column
 			fieldOrder = append(fieldOrder, uc)
 		}
 	case map[string]*Binding:
-		for name, b := range f {
+		// Sorted, so that which of two colliding names is reported does not
+		// depend on map iteration order.
+		names := make([]string, 0, len(f))
+		for name := range f {
+			names = append(names, name)
+		}
+		sort.Strings(names)
+		for _, name := range names {
+			b := f[name]
 			if b == nil || b.Kind != BindingKindColumn {
 				Refuse("E_SQL_BINDING", fmt.Sprintf("the field %s of a relation binding must be a column binding", name), Pos{})
 			}
 			uc := utf8.AsciiUpper(name)
+			if _, dup := fieldSpecs[uc]; dup {
+				Refuse("E_SQL_BINDING", fmt.Sprintf("the fields of a relation binding include %s twice (names are compared upper-cased)", uc), Pos{})
+			}
 			fieldSpecs[uc] = b.Column
 			fieldOrder = append(fieldOrder, uc)
 		}
@@ -277,11 +345,20 @@ type Bindings struct {
 func NewBindings(items map[string]*Binding) *Bindings {
 	m := make(map[string]*Binding)
 	var order []string
-	for k, v := range items {
+	names := make([]string, 0, len(items))
+	for k := range items {
+		names = append(names, k)
+	}
+	sort.Strings(names)
+	for _, k := range names {
+		v := items[k]
 		if v == nil {
 			Refuse("E_SQL_BINDING", fmt.Sprintf("the binding for %s is nil", k), Pos{})
 		}
 		upper := utf8.AsciiUpper(k)
+		if _, dup := m[upper]; dup {
+			Refuse("E_SQL_BINDING", fmt.Sprintf("two bindings are named %s once upper-cased; SEL names are case-insensitive, so they are the same name", upper), Pos{})
+		}
 		m[upper] = v
 		order = append(order, upper)
 	}

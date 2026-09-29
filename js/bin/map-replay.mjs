@@ -1114,12 +1114,18 @@ export const RAW = [
         "caveat": "decimal-float"
       },
       "MIN": {
-        "tpl": "min({*})",
+        "tpl": {
+          "1": "min({0})",
+          "*": "min({numericCast:*})"
+        },
         "ret": "NUM",
         "caveat": "decimal-float"
       },
       "MAX": {
-        "tpl": "max({*})",
+        "tpl": {
+          "1": "max({0})",
+          "*": "max({numericCast:*})"
+        },
         "ret": "NUM",
         "caveat": "decimal-float"
       },

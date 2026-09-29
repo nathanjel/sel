@@ -13,6 +13,7 @@ from typing import Any
 
 from ..errors import Pos
 from ..eval import MAX_DEPTH
+from .._limits import MAX_SQL_NODES
 from ..parser import Node
 from .. import registry as _registry
 from . import constants as _constants
@@ -53,13 +54,64 @@ def run(ast: Node, const_names: dict[str, bool] | None = None, ctx=None) -> Any:
     # although the chain alone would translate. Stage 1 removes both wrappers
     # before either guard looks, which is why they must be charged up front.
     base = 1 if ast.t == 'seq' else 0
+    sizes: dict[str, int] = {}
     for s in stmts:
-        _record(s, defs, const_names or {}, ctx, base + 1)
+        _record(s, defs, const_names or {}, ctx, base + 1, sizes)
+    _check_size(result, sizes, result.pos)
     return _substitute(result, defs, [], base)
 
 
+# Stage 1 may refuse a program for its size before the translator's own count
+# (MAX_SQL_NODES, charged at dispatch) would: inlining shares the definition's
+# node, so `X1 = X0 + X0; X2 = X1 + X1; ...` is a small DAG, and everything that
+# walks it as the tree it renders -- the constant validation below, the
+# evaluator -- is exponential in the number of statements. The bound here is a
+# multiple of the limit, so a program the translator would answer or refuse by its
+# own precise count never gets this far; only one so large that walking it is the
+# cost is stopped, with the same code.
+EARLY_SIZE = 2 * MAX_SQL_NODES
+
+
+def _tree_size(node: Any, sizes: dict[str, int], depth: int = 0) -> int:
+    """Nodes ``node`` would render as, an inlined definition counted once per
+    read. Cut at the evaluator's depth: past it `_substitute` refuses the same
+    tree for its nesting (E_SQL_DEPTH), which is the more specific answer."""
+    if depth > MAX_DEPTH:
+        return 1
+    t = node.t
+    if t == 'var':
+        return sizes.get(node.name, 1)
+    d = depth + 1
+    n = 1
+    if t == 'un':
+        n += _tree_size(node.x, sizes, d)
+    elif t == 'bin':
+        n += _tree_size(node.l, sizes, d) + _tree_size(node.r, sizes, d)
+    elif t == 'index':
+        n += _tree_size(node.obj, sizes, d) + _tree_size(node.idx, sizes, d)
+    elif t in ('list', 'seq'):
+        n += sum(_tree_size(i, sizes, d) for i in node.items)
+    elif t == 'clist':
+        n += sum(_tree_size(v, sizes, d) for _k, v in node.entries)
+    elif t == 'assign':
+        n += _tree_size(node.value, sizes, d)
+    elif t == 'call':
+        n += sum(_tree_size(a, sizes, d) for a in node.args)
+    return n
+
+
+def _check_size(node: Any, sizes: dict[str, int], pos: Pos) -> int:
+    n = _tree_size(node, sizes)
+    if n > EARLY_SIZE:
+        refuse('E_SQL_SIZE',
+               f'this program renders more than {MAX_SQL_NODES} nodes of SQL (helper '
+               'reuse is inlined as a tree); evaluate it in memory instead')
+    return n
+
+
 def _record(s: Node, defs: dict[str, Any],
-            const_names: dict[str, bool], ctx, depth: int = 0) -> None:
+            const_names: dict[str, bool], ctx, depth: int = 0,
+            sizes: dict[str, int] | None = None) -> None:
     """Fold one leading statement into ``defs``, or refuse it. ``depth`` is
     where the evaluator's count stands at the assignment's right-hand side."""
     if s.t != 'assign':
@@ -88,6 +140,9 @@ def _record(s: Node, defs: dict[str, Any],
         refuse('E_SQL_ASSIGN', 'assignment target is not a variable', s.pos)
     name = t.name
 
+    if sizes is None:
+        sizes = {}
+    size = _check_size(s.value, sizes, s.pos)
     value = _substitute(s.value, defs, [], depth)
 
     # Validated here, and only here, because after this the subtree may be gone:
@@ -107,6 +162,7 @@ def _record(s: Node, defs: dict[str, Any],
                    f'{name} is assigned more than once; SQL has no notion of a '
                    'variable changing, so each name may be written once', s.pos)
         defs[name] = value
+        sizes[name] = size
         return
 
     if len(keys) > 1:
@@ -124,6 +180,7 @@ def _record(s: Node, defs: dict[str, Any],
         if existing == key:
             refuse('E_SQL_ASSIGN', f'{name}[{key}] is assigned more than once', s.pos)
     defs[name].entries.append((key, value))
+    sizes[name] = sizes.get(name, 1) + size
 
 
 def _constant_key(idx: Node) -> str | None:
@@ -173,6 +230,11 @@ def _substitute(node: Any, defs: dict[str, Any], bound: list[str],
         # `scoped` node the translator evaluates outside every frame.
         if bound and _mentions(d, bound):
             return Node('scoped', d.pos, x=d)
+        if d.t == 'clist':
+            # A list built by indexed assignment is a VALUE: `X = R` copies it
+            # (spec §3.4), so a later `R[2] = 6` is not in X. Sharing the one
+            # object let the write reach every earlier copy.
+            return CList(d.pos, list(d.entries))
         return d
 
     if t in ('num', 'text', 'bool'):

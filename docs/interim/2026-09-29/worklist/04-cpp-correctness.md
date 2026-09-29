@@ -546,7 +546,7 @@ Each task starts by reproducing the report against the current tree, then lands 
 
 <a id="c-cpp-c10"></a>
 
-- [ ] **C-CPP-C10 — Resolve CPP-C10, CPP-C17, CPP-C23.** Coordinate the related changes below at their shared implementation surface.
+- [x] **C-CPP-C10 — Resolve CPP-C10, CPP-C17, CPP-C23.** Coordinate the related changes below at their shared implementation surface.
 
   **[CPP-C10](../cpp-code-review.md) — [medium] [confirmed] SQL stage 1: long helper-variable chains are O(n^2) and then SIGSEGV from uncounted recursion**
 
@@ -573,6 +573,8 @@ Each task starts by reproducing the report against the current tree, then lands 
   Regression prerequisite: [T08 / CPP-C23](tests/08-sql-scope.md#cpp-c23).
 
   Done when every linked scenario passes on all applicable lanes; code/position, mutation, ordering and repeat-use behavior satisfy the shared contract. Record commit and fixture IDs here.
+
+  Closed 2026-09-29 — all six hosts sqlt 1265/1265 with reuse twin; oracle/hybrid lanes agree on SQLite (+ MariaDB/MySQL/PostgreSQL for PHP); PY-C1 site f closed
 
 ## SQL kinds, numeric fidelity and server limits
 
@@ -608,7 +610,7 @@ Each task starts by reproducing the report against the current tree, then lands 
 
 <a id="c-cpp-c59"></a>
 
-- [ ] **C-CPP-C59 — Resolve CPP-C59.** SQL: TAKE/DROP count evaluation is stricter than the evaluator, and uses codes outside `sql/errors.md`
+- [x] **C-CPP-C59 — Resolve CPP-C59.** SQL: TAKE/DROP count evaluation is stricter than the evaluator, and uses codes outside `sql/errors.md`
 
   **[CPP-C59](../cpp-code-review.md) — [low] [confirmed] SQL: TAKE/DROP count evaluation is stricter than the evaluator, and uses codes outside `sql/errors.md`**
 
@@ -620,11 +622,13 @@ Each task starts by reproducing the report against the current tree, then lands 
 
   Done when every linked scenario passes on all applicable lanes; code/position, mutation, ordering and repeat-use behavior satisfy the shared contract. Record commit and fixture IDs here.
 
+  Closed 2026-09-29 — all six hosts sqlt 1265/1265 with reuse twin; oracle/hybrid lanes agree on SQLite (+ MariaDB/MySQL/PostgreSQL for PHP); PY-C1 site f closed
+
 ## SQL bindings, dialects, fragments and rendering
 
 <a id="c-cpp-c12"></a>
 
-- [ ] **C-CPP-C12 — Resolve CPP-C12, CPP-C36, CPP-C53.** Coordinate the related changes below at their shared implementation surface.
+- [x] **C-CPP-C12 — Resolve CPP-C12, CPP-C36, CPP-C53.** Coordinate the related changes below at their shared implementation surface.
 
   **[CPP-C12](../cpp-code-review.md) — [low] [confirmed by TSan] `Map::check_numeric_guard` writes a global `std::set` from the `translate()` path**
 
@@ -652,9 +656,11 @@ Each task starts by reproducing the report against the current tree, then lands 
 
   Done when every linked scenario passes on all applicable lanes; code/position, mutation, ordering and repeat-use behavior satisfy the shared contract. Record commit and fixture IDs here.
 
+  Closed 2026-09-29 — all six hosts sqlt 1265/1265 with reuse twin; oracle/hybrid lanes agree on SQLite (+ MariaDB/MySQL/PostgreSQL for PHP); PY-C1 site f closed
+
 <a id="c-cpp-c32"></a>
 
-- [ ] **C-CPP-C32 — Resolve CPP-C32.** SQL: raw relation fields are silently replaced by a same-named column in `SELECT_COLS`, and given an empty identifier in derived tables
+- [x] **C-CPP-C32 — Resolve CPP-C32.** SQL: raw relation fields are silently replaced by a same-named column in `SELECT_COLS`, and given an empty identifier in derived tables
 
   **[CPP-C32](../cpp-code-review.md) — [medium] [confirmed] SQL: raw relation fields are silently replaced by a same-named column in `SELECT_COLS`, and given an empty identifier in derived tables**
 
@@ -666,9 +672,11 @@ Each task starts by reproducing the report against the current tree, then lands 
 
   Done when every linked scenario passes on all applicable lanes; code/position, mutation, ordering and repeat-use behavior satisfy the shared contract. Record commit and fixture IDs here.
 
+  Closed 2026-09-29 — all six hosts sqlt 1265/1265 with reuse twin; oracle/hybrid lanes agree on SQLite (+ MariaDB/MySQL/PostgreSQL for PHP); PY-C1 site f closed
+
 <a id="c-cpp-c55"></a>
 
-- [ ] **C-CPP-C55 — Resolve CPP-C55, CPP-C58.** Coordinate the related changes below at their shared implementation surface.
+- [x] **C-CPP-C55 — Resolve CPP-C55, CPP-C58.** Coordinate the related changes below at their shared implementation surface.
 
   **[CPP-C55](../cpp-code-review.md) — [low] [confirmed] SQL: case-colliding duplicate relation field names: C++ keeps the first, Python keeps the last**
 
@@ -688,9 +696,11 @@ Each task starts by reproducing the report against the current tree, then lands 
 
   Done when every linked scenario passes on all applicable lanes; code/position, mutation, ordering and repeat-use behavior satisfy the shared contract. Record commit and fixture IDs here.
 
+  Closed 2026-09-29 — all six hosts sqlt 1265/1265 with reuse twin; oracle/hybrid lanes agree on SQLite (+ MariaDB/MySQL/PostgreSQL for PHP); PY-C1 site f closed
+
 <a id="c-cpp-c56"></a>
 
-- [ ] **C-CPP-C56 — Resolve CPP-C56.** SQL: `correlate` (application SQL) is spliced without parentheses into an AND chain
+- [x] **C-CPP-C56 — Resolve CPP-C56.** SQL: `correlate` (application SQL) is spliced without parentheses into an AND chain
 
   **[CPP-C56](../cpp-code-review.md) — [low] [confirmed] SQL: `correlate` (application SQL) is spliced without parentheses into an AND chain**
 
@@ -704,9 +714,11 @@ Each task starts by reproducing the report against the current tree, then lands 
 
   Done when every linked scenario passes on all applicable lanes; code/position, mutation, ordering and repeat-use behavior satisfy the shared contract. Record commit and fixture IDs here.
 
+  Closed 2026-09-29 — all six hosts sqlt 1265/1265 with reuse twin; oracle/hybrid lanes agree on SQLite (+ MariaDB/MySQL/PostgreSQL for PHP); PY-C1 site f closed
+
 <a id="c-cpp-c57"></a>
 
-- [ ] **C-CPP-C57 — Resolve CPP-C57.** SQL: the discarded pre-LINK `compile_statement` leaves orphan parameters in `Fragment::params()`
+- [x] **C-CPP-C57 — Resolve CPP-C57.** SQL: the discarded pre-LINK `compile_statement` leaves orphan parameters in `Fragment::params()`
 
   **[CPP-C57](../cpp-code-review.md) — [low] [confirmed] SQL: the discarded pre-LINK `compile_statement` leaves orphan parameters in `Fragment::params()`**
 
@@ -718,11 +730,13 @@ Each task starts by reproducing the report against the current tree, then lands 
 
   Done when every linked scenario passes on all applicable lanes; code/position, mutation, ordering and repeat-use behavior satisfy the shared contract. Record commit and fixture IDs here.
 
+  Closed 2026-09-29 — all six hosts sqlt 1265/1265 with reuse twin; oracle/hybrid lanes agree on SQLite (+ MariaDB/MySQL/PostgreSQL for PHP); PY-C1 site f closed
+
 ## Hybrid execution, keys, order and context
 
 <a id="c-cpp-c33"></a>
 
-- [ ] **C-CPP-C33 — Resolve CPP-C33.** A hybrid continuation sees SQL-renumbered rows, so `_K` and FILTER's retained keys differ from `run()`
+- [x] **C-CPP-C33 — Resolve CPP-C33.** A hybrid continuation sees SQL-renumbered rows, so `_K` and FILTER's retained keys differ from `run()`
 
   **[CPP-C33](../cpp-code-review.md) — [medium] [confirmed; cross-host, JS planner identical] A hybrid continuation sees SQL-renumbered rows, so `_K` and FILTER's retained keys differ from `run()`**
 
@@ -734,9 +748,11 @@ Each task starts by reproducing the report against the current tree, then lands 
 
   Done when every linked scenario passes on all applicable lanes; code/position, mutation, ordering and repeat-use behavior satisfy the shared contract. Record commit and fixture IDs here.
 
+  Closed 2026-09-29 — all six hosts sqlt 1265/1265 with reuse twin; oracle/hybrid lanes agree on SQLite (+ MariaDB/MySQL/PostgreSQL for PHP); PY-C1 site f closed
+
 <a id="c-cpp-c34"></a>
 
-- [ ] **C-CPP-C34 — Resolve CPP-C34.** MAP fall-through pushes TAKE/DROP past a MAP whose custom half can raise, so `run()`'s error disappears
+- [x] **C-CPP-C34 — Resolve CPP-C34.** MAP fall-through pushes TAKE/DROP past a MAP whose custom half can raise, so `run()`'s error disappears
 
   **[CPP-C34](../cpp-code-review.md) — [medium] [confirmed; JS same] MAP fall-through pushes TAKE/DROP past a MAP whose custom half can raise, so `run()`'s error disappears**
 
@@ -748,9 +764,11 @@ Each task starts by reproducing the report against the current tree, then lands 
 
   Done when every linked scenario passes on all applicable lanes; code/position, mutation, ordering and repeat-use behavior satisfy the shared contract. Record commit and fixture IDs here.
 
+  Closed 2026-09-29 — all six hosts sqlt 1265/1265 with reuse twin; oracle/hybrid lanes agree on SQLite (+ MariaDB/MySQL/PostgreSQL for PHP); PY-C1 site f closed
+
 <a id="c-cpp-c54"></a>
 
-- [ ] **C-CPP-C54 — Resolve CPP-C54.** `execute_hybrid` on a pure_memory plan mutates the caller's context; the hybrid path clones it
+- [x] **C-CPP-C54 — Resolve CPP-C54.** `execute_hybrid` on a pure_memory plan mutates the caller's context; the hybrid path clones it
 
   **[CPP-C54](../cpp-code-review.md) — [low] [confirmed] `execute_hybrid` on a pure_memory plan mutates the caller's context; the hybrid path clones it**
 
@@ -764,9 +782,11 @@ Each task starts by reproducing the report against the current tree, then lands 
 
   Done when every linked scenario passes on all applicable lanes; code/position, mutation, ordering and repeat-use behavior satisfy the shared contract. Record commit and fixture IDs here.
 
+  Closed 2026-09-29 — all six hosts sqlt 1265/1265 with reuse twin; oracle/hybrid lanes agree on SQLite (+ MariaDB/MySQL/PostgreSQL for PHP); PY-C1 site f closed
+
 <a id="c-cpp-c60"></a>
 
-- [ ] **C-CPP-C60 — Resolve CPP-C60.** SQL: `SORT_BY` then `MAP` then `DISTINCT` emits `SELECT DISTINCT proj ORDER BY <unprojected column>`
+- [x] **C-CPP-C60 — Resolve CPP-C60.** SQL: `SORT_BY` then `MAP` then `DISTINCT` emits `SELECT DISTINCT proj ORDER BY <unprojected column>`
 
   **[CPP-C60](../cpp-code-review.md) — [low] [unconfirmed on a server] SQL: `SORT_BY` then `MAP` then `DISTINCT` emits `SELECT DISTINCT proj ORDER BY <unprojected column>`**
 
@@ -779,6 +799,8 @@ Each task starts by reproducing the report against the current tree, then lands 
   Evidence gate: confirm on the named platform/configuration; otherwise record a supported non-defect/already-fixed disposition and retain the applicable invariant test.
 
   Done when every linked scenario passes on all applicable lanes; code/position, mutation, ordering and repeat-use behavior satisfy the shared contract. Record commit and fixture IDs here.
+
+  Closed 2026-09-29 — all six hosts sqlt 1265/1265 with reuse twin; oracle/hybrid lanes agree on SQLite (+ MariaDB/MySQL/PostgreSQL for PHP); PY-C1 site f closed
 
 ## Host integration, concurrency and tooling
 

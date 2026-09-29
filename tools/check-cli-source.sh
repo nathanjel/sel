@@ -60,8 +60,41 @@ while IFS='|' read -r name body want; do
   done
 done <<< "$FIXTURES"
 
+# --- operand misuse (JS-C29, LISP-C31 family) -----------------------------------
+# A command line given too little, or something that is not there, exits non-zero
+# with one plain diagnostic on stderr and nothing on stdout -- never a host stack
+# trace, an unhandled-condition banner, a PHP warning or a signal. The exact wording
+# and the exit code (1 or 2) are the host's own; that it is a controlled refusal is
+# the contract. `--no-such-flag` is not pinned as "unknown option" (four hosts read
+# it as a file name today); only that it does not blow up.
+MISUSE_END_MARK='(Traceback|Unhandled|node:|file:///|Warning|Notice|Fatal error|Exception|panic|goroutine|SB-|#<|Segmentation|core dumped)'
+misuse() {
+  local label="$1"; shift
+  for impl in $IMPLS; do
+    local so se rc
+    so="$WORK/misuse.so"; se="$WORK/misuse.se"
+    impl_cli "$impl" "$@" >"$so" 2>"$se" </dev/null; rc=$?
+    if [ "$rc" -eq 0 ] || [ "$rc" -ge 128 ]; then
+      printf 'FAIL misuse %-28s %-14s exit status %s (want a small non-zero status)\n' "$label" "$impl" "$rc"
+      failures=$((failures + 1)); continue
+    fi
+    if [ -s "$so" ]; then
+      printf 'FAIL misuse %-28s %-14s wrote to stdout: %q\n' "$label" "$impl" "$(head -c 80 "$so")"
+      failures=$((failures + 1)); continue
+    fi
+    if [ ! -s "$se" ] || grep -Eq "$MISUSE_END_MARK" "$se"; then
+      printf 'FAIL misuse %-28s %-14s not a plain one-line diagnostic: %q\n' "$label" "$impl" "$(head -c 100 "$se")"
+      failures=$((failures + 1))
+    fi
+  done
+}
+misuse "dash-e-without-operand" -e
+misuse "deps-dash-e-without-operand" --deps -e
+misuse "missing-file" "$WORK/no-such-dir/no-such-file.sel"
+misuse "unknown-option" --no-such-flag
+
 if [ "$failures" -gt 0 ]; then
   echo "$failures CLI source check(s) failed"
   exit 1
 fi
-echo "CLI source bytes: every fixture agrees across: $IMPLS"
+echo "CLI source bytes and operand misuse: every fixture agrees across: $IMPLS"

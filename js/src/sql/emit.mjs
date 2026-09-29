@@ -377,18 +377,23 @@ export class Emit {
           `the ${key} lexical entry of dialect ${this._dialect} expands into `
           + 'itself, so filling it would never finish', pos);
       }
-      const castArg = key === 'binaryCast' ? slotIndex(arg) : null;
-      if (castArg !== null && castArg < args.length
-          && args[castArg] instanceof Fragment && args[castArg].kind === 'BIN') {
-        splice(args[castArg]);
-        continue;
-      }
-      const deeper = new Set(expanding ?? []);
-      deeper.add(key);
-      for (const p of this.fill(fillSlot(val, '{0}', `{${arg}}`), args, pos, deeper)) {
-        if (typeof p === 'string') push(p);
-        else parts.push(p);
-      }
+      // {key:*} is {key:n} for every argument, joined with ', ' (sql/MAP.md 4.2).
+      const each = arg === '*' ? args.map((_, n) => String(n)) : [arg];
+      each.forEach((one, at2) => {
+        if (at2 > 0) push(', ');
+        const castArg = key === 'binaryCast' ? slotIndex(one) : null;
+        if (castArg !== null && castArg < args.length
+            && args[castArg] instanceof Fragment && args[castArg].kind === 'BIN') {
+          splice(args[castArg]);
+          return;
+        }
+        const deeper = new Set(expanding ?? []);
+        deeper.add(key);
+        for (const p of this.fill(fillSlot(val, '{0}', `{${one}}`), args, pos, deeper)) {
+          if (typeof p === 'string') push(p);
+          else parts.push(p);
+        }
+      });
     }
     return parts;
   }

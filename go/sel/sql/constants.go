@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/nathanjel/sel/go/internal/limits"
 	"github.com/nathanjel/sel/go/internal/utf8"
 	"github.com/nathanjel/sel/go/sel"
 )
@@ -83,8 +84,13 @@ func ModeFromName(name string) Mode {
 		return ModeParams
 	case "debug":
 		return ModeDebug
-	default:
+	case "inline":
 		return ModeInline
+	default:
+		// A mode nobody named is a mistake in the caller, refused at the name, not
+		// rendered as inline SQL (which is what an unknown name used to become,
+		// even for a fragment that had no slot to show the difference).
+		panic(fmt.Sprintf("unknown render mode %q; the modes are inline, params and debug", name))
 	}
 }
 
@@ -343,6 +349,26 @@ func IsConstant(n *SNode, bound map[string]bool) bool {
 	if n == nil {
 		return false
 	}
+	// A big subtree is a shared structure walked as a tree: a helper chain that
+	// doubles at every step is 2^n nodes to this walk while being n to the
+	// program. The answer for such a node is remembered (it depends only on the
+	// names, and a caller asks with the same names throughout a translation).
+	big := n.Size() > 4096
+	if big && n.constMemo != 0 {
+		return n.constMemo == 1
+	}
+	yes := isConstantNode(n, bound)
+	if big {
+		if yes {
+			n.constMemo = 1
+		} else {
+			n.constMemo = 2
+		}
+	}
+	return yes
+}
+
+func isConstantNode(n *SNode, bound map[string]bool) bool {
 	switch n.T {
 	case SNodeNum, SNodeText, SNodeBool:
 		return true
@@ -420,6 +446,17 @@ func constantCall(n *SNode, bound map[string]bool) bool {
 }
 
 func Validate(n *SNode, root *sel.Value) {
+	// A shared subtree passes once (the walk meets the same node from both
+	// operands of every doubling step): repeating SEL's evaluation of it costs
+	// what its expansion does each time.
+	if n.valid {
+		return
+	}
+	validateNode(n, root)
+	n.valid = true
+}
+
+func validateNode(n *SNode, root *sel.Value) {
 	node := n.ToNode()
 	if node == nil {
 		return
@@ -435,6 +472,14 @@ func Validate(n *SNode, root *sel.Value) {
 }
 
 func RequireNumeric(n *SNode, root *sel.Value) {
+	if n.numeric {
+		return
+	}
+	requireNumericNode(n, root)
+	n.numeric = true
+}
+
+func requireNumericNode(n *SNode, root *sel.Value) {
 	node := n.ToNode()
 	if node == nil {
 		return
@@ -485,6 +530,12 @@ func RefuseAsSel(err error, n *SNode) {
 		pos := n.Pos
 		if selErr.Line() > 0 {
 			pos = sel.Pos{Line: selErr.Line(), Col: selErr.Col(), Offset: selErr.Offset()}
+		}
+		if selErr.Code == "E_DEPTH" {
+			// The nesting is of the translated expression, which inlining built;
+			// SEL evaluates the program as written. Blaming SEL would be false.
+			Refuse("E_SQL_DEPTH",
+				fmt.Sprintf("this expression nests deeper than SEL will evaluate (%d) once its helpers are inlined, so there is nothing to translate", limits.MAX_DEPTH), pos)
 		}
 		Refuse("E_SQL_INVALID",
 			fmt.Sprintf("SEL rejects this expression (%s: %s), so there is nothing to translate; a database would answer something rather than fail", selErr.Code, selErr.Message),

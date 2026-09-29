@@ -157,6 +157,13 @@ class Fragment:
         return self.caveats == []
 
     def _join(self, mode: str) -> str:
+        # Checked before anything is emitted, not only when a slot is reached: a
+        # fragment with no parameter slot never reached the branch that named the
+        # mode, so a misspelt mode was accepted exactly where it did no harm and
+        # refused the moment a literal appeared.
+        if mode not in ('inline', 'params', 'debug'):
+            raise RuntimeError(
+                f'unknown render mode {mode}; use inline, params or debug')
         out: list[str] = []
         nth = 0                          # position in bindings(), not slot id
         for p in self.parts:

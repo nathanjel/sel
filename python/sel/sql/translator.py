@@ -20,6 +20,8 @@ from .. import utf8
 from ..builtins import regex as _regex
 from ..errors import Pos, SelError
 from ..eval import Context, MAX_DEPTH, eval_node
+from .._limits import MAX_SQL_NODES
+from .._stack import recursion_budget as _recursion_budget
 from ..lexer import ascii_upper
 from ..parser import Node
 from ..value import Value, quote_dump
@@ -156,6 +158,8 @@ class Translator:
         self.const_ctx = None
         # Walk depth, counted exactly as eval.eval_node counts evaluation nesting.
         self.depth = 0
+        # Nodes dispatched this translation, against MAX_SQL_NODES.
+        self.nodes = 0
         self.statement_plan: RelationalPlan | None = None
         self.in_where: bool = False
         self.subquery_counter = 0
@@ -174,6 +178,7 @@ class Translator:
         self.caveats = {}
         self.frames = []
         self.depth = 0
+        self.nodes = 0
         self.subquery_counter = 0
         self.statement_plan = None
         self.const_names, self.const_ctx = _constants.scope(self.bindings)
@@ -186,6 +191,10 @@ class Translator:
         return norm, self.analyze_pipeline(norm)
 
     def translate(self, ast: Node) -> Fragment:
+        with _recursion_budget():
+            return self._translate(ast)
+
+    def _translate(self, ast: Node) -> Fragment:
         norm, plan = self._begin(ast)
         if plan is not None:
             return self.compile_statement(plan)
@@ -200,6 +209,10 @@ class Translator:
         return out
 
     def translate_statement(self, ast: Node) -> Fragment:
+        with _recursion_budget():
+            return self._translate_statement(ast)
+
+    def _translate_statement(self, ast: Node) -> Fragment:
         _norm, plan = self._begin(ast)
         if plan is None:
             refuse('E_SQL_SHAPE', 'expected a relational query or pipeline')
@@ -272,6 +285,7 @@ class Translator:
         implementation accident rather than a decision. The guard reads
         ``eval.MAX_DEPTH`` rather than repeating 200, so the two cannot drift.
         """
+        self._charge()
         self.depth += 1
         if self.depth > MAX_DEPTH:
             self.depth -= 1
@@ -289,6 +303,18 @@ class Translator:
             return f
         finally:
             self.depth -= 1
+
+    def _charge(self) -> None:
+        """One node of the expression being rendered (docs/internals/
+        sql-translation.md §7.4, the size budget). Helper reuse is inlined as a
+        tree, so `A1 = A0 + A0; ...` renders 2^n nodes from n statements while SEL
+        evaluates it in linear time; past MAX_SQL_NODES the answer is E_SQL_SIZE."""
+        self.nodes += 1
+        if self.nodes > MAX_SQL_NODES:
+            refuse('E_SQL_SIZE',
+                   f'this program renders more than {MAX_SQL_NODES} nodes of SQL '
+                   '(helper reuse and aggregate unrolls are inlined as a tree); '
+                   'evaluate it in memory instead')
 
     def _dispatch(self, n: Any) -> Fragment:
         t = n.t
@@ -871,16 +897,31 @@ class Translator:
             m = (len(parts) + 1) // 2
             acc = self.fold_pairwise(op, parts[:m], pos)
             other = self.fold_pairwise(op, parts[m:], pos)
+            self._charge()
             return self._apply('ops', op, [acc, other], pos,
                                self._variant_for(op, [acc, other]))
         acc = parts[0]
         for nxt in parts[1:]:
+            self._charge()                       # the joining operator
             acc = self._apply('ops', op, [acc, nxt], pos,
                               self._variant_for(op, [acc, nxt]))
         return acc
 
     def _call(self, n: Node) -> Fragment:
         name = n.name
+
+        # A binder position holding something that is not a bare name is refused
+        # where it stands, whatever else the call is (GO-C2): the evaluator
+        # answers E_EXPECT_SYMBOL, and this layer must never go on to a different
+        # code -- or a crash -- for the arguments around it.
+        if n.spec is not None and n.spec.binds:
+            form = _registry.binding_form(name, n.args, n.spec)
+            if form is not None:
+                for i, scope in enumerate(form[0]):
+                    if scope == 'binder' and not _constants.is_binder_name(n.args[i]):
+                        refuse('E_SQL_SHAPE',
+                               f'the binder of {name} must be a bare name, and this is '
+                               'an expression', n.args[i].pos)
 
         # The two aggregates over a bucket's members -- COUNT(g) is COUNT(*)
         # and SUM(g, [x,] body) is SUM over the grouped rows -- fire on the
@@ -1459,7 +1500,7 @@ class Translator:
         if src.t == 'call' and src.name == 'FILTER':
             f_binder, f_body = _agg_shape(src)
             inner = self._source(src.args[0], call)
-            inner['filters'].append({'binder': f_binder, 'body': f_body})
+            inner['filters'].append({'binder': f_binder, 'body': f_body, 'pos': src.pos})
             return inner
         if src.t == 'call' and src.name == 'MAP':
             refuse('E_SQL_UNSUPPORTED',
@@ -1670,7 +1711,14 @@ class Translator:
         test_tpl, cast_tpl = self._guard_halves(body.pos)
         self._scale_limited(body.pos, 'this operand is read as a number')
         test = self.emit.fill(test_tpl, [q], body.pos)
-        cast = self.emit.fill(cast_tpl, [q], body.pos)
+        if 'postgresql' in _map.chain(self.dialect):
+            # PostgreSQL evaluates the cast for every row before the enclosing CASE
+            # chooses, and casting 'x' to NUMERIC is an error there (22P02), not a
+            # NULL: the SUM adds up the GUARDED cast, and the outer test discards
+            # the sum exactly as before (docs/internals/sql-kinds.md §5a).
+            cast = self.emit.fill(f'CASE WHEN {test_tpl} THEN {cast_tpl} ELSE NULL END', [q], body.pos)
+        else:
+            cast = self.emit.fill(cast_tpl, [q], body.pos)
         out = Fragment(['CASE WHEN COUNT(*) = COUNT(CASE WHEN ', *test,
                         ' THEN 1 END) THEN COALESCE(SUM(', *cast,
                         '), 0) ELSE NULL END'], 'NUM', self.dialect)
@@ -1942,6 +1990,14 @@ class Translator:
         two ways for the sake of one function.
         """
         src = self._source(n.args[0], n)
+        if src['filters']:
+            # JOIN is strict and has no place for a predicate: the FILTER it was
+            # given would be dropped, and the join would concatenate elements SEL
+            # never selected.
+            refuse('E_SQL_SHAPE',
+                   'JOIN over a FILTER is not translated: JOIN is strict, and a '
+                   'predicate has nowhere to go in the concatenation',
+                   src['filters'][0].get('pos') or n.pos)
         if src['shape'] == 'relation':
             rel = src['relation']
             scalar = ascii_upper(str(rel['scalar'])) if rel.get('scalar') is not None else None
@@ -2954,7 +3010,7 @@ class Translator:
 
             condition_parts: list[list[Any]] = []
             if plan.correlate:
-                condition_parts.append([plan.correlate])
+                condition_parts.append([f'({plan.correlate})'])
             self.in_where = True
             try:
                 for filter_ in plan.filters:

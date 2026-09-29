@@ -224,6 +224,12 @@ final class Constants
      */
     public static function isConstant(array $n, array $bound = []): bool
     {
+        // An inlined definition carries its own verdict, worked out once when it was
+        // recorded (Normalise): asking again walked the whole chain of helpers under
+        // it for every statement, quadratic in the length of the chain.
+        if (isset($n['k'])) {
+            return $n['k'];
+        }
         switch ($n['t']) {
             case 'num':
             case 'text':
@@ -399,6 +405,17 @@ final class Constants
      */
     public static function refuseAsSel(SelError $e, array $n): void
     {
+        // The evaluator's own depth limit is not a rule SEL rejects: it is a rule too
+        // deeply nested to evaluate, which is what E_SQL_DEPTH says (sql/errors.md).
+        if ($e->code === 'E_DEPTH') {
+            refuse('E_SQL_DEPTH',
+                'this expression nests deeper than SEL will evaluate ('
+                . \Sel\MAX_DEPTH . '), so there is nothing to translate; '
+                . 'the evaluator answers E_DEPTH for it',
+                $e->line > 0
+                    ? ['line' => $e->line, 'col' => $e->col, 'offset' => $e->offset]
+                    : $n['pos']);
+        }
         refuse('E_SQL_INVALID',
             "SEL rejects this expression ({$e->code}: {$e->getMessage()}), so "
             . 'there is nothing to translate; a database would answer '

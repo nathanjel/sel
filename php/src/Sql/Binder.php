@@ -36,6 +36,14 @@ final class Binder
      * after a LINK the joined row) or a LINK side (see Translator::joinRows).
      */
     public ?RowModel $model = null;
+    /**
+     * For a NODE binder: how many frames were open when the element was written.
+     * The element's free names resolve against the frames as they were then, not
+     * against the frame of the aggregate that later iterates it, so a list
+     * element cannot read the binder of the aggregate it is the list of
+     * (docs/internals/sql-translation.md 7.4).
+     */
+    public ?int $base = null;
 
     /** @param array<string,mixed>|null $payload */
     private function __construct(string $shape, ?array $payload, ?string $reason = null)
@@ -49,6 +57,12 @@ final class Binder
     public static function node(array $node): self
     {
         return new self(self::NODE, $node);
+    }
+
+    public function at(int $frames): self
+    {
+        $this->base = $frames;
+        return $this;
     }
 
     /** @param array<string,mixed> $column */

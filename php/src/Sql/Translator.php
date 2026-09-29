@@ -85,13 +85,90 @@ final class Translator
         $this->paramKinds = [];
         $this->caveats = [];
         $this->frames = [];
+        $this->hidden = [];
+        $this->scopeStack = [];
+        $this->nodes = 0;
         $this->depth = 0;
         $this->subqueryCounter = 0;
         [$this->constNames, $this->constCtx] = Constants::scope($this->bindings);
         // Stage 1 and nothing else: the translator renders the tree it is
         // handed; the planner is the one place that optimises first.
         $norm = Normalise::run($ast, $this->constNames, $this->constCtx);
+        self::checkBinderPositions($norm);
         return [$norm, $this->analyzePipeline($norm)];
+    }
+
+    /**
+     * A binder position holds a name (docs/internals/sql-translation.md 7.5): an
+     * aggregate's `BUCKET(src, b, key, proj)` or `LINK(a, b, l, r, on)` written with an
+     * expression there is refused where it stands, E_SQL_SHAPE, in the statement forms
+     * as much as in an expression -- not left for whichever later step first trips over
+     * it, as a different code or a crash. Top-down and left to right, so the first
+     * refusal is the outermost.
+     *
+     * @param array<string,mixed> $n
+     */
+    private static function checkBinderPositions(array $n): void
+    {
+        switch ($n['t']) {
+            case 'un':
+                self::checkBinderPositions($n['x']);
+                return;
+            case 'bin':
+                self::checkBinderPositions($n['l']);
+                self::checkBinderPositions($n['r']);
+                return;
+            case 'index':
+                self::checkBinderPositions($n['obj']);
+                self::checkBinderPositions($n['idx']);
+                return;
+            case 'list':
+                foreach ($n['items'] as $item) {
+                    self::checkBinderPositions($item);
+                }
+                return;
+            case 'clist':
+                foreach ($n['entries'] as [, $v]) {
+                    self::checkBinderPositions($v);
+                }
+                return;
+            case 'call':
+                $form = self::unambiguousBinderForm($n['name'], count($n['args']));
+                foreach ($n['args'] as $i => $arg) {
+                    if ($form !== null && ($form[$i] ?? null) === 'binder'
+                        && !Constants::isBinderName($arg)) {
+                        refuse('E_SQL_SHAPE',
+                            "the binder of {$n['name']} must be a bare name", $arg['pos']);
+                    }
+                    self::checkBinderPositions($arg);
+                }
+                return;
+        }
+    }
+
+    /**
+     * The scopes of the one form a binding built-in has for this argument count, when
+     * its choice does not depend on what an argument is (spec/builtins.json `when`).
+     *
+     * @return list<string>|null
+     */
+    private static function unambiguousBinderForm(string $name, int $count): ?array
+    {
+        $forms = \Sel\BuiltinManifest::FORMS[\Sel\Utf8::upper($name)] ?? null;
+        if ($forms === null) {
+            return null;
+        }
+        $found = null;
+        foreach ($forms as [$scopes, $when]) {
+            if (count($scopes) !== $count) {
+                continue;
+            }
+            if ($when !== null || $found !== null) {
+                return null;
+            }
+            $found = $scopes;
+        }
+        return $found;
     }
 
     /**
@@ -231,6 +308,12 @@ final class Translator
         // Counted the way Evaluator counts, at the same constant read from
         // there, so the two cannot drift: 200 terms translate and 201 refuse,
         // exactly as 200 evaluate and 201 raise.
+        if (!empty($n['inl'])) {
+            // A definition inlined by stage 1: written outside every binder now open.
+            unset($n['inl']);
+            return $this->hiding(0, fn (): Fragment => $this->node($n));
+        }
+        $this->chargeNodes(1);
         if (++$this->depth > \Sel\MAX_DEPTH) {
             $this->depth--;
             refuse('E_SQL_DEPTH',
@@ -240,7 +323,7 @@ final class Translator
         }
         try {
             if (!in_array($n['t'], ['bin', 'un', 'call'], true)
-                || !Constants::isConstant($n, $this->constNames)) {
+                || !Constants::isConstant($n, $this->liveConstNames())) {
                 return $this->dispatch($n);
             }
 
@@ -504,7 +587,7 @@ final class Translator
             // therefore not a check. The guard below is a different matter: it
             // fires on a NON-constant operand, which is exactly what node()
             // cannot see.
-            $x = $this->guardNumeric($x, $n['x']);
+            $x = $this->guardNumeric($x, $n['x'], true);
         }
         return $this->apply('ops', $n['op'], [$x], $n['pos']);
     }
@@ -544,8 +627,9 @@ final class Translator
             // And an operand nobody has vouched for is wrapped so that a value
             // SEL would refuse becomes NULL rather than a number the server
             // invented. A NUM operand passes through untouched.
-            $l = $this->guardNumeric($l, $n['l']);
-            $r = $this->guardNumeric($r, $n['r']);
+            $arith = in_array($op, ['+', '-', '*', '/', '%'], true);
+            $l = $this->guardNumeric($l, $n['l'], $arith);
+            $r = $this->guardNumeric($r, $n['r'], $arith);
         }
         // The `$` family and `&`, not EQL and IN: those two are structural and
         // `TRUE EQL TRUE` is TRUE, while `"x" $== TRUE` is E_NOT_BIN.
@@ -654,12 +738,21 @@ final class Translator
                         . 'maps and a scalar can never equal one. Bind the projected '
                         . 'column as a relation with that one field.', $rhs['pos']);
                 }
+                // The needle and the column must be comparable kinds, as x IN (list)
+                // requires: a BOOL or BIN needle against a TEXT column would match rows
+                // whose text happens to be '1', 'true' or the same bytes, where SEL
+                // answers FALSE because the kinds differ (PY-C21).
+                // The skeleton first: a dialect that withdrew it answers with that, not
+                // with whatever the needle happens to be wrong about.
+                $skeleton = $this->skeleton('inRelation', $n['pos']);
+                $needle = $this->node($n['l']);
+                $column = $this->columnRef($b['fields'][$scalar]);
+                self::requireComparableKinds($needle, $column, 'IN', $n['pos']);
                 return new Fragment(
-                    $this->fillNamed($this->skeleton('inRelation', $n['pos']),
+                    $this->fillNamed($skeleton,
                         self::slots($this->relationSlots($b), [
-                            'needle' => [$this->emit->textOperand($this->node($n['l']))],
-                            'body' => [$this->emit->textOperand(
-                                $this->columnRef($b['fields'][$scalar]))],
+                            'needle' => [$this->emit->textOperand($needle)],
+                            'body' => [$this->emit->textOperand($column)],
                         ]), $n['pos']),
                     'BOOL', $this->dialect);
             }
@@ -746,6 +839,31 @@ final class Translator
      */
     public function foldPairwise(string $op, array $parts, array $pos): Fragment
     {
+        // The joining operators of an unrolled fold are nodes too (docs 7.4).
+        $this->chargeNodes(max(0, count($parts) - 1));
+        return $this->foldBalanced($op, $parts, $pos);
+    }
+
+    /**
+     * The whole specification of the tree (docs/internals/sql-translation.md 7.1):
+     * one operand is itself; 2 to 256 are a plain left fold, byte for byte what a
+     * hand-written chain gives; more split at m = ceil(n / 2), the left half the
+     * larger, and each half folds by the same rule. A left fold over n operands is
+     * n levels deep, and servers refuse depth.
+     *
+     * @param list<Fragment> $parts
+     * @param array{line:int,col:int,offset:int} $pos
+     */
+    private function foldBalanced(string $op, array $parts, array $pos): Fragment
+    {
+        $n = count($parts);
+        if ($n > 256) {
+            $m = intdiv($n + 1, 2);
+            $left = $this->foldBalanced($op, array_slice($parts, 0, $m), $pos);
+            $right = $this->foldBalanced($op, array_slice($parts, $m), $pos);
+            return $this->apply('ops', $op, [$left, $right], $pos,
+                $this->variantFor($op, [$left, $right]));
+        }
         $acc = array_shift($parts);
         foreach ($parts as $next) {
             $acc = $this->apply('ops', $op, [$acc, $next], $pos,
@@ -786,7 +904,7 @@ final class Translator
                         [$test, $cast] = $this->emit->numericGuardParts($inner, $bodyNode['pos']);
                         $this->scaleLimited($bodyNode['pos'], 'this operand is read as a number');
                         $parts = self::joinParts(['CASE WHEN COUNT(*) = COUNT(CASE WHEN ', $test,
-                            ' THEN 1 END) THEN COALESCE(SUM(', $cast,
+                            ' THEN 1 END) THEN COALESCE(SUM(', $this->sumCast($test, $cast),
                             '), 0) ELSE NULL END']);
                     } else {
                         $parts = self::joinParts(['COALESCE(SUM(', $inner->parts, '), 0)']);
@@ -837,7 +955,10 @@ final class Translator
             $this->requireArgumentKind($name, $f, $arg['pos']);
             if (self::isNumericArgument($name, $i)) {
                 $this->requireNumericConstant($arg);
-                $f = $this->guardNumeric($f, $arg);
+                // MIN and MAX compare their arguments as numbers, so a numeric text
+                // constant is the number (as in arithmetic): PostgreSQL rejects MAX('10',
+                // '9') == 10 outright, and the MySQL family would compare the strings.
+                $f = $this->guardNumeric($f, $arg, $name === 'MIN' || $name === 'MAX');
             }
             $args[] = $f;
         }
@@ -1536,9 +1657,108 @@ final class Translator
                                   'JOIN' => 'join'];
     private const AGG_FOLD = ['ALL' => 'AND', 'ANY' => 'OR', 'SUM' => '+'];
 
+    /**
+     * Ranges of frame indices no name may resolve to: [from, to). A node written
+     * outside an aggregate -- a definition inlined by stage 1, an element of a
+     * static list -- is rendered inside that aggregate's frames, and would otherwise
+     * be captured by its binders. Frames pushed after the range was opened are
+     * above it and stay visible: they are the node's own.
+     *
+     * @var list<array{0:int,1:int}>
+     */
+    private array $hidden = [];
+
+    /** @var list<array{0:Binder,1:Binder}> the element and key binder of each open element/row frame */
+    private array $scopeStack = [];
+
+    /** Nodes dispatched so far in this translation (E_SQL_SIZE, docs 7.4). */
+    private int $nodes = 0;
+
+    private function chargeNodes(int $n): void
+    {
+        $this->nodes += $n;
+        if ($this->nodes > \Sel\Limits::MAX_SQL_NODES) {
+            refuse('E_SQL_SIZE',
+                'the expression this rule translates to has more than '
+                . \Sel\Limits::MAX_SQL_NODES . ' nodes; SEL evaluates it in linear '
+                . 'time, so it is evaluated the ordinary way');
+        }
+    }
+
+    private function isHidden(int $i): bool
+    {
+        foreach ($this->hidden as [$from, $to]) {
+            if ($i >= $from && $i < $to) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * @template T
+     * @param callable():T $fn
+     * @return T
+     */
+    private function hiding(int $from, callable $fn)
+    {
+        $this->hidden[] = [$from, count($this->frames)];
+        try {
+            return $fn();
+        } finally {
+            array_pop($this->hidden);
+        }
+    }
+
+    /**
+     * The value-binding names that are still constants where the walk is: a binder
+     * of the same name is the element, not the binding (JS-C53).
+     *
+     * @return array<string,bool>
+     */
+    private function liveConstNames(): array
+    {
+        if ($this->frames === [] || $this->constNames === []) {
+            return $this->constNames;
+        }
+        $names = $this->constNames;
+        foreach ($this->frames as $i => $frame) {
+            if ($this->isHidden($i)) {
+                continue;
+            }
+            foreach ($frame as $name => $_) {
+                unset($names[$name]);
+            }
+        }
+        return $names;
+    }
+
+    /**
+     * A FILTER's predicate sees the scopes outside the aggregate and its own binder,
+     * and nothing of the aggregate's body binder or of another FILTER's (7.5).
+     *
+     * @param callable():Fragment $render
+     */
+    private function inFilterScope(string $binder, callable $render): Fragment
+    {
+        [$elem, $key] = $this->scopeStack[count($this->scopeStack) - 1];
+        $top = count($this->frames) - 1;
+        $this->hidden[] = [$top, $top + 1];
+        $this->frames[] = [$binder => $elem, '_K' => $key];
+        try {
+            return $render();
+        } finally {
+            array_pop($this->frames);
+            array_pop($this->hidden);
+        }
+    }
+
     private function binder(string $name): ?Binder
     {
         for ($i = count($this->frames) - 1; $i >= 0; $i--) {
+            if ($this->isHidden($i)) {
+                continue;
+            }
             if (isset($this->frames[$i][$name])) {
                 return $this->frames[$i][$name];
             }
@@ -1633,7 +1853,9 @@ final class Translator
     {
         switch ($b->shape) {
             case Binder::NODE:
-                return $this->node($b->payload);
+                return $b->base === null
+                    ? $this->node($b->payload)
+                    : $this->hiding($b->base, fn (): Fragment => $this->node($b->payload));
             case Binder::KEY:
                 // Inside a row already: bind the key's own binder to that row
                 // and render the key there, then collate it exactly as the
@@ -1820,7 +2042,9 @@ final class Translator
                 refuse('E_SQL_BINDING',
                     "{$name}[\"{$key}\"] is not a key of that element", $n['pos']);
             }
-            return $this->node($elem);
+            return $b->base === null
+                ? $this->node($elem)
+                : $this->hiding($b->base, fn (): Fragment => $this->node($elem));
         }
         refuse('E_SQL_SHAPE',
             "{$name} names a single column, which has no parts to index", $n['pos']);
@@ -1877,14 +2101,14 @@ final class Translator
         if ($src['t'] === 'list') {
             $out = [];
             foreach ($src['items'] as $i => $item) {
-                $out[(string) ($i + 1)] = Binder::node($item);
+                $out[(string) ($i + 1)] = Binder::node($item)->at(count($this->frames));
             }
             return self::staticSource($out);
         }
         if ($src['t'] === 'clist') {
             $out = [];
             foreach ($src['entries'] as [$k, $v]) {
-                $out[$k] = Binder::node($v);
+                $out[$k] = Binder::node($v)->at(count($this->frames));
             }
             return self::staticSource($out);
         }
@@ -1893,7 +2117,9 @@ final class Translator
             $bound = $this->binder($src['name']);
             if ($bound !== null) {
                 if ($bound->shape === Binder::NODE) {
-                    return $this->source($bound->payload, $call);
+                    return $bound->base === null
+                        ? $this->source($bound->payload, $call)
+                        : $this->hiding($bound->base, fn (): array => $this->source($bound->payload, $call));
                 }
                 if ($bound->shape === Binder::NONE) {
                     refuse('E_SQL_SHAPE', (string) $bound->reason, $src['pos']);
@@ -1973,7 +2199,7 @@ final class Translator
         if ($src['t'] === 'call') {
             $this->node($src);
         }
-        return self::staticSource(['1' => Binder::node($src)], true);
+        return self::staticSource(['1' => Binder::node($src)->at(count($this->frames))], true);
     }
 
     /**
@@ -2107,7 +2333,9 @@ final class Translator
         }
 
         foreach ($src['filters'] as $filter) {
-            $p = $this->requireBool($this->node($filter['body']), $filter['body']['pos'], 'FILTER');
+            $p = $this->requireBool(
+                $this->inFilterScope($filter['binder'], fn (): Fragment => $this->node($filter['body'])),
+                $filter['body']['pos'], 'FILTER');
             if ($name === 'SUM') {
                 $q = $this->caseWhen($p, $q, $this->literal(Value::num('0'), 'NUM'), $n['pos']);
                 continue;
@@ -2138,15 +2366,13 @@ final class Translator
     private function withElement(array $src, string $binderName, Binder $elem,
                                  string $key, array $n, callable $render): Fragment
     {
-        $frame = [$binderName => $elem,
-                  '_K' => Binder::node(['t' => 'text', 'v' => $key, 'pos' => $n['pos']])];
-        foreach ($src['filters'] as $filter) {
-            $frame[$filter['binder']] = $elem;
-        }
-        $this->frames[] = $frame;
+        $kBinder = Binder::node(['t' => 'text', 'v' => $key, 'pos' => $n['pos']]);
+        $this->frames[] = [$binderName => $elem, '_K' => $kBinder];
+        $this->scopeStack[] = [$elem, $kBinder];
         try {
             return $render();
         } finally {
+            array_pop($this->scopeStack);
             array_pop($this->frames);
         }
     }
@@ -2201,9 +2427,6 @@ final class Translator
                   . 'unordered and unkeyed unless the schema says otherwise, and '
                   . 'guessing which column is the key is not something this layer does');
         $frame = [$binderName => $row, '_K' => $kBinder];
-        foreach ($src['filters'] as $filter) {
-            $frame[$filter['binder']] = $row;
-        }
         // After a LINK only the row is in scope (spec §7.4): the binders are
         // scoped to its predicate, and the evaluator raises E_UNDEF_VAR for
         // `C["id"]` in a later step -- the joined row carries them as keys, not
@@ -2211,9 +2434,11 @@ final class Translator
         // and the right binder for every later step, so `FILTER(C["id"] > 1)`
         // translated where `run()` fails (review 2026-09-15 finding W2).
         $this->frames[] = $frame;
+        $this->scopeStack[] = [$row, $kBinder];
         try {
             return $render();
         } finally {
+            array_pop($this->scopeStack);
             array_pop($this->frames);
         }
     }
@@ -2278,6 +2503,25 @@ final class Translator
     }
 
     /**
+     * The argument SUM adds up in the all-or-nothing form. PostgreSQL evaluates the
+     * cast of EVERY row before the enclosing CASE decides the sum is NULL, and its
+     * cast of 'x' to NUMERIC is an error, not a NULL: there the cast is guarded
+     * itself, so a row that is not a number reaches SUM as NULL and the outer test
+     * turns the whole sum into NULL. The MySQL family casts a non-number to 0 with a
+     * warning, which the outer test already discards.
+     *
+     * @param list<string|int> $test @param list<string|int> $cast
+     * @return list<string|int>
+     */
+    private function sumCast(array $test, array $cast): array
+    {
+        if (!in_array('postgresql', Map::chain($this->dialect), true)) {
+            return $cast;
+        }
+        return self::joinParts(['CASE WHEN ', $test, ' THEN ', $cast, ' ELSE NULL END']);
+    }
+
+    /**
      * SUM over a relation whose body is of unknown kind: NULL unless EVERY element
      * passes the numeric test (docs/internals/sql-kinds.md 5a). The skeleton's
      * `COALESCE(SUM({body}), 0)` is replaced by the guarded whole; COUNT(*) counts
@@ -2303,7 +2547,8 @@ final class Translator
             . 'COALESCE(SUM({bodyCast}), 0) ELSE NULL END', $tpl);
         $slots = self::slots($this->relationSlots($rel), [
             'bodyTest' => [new Fragment($test, 'UNKNOWN', $this->dialect, $body->params, $body->paramKinds)],
-            'bodyCast' => [new Fragment($cast, 'UNKNOWN', $this->dialect, $body->params, $body->paramKinds)],
+            'bodyCast' => [new Fragment($this->sumCast($test, $cast), 'UNKNOWN', $this->dialect,
+                $body->params, $body->paramKinds)],
         ]);
         return new Fragment($this->fillNamed($tpl, $slots, $n['pos']), 'NUM', $this->dialect,
             $body->params, $body->paramKinds, $body->caveats);
@@ -2413,6 +2658,13 @@ final class Translator
     private function joinAggregate(array $n): Fragment
     {
         $src = $this->source($n['args'][0], $n);
+        // FILTER yields a list; only ALL, ANY, SUM and COUNT absorb one (7.5), so a
+        // JOIN over it has nothing to apply the predicate to. It used to be dropped.
+        if ($src['filters'] !== []) {
+            refuse('E_SQL_SHAPE',
+                'JOIN over a FILTER would have to apply the predicate before joining, '
+                . 'and only ALL, ANY, SUM and COUNT absorb a FILTER', $n['args'][0]['pos']);
+        }
         if ($src['shape'] === 'relation') {
             $rel = $src['relation'];
             $scalar = isset($rel['scalar']) ? \Sel\Utf8::upper((string) $rel['scalar']) : null;
@@ -2422,10 +2674,13 @@ final class Translator
                     $n['pos']);
             }
             $body = $this->columnRef($rel['fields'][$scalar]);
+            $this->requireJoinText($body, $n['args'][0]['pos']);
+            $sep = $this->node($n['args'][1]);
+            $this->requireJoinText($sep, $n['args'][1]['pos']);
             $skel = $this->skeleton('join', $n['pos']);      // refuses with the map's reason
             return new Fragment(
                 $this->fillNamed($skel, self::slots($this->relationSlots($rel),
-                    ['body' => [$body], 'sep' => [$this->node($n['args'][1])]]), $n['pos']),
+                    ['body' => [$body], 'sep' => [$sep]]), $n['pos']),
                 'TEXT', $this->dialect);
         }
 
@@ -2434,15 +2689,35 @@ final class Translator
             if ($parts !== []) {
                 // Rendered per gap, not once and reused: see the note in
                 // inOperator on why splicing one Fragment twice breaks `params`.
-                $parts[] = $this->node($n['args'][1]);
+                $sep = $this->node($n['args'][1]);
+                $this->requireJoinText($sep, $n['args'][1]['pos']);
+                $parts[] = $sep;
             }
-            $parts[] = $this->withElement($src, '_', $elem, (string) $key, $n,
+            $part = $this->withElement($src, '_', $elem, (string) $key, $n,
                 fn (): Fragment => $this->fromBinder($elem, $n));
+            $this->requireJoinText($part, $n['args'][0]['pos']);
+            $parts[] = $part;
         }
         if ($parts === []) {
             return $this->literal(Value::text(''), 'TEXT');
         }
         return count($parts) === 1 ? $parts[0] : $this->foldPairwise('&', $parts, $n['pos']);
+    }
+
+    /**
+     * JOIN takes text (the `&` rules, spec 5.2 / 7.5): a BOOL or BIN element or
+     * separator is E_NOT_TEXT in SEL, and a server concatenates one as `1` or
+     * `true` -- a different answer from the same rule.
+     *
+     * @param array{line:int,col:int,offset:int} $pos
+     */
+    private function requireJoinText(Fragment $f, array $pos): void
+    {
+        if ($f->kind === 'BOOL' || $f->kind === 'BIN') {
+            refuse('E_SQL_SHAPE',
+                'JOIN joins text, and ' . ($f->kind === 'BOOL' ? 'a BOOL' : 'a BIN')
+                . ' is not text; SEL answers E_NOT_TEXT rather than concatenating it', $pos);
+        }
     }
 
     /** @param array<string,mixed> $node @return array<string,mixed>|null */
@@ -2793,9 +3068,24 @@ final class Translator
      *
      * @param array<string,mixed> $n
      */
-    private function guardNumeric(Fragment $f, array $n): Fragment
+    private function guardNumeric(Fragment $f, array $n, bool $arithmetic = false): Fragment
     {
-        if (Constants::isConstant($n, $this->constNames)) {
+        if (Constants::isConstant($n, $this->liveConstNames())) {
+            // A constant TEXT that is a number, in an arithmetic position, is that number:
+            // SEL computes with it exactly. Left as a quoted string, MariaDB and MySQL
+            // convert it to DOUBLE for `+ - * / %` (`'0.1' + '0.2' = 0.3` is false
+            // there), so it is spelled as the exact numeric literal it stands for
+            // (PHP-C33).
+            if ($arithmetic && $f->kind === 'TEXT') {
+                try {
+                    $v = \Sel\Evaluator::evalNode($n, $this->constCtx ?? new \Sel\Context());
+                } catch (\Sel\SelError) {
+                    return $f;           // refused by the constant check, with SEL's own code
+                }
+                if ($v->isText() && $v->looksNumeric()) {
+                    return $this->literal(Value::num(\Sel\Dec::format($v->asDecimal($n['pos']))), 'NUM', $n['pos']);
+                }
+            }
             return $f;
         }
         $guarded = $this->emit->numericOperand($f, $n['pos']);
@@ -2848,7 +3138,7 @@ final class Translator
             return;
         }
         foreach ($pairs as [, $node]) {
-            if (Constants::isConstant($node, $this->constNames)) {
+            if (Constants::isConstant($node, $this->liveConstNames())) {
                 if (Constants::constantScale($node, $this->constCtx) > $cap) {
                     $this->scaleLimited($node['pos'], 'this constant is read as a number');
                 }
@@ -2870,7 +3160,7 @@ final class Translator
      */
     private function requireNumericConstant(array $n): void
     {
-        if (Constants::isConstant($n, $this->constNames)) {
+        if (Constants::isConstant($n, $this->liveConstNames())) {
             Constants::requireNumeric($n, $this->constCtx);
         }
     }
@@ -3741,7 +4031,18 @@ final class Translator
                     // 2026-09-28 SQL-10). The result is discarded.
                     if ($plan->orderBy !== [] || $plan->projections !== null
                         || $plan->selectCols !== null || $plan->groupBy !== null) {
+                        // Rendered to be refused, then thrown away: the parameters it
+                        // bound go with it, or `params` holds values for slots the
+                        // statement never mentions (CPP-C57, LISP-C40).
+                        $keepParams = $this->params;
+                        $keepKinds = $this->paramKinds;
+                        $keepCaveats = $this->caveats;
+                        $keepNodes = $this->nodes;
                         $this->compileStatement($plan);
+                        $this->params = $keepParams;
+                        $this->paramKinds = $keepKinds;
+                        $this->caveats = $keepCaveats;
+                        $this->nodes = $keepNodes;
                     }
                     $plan = $this->ensureDerived($plan, $this->planHasRowsAbove($plan));
                     if (count($args) !== 3 && count($args) !== 5) {

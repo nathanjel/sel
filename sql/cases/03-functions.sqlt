@@ -268,11 +268,12 @@ A pattern outside SEL's portable subset raises SelError in the evaluator, but
 only when the call is reached. Translation walks every branch, so it arrives
 here from branches the evaluator never takes -- and a SelError escaping
 Sql::translate would break what tryTranslate() promises. Found by the fuzz lane,
-as a fatal error mid-run.
+as a fatal error mid-run. The pattern is computed (an IF): a LITERAL pattern outside the
+subset is now refused when the program compiles (spec 7.8), before any translation.
 --- dialect
 mariadb
 --- source
-RMATCH('\p{L}', "x")
+RMATCH(IF(TRUE, '\p{L}', 'x'), "x")
 --- error
 E_SQL_UNSUPPORTED
 ===

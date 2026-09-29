@@ -60,7 +60,10 @@ func recordStmt(s *sel.Node, defs map[string]*SNode, constNames map[string]bool,
 
 	value := substituteNode(s.R, defs, nil, depth)
 
-	if IsConstant(value, constNames) {
+	// A helper over the node budget is not walked here: IsConstant and SEL's
+	// evaluator both cost what its expansion does. Reading it is what refuses
+	// (E_SQL_SIZE, in the translator's walk); defining it is free.
+	if value.Size() <= limits.MAX_SQL_NODES && IsConstant(value, constNames) {
 		Validate(value, root)
 	}
 

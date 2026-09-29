@@ -159,7 +159,10 @@ funcs.ISNUM is defined one entry at a time with DEFINE-ENTRY, so at the moment a
 dialect is declared its ISNUM may not exist yet. By the time a guard is being
 USED, everything either side of the rule is registered."
   (unless (member dialect *guard-checked* :test #'equal)
-    (push dialect *guard-checked*)
+    ;; Remembered only AFTER the checks pass. Remembering first meant the first
+    ;; use refused and every later use of the same dialect sailed through the
+    ;; check it had failed, so a wrong guard was emitted on the second call
+    ;; (JS-C24, PHP-C49, PY-C49, CPP-C36, LISP-C42).
     (let ((guard (dialect-lexical dialect "numericGuard")))
       (when (stringp guard)
         (let* ((isnum (dialect-entry dialect :funcs "ISNUM"))
@@ -178,7 +181,8 @@ pattern, so its numericGuard has nothing to agree with" dialect))
                 (bad "SQL dialect ~a declares a numericGuard that does not carry ~
 ~{'~a'~^, ~}, which its funcs.ISNUM tests; they ask the same question, and a ~
 guard that asks a different one answers for rows SEL refuses"
-                     dialect missing)))))))))
+                     dialect missing)))))))
+    (push dialect *guard-checked*)))
 
 (defun dialect-entry (name section key)
   "One entry, as (VALUES entry foundp).
@@ -292,8 +296,58 @@ The usual reason is an older or newer server than the shipped map assumes, which
 needs no special code because a version is only another link in the chain:
 
     (define-dialect \"mariadb-11.8\" '(:extends \"mariadb\" :version \"11.8\"))"
-  (when (dialect-exists-p name)
-    (bad "SQL dialect ~a is already defined; a name means one dialect" name))
+  ;; A name means one dialect. Re-registering a name a caller registered ITSELF
+  ;; under the same parent replaces it (a test, a reconnect and a reload all do
+  ;; that); a shipped dialect, or a name under another parent, is refused
+  ;; (sql/MAP.md 3.1).
+  (let ((previous *extra*))
+    (when (dialect-exists-p name)
+      (let ((old (assoc name *extra* :test #'equal)))
+        (unless (and old (equal (getf (cdr old) :extends) (plist-get spec :extends)))
+          (bad "SQL dialect ~a is already defined~a; a name means one dialect" name
+               (if old " under another parent" "")))
+        (setf *extra* (remove name *extra* :key #'car :test #'equal)
+              *guard-checked* '())))
+    (handler-case (define-dialect-1 name spec)
+      (error (e)
+        (setf *extra* previous)
+        (error e))))
+  (values))
+
+(defun check-quote-pairing (name)
+  "sql/MAP.md 3.1, asked of the dialect AFTER inheritance: textQuote, textEscape
+and identQuote are one set, and a registered dialect that changes one without the
+others makes every inline text literal injectable (JS-C25, PHP-C37, PY-C50,
+CPP-C53, LISP-C36)."
+  (let* ((where (format nil "SQL dialect ~a" name))
+         (quote (dialect-lexical name "textQuote"))
+         (ident (dialect-lexical name "identQuote"))
+         (escape (dialect-lexical name "textEscape")))
+    (unless (and (stringp quote) (= (length quote) 1))
+      (bad "~a's textQuote must be exactly one character, and is ~s" where quote))
+    (when (equal quote ident)
+      (bad "~a's textQuote equals its identQuote, so a text literal would read as a ~
+quoted identifier" where))
+    (when (and (listp escape) (some (lambda (c) (zerop (length (car c)))) escape))
+      (bad "~a's textEscape has an empty key" where))
+    (let ((entry (and (listp escape) (cdr (assoc quote escape :test #'equal)))))
+      (unless (stringp entry)
+        (bad "~a's textEscape has no entry for its textQuote ~s, so a quote inside a ~
+text literal would end it" where quote))
+      (let ((doubled (concatenate 'string quote quote)))
+        (unless (or (equal entry doubled)
+                    ;; An escape character E followed by the quote, E itself a key
+                    ;; mapping to E E.
+                    (and (= (length entry) 2)
+                         (string= quote (subseq entry 1))
+                         (let* ((e (subseq entry 0 1))
+                                (mapped (cdr (assoc e escape :test #'equal))))
+                           (equal mapped (concatenate 'string e e)))))
+          (bad "~a's textEscape maps the quote ~s to ~s, which does not leave a ~
+quote inside the literal: it must be the quote doubled, or an escape character E ~
+followed by the quote with E itself escaped to E E" where quote entry))))))
+
+(defun define-dialect-1 (name spec)
   (let ((where (format nil "SQL dialect ~a" name)))
     ;; The keys a dialect declaration carries, and nothing else. :ops, :funcs and
     ;; :skel are NOT among them -- they are defined one entry at a time -- and
@@ -345,7 +399,8 @@ a server reports (11.8.8-MariaDB is 11.8.8)" where version))
         (setf *extra*
               (append *extra*
                       (list (cons name (list :extends extends :version version
-                                             :target target :lexical lexical))))))))
+                                             :target target :lexical lexical)))))
+        (check-quote-pairing name))))
   (values))
 
 (defun check-key (section key)

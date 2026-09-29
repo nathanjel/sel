@@ -404,5 +404,124 @@ func main() {
 		say("host.fn.replace", earlyVal.AsText(sel.Pos{})+" "+eval("HOST_V()").AsText(sel.Pos{}))
 	}
 
+	// --- T12: dependencies() is FLOW-SENSITIVE (spec/SPEC.md §8): a variable is a
+	// dependency when some read of it can happen before the program has definitely
+	// assigned it, in evaluation order. Assignments under a condition, a short
+	// circuit, `??` or an aggregate body are not definite; `op=` and `A[k] op= x`
+	// read their target; a plain `A[k] = x` creates A and reads only the index.
+	deps := func(src string) string {
+		d := strings.Join(sel.MustCompile(src).Dependencies(), " ")
+		if d == "" {
+			return "-"
+		}
+		return d
+	}
+	say("program.deps.read-before-assign", deps("A + 1; A = 2"))
+	say("program.deps.compound-assign-reads", deps("X += 1"))
+	say("program.deps.index-compound-reads", deps("A[1] += 1"))
+	say("program.deps.index-assign-vivifies", deps("A[1] = 2"))
+	say("program.deps.self-assign-reads", deps("A = A + 1"))
+	say("program.deps.assign-then-read", deps("A = 1; A + B"))
+	say("program.deps.conditional-assign", deps("IF(X, A = 1, 0); A"))
+	say("program.deps.both-branches-assign", deps("IF(X, A = 1, A = 2); A"))
+	say("program.deps.and-rhs-assign", deps("X AND (A = 1); A"))
+	say("program.deps.coalesce-rhs-assign", deps("X ?? (A = 1); A"))
+	say("program.deps.aggregate-body-assign", deps("MAP(L, A = _); A"))
+	say("program.deps.cond-with-default-assigns", deps("COND(X, A = 1, Y, A = 2, A = 3); A"))
+	say("program.deps.assign-in-argument", deps("LEFT(\"abc\", (N = 2)); N"))
+
+	// --- T12: a Program is reusable: after a caught error it runs again, and two
+	// contexts are independent whatever the interleaving.
+	{
+		divide := sel.MustCompile("A / B")
+		bad := sel.NewNone()
+		eval("A = 1; B = 0; 0", bad)
+		good := sel.NewNone()
+		eval("A = 6; B = 3; 0", good)
+		attempt := func(ctx *sel.Value) string {
+			v, err := divide.Run(ctx)
+			if err != nil {
+				if se, ok := err.(*sel.SelError); ok {
+					return fmt.Sprintf("%s %d:%d", se.Code, se.Line(), se.Col())
+				}
+				return "host:" + err.Error()
+			}
+			return v.Dump()
+		}
+		first := attempt(bad)
+		second := attempt(good)
+		third := attempt(bad)
+		say("program.reuse.after-error", first+"|"+second+"|"+third)
+		bump := sel.MustCompile("X = X + 1")
+		a := sel.NewNone()
+		eval("X = 1; 0", a)
+		c := sel.NewNone()
+		eval("X = 10; 0", c)
+		run := func(ctx *sel.Value) string {
+			v, err := bump.Run(ctx)
+			if err != nil {
+				return "error"
+			}
+			return v.AsText(sel.Pos{})
+		}
+		r1, r2, r3, r4 := run(a), run(c), run(a), run(c)
+		say("program.reuse.two-contexts", r1+" "+r2+" "+r3+" "+r4)
+	}
+
+	// --- T12: input the API cannot take is E_BAD_ARG, never a host panic or a
+	// different SEL error (spec/SPEC.md §8). This host is statically typed: source
+	// is a string and there is no native conversion, so the first three cannot be
+	// posed; they print n/a with the reason, and tools/check-api.sh leaves an n/a
+	// line out of the diff for that host.
+	say("error.compile.non-string", "n/a (source is a string)")
+	say("value.native.unsupported", "n/a (no native conversion)")
+	say("value.native.fraction", "n/a (no native conversion)")
+	{
+		r := "accepted"
+		func() {
+			defer func() {
+				if rec := recover(); rec != nil {
+					if se, ok := rec.(*sel.SelError); ok {
+						r = "SelError " + se.Code
+					} else {
+						r = "refused"
+					}
+				}
+			}()
+			sel.RegisterFunction("bad", 0, 0, nil)
+		}()
+		say("host.fn.refuse.not-callable", r)
+	}
+	sel.RegisterFunction("HOST_OOB", 1, 2, func(a *sel.Args) *sel.Value {
+		if a.Count() > 1 {
+			return sel.NewText(a.Text(1))
+		}
+		return sel.NewText(a.Text(5))
+	})
+	{
+		r := "no error"
+		func() {
+			defer func() {
+				if rec := recover(); rec != nil {
+					if se, ok := rec.(*sel.SelError); ok {
+						r = se.Code
+					} else {
+						r = "host:panic"
+					}
+				}
+			}()
+			v, err := sel.MustCompile("HOST_OOB(\"x\")").Run(sel.NewNone())
+			_ = v
+			if err != nil {
+				if se, ok := err.(*sel.SelError); ok {
+					r = se.Code
+				} else {
+					r = "host:error"
+				}
+			}
+		}()
+		say("host.fn.arg.out-of-range", r)
+	}
+
 	os.Stdout.WriteString(strings.Join(out, "\n") + "\n")
 }

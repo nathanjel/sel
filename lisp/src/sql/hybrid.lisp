@@ -40,22 +40,62 @@ query the query text exactly as the application wrote it."
 
 (defun source-tables (node bindings)
   "Every physical source NODE reads, first use first, each once. Keyed by the
-physical name, so two bindings over one table are one source."
+physical name, so two bindings over one table are one source.
+
+Scope-aware: a name is a read of a bound relation only where nothing shadows
+it. A binder of a binding call (through the manifest's own forms) shadows it in
+the arguments it scopes, and an assignment makes the name a variable of the
+program from the next statement on -- `ORDERS = LIST(1); COUNT(ORDERS)` reads no
+table, and neither does `LIST(1) .> MAP(ORDERS, ORDERS)` (PHP-C55, PY-C48,
+LISP-C43)."
   (let ((out '()))
-    (labels ((walk (n)
+    (labels ((assign-base (target)
+               (loop while (and target (sel::node-p target) (eq (sel::node-kind target) :index))
+                     do (setf target (sel::node-l target)))
+               (and target (sel::node-p target) (eq (sel::node-kind target) :var)
+                    (sel::node-s target)))
+             (walk (n bound)
                (when (and n (sel::node-p n))
-                 (if (and (eq (sel::node-kind n) :var)
-                          (bindings-has bindings (sel::node-s n)))
-                     (let ((b (bindings-get bindings (sel::node-s n) (sel::node-pos n))))
-                       (when (eq (binding-kind b) :relation)
-                         (let ((table (physical-source b)))
-                           (unless (member table out :test #'equal)
-                             (push table out)))))
-                     (progn
-                       (walk (sel::node-l n))
-                       (walk (sel::node-r n))
-                       (dolist (item (sel::node-items n)) (walk item)))))))
-      (walk node))
+                 (case (sel::node-kind n)
+                   (:var
+                    (when (and (not (member (sel::node-s n) bound :test #'equal))
+                               (bindings-has bindings (sel::node-s n)))
+                      (let ((b (bindings-get bindings (sel::node-s n) (sel::node-pos n))))
+                        (when (eq (binding-kind b) :relation)
+                          (let ((table (physical-source b)))
+                            (unless (member table out :test #'equal)
+                              (push table out)))))))
+                   (:seq
+                    (let ((scope bound))
+                      (dolist (item (sel::node-items n))
+                        (walk item scope)
+                        (when (eq (sel::node-kind item) :assign)
+                          (let ((name (assign-base (sel::node-l item))))
+                            (when name (push name scope)))))))
+                   (:assign
+                    ;; The right side first: it runs before the write.
+                    (walk (sel::node-r n) bound)
+                    (let ((target (sel::node-l n)))
+                      (loop while (and target (sel::node-p target) (eq (sel::node-kind target) :index))
+                            do (walk (sel::node-r target) bound)
+                               (setf target (sel::node-l target)))))
+                   (:call
+                    (let ((args (sel::node-items n)))
+                      (multiple-value-bind (scopes binds)
+                          (sel::binding-form (sel::node-s n) args (sel::node-spec n))
+                        (let ((inner (append binds bound)))
+                          (loop for arg in args
+                                for scope in (or scopes (make-list (length args)
+                                                                   :initial-element :outer))
+                                do (case scope
+                                     (:binder nil)
+                                     (:inner (walk arg inner))
+                                     (t (walk arg bound))))))))
+                   (t
+                    (walk (sel::node-l n) bound)
+                    (walk (sel::node-r n) bound)
+                    (dolist (item (sel::node-items n)) (walk item bound)))))))
+      (walk node '()))
     (nreverse out)))
 
 ;;; --- helper assignments ----------------------------------------------------
@@ -149,24 +189,23 @@ same-named helper inside its body. Copies on the way down, never writes."
                  (setf (sel::node-r c) (inline-child (sel::node-r node)))
                  c))
       (:call
-       (let* ((args (sel::node-items node))
-              (spec (sel::node-spec node))
-              (binds (and spec (sel::spec-binds spec)))
-              (inner (copy-list bound)))
-         (when binds
-           (push "_K" inner)
-           (push (if (and (= (length args) 3) (is-binder-name (second args)))
-                     (sel::node-s (second args))
-                     "_")
-                 inner))
-         (let ((c (sel::copy-node node)))
-           (setf (sel::node-items c)
-                 (loop for arg in args
-                       for i from 0
-                       collect (if (and binds (= i 1) (= (length args) 3) (is-binder-name arg))
-                                   arg
-                                   (inline-child arg (if (= i 0) bound inner)))))
-           c)))
+       ;; The binding form decides which argument is a binder NAME (never
+       ;; inlined: it is not a read), which run inside the binder, and what they
+       ;; bind -- for every arity, the four-argument SORT_BY and BUCKET included
+       ;; (PY-C24, LISP-C28).
+       (let ((args (sel::node-items node)))
+         (multiple-value-bind (scopes binds)
+             (sel::binding-form (sel::node-s node) args (sel::node-spec node))
+           (let ((inner (append binds bound))
+                 (c (sel::copy-node node)))
+             (setf (sel::node-items c)
+                   (loop for arg in args
+                         for scope in (or scopes (make-list (length args) :initial-element :outer))
+                         collect (case scope
+                                   (:binder arg)
+                                   (:inner (inline-child arg inner))
+                                   (t (inline-child arg bound)))))
+             c))))
       (t node))))
 
 (defun literal-helpers (leading)
@@ -270,19 +309,33 @@ Returns a HYBRID-PLAN struct. OPTIONS is a plist; :strict reaches the translator
         (setf identity-barrier (identity-loss-before-grouping-p norm)))
       (multiple-value-bind (leading result) (statements (sel:program-ast program))
         (let ((literals (literal-helpers leading))
-              (defs (definitions leading)))
+              (defs (definitions leading))
+              ;; The assignments a wrapped tree may carry in front of it. Starts as
+              ;; all of them; see below for the one the unwinding consumes.
+              (wrap-leading leading))
           (flet ((relation-p (node)
                    (and node (sel::node-p node) (eq (sel::node-kind node) :var)
                         (bindings-has bs (sel::node-s node))
                         (eq (binding-kind (bindings-get bs (sel::node-s node) (sel::node-pos node)))
                             :relation)))
-                 (wrap (node) (with-helpers leading node))
+                 (wrap (node) (with-helpers wrap-leading node))
                  ;; The physical sources of a wrapped tree are read off what the
                  ;; translator renders: stage 1's tree, where an assignment a
                  ;; binder shadows is gone.
                  (tables (wrapped) (source-tables (normalise wrapped names root) bs)))
             (multiple-value-bind (unwound-source unwound-steps)
                 (unwind-through-helpers result defs literals)
+              ;; A helper that shadows its own source -- `ORDERS = ORDERS .>
+              ;; DROP(2); ORDERS .> TAKE(3)` -- has been unwound INTO the pipeline:
+              ;; its steps are already in `unwound-steps`, and the source that is
+              ;; left is the binding of that name. Carrying the assignment in front
+              ;; of the pipeline as well makes stage 1 inline it a second time
+              ;; under the source read, and the DROP runs twice (PHP-C34).
+              (when (and (relation-p unwound-source)
+                         (assoc (sel::node-s unwound-source) defs :test #'equal))
+                (setf wrap-leading
+                      (remove-if (lambda (st) (equal (assigned-name st) (sel::node-s unwound-source)))
+                                 leading)))
               ;; No steps, or a source that is not a bound relation: nothing to push.
               (unless (and unwound-steps (relation-p unwound-source))
                 (return-from plan-hybrid (pure-memory-plan program dialect bs)))
@@ -325,6 +378,7 @@ Returns a HYBRID-PLAN struct. OPTIONS is a plist; :strict reaches the translator
                            (prefix-ast (wrap (sel::build-pipeline-ast source-node prefix-steps)))
                            (prefix-prog (sel::%make-program "" prefix-ast))
                            (frag (and (not (rows-are-not-the-value-p prefix-steps))
+                                      (key-safe-boundary-p prefix-steps (subseq steps k))
                                       (or (not identity-barrier)
                                           (handler-case
                                               (not (identity-loss-before-grouping-p (normalise prefix-ast names root) t))
@@ -332,8 +386,27 @@ Returns a HYBRID-PLAN struct. OPTIONS is a plist; :strict reaches the translator
                                       (try-translate-statement prefix-prog dialect bindings options))))
                       (when frag
                         (let* ((rem-steps (subseq steps k))
+                               ;; A LINK names its left side after the variable the
+                               ;; pipeline starts from (spec 7.4), so a continuation
+                               ;; that contains one reads the prefix's rows under the
+                               ;; SOURCE's own name -- `_INPUT` would rename ORDERS in
+                               ;; the joined row and `_["ORDERS"]` would be E_NO_KEY
+                               ;; (PHP-C9, PY-C23, LISP-C29, GO-C22). Only where no
+                               ;; remaining step reads that name as something else.
+                               (link-p (some (lambda (st) (member (sel::node-s st) '("LINK" "LINK_LEFT")
+                                                                  :test #'equal))
+                                             rem-steps))
+                               (root-name (sel::node-s source-node))
+                               (cont-var (if (and link-p
+                                                  (notany (lambda (st)
+                                                            (some (lambda (a) (member root-name (read-names a)
+                                                                                      :test #'equal))
+                                                                  (rest (sel::node-items st))))
+                                                          rem-steps))
+                                             root-name
+                                             input-var))
                                (cont-root (let ((v (sel::make-node :var (sel::node-pos (first rem-steps)))))
-                                            (setf (sel::node-s v) input-var)
+                                            (setf (sel::node-s v) cont-var)
                                             v))
                                (cont-ast (wrap (sel::build-pipeline-ast cont-root rem-steps)))
                                (cont-prog (sel::%make-program "" cont-ast)))
@@ -343,10 +416,50 @@ Returns a HYBRID-PLAN struct. OPTIONS is a plist; :strict reaches the translator
                                               :sql-prefix-ast prefix-ast
                                               :continuation-ast cont-ast
                                               :continuation-program cont-prog
-                                              :continuation-source-var input-var
+                                              :continuation-source-var cont-var
                                               :source-tables (tables prefix-ast)))))))
                   ;; 4. Nothing pushes down.
                   (pure-memory-plan program dialect bs))))))))))
+
+(defun reads-key-p (node)
+  "Whether NODE reads `_K` anywhere (an over-approximation: a binder that
+rebinds the name is counted too, which can only refuse a split, never allow one)."
+  (and node (sel::node-p node)
+       (or (and (eq (sel::node-kind node) :var) (equal (sel::node-s node) "_K"))
+           (let ((found nil))
+             (walk-node-children node (lambda (c) (when (reads-key-p c) (setf found t))))
+             found))))
+
+(defun step-reads-key-p (step)
+  "Whether a pipeline step's own arguments read `_K` (item 0 is its input)."
+  (some #'reads-key-p (rest (sel::node-items step))))
+
+(defun key-safe-boundary-p (prefix-steps cont-steps)
+  "Whether cutting the pipeline between PREFIX-STEPS and CONT-STEPS hides nothing.
+
+SPEC 7.3: FILTER keeps its input's keys and every other step renumbers from 1,
+while the database answers a rowset numbered 1..n. After a prefix that ENDS in a
+FILTER the continuation would see renumbered rows where run() has the FILTER's
+keys, which is invisible only if the continuation renumbers before anything
+reads a key or shows one: scanning it in order, a step that reads `_K` makes the
+boundary unsafe, and the first step that is not a FILTER renumbers (and is safe
+once its own arguments have been checked). A continuation of FILTERs alone
+returns the kept rows under their keys, which is exactly what would be lost
+(JS-C22, PHP-C8, PY-C22, CPP-C33, LISP-C8, LISP-C27)."
+  (let ((tail (car (last prefix-steps))))
+    (if (not (and tail (equal (sel::node-s tail) "FILTER")))
+        t
+        (dolist (step cont-steps nil)
+          (when (step-reads-key-p step) (return nil))
+          (unless (equal (sel::node-s step) "FILTER") (return t))))))
+
+(defun can-raise-p (node)
+  "Whether evaluating NODE in memory might raise. Only a literal and a plain read of a
+projected field are proven not to (the statement carries the field as a column, so
+the key is there): anything else may hit a digit cap, a missing key or an ABORT, and a row-cutting
+step must not hide a row whose evaluation would have (JS-C23, PY-C47, CPP-C34,
+LISP-C30, PHP-C36)."
+  (not (or (literal-kind-p node) (field-read-p node))))
 
 (defun latest-field-name (n)
   "A direct default-row field; no computed/coerced partition or revision."
@@ -463,10 +576,42 @@ and not a full pushdown (finding Y, lanes): its continuation would read
         (cond ((member name '("LINK" "LINK_LEFT") :test #'equal) (setf joined t))
               ((member name '("MAP" "SELECT_COLS" "BUCKET") :test #'equal) (setf joined nil)))))))
 
+(defparameter +order-sorts+ '("SORT" "SORT_DESC" "SORT_BY" "TOP" "TOP_DESC" "TOP_BY"))
+(defparameter +order-wraps+
+  '("SELECT_COLS" "MAP" "DISTINCT" "DEDUPE" "TAKE" "DROP" "BUCKET" "TOP" "TOP_DESC" "TOP_BY"))
+
+(defun order-lost-p (steps)
+  "Whether pushing STEPS into one statement would lose an order SEL keeps.
+
+SEL's sorts are stable and its BUCKET lists groups in the order they first
+appear; SQL promises neither through a subquery. Two cases follow, and both are
+the planner's to refuse -- the translator's bytes for them are pinned and the
+program is still fine in memory:
+
+  * a BUCKET after a sort: GROUP BY answers its groups in the server's order, not
+    in the order the sorted rows first showed them (JS-C59, PHP-C35, LISP-C26);
+  * a second sort separated from the first by a step that puts the rows in a
+    derived table: the outer ORDER BY's ties fall back to the derived table's
+    order, which a server does not keep, where SEL's stable sort keeps the
+    earlier one. Two sorts with nothing between them are one ORDER BY and are
+    stable by construction."
+  (let ((sorted nil) (wrapped nil))
+    (dolist (step steps nil)
+      (let ((name (sel::node-s step)))
+        (cond ((and (equal name "BUCKET") sorted) (return t))
+              ((member name +order-sorts+ :test #'equal)
+               (when (and sorted wrapped) (return t))
+               (setf sorted t wrapped nil)
+               ;; TOP* is a sort and a cut: what follows is over a derived table.
+               (when (member name '("TOP" "TOP_DESC" "TOP_BY") :test #'equal)
+                 (setf wrapped t)))
+              ((and sorted (member name +order-wraps+ :test #'equal))
+               (setf wrapped t)))))))
+
 (defun rows-are-not-the-value-p (steps)
-  "The two together: a prefix whose SQL rows are not the value SEL would have
-produced for it, whatever the translator says about it."
-  (or (bucket-rows-are-keys-p steps) (join-rows-lack-binders-p steps)))
+  "The two together, and the order rule: a prefix whose SQL rows are not the value
+SEL would have produced for it, whatever the translator says about it."
+  (or (bucket-rows-are-keys-p steps) (join-rows-lack-binders-p steps) (order-lost-p steps)))
 
 (defun walk-node-children (n fn)
   "Calls FN on every child node of N -- l, r and items -- whatever its kind."
@@ -612,6 +757,11 @@ may read; WRAP puts a tree behind the assignments it depends on."
              (custom (remove-if #'third pairs)))
         (when (or (null custom) (null pushable))
           (return-from try-plan-fallthrough nil))
+        ;; The custom half runs over rows the database numbered 1..n: after a
+        ;; FILTER that is only safe if no custom pair reads `_K`.
+        (when (and (some (lambda (p) (reads-key-p (second p))) custom)
+                   (not (key-safe-boundary-p (subseq steps 0 map-idx) (list map-step))))
+          (return-from try-plan-fallthrough nil))
         ;; The custom half runs over the rows the SQL returns; a read of the row
         ;; itself cannot be served by any column.
         (when (some (lambda (p) (reads-whole-row-p (second p) binder)) custom)
@@ -675,9 +825,15 @@ may read; WRAP puts a tree behind the assignments it depends on."
                       (if explicit
                           (list (first args) (second args) rewritten-rec)
                           (list (first args) rewritten-rec)))
-                (let* ((rewritten-steps (append (subseq steps 0 map-idx)
+                ;; A step that cuts rows (TAKE, DROP, a sort, TOP_BY) never crosses a
+                ;; local half that can raise: run() evaluates the MAP on every row
+                ;; before the cut, and a LIMIT in the statement would hide the row
+                ;; that raises. So when any custom pair can raise the downstream
+                ;; steps stay in the continuation, over the records the MAP builds.
+                (let* ((keep-downstream (some (lambda (p) (can-raise-p (second p))) custom))
+                       (rewritten-steps (append (subseq steps 0 map-idx)
                                                 (list rewritten-map)
-                                                downstream))
+                                                (if keep-downstream '() downstream)))
                        (rewritten-ast (funcall wrap (sel::build-pipeline-ast source-node rewritten-steps)))
                        (rewritten-prog (sel::%make-program "" rewritten-ast))
                        (sql-frag (try-translate-statement rewritten-prog dialect bindings options)))
@@ -705,7 +861,10 @@ may read; WRAP puts a tree behind the assignments it depends on."
                                 (list cont-root (second args) cont-rec)
                                 (list cont-root cont-rec)))
                       ;; The caller fills dialect and source-tables.
-                      (let ((cont-ast (funcall wrap cont-map)))
+                      (let ((cont-ast (funcall wrap
+                                               (if keep-downstream
+                                                   (sel::build-pipeline-ast cont-map downstream)
+                                                   cont-map))))
                         (make-hybrid-plan
                          :sql-statement sql-frag
                          :sql-prefix-ast rewritten-ast
@@ -728,7 +887,14 @@ list, which a driver could not bind as it was)."
      (let ((frag (hybrid-plan-sql-statement plan)))
        (funcall db-runner (as-statement frag :params) (bindings frag))))
     ((hybrid-plan-pure-memory-p plan)
-     (sel:run (hybrid-plan-continuation-program plan) context))
+     ;; On a COPY of the caller's context, like the hybrid branch below: the
+     ;; program may assign, and running it on the caller's value would write
+     ;; into the caller's tree (JS-C60, PY-C51, CPP-C54). The continuation still
+     ;; reads the caller's variables through the copy.
+     (sel:run (hybrid-plan-continuation-program plan)
+              (if context
+                  (sel:value-copy (if (sel:value-p context) context (sel:from-native context)))
+                  context)))
     (t
      ;; Hybrid execution: DB first, then in-memory continuation
      (let* ((frag (hybrid-plan-sql-statement plan))

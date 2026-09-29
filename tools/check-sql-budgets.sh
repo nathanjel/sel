@@ -110,7 +110,8 @@ for corpus in "$WORK"/*.size; do
     fi
     case "$name" in
       size-accept-*)
-        if grep -Eq '^!|\|\| !' "$out"; then
+        # The translate lane is the first line; the statement lane always answers !E_SQL_SHAPE for an expression.
+        if head -n 1 "$out" | grep -Eq '^!'; then
           printf 'FAIL %-32s %-8s refused a program inside the limit: %s\n' "$name" "$impl" "$(head -c 120 "$out")"
           failures=$((failures + 1))
         else

@@ -49,6 +49,8 @@ export class RelationalPlan {
     this.having = [];
     this.orderBy = [];
     this.limit = null;
+    // Set on a derived table built over sorted rows with no LIMIT: its ORDER BY is gone.
+    this.orderDropped = false;
     this.offset = null;
   }
 }

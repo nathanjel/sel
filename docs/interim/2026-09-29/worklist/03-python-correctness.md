@@ -10,7 +10,7 @@ Each task starts by reproducing the report against the current tree, then lands 
 
 <a id="c-py-c1"></a>
 
-- [ ] **C-PY-C1 — Resolve PY-C1.** Uncaught `RecursionError` where SPEC 6.4 mandates a value or `E_DEPTH` (systemic; six sites)
+- [x] **C-PY-C1 — Resolve PY-C1.** Uncaught `RecursionError` where SPEC 6.4 mandates a value or `E_DEPTH` (systemic; six sites)
 
   **[PY-C1](../python-code-review.md) — [high] [confirmed; re-verified by synthesizer] Uncaught `RecursionError` where SPEC 6.4 mandates a value or `E_DEPTH` (systemic; six sites)**
 
@@ -21,6 +21,8 @@ Each task starts by reproducing the report against the current tree, then lands 
   Regression prerequisite: [T01 / PY-C1](tests/01-frontend.md#py-c1).
 
   Done when every linked scenario passes on all applicable lanes; code/position, mutation, ordering and repeat-use behavior satisfy the shared contract. Record commit and fixture IDs here.
+
+  Closed 2026-09-29 — all six hosts sqlt 1265/1265 with reuse twin; oracle/hybrid lanes agree on SQLite (+ MariaDB/MySQL/PostgreSQL for PHP); PY-C1 site f closed
 
 <a id="c-py-c17"></a>
 
@@ -332,7 +334,7 @@ Each task starts by reproducing the report against the current tree, then lands 
 
 <a id="c-py-c3"></a>
 
-- [ ] **C-PY-C3 — Resolve PY-C3, PY-C4, PY-C15, PY-C33, PY-C34, PY-C35.** Coordinate the related changes below at their shared implementation surface.
+- [x] **C-PY-C3 — Resolve PY-C3, PY-C4, PY-C15, PY-C33, PY-C34, PY-C35.** Coordinate the related changes below at their shared implementation surface.
 
   **[PY-C3](../python-code-review.md) — [high] [confirmed; partly re-verified] Catastrophic regex backtracking: a 40-character subject hangs the process; no step or time bound**
 
@@ -388,6 +390,8 @@ Each task starts by reproducing the report against the current tree, then lands 
 
   Done when every linked scenario passes on all applicable lanes; code/position, mutation, ordering and repeat-use behavior satisfy the shared contract. Record commit and fixture IDs here.
 
+  Closed 2026-09-29 — 116/116 on all six hosts; 0 mismatches vs reference over 24k-80k random patterns per host; resource probes clean; all six hosts pass files 27-29 (P5 ambiguity cases 28b pending)
+
 ## Text, binary and output budgets
 
 <a id="c-py-c14"></a>
@@ -428,7 +432,7 @@ Each task starts by reproducing the report against the current tree, then lands 
 
 <a id="c-py-c5"></a>
 
-- [ ] **C-PY-C5 — Resolve PY-C5.** SQL: `BUCKET ... SUM(g, body)` crashes with a host `TypeError` whenever the body contains a literal
+- [x] **C-PY-C5 — Resolve PY-C5.** SQL: `BUCKET ... SUM(g, body)` crashes with a host `TypeError` whenever the body contains a literal
 
   **[PY-C5](../python-code-review.md) — [high] [confirmed; re-verified by synthesizer] SQL: `BUCKET ... SUM(g, body)` crashes with a host `TypeError` whenever the body contains a literal**
 
@@ -440,9 +444,11 @@ Each task starts by reproducing the report against the current tree, then lands 
 
   Done when every linked scenario passes on all applicable lanes; code/position, mutation, ordering and repeat-use behavior satisfy the shared contract. Record commit and fixture IDs here.
 
+  Closed 2026-09-29 — all six hosts sqlt 1265/1265 with reuse twin; oracle/hybrid lanes agree on SQLite (+ MariaDB/MySQL/PostgreSQL for PHP); PY-C1 site f closed
+
 <a id="c-py-c6"></a>
 
-- [ ] **C-PY-C6 — Resolve PY-C6.** SQL: exponential output from a linear program (helper reuse is inlined as a tree)
+- [x] **C-PY-C6 — Resolve PY-C6.** SQL: exponential output from a linear program (helper reuse is inlined as a tree)
 
   **[PY-C6](../python-code-review.md) — [high] [confirmed] SQL: exponential output from a linear program (helper reuse is inlined as a tree)**
 
@@ -454,9 +460,11 @@ Each task starts by reproducing the report against the current tree, then lands 
 
   Done when every linked scenario passes on all applicable lanes; code/position, mutation, ordering and repeat-use behavior satisfy the shared contract. Record commit and fixture IDs here.
 
+  Closed 2026-09-29 — all six hosts sqlt 1265/1265 with reuse twin; oracle/hybrid lanes agree on SQLite (+ MariaDB/MySQL/PostgreSQL for PHP); PY-C1 site f closed
+
 <a id="c-py-c18"></a>
 
-- [ ] **C-PY-C18 — Resolve PY-C18.** SQL: name-based (unhygienic) substitution and element re-entry produce wrong SQL or a spurious `E_SQL_DEPTH`
+- [x] **C-PY-C18 — Resolve PY-C18.** SQL: name-based (unhygienic) substitution and element re-entry produce wrong SQL or a spurious `E_SQL_DEPTH`
 
   **[PY-C18](../python-code-review.md) — [medium] [confirmed] SQL: name-based (unhygienic) substitution and element re-entry produce wrong SQL or a spurious `E_SQL_DEPTH`**
 
@@ -468,9 +476,11 @@ Each task starts by reproducing the report against the current tree, then lands 
 
   Done when every linked scenario passes on all applicable lanes; code/position, mutation, ordering and repeat-use behavior satisfy the shared contract. Record commit and fixture IDs here.
 
+  Closed 2026-09-29 — all six hosts sqlt 1265/1265 with reuse twin; oracle/hybrid lanes agree on SQLite (+ MariaDB/MySQL/PostgreSQL for PHP); PY-C1 site f closed
+
 <a id="c-py-c45"></a>
 
-- [ ] **C-PY-C45 — Resolve PY-C45.** SQL: a binder named like a scalar `value` binding is treated as that constant by the validation pre-check
+- [x] **C-PY-C45 — Resolve PY-C45.** SQL: a binder named like a scalar `value` binding is treated as that constant by the validation pre-check
 
   **[PY-C45](../python-code-review.md) — [low] [confirmed] SQL: a binder named like a scalar `value` binding is treated as that constant by the validation pre-check**
 
@@ -482,11 +492,13 @@ Each task starts by reproducing the report against the current tree, then lands 
 
   Done when every linked scenario passes on all applicable lanes; code/position, mutation, ordering and repeat-use behavior satisfy the shared contract. Record commit and fixture IDs here.
 
+  Closed 2026-09-29 — all six hosts sqlt 1265/1265 with reuse twin; oracle/hybrid lanes agree on SQLite (+ MariaDB/MySQL/PostgreSQL for PHP); PY-C1 site f closed
+
 ## SQL kinds, numeric fidelity and server limits
 
 <a id="c-py-c19"></a>
 
-- [ ] **C-PY-C19 — Resolve PY-C19, PY-C20, PY-C21.** Coordinate the related changes below at their shared implementation surface.
+- [x] **C-PY-C19 — Resolve PY-C19, PY-C20, PY-C21.** Coordinate the related changes below at their shared implementation surface.
 
   **[PY-C19](../python-code-review.md) — [medium] [confirmed] SQL: `JOIN` over a static list accepts BOOL and BIN elements/separators that SEL rejects with `E_NOT_TEXT`**
 
@@ -514,9 +526,11 @@ Each task starts by reproducing the report against the current tree, then lands 
 
   Done when every linked scenario passes on all applicable lanes; code/position, mutation, ordering and repeat-use behavior satisfy the shared contract. Record commit and fixture IDs here.
 
+  Closed 2026-09-29 — all six hosts sqlt 1265/1265 with reuse twin; oracle/hybrid lanes agree on SQLite (+ MariaDB/MySQL/PostgreSQL for PHP); PY-C1 site f closed
+
 <a id="c-py-c41"></a>
 
-- [ ] **C-PY-C41 — Resolve PY-C41, PY-C42.** Coordinate the related changes below at their shared implementation surface.
+- [x] **C-PY-C41 — Resolve PY-C41, PY-C42.** Coordinate the related changes below at their shared implementation surface.
 
   **[PY-C41](../python-code-review.md) — [low] [confirmed; server behaviour reasoned] SQL: TAKE/DROP counts above the server's integer range translate to SQL every server rejects**
 
@@ -538,11 +552,13 @@ Each task starts by reproducing the report against the current tree, then lands 
 
   Done when every linked scenario passes on all applicable lanes; code/position, mutation, ordering and repeat-use behavior satisfy the shared contract. Record commit and fixture IDs here.
 
+  Closed 2026-09-29 — all six hosts sqlt 1265/1265 with reuse twin; oracle/hybrid lanes agree on SQLite (+ MariaDB/MySQL/PostgreSQL for PHP); PY-C1 site f closed
+
 ## SQL bindings, dialects, fragments and rendering
 
 <a id="c-py-c43"></a>
 
-- [ ] **C-PY-C43 — Resolve PY-C43.** SQL: identifiers from SEL text literals (RECORD field names, SELECT_COLS names) bypass the NUL/empty checks that binding names get
+- [x] **C-PY-C43 — Resolve PY-C43.** SQL: identifiers from SEL text literals (RECORD field names, SELECT_COLS names) bypass the NUL/empty checks that binding names get
 
   **[PY-C43](../python-code-review.md) — [low] [confirmed] SQL: identifiers from SEL text literals (RECORD field names, SELECT_COLS names) bypass the NUL/empty checks that binding names get**
 
@@ -554,9 +570,11 @@ Each task starts by reproducing the report against the current tree, then lands 
 
   Done when every linked scenario passes on all applicable lanes; code/position, mutation, ordering and repeat-use behavior satisfy the shared contract. Record commit and fixture IDs here.
 
+  Closed 2026-09-29 — all six hosts sqlt 1265/1265 with reuse twin; oracle/hybrid lanes agree on SQLite (+ MariaDB/MySQL/PostgreSQL for PHP); PY-C1 site f closed
+
 <a id="c-py-c44"></a>
 
-- [ ] **C-PY-C44 — Resolve PY-C44.** SQL bindings: constructors accept types that make no sense; `Binding.value(type=...)` ignores everything but NUM; case-colliding names silently merge
+- [x] **C-PY-C44 — Resolve PY-C44.** SQL bindings: constructors accept types that make no sense; `Binding.value(type=...)` ignores everything but NUM; case-colliding names silently merge
 
   **[PY-C44](../python-code-review.md) — [low] [confirmed] SQL bindings: constructors accept types that make no sense; `Binding.value(type=...)` ignores everything but NUM; case-colliding names silently merge**
 
@@ -568,9 +586,11 @@ Each task starts by reproducing the report against the current tree, then lands 
 
   Done when every linked scenario passes on all applicable lanes; code/position, mutation, ordering and repeat-use behavior satisfy the shared contract. Record commit and fixture IDs here.
 
+  Closed 2026-09-29 — all six hosts sqlt 1265/1265 with reuse twin; oracle/hybrid lanes agree on SQLite (+ MariaDB/MySQL/PostgreSQL for PHP); PY-C1 site f closed
+
 <a id="c-py-c46"></a>
 
-- [ ] **C-PY-C46 — Resolve PY-C46.** `Fragment.as_value(mode)` accepts an unknown mode when the fragment has no parameter slot
+- [x] **C-PY-C46 — Resolve PY-C46.** `Fragment.as_value(mode)` accepts an unknown mode when the fragment has no parameter slot
 
   **[PY-C46](../python-code-review.md) — [low] [confirmed] `Fragment.as_value(mode)` accepts an unknown mode when the fragment has no parameter slot**
 
@@ -582,9 +602,11 @@ Each task starts by reproducing the report against the current tree, then lands 
 
   Done when every linked scenario passes on all applicable lanes; code/position, mutation, ordering and repeat-use behavior satisfy the shared contract. Record commit and fixture IDs here.
 
+  Closed 2026-09-29 — all six hosts sqlt 1265/1265 with reuse twin; oracle/hybrid lanes agree on SQLite (+ MariaDB/MySQL/PostgreSQL for PHP); PY-C1 site f closed
+
 <a id="c-py-c49"></a>
 
-- [ ] **C-PY-C49 — Resolve PY-C49, PY-C50.** Coordinate the related changes below at their shared implementation surface.
+- [x] **C-PY-C49 — Resolve PY-C49, PY-C50.** Coordinate the related changes below at their shared implementation surface.
 
   **[PY-C49](../python-code-review.md) — [low] [confirmed; also PHP and JS] `check_numeric_guard` memoises the dialect before it checks it, so the second use of a bad guard silently passes**
 
@@ -604,11 +626,13 @@ Each task starts by reproducing the report against the current tree, then lands 
 
   Done when every linked scenario passes on all applicable lanes; code/position, mutation, ordering and repeat-use behavior satisfy the shared contract. Record commit and fixture IDs here.
 
+  Closed 2026-09-29 — all six hosts sqlt 1265/1265 with reuse twin; oracle/hybrid lanes agree on SQLite (+ MariaDB/MySQL/PostgreSQL for PHP); PY-C1 site f closed
+
 ## Hybrid execution, keys, order and context
 
 <a id="c-py-c22"></a>
 
-- [ ] **C-PY-C22 — Resolve PY-C22.** Hybrid: a split after `FILTER` renumbers rows, so the continuation's `_K` and the result keys differ from `run()` (also in JS)
+- [x] **C-PY-C22 — Resolve PY-C22.** Hybrid: a split after `FILTER` renumbers rows, so the continuation's `_K` and the result keys differ from `run()` (also in JS)
 
   **[PY-C22](../python-code-review.md) — [medium] [confirmed] Hybrid: a split after `FILTER` renumbers rows, so the continuation's `_K` and the result keys differ from `run()` (also in JS)**
 
@@ -620,9 +644,11 @@ Each task starts by reproducing the report against the current tree, then lands 
 
   Done when every linked scenario passes on all applicable lanes; code/position, mutation, ordering and repeat-use behavior satisfy the shared contract. Record commit and fixture IDs here.
 
+  Closed 2026-09-29 — all six hosts sqlt 1265/1265 with reuse twin; oracle/hybrid lanes agree on SQLite (+ MariaDB/MySQL/PostgreSQL for PHP); PY-C1 site f closed
+
 <a id="c-py-c23"></a>
 
-- [ ] **C-PY-C23 — Resolve PY-C23.** Hybrid: splitting in front of an in-memory `LINK` renames the left side from the relation to `_INPUT` (also in JS)
+- [x] **C-PY-C23 — Resolve PY-C23.** Hybrid: splitting in front of an in-memory `LINK` renames the left side from the relation to `_INPUT` (also in JS)
 
   **[PY-C23](../python-code-review.md) — [medium] [confirmed] Hybrid: splitting in front of an in-memory `LINK` renames the left side from the relation to `_INPUT` (also in JS)**
 
@@ -634,9 +660,11 @@ Each task starts by reproducing the report against the current tree, then lands 
 
   Done when every linked scenario passes on all applicable lanes; code/position, mutation, ordering and repeat-use behavior satisfy the shared contract. Record commit and fixture IDs here.
 
+  Closed 2026-09-29 — all six hosts sqlt 1265/1265 with reuse twin; oracle/hybrid lanes agree on SQLite (+ MariaDB/MySQL/PostgreSQL for PHP); PY-C1 site f closed
+
 <a id="c-py-c24"></a>
 
-- [ ] **C-PY-C24 — Resolve PY-C24.** Hybrid: `_inline_literals` mis-scopes binders of the 4- and 5-argument forms, corrupting the continuation (also in JS)
+- [x] **C-PY-C24 — Resolve PY-C24.** Hybrid: `_inline_literals` mis-scopes binders of the 4- and 5-argument forms, corrupting the continuation (also in JS)
 
   **[PY-C24](../python-code-review.md) — [medium] [confirmed] Hybrid: `_inline_literals` mis-scopes binders of the 4- and 5-argument forms, corrupting the continuation (also in JS)**
 
@@ -648,9 +676,11 @@ Each task starts by reproducing the report against the current tree, then lands 
 
   Done when every linked scenario passes on all applicable lanes; code/position, mutation, ordering and repeat-use behavior satisfy the shared contract. Record commit and fixture IDs here.
 
+  Closed 2026-09-29 — all six hosts sqlt 1265/1265 with reuse twin; oracle/hybrid lanes agree on SQLite (+ MariaDB/MySQL/PostgreSQL for PHP); PY-C1 site f closed
+
 <a id="c-py-c47"></a>
 
-- [ ] **C-PY-C47 — Resolve PY-C47.** Hybrid: MAP fall-through pushes `TAKE`/`DROP` past the local half of the MAP, so errors `run()` raises are lost
+- [x] **C-PY-C47 — Resolve PY-C47.** Hybrid: MAP fall-through pushes `TAKE`/`DROP` past the local half of the MAP, so errors `run()` raises are lost
 
   **[PY-C47](../python-code-review.md) — [low] [confirmed] Hybrid: MAP fall-through pushes `TAKE`/`DROP` past the local half of the MAP, so errors `run()` raises are lost**
 
@@ -664,9 +694,11 @@ Each task starts by reproducing the report against the current tree, then lands 
 
   Done when every linked scenario passes on all applicable lanes; code/position, mutation, ordering and repeat-use behavior satisfy the shared contract. Record commit and fixture IDs here.
 
+  Closed 2026-09-29 — all six hosts sqlt 1265/1265 with reuse twin; oracle/hybrid lanes agree on SQLite (+ MariaDB/MySQL/PostgreSQL for PHP); PY-C1 site f closed
+
 <a id="c-py-c48"></a>
 
-- [ ] **C-PY-C48 — Resolve PY-C48.** Hybrid: `source_tables` reports a relation that is only used as a binder name (also in JS)
+- [x] **C-PY-C48 — Resolve PY-C48.** Hybrid: `source_tables` reports a relation that is only used as a binder name (also in JS)
 
   **[PY-C48](../python-code-review.md) — [low] [confirmed] Hybrid: `source_tables` reports a relation that is only used as a binder name (also in JS)**
 
@@ -678,9 +710,11 @@ Each task starts by reproducing the report against the current tree, then lands 
 
   Done when every linked scenario passes on all applicable lanes; code/position, mutation, ordering and repeat-use behavior satisfy the shared contract. Record commit and fixture IDs here.
 
+  Closed 2026-09-29 — all six hosts sqlt 1265/1265 with reuse twin; oracle/hybrid lanes agree on SQLite (+ MariaDB/MySQL/PostgreSQL for PHP); PY-C1 site f closed
+
 <a id="c-py-c51"></a>
 
-- [ ] **C-PY-C51 — Resolve PY-C51.** `execute_hybrid` deep-clones the caller's context, so hybrid and pure-memory plans differ in whether the context is mutated
+- [x] **C-PY-C51 — Resolve PY-C51.** `execute_hybrid` deep-clones the caller's context, so hybrid and pure-memory plans differ in whether the context is mutated
 
   **[PY-C51](../python-code-review.md) — [low] [confirmed] `execute_hybrid` deep-clones the caller's context, so hybrid and pure-memory plans differ in whether the context is mutated**
 
@@ -694,9 +728,11 @@ Each task starts by reproducing the report against the current tree, then lands 
 
   Done when every linked scenario passes on all applicable lanes; code/position, mutation, ordering and repeat-use behavior satisfy the shared contract. Record commit and fixture IDs here.
 
+  Closed 2026-09-29 — all six hosts sqlt 1265/1265 with reuse twin; oracle/hybrid lanes agree on SQLite (+ MariaDB/MySQL/PostgreSQL for PHP); PY-C1 site f closed
+
 <a id="c-py-c52"></a>
 
-- [ ] **C-PY-C52 — Resolve PY-C52.** SQL: nested `ORDER BY` in a derived table is relied on for tie order
+- [x] **C-PY-C52 — Resolve PY-C52.** SQL: nested `ORDER BY` in a derived table is relied on for tie order
 
   **[PY-C52](../python-code-review.md) — [low] [unconfirmed on real servers; reproduced on SQLite] SQL: nested `ORDER BY` in a derived table is relied on for tie order**
 
@@ -709,6 +745,8 @@ Each task starts by reproducing the report against the current tree, then lands 
   Evidence gate: confirm on the named platform/configuration; otherwise record a supported non-defect/already-fixed disposition and retain the applicable invariant test.
 
   Done when every linked scenario passes on all applicable lanes; code/position, mutation, ordering and repeat-use behavior satisfy the shared contract. Record commit and fixture IDs here.
+
+  Closed 2026-09-29 — all six hosts sqlt 1265/1265 with reuse twin; oracle/hybrid lanes agree on SQLite (+ MariaDB/MySQL/PostgreSQL for PHP); PY-C1 site f closed
 
 ## Host integration, concurrency and tooling
 

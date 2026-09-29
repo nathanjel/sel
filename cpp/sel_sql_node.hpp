@@ -83,6 +83,11 @@ class SNode {
   static SNodePtr clist_copy(const SNode& c);
   bool is_closed() const { return closed_; }
 
+  // Levels from this node to its deepest leaf, counted as the evaluator counts
+  // (a leaf is 1). Kept so inlining a helper can charge the depth it brings
+  // without walking it: a walk of a helper chain is what made it quadratic.
+  int height() const { return height_; }
+
   T t() const { return t_; }
   Pos pos() const { return pos_; }
 
@@ -123,6 +128,7 @@ class SNode {
 
   T t_ = T::Num;
   bool closed_ = false;
+  int height_ = 1;
   Pos pos_;
   NodePtr origin_;
   std::vector<SNodePtr> kids_;

@@ -23,12 +23,23 @@ if [ "$(echo "$IMPLS" | wc -w)" -lt 2 ]; then
   exit 1
 fi
 
+# A driver that dies part way (a segfault, an uncaught host exception) is a failure of
+# that host, reported with everything it printed first: the other hosts' probes are
+# still compared, so one crash does not hide the rest of the matrix.
 pids=()
 for impl in $IMPLS; do
-  sel_slot impl_api "$impl" > "$WORK/$impl.txt" &
+  ( sel_slot impl_api "$impl" > "$WORK/$impl.txt"; echo $? > "$WORK/$impl.rc" ) &
   pids+=($!)
 done
-sel_wait "${pids[@]}" || { echo "an API probe exited non-zero" >&2; exit 1; }
+wait "${pids[@]}" || true
+crashed=0
+for impl in $IMPLS; do
+  rc="$(cat "$WORK/$impl.rc" 2>/dev/null || echo 255)"
+  if [ "$rc" != 0 ]; then
+    echo "API probe driver for $impl exited with status $rc" >&2
+    crashed=1
+  fi
+done
 for impl in $IMPLS; do
   # An implementation that printed nothing must not compare equal to another
   # that printed nothing.
@@ -38,17 +49,7 @@ for impl in $IMPLS; do
   fi
 done
 
-status=0
-for impl in $IMPLS; do
-  [ "$impl" = "$REF" ] && continue
-  if ! diff -u "$WORK/$REF.txt" "$WORK/$impl.txt" > "$WORK/$impl.diff"; then
-    echo "API MISMATCH between $REF and $impl (--- $REF, +++ $impl):"
-    cat "$WORK/$impl.diff"
-    status=1
-  fi
-done
-
-if [ "$status" -eq 0 ]; then
-  echo "$(wc -l < "$WORK/$REF.txt") API probes, $IMPLS agree on every one"
-fi
-exit "$status"
+# Agreement AND the pins in tools/api-pins.txt, with `n/a (reason)` allowed only where
+# the pin file says a host cannot pose the probe (tools/check-api-compare.py).
+python3 tools/check-api-compare.py "$WORK" tools/api-pins.txt "$REF" $IMPLS || exit 1
+[ "$crashed" = 0 ] || exit 1

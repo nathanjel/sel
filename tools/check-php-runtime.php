@@ -577,6 +577,87 @@ $expect('an exact count of a group PCRE cannot hold matches, with the pattern\'s
     && $val('COUNT(RGROUPS(\'^(x)(?:ab){40000}(y)$\', "x" & REPEAT("ab", 40000) & "y"))') === '3'
     && $val('RREPLACE(\'^(x)(?:ab){40000}$\', "[$1]", "x" & REPEAT("ab", 40000))') === '[x]');
 
+
+// --- SQL layer (T08-T11): API-level contracts the shared .sqlt cases cannot state ---
+require_once __DIR__ . '/../php/src/Sql/bootstrap.php';
+$sqlRefused = function (callable $f, string $code): bool {
+    try { $f(); } catch (\Sel\Sql\SqlError $e) { return $e->code === $code; }
+    return false;
+};
+$ords = ['ORDERS' => \Sel\Sql\Binding::relation('orders', 'o', [
+    'ID' => \Sel\Sql\Binding::column('id', 'o', 'NUM'), 'NAME' => \Sel\Sql\Binding::column('name', 'o', 'TEXT')])];
+$sqlStmt = fn (string $src, string $d = 'mariadb') => \Sel\Sql\Sql::translateStatement(\Sel\Sel::compile($src), $d, $ords)->asStatement();
+$expect('two bindings, or two fields, that differ only by ASCII case are refused', fn() =>
+    $sqlRefused(fn() => new \Sel\Sql\Bindings(['x' => \Sel\Sql\Binding::column('a', 't', 'NUM'), 'X' => \Sel\Sql\Binding::column('b', 't', 'NUM')]), 'E_SQL_BINDING')
+    && $sqlRefused(fn() => \Sel\Sql\Binding::relation('t', 't', ['A' => \Sel\Sql\Binding::column('x', 't', 'NUM'), 'a' => \Sel\Sql\Binding::column('y', 't', 'NUM')]), 'E_SQL_BINDING'));
+$expect('a column cannot be typed LIST, STATEMENT or a non-string, and the message does not warn', function () use ($sqlRefused) {
+    foreach (['LIST', 'STATEMENT', ['NUM']] as $t) {
+        if (!$sqlRefused(fn() => \Sel\Sql\Binding::column('a', 't', $t), 'E_SQL_BINDING')) return false;
+    }
+    return true;
+});
+$expect('an unknown render mode is refused on a fragment with no slot', function () use ($ords) {
+    $f = \Sel\Sql\Sql::translate(\Sel\Sel::compile('1 + 1 == 2'), 'mariadb', []);
+    try { $f->asValue('bogus'); } catch (\InvalidArgumentException) { return true; }
+    return false;
+});
+$expect('dialect registration: quote pairing, same parent replaces, another parent is refused', function () {
+    $logic = function (callable $f): bool { try { $f(); } catch (\LogicException) { return true; } return false; };
+    $bad = [['extends' => 'ansi', 'version' => '1', 'lexical' => ['textQuote' => '"']],
+            ['extends' => 'sqlite', 'version' => '3.48', 'lexical' => ['textEscape' => []]],
+            ['extends' => 'mariadb', 'version' => '10.5', 'lexical' => ['textEscape' => ["'" => "\\'"]]]];
+    foreach ($bad as $i => $spec) {
+        if (!$logic(fn() => \Sel\Sql\Map::defineDialect("chk-bad-$i", $spec))) return false;
+        if (\Sel\Sql\Map::exists("chk-bad-$i")) return false;           // nothing half-registered
+    }
+    \Sel\Sql\Map::defineDialect('chk-redef', ['extends' => 'mariadb', 'version' => '10.5']);
+    \Sel\Sql\Map::defineDialect('chk-redef', ['extends' => 'mariadb', 'version' => '10.6']);
+    return \Sel\Sql\Map::version('chk-redef') === '10.6'
+        && $logic(fn() => \Sel\Sql\Map::defineDialect('chk-redef', ['extends' => 'postgresql', 'version' => '16']));
+});
+$expect('a numeric guard that disagrees with ISNUM is refused on EVERY use, not the first', function () use ($sqlRefused) {
+    \Sel\Sql\Map::defineDialect('chk-guard', ['extends' => 'postgresql', 'version' => '16', 'lexical' => [
+        'numericGuard' => "CASE WHEN ({textCast:0} ~ '^.*$') THEN CAST({0} AS NUMERIC) ELSE NULL END"]]);
+    $named = ['N' => \Sel\Sql\Binding::column('n', 't', 'TEXT')];
+    for ($i = 0; $i < 3; $i++) {
+        try { \Sel\Sql\Sql::translate(\Sel\Sel::compile('N + 1'), 'chk-guard', $named); return false; }
+        catch (\LogicException) {}
+    }
+    return true;
+});
+$expect('TAKE/DROP counts: a whole number with a scale is a count, past int64 is clamped, offsets add exactly', fn() =>
+    str_contains($sqlStmt('ORDERS .> TAKE(2.0)'), 'LIMIT 2')
+    && str_contains($sqlStmt('ORDERS .> TAKE(99999999999999999999999)'), 'LIMIT 9223372036854775807')
+    && str_contains($sqlStmt('ORDERS .> DROP(9223372036854775806) .> DROP(1) .> TAKE(1)'), 'OFFSET 9223372036854775807')
+    && $sqlRefused(fn() => $sqlStmt('ORDERS .> TAKE(1.5)'), 'E_NOT_INT'));
+$expect('the size budget refuses a doubling helper chain quickly, with no position', function () use ($sqlRefused) {
+    $prog = 'X0 = N;' . implode('', array_map(fn ($k) => "X$k = X" . ($k - 1) . " + X" . ($k - 1) . ';', range(1, 30))) . 'X30 > 0';
+    $t = microtime(true);
+    try {
+        \Sel\Sql\Sql::translate(\Sel\Sel::compile($prog), 'mariadb', ['N' => \Sel\Sql\Binding::column('n', 't', 'NUM')]);
+        return false;
+    } catch (\Sel\Sql\SqlError $e) {
+        return $e->code === 'E_SQL_SIZE' && $e->line === 0 && microtime(true) - $t < 5.0;
+    }
+});
+$expect('an unrolled list above 256 operands folds as a balanced tree', function () {
+    $list = implode(',', array_fill(0, 1100, 'N'));
+    $sql = \Sel\Sql\Sql::translate(\Sel\Sel::compile("ANY(($list), _ > 0)"), 'mariadb',
+        ['N' => \Sel\Sql\Binding::column('n', 't', 'NUM')])->asValue();
+    $depth = 0; $max = 0;
+    foreach (str_split($sql) as $c) { if ($c === '(') $max = max($max, ++$depth); elseif ($c === ')') $depth--; }
+    return $max < 300;            // a left fold of 1100 is 1100 deep; halves down to 256 are about 140
+});
+$expect('a hybrid plan never mutates the caller context, and reads no table for a name the program shadows', function () {
+    $b = ['ORDERS' => \Sel\Sql\Binding::relation('orders', 'o', ['ID' => \Sel\Sql\Binding::column('id', 'o', 'NUM')])];
+    $plan = \Sel\Sql\Sql::planHybrid(\Sel\Sel::compile('S = 1; A = LIST(1, 2); COUNT(A)'), 'mariadb', $b);
+    $ctx = Value::fromNative(['K' => 5]);
+    \Sel\Sql\Hybrid::execute($plan, fn() => [], $ctx);
+    $shadow = \Sel\Sql\Sql::planHybrid(\Sel\Sel::compile('ORDERS = LIST(1); COUNT(ORDERS)'), 'mariadb', $b);
+    $binder = \Sel\Sql\Sql::planHybrid(\Sel\Sel::compile('MAP(LIST(1, 2), ORDERS, ORDERS + 1)'), 'mariadb', $b);
+    return $ctx->keys() === ['K'] && $shadow->sourceTables === [] && $binder->sourceTables === [];
+});
+
 $expect('an integer Value builds its decimal lazily', function () {
     $v = Value::int(7);
     return $v->decVal === null && Dec::format($v->asDecimal()) === '7';

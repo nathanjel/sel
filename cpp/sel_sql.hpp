@@ -231,6 +231,9 @@ class Builder {
 // layer will not read.
 struct ColumnSpec {
   bool is_raw = false;
+  // A field that passes through a derived table from a RAW source field: there
+  // is no column of that name to reference, so a read of it is refused.
+  bool opaque = false;
   std::string raw;               // when is_raw
   std::string column;            // when !is_raw
   std::string table;             // when !is_raw; empty means unqualified

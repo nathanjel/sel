@@ -2,6 +2,7 @@ package sql
 
 import (
 	"fmt"
+	"math"
 	"sort"
 	"strconv"
 	"strings"
@@ -57,6 +58,78 @@ func recordFields(node *SNode) []Pair[string, *SNode] {
 	return fields
 }
 
+// checkAlias holds a name that came from a SEL text literal (a RECORD key, a
+// SELECT_COLS column) to what a binding's own names already meet: not empty, no
+// NUL. The SQL layer cannot spell either, so it says so at the literal.
+func (t *Translator) checkAlias(name string, pos Pos) {
+	if name == "" {
+		Refuse("E_SQL_UNSUPPORTED", "an empty name cannot be a SQL identifier", pos)
+	}
+	if strings.ContainsRune(name, 0) {
+		Refuse("E_SQL_UNSUPPORTED", "a name containing a NUL cannot be a SQL identifier; no dialect can quote it", pos)
+	}
+}
+
+// recordFields is the fields of a RECORD call, with each key held to checkAlias,
+// and on PostgreSQL to its 63-byte identifier limit: the server truncates a
+// longer alias, so two keys sharing their first 63 bytes would name one column
+// and SEL's two record keys would become one.
+func (t *Translator) recordFields(node *SNode) []Pair[string, *SNode] {
+	fields := recordFields(node)
+	pg := false
+	for _, d := range Chain(t.dialect) {
+		if d == "postgresql" {
+			pg = true
+		}
+	}
+	seen := make(map[string]string)
+	for i, f := range fields {
+		pos := node.Kids[2*i].Pos
+		t.checkAlias(f.Key, pos)
+		if pg {
+			short := f.Key
+			if len(short) > 63 {
+				short = short[:63]
+			}
+			if prev, dup := seen[short]; dup && prev != f.Key {
+				Refuse("E_SQL_UNSUPPORTED",
+					fmt.Sprintf("the RECORD key %q collides with an earlier key after PostgreSQL truncates identifiers to 63 bytes", f.Key), pos)
+			}
+			seen[short] = f.Key
+		}
+	}
+	return fields
+}
+
+// hasSort says whether the rows the plan reads were ordered by a SEL sort, in
+// this statement or in a derived table under it.
+func hasSort(plan *RelationalPlan) bool {
+	for p := plan; p != nil; p = p.SourceSubquery {
+		if len(p.OrderBy) > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+// requireOrderSurvives refuses a step that would lean on a sort's ORDER BY
+// surviving it. SEL's BUCKET lists its groups in the order the sorted input first
+// showed them, and its LINK keeps the left order; a GROUP BY or a join is free to
+// return its rows in any order, and text that relies on an inner ORDER BY
+// surviving an outer clause is not a translation of a stable sort. The planner
+// keeps the sort in SQL and the step in memory, where the order is exact
+// (docs/internals/sql-translation.md 12.1, "Order").
+func (t *Translator) requireOrderSurvives(plan *RelationalPlan, step string, pos Pos) {
+	if plan.OrderLostByJoin && step != "BUCKET" {
+		Refuse("E_SQL_SHAPE",
+			fmt.Sprintf("%s after a join would cut rows in an order the join does not keep from the sort before it", step), pos)
+	}
+	if step == "BUCKET" && hasSort(plan) {
+		Refuse("E_SQL_SHAPE",
+			fmt.Sprintf("%s after a sort would depend on a database keeping the sort's order through it, which SQL does not promise", step), pos)
+	}
+}
+
 func (t *Translator) planNeedsWrapBeforeMap(plan *RelationalPlan) bool {
 	return plan.Projections != nil || plan.SelectCols != nil ||
 		plan.GroupBy != nil || plan.Distinct || plan.Limit != nil || plan.Offset != nil
@@ -88,9 +161,7 @@ func (t *Translator) outputFieldNames(plan *RelationalPlan) []string {
 			names = append(names, f.Name)
 		}
 	} else if plan.SourceRelation != nil {
-		for name := range plan.SourceRelation.Relation.Fields {
-			names = append(names, name)
-		}
+		names = append(names, relationFieldNames(&plan.SourceRelation.Relation)...)
 	}
 	var unique []string
 	seen := make(map[string]bool)
@@ -220,6 +291,9 @@ func (t *Translator) ensureDerived(plan *RelationalPlan, needed bool) *Relationa
 		}
 		b := ColumnBinding(colName, alias, colType, false, false, false, "", "", false)
 		b.Column.Canonical = canonical
+		if sourceField != nil && sourceField.IsRaw {
+			b.Column.Unavailable = fmt.Sprintf("%s is a raw expression of the relation, and the derived table built by an earlier step does not carry it", name)
+		}
 		fieldEntries = append(fieldEntries, FieldEntry{Name: name, Binding: b})
 	}
 
@@ -231,7 +305,7 @@ func (t *Translator) bucketProjection(plan *RelationalPlan, binder string, aggNo
 	if aggNode != nil {
 		if aggNode.T == SNodeCall && aggNode.Str == "RECORD" {
 			var projections []RelationalProjection
-			for _, kv := range recordFields(aggNode) {
+			for _, kv := range t.recordFields(aggNode) {
 				actualNode := kv.Val
 				nodeBinder := binder
 				var groupKey *RelationalGroup
@@ -375,6 +449,7 @@ func (t *Translator) AnalyzePipeline(ast *SNode) *RelationalPlan {
 					"a BUCKET over buckets: SQL keeps a bucket's members only for the projection that ends the grouping",
 					step.Pos)
 			}
+			t.requireOrderSurvives(plan, "BUCKET", step.Pos)
 			needDerived := t.planHasRowsAbove(plan)
 			plan = t.ensureDerived(plan, needDerived)
 
@@ -418,7 +493,7 @@ func (t *Translator) AnalyzePipeline(ast *SNode) *RelationalPlan {
 					})
 				}
 			} else if keyNode.T == SNodeCall && keyNode.Str == "RECORD" {
-				for _, kv := range recordFields(keyNode) {
+				for _, kv := range t.recordFields(keyNode) {
 					aliasCopy := kv.Key
 					groupBy = append(groupBy, RelationalGroup{
 						Alias:  &aliasCopy,
@@ -463,6 +538,7 @@ func (t *Translator) AnalyzePipeline(ast *SNode) *RelationalPlan {
 					Refuse("E_BAD_ARG", "SELECT_COLS column names must be string literals", item.Pos)
 				}
 				col := item.Str
+				t.checkAlias(col, item.Pos)
 				uc := utf8.AsciiUpper(col)
 				matches := 0
 				if plan.SourceRelation != nil && plan.SourceRelation.Relation.Field(uc) != nil {
@@ -488,6 +564,13 @@ func (t *Translator) AnalyzePipeline(ast *SNode) *RelationalPlan {
 						fmt.Sprintf("relation %s has no field '%s'; the relation declares %s",
 							plan.SourceName, col, strings.Join(declared, ", ")),
 						item.Pos)
+				}
+				if plan.SourceRelation != nil {
+					if f := plan.SourceRelation.Relation.Field(uc); f != nil && f.IsRaw {
+						Refuse("E_SQL_SHAPE",
+							fmt.Sprintf("column '%s' is a raw expression of the relation, which has no column of that name to select", col),
+							item.Pos)
+					}
 				}
 				cols = append(cols, col)
 			}
@@ -526,7 +609,7 @@ func (t *Translator) AnalyzePipeline(ast *SNode) *RelationalPlan {
 
 			if expr.T == SNodeCall && expr.Str == "RECORD" {
 				var projections []RelationalProjection
-				for _, kv := range recordFields(expr) {
+				for _, kv := range t.recordFields(expr) {
 					aliasCopy := kv.Key
 					projections = append(projections, RelationalProjection{
 						Alias:  &aliasCopy,
@@ -558,6 +641,7 @@ func (t *Translator) AnalyzePipeline(ast *SNode) *RelationalPlan {
 			if len(args) != 2 {
 				Refuse("E_ARITY", "TAKE takes 2 arguments", step.Pos)
 			}
+			t.requireOrderSurvives(plan, "TAKE", step.Pos)
 			lim := t.evalIntParam(args[1], "TAKE")
 			if plan.Limit == nil {
 				plan.Limit = &lim
@@ -569,6 +653,7 @@ func (t *Translator) AnalyzePipeline(ast *SNode) *RelationalPlan {
 			if len(args) != 2 {
 				Refuse("E_ARITY", "DROP takes 2 arguments", step.Pos)
 			}
+			t.requireOrderSurvives(plan, "DROP", step.Pos)
 			off := t.evalIntParam(args[1], "DROP")
 			skipped := off
 			if plan.Limit != nil && *plan.Limit < skipped {
@@ -578,18 +663,28 @@ func (t *Translator) AnalyzePipeline(ast *SNode) *RelationalPlan {
 			if plan.Offset != nil {
 				currOff = *plan.Offset
 			}
-			if currOff > 9007199254740991-skipped {
-				plan = t.ensureDerived(plan, true)
-				plan.Offset = &off
-			} else {
-				if plan.Limit != nil {
-					*plan.Limit -= skipped
-				}
-				newOff := currOff + skipped
-				plan.Offset = &newOff
+			// Merged exactly, and clamped like a single count: two offsets that
+			// add past what a server takes are an offset past every row.
+			if plan.Limit != nil {
+				*plan.Limit -= skipped
 			}
+			newOff := currOff
+			if skipped > math.MaxInt64-currOff {
+				newOff = math.MaxInt64
+			} else {
+				newOff = currOff + skipped
+			}
+			plan.Offset = &newOff
 
 		case "SORT", "SORT_DESC", "SORT_BY", "TOP", "TOP_DESC", "TOP_BY":
+			if hasSort(plan) && plan.GroupBy == nil && (plan.Projections != nil || plan.SelectCols != nil) {
+				// SEL's sorts are stable: rows this sort ties keep the order the
+				// earlier sort gave them. A projection in between wraps the earlier
+				// ORDER BY in a derived table, whose order an outer ORDER BY does
+				// not promise to keep, and the earlier keys are no longer columns
+				// of the projected rows.
+				Refuse("E_SQL_SHAPE", "a sort after a projection would lose the tie order the sort before it gave the rows", step.Pos)
+			}
 			needDerived := plan.Limit != nil || plan.Offset != nil ||
 				(plan.GroupBy == nil && (plan.Projections != nil || plan.SelectCols != nil || plan.Distinct))
 			plan = t.ensureDerived(plan, needDerived)
@@ -603,10 +698,22 @@ func (t *Translator) AnalyzePipeline(ast *SNode) *RelationalPlan {
 
 		case "LINK", "LINK_LEFT":
 			if len(plan.OrderBy) > 0 || plan.Projections != nil || plan.SelectCols != nil || plan.GroupBy != nil {
+				// Compiled only to see whether the prefix can be spelled; the
+				// fragment is discarded, and so must be the parameter slots its
+				// literals took, or they stay in `params` with nowhere to go.
+				nParams := len(t.params)
 				_ = t.CompileStatement(plan)
+				t.params = t.params[:nParams]
+				t.paramKinds = t.paramKinds[:nParams]
 			}
 			needDerived := t.planHasRowsAbove(plan)
 			plan = t.ensureDerived(plan, needDerived)
+			if plan.SourceSubquery != nil && hasSort(plan.SourceSubquery) {
+				// The sort sits in a derived table under the join, and a join does
+				// not keep its left input's order: whatever cuts the rows next
+				// would cut different ones.
+				plan.OrderLostByJoin = true
+			}
 
 			if len(args) != 3 && len(args) != 5 {
 				Refuse("E_ARITY", fmt.Sprintf("%s takes 3 or 5 arguments", name), step.Pos)
@@ -706,13 +813,34 @@ func (t *Translator) evalIntParam(n *SNode, op string) int64 {
 		Refuse("E_NOT_NUM", fmt.Sprintf("%s count must be a number", op), n.Pos)
 	}
 	text := val.AsText(n.Pos)
-	if strings.Contains(text, ".") {
+	neg := strings.HasPrefix(text, "-")
+	if neg {
+		text = text[1:]
+	}
+	// A whole number written with a scale is that number (2.0, 0.0): only a
+	// fractional count is not an integer.
+	whole, frac := text, ""
+	if dot := strings.IndexByte(text, '.'); dot >= 0 {
+		whole, frac = text[:dot], text[dot+1:]
+	}
+	if strings.Trim(frac, "0") != "" {
 		Refuse("E_NOT_INT", fmt.Sprintf("%s count must be an integer", op), n.Pos)
 	}
-	if strings.HasPrefix(text, "-") {
+	whole = strings.TrimLeft(whole, "0")
+	if neg && whole != "" {
 		Refuse("E_RANGE", fmt.Sprintf("%s count cannot be negative", op), n.Pos)
 	}
-	num, err := strconv.ParseInt(text, 10, 64)
+	// Past what the servers take, a count is all of a list (TAKE) or none of it
+	// (DROP) in SEL: clamped, on every dialect, to what all of them accept
+	// (docs/internals/sql-translation.md 11.6).
+	const maxCount = "9223372036854775807"
+	if len(whole) > len(maxCount) || (len(whole) == len(maxCount) && whole > maxCount) {
+		return math.MaxInt64
+	}
+	if whole == "" {
+		return 0
+	}
+	num, err := strconv.ParseInt(whole, 10, 64)
 	if err != nil {
 		Refuse("E_RANGE", fmt.Sprintf("%s count is out of range", op), n.Pos)
 	}
@@ -1174,5 +1302,37 @@ func (t *Translator) CompileStatement(plan *RelationalPlan) *Fragment {
 	}
 
 	out := NewFragment(parts, KindStatement, t.dialect, t.params, t.paramKinds, t.caveats)
+	return out
+}
+
+// relationFieldNames lists a relation's fields in a fixed order: the order the
+// binding declared them in, or sorted names when it declared none. Ranging over
+// the Fields map gave a different select list on different runs (GO-C18).
+func relationFieldNames(rel *RelationSpec) []string {
+	if len(rel.FieldOrder) > 0 {
+		seen := make(map[string]bool, len(rel.FieldOrder))
+		var out []string
+		for _, n := range rel.FieldOrder {
+			if _, ok := rel.Fields[n]; ok && !seen[n] {
+				seen[n] = true
+				out = append(out, n)
+			}
+		}
+		if len(out) == len(rel.Fields) {
+			return out
+		}
+		for n := range rel.Fields {
+			if !seen[n] {
+				out = append(out, n)
+			}
+		}
+		sort.Strings(out[len(seen):])
+		return out
+	}
+	out := make([]string, 0, len(rel.Fields))
+	for n := range rel.Fields {
+		out = append(out, n)
+	}
+	sort.Strings(out)
 	return out
 }

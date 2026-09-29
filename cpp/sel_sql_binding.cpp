@@ -30,6 +30,17 @@ std::string ascii_upper(std::string_view s) {
 // libpq and sqlite3 are handed, so `a\0b` is malformed SQL on all four servers
 // rather than a column nobody has. An empty name quotes to "", which PostgreSQL
 // rejects and the other three accept -- a divergence with no upside.
+// A column holds a NUM, TEXT, BOOL, BIN or UNKNOWN value. LIST and STATEMENT are
+// what a whole fragment can be; a column declared as one made Fragment::kind
+// answer STATEMENT for a column (PY-C44).
+void check_column_type(SqlKind type) {
+  if (type == SqlKind::List || type == SqlKind::Statement) {
+    refuse("E_SQL_BINDING",
+           "a column holds a NUM, TEXT, BOOL, BIN or UNKNOWN value; it cannot be "
+           "declared as a list or a statement");
+  }
+}
+
 void check_name(const std::string& what, const std::string& v) {
   if (v.empty()) {
     refuse("E_SQL_BINDING", "a binding has an empty " + what + " name");
@@ -119,7 +130,18 @@ RelationSpec make_relation(bool from_is_raw, std::string from,
     }
     // ascii_upper, matching PHP's strtoupper: a Unicode upper-caser would fold
     // "ß" to "SS" and change the key's length.
-    r.fields.emplace_back(ascii_upper(name), b.as_column());
+    // SEL identifiers are upper-cased, so two fields differing only by case are
+    // the same name: C++ used to keep the first, Python the last (CPP-C55).
+    const std::string upper = ascii_upper(name);
+    for (const auto& [seen, spec] : r.fields) {
+      (void)spec;
+      if (seen == upper) {
+        refuse("E_SQL_BINDING", "the fields of a relation binding include two "
+                                "that differ only by case (" + name + "), which "
+                                "are one name in SEL");
+      }
+    }
+    r.fields.emplace_back(upper, b.as_column());
   }
   if (r.scalar) {
     const std::string want = ascii_upper(*r.scalar);
@@ -151,6 +173,7 @@ Binding Binding::column(std::string col, std::optional<std::string> table,
                         std::optional<std::string> prefilter) {
   check_name("column", col);
   if (table) check_name("table", *table);
+  check_column_type(type);
   Binding b;
   b.kind_ = Kind::Column;
   b.column_.column = std::move(col);
@@ -168,6 +191,7 @@ Binding Binding::raw(std::string sql, SqlKind type, bool exact, bool sargable,
   if (sql.empty()) {
     refuse("E_SQL_BINDING", "a raw column binding cannot be empty");
   }
+  check_column_type(type);
   Binding b;
   b.kind_ = Kind::Column;
   b.column_.is_raw = true;
@@ -255,10 +279,19 @@ Binding Binding::value(sel::Value v, std::optional<SqlKind> type) {
 // --- Bindings ----------------------------------------------------------------
 
 Bindings::Bindings(std::vector<std::pair<std::string, Binding>> bindings) {
+  std::map<std::string, std::string> spelling;
   for (auto& [name, b] : bindings) {
     const std::string key = ascii_upper(name);
-    // A duplicate name keeps its FIRST position and takes the LAST value, which
-    // is what assigning into a dict twice does.
+    // Two names that differ only by case are one name in SEL and are refused; a
+    // name given twice in the SAME spelling keeps its FIRST position and takes
+    // the LAST value, which is what assigning into a dict twice does.
+    const auto spelled = spelling.find(key);
+    if (spelled != spelling.end() && spelled->second != name) {
+      refuse("E_SQL_BINDING", "the bindings include two names that differ only by "
+                              "case (" + spelled->second + " and " + name +
+                                  "), which are one name in SEL");
+    }
+    spelling.emplace(key, name);
     if (map_.insert_or_assign(key, b).second) order_.push_back(key);
   }
 }

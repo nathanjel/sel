@@ -233,5 +233,69 @@
     (say "host.fn.replace" (format nil "~a ~a" (sel:as-text (sel:run early))
                                    (sel:as-text (sel:evaluate "HOST_V()")))))
 
+  ;; --- T12: dependencies() is FLOW-SENSITIVE (spec/SPEC.md 8): a variable is a
+  ;; dependency when some read of it can happen before the program has definitely
+  ;; assigned it, in evaluation order. Assignments under a condition, a short
+  ;; circuit, `??` or an aggregate body are not definite; `op=` and `A[k] op= x`
+  ;; read their target; a plain `A[k] = x` creates A and reads only the index.
+  (flet ((deps (src)
+           (let ((names (sel:dependencies (sel:compile-source src))))
+             (if names (format nil "~{~a~^ ~}" names) "-"))))
+    (say "program.deps.read-before-assign" (deps "A + 1; A = 2"))
+    (say "program.deps.compound-assign-reads" (deps "X += 1"))
+    (say "program.deps.index-compound-reads" (deps "A[1] += 1"))
+    (say "program.deps.index-assign-vivifies" (deps "A[1] = 2"))
+    (say "program.deps.self-assign-reads" (deps "A = A + 1"))
+    (say "program.deps.assign-then-read" (deps "A = 1; A + B"))
+    (say "program.deps.conditional-assign" (deps "IF(X, A = 1, 0); A"))
+    (say "program.deps.both-branches-assign" (deps "IF(X, A = 1, A = 2); A"))
+    (say "program.deps.and-rhs-assign" (deps "X AND (A = 1); A"))
+    (say "program.deps.coalesce-rhs-assign" (deps "X ?? (A = 1); A"))
+    (say "program.deps.aggregate-body-assign" (deps "MAP(L, A = _); A"))
+    (say "program.deps.cond-with-default-assigns" (deps "COND(X, A = 1, Y, A = 2, A = 3); A"))
+    (say "program.deps.assign-in-argument" (deps "LEFT(\"abc\", (N = 2)); N")))
+
+  ;; --- T12: a Program is reusable: after a caught error it runs again, and two
+  ;; contexts are independent whatever the interleaving.
+  (let* ((divide (sel:compile-source "A / B"))
+         (bad (sel:make-none))
+         (good (sel:make-none)))
+    (sel:run (sel:compile-source "A = 1; B = 0; 0") bad)
+    (sel:run (sel:compile-source "A = 6; B = 3; 0") good)
+    (flet ((attempt (ctx)
+             (handler-case (sel:value-dump (sel:run divide ctx))
+               (sel:sel-error (e) (format nil "~a ~d:~d" (sel:sel-error-code e)
+                                          (sel:sel-error-line e) (sel:sel-error-col e))))))
+      (say "program.reuse.after-error"
+           (format nil "~a|~a|~a" (attempt bad) (attempt good) (attempt bad)))))
+  (let* ((bump (sel:compile-source "X = X + 1"))
+         (a (sel:make-none))
+         (c (sel:make-none)))
+    (sel:run (sel:compile-source "X = 1; 0") a)
+    (sel:run (sel:compile-source "X = 10; 0") c)
+    (say "program.reuse.two-contexts"
+         (format nil "~a ~a ~a ~a"
+                 (sel:as-text (sel:run bump a)) (sel:as-text (sel:run bump c))
+                 (sel:as-text (sel:run bump a)) (sel:as-text (sel:run bump c)))))
+
+  ;; --- T12: input the API cannot take is E_BAD_ARG, never a host condition or a
+  ;; different SEL error (spec/SPEC.md 8). A statically typed host cannot be handed
+  ;; a non-string source and prints n/a; tools/check-api.sh leaves an n/a line out
+  ;; of the diff for that host. (Lisp is dynamically typed: all four are posed.)
+  (flet ((code (thunk)
+           (handler-case (progn (funcall thunk) "no error")
+             (sel:sel-error (e) (sel:sel-error-code e))
+             (error (e) (format nil "host:~a" (type-of e))))))
+    (say "error.compile.non-string" (code (lambda () (sel:compile-source 12))))
+    (say "value.native.unsupported" (code (lambda () (sel:from-native #'car))))
+    (say "value.native.fraction" (code (lambda () (sel:from-native 1.5d0))))
+    (say "host.fn.refuse.not-callable"
+         (handler-case (progn (sel:register-function "bad" 0 0 nil) "accepted")
+           (sel:sel-error (e) (format nil "SelError ~a" (sel:sel-error-code e)))
+           (error () "refused")))
+    (sel:register-function "HOST_OOB" 1 2
+      (lambda (a) (sel:make-text (sel:args-text a (if (> (sel:args-count a) 1) 1 5)))))
+    (say "host.fn.arg.out-of-range" (code (lambda () (sel:evaluate "HOST_OOB(\"x\")")))))
+
   (format t "~{~a~%~}" (reverse *probes*))
   (sb-ext:exit :code 0))

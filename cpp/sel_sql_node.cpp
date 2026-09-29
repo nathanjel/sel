@@ -2,6 +2,8 @@
 
 #include "sel_sql_node.hpp"
 
+#include <algorithm>
+
 namespace sel::sql {
 namespace {
 
@@ -43,6 +45,9 @@ SNodePtr SNode::rewritten(NodePtr shape, std::vector<SNodePtr> kids) {
   out->pos_ = shape->pos;
   out->origin_ = std::move(shape);
   out->kids_ = std::move(kids);
+  int h = 0;
+  for (const SNodePtr& k : out->kids_) h = std::max(h, k->height_);
+  out->height_ = h + 1;
   return out;
 }
 
@@ -61,6 +66,7 @@ SNodePtr SNode::clist_copy(const SNode& c) {
   out->pos_ = c.pos_;
   out->keys_ = c.keys_;
   out->kids_ = c.kids_;
+  out->height_ = c.height_;
   return out;
 }
 
@@ -72,6 +78,7 @@ std::shared_ptr<SNode> SNode::new_clist(Pos pos) {
 }
 
 void SNode::append(std::string key, SNodePtr value) {
+  height_ = std::max(height_, value->height() + 1);
   keys_.push_back(std::move(key));
   kids_.push_back(std::move(value));
 }
@@ -83,6 +90,7 @@ SNodePtr SNode::clist(Pos pos, std::vector<std::pair<std::string, SNodePtr>> ent
   out->keys_.reserve(entries.size());
   out->kids_.reserve(entries.size());
   for (auto& [k, v] : entries) {
+    out->height_ = std::max(out->height_, v->height() + 1);
     out->keys_.push_back(std::move(k));
     out->kids_.push_back(std::move(v));
   }

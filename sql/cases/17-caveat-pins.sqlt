@@ -106,7 +106,7 @@ sqlite
 --- source
 MAX(1, 2)
 --- expect
-max('1', '2')
+max(CAST('1' AS NUMERIC), CAST('2' AS NUMERIC))
 ===
 ### name: pin.sqlite.power
 --- dialect

@@ -278,7 +278,12 @@ CASE WHEN COUNT(*) = COUNT(CASE WHEN (<test of B>) THEN 1 END)
 
 — `COUNT(*)` counts every element, the inner `COUNT` those that pass the test, so
 one element that fails, or is NULL (SEL: `E_NO_SCALAR`), makes the whole value
-NULL. A `columns` unroll needs no such form: it is a chain of `+`, NULL
+NULL. PostgreSQL evaluates `<cast of B>` for *every* row before the enclosing
+`CASE` chooses, and casting `'x'` to `NUMERIC` is an error there (`22P02`), not a
+NULL, so on PostgreSQL the `SUM` adds up the guarded cast — `SUM(CASE WHEN (<test of
+B>) THEN <cast of B> ELSE NULL END)` — and the outer test discards the sum exactly as
+before (`warrant.sum.unknown-body-is-guarded-as-a-whole.postgresql`, measured on
+PostgreSQL 17 by the rows oracle). A `columns` unroll needs no such form: it is a chain of `+`, NULL
 propagates through it, and `warrant.sum.unknown-column-in-a-columns-unroll-is-guarded`
 pins the plain operand guard. **Open:** a `SUM` body that is *compound* (`_["QTY"] * 1`)
 gets the operand guard inside the `SUM` and has the skip-NULL hole; the old

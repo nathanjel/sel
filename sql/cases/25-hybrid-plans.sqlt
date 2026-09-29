@@ -812,7 +812,7 @@ hybrid
 --- tables
 orders
 --- expect
-SELECT `o`.`id` AS `x` FROM `orders` `o` LIMIT 2
+SELECT `o`.`id` AS `x` FROM `orders` `o`
 ===
 
 ### name: plan.fallthrough.two-dependencies-differing-only-by-case-stay-in-memory
@@ -848,7 +848,7 @@ hybrid
 --- tables
 orders
 --- expect
-SELECT "o"."id" AS "NAMÉ", "o"."name" AS "namé" FROM "orders" "o" LIMIT 2
+SELECT "o"."id" AS "NAMÉ", "o"."name" AS "namé" FROM "orders" "o"
 ===
 
 ### name: plan.bucket.filter-after-pagination-is-a-where

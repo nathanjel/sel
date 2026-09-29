@@ -90,6 +90,15 @@ one function: numeric position for a `list`, EXACT string for a `clist`."
   ;; exists and is refused later by AS-VALUE.
   (%fragment (list (length (translator-params tr))) kind (translator-dialect tr)))
 
+(defun refuse-nul (text pos)
+  "A TEXT value holding NUL is refused in EVERY mode: PostgreSQL cannot hold it
+and a C-string client truncates at it, so what the database compared would not be
+what SEL did."
+  (when (and (stringp text) (find (code-char 0) text))
+    (refuse "E_SQL_UNSUPPORTED"
+            "a text value holding NUL has no SQL literal: PostgreSQL cannot hold ~
+it and a C-string client truncates at it" pos)))
+
 (defun find-binder (tr name)
   "Innermost frame wins, which is the precedence SEL's own context lookup gives
 a binder over a variable."
@@ -138,7 +147,8 @@ expansion, but a database cannot be asked to parse it"
 (defun dispatch (tr n)
   (case (snode-kind n)
     (:num (make-literal tr (sel:make-num (sel::node-s n)) :num))
-    (:text (make-literal tr (sel:make-text (sel::node-s n)) :text))
+    (:text (refuse-nul (sel::node-s n) (snode-pos n))
+     (make-literal tr (sel:make-text (sel::node-s n)) :text))
     (:bool (make-literal tr (sel:make-bool (sel::node-b n)) :bool))
     (:var (translate-variable tr n))
     (:index (translate-index tr n))
@@ -164,10 +174,18 @@ verbatim and is left alone. Single-relation statements never come here: their
 columns are unqualified in every host (SEL-0042)."
   (if (or (null table) (getf spec :raw)) spec (list* :table table spec)))
 
-(defun column-ref (tr spec)
+(defun column-ref (tr spec &optional pos)
   "Turns a column SPEC into a fragment with no parameter slots. A raw binding is
 emitted VERBATIM -- the one place application-written SQL enters, which is why
 it is a named constructor and not a map key."
+  ;; A raw field is an expression against the relation's OWN alias. A derived
+  ;; table the relation is wrapped in has no column of that name (:OPAQUE), so a
+  ;; read through it would name something that is not there (JS-C28, CPP-C32).
+  (when (getf spec :opaque)
+    (refuse "E_SQL_SHAPE"
+            "this field is a raw expression, and the derived table this statement ~
+reads it through has no column of that name; read it before the step that wraps the ~
+relation, or bind it as a column" pos))
   (let ((sql (if (getf spec :raw)
                  (getf spec :raw)
                  (emit-column (translator-dialect tr) (getf spec :table)
@@ -205,6 +223,8 @@ value; it can only be the thing an aggregate iterates" name)
                      (format nil "~a is bound to an empty value, which is not a ~
 SQL value; only an aggregate can be given an empty binding" name)
                      (snode-pos n)))
+           (unless (or (sel:value-none-p v) (sel:value-bool-p v) (sel:value-bin-p v))
+             (refuse-nul (sel::value-scalar v) (snode-pos n)))
            (make-literal tr v (declared-kind spec v))))
         ((:columns :relation)
          (refuse "E_SQL_SHAPE"
@@ -507,7 +527,8 @@ row with no match does not have; read it through the right binder" label key)
               (snode-pos n)))
     (column-ref tr (if (row-field-info-qualify f)
                        (qualified-by (row-field-info-spec f) (row-field-info-table f))
-                       (row-field-info-spec f)))))
+                       (row-field-info-spec f))
+                (snode-pos n))))
 
 (defun collated-key (tr f)
   "A group key, rendered as the GROUP BY expression itself -- wherever it
@@ -582,12 +603,23 @@ text, but do not pretend SQL arithmetic preserved the evaluator's scale."
                    (fragment-param-kinds key) (fragment-caveats key))
         identity)))
 
+(defun walk-in-env (tr b node)
+  "Walk NODE in the scope binder B's node was written in (see BINDER-ENV)."
+  (let ((env (binder-env b)))
+    (if (eq env :current)
+        (walk-node tr node)
+        (let ((saved (translator-frames tr)))
+          (setf (translator-frames tr) env)
+          (unwind-protect (walk-node tr node)
+            (setf (translator-frames tr) saved))))))
+
 (defun from-binder (tr b n)
   "The binder half of a bare read."
   (case (binder-shape b)
     ;; Re-enters the whole walk on the element, so the depth counter and the
-    ;; constant validation apply to the inlined element too.
-    (:node (walk-node tr (binder-payload b)))
+    ;; constant validation apply to the inlined element too -- in the scope the
+    ;; element was written in.
+    (:node (walk-in-env tr b (binder-payload b)))
     ;; Inside a row already: bind the key's own binder to that row and render
     ;; the key there, then collate it exactly as the GROUP BY does.
     (:key (destructuring-bind (group row) (binder-payload b)
@@ -723,14 +755,15 @@ no first row without an ORDER BY that nothing here can supply" name key)
          ;; of a single relation is left as the binding declared it.
          (column-ref tr (if (and plan (relational-plan-joins plan))
                             (qualified-by (cdr cell) (joined-relation-alias plan (binder-payload b)))
-                            (cdr cell))))))
+                            (cdr cell))
+                     (snode-pos n)))))
     (:node
      (let ((elem (child-of (binder-payload b) key)))
        (unless elem
          (refuse "E_SQL_BINDING"
                  (format nil "~a[~s] is not a key of that element" name key)
                  (snode-pos n)))
-       (walk-node tr elem)))
+       (walk-in-env tr b elem)))
     ;; :COLUMN, and also :NONE -- which therefore does NOT report its reason when
     ;; indexed. A quirk, preserved.
     (t (refuse "E_SQL_SHAPE"
@@ -1449,8 +1482,31 @@ requires for the same reason and refuses here too"
                                           nil (snode-pos pat)))
             (replace-items n (append (subseq args 0 flag-at) (subseq args (1+ flag-at))))))))))
 
+(defun check-binder-position (n)
+  "A binding builtin whose every form of this arity NEEDS a bare name in the
+binder position, given something else, is E_SQL_SHAPE at that expression -- in
+the statement forms and inside a MAP body as much as under an aggregate, and
+BEFORE any argument is rendered, so the refusal is the binder's and not
+whatever the arguments would have said or a `no mapping` for the call (GO-C2)."
+  (let* ((name (sel::node-s n))
+         (args (sel::node-items n))
+         (forms (remove-if-not
+                 (lambda (f) (and (string= (first f) (string-upcase name))
+                                  (= (length (second f)) (length args))))
+                 sel::*builtin-form-data*)))
+    (when (and forms (every (lambda (f) (member :binder (second f))) forms))
+      (let ((idx (position :binder (second (first forms)))))
+        (unless (some (lambda (f)
+                        (let ((a (nth (position :binder (second f)) args)))
+                          (and (not (clist-p a)) (is-binder-name a))))
+                      forms)
+          (refuse "E_SQL_SHAPE"
+                  (format nil "the binder of ~a must be a bare name" name)
+                  (snode-pos (nth idx args))))))))
+
 (defun translate-call (tr n)
   ;; Captured before the rewrite, which preserves the name but rebinds the node.
+  (check-binder-position n)
   (let ((name (sel::node-s n)))
     ;; The two aggregates over a bucket's members -- COUNT(g) is COUNT(*) and
     ;; SUM(g, [x,] body) is SUM over the grouped rows -- fire on the :group
@@ -1474,9 +1530,25 @@ requires for the same reason and refuses here too"
                    (src (%source :relation nil (binder-payload group) '() nil))
                    (inner (with-row tr src (if has-custom-binder (sel::node-s (second args)) "_")
                             (lambda () (walk-node tr body-node)))))
+              ;; The group path applies the same kind check as every other SUM:
+              ;; a declared TEXT or BOOL body is E_SQL_SHAPE, a constant that is
+              ;; not a number is SEL's own refusal, and a body nobody vouched
+              ;; for is guarded ALL OR NOTHING (docs/internals/sql-kinds.md 5a).
+              (require-numeric-constant tr body-node)
+              (require-num inner (snode-pos body-node) "SUM")
               (return-from translate-call
-                (%fragment (append (list "COALESCE(SUM(") (fragment-parts inner) (list "), 0)"))
-                           :num (translator-dialect tr))))))))
+                (if (and (eq (fragment-kind inner) :unknown)
+                         (not (is-constant body-node (translator-const-names tr))))
+                    (multiple-value-bind (test cast)
+                        (split-numeric-guard (translator-dialect tr) inner (snode-pos body-node))
+                      (%fragment (append (list "CASE WHEN COUNT(*) = COUNT(CASE WHEN (")
+                                         (fragment-parts test)
+                                         (list ") THEN 1 END) THEN COALESCE(SUM(")
+                                         (fragment-parts cast)
+                                         (list "), 0) ELSE NULL END"))
+                                 :num (translator-dialect tr)))
+                    (%fragment (append (list "COALESCE(SUM(") (fragment-parts inner) (list "), 0)"))
+                               :num (translator-dialect tr)))))))))
     ;; Each of these short-circuits before the next, and none reaches the funcs
     ;; table: the generator rejects a dialect document that lists one.
     (when (member name +aggregates+ :test #'equal)
@@ -1717,7 +1789,7 @@ element is not enough. See docs/internals/sql-translation.md 7.5"
              (%source :static
                       (loop for item in (sel::node-items src)
                             for i from 1
-                            collect (cons (format nil "~D" i) (binder-node item)))
+                            collect (cons (format nil "~D" i) (binder-node item (translator-frames tr))))
                       nil '() nil)))
     (:clist (return-from classify
               (%source :static
@@ -1728,7 +1800,15 @@ element is not enough. See docs/internals/sql-translation.md 7.5"
      (let ((bound (find-binder tr (sel::node-s src))))
        (when bound
          (case (binder-shape bound)
-           (:node (return-from classify (classify tr (binder-payload bound))))
+           ;; The node a binder names is classified in the scope it was written in.
+           (:node (return-from classify
+                    (let ((env (binder-env bound)))
+                      (if (eq env :current)
+                          (classify tr (binder-payload bound))
+                          (let ((saved (translator-frames tr)))
+                            (setf (translator-frames tr) env)
+                            (unwind-protect (classify tr (binder-payload bound))
+                              (setf (translator-frames tr) saved)))))))
            (:none (refuse "E_SQL_SHAPE" (binder-reason bound) (snode-pos src)))
            ;; A bucket's members are iterated by COUNT and SUM alone
            ;; (translate-call), as one aggregate over the grouped rows; ALL,
@@ -1786,7 +1866,21 @@ it; SQL has no way to count or index what it produces" (sel::node-s src))
   ;; SEL counts as 2 -- a refusal, not a 0.
   (when (eq (snode-kind src) :call) (walk-node tr src))
   ;; The scalar rule for any other expression node.
-  (%source :static (list (cons "1" (binder-node src))) nil '() t))
+  (%source :static (list (cons "1" (binder-node src (translator-frames tr)))) nil '() t))
+
+(defun call-with-frame (tr frame render)
+  "Run RENDER with FRAME pushed. The names the frame binds also stop being
+CONSTANTS for the duration: a value binding named V is a constant only where V
+is not shadowed, and inside `ALL(L, V, V + 1 > 0)` the V is the element, so
+treating it as the binding's value validated (and could refuse) a program SEL
+evaluates differently, and left a column unguarded (JS-C53, PY-C45)."
+  (let ((saved-const (translator-const-names tr)))
+    (push frame (translator-frames tr))
+    (setf (translator-const-names tr)
+          (remove-if (lambda (name) (assoc name frame :test #'equal)) saved-const))
+    (unwind-protect (funcall render)
+      (setf (translator-const-names tr) saved-const)
+      (pop (translator-frames tr)))))
 
 (defun frame-set (frame name b)
   "Assign, never insert-if-absent: the write ORDER is semantics. If the
@@ -1803,9 +1897,7 @@ resolves to the key -- which is what the evaluator does."
     (setf frame (frame-set frame "_K" (binder-node (lit-node :text key nil (snode-pos n)))))
     ;; Every absorbed FILTER's binder names the SAME element, which is what makes
     ;; absorption three lines rather than a substitution pass.
-    (dolist (f (source-filters src)) (setf frame (frame-set frame (car f) elem)))
-    (push frame (translator-frames tr))
-    (unwind-protect (funcall render) (pop (translator-frames tr)))))
+    (call-with-frame tr frame render)))
 
 (defun with-join-binders (tr plan j render)
   "A LINK's predicate sees `_`/`_1` as its left element and `_2` as its right,
@@ -1826,8 +1918,7 @@ the source (SQL-05)."
       (setf frame (frame-set frame name left-row)))
     (dolist (name (join-plan-right-names j))
       (setf frame (frame-set frame name right-row)))
-    (push frame (translator-frames tr))
-    (unwind-protect (funcall render) (pop (translator-frames tr)))))
+    (call-with-frame tr frame render)))
 
 (defun with-row (tr src binder-name render)
   (let ((alias (relation-alias (source-relation src))))
@@ -1871,9 +1962,7 @@ against it; the correlation names the alias, so it cannot be renamed here" alias
                              (binder-none "a row of a relation has no key: SQL rows ~
 are unordered and unkeyed unless the schema says otherwise, and guessing which ~
 column is the key is not something this layer does")))
-      (dolist (f (source-filters src)) (setf frame (frame-set frame (car f) row)))
-      (push frame (translator-frames tr))
-      (unwind-protect (funcall render) (pop (translator-frames tr))))))
+      (call-with-frame tr frame render))))
 
 (defun with-group (tr src binder-name render)
   "The frame for a bucket's own body: the projection, and a FILTER or a sort
@@ -1891,8 +1980,7 @@ and SQL has neither (review 2026-09-15 finding K)."
                                (binder-key (first group-by) (binder-row (source-relation src)))
                                (binder-none "the key of a bucket over several keys is a ~
 list, which SQL has no value for; name one key"))))
-    (push frame (translator-frames tr))
-    (unwind-protect (funcall render) (pop (translator-frames tr)))))
+    (call-with-frame tr frame render)))
 
 (defun with-projected (tr src binder-name render)
   "The frame for a step after a bucket's projection: a FILTER (HAVING) or a
@@ -1907,10 +1995,23 @@ renumbered list, which SQL does not have."
     (setf frame (frame-set frame "_K"
                            (binder-none "after a projection the rows are a list renumbered ~
 from \"1\", and SQL has no row position to compare against")))
-    (push frame (translator-frames tr))
-    (unwind-protect (funcall render) (pop (translator-frames tr)))))
+    (call-with-frame tr frame render)))
 
-(defun agg-body (tr name body src n &optional unrolled)
+(defun call-in-filter-scope (tr binder-name filter-binder render)
+  "Run RENDER where a FILTER's predicate is written: its own binder names the
+element and the aggregate's does NOT exist yet. A FILTER's binder is scoped to its
+predicate, so it is not visible in the body or in another FILTER, and the
+aggregate's binder is not visible in a predicate (LISP-C7, JS-C26)."
+  (let* ((frames (translator-frames tr))
+         (top (first frames))
+         (elem (cdr (assoc binder-name top :test #'equal)))
+         (key (cdr (assoc "_K" top :test #'equal)))
+         (frame (frame-set (frame-set '() filter-binder elem) "_K" key)))
+    (setf (translator-frames tr) (rest frames))
+    (unwind-protect (call-with-frame tr frame render)
+      (setf (translator-frames tr) frames))))
+
+(defun agg-body (tr name body src n &optional unrolled binder-name)
   (let ((q (walk-node tr body)))
     (if (equal name "SUM")
         (progn
@@ -1930,7 +2031,9 @@ from \"1\", and SQL has no row position to compare against")))
     ;; but every rewrite EMITS the predicate first. Slot ids are creation-ordered
     ;; and BINDINGS walks the text, so the two orders differ here by construction.
     (dolist (f (source-filters src) q)
-      (let ((p (require-bool (walk-node tr (cdr f)) (snode-pos (cdr f)) "FILTER")))
+      (let ((p (require-bool (call-in-filter-scope tr binder-name (car f)
+                                                   (lambda () (walk-node tr (cdr f))))
+                             (snode-pos (cdr f)) "FILTER")))
         (setf q
               (cond
                 ((equal name "SUM")
@@ -2005,11 +2108,11 @@ can only be the thing another aggregate iterates" name)
           (return-from translate-aggregate
             (relation-aggregate tr name (source-relation src)
                                 (with-row tr src binder-name
-                                          (lambda () (agg-body tr name body src n)))
+                                          (lambda () (agg-body tr name body src n nil binder-name)))
                                 n)))
         (let ((parts (loop for cell in (source-elements src)
                            collect (with-element tr src binder-name (cdr cell) (car cell) n
-                                                 (lambda () (agg-body tr name body src n t))))))
+                                                 (lambda () (agg-body tr name body src n t binder-name))))))
           (cond
             ;; Spec §7.3's empty cases.
             ((null parts)
@@ -2037,11 +2140,11 @@ can only be the thing another aggregate iterates" name)
           (return-from translate-count
             (relation-aggregate tr "SUM" (source-relation src)
                                 (with-row tr src "_"
-                                          (lambda () (agg-body tr "SUM" body src n)))
+                                          (lambda () (agg-body tr "SUM" body src n nil "_")))
                                 n)))
         (let ((parts (loop for cell in (source-elements src)
                            collect (with-element tr src "_" (cdr cell) (car cell) n
-                                                 (lambda () (agg-body tr "SUM" body src n))))))
+                                                 (lambda () (agg-body tr "SUM" body src n nil "_"))))))
           (return-from translate-count
             (cond ((null parts) (make-literal tr (sel:make-num "0") :num))
                   ((null (rest parts)) (first parts))
@@ -2490,6 +2593,7 @@ dialect's CANON kind -- the map entry's ret, NUM or TEXT."
        (dolist (f (getf (relational-plan-source-relation plan) :fields))
          (let* ((col (or (getf (cdr f) :column) (car f)))
                 (spec (list :column col :table sub-alias :type (output-field-type plan (car f)))))
+           (when (getf (cdr f) :raw) (setf (getf spec :opaque) t))
            (push (cons (car f) spec) fields)))
        (nreverse fields)))))
 
@@ -2508,6 +2612,43 @@ dialect's CANON kind -- the map entry's ret, NUM or TEXT."
      :root-name (if (relational-plan-joins plan) nil (relational-plan-root-name plan))
      :bucket (and (relational-plan-bucket plan) :sealed))))
 
+(defvar *translating-dialect* nil
+  "The dialect the translation in progress is for, for the few program-supplied
+names whose acceptability depends on the server (PostgreSQL truncates aliases).")
+
+(defun check-alias-name (name pos)
+  "An alias or column that comes from a SEL text literal is held to the rules a
+binding's own names already meet: not empty, no NUL (sql/MAP.md 3.1). A NUL
+reached the statement on every dialect, and `AS \"\"` is refused by the servers
+(PHP-C53, PHP-C54, PY-C43, GO-C37)."
+  (when (or (zerop (length name)) (find (code-char 0) name))
+    (refuse "E_SQL_UNSUPPORTED"
+            (if (zerop (length name))
+                "an empty name cannot be a column or an alias in SQL"
+                "a name holding NUL cannot be a column or an alias in SQL")
+            pos)))
+
+(defun check-alias-collisions (names-and-nodes)
+  "PostgreSQL truncates an identifier to 63 bytes, so two aliases that agree on
+their first 63 bytes and differ after name ONE column there and SEL's two record
+keys would become one."
+  (when (equal *translating-dialect* "postgresql")
+    (let ((seen '()))
+      (dolist (cell names-and-nodes)
+        (let* ((name (car cell))
+               (octets (sb-ext:string-to-octets name :external-format :utf-8)))
+          (when (> (length octets) 63)
+            (let* ((prefix (subseq octets 0 63))
+                   (hit (find-if (lambda (o) (and (equalp (car o) prefix)
+                                                  (not (equal (cdr o) name))))
+                                 seen)))
+              (when hit
+                (refuse "E_SQL_UNSUPPORTED"
+                        "two aliases share their first 63 bytes, and PostgreSQL ~
+truncates both to one name"
+                        (snode-pos (cdr cell))))
+              (push (cons prefix name) seen))))))))
+
 (defun record-fields (node)
   "The (name . value) pairs of a RECORD(k, v, ...) call, refusing what the
 evaluator would: an odd count at the call, a name that is not a text literal at
@@ -2516,10 +2657,15 @@ bucket's key, a MAP's projection -- and each used to walk the pairs itself."
   (let ((args (sel::node-items node)))
     (unless (evenp (length args))
       (refuse "E_ARITY" "RECORD takes an even number of arguments" (snode-pos node)))
-    (loop for (k-node v-node) on args by #'cddr
-          do (unless (eq (snode-kind k-node) :text)
-               (refuse "E_BAD_ARG" "RECORD field names must be string literals" (snode-pos k-node)))
-          collect (cons (sel::node-s k-node) v-node))))
+    (let ((fields
+            (loop for (k-node v-node) on args by #'cddr
+                  do (unless (eq (snode-kind k-node) :text)
+                       (refuse "E_BAD_ARG" "RECORD field names must be string literals" (snode-pos k-node)))
+                     (check-alias-name (sel::node-s k-node) (snode-pos k-node))
+                  collect (cons (sel::node-s k-node) v-node))))
+      (check-alias-collisions
+       (loop for (k-node nil) on args by #'cddr collect (cons (sel::node-s k-node) k-node)))
+      fields)))
 
 (defun bucket-projection (plan binder agg-node)
   "The projection of a bucket: the RECORD (or single expression) evaluated once
@@ -2808,7 +2954,14 @@ can say about a bucket on its own."
                            (relational-plan-projections plan)
                            (relational-plan-select-cols plan)
                            (relational-plan-group-by plan))
-                   (compile-statement tr plan))
+                   ;; A check, its fragment discarded: the slots it created are
+                   ;; discarded with it, or `params` mode binds a value the
+                   ;; statement has no place for (CPP-C57, LISP-C40).
+                   (let ((params (translator-params tr))
+                         (kinds (translator-param-kinds tr)))
+                     (compile-statement tr plan)
+                     (setf (translator-params tr) params
+                           (translator-param-kinds tr) kinds)))
                  (when (or (relational-plan-group-by plan)
                            (relational-plan-projections plan)
                            (relational-plan-select-cols plan)
@@ -2907,6 +3060,15 @@ this statement already uses; bind the relation a second time under another alias
                    (dolist (item items)
                      (unless (eq (snode-kind item) :text)
                        (refuse "E_BAD_ARG" "SELECT_COLS column names must be string literals" (snode-pos item)))
+                     (check-alias-name (sel::node-s item) (snode-pos item))
+                     (let ((rawcell (assoc (sel::ascii-upcase (sel::node-s item))
+                                           (getf (relational-plan-source-relation plan) :fields)
+                                           :test #'equal)))
+                       (when (and rawcell (getf (cdr rawcell) :raw))
+                         (refuse "E_SQL_SHAPE"
+                                 "SELECT_COLS cannot name a raw field: it is an expression, ~
+not a column of the relation, so `SELECT alias.name` would name something that is not there"
+                                 (snode-pos item))))
                      (let* ((col (sel::node-s item))
                             (uc (sel::ascii-upcase col))
                             (found nil)
@@ -3307,6 +3469,7 @@ is why this is a function taking FN rather than one returning three values."
       ;; TRANSLATE-STATEMENT alone once ran the full optimiser). The planner
       ;; is the one place that optimises before translating.
       (let* ((*subquery-counter* 0)
+             (*translating-dialect* dialect)
              (norm (normalise (sel:program-ast program) names root))
              (plan (analyze-pipeline tr norm)))
         (funcall fn tr norm plan)))))

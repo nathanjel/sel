@@ -24,6 +24,9 @@ from dataclasses import replace
 from typing import Any, Callable
 
 from .. import Program, Value
+from .. import registry as _registry
+from ..eval import MAX_DEPTH
+from .._stack import recursion_budget as _recursion_budget
 from ..lexer import ascii_upper
 from ..optimizer import build_pipeline, copy_node, unwind_pipeline
 from ..parser import Node
@@ -138,26 +141,59 @@ def _source_tables(ast: Node | None, bindings: Bindings) -> list[str]:
     out: list[str] = []
     seen: set[str] = set()
 
-    def visit(node: Node | None) -> None:
+    assigned: set[str] = set()
+
+    # Iterative, in source order: the tree can be as deep as the source is long (a
+    # 20,000-step pipeline is 20,000 nested calls), and this walk runs for a
+    # pure-memory plan too, which is the plan such a program gets. A relation is
+    # read by a variable that names one and that nothing shadows: not a binder of
+    # an enclosing aggregate, and not a helper the program assigned (which is the
+    # helper's value, not the table). Entries are (node, bound) or a bare string,
+    # the name an assignment finished assigning.
+    stack: list[Any] = [(ast, frozenset())]
+    while stack:
+        entry = stack.pop()
+        if isinstance(entry, str):
+            assigned.add(entry)
+            continue
+        node, bound = entry
         if node is None:
-            return
-        if node.t == 'var' and bindings.has(node.name):
+            continue
+        t = node.t
+        children: list[Any] = []          # in visiting order
+        if t == 'var':
+            if node.name in bound or node.name in assigned or not bindings.has(node.name):
+                continue
             binding = bindings.get(node.name, node.pos)
             if binding['kind'] == 'relation':
                 table = _physical_source(binding)
                 if table not in seen:
                     seen.add(table)
                     out.append(table)
-            return
-        for child in node.args:
-            visit(child)
-        for child in node.items:
-            visit(child)
-        for child in (node.l, node.r, node.x, node.obj, node.idx,
-                      node.target, node.value):
-            visit(child)
-
-    visit(ast)
+            continue
+        if t == 'seq':
+            children = [(item, bound) for item in node.items]
+        elif t == 'assign':
+            target = node.target
+            while target is not None and target.t == 'index':
+                children.append((target.idx, bound))
+                target = target.obj
+            children.append((node.value, bound))
+            if target is not None and target.t == 'var':
+                children.append(target.name)
+        else:
+            form = (_registry.binding_form(node.name, node.args, node.spec)
+                    if t == 'call' else None)
+            if form is not None:
+                scopes, binds = form
+                inner = bound | frozenset(binds)
+                children = [(arg, inner if scopes[i] == 'inner' else bound)
+                            for i, arg in enumerate(node.args) if scopes[i] != 'binder']
+            else:
+                children = ([(child, bound) for child in node.args]
+                            + [(child, bound) for child in node.items]
+                            + [(child, bound) for child in (node.l, node.r, node.x, node.obj, node.idx)])
+        stack.extend(reversed(children))
     return out
 
 
@@ -204,6 +240,34 @@ def _join_rows_lack_binders(steps: list[Node]) -> bool:
         elif step.name in ('MAP', 'SELECT_COLS', 'BUCKET'):
             joined = False
     return joined
+
+
+SORT_STEPS = frozenset({'SORT', 'SORT_DESC', 'SORT_BY', 'TOP', 'TOP_DESC', 'TOP_BY'})
+
+
+def _first_order_hazard(steps: list[Node]) -> int | None:
+    """The index of the first step SQL cannot answer in the order SEL does, or
+    None (docs/internals/sql-translation.md §12.1, "order"): nothing relies on a
+    database's natural order, so what a sort established has to reach the end in
+    the statement itself. A GROUP BY, a join, and a second sort over a projection
+    that dropped the first sort's keys all lose it -- the group order (first
+    appearance in the sorted list), the join's row order, and the earlier sort's
+    tie order have no expression in the statement -- so a plan stops before them
+    and the continuation, which sorts stably and groups in order, does the step."""
+    sorted_ = False
+    projected = False
+    for i, step in enumerate(steps):
+        if step.name in SORT_STEPS:
+            if sorted_ and projected:
+                return i
+            sorted_, projected = True, False
+        elif step.name in ('MAP', 'SELECT_COLS'):
+            if sorted_:
+                projected = True
+        elif step.name in ('BUCKET', 'LINK', 'LINK_LEFT'):
+            if sorted_:
+                return i
+    return None
 
 
 def _rows_are_not_the_value(steps: list[Node]) -> bool:
@@ -346,11 +410,43 @@ def _map_record_details(step: Node) -> dict[str, Any] | None:
             'body': body, 'pairs': pairs}
 
 
+def _split_hides_keys(steps: list[Node], count: int) -> bool:
+    """Whether splitting the pipeline after ``steps[:count]`` would change what a
+    key is, so that the continuation answers differently from ``run()``.
+
+    Of the pipeline steps only FILTER keeps its input's keys (spec §7.3): the
+    rest renumber from 1. So a prefix that ENDS in a FILTER holds rows whose keys
+    are the original positions -- SQL hands back a rowset numbered 1..n -- and the
+    continuation may only run if a renumbering step comes before anything reads
+    a key: a FILTER after the split that reads `_K`, or that ends the pipeline
+    (the result's keys are the original positions), is not a split point, nor is
+    a step that reads `_K` of its input (docs/internals/sql-translation.md §12.1)."""
+    if count <= 0 or steps[count - 1].name != 'FILTER':
+        return False
+    for step in steps[count:]:
+        if '_K' in _read_names_of(step.args[1:]):
+            return True
+        if step.name != 'FILTER':
+            return False
+    return True
+
+
+def _read_names_of(nodes: list[Node]) -> set[str]:
+    out: set[str] = set()
+    for node in nodes:
+        _read_names(node, out)
+    return out
+
+
 def _try_plan_fallthrough(source: Node, steps: list[Node], dialect: str,
                           catalog: Bindings, options: dict[str, Any],
-                          helpers: _Helpers) -> HybridPlan | None:
+                          helpers: _Helpers, hazard: int | None = None) -> HybridPlan | None:
     map_index = next((i for i, step in enumerate(steps) if step.name == 'MAP'), -1)
     if map_index < 0 or _bucket_rows_are_keys(steps[:map_index]):
+        return None
+    # An order hazard at or before the MAP stops the plan there; one after it is
+    # the continuation's own, which sorts and groups in order.
+    if hazard is not None and hazard <= map_index:
         return None
     details = _map_record_details(steps[map_index])
     if details is None:
@@ -367,10 +463,18 @@ def _try_plan_fallthrough(source: Node, steps: list[Node], dialect: str,
     if any(_reads_whole_row(pair[1], details['binder']) for pair in custom):
         return None
 
-    # Every step after the MAP goes into the SQL, so each must keep the rows
-    # as they are, and may read only what SEL's rows have after the MAP: the
-    # pushable keys. The custom keys are not in the SQL; a dependency column
-    # is in the SQL but not in SEL's row.
+    # The custom half runs over the SQL's rows, numbered 1..n, where run()
+    # evaluates it over the MAP's input: after a FILTER those keys are the
+    # original positions, so a custom half that reads `_K` cannot be split off.
+    if map_index > 0 and steps[map_index - 1].name == 'FILTER' \
+            and any('_K' in _read_names(pair[1]) for pair in custom):
+        return None
+
+    # Nothing after the MAP goes into the SQL. The custom half of the MAP may
+    # raise -- run() evaluates it for EVERY row -- and a TAKE, DROP, sort or
+    # filter pushed past it would decide which rows it sees: the plan would
+    # return where run() raises (docs/internals/sql-translation.md §12.1). So the
+    # steps after the MAP stay in the continuation, over the whole projection.
     downstream = steps[map_index + 1:]
     if any(step.name not in FALLTHROUGH_DOWNSTREAM for step in downstream):
         return None
@@ -378,7 +482,8 @@ def _try_plan_fallthrough(source: Node, steps: list[Node], dialect: str,
     for step in downstream:
         # args[0] is the step's input -- the pipeline so far -- not its own
         # text; the step binds the row under a name of its own, so any read
-        # counts.
+        # counts. Run locally these would not need the restriction, but the
+        # plans pinned before the split moved keep their classification.
         for arg in step.args[1:]:
             if any(field not in projected for field in _field_references(arg, None)):
                 return None
@@ -424,7 +529,7 @@ def _try_plan_fallthrough(source: Node, steps: list[Node], dialect: str,
     rewritten_map.args = ([steps[map_index].args[0], steps[map_index].args[1], rewritten_record]
                           if details['explicit']
                           else [steps[map_index].args[0], rewritten_record])
-    rewritten_steps = [*steps[:map_index], rewritten_map, *steps[map_index + 1:]]
+    rewritten_steps = [*steps[:map_index], rewritten_map]
     rewritten_ast = helpers.wrap(build_pipeline(source, rewritten_steps))
     sql = _try_statement(rewritten_ast, dialect, catalog, options)
     if sql is None:
@@ -448,7 +553,7 @@ def _try_plan_fallthrough(source: Node, steps: list[Node], dialect: str,
     continuation_map.args = ([input_node, steps[map_index].args[1], continuation_record]
                              if details['explicit']
                              else [input_node, continuation_record])
-    continuation_ast = helpers.wrap(continuation_map)
+    continuation_ast = helpers.wrap(build_pipeline(input_node, [continuation_map, *downstream]))
     return HybridPlan(
         dialect=dialect,
         sql_statement=sql,
@@ -549,20 +654,21 @@ def _inline_literals(node: Node | None, literals: dict[str, Node],
     if t == 'assign':
         return replace(node, value=inline(node.value))
     if t == 'call':
-        inner = list(bound)
-        binds = node.spec is not None and node.spec.binds
-        if binds:
-            inner.append('_K')
-            inner.append(node.args[1].name
-                         if len(node.args) == 3 and sql_constants.is_binder_name(node.args[1])
-                         else '_')
+        # Which argument is a binder name (never a read), which runs once per
+        # element, and what is bound inside is the manifest's decision, the same
+        # one stage 1 and dependencies() use: a literal helper named like an
+        # explicit binder is that binder, in every spelling of the form.
+        form = _registry.binding_form(node.name, node.args, node.spec)
+        if form is None:
+            return replace(node, args=[inline(arg) for arg in node.args])
+        scopes, binds = form
+        inner = list(bound) + list(binds)
         args: list[Node] = []
         for i, arg in enumerate(node.args):
-            if (binds and i == 1 and len(node.args) == 3
-                    and sql_constants.is_binder_name(arg)):
+            if scopes[i] == 'binder':
                 args.append(arg)
             else:
-                args.append(inline(arg, bound if i == 0 else inner))
+                args.append(inline(arg, inner if scopes[i] == 'inner' else bound))
         return replace(node, args=args)
     return node
 
@@ -582,9 +688,11 @@ def _literal_helpers(leading: list[Node], options: dict[str, Any]) -> dict[str, 
 
 
 def _unwind_through_helpers(result: Node, defs: dict[str, Node],
-                            literals: dict[str, Node]) -> tuple[Node | None, list[Node]]:
+                            literals: dict[str, Node]
+                            ) -> tuple[Node | None, list[Node], set[str]]:
     """The pipeline the planner probes: the result unwound, and where its
-    source is a helper, that helper's definition unwound in turn."""
+    source is a helper, that helper's definition unwound in turn. The third
+    value is the helpers unwound through: their steps are IN the pipeline now."""
     source, steps = unwind_pipeline(_inline_literals(result, literals))
     seen: set[str] = set()
     while (source is not None and source.t == 'var' and source.name in defs
@@ -594,7 +702,7 @@ def _unwind_through_helpers(result: Node, defs: dict[str, Node],
             _inline_literals(defs[source.name], literals))
         source = inner_source
         steps = [*inner_steps, *steps]
-    return source, steps
+    return source, steps, seen
 
 
 def _read_names(node: Node | None, out: set[str] | None = None) -> set[str]:
@@ -621,10 +729,14 @@ def _referenced_assignments(leading: list[Node], node: Node) -> list[Node]:
     """The leading assignments ``node`` depends on, in program order: those
     whose name it reads, and those THEY read, transitively."""
     needed = _read_names(node)
+    # Latest first: a statement reads what was assigned BEFORE it, so walking
+    # backwards discovers a whole helper chain in one pass. In program order each
+    # pass found one more link, which made a chain of n helpers cost n passes of
+    # n statements -- a minute for a few thousand.
     grew = True
     while grew:
         grew = False
-        for s in leading:
+        for s in reversed(leading):
             if _assigned_name(s) not in needed:
                 continue
             for name in _read_names(s.value):
@@ -666,6 +778,28 @@ def _pure_memory_plan(program: Program, dialect: str, catalog: Bindings) -> Hybr
 def _latest_field_name(node):
     return (node.idx.v if node is not None and node.t == 'index'
             and node.obj.t == 'var' and node.obj.name == '_' and node.idx.t == 'text' else None)
+
+
+def _keep_left_name(remaining: list[Node], prefix: list[Node], source: Node) -> list[Node]:
+    """A LINK left in memory behind a SQL prefix still names its left side as the
+    program wrote it. SEL's joined row holds the left side under the name of the
+    variable the pipeline started from (spec §7.4), and the continuation's input
+    is `_INPUT`, so a bare three-argument LINK would carry it under that: a read
+    of `_["ORDERS"]` would be E_NO_KEY where run() answers. It is rewritten to the
+    five-argument form that names both sides (PHP-C9, PY-C23, LISP-C29)."""
+    first = remaining[0]
+    if (first.name not in ('LINK', 'LINK_LEFT') or len(first.args) != 3
+            or source is None or source.t != 'var'
+            or any(step.name in ('LINK', 'LINK_LEFT') for step in prefix)):
+        return remaining
+    right = first.args[1]
+    if right.t != 'var':
+        return remaining
+    rewritten = copy_node(first)
+    rewritten.args = [first.args[0], right,
+                      Node('var', first.pos, name=source.name),
+                      Node('var', first.pos, name=right.name), first.args[2]]
+    return [rewritten, *remaining[1:]]
 
 
 def _try_latest_member(source, steps, dialect, catalog, opts, helpers):
@@ -741,6 +875,16 @@ def plan_hybrid(program: Program, dialect: str,
                 bindings: Bindings | dict[str, Any] | None = None,
                 options: dict[str, Any] | None = None) -> HybridPlan:
     """Return the maximal SQL prefix and its optional memory continuation."""
+    # Under the recursion budget (sel/_stack.py): the planner recurses over trees
+    # the source can make as deep as the cap, several frames per level, and a
+    # RecursionError is not the SqlError the planner's callers are written for.
+    with _recursion_budget():
+        return _plan_hybrid(program, dialect, bindings, options)
+
+
+def _plan_hybrid(program: Program, dialect: str,
+                 bindings: Bindings | dict[str, Any] | None = None,
+                 options: dict[str, Any] | None = None) -> HybridPlan:
     catalog = bindings if isinstance(bindings, Bindings) else Bindings(bindings or {})
     opts = options or {}
     sqlmap.require_target(dialect)
@@ -766,17 +910,36 @@ def plan_hybrid(program: Program, dialect: str,
         return (node is not None and node.t == 'var' and catalog.has(node.name)
                 and catalog.get(node.name, node.pos)['kind'] == 'relation')
 
-    unwound_source, unwound_steps = _unwind_through_helpers(result, defs, literals)
+    unwound_source, unwound_steps, unwound = _unwind_through_helpers(result, defs, literals)
     if not unwound_steps or not is_relation(unwound_source):
+        return _pure_memory_plan(program, dialect, catalog)
+    # A pipeline this long, unwound through its helpers, is a tree deeper than the
+    # translator will render (E_SQL_DEPTH) whatever prefix is asked for, and every
+    # walk the planner makes over it costs frames in proportion: none of it is
+    # pushed down, and "none of it" is a plan, not an exception.
+    if len(unwound_steps) > MAX_DEPTH:
         return _pure_memory_plan(program, dialect, catalog)
     optimized = optimize_ast_logical(build_pipeline(unwound_source, unwound_steps), opts)
     source, steps = unwind_pipeline(optimized)
     if not steps or not is_relation(source):
         return _pure_memory_plan(program, dialect, catalog)
 
+    # A helper the pipeline was unwound through has its steps IN the pipeline,
+    # so carrying its assignment in front of it as well applies them twice --
+    # `ORDERS = ORDERS .> DROP(2); ORDERS .> TAKE(3)` skipped four rows -- unless
+    # some step also reads it as a value, in which case it stays (PHP-C34).
+    read_by_steps: set[str] = set()
+    for step in steps:
+        # args[0] is the step's input -- the pipeline so far -- not something the
+        # step reads as a value.
+        for arg in step.args[1:]:
+            _read_names(arg, read_by_steps)
+    kept_leading = [s for s in leading
+                    if _assigned_name(s) not in unwound
+                    or _assigned_name(s) in read_by_steps]
     helpers = _Helpers(
         defs,
-        lambda node: _with_helpers(leading, node),
+        lambda node: _with_helpers(kept_leading, node),
         # The physical sources of a wrapped tree are read off what the
         # translator renders: stage 1's tree, where an assignment a binder
         # shadows is gone.
@@ -787,26 +950,29 @@ def plan_hybrid(program: Program, dialect: str,
     # The whole pipeline, unless its rows would be a bucket's keys: the
     # translator renders a bare bucket as its keys, and a plan that pushes the
     # whole of ``... .> BUCKET(k)`` would hand them back as the answer.
+    hazard = _first_order_hazard(steps)
     full_ast = helpers.wrap(build_pipeline(source, steps))
-    full_sql = (None if identity_barrier or _rows_are_not_the_value(steps)
+    full_sql = (None if identity_barrier or hazard is not None or _rows_are_not_the_value(steps)
                 else _try_statement(full_ast, dialect, catalog, opts))
     if full_sql is not None:
         return HybridPlan(dialect=dialect, sql_statement=full_sql,
                           sql_prefix_ast=full_ast, pure_sql=True,
                           source_tables=helpers.tables(full_ast))
 
+    # The grouped-latest-member strategy states its own order (MIN(revision) over
+    # an ascending revision sort), so a sort before its BUCKET is not a hazard.
     latest = _try_latest_member(source, steps, dialect, catalog, opts, helpers)
     if latest is not None:
         return latest
 
     fallthrough = (None if identity_barrier else
-                   _try_plan_fallthrough(source, steps, dialect, catalog, opts, helpers))
+                   _try_plan_fallthrough(source, steps, dialect, catalog, opts, helpers, hazard))
     if fallthrough is not None:
         return fallthrough
 
-    for count in range(len(steps) - 1, 0, -1):
+    for count in range(min(len(steps) - 1, hazard if hazard is not None else len(steps)), 0, -1):
         prefix_steps = steps[:count]
-        if _rows_are_not_the_value(prefix_steps):
+        if _rows_are_not_the_value(prefix_steps) or _split_hides_keys(steps, count):
             continue
         prefix_ast = helpers.wrap(build_pipeline(source, prefix_steps))
         if identity_barrier:
@@ -819,7 +985,7 @@ def plan_hybrid(program: Program, dialect: str,
         sql = _try_statement(prefix_ast, dialect, catalog, opts)
         if sql is None:
             continue
-        remaining = steps[count:]
+        remaining = _keep_left_name(steps[count:], steps[:count], source)
         input_node = Node('var', remaining[0].pos, name='_INPUT')
         continuation_ast = helpers.wrap(build_pipeline(input_node, remaining))
         return HybridPlan(dialect=dialect, sql_statement=sql,
@@ -834,12 +1000,23 @@ def plan_hybrid(program: Program, dialect: str,
 def execute_hybrid(plan: HybridPlan, db_runner: Callable[[str, list[Value]], Any],
                    context: Value | dict[str, Any] | None = None) -> Any:
     """Execute a pure SQL, pure memory, or split plan."""
+    with _recursion_budget():
+        return _execute_hybrid(plan, db_runner, context)
+
+
+def _execute_hybrid(plan: HybridPlan, db_runner: Callable[[str, list[Value]], Any],
+                    context: Value | dict[str, Any] | None = None) -> Any:
     if not isinstance(plan, HybridPlan):
         raise TypeError('execute_hybrid expects a HybridPlan')
     if plan.pure_memory:
         if plan.continuation_program is None:
             raise RuntimeError('a pure-memory hybrid plan has no program')
-        return plan.continuation_program.run(context)
+        # Run on a copy: run()'s assignments would otherwise leave the program's
+        # helpers in the caller's context, and a plan that goes to the database
+        # cannot perform them there -- so the contract is that it never does, in
+        # any classification.
+        root = context.clone() if isinstance(context, Value) else Value.from_native(context or {})
+        return plan.continuation_program.run(root)
     if plan.sql_statement is None:
         raise RuntimeError('a SQL hybrid plan has no statement')
     fragment = plan.sql_statement

@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <array>
 #include <map>
+#include <mutex>
 #include <set>
 #include <stdexcept>
 
@@ -174,6 +175,10 @@ struct Registry {
   // activity; throwing the whole set away costs one comparison per dialect
   // afterwards.
   std::set<std::string, std::less<>> guard_checked;
+  // Translation threads reach guard_checked on the first numeric-guard use of a
+  // dialect (CPP-C12: a data race under TSan); registration is a start-up
+  // activity, but it clears the set, so it takes the lock too.
+  std::mutex guard_mutex;
 
   // sql/MAP.md §4.7: the arity a host function had when its spelling was
   // defined, per dialect -> key. Translation compares it with the function's
@@ -443,9 +448,19 @@ std::optional<Section> section_from_name(std::string_view name) {
 // --- registration ------------------------------------------------------------
 
 void Map::define_dialect(const std::string& name, const DialectSpec& spec) {
+  // A dialect name means one dialect. Re-registering a REGISTERED name under the
+  // same parent replaces the earlier registration (a start-up script that runs
+  // twice); a shipped name, or another parent, is refused.
+  bool replacing = false;
   if (exists(name)) {
-    bad("SQL dialect " + name +
-        " is already defined; a name means one dialect");
+    auto it = reg().extra.find(name);
+    const std::string parent = spec.root_ ? std::string{} : spec.extends_;
+    if (it == reg().extra.end() || it->second->extends != parent) {
+      bad("SQL dialect " + name +
+          " is already defined; a name means one dialect, and a registered one "
+          "may be registered again only under the same parent");
+    }
+    replacing = true;
   }
   const std::string where = "SQL dialect " + name;
 
@@ -478,6 +493,83 @@ void Map::define_dialect(const std::string& name, const DialectSpec& spec) {
   for (const auto& [key, kind, text, escapes] : spec.lexical_) {
     (void)escapes;
     check_lexical(key, kind, text, where);
+  }
+
+  // sql/MAP.md §3.1: textQuote, textEscape and identQuote are a SET. What each
+  // is AFTER inheritance is what an inline literal is rendered with, so a
+  // dialect that changes one without the others is refused here, before any
+  // literal exists to be injected through.
+  {
+    const auto own = [&](std::string_view key) -> const std::tuple<std::string, LexKind, std::string,
+                                                     std::vector<std::pair<std::string, std::string>>>* {
+      for (const auto& l : spec.lexical_) if (std::get<0>(l) == key) return &l;
+      return nullptr;
+    };
+    const auto text_of = [&](std::string_view key) -> std::optional<std::string> {
+      if (const auto* l = own(key)) {
+        if (std::get<1>(*l) == LexKind::Text) return std::get<2>(*l);
+        return std::nullopt;
+      }
+      if (spec.root_) return std::nullopt;
+      if (const Lexical* lx = Map::lexical(spec.extends_, key)) {
+        if (lx->kind == LexKind::Text) return std::string(lx->text);
+      }
+      return std::nullopt;
+    };
+    std::vector<std::pair<std::string, std::string>> escapes;
+    bool escapes_known = false;
+    if (const auto* l = own("textEscape")) {
+      if (std::get<1>(*l) == LexKind::Escapes) { escapes = std::get<3>(*l); escapes_known = true; }
+    } else if (!spec.root_) {
+      if (const Lexical* lx = Map::lexical(spec.extends_, "textEscape")) {
+        for (const Escape& e : lx->escapes) escapes.emplace_back(std::string(e.from), std::string(e.to));
+        escapes_known = true;
+      }
+    }
+    const std::optional<std::string> quote = text_of("textQuote");
+    const std::optional<std::string> ident = text_of("identQuote");
+    // Only when the dialect says something about the set: a root with no text
+    // syntax at all has no literals to make injectable.
+    const bool touches = own("textQuote") || own("textEscape") || own("identQuote");
+    if (touches && quote) {
+      std::size_t cps = 0;
+      for (unsigned char c : *quote) if ((c & 0xC0) != 0x80) ++cps;
+      if (cps != 1) {
+        bad(where + " sets textQuote to \"" + *quote + "\"; a quote is exactly one character");
+      }
+      if (ident && *ident == *quote) {
+        bad(where + " makes textQuote equal identQuote (" + *quote +
+            "), so a text literal reads as a quoted identifier");
+      }
+      for (const auto& [from, to] : escapes) {
+        (void)to;
+        if (from.empty()) bad(where + " has a textEscape entry with an empty key");
+      }
+      const auto entry_for = [&](const std::string& from) -> const std::string* {
+        for (const auto& [f, t] : escapes) if (f == from) return &t;
+        return nullptr;
+      };
+      const std::string* q = escapes_known ? entry_for(*quote) : nullptr;
+      if (!q) {
+        bad(where + " has no textEscape entry for its textQuote (" + *quote +
+            "), so a quote inside a text literal would end it");
+      }
+      // The quote doubled, or an escape character E followed by the quote where E
+      // is itself escaped (E -> E E): anything else leaves a quote inside the
+      // literal, or lets a backslash in the data eat the escape.
+      const bool doubled = *q == *quote + *quote;
+      bool escaped = false;
+      if (q->size() > quote->size() && q->compare(q->size() - quote->size(), quote->size(), *quote) == 0) {
+        const std::string e = q->substr(0, q->size() - quote->size());
+        const std::string* self = entry_for(e);
+        escaped = self && *self == e + e;
+      }
+      if (!doubled && !escaped) {
+        bad(where + " escapes textQuote as \"" + *q + "\", which neither doubles it "
+            "nor is an escape character that is itself escaped; a quote or a "
+            "backslash in the data would end the literal");
+      }
+    }
   }
 
   auto owned = std::make_unique<OwnedDialect>();
@@ -527,7 +619,16 @@ void Map::define_dialect(const std::string& name, const DialectSpec& spec) {
 
   OwnedDialect* raw = owned.get();
   reg().dialect_arena.push_back(std::move(owned));
-  reg().extra.emplace(name, raw);
+  if (replacing) {
+    // Nothing of the first registration remains: not its lexical values, and not
+    // the entries defined against it.
+    reg().extra[name] = raw;
+    reg().overlay.erase(name);
+    std::lock_guard<std::mutex> lock(reg().guard_mutex);
+    reg().guard_checked.clear();
+  } else {
+    reg().extra.emplace(name, raw);
+  }
 }
 
 void Map::define(const std::string& dialect, Section section,
@@ -598,7 +699,10 @@ void Map::define(const std::string& dialect, Section section,
   // A redefined ISNUM invalidates every memoised guard check: define() lets the
   // last writer win, and a redefinition against a BASE reaches every dialect
   // that inherits from it, so the whole set goes rather than one name.
-  if (section == Section::Funcs && k == "ISNUM") reg().guard_checked.clear();
+  if (section == Section::Funcs && k == "ISNUM") {
+    std::lock_guard<std::mutex> lock(reg().guard_mutex);
+    reg().guard_checked.clear();
+  }
 }
 
 void Map::define_builder(const std::string& dialect, Section section,
@@ -634,8 +738,12 @@ std::vector<std::string_view> quoted_runs(std::string_view tpl) {
 
 void Map::check_numeric_guard(const std::string& dialect) {
   Registry& r = reg();
+  std::lock_guard<std::mutex> lock(r.guard_mutex);
   if (r.guard_checked.find(dialect) != r.guard_checked.end()) return;
-  r.guard_checked.insert(dialect);
+  // Recorded only AFTER every check has passed (below): a dialect memoised
+  // before it was validated was refused once and then silently accepted, and
+  // the SQL the check had rejected went out on every later translation
+  // (CPP-C36). A refusal repeats, every use.
 
   const Lexical* guard = lexical(dialect, "numericGuard");
   if (!guard || guard->kind != LexKind::Text) return;
@@ -667,10 +775,12 @@ void Map::check_numeric_guard(const std::string& dialect) {
         + missing + ", which its funcs.ISNUM tests; they ask the same question, and "
         "a guard that asks a different one answers for rows SEL refuses");
   }
+  r.guard_checked.insert(dialect);
 }
 
 void Map::reset() {
   Registry& r = reg();
+  std::lock_guard<std::mutex> lock(r.guard_mutex);
   r.overlay.clear();
   r.extra.clear();
   r.entry_arena.clear();

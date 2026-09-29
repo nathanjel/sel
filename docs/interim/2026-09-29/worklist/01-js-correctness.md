@@ -436,7 +436,7 @@ Each task starts by reproducing the report against the current tree, then lands 
 
 <a id="c-js-c6"></a>
 
-- [ ] **C-JS-C6 — Resolve JS-C6.** RMATCH / RFIND / RGROUPS / RREPLACE have no protection against catastrophic backtracking
+- [x] **C-JS-C6 — Resolve JS-C6.** RMATCH / RFIND / RGROUPS / RREPLACE have no protection against catastrophic backtracking
 
   **[JS-C6](../js-code-review.md) — [high] [confirmed, re-verified by synthesizer] RMATCH / RFIND / RGROUPS / RREPLACE have no protection against catastrophic backtracking**
 
@@ -449,6 +449,8 @@ Each task starts by reproducing the report against the current tree, then lands 
   Contract gate: settle the relevant rule in the shared test family before choosing among the report’s proposed behaviors.
 
   Done when every linked scenario passes on all applicable lanes; code/position, mutation, ordering and repeat-use behavior satisfy the shared contract. Record commit and fixture IDs here.
+
+  Closed 2026-09-29 — 116/116 on all six hosts; 0 mismatches vs reference over 24k-80k random patterns per host; resource probes clean
 
 <a id="c-js-c17"></a>
 
@@ -606,7 +608,7 @@ Each task starts by reproducing the report against the current tree, then lands 
 
 <a id="c-js-c7"></a>
 
-- [ ] **C-JS-C7 — Resolve JS-C7, JS-C26, JS-C53.** Coordinate the related changes below at their shared implementation surface.
+- [x] **C-JS-C7 — Resolve JS-C7, JS-C26, JS-C53.** Coordinate the related changes below at their shared implementation surface.
 
   **[JS-C7](../js-code-review.md) — [high] [confirmed, repro 1 re-verified by synthesizer] SQL translator: aggregate binders are dynamically scoped**
 
@@ -634,9 +636,11 @@ Each task starts by reproducing the report against the current tree, then lands 
 
   Done when every linked scenario passes on all applicable lanes; code/position, mutation, ordering and repeat-use behavior satisfy the shared contract. Record commit and fixture IDs here.
 
+  Closed 2026-09-29 — all six hosts sqlt 1265/1265 with reuse twin; oracle/hybrid lanes agree on SQLite (+ MariaDB/MySQL/PostgreSQL for PHP); PY-C1 site f closed
+
 <a id="c-js-c8"></a>
 
-- [ ] **C-JS-C8 — Resolve JS-C8.** SQL translator: exponential output and time from small programs (no size or work budget)
+- [x] **C-JS-C8 — Resolve JS-C8.** SQL translator: exponential output and time from small programs (no size or work budget)
 
   **[JS-C8](../js-code-review.md) — [high] [confirmed] SQL translator: exponential output and time from small programs (no size or work budget)**
 
@@ -648,9 +652,11 @@ Each task starts by reproducing the report against the current tree, then lands 
 
   Done when every linked scenario passes on all applicable lanes; code/position, mutation, ordering and repeat-use behavior satisfy the shared contract. Record commit and fixture IDs here.
 
+  Closed 2026-09-29 — all six hosts sqlt 1265/1265 with reuse twin; oracle/hybrid lanes agree on SQLite (+ MariaDB/MySQL/PostgreSQL for PHP); PY-C1 site f closed
+
 <a id="c-js-c54"></a>
 
-- [ ] **C-JS-C54 — Resolve JS-C54.** SQL layer: non-SqlError host exceptions escape `tryTranslate` / `planHybrid`, and definition chains are refused with a wrong message
+- [x] **C-JS-C54 — Resolve JS-C54.** SQL layer: non-SqlError host exceptions escape `tryTranslate` / `planHybrid`, and definition chains are refused with a wrong message
 
   **[JS-C54](../js-code-review.md) — [low] [confirmed] SQL layer: non-SqlError host exceptions escape `tryTranslate` / `planHybrid`, and definition chains are refused with a wrong message**
 
@@ -663,6 +669,8 @@ Each task starts by reproducing the report against the current tree, then lands 
   Contract gate: settle the relevant rule in the shared test family before choosing among the report’s proposed behaviors.
 
   Done when every linked scenario passes on all applicable lanes; code/position, mutation, ordering and repeat-use behavior satisfy the shared contract. Record commit and fixture IDs here.
+
+  Closed 2026-09-29 — all six hosts sqlt 1265/1265 with reuse twin; oracle/hybrid lanes agree on SQLite (+ MariaDB/MySQL/PostgreSQL for PHP); PY-C1 site f closed
 
 <a id="c-js-c58"></a>
 
@@ -682,7 +690,7 @@ Each task starts by reproducing the report against the current tree, then lands 
 
 <a id="c-js-c27"></a>
 
-- [ ] **C-JS-C27 — Resolve JS-C27.** SQL `unify()` promotes an undeclared (UNKNOWN) column to a certain kind, bypassing the kind warrant
+- [x] **C-JS-C27 — Resolve JS-C27.** SQL `unify()` promotes an undeclared (UNKNOWN) column to a certain kind, bypassing the kind warrant
 
   **[JS-C27](../js-code-review.md) — [medium] [confirmed] SQL `unify()` promotes an undeclared (UNKNOWN) column to a certain kind, bypassing the kind warrant**
 
@@ -694,9 +702,11 @@ Each task starts by reproducing the report against the current tree, then lands 
 
   Done when every linked scenario passes on all applicable lanes; code/position, mutation, ordering and repeat-use behavior satisfy the shared contract. Record commit and fixture IDs here.
 
+  Closed 2026-09-29 — all six hosts sqlt 1265/1265 with reuse twin; oracle/hybrid lanes agree on SQLite (+ MariaDB/MySQL/PostgreSQL for PHP); PY-C1 site f closed
+
 <a id="c-js-c55"></a>
 
-- [ ] **C-JS-C55 — Resolve JS-C55, JS-C56.** Coordinate the related changes below at their shared implementation surface.
+- [x] **C-JS-C55 — Resolve JS-C55, JS-C56.** Coordinate the related changes below at their shared implementation surface.
 
   **[JS-C55](../js-code-review.md) — [low] [confirmed] SQL LIMIT/OFFSET/TAKE/DROP counts go through a JS `Number`: exponent notation and rounding in the SQL text**
 
@@ -716,11 +726,13 @@ Each task starts by reproducing the report against the current tree, then lands 
 
   Done when every linked scenario passes on all applicable lanes; code/position, mutation, ordering and repeat-use behavior satisfy the shared contract. Record commit and fixture IDs here.
 
+  Closed 2026-09-29 — all six hosts sqlt 1265/1265 with reuse twin; oracle/hybrid lanes agree on SQLite (+ MariaDB/MySQL/PostgreSQL for PHP); PY-C1 site f closed
+
 ## SQL bindings, dialects, fragments and rendering
 
 <a id="c-js-c24"></a>
 
-- [ ] **C-JS-C24 — Resolve JS-C24, JS-C25.** Coordinate the related changes below at their shared implementation surface.
+- [x] **C-JS-C24 — Resolve JS-C24, JS-C25.** Coordinate the related changes below at their shared implementation surface.
 
   **[JS-C24](../js-code-review.md) — [medium] [confirmed] `checkNumericGuard` memoises the dialect before it checks, so a failing check is skipped on every later call**
 
@@ -740,9 +752,11 @@ Each task starts by reproducing the report against the current tree, then lands 
 
   Done when every linked scenario passes on all applicable lanes; code/position, mutation, ordering and repeat-use behavior satisfy the shared contract. Record commit and fixture IDs here.
 
+  Closed 2026-09-29 — all six hosts sqlt 1265/1265 with reuse twin; oracle/hybrid lanes agree on SQLite (+ MariaDB/MySQL/PostgreSQL for PHP); PY-C1 site f closed
+
 <a id="c-js-c28"></a>
 
-- [ ] **C-JS-C28 — Resolve JS-C28.** A `Binding.raw` field is dropped by SELECT_COLS and by derived-table wrapping, giving SQL that names a nonexistent column
+- [x] **C-JS-C28 — Resolve JS-C28.** A `Binding.raw` field is dropped by SELECT_COLS and by derived-table wrapping, giving SQL that names a nonexistent column
 
   **[JS-C28](../js-code-review.md) — [medium] [confirmed] A `Binding.raw` field is dropped by SELECT_COLS and by derived-table wrapping, giving SQL that names a nonexistent column**
 
@@ -754,9 +768,11 @@ Each task starts by reproducing the report against the current tree, then lands 
 
   Done when every linked scenario passes on all applicable lanes; code/position, mutation, ordering and repeat-use behavior satisfy the shared contract. Record commit and fixture IDs here.
 
+  Closed 2026-09-29 — all six hosts sqlt 1265/1265 with reuse twin; oracle/hybrid lanes agree on SQLite (+ MariaDB/MySQL/PostgreSQL for PHP); PY-C1 site f closed
+
 <a id="c-js-c57"></a>
 
-- [ ] **C-JS-C57 — Resolve JS-C57.** SQL: rule-supplied identifiers are not validated like binding-supplied ones; SELECT_COLS bypasses the field allow-list on a relation with no declared fields
+- [x] **C-JS-C57 — Resolve JS-C57.** SQL: rule-supplied identifiers are not validated like binding-supplied ones; SELECT_COLS bypasses the field allow-list on a relation with no declared fields
 
   **[JS-C57](../js-code-review.md) — [low] [confirmed] SQL: rule-supplied identifiers are not validated like binding-supplied ones; SELECT_COLS bypasses the field allow-list on a relation with no declared fields**
 
@@ -770,11 +786,13 @@ Each task starts by reproducing the report against the current tree, then lands 
 
   Done when every linked scenario passes on all applicable lanes; code/position, mutation, ordering and repeat-use behavior satisfy the shared contract. Record commit and fixture IDs here.
 
+  Closed 2026-09-29 — all six hosts sqlt 1265/1265 with reuse twin; oracle/hybrid lanes agree on SQLite (+ MariaDB/MySQL/PostgreSQL for PHP); PY-C1 site f closed
+
 ## Hybrid execution, keys, order and context
 
 <a id="c-js-c22"></a>
 
-- [ ] **C-JS-C22 — Resolve JS-C22.** Hybrid planner: a SQL prefix ending in a FILTER loses FILTER's retained keys; the continuation sees SQL row ordinals
+- [x] **C-JS-C22 — Resolve JS-C22.** Hybrid planner: a SQL prefix ending in a FILTER loses FILTER's retained keys; the continuation sees SQL row ordinals
 
   **[JS-C22](../js-code-review.md) — [medium] [confirmed] Hybrid planner: a SQL prefix ending in a FILTER loses FILTER's retained keys; the continuation sees SQL row ordinals**
 
@@ -786,9 +804,11 @@ Each task starts by reproducing the report against the current tree, then lands 
 
   Done when every linked scenario passes on all applicable lanes; code/position, mutation, ordering and repeat-use behavior satisfy the shared contract. Record commit and fixture IDs here.
 
+  Closed 2026-09-29 — all six hosts sqlt 1265/1265 with reuse twin; oracle/hybrid lanes agree on SQLite (+ MariaDB/MySQL/PostgreSQL for PHP); PY-C1 site f closed
+
 <a id="c-js-c23"></a>
 
-- [ ] **C-JS-C23 — Resolve JS-C23.** Hybrid fallthrough (partially local MAP) with downstream TAKE/DROP hides errors the custom half raises on rows the LIMIT cuts off
+- [x] **C-JS-C23 — Resolve JS-C23.** Hybrid fallthrough (partially local MAP) with downstream TAKE/DROP hides errors the custom half raises on rows the LIMIT cuts off
 
   **[JS-C23](../js-code-review.md) — [medium] [confirmed] Hybrid fallthrough (partially local MAP) with downstream TAKE/DROP hides errors the custom half raises on rows the LIMIT cuts off**
 
@@ -800,9 +820,11 @@ Each task starts by reproducing the report against the current tree, then lands 
 
   Done when every linked scenario passes on all applicable lanes; code/position, mutation, ordering and repeat-use behavior satisfy the shared contract. Record commit and fixture IDs here.
 
+  Closed 2026-09-29 — all six hosts sqlt 1265/1265 with reuse twin; oracle/hybrid lanes agree on SQLite (+ MariaDB/MySQL/PostgreSQL for PHP); PY-C1 site f closed
+
 <a id="c-js-c59"></a>
 
-- [ ] **C-JS-C59 — Resolve JS-C59.** Pure-SQL bucket drops an explicit SORT_BY that fixes the group order
+- [x] **C-JS-C59 — Resolve JS-C59.** Pure-SQL bucket drops an explicit SORT_BY that fixes the group order
 
   **[JS-C59](../js-code-review.md) — [low] [confirmed, SQLite only] Pure-SQL bucket drops an explicit SORT_BY that fixes the group order**
 
@@ -814,9 +836,11 @@ Each task starts by reproducing the report against the current tree, then lands 
 
   Done when every linked scenario passes on all applicable lanes; code/position, mutation, ordering and repeat-use behavior satisfy the shared contract. Record commit and fixture IDs here.
 
+  Closed 2026-09-29 — all six hosts sqlt 1265/1265 with reuse twin; oracle/hybrid lanes agree on SQLite (+ MariaDB/MySQL/PostgreSQL for PHP); PY-C1 site f closed
+
 <a id="c-js-c60"></a>
 
-- [ ] **C-JS-C60 — Resolve JS-C60.** `executeHybrid` treats the context differently for hybrid versus pure-memory plans
+- [x] **C-JS-C60 — Resolve JS-C60.** `executeHybrid` treats the context differently for hybrid versus pure-memory plans
 
   **[JS-C60](../js-code-review.md) — [low] [confirmed] `executeHybrid` treats the context differently for hybrid versus pure-memory plans**
 
@@ -829,6 +853,8 @@ Each task starts by reproducing the report against the current tree, then lands 
   Contract gate: settle the relevant rule in the shared test family before choosing among the report’s proposed behaviors.
 
   Done when every linked scenario passes on all applicable lanes; code/position, mutation, ordering and repeat-use behavior satisfy the shared contract. Record commit and fixture IDs here.
+
+  Closed 2026-09-29 — all six hosts sqlt 1265/1265 with reuse twin; oracle/hybrid lanes agree on SQLite (+ MariaDB/MySQL/PostgreSQL for PHP); PY-C1 site f closed
 
 ## Host integration, concurrency and tooling
 

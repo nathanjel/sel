@@ -188,7 +188,11 @@ class Binding:
                            f'{type_name(v)}; build one with Value.num(), .text(), '
                            '.bool(), .bin() or .list()')
         if type is not None and type != 'NUM':
-            _check_type(type)
+            # NUM or nothing, as the docstring says: any other type used to be
+            # accepted and ignored (`Binding.value(v, 'BOOL')` on a text value
+            # behaved as TEXT), which is a declaration that looks like it worked.
+            raise SqlError('E_SQL_BINDING',
+                           f"a value binding's type is NUM or nothing, and this is {type!r}")
         if type == 'NUM':
             _check_numeric('this value binding', v)
         return Binding({'kind': 'value', 'type': type, 'value': v})

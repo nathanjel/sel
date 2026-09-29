@@ -329,7 +329,7 @@ way past and never reaches the constant check.
 --- dialect
 mariadb
 --- source
-RMATCH('\p{L}', "x")
+RMATCH(IF(TRUE, '\p{L}', 'x'), "x")
 --- error
 E_SQL_UNSUPPORTED 1:8
 ===

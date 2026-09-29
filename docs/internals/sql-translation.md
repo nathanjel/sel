@@ -805,13 +805,13 @@ hand-written SQL, and it is what the motivating example wanted.
 ```sql
 -- Fragment::asCondition()
 NOT EXISTS (SELECT 1 FROM `order_items` `oi`
-             WHERE `oi`.`order_id` = `o`.`id`
+             WHERE (`oi`.`order_id` = `o`.`id`)
                AND ((`oi`.`amount` > 0)) IS NOT TRUE)
 
 -- in a statement the application builds
 SELECT o.id FROM orders o
  WHERE NOT EXISTS (SELECT 1 FROM `order_items` `oi`
-                    WHERE `oi`.`order_id` = `o`.`id`
+                    WHERE (`oi`.`order_id` = `o`.`id`)
                       AND ((`oi`.`amount` > 0)) IS NOT TRUE)
 ```
 
@@ -1111,17 +1111,17 @@ These are quotations of `sql/cases/12-aggregates.sqlt`, checked by
 
 ```sel-case agg.relation.all
 ALL(ITEMS, I, I["qty"] > 0)
-    NOT EXISTS (SELECT 1 FROM `order_items` `oi` WHERE `oi`.`order_id` = `o`.`id` AND ((`oi`.`qty` > 0)) IS NOT TRUE)
+    NOT EXISTS (SELECT 1 FROM `order_items` `oi` WHERE (`oi`.`order_id` = `o`.`id`) AND ((`oi`.`qty` > 0)) IS NOT TRUE)
 ```
 
 ```sel-case agg.relation.sum
 SUM(ITEMS, _["QTY"] * _["PRICE"])
-    (SELECT COALESCE(SUM((`oi`.`qty` * `oi`.`price`)), 0) FROM `order_items` `oi` WHERE `oi`.`order_id` = `o`.`id`)
+    (SELECT COALESCE(SUM((`oi`.`qty` * `oi`.`price`)), 0) FROM `order_items` `oi` WHERE (`oi`.`order_id` = `o`.`id`))
 ```
 
 ```sel-case agg.relation.count
 COUNT(ITEMS) == 0
-    ((SELECT COUNT(*) FROM `order_items` `oi` WHERE `oi`.`order_id` = `o`.`id`) = 0)
+    ((SELECT COUNT(*) FROM `order_items` `oi` WHERE (`oi`.`order_id` = `o`.`id`)) = 0)
 ```
 
 `ITEMS` there declares one field. Over a relation declaring several, the same
@@ -1129,7 +1129,7 @@ expression is refused:
 
 ```sel-case agg.relation.in
 SKU IN ITEMS
-    ((CAST(`o`.`sku` AS CHAR) COLLATE utf8mb4_nopad_bin IN (SELECT CAST(`oi`.`sku` AS CHAR) COLLATE utf8mb4_nopad_bin FROM `order_items` `oi` WHERE `oi`.`order_id` = `o`.`id`)) IS TRUE)
+    ((CAST(`o`.`sku` AS CHAR) COLLATE utf8mb4_nopad_bin IN (SELECT CAST(`oi`.`sku` AS CHAR) COLLATE utf8mb4_nopad_bin FROM `order_items` `oi` WHERE (`oi`.`order_id` = `o`.`id`))) IS TRUE)
 ```
 
 ```sel-case refuse.in-over-a-multi-field-relation
@@ -1171,7 +1171,7 @@ the outer alias, because the host wrote it:
 
 ```sel-case agg.relation.nested
 ALL(ORDERS, O, ALL(LINES, L, L["qty"] > 0))
-    NOT EXISTS (SELECT 1 FROM `orders` `o` WHERE TRUE AND (NOT EXISTS (SELECT 1 FROM `lines` `l` WHERE `l`.`order_id` = `o`.`id` AND ((`l`.`qty` > 0)) IS NOT TRUE)) IS NOT TRUE)
+    NOT EXISTS (SELECT 1 FROM `orders` `o` WHERE TRUE AND (NOT EXISTS (SELECT 1 FROM `lines` `l` WHERE (`l`.`order_id` = `o`.`id`) AND ((`l`.`qty` > 0)) IS NOT TRUE)) IS NOT TRUE)
 ```
 
 Two relations sharing an alias in one expression is `E_SQL_BINDING`, checked
@@ -1332,7 +1332,7 @@ free:
 
 ```sel-case agg.filter.absorbed-into-count-bare
 COUNT(FILTER(ITEMS, I, I["qty"] <= 0))
-    (SELECT COALESCE(SUM(CASE WHEN (`oi`.`qty` <= 0) THEN 1 ELSE 0 END), 0) FROM `order_items` `oi` WHERE `oi`.`order_id` = `o`.`id`)
+    (SELECT COALESCE(SUM(CASE WHEN (`oi`.`qty` <= 0) THEN 1 ELSE 0 END), 0) FROM `order_items` `oi` WHERE (`oi`.`order_id` = `o`.`id`))
 ```
 
 `MAP` as an aggregate's source is **not** absorbed in M3 and is refused with a
@@ -1452,22 +1452,22 @@ own and push down:
 
 ```sel-case agg.relation.count
 COUNT(ITEMS) == 0
-    ((SELECT COUNT(*) FROM `order_items` `oi` WHERE `oi`.`order_id` = `o`.`id`) = 0)
+    ((SELECT COUNT(*) FROM `order_items` `oi` WHERE (`oi`.`order_id` = `o`.`id`)) = 0)
 ```
 
 ```sel-case agg.filter.absorbed-into-count
 COUNT(FILTER(ITEMS, _["QTY"] <= 0)) > 0
-    ((SELECT COALESCE(SUM(CASE WHEN (`oi`.`qty` <= 0) THEN 1 ELSE 0 END), 0) FROM `order_items` `oi` WHERE `oi`.`order_id` = `o`.`id`) > 0)
+    ((SELECT COALESCE(SUM(CASE WHEN (`oi`.`qty` <= 0) THEN 1 ELSE 0 END), 0) FROM `order_items` `oi` WHERE (`oi`.`order_id` = `o`.`id`)) > 0)
 ```
 
 ```sel-case agg.contract.over-credit-limit
 SUM(ITEMS, _["QTY"] * _["PRICE"]) > CREDIT_LIMIT
-    ((SELECT COALESCE(SUM((`oi`.`qty` * `oi`.`price`)), 0) FROM `order_items` `oi` WHERE `oi`.`order_id` = `o`.`id`) > `o`.`credit_limit`)
+    ((SELECT COALESCE(SUM((`oi`.`qty` * `oi`.`price`)), 0) FROM `order_items` `oi` WHERE (`oi`.`order_id` = `o`.`id`)) > `o`.`credit_limit`)
 ```
 
 ```sel-case agg.contract.all-skus-well-formed
 ALL(ITEMS, RMATCH('^[A-Z]{2}-\d{4}$', _["SKU"]))
-    NOT EXISTS (SELECT 1 FROM `order_items` `oi` WHERE `oi`.`order_id` = `o`.`id` AND ((`oi`.`sku` COLLATE utf8mb4_nopad_bin REGEXP '(?s)^[A-Z]{2}-[0-9]{4}$')) IS NOT TRUE)
+    NOT EXISTS (SELECT 1 FROM `order_items` `oi` WHERE (`oi`.`order_id` = `o`.`id`) AND ((`oi`.`sku` COLLATE utf8mb4_nopad_bin REGEXP '(?s)^[A-Z]{2}-[0-9]{4}$')) IS NOT TRUE)
 ```
 
 That last one is `\d` rewritten to `[0-9]` — see §7.10.

@@ -179,6 +179,18 @@ operand, and the two would drift."
 The position is SEL's own -- the innermost node that failed, not the outermost
 one this was entered at -- because that is the character the author has to
 change."
+  ;; SEL's E_DEPTH is not a judgement that the expression is invalid -- SEL
+  ;; evaluates deep-but-legal programs fine -- it is the NESTING of what would be
+  ;; translated, which is what E_SQL_DEPTH says (JS-C54 d).
+  (when (equal (sel:sel-error-code e) "E_DEPTH")
+    (refuse "E_SQL_DEPTH"
+            (format nil "this expression nests deeper than SEL will evaluate (~a), so ~
+there is nothing to translate; the evaluator answers E_DEPTH for it"
+                    sel::+max-depth+)
+            (if (plusp (sel:sel-error-line e))
+                (sel::make-pos (sel:sel-error-line e) (sel:sel-error-col e)
+                               (sel:sel-error-offset e))
+                (snode-pos n))))
   (refuse "E_SQL_INVALID"
           (format nil "SEL rejects this expression (~a: ~a), so there is ~
 nothing to translate; a database would answer something rather than fail"
@@ -202,6 +214,20 @@ else, so R[1.0] and R[1] are two different keys and SEL agrees:
 `R[1.0] = 1; R[1] = 2; JOIN(MAP(R, _K), \"|\")` is \"1.0|1\". Canonicalising here
 would collapse them, or turn a legal program into a duplicate-key refusal."
   (when (member (snode-kind idx) '(:num :text)) (sel::node-s idx)))
+
+(defun snapshot-def (v)
+  "A value read out of a definition is a COPY (spec 3.4: assignment copies, and a
+name read is a value at that moment). Only a clist is mutable -- every other node
+is immutable once stage 1 has it -- so only a clist is cloned, deeply, since its
+entries can hold clists too. Sharing one made `R[1] = 5; X = R; R[2] = 6;
+COUNT(X)` see two elements where SEL sees one (GO-C4)."
+  (if (clist-p v)
+      (let ((out (make-clist (clist-pos v))))
+        (setf (clist-entries out)
+              (mapcar (lambda (cell) (cons (car cell) (snapshot-def (cdr cell))))
+                      (clist-entries v)))
+        out)
+      v))
 
 (defun replace-items (n items)
   (let ((c (sel::copy-node n))) (setf (sel::node-items c) items) c))
@@ -234,7 +260,7 @@ accepts was decided by the host."
      (if (member (sel::node-s node) bound :test #'equal)
          node
          (let ((cell (assoc (sel::node-s node) defs :test #'equal)))
-           (if cell (cdr cell) node))))
+           (if cell (snapshot-def (cdr cell)) node))))
     ((:num :text :bool :null) node)
     (:assign (refuse "E_SQL_ASSIGN"
                      "an assignment here would have to happen while the query ~
@@ -262,8 +288,9 @@ SQL expression cannot do" (snode-pos node)))
      ;; Which arguments a binding call runs inside the binder, and what they
      ;; see, is the manifest's decision (SEL::BINDING-FORM), shared with
      ;; DEPENDENCIES. A binder argument is a NAME, not a read of one, and stays
-     ;; as written.
-     (let ((args (sel::node-items node)))
+     ;; as written -- unless a definition about to be inlined under it reads a
+     ;; name the binder would capture, in which case the binder is renamed first.
+     (let ((args (sel::node-items (setf node (hygienic-call node defs bound depth)))))
        (multiple-value-bind (scopes binds)
            (sel::binding-form (sel::node-s node) args (sel::node-spec node))
          (let ((inner (append bound binds)))
@@ -276,6 +303,125 @@ SQL expression cannot do" (snode-pos node)))
                             (:inner (substitute-node arg defs inner depth))
                             (t (substitute-node arg defs bound depth)))))))))
     (t node)))
+
+(defvar *metrics* nil
+  "Node -> (size . depth), by identity, for the definitions stage 1 has built.")
+
+(defun node-metrics (n)
+  "The size and depth of N AS A TREE -- a definition read twice counts twice, which
+is what the translator will walk -- computed once per node by identity, so a
+program whose tree is 2^30 nodes is measured in the time of its DAG. A binder
+NAME is not a node the walk visits and is not counted (it is not a read)."
+  (cond
+    ((or (null n) (not (or (clist-p n) (sel::node-p n)))) (cons 0 0))
+    ((and *metrics* (gethash n *metrics*)))
+    (t
+     (let ((size 1) (depth 0))
+       (flet ((add (child)
+                (let ((m (node-metrics child)))
+                  (incf size (car m))
+                  (setf depth (max depth (cdr m))))))
+         (cond
+           ((clist-p n) (dolist (c (clist-entries n)) (add (cdr c))))
+           (t
+            (case (sel::node-kind n)
+              ((:un) (add (sel::node-l n)))
+              ((:bin :index) (add (sel::node-l n)) (add (sel::node-r n)))
+              (:list (dolist (i (sel::node-items n)) (add i)))
+              (:call
+               (let ((args (sel::node-items n)))
+                 (multiple-value-bind (scopes binds)
+                     (sel::binding-form (sel::node-s n) args (sel::node-spec n))
+                   (declare (ignore binds))
+                   (loop for arg in args
+                         for scope in (or scopes (make-list (length args) :initial-element :outer))
+                         do (unless (eq scope :binder) (add arg))))))
+              (t nil)))))
+       (let ((m (cons size (1+ depth))))
+         (when *metrics* (setf (gethash n *metrics*) m))
+         m)))))
+
+(defun check-expansion (n)
+  "Refuse, before anything walks or evaluates it, a tree whose expansion cannot
+be translated: past MAX_SQL_NODES nodes (E_SQL_SIZE) or absurdly deep (E_SQL_DEPTH).
+Without this a doubling chain `X1 = X0 + X0; X2 = X1 + X1; ...` cost the time of
+the expansion in the constant validation of stage 1, before the translator's own
+counter ever ran. The depth cut is loose (twice the evaluator's): the exact
+boundary is still the evaluator's, decided where it always was."
+  (let ((m (node-metrics n)))
+    (when (> (car m) sel::+limit-max-sql-nodes+)
+      (refuse "E_SQL_SIZE"
+              (format nil "this program expands to more than ~a nodes of SQL once its ~
+helpers are inlined; SEL evaluates it without the expansion, but a database cannot be ~
+asked to parse it" sel::+limit-max-sql-nodes+)))
+    (when (> (cdr m) (* 2 sel::+max-depth+))
+      (refuse "E_SQL_DEPTH"
+              (format nil "this expression nests deeper than SEL will evaluate (~a), so ~
+there is nothing to translate; the evaluator answers E_DEPTH for it" sel::+max-depth+)
+              (snode-pos n)))))
+
+(defun free-names (node bound)
+  "The names NODE reads that no binder inside it (nor BOUND) defines."
+  (let ((out '()))
+    (labels ((walk (n bound)
+               (case (snode-kind n)
+                 (:var (unless (member (sel::node-s n) bound :test #'equal)
+                         (pushnew (sel::node-s n) out :test #'equal)))
+                 (:un (walk (sel::node-l n) bound))
+                 ((:bin :index) (walk (sel::node-l n) bound) (walk (sel::node-r n) bound))
+                 (:list (dolist (i (sel::node-items n)) (walk i bound)))
+                 (:clist (dolist (c (clist-entries n)) (walk (cdr c) bound)))
+                 (:call
+                  (let ((args (sel::node-items n)))
+                    (multiple-value-bind (scopes binds)
+                        (sel::binding-form (sel::node-s n) args (sel::node-spec n))
+                      (let ((inner (append bound binds)))
+                        (loop for arg in args
+                              for scope in (or scopes (make-list (length args)
+                                                                 :initial-element :outer))
+                              do (case scope
+                                   (:binder nil)
+                                   (:inner (walk arg inner))
+                                   (t (walk arg bound))))))))
+                 (t nil))))
+      (walk node bound))
+    out))
+
+(defvar *fresh-binder-counter* 0)
+
+(defun fresh-binder-name (name)
+  "A name no program can write: it contains a character the lexer never yields."
+  (format nil "~a~c~d" name (code-char 1) (incf *fresh-binder-counter*)))
+
+(defun hygienic-call (node defs bound depth)
+  "Rename the explicit binder of a binding call when it would CAPTURE a name free
+in a definition about to be inlined into its scope. `X = A; ALL(L, A, X > 0)` must
+read the column A in the body, and inlining X as the bare name A would make it
+read the binder instead (JS-C26, CPP-C23). Returns NODE, or a copy with the binder
+argument and the free reads of it in the inner arguments renamed."
+  (let ((args (sel::node-items node)))
+    (multiple-value-bind (scopes binds)
+        (sel::binding-form (sel::node-s node) args (sel::node-spec node))
+      (declare (ignore binds))
+      (let* ((bi (and scopes (position :binder scopes)))
+             (barg (and bi (nth bi args))))
+        (if (and barg (is-binder-name barg)
+                 (some (lambda (d) (member (sel::node-s barg) (free-names (cdr d) '())
+                                           :test #'equal))
+                       defs))
+            (let* ((old (sel::node-s barg))
+                   (fresh (fresh-binder-name old))
+                   (renamed (let ((c (sel::copy-node barg))) (setf (sel::node-s c) fresh) c))
+                   (map (list (cons old renamed))))
+              (replace-items
+               node
+               (loop for arg in args
+                     for scope in scopes
+                     collect (case scope
+                               (:binder renamed)
+                               (:inner (substitute-node arg map '() depth))
+                               (t arg)))))
+            node)))))
 
 (defun flatten-items (items defs bound depth)
   "Build a `,` list, flattening per spec §5.9: an operand with children and no
@@ -331,6 +477,7 @@ here, because the shape has to be known before the query runs"
       ;; translated to TRUE and every server answered TRUE where SEL raises
       ;; E_DIV_ZERO. An indexed assignment builds a clist, which the constant
       ;; test refuses to walk, so `R[1] = 1 / 0; COUNT(R)` was 1.
+      (check-expansion value)
       (when (is-constant value const-names) (validate-constant value root))
       (cond
         ((null keys)
@@ -357,8 +504,8 @@ use one or the other" name)
              (refuse "E_SQL_ASSIGN"
                      (format nil "~a[~a] is assigned more than once" name key)
                      (snode-pos s)))
-           ;; Appended in place, so a reference an earlier statement already took
-           ;; sees it. That aliasing is observable.
+           ;; Appended in place to THIS name's list, which is the only holder: a
+           ;; read of the name elsewhere took a snapshot (SNAPSHOT-DEF).
            (setf (clist-entries cl)
                  (append (clist-entries cl) (list (cons key value))))
            (if cell defs (append defs (list (cons name cl))))))))))
@@ -383,6 +530,9 @@ a shape. The result is not always an expression node."
          ;; Stage 1 removes both wrappers before either guard looks, which is
          ;; why they must be charged up front.
          (base (if (eq (sel::node-kind ast) :seq) 1 0)))
-    (dolist (s leading)
-      (setf defs (record-statement s defs const-names root (1+ base))))
-    (substitute-node result defs '() base)))
+    (let ((*metrics* (make-hash-table :test #'eq)))
+      (dolist (s leading)
+        (setf defs (record-statement s defs const-names root (1+ base))))
+      (let ((out (substitute-node result defs '() base)))
+        (check-expansion out)
+        out))))

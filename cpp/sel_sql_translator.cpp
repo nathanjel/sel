@@ -318,6 +318,10 @@ Translator::Begun Translator::begin(const NodePtr& ast) {
   caveats_.clear();
   frames_.clear();
   depth_ = 0;
+  nodes_ = 0;
+  const_memo_.reset(new_const_memo());
+  validated_.clear();
+  numeric_ok_.clear();
   subquery_counter_ = 0;
 
   ConstScope scope = const_scope(&bindings_);
@@ -350,7 +354,23 @@ Translator::Begun Translator::begin(const NodePtr& ast) {
 // at the name. The planner reads RECORD in three places -- a bucket's
 // projection, a bucket's key, a MAP's projection -- and each used to walk the
 // pairs itself.
-static std::vector<std::pair<std::string, SNodePtr>> record_fields(const SNodePtr& node) {
+// An alias or column name that comes from a SEL text literal is held to the rules a
+// binding's own names already meet: not empty, no NUL (which no dialect can
+// quote, and a C-string client truncates at). E_SQL_UNSUPPORTED at the literal.
+static void check_program_name(const std::string& name, Pos pos) {
+  if (name.empty()) {
+    refuse("E_SQL_UNSUPPORTED",
+           "an empty name cannot be quoted as a SQL identifier (PostgreSQL and "
+           "MariaDB refuse it)",
+           pos);
+  }
+  if (name.find('\0') != std::string::npos) {
+    refuse("E_SQL_UNSUPPORTED", "a name containing a NUL cannot be quoted by any dialect", pos);
+  }
+}
+
+static std::vector<std::pair<std::string, SNodePtr>> record_fields(const SNodePtr& node,
+                                                                    const std::string& dialect) {
   const auto& args = node->kids();
   if (args.size() % 2 != 0) {
     refuse("E_ARITY", "RECORD takes an even number of arguments", node->pos());
@@ -360,7 +380,27 @@ static std::vector<std::pair<std::string, SNodePtr>> record_fields(const SNodePt
     if (args[i]->t() != SNode::T::Text) {
       refuse("E_BAD_ARG", "RECORD field names must be string literals", args[i]->pos());
     }
+    check_program_name(args[i]->s(), args[i]->pos());
     fields.emplace_back(args[i]->s(), args[i + 1]);
+  }
+  // PostgreSQL truncates an identifier to 63 bytes, so two aliases whose first
+  // 63 bytes agree name ONE column and SEL's two record keys become one.
+  const auto chain = Map::chain(dialect);
+  if (std::find(chain.begin(), chain.end(), std::string_view("postgresql")) != chain.end()) {
+    for (std::size_t i = 0; i < fields.size(); ++i) {
+      for (std::size_t j = 0; j < i; ++j) {
+        const std::string& a = fields[j].first;
+        const std::string& b = fields[i].first;
+        if (a != b && (a.size() > 63 || b.size() > 63) &&
+            a.substr(0, 63) == b.substr(0, 63)) {
+          refuse("E_SQL_UNSUPPORTED",
+                 "the record keys '" + a.substr(0, 20) + "...' and '" + b.substr(0, 20) +
+                     "...' share their first 63 bytes, and PostgreSQL truncates an "
+                     "identifier there, so they would name one column",
+                 args[2 * i]->pos());
+        }
+      }
+    }
   }
   return fields;
 }
@@ -404,6 +444,19 @@ Fragment Translator::node(const SNodePtr& n) {
   // of 201 terms over a column translated -- and the evaluator answers E_DEPTH
   // for that same expression. A rule the database answers and SEL does not is a
   // defect, and it was in every host.
+  // The size budget (sql-translation.md §7.4): one per node dispatched, charged
+  // again on every re-entry of an inlined helper or an unrolled element, and
+  // counted HERE -- before constant folding, kind inference or rendering -- so
+  // the work a refusal costs is bounded by the limit and not by what the
+  // program would have expanded to (CPP-C17).
+  if (++nodes_ > sel_limits::MAX_SQL_NODES) {
+    refuse("E_SQL_SIZE",
+           "this program renders more than " + std::to_string(sel_limits::MAX_SQL_NODES) +
+               " nodes of SQL once its helpers and unrolled lists are written "
+               "out, while SEL evaluates it in a fraction of that; the "
+               "translation would be larger than any server can be asked to parse",
+           {});
+  }
   ++depth_;
   if (depth_ > MAX_DEPTH) {
     --depth_;
@@ -449,7 +502,7 @@ Fragment Translator::node_in_scope(const SNodePtr& n) {
   // A binder that reuses the name of a constant `value` binding is the ELEMENT
   // inside its body, not the constant (JS-C53): it is not constant there, so it
   // must not be folded, validated against the constant, or left unguarded.
-  if (!is_constant(*n, visible_consts())) return dispatch(n);
+  if (!is_constant(*n, visible_consts(), const_memo_.get())) return dispatch(n);
 
   // Ask SEL whether the expression is VALID before asking the map whether it is
   // translatable -- and at EVERY compound node, not just the outermost.
@@ -465,14 +518,26 @@ Fragment Translator::node_in_scope(const SNodePtr& n) {
   // a BOOL where a number is required, and the second is the sentence an author
   // can act on.
   Fragment f = dispatch(n);
-  validate(*n, const_root_);
+  // A subtree shared through a helper is the same expression at every use, so
+  // SEL is asked about it once (a chain of doubling helpers reads the shared
+  // node 2^k times).
+  if (validated_.insert(n.get()).second) validate(*n, const_root_);
   return f;
 }
 
 Fragment Translator::dispatch(const SNodePtr& n) {
   switch (n->t()) {
     case SNode::T::Num: return literal(Value::num(n->s()), SqlKind::Num);
-    case SNode::T::Text: return literal(Value::text(n->s()), SqlKind::Text);
+    case SNode::T::Text:
+      // A TEXT value holding NUL is refused in EVERY mode: PostgreSQL cannot hold
+      // it and a C-string client truncates the statement at it (R3).
+      if (n->s().find('\0') != std::string::npos) {
+        refuse("E_SQL_UNSUPPORTED",
+               "a text literal holding a NUL cannot be sent to any target: "
+               "PostgreSQL cannot store it and a C-string client truncates at it",
+               n->pos());
+      }
+      return literal(Value::text(n->s()), SqlKind::Text);
     case SNode::T::Bool: return literal(Value::boolean(n->b()), SqlKind::Bool);
     case SNode::T::Var: return variable(*n);
     case SNode::T::Index: return index(*n);
@@ -825,6 +890,13 @@ Fragment Translator::row_field(const RowModelPtr& row, const std::string& label,
                                  "right binder",
            n.pos());
   }
+  if (f->spec.opaque) {
+    refuse("E_SQL_SHAPE",
+           "this field is a raw SQL expression of the relation the statement "
+           "selects from, and it has no column of that name in a derived table; "
+           "it cannot be read here",
+           n.pos());
+  }
   if (f->spec.is_raw || !f->qualify) return column_ref(f->spec);
   ColumnSpec qualified = f->spec;
   qualified.table = f->table;
@@ -932,6 +1004,13 @@ Fragment Translator::from_binder(const Binder& b, const SNode& n) {
         qualified.table = model->table;
         return column_ref(qualified);
       }
+      if (field->opaque) {
+        refuse("E_SQL_SHAPE",
+               "this field is a raw SQL expression of the relation the statement "
+               "selects from, and it has no column of that name in a derived "
+               "table; it cannot be read here",
+               n.pos());
+      }
       return relation_column(rel, *field);
     }
     case Binder::Shape::None:
@@ -1002,7 +1081,16 @@ Fragment Translator::index_binder(const Binder& b, const std::string& name,
     // A derived table's fields carry the alias the projection gave them
     // (ensure_derived), so a read through any spelling of the name renders
     // that column, as in the other hosts -- not the spelling itself.
-    if (const ColumnSpec* f = rel.field(field)) return relation_column(rel, *f);
+    if (const ColumnSpec* f = rel.field(field)) {
+      if (f->opaque) {
+        refuse("E_SQL_SHAPE",
+               "this field is a raw SQL expression of the relation the statement "
+               "selects from, and it has no column of that name in a derived "
+               "table; it cannot be read here",
+               n.pos());
+      }
+      return relation_column(rel, *f);
+    }
     std::vector<std::string> known;
     for (const auto& [k, spec] : rel.fields) {
       (void)spec;
@@ -1132,8 +1220,9 @@ void require_comparable_kinds(const Fragment& l, const Fragment& r,
 // answers the BOOL TRUE, whose text is "TRUE", and the CASE answers 1.
 SqlKind unify(std::span<const Fragment> fs, Pos pos) {
   std::optional<SqlKind> kind;
+  bool saw_unknown = false;
   for (const Fragment& f : fs) {
-    if (f.kind() == SqlKind::Unknown) continue;
+    if (f.kind() == SqlKind::Unknown) { saw_unknown = true; continue; }
     if (!kind) { kind = f.kind(); continue; }
     if (*kind != f.kind()) {
       refuse("E_SQL_SHAPE",
@@ -1145,6 +1234,11 @@ SqlKind unify(std::span<const Fragment> fs, Pos pos) {
              pos);
     }
   }
+  // One UNKNOWN branch makes the whole conditional UNKNOWN (sql-kinds.md §4.2):
+  // the CASE returns whatever that branch holds, and a server does not know it
+  // is a BOOL or a number just because the other branches are. Laundering it
+  // through IF/COND/`??`/`???`/COALESCE defeated the refusal and the guard.
+  if (saw_unknown) return SqlKind::Unknown;
   return kind.value_or(SqlKind::Unknown);
 }
 
@@ -1253,7 +1347,9 @@ void Translator::require_join_text(const Fragment& f, Pos pos, const std::string
 // See require_numeric in sel_sql_stage1.hpp for why refusing loses nothing, and
 // for why it is never keyed on a declared kind.
 void Translator::require_numeric_constant(const SNode& n) {
-  if (is_constant(n, visible_consts())) require_numeric(n, const_root_);
+  if (is_constant(n, visible_consts(), const_memo_.get()) && numeric_ok_.insert(&n).second) {
+    require_numeric(n, const_root_);
+  }
 }
 
 // Wrap an operand the numeric context cannot be sure of.
@@ -1264,7 +1360,7 @@ void Translator::require_numeric_constant(const SNode& n) {
 // left is what could not be settled at translation time: columns, raw, relation
 // fields.
 Fragment Translator::guard_numeric(const Fragment& f, const SNode& n) {
-  if (is_constant(n, visible_consts())) return f;
+  if (is_constant(n, visible_consts(), const_memo_.get())) return f;
   // numeric_operand hands an unguarded NUM back untouched and wraps anything
   // else; the other hosts test the result's identity, which a value cannot.
   const bool wraps = f.kind() != SqlKind::Num || f.guard();
@@ -1312,7 +1408,7 @@ void Translator::coerce_scale_limits(std::span<const SNode* const> operands) {
   const std::optional<std::int32_t> cap = numeric_cast_scale();
   if (!cap) return;
   for (const SNode* operand : operands) {
-    if (is_constant(*operand, visible_consts())) {
+    if (is_constant(*operand, visible_consts(), const_memo_.get())) {
       if (constant_scale(*operand, const_root_) > *cap) {
         scale_limited(operand->pos(), "this constant is read as a number");
       }
@@ -1455,14 +1551,31 @@ Fragment Translator::fold_pairwise(const std::string& op,
   // Never empty: every caller supplies its aggregate's identity literal
   // instead, and those differ per aggregate (TRUE for ALL, FALSE for ANY, 0 for
   // SUM and COUNT, "" for JOIN).
-  Fragment acc = parts[0];
-  for (std::size_t i = 1; i < parts.size(); ++i) {
-    const Fragment pair[] = {acc, parts[i]};
+  // Above 256 operands the fold is BALANCED (docs/internals/sql-translation.md
+  // §7.1): a left fold over n operands is n levels deep and the servers refuse
+  // depth (SQLite at 1000, MariaDB/MySQL by stack overrun near 900, PostgreSQL by
+  // memory at 5000). n operands split ceil(n/2) left, the rest right,
+  // recursively; 256 or fewer stay a plain left fold, byte for byte as before.
+  const auto combine = [&](const Fragment& a, const Fragment& b) {
+    const Fragment pair[] = {a, b};
     // Recomputed at EVERY step from the accumulator's CURRENT kind: for `&`
     // the accumulator becomes BIN as soon as any operand is, and stays BIN.
-    acc = apply(Section::Ops, op, pair, pos, variant_for(op, pair));
-  }
-  return acc;
+    return apply(Section::Ops, op, pair, pos, variant_for(op, pair));
+  };
+  const std::function<Fragment(std::size_t, std::size_t)> fold =
+      [&](std::size_t lo, std::size_t hi) -> Fragment {
+    const std::size_t n = hi - lo;
+    if (n <= 256) {
+      Fragment acc = parts[lo];
+      for (std::size_t i = lo + 1; i < hi; ++i) acc = combine(acc, parts[i]);
+      return acc;
+    }
+    const std::size_t mid = lo + (n + 1) / 2;
+    const Fragment left = fold(lo, mid);
+    const Fragment right = fold(mid, hi);
+    return combine(left, right);
+  };
+  return fold(0, parts.size());
 }
 
 // --- operators ---------------------------------------------------------------
@@ -1806,12 +1919,17 @@ Fragment Translator::in_operator(const SNode& n) {
       // answers E_SQL_UNSUPPORTED. Same rule conditional() and
       // join_aggregate() already follow.
       const std::string skel = skeleton("inRelation", n.pos());
-      // No require_comparable_kinds here, and text_operand is applied
-      // unconditionally -- there is no two-BIN skip as in binary().
+      // The needle and the column have to be comparable, as `x IN (list)` has
+      // them (PY-C21): a BOOL or BIN needle against a TEXT column would match
+      // rows whose text is '1', 'true' or the same bytes. text_operand is
+      // applied unconditionally -- there is no two-BIN skip as in binary().
+      const Fragment needle_raw = node(n.l());
+      const Fragment column = column_ref(*scalar);
+      require_comparable_kinds(needle_raw, column, "IN", n.pos());
       SlotMap slots = merge_slots(
           relation_slots(rel),
-          SlotMap{{"needle", {Slot{emit_.text_operand(node(n.l()))}}},
-                  {"body", {Slot{emit_.text_operand(column_ref(*scalar))}}}});
+          SlotMap{{"needle", {Slot{emit_.text_operand(needle_raw)}}},
+                  {"body", {Slot{emit_.text_operand(column)}}}});
       return Fragment(fill_named(skel, slots, n.pos()), SqlKind::Bool, dialect_);
     }
   }
@@ -1866,7 +1984,12 @@ Fragment Translator::in_operator(const SNode& n) {
     }
     // `raw`, not `needle`: needle's kind is always TEXT after the cast.
     require_comparable_kinds(raw, f, "IN", e->pos());
-    const Fragment item = is_exact ? f : emit_.text_operand(f);
+    // Against an `exact` needle the item stays bare only when it is itself text
+    // by construction: a text literal or another exact column. A NUMBER or an
+    // undeclared column beside a bare `=` is compared NUMERICALLY by the MySQL
+    // family ('3.0' = 3, '3abc' = 3), where SEL's IN is structural (CPP-C30).
+    const bool item_is_text = e->t() == SNode::T::Text || f.exact();
+    const Fragment item = is_exact && item_is_text ? f : emit_.text_operand(f);
     const Fragment args[] = {needle, item};
     // The map key is EQL with variant text; the IN entry is not used here.
     tests.push_back(apply(Section::Ops, "EQL", args, e->pos(), "text"));
@@ -2096,6 +2219,22 @@ Fragment Translator::call(const SNodePtr& n) {
   // Captured before the rewrite, which preserves the name but rebinds the node.
   const std::string name = n->s();
 
+  // A binder position holding anything but a bare name (`BUCKET(L, A[1], k, p)`)
+  // is refused where it stands, whichever form the call ends up taking: the
+  // binder is left as written by stage 1 and is not an expression to render
+  // (GO-C2, CPP nil-deref).
+  if (n->origin()) {
+    if (const auto form = binding_form(name, n->origin()->items, n->spec())) {
+      for (std::size_t i = 0; i < n->kids().size() && i < form->scopes.size(); ++i) {
+        if (form->scopes[i] == sel_builtin_manifest::Scope::Binder &&
+            !is_binder_name(*n->kids()[i])) {
+          refuse("E_SQL_SHAPE", "the binder of " + name + " must be a bare name",
+                 n->kids()[i]->pos());
+        }
+      }
+    }
+  }
+
   // The two aggregates over a bucket's members -- COUNT(g) is COUNT(*) and
   // SUM(g, [x,] body) is SUM over the grouped rows -- fire on the Group
   // binder alone: over a relation row, COUNT(_) is the row's number of
@@ -2119,12 +2258,18 @@ Fragment Translator::call(const SNodePtr& n) {
         src.relation = group->as_row_ptr();
         const Fragment inner = with_row(src, has_custom_binder ? n->kids()[1]->s() : "_",
                                         [&]() { return node(body_node); });
-        std::string sql = "COALESCE(SUM(";
-        for (const auto& pt : inner.parts()) sql += pt.sql;
-        sql += "), 0)";
+        // A body whose value is written down has to BE a number (SEL raises
+        // E_NOT_NUM for "x"), and only then is its KIND asked about.
+        require_numeric_constant(*body_node);
+        require_num(inner, body_node->pos(), "SUM");
+        if (inner.kind() == SqlKind::Unknown) return sum_whole(inner, body_node->pos());
+        // Parts, not their SQL: a literal in the body is a parameter slot with no
+        // text of its own, and concatenating `.sql` dropped it (PHP-C7).
         std::vector<Fragment::Part> p;
-        p.push_back({false, std::move(sql)});
-        return Fragment(p, SqlKind::Num, dialect_);
+        p.push_back({false, "COALESCE(SUM("});
+        for (const auto& pt : inner.parts()) p.push_back(pt);
+        p.push_back({false, "), 0)"});
+        return Fragment(std::move(p), SqlKind::Num, dialect_);
       }
     }
   }
@@ -2696,8 +2841,18 @@ Fragment Translator::agg_body(const std::string& name, const SNodePtr& body,
     return require_bool(node(f.body), f.body->pos(), "FILTER");
   };
   Fragment q = node(body);
-  if (name == "SUM") require_num(q, body->pos(), name);
-  else require_bool(q, body->pos(), name);
+  if (name == "SUM") {
+    require_num(q, body->pos(), name);
+    // An unroll is a chain of `+`, and NULL propagates through it, so a guard on
+    // each operand IS sound here (a relation's SUM is guarded as a whole, by
+    // relation_aggregate). Without it an undeclared column was added unread and
+    // SQLite answered 1 for u='abc', n=1 where SEL raises (GO-C16).
+    if (src.shape != Source::Shape::Relation && q.kind() == SqlKind::Unknown) {
+      q = guard_numeric(q, *body);
+    }
+  } else {
+    require_bool(q, body->pos(), name);
+  }
 
   // Filters are innermost-first and each wraps the accumulator, so the
   // OUTERMOST filter ends up the OUTERMOST wrapper.
@@ -2724,9 +2879,62 @@ Fragment Translator::agg_body(const std::string& name, const SNodePtr& body,
   return q;
 }
 
+// SUM over an UNKNOWN body is an all-or-nothing guard (docs/internals/
+// sql-kinds.md §5a): NULL unless EVERY element passes the numeric test. A per-
+// element guard is not enough, because SUM skips NULL and the layer's own
+// COALESCE(SUM(..), 0) turns "nothing left" into 0, so 'x' and '9' would sum to
+// 9 where SEL raises E_NOT_NUM. SQLite and ANSI cannot ask the question and
+// refuse.
+Fragment Translator::sum_whole(const Fragment& body, Pos pos) {
+  // Refuses where the dialect has no numeric guard, with that guard's own words.
+  (void)emit_.numeric_operand(body, pos);
+  const Fragment one[] = {body};
+  const Fragment test = apply(Section::Funcs, "ISNUM", one, pos);
+  const Lexical* cast = emit_.lex("numericCast");
+  if (!cast || cast->kind != LexKind::Text) {
+    refuse("E_SQL_UNSUPPORTED",
+           "dialect " + dialect_ + " has no numericCast to read an operand as a number",
+           pos);
+  }
+  std::vector<Fragment::Part> parts;
+  const auto text = [&parts](std::string s) { parts.push_back({false, std::move(s)}); };
+  text("CASE WHEN COUNT(*) = COUNT(CASE WHEN ");
+  for (const auto& pt : test.parts()) parts.push_back(pt);
+  text(" THEN 1 END) THEN COALESCE(SUM(");
+  // PostgreSQL evaluates the cast for EVERY row before the enclosing CASE
+  // chooses, and casting 'x' to NUMERIC is an error there, not a NULL; so on
+  // PostgreSQL the SUM adds the GUARDED cast, and the outer test discards the sum
+  // exactly as before (sql-kinds.md §5a). The MySQL family casts to NULL.
+  const auto chain = Map::chain(dialect_);
+  if (std::find(chain.begin(), chain.end(), std::string_view("postgresql")) != chain.end()) {
+    for (const auto& pt : emit_.numeric_operand(body, pos).parts()) parts.push_back(pt);
+  } else {
+    for (const auto& pt : emit_.fill(cast->text, one, pos)) parts.push_back(pt);
+  }
+  text("), 0) ELSE NULL END");
+  return Fragment(std::move(parts), SqlKind::Num, dialect_);
+}
+
 Fragment Translator::relation_aggregate(const std::string& name,
                                         const RelationSpec& rel,
                                         const Fragment& body, const SNode& n) {
+  if (name == "SUM" && body.kind() == SqlKind::Unknown) {
+    // The relation skeleton wraps the body as COALESCE(SUM({body}), 0); the
+    // guarded value replaces that whole select item.
+    std::string skel = skeleton("sum", n.pos());
+    const std::string item = "COALESCE(SUM({body}), 0)";
+    const auto at = skel.find(item);
+    if (at == std::string::npos) {
+      refuse("E_SQL_UNSUPPORTED",
+             "dialect " + dialect_ + " spells the sum skeleton in a way this "
+             "layer cannot wrap in the all-or-nothing numeric guard",
+             n.pos());
+    }
+    skel.replace(at, item.size(), "{sumwhole}");
+    SlotMap slots = merge_slots(
+        relation_slots(rel), SlotMap{{"sumwhole", {Slot{sum_whole(body, n.pos())}}}});
+    return Fragment(fill_named(skel, slots, n.pos()), agg_returns(name), dialect_);
+  }
   const bool is_separate = (rel.prefilter && *rel.prefilter == "separate") ||
                            (!rel.prefilter && body.separate_prefilter());
   if (name == "ANY" && body.prefilter() && is_separate) {
@@ -3077,6 +3285,7 @@ RelationalPlan Translator::ensure_derived(RelationalPlan plan, bool needed) {
     }
     ColumnSpec field;
     field.column = source_field ? source_field->column : name;
+    field.opaque = source_field && source_field->is_raw;
     field.table = alias;
     field.type = output_field_type(subquery, name);
     if (const std::optional<SqlKind> canon_kind = output_canon_kind(subquery, name)) {
@@ -3093,7 +3302,7 @@ void Translator::bucket_projection(RelationalPlan& plan, const std::string& bind
   if (agg_node) {
     if (agg_node->t() == SNode::T::Call && agg_node->s() == "RECORD") {
       std::vector<RelationalProjection> projections;
-      for (const auto& [alias, v_node] : record_fields(agg_node)) {
+      for (const auto& [alias, v_node] : record_fields(agg_node, dialect_)) {
         SNodePtr actual_node = v_node;
         // _K is the key, which was written against the KEY's binder -- the MAP
         // spelling may name the group differently, so the projection keeps the
@@ -3266,7 +3475,7 @@ std::optional<RelationalPlan> Translator::analyze_pipeline(const SNodePtr& ast) 
           group_by.push_back({std::nullopt, binder, k_arg, k_arg->pos()});
         }
       } else if (key_node->t() == SNode::T::Call && key_node->s() == "RECORD") {
-        for (const auto& [alias, value] : record_fields(key_node)) {
+        for (const auto& [alias, value] : record_fields(key_node, dialect_)) {
           group_by.push_back({alias, binder, value, value->pos()});
         }
       } else {
@@ -3296,6 +3505,7 @@ std::optional<RelationalPlan> Translator::analyze_pipeline(const SNodePtr& ast) 
           refuse("E_BAD_ARG", "SELECT_COLS column names must be string literals", item->pos());
         }
         const std::string& col = item->s();
+        check_program_name(col, item->pos());
         const std::string uc = ascii_upper(col);
         int matches = plan.source_relation.field(uc) ? 1 : 0;
         for (const RelationalJoin& join : plan.joins) {
@@ -3317,6 +3527,16 @@ std::optional<RelationalPlan> Translator::analyze_pipeline(const SNodePtr& ast) 
                  "relation " + plan.source_name + " has no field '" + col +
                      "'; the relation declares " + declared,
                  item->pos());
+        }
+        // A raw field is an expression against the relation's own alias, so it
+        // has no column to select by name.
+        if (const ColumnSpec* raw_field = plan.source_relation.field(uc)) {
+          if (raw_field->is_raw) {
+            refuse("E_SQL_SHAPE",
+                   "the field '" + col + "' is a raw SQL expression, and "
+                   "SELECT_COLS names columns; select it through a MAP",
+                   item->pos());
+          }
         }
         cols.push_back(col);
       }
@@ -3356,7 +3576,7 @@ std::optional<RelationalPlan> Translator::analyze_pipeline(const SNodePtr& ast) 
 
       if (expr->t() == SNode::T::Call && expr->s() == "RECORD") {
         std::vector<RelationalProjection> projections;
-        for (const auto& [alias, value] : record_fields(expr)) {
+        for (const auto& [alias, value] : record_fields(expr, dialect_)) {
           projections.push_back({alias, binder, value, {}});
         }
         plan.projections = std::move(projections);
@@ -3372,6 +3592,18 @@ std::optional<RelationalPlan> Translator::analyze_pipeline(const SNodePtr& ast) 
       if (!plan.projections && !plan.select_cols) {
         refuse("E_SQL_SHAPE", "DISTINCT requires an explicit typed projection", step->pos());
       }
+      // DISTINCT keeps the FIRST element of each run in sorted order; SQL's
+      // `SELECT DISTINCT proj ... ORDER BY <column not in proj>` is refused by
+      // PostgreSQL (42P10) and MySQL 8 (3065) and answers with an unspecified
+      // representative row on MariaDB. A loud refusal is acceptable and a silent
+      // misordering is not, so the step stays in memory (CPP-C60).
+      if (!plan.order_by.empty()) {
+        refuse("E_SQL_SHAPE",
+               "DISTINCT after a sort keeps the first of each run in sorted order, "
+               "which SELECT DISTINCT ... ORDER BY does not promise; run the DISTINCT "
+               "in memory",
+               step->pos());
+      }
       plan.distinct = true;
     } else if (name == "TAKE") {
       if (args.size() != 2) {
@@ -3384,15 +3616,14 @@ std::optional<RelationalPlan> Translator::analyze_pipeline(const SNodePtr& ast) 
         refuse("E_ARITY", "DROP takes 2 arguments", step->pos());
       }
       int64_t off = eval_int_param(args[1], "DROP");
-      // Consume the bounded slice; retain a SQL boundary for large sums.
+      // Slices merge first, and the sum is clamped like a single count (§11.6):
+      // DROP(2^63-1) .> DROP(1) is the offset 2^63-1, not a wrapped or wrapped-
+      // in-a-subquery one.
       const int64_t skipped = plan.limit ? std::min(off, *plan.limit) : off;
-      if (plan.offset.value_or(0) > 9007199254740991LL - skipped) {
-        plan = ensure_derived(std::move(plan), true);
-        plan.offset = off;
-      } else {
-        if (plan.limit) *plan.limit -= skipped;
-        plan.offset = plan.offset.value_or(0) + skipped;
-      }
+      if (plan.limit) *plan.limit -= skipped;
+      const int64_t have = plan.offset.value_or(0);
+      constexpr int64_t kMax = 9223372036854775807LL;
+      plan.offset = have > kMax - skipped ? kMax : have + skipped;
     } else if (name == "SORT" || name == "SORT_DESC" || name == "SORT_BY" ||
                name == "TOP" || name == "TOP_DESC" || name == "TOP_BY") {
       // A sort after a LIMIT or OFFSET sorts the rows that survived them,
@@ -3424,7 +3655,16 @@ std::optional<RelationalPlan> Translator::analyze_pipeline(const SNodePtr& ast) 
       // The fragment is discarded: its parameters are never placed, and the
       // statement renders these steps again anyway.
       if (!plan.order_by.empty() || plan.projections || plan.select_cols || plan.group_by) {
+        // Its parameters (and caveats) are put back: the statement renders these
+        // steps again, and a slot the discarded pass created is a value bound
+        // for a placeholder the statement has no place for (CPP-C57).
+        const std::size_t slots = params_.size();
+        const std::size_t kinds = param_kinds_.size();
+        const std::vector<std::string> caveats = caveats_;
         (void)compile_statement(plan);
+        params_.resize(slots);
+        param_kinds_.resize(kinds);
+        caveats_ = caveats;
       }
       const bool need_derived = plan_has_rows_above(plan);
       plan = ensure_derived(std::move(plan), need_derived);
@@ -3513,18 +3753,30 @@ int64_t Translator::eval_int_param(const SNodePtr& n, const std::string& op) {
   } catch (const SelError& e) {
     refuse_as_sel(e, *n);
   }
+  // A whole number written with a scale (`2.0`, `0.0`, `-0`) is that number, as
+  // it is to SEL's own TAKE/DROP; only a fractional count is E_NOT_INT and only
+  // a negative one E_RANGE (§11.6). The magnitude is read digit for digit and
+  // CLAMPED to 9223372036854775807, the largest count every target accepts, so
+  // no host integer ever decides what a count means.
   const std::string& s = val.scalar();
-  if (s.find('.') != std::string::npos) {
+  const bool negative = !s.empty() && s[0] == '-';
+  const std::string body = negative ? s.substr(1) : s;
+  const std::size_t dot = body.find('.');
+  std::string whole = dot == std::string::npos ? body : body.substr(0, dot);
+  const std::string frac = dot == std::string::npos ? "" : body.substr(dot + 1);
+  if (frac.find_first_not_of('0') != std::string::npos) {
     refuse("E_NOT_INT", op + " count must be an integer", n->pos());
   }
-  if (!s.empty() && s[0] == '-') {
+  const std::size_t first = whole.find_first_not_of('0');
+  whole = first == std::string::npos ? "0" : whole.substr(first);
+  if (negative && whole != "0") {
     refuse("E_RANGE", op + " count cannot be negative", n->pos());
   }
-  try {
-    return std::stoll(s);
-  } catch (const std::exception&) {
-    refuse("E_RANGE", op + " count is out of range", n->pos());
-  }
+  constexpr std::int64_t kMax = 9223372036854775807LL;
+  if (whole.size() > 19) return kMax;
+  const unsigned long long magnitude = std::stoull(whole);
+  return magnitude > static_cast<unsigned long long>(kMax) ? kMax
+                                                          : static_cast<std::int64_t>(magnitude);
 }
 
 void Translator::analyze_sort_step(const SNodePtr& step, RelationalPlan& plan) {

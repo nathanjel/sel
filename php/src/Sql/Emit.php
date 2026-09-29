@@ -450,21 +450,28 @@ final class Emit
                     "the {$key} lexical entry of dialect {$this->dialect} expands "
                     . 'into itself, so filling it would never finish', $pos);
             }
-            $castArg = $key === 'binaryCast' ? self::slotIndex($arg) : null;
-            if ($castArg !== null && ($args[$castArg] ?? null) instanceof Fragment
-                    && $args[$castArg]->kind === 'BIN') {
-                $splice($args[$castArg]);
-                continue;
-            }
-            $deeper = $expanding;
-            $deeper[$key] = true;
-            $sub = $this->fill(str_replace('{0}', '{' . $arg . '}', $val), $args,
-                $pos, $deeper);
-            foreach ($sub as $p) {
-                if (is_string($p)) {
-                    $push($p);
-                } else {
-                    $parts[] = $p;
+            // {key:*} is {key:n} for every argument, joined with ', ' (sql/MAP.md 4.2).
+            $each = $arg === '*' ? array_map('strval', array_keys($args)) : [$arg];
+            foreach ($each as $at => $one) {
+                if ($at > 0) {
+                    $push(', ');
+                }
+                $castArg = $key === 'binaryCast' ? self::slotIndex($one) : null;
+                if ($castArg !== null && ($args[$castArg] ?? null) instanceof Fragment
+                        && $args[$castArg]->kind === 'BIN') {
+                    $splice($args[$castArg]);
+                    continue;
+                }
+                $deeper = $expanding;
+                $deeper[$key] = true;
+                $sub = $this->fill(str_replace('{0}', '{' . $one . '}', $val), $args,
+                    $pos, $deeper);
+                foreach ($sub as $p) {
+                    if (is_string($p)) {
+                        $push($p);
+                    } else {
+                        $parts[] = $p;
+                    }
                 }
             }
         }

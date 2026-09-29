@@ -1048,6 +1048,14 @@ constexpr Keyed d5_sqlite_funcs1[] = {
     {.key = "2", .value = {.present = true, .text = "substr({0}, {1})"}},
     {.key = "3", .value = {.present = true, .text = "substr({0}, {1}, {2})"}},
 };
+constexpr Keyed d5_sqlite_funcs26[] = {
+    {.key = "1", .value = {.present = true, .text = "min({0})"}},
+    {.key = "*", .value = {.present = true, .text = "min({numericCast:*})"}},
+};
+constexpr Keyed d5_sqlite_funcs27[] = {
+    {.key = "1", .value = {.present = true, .text = "max({0})"}},
+    {.key = "*", .value = {.present = true, .text = "max({numericCast:*})"}},
+};
 constexpr Entry d5_sqlite_funcs[] = {
     {.key = "LEN", .kind = EntryKind::Template, .one = "length({0})", .ret = "NUM"},
     {.key = "SUBSTR", .kind = EntryKind::Template, .body = BodyKind::ByCount, .keyed = d5_sqlite_funcs1, .ret = "TEXT"},
@@ -1075,8 +1083,8 @@ constexpr Entry d5_sqlite_funcs[] = {
     {.key = "SIGN", .kind = EntryKind::Template, .one = "sign({0})", .ret = "NUM"},
     {.key = "TRUNC", .kind = EntryKind::Template, .one = "trunc({0})", .ret = "NUM", .caveat = "decimal-float"},
     {.key = "ROUND", .kind = EntryKind::Template, .one = "round({0}, {1})", .ret = "NUM", .caveat = "decimal-float"},
-    {.key = "MIN", .kind = EntryKind::Template, .one = "min({*})", .ret = "NUM", .caveat = "decimal-float"},
-    {.key = "MAX", .kind = EntryKind::Template, .one = "max({*})", .ret = "NUM", .caveat = "decimal-float"},
+    {.key = "MIN", .kind = EntryKind::Template, .body = BodyKind::ByCount, .keyed = d5_sqlite_funcs26, .ret = "NUM", .caveat = "decimal-float"},
+    {.key = "MAX", .kind = EntryKind::Template, .body = BodyKind::ByCount, .keyed = d5_sqlite_funcs27, .ret = "NUM", .caveat = "decimal-float"},
     {.key = "ISNUM", .kind = EntryKind::Refusal, .reason = {.present = true, .text = "SQLite has no REGEXP, and CAST answers 0 for 'abc' rather than saying it is not a number, so there is no expression that asks SEL's question"}},
     {.key = "BLEN", .kind = EntryKind::Template, .one = "length({binaryCast:0})", .ret = "NUM"},
     {.key = "TO_UTF8", .kind = EntryKind::Template, .one = "CAST({0} AS BLOB)", .ret = "BIN"},

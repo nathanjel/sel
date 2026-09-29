@@ -337,7 +337,18 @@ involved.
 | `{n:}` | arguments *n* onward, joined with `, ` |
 | `{key}` | the `lexical` string named `key` |
 | `{key:n}` | argument *n* wrapped in the `lexical` template named `key` |
+| `{key:*}` | every argument, each wrapped in the `lexical` template named `key`, joined with `, ` |
 | `{{` `}}` | a literal brace |
+
+`{key:*}` is `{key:n}` for every argument, in order. SQLite's multi-argument
+`min()` and `max()` rank every number below every text value, so an argument that
+reaches them as text (a column of TEXT affinity, a literal) is never compared with
+the numbers beside it: `min(100.0, '60')` is `100.0` (GO-C17). The entry reads every
+argument as a number first, and says so as data:
+
+```jsonc
+"MAX": { "tpl": { "1": "max({0})", "*": "max({numericCast:*})" }, "ret": "NUM" }
+```
 
 `{key}` and `{key:n}` are **validated** by the generator and left in place, and
 every host expands them when it fills the template.

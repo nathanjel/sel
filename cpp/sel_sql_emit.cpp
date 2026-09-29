@@ -330,21 +330,32 @@ std::vector<Fragment::Part> Emit::fill(std::string_view tpl,
     // fails the query. Every other cast is idempotent and applied
     // unconditionally; this is the one whose input kind decides whether it means
     // anything.
-    if (key == "binaryCast") {
-      if (std::optional<int> ca = slot_index(arg)) {
-        const auto at = static_cast<std::size_t>(*ca);
-        if (at < args.size() && args[at].kind() == SqlKind::Bin) {
-          splice(args[at]);
-          continue;
+    // {key:*} is {key:n} for every argument, joined with ', ' (sql/MAP.md 4.2).
+    std::vector<std::string> each;
+    if (arg == "*") {
+      for (std::size_t n = 0; n < args.size(); ++n) each.push_back(std::to_string(n));
+    } else {
+      each.push_back(arg);
+    }
+    for (std::size_t at = 0; at < each.size(); ++at) {
+      if (at > 0) push(", ");
+      const std::string& one = each[at];
+      if (key == "binaryCast") {
+        if (std::optional<int> ca = slot_index(one)) {
+          const auto idx = static_cast<std::size_t>(*ca);
+          if (idx < args.size() && args[idx].kind() == SqlKind::Bin) {
+            splice(args[idx]);
+            continue;
+          }
         }
       }
-    }
-    std::set<std::string> deeper = expanding;
-    deeper.insert(key);
-    for (const Fragment::Part& p :
-         fill(replace_all(val->text, "{0}", "{" + arg + "}"), args, pos, deeper)) {
-      if (p.is_slot) parts.push_back(p);
-      else push(p.sql);
+      std::set<std::string> deeper = expanding;
+      deeper.insert(key);
+      for (const Fragment::Part& p :
+           fill(replace_all(val->text, "{0}", "{" + one + "}"), args, pos, deeper)) {
+        if (p.is_slot) parts.push_back(p);
+        else push(p.sql);
+      }
     }
   }
   return parts;
