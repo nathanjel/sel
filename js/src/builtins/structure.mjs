@@ -30,20 +30,18 @@ function firstCollectionItem(value) {
 // latter is a host-facing snapshot and must allocate key/value pairs, whereas
 // the relational lane only needs each row. Flat storage therefore stays a
 // packed V8 array and no per-row pair arrays or list-key strings are created.
+function snapshotItems(value) {
+  // A SNAPSHOT of the references (SPEC 7.3): what a join predicate appends to,
+  // adds to or replaces in a side afterwards is not seen by the walk.
+  if (value.storage !== null) return value.storage.slice();
+  if (value.children) return Array.from(value.children.values());
+  if (value._entries !== null) return value._entries.map((entry) => entry[1]);
+  return value.kind !== NONE ? [value] : [];
+}
+
 function forEachCollectionItem(value, callback) {
-  if (value.storage !== null) {
-    for (let i = 0; i < value.storage.length; i++) callback(value.storage[i]);
-    return;
-  }
-  if (value.children) {
-    for (const item of value.children.values()) callback(item);
-    return;
-  }
-  if (value._entries !== null) {
-    for (const [, item] of value._entries) callback(item);
-    return;
-  }
-  if (value.kind !== NONE) callback(value);
+  const items = snapshotItems(value);
+  for (let i = 0; i < items.length; i++) callback(items[i]);
 }
 
 define({ name: 'COUNT', min: 1, max: 1, fn: (args) => Value.int(args.val(0).size()) });
@@ -936,7 +934,14 @@ function doLink(args, ctx, leftJoin) {
   const output = [];
   // A join builds a collection: its rows are capped (SPEC 6.4), at the call.
   const capRows = (n) => checkCollection(n, args.pos, `${args.name} result`);
-  const each = forEachCollectionItem;
+  // Each side is listed ONCE, here: the right side is walked again for every left
+  // row, and a predicate that grows it must not give later left rows more rows.
+  const leftItems = snapshotItems(leftValue);
+  const rightItems = snapshotItems(rightValue);
+  const each = (value, callback) => {
+    const items = value === leftValue ? leftItems : value === rightValue ? rightItems : snapshotItems(value);
+    for (let i = 0; i < items.length; i++) callback(items[i]);
+  };
 
   // The pre-filter, decided from the rows themselves (see stageWalk). On a
   // left row a conjunct evaluates FALSE the row is dropped -- the joined rows

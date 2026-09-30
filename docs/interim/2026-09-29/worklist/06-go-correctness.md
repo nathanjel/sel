@@ -584,7 +584,7 @@ Each task starts by reproducing the report against the current tree, then lands 
 
 <a id="c-go-c40"></a>
 
-- [ ] **C-GO-C40 — Resolve GO-C40.** SQL: small Go/JS divergences and nondeterminism
+- [x] **C-GO-C40 — Resolve GO-C40.** SQL: small Go/JS divergences and nondeterminism
 
   **[GO-C40](../go-code-review.md) — [low] [confirmed] SQL: small Go/JS divergences and nondeterminism**
 
@@ -595,6 +595,8 @@ Each task starts by reproducing the report against the current tree, then lands 
   Regression prerequisite: [T10 / GO-C40](tests/10-sql-rendering.md#go-c40).
 
   Done when every linked scenario passes on all applicable lanes; code/position, mutation, ordering and repeat-use behavior satisfy the shared contract. Record commit and fixture IDs here.
+
+  Closed 2026-09-29 — sql/cases/52 assign.empty-text-key-is-a-constant-index six hosts
 
 <a id="c-go-c43"></a>
 

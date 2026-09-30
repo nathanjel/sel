@@ -513,9 +513,20 @@ func checkQuoting(name string) {
 	if !ok || rep == "" {
 		panic(fmt.Sprintf("SQL dialect %s has no textEscape entry for its text quote %s, so a value containing one would end the literal; map it (doubling it is the portable spelling)", name, tq))
 	}
-	if strings.HasPrefix(rep, "\\") {
-		if bs, ok := esc["\\"].(string); !ok || bs != "\\\\" {
-			panic(fmt.Sprintf("SQL dialect %s escapes the quote with a backslash but does not map the backslash to two, so an input ending in a backslash would swallow the escape", name))
+	// The only escape character a SQL server has is the backslash, so the quote is kept
+	// inside the literal by doubling it or by a backslash before it (sql/MAP.md 3.1).
+	if rep != tq+tq && rep != "\\"+tq {
+		panic(fmt.Sprintf("SQL dialect %s escapes its text quote as %q, which does not keep the quote inside the literal: it must be the quote doubled, or a backslash followed by the quote", name, rep))
+	}
+	// A value that introduces a backslash escape presupposes a server that reads
+	// backslashes, so a backslash in the data must be doubled too, or it swallows the
+	// character after it.
+	for _, v := range esc {
+		if str, ok := v.(string); ok && strings.HasPrefix(str, "\\") {
+			if bs, ok := esc["\\"].(string); !ok || bs != "\\\\" {
+				panic(fmt.Sprintf("SQL dialect %s has a textEscape that uses a backslash escape but does not map the backslash to two", name))
+			}
+			break
 		}
 	}
 }

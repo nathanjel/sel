@@ -2628,10 +2628,14 @@ export class Translator {
           // a HAVING would run before it. Otherwise a FILTER directly after
           // a grouping is its HAVING, and an ORDER BY in between changes
           // nothing (HAVING then ORDER BY is sort-then-filter's rows).
+          // A sort does NOT force the wrap: the WHERE goes in the same SELECT, beside the
+          // ORDER BY, because a derived table does not keep an ORDER BY that has no LIMIT
+          // beside it and the rows would come back in no order (a filter commutes with a
+          // stable sort, so the rows and their order are the same).
           plan = this.ensureDerived(plan, (candidate) =>
             candidate.limit !== null || candidate.offset !== null
               || (candidate.groupBy === null && Boolean(candidate.projections || candidate.selectCols
-                || candidate.orderBy.length || candidate.distinct)));
+                || candidate.distinct)));
           let binder;
           let pred;
           if (args.length === 2) {
@@ -2983,6 +2987,15 @@ export class Translator {
       }
     }
 
+    // A derived table with no LIMIT beside its ORDER BY does not keep the order, and
+    // this statement has no other ORDER BY: the rows would come back in no order,
+    // where SEL's are the sorted list's. Refused at the last step (sql-translation
+    // 12.1: a sort's ORDER BY survives every step after it, or the plan is not SQL).
+    if (plan.orderDropped && steps.length > 0) {
+      refuse('E_SQL_SHAPE',
+        'these rows come from a sorted derived table, which does not keep its order, and '
+        + 'nothing after it sorts them again', steps[steps.length - 1].pos);
+    }
     return plan;
   }
 

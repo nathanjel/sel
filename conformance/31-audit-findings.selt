@@ -1,0 +1,164 @@
+% Findings from the Rust-lane audit of the remediation (2026-09-30): each was a
+% disagreement between hosts that no earlier fixture pinned. Value-level cases; the
+% SQL ones are in sql/cases/52-audit-cases.sqlt and the dependencies() ones are API
+% probes (tools/api.* and tools/api-pins.txt).
+
+### name: text.replace.cap-is-counted-in-code-points
+--- note
+The cap is on code points (SPEC 6.4). REPLACE replaces every U+1F600 (four bytes,
+one code point) with "ab" (two bytes, two code points), so the text GROWS: 8388609
+of them make 16777218 code points. Go compared byte lengths, saw "ab" as the
+shorter one and skipped the check.
+--- source
+LEN(REPLACE("😀", "ab", REPEAT("😀", 8388609)))
+--- expect
+error E_RANGE at 1:5
+===
+
+### name: text.replace.cap-control-exactly-at-the-cap
+--- note
+One fewer and the result is exactly 16777216 code points, which is allowed.
+--- source
+LEN(REPLACE("😀", "ab", REPEAT("😀", 8388608)))
+--- expect
+num 16777216
+===
+
+### name: text.rreplace.cap-is-counted-in-code-points
+--- note
+The same growth through RREPLACE, with a two-code-point replacement for a one-code-point match.
+--- source
+LEN(RREPLACE("😀", "ab", REPEAT("😀", 8388609)))
+--- expect
+error E_RANGE at 1:5
+===
+
+### name: link.predicate-appending-to-its-source-visits-a-snapshot
+--- note
+A join walks each side as it stood when the join started (SPEC 7.3). The predicate grows X on every pair, but there are still 2 x 2 pairs. JS raised a TypeError, Python 'dictionary changed size during iteration', PHP and C++ counted 6 and Lisp ran until the collection cap.
+--- source
+X = LIST(1, 2); COUNT(LINK(X, X, A, B, (X[COUNT(X)+1]=1; TRUE)))
+--- expect
+num 4
+===
+
+### name: link.predicate-appending-to-the-right-side-visits-a-snapshot
+--- note
+The right side is walked again for every left row, so a live walk gave the second left row more right rows.
+--- source
+X = LIST(1, 2); Y = LIST(3, 4); COUNT(LINK(X, Y, A, B, (Y[COUNT(Y)+1]=1; TRUE)))
+--- expect
+num 4
+===
+
+### name: link.predicate-appending-to-the-left-side-visits-a-snapshot
+--- note
+The left side is listed once as well.
+--- source
+X = LIST(1, 2); Y = LIST(3, 4); COUNT(LINK(X, Y, A, B, (X[COUNT(X)+1]=1; TRUE)))
+--- expect
+num 4
+===
+
+### name: link-left.predicate-appending-to-its-source-visits-a-snapshot
+--- note
+LINK_LEFT walks the same snapshots.
+--- source
+X = LIST(1, 2); COUNT(LINK_LEFT(X, X, A, B, (X[COUNT(X)+1]=1; TRUE)))
+--- expect
+num 4
+===
+
+### name: link.equi-join-residual-appending-to-its-source-visits-a-snapshot
+--- note
+The equality is a hash key and the rest a residual predicate; the residual grows X, and the answer is still the two matching pairs.
+--- source
+X = LIST(1, 2); COUNT(LINK(X, X, A, B, A == B AND (X[COUNT(X)+1]=1; TRUE)))
+--- expect
+num 2
+===
+
+### name: re.icase.nonascii-pattern-is-a-run-time-refusal
+--- note
+A non-ASCII pattern under `i` is E_BAD_ARG at run time whatever else it holds
+(SPEC 7.8), so the compile-time analysis applies the `i` fold only to an ASCII
+pattern. `(?:k|K)+` is exponentially ambiguous once `i` folds k and K together, and
+JS, C++ and Python refused the pattern at compile time for that; the others gave the
+run-time error the spec names, at the flag.
+--- source
+RMATCH('(?:k|K)+é', "x", "i")
+--- expect
+error E_BAD_ARG at 1:26
+===
+
+### name: re.icase.nonascii-pattern-in-a-dead-branch-compiles
+--- note
+The same pattern in a branch that never runs is not an error: only the run-time refusal exists for it.
+--- source
+IF(FALSE, RMATCH('(?:k|K)+é', "x", "i"), 1)
+--- expect
+num 1
+===
+
+### name: re.posix.unterminated-form-is-refused.1
+--- note
+A `[` followed by `:`, `.` or `=` inside a class is refused whether or not the closer follows (SPEC 7.8): the engines read even an unfinished POSIX form differently.
+--- source
+RMATCH('[x[:y]', "x")
+--- expect
+error E_REGEX_SYNTAX at 1:8
+===
+
+### name: re.posix.unterminated-form-is-refused.2
+--- note
+A `[` followed by `:`, `.` or `=` inside a class is refused whether or not the closer follows (SPEC 7.8): the engines read even an unfinished POSIX form differently.
+--- source
+RMATCH('[[:a]', "x")
+--- expect
+error E_REGEX_SYNTAX at 1:8
+===
+
+### name: re.posix.unterminated-form-is-refused.3
+--- note
+A `[` followed by `:`, `.` or `=` inside a class is refused whether or not the closer follows (SPEC 7.8): the engines read even an unfinished POSIX form differently.
+--- source
+RMATCH('[[.]', "x")
+--- expect
+error E_REGEX_SYNTAX at 1:8
+===
+
+### name: re.posix.unterminated-form-is-refused.4
+--- note
+A `[` followed by `:`, `.` or `=` inside a class is refused whether or not the closer follows (SPEC 7.8): the engines read even an unfinished POSIX form differently.
+--- source
+RMATCH('[a[=]', "x")
+--- expect
+error E_REGEX_SYNTAX at 1:8
+===
+
+### name: re.posix.escaped-bracket-then-dot-is-a-literal
+--- note
+The control: an ESCAPED bracket is a literal, so `[a\[.]` is a class of `a`, `[` and `.`.
+--- source
+RMATCH('[a\[.]', "x")
+--- expect
+bool FALSE
+===
+
+### name: re.range.reversed-in-a-dead-branch-is-refused
+--- note
+A class range that runs backwards is a compile-time refusal of a literal pattern in a branch that never runs, in every host (C++ answered 1).
+--- source
+IF(FALSE, RFIND('[z-a]', "x"), 1)
+--- expect
+error E_REGEX_SYNTAX at 1:17
+===
+
+### name: re.range.reversed-in-a-dead-branch-under-the-i-flag
+--- note
+The flag changes nothing about a reversed range.
+--- source
+IF(FALSE, RFIND('[z-a]', "x", "i"), 1)
+--- expect
+error E_REGEX_SYNTAX at 1:17
+===

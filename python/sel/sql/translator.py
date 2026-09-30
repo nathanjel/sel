@@ -1643,6 +1643,11 @@ class Translator:
             refuse('E_SQL_SHAPE',
                    'a BIN element of a value binding has no literal node to become; '
                    'bind it as a column, or convert it before translating', pos)
+        if v.is_none():
+            # A NULL element: as_text would raise E_NULL, a SelError that try_translate
+            # does not catch. It is a binding problem, and a refusal.
+            refuse('E_SQL_BINDING',
+                   'a value binding holds a NULL element, which has no SQL literal', pos)
         return _lit_node('num' if b.get('type') == 'NUM' else 'text',
                          v.as_text(pos), pos)
 
@@ -2617,7 +2622,11 @@ class Translator:
                     candidate.limit is not None or candidate.offset is not None
                     or (candidate.group_by is None and bool(
                         candidate.projections is not None or candidate.select_cols is not None
-                        or candidate.order_by or candidate.distinct)))
+                        or candidate.distinct)))
+                # (A sort does NOT force the wrap: the WHERE goes in the same SELECT, beside the
+                # ORDER BY, because a derived table does not keep an ORDER BY that has no LIMIT
+                # beside it and the rows would come back in no order; a filter commutes with a
+                # stable sort, so the rows and their order are the same.)
                 if len(args) == 2:
                     binder, predicate = '_', args[1]
                 elif len(args) == 3:
@@ -2889,6 +2898,15 @@ class Translator:
                 join.pos = step.pos
                 plan.joins.append(join)
 
+        # A derived table with no LIMIT beside its ORDER BY does not keep the order, and
+        # this statement has no other ORDER BY: the rows would come back in no order,
+        # where SEL's are the sorted list's. Refused at the last step (sql-translation
+        # 12.1: a sort's ORDER BY survives every step after it, or the plan is not SQL).
+        # (`steps` is collected outermost-first: the last step as written is steps[0].)
+        if plan.order_dropped and steps:
+            refuse('E_SQL_SHAPE',
+                   'these rows come from a sorted derived table, which does not keep its order, '
+                   'and nothing after it sorts them again', steps[0].pos)
         return plan
 
     def _analyze_sort_step_extended(self, step: Node, plan: RelationalPlan) -> None:

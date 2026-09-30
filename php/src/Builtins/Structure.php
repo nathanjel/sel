@@ -1577,7 +1577,14 @@ final class Structure
             ];
             $ctx->pushFrame($frame);
             try {
-                $each($leftValue, function (Value $leftItem) use (&$frame, &$output, $b1, $b2, $rightValue, $aliasLeft, $aliasRight, $a, $predicate, $leftJoin, $project, $ctx): void {
+                // The right side is listed ONCE (SPEC 7.3 snapshot): it is walked again for
+                // every left row, and a predicate that grows it must not hand later left rows
+                // more rows.
+                $rightItems = [];
+                $rightValue->forEachElement(static function (string $k, Value $item) use (&$rightItems): void {
+                    $rightItems[] = $item;
+                });
+                $each($leftValue, function (Value $leftItem) use (&$frame, &$output, $b1, $b2, $rightItems, $aliasLeft, $aliasRight, $a, $predicate, $leftJoin, $project, $ctx): void {
                     $left = $aliasLeft($leftItem);
                         $frame[$b1] = $left;
                     $frame[\Sel\Utf8::lower($b1)] = $left;
@@ -1588,9 +1595,7 @@ final class Structure
                         $ctx->setFrameValue('_1', $left);
                         $ctx->setFrameValue('_', $left);
                     $matched = false;
-                    $rightValue->forEachElement(function (string $rightKey, Value $rightItem) use (
-                        &$frame, &$output, &$matched, $b1, $b2, $left, $aliasRight, $a, $predicate, $project, $ctx,
-                    ): void {
+                    foreach ($rightItems as $rightItem) {
                         $right = $aliasRight($rightItem);
                         $frame[$b2] = $right;
                         $frame[\Sel\Utf8::lower($b2)] = $right;
@@ -1602,7 +1607,7 @@ final class Structure
                             $matched = true;
                             $output[] = $project($left, $right);
                         }
-                    });
+                    }
                     if ($leftJoin && !$matched) $output[] = $project($left, null);
                 });
             } finally {

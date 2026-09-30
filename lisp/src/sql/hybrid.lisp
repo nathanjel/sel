@@ -595,7 +595,7 @@ and not a full pushdown (finding Y, lanes): its continuation would read
 
 (defparameter +order-sorts+ '("SORT" "SORT_DESC" "SORT_BY" "TOP" "TOP_DESC" "TOP_BY"))
 (defparameter +order-wraps+
-  '("SELECT_COLS" "MAP" "DISTINCT" "DEDUPE" "TAKE" "DROP" "BUCKET" "TOP" "TOP_DESC" "TOP_BY"))
+  '("SELECT_COLS" "MAP"))
 
 (defun order-lost-p (steps)
   "Whether pushing STEPS into one statement would lose an order SEL keeps.
@@ -607,21 +607,21 @@ program is still fine in memory:
 
   * a BUCKET after a sort: GROUP BY answers its groups in the server's order, not
     in the order the sorted rows first showed them (JS-C59, PHP-C35, LISP-C26);
-  * a second sort separated from the first by a step that puts the rows in a
-    derived table: the outer ORDER BY's ties fall back to the derived table's
-    order, which a server does not keep, where SEL's stable sort keeps the
-    earlier one. Two sorts with nothing between them are one ORDER BY and are
-    stable by construction."
+  * a second sort separated from the first by a projection (MAP, SELECT_COLS): the
+    earlier keys are hidden, so the outer ORDER BY's ties fall back to an order a
+    server does not keep, where SEL's stable sort keeps the earlier one. Two sorts
+    with nothing between them are one ORDER BY and are stable by construction."
   (let ((sorted nil) (wrapped nil))
     (dolist (step steps nil)
       (let ((name (sel::node-s step)))
         (cond ((and (equal name "BUCKET") sorted) (return t))
               ((member name +order-sorts+ :test #'equal)
                (when (and sorted wrapped) (return t))
-               (setf sorted t wrapped nil)
-               ;; TOP* is a sort and a cut: what follows is over a derived table.
-               (when (member name '("TOP" "TOP_DESC" "TOP_BY") :test #'equal)
-                 (setf wrapped t)))
+               ;; (A TOP* is a sort and a cut, and what follows is over a derived table with a
+               ;; LIMIT beside its ORDER BY: the contract every host shares is that this keeps
+               ;; the order -- only a projection between the two sorts loses the earlier keys,
+               ;; docs/internals/sql-translation.md 12.1.)
+               (setf sorted t wrapped nil))
               ((and sorted (member name +order-wraps+ :test #'equal))
                (setf wrapped t)))))))
 

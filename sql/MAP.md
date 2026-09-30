@@ -243,8 +243,12 @@ where:
 - `textQuote` is not exactly one character, or equals `identQuote`;
 - `textEscape` has an empty key, or none for `textQuote`;
 - the `textEscape` entry for `textQuote` does not leave a quote *inside* the
-  literal: it must be the quote doubled (`''`) or an escape character `E` followed
-  by the quote, where `E` is itself a key mapping to `E E`.
+  literal: it must be the quote doubled (`''`) or a backslash followed by the
+  quote (`\'`) — a SQL server has no escape character but the backslash;
+- any `textEscape` value starts with a backslash (an escape such as `\n`) but the
+  `\` key does not map to `\\`: a value that introduces backslash escapes
+  presupposes a server that reads them, so a backslash in the data has to be
+  doubled too, or a value ending in one un-escapes the closing quote.
 
 (A `textEscape` given as a whole object replaces the inherited one — keys are
 inherited, values are not merged — so an override must carry the quote entry and

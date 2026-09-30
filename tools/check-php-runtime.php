@@ -460,7 +460,8 @@ $expect('a class escape as a range endpoint is refused, a hyphen at the edge is 
     $code(fn() => $portable('[\d-z]')) === 'E_REGEX_SYNTAX' && $portable('[\d-]') === '[0-9-]');
 $expect('POSIX bracket forms are refused wherever they stand', fn() =>
     $code(fn() => $portable('[a[:digit:]')) === 'E_REGEX_SYNTAX' && $code(fn() => $portable('[a[.x.]]')) === 'E_REGEX_SYNTAX'
-    && $portable('[[.]') === '[[.]');
+    && $code(fn() => $portable('[[.]')) === 'E_REGEX_SYNTAX' && $code(fn() => $portable('[a[=]')) === 'E_REGEX_SYNTAX'
+    && $portable('[.[]') === '[.[]');
 $expect('group depth over 200, group count over 1000 and pattern length over 65535 are refused', fn() =>
     $code(fn() => $portable(str_repeat('(?:', 201) . 'a' . str_repeat(')', 201))) === 'E_REGEX_SYNTAX'
     && $portable(str_repeat('(?:', 200) . 'a' . str_repeat(')', 200)) !== ''

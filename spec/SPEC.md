@@ -1115,7 +1115,11 @@ escaped metacharacters, quantifiers `* + ? {n} {n,} {n,m}` and their lazy `?`
 forms, groups `( )`, non-capturing groups `(?: )`, and alternation `|`.
 
 **Rejected:** POSIX classes `[[:alpha:]]` — and their collating `[.x.]` and
-equivalence `[=x=]` forms, wherever they stand in a class, not only first —
+equivalence `[=x=]` forms, wherever they stand in a class, not only first, and
+whether or not the closing `:]`, `.]` or `=]` is there (a `[` followed by `:`, `.`
+or `=` inside a class is refused: `[[:a]`, `[x[:y]`, `[[.]` and `[a[=]` are all
+errors, since the engines read even an unfinished form differently) — a class
+range that runs backwards, `[z-a]`, whatever the flags —
 `\p{…}`, backreferences, lookahead and
 lookbehind, atomic groups, possessive quantifiers, inline modifiers `(?i)`,
 `\A \z \Z \G \K`, conditionals, recursion, and the three below.
@@ -1175,7 +1179,12 @@ under JS.
 
 **Flags: `i` and nothing else.** `i` is rejected with `E_BAD_ARG` on a pattern
 containing non-ASCII literals, because case folding is the one area the two
-engines cannot be made to agree.
+engines cannot be made to agree. That refusal is a *run-time* one and it
+comes last: the compile-time checks of a literal pattern (the structural rules and
+the ambiguity analysis below) apply the `i` fold only when the pattern is ASCII, so
+a non-ASCII pattern under `i` that is otherwise valid compiles, and the call
+raises `E_BAD_ARG` when it runs (`RMATCH('(?:k|K)+é', "x", "i")` is `E_BAD_ARG`
+at the flag, not an ambiguity refusal at the pattern).
 
 `m` and `s` are deliberately not offered. JS treats `\r`, U+2028 and U+2029 as
 line terminators and PCRE treats only `\n` as one, so every construct whose
@@ -1422,10 +1431,14 @@ of it can occur before the program has *definitely* assigned it. An assignment i
 definite only if it runs whatever the data: one inside a branch of `IF` or `COND`
 counts only when every branch makes it (a `COND` with no default does not), and
 one in the right side of `AND`, `OR`, `??` or `???`, or in an aggregate's body, is
-never definite. `op=` (`X += 1`, `A &= "x"`) and `A[k] op= x` read their target; a
-plain `A[k] = x` creates `A` and reads only the index expression. So
-`A + 1; A = 2` depends on `A`, `A = 1; A + B` on `B` alone, and
-`IF(X, A = 1, 0); A` on `X` and `A`. A program that would raise `E_UNDEF_VAR` for a
+never definite; nor is one in `COALESCE`'s later arguments or `GET`/`PATH`'s
+default. `op=` (`X += 1`, `A &= "x"`) and `A[k] op= x` read their target — after
+the target's index expressions and before the right side runs, so an assignment
+on the right is too late: `A += (A = 1; 2)` depends on `A`, while
+`A[(A = RECORD("x", 1); "x")] += 2` does not. A plain `A[k] = x` creates `A` and
+reads only the index expression. So `A + 1; A = 2` depends on `A`,
+`A = 1; A + B` on `B` alone, `IF(X, A = 1, 0); A` on `X` and `A`, and
+`GET(R, "a", (A = 1)); A` on `R` and `A`. A program that would raise `E_UNDEF_VAR` for a
 name the host did not supply always reports that name; reporting a name the run
 turns out not to need is allowed, and missing one it does is not.
 

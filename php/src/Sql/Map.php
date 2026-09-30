@@ -193,14 +193,24 @@ final class Map
                     . 'textQuote; the quote would end the literal');
             }
             $to = (string) $esc[$q];
-            if ($to !== $q . $q) {
-                // An escape character E followed by the quote, E itself escaped as EE.
-                $e = substr($to, 0, strlen($to) - strlen($q));
-                if (substr($to, -strlen($q)) !== $q || $e === ''
-                    || !array_key_exists($e, $esc) || (string) $esc[$e] !== $e . $e) {
-                    throw new \LogicException("{$where}'s textEscape for the textQuote does "
-                        . 'not keep the quote inside the literal: it must be the quote doubled, '
-                        . 'or an escape character that is itself escaped, followed by the quote');
+            // The only escape character a SQL server has is the backslash, so the quote
+            // is kept inside the literal by doubling it or by a backslash before it
+            // (sql/MAP.md 3.1) and nothing else.
+            if ($to !== $q . $q && $to !== '\\' . $q) {
+                throw new \LogicException("{$where}'s textEscape for the textQuote does "
+                    . 'not keep the quote inside the literal: it must be the quote doubled, '
+                    . 'or a backslash followed by the quote');
+            }
+            // A value that introduces a backslash escape presupposes a server that reads
+            // backslashes, so a backslash in the data must be doubled too, or it swallows
+            // the character after it (a value ending in one un-escapes the closing quote).
+            foreach ($esc as $v) {
+                if (is_string($v) && str_starts_with($v, '\\')) {
+                    if (!array_key_exists('\\', $esc) || (string) $esc['\\'] !== '\\\\') {
+                        throw new \LogicException("{$where}'s textEscape uses a backslash escape but "
+                            . 'does not double the backslash itself');
+                    }
+                    break;
                 }
             }
         }

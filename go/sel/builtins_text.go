@@ -165,7 +165,9 @@ func init() {
 			if needle == "" {
 				fail("E_BAD_ARG", "REPLACE needle must not be empty", args.PosOf(0))
 			}
-			if n := strings.Count(hay, needle); n > 0 && len(repl) > len(needle) {
+			if n := strings.Count(hay, needle); n > 0 && runeLen(repl) > runeLen(needle) {
+				// Compared in code points, as the cap is: "ab" is two code points but
+				// fewer bytes than "😀", so a byte comparison missed this growth.
 				// Length after the replacement, before it is built (SPEC §6.4).
 				grown := satAdd(runeLen(hay), satMul(int64(n), runeLen(repl)-runeLen(needle)))
 				checkTextLen(grown, "REPLACE's result", args.Pos())

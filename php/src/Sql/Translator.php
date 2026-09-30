@@ -94,56 +94,7 @@ final class Translator
         // Stage 1 and nothing else: the translator renders the tree it is
         // handed; the planner is the one place that optimises first.
         $norm = Normalise::run($ast, $this->constNames, $this->constCtx);
-        self::checkBinderPositions($norm);
         return [$norm, $this->analyzePipeline($norm)];
-    }
-
-    /**
-     * A binder position holds a name (docs/internals/sql-translation.md 7.5): an
-     * aggregate's `BUCKET(src, b, key, proj)` or `LINK(a, b, l, r, on)` written with an
-     * expression there is refused where it stands, E_SQL_SHAPE, in the statement forms
-     * as much as in an expression -- not left for whichever later step first trips over
-     * it, as a different code or a crash. Top-down and left to right, so the first
-     * refusal is the outermost.
-     *
-     * @param array<string,mixed> $n
-     */
-    private static function checkBinderPositions(array $n): void
-    {
-        switch ($n['t']) {
-            case 'un':
-                self::checkBinderPositions($n['x']);
-                return;
-            case 'bin':
-                self::checkBinderPositions($n['l']);
-                self::checkBinderPositions($n['r']);
-                return;
-            case 'index':
-                self::checkBinderPositions($n['obj']);
-                self::checkBinderPositions($n['idx']);
-                return;
-            case 'list':
-                foreach ($n['items'] as $item) {
-                    self::checkBinderPositions($item);
-                }
-                return;
-            case 'clist':
-                foreach ($n['entries'] as [, $v]) {
-                    self::checkBinderPositions($v);
-                }
-                return;
-            case 'call':
-                $form = self::unambiguousBinderForm($n['name'], count($n['args']));
-                foreach ($n['args'] as $i => $arg) {
-                    if ($form !== null && ($form[$i] ?? null) === 'binder'
-                        && !Constants::isBinderName($arg)) {
-                        refuse('E_SQL_SHAPE',
-                            "the binder of {$n['name']} must be a bare name", $arg['pos']);
-                    }
-                    self::checkBinderPositions($arg);
-                }
-                return;
-        }
     }
 
     /**
@@ -777,7 +728,16 @@ final class Translator
                 $skeleton = $this->skeleton('inRelation', $n['pos']);
                 $needle = $this->node($n['l']);
                 $column = $this->columnRef($b['fields'][$scalar]);
-                self::requireComparableKinds($needle, $column, 'IN', $n['pos']);
+                // Compared as `==` compares: a BOOL or BIN needle (or column) has no portable
+                // spelling against text, so it is refused AT THAT OPERAND, as a list's is.
+                foreach ([[$needle, $n['l']['pos']], [$column, $rhs['pos']]] as [$f, $at]) {
+                    if ($f->kind === 'BOOL' || $f->kind === 'BIN') {
+                        refuse('E_SQL_SHAPE',
+                            "IN over {$rhs['name']} compares "
+                            . ($f->kind === 'BOOL' ? 'a boolean' : 'binary data')
+                            . ' with text, which SQL would coerce and SEL never equates', $at);
+                    }
+                }
                 return new Fragment(
                     $this->fillNamed($skeleton,
                         self::slots($this->relationSlots($b), [
@@ -906,6 +866,17 @@ final class Translator
     private function call(array $n): Fragment
     {
         $name = $n['name'];
+        // A binder position holds a name; anything else is refused HERE, when this call
+        // is translated, so a refusal the enclosing call meets first (MAP as JOIN's
+        // source) still wins: the first refusal in source order.
+        $form = self::unambiguousBinderForm($name, count($n['args']));
+        if ($form !== null) {
+            foreach ($n['args'] as $i => $arg) {
+                if (($form[$i] ?? null) === 'binder' && !Constants::isBinderName($arg)) {
+                    refuse('E_SQL_SHAPE', "the binder of {$name} must be a bare name", $arg['pos']);
+                }
+            }
+        }
         // The two aggregates over a bucket's members -- COUNT(g) is COUNT(*)
         // and SUM(g, [x,] body) is SUM over the grouped rows -- fire on the
         // GROUP binder alone: over a relation row, COUNT(_) is the row's number
@@ -2289,6 +2260,12 @@ final class Translator
             refuse('E_SQL_SHAPE',
                 'a BIN element of a value binding has no literal node to become; '
                 . 'bind it as a column, or convert it before translating', $pos);
+        }
+        if ($v->isNone()) {
+            // A NULL element: asText would raise E_NULL, a SelError that tryTranslate
+            // does not catch. It is a binding problem, and a refusal.
+            refuse('E_SQL_BINDING',
+                'a value binding holds a NULL element, which has no SQL literal', $pos);
         }
         return ['t' => ($b['type'] ?? null) === 'NUM' ? 'num' : 'text',
                 'v' => $v->asText($pos), 'pos' => $pos];
@@ -3785,7 +3762,11 @@ final class Translator
                         $plan->limit !== null || $plan->offset !== null
                         || ($plan->groupBy === null
                             && ($plan->projections !== null || $plan->selectCols !== null
-                                || $plan->orderBy !== [] || $plan->distinct)));
+                                || $plan->distinct)));
+                    // (A sort does NOT force the wrap: the WHERE goes in the same SELECT, beside the
+                    // ORDER BY, because a derived table does not keep an ORDER BY that has no LIMIT
+                    // beside it and the rows would come back in no order; a filter commutes with a
+                    // stable sort, so the rows and their order are the same.)
                     if (count($args) === 2) {
                         $binder = '_';
                         $pred = $args[1];
@@ -4153,6 +4134,15 @@ final class Translator
             }
         }
 
+        // A derived table with no LIMIT beside its ORDER BY does not keep the order, and
+        // this statement has no other ORDER BY: the rows would come back in no order,
+        // where SEL's are the sorted list's. Refused at the last step (sql-translation
+        // 12.1: a sort's ORDER BY survives every step after it, or the plan is not SQL).
+        if ($plan->orderDropped && $steps !== []) {
+            refuse('E_SQL_SHAPE',
+                'these rows come from a sorted derived table, which does not keep its order, and '
+                . 'nothing after it sorts them again', $steps[count($steps) - 1]['pos']);
+        }
         return $plan;
     }
 

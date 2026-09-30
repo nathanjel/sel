@@ -85,8 +85,11 @@ class Bindings:
             if alias is None:
                 frm = b['from']
                 alias = str(frm.get('raw', '')) if isinstance(frm, dict) else str(frm)
-            if alias in seen:
+            # ASCII case-insensitively: SQLite (and, by platform, the MySQL family) reads
+            # `o` and `O` as one alias, so two relations under them collide on the server.
+            alias_key = ascii_upper(alias)
+            if alias_key in seen:
                 refuse('E_SQL_BINDING',
-                       f'relations {seen[alias]} and {name} share the alias {alias}; '
+                       f'relations {seen[alias_key]} and {name} share the alias {alias}; '
                        'give each one its own', pos)
-            seen[alias] = name
+            seen[alias_key] = name

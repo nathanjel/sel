@@ -97,12 +97,13 @@ computed is exactly a program that could not have been evaluated."
            (loop while (eq (node-kind n) :index)
                  do (push (node-r n) indexes)
                     (setf n (node-l n)))
-           ;; `A += x` and `A[k] += x` read A first; `A = x` defines it and
+           ;; Index expressions run once, in order, first. `A += x` and
+           ;; `A[k] += x` then read A BEFORE the right side runs (SPEC 8), so an
+           ;; assignment on the right is too late; `A = x` defines A and
            ;; `A[k] = x` creates it, reading only the index.
+           (dolist (idx indexes) (walk idx))
            (unless (string= (node-s node) "=")
              (read-name (node-s n)))
-           ;; Index expressions run once, in order, before the right side.
-           (dolist (idx indexes) (walk idx))
            (walk (node-r node))
            (setf (gethash (node-s n) def) t)))
 
@@ -121,9 +122,14 @@ computed is exactly a program that could not have been evaluated."
              ((and (string= name "COND") (oddp (length items)) (>= (length items) 3))
               (walk-cond-pairs items bound reads def (1+ depth)))
              ((member name '("COALESCE" "GET" "PATH") :test #'string=)
-              ;; Lazy, and only the first argument is certain to run.
-              (when items (walk (first items)))
-              (dolist (arg (rest items)) (maybe arg)))
+              ;; Lazy: the first argument always runs; COALESCE's later ones and
+              ;; GET/PATH's default (after the key) may not.
+              (loop for arg in items
+                    for i from 0
+                    do (if (or (and (string= name "COALESCE") (> i 0))
+                               (and (not (string= name "COALESCE")) (> i 1)))
+                           (maybe arg)
+                           (walk arg))))
              (t
               ;; Which arguments run inside the binder, and what they see, is
               ;; decided once, by BINDING-FORM over the manifest's forms

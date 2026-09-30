@@ -84,12 +84,15 @@ export class Bindings {
         alias = (frm !== null && typeof frm === 'object')
           ? String(frm.raw ?? '') : String(frm);
       }
-      if (seen.has(alias)) {
+      // ASCII case-insensitively: SQLite (and, by platform, the MySQL family) reads `o` and `O`
+      // as one alias, so two relations under them collide on the server (sql/MAP.md 3.1).
+      const aliasKey = asciiUpper(alias);
+      if (seen.has(aliasKey)) {
         refuse('E_SQL_BINDING',
-          `relations ${seen.get(alias)} and ${name} share the alias ${alias}; give `
+          `relations ${seen.get(aliasKey)} and ${name} share the alias ${alias}; give `
           + 'each one its own', pos);
       }
-      seen.set(alias, name);
+      seen.set(aliasKey, name);
     }
   }
 }

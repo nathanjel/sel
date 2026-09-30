@@ -284,7 +284,7 @@ Each task starts by reproducing the report against the current tree, then lands 
 
 <a id="c-py-c38"></a>
 
-- [ ] **C-PY-C38 — Resolve PY-C38.** Aliasing vs copying is observable and differs between hosts (BUCKET 2-arg, LIST, RECORD, SORT*)
+- [x] **C-PY-C38 — Resolve PY-C38.** Aliasing vs copying is observable and differs between hosts (BUCKET 2-arg, LIST, RECORD, SORT*)
 
   **[PY-C38](../python-code-review.md) — [low] [confirmed] Aliasing vs copying is observable and differs between hosts (BUCKET 2-arg, LIST, RECORD, SORT*)**
 
@@ -297,6 +297,8 @@ Each task starts by reproducing the report against the current tree, then lands 
   Contract gate: settle the relevant rule in the shared test family before choosing among the report’s proposed behaviors.
 
   Done when every linked scenario passes on all applicable lanes; code/position, mutation, ordering and repeat-use behavior satisfy the shared contract. Record commit and fixture IDs here.
+
+  Closed 2026-09-29 — covered by conformance/25-value-ownership alias.aggregate-copies.* on all hosts
 
 <a id="c-py-c39"></a>
 

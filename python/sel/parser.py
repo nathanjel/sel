@@ -133,6 +133,9 @@ class Node:
     # observes, so the evaluator's join pre-filter may drop rows below the join
     # (SEL-0050).
     keys_unobserved: bool = False
+    # SQL stage 1's memo: found NOT constant at depth 0 with nothing bound (constants.py).
+    # Trees are immutable once built, so it never goes stale.
+    _not_constant: bool = False
 
 
 class Parser:

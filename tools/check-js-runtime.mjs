@@ -583,7 +583,9 @@ expectOk('T03: assigning a value past the cap (path + depth) is E_DEPTH at the t
     ['1001 groups', '(a)'.repeat(1001)]]) reject(n, pat);
   accept('(\\d*)? outside a loop', '^(\\d*)?$', '12');
   accept('[\\d-] hyphen last', '^[\\d-]$', '-');
-  accept('[[.] literal bracket and dot', '^[[.]$', '.');
+  accept('[.[] literal dot and bracket (the bracket is not followed by : . =)', '^[.[]$', '[');
+  reject('unterminated POSIX prefixes are refused too', '[[.]');
+  reject('unterminated POSIX prefix, equals form', '[a[=]');
   accept('a run of identical atoms (folded to a count)', '^(?:ab){3}a{9}$', 'ababab' + 'a'.repeat(9));
   expectOk('the 65,533-letter pattern matches; 65,535 is refused', () => {
     assert.equal(run(`RMATCH("^" & REPEAT("a", 65533) & "$", REPEAT("a", 65533))`), 'TRUE');

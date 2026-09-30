@@ -4302,6 +4302,11 @@ Snapshot take_snapshot(const Value& value, bool want_keys) {
   return snap;
 }
 
+template <typename Fn>
+void for_each_snapshot_value(const Snapshot& snap, Fn&& fn) {
+  for (const Value& item : snap.items) fn(item);
+}
+
 std::string upper_name(std::string name) {
   for (char& ch : name) ch = ascii_up(ch);
   return name;
@@ -5435,7 +5440,7 @@ Value do_link(Args& a, Context& ctx, bool left_join) {
     JoinFlatTest flat_test{b1, b2};
     bool right_flat = true;
     try {
-      for_each_collection_value(right_value, [&](const Value& item) {
+      for_each_snapshot_value(take_snapshot(right_value, false), [&](const Value& item) {
         const Value row = ensure_row_table_alias(item, b2);
         set_frame(ctx.frames.back(), b2, row);
         set_frame(ctx.frames.back(), "_2", row);
@@ -5606,7 +5611,7 @@ Value do_link(Args& a, Context& ctx, bool left_join) {
     add_once("_");
     ctx.frames.push_back(std::move(frame));
     try {
-      for_each_collection_value(left_value, [&](const Value& item) {
+      for_each_snapshot_value(take_snapshot(left_value, false), [&](const Value& item) {
         const Value row = ensure_row_table_alias(item, b1);
         int asked = -1;
         if (!fast_field.empty() && row.get(fast_field) != nullptr) {
@@ -5677,13 +5682,17 @@ Value do_link(Args& a, Context& ctx, bool left_join) {
     frame.emplace_back("_2", Value::none());
     ctx.frames.push_back(std::move(frame));
     try {
-      for_each_collection_value(left_value, [&](const Value& item) {
+      // Each side is listed ONCE (spec §7.3): the right side is walked again for every
+      // left row, and a predicate that grows it must not give later left rows more rows.
+      const Snapshot general_left = take_snapshot(left_value, false);
+      const Snapshot general_right = take_snapshot(right_value, false);
+      for_each_snapshot_value(general_left, [&](const Value& item) {
         const Value left = ensure_row_table_alias(item, b1);
         set_frame(ctx.frames.back(), b1, left);
         set_frame(ctx.frames.back(), "_1", left);
         set_frame(ctx.frames.back(), "_", left);
         bool matched = false;
-        for_each_collection_value(right_value, [&](const Value& right_item) {
+        for_each_snapshot_value(general_right, [&](const Value& right_item) {
           const Value right = ensure_row_table_alias(right_item, b2);
           set_frame(ctx.frames.back(), b2, right);
           set_frame(ctx.frames.back(), "_2", right);
@@ -7180,22 +7189,14 @@ std::size_t validate_braces(const CodePoints& p, std::size_t start, const std::s
   return i + 1;
 }
 
-// PCRE2's rule for a POSIX bracket form (`[:alpha:]`, `[.x.]`, `[=x=]`): at a `[`
-// followed by one of `:` `.` `=` inside a class, scan on for that same character
-// followed by `]`; an unescaped `]` seen first means it was only a literal `[`
-// and `.`/`:`/`=` (`[[.]` is a class of two characters). Every engine agrees on
-// the literal reading and refuses the other, so the subset refuses it wherever it
-// stands, not only first.
+// A `[` followed by `:`, `.` or `=` inside a class is refused, closed or not
+// (SPEC 7.8): the POSIX bracket forms `[:alpha:]`, `[.x.]` and `[=x=]` are read
+// differently by the engines, and so is an unfinished one, so no spelling of the
+// prefix is portable.
 bool starts_posix_form(const CodePoints& p, std::size_t at) {
   if (at + 1 >= p.size() || p[at] != U'[') return false;
   const char32_t x = p[at + 1];
-  if (x != U':' && x != U'.' && x != U'=') return false;
-  for (std::size_t j = at + 2; j < p.size(); j++) {
-    if (p[j] == U'\\') { j++; continue; }
-    if (p[j] == U']') return false;
-    if (p[j] == x && j + 1 < p.size() && p[j + 1] == U']') return true;
-  }
-  return false;
+  return x == U':' || x == U'.' || x == U'=';
 }
 
 // Returns the rewritten text; `next` receives the index just past the closing ']'.
@@ -7598,6 +7599,9 @@ class RxParser {
         if (at(U'-') && i_ + 1 < p_.size() && p_[i_ + 1] != U']') {
           i_++;
           const long long hi = class_member(&rs);
+          // A range that runs backwards is a compile-time refusal whatever the
+          // flags (SPEC 7.8), as it is in every other host.
+          if (hi >= 0 && hi < lo) bad_regex("a class range runs backwards", pattern_, i_ - 1, pos_);
           rs.emplace_back(static_cast<char32_t>(lo), static_cast<char32_t>(hi < 0 ? lo : hi));
         } else {
           rs.emplace_back(static_cast<char32_t>(lo), static_cast<char32_t>(lo));
@@ -8082,7 +8086,12 @@ std::string validate_pattern(const std::string& pattern, Pos pos, bool ignore_ca
   }
   // Token by token the pattern is legal; now its shape (spec §7.8).
   {
-    RxParser parser(p, pattern, pos, ignore_case);
+    // The `i` fold is analysed only for an ASCII pattern (SPEC 7.8): a non-ASCII
+    // pattern under `i` is refused at run time (E_BAD_ARG) whatever else it holds,
+    // so the analysis must not turn it into a compile-time refusal of its own.
+    bool fold = ignore_case;
+    for (const char32_t cp : p) if (cp > 0x7f) { fold = false; break; }
+    RxParser parser(p, pattern, pos, fold);
     const RxTree tree = parser.parse();
     check_loops(tree, pattern, pos);
     RxAnalysis(tree, pattern, pos).run();
@@ -8504,7 +8513,18 @@ void collect(const Node* node, std::set<std::string>& bound, std::set<std::strin
       // and every argument is read where the call stands.
       const auto form = binding_form(node->s, node->items, node->spec);
       if (!form) {
-        for (const auto& arg : node->items) collect(arg.get(), bound, reads, definite, depth + 1);
+        for (std::size_t i = 0; i < node->items.size(); ++i) {
+          // The first argument always runs; COALESCE's later ones and GET/PATH's
+          // default may not, so nothing they assign is definite afterwards.
+          const bool optional = (node->s == "COALESCE" && i > 0) ||
+                                ((node->s == "GET" || node->s == "PATH") && i > 1);
+          if (optional) {
+            auto copy = definite;
+            collect(node->items[i].get(), bound, reads, copy, depth + 1);
+          } else {
+            collect(node->items[i].get(), bound, reads, definite, depth + 1);
+          }
+        }
         return;
       }
       std::optional<std::set<std::string>> inner;

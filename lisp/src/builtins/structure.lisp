@@ -92,22 +92,17 @@
                     (loop for cell in (nthcdr count ents)
                           collect (cdr cell)))))))))))
 
+(defun collection-items (v)
+  "The elements of the collection V as a fresh simple-vector: a SNAPSHOT of the
+references (spec 7.3), so a body or predicate that appends to, adds to or replaces
+V afterwards neither extends the walk nor moves what it stands on."
+  (if (and (value-is-list v) (value-storage v))
+      (copy-seq (value-storage v))
+      (coerce (mapcar #'cdr (aggregate-elements v)) 'simple-vector)))
+
 (defmacro for-each-collection-item ((item-var coll) &body body)
-  (let ((v-g (gensym "COLL"))
-        (st-g (gensym "ST"))
-        (i-g (gensym "I"))
-        (c-g (gensym "C")))
-    `(let ((,v-g ,coll))
-       (cond
-         ((and (value-is-list ,v-g) (value-storage ,v-g))
-          (let ((,st-g (value-storage ,v-g)))
-            (loop for ,i-g from 0 below (length ,st-g)
-                  for ,item-var = (svref ,st-g ,i-g)
-                  do ,@body)))
-         (t
-          (dolist (,c-g (aggregate-elements ,v-g))
-            (let ((,item-var (cdr ,c-g)))
-              ,@body)))))))
+  `(loop for ,item-var across (collection-items ,coll)
+         do (progn ,@body)))
 
 (defun first-collection-item (v)
   (cond
@@ -1363,13 +1358,17 @@ carry is promoted from neither, spec §7.4)."
                                        b2-cell b2-low-cell b2-2-cell)))
                       (ctx-push-frame ctx frame)
                       (unwind-protect
-                           (for-each-collection-item (item1 val1)
+                           ;; Each side is listed ONCE (spec 7.3): the right side is
+                           ;; walked again for every left row, and a predicate that
+                           ;; grows it must not give later left rows more rows.
+                           (let ((items2 (collection-items val2)))
+                            (for-each-collection-item (item1 val1)
                              (let ((r1 (ensure-row-table-alias item1 b1))
                                    (matched nil))
                                (setf (cdr b1-cell) r1 (cdr b1-low-cell) r1
                                      (cdr b1-1-cell) r1 (cdr b1-_-cell) r1)
                                (when sample-r2
-                                 (for-each-collection-item (item2 val2)
+                                 (loop for item2 across items2 do
                                    (let ((r2 (ensure-row-table-alias item2 b2)))
                                      (setf (cdr b2-cell) r2 (cdr b2-low-cell) r2 (cdr b2-2-cell) r2)
                                      (when (as-bool (args-eval a pred-node) (node-pos pred-node))
@@ -1378,7 +1377,7 @@ carry is promoted from neither, spec §7.4)."
                                               (push (funcall projector r1 r2) out))))))
                                (when (and is-left (not matched))
                                  (progn (check-collection-cap (incf nout) (args-pos a))
-                                        (push (funcall projector r1 nil) out)))))
+                                        (push (funcall projector r1 nil) out))))))
                         (ctx-pop-frame ctx))))))
             (make-list-value (nreverse out))))))))
 

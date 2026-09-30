@@ -422,9 +422,12 @@ func (b *Bindings) CheckAliases(pos Pos) {
 				alias = bind.Relation.From.Table
 			}
 		}
-		if prev, ok := seen[alias]; ok {
+		// ASCII case-insensitively: SQLite (and, by platform, the MySQL family) reads `o`
+		// and `O` as one alias, so two relations under them collide on the server.
+		aliasKey := utf8.AsciiUpper(alias)
+		if prev, ok := seen[aliasKey]; ok {
 			Refuse("E_SQL_BINDING", fmt.Sprintf("relations %s and %s share the alias %s; give each one its own", prev, name, alias), pos)
 		}
-		seen[alias] = name
+		seen[aliasKey] = name
 	}
 }

@@ -447,16 +447,12 @@ final class Regex
                 break;
             }
             if ($c === '[') {
-                // POSIX classes [:alpha:], collating [.x.] and equivalence [=x=]
-                // forms, wherever they stand: `[` followed by one of : . = with the
-                // matching closer (`:]` `.]` `=]`) somewhere later.
+                // A `[` followed by `:`, `.` or `=` inside a class is refused, closed or
+                // not (SPEC 7.8): the POSIX bracket forms [:alpha:], [.x.] and [=x=] are
+                // read differently by the engines, and so is an unfinished one.
                 $k = $p[$i + 1] ?? '';
                 if ($k === ':' || $k === '.' || $k === '=') {
-                    for ($j = $i + 2; $j + 1 < $n; $j++) {
-                        if ($p[$j] === $k && $p[$j + 1] === ']') {
-                            self::bad('POSIX classes such as [[:alpha:]] are not portable', $pattern, $i, $pos);
-                        }
-                    }
+                    self::bad('POSIX classes such as [[:alpha:]] are not portable', $pattern, $i, $pos);
                 }
                 $atoms[] = ['src' => '[', 'cp' => 91, 'esc' => false, 'dash' => false];
                 $i++;

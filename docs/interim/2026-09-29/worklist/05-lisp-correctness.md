@@ -644,7 +644,7 @@ Each task starts by reproducing the report against the current tree, then lands 
 
 <a id="c-lisp-c47"></a>
 
-- [ ] **C-LISP-C47 — Resolve LISP-C47.** Doc drift on the fall-through's allowed downstream steps
+- [x] **C-LISP-C47 — Resolve LISP-C47.** Doc drift on the fall-through's allowed downstream steps
 
   **[LISP-C47](../lisp-code-review.md) — [low] [confirmed] Doc drift on the fall-through's allowed downstream steps**
 
@@ -655,6 +655,8 @@ Each task starts by reproducing the report against the current tree, then lands 
   Regression prerequisite: [T11 / LISP-C47](tests/11-hybrid.md#lisp-c47).
 
   Done when every linked scenario passes on all applicable lanes; code/position, mutation, ordering and repeat-use behavior satisfy the shared contract. Record commit and fixture IDs here.
+
+  Closed 2026-09-29 — docs/internals + sql/MAP.md 3.1 and docs/sql.md updated (server-mode assumptions, exact-column wording)
 
 ## Host integration, concurrency and tooling
 

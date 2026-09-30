@@ -1017,6 +1017,11 @@ def _link(args, ctx, left_join):
     if left_value.is_null():
         return Value._list_owned([])
 
+    # Each side is listed ONCE, here (SPEC 7.3 snapshot): the right side is walked
+    # again for every left row, and a predicate that grows or replaces a side must
+    # neither extend the walk nor change the rows later left rows see.
+    left_items = list(iter_collection_items(left_value))
+    right_items = list(iter_collection_items(right_value))
     first_left = first_collection_item(left_value)
     first_right = first_collection_item(right_value)
     if first_left is None or first_right is None:
@@ -1122,7 +1127,7 @@ def _link(args, ctx, left_join):
         frame_right = {b2: None, b2.lower(): None, '_2': None}
         ctx.push_frame(frame_right)
         try:
-            for item in iter_collection_items(right_value):
+            for item in right_items:
                 row = ensure_row_table_alias(item, b2) if needs_right_alias else item
                 frame_right[b2] = row
                 frame_right[b2.lower()] = row
@@ -1186,7 +1191,7 @@ def _link(args, ctx, left_join):
                 frame_left.setdefault(binder, None)
         ctx.push_frame(frame_left)
         try:
-            for item in iter_collection_items(left_value):
+            for item in left_items:
                 row = ensure_row_table_alias(item, b1) if needs_left_alias else item
                 asked = -1
                 if fast_field is not None and row.get(fast_field) is not None:
@@ -1253,7 +1258,7 @@ def _link(args, ctx, left_join):
                  b2: None, b2.lower(): None, '_2': None}
         ctx.push_frame(frame)
         try:
-            for left_item in iter_collection_items(left_value):
+            for left_item in left_items:
                 left = ensure_row_table_alias(left_item, b1) if needs_left_alias else left_item
                 frame[b1] = left
                 frame[b1.lower()] = left
@@ -1261,7 +1266,7 @@ def _link(args, ctx, left_join):
                 frame['_'] = left
                 matched = [False]
 
-                for right_item in iter_collection_items(right_value):
+                for right_item in right_items:
                     right = ensure_row_table_alias(right_item, b2) if needs_right_alias else right_item
                     frame[b2] = right
                     frame[b2.lower()] = right

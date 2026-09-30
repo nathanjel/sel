@@ -182,14 +182,20 @@ def _check_pairing(name: str) -> None:
     if to is None:
         raise RuntimeError(f'{where} has a textEscape with no entry for its textQuote '
                            f'{quote!r}, so a quote inside a literal would end it')
-    doubled = to == quote + quote
-    escaped = (len(to) == 2 and to[1] == quote
-               and escape.get(to[0]) == to[0] + to[0])
-    if not (doubled or escaped):
+    # The only escape character a SQL server has is the backslash, so the quote is
+    # kept inside the literal by doubling it or by a backslash before it (sql/MAP.md
+    # 3.1) and nothing else.
+    if to != quote + quote and to != '\\' + quote:
         raise RuntimeError(f'{where} escapes its textQuote as {to!r}, which does not '
                            'leave a quote inside the literal: it must be the quote '
-                           'doubled, or an escape character followed by the quote '
-                           'where the escape character itself maps to two of itself')
+                           'doubled, or a backslash followed by the quote')
+    # A value that introduces a backslash escape presupposes a server that reads
+    # backslashes, so a backslash in the data must be doubled too, or it swallows the
+    # character after it (a value ending in one un-escapes the closing quote).
+    if any(isinstance(v, str) and v.startswith('\\') for v in escape.values()):
+        if escape.get('\\') != '\\\\':
+            raise RuntimeError(f'{where} has a textEscape that uses a backslash escape '
+                               'but does not double the backslash itself')
 
 
 def define(dialect: str, section: str, key: str, entry: Any) -> None:

@@ -2625,6 +2625,15 @@ The ordinary prefix planner promises:
     planner keeps the sorted rows in SQL and runs the step in memory (JS used to
     answer `E_SQL_UNSUPPORTED` here, and a host that nested the sort in a
     derived table answered the step in engine order).
+    A `FILTER` after a sort is not one of those steps: its `WHERE` goes beside
+    the `ORDER BY` in the same select, because a filter commutes with a stable
+    sort (`SORT_BY(a) .> FILTER(a > 1)` is `WHERE a > 1 ORDER BY a`, and a derived
+    table around the sort would return the rows in no order). What the wrap cannot
+    avoid — a projection or `DISTINCT` between the sort and the filter — leaves a
+    derived table with no `LIMIT` beside its `ORDER BY`, and a statement whose
+    rows would come back from it unsorted is refused as a whole, `E_SQL_SHAPE` at
+    the last step (the planner then filters in memory), rather than answered in
+    engine order.
   - **First refusal in source order.** A pipeline is checked step by step as
     written, and a step's own rule is asked before its arguments are looked at:
     `ORDERS .> SORT_BY(…) .> BUCKET(_["nope"])` is refused for the `BUCKET` over

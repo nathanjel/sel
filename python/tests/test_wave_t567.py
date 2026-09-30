@@ -161,8 +161,8 @@ def test_rejected_pattern(pattern):
 
 
 @pytest.mark.parametrize('pattern', [
-    '(a|b)+', '((a)b)+', '(\\d+,)+', '(\\d*)?', '^[\\d-]$', '^[-\\d]$', '^[\\w.-]$', '^[[.]$',
-    '^[[=]$', '^[[]$', '^[a&&b]$', '^[a||b]$', '^[a~~b]$', '^' + 'a' * 65533 + '$',
+    '(a|b)+', '((a)b)+', '(\\d+,)+', '(\\d*)?', '^[\\d-]$', '^[-\\d]$', '^[\\w.-]$', '^[.[]$',
+    '^[=[]$', '^[[]$', '^[a&&b]$', '^[a||b]$', '^[a~~b]$', '^' + 'a' * 65533 + '$',
     '(' * 200 + 'a' + ')' * 200, '^' + '(a)' * 1000 + '$', '(?:a{60000}){60000}', '^(a){20000}$',
 ])
 def test_accepted_pattern(pattern):
@@ -198,7 +198,7 @@ def test_no_future_warning_leaks_from_set_syntax():
     with warnings.catch_warnings():
         warnings.simplefilter('error')
         regex._cache.clear()
-        for pat in ('^[[]$', '^[a&&b]$', '^[a||b]$', '^[a~~b]$', '^[[.]$'):
+        for pat in ('^[[]$', '^[a&&b]$', '^[a||b]$', '^[a~~b]$', '^[.[]$'):
             assert sel.evaluate(f"RMATCH('{pat}', 'x')").scalar is False
         assert run("RMATCH('^[a&&b]$', '&')").scalar is True
         assert run("RMATCH('^[a~~b]$', '~')").scalar is True

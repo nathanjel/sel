@@ -950,11 +950,15 @@ RMATCH('[[=x=]]', "x")
 error E_REGEX_SYNTAX
 ===
 
-### name: re.accept.bracket-then-dot-in-class
+### name: re.accept.bracket-and-dot-in-class-without-a-posix-prefix
 --- note
-CONTROL: `[` and `.` in a class that do not form a POSIX bracket are literals.
+CONTROL: a `[` and a `.` or `=` in a class stay literals when the `[` is NOT followed by `:`, `.` or `=`:
+the dot or equals sign first (`[.[]`, `[=[]`), or the bracket escaped (`[\[.]`). The unescaped
+`[.` / `[=` / `[:` prefix itself is refused whether or not it is closed (SPEC 7.8;
+31-audit-findings: re.posix.unterminated-form-is-refused.*), which is why the old spelling
+`[[.]` of this control is no longer here.
 --- source
-RMATCH('^[[.]$', ".") AND RMATCH('^[[=]$', "=") AND RMATCH('^[.[]$', "[")
+RMATCH('^[.[]$', "[") AND RMATCH('^[=[]$', "=") AND RMATCH('^[\[.]$', ".")
 --- expect
 bool TRUE
 ===

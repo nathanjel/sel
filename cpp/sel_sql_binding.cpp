@@ -337,14 +337,17 @@ void Bindings::check_aliases(Pos pos) const {
     if (b.kind() != Binding::Kind::Relation) continue;
     const RelationSpec& r = b.as_relation();
     const std::string alias = r.alias ? *r.alias : r.from;
-    auto it = seen.find(alias);
+    // ASCII case-insensitively: SQLite (and, by platform, the MySQL family) reads `o`
+    // and `O` as one alias, so two relations under them collide on the server.
+    const std::string alias_key = ascii_upper(alias);
+    auto it = seen.find(alias_key);
     if (it != seen.end()) {
       refuse("E_SQL_BINDING",
              "relations " + it->second + " and " + name + " share the alias " +
                  alias + "; give each one its own",
              pos);
     }
-    seen.emplace(alias, name);
+    seen.emplace(alias_key, name);
   }
 }
 

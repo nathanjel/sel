@@ -125,15 +125,10 @@ to be written out, because cl-ppcre is the more permissive of the four."
     (loop while (< i n)
           do (let ((c (char p i)))
                (cond
-                 ;; A POSIX bracket form -- [:name:], [.x.], [=x=] -- wherever it
-                 ;; stands in the class (SPEC 7.8): PHP and cl-ppcre read it, the
-                 ;; other engines take its characters literally. It needs a
-                 ;; closing X] with at least one character between, so a class of
-                 ;; a bracket and a dot, `[[.]`, is not one.
-                 ((and (char= c #\[) (< (1+ i) n) (find (char p (1+ i)) ":.=")
-                       (let ((x (char p (1+ i))))
-                         (loop for j from (+ i 3) below (1- n)
-                               thereis (and (char= (char p j) x) (char= (char p (1+ j)) #\])))))
+                 ;; A `[` followed by `:`, `.` or `=` inside a class is refused, closed or
+                 ;; not (SPEC 7.8): the POSIX bracket forms [:name:], [.x.], [=x=] are
+                 ;; read differently by the engines, and so is an unfinished one.
+                 ((and (char= c #\[) (< (1+ i) n) (find (char p (1+ i)) ":.="))
                   (bad-regex "POSIX bracket forms such as [[:alpha:]] are not portable" pattern i pos))
                  ((char= c #\])
                   (when (zerop count)

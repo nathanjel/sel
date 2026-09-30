@@ -314,14 +314,18 @@ host chose the aliases, so the host can fix them."
     (dolist (name (binding-map-order bs))
       (let ((b (cdr (assoc name (binding-map-sorted bs) :test #'equal))))
         (when (eq (binding-kind b) :relation)
+          ;; ASCII case-insensitively: SQLite (and, by platform, the MySQL family)
+          ;; reads `o` and `O` as one alias, so two relations under them collide on
+          ;; the server.
           (let* ((alias (relation-alias (binding-spec b)))
-                 (prev (assoc alias seen :test #'equal)))
+                 (key (sel::ascii-upcase alias))
+                 (prev (assoc key seen :test #'equal)))
             (when prev
               (refuse "E_SQL_BINDING"
                       (format nil "relations ~a and ~a share the alias ~a; give ~
 each one its own" (cdr prev) name alias)
                       pos))
-            (push (cons alias name) seen)))))))
+            (push (cons key name) seen)))))))
 
 ;;; --- binders --------------------------------------------------------------
 

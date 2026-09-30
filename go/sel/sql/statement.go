@@ -412,7 +412,11 @@ func (t *Translator) AnalyzePipeline(ast *SNode) *RelationalPlan {
 					step.Pos)
 			}
 			needDerived := plan.Limit != nil || plan.Offset != nil ||
-				(plan.GroupBy == nil && (plan.Projections != nil || plan.SelectCols != nil || plan.Distinct || len(plan.OrderBy) > 0))
+				(plan.GroupBy == nil && (plan.Projections != nil || plan.SelectCols != nil || plan.Distinct))
+			// (A sort does NOT force the wrap: the WHERE goes in the same SELECT, beside the
+			// ORDER BY, because a derived table does not keep an ORDER BY that has no LIMIT
+			// beside it and the rows would come back in no order; a filter commutes with a
+			// stable sort, so the rows and their order are the same.)
 			plan = t.ensureDerived(plan, needDerived)
 
 			binder := "_"
@@ -807,6 +811,15 @@ func (t *Translator) AnalyzePipeline(ast *SNode) *RelationalPlan {
 		}
 	}
 
+	// A derived table with no LIMIT beside its ORDER BY does not keep the order, and this
+	// statement has no other ORDER BY: the rows would come back in no order, where SEL's
+	// are the sorted list's. Refused at the last step (sql-translation 12.1: a sort's
+	// ORDER BY survives every step after it, or the plan is not SQL).
+	if plan.OrderDropped && len(steps) > 0 {
+		Refuse("E_SQL_SHAPE",
+			"these rows come from a sorted derived table, which does not keep its order, and nothing after it sorts them again",
+			steps[len(steps)-1].Pos)
+	}
 	return plan
 }
 

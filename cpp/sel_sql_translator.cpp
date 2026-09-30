@@ -1855,6 +1855,11 @@ SNodePtr Translator::value_node(const Value& v, const Binding& b, Pos pos) {
            "bind it as a column, or convert it before translating",
            pos);
   }
+  if (v.is_none()) {
+    // A NULL element: as_text would raise E_NULL, a SelError that try_translate does
+    // not catch. It is a binding problem, and a refusal.
+    refuse("E_SQL_BINDING", "a value binding holds a NULL element, which has no SQL literal", pos);
+  }
   const std::optional<SqlKind> t = b.value_type();
   const bool num = t && *t == SqlKind::Num;
   return SNode::leaf(lit_node(num ? NT::Num : NT::Text, v.as_text(pos), false, pos));
@@ -1930,7 +1935,18 @@ Fragment Translator::in_operator(const SNode& n) {
       // applied unconditionally -- there is no two-BIN skip as in binary().
       const Fragment needle_raw = node(n.l());
       const Fragment column = column_ref(*scalar);
-      require_comparable_kinds(needle_raw, column, "IN", n.pos());
+      // Compared as `==` compares: a BOOL or BIN needle (or column) has no portable
+      // spelling against text, so it is refused AT THAT OPERAND, as a list's is.
+      for (const auto& [f, at] : {std::pair<const Fragment*, Pos>{&needle_raw, n.l()->pos()},
+                                  std::pair<const Fragment*, Pos>{&column, rhs.pos()}}) {
+        if (f->kind() == SqlKind::Bool || f->kind() == SqlKind::Bin) {
+          refuse("E_SQL_SHAPE",
+                 std::string("IN over ") + rhs.s() + " compares " +
+                     (f->kind() == SqlKind::Bool ? "a boolean" : "binary data") +
+                     " with text, which SQL would coerce and SEL never equates",
+                 at);
+        }
+      }
       SlotMap slots = merge_slots(
           relation_slots(rel),
           SlotMap{{"needle", {Slot{emit_.text_operand(needle_raw)}}},
@@ -3413,7 +3429,11 @@ std::optional<RelationalPlan> Translator::analyze_pipeline(const SNodePtr& ast) 
           plan.limit.has_value() || plan.offset.has_value() ||
           (!plan.group_by.has_value() &&
            (plan.projections.has_value() || plan.select_cols.has_value() ||
-            plan.distinct || !plan.order_by.empty()));
+            plan.distinct));
+      // (A sort does NOT force the wrap: the WHERE goes in the same SELECT, beside the
+      // ORDER BY, because a derived table does not keep an ORDER BY that has no LIMIT
+      // beside it and the rows would come back in no order; a filter commutes with a
+      // stable sort, so the rows and their order are the same.)
       plan = ensure_derived(std::move(plan), need_derived);
       std::string binder;
       SNodePtr pred;
@@ -3775,6 +3795,16 @@ std::optional<RelationalPlan> Translator::analyze_pipeline(const SNodePtr& ast) 
     }
   }
 
+  // A derived table with no LIMIT beside its ORDER BY does not keep the order, and this
+  // statement has no other ORDER BY: the rows would come back in no order, where SEL's
+  // are the sorted list's. Refused at the last step (sql-translation 12.1: a sort's
+  // ORDER BY survives every step after it, or the plan is not SQL).
+  if (plan.order_dropped && !steps.empty()) {
+    refuse("E_SQL_SHAPE",
+           "these rows come from a sorted derived table, which does not keep its order, and "
+           "nothing after it sorts them again",
+           steps.back()->pos());
+  }
   return plan;
 }
 

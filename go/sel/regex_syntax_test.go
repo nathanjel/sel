@@ -23,7 +23,7 @@ func TestRegexValidatorRejections(t *testing.T) {
 	for _, p := range []string{
 		`^*`, `$+`, `^{2}`, `^+?`, `a$+`, `$?`, `${0}`, // quantified anchors
 		`[+-\d]`, `[\d-z]`, `[\s-x]`, `[\w-a]`, `[a-\s]`, `[\w-.]`, `[!-\w]`, `[a--b]`, `[z-a]`, // ranges
-		`[a[:alpha:]]`, `[a[:digit:]`, `[[:alpha:]a]`, `[a[.x.]]`, `[[=x=]]`, // POSIX forms
+		`[a[:alpha:]]`, `[a[:digit:]`, `[[:alpha:]a]`, `[a[.x.]]`, `[[=x=]]`, `[[.]`, `[a[=]`, `[x[:y]`, `[[:a]`, // POSIX forms, closed or not
 		`(*FAIL)`, `a(*ACCEPT)b`, `(*UTF8)a`, // PCRE verbs
 		`(a*)*`, `(?:a?)+`, `(|a)+`, `(a*?)+`, `(?:(a)|b?)*`, `(a|)+b`, `(?:a?){2}`, // nullable loop bodies
 		`(?:(a)|b)*`, `(?:(a)|(b))+`, `((a)|(b))*`, `(?:(a)?b)+`, `(?:(a)|b){2}`, // optional captures in loops
@@ -41,7 +41,7 @@ func TestRegexValidatorRejections(t *testing.T) {
 
 func TestRegexValidatorAccepts(t *testing.T) {
 	for _, p := range []string{
-		`^[\d-]$`, `^[-\d]$`, `^[\w.-]$`, `^[\d.]$`, `^[[]$`, `^[[.]$`, `^[[=]$`, `^[.[]$`, `^[a&&b]$`,
+		`^[\d-]$`, `^[-\d]$`, `^[\w.-]$`, `^[\d.]$`, `^[[]$`, `^[.[]$`, `^[=[]$`, `^[a&&b]$`,
 		`(a|b)+`, `((a)b)+`, `(\d)-(\d)`, `^(a)?b$`, `^(?:a|)b$`, `(?:a{1000}){2}`, `^(a{300}){300}$`,
 		`(?:a{60000}){60000}`, `a{00001}`, `a{0}`, ``, `x{0}`, `^$`, `$.*`,
 		strings.Repeat("(?:", 200) + "a" + strings.Repeat(")", 200),

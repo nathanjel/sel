@@ -48,3 +48,8 @@ pin program.run.over-deep-host-value.key-error-first = E_NOT_TEXT 1:8|E_DEPTH 1:
 
 # Rust register_function is generic over Fn: a non-callable value cannot type-check.
 na  host.fn.refuse.not-callable rust
+# Audit follow-up (Rust-lane review): the target of `op=` is read BEFORE the right side runs, index
+# expressions run before that read, and a later GET/PATH/COALESCE argument's assignment is not definite.
+pin program.deps.compound-rhs-assign-is-too-late = A
+pin program.deps.index-expr-assign-precedes-compound-read = -
+pin program.deps.get-default-assign-not-definite = A R

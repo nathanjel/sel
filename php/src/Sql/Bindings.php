@@ -106,12 +106,15 @@ final class Bindings
                     ? (string) ($b['from']['raw'] ?? '')
                     : (string) $b['from'];
             }
-            if (isset($seen[$alias])) {
+            // ASCII case-insensitively: SQLite (and, by platform, the MySQL family) reads `o`
+            // and `O` as one alias, so two relations under them collide on the server.
+            $aliasKey = \Sel\Utf8::upper($alias);
+            if (isset($seen[$aliasKey])) {
                 refuse('E_SQL_BINDING',
-                    "relations {$seen[$alias]} and {$name} share the alias {$alias}; "
+                    "relations {$seen[$aliasKey]} and {$name} share the alias {$alias}; "
                     . 'give each one its own', $pos);
             }
-            $seen[$alias] = $name;
+            $seen[$aliasKey] = $name;
         }
     }
 }

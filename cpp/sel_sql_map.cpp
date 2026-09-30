@@ -554,20 +554,24 @@ void Map::define_dialect(const std::string& name, const DialectSpec& spec) {
         bad(where + " has no textEscape entry for its textQuote (" + *quote +
             "), so a quote inside a text literal would end it");
       }
-      // The quote doubled, or an escape character E followed by the quote where E
-      // is itself escaped (E -> E E): anything else leaves a quote inside the
-      // literal, or lets a backslash in the data eat the escape.
-      const bool doubled = *q == *quote + *quote;
-      bool escaped = false;
-      if (q->size() > quote->size() && q->compare(q->size() - quote->size(), quote->size(), *quote) == 0) {
-        const std::string e = q->substr(0, q->size() - quote->size());
-        const std::string* self = entry_for(e);
-        escaped = self && *self == e + e;
-      }
-      if (!doubled && !escaped) {
+      // The only escape character a SQL server has is the backslash, so the quote is
+      // kept inside the literal by doubling it or by a backslash before it
+      // (sql/MAP.md 3.1) and nothing else.
+      if (*q != *quote + *quote && *q != "\\" + *quote) {
         bad(where + " escapes textQuote as \"" + *q + "\", which neither doubles it "
-            "nor is an escape character that is itself escaped; a quote or a "
-            "backslash in the data would end the literal");
+            "nor is a backslash followed by it; a quote in the data would end the literal");
+      }
+      // A value that introduces a backslash escape presupposes a server that reads
+      // backslashes, so a backslash in the data must be doubled too, or it swallows
+      // the character after it.
+      bool uses_backslash = false;
+      for (const auto& [f, t] : escapes) { (void)f; if (!t.empty() && t[0] == '\\') uses_backslash = true; }
+      if (uses_backslash) {
+        const std::string* bs = entry_for("\\");
+        if (!bs || *bs != "\\\\") {
+          bad(where + " has a textEscape that uses a backslash escape but does not "
+              "double the backslash itself");
+        }
       }
     }
   }

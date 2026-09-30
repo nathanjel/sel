@@ -75,6 +75,10 @@ export function validate(pattern, pos, ignoreCase = false) {
     bad(`pattern is longer than ${MAX_REGEX_PATTERN} code points`, pattern, MAX_REGEX_PATTERN, pos);
   }
   const p = toCodePoints(pattern, pos).map((c) => fromCodePoints([c]));
+  // The `i` fold is analysed only for an ASCII pattern (SPEC 7.8): a non-ASCII
+  // pattern under `i` is refused at run time (E_BAD_ARG) whatever else it holds, so
+  // the analysis must not turn it into a compile-time refusal of its own.
+  if (ignoreCase && p.some((c) => c.codePointAt(0) > 0x7f)) ignoreCase = false;
   const st = { p, n: p.length, i: 0, pattern, pos, groups: 0, ignoreCase };
   const top = parseAlternation(st, 0);
   if (st.i < st.n) bad('unmatched )', pattern, st.i, pos);
@@ -312,18 +316,13 @@ function validateBraces(p, start, pattern, pos) {
   return [lo, hi, i + 1];
 }
 
-// `[:` opens a POSIX class wherever it stands in a class; `[.x.]` and `[=x=]`
-// only when the closing `.]` / `=]` follows the opener (`[[.]` is a literal `[`
-// and a `.`).
+// A `[` followed by `:`, `.` or `=` inside a class is refused, closed or not
+// (SPEC 7.8): the POSIX bracket forms `[:alpha:]`, `[.x.]` and `[=x=]` are read
+// differently by the engines, and so is an unfinished one, so no spelling of the
+// prefix is portable.
 function posixForm(p, i) {
   const k = p[i + 1];
-  if (k === ':') return true;
-  if (k !== '.' && k !== '=') return false;
-  for (let j = i + 2; j + 1 < p.length; j++) {
-    if (p[j] === ']') return false;   // the class ends first
-    if (p[j] === k && p[j + 1] === ']') return true;
-  }
-  return false;
+  return k === ':' || k === '.' || k === '=';
 }
 
 // The sets \d \w \s stand for (SPEC 7.8), and the control escapes' code points:

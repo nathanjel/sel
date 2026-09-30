@@ -179,6 +179,16 @@ def scope(bindings) -> tuple[dict[str, bool], Context]:
 
 
 def is_constant(n: Node, bound: dict[str, bool] | None = None, depth: int = 0) -> bool:
+    result = _is_constant(n, bound, depth)
+    if not result and depth == 0 and not bound:
+        try:
+            n._not_constant = True
+        except AttributeError:       # a node type with no room for it (CList): only slower
+            pass
+    return result
+
+
+def _is_constant(n: Node, bound: dict[str, bool] | None = None, depth: int = 0) -> bool:
     """Whether every leaf under ``n`` is a literal.
 
     A binder an aggregate introduces inside ``n`` counts as bound, so
@@ -195,6 +205,16 @@ def is_constant(n: Node, bound: dict[str, bool] | None = None, depth: int = 0) -
     """
     if depth > MAX_DEPTH:
         return False
+    # A node found NOT constant at depth 0 with nothing bound stays not constant
+    # anywhere with nothing bound: the depth cap only ever turns "constant" into "not
+    # constant" the deeper the walk starts. Remembering it on the node makes a helper
+    # chain (each statement's value holds the previous one's, shared) cost one step
+    # per statement instead of walking down to the cap every time (20,000 statements
+    # were 16 million calls). Recorded only from depth 0, where "not constant" cannot
+    # have come from a cap the caller's depth imposed.
+    if not bound:
+        if getattr(n, '_not_constant', False):
+            return False
     bound = bound or {}
     d = depth + 1
     t = n.t

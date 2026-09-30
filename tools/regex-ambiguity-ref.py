@@ -386,8 +386,9 @@ class Parser:
                 j += 1
                 break
             if c == '[' and j + 1 < len(p) and p[j + 1] in ':.=':
-                if p.find(p[j + 1] + ']', j + 2) != -1:
-                    raise Reject('POSIX bracket form')
+                # A `[` followed by `:`, `.` or `=` inside a class is refused, closed or
+                # not (SPEC 7.8).
+                raise Reject('POSIX bracket form')
             lo, j, was_escape = self.class_atom(j)
             if lo is None:                    # a class escape: a set, no range
                 rs.extend(was_escape)
@@ -635,6 +636,11 @@ def analyse(tree):
 
 
 def validate(pattern, ignore_case=False):
+    # The `i` fold is analysed only for an ASCII pattern (SPEC 7.8): a non-ASCII pattern
+    # under `i` is refused at run time (E_BAD_ARG) whatever else it holds, so the
+    # compile-time analysis must not turn it into a refusal of its own.
+    if ignore_case and any(ord(ch) > 127 for ch in pattern):
+        ignore_case = False
     tree = Parser(pattern, ignore_case).parse()
     analyse(tree)
 

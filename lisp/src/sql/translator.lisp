@@ -1777,6 +1777,10 @@ than restating it."
      (refuse "E_SQL_SHAPE"
              "a BIN element of a value binding has no literal node to become; ~
 bind it as a column, or convert it before translating" pos))
+    ((sel:value-none-p v)
+     ;; A NULL element: AS-TEXT would raise E_NULL, a SelError that TRY-TRANSLATE does
+     ;; not catch. It is a binding problem, and a refusal.
+     (refuse "E_SQL_BINDING" "a value binding holds a NULL element, which has no SQL literal" pos))
     (t (lit-node (if (eq (getf spec :type) :num) :num :text) (sel:as-text v pos) nil pos))))
 
 (defun value-elements (tr spec pos)
@@ -2896,9 +2900,13 @@ can say about a bucket on its own."
                  (when (or (relational-plan-limit plan)
                            (relational-plan-offset plan)
                            (and (null (relational-plan-group-by plan))
+                                ;; (A sort does NOT force the wrap: the WHERE goes in the
+                                ;; same SELECT, beside the ORDER BY, because a derived table
+                                ;; does not keep an ORDER BY that has no LIMIT beside it and
+                                ;; the rows would come back in no order; a filter commutes
+                                ;; with a stable sort, so the rows and their order are the same.)
                                 (or (relational-plan-projections plan)
                                     (relational-plan-select-cols plan)
-                                    (relational-plan-order-by plan)
                                     (relational-plan-distinct plan))))
                    (setf plan (wrap-plan-as-derived-table tr plan)))
                  (let (binder pred)
@@ -3264,6 +3272,14 @@ FILTER between: SQL keeps a bucket's members only for the projection that ends t
                          (append (mapcar (lambda (ord) (append (subseq ord 0 4) (list over-groups)))
                                          (nthcdr before (relational-plan-order-by plan)))
                                  (subseq (relational-plan-order-by plan) 0 before)))))))))
+          ;; A derived table with no LIMIT beside its ORDER BY does not keep the order, and
+          ;; this statement has no other ORDER BY: the rows would come back in no order,
+          ;; where SEL's are the sorted list's. Refused at the last step (sql-translation
+          ;; 12.1: a sort's ORDER BY survives every step after it, or the plan is not SQL).
+          (when (and (relational-plan-order-dropped plan) steps)
+            (refuse "E_SQL_SHAPE"
+                    "these rows come from a sorted derived table, which does not keep its order, and nothing after it sorts them again"
+                    (snode-pos (car (last steps)))))
           plan)))))
 
 (defun compile-statement (tr plan)

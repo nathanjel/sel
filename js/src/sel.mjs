@@ -93,10 +93,13 @@ function collect(node, bound, done, reads, depth) {
         walk(target.idx);
         target = target.obj;
       }
-      walk(node.value);
+      // The target of `op=` is read BEFORE the right side runs (SPEC §8): in
+      // `A += (A = 1; 2)` the read of A has already failed by the time the right
+      // side assigns it.
       if (node.op !== '=') {
         if (!bound.has(target.name) && !done.has(target.name)) reads.add(target.name);
       }
+      walk(node.value);
       if (!bound.has(target.name)) done.add(target.name);
       return;
     }

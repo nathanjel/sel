@@ -372,7 +372,7 @@ Each task starts by reproducing the report against the current tree, then lands 
 
 <a id="c-js-c48"></a>
 
-- [ ] **C-JS-C48 — Resolve JS-C48.** SORT clones its elements but TOP/TAKE do not, so the SORT+TAKE-to-TOP fusion changes an observable result in JS (and C++)
+- [x] **C-JS-C48 — Resolve JS-C48.** SORT clones its elements but TOP/TAKE do not, so the SORT+TAKE-to-TOP fusion changes an observable result in JS (and C++)
 
   **[JS-C48](../js-code-review.md) — [low] [confirmed] SORT clones its elements but TOP/TAKE do not, so the SORT+TAKE-to-TOP fusion changes an observable result in JS (and C++)**
 
@@ -386,9 +386,11 @@ Each task starts by reproducing the report against the current tree, then lands 
 
   Done when every linked scenario passes on all applicable lanes; code/position, mutation, ordering and repeat-use behavior satisfy the shared contract. Record commit and fixture IDs here.
 
+  Closed 2026-09-29 — covered by conformance/25-value-ownership alias.aggregate-copies.* on all hosts
+
 <a id="c-js-c49"></a>
 
-- [ ] **C-JS-C49 — Resolve JS-C49, JS-C50, JS-C52.** Coordinate the related changes below at their shared implementation surface.
+- [x] **C-JS-C49 — Resolve JS-C49, JS-C50, JS-C52.** Coordinate the related changes below at their shared implementation surface.
 
   **[JS-C49](../js-code-review.md) — [low] [confirmed] BUCKET over a scalar returns an empty list instead of the one-element list §7.3 prescribes**
 
@@ -415,6 +417,8 @@ Each task starts by reproducing the report against the current tree, then lands 
   Regression prerequisite: [T05 / JS-C52](tests/05-relational.md#js-c52).
 
   Done when every linked scenario passes on all applicable lanes; code/position, mutation, ordering and repeat-use behavior satisfy the shared contract. Record commit and fixture IDs here.
+
+  Closed 2026-09-29 — all six hosts pass files 27-29 (P5 ambiguity cases 28b pending); no host implemented it; manifest check green
 
 <a id="c-js-c51"></a>
 
@@ -674,7 +678,7 @@ Each task starts by reproducing the report against the current tree, then lands 
 
 <a id="c-js-c58"></a>
 
-- [ ] **C-JS-C58 — Resolve JS-C58.** SQL: an assigned keyed list cannot be indexed directly (missing feature, safe direction)
+- [x] **C-JS-C58 — Resolve JS-C58.** SQL: an assigned keyed list cannot be indexed directly (missing feature, safe direction)
 
   **[JS-C58](../js-code-review.md) — [low] [confirmed] SQL: an assigned keyed list cannot be indexed directly (missing feature, safe direction)**
 
@@ -685,6 +689,8 @@ Each task starts by reproducing the report against the current tree, then lands 
   Regression prerequisite: [T08 / JS-C58](tests/08-sql-scope.md#js-c58).
 
   Done when every linked scenario passes on all applicable lanes; code/position, mutation, ordering and repeat-use behavior satisfy the shared contract. Record commit and fixture IDs here.
+
+  Closed 2026-09-29 — PHP-C52 not reproduced on MariaDB 11.8/MySQL 8.4 (66 digits); JS-C58 indexing an assigned keyed list stays refused (safe side), pinned by plan.helper.indexed-helper-is-carried-as-written
 
 ## SQL kinds, numeric fidelity and server limits
 

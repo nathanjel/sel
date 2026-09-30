@@ -334,18 +334,25 @@ quoted identifier" where))
       (unless (stringp entry)
         (bad "~a's textEscape has no entry for its textQuote ~s, so a quote inside a ~
 text literal would end it" where quote))
-      (let ((doubled (concatenate 'string quote quote)))
-        (unless (or (equal entry doubled)
-                    ;; An escape character E followed by the quote, E itself a key
-                    ;; mapping to E E.
-                    (and (= (length entry) 2)
-                         (string= quote (subseq entry 1))
-                         (let* ((e (subseq entry 0 1))
-                                (mapped (cdr (assoc e escape :test #'equal))))
-                           (equal mapped (concatenate 'string e e)))))
-          (bad "~a's textEscape maps the quote ~s to ~s, which does not leave a ~
-quote inside the literal: it must be the quote doubled, or an escape character E ~
-followed by the quote with E itself escaped to E E" where quote entry))))))
+      ;; The only escape character a SQL server has is the backslash, so the quote is
+      ;; kept inside the literal by doubling it or by a backslash before it
+      ;; (sql/MAP.md 3.1) and nothing else.
+      (unless (or (equal entry (concatenate 'string quote quote))
+                  (equal entry (concatenate 'string (string #\\) quote)))
+        (bad "~a's textEscape maps the quote ~s to ~s, which does not leave a quote ~
+inside the literal: it must be the quote doubled, or a backslash followed by the quote"
+             where quote entry))
+      ;; A value that introduces a backslash escape presupposes a server that reads
+      ;; backslashes, so a backslash in the data must be doubled too, or it swallows
+      ;; the character after it.
+      (when (some (lambda (cell)
+                    (let ((v (cdr cell)))
+                      (and (stringp v) (plusp (length v)) (char= (char v 0) #\\))))
+                  escape)
+        (unless (equal (cdr (assoc (string #\\) escape :test #'equal))
+                       (concatenate 'string (string #\\) (string #\\)))
+          (bad "~a's textEscape uses a backslash escape but does not double the ~
+backslash itself" where))))))
 
 (defun define-dialect-1 (name spec)
   (let ((where (format nil "SQL dialect ~a" name)))

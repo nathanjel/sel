@@ -336,7 +336,7 @@ Each task starts by reproducing the report against the current tree, then lands 
 
 <a id="c-php-c47"></a>
 
-- [ ] **C-PHP-C47 — Resolve PHP-C47.** The BUCKET table row `BUCKET(list, [binder,] key)` implies a 3-argument binder+key form that no host has
+- [x] **C-PHP-C47 — Resolve PHP-C47.** The BUCKET table row `BUCKET(list, [binder,] key)` implies a 3-argument binder+key form that no host has
 
   **[PHP-C47](../php-code-review.md) — [low] [confirmed; spec/doc issue, all hosts agree] The BUCKET table row `BUCKET(list, [binder,] key)` implies a 3-argument binder+key form that no host has**
 
@@ -347,6 +347,8 @@ Each task starts by reproducing the report against the current tree, then lands 
   Regression prerequisite: [T05 / PHP-C47](tests/05-relational.md#php-c47).
 
   Done when every linked scenario passes on all applicable lanes; code/position, mutation, ordering and repeat-use behavior satisfy the shared contract. Record commit and fixture IDs here.
+
+  Closed 2026-09-29 — no host implemented it; manifest check green
 
 ## Portable regex semantics and resource failures
 
@@ -386,7 +388,7 @@ Each task starts by reproducing the report against the current tree, then lands 
 
 <a id="c-php-c18"></a>
 
-- [ ] **C-PHP-C18 — Resolve PHP-C18, PHP-C19, PHP-C20, PHP-C21, PHP-C45.** Coordinate the related changes below at their shared implementation surface.
+- [x] **C-PHP-C18 — Resolve PHP-C18, PHP-C19, PHP-C20, PHP-C21, PHP-C45.** Coordinate the related changes below at their shared implementation surface.
 
   **[PHP-C18](../php-code-review.md) — [medium] [confirmed] Class escapes used as range endpoints are expanded into a wrong range (`[+-\d]`, `[\s-x]`, `[\w-a]`)**
 
@@ -431,6 +433,8 @@ Each task starts by reproducing the report against the current tree, then lands 
   Regression prerequisite: [T06 / PHP-C45](tests/06-regex.md#php-c45).
 
   Done when every linked scenario passes on all applicable lanes; code/position, mutation, ordering and repeat-use behavior satisfy the shared contract. Record commit and fixture IDs here.
+
+  Closed 2026-09-29 — 300 nested groups refused and (?:a{60000}){60000} FALSE in all six hosts; conformance/28; all six hosts pass files 27-29 (P5 ambiguity cases 28b pending)
 
 ## Text, binary and output budgets
 
@@ -620,7 +624,7 @@ Each task starts by reproducing the report against the current tree, then lands 
 
 <a id="c-php-c51"></a>
 
-- [ ] **C-PHP-C51 — Resolve PHP-C51.** Over-refusals from stale "measured" argument-kind tables
+- [x] **C-PHP-C51 — Resolve PHP-C51.** Over-refusals from stale "measured" argument-kind tables
 
   **[PHP-C51](../php-code-review.md) — [low] [confirmed] Over-refusals from stale "measured" argument-kind tables**
 
@@ -632,9 +636,11 @@ Each task starts by reproducing the report against the current tree, then lands 
 
   Done when every linked scenario passes on all applicable lanes; code/position, mutation, ordering and repeat-use behavior satisfy the shared contract. Record commit and fixture IDs here.
 
+  Closed 2026-09-29 — IS_BLANK/IS_NULL/COALESCE on BOOL/BIN columns refused identically (bytes and codes) by all six translators; ?? / ??? translate identically
+
 <a id="c-php-c52"></a>
 
-- [ ] **C-PHP-C52 — Resolve PHP-C52.** Numeric literals of more than 65 digits are emitted bare on MariaDB/MySQL with no caveat
+- [x] **C-PHP-C52 — Resolve PHP-C52.** Numeric literals of more than 65 digits are emitted bare on MariaDB/MySQL with no caveat
 
   **[PHP-C52](../php-code-review.md) — [low] [unconfirmed] Numeric literals of more than 65 digits are emitted bare on MariaDB/MySQL with no caveat**
 
@@ -647,6 +653,8 @@ Each task starts by reproducing the report against the current tree, then lands 
   Evidence gate: confirm on the named platform/configuration; otherwise record a supported non-defect/already-fixed disposition and retain the applicable invariant test.
 
   Done when every linked scenario passes on all applicable lanes; code/position, mutation, ordering and repeat-use behavior satisfy the shared contract. Record commit and fixture IDs here.
+
+  Closed 2026-09-29 — PHP-C52 not reproduced on MariaDB 11.8/MySQL 8.4 (66 digits); JS-C58 indexing an assigned keyed list stays refused (safe side), pinned by plan.helper.indexed-helper-is-carried-as-written
 
 <a id="c-php-c58"></a>
 
@@ -718,7 +726,7 @@ Each task starts by reproducing the report against the current tree, then lands 
 
 <a id="c-php-c56"></a>
 
-- [ ] **C-PHP-C56 — Resolve PHP-C56.** PostgreSQL text literals assume `standard_conforming_strings=on`
+- [x] **C-PHP-C56 — Resolve PHP-C56.** PostgreSQL text literals assume `standard_conforming_strings=on`
 
   **[PHP-C56](../php-code-review.md) — [low] [unconfirmed] PostgreSQL text literals assume `standard_conforming_strings=on`**
 
@@ -734,9 +742,11 @@ Each task starts by reproducing the report against the current tree, then lands 
 
   Done when every linked scenario passes on all applicable lanes; code/position, mutation, ordering and repeat-use behavior satisfy the shared contract. Record commit and fixture IDs here.
 
+  Closed 2026-09-29 — docs/internals + sql/MAP.md 3.1 and docs/sql.md updated (server-mode assumptions, exact-column wording)
+
 <a id="c-php-c57"></a>
 
-- [ ] **C-PHP-C57 — Resolve PHP-C57.** Small API/validation inconsistencies in the SQL layer
+- [x] **C-PHP-C57 — Resolve PHP-C57.** Small API/validation inconsistencies in the SQL layer
 
   **[PHP-C57](../php-code-review.md) — [low] [confirmed] Small API/validation inconsistencies in the SQL layer**
 
@@ -747,6 +757,8 @@ Each task starts by reproducing the report against the current tree, then lands 
   Regression prerequisite: [T10 / PHP-C57](tests/10-sql-rendering.md#php-c57).
 
   Done when every linked scenario passes on all applicable lanes; code/position, mutation, ordering and repeat-use behavior satisfy the shared contract. Record commit and fixture IDs here.
+
+  Closed 2026-09-29 — sql/cases/52 bind.alias.case-colliding-relation-aliases-are-refused, six hosts
 
 ## Hybrid execution, keys, order and context
 

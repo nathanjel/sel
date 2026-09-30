@@ -284,6 +284,9 @@ say('program.deps.coalesce-rhs-assign', deps('X ?? (A = 1); A'))
 say('program.deps.aggregate-body-assign', deps('MAP(L, A = _); A'))
 say('program.deps.cond-with-default-assigns', deps('COND(X, A = 1, Y, A = 2, A = 3); A'))
 say('program.deps.assign-in-argument', deps('LEFT("abc", (N = 2)); N'))
+say('program.deps.compound-rhs-assign-is-too-late', deps('A += (A = 1; 2); A'))
+say('program.deps.index-expr-assign-precedes-compound-read', deps('A[(A = RECORD("x", 1); "x")] += 2; A["x"]'))
+say('program.deps.get-default-assign-not-definite', deps('GET(R, "a", (A = 1)); A'))
 
 # --- T12: a Program is reusable: after a caught error it runs again, and two
 # contexts are independent whatever the interleaving.

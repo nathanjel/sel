@@ -1955,7 +1955,9 @@ run of the program that built it, not a value set with the caller's string."
     (dolist (p '("^*" "$+" "^{2}" "a$?" "[[:alpha:]]" "[a[:digit:]" "[[.x.]]" "[a[=x=]]"
                  "[+-\\d]" "[\\d-z]" "[\\w-.]" "[a-\\s]"))
       (bad p))
-    (dolist (p '("[[.]" "[\\d-]" "[-\\d]" "[\\w.-]" "[\\d.]")) (ok p))))
+    (dolist (p '("[.[]" "[\\d-]" "[-\\d]" "[\\w.-]" "[\\d.]")) (ok p))
+    ;; The prefix `[.` `[=` `[:` is refused inside a class whether or not it is closed.
+    (dolist (p '("[[.]" "[a[=]" "[x[:y]" "[[:a]")) (bad p))))
 
 (test regex-limits-and-flags
   (is (equal "E_REGEX_SYNTAX" (first (code-of "RMATCH(REPEAT('(?:', 201) & 'a' & REPEAT(')', 201), \"a\")"))))

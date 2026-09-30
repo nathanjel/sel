@@ -155,13 +155,15 @@ func collectDependencies(node *Node, bound map[string]bool, reads map[string]boo
 			idx = append(idx, root.R)
 			root = root.L
 		}
+		for i := len(idx) - 1; i >= 0; i-- {
+			def = collectDependencies(idx[i], bound, reads, def, depth+1)
+		}
+		// The target of `op=` is read after the index expressions and BEFORE the right
+		// side runs, so an assignment on the right is too late (SPEC 8).
 		if node.S != "=" {
 			if !bound[root.S] && !def[root.S] {
 				reads[root.S] = true
 			}
-		}
-		for i := len(idx) - 1; i >= 0; i-- {
-			def = collectDependencies(idx[i], bound, reads, def, depth+1)
 		}
 		def = collectDependencies(node.R, bound, reads, def, depth+1)
 		if !def[root.S] {
@@ -208,8 +210,15 @@ func collectDependencies(node *Node, bound map[string]bool, reads map[string]boo
 
 		form := BindingForm(node.S, node.Items, node.Spec)
 		if form == nil {
-			for _, a := range node.Items {
-				def = collectDependencies(a, bound, reads, def, depth+1)
+			for i, a := range node.Items {
+				// The first argument always runs; COALESCE's later ones and GET/PATH's
+				// default may not, so nothing they assign is definite afterwards.
+				optional := (node.S == "COALESCE" && i > 0) || ((node.S == "GET" || node.S == "PATH") && i > 1)
+				if optional {
+					collectDependencies(a, bound, reads, copyNames(def), depth+1)
+				} else {
+					def = collectDependencies(a, bound, reads, def, depth+1)
+				}
 			}
 			return def
 		}

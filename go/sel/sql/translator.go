@@ -1506,6 +1506,11 @@ func (t *Translator) valueNode(v *sel.Value, b *Binding, pos Pos) *SNode {
 			"a BIN element of a value binding has no literal node to become; bind it as a column, or convert it before translating",
 			pos)
 	}
+	if v.IsNone() {
+		// A NULL element: AsText would raise E_NULL, a SelError that TryTranslate does not
+		// catch. It is a binding problem, and a refusal.
+		Refuse("E_SQL_BINDING", "a value binding holds a NULL element, which has no SQL literal", pos)
+	}
 	num := b.ValueType != nil && *b.ValueType == KindNum
 	nodeType := sel.NodeText
 	if num {
@@ -2218,19 +2223,13 @@ func (t *Translator) withProjected(src Source, binderName string, render func() 
 
 func (t *Translator) withJoinBinders(plan *RelationalPlan, join RelationalJoin, render func() *Fragment) *Fragment {
 	jr := BuildJoinRows(plan)
+	// `join` arrives by value, so its address is never one of plan.Joins': the join is
+	// found by what names it (one table alias per occurrence, so this is unique).
 	joinIdx := -1
 	for i := range plan.Joins {
-		if &plan.Joins[i] == &join {
+		if plan.Joins[i].SourceName == join.SourceName && plan.Joins[i].SourceTable == join.SourceTable && plan.Joins[i].SourceAlias == join.SourceAlias {
 			joinIdx = i
 			break
-		}
-	}
-	if joinIdx == -1 {
-		for i := range plan.Joins {
-			if plan.Joins[i].SourceName == join.SourceName && plan.Joins[i].SourceTable == join.SourceTable && plan.Joins[i].SourceAlias == join.SourceAlias {
-				joinIdx = i
-				break
-			}
 		}
 	}
 	step := jr.Steps[joinIdx]

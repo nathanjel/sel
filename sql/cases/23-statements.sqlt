@@ -600,13 +600,15 @@ ORDERS .> FILTER(TRUE) .> TAKE(1)
 SELECT "o".* FROM "orders" "o" WHERE TRUE LIMIT 1
 ===
 
-### name: stmt.lane.sort-then-filter-wraps
+### name: stmt.lane.sort-then-filter-keeps-the-order
 --- note
 Without an optimiser in front of it the translator sees the steps as
-written: a FILTER after a sort is a WHERE over the sorted rows, through a
-derived table whose columns are read through the guard -- in every host,
-including the one that used to keep the source column's kind through the
-derived table (finding W1).
+written. A FILTER after a sort is a WHERE beside the ORDER BY in the SAME
+select: a derived table does not keep an ORDER BY that has no LIMIT beside it,
+so wrapping the sorted rows would return them in no order where SEL has the
+sorted list's (docs/internals/sql-translation.md 12.1). A filter commutes with a
+stable sort, so the rows and their order are the same. (It used to wrap, and
+the order was lost in every host; found by the Rust-lane audit.)
 --- dialect
 postgresql
 --- bindings
@@ -616,7 +618,7 @@ statement
 --- source
 ORDERS .> SORT_BY(_["id"]) .> FILTER(_["id"] > 1)
 --- expect
-SELECT "_sub1".* FROM (SELECT "o".* FROM "orders" "o" ORDER BY "o"."id" ASC) "_sub1" WHERE ("_sub1"."id" > 1)
+SELECT "o".* FROM "orders" "o" WHERE ("o"."id" > 1) ORDER BY "o"."id" ASC
 ===
 
 ### name: stmt.order-by.later-sort-is-the-primary-key

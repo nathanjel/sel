@@ -272,7 +272,7 @@ Each task starts by reproducing the report against the current tree, then lands 
 
 <a id="c-cpp-c35"></a>
 
-- [ ] **C-CPP-C35 — Resolve CPP-C35.** The planner's logical rewrite hoists FILTER above SORT_BY, hiding the sort key's error
+- [x] **C-CPP-C35 — Resolve CPP-C35.** The planner's logical rewrite hoists FILTER above SORT_BY, hiding the sort key's error
 
   **[CPP-C35](../cpp-code-review.md) — [medium] [confirmed; JS plans the same SQL] The planner's logical rewrite hoists FILTER above SORT_BY, hiding the sort key's error**
 
@@ -283,6 +283,8 @@ Each task starts by reproducing the report against the current tree, then lands 
   Regression prerequisite: [T04 / CPP-C35](tests/04-evaluation.md#cpp-c35).
 
   Done when every linked scenario passes on all applicable lanes; code/position, mutation, ordering and repeat-use behavior satisfy the shared contract. Record commit and fixture IDs here.
+
+  Closed 2026-09-29 — fixed in C++ SQL wave: planner passes declared fields to the logical optimizer; pinned by 25/51 plan cases
 
 <a id="c-cpp-c37"></a>
 
@@ -580,7 +582,7 @@ Each task starts by reproducing the report against the current tree, then lands 
 
 <a id="c-cpp-c29"></a>
 
-- [ ] **C-CPP-C29 — Resolve CPP-C29, CPP-C30, CPP-C31.** Coordinate the related changes below at their shared implementation surface.
+- [x] **C-CPP-C29 — Resolve CPP-C29, CPP-C30, CPP-C31.** Coordinate the related changes below at their shared implementation surface.
 
   **[CPP-C29](../cpp-code-review.md) — [medium] [confirmed] SQL: kind unification launders an undeclared column into BOOL or NUM**
 
@@ -607,6 +609,8 @@ Each task starts by reproducing the report against the current tree, then lands 
   Regression prerequisite: [T09 / CPP-C31](tests/09-sql-kinds.md#cpp-c31).
 
   Done when every linked scenario passes on all applicable lanes; code/position, mutation, ordering and repeat-use behavior satisfy the shared contract. Record commit and fixture IDs here.
+
+  Closed 2026-09-29 — all six hosts sqlt 1265/1265 with reuse twin; oracle/hybrid lanes agree on SQLite (+ MariaDB/MySQL/PostgreSQL for PHP); PY-C1 site f closed; docs/internals + sql/MAP.md 3.1 and docs/sql.md updated (server-mode assumptions, exact-column wording)
 
 <a id="c-cpp-c59"></a>
 

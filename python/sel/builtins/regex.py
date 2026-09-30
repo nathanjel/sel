@@ -174,6 +174,11 @@ def parse(pattern, pos=None, ignore_case=False):
     """Returns (rewritten source, tree)."""
     p = pattern
     n = len(p)
+    # The `i` fold is analysed only for an ASCII pattern (SPEC 7.8): a non-ASCII
+    # pattern under `i` is refused at run time (E_BAD_ARG) whatever else it holds,
+    # so the analysis must not turn it into a compile-time refusal of its own.
+    if ignore_case and any(ord(ch) > 0x7f for ch in p):
+        ignore_case = False
     if n > MAX_REGEX_PATTERN:
         _bad(f'pattern is longer than {MAX_REGEX_PATTERN} code points', pattern, 0, pos)
     out = []
@@ -441,8 +446,6 @@ def _validate_class(p, start, pattern, pos):
         out.append('^')
         neg = True
         i += 1
-    if i + 1 < n and p[i] == '[' and p[i + 1] == ':':
-        _bad('POSIX classes such as [[:alpha:]] are not portable', pattern, i, pos)
     ranges = []
     # `]` always closes the class. PCRE treats a leading `]` as a literal while
     # ECMAScript reads `[]` as an empty class, so neither spelling is portable.
@@ -456,8 +459,10 @@ def _validate_class(p, start, pattern, pos):
             out.append(']')
             return ''.join(out), i + 1, tuple(ranges), neg
         count += 1
-        if c == '[' and i + 1 < n and p[i + 1] in ':.=' and \
-                p.find(p[i + 1] + ']', i + 2) >= 0:
+        # A `[` followed by `:`, `.` or `=` inside a class is refused, closed or not
+        # (SPEC 7.8): the POSIX bracket forms are read differently by the engines,
+        # and so is an unfinished one.
+        if c == '[' and i + 1 < n and p[i + 1] in ':.=':
             _bad('POSIX bracket forms ([:x:], [.x.], [=x=]) are not portable',
                  pattern, i, pos)
         text, rs, is_escape, nxt = _class_item(p, i, pattern, pos)

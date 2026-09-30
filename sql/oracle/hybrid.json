@@ -622,6 +622,40 @@
      ]
     }
    }
+  },
+  {
+   "name": "order.filter-after-sort-keeps-the-order",
+   "sel": "ORDERS .> SORT_BY(_[\"amount\"]) .> FILTER(_[\"amount\"] > 4)",
+   "note": "The sort is by amount, so the answer is NOT in id order. The FILTER's WHERE goes beside the ORDER BY in the same select: wrapped in a derived table with no LIMIT the servers drop the ORDER BY and return the rows in no order (Rust-lane audit).",
+   "expect": {
+    "fields": {
+     "id": [
+      "2",
+      "3",
+      "6",
+      "7",
+      "1",
+      "4"
+     ]
+    }
+   }
+  },
+  {
+   "name": "order.projection-then-filter-of-sorted-rows-keeps-the-order",
+   "sel": "ORDERS .> SORT_BY(_[\"amount\"]) .> MAP(RECORD(\"a\", _[\"amount\"], \"i\", _[\"id\"])) .> FILTER(_[\"a\"] > 4)",
+   "note": "A projection between the sort and the filter cannot avoid the wrap, so the statement is refused and the plan keeps the sorted rows in SQL and filters in memory; the order survives.",
+   "expect": {
+    "fields": {
+     "i": [
+      "2",
+      "3",
+      "6",
+      "7",
+      "1",
+      "4"
+     ]
+    }
+   }
   }
  ],
  "bounded": [

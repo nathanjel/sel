@@ -1,0 +1,300 @@
+### name: review.order.sort-over-a-projection-of-sorted-rows-is-refused
+--- note
+JS-C59 family (orderDropped): a derived table with no LIMIT beside its ORDER BY does not keep
+the order, and the earlier sort is the later one's tie-break. Refused at the second sort;
+Emitting `SELECT _sub1.* FROM (... ORDER BY amount) _sub1 ORDER BY name` would lose the tie-break.
+--- dialect
+mariadb
+--- bindings
+{"ORDERS": {"kind": "relation", "from": "orders", "alias": "o", "fields": {"ID": {"table": "o", "column": "id", "type": "NUM"}, "CUSTOMER_ID": {"table": "o", "column": "customer_id", "type": "NUM"}, "AMOUNT": {"table": "o", "column": "amount", "type": "NUM"}, "NAME": {"table": "o", "column": "name", "type": "TEXT"}}},
+ "CUSTOMERS": {"kind": "relation", "from": "customers", "alias": "c", "fields": {"ID": {"table": "c", "column": "id", "type": "NUM"}, "CNAME": {"table": "c", "column": "cname", "type": "TEXT"}}}}
+--- as
+statement
+--- source
+ORDERS .> SORT_BY(_["amount"]) .> MAP(RECORD("name", _["name"], "amount", _["amount"])) .> SORT_BY(_["name"])
+--- error
+E_SQL_SHAPE 1:92
+===
+
+### name: review.order.link-over-sorted-rows-is-refused
+--- note
+orderDropped: a join returns its rows in no order, and SEL's are the left list's. Refused at
+the LINK; Joining an unLIMITed ORDER BY derived table would lose the order.
+--- dialect
+mariadb
+--- bindings
+{"ORDERS": {"kind": "relation", "from": "orders", "alias": "o", "fields": {"ID": {"table": "o", "column": "id", "type": "NUM"}, "CUSTOMER_ID": {"table": "o", "column": "customer_id", "type": "NUM"}, "AMOUNT": {"table": "o", "column": "amount", "type": "NUM"}, "NAME": {"table": "o", "column": "name", "type": "TEXT"}}},
+ "CUSTOMERS": {"kind": "relation", "from": "customers", "alias": "c", "fields": {"ID": {"table": "c", "column": "id", "type": "NUM"}, "CNAME": {"table": "c", "column": "cname", "type": "TEXT"}}}}
+--- as
+statement
+--- source
+ORDERS .> SORT_BY(_["amount"]) .> LINK(CUSTOMERS, _1["customer_id"] == _2["id"]) .> MAP(RECORD("a", _["amount"]))
+--- error
+E_SQL_SHAPE 1:35
+===
+
+### name: plan.hybrid.link-over-sorted-rows-joins-in-memory
+--- note
+orderDropped, planner side: the sorted rows come from SQL and the LINK runs in memory, not
+a pure_sql join over a derived table that dropped its ORDER BY.
+--- dialect
+mariadb
+--- bindings
+{"ORDERS": {"kind": "relation", "from": "orders", "alias": "o", "fields": {"ID": {"table": "o", "column": "id", "type": "NUM"}, "CUSTOMER_ID": {"table": "o", "column": "customer_id", "type": "NUM"}, "AMOUNT": {"table": "o", "column": "amount", "type": "NUM"}, "NAME": {"table": "o", "column": "name", "type": "TEXT"}}},
+ "CUSTOMERS": {"kind": "relation", "from": "customers", "alias": "c", "fields": {"ID": {"table": "c", "column": "id", "type": "NUM"}, "CNAME": {"table": "c", "column": "cname", "type": "TEXT"}}}}
+--- source
+ORDERS .> SORT_BY(_["amount"]) .> LINK(CUSTOMERS, _1["customer_id"] == _2["id"]) .> MAP(RECORD("a", _["amount"]))
+--- plan
+hybrid
+--- tables
+orders
+--- expect
+SELECT `o`.* FROM `orders` `o` ORDER BY `o`.`amount` ASC
+===
+
+### name: plan.pure-memory.self-join-is-not-split
+--- note
+PHP-C9 / GO-C22: a continuation that starts at a LINK is fed under the source variable's own
+name, so a LINK that reads that name again (a self-join) would find the truncated rows where
+run() finds the whole relation. The split is not made.
+--- dialect
+mariadb
+--- bindings
+{"ORDERS": {"kind": "relation", "from": "orders", "alias": "o", "fields": {"ID": {"table": "o", "column": "id", "type": "NUM"}, "CUSTOMER_ID": {"table": "o", "column": "customer_id", "type": "NUM"}, "AMOUNT": {"table": "o", "column": "amount", "type": "NUM"}, "NAME": {"table": "o", "column": "name", "type": "TEXT"}}},
+ "CUSTOMERS": {"kind": "relation", "from": "customers", "alias": "c", "fields": {"ID": {"table": "c", "column": "id", "type": "NUM"}, "CNAME": {"table": "c", "column": "cname", "type": "TEXT"}}}}
+--- source
+ORDERS .> TAKE(4) .> LINK(ORDERS, _1["customer_id"] == _2["id"])
+--- plan
+pure_memory
+--- tables
+orders
+===
+
+### name: bind.value.null-element-is-refused
+--- note
+JS-C54b: a NULL element of a value binding has no SQL literal; it is a binding problem and a
+refusal at the read. Rendering it as the empty string '' would be a wrong value.
+--- dialect
+mariadb
+--- bindings
+{"V1": {"kind": "value", "value": {"1": "a", "2": null}}, "XT": {"kind": "column", "column": "xt", "type": "TEXT"}}
+--- source
+ANY(V1, _ == XT)
+--- error
+E_SQL_BINDING 1:5
+===
+
+### name: register.dialect.backslash-escape-must-double-the-backslash
+--- note
+sql/MAP.md §3.1 (checkTextPairing): a textEscape whose values use a backslash escape must map
+the backslash to itself doubled, or a value ending in a backslash un-escapes the doubled quote
+on a backslash-reading server.
+--- dialect
+my-nl
+--- register
+[{"dialect": "my-nl", "extends": "mariadb", "version": "10.5", "lexical": {"textEscape": {"'": "''", "\n": "\\n"}}}]
+--- source
+"a"
+--- throws
+LogicException
+===
+
+### name: register.dialect.quote-escape-is-doubling-or-backslash
+--- note
+sql/MAP.md §3.1 (checkTextPairing): the quote is escaped by doubling it or with a backslash,
+nothing else.
+--- dialect
+ansi-x
+--- register
+[{"dialect": "ansi-x", "extends": "ansi", "version": "2016", "lexical": {"textEscape": {"'": "x'", "x": "xx"}}}]
+--- source
+"a"
+--- throws
+LogicException
+===
+
+### name: bind.type.statement-is-not-declarable
+--- note
+DECLARABLE: LIST and STATEMENT are kinds of fragment a translation produces, not of a column.
+A binding declared as one would read the column as UNKNOWN.
+--- dialect
+mariadb
+--- bindings
+{"XS": {"kind": "column", "column": "xs", "type": "STATEMENT"}}
+--- source
+XS > 1
+--- error
+E_SQL_BINDING
+===
+
+### name: norm.size.definition-past-the-budget-is-refused-at-the-assignment
+--- note
+expandedSize: a definition whose expanded tree passes the node budget is refused at that
+assignment (docs/internals/sql-translation.md §7.4). The code is pinned and the position is not: sql/errors.md gives E_SQL_SIZE no position, and the hosts blame different nodes for E_SQL_DEPTH.
+--- dialect
+mariadb
+--- bindings
+{"XN": {"kind": "column", "column": "xn", "type": "NUM"}}
+--- source
+X0 = XN; X1 = X0 + X0; X2 = X1 + X1; X3 = X2 + X2; X4 = X3 + X3; X5 = X4 + X4; X6 = X5 + X5; X7 = X6 + X6; X8 = X7 + X7; X9 = X8 + X8; X10 = X9 + X9; X11 = X10 + X10; X12 = X11 + X11; X13 = X12 + X12; X14 = X13 + X13; X15 = X14 + X14; X16 = X15 + X15; X17 = X16 + X16; X18 = X17 + X17; X19 = X18 + X18; X20 = X19 + X19; X21 = X20 + X20; X22 = X21 + X21; X23 = X22 + X22; X24 = X23 + X23; X24 > 0
+--- error
+E_SQL_SIZE
+===
+
+### name: norm.depth.definition-past-four-times-the-depth-is-refused-at-the-assignment
+--- note
+expandedSize: a definition taller than four times the evaluator's depth is refused (E_SQL_DEPTH). The code
+is pinned and the position is not: the hosts blame different nodes of the chain (sql/errors.md
+gives the code no position of its own).
+--- dialect
+mariadb
+--- bindings
+{"XN": {"kind": "column", "column": "xn", "type": "NUM"}}
+--- source
+X0 = XN; X1 = X0 + 1; X2 = X1 + 1; X3 = X2 + 1; X4 = X3 + 1; X5 = X4 + 1; X6 = X5 + 1; X7 = X6 + 1; X8 = X7 + 1; X9 = X8 + 1; X10 = X9 + 1; X11 = X10 + 1; X12 = X11 + 1; X13 = X12 + 1; X14 = X13 + 1; X15 = X14 + 1; X16 = X15 + 1; X17 = X16 + 1; X18 = X17 + 1; X19 = X18 + 1; X20 = X19 + 1; X21 = X20 + 1; X22 = X21 + 1; X23 = X22 + 1; X24 = X23 + 1; X25 = X24 + 1; X26 = X25 + 1; X27 = X26 + 1; X28 = X27 + 1; X29 = X28 + 1; X30 = X29 + 1; X31 = X30 + 1; X32 = X31 + 1; X33 = X32 + 1; X34 = X33 + 1; X35 = X34 + 1; X36 = X35 + 1; X37 = X36 + 1; X38 = X37 + 1; X39 = X38 + 1; X40 = X39 + 1; X41 = X40 + 1; X42 = X41 + 1; X43 = X42 + 1; X44 = X43 + 1; X45 = X44 + 1; X46 = X45 + 1; X47 = X46 + 1; X48 = X47 + 1; X49 = X48 + 1; X50 = X49 + 1; X51 = X50 + 1; X52 = X51 + 1; X53 = X52 + 1; X54 = X53 + 1; X55 = X54 + 1; X56 = X55 + 1; X57 = X56 + 1; X58 = X57 + 1; X59 = X58 + 1; X60 = X59 + 1; X61 = X60 + 1; X62 = X61 + 1; X63 = X62 + 1; X64 = X63 + 1; X65 = X64 + 1; X66 = X65 + 1; X67 = X66 + 1; X68 = X67 + 1; X69 = X68 + 1; X70 = X69 + 1; X71 = X70 + 1; X72 = X71 + 1; X73 = X72 + 1; X74 = X73 + 1; X75 = X74 + 1; X76 = X75 + 1; X77 = X76 + 1; X78 = X77 + 1; X79 = X78 + 1; X80 = X79 + 1; X81 = X80 + 1; X82 = X81 + 1; X83 = X82 + 1; X84 = X83 + 1; X85 = X84 + 1; X86 = X85 + 1; X87 = X86 + 1; X88 = X87 + 1; X89 = X88 + 1; X90 = X89 + 1; X91 = X90 + 1; X92 = X91 + 1; X93 = X92 + 1; X94 = X93 + 1; X95 = X94 + 1; X96 = X95 + 1; X97 = X96 + 1; X98 = X97 + 1; X99 = X98 + 1; X100 = X99 + 1; X101 = X100 + 1; X102 = X101 + 1; X103 = X102 + 1; X104 = X103 + 1; X105 = X104 + 1; X106 = X105 + 1; X107 = X106 + 1; X108 = X107 + 1; X109 = X108 + 1; X110 = X109 + 1; X111 = X110 + 1; X112 = X111 + 1; X113 = X112 + 1; X114 = X113 + 1; X115 = X114 + 1; X116 = X115 + 1; X117 = X116 + 1; X118 = X117 + 1; X119 = X118 + 1; X120 = X119 + 1; X121 = X120 + 1; X122 = X121 + 1; X123 = X122 + 1; X124 = X123 + 1; X125 = X124 + 1; X126 = X125 + 1; X127 = X126 + 1; X128 = X127 + 1; X129 = X128 + 1; X130 = X129 + 1; X131 = X130 + 1; X132 = X131 + 1; X133 = X132 + 1; X134 = X133 + 1; X135 = X134 + 1; X136 = X135 + 1; X137 = X136 + 1; X138 = X137 + 1; X139 = X138 + 1; X140 = X139 + 1; X141 = X140 + 1; X142 = X141 + 1; X143 = X142 + 1; X144 = X143 + 1; X145 = X144 + 1; X146 = X145 + 1; X147 = X146 + 1; X148 = X147 + 1; X149 = X148 + 1; X150 = X149 + 1; X151 = X150 + 1; X152 = X151 + 1; X153 = X152 + 1; X154 = X153 + 1; X155 = X154 + 1; X156 = X155 + 1; X157 = X156 + 1; X158 = X157 + 1; X159 = X158 + 1; X160 = X159 + 1; X161 = X160 + 1; X162 = X161 + 1; X163 = X162 + 1; X164 = X163 + 1; X165 = X164 + 1; X166 = X165 + 1; X167 = X166 + 1; X168 = X167 + 1; X169 = X168 + 1; X170 = X169 + 1; X171 = X170 + 1; X172 = X171 + 1; X173 = X172 + 1; X174 = X173 + 1; X175 = X174 + 1; X176 = X175 + 1; X177 = X176 + 1; X178 = X177 + 1; X179 = X178 + 1; X180 = X179 + 1; X181 = X180 + 1; X182 = X181 + 1; X183 = X182 + 1; X184 = X183 + 1; X185 = X184 + 1; X186 = X185 + 1; X187 = X186 + 1; X188 = X187 + 1; X189 = X188 + 1; X190 = X189 + 1; X191 = X190 + 1; X192 = X191 + 1; X193 = X192 + 1; X194 = X193 + 1; X195 = X194 + 1; X196 = X195 + 1; X197 = X196 + 1; X198 = X197 + 1; X199 = X198 + 1; X200 = X199 + 1; X201 = X200 + 1; X202 = X201 + 1; X203 = X202 + 1; X204 = X203 + 1; X205 = X204 + 1; X206 = X205 + 1; X207 = X206 + 1; X208 = X207 + 1; X209 = X208 + 1; X210 = X209 + 1; X211 = X210 + 1; X212 = X211 + 1; X213 = X212 + 1; X214 = X213 + 1; X215 = X214 + 1; X216 = X215 + 1; X217 = X216 + 1; X218 = X217 + 1; X219 = X218 + 1; X220 = X219 + 1; X221 = X220 + 1; X222 = X221 + 1; X223 = X222 + 1; X224 = X223 + 1; X225 = X224 + 1; X226 = X225 + 1; X227 = X226 + 1; X228 = X227 + 1; X229 = X228 + 1; X230 = X229 + 1; X231 = X230 + 1; X232 = X231 + 1; X233 = X232 + 1; X234 = X233 + 1; X235 = X234 + 1; X236 = X235 + 1; X237 = X236 + 1; X238 = X237 + 1; X239 = X238 + 1; X240 = X239 + 1; X241 = X240 + 1; X242 = X241 + 1; X243 = X242 + 1; X244 = X243 + 1; X245 = X244 + 1; X246 = X245 + 1; X247 = X246 + 1; X248 = X247 + 1; X249 = X248 + 1; X250 = X249 + 1; X251 = X250 + 1; X252 = X251 + 1; X253 = X252 + 1; X254 = X253 + 1; X255 = X254 + 1; X256 = X255 + 1; X257 = X256 + 1; X258 = X257 + 1; X259 = X258 + 1; X260 = X259 + 1; X261 = X260 + 1; X262 = X261 + 1; X263 = X262 + 1; X264 = X263 + 1; X265 = X264 + 1; X266 = X265 + 1; X267 = X266 + 1; X268 = X267 + 1; X269 = X268 + 1; X270 = X269 + 1; X271 = X270 + 1; X272 = X271 + 1; X273 = X272 + 1; X274 = X273 + 1; X275 = X274 + 1; X276 = X275 + 1; X277 = X276 + 1; X278 = X277 + 1; X279 = X278 + 1; X280 = X279 + 1; X281 = X280 + 1; X282 = X281 + 1; X283 = X282 + 1; X284 = X283 + 1; X285 = X284 + 1; X286 = X285 + 1; X287 = X286 + 1; X288 = X287 + 1; X289 = X288 + 1; X290 = X289 + 1; X291 = X290 + 1; X292 = X291 + 1; X293 = X292 + 1; X294 = X293 + 1; X295 = X294 + 1; X296 = X295 + 1; X297 = X296 + 1; X298 = X297 + 1; X299 = X298 + 1; X300 = X299 + 1; X301 = X300 + 1; X302 = X301 + 1; X303 = X302 + 1; X304 = X303 + 1; X305 = X304 + 1; X306 = X305 + 1; X307 = X306 + 1; X308 = X307 + 1; X309 = X308 + 1; X310 = X309 + 1; X311 = X310 + 1; X312 = X311 + 1; X313 = X312 + 1; X314 = X313 + 1; X315 = X314 + 1; X316 = X315 + 1; X317 = X316 + 1; X318 = X317 + 1; X319 = X318 + 1; X320 = X319 + 1; X321 = X320 + 1; X322 = X321 + 1; X323 = X322 + 1; X324 = X323 + 1; X325 = X324 + 1; X326 = X325 + 1; X327 = X326 + 1; X328 = X327 + 1; X329 = X328 + 1; X330 = X329 + 1; X331 = X330 + 1; X332 = X331 + 1; X333 = X332 + 1; X334 = X333 + 1; X335 = X334 + 1; X336 = X335 + 1; X337 = X336 + 1; X338 = X337 + 1; X339 = X338 + 1; X340 = X339 + 1; X341 = X340 + 1; X342 = X341 + 1; X343 = X342 + 1; X344 = X343 + 1; X345 = X344 + 1; X346 = X345 + 1; X347 = X346 + 1; X348 = X347 + 1; X349 = X348 + 1; X350 = X349 + 1; X351 = X350 + 1; X352 = X351 + 1; X353 = X352 + 1; X354 = X353 + 1; X355 = X354 + 1; X356 = X355 + 1; X357 = X356 + 1; X358 = X357 + 1; X359 = X358 + 1; X360 = X359 + 1; X361 = X360 + 1; X362 = X361 + 1; X363 = X362 + 1; X364 = X363 + 1; X365 = X364 + 1; X366 = X365 + 1; X367 = X366 + 1; X368 = X367 + 1; X369 = X368 + 1; X370 = X369 + 1; X371 = X370 + 1; X372 = X371 + 1; X373 = X372 + 1; X374 = X373 + 1; X375 = X374 + 1; X376 = X375 + 1; X377 = X376 + 1; X378 = X377 + 1; X379 = X378 + 1; X380 = X379 + 1; X381 = X380 + 1; X382 = X381 + 1; X383 = X382 + 1; X384 = X383 + 1; X385 = X384 + 1; X386 = X385 + 1; X387 = X386 + 1; X388 = X387 + 1; X389 = X388 + 1; X390 = X389 + 1; X391 = X390 + 1; X392 = X391 + 1; X393 = X392 + 1; X394 = X393 + 1; X395 = X394 + 1; X396 = X395 + 1; X397 = X396 + 1; X398 = X397 + 1; X399 = X398 + 1; X400 = X399 + 1; X401 = X400 + 1; X402 = X401 + 1; X403 = X402 + 1; X404 = X403 + 1; X405 = X404 + 1; X406 = X405 + 1; X407 = X406 + 1; X408 = X407 + 1; X409 = X408 + 1; X410 = X409 + 1; X411 = X410 + 1; X412 = X411 + 1; X413 = X412 + 1; X414 = X413 + 1; X415 = X414 + 1; X416 = X415 + 1; X417 = X416 + 1; X418 = X417 + 1; X419 = X418 + 1; X420 = X419 + 1; X421 = X420 + 1; X422 = X421 + 1; X423 = X422 + 1; X424 = X423 + 1; X425 = X424 + 1; X426 = X425 + 1; X427 = X426 + 1; X428 = X427 + 1; X429 = X428 + 1; X430 = X429 + 1; X431 = X430 + 1; X432 = X431 + 1; X433 = X432 + 1; X434 = X433 + 1; X435 = X434 + 1; X436 = X435 + 1; X437 = X436 + 1; X438 = X437 + 1; X439 = X438 + 1; X440 = X439 + 1; X441 = X440 + 1; X442 = X441 + 1; X443 = X442 + 1; X444 = X443 + 1; X445 = X444 + 1; X446 = X445 + 1; X447 = X446 + 1; X448 = X447 + 1; X449 = X448 + 1; X450 = X449 + 1; X451 = X450 + 1; X452 = X451 + 1; X453 = X452 + 1; X454 = X453 + 1; X455 = X454 + 1; X456 = X455 + 1; X457 = X456 + 1; X458 = X457 + 1; X459 = X458 + 1; X460 = X459 + 1; X461 = X460 + 1; X462 = X461 + 1; X463 = X462 + 1; X464 = X463 + 1; X465 = X464 + 1; X466 = X465 + 1; X467 = X466 + 1; X468 = X467 + 1; X469 = X468 + 1; X470 = X469 + 1; X471 = X470 + 1; X472 = X471 + 1; X473 = X472 + 1; X474 = X473 + 1; X475 = X474 + 1; X476 = X475 + 1; X477 = X476 + 1; X478 = X477 + 1; X479 = X478 + 1; X480 = X479 + 1; X481 = X480 + 1; X482 = X481 + 1; X483 = X482 + 1; X484 = X483 + 1; X485 = X484 + 1; X486 = X485 + 1; X487 = X486 + 1; X488 = X487 + 1; X489 = X488 + 1; X490 = X489 + 1; X491 = X490 + 1; X492 = X491 + 1; X493 = X492 + 1; X494 = X493 + 1; X495 = X494 + 1; X496 = X495 + 1; X497 = X496 + 1; X498 = X497 + 1; X499 = X498 + 1; X500 = X499 + 1; X501 = X500 + 1; X502 = X501 + 1; X503 = X502 + 1; X504 = X503 + 1; X505 = X504 + 1; X506 = X505 + 1; X507 = X506 + 1; X508 = X507 + 1; X509 = X508 + 1; X510 = X509 + 1; X511 = X510 + 1; X512 = X511 + 1; X513 = X512 + 1; X514 = X513 + 1; X515 = X514 + 1; X516 = X515 + 1; X517 = X516 + 1; X518 = X517 + 1; X519 = X518 + 1; X520 = X519 + 1; X521 = X520 + 1; X522 = X521 + 1; X523 = X522 + 1; X524 = X523 + 1; X525 = X524 + 1; X526 = X525 + 1; X527 = X526 + 1; X528 = X527 + 1; X529 = X528 + 1; X530 = X529 + 1; X531 = X530 + 1; X532 = X531 + 1; X533 = X532 + 1; X534 = X533 + 1; X535 = X534 + 1; X536 = X535 + 1; X537 = X536 + 1; X538 = X537 + 1; X539 = X538 + 1; X540 = X539 + 1; X541 = X540 + 1; X542 = X541 + 1; X543 = X542 + 1; X544 = X543 + 1; X545 = X544 + 1; X546 = X545 + 1; X547 = X546 + 1; X548 = X547 + 1; X549 = X548 + 1; X550 = X549 + 1; X551 = X550 + 1; X552 = X551 + 1; X553 = X552 + 1; X554 = X553 + 1; X555 = X554 + 1; X556 = X555 + 1; X557 = X556 + 1; X558 = X557 + 1; X559 = X558 + 1; X560 = X559 + 1; X561 = X560 + 1; X562 = X561 + 1; X563 = X562 + 1; X564 = X563 + 1; X565 = X564 + 1; X566 = X565 + 1; X567 = X566 + 1; X568 = X567 + 1; X569 = X568 + 1; X570 = X569 + 1; X571 = X570 + 1; X572 = X571 + 1; X573 = X572 + 1; X574 = X573 + 1; X575 = X574 + 1; X576 = X575 + 1; X577 = X576 + 1; X578 = X577 + 1; X579 = X578 + 1; X580 = X579 + 1; X581 = X580 + 1; X582 = X581 + 1; X583 = X582 + 1; X584 = X583 + 1; X585 = X584 + 1; X586 = X585 + 1; X587 = X586 + 1; X588 = X587 + 1; X589 = X588 + 1; X590 = X589 + 1; X591 = X590 + 1; X592 = X591 + 1; X593 = X592 + 1; X594 = X593 + 1; X595 = X594 + 1; X596 = X595 + 1; X597 = X596 + 1; X598 = X597 + 1; X599 = X598 + 1; X600 = X599 + 1; X601 = X600 + 1; X602 = X601 + 1; X603 = X602 + 1; X604 = X603 + 1; X605 = X604 + 1; X606 = X605 + 1; X607 = X606 + 1; X608 = X607 + 1; X609 = X608 + 1; X610 = X609 + 1; X611 = X610 + 1; X612 = X611 + 1; X613 = X612 + 1; X614 = X613 + 1; X615 = X614 + 1; X616 = X615 + 1; X617 = X616 + 1; X618 = X617 + 1; X619 = X618 + 1; X620 = X619 + 1; X621 = X620 + 1; X622 = X621 + 1; X623 = X622 + 1; X624 = X623 + 1; X625 = X624 + 1; X626 = X625 + 1; X627 = X626 + 1; X628 = X627 + 1; X629 = X628 + 1; X630 = X629 + 1; X631 = X630 + 1; X632 = X631 + 1; X633 = X632 + 1; X634 = X633 + 1; X635 = X634 + 1; X636 = X635 + 1; X637 = X636 + 1; X638 = X637 + 1; X639 = X638 + 1; X640 = X639 + 1; X641 = X640 + 1; X642 = X641 + 1; X643 = X642 + 1; X644 = X643 + 1; X645 = X644 + 1; X646 = X645 + 1; X647 = X646 + 1; X648 = X647 + 1; X649 = X648 + 1; X650 = X649 + 1; X651 = X650 + 1; X652 = X651 + 1; X653 = X652 + 1; X654 = X653 + 1; X655 = X654 + 1; X656 = X655 + 1; X657 = X656 + 1; X658 = X657 + 1; X659 = X658 + 1; X660 = X659 + 1; X661 = X660 + 1; X662 = X661 + 1; X663 = X662 + 1; X664 = X663 + 1; X665 = X664 + 1; X666 = X665 + 1; X667 = X666 + 1; X668 = X667 + 1; X669 = X668 + 1; X670 = X669 + 1; X671 = X670 + 1; X672 = X671 + 1; X673 = X672 + 1; X674 = X673 + 1; X675 = X674 + 1; X676 = X675 + 1; X677 = X676 + 1; X678 = X677 + 1; X679 = X678 + 1; X680 = X679 + 1; X681 = X680 + 1; X682 = X681 + 1; X683 = X682 + 1; X684 = X683 + 1; X685 = X684 + 1; X686 = X685 + 1; X687 = X686 + 1; X688 = X687 + 1; X689 = X688 + 1; X690 = X689 + 1; X691 = X690 + 1; X692 = X691 + 1; X693 = X692 + 1; X694 = X693 + 1; X695 = X694 + 1; X696 = X695 + 1; X697 = X696 + 1; X698 = X697 + 1; X699 = X698 + 1; X700 = X699 + 1; X701 = X700 + 1; X702 = X701 + 1; X703 = X702 + 1; X704 = X703 + 1; X705 = X704 + 1; X706 = X705 + 1; X707 = X706 + 1; X708 = X707 + 1; X709 = X708 + 1; X710 = X709 + 1; X711 = X710 + 1; X712 = X711 + 1; X713 = X712 + 1; X714 = X713 + 1; X715 = X714 + 1; X716 = X715 + 1; X717 = X716 + 1; X718 = X717 + 1; X719 = X718 + 1; X720 = X719 + 1; X721 = X720 + 1; X722 = X721 + 1; X723 = X722 + 1; X724 = X723 + 1; X725 = X724 + 1; X726 = X725 + 1; X727 = X726 + 1; X728 = X727 + 1; X729 = X728 + 1; X730 = X729 + 1; X731 = X730 + 1; X732 = X731 + 1; X733 = X732 + 1; X734 = X733 + 1; X735 = X734 + 1; X736 = X735 + 1; X737 = X736 + 1; X738 = X737 + 1; X739 = X738 + 1; X740 = X739 + 1; X741 = X740 + 1; X742 = X741 + 1; X743 = X742 + 1; X744 = X743 + 1; X745 = X744 + 1; X746 = X745 + 1; X747 = X746 + 1; X748 = X747 + 1; X749 = X748 + 1; X750 = X749 + 1; X751 = X750 + 1; X752 = X751 + 1; X753 = X752 + 1; X754 = X753 + 1; X755 = X754 + 1; X756 = X755 + 1; X757 = X756 + 1; X758 = X757 + 1; X759 = X758 + 1; X760 = X759 + 1; X761 = X760 + 1; X762 = X761 + 1; X763 = X762 + 1; X764 = X763 + 1; X765 = X764 + 1; X766 = X765 + 1; X767 = X766 + 1; X768 = X767 + 1; X769 = X768 + 1; X770 = X769 + 1; X771 = X770 + 1; X772 = X771 + 1; X773 = X772 + 1; X774 = X773 + 1; X775 = X774 + 1; X776 = X775 + 1; X777 = X776 + 1; X778 = X777 + 1; X779 = X778 + 1; X780 = X779 + 1; X781 = X780 + 1; X782 = X781 + 1; X783 = X782 + 1; X784 = X783 + 1; X785 = X784 + 1; X786 = X785 + 1; X787 = X786 + 1; X788 = X787 + 1; X789 = X788 + 1; X790 = X789 + 1; X791 = X790 + 1; X792 = X791 + 1; X793 = X792 + 1; X794 = X793 + 1; X795 = X794 + 1; X796 = X795 + 1; X797 = X796 + 1; X798 = X797 + 1; X799 = X798 + 1; X800 = X799 + 1; X801 = X800 + 1; X802 = X801 + 1; X803 = X802 + 1; X804 = X803 + 1; X805 = X804 + 1; X806 = X805 + 1; X807 = X806 + 1; X808 = X807 + 1; X809 = X808 + 1; X810 = X809 + 1; X811 = X810 + 1; X812 = X811 + 1; X813 = X812 + 1; X814 = X813 + 1; X815 = X814 + 1; X816 = X815 + 1; X817 = X816 + 1; X818 = X817 + 1; X819 = X818 + 1; X820 = X819 + 1; X821 = X820 + 1; X822 = X821 + 1; X823 = X822 + 1; X824 = X823 + 1; X825 = X824 + 1; X826 = X825 + 1; X827 = X826 + 1; X828 = X827 + 1; X829 = X828 + 1; X830 = X829 + 1; X831 = X830 + 1; X832 = X831 + 1; X833 = X832 + 1; X834 = X833 + 1; X835 = X834 + 1; X836 = X835 + 1; X837 = X836 + 1; X838 = X837 + 1; X839 = X838 + 1; X840 = X839 + 1; X841 = X840 + 1; X842 = X841 + 1; X843 = X842 + 1; X844 = X843 + 1; X845 = X844 + 1; X846 = X845 + 1; X847 = X846 + 1; X848 = X847 + 1; X849 = X848 + 1; X850 = X849 + 1; X851 = X850 + 1; X852 = X851 + 1; X853 = X852 + 1; X854 = X853 + 1; X855 = X854 + 1; X856 = X855 + 1; X857 = X856 + 1; X858 = X857 + 1; X859 = X858 + 1; X860 = X859 + 1; X861 = X860 + 1; X862 = X861 + 1; X863 = X862 + 1; X864 = X863 + 1; X865 = X864 + 1; X866 = X865 + 1; X867 = X866 + 1; X868 = X867 + 1; X869 = X868 + 1; X870 = X869 + 1; X871 = X870 + 1; X872 = X871 + 1; X873 = X872 + 1; X874 = X873 + 1; X875 = X874 + 1; X876 = X875 + 1; X877 = X876 + 1; X878 = X877 + 1; X879 = X878 + 1; X880 = X879 + 1; X881 = X880 + 1; X882 = X881 + 1; X883 = X882 + 1; X884 = X883 + 1; X885 = X884 + 1; X886 = X885 + 1; X887 = X886 + 1; X888 = X887 + 1; X889 = X888 + 1; X890 = X889 + 1; X891 = X890 + 1; X892 = X891 + 1; X893 = X892 + 1; X894 = X893 + 1; X895 = X894 + 1; X896 = X895 + 1; X897 = X896 + 1; X898 = X897 + 1; X899 = X898 + 1; X899 > 0
+--- error
+E_SQL_DEPTH
+===
+
+### name: norm.size.result-past-the-budget-is-refused-where-the-walk-stops
+--- note
+The result expression is charged as the translator walks it (§7.4) and refused once the count
+passes the budget (E_SQL_SIZE). Code only: sql/errors.md gives the code no position.
+--- dialect
+mariadb
+--- bindings
+{"XN": {"kind": "column", "column": "xn", "type": "NUM"}}
+--- source
+X0 = XN; X1 = X0 + X0; X2 = X1 + X1; X3 = X2 + X2; X4 = X3 + X3; X5 = X4 + X4; X6 = X5 + X5; X7 = X6 + X6; X8 = X7 + X7; X9 = X8 + X8; X10 = X9 + X9; X11 = X10 + X10; X12 = X11 + X11; X13 = X12 + X12; X14 = X13 + X13; X15 = X14 + X14; X16 = X15 + X15; X16 + X16 > 0
+--- error
+E_SQL_SIZE
+===
+
+### name: refuse.in-relation.boolean-needle-at-the-needle
+--- note
+IN over a relation compares as `==` does: a BOOL needle is refused at the needle, not at the
+operator.
+--- dialect
+mariadb
+--- bindings
+{"XB": {"kind": "column", "column": "xb", "type": "BOOL"}, "TS": {"kind": "relation", "from": "ts", "alias": "ts", "fields": {"V": {"table": "ts", "column": "v", "type": "TEXT"}}, "scalar": "V"}}
+--- source
+XB IN TS
+--- error
+E_SQL_SHAPE 1:1
+===
+
+### name: refuse.binder.checked-at-the-call-not-in-stage-1
+--- note
+GO-C2: a binder position that is not a bare name is refused when the call is translated, so
+a refusal the call meets first (MAP as JOIN's source) wins. Refusing the binder earlier, in stage 1, would hide it.
+--- dialect
+mariadb
+--- bindings
+{"XB": {"kind": "column", "column": "xb", "type": "BOOL"}}
+--- source
+JOIN(MAP((1, 2), 1 + 1, "a"), ",") == "a" AND XB
+--- error
+E_SQL_UNSUPPORTED 1:6
+===
+
+### name: plan.pure-memory.key-read-after-a-filter-is-not-split
+--- note
+keysObservable: a split directly after a FILTER hands the continuation renumbered keys, so a
+continuation step that mentions `_K` anywhere keeps the plan in memory (argsReadKey is a raw
+scan); a scope-aware test would split here.
+--- dialect
+mariadb
+--- bindings
+{"T": {"kind": "relation", "from": "t", "alias": "t", "fields": {"N": {"table": "t", "column": "n", "type": "NUM"}, "S": {"table": "t", "column": "s", "type": "TEXT"}}}}
+--- source
+T .> FILTER(_["n"] > 1) .> MAP(RECORD("x", SPLIT(_["s"], ","), "y", ANY((1, 2), _K == "1")))
+--- plan
+pure_memory
+--- tables
+t
+===
+
+### name: bind.prefilter.unknown-spelling-is-refused
+--- note
+GO-C19: an unknown prefilter spelling is refused when the binding is made. Storing it would defer the error to a later use.
+--- dialect
+mariadb
+--- bindings
+{"XC": {"kind": "column", "column": "xc", "type": "TEXT", "prefilter": "bogus"}}
+--- source
+XC == "a"
+--- error
+E_SQL_BINDING
+===
+
+### name: order.filter-after-sort-keeps-the-order
+--- note
+Found by an audit: `ORDERS .> SORT_BY(amount) .> FILTER(amount > 1)` used to emit
+`SELECT _sub1.* FROM (SELECT o.* ... ORDER BY amount) _sub1 WHERE ...` in every host: a
+derived table with no LIMIT beside its ORDER BY does not keep the order, and nothing
+outside it sorts, so the rows came back in no order. The WHERE goes beside the ORDER BY in
+the same select instead (a filter commutes with a stable sort).
+--- dialect
+mariadb
+--- bindings
+{"ORDERS": {"kind": "relation", "from": "orders", "alias": "o", "fields": {"ID": {"table": "o", "column": "id", "type": "NUM"}, "AMOUNT": {"table": "o", "column": "amount", "type": "NUM"}}}}
+--- source
+ORDERS .> SORT_BY(_["amount"]) .> FILTER(_["amount"] > 1)
+--- plan
+pure_sql
+--- tables
+orders
+--- expect
+SELECT `o`.* FROM `orders` `o` WHERE (`o`.`amount` > 1) ORDER BY `o`.`amount` ASC
+===
+
+### name: order.projection-then-filter-of-sorted-rows-is-refused
+--- note
+The wrap cannot be avoided when a projection sits between (the filter reads the projected
+columns), and the derived table then loses the sort: the statement is refused at the last
+step, and the hybrid planner keeps the sorted rows in SQL and filters in memory.
+--- dialect
+mariadb
+--- bindings
+{"ORDERS": {"kind": "relation", "from": "orders", "alias": "o", "fields": {"ID": {"table": "o", "column": "id", "type": "NUM"}, "AMOUNT": {"table": "o", "column": "amount", "type": "NUM"}}}}
+--- as
+statement
+--- source
+ORDERS .> SORT_BY(_["amount"]) .> MAP(RECORD("a", _["amount"])) .> FILTER(_["a"] > 1)
+--- error
+E_SQL_SHAPE 1:68
+===
+
+### name: bind.alias.case-colliding-relation-aliases-are-refused
+--- note
+SQLite reads the aliases `o` and `O` as one alias (`ambiguous column name: o.x`), and the MySQL family
+does on some platforms, so two relations under aliases that differ only by ASCII case collide on the
+server exactly as two under the same alias do (PHP-C57). Refused with the same E_SQL_BINDING.
+--- dialect
+mariadb
+--- bindings
+{"A": {"kind": "relation", "from": "a", "alias": "o", "fields": {"X": {"table": "o", "column": "x", "type": "NUM"}}},
+ "B": {"kind": "relation", "from": "b", "alias": "O", "fields": {"X": {"table": "O", "column": "x", "type": "NUM"}}}}
+--- source
+COUNT(A) > 0
+--- error
+E_SQL_BINDING
+===
+
+### name: assign.empty-text-key-is-a-constant-index
+--- note
+GO-C40: `""` is a text literal like any other, so an index written `R[""]` is a constant key; Go
+treated it as "not constant" and refused the program at the assignment target with E_SQL_ASSIGN,
+where JS refuses later with E_SQL_SHAPE. Both refuse, but the code is a contract: the target is a
+legal constant index, and the refusal that follows is the one for reading a key of a value that has
+no SQL form (a record built by assignment).
+--- dialect
+mariadb
+--- bindings
+{"XN": {"kind": "column", "column": "xn", "type": "NUM"}}
+--- source
+R[""] = 1; R[""] > XN
+--- error
+E_SQL_SHAPE
+===

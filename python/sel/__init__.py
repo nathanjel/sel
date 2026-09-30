@@ -179,8 +179,13 @@ per-element expressions) contributes to `defs` only where every path assigns it.
         # -- and every argument is read where the call stands.
         form = _binding_form(node.name or '', node.args, node.spec)
         if form is None:
-            for a in node.args:
-                defs = _collect(a, bound, defs, reads, d1)
+            for i, a in enumerate(node.args):
+                # The first argument always runs; COALESCE's later ones and GET/PATH's
+                # default may not, so nothing they assign is definite afterwards.
+                if (name == 'COALESCE' and i > 0) or (name in ('GET', 'PATH') and i > 1):
+                    _collect(a, bound, defs, reads, d1)
+                else:
+                    defs = _collect(a, bound, defs, reads, d1)
             return defs
         scopes, binds = form
         inner = None

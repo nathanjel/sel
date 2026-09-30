@@ -383,17 +383,11 @@ func (p *reParser) parseClass() *reNode {
 	readItem := func() item {
 		c := p.src[p.i]
 		if c == '[' && p.i+1 < len(p.src) {
+			// A `[` followed by `:`, `.` or `=` inside a class is refused, closed or not
+			// (SPEC 7.8): the POSIX bracket forms [:alpha:], [.x.], [=x=] are read
+			// differently by the engines, and so is an unfinished one.
 			if k := p.src[p.i+1]; k == ':' || k == '.' || k == '=' {
-				// A POSIX bracket form when a matching terminator follows before
-				// the first closing bracket: [:alpha:], [.x.], [=x=].
-				for j := p.i + 2; j < len(p.src); j++ {
-					if p.src[j] == ']' {
-						break
-					}
-					if p.src[j] == k && j+1 < len(p.src) && p.src[j+1] == ']' {
-						badRegex("POSIX bracket forms such as [[:alpha:]] are not portable", p.pattern, p.i, p.pos)
-					}
-				}
+				badRegex("POSIX bracket forms such as [[:alpha:]] are not portable", p.pattern, p.i, p.pos)
 			}
 		}
 		if c == '\\' {

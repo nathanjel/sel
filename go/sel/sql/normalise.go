@@ -44,8 +44,8 @@ func recordStmt(s *sel.Node, defs map[string]*SNode, constNames map[string]bool,
 	var keys []string
 	t := s.L
 	for t.T == sel.NodeIndex {
-		k := constantKey(t.R)
-		if k == "" {
+		k, isConst := constantKey(t.R)
+		if !isConst {
 			Refuse("E_SQL_ASSIGN",
 				"an assignment target may only be indexed by a constant here, because the shape has to be known before the query runs", t.R.Pos)
 		}
@@ -96,11 +96,14 @@ func recordStmt(s *sel.Node, defs map[string]*SNode, constNames map[string]bool,
 	clist.Append(key, value)
 }
 
-func constantKey(idx *sel.Node) string {
+// constantKey is the key a constant index spells, and whether the index is one:
+// the empty text `""` is a constant key like any other (GO-C40), so "no key" is a
+// separate result and not the empty string.
+func constantKey(idx *sel.Node) (string, bool) {
 	if idx.T == sel.NodeNum || idx.T == sel.NodeText {
-		return idx.S
+		return idx.S, true
 	}
-	return ""
+	return "", false
 }
 
 func substituteNode(node *sel.Node, defs map[string]*SNode, bound []string, depth int) *SNode {
