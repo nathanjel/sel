@@ -163,7 +163,15 @@ taking booleans without cells. Allocations per 10x run 2.28 M -> 1.06 M, bytes
 280 -> 135 MB; Scenario 1 paired 0.739x of the baseline; results and the steps
 tried and dropped are in the plan's section 7.
 
-**Still open:** no `examples/<cat>/` worked-example lane for Rust; a Rust-only 4 x MAX_SQL_NODES copy guard in stage 1 (Rust copies helper text where
+**Worked examples (2026-09-30):** every `examples/<cat>/` has a `rust.rs`.
+`tools/check-examples.sh` runs the host-only ones from `rust/build/example-<cat>`,
+and `tools/check-usage.sh` builds and runs the LIVE ones with the crate's `usage`
+feature in its image; all seven agree across six hosts. Writing them found
+that `register_native` refused builtins the manifest does not list, contrary to
+docs/contributing.md. Rust now has a `define()` like the other hosts (commit
+9e34338). The API gaps they ran into are listed in rust/README.md "Known limits".
+
+**Still open:** the API gaps in rust/README.md "Known limits"; a Rust-only 4 x MAX_SQL_NODES copy guard in stage 1 (Rust copies helper text where
 JS shares it); `cargo test --no-default-features` is not in the shared
 `impl_unit`; and Rust is not in the default roster (tools/impls.sh line 25): the
 other session's user keeps rust/ out of the repository history, so the default
