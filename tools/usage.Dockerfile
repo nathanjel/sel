@@ -1,5 +1,6 @@
-# The five hosts, each with a PostgreSQL, a MariaDB and a SQLite driver: what
-# the database-backed examples under examples/ need, and nothing else.
+# Every host, each with a PostgreSQL, a MariaDB and a SQLite driver (Rust's as
+# crates, fetched at run time): what the database-backed examples under
+# examples/ need, and nothing else.
 #
 #   docker build -t sel-usage:local -f tools/usage.Dockerfile tools
 #
@@ -10,6 +11,11 @@
 #
 # Fedora, because it is what the project is developed on: one compiler, one
 # libsqlite3 and one PHP between the examples and every other lane.
+#
+# Rust is Fedora's own toolchain; its drivers are crates (postgres, mysql,
+# rusqlite -- rust/Cargo.toml's `usage` feature), which tools/check-usage.sh
+# fetches into rust/target-usage on first use, not into the image. rusqlite
+# links the libsqlite3 below, found through pkg-config.
 
 FROM fedora:44
 
@@ -20,6 +26,7 @@ RUN dnf -y install --setopt=install_weak_deps=False \
         python3 python3-psycopg3 python3-PyMySQL \
         nodejs24 nodejs24-npm \
         sbcl curl ca-certificates \
+        rust cargo pkgconf-pkg-config \
     && dnf clean all \
     && ln -sf /usr/bin/node-24 /usr/local/bin/node 2>/dev/null || true
 

@@ -28,14 +28,18 @@ so the code the documentation quotes is code that runs.
 ## Running them
 
 ```sh
-tools/check-examples.sh                  # every category that needs only the host, all five hosts
+tools/check-examples.sh                  # every category that needs only the host, every host
 tools/check-usage.sh                     # the ones marked LIVE, against real databases (Docker)
 PYTHONPATH=python python3 examples/validation/python.py      # one of them, one host
 ```
 
 A `LIVE` directory needs PostgreSQL, MariaDB or SQLite: `tools/check-usage.sh`
 starts throwaway servers, loads each directory's `seed.<dialect>.sql` into a
-database of its own, and runs the five hosts in an image that has every driver
+database of its own, and runs every host in an image that has every driver
 (`tools/usage.Dockerfile`). The C++ programs build with `cd cpp && make`; the
 database ones need the client libraries, so they are built inside that image
-with `make -C cpp BUILD=build-usage build-usage/example-<dir>`.
+with `make -C cpp BUILD=build-usage build-usage/example-<dir>`. The Rust ones
+(`rust.rs`, where a directory has one) build with `bash rust/build.sh` into
+`rust/build/example-<dir>`; the database ones need the drivers behind the crate's
+`usage` feature (`examples/lib/db.rs`), and the lane builds them in that image
+into `rust/target-usage`.

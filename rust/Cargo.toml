@@ -17,12 +17,21 @@ codegen-units = 1
 [features]
 default = ["sql"]
 sql = ["dep:serde", "dep:serde_json"]
+# The database drivers of the LIVE worked examples (../examples/lib/db.rs), which
+# tools/check-usage.sh builds in its image. Off by default: the library never
+# needs them. rusqlite links the system libsqlite3 (the image's, which every
+# other host there shares) rather than bundling its own; the mysql crate uses
+# its pure-Rust deflate backend, so no zlib is linked either.
+usage = ["sql", "dep:postgres", "dep:mysql", "dep:rusqlite"]
 
 [dependencies]
 regex = "1.10"
 regex-syntax = "0.8.11"
 serde = { version = "1.0.229", features = ["derive"], optional = true }
 serde_json = { version = "1.0.151", optional = true }
+postgres = { version = "0.19.14", optional = true }
+mysql = { version = "28.0.3", default-features = false, features = ["minimal-rust"], optional = true }
+rusqlite = { version = "0.40.2", optional = true }
 
 [[bin]]
 name = "regex_verdict"
@@ -86,3 +95,73 @@ required-features = ["sql"]
 [[example]]
 name = "plain"
 path = "../examples/plain/rust.rs"
+
+[[example]]
+name = "complex"
+path = "../examples/complex/rust.rs"
+
+[[example]]
+name = "repl"
+path = "../examples/repl/rust.rs"
+
+[[example]]
+name = "validation"
+path = "../examples/validation/rust.rs"
+
+[[example]]
+name = "scripting"
+path = "../examples/scripting/rust.rs"
+
+[[example]]
+name = "sql"
+path = "../examples/sql/rust.rs"
+required-features = ["sql"]
+
+[[example]]
+name = "dialect"
+path = "../examples/dialect/rust.rs"
+required-features = ["sql"]
+
+# The report over generated rows: examples/lib/render.rs, no database client.
+[[example]]
+name = "memory-complex"
+path = "../examples/memory-complex/rust.rs"
+required-features = ["sql"]
+
+# The database-backed examples (the categories with a LIVE marker). They include
+# ../examples/lib/db.rs and so need the drivers: tools/check-usage.sh builds them
+# in its image with `--features usage`; rust/build.sh leaves them out.
+[[example]]
+name = "sql-3nf"
+path = "../examples/sql-3nf/rust.rs"
+required-features = ["usage"]
+
+[[example]]
+name = "sql-complex"
+path = "../examples/sql-complex/rust.rs"
+required-features = ["usage"]
+
+[[example]]
+name = "sql-conditions"
+path = "../examples/sql-conditions/rust.rs"
+required-features = ["usage"]
+
+[[example]]
+name = "sql-eav"
+path = "../examples/sql-eav/rust.rs"
+required-features = ["usage"]
+
+[[example]]
+name = "sql-flat"
+path = "../examples/sql-flat/rust.rs"
+required-features = ["usage"]
+
+[[example]]
+name = "sql-functions"
+path = "../examples/sql-functions/rust.rs"
+required-features = ["usage"]
+
+[[example]]
+name = "sql-star"
+path = "../examples/sql-star/rust.rs"
+required-features = ["usage"]

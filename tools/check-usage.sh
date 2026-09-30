@@ -10,15 +10,16 @@
 #
 # WHY A LANE OF ITS OWN. tools/check-examples.sh runs examples that need nothing
 # but the host. These need PostgreSQL, MariaDB and SQLite, and a driver for each
-# in each of five languages -- libpq and libmariadb for C++, postmodern and
-# cl-mysql for Lisp -- which no development box is expected to carry. So the
-# drivers live in one image (tools/usage.Dockerfile, built here when missing),
-# the servers are pinned throwaway containers like tools/oracle-db.sh's, and the
-# repository is bind-mounted so the image never holds a stale copy of SEL.
+# in each of six languages -- libpq and libmariadb for C++, postmodern and
+# cl-mysql for Lisp, three crates for Rust -- which no development box is
+# expected to carry. So the drivers live in one image (tools/usage.Dockerfile,
+# built here when missing), the servers are pinned throwaway containers like
+# tools/oracle-db.sh's, and the repository is bind-mounted so the image never
+# holds a stale copy of SEL.
 #
 # Every example checks itself as well: it prints whether the rows the database
 # returned are the rows the same program computes in memory. The diff here is
-# the other half -- that five hosts, five drivers each, print the same bytes.
+# the other half -- that six hosts, their drivers each, print the same bytes.
 #
 # Each category gets its own database, sel_<category>, loaded from its
 # seed.<dialect>.sql; the examples find it through SEL_DB_* (examples/lib/db.*).
@@ -29,7 +30,7 @@ set -uo pipefail
 cd "$(dirname "$0")/.."
 ROOT="$PWD"
 IMAGE="${SEL_USAGE_IMAGE:-sel-usage:local}"
-HOSTS="python js php cpp lisp"
+HOSTS="python js php cpp lisp rust"
 
 # --- inside the image ------------------------------------------------------------
 # Runs the hosts for each category, in parallel, and diffs them. Invoked by the
@@ -45,6 +46,15 @@ if [ "${1:-}" = "--inside" ]; then
     tail -20 "$WORK/make.log" | sed 's/^/       /'
     exit 1
   fi
+  # Rust likewise: its own target directory, and a CARGO_HOME beside it, so the
+  # driver crates (rust/Cargo.toml's `usage` feature) are fetched once and kept.
+  export CARGO_TARGET_DIR="$ROOT/rust/target-usage" CARGO_HOME="$ROOT/rust/target-usage/cargo"
+  if ! cargo build --locked --release --manifest-path rust/Cargo.toml --features usage \
+       $(for c in "$@"; do printf -- '--example %s ' "$c"; done) > "$WORK/cargo.log" 2>&1; then
+    echo "FAIL the Rust examples do not build:"
+    tail -20 "$WORK/cargo.log" | sed 's/^/       /'
+    exit 1
+  fi
   for cat in "$@"; do
     export SEL_DB_NAME="sel_${cat//-/_}"
     export SEL_DB_SQLITE_FILE="$WORK/$SEL_DB_NAME.sqlite"
@@ -58,6 +68,7 @@ if [ "${1:-}" = "--inside" ]; then
         js)     cmd=(node "examples/$cat/js.mjs") ;;
         php)    cmd=(php "examples/$cat/php.php") ;;
         cpp)    cmd=("cpp/build-usage/example-$cat") ;;
+        rust)   cmd=("rust/target-usage/release/examples/$cat") ;;
         lisp)   cmd=(sbcl --noinform --disable-debugger --non-interactive
                      --load lisp/bin/boot.lisp --load "examples/$cat/lisp.lisp"
                      --eval '(sel-example:main)') ;;
@@ -92,7 +103,7 @@ if [ "${1:-}" = "--inside" ]; then
       status=1
     fi
     # output.txt is the transcript the documentation quotes, so it is held to
-    # what the hosts print: agreeing with each other is not enough if all five
+    # what the hosts print: agreeing with each other is not enough if all of them
     # changed.
     if [ -n "$ref" ] && [ -f "examples/$cat/output.txt" ] \
        && ! diff -u "examples/$cat/output.txt" "$WORK/$cat.$ref" > "$WORK/$cat.output.diff"; then
@@ -128,9 +139,12 @@ else
   CATEGORIES="$(for d in examples/*/; do [ -f "$d/LIVE" ] && basename "$d"; done | sort | tr '\n' ' ')"
 fi
 
-if ! docker image inspect "$IMAGE" >/dev/null 2>&1; then
-  echo "usage: building $IMAGE (once; a few minutes)" >&2
-  docker build -q -t "$IMAGE" -f tools/usage.Dockerfile tools >/dev/null || exit 1
+# The image is labelled with its Dockerfile's digest, so an image built from an
+# older Dockerfile (one without a toolchain a host now needs) is rebuilt too.
+RECIPE="$(sha256sum tools/usage.Dockerfile | cut -c1-16)"
+if [ "$(docker image inspect -f '{{index .Config.Labels "sel.usage.recipe"}}' "$IMAGE" 2>/dev/null)" != "$RECIPE" ]; then
+  echo "usage: building $IMAGE (once per Dockerfile change; a few minutes)" >&2
+  docker build -q --label "sel.usage.recipe=$RECIPE" -t "$IMAGE" -f tools/usage.Dockerfile tools >/dev/null || exit 1
 fi
 
 TAG="selu-$$"
