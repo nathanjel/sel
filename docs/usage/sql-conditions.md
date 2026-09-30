@@ -166,6 +166,38 @@ if (where) {
 
 </details>
 <details>
+<summary>Rust</summary>
+
+<!-- from: examples/sql-conditions/rust.rs#naive -->
+```rust
+let mut rule = compile(source)?;
+let columns = rule
+    .dependencies()?
+    .into_iter()
+    .map(|name| {
+        let column = name.to_ascii_lowercase();
+        (name, Binding::column(&column, "", SqlKind::Unknown, false, false, false, "", "", false))
+    })
+    .collect();
+let bindings = Bindings::new(Some(columns));
+let condition = try_translate(&rule, dialect, Some(&bindings), Options::default());
+let rows = if let Some(condition) = &condition {
+    let sql = format!("SELECT id FROM customers WHERE {} ORDER BY id", condition.as_condition(Mode::Params)?);
+    db::query(&mut conn, &sql, &condition.bindings())?
+} else {
+    // refused: the rule stays in the application, over rows it loads
+    let rows = Value::none();
+    for row in everyone.entries() {
+        if rule.run(Some(context_of(&row.val)?))?.as_bool(at)? {
+            rows.set(&row.key, row.val, at)?;
+        }
+    }
+    rows
+};
+```
+
+</details>
+<details>
 <summary>Common Lisp</summary>
 
 <!-- from: examples/sql-conditions/lisp.lisp#naive -->
@@ -310,6 +342,33 @@ const Bindings bindings({
 
 </details>
 <details>
+<summary>Rust</summary>
+
+<!-- from: examples/sql-conditions/rust.rs#involved -->
+```rust
+// Binding::column's arguments are all positional; these are the four that vary.
+let column = |name: &str, table: &str, kind: SqlKind, exact: bool| {
+    Binding::column(name, table, kind, exact, false, false, "", "", false)
+};
+use SqlKind::{Num as NUM, Text as TEXT};
+let bindings = Bindings::new(Some(HashMap::from([
+    ("STATUS".to_string(), column("status", "o", TEXT, true)),
+    ("TOTAL".to_string(), column("total", "o", NUM, false)),
+    ("CHANNEL".to_string(), column("channel", "o", TEXT, true)),
+    ("TAGS".to_string(), Binding::columns(vec![column("tag1", "o", TEXT, false),
+                                               column("tag2", "o", TEXT, false),
+                                               column("tag3", "o", TEXT, false)])),
+    ("ITEMS".to_string(), Binding::relation("order_items", "i", vec![
+        FieldEntry::new("sku", column("sku", "i", TEXT, false)),
+        FieldEntry::new("qty", column("qty", "i", NUM, false)),
+        FieldEntry::new("price", column("price", "i", NUM, false)),
+    ], /* scalar */ "", /* correlate */ r#""i"."order_id" = "o"."id""#, "", false)),
+    ("MIN_TOTAL".to_string(), Binding::value(Value::text_owned("100.00".to_string()), None)),
+])));
+```
+
+</details>
+<details>
 <summary>Common Lisp</summary>
 
 <!-- from: examples/sql-conditions/lisp.lisp#involved -->
@@ -399,6 +458,18 @@ const Fragment where = Sql::translate(rule, "postgresql", bindings);
 const std::string sql =
     "SELECT id FROM orders o WHERE " + where.as_condition(Mode::Params) + " ORDER BY id";
 const sel::Value rows = db::query(conn, sql, where.bindings());
+```
+
+</details>
+<details>
+<summary>Rust</summary>
+
+<!-- from: examples/sql-conditions/rust.rs#involved-run -->
+```rust
+let mut rule = compile(source)?;
+let condition = translate(&rule, "postgresql", Some(&bindings), Options::default())?;
+let sql = format!("SELECT id FROM orders o WHERE {} ORDER BY id", condition.as_condition(Mode::Params)?);
+let rows = db::query(&mut conn, &sql, &condition.bindings())?;
 ```
 
 </details>

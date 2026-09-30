@@ -389,6 +389,87 @@ sel::register_function("WORDS", 1, 1, [&](sel::HostArgs& args) {
 
 </details>
 <details>
+<summary>Rust</summary>
+
+<!-- from: examples/sql-functions/rust.rs#local -->
+```rust
+fn slug(text: &str) -> String {
+    let mut out = String::new();
+    let mut dash = false;
+    for c in text.chars().map(|c| c.to_ascii_lowercase()) {  // ASCII only, as SQL's
+        if c.is_ascii_lowercase() || c.is_ascii_digit() {       // [^a-z0-9]+ sees it
+            if dash && !out.is_empty() {
+                out.push('-');
+            }
+            out.push(c);
+            dash = false;
+        } else {
+            dash = true;
+        }
+    }
+    out
+}
+
+thread_local! {
+    static MARGIN: RefCell<Program> =
+        RefCell::new(compile("ROUND((PRICE - COST) * 100 / PRICE, 1)").expect("a valid rule"));
+    static SHIPPING: RefCell<Program> = RefCell::new(
+        compile("COND(KG <= 1, 4.90, KG <= 5, 9.90, KG <= 20, 19.90, 49.00) * IF(COUNTRY $== \"PL\", 1, 2)")
+            .expect("a valid rule"),
+    );
+}
+
+let vat_rates = db::query(&mut conn, "SELECT * FROM vat_rates", &[])?;
+let mut rates: HashMap<(String, String), String> = HashMap::new();
+for r in vat_rates.values() {
+    let text = |name: &str| r.get(name).expect("a vat_rates column").as_text(at);
+    rates.insert((text("country")?, text("category")?), text("rate")?);
+}
+
+register_function("SLUG", 1, 1, |args: &mut Args| Ok(Value::text_owned(slug(&args.text(0)?))))?;
+register_function("MARGIN_PCT", 2, 2, move |args: &mut Args| {
+    let ctx = Value::none();
+    ctx.set("PRICE", args.val(0)?, at)?;
+    ctx.set("COST", args.val(1)?, at)?;
+    MARGIN.with(|program| program.borrow_mut().run(Some(ctx)))
+})?;
+register_function("VAT_RATE", 2, 2, move |args: &mut Args| {
+    let (country, category) = (args.text(0)?, args.text(1)?);
+    let rate = rates
+        .get(&(country.clone(), category))
+        .or_else(|| rates.get(&(country, "*".to_string())));
+    Ok(Value::text_owned(rate.map_or("0", String::as_str).to_string()))
+})?;
+register_function("SHIPPING_COST", 2, 2, move |args: &mut Args| {
+    let ctx = Value::none();
+    ctx.set("KG", args.val(0)?, at)?;
+    ctx.set("COUNTRY", args.val(1)?, at)?;
+    SHIPPING.with(|program| program.borrow_mut().run(Some(ctx)))
+})?;
+register_function("HAS_TAG", 2, 2, move |args: &mut Args| {
+    let (tags, tag) = (args.val(0)?, args.text(1)?);
+    if tags.size() == 0 {
+        return Ok(Value::bool(tags.as_text(at)? == tag)); // a scalar is a list of one
+    }
+    for v in tags.values() {
+        if v.as_text(at)? == tag {
+            return Ok(Value::bool(true));
+        }
+    }
+    Ok(Value::bool(false))
+})?;
+register_function("WORDS", 1, 1, |args: &mut Args| {
+    let words = slug(&args.text(0)?)
+        .split('-')
+        .filter(|w| !w.is_empty())
+        .map(|w| Value::text_owned(w.to_string()))
+        .collect();
+    Ok(Value::list(words))
+})?;
+```
+
+</details>
+<details>
 <summary>Common Lisp</summary>
 
 <!-- from: examples/sql-functions/lisp.lisp#local -->
@@ -545,6 +626,25 @@ Map::define("postgresql", Section::Funcs, "HAS_TAG",
 
 </details>
 <details>
+<summary>Rust</summary>
+
+<!-- from: examples/sql-functions/rust.rs#spell -->
+```rust
+define("postgresql", "funcs", "SLUG",
+       &json!({"tpl": "slug({0})", "ret": "TEXT", "args": ["TEXT"]}));
+define("postgresql", "funcs", "MARGIN_PCT",
+       &json!({"tpl": "margin_pct({0}, {1})", "ret": "NUM", "args": ["NUM", "NUM"]}));
+define("postgresql", "funcs", "VAT_RATE",
+       &json!({"tpl": "vat_rate({0}, {1})", "ret": "NUM", "args": ["TEXT", "TEXT"]}));
+define("postgresql", "funcs", "SHIPPING_COST",
+       &json!({"tpl": "shipping_cost({0}, {1})", "ret": "NUM", "args": ["NUM", "TEXT"]}));
+define("postgresql", "funcs", "HAS_TAG",
+       &json!({"tpl": "({1} = ANY(ARRAY[{0}]))", "ret": "BOOL", "args": ["LIST", "TEXT"]}));
+// WORDS returns a list: no spelling can say that, so it has none.
+```
+
+</details>
+<details>
 <summary>Common Lisp</summary>
 
 <!-- from: examples/sql-functions/lisp.lisp#spell -->
@@ -619,6 +719,17 @@ const sel::Program program = sel::compile(read("examples/sql-functions/" + file)
 const HybridPlan plan = Sql::plan_hybrid(program, "postgresql", schema);
 const sel::Value rows = Sql::execute_hybrid(plan, db::runner(conn),
                                             plan.pure_memory ? tables : sel::Value::none());
+```
+
+</details>
+<details>
+<summary>Rust</summary>
+
+<!-- from: examples/sql-functions/rust.rs#run -->
+```rust
+let mut program = compile(&read(&format!("examples/sql-functions/{file}"))?)?;
+let plan = plan_hybrid(&program, "postgresql", Some(&schema), Options::default());
+let rows = execute_hybrid(&plan, db::runner(&mut conn), plan.pure_memory.then_some(&tables))?;
 ```
 
 </details>
@@ -738,6 +849,23 @@ try {
   Sql::translate(rule, "postgresql", title, sel::sql::Options{.strict = true});
 } catch (const SqlError& e) {
   std::cout << "   strict      " << e.code() << "\n";
+}
+```
+
+</details>
+<details>
+<summary>Rust</summary>
+
+<!-- from: examples/sql-functions/rust.rs#strict -->
+```rust
+let rule = compile("SLUG(TITLE) $== \"cast-iron-pan\"")?;
+let title = Bindings::new(Some(HashMap::from([(
+    "TITLE".to_string(),
+    Binding::column("title", "p", SqlKind::Text, false, false, false, "", "", false),
+)])));
+println!("   caveats     {}", translate(&rule, "postgresql", Some(&title), Options::default())?.caveats.join(", "));
+if let Err(e) = translate(&rule, "postgresql", Some(&title), Options { strict: true }) {
+    println!("   strict      {}", e.code);
 }
 ```
 

@@ -145,7 +145,7 @@ Worked example: `ORD_SUFFIX(n)`, returning `1st`, `2nd`, `3rd`, `4th`.
 
 All of it — the spec row, the conformance cases, and one file per host — is in
 **[examples/fn-simple/](../examples/fn-simple/)**, whose README carries the order
-of work and the three places that have no autoloader. The JS:
+of work and the four places that have no autoloader. The JS:
 
 <!-- from: examples/fn-simple/js.mjs -->
 ```js
@@ -161,7 +161,7 @@ define({
 });
 ```
 
-`php.php`, `cpp.cpp`, `lisp.lisp` and `python.py` sit beside it, saying the same
+`php.php`, `cpp.cpp`, `lisp.lisp`, `python.py` and `rust.rs` sit beside it, saying the same
 thing in their own spelling.
 
 Note what is *not* there: no argument count check, no type check, no `eval` call,

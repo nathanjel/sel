@@ -145,6 +145,42 @@ sel::register_function("NOTIFY", 2, 2, [](sel::HostArgs& args) {
 
 </details>
 <details>
+<summary>Rust</summary>
+
+<!-- from: examples/scripting/rust.rs#register -->
+```rust
+register_function("STOCK", 1, 1, |args| {
+    let sku = args.text(0)?;
+    let left = INVENTORY.lock().unwrap().get(sku.as_str()).copied();
+    Ok(Value::int(left.unwrap_or(0)))
+})?;
+
+register_function("RESERVE", 2, 2, |args| {
+    let sku = args.text(0)?;
+    let qty = args.non_neg_int(1)?;
+    let mut inventory = INVENTORY.lock().unwrap();
+    match inventory.get_mut(sku.as_str()) {
+        Some(left) if *left >= qty => {
+            *left -= qty;
+            Ok(Value::bool(true))
+        }
+        _ => Ok(Value::bool(false)),
+    }
+})?;
+
+register_function("WEIGHT", 1, 1, |args| {
+    Ok(val(WEIGHTS.get(args.text(0)?.as_str()).copied().unwrap_or("0")))
+})?;
+
+register_function("NOTIFY", 2, 2, |args| {
+    let message = format!("{}: {}", args.text(0)?, args.text(1)?);
+    OUTBOX.lock().unwrap().push(message);
+    Ok(Value::bool(true))
+})?;
+```
+
+</details>
+<details>
 <summary>Common Lisp</summary>
 
 <!-- from: examples/scripting/lisp.lisp#register -->
@@ -349,6 +385,43 @@ for (const Order& order : orders) {
     decision = e.code() + " at " + std::to_string(e.line()) + ":" + std::to_string(e.col());
   }
   std::cout << "   " << order.order << "  " << decision << "\n";
+}
+```
+
+</details>
+<details>
+<summary>Rust</summary>
+
+<!-- from: examples/scripting/rust.rs#run -->
+```rust
+// After registering: names resolve now.
+let mut fulfil = compile(&fs::read_to_string("examples/scripting/fulfil.sel")?)?;
+
+println!("1. the script reads {}", fulfil.dependencies()?.join(", "));
+println!("2. orders");
+let orders = [
+    ("A-1", "PL", vec![("LAMP-01", "2"), ("CHAIR-03", "1")]),
+    ("A-2", "DE", vec![("DESK-02", "1"), ("CHAIR-03", "2")]),
+    ("A-3", "PL", vec![("LAMP-01", "3")]),
+    ("A-4", "PL", vec![("LAMP-01", "two")]),
+];
+for (order, country, lines) in orders {
+    let ctx = Value::none();
+    ctx.set("ORDER", val(order), at)?;
+    ctx.set("COUNTRY", val(country), at)?;
+    let mut items = Vec::new();
+    for (sku, qty) in lines {
+        let item = Value::none();
+        item.set("sku", val(sku), at)?;
+        item.set("qty", val(qty), at)?;
+        items.push(item);
+    }
+    ctx.set("ITEMS", Value::list(items), at)?;
+    let decision = match fulfil.run(Some(ctx)).and_then(|v| v.as_text(at)) {
+        Ok(decision) => decision,
+        Err(e) => format!("{} at {}:{}", e.code, e.pos.line, e.pos.col),
+    };
+    println!("   {order}  {decision}");
 }
 ```
 

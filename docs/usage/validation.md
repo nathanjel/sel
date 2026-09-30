@@ -102,6 +102,28 @@ const std::vector<std::pair<std::string, std::string>> RULES = {
 
 </details>
 <details>
+<summary>Rust</summary>
+
+<!-- from: examples/validation/rust.rs#rules -->
+```rust
+const RULES: &[(&str, &str)] = &[
+    ("name",     r#"IF(IS_BLANK(NAME), ABORT("Please tell us your name"), "")"#),
+    ("email",    concat!(r#"IF(RMATCH('^[^@ ]+@[^@ ]+\.[a-z]{2,}$', TRIM(EMAIL), "i"), "","#,
+                         r#" ABORT("{EMAIL} does not look like an e-mail address"))"#)),
+    ("postcode", concat!(r#"COND(COUNTRY $== "PL" AND NOT RMATCH('^\d{2}-\d{3}$', POSTCODE),"#,
+                         r#"       ABORT("Polish postcodes look like 00-000"),"#,
+                         r#"     COUNTRY $== "DE" AND NOT RMATCH('^\d{5}$', POSTCODE),"#,
+                         r#"       ABORT("German postcodes have five digits"),"#,
+                         r#"     "")"#)),
+    ("quantity", concat!(r#"IF(NOT ISNUM(QTY) OR QTY < 1 OR QTY > STOCK,"#,
+                         r#" ABORT("Choose between 1 and {STOCK}"), "")"#)),
+    ("total",    concat!(r#"TOTAL = ROUND(QTY * PRICE * (1 - DISCOUNT), 2);"#,
+                         r#" IF(TOTAL > CREDIT_LIMIT, ABORT("{TOTAL} is over your limit of {CREDIT_LIMIT}"), "")"#)),
+];
+```
+
+</details>
+<details>
 <summary>Common Lisp</summary>
 
 <!-- from: examples/validation/lisp.lisp#rules -->
@@ -182,6 +204,18 @@ $compiled = array_map(fn (string $source) => Sel::compile($source), RULES);
 ```cpp
 Rules compiled;
 for (const auto& [field, source] : RULES) compiled.emplace_back(field, sel::compile(source));
+```
+
+</details>
+<details>
+<summary>Rust</summary>
+
+<!-- from: examples/validation/rust.rs#compile -->
+```rust
+let mut compiled = Rules::new();
+for &(field, source) in RULES {
+    compiled.push((field, compile(source)?));
+}
 ```
 
 </details>
@@ -298,6 +332,37 @@ Problems validate(const Rules& compiled, const Form& form) {
     if (!verdict.empty()) problems.emplace_back(field, verdict);
   }
   return problems;
+}
+```
+
+</details>
+<details>
+<summary>Rust</summary>
+
+<!-- from: examples/validation/rust.rs#validate -->
+```rust
+type Form<'a> = [(&'a str, &'a str)];              // field, what was typed
+type Problems = Vec<(&'static str, String)>;       // field, message
+
+fn validate(compiled: &mut Rules, form: &Form<'_>) -> Result<Problems, SelError> {
+    let mut problems = Problems::new();
+    for (field, rule) in compiled.iter_mut() {
+        let ctx = Value::none();
+        for &(name, typed) in form {
+            ctx.set(name, Value::text_owned(typed.to_string()), Pos::default())?;
+        }
+        let verdict = match rule.run(Some(ctx)).and_then(|v| v.as_text(Pos::default())) {
+            Ok(verdict) => verdict,
+            // E_ABORT is the rule speaking to the user; anything else is a
+            // broken rule or data it cannot read -- log it, show a generic line.
+            Err(e) if e.code == "E_ABORT" => e.message,
+            Err(e) => format!("could not be checked ({})", e.code),
+        };
+        if !verdict.is_empty() {
+            problems.push((*field, verdict));
+        }
+    }
+    Ok(problems)
 }
 ```
 

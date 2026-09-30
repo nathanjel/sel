@@ -140,6 +140,39 @@ Bindings schema() {
 
 </details>
 <details>
+<summary>Rust</summary>
+
+<!-- from: examples/sql-star/rust.rs#bindings -->
+```rust
+fn relation(table: &str, alias: &str, fields: &[(&str, SqlKind)]) -> Binding {
+    let columns = fields
+        .iter()
+        .map(|&(name, kind)| {
+            FieldEntry::new(name, Binding::column(name, alias, kind, false, false, false, "", "", false))
+        })
+        .collect();
+    Binding::relation(table, alias, columns, "", "", "", false)
+}
+
+fn schema() -> Bindings {
+    use SqlKind::{Num as NUM, Text as TEXT};
+    Bindings::new(Some(HashMap::from([
+        ("SALES".to_string(), relation("fact_sales", "s", &[("sale_id", NUM), ("date_key", NUM),
+                                                            ("product_key", NUM), ("store_key", NUM),
+                                                            ("qty", NUM), ("revenue", NUM)])),
+        ("DATES".to_string(), relation("dim_date", "d", &[("date_key", NUM), ("year", NUM), ("quarter", NUM),
+                                                          ("month", NUM), ("month_name", TEXT)])),
+        ("STORES".to_string(), relation("dim_store", "t", &[("store_key", NUM), ("city", TEXT),
+                                                            ("region", TEXT), ("format", TEXT)])),
+        ("PRODUCTS".to_string(), relation("dim_product", "p", &[("product_key", NUM), ("sku", TEXT),
+                                                                ("name", TEXT), ("category", TEXT),
+                                                                ("brand", TEXT), ("list_price", NUM)])),
+    ])))
+}
+```
+
+</details>
+<details>
 <summary>Common Lisp</summary>
 
 <!-- from: examples/sql-star/lisp.lisp#bindings -->
@@ -261,6 +294,17 @@ const sel::Program program = sel::compile(read("examples/sql-star/" + file));
 const HybridPlan plan = Sql::plan_hybrid(program, "postgresql", SCHEMA);
 const sel::Value rows = Sql::execute_hybrid(plan, db::runner(conn),
                                             plan.pure_memory ? tables : sel::Value::none());
+```
+
+</details>
+<details>
+<summary>Rust</summary>
+
+<!-- from: examples/sql-star/rust.rs#run -->
+```rust
+let mut program = compile(&read(&format!("examples/sql-star/{file}"))?)?;
+let plan = plan_hybrid(&program, "postgresql", Some(&schema), Options::default());
+let rows = execute_hybrid(&plan, db::runner(&mut conn), plan.pure_memory.then_some(&tables))?;
 ```
 
 </details>

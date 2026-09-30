@@ -71,4 +71,19 @@ bash rust/tests/build_integration.sh
   compiling or evaluating a program nested past `MAX_DEPTH` (200) answers
   `E_DEPTH` on a 256 KiB stack in a release build (2 MiB, the Rust thread
   default, in a debug build).
-- There is no worked-example lane (`examples/<cat>/`) for Rust yet.
+- API gaps the worked examples (`examples/*/rust.rs`) ran into, where the other
+  hosts are easier to call:
+  - `sql::define_dialect`, `define` and `define_builder`, the `Binding`
+    constructors and `plan_hybrid` report a bad argument by panicking with a
+    `SqlError` rather than returning one; a caller can only `catch_unwind`.
+  - `sql::define` takes a `&serde_json::Value`, which the crate does not
+    re-export, so an application depends on `serde_json` itself.
+  - `Binding::column` takes all nine of its fields positionally, with no
+    defaulted form.
+  - `Program` is neither `Send` nor `Sync`, and `register_function` requires a
+    `Send + Sync + 'static` closure, so a host function cannot capture a
+    compiled program or a `Value` (examples/sql-functions keeps its programs in
+    a `thread_local!`).
+  - A hybrid runner reports failure as a `SelError`, whose codes are the
+    language's; no code fits a database failure, so the examples' runner
+    passes driver errors on as `E_BAD_ARG`.

@@ -136,6 +136,39 @@ Bindings schema() {
 
 </details>
 <details>
+<summary>Rust</summary>
+
+<!-- from: examples/sql-3nf/rust.rs#bindings -->
+```rust
+fn relation(table: &str, alias: &str, fields: &[(&str, SqlKind)]) -> Binding {
+    let columns = fields
+        .iter()
+        .map(|&(name, kind)| {
+            FieldEntry::new(name, Binding::column(name, alias, kind, false, false, false, "", "", false))
+        })
+        .collect();
+    Binding::relation(table, alias, columns, "", "", "", false)
+}
+
+fn schema() -> Bindings {
+    use SqlKind::{Num as NUM, Text as TEXT};
+    Bindings::new(Some(HashMap::from([
+        ("CUSTOMERS".to_string(), relation("customers", "c", &[("customer_id", NUM), ("name", TEXT),
+                                                               ("email", TEXT), ("country", TEXT)])),
+        ("ORDERS".to_string(), relation("orders", "o", &[("order_id", NUM), ("customer_id", NUM),
+                                                         ("status", TEXT), ("ordered_on", TEXT)])),
+        ("LINES".to_string(), relation("order_lines", "l", &[("order_id", NUM), ("line_no", NUM),
+                                                             ("product_id", NUM), ("qty", NUM),
+                                                             ("unit_price", NUM)])),
+        ("PRODUCTS".to_string(), relation("products", "p", &[("product_id", NUM), ("sku", TEXT),
+                                                             ("title", TEXT), ("category_id", NUM),
+                                                             ("list_price", NUM)])),
+    ])))
+}
+```
+
+</details>
+<details>
 <summary>Common Lisp</summary>
 
 <!-- from: examples/sql-3nf/lisp.lisp#bindings -->
@@ -248,6 +281,17 @@ const sel::Program program = sel::compile(read("examples/sql-3nf/" + file));
 const HybridPlan plan = Sql::plan_hybrid(program, "postgresql", SCHEMA);
 const sel::Value rows = Sql::execute_hybrid(plan, db::runner(conn),
                                             plan.pure_memory ? tables : sel::Value::none());
+```
+
+</details>
+<details>
+<summary>Rust</summary>
+
+<!-- from: examples/sql-3nf/rust.rs#run -->
+```rust
+let mut program = compile(&read(&format!("examples/sql-3nf/{file}"))?)?;
+let plan = plan_hybrid(&program, "postgresql", Some(&schema), Options::default());
+let rows = execute_hybrid(&plan, db::runner(&mut conn), plan.pure_memory.then_some(&tables))?;
 ```
 
 </details>

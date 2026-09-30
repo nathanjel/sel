@@ -105,6 +105,32 @@ Bindings schema() {
 
 </details>
 <details>
+<summary>Rust</summary>
+
+<!-- from: examples/sql-eav/rust.rs#bindings -->
+```rust
+fn relation(table: &str, alias: &str, fields: &[(&str, SqlKind)]) -> Binding {
+    let columns = fields
+        .iter()
+        .map(|&(name, kind)| {
+            FieldEntry::new(name, Binding::column(name, alias, kind, false, false, false, "", "", false))
+        })
+        .collect();
+    Binding::relation(table, alias, columns, "", "", "", false)
+}
+
+fn schema() -> Bindings {
+    use SqlKind::{Num as NUM, Text as TEXT};
+    Bindings::new(Some(HashMap::from([
+        ("PRODUCTS".to_string(), relation("entities", "e", &[("id", NUM), ("sku", TEXT), ("kind", TEXT)])),
+        ("ATTRS".to_string(), relation("attributes", "a", &[("entity_id", NUM), ("name", TEXT),
+                                                             ("value", TEXT)])),
+    ])))
+}
+```
+
+</details>
+<details>
 <summary>Common Lisp</summary>
 
 <!-- from: examples/sql-eav/lisp.lisp#bindings -->
@@ -221,6 +247,17 @@ const sel::Program program = sel::compile(read("examples/sql-eav/" + file));
 const HybridPlan plan = Sql::plan_hybrid(program, "sqlite", SCHEMA);
 const sel::Value rows = Sql::execute_hybrid(plan, db::runner(conn),
                                             plan.pure_memory ? tables : sel::Value::none());
+```
+
+</details>
+<details>
+<summary>Rust</summary>
+
+<!-- from: examples/sql-eav/rust.rs#run -->
+```rust
+let mut program = compile(&read(&format!("examples/sql-eav/{file}"))?)?;
+let plan = plan_hybrid(&program, "sqlite", Some(&schema), Options::default());
+let rows = execute_hybrid(&plan, db::runner(&mut conn), plan.pure_memory.then_some(&tables))?;
 ```
 
 </details>

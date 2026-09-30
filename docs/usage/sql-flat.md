@@ -121,6 +121,35 @@ Bindings schema() {
 
 </details>
 <details>
+<summary>Rust</summary>
+
+<!-- from: examples/sql-flat/rust.rs#bindings -->
+```rust
+fn relation(table: &str, alias: &str, fields: &[(&str, SqlKind)]) -> Binding {
+    let columns = fields
+        .iter()
+        .map(|&(name, kind)| {
+            FieldEntry::new(name, Binding::column(name, alias, kind, false, false, false, "", "", false))
+        })
+        .collect();
+    Binding::relation(table, alias, columns, "", "", "", false)
+}
+
+fn schema() -> Bindings {
+    use SqlKind::{Num as NUM, Text as TEXT};
+    Bindings::new(Some(HashMap::from([
+        ("EXPORT".to_string(), relation("order_export", "x", &[("line_id", NUM), ("order_no", TEXT),
+                                                               ("order_date", TEXT), ("customer_name", TEXT),
+                                                               ("customer_email", TEXT), ("customer_city", TEXT),
+                                                               ("sku", TEXT), ("product_name", TEXT),
+                                                               ("category", TEXT), ("qty", NUM),
+                                                               ("unit_price", NUM), ("tags", TEXT)])),
+    ])))
+}
+```
+
+</details>
+<details>
 <summary>Common Lisp</summary>
 
 <!-- from: examples/sql-flat/lisp.lisp#bindings -->
@@ -240,6 +269,17 @@ const sel::Program program = sel::compile(read("examples/sql-flat/" + file));
 const HybridPlan plan = Sql::plan_hybrid(program, "mariadb", SCHEMA);
 const sel::Value rows = Sql::execute_hybrid(plan, db::runner(conn),
                                             plan.pure_memory ? tables : sel::Value::none());
+```
+
+</details>
+<details>
+<summary>Rust</summary>
+
+<!-- from: examples/sql-flat/rust.rs#run -->
+```rust
+let mut program = compile(&read(&format!("examples/sql-flat/{file}"))?)?;
+let plan = plan_hybrid(&program, "mariadb", Some(&schema), Options::default());
+let rows = execute_hybrid(&plan, db::runner(&mut conn), plan.pure_memory.then_some(&tables))?;
 ```
 
 </details>

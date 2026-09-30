@@ -329,6 +329,55 @@ std::cout << db::render(result, "   | ") << "\n";
 
 </details>
 <details>
+<summary>Rust</summary>
+
+<!-- from: examples/sql-complex/rust.rs#load -->
+```rust
+use SqlKind::{Num as NUM, Text as TEXT};
+let schema = Bindings::new(Some(HashMap::from([
+    ("TEAMS".to_string(), relation("teams", "g", &[("team_id", NUM), ("team", TEXT)])),
+    ("CUSTOMERS".to_string(), relation("customers", "c", &[("customer_id", NUM), ("customer", TEXT),
+                                                           ("plan", TEXT)])),
+    ("SLA".to_string(), relation("sla", "s", &[("plan", TEXT), ("priority", TEXT),
+                                               ("respond_within", NUM), ("resolve_within", NUM)])),
+    ("TICKETS".to_string(), relation("tickets", "t", &[("ticket_id", NUM), ("customer_id", NUM),
+                                                       ("team_id", NUM), ("priority", TEXT),
+                                                       ("subject", TEXT), ("opened_at", NUM),
+                                                       ("closed_at", NUM)])),
+    ("EVENTS".to_string(), relation("events", "e", &[("event_id", NUM), ("ticket_id", NUM),
+                                                     ("seq", NUM), ("at", NUM), ("kind", TEXT),
+                                                     ("actor", TEXT)])),
+])));
+let keys = HashMap::from([
+    ("TEAMS", "team_id"), ("CUSTOMERS", "customer_id"), ("SLA", "plan"),
+    ("TICKETS", "ticket_id"), ("EVENTS", "event_id"),
+]);
+
+let mut report = compile(&read("tickets-report.sel")?)?;
+let plan = plan_hybrid(&report, "postgresql", Some(&schema), Options::default());
+println!("1. the report, planned for PostgreSQL");
+println!("   plan        {}", if plan.pure_memory { "pure_memory" } else { "pushed down" });
+println!("   reads       {}", plan.source_tables.join(", "));
+
+println!("2. so SQL only loads the tables it reads");
+let mut conn = db::connect("postgresql")?;
+let tables = Value::none();
+for name in report.dependencies()? {
+    let load = compile(&format!("{name} .> SORT_BY(_[\"{}\"])", keys[name.as_str()]))?;
+    let sql = translate_statement(&load, "postgresql", Some(&schema), Options::default())?
+        .as_statement(Mode::Inline)?;
+    let rows = db::query(&mut conn, &sql, &[])?;
+    println!("   {name:<10}  {:>3} rows  {sql}", rows.size());
+    tables.set(&name, rows, at)?;
+}
+
+println!("3. and SEL computes the report over them");
+let result = report.run(Some(tables))?;
+println!("{}", db::render(&result, "   | ")?);
+```
+
+</details>
+<details>
 <summary>Common Lisp</summary>
 
 <!-- from: examples/sql-complex/lisp.lisp#load -->
@@ -474,6 +523,24 @@ for (const std::string& name : data.keys())
 const sel::Program report = sel::compile(read("tickets-report.sel"));
 std::cout << "2. the report\n";
 std::cout << db::render(report.run(data), "   | ") << "\n";
+```
+
+</details>
+<details>
+<summary>Rust</summary>
+
+<!-- from: examples/memory-complex/rust.rs#generate -->
+```rust
+let data = evaluate(&read("tickets-generate.sel")?, None)?;
+println!("1. generated in memory");
+for name in data.keys() {
+    let rows = data.get(&name).map_or(0, |table| table.size());
+    println!("   {name:<10}  {rows:>3} rows");
+}
+
+let mut report = compile(&read("tickets-report.sel")?)?;
+println!("2. the report");
+println!("{}", render(&report.run(Some(data))?, "   | ")?);
 ```
 
 </details>

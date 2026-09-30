@@ -146,6 +146,42 @@ sel::register_function("NOTIFY", 2, 2, [](sel::HostArgs& args) {
 
 </details>
 <details>
+<summary>Rust</summary>
+
+<!-- from: examples/scripting/rust.rs#register -->
+```rust
+register_function("STOCK", 1, 1, |args| {
+    let sku = args.text(0)?;
+    let left = INVENTORY.lock().unwrap().get(sku.as_str()).copied();
+    Ok(Value::int(left.unwrap_or(0)))
+})?;
+
+register_function("RESERVE", 2, 2, |args| {
+    let sku = args.text(0)?;
+    let qty = args.non_neg_int(1)?;
+    let mut inventory = INVENTORY.lock().unwrap();
+    match inventory.get_mut(sku.as_str()) {
+        Some(left) if *left >= qty => {
+            *left -= qty;
+            Ok(Value::bool(true))
+        }
+        _ => Ok(Value::bool(false)),
+    }
+})?;
+
+register_function("WEIGHT", 1, 1, |args| {
+    Ok(val(WEIGHTS.get(args.text(0)?.as_str()).copied().unwrap_or("0")))
+})?;
+
+register_function("NOTIFY", 2, 2, |args| {
+    let message = format!("{}: {}", args.text(0)?, args.text(1)?);
+    OUTBOX.lock().unwrap().push(message);
+    Ok(Value::bool(true))
+})?;
+```
+
+</details>
+<details>
 <summary>Common Lisp</summary>
 
 <!-- from: examples/scripting/lisp.lisp#register -->
@@ -289,6 +325,25 @@ Map::define("postgresql", Section::Funcs, "HAS_TAG",
 
 </details>
 <details>
+<summary>Rust</summary>
+
+<!-- from: examples/sql-functions/rust.rs#spell -->
+```rust
+define("postgresql", "funcs", "SLUG",
+       &json!({"tpl": "slug({0})", "ret": "TEXT", "args": ["TEXT"]}));
+define("postgresql", "funcs", "MARGIN_PCT",
+       &json!({"tpl": "margin_pct({0}, {1})", "ret": "NUM", "args": ["NUM", "NUM"]}));
+define("postgresql", "funcs", "VAT_RATE",
+       &json!({"tpl": "vat_rate({0}, {1})", "ret": "NUM", "args": ["TEXT", "TEXT"]}));
+define("postgresql", "funcs", "SHIPPING_COST",
+       &json!({"tpl": "shipping_cost({0}, {1})", "ret": "NUM", "args": ["NUM", "TEXT"]}));
+define("postgresql", "funcs", "HAS_TAG",
+       &json!({"tpl": "({1} = ANY(ARRAY[{0}]))", "ret": "BOOL", "args": ["LIST", "TEXT"]}));
+// WORDS returns a list: no spelling can say that, so it has none.
+```
+
+</details>
+<details>
 <summary>Common Lisp</summary>
 
 <!-- from: examples/sql-functions/lisp.lisp#spell -->
@@ -401,6 +456,24 @@ std::cout << "   pg-libpq     => " << libpq << "\n";
 
 </details>
 <details>
+<summary>Rust</summary>
+
+<!-- from: examples/dialect/rust.rs#flavour -->
+```rust
+sql::define_dialect("pg-libpq", &json!({
+    "extends": "postgresql",
+    "version": "15",
+    "target": true,                         // a base is not a target; this is a server
+    "lexical": { "placeholder": "${n}" },   // libpq numbers its parameters
+}));
+println!("   targets      => {}", sql::dialects().join(" "));
+println!("   chain        => {}", sql::chain("pg-libpq").join(" -> "));
+println!("   base         => {}", sql_in("postgresql")?);
+println!("   pg-libpq     => {}", sql_in("pg-libpq")?);
+```
+
+</details>
+<details>
 <summary>Common Lisp</summary>
 
 <!-- from: examples/dialect/lisp.lisp#flavour -->
@@ -472,6 +545,17 @@ Map::define("pg-libpq", Section::Funcs, "UPPER",
 const std::string upper =
     Sql::translate(sel::compile("UPPER(NAME)"), "pg-libpq", bindings).as_value();
 std::cout << "   upper        => " << upper << "\n";
+```
+
+</details>
+<details>
+<summary>Rust</summary>
+
+<!-- from: examples/dialect/rust.rs#respell -->
+```rust
+sql::define("pg-libpq", "funcs", "UPPER", &json!({ "tpl": "UPPER({0} COLLATE \"C\")", "ret": "TEXT" }));
+let upper = sql::translate(&compile("UPPER(NAME)")?, "pg-libpq", Some(&bindings), Options::default())?;
+println!("   upper        => {}", upper.as_value(Mode::Inline)?);
 ```
 
 </details>
@@ -559,6 +643,23 @@ std::cout << "   pg-libpq     => "
 
 </details>
 <details>
+<summary>Rust</summary>
+
+<!-- from: examples/dialect/rust.rs#withdraw -->
+```rust
+sql::define("pg-libpq", "funcs", "RMATCH", &serde_json::Value::Null);
+let re = compile("RMATCH('^a', NAME)")?;
+for dialect in ["postgresql", "pg-libpq"] {
+    let answer = match sql::try_translate(&re, dialect, Some(&bindings), Options::default()) {
+        Some(_) => "translated",
+        None => "refused",
+    };
+    println!("   {dialect:<12} => {answer}");
+}
+```
+
+</details>
+<details>
 <summary>Common Lisp</summary>
 
 <!-- from: examples/dialect/lisp.lisp#withdraw -->
@@ -637,6 +738,23 @@ Map::define_builder(
 const std::string len =
     Sql::translate(sel::compile("LEN(NAME)"), "pg-libpq", bindings).as_value();
 std::cout << "   len          => " << len << "\n";
+```
+
+</details>
+<details>
+<summary>Rust</summary>
+
+<!-- from: examples/dialect/rust.rs#builder -->
+```rust
+let len: BuilderFn = Arc::new(|emit: &Emit, args: &[Fragment], _at: Pos| -> Result<Fragment, SqlError> {
+    let mut parts = vec![Part::Sql("length(".to_string())];
+    parts.extend(args[0].parts.iter().cloned());
+    parts.push(Part::Sql(")".to_string()));
+    Ok(Fragment::new(parts, SqlKind::Num, emit.dialect(), Vec::new(), Vec::new(), Vec::new()))
+});
+sql::define_builder("pg-libpq", "funcs", "LEN", len);
+let len_sql = sql::translate(&compile("LEN(NAME)")?, "pg-libpq", Some(&bindings), Options::default())?;
+println!("   len          => {}", len_sql.as_value(Mode::Inline)?);
 ```
 
 </details>
