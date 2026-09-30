@@ -122,3 +122,7 @@ tools/scale-test/benchmark_results_corrected.json
 # database-backed examples use inside tools/usage.Dockerfile's image.
 /site/
 cpp/build-usage/
+
+# go test binaries
+go/*.test
+go/**/*.test
