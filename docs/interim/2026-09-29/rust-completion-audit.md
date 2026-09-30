@@ -24,10 +24,10 @@ proposal's dependency goals rather than silently declaring them satisfied.
 | 1.8 | Update `tools/impls.sh` | Partial | Published binaries are checked against content digests of all production sources, Cargo files and build scripts; all 11 entry points are required. Failed/concurrently changed builds preserve the prior publication. Shared CLI/manifest/budget gates and full Cargo tests pass. SQL-fuzz/oracle drivers and full repository gate coverage remain open; the shared SQL-budget script explicitly skips Rust. |
 | 2.1 | Implement `Pos` and UTF-8 decoder in `rust/src/utf8.rs` | Needs focused audit | Shared CLI byte-position and operand-misuse probes pass. Unix argv now preserves bytes: malformed expression arguments report E_UTF8 at the code-point position and non-UTF-8 filenames work. Focused argv tests pass. REPL byte/error behavior and broader API audit remain open. |
 | 2.2 | Implement portable regex compiler in `rust/src/regex.rs` | Behavior verified; resource audit open | regex.rs plus regex_ambiguity.rs pass 8,000 reference comparisons. Counted-repeat fallback preserves counters, captures and ordering; 261,252 engine comparisons and a 600,000-character positive match pass. Core conformance now 2,103/2,103. Polynomial backtracking resource behavior remains to audit. |
-| 2.3 | Define `Dec` and `DecRepr` in `rust/src/dec.rs` | Verified representation | dec.rs has Small(i128) and Large(Box<LargeDec>); LargeDec stores canonical little-endian base-10^9 limbs, exposed read-only to preserve invariants. |
+| 2.3 | Define `Dec` and `DecRepr` in `rust/src/dec.rs` | Verified representation | dec.rs has Small(i128) and Large(Box<LargeDec>); LargeDec stores a canonical binary magnitude (little-endian 64-bit words, no zero high word), exposed read-only to preserve invariants. Base-10^9 limbs until 2026-10-01 (see the binary-engine section below). |
 | 2.4 | Implement fast-path 128-bit arithmetic | Partial | Small arithmetic/promotion pass 94,040 oracle cases. Thread-local allocator test proves zero allocations for representative parsing (including i128::MAX), arithmetic, comparison, rounding and truncation. Allocation tests also cover million-digit-scale small mantissas and pre-allocation refusal of million-digit products, including scale/zero/carry boundaries. Broader resource audit remains. |
 | 2.5 | Implement exact division and rounding | Verified to current spec | Current DIV_SCALE=10, half-away division/ROUND; 94,040 oracle cases and 314 boundary fixtures pass. Proposal values are superseded. |
-| 2.6 | Implement multi-precision limb fallback | Implemented and oracle-verified | large_dec.rs implements base-10^9 add/subtract, schoolbook/Karatsuba multiplication, normalized Knuth D division, and direct decimal scaling. Production dependency tree has no num-bigint/num-traits; BigUint is a test-only oracle. Randomized limb tests and all 94,040 decimal oracle cases pass. Million-digit multiplication preflight is allocation-tested; worst-case accepted multiplication/division resource audit remains open. |
+| 2.6 | Implement multi-precision limb fallback | Replaced by a binary engine, oracle-verified | Since 2026-10-01 large_dec.rs is binary: 64-bit words; schoolbook and Karatsuba products with a dedicated squaring variant of each; Knuth D, or Barrett reduction with a Newton reciprocal for long divisors; 10^k as cached 5^k shifted k bits, each power with its reciprocal; decimal text only at parse and format, both divide and conquer. Production dependency tree still has no num-bigint/num-traits; BigUint is the test-only oracle at every threshold. See the binary-engine section below. |
 | 2.7 | Implement canonical number formatting and parsing | Behavior verified | Decimal oracle and boundary fixtures pass; code audit for all resource bounds remains. |
 | 2.8 | Unit test decimal arithmetic against oracles | Verified recorded run | 94,040 oracle cases, zero mismatches; 39,990 oracle self-check records. See rust-progress.md. |
 | 3.1 | Implement `RecordShape` | Partial | shape.rs has Arc<[String]>, key_map and bounded interning. Shape lifetime/performance audit remains. |
@@ -288,3 +288,59 @@ are current. See rust-build-cli-report.json and /tmp/sel-rust-build-*.txt,
 /tmp/sel-rust-full-unit-gate.txt, /tmp/sel-rust-cli-*.txt. The shared SQL-budget
 script explicitly skips Rust, so its nominal success is NOT Rust evidence;
 SQL-fuzz/oracle integration remains open. rust/README.md documents the workflow.
+
+## 2026-10-01: binary big-number engine
+
+**Why.** On `examples/mandelbrot.sel`, whose exact decimals double their digits per iteration, Rust took 166 ms against
+Go's 52 ms (JS 71, Lisp 77, C++ 131). The profile put 77% of samples in `dec_mul`, 45% of them in the base-10^9
+schoolbook loop, which divides by 10^9 at every step, and about 15% in the allocator. The evaluator itself was under
+5%. At Mandelbrot's operand sizes, up to 2,562 digits, a binary engine multiplied 7.3–8.2× faster (num-bigint) and
+Go's `math/big` 9.6× faster. The design follows the user's direction: the mantissa is binary and stays in
+arithmetic; decimal digits are made only when text is asked for.
+
+**What** (`rust/src/large_dec.rs`, same `LargeDec` API):
+- Little-endian 64-bit words, with u128 carries.
+- Multiplication: schoolbook below 32 words, Karatsuba above, and a dedicated squaring variant of each (a square
+  needs about half the word products). Karatsuba temporaries come from a thread-local scratch arena, not per-level
+  allocation. Multiplying a value by an equal one squares it.
+- Division: Knuth D, or Barrett reduction with an exact Newton reciprocal when divisor and quotient are both long.
+  The crossover is 160 words for a cached reciprocal and 2,560 words for a fresh one (`tune_division_thresholds`).
+- Powers of ten: 10^k is 5^k shifted k bits. The powers of five are cached with their reciprocals.
+- Digit counts come from the bit length, with one comparison against a cached power when a power of ten falls
+  inside it. `dec_guard`, `dec_mul`'s early refusal and cross-scale `dec_cmp` decide from these bounds without
+  counting.
+- Decimal text only at the edges, divide and conquer both ways. `LEN` of a computed number derives the length
+  from digits and scale (`dec_format_len`) and never writes the digits out.
+- dec.rs borrows magnitudes (`mag`, `mag_scaled`) instead of cloning both operands per operation.
+
+**Validation:**
+- Engine unit tests against num-bigint at and across every threshold: products, squares, Knuth and Barrett
+  division, exact reciprocals, powers of ten, trailing zeros, decimal round trips up to 20,000 digits.
+- `tools/check-decimal.sh 20000`: 253,992 cases, 0 mismatches.
+- 18,996 big-operand records graded by `tools/decimal-oracle-exact.py`'s `calc`, with operands to 9,002 characters
+  and scales to 3,000: 0 mismatches. The old engine also passes them (control).
+- Conformance 2154/2154, sqlt 1311/1311, map_replay 0 differences, `tools/fuzz.sh 4000` against JS 0 disagreements,
+  `cargo test` in release, debug and no-default-features.
+
+**Results** (paired A/B against the base-10^9 build):
+
+| Measure | Before | After |
+|---|---|---|
+| Mandelbrot | 160.5 ms | 46.2 ms (0.288×; Go 52, JS 71) |
+| Six scale scenarios, reused context | — | unchanged (±2%) |
+| `24-decimal-boundaries.selt` (million-digit parse/format) | 0.17 s | 1.93 s (Go 2.59 s) |
+| `10-limits.selt` | 0.19 s | 0.70 s (Go 0.78 s) |
+
+A binary mantissa pays for decimal conversion of million-digit numerals, which base-10^9 does in linear time.
+Divide-and-conquer conversion, cached reciprocals and the `LEN` path keep that below Go's `math/big`.
+
+**Correction.** The Rust scale runner (`tools/scale-test/sel_benchmarks.rs`) freed its per-run deep copy of the
+context (about 137,000 records, about 40 ms) inside the timed region; the C++ runner frees its copy after timing.
+Fixed. The Rust "S2/S4 weak spots" (49/51 ms against C++'s 7/10) were that teardown: the programs take 6.1 and
+7.8 ms.
+
+**Open:**
+- Knuth D's inner loop is 1.8× num-bigint's on 1,000-word divisors. Mandelbrot never divides large numbers.
+- No Toom-3, so multiplications above about 20,000 digits trail num-bigint by 1.2–1.4×.
+- The value cell still clones a large mantissa on every read (`CellDec::unpack`), about 15% of the post-engine
+  Mandelbrot profile.
