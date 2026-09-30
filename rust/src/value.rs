@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use std::rc::Rc;
 use std::sync::Arc;
 
-use crate::dec::{dec_cmp, dec_format, dec_parse, Dec};
+use crate::dec::{dec_cmp, dec_format, dec_parse, Dec, DecRepr, LargeDec};
 use crate::text::SelStr;
 use std::borrow::Cow;
 use crate::limits::MAX_DEPTH;
@@ -164,10 +164,46 @@ pub struct ValueInner {
     pub bool_val: bool,
     pub is_list: bool,
     pub str_val: SelStr,
-    pub dec_val: Option<Dec>,
+    pub dec_val: Option<CellDec>,
     pub shape: Option<Arc<RecordShape>>,
     pub storage: Option<Vec<Value>>,
     ext: Option<Box<Rare>>,
+}
+
+/// A number as a value cell keeps it (the parsed form of a TEXT scalar, or a
+/// computed result): the same value as `Dec`, with the small mantissa held as
+/// two u64 halves. An i128 field would make every cell 16-byte aligned and
+/// `Option<Dec>` 48 bytes; this is 32, and the cell 8-byte aligned.
+#[derive(Clone, Debug)]
+pub struct CellDec {
+    lo: u64,
+    hi: u64,
+    scale: u32,
+    neg: bool,
+    large: Option<Box<LargeDec>>,
+}
+
+impl CellDec {
+    pub fn pack(d: Dec) -> Self {
+        match d.repr {
+            DecRepr::Small(m) => CellDec {
+                lo: m as u64,
+                hi: (m >> 64) as u64,
+                scale: d.scale,
+                neg: d.neg,
+                large: None,
+            },
+            DecRepr::Large(b) => CellDec { lo: 0, hi: 0, scale: d.scale, neg: d.neg, large: Some(b) },
+        }
+    }
+
+    pub fn unpack(&self) -> Dec {
+        let repr = match &self.large {
+            Some(b) => DecRepr::Large(b.clone()),
+            None => DecRepr::Small((((self.hi as u128) << 64) | self.lo as u128) as i128),
+        };
+        Dec { neg: self.neg, scale: self.scale, repr }
+    }
 }
 
 #[derive(Clone, Debug, Default)]
@@ -243,7 +279,7 @@ impl ValueInner {
     /// formatted when it was computed and never rendered.
     pub fn text_cow(&self) -> Cow<'_, str> {
         match (&self.dec_val, self.str_val.is_empty()) {
-            (Some(d), true) => Cow::Owned(dec_format(d)),
+            (Some(d), true) => Cow::Owned(dec_format(&d.unpack())),
             _ => Cow::Borrowed(self.str_val.as_str()),
         }
     }
@@ -359,7 +395,7 @@ impl Value {
             kind: Kind::Text,
             bool_val: false,
             str_val: SelStr::EMPTY,
-            dec_val: Some(d),
+            dec_val: Some(CellDec::pack(d)),
             shape: None,
             storage: None,
             is_list: false,
@@ -377,7 +413,7 @@ impl Value {
             kind: Kind::Text,
             bool_val: false,
             str_val: s,
-            dec_val: Some(d),
+            dec_val: Some(CellDec::pack(d)),
             shape: None,
             storage: None,
             is_list: false,
@@ -506,7 +542,7 @@ impl Value {
         let mut inner = self.0.borrow_mut();
         if inner.kind == Kind::Text && inner.str_val.is_empty() {
             if let Some(ref d) = inner.dec_val {
-                let formatted = SelStr::from(dec_format(d));
+                let formatted = SelStr::from(dec_format(&d.unpack()));
                 inner.str_val = formatted;
             }
         }
@@ -856,11 +892,11 @@ impl Value {
             ));
         }
         if let Some(ref d) = s.0.borrow().dec_val {
-            return Ok(d.clone());
+            return Ok(d.unpack());
         }
         let str_val = s.scalar_str();
         let d = parse_text_decimal(&str_val, pos)?;
-        s.0.borrow_mut().dec_val = Some(d.clone());
+        s.0.borrow_mut().dec_val = Some(CellDec::pack(d.clone()));
         Ok(d)
     }
 
@@ -882,7 +918,7 @@ impl Value {
         }
         let str_val = s.scalar_str();
         if let Ok(d) = dec_parse(&str_val, Pos::default()) {
-            s.0.borrow_mut().dec_val = Some(d);
+            s.0.borrow_mut().dec_val = Some(CellDec::pack(d));
             return true;
         }
         false
@@ -962,8 +998,8 @@ impl Value {
                     && a.dec_val.is_some()
                     && b.dec_val.is_some()
                 {
-                    let d1 = a.dec_val.as_ref().unwrap();
-                    let d2 = b.dec_val.as_ref().unwrap();
+                    let d1 = &a.dec_val.as_ref().unwrap().unpack();
+                    let d2 = &b.dec_val.as_ref().unwrap().unpack();
                     if d1.neg != d2.neg || d1.scale != d2.scale || !dec_cmp(d1, d2).is_eq() {
                         return Ok(false);
                     }

@@ -87,9 +87,10 @@ const EXPECTED: [(&str, &str, &str); 10] = [
 //   phase 3, 128 B ValueInner   135,746                 865          20,275,425
 //     (+3: a FILTER result's preserved keys now live in the side box)
 //   phase 4b, literal operands  116,052                 865          17,124,385
+//   phase 3b, 104 B ValueInner  116,052                 865          14,714,305
 const MAX_ALLOCATIONS: usize = 116_052;
 const MAX_SMALL: usize = 865;
-const MAX_BYTES: usize = 17_124_385;
+const MAX_BYTES: usize = 14_714_305;
 
 #[test]
 fn scenario1_answer_and_allocation_budget() {
