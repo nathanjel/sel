@@ -15,7 +15,7 @@ correctness work, 9 rejected on measurement, 6 deferred (PHP-P10, PHP-P17, PY-P1
 each with a reconsideration condition in `performance/<host>.md`.
 
 Final gate: `tools/check.sh` **ALL GREEN** on js, js-bundle, js-bundle-min, php, cpp, lisp, python, go
-(70 steps, 1,672 s, pinned Docker databases), commit `95f0c81`. Also green: python-wheel lane,
+(70 steps, 1,672 s, pinned Docker databases), commit `bc1847b`. Also green: python-wheel lane,
 C++ package check, version check, PHP 8.1 lane, ASan/TSan targets, `go test -race`.
 Blocked (not passed): an LLP64 C++ job — no such toolchain here.
 

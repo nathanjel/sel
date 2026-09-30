@@ -4,7 +4,7 @@
 
 - [x] **T08 — Create and run this shared regression family across JS, PHP, Python, C++, Lisp and Go.**
 
-  Closed 2026-09-30 — sql/cases/48-scope-and-slots (+52); tools/check-sql-budgets.sh; sql/oracle/rows.json scope rules; all six hosts agree at commit 3bc54e6 (conformance 2134/2134, sqlt 1309) and every finding row of the family is closed in coverage.csv.
+  Closed 2026-09-30 — sql/cases/48-scope-and-slots (+52); tools/check-sql-budgets.sh; sql/oracle/rows.json scope rules; all six hosts agree at commit 46e05b4 (conformance 2134/2134, sqlt 1309) and every finding row of the family is closed in coverage.csv.
 
 **Destination:** `sql/cases .sqlt scope/aggregate/bucket cases, SQL API tests and generated expansion probes`.
 

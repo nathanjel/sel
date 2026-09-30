@@ -11,7 +11,7 @@
 
 Every implemented change keeps: conformance 2128/2128 (source, `dist/sel.mjs`, `dist/sel.min.mjs`), `sqlt` 1304/1304, the plain-vs-optimised probe (2128 sources, 0 differ), the decimal oracle (94,040 cases, 0 mismatches), `tools/fuzz.sh` across six hosts (0 disagreements) and the JS runtime/SQL/metadata lanes. Method for round 3: `tools/perf/js/ab.mjs` alternates a pre-round copy of `js/src` with the working tree and reports the MIN wall/CPU per line (other agents load the box; load only adds time).
 
-Runtime: node v24.16.0, machine: 8c/16t Fedora box, **shared with other agents (load average 10-16 while measuring)** — medians of >=5 runs, CPU time reported; ratios between n/2n/4n are the reliable signal, absolute numbers are not. Revision: `59d2493` + uncommitted working tree. Benchmarks: `tools/perf/js/` (shared harness `lib.mjs`).
+Runtime: node v24.16.0, machine: 8c/16t Fedora box, **shared with other agents (load average 10-16 while measuring)** — medians of >=5 runs, CPU time reported; ratios between n/2n/4n are the reliable signal, absolute numbers are not. Revision: `63cda0c` + uncommitted working tree. Benchmarks: `tools/perf/js/` (shared harness `lib.mjs`).
 
 | task | decision | baseline | after | growth | evidence | notes |
 |---|---|---|---|---|---|---|
@@ -28,7 +28,7 @@ Runtime: node v24.16.0, machine: 8c/16t Fedora box, **shared with other agents (
 
 ## Round 2 (JS-P11 .. JS-P20)
 
-Revision 59d2493 + uncommitted tree (round 1 + round 2 edits); node v24.16.0; machine shared with other agents (load average 8-20): A/B runs alternate a pre-round-2 copy of js/src (kept in a scratch dir) with the current tree, min wall and median CPU reported; growth ratios are the reliable signal.
+Revision 63cda0c + uncommitted tree (round 1 + round 2 edits); node v24.16.0; machine shared with other agents (load average 8-20): A/B runs alternate a pre-round-2 copy of js/src (kept in a scratch dir) with the current tree, min wall and median CPU reported; growth ratios are the reliable signal.
 
 | task | decision | baseline | after | growth | evidence | notes |
 |---|---|---|---|---|---|---|
@@ -45,7 +45,7 @@ Revision 59d2493 + uncommitted tree (round 1 + round 2 edits); node v24.16.0; ma
 
 ## Round 3 (JS-P21 .. JS-P28)
 
-Revision `59d2493` + uncommitted tree (rounds 1-3); node v24.16.0; shared box (load 8-20): A/B runs alternate a pre-round-3 copy of js/src with the tree, 2-3 rounds each, MIN of wall / cpu ms shown as wall/cpu. Runtime lane checks for each task are in `tools/check-js-runtime.mjs` (round 3 block) and `tools/check-js-sql.mjs`.
+Revision `63cda0c` + uncommitted tree (rounds 1-3); node v24.16.0; shared box (load 8-20): A/B runs alternate a pre-round-3 copy of js/src with the tree, 2-3 rounds each, MIN of wall / cpu ms shown as wall/cpu. Runtime lane checks for each task are in `tools/check-js-runtime.mjs` (round 3 block) and `tools/check-js-sql.mjs`.
 
 | task | decision | baseline | after | growth | evidence | notes |
 |---|---|---|---|---|---|---|

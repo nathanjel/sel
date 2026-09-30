@@ -16,7 +16,7 @@ builtins' use of `args`).
 
 # Lisp performance results — round 1 (LISP-P1 … LISP-P10)
 
-Revision: `59d2493` + uncommitted working tree. SBCL 2.6.8-1.fc44, 16-thread box **shared with other agents** (load average 5–23
+Revision: `63cda0c` + uncommitted working tree. SBCL 2.6.8-1.fc44, 16-thread box **shared with other agents** (load average 5–23
 during the runs): every before/after pair below was taken back to back, baseline first (a copy of `lisp/` made before the first
 edit, selected with `SEL_LISP_BENCH_ROOT`), and medians of 3–7 repetitions after a warm-up are reported; absolute numbers are
 noisy, ratios held across repeats. Harness: `tools/perf/lisp/harness.lisp` (fixed seeds, semantic checksum per point, n / 2n / 4n
@@ -45,7 +45,7 @@ old hash collision), decimal oracle 94,040 cases 0 mismatches, `tools/check-budg
 
 # Lisp performance results — round 2 (LISP-P11 … LISP-P20)
 
-Revision: `59d2493` + uncommitted working tree (round 1 changes included). SBCL 2.6.8-1.fc44, 16-thread box shared with other agents
+Revision: `63cda0c` + uncommitted working tree (round 1 changes included). SBCL 2.6.8-1.fc44, 16-thread box shared with other agents
 (load average 7–11 during the runs). Baseline = a copy of `lisp/` taken before the first round-2 edit (`SEL_LISP_BENCH_ROOT`), run back to
 back with the working tree; the **min** of 3–7 repetitions is quoted (the median moves ~2× with load), ratios held across repeats.
 Workloads: `tools/perf/lisp/tasks-r2.lisp` (`SEL_LISP_BENCH_ROOT=… BENCH_TASKS=LISP-P11 sbcl --script tools/perf/lisp/tasks-r2.lisp`,
@@ -76,7 +76,7 @@ not from these changes.
 
 # Lisp performance results — round 3 (LISP-P21 … LISP-P27)
 
-Revision: `59d2493` + uncommitted working tree (rounds 1–2 included). SBCL 2.6.8-1.fc44, 16-thread box shared with other agents
+Revision: `63cda0c` + uncommitted working tree (rounds 1–2 included). SBCL 2.6.8-1.fc44, 16-thread box shared with other agents
 (load average 7–10 during the final A/B run). Baseline = a copy of `lisp/` taken before the first round-3 edit
 (`SEL_LISP_BENCH_ROOT`), run back to back with the working tree; 5 repetitions, **median** quoted (min in
 `tmp/r3-final.tsv` style output; ratios held across repeats). Workloads: `tools/perf/lisp/tasks-r3.lisp`
@@ -108,7 +108,7 @@ Verification after the changes (final tree): `lisp/bin/conformance` 2128/2128, `
 
 ## LISP-REG-1 — regression check against 0.9.2 (faff480), with recovery
 
-Peer lead: the C++ host is ~+75% on tools/scale-test Scenario 1 since 0.9.2. Suspects from the correctness waves: clone-on-collect (SPEC 3.4), snapshot iteration, evaluate-then-coerce plan loads, caps/budget counters. Method: baseline = `git archive faff480` into a scratch tree (working tree never touched by git), SBCL 2.6.8, same current harness and dataset (`tools/scale-test/sel_benchmarks.lisp`, `dataset-10x.json`) for both, three interleaved baseline/current pairs of 5 samples (+2 warm-ups) per scenario; current = working tree on top of 59d2493 (dirty). Box load 5–10 (other agents), so minimums and medians of alternating runs are quoted.
+Peer lead: the C++ host is ~+75% on tools/scale-test Scenario 1 since 0.9.2. Suspects from the correctness waves: clone-on-collect (SPEC 3.4), snapshot iteration, evaluate-then-coerce plan loads, caps/budget counters. Method: baseline = `git archive faff480` into a scratch tree (working tree never touched by git), SBCL 2.6.8, same current harness and dataset (`tools/scale-test/sel_benchmarks.lisp`, `dataset-10x.json`) for both, three interleaved baseline/current pairs of 5 samples (+2 warm-ups) per scenario; current = working tree on top of 63cda0c (dirty). Box load 5–10 (other agents), so minimums and medians of alternating runs are quoted.
 
 **Decision: implemented (recovery) — fresh-result adoption; scale scenarios were not regressed.**
 

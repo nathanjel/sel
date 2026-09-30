@@ -19,12 +19,12 @@ decimal oracle 253 992 cases, 0 mismatches; `SEL_IMPLS="go js" tools/check-api.s
 
 # Go performance results — round 1 (GO-P1 … GO-P10)
 
-Revision: `59d2493` + the uncommitted working tree of the 2026-09-30 remediation session ("dirty").
+Revision: `63cda0c` + the uncommitted working tree of the 2026-09-30 remediation session ("dirty").
 Runtime: go1.26.8 linux/amd64, 16 hardware threads, shared with up to ~10 other agents (load average 4–22
 during the runs). Because of that, **wall-clock `ns/op` from `go test -bench` is reported but is not the verdict**:
 the verdicts are (a) allocation counts, which do not depend on load, and (b) CPU time (user+sys) of a
 single-CPU (`-test.cpu 1`) test binary, baseline and new binary run **alternately** for 5 rounds
-(`tools/perf/go/abcpu.py`, median and minimum). The baseline binary is `git archive HEAD` (`2458e5f…59d2493`,
+(`tools/perf/go/abcpu.py`, median and minimum). The baseline binary is `git archive HEAD` (`2458e5f…63cda0c`,
 i.e. all correctness work, none of the GO-P work) plus the same benchmark files. Decimal micro-benchmarks:
 same method against the `internal/decimal` test binary.
 
@@ -55,7 +55,7 @@ Durable benchmarks: `go/sel/perf_bench_test.go` (workloads P1–P10, fixed seeds
 
 # Go performance results — round 2 (GO-P11 … GO-P20)
 
-Revision: `59d2493` + the uncommitted working tree (round 1 included) of the 2026-09-30 remediation session ("dirty").
+Revision: `63cda0c` + the uncommitted working tree (round 1 included) of the 2026-09-30 remediation session ("dirty").
 Runtime: go1.26.8 linux/amd64, 16 hardware threads, shared with other agents (load average 5–14).
 Baseline for this round: a snapshot of `go/` taken before any round-2 edit (`$CLAUDE_JOB_DIR/tmp/go_base`, i.e. the tree
 with all correctness work and round 1), plus the round-2 benchmark files, built as a test binary and run alternately with
@@ -87,7 +87,7 @@ the baseline): both pass unchanged on the new tree.
 
 # Go performance results — round 3 (GO-P21 … GO-P29, GO-REG-1)
 
-Revision: `59d2493` + the uncommitted working tree (rounds 1–2 included) of the 2026-09-30 remediation session ("dirty").
+Revision: `63cda0c` + the uncommitted working tree (rounds 1–2 included) of the 2026-09-30 remediation session ("dirty").
 Runtime: go1.26.8 linux/amd64, 16 hardware threads, shared with other agents (load average 4–22). As before, wall-clock is
 reported but the verdicts are allocation counts and CPU-time A/B (`tools/perf/go/abcpu.py`, single CPU, baseline and new test
 binaries alternated, median and minimum). Baseline for this round: a snapshot of the tree before any round-3 edit

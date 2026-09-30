@@ -4,7 +4,7 @@
 
 - [x] **T11 — Create and run this shared regression family across JS, PHP, Python, C++, Lisp and Go.**
 
-  Closed 2026-09-30 — sql/cases/51-hybrid-parity, 25-hybrid-plans, 52-audit-cases; sql/oracle/hybrid.json; tools/check-hybrid-parity*.{mjs,py}, -driver.py, -go.py; php sqlo hybrid; all six hosts agree at commit 3bc54e6 (conformance 2134/2134, sqlt 1309) and every finding row of the family is closed in coverage.csv.
+  Closed 2026-09-30 — sql/cases/51-hybrid-parity, 25-hybrid-plans, 52-audit-cases; sql/oracle/hybrid.json; tools/check-hybrid-parity*.{mjs,py}, -driver.py, -go.py; php sqlo hybrid; all six hosts agree at commit 46e05b4 (conformance 2134/2134, sqlt 1309) and every finding row of the family is closed in coverage.csv.
 
 **Destination:** `sql/cases/25-hybrid-plans.sqlt plus executing hybrid API/oracle fixtures`.
 
