@@ -296,6 +296,13 @@ fn main() {
         ("compound-rhs-assign-is-too-late", "A += (A = 1; 2); A"),
         ("index-expr-assign-precedes-compound-read", "A[(A = RECORD(\"x\", 1); \"x\")] += 2; A[\"x\"]"),
         ("get-default-assign-not-definite", "GET(R, \"a\", (A = 1)); A"),
+        ("index-keys-run-in-source-order", "A[(K = 1)][K] = B; K"),
+        ("index-key-read-before-a-later-key-assigns", "A[K][(K = 1)] = B; K"),
+        ("top-arg-is-not-a-binder-in-the-three-argument-form", "L = LIST(1,2); TOP(L, A, (A = 1; 1))"),
+        (
+            "bucket-key-phase-assignment-is-not-definite-for-the-projection",
+            "L = LIST(1,2); BUCKET(L, G, (A = G; A), COUNT(G) + A)",
+        ),
     ] {
         let dependencies = compile(source).unwrap().dependencies().unwrap().join(" ");
         say(&format!("program.deps.{name}"), if dependencies.is_empty() { "-" } else { &dependencies });
