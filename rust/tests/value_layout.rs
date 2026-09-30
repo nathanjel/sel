@@ -36,6 +36,6 @@ fn packed_decimals_round_trip() {
 
 #[test]
 fn argument_frames_stay_small() {
-    // 104 B before the inline argument cache (phase 1).
-    assert!(size_of::<sel_lang::Args>() <= 160, "{}", size_of::<sel_lang::Args>());
+    // 104 B; an inline argument cache (phase 1, not kept) would add ~40 B.
+    assert!(size_of::<sel_lang::Args>() <= 104, "{}", size_of::<sel_lang::Args>());
 }

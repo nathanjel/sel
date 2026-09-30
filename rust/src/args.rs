@@ -8,42 +8,17 @@ use crate::shape::RecordShape;
 use crate::utf8::{Pos, SelError};
 use crate::value::Value;
 
-// Argument values, cached as each is first evaluated. Most calls take a few
-// arguments, so they live inline in `Args`: a built-in call allocates nothing
-// for its argument cache (a Vec here was one heap allocation per call -- per
-// row for RECORD and for every aggregate body's calls).
-const INLINE_ARGS: usize = 6;
-
-enum ArgVals {
-    Inline([Option<Value>; INLINE_ARGS]),
-    Heap(Vec<Option<Value>>),
-}
-
-impl ArgVals {
-    fn new(count: usize) -> Self {
-        if count <= INLINE_ARGS {
-            ArgVals::Inline(Default::default())
-        } else {
-            ArgVals::Heap(vec![None; count])
-        }
-    }
-
-    #[inline]
-    fn slot(&mut self, i: usize) -> &mut Option<Value> {
-        match self {
-            ArgVals::Inline(a) => &mut a[i],
-            ArgVals::Heap(v) => &mut v[i],
-        }
-    }
-}
-
+// Argument values are cached in a Vec as each is first evaluated. (An inline
+// cache for up to six arguments was tried -- rust-performance-plan.md, phase 1:
+// 2.4% fewer allocations but no measurable time, and a larger `Args` on the
+// evaluator's recursive path -- so it was not kept.)
 pub struct Args<'a> {
     pub nodes: &'a [Node],
     pub record_shape: Option<Arc<RecordShape>>,
     pub name: &'a str,
     pub pos: Pos,
     pub ctx: &'a mut Context,
-    vals: ArgVals,
+    vals: Vec<Option<Value>>,
     pub borrowed_filter: bool,
 }
 
@@ -56,14 +31,14 @@ impl<'a> Args<'a> {
             name: &node.s,
             pos: node.pos,
             ctx,
-            vals: ArgVals::new(count),
+            vals: vec![None; count],
             borrowed_filter: node.borrowed_filter,
         }
     }
 
     /// Supplies argument `i` already evaluated (a pipeline stage's source).
     pub(crate) fn preset(&mut self, i: usize, value: Value) {
-        *self.vals.slot(i) = Some(value);
+        self.vals[i] = Some(value);
     }
 
     pub fn count(&self) -> usize {
@@ -117,11 +92,11 @@ impl<'a> Args<'a> {
                 self.pos,
             ));
         }
-        if let Some(ref v) = *self.vals.slot(i) {
+        if let Some(ref v) = self.vals[i] {
             return Ok(v.clone());
         }
         let v = eval_node(&self.nodes[i], self.ctx)?;
-        *self.vals.slot(i) = Some(v.clone());
+        self.vals[i] = Some(v.clone());
         Ok(v)
     }
 

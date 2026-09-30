@@ -75,16 +75,16 @@ fn run_counted(source: &str, x: Value, y: Value) -> (usize, String) {
 
 #[test]
 fn record_of_short_fields_costs_its_cells_only() {
-    // The record's cell, its storage, and one copied cell per field: the
-    // literal keys are not evaluated at all (not even into a value) and the
-    // short texts are inline.
+    // The call's argument cache, the record's cell, its storage, and one
+    // copied cell per field: the literal keys are not evaluated at all (not
+    // even into a value) and the short texts are inline.
     let (n, dump) = run_counted(
         r#"RECORD("a", X, "b", Y)"#,
         Value::text_owned("left".into()),
         Value::text_owned("right".into()),
     );
     assert_eq!(dump, r#"-{"a"=t"left", "b"=t"right"}"#);
-    assert_eq!(n, 4);
+    assert_eq!(n, 5);
 }
 
 #[test]

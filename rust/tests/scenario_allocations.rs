@@ -90,9 +90,11 @@ const EXPECTED: [(&str, &str, &str); 10] = [
 //   phase 3b, 104 B ValueInner  116,052                 865          14,714,305
 //   4a completed: keys skipped  101,621                 865          12,867,137
 //     in invoke_call's eager evaluation too
-const MAX_ALLOCATIONS: usize = 101_621;
-const MAX_SMALL: usize = 865;
-const MAX_BYTES: usize = 12_867_137;
+//   phase 1 dropped             107,002                 875          13,098,593
+//     (no measurable time gain in paired runs; Args stays smaller)
+const MAX_ALLOCATIONS: usize = 107_002;
+const MAX_SMALL: usize = 875;
+const MAX_BYTES: usize = 13_098_593;
 
 #[test]
 fn scenario1_answer_and_allocation_budget() {
