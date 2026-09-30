@@ -17,6 +17,7 @@ use crate::join_prefilter::{
 };
 use crate::shape::{unique_record_shape, RecordShape};
 use crate::utf8::{cap_collection, cap_text, Pos, SelError};
+use crate::text::SelStr;
 use crate::value::{ListKeys, Entry, Kind, Value};
 
 fn node_contains_var(node: &Node, name: &str) -> bool {
@@ -1211,40 +1212,44 @@ enum JoinKeyType {
 struct JoinKey {
     k_type: usize, // 0: null, 1: bad, 2: int64, 3: str
     int_val: i64,
-    str_val: String,
+    str_val: SelStr,
 }
 
 fn canonical_join_key(v: &Value, numeric: bool) -> (JoinKey, Option<Value>) {
     if v.is_null() {
-        return (JoinKey { k_type: 0, int_val: 0, str_val: String::new() }, None);
+        return (JoinKey { k_type: 0, int_val: 0, str_val: SelStr::EMPTY }, None);
     }
     if numeric {
         let d = match v.as_decimal(Pos::default()) {
             Ok(d) => d,
             Err(_) => {
-                return (JoinKey { k_type: 1, int_val: 0, str_val: String::new() }, Some(v.clone()));
+                return (JoinKey { k_type: 1, int_val: 0, str_val: SelStr::EMPTY }, Some(v.clone()));
             }
         };
         if d.is_integer() {
             if let Some(n) = d.to_i64() {
-                return (JoinKey { k_type: 2, int_val: n, str_val: String::new() }, None);
+                return (JoinKey { k_type: 2, int_val: n, str_val: SelStr::EMPTY }, None);
             }
         }
         let trimmed = crate::dec::dec_trim_scale(&d);
         if trimmed.is_integer() {
             if let Some(n) = trimmed.to_i64() {
-                return (JoinKey { k_type: 2, int_val: n, str_val: String::new() }, None);
+                return (JoinKey { k_type: 2, int_val: n, str_val: SelStr::EMPTY }, None);
             }
         }
-        return (JoinKey { k_type: 3, int_val: 0, str_val: dec_format(&trimmed) }, None);
+        return (JoinKey { k_type: 3, int_val: 0, str_val: SelStr::from(dec_format(&trimmed)) }, None);
     }
 
+    // Text keys by their text, shared rather than copied.
+    if let Ok(s) = v.as_text_str(Pos::default()) {
+        return (JoinKey { k_type: 3, int_val: 0, str_val: s }, None);
+    }
     match v.as_bytes(Pos::default()) {
         Ok(b) => {
-            let s = String::from_utf8_lossy(&b).to_string();
+            let s = SelStr::from(String::from_utf8_lossy(&b).as_ref());
             (JoinKey { k_type: 3, int_val: 0, str_val: s }, None)
         }
-        Err(_) => (JoinKey { k_type: 1, int_val: 0, str_val: String::new() }, Some(v.clone())),
+        Err(_) => (JoinKey { k_type: 1, int_val: 0, str_val: SelStr::EMPTY }, Some(v.clone())),
     }
 }
 

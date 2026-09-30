@@ -4,6 +4,8 @@ use std::rc::Rc;
 use std::sync::Arc;
 
 use crate::dec::{dec_cmp, dec_format, dec_parse, Dec};
+use crate::text::SelStr;
+use std::borrow::Cow;
 use crate::limits::MAX_DEPTH;
 use crate::shape::{parse_list_slot, unique_record_shape, RecordShape};
 use crate::utf8::{validate_text, Pos, SelError};
@@ -156,7 +158,7 @@ pub struct Value(pub Rc<RefCell<ValueInner>>);
 pub struct ValueInner {
     pub kind: Kind,
     pub bool_val: bool,
-    pub str_val: String,
+    pub str_val: SelStr,
     pub bin_val: Vec<u8>,
     pub dec_val: Option<Dec>,
 
@@ -184,6 +186,15 @@ impl ValueInner {
         self.kind == Kind::None && self.size() == 0 && !self.is_list
     }
 
+    /// The scalar text of a TEXT value: its stored text, or its number
+    /// formatted when it was computed and never rendered.
+    pub fn text_cow(&self) -> Cow<'_, str> {
+        match (&self.dec_val, self.str_val.is_empty()) {
+            (Some(d), true) => Cow::Owned(dec_format(d)),
+            _ => Cow::Borrowed(self.str_val.as_str()),
+        }
+    }
+
     pub fn rebuild_index(&mut self) {
         let mut idx = HashMap::with_capacity(self.entries.len());
         for (i, e) in self.entries.iter().enumerate() {
@@ -198,7 +209,7 @@ impl Value {
         Self(Rc::new(RefCell::new(ValueInner {
             kind: Kind::None,
             bool_val: false,
-            str_val: String::new(),
+            str_val: SelStr::EMPTY,
             bin_val: Vec::new(),
             dec_val: None,
             shape: None,
@@ -220,6 +231,11 @@ impl Value {
     }
 
     pub fn text_owned(s: String) -> Self {
+        Self::text_sel(SelStr::from(s))
+    }
+
+    /// A TEXT value from text already validated (a literal, a copy).
+    pub fn text_sel(s: SelStr) -> Self {
         Self(Rc::new(RefCell::new(ValueInner {
             kind: Kind::Text,
             bool_val: false,
@@ -243,7 +259,7 @@ impl Value {
         Self(Rc::new(RefCell::new(ValueInner {
             kind: Kind::Bin,
             bool_val: false,
-            str_val: String::new(),
+            str_val: SelStr::EMPTY,
             bin_val: b,
             dec_val: None,
             shape: None,
@@ -259,7 +275,7 @@ impl Value {
         Self(Rc::new(RefCell::new(ValueInner {
             kind: Kind::Bool,
             bool_val: b,
-            str_val: String::new(),
+            str_val: SelStr::EMPTY,
             bin_val: Vec::new(),
             dec_val: None,
             shape: None,
@@ -288,7 +304,7 @@ impl Value {
         Self(Rc::new(RefCell::new(ValueInner {
             kind: Kind::Text,
             bool_val: false,
-            str_val: String::new(),
+            str_val: SelStr::EMPTY,
             bin_val: Vec::new(),
             dec_val: Some(d),
             shape: None,
@@ -301,6 +317,11 @@ impl Value {
     }
 
     pub fn num_exact(s: String, d: Dec) -> Self {
+        Self::num_exact_sel(SelStr::from(s), d)
+    }
+
+    /// A number literal: its source spelling and its parsed value.
+    pub fn num_exact_sel(s: SelStr, d: Dec) -> Self {
         Self(Rc::new(RefCell::new(ValueInner {
             kind: Kind::Text,
             bool_val: false,
@@ -324,7 +345,7 @@ impl Value {
         Self(Rc::new(RefCell::new(ValueInner {
             kind: Kind::None,
             bool_val: false,
-            str_val: String::new(),
+            str_val: SelStr::EMPTY,
             bin_val: Vec::new(),
             dec_val: None,
             shape: None,
@@ -348,7 +369,7 @@ impl Value {
         Self(Rc::new(RefCell::new(ValueInner {
             kind: Kind::None,
             bool_val: false,
-            str_val: String::new(),
+            str_val: SelStr::EMPTY,
             bin_val: Vec::new(),
             dec_val: None,
             shape: None,
@@ -364,7 +385,7 @@ impl Value {
         Self(Rc::new(RefCell::new(ValueInner {
             kind: Kind::None,
             bool_val: false,
-            str_val: String::new(),
+            str_val: SelStr::EMPTY,
             bin_val: Vec::new(),
             dec_val: None,
             shape: Some(shape),
@@ -411,7 +432,7 @@ impl Value {
         }
         if inner.kind == Kind::Text && inner.size() == 0 {
             drop(inner);
-            return self.scalar().trim().is_empty();
+            return self.scalar_str().trim().is_empty();
         }
         false
     }
@@ -437,10 +458,17 @@ impl Value {
     }
 
     pub fn scalar(&self) -> String {
+        self.scalar_str().to_string()
+    }
+
+    /// The scalar text without copying it (a short text is inline, a long
+    /// one shared). A computed number is formatted once and kept.
+    pub fn scalar_str(&self) -> SelStr {
         let mut inner = self.0.borrow_mut();
         if inner.kind == Kind::Text && inner.str_val.is_empty() {
             if let Some(ref d) = inner.dec_val {
-                inner.str_val = dec_format(d);
+                let formatted = SelStr::from(dec_format(d));
+                inner.str_val = formatted;
             }
         }
         inner.str_val.clone()
@@ -737,6 +765,22 @@ impl Value {
         Err(SelError::not_text("expected text, got boolean", pos))
     }
 
+    /// `as_text` without copying the text.
+    pub(crate) fn as_text_str(&self, pos: Pos) -> Result<SelStr, SelError> {
+        let s = self.scalar_source(pos)?;
+        let kind = s.kind();
+        if kind == Kind::Text {
+            return Ok(s.scalar_str());
+        }
+        if kind == Kind::Bin {
+            return Err(SelError::not_text(
+                "expected text, got binary (use FROM_UTF8)",
+                pos,
+            ));
+        }
+        Err(SelError::not_text("expected text, got boolean", pos))
+    }
+
     pub fn as_bytes(&self, pos: Pos) -> Result<Vec<u8>, SelError> {
         let s = self.scalar_source(pos)?;
         let kind = s.kind();
@@ -744,7 +788,7 @@ impl Value {
             return Ok(s.0.borrow().bin_val.clone());
         }
         if kind == Kind::Text {
-            return Ok(s.scalar().into_bytes());
+            return Ok(s.scalar_str().as_bytes().to_vec());
         }
         Err(SelError::not_bin(
             "expected binary or text, got boolean",
@@ -774,7 +818,7 @@ impl Value {
         if let Some(ref d) = s.0.borrow().dec_val {
             return Ok(d.clone());
         }
-        let str_val = s.scalar();
+        let str_val = s.scalar_str();
         match dec_parse(&str_val, pos) {
             Ok(d) => {
                 s.0.borrow_mut().dec_val = Some(d.clone());
@@ -808,7 +852,7 @@ impl Value {
         if s.0.borrow().dec_val.is_some() {
             return true;
         }
-        let str_val = s.scalar();
+        let str_val = s.scalar_str();
         if let Ok(d) = dec_parse(&str_val, Pos::default()) {
             s.0.borrow_mut().dec_val = Some(d);
             return true;
@@ -897,17 +941,7 @@ impl Value {
                         return Ok(false);
                     }
                 } else {
-                    let s1 = if a.str_val.is_empty() && a.dec_val.is_some() {
-                        dec_format(a.dec_val.as_ref().unwrap())
-                    } else {
-                        a.str_val.clone()
-                    };
-                    let s2 = if b.str_val.is_empty() && b.dec_val.is_some() {
-                        dec_format(b.dec_val.as_ref().unwrap())
-                    } else {
-                        b.str_val.clone()
-                    };
-                    if s1 != s2 {
+                    if a.text_cow() != b.text_cow() {
                         return Ok(false);
                     }
                 }
@@ -976,12 +1010,7 @@ impl Value {
         let mut s = match inner.kind {
             Kind::None => "-".to_string(),
             Kind::Text => {
-                let sc = if inner.str_val.is_empty() && inner.dec_val.is_some() {
-                    dec_format(inner.dec_val.as_ref().unwrap())
-                } else {
-                    inner.str_val.clone()
-                };
-                format!("t{}", quote_dump(&sc))
+                format!("t{}", quote_dump(&inner.text_cow()))
             }
             Kind::Bin => {
                 let mut hex_str = String::with_capacity(inner.bin_val.len() * 2);
@@ -1029,12 +1058,7 @@ impl Value {
         let inner = self.0.borrow();
         let mut h = match inner.kind {
             Kind::Text => {
-                let sc = if inner.str_val.is_empty() && inner.dec_val.is_some() {
-                    dec_format(inner.dec_val.as_ref().unwrap())
-                } else {
-                    inner.str_val.clone()
-                };
-                fnv_hash(&sc) ^ 1000003
+                fnv_hash(&inner.text_cow()) ^ 1000003
             }
             Kind::Bool => {
                 if inner.bool_val {

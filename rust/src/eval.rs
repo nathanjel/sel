@@ -6,6 +6,7 @@ use crate::dec::{dec_add, dec_cmp, dec_div, dec_mod, dec_mul, dec_negate, dec_su
 use crate::limits::MAX_DEPTH;
 use crate::math_plan::eval_math_plan;
 use crate::utf8::{cap_collection, cap_text, Pos, SelError};
+use crate::text::SelStr;
 use crate::value::{Kind, Value};
 use std::sync::Arc;
 
@@ -36,11 +37,13 @@ pub fn eval_node(node: &Node, ctx: &mut Context) -> Result<Value, SelError> {
 #[inline(never)]
 fn dispatch(node: &Node, ctx: &mut Context) -> Result<Value, SelError> {
     match node.t {
-        NodeType::Num => Ok(Value::num_exact(
-            node.s.clone(),
+        // A literal's text is copied into the fresh value inline when short
+        // (no allocation), shared-allocated once when long.
+        NodeType::Num => Ok(Value::num_exact_sel(
+            SelStr::new(&node.s),
             node.dec.as_ref().unwrap().clone(),
         )),
-        NodeType::Text => Ok(Value::text_owned(node.s.clone())),
+        NodeType::Text => Ok(Value::text_sel(SelStr::new(&node.s))),
         NodeType::Bool => Ok(Value::bool(node.b)),
         NodeType::Null => Ok(Value::null()),
         NodeType::Var => ctx
@@ -240,7 +243,7 @@ fn apply_binary(
         }
         "$==" => {
             if l.is_text() && r.is_text() && l.size() == 0 && r.size() == 0 {
-                return Ok(Value::bool(l.scalar() == r.scalar()));
+                return Ok(Value::bool(l.scalar_str() == r.scalar_str()));
             }
             let a = l.as_bytes(lp)?;
             let b = r.as_bytes(rp)?;
@@ -248,7 +251,7 @@ fn apply_binary(
         }
         "$!=" => {
             if l.is_text() && r.is_text() && l.size() == 0 && r.size() == 0 {
-                return Ok(Value::bool(l.scalar() != r.scalar()));
+                return Ok(Value::bool(l.scalar_str() != r.scalar_str()));
             }
             let a = l.as_bytes(lp)?;
             let b = r.as_bytes(rp)?;
@@ -304,12 +307,15 @@ fn concat(l: &Value, r: &Value, lp: Pos, rp: Pos, opos: Pos) -> Result<Value, Se
         return Err(SelError::not_text("cannot concatenate a boolean", rp));
     }
     if lv.kind() == Kind::Text && rv.kind() == Kind::Text {
-        let l_s = lv.scalar();
-        let r_s = rv.scalar();
+        let l_s = lv.scalar_str();
+        let r_s = rv.scalar_str();
         let l_cps = l_s.chars().count();
         let r_cps = r_s.chars().count();
         cap_text((l_cps as u128) + (r_cps as u128), opos)?;
-        return Ok(Value::text_owned(l_s + &r_s));
+        let mut joined = String::with_capacity(l_s.len() + r_s.len());
+        joined.push_str(&l_s);
+        joined.push_str(&r_s);
+        return Ok(Value::text_owned(joined));
     }
     let a = l.as_bytes(lp)?;
     let b = r.as_bytes(rp)?;

@@ -20,6 +20,7 @@ mod regex_counter;
 pub mod shape;
 #[cfg(feature = "sql")]
 pub mod sql;
+pub mod text;
 pub mod utf8;
 pub mod value;
 
