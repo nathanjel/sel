@@ -22,7 +22,7 @@
 # a minifier that renamed something it should not have would have reached a user
 # before it reached the suite.
 
-SEL_IMPLS="${SEL_IMPLS:-js js-bundle js-bundle-min php cpp lisp python go}"
+SEL_IMPLS="${SEL_IMPLS:-js js-bundle js-bundle-min php cpp lisp python go rust}"
 
 # Where python-wheel looks for its interpreter: a venv with the built wheel
 # installed, so the *package* is held to the same suite as the source tree.

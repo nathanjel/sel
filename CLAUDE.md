@@ -26,6 +26,9 @@ tools/check.sh                       everything (~11 layers); "ALL GREEN" or it 
                                      SEL_SQL_<DIALECT>_DSN supplies your own servers; likewise
                                      the Python unit lane fails without pytest (SEL_SKIP_PYTHON_UNIT=1)
 cd cpp && make                       build build/{conformance,batch,e2e,api,sel,unit,sqlt,...}
+bash rust/build.sh                   rust/build/{conformance,sqlt,sel,...,example-<cat>}; tools see Rust
+                                     only while rust/build/inputs.sha256 matches its sources, so an
+                                     edit under rust/src or examples/*/rust.rs needs a rebuild
 npm run build                        dist/sel.mjs + dist/sel.min.mjs (js-bundle roster entries)
 ```
 
@@ -37,6 +40,7 @@ php  php/bin/conformance
 cpp/build/conformance
 lisp/bin/conformance
 PYTHONPATH=$PWD/python python3 python/bin/conformance.py
+rust/build/conformance
 ```
 
 SQL translation cases (`sql/cases/*.sqlt`), per host; args are name substrings:
@@ -44,6 +48,7 @@ SQL translation cases (`sql/cases/*.sqlt`), per host; args are name substrings:
 ```
 node js/bin/sqlt.mjs [agg.static]      php php/bin/sqlt    cpp/build/sqlt
 lisp/bin/sqlt                          PYTHONPATH=$PWD/python python3 python/bin/sqlt
+rust/build/sqlt
 ```
 
 Unit tests (layers under the suite — decimal, utf8, value; JS and PHP have `tools/check-js-optimizer.mjs` / `tools/check-php-optimizer.php` instead, which also execute hybrid plans):
@@ -73,7 +78,7 @@ node tools/build-docs.mjs [--check|--serve 8080]   the HTML site from the Markdo
 docker build -f docs/Dockerfile -t sel-docs .      the site as an nginx image
 ```
 
-REPLs: `node js/bin/sel.mjs`, `php php/bin/sel`, `cpp/build/sel`, `lisp/bin/sel`, `PYTHONPATH=$PWD/python python3 -m sel` (`-e 'expr'` for one-shot, `--deps` for static dependencies).
+REPLs: `node js/bin/sel.mjs`, `php php/bin/sel`, `cpp/build/sel`, `lisp/bin/sel`, `PYTHONPATH=$PWD/python python3 -m sel`, `rust/build/sel` (`-e 'expr'` for one-shot, `--deps` for static dependencies).
 
 ## Generated, committed artifacts — regenerate, don't hand-edit
 
