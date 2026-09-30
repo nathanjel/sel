@@ -1,7 +1,7 @@
 
 ## JS — against 0.9.2 (faff480)
 
-Baseline: `git archive faff480` into a scratch tree (the working tree was never touched by git), node v24.16.0, current = working tree on top of 223885e (dirty). The box was loaded by other agents, so every number is the minimum of alternating repetitions (baseline, current, baseline, ...) and ratios are the signal.
+Baseline: `git archive faff480` into a scratch tree (the working tree was never touched by git), node v24.16.0, current = working tree on top of 59d2493 (dirty). The box was loaded by other agents, so every number is the minimum of alternating repetitions (baseline, current, baseline, ...) and ratios are the signal.
 
 tools/scale-test runner (`tools/perf/js/ab-scale.py BASE_TREE 5 3`, 10x dataset, steady state; prepared_total_ms = program run + materialisation, min over 5 reps of 3-run medians):
 
@@ -89,7 +89,7 @@ Raw tables: `$CLAUDE_JOB_DIR/tmp/py_abcpu_final2.txt` (this run), `tools/perf/py
 `scale-bench --only scenarioN --runs 3 --warmups 1`, `program_run_ms` min over 9–12 interleaved samples,
 `-O2`, load 1.4–3.0.
 
-| scenario | 0.9.2 | before CPP-REG-1 step 2 (03786e5) | now | now / 0.9.2 |
+| scenario | 0.9.2 | before CPP-REG-1 step 2 (3bc54e6) | now | now / 0.9.2 |
 |---|---:|---:|---:|---:|
 | 1 | 577.2 | 975.3 | 605.9 | 1.05 |
 | 2 | 5.4 | 6.8 | 6.6 | 1.22 |

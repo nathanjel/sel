@@ -4,7 +4,7 @@
 
 - [x] **T06 — Create and run this shared regression family across JS, PHP, Python, C++, Lisp and Go.**
 
-  Closed 2026-09-30 — conformance/28-regex-portability, 28b-regex-ambiguity; tools/regex-ambiguity-ref.py, check-regex-ambiguity-diff.py, check-regex-resources.py; all six hosts agree at commit 03786e5 (conformance 2134/2134, sqlt 1309) and every finding row of the family is closed in coverage.csv.
+  Closed 2026-09-30 — conformance/28-regex-portability, 28b-regex-ambiguity; tools/regex-ambiguity-ref.py, check-regex-ambiguity-diff.py, check-regex-resources.py; all six hosts agree at commit 3bc54e6 (conformance 2134/2134, sqlt 1309) and every finding row of the family is closed in coverage.csv.
 
 **Destination:** `shared regex .selt cases, compile API probes and isolated regex resource/cache stress tests`.
 

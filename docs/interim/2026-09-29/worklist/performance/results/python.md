@@ -32,7 +32,7 @@ repetitions, median (min/max in the benchmark output), n / 2n / 4n growth.
 Benchmarks: `tools/perf/python/bench_p*.py` (shared `harness.py`); run with
 `PYTHONPATH=python python3 tools/perf/python/bench_pN_*.py`.
 
-Environment: CPython 3.14.7, x86_64, 16 threads, revision 223885e + uncommitted working
+Environment: CPython 3.14.7, x86_64, 16 threads, revision 59d2493 + uncommitted working
 tree. **Machine load caveat:** five other agents were running tests and benchmarks at
 the same time, so absolute numbers moved by up to 2x between runs. Where it mattered
 (PY-P6, PY-P7, PY-P8) the comparison was made **in one process, alternating the two
@@ -62,7 +62,7 @@ Tests run after the changes (all on the final working tree): Python unit lane 14
 
 Same method and harness as round 1 (CPU time, fixed seeds, semantic checksum identical
 before/after, warm-up, median, n/2n/4n growth). Environment: CPython 3.14.7, x86_64, revision
-223885e + uncommitted working tree (round 1 + correctness work). **Load caveat:** the box ran
+59d2493 + uncommitted working tree (round 1 + correctness work). **Load caveat:** the box ran
 at load average 10–24 with five other agents, so absolute numbers moved by up to 2x between
 runs; the ratios below come from back-to-back runs of the same script, and for the smaller
 effects (PY-P14) the same benchmark was repeated. Each benchmark lives in
@@ -113,7 +113,7 @@ mismatches; `tools/check-cli-source.sh` (python) green; `python/bin/api.py` exit
 
 # Python performance results — round 3 (PY-P21 … PY-P31)
 
-Same method and harness as rounds 1-2 (`tools/perf/python/`, CPU time, checksums, growth). Revision 223885e +
+Same method and harness as rounds 1-2 (`tools/perf/python/`, CPU time, checksums, growth). Revision 59d2493 +
 uncommitted working tree; CPython 3.14.7; box load average 10-20 from other agents, so **A/B rows
 were taken in one process, alternating baseline tree and working tree, best of N rounds**
 (`ab_programs.py`, `ab_translate.py`, `ab_p24_hash.py`; the baseline is a copy of `python/sel` taken at
@@ -149,4 +149,4 @@ pass on both trees by design (they pin behaviour the optimisation must preserve)
 
 | task | decision | baseline (0.9.2) | after | growth | evidence | notes |
 |---|---|---|---|---|---|---|
-| PY-REG-1 | implemented (partial recovery; residual +11…16 % on scenarios 1–4 deferred) | scale-test scenarios 1–6 in-process CPU 2.312 / 0.043 / 1.022 / 0.065 / 0.835 / 0.881 s | 2.686 / 0.049 / 1.134 / 0.072 / 0.858 / 0.901 s (ratios 1.16 / 1.14 / 1.11 / 1.12 / 1.03 / 1.02; before the work 1.19 / 1.19 / 1.25 / 1.20 / 1.04 / 1.00) | n/a (fixed 10x dataset) | `tools/perf/python/ab_scale.py`, `ab_scale_cpu.py`, `profile_scale.py`, `profile_diff.py`; `python/tests/test_perf_regression.py` (24 tests: adoption only for read-only consumers, plain-vs-optimised equality, too-deep element refused identically with and without adoption, RECORD still copies aliased args and bounds containers, leaf clone, Args out-of-range reads); attribution table in `regression-vs-0.9.2.md` | revision 223885e + working tree; CPython 3.14.7; box load 2–12 from other agents (CPU time, alternating fresh processes) |
+| PY-REG-1 | implemented (partial recovery; residual +11…16 % on scenarios 1–4 deferred) | scale-test scenarios 1–6 in-process CPU 2.312 / 0.043 / 1.022 / 0.065 / 0.835 / 0.881 s | 2.686 / 0.049 / 1.134 / 0.072 / 0.858 / 0.901 s (ratios 1.16 / 1.14 / 1.11 / 1.12 / 1.03 / 1.02; before the work 1.19 / 1.19 / 1.25 / 1.20 / 1.04 / 1.00) | n/a (fixed 10x dataset) | `tools/perf/python/ab_scale.py`, `ab_scale_cpu.py`, `profile_scale.py`, `profile_diff.py`; `python/tests/test_perf_regression.py` (24 tests: adoption only for read-only consumers, plain-vs-optimised equality, too-deep element refused identically with and without adoption, RECORD still copies aliased args and bounds containers, leaf clone, Args out-of-range reads); attribution table in `regression-vs-0.9.2.md` | revision 59d2493 + working tree; CPython 3.14.7; box load 2–12 from other agents (CPU time, alternating fresh processes) |

@@ -9,7 +9,7 @@ attribution in the round-2 section. Round 3 (CPP-P21 … CPP-P25, the two round-
 
 # C++ performance results — round 1 (CPP-P1 … CPP-P10)
 
-Revision `223885e` + working tree (uncommitted), g++ 16.2 `-O2`, 16-thread Linux box **under heavy
+Revision `59d2493` + working tree (uncommitted), g++ 16.2 `-O2`, 16-thread Linux box **under heavy
 load from other jobs** (load average 5–24 during the runs), so every headline number is the **min of 5
 interleaved A/B runs** (`tools/perf/cpp/bench.py --ab`), CPU time (user+sys). A = the binary built from the
 tree before any of these edits; B = the current binary. Output checksums were compared on every run and are
@@ -48,7 +48,7 @@ exits 0: unit-asan 627/627, conformance-asan 2128/2128, sqlunit-asan, sqlt-asan 
 
 # C++ performance results — round 2 (CPP-P11 … CPP-P20, CPP-REG-1)
 
-Revision `090cd61` + working tree (uncommitted), g++ 16.2 `-O2` only, same shared box (load average 5–11
+Revision `f30839e` + working tree (uncommitted), g++ 16.2 `-O2` only, same shared box (load average 5–11
 during the final runs). Headline numbers are **min of 7 interleaved A/B runs** (`bench.py --ab`), CPU time;
 A = the binary built before any round-2 edit (`sel-base`), B = current. Checksums equal on every row.
 Growth runs: `bench.py --reps 3` (n/2n/4n). Raw tables: `$CLAUDE_JOB_DIR/tmp/cppperf2/` (not in the repo).
@@ -122,7 +122,7 @@ recovery has to avoid the copy when nobody else can observe it:
 
 # C++ performance results — round 3 (CPP-P21 … CPP-P25, round-2 leads)
 
-Revision `090cd61` + working tree, g++ 16.2 `-O2`, box loaded by other jobs (load average 10–12): ratios are
+Revision `f30839e` + working tree, g++ 16.2 `-O2`, box loaded by other jobs (load average 10–12): ratios are
 the **min of 7–11 interleaved A/B runs** (`tools/perf/cpp/bench.py --ab`, A = the binary at the start of the
 round) and every checksum matched. Growth: every scenario is linear (×2.0 per 2× n).
 
@@ -142,7 +142,7 @@ round) and every checksum matched. Growth: every scenario is linear (×2.0 per 2
 
 # C++ performance results — CPP-REG-1 (continued): copy cost after the Rust host's lead
 
-Revision: `03786e5` + dirty tree; g++ 16.2.1 `-O2`; `scale-bench --only scenarioN --runs 3 --warmups 1`,
+Revision: `3bc54e6` + dirty tree; g++ 16.2.1 `-O2`; `scale-bench --only scenarioN --runs 3 --warmups 1`,
 `program_run_ms`, binaries interleaved (min of 9–12 samples), load 1.4–3.0. Baseline `faff480` (0.9.2)
 built from `git archive`.
 
@@ -157,7 +157,7 @@ built from `git archive`.
 
 **Final scale-bench numbers (program_run_ms, min):**
 
-| scenario | 0.9.2 | before (03786e5) | after | after / 0.9.2 |
+| scenario | 0.9.2 | before (3bc54e6) | after | after / 0.9.2 |
 |---|---:|---:|---:|---:|
 | 1 | 577.2 | 975.3 | 605.9 | 1.05 |
 | 2 | 5.4 | 6.8 | 6.6 | 1.22 (a 1.2 ms per-run constant) |
