@@ -200,6 +200,7 @@ impl_example() {
               --eval '(sel-example:main)' --end-toplevel-options "$@" ;;
     python) PYTHONPATH="$PWD/python" python3 "examples/$cat/python.py" "$@" ;;
     python-wheel) "$SEL_PY_WHEEL_BIN" "examples/$cat/python.py" "$@" ;;
+    rust)   "rust/build/example-$cat" "$@" ;;
     *)      echo "no worked example for implementation: $impl" >&2; return 2 ;;
   esac
 }
@@ -209,7 +210,7 @@ example_impls() {
   local out=""
   for impl in $(available_impls); do
     case "$impl" in
-      js|php|cpp|lisp|python|python-wheel) out="$out $impl" ;;
+      js|php|cpp|lisp|python|python-wheel|rust) out="$out $impl" ;;
     esac
   done
   echo "${out# }"

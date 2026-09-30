@@ -110,6 +110,22 @@ for (const auto& row : std::vector<std::pair<std::string, std::string>>{
 ```
 
 </details>
+<details>
+<summary>Rust</summary>
+
+<!-- from: examples/plain/rust.rs#compile -->
+```rust
+let mut rule = compile("IF(QTY * PRICE > LIMIT, \"over budget\", \"ok\")")?;
+for (qty, price) in [("3", "19.99"), ("1", "5.00")] {
+    let ctx = Value::none();
+    ctx.set("QTY", val(qty), at)?;
+    ctx.set("PRICE", val(price), at)?;
+    ctx.set("LIMIT", val("50.00"), at)?;
+    println!("   QTY={qty} PRICE={price} => {}", text(&rule.run(Some(ctx))?)?);
+}
+```
+
+</details>
 <details open>
 <summary>Common Lisp</summary>
 

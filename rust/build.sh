@@ -5,6 +5,16 @@ stage="$(mktemp -d .build-stage.XXXXXX)"
 trap 'rm -rf "$stage"' EXIT
 bash build-inputs.sh > "$stage/inputs.sha256"
 cargo build --release
+# The worked examples (../examples/<category>/rust.rs) that need only the host;
+# the database-backed ones (LIVE) are built by tools/check-usage.sh in its image.
+examples=()
+for dir in ../examples/*/; do
+  cat="$(basename "$dir")"
+  [ -f "$dir/rust.rs" ] || continue
+  [ -f "$dir/LIVE" ] || [ -f "$dir/REFERENCE" ] || [ -f "$dir/LIBRARY" ] && continue
+  examples+=("$cat")
+done
+cargo build --release --examples
 # Refuse to label a build current if inputs changed while Cargo was running.
 bash build-inputs.sh > "$stage/inputs-after.sha256"
 cmp -s "$stage/inputs.sha256" "$stage/inputs-after.sha256" || {
@@ -14,9 +24,15 @@ cmp -s "$stage/inputs.sha256" "$stage/inputs-after.sha256" || {
 for bin in conformance sqlt map_replay check_decimal batch e2e sel sqlapi api regex_verdict scale_bench sqlfuzz; do
   cp "target/release/$bin" "$stage/$bin"
 done
+for cat in "${examples[@]}"; do
+  cp "target/release/examples/$cat" "$stage/example-$cat"
+done
 mkdir -p build
 # Publish the identity last, after every required binary has been copied.
 for bin in conformance sqlt map_replay check_decimal batch e2e sel sqlapi api regex_verdict scale_bench sqlfuzz; do
   mv "$stage/$bin" "build/$bin"
+done
+for cat in "${examples[@]}"; do
+  mv "$stage/example-$cat" "build/example-$cat"
 done
 mv "$stage/inputs.sha256" build/inputs.sha256

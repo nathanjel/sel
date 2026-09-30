@@ -79,3 +79,10 @@ num-bigint = "0.5.1"
 name = "sqlfuzz"
 path = "src/bin/sqlfuzz.rs"
 required-features = ["sql"]
+
+# The worked examples: one program per category under ../examples/, written in
+# every host and diffed by tools/check-examples.sh (rust/build.sh publishes them
+# as rust/build/example-<category>).
+[[example]]
+name = "plain"
+path = "../examples/plain/rust.rs"

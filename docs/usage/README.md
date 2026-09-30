@@ -171,6 +171,22 @@ for (const auto& row : std::vector<std::pair<std::string, std::string>>{
 
 </details>
 <details>
+<summary>Rust</summary>
+
+<!-- from: examples/plain/rust.rs#compile -->
+```rust
+let mut rule = compile("IF(QTY * PRICE > LIMIT, \"over budget\", \"ok\")")?;
+for (qty, price) in [("3", "19.99"), ("1", "5.00")] {
+    let ctx = Value::none();
+    ctx.set("QTY", val(qty), at)?;
+    ctx.set("PRICE", val(price), at)?;
+    ctx.set("LIMIT", val("50.00"), at)?;
+    println!("   QTY={qty} PRICE={price} => {}", text(&rule.run(Some(ctx))?)?);
+}
+```
+
+</details>
+<details>
 <summary>Common Lisp</summary>
 
 <!-- from: examples/plain/lisp.lisp#compile -->
@@ -273,6 +289,28 @@ std::cout << "   first SKU => "
 std::cout << "   total     => "
           << sel::compile("SUM(ITEMS, _[\"QTY\"] * _[\"PRICE\"])").run(order).as_text() << "\n";
 std::cout << "   0.10+0.20 => " << sel::evaluate("0.10 + 0.20").as_text() << "\n";
+```
+
+</details>
+<details>
+<summary>Rust</summary>
+
+<!-- from: examples/plain/rust.rs#context -->
+```rust
+let order = Value::none();
+order.set("CUSTOMER", val("Zażółć"), at)?;
+let mut items = Vec::new();
+for (sku, qty, price) in [("AB-1234", "3", "19.99"), ("CD-5678", "1", "5.01")] {
+    let item = Value::none();
+    item.set("SKU", val(sku), at)?;
+    item.set("QTY", val(qty), at)?;
+    item.set("PRICE", val(price), at)?;
+    items.push(item);
+}
+order.set("ITEMS", Value::list(items), at)?; // a list is keyed "1".."n"
+println!("   first SKU => {}", text(&compile("ITEMS[1][\"SKU\"]")?.run(Some(order.clone()))?)?);
+println!("   total     => {}", text(&compile("SUM(ITEMS, _[\"QTY\"] * _[\"PRICE\"])")?.run(Some(order))?)?);
+println!("   0.10+0.20 => {}", text(&evaluate("0.10 + 0.20", None)?)?);
 ```
 
 </details>
@@ -405,6 +443,22 @@ for (const char* name : {"NET", "VAT", "GROSS"}) {
 
 </details>
 <details>
+<summary>Rust</summary>
+
+<!-- from: examples/plain/rust.rs#variables -->
+```rust
+let ctx = Value::none();
+ctx.set("QTY", val("3"), at)?;
+ctx.set("PRICE", val("19.99"), at)?;
+// A Value is a shared handle: the run assigns into the same record.
+compile("NET = QTY * PRICE; VAT = ROUND(NET * 0.23, 2); GROSS = NET + VAT")?.run(Some(ctx.clone()))?;
+for name in ["NET", "VAT", "GROSS"] {
+    println!("   {name:<5} => {}", text(&ctx.get(name).expect("set by the rule"))?);
+}
+```
+
+</details>
+<details>
 <summary>Common Lisp</summary>
 
 <!-- from: examples/plain/lisp.lisp#variables -->
@@ -493,6 +547,20 @@ for (const char* src : {"3 + \"A\"", "NOSUCH(1)", "IF(1, \"a\", \"b\")",
 
 </details>
 <details>
+<summary>Rust</summary>
+
+<!-- from: examples/plain/rust.rs#errors -->
+```rust
+for src in ["3 + \"A\"", "NOSUCH(1)", "IF(1, \"a\", \"b\")", "ABORT(\"no stock\")"] {
+    match evaluate(src, None) {
+        Ok(_) => println!("   {src:<17} => no error"),
+        Err(e) => println!("   {src:<17} => {} at {}:{}", e.code, e.pos.line, e.pos.col),
+    }
+}
+```
+
+</details>
+<details>
 <summary>Common Lisp</summary>
 
 <!-- from: examples/plain/lisp.lisp#errors -->
@@ -552,6 +620,16 @@ echo '   ', implode(' ', Sel::compile('T = SUM(ITEMS, _["QTY"]); T > LIMIT AND C
 ```cpp
 std::cout << "   " << join(sel::compile(
     "T = SUM(ITEMS, _[\"QTY\"]); T > LIMIT AND CUSTOMER $!= \"\"").dependencies(), " ") << "\n";
+```
+
+</details>
+<details>
+<summary>Rust</summary>
+
+<!-- from: examples/plain/rust.rs#dependencies -->
+```rust
+let deps = compile("T = SUM(ITEMS, _[\"QTY\"]); T > LIMIT AND CUSTOMER $!= \"\"")?.dependencies()?;
+println!("   {}", deps.join(" "));
 ```
 
 </details>

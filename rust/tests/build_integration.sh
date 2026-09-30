@@ -17,6 +17,12 @@ for bin in conformance sqlt map_replay check_decimal batch e2e sel sqlapi api re
   printf '#!/bin/sh\nexit 0\n' > "target/release/$bin"
   chmod +x "target/release/$bin"
 done
+mkdir -p target/release/examples
+for dir in ../examples/*/; do
+  [ -f "$dir/rust.rs" ] || continue
+  printf '#!/bin/sh\nexit 0\n' > "target/release/examples/$(basename "$dir")"
+  chmod +x "target/release/examples/$(basename "$dir")"
+done
 [ "${CHANGE_INPUT:-0}" != 1 ] || echo '// changed during build' >> src/lib.rs
 CARGO
 chmod +x "$work/bin/cargo"
@@ -55,4 +61,18 @@ if CHANGE_INPUT=1 build > "$work/concurrent.log" 2>&1; then echo 'concurrent inp
 grep -q "inputs changed during compilation" "$work/concurrent.log"
 cmp prior-inputs rust/build/inputs.sha256
 stale
-echo 'Rust build integration: freshness, missing artifacts, failed builds and concurrent edits pass'
+# A worked example is a production input and is published beside the tools;
+# a database-backed (LIVE) one is built elsewhere and not published here.
+mkdir -p examples/demo examples/live
+echo '// demo' > examples/demo/rust.rs
+echo '// live' > examples/live/rust.rs
+touch examples/live/LIVE
+build
+fresh
+[ -x rust/build/example-demo ] || { echo 'worked example was not published' >&2; exit 1; }
+[ ! -e rust/build/example-live ] || { echo 'a LIVE example was published' >&2; exit 1; }
+echo '// demo edited' >> examples/demo/rust.rs
+stale
+build
+fresh
+echo 'Rust build integration: freshness, missing artifacts, failed builds, concurrent edits and examples pass'
