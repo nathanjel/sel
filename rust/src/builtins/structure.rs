@@ -966,6 +966,27 @@ struct BucketGroup {
     rows: Vec<Value>,
 }
 
+/// Whether evaluating `node` might write a variable: an assignment, or a host
+/// function call (the host may do anything), anywhere inside it.
+fn may_write(node: &Node) -> bool {
+    if node.t == NodeType::Assign {
+        return true;
+    }
+    if node.t == NodeType::Call {
+        let host = match &node.spec {
+            Some(spec) => matches!(spec.func, crate::builtins::SpecFn::Host(_)),
+            None => crate::builtins::lookup_spec(&node.s)
+                .is_some_and(|spec| matches!(spec.func, crate::builtins::SpecFn::Host(_))),
+        };
+        if host {
+            return true;
+        }
+    }
+    node.l.as_deref().is_some_and(may_write)
+        || node.r.as_deref().is_some_and(may_write)
+        || node.items.iter().any(may_write)
+}
+
 pub fn fn_bucket(args: &mut Args) -> Result<Value, SelError> {
     let val = args.val(0)?;
     if val.is_null() {
@@ -1003,6 +1024,13 @@ pub fn fn_bucket(args: &mut Args) -> Result<Value, SelError> {
     let mut table: HashMap<u64, Vec<usize>> = HashMap::new();
     let mut bare_groups: HashMap<String, usize> = HashMap::new();
     let mut groups: Vec<BucketGroup> = Vec::new();
+    // A row is collected when its key is computed and it is grouped (spec
+    // §3.4): when the key or the projection might write, it is copied then, so
+    // neither a later key nor the projection can change a row already grouped.
+    // Otherwise nothing can, and the copy waits for the result.
+    let eager = may_write(&key_node) || agg_node_opt.as_ref().is_some_and(may_write);
+    // Bare: record -> group list -> row (3 levels); projected: group list -> row (2).
+    let row_depth = if agg_node_opt.is_none() { 3 } else { 2 };
 
     args.ctx.push_frame(frame);
     for (ei, ev) in ents.vals.iter().enumerate() {
@@ -1029,17 +1057,28 @@ pub fn fn_bucket(args: &mut Args) -> Result<Value, SelError> {
         } else {
             String::new()
         };
+        let item = if eager {
+            match ev.deep_copy(row_depth, args.pos()) {
+                Ok(copy) => copy,
+                Err(err) => {
+                    args.ctx.pop_frame();
+                    return Err(err);
+                }
+            }
+        } else {
+            ev.clone()
+        };
 
         if agg_node_opt.is_none() {
             if let Some(&idx) = bare_groups.get(&key_str) {
-                groups[idx].rows.push(ev.clone());
+                groups[idx].rows.push(item);
             } else {
                 let idx = groups.len();
                 bare_groups.insert(key_str.clone(), idx);
                 groups.push(BucketGroup {
                     key: group_key,
                     key_str,
-                    rows: vec![ev.clone()],
+                    rows: vec![item],
                 });
             }
         } else {
@@ -1048,7 +1087,7 @@ pub fn fn_bucket(args: &mut Args) -> Result<Value, SelError> {
             let mut found = false;
             for &idx in bucket.iter() {
                 if groups[idx].key.eql(&group_key, 1, Pos::default())? {
-                    groups[idx].rows.push(ev.clone());
+                    groups[idx].rows.push(item.clone());
                     found = true;
                     break;
                 }
@@ -1058,7 +1097,7 @@ pub fn fn_bucket(args: &mut Args) -> Result<Value, SelError> {
                 groups.push(BucketGroup {
                     key: group_key,
                     key_str,
-                    rows: vec![ev.clone()],
+                    rows: vec![item],
                 });
                 bucket.push(idx);
             }
@@ -1069,11 +1108,16 @@ pub fn fn_bucket(args: &mut Args) -> Result<Value, SelError> {
     if agg_node_opt.is_none() {
         let out = Value::none();
         for g in groups {
-            let mut rows_copy = Vec::with_capacity(g.rows.len());
-            for r in &g.rows {
-                rows_copy.push(r.deep_copy(3, args.pos())?);
-            }
-            out.set(&g.key_str, Value::list_owned(rows_copy), Pos::default())?;
+            let rows = if eager {
+                g.rows
+            } else {
+                let mut rows_copy = Vec::with_capacity(g.rows.len());
+                for r in &g.rows {
+                    rows_copy.push(r.deep_copy(3, args.pos())?);
+                }
+                rows_copy
+            };
+            out.set(&g.key_str, Value::list_owned(rows), Pos::default())?;
         }
         return Ok(out);
     }

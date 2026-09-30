@@ -8738,6 +8738,46 @@ fn c1304_bind() -> HashMap<String, Binding> {
     m
 }
 
+fn c1305_bind() -> HashMap<String, Binding> {
+    let mut m = HashMap::new();
+        m.insert("ORDERS".to_string(), bind_relation("orders", "o", vec![FieldEntry { name: "ID".to_string(), binding: bind_col("id", "o", SqlKind::Num, false, false, false, "") }, FieldEntry { name: "CUSTOMER_ID".to_string(), binding: bind_col("customer_id", "o", SqlKind::Num, false, false, false, "") }, FieldEntry { name: "AMOUNT".to_string(), binding: bind_col("amount", "o", SqlKind::Num, false, false, false, "") }, FieldEntry { name: "NAME".to_string(), binding: bind_col("name", "o", SqlKind::Text, false, false, false, "") }], "", "", ""));
+        m.insert("CUSTOMERS".to_string(), bind_relation("customers", "c", vec![FieldEntry { name: "ID".to_string(), binding: bind_col("id", "c", SqlKind::Num, false, false, false, "") }, FieldEntry { name: "CNAME".to_string(), binding: bind_col("cname", "c", SqlKind::Text, false, false, false, "") }], "", "", ""));
+    m
+}
+
+fn c1306_bind() -> HashMap<String, Binding> {
+    let mut m = HashMap::new();
+        m.insert("ORDERS".to_string(), bind_relation("orders", "o", vec![FieldEntry { name: "ID".to_string(), binding: bind_col("id", "o", SqlKind::Num, false, false, false, "") }, FieldEntry { name: "CUSTOMER_ID".to_string(), binding: bind_col("customer_id", "o", SqlKind::Num, false, false, false, "") }, FieldEntry { name: "AMOUNT".to_string(), binding: bind_col("amount", "o", SqlKind::Num, false, false, false, "") }, FieldEntry { name: "NAME".to_string(), binding: bind_col("name", "o", SqlKind::Text, false, false, false, "") }], "", "", ""));
+        m.insert("CUSTOMERS".to_string(), bind_relation("customers", "c", vec![FieldEntry { name: "ID".to_string(), binding: bind_col("id", "c", SqlKind::Num, false, false, false, "") }, FieldEntry { name: "CNAME".to_string(), binding: bind_col("cname", "c", SqlKind::Text, false, false, false, "") }], "", "", ""));
+    m
+}
+
+fn c1307_bind() -> HashMap<String, Binding> {
+    let mut m = HashMap::new();
+        m.insert("ORDERS".to_string(), bind_relation("orders", "o", vec![FieldEntry { name: "ID".to_string(), binding: bind_col("id", "o", SqlKind::Num, false, false, false, "") }, FieldEntry { name: "CUSTOMER_ID".to_string(), binding: bind_col("customer_id", "o", SqlKind::Num, false, false, false, "") }, FieldEntry { name: "AMOUNT".to_string(), binding: bind_col("amount", "o", SqlKind::Num, false, false, false, "") }, FieldEntry { name: "NAME".to_string(), binding: bind_col("name", "o", SqlKind::Text, false, false, false, "") }], "", "", ""));
+        m.insert("CUSTOMERS".to_string(), bind_relation("customers", "c", vec![FieldEntry { name: "ID".to_string(), binding: bind_col("id", "c", SqlKind::Num, false, false, false, "") }, FieldEntry { name: "CNAME".to_string(), binding: bind_col("cname", "c", SqlKind::Text, false, false, false, "") }], "", "", ""));
+    m
+}
+
+fn c1308_bind() -> HashMap<String, Binding> {
+    let mut m = HashMap::new();
+        m.insert("ORDERS".to_string(), bind_relation("orders", "o", vec![FieldEntry { name: "ID".to_string(), binding: bind_col("id", "o", SqlKind::Num, false, false, false, "") }, FieldEntry { name: "CUSTOMER_ID".to_string(), binding: bind_col("customer_id", "o", SqlKind::Num, false, false, false, "") }, FieldEntry { name: "AMOUNT".to_string(), binding: bind_col("amount", "o", SqlKind::Num, false, false, false, "") }, FieldEntry { name: "NAME".to_string(), binding: bind_col("name", "o", SqlKind::Text, false, false, false, "") }], "", "", ""));
+        m.insert("CUSTOMERS".to_string(), bind_relation("customers", "c", vec![FieldEntry { name: "ID".to_string(), binding: bind_col("id", "c", SqlKind::Num, false, false, false, "") }, FieldEntry { name: "CNAME".to_string(), binding: bind_col("cname", "c", SqlKind::Text, false, false, false, "") }], "", "", ""));
+    m
+}
+
+fn c1309_bind() -> HashMap<String, Binding> {
+    let mut m = HashMap::new();
+        m.insert("ORDERS".to_string(), bind_relation("orders", "o", vec![FieldEntry { name: "ID".to_string(), binding: bind_col("id", "o", SqlKind::Num, false, false, false, "") }, FieldEntry { name: "CUSTOMER_ID".to_string(), binding: bind_col("customer_id", "o", SqlKind::Num, false, false, false, "") }, FieldEntry { name: "AMOUNT".to_string(), binding: bind_col("amount", "o", SqlKind::Num, false, false, false, "") }, FieldEntry { name: "NAME".to_string(), binding: bind_col("name", "o", SqlKind::Text, false, false, false, "") }], "", "", ""));
+    m
+}
+
+fn c1310_bind() -> HashMap<String, Binding> {
+    let mut m = HashMap::new();
+        m.insert("ORDERS".to_string(), bind_relation("orders", "o", vec![FieldEntry { name: "ID".to_string(), binding: bind_col("id", "o", SqlKind::Num, false, false, false, "") }, FieldEntry { name: "CUSTOMER_ID".to_string(), binding: bind_col("customer_id", "o", SqlKind::Num, false, false, false, "") }, FieldEntry { name: "AMOUNT".to_string(), binding: bind_col("amount", "o", SqlKind::Num, false, false, false, "") }, FieldEntry { name: "NAME".to_string(), binding: bind_col("name", "o", SqlKind::Text, false, false, false, "") }], "", "", ""));
+    m
+}
+
 pub struct SqlCase {
     pub name: &'static str,
     pub at: &'static str,
@@ -33553,5 +33593,119 @@ pub const SQL_CASES: &[SqlCase] = &[
         unrepresentable: None,
         register_fn: None,
         bindings_fn: Some(c1304_bind),
+    },
+    SqlCase {
+        name: "plan.order.limit-then-link-stays-in-memory",
+        at: "52-audit-cases.sqlt:319",
+        dialect: "mariadb",
+        source: "ORDERS .> TOP_BY(_[\"id\"], 3) .> LINK(CUSTOMERS, _1[\"customer_id\"] == _2[\"id\"]) .> MAP(RECORD(\"a\", _[\"amount\"]))",
+        expect: Some("SELECT `o`.* FROM `orders` `o` ORDER BY `o`.`id` ASC LIMIT 3"),
+        error: None,
+        throws: None,
+        params: None,
+        as_mode: None,
+        mode: None,
+        strict: false,
+        plan: Some("hybrid"),
+        has_tables: true,
+        tables: &["orders"],
+        unrepresentable: None,
+        register_fn: None,
+        bindings_fn: Some(c1305_bind),
+    },
+    SqlCase {
+        name: "plan.order.link-left-over-sorted-rows-stays-in-memory",
+        at: "52-audit-cases.sqlt:337",
+        dialect: "mariadb",
+        source: "ORDERS .> SORT_BY(_[\"amount\"]) .> LINK_LEFT(CUSTOMERS, _1[\"customer_id\"] == _2[\"id\"]) .> MAP(RECORD(\"a\", _[\"amount\"]))",
+        expect: Some("SELECT `o`.* FROM `orders` `o` ORDER BY `o`.`amount` ASC"),
+        error: None,
+        throws: None,
+        params: None,
+        as_mode: None,
+        mode: None,
+        strict: false,
+        plan: Some("hybrid"),
+        has_tables: true,
+        tables: &["orders"],
+        unrepresentable: None,
+        register_fn: None,
+        bindings_fn: Some(c1306_bind),
+    },
+    SqlCase {
+        name: "plan.order.projection-then-link-over-sorted-rows-stays-in-memory",
+        at: "52-audit-cases.sqlt:355",
+        dialect: "mariadb",
+        source: "ORDERS .> SORT_BY(_[\"amount\"]) .> MAP(RECORD(\"cid\", _[\"customer_id\"], \"a\", _[\"amount\"])) .> LINK(CUSTOMERS, _1[\"cid\"] == _2[\"id\"]) .> MAP(RECORD(\"a\", _[\"a\"]))",
+        expect: Some("SELECT `o`.`customer_id` AS `cid`, `o`.`amount` AS `a` FROM `orders` `o` ORDER BY `o`.`amount` ASC"),
+        error: None,
+        throws: None,
+        params: None,
+        as_mode: None,
+        mode: None,
+        strict: false,
+        plan: Some("hybrid"),
+        has_tables: true,
+        tables: &["orders"],
+        unrepresentable: None,
+        register_fn: None,
+        bindings_fn: Some(c1307_bind),
+    },
+    SqlCase {
+        name: "plan.order.sort-filter-then-link-stays-in-memory",
+        at: "52-audit-cases.sqlt:373",
+        dialect: "mariadb",
+        source: "ORDERS .> SORT_BY(_[\"amount\"]) .> FILTER(_[\"amount\"] > 1) .> LINK(CUSTOMERS, _1[\"customer_id\"] == _2[\"id\"]) .> MAP(RECORD(\"a\", _[\"amount\"]))",
+        expect: Some("SELECT `o`.* FROM `orders` `o` WHERE (`o`.`amount` > 1) ORDER BY `o`.`amount` ASC"),
+        error: None,
+        throws: None,
+        params: None,
+        as_mode: None,
+        mode: None,
+        strict: false,
+        plan: Some("hybrid"),
+        has_tables: true,
+        tables: &["orders"],
+        unrepresentable: None,
+        register_fn: None,
+        bindings_fn: Some(c1308_bind),
+    },
+    SqlCase {
+        name: "plan.keys.filter-filter-then-a-renumbering-step-splits-after-the-first",
+        at: "52-audit-cases.sqlt:392",
+        dialect: "mariadb",
+        source: "ORDERS .> FILTER(_[\"amount\"] == 2) .> FILTER(_[\"nope\"][\"x\"] $== \"b\") .> SORT()",
+        expect: Some("SELECT `o`.* FROM `orders` `o` WHERE (`o`.`amount` = 2)"),
+        error: None,
+        throws: None,
+        params: None,
+        as_mode: None,
+        mode: None,
+        strict: false,
+        plan: Some("hybrid"),
+        has_tables: true,
+        tables: &["orders"],
+        unrepresentable: None,
+        register_fn: None,
+        bindings_fn: Some(c1309_bind),
+    },
+    SqlCase {
+        name: "plan.keys.filter-filter-then-a-key-read-stays-in-memory",
+        at: "52-audit-cases.sqlt:409",
+        dialect: "mariadb",
+        source: "ORDERS .> FILTER(_[\"amount\"] == 2) .> FILTER(_[\"nope\"][\"x\"] $== \"b\") .> SORT_BY(_K)",
+        expect: None,
+        error: None,
+        throws: None,
+        params: None,
+        as_mode: None,
+        mode: None,
+        strict: false,
+        plan: Some("pure_memory"),
+        has_tables: true,
+        tables: &["orders"],
+        unrepresentable: None,
+        register_fn: None,
+        bindings_fn: Some(c1310_bind),
     },
 ];
