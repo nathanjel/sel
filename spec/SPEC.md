@@ -218,6 +218,24 @@ disagree with §5.8. The rule is a table, not a judgement call:
 | `TAKE`, `DROP`, `DISTINCT`, `DEDUPE` (§7.4) | new | **aliased** — the result's elements are the source's elements |
 | a variable, an index, an aggregate binder, `IF`/`COND`, `(…)` | — | not collected: the value itself |
 
+**A collector copies an element when it collects it,** not when it returns. The
+moment is when the aggregate's visit of that element completes: `MAP` — when its
+body returns for the element; `FILTER` — when its predicate accepts it; `SORT`,
+`SORT_DESC`, `SORT_BY`, `TOP`, `TOP_DESC`, `TOP_BY` — when the element's key has
+been computed; `BUCKET`, in every spelling — when the element's key has been
+computed and it is grouped, so a projection that runs later sees the grouped
+copies. A write a later body makes, during the same aggregate, into a source
+element already collected does not reach the result:
+
+```
+R = LIST(RECORD("id",1), RECORD("id",2));
+TOP_BY(R, (IF(_["id"] == 2, (R[1]["id"] = 99), 0); _["id"]), 2)[1]["id"]      ==>   1
+```
+
+A host may defer the copy while nothing can observe the difference — no
+assignment and no host function below the body, key or projection — but not
+past a write that could.
+
 **A list a function returns is always a new container.** Whatever a function
 does about its elements, its result never shares a backing list, array or map
 with its source: assigning into the source afterwards, or replacing one of its

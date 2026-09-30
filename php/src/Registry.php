@@ -186,6 +186,12 @@ final class Registry
         self::$host[$key] = true;
     }
 
+    /** Whether $name is a function an application registered (and so may do anything, writes included). */
+    public static function isHostFunction(string $name): bool
+    {
+        return isset(self::$host[\Sel\Utf8::upper($name)]);
+    }
+
     /**
      * The [min, max] of a host function registered with registerFunction(), or
      * null when the name is not one. The SQL layer reads it: a host function's

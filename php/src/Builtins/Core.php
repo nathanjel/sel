@@ -469,6 +469,32 @@ final class Core
     }
 
     /** @param array<string,mixed>|null $node */
+    /**
+     * Whether evaluating $node might write into a value: it holds an assignment or
+     * calls a host function. A collector copies an element when it collects it
+     * (spec §3.4); while nothing below the body can write, deferring the copy to
+     * the end is unobservable, so only a body that might write copies at
+     * collection. Iterative: a body can be a flat chain as long as the source.
+     */
+    public static function mayWrite(?array $node): bool
+    {
+        $stack = [$node];
+        while ($stack !== []) {
+            $n = array_pop($stack);
+            if (!is_array($n)) continue;
+            $t = $n['t'] ?? null;
+            if ($t === 'assign') return true;
+            if ($t === 'call' && Registry::isHostFunction((string) ($n['name'] ?? ''))) return true;
+            foreach (['args', 'items'] as $key) {
+                foreach ($n[$key] ?? [] as $child) $stack[] = $child;
+            }
+            foreach (['l', 'r', 'x', 'obj', 'idx', 'target', 'value'] as $key) {
+                if (isset($n[$key]) && is_array($n[$key])) $stack[] = $n[$key];
+            }
+        }
+        return false;
+    }
+
     public static function containsVar(?array $node, string $name): bool
     {
         if ($node === null) return false;

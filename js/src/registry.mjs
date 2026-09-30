@@ -174,4 +174,7 @@ function makeSpec(spec) {
 }
 
 export function lookup(name) { return table.get(name.toUpperCase()); }
+// Whether `name` is a function a host registered (and so could do anything,
+// including write into the values it is handed).
+export function isHostFunction(name) { return hostNames.has(String(name).toUpperCase()); }
 export function names() { return Array.from(table.keys()).sort(); }

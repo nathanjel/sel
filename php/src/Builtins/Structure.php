@@ -1761,12 +1761,15 @@ final class Structure
         // select, so the rows are collected and sorted once with the same comparator
         // (ties still break by position) instead of going through the heap.
         $needsK = $binder !== null && Core::containsVar($body, '_K');
+        // Collected once its key is computed (spec §3.4): a key that might write
+        // copies the element as it is admitted, so a later key's write cannot reach it.
+        $eager = $binder !== null && Core::mayWrite($body);
         $collectAll = $limit >= max(1, $value->size());
         if ($frame !== null) $ctx->pushFrame($frame);
         try {
             $consume = function (string $key, Value $item) use (
                 &$heap, &$index, $limit, $binder, $body, $ctx, $a, $compare, $siftUp, $siftDown, &$frame,
-                $needsK, $collectAll,
+                $needsK, $collectAll, $eager,
             ): void {
                 if ($binder === null) {
                     $candidate = ['item' => $item, 'sk' => Core::sortKey($item), 'idx' => $index++];
@@ -1778,6 +1781,7 @@ final class Structure
                         $ctx->setFrameValue('_K', $frame['_K']);
                     }
                     $candidate = ['item' => $item, 'sk' => Core::sortKey($a->evalNode($body)), 'idx' => $index++];
+                    if ($eager) $candidate['item'] = $item->copyBelow(1, $a->pos);
                 }
                 if ($collectAll) {
                     $heap[] = $candidate;
@@ -1803,6 +1807,7 @@ final class Structure
         }
         usort($heap, $compare);
         $pos = $a->pos;
+        if ($eager) return Value::list(array_map(static fn (array $entry): Value => $entry['item'], $heap));
         return Value::list(array_map(static fn (array $entry): Value => $entry['item']->copyBelow(1, $pos), $heap));
     }
 
@@ -1843,21 +1848,28 @@ final class Structure
         $groups = [];
         $buckets = [];
         $needsK = Core::containsVar($keyNode, '_K');
+        // A row is collected when its key is computed and it is grouped (spec §3.4):
+        // when the key or the projection might write, it is copied then, so neither
+        // a later key nor the projection can change a row already grouped.
+        $eager = Core::mayWrite($keyNode) || ($aggregateNode !== null && Core::mayWrite($aggregateNode));
         $frame = [$binder => Value::none()];
         if ($needsK) $frame['_K'] = Value::none();
         $ctx->pushFrame($frame);
         try {
             $index = 0;
-            $value->forEachElement(function (string $key, Value $item) use (
-                &$index, &$frame, &$groups, &$buckets, $a, $ctx, $keyNode, $aggregateNode, $binder, $needsK,
+            $value->forEachElement(function (string $key, Value $source) use (
+                &$index, &$frame, &$groups, &$buckets, $a, $ctx, $keyNode, $aggregateNode, $binder, $needsK, $eager,
             ): void {
-                $frame[$binder] = $item;
-                $ctx->setFrameValue($binder, $item);
+                $item = $source;
+                $frame[$binder] = $source;
+                $ctx->setFrameValue($binder, $source);
                 if ($needsK) {
                     $frame['_K'] = Value::text($key);
                     $ctx->setFrameValue('_K', $frame['_K']);
                 }
                 $groupKey = $a->evalNode($keyNode);
+                // Bare: a list inside the record (two levels below); projected: the group list (one).
+                if ($eager) $item = $source->copyBelow($aggregateNode === null ? 2 : 1, $a->pos);
                 // A bare bucket's key is an index key (spec §3.3): the scalar,
                 // verbatim, and refused the way indexing refuses it -- never
                 // collapsed onto a string that stands for every list, record or
@@ -1899,7 +1911,7 @@ final class Structure
             // levels below the result, a list inside the record.
             foreach ($groups as $group) {
                 $rows = [];
-                foreach ($group['rows'] as $row) $rows[] = $row->copyBelow(2, $a->pos);
+                foreach ($group['rows'] as $row) $rows[] = $eager ? $row : $row->copyBelow(2, $a->pos);
                 $out->set($group['keyString'], Value::list($rows));
             }
             return $out;

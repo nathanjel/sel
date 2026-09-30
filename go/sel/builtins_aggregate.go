@@ -331,6 +331,7 @@ func doSort(args *Args, ctx *Context, forcedDir string) *Value {
 	}
 
 	var indexed []sortItem
+	eager := false
 	if count == 1 {
 		indexed = make([]sortItem, len(ents))
 		for i, e := range ents {
@@ -342,6 +343,9 @@ func doSort(args *Args, ctx *Context, forcedDir string) *Value {
 		if needsK {
 			frame["_K"] = nil
 		}
+		// Collected once its key is computed (SPEC §3.4): a key that might write
+		// copies the element then, so a later key's write cannot reach it.
+		eager = !nodeIsPure(body)
 		indexed = make([]sortItem, len(ents))
 		for i, e := range ents {
 			frame[binder] = e.Val
@@ -351,7 +355,11 @@ func doSort(args *Args, ctx *Context, forcedDir string) *Value {
 			ctx.PushFrame(frame)
 			evalKey := args.EvalNode(body)
 			ctx.PopFrame()
-			indexed[i] = sortItem{item: e.Val, key: evalKey, idx: i}
+			item := e.Val
+			if eager {
+				item = e.Val.CloneAt(2, args.Pos())
+			}
+			indexed[i] = sortItem{item: item, key: evalKey, idx: i}
 		}
 	}
 
@@ -360,8 +368,12 @@ func doSort(args *Args, ctx *Context, forcedDir string) *Value {
 
 	out := make([]*Value, len(keyed))
 	for i := range keyed {
-		// SPEC §3.4: SORT copies what it collects.
-		out[i] = keyed[i].item.CloneAt(2, args.Pos())
+		// SPEC §3.4: SORT copies what it collects (already copied when eager).
+		if eager {
+			out[i] = keyed[i].item
+		} else {
+			out[i] = keyed[i].item.CloneAt(2, args.Pos())
+		}
 	}
 	return NewListOwned(out)
 }
@@ -480,6 +492,8 @@ func doTop(args *Args, ctx *Context, forcedDir string) *Value {
 		frame["_K"] = nil
 	}
 
+	// Collected once its key is computed (SPEC §3.4); see doSort.
+	eager := body != nil && !nodeIsPure(body)
 	items := make([]sortItem, len(ents))
 	for i, e := range ents {
 		var kVal *Value
@@ -494,7 +508,11 @@ func doTop(args *Args, ctx *Context, forcedDir string) *Value {
 			kVal = args.EvalNode(body)
 			ctx.PopFrame()
 		}
-		items[i] = sortItem{item: e.Val, key: kVal, idx: i}
+		item := e.Val
+		if eager {
+			item = e.Val.CloneAt(2, args.Pos())
+		}
+		items[i] = sortItem{item: item, key: kVal, idx: i}
 	}
 
 	if limit > len(items) {
@@ -520,7 +538,11 @@ func doTop(args *Args, ctx *Context, forcedDir string) *Value {
 	out := make([]*Value, limit)
 	for i := 0; i < limit; i++ {
 		// SPEC §3.4: TOP follows SORT and copies what it collects.
-		out[i] = best[i].item.CloneAt(2, args.Pos())
+		if eager {
+			out[i] = best[i].item
+		} else {
+			out[i] = best[i].item.CloneAt(2, args.Pos())
+		}
 	}
 	return NewListOwned(out)
 }
@@ -578,6 +600,14 @@ func doBucket(args *Args, ctx *Context) *Value {
 	table := make(map[uint64][]*bucketGroup)
 	byText := make(map[string]*bucketGroup)
 	var groups []*bucketGroup
+	// A row is collected when its key is computed and it is grouped (SPEC §3.4):
+	// when the key or the projection might write, it is copied then, so neither a
+	// later key nor the projection can change a row already grouped.
+	eager := !nodeIsPure(keyNode) || (aggNode != nil && !nodeIsPure(aggNode))
+	rowLevels := 3
+	if aggNode != nil {
+		rowLevels = 2
+	}
 
 	ctx.PushFrame(frame)
 	for idx, e := range ents {
@@ -586,6 +616,10 @@ func doBucket(args *Args, ctx *Context) *Value {
 			frame["_K"] = NewText(e.Key)
 		}
 		groupKey := args.EvalNode(keyNode)
+		row := e.Val
+		if eager {
+			row = e.Val.CloneAt(rowLevels, args.Pos())
+		}
 		keyStr := ""
 		if aggNode == nil {
 			keyStr = bucketKeyText(groupKey, keyNode.Pos)
@@ -596,9 +630,9 @@ func doBucket(args *Args, ctx *Context) *Value {
 			// (spec §7.3). Grouping them by identity, as the three-argument form
 			// does, made the second group overwrite the first in the result.
 			if g, ok := byText[keyStr]; ok {
-				g.rows = append(g.rows, e.Val)
+				g.rows = append(g.rows, row)
 			} else {
-				g := &bucketGroup{key: groupKey, keyStr: keyStr, rows: []*Value{e.Val}}
+				g := &bucketGroup{key: groupKey, keyStr: keyStr, rows: []*Value{row}}
 				byText[keyStr] = g
 				groups = append(groups, g)
 			}
@@ -609,13 +643,13 @@ func doBucket(args *Args, ctx *Context) *Value {
 		found := false
 		for _, g := range bucket {
 			if g.key.Eql(groupKey, Pos{}) {
-				g.rows = append(g.rows, e.Val)
+				g.rows = append(g.rows, row)
 				found = true
 				break
 			}
 		}
 		if !found {
-			g := &bucketGroup{key: groupKey, keyStr: keyStr, rows: []*Value{e.Val}}
+			g := &bucketGroup{key: groupKey, keyStr: keyStr, rows: []*Value{row}}
 			table[h] = append(table[h], g)
 			groups = append(groups, g)
 		}
@@ -629,7 +663,11 @@ func doBucket(args *Args, ctx *Context) *Value {
 			rowsCopy := make([]*Value, len(g.rows))
 			for i, r := range g.rows {
 				// The rows sit in a list inside the result record: level 3.
-				rowsCopy[i] = r.CloneAt(3, args.Pos())
+				if eager {
+					rowsCopy[i] = r
+				} else {
+					rowsCopy[i] = r.CloneAt(3, args.Pos())
+				}
 			}
 			out.Set(g.keyStr, NewListOwned(rowsCopy))
 		}

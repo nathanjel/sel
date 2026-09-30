@@ -3,7 +3,7 @@
 
 import * as D from '../decimal.mjs';
 import { Value, NONE, structuralHash, scalarKey } from '../value.mjs';
-import { define } from '../registry.mjs';
+import { define, isHostFunction } from '../registry.mjs';
 import { bytesCompare, compareText } from '../utf8.mjs';
 import { fail, SelError } from '../errors.mjs';
 import { cpLength, checkText, MAX_TEXT_LEN } from '../budget.mjs';
@@ -46,6 +46,32 @@ function nodeContainsVar(node, name) {
       case 'bin': stack.push(n.l, n.r); break;
       case 'un': stack.push(n.x); break;
       case 'assign': stack.push(n.target, n.value); break;
+      case 'seq': case 'list': for (const item of n.items) stack.push(item); break;
+      default: break;
+    }
+  }
+  return false;
+}
+
+// Whether evaluating `node` might write into a value: it holds an assignment or
+// calls a host function. A collector copies an element when it collects it
+// (spec §3.4); while nothing below the body can write, deferring that copy to
+// the end is unobservable, so only a body that might write pays for copying at
+// the moment of collection.
+function mayWrite(node) {
+  const stack = [node];
+  while (stack.length > 0) {
+    const n = stack.pop();
+    if (!n) continue;
+    switch (n.t) {
+      case 'assign': return true;
+      case 'index': stack.push(n.obj, n.idx); break;
+      case 'call':
+        if (isHostFunction(n.name)) return true;
+        for (const item of n.args) stack.push(item);
+        break;
+      case 'bin': stack.push(n.l, n.r); break;
+      case 'un': stack.push(n.x); break;
       case 'seq': case 'list': for (const item of n.items) stack.push(item); break;
       default: break;
     }
@@ -428,6 +454,7 @@ function doSort(args, ctx, forcedDir) {
     indexed = entries.map(([, item], idx) => ({ item, info: keyInfo(item), idx }));
   } else {
     const needsK = nodeContainsVar(body, '_K');
+    const eager = mayWrite(body);
     indexed = entries.map(([k, item], idx) => {
       const frame = new Map([[binder, item]]);
       if (needsK) frame.set('_K', Value.text(k));
@@ -438,7 +465,9 @@ function doSort(args, ctx, forcedDir) {
       } finally {
         ctx.popFrame();
       }
-      return { item, info: keyInfo(evalKey), idx };
+      // Collected once its key is computed (spec §3.4): a later key that writes
+      // into this element must not reach the result.
+      return { item: eager ? item.cloneAt(2, args.pos) : item, info: keyInfo(evalKey), idx, owned: eager };
     });
   }
 
@@ -456,7 +485,7 @@ function doSort(args, ctx, forcedDir) {
     indexed.sort((x, y) => sign * compareInfo(x.info, y.info));
   }
 
-  return Value.listOwned(indexed.map((x) => x.item.cloneAt(2, args.pos)));
+  return Value.listOwned(indexed.map((x) => (x.owned ? x.item : x.item.cloneAt(2, args.pos))));
 }
 
 function doTop(args, ctx, forcedDir) {
@@ -530,6 +559,13 @@ function doTop(args, ctx, forcedDir) {
     }
   };
   const needsK = body !== null && nodeContainsVar(body, '_K');
+  // Collected once its key is computed (spec §3.4); a key that might write copies
+  // the element as it is admitted, so a later key's write cannot reach it.
+  const eager = body !== null && mayWrite(body);
+  const admit = (candidate) => {
+    if (eager) { candidate.item = candidate.item.cloneAt(2, args.pos); candidate.owned = true; }
+    return candidate;
+  };
   let idx = 0;
   const consume = (key, item) => {
     let candidate;
@@ -547,10 +583,10 @@ function doTop(args, ctx, forcedDir) {
     }
     idx += 1;
     if (heap.length < limit) {
-      heap.push(candidate);
+      heap.push(admit(candidate));
       siftUp(heap.length - 1);
     } else if (worse(heap[0], candidate)) {
-      heap[0] = candidate;
+      heap[0] = admit(candidate);
       siftDown(0);
     }
   };
@@ -567,7 +603,7 @@ function doTop(args, ctx, forcedDir) {
   }
   heap.sort(compare);
   // Copied like SORT's (spec §3.4): TOP is SORT and TAKE in one pass.
-  return Value.listOwned(heap.map((entry) => entry.item.cloneAt(2, args.pos)));
+  return Value.listOwned(heap.map((entry) => (entry.owned ? entry.item : entry.item.cloneAt(2, args.pos))));
 }
 
 define({
@@ -633,14 +669,20 @@ function doBucket(args, ctx) {
   const needsK = nodeContainsVar(keyNode, '_K');
   const frame = new Map([[binder, null]]);
   if (needsK) frame.set('_K', null);
+  // A row is collected when its key is computed and it is grouped (spec §3.4):
+  // when the key or the projection might write, it is copied then, so neither a
+  // later key nor the projection can change a row already grouped.
+  const eager = mayWrite(keyNode) || (aggregateNode !== null && mayWrite(aggregateNode));
   const table = new Map();
   const byText = new Map();
   const byScalar = new Map();
   const groups = [];
-  const process = (key, item, index) => {
-    frame.set(binder, item);
+  const process = (key, source, index) => {
+    frame.set(binder, source);
     if (needsK) frame.set('_K', Value.text(key === undefined ? String(index) : key));
     const groupKey = args.evalNode(keyNode);
+    // Bare: record → group list → row (3 levels); projected: group list → row (2).
+    const item = eager ? source.cloneAt(aggregateNode === null ? 3 : 2, args.pos) : source;
     // A bare bucket's key is an index key (spec §3.3): the scalar, verbatim,
     // and refused the way indexing refuses it -- never collapsed onto a
     // string that stands for every list, record or NULL. The projected
@@ -689,7 +731,7 @@ function doBucket(args, ctx) {
   if (aggregateNode === null) {
     const out = Value.none();
     for (const group of groups) {
-      out.set(group.keyString, Value.listOwned(group.rows.map((row) => row.cloneAt(3, args.pos))));
+      out.set(group.keyString, Value.listOwned(eager ? group.rows : group.rows.map((row) => row.cloneAt(3, args.pos))));
     }
     return out;
   }

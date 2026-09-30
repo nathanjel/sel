@@ -781,3 +781,183 @@ X = 1; A = X; A[A["k"]="k"]
 --- expect
 text "k"
 ===
+
+### name: alias.collected-copy-timing.map
+--- note
+MAP: a collector copies an element when it collects it (SPEC §3.4). A later body in the same aggregate writes into a source element already collected; the write must not reach the result. Before this was pinned the hosts disagreed on when the copy was made.
+--- source
+R = LIST(RECORD("id",1), RECORD("id",2)); MAP(R, (IF(_["id"] == 2, (R[1]["id"] = 99), 0); _))[1]["id"]
+--- expect
+num 1
+===
+
+### name: alias.collected-copy-timing.filter
+--- note
+FILTER: a collector copies an element when it collects it (SPEC §3.4). A later body in the same aggregate writes into a source element already collected; the write must not reach the result. Before this was pinned the hosts disagreed on when the copy was made.
+--- source
+R = LIST(RECORD("id",1), RECORD("id",2)); FILTER(R, (IF(_["id"] == 2, (R[1]["id"] = 99), 0); TRUE))[1]["id"]
+--- expect
+num 1
+===
+
+### name: alias.collected-copy-timing.sort
+--- note
+SORT with a body: a collector copies an element when it collects it (SPEC §3.4). A later body in the same aggregate writes into a source element already collected; the write must not reach the result. Before this was pinned the hosts disagreed on when the copy was made.
+--- source
+R = LIST(RECORD("id",1), RECORD("id",2)); SORT(R, (IF(_["id"] == 2, (R[1]["id"] = 99), 0); _["id"]))[1]["id"]
+--- expect
+num 1
+===
+
+### name: alias.collected-copy-timing.sort-desc
+--- note
+SORT_DESC with a body: a collector copies an element when it collects it (SPEC §3.4). A later body in the same aggregate writes into a source element already collected; the write must not reach the result. Before this was pinned the hosts disagreed on when the copy was made.
+--- source
+R = LIST(RECORD("id",1), RECORD("id",2)); SORT_DESC(R, (IF(_["id"] == 2, (R[1]["id"] = 99), 0); _["id"]))[2]["id"]
+--- expect
+num 1
+===
+
+### name: alias.collected-copy-timing.sort-by
+--- note
+SORT_BY: a collector copies an element when it collects it (SPEC §3.4). A later body in the same aggregate writes into a source element already collected; the write must not reach the result. Before this was pinned the hosts disagreed on when the copy was made.
+--- source
+R = LIST(RECORD("id",1), RECORD("id",2)); SORT_BY(R, (IF(_["id"] == 2, (R[1]["id"] = 99), 0); _["id"]))[1]["id"]
+--- expect
+num 1
+===
+
+### name: alias.collected-copy-timing.sort-by-binder
+--- note
+SORT_BY with a binder: a collector copies an element when it collects it (SPEC §3.4). A later body in the same aggregate writes into a source element already collected; the write must not reach the result. Before this was pinned the hosts disagreed on when the copy was made.
+--- source
+R = LIST(RECORD("id",1), RECORD("id",2)); SORT_BY(R, x, (IF(x["id"] == 2, (R[1]["id"] = 99), 0); x["id"]))[1]["id"]
+--- expect
+num 1
+===
+
+### name: alias.collected-copy-timing.top
+--- note
+TOP with a body: a collector copies an element when it collects it (SPEC §3.4). A later body in the same aggregate writes into a source element already collected; the write must not reach the result. Before this was pinned the hosts disagreed on when the copy was made.
+--- source
+R = LIST(RECORD("id",1), RECORD("id",2)); TOP(R, (IF(_["id"] == 2, (R[1]["id"] = 99), 0); _["id"]), 2)[1]["id"]
+--- expect
+num 1
+===
+
+### name: alias.collected-copy-timing.top-desc
+--- note
+TOP_DESC with a body: a collector copies an element when it collects it (SPEC §3.4). A later body in the same aggregate writes into a source element already collected; the write must not reach the result. Before this was pinned the hosts disagreed on when the copy was made.
+--- source
+R = LIST(RECORD("id",1), RECORD("id",2)); TOP_DESC(R, (IF(_["id"] == 2, (R[1]["id"] = 99), 0); _["id"]), 2)[2]["id"]
+--- expect
+num 1
+===
+
+### name: alias.collected-copy-timing.top-by
+--- note
+TOP_BY: a collector copies an element when it collects it (SPEC §3.4). A later body in the same aggregate writes into a source element already collected; the write must not reach the result. Before this was pinned the hosts disagreed on when the copy was made.
+--- source
+R = LIST(RECORD("id",1), RECORD("id",2)); TOP_BY(R, (IF(_["id"] == 2, (R[1]["id"] = 99), 0); _["id"]), 2)[1]["id"]
+--- expect
+num 1
+===
+
+### name: alias.collected-copy-timing.top-by-binder
+--- note
+TOP_BY with a binder: a collector copies an element when it collects it (SPEC §3.4). A later body in the same aggregate writes into a source element already collected; the write must not reach the result. Before this was pinned the hosts disagreed on when the copy was made.
+--- source
+R = LIST(RECORD("id",1), RECORD("id",2)); TOP_BY(R, x, (IF(x["id"] == 2, (R[1]["id"] = 99), 0); x["id"]), 2)[1]["id"]
+--- expect
+num 1
+===
+
+### name: alias.collected-copy-timing.bucket-two-argument
+--- note
+two-argument BUCKET, the write in the key: a collector copies an element when it collects it (SPEC §3.4). A later body in the same aggregate writes into a source element already collected; the write must not reach the result. Before this was pinned the hosts disagreed on when the copy was made.
+--- source
+R = LIST(RECORD("id",1), RECORD("id",2)); BUCKET(R, (IF(_["id"] == 2, (R[1]["id"] = 99), 0); "g"))["g"][1]["id"]
+--- expect
+num 1
+===
+
+### name: alias.collected-copy-timing.bucket-projected-write-in-key
+--- note
+projected BUCKET, the write in the key: a collector copies an element when it collects it (SPEC §3.4). A later body in the same aggregate writes into a source element already collected; the write must not reach the result. Before this was pinned the hosts disagreed on when the copy was made.
+--- source
+R = LIST(RECORD("id",1), RECORD("id",2)); BUCKET(R, (IF(_["id"] == 2, (R[1]["id"] = 99), 0); "g"), SUM(_, r, r["id"]))[1]
+--- expect
+num 3
+===
+
+### name: alias.collected-copy-timing.bucket-projected-write-in-projection
+--- note
+projected BUCKET, the write in the projection: the rows were grouped (and copied) before it ran: a collector copies an element when it collects it (SPEC §3.4). A later body in the same aggregate writes into a source element already collected; the write must not reach the result. Before this was pinned the hosts disagreed on when the copy was made.
+--- source
+R = LIST(RECORD("id",1), RECORD("id",2)); BUCKET(R, "g", (R[1]["id"] = 99; SUM(_, r, r["id"])))[1]
+--- expect
+num 3
+===
+
+### name: alias.collected-copy-timing.bucket-projected-returns-the-group
+--- note
+projected BUCKET returning its group after writing the source: a collector copies an element when it collects it (SPEC §3.4). A later body in the same aggregate writes into a source element already collected; the write must not reach the result. Before this was pinned the hosts disagreed on when the copy was made.
+--- source
+R = LIST(RECORD("id",1), RECORD("id",2)); BUCKET(R, "g", (R[1]["id"] = 99; _))[1][1]["id"]
+--- expect
+num 1
+===
+
+### name: alias.collected-copy-timing.bucket-binder-write-in-key
+--- note
+four-argument BUCKET, the write in the key: a collector copies an element when it collects it (SPEC §3.4). A later body in the same aggregate writes into a source element already collected; the write must not reach the result. Before this was pinned the hosts disagreed on when the copy was made.
+--- source
+R = LIST(RECORD("id",1), RECORD("id",2)); BUCKET(R, x, (IF(x["id"] == 2, (R[1]["id"] = 99), 0); "g"), SUM(x, r, r["id"]))[1]
+--- expect
+num 3
+===
+
+### name: alias.collected-copy-timing.bucket-binder-write-in-projection
+--- note
+four-argument BUCKET, the write in the projection: a collector copies an element when it collects it (SPEC §3.4). A later body in the same aggregate writes into a source element already collected; the write must not reach the result. Before this was pinned the hosts disagreed on when the copy was made.
+--- source
+R = LIST(RECORD("id",1), RECORD("id",2)); BUCKET(R, x, "g", (R[1]["id"] = 99; SUM(x, r, r["id"])))[1]
+--- expect
+num 3
+===
+
+### name: alias.collected-copy-timing.independent-after-return.sort-by
+--- note
+The control: a write after the aggregate returned never reaches its result.
+--- source
+R = LIST(RECORD("id",1), RECORD("id",2)); S = SORT_BY(R, _["id"]); R[1]["id"] = 99; S[1]["id"]
+--- expect
+num 1
+===
+
+### name: alias.collected-copy-timing.independent-after-return.top-by
+--- note
+The control: a write after the aggregate returned never reaches its result.
+--- source
+R = LIST(RECORD("id",1), RECORD("id",2)); T = TOP_BY(R, _["id"], 2); R[1]["id"] = 99; T[1]["id"]
+--- expect
+num 1
+===
+
+### name: alias.collected-copy-timing.independent-after-return.bucket
+--- note
+The control: a write after the aggregate returned never reaches its result.
+--- source
+R = LIST(RECORD("id",1), RECORD("id",2)); B = BUCKET(R, "g"); R[1]["id"] = 99; B["g"][1]["id"]
+--- expect
+num 1
+===
+
+### name: alias.collected-copy-timing.independent-after-return.bucket-projected
+--- note
+The control: a write after the aggregate returned never reaches its result.
+--- source
+R = LIST(RECORD("id",1), RECORD("id",2)); B = BUCKET(R, "g", _); R[1]["id"] = 99; B[1][1]["id"]
+--- expect
+num 1
+===

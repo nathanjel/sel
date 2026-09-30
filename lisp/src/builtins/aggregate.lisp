@@ -20,6 +20,29 @@
                    (node-contains-var-p (node-r node) var-name)))
       (t nil))))
 
+;;; Whether evaluating NODE might write into a value: it holds an assignment or
+;;; calls a host function. A collector copies an element when it collects it
+;;; (SPEC 3.4); while nothing below the body can write, deferring the copy to the
+;;; end is unobservable, so only a body that might write copies at collection.
+;;; Iterative: a body can be a flat chain as long as the source.
+(defun node-may-write-p (node)
+  (let ((stack (list node))
+        (hosts (and (boundp '*host-functions*) (symbol-value '*host-functions*))))
+    (loop while stack
+          do (let ((n (pop stack)))
+               (when (and n (node-p n))
+                 (case (node-kind n)
+                   (:assign (return-from node-may-write-p t))
+                   (:call
+                    (when (and hosts (node-s n) (gethash (string-upcase (node-s n)) hosts))
+                      (return-from node-may-write-p t))
+                    (dolist (it (node-items n)) (push it stack)))
+                   ((:seq :list) (dolist (it (node-items n)) (push it stack)))
+                   ((:bin :index) (push (node-l n) stack) (push (node-r n) stack))
+                   ((:un :group) (push (node-l n) stack))
+                   (t nil)))))
+    nil))
+
 (defun snapshot-source (v)
   "The elements V has now, as a container of its own (SPEC 7.3): an aggregate
 visits what its source held when it started, so a key the body adds is not
@@ -552,6 +575,10 @@ order it is handed its elements."
                                    (let ((c (compare-sort-keys (sort-item-key x) (sort-item-key y))))
                                      (if (zerop c) (> (sort-item-idx x) (sort-item-idx y)) (> c 0))))))
                  (needs-k (and body (node-contains-var-p body "_K")))
+                 ;; Collected once its key is computed (SPEC 3.4): a key that might
+                 ;; write copies the element then, so a later key's write cannot
+                 ;; reach it.
+                 (eager (and body (node-may-write-p body)))
                  (binder-cell (cons binder nil))
                  (k-cell (when needs-k (cons "_K" nil)))
                  (frame (if needs-k (list binder-cell k-cell) (list binder-cell))))
@@ -579,7 +606,8 @@ order it is handed its elements."
                                     do (setf (cdr binder-cell) item)
                                        (when needs-k
                                          (setf (cdr k-cell) (format-index-text (1+ i))))
-                                       (funcall push-item (make-sort-item item (args-eval a body) i)))))
+                                       (let ((key (args-eval a body)))
+                                         (funcall push-item (make-sort-item (if eager (value-copy item) item) key i))))))
                            ((value-shape val)
                             (let* ((shape (value-shape val))
                                    (storage (value-storage val))
@@ -590,14 +618,16 @@ order it is handed its elements."
                                     do (setf (cdr binder-cell) item)
                                        (when needs-k
                                          (setf (cdr k-cell) (%text k)))
-                                       (funcall push-item (make-sort-item item (args-eval a body) i)))))
+                                       (let ((key (args-eval a body)))
+                                         (funcall push-item (make-sort-item (if eager (value-copy item) item) key i))))))
                            (t
                             (loop for (k . item) in (aggregate-elements val)
                                   for idx from 0
                                   do (setf (cdr binder-cell) item)
                                      (when needs-k
                                        (setf (cdr k-cell) (%text k)))
-                                     (funcall push-item (make-sort-item item (args-eval a body) idx)))))
+                                     (let ((key (args-eval a body)))
+                                       (funcall push-item (make-sort-item (if eager (value-copy item) item) key idx))))))
                       (ctx-pop-frame ctx))))
               (let ((items (funcall get-items)))
                 (setf items (stable-sort items
@@ -612,7 +642,7 @@ order it is handed its elements."
                 ;; copying the rest would be the cost of a full SORT.
                 (make-list-value
                  (loop for x in items
-                       collect (if fresh
+                       collect (if (or fresh eager)
                                    (sort-item-item x)
                                    (value-copy (sort-item-item x))))))))))))
 
@@ -690,16 +720,22 @@ order it is handed its elements."
                (groups-table (make-hash-table :test #'eql))
                (groups '())
                (needs-k (node-contains-var-p key-node "_K"))
+               ;; A row is collected when its key is computed and it is grouped
+               ;; (SPEC 3.4): when the key or the projection might write, it is
+               ;; copied then, so neither a later key nor the projection can
+               ;; change a row already grouped.
+               (eager (or (node-may-write-p key-node) (and agg-node (node-may-write-p agg-node))))
                (binder-cell (cons binder nil))
                (k-cell (when needs-k (cons "_K" nil)))
                (frame (if needs-k (list binder-cell k-cell) (list binder-cell))))
           (ctx-push-frame ctx frame)
           (unwind-protect
-               (flet ((process-item (item k idx)
-                        (setf (cdr binder-cell) item)
+               (flet ((process-item (source k idx)
+                        (setf (cdr binder-cell) source)
                         (when needs-k
                           (setf (cdr k-cell) (if k (%text k) (format-index-text idx))))
                         (let* ((eval-key (args-eval a key-node))
+                               (item (if eager (value-copy source) source))
                                ;; A bare bucket's key is an index key (spec §3.3):
                                ;; the scalar, verbatim, and refused the way indexing
                                ;; refuses it -- never collapsed onto a string that
@@ -751,7 +787,7 @@ order it is handed its elements."
           (if (null agg-node)
               (let ((out (make-none)))
                 (dolist (g groups)
-                  (value-set out (group-entry-key-str g) (make-list-value (if src-fresh
+                  (value-set out (group-entry-key-str g) (make-list-value (if (or src-fresh eager)
                                                                 (group-entry-rows g)
                                                                 (mapcar #'value-copy (group-entry-rows g))))))
                 out)

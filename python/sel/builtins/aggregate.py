@@ -26,6 +26,38 @@ def shape(args):
     return '_', args.node(1)
 
 
+
+def _may_write(node) -> bool:
+    """Whether evaluating NODE might write into a value: it holds an assignment
+    or calls a host function. A collector copies an element when it collects it
+    (spec §3.4); while nothing below the body can write, deferring the copy to the
+    end is unobservable, so only a body that might write copies at collection."""
+    from ..registry import is_host_function
+    stack = [node]
+    while stack:
+        n = stack.pop()
+        if n is None:
+            continue
+        t = n.t
+        if t == 'assign':
+            return True
+        if t == 'index':
+            stack.append(n.obj)
+            stack.append(n.idx)
+        elif t == 'call':
+            if is_host_function(n.name or ''):
+                return True
+            stack.extend(n.args)
+        elif t == 'bin':
+            stack.append(n.l)
+            stack.append(n.r)
+        elif t == 'un':
+            stack.append(n.x)
+        elif t in ('seq', 'list'):
+            stack.extend(n.items)
+    return False
+
+
 def node_contains_var(node, name):
     """Whether NODE reads the variable `name`. Iterative: a body is a tree the
     source can make as deep as it is long (a flat chain of 5,000 `+` inside an
@@ -593,13 +625,18 @@ def do_sort(args, ctx, forced_dir):
         if with_k:
             frame['_K'] = None
         indexed = []
+        # Collected once its key is computed (spec §3.4): a key that might write
+        # copies the element then, so a later key's write cannot reach it.
+        eager = _may_write(body)
         ctx.push_frame(frame)
         try:
             for idx, (k, item) in enumerate(ents):
                 frame[binder] = item
                 if with_k:
                     frame['_K'] = Value.text(k)
-                indexed.append({'item': item, 'key': args.eval_node(body), 'idx': idx})
+                key_value = args.eval_node(body)
+                indexed.append({'item': item.clone(args.pos, 2) if eager else item,
+                                'key': key_value, 'idx': idx, 'owned': eager})
         finally:
             ctx.pop_frame()
 
@@ -608,7 +645,8 @@ def do_sort(args, ctx, forced_dir):
     # rule for DESC (SPEC 7.3: only unequal ranks reverse, ties stay put).
     keys = [sort_key(x['key']) for x in indexed]
     order = sorted(range(len(indexed)), key=keys.__getitem__, reverse=(direction == 'DESC'))
-    return Value._list_owned([indexed[i]['item'].clone(args.pos, 2) for i in order])
+    return Value._list_owned([indexed[i]['item'] if indexed[i].get('owned') else indexed[i]['item'].clone(args.pos, 2)
+                              for i in order])
 
 
 define('SORT', 1, 3, lazy=True, binds=True, fn=lambda args, ctx: do_sort(args, ctx, 'ASC'))
@@ -664,6 +702,8 @@ def do_top(args, ctx, forced_dir):
     # evaluation order, and therefore the first error, is unchanged: each element's
     # key is evaluated in order, before anything is selected.
     needs_k = body is not None and node_contains_var(body, '_K')
+    # Collected once its key is computed (spec §3.4); see do_sort.
+    eager = body is not None and _may_write(body)
     items = []
     keys = []
 
@@ -679,7 +719,7 @@ def do_top(args, ctx, forced_dir):
                 keys.append(sort_key(args.eval_node(body)))
             finally:
                 ctx.pop_frame()
-        items.append(item)
+        items.append(item.clone(args.pos, 2) if eager else item)
 
     if value.is_list and value.storage is not None:
         # A packed list may carry the keys a FILTER kept (list_keys); _K is
@@ -699,7 +739,7 @@ def do_top(args, ctx, forced_dir):
         order = sorted(range(len(items)), key=keys.__getitem__, reverse=(direction == 'DESC'))
     else:
         order = select(limit, range(len(items)), key=keys.__getitem__)
-    return Value._list_owned([items[i].clone(args.pos, 2) for i in order])
+    return Value._list_owned([items[i] if eager else items[i].clone(args.pos, 2) for i in order])
 
 
 define('TOP', 2, 4, lazy=True, binds=True, fn=lambda args, ctx: do_top(args, ctx, 'ASC'))
@@ -744,12 +784,18 @@ def do_bucket(args, ctx):
     scalar_table = {}
     index_table = {}
     groups = []
+    # A row is collected when its key is computed and it is grouped (spec §3.4):
+    # when the key or the projection might write, it is copied then, so neither a
+    # later key nor the projection can change a row already grouped.
+    eager = _may_write(key_node) or (agg_node is not None and _may_write(agg_node))
+    row_levels = 3 if agg_node is None else 2
 
-    def process(key, item, index):
-        frame[binder] = item
+    def process(key, source, index):
+        frame[binder] = source
         if needs_k:
             frame['_K'] = Value.text(key if key is not None else str(index))
         group_key = args.eval_node(key_node)
+        item = source.clone(args.pos, row_levels) if eager else source
         # A bare bucket's key is an index key (spec §3.3): the scalar,
         # verbatim, and refused the way indexing refuses it -- never collapsed
         # onto a string that stands for every list, record or NULL. The
@@ -804,7 +850,7 @@ def do_bucket(args, ctx):
     if agg_node is None:
         out = Value.none()
         for g in groups:
-            out.set(g['key_str'], Value._list_owned([row.clone(args.pos, 3) for row in g['rows']]))
+            out.set(g['key_str'], Value._list_owned(g['rows'] if eager else [row.clone(args.pos, 3) for row in g['rows']]))
         return out
 
     out = []
