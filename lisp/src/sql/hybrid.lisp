@@ -609,17 +609,21 @@ and not a full pushdown (finding Y, lanes): its continuation would read
 (defparameter +order-sorts+ '("SORT" "SORT_DESC" "SORT_BY" "TOP" "TOP_DESC" "TOP_BY"))
 (defparameter +order-wraps+
   '("SELECT_COLS" "MAP"))
+(defparameter +order-joins+ '("LINK" "LINK_LEFT"))
 
 (defun order-lost-p (steps)
   "Whether pushing STEPS into one statement would lose an order SEL keeps.
 
 SEL's sorts are stable and its BUCKET lists groups in the order they first
-appear; SQL promises neither through a subquery. Two cases follow, and both are
+appear; SQL promises neither through a subquery. Three cases follow, and all are
 the planner's to refuse -- the translator's bytes for them are pinned and the
 program is still fine in memory:
 
   * a BUCKET after a sort: GROUP BY answers its groups in the server's order, not
     in the order the sorted rows first showed them (JS-C59, PHP-C35, LISP-C26);
+  * a LINK or LINK_LEFT after a sort (a TOP* included: the LIMIT beside the ORDER BY
+    decides which rows survive, not the order a join returns them in): the joined rows
+    come out in the server's order, where SEL's are the left's order then the right's;
   * a second sort separated from the first by a projection (MAP, SELECT_COLS): the
     earlier keys are hidden, so the outer ORDER BY's ties fall back to an order a
     server does not keep, where SEL's stable sort keeps the earlier one. Two sorts
@@ -627,7 +631,8 @@ program is still fine in memory:
   (let ((sorted nil) (wrapped nil))
     (dolist (step steps nil)
       (let ((name (sel::node-s step)))
-        (cond ((and (equal name "BUCKET") sorted) (return t))
+        (cond ((and (or (equal name "BUCKET") (member name +order-joins+ :test #'equal)) sorted)
+               (return t))
               ((member name +order-sorts+ :test #'equal)
                (when (and sorted wrapped) (return t))
                ;; (A TOP* is a sort and a cut, and what follows is over a derived table with a

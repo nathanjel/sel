@@ -8622,6 +8622,34 @@ static std::vector<std::pair<std::string, Binding>> c1304_bind() {
   };
 }
 
+static std::vector<std::pair<std::string, Binding>> c1305_bind() {
+  return {
+      {"ORDERS", Binding::relation("orders", "o", {{"ID", Binding::column("id", "o", SqlKind::Num)}, {"CUSTOMER_ID", Binding::column("customer_id", "o", SqlKind::Num)}, {"AMOUNT", Binding::column("amount", "o", SqlKind::Num)}, {"NAME", Binding::column("name", "o", SqlKind::Text)}}, std::nullopt, std::nullopt)},
+      {"CUSTOMERS", Binding::relation("customers", "c", {{"ID", Binding::column("id", "c", SqlKind::Num)}, {"CNAME", Binding::column("cname", "c", SqlKind::Text)}}, std::nullopt, std::nullopt)},
+  };
+}
+
+static std::vector<std::pair<std::string, Binding>> c1306_bind() {
+  return {
+      {"ORDERS", Binding::relation("orders", "o", {{"ID", Binding::column("id", "o", SqlKind::Num)}, {"CUSTOMER_ID", Binding::column("customer_id", "o", SqlKind::Num)}, {"AMOUNT", Binding::column("amount", "o", SqlKind::Num)}, {"NAME", Binding::column("name", "o", SqlKind::Text)}}, std::nullopt, std::nullopt)},
+      {"CUSTOMERS", Binding::relation("customers", "c", {{"ID", Binding::column("id", "c", SqlKind::Num)}, {"CNAME", Binding::column("cname", "c", SqlKind::Text)}}, std::nullopt, std::nullopt)},
+  };
+}
+
+static std::vector<std::pair<std::string, Binding>> c1307_bind() {
+  return {
+      {"ORDERS", Binding::relation("orders", "o", {{"ID", Binding::column("id", "o", SqlKind::Num)}, {"CUSTOMER_ID", Binding::column("customer_id", "o", SqlKind::Num)}, {"AMOUNT", Binding::column("amount", "o", SqlKind::Num)}, {"NAME", Binding::column("name", "o", SqlKind::Text)}}, std::nullopt, std::nullopt)},
+      {"CUSTOMERS", Binding::relation("customers", "c", {{"ID", Binding::column("id", "c", SqlKind::Num)}, {"CNAME", Binding::column("cname", "c", SqlKind::Text)}}, std::nullopt, std::nullopt)},
+  };
+}
+
+static std::vector<std::pair<std::string, Binding>> c1308_bind() {
+  return {
+      {"ORDERS", Binding::relation("orders", "o", {{"ID", Binding::column("id", "o", SqlKind::Num)}, {"CUSTOMER_ID", Binding::column("customer_id", "o", SqlKind::Num)}, {"AMOUNT", Binding::column("amount", "o", SqlKind::Num)}, {"NAME", Binding::column("name", "o", SqlKind::Text)}}, std::nullopt, std::nullopt)},
+      {"CUSTOMERS", Binding::relation("customers", "c", {{"ID", Binding::column("id", "c", SqlKind::Num)}, {"CNAME", Binding::column("cname", "c", SqlKind::Text)}}, std::nullopt, std::nullopt)},
+  };
+}
+
 static const SqlCase CASES[] = {
     {.name = "lex.number.canonical-form-survives",
      .at = "01-lexical.sqlt:4",
@@ -30808,6 +30836,74 @@ static const SqlCase CASES[] = {
      .unrepresentable = nullptr,
      .register_fn = nullptr,
      .bindings_fn = c1304_bind},
+    {.name = "plan.order.limit-then-link-stays-in-memory",
+     .at = "52-audit-cases.sqlt:319",
+     .dialect = "mariadb",
+     .source = "ORDERS .> TOP_BY(_[\"id\"], 3) .> LINK(CUSTOMERS, _1[\"customer_id\"] == _2[\"id\"]) .> MAP(RECORD(\"a\", _[\"amount\"]))",
+     .expect = "SELECT `o`.* FROM `orders` `o` ORDER BY `o`.`id` ASC LIMIT 3",
+     .error = nullptr,
+     .throws = nullptr,
+     .params = nullptr,
+     .as_ = nullptr,
+     .mode = nullptr,
+     .strict = false,
+     .plan = "hybrid",
+     .has_tables = true,
+     .tables = {"orders"},
+     .unrepresentable = nullptr,
+     .register_fn = nullptr,
+     .bindings_fn = c1305_bind},
+    {.name = "plan.order.link-left-over-sorted-rows-stays-in-memory",
+     .at = "52-audit-cases.sqlt:337",
+     .dialect = "mariadb",
+     .source = "ORDERS .> SORT_BY(_[\"amount\"]) .> LINK_LEFT(CUSTOMERS, _1[\"customer_id\"] == _2[\"id\"]) .> MAP(RECORD(\"a\", _[\"amount\"]))",
+     .expect = "SELECT `o`.* FROM `orders` `o` ORDER BY `o`.`amount` ASC",
+     .error = nullptr,
+     .throws = nullptr,
+     .params = nullptr,
+     .as_ = nullptr,
+     .mode = nullptr,
+     .strict = false,
+     .plan = "hybrid",
+     .has_tables = true,
+     .tables = {"orders"},
+     .unrepresentable = nullptr,
+     .register_fn = nullptr,
+     .bindings_fn = c1306_bind},
+    {.name = "plan.order.projection-then-link-over-sorted-rows-stays-in-memory",
+     .at = "52-audit-cases.sqlt:355",
+     .dialect = "mariadb",
+     .source = "ORDERS .> SORT_BY(_[\"amount\"]) .> MAP(RECORD(\"cid\", _[\"customer_id\"], \"a\", _[\"amount\"])) .> LINK(CUSTOMERS, _1[\"cid\"] == _2[\"id\"]) .> MAP(RECORD(\"a\", _[\"a\"]))",
+     .expect = "SELECT `o`.`customer_id` AS `cid`, `o`.`amount` AS `a` FROM `orders` `o` ORDER BY `o`.`amount` ASC",
+     .error = nullptr,
+     .throws = nullptr,
+     .params = nullptr,
+     .as_ = nullptr,
+     .mode = nullptr,
+     .strict = false,
+     .plan = "hybrid",
+     .has_tables = true,
+     .tables = {"orders"},
+     .unrepresentable = nullptr,
+     .register_fn = nullptr,
+     .bindings_fn = c1307_bind},
+    {.name = "plan.order.sort-filter-then-link-stays-in-memory",
+     .at = "52-audit-cases.sqlt:373",
+     .dialect = "mariadb",
+     .source = "ORDERS .> SORT_BY(_[\"amount\"]) .> FILTER(_[\"amount\"] > 1) .> LINK(CUSTOMERS, _1[\"customer_id\"] == _2[\"id\"]) .> MAP(RECORD(\"a\", _[\"amount\"]))",
+     .expect = "SELECT `o`.* FROM `orders` `o` WHERE (`o`.`amount` > 1) ORDER BY `o`.`amount` ASC",
+     .error = nullptr,
+     .throws = nullptr,
+     .params = nullptr,
+     .as_ = nullptr,
+     .mode = nullptr,
+     .strict = false,
+     .plan = "hybrid",
+     .has_tables = true,
+     .tables = {"orders"},
+     .unrepresentable = nullptr,
+     .register_fn = nullptr,
+     .bindings_fn = c1308_bind},
 };
 
 std::span<const SqlCase> sql_cases() { return CASES; }

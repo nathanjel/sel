@@ -144,3 +144,9 @@ cases / 0 mismatches; `tools/check-cli-source.sh` (python) green; `python/bin/ap
 Which new tests fail on the baseline tree: `test_perf_unsupported_ops` (6), `test_perf_overcap_mul` (timing/attr),
 `test_perf_value_overheads` (3: formatting time, table attribute, ValueError); the rest are equivalence tests that
 pass on both trees by design (they pin behaviour the optimisation must preserve).
+
+## PY-REG-1 — Python against the 0.9.2 baseline on the scale-test (added after a peer's C++ +75 % measurement)
+
+| task | decision | baseline (0.9.2) | after | growth | evidence | notes |
+|---|---|---|---|---|---|---|
+| PY-REG-1 | implemented (partial recovery; residual +11…16 % on scenarios 1–4 deferred) | scale-test scenarios 1–6 in-process CPU 2.312 / 0.043 / 1.022 / 0.065 / 0.835 / 0.881 s | 2.686 / 0.049 / 1.134 / 0.072 / 0.858 / 0.901 s (ratios 1.16 / 1.14 / 1.11 / 1.12 / 1.03 / 1.02; before the work 1.19 / 1.19 / 1.25 / 1.20 / 1.04 / 1.00) | n/a (fixed 10x dataset) | `tools/perf/python/ab_scale.py`, `ab_scale_cpu.py`, `profile_scale.py`, `profile_diff.py`; `python/tests/test_perf_regression.py` (24 tests: adoption only for read-only consumers, plain-vs-optimised equality, too-deep element refused identically with and without adoption, RECORD still copies aliased args and bounds containers, leaf clone, Args out-of-range reads); attribution table in `regression-vs-0.9.2.md` | revision 223885e + working tree; CPython 3.14.7; box load 2–12 from other agents (CPU time, alternating fresh processes) |

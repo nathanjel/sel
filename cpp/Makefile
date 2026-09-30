@@ -231,6 +231,9 @@ $(TSAN_OBJS): $(TSAN_DIR)/%.o: %.cpp $(SQL_HDRS) sel.hpp | $(TSAN_DIR)
 $(BUILD)/sql-race-tsan: tests/sql_race.cpp $(TSAN_OBJS) | $(BUILD)
 	$(CXX) $(TSAN_FLAGS) -pthread -o $@ $< $(TSAN_OBJS)
 
+$(BUILD)/regex-race-tsan: tests/regex_race.cpp $(TSAN_OBJS) | $(BUILD)
+	$(CXX) $(TSAN_FLAGS) -pthread -o $@ $< $(TSAN_OBJS)
+
 $(BUILD)/registry-race-tsan: tests/registry_race.cpp $(TSAN_OBJS) | $(BUILD)
 	$(CXX) $(TSAN_FLAGS) -pthread -o $@ $< $(TSAN_OBJS)
 
@@ -239,6 +242,10 @@ $(BUILD)/registry-race-tsan: tests/registry_race.cpp $(TSAN_OBJS) | $(BUILD)
 .PHONY: tsan-registry
 tsan-registry: $(BUILD)/registry-race-tsan
 	$(BUILD)/registry-race-tsan
+
+.PHONY: tsan-regex
+tsan-regex: $(BUILD)/regex-race-tsan
+	$(BUILD)/regex-race-tsan
 
 .PHONY: tsan
 tsan: $(BUILD)/sql-race-tsan

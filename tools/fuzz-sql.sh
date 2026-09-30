@@ -92,11 +92,19 @@ $((n - emitted)) refused or not compiled, $disagreed disagreements"
 fi
 
 # --- against a real database, when there is one ------------------------------
-for impl in $(available_impls); do
-  { sel_slot impl_oracle "$impl" fuzz "--corpus=$WORK/corpus.selc" "${EXTRA[@]+"${EXTRA[@]}"}" > "$WORK/$impl.oracle" 2>&1
-    echo $? > "$WORK/$impl.oracle.rc"; } &
-done
-wait
+#
+# Under the gate this half holds the database lock (SEL_DB_LOCK, exported by
+# tools/check.sh) because it shares one schema with the other database layers;
+# the host-against-host half above needs no server and never waits for it. The
+# lock is taken before any slot, the order every database layer uses.
+(
+  if [ -n "${SEL_DB_LOCK:-}" ]; then exec 9>"$SEL_DB_LOCK"; flock 9; fi
+  for impl in $(available_impls); do
+    { sel_slot impl_oracle "$impl" fuzz "--corpus=$WORK/corpus.selc" "${EXTRA[@]+"${EXTRA[@]}"}" > "$WORK/$impl.oracle" 2>&1
+      echo $? > "$WORK/$impl.oracle.rc"; } &
+  done
+  wait
+)
 for impl in $(available_impls); do
   [ -s "$WORK/$impl.oracle" ] || continue
   sed "s/^/${impl}: /" "$WORK/$impl.oracle"

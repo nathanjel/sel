@@ -30,6 +30,42 @@ namespace {
 constexpr std::string_view SQL_SPECIAL_CALLS[] = {
     "IF", "COND", "COALESCE", "COUNT", "SUM", "AVG", "MIN", "MAX", "RECORD", "LIST"};
 
+// Root variable names the program assigns to, anywhere (helper statements, aggregate
+// bodies, index targets `A[k] = x` which write into A). Iterative: a flat chain of
+// 400k operators is one tree as deep as the source is long.
+std::set<std::string> assigned_roots(const Node& root) {
+  std::set<std::string> names;
+  std::vector<const Node*> stack{&root};
+  while (!stack.empty()) {
+    const Node* n = stack.back();
+    stack.pop_back();
+    if (n->t == NT::Assign) {
+      const Node* target = n->l.get();
+      while (target && target->t == NT::Index) target = target->l.get();
+      if (target && target->t == NT::Var) names.insert(target->s);
+    }
+    if (n->l) stack.push_back(n->l.get());
+    if (n->r) stack.push_back(n->r.get());
+    for (const auto& item : n->items) if (item) stack.push_back(item.get());
+  }
+  return names;
+}
+
+// A context the program may write to without the caller seeing it (CPP-C54), built
+// without deep-copying what the program never assigns (CPP-P24): entries it does not
+// assign to are shared with the caller's context (nothing writes to them), entries it
+// assigns to are cloned. A context that is not a plain variable map (a scalar, a list)
+// keeps the whole-value clone.
+Value isolated_context(const Value& context, const Node& ast) {
+  if (!context.is_none() || context.is_list()) return context.clone();
+  const std::set<std::string> roots = assigned_roots(ast);
+  Value out = Value::none();
+  for (const auto& entry : context.entries()) {
+    out.set(entry.first, roots.count(entry.first) ? entry.second.clone() : entry.second);
+  }
+  return out;
+}
+
 std::string upper_ascii(std::string value) {
   for (char& ch : value) {
     if (ch >= 'a' && ch <= 'z') ch = static_cast<char>(ch - 'a' + 'A');
@@ -1076,7 +1112,7 @@ Value Sql::execute_hybrid(const HybridPlan& plan, const DbRunner& db_runner,
     // Never the caller's own context: a helper assignment in the program
     // (`Y = 5; ...`) must not appear in it because nothing was pushed down while
     // it does not when something was (CPP-C54).
-    Value copy = context.clone();
+    Value copy = isolated_context(context, *plan.continuation_program->ast());
     return plan.continuation_program->run(copy);
   }
   if (!plan.sql_statement) {
@@ -1088,7 +1124,7 @@ Value Sql::execute_hybrid(const HybridPlan& plan, const DbRunner& db_runner,
   if (!plan.continuation_program) {
     throw std::logic_error("hybrid plan has no continuation program");
   }
-  Value continuation_context = context.clone();
+  Value continuation_context = isolated_context(context, *plan.continuation_program->ast());
   continuation_context.set(plan.continuation_source_var, rows);
   return plan.continuation_program->run(continuation_context);
 }

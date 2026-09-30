@@ -9082,6 +9082,34 @@ func c1304Bind() map[string]*sql.Binding {
 	}
 }
 
+func c1305Bind() map[string]*sql.Binding {
+	return map[string]*sql.Binding{
+		"ORDERS": bindRelation("orders", "o", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "CUSTOMER_ID", Binding: bindCol("customer_id", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "AMOUNT", Binding: bindCol("amount", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "NAME", Binding: bindCol("name", "o", sql.KindText, false, false, false, "")}}, "", "", ""),
+		"CUSTOMERS": bindRelation("customers", "c", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "c", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "CNAME", Binding: bindCol("cname", "c", sql.KindText, false, false, false, "")}}, "", "", ""),
+	}
+}
+
+func c1306Bind() map[string]*sql.Binding {
+	return map[string]*sql.Binding{
+		"ORDERS": bindRelation("orders", "o", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "CUSTOMER_ID", Binding: bindCol("customer_id", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "AMOUNT", Binding: bindCol("amount", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "NAME", Binding: bindCol("name", "o", sql.KindText, false, false, false, "")}}, "", "", ""),
+		"CUSTOMERS": bindRelation("customers", "c", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "c", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "CNAME", Binding: bindCol("cname", "c", sql.KindText, false, false, false, "")}}, "", "", ""),
+	}
+}
+
+func c1307Bind() map[string]*sql.Binding {
+	return map[string]*sql.Binding{
+		"ORDERS": bindRelation("orders", "o", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "CUSTOMER_ID", Binding: bindCol("customer_id", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "AMOUNT", Binding: bindCol("amount", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "NAME", Binding: bindCol("name", "o", sql.KindText, false, false, false, "")}}, "", "", ""),
+		"CUSTOMERS": bindRelation("customers", "c", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "c", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "CNAME", Binding: bindCol("cname", "c", sql.KindText, false, false, false, "")}}, "", "", ""),
+	}
+}
+
+func c1308Bind() map[string]*sql.Binding {
+	return map[string]*sql.Binding{
+		"ORDERS": bindRelation("orders", "o", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "CUSTOMER_ID", Binding: bindCol("customer_id", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "AMOUNT", Binding: bindCol("amount", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "NAME", Binding: bindCol("name", "o", sql.KindText, false, false, false, "")}}, "", "", ""),
+		"CUSTOMERS": bindRelation("customers", "c", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "c", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "CNAME", Binding: bindCol("cname", "c", sql.KindText, false, false, false, "")}}, "", "", ""),
+	}
+}
+
 type SqlCase struct {
 	Name            string
 	At              string
@@ -31288,4 +31316,72 @@ var sqlCases = []SqlCase{
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
 	 BindingsFn: c1304Bind},
+	{Name: "plan.order.limit-then-link-stays-in-memory",
+	 At: "52-audit-cases.sqlt:319",
+	 Dialect: "mariadb",
+	 Source: "ORDERS .> TOP_BY(_[\"id\"], 3) .> LINK(CUSTOMERS, _1[\"customer_id\"] == _2[\"id\"]) .> MAP(RECORD(\"a\", _[\"amount\"]))",
+	 Expect: strPtr("SELECT `o`.* FROM `orders` `o` ORDER BY `o`.`id` ASC LIMIT 3"),
+	 Error: nil,
+	 Throws: nil,
+	 Params: nil,
+	 As: nil,
+	 Mode: nil,
+	 Strict: false,
+	 Plan: strPtr("hybrid"),
+	 HasTables: true,
+	 Tables: []string{"orders"},
+	 Unrepresentable: nil,
+	 RegisterFn: nil,
+	 BindingsFn: c1305Bind},
+	{Name: "plan.order.link-left-over-sorted-rows-stays-in-memory",
+	 At: "52-audit-cases.sqlt:337",
+	 Dialect: "mariadb",
+	 Source: "ORDERS .> SORT_BY(_[\"amount\"]) .> LINK_LEFT(CUSTOMERS, _1[\"customer_id\"] == _2[\"id\"]) .> MAP(RECORD(\"a\", _[\"amount\"]))",
+	 Expect: strPtr("SELECT `o`.* FROM `orders` `o` ORDER BY `o`.`amount` ASC"),
+	 Error: nil,
+	 Throws: nil,
+	 Params: nil,
+	 As: nil,
+	 Mode: nil,
+	 Strict: false,
+	 Plan: strPtr("hybrid"),
+	 HasTables: true,
+	 Tables: []string{"orders"},
+	 Unrepresentable: nil,
+	 RegisterFn: nil,
+	 BindingsFn: c1306Bind},
+	{Name: "plan.order.projection-then-link-over-sorted-rows-stays-in-memory",
+	 At: "52-audit-cases.sqlt:355",
+	 Dialect: "mariadb",
+	 Source: "ORDERS .> SORT_BY(_[\"amount\"]) .> MAP(RECORD(\"cid\", _[\"customer_id\"], \"a\", _[\"amount\"])) .> LINK(CUSTOMERS, _1[\"cid\"] == _2[\"id\"]) .> MAP(RECORD(\"a\", _[\"a\"]))",
+	 Expect: strPtr("SELECT `o`.`customer_id` AS `cid`, `o`.`amount` AS `a` FROM `orders` `o` ORDER BY `o`.`amount` ASC"),
+	 Error: nil,
+	 Throws: nil,
+	 Params: nil,
+	 As: nil,
+	 Mode: nil,
+	 Strict: false,
+	 Plan: strPtr("hybrid"),
+	 HasTables: true,
+	 Tables: []string{"orders"},
+	 Unrepresentable: nil,
+	 RegisterFn: nil,
+	 BindingsFn: c1307Bind},
+	{Name: "plan.order.sort-filter-then-link-stays-in-memory",
+	 At: "52-audit-cases.sqlt:373",
+	 Dialect: "mariadb",
+	 Source: "ORDERS .> SORT_BY(_[\"amount\"]) .> FILTER(_[\"amount\"] > 1) .> LINK(CUSTOMERS, _1[\"customer_id\"] == _2[\"id\"]) .> MAP(RECORD(\"a\", _[\"amount\"]))",
+	 Expect: strPtr("SELECT `o`.* FROM `orders` `o` WHERE (`o`.`amount` > 1) ORDER BY `o`.`amount` ASC"),
+	 Error: nil,
+	 Throws: nil,
+	 Params: nil,
+	 As: nil,
+	 Mode: nil,
+	 Strict: false,
+	 Plan: strPtr("hybrid"),
+	 HasTables: true,
+	 Tables: []string{"orders"},
+	 Unrepresentable: nil,
+	 RegisterFn: nil,
+	 BindingsFn: c1308Bind},
 }

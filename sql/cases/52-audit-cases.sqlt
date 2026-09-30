@@ -315,3 +315,76 @@ orders
 --- expect
 SELECT `_sub1`.`id`, `_sub1`.`amount` FROM (SELECT `o`.* FROM `orders` `o` ORDER BY `o`.`id` ASC LIMIT 2) `_sub1`
 ===
+
+### name: plan.order.limit-then-link-stays-in-memory
+--- note
+A LINK after a TOP_BY: the LIMIT beside the ORDER BY decides which rows survive, not the order a join returns them in (docs/internals/sql-translation.md 12.1, "Order": a join over a derived table loses the order). The prefix ends before the LINK; the LINK runs in memory over the limited, sorted rows.
+--- dialect
+mariadb
+--- bindings
+{"ORDERS": {"kind": "relation", "from": "orders", "alias": "o", "fields": {"ID": {"table": "o", "column": "id", "type": "NUM"}, "CUSTOMER_ID": {"table": "o", "column": "customer_id", "type": "NUM"}, "AMOUNT": {"table": "o", "column": "amount", "type": "NUM"}, "NAME": {"table": "o", "column": "name", "type": "TEXT"}}},
+ "CUSTOMERS": {"kind": "relation", "from": "customers", "alias": "c", "fields": {"ID": {"table": "c", "column": "id", "type": "NUM"}, "CNAME": {"table": "c", "column": "cname", "type": "TEXT"}}}}
+--- source
+ORDERS .> TOP_BY(_["id"], 3) .> LINK(CUSTOMERS, _1["customer_id"] == _2["id"]) .> MAP(RECORD("a", _["amount"]))
+--- plan
+hybrid
+--- tables
+orders
+--- expect
+SELECT `o`.* FROM `orders` `o` ORDER BY `o`.`id` ASC LIMIT 3
+===
+
+### name: plan.order.link-left-over-sorted-rows-stays-in-memory
+--- note
+LINK_LEFT is the same step as LINK for this rule: sorted rows come from SQL, the join runs in memory.
+--- dialect
+mariadb
+--- bindings
+{"ORDERS": {"kind": "relation", "from": "orders", "alias": "o", "fields": {"ID": {"table": "o", "column": "id", "type": "NUM"}, "CUSTOMER_ID": {"table": "o", "column": "customer_id", "type": "NUM"}, "AMOUNT": {"table": "o", "column": "amount", "type": "NUM"}, "NAME": {"table": "o", "column": "name", "type": "TEXT"}}},
+ "CUSTOMERS": {"kind": "relation", "from": "customers", "alias": "c", "fields": {"ID": {"table": "c", "column": "id", "type": "NUM"}, "CNAME": {"table": "c", "column": "cname", "type": "TEXT"}}}}
+--- source
+ORDERS .> SORT_BY(_["amount"]) .> LINK_LEFT(CUSTOMERS, _1["customer_id"] == _2["id"]) .> MAP(RECORD("a", _["amount"]))
+--- plan
+hybrid
+--- tables
+orders
+--- expect
+SELECT `o`.* FROM `orders` `o` ORDER BY `o`.`amount` ASC
+===
+
+### name: plan.order.projection-then-link-over-sorted-rows-stays-in-memory
+--- note
+A projection between the sort and the LINK does not bring the order back: the LINK is still over sorted rows. The sorted, projected rows come from SQL; the LINK runs in memory.
+--- dialect
+mariadb
+--- bindings
+{"ORDERS": {"kind": "relation", "from": "orders", "alias": "o", "fields": {"ID": {"table": "o", "column": "id", "type": "NUM"}, "CUSTOMER_ID": {"table": "o", "column": "customer_id", "type": "NUM"}, "AMOUNT": {"table": "o", "column": "amount", "type": "NUM"}, "NAME": {"table": "o", "column": "name", "type": "TEXT"}}},
+ "CUSTOMERS": {"kind": "relation", "from": "customers", "alias": "c", "fields": {"ID": {"table": "c", "column": "id", "type": "NUM"}, "CNAME": {"table": "c", "column": "cname", "type": "TEXT"}}}}
+--- source
+ORDERS .> SORT_BY(_["amount"]) .> MAP(RECORD("cid", _["customer_id"], "a", _["amount"])) .> LINK(CUSTOMERS, _1["cid"] == _2["id"]) .> MAP(RECORD("a", _["a"]))
+--- plan
+hybrid
+--- tables
+orders
+--- expect
+SELECT `o`.`customer_id` AS `cid`, `o`.`amount` AS `a` FROM `orders` `o` ORDER BY `o`.`amount` ASC
+===
+
+### name: plan.order.sort-filter-then-link-stays-in-memory
+--- note
+A FILTER after the sort keeps the ORDER BY in the same select (12.1); a LINK after it is over sorted rows, so it runs in memory.
+--- dialect
+mariadb
+--- bindings
+{"ORDERS": {"kind": "relation", "from": "orders", "alias": "o", "fields": {"ID": {"table": "o", "column": "id", "type": "NUM"}, "CUSTOMER_ID": {"table": "o", "column": "customer_id", "type": "NUM"}, "AMOUNT": {"table": "o", "column": "amount", "type": "NUM"}, "NAME": {"table": "o", "column": "name", "type": "TEXT"}}},
+ "CUSTOMERS": {"kind": "relation", "from": "customers", "alias": "c", "fields": {"ID": {"table": "c", "column": "id", "type": "NUM"}, "CNAME": {"table": "c", "column": "cname", "type": "TEXT"}}}}
+--- source
+ORDERS .> SORT_BY(_["amount"]) .> FILTER(_["amount"] > 1) .> LINK(CUSTOMERS, _1["customer_id"] == _2["id"]) .> MAP(RECORD("a", _["amount"]))
+--- plan
+hybrid
+--- tables
+orders
+--- expect
+SELECT `o`.* FROM `orders` `o` WHERE (`o`.`amount` > 1) ORDER BY `o`.`amount` ASC
+===
+

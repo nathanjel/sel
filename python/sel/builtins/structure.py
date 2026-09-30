@@ -1018,7 +1018,16 @@ def _link(args, ctx, left_join):
     if (deep and stages and jequi is not None and left_node is not None and left_node.t == 'call'
             and left_node.name in ('LINK', 'LINK_LEFT', 'FILTER')
             and _pure_source(left_node) and _pure_source(right_node)):
-        right_value = args.val(1)
+        try:
+            right_value = args.val(1)
+        except SelError:
+            # The right source went first for the prefilter's sake, which is only
+            # unobservable while neither source raises (SPEC 7.4: as written, the
+            # left source runs first). The left source is pure too: run it now with
+            # nothing handed down. If it raises, ITS error is the one as written;
+            # if it does not, the right source's error stands.
+            args.val(0)
+            raise
         right_side = _SideFacts(right_value, _row_keys(right_value, b2_names), left_join, b2_names)
         # What the rows below may still be asked, with the left rows unknown:
         # a field no right side (here or above) carries is theirs; a conjunct

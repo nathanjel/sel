@@ -118,27 +118,35 @@ for _ in range(0 if PIPELINE else count):
     two = R.random() < 0.6
     link1 = R.choice(['LINK', 'LINK', 'LINK_LEFT'])
     link2 = R.choice(['LINK', 'LINK', 'LINK_LEFT'])
+    # Sources that raise (an undefined name), now and then: a host that evaluates
+    # the right source of a join before its left one -- which the join pre-filter
+    # does for a FILTER handed down through a LINK -- reports the wrong error when
+    # both raise (SPEC 7.4: written order). The oracle form evaluates in written
+    # order, so the two forms disagree on such a program until the host is right.
+    LA = 'NOPE_A' if R.random() < 0.10 else 'A'
+    RB = 'NOPE_B' if R.random() < 0.06 else 'B'
+    RC = 'NOPE_C' if R.random() < 0.10 else 'C'
     p1 = '_1["bid"] == _2["id"]'
     p2 = 'L, R, ' + R.choice(['L["cid"] == R["id"]', 'L["A"]["cid"] == R["id"]', 'L["B"]["cid"] == R["id"]', 'L["a"]["cid"] == R["id"]'])
     mid = predicate(False) if (two and R.random() < 0.35) else None
     final = predicate(two)
     tail = R.choice(['', '', ' .> MAP(_K)', ' .> MAP(1)', ' .> TAKE(2)', ' .> MAP(RECORD("s", _["A"]["status"] ?? "-"))'])
-    segs = [('data', d), ('link1', f'{link1}(B, {p1})')]
+    segs = [('data', d), ('link1', f'{link1}({RB}, {p1})')]
     if two and mid is not None:
         segs.append(('mid', f'FILTER({mid})'))
     if two:
-        segs.append(('link2', f'{link2}(C, {p2})'))
+        segs.append(('link2', f'{link2}({RC}, {p2})'))
     segs.append(('final', f'FILTER({final}){tail}'))
-    written = d + f'A .> {link1}(B, {p1})'
-    oracle = d + f'J1 = A .> {link1}(B, {p1}); '
+    written = d + f'{LA} .> {link1}({RB}, {p1})'
+    oracle = d + f'J1 = {LA} .> {link1}({RB}, {p1}); '
     last = 'J1'
     if two:
         if mid is not None:
             written += f' .> FILTER({mid})'
             oracle += f'M = J1 .> FILTER({mid}); '
             last = 'M'
-        written += f' .> {link2}(C, {p2})'
-        oracle += f'J2 = {last} .> {link2}(C, {p2}); '
+        written += f' .> {link2}({RC}, {p2})'
+        oracle += f'J2 = {last} .> {link2}({RC}, {p2}); '
         last = 'J2'
     written += f' .> FILTER({final}){tail}'
     oracle += f'{last} .> FILTER({final}){tail}'

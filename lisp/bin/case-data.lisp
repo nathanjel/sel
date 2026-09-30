@@ -21078,4 +21078,68 @@ ORDERS .> TAKE(1)"
    :plan "hybrid"
    :tables (list "orders")
    :register nil
-   :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num)) (cons "CUSTOMER_ID" (binding-column "customer_id" "o" :num)) (cons "AMOUNT" (binding-column "amount" "o" :num)) (cons "NAME" (binding-column "name" "o" :text))) nil nil)))))))
+   :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num)) (cons "CUSTOMER_ID" (binding-column "customer_id" "o" :num)) (cons "AMOUNT" (binding-column "amount" "o" :num)) (cons "NAME" (binding-column "name" "o" :text))) nil nil)))))
+  (list
+   :name "plan.order.limit-then-link-stays-in-memory"
+   :at "52-audit-cases.sqlt:319"
+   :dialect "mariadb"
+   :source "ORDERS .> TOP_BY(_[\"id\"], 3) .> LINK(CUSTOMERS, _1[\"customer_id\"] == _2[\"id\"]) .> MAP(RECORD(\"a\", _[\"amount\"]))"
+   :expect "SELECT `o`.* FROM `orders` `o` ORDER BY `o`.`id` ASC LIMIT 3"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan "hybrid"
+   :tables (list "orders")
+   :register nil
+   :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num)) (cons "CUSTOMER_ID" (binding-column "customer_id" "o" :num)) (cons "AMOUNT" (binding-column "amount" "o" :num)) (cons "NAME" (binding-column "name" "o" :text))) nil nil)) (cons "CUSTOMERS" (binding-relation "customers" "c" (list (cons "ID" (binding-column "id" "c" :num)) (cons "CNAME" (binding-column "cname" "c" :text))) nil nil)))))
+  (list
+   :name "plan.order.link-left-over-sorted-rows-stays-in-memory"
+   :at "52-audit-cases.sqlt:337"
+   :dialect "mariadb"
+   :source "ORDERS .> SORT_BY(_[\"amount\"]) .> LINK_LEFT(CUSTOMERS, _1[\"customer_id\"] == _2[\"id\"]) .> MAP(RECORD(\"a\", _[\"amount\"]))"
+   :expect "SELECT `o`.* FROM `orders` `o` ORDER BY `o`.`amount` ASC"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan "hybrid"
+   :tables (list "orders")
+   :register nil
+   :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num)) (cons "CUSTOMER_ID" (binding-column "customer_id" "o" :num)) (cons "AMOUNT" (binding-column "amount" "o" :num)) (cons "NAME" (binding-column "name" "o" :text))) nil nil)) (cons "CUSTOMERS" (binding-relation "customers" "c" (list (cons "ID" (binding-column "id" "c" :num)) (cons "CNAME" (binding-column "cname" "c" :text))) nil nil)))))
+  (list
+   :name "plan.order.projection-then-link-over-sorted-rows-stays-in-memory"
+   :at "52-audit-cases.sqlt:355"
+   :dialect "mariadb"
+   :source "ORDERS .> SORT_BY(_[\"amount\"]) .> MAP(RECORD(\"cid\", _[\"customer_id\"], \"a\", _[\"amount\"])) .> LINK(CUSTOMERS, _1[\"cid\"] == _2[\"id\"]) .> MAP(RECORD(\"a\", _[\"a\"]))"
+   :expect "SELECT `o`.`customer_id` AS `cid`, `o`.`amount` AS `a` FROM `orders` `o` ORDER BY `o`.`amount` ASC"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan "hybrid"
+   :tables (list "orders")
+   :register nil
+   :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num)) (cons "CUSTOMER_ID" (binding-column "customer_id" "o" :num)) (cons "AMOUNT" (binding-column "amount" "o" :num)) (cons "NAME" (binding-column "name" "o" :text))) nil nil)) (cons "CUSTOMERS" (binding-relation "customers" "c" (list (cons "ID" (binding-column "id" "c" :num)) (cons "CNAME" (binding-column "cname" "c" :text))) nil nil)))))
+  (list
+   :name "plan.order.sort-filter-then-link-stays-in-memory"
+   :at "52-audit-cases.sqlt:373"
+   :dialect "mariadb"
+   :source "ORDERS .> SORT_BY(_[\"amount\"]) .> FILTER(_[\"amount\"] > 1) .> LINK(CUSTOMERS, _1[\"customer_id\"] == _2[\"id\"]) .> MAP(RECORD(\"a\", _[\"amount\"]))"
+   :expect "SELECT `o`.* FROM `orders` `o` WHERE (`o`.`amount` > 1) ORDER BY `o`.`amount` ASC"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan "hybrid"
+   :tables (list "orders")
+   :register nil
+   :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num)) (cons "CUSTOMER_ID" (binding-column "customer_id" "o" :num)) (cons "AMOUNT" (binding-column "amount" "o" :num)) (cons "NAME" (binding-column "name" "o" :text))) nil nil)) (cons "CUSTOMERS" (binding-relation "customers" "c" (list (cons "ID" (binding-column "id" "c" :num)) (cons "CNAME" (binding-column "cname" "c" :text))) nil nil)))))))

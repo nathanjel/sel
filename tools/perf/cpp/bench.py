@@ -67,6 +67,19 @@ SCENARIOS = {
   'p19-b64-encode': ([250000, 500000, 1000000], lambda n: 'S = TO_UTF8(REPEAT("abcdefgh", %d)); LEN(ENCODE_BASE64(S))' % n, 'CPP-P19 base64 encode'),
   'p20-filter-keep': ([100000, 200000, 400000], lambda n: 'A = %s; COUNT(FILTER(A, _K %% 2 == 0 OR _K %% 2 == 1))' % LIST(n), 'CPP-P20 FILTER keeping everything'),
   'p20-filter-half': ([100000, 200000, 400000], lambda n: 'A = %s; COUNT(FILTER(A, _K %% 2 == 0))' % LIST(n), 'CPP-P20 FILTER keeping half'),
+  # ---- round 3 (CPP-P21 .. CPP-P25)
+  'p21-record1':    ([100000, 200000, 400000], lambda n: 'S = %s; COUNT(MAP(S, RECORD("id", _K)))' % LIST(n), 'CPP-P21 one literal key'),
+  'p21-record3':    ([100000, 200000, 400000], lambda n: 'S = %s; COUNT(MAP(S, RECORD("id", _K, "g", _K, "v", _K)))' % LIST(n), 'CPP-P21 three literal keys'),
+  'p21-list-ref':   ([100000, 200000, 400000], lambda n: 'S = %s; COUNT(MAP(S, LIST(_K, _K)))' % LIST(n), 'CPP-P21 reference (LIST of two)'),
+  'p23-distinct-uniq': ([50000, 100000, 200000], lambda n: 'X = MAP(%s, ((_K * 7919) %% 1000003) & ""); COUNT(DISTINCT(X))' % LIST(n), 'CPP-P23 DISTINCT, all unique numeric texts'),
+  'p23-distinct-dup':  ([100000, 200000, 400000], lambda n: 'X = MAP(%s, (_K %% 1000) & ""); COUNT(DISTINCT(X))' % LIST(n), 'CPP-P23 DISTINCT, 1000 distinct values'),
+  'p24-strict-calls': ([100000, 200000, 400000], lambda n: 'L = %s; COUNT(MAP(L, LEN(_) + LEN(_) + BLEN(_)))' % LIST(n), 'CPP-P24 strict calls per row (Args vector)'),
+  'p24-strict-calls-fn': ([100000, 200000, 400000], lambda n: 'L = %s; COUNT(MAP(L, MAX(LEN(_), 1) + MIN(LEN(_), 2)))' % LIST(n), 'CPP-P24 nested strict calls per row'),
+  'p25-num-list':   ([100000, 200000, 400000], lambda n: 'COUNT((' + ', '.join(str(i) for i in range(n)) + '))', 'CPP-P25 front end: a list of n numbers'),
+  'p25-op-chain':   ([200000, 400000, 800000], lambda n: 'IF(FALSE, ' + '+'.join(['12'] * n) + ', 1)', 'CPP-P25 front end: n-term flat chain (never evaluated)'),
+  'p25-text':       ([2000000, 4000000, 8000000], lambda n: 'LEN("' + 'a' * n + '")', 'CPP-P25 front end: an n-byte string literal'),
+  'p25-text-esc':   ([500000, 1000000, 2000000], lambda n: 'LEN("' + 'a\\n' * n + '")', 'CPP-P25 front end: an n-escape string literal'),
+  'p25-idents':     ([100000, 200000, 400000], lambda n: 'IF(FALSE, ' + ' AND '.join(['abc_def'] * n) + ', 1)', 'CPP-P25 front end: n identifier tokens'),
   'p20-map-ref':    ([100000, 200000, 400000], lambda n: 'A = %s; COUNT(MAP(A, _))' % LIST(n), 'CPP-P20 MAP reference'),
 }
 

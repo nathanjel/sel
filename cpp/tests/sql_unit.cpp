@@ -515,6 +515,42 @@ int main() {
       }, context);
       if (context.has("Y")) fail("execute_hybrid mutated the caller's context", "Y is set", "Y is not set");
     }
+    // CPP-P24: execute_hybrid copies only the variables the continuation assigns to.
+    // The caller's context is still never written to, however the program writes.
+    {
+      const Bindings rb({{"ORDERS", orders()}});
+      const auto big_context = []() {
+        sel::Value context = sel::Value::none();
+        std::vector<sel::Value> rows;
+        for (int i = 1; i <= 3; i++) {
+          sel::Value r = sel::Value::none();
+          r.set("id", sel::Value::num(std::to_string(i)));
+          rows.push_back(std::move(r));
+        }
+        context.set("BIG", sel::Value::list(std::move(rows)));
+        context.set("KEEP", sel::Value::text("k"));
+        return context;
+      };
+      const auto run = [&](const std::string& source, sel::Value& context) {
+        const auto plan = Sql::plan_hybrid(sel::compile(source), "mariadb", rb);
+        return Sql::execute_hybrid(plan, [](const std::string&, const std::vector<sel::Value>&) {
+          return sel::Value::list({});
+        }, context).dump();
+      };
+      sel::Value c = big_context();
+      const std::string before = c.dump();
+      check("a helper assignment is not in the caller's context", run("Y = 5; Y + COUNT(BIG)", c), "t\"8\"");
+      check("...nor is it after an unrelated read", c.dump(), before);
+      check("an indexed write into a variable copies it first", run("BIG[1][\"id\"] = 99; BIG[1][\"id\"]", c), "t\"99\"");
+      check("...and the caller's BIG is unchanged", c.dump(), before);
+      check("a copy of a variable can be written", run("Z = BIG; Z[2][\"id\"] = 7; Z[2][\"id\"] & \"/\" & BIG[2][\"id\"]", c), "t\"7/2\"");
+      check("...caller unchanged again", c.dump(), before);
+      check("an unassigned variable is still read", run("KEEP & COUNT(BIG)", c), "t\"k3\"");
+      // A scalar or list context is not a variable map: it keeps the whole clone.
+      sel::Value odd = sel::Value::text("scalar");
+      odd.set("A", sel::Value::num("1"));
+      check("a context with a scalar is cloned whole", run("A + 1", odd), "t\"2\"");
+    }
     // CPP-C35: a FILTER is not hoisted above a SORT_BY whose key can raise.
     {
       const Bindings rb({{"ORDERS", orders()}});

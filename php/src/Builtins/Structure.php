@@ -1209,7 +1209,17 @@ final class Structure
         if ($deep && $stages !== [] && $jequi !== null && $leftNode !== null && $leftNode['t'] === 'call'
                 && in_array($leftNode['name'], ['LINK', 'LINK_LEFT', 'FILTER'], true)
                 && self::pureSource($leftNode) && self::pureSource($rightNode)) {
-            $rightValue = $a->val(1);
+            try {
+                $rightValue = $a->val(1);
+            } catch (\Sel\SelError $e) {
+                // The right source went first for the prefilter's sake, which is only
+                // unobservable while neither source raises (SPEC 7.4: as written, the
+                // left source runs first). The left source is pure too: run it now with
+                // nothing handed down. If it raises, ITS error is the one as written;
+                // if it does not, the right source's error stands.
+                $a->val(0);
+                throw $e;
+            }
             $rightSide = new JoinSideFacts($rightValue, self::rowKeys($rightValue, $b2Names), $leftJoin, $b2Names);
             $ownedBelow = static function (array $fields, array $stage) use ($rightSide, $aboveKeys): bool {
                 $upper = $aboveKeys($stage);

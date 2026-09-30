@@ -3,6 +3,8 @@
 //   g++ -std=c++23 -O2 -o cpp/build/sqlbench tools/perf/cpp/sqlbench.cpp cpp/build/sel_sql*.o cpp/build/sel.o
 //   cpp/build/sqlbench fold 1000 4000 16000
 //   cpp/build/sqlbench bindings 20000 2 51 501
+//   cpp/build/sqlbench plan 20 160 640      # plan_hybrid: an unsupported step, then N FILTERs (CPP-P24)
+//   cpp/build/sqlbench hybrid 200 50000      # execute_hybrid against an unrelated N-row context (CPP-P24)
 //
 // Prints CPU microseconds per call and an FNV checksum of the emitted SQL, so a
 // speedup that changes a byte is visible. `fold` translates literal-list programs
@@ -80,6 +82,58 @@ int main(int argc, char** argv) {
       const double dt = cpu_seconds() - t0;
       std::printf("| bindings-%d | %d | %.2f us/call | %zu | %016llx |\n", count, iterations,
                   dt * 1e6 / iterations, sql.size(), static_cast<unsigned long long>(fnv(sql)));
+    }
+    return 0;
+  }
+  if (mode == "plan") {
+    const int iterations = std::atoi(argv[2]);
+    const Bindings rb({{"ORDERS", Binding::relation("orders", "o", {{"id", Binding::column("id", "o", SqlKind::Num)}, {"amount", Binding::column("amount", "o", SqlKind::Num)}, {"name", Binding::column("name", "o", SqlKind::Text)}})}});
+    for (int a = 3; a < argc; ++a) {
+      const int n = std::atoi(argv[a]);
+      // An unsupported step (a host-side ABORT in the predicate) after the first 10 FILTERs:
+      // the prefix search has to try the long prefixes first and fail.
+      std::string src = "ORDERS";
+      for (int i = 0; i < 10; ++i) src += " .> FILTER(_[\"amount\"] > " + std::to_string(i) + ")";
+      src += " .> FILTER(ABORT(\"x\") == 1)";
+      for (int i = 0; i < n; ++i) src += " .> FILTER(_[\"amount\"] > " + std::to_string(i) + ")";
+      const sel::Program prog = sel::compile(src);
+      std::string kind;
+      const double t0 = cpu_seconds();
+      for (int i = 0; i < iterations; ++i) {
+        const auto plan = Sql::plan_hybrid(prog, "mariadb", rb);
+        kind = plan.pure_sql ? "pure_sql" : plan.pure_memory ? "pure_memory" : "hybrid";
+      }
+      const double dt = cpu_seconds() - t0;
+      std::printf("| plan-%d | %d | %.3f ms/call | %s |\n", n, iterations, dt * 1e3 / iterations, kind.c_str());
+    }
+    return 0;
+  }
+  if (mode == "hybrid") {
+    // execute_hybrid over a context holding a big variable the program never touches:
+    // the caller's context must not be written to, but it need not be deep-copied.
+    const int iterations = std::atoi(argv[2]);
+    for (int a = 3; a < argc; ++a) {
+      const int rows = std::atoi(argv[a]);
+      sel::Value ctx = sel::Value::none();
+      std::vector<sel::Value> big;
+      big.reserve(rows);
+      for (int i = 0; i < rows; ++i) {
+        sel::Value r = sel::Value::none();
+        r.set("id", sel::Value::num(std::to_string(i)));
+        r.set("name", sel::Value::text("row" + std::to_string(i)));
+        big.push_back(std::move(r));
+      }
+      ctx.set("BIG", sel::Value::list(std::move(big)));
+      const sel::Program prog = sel::compile("Y = 5; Y + 1");
+      const auto plan = Sql::plan_hybrid(prog, "mariadb");
+      const Sql::DbRunner runner = [](const std::string&, const std::vector<sel::Value>&) { return sel::Value::none(); };
+      std::string out;
+      const double t0 = cpu_seconds();
+      for (int i = 0; i < iterations; ++i) out = Sql::execute_hybrid(plan, runner, ctx).dump();
+      const double dt = cpu_seconds() - t0;
+      const bool leaked = ctx.has("Y");
+      std::printf("| hybrid-%d | %d | %.2f us/call | caller-written=%d | %016llx |\n", rows, iterations,
+                  dt * 1e6 / iterations, leaked ? 1 : 0, static_cast<unsigned long long>(fnv(out)));
     }
     return 0;
   }

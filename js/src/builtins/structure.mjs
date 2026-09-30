@@ -878,7 +878,17 @@ function doLink(args, ctx, leftJoin) {
   if (deep && stages.length && jequi && leftNode && leftNode.t === 'call'
       && (leftNode.name === 'LINK' || leftNode.name === 'LINK_LEFT' || leftNode.name === 'FILTER')
       && pureSource(leftNode) && pureSource(rightNode)) {
-    rightValue = args.val(1);
+    try {
+      rightValue = args.val(1);
+    } catch (e) {
+      // The right source was evaluated first for the prefilter's sake, which is
+      // only unobservable while neither source raises (SPEC 7.4: as written, the
+      // left source runs first). The left source is pure too, so run it now,
+      // with nothing handed down: if it raises, ITS error is the one as written;
+      // if it does not, the right source's error stands.
+      if (e instanceof SelError) args.val(0);
+      throw e;
+    }
     rightSide = new SideFacts(rightValue, rowKeys(rightValue, b2Names), leftJoin, b2Names);
     // With the left rows unknown: a field no right side (here or above)
     // carries is theirs; a conjunct on a right side's field is passed over

@@ -81,11 +81,11 @@ CHECKS = [
     # mutations below. Its own build has to happen in the WORK TREE -- build/ is
     # not copied -- or it would grade the unmutated binary, which is this tool's
     # signature failure mode.
-    ('sqlt (cpp)',        ['sh', '-c', 'make -s -C cpp build/sqlt && cpp/build/sqlt']),
+    ('sqlt (cpp)',        ['sh', '-c', 'make -s -j4 -C cpp build/sqlt && cpp/build/sqlt']),
     # Same build, so the marginal cost is one link, and it is the only thing
     # that watches the C++ registration path.
     ('sql map replay (cpp)',
-     ['sh', '-c', 'make -s -C cpp build/sqlreplay && cpp/build/sqlreplay']),
+     ['sh', '-c', 'make -s -j4 -C cpp build/sqlreplay && cpp/build/sqlreplay']),
     ('oracle rows',       ['php', 'php/bin/sqlo', 'rows']),
     # The SQL API contract, pinned. A mutation that drops a public flag --
     # Fragment.canonical, lost by every host's top-level translate at once
@@ -93,7 +93,7 @@ CHECKS = [
     # C++ builds its probe first -- and conformance, which is what the roster
     # checks C++ is present by: the mutated copy has no build output, and a
     # host the check cannot run is a host it silently leaves out.
-    ('sql api',           ['sh', '-c', 'make -s -C cpp build/conformance build/sqlapi && tools/check-sqlapi.sh']),
+    ('sql api',           ['sh', '-c', 'make -s -j4 -C cpp build/conformance build/sqlapi && tools/check-sqlapi.sh']),
 ]
 NEEDS_DB = {'oracle coverage', 'oracle expressions', 'oracle rows'}
 
@@ -163,9 +163,14 @@ SLOT = ['bash', '-c',
 
 
 def jobs():
-    raw = os.environ.get('SEL_JOBS', '')
-    if raw.strip().isdigit() and int(raw) > 0:
-        return int(raw)
+    # Mutations graded side by side. SEL_MUTATE_JOBS caps it below the slot bound
+    # (the gate sets two thirds of it) so the lane cannot occupy every slot and
+    # leave the gate's other, shorter layers queueing behind it: each mutation
+    # holds at most one slot at a time, so a lane of N workers uses at most N.
+    for name in ('SEL_MUTATE_JOBS', 'SEL_JOBS'):
+        raw = os.environ.get(name, '')
+        if raw.strip().isdigit() and int(raw) > 0:
+            return int(raw)
     return max(1, ((os.cpu_count() or 2) + 1) // 2)
 
 
@@ -185,8 +190,58 @@ def run(cmd, cwd, label=None):
     # exists to catch, committed by the tool itself.
     env = dict(os.environ, PYTHONPATH=os.path.join(cwd, 'python'))
     prefix = [] if label in NOT_LEAF else SLOT
+    # The oracle checks drop and recreate the one shared schema, so under the
+    # gate they take its database lock -- for the one check, not for the lane:
+    # the lane used to hold it for its whole run (over an hour) and starved
+    # every other database layer behind it. Lock first, slot second, the order
+    # the other layers take them in, so a holder of the lock can always get a
+    # slot and a holder of a slot never waits for the lock.
+    lock = os.environ.get('SEL_DB_LOCK')
+    if lock and label in NEEDS_DB:
+        prefix = ['flock', lock] + prefix
     return subprocess.run(prefix + list(cmd), cwd=cwd, env=env, stdout=subprocess.DEVNULL,
                           stderr=subprocess.DEVNULL).returncode
+
+
+
+# The order in which one mutation's checks run. The loop stops at the first check
+# that fails, so the order decides what a mutation COSTS, never whether it is
+# caught: a mutation is caught if ANY check fails, in whatever order they ran.
+# CHECKS is ordered cheapest-first across hosts, which made a C++-local mutation
+# pay for every other host's suite (about 440 s sequentially) before the one
+# check that can see it, and a Lisp one pay for PHP, Python and JS first. A
+# mutation in a host's own SQL source is now graded by that host's own checks
+# first, in their original order, and only if they all pass by the rest. Shared
+# data (sql/dialects, sql/oracle) keeps the original order: no one host owns it.
+def ordered_checks(live, file):
+    owner = next((impl for impl, root in HOST_ROOTS.items() if file.startswith(root)), None)
+    if owner is None:
+        return list(live)
+    own = [c for c in live if CHECK_IMPLS.get(c[0]) == {owner}]
+    rest = [c for c in live if c not in own]
+    return own + rest
+
+
+def _ignore(directory, names):
+    """What a graded copy leaves behind. Build output is left behind everywhere
+    except under cpp/: the seed's C++ objects are copied into each tree so a
+    mutation to one SQL translation unit recompiles that unit and relinks,
+    instead of compiling the whole library again (about 180 s per mutation)."""
+    skip = set(shutil.ignore_patterns(
+        '.git', 'node_modules', 'dist', 'target', '.venv*', '__pycache__')(directory, names))
+    if 'build' in names and not directory.rstrip('/').endswith(os.sep + 'cpp'):
+        skip.add('build')
+    return skip
+
+
+# The seed is copied from the REAL tree, whose own cpp/build may be half-written
+# by whoever is building in it at this moment: it never travels. The seed builds
+# its own.
+_ignore_root = shutil.ignore_patterns(
+    '.git', 'node_modules', 'build', 'dist', 'target', '.venv*', '__pycache__')
+
+
+CPP_SEED_TARGETS = ['build/sqlt', 'build/sqlreplay', 'build/conformance', 'build/sqlapi']
 
 
 def main(argv):
@@ -213,7 +268,31 @@ def main(argv):
     # all reported `caught by sqldoc` for mutations sqldoc cannot see.
     pool = ThreadPoolExecutor(max_workers=jobs())
     live = [(label, cmd) for label, cmd in checks if label not in NEEDS_DB or any_db]
-    baseline = list(pool.map(lambda lc: (lc[0], run(lc[1], ROOT, lc[0])), live))
+    # One frozen copy of the tree, made once: the baseline runs in it, every
+    # graded tree is copied from it, and the C++ library is built in it once
+    # (in parallel) instead of inside the real tree -- where the baseline's
+    # `make` used to race with whoever else was building -- and instead of from
+    # scratch in every graded copy. Sources are frozen at the moment of the
+    # copy, so a tree edited while the lane runs is graded as it was when the
+    # lane started, which is also what the verdicts then mean.
+    work = tempfile.mkdtemp(prefix='mutate-sql.')
+    seed = os.path.join(work, '_seed')
+    shutil.copytree(ROOT, seed, ignore=_ignore_root)
+    if any(CHECK_IMPLS.get(label, set()) & {'cpp'} or label == 'sql api' for label, _ in live):
+        env = dict(os.environ)
+        subprocess.run(['make', '-s', f'-j{jobs()}', '-C', 'cpp'] + CPP_SEED_TARGETS, cwd=seed,
+                       env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    # Warm the Lisp compile cache in the seed before the baseline starts its
+    # checks side by side: ASDF keys its fasl cache by absolute source path, the
+    # seed's path is new, and four Lisp checks compiling the same system at once
+    # race on the same fasl files and fail -- a baseline that is red for a reason
+    # that has nothing to do with the tree. (In the real tree the cache was
+    # always warm, which hid it.) The per-mutation copies run their checks one
+    # after another, so they never had the race.
+    lisp_first = next((c for c in live if 'lisp' in CHECK_IMPLS.get(c[0], set())), None)
+    if lisp_first is not None:
+        run(lisp_first[1], seed, lisp_first[0])
+    baseline = list(pool.map(lambda lc: (lc[0], run(lc[1], seed, lc[0])), live))
     for label, rc in baseline:
         if rc != 0:
             print(f'BASELINE {label} fails on the unmutated tree; every mutation '
@@ -227,7 +306,6 @@ def main(argv):
     # exist raised FileNotFoundError where the default form quietly uses /tmp.
     # Set TMPDIR to move this off a tmpfs; on a lot of Linux installs /tmp is
     # one, which makes every copy below resident memory rather than disk.
-    work = tempfile.mkdtemp(prefix='mutate-sql.')
 
     def grade(m):
         # One mutation: its own copy of the tree, the mutation applied, the
@@ -240,8 +318,11 @@ def main(argv):
         # never see the mutation. That is not hypothetical -- it is what the
         # first version of this script did, and it scored three mutations as
         # holes that the suite catches immediately.
-        shutil.copytree(ROOT, tree, ignore=shutil.ignore_patterns(
-            '.git', 'node_modules', 'build', 'dist', 'target', '.venv*', '__pycache__'))
+        shutil.copytree(seed, tree, ignore=_ignore, symlinks=True)
+        if m['file'].startswith('cpp/') and not m['file'].endswith('.cpp'):
+            # No header dependency tracking beyond the Makefile's own lists:
+            # a header mutation gets a clean build, not a seeded one.
+            shutil.rmtree(os.path.join(tree, 'cpp', 'build'), ignore_errors=True)
         try:
             # Each mutation gets its OWN tree at its own path, which is what
             # keeps the Lisp lane honest as well as the C++ one: ASDF keys its
@@ -282,7 +363,7 @@ def main(argv):
                     return name, 'error', (f'{name}: {m["file"]} changed but the generated '
                                            'map did not — the mutation is a no-op')
 
-            for label, cmd in live:
+            for label, cmd in ordered_checks(live, m['file']):
                 if run(cmd, tree, label) != 0:
                     return name, 'caught', label
             return name, 'survived', None

@@ -625,6 +625,89 @@ void test_decimal_native_edges() {
 // §3.4: what the aggregates collect is copied, and a value's depth counts the path
 // it is stored under. Each program mutates the source through a pending read, so a
 // result that still shared an element with it would show the mutation (CPP-C42).
+void test_round3_fast_paths() {
+  selt::section("round-3 fast paths keep their answers (CPP-P21..P24)");
+  auto run = [](const std::string& src) {
+    try { return evaluate(src).dump(); }
+    catch (const SelError& e) { return e.code() + "@" + std::to_string(e.line()) + ":" + std::to_string(e.col()); }
+  };
+  // CPP-P21: literal keys go straight into the shaped storage. Same records as the
+  // dynamic-key spelling, same errors in the same places.
+  selt::eq(run("RECORD(\"a\", 1, \"b\", \"x\", \"c\", LIST(1, 2))"),
+           run("K = \"a\"; RECORD(K, 1, \"b\", \"x\", \"c\", LIST(1, 2))"), "literal keys equal the general path");
+  selt::eq(run("RECORD(\"a\", 1, \"a\", 2)"), std::string("-{\"a\"=t\"2\"}"), "a repeated literal key keeps the general rule");
+  selt::eq(run("S = RECORD(\"n\", 1); R = RECORD(\"a\", S); S[\"n\"] = 9; R[\"a\"][\"n\"]"), std::string("t\"1\""),
+           "a value stored in a literal-key record is a copy");
+  selt::eq(run("RECORD(\"a\", 1 / 0, \"b\", NOSUCH())"), std::string("E_UNKNOWN_FUNC@1:25"),
+           "an unknown name is a compile-time refusal before any evaluation");
+  selt::eq(run("RECORD(\"a\", 1, \"b\", 1 / 0)"), std::string("E_DIV_ZERO@1:23"), "a value error is reported at the value");
+  selt::eq(run("RECORD(\"a\", UNBOUND, \"b\", 1 / 0)"), std::string("E_UNDEF_VAR@1:13"), "values still evaluate left to right");
+  selt::eq(run("R = RECORD(\"a\", 1, \"b\", 2); R[\"c\"] = 3; R[\"a\"] & R[\"b\"] & R[\"c\"] & COUNT(R)"), std::string("t\"1233\""),
+           "a literal-key record takes new keys afterwards");
+  selt::eq(run("JOIN(MAP(LIST(1, 2, 3), RECORD(\"k\", _)[\"k\"]), \",\")"), std::string("t\"1,2,3\""), "a literal-key record per row");
+  // CPP-P22: substring search is linear; FIND/REPLACE/SPLIT agree with the naive definition.
+  selt::eq(run("FIND(\"b\", \"aabab\")"), std::string("t\"3\""), "FIND");
+  selt::eq(run("FIND(\"é😀\", \"aé😀b\", 2)"), std::string("t\"2\""), "FIND counts code points");
+  selt::eq(run("FIND(\"ab\", \"aabab\", 4)"), std::string("t\"4\""), "FIND from a start");
+  selt::eq(run("FIND(\"zz\", \"aabab\")"), std::string("t\"0\""), "FIND misses");
+  selt::eq(run("REPLACE(\"aa\", \"b\", \"aaaa\")"), std::string("t\"bb\""), "REPLACE non-overlapping");
+  selt::eq(run("REPLACE(\"aa\", \"b\", \"aaa\")"), std::string("t\"ba\""), "REPLACE leftmost first");
+  selt::eq(run("JOIN(SPLIT(\"a😀b😀😀c\", \"😀\"), \"|\")"), std::string("t\"a|b||c\""), "SPLIT on a 4-byte separator");
+  selt::eq(run("COUNT(SPLIT(\"\", \",\"))"), std::string("t\"1\""), "SPLIT of nothing is one empty piece");
+#if !defined(__SANITIZE_ADDRESS__)
+  {
+    // The pattern that took 6.7 s at n = 400,000 with std::string::find (two-way search).
+    const auto t0 = std::chrono::steady_clock::now();
+    const std::string r = run("FIND(REPEAT(\"a\", 200000) & \"b\", REPEAT(\"a\", 400000))");
+    const double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
+    selt::eq(r, std::string("t\"0\""), "a long needle that almost matches everywhere is not found");
+    selt::ok(ms < 1500.0, "and it takes linear time (" + std::to_string(static_cast<int>(ms)) + " ms)");
+  }
+#endif
+  // PADL/PADR and REPEAT are built byte by byte now.
+  selt::eq(run("PADL(\"é😀\", 6, \"ab\")"), std::string("t\"ababé😀\""), "PADL with a partial fill cycle");
+  selt::eq(run("PADR(\"x\", 5, \"éa\")"), std::string("t\"xéaéa\""), "PADR with a multi-byte fill");
+  selt::eq(run("PADL(\"x\", 4, \"-\")"), std::string("t\"---x\""), "PADL with a one-byte fill");
+  selt::eq(run("PADR(\"abc\", 2, \"-\")"), std::string("t\"abc\""), "a text already wide enough is returned as it is");
+  selt::eq(run("PADL(\"é\", 1, \"\")"), std::string("E_BAD_ARG@1:14"), "an empty fill is refused even when nothing is padded");
+  selt::eq(run("REPEAT(\"é\", 3)"), std::string("t\"ééé\""), "REPEAT of a multi-byte text");
+  selt::eq(run("REPEAT(\"z\", 4)"), std::string("t\"zzzz\""), "REPEAT of one byte");
+  selt::eq(run("REPEAT(\"\", 1000000000000)"), std::string("t\"\""), "REPEAT of nothing is nothing");
+  // CPP-P23: DISTINCT and DEDUPE share one open-addressing table over the output list.
+  selt::eq(run("JOIN(DISTINCT(LIST(\"b\", \"a\", \"b\", \"c\", \"a\")), \",\")"), std::string("t\"b,a,c\""), "first occurrence order");
+  selt::eq(run("COUNT(DEDUPE(LIST(1, 1.0, 1, 2)))"), std::string("t\"3\""), "1 and 1.0 are different values (EQL is structural)");
+  selt::eq(run("COUNT(DISTINCT(LIST(RECORD(\"a\", 1), RECORD(\"a\", 1), RECORD(\"a\", 2))))"), std::string("t\"2\""), "records compare by structure");
+  selt::eq(run("DISTINCT(NULL)"), run("LIST()"), "NULL has nothing distinct");
+  selt::eq(run("COUNT(DISTINCT(MAP(SPLIT(REPEAT(\"a,\", 4999), \",\"), _K % 1000)))"), std::string("t\"1000\""),
+           "past the initial table the dedup still finds every duplicate");
+  selt::eq(run("COUNT(DISTINCT(MAP(SPLIT(REPEAT(\"a,\", 2999), \",\"), _K)))"), std::string("t\"3000\""),
+           "and keeps every distinct value while the table grows");
+  // CPP-P4 (nested): `??` probes small operator trees for a miss instead of throwing it.
+  const std::string rec = "A = RECORD(\"x\", 4, \"t\", \"abc\", \"r\", RECORD(\"y\", 2)); ";
+  selt::eq(run(rec + "(A[\"k\"] & \"x\") ?? \"d\""), std::string("t\"d\""), "a missing key under & falls back");
+  selt::eq(run(rec + "(A[\"x\"] + 1) ?? 0"), std::string("t\"5\""), "a present operand is used");
+  selt::eq(run(rec + "(1 + A[\"k\"]) ?? 7"), std::string("t\"7\""), "a miss on the right operand too");
+  selt::eq(run(rec + "(NOSUCH + 1) ?? 8"), std::string("t\"8\""), "a missing name");
+  selt::eq(run(rec + "(-A[\"k\"]) ?? 9"), std::string("t\"9\""), "a miss under a unary minus");
+  selt::eq(run(rec + "(A[\"r\"][\"y\"] * A[\"x\"]) ?? 0"), std::string("t\"8\""), "nested present values");
+  selt::eq(run(rec + "(A[\"r\"][\"zz\"] * 2) ?? 11"), std::string("t\"11\""), "a miss deep in an index chain");
+  selt::eq(run(rec + "(A[\"t\"] + 1) ?? 3"), std::string("E_NOT_NUM@1:56"), "a coercion error is not swallowed");
+  selt::eq(run(rec + "(A[\"t\"] & A[\"k\"]) ??? \"z\""), std::string("t\"z\""), "??? on a miss");
+  selt::eq(run(rec + "((A[\"k\"] & \"\") ?? \"\") ??? \"v\""), std::string("t\"v\""), "a vacuous result under ???");
+  selt::eq(run(rec + "((Z = 5) + A[\"k\"]) ?? Z"), std::string("t\"5\""), "an operand with an effect runs first, then the miss");
+  selt::eq(run(rec + "(A[\"k\"] + (Z = 6)) ?? Z"), std::string("E_UNDEF_VAR@1:76"),
+           "a miss on the left never runs the right operand's effect (Z stays unset)");
+  selt::eq(run(rec + "Z = 99; (A[\"k\"] + (Z = 6)) ?? Z"), std::string("t\"99\""),
+           "...and a Z that was set before is untouched");
+  selt::eq(run(rec + "(LEN(A[\"k\"]) + 1) ?? 2"), std::string("t\"2\""), "a call that misses inside the operand");
+  selt::eq(run(rec + "IF(A[\"x\"] > 1, (A[\"k\"] & \"a\") ?? \"b\", \"c\")"), std::string("t\"b\""), "inside another call");
+  // CPP-P24: a call with more than four arguments keeps working (the first four live in the object).
+  selt::eq(run("MAX(3, 9, 2, 7, 4, 8, 1)"), std::string("t\"9\""), "seven strict arguments");
+  selt::eq(run("COUNT(LIST(1, 2, 3, 4, 5, 6, 7, 8, 9))"), std::string("t\"9\""), "nine arguments to LIST");
+  selt::eq(run("R = RECORD(\"a\", 1, \"b\", 2, \"c\", 3, \"d\", 4, \"e\", 5); R[\"e\"] * 2"), std::string("t\"10\""), "five pairs to RECORD");
+  selt::eq(run("JOIN(MAP(LIST(\"x\", \"yy\"), PADL(_, 3, \"-\")), \",\")"), std::string("t\"--x,-yy\""), "a strict call per row");
+}
+
 void test_collector_copies_and_depth() {
   selt::section("collector copies and depth");
   const char* copies[][2] = {
@@ -1484,8 +1567,16 @@ void test_plain_vs_optimised() {
     // this comparison is about the optimiser, not about size.
     // Nor do the regex-portability cases (long subjects through the engine, 8 s a
     // pass) tell the optimiser anything the shorter regex cases do not.
+    // The ambiguity cases (28b) run the regex validator on patterns that hit its
+    // caps, dozens of times a pass; `sqlt`/conformance cover them and the plain-vs-
+    // optimised question is not about regexes (under ASan this pass took over an hour).
     if (path.find("29-text-binary-budgets") != std::string::npos ||
-        path.find("28-regex-portability") != std::string::npos) continue;
+        path.find("28-regex-portability") != std::string::npos ||
+        path.find("28b-regex-ambiguity") != std::string::npos) continue;
+#if defined(__SANITIZE_ADDRESS__)
+    // Three cases build 8M-code-point texts (the REPLACE cap); ~100x slower under ASan.
+    if (path.find("31-audit-findings") != std::string::npos) continue;
+#endif
     std::ifstream in(path);
     std::string line, setup, source, section;
     std::string name;
@@ -1988,6 +2079,7 @@ int main() {
   test_pipeline_temporaries_are_kept();
   test_filter_packed_result();
   test_round2_fast_paths();
+  test_round3_fast_paths();
   test_collector_copies_and_depth();
   test_value();
   test_host_api();

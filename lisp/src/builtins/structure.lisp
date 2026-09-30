@@ -1095,7 +1095,14 @@ carry is promoted from neither, spec §7.4)."
     (when (and deep stages jequi-left (eq (node-kind node0) :call)
                (member (node-s node0) '("LINK" "LINK_LEFT" "FILTER") :test #'string=)
                (join-pure-source-p node0) (join-pure-source-p node1))
-      (let ((rv (args-val a 1)))
+      (let ((rv (handler-case (args-val a 1)
+                  ;; The right source went first for the prefilter's sake, which is
+                  ;; only unobservable while neither source raises (SPEC 7.4: as
+                  ;; written, the left source runs first). The left source is pure
+                  ;; too: run it now, after the failed evaluation has unwound and
+                  ;; with nothing handed down. If it raises, ITS error is the one
+                  ;; as written; if it does not, the right source's error stands.
+                  (sel-error (c) (args-val a 0) (error c)))))
         (setf right-side (make-join-side-of rv (join-row-keys rv b2-names) is-left b2-names))
         (multiple-value-bind (applied stop)
             (join-stage-walk stages owned-by-left

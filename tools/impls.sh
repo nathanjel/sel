@@ -55,8 +55,32 @@ SEL_PHP_FLAGS="${SEL_PHP_FLAGS:-}"
 # started by the gate shares the gate's bound rather than adding its own. A leaf
 # waits for a free slot; nothing is ever refused.
 _sel_threads() { nproc 2>/dev/null || getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4; }
-SEL_JOBS="${SEL_JOBS:-$(( ($(_sel_threads) + 1) / 2 ))}"
-SEL_PHP_JOBS="${SEL_PHP_JOBS:-$(( ($(_sel_threads) + 3) / 4 ))}"
+# The default bound adapts to the box at the moment the FIRST tool starts: three
+# quarters of the hardware threads (12 of 16) when the one-minute load average
+# says the machine is mostly idle, half of them when something else is already
+# using it. The gate exports the result (below), so every tool it starts uses the
+# same number; run standalone, each tool decides for itself. SEL_JOBS and
+# SEL_PHP_JOBS set in the environment always win. Leaves are mostly single-threaded
+# and short, so a bound near the thread count keeps every core fed without the
+# oversubscription that made the old half-the-threads default safe on a loaded box.
+_sel_default_jobs() {
+  local t load
+  t="$(_sel_threads)"
+  load="$(cut -d' ' -f1 /proc/loadavg 2>/dev/null || echo 0)"
+  # awk for the comparison: the load average is a decimal.
+  if awk -v l="$load" -v t="$t" 'BEGIN { exit !(l < t / 2) }'; then
+    echo $(( (t * 3 + 3) / 4 ))
+  else
+    echo $(( (t + 1) / 2 ))
+  fi
+}
+SEL_JOBS="${SEL_JOBS:-$(_sel_default_jobs)}"
+# PHP is capped separately because, on a box with no php binary, `php` is a Docker
+# wrapper and each call a container start. With a native php the leaf is an
+# ordinary single-threaded process, so the cap is half the general bound (4 of 8
+# as before, 6 of 12 now): PHP runs the longest suites in the gate, and most of
+# the mutation lane's checks are PHP ones.
+SEL_PHP_JOBS="${SEL_PHP_JOBS:-$(( (SEL_JOBS + 1) / 2 ))}"
 [ "$SEL_JOBS" -ge 1 ] || SEL_JOBS=1
 [ "$SEL_PHP_JOBS" -ge 1 ] || SEL_PHP_JOBS=1
 # One directory per user, kept: the lock files are empty and the bound is then

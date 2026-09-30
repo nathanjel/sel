@@ -24,6 +24,29 @@ tools/scale-test/benchmark_php_memory.php
                             shape-cache, and memory probes
 ```
 
+## Concurrency knobs
+
+The gate is a pool of leaf commands, each holding one flock(1) slot
+(`tools/impls.sh`, slot files under `$TMPDIR/sel-slots-<uid>`), so nested tools
+share one bound instead of each adding their own.
+
+| Knob | Default | Meaning |
+|---|---|---|
+| `SEL_JOBS` | 3/4 of the hardware threads (12 of 16) when the one-minute load average is below half the threads at start, otherwise half (8) | leaf commands at once. The gate exports the value, so everything it starts agrees; run standalone, each tool decides for itself. |
+| `SEL_PHP_JOBS` | half of `SEL_JOBS` | how many of them may be PHP (a PHP leaf is single-threaded; on a box whose `php` is a Docker wrapper, lower it, each call is a container start) |
+| `SEL_MUTATE_JOBS` | `tools/mutate-sql.sh`: `SEL_JOBS`; under the gate: two thirds of it | mutations graded side by side. The cap exists so the lane cannot hold every slot and starve the gate's shorter layers. |
+| `SEL_DB_LOCK` | set by the gate (`$LOGS/db.lock`) | the database layers share one schema, so they serialise on this lock — taken for the checks that touch it (the oracle, the oracle half of the SQL fuzz, each mutation-lane oracle check), never for a whole lane. Always taken before a slot. |
+| `SEL_SLOT_DIR` | `$TMPDIR/sel-slots-<uid>` | where the slot locks live; set it to isolate a run from other SEL tools on the box |
+
+`tools/mutate-sql.sh` grades each mutation with the mutated host's OWN checks
+first (a mutation in `js/src/sql` runs the JS suites before anything else) and
+the remaining hosts' after; a mutation counts as caught if any check fails, so
+the order changes only what a mutation costs, never its verdict. The lane copies
+the tree once (the seed), builds the C++ SQL tools in it once in parallel, runs
+the baseline there, and copies the seed, objects included, per mutation, so a
+mutation of one C++ translation unit recompiles that unit, not the library. A
+mutation to a C++ header gets a clean build.
+
 Only the JS side owns generators: `gen-programs.mjs` (fuzz corpus),
 `extract-docs.mjs` (documentation corpus) and `decimal-oracle.py` (Python) run
 once and feed every implementation. A port never re-implements a generator, only

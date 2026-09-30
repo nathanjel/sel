@@ -2735,6 +2735,13 @@ class Lexer {
     return encode_utf8(std::span<const char32_t>(chars_).subspan(from, to - from));
   }
 
+  // For a range already known to be ASCII (digits, identifiers): no encoder.
+  std::string ascii_slice(std::size_t from, std::size_t to) const {
+    std::string out(to - from, '\0');
+    for (std::size_t k = from; k < to; k++) out[k - from] = static_cast<char>(chars_[k]);
+    return out;
+  }
+
   struct Part {
     bool is_expr = false;
     std::string text;
@@ -2820,7 +2827,7 @@ class Lexer {
           j++;
           while (j < to && is_digit(chars_[j])) j++;
         }
-        out.push_back(Token{Tok::Num, slice(i, j), pos});
+        out.push_back(Token{Tok::Num, ascii_slice(i, j), pos});
         i = j;
         continue;
       }
@@ -2829,7 +2836,7 @@ class Lexer {
         std::size_t j = i;
         while (j < to && is_ident(chars_[j])) j++;
         // Identifiers are ASCII and case-insensitive; upper case is canonical.
-        std::string word = slice(i, j);
+        std::string word = ascii_slice(i, j);
         for (char& ch : word) {
           if (ch >= 'a' && ch <= 'z') ch = static_cast<char>(ch - 32);
         }
@@ -2915,11 +2922,26 @@ class Lexer {
     }
   }
 
+  // The operators that start with each ASCII byte, longest first (the order of operators()):
+  // one table lookup instead of a scan over all 31 per token (CPP-P25).
+  static const std::vector<const std::string*>& operators_starting_with(char32_t c) {
+    static const std::array<std::vector<const std::string*>, 128> by_first = [] {
+      std::array<std::vector<const std::string*>, 128> table;
+      for (const std::string& op : operators()) {
+        table[static_cast<unsigned char>(op[0])].push_back(&op);
+      }
+      return table;
+    }();
+    static const std::vector<const std::string*> none;
+    return c < 128 ? by_first[static_cast<std::size_t>(c)] : none;
+  }
+
   std::string match_operator(std::size_t i, std::size_t to) const {
-    for (const std::string& op : operators()) {
+    for (const std::string* candidate : operators_starting_with(chars_[i])) {
+      const std::string& op = *candidate;
       if (i + op.size() > to) continue;
       bool ok = true;
-      for (std::size_t k = 0; k < op.size(); k++) {
+      for (std::size_t k = 1; k < op.size(); k++) {   // the first byte is the bucket
         if (chars_[i + k] != static_cast<char32_t>(static_cast<unsigned char>(op[k]))) {
           ok = false;
           break;
@@ -3370,7 +3392,7 @@ class Parser {
     NodePtr left = parse_prefix(min_bp);
 
     for (;;) {
-      const Token t = peek();
+      const Token& t = peek();
       const Infix* e = infix_entry(t);
       if (e == nullptr || e->bp < min_bp) return left;
 
@@ -3460,7 +3482,7 @@ class Parser {
   // the process. Entered only when a prefix operator is actually consumed, so
   // every other expression's trip point is unchanged.
   NodePtr parse_prefix(int min_bp) {
-    const Token t = peek();
+    const Token& t = peek();
 
     if (t.type == Tok::Ident && t.value == "NOT" && min_bp <= BP_NOT) {
       next();
@@ -3558,7 +3580,7 @@ class Parser {
   }
 
   NodePtr parse_primary() {
-    const Token t = peek();
+    const Token& t = peek();
     enter(t.pos);
     const Leave leave_guard{this};
 
@@ -3798,7 +3820,18 @@ Value eval_node(const Node& node, Context& ctx);
 class Args {
  public:
   Args(const Node& node, Context& ctx)
-      : nodes_(node.items), record_shape_(node.record_shape), name_(node.s), pos_(node.pos), ctx_(ctx), vals_(node.items.size()) {}
+      : nodes_(node.items), record_shape_(node.record_shape), name_(node.s), pos_(node.pos), ctx_(ctx) {
+    // Up to kInline arguments live in the object; only a wider call allocates (CPP-P24).
+    const std::size_t n = node.items.size();
+    if (n <= kInline) {
+      vals_ = inline_;
+    } else {
+      heap_ = std::make_unique<std::optional<Value>[]>(n);
+      vals_ = heap_.get();
+    }
+  }
+  Args(const Args&) = delete;
+  Args& operator=(const Args&) = delete;
 
   int count() const { return static_cast<int>(nodes_.size()); }
   const Node& node(int i) const { return *nodes_[i]; }
@@ -3885,12 +3918,32 @@ class Args {
   const std::string& name_;
   Pos pos_;
   Context& ctx_;
-  std::vector<std::optional<Value>> vals_;
+  static constexpr std::size_t kInline = 4;
+  std::optional<Value> inline_[kInline];
+  std::unique_ptr<std::optional<Value>[]> heap_;
+  std::optional<Value>* vals_ = nullptr;
 };
 
 namespace {
 
 // Code points in a UTF-8 string that is already known to be valid.
+// Byte-level substring search, linear in the haystack for any needle (glibc's memmem
+// switches to the two-way algorithm for long needles; std::string::find is O(n*m) on
+// aaaa..ab style inputs: a 200 KB needle in 400 KB took 1.6-6.7 s -- CPP-P22).
+// UTF-8 is self-synchronising, so a byte match of a valid needle is a code-point match.
+inline std::size_t byte_find(const std::string& hay, const std::string& needle, std::size_t from) {
+  if (from > hay.size()) return std::string::npos;
+  if (needle.empty()) return from;
+  if (needle.size() > hay.size() - from) return std::string::npos;
+#if defined(__GLIBC__)
+  const void* at = memmem(hay.data() + from, hay.size() - from, needle.data(), needle.size());
+  return at == nullptr ? std::string::npos
+                       : static_cast<std::size_t>(static_cast<const char*>(at) - hay.data());
+#else
+  return hay.find(needle, from);   // no two-way memmem here: same answer, worst case O(n*m)
+#endif
+}
+
 std::size_t cp_count(const std::string& s) {
   std::size_t n = 0;
   for (const unsigned char c : s) {
@@ -4024,12 +4077,103 @@ const Dec& as_dec_ref(const Value& v, Pos pos) {
   return src.dec_ref();
 }
 
-Value eval_unary(const Node& node, Context& ctx) {
-  const Value v = eval_node(*node.l, ctx);
+Value apply_binary(const Node& node, unsigned char opc, const Value& l, const Value& r);
+
+Value apply_unary(const Node& node, const Value& v) {
   if (node.s == "NOT") return Value::boolean(!v.as_bool(node.l->pos));
   const Dec d = as_dec(v, node.l->pos);
   return make_num(dec_negate(d));
 }
+
+Value eval_unary(const Node& node, Context& ctx) {
+  const Value v = eval_node(*node.l, ctx);
+  return apply_unary(node, v);
+}
+
+// How many nodes of `n` probe_eval walks itself (the rest it hands to eval_node), counted
+// up to `limit`: a bound on the evaluation depth it stands in for.
+int probe_size(const Node& n, int limit) {
+  if (limit <= 0) return 1;
+  switch (n.t) {
+    case NT::Var: return 1;
+    case NT::Index:
+      if (n.r->t != NT::Text) return 1;
+      return 1 + (n.l->t == NT::Var ? 0 : probe_size(*n.l, limit - 1));
+    case NT::Un: return n.math_plan ? 1 : 1 + probe_size(*n.l, limit - 1);
+    case NT::Bin: {
+      const unsigned char opc = n.opc ? n.opc : bin_opcode(n.s);
+      if (n.math_plan || opc == BO_AND || opc == BO_OR || opc == BO_COALESCE || opc == BO_VACUOUS) return 1;
+      const int left = probe_size(*n.l, limit - 1);
+      return 1 + left + probe_size(*n.r, limit - 1 - left);
+    }
+    default: return 1;
+  }
+}
+
+// Shifts ctx.depth by the levels probe_eval skipped while a subtree that it does not
+// walk is evaluated, so E_DEPTH is raised at the node it would have been raised at.
+struct DepthShift {
+  Context& ctx;
+  int by;
+  DepthShift(Context& c, int n) : ctx(c), by(n) { ctx.depth += by; }
+  ~DepthShift() { ctx.depth -= by; }
+};
+
+// eval_node for the small shapes `??` is usually given, with a miss (the two codes `??`
+// swallows: E_UNDEF_VAR, E_NO_KEY) reported as `false` rather than thrown. `level` is the
+// depth eval_node would have given this node (1 = directly under the `??`). Evaluation
+// order, coercion order and every other error are exactly eval_binary's / eval_unary's:
+// the operands are evaluated left then right and only then combined by apply_binary.
+bool probe_eval(const Node& n, Context& ctx, Value& out, int level) {
+  switch (n.t) {
+    case NT::Var: {
+      const Value* v = ctx.lookup(n.s);
+      if (!v) return false;
+      out = *v;
+      return true;
+    }
+    case NT::Index: {
+      if (n.r->t != NT::Text) break;
+      Value obj;
+      if (n.l->t == NT::Var) {
+        const Value* v = ctx.lookup(n.l->s);
+        if (!v) return false;
+        obj = *v;
+      } else if (!probe_eval(*n.l, ctx, obj, level + 1)) {
+        return false;
+      }
+      const Value* child = obj.get(n.r->s);
+      if (!child) return false;
+      out = *child;
+      return true;
+    }
+    case NT::Un: {
+      if (n.math_plan) break;
+      Value v;
+      if (!probe_eval(*n.l, ctx, v, level + 1)) return false;
+      out = apply_unary(n, v);
+      return true;
+    }
+    case NT::Bin: {
+      const unsigned char opc = n.opc ? n.opc : bin_opcode(n.s);
+      if (n.math_plan || opc == BO_AND || opc == BO_OR || opc == BO_COALESCE || opc == BO_VACUOUS) break;
+      Value l, r;
+      if (!probe_eval(*n.l, ctx, l, level + 1)) return false;
+      if (!probe_eval(*n.r, ctx, r, level + 1)) return false;
+      out = apply_binary(n, opc, l, r);
+      return true;
+    }
+    default: break;
+  }
+  const DepthShift shift(ctx, level - 1);
+  out = eval_node(n, ctx);
+  return true;
+}
+
+Value apply_binary(const Node& node, unsigned char opc, const Value& l, const Value& r);
+Value apply_unary(const Node& node, const Value& v);
+int probe_size(const Node& n, int limit);
+bool probe_eval(const Node& n, Context& ctx, Value& out, int level);
 
 Value eval_binary(const Node& node, Context& ctx) {
   const std::string& op = node.s;
@@ -4071,9 +4215,22 @@ Value eval_binary(const Node& node, Context& ctx) {
         return eval_node(*node.r, ctx);
       }
     }
+    // A left operand that is a small tree of operators over names and literal-key
+    // indexes (`(_["k"] & "x") ?? 0`, `A["a"] + 1 ??? 0`) is evaluated by probe_eval,
+    // which reports a miss instead of throwing it: the exception cost about 10 us a
+    // row (CPP-P4 leftover). Anything it does not understand is evaluated by
+    // eval_node inside it, so the try below still catches what that throws.
+    const int probed = probe_size(*node.l, 13);
+    const bool probe = probed <= 12 && ctx.depth + probed + 1 <= MAX_DEPTH;
     try {
-      const Value l = eval_node(*node.l, ctx);
-      if (!(opc == BO_COALESCE ? l.is_null() : l.is_vacuous())) return l;
+      Value l;
+      if (probe) {
+        if (probe_eval(*node.l, ctx, l, 1) &&
+            !(opc == BO_COALESCE ? l.is_null() : l.is_vacuous())) return l;
+      } else {
+        l = eval_node(*node.l, ctx);
+        if (!(opc == BO_COALESCE ? l.is_null() : l.is_vacuous())) return l;
+      }
     } catch (const SelError& e) {
       if (e.code() != "E_NO_KEY" && e.code() != "E_UNDEF_VAR") throw;
     }
@@ -4082,6 +4239,14 @@ Value eval_binary(const Node& node, Context& ctx) {
 
   const Value l = eval_node(*node.l, ctx);
   const Value r = eval_node(*node.r, ctx);
+  return apply_binary(node, opc, l, r);
+}
+
+// The operator proper, on operands already evaluated (both, left then right: §6.2).
+// Split from eval_binary so the `??` probe (probe_eval) applies exactly the same
+// coercions, in the same order, with the same positions.
+Value apply_binary(const Node& node, unsigned char opc, const Value& l, const Value& r) {
+  const std::string& op = node.s;
   const Pos lp = node.l->pos, rp = node.r->pos;
 
   // Each pair of coercions below is sequenced through named locals rather than
@@ -4549,8 +4714,6 @@ namespace {
 // ============================================================================
 // --- builtins
 // ============================================================================
-
-CodePoints cps_of(const std::string& s) { return decode_utf8(s); }
 
 // --- control. The whole of SEL's control flow: lazy, so only the taken branch
 // is evaluated — exactly the property the AST calling convention exists for.
@@ -5676,7 +5839,23 @@ Value do_link(Args& a, Context& ctx, bool left_join) {
   if (deep && !stages.empty() && jequi && left_node.t == NT::Call &&
       (left_node.s == "LINK" || left_node.s == "LINK_LEFT" || left_node.s == "FILTER") &&
       join_pure_source(&left_node) && join_pure_source(&right_node)) {
-    const Value& right_first = a.val(1);
+    // The right source is evaluated first only as an optimisation; a program is what it is
+    // as written, where the LEFT source runs first (SPEC 7.4, 6.2). So if the right one
+    // raises, the left one (pure: no effects, but errors are observable) is evaluated as
+    // written and ITS error wins; only when it evaluates cleanly does the right source's
+    // own error stand. eval_node restored the depth while the exception unwound.
+    const Value* right_first_ptr = nullptr;
+    try {
+      right_first_ptr = &a.val(1);
+    } catch (const SelError&) {
+      ctx.join_prefilter.reset();
+      ctx.join_prefilter_report.reset();
+      (void)a.eval(a.node(0));
+      ctx.join_prefilter.reset();
+      ctx.join_prefilter_report.reset();
+      throw;
+    }
+    const Value& right_first = *right_first_ptr;
     right_side = join_side_facts(right_first, join_row_keys(right_first, b2_names), left_join, b2_names);
     const auto total_below = [&](const std::vector<std::pair<std::string, bool>>& reqs, const JoinStage& stage) {
       return join_totality(reqs, nullptr, *right_side, above_of(stage));
@@ -6104,9 +6283,29 @@ void register_structure() {
 
   define(Spec{"RECORD", 0, VARIADIC, false, false, nullptr,   // even count: spec/builtins.json
               [](Args& a, Context&) -> Value {
-                Value rec = Value::none();
                 const int n = a.count();
                 cap_collection(static_cast<u128>(n / 2), a.pos());
+                // Literal, distinct keys (prepare_record_shape): the keys are the shape's own,
+                // a literal key cannot fail to be text, so the values go straight into the
+                // shaped storage -- no intermediate record (CPP-P21). Same evaluation order:
+                // the arguments were evaluated before this call, left to right.
+                // The shape is checked against the key NODES as they are now: the planners
+                // rewrite argument lists and a stale shape must not name the wrong keys.
+                bool literal_keys = a.record_shape() &&
+                    a.record_shape()->keys.size() == static_cast<std::size_t>(n / 2);
+                for (int i = 0; literal_keys && i < n; i += 2) {
+                  const Node& k = a.node(i);
+                  literal_keys = k.t == NT::Text && k.s == a.record_shape()->keys[i / 2];
+                }
+                if (literal_keys) {
+                  std::vector<Value> values;
+                  values.reserve(static_cast<std::size_t>(n / 2));
+                  for (int i = 0; i < n; i += 2) {
+                    values.push_back(adopt_or_clone(a.take_val(i + 1), 1, a.pos()));
+                  }
+                  return Internals::shaped(a.record_shape(), std::move(values));
+                }
+                Value rec = Value::none();
                 for (int i = 0; i < n; i += 2) {
                   // The key is coerced into a local first: argument evaluation order is
                   // unspecified, and the copy below can raise E_DEPTH for an over-deep
@@ -6182,22 +6381,36 @@ void register_structure() {
   const auto dedupe = [](Args& a, Context&) -> Value {
                 const Value& val = a.val(0);
                 if (val.is_null()) return Value::list({});
-                std::unordered_map<std::uint64_t, std::vector<Value>> buckets;
+                // Open addressing over indices into `out` (CPP-P23): a chained
+                // unordered_map<hash, vector<Value>> paid two allocations per distinct
+                // value. Slots hold an index into `out`; the parallel `hashes` vector
+                // keeps the full hash so a probe compares 64 bits before any eql().
+                constexpr std::uint32_t kEmpty = 0xFFFFFFFFu;
+                std::vector<std::uint32_t> table(16, kEmpty);
+                std::vector<std::uint64_t> hashes;
                 std::vector<Value> out;
                 const Pos call_pos = a.pos();   // where a too-deep element is reported
                 for_each_collection_value(val, [&](const Value& item) {
                   const std::uint64_t hash = item.structural_hash(call_pos);
-                  auto& bucket = buckets[hash];
-                  bool found = false;
-                  for (const Value& existing : bucket) {
-                    if (item.eql(existing, call_pos)) {
-                      found = true;
-                      break;
-                    }
+                  std::size_t mask = table.size() - 1;
+                  std::size_t slot = static_cast<std::size_t>(hash) & mask;
+                  while (table[slot] != kEmpty) {
+                    const std::uint32_t at = table[slot];
+                    if (hashes[at] == hash && item.eql(out[at], call_pos)) return;
+                    slot = (slot + 1) & mask;
                   }
-                  if (!found) {
-                    bucket.push_back(item);
-                    out.push_back(item);
+                  table[slot] = static_cast<std::uint32_t>(out.size());
+                  hashes.push_back(hash);
+                  out.push_back(item);
+                  if (out.size() * 2 > table.size()) {       // keep the load factor <= 1/2
+                    std::vector<std::uint32_t> bigger(table.size() * 2, kEmpty);
+                    mask = bigger.size() - 1;
+                    for (std::size_t k = 0; k < out.size(); k++) {
+                      std::size_t at = static_cast<std::size_t>(hashes[k]) & mask;
+                      while (bigger[at] != kEmpty) at = (at + 1) & mask;
+                      bigger[at] = static_cast<std::uint32_t>(k);
+                    }
+                    table.swap(bigger);
                   }
                 });
                 return Value::list(std::move(out));
@@ -7044,24 +7257,40 @@ std::string trim_text(const std::string& s, bool left, bool right) {
 }
 
 Value pad(Args& a, bool left) {
-  const CodePoints c = cps_of(a.text(0));
+  // Byte-level (CPP-P22): the old version widened every code point to 4 bytes twice
+  // (padding, then the result) and re-encoded; at the 16M-code-point cap that was
+  // ~128 MB of scratch for a 16 MB answer.
+  const std::string& text = a.text(0);
   const long long width = a.non_neg_int(1);
-  const CodePoints fill = cps_of(a.text(2));
+  const std::string& fill = a.text(2);
   if (fill.empty()) fail("E_BAD_ARG", "pad fill must not be empty", a.pos_of(2));
-  if (static_cast<long long>(c.size()) >= width) return make_text(encode_utf8(c));
-  cap_text(static_cast<u128>(width), a.pos());   // the result is exactly `width` long
-  const std::size_t need = static_cast<std::size_t>(width) - c.size();
-  CodePoints padding;
-  while (padding.size() < need) padding.push_back(fill[padding.size() % fill.size()]);
-  CodePoints out;
-  if (left) {
-    out = padding;
-    out.insert(out.end(), c.begin(), c.end());
-  } else {
-    out = c;
-    out.insert(out.end(), padding.begin(), padding.end());
+  const std::size_t have = cp_count(text);
+  if (static_cast<unsigned long long>(have) >= static_cast<unsigned long long>(width)) {
+    return make_text(text);
   }
-  return make_text(encode_utf8(out));
+  cap_text(static_cast<u128>(width), a.pos());   // the result is exactly `width` long
+  const std::size_t need = static_cast<std::size_t>(width) - have;
+  const std::size_t fill_cps = cp_count(fill);
+  const std::size_t cycles = need / fill_cps;
+  const std::size_t rest_bytes = advance_cps(fill, 0, need % fill_cps);
+  std::string padding;
+  if (fill.size() == 1) {
+    padding.assign(need, fill[0]);
+  } else {
+    padding.reserve(cycles * fill.size() + rest_bytes);
+    for (std::size_t i = 0; i < cycles; i++) padding += fill;
+    padding.append(fill, 0, rest_bytes);
+  }
+  std::string out;
+  out.reserve(text.size() + padding.size());
+  if (left) {
+    out += padding;
+    out += text;
+  } else {
+    out += text;
+    out += padding;
+  }
+  return make_text(std::move(out));
 }
 
 
@@ -7114,7 +7343,7 @@ void register_text() {
                 // `from` counts code points and may be enormous: past the end nothing matches.
                 if (static_cast<unsigned long long>(from) > cp_count(hay)) return make_int(0);
                 const std::size_t start_byte = advance_cps(hay, 0, static_cast<unsigned long long>(from));
-                const std::size_t at = hay.find(needle, start_byte);
+                const std::size_t at = byte_find(hay, needle, start_byte);
                 if (at == std::string::npos) return make_int(0);
                 return make_int(static_cast<long long>(cp_count_range(hay, 0, at)) + 1);
               }});
@@ -7132,7 +7361,7 @@ void register_text() {
                   u128 matches = 0;
                   std::size_t j = 0;
                   for (;;) {
-                    const std::size_t at = hay.find(needle, j);
+                    const std::size_t at = byte_find(hay, needle, j);
                     if (at == std::string::npos) break;
                     matches++;
                     j = at + needle.size();
@@ -7143,7 +7372,7 @@ void register_text() {
                 std::string out;
                 std::size_t i = 0;
                 for (;;) {
-                  const std::size_t at = hay.find(needle, i);
+                  const std::size_t at = byte_find(hay, needle, i);
                   if (at == std::string::npos) break;
                   out.append(hay, i, at - i);
                   out += repl;
@@ -7162,7 +7391,7 @@ void register_text() {
                 std::vector<Value> parts;
                 std::size_t i = 0;
                 for (;;) {
-                  const std::size_t at = hay.find(sep, i);
+                  const std::size_t at = byte_find(hay, sep, i);
                   if (at == std::string::npos) break;
                   cap_collection(static_cast<u128>(parts.size()) + 2, a.pos());
                   parts.push_back(make_text(hay.substr(i, at - i)));
@@ -7213,9 +7442,13 @@ void register_text() {
                 cap_text(static_cast<u128>(cp_count(s)) * static_cast<unsigned long long>(n),
                          a.pos());
                 std::string out;
-                out.reserve(s.size() * static_cast<std::size_t>(n));
-                for (long long i = 0; i < n; i++) out += s;
-                return make_text(out);
+                if (s.size() == 1) {
+                  out.assign(static_cast<std::size_t>(n), s[0]);
+                } else {
+                  out.reserve(s.size() * static_cast<std::size_t>(n));
+                  for (long long i = 0; i < n; i++) out += s;
+                }
+                return make_text(std::move(out));
               }});
 
   define(Spec{"PADL", 3, 3, false, false, nullptr,
@@ -8547,11 +8780,12 @@ constexpr std::size_t REGEX_CACHE_MAX = 256;   // spec §7.8: bounded pattern ca
 // unit test can look at how many entries it holds.
 struct RegexCacheState {
   std::mutex mutex;
-  std::map<std::string, Regex> map;
+  // Shared, not owned by the map alone: a call holds the pattern it searches with
+  // for as long as it searches, and another thread may evict that entry meanwhile
+  // (ThreadSanitizer saw it: four threads cycling 300 patterns through 256 slots
+  // destroyed a Regex in use).
+  std::map<std::string, std::shared_ptr<const Regex>> map;
   std::deque<std::string> order;   // insertion order, oldest first
-  // Bumped, under the mutex, whenever an entry is evicted: a pointer to a cached
-  // pattern is good for as long as this number is what it was when it was taken.
-  std::atomic<unsigned long> evictions{0};
 };
 
 // The pattern this thread used last, found again without the lock, the key string
@@ -8560,8 +8794,7 @@ struct RegexCacheState {
 struct RegexLastUsed {
   std::string pattern;
   std::string flags;
-  Regex* re = nullptr;
-  unsigned long evictions = 0;
+  std::shared_ptr<const Regex> re;
 };
 
 RegexCacheState& regex_cache_state() {
@@ -8584,13 +8817,12 @@ auto guarded_search(Pos pos, F&& f) -> decltype(f()) {
 
 // Compiled patterns are cached: a rule inside an aggregate compiles its pattern
 // once per element otherwise.
-Regex& compile_regex(const std::string& pattern, const std::string& flags, Pos flag_pos,
-                     Pos pat_pos) {
+std::shared_ptr<const Regex> compile_regex(const std::string& pattern, const std::string& flags, Pos flag_pos,
+                                           Pos pat_pos) {
   thread_local RegexLastUsed last;
-  if (last.re && last.evictions == regex_cache_state().evictions.load(std::memory_order_acquire) &&
-      last.pattern == pattern && last.flags == flags) {
+  if (last.re && last.pattern == pattern && last.flags == flags) {
     // Same pattern, same flags as a call that already passed every check below.
-    return *last.re;
+    return last.re;
   }
   bool ignore_case = false;
   for (char32_t ch : decode_utf8(flags, flag_pos)) {
@@ -8627,20 +8859,18 @@ Regex& compile_regex(const std::string& pattern, const std::string& flags, Pos f
   // stale-value race. ThreadSanitizer caught this on four threads compiling
   // distinct patterns.
   RegexCacheState& state = regex_cache_state();
-  std::map<std::string, Regex>& cache = state.map;
+  std::map<std::string, std::shared_ptr<const Regex>>& cache = state.map;
   // Bounded (spec §7.8): patterns come from data, and an unbounded cache is a
   // leak the caller cannot see. At most REGEX_CACHE_MAX, oldest evicted first.
-  // std::map never moves its nodes, so the reference handed out stays valid until
-  // its own entry is evicted -- 256 insertions later, by which time the call that
-  // asked for it has finished with it.
+  // What is handed out is a shared_ptr, so an entry evicted under a call that is
+  // still searching with it lives until that call lets go.
   std::deque<std::string>& cache_order = state.order;
   std::lock_guard<std::mutex> lock(state.mutex);
   const std::string key = (ignore_case ? "i " : " ") + pattern;
-  auto remember = [&](Regex& re) -> Regex& {
+  auto remember = [&](const std::shared_ptr<const Regex>& re) {
     last.pattern = pattern;
     last.flags = flags;
-    last.re = &re;
-    last.evictions = state.evictions.load(std::memory_order_relaxed);
+    last.re = re;
     return re;
   };
   auto it = cache.find(key);
@@ -8656,17 +8886,16 @@ Regex& compile_regex(const std::string& pattern, const std::string& flags, Pos f
     if (cache.size() >= REGEX_CACHE_MAX) {
       cache.erase(cache_order.front());
       cache_order.pop_front();
-      state.evictions.fetch_add(1, std::memory_order_release);
     }
     cache_order.push_back(key);
-    return remember(cache.emplace(key, std::move(re)).first->second);
+    return remember(cache.emplace(key, std::make_shared<const Regex>(std::move(re))).first->second);
   } catch (const srell::regex_error& e) {
     fail("E_REGEX_SYNTAX", std::string(e.what()) + " in /" + pattern + "/", pat_pos);
   }
 }
 
 struct RegexCall {
-  Regex* re;
+  std::shared_ptr<const Regex> re;
   std::u32string subject;
 };
 
@@ -8694,7 +8923,7 @@ RegexCall regex_args(Args& a, int pat_index, int subj_index, int flag_index) {
   std::u32string subject = u32_subject(a.text(subj_index), a.pos_of(subj_index));
   const std::string flags = a.count() > flag_index ? a.text(flag_index) : "";
   const Pos flag_pos = a.count() > flag_index ? a.pos_of(flag_index) : a.pos();
-  return RegexCall{&compile_regex(pattern, flags, flag_pos, a.pos_of(pat_index)), std::move(subject)};
+  return RegexCall{compile_regex(pattern, flags, flag_pos, a.pos_of(pat_index)), std::move(subject)};
 }
 
 // SEL replacement syntax is $0–$9 and $$ for a literal $; every other character
@@ -8770,7 +8999,8 @@ void register_regex() {
                 const std::u32string subject = u32_subject(a.text(2), a.pos_of(2));
                 const std::string flags = a.count() > 3 ? a.text(3) : "";
                 const Pos flag_pos = a.count() > 3 ? a.pos_of(3) : a.pos();
-                Regex& re = compile_regex(pattern, flags, flag_pos, a.pos_of(0));
+                const std::shared_ptr<const Regex> re_holder = compile_regex(pattern, flags, flag_pos, a.pos_of(0));
+                const Regex& re = *re_holder;
 
                 // The walk of spec §7.8: left to right; after an EMPTY match at s the
                 // scan resumes at s+1 with the code point at s copied through, after

@@ -150,7 +150,7 @@ case " $IMPLS " in *" js-bundle-min "*) step "JS minified runtime isolation" sel
 case " $IMPLS " in *" php "*) step "PHP runtime" sel_slot sel_php tools/check-php-runtime.php ;; esac
 case " $IMPLS " in *" php "*) step "PHP integration" sel_slot sel_php tools/check-php-integration.php ;; esac
 case " $IMPLS " in *" php "*) step "PHP 8.1 (oldest supported)" sel_slot tools/check-php-version.sh ;; esac
-case " $IMPLS " in *" cpp "*) step "C++ registry race (TSan)" sel_slot make -C cpp tsan-registry ;; esac
+case " $IMPLS " in *" cpp "*) step "C++ registry race (TSan)" sel_slot make -j4 -C cpp tsan-registry ;; esac
 case " $IMPLS " in *" js "*) step "JS metadata" sel_slot node tools/metadata/js.mjs ;; esac
 case " $IMPLS " in *" php "*) step "PHP metadata" sel_slot sel_php tools/metadata/php.php ;; esac
 case " $IMPLS " in *" python "*) step "Python metadata" sel_slot python3 tools/metadata/python.py ;; esac
@@ -201,7 +201,15 @@ case " $IMPLS " in *" python "*) step "scale plans vs reference" sel_slot python
 # half and most of the mutation run need no server, and could release it
 # sooner, but a finer grain would have to reach inside those scripts.
 db_step() { local name="$1"; shift; step "$name" flock "$LOGS/db.lock" "$@"; }
-db_step "sql mutations" ./tools/mutate-sql.sh
+# The lock is exported so the two long lanes can take it for exactly the checks
+# that touch the shared schema instead of for their whole run. The mutation lane
+# used to hold it for its entire duration (over an hour) and the SQL fuzz lane's
+# host-against-host half, which needs no server, queued behind it: gate #2's wall
+# time was that one lane plus the seconds the rest then took. Mutations run
+# beside everything else now, at two thirds of the slot bound.
+export SEL_DB_LOCK="$LOGS/db.lock"
+export SEL_MUTATE_JOBS="${SEL_MUTATE_JOBS:-$(( (SEL_JOBS * 2 + 2) / 3 ))}"
+step "sql mutations" ./tools/mutate-sql.sh
 db_step "sql semantic oracle" ./tools/check-sql-oracle.sh
 step "manifest versions" sel_slot ./tools/check-version.sh
 step "package contents: user docs only" sel_slot ./tools/check-package-docs.sh
@@ -234,7 +242,7 @@ step "joined rows vs spec model" ./tools/join-rows-oracle/run.sh "${JOIN_ROWS_CO
 # variable first (SEL-0054): the join tests conjuncts early at run time, and
 # nothing that does may change a value, a key or an error.
 step "join then filter as written" sh -c './tools/join-filter-oracle/run.sh "${JOIN_FILTER_COUNT:-1500}" "${JOIN_FILTER_SEED:-54001}" mixed && ./tools/join-filter-oracle/run.sh "${JOIN_FILTER_COUNT:-1500}" "$(( ${JOIN_FILTER_SEED:-54001} + 1 ))" uniform'
-db_step "differential fuzz, sql" ./tools/fuzz-sql.sh "${SQL_FUZZ_COUNT:-2000}" "${SQL_FUZZ_SEED:-20260905}"
+step "differential fuzz, sql" ./tools/fuzz-sql.sh "${SQL_FUZZ_COUNT:-2000}" "${SQL_FUZZ_SEED:-20260905}"
 
 report
 

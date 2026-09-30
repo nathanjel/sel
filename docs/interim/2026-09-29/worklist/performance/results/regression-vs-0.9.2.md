@@ -56,3 +56,30 @@ Method and full row: `go.md`, GO-REG-1. Baseline = `git archive faff480 go` buil
 | scenario6 | 302.0 / 294.8 | 244.4 / 238.2 | 0.81 | 0.81 |
 
 **Attribution and recovery (GO-REG-1).** Go is faster than 0.9.2 on scenarios 1, 3, 5, 6 (0.70–0.90×). Scenarios 2 and 4 are 5–12 ms runs with the 10× dataset resident; ≈ 44 % of their CPU is the garbage collector's mark phase. Longer single-scenario runs (200 runs, 20 warmups) put scenario 2 at +10–15 % (4.0–4.8 → 5.1–5.4 ms); with `GOGC=off` +4–11 % (scenario 2) and 0.78× (scenario 4), so most of the gap is GC work over larger row objects and the copies SPEC §3.4 now requires (`MAP`/`FILTER`/TOP*/assignment copy what they keep), plus the atomic derived caches that made `Value` larger (GO-C6). Recovered with no semantic change: a `FILTER` whose parent only reads or copies its rows now keeps them aliased (`Context.NoCopy`; declined wherever a value could change while the rows are read; `nocopy_test.go` holds elision on/off to identical outcomes including depth and row-copy failures); the decimal, one-shot-`Eval`, slot-cache and structural-hash items (GO-P21, P24–P26). **Residual, not recovered:** +10–15 % (≈ 0.5–2.8 ms absolute) on scenarios 2 and 4; the next idea is shrinking `Value` back toward 0.9.2's 152 B (merge the atomic caches, reorder the flag bytes), which touches every constructor and was not attempted. Not compared: the round-3 benchmark files (`perf3_*`), which use entry points added in this wave.
+
+## Python — against 0.9.2 (faff480)
+
+Method and full row: `python.md`, PY-REG-1. Baseline = `git archive faff480` in a scratch tree (the working tree was never touched by git); both trees run `tools/scale-test/sel_benchmarks.py`'s fixtures on `dataset-10x.json`, steady state. Because the wall clock of the runner moved by up to 25 % with the other agents' load (3–15), the table is **in-process CPU time of `program.run()`** (`tools/perf/python/ab_scale_cpu.py BASE_TREE --rounds 6 --runs 5`: fresh process per measurement, base and current alternating, best median per tree, CPython 3.14.7).
+
+| scenario | 0.9.2 (cpu s) | current (cpu s) | ratio | before the recovery work |
+|---|---:|---:|---:|---:|
+| scenario1 (14-stage pipeline) | 2.312 | 2.686 | 1.16 | 1.19 |
+| scenario2 | 0.043 | 0.049 | 1.14 | 1.19 |
+| scenario3 | 1.022 | 1.134 | 1.11 | 1.25 |
+| scenario4 | 0.065 | 0.072 | 1.12 | 1.20 |
+| scenario5 | 0.835 | 0.858 | 1.03 | 1.04 |
+| scenario6 | 0.881 | 0.901 | 1.02 | 1.00 |
+
+Python is the one host that is still slower than 0.9.2 on the scale-test (the JS, Lisp and Go sections show 0.6–1.0, with Go's two small scenarios at +10–15 %); the C++ +75 % does not reproduce here (+2 … +16 %). Scenario 1 is on the 15 % line.
+
+**Attribution (cProfile, `tools/perf/python/profile_diff.py BASE_TREE scenarioN`, own-time deltas against 0.9.2 on scenario 1, profiler inflates both sides about equally):** the extra time is (a) the copies SPEC 3.4 now requires — `Value.clone` / `_clone_at` (about 295 k leaf and row copies, 0.36 s of a 9.9 s profile) and `RECORD`'s per-field copy loop (+0.17 s), i.e. the clone-on-collect contract itself; (b) `Value.__init__` for those copies (+0.10 s); (c) `eval_node`/`_dispatch` (+0.16 s together: the snapshot `list(...)` in `walk`, `Args` bookkeeping, evaluate-then-coerce loads in the math plan (`eval.dec` 150 k calls, +0.08 s), size/cap counters `check_collection` (+0.03 s)); (d) `_link` +0.08 s. Offsetting savings: the validation removed from `Value.text` (-0.26 s), `Value.num` / `_eql_at` / join-plan build (-0.3 s together).
+
+**Recovered with no change of semantics** (same answers: conformance 2128/2128, pytest 1683, plain-vs-optimised 2128 sources / 0 differ, sqlt 1305):
+1. `FILTER` followed by `MAP` hands its kept elements on without copying them when the `MAP` body only reads (no assignment, no host function): the physical optimiser stamps `adopt_items` on the FILTER step (`optimizer.adopts_elements`); the depth check that the skipped copy performed is kept as `Value.check_depth` (error code and position identical, tested), and `MAP` copies what it collects, as before. A body that assigns or calls a host function keeps the copy (tests: `python/tests/test_perf_regression.py`).
+2. `RECORD` skips the copy of a field whose node computes a scalar (arithmetic, unary, scalar builtins) — never of a `LIST`/`RECORD` argument, whose nesting the constructor still bounds; evaluation order (keys, then values) unchanged.
+3. `Value.clone` copies a leaf inline and `_clone_at` copies the leaf children of records/lists without a call each (same depth refusals).
+4. `Args.val/node/pos_of`: the bounds check is a sign test plus the list's own `IndexError` (the two `len()` calls per read are gone); `record_shape`/`adopt` are read from the call node on demand instead of two slots stored per call.
+
+**Not recovered:** scenario 1/2/3/4 remain at +11 … +16 % CPU. The rest is the copy contract (a leaf copy is one `Value` allocation, 9 slot stores) and the snapshot/budget counters; further gain needs copy-on-write leaves or a lighter `Value` (PY-P24(a), rejected in round 3 at ~45 ns of ~700 ns per Value) — deferred, reconsider if the scale scenarios become a release criterion.
+
+Raw tables: `$CLAUDE_JOB_DIR/tmp/py_abcpu_final2.txt` (this run), `tools/perf/python/ab_scale.py` (runner wall clock variant: scenario1 1.19 → 1.16, scenario3 1.25 → 1.14).

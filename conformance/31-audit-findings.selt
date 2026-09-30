@@ -162,3 +162,48 @@ IF(FALSE, RFIND('[z-a]', "x", "i"), 1)
 --- expect
 error E_REGEX_SYNTAX at 1:17
 ===
+
+### name: join.order.both-sources-raise-left-first
+--- note
+Sources run as written: the left source of the outer LINK (itself a LINK whose left is NOPE_A) is evaluated before the right source NOPE_C (SPEC 7.4, 6.2). A host that hands the FILTER down through the join and evaluates the right source first reported NOPE_C. 'Pure' means no side effects; errors are observable.
+--- source
+Y = LIST(RECORD("a",1,"b",2,"q",1)); NOPE_A .> LINK(Y, _1['a'] == _2['a']) .> LINK(NOPE_C, _['b'] == _2['b']) .> FILTER(_['q'] == 1) .> MAP(1)
+--- expect
+error E_UNDEF_VAR at 1:38
+===
+
+### name: join.order.both-sources-raise-left-first-in-the-helper-form
+--- note
+The same program with the join assigned first: nothing can be handed down, and the left source raises first.
+--- source
+Y = LIST(RECORD("a",1,"b",2,"q",1)); J = NOPE_A .> LINK(Y, _1['a'] == _2['a']) .> LINK(NOPE_C, _['b'] == _2['b']); J .> FILTER(_['q'] == 1) .> MAP(1)
+--- expect
+error E_UNDEF_VAR at 1:42
+===
+
+### name: join.order.only-the-right-source-raises
+--- note
+The left side is fine, so the right source's own error is the one reported, at its own position.
+--- source
+Y = LIST(RECORD("a",1,"b",2,"q",1)); Y .> LINK(Y, _1['a'] == _2['a']) .> LINK(NOPE_C, _['b'] == _2['b']) .> FILTER(_['q'] == 1) .> MAP(1)
+--- expect
+error E_UNDEF_VAR at 1:79
+===
+
+### name: join.order.link-left-both-sources-raise-left-first
+--- note
+The same through LINK_LEFT as the outer join.
+--- source
+Y = LIST(RECORD("a",1,"b",2,"q",1)); NOPE_A .> LINK(Y, _1['a'] == _2['a']) .> LINK_LEFT(NOPE_C, _['b'] == _2['b']) .> FILTER(_['q'] == 1) .> MAP(1)
+--- expect
+error E_UNDEF_VAR at 1:38
+===
+
+### name: join.order.filter-below-the-join-both-raise
+--- note
+A FILTER (not a LINK) as the left source of the outer join: the left source still runs first.
+--- source
+Y = LIST(RECORD("a",1,"b",2,"q",1)); NOPE_A .> FILTER(_['q'] == 1) .> LINK(NOPE_C, _['b'] == _2['b']) .> FILTER(_['q'] == 1) .> MAP(1)
+--- expect
+error E_UNDEF_VAR at 1:38
+===

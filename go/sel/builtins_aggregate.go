@@ -1242,7 +1242,27 @@ func doLink(args *Args, ctx *Context, leftJoin bool) *Value {
 	}
 
 	if deep && len(stages) > 0 && jequi != nil && isJoinOrFilter(leftNode) && joinPureSource(leftNode) && joinPureSource(rightNode) {
-		rightFirst := args.Val(1)
+		var rightFirst *Value
+		func() {
+			depth := ctx.Depth
+			defer func() {
+				if r := recover(); r != nil {
+					if !isSelPanic(r) {
+						panic(r)
+					}
+					// The right source went first for the prefilter's sake, which is
+					// only unobservable while neither source raises (SPEC 7.4: as
+					// written, the left source runs first). The left source is pure
+					// too: run it now with nothing handed down. If it raises, ITS
+					// error is the one as written; if it does not, the right
+					// source's error stands.
+					ctx.Depth = depth
+					args.Val(0)
+					panic(r)
+				}
+			}()
+			rightFirst = args.Val(1)
+		}()
 		rightSide = newJoinSideFacts(rightFirst, joinRowKeys(rightFirst, b2Names), leftJoin, b2Names)
 		totalBelow := func(reqs []JoinTotalReq, stage JoinStage) bool {
 			return joinTotality(reqs, nil, rightSide, aboveOf(stage))
