@@ -263,7 +263,7 @@ pub fn join_row_keys(val: &Value, bound: &[String]) -> HashMap<String, bool> {
     let outer = val.0.borrow();
     let rows: Vec<Value> = match outer.storage {
         Some(ref st) => st.clone(),
-        None => outer.entries.iter().map(|e| e.val.clone()).collect(),
+        None => outer.entries().iter().map(|e| e.val.clone()).collect(),
     };
     drop(outer);
     for item in &rows {

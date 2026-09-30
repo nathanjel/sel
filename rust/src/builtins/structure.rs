@@ -118,7 +118,7 @@ pub fn fn_take(args: &mut Args) -> Result<Value, SelError> {
     }
     let is_dense_list = {
         let inner = val.0.borrow();
-        inner.is_list && inner.storage.is_some() && inner.list_keys.is_none()
+        inner.is_list && inner.storage.is_some() && inner.list_keys().is_none()
     };
     if is_dense_list {
         let inner = val.0.borrow();
@@ -140,7 +140,7 @@ pub fn fn_drop(args: &mut Args) -> Result<Value, SelError> {
     }
     let is_dense_list = {
         let inner = val.0.borrow();
-        inner.is_list && inner.storage.is_some() && inner.list_keys.is_none()
+        inner.is_list && inner.storage.is_some() && inner.list_keys().is_none()
     };
     if is_dense_list {
         let inner = val.0.borrow();

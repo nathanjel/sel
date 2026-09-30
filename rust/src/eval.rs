@@ -132,7 +132,7 @@ fn eval_list(node: &Node, ctx: &mut Context) -> Result<Value, SelError> {
                     values.push(child.deep_copy(2, node.pos)?);
                 }
             } else {
-                for e in &inner.entries {
+                for e in inner.entries() {
                     values.push(e.val.deep_copy(2, node.pos)?);
                 }
             }
@@ -340,7 +340,7 @@ fn is_in(needle: &Value, hay: &Value, pos: Pos) -> Result<bool, SelError> {
         }
         return Ok(false);
     }
-    let entries = inner.entries.clone();
+    let entries = inner.entries().to_vec();
     drop(inner);
     for e in entries {
         if e.val.eql(needle, 1, pos)? {

@@ -84,9 +84,11 @@ const EXPECTED: [(&str, &str, &str); 10] = [
 //   phase 1, inline arg cache   222,664              82,437          27,217,942
 //   phase 4a, literal RECORD    202,884              68,006          26,744,951
 //   phase 2, SelStr text        135,743                 865          26,355,641
-const MAX_ALLOCATIONS: usize = 135_743;
+//   phase 3, 128 B ValueInner   135,746                 865          20,275,425
+//     (+3: a FILTER result's preserved keys now live in the side box)
+const MAX_ALLOCATIONS: usize = 135_746;
 const MAX_SMALL: usize = 865;
-const MAX_BYTES: usize = 26_355_641;
+const MAX_BYTES: usize = 20_275_425;
 
 #[test]
 fn scenario1_answer_and_allocation_budget() {

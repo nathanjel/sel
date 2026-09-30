@@ -154,31 +154,84 @@ impl Elems {
 #[derive(Clone, Debug)]
 pub struct Value(pub Rc<RefCell<ValueInner>>);
 
+// One value. Scalars and shaped records -- nearly every value a program
+// handles -- use only the inline fields; what few values need (BIN bytes, an
+// irregular record's entries and index, FILTER's preserved keys) sits behind
+// one pointer, so a value cell stays small.
 #[derive(Clone, Debug)]
 pub struct ValueInner {
     pub kind: Kind,
     pub bool_val: bool,
+    pub is_list: bool,
     pub str_val: SelStr,
-    pub bin_val: Vec<u8>,
     pub dec_val: Option<Dec>,
-
     pub shape: Option<Arc<RecordShape>>,
     pub storage: Option<Vec<Value>>,
-    pub is_list: bool,
-    pub list_keys: Option<ListKeys>,
+    ext: Option<Box<Rare>>,
+}
 
-    pub entries: Vec<Entry>,
-    // Boxed: only large irregular records carry one, and every value pays
-    // for the field inline.
-    pub index: Option<Box<HashMap<String, usize>>>,
+#[derive(Clone, Debug, Default)]
+struct Rare {
+    bin_val: Vec<u8>,
+    list_keys: Option<ListKeys>,
+    entries: Vec<Entry>,
+    index: Option<HashMap<String, usize>>,
 }
 
 impl ValueInner {
+    fn blank(kind: Kind) -> Self {
+        ValueInner {
+            kind,
+            bool_val: false,
+            is_list: false,
+            str_val: SelStr::EMPTY,
+            dec_val: None,
+            shape: None,
+            storage: None,
+            ext: None,
+        }
+    }
+
+    fn rare_mut(&mut self) -> &mut Rare {
+        self.ext.get_or_insert_with(Default::default)
+    }
+
+    /// An irregular record's entries, in order (empty for anything else).
+    #[inline]
+    pub fn entries(&self) -> &[Entry] {
+        self.ext.as_deref().map_or(&[], |r| &r.entries)
+    }
+
+    pub fn entries_mut(&mut self) -> &mut Vec<Entry> {
+        &mut self.rare_mut().entries
+    }
+
+    /// A BIN value's bytes (empty for anything else).
+    #[inline]
+    pub fn bin(&self) -> &[u8] {
+        self.ext.as_deref().map_or(&[], |r| &r.bin_val)
+    }
+
+    /// The keys a FILTER preserved, for a list not numbered 1..n.
+    #[inline]
+    pub fn list_keys(&self) -> Option<&ListKeys> {
+        self.ext.as_deref().and_then(|r| r.list_keys.as_ref())
+    }
+
+    fn take_list_keys(&mut self) -> Option<ListKeys> {
+        self.ext.as_deref_mut().and_then(|r| r.list_keys.take())
+    }
+
+    #[inline]
+    fn index(&self) -> Option<&HashMap<String, usize>> {
+        self.ext.as_deref().and_then(|r| r.index.as_ref())
+    }
+
     pub fn size(&self) -> usize {
         if let Some(ref st) = self.storage {
             st.len()
         } else {
-            self.entries.len()
+            self.entries().len()
         }
     }
 
@@ -196,11 +249,11 @@ impl ValueInner {
     }
 
     pub fn rebuild_index(&mut self) {
-        let mut idx = HashMap::with_capacity(self.entries.len());
-        for (i, e) in self.entries.iter().enumerate() {
+        let mut idx = HashMap::with_capacity(self.entries().len());
+        for (i, e) in self.entries().iter().enumerate() {
             idx.insert(e.key.clone(), i);
         }
-        self.index = Some(Box::new(idx));
+        self.rare_mut().index = Some(idx);
     }
 }
 
@@ -210,14 +263,11 @@ impl Value {
             kind: Kind::None,
             bool_val: false,
             str_val: SelStr::EMPTY,
-            bin_val: Vec::new(),
             dec_val: None,
             shape: None,
             storage: None,
             is_list: false,
-            list_keys: None,
-            entries: Vec::new(),
-            index: None,
+            ext: None,
         })))
     }
 
@@ -240,14 +290,11 @@ impl Value {
             kind: Kind::Text,
             bool_val: false,
             str_val: s,
-            bin_val: Vec::new(),
             dec_val: None,
             shape: None,
             storage: None,
             is_list: false,
-            list_keys: None,
-            entries: Vec::new(),
-            index: None,
+            ext: None,
         })))
     }
 
@@ -260,14 +307,11 @@ impl Value {
             kind: Kind::Bin,
             bool_val: false,
             str_val: SelStr::EMPTY,
-            bin_val: b,
+            ext: Some(Box::new(Rare { bin_val: b, ..Default::default() })),
             dec_val: None,
             shape: None,
             storage: None,
             is_list: false,
-            list_keys: None,
-            entries: Vec::new(),
-            index: None,
         })))
     }
 
@@ -276,14 +320,11 @@ impl Value {
             kind: Kind::Bool,
             bool_val: b,
             str_val: SelStr::EMPTY,
-            bin_val: Vec::new(),
             dec_val: None,
             shape: None,
             storage: None,
             is_list: false,
-            list_keys: None,
-            entries: Vec::new(),
-            index: None,
+            ext: None,
         })))
     }
 
@@ -305,14 +346,11 @@ impl Value {
             kind: Kind::Text,
             bool_val: false,
             str_val: SelStr::EMPTY,
-            bin_val: Vec::new(),
             dec_val: Some(d),
             shape: None,
             storage: None,
             is_list: false,
-            list_keys: None,
-            entries: Vec::new(),
-            index: None,
+            ext: None,
         })))
     }
 
@@ -326,14 +364,11 @@ impl Value {
             kind: Kind::Text,
             bool_val: false,
             str_val: s,
-            bin_val: Vec::new(),
             dec_val: Some(d),
             shape: None,
             storage: None,
             is_list: false,
-            list_keys: None,
-            entries: Vec::new(),
-            index: None,
+            ext: None,
         })))
     }
 
@@ -346,14 +381,11 @@ impl Value {
             kind: Kind::None,
             bool_val: false,
             str_val: SelStr::EMPTY,
-            bin_val: Vec::new(),
             dec_val: None,
             shape: None,
             storage: Some(items),
             is_list: true,
-            list_keys: None,
-            entries: Vec::new(),
-            index: None,
+            ext: None,
         })))
     }
 
@@ -370,14 +402,11 @@ impl Value {
             kind: Kind::None,
             bool_val: false,
             str_val: SelStr::EMPTY,
-            bin_val: Vec::new(),
             dec_val: None,
             shape: None,
             storage: Some(items),
             is_list: true,
-            list_keys: Some(keys),
-            entries: Vec::new(),
-            index: None,
+            ext: Some(Box::new(Rare { list_keys: Some(keys), ..Default::default() })),
         })))
     }
 
@@ -386,14 +415,11 @@ impl Value {
             kind: Kind::None,
             bool_val: false,
             str_val: SelStr::EMPTY,
-            bin_val: Vec::new(),
             dec_val: None,
             shape: Some(shape),
             storage: Some(values),
             is_list: false,
-            list_keys: None,
-            entries: Vec::new(),
-            index: None,
+            ext: None,
         })))
     }
 
@@ -480,16 +506,16 @@ impl Value {
             return shape.key_map.contains_key(key);
         }
         if inner.is_list && inner.storage.is_some() {
-            if let Some(ref lk) = inner.list_keys {
+            if let Some(lk) = inner.list_keys() {
                 return lk.position(key).is_some();
             }
             let len = inner.storage.as_ref().unwrap().len();
             return parse_list_slot(key, len).is_some();
         }
-        if let Some(ref idx) = inner.index {
+        if let Some(idx) = inner.index() {
             return idx.contains_key(key);
         }
-        inner.entries.iter().any(|e| e.key == key)
+        inner.entries().iter().any(|e| e.key == key)
     }
 
     pub fn get(&self, key: &str) -> Option<Value> {
@@ -502,7 +528,7 @@ impl Value {
         }
         if inner.is_list && inner.storage.is_some() {
             let st = inner.storage.as_ref().unwrap();
-            if let Some(ref lk) = inner.list_keys {
+            if let Some(lk) = inner.list_keys() {
                 return lk.position(key).map(|i| st[i].clone());
             }
             if let Some(idx) = parse_list_slot(key, st.len()) {
@@ -510,13 +536,13 @@ impl Value {
             }
             return None;
         }
-        if let Some(ref idx) = inner.index {
+        if let Some(idx) = inner.index() {
             if let Some(&i) = idx.get(key) {
-                return Some(inner.entries[i].val.clone());
+                return Some(inner.entries()[i].val.clone());
             }
             return None;
         }
-        for e in &inner.entries {
+        for e in inner.entries() {
             if e.key == key {
                 return Some(e.val.clone());
             }
@@ -544,11 +570,11 @@ impl Value {
                     val: v,
                 });
             }
-            inner.entries = entries;
+            *inner.entries_mut() = entries;
             inner.rebuild_index();
         } else if inner.is_list && inner.storage.is_some() {
             let st_len = inner.storage.as_ref().unwrap().len();
-            let found_idx = if let Some(ref lk) = inner.list_keys {
+            let found_idx = if let Some(lk) = inner.list_keys() {
                 lk.position(key)
             } else {
                 parse_list_slot(key, st_len)
@@ -559,7 +585,7 @@ impl Value {
             }
             // Transition from list to entries
             let storage = inner.storage.take().unwrap();
-            let list_keys = inner.list_keys.take();
+            let list_keys = inner.take_list_keys();
             let mut entries = Vec::with_capacity(storage.len() + 1);
             if let Some(lk) = list_keys {
                 for (k, v) in lk.to_strings().into_iter().zip(storage.into_iter()) {
@@ -573,35 +599,36 @@ impl Value {
                     });
                 }
             }
-            inner.entries = entries;
+            *inner.entries_mut() = entries;
             inner.rebuild_index();
         }
 
-        if let Some(ref idx) = inner.index {
-            if let Some(&i) = idx.get(key) {
-                inner.entries[i].val = val;
+        if let Some(found) = inner.index().map(|idx| idx.get(key).copied()) {
+            let rare = inner.rare_mut();
+            if let Some(i) = found {
+                rare.entries[i].val = val;
                 return Ok(());
             }
-            let new_idx = inner.entries.len();
-            inner.entries.push(Entry {
+            let new_idx = rare.entries.len();
+            rare.entries.push(Entry {
                 key: key.to_string(),
                 val,
             });
-            inner.index.as_mut().unwrap().insert(key.to_string(), new_idx);
+            rare.index.as_mut().unwrap().insert(key.to_string(), new_idx);
             return Ok(());
         }
 
-        for e in &mut inner.entries {
+        for e in inner.entries_mut() {
             if e.key == key {
                 e.val = val;
                 return Ok(());
             }
         }
-        inner.entries.push(Entry {
+        inner.entries_mut().push(Entry {
             key: key.to_string(),
             val,
         });
-        if inner.entries.len() >= 16 {
+        if inner.entries().len() >= 16 {
             inner.rebuild_index();
         }
         Ok(())
@@ -613,13 +640,13 @@ impl Value {
             return shape.keys.to_vec();
         }
         if inner.is_list && inner.storage.is_some() {
-            if let Some(ref lk) = inner.list_keys {
+            if let Some(lk) = inner.list_keys() {
                 return lk.to_strings();
             }
             let len = inner.storage.as_ref().unwrap().len();
             return (1..=len).map(|i| i.to_string()).collect();
         }
-        inner.entries.iter().map(|e| e.key.clone()).collect()
+        inner.entries().iter().map(|e| e.key.clone()).collect()
     }
 
     pub fn values(&self) -> Vec<Value> {
@@ -627,7 +654,7 @@ impl Value {
         if let Some(ref storage) = inner.storage {
             return storage.clone();
         }
-        inner.entries.iter().map(|e| e.val.clone()).collect()
+        inner.entries().iter().map(|e| e.val.clone()).collect()
     }
 
     pub fn entries(&self) -> Vec<Entry> {
@@ -646,7 +673,7 @@ impl Value {
         }
         if inner.is_list && inner.storage.is_some() {
             let storage = inner.storage.as_ref().unwrap();
-            if let Some(ref lk) = inner.list_keys {
+            if let Some(lk) = inner.list_keys() {
                 return storage
                     .iter()
                     .enumerate()
@@ -665,7 +692,7 @@ impl Value {
                 })
                 .collect();
         }
-        inner.entries.clone()
+        inner.entries().to_vec()
     }
 
     /// The children an aggregate walks, as `elements()` defines them, without
@@ -682,7 +709,7 @@ impl Value {
         if let Some(ref storage) = inner.storage {
             let keys = if let Some(ref shape) = inner.shape {
                 ElemKeys::Shape(shape.keys.clone())
-            } else if let Some(ref lk) = inner.list_keys {
+            } else if let Some(lk) = inner.list_keys() {
                 ElemKeys::List(lk.clone())
             } else {
                 ElemKeys::Position
@@ -690,8 +717,8 @@ impl Value {
             return Elems { vals: storage.clone(), keys };
         }
         Elems {
-            vals: inner.entries.iter().map(|e| e.val.clone()).collect(),
-            keys: ElemKeys::Owned(inner.entries.iter().map(|e| e.key.clone()).collect()),
+            vals: inner.entries().iter().map(|e| e.val.clone()).collect(),
+            keys: ElemKeys::Owned(inner.entries().iter().map(|e| e.key.clone()).collect()),
         }
     }
 
@@ -739,7 +766,7 @@ impl Value {
             let next = if let Some(ref st) = cur_inner.storage {
                 st[0].clone()
             } else {
-                cur_inner.entries[0].val.clone()
+                cur_inner.entries()[0].val.clone()
             };
             drop(cur_inner);
             cur = next;
@@ -785,7 +812,7 @@ impl Value {
         let s = self.scalar_source(pos)?;
         let kind = s.kind();
         if kind == Kind::Bin {
-            return Ok(s.0.borrow().bin_val.clone());
+            return Ok(s.0.borrow().bin().to_vec());
         }
         if kind == Kind::Text {
             return Ok(s.scalar_str().as_bytes().to_vec());
@@ -869,7 +896,7 @@ impl Value {
         if let Some(ref storage) = inner.storage {
             for child in storage { child.check_copy_depth(depth + 1, pos)?; }
         } else {
-            for entry in &inner.entries { entry.val.check_copy_depth(depth + 1, pos)?; }
+            for entry in inner.entries() { entry.val.check_copy_depth(depth + 1, pos)?; }
         }
         Ok(())
     }
@@ -882,38 +909,37 @@ impl Value {
         let mut out = ValueInner {
             kind: inner.kind,
             bool_val: inner.bool_val,
+            is_list: inner.is_list,
             str_val: inner.str_val.clone(),
-            bin_val: inner.bin_val.clone(),
             dec_val: inner.dec_val.clone(),
             shape: inner.shape.clone(),
             storage: None,
-            is_list: inner.is_list,
-            list_keys: inner.list_keys.clone(),
-            entries: Vec::new(),
-            index: None,
+            ext: None,
         };
+        if !inner.bin().is_empty() || inner.list_keys().is_some() {
+            let rare = out.rare_mut();
+            rare.bin_val = inner.bin().to_vec();
+            rare.list_keys = inner.list_keys().cloned();
+        }
         if let Some(ref storage) = inner.storage {
             let mut new_storage = Vec::with_capacity(storage.len());
             for child in storage {
                 new_storage.push(child.deep_copy(depth + 1, pos)?);
             }
             out.storage = Some(new_storage);
-        } else if !inner.entries.is_empty() {
-            let mut new_entries = Vec::with_capacity(inner.entries.len());
-            for e in &inner.entries {
+        } else if !inner.entries().is_empty() {
+            let mut new_entries = Vec::with_capacity(inner.entries().len());
+            for e in inner.entries() {
                 new_entries.push(Entry {
                     key: e.key.clone(),
                     val: e.val.deep_copy(depth + 1, pos)?,
                 });
             }
-            if inner.index.is_some() {
-                let mut new_index = HashMap::with_capacity(new_entries.len());
-                for (idx, e) in new_entries.iter().enumerate() {
-                    new_index.insert(e.key.clone(), idx);
-                }
-                out.index = Some(Box::new(new_index));
+            let indexed = inner.index().is_some();
+            *out.entries_mut() = new_entries;
+            if indexed {
+                out.rebuild_index();
             }
-            out.entries = new_entries;
         }
         Ok(Value(Rc::new(RefCell::new(out))))
     }
@@ -947,7 +973,7 @@ impl Value {
                 }
             }
             Kind::Bin => {
-                if a.bin_val != b.bin_val {
+                if a.bin() != b.bin() {
                     return Ok(false);
                 }
             }
@@ -968,8 +994,8 @@ impl Value {
             && b.is_list
             && a.storage.is_some()
             && b.storage.is_some()
-            && a.list_keys.is_none()
-            && b.list_keys.is_none()
+            && a.list_keys().is_none()
+            && b.list_keys().is_none()
         {
             let st1 = a.storage.as_ref().unwrap().clone();
             let st2 = b.storage.as_ref().unwrap().clone();
@@ -1013,8 +1039,8 @@ impl Value {
                 format!("t{}", quote_dump(&inner.text_cow()))
             }
             Kind::Bin => {
-                let mut hex_str = String::with_capacity(inner.bin_val.len() * 2);
-                for &b in &inner.bin_val {
+                let mut hex_str = String::with_capacity(inner.bin().len() * 2);
+                for &b in inner.bin() {
                     use std::fmt::Write;
                     let _ = write!(hex_str, "{:02x}", b);
                 }
@@ -1067,7 +1093,7 @@ impl Value {
                     67890
                 }
             }
-            Kind::Bin => fnv_hash_bytes(&inner.bin_val) ^ 2000003,
+            Kind::Bin => fnv_hash_bytes(inner.bin()) ^ 2000003,
             Kind::None => 0,
         };
         if inner.size() == 0 {
