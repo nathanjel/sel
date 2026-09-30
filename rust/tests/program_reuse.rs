@@ -1,0 +1,105 @@
+use sel_lang::{compile, Context, Entry, Pos, Value};
+
+fn record(fields: &[(&str, i64)]) -> Value {
+    Value::record_from_entries(
+        fields
+            .iter()
+            .map(|(key, value)| Entry {
+                key: (*key).into(),
+                val: Value::int(*value),
+            })
+            .collect(),
+    )
+}
+fn root(row: Value) -> Value {
+    Value::record_from_entries(vec![Entry {
+        key: "X".into(),
+        val: row,
+    }])
+}
+
+#[test]
+fn retained_program_cache_checks_shapes_and_reads_current_values() {
+    let pos = Pos::default();
+    let mut program = compile("X[\"v\"]").unwrap();
+    let first = record(&[("v", 1), ("other", 2)]);
+    assert_eq!(
+        program
+            .run(Some(root(first.clone())))
+            .unwrap()
+            .as_text(pos)
+            .unwrap(),
+        "1"
+    );
+    let cache = program
+        .physical_ast()
+        .slot_cache
+        .get()
+        .expect("cache retained after run");
+    assert_eq!(cache.slot, 0);
+    assert!(program.ast().slot_cache.get().is_none());
+    first.set("v", Value::int(3), pos).unwrap();
+    assert_eq!(
+        program
+            .run(Some(root(first.clone())))
+            .unwrap()
+            .as_text(pos)
+            .unwrap(),
+        "3"
+    );
+    assert_eq!(
+        program.physical_ast().slot_cache.get().unwrap().shape_id,
+        cache.shape_id
+    );
+    let reordered = record(&[("other", 4), ("v", 5)]);
+    assert_eq!(
+        program
+            .run(Some(root(reordered)))
+            .unwrap()
+            .as_text(pos)
+            .unwrap(),
+        "5"
+    );
+    assert_eq!(program.physical_ast().slot_cache.get().unwrap().slot, 1);
+    first.set("new", Value::int(6), pos).unwrap(); // shaped -> entries
+    assert_eq!(
+        program
+            .run(Some(root(first)))
+            .unwrap()
+            .as_text(pos)
+            .unwrap(),
+        "3"
+    );
+    assert_eq!(
+        program
+            .run(Some(root(record(&[("other", 9)]))))
+            .unwrap_err()
+            .code,
+        "E_NO_KEY"
+    );
+    assert_eq!(
+        program
+            .run_with_context(&mut Context::new(root(record(&[("v", 7)]))))
+            .unwrap()
+            .as_text(pos)
+            .unwrap(),
+        "7"
+    );
+    let mut clone = program.clone();
+    assert_eq!(
+        clone
+            .run(Some(root(record(&[("other", 8), ("v", 9)]))))
+            .unwrap()
+            .as_text(pos)
+            .unwrap(),
+        "9"
+    );
+    assert_eq!(
+        program
+            .run(Some(root(record(&[("v", 10)]))))
+            .unwrap()
+            .as_text(pos)
+            .unwrap(),
+        "10"
+    );
+}

@@ -1,0 +1,81 @@
+[package]
+name = "sel-lang"
+version = "0.9.2"
+edition = "2021"
+authors = ["Marcin Gałczyński <marcin@galczynski.pl>"]
+description = "A small expression language for validation rules."
+license = "MIT"
+autobins = false
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+
+# The core language needs only the regex crate. The SEL->SQL layer is opt-in
+# in every host (spec'd in docs/internals/sql-translation.md); here it is the
+# default-on `sql` feature, which brings the JSON reader its dialect map uses.
+[features]
+default = ["sql"]
+sql = ["dep:serde", "dep:serde_json"]
+
+[dependencies]
+regex = "1.10"
+regex-syntax = "0.8.11"
+serde = { version = "1.0.229", features = ["derive"], optional = true }
+serde_json = { version = "1.0.151", optional = true }
+
+[[bin]]
+name = "regex_verdict"
+path = "src/bin/regex_verdict.rs"
+
+[[bin]]
+name = "scale_bench"
+path = "src/bin/scale_bench.rs"
+required-features = ["sql"]
+
+[[bin]]
+name = "conformance"
+path = "src/bin/conformance.rs"
+
+[[bin]]
+name = "sqlt"
+path = "src/bin/sqlt.rs"
+required-features = ["sql"]
+
+[[bin]]
+name = "map_replay"
+path = "src/bin/map_replay.rs"
+required-features = ["sql"]
+
+[[bin]]
+name = "check_decimal"
+path = "src/bin/check_decimal.rs"
+
+[[bin]]
+name = "batch"
+path = "src/bin/batch.rs"
+
+[[bin]]
+name = "e2e"
+path = "src/bin/e2e.rs"
+
+[[bin]]
+name = "sel"
+path = "src/bin/sel.rs"
+
+[[bin]]
+name = "sqlapi"
+path = "src/bin/sqlapi.rs"
+required-features = ["sql"]
+
+[[bin]]
+name = "api"
+path = "src/bin/api.rs"
+
+[dev-dependencies]
+num-bigint = "0.5.1"
+
+[[bin]]
+name = "sqlfuzz"
+path = "src/bin/sqlfuzz.rs"
+required-features = ["sql"]
