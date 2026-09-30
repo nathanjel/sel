@@ -1,6 +1,7 @@
 # Rust Scenario 1 performance: resolution plan
 
-2026-09-30. Plan only: nothing here has been implemented. It closes item 7.4 of
+2026-09-30. Implemented on branch `feature/rust-host`; measured results are in
+§7 at the end. It closes item 7.4 of
 [the implementation plan](rust-implementation-plan.md); the evidence it rests on
 is in [the audit](rust-completion-audit.md).
 
@@ -406,3 +407,61 @@ Risks and what guards them:
   `Value::text_owned` keep their signatures. The new accessors are
   `pub(crate)`. `Args.vals` stops being public; `invoke_call` is its only
   outside user.
+
+## 7. Results (2026-09-30)
+
+Implemented on `feature/rust-host`, one commit per step, each verified before
+the next: conformance, sqlt, map replay, `cargo test` (debug, release,
+`--no-default-features`, judged by exit code), the allocation budget, and
+differential fuzz against JS (4 × 4,000 core programs, 2 × 2,000 SQL programs ×
+4 dialects). The final state passes `SEL_IMPLS="js rust" tools/check.sh`,
+ALL GREEN, 38 layers, with Docker databases.
+
+| Commit | Step | Allocations / run, 1× | ≤ 15 B | Bytes / run, 1× |
+|---|---|---|---|---|
+| be51456 | baseline | 228,045 | 82,447 | 27,449,398 |
+| dd2c85e | 1: inline argument cache | 222,664 | 82,437 | 27,217,942 |
+| 4e3fe0c | 4a: RECORD with literal keys | 202,884 | 68,006 | 26,744,951 |
+| 901c494 | 2: `SelStr` text | 135,743 | 865 | 26,355,641 |
+| b685cf2 | 3: 128 B `ValueInner` | 135,746 | 865 | 20,275,425 |
+| bc624d7 | 4b: literal operands, `eval_bool` | 116,052 | 865 | 17,124,385 |
+| a049438 | 3b: packed decimal, 104 B `ValueInner` | 116,052 | 865 | 14,714,305 |
+
+The last row is pinned by `tests/scenario_allocations.rs`. At 10× (the
+benchmark's dataset) a run makes 1,150,753 allocations (2,276,227 before) and
+requests 150.9 MB (279.7 MB).
+
+Scenario 1, 10×, `prepared_total_ms`, paired alternating runs of the frozen
+baseline binary (A) against the new one (B), rows validated against the
+independent Decimal oracle:
+
+| Comparison | Rounds | A median | B median | Paired B/A median (range) |
+|---|---|---|---|---|
+| baseline → after 1, 4a, 2 | 5 | 665.6 ms | 603.3 ms | 0.903 (0.893–0.915) |
+| after 2 → after 3 | 4 | 597.1 ms | 526.7 ms | 0.882 (0.861–0.901) |
+| baseline → after 4b | 5 | 653.2 ms | 510.2 ms | 0.781 (0.769–0.792) |
+| **baseline → final (02ee9dd)** | **8** | **642.4 ms** | **475.4 ms** | **0.747 (0.717–0.783)** |
+
+The final run was on a quiet box (load 2–3). The target (≤ 0.75) is met on the
+median, with one of eight rounds above it.
+
+**Peer sanity check** (§1), interleaved, 4 rounds at load 4–6: C++ 0.9.2
+(faff480, built outside the repo) 635.7 ms, Rust baseline 653.2 ms, Rust final
+484.2 ms. The baseline trailed its peer (1.028×); the final build is ahead of it
+(0.762×).
+
+**Tried and dropped** (paired A/B showed no gain, so reverted per §2):
+- reading a binder's field through a frame reference instead of cloning the
+  row handle (B/A 1.004);
+- caching `RowAlias`'s "shape already has the alias" check per shape (1.008);
+- presizing join buckets to the right side's row count, which raised bytes by
+  3.5% (keys repeat) and was caught by the budget test.
+
+**Not needed:** 3b's alternative of changing `dec.rs` (the packed form in
+`value.rs` keeps `dec.rs` untouched), and Phase 5 beyond the dropped
+experiment: `eval_index`'s remaining cost is the first touch of each field's
+cell, which the smaller cells already reduced.
+
+**Also on the branch, not performance:** `5514856` ports main's `orderIsLost`
+hybrid-planner rule (sqlt 1,305/1,305), and `02ee9dd` adds main's four new
+`program.deps` API probes (114 agree with JS, 31 pinned).
