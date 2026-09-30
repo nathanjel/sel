@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use std::rc::Rc;
 use std::sync::Arc;
 
-use crate::dec::{dec_cmp, dec_format, dec_parse, Dec, DecRepr, LargeDec};
+use crate::dec::{dec_cmp, dec_format, dec_format_len, dec_parse, Dec, DecRepr, LargeDec};
 use crate::text::SelStr;
 use std::borrow::Cow;
 use crate::limits::MAX_DEPTH;
@@ -547,6 +547,17 @@ impl Value {
             }
         }
         inner.str_val.clone()
+    }
+
+    /// The length of a computed number's text while it has not been formatted
+    /// (None otherwise): digits and scale decide it, so `LEN` of a large
+    /// number never writes its digits out.
+    pub fn unformatted_number_len(&self) -> Option<usize> {
+        let inner = self.0.borrow();
+        if inner.kind != Kind::Text || !inner.str_val.is_empty() {
+            return None;
+        }
+        inner.dec_val.as_ref().map(|d| dec_format_len(&d.unpack()))
     }
 
     pub fn has(&self, key: &str) -> bool {

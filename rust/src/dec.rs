@@ -3,6 +3,8 @@
 pub use crate::large_dec::LargeDec;
 use crate::limits::{DIV_SCALE, MAX_FRAC_DIGITS, MAX_INT_DIGITS};
 use crate::utf8::{Pos, SelError};
+use std::borrow::Cow;
+use std::cmp::Ordering;
 use std::fmt;
 
 pub const POW10_128: [i128; 39] = {
@@ -176,16 +178,42 @@ impl Dec {
                     *m == 0
                 }
             }
-            DecRepr::Large(b) => {
-                let p = big_pow10(self.scale as usize);
-                b.div_rem(&p).1.is_zero()
-            }
+            DecRepr::Large(b) => b.is_multiple_of_pow10(self.scale as usize),
         }
     }
 }
 
 pub fn big_pow10(k: usize) -> LargeDec {
     LargeDec::pow10(k)
+}
+
+/// The magnitude, borrowed when it is already large.
+fn mag(d: &Dec) -> Cow<'_, LargeDec> {
+    match &d.repr {
+        DecRepr::Small(m) => Cow::Owned(LargeDec::from(m.unsigned_abs())),
+        DecRepr::Large(b) => Cow::Borrowed(&**b),
+    }
+}
+
+/// The magnitude times 10^k: aligned to a scale k places finer.
+fn mag_scaled(d: &Dec, k: usize) -> Cow<'_, LargeDec> {
+    if k == 0 {
+        mag(d)
+    } else {
+        Cow::Owned(mag(d).mul_pow10(k))
+    }
+}
+
+/// Bounds on the mantissa's decimal digit count; for a large one they come from
+/// its bit length, with no conversion and no division.
+fn digit_bounds(d: &Dec) -> (usize, usize) {
+    match &d.repr {
+        DecRepr::Small(m) => {
+            let n = if *m == 0 { 1 } else { m.ilog10() as usize + 1 };
+            (n, n)
+        }
+        DecRepr::Large(b) => b.digit_bounds(),
+    }
 }
 
 pub fn dec_guard(d: Dec, pos: Pos) -> Result<Dec, SelError> {
@@ -196,23 +224,15 @@ pub fn dec_guard(d: Dec, pos: Pos) -> Result<Dec, SelError> {
             pos,
         ));
     }
-    let num_digits = match &d.repr {
-        DecRepr::Small(m) => {
-            if *m == 0 {
-                1
-            } else {
-                m.ilog10() as usize + 1
-            }
-        }
-        DecRepr::Large(b) => {
-            if b.is_zero() {
-                1
-            } else {
-                b.digits()
-            }
-        }
+    // At most scale + MAX_INT_DIGITS mantissa digits. The bounds decide every
+    // value not within a digit of that line; only those are counted exactly.
+    let limit = d.scale as usize + MAX_INT_DIGITS;
+    let (lo, hi) = digit_bounds(&d);
+    let over = match &d.repr {
+        DecRepr::Large(b) if lo <= limit && hi > limit => b.digits() > limit,
+        _ => lo > limit,
     };
-    if num_digits > (d.scale as usize) && (num_digits - (d.scale as usize)) > MAX_INT_DIGITS {
+    if over {
         return Err(SelError::new(
             "E_RANGE",
             format!("number has more than {} integer digits", MAX_INT_DIGITS),
@@ -329,6 +349,19 @@ pub fn dec_format(d: &Dec) -> String {
     format!("{}{}.{}", sign, &s[..dot_idx], &s[dot_idx..])
 }
 
+/// The length of `dec_format(d)` without producing it: the sign, the mantissa's
+/// digits (padded to scale + 1 when all fractional), and the point. The text is
+/// ASCII, so this is its code-point count too.
+pub fn dec_format_len(d: &Dec) -> usize {
+    let sign = usize::from(d.neg && !d.is_zero());
+    let digits = match &d.repr {
+        DecRepr::Small(m) => m.checked_ilog10().map_or(1, |n| n as usize + 1),
+        DecRepr::Large(b) => b.digits(),
+    };
+    let scale = d.scale as usize;
+    sign + if scale == 0 { digits } else { digits.max(scale + 1) + 1 }
+}
+
 impl fmt::Display for Dec {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", dec_format(self))
@@ -353,7 +386,7 @@ pub fn dec_trim_scale(d: &Dec) -> Dec {
     let DecRepr::Large(digits) = &d.repr else {
         unreachable!()
     };
-    let zeros = digits.trailing_zeros().min(d.scale as usize);
+    let zeros = digits.trailing_zeros_at_most(d.scale as usize);
     if zeros == 0 {
         return d.clone();
     }
@@ -428,14 +461,8 @@ pub fn dec_add(a: &Dec, b: &Dec, pos: Pos) -> Result<Dec, SelError> {
     }
 
     let scale = a.scale.max(b.scale);
-    let mut ba = a.to_large();
-    let mut bb = b.to_large();
-    if scale > a.scale {
-        ba.mul_pow10_assign((scale - a.scale) as usize);
-    }
-    if scale > b.scale {
-        bb.mul_pow10_assign((scale - b.scale) as usize);
-    }
+    let ba = mag_scaled(a, (scale - a.scale) as usize);
+    let bb = mag_scaled(b, (scale - b.scale) as usize);
 
     if a.neg == b.neg {
         let sum = ba.add(&bb);
@@ -474,21 +501,12 @@ pub fn dec_mul(a: &Dec, b: &Dec, pos: Pos) -> Result<Dec, SelError> {
     }
 
     // Nonzero products have at least da + db - 1 mantissa digits. Refuse
-    // provably oversized results before cloning operands or allocating limbs.
-    // The ambiguous one-digit boundary is still checked on the exact result.
-    let digits = |d: &Dec| match &d.repr {
-        DecRepr::Small(m) => {
-            if *m == 0 {
-                1
-            } else {
-                m.ilog10() as usize + 1
-            }
-        }
-        DecRepr::Large(m) => m.digits(),
-    };
+    // provably oversized results before multiplying; the lower digit bounds
+    // prove it without counting, and the exact result is guarded anyway.
     if !a.is_zero()
         && !b.is_zero()
-        && (digits(a) + digits(b) - 1).saturating_sub(prod_scale as usize) > MAX_INT_DIGITS
+        && (digit_bounds(a).0 + digit_bounds(b).0 - 1).saturating_sub(prod_scale as usize)
+            > MAX_INT_DIGITS
     {
         return Err(SelError::new(
             "E_RANGE",
@@ -496,10 +514,25 @@ pub fn dec_mul(a: &Dec, b: &Dec, pos: Pos) -> Result<Dec, SelError> {
             pos,
         ));
     }
-    let ba = a.to_large();
-    let bb = b.to_large();
-    let prod = ba.mul(&bb);
+    let prod = mag(a).mul(&mag(b));
     dec_guard(Dec::from_large(neg, prod, prod_scale), pos)
+}
+
+/// Orders |a| and |b| (both nonzero) from their digit bounds when those
+/// cannot overlap: |a| < 10^(hi_a - scale_a) <= 10^(lo_b - 1 - scale_b) <= |b|.
+fn cmp_mag_by_size(a: &Dec, b: &Dec) -> Option<Ordering> {
+    if a.is_zero() || b.is_zero() {
+        return None;
+    }
+    let ((alo, ahi), (blo, bhi)) = (digit_bounds(a), digit_bounds(b));
+    let (sa, sb) = (a.scale as i64, b.scale as i64);
+    if ahi as i64 - sa <= blo as i64 - 1 - sb {
+        Some(Ordering::Less)
+    } else if bhi as i64 - sb <= alo as i64 - 1 - sa {
+        Some(Ordering::Greater)
+    } else {
+        None
+    }
 }
 
 pub fn dec_cmp(a: &Dec, b: &Dec) -> std::cmp::Ordering {
@@ -515,16 +548,12 @@ pub fn dec_cmp(a: &Dec, b: &Dec) -> std::cmp::Ordering {
     }
     let ord = if let Some((ma, mb, _)) = align_small(a, b) {
         ma.cmp(&mb)
+    } else if let Some(ord) = cmp_mag_by_size(a, b) {
+        ord
     } else {
         let scale = a.scale.max(b.scale);
-        let mut ba = a.to_large();
-        let mut bb = b.to_large();
-        if scale > a.scale {
-            ba.mul_pow10_assign((scale - a.scale) as usize);
-        }
-        if scale > b.scale {
-            bb.mul_pow10_assign((scale - b.scale) as usize);
-        }
+        let ba = mag_scaled(a, (scale - a.scale) as usize);
+        let bb = mag_scaled(b, (scale - b.scale) as usize);
         ba.cmp(&bb)
     };
     if a.neg {
@@ -579,36 +608,22 @@ pub fn dec_div(a: &Dec, b: &Dec, pos: Pos) -> Result<Dec, SelError> {
         }
     }
 
-    // Large / arbitrary precision fallback using LargeDec
-    let mut num = a.to_large();
-    let mut den = b.to_large();
-
-    if b.scale > a.scale {
-        num.mul_pow10_assign((b.scale - a.scale) as usize);
-    } else if a.scale > b.scale {
-        den.mul_pow10_assign((a.scale - b.scale) as usize);
-    }
-
-    num.mul_pow10_assign(DIV_SCALE);
+    // Large: |a| 10^(sb - sa + DIV_SCALE) / |b| 10^(sa - sb), whichever
+    // exponents are positive.
+    let (sa, sb) = (a.scale as usize, b.scale as usize);
+    let num = mag_scaled(a, sb.saturating_sub(sa) + DIV_SCALE);
+    let den = mag_scaled(b, sa.saturating_sub(sb));
     let (mut q, r) = num.div_rem(&den);
 
     if r.is_zero() {
-        let mut scale = DIV_SCALE as u32;
-        while scale > 0 && !q.is_zero() {
-            let rem = q.limbs().first().copied().unwrap_or(0) % 10;
-            if rem != 0 {
-                break;
-            }
-            q.div_small_assign(10);
-            scale -= 1;
-        }
-        if q.is_zero() {
-            scale = 0;
-        }
+        // An exact quotient takes its minimal scale: drop up to DIV_SCALE zeros.
+        let zeros = q.trailing_zeros_at_most(DIV_SCALE);
+        let scale = if q.is_zero() { 0 } else { (DIV_SCALE - zeros) as u32 };
+        let q = if zeros == 0 { q } else { q.div_pow10(zeros).0 };
         dec_guard(Dec::from_large(neg, q, scale), pos)
     } else {
         let two_r = r.mul_small(2);
-        if two_r >= den {
+        if two_r >= *den {
             q.add_one();
         }
         dec_guard(Dec::from_large(neg, q, DIV_SCALE as u32), pos)
@@ -624,14 +639,8 @@ pub fn dec_mod(a: &Dec, b: &Dec, pos: Pos) -> Result<Dec, SelError> {
         return dec_guard(Dec::from_small(a.neg, rem, scale), pos);
     }
     let scale = a.scale.max(b.scale);
-    let mut ba = a.to_large();
-    let mut bb = b.to_large();
-    if scale > a.scale {
-        ba.mul_pow10_assign((scale - a.scale) as usize);
-    }
-    if scale > b.scale {
-        bb.mul_pow10_assign((scale - b.scale) as usize);
-    }
+    let ba = mag_scaled(a, (scale - a.scale) as usize);
+    let bb = mag_scaled(b, (scale - b.scale) as usize);
     let rem = ba.div_rem(&bb).1;
     dec_guard(Dec::from_large(a.neg, rem, scale), pos)
 }
@@ -653,8 +662,7 @@ pub fn dec_round(d: &Dec, n: usize, pos: Pos) -> Result<Dec, SelError> {
                 }
             }
         }
-        let mut b = d.to_large();
-        b.mul_pow10_assign(diff);
+        let b = mag(d).mul_pow10(diff);
         return dec_guard(Dec::from_large(d.neg, b, n as u32), pos);
     }
 
@@ -674,11 +682,9 @@ pub fn dec_round(d: &Dec, n: usize, pos: Pos) -> Result<Dec, SelError> {
         return dec_guard(Dec::from_small(false, 0, n as u32), pos);
     }
 
-    let p = big_pow10(diff);
-    let digits = d.to_large();
-    let (mut q, r) = digits.div_rem(&p);
-    let two_r = r.mul_small(2);
-    if two_r >= p {
+    let (mut q, r) = mag(d).div_pow10(diff);
+    // Half away from zero: 2r >= 10^diff.
+    if !r.is_zero() && r.mul_small(2) >= LargeDec::pow10(diff) {
         q.add_one();
     }
     dec_guard(Dec::from_large(d.neg, q, n as u32), pos)
@@ -695,8 +701,7 @@ pub fn dec_trunc(d: &Dec) -> Dec {
         }
         return Dec::zero();
     }
-    let p = big_pow10(d.scale as usize);
-    let q = d.to_large().div_rem(&p).0;
+    let q = mag(d).div_pow10(d.scale as usize).0;
     Dec::from_large(d.neg, q, 0)
 }
 
@@ -716,9 +721,7 @@ pub fn dec_floor(d: &Dec, pos: Pos) -> Result<Dec, SelError> {
         }
         return Ok(Dec::from_small(d.neg, i128::from(d.neg && *m != 0), 0));
     }
-    let p = big_pow10(d.scale as usize);
-    let digits = d.to_large();
-    let (mut q, r) = digits.div_rem(&p);
+    let (mut q, r) = mag(d).div_pow10(d.scale as usize);
     if d.neg && !r.is_zero() {
         q.add_one();
     }
@@ -741,9 +744,7 @@ pub fn dec_ceil(d: &Dec, pos: Pos) -> Result<Dec, SelError> {
         }
         return Ok(Dec::from_small(d.neg, i128::from(!d.neg && *m != 0), 0));
     }
-    let p = big_pow10(d.scale as usize);
-    let digits = d.to_large();
-    let (mut q, r) = digits.div_rem(&p);
+    let (mut q, r) = mag(d).div_pow10(d.scale as usize);
     if !d.neg && !r.is_zero() {
         q.add_one();
     }
@@ -778,6 +779,42 @@ mod tests {
             dec_format(&Dec::from_small(true, i128::MIN, 0)),
             i128::MIN.unsigned_abs().to_string()
         );
+    }
+
+    #[test]
+    fn format_len_is_the_formatted_length() {
+        let pos = Pos::default();
+        let mut seed = 0x0bad_cafe_d00d_f00du64;
+        let mut next = move || {
+            seed ^= seed << 13;
+            seed ^= seed >> 7;
+            seed ^= seed << 17;
+            seed
+        };
+        for digits in [1usize, 2, 9, 19, 38, 39, 40, 100, 300] {
+            for _ in 0..6 {
+                let mantissa: String = (0..digits)
+                    .map(|i| (b'0' + (next() % 10) as u8 + u8::from(i == 0 && digits > 1)).min(b'9') as char)
+                    .collect();
+                for scale in [0usize, 1, digits - 1, digits, digits + 1, digits + 7] {
+                    for neg in [false, true] {
+                        let text = if scale == 0 {
+                            mantissa.clone()
+                        } else {
+                            let padded = format!("{:0>w$}", mantissa, w = scale + 1);
+                            format!("{}.{}", &padded[..padded.len() - scale], &padded[padded.len() - scale..])
+                        };
+                        let text = if neg { format!("-{text}") } else { text };
+                        let d = dec_parse(&text, pos).unwrap();
+                        assert_eq!(dec_format_len(&d), dec_format(&d).len(), "{text}");
+                    }
+                }
+            }
+        }
+        for zero in ["0", "0.000", "-0.0"] {
+            let d = dec_parse(zero, pos).unwrap();
+            assert_eq!(dec_format_len(&d), dec_format(&d).len(), "{zero}");
+        }
     }
 
     #[test]

@@ -52,8 +52,15 @@ fn pad(args: &mut Args, left: bool) -> Result<Value, SelError> {
 }
 
 pub fn fn_len(args: &mut Args) -> Result<Value, SelError> {
-    let s = args.text(0)?;
-    let chars = to_code_points(&s, args.pos_at(0))?;
+    let pos = args.pos_at(0);
+    let scalar = args.val(0)?.scalar_source(pos)?;
+    // A computed number's length follows from its digits and scale; its text
+    // is made only if something else asks for it.
+    if let Some(len) = scalar.unformatted_number_len() {
+        return Ok(Value::int(len as i64));
+    }
+    let s = scalar.as_text(pos)?;
+    let chars = to_code_points(&s, pos)?;
     Ok(Value::int(chars.len() as i64))
 }
 
