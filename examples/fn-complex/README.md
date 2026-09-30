@@ -29,7 +29,8 @@ strict lane is the default:
 2. **Push a frame per element, and pop it on the way out — including when the
    body raises.** A body that fails must not leave the binder in scope for
    whatever runs next. Every implementation here uses its language's
-   try/finally for exactly that.
+   try/finally for exactly that — except Rust, which has none: it pops the
+   frame before `?` can leave with the body's error.
 3. **Bind `_K` as well as the element**, so the body can see the key.
 4. **Handle the no-children cases** the way spec/SPEC.md §7.3 specifies: a
    scalar behaves as a one-element list containing itself, and a childless NONE

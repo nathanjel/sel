@@ -67,6 +67,54 @@ fn register_native(m: &mut HashMap<String, Arc<Spec>>, name: &'static str, f: Bu
     );
 }
 
+/// A builtin that brings its own shape, as `define` does in the other hosts: a
+/// name spec/builtins.json lists must agree with it (the manifest owns core's
+/// shape; register_native() just reads it), and any other name -- a builtin of
+/// the application's own -- passes through as declared here.
+#[allow(dead_code)] // core registers through register_native(); this is for builtins beyond it
+fn define(
+    m: &mut HashMap<String, Arc<Spec>>,
+    name: &'static str,
+    min: usize,
+    max: Option<usize>,
+    lazy: bool,
+    binds: bool,
+    f: BuiltinFn,
+) {
+    if let Some(e) = lookup_builtin(name) {
+        let mut wrong = Vec::new();
+        if min != e.min {
+            wrong.push(format!("min {} vs {}", min, e.min));
+        }
+        if max != e.max {
+            wrong.push(format!("max {:?} vs {:?}", max, e.max));
+        }
+        if lazy != e.lazy {
+            wrong.push(format!("lazy {} vs {}", lazy, e.lazy));
+        }
+        if binds != e.binds {
+            wrong.push(format!("binds {} vs {}", binds, e.binds));
+        }
+        if !wrong.is_empty() {
+            panic!("SEL function {} disagrees with spec/builtins.json: {}", name, wrong.join("; "));
+        }
+    }
+    if m.contains_key(name) {
+        panic!("SEL function {} defined twice", name);
+    }
+    m.insert(
+        name.to_string(),
+        Arc::new(Spec { name: name.to_string(), min, max, lazy, binds, func: SpecFn::Native(f) }),
+    );
+}
+
+/// A builtin is whatever registry() registers natively -- core, and any builtin
+/// define()d beside it -- not only what the manifest lists.
+fn is_builtin(key: &str) -> bool {
+    lookup_builtin(key).is_some()
+        || registry().read().unwrap().get(key).map_or(false, |s| matches!(s.func, SpecFn::Native(_)))
+}
+
 fn registry() -> &'static RwLock<HashMap<String, Arc<Spec>>> {
     static REGISTRY: OnceLock<RwLock<HashMap<String, Arc<Spec>>>> = OnceLock::new();
     REGISTRY.get_or_init(|| {
@@ -162,6 +210,11 @@ fn registry() -> &'static RwLock<HashMap<String, Arc<Spec>>> {
         register_native(&mut m, "LINK", structure::fn_link);
         register_native(&mut m, "LINK_LEFT", structure::fn_link_left);
 
+        // A builtin the manifest does not list: the unit tests below prove one
+        // is a builtin like any other.
+        #[cfg(test)]
+        define(&mut m, "UNLISTED_ANY", 2, Some(3), true, true, structure::fn_any);
+
         RwLock::new(m)
     })
 }
@@ -207,7 +260,7 @@ where
             crate::utf8::Pos::default(),
         ));
     }
-    if lookup_builtin(&key).is_some() {
+    if is_builtin(&key) {
         return Err(SelError::new(
             "E_BAD_ARG",
             format!("{} is a builtin; a host function cannot replace it", key),
@@ -235,7 +288,7 @@ where
 
 pub fn host_arity(name: &str) -> Option<(usize, usize)> {
     let key = name.to_ascii_uppercase();
-    if lookup_builtin(&key).is_some() {
+    if is_builtin(&key) {
         return None;
     }
     let spec = lookup_spec(&key)?;
@@ -244,5 +297,48 @@ pub fn host_arity(name: &str) -> Option<(usize, usize)> {
 
 pub fn reset_host_functions() {
     let mut reg = registry().write().unwrap();
-    reg.retain(|k, _| lookup_builtin(k).is_some());
+    reg.retain(|_, s| matches!(s.func, SpecFn::Native(_)));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::utf8::Pos;
+
+    fn truth(src: &str) -> bool {
+        crate::evaluate(src, None).unwrap().as_bool(Pos::default()).unwrap()
+    }
+
+    // UNLISTED_ANY is registry()'s test-only define() of ANY's body under a name
+    // spec/builtins.json does not have -- as examples/fn-complex's FIRST would be.
+    #[test]
+    fn a_builtin_the_manifest_does_not_list_is_a_builtin() {
+        assert!(lookup_builtin("UNLISTED_ANY").is_none());
+        assert!(truth("UNLISTED_ANY(LIST(1, 2), X, X > 1)"));
+        assert!(!truth("UNLISTED_ANY(LIST(1, 2), _ > 5)"));
+        // Its binder is bound, not a dependency: the classic binding shapes apply.
+        let deps = crate::compile("UNLISTED_ANY(ITEMS, X, X > LIMIT)").unwrap().dependencies().unwrap();
+        assert_eq!(deps, vec!["ITEMS".to_string(), "LIMIT".to_string()]);
+        // Its declared arity is checked at compile time.
+        assert_eq!(crate::compile("UNLISTED_ANY(1)").unwrap_err().code, "E_ARITY");
+        // A host function cannot replace it, it is not one, and a reset keeps it.
+        assert_eq!(register_function("unlisted_any", 1, 1, |_| Ok(Value::bool(true))).unwrap_err().code, "E_BAD_ARG");
+        assert!(host_arity("UNLISTED_ANY").is_none());
+        reset_host_functions();
+        assert!(lookup_spec("UNLISTED_ANY").is_some());
+    }
+
+    #[test]
+    #[should_panic(expected = "disagrees with spec/builtins.json: lazy false vs true")]
+    fn define_refuses_a_listed_name_with_another_shape() {
+        define(&mut HashMap::new(), "ANY", 2, Some(3), false, true, structure::fn_any);
+    }
+
+    #[test]
+    #[should_panic(expected = "defined twice")]
+    fn define_refuses_a_name_twice() {
+        let mut m = HashMap::new();
+        define(&mut m, "UNLISTED_TWICE", 1, Some(1), false, false, text::fn_len);
+        define(&mut m, "UNLISTED_TWICE", 1, Some(1), false, false, text::fn_len);
+    }
 }

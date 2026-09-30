@@ -24,6 +24,7 @@ php/src/Builtins/*.php   implement                  → php.php
 cpp/sel.cpp              implement                  → cpp.cpp
 lisp/src/builtins/*.lisp implement                  → lisp.lisp
 python/sel/builtins/*.py implement                  → python.py
+rust/src/builtins/*.rs   implement                  → rust.rs
 tools/check.sh           all green, or it isn't done
 ```
 
@@ -40,6 +41,7 @@ The Args API is what makes a builtin four lines instead of twenty; see
 
 ## Registering the file
 
-None of the three has an autoloader: a new file must be added to `:components`
-in `lisp/sel-lang.asd`, to `php/src/bootstrap.php`, and to the imports in
-`python/sel/builtins/__init__.py`.
+None of the four has an autoloader: a new file must be added to `:components`
+in `lisp/sel-lang.asd`, to `php/src/bootstrap.php`, to the imports in
+`python/sel/builtins/__init__.py`, and as a `pub mod` in
+`rust/src/builtins/mod.rs`.
