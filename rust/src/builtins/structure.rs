@@ -73,6 +73,20 @@ pub fn fn_record(args: &mut Args) -> Result<Value, SelError> {
         return Ok(Value::none());
     }
     cap_collection((count / 2) as u128, args.pos())?;
+    // Every key a text literal (the parser then built the shape): the keys
+    // are known, and evaluating them per row would only rebuild the same
+    // strings. A literal has no effect and cannot fail -- except at the depth
+    // limit, where the first key raises E_DEPTH, so that case keeps the
+    // general path and its error position.
+    if let Some(shape) = args.record_shape() {
+        if args.ctx.depth < crate::limits::MAX_DEPTH {
+            let mut values = Vec::with_capacity(count / 2);
+            for i in (1..count).step_by(2) {
+                values.push(args.val(i)?.deep_copy(2, args.pos())?);
+            }
+            return Ok(Value::shaped_record(shape, values));
+        }
+    }
     let mut keys = Vec::with_capacity(count / 2);
     let mut values = Vec::with_capacity(count / 2);
     for i in (0..count).step_by(2) {
