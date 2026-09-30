@@ -190,12 +190,136 @@ fn eval_binary(node: &Node, ctx: &mut Context) -> Result<Value, SelError> {
         }
     }
 
+    if is_comparison(op) {
+        return compare_nodes(op, l_node, r_node, ctx).map(Value::bool);
+    }
+
     let l = eval_node(l_node, ctx)?;
     let r = eval_node(r_node, ctx)?;
     let lp = l_node.pos;
     let rp = r_node.pos;
 
     apply_binary(op, &l, &r, lp, rp, node.pos)
+}
+
+fn is_comparison(op: &str) -> bool {
+    matches!(
+        op,
+        "==" | "!=" | "<" | "<=" | ">" | ">=" | "$==" | "$!=" | "$<" | "$<=" | "$>" | "$>="
+    )
+}
+
+/// A comparison operand. A literal is only read by a comparison and never
+/// escapes it, so it is read in place instead of built into a value cell.
+enum Operand<'n> {
+    Val(Value),
+    Lit(&'n Node),
+}
+
+impl Operand<'_> {
+    // Evaluates `n` (as the operand's evaluation would), unless it is a literal
+    // whose evaluation cannot fail: at the depth limit even a literal raises
+    // E_DEPTH, so there it is evaluated as written.
+    fn of<'n>(n: &'n Node, ctx: &mut Context) -> Result<Operand<'n>, SelError> {
+        let literal = n.math_plan.is_none()
+            && (n.t == NodeType::Text || (n.t == NodeType::Num && n.dec.is_some()));
+        if literal && ctx.depth < MAX_DEPTH {
+            Ok(Operand::Lit(n))
+        } else {
+            Ok(Operand::Val(eval_node(n, ctx)?))
+        }
+    }
+
+    fn decimal(&self, pos: Pos) -> Result<crate::dec::Dec, SelError> {
+        match self {
+            Operand::Val(v) => v.as_decimal(pos),
+            Operand::Lit(n) if n.t == NodeType::Num => Ok(n.dec.clone().unwrap()),
+            Operand::Lit(n) => crate::value::parse_text_decimal(&n.s, pos),
+        }
+    }
+
+    // The text of a TEXT scalar with no children (`$==`'s direct case).
+    fn plain_text(&self) -> Option<SelStr> {
+        match self {
+            Operand::Val(v) => (v.is_text() && v.size() == 0).then(|| v.scalar_str()),
+            Operand::Lit(n) => Some(SelStr::new(&n.s)),
+        }
+    }
+
+    fn bytes(&self, pos: Pos) -> Result<std::borrow::Cow<'_, [u8]>, SelError> {
+        match self {
+            Operand::Val(v) => v.as_bytes(pos).map(std::borrow::Cow::Owned),
+            Operand::Lit(n) => Ok(std::borrow::Cow::Borrowed(n.s.as_bytes())),
+        }
+    }
+}
+
+// Both operands in order, then the comparison, exactly as apply_binary would
+// run it on the operands' values.
+#[inline(never)]
+fn compare_nodes(op: &str, l_node: &Node, r_node: &Node, ctx: &mut Context) -> Result<bool, SelError> {
+    let l = Operand::of(l_node, ctx)?;
+    let r = Operand::of(r_node, ctx)?;
+    let (lp, rp) = (l_node.pos, r_node.pos);
+    match op {
+        "==" | "!=" | "<" | "<=" | ">" | ">=" => {
+            let a = l.decimal(lp)?;
+            let b = r.decimal(rp)?;
+            Ok(compare_result(op, dec_cmp(&a, &b)))
+        }
+        "$==" | "$!=" => {
+            let equal = match (l.plain_text(), r.plain_text()) {
+                (Some(a), Some(b)) => a == b,
+                _ => {
+                    let a = l.bytes(lp)?;
+                    let b = r.bytes(rp)?;
+                    a == b
+                }
+            };
+            Ok(if op == "$==" { equal } else { !equal })
+        }
+        _ => {
+            let a = l.bytes(lp)?;
+            let b = r.bytes(rp)?;
+            Ok(compare_result(&op[1..], a.cmp(&b)))
+        }
+    }
+}
+
+/// `eval_node(node)?.as_bool(node.pos)` for a condition, without building the
+/// boolean's value cell when the node is a comparison or AND/OR: the same
+/// depth charge, evaluation order and errors.
+pub(crate) fn eval_bool(node: &Node, ctx: &mut Context) -> Result<bool, SelError> {
+    let direct = node.t == NodeType::Bin
+        && node.math_plan.is_none()
+        && (node.s == "AND" || node.s == "OR" || is_comparison(&node.s));
+    if !direct {
+        return eval_node(node, ctx)?.as_bool(node.pos);
+    }
+    ctx.depth += 1;
+    if ctx.depth > MAX_DEPTH {
+        ctx.depth -= 1;
+        return Err(SelError::depth("evaluation nested too deeply", node.pos));
+    }
+    let res = eval_bool_bin(node, ctx);
+    ctx.depth -= 1;
+    if res.is_err() {
+        // As eval_node: no prefilter state outlives an error.
+        ctx.join_prefilter = None;
+        ctx.join_prefilter_report = None;
+    }
+    res
+}
+
+#[inline(never)]
+fn eval_bool_bin(node: &Node, ctx: &mut Context) -> Result<bool, SelError> {
+    let l_node = node.l.as_ref().unwrap();
+    let r_node = node.r.as_ref().unwrap();
+    match node.s.as_str() {
+        "AND" => Ok(eval_bool(l_node, ctx)? && eval_bool(r_node, ctx)?),
+        "OR" => Ok(eval_bool(l_node, ctx)? || eval_bool(r_node, ctx)?),
+        op => compare_nodes(op, l_node, r_node, ctx),
+    }
 }
 
 // Arithmetic/conversion temporaries must not live in every recursive frame.

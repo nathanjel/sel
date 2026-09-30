@@ -424,14 +424,10 @@ fn filter_rows(args: &mut Args, plan: Box<FilterPlan>, source: Result<Value, Sel
         if needs_k {
             args.ctx.bind("_K", Value::text_owned(ents.key(i)));
         }
-        let keep = match args.eval_node(&body_node) {
-            Ok(v) => match v.as_bool(body_pos) {
-                Ok(b) => b,
-                Err(err) => {
-                    args.ctx.pop_frame();
-                    return Err(err);
-                }
-            },
+        // body_pos is body_node's own position: eval_bool is exactly
+        // eval_node(..).as_bool(body_pos), without the boolean's value cell.
+        let keep = match crate::eval::eval_bool(&body_node, args.ctx) {
+            Ok(b) => b,
             Err(err) => {
                 args.ctx.pop_frame();
                 return Err(err);
@@ -1376,7 +1372,7 @@ fn join_set_row(ctx: &mut Context, names: &[String], row: &Value) {
 /// 0 keep, 1 drop, 2 keep because a conjunct raised (the FILTER decides).
 fn join_verdict(args: &mut Args, conjuncts: &[Node], errored: &mut bool) -> u8 {
     for conjunct in conjuncts {
-        match args.eval_node(conjunct).and_then(|v| v.as_bool(conjunct.pos)) {
+        match crate::eval::eval_bool(conjunct, args.ctx) {
             Err(_) => {
                 *errored = true;
                 return 2;

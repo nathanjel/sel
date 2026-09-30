@@ -257,6 +257,19 @@ impl ValueInner {
     }
 }
 
+/// A TEXT scalar read as a number: E_RANGE past the digit caps, E_NOT_NUM for
+/// anything that is not a number (`Value::as_decimal`'s rule, shared with the
+/// evaluator's literal operands).
+pub(crate) fn parse_text_decimal(text: &str, pos: Pos) -> Result<Dec, SelError> {
+    dec_parse(text, pos).map_err(|e| {
+        if e.code == "E_RANGE" {
+            e
+        } else {
+            SelError::not_num(format!("not a number: {:?}", text), pos)
+        }
+    })
+}
+
 impl Value {
     pub fn none() -> Self {
         Self(Rc::new(RefCell::new(ValueInner {
@@ -846,21 +859,9 @@ impl Value {
             return Ok(d.clone());
         }
         let str_val = s.scalar_str();
-        match dec_parse(&str_val, pos) {
-            Ok(d) => {
-                s.0.borrow_mut().dec_val = Some(d.clone());
-                Ok(d)
-            }
-            Err(e) => {
-                if e.code == "E_RANGE" {
-                    return Err(e);
-                }
-                Err(SelError::not_num(
-                    format!("not a number: {:?}", str_val),
-                    pos,
-                ))
-            }
-        }
+        let d = parse_text_decimal(&str_val, pos)?;
+        s.0.borrow_mut().dec_val = Some(d.clone());
+        Ok(d)
     }
 
     pub fn looks_numeric(&self) -> bool {
