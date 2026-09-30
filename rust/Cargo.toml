@@ -165,3 +165,16 @@ required-features = ["usage"]
 name = "sql-star"
 path = "../examples/sql-star/rust.rs"
 required-features = ["usage"]
+
+# The benchmark hosts, beside the other hosts' ones: the six-scenario runner
+# tools/scale-test/benchmark_all.py gates (its `rust` lane builds and runs it),
+# and the Mandelbrot timer of tools/commit-benchmark/.
+[[example]]
+name = "scale-bench"
+path = "../tools/scale-test/sel_benchmarks.rs"
+required-features = ["sql"]
+
+[[example]]
+name = "mandelbrot"
+path = "../tools/commit-benchmark/mandelbrot.rs"
+required-features = ["sql"]

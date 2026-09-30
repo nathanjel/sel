@@ -50,17 +50,53 @@ fn repo() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..")
 }
 
-// Numbers load as text, exactly as rust/src/bin/scale_bench.rs does.
-fn value(v: &Json) -> Value {
-    match v {
-        Json::Null => Value::null(),
-        Json::Bool(b) => Value::bool(*b),
-        Json::Number(n) => Value::text_owned(n.to_string()),
-        Json::String(s) => Value::text_owned(s.clone()),
-        Json::Array(xs) => Value::list(xs.iter().map(value).collect()),
-        Json::Object(xs) => Value::record_from_entries(
-            xs.iter().map(|(k, v)| Entry { key: k.clone(), val: value(v) }).collect(),
-        ),
+// The fixture loads exactly as rust/src/bin/scale_bench.rs loads it: numbers as
+// text, and read straight from the parser, not through serde_json::Value, which
+// sorts object keys -- a SEL record keeps the order the file gives.
+struct Fixture(Value);
+
+impl<'de> serde::Deserialize<'de> for Fixture {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        struct V;
+        impl<'de> serde::de::Visitor<'de> for V {
+            type Value = Fixture;
+            fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+                f.write_str("JSON")
+            }
+            fn visit_unit<E>(self) -> Result<Fixture, E> {
+                Ok(Fixture(Value::null()))
+            }
+            fn visit_bool<E>(self, b: bool) -> Result<Fixture, E> {
+                Ok(Fixture(Value::bool(b)))
+            }
+            fn visit_i64<E>(self, n: i64) -> Result<Fixture, E> {
+                Ok(Fixture(Value::text_owned(n.to_string())))
+            }
+            fn visit_u64<E>(self, n: u64) -> Result<Fixture, E> {
+                Ok(Fixture(Value::text_owned(n.to_string())))
+            }
+            fn visit_f64<E>(self, n: f64) -> Result<Fixture, E> {
+                Ok(Fixture(Value::text_owned(n.to_string())))
+            }
+            fn visit_str<E>(self, s: &str) -> Result<Fixture, E> {
+                Ok(Fixture(Value::text_owned(s.to_string())))
+            }
+            fn visit_seq<A: serde::de::SeqAccess<'de>>(self, mut a: A) -> Result<Fixture, A::Error> {
+                let mut xs = Vec::new();
+                while let Some(Fixture(x)) = a.next_element()? {
+                    xs.push(x);
+                }
+                Ok(Fixture(Value::list(xs)))
+            }
+            fn visit_map<A: serde::de::MapAccess<'de>>(self, mut a: A) -> Result<Fixture, A::Error> {
+                let mut entries = Vec::new();
+                while let Some((key, Fixture(val))) = a.next_entry::<String, Fixture>()? {
+                    entries.push(Entry { key, val });
+                }
+                Ok(Fixture(Value::record_from_entries(entries)))
+            }
+        }
+        d.deserialize_any(V)
     }
 }
 
@@ -98,7 +134,7 @@ const MAX_BYTES: usize = 13_098_593;
 
 #[test]
 fn scenario1_answer_and_allocation_budget() {
-    let dataset: Json = serde_json::from_slice(
+    let Fixture(dataset) = serde_json::from_slice(
         &std::fs::read(repo().join("tools/scale-test/dataset.json")).unwrap(),
     )
     .unwrap();
@@ -117,10 +153,9 @@ fn scenario1_answer_and_allocation_budget() {
         .to_string();
     let context = Value::record_from_entries(
         dataset
-            .as_object()
-            .unwrap()
-            .iter()
-            .map(|(k, v)| Entry { key: k.to_ascii_uppercase(), val: value(v) })
+            .entries()
+            .into_iter()
+            .map(|e| Entry { key: e.key.to_ascii_uppercase(), val: e.val })
             .collect(),
     );
     let mut program = compile(&query).unwrap();

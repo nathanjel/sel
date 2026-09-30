@@ -25,7 +25,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from benchmark_support import fixture_metadata, resolve_path, runtime_metadata, sha256_file, stats
 
 
-IN_MEMORY_LANES = ("lisp", "cpp", "js", "php", "python")
+IN_MEMORY_LANES = ("lisp", "cpp", "rust", "js", "php", "python")
+RUST_BUILD = ["cargo", "build", "--release", "--manifest-path", "rust/Cargo.toml",
+              "--example", "scale-bench"]
+RUST_BINARY = ROOT / "rust/target/release/examples/scale-bench"
 DATABASE_LANES = ("postgresql", "mariadb")
 PHASES = ("program_run_ms", "materialize_ms", "prepared_total_ms")
 DB_PHASES = ("db_execute_fetch_ms", "db_materialize_ms", "continuation_ms", "hybrid_total_ms")
@@ -245,6 +248,32 @@ def run_cpp(dataset: Path, reference: Path, report_path: Path,
     return report
 
 
+def run_rust(dataset: Path, reference: Path, report_path: Path,
+             runs: int, warmups: int, timing_mode: str,
+             only: str | None = None, build: bool = True) -> dict[str, Any]:
+    # tools/scale-test/sel_benchmarks.rs, the crate's `scale-bench` example:
+    # Cargo rebuilds it whenever it or the crate changed.
+    if build:
+        run_process(RUST_BUILD, label="rust build", stream=False)
+    command = [
+        str(RUST_BINARY),
+        "--dataset", str(dataset), "--reference", str(reference),
+        "--output", str(report_path), "--runs", str(runs),
+        "--warmups", str(warmups), "--timing-mode", timing_mode,
+    ]
+    if only:
+        command.extend(["--only", only])
+    run_process(command, label="rust")
+    report = load_json(report_path)
+    report.setdefault("metadata", {})["build"] = {
+        "build_command": " ".join(RUST_BUILD),
+        "built_from_current_sources": build,
+        "binary_path": str(RUST_BINARY.resolve()),
+        "binary_sha256": sha256_file(RUST_BINARY),
+    }
+    return report
+
+
 def run_json_lane(lane: str, command: list[str], dataset: Path, reference: Path,
                   report_path: Path, runs: int, warmups: int,
                   timing_mode: str, env: dict[str, str] | None = None,
@@ -268,6 +297,8 @@ def run_cold_in_memory_once(lane: str, dataset: Path, reference: Path,
         report = run_lisp(dataset, reference, report_path, 1, 0, timing_mode, scenario_id)
     elif lane == "cpp":
         report = run_cpp(dataset, reference, report_path, 1, 0, timing_mode, scenario_id, build=False)
+    elif lane == "rust":
+        report = run_rust(dataset, reference, report_path, 1, 0, timing_mode, scenario_id, build=False)
     elif lane == "js":
         command = ["node"]
         if timing_mode == "gc-controlled":
@@ -318,8 +349,8 @@ def run_cold_process_benchmark(dataset: Path, reference_path: Path,
 
     Each in-memory lane/scenario/sample is a fresh host process.  Database
     cold samples likewise use a fresh Python/PDO process per dialect/scenario.
-    The C++ binary is built once before the cold measurements and is not charged
-    to the process timings.
+    The C++ and Rust binaries are built once before the cold measurements and
+    are not charged to the process timings.
     """
     if runs < 1:
         raise ValueError("runs must be positive")
@@ -346,6 +377,7 @@ def run_cold_process_benchmark(dataset: Path, reference_path: Path,
         report_dir = Path(temporary)
         run_process(["make", "-B", "-C", "cpp", "-j2", "build/scale-bench"],
                     label="cold cpp build", stream=False)
+        run_process(RUST_BUILD, label="cold rust build", stream=False)
         for lane in IN_MEMORY_LANES:
             lane_samples: dict[str, list[dict[str, float]]] = {item["id"]: [] for item in reference}
             lane_metadata: dict[str, Any] = {}
@@ -602,6 +634,8 @@ def main() -> int:
                                     args.runs, args.warmups, args.timing_mode, args.only)
         reports["cpp"] = run_cpp(dataset, reference_path, report_dir / "cpp.json",
                                    args.runs, args.warmups, args.timing_mode, args.only)
+        reports["rust"] = run_rust(dataset, reference_path, report_dir / "rust.json",
+                                     args.runs, args.warmups, args.timing_mode, args.only)
         js_command = ["node"]
         if args.timing_mode == "gc-controlled":
             js_command.append("--expose-gc")

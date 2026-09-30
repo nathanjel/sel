@@ -4,14 +4,37 @@ use sel_lang::{compile, Entry, Value};
 use serde_json::{json, Value as Json};
 use std::{fs, time::Instant};
 
-fn value(v: &Json) -> Value {
-    match v {
-        Json::Null => Value::null(),
-        Json::Bool(b) => Value::bool(*b),
-        Json::Number(n) => Value::text_owned(n.to_string()),
-        Json::String(s) => Value::text_owned(s.clone()),
-        Json::Array(xs) => Value::list(xs.iter().map(value).collect()),
-        Json::Object(xs) => Value::record_from_entries(xs.iter().map(|(k, v)| Entry { key: k.clone(), val: value(v) }).collect()),
+/// The fixture as a SEL value, numbers as text. Read straight from the parser,
+/// not through serde_json::Value, which sorts object keys: a SEL record keeps
+/// its keys in the order the file gives them.
+struct Fixture(Value);
+
+impl<'de> serde::Deserialize<'de> for Fixture {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        struct V;
+        impl<'de> serde::de::Visitor<'de> for V {
+            type Value = Fixture;
+            fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result { f.write_str("JSON") }
+            fn visit_unit<E>(self) -> Result<Fixture, E> { Ok(Fixture(Value::null())) }
+            fn visit_bool<E>(self, b: bool) -> Result<Fixture, E> { Ok(Fixture(Value::bool(b))) }
+            fn visit_i64<E>(self, n: i64) -> Result<Fixture, E> { Ok(Fixture(Value::text_owned(n.to_string()))) }
+            fn visit_u64<E>(self, n: u64) -> Result<Fixture, E> { Ok(Fixture(Value::text_owned(n.to_string()))) }
+            fn visit_f64<E>(self, n: f64) -> Result<Fixture, E> { Ok(Fixture(Value::text_owned(n.to_string()))) }
+            fn visit_str<E>(self, s: &str) -> Result<Fixture, E> { Ok(Fixture(Value::text_owned(s.to_string()))) }
+            fn visit_seq<A: serde::de::SeqAccess<'de>>(self, mut a: A) -> Result<Fixture, A::Error> {
+                let mut xs = Vec::new();
+                while let Some(Fixture(x)) = a.next_element()? { xs.push(x); }
+                Ok(Fixture(Value::list(xs)))
+            }
+            fn visit_map<A: serde::de::MapAccess<'de>>(self, mut a: A) -> Result<Fixture, A::Error> {
+                let mut entries = Vec::new();
+                while let Some((key, Fixture(val))) = a.next_entry::<String, Fixture>()? {
+                    entries.push(Entry { key, val });
+                }
+                Ok(Fixture(Value::record_from_entries(entries)))
+            }
+        }
+        d.deserialize_any(V)
     }
 }
 
@@ -21,13 +44,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let runs: usize = args[2].parse()?;
     let warmups: usize = args[3].parse()?;
     if runs == 0 { return Err("RUNS must be positive".into()); }
-    let dataset: Json = serde_json::from_slice(&fs::read(&args[0])?)?;
+    let Fixture(dataset) = serde_json::from_slice(&fs::read(&args[0])?)?;
     let reference: Json = serde_json::from_slice(&fs::read(&args[1])?)?;
     let scenario = reference.as_array().ok_or("reference must be an array")?.iter()
         .find(|v| v["id"] == "scenario1").ok_or("scenario1 missing")?;
     let query = scenario["query"].as_str().ok_or("query missing")?;
-    let context = Value::record_from_entries(dataset.as_object().ok_or("dataset must be an object")?.iter()
-        .map(|(k, v)| Entry { key: k.to_ascii_uppercase(), val: value(v) }).collect());
+    let context = Value::record_from_entries(dataset.entries().into_iter()
+        .map(|e| Entry { key: e.key.to_ascii_uppercase(), val: e.val }).collect());
     let original_hash = context.structural_hash()?;
     let compile_start = Instant::now();
     let mut program = compile(query)?;
