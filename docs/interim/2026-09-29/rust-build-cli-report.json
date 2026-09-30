@@ -1,0 +1,41 @@
+{
+  "date": "2026-09-29",
+  "input_digest_file": "rust/build/inputs.sha256",
+  "published_binary_sha256": {
+    "conformance": "676f164b7b6c667f89a9b23668f65a34b5bea389caba18013010acf21442c622",
+    "sqlt": "d8d993fb510692be9a629730fd2e7ac2f4791df45e7b32fa82e0822da35f3a93",
+    "map_replay": "17569ed8f54c134de49724aa0ecc1bd28da4ad72a4e87e27d7267f12a0854025",
+    "check_decimal": "7edacf2dffd38df638d6a74eeeda7ce51ba16c8f3e014e2776f25d2bffd964b3",
+    "batch": "ec279d9b4c3c5893fcf80c889ef8198049ed07c06985cfbdb5a1695b82ffd022",
+    "e2e": "ef8d6096703e3eeb5ab8e6b8ec5f3b2d7fd4a8bb788d22960e02ced7d9da1735",
+    "sel": "171d1bd5a4795d4616777a6664e93c696e1b89b99a84e96bf88f93a5beeae938",
+    "sqlapi": "ebc518e7d8fb8afc157ee26850330514c33c6574273bcc599ae0ae048f34b841",
+    "api": "c82e44a3ba213b0b482933611a926dc971169e8090a98eedb09ff229d905b5fe",
+    "regex_verdict": "b5cccd4edeb2171e52977a4de2100f2229ab45319a9dc28ca4814c2e444c1178",
+    "scale_bench": "674cdbe4509ca2e325c5a8aa061a25c8ff036995a7d7f87ef21ae91758d89a5f"
+  },
+  "cargo_tests_passed": 51,
+  "build_integration": "production/config/new-file/missing-artifact changes invalidate; test-only file edits do not; failed/concurrently changed builds do not publish",
+  "cli_shared_gate": "11 byte fixtures and 4 misuse cases pass with Rust selected",
+  "cli_unix_tests": [
+    "invalid UTF-8 expression argv reports E_UTF8 at codepoint column 3",
+    "non-UTF-8 path with valid source succeeds"
+  ],
+  "manifest_arity_probes": 700,
+  "manifest_binding_probes": 43,
+  "error_catalogue_codes": 34,
+  "budget_requests": 12,
+  "budget_ceiling_seconds": 20,
+  "excluded_evidence": [
+    "check-sql-budgets.sh explicitly skips Rust; its success output is not a Rust pass"
+  ],
+  "logs": [
+    "/tmp/sel-rust-full-unit-gate.txt",
+    "/tmp/sel-rust-build-final-tests.txt",
+    "/tmp/sel-rust-cli-final.txt",
+    "/tmp/sel-rust-manifest-gate.txt",
+    "/tmp/sel-rust-cli-budgets.txt",
+    "/tmp/sel-rust-error-codes-included.txt",
+    "/tmp/sel-rust-generated-current.txt"
+  ]
+}

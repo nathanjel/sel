@@ -1,0 +1,26 @@
+{
+  "date": "2026-09-29",
+  "source": "rust/src/optimizer.rs",
+  "source_sha256": "65a9d791648498e5c818753530a80fd1d45024c588f6dbd6abcaee37aafa7f2a",
+  "profile": "debug",
+  "probe": "rust/tests/pipeline_allocations.rs",
+  "pipeline": "ROWS followed by N MAP(_) stages; no stage fusion",
+  "counts": {
+    "before": {
+      "40": 12680,
+      "80": 49343
+    },
+    "after": {
+      "40": 780,
+      "80": 1543
+    }
+  },
+  "scope": "Allocation calls during optimize_ast only; excludes parsing. Does not establish runtime pipeline stack safety or Scenario 1 speed.",
+  "verification": [
+    "pipeline_optimization_allocation_growth_is_linear",
+    "rebuilding_pipeline_preserves_source_and_stage_metadata",
+    "retained_program_cache_checks_shapes_and_reads_current_values",
+    "local_map_errors_survive_later_row_cuts_and_context_is_unchanged",
+    "pure_memory_assignments_do_not_mutate_caller_context"
+  ]
+}
