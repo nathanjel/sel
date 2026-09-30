@@ -842,7 +842,7 @@ impl Value {
     }
 
     /// `as_text` without copying the text.
-    pub(crate) fn as_text_str(&self, pos: Pos) -> Result<SelStr, SelError> {
+    pub fn as_text_str(&self, pos: Pos) -> Result<SelStr, SelError> {
         let s = self.scalar_source(pos)?;
         let kind = s.kind();
         if kind == Kind::Text {

@@ -733,7 +733,16 @@ fn invoke_call(
         args.preset(0, value);
     }
     if !spec.lazy {
+        // A RECORD whose keys are all text literals carries the shape the
+        // parser built from them, and fn_record's fast path never reads those
+        // keys (same depth condition). A literal can neither fail nor have an
+        // effect short of the depth limit, so skipping them here changes
+        // nothing but the per-row value cell each would have cost.
+        let skip_keys = node.shape.is_some() && args.ctx.depth < MAX_DEPTH;
         for i in 0..args.count() {
+            if skip_keys && i % 2 == 0 {
+                continue;
+            }
             if let Err(e) = args.val(i) {
                 args.ctx.frames.truncate(frame_depth);
                 return Err(e);

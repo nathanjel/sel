@@ -88,9 +88,11 @@ const EXPECTED: [(&str, &str, &str); 10] = [
 //     (+3: a FILTER result's preserved keys now live in the side box)
 //   phase 4b, literal operands  116,052                 865          17,124,385
 //   phase 3b, 104 B ValueInner  116,052                 865          14,714,305
-const MAX_ALLOCATIONS: usize = 116_052;
+//   4a completed: keys skipped  101,621                 865          12,867,137
+//     in invoke_call's eager evaluation too
+const MAX_ALLOCATIONS: usize = 101_621;
 const MAX_SMALL: usize = 865;
-const MAX_BYTES: usize = 14_714_305;
+const MAX_BYTES: usize = 12_867_137;
 
 #[test]
 fn scenario1_answer_and_allocation_budget() {

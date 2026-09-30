@@ -132,3 +132,35 @@ fn filter_over_link_chains_reach_their_errors_on_bounded_stacks() {
         .join()
         .unwrap();
 }
+
+// A FILTER's predicate is evaluated by eval_bool, which recurses through
+// AND/OR chains and comparisons without building boolean values: long chains
+// must still reach E_DEPTH at the JS host's positions on the bounded stacks.
+#[test]
+fn deep_filter_conditions_reach_their_errors_on_bounded_stacks() {
+    fn filter(n: usize, op: &str, test: &str) -> String {
+        format!("L = LIST(1, 2); FILTER(L, {})", vec![test; n].join(op))
+    }
+    let stack = if cfg!(debug_assertions) { 2 * 1024 * 1024 } else { 256 * 1024 };
+    std::thread::Builder::new()
+        .stack_size(stack)
+        .spawn(move || {
+            for (source, expected) in [
+                (filter(150, " AND ", "_ == 1"), Ok(r#"-{"1"=t"1"}"#.to_string())),
+                (filter(150, " OR ", "_ == 3"), Ok("-".to_string())),
+                (filter(199, " AND ", "_ == 1"), Err(("E_DEPTH", 1, 29))),
+                (filter(200, " OR ", "_ == 3"), Err(("E_DEPTH", 1, 34))),
+                (filter(250, " AND ", "_ == 1"), Err(("E_DEPTH", 1, 584))),
+                (filter(250, " OR ", "_ == 3"), Err(("E_DEPTH", 1, 534))),
+            ] {
+                let got = sel_lang::compile(&source)
+                    .and_then(|mut p| p.run(None))
+                    .map(|v| v.dump().unwrap())
+                    .map_err(|e| (e.code, e.pos.line, e.pos.col));
+                assert_eq!(got, expected, "{}", &source[..40]);
+            }
+        })
+        .unwrap()
+        .join()
+        .unwrap();
+}
