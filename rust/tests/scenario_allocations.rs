@@ -79,11 +79,12 @@ const EXPECTED: [(&str, &str, &str); 10] = [
     ("Home & Kitchen", "346", "354681.75"),
 ];
 
-// Per-run budgets (run plus dump). Baseline, be51456: 228,045 allocations,
-// 82,447 of at most 15 bytes, 27,449,398 bytes requested.
-const MAX_ALLOCATIONS: usize = 228_045;
-const MAX_SMALL: usize = 82_447;
-const MAX_BYTES: usize = 27_449_398;
+// Per-run budgets (run plus dump), lowered as each phase lands.
+//   baseline (be51456)          228,045 allocations, 82,447 <= 15 B, 27,449,398 B
+//   phase 1, inline arg cache   222,664              82,437          27,217,942
+const MAX_ALLOCATIONS: usize = 222_664;
+const MAX_SMALL: usize = 82_437;
+const MAX_BYTES: usize = 27_217_942;
 
 #[test]
 fn scenario1_answer_and_allocation_budget() {

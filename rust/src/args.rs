@@ -8,13 +8,42 @@ use crate::shape::RecordShape;
 use crate::utf8::{Pos, SelError};
 use crate::value::Value;
 
+// Argument values, cached as each is first evaluated. Most calls take a few
+// arguments, so they live inline in `Args`: a built-in call allocates nothing
+// for its argument cache (a Vec here was one heap allocation per call -- per
+// row for RECORD and for every aggregate body's calls).
+const INLINE_ARGS: usize = 6;
+
+enum ArgVals {
+    Inline([Option<Value>; INLINE_ARGS]),
+    Heap(Vec<Option<Value>>),
+}
+
+impl ArgVals {
+    fn new(count: usize) -> Self {
+        if count <= INLINE_ARGS {
+            ArgVals::Inline(Default::default())
+        } else {
+            ArgVals::Heap(vec![None; count])
+        }
+    }
+
+    #[inline]
+    fn slot(&mut self, i: usize) -> &mut Option<Value> {
+        match self {
+            ArgVals::Inline(a) => &mut a[i],
+            ArgVals::Heap(v) => &mut v[i],
+        }
+    }
+}
+
 pub struct Args<'a> {
     pub nodes: &'a [Node],
     pub record_shape: Option<Arc<RecordShape>>,
     pub name: &'a str,
     pub pos: Pos,
     pub ctx: &'a mut Context,
-    pub vals: Vec<Option<Value>>,
+    vals: ArgVals,
     pub borrowed_filter: bool,
 }
 
@@ -27,9 +56,14 @@ impl<'a> Args<'a> {
             name: &node.s,
             pos: node.pos,
             ctx,
-            vals: vec![None; count],
+            vals: ArgVals::new(count),
             borrowed_filter: node.borrowed_filter,
         }
+    }
+
+    /// Supplies argument `i` already evaluated (a pipeline stage's source).
+    pub(crate) fn preset(&mut self, i: usize, value: Value) {
+        *self.vals.slot(i) = Some(value);
     }
 
     pub fn count(&self) -> usize {
@@ -72,7 +106,7 @@ impl<'a> Args<'a> {
     }
 
     pub fn val(&mut self, i: usize) -> Result<Value, SelError> {
-        if i >= self.nodes.len() || i >= self.vals.len() {
+        if i >= self.nodes.len() {
             return Err(SelError::new(
                 "E_BAD_ARG",
                 format!(
@@ -83,11 +117,11 @@ impl<'a> Args<'a> {
                 self.pos,
             ));
         }
-        if let Some(ref v) = self.vals[i] {
+        if let Some(ref v) = *self.vals.slot(i) {
             return Ok(v.clone());
         }
         let v = eval_node(&self.nodes[i], self.ctx)?;
-        self.vals[i] = Some(v.clone());
+        *self.vals.slot(i) = Some(v.clone());
         Ok(v)
     }
 

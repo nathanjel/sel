@@ -600,7 +600,7 @@ fn invoke_call(
     let frame_depth = ctx.frames.len();
     let mut args = Args::new(node, ctx);
     if let Some(value) = source {
-        args.vals[0] = Some(value);
+        args.preset(0, value);
     }
     if !spec.lazy {
         for i in 0..args.count() {
