@@ -228,12 +228,25 @@
                                c))
        s))
 
+(defparameter +operators-by-first-char+
+  (let ((table (make-array 128 :initial-element nil)))
+    ;; The candidates for each first character, in +OPERATORS+ order: longest
+    ;; match first is kept because the order within a bucket is the order of the
+    ;; list above.
+    (dolist (op (reverse +operators+))
+      (push op (svref table (char-code (char op 0)))))
+    table)
+  "+OPERATORS+ indexed by the first character of each operator (LISP-P22): testing
+33 strings for every operator token cost more than the rest of lexing it.")
+
 (defun match-operator (lx i to)
-  (let ((chars (lexer-chars lx)))
-    (loop for op in +operators+
-          when (and (<= (+ i (length op)) to)
-                    (string= op chars :start2 i :end2 (+ i (length op))))
-            do (return op))))
+  (let* ((chars (lexer-chars lx))
+         (code (char-code (char chars i))))
+    (when (< code 128)
+      (loop for op in (svref +operators-by-first-char+ code)
+            when (and (<= (+ i (length op)) to)
+                      (string= op chars :start2 i :end2 (+ i (length op))))
+              do (return op)))))
 
 ;;; --- text literals ---------------------------------------------------------
 

@@ -50,7 +50,7 @@ import re
 
 from .._budget import check_text
 from .._stack import recursion_budget
-from .._limits import MAX_DEPTH, MAX_REGEX_GROUPS, MAX_REGEX_PATTERN
+from .._limits import MAX_DEPTH, MAX_REGEX_GROUPS, MAX_REGEX_PATTERN, MAX_TEXT_LEN
 from ..errors import fail
 from ..registry import define
 from ..value import Value
@@ -546,6 +546,10 @@ _FOLD = {0x212A: 'k', 0x017F: 's'}
 
 
 def _fold_subject(subject: str) -> str:
+    # Nothing to fold in an ASCII subject (the two code points are above it), so it is
+    # returned as it is instead of being copied through translate() (PY-P30).
+    if subject.isascii():
+        return subject
     return subject.translate(_FOLD)
 
 
@@ -578,14 +582,13 @@ def _flags(flags, pos):
 
 
 def _compile(pattern, flags, pos, pat_pos):
-    ignore_case = _flags(flags, pos)
+    # No flags is the common call: skip the flag scan altogether (PY-P30).
+    ignore_case = _flags(flags, pos) if flags else False
 
-    if ignore_case:
-        for ch in pattern:
-            if ord(ch) > 0x7F:
-                fail('E_BAD_ARG',
-                     'the i flag needs an ASCII-only pattern — case folding above '
-                     'ASCII differs between PCRE and ECMAScript', pos)
+    if ignore_case and not pattern.isascii():
+        fail('E_BAD_ARG',
+             'the i flag needs an ASCII-only pattern — case folding above '
+             'ASCII differs between PCRE and ECMAScript', pos)
 
     key = (ignore_case, pattern)
     rx = _cache.get(key)
@@ -683,35 +686,41 @@ def _rgroups(a, ctx):
     return Value._list_owned(out)
 
 
-def _expand(repl, m, rx, original, pos):
-    """SEL understands $0-$9 and $$ only. Spliced by hand so that $&, $` and
-    backslash references stay literal.
-    """
-    out = []
+def _parse_replacement(repl):
+    """The replacement, parsed ONCE per call: a tuple of literal strings and
+    group numbers. SEL understands $0-$9 and $$ only; $&, $` and backslash
+    references stay literal (PY-P13: it was re-scanned character by character for
+    every match)."""
+    parts = []
+    lit = []
     i = 0
-    while i < len(repl):
-        if repl[i] != '$':
-            out.append(repl[i])
-            i += 1
+    n = len(repl)
+    while i < n:
+        c = repl[i]
+        if c != '$':
+            j = repl.find('$', i)
+            if j < 0:
+                j = n
+            lit.append(repl[i:j])
+            i = j
             continue
-        nxt = repl[i + 1] if i + 1 < len(repl) else ''
+        nxt = repl[i + 1] if i + 1 < n else ''
         if nxt == '$':
-            out.append('$')
+            lit.append('$')
             i += 2
             continue
         if nxt and '0' <= nxt <= '9':
-            g = int(nxt)
-            if g > rx.groups:
-                fail('E_BAD_ARG',
-                     f'replacement refers to ${g} but the pattern has '
-                     f'{rx.groups} groups', pos)
-            val = _group_text(m, g, original)
-            out.append(val if val is not None else '')
+            if lit:
+                parts.append(''.join(lit))
+                lit = []
+            parts.append(int(nxt))
             i += 2
             continue
-        out.append('$')
+        lit.append('$')
         i += 1
-    return ''.join(out)
+    if lit:
+        parts.append(''.join(lit))
+    return parts
 
 
 def _rreplace(a, ctx):
@@ -723,20 +732,57 @@ def _rreplace(a, ctx):
     rx, ignore_case = _compile(pattern, flags, flag_pos, a.pos_of(0))
     haystack = _fold_subject(subject) if ignore_case else subject
 
-    # Offsets from the folded subject, text from the original — the fold is
+    parts = _parse_replacement(repl)
+    groups = rx.groups
+    # A reference past the pattern's groups is an error only when a match occurs
+    # (it always was: the old _expand raised while expanding the first match).
+    bad = next((g for g in parts if type(g) is int and g > groups), None)
+    constant = None
+    if not any(type(p) is int for p in parts):
+        constant = ''.join(parts)
+
+    # The loop the other hosts run, inlined (was a generator plus a call per match):
+    # a zero-width match advances a whole code point, so it cannot loop. Offsets
+    # come from the folded subject, text from the original -- the fold is
     # length-preserving, so the same offsets index both.
+    search = rx.search
+    n = len(subject)
     out = []
+    append = out.append
     last = 0
     total = 0
-    for m in _matches(rx, haystack):
-        out.append(subject[last:m.start()])
-        piece = _expand(repl, m, rx, subject, a.pos_of(1))
-        out.append(piece)
+    pos = 0
+    while pos <= n:
+        m = search(haystack, pos)
+        if m is None:
+            break
+        start, end = m.span()
+        if start > last:
+            append(subject[last:start])
+        if bad is not None:
+            fail('E_BAD_ARG',
+                 f'replacement refers to ${bad} but the pattern has {groups} groups',
+                 a.pos_of(1))
+        if constant is not None:
+            piece = constant
+        else:
+            pieces = []
+            for p in parts:
+                if type(p) is int:
+                    st, en = m.span(p)
+                    if st >= 0:
+                        pieces.append(subject[st:en])
+                else:
+                    pieces.append(p)
+            piece = ''.join(pieces)
+        append(piece)
         # The result is measured as it grows and refused past the cap (SPEC 6.4).
-        total += m.start() - last + len(piece)
-        check_text(total + (len(subject) - m.end()), a.pos)
-        last = m.end()
-    out.append(subject[last:])
+        total += start - last + len(piece)
+        if total + (n - end) > MAX_TEXT_LEN:
+            check_text(total + (n - end), a.pos)
+        last = end
+        pos = end + 1 if end == start else end
+    append(subject[last:])
     return Value.text(''.join(out))
 
 

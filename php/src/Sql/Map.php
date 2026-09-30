@@ -42,6 +42,29 @@ final class Map
     private static array $guardChecked = [];
 
     /**
+     * Per-dialect answers that only registration can change (PHP-P24): the
+     * inheritance chain, each resolved lexical value, and the `textEscape` map in
+     * the form strtr() takes. Translation asks for them several times per node.
+     * Flushed by flushMemo(), which defineDialect() and reset() call at every
+     * point the set of dialects or their lexical entries can change; define()
+     * only touches funcs/ops/skel, which none of these read.
+     *
+     * @var array<string,list<string>>
+     */
+    private static array $chainMemo = [];
+    /** @var array<string,array<string,mixed>> */
+    private static array $lexMemo = [];
+    /** @var array<string,?array<string,string>> */
+    private static array $escapeMemo = [];
+
+    private static function flushMemo(): void
+    {
+        self::$chainMemo = [];
+        self::$lexMemo = [];
+        self::$escapeMemo = [];
+    }
+
+    /**
      * sql/MAP.md §4.7: the arity a host function had when its spelling was
      * defined, per dialect. Translation compares it with the function's arity
      * now, so a function registered again with another arity is not rendered
@@ -145,6 +168,7 @@ final class Map
             'target' => $target,
             'lexical' => $lexical,
         ];
+        self::flushMemo();
         // The three quoting keys are a set (sql/MAP.md 3.1): checked on what the
         // dialect resolves to after inheritance, and undone if it does not hold.
         try {
@@ -155,9 +179,11 @@ final class Map
             } else {
                 self::$extra[$name] = $previous;
             }
+            self::flushMemo();
             throw $e;
         }
         unset(self::$guardChecked[$name]);
+        self::flushMemo();
     }
 
     /**
@@ -272,6 +298,7 @@ final class Map
         self::$overlay = [];
         self::$guardChecked = [];
         self::$hostArity = [];
+        self::flushMemo();
     }
 
     /**
@@ -346,13 +373,16 @@ final class Map
     /** Self first, then extends, up to ansi. @return list<string> */
     public static function chain(string $dialect): array
     {
+        if (isset(self::$chainMemo[$dialect])) {
+            return self::$chainMemo[$dialect];
+        }
         $out = [];
         $cur = $dialect;
         while ($cur !== null && self::exists($cur) && !in_array($cur, $out, true)) {
             $out[] = $cur;
             $cur = self::record($cur)['extends'] ?? null;
         }
-        return $out;
+        return self::$chainMemo[$dialect] = $out;
     }
 
     public static function version(string $dialect): string
@@ -373,13 +403,41 @@ final class Map
         // binaryLiteral refuses BIN literals" -- and isset() reads that as
         // "absent" and walks on to the base, which handed the withdrawn value
         // back. The documented withdrawal was unimplementable, in both hosts.
+        if (isset(self::$lexMemo[$dialect]) && array_key_exists($key, self::$lexMemo[$dialect])) {
+            return self::$lexMemo[$dialect][$key];
+        }
+        $found = null;
         foreach (self::chain($dialect) as $d) {
             $r = self::record($d);
             if (array_key_exists($key, $r['lexical'] ?? [])) {
-                return $r['lexical'][$key];
+                $found = $r['lexical'][$key];
+                break;
             }
         }
-        return null;
+        return self::$lexMemo[$dialect][$key] = $found;
+    }
+
+    /**
+     * `textEscape` as strtr() wants it: every key a string, every value a string.
+     * strtr() with an array already tries the longest key first, so no sorting is
+     * needed (PHP-P24). Null when the dialect declares no escape map.
+     *
+     * @return ?array<string,string>
+     */
+    public static function textEscapeMap(string $dialect): ?array
+    {
+        if (array_key_exists($dialect, self::$escapeMemo)) {
+            return self::$escapeMemo[$dialect];
+        }
+        $escape = self::lexical($dialect, 'textEscape');
+        $out = null;
+        if (is_array($escape)) {
+            $out = [];
+            foreach ($escape as $k => $v) {
+                $out[(string) $k] = (string) $v;
+            }
+        }
+        return self::$escapeMemo[$dialect] = $out;
     }
 
     /**

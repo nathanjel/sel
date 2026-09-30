@@ -802,7 +802,10 @@ final class Regex
     private static function compile(string $pattern, string $flags, ?array $pos, ?array $patPos): array
     {
         $ignoreCase = self::ignoreCase($flags, $pos);
-        if ($ignoreCase) {
+        // A cached `i` pattern has already passed the ASCII check (only ASCII
+        // patterns are ever compiled with the flag on), so the scan is for the
+        // first use only (PHP-P30).
+        if ($ignoreCase && !isset(self::$cache['i ' . $pattern])) {
             foreach (Utf8::codePoints($pattern) as $cp) {
                 if ($cp > 0x7f) {
                     fail(
@@ -1036,21 +1039,32 @@ final class Regex
                 $at = 0;        // where the next search starts
                 $len = strlen($subject);
                 $replPos = $a->posOf(1);
+                $parts = self::parseReplacement($repl);
+                $plain = count($parts) === 1 && is_string($parts[0]) ? $parts[0] : null;   // no group reference
                 while ($at <= $len) {
                     $m = [];
-                    $r = self::run($c, static function (string $re) use ($subject, &$m, $at) {
-                        return preg_match($re, $subject, $m, PREG_OFFSET_CAPTURE | PREG_UNMATCHED_AS_NULL, $at);
-                    }, $a->pos);
-                    if ($r !== 1) break;
-                    $groups = [];
-                    foreach ($m as $k => $g) {
-                        if (is_int($k) && $k <= $c['groups']) {
-                            $groups[] = $g[0];
-                        }
+                    $r = preg_match($c['re'], $subject, $m, PREG_OFFSET_CAPTURE | PREG_UNMATCHED_AS_NULL, $at);
+                    if ($r === false && preg_last_error() !== PREG_NO_ERROR) {
+                        // A PCRE resource limit: retried by run() without the JIT and with raised limits.
+                        $r = self::run($c, static function (string $re) use ($subject, &$m, $at) {
+                            return preg_match($re, $subject, $m, PREG_OFFSET_CAPTURE | PREG_UNMATCHED_AS_NULL, $at);
+                        }, $a->pos);
                     }
+                    if ($r !== 1) break;
                     $start = $m[0][1];
                     $matched = (string) $m[0][0];
-                    $piece = substr($subject, $last, $start - $last) . self::expand($repl, $groups, $replPos);
+                    if ($plain !== null) {
+                        $expansion = $plain;
+                    } else {
+                        $groups = [];
+                        foreach ($m as $k => $g) {
+                            if (is_int($k) && $k <= $c['groups']) {
+                                $groups[] = $g[0];
+                            }
+                        }
+                        $expansion = self::expandParts($parts, $groups, $replPos);
+                    }
+                    $piece = substr($subject, $last, $start - $last) . $expansion;
                     // The result is checked as it grows, so a replacement that
                     // would run past the cap (spec §6.4) is refused at the call
                     // with at most one cap's worth built, not after the fact.
@@ -1080,38 +1094,70 @@ final class Regex
     }
 
     /**
-     * @param list<string|null> $groups
-     * @param array<string,mixed> $pos
+     * The replacement text cut once into literal strings and group numbers
+     * ($0-$9), so a replacement with a thousand matches is not re-scanned a
+     * thousand times (PHP-P18). `$$` is a literal dollar and any other `$` stays one.
+     * A replacement with no `$` at all is a single literal.
+     *
+     * @return list<string|int>
      */
-    private static function expand(string $repl, array $groups, array $pos): string
+    private static function parseReplacement(string $repl): array
     {
-        $out = '';
+        if (!str_contains($repl, '$')) {
+            return [$repl];
+        }
+        $parts = [];
+        $lit = '';
         for ($i = 0, $n = strlen($repl); $i < $n; $i++) {
             if ($repl[$i] !== '$') {
-                $out .= $repl[$i];
+                $lit .= $repl[$i];
                 continue;
             }
             $next = $repl[$i + 1] ?? '';
             if ($next === '$') {
-                $out .= '$';
+                $lit .= '$';
                 $i++;
                 continue;
             }
             if ($next >= '0' && $next <= '9') {
-                $g = (int) $next;
-                if ($g >= count($groups)) {
-                    $have = count($groups) - 1;
-                    fail(
-                        'E_BAD_ARG',
-                        "replacement refers to \${$g} but the pattern has {$have} groups",
-                        $pos,
-                    );
+                if ($lit !== '') {
+                    $parts[] = $lit;
+                    $lit = '';
                 }
-                $out .= $groups[$g] ?? '';
+                $parts[] = (int) $next;
                 $i++;
                 continue;
             }
-            $out .= '$';
+            $lit .= '$';
+        }
+        if ($lit !== '') {
+            $parts[] = $lit;
+        }
+        return $parts;
+    }
+
+    /**
+     * @param list<string|int> $parts
+     * @param list<string|null> $groups
+     * @param array<string,mixed> $pos
+     */
+    private static function expandParts(array $parts, array $groups, array $pos): string
+    {
+        $out = '';
+        foreach ($parts as $part) {
+            if (is_string($part)) {
+                $out .= $part;
+                continue;
+            }
+            if ($part >= count($groups)) {
+                $have = count($groups) - 1;
+                fail(
+                    'E_BAD_ARG',
+                    "replacement refers to \${$part} but the pattern has {$have} groups",
+                    $pos,
+                );
+            }
+            $out .= $groups[$part] ?? '';
         }
         return $out;
     }

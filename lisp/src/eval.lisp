@@ -348,31 +348,14 @@
         (check-collection-cap (+ n (max 1 (value-size v))) (node-pos node))
         (if (and (eq (value-kind v) :none) (plusp (value-size v)))
             (dolist (child (value-values v))
-              (value-set out (format nil "~d" (incf n)) (value-copy-at child 2 (node-pos node))))
-            (value-set out (format nil "~d" (incf n)) (value-copy-at v 2 (node-pos node))))))))
+              (value-set out (format-index-string (incf n)) (value-copy-at child 2 (node-pos node))))
+            (value-set out (format-index-string (incf n)) (value-copy-at v 2 (node-pos node))))))))
 
 (defun eval-unary (node ctx)
   (let ((v (eval-node (node-l node) ctx)))
     (if (string= (node-s node) "NOT")
         (make-bool (not (as-bool v (node-pos (node-l node)))))
         (make-num (dec-negate (as-dec v (node-pos (node-l node))))))))
-
-;;; The six comparisons, and nothing else.
-;;;
-;;; The last clause was `(t (>= c 0))`, which answered for every operator it did
-;;; not name. This host is the one where that mattered most: the caller reaches
-;;; here through `(member op +compare-ops+)` and through a bare test on a
-;;; leading `$`, so an operator added to +compare-ops+ and forgotten here really
-;;; would have evaluated as `>=` and reported nothing. Unreachable today, and
-;;; that is the point of saying so out loud rather than answering.
-(defun compare-result (op c pos)
-  (cond ((string= op "==") (zerop c))
-        ((string= op "!=") (not (zerop c)))
-        ((string= op "<") (minusp c))
-        ((string= op "<=") (<= c 0))
-        ((string= op ">") (plusp c))
-        ((string= op ">=") (>= c 0))
-        (t (fail "E_SYNTAX" (format nil "unknown comparison operator ~a" op) pos))))
 
 ;;; TEXT & TEXT stays TEXT; anything involving BIN becomes BIN (§5.2).
 (defun sel-concat (l r lp rp &optional pos)
@@ -407,72 +390,109 @@
                        (t #'logxor))
                  a b)))
 
+(defun binary-op-code (op)
+  "The operator's keyword. The one place operator spellings are matched; the
+evaluator asks it once per node and dispatches with CASE (LISP-P3)."
+  (cond ((string= op "AND") :and) ((string= op "OR") :or)
+        ((string= op "??") :coalesce) ((string= op "???") :vacuous)
+        ((string= op "+") :add) ((string= op "-") :sub) ((string= op "*") :mul)
+        ((string= op "/") :div) ((string= op "%") :mod)
+        ((string= op "&") :concat) ((string= op "EQL") :eql) ((string= op "IN") :in)
+        ((string= op "XOR") :xor)
+        ((string= op "BAND") :band) ((string= op "BOR") :bor) ((string= op "BXOR") :bxor)
+        ((string= op "==") :eq) ((string= op "!=") :ne) ((string= op "<") :lt)
+        ((string= op "<=") :le) ((string= op ">") :gt) ((string= op ">=") :ge)
+        ((string= op "$==") :teq) ((string= op "$!=") :tne) ((string= op "$<") :tlt)
+        ((string= op "$<=") :tle) ((string= op "$>") :tgt) ((string= op "$>=") :tge)
+        (t :unknown)))
+
+(declaim (inline node-op-code))
+(defun node-op-code (node)
+  (or (node-opc node) (setf (node-opc node) (binary-op-code (node-s node)))))
+
+;;; The six comparisons, and nothing else: ECASE, so an operator added to the
+;;; families and forgotten here is an error rather than an answer. (The clause
+;;; before this function existed was `(t (>= c 0))`, which answered for every
+;;; operator it did not name.)
+(defun compare-code-result (code c)
+  (declare (type fixnum c))
+  (ecase code
+    ((:eq :teq) (zerop c))
+    ((:ne :tne) (not (zerop c)))
+    ((:lt :tlt) (minusp c))
+    ((:le :tle) (<= c 0))
+    ((:gt :tgt) (plusp c))
+    ((:ge :tge) (>= c 0))))
+
 (defun eval-binary (node ctx)
-  (let ((op (node-s node)))
-    ;; Short-circuit before either side is touched (§5.5).
-    (when (or (string= op "AND") (string= op "OR"))
-      (let ((left (as-bool (eval-node (node-l node) ctx) (node-pos (node-l node)))))
-        (when (and (string= op "AND") (not left)) (return-from eval-binary (make-bool nil)))
-        (when (and (string= op "OR") left) (return-from eval-binary (make-bool t)))
-        (return-from eval-binary
-          (make-bool (as-bool (eval-node (node-r node) ctx) (node-pos (node-r node)))))))
+  (let ((code (node-op-code node))
+        (op (node-s node)))
+    (case code
+      ;; Short-circuit before either side is touched (§5.5).
+      ((:and :or)
+       (let ((left (as-bool (eval-node (node-l node) ctx) (node-pos (node-l node)))))
+         (cond ((and (eq code :and) (not left)) (make-bool nil))
+               ((and (eq code :or) left) (make-bool t))
+               (t (make-bool (as-bool (eval-node (node-r node) ctx) (node-pos (node-r node))))))))
 
-    ;; ?? falls back on NULL, ??? on any vacuous value; both on a missing key
-    ;; or name.
-    (when (or (string= op "??") (string= op "???"))
-      (let ((l (handler-case (eval-node (node-l node) ctx)
-                 (sel-error (e)
-                   (if (or (string= (sel-error-code e) "E_NO_KEY")
-                           (string= (sel-error-code e) "E_UNDEF_VAR"))
-                       (return-from eval-binary (eval-node (node-r node) ctx))
-                       (error e))))))
-        (if (if (string= op "??") (value-null-p l) (value-vacuous-p l))
-            (return-from eval-binary (eval-node (node-r node) ctx))
-            (return-from eval-binary l))))
+      ;; ?? falls back on NULL, ??? on any vacuous value; both on a missing key
+      ;; or name.
+      ((:coalesce :vacuous)
+       (let ((l (handler-case (eval-node (node-l node) ctx)
+                  (sel-error (e)
+                    (if (or (string= (sel-error-code e) "E_NO_KEY")
+                            (string= (sel-error-code e) "E_UNDEF_VAR"))
+                        (return-from eval-binary (eval-node (node-r node) ctx))
+                        (error e))))))
+         (if (if (eq code :coalesce) (value-null-p l) (value-vacuous-p l))
+             (eval-node (node-r node) ctx)
+             l)))
 
-    (let* ((l (eval-node (node-l node) ctx))
-           (r (eval-node (node-r node) ctx))
-           (lp (node-pos (node-l node)))
-           (rp (node-pos (node-r node))))
-      (cond
-        ;; Each pair of coercions is sequenced left before right: which operand's
-        ;; position an error reports is observable, and SEL evaluates strictly
-        ;; left to right (§6.2).
-        ((member op '("+" "-" "*" "/" "%") :test #'string=)
-         (let* ((a (as-dec l lp))
-                (b (as-dec r rp)))
-           (make-num (cond ((string= op "+") (dec-add a b (node-pos node)))
-                           ((string= op "-") (dec-sub a b (node-pos node)))
-                           ((string= op "*") (dec-mul a b (node-pos node)))
-                           ((string= op "/") (dec-div a b (node-pos node)))
-                           (t (dec-mod a b (node-pos node)))))))
+      (t
+       (let* ((l (eval-node (node-l node) ctx))
+              (r (eval-node (node-r node) ctx))
+              (lp (node-pos (node-l node)))
+              (rp (node-pos (node-r node))))
+         ;; Each pair of coercions is sequenced left before right: which operand's
+         ;; position an error reports is observable, and SEL evaluates strictly
+         ;; left to right (§6.2).
+         (case code
+           ((:add :sub :mul :div :mod)
+            (let* ((a (as-dec l lp))
+                   (b (as-dec r rp)))
+              (make-num (ecase code
+                          (:add (dec-add a b (node-pos node)))
+                          (:sub (dec-sub a b (node-pos node)))
+                          (:mul (dec-mul a b (node-pos node)))
+                          (:div (dec-div a b (node-pos node)))
+                          (:mod (dec-mod a b (node-pos node)))))))
 
-        ((string= op "&") (sel-concat l r lp rp (node-pos node)))
+           (:concat (sel-concat l r lp rp (node-pos node)))
 
-        ((string= op "EQL") (make-bool (value-eql l r (node-pos node))))
-        ((string= op "IN") (make-bool (value-in l r)))
+           (:eql (make-bool (value-eql l r (node-pos node))))
+           (:in (make-bool (value-in l r)))
 
-        ((string= op "XOR")
-         (let* ((a (as-bool l lp))
-                (b (as-bool r rp)))
-           (make-bool (not (eq a b)))))
+           (:xor
+            (let* ((a (as-bool l lp))
+                   (b (as-bool r rp)))
+              (make-bool (not (eq a b)))))
 
-        ((member op '("BAND" "BOR" "BXOR") :test #'string=)
-         (let* ((a (as-bytes l lp))
-                (b (as-bytes r rp)))
-           (sel-bitwise op a b (node-pos node))))
+           ((:band :bor :bxor)
+            (let* ((a (as-bytes l lp))
+                   (b (as-bytes r rp)))
+              (sel-bitwise op a b (node-pos node))))
 
-        ((char= (char op 0) #\$)
-         (let* ((a (as-bytes l lp))
-                (b (as-bytes r rp)))
-           (make-bool (compare-result (subseq op 1) (bytes-compare a b) (node-pos node)))))
+           ((:teq :tne :tlt :tle :tgt :tge)
+            (let* ((a (as-bytes l lp))
+                   (b (as-bytes r rp)))
+              (make-bool (compare-code-result code (bytes-compare a b)))))
 
-        ((member op +compare-ops+ :test #'string=)
-         (let* ((a (as-dec l lp))
-                (b (as-dec r rp)))
-           (make-bool (compare-result op (dec-cmp a b) (node-pos node)))))
+           ((:eq :ne :lt :le :gt :ge)
+            (let* ((a (as-dec l lp))
+                   (b (as-dec r rp)))
+              (make-bool (compare-code-result code (dec-cmp a b)))))
 
-        (t (fail "E_SYNTAX" (format nil "unknown operator ~a" op) (node-pos node)))))))
+           (t (fail "E_SYNTAX" (format nil "unknown operator ~a" op) (node-pos node)))))))))
 
 ;;; --- assignment ------------------------------------------------------------
 
@@ -544,6 +564,24 @@
                  (incf path-length)))
       path)))
 
+;;; A call whose result is built fresh and referenced by nothing else (SPEC 3.4: these
+;;; copy what they collect, and LIST and RECORD copy their arguments). What such a
+;;; node yields is private to whoever consumes it, so the consumer adopts it instead
+;;; of copying it again: MAP does not copy a RECORD it has just built, a FILTER
+;;; or sort fed by a MAP keeps the elements it was handed, and `B = MAP(...)` stores
+;;; the list it was given. The copy is only a
+;;; defence against aliasing, and there is nothing it could alias. Not in the list:
+;;; TAKE, DROP, DISTINCT and DEDUPE (their elements alias the source's), LINK, and
+;;; anything that may return an operand as it is (IF, `??`, a variable, an index).
+(defparameter +fresh-result-calls+
+  '("MAP" "FILTER" "SORT" "SORT_DESC" "SORT_BY" "TOP" "TOP_DESC" "TOP_BY" "BUCKET" "LIST" "RECORD"))
+
+(defun node-fresh-p (node)
+  (and node
+       (eq (node-kind node) :call)
+       (member (node-s node) +fresh-result-calls+ :test #'string=)
+       t))
+
 (defun eval-assign (node ctx)
   (let* ((path (resolve-target (node-l node) ctx))
          (key (car (last path)))
@@ -553,7 +591,13 @@
                ;; The stored value sits at the end of PATH, so its own nesting
                ;; counts from there: target path plus value depth is what the
                ;; cap bounds (§6.4), reported at the target like the path alone.
-               (value-copy-at (eval-node (node-r node) ctx) (length path) (node-pos (node-l node)))
+               (let ((v (eval-node (node-r node) ctx)))
+                 (if (node-fresh-p (node-r node))
+                     ;; Built fresh and referenced by nothing else: stored as it is, but
+                     ;; its depth still counts from here (the copy did that walk).
+                     (progn (value-depth-check v (length path) (node-pos (node-l node)))
+                            v)
+                     (value-copy-at v (length path) (node-pos (node-l node)))))
                (let ((current (value-get (walk-create ctx path upto) key)))
                  (unless current
                    (fail "E_UNDEF_VAR"

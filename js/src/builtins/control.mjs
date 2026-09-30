@@ -9,7 +9,7 @@ define({
   fn: (args) => {
     if (args.bool(0)) return args.val(1);
     if (args.count() === 3) return args.val(2);
-    return Value.text('');
+    return Value.textOwned('');
   },
 });
 

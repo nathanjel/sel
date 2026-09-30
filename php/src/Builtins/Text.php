@@ -33,14 +33,14 @@ final class Text
             'fn' => static function (Args $a): Value {
                 $s = $a->text(0);
                 $n = $a->nonNegInt(1);
-                return Value::text(substr($s, 0, Utf8::advance($s, $n)));
+                return Value::textTrusted(substr($s, 0, Utf8::advance($s, $n)));
             }]);
 
         Registry::define(['name' => 'RIGHT', 'min' => 2, 'max' => 2,
             'fn' => static function (Args $a): Value {
                 $s = $a->text(0);
                 $n = $a->nonNegInt(1);
-                return Value::text(Utf8::slice($s, max(0, Utf8::length($s) - $n)));
+                return Value::textTrusted(substr($s, Utf8::retreat($s, $n)));
             }]);
 
         Registry::define(['name' => 'SUBSTR', 'min' => 2, 'max' => 3,
@@ -52,9 +52,9 @@ final class Text
                 }
                 $from = $start - 1;
                 if ($a->count() === 2) {
-                    return Value::text(Utf8::slice($s, $from));
+                    return Value::textTrusted(Utf8::slice($s, $from));
                 }
-                return Value::text(Utf8::slice($s, $from, $a->nonNegInt(2)));
+                return Value::textTrusted(Utf8::slice($s, $from, $a->nonNegInt(2)));
             }]);
 
         Registry::define(['name' => 'FIND', 'min' => 2, 'max' => 3,
@@ -97,7 +97,7 @@ final class Text
                         }
                     }
                 }
-                return Value::text(str_replace($needle, $repl, $hay));
+                return Value::textTrusted(str_replace($needle, $repl, $hay));
             }]);
 
         Registry::define(['name' => 'SPLIT', 'min' => 2, 'max' => 2,
@@ -110,37 +110,32 @@ final class Text
                 Utf8::checkCount(substr_count($hay, $sep) + 1, $a->pos, 'SPLIT result');
                 $parts = [];
                 foreach (explode($sep, $hay) as $part) {
-                    $parts[] = Value::text($part);
+                    $parts[] = Value::textTrusted($part);
                 }
                 return Value::list($parts);
             }]);
 
         Registry::define(['name' => 'TRIM', 'min' => 1, 'max' => 1,
-            'fn' => static fn (Args $a): Value => Value::text(trim($a->text(0), " \t\r\n"))]);
+            'fn' => static fn (Args $a): Value => Value::textTrusted(trim($a->text(0), " \t\r\n"))]);
         Registry::define(['name' => 'LTRIM', 'min' => 1, 'max' => 1,
-            'fn' => static fn (Args $a): Value => Value::text(ltrim($a->text(0), " \t\r\n"))]);
+            'fn' => static fn (Args $a): Value => Value::textTrusted(ltrim($a->text(0), " \t\r\n"))]);
         Registry::define(['name' => 'RTRIM', 'min' => 1, 'max' => 1,
-            'fn' => static fn (Args $a): Value => Value::text(rtrim($a->text(0), " \t\r\n"))]);
+            'fn' => static fn (Args $a): Value => Value::textTrusted(rtrim($a->text(0), " \t\r\n"))]);
 
         // ASCII only, deliberately. PHP's strtoupper is byte- and locale-based
         // while JS's toUpperCase applies full Unicode mapping; they cannot be
         // reconciled without shipping a case table, and guessing would break the
         // invariant silently. Utf8::upper/lower are the locale-free ASCII rule.
         Registry::define(['name' => 'UPPER', 'min' => 1, 'max' => 1,
-            'fn' => static fn (Args $a): Value => Value::text(Utf8::upper($a->text(0)))]);
+            'fn' => static fn (Args $a): Value => Value::textTrusted(Utf8::upper($a->text(0)))]);
         Registry::define(['name' => 'LOWER', 'min' => 1, 'max' => 1,
-            'fn' => static fn (Args $a): Value => Value::text(Utf8::lower($a->text(0)))]);
+            'fn' => static fn (Args $a): Value => Value::textTrusted(Utf8::lower($a->text(0)))]);
 
         Registry::define(['name' => 'BACKWARDS', 'min' => 1, 'max' => 1,
             'fn' => static function (Args $a): Value {
                 $s = $a->text(0);
-                $r = strrev($s);
-                if (!Utf8::isAscii($s)) {
-                    // strrev reversed the bytes of each multi-byte character too:
-                    // its continuation bytes now come first. Put each back.
-                    $r = preg_replace_callback('/[\x80-\xbf]+[\xc0-\xf7]/', static fn (array $m): string => strrev($m[0]), $r);
-                }
-                return Value::text($r);
+                if (Utf8::isAscii($s)) return Value::textTrusted(strrev($s));
+                return Value::textTrusted(self::reverseCodePoints($s));
             }]);
 
         Registry::define(['name' => 'REPEAT', 'min' => 2, 'max' => 2,
@@ -153,7 +148,7 @@ final class Text
                 if ($n > intdiv(\Sel\Limits::MAX_TEXT_LEN, Utf8::length($s))) {
                     fail('E_RANGE', 'REPEAT result would be longer than ' . \Sel\Limits::MAX_TEXT_LEN, $a->pos);
                 }
-                return Value::text(str_repeat($s, $n));
+                return Value::textTrusted(str_repeat($s, $n));
             }]);
 
         Registry::define(['name' => 'PADL', 'min' => 3, 'max' => 3,
@@ -180,6 +175,26 @@ final class Text
             }]);
     }
 
+    /**
+     * Valid UTF-8 reversed by code point. With mbstring, through UTF-32: strrev of
+     * the little-endian text is the big-endian text of the reversed code points
+     * (~25x faster than patching reversed multi-byte sequences with preg, PHP-P1).
+     * Without it, the reversed bytes of each character are put back in order by
+     * three fixed-length passes (their lead-byte classes are disjoint from each
+     * other and from the continuation bytes, so no pass mis-matches what another
+     * restored).
+     */
+    private static function reverseCodePoints(string $s): string
+    {
+        if (function_exists('mb_convert_encoding')) {
+            return mb_convert_encoding(strrev(mb_convert_encoding($s, 'UTF-32LE', 'UTF-8')), 'UTF-8', 'UTF-32BE');
+        }
+        return preg_replace(
+            ['/([\x80-\xbf])([\xc0-\xdf])/', '/([\x80-\xbf])([\x80-\xbf])([\xe0-\xef])/',
+             '/([\x80-\xbf])([\x80-\xbf])([\x80-\xbf])([\xf0-\xf7])/'],
+            ['$2$1', '$3$2$1', '$4$3$2$1'], strrev($s));
+    }
+
     private static function pad(Args $a, bool $left): Value
     {
         $s = $a->text(0);
@@ -190,7 +205,7 @@ final class Text
         }
         $have = Utf8::length($s);
         if ($have >= $width) {
-            return Value::text($s);
+            return Value::textTrusted($s);
         }
         if ($width > \Sel\Limits::MAX_TEXT_LEN) {
             fail('E_RANGE', 'pad result would be longer than ' . \Sel\Limits::MAX_TEXT_LEN, $a->pos);
@@ -200,6 +215,6 @@ final class Text
         // Whole copies of the fill, then as much of one more as fits — cut at a
         // code point, never inside one.
         $padding = str_repeat($fill, intdiv($need, $fillLen)) . Utf8::slice($fill, 0, $need % $fillLen);
-        return Value::text($left ? $padding . $s : $s . $padding);
+        return Value::textTrusted($left ? $padding . $s : $s . $padding);
     }
 }

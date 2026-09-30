@@ -106,10 +106,41 @@ bool join_rows_lack_binders(const std::vector<NodePtr>& steps, std::size_t count
   return joined;
 }
 
-// The two together: a prefix whose SQL rows are not the value SEL would have
+// Whether an explicit sort's order would not survive a later step in SQL. SEL's
+// result is in the order the sort gave it, and a database promises nothing about the
+// order of rows once they pass through a derived table into a join, a group or a
+// second sort's tie-break: a BUCKET's groups come out in first-appearance order in
+// SEL and in engine order in SQL, a LINK's rows are the left's order then the
+// right's, and a later sort keeps the earlier sort's order among its ties, which is
+// gone once a projection hid the earlier key. A LIMIT beside the earlier ORDER BY
+// decides which rows survive, not any of this. A prefix that ends before that step
+// is exact; one that includes it answers in another order
+// (docs/internals/sql-translation.md 12.1, "Order"; PHP-C35).
+bool order_is_lost(const std::vector<NodePtr>& steps, std::size_t count) {
+  bool sorted = false;
+  bool projected = false;
+  for (std::size_t i = 0; i < count && i < steps.size(); ++i) {
+    const std::string& name = steps[i]->s;
+    const bool is_sort = name == "SORT" || name == "SORT_DESC" || name == "SORT_BY" ||
+                         name == "TOP" || name == "TOP_DESC" || name == "TOP_BY";
+    if (is_sort) {
+      if (sorted && projected) return true;
+      sorted = true;
+      projected = false;
+    } else if (sorted && (name == "MAP" || name == "SELECT_COLS")) {
+      projected = true;
+    } else if (sorted && (name == "BUCKET" || name == "LINK" || name == "LINK_LEFT")) {
+      return true;
+    }
+  }
+  return false;
+}
+
+// The three together: a prefix whose SQL rows are not the value SEL would have
 // produced for it, whatever the translator says about it.
 bool rows_are_not_the_value(const std::vector<NodePtr>& steps, std::size_t count) {
-  return bucket_rows_are_keys(steps, count) || join_rows_lack_binders(steps, count);
+  return bucket_rows_are_keys(steps, count) || join_rows_lack_binders(steps, count) ||
+         order_is_lost(steps, count);
 }
 
 // The whole-name helper definitions of a program, by name.

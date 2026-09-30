@@ -3164,8 +3164,7 @@ class Translator:
 # --- module-level helpers ----------------------------------------------------
 
 def _replace(n: Node, **kw) -> Node:
-    import dataclasses
-    return dataclasses.replace(n, **kw)
+    return n.replaced(**kw)
 
 
 def _static_source(elements: dict[str, Binder], scalar_rule: bool = False) -> dict[str, Any]:

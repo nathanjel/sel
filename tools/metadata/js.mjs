@@ -57,8 +57,24 @@ if(process.argv[2]==='bench') {
   assert.notEqual(held.shape,again.shape); assert.ok(held.eql(again));
   assert.equal(structuralHash(held),structuralHash(again));
   assert.equal(program.run(ctx).shape,prepared);
+  // JS-P3: a schema of a few hundred columns (a joined row has twice its sides') IS
+  // interned now -- refusing to made every row of a join carry a shape of its own, a
+  // 36x cliff at 260 fields. What stays out of the cache is a single shape too wide to
+  // be a schema: more than 4096 keys, or more than 262144 key characters.
   for(const keys of [Array.from({length:257},(_,i)=>'wide_'+i),['x'.repeat(16385)]]) {
-    assert.notEqual(record(keys,keys.map(()=>leaf)).shape,record(keys,keys.map(()=>leaf)).shape);
+    assert.equal(record(keys,keys.map(()=>leaf)).shape,record(keys,keys.map(()=>leaf)).shape);
+  }
+  // (A different shape is built between the two calls: a run of rows with the same keys
+  // matches the LAST shape by pointer, cached or not -- JS-P9.)
+  for(const keys of [Array.from({length:4097},(_,i)=>'w'+i),['x'.repeat(262145)]]) {
+    const first=record(keys,keys.map(()=>leaf)).shape;
+    record(['other'],[leaf]);
+    assert.notEqual(first,record(keys,keys.map(()=>leaf)).shape);
+  }
+  for(const keys of [Array.from({length:257},(_,i)=>'wide_'+i),['x'.repeat(16385)]]) {
+    const first=record(keys,keys.map(()=>leaf)).shape;
+    record(['other'],[leaf]);
+    assert.equal(first,record(keys,keys.map(()=>leaf)).shape);
   }
   const dynamic=compile('RECORD(K, X)');
   ctx.set('K',Value.text('first')); assert.equal(dynamic.run(ctx).get('first').scalar,'1');

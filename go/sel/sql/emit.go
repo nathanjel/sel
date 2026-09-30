@@ -85,60 +85,76 @@ func NumericLiteral(dialect string, v *sel.Value, pos Pos) string {
 	return n
 }
 
-func TextLiteral(dialect string, text string) string {
-	quoteVal := Lexical(dialect, "textQuote")
-	quote := "'"
-	if s, ok := quoteVal.(string); ok {
-		quote = s
-	}
+// escaper is a dialect's text quote and its escape map compiled into a replacer.
+type escaper struct {
+	quote string
+	rep   *strings.Replacer // nil when the dialect escapes nothing
+}
 
-	escapeVal := Lexical(dialect, "textEscape")
-	out := text
-	if escapeVal != nil {
-		var escapeMap map[string]string
-		if m, ok := escapeVal.(map[string]string); ok {
-			escapeMap = m
-		} else if m, ok := escapeVal.(map[string]interface{}); ok {
-			escapeMap = make(map[string]string)
-			for k, v := range m {
-				if vs, ok := v.(string); ok {
-					escapeMap[k] = vs
-				}
+// escaperFor returns the dialect's escaper, built once per registration state
+// (escaperMemo). The replacer is handed the keys longest first, which is what the
+// old per-literal scan did: at each position the longest escape key that matches is
+// taken, and what it puts out is not scanned again. strings.Replacer compares in
+// argument order and never overlaps matches, so the two agree; an empty key was never
+// a match and is left out.
+func escaperFor(dialect string) *escaper {
+	mapMu.Lock()
+	defer mapMu.Unlock()
+	if e, ok := escaperMemo[dialect]; ok {
+		return e
+	}
+	e := &escaper{quote: "'"}
+	if s, ok := lexicalLocked(dialect, "textQuote").(string); ok {
+		e.quote = s
+	}
+	var escapeMap map[string]string
+	switch m := lexicalLocked(dialect, "textEscape").(type) {
+	case map[string]string:
+		escapeMap = m
+	case map[string]interface{}:
+		escapeMap = make(map[string]string)
+		for k, v := range m {
+			if vs, ok := v.(string); ok {
+				escapeMap[k] = vs
 			}
 		}
-
-		if len(escapeMap) > 0 {
-			keys := make([]string, 0, len(escapeMap))
-			for k := range escapeMap {
+	}
+	if len(escapeMap) > 0 {
+		keys := make([]string, 0, len(escapeMap))
+		for k := range escapeMap {
+			if k != "" {
 				keys = append(keys, k)
 			}
-			sort.Slice(keys, func(i, j int) bool {
+		}
+		sort.Slice(keys, func(i, j int) bool {
+			if len(keys[i]) != len(keys[j]) {
 				return len(keys[i]) > len(keys[j])
-			})
-
-			var buf strings.Builder
-			i := 0
-			for i < len(out) {
-				hit := ""
-				for _, k := range keys {
-					if k != "" && strings.HasPrefix(out[i:], k) {
-						hit = k
-						break
-					}
-				}
-				if hit != "" {
-					buf.WriteString(escapeMap[hit])
-					i += len(hit)
-				} else {
-					buf.WriteByte(out[i])
-					i++
-				}
 			}
-			out = buf.String()
+			return keys[i] < keys[j]
+		})
+		pairs := make([]string, 0, 2*len(keys))
+		for _, k := range keys {
+			pairs = append(pairs, k, escapeMap[k])
+		}
+		if len(pairs) > 0 {
+			e.rep = strings.NewReplacer(pairs...)
 		}
 	}
+	// An unregistered dialect has an empty chain: do not remember it, so a later
+	// registration of that name is seen at once.
+	if len(chainLocked(dialect)) > 0 {
+		escaperMemo[dialect] = e
+	}
+	return e
+}
 
-	return quote + out + quote
+func TextLiteral(dialect string, text string) string {
+	e := escaperFor(dialect)
+	out := text
+	if e.rep != nil {
+		out = e.rep.Replace(text)
+	}
+	return e.quote + out + e.quote
 }
 
 func Placeholder(dialect string, n int) string {
@@ -241,7 +257,15 @@ func (e *Emit) Column(table, column string) string {
 }
 
 func (e *Emit) Fill(tpl string, args []*Fragment, pos Pos, expanding map[string]bool) []Part {
-	var parts []Part
+	// Sized for what the arguments contribute plus the template's own runs: every
+	// spliced fragment used to grow the slice by doubling (GO-P16).
+	hint := 4
+	for _, a := range args {
+		if a != nil {
+			hint += len(a.Parts)
+		}
+	}
+	parts := make([]Part, 0, hint)
 
 	push := func(s string) {
 		if s == "" {

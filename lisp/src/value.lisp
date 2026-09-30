@@ -38,6 +38,34 @@
 (defconstant +shape-cache-max-keys+ 256)
 (defconstant +shape-cache-max-chars+ 16384)
 
+(defvar *index-string-cache*
+  (let ((vec (make-array 10001 :initial-element nil)))
+    (loop for i from 1 to 10000
+          do (setf (aref vec i) (format nil "~d" i)))
+    vec)
+  "The canonical key strings \"1\" .. \"10000\" of a list's positions, made once: a
+`(format nil \"~d\" i)` per element was about 133 ns each, charged on every list
+key, hash and flatten (LISP-P20).")
+
+(declaim (inline format-index-string))
+(defun format-index-string (n)
+  (declare (optimize (speed 3) (safety 1)))
+  (declare (type fixnum n))
+  (if (and (<= 1 n) (<= n 10000))
+      (svref (the simple-vector *index-string-cache*) n)
+      (format nil "~d" n)))
+
+(defun keys-distinct-p (keys)
+  "True when no two of the strings KEYS are equal. The quadratic REMOVE-DUPLICATES
+this replaces took 7.7 s over 16,000 RECORD keys (LISP-P14); a few keys are
+compared pairwise, many through a hash table."
+  (if (< (length keys) 24)
+      (loop for tail on keys never (member (car tail) (cdr tail) :test #'string=))
+      (let ((seen (make-hash-table :test 'equal :size (length keys))))
+        (dolist (k keys t)
+          (when (gethash k seen) (return nil))
+          (setf (gethash k seen) t)))))
+
 (defun get-record-shape (keys)
   ;; Probe with the caller's list; copy only when constructing a new layout.
   (or (gethash keys *shape-cache*)
@@ -114,7 +142,7 @@
            (entries '()))
       (loop for i from 1 to n
             for item across storage
-            do (push (cons (format nil "~d" i) item) entries))
+            do (push (cons (format-index-string i) item) entries))
       (setf entries (nreverse entries)
             (value-children-internal v) entries
             (value-tail v) (last entries)
@@ -314,7 +342,7 @@ kept in step with the limit by hand.")
      (record-shape-keys (value-shape v)))
     ((and (value-is-list v) (value-storage v))
      (loop for i from 1 to (length (value-storage v))
-           collect (format nil "~d" i)))
+           collect (format-index-string i)))
     (t
      (mapcar #'car (value-children v)))))
 
@@ -475,7 +503,11 @@ kept in step with the limit by hand.")
                 (%make-value-raw :text (value-%scalar v) nil nil 0 nil nil nil nil dec)
                 (%make-value-raw :text (value-%scalar v) nil nil 0 nil nil nil nil nil))))
          (:bin
-          (%make-value-raw :bin (copy-seq (the (vector (unsigned-byte 8)) (value-%scalar v))) nil nil 0 nil nil nil nil nil))
+          ;; The octets are shared, as a TEXT scalar's string is: nothing in a program
+          ;; writes into a built BIN (every builtin fills a fresh vector), and the
+          ;; boundary copies on the way in (MAKE-BIN) and out (TO-NATIVE). Copying
+          ;; 500 KB per assignment cost 0.24 ms for nothing (LISP-P27).
+          (%make-value-raw :bin (value-%scalar v) nil nil 0 nil nil nil nil nil))
          (:bool
           (%make-value-raw :bool (value-%scalar v) nil nil 0 nil nil nil nil nil))
          (otherwise
@@ -500,12 +532,32 @@ kept in step with the limit by hand.")
     (t
      (let ((new-v (%value-with-children
                    (value-kind v)
-                   (if (eq (value-kind v) :bin) (copy-seq (value-scalar v)) (value-scalar v))
+                   (value-scalar v)
                    (loop for (k . child) in (value-children v)
                          collect (cons k (value-copy-at child (1+ depth) pos)))
                    (value-is-list v))))
        (setf (value-dec-val new-v) (value-dec-val v))
        new-v))))
+
+(defun value-depth-check (v depth pos)
+  "The depth walk of VALUE-COPY-AT, without the copy: for a value that is already
+private to the caller and need only be checked against the cap (§6.4)."
+  (declare (optimize (speed 3) (safety 1)))
+  (declare (type fixnum depth))
+  (when (> depth +max-depth+)
+    (fail "E_DEPTH" "value nested too deeply" pos))
+  (cond
+    ((value-shape v)
+     (let ((storage (value-storage v)))
+       (loop for child across (the simple-vector storage)
+             do (value-depth-check child (1+ depth) pos))))
+    ((and (value-is-list v) (value-storage v))
+     (let ((storage (value-storage v)))
+       (loop for child across (the simple-vector storage)
+             do (value-depth-check child (1+ depth) pos))))
+    (t
+     (dolist (cell (value-children-internal v))
+       (value-depth-check (cdr cell) (1+ depth) pos)))))
 
 ;;; --- structural equality (§5.4) --------------------------------------------
 
@@ -570,8 +622,15 @@ same keys in the same order, pairwise EQL."
        (setf h (logand most-positive-fixnum (logxor h (if (value-scalar v) 12345 67890)))))
       (:bin
        (let ((b (value-scalar v)))
+         ;; Every octet goes into the hash. Hashing the length alone put every
+         ;; BIN of one size in one bucket, so DEDUPE over N distinct BINs was
+         ;; quadratic (LISP-P7: 8,000 four-byte BINs took 5.8 s). FNV-1a, 32 bit.
          (when (typep b 'vector)
-           (setf h (logand most-positive-fixnum (logxor h (sxhash (length b)))))))))
+           (let ((x 2166136261))
+             (declare (type (unsigned-byte 32) x))
+             (loop for o across b
+                   do (setf x (logand #xFFFFFFFF (* (logxor x (logand o #xFF)) 16777619))))
+             (setf h (logand most-positive-fixnum (logxor h x (sxhash (length b))))))))))
     (cond
       ((value-shape v)
        (let* ((shape (value-shape v))
@@ -588,7 +647,7 @@ same keys in the same order, pairwise EQL."
               (n (length storage)))
          (loop for i from 0 below n
                do (setf h (logand most-positive-fixnum
-                                  (logxor h (sxhash (format nil "~d" (1+ i))))))
+                                  (logxor h (sxhash (format-index-string (1+ i))))))
                   (setf h (logand most-positive-fixnum
                                   (logxor (ash (logand h #x1ffffffffffffff) 3)
                                           (value-hash (svref storage i) (1+ depth))))))))
@@ -698,7 +757,7 @@ exact decimal form, and SEL has no floating point. Pass a string instead."
                                    x))
                      (n (length keys)))
                 (declare (ignore _))
-                (if (= (length (remove-duplicates keys :test #'string=)) n)
+                (if (keys-distinct-p keys)
                     (let* ((shape (get-record-shape keys))
                            (storage (make-array n)))
                       (loop for (nil . val) in x
@@ -743,7 +802,7 @@ value has no children, otherwise an alist, with the scalar under \"_\"."
                           (let ((storage (value-storage v))
                                 (n (length (value-storage v))))
                             (loop for i from 1 to n
-                                  collect (cons (format nil "~d" i) (to-native-at (svref storage (1- i)) (1+ depth))))))
+                                  collect (cons (format-index-string i) (to-native-at (svref storage (1- i)) (1+ depth))))))
                          (t
                           (loop for (k . child) in (value-children v)
                                 collect (cons (copy-seq k) (to-native-at child (1+ depth))))))))

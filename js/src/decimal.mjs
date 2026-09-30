@@ -51,7 +51,7 @@ for (let i = 1; i <= 64; i++) POW10_TABLE.push(POW10_TABLE[i - 1] * 10n);
 const POW10_CACHE = new Map();
 const POW10_CACHE_ENTRIES = 64;
 const POW10_CACHE_MAX_EXPONENT = 1000000;
-const POW10_CACHE_DIGITS = 1048576;
+const POW10_CACHE_DIGITS = 4194304;
 let pow10Weight = 0;
 
 export function pow10(k) {
@@ -60,9 +60,14 @@ export function pow10(k) {
   if (!v) {
     v = 10n ** BigInt(k);
     if (k <= POW10_CACHE_MAX_EXPONENT) {
-      if (POW10_CACHE.size >= POW10_CACHE_ENTRIES || pow10Weight + k > POW10_CACHE_DIGITS) {
-        POW10_CACHE.clear();
-        pow10Weight = 0;
+      // The oldest entries go, one at a time, until the new one fits: emptying the whole
+      // table sent two operands at scales 600k and 500k back to a 40 ms recomputation on
+      // every operation (JS-P28).
+      while (POW10_CACHE.size > 0
+             && (POW10_CACHE.size >= POW10_CACHE_ENTRIES || pow10Weight + k > POW10_CACHE_DIGITS)) {
+        const oldest = POW10_CACHE.keys().next().value;
+        POW10_CACHE.delete(oldest);
+        pow10Weight -= oldest;
       }
       POW10_CACHE.set(k, v);
       pow10Weight += k;
@@ -103,8 +108,19 @@ export function guard(d, pos) {
   if (d.digits > _FAST_BOUND) {
     // A shift past the magnitude returns zero without rendering its digits.
     // Only values near the cap need the exact digit count (and its hex string).
-    if ((d.digits >> _intLimitShift) !== 0n && numDigits(d.digits) - d.scale > MAX_INT_DIGITS) {
-      fail('E_RANGE', `number has more than ${MAX_INT_DIGITS} integer digits`, pos);
+    if ((d.digits >> _intLimitShift) !== 0n) {
+      // The digit count is bracketed from the bit length in integer arithmetic
+      // (2^(b-1) <= n < 2^b, and 0.30102 < log10(2) < 0.30103), so a value far past
+      // the cap is refused, and one far inside it accepted, without building the
+      // 10^k the exact count compares against; only the thin ambiguous band pays it.
+      const b = bitLength(d.digits);
+      if (Math.floor(((b - 1) * 30102) / 100000) + 1 - d.scale > MAX_INT_DIGITS) {
+        fail('E_RANGE', `number has more than ${MAX_INT_DIGITS} integer digits`, pos);
+      }
+      if (Math.floor((b * 30103) / 100000) + 1 - d.scale > MAX_INT_DIGITS
+          && numDigits(d.digits) - d.scale > MAX_INT_DIGITS) {
+        fail('E_RANGE', `number has more than ${MAX_INT_DIGITS} integer digits`, pos);
+      }
     }
   }
   return d;
@@ -121,7 +137,16 @@ const NUM_RE = /^-?[0-9]+(\.[0-9]+)?$/;
 // it is a digit, so "not a number" would be false. Callers that must not raise —
 // ISNUM's probe — catch it and answer no.
 export function parse(text, pos) {
-  if (typeof text !== 'string' || !NUM_RE.test(text)) return null;
+  if (typeof text !== 'string') return null;
+  // Up to 15 characters cannot hold more than 15 digits, which a double holds exactly and
+  // which is nowhere near a cap: one pass over the code units, one BigInt (JS-P10). Anything
+  // longer, and anything this pass does not recognise as a plain numeral, takes the general
+  // path below, which is also where every refusal is decided.
+  if (text.length <= 15) {
+    const fast = parseShort(text);
+    if (fast !== undefined) return fast;
+  }
+  if (!NUM_RE.test(text)) return null;
   const neg = text.charCodeAt(0) === 45;
   const body = neg ? text.slice(1) : text;
   const dot = body.indexOf('.');
@@ -135,6 +160,37 @@ export function parse(text, pos) {
     fail('E_RANGE', `number has more than ${MAX_INT_DIGITS} integer digits`, pos);
   }
   return make(neg, BigInt(stripped), fracPart.length);
+}
+
+function parseShort(text) {
+  const n = text.length;
+  let i = 0;
+  let neg = false;
+  if (n > 0 && text.charCodeAt(0) === 45) { neg = true; i = 1; }
+  let acc = 0;
+  let digits = 0;
+  let c = 0;
+  for (; i < n; i++) {
+    c = text.charCodeAt(i) - 48;
+    if (c < 0 || c > 9) break;
+    acc = acc * 10 + c;
+    digits++;
+  }
+  if (digits === 0) return undefined;
+  let scale = 0;
+  if (i < n) {
+    if (c !== -2) return undefined;              // not '.': let the general path decide
+    i++;
+    const start = i;
+    for (; i < n; i++) {
+      c = text.charCodeAt(i) - 48;
+      if (c < 0 || c > 9) return undefined;
+      acc = acc * 10 + c;
+    }
+    scale = i - start;
+    if (scale === 0) return undefined;
+  }
+  return make(neg, BigInt(acc), scale);
 }
 
 export function format(d) {
@@ -225,6 +281,10 @@ export function mul(a, b, pos) {
 export function cmp(a, b) {
   if (a.digits === 0n && b.digits === 0n) return 0;
   if (a.neg !== b.neg) return a.neg ? -1 : 1;
+  if (a.scale === b.scale) {             // same scale: the digits compare as they are
+    const d = a.digits === b.digits ? 0 : (a.digits < b.digits ? -1 : 1);
+    return a.neg ? -d : d;
+  }
   const [A, B] = aligned(a, b);
   const c = A === B ? 0 : (A < B ? -1 : 1);
   return a.neg ? -c : c;

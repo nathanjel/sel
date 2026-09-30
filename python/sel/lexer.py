@@ -13,7 +13,7 @@ never learns that interpolation exists.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from bisect import bisect_right
 import re
 
 from .errors import Pos, fail
@@ -41,35 +41,53 @@ _SIMPLE_ESCAPES = {
 _HEX_RE = re.compile(r'^[0-9a-fA-F]+$')
 
 
-# ASCII by specification, and by hand. Python's str.isdigit()/isalpha() accept
-# Unicode — "٣".isdigit() is True and "é".isalpha() is True — which is the same
-# trap SBCL's DIGIT-CHAR-P set for the Lisp host. Identifiers and number
-# literals are ASCII (§2.3, §2.4), so nothing here may consult Python's opinion.
-def _is_digit(c: str) -> bool:
-    return '0' <= c <= '9'
+# Identifiers and number literals are ASCII (§2.3, §2.4), by specification and by
+# hand: Python's str.isdigit()/isalpha() accept Unicode ("٣".isdigit() is True and
+# "é".isalpha() is True), the same trap SBCL's DIGIT-CHAR-P set for the Lisp host,
+# so nothing below consults Python's opinion -- every class is written out.
+# The scanners, written as regular
+# expressions with explicit classes (never \w, \d or \s, which are Unicode's) so
+# the interpreter's C matcher does the per-character work. `endpos` is the range
+# bound the loops used to carry as `to`.
+_SPACES = re.compile(r'[ \t\r\n]*')
+_NUMBER = re.compile(r'[0-9]+(?:\.[0-9]+)?')      # a '.' only when a digit follows
+_IDENT = re.compile(r'[A-Za-z_][A-Za-z0-9_]*')
 
-
-def _is_alpha(c: str) -> bool:
-    return ('A' <= c <= 'Z') or ('a' <= c <= 'z') or c == '_'
-
-
-def _is_ident(c: str) -> bool:
-    return _is_alpha(c) or _is_digit(c)
-
-
-def _is_space(c: str) -> bool:
-    return c in ' \t\r\n'
+# Operators by length, for a longest-first set lookup in place of a scan of the
+# whole table (the table is ordered so that the first match IS the longest: no
+# operator is a proper prefix of one listed after it; tests/test_perf_lexer.py
+# checks that against the scan).
+_OPS3 = frozenset(op for op in OPERATORS if len(op) == 3)
+_OPS2 = frozenset(op for op in OPERATORS if len(op) == 2)
+_OPS1 = frozenset(op for op in OPERATORS if len(op) == 1)
 
 
 # The kinds of work lex_range keeps on its explicit stack.
 _T_RANGE, _T_PART, _T_CLOSE, _T_END = 0, 1, 2, 3
 
 
-@dataclass(slots=True)
 class Token:
-    type: str
-    value: str
-    pos: Pos
+    """A token. A plain slots class: one is built per lexeme, and the dataclass
+    __init__ was measurable (PY-P5)."""
+    __slots__ = ('type', 'value', 'pos')
+
+    def __init__(self, type: str, value: str, pos: Pos) -> None:      # noqa: A002
+        self.type = type
+        self.value = value
+        self.pos = pos
+
+    def __eq__(self, other: object) -> bool:
+        if other.__class__ is not Token:
+            return NotImplemented
+        return (self.type == other.type and self.value == other.value
+                and self.pos == other.pos)
+
+    def __repr__(self) -> str:
+        return f'Token(type={self.type!r}, value={self.value!r}, pos={self.pos!r})'
+
+
+_RAW_RUN = re.compile(r"[^']+")
+_QUOTED_RUN = re.compile(r'[^"\\{]+')
 
 
 class Lexer:
@@ -80,20 +98,19 @@ class Lexer:
         # brace_ends[i] is the index just past the '}' matching the '{' at i,
         # once some scan has established it. See match_brace.
         self.brace_ends: dict[int, int] = {}
-        self.line_starts = [0]
-        for i, ch in enumerate(source):
-            if ch == '\n':
-                self.line_starts.append(i + 1)
+        # One hop per newline through str.find (C), not a Python pass over every
+        # character of the source.
+        line_starts = [0]
+        find = source.find
+        at = find('\n')
+        while at != -1:
+            line_starts.append(at + 1)
+            at = find('\n', at + 1)
+        self.line_starts = line_starts
 
     def pos_at(self, offset: int) -> Pos:
-        lo, hi = 0, len(self.line_starts) - 1
-        while lo < hi:
-            mid = (lo + hi + 1) // 2
-            if self.line_starts[mid] <= offset:
-                lo = mid
-            else:
-                hi = mid - 1
-        return Pos(lo + 1, offset - self.line_starts[lo] + 1, offset)
+        line = bisect_right(self.line_starts, offset) - 1
+        return Pos(line + 1, offset - self.line_starts[line] + 1, offset)
 
     def tokenize(self) -> list[Token]:
         out: list[Token] = []
@@ -146,40 +163,32 @@ class Lexer:
         while i < to:
             c = self.chars[i]
 
-            if _is_space(c):
-                i += 1
+            if c in ' \t\r\n':
+                i = _SPACES.match(self.chars, i, to).end()
                 continue
 
             if c == '#':
-                while i < to and self.chars[i] != '\n':
-                    i += 1
+                # To the end of the line (LF only, SPEC 2.1) or of the range.
+                nl = self.chars.find('\n', i, to)
+                i = to if nl == -1 else nl
                 continue
 
             pos = self.pos_at(i)
 
-            if _is_digit(c):
-                j = i
-                while j < to and _is_digit(self.chars[j]):
-                    j += 1
+            if '0' <= c <= '9':
                 # Only consume the dot when a digit follows, so `1.` is not a number.
-                if j + 1 < to and self.chars[j] == '.' and _is_digit(self.chars[j + 1]):
-                    j += 1
-                    while j < to and _is_digit(self.chars[j]):
-                        j += 1
+                j = _NUMBER.match(self.chars, i, to).end()
                 out.append(Token('num', self.chars[i:j], pos))
                 i = j
                 continue
 
-            if _is_alpha(c):
-                j = i
-                while j < to and _is_ident(self.chars[j]):
-                    j += 1
+            if ('A' <= c <= 'Z') or ('a' <= c <= 'z') or c == '_':
+                j = _IDENT.match(self.chars, i, to).end()
                 # ASCII-only identifiers, so ASCII-only upper-casing. str.upper()
-                # is full Unicode and would fold "ß" to "SS" — it cannot reach a
-                # non-ASCII character here, but saying so explicitly is cheaper
-                # than the next reader having to prove it.
-                word = self.chars[i:j]
-                out.append(Token('ident', ascii_upper(word), pos))
+                # is full Unicode and would fold "ß" to "SS"; the word is already
+                # known to be ASCII, where the two agree, so the C method is safe
+                # and ascii_upper's per-character generator is not needed.
+                out.append(Token('ident', self.chars[i:j].upper(), pos))
                 i = j
                 continue
 
@@ -233,11 +242,17 @@ class Lexer:
         stack.append((_T_RANGE, pfrom, pto, bal))
 
     def match_operator(self, i: int, to: int) -> str | None:
-        for op in OPERATORS:
-            if i + len(op) > to:
-                continue
-            if self.chars[i:i + len(op)] == op:
-                return op
+        s = self.chars
+        if i + 3 <= to:
+            three = s[i:i + 3]
+            if three in _OPS3:
+                return three
+        if i + 2 <= to:
+            two = s[i:i + 2]
+            if two in _OPS2:
+                return two
+        if s[i] in _OPS1:
+            return s[i]
         return None
 
     # --- text literals --------------------------------------------------------
@@ -258,8 +273,11 @@ class Lexer:
                     continue
                 out.append(Token('text', ''.join(buf), pos))
                 return i + 1
-            buf.append(c)
-            i += 1
+            # The whole run up to the next quote in one slice (PY-P31), not a
+            # character at a time: c is not a quote, so the run is never empty.
+            j = _RAW_RUN.match(self.chars, i, to).end()
+            buf.append(self.chars[i:j])
+            i = j
         fail('E_UNTERMINATED', 'unterminated raw text literal', pos)
 
     def scan_quoted(self, start: int, to: int) -> tuple[list[tuple], int]:
@@ -293,8 +311,11 @@ class Lexer:
                 i = close + 1
                 continue
 
-            buf.append(c)
-            i += 1
+            # A run of ordinary characters in one slice (PY-P31); c is not special,
+            # so the run is never empty.
+            j = _QUOTED_RUN.match(self.chars, i, to).end()
+            buf.append(self.chars[i:j])
+            i = j
         fail('E_UNTERMINATED', 'unterminated text literal', pos)
 
     def read_escape(self, i: int, to: int) -> tuple[str, int]:

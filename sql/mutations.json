@@ -950,8 +950,8 @@
       "name": "js-numeric-constant-is-evaluated-but-not-required-numeric",
       "was": "Without the coercion requireNumeric is just validate: the constant evaluates happily and CAST('x' AS DECIMAL) goes out, which MariaDB reads as 0.",
       "file": "js/src/sql/constants.mjs",
-      "from": "    evalNode(n, ctx ?? new Context()).asDecimal(n.pos);",
-      "to": "    evalNode(n, ctx ?? new Context());"
+      "from": "    evalConstant(n, ctx).asDecimal(n.pos);",
+      "to": "    evalConstant(n, ctx);"
     },
     {
       "name": "js-numeric-constant-checked-on-one-operand-only",

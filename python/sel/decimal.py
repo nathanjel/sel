@@ -27,7 +27,6 @@ str() is the conversion being guarded.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 import re
 import sys
 
@@ -52,6 +51,8 @@ MAX_FRAC_DIGITS = _limits.MAX_FRAC_DIGITS
 # certainly does not. Used as an O(1) gate so the exact count is computed only
 # for numbers that are actually near the cap.
 _MAX_INT_BITS = 3321929
+# Below this many operand bits a product cannot be near the cap; skip the estimate.
+_MUL_PRECHECK_BITS = 1 << 20
 
 # CPython refuses int<->str conversion above 4300 digits by default (and above
 # whatever the deployer set with -X int_max_str_digits or sys.set_int_max_str_digits)
@@ -105,11 +106,33 @@ def _str_split(value: int, width: int) -> str:
     return _str_split(high, width - low) + _str_split(rest, low)
 
 
-@dataclass(frozen=True, slots=True)
 class Dec:
-    neg: bool
-    digits: int
-    scale: int
+    """A decimal: sign, unscaled digits, scale. Immutable BY CONVENTION -- nothing
+    in the library assigns to one after construction. It was a frozen slots
+    dataclass, and constructing one cost 3-4x this (frozen's __init__ goes through
+    object.__setattr__ per field); a Dec is built for every literal and every
+    arithmetic result. Equality and hashing are the representation's, as the
+    dataclass gave them: 150/2 != 15/1 (EQL is structural; compare by value with
+    cmp), so they are not normalised here either."""
+
+    __slots__ = ('neg', 'digits', 'scale')
+
+    def __init__(self, neg: bool, digits: int, scale: int) -> None:
+        self.neg = neg
+        self.digits = digits
+        self.scale = scale
+
+    def __eq__(self, other: object) -> bool:
+        if other.__class__ is not Dec:
+            return NotImplemented
+        return (self.neg == other.neg and self.digits == other.digits
+                and self.scale == other.scale)
+
+    def __hash__(self) -> int:
+        return hash((self.neg, self.digits, self.scale))
+
+    def __repr__(self) -> str:
+        return f'Dec(neg={self.neg!r}, digits={self.digits!r}, scale={self.scale!r})'
 
 
 # Small powers are shared; mantissas already use native arbitrary-size ints.
@@ -264,9 +287,15 @@ def sign(d: Dec) -> int:
 
 def is_integer(d: Dec) -> bool:
     """True when the value has no fractional part left after its scale."""
-    if d.scale == 0:
+    if d.scale == 0 or d.digits == 0:
         return True
-    return d.digits % _pow10(d.scale) == 0
+    if d.scale > _GAP:
+        # 10**scale divides digits only if 2**scale does, i.e. the digits have at
+        # least `scale` trailing zero bits. Decides most values without building
+        # a power of ten as large as the scale (PY-P22).
+        if ((d.digits & -d.digits).bit_length() - 1) < d.scale:
+            return False
+    return divmod(d.digits, _pow10(d.scale))[1] == 0      # divmod, not %: PY-P19
 
 
 def to_safe_int(d: Dec) -> int:
@@ -306,7 +335,46 @@ def sub(a: Dec, b: Dec, pos: Pos | None = None) -> Dec:
 
 
 def mul(a: Dec, b: Dec, pos: Pos | None = None) -> Dec:
-    return guard(make(a.neg != b.neg, a.digits * b.digits, a.scale + b.scale), pos)
+    scale = a.scale + b.scale
+    # Refuse before multiplying when the operand sizes already settle it (PY-P23):
+    # a product of an m-bit and an n-bit integer has at least m+n-1 bits, so its
+    # digit count is bounded below by the same estimate _cmp_by_magnitude uses, and
+    # multiplying two million-digit numbers to learn they are too wide took seconds.
+    # The same two refusals guard() makes, in the same order; everything not
+    # clearly over the cap is multiplied and guarded exactly as before.
+    bits = a.digits.bit_length() + b.digits.bit_length()
+    if bits >= _MUL_PRECHECK_BITS and a.digits and b.digits:
+        if scale > MAX_FRAC_DIGITS:
+            fail('E_RANGE', f'number has more than {MAX_FRAC_DIGITS} fractional digits', pos)
+        pb = bits - 1
+        if ((pb - 1) * 30102) // 100000 + 1 - scale > MAX_INT_DIGITS:
+            fail('E_RANGE', f'number has more than {MAX_INT_DIGITS} integer digits', pos)
+    return guard(make(a.neg != b.neg, a.digits * b.digits, scale), pos)
+
+
+# A scale gap this wide is where aligning (multiplying by 10**gap) starts to cost
+# real time; below it the exact path is at least as cheap as the estimate.
+_GAP = 64
+
+
+def _cmp_by_magnitude(A: int, sa: int, B: int, sb: int) -> int:
+    """Sign of |A*10**-sa| - |B*10**-sb| when bit lengths already decide it, else 0.
+
+    With bl = bit_length, A has between floor((bl-1)*0.30102)+1 and
+    floor(bl*0.30103)+1 digits (0.30102 < log10 2 < 0.30103), and a value with
+    nd digits at scale s lies in [10**(nd-1-s), 10**(nd-s)). One side's lower bound
+    at or above the other's upper bound is a strict inequality.
+    """
+    bla, blb = A.bit_length(), B.bit_length()
+    lo_a = ((bla - 1) * 30102) // 100000 + 1
+    hi_a = (bla * 30103) // 100000 + 1
+    lo_b = ((blb - 1) * 30102) // 100000 + 1
+    hi_b = (blb * 30103) // 100000 + 1
+    if lo_a - 1 - sa >= hi_b - sb:
+        return 1
+    if lo_b - 1 - sb >= hi_a - sa:
+        return -1
+    return 0
 
 
 def cmp(a: Dec, b: Dec) -> int:
@@ -315,8 +383,19 @@ def cmp(a: Dec, b: Dec) -> int:
     if a.scale == b.scale:
         A, B = a.digits, b.digits
     else:
-        if a.digits == 0 and b.digits == 0:
-            return 0
+        A, B = a.digits, b.digits
+        if A == 0 or B == 0:
+            c = (A > 0) - (B > 0)        # a zero is below any positive, equal to zero
+            return -c if a.neg else c
+        gap = a.scale - b.scale
+        if gap > _GAP or gap < -_GAP:
+            # Far apart in scale: the magnitudes usually differ by far more than the
+            # imprecision of a bit-length estimate, which decides without building
+            # 10**gap (PY-P22). Inconclusive (within about one power) falls through
+            # to the exact alignment below.
+            c = _cmp_by_magnitude(A, a.scale, B, b.scale)
+            if c:
+                return -c if a.neg else c
         A, B, _ = _aligned(a, b)
     c = 0 if A == B else (-1 if A < B else 1)
     return -c if a.neg else c
@@ -355,7 +434,10 @@ def mod(a: Dec, b: Dec, pos: Pos | None = None) -> Dec:
     if is_zero(b):
         fail('E_DIV_ZERO', 'modulo by zero', pos)
     A, B, s = _aligned(a, b)
-    return make(a.neg, A % B, s)
+    # divmod, not %: since CPython 3.12 `divmod` and `//` take a sub-quadratic
+    # path for huge ints and `%` does not -- about 9x slower on a million digits
+    # (PY-P19). The remainder is the same.
+    return make(a.neg, divmod(A, B)[1], s)
 
 
 # --- rounding ---------------------------------------------------------------

@@ -6,7 +6,7 @@
 import { fail, MAX_DEPTH } from './errors.mjs';
 import * as D from './decimal.mjs';
 import { Value, NONE, TEXT, BOOL } from './value.mjs';
-import { bytesCompare } from './utf8.mjs';
+import { bytesCompare, compareText, encodeUtf8 } from './utf8.mjs';
 import { cpLength, checkText, checkCollection, MAX_TEXT_LEN } from './budget.mjs';
 import { OpCode } from './math_plan.mjs';
 import { checkSizedInt, MAX_SCALE, MAX_POWER } from './builtins/number.mjs';
@@ -247,17 +247,22 @@ export function evalMathPlan(plan, ctx) {
       }
     }
   }
-  return Value.num(scratchpad[plan.outputSlot]);
+  // A slot a step computed is a decimal the guard has already passed (JS-P24); anything
+  // else keeps the checked constructor, and its refusal.
+  const out = scratchpad[plan.outputSlot];
+  return out instanceof Value ? Value.num(out) : Value.numOwned(out);
 }
 
 function evalDispatch(node, ctx) {
   switch (node.t) {
     case 'num': {
-      const v = Value.text(node.v);
+      const v = Value.textOwned(node.v);
       if (node.dec) v._decimal = node.dec;
       return v;
     }
-    case 'text': return Value.text(node.v);
+    case 'text': return Value.textOwned(node.v);
+    // A value already computed (sql/constants.mjs evalConstant): nothing to evaluate.
+    case 'cval': return node.v;
     case 'bool': return Value.bool(node.v);
     case 'null': return Value.null();
 
@@ -329,7 +334,7 @@ function evalList(node, ctx) {
 function evalUnary(node, ctx) {
   const v = evalNode(node.x, ctx);
   if (node.op === 'NOT') return Value.bool(!v.asBool(node.x.pos));
-  return Value.num(D.negate(v.asDecimal(node.x.pos)));
+  return Value.numOwned(D.negate(v.asDecimal(node.x.pos)));
 }
 
 function evalBinary(node, ctx) {
@@ -360,24 +365,38 @@ function evalBinary(node, ctx) {
   }
 
   const l = evalNode(node.l, ctx);
-  const r = evalNode(node.r, ctx);
-  const lp = node.l.pos, rp = node.r.pos;
+  const rn = node.r;
+  // A numeric literal on the right of an arithmetic or numeric-comparison operator is
+  // read as its decimal: no Value is built for it (JS-P23). What evalNode would have
+  // done for it is kept -- the depth check, after the left side ran -- and nothing
+  // else can happen to a literal.
+  const rdec = (rn.t === 'num' && rn.dec !== undefined && NUMERIC_BINARY.has(op)) ? rn.dec : null;
+  let r = null;
+  if (rdec !== null) {
+    if (ctx.depth >= MAX_DEPTH) fail('E_DEPTH', 'evaluation nested too deeply', rn.pos);
+  } else {
+    r = evalNode(rn, ctx);
+  }
+  const lp = node.l.pos, rp = rn.pos;
 
   switch (op) {
-    case '+': return Value.num(D.add(l.asDecimal(lp), r.asDecimal(rp), node.pos));
-    case '-': return Value.num(D.sub(l.asDecimal(lp), r.asDecimal(rp), node.pos));
-    case '*': return Value.num(D.mul(l.asDecimal(lp), r.asDecimal(rp), node.pos));
-    case '/': return Value.num(D.div(l.asDecimal(lp), r.asDecimal(rp), node.pos));
-    case '%': return Value.num(D.mod(l.asDecimal(lp), r.asDecimal(rp), node.pos));
+    case '+': return Value.numOwned(D.add(l.asDecimal(lp), rdec ?? r.asDecimal(rp), node.pos));
+    case '-': return Value.numOwned(D.sub(l.asDecimal(lp), rdec ?? r.asDecimal(rp), node.pos));
+    case '*': return Value.numOwned(D.mul(l.asDecimal(lp), rdec ?? r.asDecimal(rp), node.pos));
+    case '/': return Value.numOwned(D.div(l.asDecimal(lp), rdec ?? r.asDecimal(rp), node.pos));
+    case '%': return Value.numOwned(D.mod(l.asDecimal(lp), rdec ?? r.asDecimal(rp), node.pos));
 
     case '&': return concat(l, r, lp, rp, node.pos);
 
     case '==': case '!=': case '<': case '<=': case '>': case '>=': {
-      const c = D.cmp(l.asDecimal(lp), r.asDecimal(rp));
+      const c = D.cmp(l.asDecimal(lp), rdec ?? r.asDecimal(rp));
       return Value.bool(compareResult(op, c, node.pos));
     }
     case '$==': case '$!=': case '$<': case '$<=': case '$>': case '$>=': {
-      const c = bytesCompare(l.asBytes(lp), r.asBytes(rp));
+      const a = l.asTextOrBytes(lp), b = r.asTextOrBytes(rp);
+      let c;
+      if (typeof a === 'string' && typeof b === 'string') c = compareText(a, b);
+      else c = bytesCompare(typeof a === 'string' ? encodeUtf8(a, lp) : a, typeof b === 'string' ? encodeUtf8(b, rp) : b);
       return Value.bool(compareResult(op.slice(1), c, node.pos));
     }
 
@@ -391,6 +410,8 @@ function evalBinary(node, ctx) {
   }
   fail('E_SYNTAX', `unknown operator ${op}`, node.pos);
 }
+
+const NUMERIC_BINARY = new Set(['+', '-', '*', '/', '%', '==', '!=', '<', '<=', '>', '>=']);
 
 // The six comparisons, and nothing else.
 //
@@ -421,7 +442,7 @@ function concat(l, r, lp, rp, pos) {
     // Code units bound code points, so the exact count is only taken near the cap.
     const units = lv.scalar.length + rv.scalar.length;
     if (units > MAX_TEXT_LEN) checkText(cpLength(lv.scalar) + cpLength(rv.scalar), pos, '& result');
-    return Value.text(lv.scalar + rv.scalar);
+    return Value.textOwned(lv.scalar + rv.scalar);
   }
   const a = l.asBytes(lp), b = r.asBytes(rp);
   checkText(a.length + b.length, pos, '& result');
@@ -462,7 +483,15 @@ function evalAssign(node, ctx) {
     // plus the value's own nesting is what SPEC 6.4 caps, and the error is the
     // assignment target's. `path` counts the variable and every bracket, so the
     // stored value's root is `path.length` levels down.
-    value = evalNode(node.value, ctx).cloneAt(path.length, node.target.pos);
+    value = evalNode(node.value, ctx);
+    if (node.value.t === 'list') {
+      // A `,` result is a fresh container whose children were copied when it
+      // was built, so nothing else can reach it: storing it needs no second
+      // copy, only the depth check the copy would have made.
+      value.checkDepthAt(path.length, node.target.pos);
+    } else {
+      value = value.cloneAt(path.length, node.target.pos);
+    }
   } else {
     const current = walkCreate(ctx, path, path.length - 1).get(key);
     if (current === undefined) {
@@ -480,7 +509,7 @@ function evalAssign(node, ctx) {
           : binOp === '*' ? D.mul(a, b, node.pos)
             : binOp === '/' ? D.div(a, b, node.pos)
               : D.mod(a, b, node.pos);
-      value = Value.num(r);
+      value = Value.numOwned(r);
     }
   }
 

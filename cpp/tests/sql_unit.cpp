@@ -527,6 +527,40 @@ int main() {
       check("declared sort key still hoists",
             kind("ORDERS .> SORT_BY(_[\"ID\"]) .> FILTER(_[\"ID\"] > 100) .> TAKE(5)"), "pure_sql");
     }
+    // CPP-P14: the Translator reads the caller's Bindings instead of copying them, and
+    // the work done once per set (alias clashes, the value bindings) gives the same
+    // answers as it did per call.
+    {
+      const Bindings clash({{"A", Binding::relation("orders", "o")}, {"B", Binding::relation("customers", "O")}});
+      const auto refusal = [&](const Bindings& b, const std::string& dialect) {
+        try {
+          Sql::translate(sel::compile("TRUE"), dialect, b);
+        } catch (const sel::sql::SqlError& e) {
+          return e.code();
+        } catch (const std::exception& e) {
+          return std::string("std:") + e.what();
+        }
+        return std::string("ok");
+      };
+      check("two relations sharing an alias, found when the set is built, are refused on translate",
+            refusal(clash, "mariadb"), "E_SQL_BINDING");
+      check("and the dialect is still judged first", refusal(clash, "nonesuch").substr(0, 4) == "E_SQ" ? std::string("E_SQL") : std::string("?"), "E_SQL");
+      std::string dialect_code;
+      try { Sql::translate(sel::compile("TRUE"), "nonesuch", clash); } catch (const sel::sql::SqlError& e) { dialect_code = e.code(); } catch (...) {}
+      check("a bad dialect wins over the alias clash", dialect_code, "E_SQL_DIALECT");
+      const Bindings values({{"N", Binding::value(sel::Value::num("5"))},
+                             {"T", Binding::value(sel::Value::text("x"))},
+                             {"COL", Binding::column("id", std::nullopt, SqlKind::Num)}});
+      const auto sql = [&](const std::string& src) {
+        return Sql::translate(sel::compile(src), "mariadb", values).as_condition();
+      };
+      const std::string with_n = sql("N + 1 == 6 AND COL > N");
+      check("a numeric value binding is the constant it names",
+            with_n.find("CAST('5' AS DECIMAL(65,10))") != std::string::npos ? "yes" : with_n,
+            "yes");
+      check("a text one too", sql("T $== \"x\" AND COL > 1").find("CAST('x' AS CHAR)") != std::string::npos ? "yes" : "no", "yes");
+      check("translating twice gives one answer", sql("COL > N"), sql("COL > N"));
+    }
     if (wave != 0) return 1;
   }
 

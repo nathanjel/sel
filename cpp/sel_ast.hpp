@@ -68,6 +68,10 @@ struct Node {
   // reading `_K`, so nothing observes the keys its result carries and the
   // evaluator's join pre-filter may drop rows below the join (SEL-0050/0052).
   bool keys_unobserved = false;
+  // Bin: the operator resolved once, at parse time, to a BinOp code (0 = not yet
+  // resolved; eval_binary then derives it from `s`). Set only where `s` is, and
+  // `s` of a Bin node never changes afterwards.
+  unsigned char opc = 0;
 
   std::shared_ptr<const Node> l, r;       // Bin: operands. Index: obj, idx. Assign: target, value.
   std::vector<std::shared_ptr<const Node>> items;   // Seq/List/Call arguments

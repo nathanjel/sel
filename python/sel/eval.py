@@ -91,15 +91,25 @@ class Args:
     position.
     """
 
-    __slots__ = ('nodes', 'name', 'pos', 'ctx', '_vals', 'record_shape')
+    __slots__ = ('nodes', 'name', 'pos', 'ctx', '_vals', 'call')
 
     def __init__(self, node: Node, ctx: Context) -> None:
         self.nodes = node.args
-        self.record_shape = node.record_shape
+        self.call = node
         self.name = node.name
         self.pos = node.pos
         self.ctx = ctx
         self._vals: list[Value | None] = [None] * len(node.args)
+
+    # Read by the two built-ins that use them (RECORD, FILTER) and by nothing else:
+    # a slot each cost every call's Args a store for a rule most calls never ask.
+    @property
+    def record_shape(self):
+        return self.call.record_shape
+
+    @property
+    def adopt(self) -> bool:
+        return self.call.adopt_items
 
     def count(self) -> int:
         return len(self.nodes)
@@ -111,22 +121,36 @@ class Args:
         fail('E_BAD_ARG',
              f'{self.name} has no argument {i} (the call has {len(self.nodes)})', self.pos)
 
+    # The bounds check is a sign test plus the IndexError the list raises itself:
+    # a host function reads an argument it was not given -> `_oob`, never the
+    # host's IndexError, and never Python's negative indexing answering for it.
+    # (Two len() calls per read were measurable on a program that reads millions.)
     def node(self, i: int) -> Node:
-        if i < 0 or i >= len(self.nodes):
+        if i < 0:
             self._oob(i)
-        return self.nodes[i]
+        try:
+            return self.nodes[i]
+        except IndexError:
+            self._oob(i)
 
     def pos_of(self, i: int) -> Pos:
-        if i < 0 or i >= len(self.nodes):
+        if i < 0:
             self._oob(i)
-        return self.nodes[i].pos
+        try:
+            return self.nodes[i].pos
+        except IndexError:
+            self._oob(i)
 
     def val(self, i: int) -> Value:
-        if i < 0 or i >= len(self.nodes):
+        if i < 0:
             self._oob(i)
-        if self._vals[i] is None:
-            self._vals[i] = eval_node(self.nodes[i], self.ctx)
-        return self._vals[i]
+        try:
+            v = self._vals[i]
+        except IndexError:
+            self._oob(i)
+        if v is None:
+            v = self._vals[i] = eval_node(self.nodes[i], self.ctx)
+        return v
 
     def eval_node(self, node: Node) -> Value:
         """For lazy functions re-evaluating a body node under changed bindings."""
@@ -263,7 +287,7 @@ def _eval_math_plan(plan: MathPlan, ctx: Context) -> Value:
         elif op == _MAX:
             a = dec(step.src1); b = dec(step.src2)
             scratchpad[step.dst] = b if D.cmp(b, a) > 0 else a
-    return Value.num(scratchpad[plan.output_slot])
+    return Value._num_owned(scratchpad[plan.output_slot])
 
 
 def _dispatch(node: Node, ctx: Context) -> Value:
@@ -275,7 +299,14 @@ def _dispatch(node: Node, ctx: Context) -> Value:
             v._dec_val = node.dec
         return v
     if t == 'text':
-        return Value.text(node.v)
+        # An ASCII literal needs no validation (and Value.text's isinstance + validate
+        # call cost as much as building the Value, per evaluation -- PY-P29); anything
+        # else, including a hand-built node carrying something that is not a str, takes
+        # the validating constructor as before.
+        v = node.v
+        if type(v) is str and v.isascii():
+            return Value(TEXT, v)
+        return Value.text(v)
     if t == 'bool':
         return Value.bool(node.v)
     if t == 'null':
@@ -381,7 +412,7 @@ def _eval_unary(node: Node, ctx: Context) -> Value:
     v = eval_node(node.x, ctx)
     if node.op == 'NOT':
         return Value.bool(not v.as_bool(node.x.pos))
-    return Value.num(D.negate(v.as_decimal(node.x.pos)))
+    return Value._num_owned(D.negate(v.as_decimal(node.x.pos)))
 
 
 def _eval_binary(node: Node, ctx: Context) -> Value:
@@ -410,7 +441,8 @@ def _eval_binary(node: Node, ctx: Context) -> Value:
         return l
 
     l = eval_node(node.l, ctx)
-    r = eval_node(node.r, ctx)
+    const = node.const_value
+    r = const.value if const is not None else eval_node(node.r, ctx)
     lp, rp = node.l.pos, node.r.pos
 
     # Each coerced operand is bound to a named local before it is used, and in
@@ -422,19 +454,19 @@ def _eval_binary(node: Node, ctx: Context) -> Value:
     # can be read against the other four without a footnote.
     if op == '+':
         a = l.as_decimal(lp); b = r.as_decimal(rp)
-        return Value.num(D.add(a, b, node.pos))
+        return Value._num_owned(D.add(a, b, node.pos))
     if op == '-':
         a = l.as_decimal(lp); b = r.as_decimal(rp)
-        return Value.num(D.sub(a, b, node.pos))
+        return Value._num_owned(D.sub(a, b, node.pos))
     if op == '*':
         a = l.as_decimal(lp); b = r.as_decimal(rp)
-        return Value.num(D.mul(a, b, node.pos))
+        return Value._num_owned(D.mul(a, b, node.pos))
     if op == '/':
         a = l.as_decimal(lp); b = r.as_decimal(rp)
-        return Value.num(D.div(a, b, node.pos))
+        return Value._num_owned(D.div(a, b, node.pos))
     if op == '%':
         a = l.as_decimal(lp); b = r.as_decimal(rp)
-        return Value.num(D.mod(a, b, node.pos))
+        return Value._num_owned(D.mod(a, b, node.pos))
 
     if op == '&':
         return _concat(l, r, lp, rp, node.pos)
@@ -474,6 +506,11 @@ def _eval_binary(node: Node, ctx: Context) -> Value:
     if op == 'EQL':
         return Value.bool(l.eql(r, node.pos))
     if op == 'IN':
+        # A list of text/number literals with a membership set: a needle that is a
+        # plain text value (no children) is EQL to an element exactly when their
+        # texts are equal (Value._eql_at), so a set lookup answers as the scan does.
+        if const is not None and const.texts is not None and l.kind == TEXT and l.size() == 0:
+            return Value.bool(l.scalar in const.texts)
         return Value.bool(_is_in(l, r))
 
     if op == 'XOR':
@@ -535,10 +572,22 @@ def _is_in(needle: Value, hay: Value) -> bool:
     return any(child.eql(needle) for child in hay.values())
 
 
+_BITWISE_INT_MIN = 64
+
+
 def _bitwise(op: str, a: bytes, b: bytes, pos: Pos) -> Value:
     if len(a) != len(b):
         fail('E_LEN_MISMATCH',
              f'{op} needs operands of equal length ({len(a)} vs {len(b)})', pos)
+    n = len(a)
+    if n >= _BITWISE_INT_MIN:
+        # Two integers and one machine-word operation each, instead of a generator
+        # step per byte: the same bytes, at memory speed (PY-P29). Small operands
+        # keep the byte loop, which is cheaper than building the integers.
+        x = int.from_bytes(a, 'big')
+        y = int.from_bytes(b, 'big')
+        r = x & y if op == 'BAND' else (x | y if op == 'BOR' else x ^ y)
+        return Value.bin(r.to_bytes(n, 'big'))
     if op == 'BAND':
         return Value.bin(bytes(x & y for x, y in zip(a, b)))
     if op == 'BOR':
@@ -582,7 +631,7 @@ def _eval_assign(node: Node, ctx: Context) -> Value:
                 res = D.div(a, b, node.pos)
             else:
                 res = D.mod(a, b, node.pos)
-            value = Value.num(res)
+            value = Value._num_owned(res)
 
     # Re-derived after the right-hand side ran, which may have replaced or
     # removed any level along the path.

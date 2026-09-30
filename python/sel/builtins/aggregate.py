@@ -2,6 +2,7 @@
 once per element, which is the same move IF makes, repeated.
 """
 
+import heapq
 from functools import cmp_to_key
 
 from .. import decimal as D
@@ -120,6 +121,14 @@ def _is_fresh(node) -> bool:
     if t == 'call':
         return node.name in _FRESH_CALLS
     return False
+
+
+# The calls whose result is a computed scalar, for a constructor's own arguments
+# (RECORD, builtins/structure.py): such a value has nothing to copy. A container built
+# by LIST or RECORD is a value whose nesting the constructor above it must still
+# bound (clone at depth 2 is where `RECORD("a", LIST(<199 deep>))` is refused), so
+# those two are copied.
+_SCALAR_FRESH_CALLS = _FRESH_CALLS - {'LIST', 'RECORD'}
 
 
 def collected(value, body, args):
@@ -310,6 +319,18 @@ def _filter(args, ctx):
     is_dense = in_val.is_list and in_val.storage is not None and in_val.list_keys is None
     def keep(r, body):
         return r.as_bool(body.pos)
+    pos = args.pos
+    if args.adopt:
+        # The step after this one only reads what is kept and copies what it
+        # collects (optimizer.adopts_elements), so a kept element is handed on
+        # as it is. The copy also refuses an element nested past the cap, so
+        # that is still checked, without copying (Value.check_depth).
+        def kept(item):
+            item.check_depth(2, pos)
+            return item
+    else:
+        def kept(item):
+            return item.clone(pos, 2)
     storage = []
     keys = None
     needs_custom_keys = False
@@ -319,7 +340,7 @@ def _filter(args, ctx):
         def visit(r, key, item, body):
             nonlocal needs_custom_keys, keys, orig_idx
             if keep(r, body):
-                storage.append(item.clone(args.pos, 2))
+                storage.append(kept(item))
                 if needs_custom_keys:
                     keys.append(str(orig_idx))
             else:
@@ -333,7 +354,7 @@ def _filter(args, ctx):
         def visit(r, key, item, body):
             nonlocal needs_custom_keys, keys, expected_index
             if keep(r, body):
-                storage.append(item.clone(args.pos, 2))
+                storage.append(kept(item))
                 if not needs_custom_keys and str(key) != str(expected_index):
                     needs_custom_keys = True
                     keys = [str(j + 1) for j in range(len(storage) - 1)]
@@ -349,14 +370,34 @@ def _filter(args, ctx):
 
 
 def _sum(args, ctx):
-    total = [D.ZERO]
+    # The running total is a signed integer at the widest scale seen so far, not a
+    # Dec per addition (PY-P25): the result's scale is the largest operand scale, as
+    # it always was, and one Dec is built at the end. The digit cap is still checked
+    # where an addition could first cross it -- the step's own result, at the body's
+    # position -- through the same guard(), gated by the same cheap bit-length test.
+    state = [0, 0]                       # signed total, scale
 
     def visit(r, k, i, body):
-        total[0] = D.add(total[0], r.as_decimal(body.pos), body.pos)
+        d = r.as_decimal(body.pos)
+        total, scale = state
+        ds = d.scale
+        digits = -d.digits if d.neg else d.digits
+        if ds > scale:
+            if total:
+                total *= D._pow10(ds - scale)
+            scale = ds
+        elif ds < scale:
+            digits *= D._pow10(scale - ds)
+        total += digits
+        state[0] = total
+        state[1] = scale
+        if total.bit_length() >= D._MAX_INT_BITS:
+            D.guard(D.make(total < 0, -total if total < 0 else total, scale), body.pos)
         return None
 
     walk(args, ctx, visit)
-    return Value.num(total[0])
+    total, scale = state
+    return Value._num_owned(D.make(total < 0, -total if total < 0 else total, scale))
 
 
 def _join(args, ctx):
@@ -429,6 +470,75 @@ def compare_values(a: Value, b: Value) -> int:
     return 0
 
 
+class _DecKey:
+    """A decimal with a fraction as a sort key: `mant / 10**scale`, ordered exactly
+    by cross-multiplication. A scale-0 number is keyed by its plain int instead, and
+    the two kinds compare with each other (an int is scale 0), so a key never needs
+    to know the other keys' scale. Equal numbers compare equal whatever their
+    spelling (`1.0` and `1`), which is what lets ties keep their input order."""
+    __slots__ = ('mant', 'scale')
+
+    def __init__(self, mant, scale):
+        self.mant = mant
+        self.scale = scale
+
+    @staticmethod
+    def _parts(o):
+        if isinstance(o, _DecKey):
+            return o.mant, o.scale
+        return o, 0
+
+    def _cross(self, other):
+        a, sa = self.mant, self.scale
+        b, sb = self._parts(other)
+        if sa == sb:
+            return a, b
+        if sa > sb:
+            return a, b * D._pow10(sa - sb)
+        return a * D._pow10(sb - sa), b
+
+    def __eq__(self, other):
+        a, b = self._cross(other)
+        return a == b
+
+    def __lt__(self, other):
+        a, b = self._cross(other)
+        return a < b
+
+    def __gt__(self, other):
+        a, b = self._cross(other)
+        return a > b
+
+    def __le__(self, other):
+        a, b = self._cross(other)
+        return a <= b
+
+    def __ge__(self, other):
+        a, b = self._cross(other)
+        return a >= b
+
+    __hash__ = None
+
+
+def sort_key(v: Value):
+    """The key of SPEC 7.3's total order, derived ONCE per element: a tuple
+    `(rank, payload)` whose native Python ordering is the order compare_values
+    defines, so a sort or a selection can use the interpreter's own comparison
+    instead of re-deriving both operands' kind, decimal and bytes at every step.
+    Equal keys are ties (the caller keeps input order)."""
+    leaf = _sort_leaf(v)
+    rank = _sort_rank(leaf)
+    if rank == 2:
+        d = leaf.as_decimal()
+        mant = -d.digits if d.neg else d.digits
+        return (2, mant if d.scale == 0 else _DecKey(mant, d.scale))
+    if rank == 1:
+        return (1, 1 if leaf.scalar else 0)
+    if rank == 3 or rank == 4:
+        return (rank, leaf.as_bytes())
+    return (rank, 0)
+
+
 def do_sort(args, ctx, forced_dir):
     val = args.val(0)
     ents = [] if val.is_null() else elements(val)
@@ -475,23 +585,30 @@ def do_sort(args, ctx, forced_dir):
         if not ents:
             return Value._list_owned([])
 
+        # One frame for the whole pass, like walk() (PY-P25): a fresh dict per element
+        # is what the allocation profile showed, and `_K` is a validated Value.text per
+        # element that a key body which never mentions it does not need.
+        frame = {binder: None}
+        with_k = node_contains_var(body, '_K')
+        if with_k:
+            frame['_K'] = None
         indexed = []
-        for idx, (k, item) in enumerate(ents):
-            ctx.push_frame({binder: item, '_K': Value.text(k)})
-            try:
-                eval_key = args.eval_node(body)
-            finally:
-                ctx.pop_frame()
-            indexed.append({'item': item, 'key': eval_key, 'idx': idx})
+        ctx.push_frame(frame)
+        try:
+            for idx, (k, item) in enumerate(ents):
+                frame[binder] = item
+                if with_k:
+                    frame['_K'] = Value.text(k)
+                indexed.append({'item': item, 'key': args.eval_node(body), 'idx': idx})
+        finally:
+            ctx.pop_frame()
 
-    def cmp_func(x, y):
-        c = compare_values(x['key'], y['key'])
-        if direction == 'DESC':
-            c = -c
-        return c if c != 0 else (x['idx'] - y['idx'])
-
-    indexed.sort(key=cmp_to_key(cmp_func))
-    return Value._list_owned([x['item'].clone(args.pos, 2) for x in indexed])
+    # Every key is derived once, then sorted with the interpreter's own stable
+    # sort: `reverse=True` keeps equal keys in input order too, which is the
+    # rule for DESC (SPEC 7.3: only unequal ranks reverse, ties stay put).
+    keys = [sort_key(x['key']) for x in indexed]
+    order = sorted(range(len(indexed)), key=keys.__getitem__, reverse=(direction == 'DESC'))
+    return Value._list_owned([indexed[i]['item'].clone(args.pos, 2) for i in order])
 
 
 define('SORT', 1, 3, lazy=True, binds=True, fn=lambda args, ctx: do_sort(args, ctx, 'ASC'))
@@ -540,70 +657,36 @@ def do_top(args, ctx, forced_dir):
     if limit == 0 or (value.kind == NONE and value.size() == 0):
         return Value._list_owned([])
 
-    def compare(a, b):
-        c = compare_values(a['key'], b['key'])
-        if direction == 'DESC':
-            c = -c
-        return c if c != 0 else a['idx'] - b['idx']
-
-    def worse(a, b):
-        c = compare(a, b)
-        return c > 0 or (c == 0 and a['idx'] > b['idx'])
-
-    heap = []
-
-    def sift_up(index):
-        while index > 0:
-            parent = (index - 1) // 2
-            if not worse(heap[index], heap[parent]):
-                break
-            heap[index], heap[parent] = heap[parent], heap[index]
-            index = parent
-
-    def sift_down(index):
-        while True:
-            left = index * 2 + 1
-            right = left + 1
-            worst_index = index
-            if left < len(heap) and worse(heap[left], heap[worst_index]):
-                worst_index = left
-            if right < len(heap) and worse(heap[right], heap[worst_index]):
-                worst_index = right
-            if worst_index == index:
-                return
-            heap[index], heap[worst_index] = heap[worst_index], heap[index]
-            index = worst_index
-
+    # Keys are derived once per element as native-comparable tuples (sort_key),
+    # then the interpreter's selection does the work. nsmallest / nlargest are
+    # documented as sorted(...)[:n] / sorted(..., reverse=True)[:n], so equal keys
+    # keep input order in both directions, which is the rule (SPEC 7.3). Body
+    # evaluation order, and therefore the first error, is unchanged: each element's
+    # key is evaluated in order, before anything is selected.
     needs_k = body is not None and node_contains_var(body, '_K')
-    index = 0
+    items = []
+    keys = []
 
     def consume(key, item):
-        nonlocal index
         if binder is None:
-            candidate = {'item': item, 'key': item, 'idx': index}
+            keys.append(sort_key(item))
         else:
             frame = {binder: item}
             if needs_k:
                 frame['_K'] = Value.text(key)
             ctx.push_frame(frame)
             try:
-                candidate = {'item': item, 'key': args.eval_node(body), 'idx': index}
+                keys.append(sort_key(args.eval_node(body)))
             finally:
                 ctx.pop_frame()
-        index += 1
-        if len(heap) < limit:
-            heap.append(candidate)
-            sift_up(len(heap) - 1)
-        elif worse(heap[0], candidate):
-            heap[0] = candidate
-            sift_down(0)
+        items.append(item)
 
     if value.is_list and value.storage is not None:
         # A packed list may carry the keys a FILTER kept (list_keys); _K is
         # those, not the positions (review 2026-09-25 SEM-02).
-        keys = value.list_keys
+        lkeys = value.list_keys
         for i, item in enumerate(value.storage):
-            consume(keys[i] if keys is not None else str(i + 1), item)
+            consume(lkeys[i] if lkeys is not None else str(i + 1), item)
     elif value.shape is not None:
         for i, item in enumerate(value.storage):
             consume(value.shape.keys[i], item)
@@ -611,8 +694,12 @@ def do_top(args, ctx, forced_dir):
         for key, item in elements(value):
             consume(key, item)
 
-    heap.sort(key=cmp_to_key(compare))
-    return Value._list_owned([entry['item'].clone(args.pos, 2) for entry in heap])
+    select = heapq.nlargest if direction == 'DESC' else heapq.nsmallest
+    if limit >= len(items):
+        order = sorted(range(len(items)), key=keys.__getitem__, reverse=(direction == 'DESC'))
+    else:
+        order = select(limit, range(len(items)), key=keys.__getitem__)
+    return Value._list_owned([items[i].clone(args.pos, 2) for i in order])
 
 
 define('TOP', 2, 4, lazy=True, binds=True, fn=lambda args, ctx: do_top(args, ctx, 'ASC'))
@@ -654,6 +741,7 @@ def do_bucket(args, ctx):
     if needs_k:
         frame['_K'] = None
     table = {}
+    scalar_table = {}
     index_table = {}
     groups = []
 
@@ -679,6 +767,18 @@ def do_bucket(args, ctx):
                 group['rows'].append(item)
             return
         key_str = ''
+        if group_key.size() == 0:
+            # A key with no children is its kind and text (see _dedupe): one dict probe
+            # in place of a structural hash and an eql() per row (PY-P26).
+            ident = (group_key.kind, group_key.scalar)
+            group = scalar_table.get(ident)
+            if group is None:
+                group = {'key': group_key, 'key_str': key_str, 'rows': [item]}
+                scalar_table[ident] = group
+                groups.append(group)
+            else:
+                group['rows'].append(item)
+            return
         hashed = structural_hash(group_key)
         bucket = table.get(hashed)
         if bucket is None:

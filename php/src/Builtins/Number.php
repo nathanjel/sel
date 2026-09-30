@@ -29,23 +29,23 @@ final class Number
     public static function register(): void
     {
         Registry::define(['name' => 'ABS', 'min' => 1, 'max' => 1,
-            'fn' => static fn (Args $a): Value => Value::num(Dec::abs($a->dec(0)))]);
+            'fn' => static fn (Args $a): Value => Value::numTrusted(Dec::abs($a->dec(0)))]);
         Registry::define(['name' => 'SIGN', 'min' => 1, 'max' => 1,
             'fn' => static fn (Args $a): Value => Value::int(Dec::sign($a->dec(0)))]);
         Registry::define(['name' => 'CEIL', 'min' => 1, 'max' => 1,
-            'fn' => static fn (Args $a): Value => Value::num(Dec::ceil($a->dec(0), $a->pos))]);
+            'fn' => static fn (Args $a): Value => Value::numTrusted(Dec::ceil($a->dec(0), $a->pos))]);
         Registry::define(['name' => 'FLOOR', 'min' => 1, 'max' => 1,
-            'fn' => static fn (Args $a): Value => Value::num(Dec::floor($a->dec(0), $a->pos))]);
+            'fn' => static fn (Args $a): Value => Value::numTrusted(Dec::floor($a->dec(0), $a->pos))]);
         Registry::define(['name' => 'TRUNC', 'min' => 1, 'max' => 1,
-            'fn' => static fn (Args $a): Value => Value::num(Dec::trunc($a->dec(0)))]);
+            'fn' => static fn (Args $a): Value => Value::numTrusted(Dec::trunc($a->dec(0)))]);
         Registry::define(['name' => 'CANON', 'min' => 1, 'max' => 1,
-            'fn' => static fn (Args $a): Value => Value::num(Dec::trimScale($a->dec(0)))]);
+            'fn' => static fn (Args $a): Value => Value::numTrusted(Dec::trimScale($a->dec(0)))]);
 
         Registry::define(['name' => 'ROUND', 'min' => 2, 'max' => 2,
-            'fn' => static fn (Args $a): Value => Value::num(Dec::round($a->dec(0), self::sized($a, 1, self::MAX_SCALE, 'ROUND scale'), $a->pos))]);
+            'fn' => static fn (Args $a): Value => Value::numTrusted(Dec::round($a->dec(0), self::sized($a, 1, self::MAX_SCALE, 'ROUND scale'), $a->pos))]);
 
         Registry::define(['name' => 'POWER', 'min' => 2, 'max' => 2,
-            'fn' => static fn (Args $a): Value => Value::num(Dec::power($a->dec(0), self::sized($a, 1, self::MAX_POWER, 'POWER exponent'), $a->pos))]);
+            'fn' => static fn (Args $a): Value => Value::numTrusted(Dec::power($a->dec(0), self::sized($a, 1, self::MAX_POWER, 'POWER exponent'), $a->pos))]);
 
         Registry::define(['name' => 'MIN', 'min' => 1, 'max' => PHP_INT_MAX,
             'fn' => static function (Args $a): Value {
@@ -56,7 +56,7 @@ final class Number
                         $best = $d;
                     }
                 }
-                return Value::num($best);
+                return Value::numTrusted($best);
             }]);
 
         Registry::define(['name' => 'MAX', 'min' => 1, 'max' => PHP_INT_MAX,
@@ -68,7 +68,7 @@ final class Number
                         $best = $d;
                     }
                 }
-                return Value::num($best);
+                return Value::numTrusted($best);
             }]);
 
         // The non-throwing probe. Every other numeric path raises E_NOT_NUM.

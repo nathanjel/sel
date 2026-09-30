@@ -533,9 +533,8 @@ std::int32_t constant_scale(const SNode& n, sel::Value& root) {
 ConstScope const_scope(const Bindings* bindings) {
   ConstScope out;
   if (!bindings) return out;
-  for (const std::string& name : bindings->names()) {
+  for (const std::string& name : bindings->value_names()) {
     const Binding& b = bindings->get(name);
-    if (b.kind() != Binding::Kind::Value) continue;
     const sel::Value& v = b.as_value();
     if (v.is_none() || v.size() > 0) continue;
     out.names.insert(name);

@@ -8,7 +8,6 @@ expression it held, and anything that cannot be is refused with a position.
 
 from __future__ import annotations
 
-import dataclasses
 from typing import Any
 
 from ..errors import Pos
@@ -251,20 +250,20 @@ def _substitute(node: Any, defs: dict[str, Any], bound: list[str],
                'expression cannot do', node.pos)
 
     if t == 'un':
-        return dataclasses.replace(node, x=_substitute(node.x, defs, bound, depth))
+        return node.replaced(x=_substitute(node.x, defs, bound, depth))
 
     if t == 'bin':
-        return dataclasses.replace(node,
+        return node.replaced(
                                    l=_substitute(node.l, defs, bound, depth),
                                    r=_substitute(node.r, defs, bound, depth))
 
     if t == 'index':
-        return dataclasses.replace(node,
+        return node.replaced(
                                    obj=_substitute(node.obj, defs, bound, depth),
                                    idx=_substitute(node.idx, defs, bound, depth))
 
     if t == 'list':
-        return dataclasses.replace(node, items=_flatten(node.items, defs, bound, depth))
+        return node.replaced(items=_flatten(node.items, defs, bound, depth))
 
     if t == 'clist':
         return CList(node.pos, [(k, _substitute(v, defs, bound, depth))
@@ -285,7 +284,7 @@ def _substitute(node: Any, defs: dict[str, Any], bound: list[str],
                 args.append(arg)
             else:
                 args.append(_substitute(arg, defs, inner if scope == 'inner' else bound, depth))
-        return dataclasses.replace(node, args=args)
+        return node.replaced(args=args)
 
     return node
 

@@ -203,10 +203,39 @@ function joinRowsLackBinders(steps) {
   return joined;
 }
 
-// The two together: a prefix whose SQL rows are not the value SEL would have
+// Whether an explicit sort's order would not survive a later step in SQL. SEL's
+// result is in the order the sort gave it, and a database promises nothing about the
+// order of rows once they pass through a derived table into a join, a group or a
+// second sort's tie-break: a BUCKET's groups come out in first-appearance order in
+// SEL and in engine order in SQL, a LINK's rows are the left's order then the
+// right's, and a later sort keeps the earlier sort's order among its ties, which is
+// gone once a projection hid the earlier key. A LIMIT beside the earlier ORDER BY
+// decides which rows survive, not any of this. A prefix that ends before that step
+// is exact; one that includes it answers in another order
+// (docs/internals/sql-translation.md 12.1, "Order"; PHP-C35).
+const ORDER_SORTS = new Set(['SORT', 'SORT_DESC', 'SORT_BY', 'TOP', 'TOP_DESC', 'TOP_BY']);
+function orderIsLost(steps) {
+  let sorted = false;
+  let projected = false;
+  for (const step of steps) {
+    const name = step.name;
+    if (ORDER_SORTS.has(name)) {
+      if (sorted && projected) return true;
+      sorted = true;
+      projected = false;
+    } else if (sorted && (name === 'MAP' || name === 'SELECT_COLS')) {
+      projected = true;
+    } else if (sorted && (name === 'BUCKET' || name === 'LINK' || name === 'LINK_LEFT')) {
+      return true;
+    }
+  }
+  return false;
+}
+
+// The three together: a prefix whose SQL rows are not the value SEL would have
 // produced for it, whatever the translator says about it.
 function rowsAreNotTheValue(steps) {
-  return bucketRowsAreKeys(steps) || joinRowsLackBinders(steps);
+  return bucketRowsAreKeys(steps) || joinRowsLackBinders(steps) || orderIsLost(steps);
 }
 
 const SQL_SPECIAL_CALLS = new Set([
@@ -888,14 +917,46 @@ export function planHybrid(program, dialect, bindings = null, options = null) {
   return pureMemoryPlan(program, dialect, catalog);
 }
 
+// The names a program may write through: the base variable of every assignment
+// target anywhere in the tree (an over-approximation is safe; it only costs a copy).
+// Iterative, like every other walk of a tree that can be as deep as its source is long.
+const ASSIGNED = new WeakMap();
+function assignedRoots(program) {
+  let names = ASSIGNED.get(program);
+  if (names) return names;
+  names = new Set();
+  const stack = [program.ast];
+  while (stack.length > 0) {
+    const n = stack.pop();
+    if (!n || typeof n !== 'object') continue;
+    if (n.t === 'assign') {
+      let target = n.target;
+      while (target && target.t === 'index') { stack.push(target.idx); target = target.obj; }
+      if (target && target.t === 'var') names.add(target.name);
+      stack.push(n.value);
+      continue;
+    }
+    if (n.args) for (const item of n.args) stack.push(item);
+    if (n.items) for (const item of n.items) stack.push(item);
+    for (const key of ['l', 'r', 'x', 'obj', 'idx', 'value']) if (n[key]) stack.push(n[key]);
+  }
+  ASSIGNED.set(program, names);
+  return names;
+}
+
+function continuationRoot(plan, context) {
+  return context instanceof Value
+    ? context.shallowRoot(assignedRoots(plan.continuationProgram))
+    : Value.fromNative(context || {});
+}
+
 export function executeHybrid(plan, dbRunner, context = null) {
   if (!(plan instanceof HybridPlan)) throw new TypeError('executeHybrid expects a HybridPlan');
   // The caller's context is never written, whatever the classification: a program
   // that assigns (`A += 1`) would leave A in it, and which plans do depends on how
   // the planner split them -- an accident, not a contract.
   if (plan.pureMemory) {
-    return plan.continuationProgram.run(
-      context instanceof Value ? context.clone() : Value.fromNative(context || {}));
+    return plan.continuationProgram.run(continuationRoot(plan, context));
   }
   const runSql = () => {
     const fragment = plan.sqlStatement;
@@ -903,7 +964,7 @@ export function executeHybrid(plan, dbRunner, context = null) {
   };
   if (plan.pureSql) return runSql();
   const rows = runSql();
-  const root = context instanceof Value ? context.clone() : Value.fromNative(context || {});
+  const root = continuationRoot(plan, context);
   root.set(plan.continuationSourceVar,
     rows instanceof Value ? rows : Value.fromNative(rows));
   return plan.continuationProgram.run(root);

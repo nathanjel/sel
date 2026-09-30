@@ -20,7 +20,6 @@ optimiser and the translator.
 
 from __future__ import annotations
 
-from dataclasses import replace
 from typing import Any, Callable
 
 from .. import Program, Value
@@ -302,6 +301,14 @@ def _contains_unsupported_sql(node: Node | None, dialect: str,
 
     def inner(item: Node | None) -> bool:
         return _contains_unsupported_sql(item, dialect, defs, seen)
+
+    # An operator the dialect withdrew (BAND/BOR/BXOR carry a reason string in
+    # the `ops` table: SQL's & | ^ are integer operators) is as unsupported as a
+    # withdrawn function. Calls were classified against `funcs` only, so a MAP
+    # with such a pair lost the fall-through and moved every column (PY-P21).
+    if node.t in ('bin', 'un') and isinstance(
+            sqlmap.entry(dialect, 'ops', node.op), str):
+        return True
 
     if any(inner(item) for item in node.args):
         return True
@@ -636,7 +643,7 @@ def _inline_literals(node: Node | None, literals: dict[str, Node],
     if t == 'var':
         if node.name in bound or node.name not in literals:
             return node
-        return replace(literals[node.name], pos=node.pos)
+        return literals[node.name].replaced(pos=node.pos)
     if t in LITERAL_TYPES:
         return node
 
@@ -644,15 +651,15 @@ def _inline_literals(node: Node | None, literals: dict[str, Node],
         return _inline_literals(child, literals, scope)
 
     if t == 'un':
-        return replace(node, x=inline(node.x))
+        return node.replaced(x=inline(node.x))
     if t == 'bin':
-        return replace(node, l=inline(node.l), r=inline(node.r))
+        return node.replaced(l=inline(node.l), r=inline(node.r))
     if t == 'index':
-        return replace(node, obj=inline(node.obj), idx=inline(node.idx))
+        return node.replaced(obj=inline(node.obj), idx=inline(node.idx))
     if t in ('list', 'seq'):
-        return replace(node, items=[inline(item) for item in node.items])
+        return node.replaced(items=[inline(item) for item in node.items])
     if t == 'assign':
-        return replace(node, value=inline(node.value))
+        return node.replaced(value=inline(node.value))
     if t == 'call':
         # Which argument is a binder name (never a read), which runs once per
         # element, and what is bound inside is the manifest's decision, the same
@@ -660,7 +667,7 @@ def _inline_literals(node: Node | None, literals: dict[str, Node],
         # explicit binder is that binder, in every spelling of the form.
         form = _registry.binding_form(node.name, node.args, node.spec)
         if form is None:
-            return replace(node, args=[inline(arg) for arg in node.args])
+            return node.replaced(args=[inline(arg) for arg in node.args])
         scopes, binds = form
         inner = list(bound) + list(binds)
         args: list[Node] = []
@@ -669,7 +676,7 @@ def _inline_literals(node: Node | None, literals: dict[str, Node],
                 args.append(arg)
             else:
                 args.append(inline(arg, inner if scopes[i] == 'inner' else bound))
-        return replace(node, args=args)
+        return node.replaced(args=args)
     return node
 
 
@@ -1021,6 +1028,47 @@ def _plan_hybrid(program: Program, dialect: str,
     return _pure_memory_plan(program, dialect, catalog)
 
 
+def _assigned_roots(ast: Node | None) -> frozenset[str]:
+    """The variable names the program writes to: the root of every assignment
+    target (`A`, `A[1]`, `A[1]["k"]`), wherever it sits -- inside an aggregate
+    body too. Iterative, for the same reason the walk above is."""
+    roots: set[str] = set()
+    stack: list[Node | None] = [ast]
+    while stack:
+        node = stack.pop()
+        if node is None:
+            continue
+        if node.t == 'assign':
+            target = node.target
+            while target is not None and target.t == 'index':
+                target = target.obj
+            if target is not None and target.t == 'var':
+                roots.add(target.name)
+        stack.extend(node.args)
+        stack.extend(node.items)
+        stack.extend((node.l, node.r, node.x, node.obj, node.idx, node.target, node.value))
+    return frozenset(roots)
+
+
+def _private_root(plan: HybridPlan, context: Value | dict[str, Any] | None) -> Value:
+    """The context the continuation runs on: the caller's is never written to
+    (PY-C51), but it used to be deep-copied whole -- a 100,000-row context cost
+    over a second per call for a program that wrote nothing to it (PY-P16).
+    A caller's Value is now copied one level: its variables are shared, except
+    the ones the continuation assigns to, which are deep-copied. The program
+    cannot change a shared variable because it never assigns into it; a native
+    context is converted fresh as before."""
+    if not isinstance(context, Value):
+        return Value.from_native(context or {})
+    if context.kind != Value.NONE or context.is_list or context._scalar is not None:
+        return context.clone()             # not a plain record of variables
+    writes = plan.__dict__.get('_writes')
+    if writes is None:
+        writes = plan.__dict__['_writes'] = _assigned_roots(plan.continuation_program.ast)
+    return Value._from_entries_owned(
+        [(k, v.clone() if k in writes else v) for k, v in context.entries()])
+
+
 def execute_hybrid(plan: HybridPlan, db_runner: Callable[[str, list[Value]], Any],
                    context: Value | dict[str, Any] | None = None) -> Any:
     """Execute a pure SQL, pure memory, or split plan."""
@@ -1039,7 +1087,7 @@ def _execute_hybrid(plan: HybridPlan, db_runner: Callable[[str, list[Value]], An
         # helpers in the caller's context, and a plan that goes to the database
         # cannot perform them there -- so the contract is that it never does, in
         # any classification.
-        root = context.clone() if isinstance(context, Value) else Value.from_native(context or {})
+        root = _private_root(plan, context)
         return plan.continuation_program.run(root)
     if plan.sql_statement is None:
         raise RuntimeError('a SQL hybrid plan has no statement')
@@ -1049,7 +1097,7 @@ def _execute_hybrid(plan: HybridPlan, db_runner: Callable[[str, list[Value]], An
         return rows
     if plan.continuation_program is None:
         raise RuntimeError('a hybrid plan has no continuation program')
-    root = context.clone() if isinstance(context, Value) else Value.from_native(context or {})
+    root = _private_root(plan, context)
     root.set(plan.continuation_source_var,
              rows if isinstance(rows, Value) else Value.from_native(rows))
     return plan.continuation_program.run(root)

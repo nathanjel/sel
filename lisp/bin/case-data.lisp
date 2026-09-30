@@ -21062,4 +21062,20 @@ ORDERS .> TAKE(1)"
    :plan nil
    :tables :none
    :register nil
-   :bindings (lambda () (list (cons "XN" (binding-column "xn" nil :num)))))))
+   :bindings (lambda () (list (cons "XN" (binding-column "xn" nil :num)))))
+  (list
+   :name "plan.order.sort-over-a-projection-of-sorted-rows-stays-in-memory"
+   :at "52-audit-cases.sqlt:302"
+   :dialect "mariadb"
+   :source "ORDERS .> TOP_BY(_[\"id\"], 2) .> SELECT_COLS(\"id\", \"amount\") .> SORT_BY(_[\"amount\"], \"DESC\") .> TOP_BY(_K, 2)"
+   :expect "SELECT `_sub1`.`id`, `_sub1`.`amount` FROM (SELECT `o`.* FROM `orders` `o` ORDER BY `o`.`id` ASC LIMIT 2) `_sub1`"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan "hybrid"
+   :tables (list "orders")
+   :register nil
+   :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num)) (cons "CUSTOMER_ID" (binding-column "customer_id" "o" :num)) (cons "AMOUNT" (binding-column "amount" "o" :num)) (cons "NAME" (binding-column "name" "o" :text))) nil nil)))))))

@@ -39,7 +39,7 @@
           (let* ((keys (loop for i from 0 below n by 2 collect (args-text a i)))
                  (prepared (args-record-shape a))
                  (matches (and prepared (equal keys (record-shape-keys prepared)))))
-            (if (or matches (= (length (remove-duplicates keys :test #'string=)) num-fields))
+            (if (or matches (keys-distinct-p keys))
                 (let* ((shape (if matches prepared (get-record-shape keys)))
                        (storage (make-array num-fields)))
                   (loop for i from 0 below n by 2
@@ -227,6 +227,23 @@ when the operator's left operand reads the right side."
 ;; One key per number, as `==` compares it (spec §7.4): trailing fraction
 ;; zeros and a negative zero are representation, not value. The plain-integer
 ;; shortcut is an ASCII check, never DIGIT-CHAR-P, which accepts other scripts.
+(defun canonical-dec-string (d)
+  "The canonical spelling of the parsed number D: no trailing fraction zeros, no
+negative zero. Trailing zeros are dropped from the FORMATTED text, because
+stripping them from the integer by `(floor digits 10)` was a bignum division per
+zero -- quadratic in the zeros, 20 s for a key with 100,000 of them (LISP-P19)."
+  (if (zerop (dec-digits d))
+      "0"
+      (let ((text (dec-format d)))
+        (if (plusp (dec-scale d))
+            (let ((end (length text)))
+              (loop while (char= (char text (1- end)) #\0) do (decf end))
+              ;; Only fraction zeros can have been dropped: scale > 0 puts a dot
+              ;; before them, and the loop stops at it.
+              (when (char= (char text (1- end)) #\.) (decf end))
+              (subseq text 0 end))
+            text))))
+
 (defun canonical-numeric-string (sc)
   (declare (type string sc))
   (let ((len (length sc)))
@@ -240,16 +257,7 @@ when the operator's left operand reads the right side."
                    always (char<= #\0 (char sc i) #\9)))
         sc
         (let ((d (dec-parse sc)))
-          (when d
-            (let ((digits (dec-digits d))
-                  (scale (dec-scale d)))
-              (if (zerop digits)
-                  "0"
-                  (progn
-                    (loop while (and (> scale 0) (zerop (mod digits 10)))
-                          do (setf digits (floor digits 10))
-                             (decf scale))
-                    (dec-format (%make-dec (dec-neg d) digits scale))))))))))
+          (when d (canonical-dec-string d))))))
 
 ;; `_1` and `_2` name a position, not a relation: an argument with no name is
 ;; bound bare (spec §7.4).
@@ -266,18 +274,8 @@ when the operator's left operand reads the right side."
     (handler-case
         (if is-numeric
             (let ((sc (and (eq (value-kind val) :text) (value-scalar val))))
-              (if (and (stringp sc) (canonical-numeric-string sc))
-                  (canonical-numeric-string sc)
-                  (let* ((d (as-dec val nil))
-                         (digits (dec-digits d))
-                         (scale (dec-scale d)))
-                    (if (zerop digits)
-                        "0"
-                        (progn
-                          (loop while (and (> scale 0) (zerop (mod digits 10)))
-                                do (setf digits (floor digits 10))
-                                   (decf scale))
-                          (dec-format (%make-dec (dec-neg d) digits scale)))))))
+              (or (and (stringp sc) (canonical-numeric-string sc))
+                  (canonical-dec-string (as-dec val nil))))
             (let ((bytes (as-bytes val nil)))
               (map 'string #'code-char bytes)))
       (sel-error () (cons :bad val)))))
@@ -314,6 +312,79 @@ when the operator's left operand reads the right side."
       (coerce-join-operand is-numeric (cdr key) left-expr))
     (when (jrf-bad facts)
       (coerce-join-operand is-numeric (jrf-bad facts) right-expr))))
+
+;;; LINK with `key-equality AND residual...` (LISP-P9). The predicate is not a bare
+;;; `==`, so the hash join above does not apply, and the nested loop ran the
+;;; evaluator on every (left, right) pair: n*m. When the LEADING conjunct is an
+;;; equality between an expression over the left element and one over the right,
+;;; a pair whose keys differ has a FALSE first conjunct, so the residual conjuncts
+;;; (and their errors and effects) never run for it: only the pairs whose keys are
+;;; equal need the predicate. Those are found by hashing, and the predicate then
+;;; runs on each, unchanged, in the order the nested loop would reach them.
+;;;
+;;; Used only where that is provably the same program: the predicate has no
+;;; assignment and calls only shipped built-ins (nothing in it can change what a
+;;; later pair reads), and every key of both sides is a live, good key -- computed
+;;; up front, with any failure (an error, a NULL, a rejected key) sending the join
+;;; to the nested loop, which raises it where and as it always did.
+(defun leading-and-conjunct (pred)
+  "The first conjunct of a left-nested AND chain, or NIL when PRED is not one."
+  (when (and pred (node-p pred) (eq (node-kind pred) :bin) (string= (node-s pred) "AND"))
+    (let ((n pred))
+      (loop while (and (node-p n) (eq (node-kind n) :bin) (string= (node-s n) "AND"))
+            do (setf n (node-l n)))
+      n)))
+
+(defun link-pred-pure-p (node)
+  "No assignment anywhere in NODE, and every call is to a shipped built-in."
+  (labels ((pure (n)
+             (or (null n) (not (node-p n))
+                 (and (case (node-kind n)
+                        (:assign nil)
+                        (:call (and (member (node-s n) *shipped-builtins* :test #'string=) t))
+                        (t t))
+                      (pure (node-l n))
+                      (pure (node-r n))
+                      (every #'pure (node-items n))))))
+    (pure node)))
+
+(defun and-residual-candidates (a ctx pred b1 b2 items1 items2)
+  "(values left-keys table) -- the canonical key of every left element, and the
+indexes of the right elements under each key in right order -- or NIL when the
+join is not of this shape or any key is not a live, good one."
+  (let ((lead (leading-and-conjunct pred)))
+    (when (and lead (link-pred-pure-p pred))
+      (multiple-value-bind (left-expr right-expr is-numeric) (try-extract-equi-keys lead b1 b2)
+        (when (and left-expr right-expr)
+          (handler-case
+              (let ((table (make-hash-table :test #'equal))
+                    (left-keys (make-array (length items1)))
+                    (b1-cell (cons b1 nil)) (b1-low (cons (string-downcase b1) nil))
+                    (b1-1 (cons "_1" nil)) (b1-_ (cons "_" nil))
+                    (b2-cell (cons b2 nil)) (b2-low (cons (string-downcase b2) nil))
+                    (b2-2 (cons "_2" nil)))
+                (flet ((live-key (expr)
+                         (let ((key (extract-join-key (args-eval a expr) is-numeric)))
+                           (when (or (null key) (join-key-bad-p key))
+                             (return-from and-residual-candidates nil))
+                           key)))
+                  (ctx-push-frame ctx (list b2-cell b2-low b2-2))
+                  (unwind-protect
+                       (loop for item2 across items2 for j from 0
+                             do (let ((r2 (ensure-row-table-alias item2 b2)))
+                                  (setf (cdr b2-cell) r2 (cdr b2-low) r2 (cdr b2-2) r2)
+                                  (push j (gethash (live-key right-expr) table))))
+                    (ctx-pop-frame ctx))
+                  (maphash (lambda (k v) (setf (gethash k table) (nreverse v))) table)
+                  (ctx-push-frame ctx (list b1-cell b1-low b1-1 b1-_))
+                  (unwind-protect
+                       (loop for item1 across items1 for i from 0
+                             do (let ((r1 (ensure-row-table-alias item1 b1)))
+                                  (setf (cdr b1-cell) r1 (cdr b1-low) r1 (cdr b1-1) r1 (cdr b1-_) r1)
+                                  (setf (svref left-keys i) (live-key left-expr))))
+                    (ctx-pop-frame ctx)))
+                (values left-keys table))
+            (sel-error () nil)))))))
 
 (defun make-null-record (sample-row tbl-name)
   "An unmatched LINK_LEFT row's right side (spec §7.4): shaped like the first
@@ -549,9 +620,10 @@ RKEPT, the right fields it leaves out for being NULL or a record."
     (%make-join-plan :shape (car plan) :ops ops :slots slots
                      :lrest lrest :rkept (nreverse rkept))))
 
-(defun join-plan-build (plan r1 rside check-left check-right)
-  "The row PLAN makes of R1 and RSIDE, or NIL when the pair breaks its
-assumptions: with CHECK-LEFT, that each left field is (or is not) a nested
+(defun join-plan-build (plan r1 rside check-left check-right &optional (o1 r1) (o2 rside))
+  "The row PLAN makes of R1 and RSIDE (the shaped views the fields are read
+from; O1 and O2 are the elements themselves, which the binder keys hold), or NIL
+when the pair breaks its assumptions: with CHECK-LEFT, that each left field is (or is not) a nested
 record as it was; with CHECK-RIGHT, that a right field it copies is a
 non-NULL scalar -- checked as it is copied -- and that one it leaves out for
 being NULL or a record still is one."
@@ -588,8 +660,8 @@ being NULL or a record still is one."
                      (when (and check-right (eq (value-kind v) :none) (not (value-is-list v)))
                        (return-from join-plan-build nil))
                      v))
-                (2 r1)
-                (t rside))))
+                (2 o1)
+                (t o2))))
       (%make-shaped-value (join-plan-shape plan) storage))))
 
 (defun make-join-flat-test (binder-names)
@@ -621,39 +693,63 @@ the join has seen that every right row is flat (MAKE-JOIN-FLAT-TEST), it sets
 (CAR FACTS) and the right checks are skipped: a plan made from a flat row
 holds for every flat row of its shape."
   (let ((plans (make-hash-table :test #'equal))
+        (twins (make-hash-table :test #'eq))
         (last-left nil) (last-plan nil) (last-list nil)
         (pair-l nil) (pair-r nil) (pair-matched nil))
+    (flet ((shaped-view (row)
+             ;; A row with no record shape (built by assignment, say, and not from
+             ;; data the host converted) is read through a shaped twin made once:
+             ;; the same keys in the same order holding the same values. Without
+             ;; it every pair of such rows took MAKE-JOINED-ROW, which builds two
+             ;; hash tables and several lists per pair (LISP-P8: 3-6x slower).
+             (cond ((null row) nil)
+                   ((and (value-shape row) (value-storage row)) row)
+                   (t (multiple-value-bind (twin found) (gethash row twins)
+                        (if found
+                            twin
+                            (setf (gethash row twins)
+                                  (and (plusp (value-size row)) (not (value-is-list row))
+                                       (let* ((keys (value-keys row))
+                                              (storage (make-array (length keys))))
+                                         (loop for k in keys for i from 0
+                                               do (setf (svref storage i) (value-get row k)))
+                                         (%make-shaped-value (get-record-shape keys) storage))))))))))
     (lambda (r1 r2)
       (block project
-        (let ((rside (or r2 null-r2)))
-          (if (or (null (value-shape r1)) (null (value-storage r1))
-                  (null rside) (null (value-shape rside)) (null (value-storage rside)))
-              (make-joined-row r1 r2 b1 b2 null-r2)
+        (let* ((o1 r1)
+               (o2 (or r2 null-r2))
+               (s1 (shaped-view o1))
+               (s2 (shaped-view o2))
+               (r1 s1)
+               (rside s2))
+          (if (or (null r1) (null rside))
+              (make-joined-row o1 r2 b1 b2 null-r2)
               (let ((lshape (value-shape r1))
                     (rshape (value-shape rside))
                     (matched (and r2 t))
                     (list nil))
                 (flet ((remember (plan row)
-                         (setf last-left r1 last-plan plan last-list list
+                         (setf last-left o1 last-plan plan last-list list
                                pair-l lshape pair-r rshape pair-matched matched)
                          row))
                   ;; The same shapes as the last pair: its plan first, checking
                   ;; the left row only when it is a new one.
                   (if (and last-plan (eq lshape pair-l) (eq rshape pair-r) (eq matched pair-matched))
-                      (let ((row (join-plan-build last-plan r1 rside (not (eq last-left r1)) (not (car facts)))))
+                      (let ((row (join-plan-build last-plan r1 rside (not (eq last-left o1)) (not (car facts))
+                                                  o1 o2)))
                         (when row
-                          (setf last-left r1)
+                          (setf last-left o1)
                           (return-from project row))
                         (setf list last-list))
                       (let ((key (list lshape rshape matched)))
                         (setf list (or (gethash key plans)
                                        (setf (gethash key plans) (list :plans))))))
                   (dolist (plan (cdr list))
-                    (let ((row (join-plan-build plan r1 rside t (not (car facts)))))
+                    (let ((row (join-plan-build plan r1 rside t (not (car facts)) o1 o2)))
                       (when row (return-from project (remember plan row)))))
                   (let ((plan (compile-join-plan r1 rside matched b1 b2)))
                     (setf (cdr (last list)) (list plan))
-                    (remember plan (join-plan-build plan r1 rside nil nil)))))))))))
+                    (remember plan (join-plan-build plan r1 rside nil nil o1 o2))))))))))))
 
 (defun single-relation-name (node)
   "Returns the relation name if NODE represents a single relation (possibly filtered/mapped), but NIL if it involves a join."
@@ -1136,6 +1232,9 @@ carry is promoted from neither, spec §7.4)."
                                  (when (and key (not (join-key-bad-p key)))
                                    (push r2 (gethash key ht))))))
                         (ctx-pop-frame ctx))
+                      ;; Buckets were built by PUSH, newest first. Put them in row order
+                      ;; once, here, and not with a REVERSE per probing left row (LISP-P19).
+                      (maphash (lambda (k v) (setf (gethash k ht) (nreverse v))) ht)
                       (setf (car facts) flat))
                     ;; The pre-filter, decided from the rows themselves
                     ;; (JOIN-STAGE-WALK). On a left row a conjunct evaluates
@@ -1251,7 +1350,7 @@ carry is promoted from neither, spec §7.4)."
                                  (emit (joined)
                                    (check-collection-cap (incf nout) (args-pos a))
                                    (if numbered
-                                       (push (cons (format nil "~d" position) joined) keyed)
+                                       (push (cons (format-index-string position) joined) keyed)
                                        (push joined out))
                                    (incf position)))
                           ;; The right rows the right conjuncts reject, once
@@ -1332,7 +1431,7 @@ carry is promoted from neither, spec §7.4)."
                                            ;; joined rows raise in the FILTER,
                                            ;; in order, where they would have.
                                            (let ((skip (and rejected (= asked 0) rejected)))
-                                             (dolist (r2 (reverse matches))
+                                             (dolist (r2 matches)
                                                (if (and skip (gethash r2 skip))
                                                    (progn (setf dropped t) (incf position))
                                                    (emit (funcall projector r1 r2)))))
@@ -1361,20 +1460,37 @@ carry is promoted from neither, spec §7.4)."
                            ;; Each side is listed ONCE (spec 7.3): the right side is
                            ;; walked again for every left row, and a predicate that
                            ;; grows it must not give later left rows more rows.
-                           (let ((items2 (collection-items val2)))
-                            (for-each-collection-item (item1 val1)
-                             (let ((r1 (ensure-row-table-alias item1 b1))
+                           (let* ((items1 (collection-items val1))
+                                  (items2 (collection-items val2))
+                                  (candidates nil)
+                                  (left-keys nil))
+                            ;; `key == key AND residual`: only the pairs whose keys
+                            ;; are equal can satisfy the predicate (see
+                            ;; AND-RESIDUAL-CANDIDATES), so only those are run.
+                            (when (and sample-r2 (null prefilter))
+                              (ctx-pop-frame ctx)
+                              (unwind-protect
+                                   (multiple-value-setq (left-keys candidates)
+                                     (and-residual-candidates a ctx pred-node b1 b2 items1 items2))
+                                (ctx-push-frame ctx frame)))
+                            (loop for item1 across items1
+                                  for i of-type fixnum from 0
+                             do (let ((r1 (ensure-row-table-alias item1 b1))
                                    (matched nil))
                                (setf (cdr b1-cell) r1 (cdr b1-low-cell) r1
                                      (cdr b1-1-cell) r1 (cdr b1-_-cell) r1)
                                (when sample-r2
-                                 (loop for item2 across items2 do
-                                   (let ((r2 (ensure-row-table-alias item2 b2)))
-                                     (setf (cdr b2-cell) r2 (cdr b2-low-cell) r2 (cdr b2-2-cell) r2)
-                                     (when (as-bool (args-eval a pred-node) (node-pos pred-node))
-                                       (setf matched t)
-                                       (progn (check-collection-cap (incf nout) (args-pos a))
-                                              (push (funcall projector r1 r2) out))))))
+                                 (flet ((try (item2)
+                                          (let ((r2 (ensure-row-table-alias item2 b2)))
+                                            (setf (cdr b2-cell) r2 (cdr b2-low-cell) r2 (cdr b2-2-cell) r2)
+                                            (when (as-bool (args-eval a pred-node) (node-pos pred-node))
+                                              (setf matched t)
+                                              (progn (check-collection-cap (incf nout) (args-pos a))
+                                                     (push (funcall projector r1 r2) out))))))
+                                   (if candidates
+                                       (dolist (j (gethash (svref left-keys i) candidates))
+                                         (try (svref items2 j)))
+                                       (loop for item2 across items2 do (try item2)))))
                                (when (and is-left (not matched))
                                  (progn (check-collection-cap (incf nout) (args-pos a))
                                         (push (funcall projector r1 nil) out))))))

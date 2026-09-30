@@ -5,6 +5,7 @@ quoting happens, so there is one place to get it right.
 from __future__ import annotations
 
 import re
+from typing import Any
 
 from .. import decimal as D
 from ..errors import Pos
@@ -19,6 +20,61 @@ from .errors import refuse
 # fullmatch and a three-digit cap close that: one grammar, and no host's integer
 # parser is consulted.
 _SLOT = re.compile(r'0|[1-9][0-9]{0,2}')
+
+
+_SEGMENTS: dict[str, tuple] = {}
+_SEGMENTS_MAX = 4096
+
+
+def _segments(tpl: str) -> tuple:
+    """A template as a tuple of (is_slot, text): literal runs with ``{{`` / ``}}``
+    already unescaped, and the raw text of every ``{...}`` slot. A template is scanned
+    once per distinct string, not once per fill: the same few dozen templates are
+    filled for every node of every translation, and the character-by-character scan
+    was a third of a translation's time (PY-P28). Independent of the dialect and of
+    the arguments, so the cache is shared; bounded, and a miss just rescans."""
+    segs = _SEGMENTS.get(tpl)
+    if segs is not None:
+        return segs
+    out: list = []
+    lit: list = []
+
+    def flush() -> None:
+        if lit:
+            out.append((False, ''.join(lit)))
+            lit.clear()
+
+    i = 0
+    n_tpl = len(tpl)
+    while i < n_tpl:
+        c = tpl[i]
+        if c == '{' and i + 1 < n_tpl and tpl[i + 1] == '{':
+            lit.append('{')
+            i += 2
+        elif c == '}' and i + 1 < n_tpl and tpl[i + 1] == '}':
+            lit.append('}')
+            i += 2
+        elif c != '{':
+            # the run up to the next brace in one slice
+            j = i + 1
+            while j < n_tpl and tpl[j] != '{' and tpl[j] != '}':
+                j += 1
+            lit.append(tpl[i:j])
+            i = j
+        else:
+            end = tpl.find('}', i)
+            if end == -1:
+                lit.append(tpl[i:])
+                break
+            flush()
+            out.append((True, tpl[i + 1:end]))
+            i = end + 1
+    flush()
+    segs = tuple(out)
+    if len(_SEGMENTS) >= _SEGMENTS_MAX:
+        _SEGMENTS.clear()
+    _SEGMENTS[tpl] = segs
+    return segs
 
 
 def _slot_index(s: str) -> int | None:
@@ -110,28 +166,43 @@ def _numeric_literal(dialect: str, v: Value, pos: Pos | None) -> str:
     return '(' + n + ')' if n.startswith('-') else n
 
 
+# One escaper per escape table, built on first use (PY-P20: the literal was walked
+# one character at a time in Python, 0.44 s per megabyte). Keyed by the dialect
+# and by the identity of its escape dict, which is kept in the entry so that a
+# re-registered dialect (a new dict) never reuses a stale escaper.
+_ESCAPERS: dict[str, tuple[dict, Any]] = {}
+
+
+def _escaper(dialect: str, escape: dict) -> Any:
+    entry = _ESCAPERS.get(dialect)
+    if entry is not None and entry[0] is escape:
+        return entry[1]
+    keys = sorted((k for k in escape if k), key=len, reverse=True)
+    if keys and all(len(k) == 1 for k in keys):
+        # Every rule is one character: a translate table, applied in C.
+        table = {ord(k): str(escape[k]) for k in keys}
+        fn = lambda text: text.translate(table)             # noqa: E731
+    elif keys:
+        # Longest first, so a rule for "\\\\" is applied before one for "\\".
+        # ONE left-to-right pass either way, never one str.replace per rule:
+        # replacing "'" with "''" and then "\\" with "\\\\" would rewrite the
+        # output of the first rule. The alternation tries the keys in order at each
+        # position, which is exactly the longest-match scan it replaces.
+        rx = re.compile('|'.join(re.escape(k) for k in keys))
+        repl = {k: str(escape[k]) for k in keys}
+        fn = lambda text: rx.sub(lambda m: repl[m.group(0)], text)   # noqa: E731
+    else:
+        fn = lambda text: text                                # noqa: E731
+    _ESCAPERS[dialect] = (escape, fn)
+    return fn
+
+
 def text_literal(dialect: str, text: str) -> str:
     quote = str(_map.lexical(dialect, 'textQuote'))
     escape = _map.lexical(dialect, 'textEscape')
     out = text
     if isinstance(escape, dict):
-        # Longest first, so a rule for "\\\\" is applied before one for "\\".
-        # A single left-to-right pass, never one str.replace per rule: replacing
-        # "'" with "''" and then "\\" with "\\\\" would rewrite the output of the
-        # first rule.
-        keys = sorted(escape.keys(), key=len, reverse=True)
-        buf: list[str] = []
-        i = 0
-        while i < len(out):
-            for k in keys:
-                if k and out.startswith(k, i):
-                    buf.append(str(escape[k]))
-                    i += len(k)
-                    break
-            else:
-                buf.append(out[i])
-                i += 1
-        out = ''.join(buf)
+        out = _escaper(dialect, escape)(out)
     return quote + out + quote
 
 
@@ -299,27 +370,11 @@ class Emit:
                 first = False
                 splice(f)
 
-        i = 0
-        n_tpl = len(tpl)
-        while i < n_tpl:
-            if tpl[i] == '{' and i + 1 < n_tpl and tpl[i + 1] == '{':
-                push('{')
-                i += 2
+        for is_slot, text in _segments(tpl):
+            if not is_slot:
+                push(text)
                 continue
-            if tpl[i] == '}' and i + 1 < n_tpl and tpl[i + 1] == '}':
-                push('}')
-                i += 2
-                continue
-            if tpl[i] != '{':
-                push(tpl[i])
-                i += 1
-                continue
-            end = tpl.find('}', i)
-            if end == -1:
-                push(tpl[i:])
-                break
-            slot = tpl[i + 1:end]
-            i = end + 1
+            slot = text
 
             if slot == '*':
                 join(args)

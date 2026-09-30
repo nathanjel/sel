@@ -62,6 +62,18 @@ func init() {
 			if count == 0 {
 				return NewNone()
 			}
+			if shape := args.RecordShape(); shape != nil {
+				// Every key is a distinct text literal (the parser prepared the
+				// shape): the keys cannot fail or have effects, and dispatch has
+				// not evaluated them. Values are evaluated and copied in order
+				// (GO-P14).
+				values := make([]*Value, count/2)
+				for i := 1; i < count; i += 2 {
+					// SPEC §3.4: RECORD copies its values, like `,`.
+					values[i/2] = args.Val(i).CloneAt(2, args.Pos())
+				}
+				return NewShapedRecord(shape, values)
+			}
 			keys := make([]string, count/2)
 			values := make([]*Value, count/2)
 			for i := 0; i < count; i += 2 {

@@ -33,7 +33,11 @@
   ;; On a FILTER body: whether the step after the FILTER renumbers without
   ;; reading `_K`, so nothing observes the keys its result carries and the
   ;; evaluator's join pre-filter may drop rows below the join (SEL-0052).
-  (keys-unobserved nil))
+  (keys-unobserved nil)
+  ;; A :bin node's operator as a keyword, filled on first evaluation (EVAL's
+  ;; BINARY-OP-CODE) so the evaluator dispatches with CASE instead of a chain of
+  ;; STRING= on every evaluation (LISP-P3). Never copied: a copy re-derives it.
+  (opc nil))
 
 ;;; The operator families, named once for the PARSER. The precedence table below
 ;;; is BUILT from these rather than repeating them, and EVAL-BINARY asks
@@ -172,7 +176,7 @@ left to the run."
                (loop for tail on items by #'cddr
                      always (eq (node-kind (first tail)) :text)))
       (let ((keys (loop for tail on items by #'cddr collect (node-s (first tail)))))
-        (when (= (length keys) (length (remove-duplicates keys :test #'string=)))
+        (when (keys-distinct-p keys)
           (get-record-shape keys))))))
 
 (defstruct (parser (:constructor %make-parser (toks)))
@@ -388,7 +392,7 @@ left to the run."
               (setf args (if (and (eq (node-kind inner) :list) (not (node-grouped inner)))
                              (node-items inner)
                              (list inner))))))
-      (let ((spec (registry-lookup (token-value name-tok))))
+      (let ((spec (registry-lookup-canonical (token-value name-tok))))
         (unless spec
           (fail "E_UNKNOWN_FUNC" (format nil "unknown function ~a" (token-value name-tok))
                 (token-pos name-tok)))
@@ -412,10 +416,20 @@ left to the run."
         (:num
          (p-next p)
          ;; Canonicalised once, here: the literal 007 is the value 7.
-         (let* ((parsed (dec-parse (token-value tok) (token-pos tok)))
+         (let* ((text (token-value tok))
+                (parsed (dec-parse text (token-pos tok)))
                 (n (make-node :num (token-pos tok))))
+           ;; A numeral with no leading zero in its integer part is already its own
+           ;; canonical text: rendering it again only to get the same characters
+           ;; is what made a million-digit literal cost seconds to compile
+           ;; (LISP-P2). (The token has no sign, so `0` and `0.5` are canonical
+           ;; and `007` is not.)
            (setf (node-dec-val n) parsed
-                 (node-s n) (dec-format parsed))
+                 (node-s n) (if (or (char/= (char text 0) #\0)
+                                    (= (length text) 1)
+                                    (char= (char text 1) #\.))
+                                text
+                                (dec-format parsed)))
            n))
 
         (:text
@@ -478,7 +492,7 @@ left to the run."
             (setf args (if (and (eq (node-kind inner) :list) (not (node-grouped inner)))
                            (node-items inner)
                            (list inner)))))
-      (let ((spec (registry-lookup (token-value name-tok))))
+      (let ((spec (registry-lookup-canonical (token-value name-tok))))
         (unless spec
           (fail "E_UNKNOWN_FUNC" (format nil "unknown function ~a" (token-value name-tok))
                 (token-pos name-tok)))
@@ -502,6 +516,24 @@ left to the run."
   '(("" (:outer :inner) nil ("_" "_K"))
     ("" (:outer :binder :inner) (1 :name) ("_K"))))
 
+;;; The binding forms of one builtin, by name, in table order. BINDING-FORM runs for
+;;; every call the dependency walker and the SQL layer visit, and filtered the whole
+;;; table (a STRING= per builtin) each time (LISP-P15). The table is data set once at
+;;; load; the index is keyed on that list, so a reloaded manifest rebuilds it.
+(defvar *binding-forms-index* nil)   ; (data . hash-table)
+
+(defun binding-forms-named (name)
+  "The forms of the builtin called NAME (any case), or NIL."
+  (let ((cache *binding-forms-index*))
+    (unless (and cache (eq (car cache) *builtin-form-data*))
+      (let ((h (make-hash-table :test 'equal)))
+        (dolist (f *builtin-form-data*)
+          (push f (gethash (string-upcase (first f)) h)))
+        (maphash (lambda (k v) (setf (gethash k h) (nreverse v))) h)
+        (setf cache (cons *builtin-form-data* h)
+              *binding-forms-index* cache)))
+    (gethash (string-upcase name) (cdr cache))))
+
 (defun binding-form (name args &optional (spec (registry-lookup name)))
   "Which argument of a binding call runs where (spec/builtins.md, \"Binding
 forms\"): two values, the per-argument scopes -- :OUTER (evaluated where the
@@ -510,8 +542,7 @@ call is), :BINDER (a bare name, never evaluated) or :INNER (once per element)
 form takes this count: the evaluator would refuse it, and a static consumer
 reads every argument where the call stands. The dependency walker and the SQL
 layer's stage 1 both classify through here, so they cannot disagree."
-  (let* ((upper (string-upcase name))
-         (forms (or (remove-if-not (lambda (f) (string= (first f) upper)) *builtin-form-data*)
+  (let* ((forms (or (binding-forms-named name)
                     (and spec (spec-binds spec) *generic-binding-forms*)))
          (count (length args)))
     (dolist (form forms nil)

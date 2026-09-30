@@ -115,6 +115,62 @@ const R = { ORDERS: Binding.relation('orders', 'o', { ID: Binding.column('id', '
     outcome(() => map.defineDialect('mariadb', { extends: null, version: '11' })).error instanceof Error);
 }
 
+// --- text literals: the regex pass and the per-character scan agree (JS-P25) ------
+{
+  const { map } = sql;
+  const { textLiteral } = await import('../js/src/sql/emit.mjs');
+  map.defineDialect('js-esc', { extends: 'mariadb', version: '10.5',
+    lexical: { textEscape: { "'": "''", '\\': '\\\\', '--': '-\\-', '\n': '\\n', '\\\\': 'BACKSLASH-PAIR' } } });
+  const naive = (dialect, text) => {
+    const esc = map.lexical(dialect, 'textEscape');
+    const keys = Object.keys(esc).filter((k) => k).sort((a, b) => b.length - a.length);
+    let out = '';
+    for (let i = 0; i < text.length;) {
+      const hit = keys.find((k) => text.startsWith(k, i));
+      if (hit === undefined) { out += text[i]; i += 1; } else { out += String(esc[hit]); i += hit.length; }
+    }
+    return String(map.lexical(dialect, 'textQuote')) + out + String(map.lexical(dialect, 'textQuote'));
+  };
+  const parts = ["'", '\\', '\\\\', '--', '-', '\n', 'a', ' ', '😀', 'é'];
+  let seed = 7;
+  const next = () => (seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff;
+  let agree = true;
+  for (let i = 0; i < 400 && agree; i++) {
+    let text = '';
+    const len = 20 + Math.floor(next() * 300);
+    for (let k = 0; k < len; k++) text += parts[Math.floor(next() * parts.length)];
+    for (const d of ['mariadb', 'postgresql', 'sqlite', 'js-esc']) if (textLiteral(d, text) !== naive(d, text)) agree = false;
+  }
+  check('textLiteral over long text equals the per-character rule in every dialect, overlapping keys included', agree);
+  // The rules object is the host's own and nothing freezes it: a rule added after the
+  // first long literal is honoured by the next one.
+  const rules = map.lexical('js-esc', 'textEscape');
+  const long = 'x%y'.repeat(40);
+  const before = textLiteral('js-esc', long);
+  rules['%'] = '\\%';
+  const after = textLiteral('js-esc', long);
+  delete rules['%'];
+  check('a rule added to a dialect\'s escape table after use applies to the next literal',
+    before === naive('js-esc', long) && after.includes('x\\%y') && textLiteral('js-esc', long) === before);
+}
+
+// --- the dialect chain is cached, frozen, and follows registrations (JS-P26) -------
+{
+  const { map } = sql;
+  check('chain(mariadb) is self first, then up to ansi', JSON.stringify(map.chain('mariadb')) === '["mariadb","mysql-family","ansi"]',
+    JSON.stringify(map.chain('mariadb')));
+  check('the same array comes back (built once) and it is frozen',
+    map.chain('mariadb') === map.chain('mariadb') && Object.isFrozen(map.chain('mariadb')));
+  check('an unknown name has an empty chain for now', map.chain('js-later').length === 0);
+  map.defineDialect('js-later', { extends: 'postgresql', version: '16' });
+  check('...and the chain follows once it is registered',
+    JSON.stringify(map.chain('js-later')) === '["js-later","postgresql","ansi"]', JSON.stringify(map.chain('js-later')));
+  check('lexical() and entry() walk the new chain', map.lexical('js-later', 'textQuote') === "'");
+  map.defineDialect('js-later', { extends: 'postgresql', version: '17' });
+  check('re-declaring under the same parent keeps a correct chain',
+    JSON.stringify(map.chain('js-later')) === '["js-later","postgresql","ansi"]');
+}
+
 // --- hybrid execution never writes the caller's context ----------------------------
 {
   const program = compile('A = 1; A += 1; ORDERS .> SORT_BY(_["id"]) .> TAKE(A)');

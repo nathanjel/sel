@@ -189,8 +189,10 @@ export function compileMathPlan(root) {
     }
 
     if (node.t === 'bin' || node.t === 'un') return null;
-    if (node.t === 'assign' || node.t === 'seq' || node.t === 'list') return null;
-    if (node.t === 'call' && (node.name === 'IF' || node.name === 'COND')) return null;
+    // IF/COND, `,`, `;` and assignment are not arithmetic, but they are operands
+    // like any call: loaded (evaluated by the tree evaluator, in operand order,
+    // with its own laziness) and coerced where the consuming operation coerces
+    // (SPEC 6.2). Refusing them here left the whole expression unplanned.
 
     const slot = allocSlot();
     steps.push({ op: OpCode.LOAD_LEAF, dst: slot, leafNode: node, pos: node.pos });

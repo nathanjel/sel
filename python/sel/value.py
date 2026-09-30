@@ -5,6 +5,7 @@ there is deliberately no second representation of state. See spec/SPEC.md §3.
 from __future__ import annotations
 
 import re
+from itertools import islice
 from typing import Any, Iterator
 
 from . import decimal as D
@@ -47,7 +48,12 @@ def _cache_record_shape(signature: tuple[str, ...], shape: RecordShape) -> None:
     if len(signature) > _SHAPE_CACHE_MAX_KEYS or sum(map(len, signature)) > _SHAPE_CACHE_MAX_CHARS:
         return
     if len(_SHAPES) >= _SHAPE_CACHE_ENTRIES:
-        _SHAPES.clear()
+        # Evict the oldest quarter, not everything: a workload with a few more
+        # layouts than the cache holds used to lose every shape (and every plan
+        # keyed by one) each time the cache filled. A shape that is evicted and
+        # built again is an equal, distinct object, exactly what clear() allowed.
+        for old in list(islice(_SHAPES, _SHAPE_CACHE_ENTRIES // 4)):
+            _SHAPES.pop(old, None)
     _SHAPES[signature] = shape
 
 _LIST_KEY = re.compile(r'[1-9][0-9]{0,8}\Z')
@@ -221,6 +227,26 @@ def elements(value: Any) -> list[tuple[str, Any]]:
     return list(iter_elements(value))
 
 
+def _clone_seq(seq: list, depth: int, pos: Pos | None) -> list:
+    """The copies of a value's children, which sit at DEPTH. The children of a
+    record or list are mostly leaves, so a leaf is copied inline rather than by a
+    call of its own; one past the cap is refused exactly where _clone_at would."""
+    if not seq:
+        return []
+    if depth > MAX_DEPTH:
+        fail('E_DEPTH', 'value nested too deeply', pos)
+    out = []
+    add = out.append
+    for v in seq:
+        if v.storage is None and v.shape is None and not v.children:
+            c = Value(v.kind, v._scalar, v.is_list)
+            c._dec_val = v._dec_val
+            add(c)
+        else:
+            add(v._clone_at(depth, pos))
+    return out
+
+
 class Value:
     __slots__ = ('kind', '_scalar', 'children', 'is_list', 'shape', 'storage',
                  '_dec_val', 'list_keys', '_list_key_map')
@@ -282,6 +308,11 @@ class Value:
         if self.kind == NONE and self.size() == 0:
             return True
         if self.kind == TEXT and self.size() == 0:
+            # A number is never blank: its text starts with a digit or a sign. Asking
+            # `.scalar` for one that has only its decimal built formats the whole
+            # number first -- 0.9 s for a million-digit one (PY-P24).
+            if self._scalar is None and self._dec_val is not None:
+                return False
             return len(self.scalar) == 0 or all(ch in ' \t\r\n' for ch in self.scalar)
         return False
 
@@ -422,6 +453,17 @@ class Value:
             fail('E_NOT_NUM', f'not a number: {d!r}', None)
         v = Value(TEXT, None)
         v._dec_val = parsed
+        return v
+
+    @staticmethod
+    def _num_owned(d: D.Dec) -> Value:
+        """A number Value from a Dec the library just computed: already built by
+        D.make (canonical, no negative zero) and, where it could have grown, passed
+        through D.guard by the operation that made it. Value.num re-checked all of
+        that on every arithmetic result -- about a third of its cost and 15% of a
+        plan's -- and stays the public boundary, which must not trust its input."""
+        v = Value(TEXT, None)
+        v._dec_val = d
         return v
 
     @staticmethod
@@ -642,6 +684,14 @@ is refused. `pos` is reported when the caller has one -- the evaluator knows
 which node asked -- and is None for a call from host code, the same convention
 as as_text().
         """
+        # A leaf is most of what is copied (a record's fields): it needs no
+        # recursion, so it is copied here without the second call.
+        if self.storage is None and self.shape is None and not self.children:
+            if depth > MAX_DEPTH:
+                fail('E_DEPTH', 'value nested too deeply', pos)
+            out = Value(self.kind, self._scalar, self.is_list)
+            out._dec_val = self._dec_val
+            return out
         return self._clone_at(depth, pos)
 
     def _clone_at(self, depth: int, pos: Pos | None) -> Value:
@@ -649,20 +699,42 @@ as as_text().
             fail('E_DEPTH', 'value nested too deeply', pos)
         # A leaf is copied too: it can gain children later (`B[1]["k"] = v`),
         # and a shared one would give them to the original as well (§5.7;
-        # review 2026-09-25 SEM-12).
+        # review 2026-09-25 SEL-12).
         out = Value(self.kind, self._scalar, self.is_list)
         out._dec_val = self._dec_val
         if self.shape is not None:
             out.shape = self.shape
-            out.storage = [v._clone_at(depth + 1, pos) for v in self.storage]
+            out.storage = _clone_seq(self.storage, depth + 1, pos)
         elif self.storage is not None:
-            out.storage = [v._clone_at(depth + 1, pos) for v in self.storage]
+            out.storage = _clone_seq(self.storage, depth + 1, pos)
             if self.list_keys is not None:
                 out.list_keys = list(self.list_keys)
         elif self.children:
             out.children = {k: v._clone_at(depth + 1, pos)
                             for k, v in self.children.items()}
         return out
+
+    def check_depth(self, depth: int = 1, pos: Pos | None = None) -> None:
+        """Refuses, exactly as clone() would, a value nested past the cap -- but
+        copies nothing. FILTER uses it when it hands a kept element on as it is:
+        the copy it skips is also the place a too-deep element is reported, and
+        that answer must not depend on whether the copy was needed."""
+        if depth > MAX_DEPTH:
+            fail('E_DEPTH', 'value nested too deeply', pos)
+        seq = self.storage
+        if seq is None:
+            ch = self.children
+            if not ch:
+                return
+            seq = ch.values()
+        elif not seq:
+            return
+        nxt = depth + 1
+        if nxt > MAX_DEPTH:
+            fail('E_DEPTH', 'value nested too deeply', pos)
+        for v in seq:
+            if v.storage is not None or v.children:
+                v.check_depth(nxt, pos)
 
     # PHP spells the deep copy `->copy()`; the alias means a reader coming from
     # docs/contributing.md's Value API table finds whichever name they looked up.
@@ -818,6 +890,24 @@ def structural_hash(value: Value) -> int:
     return _structural_hash_at(value, 1)
 
 
+_INDEX_HASH_LIMIT = 4096
+_INDEX_HASHES: list[int] = []
+
+
+def _index_hashes(n: int) -> list[int]:
+    """hash(str(1)) .. hash(str(min(n, limit))): a dense list's keys are its positions,
+    and hashing a fresh str per element per list dominated DEDUPE/EQL-bucket paths
+    (PY-P24). Grown by replacing the table, never by appending to it, so a reader in
+    another thread only ever sees a complete table."""
+    global _INDEX_HASHES
+    table = _INDEX_HASHES
+    want = n if n < _INDEX_HASH_LIMIT else _INDEX_HASH_LIMIT
+    if len(table) < want:
+        table = [hash(str(i)) for i in range(1, want + 1)]
+        _INDEX_HASHES = table
+    return table
+
+
 def _structural_hash_at(value: Value, depth: int) -> int:
     if depth > MAX_DEPTH:
         fail('E_DEPTH', 'value nested too deeply', None)
@@ -840,9 +930,12 @@ def _structural_hash_at(value: Value, depth: int) -> int:
             h = ((h * 1000003) ^ kh ^ ch) & 0xffffffffffffffff
     elif value.is_list and value.storage is not None:
         if value.list_keys is None:
-            for i, child in enumerate(value.storage, 1):
+            storage = value.storage
+            table = _index_hashes(len(storage))
+            for i, child in enumerate(storage):
                 ch = _structural_hash_at(child, depth + 1)
-                h = ((h * 1000003) ^ hash(str(i)) ^ ch) & 0xffffffffffffffff
+                ih = table[i] if i < len(table) else hash(str(i + 1))
+                h = ((h * 1000003) ^ ih ^ ch) & 0xffffffffffffffff
         else:
             for k, child in zip(value.list_keys, value.storage):
                 ch = _structural_hash_at(child, depth + 1)

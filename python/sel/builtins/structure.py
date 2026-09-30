@@ -11,6 +11,7 @@ def _upper_name(s):
     kept for the all-ASCII names that are nearly every name."""
     return s.upper() if s.isascii() else ascii_upper(s)
 from ..registry import INF, define
+from .aggregate import _SCALAR_FRESH_CALLS
 from ..parser import Node
 from ..value import NONE, TEXT, Value, elements, iter_elements, iter_values, structural_hash, _record_shape
 
@@ -32,8 +33,12 @@ def first_collection_item(value):
         return None
     if value.is_list and value.storage is not None and value.storage:
         return value.storage[0]
-    entries = elements(value)
-    return entries[0][1] if entries else value
+    # The first element only: building every entry of a dict-mode record to read the
+    # first one is what `elements()` did (PY-P26). iter_values yields the same first
+    # item, and nothing at all exactly where elements() was empty.
+    for item in iter_values(value):
+        return item
+    return value
 
 
 define('COUNT', 1, 1, fn=lambda args, ctx: Value.int(args.val(0).size()))
@@ -54,17 +59,37 @@ def _list(args, ctx):
 define('LIST', 0, INF, fn=_list)
 
 
+_COALESCE_OPS = ('??', '???')
+
+
 def _record(args, ctx):
     count = args.count()
     if count == 0:
         return Value.none()
     check_collection(count // 2, args.pos)
     shape = args.record_shape
+    pos = args.pos
+    # Without a precomputed shape the keys are evaluated first, as they always
+    # were, and then the values.
+    keys = None if shape is not None else [args.text(i) for i in range(0, count, 2)]
+    # Each field value is copied one level down unless its node computes a scalar
+    # of its own (aggregate.arg_needs_copy, spelled out here: this loop runs once
+    # per row of a MAP(RECORD(...)), and two helper calls per field were the
+    # measurable part of it).
+    nodes = args.nodes
+    vals = []
+    for i in range(1, count, 2):
+        v = args.val(i)
+        n = nodes[i]
+        t = n.t
+        if t == 'un' or (t == 'bin' and n.op not in _COALESCE_OPS) or (
+                t == 'call' and n.name in _SCALAR_FRESH_CALLS):
+            vals.append(v)
+        else:
+            vals.append(v.clone(pos, 2))
     if shape is not None:
-        return Value._from_shape(shape, [args.val(i + 1).clone(args.pos, 2) for i in range(0, count, 2)])
-    keys = [args.text(i) for i in range(0, count, 2)]
-    values = [args.val(i + 1).clone(args.pos, 2) for i in range(0, count, 2)]
-    return Value._record_owned(keys, values)
+        return Value._from_shape(shape, vals)
+    return Value._record_owned(keys, vals)
 
 
 define('RECORD', 0, INF,
@@ -133,7 +158,20 @@ def _dedupe(args, ctx):
         return Value._list_owned([])
     buckets = {}
     out = []
+    # A value with no children is identified by its kind and text alone (EQL compares
+    # nothing else of it, and a number is its canonical text), so a plain set decides
+    # it with the interpreter's own hash and equality instead of a structural hash and
+    # an eql() per element (PY-P26). Values with children take the structural path;
+    # the two domains cannot be EQL to each other (different sizes).
+    scalars = set()
     for _, item in elements(value):
+        if item.size() == 0:
+            ident = (item.kind, item.scalar)
+            if ident in scalars:
+                continue
+            scalars.add(ident)
+            out.append(item)
+            continue
         key = structural_hash(item)
         bucket = buckets.get(key)
         if bucket is None:
@@ -550,8 +588,29 @@ def _compile_plan(plan, left, rside, matched, b1, b2):
     # collector every run pays for.
     ns = {'_from_shape': Value._from_shape, '_shape': shape, '_rshape': rside.shape}
     local = {}
-    exec(code, ns, local)
+    exec(_plan_code(code), ns, local)
     return local['build'], local['many']
+
+
+# The generated source depends only on the op list and the guards -- indices and
+# tests, never on names or shape objects (those arrive in the namespace) -- so two
+# layouts that differ only in their key names, or the same layout met again after
+# its shape was evicted, generate the same text. Compiling it is what cost: a LINK
+# inside a MAP body, or rows with one layout apiece, compiled a plan per call.
+# Process-wide and bounded like _ALIAS_PLANS; a racing eviction or insert only
+# costs a recompile.
+_PLAN_CODE = {}
+_PLAN_CODE_ENTRIES = 512
+
+
+def _plan_code(source):
+    code = _PLAN_CODE.get(source)
+    if code is None:
+        code = compile(source, '<join-plan>', 'exec')
+        if len(_PLAN_CODE) >= _PLAN_CODE_ENTRIES:
+            _PLAN_CODE.clear()
+        _PLAN_CODE[source] = code
+    return code
 
 
 def _scalars(tests):
@@ -1258,20 +1317,27 @@ def _link(args, ctx, left_join):
                  b2: None, b2.lower(): None, '_2': None}
         ctx.push_frame(frame)
         try:
+            # The right side's table alias depends only on the right row, so it is
+            # made once (on the first left row, so an empty left side still does no
+            # work), not once per PAIR -- it was 21% of a 500x500 join (PY-P14).
+            rights = None if needs_right_alias else right_items
+            b1_lower, b2_lower = b1.lower(), b2.lower()
+            eval_predicate = args.eval_node
             for left_item in left_items:
                 left = ensure_row_table_alias(left_item, b1) if needs_left_alias else left_item
                 frame[b1] = left
-                frame[b1.lower()] = left
+                frame[b1_lower] = left
                 frame['_1'] = left
                 frame['_'] = left
                 matched = [False]
+                if rights is None:
+                    rights = [ensure_row_table_alias(r, b2) for r in right_items]
 
-                for right_item in right_items:
-                    right = ensure_row_table_alias(right_item, b2) if needs_right_alias else right_item
+                for right in rights:
                     frame[b2] = right
-                    frame[b2.lower()] = right
+                    frame[b2_lower] = right
                     frame['_2'] = right
-                    if args.eval_node(predicate).as_bool(predicate.pos):
+                    if eval_predicate(predicate).as_bool(predicate.pos):
                         matched[0] = True
                         check_collection(len(output) + 1, args.pos)
                         output.append(project(left, right))

@@ -18,21 +18,24 @@ def check_sized_int(d: D.Dec, name: str, arg_num: int, limit: int, what: str, po
     if n < 0:
         fail('E_RANGE', f'{name} argument {arg_num} must not be negative', pos)
     if n > limit:
-        fail('E_RANGE', f'{what} {n} exceeds the maximum of {limit}', pos)
+        # The number itself only when it is short: str() of a million-digit argument is
+        # work the refusal does not need (PY-P24), and the message is not contract.
+        shown = str(n) if n.bit_length() <= 128 else f'of {n.bit_length()} bits'
+        fail('E_RANGE', f'{what} {shown} exceeds the maximum of {limit}', pos)
     return n
 
 
-define('ABS', 1, 1, fn=lambda a, ctx: Value.num(D.abs_(a.dec(0))))
+define('ABS', 1, 1, fn=lambda a, ctx: Value._num_owned(D.abs_(a.dec(0))))
 define('SIGN', 1, 1, fn=lambda a, ctx: Value.int(D.sign(a.dec(0))))
-define('CEIL', 1, 1, fn=lambda a, ctx: Value.num(D.ceil(a.dec(0), a.pos)))
-define('FLOOR', 1, 1, fn=lambda a, ctx: Value.num(D.floor(a.dec(0), a.pos)))
-define('TRUNC', 1, 1, fn=lambda a, ctx: Value.num(D.trunc(a.dec(0))))
-define('CANON', 1, 1, fn=lambda a, ctx: Value.num(D.trim_scale(a.dec(0))))
+define('CEIL', 1, 1, fn=lambda a, ctx: Value._num_owned(D.ceil(a.dec(0), a.pos)))
+define('FLOOR', 1, 1, fn=lambda a, ctx: Value._num_owned(D.floor(a.dec(0), a.pos)))
+define('TRUNC', 1, 1, fn=lambda a, ctx: Value._num_owned(D.trunc(a.dec(0))))
+define('CANON', 1, 1, fn=lambda a, ctx: Value._num_owned(D.trim_scale(a.dec(0))))
 
 define('ROUND', 2, 2,
-       fn=lambda a, ctx: Value.num(D.round(a.dec(0), check_sized_int(a.dec(1), 'ROUND', 2, MAX_SCALE, 'ROUND scale', a.pos_of(1)), a.pos)))
+       fn=lambda a, ctx: Value._num_owned(D.round(a.dec(0), check_sized_int(a.dec(1), 'ROUND', 2, MAX_SCALE, 'ROUND scale', a.pos_of(1)), a.pos)))
 define('POWER', 2, 2,
-       fn=lambda a, ctx: Value.num(D.power(a.dec(0), check_sized_int(a.dec(1), 'POWER', 2, MAX_POWER, 'POWER exponent', a.pos_of(1)), a.pos)))
+       fn=lambda a, ctx: Value._num_owned(D.power(a.dec(0), check_sized_int(a.dec(1), 'POWER', 2, MAX_POWER, 'POWER exponent', a.pos_of(1)), a.pos)))
 
 
 def _min(a, ctx):
@@ -41,7 +44,7 @@ def _min(a, ctx):
         d = a.dec(i)
         if D.cmp(d, best) < 0:
             best = d
-    return Value.num(best)
+    return Value._num_owned(best)
 
 
 def _max(a, ctx):
@@ -50,7 +53,7 @@ def _max(a, ctx):
         d = a.dec(i)
         if D.cmp(d, best) > 0:
             best = d
-    return Value.num(best)
+    return Value._num_owned(best)
 
 
 define('MIN', 1, INF, fn=_min)

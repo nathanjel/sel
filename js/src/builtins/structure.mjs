@@ -1,6 +1,6 @@
 import { Value, RecordShape, NONE, TEXT, structuralHash, scalarKey, internRecordShape } from '../value.mjs';
 import * as D from '../decimal.mjs';
-import { define } from '../registry.mjs';
+import { define, hostArity } from '../registry.mjs';
 import { BUILTIN_MANIFEST } from '../_builtin_manifest.mjs';
 import { SelError, fail, MAX_DEPTH } from '../errors.mjs';
 import { asciiUpper } from '../lexer.mjs';
@@ -223,8 +223,8 @@ const JOIN_BAD = Symbol('join-bad');
 function canonicalJoinKey(value, numeric) {
   if (!value || value.isNull()) return null;
   if (numeric) {
-    let d;
-    try { d = value.asDecimal(null); } catch (e) { if (e instanceof SelError) return JOIN_BAD; throw e; }
+    const d = value.tryDecimal();
+    if (d === null) return JOIN_BAD;
     // One key per number, as `==` compares it (spec §7.4): trailing fraction
     // zeros and a negative zero are representation, not value.
     if (d.digits === 0n) return '0';
@@ -273,7 +273,33 @@ function isPositionalBinder(name) {
   return name === '_1' || name === '_2';
 }
 
-const ALIAS_PLANS = new Map();
+// Keyed by the row shape and held weakly: a plan lives as long as its shape does, so the
+// cache needs no size bound of its own and a wide shape costs nothing once it is gone.
+// True when evaluating `node` cannot change any value: no assignment anywhere in it and
+// no call to a host function (which is handed values and may do what it likes). An
+// iterative walk: a predicate is a tree as deep as its source is long.
+function isPureNode(node) {
+  const stack = [node];
+  while (stack.length > 0) {
+    const n = stack.pop();
+    if (!n) continue;
+    switch (n.t) {
+      case 'assign': return false;
+      case 'call':
+        if (hostArity(n.name) !== null) return false;
+        for (const item of n.args) stack.push(item);
+        break;
+      case 'index': stack.push(n.obj, n.idx); break;
+      case 'bin': stack.push(n.l, n.r); break;
+      case 'un': stack.push(n.x); break;
+      case 'seq': case 'list': for (const item of n.items) stack.push(item); break;
+      default: break;
+    }
+  }
+  return true;
+}
+
+const ALIAS_PLANS = new WeakMap();
 
 function ensureRowTableAlias(row, tableName) {
   if (!tableName || isPositionalBinder(tableName) || row.has(tableName)) return row;
@@ -287,10 +313,7 @@ function ensureRowTableAlias(row, tableName) {
       const keys = [...oldShape.keys, tableName];
       if (addLower) keys.push(lower);
       cached = { shape: new RecordShape(keys), oldSize: oldShape.size, addLower, tableName };
-      if (keys.length <= 256 && keys.reduce((n, key) => n + key.length, 0) <= 16384) {
-        if (ALIAS_PLANS.size >= 256) ALIAS_PLANS.clear();
-        ALIAS_PLANS.set(oldShape, cached);
-      }
+      ALIAS_PLANS.set(oldShape, cached);
     }
     const storage = row.storage.slice(0, cached.oldSize);
     storage.push(row);
@@ -707,7 +730,7 @@ function rowFact(value, name, kind) {
     if (kind === 'ANY') { if (!v || v.isNull() || isNestedRecord(v)) ok = false; return; }
     if (!v || v.kind !== TEXT) { ok = false; return; }
     if (kind === 'NUM') {
-      try { v.asDecimal(); } catch (e) { if (e instanceof SelError) ok = false; else throw e; }
+      if (v.tryDecimal() === null) ok = false;
     }
   });
   return ok && (kind !== 'PRESENT' || rows > 0);
@@ -1174,6 +1197,12 @@ function doLink(args, ctx, leftJoin) {
       [b2, null], [b2.toLowerCase(), null], ['_2', null],
     ]);
     ctx.pushFrame(frame);
+    // A predicate that can change no value (no assignment, no host function) sees the
+    // same right rows for every left row, so they are aliased once, at the first left
+    // row, not once per pair (JS-P22). Anything else re-aliases per pair as before: a
+    // predicate's writes are visible to the pairs still to come.
+    const stable = isPureNode(predicate);
+    let aliasedRights = null;
     try {
       each(leftValue, (leftItem) => {
         const left = ensureRowTableAlias(leftItem, b1);
@@ -1182,8 +1211,7 @@ function doLink(args, ctx, leftJoin) {
         frame.set('_1', left);
         frame.set('_', left);
         let matched = false;
-        if (sampleRight) each(rightValue, (rightItem) => {
-          const right = ensureRowTableAlias(rightItem, b2);
+        const pair = (right) => {
           frame.set(b2, right);
           frame.set(b2.toLowerCase(), right);
           frame.set('_2', right);
@@ -1192,7 +1220,18 @@ function doLink(args, ctx, leftJoin) {
             output.push(project(left, right));
             capRows(output.length);
           }
-        });
+        };
+        if (sampleRight) {
+          if (stable) {
+            if (aliasedRights === null) {
+              aliasedRights = [];
+              each(rightValue, (rightItem) => { aliasedRights.push(ensureRowTableAlias(rightItem, b2)); });
+            }
+            for (let i = 0; i < aliasedRights.length; i++) pair(aliasedRights[i]);
+          } else {
+            each(rightValue, (rightItem) => pair(ensureRowTableAlias(rightItem, b2)));
+          }
+        }
         if (leftJoin && !matched) { output.push(project(left, null)); capRows(output.length); }
       });
     } finally {

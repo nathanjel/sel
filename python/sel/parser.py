@@ -136,6 +136,34 @@ class Node:
     # SQL stage 1's memo: found NOT constant at depth 0 with nothing bound (constants.py).
     # Trees are immutable once built, so it never goes stale.
     _not_constant: bool = False
+    # Physical-tree metadata: for an `IN` whose right operand is a list of literals,
+    # the optimiser's ConstantList (the list's Value, built once, and a set of the
+    # texts when every element is text or a number) so the test does not rebuild
+    # and clone the list for every row (PY-P8). Private to the node: only `IN`
+    # reads it, and it is never returned or stored where a program could reach it.
+    const_value: Any = None
+    # Physical-tree metadata on a FILTER step: the step after it only reads the
+    # kept elements and copies whatever it collects (optimizer.adopts_elements),
+    # so FILTER hands them on as they are instead of cloning each one (PY-REG-1).
+    adopt_items: bool = False
+
+    def replaced(self, **changes) -> 'Node':
+        """A shallow copy with FIELD=VALUE overrides, like dataclasses.replace but
+        without its per-call field introspection (which was most of the cost of
+        an optimiser that copies every node). Unchanged fields, lists included,
+        are shared with the original, exactly as replace shares them; a caller
+        that means to edit `args` or `items` passes a fresh list. The positional
+        order below is the field order: tests/test_perf_node_copy.py checks that
+        every declared field is carried, so a field added to Node cannot be
+        silently dropped here."""
+        c = Node(self.t, self.pos, self.v, self.name, self.op, self.l, self.r, self.x,
+                 self.obj, self.idx, self.target, self.value, self.items, self.args,
+                 self.spec, self.grouped, self.dec, self.math_plan, self._cached_slot,
+                 self.record_shape, self.keys_unobserved, self._not_constant,
+                 self.const_value, self.adopt_items)
+        for k, v in changes.items():
+            setattr(c, k, v)
+        return c
 
 
 class Parser:

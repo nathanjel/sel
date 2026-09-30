@@ -10,56 +10,90 @@ import { cpLength, checkText, checkCollection } from '../budget.mjs';
 
 const cps = (s) => toCodePoints(s, null);
 
-function indexOfCp(hay, needle, from) {
-  const n = needle.length;
-  outer: for (let i = from; i + n <= hay.length; i++) {
-    for (let j = 0; j < n; j++) if (hay[i + j] !== needle[j]) continue outer;
-    return i;
+// A text with no surrogate has one UTF-16 unit per code point, so every position, length
+// and slice below is the native one; the code point arrays are only for text that has an
+// astral character (JS-P5). A Value's text is well formed, so a surrogate in it is half of
+// a valid pair.
+const ANY_SURROGATE = /[\uD800-\uDFFF]/;
+const plain = (s) => !ANY_SURROGATE.test(s);
+
+// The UTF-16 offset of the code point at index `cp` (or the end when past it).
+function unitOffset(s, cp) {
+  let i = 0;
+  for (let k = 0; k < cp && i < s.length; k++) {
+    const c = s.charCodeAt(i);
+    i += c >= 0xd800 && c <= 0xdbff ? 2 : 1;
   }
-  return -1;
+  return i;
 }
 
-define({ name: 'LEN', min: 1, max: 1, fn: (args) => Value.int(cps(args.text(0)).length) });
+// The code point index of the UTF-16 offset `u`.
+function cpIndex(s, u) {
+  let n = 0;
+  for (let i = 0; i < u; i++) {
+    const c = s.charCodeAt(i);
+    if (c >= 0xd800 && c <= 0xdbff) i++;
+    n++;
+  }
+  return n;
+}
+
+define({ name: 'LEN', min: 1, max: 1, fn: (args) => Value.int(cpLength(args.text(0))) });
 
 define({
   name: 'LEFT', min: 2, max: 2,
-  fn: (args) => Value.text(fromCodePoints(cps(args.text(0)).slice(0, args.nonNegInt(1)))),
+  fn: (args) => {
+    const s = args.text(0);
+    const n = args.nonNegInt(1);
+    if (plain(s)) return Value.textOwned(s.slice(0, n));
+    return Value.textOwned(fromCodePoints(cps(s).slice(0, n)));
+  },
 });
 
 define({
   name: 'RIGHT', min: 2, max: 2,
   fn: (args) => {
-    const c = cps(args.text(0));
+    const s = args.text(0);
     const n = args.nonNegInt(1);
-    return Value.text(fromCodePoints(c.slice(Math.max(0, c.length - n))));
+    if (plain(s)) return Value.textOwned(s.slice(Math.max(0, s.length - n)));
+    const c = cps(s);
+    return Value.textOwned(fromCodePoints(c.slice(Math.max(0, c.length - n))));
   },
 });
 
 define({
   name: 'SUBSTR', min: 2, max: 3,
   fn: (args) => {
-    const c = cps(args.text(0));
+    const s = args.text(0);
     const start = args.int(1);
     if (start < 1) fail('E_RANGE', 'SUBSTR start is 1-based and must be at least 1', args.posOf(1));
     const from = start - 1;
-    if (args.count() === 2) return Value.text(fromCodePoints(c.slice(from)));
-    return Value.text(fromCodePoints(c.slice(from, from + args.nonNegInt(2))));
+    const count = args.count() === 2 ? null : args.nonNegInt(2);
+    if (plain(s)) return Value.textOwned(count === null ? s.slice(from) : s.slice(from, from + count));
+    const c = cps(s);
+    return Value.textOwned(fromCodePoints(count === null ? c.slice(from) : c.slice(from, from + count)));
   },
 });
 
 define({
   name: 'FIND', min: 2, max: 3,
   fn: (args) => {
-    const needle = cps(args.text(0));
-    const hay = cps(args.text(1));
+    const needle = args.text(0);
+    const hay = args.text(1);
     let from = 0;
     if (args.count() === 3) {
       const f = args.int(2);
       if (f < 1) fail('E_RANGE', 'FIND start is 1-based and must be at least 1', args.posOf(2));
       from = f - 1;
     }
-    if (needle.length === 0) fail('E_BAD_ARG', 'FIND needle must not be empty', args.posOf(0));
-    return Value.int(indexOfCp(hay, needle, from) + 1);
+    if (needle === '') fail('E_BAD_ARG', 'FIND needle must not be empty', args.posOf(0));
+    // The engine's indexOf is exact on well-formed UTF-16: a needle cannot begin with half
+    // of a pair, so it can only match at a code point boundary (JS-P6, the old loop was
+    // O(n*m) over number arrays). Only a haystack with astral characters needs its offsets
+    // converted, once each way.
+    if (plain(hay)) return Value.int(hay.indexOf(needle, from) + 1);
+    const at = hay.indexOf(needle, unitOffset(hay, from));
+    return Value.int(at < 0 ? 0 : cpIndex(hay, at) + 1);
   },
 });
 
@@ -80,7 +114,7 @@ define({
       const size = cpLength(hay) + matches * (cpLength(repl) - cpLength(needle));
       checkText(size, args.pos, 'REPLACE result');
     }
-    return Value.text(pieces.join(repl));
+    return Value.textOwned(pieces.join(repl));
   },
 });
 
@@ -92,41 +126,44 @@ define({
     if (sep === '') fail('E_BAD_ARG', 'SPLIT separator must not be empty', args.posOf(1));
     const pieces = hay.split(sep);
     checkCollection(pieces.length, args.pos, 'SPLIT result');
-    return Value.list(pieces.map((piece) => Value.text(piece)));
+    return Value.list(pieces.map((piece) => Value.textOwned(piece)));
   },
 });
 
-const SPACE = new Set([0x20, 0x09, 0x0d, 0x0a]);
+// The four whitespace characters are ASCII units, and no surrogate unit equals one, so the
+// scan is over code units whatever the text holds.
+function isSpace(c) { return c === 0x20 || c === 0x09 || c === 0x0d || c === 0x0a; }
 
 function trim(s, left, right) {
-  const c = cps(s);
-  let a = 0, b = c.length;
-  if (left) while (a < b && SPACE.has(c[a])) a++;
-  if (right) while (b > a && SPACE.has(c[b - 1])) b--;
-  return fromCodePoints(c.slice(a, b));
+  let a = 0, b = s.length;
+  if (left) while (a < b && isSpace(s.charCodeAt(a))) a++;
+  if (right) while (b > a && isSpace(s.charCodeAt(b - 1))) b--;
+  return a === 0 && b === s.length ? s : s.slice(a, b);
 }
 
-define({ name: 'TRIM', min: 1, max: 1, fn: (a) => Value.text(trim(a.text(0), true, true)) });
-define({ name: 'LTRIM', min: 1, max: 1, fn: (a) => Value.text(trim(a.text(0), true, false)) });
-define({ name: 'RTRIM', min: 1, max: 1, fn: (a) => Value.text(trim(a.text(0), false, true)) });
+define({ name: 'TRIM', min: 1, max: 1, fn: (a) => Value.textOwned(trim(a.text(0), true, true)) });
+define({ name: 'LTRIM', min: 1, max: 1, fn: (a) => Value.textOwned(trim(a.text(0), true, false)) });
+define({ name: 'RTRIM', min: 1, max: 1, fn: (a) => Value.textOwned(trim(a.text(0), false, true)) });
 
 // ASCII only, deliberately. PHP's strtoupper is byte- and locale-based while JS's
 // toUpperCase applies full Unicode mapping; they cannot be reconciled without
 // shipping a case table, and guessing would break the invariant silently.
 function asciiCase(s, up) {
-  return fromCodePoints(cps(s).map((c) => {
-    if (up && c >= 0x61 && c <= 0x7a) return c - 32;
-    if (!up && c >= 0x41 && c <= 0x5a) return c + 32;
-    return c;
-  }));
+  // Only a-z (or A-Z) move, and they are single units, so the astral characters and every
+  // other non-ASCII unit pass through untouched.
+  return up ? s.replace(/[a-z]+/g, (m) => m.toUpperCase()) : s.replace(/[A-Z]+/g, (m) => m.toLowerCase());
 }
 
-define({ name: 'UPPER', min: 1, max: 1, fn: (a) => Value.text(asciiCase(a.text(0), true)) });
-define({ name: 'LOWER', min: 1, max: 1, fn: (a) => Value.text(asciiCase(a.text(0), false)) });
+define({ name: 'UPPER', min: 1, max: 1, fn: (a) => Value.textOwned(asciiCase(a.text(0), true)) });
+define({ name: 'LOWER', min: 1, max: 1, fn: (a) => Value.textOwned(asciiCase(a.text(0), false)) });
 
 define({
   name: 'BACKWARDS', min: 1, max: 1,
-  fn: (args) => Value.text(fromCodePoints(cps(args.text(0)).reverse())),
+  fn: (args) => {
+    const s = args.text(0);
+    if (plain(s)) return Value.textOwned(s.split('').reverse().join(''));
+    return Value.textOwned(fromCodePoints(cps(s).reverse()));
+  },
 });
 
 define({
@@ -136,27 +173,27 @@ define({
     const count = args.nonNegInt(1);
     // An empty text repeated any number of times is empty, and a count of zero
     // is empty text of any length (SPEC 6.4: an empty result is never too large).
-    if (text === '' || count === 0) return Value.text('');
+    if (text === '' || count === 0) return Value.textOwned('');
     checkText(cpLength(text) * count, args.pos, 'REPEAT result');
-    return Value.text(text.repeat(count));
+    return Value.textOwned(text.repeat(count));
   },
 });
 
 function pad(args, left) {
-  const c = cps(args.text(0));
+  const text = args.text(0);
   const width = args.nonNegInt(1);
   const fill = cps(args.text(2));
   if (fill.length === 0) fail('E_BAD_ARG', 'pad fill must not be empty', args.posOf(2));
-  if (c.length >= width) return Value.text(fromCodePoints(c));
+  const len = cpLength(text);
+  if (len >= width) return Value.textOwned(text);
   checkText(width, args.pos, 'PAD result');
-  const need = width - c.length;
+  const need = width - len;
   // Whole cycles of the fill, then the part of one that fits: an astral fill
   // is cut between code points, never inside one.
   const fillText = fromCodePoints(fill);
   const padding = fillText.repeat(Math.floor(need / fill.length))
     + fromCodePoints(fill.slice(0, need % fill.length));
-  const text = fromCodePoints(c);
-  return Value.text(left ? padding + text : text + padding);
+  return Value.textOwned(left ? padding + text : text + padding);
 }
 
 define({ name: 'PADL', min: 3, max: 3, fn: (a) => pad(a, true) });
@@ -169,15 +206,15 @@ define({
     if (n < 0 || n > 0x10ffff || (n >= 0xd800 && n <= 0xdfff)) {
       fail('E_RANGE', `${n} is not an encodable code point`, args.posOf(0));
     }
-    return Value.text(fromCodePoints([n]));
+    return Value.textOwned(fromCodePoints([n]));
   },
 });
 
 define({
   name: 'CODE', min: 1, max: 1,
   fn: (args) => {
-    const c = cps(args.text(0));
-    if (c.length === 0) fail('E_RANGE', 'CODE of empty text', args.posOf(0));
-    return Value.int(c[0]);
+    const s = args.text(0);
+    if (s.length === 0) fail('E_RANGE', 'CODE of empty text', args.posOf(0));
+    return Value.int(s.codePointAt(0));
   },
 });

@@ -96,8 +96,17 @@ invalid sequence, so an overlong or truncated one is reported where it begins."
     (get-output-stream-string out)))
 
 (defun bytes-to-hex (bytes)
-  (string-downcase (with-output-to-string (s)
-                     (loop for b across bytes do (format s "~2,'0x" b)))))
+  "Lower-case hexadecimal, two characters per byte. Filled into a preallocated
+string from a digit table: `format ~2,'0x` per byte through a string stream, and
+then a STRING-DOWNCASE over the result, cost 0.48 s per MB (LISP-P18)."
+  (let* ((n (length bytes))
+         (digits "0123456789abcdef")
+         (out (make-string (* 2 n) :element-type 'character)))
+    (declare (type simple-string digits))
+    (dotimes (i n out)
+      (let ((b (aref bytes i)))
+        (setf (schar out (* 2 i)) (schar digits (ash b -4))
+              (schar out (1+ (* 2 i))) (schar digits (logand b 15)))))))
 
 (defun bytes-equal (a b)
   (and (= (length a) (length b))

@@ -14,18 +14,28 @@ type Args struct {
 	name        string
 	pos         Pos
 	ctx         *Context
+	call        *Node
 	vals        []*Value
+	// valsBuf backs vals for a call of up to four arguments, so the Args and its
+	// value slots are one allocation instead of two (GO-P12).
+	valsBuf [4]*Value
 }
 
 func NewArgs(node *Node, ctx *Context) *Args {
-	return &Args{
+	a := &Args{
 		nodes:       node.Items,
 		recordShape: node.Shape,
 		name:        node.S,
 		pos:         node.Pos,
 		ctx:         ctx,
-		vals:        make([]*Value, len(node.Items)),
+		call:        node,
 	}
+	if n := len(node.Items); n <= len(a.valsBuf) {
+		a.vals = a.valsBuf[:n]
+	} else {
+		a.vals = make([]*Value, n)
+	}
+	return a
 }
 
 // has refuses an argument the call does not have: SPEC 8.1, a registered function
@@ -66,6 +76,9 @@ func (a *Args) PosOf(i int) Pos {
 func (a *Args) Val(i int) *Value {
 	a.has(i)
 	if a.vals[i] == nil {
+		if i == 0 {
+			a.offerNoCopy()
+		}
 		a.vals[i] = EvalNode(a.nodes[i], a.ctx)
 	}
 	return a.vals[i]

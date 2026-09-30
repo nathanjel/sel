@@ -82,30 +82,76 @@ gap, however small, and the gap is where \"1 OR 1=1\" lived."
           ((and (plusp (length n)) (char= (char n 0) #\-)) (format nil "(~a)" n))
           (t n))))
 
+(defstruct (escape-plan (:constructor %make-escape-plan (rules ascii other)))
+  ;; RULES: the dialect's escape rules, longest key first. ASCII / OTHER: when every
+  ;; key is one character, the replacement by character code (a 128-entry vector and
+  ;; a table for the rest); both NIL when some key is longer and the rules must be
+  ;; tried at every position.
+  rules ascii other)
+
+(defvar *escape-plans* (make-hash-table :test #'eq :weakness :key :synchronized t)
+  "ESCAPE-PLAN per textEscape rule list, by the identity of the list the dialect's
+lexical table returns: the table (and so the list) is dropped whenever a dialect is
+registered or reset, which drops the plan with it (LISP-P24).")
+
+(defun escape-plan-for (escape)
+  (or (gethash escape *escape-plans*)
+      (setf (gethash escape *escape-plans*)
+            ;; Longest first, so a rule for "\\\\" is applied before one for "\\".
+            (let ((rules (stable-sort (copy-list escape) #'> :key (lambda (c) (length (car c))))))
+              (if (every (lambda (r) (= (length (car r)) 1)) rules)
+                  (let ((ascii (make-array 128 :initial-element nil))
+                        (other (make-hash-table)))
+                    (dolist (r (reverse rules))
+                      (let ((code (char-code (char (car r) 0))))
+                        (if (< code 128)
+                            (setf (svref ascii code) (cdr r))
+                            (setf (gethash code other) (cdr r)))))
+                    (%make-escape-plan rules ascii other))
+                  (%make-escape-plan rules nil nil))))))
+
 (defun emit-text-literal (dialect text)
   (let ((quote (lex-text dialect "textQuote"))
         (escape (dialect-lexical dialect "textEscape")))
     (if (not (and escape (listp escape)))
         (concatenate 'string quote text quote)
-        ;; Longest first, so a rule for "\\\\" is applied before one for "\\".
         ;; A single left-to-right pass, never one replace per rule: replacing '
         ;; with '' and then \ with \\ would rewrite the output of the first.
-        (let ((rules (stable-sort (copy-list escape) #'> :key (lambda (c) (length (car c))))))
+        (let* ((plan (escape-plan-for escape))
+               (ascii (escape-plan-ascii plan))
+               (rules (escape-plan-rules plan)))
           (with-output-to-string (out)
             (write-string quote out)
             (let ((i 0) (n (length text)))
-              (loop while (< i n)
-                    do (let ((hit (find-if (lambda (r)
-                                             (let ((k (car r)))
-                                               (and (plusp (length k))
-                                                    (<= (+ i (length k)) n)
-                                                    (string= k text :start2 i
-                                                                    :end2 (+ i (length k))))))
-                                           rules)))
-                         (if hit
-                             (progn (write-string (cdr hit) out) (incf i (length (car hit))))
-                             (progn (write-char (char text i) out) (incf i))))))
-             (write-string quote out))))))
+              (if ascii
+                  ;; One character per rule: copy the runs between special
+                  ;; characters in one WRITE-STRING each.
+                  (let ((other (escape-plan-other plan))
+                        (run 0))
+                    (loop while (< i n)
+                          do (let* ((code (char-code (char text i)))
+                                    (rep (if (< code 128)
+                                             (svref ascii code)
+                                             (gethash code other))))
+                               (if rep
+                                   (progn (when (< run i) (write-string text out :start run :end i))
+                                          (write-string rep out)
+                                          (incf i)
+                                          (setf run i))
+                                   (incf i))))
+                    (when (< run n) (write-string text out :start run :end n)))
+                  (loop while (< i n)
+                        do (let ((hit (find-if (lambda (r)
+                                                 (let ((k (car r)))
+                                                   (and (plusp (length k))
+                                                        (<= (+ i (length k)) n)
+                                                        (string= k text :start2 i
+                                                                        :end2 (+ i (length k))))))
+                                               rules)))
+                             (if hit
+                                 (progn (write-string (cdr hit) out) (incf i (length (car hit))))
+                                 (progn (write-char (char text i) out) (incf i)))))))
+            (write-string quote out))))))
 
 (defun emit-literal (dialect v &optional (form :text) pos)
   "A SEL value as a SQL literal, in the form the caller SAYS it has.
@@ -252,7 +298,47 @@ is structural and does not normalise numbers."
                    (fragment-param-kinds f)
                    (fragment-caveats f)))))
 
-(defun emit-fill (dialect tpl args &optional pos expanding)
+(defvar *template-segments* (make-hash-table :test #'eq :weakness :key :synchronized t)
+  "The parsed form of each mapping template, keyed by the identity of its string: the
+map's entries and a dialect's lexical values are stable strings, so each is scanned
+once and not at every node it is filled into (LISP-P15).")
+
+(defun template-segments (tpl)
+  "TPL as a list of segments, in order: a string (literal text, `{{` and `}}` already
+unescaped), (:SPLICE k) for {k}, (:JOIN k) for {*} and {k:}, and (:LEXICAL slot) for a
+reference to a lexical entry, resolved against the dialect when it is filled."
+  (let ((out '()) (i 0) (n (length tpl)))
+    (labels ((lit (s) (when (plusp (length s)) (push s out))))
+      (loop while (< i n)
+            do (let ((c (char tpl i)))
+                 (cond
+                   ((and (char= c #\{) (< (1+ i) n) (char= (char tpl (1+ i)) #\{))
+                    (lit "{") (incf i 2))
+                   ((and (char= c #\}) (< (1+ i) n) (char= (char tpl (1+ i)) #\}))
+                    (lit "}") (incf i 2))
+                   ((char/= c #\{)
+                    (let ((j (or (position-if (lambda (ch) (or (char= ch #\{) (char= ch #\})))
+                                              tpl :start (1+ i))
+                                 n)))
+                      (lit (subseq tpl i j))
+                      (setf i j)))
+                   (t
+                    (let ((end (position #\} tpl :start i)))
+                      (if (null end)
+                          (progn (lit (subseq tpl i)) (setf i n))
+                          (let ((slot (subseq tpl (1+ i) end)))
+                            (setf i (1+ end))
+                            (cond
+                              ((equal slot "*") (push (list :join 0) out))
+                              ((and (plusp (length slot))
+                                    (char= (char slot (1- (length slot))) #\:)
+                                    (slot-index (subseq slot 0 (1- (length slot)))))
+                               (push (list :join (slot-index (subseq slot 0 (1- (length slot))))) out))
+                              ((slot-index slot) (push (list :splice (slot-index slot)) out))
+                              (t (push (list :lexical slot) out)))))))))))
+    (nreverse out)))
+
+(defun fill-segments (dialect segments args &optional pos expanding)
   "Fill a template with already-rendered arguments, producing a part list.
 
 Splicing part lists rather than strings is the whole point: an argument carrying
@@ -281,81 +367,85 @@ actual mistake and a depth cap would need a number nobody can justify."
              (join-from (k)
                (loop for i from k below (length args)
                      do (unless (= i k) (push-str ", "))
-                        (splice (nth i args)))))
-      (let ((i 0) (n (length tpl)))
-        (loop while (< i n)
-              do (let ((c (char tpl i)))
-                   (cond
-                     ((and (char= c #\{) (< (1+ i) n) (char= (char tpl (1+ i)) #\{))
-                      (push-str "{") (incf i 2))
-                     ((and (char= c #\}) (< (1+ i) n) (char= (char tpl (1+ i)) #\}))
-                      (push-str "}") (incf i 2))
-                     ((char/= c #\{) (push-str (string c)) (incf i))
-                     (t
-                      (let ((end (position #\} tpl :start i)))
-                        (if (null end)
-                            (progn (push-str (subseq tpl i)) (setf i n))
-                            (let ((slot (subseq tpl (1+ i) end)))
-                              (setf i (1+ end))
-                              (cond
-                                ((equal slot "*") (join-from 0))
-                                ((and (plusp (length slot))
-                                      (char= (char slot (1- (length slot))) #\:)
-                                      (slot-index (subseq slot 0 (1- (length slot)))))
-                                 (join-from (slot-index (subseq slot 0 (1- (length slot))))))
-                                ((slot-index slot)
-                                 (let ((k (slot-index slot)))
-                                   (when (>= k (length args))
-                                     (refuse "E_SQL_UNSUPPORTED"
-                                             (format nil "the mapping for this ~
+                        (splice (nth i args))))
+             (lexical (slot)
+               (let* ((colon (position #\: slot))
+             (key (if colon (subseq slot 0 colon) slot))
+             (arg (if colon (subseq slot (1+ colon)) ""))
+             (val (dialect-lexical dialect key)))
+        (unless (stringp val)
+          (refuse "E_SQL_UNSUPPORTED"
+                  (format nil "a template used {~a}, ~
+      which is neither an argument nor a lexical entry of dialect ~a" slot dialect) pos))
+        (if (equal arg "")
+            (push-str val)
+            (progn
+              (when (member key expanding :test #'equal)
+                (refuse "E_SQL_UNSUPPORTED"
+                        (format nil "the ~a lexical entry ~
+      of dialect ~a expands into itself, so filling it would never finish" key dialect)
+                        pos))
+              ;; binaryCast converts a TEXT or NUM
+              ;; operand to bytes. One already BIN needs
+              ;; no conversion, and on PostgreSQL
+              ;; converting it is destructive:
+              ;; text::bytea parses its input as a bytea
+              ;; LITERAL. Every other cast is idempotent
+              ;; and applied unconditionally; this is the
+              ;; one whose input kind decides whether it
+              ;; means anything.
+              ;; {key:*} is {key:n} for every argument, joined
+              ;; with ", " (sql/MAP.md 4.2).
+              (let ((each (if (equal arg "*")
+                              (loop for n below (length args)
+                                    collect (format nil "~d" n))
+                              (list arg))))
+               (loop for one in each
+                     for at from 0
+                     do (when (> at 0) (push-str ", "))
+                        (let ((ca (and (equal key "binaryCast")
+                                       (slot-index one))))
+                          (if (and ca (< ca (length args))
+                                   (eq (fragment-kind (nth ca args)) :bin))
+                              (splice (nth ca args))
+                              (dolist (p (fill-segments
+                                          dialect
+                                          (lexical-expansion val one)
+                                          args pos (cons key expanding)))
+                                (if (stringp p) (push-str p) (push p parts))))))))))))
+    (dolist (seg segments)
+        (if (stringp seg)
+            (push-str seg)
+            (ecase (car seg)
+              (:join (join-from (cadr seg)))
+              (:splice (let ((k (cadr seg)))
+                         (when (>= k (length args))
+                           (refuse "E_SQL_UNSUPPORTED"
+                                   (format nil "the mapping for this ~
 expression asks for argument ~a, which it was not given" k) pos))
-                                   (splice (nth k args))))
-                                (t
-                                 ;; A lexical reference, from a runtime-registered
-                                 ;; template.
-                                 (let* ((colon (position #\: slot))
-                                        (key (if colon (subseq slot 0 colon) slot))
-                                        (arg (if colon (subseq slot (1+ colon)) ""))
-                                        (val (dialect-lexical dialect key)))
-                                   (unless (stringp val)
-                                     (refuse "E_SQL_UNSUPPORTED"
-                                             (format nil "a template used {~a}, ~
-which is neither an argument nor a lexical entry of dialect ~a" slot dialect) pos))
-                                   (if (equal arg "")
-                                       (push-str val)
-                                       (progn
-                                         (when (member key expanding :test #'equal)
-                                           (refuse "E_SQL_UNSUPPORTED"
-                                                   (format nil "the ~a lexical entry ~
-of dialect ~a expands into itself, so filling it would never finish" key dialect)
-                                                   pos))
-                                         ;; binaryCast converts a TEXT or NUM
-                                         ;; operand to bytes. One already BIN needs
-                                         ;; no conversion, and on PostgreSQL
-                                         ;; converting it is destructive:
-                                         ;; text::bytea parses its input as a bytea
-                                         ;; LITERAL. Every other cast is idempotent
-                                         ;; and applied unconditionally; this is the
-                                         ;; one whose input kind decides whether it
-                                         ;; means anything.
-                                         ;; {key:*} is {key:n} for every argument, joined
-                                         ;; with ", " (sql/MAP.md 4.2).
-                                         (let ((each (if (equal arg "*")
-                                                         (loop for n below (length args)
-                                                               collect (format nil "~d" n))
-                                                         (list arg))))
-                                          (loop for one in each
-                                                for at from 0
-                                                do (when (> at 0) (push-str ", "))
-                                                   (let ((ca (and (equal key "binaryCast")
-                                                                  (slot-index one))))
-                                                     (if (and ca (< ca (length args))
-                                                              (eq (fragment-kind (nth ca args)) :bin))
-                                                         (splice (nth ca args))
-                                                         (dolist (p (emit-fill
-                                                                     dialect
-                                                                     (replace-all val "{0}"
-                                                                                  (format nil "{~a}" one))
-                                                                     args pos (cons key expanding)))
-                                                           (if (stringp p) (push-str p) (push p parts)))))))))))))))))))
-      (nreverse parts)))))
+                         (splice (nth k args))))
+              (:lexical (lexical (cadr seg))))))
+      (nreverse parts))))
+
+(defvar *lexical-expansions* (make-hash-table :test #'eq :weakness :key :synchronized t)
+  "For a lexical template VALUE, the segments of its expansion for each argument
+spelling ONE (an alist): `{key:one}` is VALUE with `{0}` replaced by `{one}`, which
+was rebuilt and re-scanned at every use (LISP-P15).")
+
+(defun lexical-expansion (val one)
+  (let ((cell (assoc one (gethash val *lexical-expansions*) :test #'string=)))
+    (if cell
+        (cdr cell)
+        (let ((segs (template-segments (replace-all val "{0}" (format nil "{~a}" one)))))
+          (push (cons one segs) (gethash val *lexical-expansions*))
+          segs))))
+
+(defun emit-fill (dialect tpl args &optional pos expanding)
+  "Fill the template TPL (see FILL-SEGMENTS): the segments of a mapping template are
+parsed once per template string and kept."
+  (fill-segments dialect
+                 (if expanding
+                     (template-segments tpl)
+                     (or (gethash tpl *template-segments*)
+                         (setf (gethash tpl *template-segments*) (template-segments tpl))))
+                 args pos expanding))

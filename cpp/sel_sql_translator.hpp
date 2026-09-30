@@ -241,7 +241,10 @@ struct RelationalPlan {
 
 class Translator {
  public:
-  Translator(std::string dialect, Bindings bindings, Options options);
+  // `bindings` is held by reference: a Translator lives inside one translate call,
+  // and copying the whole set on every call cost more than the translation for a
+  // small rule against a big set.
+  Translator(std::string dialect, const Bindings& bindings, Options options);
 
   Fragment translate(const NodePtr& ast);
   Fragment translate_statement(const NodePtr& ast);
@@ -429,7 +432,7 @@ class Translator {
 
   std::string dialect_;
   Emit emit_;
-  Bindings bindings_;
+  const Bindings& bindings_;
   bool strict_ = false;
 
   // The single absolute parameter vector. Slot ids are CREATION numbers and are

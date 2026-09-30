@@ -129,31 +129,61 @@ function numericLiteral(dialect, v, pos) {
   return n.startsWith('-') ? `(${n})` : n;
 }
 
+// A text past this many characters is escaped by one regex pass built from the dialect's
+// rules; shorter text keeps the per-character scan, which beats building the signature
+// that keeps the regex honest (JS-P25).
+const ESCAPE_SCAN_MAX = 64;
+const ESCAPE_PLANS = new WeakMap();
+
+// The escape rules as one alternation, longest key first (the rule for "\\" before one
+// for "\"), with the replacement of each. Cached by the rules object and re-checked
+// against its JSON: a dialect's object is the host's own, and nothing freezes it.
+function escapePlan(escape) {
+  const signature = JSON.stringify(escape);
+  let plan = ESCAPE_PLANS.get(escape);
+  if (plan === undefined || plan.signature !== signature) {
+    const keys = Object.keys(escape).filter((k) => k).sort((a, b) => b.length - a.length);
+    plan = {
+      signature,
+      re: keys.length === 0 ? null
+        : new RegExp(keys.map((k) => k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|'), 'g'),
+      table: new Map(keys.map((k) => [k, String(escape[k])])),
+    };
+    ESCAPE_PLANS.set(escape, plan);
+  }
+  return plan;
+}
+
 export function textLiteral(dialect, text) {
   const quote = String(map.lexical(dialect, 'textQuote'));
   const escape = map.lexical(dialect, 'textEscape');
   let out = text;
   if (escape !== null && typeof escape === 'object' && !Array.isArray(escape)) {
-    // Longest first, so a rule for "\\" is applied before one for "\". A single
-    // left-to-right pass, never one replace per rule: replacing "'" with "''"
-    // and then "\" with "\\" would rewrite the output of the first rule.
-    const keys = Object.keys(escape).sort((a, b) => b.length - a.length);
-    const buf = [];
-    let i = 0;
-    while (i < out.length) {
-      let hit = null;
-      for (const k of keys) {
-        if (k && out.startsWith(k, i)) { hit = k; break; }
+    if (out.length > ESCAPE_SCAN_MAX) {
+      const plan = escapePlan(escape);
+      if (plan.re !== null) out = out.replace(plan.re, (hit) => plan.table.get(hit));
+    } else {
+      // Longest first, so a rule for "\\" is applied before one for "\". A single
+      // left-to-right pass, never one replace per rule: replacing "'" with "''"
+      // and then "\" with "\\" would rewrite the output of the first rule.
+      const keys = Object.keys(escape).sort((a, b) => b.length - a.length);
+      const buf = [];
+      let i = 0;
+      while (i < out.length) {
+        let hit = null;
+        for (const k of keys) {
+          if (k && out.startsWith(k, i)) { hit = k; break; }
+        }
+        if (hit !== null) {
+          buf.push(String(escape[hit]));
+          i += hit.length;
+        } else {
+          buf.push(out[i]);
+          i += 1;
+        }
       }
-      if (hit !== null) {
-        buf.push(String(escape[hit]));
-        i += hit.length;
-      } else {
-        buf.push(out[i]);
-        i += 1;
-      }
+      out = buf.join('');
     }
-    out = buf.join('');
   }
   return quote + out + quote;
 }

@@ -297,10 +297,10 @@ std::optional<int> list_key(std::string_view k) {
 
 // --- lifecycle ---------------------------------------------------------------
 
-Translator::Translator(std::string dialect, Bindings bindings, Options options)
+Translator::Translator(std::string dialect, const Bindings& bindings, Options options)
     : dialect_(std::move(dialect)),
       emit_(dialect_),
-      bindings_(std::move(bindings)),
+      bindings_(bindings),
       strict_(options.strict) {}
 
 // What both entry points do before they differ: the dialect and alias checks,

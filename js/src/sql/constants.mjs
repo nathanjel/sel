@@ -167,25 +167,37 @@ export function scope(bindings) {
 // `ALL((1, 2), _ > 0)` is constant and `ALL(ITEMS, _ > 0)` is not. That is the
 // same rule the evaluator applies, which is what lets the whole node be handed to
 // it below.
+//
+// The answer for a node depends only on the node and on `bound`, and the translator asks
+// it again at every level of a nest (is this node constant? is its parent? its
+// grandparent?), which made a deep constant expression quadratic (JS-P4). The answers
+// are kept per `bound` map, which the translator builds once and never changes.
+const CONSTANT_MEMO = new WeakMap();
+
 export function isConstant(n, bound = null) {
-  const b = bound ?? new Map();
   const t = n.t;
   if (t === 'num' || t === 'text' || t === 'bool') return true;
+  const b = bound ?? new Map();
   if (t === 'var') return b.has(n.name);
-  if (t === 'un') return isConstant(n.x, b);
-  if (t === 'bin') return isConstant(n.l, b) && isConstant(n.r, b);
-  if (t === 'index') return isConstant(n.obj, b) && isConstant(n.idx, b);
-  if (t === 'clist') {
-    // Stage 1 builds this one; the evaluator has never seen it and cannot
-    // evaluate it. Nothing containing one is checkable.
-    return false;
+  let memo;
+  if (bound !== null) {
+    memo = CONSTANT_MEMO.get(bound);
+    if (memo === undefined) { memo = new WeakMap(); CONSTANT_MEMO.set(bound, memo); }
+    const cached = memo.get(n);
+    if (cached !== undefined) return cached;
   }
-  if (t === 'list') return n.items.every((item) => isConstant(item, b));
-  if (t === 'call') return constantCall(n, b);
-  // assign and seq are gone by now (stage 1), and an unknown node type is not
-  // something to guess about: not constant, so nothing is validated and the walk
-  // refuses it in the ordinary way.
-  return false;
+  let r;
+  if (t === 'un') r = isConstant(n.x, b);
+  else if (t === 'bin') r = isConstant(n.l, b) && isConstant(n.r, b);
+  else if (t === 'index') r = isConstant(n.obj, b) && isConstant(n.idx, b);
+  else if (t === 'list') r = n.items.every((item) => isConstant(item, b));
+  else if (t === 'call') r = constantCall(n, b);
+  // clist (stage 1 builds it; the evaluator has never seen it and cannot evaluate it),
+  // assign and seq (gone by now), and an unknown node type are not constant, so nothing
+  // is validated and the walk refuses them in the ordinary way.
+  else r = false;
+  if (memo !== undefined) memo.set(n, r);
+  return r;
 }
 
 // The binding form is the only reason this is not three lines.
@@ -217,6 +229,60 @@ function constantCall(n, bound) {
   return true;
 }
 
+// Evaluate a constant node, once.
+//
+// validate() runs at every constant node on the way up, and each run used to evaluate the
+// whole subtree again, so `LEN(REPEAT("x", 20000)) + ... + ...` k levels deep evaluated the
+// REPEAT k times over (quadratic; JS-P4). A node that evaluated without error has a value
+// that cannot change: constants hold no frame, no assignment and no host state. So the
+// value is kept on the translation's context, and the next evaluation up the tree runs on
+// a copy of its node in which every already-evaluated descendant is replaced by its value
+// (a 'cval' node, which the evaluator returns as is). The error a failing evaluation
+// raises, and its position, are the innermost node's, exactly as before: a failing
+// descendant was refused when it was validated, before any ancestor is asked.
+function evalConstant(n, ctx) {
+  const c = ctx ?? new Context();
+  let vals = c.constVals;
+  if (vals === undefined) { vals = new WeakMap(); c.constVals = vals; }
+  const hit = vals.get(n);
+  if (hit !== undefined) return hit;
+  const v = evalNode(frozenChildren(n, vals), c);
+  vals.set(n, v);
+  return v;
+}
+
+function frozen(child, vals) {
+  const v = vals.get(child);
+  if (v !== undefined) return { t: 'cval', v, pos: child.pos };
+  return frozenChildren(child, vals);
+}
+
+function frozenChildren(n, vals) {
+  switch (n.t) {
+    case 'bin': {
+      const l = frozen(n.l, vals), r = frozen(n.r, vals);
+      return l === n.l && r === n.r ? n : { ...n, l, r };
+    }
+    case 'un': {
+      const x = frozen(n.x, vals);
+      return x === n.x ? n : { ...n, x };
+    }
+    case 'index': {
+      const obj = frozen(n.obj, vals), idx = frozen(n.idx, vals);
+      return obj === n.obj && idx === n.idx ? n : { ...n, obj, idx };
+    }
+    case 'list': {
+      const items = n.items.map((item) => frozen(item, vals));
+      return items.every((item, i) => item === n.items[i]) ? n : { ...n, items };
+    }
+    case 'call': {
+      const args = n.args.map((a) => frozen(a, vals));
+      return args.every((a, i) => a === n.args[i]) ? n : { ...n, args };
+    }
+    default: return n;
+  }
+}
+
 // Evaluate `n` the way SEL would, and refuse the translation if SEL refuses the
 // expression.
 //
@@ -235,7 +301,7 @@ function constantCall(n, bound) {
 // has to change.
 export function validate(n, ctx = null) {
   try {
-    evalNode(n, ctx ?? new Context());
+    evalConstant(n, ctx);
   } catch (e) {
     refuseAsSel(e, n);
   }
@@ -262,7 +328,7 @@ export function validate(n, ctx = null) {
 // const.numeric.a-text-column-still-coerces so this check cannot grow into it.
 export function requireNumeric(n, ctx = null) {
   try {
-    evalNode(n, ctx ?? new Context()).asDecimal(n.pos);
+    evalConstant(n, ctx).asDecimal(n.pos);
   } catch (e) {
     refuseAsSel(e, n);
   }
@@ -276,7 +342,7 @@ export function requireNumeric(n, ctx = null) {
 export function numericTextConstant(n, ctx = null) {
   let v;
   try {
-    v = evalNode(n, ctx ?? new Context());
+    v = evalConstant(n, ctx);
   } catch (e) {
     if (e instanceof SelError) return null;
     throw e;
@@ -288,7 +354,7 @@ export function numericTextConstant(n, ctx = null) {
 // The number of fractional digits of a constant already known to be a number
 // (requireNumeric ran first).
 export function constantScale(n, ctx = null) {
-  return evalNode(n, ctx ?? new Context()).asDecimal(n.pos).scale;
+  return evalConstant(n, ctx).asDecimal(n.pos).scale;
 }
 
 // SEL's own refusal, reported as the translator's.

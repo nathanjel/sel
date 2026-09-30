@@ -27,7 +27,12 @@
   (neg nil :type boolean)
   (digits 0 :type integer)
   (scale 0 :type fixnum)
-  (int-val nil))
+  (int-val nil)
+  ;; The canonical text this number was parsed from, kept for a LONG numeral only:
+  ;; rendering a million-digit integer is the most expensive thing the core does,
+  ;; and a value that was read and is now printed unchanged (`X == Y`, CANON,
+  ;; a pass-through) need not be rendered at all (LISP-P2). Set once, by DEC-PARSE.
+  (text nil))
 
 (defvar *pow10-table*
   (coerce (loop for i from 0 to 18 collect (expt 10 i)) 'simple-vector))
@@ -44,6 +49,42 @@
 (defconstant +pow10-cache-digits+ 1048576)
 (defvar *pow10-cache-weight* 0)
 
+;;; Multiplication of big integers. SBCL multiplies bignums limb by limb
+;;; (quadratic), which made every operation on a legal million-digit number cost
+;;; seconds (LISP-P2). Karatsuba above a threshold brings parse, 10^k and the
+;;; product check to a fraction of that. Operands are non-negative here; anything
+;;; else takes the built-in multiply.
+(defconstant +kmul-threshold-bits+ 8192)
+
+(defun kmul (a b)
+  (declare (type integer a b))
+  (if (or (minusp a) (minusp b))
+      (* a b)
+      (let ((la (integer-length a))
+            (lb (integer-length b)))
+        (if (or (< la +kmul-threshold-bits+) (< lb +kmul-threshold-bits+))
+            (* a b)
+            (let* ((h (ash (max la lb) -1))
+                   (mask (1- (ash 1 h)))
+                   (a0 (logand a mask)) (a1 (ash a (- h)))
+                   (b0 (logand b mask)) (b1 (ash b (- h)))
+                   (z0 (kmul a0 b0))
+                   (z2 (kmul a1 b1))
+                   (z1 (- (kmul (+ a0 a1) (+ b0 b1)) z0 z2)))
+              (+ (ash z2 (* 2 h)) (ash z1 h) z0))))))
+
+(defun big-pow10 (k)
+  "10^K, through Karatsuba squaring of 5^K then a shift."
+  (declare (type (integer 0) k))
+  (if (< k 4000)
+      (expt 10 k)
+      (let ((result 1) (base 5) (e k))
+        (loop while (plusp e)
+              do (when (oddp e) (setf result (kmul result base)))
+                 (setf e (ash e -1))
+                 (when (plusp e) (setf base (kmul base base))))
+        (ash result k))))
+
 (declaim (inline pow10))
 (defun pow10 (k)
   (declare (optimize (speed 3) (safety 1)))
@@ -51,7 +92,7 @@
   (if (and (>= k 0) (<= k 18))
       (svref *pow10-table* k)
       (or (gethash k *pow10-cache*)
-          (let ((value (expt 10 k)))
+          (let ((value (big-pow10 k)))
             (when (<= 0 k +pow10-cache-max-exponent+)
               ;; A bounded generation avoids maintaining an LRU list in the
               ;; arithmetic hot path. Oversized powers are never retained.
@@ -65,12 +106,26 @@
             value))))
 
 (defun num-digits (n)
-  (if (zerop n)
-      1
-      (let ((d (1+ (truncate (* (integer-length n) 30103) 100000))))
-        (loop while (< n (pow10 (1- d)))
-              do (decf d))
-        d)))
+  (cond
+    ((zerop n) 1)
+    ((< (integer-length n) 64)
+     (let ((d (1+ (truncate (* (integer-length n) 30103) 100000))))
+       (loop while (< n (pow10 (1- d)))
+             do (decf d))
+       d))
+    (t
+     ;; One big power, not one per candidate: the bit length gives a count that
+     ;; is a LOWER bound (LO, so N >= 10^(LO-1)) within a few dozen of the true
+     ;; one, and the rest is found by multiplying that power by ten, which is
+     ;; linear, where asking POW10 for each candidate exponent built a new
+     ;; million-digit power every time (LISP-P2).
+     (let* ((lo (1+ (floor (* (1- (integer-length n)) 30102) 100000)))
+            (d lo)
+            (q (* (pow10 (1- lo)) 10)))
+       (loop while (>= n q)
+             do (incf d)
+                (setf q (* q 10)))
+       d))))
 
 (declaim (inline dec-make))
 (defun dec-make (neg digits scale &optional int-val)
@@ -128,7 +183,45 @@ No trimming, no sign but a leading minus, no exponent, no leading or trailing do
         (let* ((mid (ash len -1))
                (hi (parse-bignum-string s start (+ start mid)))
                (lo (parse-bignum-string s (+ start mid) end)))
-          (+ (* hi (pow10 (- len mid))) lo)))))
+          (+ (kmul hi (pow10 (- len mid))) lo)))))
+
+;;; One pass over an ordinary short numeral (at most 19 characters, so at most 19
+;;; digits and an unsigned 64-bit accumulator cannot overflow): accumulate the
+;;; digits and check the grammar as it goes, instead of the five scans
+;;; (DEC-NUMBER-STRING-P, POSITION, SUBSEQ, CONCATENATE, POSITION-IF) plus a
+;;; bignum parse the general path pays (LISP-P6: 472 ns for "12345.67").
+;;; Answers NIL for anything it does not handle -- a longer numeral, anything that
+;;; is not exactly -?digits[.digits], a non-simple string -- and the general path
+;;; decides. The result is what the general path builds: DEC-MAKE normalises a
+;;; zero to no sign, and a short numeral never reaches either cap.
+(defun dec-parse-short (text)
+  (declare (optimize (speed 3) (safety 0)))
+  (typecase text
+    ((simple-array character (*))
+     (let ((n (length text)))
+       (when (and (<= 1 n 19))
+         (let* ((neg (char= (schar text 0) #\-))
+                (start (if neg 1 0))
+                (acc 0)
+                (ndigits 0)
+                (frac -1))
+           (declare (type (unsigned-byte 64) acc) (type fixnum start ndigits frac))
+           (when (>= start n) (return-from dec-parse-short nil))
+           (loop for i of-type fixnum from start below n
+                 do (let ((code (char-code (schar text i))))
+                      (cond ((<= 48 code 57)
+                             (setf acc (+ (* acc 10) (- code 48)))
+                             (incf ndigits)
+                             (when (>= frac 0) (incf frac)))
+                            ((and (= code 46) (< frac 0) (plusp ndigits))
+                             (setf frac 0))
+                            (t (return-from dec-parse-short nil)))))
+           ;; At least one digit, and a '.' must be followed by one.
+           (when (or (zerop ndigits) (eql frac 0)) (return-from dec-parse-short nil))
+           (let ((scale (max frac 0)))
+             (declare (type fixnum scale))
+             (dec-make neg acc scale))))))
+    (t nil)))
 
 (defun dec-parse (text &optional at)
   "Return a DEC, or NIL when TEXT is not a number. Callers raise E_NOT_NUM with
@@ -137,6 +230,8 @@ the position of the offending node.
 A well-formed numeral too big to hold is E_RANGE, not NIL: every character of it
 is a digit, so \"not a number\" would be false. Callers that must not signal --
 ISNUM's probe -- catch it and answer no."
+  (let ((fast (dec-parse-short text)))
+    (when fast (return-from dec-parse fast)))
   (when (and (stringp text) (dec-number-string-p text))
     (let* ((len (length text))
            (neg (char= (char text 0) #\-))
@@ -166,10 +261,58 @@ ISNUM's probe -- catch it and answer no."
                 (fail "E_RANGE"
                       (format nil "number has more than ~D integer digits" +max-int-digits+)
                       at))
-              (let ((digits (if first-nz (parse-bignum-string combined first-nz (length combined)) 0)))
-                (dec-guard (dec-make neg digits frac-len) at))))))))
+              (let* ((digits (if first-nz (parse-bignum-string combined first-nz (length combined)) 0))
+                     (d (dec-guard (dec-make neg digits frac-len) at)))
+                ;; A long numeral that is already canonical -- no leading zero in
+                ;; its integer part, and not a negative zero -- is its own text.
+                (when (and (> len 64)
+                           (or (char/= (char int-part 0) #\0) (= (length int-part) 1))
+                           (not (and neg (zerop digits))))
+                  (setf (dec-text d) (copy-seq text)))
+                d)))))))
+
+;;; The text of a number whose digits fit an unsigned 62-bit integer and whose scale
+;;; is at most 19: the digits are written straight into the result, right to left,
+;;; with no intermediate strings (LISP-P6: 286 ns for 12345.67 through
+;;; WRITE-TO-STRING, SUBSEQ and CONCATENATE). Same output as the general path.
+(defun dec-format-small (neg digits scale)
+  (declare (optimize (speed 3) (safety 0))
+           (type (unsigned-byte 62) digits) (type (integer 0 19) scale))
+  (let* ((nd (let ((n digits) (k 1))
+               (declare (type (unsigned-byte 62) n) (type fixnum k))
+               (loop (setf n (floor n 10))
+                     (when (zerop n) (return k))
+                     (incf k))))
+         (int-nd (if (<= nd scale) 1 (- nd scale)))
+         (len (+ (if neg 1 0) int-nd (if (plusp scale) (1+ scale) 0)))
+         (out (make-string len))
+         (pos (1- len))
+         (n digits))
+    (declare (type fixnum nd int-nd len pos) (type (unsigned-byte 62) n))
+    (dotimes (k scale)
+      (multiple-value-bind (q r) (floor n 10)
+        (setf (schar out pos) (code-char (+ 48 r)) n q)
+        (decf pos)))
+    (when (plusp scale)
+      (setf (schar out pos) #\.)
+      (decf pos))
+    (if (zerop n)
+        (progn (setf (schar out pos) #\0) (decf pos))
+        (loop while (plusp n)
+              do (multiple-value-bind (q r) (floor n 10)
+                   (setf (schar out pos) (code-char (+ 48 r)) n q)
+                   (decf pos))))
+    (when neg (setf (schar out 0) #\-))
+    out))
 
 (defun dec-format (d)
+  (let ((digits (dec-digits d)) (scale (dec-scale d)))
+    (when (dec-text d) (return-from dec-format (copy-seq (dec-text d))))
+    (if (and (typep digits '(unsigned-byte 62)) (typep scale '(integer 0 19)))
+        (dec-format-small (dec-neg d) digits scale)
+        (dec-format-general d))))
+
+(defun dec-format-general (d)
   (let ((sign (if (dec-neg d) "-" ""))
         (s (write-to-string (dec-digits d) :base 10 :radix nil))
         (scale (dec-scale d)))
@@ -236,7 +379,7 @@ ISNUM's probe -- catch it and answer no."
                do (decf end))
          (if (= end len)
              d
-             (dec-make (dec-neg d) (parse-integer text :end end) (- scale (- len end)))))))))
+             (dec-make (dec-neg d) (parse-bignum-string text 0 end) (- scale (- len end)))))))))
 
 (declaim (inline dec-abs))
 (defun dec-abs (d)
@@ -308,10 +451,28 @@ ISNUM's probe -- catch it and answer no."
   (dec-add a (dec-negate b) at))
 
 (defun %dec-mul-general (a b &optional at)
-  (dec-guard (dec-make (not (eq (dec-neg a) (dec-neg b)))
-                       (* (dec-digits a) (dec-digits b))
-                       (+ (dec-scale a) (dec-scale b)))
-             at))
+  (let ((scale (+ (dec-scale a) (dec-scale b)))
+        (da (dec-digits a))
+        (db (dec-digits b)))
+    ;; Refuse what the guard would refuse, BEFORE the multiply: the product has at
+    ;; least as many digits as the bit lengths force, and multiplying two
+    ;; million-digit operands only to be told so cost tens of seconds (LISP-P2).
+    ;; The messages and their order are DEC-GUARD's.
+    (when (and (plusp da) (plusp db))
+      (when (> scale +max-frac-digits+)
+        (fail "E_RANGE"
+              (format nil "number has more than ~D fractional digits" +max-frac-digits+)
+              at))
+      (let* ((bits (1- (+ (integer-length da) (integer-length db))))
+             (lower (1+ (floor (* (1- bits) 30102) 100000))))
+        (when (> (- lower scale) +max-int-digits+)
+          (fail "E_RANGE"
+                (format nil "number has more than ~D integer digits" +max-int-digits+)
+                at))))
+    (dec-guard (dec-make (not (eq (dec-neg a) (dec-neg b)))
+                         (kmul da db)
+                         scale)
+               at)))
 
 (declaim (inline dec-mul))
 (defun dec-mul (a b &optional at)
@@ -382,15 +543,30 @@ ISNUM's probe -- catch it and answer no."
   (let* ((n (* (dec-digits a) (pow10 (+ (dec-scale b) +div-scale+))))
          (d (* (dec-digits b) (pow10 (dec-scale a))))
          (neg (not (eq (dec-neg a) (dec-neg b)))))
-    (multiple-value-bind (q r) (truncate n d)
+    (multiple-value-bind (q r)
+        ;; Two word-sized operands divide with the machine's divide: the generic
+        ;; TRUNCATE was two thirds of the time of an ordinary division (LISP-P27).
+        (if (and (typep n '(unsigned-byte 62)) (typep d '(unsigned-byte 62)))
+            (truncate (the (unsigned-byte 62) n) (the (unsigned-byte 62) d))
+            (truncate n d))
       (if (zerop r)
           ;; Exact: drop trailing zeros to reach the minimal scale.
           (let ((digits q)
                 (scale +div-scale+))
-            (loop while (and (plusp scale)
-                             (zerop (mod digits 10)))
-                  do (setf digits (truncate digits 10))
-                     (decf scale))
+            (if (typep digits '(unsigned-byte 62))
+                ;; A word-sized quotient strips its zeros with word arithmetic
+                ;; (division by a constant is a multiply): the generic MOD and
+                ;; TRUNCATE here were most of an exact division (LISP-P27).
+                (let ((word digits))
+                  (declare (type (unsigned-byte 62) word) (type fixnum scale))
+                  (loop while (and (plusp scale) (zerop (mod word 10)))
+                        do (setf word (truncate word 10))
+                           (decf scale))
+                  (setf digits word))
+                (loop while (and (plusp scale)
+                                 (zerop (mod digits 10)))
+                      do (setf digits (truncate digits 10))
+                         (decf scale)))
             (when (zerop digits) (setf scale 0))
             (dec-guard (dec-make neg digits scale) at))
           ;; Inexact: round half away from zero.

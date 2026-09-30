@@ -141,6 +141,11 @@ final class Utf8
      */
     public static function chars(string $s): array
     {
+        // ASCII: one byte per code point, split in C (PHP-P1/P9). The empty
+        // guard is for PHP < 8.2, where str_split('') is [''].
+        if (!preg_match('/[\x80-\xff]/', $s)) {
+            return $s === '' ? [] : str_split($s);
+        }
         $out = [];
         $n = strlen($s);
         $i = 0;
@@ -169,12 +174,29 @@ final class Utf8
         $n = strlen($s);
         if (self::isAscii($s)) return $n;
         // Every code point has exactly one byte that is not a continuation byte.
-        $count = 0;
-        for ($i = 0; $i < $n; $i += 1 << 20) {
-            $chunk = substr($s, $i, 1 << 20);
-            $count += strlen($chunk) - (int) preg_match_all('/[\x80-\xbf]/', $chunk);
+        // count_chars() tallies all 256 byte values in one C pass (~1 ms/MB, no
+        // allocation beyond a 256-entry table): preg_match_all over a megabyte
+        // chunk built a match array per chunk and was ~150x slower (PHP-P1).
+        $continuation = 0;
+        foreach (count_chars($s, 1) as $byte => $times) {
+            if ($byte >= 0x80 && $byte <= 0xbf) $continuation += $times;
         }
-        return $count;
+        return $n - $continuation;
+    }
+
+    /**
+     * The byte offset of the start of the last `$cps` code points, clamped to 0:
+     * walks back from the end over lead bytes, O(cps) whatever the length.
+     */
+    public static function retreat(string $s, int $cps): int
+    {
+        $i = strlen($s);
+        while ($cps > 0 && $i > 0) {
+            $i--;
+            while ($i > 0 && (ord($s[$i]) & 0xc0) === 0x80) $i--;
+            $cps--;
+        }
+        return $i;
     }
 
     /**

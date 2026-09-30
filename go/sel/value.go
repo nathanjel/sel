@@ -62,6 +62,13 @@ type Value struct {
 	storage  []*Value
 	isList   bool
 	listKeys []string
+	// keyIdx maps each listKeys entry to its slot (first occurrence wins), built
+	// lazily by listKeyPos for a keyed list of keyIndexMin or more children and
+	// published through an atomic pointer so goroutines sharing a read-only value
+	// never write a plain field (GO-C6). listKeys is never mutated in place, only
+	// replaced or dropped, so a published index cannot go stale; it is cleared
+	// together with listKeys.
+	keyIdx atomic.Pointer[map[string]int]
 
 	// Fallback for irregular records / duplicate-preserving join rows
 	entries []Entry
@@ -195,6 +202,39 @@ func (v *Value) Size() int {
 	return len(v.entries)
 }
 
+// keyIndexMin is the keyed-list size from which Get/Has/Set use a hash index
+// instead of scanning listKeys (GO-P11). Below it the scan is cheaper than
+// building the map.
+const keyIndexMin = 16
+
+// listKeyPos is the slot of key in a keyed list, or -1. Linear for a short list,
+// indexed (built once, lazily, first occurrence of a duplicate wins) otherwise.
+func (v *Value) listKeyPos(key string) int {
+	if len(v.listKeys) < keyIndexMin {
+		for i, k := range v.listKeys {
+			if k == key {
+				return i
+			}
+		}
+		return -1
+	}
+	p := v.keyIdx.Load()
+	if p == nil {
+		m := make(map[string]int, len(v.listKeys))
+		for i, k := range v.listKeys {
+			if _, dup := m[k]; !dup {
+				m[k] = i
+			}
+		}
+		v.keyIdx.Store(&m)
+		p = &m
+	}
+	if i, ok := (*p)[key]; ok {
+		return i
+	}
+	return -1
+}
+
 func (v *Value) Has(key string) bool {
 	if v.shape != nil {
 		_, ok := v.shape.KeyMap[key]
@@ -202,12 +242,7 @@ func (v *Value) Has(key string) bool {
 	}
 	if v.isList && v.storage != nil {
 		if v.listKeys != nil {
-			for _, k := range v.listKeys {
-				if k == key {
-					return true
-				}
-			}
-			return false
+			return v.listKeyPos(key) >= 0
 		}
 		return parseListSlot(key, len(v.storage)) >= 0
 	}
@@ -232,10 +267,8 @@ func (v *Value) Get(key string) *Value {
 	}
 	if v.isList && v.storage != nil {
 		if v.listKeys != nil {
-			for i, k := range v.listKeys {
-				if k == key {
-					return v.storage[i]
-				}
+			if i := v.listKeyPos(key); i >= 0 {
+				return v.storage[i]
 			}
 			return nil
 		}
@@ -274,11 +307,9 @@ func (v *Value) Set(key string, val *Value) *Value {
 		v.rebuildIndex()
 	} else if v.isList && v.storage != nil {
 		if v.listKeys != nil {
-			for i, k := range v.listKeys {
-				if k == key {
-					v.storage[i] = val
-					return v
-				}
+			if i := v.listKeyPos(key); i >= 0 {
+				v.storage[i] = val
+				return v
 			}
 		} else {
 			idx := parseListSlot(key, len(v.storage))
@@ -290,6 +321,7 @@ func (v *Value) Set(key string, val *Value) *Value {
 		entries := v.Entries()
 		v.storage = nil
 		v.listKeys = nil
+		v.keyIdx.Store(nil)
 		v.entries = entries
 		v.rebuildIndex()
 	}
@@ -324,6 +356,55 @@ func (v *Value) rebuildIndex() {
 	}
 }
 
+
+// denseEntries is the entry list of a positional list: key i+1 for child i. The
+// keys of a list past 99 children are strconv.Itoa strings, one allocation each
+// (GO-P12); here they are written once into one blob and sliced out of it, so the
+// whole list costs one string allocation. Identical keys, identical order.
+func denseEntries(vals []*Value) []Entry {
+	n := len(vals)
+	out := make([]Entry, n)
+	if n <= 99 {
+		for i, v := range vals {
+			out[i] = Entry{Key: strconv.Itoa(i + 1), Val: v}
+		}
+		return out
+	}
+	total := 9 + 2*90
+	for d, lo := 3, 100; lo <= n; d, lo = d+1, lo*10 {
+		hi := lo*10 - 1
+		if hi > n {
+			hi = n
+		}
+		total += d * (hi - lo + 1)
+	}
+	var sb strings.Builder
+	sb.Grow(total)
+	var buf [20]byte
+	ends := make([]int, n)
+	for i := 0; i < n; i++ {
+		sb.Write(strconv.AppendInt(buf[:0], int64(i+1), 10))
+		ends[i] = sb.Len()
+	}
+	blob := sb.String()
+	start := 0
+	for i, v := range vals {
+		out[i] = Entry{Key: blob[start:ends[i]], Val: v}
+		start = ends[i]
+	}
+	return out
+}
+
+// denseKeys is denseEntries' keys alone.
+func denseKeys(n int) []string {
+	es := denseEntries(make([]*Value, n))
+	res := make([]string, n)
+	for i := range es {
+		res[i] = es[i].Key
+	}
+	return res
+}
+
 func (v *Value) Keys() []string {
 	if v.shape != nil {
 		res := make([]string, len(v.shape.Keys))
@@ -336,11 +417,7 @@ func (v *Value) Keys() []string {
 			copy(res, v.listKeys)
 			return res
 		}
-		res := make([]string, len(v.storage))
-		for i := range v.storage {
-			res[i] = strconv.Itoa(i + 1)
-		}
-		return res
+		return denseKeys(len(v.storage))
 	}
 	res := make([]string, len(v.entries))
 	for i, e := range v.entries {
@@ -371,15 +448,12 @@ func (v *Value) Entries() []Entry {
 		return res
 	}
 	if v.isList && v.storage != nil {
+		if v.listKeys == nil {
+			return denseEntries(v.storage)
+		}
 		res := make([]Entry, len(v.storage))
-		if v.listKeys != nil {
-			for i := range v.storage {
-				res[i] = Entry{Key: v.listKeys[i], Val: v.storage[i]}
-			}
-		} else {
-			for i := range v.storage {
-				res[i] = Entry{Key: strconv.Itoa(i + 1), Val: v.storage[i]}
-			}
+		for i := range v.storage {
+			res[i] = Entry{Key: v.listKeys[i], Val: v.storage[i]}
 		}
 		return res
 	}
@@ -698,10 +772,35 @@ func (v *Value) structuralHashAt(depth int) uint64 {
 	if v.Size() == 0 {
 		return h
 	}
-	for _, e := range v.Entries() {
-		kh := fnvHash(e.Key)
-		ch := e.Val.structuralHashAt(depth + 1)
-		h = (h * 1000003) ^ kh ^ ch
+	// The children are read in place: Entries() would build a slice of (key, value)
+	// pairs, and for a dense list a string per key, only to hash them (GO-P26). The
+	// combination is the same for every representation, so equal values still hash
+	// equal however they were built.
+	switch {
+	case v.shape != nil:
+		kh := v.shape.KeyHashes()
+		for i, c := range v.storage {
+			h = (h * 1000003) ^ kh[i] ^ c.structuralHashAt(depth+1)
+		}
+	case v.isList && v.storage != nil && v.listKeys == nil:
+		var buf [20]byte
+		for i, c := range v.storage {
+			key := strconv.AppendInt(buf[:0], int64(i+1), 10)
+			kh := uint64(14695981039346656037)
+			for _, b := range key {
+				kh ^= uint64(b)
+				kh *= 1099511628211
+			}
+			h = (h * 1000003) ^ kh ^ c.structuralHashAt(depth+1)
+		}
+	case v.isList && v.storage != nil:
+		for i, c := range v.storage {
+			h = (h * 1000003) ^ fnvHash(v.listKeys[i]) ^ c.structuralHashAt(depth+1)
+		}
+	default:
+		for _, e := range v.entries {
+			h = (h * 1000003) ^ fnvHash(e.Key) ^ e.Val.structuralHashAt(depth+1)
+		}
 	}
 	return h
 }
@@ -715,15 +814,12 @@ func (v *Value) Elements() []Entry {
 		return out
 	}
 	if v.isList && v.storage != nil {
+		if v.listKeys == nil {
+			return denseEntries(v.storage)
+		}
 		out := make([]Entry, len(v.storage))
-		if v.listKeys != nil {
-			for i, item := range v.storage {
-				out[i] = Entry{Key: v.listKeys[i], Val: item}
-			}
-		} else {
-			for i, item := range v.storage {
-				out[i] = Entry{Key: strconv.Itoa(i + 1), Val: item}
-			}
+		for i, item := range v.storage {
+			out[i] = Entry{Key: v.listKeys[i], Val: item}
 		}
 		return out
 	}

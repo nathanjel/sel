@@ -2,14 +2,31 @@ package sel
 
 import (
 	"strconv"
-	"strings"
 	"sync"
+	"sync/atomic"
 )
 
 type RecordShape struct {
 	Keys   []string
 	KeyMap map[string]int
 	Size   int
+
+	// keyHashes[i] is fnvHash(Keys[i]), built on the first structural hash of a
+	// record of this shape and then shared by every such record (GO-P26).
+	keyHashes atomic.Pointer[[]uint64]
+}
+
+// KeyHashes returns the hash of each key, computed once per shape.
+func (s *RecordShape) KeyHashes() []uint64 {
+	if p := s.keyHashes.Load(); p != nil {
+		return *p
+	}
+	hs := make([]uint64, len(s.Keys))
+	for i, k := range s.Keys {
+		hs[i] = fnvHash(k)
+	}
+	s.keyHashes.CompareAndSwap(nil, &hs)
+	return *s.keyHashes.Load()
 }
 
 const (
@@ -37,21 +54,32 @@ func NewRecordShape(keys []string) *RecordShape {
 	}
 }
 
-func InternRecordShape(keys []string) *RecordShape {
-	// Length prefixes preserve boundaries even when keys contain NUL or colons.
-	var signature strings.Builder
+// shapeSignature appends the length-prefixed signature of keys to buf. Length
+// prefixes preserve boundaries even when keys contain NUL or colons.
+func shapeSignature(buf []byte, keys []string) []byte {
 	for _, key := range keys {
-		signature.WriteString(strconv.Itoa(len(key)))
-		signature.WriteByte(':')
-		signature.WriteString(key)
+		buf = strconv.AppendInt(buf, int64(len(key)), 10)
+		buf = append(buf, ':')
+		buf = append(buf, key...)
 	}
-	sig := signature.String()
+	return buf
+}
+
+// cachedShape looks keys up without allocating: the signature is built on the
+// stack, and a map lookup keyed by string(bytes) does not copy the bytes.
+func cachedShape(sig []byte) *RecordShape {
 	shapeMu.RLock()
-	if s, ok := shapeCache[sig]; ok {
-		shapeMu.RUnlock()
+	s := shapeCache[string(sig)]
+	shapeMu.RUnlock()
+	return s
+}
+
+func InternRecordShape(keys []string) *RecordShape {
+	var stack [192]byte
+	sig := shapeSignature(stack[:0], keys)
+	if s := cachedShape(sig); s != nil {
 		return s
 	}
-	shapeMu.RUnlock()
 
 	s := NewRecordShape(keys)
 
@@ -65,13 +93,32 @@ func InternRecordShape(keys []string) *RecordShape {
 		if len(shapeCache) >= shapeCacheEntries {
 			shapeCache = make(map[string]*RecordShape)
 		}
-		shapeCache[sig] = s
+		shapeCache[string(sig)] = s
 		shapeMu.Unlock()
 	}
 	return s
 }
 
+// UniqueRecordShape is the shape of keys, or nil when a key repeats. The cache is
+// asked first (GO-P14): a hit whose map has as many entries as it has keys was
+// built from distinct keys, which answers the uniqueness question without the
+// per-call set. A miss checks for a repeat — pairwise for a short key list, with a
+// set beyond that — and only then builds and caches the shape.
 func UniqueRecordShape(keys []string) *RecordShape {
+	var stack [192]byte
+	if s := cachedShape(shapeSignature(stack[:0], keys)); s != nil && len(s.KeyMap) == len(s.Keys) {
+		return s
+	}
+	if len(keys) <= 8 {
+		for i := 1; i < len(keys); i++ {
+			for j := 0; j < i; j++ {
+				if keys[i] == keys[j] {
+					return nil
+				}
+			}
+		}
+		return InternRecordShape(keys)
+	}
 	seen := make(map[string]struct{}, len(keys))
 	for _, k := range keys {
 		if _, exists := seen[k]; exists {

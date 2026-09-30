@@ -466,7 +466,7 @@ func validateNode(n *SNode, root *sel.Value) {
 	if root == nil {
 		root = sel.NewNull()
 	}
-	_, err := prog.Run(root)
+	_, err := prog.RunAsWritten(root)
 	if err != nil {
 		RefuseAsSel(err, n)
 	}
@@ -489,7 +489,7 @@ func requireNumericNode(n *SNode, root *sel.Value) {
 	if root == nil {
 		root = sel.NewNull()
 	}
-	val, err := prog.Run(root)
+	val, err := prog.RunAsWritten(root)
 	if err != nil {
 		RefuseAsSel(err, n)
 	}
@@ -529,7 +529,7 @@ func NumericTextConstant(n *SNode, root *sel.Value) (text string, ok bool) {
 			panic(r)
 		}
 	}()
-	val, err := sel.NewProgram("", node).Run(root)
+	val, err := sel.NewProgram("", node).RunAsWritten(root)
 	if err != nil {
 		return "", false
 	}
@@ -548,7 +548,7 @@ func ConstantScale(n *SNode, root *sel.Value) int {
 	if root == nil {
 		root = sel.NewNull()
 	}
-	val, err := prog.Run(root)
+	val, err := prog.RunAsWritten(root)
 	if err != nil {
 		RefuseAsSel(err, n)
 	}

@@ -264,8 +264,39 @@ func sortedRowsJoined(steps []*sel.Node, count int) bool {
 	return false
 }
 
+// orderIsLost says whether an explicit sort's order would not survive a later step in
+// SQL. SEL's result is in the order the sort gave it, and a database promises nothing
+// about the order of rows once they pass through a derived table into a join, a group
+// or a second sort's tie-break: a BUCKET's groups come out in first-appearance order in
+// SEL and in engine order in SQL, a LINK's rows are the left's order then the right's,
+// and a later sort keeps the earlier sort's order among its ties, which is gone once a
+// projection hid the earlier key. A LIMIT beside the earlier ORDER BY decides which rows
+// survive, not any of this. A prefix that ends before that step is exact; one that
+// includes it answers in another order (docs/internals/sql-translation.md 12.1, "Order").
+func orderIsLost(steps []*sel.Node, count int) bool {
+	sorted, projected := false, false
+	for i := 0; i < count && i < len(steps); i++ {
+		switch steps[i].S {
+		case "SORT", "SORT_DESC", "SORT_BY", "TOP", "TOP_DESC", "TOP_BY":
+			if sorted && projected {
+				return true
+			}
+			sorted, projected = true, false
+		case "MAP", "SELECT_COLS":
+			if sorted {
+				projected = true
+			}
+		case "BUCKET", "LINK", "LINK_LEFT":
+			if sorted {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 func rowsAreNotTheValue(steps []*sel.Node, count int) bool {
-	return bucketRowsAreKeys(steps, count) || joinRowsLackBinders(steps, count)
+	return bucketRowsAreKeys(steps, count) || joinRowsLackBinders(steps, count) || orderIsLost(steps, count)
 }
 
 func physicalSource(b *Binding) string {
@@ -1204,6 +1235,49 @@ func PlanHybrid(program *sel.Program, dialect string, bindings *Bindings, option
 	return pureMemoryPlan(program, dialect, checked)
 }
 
+// writesContext reports whether the program can assign to anything: only then does
+// a run need a private deep copy of the caller's variables. A program with no
+// assignment node cannot modify a value it reads, and aggregates copy what they
+// collect, so its run can read the caller's own values (GO-P18): the copy of a
+// 50,000-row table was the whole cost of a hybrid execution with a small
+// continuation.
+func writesContext(n *sel.Node) bool {
+	if n == nil {
+		return false
+	}
+	if n.T == sel.NodeAssign {
+		return true
+	}
+	if writesContext(n.L) || writesContext(n.R) {
+		return true
+	}
+	for _, it := range n.Items {
+		if writesContext(it) {
+			return true
+		}
+	}
+	return false
+}
+
+// privateContext is the context a continuation runs in: the caller's variables,
+// copied only as far as the program can change them. A continuation that never
+// assigns gets a new root holding the caller's own children (the caller's context
+// is never written to, because nothing is assigned); one that assigns gets a deep
+// copy.
+func privateContext(plan *HybridPlan, context *sel.Value) *sel.Value {
+	if context == nil || context.IsNull() {
+		return sel.NewRecordFromEntries(nil)
+	}
+	if plan.ContinuationAst != nil && !writesContext(plan.ContinuationAst) {
+		root := sel.NewNone()
+		for _, e := range context.Entries() {
+			root.Set(e.Key, e.Val)
+		}
+		return root
+	}
+	return context.Clone()
+}
+
 // ExecuteHybrid runs a hybrid plan, evaluating SQL prefixes through dbRunner and remaining steps in memory.
 func ExecuteHybrid(plan *HybridPlan, dbRunner DbRunner, context *sel.Value) (*sel.Value, error) {
 	if plan.PureMemory {
@@ -1213,10 +1287,7 @@ func ExecuteHybrid(plan *HybridPlan, dbRunner DbRunner, context *sel.Value) (*se
 		// On a private copy: a SQL prefix cannot perform a helper's assignment, so
 		// no plan can promise run()'s side effect on the caller's context, and a
 		// pure-memory plan does not get to be the exception.
-		if context == nil || context.IsNull() {
-			return plan.ContinuationProgram.Run(sel.NewRecordFromEntries(nil))
-		}
-		return plan.ContinuationProgram.Run(context.Clone())
+		return plan.ContinuationProgram.Run(privateContext(plan, context))
 	}
 	if plan.SqlStatement == nil {
 		return nil, fmt.Errorf("SQL hybrid plan has no SQL statement")
@@ -1231,15 +1302,10 @@ func ExecuteHybrid(plan *HybridPlan, dbRunner DbRunner, context *sel.Value) (*se
 	if plan.ContinuationProgram == nil {
 		return nil, fmt.Errorf("hybrid plan has no continuation program")
 	}
-	var continuationContext *sel.Value
 	// IsNone is the kind of every list and record too; the test for "no value" is
 	// IsNull, and using the wrong one threw away every variable the caller held
-	// (GO-C5).
-	if context == nil || context.IsNull() {
-		continuationContext = sel.NewRecordFromEntries(nil)
-	} else {
-		continuationContext = context.Clone()
-	}
+	// (GO-C5). privateContext keeps that test.
+	continuationContext := privateContext(plan, context)
 	continuationContext.Set(plan.ContinuationSourceVar, rows)
 	return plan.ContinuationProgram.Run(continuationContext)
 }

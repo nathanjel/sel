@@ -239,29 +239,42 @@ turn."
 (defun read-names (node)
   "The names a tree reads, binders included: an over-approximation that can
 only keep an assignment the tree does not need, never drop one it does."
-  (let ((out '()))
+  (let ((out '())
+        (seen (make-hash-table :test #'equal)))
     (labels ((walk (n)
                (when (and n (sel::node-p n))
                  (if (eq (sel::node-kind n) :var)
-                     (pushnew (sel::node-s n) out :test #'equal)
+                     (let ((name (sel::node-s n)))
+                       (unless (gethash name seen)
+                         (setf (gethash name seen) t)
+                         (push name out)))
                      (walk-node-children n #'walk)))))
       (walk node))
     out))
 
 (defun referenced-assignments (leading node)
   "The leading assignments NODE depends on, in program order: those whose name
-it reads, and those THEY read, transitively."
-  (let ((needed (read-names node))
-        (grew t))
-    (loop while grew
-          do (setf grew nil)
-             (dolist (s leading)
-               (when (member (assigned-name s) needed :test #'equal)
-                 (dolist (name (read-names (sel::node-r s)))
-                   (unless (member name needed :test #'equal)
-                     (push name needed)
-                     (setf grew t))))))
-    (remove-if-not (lambda (s) (member (assigned-name s) needed :test #'equal)) leading)))
+it reads, and those THEY read, transitively.
+
+A worklist over names: each statement's right side is read once, and a name is
+expanded once, where the fixpoint loop this replaced re-read every statement's
+right side on every pass and tested membership in a list (LISP-P25)."
+  (let ((needed (make-hash-table :test #'equal))
+        (by-name (make-hash-table :test #'equal))
+        (queue '()))
+    (dolist (s leading)
+      (push s (gethash (assigned-name s) by-name)))
+    (flet ((need (name)
+             (unless (gethash name needed)
+               (setf (gethash name needed) t)
+               (push name queue))))
+      (dolist (name (read-names node)) (need name))
+      (loop while queue
+            do (let ((name (pop queue)))
+                 (dolist (s (gethash name by-name))
+                   (dolist (read (read-names (sel::node-r s)))
+                     (need read))))))
+    (remove-if-not (lambda (s) (gethash (assigned-name s) needed)) leading)))
 
 (defun with-helpers (leading node)
   "NODE behind the assignments it depends on, as the program wrote them -- a
@@ -891,6 +904,40 @@ may read; WRAP puts a tree behind the assignments it depends on."
                          :pure-sql-p nil
                          :pure-memory-p nil)))))))))))))
 
+;;; The caller's context is never written to (JS-C60, PY-C51, CPP-C54), and was kept
+;;; safe by deep-copying all of it on every call: with a 300,000-element list in
+;;; the context a trivial plan cost about 127 ms (LISP-P10). A continuation with no
+;;; assignment in it cannot write through an alias, so it needs no copy; one that
+;;; calls something other than a shipped built-in (a host function could do
+;;; anything) gets the full copy, as before.
+(defun continuation-may-write-p (program)
+  (labels ((walk (n)
+             (and n (sel::node-p n)
+                  (or (eq (sel::node-kind n) :assign)
+                      (and (eq (sel::node-kind n) :call)
+                           (not (member (sel::node-s n) sel::*shipped-builtins* :test #'string=)))
+                      (walk (sel::node-l n))
+                      (walk (sel::node-r n))
+                      (some #'walk (sel::node-items n))))))
+    (walk (sel::program-ast program))))
+
+(defun context-for-continuation (program context)
+  "A value the continuation may run on without the caller's tree ever being
+written: the context itself when PROGRAM cannot write; else a full copy."
+  (let ((value (if (sel:value-p context) context (sel:from-native context))))
+    (if (and (sel:value-p context) (continuation-may-write-p program))
+        (sel:value-copy value)
+        value)))
+
+(defun root-with-variable (context name value)
+  "A new root holding CONTEXT's variables (the same child values, not copies) and
+NAME bound to VALUE, so the caller's root is not given a variable it never had."
+  (let ((root (sel:make-none)))
+    (dolist (k (sel::value-keys context))
+      (sel:value-set root k (sel::value-get context k)))
+    (sel:value-set root name value)
+    root))
+
 (defun execute-hybrid (plan db-runner &optional context)
   "Execute a HYBRID-PLAN using DB-RUNNER for SQL execution and SEL:RUN for in-memory continuation.
 DB-RUNNER is a function (lambda (sql-string params) ...) that returns a SEL:VALUE
@@ -908,10 +955,9 @@ list, which a driver could not bind as it was)."
      ;; program may assign, and running it on the caller's value would write
      ;; into the caller's tree (JS-C60, PY-C51, CPP-C54). The continuation still
      ;; reads the caller's variables through the copy.
-     (sel:run (hybrid-plan-continuation-program plan)
-              (if context
-                  (sel:value-copy (if (sel:value-p context) context (sel:from-native context)))
-                  context)))
+     (let ((program (hybrid-plan-continuation-program plan)))
+       (sel:run program
+                (if context (context-for-continuation program context) context))))
     (t
      ;; Hybrid execution: DB first, then in-memory continuation
      (let* ((frag (hybrid-plan-sql-statement plan))
@@ -923,8 +969,14 @@ list, which a driver could not bind as it was)."
        ;; child would otherwise write into the caller's tree (review
        ;; 2026-09-15, low). The rows the database returned are added to the
        ;; copy, never to the caller's value.
-       (let ((cont-context (if context
-                               (sel:value-copy (if (sel:value-p context) context (sel:from-native context)))
-                               (sel:make-none))))
-         (sel:value-set cont-context input-var (if (sel:value-p db-rows) db-rows (sel:from-native db-rows)))
+       (let* ((rows (if (sel:value-p db-rows) db-rows (sel:from-native db-rows)))
+              (cont-context
+                (cond ((null context)
+                       (let ((root (sel:make-none))) (sel:value-set root input-var rows) root))
+                      ((continuation-may-write-p cont-prog)
+                       (let ((root (context-for-continuation cont-prog context)))
+                         (sel:value-set root input-var rows)
+                         root))
+                      (t (root-with-variable (if (sel:value-p context) context (sel:from-native context))
+                                             input-var rows)))))
          (sel:run cont-prog cont-context))))))

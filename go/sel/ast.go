@@ -26,6 +26,26 @@ const (
 type SlotCache struct {
 	Shape *RecordShape
 	Slot  int
+	// Misses counts how many times this site replaced its entry because the row had
+	// another shape; a site that keeps alternating stops storing (GO-P25).
+	Misses int32
+}
+
+// slotCacheMissLimit is how many replacements a site makes before it is treated as
+// polymorphic: its last entry stays (still a hit for that shape) and further misses
+// take the shape's key map without allocating a new entry or storing anything.
+const slotCacheMissLimit = 8
+
+// storeSlot records shape→slot at a site, unless the site has proved polymorphic.
+func storeSlot(holder *atomic.Pointer[SlotCache], shape *RecordShape, slot int) {
+	var misses int32
+	if old := holder.Load(); old != nil {
+		if old.Misses >= slotCacheMissLimit {
+			return
+		}
+		misses = old.Misses + 1
+	}
+	holder.Store(&SlotCache{Shape: shape, Slot: slot, Misses: misses})
 }
 
 type Spec struct {

@@ -6,9 +6,10 @@ import (
 	"bytes"
 	"fmt"
 	"math/big"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/nathanjel/sel/go/internal/decimal"
 	"github.com/nathanjel/sel/go/internal/utf8"
@@ -154,10 +155,127 @@ func compareValues(a, b *Value) int {
 	return 0
 }
 
+// sortKey is a sort key classified ONCE (GO-P2): the rank of the total order and
+// the payload its comparison needs. compareValues re-derived all of this on every
+// comparison of a sort (sortLeaf, LooksNumeric, a decimal or bytes fetch), which is
+// n log n classifications of n keys. cmpSortKey orders exactly as compareValues
+// does (a test holds the two together over mixed-kind lists).
+type sortKey struct {
+	rank  int8
+	b     bool         // rank 1
+	small bool         // rank 2: the value is the whole number `i`
+	i     int64        //
+	dec   *decimal.Dec // rank 2 otherwise
+	s     string       // rank 3, 4: the bytes
+}
+
+func classifySortKey(v *Value) sortKey {
+	v = sortLeaf(v)
+	r := sortRank(v)
+	k := sortKey{rank: int8(r)}
+	switch r {
+	case 1:
+		k.b = v.boolVal
+	case 2:
+		d := v.AsDecimal(Pos{})
+		// A whole number of at most 18 digits is an int64 (no overflow when two
+		// are subtracted or scaled); anything else is compared as a decimal.
+		if d.Scale == 0 && d.Digits != nil && d.Digits.IsInt64() {
+			if m := d.Digits.Int64(); m < 1e18 {
+				k.small = true
+				k.i = m
+				if d.Neg {
+					k.i = -m
+				}
+				return k
+			}
+		}
+		k.dec = d
+	case 3, 4:
+		k.s = string(v.AsBytes(Pos{}))
+	}
+	return k
+}
+
+func cmpSortKey(a, b *sortKey) int {
+	if a.rank != b.rank {
+		if a.rank < b.rank {
+			return -1
+		}
+		return 1
+	}
+	switch a.rank {
+	case 1:
+		if a.b == b.b {
+			return 0
+		}
+		if !a.b {
+			return -1
+		}
+		return 1
+	case 2:
+		if a.small && b.small {
+			switch {
+			case a.i < b.i:
+				return -1
+			case a.i > b.i:
+				return 1
+			}
+			return 0
+		}
+		return decimal.Cmp(a.decOf(), b.decOf())
+	case 3, 4:
+		return strings.Compare(a.s, b.s)
+	}
+	return 0
+}
+
+func (k *sortKey) decOf() *decimal.Dec {
+	if k.dec != nil {
+		return k.dec
+	}
+	return decimal.FromInt(k.i)
+}
+
 type sortItem struct {
 	item *Value
 	key  *Value
 	idx  int
+}
+
+// keyedItem is a sortItem with its key classified.
+type keyedItem struct {
+	item *Value
+	key  sortKey
+	idx  int
+}
+
+// classifyItems classifies every key once and returns pointers into one backing
+// array: the sort moves 8-byte pointers, not 80-byte items.
+func classifyItems(items []sortItem) []*keyedItem {
+	backing := make([]keyedItem, len(items))
+	out := make([]*keyedItem, len(items))
+	for i := range items {
+		backing[i] = keyedItem{item: items[i].item, key: classifySortKey(items[i].key), idx: items[i].idx}
+		out[i] = &backing[i]
+	}
+	return out
+}
+
+// lessKeyed is the order of the sort: by key (reversed for DESC), then input
+// order. The key order is a total preorder (SPEC §7.3), so an unstable sort with
+// the input index as tie-break gives exactly what a stable sort gives.
+func lessKeyed(desc bool) func(a, b *keyedItem) int {
+	return func(a, b *keyedItem) int {
+		c := cmpSortKey(&a.key, &b.key)
+		if desc {
+			c = -c
+		}
+		if c != 0 {
+			return c
+		}
+		return a.idx - b.idx
+	}
 }
 
 func doSort(args *Args, ctx *Context, forcedDir string) *Value {
@@ -237,23 +355,65 @@ func doSort(args *Args, ctx *Context, forcedDir string) *Value {
 		}
 	}
 
-	sort.SliceStable(indexed, func(i, j int) bool {
-		c := compareValues(indexed[i].key, indexed[j].key)
-		if direction == "DESC" {
-			c = -c
-		}
-		if c != 0 {
-			return c < 0
-		}
-		return indexed[i].idx < indexed[j].idx
-	})
+	keyed := classifyItems(indexed)
+	slices.SortFunc(keyed, lessKeyed(direction == "DESC"))
 
-	out := make([]*Value, len(indexed))
-	for i, x := range indexed {
+	out := make([]*Value, len(keyed))
+	for i := range keyed {
 		// SPEC §3.4: SORT copies what it collects.
-		out[i] = x.item.CloneAt(2, args.Pos())
+		out[i] = keyed[i].item.CloneAt(2, args.Pos())
 	}
 	return NewListOwned(out)
+}
+
+// topSelectFactor: below limit*factor < n the bounded selection beats sorting
+// everything; above it the plain sort does.
+const topSelectFactor = 8
+
+// selectBest returns the k smallest items under cmp, in cmp order. cmp is a total
+// order (it ends in the input index), so the result is unique.
+func selectBest(items []*keyedItem, k int, cmp func(a, b *keyedItem) int) []*keyedItem {
+	// A max-heap (worst of the best at the root) of k items.
+	heap := make([]*keyedItem, 0, k)
+	siftDown := func(i int) {
+		n := len(heap)
+		for {
+			l, r, big := 2*i+1, 2*i+2, i
+			if l < n && cmp(heap[l], heap[big]) > 0 {
+				big = l
+			}
+			if r < n && cmp(heap[r], heap[big]) > 0 {
+				big = r
+			}
+			if big == i {
+				return
+			}
+			heap[i], heap[big] = heap[big], heap[i]
+			i = big
+		}
+	}
+	for i := range items {
+		if len(heap) < k {
+			heap = append(heap, items[i])
+			// sift up
+			c := len(heap) - 1
+			for c > 0 {
+				p := (c - 1) / 2
+				if cmp(heap[c], heap[p]) <= 0 {
+					break
+				}
+				heap[c], heap[p] = heap[p], heap[c]
+				c = p
+			}
+			continue
+		}
+		if cmp(items[i], heap[0]) < 0 {
+			heap[0] = items[i]
+			siftDown(0)
+		}
+	}
+	slices.SortFunc(heap, cmp)
+	return heap
 }
 
 func doTop(args *Args, ctx *Context, forcedDir string) *Value {
@@ -337,24 +497,30 @@ func doTop(args *Args, ctx *Context, forcedDir string) *Value {
 		items[i] = sortItem{item: e.Val, key: kVal, idx: i}
 	}
 
-	sort.SliceStable(items, func(i, j int) bool {
-		c := compareValues(items[i].key, items[j].key)
-		if direction == "DESC" {
-			c = -c
-		}
-		if c != 0 {
-			return c < 0
-		}
-		return items[i].idx < items[j].idx
-	})
-
 	if limit > len(items) {
 		limit = len(items)
 	}
+	keyed := classifyItems(items)
+	cmp := lessKeyed(direction == "DESC")
+	var best []*keyedItem
+	if limit == 0 {
+		// The keys were evaluated (they must be); there is nothing to select.
+		best = nil
+	} else if limit*topSelectFactor < len(keyed) {
+		// GO-P3: only the `limit` best are wanted. Select them with a bounded
+		// heap and sort just those: O(n log k) where the full sort was O(n log n).
+		// The comparison includes the input index, so ties resolve to input order
+		// exactly as they do in the full sort.
+		best = selectBest(keyed, limit, cmp)
+	} else {
+		slices.SortFunc(keyed, cmp)
+		best = keyed[:limit]
+	}
+
 	out := make([]*Value, limit)
 	for i := 0; i < limit; i++ {
 		// SPEC §3.4: TOP follows SORT and copies what it collects.
-		out[i] = items[i].item.CloneAt(2, args.Pos())
+		out[i] = best[i].item.CloneAt(2, args.Pos())
 	}
 	return NewListOwned(out)
 }
@@ -500,6 +666,54 @@ func singleRelationName(node *Node) string {
 	return ""
 }
 
+// aliasKey and aliasPlan memoise what ensureRowTableAlias computes for a row of a
+// given shape and table name (GO-P14): the target shape is a pure function of the
+// two, and recomputing it built a keys slice, a set and a signature for every row
+// of every LINK. Bounded; reset when full (like the shape cache it feeds on).
+type aliasKey struct {
+	shape *RecordShape
+	name  string
+}
+
+type aliasPlan struct {
+	target   *RecordShape // nil: fall back to entries
+	addLower bool
+}
+
+const aliasMemoEntries = 1024
+
+var (
+	aliasMu   sync.RWMutex
+	aliasMemo = make(map[aliasKey]aliasPlan)
+)
+
+func planRowTableAlias(oldShape *RecordShape, tableName string) aliasPlan {
+	k := aliasKey{oldShape, tableName}
+	aliasMu.RLock()
+	p, ok := aliasMemo[k]
+	aliasMu.RUnlock()
+	if ok {
+		return p
+	}
+	lower := strings.ToLower(tableName)
+	_, lowerTaken := oldShape.KeyMap[lower]
+	addLower := lower != tableName && !lowerTaken
+	keys := make([]string, len(oldShape.Keys)+1, len(oldShape.Keys)+2)
+	copy(keys, oldShape.Keys)
+	keys[len(oldShape.Keys)] = tableName
+	if addLower {
+		keys = append(keys, lower)
+	}
+	p = aliasPlan{target: UniqueRecordShape(keys), addLower: addLower}
+	aliasMu.Lock()
+	if len(aliasMemo) >= aliasMemoEntries {
+		aliasMemo = make(map[aliasKey]aliasPlan)
+	}
+	aliasMemo[k] = p
+	aliasMu.Unlock()
+	return p
+}
+
 func ensureRowTableAlias(row *Value, tableName string) *Value {
 	if tableName == "" || isPositionalBinder(tableName) || row.Has(tableName) {
 		return row
@@ -507,22 +721,15 @@ func ensureRowTableAlias(row *Value, tableName string) *Value {
 	lower := strings.ToLower(tableName)
 	if row.shape != nil {
 		oldShape := row.shape
-		addLower := lower != tableName && !row.Has(lower)
-		keys := make([]string, len(oldShape.Keys)+1)
-		copy(keys, oldShape.Keys)
-		keys[len(oldShape.Keys)] = tableName
-		if addLower {
-			keys = append(keys, lower)
-		}
-		targetShape := UniqueRecordShape(keys)
-		if targetShape != nil {
-			storage := make([]*Value, len(keys))
+		if plan := planRowTableAlias(oldShape, tableName); plan.target != nil {
+			n := len(oldShape.Keys)
+			storage := make([]*Value, plan.target.Size)
 			copy(storage, row.storage)
-			storage[len(oldShape.Keys)] = row
-			if addLower {
-				storage[len(oldShape.Keys)+1] = row
+			storage[n] = row
+			if plan.addLower {
+				storage[n+1] = row
 			}
-			return NewShapedRecord(targetShape, storage)
+			return NewShapedRecord(plan.target, storage)
 		}
 	}
 	entries := make([]Entry, len(row.Entries()))
@@ -843,6 +1050,89 @@ func coerceJoinOperand(numeric bool, v *Value, node *Node) {
 	} else {
 		v.AsBytes(node.Pos)
 	}
+}
+
+// GO-P1: `equality AND residual…` used to fall back to the O(n*m) nested loop
+// because extractJoinEqui wants the whole predicate to be one `==`. A LEADING
+// equality conjunct can be the hash key instead, with the remaining conjuncts
+// evaluated per bucket pair: AND short-circuits left to right, so a pair whose
+// equality is false never reaches the residual in the nested loop either, and the
+// matched pairs are visited in the same (left row, right row) order.
+//
+// What the nested loop would ALSO do is raise on a pair whose equality raises
+// (a NULL, unparseable or missing key), in pair order, and the hash path cannot
+// reproduce that order. So it is used only when every key of both sides evaluates
+// cleanly to a plain scalar: any error, NULL, bad or nested key hands the whole
+// join back to the nested loop, which then raises exactly what it always did. The
+// key expressions are evaluated speculatively, which is unobservable because they
+// are refused unless assignment-free and free of host functions.
+func extractJoinEquiResidual(node *Node, b1, b2 string) (*joinEqui, []*Node) {
+	var rev []*Node
+	for node != nil && node.T == NodeBin && node.S == "AND" {
+		rev = append(rev, node.R)
+		node = node.L
+	}
+	if len(rev) == 0 {
+		return nil, nil
+	}
+	equi := extractJoinEqui(node, b1, b2)
+	if equi == nil || !nodeIsPure(equi.leftExpr) || !nodeIsPure(equi.rightExpr) {
+		return nil, nil
+	}
+	rest := make([]*Node, len(rev))
+	for i, c := range rev {
+		rest[len(rev)-1-i] = c
+	}
+	return equi, rest
+}
+
+// nodeIsPure: evaluating the expression twice, or not at all, cannot be observed:
+// no assignment anywhere, and no host function (which may have effects).
+func nodeIsPure(n *Node) bool {
+	if n == nil {
+		return true
+	}
+	switch n.T {
+	case NodeAssign:
+		return false
+	case NodeCall:
+		if isHostFunction(n.S) {
+			return false
+		}
+	}
+	if !nodeIsPure(n.L) || !nodeIsPure(n.R) {
+		return false
+	}
+	for _, it := range n.Items {
+		if !nodeIsPure(it) {
+			return false
+		}
+	}
+	return true
+}
+
+// plainJoinKey evaluates a key expression and returns its canonical key, or ok =
+// false if the expression raises or the key is NULL, unparseable or nested.
+func plainJoinKey(args *Args, expr *Node, ctx *Context, numeric bool) (k joinKey, ok bool) {
+	d := ctx.Depth
+	defer func() {
+		if r := recover(); r != nil {
+			if !isSelPanic(r) {
+				panic(r)
+			}
+			ctx.Depth = d
+			ok = false
+		}
+	}()
+	v := args.EvalNode(expr)
+	if v == nil || v.IsNull() || joinCategory(v) != joinScalar {
+		return joinKey{}, false
+	}
+	k = canonicalJoinKey(v, numeric)
+	if k.isNull || k.isBad {
+		return joinKey{}, false
+	}
+	return k, true
 }
 
 func evalBoolSafely(args *Args, conjunct *Node, ctx *Context) (keep bool, errOccurred bool) {
@@ -1375,23 +1665,113 @@ func doLink(args *Args, ctx *Context, leftJoin bool) *Value {
 	ctx.PushFrame(frame)
 	defer ctx.PopFrame()
 
-	for _, lEntry := range leftEnts {
-		left := ensureRowTableAlias(lEntry.Val, b1)
+	lowerB1, lowerB2 := strings.ToLower(b1), strings.ToLower(b2)
+	setLeft := func(left *Value) {
 		frame[b1] = left
 		frame["_1"] = left
 		frame["_"] = left
-		if lowerB1 := strings.ToLower(b1); lowerB1 != b1 {
+		if lowerB1 != b1 {
 			frame[lowerB1] = left
 		}
+	}
+	setRight := func(right *Value) {
+		frame[b2] = right
+		frame["_2"] = right
+		if lowerB2 != b2 {
+			frame[lowerB2] = right
+		}
+	}
+
+	// GO-P1: a leading equality conjunct is the hash key (see extractJoinEquiResidual).
+	if resEqui, residual := extractJoinEquiResidual(predicate, b1, b2); resEqui != nil {
+		lrows := make([]*Value, len(leftEnts))
+		lkeys := make([]joinKey, len(leftEnts))
+		usable := true
+		for i, lEntry := range leftEnts {
+			left := ensureRowTableAlias(lEntry.Val, b1)
+			lrows[i] = left
+			setLeft(left)
+			k, ok := plainJoinKey(args, resEqui.leftExpr, ctx, resEqui.numeric)
+			if !ok {
+				usable = false
+				break
+			}
+			lkeys[i] = k
+		}
+		var buckets map[joinKey][]*Value
+		if usable {
+			buckets = make(map[joinKey][]*Value)
+			for _, rEntry := range rightEnts {
+				right := ensureRowTableAlias(rEntry.Val, b2)
+				setRight(right)
+				k, ok := plainJoinKey(args, resEqui.rightExpr, ctx, resEqui.numeric)
+				if !ok {
+					usable = false
+					break
+				}
+				buckets[k] = append(buckets[k], right)
+			}
+		}
+		if usable {
+			for i, left := range lrows {
+				setLeft(left)
+				matched := false
+				for _, right := range buckets[lkeys[i]] {
+					setRight(right)
+					keep := true
+					for _, c := range residual {
+						if !args.EvalNode(c).AsBool(c.Pos) {
+							keep = false
+							break
+						}
+					}
+					if keep {
+						matched = true
+						checkCollection(int64(len(output))+1, "the join", args.Pos())
+						output = append(output, projector.project(left, right))
+					}
+				}
+				if leftJoin && !matched {
+					checkCollection(int64(len(output))+1, "the join", args.Pos())
+					output = append(output, projector.project(left, nil))
+				}
+			}
+			return NewListOwned(output)
+		}
+		// Not usable: the nested loop below answers, errors and all. Leave the
+		// binders as they were (the loop sets every one it reads).
+		frame[b1], frame["_1"], frame["_"] = nil, nil, nil
+		frame[b2], frame["_2"] = nil, nil
+		frame[lowerB1] = nil
+		frame[lowerB2] = nil
+	}
+
+	// GO-P4: the right rows' alias records are built once, not once per (left,
+	// right) pair, and the binder's lower-cased spelling once, not per pair.
+	// Only for a predicate that cannot write: an assignment into Y acts on the
+	// alias record, and a shared record would carry it from one pair to the next.
+	var rightRows []*Value
+	hoistRight := nodeIsPure(predicate)
+	if hoistRight {
+		rightRows = make([]*Value, len(rightEnts))
+		for i, rEntry := range rightEnts {
+			rightRows[i] = ensureRowTableAlias(rEntry.Val, b2)
+		}
+	}
+
+	for _, lEntry := range leftEnts {
+		left := ensureRowTableAlias(lEntry.Val, b1)
+		setLeft(left)
 
 		matched := false
-		for _, rEntry := range rightEnts {
-			right := ensureRowTableAlias(rEntry.Val, b2)
-			frame[b2] = right
-			frame["_2"] = right
-			if lowerB2 := strings.ToLower(b2); lowerB2 != b2 {
-				frame[lowerB2] = right
+		for ri, rEntry := range rightEnts {
+			var right *Value
+			if hoistRight {
+				right = rightRows[ri]
+			} else {
+				right = ensureRowTableAlias(rEntry.Val, b2)
 			}
+			setRight(right)
 
 			if args.EvalNode(predicate).AsBool(predicate.Pos) {
 				matched = true
@@ -1478,6 +1858,10 @@ func init() {
 			written := args.Node(args.Count() - 1)
 			handed := ctx.JoinPrefilter
 			ctx.JoinPrefilter = nil
+			// The parent reads or copies what this FILTER keeps (nocopy.go): the kept
+			// rows stay aliased, checked for depth as the copy would have been.
+			noCopy := ctx.NoCopy != nil && ctx.NoCopy == args.call
+			ctx.NoCopy = nil
 
 			src := args.Node(0)
 			var ownNodes []*Node
@@ -1559,7 +1943,7 @@ func init() {
 			if isDense {
 				aggregateWalk(args, ctx, func(r *Value, key string, item *Value, body *Node) *Value {
 					if r.AsBool(body.Pos) {
-						storage = append(storage, item.CloneAt(2, args.Pos()))
+						storage = append(storage, keepRow(item, noCopy, args.Pos()))
 						if needsCustomKeys {
 							keys = append(keys, strconv.Itoa(origIdx))
 						}
@@ -1579,7 +1963,7 @@ func init() {
 				expectedIndex := 1
 				aggregateWalk(args, ctx, func(r *Value, key string, item *Value, body *Node) *Value {
 					if r.AsBool(body.Pos) {
-						storage = append(storage, item.CloneAt(2, args.Pos()))
+						storage = append(storage, keepRow(item, noCopy, args.Pos()))
 						if !needsCustomKeys && key != strconv.Itoa(expectedIndex) {
 							needsCustomKeys = true
 							keys = make([]string, len(storage)-1)

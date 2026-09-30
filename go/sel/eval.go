@@ -32,6 +32,7 @@ func EvalNode(node *Node, ctx *Context) *Value {
 	ctx.Depth++
 	if ctx.Depth > MAX_DEPTH {
 		ctx.Depth--
+		ctx.NoCopy = nil
 		fail("E_DEPTH", "evaluation nested too deeply", node.Pos)
 	}
 
@@ -49,6 +50,7 @@ func EvalNode(node *Node, ctx *Context) *Value {
 			// find it there.
 			ctx.JoinPrefilter = nil
 			ctx.JoinPrefilterReport = nil
+			ctx.NoCopy = nil
 		}
 	}()
 	var res *Value
@@ -110,7 +112,7 @@ func dispatch(node *Node, ctx *Context) *Value {
 		if obj.shape != nil {
 			if idx, ok := obj.shape.KeyMap[key]; ok {
 				if literal && node.SlotCache != nil {
-					node.SlotCache.Store(&SlotCache{Shape: obj.shape, Slot: idx})
+					storeSlot(node.SlotCache, obj.shape, idx)
 				}
 				return obj.storage[idx]
 			}
@@ -145,8 +147,16 @@ func dispatch(node *Node, ctx *Context) *Value {
 	case NodeCall:
 		args := NewArgs(node, ctx)
 		if !node.Spec.Lazy {
-			for i := range node.Items {
-				args.Val(i)
+			if node.Shape != nil {
+				// A RECORD whose keys are all text literals: only the values
+				// are evaluated (GO-P14). The keys cannot fail or have effects.
+				for i := 1; i < len(node.Items); i += 2 {
+					args.Val(i)
+				}
+			} else {
+				for i := range node.Items {
+					args.Val(i)
+				}
 			}
 		}
 		return node.Spec.Fn(args, ctx)
@@ -212,6 +222,20 @@ func evalBinary(node *Node, ctx *Context) *Value {
 	if op == "??" || op == "???" {
 		var l *Value
 		hasVal := false
+		// GO-P7: a plain path (`R["a"]["b"]`, a variable or literal keys) that is
+		// missing is the common case of `??`, and raising E_NO_KEY for it costs a
+		// message, a panic and a recover (~6x a hit). Resolve such a path without
+		// raising; anything else takes the recover path below.
+		pv, pmissing, handled := tryLiteralPath(node.L, ctx)
+		if handled {
+			if pmissing {
+				return EvalNode(node.R, ctx)
+			}
+			if (op == "??" && pv.IsNull()) || (op == "???" && pv.IsVacuous()) {
+				return EvalNode(node.R, ctx)
+			}
+			return pv
+		}
 		func() {
 			defer func() {
 				if r := recover(); r != nil {
@@ -432,7 +456,17 @@ func evalAssign(node *Node, ctx *Context) *Value {
 		// The stored value sits len(path) levels down (the variable plus each
 		// bracket), so its depth is counted from there: path plus value must fit
 		// the cap, and the error is reported at the target (SPEC §6.4).
-		value = EvalNode(node.R, ctx).CloneAt(len(path), node.L.Pos)
+		rhs := EvalNode(node.R, ctx)
+		if len(path) == 1 && producesFreshValue(node.R) {
+			// A variable takes a result whose every node was built by the call
+			// that returned it (GO-P13): the copy would duplicate what nothing
+			// else can reach. The constructor already checked that its
+			// children fit one level below the list, which for a plain variable
+			// is exactly the depth the assignment would check.
+			value = rhs
+		} else {
+			value = rhs.CloneAt(len(path), node.L.Pos)
+		}
 	} else {
 		current := walkCreate(ctx, path, len(path)-1).Get(key)
 		if current == nil {
@@ -465,6 +499,19 @@ func evalAssign(node *Node, ctx *Context) *Value {
 
 	walkCreate(ctx, path, len(path)-1).Set(key, value)
 	return value
+}
+
+// freshResultFuncs are the built-ins whose result is a new container holding
+// COPIES of what it collected (SPEC §3.4 table), so no node of the result is
+// reachable from anything else. TAKE, DROP, DISTINCT and DEDUPE alias their
+// elements and are deliberately absent.
+var freshResultFuncs = map[string]bool{
+	"MAP": true, "FILTER": true, "SORT": true, "SORT_DESC": true, "SORT_BY": true,
+	"TOP": true, "TOP_DESC": true, "TOP_BY": true, "BUCKET": true, "LIST": true, "RECORD": true,
+}
+
+func producesFreshValue(n *Node) bool {
+	return n.T == NodeCall && freshResultFuncs[n.S]
 }
 
 func walkCreate(ctx *Context, path []string, upto int) *Value {
@@ -535,7 +582,15 @@ func (s *mathSlot) dec() *decimal.Dec {
 }
 
 func evalMathPlan(plan *MathPlan, ctx *Context) *Value {
-	slots := make([]mathSlot, plan.ScratchpadSize)
+	// Up to eight slots live in the frame (GO-P12): a plan of a few operations is
+	// the common case and its scratchpad never outlives this call.
+	var slotBuf [8]mathSlot
+	var slots []mathSlot
+	if int(plan.ScratchpadSize) <= len(slotBuf) {
+		slots = slotBuf[:plan.ScratchpadSize]
+	} else {
+		slots = make([]mathSlot, plan.ScratchpadSize)
+	}
 	for si := range plan.Steps {
 		step := &plan.Steps[si]
 		switch step.Op {
@@ -623,4 +678,71 @@ func evalMathPlan(plan *MathPlan, ctx *Context) *Value {
 		}
 	}
 	return NewNum(slots[plan.OutputSlot].dec())
+}
+
+// coalescePathFast switches the GO-P7 walk off, for the test that holds it to the
+// raising route it replaces.
+var coalescePathFast = true
+
+// tryLiteralPath resolves an expression made only of a variable and literal
+// index keys, `A["x"]["y"]`, WITHOUT raising E_UNDEF_VAR / E_NO_KEY: missing
+// reports that one of them would have been raised (which `??` swallows). handled
+// is false for any other shape, and for a chain deep enough that evaluating it
+// would raise E_DEPTH, so the caller's ordinary path answers those exactly as it
+// always did. The lookups are the ones dispatch makes, slot cache included.
+func tryLiteralPath(node *Node, ctx *Context) (v *Value, missing, handled bool) {
+	if !coalescePathFast {
+		return nil, false, false
+	}
+	var chain [8]*Node
+	n := 0
+	cur := node
+	for cur.T == NodeIndex {
+		if cur.MathPlan != nil || cur.R == nil || cur.R.T != NodeText || n == len(chain) {
+			return nil, false, false
+		}
+		chain[n] = cur
+		n++
+		cur = cur.L
+	}
+	// dispatch reads a variable directly under an index without an EvalNode of its
+	// own, so a chain of n index nodes nests n levels and a bare variable nests one.
+	need := n
+	if need == 0 {
+		need = 1
+	}
+	if cur.T != NodeVar || cur.MathPlan != nil || ctx.Depth+need > MAX_DEPTH {
+		return nil, false, false
+	}
+	obj := ctx.Lookup(cur.S)
+	if obj == nil {
+		return nil, true, true
+	}
+	for i := n - 1; i >= 0; i-- {
+		ix := chain[i]
+		if ix.SlotCache != nil {
+			if cache := ix.SlotCache.Load(); cache != nil && obj.shape == cache.Shape {
+				obj = obj.storage[cache.Slot]
+				continue
+			}
+		}
+		key := ix.R.S
+		if obj.shape != nil {
+			idx, ok := obj.shape.KeyMap[key]
+			if !ok {
+				return nil, true, true
+			}
+			if ix.SlotCache != nil {
+				storeSlot(ix.SlotCache, obj.shape, idx)
+			}
+			obj = obj.storage[idx]
+			continue
+		}
+		child := obj.Get(key)
+		if child == nil {
+			return nil, true, true
+		}
+		obj = child
+	}
+	return obj, false, true
 }

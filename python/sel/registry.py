@@ -170,6 +170,12 @@ def register_function(name: str, min: int, max: int,   # noqa: A002
     _host.add(key)
 
 
+def is_host_function(name: str) -> bool:
+    """Whether NAME is an application's own function (register_function), which
+    the optimiser must assume can do anything with the values it is handed."""
+    return ascii_upper(name) in _host
+
+
 def host_arity(name: str) -> tuple[int, int] | None:
     """The [min, max] of a host function registered with register_function(),
     or None when the name is not one. The SQL layer reads it: a host function's

@@ -287,6 +287,10 @@ say('program.deps.assign-in-argument', deps('LEFT("abc", (N = 2)); N'))
 say('program.deps.compound-rhs-assign-is-too-late', deps('A += (A = 1; 2); A'))
 say('program.deps.index-expr-assign-precedes-compound-read', deps('A[(A = RECORD("x", 1); "x")] += 2; A["x"]'))
 say('program.deps.get-default-assign-not-definite', deps('GET(R, "a", (A = 1)); A'))
+say('program.deps.index-keys-run-in-source-order', deps('A[(K = 1)][K] = B; K'))
+say('program.deps.index-key-read-before-a-later-key-assigns', deps('A[K][(K = 1)] = B; K'))
+say('program.deps.top-arg-is-not-a-binder-in-the-three-argument-form', deps('L = LIST(1,2); TOP(L, A, (A = 1; 1))'))
+say('program.deps.bucket-key-phase-assignment-is-not-definite-for-the-projection', deps('L = LIST(1,2); BUCKET(L, G, (A = G; A), COUNT(G) + A)'))
 
 # --- T12: a Program is reusable: after a caught error it runs again, and two
 # contexts are independent whatever the interleaving.

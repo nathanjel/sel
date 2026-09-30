@@ -215,6 +215,30 @@ nothing to translate; a database would answer something rather than fail"
 
 ;;; --- normalise ------------------------------------------------------------
 
+;;; The definitions a program's leading statements make. A plain alist (name . value)
+;;; is also accepted wherever DEFS is read -- a binder rename passes one -- but the
+;;; statements' own set is this struct: the alist was searched by ASSOC and extended
+;;; by APPEND per statement, O(n^2) over n statements (LISP-P16).
+(defstruct (defs (:constructor make-defs ()))
+  (table (make-hash-table :test 'equal))
+  (items '()))                          ; the cells, newest first; only ever iterated as a set
+
+(defun defs-get (name defs)
+  "The cell (NAME . VALUE), or NIL. DEFS is a DEFS or an alist."
+  (if (defs-p defs)
+      (gethash name (defs-table defs))
+      (assoc name defs :test #'equal)))
+
+(defun defs-list (defs)
+  (if (defs-p defs) (defs-items defs) defs))
+
+(defun defs-add (defs name value)
+  (let ((cell (cons name value)))
+    (setf (gethash name (defs-table defs)) cell)
+    (push cell (defs-items defs)))
+  defs)
+
+
 (defun constant-key (idx)
   "The literal key an index expression names, or NIL when it is not one.
 
@@ -272,7 +296,7 @@ accepts was decided by the host."
      ;; helper is never inlined into the body.
      (if (member (sel::node-s node) bound :test #'equal)
          node
-         (let ((cell (assoc (sel::node-s node) defs :test #'equal)))
+         (let ((cell (defs-get (sel::node-s node) defs)))
            (if cell (snapshot-def (cdr cell)) node))))
     ((:num :text :bool :null) node)
     (:assign (refuse "E_SQL_ASSIGN"
@@ -421,7 +445,7 @@ argument and the free reads of it in the inner arguments renamed."
         (if (and barg (is-binder-name barg)
                  (some (lambda (d) (member (sel::node-s barg) (free-names (cdr d) '())
                                            :test #'equal))
-                       defs))
+                       (defs-list defs)))
             (let* ((old (sel::node-s barg))
                    (fresh (fresh-binder-name old))
                    (renamed (let ((c (sel::copy-node barg))) (setf (sel::node-s c) fresh) c))
@@ -494,19 +518,19 @@ here, because the shape has to be known before the query runs"
       (when (is-constant value const-names) (validate-constant value root))
       (cond
         ((null keys)
-         (when (assoc name defs :test #'equal)
+         (when (defs-get name defs)
            (refuse "E_SQL_ASSIGN"
                    (format nil "~a is assigned more than once; SQL has no notion ~
 of a variable changing, so each name may be written once" name)
                    (snode-pos s)))
-         (append defs (list (cons name value))))
+         (defs-add defs name value))
         ((> (length keys) 1)
          (refuse "E_SQL_ASSIGN"
                  "only one level of indexed assignment can be folded into a list ~
 here" (snode-pos s)))
         (t
          (let* ((key (first keys))
-                (cell (assoc name defs :test #'equal))
+                (cell (defs-get name defs))
                 (cl (if cell (cdr cell) (make-clist (snode-pos s)))))
            (unless (clist-p cl)
              (refuse "E_SQL_ASSIGN"
@@ -521,7 +545,7 @@ use one or the other" name)
            ;; read of the name elsewhere took a snapshot (SNAPSHOT-DEF).
            (setf (clist-entries cl)
                  (append (clist-entries cl) (list (cons key value))))
-           (if cell defs (append defs (list (cons name cl))))))))))
+           (if cell defs (defs-add defs name cl))))))))
 
 (defun normalise (ast const-names root)
   "Turn a program into one expression, or refuse it.
@@ -535,7 +559,7 @@ a shape. The result is not always an expression node."
          ;; reports at 1:1.
          (result (car (last stmts)))
          (leading (butlast stmts))
-         (defs '())
+         (defs (make-defs))
          ;; Counting starts where the evaluator's count would stand: the `;`
          ;; sequence costs a level and each assignment it inlines one more
          ;; (spec 6.4), so `X = <199 terms>; X` -- E_DEPTH in the evaluator --

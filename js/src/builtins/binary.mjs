@@ -25,9 +25,17 @@ define({
   fn: (a) => {
     const b = a.bytes(0);
     checkText(b.length * 2, a.pos, 'TO_HEX result');
-    return Value.text(bytesToHex(b));
+    return Value.textOwned(bytesToHex(b));
   },
 });
+
+// -1 for anything that is not a hex digit, indexed by code unit.
+const HEX_VALUE = (() => {
+  const t = new Int8Array(128).fill(-1);
+  for (let i = 0; i < 10; i++) t[0x30 + i] = i;
+  for (let i = 0; i < 6; i++) { t[0x41 + i] = 10 + i; t[0x61 + i] = 10 + i; }
+  return t;
+})();
 
 define({
   name: 'FROM_HEX', min: 1, max: 1,
@@ -36,36 +44,50 @@ define({
     if (s.length % 2 !== 0) fail('E_BAD_ARG', 'FROM_HEX needs an even number of digits', args.posOf(0));
     const out = new Uint8Array(s.length / 2);
     for (let i = 0; i < out.length; i++) {
-      const pair = s.slice(i * 2, i * 2 + 2);
-      if (!/^[0-9a-fA-F]{2}$/.test(pair)) {
-        fail('E_BAD_ARG', `FROM_HEX: ${JSON.stringify(pair)} is not hex`, args.posOf(0));
+      const a = s.charCodeAt(i * 2), b = s.charCodeAt(i * 2 + 1);
+      const hi = a < 128 ? HEX_VALUE[a] : -1, lo = b < 128 ? HEX_VALUE[b] : -1;
+      if (hi < 0 || lo < 0) {
+        fail('E_BAD_ARG', `FROM_HEX: ${JSON.stringify(s.slice(i * 2, i * 2 + 2))} is not hex`, args.posOf(0));
       }
-      out[i] = parseInt(pair, 16);
+      out[i] = (hi << 4) | lo;
     }
     return Value.binOwned(out);
   },
 });
 
 const B64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
-const B64_INDEX = (() => {
-  const m = new Map();
-  for (let i = 0; i < B64.length; i++) m.set(B64[i], i);
-  return m;
+const B64_CODES = Uint8Array.from(B64, (ch) => ch.charCodeAt(0));
+// The 6-bit value of a base64 character by code unit, -1 for anything else ('=' included).
+const B64_VALUE = (() => {
+  const t = new Int8Array(128).fill(-1);
+  for (let i = 0; i < B64.length; i++) t[B64.charCodeAt(i)] = i;
+  return t;
 })();
+
+// A byte array of ASCII codes as a string, in blocks that stay clear of argument limits.
+function asciiString(codes) {
+  let out = '';
+  for (let i = 0; i < codes.length; i += 8192) {
+    out += String.fromCharCode.apply(null, codes.subarray(i, i + 8192));
+  }
+  return out;
+}
 
 define({
   name: 'ENCODE_BASE64', min: 1, max: 1,
   fn: (args) => {
     const b = args.bytes(0);
     checkText(4 * Math.ceil(b.length / 3), args.pos, 'ENCODE_BASE64 result');
-    let out = '';
+    const out = new Uint8Array(4 * Math.ceil(b.length / 3));
+    let k = 0;
     for (let i = 0; i < b.length; i += 3) {
       const n = (b[i] << 16) | ((i + 1 < b.length ? b[i + 1] : 0) << 8) | (i + 2 < b.length ? b[i + 2] : 0);
-      out += B64[(n >> 18) & 63] + B64[(n >> 12) & 63];
-      out += i + 1 < b.length ? B64[(n >> 6) & 63] : '=';
-      out += i + 2 < b.length ? B64[n & 63] : '=';
+      out[k++] = B64_CODES[(n >> 18) & 63];
+      out[k++] = B64_CODES[(n >> 12) & 63];
+      out[k++] = i + 1 < b.length ? B64_CODES[(n >> 6) & 63] : 0x3d;
+      out[k++] = i + 2 < b.length ? B64_CODES[n & 63] : 0x3d;
     }
-    return Value.text(out);
+    return Value.textOwned(asciiString(out));
   },
 });
 
@@ -76,29 +98,29 @@ define({
     const s = args.text(0);
     const pos = args.posOf(0);
     if (s.length % 4 !== 0) fail('E_BAD_ARG', 'DECODE_BASE64 needs a length that is a multiple of 4', pos);
-    const out = [];
+    const out = new Uint8Array((s.length / 4) * 3);
+    let k = 0;
     for (let i = 0; i < s.length; i += 4) {
-      const quad = [];
+      let n = 0;
       let padding = 0;
-      for (let k = 0; k < 4; k++) {
-        const ch = s[i + k];
-        if (ch === '=') {
-          if (i + 4 < s.length || k < 2) fail('E_BAD_ARG', 'misplaced base64 padding', pos);
+      for (let q = 0; q < 4; q++) {
+        const code = s.charCodeAt(i + q);
+        if (code === 0x3d) {
+          if (i + 4 < s.length || q < 2) fail('E_BAD_ARG', 'misplaced base64 padding', pos);
           padding++;
-          quad.push(0);
+          n <<= 6;
           continue;
         }
         if (padding > 0) fail('E_BAD_ARG', 'misplaced base64 padding', pos);
-        const v = B64_INDEX.get(ch);
-        if (v === undefined) fail('E_BAD_ARG', `invalid base64 character ${JSON.stringify(ch)}`, pos);
-        quad.push(v);
+        const v = code < 128 ? B64_VALUE[code] : -1;
+        if (v < 0) fail('E_BAD_ARG', `invalid base64 character ${JSON.stringify(s[i + q])}`, pos);
+        n = (n << 6) | v;
       }
-      const n = (quad[0] << 18) | (quad[1] << 12) | (quad[2] << 6) | quad[3];
-      out.push((n >> 16) & 255);
-      if (padding < 2) out.push((n >> 8) & 255);
-      if (padding < 1) out.push(n & 255);
+      out[k++] = (n >> 16) & 255;
+      if (padding < 2) out[k++] = (n >> 8) & 255;
+      if (padding < 1) out[k++] = n & 255;
     }
-    return Value.binOwned(Uint8Array.from(out));
+    return Value.binOwned(k === out.length ? out : out.slice(0, k));
   },
 });
 
@@ -122,7 +144,7 @@ define({
     const b = args.bytes(0);
     let crc = -1;
     for (let i = 0; i < b.length; i++) crc = t[(crc ^ b[i]) & 255] ^ (crc >>> 8);
-    return Value.text(((crc ^ -1) >>> 0).toString(16).padStart(8, '0'));
+    return Value.textOwned(((crc ^ -1) >>> 0).toString(16).padStart(8, '0'));
   },
 });
 
@@ -131,7 +153,9 @@ define({
   fn: (args) => {
     const b = args.bytes(0);
     checkCollection(b.length, args.pos, 'BTL result');
-    return Value.list(Array.from(b).map((x) => Value.int(x)));
+    const out = new Array(b.length);
+    for (let i = 0; i < b.length; i++) out[i] = Value.byteValue(b[i]);
+    return Value.listOwned(out);
   },
 });
 

@@ -34,10 +34,18 @@ type compiledRegex struct {
 	ignoreCase bool
 }
 
+// regexKey is the cache key: a struct of a flag and the pattern, so a lookup hashes
+// the pattern in place. The key used to be built with a string concatenation per
+// call (GO-P19), one allocation for every RMATCH of every element.
+type regexKey struct {
+	ignoreCase bool
+	pattern    string
+}
+
 var (
-	regexMu    sync.Mutex
-	regexCache = make(map[string]*compiledRegex)
-	regexOrder []string
+	regexMu    sync.RWMutex
+	regexCache = make(map[regexKey]*compiledRegex)
+	regexOrder []regexKey
 )
 
 func compileRegex(pattern, flags string, flagPos, patPos Pos) (*compiledRegex, bool) {
@@ -63,13 +71,13 @@ func compileRegex(pattern, flags string, flagPos, patPos Pos) (*compiledRegex, b
 		}
 	}
 
-	key := fmt.Sprintf("%v:%s", ignoreCase, pattern)
-	regexMu.Lock()
-	if c, ok := regexCache[key]; ok {
-		regexMu.Unlock()
+	key := regexKey{ignoreCase, pattern}
+	regexMu.RLock()
+	c, ok := regexCache[key]
+	regexMu.RUnlock()
+	if ok {
 		return c, ignoreCase
 	}
-	regexMu.Unlock()
 
 	tree := parseRegexIC(pattern, ignoreCase, patPos)
 	prefix := "(?s)"
@@ -104,87 +112,52 @@ func compileRegex(pattern, flags string, flagPos, patPos Pos) (*compiledRegex, b
 	return cr, ignoreCase
 }
 
-func foldSubject(runes []rune) []rune {
-	out := make([]rune, len(runes))
-	for i, r := range runes {
-		if r == 0x212A { // Kelvin sign
-			out[i] = 'k'
-		} else if r == 0x017F { // Latin small letter sharp s
-			out[i] = 's'
-		} else {
-			out[i] = r
-		}
-	}
-	return out
-}
-
-type regexMatch struct {
-	startCp int
-	endCp   int
-	groups  [][2]int // startCp, endCp for each submatch (-1 if didn't participate)
-}
-
-// findMatches walks the subject left to right (§7.8). At each position it takes
-// the leftmost match; after an empty match at s the scan resumes at s+1, having
-// copied that code point through, and after a non-empty match it resumes at the
-// match end, where an empty match is allowed. Go's own FindAll drops an empty
-// match that abuts the one before it, which is the one thing this walk differs in.
-func findMatches(cr *compiledRegex, subjectRunes, searchRunes []rune, limit int) []regexMatch {
-	searchStr := string(searchRunes)
-	// runeAt maps a byte offset of searchStr to its code point index.
-	runeAt := make([]int32, len(searchStr)+1)
-	curRune := int32(0)
-	for byteOff := range searchStr {
-		runeAt[byteOff] = curRune
-		curRune++
-	}
-	runeAt[len(searchStr)] = curRune
-
-	var matches []regexMatch
-	pos := 0 // byte offset of the current scan position
-	for pos <= len(searchStr) {
+// matchSpans walks the subject left to right (§7.8) over BYTE offsets of the
+// original string: no rune slices, no offset table, no folded copy. At each
+// position it takes the leftmost match; after an empty match at s the scan
+// resumes at s+1, having copied that code point through, and after a non-empty
+// match it resumes at the match end, where an empty match is allowed. Go's own
+// FindAll drops an empty match that abuts the one before it, which is the one
+// thing this walk differs in. visit gets the submatch byte offsets (as the
+// regexp package reports them, shifted to the whole subject) and returns false to
+// stop. Case folding needs no subject copy: the engine's (?i) already folds U+212A
+// to k and U+017F to s, which is what the retired foldSubject did by hand.
+func matchSpans(cr *compiledRegex, subj string, visit func(m []int) bool) {
+	pos := 0
+	for pos <= len(subj) {
 		re := cr.re
 		if pos > 0 {
 			re = cr.tail
 		}
-		m := re.FindStringSubmatchIndex(searchStr[pos:])
+		m := re.FindStringSubmatchIndex(subj[pos:])
 		if m == nil {
-			break
+			return
 		}
-		numGroups := len(m) / 2
-		groups := make([][2]int, numGroups)
-		for g := 0; g < numGroups; g++ {
-			gs, ge := m[2*g], m[2*g+1]
-			if gs < 0 || ge < 0 {
-				groups[g] = [2]int{-1, -1}
-			} else {
-				groups[g] = [2]int{int(runeAt[pos+gs]), int(runeAt[pos+ge])}
+		if pos > 0 {
+			for i := range m {
+				if m[i] >= 0 {
+					m[i] += pos
+				}
 			}
 		}
-		start, end := pos+m[0], pos+m[1]
-		matches = append(matches, regexMatch{
-			startCp: int(runeAt[start]),
-			endCp:   int(runeAt[end]),
-			groups:  groups,
-		})
-		if limit > 0 && len(matches) >= limit {
-			break
+		if !visit(m) {
+			return
 		}
+		start, end := m[0], m[1]
 		if end > start {
 			pos = end
 			continue
 		}
 		// An empty match: step over one code point.
-		if end >= len(searchStr) {
-			break
+		if end >= len(subj) {
+			return
 		}
-		_, w := utf8.DecodeRuneInString(searchStr[end:])
+		_, w := utf8.DecodeRuneInString(subj[end:])
 		pos = end + w
 	}
-	return matches
 }
 
-func regexArgs(args *Args, patIdx, subjIdx, flagIdx int) (*compiledRegex, []rune, []rune) {
+func regexArgs(args *Args, patIdx, subjIdx, flagIdx int) (*compiledRegex, string) {
 	pat := args.Text(patIdx)
 	subj := args.Text(subjIdx)
 	flags := ""
@@ -193,16 +166,15 @@ func regexArgs(args *Args, patIdx, subjIdx, flagIdx int) (*compiledRegex, []rune
 		flags = args.Text(flagIdx)
 		flagPos = args.PosOf(flagIdx)
 	}
-	cr, ignoreCase := compileRegex(pat, flags, flagPos, args.PosOf(patIdx))
-	origRunes := []rune(subj)
-	searchRunes := origRunes
-	if ignoreCase {
-		searchRunes = foldSubject(origRunes)
-	}
-	return cr, origRunes, searchRunes
+	cr, _ := compileRegex(pat, flags, flagPos, args.PosOf(patIdx))
+	return cr, subj
 }
 
-func expandRepl(repl string, m regexMatch, numGroups int, origRunes []rune, pos Pos) string {
+// expandRepl expands $n in the replacement; group spans are byte offsets into subj.
+func expandRepl(repl string, m []int, numGroups int, subj string, pos Pos) string {
+	if strings.IndexByte(repl, '$') < 0 {
+		return repl
+	}
 	var out strings.Builder
 	i := 0
 	for i < len(repl) {
@@ -223,9 +195,8 @@ func expandRepl(repl string, m regexMatch, numGroups int, origRunes []rune, pos 
 				if g >= numGroups {
 					fail("E_BAD_ARG", fmt.Sprintf("replacement refers to $%d but the pattern has %d groups", g, numGroups-1), pos)
 				}
-				span := m.groups[g]
-				if span[0] >= 0 {
-					out.WriteString(string(origRunes[span[0]:span[1]]))
+				if m[2*g] >= 0 {
+					out.WriteString(subj[m[2*g]:m[2*g+1]])
 				}
 				i += 2
 				continue
@@ -243,9 +214,8 @@ func init() {
 		Min:  2,
 		Max:  3,
 		Fn: func(args *Args, ctx *Context) *Value {
-			cr, orig, search := regexArgs(args, 0, 1, 2)
-			matches := findMatches(cr, orig, search, 1)
-			return NewBool(len(matches) > 0)
+			cr, subj := regexArgs(args, 0, 1, 2)
+			return NewBool(cr.re.MatchString(subj))
 		},
 	})
 
@@ -254,12 +224,13 @@ func init() {
 		Min:  2,
 		Max:  3,
 		Fn: func(args *Args, ctx *Context) *Value {
-			cr, orig, search := regexArgs(args, 0, 1, 2)
-			matches := findMatches(cr, orig, search, 1)
-			if len(matches) == 0 {
+			cr, subj := regexArgs(args, 0, 1, 2)
+			loc := cr.re.FindStringIndex(subj)
+			if loc == nil {
 				return NewInt(0)
 			}
-			return NewInt(int64(matches[0].startCp + 1))
+			// Only the one offset that is reported is converted to a code point index.
+			return NewInt(int64(utf8.RuneCountInString(subj[:loc[0]]) + 1))
 		},
 	})
 
@@ -268,18 +239,17 @@ func init() {
 		Min:  2,
 		Max:  3,
 		Fn: func(args *Args, ctx *Context) *Value {
-			cr, orig, search := regexArgs(args, 0, 1, 2)
-			matches := findMatches(cr, orig, search, 1)
-			if len(matches) == 0 {
+			cr, subj := regexArgs(args, 0, 1, 2)
+			m := cr.re.FindStringSubmatchIndex(subj)
+			if m == nil {
 				return NewNone()
 			}
-			first := matches[0]
-			items := make([]*Value, len(first.groups))
-			for i, g := range first.groups {
-				if g[0] < 0 {
+			items := make([]*Value, len(m)/2)
+			for i := range items {
+				if m[2*i] < 0 {
 					items[i] = NewTextOwned("")
 				} else {
-					items[i] = NewTextOwned(string(orig[g[0]:g[1]]))
+					items[i] = NewTextOwned(subj[m[2*i]:m[2*i+1]])
 				}
 			}
 			return NewListOwned(items)
@@ -300,16 +270,7 @@ func init() {
 				flags = args.Text(3)
 				flagPos = args.PosOf(3)
 			}
-			cr, ignoreCase := compileRegex(pat, flags, flagPos, args.PosOf(0))
-			origRunes := []rune(subj)
-			searchRunes := origRunes
-			if ignoreCase {
-				searchRunes = foldSubject(origRunes)
-			}
-			matches := findMatches(cr, origRunes, searchRunes, 0)
-			if len(matches) == 0 {
-				return NewTextOwned(subj)
-			}
+			cr, _ := compileRegex(pat, flags, flagPos, args.PosOf(0))
 
 			numGroups := 1
 			if cr.re != nil {
@@ -317,20 +278,29 @@ func init() {
 			}
 
 			var out strings.Builder
-			last := 0
+			last := 0         // byte offset of the end of the copied prefix
 			built := int64(0) // code points written so far (SPEC §6.4)
-			for _, m := range matches {
-				out.WriteString(string(origRunes[last:m.startCp]))
-				built += int64(m.startCp - last)
-				piece := expandRepl(repl, m, numGroups, origRunes, args.PosOf(1))
+			matched := false
+			replPos := args.PosOf(1)
+			matchSpans(cr, subj, func(m []int) bool {
+				matched = true
+				seg := subj[last:m[0]]
+				out.WriteString(seg)
+				built += runeLen(seg)
+				piece := expandRepl(repl, m, numGroups, subj, replPos)
 				built = satAdd(built, runeLen(piece))
 				checkTextLen(built, "RREPLACE's result", args.Pos())
 				out.WriteString(piece)
-				last = m.endCp
+				last = m[1]
+				return true
+			})
+			if !matched {
+				return NewTextOwned(subj)
 			}
-			built += int64(len(origRunes) - last)
+			tail := subj[last:]
+			built += runeLen(tail)
 			checkTextLen(built, "RREPLACE's result", args.Pos())
-			out.WriteString(string(origRunes[last:]))
+			out.WriteString(tail)
 			return NewTextOwned(out.String())
 		},
 	})

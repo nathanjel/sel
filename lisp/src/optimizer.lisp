@@ -22,8 +22,17 @@
           (node-spec copy) (node-spec n)
           (node-record-shape copy) (node-record-shape n)
           (node-math-plan copy) (node-math-plan n)
-          (node-keys-unobserved copy) (node-keys-unobserved n))
+          (node-keys-unobserved copy) (node-keys-unobserved n)
+          ;; The parsed decimal of a numeral travels with the copy: dropping it made
+          ;; every optimised literal re-parse its text at run time, which is why an
+          ;; optimised `A > 1` ran slower than the plain tree (LISP-P5).
+          (node-dec-val copy) (node-dec-val n))
     copy))
+
+(defun node-dec (node pos)
+  "The decimal of a :num node: the cached parse, else a fresh one (NIL when the
+text is not a number)."
+  (or (node-dec-val node) (dec-parse (node-s node) pos)))
 
 ;; A fold that replaces a node by one of its children must not move the error
 ;; position an operator over the result reports: spec §6.3 names the node that
@@ -63,10 +72,12 @@
            ;; evaluator, which owns that error.
            ((and (string= op "NEG") child (eq (node-kind child) :num))
             (handler-case
-                (let ((d (dec-parse (node-s child) (node-pos node))))
+                (let ((d (node-dec child (node-pos node))))
                   (if d
-                      (let ((res (make-node :num (node-pos node))))
-                        (setf (node-s res) (dec-format (dec-negate d)))
+                      (let ((res (make-node :num (node-pos node)))
+                            (neg (dec-negate d)))
+                        (setf (node-s res) (dec-format neg)
+                              (node-dec-val res) neg)
                         res)
                       node))
               (error () node)))
@@ -105,8 +116,8 @@
                  (member op '("+" "-" "*" "/" "%") :test #'string=))
             (let ((pos (node-pos node)))
               (handler-case
-                  (let* ((dl (dec-parse (node-s l) pos))
-                         (dr (dec-parse (node-s r) pos))
+                  (let* ((dl (node-dec l pos))
+                         (dr (node-dec r pos))
                          (dres (when (and dl dr)
                                  (cond
                                    ((string= op "+") (dec-add dl dr pos))
@@ -117,7 +128,8 @@
                                    (t nil)))))
                     (if dres
                         (let ((res (make-node :num pos)))
-                          (setf (node-s res) (dec-format dres))
+                          (setf (node-s res) (dec-format dres)
+                                (node-dec-val res) dres)
                           res)
                         node))
                 (error () node))))
@@ -127,8 +139,8 @@
                  (member op '("==" "!=" "<" "<=" ">" ">=") :test #'string=))
             (let ((pos (node-pos node)))
               (handler-case
-                  (let* ((dl (dec-parse (node-s l) pos))
-                         (dr (dec-parse (node-s r) pos)))
+                  (let* ((dl (node-dec l pos))
+                         (dr (node-dec r pos)))
                     (if (and dl dr)
                         (let* ((cmp (dec-cmp dl dr))
                                (b (cond

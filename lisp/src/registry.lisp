@@ -110,6 +110,13 @@ plain ERROR. OVERWRITE NIL also refuses the name of an earlier registration."
 (defun registry-lookup (name)
   (gethash (string-upcase name) *registry*))
 
+(declaim (inline registry-lookup-canonical))
+(defun registry-lookup-canonical (name)
+  "REGISTRY-LOOKUP for a name the lexer already spelled in canonical (upper) case:
+STRING-UPCASE allocates a fresh string even when nothing changes, once per call node
+(LISP-P27)."
+  (gethash name *registry*))
+
 (defun function-names ()
   (sort (loop for k being the hash-keys of *registry* collect k) #'string<))
 

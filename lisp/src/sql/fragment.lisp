@@ -46,7 +46,7 @@ the class of bug this shape exists to make unreachable."
   ;; text is what SQL sorts by its bytes.
   (canonical nil :type boolean))
 
-(defun slot-inline-p (f slot)
+(defun slot-inline-p (f slot &optional (kinds (fragment-param-kinds f)))
   "True for a slot rendered as a literal in every mode, never as a parameter.
 
 Three forms qualify, for the same underlying reason: NONE carries any character
@@ -60,7 +60,9 @@ of the dialect document rather than out of a rule -- bound as a string it breaks
 SQLite outright, where 1 = '1' is 0. BIN, because a BIN parameter is bytes and a
 driver sends them through the connection's text encoding: on PostgreSQL 130 of
 the 256 single-byte values then failed."
-  (let ((k (nth (1- slot) (fragment-param-kinds f))))
+  ;; KINDS is the fragment's kind list, or a vector of it: a render reads a slot's
+  ;; kind once per slot, and NTH over the list made every render O(P^2) (LISP-P12).
+  (let ((k (if (vectorp kinds) (and (< (1- slot) (length kinds)) (aref kinds (1- slot))) (nth (1- slot) kinds))))
     (and k (member k '(:num :bool :bin)) t)))
 
 (defun check-render-mode (mode)
@@ -73,7 +75,9 @@ statements where it could not be seen (PHP-C57, PY-C46)."
 
 (defun frag-join (f mode)
   (check-render-mode mode)
-  (let ((nth 0))
+  (let ((nth 0)
+        (kinds (coerce (fragment-param-kinds f) 'simple-vector))
+        (values (coerce (fragment-params f) 'simple-vector)))
     (with-output-to-string (out)
       (dolist (p (fragment-parts f))
         (if (stringp p)
@@ -81,9 +85,9 @@ statements where it could not be seen (PHP-C57, PY-C46)."
             (let* ((i (1- p))
                    ;; A slot whose kind was never recorded is quoted rather than
                    ;; emitted bare, matching the other hosts.
-                   (form (or (nth i (fragment-param-kinds f)) :text))
-                   (v (nth i (fragment-params f))))
-              (if (and (not (eq mode :inline)) (slot-inline-p f p))
+                   (form (or (and (< i (length kinds)) (svref kinds i)) :text))
+                   (v (and (< i (length values)) (svref values i))))
+              (if (and (not (eq mode :inline)) (slot-inline-p f p kinds))
                   ;; Never a placeholder, and it does not advance NTH either,
                   ;; because it emits no placeholder for a binding to land in.
                   (write-string (emit-literal (fragment-dialect f) v form) out)
@@ -147,7 +151,9 @@ orders are not the same. A slot is numbered when it is created, and the template
 decides where it lands: FIND(needle, hay) maps to INSTR({1}, {0}), so the second
 slot created is the first one emitted. A slot appearing more than once yields
 its value more than once, which is also right."
-  (let ((out '()))
+  (let ((out '())
+        (kinds (coerce (fragment-param-kinds f) 'simple-vector))
+        (values (coerce (fragment-params f) 'simple-vector)))
     (dolist (p (fragment-parts f) (nreverse out))
-      (when (and (integerp p) (not (slot-inline-p f p)))
-        (push (nth (1- p) (fragment-params f)) out)))))
+      (when (and (integerp p) (not (slot-inline-p f p kinds)))
+        (push (and (< (1- p) (length values)) (svref values (1- p))) out)))))

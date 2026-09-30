@@ -67,6 +67,22 @@ func (p *Program) PhysicalAST() *Node {
 }
 
 func (p *Program) Run(ctx *Value) (result *Value, err error) {
+	return p.runTree(nil, ctx)
+}
+
+// RunAsWritten evaluates the program's tree exactly as parsed, with no planning: the
+// plain tree is the authority the physical tree is held to (SPEC 6.4), so the answer
+// is the one Run gives. It is for a caller that evaluates a small tree once and throws
+// the program away (the SQL layer validating a constant sub-expression), where the
+// planner's rewrites cost more than the evaluation they would speed up.
+func (p *Program) RunAsWritten(ctx *Value) (result *Value, err error) {
+	return p.runTree(p.ast, ctx)
+}
+
+// runTree evaluates one tree of this program on a fresh context: the given one, or
+// the physical tree when target is nil (built inside the recovered region, as Run
+// always did, so a panic out of the optimizer is still reported as an error).
+func (p *Program) runTree(target *Node, ctx *Value) (result *Value, err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			if se, ok := r.(*SelError); ok {
@@ -77,7 +93,9 @@ func (p *Program) Run(ctx *Value) (result *Value, err error) {
 		}
 	}()
 	c := NewContext(ctx)
-	target := p.PhysicalAST()
+	if target == nil {
+		target = p.PhysicalAST()
+	}
 	return EvalNode(target, c), nil
 }
 
@@ -275,12 +293,46 @@ func collectDependencies(node *Node, bound map[string]bool, reads map[string]boo
 	return def
 }
 
+// Eval compiles and runs a program once. Planning (the logical rewrites, constant
+// folding and the math plan) costs about a quarter of a run-once total and only pays
+// off when the program runs again or walks a collection, so a one-shot program that
+// has neither an aggregate nor a pipeline stage is evaluated as written (GO-P24). The
+// physical tree is a function of the AST alone and is held to the plain tree's answer
+// (SPEC 6.4), so this changes timing and nothing else.
 func Eval(source string, ctx *Value) (*Value, error) {
 	prog, err := Compile(source)
 	if err != nil {
 		return nil, err
 	}
+	if !plansPay(prog.ast) {
+		return prog.runTree(prog.ast, ctx)
+	}
 	return prog.Run(ctx)
+}
+
+// plansPay reports whether the program calls an aggregate or a pipeline operator,
+// the only constructs whose planned form can beat evaluating the tree as written.
+// Iterative: a flat chain as long as the source can be is as deep as it is long.
+func plansPay(root *Node) bool {
+	stack := []*Node{root}
+	for len(stack) > 0 {
+		n := stack[len(stack)-1]
+		stack = stack[:len(stack)-1]
+		if n == nil {
+			continue
+		}
+		if n.T == NodeCall {
+			if IsPipelineOp(n.S) {
+				return true
+			}
+			if spec := Lookup(n.S); spec != nil && spec.Binds {
+				return true
+			}
+		}
+		stack = append(stack, n.L, n.R)
+		stack = append(stack, n.Items...)
+	}
+	return false
 }
 
 func MustEval(source string, ctx *Value) *Value {

@@ -93,14 +93,16 @@ define('SPLIT', 2, 2, fn=_split)
 
 
 def _trim(s: str, left: bool, right: bool) -> str:
-    a, b = 0, len(s)
+    # The explicit four-character set, never the no-argument strip(): that one
+    # strips every Unicode space, which SEL must not (PY-P11: a per-character
+    # loop took 195 ms per MB of padding, strip with the set takes 8 ms).
+    if left and right:
+        return s.strip(_SPACE)
     if left:
-        while a < b and s[a] in _SPACE:
-            a += 1
+        return s.lstrip(_SPACE)
     if right:
-        while b > a and s[b - 1] in _SPACE:
-            b -= 1
-    return s[a:b]
+        return s.rstrip(_SPACE)
+    return s
 
 
 define('TRIM', 1, 1, fn=lambda a, ctx: Value.text(_trim(a.text(0), True, True)))
@@ -112,17 +114,18 @@ define('RTRIM', 1, 1, fn=lambda a, ctx: Value.text(_trim(a.text(0), False, True)
 # can change length — "ß".upper() is "SS", "ﬁ".upper() is "FI" — while PHP's
 # strtoupper is byte- and locale-based. They cannot be reconciled without
 # shipping a case table, and guessing would break the invariant silently.
+_UP_TABLE = {c: c - 32 for c in range(0x61, 0x7B)}
+_LOW_TABLE = {c: c + 32 for c in range(0x41, 0x5B)}
+
+
 def _ascii_case(s: str, up: bool) -> str:
-    out = []
-    for ch in s:
-        c = ord(ch)
-        if up and 0x61 <= c <= 0x7A:
-            out.append(chr(c - 32))
-        elif not up and 0x41 <= c <= 0x5A:
-            out.append(chr(c + 32))
-        else:
-            out.append(ch)
-    return ''.join(out)
+    # Pure ASCII text: str.upper()/lower() is byte-identical to the ASCII rule,
+    # because no ASCII character has a multi-character or non-ASCII mapping.
+    # Anything else goes through a fixed 26-entry translate table, so the full
+    # Unicode mapping is still never applied (PY-P11).
+    if s.isascii():
+        return s.upper() if up else s.lower()
+    return s.translate(_UP_TABLE if up else _LOW_TABLE)
 
 
 define('UPPER', 1, 1, fn=lambda a, ctx: Value.text(_ascii_case(a.text(0), True)))

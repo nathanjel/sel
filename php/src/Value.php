@@ -250,6 +250,20 @@ final class Value
         return new self(self::TEXT, $s);
     }
 
+    /**
+     * INTERNAL: a TEXT whose bytes the engine itself knows are valid UTF-8 — a
+     * parser literal (the lexer validated the source and every escape it decodes
+     * is a scalar value), a number's digits, a cut of a valid text at character
+     * boundaries, the concatenation of two valid texts. Skips the PCRE validity
+     * pass Value::text makes (~280 ns, ~40% of evaluating a literal, PHP-P11).
+     * Anything from outside — host input, bytes decoded from BIN — must still
+     * go through Value::text.
+     */
+    public static function textTrusted(string $s): self
+    {
+        return new self(self::TEXT, $s);
+    }
+
     /** A key entering from host code (spec §8): valid UTF-8, like every text. */
     /** @param mixed $x */
     private static function describe($x): string
@@ -341,6 +355,22 @@ final class Value
         // otherwise still gets one canonical text (PHP-C10, a 0.9.2 regression).
         $v = new self(self::TEXT, null);
         $v->decVal = $parsed;
+        return $v;
+    }
+
+    /**
+     * The number for a decimal an operation of this library just built. Dec's own
+     * arithmetic has already canonicalised it and enforced the digit caps, so the
+     * well-formedness pass `num()` runs on host input (HOST-13/14, PHP-C40) is
+     * skipped: a quarter of each numeric result went to it (PHP-P12). Never call
+     * this with a decimal that came from outside the library.
+     *
+     * @param array{neg:bool,digits:string,scale:int} $d
+     */
+    public static function numTrusted(array $d): self
+    {
+        $v = new self(self::TEXT, null);
+        $v->decVal = $d;
         return $v;
     }
 
@@ -908,11 +938,20 @@ final class Value
         }
         try {
             $v = $this->scalarSource(null);
+            if ($v->kind !== self::TEXT) return false;
+            if ($v->decVal !== null) return true;
+            // Dec::parse answers null for text that is not a number, so a probe
+            // never needs asDecimal()'s fail(): building a SelError (trace and a
+            // json_encode'd message) and catching it made every non-numeric text
+            // key cost ~7x a parsed one (PHP-P3).
             // A well-formed numeral too big to hold raises E_RANGE out of parse.
             // The probe answers no rather than raising, so ISNUM is true exactly
             // when the value can be used as a number — before the cap it said
             // TRUE for a 2 000 000-digit text that then failed on first use.
-            return $v->kind === self::TEXT && $v->asDecimal() !== null;
+            $d = Dec::parse((string) $v->getScalar(), null);
+            if ($d === null) return false;
+            $v->decVal = $d;
+            return true;
         } catch (SelError) {
             return false;
         }
@@ -956,6 +995,39 @@ final class Value
         return $this->copyAt($below + 1, $pos);
     }
 
+    /**
+     * A copy of a record made to be written through by a program that assigns
+     * only to the top-level names in `$writable` (PHP-P22): those children are
+     * deep-copied, every other top-level child is shared with the original. The
+     * program cannot reach a shared child through an assignment, so the original is
+     * never written to, and the copy costs the size of what is written rather than
+     * of the whole context. A root that is not a plain record is copied whole.
+     *
+     * @param list<string> $writable
+     */
+    public function copyWritable(array $writable): Value
+    {
+        $w = array_fill_keys($writable, true);
+        if ($this->shape !== null && $this->storage !== null) {
+            $values = [];
+            foreach ($this->shape->keys as $i => $k) {
+                $child = $this->storage[$i];
+                $values[] = isset($w[$k]) ? $child->copyAt(2, null) : $child;
+            }
+            return self::fromShape($this->shape, $values);
+        }
+        if ($this->isList || $this->storage !== null || $this->children === null) {
+            return $this->copy();
+        }
+        $out = new self($this->kind, $this->scalar, false);
+        $out->decVal = $this->decVal;
+        $out->children = [];
+        foreach ($this->children as $k => $v) {
+            $out->children[$k] = isset($w[(string) $k]) ? $v->copyAt(2, null) : $v;
+        }
+        return $out;
+    }
+
     /** @param array<string,mixed>|null $pos */
     private function copyAt(int $depth, ?array $pos): Value
     {
@@ -974,7 +1046,16 @@ final class Value
             foreach ($this->storage as $value) {
                 $values[] = $value->copyAt($depth + 1, $pos);
             }
-            return self::list($values, $this->listKeys);
+            // Built directly, not through list(): the elements are copies of
+            // Values and the keys are this list's own, already validated (text,
+            // distinct, paired), so list()'s instanceof pass, per-key preg and
+            // duplicate table would only re-prove it on every assignment, `,` and
+            // aggregate collect of a keyed list (PHP-P16). The key map is rebuilt
+            // lazily, as for any fresh list.
+            $v = new self(self::NONE, null, true);
+            $v->storage = $values;
+            $v->listKeys = $this->listKeys;
+            return $v;
         }
         $out = new self($this->kind, $this->scalar, $this->isList);
         $out->decVal = $this->decVal;
@@ -997,6 +1078,18 @@ final class Value
 
     public function structuralHash(): string
     {
+        // A value with no children is keyed by its own kind, length and scalar
+        // (PHP-P25): no HashContext, and injective, which is all a bucket key has
+        // to be -- every bucket confirms with eql(). It cannot equal the digest of
+        // a container, which is sixteen hex digits and has no ':'.
+        if ($this->size() === 0) {
+            $scalar = match ($this->kind) {
+                self::NONE => '',
+                self::TEXT, self::BIN => (string) $this->getScalar(),
+                self::BOOL => $this->scalar ? '1' : '0',
+            };
+            return $this->kind . ':' . strlen($scalar) . ':' . $scalar;
+        }
         $hash = hash_init('xxh3');
         $this->updateStructuralHash($hash, 1);
         return hash_final($hash);

@@ -29,17 +29,28 @@ final class Structure
                 $out = [];
                 $value->forEachElement(static function (string $key, Value $item) use (&$buckets, &$out): void {
                     $hash = $item->structuralHash();
-                    $found = false;
-                    foreach ($buckets[$hash] ?? [] as $existing) {
+                    // One item per hash is stored as the item itself and becomes a
+                    // list only when a second, unequal one collides (PHP-P25).
+                    $slot = $buckets[$hash] ?? null;
+                    if ($slot === null) {
+                        $buckets[$hash] = $item;
+                        $out[] = $item;
+                        return;
+                    }
+                    if ($slot instanceof Value) {
+                        if (!$item->eql($slot)) {
+                            $buckets[$hash] = [$slot, $item];
+                            $out[] = $item;
+                        }
+                        return;
+                    }
+                    foreach ($slot as $existing) {
                         if ($item->eql($existing)) {
-                            $found = true;
-                            break;
+                            return;
                         }
                     }
-                    if (!$found) {
-                        $buckets[$hash][] = $item;
-                        $out[] = $item;
-                    }
+                    $buckets[$hash][] = $item;
+                    $out[] = $item;
                 });
                 return Value::list($out);
             }]);
@@ -79,30 +90,55 @@ final class Structure
         return $value;
     }
 
-    /** @param array<string,mixed> $node @param array<string,bool> $allowed */
-    private static function exprDependsOnlyOn(?array $node, array $allowed): bool
+    /**
+     * Does the expression read nothing of the LINK but the binder names in `$allowed`?
+     *
+     * `$forbidden` is the other side's binder names. When it is given, a variable
+     * that is neither allowed nor forbidden is a constant of the join — a name
+     * from the enclosing scope, whose value cannot change while the join runs,
+     * because an assignment in the key is refused below — and may appear in a key
+     * (PHP-P6): `A["id"] + K == B["id"]` hashes instead of falling to the nested
+     * loop, which was ~1000x slower at 600 rows. Names starting with `_` (`_`,
+     * `_1`, `_2`, `_K`) are the language's own and stay refused. With `$forbidden`
+     * null only binder names qualify, which is what an assignment target needs.
+     *
+     * @param array<string,mixed> $node @param array<string,bool> $allowed @param array<string,bool>|null $forbidden
+     */
+    private static function exprDependsOnlyOn(?array $node, array $allowed, ?array $forbidden = null): bool
     {
         if ($node === null) return true;
         return match ($node['t']) {
-            'var' => isset($allowed[\Sel\Utf8::upper($node['name'])]),
-            'index' => self::exprDependsOnlyOn($node['obj'], $allowed)
-                && self::exprDependsOnlyOn($node['idx'], $allowed),
-            'call' => self::allNodes($node['args'], $allowed),
-            'bin' => self::exprDependsOnlyOn($node['l'], $allowed)
-                && self::exprDependsOnlyOn($node['r'], $allowed),
-            'un' => self::exprDependsOnlyOn($node['x'], $allowed),
+            'var' => self::varAllowed($node['name'], $allowed, $forbidden),
+            'index' => self::exprDependsOnlyOn($node['obj'], $allowed, $forbidden)
+                && self::exprDependsOnlyOn($node['idx'], $allowed, $forbidden),
+            'call' => self::allNodes($node['args'], $allowed, $forbidden),
+            'bin' => self::exprDependsOnlyOn($node['l'], $allowed, $forbidden)
+                && self::exprDependsOnlyOn($node['r'], $allowed, $forbidden),
+            'un' => self::exprDependsOnlyOn($node['x'], $allowed, $forbidden),
+            // A target must be one of the binders even when outside names are
+            // welcome elsewhere: an assignment to an outer variable would make it
+            // change under the join.
             'assign' => self::exprDependsOnlyOn($node['target'], $allowed)
-                && self::exprDependsOnlyOn($node['value'], $allowed),
-            'seq', 'list' => self::allNodes($node['items'], $allowed),
+                && self::exprDependsOnlyOn($node['value'], $allowed, $forbidden),
+            'seq', 'list' => self::allNodes($node['items'], $allowed, $forbidden),
             default => true,
         };
     }
 
-    /** @param list<array<string,mixed>> $nodes @param array<string,bool> $allowed */
-    private static function allNodes(array $nodes, array $allowed): bool
+    /** @param array<string,bool> $allowed @param array<string,bool>|null $forbidden */
+    private static function varAllowed(string $name, array $allowed, ?array $forbidden): bool
+    {
+        $upper = \Sel\Utf8::upper($name);
+        if (isset($allowed[$upper])) return true;
+        if ($forbidden === null || isset($forbidden[$upper])) return false;
+        return !str_starts_with($name, '_');
+    }
+
+    /** @param list<array<string,mixed>> $nodes @param array<string,bool> $allowed @param array<string,bool>|null $forbidden */
+    private static function allNodes(array $nodes, array $allowed, ?array $forbidden = null): bool
     {
         foreach ($nodes as $node) {
-            if (!self::exprDependsOnlyOn($node, $allowed)) return false;
+            if (!self::exprDependsOnlyOn($node, $allowed, $forbidden)) return false;
         }
         return true;
     }
@@ -121,12 +157,12 @@ final class Structure
         // and answer a different question, so such a comparison is not an equi
         // join and the general path decides it.
         if (array_intersect_key($leftNames, $rightNames) !== []) return null;
-        if (self::exprDependsOnlyOn($node['l'], $leftNames)
-            && self::exprDependsOnlyOn($node['r'], $rightNames)) {
+        if (self::exprDependsOnlyOn($node['l'], $leftNames, $rightNames)
+            && self::exprDependsOnlyOn($node['r'], $rightNames, $leftNames)) {
             return ['left' => $node['l'], 'right' => $node['r'], 'numeric' => $node['op'] === '==', 'swapped' => false];
         }
-        if (self::exprDependsOnlyOn($node['r'], $leftNames)
-            && self::exprDependsOnlyOn($node['l'], $rightNames)) {
+        if (self::exprDependsOnlyOn($node['r'], $leftNames, $rightNames)
+            && self::exprDependsOnlyOn($node['l'], $rightNames, $leftNames)) {
             return ['left' => $node['r'], 'right' => $node['l'], 'numeric' => $node['op'] === '==', 'swapped' => true];
         }
         return null;
@@ -630,6 +666,17 @@ final class Structure
         RecordShape $shape,
         RecordShape $rshape
     ): array {
+        // The generated code is a function of (ops, slots, rkept, lnested) alone —
+        // the shapes are bound at call time — so the compiled factory is cached
+        // across LINK invocations (PHP-P20): an eval() costs ~60 us and this ran
+        // for every invocation and shape pair. Bounded, and dropped wholesale when
+        // full, like RecordShape's own cache; the key holds integers only, and so
+        // does the code (no injection surface).
+        $cacheKey = json_encode([$plan['ops'], $plan['slots'], $plan['rkept'], $plan['lnested']]);
+        $factory = self::$joinFactories[$cacheKey] ?? null;
+        if ($factory !== null) {
+            return $factory($shape, $rshape);
+        }
         $ops = $plan['ops'];
         $slots = $plan['slots'];
         $rkept = $plan['rkept'];
@@ -722,8 +769,17 @@ final class Structure
             }
         ];";
 
-        return eval($code);
+        if (count(self::$joinFactories) >= self::JOIN_FACTORY_CAP) {
+            self::$joinFactories = [];
+        }
+        $factory = eval('return static function (\Sel\RecordShape $shape, \Sel\RecordShape $rshape): array { ' . $code . ' };');
+        self::$joinFactories[$cacheKey] = $factory;
+        return $factory($shape, $rshape);
     }
+
+    private const JOIN_FACTORY_CAP = 512;
+    /** @var array<string,\Closure> */
+    private static array $joinFactories = [];
 
     private static function makeJoinProjector(string $b1, string $b2, ?Value $nullRight): JoinProjector
     {
@@ -1584,24 +1640,26 @@ final class Structure
                 $rightValue->forEachElement(static function (string $k, Value $item) use (&$rightItems): void {
                     $rightItems[] = $item;
                 });
-                $each($leftValue, function (Value $leftItem) use (&$frame, &$output, $b1, $b2, $rightItems, $aliasLeft, $aliasRight, $a, $predicate, $leftJoin, $project, $ctx): void {
+                // Hoisted out of the loops (PHP-P21): the lower-cased binder names, and
+                // the aliased right rows. A right row is aliased once, on first use, when
+                // the predicate cannot write (pureSource): the alias is a wrapper over the
+                // same elements, so a pair that re-made it was only re-proving it. A
+                // predicate with an assignment keeps a fresh alias per pair, as before.
+                $b1l = \Sel\Utf8::lower($b1);
+                $b2l = \Sel\Utf8::lower($b2);
+                $shareAliases = self::pureSource($predicate);
+                $aliased = [];
+                $each($leftValue, function (Value $leftItem) use (&$output, $b1, $b2, $b1l, $b2l, $rightItems, &$aliased, $shareAliases, $aliasLeft, $aliasRight, $a, $predicate, $leftJoin, $project, $ctx): void {
                     $left = $aliasLeft($leftItem);
-                        $frame[$b1] = $left;
-                    $frame[\Sel\Utf8::lower($b1)] = $left;
-                        $frame['_1'] = $left;
-                        $frame['_'] = $left;
-                        $ctx->setFrameValue($b1, $left);
-                        $ctx->setFrameValue(\Sel\Utf8::lower($b1), $left);
-                        $ctx->setFrameValue('_1', $left);
-                        $ctx->setFrameValue('_', $left);
+                    $ctx->setFrameValue($b1, $left);
+                    $ctx->setFrameValue($b1l, $left);
+                    $ctx->setFrameValue('_1', $left);
+                    $ctx->setFrameValue('_', $left);
                     $matched = false;
-                    foreach ($rightItems as $rightItem) {
-                        $right = $aliasRight($rightItem);
-                        $frame[$b2] = $right;
-                        $frame[\Sel\Utf8::lower($b2)] = $right;
-                        $frame['_2'] = $right;
+                    foreach ($rightItems as $ri => $rightItem) {
+                        $right = $shareAliases ? ($aliased[$ri] ??= $aliasRight($rightItem)) : $aliasRight($rightItem);
                         $ctx->setFrameValue($b2, $right);
-                        $ctx->setFrameValue(\Sel\Utf8::lower($b2), $right);
+                        $ctx->setFrameValue($b2l, $right);
                         $ctx->setFrameValue('_2', $right);
                         if ($a->evalNode($predicate)->asBool($predicate['pos'])) {
                             $matched = true;
@@ -1661,7 +1719,7 @@ final class Structure
         // The one ordering SORT uses too (Core::compareValues); only the
         // bounded selection below is TOP's own.
         $compare = static function (array $left, array $right) use ($dir): int {
-            $c = Core::compareValues($left['key'], $right['key']);
+            $c = Core::compareKeys($left['sk'], $right['sk']);
             if ($dir === 'DESC') $c = -$c;
             return $c !== 0 ? $c : ($left['idx'] <=> $right['idx']);
         };
@@ -1688,21 +1746,32 @@ final class Structure
         };
         $index = 0;
         $frame = $binder === null ? null : [$binder => Value::none(), '_K' => Value::none()];
+        // `_K` is bound for every row only when the body can read it (PHP-P26), as
+        // BUCKET does; and when the limit reaches the row count there is nothing to
+        // select, so the rows are collected and sorted once with the same comparator
+        // (ties still break by position) instead of going through the heap.
+        $needsK = $binder !== null && Core::containsVar($body, '_K');
+        $collectAll = $limit >= max(1, $value->size());
         if ($frame !== null) $ctx->pushFrame($frame);
         try {
             $consume = function (string $key, Value $item) use (
                 &$heap, &$index, $limit, $binder, $body, $ctx, $a, $compare, $siftUp, $siftDown, &$frame,
+                $needsK, $collectAll,
             ): void {
                 if ($binder === null) {
-                    $candidate = ['item' => $item, 'key' => $item, 'idx' => $index++];
+                    $candidate = ['item' => $item, 'sk' => Core::sortKey($item), 'idx' => $index++];
                 } else {
                     $frame[$binder] = $item;
-                    $frame['_K'] = Value::text($key);
                     $ctx->setFrameValue($binder, $frame[$binder]);
-                    $ctx->setFrameValue('_K', $frame['_K']);
-                    $candidate = ['item' => $item, 'key' => $a->evalNode($body), 'idx' => $index++];
+                    if ($needsK) {
+                        $frame['_K'] = Value::text($key);
+                        $ctx->setFrameValue('_K', $frame['_K']);
+                    }
+                    $candidate = ['item' => $item, 'sk' => Core::sortKey($a->evalNode($body)), 'idx' => $index++];
                 }
-                if (count($heap) < $limit) {
+                if ($collectAll) {
+                    $heap[] = $candidate;
+                } elseif (count($heap) < $limit) {
                     $heap[] = $candidate;
                     $siftUp(count($heap) - 1);
                 } elseif ($compare($heap[0], $candidate) > 0) {

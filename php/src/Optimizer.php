@@ -280,6 +280,13 @@ final class Optimizer
                 }
             }
 
+            // Two text literals joined by `&` are one text literal (PHP-P29): the
+            // fold cannot fail, since the result is shorter than the cap unless the
+            // source itself was enormous, and then the node is left for the evaluator.
+            if ($op === '&' && ($left['t'] ?? null) === 'text' && ($right['t'] ?? null) === 'text'
+                && strlen((string) $left['v']) + strlen((string) $right['v']) <= \Sel\Limits::MAX_TEXT_LEN) {
+                return ['t' => 'text', 'v' => (string) $left['v'] . (string) $right['v'], 'pos' => $node['pos']];
+            }
             if (($left['t'] ?? null) === 'text' && ($right['t'] ?? null) === 'text'
                 && in_array($op, ['$==', '$!=', '$<', '$<=', '$>', '$>='], true)) {
                 $cmp = strcmp((string) $left['v'], (string) $right['v']) <=> 0;

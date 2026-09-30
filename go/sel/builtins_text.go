@@ -5,6 +5,7 @@ package sel
 import (
 	"fmt"
 	"strings"
+	ustd "unicode/utf8"
 
 	"github.com/nathanjel/sel/go/internal/utf8"
 )
@@ -13,43 +14,105 @@ func isSelSpace(r rune) bool {
 	return r == ' ' || r == '\t' || r == '\r' || r == '\n'
 }
 
+// Code-point indexing without a []rune round trip (GO-P20). Text is valid UTF-8,
+// so a byte offset is found by walking boundaries; ASCII bytes take the one-step
+// branch. A result far smaller than its source is copied, so a one-character LEFT
+// of a huge text does not keep the huge text alive.
+
+// runeOffset is the byte offset after the first n code points of s (len(s) when s
+// has fewer).
+func runeOffset(s string, n int) int {
+	i := 0
+	for i < len(s) && n > 0 {
+		if s[i] < utf8Self {
+			i++
+		} else {
+			_, w := ustd.DecodeRuneInString(s[i:])
+			i += w
+		}
+		n--
+	}
+	return i
+}
+
+// runeOffsetFromEnd is the byte offset where the last n code points of s begin
+// (0 when s has fewer).
+func runeOffsetFromEnd(s string, n int) int {
+	i := len(s)
+	for i > 0 && n > 0 {
+		if s[i-1] < utf8Self {
+			i--
+		} else {
+			_, w := ustd.DecodeLastRuneInString(s[:i])
+			i -= w
+		}
+		n--
+	}
+	return i
+}
+
+const utf8Self = 0x80
+
+// sliceText is s[a:b] as a string that does not pin a much larger source.
+func sliceText(s string, a, b int) string {
+	if b-a < len(s)/2 {
+		return strings.Clone(s[a:b])
+	}
+	return s[a:b]
+}
+
+// trimText trims the four characters SEL calls whitespace, all ASCII, so a byte
+// scan from each end is exact for any valid text.
 func trimText(s string, left, right bool) string {
-	runes := []rune(s)
-	a := 0
-	b := len(runes)
+	a, b := 0, len(s)
 	if left {
-		for a < b && isSelSpace(runes[a]) {
+		for a < b && isSelSpace(rune(s[a])) {
 			a++
 		}
 	}
 	if right {
-		for b > a && isSelSpace(runes[b-1]) {
+		for b > a && isSelSpace(rune(s[b-1])) {
 			b--
 		}
 	}
-	return string(runes[a:b])
+	return sliceText(s, a, b)
 }
 
 func pad(args *Args, left bool) *Value {
-	sRunes := []rune(args.Text(0))
+	s := args.Text(0)
 	width := int(args.NonNegInt(1))
-	fillRunes := []rune(args.Text(2))
-	if len(fillRunes) == 0 {
+	fill := args.Text(2)
+	if fill == "" {
 		fail("E_BAD_ARG", "pad fill must not be empty", args.PosOf(2))
 	}
-	if len(sRunes) >= width {
-		return NewTextOwned(string(sRunes))
+	have := ustd.RuneCountInString(s)
+	if have >= width {
+		return NewTextOwned(s)
 	}
 	checkTextLen(int64(width), args.Name()+"'s result", args.Pos())
-	need := width - len(sRunes)
-	padding := make([]rune, need)
-	for i := 0; i < need; i++ {
-		padding[i] = fillRunes[i%len(fillRunes)]
+	need := width - have
+	// The padding is the fill repeated, cut after `need` code points: whole
+	// copies by strings.Repeat, then the leading code points of one more.
+	fillLen := ustd.RuneCountInString(fill)
+	var padding string
+	if need <= fillLen {
+		padding = fill[:runeOffset(fill, need)]
+	} else {
+		padding = strings.Repeat(fill, need/fillLen) + fill[:runeOffset(fill, need%fillLen)]
 	}
 	if left {
-		return NewTextOwned(string(append(padding, sRunes...)))
+		return NewTextOwned(padding + s)
 	}
-	return NewTextOwned(string(append(sRunes, padding...)))
+	return NewTextOwned(s + padding)
+}
+
+// clampInt narrows a count to an int, saturating: a larger count than any text can
+// have behaves as "all of it".
+func clampInt(n int64) int {
+	if n > int64(1<<31-1) {
+		return 1<<31 - 1
+	}
+	return int(n)
 }
 
 func init() {
@@ -67,12 +130,9 @@ func init() {
 		Min:  2,
 		Max:  2,
 		Fn: func(args *Args, ctx *Context) *Value {
-			runes := []rune(args.Text(0))
+			str := args.Text(0)
 			n := int(args.NonNegInt(1))
-			if n > len(runes) {
-				n = len(runes)
-			}
-			return NewTextOwned(string(runes[:n]))
+			return NewTextOwned(sliceText(str, 0, runeOffset(str, n)))
 		},
 	})
 
@@ -81,12 +141,9 @@ func init() {
 		Min:  2,
 		Max:  2,
 		Fn: func(args *Args, ctx *Context) *Value {
-			runes := []rune(args.Text(0))
+			str := args.Text(0)
 			n := int(args.NonNegInt(1))
-			if n > len(runes) {
-				n = len(runes)
-			}
-			return NewTextOwned(string(runes[len(runes)-n:]))
+			return NewTextOwned(sliceText(str, runeOffsetFromEnd(str, n), len(str)))
 		},
 	})
 
@@ -95,25 +152,23 @@ func init() {
 		Min:  2,
 		Max:  3,
 		Fn: func(args *Args, ctx *Context) *Value {
-			runes := []rune(args.Text(0))
+			str := args.Text(0)
 			start := args.Int(1)
 			if start < 1 {
 				fail("E_RANGE", "SUBSTR start is 1-based and must be at least 1", args.PosOf(1))
 			}
-			from := int(start - 1)
-			size := len(runes)
-			if from >= size {
+			// `start-1` code points are skipped by walking, clamped to the text:
+			// a start past the end is the empty text.
+			from := runeOffset(str, clampInt(start-1))
+			if from >= len(str) {
 				return NewTextOwned("")
 			}
 			if args.Count() == 2 {
-				return NewTextOwned(string(runes[from:]))
+				return NewTextOwned(sliceText(str, from, len(str)))
 			}
 			n := args.NonNegInt(2)
-			to := from + int(n)
-			if n > int64(size-from) || to > size {
-				to = size
-			}
-			return NewTextOwned(string(runes[from:to]))
+			to := from + runeOffset(str[from:], clampInt(n))
+			return NewTextOwned(sliceText(str, from, to))
 		},
 	})
 
@@ -122,9 +177,9 @@ func init() {
 		Min:  2,
 		Max:  3,
 		Fn: func(args *Args, ctx *Context) *Value {
-			needle := []rune(args.Text(0))
-			hay := []rune(args.Text(1))
-			if len(needle) == 0 {
+			needle := args.Text(0)
+			hay := args.Text(1)
+			if needle == "" {
 				fail("E_BAD_ARG", "FIND needle must not be empty", args.PosOf(0))
 			}
 			from := 0
@@ -135,22 +190,28 @@ func init() {
 				}
 				from = int(f - 1)
 			}
-			if from > len(hay) {
+			// The search runs on bytes (GO-P15): strings.Index instead of a
+			// rune-by-rune comparison over two []rune copies. The 1-based start is
+			// a code-point index, so it is walked to a byte offset once, and the
+			// answer is converted back by counting the code points before the hit.
+			byteFrom := 0
+			if from > 0 {
+				i, n := 0, 0
+				for i < len(hay) && n < from {
+					_, w := ustd.DecodeRuneInString(hay[i:])
+					i += w
+					n++
+				}
+				if n < from {
+					return NewInt(0) // the start is past the end
+				}
+				byteFrom = i
+			}
+			idx := strings.Index(hay[byteFrom:], needle)
+			if idx < 0 {
 				return NewInt(0)
 			}
-			for i := from; i <= len(hay)-len(needle); i++ {
-				match := true
-				for j := range needle {
-					if hay[i+j] != needle[j] {
-						match = false
-						break
-					}
-				}
-				if match {
-					return NewInt(int64(i + 1))
-				}
-			}
-			return NewInt(0)
+			return NewInt(int64(from + ustd.RuneCountInString(hay[byteFrom:byteFrom+idx]) + 1))
 		},
 	})
 
@@ -172,7 +233,9 @@ func init() {
 				grown := satAdd(runeLen(hay), satMul(int64(n), runeLen(repl)-runeLen(needle)))
 				checkTextLen(grown, "REPLACE's result", args.Pos())
 			}
-			return NewText(strings.ReplaceAll(hay, needle, repl))
+			// hay, needle and repl are valid text, and a replacement only swaps whole
+			// code points for whole code points: the result needs no second scan.
+			return NewTextOwned(strings.ReplaceAll(hay, needle, repl))
 		},
 	})
 
@@ -190,7 +253,7 @@ func init() {
 			parts := strings.Split(hay, sep)
 			vals := make([]*Value, len(parts))
 			for i, p := range parts {
-				vals[i] = NewText(p)
+				vals[i] = NewTextOwned(p) // a piece between two valid separators is valid
 			}
 			return NewListOwned(vals)
 		},
@@ -246,11 +309,20 @@ func init() {
 		Min:  1,
 		Max:  1,
 		Fn: func(args *Args, ctx *Context) *Value {
-			runes := []rune(args.Text(0))
-			for i, j := 0, len(runes)-1; i < j; i, j = i+1, j-1 {
-				runes[i], runes[j] = runes[j], runes[i]
+			str := args.Text(0)
+			var sb strings.Builder
+			sb.Grow(len(str))
+			for i := len(str); i > 0; {
+				if str[i-1] < utf8Self {
+					i--
+					sb.WriteByte(str[i])
+					continue
+				}
+				r, w := ustd.DecodeLastRuneInString(str[:i])
+				i -= w
+				sb.WriteRune(r)
 			}
-			return NewTextOwned(string(runes))
+			return NewTextOwned(sb.String())
 		},
 	})
 
@@ -267,7 +339,7 @@ func init() {
 				return NewText("")
 			}
 			checkTextLen(satMul(runeLen(s), n), "REPEAT's result", args.Pos())
-			return NewText(strings.Repeat(s, int(n)))
+			return NewTextOwned(strings.Repeat(s, int(n)))
 		},
 	})
 
@@ -311,8 +383,8 @@ func init() {
 			if s == "" {
 				fail("E_RANGE", "CODE of empty text", args.PosOf(0))
 			}
-			runes := []rune(s)
-			return NewInt(int64(runes[0]))
+			r, _ := ustd.DecodeRuneInString(s)
+			return NewInt(int64(r))
 		},
 	})
 }

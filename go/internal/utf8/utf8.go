@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"unicode/utf8"
+	"unsafe"
 )
 
 type Pos struct {
@@ -130,21 +131,44 @@ func BytesCompare(a, b []byte) int {
 }
 
 func AsciiUpper(s string) string {
-	b := []byte(s)
-	for i, c := range b {
-		if 'a' <= c && c <= 'z' {
+	// Already upper case (every identifier the lexer produces, every Lookup of a
+	// built-in by its own name): no copy; otherwise one allocation.
+	i := 0
+	for ; i < len(s); i++ {
+		if 'a' <= s[i] && s[i] <= 'z' {
+			break
+		}
+	}
+	if i == len(s) {
+		return s
+	}
+	b := make([]byte, len(s))
+	copy(b, s)
+	for ; i < len(b); i++ {
+		if c := b[i]; 'a' <= c && c <= 'z' {
 			b[i] = c - 32
 		}
 	}
-	return string(b)
+	return unsafe.String(&b[0], len(b)) // b is not touched again
 }
 
 func AsciiLower(s string) string {
-	b := []byte(s)
-	for i, c := range b {
-		if 'A' <= c && c <= 'Z' {
+	// No upper-case ASCII letter: no copy; otherwise one allocation.
+	i := 0
+	for ; i < len(s); i++ {
+		if 'A' <= s[i] && s[i] <= 'Z' {
+			break
+		}
+	}
+	if i == len(s) {
+		return s
+	}
+	b := make([]byte, len(s))
+	copy(b, s)
+	for ; i < len(b); i++ {
+		if c := b[i]; 'A' <= c && c <= 'Z' {
 			b[i] = c + 32
 		}
 	}
-	return string(b)
+	return unsafe.String(&b[0], len(b)) // b is not touched again
 }

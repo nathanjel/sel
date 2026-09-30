@@ -33,13 +33,28 @@ const isIdent = (c) => isAlpha(c) || isDigit(c);
 const isSpace = (c) => c === ' ' || c === '\t' || c === '\r' || c === '\n';
 
 // The kinds of work lexRange keeps on its explicit stack.
+// A token is a literal with a fixed shape: the same keys in the same order the spread
+// produced, without building the spread's intermediate object (JS-P2).
+function mk(type, value, pos) {
+  return { type, value, line: pos.line, col: pos.col, offset: pos.offset };
+}
+
+// Operators by first character, each list in OPERATORS order (longest first), so the
+// scan at a position looks at the two or three candidates that can match, not at all 35.
+const OPS_BY_FIRST = new Map();
+for (const op of OPERATORS) {
+  const k = op[0];
+  if (!OPS_BY_FIRST.has(k)) OPS_BY_FIRST.set(k, []);
+  OPS_BY_FIRST.get(k).push(op);
+}
+
 const T_RANGE = 0, T_PART = 1, T_CLOSE = 2, T_END = 3;
 
 class Lexer {
   constructor(source) {
     // Splitting on code points also validates the source: a lone surrogate here
     // is E_UTF8 rather than a silently mangled token.
-    this.chars = toCodePoints(source, SOURCE).map((c) => fromCodePoints([c]));
+    this.chars = toCodePoints(source, SOURCE).map((c) => String.fromCodePoint(c));
     this.n = this.chars.length;
     // braceEnds[i] is the index just past the '}' matching the '{' at i, once
     // some scan has established it (0 = not yet). See matchBrace.
@@ -48,15 +63,28 @@ class Lexer {
     for (let i = 0; i < this.n; i++) {
       if (this.chars[i] === '\n') this.lineStarts.push(i + 1);
     }
+    // Lexing moves forward, so the line of the last position asked for is nearly
+    // always the line of the next one: start there (JS-P2).
+    this.lastLine = 0;
   }
 
   posAt(offset) {
-    let lo = 0, hi = this.lineStarts.length - 1;
-    while (lo < hi) {
-      const mid = (lo + hi + 1) >> 1;
-      if (this.lineStarts[mid] <= offset) lo = mid; else hi = mid - 1;
+    const ls = this.lineStarts;
+    let lo = this.lastLine;
+    if (ls[lo] <= offset && (lo + 1 === ls.length || offset < ls[lo + 1])) {
+      // same line as last time
+    } else if (lo + 1 < ls.length && ls[lo + 1] <= offset && (lo + 2 === ls.length || offset < ls[lo + 2])) {
+      lo++;
+    } else {
+      lo = 0;
+      let hi = ls.length - 1;
+      while (lo < hi) {
+        const mid = (lo + hi + 1) >> 1;
+        if (ls[mid] <= offset) lo = mid; else hi = mid - 1;
+      }
     }
-    return { line: lo + 1, col: offset - this.lineStarts[lo] + 1, offset };
+    this.lastLine = lo;
+    return { line: lo + 1, col: offset - ls[lo] + 1, offset };
   }
 
   slice(from, to) { return this.chars.slice(from, to).join(''); }
@@ -64,7 +92,7 @@ class Lexer {
   tokenize() {
     const out = [];
     this.lexRange(0, this.n, out);
-    out.push({ type: 'eof', value: '', ...this.posAt(this.n) });
+    out.push(mk('eof', '', this.posAt(this.n)));
     return out;
   }
 
@@ -90,7 +118,7 @@ class Lexer {
             fail('E_SYNTAX', `unclosed ${task.bal[task.bal.length - 1].op} in interpolation`,
               this.posAt(task.part.to));
           }
-          out.push({ type: 'op', value: ')', ...this.posAt(task.part.to) });
+          out.push(mk('op', ')', this.posAt(task.part.to)));
           break;
         }
         case T_END: out.push({ type: 'op', value: ')', ...task.pos }); break;
@@ -128,7 +156,7 @@ class Lexer {
           j++;
           while (j < to && isDigit(this.chars[j])) j++;
         }
-        out.push({ type: 'num', value: this.slice(i, j), ...pos });
+        out.push(mk('num', this.slice(i, j), pos));
         i = j;
         continue;
       }
@@ -136,7 +164,7 @@ class Lexer {
       if (isAlpha(c)) {
         let j = i;
         while (j < to && isIdent(this.chars[j])) j++;
-        out.push({ type: 'ident', value: this.slice(i, j).toUpperCase(), ...pos });
+        out.push(mk('ident', this.slice(i, j).toUpperCase(), pos));
         i = j;
         continue;
       }
@@ -144,13 +172,13 @@ class Lexer {
       if (c === '"') {
         const { parts, next } = this.scanQuoted(i, to);
         if (parts.length === 1) {
-          out.push({ type: 'text', value: parts[0].value, ...pos });
+          out.push(mk('text', parts[0].value, pos));
           i = next;
           continue;
         }
         // `( "seg" & expr & "seg" )`: the opener now, the rest as tasks, the
         // remainder of this range underneath them.
-        out.push({ type: 'op', value: '(', ...pos });
+        out.push(mk('op', '(', pos));
         stack.push({ k: T_RANGE, i: next, to, bal });
         stack.push({ k: T_END, pos });
         for (let k = parts.length - 1; k >= 0; k--) {
@@ -172,7 +200,7 @@ class Lexer {
             }
           }
         }
-        out.push({ type: 'op', value: op, ...pos });
+        out.push(mk('op', op, pos));
         i += op.length;
         continue;
       }
@@ -185,20 +213,22 @@ class Lexer {
   // or `( interior )`, the interior being a range of its own.
   emitPart(task, out, stack) {
     const { part, index, pos } = task;
-    if (index > 0) out.push({ type: 'op', value: '&', ...pos });
+    if (index > 0) out.push(mk('op', '&', pos));
     if (part.kind === 'text') {
-      out.push({ type: 'text', value: part.value, ...pos });
+      out.push(mk('text', part.value, pos));
       return;
     }
     const mark = out.length;
     const bal = [];
-    out.push({ type: 'op', value: '(', ...this.posAt(part.from) });
+    out.push(mk('op', '(', this.posAt(part.from)));
     stack.push({ k: T_CLOSE, mark, part, bal });
     stack.push({ k: T_RANGE, i: part.from, to: part.to, bal });
   }
 
   matchOperator(i, to) {
-    for (const op of OPERATORS) {
+    const cands = OPS_BY_FIRST.get(this.chars[i]);
+    if (cands === undefined) return null;
+    for (const op of cands) {
       if (i + op.length > to) continue;
       let ok = true;
       for (let k = 0; k < op.length; k++) {
@@ -221,7 +251,7 @@ class Lexer {
       const c = this.chars[i];
       if (c === "'") {
         if (i + 1 < to && this.chars[i + 1] === "'") { buf += "'"; i += 2; continue; }
-        out.push({ type: 'text', value: buf, ...pos });
+        out.push(mk('text', buf, pos));
         return i + 1;
       }
       buf += c;

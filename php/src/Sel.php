@@ -98,6 +98,66 @@ final class Program
      *
      * @return array<string,mixed>
      */
+    /**
+     * `run()` for a program that will not run again (PHP-P29). Building the
+     * physical tree costs about as much as evaluating a small rule twice, and
+     * pays for itself only when a body is evaluated per element (an aggregate) or
+     * a pipeline can be fused. A program with neither is evaluated as written --
+     * the reference the optimiser is held to -- and the optimiser is not run. One
+     * that has either goes through run() unchanged.
+     *
+     * @param Value|array<mixed>|null $context
+     */
+    public function runOnce($context = null): Value
+    {
+        if ($this->physical !== null || self::repeatsWork($this->ast)) {
+            return $this->run($context);
+        }
+        $root = $context instanceof Value ? $context : Value::fromNative($context ?? []);
+        $wasGcEnabled = gc_enabled();
+        if ($wasGcEnabled) {
+            gc_disable();
+        }
+        try {
+            return Evaluator::evalNode($this->ast, new Context($root));
+        } finally {
+            if ($wasGcEnabled) {
+                gc_enable();
+            }
+        }
+    }
+
+    /**
+     * Whether any call in the tree binds a name (runs a body per element) or is a
+     * pipeline stage. An iterative walk: the tree can be as deep as the source is
+     * long.
+     *
+     * @param array<string,mixed> $ast
+     */
+    private static function repeatsWork(array $ast): bool
+    {
+        $stack = [$ast];
+        while ($stack !== []) {
+            $n = array_pop($stack);
+            if (($n['t'] ?? null) === 'call') {
+                $name = (string) ($n['name'] ?? '');
+                $spec = Registry::lookup($name);
+                if ($spec === null || ($spec['binds'] ?? false) || in_array($name, Optimizer::PIPELINE_OPS, true)) {
+                    return true;
+                }
+            }
+            foreach (['args', 'items'] as $key) {
+                foreach ($n[$key] ?? [] as $child) {
+                    if (is_array($child)) $stack[] = $child;
+                }
+            }
+            foreach (['l', 'r', 'x', 'obj', 'idx', 'value', 'target'] as $key) {
+                if (isset($n[$key]) && is_array($n[$key])) $stack[] = $n[$key];
+            }
+        }
+        return false;
+    }
+
     public function physicalAst(): array
     {
         // Keyed by the identity of $ast: PHP arrays are values, but a copy on
@@ -353,7 +413,7 @@ final class Sel
     /** @param Value|array<mixed>|null $context */
     public static function evaluate($source, $context = null): Value
     {
-        return self::compile($source)->run($context);
+        return self::compile($source)->runOnce($context);
     }
 
     /** @return list<string> */

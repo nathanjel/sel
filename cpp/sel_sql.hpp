@@ -350,6 +350,10 @@ class Bindings {
   // Throws E_SQL_UNBOUND when the name has no binding.
   const Binding& get(std::string_view name, Pos pos = {}) const;
   std::vector<std::string> names() const;
+  // The (upper-cased) names of the Value bindings, sorted, as names() has them.
+  // Worked out once, when the set is built: the translator asks on every call, and
+  // finding them meant walking every binding there is.
+  const std::vector<std::string>& value_names() const { return value_names_; }
 
   // A relation alias may name only one thing. Two relations sharing an alias in
   // one expression would produce a subquery correlated to the wrong rows, and
@@ -366,6 +370,10 @@ class Bindings {
   // the refusal. No case asserts that message, so this is closing a divergence
   // before it is load-bearing rather than after.
   std::vector<std::string> order_;
+  std::vector<std::string> value_names_;
+  // What check_aliases refuses with, found once in the constructor (the set never
+  // changes after it): empty when no two relations share an alias.
+  std::string alias_clash_;
 };
 
 

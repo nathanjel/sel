@@ -31,6 +31,32 @@
 ;; with another arity is not rendered through a template written for the old one.
 (defvar *host-arity* '())
 
+;;; Lookup cache (LISP-P15). A dialect's inheritance chain, its entries and its
+;;; lexical values were re-derived on every call: DIALECT-CHAIN allocated and ran
+;;; MEMBER string compares, and each entry lookup walked it again through several
+;;; ASSOCs, for every node of every translation -- about 45% of a 20-node rule's
+;;; time and, for a miss (an unsupported function), about 6 us each.
+;;;
+;;; One VIEW per dialect name, built on first use and dropped WHOLE by MAP-CHANGED
+;;; whenever registration touches the map (DEFINE-DIALECT, DEFINE-ENTRY,
+;;; MAP-RESET), so a lookup can never answer from before a registration. The
+;;; tables are synchronized: translation may run on several threads. A reader that
+;;; raced a registration and filled the old table wastes that work and nothing
+;;; else, because the table it filled is already unreachable.
+(defstruct (view (:constructor %view (chain)))
+  (chain '() :type list)
+  (entries (vector (make-hash-table :test 'equal :synchronized t)
+                   (make-hash-table :test 'equal :synchronized t)
+                   (make-hash-table :test 'equal :synchronized t)))
+  (lexical (make-hash-table :test 'equal :synchronized t)))
+
+(defvar *views* (make-hash-table :test 'equal :synchronized t))
+
+(defun map-changed ()
+  "Forget every cached lookup. Called by everything that writes the map."
+  (setf *views* (make-hash-table :test 'equal :synchronized t))
+  (values))
+
 ;;; Every key DEFINE-DIALECT accepts. sql/MAP.md §3 is the normative list.
 (defparameter +dialect-keys+ '(:extends :version :target :lexical))
 
@@ -41,6 +67,7 @@
 (defun map-reset ()
   "Forget every runtime registration. For tests; nothing else should need it."
   (setf *extra* '() *overlay* '() *guard-checked* '() *host-arity* '())
+  (map-changed)
   (values))
 
 (defun host-spelling-arity (dialect key)
@@ -87,7 +114,16 @@ anyone runs; translate to one of ~{~a~^, ~}" name (dialect-targets))
               pos))))
 
 (defun dialect-chain (name)
-  "Self first, then extends, up to the root."
+  "Self first, then extends, up to the root. Cached per dialect (see VIEW); the
+list is shared, so a caller must not modify it."
+  (view-chain (dialect-view name)))
+
+(defun dialect-view (name)
+  (let ((views *views*))
+    (or (gethash name views)
+        (setf (gethash name views) (%view (compute-dialect-chain name))))))
+
+(defun compute-dialect-chain (name)
   (let ((out '())
         (cur name))
     (loop
@@ -113,10 +149,15 @@ value the job of REFUSING -- a null binaryLiteral refuses BIN literals -- and
 reading it as absent walks on to the base and hands the withdrawn value back.
 The two answer the same NIL to the caller, exactly as the other hosts do; what
 differs is that a withdrawal stops here."
-  (dolist (d (dialect-chain name) nil)
-    (let* ((rec (dialect-record d))
-           (cell (assoc key (getf rec :lexical) :test #'equal)))
-      (when cell (return (cdr cell))))))
+  (let ((table (view-lexical (dialect-view name))))
+    (multiple-value-bind (v hit) (gethash key table)
+      (if hit
+          v
+          (setf (gethash key table)
+                (dolist (d (view-chain (dialect-view name)) nil)
+                  (let* ((rec (dialect-record d))
+                         (cell (assoc key (getf rec :lexical) :test #'equal)))
+                    (when cell (return (cdr cell))))))))))
 
 (defun quoted-runs (tpl)
   "Every single-quoted run in TPL, in order.
@@ -197,16 +238,25 @@ already flattened, so a generated hit at the leaf would shadow a runtime entry
 registered against a base, and registering against `ansi` is documented to reach
 every dialect."
   (check-section section)
-  (let ((chain (dialect-chain name)))
-    (dolist (d chain)
-      (let* ((sec (cdr (assoc section (cdr (assoc d *overlay* :test #'equal)))))
-             (cell (assoc key sec :test #'equal)))
-        (when cell (return-from dialect-entry (values (cdr cell) t)))))
-    (dolist (d chain)
-      (let* ((rec (cdr (assoc d +dialects+ :test #'equal)))
-             (cell (assoc key (getf rec section) :test #'equal)))
-        (when cell (return-from dialect-entry (values (cdr cell) t)))))
-    (values nil nil)))
+  (let* ((view (dialect-view name))
+         (table (svref (view-entries view) (position section +sections+)))
+         (hit (gethash key table)))
+    (if hit
+        (values (cadr hit) (car hit))
+        (multiple-value-bind (entry found) (dialect-entry-uncached (view-chain view) section key)
+          (setf (gethash key table) (list found entry))
+          (values entry found)))))
+
+(defun dialect-entry-uncached (chain section key)
+  (dolist (d chain)
+    (let* ((sec (cdr (assoc section (cdr (assoc d *overlay* :test #'equal)))))
+           (cell (assoc key sec :test #'equal)))
+      (when cell (return-from dialect-entry-uncached (values (cdr cell) t)))))
+  (dolist (d chain)
+    (let* ((rec (cdr (assoc d +dialects+ :test #'equal)))
+           (cell (assoc key (getf rec section) :test #'equal)))
+      (when cell (return-from dialect-entry-uncached (values (cdr cell) t)))))
+  (values nil nil))
 
 ;;; --- versions -------------------------------------------------------------
 
@@ -307,11 +357,14 @@ needs no special code because a version is only another link in the chain:
           (bad "SQL dialect ~a is already defined~a; a name means one dialect" name
                (if old " under another parent" "")))
         (setf *extra* (remove name *extra* :key #'car :test #'equal)
-              *guard-checked* '())))
+              *guard-checked* '())
+        (map-changed)))
     (handler-case (define-dialect-1 name spec)
       (error (e)
         (setf *extra* previous)
-        (error e))))
+        (map-changed)
+        (error e)))
+    (map-changed))
   (values))
 
 (defun check-quote-pairing (name)
@@ -407,6 +460,7 @@ a server reports (11.8.8-MariaDB is 11.8.8)" where version))
               (append *extra*
                       (list (cons name (list :extends extends :version version
                                              :target target :lexical lexical)))))
+        (map-changed)
         (check-quote-pairing name))))
   (values))
 
@@ -622,7 +676,8 @@ withdraws it without one."
     ;; lets the last writer win, and a redefinition against a BASE reaches every
     ;; dialect that inherits from it, so the whole set goes rather than one name.
     (when (and (eq section :funcs) (equal k "ISNUM"))
-      (setf *guard-checked* '())))
+      (setf *guard-checked* '()))
+    (map-changed))
   (values))
 
 (defun define-builder (dialect section key fn)

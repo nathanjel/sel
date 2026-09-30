@@ -36,26 +36,13 @@ mutation inside one is seen -- only the container is copied."
     (setf (value-index c) nil)
     c))
 
-(defvar *index-string-cache*
-  (let ((vec (make-array 10001 :initial-element nil)))
-    (loop for i from 1 to 10000
-          do (setf (aref vec i) (format nil "~d" i)))
-    vec))
-
 (defvar *index-text-cache*
   (let ((vec (make-array 10001 :initial-element nil)))
     (loop for i from 1 to 10000
           do (setf (aref vec i) (%text (svref *index-string-cache* i))))
     vec))
 
-(declaim (inline format-index-string format-index-text))
-(defun format-index-string (n)
-  (declare (optimize (speed 3) (safety 1)))
-  (declare (type fixnum n))
-  (if (and (<= 1 n) (<= n 10000))
-      (svref (the simple-vector *index-string-cache*) n)
-      (format nil "~d" n)))
-
+(declaim (inline format-index-text))
 (defun format-index-text (n)
   (declare (optimize (speed 3) (safety 1)))
   (declare (type fixnum n))
@@ -137,15 +124,21 @@ given, is evaluated in place of the written body."
         (make-bool nil)))
   :lazy t :binds t)
 
+;;; Bound by the sorts around their per-element copy: true when the source is fresh.
+(defvar *collect-fresh* nil)
+
 (define-builtin "MAP" 2 3
   (lambda (a ctx)
-    (let ((out '()))
+    (let ((out '())
+          ;; Once per call, not per element: the test scans a list of names.
+          (fresh (node-fresh-p (args-node a (1- (args-count a))))))
       (aggregate-walk a ctx
                       (lambda (r key item body)
                         (declare (ignore key item))
                         ;; Copied as it is collected (§3.4): the result shares nothing
-                        ;; with the source, or with what the body returned.
-                        (push (value-copy r (node-pos body)) out)
+                        ;; with the source, or with what the body returned -- unless
+                        ;; the body builds it fresh, and then it is adopted.
+                        (push (if fresh r (value-copy r (node-pos body))) out)
                         nil))
       (make-list-value (nreverse out))))
   :lazy t :binds t)
@@ -167,6 +160,7 @@ given, is evaluated in place of the written body."
            (written (args-node a (1- (args-count a))))
            (handed (prog1 (context-join-prefilter ctx) (setf (context-join-prefilter ctx) nil)))
            (src (args-node a 0))
+           (src-fresh (node-fresh-p src))
            (own nil)
            (over-join nil))
       (when (and src (eq (node-kind src) :call) (member (node-s src) '("LINK" "LINK_LEFT") :test #'string=))
@@ -217,7 +211,7 @@ given, is evaluated in place of the written body."
         (aggregate-walk a ctx
                         (lambda (r key item body)
                           (when (as-bool r (node-pos body))
-                            (push (cons key (value-copy item (node-pos body))) pairs))
+                            (push (cons key (if src-fresh item (value-copy item (node-pos body)))) pairs))
                           nil)
                         t body-override)
         (if (null pairs)
@@ -337,19 +331,57 @@ order it is handed its elements."
               (lambda ()
                 (coerce (subseq arr 0 size) 'list))))))
 
-(defstruct (sort-item (:constructor make-sort-item (item key idx)))
+;;; A sort key decorated ONCE with what comparing needs: its rank in SPEC 7.3's
+;;; order and, within a rank, the value to compare (BOOL as 0/1, a number as its
+;;; DEC, other text and BIN as octets). COMPARE-VALUES re-derived all of that on
+;;; every comparison -- re-encoding both texts to UTF-8 and re-parsing both as
+;;; decimals, n log n times (LISP-P4: 50k text keys took 0.9 s and 200 MB).
+;;; Nothing here can signal: the leaf is a BOOL/TEXT/BIN scalar or nothing.
+(defstruct (sort-key (:constructor %make-sort-key (rank payload)))
+  (rank 0 :type fixnum)
+  payload)
+
+(defun make-sort-key (key)
+  (let* ((leaf (sort-leaf key))
+         (rank (sort-rank leaf)))
+    (%make-sort-key rank
+                    (case rank
+                      (1 (if (value-scalar leaf) 1 0))
+                      (2 (as-dec leaf))
+                      ((3 4) (as-bytes leaf))
+                      (t nil)))))
+
+(defun compare-sort-keys (a b)
+  "COMPARE-VALUES on decorated keys: the same order, without the repeated work."
+  (let ((ra (sort-key-rank a))
+        (rb (sort-key-rank b)))
+    (cond ((< ra rb) -1)
+          ((> ra rb) 1)
+          (t (case ra
+               (1 (let ((av (sort-key-payload a)) (bv (sort-key-payload b)))
+                    (declare (type fixnum av bv))
+                    (cond ((< av bv) -1) ((> av bv) 1) (t 0))))
+               (2 (dec-cmp (sort-key-payload a) (sort-key-payload b)))
+               ((3 4) (bytes-compare (sort-key-payload a) (sort-key-payload b)))
+               (t 0))))))
+
+(defstruct (sort-item (:constructor %make-sort-item (item key idx)))
   item
-  key
+  key                                   ; a SORT-KEY
   (idx 0 :type fixnum))
+
+(defun make-sort-item (item key idx)
+  (%make-sort-item item (make-sort-key key) idx))
 
 ;;; SORT and its variants collect the elements into a new list, and §3.4 has the
 ;;; aggregates copy what they collect: the copy is made as the element is
 ;;; collected, so the result never shares structure with the source.
 (defun make-copied-sort-item (item key idx)
-  (make-sort-item (value-copy item) key idx))
+  (make-sort-item (if *collect-fresh* item (value-copy item)) key idx))
 
 (defun do-sort (a ctx forced-dir)
-  (let ((val (args-val a 0)))
+  (let* ((val (args-val a 0))
+         (*collect-fresh* (node-fresh-p (args-node a 0))))
     ;; A scalar is one element (SPEC 7.3), so its sort key is evaluated -- only
     ;; NULL and an empty list have nothing to sort.
     ;; The direction is always evaluated and checked, even when there is nothing to
@@ -451,7 +483,7 @@ order it is handed its elements."
             (setf indexed
                   (stable-sort indexed
                                (lambda (x y)
-                                 (let ((c (compare-values (sort-item-key x) (sort-item-key y))))
+                                 (let ((c (compare-sort-keys (sort-item-key x) (sort-item-key y))))
                                    (when desc (setf c (- c)))
                                    (< c 0)))))
             (make-list-value
@@ -465,6 +497,7 @@ order it is handed its elements."
   ;; there too.
   (let* ((count (args-count a))
          (val (args-val a 0))
+         (fresh (node-fresh-p (args-node a 0)))
          (limit (args-non-neg-int a (1- count))))
     ;; Direction and count are always evaluated and checked (SPEC 7.4), whatever
     ;; the list holds; only then may an empty list or a zero count end the call.
@@ -513,10 +546,10 @@ order it is handed its elements."
                  (desc (string= direction "DESC"))
                  (greater-fn (if desc
                                  (lambda (x y)
-                                   (let ((c (compare-values (sort-item-key x) (sort-item-key y))))
+                                   (let ((c (compare-sort-keys (sort-item-key x) (sort-item-key y))))
                                      (if (zerop c) (> (sort-item-idx x) (sort-item-idx y)) (< c 0))))
                                  (lambda (x y)
-                                   (let ((c (compare-values (sort-item-key x) (sort-item-key y))))
+                                   (let ((c (compare-sort-keys (sort-item-key x) (sort-item-key y))))
                                      (if (zerop c) (> (sort-item-idx x) (sort-item-idx y)) (> c 0))))))
                  (needs-k (and body (node-contains-var-p body "_K")))
                  (binder-cell (cons binder nil))
@@ -569,7 +602,7 @@ order it is handed its elements."
               (let ((items (funcall get-items)))
                 (setf items (stable-sort items
                                          (lambda (x y)
-                                           (let ((c (compare-values (sort-item-key x) (sort-item-key y))))
+                                           (let ((c (compare-sort-keys (sort-item-key x) (sort-item-key y))))
                                              (if (zerop c)
                                                  (< (sort-item-idx x) (sort-item-idx y))
                                                  (progn
@@ -579,7 +612,9 @@ order it is handed its elements."
                 ;; copying the rest would be the cost of a full SORT.
                 (make-list-value
                  (loop for x in items
-                       collect (value-copy (sort-item-item x)))))))))))
+                       collect (if fresh
+                                   (sort-item-item x)
+                                   (value-copy (sort-item-item x))))))))))))
 
 (define-builtin "SORT" 1 3
   (lambda (a ctx) (do-sort a ctx "ASC"))
@@ -638,7 +673,8 @@ order it is handed its elements."
     (as-text v pos)))
 
 (defun do-bucket (a ctx)
-  (let* ((val (snapshot-source (args-val a 0))))
+  (let* ((val (snapshot-source (args-val a 0)))
+         (src-fresh (node-fresh-p (args-node a 0))))
     ;; A scalar is one element (SPEC 7.3); only NULL and an empty list have none.
     (if (or (value-null-p val)
             (and (zerop (value-size val)) (eq (value-kind val) :none)))
@@ -715,7 +751,9 @@ order it is handed its elements."
           (if (null agg-node)
               (let ((out (make-none)))
                 (dolist (g groups)
-                  (value-set out (group-entry-key-str g) (make-list-value (mapcar #'value-copy (group-entry-rows g)))))
+                  (value-set out (group-entry-key-str g) (make-list-value (if src-fresh
+                                                                (group-entry-rows g)
+                                                                (mapcar #'value-copy (group-entry-rows g))))))
                 out)
               (let ((out '())
                     (agg-binder-cell (cons binder nil))
@@ -727,7 +765,7 @@ order it is handed its elements."
                          (setf (cdr agg-binder-cell) (make-list-value (group-entry-rows g))
                                (cdr agg-k-cell) (group-entry-key g))
                          (let ((res (args-eval a agg-node)))
-                           (push (value-copy res (node-pos agg-node)) out)))
+                           (push (if (node-fresh-p agg-node) res (value-copy res (node-pos agg-node))) out)))
                     (ctx-pop-frame ctx)))
                 (make-list-value (nreverse out))))))))
 

@@ -7,7 +7,6 @@ translator without changing a compiled program behind the host's back.
 
 from __future__ import annotations
 
-from dataclasses import replace
 from typing import Any
 
 from . import decimal as D
@@ -16,7 +15,7 @@ from .eval import bytes_compare
 from .lexer import ascii_upper
 from .math_plan import compile_math_plan, is_math_op
 from .parser import Node
-from .registry import lookup
+from .registry import is_host_function, lookup
 from .utf8 import encode_utf8
 
 
@@ -30,7 +29,7 @@ PIPELINE_OPS = frozenset({
 def copy_node(node: Node | None) -> Node | None:
     if node is None:
         return None
-    return replace(node, args=list(node.args), items=list(node.items))
+    return node.replaced(args=list(node.args), items=list(node.items))
 
 
 def call(name: str, args: list[Node], pos) -> Node:
@@ -60,8 +59,18 @@ def literal_bool(value: bool, pos) -> Node:
     return Node('bool', pos, v=value)
 
 
-def literal_num(value: str, pos) -> Node:
-    return Node('num', pos, v=value)
+def literal_num(value: str, pos, dec=None) -> Node:
+    """A number literal node. DEC is the decoded Dec of `value` when the caller has
+    it (every fold does: it just computed it), so the evaluator's 'num' branch
+    reads it instead of re-parsing the text on every evaluation -- a folded node
+    used to carry none -- and a fold over a folded operand needs no re-parse."""
+    return Node('num', pos, v=value, dec=dec)
+
+
+def literal_dec(node: Node) -> D.Dec:
+    """The Dec of a 'num' node: the one the parser (or an earlier fold) decoded, or
+    a parse of its text."""
+    return node.dec if node.dec is not None else D.parse(node.v, node.pos)
 
 
 # A fold that replaces a node by one of its children must not move the error
@@ -80,7 +89,7 @@ def is_literal(node: Node | None) -> bool:
 
 
 def hoist_literal(child: Node, pos) -> Node:
-    return replace(child, pos=pos)
+    return child.replaced(pos=pos)
 
 
 def text_compare(a: str, b: str) -> int:
@@ -95,7 +104,8 @@ def fold(node: Node | None) -> Node | None:
             return literal_bool(not node.x.v, node.pos)
         if node.op == 'NEG' and node.x.t == 'num':
             try:
-                return literal_num(D.format(D.negate(D.parse(node.x.v, node.pos))), node.pos)
+                negated = D.negate(literal_dec(node.x))
+                return literal_num(D.format(negated), node.pos, negated)
             except Exception:
                 return node
         return node
@@ -113,8 +123,8 @@ def fold(node: Node | None) -> Node | None:
         if (node.l.t == 'num' and node.r.t == 'num'
                 and node.op in ('+', '-', '*', '/', '%')):
             try:
-                left = D.parse(node.l.v, node.pos)
-                right = D.parse(node.r.v, node.pos)
+                left = literal_dec(node.l)
+                right = literal_dec(node.r)
                 if node.op == '+':
                     result = D.add(left, right, node.pos)
                 elif node.op == '-':
@@ -125,13 +135,13 @@ def fold(node: Node | None) -> Node | None:
                     result = D.div(left, right, node.pos)
                 else:
                     result = D.mod(left, right, node.pos)
-                return literal_num(D.format(result), node.pos)
+                return literal_num(D.format(result), node.pos, result)
             except Exception:
                 return node
         if (node.l.t == 'num' and node.r.t == 'num'
                 and node.op in ('==', '!=', '<', '<=', '>', '>=')):
             try:
-                c = D.cmp(D.parse(node.l.v, node.pos), D.parse(node.r.v, node.pos))
+                c = D.cmp(literal_dec(node.l), literal_dec(node.r))
                 if node.op == '==':
                     value = c == 0
                 elif node.op == '!=':
@@ -256,6 +266,51 @@ def keys_renumbered_by(step: Node | None) -> bool:
     reading ``_K`` hides that; the end of the pipeline, or another FILTER,
     does not."""
     return step is not None and step.name != 'FILTER' and not step_reads_key(step)
+
+
+# The steps that only READ the elements they are handed and copy whatever they
+# keep (SPEC 3.4: MAP copies what it collects). A FILTER in front of one need not
+# copy its kept elements: they are read once and MAP's own copy is the copy the
+# contract asks for (PY-REG-1). Only a pipeline step can follow a FILTER this way;
+# SUM, ALL and ANY take their source as an argument and never reach this test, and
+# BUCKET, SELECT_COLS and the sorts hand the elements on or build from them, so
+# they are not here.
+_READ_ONLY_CONSUMERS = ('MAP',)
+
+
+def body_only_reads(node: Node | None) -> bool:
+    """Whether evaluating NODE can change nothing it reaches: no assignment, and
+    no call to an application's own function (which may do anything to a value
+    it is handed). Iterative: a body is as deep as the source is long."""
+    stack = [node]
+    while stack:
+        n = stack.pop()
+        if n is None:
+            continue
+        t = n.t
+        if t == 'assign':
+            return False
+        if t == 'call':
+            if is_host_function(n.name):
+                return False
+            stack.extend(n.args)
+        elif t == 'index':
+            stack.append(n.obj)
+            stack.append(n.idx)
+        elif t == 'bin':
+            stack.append(n.l)
+            stack.append(n.r)
+        elif t == 'un':
+            stack.append(n.x)
+        elif t in ('seq', 'list'):
+            stack.extend(n.items)
+    return True
+
+
+def adopts_elements(step: Node | None) -> bool:
+    """Whether the step after a FILTER only reads the elements FILTER keeps."""
+    return (step is not None and step.t == 'call' and step.name in _READ_ONLY_CONSUMERS
+            and all(body_only_reads(a) for a in step.args[1:]))
 
 
 def source_is_list(source: Node | None) -> bool:
@@ -409,7 +464,7 @@ def numeric_literal(node: Node | None) -> int | None:
     if node is None or node.t != 'num':
         return None
     try:
-        value = D.parse(node.v)
+        value = node.dec if node.dec is not None else D.parse(node.v)
         if value is None or not D.is_integer(value):
             return None
         result = D.to_safe_int(value)
@@ -641,6 +696,7 @@ def optimize_tree(node: Node | None, physical: bool, depth: int = 1,
                 if step.name == 'FILTER':
                     following = final_steps[index + 1] if index + 1 < len(final_steps) else None
                     step.args[-1].keys_unobserved = keys_renumbered_by(following)
+                    step.adopt_items = adopts_elements(following)
         root = build_pipeline(optimized_source, final_steps)
         if physical and final_steps:
             # A fused or dropped step leaves a node standing for the whole call:
@@ -671,11 +727,59 @@ def optimize_tree(node: Node | None, physical: bool, depth: int = 1,
         copy.value = optimize_tree(copy.value, physical, depth + 1, options, False)
 
     folded = copy if options.get('foldConstants', True) is False else fold(copy)
+    if physical and folded.t == 'bin' and folded.op == 'IN' and _literal_list(folded.r):
+        folded.const_value = _build_constant(folded.r)
     if physical and not in_math and is_math_op(folded):
         plan = compile_math_plan(folded)
         if plan is not None:
             folded.math_plan = plan
     return folded
+
+
+class ConstantList:
+    """The Value of a literal list beside, when every element is text or a number,
+    the set of their texts: EQL between two plain text values is equality of their
+    texts, so `x IN list` with a plain text x is a set lookup (see eval._eval_binary).
+    Immutable once built and private to the IN node that holds it."""
+    __slots__ = ('value', 'texts')
+
+    def __init__(self, value) -> None:
+        self.value = value
+        texts = None
+        if value.kind == 'NONE' and value.size() > 0:
+            elements = [child for _, child in value.entries()]
+            if all(c.kind == 'TEXT' and c.size() == 0 for c in elements):
+                texts = frozenset(c.scalar for c in elements)
+        self.texts = texts
+
+
+def _literal_list(node: Node | None) -> bool:
+    """`("a", "b")` or `LIST("a", "b")`: a list of nothing but literals. Evaluating
+    it reads no variable, runs no code and can raise nothing (the tree is within
+    the depth cap, optimize_root checked), so its Value is a constant."""
+    if node is None:
+        return False
+    if node.t == 'list':
+        elements = node.items
+    elif node.t == 'call' and node.name == 'LIST':
+        elements = node.args
+    else:
+        return False
+    return bool(elements) and all(is_literal(e) for e in elements)
+
+
+def _build_constant(node: Node) -> Any:
+    """The list's Value, built with the evaluator itself so it is what a per-row
+    evaluation would have produced; None (so the row path runs as before) should
+    it refuse."""
+    from .eval import Context, eval_node
+    from .errors import SelError
+    from .value import Value
+    try:
+        value = eval_node(node, Context(Value.from_native({})))
+    except SelError:
+        return None
+    return ConstantList(value)
 
 
 def exceeds_depth(node: Node | None, depth: int) -> bool:

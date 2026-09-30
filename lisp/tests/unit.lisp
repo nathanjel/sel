@@ -2414,3 +2414,591 @@ non-NIL results (each worker returns NIL when it saw nothing wrong)."
       (is (starts-with-p "sel: " out) "~a: ~a" line out)
       (is (not (search "Unhandled" out)) "~a: ~a" line out)
       (is (not (search "SB-" out)) "~a: ~a" line out))))
+
+;;; --- performance round 1 (LISP-P1 .. P10): the fast paths answer what the general ones do
+
+(defun perf-mk-alist-rows (n)
+  (loop for i below n
+        collect (list (cons "id" i) (cons "a" (mod (* i 7919) 11)) (cons "b" (mod i 5)))))
+
+(test perf-p1-interpolation-count-is-linear
+  ;; LISP-P1: 64,000 interpolations in one literal compiled in 71 s (quadratic
+  ;; `(length acc)`); the bound here is generous, the point is that it finishes.
+  (let* ((src (with-output-to-string (o)
+                (write-char #\" o) (dotimes (i 64000) (write-string "{1}" o)) (write-char #\" o)))
+         (t0 (get-internal-real-time))
+         (program (sel:compile-source src)))
+    (is (not (null program)))
+    (is (< (- (get-internal-real-time) t0) (* 20 internal-time-units-per-second)))
+    (raises "E_SYNTAX" (sel:compile-source "\"a{ }b\""))
+    (raises "E_SYNTAX" (sel:compile-source "\"{# only a comment
+}\""))))
+
+(test perf-p2-big-number-helpers-agree-with-the-builtins
+  (let ((st (sb-ext:seed-random-state 11)))
+    (dotimes (i 40)
+      (let ((a (random (ash 1 (+ 100 (random 60000 st))) st))
+            (b (random (ash 1 (+ 100 (random 60000 st))) st)))
+        (is (= (sel::kmul a b) (* a b)))))
+    (is (= 6 (sel::kmul 2 3)))
+    (is (= -6 (sel::kmul -2 3)))
+    (dolist (k '(0 1 3999 4000 4001 12345 65536))
+      (is (= (sel::big-pow10 k) (expt 10 k))))
+    (dotimes (i 40)
+      (let ((n (random (ash 1 (+ 64 (random 30000 st))) st)))
+        (is (= (sel::num-digits n) (length (write-to-string n :base 10 :radix nil))))))
+    (is (= 1 (sel::num-digits 0)))
+    (is (= 20 (sel::num-digits (expt 10 19))))
+    (is (= 19 (sel::num-digits (1- (expt 10 19)))))))
+
+(test perf-p2-long-numeral-keeps-its-canonical-text
+  (let* ((digits (make-string 200 :initial-element #\7))
+         (text (concatenate 'string digits ".500"))
+         (d (sel::dec-parse text)))
+    ;; canonical: no leading zero, trailing zeros kept as scale
+    (is (string= text (sel::dec-format d)))
+    (is (not (eq text (sel::dec-format d))) "the cached text is handed out as a copy")
+    ;; not canonical: a leading zero and a negative zero are rendered, not echoed
+    (is (string= (concatenate 'string digits ".5")
+                 (sel::dec-format (sel::dec-parse (concatenate 'string "000" digits ".5")))))
+    (let ((zeros (concatenate 'string "0." (make-string 70 :initial-element #\0))))
+      (is (string= zeros (sel::dec-format (sel::dec-parse (concatenate 'string "-" zeros))))))
+    ;; arithmetic on it gives a value with no stale cache
+    (is (string= (concatenate 'string digits ".501")
+                 (sel::dec-format (sel::dec-add d (sel::dec-parse "0.001")))))
+    ;; the parser keeps a canonical token as the node's text and renders a non-canonical one
+    (is (string= "7" (dump-of-text "007")))
+    (is (string= "0.5" (dump-of-text "0.5")))
+    (is (string= "0" (dump-of-text "0")))
+    (is (string= "100" (dump-of-text "100")))
+    (is (string= "0.50" (dump-of-text "00.50")))))
+
+(defun dump-of-text (numeral)
+  (sel::node-s (sel:program-ast (sel:compile-source numeral))))
+
+(test perf-p2-multiply-refuses-before-it-multiplies
+  (let* ((big (concatenate 'string (make-string 600000 :initial-element #\9)))
+         (t0 (get-internal-real-time)))
+    (raises "E_RANGE" (sel:evaluate (format nil "~a * ~a" big big)))
+    (is (< (- (get-internal-real-time) t0) (* 30 internal-time-units-per-second)))
+    ;; and right at the boundary the product is still exact
+    (is (string= (write-to-string (* 99999999999 99999999999) :base 10 :radix nil)
+                 (dump-of-number "99999999999 * 99999999999")))))
+
+(defun dump-of-number (src)
+  (sel:as-text (sel:evaluate src)))
+
+(test perf-p3-binary-operators-dispatch-every-spelling
+  ;; LISP-P3: the operator is interned once per node; every spelling still works
+  (dolist (case '(("7 + 2" . "9") ("7 - 2" . "5") ("7 * 2" . "14") ("7 / 2" . "3.5") ("7 % 4" . "3")
+                  ("\"a\" & \"b\"" . "ab") ("1 == 1" . t) ("1 != 1" . nil) ("1 < 2" . t) ("2 <= 2" . t)
+                  ("3 > 2" . t) ("2 >= 3" . nil) ("\"a\" $== \"a\"" . t) ("\"a\" $!= \"a\"" . nil)
+                  ("\"a\" $< \"b\"" . t) ("\"b\" $<= \"a\"" . nil) ("\"b\" $> \"a\"" . t)
+                  ("\"a\" $>= \"b\"" . nil) ("TRUE AND FALSE" . nil) ("TRUE OR FALSE" . t)
+                  ("TRUE XOR TRUE" . nil) ("NULL ?? 5" . "5") ("\"\" ??? 6" . "6")
+                  ("1 EQL 1" . t) ("2 IN (1, 2)" . t)))
+    (let ((v (sel:evaluate (car case))))
+      (if (stringp (cdr case))
+          (is (string= (cdr case) (sel:as-text v)) "~a" (car case))
+          (is (eq (cdr case) (and (sel::value-scalar v) t)) "~a" (car case)))))
+  (is (string= "0f" (sel:as-text (sel:evaluate "TO_HEX(FROM_HEX(\"ff\") BAND FROM_HEX(\"0f\"))"))))
+  (is (string= "ff" (sel:as-text (sel:evaluate "TO_HEX(FROM_HEX(\"f0\") BOR FROM_HEX(\"0f\"))"))))
+  (is (string= "ff" (sel:as-text (sel:evaluate "TO_HEX(FROM_HEX(\"f0\") BXOR FROM_HEX(\"0f\"))"))))
+  ;; the keyword is derived once per node and is not copied with it
+  (let* ((program (sel:compile-source "\"x\" & A")) (node (sel:program-ast program)))
+    (sel:run program (sel:from-native (list (cons "A" "1"))))
+    (is (eq :concat (sel::node-opc (sel::program-physical-ast program))))
+    (is (null (sel::node-opc (sel::copy-node-shallow node))))))
+
+(test perf-p5-optimised-literals-keep-their-decimals
+  (let* ((program (sel:compile-source "A > 1 + 2 * 3"))
+         (physical (sel::program-physical-ast program))
+         (folded (sel::node-r physical)))
+    (is (eq :num (sel::node-kind folded)))
+    (is (string= "7" (sel::node-s folded)))
+    (is (not (null (sel::node-dec-val folded))))
+    (is (string= "7" (sel::dec-format (sel::node-dec-val folded)))))
+  (let* ((lit (sel::node-r (sel:program-ast (sel:compile-source "A > 1.50"))))
+         (copy (sel::copy-node-shallow lit)))
+    (is (eq (sel::node-dec-val lit) (sel::node-dec-val copy))))
+  (is (string= "-3" (sel:as-text (sel:evaluate "-(1 + 2)"))))
+  (is (eq t (and (sel::value-scalar (sel:evaluate "1.50 == 1.5")) t))))
+
+(test perf-p6-short-number-fast-paths-match-the-general-ones
+  (dolist (text '("0" "-0" "5" "-5" "12345.67" "-12345.67" "0.5" "-0.5" "0.000" "-0.000" "007" "1." ".5" "-" "" "1.2.3"
+                  "1e5" " 1" "1 " "+1" "١٢" "123456789012345678" "1234567890123456789" "12345678901234567890"
+                  "00000000000000000001" "9999999999999999999" "-999999999999999999"))
+    (let ((fast (sel::dec-parse text)))
+      (if (and fast (<= (length text) 19))
+          (progn
+            (is (string= (sel::dec-format fast) (sel::dec-format-general fast)) "~s" text)
+            (is (sel::dec-number-string-p text) "~s" text))
+          (is (or (null fast) (sel::dec-number-string-p text)) "~s" text))))
+  (is (string= "0.000" (sel::dec-format (sel::dec-parse "0.000"))))
+  (is (string= "0" (sel::dec-format (sel::dec-parse "-0"))))
+  (is (string= "12345.67" (sel::dec-format (sel::dec-parse "12345.67"))))
+  (is (string= "-0.5" (sel::dec-format (sel::dec-parse "-0.5"))))
+  ;; the printer does not follow the embedder's settings
+  (let ((*print-radix* t) (*print-base* 16))
+    (is (string= "12345.67" (sel::dec-format (sel::dec-parse "12345.67"))))))
+
+(test perf-p7-bin-hash-covers-every-octet
+  (let ((a (sel:make-bin (coerce '(1 2 3 4) '(vector (unsigned-byte 8)))))
+        (b (sel:make-bin (coerce '(1 2 3 5) '(vector (unsigned-byte 8)))))
+        (c (sel:make-bin (coerce '(1 2 3 4) '(vector (unsigned-byte 8))))))
+    (is (/= (sel::value-hash a) (sel::value-hash b)))
+    (is (= (sel::value-hash a) (sel::value-hash c))))
+  (let ((ctx (sel:from-native (list (cons "B" (loop for i below 3000
+                                                    collect (coerce (list (ldb (byte 8 0) i) (ldb (byte 8 8) i) 7)
+                                                                    '(vector (unsigned-byte 8)))))))))
+    (let ((t0 (get-internal-real-time)))
+      (is (string= "3000" (sel:as-text (sel:run (sel:compile-source "COUNT(DEDUPE(B))") ctx))))
+      (is (< (- (get-internal-real-time) t0) (* 10 internal-time-units-per-second))))))
+
+(test perf-p4-decorated-sort-keys-order-like-compare-values
+  (let* ((st (sb-ext:seed-random-state 5))
+         (vals (list nil t :false "10" "9" "1a" "" " 2" "-0" "0" "007" "1.50" "1.5" "abc" "ABC" "é" "z"
+                     (sel:make-bin (coerce '(1 2) '(vector (unsigned-byte 8))))
+                     (sel:make-bin (coerce '(1) '(vector (unsigned-byte 8))))
+                     (list (cons "x" "5") (cons "y" 1)) (list (cons "x" "abc")) 3 -2)))
+    (let ((values (mapcar #'sel:from-native vals)))
+      (dotimes (i 400)
+        (let* ((a (nth (random (length values) st) values))
+               (b (nth (random (length values) st) values))
+               (old (sel::compare-values a b))
+               (new (sel::compare-sort-keys (sel::make-sort-key a) (sel::make-sort-key b))))
+          (is (= (signum old) (signum new)) "~a ~a" (sel:value-dump a) (sel:value-dump b)))))))
+
+(test perf-p8-unshaped-rows-join-like-shaped-ones
+  (flet ((unshaped (alists)
+           (sel:make-list-value
+            (mapcar (lambda (al) (let ((v (sel:make-none)))
+                                   (dolist (kv al v) (sel:value-set v (car kv) (sel:from-native (cdr kv))))))
+                    alists))))
+    (let* ((left (perf-mk-alist-rows 40)) (right (perf-mk-alist-rows 25))
+           (shaped-ctx (sel:from-native (list (cons "L" left) (cons "R" right))))
+           (unshaped-ctx (let ((c (sel:make-none)))
+                           (sel:value-set c "L" (unshaped left))
+                           (sel:value-set c "R" (unshaped right))
+                           c))
+           (program (sel:compile-source "LINK(L, R, l, r, l[\"a\"] == r[\"a\"]) .> MAP(_[\"l\"][\"id\"] & \"-\" & _[\"r\"][\"id\"]) .> JOIN(\",\")"))
+           (left-program (sel:compile-source "LINK_LEFT(L, R, l, r, l[\"b\"] == r[\"id\"] + 100) .> COUNT")))
+      (is (string= (sel:as-text (sel:run program shaped-ctx)) (sel:as-text (sel:run program unshaped-ctx))))
+      (is (string= (sel:as-text (sel:run left-program shaped-ctx)) (sel:as-text (sel:run left-program unshaped-ctx)))))))
+
+(test perf-p9-equality-and-residual-link-matches-the-nested-loop
+  (let* ((ctx (sel:from-native (list (cons "L" (perf-mk-alist-rows 60)) (cons "R" (perf-mk-alist-rows 45))))))
+    (dolist (src '("COUNT(LINK(L, R, l, r, l[\"a\"] == r[\"a\"] AND l[\"id\"] < r[\"id\"]))"
+                   "COUNT(LINK(L, R, l, r, r[\"a\"] == l[\"a\"] AND l[\"b\"] != r[\"b\"] AND TRUE))"
+                   "COUNT(LINK_LEFT(L, R, l, r, l[\"a\"] == r[\"a\"] AND l[\"id\"] > 1000))"
+                   "LINK(L, R, l, r, l[\"a\"] $== r[\"a\"] AND l[\"b\"] >= r[\"b\"]) .> MAP(_[\"l\"][\"id\"] & \":\" & _[\"r\"][\"id\"]) .> JOIN(\",\")"))
+      ;; the same program with the leading conjunct hidden from the planner: `TRUE AND ...`
+      ;; puts a non-key first, so the evaluator runs every pair (the nested loop).
+      (let* ((nested (let ((pos (search "l[\"a\"]" src)))
+                       (declare (ignore pos))
+                       (sel:run (sel:compile-source (concatenate-first-conjunct-hidden src)) ctx)))
+             (fast (sel:run (sel:compile-source src) ctx)))
+        (is (string= (sel:value-dump nested) (sel:value-dump fast)) "~a" src))))
+  ;; a bad key anywhere sends the join to the nested loop, which raises where it always did
+  (let ((ctx (sel:from-native (list (cons "L" (list (list (cons "k" "1") (cons "v" 1)) (list (cons "k" "x") (cons "v" 2))))
+                                    (cons "R" (list (list (cons "k" "1") (cons "v" 3))))))))
+    (raises "E_NOT_NUM" (sel:run (sel:compile-source "COUNT(LINK(L, R, l, r, l[\"k\"] == r[\"k\"] AND TRUE))") ctx)))
+  ;; an assignment in the predicate keeps the nested loop (an effect must run per pair, in order)
+  (let ((ctx (sel:from-native (list (cons "N" 0) (cons "L" (perf-mk-alist-rows 6)) (cons "R" (perf-mk-alist-rows 6))))))
+    (sel:run (sel:compile-source "COUNT(LINK(L, R, l, r, l[\"a\"] == r[\"a\"] AND (N = N + 1; TRUE)))") ctx)
+    (let ((expected (let ((n 0))
+                      (dotimes (i 6) (dotimes (j 6)
+                        (when (= (mod (* i 7919) 11) (mod (* j 7919) 11)) (incf n))))
+                      n)))
+      (is (= expected (parse-integer (sel:as-text (sel:value-get ctx "N"))))))))
+
+(defun concatenate-first-conjunct-hidden (src)
+  "SRC with `TRUE AND ` put in front of the predicate's first conjunct, so it is no
+longer the leading equality."
+  (let* ((open (search "l, r, " src))
+         (start (+ open (length "l, r, "))))
+    (concatenate 'string (subseq src 0 start) "TRUE AND " (subseq src start))))
+
+(test perf-p10-hybrid-continuation-does-not-copy-what-it-cannot-write
+  (let* ((orders (sel.sql:binding-relation "orders" "orders"
+                   (list (cons "ID" (sel.sql:binding-column "id" "orders"))
+                         (cons "AMOUNT" (sel.sql:binding-column "amount" "orders")))))
+         (runner (lambda (sql params) (declare (ignore sql params))
+                   (sel:evaluate "LIST(RECORD('id', 'vip-42', 'amount', 150))")))
+         (reader (sel.sql:plan-hybrid
+                  (sel:compile-source "ORDERS .> FILTER(_['amount'] > 100) .> MAP(RECORD('id', _['id'], 'g', RGROUPS('([0-9]+)', _['id'])))")
+                  "postgresql" (list (cons "ORDERS" orders))))
+         (writer (sel.sql:plan-hybrid (sel:compile-source "BIG[1] = 99; COUNT(BIG)") "postgresql" nil))
+         (ctx (sel:make-none)))
+    (sel:value-set ctx "BIG" (sel:from-native '(1 2 3)))
+    ;; the read-only continuation runs on the caller's variables without a copy, and the
+    ;; caller's root does not gain the plan's input variable
+    (when (and (sel.sql:hybrid-plan-continuation-program reader)
+               (not (sel.sql:hybrid-plan-pure-sql-p reader)))
+      (sel.sql:execute-hybrid reader runner ctx)
+      (is (null (sel:value-get ctx "ORDERS")))
+      (is (string= "1" (sel:as-text (sel:value-get (sel:value-get ctx "BIG") "1")))))
+    ;; one that assigns still runs on a copy: the caller's tree is not written
+    (is (sel.sql:hybrid-plan-pure-memory-p writer))
+    (is (string= "3" (sel:as-text (sel.sql:execute-hybrid writer runner ctx))))
+    (is (string= "1" (sel:as-text (sel:value-get (sel:value-get ctx "BIG") "1"))))
+    ;; the classification the optimisation rests on
+    (is (not (sel.sql::continuation-may-write-p (sel:compile-source "X .> FILTER(_ > 1)"))))
+    (is (sel.sql::continuation-may-write-p (sel:compile-source "A = 1; A")))))
+
+;;; --- performance round 2 (LISP-P11 .. LISP-P20) --------------------------------
+
+(defun p2-translate (src bindings &optional (dialect "mariadb"))
+  (sel.sql:translate (sel:compile-source src) dialect bindings))
+
+(test perf-p11-p12-big-in-list-is-linear-and-renders-consistently
+  (let* ((n 3000)
+         (items (sel:from-native (loop for i below n collect (format nil "s~d" i))))
+         (bindings (list (cons "X" (sel.sql:binding-column "x" "t" :text))
+                         (cons "L" (sel.sql:binding-value items))))
+         (t0 (get-internal-real-time))
+         (f (p2-translate "X IN L" bindings))
+         (inline (sel.sql:as-value f :inline))
+         (params (sel.sql:as-value f :params)))
+    (is (< (- (get-internal-real-time) t0) (* 20 internal-time-units-per-second)))
+    ;; one OR between each pair of the n comparisons, balanced or not
+    (is (= (1- n) (loop with start = 0 for i = (search " OR " inline :start2 start)
+                        while i count t do (setf start (1+ i)))))
+    (is (= n (length (sel.sql:fragment-params f))))
+    ;; :params emits one placeholder per bound slot, and BINDINGS yields them in order
+    (is (= n (count #\? params)))
+    (is (= n (length (sel.sql:bindings f))))
+    (is (equal (mapcar (lambda (v) (sel:as-text v)) (subseq (sel.sql:bindings f) 0 3))
+               '("s0" "s1" "s2")))
+    ;; inline and params agree once the placeholders are filled back in
+    (is (string= inline
+                 (with-output-to-string (o)
+                   (let ((i 0))
+                     (loop for c across params
+                           do (if (char= c #\?)
+                                  (progn (write-string (sel.sql::emit-literal "mariadb" (nth i (sel.sql:fragment-params f)) :text) o)
+                                         (incf i))
+                                  (write-char c o)))))))))
+
+(test perf-p12-slot-ids-follow-a-running-count
+  ;; a literal's slot id is the count after its push, including after the translator
+  ;; takes slots back (a constant text read as a number in arithmetic)
+  (let ((f (p2-translate "N + \"1.5\" > 2 AND X $== \"a\" AND X $!= \"b\""
+                         (list (cons "X" (sel.sql:binding-column "x" "t" :text))
+                               (cons "N" (sel.sql:binding-column "n" "t" :num))))))
+    (let ((slots (remove-if-not #'integerp (sel.sql:fragment-parts f))))
+      (is (equal slots (loop for i from 1 to (length slots) collect i)))
+      (is (= (length slots) (length (sel.sql:fragment-params f)))))))
+
+(test perf-p14-record-keys-distinct-check
+  (let ((st (sb-ext:seed-random-state 14)))
+    (dolist (n '(0 1 2 5 23 24 25 100 1000))
+      (dotimes (round 5)
+        (let* ((pool (max 1 (floor (* n (if (evenp round) 1.0 0.5)))))
+               (keys (loop repeat n collect (format nil "k~d" (random pool st)))))
+          (is (eq (and (= (length keys) (length (remove-duplicates keys :test #'string=))) t)
+                  (and (sel::keys-distinct-p keys) t)))))))
+  (let* ((n 8000)
+         (src (with-output-to-string (o)
+                (write-string "RECORD(" o)
+                (dotimes (i n) (when (> i 0) (write-string "," o)) (format o "\"k~d\",~d" i i))
+                (write-string ")" o)))
+         (t0 (get-internal-real-time))
+         (p (sel:compile-source src)))
+    (is (< (- (get-internal-real-time) t0) (* 5 internal-time-units-per-second)))
+    (is (= n (sel:value-size (sel:run p (sel:make-none))))))
+  ;; duplicates are still detected beyond the pairwise threshold
+  (let ((src (with-output-to-string (o)
+               (write-string "RECORD(" o)
+               (dotimes (i 40) (format o "\"k~d\",~d," i i))
+               (write-string "\"k3\",99)" o))))
+    (is (string= "99" (sel:as-text (sel:value-get (sel:run (sel:compile-source src) (sel:make-none)) "k3"))))))
+
+(test perf-p15-dialect-lookups-are-cached-and-invalidated
+  (unwind-protect
+       (progn
+         (sel.sql:map-reset)
+         ;; the cached answer equals the walk for every shipped dialect, section and a
+         ;; sample of keys, hits and misses
+         (dolist (d (sel.sql::dialect-targets))
+           (dolist (section '(:ops :funcs :skel))
+             (dolist (key '("LEN" "UPPER" "ISNUM" "NO-SUCH-FUNCTION" "+" "==" "isTrue"))
+               (multiple-value-bind (v f) (sel.sql::dialect-entry d section key)
+                 (multiple-value-bind (v2 f2)
+                     (sel.sql::dialect-entry-uncached (sel.sql::compute-dialect-chain d) section key)
+                   (is (equal v v2))
+                   (is (eq f f2)))))))
+         (is (equal (sel.sql::dialect-chain "mariadb") (sel.sql::compute-dialect-chain "mariadb")))
+         ;; a registration is seen by the very next lookup, and so is its removal
+         (let ((shipped (sel.sql::dialect-entry "postgresql" :funcs "LEN")))
+           (sel.sql:define-entry "postgresql" :funcs "LEN" (list :tpl "xlen({0})" :ret "NUM"))
+           (let ((now (sel.sql::dialect-entry "postgresql" :funcs "LEN")))
+             (is (equal "xlen({0})" (getf now :tpl)))
+             (is (not (equal shipped now))))
+           ;; a dialect inheriting from it sees the override too
+           (is (equal "xlen({0})" (getf (sel.sql::dialect-entry "postgresql" :funcs "LEN") :tpl)))
+           (sel.sql:map-reset)
+           (is (equal shipped (sel.sql::dialect-entry "postgresql" :funcs "LEN"))))
+         ;; a dialect registered later appears in lookups afterwards
+         (is (null (sel.sql::dialect-chain "t-p15")))
+         (sel.sql:define-dialect "t-p15" '(:extends "mariadb" :version "10.5"))
+         (is (equal (first (sel.sql::dialect-chain "t-p15")) "t-p15"))
+         (is (member "mariadb" (sel.sql::dialect-chain "t-p15") :test #'equal)))
+    (sel.sql:map-reset)))
+
+(test perf-p17-tail-scanner-is-built-on-demand
+  (is (eq t (sel::as-bool (sel:evaluate "RMATCH('ab+c', \"xabbcx\")") nil)))
+  ;; RREPLACE asks for the tail scanner and gets the right answer with `^` and empty matches
+  (is (string= "-a-b-"  (sel:as-text (sel:evaluate "RREPLACE('b*?', \"-\", \"ab\")"))))
+  (is (string= "X-b" (sel:as-text (sel:evaluate "RREPLACE('^a', \"X\", \"a-b\")"))))
+  (is (string= "XaXbX" (sel:as-text (sel:evaluate "RREPLACE('c*', \"X\", \"ab\")")))))
+
+(test perf-p18-hex-matches-format
+  (let ((st (sb-ext:seed-random-state 18)))
+    (dolist (n '(0 1 2 15 16 255 1000))
+      (let ((bytes (make-array n :element-type '(unsigned-byte 8))))
+        (dotimes (i n) (setf (aref bytes i) (random 256 st)))
+        (is (string= (string-downcase (with-output-to-string (s)
+                                        (loop for b across bytes do (format s "~2,'0x" b))))
+                     (sel::bytes-to-hex bytes)))))))
+
+(test perf-p19-canonical-join-keys-match-the-reference
+  (labels ((reference (sc)
+             ;; the divide-by-ten loop this replaced
+             (let ((d (sel::dec-parse sc)))
+               (when d
+                 (let ((digits (sel::dec-digits d)) (scale (sel::dec-scale d)))
+                   (if (zerop digits)
+                       "0"
+                       (progn
+                         (loop while (and (> scale 0) (zerop (mod digits 10)))
+                               do (setf digits (floor digits 10)) (decf scale))
+                         (sel::dec-format (sel::%make-dec (sel::dec-neg d) digits scale)))))))))
+    (let ((st (sb-ext:seed-random-state 19)))
+      (dotimes (i 4000)
+        (let* ((ip (random 4 st))
+               (fp (random 6 st))
+               (sc (format nil "~a~a~a~a"
+                           (if (zerop (random 3 st)) "-" "")
+                           (if (zerop ip) "0" (format nil "~d" (random (expt 10 ip) st)))
+                           (if (zerop fp) "" ".")
+                           (with-output-to-string (o)
+                             (dotimes (k fp) (write-char (if (zerop (random 2 st)) #\0 (code-char (+ 48 (random 10 st)))) o))))))
+          (let ((want (reference sc)))
+            (when (and want (not (and (plusp (length sc)) (every #'digit-char-p sc))))
+              (is (string= want (sel::canonical-numeric-string sc)) "~a" sc)))))))
+  ;; a key with a hundred thousand fraction zeros is cheap and equal to its short spelling
+  (let* ((z (make-string 100000 :initial-element #\0))
+         (p (sel:compile-source "COUNT(LINK(A, B, a[\"k\"] == b[\"k\"]))"))
+         (ctx (sel:from-native (list (cons "A" (list (list (cons "k" (concatenate 'string "1.5" z)))))
+                                     (cons "B" (list (list (cons "k" "1.5"))))))))
+    (let ((t0 (get-internal-real-time)))
+      (is (string= "1" (sel:as-text (sel:run p ctx))))
+      (is (< (- (get-internal-real-time) t0) (* 10 internal-time-units-per-second))))))
+
+(test perf-p20-list-keys-share-the-canonical-strings
+  (is (eq (sel::format-index-string 7) (sel::format-index-string 7)))
+  (is (string= "10001" (sel::format-index-string 10001)))
+  (is (equal (sel:value-keys (sel:from-native '(1 2 3))) '("1" "2" "3")))
+  ;; the list and the record spelling of the same keys hash alike
+  (let ((l (sel:from-native (loop for i below 50 collect i)))
+        (r (sel:from-native (loop for i from 1 to 50 collect (cons (format nil "~d" i) (1- i))))))
+    (is (= (sel::value-hash l) (sel::value-hash r)))))
+
+;;; --- performance round 3 (LISP-P21 .. LISP-P27) ---------------------------
+
+(defun reference-pad (s width fill left)
+  "The specification of PADL/PADR, written the slow obvious way."
+  (if (>= (length s) width)
+      s
+      (let ((pad (with-output-to-string (o)
+                   (dotimes (i (- width (length s)))
+                     (write-char (char fill (mod i (length fill))) o)))))
+        (if left (concatenate 'string pad s) (concatenate 'string s pad)))))
+
+(test perf-p21-pad-and-repeat-match-their-specification
+  (dolist (s '("" "x" "abc" "héllo"))
+    (dolist (width '(0 1 2 3 5 8 17))
+      (dolist (fill '("-" "ab" "xyz" "é"))
+        (is (string= (reference-pad s width fill t)
+                     (sel::value-scalar (sel:evaluate (format nil "PADL(~s, ~d, ~s)" s width fill)))))
+        (is (string= (reference-pad s width fill nil)
+                     (sel::value-scalar (sel:evaluate (format nil "PADR(~s, ~d, ~s)" s width fill))))))))
+  ;; an empty fill is still refused, and REPEAT doubles into the right length and content
+  (signals sel:sel-error (sel:evaluate "PADL(\"a\", 5, \"\")"))
+  (dolist (unit '("a" "ab" "abc" "héy"))
+    (dolist (n '(0 1 2 3 4 5 7 8 9 31 32 33 100))
+      (is (string= (with-output-to-string (o) (dotimes (i n) (write-string unit o)))
+                   (sel::value-scalar (sel:evaluate (format nil "REPEAT(~s, ~d)" unit n))))))))
+
+(test perf-p22-operator-table-matches-a-linear-scan
+  (flet ((scan (chars i to)
+           (loop for op in sel::+operators+
+                 when (and (<= (+ i (length op)) to)
+                           (string= op chars :start2 i :end2 (+ i (length op))))
+                   do (return op))))
+    (dolist (src '("??? ?? $== $!= $<= $>= $< $> == != <= >= += -= *= /= %= &= .> + - * / % & = < > ( ) [ ] , ;"
+                   "a??b???c $<=d $<e ==f =g .>h é§ @ # ~"))
+      (let ((lx (sel::make-lexer src)))
+        (dotimes (i (length src))
+          (is (equal (scan (sel::lexer-chars lx) i (length src))
+                     (sel::match-operator lx i (length src)))))))))
+
+(test perf-p23-evaluate-runs-the-tree-as-written
+  (dolist (src '("IF(A > 1 AND B < 5, A * 2 + B, ROUND(A / 3, 2))"
+                 "A + B * 2 - 1" "SUM((1, 2, 3), X, X * A)" "A ?? 7" "MAX(A, B, 3)"
+                 "LIST(A, B) .> SORT_DESC() .> TAKE(1)"))
+    (let ((ctx (lambda () (sel:from-native (list (cons "A" 7) (cons "B" 3))))))
+      (is (string= (sel:value-dump (sel:evaluate src (funcall ctx)))
+                   (sel:value-dump (sel:run (sel:compile-source src) (funcall ctx))))))))
+
+(test perf-p24-text-literal-escapes-match-the-rule-walk
+  (flet ((reference (dialect text)
+           (let* ((quote (sel.sql::lex-text dialect "textQuote"))
+                  (rules (stable-sort (copy-list (sel.sql::dialect-lexical dialect "textEscape"))
+                                      #'> :key (lambda (c) (length (car c))))))
+             (with-output-to-string (out)
+               (write-string quote out)
+               (let ((i 0) (n (length text)))
+                 (loop while (< i n)
+                       do (let ((hit (find-if (lambda (r) (let ((k (car r)))
+                                                            (and (plusp (length k)) (<= (+ i (length k)) n)
+                                                                 (string= k text :start2 i :end2 (+ i (length k))))))
+                                              rules)))
+                            (if hit
+                                (progn (write-string (cdr hit) out) (incf i (length (car hit))))
+                                (progn (write-char (char text i) out) (incf i))))))
+               (write-string quote out)))))
+    (dolist (d '("mariadb" "mysql" "postgresql" "sqlite"))
+      (dolist (text (list "" "plain" "it's" "a\\b" "'" "\\" "''" "\\'" "é'ü\\" "x%_y" (make-string 300 :initial-element #\')))
+        (is (string= (reference d text) (sel.sql::emit-text-literal d text))
+            "~a ~s" d text)))
+    ;; a dialect whose rule keys are longer than one character takes the general path
+    (unwind-protect
+         (progn
+           (sel.sql:define-dialect "t-multi"
+             '(:extends "postgresql" :version "1"
+               :lexical (("textEscape" . (("'" . "''") ("--" . "-!-") ("-" . "~"))))))
+           (dolist (text '("a--b" "a-b" "---" "x'--'y" "--"))
+             (is (string= (reference "t-multi" text) (sel.sql::emit-text-literal "t-multi" text))
+                 "t-multi ~s" text)))
+      (sel.sql:map-reset))))
+
+(test perf-p25-referenced-assignments-close-over-reads
+  (flet ((reference (leading node)
+           (let ((needed (sel.sql::read-names node)) (grew t))
+             (loop while grew
+                   do (setf grew nil)
+                      (dolist (s leading)
+                        (when (member (sel.sql::assigned-name s) needed :test #'equal)
+                          (dolist (name (sel.sql::read-names (sel::node-r s)))
+                            (unless (member name needed :test #'equal)
+                              (push name needed) (setf grew t))))))
+             (remove-if-not (lambda (s) (member (sel.sql::assigned-name s) needed :test #'equal)) leading))))
+    (dolist (src '("H0 = 1; H1 = H0 + 1; H2 = H1 * 2; UNUSED = 9; ORDERS .> FILTER(_['a'] > H2)"
+                   "A = 1; B = A; A = 2; C = B + A; D = 7; C + X"
+                   "P = 1; Q = P; R = Q; S = R; T = 0; S"
+                   "K = 1; K = K + 1; K = K * 3; K"))
+      (let* ((ast (sel:program-ast (sel:compile-source src)))
+             (items (sel::node-items ast))
+             (leading (butlast items))
+             (final (car (last items))))
+        (is (equal (mapcar #'sel.sql::assigned-name (reference leading final))
+                   (mapcar #'sel.sql::assigned-name (sel.sql::referenced-assignments leading final)))
+            "~a" src)))))
+
+(test perf-p27-bin-copies-share-octets-and-stay-independent
+  (let* ((b (sel::make-bin (make-array 6 :element-type '(unsigned-byte 8) :initial-contents '(1 2 3 4 5 6))))
+         (ctx (sel:make-none)))
+    (sel::value-set ctx "B" b)
+    (is (string= "t\"6\"" (sel:value-dump (sel:run (sel:compile-source "C = B; BLEN(C)") ctx))))
+    ;; operations read the octets and never write them
+    (sel:run (sel:compile-source "C = B; D = C BAND FROM_HEX(\"ffffffffffff\"); E = C BOR C; F = C BXOR C; N = BTL(C); 1") ctx)
+    (is (equalp #(1 2 3 4 5 6) (coerce (sel::value-scalar b) 'vector)))
+    ;; the boundary still copies on the way out
+    (let ((native (sel:to-native b)))
+      (setf (aref native 0) 99)
+      (is (= 1 (aref (sel::value-scalar b) 0))))))
+
+(test perf-p27-division-fast-path-agrees-with-rational-arithmetic
+  (flet ((reference (a b)
+           ;; exact quotient rounded half away from zero at 10 fractional digits,
+           ;; reported at its minimal scale when exact within them
+           (let* ((q (/ (rational a) (rational b)))
+                  (scaled (* (abs q) (expt 10 10)))
+                  (r (if (integerp scaled) scaled (floor (+ scaled 1/2)))))
+             (values (if (minusp q) (- r) r) (integerp scaled)))))
+    (dolist (a '("1" "7" "12345" "99999999999999999999" "0.5" "-9" "100" "1000000007" "0.0001"))
+      (dolist (b '("1" "3" "7" "0.1" "0.3" "-2" "1000" "0.0000001" "12345678901234567890"))
+        (let* ((da (sel::dec-parse a)) (db (sel::dec-parse b))
+               (got (sel::dec-div da db))
+               (value (* (if (sel::dec-neg got) -1 1) (sel::dec-digits got)
+                         (expt 10 (- 10 (sel::dec-scale got)))))
+               (ra (/ (* (if (sel::dec-neg da) -1 1) (sel::dec-digits da)) (expt 10 (sel::dec-scale da))))
+               (rb (/ (* (if (sel::dec-neg db) -1 1) (sel::dec-digits db)) (expt 10 (sel::dec-scale db)))))
+          (is (= value (reference ra rb)) "~a / ~a" a b))))))
+
+(test perf-p15-template-segments-fill-like-the-original-scan
+  (flet ((frag (s kind) (sel.sql::%fragment (list s) kind "mariadb" nil nil nil))
+         (text (parts) (apply #'concatenate 'string (remove-if-not #'stringp parts))))
+    (let ((a (frag "A" :text)) (b (frag "B" :num)) (c (frag "C" :bin)))
+      (dolist (case '(("x" nil "x")
+                      ("({0} = {1})" nil "(A = B)")
+                      ("{{{0}}}" nil "{A}")
+                      ("{*}" nil "A, B")
+                      ("f({1:})" nil "f(B)")
+                      ("f({0:})" nil "f(A, B)")
+                      ("a{0}b{0}c" nil "aAbAc")
+                      ("tail {" nil "tail {")
+                      ("{0} {{" nil "A {")))
+        (destructuring-bind (tpl args expected) case
+          (declare (ignore args))
+          (is (string= expected (text (sel.sql::emit-fill "mariadb" tpl (list a b))))
+              "~s" tpl)
+          ;; twice: the second fill comes from the cached segments
+          (is (string= expected (text (sel.sql::emit-fill "mariadb" tpl (list a b)))))))
+      ;; a slot beyond the arguments refuses, and so does an unknown lexical name
+      (signals sel.sql::sql-error (sel.sql::emit-fill "mariadb" "{2}" (list a b)))
+      (signals sel.sql::sql-error (sel.sql::emit-fill "mariadb" "{nosuchlexical:0}" (list a b)))
+      ;; a lexical reference expands per argument, and {key:*} for every argument
+      (is (equal (text (sel.sql::emit-fill "mariadb" "{textCast:0}" (list a b)))
+                 (text (sel.sql::emit-fill "mariadb" "{textCast:0}" (list a b)))))
+      (is (plusp (length (text (sel.sql::emit-fill "mariadb" "{textCast:*}" (list a b))))))
+      ;; binaryCast keeps an already-BIN operand as it is
+      (is (string= "C" (text (sel.sql::emit-fill "mariadb" "{binaryCast:0}" (list c))))))))
+
+;;; LISP-REG-1: a result built fresh is adopted, never copied again, and the adoption
+;;; shares nothing it should not.
+(test reg-fresh-results-are-adopted-without-aliasing
+  (flet ((d (src) (sel:value-dump (sel:evaluate src))))
+    ;; MAP over a variable: the RECORD it builds is adopted, the source is untouched.
+    (is (string= (d "XS = LIST(RECORD(\"v\",\"a\"), RECORD(\"v\",\"b\")); B = MAP(XS, RECORD(\"v\", _[\"v\"])); B[1][\"v\"] = \"z\"; XS[1][\"v\"]")
+                 (d "\"a\"")))
+    ;; a pipeline of fresh stages: writing through the result leaves the source alone
+    (is (string= (d "XS = LIST(RECORD(\"v\",1), RECORD(\"v\",2)); Y = XS .> MAP(RECORD(\"v\", _[\"v\"])) .> FILTER(TRUE); Y[1][\"v\"] = 9; XS[1][\"v\"] & \"/\" & Y[1][\"v\"]")
+                 (d "\"1/9\"")))
+    (is (string= (d "XS = LIST(RECORD(\"v\",1), RECORD(\"v\",2)); Y = XS .> MAP(RECORD(\"v\", _[\"v\"])) .> SORT_BY(_[\"v\"], \"DESC\"); Y[1][\"v\"] = 9; XS[2][\"v\"] & \"/\" & Y[1][\"v\"]")
+                 (d "\"2/9\"")))
+    (is (string= (d "XS = LIST(RECORD(\"v\",1), RECORD(\"v\",2)); Y = XS .> MAP(RECORD(\"k\", _[\"v\"] % 2, \"v\", _[\"v\"])) .> BUCKET(_[\"k\"], RECORD(\"k\", _K, \"n\", COUNT(_))); Y[1][\"n\"] = 7; XS[1][\"v\"] & \"/\" & Y[1][\"n\"]")
+                 (d "\"1/7\"")))
+    ;; results that are NOT fresh are still copied: TAKE aliases its elements, a
+    ;; variable is a variable, and FILTER over a variable copies what it keeps
+    (is (string= (d "XS = LIST(RECORD(\"v\",1)); B = TAKE(XS, 1); B[1][\"v\"] = 5; XS[1][\"v\"]")
+                 (d "\"1\"")))
+    (is (string= (d "XS = LIST(RECORD(\"v\",1)); B = FILTER(XS, TRUE); B[1][\"v\"] = 5; XS[1][\"v\"]")
+                 (d "\"1\"")))
+    (is (string= (d "XS = LIST(RECORD(\"v\",1)); B = SORT(XS); B[1][\"v\"] = 5; XS[1][\"v\"]")
+                 (d "\"1\"")))
+    (is (string= (d "XS = LIST(RECORD(\"v\",1)); B = IF(TRUE, XS, XS); B[1][\"v\"] = 5; XS[1][\"v\"]")
+                 (d "\"1\"")))))
+
+(test reg-adopted-assignment-still-counts-its-depth-from-the-target
+  ;; 150 indices, then a fresh value 60 levels deep: 150 + 60 passes 200; 150 + 60 + 1 must not
+  (flet ((src (levels)
+           (format nil "A~{~a~} = ~a~a~a"
+                   (loop repeat 150 collect "[1]")
+                   (apply #'concatenate 'string (loop repeat levels collect "LIST("))
+                   "1"
+                   (apply #'concatenate 'string (loop repeat levels collect ")")))))
+    (is (sel:evaluate (src 30)))
+    (raises "E_DEPTH" (sel:evaluate (src 70)))))

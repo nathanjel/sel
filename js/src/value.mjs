@@ -61,6 +61,9 @@ function checkDecimal(d) {
 }
 
 let INT_CAP = null;
+// Anything below 10^18 is under the digit cap whatever the cap is (it is at least 18), so the
+// first BigInt a program ever passes does not have to build 10^1000000 to be waved through.
+const SMALL_INT = 10n ** 18n;
 function intCap() { return INT_CAP ??= 10n ** BigInt(D.MAX_INT_DIGITS); }
 
 export const TEXT = 'TEXT';
@@ -82,24 +85,54 @@ export class RecordShape {
 
 const SHAPES = new Map();
 const SHAPE_CACHE_ENTRIES = 256;
-const SHAPE_CACHE_MAX_KEYS = 256;
-const SHAPE_CACHE_MAX_CHARS = 16384;
+// Bounds on what the cache holds. The number of shapes is bounded, and so is what
+// they weigh in all: a schema of a few hundred columns is ordinary (a joined row has
+// twice its sides' columns), and refusing to intern it made every row of a join carry
+// a shape of its own, with its own plan -- a 36x cliff at 260 fields (JS-P3). A single
+// shape too wide to be a schema at all (more than SHAPE_CACHE_MAX_KEYS keys) is still
+// not interned.
+const SHAPE_CACHE_MAX_KEYS = 4096;
+const SHAPE_CACHE_MAX_CHARS = 262144;
+const SHAPE_CACHE_TOTAL_CHARS = 4194304;
+let shapeCacheChars = 0;
 
 // The one shape object for these keys (interned while the cache holds it), so
 // rows built by different calls share their shape and shape-keyed caches hit.
 export function internRecordShape(keys) { return recordShape(keys); }
 
+// The shape last asked for by key list: a run of rows with the same keys matches it by
+// length and pointer compares, without building the JSON signature (JS-P9).
+let lastKeyedShape = null;
+
 function recordShape(keys) {
+  const last = lastKeyedShape;
+  if (last !== null && last.keys.length === keys.length) {
+    let i = 0;
+    while (i < keys.length && last.keys[i] === keys[i]) i++;
+    if (i === keys.length) return last;
+  }
+  const shape = internedShape(keys);
+  lastKeyedShape = shape;
+  return shape;
+}
+
+function internedShape(keys) {
   // Keys are arbitrary SEL text.  A delimiter-joined signature would alias
   // distinct schemas when a key itself contains that delimiter.
   const signature = JSON.stringify(keys);
   let shape = SHAPES.get(signature);
   if (!shape) {
     shape = new RecordShape(keys);
-    if (keys.length <= SHAPE_CACHE_MAX_KEYS &&
-        keys.reduce((n, key) => n + key.length, 0) <= SHAPE_CACHE_MAX_CHARS) {
-      if (SHAPES.size >= SHAPE_CACHE_ENTRIES) SHAPES.clear();
-      SHAPES.set(signature, shape);
+    if (keys.length <= SHAPE_CACHE_MAX_KEYS) {
+      const chars = keys.reduce((n, key) => n + key.length, 0);
+      if (chars <= SHAPE_CACHE_MAX_CHARS) {
+        if (SHAPES.size >= SHAPE_CACHE_ENTRIES || shapeCacheChars + chars > SHAPE_CACHE_TOTAL_CHARS) {
+          SHAPES.clear();
+          shapeCacheChars = 0;
+        }
+        SHAPES.set(signature, shape);
+        shapeCacheChars += chars;
+      }
     }
   }
   return shape;
@@ -119,19 +152,41 @@ function listIndex(key, length) {
 // diverge on purpose -- ordinary records overwrite, joined rows keep the
 // ordered duplicates -- so that fallback is theirs, not this helper's. Measured
 // against the inlined loop the call boundary costs nothing (WL-001 SEL-0016).
+// The shape of the last call, with keys already known to be distinct: rows built one after
+// another by the same expression have the same keys in the same order, so comparing the
+// keys to this shape (length and one pointer compare each) replaces the duplicate check
+// and the JSON signature (JS-P9; 2.4 us per row before, 0.6 after).
+let lastUniqueShape = null;
+
 function shapedFromUniqueEntries(entries) {
-  const keys = new Array(entries.length);
-  const values = new Array(entries.length);
+  const n = entries.length;
+  const values = new Array(n);
+  const last = lastUniqueShape;
+  if (last !== null && last.keys.length === n) {
+    let i = 0;
+    for (; i < n; i++) {
+      const entry = entries[i];
+      if (entry[0] !== last.keys[i]) break;
+      values[i] = entry[1];
+    }
+    if (i === n) return Value.shapedFromShape(last, values);
+  }
+  const keys = new Array(n);
   const seen = new Set();
-  for (let i = 0; i < entries.length; i++) {
-    const [key, value] = entries[i];
+  for (let i = 0; i < n; i++) {
+    const entry = entries[i];
+    const key = entry[0];
     keys[i] = key;
-    values[i] = value;
+    values[i] = entry[1];
     if (seen.has(key)) return null;
     seen.add(key);
   }
-  return Value.shapedOwned(keys, values);
+  const shape = recordShape(keys);
+  lastUniqueShape = shape;
+  return Value.shapedFromShape(shape, values);
 }
+
+const BYTE_DECIMALS = new Array(256);
 
 export class Value {
   constructor(kind, scalar, isList = false) {
@@ -198,6 +253,12 @@ export class Value {
     checkText(s);
     return new Value(TEXT, s);
   }
+  // The interpreter's constructor for text it has just made from Values that were
+  // already validated (a concatenation, a slice by code points, a join): no check.
+  // `Value.text` scans every string for surrogates, and on a long V8 rope that scan
+  // flattens the rope, so a loop that appends to one string went quadratic (JS-P1).
+  // Never for host input, and never for output of an engine that can split a pair.
+  static textOwned(s) { return new Value(TEXT, s); }
   static bin(b) {
     if (!(b instanceof Uint8Array) && !Array.isArray(b)) badArg('bytes must be a Uint8Array or an array of numbers');
     const out = new Uint8Array(b.length);
@@ -288,6 +349,16 @@ export class Value {
   // A string is canonicalised and validated: "007" becomes "7", and anything
   // that is not a number is E_NOT_NUM here rather than a TEXT value that fails
   // later somewhere else. Internal callers pass a decimal record, not a string.
+  // A whole number 0..255 (a byte) without a BigInt: the 256 decimals are built
+  // once and shared, the way cloneAt already shares a decimal between copies --
+  // nothing writes into a decimal record.
+  static byteValue(x) {
+    const d = BYTE_DECIMALS[x] || (BYTE_DECIMALS[x] = D.fromInt(x));
+    const v = new Value(TEXT, null);
+    v._decimal = d;
+    return v;
+  }
+
   static num(d) {
     let parsed = d;
     if (typeof d === 'string') {
@@ -300,13 +371,22 @@ export class Value {
     v._decimal = parsed;
     return v;
   }
+  // A number from a decimal the evaluator's own arithmetic just produced (JS-P24):
+  // D.add, D.mul and the rest have already run the digit-cap guard, so the checked
+  // constructor's second validation and copy are skipped. A host's decimal never
+  // comes through here (Value.num checks it). Negative zero is still normalised.
+  static numOwned(d) {
+    const v = new Value(TEXT, null);
+    v._decimal = d.neg && d.digits === 0n ? { neg: false, digits: 0n, scale: d.scale } : d;
+    return v;
+  }
   static int(n) {
     if (typeof n === 'number' ? !Number.isInteger(n) : typeof n !== 'bigint') {
       badArg(`not a whole number: ${String(n)}`);
     }
     // A native integer obeys the digit cap like the same digits in source
     // (spec §8, §6.4; review 2026-09-25 HOST-06).
-    if (typeof n === 'bigint' && (n < 0n ? -n : n) >= intCap()) {
+    if (typeof n === 'bigint' && (n < 0n ? -n : n) >= SMALL_INT && (n < 0n ? -n : n) >= intCap()) {
       fail('E_RANGE', `number has more than ${D.MAX_INT_DIGITS} integer digits`, null);
     }
     const d = D.fromInt(n);
@@ -475,6 +555,15 @@ export class Value {
     fail('E_NOT_BIN', 'expected binary or text, got boolean', pos);
   }
 
+  // What asBytes would encode, without encoding it: the string for TEXT, the bytes for BIN,
+  // the same refusal for anything else. For comparisons, which can compare two strings
+  // without building either one's UTF-8 (JS-P8).
+  asTextOrBytes(pos) {
+    const v = this.scalarSource(pos);
+    if (v.kind === BIN || v.kind === TEXT) return v.scalar;
+    fail('E_NOT_BIN', 'expected binary or text, got boolean', pos);
+  }
+
   asBool(pos) {
     const v = this.scalarSource(pos);
     if (v.kind === BOOL) return v.scalar;
@@ -489,6 +578,24 @@ export class Value {
     if (v._decimal !== null) return v._decimal;
     const d = D.parse(v.scalar, pos);
     if (d === null) fail('E_NOT_NUM', `not a number: ${JSON.stringify(v.scalar)}`, pos);
+    v._decimal = d;
+    return d;
+  }
+
+  // The number this value is in scalar context, or null when asDecimal would
+  // raise (not a number, over the digit cap, no scalar, BOOL/BIN/NULL). The hot
+  // callers -- a join key over a column of text that is mostly not numeric --
+  // used to throw and catch a SelError, stack trace included, per row.
+  tryDecimal() {
+    let v = this;
+    if (v.kind === NONE) {
+      try { v = this.scalarSource(null); } catch { return null; }
+    }
+    if (v.kind !== TEXT) return null;
+    if (v._decimal !== null) return v._decimal;
+    let d;
+    try { d = D.parse(v.scalar); } catch { return null; }
+    if (d === null) return null;
     v._decimal = d;
     return d;
   }
@@ -529,6 +636,44 @@ export class Value {
   // node asked — and is null for a call from host code, the same convention as
   // asText().
   clone(pos = null) { return this.cloneAt(1, pos); }
+
+  // A copy of this root for running a program that may assign to the names in
+  // `writable`: those entries are deep copies, every other entry is shared with
+  // this value. Sound for a program that only ever writes through those names
+  // (assignment is the one way a run changes a value), which is what a hybrid
+  // continuation gets, without copying an unrelated 200k-row table per run.
+  // Anything that is not a plain record root falls back to the full copy.
+  shallowRoot(writable) {
+    if (this.kind !== NONE || this._entries !== null || (this.isList && this.storage !== null)) return this.clone();
+    const out = [];
+    for (const [key, value] of this.entries()) out.push([key, writable.has(key) ? value.cloneAt(2, null) : value]);
+    return Value.fromEntriesOwned(out);
+  }
+
+  // The depth check of cloneAt without the copy, for a value that is already
+  // exclusively the caller's (a fresh `,` result): same error, same node, no
+  // allocation. Recursion is bounded by MAX_DEPTH because the check fails first.
+  checkDepthAt(depth, pos) {
+    if (depth > MAX_DEPTH) fail('E_DEPTH', 'value nested too deeply', pos);
+    const next = depth + 1;
+    // A childless value (almost every element of a wide list) is settled by the
+    // one comparison below; only a container is entered.
+    if (this.shape || (this.isList && this.storage !== null)) {
+      const items = this.storage;
+      for (let i = 0; i < items.length; i++) {
+        const v = items[i];
+        if (v.storage === null && v._entries === null && (v.children === null || v.children === undefined || v.children.size === 0)) {
+          if (next > MAX_DEPTH) fail('E_DEPTH', 'value nested too deeply', pos);
+        } else v.checkDepthAt(next, pos);
+      }
+      return;
+    }
+    if (this._entries !== null) {
+      for (const entry of this._entries) entry[1].checkDepthAt(next, pos);
+      return;
+    }
+    if (this.children) for (const v of this.children.values()) v.checkDepthAt(next, pos);
+  }
 
   cloneAt(depth, pos) {
     if (depth > MAX_DEPTH) fail('E_DEPTH', 'value nested too deeply', pos);
@@ -695,6 +840,16 @@ export class Value {
 // Structural hashing is only a prefilter: callers must still use eql() inside
 // the bucket because collisions are allowed.  It deliberately walks the flat
 // storage directly so DEDUPE does not serialize every row just to find a bucket.
+// The hash of the key a packed list's element i has ("1", "2", ...), so a packed list
+// hashes like its keyed twin without building the key text per element per call (JS-P28).
+const LIST_KEY_HASHES = [];
+function listKeyHash(i) {
+  if (i >= 65536) return stringHash(String(i + 1));
+  let h = LIST_KEY_HASHES[i];
+  if (h === undefined) h = LIST_KEY_HASHES[i] = stringHash(String(i + 1));
+  return h;
+}
+
 export function structuralHash(value, depth = 1) {
   // A value nested past the cap cannot be hashed any more than dumped (spec
   // §6.4): answering 0 let DEDUPE pass one it could not compare (review
@@ -705,7 +860,8 @@ export function structuralHash(value, depth = 1) {
   else if (value.kind === BOOL) h = mixHash(h, value.scalar ? 12345 : 67890);
   else if (value.kind === BIN) {
     h = mixHash(h, value.scalar.length);
-    for (const byte of value.scalar) h = mixHash(h, byte);
+    const bytes = value.scalar;
+    for (let i = 0; i < bytes.length; i++) h = mixHash(h, bytes[i]);
   }
   if (value.shape) {
     for (let i = 0; i < value.shape.keys.length; i++) {
@@ -714,7 +870,7 @@ export function structuralHash(value, depth = 1) {
     }
   } else if (value.isList && value.storage !== null) {
     for (let i = 0; i < value.storage.length; i++) {
-      h = mixHash(h, stringHash(String(i + 1)));
+      h = mixHash(h, listKeyHash(i));
       h = mixHash(h, structuralHash(value.storage[i], depth + 1));
     }
   } else {

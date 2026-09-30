@@ -34,6 +34,7 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <cstdio>
 #include <cstring>
 #include <deque>
@@ -459,7 +460,7 @@ int cmp_limbs(const std::vector<uint32_t>& la, const std::vector<uint32_t>& lb) 
   return 0;
 }
 
-std::vector<uint32_t> mul_limbs(const std::vector<uint32_t>& la, const std::vector<uint32_t>& lb) {
+std::vector<uint32_t> mul_limbs_school(const std::vector<uint32_t>& la, const std::vector<uint32_t>& lb) {
   if ((la.size() == 1 && la[0] == 0) || (lb.size() == 1 && lb[0] == 0)) return {0};
   if (la.size() == 1 && la[0] == 1) return lb;
   if (lb.size() == 1 && lb[0] == 1) return la;
@@ -525,7 +526,7 @@ std::vector<uint32_t> mul_limbs(const std::vector<uint32_t>& la, const std::vect
   return res;
 }
 
-std::vector<uint32_t> sqr_limbs(const std::vector<uint32_t>& la) {
+std::vector<uint32_t> sqr_limbs_school(const std::vector<uint32_t>& la) {
   if (la.empty() || (la.size() == 1 && la[0] == 0)) return {0};
   if (la.size() == 1 && la[0] == 1) return {1};
 
@@ -594,6 +595,94 @@ std::vector<uint32_t> sqr_limbs(const std::vector<uint32_t>& la) {
   return res;
 }
 
+// Karatsuba above this many limbs (measured: tools/perf/cpp/bench.py p2-*). Below it
+// the schoolbook loops above win; above it the O(n^1.58) recursion does. The result
+// is the exact integer product either way.
+constexpr size_t KARATSUBA_LIMBS = 48;
+
+std::vector<uint32_t> trim_limbs(std::vector<uint32_t> v) {
+  while (v.size() > 1 && v.back() == 0) v.pop_back();
+  if (v.empty()) v.push_back(0);
+  return v;
+}
+
+// dst += src << (off limbs), growing dst as needed.
+void limbs_add_into(std::vector<uint32_t>& dst, const std::vector<uint32_t>& src, size_t off) {
+  if (dst.size() < off + src.size() + 1) dst.resize(off + src.size() + 1, 0);
+  uint32_t carry = 0;
+  size_t i = 0;
+  for (; i < src.size(); ++i) {
+    uint32_t s = dst[off + i] + src[i] + carry;     // at most 2*(1e9-1)+1 < 2^32
+    if (s >= BASE_10E9) { s -= BASE_10E9; carry = 1; } else { carry = 0; }
+    dst[off + i] = s;
+  }
+  for (size_t k = off + i; carry; ++k) {
+    if (k >= dst.size()) dst.push_back(0);
+    uint32_t s = dst[k] + carry;
+    if (s >= BASE_10E9) { s -= BASE_10E9; carry = 1; } else { carry = 0; }
+    dst[k] = s;
+  }
+}
+
+// dst -= src in place; requires dst >= src as numbers.
+void limbs_sub_from(std::vector<uint32_t>& dst, const std::vector<uint32_t>& src) {
+  int64_t borrow = 0;
+  for (size_t i = 0; i < src.size(); ++i) {
+    int64_t t = static_cast<int64_t>(dst[i]) - src[i] - borrow;
+    if (t < 0) { t += BASE_10E9; borrow = 1; } else { borrow = 0; }
+    dst[i] = static_cast<uint32_t>(t);
+  }
+  for (size_t k = src.size(); borrow; ++k) {
+    if (dst[k] == 0) { dst[k] = BASE_10E9 - 1; } else { --dst[k]; borrow = 0; }
+  }
+}
+
+std::vector<uint32_t> mul_limbs_fast(const std::vector<uint32_t>& a, const std::vector<uint32_t>& b,
+                                     bool square) {
+  if (std::min(a.size(), b.size()) < KARATSUBA_LIMBS) {
+    return square ? sqr_limbs_school(a) : mul_limbs_school(a, b);
+  }
+  const std::vector<uint32_t>& big = a.size() >= b.size() ? a : b;
+  const std::vector<uint32_t>& small = a.size() >= b.size() ? b : a;
+  const size_t na = big.size(), nb = small.size();
+  if (na >= 2 * nb) {                         // unbalanced: multiply in chunks of the short side
+    std::vector<uint32_t> res(na + nb + 1, 0);
+    for (size_t off = 0; off < na; off += nb) {
+      std::vector<uint32_t> chunk(big.begin() + off, big.begin() + std::min(off + nb, na));
+      limbs_add_into(res, mul_limbs_fast(trim_limbs(std::move(chunk)), small, false), off);
+    }
+    return trim_limbs(std::move(res));
+  }
+  const size_t m = na / 2;                    // nb > m because nb > na / 2
+  std::vector<uint32_t> a0(big.begin(), big.begin() + m), a1(big.begin() + m, big.end());
+  std::vector<uint32_t> b0(small.begin(), small.begin() + m), b1(small.begin() + m, small.end());
+  a0 = trim_limbs(std::move(a0));
+  b0 = trim_limbs(std::move(b0));
+  std::vector<uint32_t> z0 = mul_limbs_fast(a0, b0, square);
+  std::vector<uint32_t> z2 = mul_limbs_fast(a1, b1, square);
+  std::vector<uint32_t> sa = add_limbs(a0, a1);
+  std::vector<uint32_t> z1 = square ? mul_limbs_fast(sa, sa, true)
+                                    : mul_limbs_fast(sa, add_limbs(b0, b1), false);
+  z1 = trim_limbs(std::move(z1));
+  limbs_sub_from(z1, z0);
+  limbs_sub_from(z1, z2);
+  std::vector<uint32_t> res = z0;
+  res.resize(na + nb + 1, 0);
+  limbs_add_into(res, z1, m);
+  limbs_add_into(res, z2, 2 * m);
+  return trim_limbs(std::move(res));
+}
+
+std::vector<uint32_t> mul_limbs(const std::vector<uint32_t>& la, const std::vector<uint32_t>& lb) {
+  if (std::min(la.size(), lb.size()) < KARATSUBA_LIMBS) return mul_limbs_school(la, lb);
+  return mul_limbs_fast(la, lb, false);
+}
+
+std::vector<uint32_t> sqr_limbs(const std::vector<uint32_t>& la) {
+  if (la.size() < KARATSUBA_LIMBS) return sqr_limbs_school(la);
+  return mul_limbs_fast(la, la, true);
+}
+
 void scale_up_limbs(std::vector<uint32_t>& limbs, long long diff) {
   if (diff <= 0 || (limbs.size() == 1 && limbs[0] == 0)) return;
   long long words = diff / 9;
@@ -613,15 +702,48 @@ void scale_up_limbs(std::vector<uint32_t>& limbs, long long diff) {
   }
 }
 
-std::string dec_digits_from_magnitude(__uint128_t magnitude) {
-  if (magnitude == 0) return "0";
-  char buf[42];
-  int pos = 42;
-  while (magnitude != 0) {
-    buf[--pos] = static_cast<char>('0' + (magnitude % 10));
-    magnitude /= 10;
+// Decimal digits of `m`, least significant first, into buf (at least 40 bytes);
+// returns how many. A 128-bit `% 10` is a library call, so the magnitude is cut
+// into 19-digit chunks by 128-bit division (one call per chunk) and each chunk
+// is finished in 64-bit arithmetic -- almost every mantissa fits in 64 bits and
+// never pays for the first step at all (CPP-P6).
+inline int u128_digits_rev(__uint128_t m, char* buf) {
+  int n = 0;
+  if (m == 0) {
+    buf[n++] = '0';
+    return n;
   }
-  return std::string(buf + pos, 42 - pos);
+  constexpr uint64_t E19 = 10000000000000000000ULL;
+  while (m > std::numeric_limits<uint64_t>::max()) {
+    uint64_t lo = static_cast<uint64_t>(m % E19);
+    m /= E19;
+    for (int i = 0; i < 19; ++i) { buf[n++] = static_cast<char>('0' + lo % 10); lo /= 10; }
+  }
+  uint64_t v = static_cast<uint64_t>(m);
+  while (v != 0) { buf[n++] = static_cast<char>('0' + v % 10); v /= 10; }
+  return n;
+}
+
+// Strips trailing decimal zeros from a mantissa while `scale` > 0, in 64-bit
+// arithmetic whenever the magnitude allows it.
+template <class T>
+inline void trim_trailing_zeros(T& m, long long& scale) {
+  if (m >= std::numeric_limits<int64_t>::min() && m <= std::numeric_limits<int64_t>::max()) {
+    int64_t v = static_cast<int64_t>(m);
+    while (scale > 0 && v != 0 && v % 10 == 0) { v /= 10; --scale; }
+    if (v == 0) scale = scale > 0 ? 0 : scale;   // callers reset a zero's scale themselves
+    m = static_cast<T>(v);
+    return;
+  }
+  while (scale > 0 && m % 10 == 0) { m /= 10; --scale; }
+}
+
+std::string dec_digits_from_magnitude(__uint128_t magnitude) {
+  char rev[42];
+  const int n = u128_digits_rev(magnitude, rev);
+  char buf[42];
+  for (int i = 0; i < n; ++i) buf[i] = rev[n - 1 - i];
+  return std::string(buf, static_cast<size_t>(n));
 }
 
 std::string add_abs(const std::string& a, const std::string& b) {
@@ -636,20 +758,74 @@ std::string add_abs(const std::string& a, const std::string& b) {
   return limbs_to_string(add_limbs(string_to_limbs(a), string_to_limbs(b)));
 }
 
-// Requires a >= b.
-std::string sub_abs(const std::string& a, const std::string& b) {
-  if (a == b) return "0";
-  if (b == "0") return a;
-  if (a.size() <= 18 && b.size() <= 18) {
-    __uint128_t va = 0, vb = 0;
-    for (char c : a) va = va * 10 + (c - '0');
-    for (char c : b) vb = vb * 10 + (c - '0');
-    return dec_digits_from_magnitude(va - vb);
+// Knuth algorithm D (TAOCP 4.3.1) on little-endian base-1e9 limbs. Requires
+// b.size() >= 2, b.back() != 0 and a >= b (so a.size() >= b.size()).
+void divmod_limbs(const std::vector<uint32_t>& a, const std::vector<uint32_t>& b,
+                  std::vector<uint32_t>& q, std::vector<uint32_t>& r) {
+  const uint64_t B = BASE_10E9;
+  const size_t n = b.size();
+  const uint64_t d = B / (static_cast<uint64_t>(b.back()) + 1);   // normalisation factor
+  std::vector<uint32_t> u(a.size() + 1), v(n);
+  uint64_t carry = 0;
+  for (size_t i = 0; i < a.size(); ++i) {
+    uint64_t cur = static_cast<uint64_t>(a[i]) * d + carry;
+    u[i] = static_cast<uint32_t>(cur % B);
+    carry = cur / B;
   }
-  return limbs_to_string(sub_limbs(string_to_limbs(a), string_to_limbs(b)));
+  u[a.size()] = static_cast<uint32_t>(carry);
+  carry = 0;
+  for (size_t i = 0; i < n; ++i) {
+    uint64_t cur = static_cast<uint64_t>(b[i]) * d + carry;
+    v[i] = static_cast<uint32_t>(cur % B);
+    carry = cur / B;
+  }
+  const size_t m = a.size() - n;
+  q.assign(m + 1, 0);
+  const uint64_t vt = v[n - 1], vs = v[n - 2];
+  for (size_t j = m + 1; j-- > 0;) {
+    uint64_t num = static_cast<uint64_t>(u[j + n]) * B + u[j + n - 1];
+    uint64_t qhat = num / vt, rhat = num % vt;
+    while (qhat >= B || qhat * vs > rhat * B + u[j + n - 2]) {
+      --qhat;
+      rhat += vt;
+      if (rhat >= B) break;
+    }
+    int64_t borrow = 0;
+    uint64_t c = 0;
+    for (size_t i = 0; i < n; ++i) {
+      uint64_t p = qhat * v[i] + c;
+      c = p / B;
+      int64_t t = static_cast<int64_t>(u[i + j]) - borrow - static_cast<int64_t>(p % B);
+      if (t < 0) { t += static_cast<int64_t>(B); borrow = 1; } else { borrow = 0; }
+      u[i + j] = static_cast<uint32_t>(t);
+    }
+    int64_t t = static_cast<int64_t>(u[j + n]) - borrow - static_cast<int64_t>(c);
+    if (t < 0) { t += static_cast<int64_t>(B); borrow = 1; } else { borrow = 0; }
+    u[j + n] = static_cast<uint32_t>(t);
+    if (borrow) {                       // qhat was one too large: add the divisor back
+      --qhat;
+      uint64_t carry2 = 0;
+      for (size_t i = 0; i < n; ++i) {
+        uint64_t sum = static_cast<uint64_t>(u[i + j]) + v[i] + carry2;
+        u[i + j] = static_cast<uint32_t>(sum % B);
+        carry2 = sum / B;
+      }
+      u[j + n] = static_cast<uint32_t>((static_cast<uint64_t>(u[j + n]) + carry2) % B);
+    }
+    q[j] = static_cast<uint32_t>(qhat);
+  }
+  r.assign(n, 0);
+  uint64_t rem = 0;
+  for (size_t i = n; i-- > 0;) {
+    uint64_t cur = rem * B + u[i];
+    r[i] = static_cast<uint32_t>(cur / d);
+    rem = cur % d;
+  }
+  while (q.size() > 1 && q.back() == 0) q.pop_back();
+  while (r.size() > 1 && r.back() == 0) r.pop_back();
 }
 
-// Schoolbook long division with power-of-10 and single-digit fast paths.
+// Long division: power-of-10 and single-limb fast paths, Knuth D beyond.
 bool divmod_abs(const std::string& a, const std::string& b, std::string& q, std::string& r) {
   if (b == "0") return false;
   if (cmp_abs(a, b) < 0) { q = "0"; r = a; return true; }
@@ -688,18 +864,17 @@ bool divmod_abs(const std::string& a, const std::string& b, std::string& q, std:
     r = std::to_string(rem);
     return true;
   }
-  std::string quo;
-  quo.reserve(a.size());
-  std::string rem = "0";
-  for (std::size_t i = 0; i < a.size(); i++) {
-    rem = strip(rem + a[i]);
-    int k = 0;
-    while (cmp_abs(rem, b) >= 0) { rem = sub_abs(rem, b); k++; }
-    quo.push_back(static_cast<char>('0' + k));
+  // Multi-limb divisor: Knuth's algorithm D on the base-1e9 limbs. Schoolbook
+  // digit-by-digit division allocated a string per step and was O(n*m*9); this is
+  // O(n*m/81) with no allocation in the loop. The quotient and remainder are the
+  // exact integer ones, so the result is byte-identical.
+  {
+    std::vector<uint32_t> ql, rl;
+    divmod_limbs(string_to_limbs(a), string_to_limbs(b), ql, rl);
+    q = limbs_to_string(ql);
+    r = limbs_to_string(rl);
+    return true;
   }
-  q = strip(quo);
-  r = rem;
-  return true;
 }
 
 std::string scale_up(const std::string& digits, long long k) {
@@ -916,15 +1091,7 @@ std::size_t dec_format_buf(const Dec& d, char* out) {
   if (d.small) {
     __int128_t m = d.mantissa < 0 ? -d.mantissa : d.mantissa;
     char digits[48];
-    int dlen = 0;
-    if (m == 0) {
-      digits[dlen++] = '0';
-    } else {
-      while (m > 0) {
-        digits[dlen++] = '0' + static_cast<char>(m % 10);
-        m /= 10;
-      }
-    }
+    const int dlen = u128_digits_rev(static_cast<__uint128_t>(m), digits);
     if (d.scale == 0) {
       for (int i = dlen - 1; i >= 0; --i) *p++ = digits[i];
       return static_cast<std::size_t>(p - out);
@@ -977,10 +1144,7 @@ Dec dec_trim_scale(const Dec& d) {
   if (d.small) {
     dec_mantissa_t m = d.mantissa;
     long long scale = d.scale;
-    while (scale > 0 && m % 10 == 0) {
-      m /= 10;
-      --scale;
-    }
+    trim_trailing_zeros(m, scale);
     return dec_from_mantissa(m, scale);
   }
   const std::string& digits = dec_get_digits(d);
@@ -1077,6 +1241,25 @@ Dec dec_add(const Dec& a, const Dec& b, Pos pos = {}) {
 
 Dec dec_sub(const Dec& a, const Dec& b, Pos pos = {}) { return dec_add(a, dec_negate(b), pos); }
 
+// Number of digits in the unscaled magnitude (at least 1).
+long long dec_ndigits(const Dec& d) {
+  if (d.small) {
+    __uint128_t m = d.mantissa < 0 ? static_cast<__uint128_t>(0) - static_cast<__uint128_t>(d.mantissa)
+                                   : static_cast<__uint128_t>(d.mantissa);
+    long long n = 1;
+    while (m >= 10) { m /= 10; ++n; }
+    return n;
+  }
+  const std::vector<uint32_t>& l = dec_get_limbs(d);
+  size_t top = l.size();
+  while (top > 1 && l[top - 1] == 0) --top;
+  long long n = static_cast<long long>(top - 1) * 9;
+  uint32_t v = l[top - 1];
+  long long t = 1;
+  while (v >= 10) { v /= 10; ++t; }
+  return n + t;
+}
+
 Dec dec_mul(const Dec& a, const Dec& b, Pos pos = {}) {
   if (a.small && b.small && a.scale <= MAX_FRAC_DIGITS - b.scale) {
     const long long prod_scale = static_cast<long long>(a.scale) + b.scale;
@@ -1085,6 +1268,20 @@ Dec dec_mul(const Dec& a, const Dec& b, Pos pos = {}) {
       if (!__builtin_mul_overflow(a.mantissa, b.mantissa, &prod)) {
         return dec_guard(dec_from_mantissa(prod, prod_scale), pos);
       }
+    }
+  }
+  // A product that cannot fit is refused before it is computed: the result has at
+  // least da + db - 1 digits and exactly sa + sb fractional ones, so the cap can
+  // be decided from the operand sizes (the same E_RANGE the guard raises, at the
+  // same position, without spending minutes multiplying a doomed pair).
+  if (!dec_is_zero(a) && !dec_is_zero(b)) {
+    const long long prod_scale = static_cast<long long>(a.scale) + b.scale;
+    const long long min_digits = dec_ndigits(a) + dec_ndigits(b) - 1;
+    if (prod_scale > MAX_FRAC_DIGITS) {
+      fail("E_RANGE", "number has more than " + std::to_string(MAX_FRAC_DIGITS) + " fractional digits", pos);
+    }
+    if (min_digits - prod_scale > MAX_INT_DIGITS) {
+      fail("E_RANGE", "number has more than " + std::to_string(MAX_INT_DIGITS) + " integer digits", pos);
     }
   }
   const std::vector<uint32_t>& la = dec_get_limbs(a);
@@ -1144,10 +1341,7 @@ Dec dec_div(const Dec& a, const Dec& b, Pos pos = {}) {
         const bool neg = a.neg != b.neg;
         if (r == 0) {
           long long scale = DIV_SCALE;
-          while (scale > 0 && q % 10 == 0) {
-            q /= 10;
-            scale--;
-          }
+          trim_trailing_zeros(q, scale);
           if (q == 0) scale = 0;
           __int128_t signed_q = neg ? -q : q;
           return dec_guard(dec_from_mantissa(signed_q, scale), pos);
@@ -1294,6 +1488,21 @@ bool dec_is_integer(const Dec& d) {
 // n must be a non-negative integer; the result scale is scale(x) * n, which
 // falls out of repeated multiplication.
 Dec dec_power(const Dec& a, long long n, Pos pos = {}) {
+  // Same early refusal as dec_mul: a^n has exactly n*sa fractional digits and at
+  // least n*(da-1)+1 digits, so a result past the caps is known before any
+  // squaring (POWER(9999999999999999999999999999, 100000) spent 18 s finding out).
+  if (n > 0 && !dec_is_zero(a)) {
+    const long long da = dec_ndigits(a);
+    const long long sa = a.scale;
+    const __int128_t frac = static_cast<__int128_t>(sa) * n;
+    if (frac > MAX_FRAC_DIGITS) {
+      fail("E_RANGE", "number has more than " + std::to_string(MAX_FRAC_DIGITS) + " fractional digits", pos);
+    }
+    const __int128_t min_digits = static_cast<__int128_t>(da - 1) * n + 1;
+    if (min_digits - frac > MAX_INT_DIGITS) {
+      fail("E_RANGE", "number has more than " + std::to_string(MAX_INT_DIGITS) + " integer digits", pos);
+    }
+  }
   Dec result = dec_from_mantissa(1, 0);
   Dec base = a;
   long long e = n;
@@ -1454,7 +1663,73 @@ struct Internals {
   static std::vector<Value>& storage(Value& v) {
     return v.p_->mutable_coll().storage;
   }
+  // True when nothing outside this tree refers to any node of it: every Impl
+  // reachable from `v` has exactly one owner. Mirrors clone_at's shape of the
+  // tree (storage for shaped records and lists, children otherwise) and its depth
+  // accounting, so a tree deeper than the cap reports false and is cloned -- and
+  // refused -- as before.
+  static bool unique_tree(const Value& v, int depth) {
+    const Value::Impl* p = v.p_;
+    if (!p) return true;
+    if (p->ref_count != 1 || depth > MAX_DEPTH) return false;
+    return unique_children(p, depth);
+  }
+  static bool unique_children(const Value::Impl* p, int depth) {
+    if (!p->collection) return true;
+    const Value::Collection& c = *p->collection;
+    if (c.shape || (p->is_list && c.children.empty())) {
+      for (const Value& x : c.storage) if (!unique_tree(x, depth + 1)) return false;
+    } else {
+      for (const Value::Entry& e : c.children) if (!unique_tree(e.second, depth + 1)) return false;
+    }
+    return true;
+  }
+  // Whether element `index` of `coll` can be KEPT by an aggregate that would
+  // otherwise copy it (spec §3.4) without anyone being able to tell: `coll` is a
+  // temporary -- this aggregate's own argument and nothing else holds it, which
+  // is what a pipeline hands from one stage to the next -- and the element is held
+  // by nothing but that temporary's slots, the aggregate's snapshot and the
+  // `extra` handles its walk has on it (the binder's frame), with one owner for
+  // every node beneath it. Then the copy would be an independent twin of a value
+  // no one can reach any more. Anything else -- a variable's list, an element an
+  // earlier step aliased, a result that kept the element as its key -- says no and
+  // is copied as before.
+  static bool exclusively_held(const Value& coll, std::size_t index, const Value& item,
+                               std::uint32_t extra) {
+    const Value::Impl* c = coll.p_;
+    const Value::Impl* e = item.p_;
+    if (!c || !e || c->ref_count != 1 || !c->collection) return false;
+    const Value::Collection& col = *c->collection;
+    std::uint32_t held = 1 + extra;                      // the snapshot's handle, the walk's
+    if (index < col.storage.size() && col.storage[index].p_ == e) ++held;
+    if (index < col.children.size() && col.children[index].second.p_ == e) ++held;
+    if (e->ref_count != held) return false;
+    return unique_children(e, 1);
+  }
 };
+
+namespace {
+// What a collecting operation keeps (spec §3.4: `=`, `,`, LIST, RECORD and the
+// aggregates copy what they collect). A value that is a fresh temporary all the
+// way down -- nothing else holds any part of it -- is already an independent
+// copy, so it is kept as it is instead of being copied again (CPP-P7). Anything
+// shared with a variable, another collection or the caller is still cloned, and
+// so is a tree deeper than the cap, which is how E_DEPTH is still raised.
+Value adopt_or_clone(Value&& v, int levels, Pos pos) {
+  if (Internals::unique_tree(v, 1 + levels)) return std::move(v);
+  return v.clone_below(levels, pos);
+}
+
+// What an aggregate that collects ITS ELEMENTS (FILTER, SORT, BUCKET rows) keeps of
+// element `index` of `coll`: the element itself when Internals::exclusively_held
+// says the copy would be pointless (the pipeline-temporary case), a copy otherwise.
+// `extra` is the number of handles the caller's own walk holds on `item` (the
+// binder frame: one).
+Value keep_element(const Value& coll, std::size_t index, const Value& item, std::uint32_t extra) {
+  if (Internals::exclusively_held(coll, index, item, extra)) return item;
+  return item.clone();
+}
+}  // namespace
 
 namespace {
 // Containers have one allocation for their header and payload. Scalars retain
@@ -1570,6 +1845,8 @@ Value Value::clone_at(int depth, Pos pos) const {
   out.p_->boolean = p_->boolean;
   out.p_->is_list = p_->is_list;
   if (p_->decimal) out.p_->decimal = std::make_unique<Dec>(*p_->decimal);
+  // A scalar with no payload of its own -- nearly every node of a row -- is done.
+  if (!p_->collection) return out;
   if (!p_->coll().shape && (!p_->is_list || p_->coll().storage.empty()) && p_->coll().children.empty()) {
     return out;
   }
@@ -2885,8 +3162,42 @@ const std::set<std::string>& compare_words() {
   return words;
 }
 
-bool is_compare_op(const Token& t) {
-  return t.type == Tok::Op && compare_ops().count(t.value) > 0;
+// A binary operator as a number, resolved once per node (Node::opc) instead of by
+// a chain of string comparisons on every evaluation (CPP-P5). The comparison codes
+// are contiguous and in the order compare_result() names them, so the kind of a
+// comparison is `code - BO_NUM_EQ` / `code - BO_TXT_EQ`.
+enum BinOp : unsigned char {
+  BO_NONE = 0,
+  BO_AND, BO_OR, BO_COALESCE, BO_VACUOUS,
+  BO_ADD, BO_SUB, BO_MUL, BO_DIV, BO_MOD, BO_CONCAT,
+  BO_EQL, BO_IN, BO_XOR, BO_BAND, BO_BOR, BO_BXOR,
+  BO_NUM_EQ, BO_NUM_NE, BO_NUM_LT, BO_NUM_LE, BO_NUM_GT, BO_NUM_GE,
+  BO_TXT_EQ, BO_TXT_NE, BO_TXT_LT, BO_TXT_LE, BO_TXT_GT, BO_TXT_GE,
+};
+
+unsigned char bin_opcode(const std::string& op) {
+  static const std::unordered_map<std::string, unsigned char> table = {
+      {"AND", BO_AND}, {"OR", BO_OR}, {"??", BO_COALESCE}, {"???", BO_VACUOUS},
+      {"+", BO_ADD}, {"-", BO_SUB}, {"*", BO_MUL}, {"/", BO_DIV}, {"%", BO_MOD}, {"&", BO_CONCAT},
+      {"EQL", BO_EQL}, {"IN", BO_IN}, {"XOR", BO_XOR}, {"BAND", BO_BAND}, {"BOR", BO_BOR}, {"BXOR", BO_BXOR},
+      {"==", BO_NUM_EQ}, {"!=", BO_NUM_NE}, {"<", BO_NUM_LT}, {"<=", BO_NUM_LE}, {">", BO_NUM_GT}, {">=", BO_NUM_GE},
+      {"$==", BO_TXT_EQ}, {"$!=", BO_TXT_NE}, {"$<", BO_TXT_LT}, {"$<=", BO_TXT_LE}, {"$>", BO_TXT_GT}, {"$>=", BO_TXT_GE},
+  };
+  const auto it = table.find(op);
+  return it == table.end() ? static_cast<unsigned char>(BO_NONE) : it->second;
+}
+
+// Whether the comparison `kind` (0 == 1 != 2 < 3 <= 4 > 5 >=) holds for the
+// three-way result `c`: compare_result() without the string.
+bool cmp_holds(int kind, int c) {
+  switch (kind) {
+    case 0: return c == 0;
+    case 1: return c != 0;
+    case 2: return c < 0;
+    case 3: return c <= 0;
+    case 4: return c > 0;
+    default: return c >= 0;
+  }
 }
 
 // spec/SPEC.md §5, as a table. Higher binds tighter. The gaps are the levels
@@ -3092,6 +3403,7 @@ class Parser {
         const Leave leave_guard{this};
         auto n = make(NT::Bin, t.pos);
         n->s = t.value;
+        n->opc = bin_opcode(n->s);
         n->l = left;
         n->r = parse_term(e->bp);
         left = n;
@@ -3112,6 +3424,7 @@ class Parser {
         }
         auto n = make(NT::Bin, t.pos);
         n->s = t.value;
+        n->opc = bin_opcode(n->s);
         n->l = left;
         n->r = right;
         left = n;
@@ -3120,6 +3433,7 @@ class Parser {
 
       auto n = make(NT::Bin, t.pos);
       n->s = t.value;
+      n->opc = bin_opcode(n->s);
       n->l = left;
       n->r = parse_term(e->bp + 1);
       left = n;
@@ -3292,7 +3606,17 @@ class Parser {
       if (at_op(")")) fail("E_SYNTAX", "empty parentheses", t.pos);
       NodePtr inner = parse_sequence();
       expect_op(")");
-      // Marked so that F((1,2)) passes one list rather than two arguments.
+      // Marked so that F((1,2)) passes one list rather than two arguments. The
+      // node the sequence just returned has no other owner in the ordinary case,
+      // so it is marked in place: copying it copied the whole `items` vector, once
+      // per parenthesis -- ninety of them around a wide list made a parse seven
+      // times slower. Node documents the const_cast (created non-const by
+      // make_shared, only held as const); a node that somebody else holds is still
+      // copied.
+      if (inner.use_count() == 1) {
+        const_cast<Node&>(*inner).grouped = true;
+        return inner;
+      }
       auto copy = std::make_shared<Node>(*inner);
       copy->grouped = true;
       return copy;
@@ -3485,6 +3809,13 @@ class Args {
   const std::string& name() const { return name_; }
   Context& ctx() { return ctx_; }
 
+  // The argument's value, moved out: for built-ins that read each argument once
+  // and keep it (LIST, RECORD), so a fresh temporary can be adopted without a copy.
+  Value take_val(int i) {
+    val(i);
+    return std::move(*vals_[i]);   // stays engaged (moved-from): a later val(i) must not re-evaluate
+  }
+
   const Value& val(int i) {
     if (!vals_[i].has_value()) vals_[i] = eval_node(*nodes_[i], ctx_);
     return *vals_[i];
@@ -3558,22 +3889,6 @@ class Args {
 };
 
 namespace {
-
-bool compare_result(const std::string& op, int c, Pos pos) {
-  if (op == "==") return c == 0;
-  if (op == "!=") return c != 0;
-  if (op == "<") return c < 0;
-  if (op == "<=") return c <= 0;
-  if (op == ">") return c > 0;
-  if (op == ">=") return c >= 0;
-  // Not a fallthrough. `return c >= 0` stood here and answered for every
-  // operator it did not name: an operator added to the lexer and to
-  // compare_ops() but forgotten here evaluated as ">=" and reported nothing,
-  // which is the hidden assumption this project would rather fail than carry.
-  // Unreachable today -- the parser only builds these six -- and that is the
-  // point of saying so out loud.
-  fail("E_SYNTAX", "unknown comparison operator " + op, pos);
-}
 
 // Code points in a UTF-8 string that is already known to be valid.
 std::size_t cp_count(const std::string& s) {
@@ -3662,7 +3977,7 @@ Value eval_list(const Node& node, Context& ctx) {
       // five places anything in this file clones — js/src/eval.mjs:163,165.
       for (const auto& child : v.entries()) out.push_back(child.second.clone_below(1, node.pos));
     } else {
-      out.push_back(v.clone_below(1, node.pos));
+      out.push_back(adopt_or_clone(std::move(v), 1, node.pos));
     }
   }
   return Value::list(std::move(out));
@@ -3670,6 +3985,12 @@ Value eval_list(const Node& node, Context& ctx) {
 
 // Numeric coercion at an arbitrary position, used by the operators. Built-ins go
 // through Args::dec instead, which reports against the argument's own position.
+// The same decimal as as_dec, without the copy: a view of the cache on the Value
+// the number lives in (filled here on first use). Valid while `v` is. A Dec owns
+// a digit string and a limb vector, so a comparison loop that copied both sides
+// on every call -- a sort does n log n of them -- spent a third of its time there.
+const Dec& as_dec_ref(const Value& v, Pos pos);
+
 Dec as_dec(const Value& v, Pos pos) {
   const Value& src = v.scalar_source(pos);
   if (src.has_dec()) {
@@ -3687,6 +4008,22 @@ Dec as_dec(const Value& v, Pos pos) {
   return d;
 }
 
+const Dec& as_dec_ref(const Value& v, Pos pos) {
+  const Value& src = v.scalar_source(pos);
+  if (!src.has_dec()) {
+    if (src.kind() != Kind::Text) {
+      fail("E_NOT_NUM",
+           std::string("expected a number, got ") +
+               (src.kind() == Kind::Bin ? "bin" : src.kind() == Kind::Bool ? "bool" : "none"),
+           pos);
+    }
+    Dec d;
+    if (!dec_parse(src.scalar(), d, pos)) fail("E_NOT_NUM", "not a number: \"" + src.scalar() + "\"", pos);
+    src.set_dec(std::move(d));
+  }
+  return src.dec_ref();
+}
+
 Value eval_unary(const Node& node, Context& ctx) {
   const Value v = eval_node(*node.l, ctx);
   if (node.s == "NOT") return Value::boolean(!v.as_bool(node.l->pos));
@@ -3696,21 +4033,47 @@ Value eval_unary(const Node& node, Context& ctx) {
 
 Value eval_binary(const Node& node, Context& ctx) {
   const std::string& op = node.s;
+  const unsigned char opc = node.opc ? node.opc : bin_opcode(op);
 
   // Short-circuit before either side is touched (§5.5).
-  if (op == "AND" || op == "OR") {
+  if (opc == BO_AND || opc == BO_OR) {
     const bool left = eval_node(*node.l, ctx).as_bool(node.l->pos);
-    if (op == "AND" && !left) return Value::boolean(false);
-    if (op == "OR" && left) return Value::boolean(true);
+    if (opc == BO_AND && !left) return Value::boolean(false);
+    if (opc == BO_OR && left) return Value::boolean(true);
     return Value::boolean(eval_node(*node.r, ctx).as_bool(node.r->pos));
   }
 
   // ?? falls back on NULL, ??? on any vacuous value; both on a missing key or
   // name.
-  if (op == "??" || op == "???") {
+  if (opc == BO_COALESCE || opc == BO_VACUOUS) {
+    // A left operand that is a plain name or a chain of literal-key indexes over
+    // one is probed without evaluating it: a miss there is the ordinary case for
+    // `??` and used to cost a C++ exception (about 20 us) each. The probe finds
+    // exactly what eval_node would (the same lookup, the same get), treats a
+    // miss exactly as the two codes the catch below swallows, and is skipped when
+    // the depth budget could run out inside the chain, so E_DEPTH is still the
+    // evaluator's to raise.
+    {
+      int links = 0;
+      const Node* base = node.l.get();
+      while (base->t == NT::Index && base->r->t == NT::Text) { ++links; base = base->l.get(); }
+      if (base->t == NT::Var && ctx.depth + links + 2 <= MAX_DEPTH) {
+        const Value* cur = ctx.lookup(base->s);
+        if (cur) {
+          // Walk the chain outermost-last: collect the keys bottom-up.
+          std::vector<const Node*> chain;
+          for (const Node* n = node.l.get(); n->t == NT::Index; n = n->l.get()) chain.push_back(n);
+          for (auto it = chain.rbegin(); cur && it != chain.rend(); ++it) cur = cur->get((*it)->r->s);
+        }
+        if (cur) {
+          if (!(opc == BO_COALESCE ? cur->is_null() : cur->is_vacuous())) return *cur;
+        }
+        return eval_node(*node.r, ctx);
+      }
+    }
     try {
       const Value l = eval_node(*node.l, ctx);
-      if (!(op == "??" ? l.is_null() : l.is_vacuous())) return l;
+      if (!(opc == BO_COALESCE ? l.is_null() : l.is_vacuous())) return l;
     } catch (const SelError& e) {
       if (e.code() != "E_NO_KEY" && e.code() != "E_UNDEF_VAR") throw;
     }
@@ -3727,41 +4090,40 @@ Value eval_binary(const Node& node, Context& ctx) {
   // requires strictly left to right (§6.2), which is observable: `TRUE $== FALSE`
   // must report the *left* operand's position. The differential fuzzer found
   // this; do not collapse these back into one expression.
-  if (op == "+" || op == "-" || op == "*" || op == "/" || op == "%") {
-    const Dec a = as_dec(l, lp);
-    const Dec b = as_dec(r, rp);
-    if (op == "+") return make_num(dec_add(a, b, node.pos));
-    if (op == "-") return make_num(dec_sub(a, b, node.pos));
-    if (op == "*") return make_num(dec_mul(a, b, node.pos));
-    if (op == "/") return make_num(dec_div(a, b, node.pos));
-    return make_num(dec_mod(a, b, node.pos));
-  }
-
-  if (op == "&") return concat(l, r, lp, rp, node.pos);
-
-  if (op == "EQL") return Value::boolean(l.eql(r, node.pos));
-  if (op == "IN") return Value::boolean(is_in(l, r, node.pos));
-  if (op == "XOR") {
-    const bool a = l.as_bool(lp);
-    const bool b = r.as_bool(rp);
-    return Value::boolean(a != b);
-  }
-
-  if (op == "BAND" || op == "BOR" || op == "BXOR") {
-    const std::string a = l.as_bytes(lp);
-    const std::string b = r.as_bytes(rp);
-    return bitwise(op, a, b, node.pos);
-  }
-
-  if (!op.empty() && op[0] == '$') {
-    const std::string a = l.as_bytes(lp);
-    const std::string b = r.as_bytes(rp);
-    return Value::boolean(compare_result(op.substr(1), bytes_compare(a, b), node.pos));
-  }
-  if (is_compare_op(Token{Tok::Op, op, {}})) {
-    const Dec a = as_dec(l, lp);
-    const Dec b = as_dec(r, rp);
-    return Value::boolean(compare_result(op, dec_cmp(a, b), node.pos));
+  switch (opc) {
+    case BO_ADD: case BO_SUB: case BO_MUL: case BO_DIV: case BO_MOD: {
+      const Dec a = as_dec(l, lp);
+      const Dec b = as_dec(r, rp);
+      if (opc == BO_ADD) return make_num(dec_add(a, b, node.pos));
+      if (opc == BO_SUB) return make_num(dec_sub(a, b, node.pos));
+      if (opc == BO_MUL) return make_num(dec_mul(a, b, node.pos));
+      if (opc == BO_DIV) return make_num(dec_div(a, b, node.pos));
+      return make_num(dec_mod(a, b, node.pos));
+    }
+    case BO_CONCAT: return concat(l, r, lp, rp, node.pos);
+    case BO_EQL: return Value::boolean(l.eql(r, node.pos));
+    case BO_IN: return Value::boolean(is_in(l, r, node.pos));
+    case BO_XOR: {
+      const bool a = l.as_bool(lp);
+      const bool b = r.as_bool(rp);
+      return Value::boolean(a != b);
+    }
+    case BO_BAND: case BO_BOR: case BO_BXOR: {
+      const std::string a = l.as_bytes(lp);
+      const std::string b = r.as_bytes(rp);
+      return bitwise(op, a, b, node.pos);
+    }
+    case BO_TXT_EQ: case BO_TXT_NE: case BO_TXT_LT: case BO_TXT_LE: case BO_TXT_GT: case BO_TXT_GE: {
+      const std::string a = l.as_bytes(lp);
+      const std::string b = r.as_bytes(rp);
+      return Value::boolean(cmp_holds(opc - BO_TXT_EQ, bytes_compare(a, b)));
+    }
+    case BO_NUM_EQ: case BO_NUM_NE: case BO_NUM_LT: case BO_NUM_LE: case BO_NUM_GT: case BO_NUM_GE: {
+      const Dec a = as_dec(l, lp);
+      const Dec b = as_dec(r, rp);
+      return Value::boolean(cmp_holds(opc - BO_NUM_EQ, dec_cmp(a, b)));
+    }
+    default: break;
   }
 
   fail("E_SYNTAX", "unknown operator " + op, node.pos);
@@ -3903,7 +4265,7 @@ Value eval_assign(const Node& node, Context& ctx) {
     // The depth cap counts the path to the target as well as the value (§6.4):
     // `path.size() - 1` levels of index sit above where it lands, and the error is
     // the target's, not the assignment's.
-    value = eval_node(*node.r, ctx).clone_below(static_cast<int>(path.size()) - 1, node.l->pos);
+    value = adopt_or_clone(eval_node(*node.r, ctx), static_cast<int>(path.size()) - 1, node.l->pos);
   } else {
     const Value* current = walk_create(ctx, path, path.size() - 1)->get(key);
     if (!current) fail("E_UNDEF_VAR", node.s + " needs an existing target", node.l->pos);
@@ -4189,28 +4551,6 @@ namespace {
 // ============================================================================
 
 CodePoints cps_of(const std::string& s) { return decode_utf8(s); }
-
-// 0-based code point index of `needle` in `hay`, or -1.
-long long index_of_cp(const CodePoints& hay, const CodePoints& needle, long long from) {
-  const long long n = static_cast<long long>(needle.size());
-  // `from` comes from a user-supplied count and can be enormous; returning
-  // early keeps `i + n` below the overflow that UBSan flags.
-  if (from < 0 || from > static_cast<long long>(hay.size())) return -1;
-  for (long long i = from; i + n <= static_cast<long long>(hay.size()); i++) {
-    bool ok = true;
-    for (long long j = 0; j < n; j++) {
-      if (hay[i + j] != needle[j]) { ok = false; break; }
-    }
-    if (ok) return i;
-  }
-  return -1;
-}
-
-std::string slice_cp(const CodePoints& c, long long from, long long to) {
-  from = std::max(0LL, std::min(from, static_cast<long long>(c.size())));
-  to = std::max(from, std::min(to, static_cast<long long>(c.size())));
-  return encode_utf8(std::span<const char32_t>(c).subspan(from, to - from));
-}
 
 // --- control. The whole of SEL's control flow: lazy, so only the taken branch
 // is evaluated — exactly the property the AST calling convention exists for.
@@ -4788,7 +5128,15 @@ bool node_contains_var(const Node& root, std::string_view wanted) {
     const Node* node = todo.back();
     todo.pop_back();
     if (!node) continue;
-    if (node->t == NT::Var && upper_name(node->s) == upper_wanted) return true;
+    if (node->t == NT::Var && node->s.size() == upper_wanted.size()) {
+      // Equal without spelling the name in capitals first: this runs for every
+      // variable of every body, on every aggregate call, and the copy was the cost.
+      bool same = true;
+      for (std::size_t i = 0; i < node->s.size(); ++i) {
+        if (ascii_up(node->s[i]) != upper_wanted[i]) { same = false; break; }
+      }
+      if (same) return true;
+    }
     if (node->l) todo.push_back(node->l.get());
     if (node->r) todo.push_back(node->r.get());
     for (const NodePtr& item : node->items) if (item) todo.push_back(item.get());
@@ -5749,7 +6097,7 @@ void register_structure() {
                 std::vector<Value> out;
                 out.reserve(a.count());
                 for (int i = 0; i < a.count(); i++) {
-                  out.push_back(a.val(i).clone_below(1, a.pos()));
+                  out.push_back(adopt_or_clone(a.take_val(i), 1, a.pos()));
                 }
                 return Value::list(std::move(out));
               }});
@@ -5764,7 +6112,7 @@ void register_structure() {
                   // unspecified, and the copy below can raise E_DEPTH for an over-deep
                   // host value, which must not beat the key's own E_NOT_TEXT (CPP-C15).
                   const std::string key = a.text(i);
-                  rec.set(key, a.val(i + 1).clone_below(1, a.pos()));
+                  rec.set(key, adopt_or_clone(a.take_val(i + 1), 1, a.pos()));
                 }
                 if (a.record_shape() && a.record_shape()->keys == rec.keys()) {
                   std::vector<Value> values;
@@ -6021,7 +6369,7 @@ int compare_values(const Value& av_in, const Value& bv_in) {
       const int bv = pb->boolean_scalar() ? 1 : 0;
       return (av > bv) - (av < bv);
     }
-    case 2: return dec_cmp(as_dec(*pa, Pos{}), as_dec(*pb, Pos{}));
+    case 2: return dec_cmp(as_dec_ref(*pa, Pos{}), as_dec_ref(*pb, Pos{}));
     case 3:
     case 4: {
       const std::string& as = pa->as_bytes();
@@ -6057,7 +6405,7 @@ Value do_sort(Args& a, Context& ctx, std::optional<std::string> forced_dir) {
     const Snapshot snap = take_snapshot(val, false);
     for (std::size_t i = 0; i < source_size; i++) {
       const Value& item = snap.items[i];
-      Value detached = item.clone();
+      Value detached = keep_element(val, i, item, 0);
       // The comparator only reads the key. Keep one detached tree and give the
       // output item and comparison key handles to that same immutable snapshot;
       // the old code recursively cloned the item twice.
@@ -6123,7 +6471,7 @@ Value do_sort(Args& a, Context& ctx, std::optional<std::string> forced_dir) {
           ctx.frames.back()[1].second = make_text(snap.keys[i]);
         }
         Value eval_key = a.eval(*body);
-        indexed.push_back({item.clone(), std::move(eval_key), i});   // collected: copied (§3.4)
+        indexed.push_back({keep_element(val, i, item, 1), std::move(eval_key), i});   // collected: copied (§3.4), unless nothing could tell
       }
     } catch (...) {
       ctx.frames.pop_back();
@@ -6196,9 +6544,10 @@ Value do_top(Args& a, Context& ctx, std::optional<std::string> forced_dir) {
   }
   if (nothing_to_do) return Value::list({});
 
-  const auto compare = [&direction](const TopEntry& lhs, const TopEntry& rhs) {
+  const bool desc = direction == "DESC";
+  const auto compare = [desc](const TopEntry& lhs, const TopEntry& rhs) {
     int c = compare_values(lhs.key, rhs.key);
-    if (direction == "DESC") c = -c;
+    if (desc) c = -c;
     if (c != 0) return c < 0;
     return lhs.idx < rhs.idx;
   };
@@ -6233,6 +6582,11 @@ Value do_top(Args& a, Context& ctx, std::optional<std::string> forced_dir) {
   };
 
   const bool needs_k = body && node_contains_var(*body, "_K");
+  // k >= half the source: nearly every element is admitted (heap.size() < k holds
+  // until the last kept one, and with k == the source size always), so the order of
+  // the output is just the `compare` order of the first k -- a sort and a cut. The
+  // `compare` ties on the source index, so the result is identical either way.
+  const bool sort_all = k == source_size || k * 2 >= source_size;
   if (body) {
     std::vector<std::pair<std::string, Value>> frame;
     frame.reserve(needs_k ? 2 : 1);
@@ -6240,6 +6594,7 @@ Value do_top(Args& a, Context& ctx, std::optional<std::string> forced_dir) {
     if (needs_k) frame.emplace_back("_K", Value::none());
     ctx.frames.push_back(std::move(frame));
   }
+  if (sort_all) heap.reserve(source_size);
 
   std::size_t index = 0;
   const Snapshot snap = take_snapshot(value, needs_k);
@@ -6261,11 +6616,18 @@ Value do_top(Args& a, Context& ctx, std::optional<std::string> forced_dir) {
       // What TOP keeps it collects, so it keeps a copy (§3.4) -- taken here, when
       // the candidate is admitted, not at the end: a later body may assign into
       // the source. Without a body the key is the item, and reads the copy.
-      auto detach = [&body](TopEntry& c) {
-        c.item = c.item.clone();
+      // The candidate holds the item and, bodyless, the key; with a body the
+      // binder's frame does: two handles either way beside the snapshot's.
+      auto detach = [&body, &value, &snap](TopEntry& c) {
+        c.item = keep_element(value, c.idx, snap.items[c.idx], 2);
         if (!body) c.key = c.item;
       };
-      if (heap.size() < k) {
+      if (sort_all) {
+        // A big k keeps most of the source, and a heap then costs more compares than
+        // the full sort it stands in for: collect everything, sort once below, cut.
+        detach(candidate);
+        heap.push_back(std::move(candidate));
+      } else if (heap.size() < k) {
         detach(candidate);
         heap.push_back(std::move(candidate));
         sift_up(heap.size() - 1);
@@ -6282,6 +6644,7 @@ Value do_top(Args& a, Context& ctx, std::optional<std::string> forced_dir) {
   }
   if (body) ctx.frames.pop_back();
   std::stable_sort(heap.begin(), heap.end(), compare);
+  if (heap.size() > k) heap.erase(heap.begin() + static_cast<std::ptrdiff_t>(k), heap.end());
   std::vector<Value> out;
   out.reserve(heap.size());
   for (TopEntry& entry : heap) out.push_back(std::move(entry.item));
@@ -6377,10 +6740,10 @@ Value do_bucket(Args& a, Context& ctx) {
       }
 
       if (found >= 0) {
-        groups[found].rows.push_back(item.clone());   // collected: copied (§3.4)
+        groups[found].rows.push_back(keep_element(val, i, item, 1));   // collected: copied (§3.4), unless nothing could tell
       } else {
         if (!agg_node) bare_groups.emplace(key_str, groups.size());
-        groups.push_back(GroupEntry{std::move(eval_key), std::move(key_str), {item.clone()}});
+        groups.push_back(GroupEntry{std::move(eval_key), std::move(key_str), {keep_element(val, i, item, 1)}});
         if (agg_node) group_buckets[hash].push_back(groups.size() - 1);
       }
     }
@@ -6391,11 +6754,14 @@ Value do_bucket(Args& a, Context& ctx) {
   ctx.frames.pop_back();
 
   if (!agg_node) {
-    Value out = Value::none();
-    for (auto& g : groups) {
-      out.set(g.key_str, Value::list(std::move(g.rows)));
-    }
-    return out;
+    // One entry per key text, each key new by construction (`bare_groups` saw to
+    // that): the record is built in one go. Value::set per group looked the key up
+    // again and kept a hash index of it in step, for a record nothing has read yet
+    // -- the index is built on the first lookup.
+    std::vector<Value::Entry> entries;
+    entries.reserve(groups.size());
+    for (auto& g : groups) entries.emplace_back(std::move(g.key_str), Value::list(std::move(g.rows)));
+    return Internals::with_children(Kind::None, std::move(entries));
   }
 
   std::vector<Value> out;
@@ -6443,11 +6809,13 @@ void register_aggregates() {
 
   define(Spec{"MAP", 2, 3, true, true, nullptr, [](Args& a, Context& ctx) -> Value {
                 std::vector<Value> out;
-                walk(a, ctx, [&out](const Value& r, std::size_t, const Value&,
+                walk(a, ctx, [&out](Value&& r, std::size_t, const Value&,
                                     const Node&) -> std::optional<Value> {
                   // Collected, so copied (§3.4): a body that returns `_` hands
                   // back the source's own element, which the result must not share.
-                  out.push_back(r.clone());
+                  // A fresh temporary (RECORD(...), an arithmetic result) is already
+                  // its own copy and is kept as it is.
+                  out.push_back(adopt_or_clone(std::move(r), 0, Pos{}));
                   return std::nullopt;
                 });
                 return Value::list(std::move(out));
@@ -6526,16 +6894,33 @@ void register_aggregates() {
                     }
                   }
                 }
-                std::vector<Value::Entry> entries;
-                walk(a, ctx, [&entries, &coll](const Value& r, std::size_t idx, const Value& item,
-                                               const Node& body) -> std::optional<Value> {
-                  if (r.as_bool(body.pos)) entries.emplace_back(collection_key(coll, idx), item.clone());  // collected: copied (§3.4)
+                // What is kept, with where it stood. A source that is a packed list has
+                // the keys 1..n, so while the kept ones are exactly 1, 2, 3, ... -- nothing
+                // dropped yet, or only from the end -- the result is the packed list of
+                // them and no key is ever spelled; the first gap turns it into the keyed
+                // list it always was (keys are kept: FILTER leaves "2","3", not "1","2").
+                const bool packed_source = coll.is_list() && coll.size() != 0 && !coll.storage().empty();
+                std::vector<Value> kept;
+                std::vector<std::size_t> at;
+                bool sequential = packed_source;
+                walk(a, ctx, [&](const Value& r, std::size_t idx, const Value& item,
+                                 const Node& body) -> std::optional<Value> {
+                  if (!r.as_bool(body.pos)) return std::nullopt;
+                  if (sequential && idx != kept.size()) sequential = false;
+                  kept.push_back(keep_element(coll, idx, item, 1));  // collected: copied (§3.4), unless nothing could tell
+                  at.push_back(idx);
                   return std::nullopt;
                 }, override_body.get());
-                if (entries.empty()) {
+                if (kept.empty()) {
                   Value out = Value::none();
                   out.set_is_list(true);
                   return out;
+                }
+                if (sequential) return Value::list(std::move(kept));
+                std::vector<Value::Entry> entries;
+                entries.reserve(kept.size());
+                for (std::size_t n = 0; n < kept.size(); ++n) {
+                  entries.emplace_back(collection_key(coll, at[n]), std::move(kept[n]));
                 }
                 return Internals::with_children(Kind::None, std::move(entries), true);
               }});
@@ -6605,15 +6990,45 @@ void register_aggregates() {
 // so positions and lengths agree with the other hosts on astral characters.
 // Positions are 1-based and 0 means "not found" (§7.5).
 
+// Text is valid UTF-8 by construction (every Value::text is validated at the
+// boundary), and UTF-8 is self-synchronising: a code point starts at every byte
+// that is not 10xxxxxx, and a byte-level match of a valid needle in a valid
+// haystack always begins and ends on code point boundaries. So lengths, slices,
+// searches and ASCII case maps can all run on the bytes -- identical results,
+// without decoding the whole string into a vector<char32_t> first (CPP-P9).
+
+// Byte offset reached by moving `k` code points forward from byte `pos`; the end
+// of the string if there are fewer.
+std::size_t advance_cps(const std::string& s, std::size_t pos, unsigned long long k) {
+  const std::size_t n = s.size();
+  while (k > 0 && pos < n) {
+    ++pos;
+    while (pos < n && (static_cast<unsigned char>(s[pos]) & 0xC0) == 0x80) ++pos;
+    --k;
+  }
+  return pos;
+}
+
+// Code points in s[from, to).
+std::size_t cp_count_range(const std::string& s, std::size_t from, std::size_t to) {
+  std::size_t n = 0;
+  for (std::size_t i = from; i < to; ++i) {
+    if ((static_cast<unsigned char>(s[i]) & 0xC0) != 0x80) ++n;
+  }
+  return n;
+}
+
 // ASCII only, deliberately. The hosts' own case mappings cannot be reconciled
 // without shipping a case table, and guessing would break the invariant silently.
+// Bytes of a multi-byte sequence are all >= 0x80, so they are never touched.
 std::string ascii_case(const std::string& s, bool up) {
-  CodePoints c = cps_of(s);
-  for (char32_t& ch : c) {
-    if (up && ch >= U'a' && ch <= U'z') ch -= 32;
-    else if (!up && ch >= U'A' && ch <= U'Z') ch += 32;
+  std::string out = s;
+  if (up) {
+    for (char& ch : out) if (ch >= 'a' && ch <= 'z') ch = static_cast<char>(ch - 32);
+  } else {
+    for (char& ch : out) if (ch >= 'A' && ch <= 'Z') ch = static_cast<char>(ch + 32);
   }
-  return encode_utf8(c);
+  return out;
 }
 
 bool is_sel_space(char32_t c) {
@@ -6621,11 +7036,11 @@ bool is_sel_space(char32_t c) {
 }
 
 std::string trim_text(const std::string& s, bool left, bool right) {
-  const CodePoints c = cps_of(s);
-  long long a = 0, b = static_cast<long long>(c.size());
-  if (left) while (a < b && is_sel_space(c[a])) a++;
-  if (right) while (b > a && is_sel_space(c[b - 1])) b--;
-  return slice_cp(c, a, b);
+  std::size_t a = 0, b = s.size();
+  const auto sp = [&](std::size_t i) { return is_sel_space(static_cast<unsigned char>(s[i])); };
+  if (left) while (a < b && sp(a)) a++;
+  if (right) while (b > a && sp(b - 1)) b--;
+  return s.substr(a, b - a);
 }
 
 Value pad(Args& a, bool left) {
@@ -6652,41 +7067,41 @@ Value pad(Args& a, bool left) {
 
 void register_text() {
   define(Spec{"LEN", 1, 1, false, false, nullptr, [](Args& a, Context&) -> Value {
-                return make_int(static_cast<long long>(cps_of(a.text(0)).size()));
+                return make_int(static_cast<long long>(cp_count(a.text(0))));
               }});
 
   define(Spec{"LEFT", 2, 2, false, false, nullptr, [](Args& a, Context&) -> Value {
-                const CodePoints c = cps_of(a.text(0));
-                return make_text(slice_cp(c, 0, static_cast<long long>(a.non_neg_int(1))));
+                const std::string& s = a.text(0);
+                const unsigned long long n = static_cast<unsigned long long>(a.non_neg_int(1));
+                return make_text(s.substr(0, advance_cps(s, 0, n)));
               }});
 
   define(Spec{"RIGHT", 2, 2, false, false, nullptr, [](Args& a, Context&) -> Value {
-                const CodePoints c = cps_of(a.text(0));
-                const long long n = static_cast<long long>(a.non_neg_int(1));
-                return make_text(slice_cp(c, static_cast<long long>(c.size()) - n,
-                                          static_cast<long long>(c.size())));
+                const std::string& s = a.text(0);
+                const unsigned long long n = static_cast<unsigned long long>(a.non_neg_int(1));
+                const std::size_t total = cp_count(s);
+                if (n >= total) return make_text(s);
+                return make_text(s.substr(advance_cps(s, 0, total - n)));
               }});
 
   define(Spec{"SUBSTR", 2, 3, false, false, nullptr, [](Args& a, Context&) -> Value {
-                const CodePoints c = cps_of(a.text(0));
+                const std::string& s = a.text(0);
                 const long long start = a.integer(1);
                 if (start < 1) {
                   fail("E_RANGE", "SUBSTR start is 1-based and must be at least 1", a.pos_of(1));
                 }
-                const long long from = static_cast<long long>(start - 1);
-                const long long size = static_cast<long long>(c.size());
-                if (a.count() == 2) return make_text(slice_cp(c, from, size));
-                // Clamped rather than added: non_neg_int saturates at LLONG_MAX,
-                // so `from + n` is signed overflow (UB) for a huge length, and
-                // the other hosts simply return the rest of the string.
-                const long long n = a.non_neg_int(2);
-                const long long to = (n >= static_cast<long long>(size - from)) ? size : from + static_cast<long long>(n);
-                return make_text(slice_cp(c, from, to));
+                const std::size_t from_byte = advance_cps(s, 0, static_cast<unsigned long long>(start - 1));
+                if (a.count() == 2) return make_text(s.substr(from_byte));
+                // A huge length just runs to the end (advance_cps clamps; nothing
+                // is added to `from`, so nothing can overflow).
+                const unsigned long long n = static_cast<unsigned long long>(a.non_neg_int(2));
+                const std::size_t to_byte = advance_cps(s, from_byte, n);
+                return make_text(s.substr(from_byte, to_byte - from_byte));
               }});
 
   define(Spec{"FIND", 2, 3, false, false, nullptr, [](Args& a, Context&) -> Value {
-                const CodePoints needle = cps_of(a.text(0));
-                const CodePoints hay = cps_of(a.text(1));
+                const std::string& needle = a.text(0);
+                const std::string& hay = a.text(1);
                 long long from = 0;
                 if (a.count() == 3) {
                   const long long f = a.integer(2);
@@ -6696,13 +7111,18 @@ void register_text() {
                   from = static_cast<long long>(f - 1);
                 }
                 if (needle.empty()) fail("E_BAD_ARG", "FIND needle must not be empty", a.pos_of(0));
-                return make_int(index_of_cp(hay, needle, from) + 1);
+                // `from` counts code points and may be enormous: past the end nothing matches.
+                if (static_cast<unsigned long long>(from) > cp_count(hay)) return make_int(0);
+                const std::size_t start_byte = advance_cps(hay, 0, static_cast<unsigned long long>(from));
+                const std::size_t at = hay.find(needle, start_byte);
+                if (at == std::string::npos) return make_int(0);
+                return make_int(static_cast<long long>(cp_count_range(hay, 0, at)) + 1);
               }});
 
   define(Spec{"REPLACE", 3, 3, false, false, nullptr, [](Args& a, Context&) -> Value {
-                const CodePoints needle = cps_of(a.text(0));
-                const CodePoints repl = cps_of(a.text(1));
-                const CodePoints hay = cps_of(a.text(2));
+                const std::string& needle = a.text(0);
+                const std::string& repl = a.text(1);
+                const std::string& hay = a.text(2);
                 if (needle.empty()) {
                   fail("E_BAD_ARG", "REPLACE needle must not be empty", a.pos_of(0));
                 }
@@ -6710,45 +7130,45 @@ void register_text() {
                 // capped, spec §6.4) before any of it is built.
                 {
                   u128 matches = 0;
-                  long long j = 0;
+                  std::size_t j = 0;
                   for (;;) {
-                    const long long at = index_of_cp(hay, needle, j);
-                    if (at < 0) break;
+                    const std::size_t at = hay.find(needle, j);
+                    if (at == std::string::npos) break;
                     matches++;
-                    j = at + static_cast<long long>(needle.size());
+                    j = at + needle.size();
                   }
-                  const u128 base = hay.size() - matches * needle.size();
-                  cap_text(base + matches * repl.size(), a.pos());
+                  const u128 base = static_cast<u128>(cp_count(hay)) - matches * cp_count(needle);
+                  cap_text(base + matches * cp_count(repl), a.pos());
                 }
-                CodePoints out;
-                long long i = 0;
+                std::string out;
+                std::size_t i = 0;
                 for (;;) {
-                  const long long at = index_of_cp(hay, needle, i);
-                  if (at < 0) break;
-                  out.insert(out.end(), hay.begin() + i, hay.begin() + at);
-                  out.insert(out.end(), repl.begin(), repl.end());
-                  i = at + static_cast<long long>(needle.size());
+                  const std::size_t at = hay.find(needle, i);
+                  if (at == std::string::npos) break;
+                  out.append(hay, i, at - i);
+                  out += repl;
+                  i = at + needle.size();
                 }
-                out.insert(out.end(), hay.begin() + i, hay.end());
-                return make_text(encode_utf8(out));
+                out.append(hay, i, std::string::npos);
+                return make_text(std::move(out));
               }});
 
   define(Spec{"SPLIT", 2, 2, false, false, nullptr, [](Args& a, Context&) -> Value {
-                const CodePoints hay = cps_of(a.text(0));
-                const CodePoints sep = cps_of(a.text(1));
+                const std::string& hay = a.text(0);
+                const std::string& sep = a.text(1);
                 if (sep.empty()) {
                   fail("E_BAD_ARG", "SPLIT separator must not be empty", a.pos_of(1));
                 }
                 std::vector<Value> parts;
-                long long i = 0;
+                std::size_t i = 0;
                 for (;;) {
-                  const long long at = index_of_cp(hay, sep, i);
-                  if (at < 0) break;
+                  const std::size_t at = hay.find(sep, i);
+                  if (at == std::string::npos) break;
                   cap_collection(static_cast<u128>(parts.size()) + 2, a.pos());
-                  parts.push_back(make_text(slice_cp(hay, i, at)));
-                  i = at + static_cast<long long>(sep.size());
+                  parts.push_back(make_text(hay.substr(i, at - i)));
+                  i = at + sep.size();
                 }
-                parts.push_back(make_text(slice_cp(hay, i, static_cast<long long>(hay.size()))));
+                parts.push_back(make_text(hay.substr(i)));
                 return Value::list(std::move(parts));
               }});
 
@@ -6770,9 +7190,17 @@ void register_text() {
               }});
 
   define(Spec{"BACKWARDS", 1, 1, false, false, nullptr, [](Args& a, Context&) -> Value {
-                CodePoints c = cps_of(a.text(0));
-                std::reverse(c.begin(), c.end());
-                return make_text(encode_utf8(c));
+                const std::string& s = a.text(0);
+                std::string out;
+                out.reserve(s.size());
+                std::size_t end = s.size();
+                while (end > 0) {                      // copy code points last to first
+                  std::size_t start = end - 1;
+                  while (start > 0 && (static_cast<unsigned char>(s[start]) & 0xC0) == 0x80) --start;
+                  out.append(s, start, end - start);
+                  end = start;
+                }
+                return make_text(std::move(out));
               }});
 
   define(Spec{"REPEAT", 2, 2, false, false, nullptr, [](Args& a, Context&) -> Value {
@@ -6807,9 +7235,10 @@ void register_text() {
               }});
 
   define(Spec{"CODE", 1, 1, false, false, nullptr, [](Args& a, Context&) -> Value {
-                const CodePoints c = cps_of(a.text(0));
-                if (c.empty()) fail("E_RANGE", "CODE of empty text", a.pos_of(0));
-                return make_int(static_cast<long long>(c[0]));
+                const std::string& s = a.text(0);
+                if (s.empty()) fail("E_RANGE", "CODE of empty text", a.pos_of(0));
+                const CodePoints first = decode_utf8(s.substr(0, advance_cps(s, 0, 1)));
+                return make_int(static_cast<long long>(first[0]));
               }});
 }
 
@@ -6894,10 +7323,17 @@ void register_numbers() {
 
 const char* B64_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
-int b64_index(char c) {
-  const char* p = std::strchr(B64_ALPHABET, c);
-  return (p == nullptr || c == '\0') ? -1 : static_cast<int>(p - B64_ALPHABET);
+// One lookup per input byte: -1 for anything outside the alphabet ('=' included,
+// which the decoder handles itself). A strchr per character walked the alphabet.
+constexpr std::array<signed char, 256> make_b64_table() {
+  std::array<signed char, 256> t{};
+  for (auto& v : t) v = -1;
+  for (int i = 0; i < 64; ++i) t[static_cast<unsigned char>("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"[i])] = static_cast<signed char>(i);
+  return t;
 }
+constexpr std::array<signed char, 256> B64_TABLE = make_b64_table();
+
+int b64_index(char c) { return B64_TABLE[static_cast<unsigned char>(c)]; }
 
 int hex_value(char c) {
   if (c >= '0' && c <= '9') return c - '0';
@@ -6967,6 +7403,7 @@ void register_binary() {
                 const std::string& b = a.bytes(0);
                 cap_text(static_cast<u128>((b.size() + 2) / 3) * 4, a.pos());
                 std::string out;
+                out.reserve(((b.size() + 2) / 3) * 4);
                 for (std::size_t i = 0; i < b.size(); i += 3) {
                   const unsigned n =
                       (static_cast<unsigned char>(b[i]) << 16) |
@@ -6988,6 +7425,7 @@ void register_binary() {
                   fail("E_BAD_ARG", "DECODE_BASE64 needs a length that is a multiple of 4", pos);
                 }
                 std::string out;
+                out.reserve(s.size() / 4 * 3);
                 for (std::size_t i = 0; i < s.size(); i += 4) {
                   int quad[4] = {0, 0, 0, 0};
                   int padding = 0;
@@ -8111,6 +8549,19 @@ struct RegexCacheState {
   std::mutex mutex;
   std::map<std::string, Regex> map;
   std::deque<std::string> order;   // insertion order, oldest first
+  // Bumped, under the mutex, whenever an entry is evicted: a pointer to a cached
+  // pattern is good for as long as this number is what it was when it was taken.
+  std::atomic<unsigned long> evictions{0};
+};
+
+// The pattern this thread used last, found again without the lock, the key string
+// or the map. A rule inside an aggregate asks for the same pattern once per
+// element, and those lookups were a third of what a short match cost.
+struct RegexLastUsed {
+  std::string pattern;
+  std::string flags;
+  Regex* re = nullptr;
+  unsigned long evictions = 0;
 };
 
 RegexCacheState& regex_cache_state() {
@@ -8135,6 +8586,12 @@ auto guarded_search(Pos pos, F&& f) -> decltype(f()) {
 // once per element otherwise.
 Regex& compile_regex(const std::string& pattern, const std::string& flags, Pos flag_pos,
                      Pos pat_pos) {
+  thread_local RegexLastUsed last;
+  if (last.re && last.evictions == regex_cache_state().evictions.load(std::memory_order_acquire) &&
+      last.pattern == pattern && last.flags == flags) {
+    // Same pattern, same flags as a call that already passed every check below.
+    return *last.re;
+  }
   bool ignore_case = false;
   for (char32_t ch : decode_utf8(flags, flag_pos)) {
     // `i` and nothing else: an uppercase `I` (or U+0130, U+0131, U+212A) is not
@@ -8179,8 +8636,15 @@ Regex& compile_regex(const std::string& pattern, const std::string& flags, Pos f
   std::deque<std::string>& cache_order = state.order;
   std::lock_guard<std::mutex> lock(state.mutex);
   const std::string key = (ignore_case ? "i " : " ") + pattern;
+  auto remember = [&](Regex& re) -> Regex& {
+    last.pattern = pattern;
+    last.flags = flags;
+    last.re = &re;
+    last.evictions = state.evictions.load(std::memory_order_relaxed);
+    return re;
+  };
   auto it = cache.find(key);
-  if (it != cache.end()) return it->second;
+  if (it != cache.end()) return remember(it->second);
 
   const std::string source = validate_pattern(pattern, pat_pos, ignore_case);
   auto opts = srell::regex_constants::ECMAScript | srell::regex_constants::dotall;
@@ -8192,9 +8656,10 @@ Regex& compile_regex(const std::string& pattern, const std::string& flags, Pos f
     if (cache.size() >= REGEX_CACHE_MAX) {
       cache.erase(cache_order.front());
       cache_order.pop_front();
+      state.evictions.fetch_add(1, std::memory_order_release);
     }
     cache_order.push_back(key);
-    return cache.emplace(key, std::move(re)).first->second;
+    return remember(cache.emplace(key, std::move(re)).first->second);
   } catch (const srell::regex_error& e) {
     fail("E_REGEX_SYNTAX", std::string(e.what()) + " in /" + pattern + "/", pat_pos);
   }
@@ -8205,13 +8670,31 @@ struct RegexCall {
   std::u32string subject;
 };
 
+// The subject as SRELL wants it, code points in a u32string. Decoded once, straight
+// into the string: going through a vector of code points and copying that into the
+// string made two conversions, each the size of the text times four. An all-ASCII
+// subject -- most of them -- widens byte for byte.
+std::u32string u32_subject(const std::string& s, Pos pos) {
+  bool ascii = true;
+  for (const unsigned char c : s) {
+    if (c >= 0x80) { ascii = false; break; }
+  }
+  if (ascii) {
+    std::u32string out;
+    out.resize(s.size());
+    for (std::size_t i = 0; i < s.size(); ++i) out[i] = static_cast<char32_t>(static_cast<unsigned char>(s[i]));
+    return out;
+  }
+  const CodePoints cps = decode_utf8(s, pos);
+  return std::u32string(cps.begin(), cps.end());
+}
+
 RegexCall regex_args(Args& a, int pat_index, int subj_index, int flag_index) {
   const std::string pattern = a.text(pat_index);
-  const CodePoints subject = cps_of(a.text(subj_index));
+  std::u32string subject = u32_subject(a.text(subj_index), a.pos_of(subj_index));
   const std::string flags = a.count() > flag_index ? a.text(flag_index) : "";
   const Pos flag_pos = a.count() > flag_index ? a.pos_of(flag_index) : a.pos();
-  return RegexCall{&compile_regex(pattern, flags, flag_pos, a.pos_of(pat_index)),
-                   std::u32string(subject.begin(), subject.end())};
+  return RegexCall{&compile_regex(pattern, flags, flag_pos, a.pos_of(pat_index)), std::move(subject)};
 }
 
 // SEL replacement syntax is $0–$9 and $$ for a literal $; every other character
@@ -8284,8 +8767,7 @@ void register_regex() {
   define(Spec{"RREPLACE", 3, 4, false, false, nullptr, [](Args& a, Context&) -> Value {
                 const std::string pattern = a.text(0);
                 const std::string repl = a.text(1);
-                const CodePoints subj_cps = cps_of(a.text(2));
-                const std::u32string subject(subj_cps.begin(), subj_cps.end());
+                const std::u32string subject = u32_subject(a.text(2), a.pos_of(2));
                 const std::string flags = a.count() > 3 ? a.text(3) : "";
                 const Pos flag_pos = a.count() > 3 ? a.pos_of(3) : a.pos();
                 Regex& re = compile_regex(pattern, flags, flag_pos, a.pos_of(0));
@@ -8298,12 +8780,42 @@ void register_regex() {
                 // Each search starts at `s` but treats everything before it as
                 // context (match_prev_avail), so `^` still means the start of the
                 // whole subject and not of the rest of it.
+                // The replacement is taken apart once: literal runs as code points and
+                // $0-$9 as group numbers (spec §7.8: "$$" is a dollar, any other "$" is
+                // literal). Whether a group exists is only known when a match comes up,
+                // and a replacement that is never reached must not be refused, so that
+                // check stays with the match.
+                //
+                // Only for a subject long enough to have many matches: taking the
+                // replacement apart costs a few allocations, which a short subject
+                // with its one match never gets back (an element-wise RREPLACE over a
+                // million short strings was 8% slower for it).
+                struct Piece { std::u32string lit; int group; };   // group < 0: a literal
+                std::vector<Piece> pieces;
+                const bool split_replacement = subject.size() >= 256;
+                if (split_replacement) {
+                  const CodePoints rc = decode_utf8(repl, a.pos_of(1));
+                  std::u32string lit;
+                  for (std::size_t k = 0; k < rc.size(); ++k) {
+                    if (rc[k] != U'$') { lit.push_back(rc[k]); continue; }
+                    const char32_t next = k + 1 < rc.size() ? rc[k + 1] : U'\0';
+                    if (next == U'$') { lit.push_back(U'$'); ++k; continue; }
+                    if (next >= U'0' && next <= U'9') {
+                      if (!lit.empty()) { pieces.push_back({std::move(lit), -1}); lit.clear(); }
+                      pieces.push_back({std::u32string(), static_cast<int>(next - U'0')});
+                      ++k;
+                      continue;
+                    }
+                    lit.push_back(U'$');
+                  }
+                  if (!lit.empty()) pieces.push_back({std::move(lit), -1});
+                }
                 std::u32string out;
                 std::size_t last = 0;
                 std::size_t s = 0;
                 const std::size_t n = subject.size();
+                srell::u32smatch m;
                 while (s <= n) {
-                  srell::u32smatch m;
                   const auto flags = s > 0 ? srell::regex_constants::match_prev_avail
                                            : srell::regex_constants::match_default;
                   if (!guarded_search(a.pos(), [&] {
@@ -8314,10 +8826,27 @@ void register_regex() {
                   }
                   const std::size_t at = s + static_cast<std::size_t>(m.position(0));
                   const std::size_t len = static_cast<std::size_t>(m.length(0));
-                  out += subject.substr(last, at - last);
-                  const std::string piece = expand_replacement(repl, m, a.pos_of(1));
-                  const CodePoints pc = decode_utf8(piece, a.pos_of(1));
-                  out.append(pc.begin(), pc.end());
+                  out.append(subject, last, at - last);
+                  if (!split_replacement) {
+                    const std::string piece = expand_replacement(repl, m, a.pos_of(1));
+                    const CodePoints pc = decode_utf8(piece, a.pos_of(1));
+                    out.append(pc.begin(), pc.end());
+                  }
+                  for (const Piece& piece : pieces) {
+                    if (piece.group < 0) {
+                      out += piece.lit;
+                      continue;
+                    }
+                    const std::size_t g = static_cast<std::size_t>(piece.group);
+                    if (g >= m.size()) {
+                      fail("E_BAD_ARG",
+                           "replacement refers to $" + std::to_string(g) + " but the pattern has " +
+                               std::to_string(m.size() - 1) + " groups",
+                           a.pos_of(1));
+                    }
+                    // A capture that did not participate yields "".
+                    if (m[g].matched) out.append(m[g].first, m[g].second);
+                  }
                   cap_text(out.size(), a.pos());   // spec §6.4: stop growing at the cap
                   if (len == 0) {
                     if (at >= n) { last = at; break; }
@@ -9687,9 +10216,47 @@ std::vector<std::string> Program::dependencies() const {
 
 Program compile(const std::string& source) { return Program(source, parse(source)); }
 
-Value evaluate(const std::string& source, Value& context) { return compile(source).run(context); }
+namespace {
+// Whether a tree has a call that iterates -- an aggregate or a join, which are the
+// calls that bind an element. Without one every node runs once, so the optimiser
+// (fusion, math plans, join pushdown) can save nothing the walk it costs does not
+// spend: it is about as dear as parsing the rule. Iterative, so the depth of the
+// tree does not matter; stops at the first such call.
+bool has_iterating_call(const Node& root) {
+  std::vector<const Node*> pending{&root};
+  while (!pending.empty()) {
+    const Node* n = pending.back();
+    pending.pop_back();
+    if (n->t == NT::Call && n->spec && n->spec->binds) return true;
+    if (n->l) pending.push_back(n->l.get());
+    if (n->r) pending.push_back(n->r.get());
+    for (const auto& item : n->items) {
+      if (item) pending.push_back(item.get());
+    }
+  }
+  return false;
+}
+}  // namespace
 
-Value evaluate(const std::string& source) { return compile(source).run(); }
+// One shot: the program runs once and is dropped. A rule with no loop in it runs
+// the tree as parsed -- the evaluator is the authority on what a program means
+// and the optimiser is held to its answer -- instead of building a physical tree
+// that its single run cannot repay. One that loops keeps the optimiser: its data
+// may be as big as you like.
+Value evaluate(const std::string& source, Value& context) {
+  const Program program = compile(source);
+  const auto ast = program.ast();
+  if (!has_iterating_call(*ast)) {
+    Context ctx(context);
+    return eval_node(*ast, ctx);
+  }
+  return program.run(context);
+}
+
+Value evaluate(const std::string& source) {
+  Value ctx = Value::none();
+  return evaluate(source, ctx);
+}
 
 std::vector<std::string> function_names() {
   ensure_registered();

@@ -900,30 +900,40 @@ absent or not a literal."
     (check-regex-pattern pattern ic flag-pos pattern-pos)))
 
 (defun compile-regex (pattern flags flag-pos pat-pos)
-  "Returns (values scanner tail-scanner ignore-case).
+  "Returns (values scanner tail-scanner-function ignore-case).
 
-TAIL-SCANNER is the same pattern with `^` made unsatisfiable; RREPLACE uses it
-for every match after the first, because cl-ppcre re-anchors \\A to :start."
+The second value is a function of no arguments that returns the TAIL scanner: the
+same pattern with `^` made unsatisfiable, which RREPLACE uses for every match after
+the first, because cl-ppcre re-anchors \\A to :start. It is built on the first call
+and kept with the cached head scanner: RMATCH, RFIND and RGROUPS never ask for it,
+and building it for every pattern doubled the compile cost of a pattern used once
+(LISP-P17)."
   (let* ((ignore-case (check-regex-flags flags flag-pos))
          (key (concatenate 'string (if ignore-case "i " " ") pattern))
          (cached (regex-cache-get key)))
-    (unless cached
-      (check-regex-pattern pattern ignore-case flag-pos pat-pos)
-      (setf cached
-            (flet ((build (anchored)
-                     (let ((source (validate-pattern pattern pat-pos anchored)))
-                       (handler-case
-                           (cl-ppcre:create-scanner source
-                                                    :case-insensitive-mode ignore-case
-                                                    :single-line-mode t   ; dotall
-                                                    :multi-line-mode nil)
-                         (cl-ppcre:ppcre-syntax-error (e)
-                           (fail "E_REGEX_SYNTAX"
-                                 (format nil "~a in /~a/" e pattern)
-                                 pat-pos))))))
-              (cons (build t) (build nil))))
-      (regex-cache-put key cached))
-    (values (car cached) (cdr cached) ignore-case)))
+    (flet ((build (anchored)
+             (let ((source (validate-pattern pattern pat-pos anchored)))
+               (handler-case
+                   (cl-ppcre:create-scanner source
+                                            :case-insensitive-mode ignore-case
+                                            :single-line-mode t   ; dotall
+                                            :multi-line-mode nil)
+                 (cl-ppcre:ppcre-syntax-error (e)
+                   (fail "E_REGEX_SYNTAX"
+                         (format nil "~a in /~a/" e pattern)
+                         pat-pos))))))
+      (unless cached
+        (check-regex-pattern pattern ignore-case flag-pos pat-pos)
+        ;; (head . tail): TAIL is NIL until a RREPLACE continues a scan.
+        (setf cached (cons (build t) nil))
+        (regex-cache-put key cached))
+      (values (car cached)
+              (lambda ()
+                (or (cdr cached)
+                    ;; Two threads may both build it; the scanners are equal and the
+                    ;; last store wins, which is harmless.
+                    (setf (cdr cached) (build nil))))
+              ignore-case))))
 
 ;;; cl-ppcre matches by recursion: a repeated group over a long subject nests one
 ;;; frame set per iteration, and `^(?:ab|a)*$` over 100,000 characters exhausted the
@@ -1091,7 +1101,7 @@ subject this long is where it happens."
                (loop
                  (when (> from n) (return))
                  (multiple-value-bind (start end reg-starts reg-ends)
-                     (regex-scan (if (zerop from) scanner tail-scanner)
+                     (regex-scan (if (zerop from) scanner (funcall tail-scanner))
                                  folded :start from)
                    (when (null start) (return))
                    (let ((expansion (expand-replacement repl subject start end

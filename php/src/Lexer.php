@@ -58,17 +58,23 @@ final class Lexer
         // silently mangled token.
         // The position is the first invalid unit's, counted in code points of
         // the valid prefix (SPEC §2).
-        $bad = Utf8::firstInvalid($source);
-        if ($bad !== null) {
-            fail('E_UTF8', $bad[1], Utf8::positionAtByte($source, $bad[0]));
+        // PCRE's strict UTF-8 check is exactly "valid UTF-8" (the same strictness
+        // as the hand-written codec: overlongs, surrogates and > U+10FFFF are
+        // refused), so the byte loop only runs for a source that is about to be
+        // refused and has to say where (PHP-P9).
+        if (preg_match('//u', $source) !== 1) {
+            $bad = Utf8::firstInvalid($source);
+            if ($bad !== null) {
+                fail('E_UTF8', $bad[1], Utf8::positionAtByte($source, $bad[0]));
+            }
         }
         $this->chars = Utf8::chars($source);
         $this->n = count($this->chars);
+        // Line starts: one C-level scan for the newlines instead of a PHP loop
+        // over every character.
         $this->lineStarts = [0];
-        for ($i = 0; $i < $this->n; $i++) {
-            if ($this->chars[$i] === "\n") {
-                $this->lineStarts[] = $i + 1;
-            }
+        foreach (array_keys($this->chars, "\n", true) as $i) {
+            $this->lineStarts[] = $i + 1;
         }
     }
 
@@ -294,15 +300,33 @@ final class Lexer
         $stack[] = ['k' => self::T_RANGE, 'i' => $part['from'], 'to' => $part['to'], 'bal' => $bal];
     }
 
+    /**
+     * The operators by first character, each list in OPERATORS order (longest
+     * first) so the first match is the same one a scan of the whole table finds;
+     * built once. A token starting with anything else cannot be an operator
+     * (PHP-P9: 31 comparisons per operator token before).
+     *
+     * @var array<string,list<string>>|null
+     */
+    private static ?array $operatorsByFirst = null;
+
     private function matchOperator(int $i, int $to): ?string
     {
-        foreach (self::OPERATORS as $op) {
+        $byFirst = self::$operatorsByFirst;
+        if ($byFirst === null) {
+            $byFirst = [];
+            foreach (self::OPERATORS as $op) {
+                $byFirst[$op[0]][] = $op;
+            }
+            self::$operatorsByFirst = $byFirst;
+        }
+        foreach ($byFirst[$this->chars[$i]] ?? [] as $op) {
             $len = strlen($op);
             if ($i + $len > $to) {
                 continue;
             }
             $ok = true;
-            for ($k = 0; $k < $len; $k++) {
+            for ($k = 1; $k < $len; $k++) {
                 if ($this->chars[$i + $k] !== $op[$k]) {
                     $ok = false;
                     break;

@@ -253,6 +253,8 @@ func Reset() {
 	defer mapMu.Unlock()
 	ensureInit()
 	extra = make(map[string]*DialectRecord)
+	chainMemo = make(map[string][]string)
+	escaperMemo = make(map[string]*escaper)
 	overlay = make(map[string]map[string]map[string]*EntryRecord)
 	guardChecked = make(map[string]bool)
 	hostArities = make(map[string]map[string][2]int)
@@ -359,10 +361,44 @@ func RequireTarget(dialect string, pos Pos) {
 	}
 }
 
+// chainMemo caches each dialect's inheritance chain (GO-P16): Chain ran for every
+// identifier, literal, placeholder and template slot, each time allocating a set
+// and a slice and taking the lock. The chain is a function of the registered
+// dialects only, so it is cleared whenever extra changes (Reset, DefineDialect and
+// its rollback). Guarded by mapMu; the slices in it are never handed out.
+var chainMemo = make(map[string][]string)
+
+// escaperMemo caches each dialect's text quote and compiled escape replacer (GO-P28:
+// TextLiteral sorted the escape keys and scanned with a prefix test per key on every
+// literal). Like chainMemo it is a function of the registered dialects only, so it
+// is cleared wherever chainMemo is. Guarded by mapMu.
+var escaperMemo = make(map[string]*escaper)
+
+// chainLocked is Chain with mapMu already held. Its result is shared: do not modify.
+func chainLocked(dialect string) []string {
+	ensureInit()
+	if out, ok := chainMemo[dialect]; ok {
+		return out
+	}
+	out := buildChain(dialect)
+	// An unknown dialect has an empty chain; do not remember it, so a later
+	// registration of that name is seen at once.
+	if len(out) > 0 {
+		chainMemo[dialect] = out
+	}
+	return out
+}
+
 func Chain(dialect string) []string {
 	mapMu.Lock()
 	defer mapMu.Unlock()
-	ensureInit()
+	out := chainLocked(dialect)
+	cp := make([]string, len(out))
+	copy(cp, out)
+	return cp
+}
+
+func buildChain(dialect string) []string {
 	var out []string
 	seen := make(map[string]bool)
 	cur := dialect
@@ -390,10 +426,14 @@ func Version(dialect string) string {
 }
 
 func Lexical(dialect, key string) interface{} {
-	ch := Chain(dialect)
 	mapMu.Lock()
 	defer mapMu.Unlock()
-	for _, d := range ch {
+	return lexicalLocked(dialect, key)
+}
+
+// lexicalLocked is Lexical with mapMu already held.
+func lexicalLocked(dialect, key string) interface{} {
+	for _, d := range chainLocked(dialect) {
 		rec := getRecord(d)
 		if rec != nil && rec.Lexical != nil {
 			if v, ok := rec.Lexical[key]; ok {
@@ -406,10 +446,10 @@ func Lexical(dialect, key string) interface{} {
 
 func Entry(dialect, section, key string) interface{} {
 	checkSection(section)
-	ch := Chain(dialect)
 
 	mapMu.Lock()
 	defer mapMu.Unlock()
+	ch := chainLocked(dialect)
 
 	// Overlay chain first
 	for _, d := range ch {
@@ -474,6 +514,8 @@ func DefineDialect(name string, spec map[string]interface{}) {
 		} else {
 			delete(extra, name)
 		}
+		chainMemo = make(map[string][]string)
+		escaperMemo = make(map[string]*escaper)
 		guardChecked = make(map[string]bool)
 		mapMu.Unlock()
 		panic(r)
@@ -633,6 +675,8 @@ func defineDialectLocked(name string, spec map[string]interface{}) (*DialectReco
 		delete(hostArities, name)
 		guardChecked = make(map[string]bool)
 	}
+	chainMemo = make(map[string][]string)
+	escaperMemo = make(map[string]*escaper)
 	extra[name] = &DialectRecord{
 		Name:    name,
 		Extends: ext,

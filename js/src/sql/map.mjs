@@ -138,6 +138,7 @@ export function defineDialect(name, spec) {
   checkTextPairing(name, lexical_, ext);
   if (previous !== null) guardChecked.delete(name);
   extra.set(name, { extends: ext, version, target, lexical: lexical_ });
+  CHAINS.clear();
 }
 
 // The quote and the escape that goes with it (sql/MAP.md §3.1). A text literal is
@@ -220,6 +221,7 @@ export function defineBuilder(dialect, section, key, fn) {
 // Forget every runtime registration. For tests; nothing else should need it.
 export function reset() {
   extra.clear();
+  CHAINS.clear();
   overlay.clear();
   guardChecked.clear();
   hostArities.clear();
@@ -329,13 +331,23 @@ export function requireTarget(dialect, pos = null) {
 }
 
 // Self first, then extends, up to ansi.
+//
+// Built once per dialect and handed back frozen (JS-P26): every lexical() and
+// entry() lookup asks, and rebuilding the array each time was a tenth of a
+// translation's own time. A registration or a reset is what can change an answer,
+// and both empty the cache.
+const CHAINS = new Map();
 export function chain(dialect) {
-  const out = [];
+  let out = CHAINS.get(dialect);
+  if (out !== undefined) return out;
+  out = [];
   let cur = dialect;
   while (cur != null && exists(cur) && !out.includes(cur)) {
     out.push(cur);
     cur = record(cur).extends ?? null;
   }
+  Object.freeze(out);
+  CHAINS.set(dialect, out);
   return out;
 }
 

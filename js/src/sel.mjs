@@ -88,11 +88,16 @@ function collect(node, bound, done, reads, depth) {
       // Index expressions run first, in order, then the right side; then the
       // store. `A = x` defines A; `A[k] = x` creates A and reads only the index;
       // `A += x` and `A[k] += x` also read their target.
+      // In SOURCE order: `A[(K = 1)][K] = B` runs the inner bracket first, so the K of the
+      // outer bracket is already assigned. The chain is walked outermost-first, so the keys
+      // are collected and then taken from the innermost out.
       let target = node.target;
+      const keys = [];
       while (target.t === 'index') {
-        walk(target.idx);
+        keys.push(target.idx);
         target = target.obj;
       }
+      for (let i = keys.length - 1; i >= 0; i--) walk(keys[i]);
       // The target of `op=` is read BEFORE the right side runs (SPEC §8): in
       // `A += (A = 1; 2)` the read of A has already failed by the time the right
       // side assigns it.

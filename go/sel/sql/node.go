@@ -43,6 +43,8 @@ type SNode struct {
 	size           int64 // memo of Size; 0 = not yet computed
 	valid, numeric bool  // Validate / RequireNumeric already passed for this big subtree
 	constMemo      uint8 // memo of IsConstant for a large shared subtree: 1 yes, 2 no
+	toNodeDone     bool  // ToNode already ran for this (immutable) subtree
+	toNodeVal      *sel.Node
 	T              SNodeType
 	Pos            Pos
 	Origin         *sel.Node
@@ -151,6 +153,18 @@ func (s *SNode) ToNode() *sel.Node {
 	if s == nil || s.T == SNodeCList {
 		return nil
 	}
+	// An SNode is not changed once built, so its evaluable form is built once: the
+	// translator asks for it at every constant node of a chain, each time for the
+	// whole subtree below, which made a chain of n cost n copies of n nodes (GO-P28).
+	if s.toNodeDone {
+		return s.toNodeVal
+	}
+	out := s.buildNode()
+	s.toNodeVal, s.toNodeDone = out, true
+	return out
+}
+
+func (s *SNode) buildNode() *sel.Node {
 	if len(s.Kids) == 0 {
 		return s.Origin
 	}

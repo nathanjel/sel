@@ -13,12 +13,15 @@ import (
 
 const b64Alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
 
-var b64Index map[byte]int
+// b64Index maps a byte to its sextet, or -1 when it is not in the alphabet.
+var b64Index [256]int8
 
 func init() {
-	b64Index = make(map[byte]int, len(b64Alphabet))
+	for i := range b64Index {
+		b64Index[i] = -1
+	}
 	for i := 0; i < len(b64Alphabet); i++ {
-		b64Index[b64Alphabet[i]] = i
+		b64Index[b64Alphabet[i]] = int8(i)
 	}
 
 	Define(&Spec{
@@ -95,7 +98,7 @@ func init() {
 		Fn: func(args *Args, ctx *Context) *Value {
 			b := args.Bytes(0)
 			checkTextLen(satMul((int64(len(b))+2)/3, 4), "ENCODE_BASE64's result", args.Pos())
-			var out []byte
+			out := make([]byte, 0, (len(b)+2)/3*4)
 			for i := 0; i < len(b); i += 3 {
 				b0 := uint32(b[i])
 				b1 := uint32(0)
@@ -134,7 +137,7 @@ func init() {
 			if len(s)%4 != 0 {
 				fail("E_BAD_ARG", "DECODE_BASE64 needs a length that is a multiple of 4", pos)
 			}
-			var out []byte
+			out := make([]byte, 0, len(s)/4*3)
 			for i := 0; i < len(s); i += 4 {
 				var quad [4]int
 				padding := 0
@@ -151,11 +154,11 @@ func init() {
 					if padding > 0 {
 						fail("E_BAD_ARG", "misplaced base64 padding", pos)
 					}
-					v, ok := b64Index[ch]
-					if !ok {
+					v := b64Index[ch]
+					if v < 0 {
 						fail("E_BAD_ARG", fmt.Sprintf("invalid base64 character %q", ch), pos)
 					}
-					quad[k] = v
+					quad[k] = int(v)
 				}
 				n := (quad[0] << 18) | (quad[1] << 12) | (quad[2] << 6) | quad[3]
 				out = append(out, byte((n>>16)&255))
@@ -188,9 +191,13 @@ func init() {
 		Fn: func(args *Args, ctx *Context) *Value {
 			b := args.Bytes(0)
 			checkCollection(int64(len(b)), "BTL's result", args.Pos())
+			// One slab for the Values and shared decimals for the byte values: a
+			// Dec is immutable, and every element is a fresh Value of its own.
 			items := make([]*Value, len(b))
+			slab := make([]Value, len(b))
 			for i, v := range b {
-				items[i] = NewInt(int64(v))
+				slab[i] = Value{Kind: KindText, decVal: decimal.FromByte(v)}
+				items[i] = &slab[i]
 			}
 			return NewListOwned(items)
 		},

@@ -1327,7 +1327,7 @@ function rustKind(t) {
   if (t === null || t === undefined) return 'SqlKind::Unknown';
   if (typeof t !== 'string') throw new Unrepresentable(`a binding type that is ${shapeOf(t)}`);
   const k = { NUM: 'Num', TEXT: 'Text', BOOL: 'Bool', BIN: 'Bin',
-              UNKNOWN: 'Unknown', LIST: 'List' }[t];
+              UNKNOWN: 'Unknown', LIST: 'List', STATEMENT: 'Statement' }[t];
   if (!k) throw new Unrepresentable(`the binding type ${JSON.stringify(t)}`);
   return `SqlKind::${k}`;
 }

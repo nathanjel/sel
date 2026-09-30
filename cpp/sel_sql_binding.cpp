@@ -294,6 +294,27 @@ Bindings::Bindings(std::vector<std::pair<std::string, Binding>> bindings) {
     spelling.emplace(key, name);
     if (map_.insert_or_assign(key, b).second) order_.push_back(key);
   }
+  for (const auto& [key, b] : map_) {
+    if (b.kind() == Binding::Kind::Value) value_names_.push_back(key);
+  }
+  // The alias check, once: the same walk check_aliases always made, in the
+  // caller's order, remembering its message instead of throwing it here -- the
+  // refusal belongs to translate(), after the dialect check.
+  std::map<std::string, std::string> seen;
+  for (const std::string& name : order_) {
+    const Binding& b = map_.find(name)->second;
+    if (b.kind() != Binding::Kind::Relation) continue;
+    const RelationSpec& r = b.as_relation();
+    const std::string alias = r.alias ? *r.alias : r.from;
+    const std::string alias_key = ascii_upper(alias);
+    const auto it = seen.find(alias_key);
+    if (it != seen.end()) {
+      alias_clash_ = "relations " + it->second + " and " + name + " share the alias " +
+                     alias + "; give each one its own";
+      break;
+    }
+    seen.emplace(alias_key, name);
+  }
 }
 
 bool Bindings::has(std::string_view name) const {
@@ -331,24 +352,10 @@ std::vector<std::string> Bindings::names() const {
 }
 
 void Bindings::check_aliases(Pos pos) const {
-  std::map<std::string, std::string> seen;
-  for (const std::string& name : order_) {
-    const Binding& b = map_.find(name)->second;
-    if (b.kind() != Binding::Kind::Relation) continue;
-    const RelationSpec& r = b.as_relation();
-    const std::string alias = r.alias ? *r.alias : r.from;
-    // ASCII case-insensitively: SQLite (and, by platform, the MySQL family) reads `o`
-    // and `O` as one alias, so two relations under them collide on the server.
-    const std::string alias_key = ascii_upper(alias);
-    auto it = seen.find(alias_key);
-    if (it != seen.end()) {
-      refuse("E_SQL_BINDING",
-             "relations " + it->second + " and " + name + " share the alias " +
-                 alias + "; give each one its own",
-             pos);
-    }
-    seen.emplace(alias_key, name);
-  }
+  // ASCII case-insensitively: SQLite (and, by platform, the MySQL family) reads `o`
+  // and `O` as one alias, so two relations under them collide on the server. The
+  // walk is the constructor's; this only raises what it found.
+  if (!alias_clash_.empty()) refuse("E_SQL_BINDING", alias_clash_, pos);
 }
 
 }  // namespace sel::sql

@@ -55,3 +55,30 @@ func itoa(n int) string {
 	}
 	return s
 }
+
+// GO-P23: the ASCII case mappers copy once, and not at all when nothing changes.
+func TestAsciiCaseMappersMatchAByteWiseReference(t *testing.T) {
+	ref := func(s string, lo, hi byte, d int) string {
+		b := []byte(s)
+		for i, c := range b {
+			if lo <= c && c <= hi {
+				b[i] = byte(int(c) + d)
+			}
+		}
+		return string(b)
+	}
+	for _, s := range []string{"", "a", "A", "abc", "ABC", "aBc", "é😀zZ", "İi", "STRAßE", "x\x00Y", "z{`@[Aa"} {
+		if got, want := AsciiUpper(s), ref(s, 'a', 'z', -32); got != want {
+			t.Errorf("AsciiUpper(%q) = %q, want %q", s, got, want)
+		}
+		if got, want := AsciiLower(s), ref(s, 'A', 'Z', 32); got != want {
+			t.Errorf("AsciiLower(%q) = %q, want %q", s, got, want)
+		}
+	}
+	if allocs := testing.AllocsPerRun(50, func() { _ = AsciiLower("already lower é") }); allocs != 0 {
+		t.Errorf("AsciiLower on text with nothing to change allocated %v times", allocs)
+	}
+	if allocs := testing.AllocsPerRun(50, func() { _ = AsciiUpper("MIXed Case") }); allocs != 1 {
+		t.Errorf("AsciiUpper allocated %v times, want 1", allocs)
+	}
+}

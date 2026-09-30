@@ -151,9 +151,16 @@ signalling — LEFT and SUBSTR are specified to return fewer characters."
           (%text "")
           (let ((total (* n (length s))))
             (check-text-cap total (args-pos a))
-            (let ((out (make-string total)))
-              (loop for at from 0 below total by (length s)
-                    do (replace out s :start1 at))
+            (let ((out (make-string total))
+                  (filled (length s)))
+              ;; One copy of the unit, then the filled prefix doubles into the
+              ;; rest (the two regions never overlap): a REPLACE call per copy
+              ;; costs more than the characters it moves (LISP-P21).
+              (replace out s)
+              (loop while (< filled total)
+                    do (let ((n (min filled (- total filled))))
+                         (replace out out :start1 filled :start2 0 :end2 n)
+                         (incf filled n)))
               (%text out)))))))
 
 (defun pad-text (a left)
@@ -164,13 +171,23 @@ signalling — LEFT and SUBSTR are specified to return fewer characters."
       (fail "E_BAD_ARG" "pad fill must not be empty" (args-pos-of a 2)))
     (if (>= (length s) width)
         (%text s)
+        ;; The result is allocated once, at its final length, and the padding is
+        ;; written straight into it: building the padding in a string stream and
+        ;; then copying it out and concatenating cost about 14 characters of garbage
+        ;; per result character (LISP-P21).
         (let* ((need (progn (check-text-cap width (args-pos a)) (- width (length s))))
-               (padding (with-output-to-string (out)
-                          (dotimes (i need)
-                            (write-char (char fill (mod i (length fill))) out)))))
-          (%text (if left
-                     (concatenate 'string padding s)
-                     (concatenate 'string s padding)))))))
+               (flen (length fill))
+               (out (make-string width))
+               (pad-at (if left 0 (length s))))
+          (if left
+              (replace out s :start1 need)
+              (replace out s))
+          (if (= flen 1)
+              (fill out (char fill 0) :start pad-at :end (+ pad-at need))
+              (loop for i from 0 below need
+                    for j = 0 then (if (= (1+ j) flen) 0 (1+ j))
+                    do (setf (char out (+ pad-at i)) (char fill j))))
+          (%text out)))))
 
 (define-builtin "PADL" 3 3 (lambda (a ctx) (declare (ignore ctx)) (pad-text a t)))
 (define-builtin "PADR" 3 3 (lambda (a ctx) (declare (ignore ctx)) (pad-text a nil)))

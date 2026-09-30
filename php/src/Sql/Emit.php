@@ -140,16 +140,10 @@ final class Emit
     public static function textLiteral(string $dialect, string $text): string
     {
         $quote = (string) Map::lexical($dialect, 'textQuote');
-        $escape = Map::lexical($dialect, 'textEscape');
-        $out = $text;
-        if (is_array($escape)) {
-            // Longest first, so a rule for "\\" is applied before one for "\".
-            $keys = array_keys($escape);
-            usort($keys, static fn ($a, $b): int => strlen((string) $b) <=> strlen((string) $a));
-            $out = strtr($out, array_combine($keys, array_map(
-                static fn ($k) => (string) $escape[$k], $keys)));
-        }
-        return $quote . $out . $quote;
+        $map = Map::textEscapeMap($dialect);
+        // strtr() with an array applies the longest key first, so a rule for "\\"
+        // still wins over one for "\" without sorting the keys on every literal.
+        return $quote . ($map === null ? $text : strtr($text, $map)) . $quote;
     }
 
     /**
@@ -395,8 +389,18 @@ final class Emit
                 continue;
             }
             if ($tpl[$i] !== '{') {
-                $push($tpl[$i]);
-                $i++;
+                // Copy the whole run of ordinary characters at once (PHP-P23):
+                // a template is mostly literal SQL, and pushing it one character
+                // at a time through the closure cost 6x the run copy. A lone `}`
+                // is a run of length zero and is pushed as itself.
+                $run = strcspn($tpl, '{}', $i);
+                if ($run === 0) {
+                    $push($tpl[$i]);
+                    $i++;
+                } else {
+                    $push(substr($tpl, $i, $run));
+                    $i += $run;
+                }
                 continue;
             }
             $end = strpos($tpl, '}', $i);

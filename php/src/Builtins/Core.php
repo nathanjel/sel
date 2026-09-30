@@ -166,17 +166,28 @@ final class Core
                 $out = [];
                 $val->forEachElement(static function (string $key, Value $item) use (&$buckets, &$out): void {
                     $hash = $item->structuralHash();
-                    $seen = false;
-                    foreach ($buckets[$hash] ?? [] as $existing) {
+                    // One item per hash is stored as the item itself and becomes a
+                    // list only when a second, unequal one collides (PHP-P25).
+                    $slot = $buckets[$hash] ?? null;
+                    if ($slot === null) {
+                        $buckets[$hash] = $item;
+                        $out[] = $item;
+                        return;
+                    }
+                    if ($slot instanceof Value) {
+                        if (!$item->eql($slot)) {
+                            $buckets[$hash] = [$slot, $item];
+                            $out[] = $item;
+                        }
+                        return;
+                    }
+                    foreach ($slot as $existing) {
                         if ($item->eql($existing)) {
-                            $seen = true;
-                            break;
+                            return;
                         }
                     }
-                    if (!$seen) {
-                        $buckets[$hash][] = $item;
-                        $out[] = $item;
-                    }
+                    $buckets[$hash][] = $item;
+                    $out[] = $item;
                 });
                 return Value::list($out);
             }]);
@@ -206,6 +217,20 @@ final class Core
      */
     public static function compareValues(Value $a, Value $b): int
     {
+        return self::compareKeys(self::sortKey($a), self::sortKey($b));
+    }
+
+    /**
+     * The sort key of a value, classified ONCE (PHP-P3): its rank under the
+     * total order and what is compared inside that rank. A sort builds one per
+     * element and compares the keys, instead of re-classifying both operands on
+     * every comparison (n log n classifications, each a scalar-context walk and
+     * a decimal parse). Comparing two keys is exactly compareValues.
+     *
+     * @return array{0:int,1:mixed} [rank, payload]: 1 int 0|1, 2 decimal array, 3|4 bytes
+     */
+    public static function sortKey(Value $v): array
+    {
         // One total order (spec §7.3): rank by kind first, then compare inside a
         // rank. NULL < BOOL (FALSE < TRUE) < numeric-looking text and numbers by
         // exact value < every other TEXT bytewise < BIN bytewise. Ranking BEFORE
@@ -215,21 +240,33 @@ final class Core
         // A value with children and no scalar of its own is ordered by what scalar
         // context makes of it (§3.2: its first child, recursively): a record sorts
         // by its first field and ranks by that field's kind.
-        $a = self::sortLeaf($a);
-        $b = self::sortLeaf($b);
-        $ra = self::sortRank($a);
-        $rb = self::sortRank($b);
-        if ($ra !== $rb) return $ra <=> $rb;
-        switch ($ra) {
-            case 0:
-                return 0;
+        $leaf = self::sortLeaf($v);
+        $rank = self::sortRank($leaf);
+        switch ($rank) {
             case 1:
-                return ((int) (bool) $a->getScalar()) <=> ((int) (bool) $b->getScalar());
+                return [1, (int) (bool) $leaf->getScalar()];
             case 2:
-                return Dec::cmp($a->asDecimal(), $b->asDecimal());
+                return [2, $leaf->asDecimal()];
             case 3:
             case 4:
-                return strcmp($a->asBytes(), $b->asBytes());
+                return [$rank, $leaf->asBytes()];
+            default:
+                return [$rank, null];
+        }
+    }
+
+    /** @param array{0:int,1:mixed} $x @param array{0:int,1:mixed} $y */
+    public static function compareKeys(array $x, array $y): int
+    {
+        if ($x[0] !== $y[0]) return $x[0] <=> $y[0];
+        switch ($x[0]) {
+            case 1:
+                return $x[1] <=> $y[1];
+            case 2:
+                return Dec::cmp($x[1], $y[1]);
+            case 3:
+            case 4:
+                return strcmp($x[1], $y[1]);
             default:
                 return 0;
         }
@@ -267,7 +304,7 @@ final class Core
             $idx = 0;
             $pos = $a->pos;
             $val->forEachElement(static function (string $key, Value $item) use (&$indexed, &$idx, $pos): void {
-                $indexed[] = ['item' => $item->copyBelow(1, $pos), 'key' => $item, 'idx' => $idx++];
+                $indexed[] = ['item' => $item->copyBelow(1, $pos), 'sk' => self::sortKey($item), 'idx' => $idx++];
             });
         } else {
             if ($count === 2) {
@@ -323,7 +360,7 @@ final class Core
                         $ctx->setFrameValue('_K', $frame['_K']);
                     }
                     $evalKey = $a->evalNode($body);
-                    $indexed[] = ['item' => $item->copyBelow(1, $a->pos), 'key' => $evalKey, 'idx' => $idx++];
+                    $indexed[] = ['item' => $item->copyBelow(1, $a->pos), 'sk' => self::sortKey($evalKey), 'idx' => $idx++];
                 });
             } finally {
                 $ctx->popFrame();
@@ -331,7 +368,7 @@ final class Core
         }
 
         usort($indexed, static function (array $x, array $y) use ($dir): int {
-            $c = self::compareValues($x['key'], $y['key']);
+            $c = self::compareKeys($x['sk'], $y['sk']);
             if ($dir === 'DESC') {
                 $c = -$c;
             }
@@ -569,12 +606,14 @@ final class Core
 
         Registry::define(['name' => 'SUM', 'min' => 2, 'max' => 3, 'lazy' => true, 'binds' => true,
             'fn' => static function (Args $a, Context $ctx): Value {
-                $total = Dec::zero();
+                // A native running total while every step fits (PHP-P27); the answer
+                // is the one a chain of Dec::add calls gives.
+                $total = ['m' => 0, 's' => 0];
                 self::walk($a, $ctx, static function (Value $r, $k, $i, array $body) use (&$total): ?Value {
-                    $total = Dec::add($total, $r->asDecimal($body['pos']), $body['pos']);
+                    Dec::sumAccumulate($total, $r->asDecimal($body['pos']), $body['pos']);
                     return null;
                 });
-                return Value::num($total);
+                return Value::numTrusted(Dec::sumResult($total));
             }]);
 
         // Strict, not an aggregate: its second argument is a separator, not a body.

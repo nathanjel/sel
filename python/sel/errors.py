@@ -2,17 +2,32 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import NoReturn
 
 
-@dataclass(frozen=True, slots=True)
 class Pos:
-    """A source position. 1-based line and column, counted in code points."""
+    """A source position. 1-based line and column, counted in code points.
+    Immutable by convention (a frozen slots dataclass until PY-P5: one is built
+    per token, so its construction cost showed in the lexer)."""
 
-    line: int = 0
-    col: int = 0
-    offset: int = 0
+    __slots__ = ('line', 'col', 'offset')
+
+    def __init__(self, line: int = 0, col: int = 0, offset: int = 0) -> None:
+        self.line = line
+        self.col = col
+        self.offset = offset
+
+    def __eq__(self, other: object) -> bool:
+        if other.__class__ is not Pos:
+            return NotImplemented
+        return (self.line == other.line and self.col == other.col
+                and self.offset == other.offset)
+
+    def __hash__(self) -> int:
+        return hash((self.line, self.col, self.offset))
+
+    def __repr__(self) -> str:
+        return f'Pos(line={self.line!r}, col={self.col!r}, offset={self.offset!r})'
 
 
 class SelError(Exception):

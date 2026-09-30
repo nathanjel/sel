@@ -8616,6 +8616,12 @@ static std::vector<std::pair<std::string, Binding>> c1303_bind() {
   };
 }
 
+static std::vector<std::pair<std::string, Binding>> c1304_bind() {
+  return {
+      {"ORDERS", Binding::relation("orders", "o", {{"ID", Binding::column("id", "o", SqlKind::Num)}, {"CUSTOMER_ID", Binding::column("customer_id", "o", SqlKind::Num)}, {"AMOUNT", Binding::column("amount", "o", SqlKind::Num)}, {"NAME", Binding::column("name", "o", SqlKind::Text)}}, std::nullopt, std::nullopt)},
+  };
+}
+
 static const SqlCase CASES[] = {
     {.name = "lex.number.canonical-form-survives",
      .at = "01-lexical.sqlt:4",
@@ -30785,6 +30791,23 @@ static const SqlCase CASES[] = {
      .unrepresentable = nullptr,
      .register_fn = nullptr,
      .bindings_fn = c1303_bind},
+    {.name = "plan.order.sort-over-a-projection-of-sorted-rows-stays-in-memory",
+     .at = "52-audit-cases.sqlt:302",
+     .dialect = "mariadb",
+     .source = "ORDERS .> TOP_BY(_[\"id\"], 2) .> SELECT_COLS(\"id\", \"amount\") .> SORT_BY(_[\"amount\"], \"DESC\") .> TOP_BY(_K, 2)",
+     .expect = "SELECT `_sub1`.`id`, `_sub1`.`amount` FROM (SELECT `o`.* FROM `orders` `o` ORDER BY `o`.`id` ASC LIMIT 2) `_sub1`",
+     .error = nullptr,
+     .throws = nullptr,
+     .params = nullptr,
+     .as_ = nullptr,
+     .mode = nullptr,
+     .strict = false,
+     .plan = "hybrid",
+     .has_tables = true,
+     .tables = {"orders"},
+     .unrepresentable = nullptr,
+     .register_fn = nullptr,
+     .bindings_fn = c1304_bind},
 };
 
 std::span<const SqlCase> sql_cases() { return CASES; }

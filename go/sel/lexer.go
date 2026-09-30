@@ -63,6 +63,8 @@ type Token struct {
 	Pos   Pos
 }
 
+const maxTokenPrealloc = 1 << 17
+
 type Lexer struct {
 	chars      []rune
 	n          int
@@ -70,6 +72,8 @@ type Lexer struct {
 	// braceEnds[i] is the index just past the '}' matching the '{' at i, once
 	// some scan has established it (0 = not yet). See matchBrace.
 	braceEnds []int
+	// lineCursor is the line index of the last posAt answer.
+	lineCursor int
 }
 
 // The kinds of work lexRange keeps on its explicit stack.
@@ -141,25 +145,46 @@ func NewLexer(source string) *Lexer {
 	}
 }
 
+// posAt resolves a code point offset to line and column. Tokens are asked for in
+// nearly increasing order, so the line of the previous answer (and the next few)
+// are tried before the binary search (GO-P6).
 func (l *Lexer) posAt(offset int) Pos {
-	lo, hi := 0, len(l.lineStarts)-1
+	ls := l.lineStarts
+	cur := l.lineCursor
+	if cur >= len(ls) || ls[cur] > offset {
+		cur = -1
+	} else {
+		// Forward within a few lines of the last answer.
+		for step := 0; step < 4; step++ {
+			if cur+1 >= len(ls) || ls[cur+1] > offset {
+				l.lineCursor = cur
+				return Pos{Line: cur + 1, Col: offset - ls[cur] + 1, Offset: offset}
+			}
+			cur++
+		}
+		cur = -1
+	}
+	lo, hi := 0, len(ls)-1
 	for lo < hi {
 		mid := (lo + hi + 1) / 2
-		if l.lineStarts[mid] <= offset {
+		if ls[mid] <= offset {
 			lo = mid
 		} else {
 			hi = mid - 1
 		}
 	}
-	return Pos{
-		Line:   lo + 1,
-		Col:    offset - l.lineStarts[lo] + 1,
-		Offset: offset,
-	}
+	l.lineCursor = lo
+	return Pos{Line: lo + 1, Col: offset - ls[lo] + 1, Offset: offset}
 }
 
 func (l *Lexer) Tokenize() []Token {
-	out := make([]Token, 0, 32)
+	// About one token in three characters for ordinary rules; growth past the cap
+	// is by append (a source that is mostly text does not get 56 bytes a character).
+	est := l.n/3 + 32
+	if est > maxTokenPrealloc {
+		est = maxTokenPrealloc
+	}
+	out := make([]Token, 0, est)
 	l.lexRange(0, l.n, &out)
 	out = append(out, Token{Type: TokenEOF, Value: "", Pos: l.posAt(l.n)})
 	return out
@@ -243,8 +268,17 @@ func (l *Lexer) lexTokens(frm, to int, out *[]Token, stack []lexTask, bal *balan
 			for j < to && isIdent(l.chars[j]) {
 				j++
 			}
-			word := string(l.chars[i:j])
-			*out = append(*out, Token{Type: TokenIdent, Value: utf8.AsciiUpper(word), Pos: pos})
+			// An identifier is ASCII by construction (isAlpha, isIdent): upper-case
+			// it while copying, in one allocation rather than two.
+			word := make([]byte, j-i)
+			for k := i; k < j; k++ {
+				ch := byte(l.chars[k])
+				if 'a' <= ch && ch <= 'z' {
+					ch -= 32
+				}
+				word[k-i] = ch
+			}
+			*out = append(*out, Token{Type: TokenIdent, Value: string(word), Pos: pos})
 			i = j
 			continue
 		}
@@ -285,7 +319,7 @@ func (l *Lexer) lexTokens(frm, to int, out *[]Token, stack []lexTask, bal *balan
 				}
 			}
 			*out = append(*out, Token{Type: TokenOp, Value: op, Pos: pos})
-			i += len([]rune(op))
+			i += len(op)
 			continue
 		}
 
@@ -312,15 +346,16 @@ func (l *Lexer) emitPart(task lexTask, out *[]Token, stack []lexTask) []lexTask 
 	return append(stack, lexTask{kind: taskRange, i: part.frm, to: part.to, bal: bal})
 }
 
+// Every operator is ASCII, so it is compared byte against code point, with no
+// []rune(op) conversion per probe (GO-P6).
 func (l *Lexer) matchOperator(i, to int) (string, bool) {
 	for _, op := range operators {
-		opRunes := []rune(op)
-		if i+len(opRunes) > to {
+		if i+len(op) > to {
 			continue
 		}
 		match := true
-		for k, r := range opRunes {
-			if l.chars[i+k] != r {
+		for k := 0; k < len(op); k++ {
+			if l.chars[i+k] != rune(op[k]) {
 				match = false
 				break
 			}

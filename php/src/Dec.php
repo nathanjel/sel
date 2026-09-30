@@ -58,6 +58,14 @@ final class Dec
      */
     public static int $mulCarryEvery = 50000;
 
+    /**
+     * Test hook: false makes parse() and div() take their general
+     * digit-string paths on operands the native fast paths would handle, so a
+     * test can hold the two to identical results (PHP-P13, P15). A native-integer mod() was tried and dropped: 5-8% over the
+     * general path, below what earns a second code path.
+     */
+    public static bool $fastPaths = true;
+
     private static function hasGmp(): bool
     {
         if (self::$hasGmp === null) {
@@ -91,7 +99,11 @@ final class Dec
         if ($la !== $lb) {
             return $la < $lb ? -1 : 1;
         }
-        return $a === $b ? 0 : ($a < $b ? -1 : 1);
+        // strcmp, not `<`: same length already, and `<` on two digit strings is a
+        // PHP numeric-string comparison (4-5x slower, and only kept exact by
+        // PHP's own overflow fallback).
+        $c = strcmp($a, $b);
+        return $c < 0 ? -1 : ($c > 0 ? 1 : 0);
     }
 
     private static function addAbs(string $a, string $b): string
@@ -225,17 +237,142 @@ final class Dec
             return (string) $c0;
         }
 
-        $limbsA = [];
-        for ($i = $la; $i > 0; $i -= 7) {
-            $start = max(0, $i - 7);
-            $limbsA[] = (int) substr($a, $start, $i - $start);
-        }
-        $limbsB = [];
-        for ($j = $lb; $j > 0; $j -= 7) {
-            $start = max(0, $j - 7);
-            $limbsB[] = (int) substr($b, $start, $j - $start);
-        }
+        return self::fromLimbs(self::mulLimbs(self::toLimbs($a), self::toLimbs($b)));
+    }
 
+    /** Operand sizes (in limbs) below which schoolbook beats Karatsuba's bookkeeping. */
+    public static int $karatsubaFrom = 40;
+
+    /**
+     * Product of two limb arrays (base 10^7, least significant first, no leading
+     * zero limb): schoolbook below $karatsubaFrom limbs, Karatsuba above it
+     * (PHP-P5). Quadratic schoolbook made squaring a 100,000-digit number take
+     * 13 s without ext-gmp; three half-size products instead of four make it
+     * ~n^1.58. Exact integer arithmetic only.
+     *
+     * @param list<int> $a @param list<int> $b @return list<int>
+     */
+    private static function mulLimbs(array $a, array $b): array
+    {
+        $na = count($a);
+        $nb = count($b);
+        if ($na < $nb) {
+            [$a, $b, $na, $nb] = [$b, $a, $nb, $na];
+        }
+        if ($nb < self::$karatsubaFrom) {
+            return self::mulLimbsSchool($a, $b);
+        }
+        $h = intdiv($na + 1, 2);
+        if ($nb <= $h) {
+            // Lopsided: only the long operand is split.
+            $p0 = self::mulLimbs(self::trimLimbs(array_slice($a, 0, $h)), $b);
+            $p1 = self::mulLimbs(array_slice($a, $h), $b);
+            return self::addShifted($p0, $p1, $h);
+        }
+        $a0 = self::trimLimbs(array_slice($a, 0, $h));
+        $a1 = array_slice($a, $h);
+        $b0 = self::trimLimbs(array_slice($b, 0, $h));
+        $b1 = array_slice($b, $h);
+        $z0 = self::mulLimbs($a0, $b0);
+        $z2 = self::mulLimbs($a1, $b1);
+        $z1 = self::subLimbs(self::subLimbs(self::mulLimbs(self::addLimbs($a0, $a1), self::addLimbs($b0, $b1)), $z0), $z2);
+        return self::addShifted(self::addShifted($z0, $z1, $h), $z2, 2 * $h);
+    }
+
+    /** @param list<int> $limbs @return list<int> */
+    private static function trimLimbs(array $limbs): array
+    {
+        $n = count($limbs);
+        while ($n > 1 && $limbs[$n - 1] === 0) {
+            $n--;
+        }
+        return $n === count($limbs) ? $limbs : array_slice($limbs, 0, $n);
+    }
+
+    /** @param list<int> $a @param list<int> $b @return list<int> */
+    private static function addLimbs(array $a, array $b): array
+    {
+        if (count($a) < count($b)) {
+            [$a, $b] = [$b, $a];
+        }
+        $carry = 0;
+        $nb = count($b);
+        foreach ($a as $i => $x) {
+            $t = $x + ($i < $nb ? $b[$i] : 0) + $carry;
+            if ($t >= 10000000) {
+                $t -= 10000000;
+                $carry = 1;
+            } else {
+                $carry = 0;
+            }
+            $a[$i] = $t;
+        }
+        if ($carry) {
+            $a[] = 1;
+        }
+        return $a;
+    }
+
+    /** a - b for a >= b. @param list<int> $a @param list<int> $b @return list<int> */
+    private static function subLimbs(array $a, array $b): array
+    {
+        $borrow = 0;
+        $nb = count($b);
+        foreach ($a as $i => $x) {
+            $t = $x - ($i < $nb ? $b[$i] : 0) - $borrow;
+            if ($t < 0) {
+                $t += 10000000;
+                $borrow = 1;
+            } else {
+                $borrow = 0;
+            }
+            $a[$i] = $t;
+        }
+        return self::trimLimbs($a);
+    }
+
+    /** x + y * base^shift. @param list<int> $x @param list<int> $y @return list<int> */
+    private static function addShifted(array $x, array $y, int $shift): array
+    {
+        if ($y === [0]) {
+            return $x;
+        }
+        $nx = count($x);
+        $ny = count($y);
+        $n = max($nx, $ny + $shift);
+        $out = $x;
+        for ($i = $nx; $i < $n; $i++) {
+            $out[$i] = 0;
+        }
+        $carry = 0;
+        for ($i = $shift; $i < $n; $i++) {
+            $j = $i - $shift;
+            $t = $out[$i] + ($j < $ny ? $y[$j] : 0) + $carry;
+            if ($t >= 10000000) {
+                $t -= 10000000;
+                $carry = 1;
+            } else {
+                $carry = 0;
+            }
+            $out[$i] = $t;
+            if ($j >= $ny && $carry === 0) {
+                break;
+            }
+        }
+        if ($carry) {
+            $out[] = 1;
+        }
+        return self::trimLimbs($out);
+    }
+
+    /**
+     * The schoolbook product: accumulate limb products, rippling the carries back
+     * under 10^7 every $mulCarryEvery rows so no slot overflows a native int.
+     *
+     * @param list<int> $limbsA @param list<int> $limbsB @return list<int>
+     */
+    private static function mulLimbsSchool(array $limbsA, array $limbsB): array
+    {
         $na = count($limbsA);
         $nb = count($limbsB);
         $acc = array_fill(0, $na + $nb, 0);
@@ -270,16 +407,7 @@ final class Dec
             $acc[] = $carry % 10000000;
             $carry = intdiv($carry, 10000000);
         }
-
-        while (count($acc) > 1 && end($acc) === 0) {
-            array_pop($acc);
-        }
-
-        $out = (string) array_pop($acc);
-        while (!empty($acc)) {
-            $out .= sprintf('%07d', array_pop($acc));
-        }
-        return $out;
+        return self::trimLimbs($acc);
     }
 
     /**
@@ -342,18 +470,137 @@ final class Dec
             return [$q === '' ? '0' : $q, (string) $rem];
         }
 
-        $q = '';
-        $r = '0';
-        for ($i = 0; $i < $la; $i++) {
-            $r = self::strip($r . $a[$i]);
-            $k = 0;
-            while (self::cmpAbs($r, $b) >= 0) {
-                $r = self::subAbs($r, $b);
-                $k++;
-            }
-            $q .= chr(48 + $k);
+        return self::divModLimbs($a, $b);
+    }
+
+    /**
+     * Digits to base-10^7 limbs, least significant first (the representation
+     * mulAbs multiplies in).
+     *
+     * @return list<int>
+     */
+    private static function toLimbs(string $digits): array
+    {
+        $limbs = [];
+        for ($i = strlen($digits); $i > 0; $i -= 7) {
+            $start = max(0, $i - 7);
+            $limbs[] = (int) substr($digits, $start, $i - $start);
         }
-        return [self::strip($q), $r];
+        return $limbs;
+    }
+
+    /** @param list<int> $limbs most significant limb last; trailing zero limbs are dropped */
+    private static function fromLimbs(array $limbs): string
+    {
+        $i = count($limbs) - 1;
+        while ($i > 0 && $limbs[$i] === 0) $i--;
+        $out = (string) $limbs[$i];
+        for ($i--; $i >= 0; $i--) {
+            $out .= sprintf('%07d', $limbs[$i]);
+        }
+        return $out;
+    }
+
+    /**
+     * Knuth's algorithm D over base-10^7 limbs (PHP-P4): quotient and remainder
+     * of two non-negative digit strings, `$b` longer than 9 digits so it has at
+     * least two limbs, `$a` > `$b`. Integer arithmetic only — every product is
+     * below 10^14, well inside a native int — and O(la * lb / 49) limb steps
+     * where the digit-at-a-time loop it replaces did a string compare and a
+     * string subtract per digit, each O(lb), so quadratic with a large constant.
+     *
+     * @return array{0:string,1:string}
+     */
+    private static function divModLimbs(string $a, string $b): array
+    {
+        $base = 10000000;
+        $u = self::toLimbs($a);
+        $v = self::toLimbs($b);
+        $n = count($v);
+        $m = count($u) - $n;
+        // Normalise so the divisor's top limb is at least base/2.
+        $d = intdiv($base, $v[$n - 1] + 1);
+        if ($d !== 1) {
+            $carry = 0;
+            foreach ($u as $i => $x) {
+                $t = $x * $d + $carry;
+                $u[$i] = $t % $base;
+                $carry = intdiv($t, $base);
+            }
+            $u[] = $carry;
+            $carry = 0;
+            foreach ($v as $i => $x) {
+                $t = $x * $d + $carry;
+                $v[$i] = $t % $base;
+                $carry = intdiv($t, $base);
+            }
+        } else {
+            $u[] = 0;
+        }
+        $vTop = $v[$n - 1];
+        $vNext = $v[$n - 2];
+        $q = array_fill(0, $m + 1, 0);
+        for ($j = $m; $j >= 0; $j--) {
+            $num = $u[$j + $n] * $base + $u[$j + $n - 1];
+            $qhat = intdiv($num, $vTop);
+            $rhat = $num % $vTop;
+            while ($qhat >= $base || $qhat * $vNext > $rhat * $base + $u[$j + $n - 2]) {
+                $qhat--;
+                $rhat += $vTop;
+                if ($rhat >= $base) break;
+            }
+            // Multiply and subtract: u[j .. j+n] -= qhat * v.
+            $borrow = 0;
+            $carry = 0;
+            for ($i = 0; $i < $n; $i++) {
+                $p = $qhat * $v[$i] + $carry;
+                $carry = intdiv($p, $base);
+                $t = $u[$i + $j] - ($p % $base) - $borrow;
+                if ($t < 0) {
+                    $t += $base;
+                    $borrow = 1;
+                } else {
+                    $borrow = 0;
+                }
+                $u[$i + $j] = $t;
+            }
+            $t = $u[$j + $n] - $carry - $borrow;
+            if ($t < 0) {
+                $t += $base;
+                $borrow = 1;
+            } else {
+                $borrow = 0;
+            }
+            $u[$j + $n] = $t;
+            if ($borrow) {
+                // qhat was one too large: add the divisor back.
+                $qhat--;
+                $carry = 0;
+                for ($i = 0; $i < $n; $i++) {
+                    $t = $u[$i + $j] + $v[$i] + $carry;
+                    if ($t >= $base) {
+                        $t -= $base;
+                        $carry = 1;
+                    } else {
+                        $carry = 0;
+                    }
+                    $u[$i + $j] = $t;
+                }
+                $u[$j + $n] = ($u[$j + $n] + $carry) % $base;
+            }
+            $q[$j] = $qhat;
+        }
+        // The remainder is u[0 .. n-1] divided back by the normalisation factor.
+        $r = array_slice($u, 0, $n);
+        if ($d !== 1) {
+            $rem = 0;
+            for ($i = $n - 1; $i >= 0; $i--) {
+                $t = $rem * $base + $r[$i];
+                $r[$i] = intdiv($t, $d);
+                $rem = $t % $d;
+            }
+        }
+        return [self::fromLimbs($q), self::fromLimbs($r)];
     }
 
     private static function scaleUp(string $digits, int $k): string
@@ -531,6 +778,41 @@ final class Dec
         // produced an out-of-range digit, which formatted as punctuation:
         // `"5\n" + 1` answered `5)`. It is the same PCRE behaviour the regex
         // built-ins already use `D` for, one layer further down.
+        $len = strlen($text);
+        if ($len <= 18 && self::$fastPaths) {
+            // Short numerals (the overwhelming case): strspn validation and the
+            // six-key array built directly. Eighteen digits can trip neither
+            // digit cap and always fit the native mantissa, so guard() and
+            // parseMantissa() are skipped; the arrays are identical, key order
+            // included, to the general path below (PHP-P15; tested against it).
+            $i = ($text[0] ?? '') === '-' ? 1 : 0;
+            $n = strspn($text, '0123456789', $i);
+            if ($n === 0) {
+                return null;
+            }
+            $end = $i + $n;
+            if ($end === $len) {
+                $digits = ltrim(substr($text, $i), '0');
+                $scale = 0;
+            } elseif ($text[$end] === '.') {
+                $m = strspn($text, '0123456789', $end + 1);
+                if ($m === 0 || $end + 1 + $m !== $len) {
+                    return null;
+                }
+                $digits = ltrim(substr($text, $i, $n) . substr($text, $end + 1), '0');
+                $scale = $m;
+            } else {
+                return null;
+            }
+            if ($digits === '') {
+                return ['neg' => false, 'digits' => '0', 'scale' => $scale,
+                        'native' => 0, 'nativeDigits' => '0', 'nativeNeg' => false];
+            }
+            $neg = $i === 1;
+            $v = (int) $digits;
+            return ['neg' => $neg, 'digits' => $digits, 'scale' => $scale,
+                    'native' => $neg ? -$v : $v, 'nativeDigits' => $digits, 'nativeNeg' => $neg];
+        }
         if (preg_match('/^-?[0-9]+(\.[0-9]+)?$/D', $text) !== 1) {
             return null;
         }
@@ -696,6 +978,64 @@ final class Dec
     }
 
     /**
+     * One step of a running total (SUM, PHP-P27). The total stays a native integer
+     * mantissa and a scale while every step fits, and becomes a decimal descriptor
+     * once one does not (overflow, a scale gap too wide for a native factor, or a
+     * mantissa that is not native) -- from there every step is Dec::add. The answer
+     * is the one a chain of Dec::add calls gives, without building a six-key
+     * descriptor per element. Start with `['m' => 0, 's' => 0]`; finish with
+     * sumResult().
+     *
+     * @param array{m?:int,s?:int,d?:array{neg:bool,digits:string,scale:int}} $acc
+     * @param array{neg:bool,digits:string,scale:int} $d
+     * @param array{line:int,col:int,offset:int}|null $pos
+     */
+    public static function sumAccumulate(array &$acc, array $d, ?array $pos = null): void
+    {
+        if (!isset($acc['d'])) {
+            $right = self::intMantissa($d);
+            if ($right !== null) {
+                $left = $acc['m'];
+                $scale = $acc['s'];
+                if ($d['scale'] === $scale) {
+                    $sum = $left + $right;
+                    if (is_int($sum)) {
+                        $acc['m'] = $sum;
+                        return;
+                    }
+                } else {
+                    $to = max($scale, $d['scale']);
+                    $lf = self::intPow10($to - $scale);
+                    $rf = self::intPow10($to - $d['scale']);
+                    if ($lf !== null && $rf !== null) {
+                        $left *= $lf;
+                        $right *= $rf;
+                        if (is_int($left) && is_int($right)) {
+                            $sum = $left + $right;
+                            if (is_int($sum)) {
+                                $acc['m'] = $sum;
+                                $acc['s'] = $to;
+                                return;
+                            }
+                        }
+                    }
+                }
+            }
+            $acc = ['d' => self::fromIntFast($acc['m'], $acc['s'])];
+        }
+        $acc['d'] = self::add($acc['d'], $d, $pos);
+    }
+
+    /**
+     * @param array{m?:int,s?:int,d?:array{neg:bool,digits:string,scale:int}} $acc
+     * @return array{neg:bool,digits:string,scale:int}
+     */
+    public static function sumResult(array $acc): array
+    {
+        return $acc['d'] ?? self::fromIntFast($acc['m'], $acc['s']);
+    }
+
+    /**
      * @param array{neg:bool,digits:string,scale:int} $a
      * @param array{neg:bool,digits:string,scale:int} $b
      * @return array{neg:bool,digits:string,scale:int}
@@ -761,6 +1101,60 @@ final class Dec
     }
 
     /**
+     * Division on native mantissas (PHP-P13): the same quotient the digit-string
+     * path below computes — scaled to DIV_SCALE digits, exact results cut to their
+     * minimal scale, inexact ones rounded half away from zero — done in machine
+     * integers when every intermediate provably fits. The guards keep the scaled
+     * dividend within PHP_INT_MAX and the divisor within half of it, so `2 * r >= D`
+     * cannot overflow; PHP_INT_MIN mantissas and anything wider take the general
+     * path. Null means "not applicable". The result is identical, cache keys
+     * included, to the general path's (tested against it).
+     *
+     * @return array{neg:bool,digits:string,scale:int}|null
+     */
+    private static function fastDiv(array $a, array $b): ?array
+    {
+        if (!self::$fastPaths) {
+            return null;
+        }
+        $x = self::intMantissa($a);
+        $y = self::intMantissa($b);
+        if ($x === null || $y === null || $x === PHP_INT_MIN || $y === PHP_INT_MIN) {
+            return null;
+        }
+        $p1 = self::intPow10($b['scale'] + self::DIV_SCALE);
+        $p2 = self::intPow10($a['scale']);
+        if ($p1 === null || $p2 === null) {
+            return null;
+        }
+        $ax = $x < 0 ? -$x : $x;
+        $ay = $y < 0 ? -$y : $y;
+        if ($ax > intdiv(PHP_INT_MAX, $p1) || $ay > intdiv(PHP_INT_MAX >> 1, $p2)) {
+            return null;
+        }
+        $N = $ax * $p1;
+        $D = $ay * $p2;
+        $q = intdiv($N, $D);
+        $r = $N - $q * $D;
+        $neg = ($x < 0) !== ($y < 0);
+        if ($r === 0) {
+            if ($q === 0) {
+                return self::make(false, '0', 0, 0);
+            }
+            $scale = self::DIV_SCALE;
+            while ($scale > 0 && $q % 10 === 0) {
+                $q = intdiv($q, 10);
+                $scale--;
+            }
+            return self::make($neg, (string) $q, $scale, $neg ? -$q : $q);
+        }
+        if ($r >= $D - $r) {
+            $q++;
+        }
+        return self::make($neg, (string) $q, self::DIV_SCALE, $neg ? -$q : $q);
+    }
+
+    /**
      * Exact when the quotient terminates within DIV_SCALE fractional digits (and
      * then reported at its minimal scale); otherwise rounded half away from zero
      * to exactly DIV_SCALE digits. So 4/2 is "2" and 1/3 is "0.3333333333".
@@ -774,6 +1168,10 @@ final class Dec
     {
         if (self::isZero($b)) {
             fail('E_DIV_ZERO', 'division by zero', $pos);
+        }
+        $fast = self::fastDiv($a, $b);
+        if ($fast !== null) {
+            return $fast;
         }
         $N = self::scaleUp($a['digits'], $b['scale']);
         $D = self::scaleUp($b['digits'], $a['scale']);

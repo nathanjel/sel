@@ -53,3 +53,7 @@ na  host.fn.refuse.not-callable rust
 pin program.deps.compound-rhs-assign-is-too-late = A
 pin program.deps.index-expr-assign-precedes-compound-read = -
 pin program.deps.get-default-assign-not-definite = A R
+pin program.deps.index-keys-run-in-source-order = B
+pin program.deps.index-key-read-before-a-later-key-assigns = B K
+pin program.deps.top-arg-is-not-a-binder-in-the-three-argument-form = A
+pin program.deps.bucket-key-phase-assignment-is-not-definite-for-the-projection = A

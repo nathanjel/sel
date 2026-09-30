@@ -704,6 +704,350 @@ $expect('reading an argument a host function was not given is E_BAD_ARG', functi
     }
     return true;
 });
+// --- performance wave (PHP-P1..P11): each rewritten hot path against a plain reference ----------------------------
+$cpList = static function (string $s): array {
+    $o = []; $i = 0; $n = strlen($s);
+    while ($i < $n) { $b = ord($s[$i]); $l = $b < 0x80 ? 1 : ($b < 0xe0 ? 2 : ($b < 0xf0 ? 3 : 4)); $o[] = substr($s, $i, $l); $i += $l; }
+    return $o;
+};
+$expect('P1: Utf8::length / retreat / BACKWARDS / RIGHT / LEN agree with a code-point walk on random valid UTF-8', function () use ($cpList) {
+    mt_srand(7);
+    $pool = ['a', 'Z', ' ', 'é', 'ß', '漢', '😀', "\u{10FFFF}", "\u{7FF}", "\u{800}", "\u{FFFF}", "\u{10000}", "\0"];
+    for ($t = 0; $t < 4000; $t++) {
+        $s = ''; for ($i = mt_rand(0, 30); $i > 0; $i--) $s .= $pool[mt_rand(0, count($pool) - 1)];
+        $cps = $cpList($s); $k = mt_rand(0, 34);
+        if (\Sel\Utf8::length($s) !== count($cps)) return false;
+        if (substr($s, \Sel\Utf8::retreat($s, $k)) !== implode('', array_slice($cps, max(0, count($cps) - $k)))) return false;
+        $ev = static fn (string $src) => \Sel\Sel::evaluate($src, ['S' => $s, 'K' => $k])->asText();
+        if ($ev('BACKWARDS(S)') !== implode('', array_reverse($cps))) return false;
+        if ($ev('RIGHT(S, K)') !== implode('', array_slice($cps, max(0, count($cps) - $k)))) return false;
+        if ($ev('LEN(S)') !== (string) count($cps)) return false;
+    }
+    return true;
+});
+$expect('P1: the preg fallback of BACKWARDS (no mbstring) agrees with the UTF-32 path', function () use ($cpList) {
+    $m = new ReflectionMethod(\Sel\Builtins\Text::class, 'reverseCodePoints');
+    $m->setAccessible(true);
+    $fallback = static fn (string $s): string => preg_replace(
+        ['/([\x80-\xbf])([\xc0-\xdf])/', '/([\x80-\xbf])([\x80-\xbf])([\xe0-\xef])/', '/([\x80-\xbf])([\x80-\xbf])([\x80-\xbf])([\xf0-\xf7])/'],
+        ['$2$1', '$3$2$1', '$4$3$2$1'], strrev($s));
+    foreach (['aé漢😀', '😀😀a', 'é', "x\u{10FFFF}\u{7FF}y\u{800}"] as $s) {
+        if ($m->invoke(null, $s) !== implode('', array_reverse($cpList($s)))) return false;
+        if ($fallback($s) !== implode('', array_reverse($cpList($s)))) return false;
+    }
+    return true;
+});
+$expect('P3: sort keys give the same order as compareValues, and looksNumeric of non-numeric text builds no error', function () {
+    $vals = [Value::null(), Value::bool(true), Value::bool(false), Value::text('10'), Value::text('9'), Value::text('1a'), Value::text(''),
+        Value::text(' 2'), Value::text('-0'), Value::text('1e3'), Value::text('007'), Value::bin("\x01"), Value::text('abc'), Value::text('1.50'), Value::text('1.5')];
+    foreach ($vals as $x) foreach ($vals as $y) {
+        if (\Sel\Builtins\Core::compareKeys(\Sel\Builtins\Core::sortKey($x), \Sel\Builtins\Core::sortKey($y))
+            !== \Sel\Builtins\Core::compareValues($x, $y)) return false;
+    }
+    $v = Value::text('not a number');
+    return $v->looksNumeric() === false && Value::text('12')->looksNumeric() === true && Value::text('1' . str_repeat('0', 1000001))->looksNumeric() === false;
+});
+$expect('P4/P5: limb division and Karatsuba multiplication agree with GMP (forced off/on), add-back cases included', function () {
+    mt_srand(5);
+    $limbs = [0, 1, 2, 9999999, 9999998, 5000000, 4999999, 5000001, 1234567, 7654321];
+    $num = static function (int $n) use ($limbs): string { $s = ''; for ($i = 0; $i < $n; $i++) { $v = $limbs[mt_rand(0, 9)]; if ($i === 0 && $v === 0) $v = 1; $s .= $i === 0 ? (string) $v : sprintf('%07d', $v); } return $s; };
+    $from = Dec::$karatsubaFrom;
+    try {
+        foreach ([2, 3, 40] as $k) {
+            Dec::$karatsubaFrom = $k;
+            for ($t = 0; $t < 400; $t++) {
+                $nb = mt_rand(2, 14); $na = mt_rand($nb, $nb + 14);
+                $a = $num($na); $b = $num($nb);
+                foreach (['div', 'mod', 'mul'] as $op) {
+                    Dec::forceGmp(null); $g = Dec::format(Dec::$op(Dec::parse($a), Dec::parse($b)));
+                    Dec::forceGmp(false); $p = Dec::format(Dec::$op(Dec::parse($a), Dec::parse($b)));
+                    if ($g !== $p) return false;
+                }
+            }
+        }
+    } finally { Dec::$karatsubaFrom = $from; Dec::forceGmp(null); }
+    return true;
+});
+$expect('P6: LINK with an outside variable in the key uses the hash path and answers as the nested loop does', function () {
+    $rows = static fn (int $n, int $d): array => array_map(static fn ($i) => ['id' => $i + $d], range(0, $n - 1));
+    $ctx = ['L' => $rows(40, 0), 'R' => $rows(40, 1), 'K' => 1];
+    $fast = \Sel\Sel::evaluate('COUNT(LINK(L, R, A, B, A["id"] + K == B["id"]))', $ctx)->asText();
+    $slow = \Sel\Sel::evaluate('COUNT(LINK(L, R, A, B, A["id"] + K == B["id"] AND TRUE))', $ctx)->asText();
+    if ($fast !== $slow || $fast !== '40') return false;
+    // an assignment to the outside name inside a key keeps the general path (and its answer)
+    $assigned = \Sel\Sel::evaluate('COUNT(LINK(L, R, A, B, (K = K + 1; A["id"] + K) == B["id"]))', $ctx)->asText();
+    $assignedSlow = \Sel\Sel::evaluate('COUNT(LINK(L, R, A, B, (K = K + 1; A["id"] + K) == B["id"] AND TRUE))', $ctx)->asText();
+    // empty side: the key is never evaluated, so an undefined name raises nothing
+    $empty = \Sel\Sel::evaluate('COUNT(LINK(L, LIST(), A, B, A["id"] + NOPE == B["id"]))', $ctx)->asText();
+    try { \Sel\Sel::evaluate('COUNT(LINK(L, R, A, B, A["id"] + NOPE == B["id"]))', $ctx); return false; }
+    catch (SelError $e) { if ($e->code !== 'E_UNDEF_VAR') return false; }
+    return $assigned === $assignedSlow && $empty === '0';
+});
+$expect('P11: textTrusted is internal; host input still goes through the UTF-8 check', function () {
+    try { Value::text("a\xffb"); return false; } catch (SelError $e) { if ($e->code !== 'E_UTF8') return false; }
+    return Value::textTrusted('abc')->asText() === 'abc'
+        && \Sel\Sel::evaluate('UPPER(SUBSTR("héllo", 2, 3)) & LEFT("😀x", 1)')->asText() === "éLL😀";
+});
+$expect('P9: the lexer rejects invalid UTF-8 at the same position as before the PCRE fast path', function () {
+    try { \Sel\Lexer::tokenizeSource("1 +\n \"a\xffb\""); return false; }
+    catch (SelError $e) { return $e->code === 'E_UTF8' && $e->line === 2 && $e->col === 4 && $e->offset === 7; }
+});
+
+// ---- performance wave, round 2 (PHP-P12 .. P21): each optimisation is held to the path it replaced ----------------
+$expect('P12: numTrusted is what num() builds from a library result; num() still refuses a forged decimal', function () {
+    $d = Dec::add(Dec::parse('12.50'), Dec::parse('0.25'));
+    if (Value::numTrusted($d)->dump() !== Value::num($d)->dump()) return false;
+    foreach ([['neg' => 'x', 'digits' => '5', 'scale' => 0], ['neg' => false, 'digits' => '5x', 'scale' => 0],
+              ['neg' => false, 'digits' => '5', 'scale' => -1]] as $forged) {
+        try { Value::num($forged); return false; } catch (SelError $e) { if ($e->code !== 'E_BAD_ARG') return false; }
+    }
+    return \Sel\Sel::evaluate('ABS(-3) + MAX(1, 2.50) * 2')->asText() === '8.00'
+        && \Sel\Sel::evaluate('SUM((1, 2.5, 3), X, X)')->asText() === '6.5';
+});
+$expect('P13/P15: parse, div and mod on native mantissas give the arrays of the digit-string paths', function () {
+    mt_srand(20260930);
+    $num = static function (): string {
+        $w = mt_rand(1, 19);
+        $t = (mt_rand(0, 4) === 0 ? '-' : '');
+        for ($i = 0; $i < $w; $i++) $t .= (string) mt_rand(0, 9);
+        if (mt_rand(0, 5) === 0) $t = ($t[0] === '-' ? '-' : '') . str_repeat('9', $w);
+        $sc = mt_rand(0, 3) === 0 ? 0 : mt_rand(0, 12);
+        if ($sc > 0) {
+            $neg = $t[0] === '-'; $body = ltrim($t, '-');
+            $body = str_pad($body, $sc + 1, '0', STR_PAD_LEFT);
+            $t = ($neg ? '-' : '') . substr($body, 0, -$sc) . '.' . substr($body, -$sc);
+        }
+        return $t;
+    };
+    $edge = ['', '-', '.', '5.', '.5', '-0', '0', '007', "5\n", ' 1', '1.2.3', '123456789012345678', '1234567890123456789',
+             '9223372036854775807', '-9223372036854775808', '0.1', '1.0', '7', '-7', '0.0000001'];
+    $texts = $edge;
+    for ($i = 0; $i < 6000; $i++) $texts[] = $num();
+    $same = static function (callable $f) {
+        Dec::$fastPaths = true;  $a = $f();
+        Dec::$fastPaths = false; $b = $f();
+        Dec::$fastPaths = true;
+        return $a === $b;
+    };
+    foreach ($texts as $t) {
+        if (!$same(static fn () => Dec::parse($t))) return false;
+    }
+    for ($i = 0; $i < 12000; $i++) {
+        $x = $texts[mt_rand(0, count($texts) - 1)]; $y = $texts[mt_rand(0, count($texts) - 1)];
+        $a = Dec::parse($x); $b = Dec::parse($y);
+        if ($a === null || $b === null) continue;
+        foreach (['div', 'mod'] as $op) {
+            $run = static function () use ($op, $a, $b) {
+                try { return Dec::$op($a, $b); } catch (SelError $e) { return $e->code; }
+            };
+            if (!$same($run)) return false;
+        }
+    }
+    Dec::$fastPaths = true;
+    return true;
+});
+$expect('P14: cmp on digit strings agrees with GMP, equal widths differing in the last digit included', function () {
+    if (!extension_loaded('gmp')) return true;
+    mt_srand(14);
+    for ($i = 0; $i < 4000; $i++) {
+        $w = mt_rand(1, 400);
+        $a = (string) mt_rand(1, 9); for ($j = 1; $j < $w; $j++) $a .= (string) mt_rand(0, 9);
+        $b = $a;
+        if (mt_rand(0, 1)) { $k = mt_rand(0, $w - 1); $b[$k] = (string) ((int) $b[$k] === 9 ? 8 : (int) $b[$k] + 1); if ($b[0] === '0') $b[0] = '1'; }
+        $want = gmp_cmp($a, $b);
+        $got = Dec::cmp(Dec::parse($a), Dec::parse($b));
+        if ($got !== ($want < 0 ? -1 : ($want > 0 ? 1 : 0))) return false;
+    }
+    return true;
+});
+$expect('P16: a keyed list copies keys and elements, independently of the original', function () {
+    $ctx = ['L' => [5, 6, 7, 8]];
+    $src = 'A = FILTER(L, X, X > 5); B = A; B["99"] = 1; C = A; C["2"] = 0; COUNT(A) & "/" & COUNT(B) & "/" & COUNT(C) & "/" & A["2"] & "/" & A["3"] & "/" & C["2"]';
+    return \Sel\Sel::evaluate($src, $ctx)->asText() === '3/4/3/6/7/0';
+});
+$expect('P18: RREPLACE parses its replacement once and expands $0-$9, $$ and a lone $ per match', function () {
+    $e = static fn (string $src) => \Sel\Sel::evaluate($src)->asText();
+    if ($e('RREPLACE("(a)(b)", "<$2$1$$|$0|$x|$>", "abab")') !== '<ba$|ab|$x|$>' . '<ba$|ab|$x|$>') return false;
+    if ($e('RREPLACE("é", "e$0", "aéb")') !== 'aeéb') return false;
+    if ($e('RREPLACE("x", "", "axbx")') !== 'ab') return false;
+    if ($e('RREPLACE("b*?", "-", "abb")') !== '-a-b-b-') return false;
+    try { $e('RREPLACE("(a)", "$2", "a")'); return false; } catch (SelError $x) { if ($x->code !== 'E_BAD_ARG') return false; }
+    // no match: the bad group reference is never reached
+    return $e('RREPLACE("(a)", "$2", "zzz")') === 'zzz';
+});
+$expect('P19: CRC32 and base64 are the written-out algorithms\' answers; invalid base64 is still refused', function () {
+    mt_srand(19);
+    for ($i = 0; $i < 300; $i++) {
+        $b = random_bytes(mt_rand(0, 300));
+        if (crc32($b) !== \Sel\Builtins\Binary::crc32Reference($b)) return false;
+    }
+    if (\Sel\Sel::evaluate('CRC32(TO_UTF8("123456789"))')->asText() !== 'cbf43926') return false;
+    $e = static fn (string $src) => \Sel\Sel::evaluate($src)->asText();
+    if ($e('TO_HEX(DECODE_BASE64("QUJD"))') !== '414243' || $e('TO_HEX(DECODE_BASE64("QQ=="))') !== '41'
+        || $e('TO_HEX(DECODE_BASE64("QR=="))') !== '41' || $e('TO_HEX(DECODE_BASE64(""))') !== '') return false;
+    foreach (['A===', '====', 'AA=A', 'QQ=', 'QUJD=', 'QU JD', "QUJD\n", 'AAAA====', 'é==='] as $bad) {
+        try { \Sel\Sel::evaluate('DECODE_BASE64(S)', ['S' => $bad]); return false; }
+        catch (SelError $x) { if ($x->code !== 'E_BAD_ARG') return false; }
+    }
+    // past the old PCRE JIT-stack limit of a quantified-group regex
+    $big = base64_encode(str_repeat('abcdefghij', 60000));
+    return \Sel\Sel::evaluate('BLEN(DECODE_BASE64(S))', ['S' => $big])->asText() === '600000';
+});
+$expect('P20: the compiled LINK projector is cached across calls and stays correct over many shape pairs', function () {
+    $run = static fn (array $l, array $r): string => \Sel\Sel::evaluate('COUNT(LINK(L, R, A, B, A["id"] == B["id"]))', ['L' => $l, 'R' => $r])->asText();
+    for ($round = 0; $round < 3; $round++) {
+        if ($run([['id' => 1, 'v' => 'a'], ['id' => 2, 'v' => 'b']], [['id' => 2, 'w' => 'c']]) !== '1') return false;
+    }
+    // more distinct (ops, slots) plans than the cache holds: it is dropped and refilled, never wrong
+    for ($i = 0; $i < 700; $i++) {
+        $left = ['id' => 1]; $right = ['id' => 1];
+        for ($j = 0; $j <= $i % 9; $j++) { $left['l' . $j] = $j; $right['r' . ($i % 7) . $j] = $j; }
+        if ($i % 5 === 0) $left['id2'] = [1, 2];
+        if ($run([$left], [$right]) !== '1') return false;
+    }
+    return true;
+});
+$expect('P21: nested-loop LINK shares the aliased right rows only when the predicate cannot write', function () {
+    $ctx = ['L' => array_map(static fn ($i) => ['id' => $i], range(1, 12)), 'R' => array_map(static fn ($i) => ['id' => $i], range(1, 9))];
+    $pure = \Sel\Sel::evaluate('COUNT(LINK(L, R, A, B, A["id"] + B["id"] == 10))', $ctx)->asText();
+    $same = \Sel\Sel::evaluate('COUNT(LINK(L, R, A, B, A["id"] + B["id"] == 10 AND TRUE))', $ctx)->asText();
+    if ($pure !== $same || $pure !== '9') return false;
+    // the predicate assigns (an outside name): the aliases are made per pair as before, and the answer is the same
+    $write = \Sel\Sel::evaluate('COUNT(LINK(L, R, A, B, (N = N + 1; A["id"] + B["id"] == 10))) & "/" & N', $ctx + ['N' => 0])->asText();
+    $leftJoin = \Sel\Sel::evaluate('COUNT(LINK_LEFT(L, R, A, B, A["id"] > 100))', $ctx)->asText();
+    return $write === '9/108' && $leftJoin === '12';
+});
+
+// ---- round 3: PHP-P22 .. P30 -----------------------------------------------------------------------------------------
+$expect('P22: a hybrid continuation runs on a root that owns only what it assigns; the caller is never written to', function () {
+    $b = ['ORDERS' => \Sel\Sql\Binding::relation('orders', 'o', ['ID' => \Sel\Sql\Binding::column('id', 'o', 'NUM')])];
+    $rows = static fn () => [['ID' => 1], ['ID' => 2], ['ID' => 3]];
+    $plan = \Sel\Sql\Sql::planHybrid(\Sel\Sel::compile('X = COUNT(T); ORDERS .> TAKE(3) .> MAP(_["ID"] + X)'), 'postgresql', $b);
+    if ($plan->pureSql || $plan->pureMemory) return false;
+    $ctx = Value::fromNative(['T' => [['n' => 'a'], ['n' => 'b'], ['n' => 'c'], ['n' => 'd']], 'U' => 'u',
+        'ORDERS' => [['ID' => 1], ['ID' => 2], ['ID' => 3]]]);
+    $before = $ctx->dump();
+    $out = \Sel\Sql\Sql::executeHybrid($plan, $rows, $ctx);
+    if ($out->dump() !== Value::fromNative([5, 6, 7])->dump() || $ctx->dump() !== $before || $ctx->has('X')) return false;
+    // a continuation that writes INTO a caller name writes to a copy of it
+    $write = \Sel\Sql\Sql::planHybrid(\Sel\Sel::compile('T[1]["n"] = "z"; ORDERS .> TAKE(3) .> MAP(_["ID"] + COUNT(T))'), 'postgresql', $b);
+    $out2 = \Sel\Sql\Sql::executeHybrid($write, $rows, $ctx);
+    if ($ctx->dump() !== $before || $out2->dump() !== Value::fromNative([5, 6, 7])->dump()) return false;
+    // copyWritable: the written names are copies, every other top-level child is shared
+    foreach ([Value::fromNative(['T' => [1, 2], 'U' => [3]]), (function () { $v = Value::none(); $v->set('T', Value::fromNative([1, 2])); $v->set('U', Value::fromNative([3])); return $v; })()] as $root) {
+        $c = $root->copyWritable(['T']);
+        if ($c->get('U') !== $root->get('U') || $c->get('T') === $root->get('T') || $c->dump() !== $root->dump()) return false;
+    }
+    // pure-memory plan: the same rule
+    $mem = \Sel\Sql\Sql::planHybrid(\Sel\Sel::compile('T[2]["n"] = "q"; COUNT(T)'), 'postgresql', $b);
+    $outm = \Sel\Sql\Sql::executeHybrid($mem, $rows, $ctx);
+    return $mem->pureMemory && $outm->asText() === '4' && $ctx->dump() === $before;
+});
+$expect('P24: the dialect chain and lexical memos follow registration and reset', function () {
+    \Sel\Sql\Map::reset();
+    $base = \Sel\Sql\Map::lexical('mariadb', 'textCollate');
+    \Sel\Sql\Map::defineDialect('p24-x', ['extends' => 'mariadb', 'lexical' => ['textCollate' => 'COLLATE one']]);
+    if (\Sel\Sql\Map::lexical('p24-x', 'textCollate') !== 'COLLATE one' || \Sel\Sql\Map::lexical('mariadb', 'textCollate') !== $base) return false;
+    if (\Sel\Sql\Map::chain('p24-x') !== ['p24-x', 'mariadb', 'mysql-family', 'ansi']) return false;
+    \Sel\Sql\Map::defineDialect('p24-x', ['extends' => 'mariadb', 'lexical' => ['textCollate' => 'COLLATE two']]);
+    if (\Sel\Sql\Map::lexical('p24-x', 'textCollate') !== 'COLLATE two') return false;
+    \Sel\Sql\Map::reset();
+    return !\Sel\Sql\Map::exists('p24-x') && \Sel\Sql\Map::chain('p24-x') === [] && \Sel\Sql\Map::lexical('mariadb', 'textCollate') === $base;
+});
+$expect('P24: text literals escape the same after the escape map is memoised', function () {
+    $m = \Sel\Sql\Emit::textLiteral('mariadb', "a'b\\c\n");
+    $pg = \Sel\Sql\Emit::textLiteral('postgresql', "a'b\\c");
+    return $m === \Sel\Sql\Emit::textLiteral('mariadb', "a'b\\c\n") && $pg === "'a''b\\c'" && str_starts_with($m, "'") && str_ends_with($m, "'");
+});
+$expect('P25: DEDUPE and DISTINCT keep the first of equal items, for leaves and containers alike', function () {
+    mt_srand(25);
+    $pool = ['a', 'b', '1', '1.0', 1, '2.5', true, false, [], [1], [1, 2], ['k' => 1], ['k' => '1'], ['x' => [1]], '', ' '];
+    $pool = array_values($pool);
+    for ($round = 0; $round < 40; $round++) {
+        $items = [];
+        for ($i = 0; $i < 30; $i++) $items[] = $pool[mt_rand(0, count($pool) - 1)];
+        $list = Value::fromNative($items);
+        $want = []; $kept = [];
+        $list->forEachElement(static function (string $k, Value $v) use (&$kept): void {
+            foreach ($kept as $e) if ($v->eql($e)) return;
+            $kept[] = $v;
+        });
+        foreach (['DEDUPE(L)', 'DISTINCT(L)'] as $src) {
+            $out = \Sel\Sel::evaluate($src, ['L' => $list]);
+            if ($out->size() !== count($kept)) return false;
+            $i = 0;
+            $ok = true;
+            $out->forEachElement(static function (string $k, Value $v) use (&$i, $kept, &$ok): void { if (!$v->eql($kept[$i++])) $ok = false; });
+            if (!$ok) return false;
+        }
+    }
+    // a value with no children hashes to its own key; containers to a digest; NULL and [] agree
+    return Value::null()->structuralHash() === Value::list([])->structuralHash()
+        && Value::text('ab')->structuralHash() !== Value::text('a')->structuralHash()
+        && Value::list([Value::text('a')])->structuralHash() !== Value::text('a')->structuralHash()
+        && !str_contains(Value::list([Value::text('a')])->structuralHash(), ':');
+});
+$expect('P26: TOP equals SORT then TAKE, with and without `_K`, both below and above the row count', function () {
+    mt_srand(26);
+    $rows = []; for ($i = 0; $i < 60; $i++) $rows[] = ['v' => mt_rand(0, 9), 'w' => 'w' . $i];
+    foreach ([1, 5, 59, 60, 61, 1000] as $n) {
+        foreach (['ASC' => 'TOP', 'DESC' => 'TOP_DESC'] as $dir => $fn) {
+            $top = \Sel\Sel::evaluate("JOIN($fn(R, _[\"v\"], $n) .> MAP(_[\"w\"]), \",\")", ['R' => $rows])->asText();
+            $sortFn = $dir === 'ASC' ? 'SORT_BY' : 'SORT_BY';
+            $ref = \Sel\Sel::evaluate("JOIN(R .> SORT_BY(_[\"v\"], \"$dir\") .> TAKE($n) .> MAP(_[\"w\"]), \",\")", ['R' => $rows])->asText();
+            if ($top !== $ref) return false;
+        }
+        // a body that reads _K is keyed per row; one that does not skips the binding
+        $withK = \Sel\Sel::evaluate("JOIN(TOP(R, _[\"v\"] + LEN(_K) * 0, $n) .> MAP(_[\"w\"]), \",\")", ['R' => $rows])->asText();
+        $noK = \Sel\Sel::evaluate("JOIN(TOP(R, _[\"v\"], $n) .> MAP(_[\"w\"]), \",\")", ['R' => $rows])->asText();
+        if ($withK !== $noK) return false;
+    }
+    return true;
+});
+$expect('P27: the native running total gives exactly the answer of a chain of Dec::add', function () {
+    mt_srand(27);
+    $gen = static function (): string {
+        $k = mt_rand(0, 6);
+        $int = match ($k) { 0 => (string) mt_rand(0, 999), 1 => (string) mt_rand(), 2 => str_repeat('9', mt_rand(15, 25)), 3 => '0', 4 => (string) mt_rand(0, 9), default => (string) mt_rand(0, 99999) };
+        $frac = mt_rand(0, 2) === 0 ? '' : '.' . str_repeat((string) mt_rand(0, 9), mt_rand(1, 22));
+        return (mt_rand(0, 3) === 0 ? '-' : '') . $int . $frac;
+    };
+    for ($round = 0; $round < 400; $round++) {
+        $texts = []; for ($i = 0, $n = mt_rand(0, 14); $i < $n; $i++) $texts[] = $gen();
+        $chain = Dec::zero();
+        $acc = ['m' => 0, 's' => 0];
+        foreach ($texts as $t) {
+            $d = Dec::parse($t);
+            $chain = Dec::add($chain, $d);
+            Dec::sumAccumulate($acc, $d);
+        }
+        if (Dec::format(Dec::sumResult($acc)) !== Dec::format($chain)) return false;
+        $viaSel = \Sel\Sel::evaluate('SUM(L, X, X)', ['L' => $texts])->asText();
+        if ($viaSel !== Dec::format($chain)) return false;
+    }
+    return true;
+});
+$expect('P29: Sel::evaluate of a program with no per-element work equals run(); literal concatenation folds', function () {
+    $srcs = ['X * 2 + 1 > 10 AND S $== "a"', '"abc" & "def"', '"a" & "b" & S', 'IF(X > 1, "p" & "q", "r")', 'LEN("é" & "漢")', 'X / 0'];
+    foreach ($srcs as $src) {
+        $ctx = ['X' => 6, 'S' => 'a'];
+        try { $a = \Sel\Sel::evaluate($src, $ctx)->dump(); } catch (SelError $e) { $a = $e->code . '@' . $e->line . ':' . $e->col; }
+        try { $b = \Sel\Sel::compile($src)->run(Value::fromNative($ctx))->dump(); } catch (SelError $e) { $b = $e->code . '@' . $e->line . ':' . $e->col; }
+        if ($a !== $b) return false;
+    }
+    $folded = \Sel\Optimizer::optimize(\Sel\Sel::compile('"abc" & "def"')->ast, true);
+    $kept = \Sel\Optimizer::optimize(\Sel\Sel::compile('"abc" & S')->ast, true);
+    return $folded['t'] === 'text' && $folded['v'] === 'abcdef' && $kept['t'] === 'bin';
+});
+$expect('P30: a cached `i` pattern is not re-scanned, and a non-ASCII pattern still refuses the flag every time', function () {
+    for ($i = 0; $i < 3; $i++) {
+        if (\Sel\Sel::evaluate('RMATCH(P, "ABC", "i")', ['P' => 'abc'])->dump() !== Value::bool(true)->dump()) return false;
+        try { \Sel\Sel::evaluate('RMATCH(P, "x", "i")', ['P' => 'é']); return false; }
+        catch (SelError $e) { if ($e->code !== 'E_BAD_ARG') return false; }
+    }
+    return true;
+});
+
 if ($boundary) {
     fwrite(STDERR, 'PHP runtime: ' . count($boundary) . " host-boundary contract(s) broken:\n  " . implode("\n  ", $boundary) . "\n");
     exit(1);

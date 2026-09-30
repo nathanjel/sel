@@ -20,6 +20,9 @@
   ;; Parallel to PARAMS, and never :UNKNOWN or :LIST -- those are clamped to
   ;; :TEXT, because they are not literal FORMS and the renderer has to have one.
   (param-kinds '() :type list)
+  ;; The length of PARAMS, kept beside it: a slot id was (LENGTH PARAMS) after each
+  ;; push, O(P) per literal and so O(P^2) for a program that binds thousands.
+  (param-count 0 :type fixnum)
   ;; An insertion-ordered set, held reversed. A sorted container would reorder
   ;; what the fragment reports, and the .sqlt cases can see that.
   (caveats '() :type list)
@@ -86,9 +89,10 @@ one function: numeric position for a `list`, EXACT string for a `clist`."
   "The ONLY writer of PARAMS and PARAM-KINDS."
   (push v (translator-params tr))
   (push (if (member kind '(:unknown :list)) :text kind) (translator-param-kinds tr))
+  (incf (translator-param-count tr))
   ;; The fragment's own kind stays UNCLAMPED -- a LIST-kinded literal fragment
   ;; exists and is refused later by AS-VALUE.
-  (%fragment (list (length (translator-params tr))) kind (translator-dialect tr)))
+  (%fragment (list (translator-param-count tr)) kind (translator-dialect tr)))
 
 (defun refuse-nul (text pos)
   "A TEXT value holding NUL is refused in EVERY mode: PostgreSQL cannot hold it
@@ -1101,6 +1105,7 @@ bound are taken back, or `params` mode would report a value bound that no
 placeholder uses."
   (let* ((params (translator-params tr))
          (kinds (translator-param-kinds tr))
+         (count (translator-param-count tr))
          (f (walk-node tr n)))
     (if (and (eq (fragment-kind f) :text)
              (is-constant n (translator-const-names tr)))
@@ -1108,7 +1113,8 @@ placeholder uses."
           (if text
               (progn
                 (setf (translator-params tr) params
-                      (translator-param-kinds tr) kinds)
+                      (translator-param-kinds tr) kinds
+                      (translator-param-count tr) count)
                 (walk-node tr (lit-node :num text nil (snode-pos n))))
               f))
         f)))
@@ -1515,9 +1521,8 @@ whatever the arguments would have said or a `no mapping` for the call (GO-C2)."
   (let* ((name (sel::node-s n))
          (args (sel::node-items n))
          (forms (remove-if-not
-                 (lambda (f) (and (string= (first f) (string-upcase name))
-                                  (= (length (second f)) (length args))))
-                 sel::*builtin-form-data*)))
+                 (lambda (f) (= (length (second f)) (length args)))
+                 (sel::binding-forms-named name))))
     (when (and forms (every (lambda (f) (member :binder (second f))) forms))
       (let ((idx (position :binder (second (first forms)))))
         (unless (some (lambda (f)
@@ -3010,10 +3015,12 @@ can say about a bucket on its own."
                    ;; discarded with it, or `params` mode binds a value the
                    ;; statement has no place for (CPP-C57, LISP-C40).
                    (let ((params (translator-params tr))
-                         (kinds (translator-param-kinds tr)))
+                         (kinds (translator-param-kinds tr))
+                         (count (translator-param-count tr)))
                      (compile-statement tr plan)
                      (setf (translator-params tr) params
-                           (translator-param-kinds tr) kinds)))
+                           (translator-param-kinds tr) kinds
+                           (translator-param-count tr) count)))
                  ;; A join returns its rows in no order, and SEL's are the left
                  ;; list's: rows sorted with no LIMIT beside the ORDER BY (which a
                  ;; derived table drops) cannot pass through a JOIN carrying their

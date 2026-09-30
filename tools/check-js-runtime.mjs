@@ -6,7 +6,9 @@ import { compile, Value, RecordShape } from '../js/src/sel.mjs';
 import { parse } from '../js/src/parser.mjs';
 import { evalNode, Context } from '../js/src/eval.mjs';
 import { optimizeAstLogical, unwindPipeline } from '../js/src/optimizer.mjs';
-import { decodeSource } from '../js/src/utf8.mjs';
+import { decodeSource, fromCodePoints, toCodePoints } from '../js/src/utf8.mjs';
+import { structuralHash } from '../js/src/value.mjs';
+import * as DEC from '../js/src/decimal.mjs';
 import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -820,6 +822,202 @@ a*a*$
       assert.ok(!/node:|file:\/\/\/|Error:|at .*\(/.test(r.stderr), `stack trace: ${r.stderr}`);
     });
   }
+}
+
+// --- performance round 2 (JS-P11..P20): the optimisations are invisible ------
+{
+  const run = (src, ctx = {}) => compile(src).run(Value.fromNative(ctx));
+  const dump = (v) => v.dump();
+  // P11: a math plan over an expression with an IF/COND/`,`/`;`/assignment operand answers as the plain tree does.
+  const plainEval = (src, ctx = {}) => { const prog = compile(src); return evalNode(prog.ast, new Context(Value.fromNative(ctx))); };
+  for (const src of [
+    'A * 3 + IF(B > 0, C, 2) - A / 4',
+    '(A + 1) * COND(B > 1, 5, B < 0, 7, 9) + C',
+    'A + (A = 10; A * 2) + A',
+    'A * (1, 2)',
+    'N = 1; N + (N = 5) + N',
+    'A + IF(TRUE, 1, 1 / 0) * B',
+    '1 + IF(B > 0, "x", 2)',
+  ]) {
+    expectOk(`P11 plan vs plain tree: ${src}`, () => {
+      const ctx = { A: 7, B: 1, C: 9 };
+      let a, b;
+      try { a = dump(run(src, ctx)); } catch (e) { a = `!${e.code}@${e.line}:${e.col}`; }
+      try { b = dump(plainEval(src, ctx)); } catch (e) { b = `!${e.code}@${e.line}:${e.col}`; }
+      assert.equal(a, b);
+    });
+  }
+  // P12: the append idiom gives the same list and the same depth error whether or not the second copy is made.
+  expectOk('P12 A = (A, x) appends and the stored list is independent of later writes', () => {
+    const r = run('A = (1, 2); A = (A, 3); B = A; B[1] = 9; (A[1], B[1], COUNT(A))', {});
+    assert.equal(r.get('1').scalar, '1'); assert.equal(r.get('2').scalar, '9'); assert.equal(r.get('3').scalar, '3');
+  });
+  expectOk('P12 the depth check still fires at the target for a list that nests past the cap', () => {
+    let deep = 'A[1]'; for (let i = 0; i < 197; i++) deep += '[1]';
+    let e; try { run(`${deep} = 1; A = (A, 2); A = (A, 3)`); } catch (x) { e = x; }
+    assert.ok(e === undefined || e.code === 'E_DEPTH', `unexpected ${e && e.code}`);
+    let deeper = 'A[1]'; for (let i = 0; i < 199; i++) deeper += '[1]';
+    let f; try { run(`${deeper} = 1; A = (A, 2)`); } catch (x) { f = x; }
+    assert.ok(f && f.code === 'E_DEPTH', `want E_DEPTH, got ${f && f.code}`);
+  });
+  // P16: a hybrid continuation shares the caller's unrelated entries but never writes through to them.
+  {
+    const sqlUrl = pathToFileURL(resolve('js/src/sql/index.mjs')).href;
+    const { Sql, Binding } = await import(sqlUrl);
+    const bindings = { ORDERS: Binding.relation('orders', 'o', { AMOUNT: Binding.column('amount', 'o', 'NUM') }, null, null) };
+    const plan = Sql.planHybrid(compile('ORDERS .> FILTER(_["AMOUNT"] > 1) .> MAP(RECORD("a", _["AMOUNT"] * FACTOR)) .> TAKE(3)'), 'mariadb', bindings);
+    const ctx = Value.fromNative({ FACTOR: 2, UNRELATED: [{ v: 1 }, { v: 2 }], ORDERS: [{ AMOUNT: 5 }, { AMOUNT: 7 }] });
+    const runner = () => [{ AMOUNT: 5 }, { AMOUNT: 7 }];
+    expectOk('P16 executeHybrid leaves the caller context untouched and answers like run()', () => {
+      const before = ctx.dump();
+      const out = Sql.executeHybrid(plan, runner, ctx);
+      assert.equal(ctx.dump(), before);
+      assert.equal(out.size(), 2);
+    });
+    const assigning = Sql.planHybrid(compile('ORDERS .> FILTER(_["AMOUNT"] > 1) .> MAP(RECORD("a", _["AMOUNT"])) .> TAKE(3); UNRELATED[1]["v"] = 99; FACTOR += 1; FACTOR'), 'mariadb', bindings);
+    expectOk('P16 a continuation that assigns to context names writes only to its own copy', () => {
+      const before = ctx.dump();
+      const out = Sql.executeHybrid(assigning, runner, ctx);
+      assert.equal(ctx.dump(), before, 'the caller context changed');
+      assert.equal(out.scalar, '3');
+    });
+  }
+  // P17: BTL elements are distinct values even though byte decimals are shared.
+  expectOk('P17 BTL elements are independent values', () => {
+    const r = run('B = BTL(FROM_HEX("0101")); B[1] = 7; (B[1], B[2], COUNT(B))');
+    assert.equal(r.get('1').scalar, '7'); assert.equal(r.get('2').scalar, '1'); assert.equal(r.get('3').scalar, '2');
+    assert.equal(dump(run('BTL(FROM_HEX("00ff80"))')), dump(run('LIST(0, 255, 128)')));
+    assert.equal(run('LTB(BTL(FROM_HEX("00ff80")))').kind, 'BIN');
+  });
+  expectOk('P17 the first BigInt handed to Value.int does not pay for 10^1000000', () => {
+    assert.equal(Value.int(123n).scalar, '123');
+    assert.equal(Value.int(-(10n ** 17n)).scalar, '-100000000000000000');
+    assert.throws(() => Value.int(10n ** 1000000n), (e) => e.code === 'E_RANGE');
+  });
+  // P18: the integer-digit cap verdict is exact at the boundary.
+  expectCode('P18 POWER far past the cap is E_RANGE', 'E_RANGE', () => compile('POWER(POWER(3, 99999), 21)').run(Value.none()));
+  expectOk('P18 a number of exactly the cap in digits is legal, one more is not', () => {
+    assert.equal(compile('LEN(REPEAT("9", 1000000) + 0)').run(Value.none()).scalar, '1000000');
+    let e; try { compile('REPEAT("9", 1000000) + 1').run(Value.none()); } catch (x) { e = x; }
+    assert.ok(e && e.code === 'E_RANGE', `want E_RANGE, got ${e && e.code}`);
+  });
+  // P19: a numeric join still raises E_NOT_NUM at the pair the comparison rejects, from the same node.
+  expectOk('P19 numeric join over non-numeric keys raises as the comparison does', () => {
+    let e; try { run('COUNT(LINK(L, R, A, B, A["k"] == B["k"]))', { L: [{ k: 7 }], R: [{ k: 'x' }] }); } catch (x) { e = x; }
+    assert.ok(e && e.code === 'E_NOT_NUM', `want E_NOT_NUM, got ${e && e.code}`);
+    assert.equal(run('COUNT(LINK(L, R, A, B, A["k"] == B["k"]))', { L: [{ k: 7 }], R: [{ k: '7.0' }] }).scalar, '1');
+    assert.equal(Value.text('abc').tryDecimal(), null);
+    assert.equal(Value.text('1.50').tryDecimal().scale, 2);
+    assert.equal(Value.bool(true).tryDecimal(), null);
+  });
+  // P20: the i-flag ASCII refusal fires on every call, cached pattern or not, and flags never share a cached regex.
+  expectOk('P20 regex compile memo: refusals repeat, flags stay separate', () => {
+    for (let i = 0; i < 3; i++) {
+      let e; try { run('RMATCH("é", "é", "i")'); } catch (x) { e = x; }
+      assert.ok(e && e.code === 'E_BAD_ARG', `call ${i}: want E_BAD_ARG, got ${e && e.code}`);
+    }
+    assert.equal(dump(run('RMATCH("abc", "ABC")')), 'FALSE');
+    assert.equal(dump(run('RMATCH("abc", "ABC", "i")')), 'TRUE');
+    assert.equal(dump(run('RMATCH("abc", "ABC")')), 'FALSE');
+    assert.equal(dump(run('RMATCH("é", "é")')), 'TRUE');
+  });
+}
+
+// --- performance round 3 (JS-P21..P28): the optimisations are invisible ------
+{
+  const run = (src, ctx = {}) => compile(src).run(Value.fromNative(ctx));
+  const dump = (v) => v.dump();
+  // P22: a pure predicate aliases the right rows once; an assigning one per pair. Both give
+  // the same joined rows, and a host-function call keeps the per-pair path.
+  expectOk('P22 LINK nested loop: pure predicate == impure twin', () => {
+    const L = [{ id: 1, v: 3, k: 1 }, { id: 2, v: 9, k: 2 }, { id: 3, v: 5, k: 1 }];
+    const R = [{ rid: 1, v: 4, k: 1 }, { rid: 2, v: 8, k: 2 }, { rid: 3, v: 1, k: 1 }];
+    for (const fn of ['LINK', 'LINK_LEFT']) {
+      const pure = dump(run(`${fn}(L, R, A, B, A["v"] < B["v"] AND A["k"] != B["k"] + 5)`, { L, R }));
+      const twin = dump(run(`${fn}(L, R, A, B, (Z = 1; A["v"] < B["v"] AND A["k"] != B["k"] + 5))`, { L, R }));
+      assert.equal(pure, twin);
+    }
+    assert.equal(run('COUNT(LINK(L, R, A, B, A["v"] < B["v"]))', { L, R }).scalar, '3');
+    assert.equal(run('COUNT(LINK_LEFT(L, R, A, B, A["v"] > 100))', { L, R }).scalar, '3');
+    // The right side is aliased under its own name for every left row.
+    assert.equal(run('COUNT(LINK(L, R, A, B, B["v"] > A["v"] AND A["id"] == B["rid"]))', { L, R }).scalar, '1');
+  });
+  // P23: a numeric literal on the right of an arithmetic/comparison operator is read as its
+  // decimal; scale, sign, error positions and the depth boundary are what they were.
+  expectOk('P23 right-hand literal fast path keeps values, scale, errors and depth', () => {
+    assert.equal(run('A + 1.50', { A: 2 }).scalar, '3.50');
+    assert.equal(run('A * 0', { A: 2 }).scalar, '0');
+    assert.equal(run('A - 007', { A: 10 }).scalar, '3');
+    assert.equal(dump(run('A == 2.0', { A: 2 })), 'TRUE');
+    assert.equal(dump(run('A >= 3', { A: 2 })), 'FALSE');
+    assert.equal(run('A / 3', { A: 1 }).scalar, '0.3333333333');
+    assert.equal(dump(run('A $== 2', { A: '2' })), 'TRUE');
+    assert.equal(run('"a" & 1', {}).scalar, 'a1');
+    let e; try { run('A + 1', { A: 'x' }); } catch (x) { e = x; }
+    assert.ok(e && e.code === 'E_NOT_NUM' && e.line === 1 && e.col === 1, `left operand error, got ${e && e.code}@${e && e.col}`);
+    e = null; try { run('A + B + 1', { A: 1 }); } catch (x) { e = x; }
+    assert.ok(e && e.code === 'E_UNDEF_VAR' && e.col === 5, `left error first, got ${e && e.code}@${e && e.col}`);
+    const nest = (n, tail) => '('.repeat(n) + tail + ')'.repeat(n);
+    assert.equal(run(nest(99, 'A + 1'), { A: 5 }).scalar, '6');
+    e = null; try { run(nest(100, 'A + 1'), { A: 5 }); } catch (x) { e = x; }
+    assert.ok(e && e.code === 'E_DEPTH' && e.col === 101, `depth boundary, got ${e && e.code}@${e && e.col}`);
+  });
+  // P27: fromCodePoints round-trips at and around the chunk size, and for the empty and one-element arrays.
+  expectOk('P27 fromCodePoints: boundaries of the short path and the chunked one', () => {
+    assert.equal(fromCodePoints([]), '');
+    assert.equal(fromCodePoints([0x1f600]), '\u{1f600}');
+    for (const n of [1, 2, 4095, 4096, 4097, 8191, 8192, 8193, 20000]) {
+      let str = '';
+      for (let i = 0; i < n; i++) str += i % 5 === 0 ? '\u{1f600}' : i % 3 === 0 ? '\u00e9' : String.fromCharCode(97 + (i % 26));
+      assert.equal(fromCodePoints(toCodePoints(str, null)), str, `n=${n}`);
+    }
+  });
+  // P28: a packed list hashes like its keyed twin (the key hashes are tabled now), BIN hashing is indexed, past the table too.
+  expectOk('P28 structuralHash: packed list == keyed twin, BIN stable, beyond the key table', () => {
+    for (const n of [0, 1, 7, 65536, 65540]) {
+      const nums = Array.from({ length: n }, (_, i) => i % 5);
+      const packed = Value.fromNative(nums);
+      const keyed = Value.fromEntries(nums.map((x, i) => [String(i + 1), Value.fromNative(x)]));
+      assert.equal(structuralHash(packed), structuralHash(keyed), `n=${n}`);
+    }
+    const a = Value.bin(Uint8Array.from([1, 2, 3])), b = Value.bin(Uint8Array.from([1, 2, 3])), c = Value.bin(Uint8Array.from([1, 2, 4]));
+    assert.equal(structuralHash(a), structuralHash(b));
+    assert.notEqual(structuralHash(a), structuralHash(c));
+    assert.equal(run('COUNT(DEDUPE(LIST(LIST(1,2), LIST(1,2), LIST(2,1))))').scalar, '2');
+  });
+  // P28: the pow10 cache evicts the oldest entries (not everything) and every answer stays exact.
+  expectOk('P28 pow10 cache: exact through evictions, alternating large scales', () => {
+    const ks = [200000, 400000, 600000, 800000, 900000, 1000000, 200000, 600000, 500000, 600000, 500000, 70, 65, 64, 100, 999999];
+    for (const k of ks) assert.ok(DEC.pow10(k) === 10n ** BigInt(k), `10^${k}`);
+    for (let i = 0; i < 6; i++) for (const k of [600000, 500000]) assert.ok(DEC.pow10(k) === 10n ** BigInt(k));
+    assert.equal(DEC.pow10(3), 1000n);
+    for (let k = 65; k < 400; k += 7) assert.ok(DEC.pow10(k) === 10n ** BigInt(k));
+  });
+  // JS-REG-1: MAP skips its copy only when the body BUILDS the result (RECORD/LIST/arithmetic);
+  // a body that returns something by reference still gets its copy (SPEC 3.4).
+  expectOk('JS-REG-1 MAP copies what it collects unless the body built it', () => {
+    // Built results: independent of the source, and of each other.
+    const prog = `R = MAP(X, RECORD("a", _["a"])); X[1]["a"] = 9; R[1]["a"] = 7; (R[1]["a"], R[2]["a"], X[1]["a"], X[2]["a"])`;
+    assert.equal(dump(run(prog, { X: [{ a: 1 }, { a: 2 }] })), '-{"1"=t"7", "2"=t"2", "3"=t"9", "4"=t"2"}');
+    const arith = `R = MAP(X, _ * 2); R[1] = 5; (R[1], R[2], X[1], X[2])`;
+    assert.equal(dump(run(arith, { X: [1, 2] })), '-{"1"=t"5", "2"=t"4", "3"=t"1", "4"=t"2"}');
+    // By reference: still a copy of the element, not the element.
+    const alias = `R = MAP(X, _); X[1]["a"] = 9; R[1]["a"]`;
+    assert.equal(dump(run(alias, { X: [{ a: 1 }] })), 't"1"');
+    const alias2 = `R = MAP(X, _); R[1]["a"] = 9; X[1]["a"]`;
+    assert.equal(dump(run(alias2, { X: [{ a: 1 }] })), 't"1"');
+  });
+  // P24: results built without the second validation are the same numbers; negative zero
+  // never survives, however it arises.
+  expectOk('P24 evaluator results: negative zero is normalised, caps still apply', () => {
+    for (const src of ['0 * -1', '-(0)', '-0', 'T = 0; T *= -1; T', 'A - A', 'A % 1 * -1', '0 / -5']) {
+      const v = run(src, { A: 3 });
+      assert.equal(v.scalar, '0', `${src} printed ${v.scalar}`);
+      assert.equal(dump(v), 't"0"', `${src} dumped ${dump(v)}`);
+    }
+    let e; try { run('A * A', { A: '9'.repeat(600000) }); } catch (x) { e = x; }
+    assert.ok(e && e.code === 'E_RANGE', `want E_RANGE, got ${e && e.code}`);
+  });
 }
 
 if (boundary.length) {

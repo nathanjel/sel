@@ -214,3 +214,13 @@ func HostArity(name string) (int, int, bool) {
 	spec := funcTable[key]
 	return spec.Min, spec.Max, true
 }
+
+// isHostFunction reports whether name is an application-registered function
+// (which may have effects) rather than a builtin.
+func isHostFunction(name string) bool {
+	key := utf8.AsciiUpper(name)
+	registryMu.RLock()
+	defer registryMu.RUnlock()
+	_, ok := hostFuncs[key]
+	return ok
+}

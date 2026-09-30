@@ -4,7 +4,7 @@
 import * as D from '../decimal.mjs';
 import { Value, NONE, structuralHash, scalarKey } from '../value.mjs';
 import { define } from '../registry.mjs';
-import { bytesCompare } from '../utf8.mjs';
+import { bytesCompare, compareText } from '../utf8.mjs';
 import { fail, SelError } from '../errors.mjs';
 import { cpLength, checkText, MAX_TEXT_LEN } from '../budget.mjs';
 // The direction and field names fold ASCII-only (review 2026-09-25 SEM-05):
@@ -129,13 +129,30 @@ define({
   },
 });
 
+const BUILDS_NUMBER = new Set(['+', '-', '*', '/', '%']);
+// Whether evaluating `node` always yields a value no other reference holds: a
+// RECORD/LIST call (their arguments are copied into them, SPEC 3.4) or arithmetic.
+function buildsItsResult(node) {
+  if (!node) return false;
+  if (node.t === 'call') return node.name === 'RECORD' || node.name === 'LIST';
+  if (node.t === 'bin') return BUILDS_NUMBER.has(node.op);
+  if (node.t === 'un') return node.op === 'NEG';
+  return false;
+}
+
 define({
   name: 'MAP', min: 2, max: 3, lazy: true, binds: true,
   fn: (args, ctx) => {
     const out = [];
     // The collectors copy what they collect (spec §3.4): an element the body
-    // returned by reference -- `MAP(X, _)` -- must not stay live in X.
-    walk(args, ctx, (r) => { out.push(r.cloneAt(2, args.pos)); return undefined; });
+    // returned by reference -- `MAP(X, _)` -- must not stay live in X. A body that
+    // BUILDS its result (a RECORD or LIST, which copied its own arguments, or
+    // arithmetic, which computes a new number) returns a value nothing else refers
+    // to, so the copy would only duplicate it (0.9.2 comparison, JS-REG-1).
+    walk(args, ctx, (r, _k, _i, body) => {
+      out.push(buildsItsResult(body) ? r : r.cloneAt(2, args.pos));
+      return undefined;
+    });
     return Value.listOwned(out);
   },
 });
@@ -295,7 +312,7 @@ define({
         checkText(size, args.pos, 'JOIN result');
       }
     }
-    return Value.text(parts.join(sep));
+    return Value.textOwned(parts.join(sep));
   },
 });
 
@@ -336,17 +353,23 @@ function keyInfo(key) {
     key,
     rk,
     dec: rk === 2 ? leaf.asDecimal() : null,
-    bytes: rk === 3 || rk === 4 ? leaf.asBytes() : null,
+    // TEXT keeps its string (compared natively where that is exact), BIN its bytes.
+    text: rk === 3 ? leaf.scalar : null,
+    plain: rk === 3 && !ANY_SURROGATE.test(leaf.scalar),
+    bytes: rk === 4 ? leaf.asBytes() : null,
     flag: rk === 1 ? (leaf.scalar ? 1 : 0) : 0,
   };
 }
+
+const ANY_SURROGATE = /[\uD800-\uDFFF]/;
 
 function compareInfo(a, b) {
   if (a.rk !== b.rk) return a.rk - b.rk;
   switch (a.rk) {
     case 1: return a.flag - b.flag;
     case 2: return D.cmp(a.dec, b.dec);
-    case 3: case 4: return bytesCompare(a.bytes, b.bytes);
+    case 3: return compareText(a.text, b.text);
+    case 4: return bytesCompare(a.bytes, b.bytes);
     default: return 0;
   }
 }
@@ -404,8 +427,10 @@ function doSort(args, ctx, forcedDir) {
   if (count === 1) {
     indexed = entries.map(([, item], idx) => ({ item, info: keyInfo(item), idx }));
   } else {
+    const needsK = nodeContainsVar(body, '_K');
     indexed = entries.map(([k, item], idx) => {
-      const frame = new Map([[binder, item], ['_K', Value.text(k)]]);
+      const frame = new Map([[binder, item]]);
+      if (needsK) frame.set('_K', Value.text(k));
       ctx.pushFrame(frame);
       let evalKey;
       try {
@@ -417,11 +442,19 @@ function doSort(args, ctx, forcedDir) {
     });
   }
 
-  indexed.sort((x, y) => {
-    let c = compareInfo(x.info, y.info);
-    if (dir === 'DESC') c = -c;
-    return c !== 0 ? c : (x.idx - y.idx);
-  });
+  // Array.prototype.sort is stable, so equal keys keep their input order without an index
+  // tie-break. When every key has the same rank the comparison is one specialised step
+  // (plain text natively, decimals by D.cmp); otherwise the general ordering of §7.3.
+  const sign = dir === 'DESC' ? -1 : 1;
+  const rk0 = indexed[0].info.rk;
+  const homogeneous = indexed.every((x) => x.info.rk === rk0);
+  if (homogeneous && rk0 === 3 && indexed.every((x) => x.info.plain)) {
+    indexed.sort((x, y) => (x.info.text < y.info.text ? -sign : x.info.text > y.info.text ? sign : 0));
+  } else if (homogeneous && rk0 === 2) {
+    indexed.sort((x, y) => sign * D.cmp(x.info.dec, y.info.dec));
+  } else {
+    indexed.sort((x, y) => sign * compareInfo(x.info, y.info));
+  }
 
   return Value.listOwned(indexed.map((x) => x.item.cloneAt(2, args.pos)));
 }

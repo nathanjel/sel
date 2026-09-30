@@ -1129,6 +1129,55 @@ final class Hybrid
             : ['t' => 'seq', 'items' => array_merge($kept, [$node]), 'pos' => $kept[0]['pos']];
     }
 
+    /** @var \WeakMap<\Sel\Program, list<string>|false>|null */
+    private static ?\WeakMap $writableRoots = null;
+
+    /**
+     * The root a continuation runs on (PHP-P22): the caller's context is never
+     * written to, but copying all of it cost 5.5 us a row on every execution
+     * although a continuation usually assigns to a name or two. Only the top-level
+     * names the program assigns to are deep-copied; the rest are shared, and a
+     * program with no assignment to a name cannot write through a shared child.
+     * An assignment whose root cannot be read off the tree falls back to the
+     * whole-context copy.
+     */
+    private static function rootFor(?\Sel\Program $program, Value $context): Value
+    {
+        $names = $program === null ? null : self::writableRoots($program);
+        return $names === null ? $context->copy() : $context->copyWritable($names);
+    }
+
+    /** @return list<string>|null the top-level names a program assigns to, null when unsure */
+    private static function writableRoots(\Sel\Program $program): ?array
+    {
+        self::$writableRoots ??= new \WeakMap();
+        if (isset(self::$writableRoots[$program])) {
+            $known = self::$writableRoots[$program];
+            return $known === false ? null : $known;      // false: the tree was not readable, copy it whole
+        }
+        $names = [];
+        $stack = [$program->ast];
+        $ok = true;
+        while ($stack !== [] && $ok) {
+            $n = array_pop($stack);
+            if (($n['t'] ?? null) === 'assign') {
+                $target = $n['target'] ?? null;
+                while (is_array($target) && ($target['t'] ?? null) === 'index') $target = $target['obj'] ?? null;
+                if (is_array($target) && ($target['t'] ?? null) === 'var' && is_string($target['name'] ?? null)) {
+                    $names[$target['name']] = true;
+                } else {
+                    $ok = false;
+                }
+            }
+            foreach ($n as $k => $child) {
+                if ($k !== 'pos' && is_array($child)) $stack[] = $child;
+            }
+        }
+        $result = $ok ? array_keys($names) : null;
+        self::$writableRoots[$program] = $result ?? false;
+        return $result;
+    }
+
     /**
      * Execute a plan with a callback receiving `(sql, bindings, fragment)`.
      * The callback may return a native row array or a Value.
@@ -1144,7 +1193,9 @@ final class Hybrid
             }
             // On a copy, as the hybrid path does: a program that assigns must not write
             // into the caller's context because the planner sent all of it to memory.
-            $memoryRoot = $context instanceof Value ? $context->copy() : Value::fromNative($context ?? []);
+            $memoryRoot = $context instanceof Value
+                ? self::rootFor($plan->continuationProgram, $context)
+                : Value::fromNative($context ?? []);
             return $plan->continuationProgram->run($memoryRoot);
         }
         if ($plan->sqlStatement === null) {
@@ -1153,7 +1204,9 @@ final class Hybrid
         $fragment = $plan->sqlStatement;
         $rows = $dbRunner($fragment->asStatement('params'), $fragment->bindings(), $fragment);
         if ($plan->pureSql) return $rows;
-        $root = $context instanceof Value ? $context->copy() : Value::fromNative($context ?? []);
+        $root = $context instanceof Value
+            ? self::rootFor($plan->continuationProgram, $context)
+            : Value::fromNative($context ?? []);
         $root->set($plan->continuationSourceVar,
             $rows instanceof Value ? $rows : Value::fromNative($rows));
         if ($plan->continuationProgram === null) {

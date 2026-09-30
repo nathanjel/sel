@@ -157,7 +157,7 @@ final class Evaluator
                     break;
             }
         }
-        return Value::num(self::operand($scratchpad[$plan['outputSlot']], $plan['outputPos']));
+        return Value::numTrusted(self::operand($scratchpad[$plan['outputSlot']], $plan['outputPos']));
     }
 
     /** @param array<string,mixed> $node */
@@ -165,14 +165,14 @@ final class Evaluator
     {
         switch ($node['t']) {
             case 'num':                                 // canonicalised by the parser
-                $v = Value::text($node['v']);
+                $v = Value::textTrusted($node['v']);
                 if (isset($node['dec'])) {
                     $v->decVal = $node['dec'];
                 }
                 return $v;
 
             case 'text':
-                return Value::text($node['v']);
+                return Value::textTrusted($node['v']);
 
             case 'bool':
                 return Value::bool($node['v']);
@@ -295,7 +295,7 @@ final class Evaluator
         if ($node['op'] === 'NOT') {
             return Value::bool(!$v->asBool($node['x']['pos']));
         }
-        return Value::num(Dec::negate($v->asDecimal($node['x']['pos'])));
+        return Value::numTrusted(Dec::negate($v->asDecimal($node['x']['pos'])));
     }
 
     /** @param array<string,mixed> $node */
@@ -338,11 +338,11 @@ final class Evaluator
         $rp = $node['r']['pos'];
 
         switch ($op) {
-            case '+': return Value::num(Dec::add($l->asDecimal($lp), $r->asDecimal($rp), $node['pos']));
-            case '-': return Value::num(Dec::sub($l->asDecimal($lp), $r->asDecimal($rp), $node['pos']));
-            case '*': return Value::num(Dec::mul($l->asDecimal($lp), $r->asDecimal($rp), $node['pos']));
-            case '/': return Value::num(Dec::div($l->asDecimal($lp), $r->asDecimal($rp), $node['pos']));
-            case '%': return Value::num(Dec::mod($l->asDecimal($lp), $r->asDecimal($rp), $node['pos']));
+            case '+': return Value::numTrusted(Dec::add($l->asDecimal($lp), $r->asDecimal($rp), $node['pos']));
+            case '-': return Value::numTrusted(Dec::sub($l->asDecimal($lp), $r->asDecimal($rp), $node['pos']));
+            case '*': return Value::numTrusted(Dec::mul($l->asDecimal($lp), $r->asDecimal($rp), $node['pos']));
+            case '/': return Value::numTrusted(Dec::div($l->asDecimal($lp), $r->asDecimal($rp), $node['pos']));
+            case '%': return Value::numTrusted(Dec::mod($l->asDecimal($lp), $r->asDecimal($rp), $node['pos']));
 
             case '&': return self::concat($l, $r, $lp, $rp, $node['pos']);
 
@@ -482,7 +482,7 @@ final class Evaluator
             } else {
                 $a = $current->asDecimal($tp);
                 $b = $rhs->asDecimal($vp);
-                $value = Value::num(match ($binOp) {
+                $value = Value::numTrusted(match ($binOp) {
                     '+' => Dec::add($a, $b, $node['pos']),
                     '-' => Dec::sub($a, $b, $node['pos']),
                     '*' => Dec::mul($a, $b, $node['pos']),

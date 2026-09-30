@@ -9076,6 +9076,12 @@ func c1303Bind() map[string]*sql.Binding {
 	}
 }
 
+func c1304Bind() map[string]*sql.Binding {
+	return map[string]*sql.Binding{
+		"ORDERS": bindRelation("orders", "o", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "CUSTOMER_ID", Binding: bindCol("customer_id", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "AMOUNT", Binding: bindCol("amount", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "NAME", Binding: bindCol("name", "o", sql.KindText, false, false, false, "")}}, "", "", ""),
+	}
+}
+
 type SqlCase struct {
 	Name            string
 	At              string
@@ -31265,4 +31271,21 @@ var sqlCases = []SqlCase{
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
 	 BindingsFn: c1303Bind},
+	{Name: "plan.order.sort-over-a-projection-of-sorted-rows-stays-in-memory",
+	 At: "52-audit-cases.sqlt:302",
+	 Dialect: "mariadb",
+	 Source: "ORDERS .> TOP_BY(_[\"id\"], 2) .> SELECT_COLS(\"id\", \"amount\") .> SORT_BY(_[\"amount\"], \"DESC\") .> TOP_BY(_K, 2)",
+	 Expect: strPtr("SELECT `_sub1`.`id`, `_sub1`.`amount` FROM (SELECT `o`.* FROM `orders` `o` ORDER BY `o`.`id` ASC LIMIT 2) `_sub1`"),
+	 Error: nil,
+	 Throws: nil,
+	 Params: nil,
+	 As: nil,
+	 Mode: nil,
+	 Strict: false,
+	 Plan: strPtr("hybrid"),
+	 HasTables: true,
+	 Tables: []string{"orders"},
+	 Unrepresentable: nil,
+	 RegisterFn: nil,
+	 BindingsFn: c1304Bind},
 }

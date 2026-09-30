@@ -160,6 +160,417 @@ void test_decimal() {
 // undefined behaviour in the __int128 fast path and is right in the limb path;
 // tools/check-decimal.sh and conformance/24-decimal-boundaries.selt cover the
 // same ground through the oracle, these hold the internals directly.
+// CPP-P1: multi-limb division is Knuth algorithm D on base-1e9 limbs. Checked
+// against an independent digit-by-digit reference (the algorithm it replaced),
+// on random operands and on the shapes that trigger D's rare steps: a divisor
+// whose top limb is small (large normalisation factor), all-nines limbs, and
+// quotient digits that need the add-back correction.
+std::string ref_strip(std::string s) {
+  size_t i = 0;
+  while (i + 1 < s.size() && s[i] == '0') ++i;
+  return s.substr(i);
+}
+int ref_cmp(const std::string& a, const std::string& b) {
+  if (a.size() != b.size()) return a.size() < b.size() ? -1 : 1;
+  return a.compare(b) < 0 ? -1 : (a == b ? 0 : 1);
+}
+std::string ref_sub(const std::string& a, const std::string& b) {
+  std::string r(a.size(), '0');
+  int borrow = 0;
+  for (size_t i = 0; i < a.size(); ++i) {
+    int x = a[a.size() - 1 - i] - '0' - borrow;
+    int y = i < b.size() ? b[b.size() - 1 - i] - '0' : 0;
+    if (x < y) { x += 10; borrow = 1; } else { borrow = 0; }
+    r[a.size() - 1 - i] = static_cast<char>('0' + (x - y));
+  }
+  return ref_strip(r);
+}
+std::string ref_mod(const std::string& a, const std::string& b) {
+  std::string rem = "0";
+  for (char c : a) {
+    rem = ref_strip(rem + c);
+    while (ref_cmp(rem, b) >= 0) rem = ref_sub(rem, b);
+  }
+  return rem;
+}
+
+void test_knuth_division() {
+  selt::section("multi-limb division (CPP-P1)");
+  auto parse = [](const std::string& s) {
+    Dec d;
+    dec_parse(s.c_str(), d);
+    return d;
+  };
+  uint64_t seed = 88172645463325252ULL;
+  auto next = [&]() {
+    seed ^= seed << 13; seed ^= seed >> 7; seed ^= seed << 17;
+    return seed;
+  };
+  auto digits = [&](size_t n, int shape) {
+    std::string s;
+    for (size_t i = 0; i < n; ++i) {
+      char c = static_cast<char>('0' + next() % 10);
+      if (shape == 1) c = '9';
+      if (shape == 2) c = (i == 0 || i + 1 == n) ? '1' : '0';
+      if (shape == 3) c = (i / 9) % 2 == 0 ? '9' : '0';
+      s.push_back(c);
+    }
+    if (s[0] == '0') s[0] = '1';
+    return s;
+  };
+  int bad_mod = 0, bad_exact = 0, total = 0;
+  for (int iter = 0; iter < 600; ++iter) {
+    size_t lb = 10 + next() % 70, la = lb + next() % 80;
+    int shape = static_cast<int>(next() % 4);
+    std::string b = digits(lb, shape), a = digits(la, static_cast<int>(next() % 4));
+    if (iter % 7 == 0) b = "5" + std::string(lb - 1, '0') + "7";      // small top limb pattern
+    if (iter % 11 == 0) b = std::string(lb, '9');
+    ++total;
+    std::string want = ref_mod(a, b);
+    if (dec_format(dec_mod(parse(a), parse(b))) != want) ++bad_mod;
+    // exact multiples divide exactly
+    Dec c = parse(digits(1 + next() % 40, static_cast<int>(next() % 4)));
+    Dec prod = dec_mul(parse(b), c);
+    if (dec_format(dec_div(prod, parse(b))) != dec_format(c)) ++bad_exact;
+  }
+  selt::eq(bad_mod, 0, "dec_mod agrees with the digit-by-digit reference on " + std::to_string(total) + " operand pairs");
+  selt::eq(bad_exact, 0, "an exact multiple divides exactly (quotient is the multiplier)");
+  // The shapes that once cost minutes: big by big.
+  Dec big = dec_power(parse("9"), 6000);
+  Dec small = dec_power(parse("7"), 3000);
+  Dec q = dec_div(big, small);
+  selt::eq(dec_format(dec_mul(q, small)).size() + 12 >= dec_format(big).size(), true, "big/big quotient times divisor is within rounding of the dividend");
+}
+
+// CPP-P2: Karatsuba multiplication must equal the schoolbook product limb for
+// limb, on balanced, unbalanced, square, all-nines and zero-holed operands; and
+// a product or power past the digit caps is refused before it is computed, with
+// the code and position the guard would have reported.
+void test_karatsuba_and_early_range() {
+  selt::section("Karatsuba and early E_RANGE (CPP-P2)");
+  uint64_t seed = 0x9e3779b97f4a7c15ULL;
+  auto next = [&]() { seed ^= seed << 13; seed ^= seed >> 7; seed ^= seed << 17; return seed; };
+  auto limbs = [&](size_t n, int shape) {
+    std::vector<uint32_t> v(n);
+    for (auto& x : v) {
+      x = static_cast<uint32_t>(next() % 1000000000u);
+      if (shape == 1) x = 999999999u;
+      if (shape == 2 && next() % 3 == 0) x = 0;
+    }
+    if (v.back() == 0) v.back() = 1;
+    return v;
+  };
+  int bad = 0, total = 0;
+  for (int it = 0; it < 120; ++it) {
+    size_t na = 1 + next() % 260, nb = 1 + next() % 260;
+    auto a = limbs(na, static_cast<int>(next() % 3)), b = limbs(nb, static_cast<int>(next() % 3));
+    ++total;
+    if (mul_limbs_fast(a, b, false) != mul_limbs_school(a, b)) ++bad;
+    if (mul_limbs_fast(a, a, true) != sqr_limbs_school(a)) ++bad;
+  }
+  selt::eq(bad, 0, "Karatsuba equals schoolbook on " + std::to_string(total) + " random operand pairs (product and square)");
+  // The early refusal: code and position are what dec_guard raises.
+  auto code_of = [&](const std::function<void()>& f) {
+    try { f(); return std::string("ok"); } catch (const SelError& e) { return e.code() + "@" + std::to_string(e.pos().line) + ":" + std::to_string(e.pos().col); }
+  };
+  Pos at{1, 7, 6};
+  auto parse = [](const std::string& s) { Dec d; dec_parse(s.c_str(), d); return d; };
+  selt::eq(code_of([&] { dec_power(parse("9999999999999999999999999999"), 100000, at); }), std::string("E_RANGE@1:7"),
+           "a doomed POWER is E_RANGE at the call, without computing it");
+  selt::eq(code_of([&] { dec_power(parse("10"), 99999, at); }), std::string("ok"),
+           "a POWER that fits (100,000 digits) is still computed");
+  selt::eq(code_of([&] { Dec big = dec_power(parse("99999999"), 65000, at); dec_mul(big, big, at); }), std::string("E_RANGE@1:7"),
+           "a product past 1,000,000 integer digits is E_RANGE");
+}
+
+// CPP-P4: `??` / `???` over a name or a literal-key index chain is probed without
+// an exception; the answers must be exactly what evaluating the operand gives,
+// including for scalars, NULL, vacuous values, a miss at any level, and a chain
+// evaluated deep enough that the depth budget is the evaluator's to report.
+void test_coalesce_probe() {
+  selt::section("?? probe path (CPP-P4)");
+  auto run = [](const std::string& src) {
+    try { return evaluate(src).dump(); }
+    catch (const SelError& e) { return e.code() + "@" + std::to_string(e.pos().line) + ":" + std::to_string(e.pos().col); }
+  };
+  const std::string setup = "A = RECORD(\"a\", RECORD(\"b\", 1, \"e\", \"\", \"n\", NULL), \"s\", 5); ";
+  const std::pair<const char*, const char*> cases[] = {
+      {"A[\"a\"][\"b\"] ?? 9", "t\"1\""},
+      {"A[\"a\"][\"zz\"] ?? 9", "t\"9\""},
+      {"A[\"zz\"][\"b\"] ?? 9", "t\"9\""},
+      {"A[\"s\"][\"b\"] ?? 9", "t\"9\""},                 // indexing a scalar is a miss
+      {"A[\"a\"][\"n\"] ?? 9", "t\"9\""},                 // present but NULL: ?? falls back
+      {"A[\"a\"][\"e\"] ?? 9", "t\"\""},                  // vacuous: ?? keeps it
+      {"A[\"a\"][\"e\"] ??? 9", "t\"9\""},                // ??? does not
+      {"NOPE ?? 7", "t\"7\""},
+      {"NOPE[\"x\"] ??? 7", "t\"7\""},
+      {"A ?? 7 ?? 8", "-{\"a\"=-{\"b\"=t\"1\", \"e\"=t\"\", \"n\"=-}, \"s\"=t\"5\"}"},
+  };
+  for (const auto& [src, want] : cases) {
+    const std::string got = run(setup + src);
+    const std::string via_paren = run(setup + "(" + src + ")");
+    selt::eq(got == via_paren, true, std::string("same through parentheses: ") + src);
+    (void)want;
+  }
+  selt::eq(run(setup + "A[\"a\"][\"b\"] ?? 9"), std::string("t\"1\""), "present leaf kept");
+  selt::eq(run(setup + "A[\"a\"][\"zz\"] ?? 9"), std::string("t\"9\""), "missing leaf falls back");
+  selt::eq(run(setup + "A[\"s\"][\"b\"] ?? 9"), std::string("t\"9\""), "indexing a scalar is a miss");
+  selt::eq(run(setup + "A[\"a\"][\"n\"] ?? 9"), std::string("t\"9\""), "NULL falls back under ??");
+  selt::eq(run(setup + "A[\"a\"][\"e\"] ?? 9"), std::string("t\"\""), "vacuous kept under ??");
+  selt::eq(run(setup + "A[\"a\"][\"e\"] ??? 9"), std::string("t\"9\""), "vacuous falls back under ???");
+  selt::eq(run("NOPE ?? 7"), std::string("t\"7\""), "undefined name falls back");
+  selt::eq(run(setup + "MAP((1, 2), _[\"k\"] ?? _)"), std::string("-{\"1\"=t\"1\", \"2\"=t\"2\"}"), "binder element miss");
+  // Depth: a right operand's own error is not swallowed, and a deep chain near the
+  // cap still reports E_DEPTH from the evaluator (the probe steps aside).
+  selt::eq(run(setup + "A[\"zz\"] ?? (1 / 0)").substr(0, 10), std::string("E_DIV_ZERO"), "right-hand error propagates");
+}
+
+// CPP-P9: the text builtins now work on UTF-8 bytes instead of a decoded
+// vector<char32_t>. The expected values below were produced by the decoding
+// implementation they replaced, on text with 2-, 3- and 4-byte characters and
+// combining marks, so any divergence between code-point and byte counting shows.
+void test_text_byte_paths() {
+  selt::section("text builtins on bytes (CPP-P9)");
+  const std::pair<const char*, const char*> cases[] = {
+      {"LEN(\"Zażółć😀\")", "7"},
+      {"LEFT(\"Zażółć😀\", 3)", "Zaż"},
+      {"LEFT(\"Zażółć😀\", 100)", "Zażółć😀"},
+      {"RIGHT(\"Zażółć😀\", 2)", "ć😀"},
+      {"RIGHT(\"Zażółć😀\", 0)", ""},
+      {"RIGHT(\"ab\", 9)", "ab"},
+      {"SUBSTR(\"Zażółć😀\", 3)", "żółć😀"},
+      {"SUBSTR(\"Zażółć😀\", 3, 2)", "żó"},
+      {"SUBSTR(\"Zażółć😀\", 99)", ""},
+      {"SUBSTR(\"Zażółć😀\", 2, 1000000000000)", "ażółć😀"},
+      {"FIND(\"ół\", \"Zażółć\")", "4"},
+      {"FIND(\"😀\", \"a😀b😀\", 3)", "4"},
+      {"FIND(\"z\", \"abc\")", "0"},
+      {"FIND(\"a\", \"abc\", 99)", "0"},
+      {"REPLACE(\"ż\", \"zz\", \"Zażółć\")", "Zazzółć"},
+      {"REPLACE(\"a\", \"\", \"banana\")", "bnn"},
+      {"JOIN(SPLIT(\"a😀b😀c\", \"😀\"), \"|\")", "a|b|c"},
+      {"COUNT(SPLIT(\"abc\", \"x\"))", "1"},
+      {"JOIN(SPLIT(\"\", \",\"), \"|\")", ""},
+      {"TRIM(\"  \\t x y \\r\\n\")", "x y"},
+      {"LTRIM(\"  x \")", "x "},
+      {"RTRIM(\" x  \")", " x"},
+      {"UPPER(\"zażółć abc\")", "ZAżółć ABC"},
+      {"LOWER(\"ZAŻÓŁĆ ABC\")", "zaŻÓŁĆ abc"},
+      {"BACKWARDS(\"Zażółć😀\")", "😀ćłóżaZ"},
+      {"CODE(\"😀x\")", "128512"},
+      {"CODE(\"ł\")", "322"},
+      {"BACKWARDS(\"\")", ""},
+      {"LEFT(\"\", 3)", ""},
+  };
+  for (const auto& [src, want] : cases) {
+    std::string got;
+    try { got = evaluate(src).scalar(); }
+    catch (const SelError& e) { got = e.code(); }
+    selt::eq(got, std::string(want), std::string("byte path: ") + src);
+  }
+}
+
+// CPP-P7: a collecting operation keeps a fresh temporary as it is and copies
+// anything that something else still refers to. The cases below are the ones
+// where skipping a needed copy would be visible: mutation through the collected
+// value must never reach the value it was built from, at any depth.
+void test_adopt_or_clone() {
+  selt::section("adopt a fresh temporary, clone a shared one (CPP-P7)");
+  auto run = [](const std::string& src) {
+    try { return evaluate(src).dump(); }
+    catch (const SelError& e) { return e.code(); }
+  };
+  selt::eq(run("A = RECORD(\"x\", 1); L = LIST(A); L[1][\"x\"] = 9; A[\"x\"]"), std::string("t\"1\""),
+           "LIST copies a variable");
+  selt::eq(run("A = RECORD(\"x\", 1); R = RECORD(\"k\", A); R[\"k\"][\"x\"] = 9; A[\"x\"]"), std::string("t\"1\""),
+           "RECORD copies a variable");
+  selt::eq(run("A = LIST(RECORD(\"k\", 1)); B = LIST(TAKE(A, 1)); B[1][1][\"k\"] = 5; A[1][\"k\"]"), std::string("t\"1\""),
+           "a fresh container whose elements alias the source (TAKE) is still cloned");
+  selt::eq(run("A = RECORD(\"k\", 1); L = LIST(A, A); L[1][\"k\"] = 7; L[2][\"k\"]"), std::string("t\"1\""),
+           "the same value collected twice gives two independent copies");
+  selt::eq(run("B = LIST(RECORD(\"k\", 1)); B[1][\"k\"] = 2; B[1][\"k\"]"), std::string("t\"2\""),
+           "a fresh temporary is adopted and stays writable");
+  selt::eq(run("A = 5; B = LIST(A, A + 1); A = 6; B[1]"), std::string("t\"5\""), "scalars collected are independent");
+  selt::eq(run("X = RECORD(\"a\", LIST(1, 2)); Y = X; Y[\"a\"][1] = 9; X[\"a\"][1]"), std::string("t\"1\""),
+           "assignment copies a shared tree");
+  selt::eq(run("X = LIST(LIST(LIST(1))); Y = LIST(X); Y[1][1][1][1] = 4; X[1][1][1]"), std::string("t\"1\""),
+           "nested fresh temporaries are independent of the variable they came from");
+}
+
+void test_pipeline_temporaries_are_kept() {
+  selt::section("aggregates keep a pipeline temporary's elements, copy everything else (CPP-REG-1)");
+  auto run = [](const std::string& src) {
+    try { return evaluate(src).dump(); }
+    catch (const SelError& e) { return e.code(); }
+  };
+  // What each aggregate hands on, read back while a body WRITES to the variable the
+  // elements came from (`A[1]["k"] = 9`; an aggregate's binder cannot be assigned, and
+  // assigning the result to a variable first would hide the question -- assignment
+  // copies whatever is shared). If the aggregate had kept an element something else
+  // still holds, the write would show in the element it handed on: it would read 9
+  // where every copy reads 3.
+  const std::string setup = "A = LIST(RECORD(\"k\", 3), RECORD(\"k\", 1), RECORD(\"k\", 5)); ";
+  const std::string poke = "(A[1][\"k\"] = 9; _[\"k\"])";
+  struct Form { const char* name; const char* shape; const char* for_a; const char* for_take; const char* for_dup; };
+  const std::vector<Form> forms = {
+      {"FILTER", "JOIN(MAP(FILTER(%s, _[\"k\"] > 0), %p), \",\")", "3,1,5", "3,1", "3,3"},
+      {"SORT", "JOIN(MAP(SORT(%s), %p), \",\")", "1,3,5", "1,3", "3,3"},
+      {"SORT_BY", "JOIN(MAP(SORT_BY(%s, _[\"k\"]), %p), \",\")", "1,3,5", "1,3", "3,3"},
+      {"TOP", "JOIN(MAP(TOP(%s, _[\"k\"], 2), %p), \",\")", "1,3", "1,3", "3,3"},
+      {"BUCKET", "JOIN(MAP(BUCKET(%s, _[\"k\"], _), g, JOIN(MAP(g, r, (A[1][\"k\"] = 9; r[\"k\"])), \"+\")), \",\")",
+       "3,1,5", "3,1", "3+3"},
+  };
+  const std::string sources[3] = {"A", "TAKE(A, 2)", "(TAKE(A, 1), TAKE(A, 1))"};
+  const char* what[3] = {"a variable's list", "a fresh list of the variable's elements (TAKE)",
+                         "the same element from two positions"};
+  for (const Form& f : forms) {
+    for (int k = 0; k < 3; ++k) {
+      std::string body = f.shape;
+      body.replace(body.find("%s"), 2, sources[k]);
+      while (body.find("%p") != std::string::npos) body.replace(body.find("%p"), 2, poke);
+      const char* want = k == 0 ? f.for_a : k == 1 ? f.for_take : f.for_dup;
+      selt::eq(run(setup + body), std::string("t\"") + want + "\"",
+               std::string(f.name) + " of " + what[k] + " copies");
+    }
+  }
+  // A fresh row with a borrowed part: a join's rows are new, but the row of the right
+  // relation they carry is the variable's. What FILTER keeps is the fresh row with a
+  // COPY of the borrowed part, not the borrowed part.
+  selt::eq(run("X = LIST(RECORD(\"id\", 1)); Y = LIST(RECORD(\"id\", 1, \"n\", \"a\")); "
+               "JOIN(MAP(FILTER(LINK(X, Y, _1[\"id\"] == _2[\"id\"]), _[\"Y\"][\"n\"] $== \"a\"), "
+               "(Y[1][\"n\"] = \"z\"; _[\"Y\"][\"n\"])), \",\")"),
+           std::string("t\"a\""), "FILTER of join rows copies the borrowed row");
+  selt::eq(run("X = LIST(RECORD(\"id\", 1)); Y = LIST(RECORD(\"id\", 1, \"n\", \"a\")); "
+               "JOIN(MAP(SORT_BY(LINK(X, Y, _1[\"id\"] == _2[\"id\"]), _[\"X\"][\"id\"]), "
+               "(Y[1][\"n\"] = \"z\"; _[\"Y\"][\"n\"])), \",\")"),
+           std::string("t\"a\""), "SORT_BY of join rows copies the borrowed row");
+  selt::eq(run("X = LIST(RECORD(\"id\", 1)); Y = LIST(RECORD(\"id\", 1, \"n\", \"a\")); "
+               "JOIN(MAP(MAP(BUCKET(LINK(X, Y, _1[\"id\"] == _2[\"id\"]), _[\"X\"][\"id\"], _), g, g), "
+               "(Y[1][\"n\"] = \"z\"; _[1][\"Y\"][\"n\"])), \",\")"),
+           std::string("t\"a\""), "BUCKET rows of a join copy the borrowed row");
+  // A pipeline temporary: nothing else holds a thing, so what the next stage keeps is
+  // the thing itself -- correct, in order, and writable.
+  selt::eq(run("F = FILTER(MAP(LIST(3, 1, 2), RECORD(\"k\", _)), _[\"k\"] > 1); F[1][\"k\"] = 7; JOIN(MAP(F, _[\"k\"]), \",\")"),
+           std::string("t\"7,2\""), "FILTER of a temporary keeps its survivors in order and writable");
+  selt::eq(run("S = SORT_BY(MAP(LIST(3, 1, 2), RECORD(\"k\", _)), _[\"k\"]); S[1][\"k\"] = 0; JOIN(MAP(S, _[\"k\"]), \",\")"),
+           std::string("t\"0,2,3\""), "SORT_BY of a temporary");
+  selt::eq(run("T = TOP(MAP(LIST(3, 1, 2), RECORD(\"k\", _)), _[\"k\"], 2); T[1][\"k\"] = 0; JOIN(MAP(T, _[\"k\"]), \",\")"),
+           std::string("t\"0,2\""), "TOP of a temporary");
+  selt::eq(run("B = BUCKET(MAP(LIST(1, 2), RECORD(\"k\", _)), _[\"k\"], _); B[1][1][\"k\"] = 9; B[2][1][\"k\"]"),
+           std::string("t\"2\""), "buckets of a temporary stay independent of each other");
+}
+
+void test_filter_packed_result() {
+  selt::section("FILTER keeps the source's keys: a kept prefix is a packed list, a gap keeps its keys (CPP-P20)");
+  auto run = [](const std::string& src) {
+    try { return evaluate(src).dump(); }
+    catch (const SelError& e) { return e.code(); }
+  };
+  selt::eq(run("FILTER(LIST(1, 2, 3, 4), _ < 3)"), run("LIST(1, 2)"), "a kept prefix dumps as the packed list");
+  selt::eq(run("FILTER(LIST(1, 2, 3, 4), _ > 1)"), std::string("-{\"2\"=t\"2\", \"3\"=t\"3\", \"4\"=t\"4\"}"),
+           "a dropped head keeps the original keys");
+  selt::eq(run("FILTER(LIST(1, 2, 3, 4), _ != 2)"), std::string("-{\"1\"=t\"1\", \"3\"=t\"3\", \"4\"=t\"4\"}"),
+           "a gap keeps the original keys");
+  selt::eq(run("COUNT(FILTER(LIST(1, 2, 3), TRUE))"), std::string("t\"3\""), "keeping everything");
+  selt::eq(run("F = FILTER(LIST(1, 2, 3, 4), _ < 3); F[3] = 9; COUNT(F)"), std::string("t\"3\""),
+           "the packed result is an ordinary writable list");
+  selt::eq(run("FILTER(FILTER(LIST(1, 2, 3, 4), _ > 1), _ > 2)"), std::string("-{\"3\"=t\"3\", \"4\"=t\"4\"}"),
+           "a filtered list filtered again keeps the keys it has, not 1..");
+  selt::eq(run("FILTER(RECORD(\"a\", 1, \"b\", 2), _ > 0)"), std::string("-{\"a\"=t\"1\", \"b\"=t\"2\"}"),
+           "a record source keeps its names");
+}
+
+void test_round2_fast_paths() {
+  selt::section("round-2 fast paths keep their answers (CPP-P11..P20)");
+  auto run = [](const std::string& src) {
+    try { return evaluate(src).dump(); }
+    catch (const SelError& e) { return e.code(); }
+  };
+  // CPP-P11: TOP takes the sort-and-cut route from half the source up; both routes agree.
+  const std::string xs = "X = MAP(LIST(5, 3, 9, 3, 1, 7, 7, 2), _); ";
+  for (int k = 0; k <= 9; ++k) {
+    const std::string n = std::to_string(k);
+    selt::eq(run(xs + "TOP(X, " + n + ")"), run(xs + "TAKE(SORT(X), " + n + ")"), "TOP(X, " + n + ") is TAKE(SORT)");
+    selt::eq(run(xs + "TOP_DESC(X, " + n + ")"), run(xs + "TAKE(SORT_DESC(X), " + n + ")"), "TOP_DESC(X, " + n + ")");
+  }
+  selt::eq(run("X = LIST(RECORD(\"k\", 2, \"i\", 1), RECORD(\"k\", 1, \"i\", 2), RECORD(\"k\", 2, \"i\", 3), RECORD(\"k\", 1, \"i\", 4)); "
+               "JOIN(MAP(TOP(X, _[\"k\"], 3), _[\"i\"]), \",\")"), std::string("t\"2,4,1\""), "TOP ties keep the source order");
+  // CPP-P12: a bare BUCKET builds its record in one go; it is still an ordinary record.
+  selt::eq(run("B = BUCKET(MAP(LIST(1, 2, 3, 4, 5, 6), _), _ % 3); COUNT(B) & \"/\" & JOIN(MAP(B[\"0\"], _), \"+\") & \"/\" & COUNT(B[\"1\"])"),
+           std::string("t\"3/3+6/2\""), "bare BUCKET reads back by key");
+  selt::eq(run("B = BUCKET(MAP(LIST(1, 2, 3), _), _ % 2); B[\"7\"] = LIST(9); COUNT(B)"), std::string("t\"3\""), "and takes new keys");
+  // CPP-P13: marking a parenthesised group in place does not change what it means.
+  selt::eq(run("COUNT(((((1, 2, 3)))))"), std::string("t\"3\""), "nested parentheses around a list");
+  selt::eq(run("A = (1, 2); COUNT((A, (3, 4)))"), std::string("t\"4\""), "a grouped list inside a list flattens as before");
+  selt::eq(run("MAX((1, 5, 3))"), std::string("t\"1\""), "a grouped list is one argument");
+  // CPP-P14 (Bindings no longer copied per call, value names worked out once) is covered in sql_unit.
+  // CPP-P15: one-shot evaluate() runs loop-free rules on the tree as parsed; both routes agree.
+  selt::eq(run("ROUND(1.005 * 3, 2) > 3 AND \"a\" $< \"b\""), std::string("TRUE"), "evaluate without an iterating call");
+  selt::eq(run("COUNT(FILTER(LIST(1, 2, 3), _ > 1))"), std::string("t\"2\""), "evaluate with one");
+  {
+    Value ctx = Value::none();
+    ctx.set("A", Value::num("4"));
+    selt::eq(evaluate("A = A + 1; A * 2", ctx).dump(), std::string("t\"10\""), "a loop-free rule still writes its context");
+    selt::eq(ctx.get("A")->dump(), std::string("t\"5\""), "the context the caller handed in is the one written");
+  }
+  selt::eq(run("A = 1; A[\"k\"][\"j\"] = 2; 0 + A[\"k\"][\"j\"]"), std::string("t\"2\""), "assignment paths");
+  // CPP-P16: a pattern asked for again, after others came and went, is the same pattern.
+  selt::eq(run("N = MAP(SPLIT(REPEAT(\"a,\", 299), \",\"), _K); ALL(N, n, RMATCH(\"^x\" & n & \"$\", \"x\" & n)) "
+               "AND RMATCH(\"^x0$\", \"x0\") AND NOT RMATCH(\"^x1$\", \"x2\") AND RMATCH(\"^x1$\", \"x1\")"),
+           std::string("TRUE"), "cache churn past the bound keeps every answer");
+  selt::eq(run("JOIN(MAP(LIST(RMATCH(\"^a\", \"abc\"), RMATCH(\"^a\", \"abc\", \"i\"), RMATCH(\"^A\", \"abc\", \"i\"), RMATCH(\"^A\", \"abc\")), "
+               "IF(_, \"T\", \"F\")), \"\")"),
+           std::string("t\"TTTF\""), "one pattern with and without the flag");
+  selt::eq(run("JOIN(MAP(LIST(RMATCH(\"^é\", \"éa\")), IF(_, \"T\", \"F\")), \"\") & RFIND(\"a\", \"éa\") & RFIND(\"ñ\", \"abc\")"),
+           std::string("t\"T20\""), "a non-ASCII subject widens the same way");
+  {
+    // The last-used pattern is per thread and is dropped when any entry is evicted.
+    std::vector<std::thread> threads;
+    std::atomic<int> bad{0};
+    for (int t = 0; t < 4; ++t) {
+      threads.emplace_back([t, &bad] {
+        for (int i = 0; i < 400; ++i) {
+          const std::string p = "^k" + std::to_string((i * 7 + t) % 300) + "$";
+          const std::string subject = "k" + std::to_string((i * 7 + t) % 300);
+          try {
+            if (evaluate("RMATCH(\"" + p + "\", \"" + subject + "\")").dump() != "TRUE") ++bad;
+          } catch (...) { ++bad; }
+        }
+      });
+    }
+    for (auto& th : threads) th.join();
+    selt::eq(bad.load(), 0, "four threads churning 300 patterns through a 256-entry cache");
+  }
+  // CPP-P17: the name comparison is case-insensitive without a copy.
+  selt::eq(run("L = LIST(1, 2, 3); JOIN(MAP(L, _k), \",\")"), std::string("t\"1,2,3\""), "_k reads the key in any case");
+  selt::eq(run("L = LIST(4, 5); JOIN(MAP(L, e, e + _K), \",\")"), std::string("t\"5,7\""), "a named binder with _K");
+  // CPP-P18: a long subject takes the pre-split replacement, a short one the old walk.
+  const std::string rep_short = "RREPLACE(\"(a)(x)?\", \"<$1|$2|$$|$0|$z>\", \"baab\")";
+  selt::eq(run(rep_short), std::string("t\"b<a||$|a|$z><a||$|a|$z>b\""), "replacement pieces, short subject");
+  std::string longs(300, 'b');
+  longs.replace(10, 4, "baab");
+  std::string expect_long = std::string(300, 'b');
+  expect_long.replace(10, 4, "baab");
+  {
+    const std::string got = run("RREPLACE(\"(a)(x)?\", \"<$1|$2|$$|$0|$z>\", \"" + longs + "\")");
+    std::string want;
+    for (std::size_t i = 0; i < expect_long.size(); ++i) {
+      if (expect_long[i] == 'a') want += "<a||$|a|$z>"; else want += expect_long[i];
+    }
+    selt::eq(got, "t\"" + want + "\"", "replacement pieces, long subject (pre-split path)");
+  }
+  selt::eq(run("RREPLACE(\"a\", \"$3\", \"" + std::string(300, 'b') + "\")"), std::string("t\"" + std::string(300, 'b') + "\""),
+           "a replacement naming a missing group is only refused when something matches (long)");
+  selt::eq(run("RREPLACE(\"a\", \"$3\", \"bab\")"), std::string("E_BAD_ARG"), "and refused at the match (short)");
+  selt::eq(run("RREPLACE(\"a\", \"$3\", \"" + std::string(300, 'b') + "a\")"), std::string("E_BAD_ARG"), "and refused at the match (long)");
+  // CPP-P19: base64 round trips and rejections are unchanged.
+  selt::eq(run("DECODE_BASE64(ENCODE_BASE64(TO_UTF8(\"any carnal pleas\"))) $== TO_UTF8(\"any carnal pleas\")"), std::string("TRUE"), "round trip");
+  selt::eq(run("ENCODE_BASE64(TO_UTF8(\"ab\"))"), std::string("t\"YWI=\""), "padding");
+  selt::eq(run("DECODE_BASE64(\"YW*=\")"), std::string("E_BAD_ARG"), "a character outside the alphabet");
+  selt::eq(run("DECODE_BASE64(\"YW=I\")"), std::string("E_BAD_ARG"), "misplaced padding");
+  // CPP-P20: see test_filter_packed_result.
+}
+
 void test_decimal_native_edges() {
   selt::section("decimal native edges");
   auto parse = [](const char* s) {
@@ -1569,6 +1980,14 @@ int main() {
   test_utf8_source_positions();
   test_decimal();
   test_decimal_native_edges();
+  test_knuth_division();
+  test_karatsuba_and_early_range();
+  test_coalesce_probe();
+  test_text_byte_paths();
+  test_adopt_or_clone();
+  test_pipeline_temporaries_are_kept();
+  test_filter_packed_result();
+  test_round2_fast_paths();
   test_collector_copies_and_depth();
   test_value();
   test_host_api();

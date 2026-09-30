@@ -437,7 +437,12 @@ function validateClass(p, start, pattern, pos) {
 const cache = new Map();
 const CACHE_MAX = 256;
 
+// The last (pattern, flags) and its RegExp: a FILTER over rows calls with the same
+// literal pair every time, and two string compares beat a flag loop, a key
+// concatenation and a Map lookup. The entry is always one the cache holds or held.
+let lastPattern = null, lastFlags = null, lastRe = null;
 function compile(pattern, flags, pos, patPos) {
+  if (pattern === lastPattern && flags === lastFlags) { lastRe.lastIndex = 0; return lastRe; }
   let ignoreCase = false;
   for (const ch of flags) {
     // Lowercase `i` only: toLowerCase would take U+0130 and U+212A for letters.
@@ -450,16 +455,6 @@ function compile(pattern, flags, pos, patPos) {
     fail('E_BAD_ARG', `unknown regex flag ${JSON.stringify(ch)}`, pos);
   }
 
-  if (ignoreCase) {
-    for (const cp of toCodePoints(pattern, patPos)) {
-      if (cp > 0x7f) {
-        fail('E_BAD_ARG',
-          'the i flag needs an ASCII-only pattern — case folding above ASCII differs between PCRE and ECMAScript',
-          pos);
-      }
-    }
-  }
-
   // '\\0' as an escape, never the byte itself. Written literally the NUL made
   // this file `data` rather than text, and GNU grep silently skips a binary
   // file's contents -- so every `grep -r` across js/src missed this module
@@ -467,6 +462,18 @@ function compile(pattern, flags, pos, patPos) {
   const key = (ignoreCase ? 'i\0' : '\0') + pattern;
   let re = cache.get(key);
   if (!re) {
+    // Only a pattern that passed this check is ever cached, so a hit needs none:
+    // the scan (and its error, raised on every call for a bad pattern, since a
+    // refusal is never cached) lives on the miss path.
+    if (ignoreCase) {
+      for (const cp of toCodePoints(pattern, patPos)) {
+        if (cp > 0x7f) {
+          fail('E_BAD_ARG',
+            'the i flag needs an ASCII-only pattern — case folding above ASCII differs between PCRE and ECMAScript',
+            pos);
+        }
+      }
+    }
     const source = validate(pattern, patPos, ignoreCase);
     try {
       re = new RegExp(source, ignoreCase ? 'usgi' : 'usg');
@@ -484,6 +491,7 @@ function compile(pattern, flags, pos, patPos) {
     cache.set(key, re);
   }
   re.lastIndex = 0;
+  lastPattern = pattern; lastFlags = flags; lastRe = re;
   return re;
 }
 
