@@ -411,57 +411,103 @@ Risks and what guards them:
 ## 7. Results (2026-09-30)
 
 Implemented on `feature/rust-host`, one commit per step, each verified before
-the next: conformance, sqlt, map replay, `cargo test` (debug, release,
-`--no-default-features`, judged by exit code), the allocation budget, and
-differential fuzz against JS (4 × 4,000 core programs, 2 × 2,000 SQL programs ×
-4 dialects). The final state passes `SEL_IMPLS="js rust" tools/check.sh`,
-ALL GREEN, 38 layers, with Docker databases.
+the next:
+- conformance, sqlt, map replay;
+- `cargo test` (debug, release, `--no-default-features`), judged by exit code;
+- the allocation budget;
+- differential fuzz against JS (4,000 core programs per seed, and 2,000 SQL
+  programs × 4 dialects per seed).
 
-| Commit | Step | Allocations / run, 1× | ≤ 15 B | Bytes / run, 1× |
+The final state passes `SEL_IMPLS="js rust" tools/check.sh`: ALL GREEN, 38
+layers, with Docker databases.
+
+### Allocations
+
+Scenario 1 on the 1× dataset, per run (run plus dump). The last row is pinned by
+`tests/scenario_allocations.rs`.
+
+| Commit | Step | Allocations | ≤ 15 B | Bytes |
 |---|---|---|---|---|
 | be51456 | baseline | 228,045 | 82,447 | 27,449,398 |
 | dd2c85e | 1: inline argument cache | 222,664 | 82,437 | 27,217,942 |
-| 4e3fe0c | 4a: RECORD with literal keys | 202,884 | 68,006 | 26,744,951 |
+| 4e3fe0c | 4a: RECORD literal keys, first part | 202,884 | 68,006 | 26,744,951 |
 | 901c494 | 2: `SelStr` text | 135,743 | 865 | 26,355,641 |
 | b685cf2 | 3: 128 B `ValueInner` | 135,746 | 865 | 20,275,425 |
 | bc624d7 | 4b: literal operands, `eval_bool` | 116,052 | 865 | 17,124,385 |
 | a049438 | 3b: packed decimal, 104 B `ValueInner` | 116,052 | 865 | 14,714,305 |
+| 05547ad | 4a completed: keys skipped in `invoke_call` too | 101,621 | 865 | 12,867,137 |
+| **1c6cdb8** | **phase 1 dropped (see below)** | **107,002** | **875** | **13,098,593** |
 
-The last row is pinned by `tests/scenario_allocations.rs`. At 10× (the
-benchmark's dataset) a run makes 1,150,753 allocations (2,276,227 before) and
-requests 150.9 MB (279.7 MB).
+At 10×, the benchmark's dataset, a run makes 1,059,670 allocations (was
+2,276,227) and requests 134.7 MB (was 279.7 MB). `ValueInner` is 104 bytes
+(was 192) and a value cell 128 (was 224).
 
-Scenario 1, 10×, `prepared_total_ms`, paired alternating runs of the frozen
-baseline binary (A) against the new one (B), rows validated against the
-independent Decimal oracle:
+### Time
 
-| Comparison | Rounds | A median | B median | Paired B/A median (range) |
-|---|---|---|---|---|
-| baseline → after 1, 4a, 2 | 5 | 665.6 ms | 603.3 ms | 0.903 (0.893–0.915) |
-| after 2 → after 3 | 4 | 597.1 ms | 526.7 ms | 0.882 (0.861–0.901) |
-| baseline → after 4b | 5 | 653.2 ms | 510.2 ms | 0.781 (0.769–0.792) |
-| **baseline → final (02ee9dd)** | **8** | **642.4 ms** | **475.4 ms** | **0.747 (0.717–0.783)** |
+Scenario 1, 10×, `prepared_total_ms`. Each step is paired against its
+predecessor, alternating binaries in 4 rounds of 5 runs, on a quiet box (load
+2–3):
 
-The final run was on a quiet box (load 2–3). The target (≤ 0.75) is met on the
-median, with one of eight rounds above it.
+| Step | Before | After | Paired after/before (range) |
+|---|---|---|---|
+| 1: inline argument cache | 636.9 ms | 643.0 ms | 1.009 (0.987–1.042) |
+| 4a: RECORD literal keys, first part | 646.5 ms | 640.7 ms | 0.988 (0.980–1.001) |
+| 2: `SelStr` text | 638.7 ms | 593.6 ms | 0.930 (0.916–0.944) |
+| 3: 128 B `ValueInner` | 598.3 ms | 521.9 ms | 0.873 (0.868–0.875) |
+| 4b: literal operands, `eval_bool` | 522.8 ms | 510.3 ms | 0.981 (0.971–1.011) |
+| 3b: packed decimal | 523.6 ms | 490.3 ms | 0.938 (0.921–0.950) |
+| 4a completed | 496.8 ms | 483.9 ms | 0.982 (0.968–0.990) |
 
-**Peer sanity check** (§1), interleaved, 4 rounds at load 4–6: C++ 0.9.2
-(faff480, built outside the repo) 635.7 ms, Rust baseline 653.2 ms, Rust final
-484.2 ms. The baseline trailed its peer (1.028×); the final build is ahead of it
-(0.762×).
+**Phase 1 was dropped** under §2's rule. It showed no reproducible gain, both
+alone and in the final context (1.009 above, and 0.994 over 8 paired rounds
+against the final build without it), and it made `Args` larger on the
+evaluator's recursive path.
 
-**Tried and dropped** (paired A/B showed no gain, so reverted per §2):
+**Before/after, the frozen baseline binary against the final one**, rows
+validated against the independent Decimal oracle, 8 alternating rounds of 5
+runs at load 5–7:
+
+| Baseline (be51456) | Final (1c6cdb8) | Paired final/baseline |
+|---|---|---|
+| 655.7 ms | 490.9 ms | **0.739** (0.715–0.843; seven of eight rounds ≤ 0.760) |
+
+An earlier 8-round run of the build just before the last two commits, on a
+quiet box (load 2–3), gave 642.4 → 475.4 ms, 0.747 (0.717–0.783). The target
+(≤ 0.75) is met on the median in both runs.
+
+**Peer sanity check** (§1), C++ 0.9.2 (faff480, built outside the repo)
+interleaved with both Rust builds, 4 rounds each:
+
+| Load | C++ 0.9.2 | Rust baseline | Rust final | baseline/C++ | final/C++ |
+|---|---|---|---|---|---|
+| 4–6 (the build before the last two commits) | 635.7 ms | 653.2 ms | 484.2 ms | 1.028 | 0.762 |
+| 8–10 (final build; noisy, baseline 821–1,044 ms) | 796.5 ms | 931.3 ms | 714.9 ms | 1.169 | 0.898 |
+
+Before, Rust trailed its peer; now it runs ahead of it.
+
+### Tried and dropped
+
+These showed no gain in a paired A/B, so they were reverted per §2:
 - reading a binder's field through a frame reference instead of cloning the
-  row handle (B/A 1.004);
+  row's handle (1.004);
 - caching `RowAlias`'s "shape already has the alias" check per shape (1.008);
 - presizing join buckets to the right side's row count, which raised bytes by
-  3.5% (keys repeat) and was caught by the budget test.
+  3.5% because keys repeat (caught by the budget test).
 
-**Not needed:** 3b's alternative of changing `dec.rs` (the packed form in
-`value.rs` keeps `dec.rs` untouched), and Phase 5 beyond the dropped
-experiment: `eval_index`'s remaining cost is the first touch of each field's
-cell, which the smaller cells already reduced.
+### What else landed
 
-**Also on the branch, not performance:** `5514856` ports main's `orderIsLost`
-hybrid-planner rule (sqlt 1,305/1,305), and `02ee9dd` adds main's four new
-`program.deps` API probes (114 agree with JS, 31 pinned).
+**New tests:**
+- `tests/scenario_allocations.rs`
+- `tests/value_allocations.rs` (it found that 4a was incomplete)
+- `tests/text_storage.rs`
+- `tests/value_ownership.rs`
+- `tests/literal_operands.rs`
+- `tests/value_layout.rs`
+- `tests/evaluator_stack.rs`: long AND/OR FILTER predicates through
+  `eval_bool`, at JS's E_DEPTH positions on 256 KiB release and 2 MiB debug
+  stacks.
+
+**Not performance:**
+- `5514856` ports main's `orderIsLost` hybrid-planner rule (sqlt 1,305/1,305).
+- `02ee9dd` adds main's four new `program.deps` API probes (114 agree with JS,
+  31 pinned).

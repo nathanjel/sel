@@ -63,7 +63,7 @@ proposal's dependency goals rather than silently declaring them satisfied.
 | 7.1 | Implement `conformance` binary (`rust/src/bin/conformance.rs`) | Verified shared gate | Current driver passes all 2103 cases, with zero failures or suite errors. Stale proposal test count is not the target. |
 | 7.2 | Implement `map_replay` binary (`rust/src/bin/map_replay.rs`) | Verified shared gate | map_replay passes 254 registration calls/649 lookups; see recorded run. |
 | 7.3 | Implement `sqlt` binary (`rust/src/bin/sqlt.rs`) | Verified shared gate | sqlt passes all 1284 current fixtures; 7 type-system refusals counted as passes must remain explicit. |
-| 7.4 | Benchmark Scenario 1 on `dataset-10x.json` | Target not met | All 10 result rows and unchanged context validated. Historical median after limb parsing was 935.55 ms. Latest alternating A/B comparison (10 samples each) measured 1008.78 ms with per-run AST cloning/MAP record copying restored, versus 987.48 ms current; initial unpaired current run was 1092.56 ms. See rust-scenario1-record-ab.json and rust-scenario1-owned-record.json. Required 550 ms remains unmet; timing variation requires paired comparisons. |
+| 7.4 | Benchmark Scenario 1 on `dataset-10x.json` | Met (paired) | After the value-representation work (rust-performance-plan.md §7, branch feature/rust-host), Scenario 1 runs 490.9 ms against 655.7 ms for the frozen baseline, paired 0.739x over 8 rounds (0.715-0.843; 642.4 -> 475.4 ms, 0.747x at load 2-3 on the build before the last two commits), rows validated against the independent Decimal oracle. Against its peer, C++ 0.9.2 built outside the repo, the baseline trailed (1.028x) and the final build is ahead (0.762x at load 4-6). The absolute 550 ms of the proposal is reached on this box: 475-491 ms. |
 
 ## 2026-09-30: remediation parity, integration, gate
 
@@ -151,14 +151,19 @@ give JS's values, E_NO_KEY/E_DEPTH codes and positions on 256 KiB release and
 the other session's JS-only layers (stale mutation anchor in
 js/src/sql/constants.mjs, JS metadata).
 
-**Performance follow-up (2026-09-30):** interleaved runs show the 576 ms C++
-reference era (faff480) at 650–810 ms and current C++ at 1,150–1,720 ms on this
-box, with Rust at 670–780 ms. Rust is 5–12% behind C++ 0.9.2 because of its value
+**Performance follow-up (2026-09-30):** interleaved runs showed the 576 ms C++
+reference era (faff480) at 650-810 ms and current C++ at 1,150-1,720 ms on this
+box, with Rust at 670-780 ms: 5-12% behind C++ 0.9.2 because of its value
 representation (224 B cells, no small-string storage, owned-String text reads,
-a heap argument cache per call). The fix is planned phase by phase in
-[rust-performance-plan.md](rust-performance-plan.md).
+literal operands and booleans built into cells). Implemented on
+feature/rust-host per [rust-performance-plan.md](rust-performance-plan.md):
+immutable inline/shared text (`SelStr`), a 104 B `ValueInner` (was 192), literal
+RECORD keys never evaluated, comparisons reading literals in place and FILTER
+taking booleans without cells. Allocations per 10x run 2.28 M -> 1.06 M, bytes
+280 -> 135 MB; Scenario 1 paired 0.739x of the baseline; results and the steps
+tried and dropped are in the plan's section 7.
 
-**Still open:** the quiet-box absolute measurement (7.4; see the performance plan); no `examples/<cat>/` worked-example lane for Rust; a Rust-only 4 x MAX_SQL_NODES copy guard in stage 1 (Rust copies helper text where
+**Still open:** no `examples/<cat>/` worked-example lane for Rust; a Rust-only 4 x MAX_SQL_NODES copy guard in stage 1 (Rust copies helper text where
 JS shares it); `cargo test --no-default-features` is not in the shared
 `impl_unit`; and Rust is not in the default roster (tools/impls.sh line 25): the
 other session's user keeps rust/ out of the repository history, so the default
