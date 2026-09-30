@@ -908,8 +908,8 @@
       "name": "lisp-node-list-keys-in-the-callers-print-base",
       "was": "SEL list keys are the canonical ASCII decimals. Built with PRINC-TO-STRING they follow the caller's *PRINT-BASE*, so element 10 of a bound node list is keyed \"A\" and nothing can find it.",
       "file": "lisp/src/sql/translator.lisp",
-      "from": "collect (cons (format nil \"~D\" i) (binder-node item))",
-      "to": "collect (cons (princ-to-string i) (binder-node item))"
+      "from": "collect (cons (format nil \"~D\" i) (binder-node item (translator-frames tr)))",
+      "to": "collect (cons (princ-to-string i) (binder-node item (translator-frames tr)))"
     },
     {
       "name": "lisp-column-list-keys-in-the-callers-print-base",
