@@ -8,7 +8,9 @@ Report measurements below are historical evidence, not verified targets for this
 
 ## GO-P1: LINK / LINK_LEFT with `equality AND residual` falls back to the O(n*m) nested loop
 
-- [ ] **P-GO-P1 — Measure and address this finding.**
+- [x] **P-GO-P1 — Measure and address this finding.**
+
+  Closed 2026-09-30 — implemented; evidence: performance/results/go.md, tools/perf/go/
 
 Source: [GO-P1](../../go-code-review.md). Report labels: [high] [measured].
 
@@ -24,7 +26,9 @@ Source: [GO-P1](../../go-code-review.md). Report labels: [high] [measured].
 
 ## GO-P2: Sorting re-classifies both keys on every comparison (LooksNumeric re-parses non-numeric text each time; reflection-based sort)
 
-- [ ] **P-GO-P2 — Measure and address this finding.**
+- [x] **P-GO-P2 — Measure and address this finding.**
+
+  Closed 2026-09-30 — implemented; evidence: performance/results/go.md, tools/perf/go/
 
 Source: [GO-P2](../../go-code-review.md). Report labels: [high] [measured].
 
@@ -40,7 +44,9 @@ Source: [GO-P2](../../go-code-review.md). Report labels: [high] [measured].
 
 ## GO-P3: TOP / TOP_BY / TOP_DESC do a full O(n log n) stable sort to return k rows
 
-- [ ] **P-GO-P3 — Measure and address this finding.**
+- [x] **P-GO-P3 — Measure and address this finding.**
+
+  Closed 2026-09-30 — implemented; evidence: performance/results/go.md, tools/perf/go/
 
 Source: [GO-P3](../../go-code-review.md). Report labels: [high] [reasoned + measured baseline].
 
@@ -56,7 +62,9 @@ Source: [GO-P3](../../go-code-review.md). Report labels: [high] [reasoned + meas
 
 ## GO-P4: Non-equi LINK/LINK_LEFT rebuilds the right-side alias record for every (left,right) pair
 
-- [ ] **P-GO-P4 — Measure and address this finding.**
+- [x] **P-GO-P4 — Measure and address this finding.**
+
+  Closed 2026-09-30 — implemented; evidence: performance/results/go.md, tools/perf/go/
 
 Source: [GO-P4](../../go-code-review.md). Report labels: [high] [measured].
 
@@ -72,7 +80,9 @@ Source: [GO-P4](../../go-code-review.md). Report labels: [high] [measured].
 
 ## GO-P5: RMATCH / RFIND / RGROUPS compute every match, a per-byte offset table and three copies of the subject
 
-- [ ] **P-GO-P5 — Measure and address this finding.**
+- [x] **P-GO-P5 — Measure and address this finding.**
+
+  Closed 2026-09-30 — implemented; evidence: performance/results/go.md, tools/perf/go/
 
 Source: [GO-P5](../../go-code-review.md). Report labels: [high] [measured].
 
@@ -88,7 +98,9 @@ Source: [GO-P5](../../go-code-review.md). Report labels: [high] [measured].
 
 ## GO-P6: Front-end throughput: `matchOperator` allocates, the token slice is unsized, `posAt` binary-searches
 
-- [ ] **P-GO-P6 — Measure and address this finding.**
+- [x] **P-GO-P6 — Measure and address this finding.**
+
+  Closed 2026-09-30 — implemented (partly) (remaining sub-items measured and deferred in the results row); evidence: performance/results/go.md, tools/perf/go/
 
 Source: [GO-P6](../../go-code-review.md). Report labels: [high for compile time of large rules] [measured].
 
@@ -104,7 +116,9 @@ Source: [GO-P6](../../go-code-review.md). Report labels: [high for compile time 
 
 ## GO-P7: `??` / `???` on a missing field pays panic + recover + Sprintf (~6x slower than a hit)
 
-- [ ] **P-GO-P7 — Measure and address this finding.**
+- [x] **P-GO-P7 — Measure and address this finding.**
+
+  Closed 2026-09-30 — implemented; evidence: performance/results/go.md, tools/perf/go/
 
 Source: [GO-P7](../../go-code-review.md). Report labels: [medium] [measured].
 
@@ -120,7 +134,9 @@ Source: [GO-P7](../../go-code-review.md). Report labels: [medium] [measured].
 
 ## GO-P8: Per-node `defer` closure in `EvalNode` (added by the depth/frame fix)
 
-- [ ] **P-GO-P8 — Measure and address this finding.**
+- [x] **P-GO-P8 — Measure and address this finding.**
+
+  Closed 2026-09-30 — rejected (no gain under CPU-time A/B (P8 per-node defer x1.00; P22 x1.03)); evidence: performance/results/go.md, tools/perf/go/
 
 Source: [GO-P8](../../go-code-review.md). Report labels: [medium] [measured, noisy].
 
@@ -136,7 +152,9 @@ Source: [GO-P8](../../go-code-review.md). Report labels: [medium] [measured, noi
 
 ## GO-P9: Small-number arithmetic is allocation-bound: 4-6 allocations per op; `Make` copies every result
 
-- [ ] **P-GO-P9 — Measure and address this finding.**
+- [x] **P-GO-P9 — Measure and address this finding.**
+
+  Closed 2026-09-30 — implemented (partly) (remaining sub-items measured and deferred in the results row); evidence: performance/results/go.md, tools/perf/go/
 
 Source: [GO-P9](../../go-code-review.md). Report labels: [medium] [measured].
 
@@ -152,7 +170,9 @@ Source: [GO-P9](../../go-code-review.md). Report labels: [medium] [measured].
 
 ## GO-P10: Parsing a large numeral is quadratic (`big.Int.SetString`)
 
-- [ ] **P-GO-P10 — Measure and address this finding.**
+- [x] **P-GO-P10 — Measure and address this finding.**
+
+  Closed 2026-09-30 — implemented; evidence: performance/results/go.md, tools/perf/go/
 
 Source: [GO-P10](../../go-code-review.md). Report labels: [medium] [measured].
 
@@ -168,7 +188,9 @@ Source: [GO-P10](../../go-code-review.md). Report labels: [medium] [measured].
 
 ## GO-P11: Keyed lists (the result of FILTER when any element is dropped, and join results) have O(n) `Get`/`Has`/`Set`
 
-- [ ] **P-GO-P11 — Measure and address this finding.**
+- [x] **P-GO-P11 — Measure and address this finding.**
+
+  Closed 2026-09-30 — implemented; evidence: performance/results/go.md, tools/perf/go/
 
 Source: [GO-P11](../../go-code-review.md). Report labels: [medium] [measured].
 
@@ -184,7 +206,9 @@ Source: [GO-P11](../../go-code-review.md). Report labels: [medium] [measured].
 
 ## GO-P12: Per-node and per-walk allocation: literals, Args, scratchpad, and `Elements()`/`Entries()` key strings
 
-- [ ] **P-GO-P12 — Measure and address this finding.**
+- [x] **P-GO-P12 — Measure and address this finding.**
+
+  Closed 2026-09-30 — implemented (partly) (remaining sub-items measured and deferred in the results row); evidence: performance/results/go.md, tools/perf/go/
 
 Source: [GO-P12](../../go-code-review.md). Report labels: [medium] [measured allocs, reasoned savings].
 
@@ -200,7 +224,9 @@ Source: [GO-P12](../../go-code-review.md). Report labels: [medium] [measured all
 
 ## GO-P13: Assignment deep-copies a fresh right-hand side
 
-- [ ] **P-GO-P13 — Measure and address this finding.**
+- [x] **P-GO-P13 — Measure and address this finding.**
+
+  Closed 2026-09-30 — implemented; evidence: performance/results/go.md, tools/perf/go/
 
 Source: [GO-P13](../../go-code-review.md). Report labels: [medium] [measured cost of the copy, reasoned fix].
 
@@ -216,7 +242,9 @@ Source: [GO-P13](../../go-code-review.md). Report labels: [medium] [measured cos
 
 ## GO-P14: Record construction: uniqueness map, signature string and `reflect.DeepEqual` per call
 
-- [ ] **P-GO-P14 — Measure and address this finding.**
+- [x] **P-GO-P14 — Measure and address this finding.**
+
+  Closed 2026-09-30 — implemented; evidence: performance/results/go.md, tools/perf/go/
 
 Source: [GO-P14](../../go-code-review.md). Report labels: [medium] [measured].
 
@@ -232,7 +260,9 @@ Source: [GO-P14](../../go-code-review.md). Report labels: [medium] [measured].
 
 ## GO-P15: FIND is naive O(n*m) on `[]rune` copies
 
-- [ ] **P-GO-P15 — Measure and address this finding.**
+- [x] **P-GO-P15 — Measure and address this finding.**
+
+  Closed 2026-09-30 — implemented; evidence: performance/results/go.md, tools/perf/go/
 
 Source: [GO-P15](../../go-code-review.md). Report labels: [medium] [measured] [].
 
@@ -248,7 +278,9 @@ Source: [GO-P15](../../go-code-review.md). Report labels: [medium] [measured] []
 
 ## GO-P16: SQL `Emit.Fill` builds templates one byte at a time by string concatenation; `Lexical()`/`Entry()` rebuild the dialect chain per lookup
 
-- [ ] **P-GO-P16 — Measure and address this finding.**
+- [x] **P-GO-P16 — Measure and address this finding.**
+
+  Closed 2026-09-30 — implemented; evidence: performance/results/go.md, tools/perf/go/
 
 Source: [GO-P16](../../go-code-review.md). Report labels: [medium] [measured].
 
@@ -264,7 +296,9 @@ Source: [GO-P16](../../go-code-review.md). Report labels: [medium] [measured].
 
 ## GO-P17: SQL pairwise folds are quadratic: `x IN (<n literals>)`, aggregate unrolls over n elements
 
-- [ ] **P-GO-P17 — Measure and address this finding.**
+- [x] **P-GO-P17 — Measure and address this finding.**
+
+  Closed 2026-09-30 — already-addressed (linear since the T09 balanced fold); evidence: performance/results/go.md, tools/perf/go/
 
 Source: [GO-P17](../../go-code-review.md). Report labels: [medium] [measured].
 
@@ -280,7 +314,9 @@ Source: [GO-P17](../../go-code-review.md). Report labels: [medium] [measured].
 
 ## GO-P18: `ExecuteHybrid` deep-clones the whole caller context on every execution
 
-- [ ] **P-GO-P18 — Measure and address this finding.**
+- [x] **P-GO-P18 — Measure and address this finding.**
+
+  Closed 2026-09-30 — implemented; evidence: performance/results/go.md, tools/perf/go/
 
 Source: [GO-P18](../../go-code-review.md). Report labels: [medium, only with big contexts] [measured].
 
@@ -296,7 +332,9 @@ Source: [GO-P18](../../go-code-review.md). Report labels: [medium, only with big
 
 ## GO-P19: Regex per-call overhead: `fmt.Sprintf` cache key + global RWMutex; and the cache is unbounded
 
-- [ ] **P-GO-P19 — Measure and address this finding.**
+- [x] **P-GO-P19 — Measure and address this finding.**
+
+  Closed 2026-09-30 — implemented; evidence: performance/results/go.md, tools/perf/go/
 
 Source: [GO-P19](../../go-code-review.md). Report labels: [medium] [measured].
 
@@ -312,7 +350,9 @@ Source: [GO-P19](../../go-code-review.md). Report labels: [medium] [measured].
 
 ## GO-P20: `[]rune` round-trips in TRIM / LEFT / RIGHT / SUBSTR / CODE / BACKWARDS / PADL
 
-- [ ] **P-GO-P20 — Measure and address this finding.**
+- [x] **P-GO-P20 — Measure and address this finding.**
+
+  Closed 2026-09-30 — implemented; evidence: performance/results/go.md, tools/perf/go/
 
 Source: [GO-P20](../../go-code-review.md). Report labels: [medium] [measured] [].
 
@@ -328,7 +368,9 @@ Source: [GO-P20](../../go-code-review.md). Report labels: [medium] [measured] []
 
 ## GO-P21: `Guard` recomputes 10^N to count digits on maximum-size values; `TrimScale` and `Cmp` round-trip through strings / aligned copies
 
-- [ ] **P-GO-P21 — Measure and address this finding.**
+- [x] **P-GO-P21 — Measure and address this finding.**
+
+  Closed 2026-09-30 — implemented; evidence: performance/results/go.md, tools/perf/go/
 
 Source: [GO-P21](../../go-code-review.md). Report labels: [low] [measured].
 
@@ -344,7 +386,9 @@ Source: [GO-P21](../../go-code-review.md). Report labels: [low] [measured].
 
 ## GO-P22: `nodeContainsVar` walks the whole body AST (and allocates via `AsciiUpper` per Var node) on each aggregate call
 
-- [ ] **P-GO-P22 — Measure and address this finding.**
+- [x] **P-GO-P22 — Measure and address this finding.**
+
+  Closed 2026-09-30 — rejected (no gain under CPU-time A/B (P8 per-node defer x1.00; P22 x1.03)); evidence: performance/results/go.md, tools/perf/go/
 
 Source: [GO-P22](../../go-code-review.md). Report labels: [low] [reasoned].
 
@@ -360,7 +404,9 @@ Source: [GO-P22](../../go-code-review.md). Report labels: [low] [reasoned].
 
 ## GO-P23: Redundant UTF-8 re-validation, binary helpers, `AsciiUpper`/`AsciiLower` double copy
 
-- [ ] **P-GO-P23 — Measure and address this finding.**
+- [x] **P-GO-P23 — Measure and address this finding.**
+
+  Closed 2026-09-30 — implemented; evidence: performance/results/go.md, tools/perf/go/
 
 Source: [GO-P23](../../go-code-review.md). Report labels: [low] [reasoned/measured mix].
 
@@ -374,7 +420,9 @@ Source: [GO-P23](../../go-code-review.md). Report labels: [low] [reasoned/measur
 
 ## GO-P24: One-shot `Eval(src)` pays for optimisation it cannot amortise
 
-- [ ] **P-GO-P24 — Measure and address this finding.**
+- [x] **P-GO-P24 — Measure and address this finding.**
+
+  Closed 2026-09-30 — implemented; evidence: performance/results/go.md, tools/perf/go/
 
 Source: [GO-P24](../../go-code-review.md). Report labels: [low] [measured].
 
@@ -390,7 +438,9 @@ Source: [GO-P24](../../go-code-review.md). Report labels: [low] [measured].
 
 ## GO-P25: SlotCache miss path allocates on every polymorphic site
 
-- [ ] **P-GO-P25 — Measure and address this finding.**
+- [x] **P-GO-P25 — Measure and address this finding.**
+
+  Closed 2026-09-30 — implemented; evidence: performance/results/go.md, tools/perf/go/
 
 Source: [GO-P25](../../go-code-review.md). Report labels: [low] [reasoned].
 
@@ -406,7 +456,9 @@ Source: [GO-P25](../../go-code-review.md). Report labels: [low] [reasoned].
 
 ## GO-P26: DISTINCT/BUCKET hashing; structural hash quality
 
-- [ ] **P-GO-P26 — Measure and address this finding.**
+- [x] **P-GO-P26 — Measure and address this finding.**
+
+  Closed 2026-09-30 — implemented; evidence: performance/results/go.md, tools/perf/go/
 
 Source: [GO-P26](../../go-code-review.md). Report labels: [low] [measured].
 
@@ -422,7 +474,9 @@ Source: [GO-P26](../../go-code-review.md). Report labels: [low] [measured].
 
 ## GO-P27: Parser hot loop details; numeric literal cost (null result)
 
-- [ ] **P-GO-P27 — Measure and address this finding.**
+- [x] **P-GO-P27 — Measure and address this finding.**
+
+  Closed 2026-09-30 — implemented; evidence: performance/results/go.md, tools/perf/go/
 
 Source: [GO-P27](../../go-code-review.md). Report labels: [low] [measured].
 
@@ -436,7 +490,9 @@ Source: [GO-P27](../../go-code-review.md). Report labels: [low] [measured].
 
 ## GO-P28: Smaller SQL costs
 
-- [ ] **P-GO-P28 — Measure and address this finding.**
+- [x] **P-GO-P28 — Measure and address this finding.**
+
+  Closed 2026-09-30 — implemented (partly) (remaining sub-items measured and deferred in the results row); evidence: performance/results/go.md, tools/perf/go/
 
 Source: [GO-P28](../../go-code-review.md). Report labels: [low] [measured / reasoned].
 
@@ -451,6 +507,8 @@ Source: [GO-P28](../../go-code-review.md). Report labels: [low] [measured / reas
 ## GO-P29: Go GC configuration dominates large-context workloads
 
 - [ ] **P-GO-P29 — Measure and address this finding.**
+
+  Deferred 2026-09-30 — documentation-only GC tuning advice (GOGC=200: -21% CPU, +45% memory on scenario 1); recommended text is in the round-3 row, no library-wide setting; reconsider when the Go usage docs are next revised — place the recommended text there. Evidence: performance/results/go.md
 
 Source: [GO-P29](../../go-code-review.md). Report labels: [low] [reasoned].
 

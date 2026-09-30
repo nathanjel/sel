@@ -2,7 +2,9 @@
 
 [Worklist](../README.md) · [Test harness and completion rules](../00-tests.md)
 
-- [ ] **T12 — Create and run this shared regression family across JS, PHP, Python, C++, Lisp and Go.**
+- [x] **T12 — Create and run this shared regression family across JS, PHP, Python, C++, Lisp and Go.**
+
+  Closed 2026-09-30 — tools/api.* probes 87-114 + tools/api-pins.txt + check-api-compare.py; tools/check-cli-source.sh misuse; host T12 tests; tools/check-php-version.sh, check-php-integration.php; all six hosts agree at commit 03786e5 (conformance 2134/2134, sqlt 1309) and every finding row of the family is closed in coverage.csv.
 
 **Destination:** `tools/api.*, tools/sqlapi.*, CLI/runtime probes, Go race tests, C++ ASan/UBSan/TSan, Python/Lisp concurrency harnesses and metadata checks`.
 

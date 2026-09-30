@@ -9110,6 +9110,18 @@ func c1308Bind() map[string]*sql.Binding {
 	}
 }
 
+func c1309Bind() map[string]*sql.Binding {
+	return map[string]*sql.Binding{
+		"ORDERS": bindRelation("orders", "o", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "CUSTOMER_ID", Binding: bindCol("customer_id", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "AMOUNT", Binding: bindCol("amount", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "NAME", Binding: bindCol("name", "o", sql.KindText, false, false, false, "")}}, "", "", ""),
+	}
+}
+
+func c1310Bind() map[string]*sql.Binding {
+	return map[string]*sql.Binding{
+		"ORDERS": bindRelation("orders", "o", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "CUSTOMER_ID", Binding: bindCol("customer_id", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "AMOUNT", Binding: bindCol("amount", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "NAME", Binding: bindCol("name", "o", sql.KindText, false, false, false, "")}}, "", "", ""),
+	}
+}
+
 type SqlCase struct {
 	Name            string
 	At              string
@@ -31384,4 +31396,38 @@ var sqlCases = []SqlCase{
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
 	 BindingsFn: c1308Bind},
+	{Name: "plan.keys.filter-filter-then-a-renumbering-step-splits-after-the-first",
+	 At: "52-audit-cases.sqlt:392",
+	 Dialect: "mariadb",
+	 Source: "ORDERS .> FILTER(_[\"amount\"] == 2) .> FILTER(_[\"nope\"][\"x\"] $== \"b\") .> SORT()",
+	 Expect: strPtr("SELECT `o`.* FROM `orders` `o` WHERE (`o`.`amount` = 2)"),
+	 Error: nil,
+	 Throws: nil,
+	 Params: nil,
+	 As: nil,
+	 Mode: nil,
+	 Strict: false,
+	 Plan: strPtr("hybrid"),
+	 HasTables: true,
+	 Tables: []string{"orders"},
+	 Unrepresentable: nil,
+	 RegisterFn: nil,
+	 BindingsFn: c1309Bind},
+	{Name: "plan.keys.filter-filter-then-a-key-read-stays-in-memory",
+	 At: "52-audit-cases.sqlt:409",
+	 Dialect: "mariadb",
+	 Source: "ORDERS .> FILTER(_[\"amount\"] == 2) .> FILTER(_[\"nope\"][\"x\"] $== \"b\") .> SORT_BY(_K)",
+	 Expect: nil,
+	 Error: nil,
+	 Throws: nil,
+	 Params: nil,
+	 As: nil,
+	 Mode: nil,
+	 Strict: false,
+	 Plan: strPtr("pure_memory"),
+	 HasTables: true,
+	 Tables: []string{"orders"},
+	 Unrepresentable: nil,
+	 RegisterFn: nil,
+	 BindingsFn: c1310Bind},
 }

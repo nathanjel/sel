@@ -2,7 +2,9 @@
 
 [Worklist](../README.md) · [Test harness and completion rules](../00-tests.md)
 
-- [ ] **T09 — Create and run this shared regression family across JS, PHP, Python, C++, Lisp and Go.**
+- [x] **T09 — Create and run this shared regression family across JS, PHP, Python, C++, Lisp and Go.**
+
+  Closed 2026-09-30 — sql/cases/49-kind-guarantees, 19-kind-warrant; sql/oracle expressions/rows; tools/check-sql-limits.php; all six hosts agree at commit 03786e5 (conformance 2134/2134, sqlt 1309) and every finding row of the family is closed in coverage.csv.
 
 **Destination:** `sql/cases kind-warrant/count/IN cases plus executed SQLite, MariaDB/MySQL and PostgreSQL fixtures as relevant`.
 

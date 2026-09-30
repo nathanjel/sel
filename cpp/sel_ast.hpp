@@ -68,6 +68,11 @@ struct Node {
   // reading `_K`, so nothing observes the keys its result carries and the
   // evaluator's join pre-filter may drop rows below the join (SEL-0050/0052).
   bool keys_unobserved = false;
+  // On a FILTER body: the FILTER may keep its elements uncopied (keep_or_alias).
+  // Stamped by the physical optimiser when this body and the next pipeline step's
+  // (a MAP or a FILTER) write nothing, so no kept element can change before the
+  // next step has copied what it keeps (CPP-REG-1, the Rust host's borrowed_filter).
+  bool borrow_rows = false;
   // Bin: the operator resolved once, at parse time, to a BinOp code (0 = not yet
   // resolved; eval_binary then derives it from `s`). Set only where `s` is, and
   // `s` of a Bin node never changes afterwards.

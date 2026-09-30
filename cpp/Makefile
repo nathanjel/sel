@@ -208,11 +208,24 @@ $(BUILD)/sqlt-asan: bin/sqlt.cpp bin/case_data.hpp $(SQL_HDRS) sel.hpp $(ASAN_DI
 	$(CXX) $(ASAN_FLAGS) -o $@ $< $(ASAN_DIR)/case_data.o $(ASAN_SQL_OBJS) $(ASAN_DIR)/sel.o
 
 .PHONY: asan
+# ASan checks the whole byte range a libc call may read, and for memmem that is the
+# remaining haystack on every call: a linear search loop becomes quadratic under
+# the sanitizer alone (REPLACE over 8M code points, conformance/31's cap cases:
+# 25+ minutes instead of seconds; the -O2 build is linear). Every read the
+# interpreter itself makes is still checked -- only memmem's up-front range check
+# is off. The conformance files run side by side, ASAN_JOBS at a time, each with
+# its own output; any failing file fails the target.
+ASAN_JOBS ?= $(shell nproc 2>/dev/null || echo 4)
+ASAN_ENV  := ASAN_OPTIONS=intercept_memmem=0$(if $(ASAN_OPTIONS),:$(ASAN_OPTIONS))
+
 asan: $(BUILD)/unit-asan $(BUILD)/conformance-asan $(BUILD)/sqlunit-asan $(BUILD)/sqlt-asan
-	$(BUILD)/unit-asan
-	cd .. && cpp/$(BUILD)/conformance-asan
-	$(BUILD)/sqlunit-asan
-	cd .. && cpp/$(BUILD)/sqlt-asan
+	$(ASAN_ENV) $(BUILD)/unit-asan
+	cd .. && ls conformance/*.selt | $(ASAN_ENV) xargs -P $(ASAN_JOBS) -I{} sh -c \
+	  'out=$$(cpp/$(BUILD)/conformance-asan {} 2>&1); rc=$$?; \
+	   printf "%s: %s\n" {} "$$(printf "%s\n" "$$out" | tail -n 1)"; \
+	   if [ $$rc -ne 0 ]; then printf "%s\n" "$$out" | grep -E "^(FAIL|SUITE)|ERROR: |SUMMARY: " | head -n 40; exit 1; fi'
+	$(ASAN_ENV) $(BUILD)/sqlunit-asan
+	cd .. && $(ASAN_ENV) cpp/$(BUILD)/sqlt-asan
 
 # The thread sanitizer, for the one promise the SQL layer makes about threads:
 # translate() may run on several threads once the map is registered (T10,

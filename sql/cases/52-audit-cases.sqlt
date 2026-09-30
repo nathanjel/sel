@@ -388,3 +388,35 @@ orders
 SELECT `o`.* FROM `orders` `o` WHERE (`o`.`amount` > 1) ORDER BY `o`.`amount` ASC
 ===
 
+
+### name: plan.keys.filter-filter-then-a-renumbering-step-splits-after-the-first
+--- note
+Gate fuzz (seed 4243, program 338). The prefix may end at a FILTER when the continuation cannot tell the database renumbered the rows (docs/internals/sql-translation.md 12.1, "Row keys"): the continuation's first step here is a FILTER, which keeps the keys it is handed, but the SORT after it renumbers and nothing reads `_K` before it, so the retained keys never reach the answer. JS, PHP, Python, Lisp and Go split after the first FILTER; C++ stopped at any FILTER that started the continuation and planned pure_memory.
+--- dialect
+mariadb
+--- bindings
+{"ORDERS": {"kind": "relation", "from": "orders", "alias": "o", "fields": {"ID": {"table": "o", "column": "id", "type": "NUM"}, "CUSTOMER_ID": {"table": "o", "column": "customer_id", "type": "NUM"}, "AMOUNT": {"table": "o", "column": "amount", "type": "NUM"}, "NAME": {"table": "o", "column": "name", "type": "TEXT"}}}}
+--- source
+ORDERS .> FILTER(_["amount"] == 2) .> FILTER(_["nope"]["x"] $== "b") .> SORT()
+--- plan
+hybrid
+--- tables
+orders
+--- expect
+SELECT `o`.* FROM `orders` `o` WHERE (`o`.`amount` = 2)
+===
+
+### name: plan.keys.filter-filter-then-a-key-read-stays-in-memory
+--- note
+The control: the step after the continuation's FILTER renumbers, but it reads `_K` first -- the keys the FILTER kept, which the database's rowset does not have -- so there is no split point and nothing pushes down.
+--- dialect
+mariadb
+--- bindings
+{"ORDERS": {"kind": "relation", "from": "orders", "alias": "o", "fields": {"ID": {"table": "o", "column": "id", "type": "NUM"}, "CUSTOMER_ID": {"table": "o", "column": "customer_id", "type": "NUM"}, "AMOUNT": {"table": "o", "column": "amount", "type": "NUM"}, "NAME": {"table": "o", "column": "name", "type": "TEXT"}}}}
+--- source
+ORDERS .> FILTER(_["amount"] == 2) .> FILTER(_["nope"]["x"] $== "b") .> SORT_BY(_K)
+--- plan
+pure_memory
+--- tables
+orders
+===

@@ -8,7 +8,9 @@ Report measurements below are historical evidence, not verified targets for this
 
 ## JS-P1: `Value.text` scans every result string for surrogates, which flattens V8 ropes: repeated `&`/`&=` is ~50x slower than necessary and superlinear
 
-- [ ] **P-JS-P1 — Measure and address this finding.**
+- [x] **P-JS-P1 — Measure and address this finding.**
+
+  Closed 2026-09-30 — implemented; evidence: performance/results/js.md, tools/perf/js/p01-text-concat.mjs
 
 Source: [JS-P1](../../js-code-review.md). Report labels: [high] [measured].
 
@@ -24,7 +26,9 @@ Source: [JS-P1](../../js-code-review.md). Report labels: [high] [measured].
 
 ## JS-P2: The lexer builds a `fromCodePoints([c])` string per character and dominates compile time
 
-- [ ] **P-JS-P2 — Measure and address this finding.**
+- [x] **P-JS-P2 — Measure and address this finding.**
+
+  Closed 2026-09-30 — implemented; evidence: performance/results/js.md, tools/perf/js/p02-lexer.mjs
 
 Source: [JS-P2](../../js-code-review.md). Report labels: [high] [measured] [c].
 
@@ -40,7 +44,9 @@ Source: [JS-P2](../../js-code-review.md). Report labels: [high] [measured] [c].
 
 ## JS-P3: Cliff for rows with more than ~254 fields: shape interning stops, so every join pair builds its own plan (36x slower, 240 MB extra)
 
-- [ ] **P-JS-P3 — Measure and address this finding.**
+- [x] **P-JS-P3 — Measure and address this finding.**
+
+  Closed 2026-09-30 — implemented; evidence: performance/results/js.md, tools/perf/js/p03-wide-join.mjs
 
 Source: [JS-P3](../../js-code-review.md). Report labels: [high] [measured].
 
@@ -56,7 +62,9 @@ Source: [JS-P3](../../js-code-review.md). Report labels: [high] [measured].
 
 ## JS-P4: SQL translator re-evaluates constant sub-trees at every nesting level (quadratic amplification, ~150x at 160 terms)
 
-- [ ] **P-JS-P4 — Measure and address this finding.**
+- [x] **P-JS-P4 — Measure and address this finding.**
+
+  Closed 2026-09-30 — implemented; evidence: performance/results/js.md, tools/perf/js/p04-sql-constants.mjs
 
 Source: [JS-P4](../../js-code-review.md). Report labels: [high as a DoS] [measured].
 
@@ -72,7 +80,9 @@ Source: [JS-P4](../../js-code-review.md). Report labels: [high as a DoS] [measur
 
 ## JS-P5: Every text builtin round-trips the whole string through a code point array
 
-- [ ] **P-JS-P5 — Measure and address this finding.**
+- [x] **P-JS-P5 — Measure and address this finding.**
+
+  Closed 2026-09-30 — implemented (partly) (remaining sub-items dispositioned in the results row); evidence: performance/results/js.md, tools/perf/js/p05-text-builtins.mjs
 
 Source: [JS-P5](../../js-code-review.md). Report labels: [medium] [measured].
 
@@ -88,7 +98,9 @@ Source: [JS-P5](../../js-code-review.md). Report labels: [medium] [measured].
 
 ## JS-P6: FIND, REPLACE and SPLIT are naive O(n*m) over number arrays
 
-- [ ] **P-JS-P6 — Measure and address this finding.**
+- [x] **P-JS-P6 — Measure and address this finding.**
+
+  Closed 2026-09-30 — implemented; evidence: performance/results/js.md, tools/perf/js/p05-text-builtins.mjs
 
 Source: [JS-P6](../../js-code-review.md). Report labels: [medium] [measured].
 
@@ -104,7 +116,9 @@ Source: [JS-P6](../../js-code-review.md). Report labels: [medium] [measured].
 
 ## JS-P7: UTF-8, hex and base64 codecs go through intermediate arrays and per-byte strings
 
-- [ ] **P-JS-P7 — Measure and address this finding.**
+- [x] **P-JS-P7 — Measure and address this finding.**
+
+  Closed 2026-09-30 — implemented; evidence: performance/results/js.md, tools/perf/js/p07-codecs.mjs
 
 Source: [JS-P7](../../js-code-review.md). Report labels: [medium] [measured].
 
@@ -120,7 +134,9 @@ Source: [JS-P7](../../js-code-review.md). Report labels: [medium] [measured].
 
 ## JS-P8: Text comparison encodes both operands to UTF-8 on every comparison; the sort/TOP comparator re-derives each key's class every time
 
-- [ ] **P-JS-P8 — Measure and address this finding.**
+- [x] **P-JS-P8 — Measure and address this finding.**
+
+  Closed 2026-09-30 — implemented; evidence: performance/results/js.md, tools/perf/js/p08-sort-compare.mjs
 
 Source: [JS-P8](../../js-code-review.md). Report labels: [medium] [measured].
 
@@ -136,7 +152,9 @@ Source: [JS-P8](../../js-code-review.md). Report labels: [medium] [measured].
 
 ## JS-P9: `Value.fromEntriesOwned` re-derives the record shape from scratch for every row (~4x slower than a shape check)
 
-- [ ] **P-JS-P9 — Measure and address this finding.**
+- [x] **P-JS-P9 — Measure and address this finding.**
+
+  Closed 2026-09-30 — implemented; evidence: performance/results/js.md, tools/perf/js/p09-entries-shape.mjs
 
 Source: [JS-P9](../../js-code-review.md). Report labels: [medium] [measured].
 
@@ -152,7 +170,9 @@ Source: [JS-P9](../../js-code-review.md). Report labels: [medium] [measured].
 
 ## JS-P10: `D.parse` is ~4x slower than needed and is ~17% of a numeric-data workload
 
-- [ ] **P-JS-P10 — Measure and address this finding.**
+- [x] **P-JS-P10 — Measure and address this finding.**
+
+  Closed 2026-09-30 — implemented; evidence: performance/results/js.md, tools/perf/js/p10-decimal-parse.mjs
 
 Source: [JS-P10](../../js-code-review.md). Report labels: [medium] [measured].
 
@@ -168,7 +188,9 @@ Source: [JS-P10](../../js-code-review.md). Report labels: [medium] [measured].
 
 ## JS-P11: One non-plannable operand (IF, COND, `,`, `;`, assignment) disables planning for the whole arithmetic expression
 
-- [ ] **P-JS-P11 — Measure and address this finding.**
+- [x] **P-JS-P11 — Measure and address this finding.**
+
+  Closed 2026-09-30 — implemented; evidence: performance/results/js.md, tools/perf/js/p11-plan-with-if.mjs
 
 Source: [JS-P11](../../js-code-review.md). Report labels: [medium] [measured (noisy) + reasoned].
 
@@ -184,7 +206,9 @@ Source: [JS-P11](../../js-code-review.md). Report labels: [medium] [measured (no
 
 ## JS-P12: The append idiom `A = (A, x)` is O(n^2) with ~300 ns per copied element, 64% GC
 
-- [ ] **P-JS-P12 — Measure and address this finding.**
+- [x] **P-JS-P12 — Measure and address this finding.**
+
+  Closed 2026-09-30 — implemented (partly) (remaining sub-items dispositioned in the results row); evidence: performance/results/js.md, tools/perf/js/p12-append.mjs
 
 Source: [JS-P12](../../js-code-review.md). Report labels: [medium] [measured].
 
@@ -200,7 +224,9 @@ Source: [JS-P12](../../js-code-review.md). Report labels: [medium] [measured].
 
 ## JS-P13: `doSort` deep-clones every result element
 
-- [ ] **P-JS-P13 — Measure and address this finding.**
+- [x] **P-JS-P13 — Measure and address this finding.**
+
+  Closed 2026-09-30 — rejected (SORT/SORT_BY copy is the SPEC 3.4 contract); evidence: performance/results/js.md, tools/perf/js/p13-sort-clone.mjs
 
 Source: [JS-P13](../../js-code-review.md). Report labels: [medium] [measured].
 
@@ -216,7 +242,9 @@ Source: [JS-P13](../../js-code-review.md). Report labels: [medium] [measured].
 
 ## JS-P14: `nodeContainsVar` walks the aggregate body on every aggregate call
 
-- [ ] **P-JS-P14 — Measure and address this finding.**
+- [x] **P-JS-P14 — Measure and address this finding.**
+
+  Closed 2026-09-30 — rejected (0-5% on the report workload (noise)); evidence: performance/results/js.md, tools/perf/js/p14-contains-var.mjs
 
 Source: [JS-P14](../../js-code-review.md). Report labels: [medium] [measured].
 
@@ -232,7 +260,9 @@ Source: [JS-P14](../../js-code-review.md). Report labels: [medium] [measured].
 
 ## JS-P15: `foldPairwise` is quadratic and produces a left-deep chain as deep as the list
 
-- [ ] **P-JS-P15 — Measure and address this finding.**
+- [x] **P-JS-P15 — Measure and address this finding.**
+
+  Closed 2026-09-30 — already-addressed (SQL balanced fold (T09 wave)); evidence: performance/results/js.md, tools/perf/js/p15-fold-pairwise.mjs
 
 Source: [JS-P15](../../js-code-review.md). Report labels: [medium] [measured].
 
@@ -248,7 +278,9 @@ Source: [JS-P15](../../js-code-review.md). Report labels: [medium] [measured].
 
 ## JS-P16: `executeHybrid` deep-clones the entire caller context on every hybrid run
 
-- [ ] **P-JS-P16 — Measure and address this finding.**
+- [x] **P-JS-P16 — Measure and address this finding.**
+
+  Closed 2026-09-30 — implemented; evidence: performance/results/js.md, tools/perf/js/p16-hybrid-context.mjs
 
 Source: [JS-P16](../../js-code-review.md). Report labels: [medium] [measured].
 
@@ -264,7 +296,9 @@ Source: [JS-P16](../../js-code-review.md). Report labels: [medium] [measured].
 
 ## JS-P17: BTL allocates a BigInt-backed decimal per byte; `Value.int(bigint)` first-call cost
 
-- [ ] **P-JS-P17 — Measure and address this finding.**
+- [x] **P-JS-P17 — Measure and address this finding.**
+
+  Closed 2026-09-30 — implemented; evidence: performance/results/js.md, tools/perf/js/p17-btl.mjs
 
 Source: [JS-P17](../../js-code-review.md). Report labels: [low-medium] [measured].
 
@@ -280,7 +314,9 @@ Source: [JS-P17](../../js-code-review.md). Report labels: [low-medium] [measured
 
 ## JS-P18: Over-cap rejection in `guard()` costs up to ~0.5 s per rejected operation because `numDigits` builds an uncached 10^k
 
-- [ ] **P-JS-P18 — Measure and address this finding.**
+- [x] **P-JS-P18 — Measure and address this finding.**
+
+  Closed 2026-09-30 — implemented; evidence: performance/results/js.md, tools/perf/js/p18-guard-reject.mjs
 
 Source: [JS-P18](../../js-code-review.md). Report labels: [low-medium] [measured].
 
@@ -296,7 +332,9 @@ Source: [JS-P18](../../js-code-review.md). Report labels: [low-medium] [measured
 
 ## JS-P19: `SelError` captures a stack trace, and errors are used as control flow in several probes
 
-- [ ] **P-JS-P19 — Measure and address this finding.**
+- [x] **P-JS-P19 — Measure and address this finding.**
+
+  Closed 2026-09-30 — implemented; evidence: performance/results/js.md, tools/perf/js/p19-join-bad-keys.mjs
 
 Source: [JS-P19](../../js-code-review.md). Report labels: [low-medium] [measured].
 
@@ -312,7 +350,9 @@ Source: [JS-P19](../../js-code-review.md). Report labels: [low-medium] [measured
 
 ## JS-P20: Regex `compile()` pays ~0.45 us fixed overhead per call, plus an uncached ASCII scan for the `i` flag
 
-- [ ] **P-JS-P20 — Measure and address this finding.**
+- [x] **P-JS-P20 — Measure and address this finding.**
+
+  Closed 2026-09-30 — implemented; evidence: performance/results/js.md, tools/perf/js/p20-regex-compile.mjs
 
 Source: [JS-P20](../../js-code-review.md). Report labels: [low-medium] [measured].
 
@@ -328,7 +368,9 @@ Source: [JS-P20](../../js-code-review.md). Report labels: [low-medium] [measured
 
 ## JS-P21: The regex compile cache is unbounded and keyed by data-derived patterns
 
-- [ ] **P-JS-P21 — Measure and address this finding.**
+- [x] **P-JS-P21 — Measure and address this finding.**
+
+  Closed 2026-09-30 — already-addressed (regex cache bounded at 256 (T06 wave); remaining retention is V8 own regexp cache); evidence: performance/results/js.md, tools/perf/js/p21-regex-cache.mjs
 
 Source: [JS-P21](../../js-code-review.md). Report labels: [low] [measured].
 
@@ -344,7 +386,9 @@ Source: [JS-P21](../../js-code-review.md). Report labels: [low] [measured].
 
 ## JS-P22: Non-equi LINK re-aliases the right row for every pair
 
-- [ ] **P-JS-P22 — Measure and address this finding.**
+- [x] **P-JS-P22 — Measure and address this finding.**
+
+  Closed 2026-09-30 — implemented; evidence: performance/results/js.md, tools/perf/js/p22-link-realias.mjs
 
 Source: [JS-P22](../../js-code-review.md). Report labels: [low-medium] [measured, noisy].
 
@@ -360,7 +404,9 @@ Source: [JS-P22](../../js-code-review.md). Report labels: [low-medium] [measured
 
 ## JS-P23: Numeric/text literals allocate a fresh 9-field Value and re-run the surrogate regex on every evaluation
 
-- [ ] **P-JS-P23 — Measure and address this finding.**
+- [x] **P-JS-P23 — Measure and address this finding.**
+
+  Closed 2026-09-30 — implemented; evidence: performance/results/js.md, tools/perf/js/p23-literals.mjs
 
 Source: [JS-P23](../../js-code-review.md). Report labels: [low] [measured].
 
@@ -376,7 +422,9 @@ Source: [JS-P23](../../js-code-review.md). Report labels: [low] [measured].
 
 ## JS-P24: Double validation/allocation on every arithmetic result
 
-- [ ] **P-JS-P24 — Measure and address this finding.**
+- [x] **P-JS-P24 — Measure and address this finding.**
+
+  Closed 2026-09-30 — implemented; evidence: performance/results/js.md, tools/perf/js/p24-num-result.mjs
 
 Source: [JS-P24](../../js-code-review.md). Report labels: [low] [measured].
 
@@ -392,7 +440,9 @@ Source: [JS-P24](../../js-code-review.md). Report labels: [low] [measured].
 
 ## JS-P25: `textLiteral` is 20-25x slower than a split/join and allocates per character
 
-- [ ] **P-JS-P25 — Measure and address this finding.**
+- [x] **P-JS-P25 — Measure and address this finding.**
+
+  Closed 2026-09-30 — implemented; evidence: performance/results/js.md, tools/perf/js/p25-text-literal.mjs
 
 Source: [JS-P25](../../js-code-review.md). Report labels: [low] [measured].
 
@@ -408,7 +458,9 @@ Source: [JS-P25](../../js-code-review.md). Report labels: [low] [measured].
 
 ## JS-P26: Dialect chain is rebuilt on every lexical/entry lookup
 
-- [ ] **P-JS-P26 — Measure and address this finding.**
+- [x] **P-JS-P26 — Measure and address this finding.**
+
+  Closed 2026-09-30 — implemented; evidence: performance/results/js.md, tools/perf/js/p26-dialect-chain.mjs
 
 Source: [JS-P26](../../js-code-review.md). Report labels: [low] [measured].
 
@@ -424,7 +476,9 @@ Source: [JS-P26](../../js-code-review.md). Report labels: [low] [measured].
 
 ## JS-P27: `fromCodePoints` slices even short arrays
 
-- [ ] **P-JS-P27 — Measure and address this finding.**
+- [x] **P-JS-P27 — Measure and address this finding.**
+
+  Closed 2026-09-30 — implemented; evidence: performance/results/js.md, tools/perf/js/p27-from-code-points.mjs
 
 Source: [JS-P27](../../js-code-review.md). Report labels: [low] [measured].
 
@@ -440,7 +494,9 @@ Source: [JS-P27](../../js-code-review.md). Report labels: [low] [measured].
 
 ## JS-P28: Smaller items
 
-- [ ] **P-JS-P28 — Measure and address this finding.**
+- [x] **P-JS-P28 — Measure and address this finding.**
+
+  Closed 2026-09-30 — implemented (partly) (remaining sub-items dispositioned in the results row); evidence: performance/results/js.md, tools/perf/js/p28-hash-micro.mjs
 
 Source: [JS-P28](../../js-code-review.md). Report labels: [low] [reasoned].
 

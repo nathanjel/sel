@@ -674,11 +674,12 @@ bool cannot_raise(const NodePtr& node) {
          node->r->t == NT::Text;
 }
 
-// Whether a step that starts the continuation can observe the KEYS of the rows
-// the database handed back. FILTER is the one step that keeps its input's keys
-// (spec §7.3) and the database renumbers from 1, so a continuation that begins
-// with a FILTER, or whose first step reads `_K`, sees keys `run()` would not.
-// Every other step renumbers, so only the first one matters.
+// Whether the continuation can observe the KEYS of the rows the database handed
+// back. FILTER is the one step that keeps its input's keys (spec §7.3) and the
+// database renumbers from 1, so the continuation sees keys `run()` would not
+// when a step reads `_K` before anything renumbers, or when nothing renumbers at
+// all (the retained keys are the answer). A FILTER hands its keys on; every
+// other step renumbers, and past it the keys are gone.
 bool reads_key_var(const NodePtr& node) {
   if (!node) return false;
   if (node->t == NT::Var && node->s == "_K") return true;
@@ -689,12 +690,14 @@ bool reads_key_var(const NodePtr& node) {
 
 bool continuation_observes_keys(const std::vector<NodePtr>& steps, std::size_t from) {
   if (from >= steps.size()) return false;
-  const NodePtr& first = steps[from];
-  if (first->s == "FILTER") return true;
-  for (std::size_t i = 1; i < first->items.size(); ++i) {
-    if (reads_key_var(first->items[i])) return true;
+  for (std::size_t s = from; s < steps.size(); ++s) {
+    const NodePtr& step = steps[s];
+    for (std::size_t i = 1; i < step->items.size(); ++i) {
+      if (reads_key_var(step->items[i])) return true;
+    }
+    if (step->s != "FILTER") return false;   // renumbers: the keys stop here
   }
-  return false;
+  return true;                                // the retained keys are the value
 }
 
 // A prefix that ends in a FILTER is not a split point when the continuation can

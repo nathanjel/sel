@@ -8,7 +8,9 @@ Report measurements below are historical evidence, not verified targets for this
 
 ## PY-P1: SORT / SORT_BY / SORT_DESC / TOP* re-derive both keys' kind, decimal and UTF-8 bytes on every comparison
 
-- [ ] **P-PY-P1 — Measure and address this finding.**
+- [x] **P-PY-P1 — Measure and address this finding.**
+
+  Closed 2026-09-30 — implemented; evidence: performance/results/python.md, tools/perf/python/
 
 Source: [PY-P1](../../python-code-review.md). Report labels: [high] [measured].
 
@@ -24,7 +26,9 @@ Source: [PY-P1](../../python-code-review.md). Report labels: [high] [measured].
 
 ## PY-P2: Every LINK call `exec`s freshly generated source per (left shape, right shape) pair; nested LINKs and heterogeneous rows are 40-150x slower than the amortised cost
 
-- [ ] **P-PY-P2 — Measure and address this finding.**
+- [x] **P-PY-P2 — Measure and address this finding.**
+
+  Closed 2026-09-30 — implemented; evidence: performance/results/python.md, tools/perf/python/
 
 Source: [PY-P2](../../python-code-review.md). Report labels: [high] [measured].
 
@@ -40,7 +44,9 @@ Source: [PY-P2](../../python-code-review.md). Report labels: [high] [measured].
 
 ## PY-P3: SQL `fold_pairwise` is quadratic: every step re-copies the accumulated part list
 
-- [ ] **P-PY-P3 — Measure and address this finding.**
+- [x] **P-PY-P3 — Measure and address this finding.**
+
+  Closed 2026-09-30 — already-addressed (PY-C42 balanced fold); evidence: performance/results/python.md, tools/perf/python/
 
 Source: [PY-P3](../../python-code-review.md). Report labels: [high] [measured].
 
@@ -56,7 +62,9 @@ Source: [PY-P3](../../python-code-review.md). Report labels: [high] [measured].
 
 ## PY-P4: `dataclasses.replace` in `copy_node` makes the optimiser about as expensive as parsing
 
-- [ ] **P-PY-P4 — Measure and address this finding.**
+- [x] **P-PY-P4 — Measure and address this finding.**
+
+  Closed 2026-09-30 — implemented; evidence: performance/results/python.md, tools/perf/python/
 
 Source: [PY-P4](../../python-code-review.md). Report labels: [medium] [measured].
 
@@ -72,7 +80,9 @@ Source: [PY-P4](../../python-code-review.md). Report labels: [medium] [measured]
 
 ## PY-P5: Frozen dataclasses (`Dec`, `Pos`, and `Node` defaults) cost 3-4x more to construct than necessary
 
-- [ ] **P-PY-P5 — Measure and address this finding.**
+- [x] **P-PY-P5 — Measure and address this finding.**
+
+  Closed 2026-09-30 — implemented; evidence: performance/results/python.md, tools/perf/python/
 
 Source: [PY-P5](../../python-code-review.md). Report labels: [medium] [measured].
 
@@ -88,7 +98,9 @@ Source: [PY-P5](../../python-code-review.md). Report labels: [medium] [measured]
 
 ## PY-P6: `Value.num(dec)` re-validates every internal result
 
-- [ ] **P-PY-P6 — Measure and address this finding.**
+- [x] **P-PY-P6 — Measure and address this finding.**
+
+  Closed 2026-09-30 — implemented; evidence: performance/results/python.md, tools/perf/python/
 
 Source: [PY-P6](../../python-code-review.md). Report labels: [medium] [measured].
 
@@ -104,7 +116,9 @@ Source: [PY-P6](../../python-code-review.md). Report labels: [medium] [measured]
 
 ## PY-P7: One un-plannable operand throws away the plan for the whole expression, including sub-plans
 
-- [ ] **P-PY-P7 — Measure and address this finding.**
+- [x] **P-PY-P7 — Measure and address this finding.**
+
+  Closed 2026-09-30 — rejected (math sub-plans: no gain since evaluate-then-coerce (38.0 vs 40.2 us)); evidence: performance/results/python.md, tools/perf/python/
 
 Source: [PY-P7](../../python-code-review.md). Report labels: [medium] [measured].
 
@@ -120,7 +134,9 @@ Source: [PY-P7](../../python-code-review.md). Report labels: [medium] [measured]
 
 ## PY-P8: Constant list operands (`x IN LIST("a","b",...)`, `x IN ("a","b")`) are rebuilt and cloned for every row
 
-- [ ] **P-PY-P8 — Measure and address this finding.**
+- [x] **P-PY-P8 — Measure and address this finding.**
+
+  Closed 2026-09-30 — implemented; evidence: performance/results/python.md, tools/perf/python/
 
 Source: [PY-P8](../../python-code-review.md). Report labels: [medium] [measured].
 
@@ -136,7 +152,9 @@ Source: [PY-P8](../../python-code-review.md). Report labels: [medium] [measured]
 
 ## PY-P9: Constant folding re-parses and re-formats literals and drops the decoded `Dec`; folded literals are re-parsed on every evaluation
 
-- [ ] **P-PY-P9 — Measure and address this finding.**
+- [x] **P-PY-P9 — Measure and address this finding.**
+
+  Closed 2026-09-30 — implemented; evidence: performance/results/python.md, tools/perf/python/
 
 Source: [PY-P9](../../python-code-review.md). Report labels: [medium] [measured].
 
@@ -152,7 +170,9 @@ Source: [PY-P9](../../python-code-review.md). Report labels: [medium] [measured]
 
 ## PY-P10: Lexer: linear scan of 34 operators with a slice per candidate; per-character loops; redundant O(n) work in `Lexer.__init__`
 
-- [ ] **P-PY-P10 — Measure and address this finding.**
+- [x] **P-PY-P10 — Measure and address this finding.**
+
+  Closed 2026-09-30 — implemented; evidence: performance/results/python.md, tools/perf/python/
 
 Source: [PY-P10](../../python-code-review.md). Report labels: [medium] [measured].
 
@@ -168,7 +188,9 @@ Source: [PY-P10](../../python-code-review.md). Report labels: [medium] [measured
 
 ## PY-P11: Text builtins loop per character in Python: PADL/PADR (about 800x), UPPER/LOWER, TRIM/LTRIM/RTRIM
 
-- [ ] **P-PY-P11 — Measure and address this finding.**
+- [x] **P-PY-P11 — Measure and address this finding.**
+
+  Closed 2026-09-30 — implemented; evidence: performance/results/python.md, tools/perf/python/
 
 Source: [PY-P11](../../python-code-review.md). Report labels: [medium] [measured].
 
@@ -184,7 +206,9 @@ Source: [PY-P11](../../python-code-review.md). Report labels: [medium] [measured
 
 ## PY-P12: base64, CRC32, hex decode and byte-list conversions are per-byte Python loops
 
-- [ ] **P-PY-P12 — Measure and address this finding.**
+- [x] **P-PY-P12 — Measure and address this finding.**
+
+  Closed 2026-09-30 — implemented; evidence: performance/results/python.md, tools/perf/python/
 
 Source: [PY-P12](../../python-code-review.md). Report labels: [medium] [measured].
 
@@ -200,7 +224,9 @@ Source: [PY-P12](../../python-code-review.md). Report labels: [medium] [measured
 
 ## PY-P13: `RREPLACE` re-parses the replacement string for every match and does extra slicing
 
-- [ ] **P-PY-P13 — Measure and address this finding.**
+- [x] **P-PY-P13 — Measure and address this finding.**
+
+  Closed 2026-09-30 — implemented; evidence: performance/results/python.md, tools/perf/python/
 
 Source: [PY-P13](../../python-code-review.md). Report labels: [medium] [measured].
 
@@ -216,7 +242,9 @@ Source: [PY-P13](../../python-code-review.md). Report labels: [medium] [measured
 
 ## PY-P14: Nested-loop LINK re-creates the right row's table alias for every pair
 
-- [ ] **P-PY-P14 — Measure and address this finding.**
+- [x] **P-PY-P14 — Measure and address this finding.**
+
+  Closed 2026-09-30 — implemented; evidence: performance/results/python.md, tools/perf/python/
 
 Source: [PY-P14](../../python-code-review.md). Report labels: [medium] [measured].
 
@@ -232,7 +260,9 @@ Source: [PY-P14](../../python-code-review.md). Report labels: [medium] [measured
 
 ## PY-P15: 2-argument `BUCKET` deep-copies every member row
 
-- [ ] **P-PY-P15 — Measure and address this finding.**
+- [x] **P-PY-P15 — Measure and address this finding.**
+
+  Closed 2026-09-30 — rejected (2-arg BUCKET copy is the SPEC 3.4 contract); evidence: performance/results/python.md, tools/perf/python/
 
 Source: [PY-P15](../../python-code-review.md). Report labels: [medium] [measured].
 
@@ -248,7 +278,9 @@ Source: [PY-P15](../../python-code-review.md). Report labels: [medium] [measured
 
 ## PY-P16: `execute_hybrid` deep-clones the whole context on every call
 
-- [ ] **P-PY-P16 — Measure and address this finding.**
+- [x] **P-PY-P16 — Measure and address this finding.**
+
+  Closed 2026-09-30 — implemented; evidence: performance/results/python.md, tools/perf/python/
 
 Source: [PY-P16](../../python-code-review.md). Report labels: [medium] [measured].
 
@@ -266,6 +298,8 @@ Source: [PY-P16](../../python-code-review.md). Report labels: [medium] [measured
 
 - [ ] **P-PY-P17 — Measure and address this finding.**
 
+  Deferred 2026-09-30 — interpreter loop/closures: eval_node+_dispatch self time ~14%, the rest is Value/decimal construction; reconsider when a value-representation change makes dispatch the larger share. Evidence: performance/results/python.md
+
 Source: [PY-P17](../../python-code-review.md). Report labels: [medium] [reasoned; prototype 2-7%].
 
 **Source target:** `eval.py:163-173` (`eval_node`) -> `:230-307` (`_dispatch`), `:342-442` (`_eval_binary`), `:176-227` (`_eval_math_plan`), `:299-305` (strict call).
@@ -282,6 +316,8 @@ Source: [PY-P17](../../python-code-review.md). Report labels: [medium] [reasoned
 
 - [ ] **P-PY-P18 — Measure and address this finding.**
 
+  Deferred 2026-09-30 — SQL constant validation per ancestor: after PY-P11 the worst case translates in 12.6 ms, effect gone; reconsider when a workload shows constant validation above ~20% of a translation. Evidence: performance/results/python.md
+
 Source: [PY-P18](../../python-code-review.md). Report labels: [medium] [measured].
 
 **Source target:** `translator.py:261-267` (`_node`: `is_constant` walk + `validate` -> `eval_node` at EVERY compound constant node, deliberately: see the comment about `FALSE AND (1/0 > 0)`).
@@ -296,7 +332,9 @@ Source: [PY-P18](../../python-code-review.md). Report labels: [medium] [measured
 
 ## PY-P19: `mod` uses `%` on huge ints, about 9x slower than `divmod` on CPython 3.12+
 
-- [ ] **P-PY-P19 — Measure and address this finding.**
+- [x] **P-PY-P19 — Measure and address this finding.**
+
+  Closed 2026-09-30 — implemented; evidence: performance/results/python.md, tools/perf/python/
 
 Source: [PY-P19](../../python-code-review.md). Report labels: [low-medium] [measured].
 
@@ -312,7 +350,9 @@ Source: [PY-P19](../../python-code-review.md). Report labels: [low-medium] [meas
 
 ## PY-P20: SQL `text_literal` escapes character by character in Python
 
-- [ ] **P-PY-P20 — Measure and address this finding.**
+- [x] **P-PY-P20 — Measure and address this finding.**
+
+  Closed 2026-09-30 — implemented; evidence: performance/results/python.md, tools/perf/python/
 
 Source: [PY-P20](../../python-code-review.md). Report labels: [low-medium] [measured].
 
@@ -328,7 +368,9 @@ Source: [PY-P20](../../python-code-review.md). Report labels: [low-medium] [meas
 
 ## PY-P21: `_contains_unsupported_sql` ignores the `ops` table, so a MAP with a bit-operator pair loses the fall-through
 
-- [ ] **P-PY-P21 — Measure and address this finding.**
+- [x] **P-PY-P21 — Measure and address this finding.**
+
+  Closed 2026-09-30 — implemented; evidence: performance/results/python.md, tools/perf/python/
 
 Source: [PY-P21](../../python-code-review.md). Report labels: [low-medium] [measured].
 
@@ -344,7 +386,9 @@ Source: [PY-P21](../../python-code-review.md). Report labels: [low-medium] [meas
 
 ## PY-P22: Comparisons and additions across a huge scale gap build `10**gap`; the power cache holds only one large exponent
 
-- [ ] **P-PY-P22 — Measure and address this finding.**
+- [x] **P-PY-P22 — Measure and address this finding.**
+
+  Closed 2026-09-30 — implemented; evidence: performance/results/python.md, tools/perf/python/
 
 Source: [PY-P22](../../python-code-review.md). Report labels: [low] [measured].
 
@@ -360,7 +404,9 @@ Source: [PY-P22](../../python-code-review.md). Report labels: [low] [measured].
 
 ## PY-P23: Over-cap products are computed in full before being refused
 
-- [ ] **P-PY-P23 — Measure and address this finding.**
+- [x] **P-PY-P23 — Measure and address this finding.**
+
+  Closed 2026-09-30 — implemented; evidence: performance/results/python.md, tools/perf/python/
 
 Source: [PY-P23](../../python-code-review.md). Report labels: [low] [measured].
 
@@ -376,7 +422,9 @@ Source: [PY-P23](../../python-code-review.md). Report labels: [low] [measured].
 
 ## PY-P24: Small per-value overheads in `value.py`
 
-- [ ] **P-PY-P24 — Measure and address this finding.**
+- [x] **P-PY-P24 — Measure and address this finding.**
+
+  Closed 2026-09-30 — implemented; evidence: performance/results/python.md, tools/perf/python/
 
 Source: [PY-P24](../../python-code-review.md). Report labels: [low] [reasoned].
 
@@ -390,7 +438,9 @@ Source: [PY-P24](../../python-code-review.md). Report labels: [low] [reasoned].
 
 ## PY-P25: SUM allocates a `Dec` per addition; aggregate `walk` machinery costs about 30% of trivial bodies
 
-- [ ] **P-PY-P25 — Measure and address this finding.**
+- [x] **P-PY-P25 — Measure and address this finding.**
+
+  Closed 2026-09-30 — implemented; evidence: performance/results/python.md, tools/perf/python/
 
 Source: [PY-P25](../../python-code-review.md). Report labels: [low] [measured for SUM; rest reasoned].
 
@@ -406,7 +456,9 @@ Source: [PY-P25](../../python-code-review.md). Report labels: [low] [measured fo
 
 ## PY-P26: DISTINCT/BUCKET hash whole records; `first_collection_item` materialises a dict-mode record
 
-- [ ] **P-PY-P26 — Measure and address this finding.**
+- [x] **P-PY-P26 — Measure and address this finding.**
+
+  Closed 2026-09-30 — implemented; evidence: performance/results/python.md, tools/perf/python/
 
 Source: [PY-P26](../../python-code-review.md). Report labels: [low] [reasoned].
 
@@ -422,7 +474,9 @@ Source: [PY-P26](../../python-code-review.md). Report labels: [low] [reasoned].
 
 ## PY-P27: Hybrid: quadratic prefix search and repeated stage 1 in `plan_hybrid`
 
-- [ ] **P-PY-P27 — Measure and address this finding.**
+- [x] **P-PY-P27 — Measure and address this finding.**
+
+  Closed 2026-09-30 — already-addressed (hybrid planner linear since PY-C52 / PY-C1 site f); evidence: performance/results/python.md, tools/perf/python/
 
 Source: [PY-P27](../../python-code-review.md). Report labels: [low] [measured].
 
@@ -438,7 +492,9 @@ Source: [PY-P27](../../python-code-review.md). Report labels: [low] [measured].
 
 ## PY-P28: SQL translator per-translation overhead: template re-tokenising, repeated tree copy in stage 1, `chain()` recomputation; needle/separator re-rendered per element
 
-- [ ] **P-PY-P28 — Measure and address this finding.**
+- [x] **P-PY-P28 — Measure and address this finding.**
+
+  Closed 2026-09-30 — implemented; evidence: performance/results/python.md, tools/perf/python/
 
 Source: [PY-P28](../../python-code-review.md). Report labels: [low] [measured share, reasoned gain].
 
@@ -454,7 +510,9 @@ Source: [PY-P28](../../python-code-review.md). Report labels: [low] [measured sh
 
 ## PY-P29: Evaluator micro-costs: boolean-context `Value` allocation, assignment/literal paths, `_bitwise`
 
-- [ ] **P-PY-P29 — Measure and address this finding.**
+- [x] **P-PY-P29 — Measure and address this finding.**
+
+  Closed 2026-09-30 — implemented; evidence: performance/results/python.md, tools/perf/python/
 
 Source: [PY-P29](../../python-code-review.md). Report labels: [low] [reasoned/guessed].
 
@@ -468,7 +526,9 @@ Source: [PY-P29](../../python-code-review.md). Report labels: [low] [reasoned/gu
 
 ## PY-P30: Per-call overhead in regex `_compile` under the `i` flag and in `_args_for`
 
-- [ ] **P-PY-P30 — Measure and address this finding.**
+- [x] **P-PY-P30 — Measure and address this finding.**
+
+  Closed 2026-09-30 — implemented; evidence: performance/results/python.md, tools/perf/python/
 
 Source: [PY-P30](../../python-code-review.md). Report labels: [low] [reasoned].
 
@@ -484,7 +544,9 @@ Source: [PY-P30](../../python-code-review.md). Report labels: [low] [reasoned].
 
 ## PY-P31: Lexer: text literal bodies copied char by char; nested interpolation rescanned per level
 
-- [ ] **P-PY-P31 — Measure and address this finding.**
+- [x] **P-PY-P31 — Measure and address this finding.**
+
+  Closed 2026-09-30 — implemented; evidence: performance/results/python.md, tools/perf/python/
 
 Source: [PY-P31](../../python-code-review.md). Report labels: [low] [measured/reasoned].
 

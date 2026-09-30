@@ -2,7 +2,9 @@
 
 [Worklist](../README.md) · [Test harness and completion rules](../00-tests.md)
 
-- [ ] **T04 — Create and run this shared regression family across JS, PHP, Python, C++, Lisp and Go.**
+- [x] **T04 — Create and run this shared regression family across JS, PHP, Python, C++, Lisp and Go.**
+
+  Closed 2026-09-30 — conformance/26-evaluation-order; tools/check-eval-equivalence.{mjs,py,php} + C++/Go/Lisp plain-vs-optimised unit hooks; all six hosts agree at commit 03786e5 (conformance 2134/2134, sqlt 1309) and every finding row of the family is closed in coverage.csv.
 
 **Destination:** `shared conformance fixtures plus plain/logical/physical/math-plan test adapters and host runtime recovery tests`.
 

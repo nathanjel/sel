@@ -8,7 +8,9 @@ Report measurements below are historical evidence, not verified targets for this
 
 ## PHP-P1: Every text builtin re-splits its argument into a PHP array of code points, even for O(1)/O(k) answers
 
-- [ ] **P-PHP-P1 — Measure and address this finding.**
+- [x] **P-PHP-P1 — Measure and address this finding.**
+
+  Closed 2026-09-30 — implemented; evidence: performance/results/php.md, tools/perf/php/
 
 Source: [PHP-P1](../../php-code-review.md). Report labels: [high] [measured].
 
@@ -24,7 +26,9 @@ Source: [PHP-P1](../../php-code-review.md). Report labels: [high] [measured].
 
 ## PHP-P2: FIND / REPLACE / SPLIT use a pure-PHP O(n*m) scan over code-point arrays
 
-- [ ] **P-PHP-P2 — Measure and address this finding.**
+- [x] **P-PHP-P2 — Measure and address this finding.**
+
+  Closed 2026-09-30 — already-addressed (byte-level strpos/str_replace/explode from the correctness wave (PHP-C23)); evidence: performance/results/php.md, tools/perf/php/
 
 Source: [PHP-P2](../../php-code-review.md). Report labels: [high] [measured].
 
@@ -40,7 +44,9 @@ Source: [PHP-P2](../../php-code-review.md). Report labels: [high] [measured].
 
 ## PHP-P3: SORT / SORT_BY re-classify each key on every comparison, and every non-numeric text key builds and catches an exception
 
-- [ ] **P-PHP-P3 — Measure and address this finding.**
+- [x] **P-PHP-P3 — Measure and address this finding.**
+
+  Closed 2026-09-30 — implemented; evidence: performance/results/php.md, tools/perf/php/
 
 Source: [PHP-P3](../../php-code-review.md). Report labels: [high] [measured].
 
@@ -56,7 +62,9 @@ Source: [PHP-P3](../../php-code-review.md). Report labels: [high] [measured].
 
 ## PHP-P4: Non-GMP long division is a per-digit repeated-subtraction loop
 
-- [ ] **P-PHP-P4 — Measure and address this finding.**
+- [x] **P-PHP-P4 — Measure and address this finding.**
+
+  Closed 2026-09-30 — implemented; evidence: performance/results/php.md, tools/perf/php/
 
 Source: [PHP-P4](../../php-code-review.md). Report labels: [high without ext-gmp, none with it] [measured].
 
@@ -72,7 +80,9 @@ Source: [PHP-P4](../../php-code-review.md). Report labels: [high without ext-gmp
 
 ## PHP-P5: Non-GMP multiply (and so POWER) is quadratic, no Karatsuba
 
-- [ ] **P-PHP-P5 — Measure and address this finding.**
+- [x] **P-PHP-P5 — Measure and address this finding.**
+
+  Closed 2026-09-30 — implemented; evidence: performance/results/php.md, tools/perf/php/
 
 Source: [PHP-P5](../../php-code-review.md). Report labels: [high without ext-gmp, none with it] [measured].
 
@@ -88,7 +98,9 @@ Source: [PHP-P5](../../php-code-review.md). Report labels: [high without ext-gmp
 
 ## PHP-P6: Equi-join key extraction refuses any key expression mentioning a variable other than the binders, dropping LINK to O(n*m)
 
-- [ ] **P-PHP-P6 — Measure and address this finding.**
+- [x] **P-PHP-P6 — Measure and address this finding.**
+
+  Closed 2026-09-30 — implemented; evidence: performance/results/php.md, tools/perf/php/
 
 Source: [PHP-P6](../../php-code-review.md). Report labels: [high] [measured; cross-host design].
 
@@ -110,7 +122,9 @@ No second implementation task: [C-PHP-C14](../02-php-correctness.md#c-php-c14) o
 
 ## PHP-P8: The left fold that unrolls IN lists and static aggregates is quadratic
 
-- [ ] **P-PHP-P8 — Measure and address this finding.**
+- [x] **P-PHP-P8 — Measure and address this finding.**
+
+  Closed 2026-09-30 — already-addressed (balanced fold above 256 operands (SQL wave)); evidence: performance/results/php.md, tools/perf/php/
 
 Source: [PHP-P8](../../php-code-review.md). Report labels: [high] [measured].
 
@@ -126,7 +140,9 @@ Source: [PHP-P8](../../php-code-review.md). Report labels: [high] [measured].
 
 ## PHP-P9: Tokenizer is a per-character interpreted loop (~70% of front-end time)
 
-- [ ] **P-PHP-P9 — Measure and address this finding.**
+- [x] **P-PHP-P9 — Measure and address this finding.**
+
+  Closed 2026-09-30 — implemented (partly) (tokenizer fast path; whole-run lexing deferred); evidence: performance/results/php.md, tools/perf/php/
 
 Source: [PHP-P9](../../php-code-review.md). Report labels: [medium] [measured].
 
@@ -144,6 +160,8 @@ Source: [PHP-P9](../../php-code-review.md). Report labels: [medium] [measured].
 
 - [ ] **P-PHP-P10 — Measure and address this finding.**
 
+  Deferred 2026-09-30 — tokens as arrays ~397 B/token; needs a spec-level source-size cap decision and a cross-cutting refactor (at best 2.5x smaller tokens); reconsider when a source-size cap is decided or token memory dominates a real profile. Evidence: performance/results/php.md
+
 Source: [PHP-P10](../../php-code-review.md). Report labels: [medium] [measured].
 
 **Source target:** `Lexer.php:107, 144, 154, 170` (`['type'=>..,'value'=>..] + $pos`), Parser node arrays with `'pos' => $t`.
@@ -158,7 +176,9 @@ Source: [PHP-P10](../../php-code-review.md). Report labels: [medium] [measured].
 
 ## PHP-P11: Literals and internal results are re-validated: `Value::text` UTF-8 check on every literal evaluation
 
-- [ ] **P-PHP-P11 — Measure and address this finding.**
+- [x] **P-PHP-P11 — Measure and address this finding.**
+
+  Closed 2026-09-30 — implemented (subset) (Value::set key-check skip rejected (no gain)); evidence: performance/results/php.md, tools/perf/php/
 
 Source: [PHP-P11](../../php-code-review.md). Report labels: [medium] [measured].
 
@@ -174,7 +194,9 @@ Source: [PHP-P11](../../php-code-review.md). Report labels: [medium] [measured].
 
 ## PHP-P12: Internal decimal results are re-validated by `Value::num(array)` -> `Dec::checked`
 
-- [ ] **P-PHP-P12 — Measure and address this finding.**
+- [x] **P-PHP-P12 — Measure and address this finding.**
+
+  Closed 2026-09-30 — implemented; evidence: performance/results/php.md, tools/perf/php/
 
 Source: [PHP-P12](../../php-code-review.md). Report labels: [medium] [measured].
 
@@ -190,7 +212,9 @@ Source: [PHP-P12](../../php-code-review.md). Report labels: [medium] [measured].
 
 ## PHP-P13: `Dec::div` has no native fast path for small operands
 
-- [ ] **P-PHP-P13 — Measure and address this finding.**
+- [x] **P-PHP-P13 — Measure and address this finding.**
+
+  Closed 2026-09-30 — implemented (div) (native mod rejected (5-8%)); evidence: performance/results/php.md, tools/perf/php/
 
 Source: [PHP-P13](../../php-code-review.md). Report labels: [medium] [measured].
 
@@ -206,7 +230,9 @@ Source: [PHP-P13](../../php-code-review.md). Report labels: [medium] [measured].
 
 ## PHP-P14: `cmpAbs` compares digit strings with `<` (PHP numeric-string comparison)
 
-- [ ] **P-PHP-P14 — Measure and address this finding.**
+- [x] **P-PHP-P14 — Measure and address this finding.**
+
+  Closed 2026-09-30 — implemented; evidence: performance/results/php.md, tools/perf/php/
 
 Source: [PHP-P14](../../php-code-review.md). Report labels: [medium] [measured].
 
@@ -222,7 +248,9 @@ Source: [PHP-P14](../../php-code-review.md). Report labels: [medium] [measured].
 
 ## PHP-P15: `Dec::parse` can take a strspn-based short path (2x)
 
-- [ ] **P-PHP-P15 — Measure and address this finding.**
+- [x] **P-PHP-P15 — Measure and address this finding.**
+
+  Closed 2026-09-30 — implemented; evidence: performance/results/php.md, tools/perf/php/
 
 Source: [PHP-P15](../../php-code-review.md). Report labels: [medium] [measured].
 
@@ -238,7 +266,9 @@ Source: [PHP-P15](../../php-code-review.md). Report labels: [medium] [measured].
 
 ## PHP-P16: `Value::copy()` of a keyed list re-validates every key and every element
 
-- [ ] **P-PHP-P16 — Measure and address this finding.**
+- [x] **P-PHP-P16 — Measure and address this finding.**
+
+  Closed 2026-09-30 — implemented; evidence: performance/results/php.md, tools/perf/php/
 
 Source: [PHP-P16](../../php-code-review.md). Report labels: [medium] [measured].
 
@@ -256,6 +286,8 @@ Source: [PHP-P16](../../php-code-review.md). Report labels: [medium] [measured].
 
 - [ ] **P-PHP-P17 — Measure and address this finding.**
 
+  Deferred 2026-09-30 — numeric Value ~410 B each; a 62% saving needs a decimal-representation refactor (~105 access sites + public descriptor); reconsider when a decimal-representation refactor is scheduled or numeric memory becomes a reported limit. Evidence: performance/results/php.md
+
 Source: [PHP-P17](../../php-code-review.md). Report labels: [medium for memory] [measured].
 
 **Source target:** `Dec.php:405-411` (neg, digits, scale, native, nativeDigits, nativeNeg), `Value.php:814-822`.
@@ -270,7 +302,9 @@ Source: [PHP-P17](../../php-code-review.md). Report labels: [medium for memory] 
 
 ## PHP-P18: RREPLACE memory and constant factors
 
-- [ ] **P-PHP-P18 — Measure and address this finding.**
+- [x] **P-PHP-P18 — Measure and address this finding.**
+
+  Closed 2026-09-30 — implemented; evidence: performance/results/php.md, tools/perf/php/
 
 Source: [PHP-P18](../../php-code-review.md). Report labels: [medium] [reasoned / measured constants].
 
@@ -284,7 +318,9 @@ Source: [PHP-P18](../../php-code-review.md). Report labels: [medium] [reasoned /
 
 ## PHP-P19: ENCODE_BASE64 / DECODE_BASE64 / CRC32 are byte-at-a-time PHP loops
 
-- [ ] **P-PHP-P19 — Measure and address this finding.**
+- [x] **P-PHP-P19 — Measure and address this finding.**
+
+  Closed 2026-09-30 — implemented; evidence: performance/results/php.md, tools/perf/php/
 
 Source: [PHP-P19](../../php-code-review.md). Report labels: [medium] [measured].
 
@@ -300,7 +336,9 @@ Source: [PHP-P19](../../php-code-review.md). Report labels: [medium] [measured].
 
 ## PHP-P20: LINK compiles a new plan with `eval()` for every LINK invocation and shape pair (~60 us each), never cached across calls
 
-- [ ] **P-PHP-P20 — Measure and address this finding.**
+- [x] **P-PHP-P20 — Measure and address this finding.**
+
+  Closed 2026-09-30 — implemented; evidence: performance/results/php.md, tools/perf/php/
 
 Source: [PHP-P20](../../php-code-review.md). Report labels: [medium] [measured].
 
@@ -316,7 +354,9 @@ Source: [PHP-P20](../../php-code-review.md). Report labels: [medium] [measured].
 
 ## PHP-P21: Non-equi (nested-loop) LINK re-aliases every right row for every left row
 
-- [ ] **P-PHP-P21 — Measure and address this finding.**
+- [x] **P-PHP-P21 — Measure and address this finding.**
+
+  Closed 2026-09-30 — implemented; evidence: performance/results/php.md, tools/perf/php/
 
 Source: [PHP-P21](../../php-code-review.md). Report labels: [medium] [measured].
 
@@ -332,7 +372,9 @@ Source: [PHP-P21](../../php-code-review.md). Report labels: [medium] [measured].
 
 ## PHP-P22: `Hybrid::execute` deep-copies the whole caller context on every call
 
-- [ ] **P-PHP-P22 — Measure and address this finding.**
+- [x] **P-PHP-P22 — Measure and address this finding.**
+
+  Closed 2026-09-30 — implemented; evidence: performance/results/php.md, tools/perf/php/
 
 Source: [PHP-P22](../../php-code-review.md). Report labels: [medium] [measured].
 
@@ -348,7 +390,9 @@ Source: [PHP-P22](../../php-code-review.md). Report labels: [medium] [measured].
 
 ## PHP-P23: `Emit::fill` copies templates one character at a time through a closure (6x)
 
-- [ ] **P-PHP-P23 — Measure and address this finding.**
+- [x] **P-PHP-P23 — Measure and address this finding.**
+
+  Closed 2026-09-30 — implemented; evidence: performance/results/php.md, tools/perf/php/
 
 Source: [PHP-P23](../../php-code-review.md). Report labels: [medium] [measured].
 
@@ -364,7 +408,9 @@ Source: [PHP-P23](../../php-code-review.md). Report labels: [medium] [measured].
 
 ## PHP-P24: Template lookup rebuilds the dialect chain per node; `textLiteral` re-sorts its escape keys per literal
 
-- [ ] **P-PHP-P24 — Measure and address this finding.**
+- [x] **P-PHP-P24 — Measure and address this finding.**
+
+  Closed 2026-09-30 — implemented; evidence: performance/results/php.md, tools/perf/php/
 
 Source: [PHP-P24](../../php-code-review.md). Report labels: [low-medium] [measured].
 
@@ -380,7 +426,9 @@ Source: [PHP-P24](../../php-code-review.md). Report labels: [low-medium] [measur
 
 ## PHP-P25: `structuralHash` allocates a HashContext even for scalar leaves
 
-- [ ] **P-PHP-P25 — Measure and address this finding.**
+- [x] **P-PHP-P25 — Measure and address this finding.**
+
+  Closed 2026-09-30 — implemented; evidence: performance/results/php.md, tools/perf/php/
 
 Source: [PHP-P25](../../php-code-review.md). Report labels: [low-medium] [measured].
 
@@ -396,7 +444,9 @@ Source: [PHP-P25](../../php-code-review.md). Report labels: [low-medium] [measur
 
 ## PHP-P26: Sort/heap costs in TOP: `_K` bound for every row; heap used when limit >= rows
 
-- [ ] **P-PHP-P26 — Measure and address this finding.**
+- [x] **P-PHP-P26 — Measure and address this finding.**
+
+  Closed 2026-09-30 — implemented; evidence: performance/results/php.md, tools/perf/php/
 
 Source: [PHP-P26](../../php-code-review.md). Report labels: [low-medium] [measured].
 
@@ -412,7 +462,9 @@ Source: [PHP-P26](../../php-code-review.md). Report labels: [low-medium] [measur
 
 ## PHP-P27: `Dec` SUM accumulates through full six-key descriptors
 
-- [ ] **P-PHP-P27 — Measure and address this finding.**
+- [x] **P-PHP-P27 — Measure and address this finding.**
+
+  Closed 2026-09-30 — implemented; evidence: performance/results/php.md, tools/perf/php/
 
 Source: [PHP-P27](../../php-code-review.md). Report labels: [low-medium] [measured].
 
@@ -428,7 +480,9 @@ Source: [PHP-P27](../../php-code-review.md). Report labels: [low-medium] [measur
 
 ## PHP-P28: Per-node overhead in `evalNode`: try/finally plus a second dispatch call
 
-- [ ] **P-PHP-P28 — Measure and address this finding.**
+- [x] **P-PHP-P28 — Measure and address this finding.**
+
+  Closed 2026-09-30 — rejected (removing try/finally in evalNode: x0.98, no measurable gain); evidence: performance/results/php.md, tools/perf/php/
 
 Source: [PHP-P28](../../php-code-review.md). Report labels: [low-medium] [measured].
 
@@ -444,7 +498,9 @@ Source: [PHP-P28](../../php-code-review.md). Report labels: [low-medium] [measur
 
 ## PHP-P29: The optimiser costs more than it saves for one-shot, non-pipeline rules; constant folding stops short of text `&`
 
-- [ ] **P-PHP-P29 — Measure and address this finding.**
+- [x] **P-PHP-P29 — Measure and address this finding.**
+
+  Closed 2026-09-30 — implemented; evidence: performance/results/php.md, tools/perf/php/
 
 Source: [PHP-P29](../../php-code-review.md). Report labels: [low] [measured].
 
@@ -460,7 +516,9 @@ Source: [PHP-P29](../../php-code-review.md). Report labels: [low] [measured].
 
 ## PHP-P30: Assorted small items
 
-- [ ] **P-PHP-P30 — Measure and address this finding.**
+- [x] **P-PHP-P30 — Measure and address this finding.**
+
+  Closed 2026-09-30 — implemented (partly) (i-flag rescan done; other sub-items measured and deferred/rejected item by item); evidence: performance/results/php.md, tools/perf/php/
 
 Source: [PHP-P30](../../php-code-review.md). Report labels: [low] [measured / reasoned].
 

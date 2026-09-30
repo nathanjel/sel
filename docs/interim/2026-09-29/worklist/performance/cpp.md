@@ -8,7 +8,9 @@ Report measurements below are historical evidence, not verified targets for this
 
 ## CPP-P1: Big-by-big decimal division is O(n*m*9) with a string allocation per step, and division falls off a cliff at about 28 digits
 
-- [ ] **P-CPP-P1 — Measure and address this finding.**
+- [x] **P-CPP-P1 — Measure and address this finding.**
+
+  Closed 2026-09-30 — implemented; evidence: performance/results/cpp.md, tools/perf/cpp/
 
 Source: [CPP-P1](../../cpp-code-review.md). Report labels: [impact: high (DoS)] [measured].
 
@@ -24,7 +26,9 @@ Source: [CPP-P1](../../cpp-code-review.md). Report labels: [impact: high (DoS)] 
 
 ## CPP-P2: Schoolbook multiplication with no early E_RANGE rejection
 
-- [ ] **P-CPP-P2 — Measure and address this finding.**
+- [x] **P-CPP-P2 — Measure and address this finding.**
+
+  Closed 2026-09-30 — implemented; evidence: performance/results/cpp.md, tools/perf/cpp/
 
 Source: [CPP-P2](../../cpp-code-review.md). Report labels: [impact: high (DoS) / medium otherwise] [measured].
 
@@ -40,7 +44,9 @@ Source: [CPP-P2](../../cpp-code-review.md). Report labels: [impact: high (DoS) /
 
 ## CPP-P3: SQL `IN` / `ANY` / `JOIN` literal lists translate in O(N^2) (`fold_pairwise` re-splices the accumulator through `Emit::fill`)
 
-- [ ] **P-CPP-P3 — Measure and address this finding.**
+- [x] **P-CPP-P3 — Measure and address this finding.**
+
+  Closed 2026-09-30 — already-addressed (SQL balanced fold above 256 operands); evidence: performance/results/cpp.md, tools/perf/cpp/
 
 Source: [CPP-P3](../../cpp-code-review.md). Report labels: [impact: high] [measured].
 
@@ -56,7 +62,9 @@ Source: [CPP-P3](../../cpp-code-review.md). Report labels: [impact: high] [measu
 
 ## CPP-P4: `??` / `???` on a missing key cost about 20 microseconds each (implemented with a C++ exception)
 
-- [ ] **P-CPP-P4 — Measure and address this finding.**
+- [x] **P-CPP-P4 — Measure and address this finding.**
+
+  Closed 2026-09-30 — implemented; evidence: performance/results/cpp.md, tools/perf/cpp/
 
 Source: [CPP-P4](../../cpp-code-review.md). Report labels: [impact: medium-high] [measured].
 
@@ -72,7 +80,9 @@ Source: [CPP-P4](../../cpp-code-review.md). Report labels: [impact: medium-high]
 
 ## CPP-P5: Operator dispatch by string comparison and per-evaluation literal allocation dominate small-predicate loops
 
-- [ ] **P-CPP-P5 — Measure and address this finding.**
+- [x] **P-CPP-P5 — Measure and address this finding.**
+
+  Closed 2026-09-30 — implemented; evidence: performance/results/cpp.md, tools/perf/cpp/
 
 Source: [CPP-P5](../../cpp-code-review.md). Report labels: [impact: medium] [measured].
 
@@ -88,7 +98,9 @@ Source: [CPP-P5](../../cpp-code-review.md). Report labels: [impact: medium] [mea
 
 ## CPP-P6: 128-bit divisions by 10 in hot formatting and rounding paths
 
-- [ ] **P-CPP-P6 — Measure and address this finding.**
+- [x] **P-CPP-P6 — Measure and address this finding.**
+
+  Closed 2026-09-30 — implemented; evidence: performance/results/cpp.md, tools/perf/cpp/
 
 Source: [CPP-P6](../../cpp-code-review.md). Report labels: [impact: medium] [measured].
 
@@ -104,7 +116,9 @@ Source: [CPP-P6](../../cpp-code-review.md). Report labels: [impact: medium] [mea
 
 ## CPP-P7: `LIST` / `RECORD` (and `,`, `=`, MAP collection) deep-clone freshly built temporaries
 
-- [ ] **P-CPP-P7 — Measure and address this finding.**
+- [x] **P-CPP-P7 — Measure and address this finding.**
+
+  Closed 2026-09-30 — implemented; evidence: performance/results/cpp.md, tools/perf/cpp/
 
 Source: [CPP-P7](../../cpp-code-review.md). Report labels: [impact: medium] [measured].
 
@@ -122,6 +136,8 @@ Source: [CPP-P7](../../cpp-code-review.md). Report labels: [impact: medium] [mea
 
 - [ ] **P-CPP-P8 — Measure and address this finding.**
 
+  Deferred 2026-09-30 — numeric Value footprint (Impl 72 B + Dec 96 B): high risk, estimated <=20-30% on numeric loops; reconsider when the CPP-REG-1 per-node-cost work (inline small decimal, as in the Rust host) is scheduled — revisit together. Evidence: performance/results/cpp.md
+
 Source: [CPP-P8](../../cpp-code-review.md). Report labels: [impact: medium] [measured for the pieces, reasoned for the total].
 
 **Source target:** `cpp/sel.hpp:133-140` (`Dec` is 96 bytes: string + vector + int128, all always present), `cpp/sel.cpp:1407-1413` (`from_dec` = `Impl` + `make_unique<Dec>`).
@@ -136,7 +152,9 @@ Source: [CPP-P8](../../cpp-code-review.md). Report labels: [impact: medium] [mea
 
 ## CPP-P9: Text builtins decode the whole string to `vector<char32_t>` even when a byte scan would do
 
-- [ ] **P-CPP-P9 — Measure and address this finding.**
+- [x] **P-CPP-P9 — Measure and address this finding.**
+
+  Closed 2026-09-30 — implemented; evidence: performance/results/cpp.md, tools/perf/cpp/
 
 Source: [CPP-P9](../../cpp-code-review.md). Report labels: [impact: medium] [measured].
 
@@ -152,7 +170,9 @@ Source: [CPP-P9](../../cpp-code-review.md). Report labels: [impact: medium] [mea
 
 ## CPP-P10: Sort comparator re-classifies both keys on every comparison
 
-- [ ] **P-CPP-P10 — Measure and address this finding.**
+- [x] **P-CPP-P10 — Measure and address this finding.**
+
+  Closed 2026-09-30 — rejected (decorated sort keys: no measurable gain); evidence: performance/results/cpp.md, tools/perf/cpp/
 
 Source: [CPP-P10](../../cpp-code-review.md). Report labels: [impact: medium] [measured baseline, reasoned cause].
 
@@ -168,7 +188,9 @@ Source: [CPP-P10](../../cpp-code-review.md). Report labels: [impact: medium] [me
 
 ## CPP-P11: `TOP*` with a large N is 2-3x slower than the full sort it replaces
 
-- [ ] **P-CPP-P11 — Measure and address this finding.**
+- [x] **P-CPP-P11 — Measure and address this finding.**
+
+  Closed 2026-09-30 — implemented; evidence: performance/results/cpp.md, tools/perf/cpp/
 
 Source: [CPP-P11](../../cpp-code-review.md). Report labels: [impact: medium] [measured].
 
@@ -184,7 +206,9 @@ Source: [CPP-P11](../../cpp-code-review.md). Report labels: [impact: medium] [me
 
 ## CPP-P12: Bare `BUCKET(list, key)` is allocation-heavy per group (about 3.5 us/group)
 
-- [ ] **P-CPP-P12 — Measure and address this finding.**
+- [x] **P-CPP-P12 — Measure and address this finding.**
+
+  Closed 2026-09-30 — implemented; evidence: performance/results/cpp.md, tools/perf/cpp/
 
 Source: [CPP-P12](../../cpp-code-review.md). Report labels: [impact: medium] [measured].
 
@@ -200,7 +224,9 @@ Source: [CPP-P12](../../cpp-code-review.md). Report labels: [impact: medium] [me
 
 ## CPP-P13: Each parenthesised group shallow-copies its node, copying the whole `items` vector
 
-- [ ] **P-CPP-P13 — Measure and address this finding.**
+- [x] **P-CPP-P13 — Measure and address this finding.**
+
+  Closed 2026-09-30 — implemented; evidence: performance/results/cpp.md, tools/perf/cpp/
 
 Source: [CPP-P13](../../cpp-code-review.md). Report labels: [impact: medium, only on wide nested lists] [measured].
 
@@ -216,7 +242,9 @@ Source: [CPP-P13](../../cpp-code-review.md). Report labels: [impact: medium, onl
 
 ## CPP-P14: Every SQL `translate()` copies the whole `Bindings` and scans all of them
 
-- [ ] **P-CPP-P14 — Measure and address this finding.**
+- [x] **P-CPP-P14 — Measure and address this finding.**
+
+  Closed 2026-09-30 — implemented; evidence: performance/results/cpp.md, tools/perf/cpp/
 
 Source: [CPP-P14](../../cpp-code-review.md). Report labels: [impact: medium] [measured].
 
@@ -232,7 +260,9 @@ Source: [CPP-P14](../../cpp-code-review.md). Report labels: [impact: medium] [me
 
 ## CPP-P15: `evaluate(source, ctx)` pays the optimiser on every call and it costs about as much as parsing
 
-- [ ] **P-CPP-P15 — Measure and address this finding.**
+- [x] **P-CPP-P15 — Measure and address this finding.**
+
+  Closed 2026-09-30 — implemented; evidence: performance/results/cpp.md, tools/perf/cpp/
 
 Source: [CPP-P15](../../cpp-code-review.md). Report labels: [impact: medium for one-shot use] [measured].
 
@@ -248,7 +278,9 @@ Source: [CPP-P15](../../cpp-code-review.md). Report labels: [impact: medium for 
 
 ## CPP-P16: Per-call regex overhead for literal patterns, and the subject is converted twice at 4-8x size
 
-- [ ] **P-CPP-P16 — Measure and address this finding.**
+- [x] **P-CPP-P16 — Measure and address this finding.**
+
+  Closed 2026-09-30 — implemented; evidence: performance/results/cpp.md, cpp/tests/regex_race.cpp
 
 Source: [CPP-P16](../../cpp-code-review.md). Report labels: [impact: medium] [reasoned + measured deltas].
 
@@ -264,7 +296,9 @@ Source: [CPP-P16](../../cpp-code-review.md). Report labels: [impact: medium] [re
 
 ## CPP-P17: `node_contains_var` re-scans and allocates on every aggregate call
 
-- [ ] **P-CPP-P17 — Measure and address this finding.**
+- [x] **P-CPP-P17 — Measure and address this finding.**
+
+  Closed 2026-09-30 — implemented; evidence: performance/results/cpp.md, tools/perf/cpp/
 
 Source: [CPP-P17](../../cpp-code-review.md). Report labels: [impact: low-medium] [measured by call count].
 
@@ -280,7 +314,9 @@ Source: [CPP-P17](../../cpp-code-review.md). Report labels: [impact: low-medium]
 
 ## CPP-P18: RREPLACE re-parses the replacement and makes four temporaries per match
 
-- [ ] **P-CPP-P18 — Measure and address this finding.**
+- [x] **P-CPP-P18 — Measure and address this finding.**
+
+  Closed 2026-09-30 — implemented; evidence: performance/results/cpp.md, tools/perf/cpp/
 
 Source: [CPP-P18](../../cpp-code-review.md). Report labels: [impact: low-medium] [measured].
 
@@ -296,7 +332,9 @@ Source: [CPP-P18](../../cpp-code-review.md). Report labels: [impact: low-medium]
 
 ## CPP-P19: Base64 decode uses `strchr` per input character; encode appends char by char
 
-- [ ] **P-CPP-P19 — Measure and address this finding.**
+- [x] **P-CPP-P19 — Measure and address this finding.**
+
+  Closed 2026-09-30 — implemented; evidence: performance/results/cpp.md, tools/perf/cpp/
 
 Source: [CPP-P19](../../cpp-code-review.md). Report labels: [impact: low-medium] [measured].
 
@@ -312,7 +350,9 @@ Source: [CPP-P19](../../cpp-code-review.md). Report labels: [impact: low-medium]
 
 ## CPP-P20: `FILTER` result always materialises string keys
 
-- [ ] **P-CPP-P20 — Measure and address this finding.**
+- [x] **P-CPP-P20 — Measure and address this finding.**
+
+  Closed 2026-09-30 — implemented; evidence: performance/results/cpp.md, tools/perf/cpp/
 
 Source: [CPP-P20](../../cpp-code-review.md). Report labels: [impact: low-medium] [measured].
 
@@ -328,7 +368,9 @@ Source: [CPP-P20](../../cpp-code-review.md). Report labels: [impact: low-medium]
 
 ## CPP-P21: `RECORD` with literal keys builds an intermediate record, then a second shaped Value
 
-- [ ] **P-CPP-P21 — Measure and address this finding.**
+- [x] **P-CPP-P21 — Measure and address this finding.**
+
+  Closed 2026-09-30 — implemented; evidence: performance/results/cpp.md, tools/perf/cpp/
 
 Source: [CPP-P21](../../cpp-code-review.md). Report labels: [impact: low-medium] [measured; reasoned split].
 
@@ -344,7 +386,9 @@ Source: [CPP-P21](../../cpp-code-review.md). Report labels: [impact: low-medium]
 
 ## CPP-P22: Naive O(n*m) substring search, pad and repeat loops
 
-- [ ] **P-CPP-P22 — Measure and address this finding.**
+- [x] **P-CPP-P22 — Measure and address this finding.**
+
+  Closed 2026-09-30 — implemented; evidence: performance/results/cpp.md, tools/perf/cpp/
 
 Source: [CPP-P22](../../cpp-code-review.md). Report labels: [impact: low] [measured / reasoned].
 
@@ -360,7 +404,9 @@ Source: [CPP-P22](../../cpp-code-review.md). Report labels: [impact: low] [measu
 
 ## CPP-P23: `DISTINCT` uses `unordered_map<uint64_t, vector<Value>>` (one node and one vector block per distinct value)
 
-- [ ] **P-CPP-P23 — Measure and address this finding.**
+- [x] **P-CPP-P23 — Measure and address this finding.**
+
+  Closed 2026-09-30 — implemented; evidence: performance/results/cpp.md, tools/perf/cpp/
 
 Source: [CPP-P23](../../cpp-code-review.md). Report labels: [impact: low] [reasoned].
 
@@ -374,7 +420,9 @@ Source: [CPP-P23](../../cpp-code-review.md). Report labels: [impact: low] [reaso
 
 ## CPP-P24: Small per-call and per-run allocation and hybrid-planner overheads
 
-- [ ] **P-CPP-P24 — Measure and address this finding.**
+- [x] **P-CPP-P24 — Measure and address this finding.**
+
+  Closed 2026-09-30 — implemented (partly) (remaining sub-items measured and deferred/rejected in the round-3 row); evidence: performance/results/cpp.md, tools/perf/cpp/
 
 Source: [CPP-P24](../../cpp-code-review.md). Report labels: [impact: low] [reasoned; one guessed].
 
@@ -388,7 +436,9 @@ Source: [CPP-P24](../../cpp-code-review.md). Report labels: [impact: low] [reaso
 
 ## CPP-P25: Front-end allocation and copy overheads
 
-- [ ] **P-CPP-P25 — Measure and address this finding.**
+- [x] **P-CPP-P25 — Measure and address this finding.**
+
+  Closed 2026-09-30 — implemented (partly) (remaining sub-items measured and deferred/rejected in the round-3 row); evidence: performance/results/cpp.md, tools/perf/cpp/
 
 Source: [CPP-P25](../../cpp-code-review.md). Report labels: [impact: low] [reasoned; front-end measured].
 

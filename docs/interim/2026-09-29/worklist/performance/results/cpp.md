@@ -139,3 +139,58 @@ round) and every checksum matched. Growth: every scenario is linear (×2.0 per 2
 **Tests added:** `cpp/tests/unit.cpp` `test_round3_fast_paths` (RECORD literal/duplicate/dynamic keys and error order; FIND/REPLACE/SPLIT incl. multi-byte and a linear-time bound skipped under ASan; PAD/REPEAT cases; DISTINCT/DEDUPE incl. growth past the initial table; >4-argument calls; 15 nested-`??` cases incl. coercion errors, effects and the "a miss never runs the right operand" rule) and `cpp/tests/sql_unit.cpp` (execute_hybrid isolation: helper assignment, indexed write, copy of a variable, unassigned variable read, scalar context). **Tools:** `tools/perf/cpp/bench.py` scenarios p21–p25, `sqlbench.cpp` modes `plan` and `hybrid`.
 
 **Verification (final tree):** decimal oracle 94,040 cases / 0 mismatches; `sqlunit` green; `sqlt` green (1309 under ASan); `make -C cpp tsan`, `tsan-registry` and `tsan-regex` green. **ASan:** `unit-asan` 751/751, `sqlunit-asan` and `sqlt-asan` green, and `conformance-asan` run per file (8 files at a time) passes every file, except that `conformance/31-audit-findings.selt` was run under ASan without its three 8M-code-point cap cases (`text.replace.cap-*`, `text.rreplace.cap-*`: they did not finish in 25 minutes under ASan on this loaded box; the other 19 cases, including the three `join.order.*`, pass under ASan in 0.06 s, and all 22 pass in the plain build in 1.4 s). **Join-prefilter error order (coordinator item, peer finding; a correctness fix, not a speed-up):** on the deep prefilter path of `do_link` (FILTER handed down through a LINK whose left is itself a LINK/FILTER, a MAP after it) the right source is evaluated first as an optimisation. If it raises a SEL error, the left source (pure) is now evaluated as written and ITS error wins; only when that evaluates cleanly does the right source's error stand (eval depth is restored by `eval_node`'s RAII while the exception unwinds). The three `conformance/31-audit-findings.selt` `join.order.*` cases that reported 1:76/1:84/1:89 now report 1:38. Checked: conformance 2134/2134, unit 771/771 (plain-vs-optimised clean), join-filter oracle (mixed seed 54001 / uniform 54002, `SEL_IMPLS="js cpp"`, 1500 pairs each: 0 cross-host and 0 as-written disagreements), join-rows oracle 2000 programs 0 wrong, TSan lanes clean. **Test-lane note:** `unit` now skips `28b-regex-ambiguity` in its plain-vs-optimised pass (it ran the validator at its caps dozens of times; over an hour under ASan; conformance covers it) and skips `31-audit-findings` under ASan only (three cases build 8M-code-point texts, ~100× slower there); the serial `make asan` conformance step takes tens of minutes under load because of those cases, so run it per file in parallel as above.
+
+# C++ performance results — CPP-REG-1 (continued): copy cost after the Rust host's lead
+
+Revision: `03786e5` + dirty tree; g++ 16.2.1 `-O2`; `scale-bench --only scenarioN --runs 3 --warmups 1`,
+`program_run_ms`, binaries interleaved (min of 9–12 samples), load 1.4–3.0. Baseline `faff480` (0.9.2)
+built from `git archive`.
+
+| task | decision | 0.9.2 | before | after | evidence / notes |
+|---|---|---|---|---|---|
+| CPP-REG-1 step 0: attribution | measured | 2.91 M allocations / run | 6.11 M allocations / run; 3.22 M cloned nodes / run | — | counting `operator new` wrapper + per-call-site clone counters over scenario 1. **Sites:** BUCKET row keep (`keep_element` in `do_bucket`): 73,918 calls × 57 nodes = **4.21 M nodes** — a joined row from LINK holds the left row and each table's row under several aliases (`L`, `l`, `_1`, …), a DAG the deep copy expands into a tree; FILTER keeps 49 K calls × 6 nodes = 0.29 M; RECORD field leaves 0.21 M; the context clone (isolated mode, outside `program_run_ms`) 1.71 M. Per cloned numeric leaf: an `Impl` plus a `std::make_unique<Dec>`. Ceiling spike (BUCKET keeps rows, unsafely): **624 ms** — the BUCKET copies are ~357 of the 406 ms gap, so per-node cost is secondary. |
+| CPP-REG-1 step 2a: projected BUCKET keeps its rows | **implemented** | 577 ms | 975 ms | **642 ms** | `do_bucket`: when the projection is a native RECORD or LIST call and neither the key nor the projection writes (`writes_nothing`: no assignment anywhere below, no host-function call), rows are kept uncopied (`keep_or_alias`) after `Internals::check_clone_depth(row, 1, Pos{})`, the allocation-free twin of `clone_at`'s depth test (same tree shape, same position), so a too-deep row is still E_DEPTH at the same moment. Nothing kept can reach the result uncopied (RECORD/LIST `adopt_or_clone` whatever is shared) and nothing can change while the BUCKET runs. |
+| CPP-REG-1 step 2b: FILTER borrows rows for a read-only next step | **implemented** (Rust `borrowed_filter`) | 577 ms | 642 ms | **606 ms** | physical optimiser stamps `Node::borrow_rows` on a FILTER body when the body and the next step's (MAP or FILTER) body write nothing; FILTER then uses `keep_or_alias`. The next step copies what it keeps, as before. |
+| CPP-REG-1 step 2c: MAP whose body is RECORD | already addressed | — | — | — | `adopt_or_clone`'s `unique_tree` already adopts a fresh RECORD (same effect as Rust's `fresh_record`). |
+| CPP-REG-1 step 1: per-node cost (inline small Dec, shared long text, one allocation per node) | **deferred** | — | — | — | after 2a/2b the run makes **2.95 M allocations vs 2.91 M at 0.9.2** — at parity; what remains of the gap (+5%) is no longer allocation. An inline decimal would speed 0.9.2's paths as much as ours, is a representation change touching every `Dec` user (cf. CPP-P8), and the stop rule (continue only above +25%) says stop. Reconsider for absolute speed, not as a regression. |
+| CPP-REG-1 step 3: whole-program no-write elision | **not needed** | — | — | — | stop rule: the gap is +5%, below the 25% threshold. |
+
+**Final scale-bench numbers (program_run_ms, min):**
+
+| scenario | 0.9.2 | before (03786e5) | after | after / 0.9.2 |
+|---|---:|---:|---:|---:|
+| 1 | 577.2 | 975.3 | 605.9 | 1.05 |
+| 2 | 5.4 | 6.8 | 6.6 | 1.22 (a 1.2 ms per-run constant) |
+| 3 | 185.2 | 174.7 | 164.2 | 0.89 |
+| 4 | 8.3 | 8.5 | 7.3 | 0.88 |
+| 5 | 239.3 | 242.5 | 243.9 | 1.02 |
+| 6 | 261.2 | 278.8 | 272.1 | 1.04 |
+
+**Tests:** `cpp/tests/unit.cpp` `test_bucket_rows_alias_when_unobservable` (the `writes_nothing`
+classifier on assignments, compound assignments in nested bodies, index assignments and host calls; the
+answer unchanged; a row a RECORD or LIST projection keeps is a copy, checked by mutating the result through
+the host API; E_DEPTH on a too-deep row identical with and without the copy) and
+`test_filter_borrows_rows_for_a_read_only_next_step` (the `borrow_rows` stamp for read-only / assigning /
+host-calling / non-MAP next steps and no next step; answer; the MAP after it keeps a copy; E_DEPTH parity).
+
+**Cross-host divergence found (not changed, needs a decision):** C++ copies a BUCKET's rows *when it collects
+them*; JS, PHP, Python, Lisp, Go and Rust collect the row handles and copy what reaches the result at the end.
+A key or projection that writes to an already-collected row therefore answers differently:
+`L = LIST(RECORD("k","a","v",1), RECORD("k","a","v",2), RECORD("k","b","v",5)); B = BUCKET(L, _["k"],
+RECORD("s", (L[1]["v"] = 100; SUM(_, r, r["v"])))); B[1]["s"]` is 3 in C++ and 102 in the other six; the
+bare form with a writing key (`B = BUCKET(L, (IF(_["v"] == 2, (L[1]["v"] = 100), 0); _["k"])); B["a"][1]["v"]`)
+is 1 in C++, 100 elsewhere. SORT_BY splits 3–3 the same way (`S = SORT_BY(L, (IF(_["v"] == 2, (L[1]["v"] =
+100), 0); _["v"])); S[1]["v"]`: 100 in JS/Go/Python, 1 in C++/PHP/Lisp). SPEC §3.4 says what is copied, not
+when; no conformance case pins it. The elisions above never engage when a body writes, so they leave C++'s
+answers exactly as they were.
+
+**make -C cpp asan:** now exits 0 in **981 s wall** (including rebuilding the ASan unit, SQL unit and
+sqlt binaries) with every conformance file passing, the three 8M-code-point cap cases of
+`conformance/31` included. Their 25+ minutes were an ASan artifact, not a C++ inefficiency: the
+sanitizer's `memmem` interceptor validates the whole remaining haystack on every call, so the linear
+REPLACE search loop becomes quadratic under ASan only (838,860 code points: 17.1 s with the
+interceptor, 0.78 s with `ASAN_OPTIONS=intercept_memmem=0`; the `-O2` build does 8.4 M in 0.5 s;
+RREPLACE was linear under ASan either way). `cpp/Makefile`'s `asan` target now sets
+`intercept_memmem=0` (every read the interpreter itself makes is still checked) and runs the
+conformance files `ASAN_JOBS` (default `nproc`) at a time, each with its own summary line, failing the
+target if any file fails. `make tsan`, `tsan-registry` and `tsan-regex` are clean.

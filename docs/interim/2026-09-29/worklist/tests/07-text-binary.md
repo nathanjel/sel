@@ -2,7 +2,9 @@
 
 [Worklist](../README.md) · [Test harness and completion rules](../00-tests.md)
 
-- [ ] **T07 — Create and run this shared regression family across JS, PHP, Python, C++, Lisp and Go.**
+- [x] **T07 — Create and run this shared regression family across JS, PHP, Python, C++, Lisp and Go.**
+
+  Closed 2026-09-30 — conformance/29-text-binary-budgets (+31 caps); tools/check-budgets.sh; all six hosts agree at commit 03786e5 (conformance 2134/2134, sqlt 1309) and every finding row of the family is closed in coverage.csv.
 
 **Destination:** `text/binary/null .selt cases, generated size-boundary probes and memory-limited subprocess tests`.
 

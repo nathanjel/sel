@@ -83,3 +83,25 @@ Python is the one host that is still slower than 0.9.2 on the scale-test (the JS
 **Not recovered:** scenario 1/2/3/4 remain at +11 … +16 % CPU. The rest is the copy contract (a leaf copy is one `Value` allocation, 9 slot stores) and the snapshot/budget counters; further gain needs copy-on-write leaves or a lighter `Value` (PY-P24(a), rejected in round 3 at ~45 ns of ~700 ns per Value) — deferred, reconsider if the scale scenarios become a release criterion.
 
 Raw tables: `$CLAUDE_JOB_DIR/tmp/py_abcpu_final2.txt` (this run), `tools/perf/python/ab_scale.py` (runner wall clock variant: scenario1 1.19 → 1.16, scenario3 1.25 → 1.14).
+
+## C++ — against 0.9.2 (faff480)
+
+`scale-bench --only scenarioN --runs 3 --warmups 1`, `program_run_ms` min over 9–12 interleaved samples,
+`-O2`, load 1.4–3.0.
+
+| scenario | 0.9.2 | before CPP-REG-1 step 2 (03786e5) | now | now / 0.9.2 |
+|---|---:|---:|---:|---:|
+| 1 | 577.2 | 975.3 | 605.9 | 1.05 |
+| 2 | 5.4 | 6.8 | 6.6 | 1.22 |
+| 3 | 185.2 | 174.7 | 164.2 | 0.89 |
+| 4 | 8.3 | 8.5 | 7.3 | 0.88 |
+| 5 | 239.3 | 242.5 | 243.9 | 1.02 |
+| 6 | 261.2 | 278.8 | 272.1 | 1.04 |
+
+**Attribution:** allocations per scenario-1 run went from 2.91 M (0.9.2) to 6.11 M; 4.21 M of the cloned
+nodes were BUCKET copying each joined row (a DAG of aliased table rows the deep copy expands, 57 nodes per
+row). **Recovered** by two copy elisions that engage only where no body can write and nothing collected can
+reach the result uncopied (projected BUCKET with a RECORD/LIST projection; FILTER before a read-only MAP or
+FILTER, as the Rust host's `borrowed_filter`), each keeping clone_at's E_DEPTH check allocation-free.
+Allocations are now 2.95 M per run. Scenario 2's 22% is a ~1.2 ms per-run constant on a 5 ms run.
+Details and tests: `cpp.md` (CPP-REG-1 continued).

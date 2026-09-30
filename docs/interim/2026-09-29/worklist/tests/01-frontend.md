@@ -2,7 +2,9 @@
 
 [Worklist](../README.md) · [Test harness and completion rules](../00-tests.md)
 
-- [ ] **T01 — Create and run this shared regression family across JS, PHP, Python, C++, Lisp and Go.**
+- [x] **T01 — Create and run this shared regression family across JS, PHP, Python, C++, Lisp and Go.**
+
+  Closed 2026-09-30 — conformance/01-lexical, 10-limits, 14-pipeline (+31); tools/check-cli-source.sh; tools/stress.sh coalesce/interp/pipe shapes; all six hosts agree at commit 03786e5 (conformance 2134/2134, sqlt 1309) and every finding row of the family is closed in coverage.csv.
 
 **Destination:** `conformance/10-limits.selt plus generated bounded subprocess probes; CLI byte fixtures and compile/dependencies API probes`.
 

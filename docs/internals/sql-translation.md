@@ -2591,7 +2591,9 @@ The ordinary prefix planner promises:
     renumbers from `"1"` (spec §7.3); the database answers a *rowset* numbered
     `1..n`. So a boundary directly after a `FILTER` hands the continuation
     renumbered rows, and is legal only where the continuation cannot tell: a
-    renumbering step comes first and nothing reads `_K` before it. Otherwise
+    renumbering step comes before the continuation's first `_K` read (a
+    continuation `FILTER` keeps and hands on the keys, so it is looked past to
+    the step after it). Otherwise
     the prefix ends before the `FILTER` (for `ORDERS .> FILTER(…) .> FILTER(
     <no SQL spelling>)` and for a `_K` read after the `FILTER`, nothing pushes
     down: `pure_memory`). A `pure_sql` plan answers the rowset itself: its rows

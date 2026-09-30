@@ -8,7 +8,9 @@ Report measurements below are historical evidence, not verified targets for this
 
 ## LISP-P1: `emit-parts` calls `(length acc)` per interpolation: quadratic in the number of interpolations
 
-- [ ] **P-LISP-P1 — Measure and address this finding.**
+- [x] **P-LISP-P1 — Measure and address this finding.**
+
+  Closed 2026-09-30 — already-addressed (T01 iterative/linear lexer rewrite); evidence: performance/results/lisp.md, tools/perf/lisp/
 
 Source: [LISP-P1](../../lisp-code-review.md). Report labels: [impact: high] [measured].
 
@@ -24,7 +26,9 @@ Source: [LISP-P1](../../lisp-code-review.md). Report labels: [impact: high] [mea
 
 ## LISP-P2: Legal 1,000,000-digit numbers cost 5 to 150 s per operation (schoolbook conversion and multiplication plus redundant work)
 
-- [ ] **P-LISP-P2 — Measure and address this finding.**
+- [x] **P-LISP-P2 — Measure and address this finding.**
+
+  Closed 2026-09-30 — implemented; evidence: performance/results/lisp.md, tools/perf/lisp/
 
 Source: [LISP-P2](../../lisp-code-review.md). Report labels: [impact: high] [measured].
 
@@ -40,7 +44,9 @@ Source: [LISP-P2](../../lisp-code-review.md). Report labels: [impact: high] [mea
 
 ## LISP-P3: `eval-binary` dispatches on the operator with chains of `string=`
 
-- [ ] **P-LISP-P3 — Measure and address this finding.**
+- [x] **P-LISP-P3 — Measure and address this finding.**
+
+  Closed 2026-09-30 — implemented; evidence: performance/results/lisp.md, tools/perf/lisp/
 
 Source: [LISP-P3](../../lisp-code-review.md). Report labels: [impact: high] [measured].
 
@@ -56,7 +62,9 @@ Source: [LISP-P3](../../lisp-code-review.md). Report labels: [impact: high] [mea
 
 ## LISP-P4: SORT/SORT_BY/TOP on text keys re-encode UTF-8 and re-parse a decimal on every comparison
 
-- [ ] **P-LISP-P4 — Measure and address this finding.**
+- [x] **P-LISP-P4 — Measure and address this finding.**
+
+  Closed 2026-09-30 — implemented; evidence: performance/results/lisp.md, tools/perf/lisp/
 
 Source: [LISP-P4](../../lisp-code-review.md). Report labels: [impact: high for text sorts] [measured].
 
@@ -72,7 +80,9 @@ Source: [LISP-P4](../../lisp-code-review.md). Report labels: [impact: high for t
 
 ## LISP-P5: `copy-node-shallow` drops `node-dec-val`, so every optimised numeric literal loses its parsed decimal
 
-- [ ] **P-LISP-P5 — Measure and address this finding.**
+- [x] **P-LISP-P5 — Measure and address this finding.**
+
+  Closed 2026-09-30 — implemented; evidence: performance/results/lisp.md, tools/perf/lisp/
 
 Source: [LISP-P5](../../lisp-code-review.md). Report labels: [impact: medium] [measured].
 
@@ -88,7 +98,9 @@ Source: [LISP-P5](../../lisp-code-review.md). Report labels: [impact: medium] [m
 
 ## LISP-P6: `dec-parse` and `dec-format` are slow for ordinary short numbers
 
-- [ ] **P-LISP-P6 — Measure and address this finding.**
+- [x] **P-LISP-P6 — Measure and address this finding.**
+
+  Closed 2026-09-30 — implemented; evidence: performance/results/lisp.md, tools/perf/lisp/
 
 Source: [LISP-P6](../../lisp-code-review.md). Report labels: [impact: medium] [measured].
 
@@ -104,7 +116,9 @@ Source: [LISP-P6](../../lisp-code-review.md). Report labels: [impact: medium] [m
 
 ## LISP-P7: DEDUPE/DISTINCT on BIN values is quadratic (`value-hash` hashes a BIN only by its length)
 
-- [ ] **P-LISP-P7 — Measure and address this finding.**
+- [x] **P-LISP-P7 — Measure and address this finding.**
+
+  Closed 2026-09-30 — implemented; evidence: performance/results/lisp.md, tools/perf/lisp/
 
 Source: [LISP-P7](../../lisp-code-review.md). Report labels: [impact: medium] [measured].
 
@@ -120,7 +134,9 @@ Source: [LISP-P7](../../lisp-code-review.md). Report labels: [impact: medium] [m
 
 ## LISP-P8: Rows without a record shape take the slow `make-joined-row` path in LINK (about 6x slower)
 
-- [ ] **P-LISP-P8 — Measure and address this finding.**
+- [x] **P-LISP-P8 — Measure and address this finding.**
+
+  Closed 2026-09-30 — implemented; evidence: performance/results/lisp.md, tools/perf/lisp/
 
 Source: [LISP-P8](../../lisp-code-review.md). Report labels: [impact: medium] [measured].
 
@@ -136,7 +152,9 @@ Source: [LISP-P8](../../lisp-code-review.md). Report labels: [impact: medium] [m
 
 ## LISP-P9: Nested-loop LINK: per-pair row aliasing, and no hash join for AND-conjunctions or predicates mentioning an outer variable
 
-- [ ] **P-LISP-P9 — Measure and address this finding.**
+- [x] **P-LISP-P9 — Measure and address this finding.**
+
+  Closed 2026-09-30 — implemented; evidence: performance/results/lisp.md, tools/perf/lisp/
 
 Source: [LISP-P9](../../lisp-code-review.md). Report labels: [impact: medium for non-trivial predicates] [measured + reasoned].
 
@@ -152,7 +170,9 @@ Source: [LISP-P9](../../lisp-code-review.md). Report labels: [impact: medium for
 
 ## LISP-P10: `execute-hybrid` deep-copies the entire caller context on every call
 
-- [ ] **P-LISP-P10 — Measure and address this finding.**
+- [x] **P-LISP-P10 — Measure and address this finding.**
+
+  Closed 2026-09-30 — implemented; evidence: performance/results/lisp.md, tools/perf/lisp/
 
 Source: [LISP-P10](../../lisp-code-review.md). Report labels: [impact: medium] [measured].
 
@@ -168,7 +188,9 @@ Source: [LISP-P10](../../lisp-code-review.md). Report labels: [impact: medium] [
 
 ## LISP-P11: SQL: `emit-fill` splices whole part lists at every nesting level; left-folded n-ary translations are super-linear
 
-- [ ] **P-LISP-P11 — Measure and address this finding.**
+- [x] **P-LISP-P11 — Measure and address this finding.**
+
+  Closed 2026-09-30 — implemented; evidence: performance/results/lisp.md, tools/perf/lisp/
 
 Source: [LISP-P11](../../lisp-code-review.md). Report labels: [impact: medium] [measured].
 
@@ -184,7 +206,9 @@ Source: [LISP-P11](../../lisp-code-review.md). Report labels: [impact: medium] [
 
 ## LISP-P12: SQL: `make-literal` and fragment rendering are O(P^2) in the number of parameters
 
-- [ ] **P-LISP-P12 — Measure and address this finding.**
+- [x] **P-LISP-P12 — Measure and address this finding.**
+
+  Closed 2026-09-30 — implemented; evidence: performance/results/lisp.md, tools/perf/lisp/
 
 Source: [LISP-P12](../../lisp-code-review.md). Report labels: [impact: medium] [measured].
 
@@ -200,7 +224,9 @@ Source: [LISP-P12](../../lisp-code-review.md). Report labels: [impact: medium] [
 
 ## LISP-P13: Nested interpolation re-scans the remaining literal at every level and allocates positions eagerly
 
-- [ ] **P-LISP-P13 — Measure and address this finding.**
+- [x] **P-LISP-P13 — Measure and address this finding.**
+
+  Closed 2026-09-30 — already-addressed (T01 iterative/linear lexer rewrite); evidence: performance/results/lisp.md, tools/perf/lisp/
 
 Source: [LISP-P13](../../lisp-code-review.md). Report labels: [impact: medium] [measured].
 
@@ -216,7 +242,9 @@ Source: [LISP-P13](../../lisp-code-review.md). Report labels: [impact: medium] [
 
 ## LISP-P14: RECORD key duplicate check is quadratic (`remove-duplicates :test #'string=` on a list)
 
-- [ ] **P-LISP-P14 — Measure and address this finding.**
+- [x] **P-LISP-P14 — Measure and address this finding.**
+
+  Closed 2026-09-30 — implemented; evidence: performance/results/lisp.md, tools/perf/lisp/
 
 Source: [LISP-P14](../../lisp-code-review.md). Report labels: [impact: medium] [measured].
 
@@ -232,7 +260,9 @@ Source: [LISP-P14](../../lisp-code-review.md). Report labels: [impact: medium] [
 
 ## LISP-P15: SQL: dialect lookups are unindexed and re-derive the inheritance chain every call
 
-- [ ] **P-LISP-P15 — Measure and address this finding.**
+- [x] **P-LISP-P15 — Measure and address this finding.**
+
+  Closed 2026-09-30 — implemented; evidence: performance/results/lisp.md, tools/perf/lisp/
 
 Source: [LISP-P15](../../lisp-code-review.md). Report labels: [impact: low-medium] [measured].
 
@@ -248,7 +278,9 @@ Source: [LISP-P15](../../lisp-code-review.md). Report labels: [impact: low-mediu
 
 ## LISP-P16: SQL stage 1 is O(n^2) in the number of statements
 
-- [ ] **P-LISP-P16 — Measure and address this finding.**
+- [x] **P-LISP-P16 — Measure and address this finding.**
+
+  Closed 2026-09-30 — implemented; evidence: performance/results/lisp.md, tools/perf/lisp/
 
 Source: [LISP-P16](../../lisp-code-review.md). Report labels: [impact: low-medium] [measured].
 
@@ -264,7 +296,9 @@ Source: [LISP-P16](../../lisp-code-review.md). Report labels: [impact: low-mediu
 
 ## LISP-P17: Every regex pattern compiles two scanners, only RREPLACE uses the second
 
-- [ ] **P-LISP-P17 — Measure and address this finding.**
+- [x] **P-LISP-P17 — Measure and address this finding.**
+
+  Closed 2026-09-30 — implemented; evidence: performance/results/lisp.md, tools/perf/lisp/
 
 Source: [LISP-P17](../../lisp-code-review.md). Report labels: [impact: low-medium] [measured].
 
@@ -280,7 +314,9 @@ Source: [LISP-P17](../../lisp-code-review.md). Report labels: [impact: low-mediu
 
 ## LISP-P18: `bytes-to-hex` formats each byte with `format`
 
-- [ ] **P-LISP-P18 — Measure and address this finding.**
+- [x] **P-LISP-P18 — Measure and address this finding.**
+
+  Closed 2026-09-30 — implemented; evidence: performance/results/lisp.md, tools/perf/lisp/
 
 Source: [LISP-P18](../../lisp-code-review.md). Report labels: [impact: medium (s4) / low (s1)] [measured].
 
@@ -296,7 +332,9 @@ Source: [LISP-P18](../../lisp-code-review.md). Report labels: [impact: medium (s
 
 ## LISP-P19: Join-key canonicalisation does redundant work
 
-- [ ] **P-LISP-P19 — Measure and address this finding.**
+- [x] **P-LISP-P19 — Measure and address this finding.**
+
+  Closed 2026-09-30 — implemented; evidence: performance/results/lisp.md, tools/perf/lisp/
 
 Source: [LISP-P19](../../lisp-code-review.md). Report labels: [impact: low-medium] [measured for the zero-stripping; reasoned for the rest].
 
@@ -312,7 +350,9 @@ Source: [LISP-P19](../../lisp-code-review.md). Report labels: [impact: low-mediu
 
 ## LISP-P20: Per-element `(format nil "~d" i)` for list keys
 
-- [ ] **P-LISP-P20 — Measure and address this finding.**
+- [x] **P-LISP-P20 — Measure and address this finding.**
+
+  Closed 2026-09-30 — implemented; evidence: performance/results/lisp.md, tools/perf/lisp/
 
 Source: [LISP-P20](../../lisp-code-review.md). Report labels: [impact: low] [measured].
 
@@ -328,7 +368,9 @@ Source: [LISP-P20](../../lisp-code-review.md). Report labels: [impact: low] [mea
 
 ## LISP-P21: REPEAT / PADL / PADR build strings one write at a time
 
-- [ ] **P-LISP-P21 — Measure and address this finding.**
+- [x] **P-LISP-P21 — Measure and address this finding.**
+
+  Closed 2026-09-30 — implemented; evidence: performance/results/lisp.md, tools/perf/lisp/
 
 Source: [LISP-P21](../../lisp-code-review.md). Report labels: [impact: low] [measured].
 
@@ -344,7 +386,9 @@ Source: [LISP-P21](../../lisp-code-review.md). Report labels: [impact: low] [mea
 
 ## LISP-P22: `match-operator` scans all 33 operator strings with `string=` for every operator token
 
-- [ ] **P-LISP-P22 — Measure and address this finding.**
+- [x] **P-LISP-P22 — Measure and address this finding.**
+
+  Closed 2026-09-30 — implemented; evidence: performance/results/lisp.md, tools/perf/lisp/
 
 Source: [LISP-P22](../../lisp-code-review.md). Report labels: [impact: low] [measured].
 
@@ -360,7 +404,9 @@ Source: [LISP-P22](../../lisp-code-review.md). Report labels: [impact: low] [mea
 
 ## LISP-P23: `evaluate` (compile + run once) pays the full optimizer for nothing
 
-- [ ] **P-LISP-P23 — Measure and address this finding.**
+- [x] **P-LISP-P23 — Measure and address this finding.**
+
+  Closed 2026-09-30 — implemented; evidence: performance/results/lisp.md, tools/perf/lisp/
 
 Source: [LISP-P23](../../lisp-code-review.md). Report labels: [impact: low] [measured].
 
@@ -376,7 +422,9 @@ Source: [LISP-P23](../../lisp-code-review.md). Report labels: [impact: low] [mea
 
 ## LISP-P24: SQL: `emit-text-literal` pays per-call sorting and per-character rule search
 
-- [ ] **P-LISP-P24 — Measure and address this finding.**
+- [x] **P-LISP-P24 — Measure and address this finding.**
+
+  Closed 2026-09-30 — implemented; evidence: performance/results/lisp.md, tools/perf/lisp/
 
 Source: [LISP-P24](../../lisp-code-review.md). Report labels: [impact: low] [measured].
 
@@ -392,7 +440,9 @@ Source: [LISP-P24](../../lisp-code-review.md). Report labels: [impact: low] [mea
 
 ## LISP-P25: Hybrid helper-assignment bookkeeping is super-quadratic in the number of non-literal helpers
 
-- [ ] **P-LISP-P25 — Measure and address this finding.**
+- [x] **P-LISP-P25 — Measure and address this finding.**
+
+  Closed 2026-09-30 — implemented; evidence: performance/results/lisp.md, tools/perf/lisp/
 
 Source: [LISP-P25](../../lisp-code-review.md). Report labels: [impact: low] [measured].
 
@@ -408,7 +458,9 @@ Source: [LISP-P25](../../lisp-code-review.md). Report labels: [impact: low] [mea
 
 ## LISP-P26: Shape-cache key hashing: `sxhash` of a list of strings looks at only the first few elements
 
-- [ ] **P-LISP-P26 — Measure and address this finding.**
+- [x] **P-LISP-P26 — Measure and address this finding.**
+
+  Closed 2026-09-30 — rejected (shape-cache key hashing: <1 us per lookup at the 256-entry cap); evidence: performance/results/lisp.md, tools/perf/lisp/
 
 Source: [LISP-P26](../../lisp-code-review.md). Report labels: [impact: low] [measured].
 
@@ -424,7 +476,9 @@ Source: [LISP-P26](../../lisp-code-review.md). Report labels: [impact: low] [mea
 
 ## LISP-P27: Smaller items
 
-- [ ] **P-LISP-P27 — Measure and address this finding.**
+- [x] **P-LISP-P27 — Measure and address this finding.**
+
+  Closed 2026-09-30 — implemented; evidence: performance/results/lisp.md, tools/perf/lisp/
 
 Source: [LISP-P27](../../lisp-code-review.md). Report labels: [impact: low] [mostly reasoned or guessed].
 

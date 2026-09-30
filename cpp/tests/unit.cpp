@@ -397,6 +397,117 @@ void test_adopt_or_clone() {
            "nested fresh temporaries are independent of the variable they came from");
 }
 
+void test_bucket_rows_alias_when_unobservable() {
+  selt::section("a projected BUCKET keeps its rows uncopied only when nothing could tell (CPP-REG-1)");
+  auto run = [](const std::string& src) {
+    try { return evaluate(src).dump(); }
+    catch (const SelError& e) { return e.code(); }
+  };
+  // The classifier: an assignment anywhere below a body, or a call to an
+  // application's own function, is a possible write; nothing else is.
+  register_function("REG1_POKE", 1, 1, [](HostArgs& a) {
+    Value v = a.val(0);
+    v.set("v", Value::integer(100));
+    return Value::integer(0);
+  });
+  selt::ok(writes_nothing(*compile("RECORD(\"s\", SUM(_, r, r[\"v\"] * 2), \"k\", _K)").ast()),
+           "reads, arithmetic and nested aggregates write nothing");
+  selt::ok(!writes_nothing(*compile("RECORD(\"s\", (X = 1; COUNT(_)))").ast()), "an assignment writes");
+  selt::ok(!writes_nothing(*compile("RECORD(\"s\", SUM(_, r, (L[1] += 1; r)))").ast()),
+           "a compound assignment inside a nested body writes");
+  selt::ok(!writes_nothing(*compile("L[(K = 1)]").ast()), "an assignment inside an index writes");
+  selt::ok(!writes_nothing(*compile("RECORD(\"s\", REG1_POKE(L[1]))").ast()), "a host function call may write");
+
+  const std::string L = "L = LIST(RECORD(\"k\", \"a\", \"v\", 1), RECORD(\"k\", \"a\", \"v\", 2), "
+                        "RECORD(\"k\", \"b\", \"v\", 5)); ";
+  selt::eq(run(L + "JOIN(MAP(BUCKET(L, _[\"k\"], RECORD(\"k\", _K, \"s\", SUM(_, r, r[\"v\"]))), "
+                   "_[\"k\"] & \"=\" & _[\"s\"]), \",\")"),
+           std::string("t\"a=3,b=5\""), "a read-only projection answers as before");
+  // A row that reaches the result is a copy: changing it through the host API must
+  // not change the variable it came from.
+  {
+    Value ctx = Value::none();
+    compile(L + "0").run(ctx);
+    Value out = compile("BUCKET(L, _[\"k\"], RECORD(\"rows\", _))").run(ctx);
+    Value row = *(*(*out.get("1")).get("rows")).get("1");
+    row.set("v", Value::integer(77));
+    selt::eq(ctx.get("L")->get("1")->get("v")->scalar(), std::string("1"),
+             "a row a RECORD projection keeps is a copy, not the variable's row");
+    Value out2 = compile("BUCKET(L, _[\"k\"], LIST(_[1], COUNT(_)))").run(ctx);
+    Value row2 = *(*out2.get("1")).get("1");
+    row2.set("v", Value::integer(78));
+    selt::eq(ctx.get("L")->get("1")->get("v")->scalar(), std::string("1"), "and so is one a LIST projection keeps");
+  }
+  // E_DEPTH parity: a row nested past the cap raises the same error, with or without
+  // the copy (the second spelling writes, so it copies).
+  std::string deep = "D = 1; D";
+  for (int i = 0; i < 199; ++i) deep += "[1]";
+  deep += " = 1; L = LIST(D); ";
+  std::string alias_err, copy_err;
+  try { evaluate(deep + "BUCKET(L, 1, RECORD(\"n\", COUNT(_)))"); } catch (const SelError& e) {
+    alias_err = e.code() + "@" + std::to_string(e.line()) + ":" + std::to_string(e.col());
+  }
+  try { evaluate(deep + "BUCKET(L, 1, RECORD(\"n\", (Z = 1; COUNT(_))))"); } catch (const SelError& e) {
+    copy_err = e.code() + "@" + std::to_string(e.line()) + ":" + std::to_string(e.col());
+  }
+  selt::ok(!copy_err.empty(), "the copying path refuses the too-deep row");
+  selt::eq(alias_err, copy_err, "the uncopied path refuses it the same way");
+}
+
+void test_filter_borrows_rows_for_a_read_only_next_step() {
+  selt::section("a FILTER keeps its elements uncopied when it and the next step write nothing (CPP-REG-1)");
+  auto flags = [](const std::string& src) {
+    const NodePtr p = compile(src).physical_ast();
+    std::string out;
+    std::vector<const Node*> stack{p.get()};
+    while (!stack.empty()) {
+      const Node* n = stack.back();
+      stack.pop_back();
+      if (n->t == NT::Call && n->s == "FILTER" && !n->items.empty()) out += n->items.back()->borrow_rows ? "B" : "c";
+      for (const NodePtr& c : n->items) if (c) stack.push_back(c.get());
+      if (n->l) stack.push_back(n->l.get());
+      if (n->r) stack.push_back(n->r.get());
+    }
+    return out;
+  };
+  selt::eq(flags("L .> FILTER(_[\"v\"] > 0) .> MAP(_[\"v\"] * 2)"), std::string("B"), "read-only FILTER then MAP");
+  selt::eq(flags("L .> FILTER(_[\"v\"] > 0) .> MAP((X = 1; _[\"v\"]))"), std::string("c"),
+           "a next step that assigns");
+  selt::eq(flags("L .> FILTER((X = 1; _[\"v\"] > 0)) .> MAP(_)"), std::string("c"), "a FILTER body that assigns");
+  selt::eq(flags("L .> FILTER(_[\"v\"] > 0) .> MAP(REG1_POKE(_))"), std::string("c"),
+           "a next step that calls a host function");
+  selt::eq(flags("L .> FILTER(_[\"v\"] > 0) .> SORT_BY(_[\"v\"])"), std::string("c"), "a next step that is not MAP/FILTER");
+  selt::eq(flags("L .> FILTER(_[\"v\"] > 0)"), std::string("c"), "no next step");
+
+  auto run = [](const std::string& src) {
+    try { return evaluate(src).dump(); }
+    catch (const SelError& e) { return e.code(); }
+  };
+  const std::string L = "L = LIST(RECORD(\"v\", 1), RECORD(\"v\", 2), RECORD(\"v\", 3)); ";
+  selt::eq(run(L + "JOIN(L .> FILTER(_[\"v\"] > 1) .> MAP(_[\"v\"] * 2), \",\")"), std::string("t\"4,6\""),
+           "the answer is unchanged");
+  {
+    Value ctx = Value::none();
+    compile(L + "0").run(ctx);
+    Value out = compile("L .> FILTER(_[\"v\"] > 1) .> MAP(_)").run(ctx);
+    Value row = *out.get("1");
+    row.set("v", Value::integer(77));
+    selt::eq(ctx.get("L")->get("2")->get("v")->scalar(), std::string("2"), "what the MAP after it keeps is a copy");
+  }
+  std::string deep = "D = 1; D";
+  for (int i = 0; i < 199; ++i) deep += "[1]";
+  deep += " = 1; L = LIST(D); ";
+  std::string borrow_err, copy_err;
+  try { evaluate(deep + "COUNT(L .> FILTER(COUNT(_) > 0) .> MAP(1))"); } catch (const SelError& e) {
+    borrow_err = e.code() + "@" + std::to_string(e.line()) + ":" + std::to_string(e.col());
+  }
+  try { evaluate(deep + "COUNT(L .> FILTER((Z = 1; COUNT(_) > 0)) .> MAP(1))"); } catch (const SelError& e) {
+    copy_err = e.code() + "@" + std::to_string(e.line()) + ":" + std::to_string(e.col());
+  }
+  selt::ok(!copy_err.empty(), "the copying FILTER refuses the too-deep element");
+  selt::eq(borrow_err, copy_err, "the borrowing FILTER refuses it the same way");
+}
+
 void test_pipeline_temporaries_are_kept() {
   selt::section("aggregates keep a pipeline temporary's elements, copy everything else (CPP-REG-1)");
   auto run = [](const std::string& src) {
@@ -2076,6 +2187,8 @@ int main() {
   test_coalesce_probe();
   test_text_byte_paths();
   test_adopt_or_clone();
+  test_bucket_rows_alias_when_unobservable();
+  test_filter_borrows_rows_for_a_read_only_next_step();
   test_pipeline_temporaries_are_kept();
   test_filter_packed_result();
   test_round2_fast_paths();

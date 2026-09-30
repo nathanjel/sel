@@ -21142,4 +21142,36 @@ ORDERS .> TAKE(1)"
    :plan "hybrid"
    :tables (list "orders")
    :register nil
-   :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num)) (cons "CUSTOMER_ID" (binding-column "customer_id" "o" :num)) (cons "AMOUNT" (binding-column "amount" "o" :num)) (cons "NAME" (binding-column "name" "o" :text))) nil nil)) (cons "CUSTOMERS" (binding-relation "customers" "c" (list (cons "ID" (binding-column "id" "c" :num)) (cons "CNAME" (binding-column "cname" "c" :text))) nil nil)))))))
+   :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num)) (cons "CUSTOMER_ID" (binding-column "customer_id" "o" :num)) (cons "AMOUNT" (binding-column "amount" "o" :num)) (cons "NAME" (binding-column "name" "o" :text))) nil nil)) (cons "CUSTOMERS" (binding-relation "customers" "c" (list (cons "ID" (binding-column "id" "c" :num)) (cons "CNAME" (binding-column "cname" "c" :text))) nil nil)))))
+  (list
+   :name "plan.keys.filter-filter-then-a-renumbering-step-splits-after-the-first"
+   :at "52-audit-cases.sqlt:392"
+   :dialect "mariadb"
+   :source "ORDERS .> FILTER(_[\"amount\"] == 2) .> FILTER(_[\"nope\"][\"x\"] $== \"b\") .> SORT()"
+   :expect "SELECT `o`.* FROM `orders` `o` WHERE (`o`.`amount` = 2)"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan "hybrid"
+   :tables (list "orders")
+   :register nil
+   :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num)) (cons "CUSTOMER_ID" (binding-column "customer_id" "o" :num)) (cons "AMOUNT" (binding-column "amount" "o" :num)) (cons "NAME" (binding-column "name" "o" :text))) nil nil)))))
+  (list
+   :name "plan.keys.filter-filter-then-a-key-read-stays-in-memory"
+   :at "52-audit-cases.sqlt:409"
+   :dialect "mariadb"
+   :source "ORDERS .> FILTER(_[\"amount\"] == 2) .> FILTER(_[\"nope\"][\"x\"] $== \"b\") .> SORT_BY(_K)"
+   :expect nil
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan "pure_memory"
+   :tables (list "orders")
+   :register nil
+   :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num)) (cons "CUSTOMER_ID" (binding-column "customer_id" "o" :num)) (cons "AMOUNT" (binding-column "amount" "o" :num)) (cons "NAME" (binding-column "name" "o" :text))) nil nil)))))))

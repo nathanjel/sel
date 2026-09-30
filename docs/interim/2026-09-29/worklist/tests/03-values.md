@@ -2,7 +2,9 @@
 
 [Worklist](../README.md) · [Test harness and completion rules](../00-tests.md)
 
-- [ ] **T03 — Create and run this shared regression family across JS, PHP, Python, C++, Lisp and Go.**
+- [x] **T03 — Create and run this shared regression family across JS, PHP, Python, C++, Lisp and Go.**
+
+  Closed 2026-09-30 — conformance/25-value-ownership; tools/api.* probes (bool.isolated.between.contexts, ctor.*); host unit tests; all six hosts agree at commit 03786e5 (conformance 2134/2134, sqlt 1309) and every finding row of the family is closed in coverage.csv.
 
 **Destination:** `conformance/04-values.selt, conformance/21-structural-hash-identity.selt, tools/api.* and per-host runtime tests`.
 

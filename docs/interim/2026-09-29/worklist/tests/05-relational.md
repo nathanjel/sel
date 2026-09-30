@@ -4,6 +4,8 @@
 
 - [ ] **T05 — Create and run this shared regression family across JS, PHP, Python, C++, Lisp and Go.**
 
+  Open 2026-09-30 — every finding closed except PHP-C26 (deferred: chained LINK under assignment costs ~10x per level; needs a spec-level evaluation-work budget, a decision for the maintainer). Fixtures: conformance/27-relational-edges (+31 join.order.*); join-filter oracle with raising sources.
+
 **Destination:** `conformance/06-aggregates.selt, relational/bucket/joined-row files and property-test generators`.
 
 **Required cases and assertions:** Run mutation during MAP/FILTER/SUM/ALL/SORT_BY/TOP_BY/BUCKET over packed lists, shaped records and entry-backed records: append, overwrite, add a non-positional key, and replace the source. Test all permutations of ("10","9","1a"), stable ties and DESC, transitivity/idempotence, and TOP(n) versus TAKE(SORT,n) for n=0,1,size,size+1 and huge n. Exercise scalar/NULL/empty inputs, empty keys, duplicate SELECT_COLS names, group keys with equal spelling but unequal structure, warm numeric caches, same-name binders, comma/sequence/assignment join operands, large exact decimal keys and hash collisions. Compare fast equi-join with a forced general path; assert row count, order, keys and aliasing, not just COUNT.

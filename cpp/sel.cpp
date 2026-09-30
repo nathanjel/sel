@@ -1706,6 +1706,27 @@ struct Internals {
     if (e->ref_count != held) return false;
     return unique_children(e, 1);
   }
+  // The E_DEPTH that clone_at(depth, pos) would raise for `v`, and nothing else:
+  // the same tree shape (storage for shaped records and packed lists, children
+  // otherwise), the same `depth > MAX_DEPTH` test, the same position, and no
+  // allocation. What an aggregate runs instead of a copy it can prove nobody
+  // could tell apart from the original (keep_or_alias), so that the error a
+  // too-deep element raises is still raised, at the same moment.
+  static void check_clone_depth(const Value& v, int depth, Pos pos) {
+    std::vector<std::pair<const Value::Impl*, int>> stack{{v.p_, depth}};
+    while (!stack.empty()) {
+      const auto [p, d] = stack.back();
+      stack.pop_back();
+      if (d > MAX_DEPTH) fail("E_DEPTH", "value nested too deeply", pos);
+      if (!p || !p->collection) continue;
+      const Value::Collection& c = *p->collection;
+      if (c.shape || (p->is_list && c.children.empty())) {
+        for (const Value& x : c.storage) stack.emplace_back(x.p_, d + 1);
+      } else {
+        for (const Value::Entry& e : c.children) stack.emplace_back(e.second.p_, d + 1);
+      }
+    }
+  }
 };
 
 namespace {
@@ -1728,6 +1749,40 @@ Value adopt_or_clone(Value&& v, int levels, Pos pos) {
 Value keep_element(const Value& coll, std::size_t index, const Value& item, std::uint32_t extra) {
   if (Internals::exclusively_held(coll, index, item, extra)) return item;
   return item.clone();
+}
+
+// Whether evaluating `root` can change a value that existed before it ran. SEL
+// has exactly two ways to do that: an assignment (anywhere below `root`,
+// including inside a nested aggregate's body) and a call to an application's own
+// function, which is handed values and may keep or change them. A body with
+// neither leaves every value it reads as it found it.
+bool writes_nothing(const Node& root) {
+  std::vector<const Node*> stack{&root};
+  while (!stack.empty()) {
+    const Node* n = stack.back();
+    stack.pop_back();
+    if (n->t == NT::Assign) return false;
+    if (n->t == NT::Call && n->spec && n->spec->host) return false;
+    if (n->l) stack.push_back(n->l.get());
+    if (n->r) stack.push_back(n->r.get());
+    for (const NodePtr& c : n->items) {
+      if (c) stack.push_back(c.get());
+    }
+  }
+  return true;
+}
+
+// keep_element, for an aggregate that has proved the copy unobservable: every
+// body it evaluates writes nothing (so no element can change while it runs) and
+// nothing it collected can reach its result uncopied. Then an element and its
+// copy cannot be told apart, and the element itself is kept -- after the depth
+// check the copy would have made, so a too-deep element is still E_DEPTH, at the
+// same moment and position (CPP-REG-1: BUCKET copying every joined row was most
+// of scale-test scenario 1's time).
+Value keep_or_alias(const Value& coll, std::size_t index, const Value& item, std::uint32_t extra) {
+  if (Internals::exclusively_held(coll, index, item, extra)) return item;
+  Internals::check_clone_depth(item, 1, Pos{});
+  return item;
 }
 }  // namespace
 
@@ -6907,6 +6962,18 @@ Value do_bucket(Args& a, Context& ctx) {
   if (needs_k_key) frame.emplace_back("_K", Value::none());
   ctx.frames.push_back(std::move(frame));
 
+  // The rows a projected BUCKET collects are read by its projection and by
+  // nothing else: its binder cannot be assigned, and a projection that is a
+  // RECORD or LIST call copies whatever of a row it keeps (adopt_or_clone), so
+  // no row reaches the result uncopied. When neither the key nor the projection
+  // writes anything, no row can change while the BUCKET runs either, and the
+  // copy spec §3.4 asks for is one nobody could tell from the row itself.
+  const bool alias_rows = agg_node && agg_node->t == NT::Call && agg_node->spec && !agg_node->spec->host &&
+                          (agg_node->spec->name == "RECORD" || agg_node->spec->name == "LIST") &&
+                          writes_nothing(*key_node) && writes_nothing(*agg_node);
+  const auto keep = [&](std::size_t i, const Value& item) {
+    return alias_rows ? keep_or_alias(val, i, item, 1) : keep_element(val, i, item, 1);
+  };
   const Snapshot snap = take_snapshot(val, needs_k_key);
   try {
     for (std::size_t i = 0; i < source_size; i++) {
@@ -6953,10 +7020,10 @@ Value do_bucket(Args& a, Context& ctx) {
       }
 
       if (found >= 0) {
-        groups[found].rows.push_back(keep_element(val, i, item, 1));   // collected: copied (§3.4), unless nothing could tell
+        groups[found].rows.push_back(keep(i, item));   // collected: copied (§3.4), unless nothing could tell
       } else {
         if (!agg_node) bare_groups.emplace(key_str, groups.size());
-        groups.push_back(GroupEntry{std::move(eval_key), std::move(key_str), {keep_element(val, i, item, 1)}});
+        groups.push_back(GroupEntry{std::move(eval_key), std::move(key_str), {keep(i, item)}});
         if (agg_node) group_buckets[hash].push_back(groups.size() - 1);
       }
     }
@@ -7120,7 +7187,8 @@ void register_aggregates() {
                                  const Node& body) -> std::optional<Value> {
                   if (!r.as_bool(body.pos)) return std::nullopt;
                   if (sequential && idx != kept.size()) sequential = false;
-                  kept.push_back(keep_element(coll, idx, item, 1));  // collected: copied (§3.4), unless nothing could tell
+                  kept.push_back(written.borrow_rows ? keep_or_alias(coll, idx, item, 1)
+                                                     : keep_element(coll, idx, item, 1));  // collected: copied (§3.4), unless nothing could tell
                   at.push_back(idx);
                   return std::nullopt;
                 }, override_body.get());
@@ -10024,6 +10092,16 @@ std::vector<NodePtr> opt_inmemory_steps(const NodePtr& source, std::vector<NodeP
     if (copy->s == "FILTER" && !copy->items.empty()) {
       auto body = opt_copy(copy->items.back());
       body->keys_unobserved = opt_keys_renumbered_by(i + 1 < steps.size() ? &steps[i + 1] : nullptr);
+      // The next step is where what this FILTER keeps is copied: a MAP copies what
+      // it collects, a FILTER keeps (and copies) its elements. When neither body
+      // can write, nothing kept can change on the way there, and keeping the
+      // element itself is indistinguishable from keeping a copy of it.
+      if (i + 1 < steps.size()) {
+        const Node& after = *steps[i + 1];
+        body->borrow_rows = after.t == NT::Call && after.spec && !after.spec->host &&
+                            (after.s == "MAP" || after.s == "FILTER") && !after.items.empty() &&
+                            writes_nothing(*body) && writes_nothing(*after.items.back());
+      }
       copy->items.back() = std::move(body);
     }
     rewritten.push_back(std::move(copy));

@@ -59,34 +59,34 @@ JS-C57,../js-code-review.md,C-JS-C57,01-js-correctness.md,tests/10-sql-rendering
 JS-C58,../js-code-review.md,C-JS-C58,01-js-correctness.md,tests/08-sql-scope.md#js-c58,closed,,no defect / not reproduced,"PHP-C52 not reproduced on MariaDB 11.8/MySQL 8.4 (66 digits); JS-C58 indexing an assigned keyed list stays refused (safe side), pinned by plan.helper.indexed-helper-is-carried-as-written"
 JS-C59,../js-code-review.md,C-JS-C59,01-js-correctness.md,tests/11-hybrid.md#js-c59,closed,"sql/cases/48-scope-and-slots, 49-kind-guarantees, 50-rendering-and-registration, 51-hybrid-parity, 19, 25, 17; sql/oracle/hybrid.json + rows/expressions; tools/check-sql-budgets.sh; tools/check-hybrid-parity*; per-host SQL unit tests","docs/internals/sql-translation.md 7.4 (scope, E_SQL_SIZE MAX_SQL_NODES=250000), sql-kinds.md 5a (all-or-nothing SUM guard, UNKNOWN guards), 7.1 balanced fold >256, 11.6 count clamp 2^63-1, MAP.md 3.1 dialect registration, 4.2 {key:*} numericCast; 12.1 hybrid parity (keys, errors, context, order, names)",all six hosts sqlt 1265/1265 with reuse twin; oracle/hybrid lanes agree on SQLite (+ MariaDB/MySQL/PostgreSQL for PHP); PY-C1 site f closed
 JS-C60,../js-code-review.md,C-JS-C60,01-js-correctness.md,tests/11-hybrid.md#js-c60,closed,"sql/cases/48-scope-and-slots, 49-kind-guarantees, 50-rendering-and-registration, 51-hybrid-parity, 19, 25, 17; sql/oracle/hybrid.json + rows/expressions; tools/check-sql-budgets.sh; tools/check-hybrid-parity*; per-host SQL unit tests","docs/internals/sql-translation.md 7.4 (scope, E_SQL_SIZE MAX_SQL_NODES=250000), sql-kinds.md 5a (all-or-nothing SUM guard, UNKNOWN guards), 7.1 balanced fold >256, 11.6 count clamp 2^63-1, MAP.md 3.1 dialect registration, 4.2 {key:*} numericCast; 12.1 hybrid parity (keys, errors, context, order, names)",all six hosts sqlt 1265/1265 with reuse twin; oracle/hybrid lanes agree on SQLite (+ MariaDB/MySQL/PostgreSQL for PHP); PY-C1 site f closed
-JS-P1,../js-code-review.md,P-JS-P1,performance/js.md,performance/js.md#js-p1,pending,,,
-JS-P2,../js-code-review.md,P-JS-P2,performance/js.md,performance/js.md#js-p2,pending,,,
-JS-P3,../js-code-review.md,P-JS-P3,performance/js.md,performance/js.md#js-p3,pending,,,
-JS-P4,../js-code-review.md,P-JS-P4,performance/js.md,performance/js.md#js-p4,pending,,,
-JS-P5,../js-code-review.md,P-JS-P5,performance/js.md,performance/js.md#js-p5,pending,,,
-JS-P6,../js-code-review.md,P-JS-P6,performance/js.md,performance/js.md#js-p6,pending,,,
-JS-P7,../js-code-review.md,P-JS-P7,performance/js.md,performance/js.md#js-p7,pending,,,
-JS-P8,../js-code-review.md,P-JS-P8,performance/js.md,performance/js.md#js-p8,pending,,,
-JS-P9,../js-code-review.md,P-JS-P9,performance/js.md,performance/js.md#js-p9,pending,,,
-JS-P10,../js-code-review.md,P-JS-P10,performance/js.md,performance/js.md#js-p10,pending,,,
-JS-P11,../js-code-review.md,P-JS-P11,performance/js.md,performance/js.md#js-p11,pending,,,
-JS-P12,../js-code-review.md,P-JS-P12,performance/js.md,performance/js.md#js-p12,pending,,,
-JS-P13,../js-code-review.md,P-JS-P13,performance/js.md,performance/js.md#js-p13,pending,,,
-JS-P14,../js-code-review.md,P-JS-P14,performance/js.md,performance/js.md#js-p14,pending,,,
-JS-P15,../js-code-review.md,P-JS-P15,performance/js.md,performance/js.md#js-p15,pending,,,
-JS-P16,../js-code-review.md,P-JS-P16,performance/js.md,performance/js.md#js-p16,pending,,,
-JS-P17,../js-code-review.md,P-JS-P17,performance/js.md,performance/js.md#js-p17,pending,,,
-JS-P18,../js-code-review.md,P-JS-P18,performance/js.md,performance/js.md#js-p18,pending,,,
-JS-P19,../js-code-review.md,P-JS-P19,performance/js.md,performance/js.md#js-p19,pending,,,
-JS-P20,../js-code-review.md,P-JS-P20,performance/js.md,performance/js.md#js-p20,pending,,,
-JS-P21,../js-code-review.md,P-JS-P21,performance/js.md,performance/js.md#js-p21,pending,,,
-JS-P22,../js-code-review.md,P-JS-P22,performance/js.md,performance/js.md#js-p22,pending,,,
-JS-P23,../js-code-review.md,P-JS-P23,performance/js.md,performance/js.md#js-p23,pending,,,
-JS-P24,../js-code-review.md,P-JS-P24,performance/js.md,performance/js.md#js-p24,pending,,,
-JS-P25,../js-code-review.md,P-JS-P25,performance/js.md,performance/js.md#js-p25,pending,,,
-JS-P26,../js-code-review.md,P-JS-P26,performance/js.md,performance/js.md#js-p26,pending,,,
-JS-P27,../js-code-review.md,P-JS-P27,performance/js.md,performance/js.md#js-p27,pending,,,
-JS-P28,../js-code-review.md,P-JS-P28,performance/js.md,performance/js.md#js-p28,pending,,,
+JS-P1,../js-code-review.md,P-JS-P1,performance/js.md,performance/js.md#js-p1,closed,tools/perf/js/p01-text-concat.mjs,implemented,performance/results/js.md (JS-P1 row); benchmark tools/perf/js/p01-text-concat.mjs
+JS-P2,../js-code-review.md,P-JS-P2,performance/js.md,performance/js.md#js-p2,closed,tools/perf/js/p02-lexer.mjs,implemented,performance/results/js.md (JS-P2 row); benchmark tools/perf/js/p02-lexer.mjs
+JS-P3,../js-code-review.md,P-JS-P3,performance/js.md,performance/js.md#js-p3,closed,tools/perf/js/p03-wide-join.mjs,implemented,performance/results/js.md (JS-P3 row); benchmark tools/perf/js/p03-wide-join.mjs
+JS-P4,../js-code-review.md,P-JS-P4,performance/js.md,performance/js.md#js-p4,closed,tools/perf/js/p04-sql-constants.mjs,implemented,performance/results/js.md (JS-P4 row); benchmark tools/perf/js/p04-sql-constants.mjs
+JS-P5,../js-code-review.md,P-JS-P5,performance/js.md,performance/js.md#js-p5,closed,tools/perf/js/p05-text-builtins.mjs,implemented (partly): remaining sub-items dispositioned in the results row,performance/results/js.md (JS-P5 row); benchmark tools/perf/js/p05-text-builtins.mjs
+JS-P6,../js-code-review.md,P-JS-P6,performance/js.md,performance/js.md#js-p6,closed,tools/perf/js/p05-text-builtins.mjs,implemented,performance/results/js.md (JS-P6 row); benchmark tools/perf/js/p05-text-builtins.mjs
+JS-P7,../js-code-review.md,P-JS-P7,performance/js.md,performance/js.md#js-p7,closed,tools/perf/js/p07-codecs.mjs,implemented,performance/results/js.md (JS-P7 row); benchmark tools/perf/js/p07-codecs.mjs
+JS-P8,../js-code-review.md,P-JS-P8,performance/js.md,performance/js.md#js-p8,closed,tools/perf/js/p08-sort-compare.mjs,implemented,performance/results/js.md (JS-P8 row); benchmark tools/perf/js/p08-sort-compare.mjs
+JS-P9,../js-code-review.md,P-JS-P9,performance/js.md,performance/js.md#js-p9,closed,tools/perf/js/p09-entries-shape.mjs,implemented,performance/results/js.md (JS-P9 row); benchmark tools/perf/js/p09-entries-shape.mjs
+JS-P10,../js-code-review.md,P-JS-P10,performance/js.md,performance/js.md#js-p10,closed,tools/perf/js/p10-decimal-parse.mjs,implemented,performance/results/js.md (JS-P10 row); benchmark tools/perf/js/p10-decimal-parse.mjs
+JS-P11,../js-code-review.md,P-JS-P11,performance/js.md,performance/js.md#js-p11,closed,tools/perf/js/p11-plan-with-if.mjs,implemented,performance/results/js.md (JS-P11 row); benchmark tools/perf/js/p11-plan-with-if.mjs
+JS-P12,../js-code-review.md,P-JS-P12,performance/js.md,performance/js.md#js-p12,closed,tools/perf/js/p12-append.mjs,implemented (partly): remaining sub-items dispositioned in the results row,performance/results/js.md (JS-P12 row); benchmark tools/perf/js/p12-append.mjs
+JS-P13,../js-code-review.md,P-JS-P13,performance/js.md,performance/js.md#js-p13,closed,tools/perf/js/p13-sort-clone.mjs,rejected: SORT/SORT_BY copy is the SPEC 3.4 contract,performance/results/js.md (JS-P13 row); benchmark tools/perf/js/p13-sort-clone.mjs
+JS-P14,../js-code-review.md,P-JS-P14,performance/js.md,performance/js.md#js-p14,closed,tools/perf/js/p14-contains-var.mjs,rejected: 0-5% on the report workload (noise),performance/results/js.md (JS-P14 row); benchmark tools/perf/js/p14-contains-var.mjs
+JS-P15,../js-code-review.md,P-JS-P15,performance/js.md,performance/js.md#js-p15,closed,tools/perf/js/p15-fold-pairwise.mjs,already-addressed: SQL balanced fold (T09 wave),performance/results/js.md (JS-P15 row); benchmark tools/perf/js/p15-fold-pairwise.mjs
+JS-P16,../js-code-review.md,P-JS-P16,performance/js.md,performance/js.md#js-p16,closed,tools/perf/js/p16-hybrid-context.mjs,implemented,performance/results/js.md (JS-P16 row); benchmark tools/perf/js/p16-hybrid-context.mjs
+JS-P17,../js-code-review.md,P-JS-P17,performance/js.md,performance/js.md#js-p17,closed,tools/perf/js/p17-btl.mjs,implemented,performance/results/js.md (JS-P17 row); benchmark tools/perf/js/p17-btl.mjs
+JS-P18,../js-code-review.md,P-JS-P18,performance/js.md,performance/js.md#js-p18,closed,tools/perf/js/p18-guard-reject.mjs,implemented,performance/results/js.md (JS-P18 row); benchmark tools/perf/js/p18-guard-reject.mjs
+JS-P19,../js-code-review.md,P-JS-P19,performance/js.md,performance/js.md#js-p19,closed,tools/perf/js/p19-join-bad-keys.mjs,implemented,performance/results/js.md (JS-P19 row); benchmark tools/perf/js/p19-join-bad-keys.mjs
+JS-P20,../js-code-review.md,P-JS-P20,performance/js.md,performance/js.md#js-p20,closed,tools/perf/js/p20-regex-compile.mjs,implemented,performance/results/js.md (JS-P20 row); benchmark tools/perf/js/p20-regex-compile.mjs
+JS-P21,../js-code-review.md,P-JS-P21,performance/js.md,performance/js.md#js-p21,closed,tools/perf/js/p21-regex-cache.mjs,already-addressed: regex cache bounded at 256 (T06 wave); remaining retention is V8 own regexp cache,performance/results/js.md (JS-P21 row); benchmark tools/perf/js/p21-regex-cache.mjs
+JS-P22,../js-code-review.md,P-JS-P22,performance/js.md,performance/js.md#js-p22,closed,tools/perf/js/p22-link-realias.mjs,implemented,performance/results/js.md (JS-P22 row); benchmark tools/perf/js/p22-link-realias.mjs
+JS-P23,../js-code-review.md,P-JS-P23,performance/js.md,performance/js.md#js-p23,closed,tools/perf/js/p23-literals.mjs,implemented,performance/results/js.md (JS-P23 row); benchmark tools/perf/js/p23-literals.mjs
+JS-P24,../js-code-review.md,P-JS-P24,performance/js.md,performance/js.md#js-p24,closed,tools/perf/js/p24-num-result.mjs,implemented,performance/results/js.md (JS-P24 row); benchmark tools/perf/js/p24-num-result.mjs
+JS-P25,../js-code-review.md,P-JS-P25,performance/js.md,performance/js.md#js-p25,closed,tools/perf/js/p25-text-literal.mjs,implemented,performance/results/js.md (JS-P25 row); benchmark tools/perf/js/p25-text-literal.mjs
+JS-P26,../js-code-review.md,P-JS-P26,performance/js.md,performance/js.md#js-p26,closed,tools/perf/js/p26-dialect-chain.mjs,implemented,performance/results/js.md (JS-P26 row); benchmark tools/perf/js/p26-dialect-chain.mjs
+JS-P27,../js-code-review.md,P-JS-P27,performance/js.md,performance/js.md#js-p27,closed,tools/perf/js/p27-from-code-points.mjs,implemented,performance/results/js.md (JS-P27 row); benchmark tools/perf/js/p27-from-code-points.mjs
+JS-P28,../js-code-review.md,P-JS-P28,performance/js.md,performance/js.md#js-p28,closed,tools/perf/js/p28-hash-micro.mjs,implemented (partly): remaining sub-items dispositioned in the results row,performance/results/js.md (JS-P28 row); benchmark tools/perf/js/p28-hash-micro.mjs
 PHP-C1,../php-code-review.md,C-PHP-C1,02-php-correctness.md,tests/03-values.md#php-c1,closed,"tools/check-php-runtime.php; tools/api.php bool.isolated.between.contexts; conformance/24,25",SPEC 3.4 copy table; PHP-C17 fixed by carry interval (not reproduced at 646k digits; tested via lowered interval),php lanes green; tests fail on HEAD archive (27)
 PHP-C2,../php-code-review.md,C-PHP-C2,02-php-correctness.md,tests/03-values.md#php-c2,closed,"tools/check-php-runtime.php; tools/api.php bool.isolated.between.contexts; conformance/24,25",SPEC 3.4 copy table; PHP-C17 fixed by carry interval (not reproduced at 646k digits; tested via lowered interval),php lanes green; tests fail on HEAD archive (27)
 PHP-C3,../php-code-review.md,C-PHP-C3,02-php-correctness.md,tests/06-regex.md#php-c3,closed,"conformance/27-relational-edges, 28-regex-portability, 29-text-binary-budgets; host unit tests; tools/check-budgets.sh; tools/check-regex-resources.py","SPEC 7.3 snapshot iteration + total order; 7.4 direction/count always evaluated, join key by ==, right binder shadows; 7.8 P1-P4 + caps; 6.4 MAX_TEXT_LEN/MAX_COLLECTION/MAX_REGEX_*",all six hosts pass files 27-29 (P5 ambiguity cases 28b pending)
@@ -145,36 +145,36 @@ PHP-C55,../php-code-review.md,C-PHP-C55,02-php-correctness.md,tests/11-hybrid.md
 PHP-C56,../php-code-review.md,C-PHP-C56,02-php-correctness.md,tests/10-sql-rendering.md#php-c56,closed,,documentation wording,"docs/internals + sql/MAP.md 3.1 and docs/sql.md updated (server-mode assumptions, exact-column wording)"
 PHP-C57,../php-code-review.md,C-PHP-C57,02-php-correctness.md,tests/10-sql-rendering.md#php-c57,closed,,non-defect for Hybrid::execute return (JS/Python/PHP all return the runner's rows for pure_sql); alias case-collision fixed,alias case-collision fixed (E_SQL_BINDING); execute return type is not a defect (all hosts return the runner's rows)
 PHP-C58,../php-code-review.md,C-PHP-C58,02-php-correctness.md,tests/09-sql-kinds.md#php-c58,closed,"sql/cases/48-scope-and-slots, 49-kind-guarantees, 50-rendering-and-registration, 51-hybrid-parity, 19, 25, 17; sql/oracle/hybrid.json + rows/expressions; tools/check-sql-budgets.sh; tools/check-hybrid-parity*; per-host SQL unit tests","docs/internals/sql-translation.md 7.4 (scope, E_SQL_SIZE MAX_SQL_NODES=250000), sql-kinds.md 5a (all-or-nothing SUM guard, UNKNOWN guards), 7.1 balanced fold >256, 11.6 count clamp 2^63-1, MAP.md 3.1 dialect registration, 4.2 {key:*} numericCast; 12.1 hybrid parity (keys, errors, context, order, names)",all six hosts sqlt 1265/1265 with reuse twin; oracle/hybrid lanes agree on SQLite (+ MariaDB/MySQL/PostgreSQL for PHP); PY-C1 site f closed
-PHP-P1,../php-code-review.md,P-PHP-P1,performance/php.md,performance/php.md#php-p1,pending,,,
-PHP-P2,../php-code-review.md,P-PHP-P2,performance/php.md,performance/php.md#php-p2,pending,,,
-PHP-P3,../php-code-review.md,P-PHP-P3,performance/php.md,performance/php.md#php-p3,pending,,,
-PHP-P4,../php-code-review.md,P-PHP-P4,performance/php.md,performance/php.md#php-p4,pending,,,
-PHP-P5,../php-code-review.md,P-PHP-P5,performance/php.md,performance/php.md#php-p5,pending,,,
-PHP-P6,../php-code-review.md,P-PHP-P6,performance/php.md,performance/php.md#php-p6,pending,,,
-PHP-P7,../php-code-review.md,C-PHP-C14,02-php-correctness.md,performance/php.md#php-p7,pending,,,
-PHP-P8,../php-code-review.md,P-PHP-P8,performance/php.md,performance/php.md#php-p8,pending,,,
-PHP-P9,../php-code-review.md,P-PHP-P9,performance/php.md,performance/php.md#php-p9,pending,,,
-PHP-P10,../php-code-review.md,P-PHP-P10,performance/php.md,performance/php.md#php-p10,pending,,,
-PHP-P11,../php-code-review.md,P-PHP-P11,performance/php.md,performance/php.md#php-p11,pending,,,
-PHP-P12,../php-code-review.md,P-PHP-P12,performance/php.md,performance/php.md#php-p12,pending,,,
-PHP-P13,../php-code-review.md,P-PHP-P13,performance/php.md,performance/php.md#php-p13,pending,,,
-PHP-P14,../php-code-review.md,P-PHP-P14,performance/php.md,performance/php.md#php-p14,pending,,,
-PHP-P15,../php-code-review.md,P-PHP-P15,performance/php.md,performance/php.md#php-p15,pending,,,
-PHP-P16,../php-code-review.md,P-PHP-P16,performance/php.md,performance/php.md#php-p16,pending,,,
-PHP-P17,../php-code-review.md,P-PHP-P17,performance/php.md,performance/php.md#php-p17,pending,,,
-PHP-P18,../php-code-review.md,P-PHP-P18,performance/php.md,performance/php.md#php-p18,pending,,,
-PHP-P19,../php-code-review.md,P-PHP-P19,performance/php.md,performance/php.md#php-p19,pending,,,
-PHP-P20,../php-code-review.md,P-PHP-P20,performance/php.md,performance/php.md#php-p20,pending,,,
-PHP-P21,../php-code-review.md,P-PHP-P21,performance/php.md,performance/php.md#php-p21,pending,,,
-PHP-P22,../php-code-review.md,P-PHP-P22,performance/php.md,performance/php.md#php-p22,pending,,,
-PHP-P23,../php-code-review.md,P-PHP-P23,performance/php.md,performance/php.md#php-p23,pending,,,
-PHP-P24,../php-code-review.md,P-PHP-P24,performance/php.md,performance/php.md#php-p24,pending,,,
-PHP-P25,../php-code-review.md,P-PHP-P25,performance/php.md,performance/php.md#php-p25,pending,,,
-PHP-P26,../php-code-review.md,P-PHP-P26,performance/php.md,performance/php.md#php-p26,pending,,,
-PHP-P27,../php-code-review.md,P-PHP-P27,performance/php.md,performance/php.md#php-p27,pending,,,
-PHP-P28,../php-code-review.md,P-PHP-P28,performance/php.md,performance/php.md#php-p28,pending,,,
-PHP-P29,../php-code-review.md,P-PHP-P29,performance/php.md,performance/php.md#php-p29,pending,,,
-PHP-P30,../php-code-review.md,P-PHP-P30,performance/php.md,performance/php.md#php-p30,pending,,,
+PHP-P1,../php-code-review.md,P-PHP-P1,performance/php.md,performance/php.md#php-p1,closed,tools/perf/php/,implemented,performance/results/php.md (PHP-P1 row); benchmark tools/perf/php/
+PHP-P2,../php-code-review.md,P-PHP-P2,performance/php.md,performance/php.md#php-p2,closed,tools/perf/php/,already-addressed: byte-level strpos/str_replace/explode from the correctness wave (PHP-C23),performance/results/php.md (PHP-P2 row); benchmark tools/perf/php/
+PHP-P3,../php-code-review.md,P-PHP-P3,performance/php.md,performance/php.md#php-p3,closed,tools/perf/php/,implemented,performance/results/php.md (PHP-P3 row); benchmark tools/perf/php/
+PHP-P4,../php-code-review.md,P-PHP-P4,performance/php.md,performance/php.md#php-p4,closed,tools/perf/php/,implemented,performance/results/php.md (PHP-P4 row); benchmark tools/perf/php/
+PHP-P5,../php-code-review.md,P-PHP-P5,performance/php.md,performance/php.md#php-p5,closed,tools/perf/php/,implemented,performance/results/php.md (PHP-P5 row); benchmark tools/perf/php/
+PHP-P6,../php-code-review.md,P-PHP-P6,performance/php.md,performance/php.md#php-p6,closed,tools/perf/php/,implemented,performance/results/php.md (PHP-P6 row); benchmark tools/perf/php/
+PHP-P7,../php-code-review.md,C-PHP-C14,02-php-correctness.md,performance/php.md#php-p7,closed,tools/perf/php/,"already-addressed: owned by correctness task C-PHP-C14 (closed): linear assignment-target walk, 40,000-bracket target 4.9 s -> 0.8 s",performance/results/php.md (PHP-P7 row); benchmark tools/perf/php/
+PHP-P8,../php-code-review.md,P-PHP-P8,performance/php.md,performance/php.md#php-p8,closed,tools/perf/php/,already-addressed: balanced fold above 256 operands (SQL wave),performance/results/php.md (PHP-P8 row); benchmark tools/perf/php/
+PHP-P9,../php-code-review.md,P-PHP-P9,performance/php.md,performance/php.md#php-p9,closed,tools/perf/php/,implemented (partly): tokenizer fast path; whole-run lexing deferred,performance/results/php.md (PHP-P9 row); benchmark tools/perf/php/
+PHP-P10,../php-code-review.md,P-PHP-P10,performance/php.md,performance/php.md#php-p10,deferred,tools/perf/php/,deferred: tokens as arrays ~397 B/token; needs a spec-level source-size cap decision and a cross-cutting refactor (at best 2.5x smaller tokens),performance/results/php.md (PHP-P10 row); benchmark tools/perf/php/; reconsider when a source-size cap is decided or token memory dominates a real profile
+PHP-P11,../php-code-review.md,P-PHP-P11,performance/php.md,performance/php.md#php-p11,closed,tools/perf/php/,implemented (subset): Value::set key-check skip rejected (no gain),performance/results/php.md (PHP-P11 row); benchmark tools/perf/php/
+PHP-P12,../php-code-review.md,P-PHP-P12,performance/php.md,performance/php.md#php-p12,closed,tools/perf/php/,implemented,performance/results/php.md (PHP-P12 row); benchmark tools/perf/php/
+PHP-P13,../php-code-review.md,P-PHP-P13,performance/php.md,performance/php.md#php-p13,closed,tools/perf/php/,implemented (div): native mod rejected (5-8%),performance/results/php.md (PHP-P13 row); benchmark tools/perf/php/
+PHP-P14,../php-code-review.md,P-PHP-P14,performance/php.md,performance/php.md#php-p14,closed,tools/perf/php/,implemented,performance/results/php.md (PHP-P14 row); benchmark tools/perf/php/
+PHP-P15,../php-code-review.md,P-PHP-P15,performance/php.md,performance/php.md#php-p15,closed,tools/perf/php/,implemented,performance/results/php.md (PHP-P15 row); benchmark tools/perf/php/
+PHP-P16,../php-code-review.md,P-PHP-P16,performance/php.md,performance/php.md#php-p16,closed,tools/perf/php/,implemented,performance/results/php.md (PHP-P16 row); benchmark tools/perf/php/
+PHP-P17,../php-code-review.md,P-PHP-P17,performance/php.md,performance/php.md#php-p17,deferred,tools/perf/php/,deferred: numeric Value ~410 B each; a 62% saving needs a decimal-representation refactor (~105 access sites + public descriptor),performance/results/php.md (PHP-P17 row); benchmark tools/perf/php/; reconsider when a decimal-representation refactor is scheduled or numeric memory becomes a reported limit
+PHP-P18,../php-code-review.md,P-PHP-P18,performance/php.md,performance/php.md#php-p18,closed,tools/perf/php/,implemented,performance/results/php.md (PHP-P18 row); benchmark tools/perf/php/
+PHP-P19,../php-code-review.md,P-PHP-P19,performance/php.md,performance/php.md#php-p19,closed,tools/perf/php/,implemented,performance/results/php.md (PHP-P19 row); benchmark tools/perf/php/
+PHP-P20,../php-code-review.md,P-PHP-P20,performance/php.md,performance/php.md#php-p20,closed,tools/perf/php/,implemented,performance/results/php.md (PHP-P20 row); benchmark tools/perf/php/
+PHP-P21,../php-code-review.md,P-PHP-P21,performance/php.md,performance/php.md#php-p21,closed,tools/perf/php/,implemented,performance/results/php.md (PHP-P21 row); benchmark tools/perf/php/
+PHP-P22,../php-code-review.md,P-PHP-P22,performance/php.md,performance/php.md#php-p22,closed,tools/perf/php/,implemented,performance/results/php.md (PHP-P22 row); benchmark tools/perf/php/
+PHP-P23,../php-code-review.md,P-PHP-P23,performance/php.md,performance/php.md#php-p23,closed,tools/perf/php/,implemented,performance/results/php.md (PHP-P23 row); benchmark tools/perf/php/
+PHP-P24,../php-code-review.md,P-PHP-P24,performance/php.md,performance/php.md#php-p24,closed,tools/perf/php/,implemented,performance/results/php.md (PHP-P24 row); benchmark tools/perf/php/
+PHP-P25,../php-code-review.md,P-PHP-P25,performance/php.md,performance/php.md#php-p25,closed,tools/perf/php/,implemented,performance/results/php.md (PHP-P25 row); benchmark tools/perf/php/
+PHP-P26,../php-code-review.md,P-PHP-P26,performance/php.md,performance/php.md#php-p26,closed,tools/perf/php/,implemented,performance/results/php.md (PHP-P26 row); benchmark tools/perf/php/
+PHP-P27,../php-code-review.md,P-PHP-P27,performance/php.md,performance/php.md#php-p27,closed,tools/perf/php/,implemented,performance/results/php.md (PHP-P27 row); benchmark tools/perf/php/
+PHP-P28,../php-code-review.md,P-PHP-P28,performance/php.md,performance/php.md#php-p28,closed,tools/perf/php/,"rejected: removing try/finally in evalNode: x0.98, no measurable gain",performance/results/php.md (PHP-P28 row); benchmark tools/perf/php/
+PHP-P29,../php-code-review.md,P-PHP-P29,performance/php.md,performance/php.md#php-p29,closed,tools/perf/php/,implemented,performance/results/php.md (PHP-P29 row); benchmark tools/perf/php/
+PHP-P30,../php-code-review.md,P-PHP-P30,performance/php.md,performance/php.md#php-p30,closed,tools/perf/php/,implemented (partly): i-flag rescan done; other sub-items measured and deferred/rejected item by item,performance/results/php.md (PHP-P30 row); benchmark tools/perf/php/
 PY-C1,../python-code-review.md,C-PY-C1,03-python-correctness.md,tests/01-frontend.md#py-c1,closed,"sql/cases/48-scope-and-slots, 49-kind-guarantees, 50-rendering-and-registration, 51-hybrid-parity, 19, 25, 17; sql/oracle/hybrid.json + rows/expressions; tools/check-sql-budgets.sh; tools/check-hybrid-parity*; per-host SQL unit tests","docs/internals/sql-translation.md 7.4 (scope, E_SQL_SIZE MAX_SQL_NODES=250000), sql-kinds.md 5a (all-or-nothing SUM guard, UNKNOWN guards), 7.1 balanced fold >256, 11.6 count clamp 2^63-1, MAP.md 3.1 dialect registration, 4.2 {key:*} numericCast; 12.1 hybrid parity (keys, errors, context, order, names)",all six hosts sqlt 1265/1265 with reuse twin; oracle/hybrid lanes agree on SQLite (+ MariaDB/MySQL/PostgreSQL for PHP); PY-C1 site f closed
 PY-C2,../python-code-review.md,C-PY-C2,03-python-correctness.md,tests/12-integration.md#py-c2,closed,python/tests/test_gc_pause.py::test_collector_is_enabled_after_concurrent_runs,_gc pause state guarded by a lock,"fails on the HEAD _gc.py, passes now"
 PY-C3,../python-code-review.md,C-PY-C3,03-python-correctness.md,tests/06-regex.md#py-c3,closed,conformance/28b-regex-ambiguity.selt (116); tools/regex-ambiguity-ref.py; tools/check-regex-ambiguity-diff.py; tools/check-regex-resources.py,"SPEC 7.8: static exponential-ambiguity rule (position automaton, EDA, budget 16), identical in all six hosts",116/116 on all six hosts; 0 mismatches vs reference over 24k-80k random patterns per host; resource probes clean
@@ -227,37 +227,37 @@ PY-C49,../python-code-review.md,C-PY-C49,03-python-correctness.md,tests/10-sql-r
 PY-C50,../python-code-review.md,C-PY-C49,03-python-correctness.md,tests/10-sql-rendering.md#py-c50,closed,"sql/cases/48-scope-and-slots, 49-kind-guarantees, 50-rendering-and-registration, 51-hybrid-parity, 19, 25, 17; sql/oracle/hybrid.json + rows/expressions; tools/check-sql-budgets.sh; tools/check-hybrid-parity*; per-host SQL unit tests","docs/internals/sql-translation.md 7.4 (scope, E_SQL_SIZE MAX_SQL_NODES=250000), sql-kinds.md 5a (all-or-nothing SUM guard, UNKNOWN guards), 7.1 balanced fold >256, 11.6 count clamp 2^63-1, MAP.md 3.1 dialect registration, 4.2 {key:*} numericCast; 12.1 hybrid parity (keys, errors, context, order, names)",all six hosts sqlt 1265/1265 with reuse twin; oracle/hybrid lanes agree on SQLite (+ MariaDB/MySQL/PostgreSQL for PHP); PY-C1 site f closed
 PY-C51,../python-code-review.md,C-PY-C51,03-python-correctness.md,tests/11-hybrid.md#py-c51,closed,"sql/cases/48-scope-and-slots, 49-kind-guarantees, 50-rendering-and-registration, 51-hybrid-parity, 19, 25, 17; sql/oracle/hybrid.json + rows/expressions; tools/check-sql-budgets.sh; tools/check-hybrid-parity*; per-host SQL unit tests","docs/internals/sql-translation.md 7.4 (scope, E_SQL_SIZE MAX_SQL_NODES=250000), sql-kinds.md 5a (all-or-nothing SUM guard, UNKNOWN guards), 7.1 balanced fold >256, 11.6 count clamp 2^63-1, MAP.md 3.1 dialect registration, 4.2 {key:*} numericCast; 12.1 hybrid parity (keys, errors, context, order, names)",all six hosts sqlt 1265/1265 with reuse twin; oracle/hybrid lanes agree on SQLite (+ MariaDB/MySQL/PostgreSQL for PHP); PY-C1 site f closed
 PY-C52,../python-code-review.md,C-PY-C52,03-python-correctness.md,tests/11-hybrid.md#py-c52,closed,"sql/cases/48-scope-and-slots, 49-kind-guarantees, 50-rendering-and-registration, 51-hybrid-parity, 19, 25, 17; sql/oracle/hybrid.json + rows/expressions; tools/check-sql-budgets.sh; tools/check-hybrid-parity*; per-host SQL unit tests","docs/internals/sql-translation.md 7.4 (scope, E_SQL_SIZE MAX_SQL_NODES=250000), sql-kinds.md 5a (all-or-nothing SUM guard, UNKNOWN guards), 7.1 balanced fold >256, 11.6 count clamp 2^63-1, MAP.md 3.1 dialect registration, 4.2 {key:*} numericCast; 12.1 hybrid parity (keys, errors, context, order, names)",all six hosts sqlt 1265/1265 with reuse twin; oracle/hybrid lanes agree on SQLite (+ MariaDB/MySQL/PostgreSQL for PHP); PY-C1 site f closed
-PY-P1,../python-code-review.md,P-PY-P1,performance/python.md,performance/python.md#py-p1,pending,,,
-PY-P2,../python-code-review.md,P-PY-P2,performance/python.md,performance/python.md#py-p2,pending,,,
-PY-P3,../python-code-review.md,P-PY-P3,performance/python.md,performance/python.md#py-p3,pending,,,
-PY-P4,../python-code-review.md,P-PY-P4,performance/python.md,performance/python.md#py-p4,pending,,,
-PY-P5,../python-code-review.md,P-PY-P5,performance/python.md,performance/python.md#py-p5,pending,,,
-PY-P6,../python-code-review.md,P-PY-P6,performance/python.md,performance/python.md#py-p6,pending,,,
-PY-P7,../python-code-review.md,P-PY-P7,performance/python.md,performance/python.md#py-p7,pending,,,
-PY-P8,../python-code-review.md,P-PY-P8,performance/python.md,performance/python.md#py-p8,pending,,,
-PY-P9,../python-code-review.md,P-PY-P9,performance/python.md,performance/python.md#py-p9,pending,,,
-PY-P10,../python-code-review.md,P-PY-P10,performance/python.md,performance/python.md#py-p10,pending,,,
-PY-P11,../python-code-review.md,P-PY-P11,performance/python.md,performance/python.md#py-p11,pending,,,
-PY-P12,../python-code-review.md,P-PY-P12,performance/python.md,performance/python.md#py-p12,pending,,,
-PY-P13,../python-code-review.md,P-PY-P13,performance/python.md,performance/python.md#py-p13,pending,,,
-PY-P14,../python-code-review.md,P-PY-P14,performance/python.md,performance/python.md#py-p14,pending,,,
-PY-P15,../python-code-review.md,P-PY-P15,performance/python.md,performance/python.md#py-p15,pending,,,
-PY-P16,../python-code-review.md,P-PY-P16,performance/python.md,performance/python.md#py-p16,pending,,,
-PY-P17,../python-code-review.md,P-PY-P17,performance/python.md,performance/python.md#py-p17,pending,,,
-PY-P18,../python-code-review.md,P-PY-P18,performance/python.md,performance/python.md#py-p18,pending,,,
-PY-P19,../python-code-review.md,P-PY-P19,performance/python.md,performance/python.md#py-p19,pending,,,
-PY-P20,../python-code-review.md,P-PY-P20,performance/python.md,performance/python.md#py-p20,pending,,,
-PY-P21,../python-code-review.md,P-PY-P21,performance/python.md,performance/python.md#py-p21,pending,,,
-PY-P22,../python-code-review.md,P-PY-P22,performance/python.md,performance/python.md#py-p22,pending,,,
-PY-P23,../python-code-review.md,P-PY-P23,performance/python.md,performance/python.md#py-p23,pending,,,
-PY-P24,../python-code-review.md,P-PY-P24,performance/python.md,performance/python.md#py-p24,pending,,,
-PY-P25,../python-code-review.md,P-PY-P25,performance/python.md,performance/python.md#py-p25,pending,,,
-PY-P26,../python-code-review.md,P-PY-P26,performance/python.md,performance/python.md#py-p26,pending,,,
-PY-P27,../python-code-review.md,P-PY-P27,performance/python.md,performance/python.md#py-p27,pending,,,
-PY-P28,../python-code-review.md,P-PY-P28,performance/python.md,performance/python.md#py-p28,pending,,,
-PY-P29,../python-code-review.md,P-PY-P29,performance/python.md,performance/python.md#py-p29,pending,,,
-PY-P30,../python-code-review.md,P-PY-P30,performance/python.md,performance/python.md#py-p30,pending,,,
-PY-P31,../python-code-review.md,P-PY-P31,performance/python.md,performance/python.md#py-p31,pending,,,
+PY-P1,../python-code-review.md,P-PY-P1,performance/python.md,performance/python.md#py-p1,closed,tools/perf/python/,implemented,performance/results/python.md (PY-P1 row); benchmark tools/perf/python/
+PY-P2,../python-code-review.md,P-PY-P2,performance/python.md,performance/python.md#py-p2,closed,tools/perf/python/,implemented,performance/results/python.md (PY-P2 row); benchmark tools/perf/python/
+PY-P3,../python-code-review.md,P-PY-P3,performance/python.md,performance/python.md#py-p3,closed,tools/perf/python/,already-addressed: PY-C42 balanced fold,performance/results/python.md (PY-P3 row); benchmark tools/perf/python/
+PY-P4,../python-code-review.md,P-PY-P4,performance/python.md,performance/python.md#py-p4,closed,tools/perf/python/,implemented,performance/results/python.md (PY-P4 row); benchmark tools/perf/python/
+PY-P5,../python-code-review.md,P-PY-P5,performance/python.md,performance/python.md#py-p5,closed,tools/perf/python/,implemented,performance/results/python.md (PY-P5 row); benchmark tools/perf/python/
+PY-P6,../python-code-review.md,P-PY-P6,performance/python.md,performance/python.md#py-p6,closed,tools/perf/python/,implemented,performance/results/python.md (PY-P6 row); benchmark tools/perf/python/
+PY-P7,../python-code-review.md,P-PY-P7,performance/python.md,performance/python.md#py-p7,closed,tools/perf/python/,rejected: math sub-plans: no gain since evaluate-then-coerce (38.0 vs 40.2 us),performance/results/python.md (PY-P7 row); benchmark tools/perf/python/
+PY-P8,../python-code-review.md,P-PY-P8,performance/python.md,performance/python.md#py-p8,closed,tools/perf/python/,implemented,performance/results/python.md (PY-P8 row); benchmark tools/perf/python/
+PY-P9,../python-code-review.md,P-PY-P9,performance/python.md,performance/python.md#py-p9,closed,tools/perf/python/,implemented,performance/results/python.md (PY-P9 row); benchmark tools/perf/python/
+PY-P10,../python-code-review.md,P-PY-P10,performance/python.md,performance/python.md#py-p10,closed,tools/perf/python/,implemented,performance/results/python.md (PY-P10 row); benchmark tools/perf/python/
+PY-P11,../python-code-review.md,P-PY-P11,performance/python.md,performance/python.md#py-p11,closed,tools/perf/python/,implemented,performance/results/python.md (PY-P11 row); benchmark tools/perf/python/
+PY-P12,../python-code-review.md,P-PY-P12,performance/python.md,performance/python.md#py-p12,closed,tools/perf/python/,implemented,performance/results/python.md (PY-P12 row); benchmark tools/perf/python/
+PY-P13,../python-code-review.md,P-PY-P13,performance/python.md,performance/python.md#py-p13,closed,tools/perf/python/,implemented,performance/results/python.md (PY-P13 row); benchmark tools/perf/python/
+PY-P14,../python-code-review.md,P-PY-P14,performance/python.md,performance/python.md#py-p14,closed,tools/perf/python/,implemented,performance/results/python.md (PY-P14 row); benchmark tools/perf/python/
+PY-P15,../python-code-review.md,P-PY-P15,performance/python.md,performance/python.md#py-p15,closed,tools/perf/python/,rejected: 2-arg BUCKET copy is the SPEC 3.4 contract,performance/results/python.md (PY-P15 row); benchmark tools/perf/python/
+PY-P16,../python-code-review.md,P-PY-P16,performance/python.md,performance/python.md#py-p16,closed,tools/perf/python/,implemented,performance/results/python.md (PY-P16 row); benchmark tools/perf/python/
+PY-P17,../python-code-review.md,P-PY-P17,performance/python.md,performance/python.md#py-p17,deferred,tools/perf/python/,"deferred: interpreter loop/closures: eval_node+_dispatch self time ~14%, the rest is Value/decimal construction",performance/results/python.md (PY-P17 row); benchmark tools/perf/python/; reconsider when a value-representation change makes dispatch the larger share
+PY-P18,../python-code-review.md,P-PY-P18,performance/python.md,performance/python.md#py-p18,deferred,tools/perf/python/,"deferred: SQL constant validation per ancestor: after PY-P11 the worst case translates in 12.6 ms, effect gone",performance/results/python.md (PY-P18 row); benchmark tools/perf/python/; reconsider when a workload shows constant validation above ~20% of a translation
+PY-P19,../python-code-review.md,P-PY-P19,performance/python.md,performance/python.md#py-p19,closed,tools/perf/python/,implemented,performance/results/python.md (PY-P19 row); benchmark tools/perf/python/
+PY-P20,../python-code-review.md,P-PY-P20,performance/python.md,performance/python.md#py-p20,closed,tools/perf/python/,implemented,performance/results/python.md (PY-P20 row); benchmark tools/perf/python/
+PY-P21,../python-code-review.md,P-PY-P21,performance/python.md,performance/python.md#py-p21,closed,tools/perf/python/,implemented,performance/results/python.md (PY-P21 row); benchmark tools/perf/python/
+PY-P22,../python-code-review.md,P-PY-P22,performance/python.md,performance/python.md#py-p22,closed,tools/perf/python/,implemented,performance/results/python.md (PY-P22 row); benchmark tools/perf/python/
+PY-P23,../python-code-review.md,P-PY-P23,performance/python.md,performance/python.md#py-p23,closed,tools/perf/python/,implemented,performance/results/python.md (PY-P23 row); benchmark tools/perf/python/
+PY-P24,../python-code-review.md,P-PY-P24,performance/python.md,performance/python.md#py-p24,closed,tools/perf/python/,implemented,performance/results/python.md (PY-P24 row); benchmark tools/perf/python/
+PY-P25,../python-code-review.md,P-PY-P25,performance/python.md,performance/python.md#py-p25,closed,tools/perf/python/,implemented,performance/results/python.md (PY-P25 row); benchmark tools/perf/python/
+PY-P26,../python-code-review.md,P-PY-P26,performance/python.md,performance/python.md#py-p26,closed,tools/perf/python/,implemented,performance/results/python.md (PY-P26 row); benchmark tools/perf/python/
+PY-P27,../python-code-review.md,P-PY-P27,performance/python.md,performance/python.md#py-p27,closed,tools/perf/python/,already-addressed: hybrid planner linear since PY-C52 / PY-C1 site f,performance/results/python.md (PY-P27 row); benchmark tools/perf/python/
+PY-P28,../python-code-review.md,P-PY-P28,performance/python.md,performance/python.md#py-p28,closed,tools/perf/python/,implemented,performance/results/python.md (PY-P28 row); benchmark tools/perf/python/
+PY-P29,../python-code-review.md,P-PY-P29,performance/python.md,performance/python.md#py-p29,closed,tools/perf/python/,implemented,performance/results/python.md (PY-P29 row); benchmark tools/perf/python/
+PY-P30,../python-code-review.md,P-PY-P30,performance/python.md,performance/python.md#py-p30,closed,tools/perf/python/,implemented,performance/results/python.md (PY-P30 row); benchmark tools/perf/python/
+PY-P31,../python-code-review.md,P-PY-P31,performance/python.md,performance/python.md#py-p31,closed,tools/perf/python/,implemented,performance/results/python.md (PY-P31 row); benchmark tools/perf/python/
 CPP-C1,../cpp-code-review.md,C-CPP-C1,04-cpp-correctness.md,tests/05-relational.md#cpp-c1,closed,"conformance/27-relational-edges, 28-regex-portability, 29-text-binary-budgets; host unit tests; tools/check-budgets.sh; tools/check-regex-resources.py","SPEC 7.3 snapshot iteration + total order; 7.4 direction/count always evaluated, join key by ==, right binder shadows; 7.8 P1-P4 + caps; 6.4 MAX_TEXT_LEN/MAX_COLLECTION/MAX_REGEX_*",all six hosts pass files 27-29 (P5 ambiguity cases 28b pending)
 CPP-C2,../cpp-code-review.md,C-CPP-C2,04-cpp-correctness.md,tests/04-evaluation.md#cpp-c2,closed,"conformance/26 lim.eval-depth.flat-chain-inside-*, num.plan.*, asg.compound.*; host unit tests",SPEC 6.4: index over bare variable costs one level; no host crash on flat chains in aggregate bodies; registered builtins guarded,"host lanes green; asan clean (cpp); race green (go); LISP-C44 not reproduced, hardening + test"
 CPP-C3,../cpp-code-review.md,C-CPP-C3,04-cpp-correctness.md,tests/04-evaluation.md#cpp-c3,closed,"conformance/26 lim.eval-depth.flat-chain-inside-*, num.plan.*, asg.compound.*; host unit tests",SPEC 6.4: index over bare variable costs one level; no host crash on flat chains in aggregate bodies; registered builtins guarded,"host lanes green; asan clean (cpp); race green (go); LISP-C44 not reproduced, hardening + test"
@@ -318,31 +318,31 @@ CPP-C57,../cpp-code-review.md,C-CPP-C57,04-cpp-correctness.md,tests/10-sql-rende
 CPP-C58,../cpp-code-review.md,C-CPP-C55,04-cpp-correctness.md,tests/10-sql-rendering.md#cpp-c58,closed,"sql/cases/48-scope-and-slots, 49-kind-guarantees, 50-rendering-and-registration, 51-hybrid-parity, 19, 25, 17; sql/oracle/hybrid.json + rows/expressions; tools/check-sql-budgets.sh; tools/check-hybrid-parity*; per-host SQL unit tests","docs/internals/sql-translation.md 7.4 (scope, E_SQL_SIZE MAX_SQL_NODES=250000), sql-kinds.md 5a (all-or-nothing SUM guard, UNKNOWN guards), 7.1 balanced fold >256, 11.6 count clamp 2^63-1, MAP.md 3.1 dialect registration, 4.2 {key:*} numericCast; 12.1 hybrid parity (keys, errors, context, order, names)",all six hosts sqlt 1265/1265 with reuse twin; oracle/hybrid lanes agree on SQLite (+ MariaDB/MySQL/PostgreSQL for PHP); PY-C1 site f closed
 CPP-C59,../cpp-code-review.md,C-CPP-C59,04-cpp-correctness.md,tests/09-sql-kinds.md#cpp-c59,closed,"sql/cases/48-scope-and-slots, 49-kind-guarantees, 50-rendering-and-registration, 51-hybrid-parity, 19, 25, 17; sql/oracle/hybrid.json + rows/expressions; tools/check-sql-budgets.sh; tools/check-hybrid-parity*; per-host SQL unit tests","docs/internals/sql-translation.md 7.4 (scope, E_SQL_SIZE MAX_SQL_NODES=250000), sql-kinds.md 5a (all-or-nothing SUM guard, UNKNOWN guards), 7.1 balanced fold >256, 11.6 count clamp 2^63-1, MAP.md 3.1 dialect registration, 4.2 {key:*} numericCast; 12.1 hybrid parity (keys, errors, context, order, names)",all six hosts sqlt 1265/1265 with reuse twin; oracle/hybrid lanes agree on SQLite (+ MariaDB/MySQL/PostgreSQL for PHP); PY-C1 site f closed
 CPP-C60,../cpp-code-review.md,C-CPP-C60,04-cpp-correctness.md,tests/11-hybrid.md#cpp-c60,closed,"sql/cases/48-scope-and-slots, 49-kind-guarantees, 50-rendering-and-registration, 51-hybrid-parity, 19, 25, 17; sql/oracle/hybrid.json + rows/expressions; tools/check-sql-budgets.sh; tools/check-hybrid-parity*; per-host SQL unit tests","docs/internals/sql-translation.md 7.4 (scope, E_SQL_SIZE MAX_SQL_NODES=250000), sql-kinds.md 5a (all-or-nothing SUM guard, UNKNOWN guards), 7.1 balanced fold >256, 11.6 count clamp 2^63-1, MAP.md 3.1 dialect registration, 4.2 {key:*} numericCast; 12.1 hybrid parity (keys, errors, context, order, names)",all six hosts sqlt 1265/1265 with reuse twin; oracle/hybrid lanes agree on SQLite (+ MariaDB/MySQL/PostgreSQL for PHP); PY-C1 site f closed
-CPP-P1,../cpp-code-review.md,P-CPP-P1,performance/cpp.md,performance/cpp.md#cpp-p1,pending,,,
-CPP-P2,../cpp-code-review.md,P-CPP-P2,performance/cpp.md,performance/cpp.md#cpp-p2,pending,,,
-CPP-P3,../cpp-code-review.md,P-CPP-P3,performance/cpp.md,performance/cpp.md#cpp-p3,pending,,,
-CPP-P4,../cpp-code-review.md,P-CPP-P4,performance/cpp.md,performance/cpp.md#cpp-p4,pending,,,
-CPP-P5,../cpp-code-review.md,P-CPP-P5,performance/cpp.md,performance/cpp.md#cpp-p5,pending,,,
-CPP-P6,../cpp-code-review.md,P-CPP-P6,performance/cpp.md,performance/cpp.md#cpp-p6,pending,,,
-CPP-P7,../cpp-code-review.md,P-CPP-P7,performance/cpp.md,performance/cpp.md#cpp-p7,pending,,,
-CPP-P8,../cpp-code-review.md,P-CPP-P8,performance/cpp.md,performance/cpp.md#cpp-p8,pending,,,
-CPP-P9,../cpp-code-review.md,P-CPP-P9,performance/cpp.md,performance/cpp.md#cpp-p9,pending,,,
-CPP-P10,../cpp-code-review.md,P-CPP-P10,performance/cpp.md,performance/cpp.md#cpp-p10,pending,,,
-CPP-P11,../cpp-code-review.md,P-CPP-P11,performance/cpp.md,performance/cpp.md#cpp-p11,pending,,,
-CPP-P12,../cpp-code-review.md,P-CPP-P12,performance/cpp.md,performance/cpp.md#cpp-p12,pending,,,
-CPP-P13,../cpp-code-review.md,P-CPP-P13,performance/cpp.md,performance/cpp.md#cpp-p13,pending,,,
-CPP-P14,../cpp-code-review.md,P-CPP-P14,performance/cpp.md,performance/cpp.md#cpp-p14,pending,,,
-CPP-P15,../cpp-code-review.md,P-CPP-P15,performance/cpp.md,performance/cpp.md#cpp-p15,pending,,,
-CPP-P16,../cpp-code-review.md,P-CPP-P16,performance/cpp.md,performance/cpp.md#cpp-p16,pending,,,
-CPP-P17,../cpp-code-review.md,P-CPP-P17,performance/cpp.md,performance/cpp.md#cpp-p17,pending,,,
-CPP-P18,../cpp-code-review.md,P-CPP-P18,performance/cpp.md,performance/cpp.md#cpp-p18,pending,,,
-CPP-P19,../cpp-code-review.md,P-CPP-P19,performance/cpp.md,performance/cpp.md#cpp-p19,pending,,,
-CPP-P20,../cpp-code-review.md,P-CPP-P20,performance/cpp.md,performance/cpp.md#cpp-p20,pending,,,
-CPP-P21,../cpp-code-review.md,P-CPP-P21,performance/cpp.md,performance/cpp.md#cpp-p21,pending,,,
-CPP-P22,../cpp-code-review.md,P-CPP-P22,performance/cpp.md,performance/cpp.md#cpp-p22,pending,,,
-CPP-P23,../cpp-code-review.md,P-CPP-P23,performance/cpp.md,performance/cpp.md#cpp-p23,pending,,,
-CPP-P24,../cpp-code-review.md,P-CPP-P24,performance/cpp.md,performance/cpp.md#cpp-p24,pending,,,
-CPP-P25,../cpp-code-review.md,P-CPP-P25,performance/cpp.md,performance/cpp.md#cpp-p25,pending,,,
+CPP-P1,../cpp-code-review.md,P-CPP-P1,performance/cpp.md,performance/cpp.md#cpp-p1,closed,tools/perf/cpp/,implemented,performance/results/cpp.md (CPP-P1 row); benchmark tools/perf/cpp/
+CPP-P2,../cpp-code-review.md,P-CPP-P2,performance/cpp.md,performance/cpp.md#cpp-p2,closed,tools/perf/cpp/,implemented,performance/results/cpp.md (CPP-P2 row); benchmark tools/perf/cpp/
+CPP-P3,../cpp-code-review.md,P-CPP-P3,performance/cpp.md,performance/cpp.md#cpp-p3,closed,tools/perf/cpp/,already-addressed: SQL balanced fold above 256 operands,performance/results/cpp.md (CPP-P3 row); benchmark tools/perf/cpp/
+CPP-P4,../cpp-code-review.md,P-CPP-P4,performance/cpp.md,performance/cpp.md#cpp-p4,closed,tools/perf/cpp/,implemented,performance/results/cpp.md (CPP-P4 row); benchmark tools/perf/cpp/
+CPP-P5,../cpp-code-review.md,P-CPP-P5,performance/cpp.md,performance/cpp.md#cpp-p5,closed,tools/perf/cpp/,implemented,performance/results/cpp.md (CPP-P5 row); benchmark tools/perf/cpp/
+CPP-P6,../cpp-code-review.md,P-CPP-P6,performance/cpp.md,performance/cpp.md#cpp-p6,closed,tools/perf/cpp/,implemented,performance/results/cpp.md (CPP-P6 row); benchmark tools/perf/cpp/
+CPP-P7,../cpp-code-review.md,P-CPP-P7,performance/cpp.md,performance/cpp.md#cpp-p7,closed,tools/perf/cpp/,implemented,performance/results/cpp.md (CPP-P7 row); benchmark tools/perf/cpp/
+CPP-P8,../cpp-code-review.md,P-CPP-P8,performance/cpp.md,performance/cpp.md#cpp-p8,deferred,tools/perf/cpp/,"deferred: numeric Value footprint (Impl 72 B + Dec 96 B): high risk, estimated <=20-30% on numeric loops","performance/results/cpp.md (CPP-P8 row); benchmark tools/perf/cpp/; reconsider when the CPP-REG-1 per-node-cost work (inline small decimal, as in the Rust host) is scheduled — revisit together"
+CPP-P9,../cpp-code-review.md,P-CPP-P9,performance/cpp.md,performance/cpp.md#cpp-p9,closed,tools/perf/cpp/,implemented,performance/results/cpp.md (CPP-P9 row); benchmark tools/perf/cpp/
+CPP-P10,../cpp-code-review.md,P-CPP-P10,performance/cpp.md,performance/cpp.md#cpp-p10,closed,tools/perf/cpp/,rejected: decorated sort keys: no measurable gain,performance/results/cpp.md (CPP-P10 row); benchmark tools/perf/cpp/
+CPP-P11,../cpp-code-review.md,P-CPP-P11,performance/cpp.md,performance/cpp.md#cpp-p11,closed,tools/perf/cpp/,implemented,performance/results/cpp.md (CPP-P11 row); benchmark tools/perf/cpp/
+CPP-P12,../cpp-code-review.md,P-CPP-P12,performance/cpp.md,performance/cpp.md#cpp-p12,closed,tools/perf/cpp/,implemented,performance/results/cpp.md (CPP-P12 row); benchmark tools/perf/cpp/
+CPP-P13,../cpp-code-review.md,P-CPP-P13,performance/cpp.md,performance/cpp.md#cpp-p13,closed,tools/perf/cpp/,implemented,performance/results/cpp.md (CPP-P13 row); benchmark tools/perf/cpp/
+CPP-P14,../cpp-code-review.md,P-CPP-P14,performance/cpp.md,performance/cpp.md#cpp-p14,closed,tools/perf/cpp/,implemented,performance/results/cpp.md (CPP-P14 row); benchmark tools/perf/cpp/
+CPP-P15,../cpp-code-review.md,P-CPP-P15,performance/cpp.md,performance/cpp.md#cpp-p15,closed,tools/perf/cpp/,implemented,performance/results/cpp.md (CPP-P15 row); benchmark tools/perf/cpp/
+CPP-P16,../cpp-code-review.md,P-CPP-P16,performance/cpp.md,performance/cpp.md#cpp-p16,closed,cpp/tests/regex_race.cpp,implemented,performance/results/cpp.md (CPP-P16 row); benchmark cpp/tests/regex_race.cpp
+CPP-P17,../cpp-code-review.md,P-CPP-P17,performance/cpp.md,performance/cpp.md#cpp-p17,closed,tools/perf/cpp/,implemented,performance/results/cpp.md (CPP-P17 row); benchmark tools/perf/cpp/
+CPP-P18,../cpp-code-review.md,P-CPP-P18,performance/cpp.md,performance/cpp.md#cpp-p18,closed,tools/perf/cpp/,implemented,performance/results/cpp.md (CPP-P18 row); benchmark tools/perf/cpp/
+CPP-P19,../cpp-code-review.md,P-CPP-P19,performance/cpp.md,performance/cpp.md#cpp-p19,closed,tools/perf/cpp/,implemented,performance/results/cpp.md (CPP-P19 row); benchmark tools/perf/cpp/
+CPP-P20,../cpp-code-review.md,P-CPP-P20,performance/cpp.md,performance/cpp.md#cpp-p20,closed,tools/perf/cpp/,implemented,performance/results/cpp.md (CPP-P20 row); benchmark tools/perf/cpp/
+CPP-P21,../cpp-code-review.md,P-CPP-P21,performance/cpp.md,performance/cpp.md#cpp-p21,closed,tools/perf/cpp/,implemented,performance/results/cpp.md (CPP-P21 row); benchmark tools/perf/cpp/
+CPP-P22,../cpp-code-review.md,P-CPP-P22,performance/cpp.md,performance/cpp.md#cpp-p22,closed,tools/perf/cpp/,implemented,performance/results/cpp.md (CPP-P22 row); benchmark tools/perf/cpp/
+CPP-P23,../cpp-code-review.md,P-CPP-P23,performance/cpp.md,performance/cpp.md#cpp-p23,closed,tools/perf/cpp/,implemented,performance/results/cpp.md (CPP-P23 row); benchmark tools/perf/cpp/
+CPP-P24,../cpp-code-review.md,P-CPP-P24,performance/cpp.md,performance/cpp.md#cpp-p24,closed,tools/perf/cpp/,implemented (partly): remaining sub-items measured and deferred/rejected in the round-3 row,performance/results/cpp.md (CPP-P24 row); benchmark tools/perf/cpp/
+CPP-P25,../cpp-code-review.md,P-CPP-P25,performance/cpp.md,performance/cpp.md#cpp-p25,closed,tools/perf/cpp/,implemented (partly): remaining sub-items measured and deferred/rejected in the round-3 row,performance/results/cpp.md (CPP-P25 row); benchmark tools/perf/cpp/
 LISP-C1,../lisp-code-review.md,C-LISP-C1,05-lisp-correctness.md,tests/05-relational.md#lisp-c1,closed,"conformance/27-relational-edges, 28-regex-portability, 29-text-binary-budgets; host unit tests; tools/check-budgets.sh; tools/check-regex-resources.py","SPEC 7.3 snapshot iteration + total order; 7.4 direction/count always evaluated, join key by ==, right binder shadows; 7.8 P1-P4 + caps; 6.4 MAX_TEXT_LEN/MAX_COLLECTION/MAX_REGEX_*",all six hosts pass files 27-29 (P5 ambiguity cases 28b pending)
 LISP-C2,../lisp-code-review.md,C-LISP-C2,05-lisp-correctness.md,tests/03-values.md#lisp-c2,closed,"lisp/tests/unit.lisp (7 new); conformance/24,25",SPEC 3.4; from-native E_BAD_ARG,lisp test 658 pass
 LISP-C3,../lisp-code-review.md,C-LISP-C3,05-lisp-correctness.md,tests/06-regex.md#lisp-c3,closed,"conformance/27-relational-edges, 28-regex-portability, 29-text-binary-budgets; host unit tests; tools/check-budgets.sh; tools/check-regex-resources.py","SPEC 7.3 snapshot iteration + total order; 7.4 direction/count always evaluated, join key by ==, right binder shadows; 7.8 P1-P4 + caps; 6.4 MAX_TEXT_LEN/MAX_COLLECTION/MAX_REGEX_*",all six hosts pass files 27-29 (P5 ambiguity cases 28b pending)
@@ -390,33 +390,33 @@ LISP-C44,../lisp-code-review.md,C-LISP-C44,05-lisp-correctness.md,tests/04-evalu
 LISP-C45,../lisp-code-review.md,C-LISP-C45,05-lisp-correctness.md,tests/02-decimal.md#lisp-c45,closed,"lisp/tests/unit.lisp (7 new); conformance/24,25",SPEC 3.4; from-native E_BAD_ARG,lisp test 658 pass
 LISP-C46,../lisp-code-review.md,C-LISP-C46,05-lisp-correctness.md,tests/01-frontend.md#lisp-c46,closed,"conformance/14-pipeline.selt: pipe.placeholder.repeated(-three,-evaluates-once-per-placeholder), below-min-arity-is-a-plain-argument, binding-function-is-not-substituted; conformance/10-limits.selt: lim.pipe-depth(-just-under), lim.pipe-chain-*","grammar.md: every top-level bare _ replaced (textual, x evaluated once per placeholder); binding built-ins never substitute; SPEC 6.4: pipe-step parens cost one level (pinned, not changed)",Go break removed; all six hosts agree
 LISP-C47,../lisp-code-review.md,C-LISP-C47,05-lisp-correctness.md,tests/11-hybrid.md#lisp-c47,closed,,documentation wording,"docs/internals + sql/MAP.md 3.1 and docs/sql.md updated (server-mode assumptions, exact-column wording)"
-LISP-P1,../lisp-code-review.md,P-LISP-P1,performance/lisp.md,performance/lisp.md#lisp-p1,pending,,,
-LISP-P2,../lisp-code-review.md,P-LISP-P2,performance/lisp.md,performance/lisp.md#lisp-p2,pending,,,
-LISP-P3,../lisp-code-review.md,P-LISP-P3,performance/lisp.md,performance/lisp.md#lisp-p3,pending,,,
-LISP-P4,../lisp-code-review.md,P-LISP-P4,performance/lisp.md,performance/lisp.md#lisp-p4,pending,,,
-LISP-P5,../lisp-code-review.md,P-LISP-P5,performance/lisp.md,performance/lisp.md#lisp-p5,pending,,,
-LISP-P6,../lisp-code-review.md,P-LISP-P6,performance/lisp.md,performance/lisp.md#lisp-p6,pending,,,
-LISP-P7,../lisp-code-review.md,P-LISP-P7,performance/lisp.md,performance/lisp.md#lisp-p7,pending,,,
-LISP-P8,../lisp-code-review.md,P-LISP-P8,performance/lisp.md,performance/lisp.md#lisp-p8,pending,,,
-LISP-P9,../lisp-code-review.md,P-LISP-P9,performance/lisp.md,performance/lisp.md#lisp-p9,pending,,,
-LISP-P10,../lisp-code-review.md,P-LISP-P10,performance/lisp.md,performance/lisp.md#lisp-p10,pending,,,
-LISP-P11,../lisp-code-review.md,P-LISP-P11,performance/lisp.md,performance/lisp.md#lisp-p11,pending,,,
-LISP-P12,../lisp-code-review.md,P-LISP-P12,performance/lisp.md,performance/lisp.md#lisp-p12,pending,,,
-LISP-P13,../lisp-code-review.md,P-LISP-P13,performance/lisp.md,performance/lisp.md#lisp-p13,pending,,,
-LISP-P14,../lisp-code-review.md,P-LISP-P14,performance/lisp.md,performance/lisp.md#lisp-p14,pending,,,
-LISP-P15,../lisp-code-review.md,P-LISP-P15,performance/lisp.md,performance/lisp.md#lisp-p15,pending,,,
-LISP-P16,../lisp-code-review.md,P-LISP-P16,performance/lisp.md,performance/lisp.md#lisp-p16,pending,,,
-LISP-P17,../lisp-code-review.md,P-LISP-P17,performance/lisp.md,performance/lisp.md#lisp-p17,pending,,,
-LISP-P18,../lisp-code-review.md,P-LISP-P18,performance/lisp.md,performance/lisp.md#lisp-p18,pending,,,
-LISP-P19,../lisp-code-review.md,P-LISP-P19,performance/lisp.md,performance/lisp.md#lisp-p19,pending,,,
-LISP-P20,../lisp-code-review.md,P-LISP-P20,performance/lisp.md,performance/lisp.md#lisp-p20,pending,,,
-LISP-P21,../lisp-code-review.md,P-LISP-P21,performance/lisp.md,performance/lisp.md#lisp-p21,pending,,,
-LISP-P22,../lisp-code-review.md,P-LISP-P22,performance/lisp.md,performance/lisp.md#lisp-p22,pending,,,
-LISP-P23,../lisp-code-review.md,P-LISP-P23,performance/lisp.md,performance/lisp.md#lisp-p23,pending,,,
-LISP-P24,../lisp-code-review.md,P-LISP-P24,performance/lisp.md,performance/lisp.md#lisp-p24,pending,,,
-LISP-P25,../lisp-code-review.md,P-LISP-P25,performance/lisp.md,performance/lisp.md#lisp-p25,pending,,,
-LISP-P26,../lisp-code-review.md,P-LISP-P26,performance/lisp.md,performance/lisp.md#lisp-p26,pending,,,
-LISP-P27,../lisp-code-review.md,P-LISP-P27,performance/lisp.md,performance/lisp.md#lisp-p27,pending,,,
+LISP-P1,../lisp-code-review.md,P-LISP-P1,performance/lisp.md,performance/lisp.md#lisp-p1,closed,tools/perf/lisp/,already-addressed: T01 iterative/linear lexer rewrite,performance/results/lisp.md (LISP-P1 row); benchmark tools/perf/lisp/
+LISP-P2,../lisp-code-review.md,P-LISP-P2,performance/lisp.md,performance/lisp.md#lisp-p2,closed,tools/perf/lisp/,implemented,performance/results/lisp.md (LISP-P2 row); benchmark tools/perf/lisp/
+LISP-P3,../lisp-code-review.md,P-LISP-P3,performance/lisp.md,performance/lisp.md#lisp-p3,closed,tools/perf/lisp/,implemented,performance/results/lisp.md (LISP-P3 row); benchmark tools/perf/lisp/
+LISP-P4,../lisp-code-review.md,P-LISP-P4,performance/lisp.md,performance/lisp.md#lisp-p4,closed,tools/perf/lisp/,implemented,performance/results/lisp.md (LISP-P4 row); benchmark tools/perf/lisp/
+LISP-P5,../lisp-code-review.md,P-LISP-P5,performance/lisp.md,performance/lisp.md#lisp-p5,closed,tools/perf/lisp/,implemented,performance/results/lisp.md (LISP-P5 row); benchmark tools/perf/lisp/
+LISP-P6,../lisp-code-review.md,P-LISP-P6,performance/lisp.md,performance/lisp.md#lisp-p6,closed,tools/perf/lisp/,implemented,performance/results/lisp.md (LISP-P6 row); benchmark tools/perf/lisp/
+LISP-P7,../lisp-code-review.md,P-LISP-P7,performance/lisp.md,performance/lisp.md#lisp-p7,closed,tools/perf/lisp/,implemented,performance/results/lisp.md (LISP-P7 row); benchmark tools/perf/lisp/
+LISP-P8,../lisp-code-review.md,P-LISP-P8,performance/lisp.md,performance/lisp.md#lisp-p8,closed,tools/perf/lisp/,implemented,performance/results/lisp.md (LISP-P8 row); benchmark tools/perf/lisp/
+LISP-P9,../lisp-code-review.md,P-LISP-P9,performance/lisp.md,performance/lisp.md#lisp-p9,closed,tools/perf/lisp/,implemented,performance/results/lisp.md (LISP-P9 row); benchmark tools/perf/lisp/
+LISP-P10,../lisp-code-review.md,P-LISP-P10,performance/lisp.md,performance/lisp.md#lisp-p10,closed,tools/perf/lisp/,implemented,performance/results/lisp.md (LISP-P10 row); benchmark tools/perf/lisp/
+LISP-P11,../lisp-code-review.md,P-LISP-P11,performance/lisp.md,performance/lisp.md#lisp-p11,closed,tools/perf/lisp/,implemented,performance/results/lisp.md (LISP-P11 row); benchmark tools/perf/lisp/
+LISP-P12,../lisp-code-review.md,P-LISP-P12,performance/lisp.md,performance/lisp.md#lisp-p12,closed,tools/perf/lisp/,implemented,performance/results/lisp.md (LISP-P12 row); benchmark tools/perf/lisp/
+LISP-P13,../lisp-code-review.md,P-LISP-P13,performance/lisp.md,performance/lisp.md#lisp-p13,closed,tools/perf/lisp/,already-addressed: T01 iterative/linear lexer rewrite,performance/results/lisp.md (LISP-P13 row); benchmark tools/perf/lisp/
+LISP-P14,../lisp-code-review.md,P-LISP-P14,performance/lisp.md,performance/lisp.md#lisp-p14,closed,tools/perf/lisp/,implemented,performance/results/lisp.md (LISP-P14 row); benchmark tools/perf/lisp/
+LISP-P15,../lisp-code-review.md,P-LISP-P15,performance/lisp.md,performance/lisp.md#lisp-p15,closed,tools/perf/lisp/,implemented,performance/results/lisp.md (LISP-P15 row); benchmark tools/perf/lisp/
+LISP-P16,../lisp-code-review.md,P-LISP-P16,performance/lisp.md,performance/lisp.md#lisp-p16,closed,tools/perf/lisp/,implemented,performance/results/lisp.md (LISP-P16 row); benchmark tools/perf/lisp/
+LISP-P17,../lisp-code-review.md,P-LISP-P17,performance/lisp.md,performance/lisp.md#lisp-p17,closed,tools/perf/lisp/,implemented,performance/results/lisp.md (LISP-P17 row); benchmark tools/perf/lisp/
+LISP-P18,../lisp-code-review.md,P-LISP-P18,performance/lisp.md,performance/lisp.md#lisp-p18,closed,tools/perf/lisp/,implemented,performance/results/lisp.md (LISP-P18 row); benchmark tools/perf/lisp/
+LISP-P19,../lisp-code-review.md,P-LISP-P19,performance/lisp.md,performance/lisp.md#lisp-p19,closed,tools/perf/lisp/,implemented,performance/results/lisp.md (LISP-P19 row); benchmark tools/perf/lisp/
+LISP-P20,../lisp-code-review.md,P-LISP-P20,performance/lisp.md,performance/lisp.md#lisp-p20,closed,tools/perf/lisp/,implemented,performance/results/lisp.md (LISP-P20 row); benchmark tools/perf/lisp/
+LISP-P21,../lisp-code-review.md,P-LISP-P21,performance/lisp.md,performance/lisp.md#lisp-p21,closed,tools/perf/lisp/,implemented,performance/results/lisp.md (LISP-P21 row); benchmark tools/perf/lisp/
+LISP-P22,../lisp-code-review.md,P-LISP-P22,performance/lisp.md,performance/lisp.md#lisp-p22,closed,tools/perf/lisp/,implemented,performance/results/lisp.md (LISP-P22 row); benchmark tools/perf/lisp/
+LISP-P23,../lisp-code-review.md,P-LISP-P23,performance/lisp.md,performance/lisp.md#lisp-p23,closed,tools/perf/lisp/,implemented,performance/results/lisp.md (LISP-P23 row); benchmark tools/perf/lisp/
+LISP-P24,../lisp-code-review.md,P-LISP-P24,performance/lisp.md,performance/lisp.md#lisp-p24,closed,tools/perf/lisp/,implemented,performance/results/lisp.md (LISP-P24 row); benchmark tools/perf/lisp/
+LISP-P25,../lisp-code-review.md,P-LISP-P25,performance/lisp.md,performance/lisp.md#lisp-p25,closed,tools/perf/lisp/,implemented,performance/results/lisp.md (LISP-P25 row); benchmark tools/perf/lisp/
+LISP-P26,../lisp-code-review.md,P-LISP-P26,performance/lisp.md,performance/lisp.md#lisp-p26,closed,tools/perf/lisp/,rejected: shape-cache key hashing: <1 us per lookup at the 256-entry cap,performance/results/lisp.md (LISP-P26 row); benchmark tools/perf/lisp/
+LISP-P27,../lisp-code-review.md,P-LISP-P27,performance/lisp.md,performance/lisp.md#lisp-p27,closed,tools/perf/lisp/,implemented,performance/results/lisp.md (LISP-P27 row); benchmark tools/perf/lisp/
 GO-C1,../go-code-review.md,C-GO-C1,06-go-correctness.md,tests/06-regex.md#go-c1,closed,"conformance/27-relational-edges, 28-regex-portability, 29-text-binary-budgets; host unit tests; tools/check-budgets.sh; tools/check-regex-resources.py","SPEC 7.3 snapshot iteration + total order; 7.4 direction/count always evaluated, join key by ==, right binder shadows; 7.8 P1-P4 + caps; 6.4 MAX_TEXT_LEN/MAX_COLLECTION/MAX_REGEX_*",all six hosts pass files 27-29 (P5 ambiguity cases 28b pending)
 GO-C2,../go-code-review.md,C-GO-C2,06-go-correctness.md,tests/08-sql-scope.md#go-c2,closed,"sql/cases/48-scope-and-slots, 49-kind-guarantees, 50-rendering-and-registration, 51-hybrid-parity, 19, 25, 17; sql/oracle/hybrid.json + rows/expressions; tools/check-sql-budgets.sh; tools/check-hybrid-parity*; per-host SQL unit tests","docs/internals/sql-translation.md 7.4 (scope, E_SQL_SIZE MAX_SQL_NODES=250000), sql-kinds.md 5a (all-or-nothing SUM guard, UNKNOWN guards), 7.1 balanced fold >256, 11.6 count clamp 2^63-1, MAP.md 3.1 dialect registration, 4.2 {key:*} numericCast; 12.1 hybrid parity (keys, errors, context, order, names)",all six hosts sqlt 1265/1265 with reuse twin; oracle/hybrid lanes agree on SQLite (+ MariaDB/MySQL/PostgreSQL for PHP); PY-C1 site f closed
 GO-C3,../go-code-review.md,C-GO-C3,06-go-correctness.md,tests/08-sql-scope.md#go-c3,closed,"sql/cases/48-scope-and-slots, 49-kind-guarantees, 50-rendering-and-registration, 51-hybrid-parity, 19, 25, 17; sql/oracle/hybrid.json + rows/expressions; tools/check-sql-budgets.sh; tools/check-hybrid-parity*; per-host SQL unit tests","docs/internals/sql-translation.md 7.4 (scope, E_SQL_SIZE MAX_SQL_NODES=250000), sql-kinds.md 5a (all-or-nothing SUM guard, UNKNOWN guards), 7.1 balanced fold >256, 11.6 count clamp 2^63-1, MAP.md 3.1 dialect registration, 4.2 {key:*} numericCast; 12.1 hybrid parity (keys, errors, context, order, names)",all six hosts sqlt 1265/1265 with reuse twin; oracle/hybrid lanes agree on SQLite (+ MariaDB/MySQL/PostgreSQL for PHP); PY-C1 site f closed
@@ -464,32 +464,32 @@ GO-C44,../go-code-review.md,C-GO-C44,06-go-correctness.md,tests/04-evaluation.md
 GO-C45,../go-code-review.md,C-GO-C44,06-go-correctness.md,tests/04-evaluation.md#go-c45,closed,"conformance/26 lim.eval-depth.flat-chain-inside-*, num.plan.*, asg.compound.*; host unit tests",SPEC 6.4: index over bare variable costs one level; no host crash on flat chains in aggregate bodies; registered builtins guarded,"host lanes green; asan clean (cpp); race green (go); LISP-C44 not reproduced, hardening + test"
 GO-C46,../go-code-review.md,C-GO-C44,06-go-correctness.md,tests/04-evaluation.md#go-c46,closed,"conformance/26 lim.eval-depth.flat-chain-inside-*, num.plan.*, asg.compound.*; host unit tests",SPEC 6.4: index over bare variable costs one level; no host crash on flat chains in aggregate bodies; registered builtins guarded,"host lanes green; asan clean (cpp); race green (go); LISP-C44 not reproduced, hardening + test"
 GO-C47,../go-code-review.md,C-GO-C44,06-go-correctness.md,tests/04-evaluation.md#go-c47,closed,"conformance/26 lim.eval-depth.flat-chain-inside-*, num.plan.*, asg.compound.*; host unit tests",SPEC 6.4: index over bare variable costs one level; no host crash on flat chains in aggregate bodies; registered builtins guarded,"host lanes green; asan clean (cpp); race green (go); LISP-C44 not reproduced, hardening + test"
-GO-P1,../go-code-review.md,P-GO-P1,performance/go.md,performance/go.md#go-p1,pending,,,
-GO-P2,../go-code-review.md,P-GO-P2,performance/go.md,performance/go.md#go-p2,pending,,,
-GO-P3,../go-code-review.md,P-GO-P3,performance/go.md,performance/go.md#go-p3,pending,,,
-GO-P4,../go-code-review.md,P-GO-P4,performance/go.md,performance/go.md#go-p4,pending,,,
-GO-P5,../go-code-review.md,P-GO-P5,performance/go.md,performance/go.md#go-p5,pending,,,
-GO-P6,../go-code-review.md,P-GO-P6,performance/go.md,performance/go.md#go-p6,pending,,,
-GO-P7,../go-code-review.md,P-GO-P7,performance/go.md,performance/go.md#go-p7,pending,,,
-GO-P8,../go-code-review.md,P-GO-P8,performance/go.md,performance/go.md#go-p8,pending,,,
-GO-P9,../go-code-review.md,P-GO-P9,performance/go.md,performance/go.md#go-p9,pending,,,
-GO-P10,../go-code-review.md,P-GO-P10,performance/go.md,performance/go.md#go-p10,pending,,,
-GO-P11,../go-code-review.md,P-GO-P11,performance/go.md,performance/go.md#go-p11,pending,,,
-GO-P12,../go-code-review.md,P-GO-P12,performance/go.md,performance/go.md#go-p12,pending,,,
-GO-P13,../go-code-review.md,P-GO-P13,performance/go.md,performance/go.md#go-p13,pending,,,
-GO-P14,../go-code-review.md,P-GO-P14,performance/go.md,performance/go.md#go-p14,pending,,,
-GO-P15,../go-code-review.md,P-GO-P15,performance/go.md,performance/go.md#go-p15,pending,,,
-GO-P16,../go-code-review.md,P-GO-P16,performance/go.md,performance/go.md#go-p16,pending,,,
-GO-P17,../go-code-review.md,P-GO-P17,performance/go.md,performance/go.md#go-p17,pending,,,
-GO-P18,../go-code-review.md,P-GO-P18,performance/go.md,performance/go.md#go-p18,pending,,,
-GO-P19,../go-code-review.md,P-GO-P19,performance/go.md,performance/go.md#go-p19,pending,,,
-GO-P20,../go-code-review.md,P-GO-P20,performance/go.md,performance/go.md#go-p20,pending,,,
-GO-P21,../go-code-review.md,P-GO-P21,performance/go.md,performance/go.md#go-p21,pending,,,
-GO-P22,../go-code-review.md,P-GO-P22,performance/go.md,performance/go.md#go-p22,pending,,,
-GO-P23,../go-code-review.md,P-GO-P23,performance/go.md,performance/go.md#go-p23,pending,,,
-GO-P24,../go-code-review.md,P-GO-P24,performance/go.md,performance/go.md#go-p24,pending,,,
-GO-P25,../go-code-review.md,P-GO-P25,performance/go.md,performance/go.md#go-p25,pending,,,
-GO-P26,../go-code-review.md,P-GO-P26,performance/go.md,performance/go.md#go-p26,pending,,,
-GO-P27,../go-code-review.md,P-GO-P27,performance/go.md,performance/go.md#go-p27,pending,,,
-GO-P28,../go-code-review.md,P-GO-P28,performance/go.md,performance/go.md#go-p28,pending,,,
-GO-P29,../go-code-review.md,P-GO-P29,performance/go.md,performance/go.md#go-p29,pending,,,
+GO-P1,../go-code-review.md,P-GO-P1,performance/go.md,performance/go.md#go-p1,closed,tools/perf/go/,implemented,performance/results/go.md (GO-P1 row); benchmark tools/perf/go/
+GO-P2,../go-code-review.md,P-GO-P2,performance/go.md,performance/go.md#go-p2,closed,tools/perf/go/,implemented,performance/results/go.md (GO-P2 row); benchmark tools/perf/go/
+GO-P3,../go-code-review.md,P-GO-P3,performance/go.md,performance/go.md#go-p3,closed,tools/perf/go/,implemented,performance/results/go.md (GO-P3 row); benchmark tools/perf/go/
+GO-P4,../go-code-review.md,P-GO-P4,performance/go.md,performance/go.md#go-p4,closed,tools/perf/go/,implemented,performance/results/go.md (GO-P4 row); benchmark tools/perf/go/
+GO-P5,../go-code-review.md,P-GO-P5,performance/go.md,performance/go.md#go-p5,closed,tools/perf/go/,implemented,performance/results/go.md (GO-P5 row); benchmark tools/perf/go/
+GO-P6,../go-code-review.md,P-GO-P6,performance/go.md,performance/go.md#go-p6,closed,tools/perf/go/,implemented (partly): remaining sub-items measured and deferred in the results row,performance/results/go.md (GO-P6 row); benchmark tools/perf/go/
+GO-P7,../go-code-review.md,P-GO-P7,performance/go.md,performance/go.md#go-p7,closed,tools/perf/go/,implemented,performance/results/go.md (GO-P7 row); benchmark tools/perf/go/
+GO-P8,../go-code-review.md,P-GO-P8,performance/go.md,performance/go.md#go-p8,closed,tools/perf/go/,rejected: no gain under CPU-time A/B (P8 per-node defer x1.00; P22 x1.03),performance/results/go.md (GO-P8 row); benchmark tools/perf/go/
+GO-P9,../go-code-review.md,P-GO-P9,performance/go.md,performance/go.md#go-p9,closed,tools/perf/go/,implemented (partly): remaining sub-items measured and deferred in the results row,performance/results/go.md (GO-P9 row); benchmark tools/perf/go/
+GO-P10,../go-code-review.md,P-GO-P10,performance/go.md,performance/go.md#go-p10,closed,tools/perf/go/,implemented,performance/results/go.md (GO-P10 row); benchmark tools/perf/go/
+GO-P11,../go-code-review.md,P-GO-P11,performance/go.md,performance/go.md#go-p11,closed,tools/perf/go/,implemented,performance/results/go.md (GO-P11 row); benchmark tools/perf/go/
+GO-P12,../go-code-review.md,P-GO-P12,performance/go.md,performance/go.md#go-p12,closed,tools/perf/go/,implemented (partly): remaining sub-items measured and deferred in the results row,performance/results/go.md (GO-P12 row); benchmark tools/perf/go/
+GO-P13,../go-code-review.md,P-GO-P13,performance/go.md,performance/go.md#go-p13,closed,tools/perf/go/,implemented,performance/results/go.md (GO-P13 row); benchmark tools/perf/go/
+GO-P14,../go-code-review.md,P-GO-P14,performance/go.md,performance/go.md#go-p14,closed,tools/perf/go/,implemented,performance/results/go.md (GO-P14 row); benchmark tools/perf/go/
+GO-P15,../go-code-review.md,P-GO-P15,performance/go.md,performance/go.md#go-p15,closed,tools/perf/go/,implemented,performance/results/go.md (GO-P15 row); benchmark tools/perf/go/
+GO-P16,../go-code-review.md,P-GO-P16,performance/go.md,performance/go.md#go-p16,closed,tools/perf/go/,implemented,performance/results/go.md (GO-P16 row); benchmark tools/perf/go/
+GO-P17,../go-code-review.md,P-GO-P17,performance/go.md,performance/go.md#go-p17,closed,tools/perf/go/,already-addressed: linear since the T09 balanced fold,performance/results/go.md (GO-P17 row); benchmark tools/perf/go/
+GO-P18,../go-code-review.md,P-GO-P18,performance/go.md,performance/go.md#go-p18,closed,tools/perf/go/,implemented,performance/results/go.md (GO-P18 row); benchmark tools/perf/go/
+GO-P19,../go-code-review.md,P-GO-P19,performance/go.md,performance/go.md#go-p19,closed,tools/perf/go/,implemented,performance/results/go.md (GO-P19 row); benchmark tools/perf/go/
+GO-P20,../go-code-review.md,P-GO-P20,performance/go.md,performance/go.md#go-p20,closed,tools/perf/go/,implemented,performance/results/go.md (GO-P20 row); benchmark tools/perf/go/
+GO-P21,../go-code-review.md,P-GO-P21,performance/go.md,performance/go.md#go-p21,closed,tools/perf/go/,implemented,performance/results/go.md (GO-P21 row); benchmark tools/perf/go/
+GO-P22,../go-code-review.md,P-GO-P22,performance/go.md,performance/go.md#go-p22,closed,tools/perf/go/,rejected: no gain under CPU-time A/B (P8 per-node defer x1.00; P22 x1.03),performance/results/go.md (GO-P22 row); benchmark tools/perf/go/
+GO-P23,../go-code-review.md,P-GO-P23,performance/go.md,performance/go.md#go-p23,closed,tools/perf/go/,implemented,performance/results/go.md (GO-P23 row); benchmark tools/perf/go/
+GO-P24,../go-code-review.md,P-GO-P24,performance/go.md,performance/go.md#go-p24,closed,tools/perf/go/,implemented,performance/results/go.md (GO-P24 row); benchmark tools/perf/go/
+GO-P25,../go-code-review.md,P-GO-P25,performance/go.md,performance/go.md#go-p25,closed,tools/perf/go/,implemented,performance/results/go.md (GO-P25 row); benchmark tools/perf/go/
+GO-P26,../go-code-review.md,P-GO-P26,performance/go.md,performance/go.md#go-p26,closed,tools/perf/go/,implemented,performance/results/go.md (GO-P26 row); benchmark tools/perf/go/
+GO-P27,../go-code-review.md,P-GO-P27,performance/go.md,performance/go.md#go-p27,closed,tools/perf/go/,implemented,performance/results/go.md (GO-P27 row); benchmark tools/perf/go/
+GO-P28,../go-code-review.md,P-GO-P28,performance/go.md,performance/go.md#go-p28,closed,tools/perf/go/,implemented (partly): remaining sub-items measured and deferred in the results row,performance/results/go.md (GO-P28 row); benchmark tools/perf/go/
+GO-P29,../go-code-review.md,P-GO-P29,performance/go.md,performance/go.md#go-p29,deferred,tools/perf/go/,"deferred: documentation-only GC tuning advice (GOGC=200: -21% CPU, +45% memory on scenario 1); recommended text is in the round-3 row, no library-wide setting",performance/results/go.md (GO-P29 row); benchmark tools/perf/go/; reconsider when the Go usage docs are next revised — place the recommended text there

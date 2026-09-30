@@ -8650,6 +8650,18 @@ static std::vector<std::pair<std::string, Binding>> c1308_bind() {
   };
 }
 
+static std::vector<std::pair<std::string, Binding>> c1309_bind() {
+  return {
+      {"ORDERS", Binding::relation("orders", "o", {{"ID", Binding::column("id", "o", SqlKind::Num)}, {"CUSTOMER_ID", Binding::column("customer_id", "o", SqlKind::Num)}, {"AMOUNT", Binding::column("amount", "o", SqlKind::Num)}, {"NAME", Binding::column("name", "o", SqlKind::Text)}}, std::nullopt, std::nullopt)},
+  };
+}
+
+static std::vector<std::pair<std::string, Binding>> c1310_bind() {
+  return {
+      {"ORDERS", Binding::relation("orders", "o", {{"ID", Binding::column("id", "o", SqlKind::Num)}, {"CUSTOMER_ID", Binding::column("customer_id", "o", SqlKind::Num)}, {"AMOUNT", Binding::column("amount", "o", SqlKind::Num)}, {"NAME", Binding::column("name", "o", SqlKind::Text)}}, std::nullopt, std::nullopt)},
+  };
+}
+
 static const SqlCase CASES[] = {
     {.name = "lex.number.canonical-form-survives",
      .at = "01-lexical.sqlt:4",
@@ -30904,6 +30916,40 @@ static const SqlCase CASES[] = {
      .unrepresentable = nullptr,
      .register_fn = nullptr,
      .bindings_fn = c1308_bind},
+    {.name = "plan.keys.filter-filter-then-a-renumbering-step-splits-after-the-first",
+     .at = "52-audit-cases.sqlt:392",
+     .dialect = "mariadb",
+     .source = "ORDERS .> FILTER(_[\"amount\"] == 2) .> FILTER(_[\"nope\"][\"x\"] $== \"b\") .> SORT()",
+     .expect = "SELECT `o`.* FROM `orders` `o` WHERE (`o`.`amount` = 2)",
+     .error = nullptr,
+     .throws = nullptr,
+     .params = nullptr,
+     .as_ = nullptr,
+     .mode = nullptr,
+     .strict = false,
+     .plan = "hybrid",
+     .has_tables = true,
+     .tables = {"orders"},
+     .unrepresentable = nullptr,
+     .register_fn = nullptr,
+     .bindings_fn = c1309_bind},
+    {.name = "plan.keys.filter-filter-then-a-key-read-stays-in-memory",
+     .at = "52-audit-cases.sqlt:409",
+     .dialect = "mariadb",
+     .source = "ORDERS .> FILTER(_[\"amount\"] == 2) .> FILTER(_[\"nope\"][\"x\"] $== \"b\") .> SORT_BY(_K)",
+     .expect = nullptr,
+     .error = nullptr,
+     .throws = nullptr,
+     .params = nullptr,
+     .as_ = nullptr,
+     .mode = nullptr,
+     .strict = false,
+     .plan = "pure_memory",
+     .has_tables = true,
+     .tables = {"orders"},
+     .unrepresentable = nullptr,
+     .register_fn = nullptr,
+     .bindings_fn = c1310_bind},
 };
 
 std::span<const SqlCase> sql_cases() { return CASES; }
