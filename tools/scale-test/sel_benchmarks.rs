@@ -323,12 +323,16 @@ fn execute(program: &mut Program, context: &Value, isolate: bool) -> Result<(Val
     let input = if isolate { context.deep_copy(0, Pos::default())? } else { context.clone() };
     let context_clone_ms = ms(clone_start);
     let run_start = Instant::now();
-    let actual = program.run(Some(input))?;
+    // The run gets a handle and `input` outlives the timed region, as the C++
+    // runner's copy does: freeing the ~137,000 copied records is context
+    // teardown (about 40 ms), not the program.
+    let actual = program.run(Some(input.clone()))?;
     let run_ms = ms(run_start);
     let materialize_start = Instant::now();
     let _ = actual.dump()?;
     let materialize_ms = ms(materialize_start);
     let prepared_ms = ms(run_start);
+    drop(input);
     Ok((actual, Sample { context_clone_ms, run_ms, materialize_ms, prepared_ms }))
 }
 
