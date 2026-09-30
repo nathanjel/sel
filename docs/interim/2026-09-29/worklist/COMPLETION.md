@@ -6,9 +6,9 @@
 
 | | Findings | Closed | Deferred |
 |---|---:|---:|---:|
-| Correctness | 324 | 323 | 1 (PHP-C26) |
+| Correctness | 324 | 324 | 0 (PHP-C26 closed as an accepted known limit) |
 | Performance | 170 | 164 | 6 |
-| **Total** | **494** | **487** | **7** |
+| **Total** | **494** | **488** | **6** |
 
 Performance dispositions: 144 implemented (some partly, sub-items noted), 11 already addressed by
 correctness work, 9 rejected on measurement, 6 deferred (PHP-P10, PHP-P17, PY-P17, PY-P18, CPP-P8, GO-P29),
@@ -42,10 +42,10 @@ Blocked (not passed): an LLP64 C++ job — no such toolchain here.
   TAKE/DROP clamped at 2^63−1; dialect registration checks; correlate parenthesised;
   data-driven SQLite MIN/MAX cast; hybrid plans held to `run()` on keys, errors, context, order, names.
 
-## For the maintainer to decide
+## Maintainer decisions (2026-09-30): items 1–4 accepted as described
 
 1. **PHP-C26** — chained LINK under assignment grows ~10× per level (7 levels: 7–31 s on every host,
-   Lisp exhausts its heap). Needs a spec-level evaluation-work budget, or accept the deferral.
+   Lisp exhausts its heap). **Decided 2026-09-30: accepted as a known limit** (no global work budget).
 2. **Python CRC32** now uses `zlib.crc32` (reverses an earlier documented choice; the hand-written table
    stays in the tests as the reference).
 3. **Hybrid pushdown** — the order-loss refusals reduced fully pushed-down (`pure_sql`) plans on the

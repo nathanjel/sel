@@ -2,7 +2,9 @@
 
 [Worklist](../README.md) · [Test harness and completion rules](../00-tests.md)
 
-- [ ] **T05 — Create and run this shared regression family across JS, PHP, Python, C++, Lisp and Go.**
+- [x] **T05 — Create and run this shared regression family across JS, PHP, Python, C++, Lisp and Go.**
+
+  Closed 2026-09-30 — all findings closed; PHP-C26 closed as an accepted known limit by the maintainer (no global work budget).
 
   Open 2026-09-30 — every finding closed except PHP-C26 (deferred: chained LINK under assignment costs ~10x per level; needs a spec-level evaluation-work budget, a decision for the maintainer). Fixtures: conformance/27-relational-edges (+31 join.order.*); join-filter oracle with raising sources.
 
