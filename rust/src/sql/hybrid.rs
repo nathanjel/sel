@@ -161,8 +161,37 @@ fn join_rows_lack_binders(steps: &[Node], count: usize) -> bool {
     joined
 }
 
+// Whether an explicit sort's order would not survive a later step in SQL.
+// SEL's result is in the order the sort gave it, and a database promises
+// nothing about the order of rows once they pass through a derived table
+// into a join, a group or a second sort's tie-break: a later sort keeps the
+// earlier sort's order among its ties, which is gone once a projection hid
+// the earlier key. A LIMIT beside the earlier ORDER BY decides which rows
+// survive, not any of this. A prefix that ends before that step is exact
+// (docs/internals/sql-translation.md 12.1, "Order"; PHP-C35).
+fn order_is_lost(steps: &[Node], count: usize) -> bool {
+    const ORDER_SORTS: [&str; 6] = ["SORT", "SORT_DESC", "SORT_BY", "TOP", "TOP_DESC", "TOP_BY"];
+    let mut sorted = false;
+    let mut projected = false;
+    for step in &steps[..count.min(steps.len())] {
+        let name = step.s.as_str();
+        if ORDER_SORTS.contains(&name) {
+            if sorted && projected {
+                return true;
+            }
+            sorted = true;
+            projected = false;
+        } else if sorted && (name == "MAP" || name == "SELECT_COLS") {
+            projected = true;
+        } else if sorted && (name == "BUCKET" || name == "LINK" || name == "LINK_LEFT") {
+            return true;
+        }
+    }
+    false
+}
+
 fn rows_are_not_the_value(steps: &[Node], count: usize) -> bool {
-    bucket_rows_are_keys(steps, count) || join_rows_lack_binders(steps, count)
+    bucket_rows_are_keys(steps, count) || join_rows_lack_binders(steps, count) || order_is_lost(steps, count)
 }
 
 fn physical_source(b: &Binding) -> String {
