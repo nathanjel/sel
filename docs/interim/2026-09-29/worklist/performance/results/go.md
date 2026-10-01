@@ -44,7 +44,7 @@ Durable benchmarks: `go/sel/perf_bench_test.go` (workloads P1–P10, fixed seeds
 | **GO-P6** front end (5 sub-items) | **partly implemented** | Tokenize 400 KB: 1.39 s → 0.44 s CPU (**3.2×**, min 2.5×); Compile 400 KB: 1.57 → 0.84 s (**1.9×**) | wall Tokenize 88.6 → 23 ms, B/op 46.4 → 22.3 MB | (a) operator match by byte compare — **done**; (b) token slice presized `n/3+32`, capped at 2¹⁷ tokens — **done**; (c) `posAt` cursor with binary-search fallback — **done**; (d) `AsciiUpper` scan-first, identifiers upper-cased in one allocation — **done**; (e) lazy failure positions / smaller `Token` (uint8 type, int32 offset) — **deferred**: reasoned, not measured; a `Token` layout change touches the parser and every token constructor, and the 3.2× already removes the front end from the profile's top; reconsider if compile time of multi-hundred-KB rules matters again. Tests: `TestPosAtCursorMatchesTheNaiveCount` (every offset, forward/backward/random), `TestAsciiUpperKeepsAnUpperCaseStringAndUpperCasesTheRest`, `TestTokenizeUpperCasesIdentifiersAndKeepsOperators`, conformance 01/10 (positions). |
 | **GO-P7** `??` on a missing field | **implemented** | coalesce_miss n=100k: 2.19 s → 1.25 s CPU (**1.75×**); hit unchanged (1.06×) | allocs 599 k → 300 k per run (n=100k), wall miss:hit ratio 4× → 2× | `tryLiteralPath` in `eval.go`: a variable plus literal keys is resolved without raising; anything else (computed keys, calls, MathPlan nodes, chains deeper than 8) takes the recover route; depth-cap exactness preserved (falls back when the chain would reach E_DEPTH). `TestCoalesceOverAPlainPathMatchesTheRecoverRoute` (27 paths × `??`/`???`, vs the same path behind `IF(TRUE, …)`), `TestCoalesceKeepsTheDepthCapForAPlainPath` (start depths around the cap, walk on vs off via `coalescePathFast`). |
 | **GO-P8** per-node `defer` in `EvalNode` | **rejected** | no difference: filter_and 7.25 s vs 7.27 s CPU (1.00×), map_math 1.01×, map_if 1.00×, coalesce_hit 1.00× (A/B, 7 rounds, CPU time, n=100k) | identical allocs | Implemented in a scratch tree (state restored at the recover sites through an `evalState` snapshot) and measured: no reproducible gain under CPU-time A/B (the wall-clock runs that looked like −25 % were load noise: medians 2–3× the minima). Reverted; `eval.go` is byte-identical to HEAD. Reconsider only with a profile showing `deferreturn`/closure allocation at a meaningful share on a quiet machine. |
-| **GO-P9** small-number arithmetic | **partly implemented** | micro CPU: Negate 2.6×, Abs ≈2.6×, Parse "12345.67" 2.6×, TrimScale 3.5×, Mul 1.25×, Add 1.12–1.21×, FromInt 1.2×, Round 1.12×; end to end SUM(L,_) n=100k 1.12×, SUM(L,_*2+1) ≈1.1×, map_math 1.08× | allocs per op: Add 4→3, AddDec 6→5, Mul 4→3, Negate/Abs 3→1, Parse 5→3, TrimScale 13→6, FromInt 4→3; SUM n=100k 500 k → 400 k allocs | (1) `makeOwned` (keeps the freshly computed `big.Int`; `Make` still copies for callers that pass one in) — **done**; Negate/Abs share the magnitude — **done**; (3) uint64 fast path in `Parse` (≤18 significant digits, no concatenation/TrimLeft/SetString) and in `TrimScale` — **done**; (2) compact `mag uint64` representation — **deferred**: it replaces the exported `Digits *big.Int` (12 external read sites, every decimal function) for a further 3→1 allocations per op; measured remaining share of decimal arithmetic in the end-to-end SUM is ≈25 % of CPU, so the ceiling is ~1.2×, which does not justify the churn now; reconsider with a profile where decimal dominates. (4) shrink `Value` — **deferred** (same reasoning; 152-byte `Value` per result is the larger share and its fields are used everywhere). Oracle: `SEL_IMPLS=go tools/check-decimal.sh` 94 040 cases, 0 mismatches; `TestParseWordPathMatchesTheGeneralPath`, `TestTrimScaleWordPathMatchesTheStringRoute`, `TestNegateAndAbsLeaveTheOperandAlone`. |
+| **GO-P9** small-number arithmetic | **partly implemented** | micro CPU: Negate 2.6×, Abs ≈2.6×, Parse "12345.67" 2.6×, TrimScale 3.5×, Mul 1.25×, Add 1.12–1.21×, FromInt 1.2×, Round 1.12×; end to end SUM(L,_) n=100k 1.12×, SUM(L,_*2+1) ≈1.1×, map_math 1.08× | allocs per op: Add 4→3, AddDec 6→5, Mul 4→3, Negate/Abs 3→1, Parse 5→3, TrimScale 13→6, FromInt 4→3; SUM n=100k 500 k → 400 k allocs | (1) `makeOwned` (keeps the freshly computed `big.Int`; `Make` still copies for callers that pass one in) — **done**; Negate/Abs share the magnitude — **done**; (3) uint64 fast path in `Parse` (≤18 significant digits, no concatenation/TrimLeft/SetString) and in `TrimScale` — **done**; (2) compact `mag uint64` representation — **deferred**: it replaces the exported `Digits *big.Int` (12 external read sites, every decimal function) for a further 3→1 allocations per op; measured remaining share of decimal arithmetic in the end-to-end SUM is ≈25 % of CPU, so the ceiling is ~1.2×, which does not justify the churn now; reconsider with a profile where decimal dominates (revisited 2026-10-01, item 1, at the end of this file). (4) shrink `Value` — **deferred** (same reasoning; 152-byte `Value` per result is the larger share and its fields are used everywhere). Oracle: `SEL_IMPLS=go tools/check-decimal.sh` 94 040 cases, 0 mismatches; `TestParseWordPathMatchesTheGeneralPath`, `TestTrimScaleWordPathMatchesTheStringRoute`, `TestNegateAndAbsLeaveTheOperandAlone`. |
 | **GO-P10** large numeral parse | **implemented** | 999 999 digits parse: 2.86 s → 0.375 s CPU (**7.6×**); end to end `LEN(S + 1)`: 2.02 s → 0.54 s (**3.7×**); 100k digits 3.6×; 10k digits 3.3× | allocation volume for 1 M digits: 2.20 GB → 9.8 MB | `parseDigits` divide-and-conquer (leaf 1024, split at the largest 1024·2ʲ below the length, `hi·10^k + lo`, powers from the bounded `Pow10` cache). `TestParseDigitsMatchesSetString` (18 lengths around every split point × 6 digit patterns incl. zeros at split positions, signed decimal end to end). |
 
 ## Verification run for this chunk
@@ -132,3 +132,84 @@ GO-REG-1 table (`tools/perf/go/scale_ab.py`, 5 interleaved rounds × 2 runs, 10�
 - `SEL_IMPLS="go js" tools/check-api.sh`: 114 probes agree (31 pinned); `SEL_IMPLS=go`: `check-budgets.sh` (E_RANGE within 20 s), `check-sql-budgets.sh` pass; `tools/check-hybrid-parity-go.py`: 68 agree, 0 differ.
 - Workload answers: `TestPerfWorkloadChecksums` (34), `TestPerf2WorkloadChecksums` (29), `TestPerf2SqlChecksums`, `TestPerf3WorkloadChecksums` and `TestPerf3SqlChecksums` pass unchanged against the answers recorded at the baselines.
 
+
+## 2026-10-01: item 1, math plan intermediates in registers
+
+**Why.** The GC and JIT experiments of that day profiled Go on `examples/mandelbrot.sel` at 50 ms, against C++'s 32:
+- 313k objects allocated per frame: every decimal step made a new `Dec`, `*big.Int` and digit array;
+- `runtime.mallocgc` at 23% of samples, and GC at 12.5% of wall time (GOGC=off with prefaulted memory, against the
+  default).
+
+That is the profile where decimal dominates that GO-P9 asked for. It points at intermediates rather than small
+mantissas, because Mandelbrot's operands pass int128 by the third iteration.
+
+**What.**
+- `internal/decimal/reg.go`:
+  - `Num` reads a `Dec` in place. `AddInto`/`SubInto`/`MulInto` compute into a `big.Int` the caller owns, with Add's,
+    Sub's and Mul's sign, scale and E_RANGE rules (`guardMag`), and bring an operand to the common scale in a scratch
+    the caller owns.
+  - `Add`/`Sub`/`Mul` are now `AddNew`/`SubNew`/`MulNew`, with one fresh `big.Int` each, so their allocations are
+    unchanged.
+- `sel/plan_regs.go` `assignRegisters` runs at compile time:
+  - An ADD, SUB or MUL result read only by another ADD, SUB or MUL goes to a register.
+  - The output, and anything NEG, ABS, MIN, MAX, DIV, ROUND and so on read, stay fresh `Dec`s, since those may return
+    or share them.
+  - ADD and SUB write over the register they consume; MUL takes another, because math/big reallocates when a product
+    aliases an operand.
+- Register files sit on a per-`Context` stack, one per plan evaluation in progress (a leaf can run another plan). They
+  are given back by `defer`, so a failure `??` catches gives them back too, and trimmed past 16K words.
+- Scratchpads live in an 8- or 16-slot stack buffer; Mandelbrot's `tr` plan needs nine slots.
+- `init` checks that every manifest operation has an implementation, as `spec/math-ops.md` requires.
+- `go/bin/check-decimal` also runs `+ - *` through one long-lived register, and reads records of any length.
+
+**Tests first** (`f3058e3`, `0dd7aad`):
+- `plan_regs_test.go`:
+  - results stay the run's own across runs;
+  - re-entry through a host function;
+  - a failure `??` catches inside a plan;
+  - 300 seeded big-operand expressions, planned against as written.
+- `plan_regs_race_test.go`: eight goroutines on one Program.
+- `dec_regs_test.go`: `Add`/`Sub`/`Mul` never write an operand.
+- `reg_test.go`: the register operations against the retired `Add`/`Sub`/`Mul`, with no allocation into a warm
+  register.
+- Budgets, lowered by G1 (`5e6371e`):
+  - `X*Y+Z` 7 → 4;
+  - `ZR*ZR - ZI*ZI + CR` 16 → 4;
+  - `2.0*ZR*ZI + CI` 12 → 4;
+  - `ZR*ZR + ZI*ZI` 10 → 4;
+  - `X+1` 6 → 4;
+  - one `Run` of `X*Y+Z` 8 → 7.
+- `SR*SR + SI*SI > 4.0`: 8.
+
+**Checked:**
+- `go test -race ./...`.
+- Conformance 2183/2183, including `32-numeric-plans.selt`, which the planned-versus-plain test also runs.
+- `check-decimal` 253,992 cases, of which 84,600 also went through registers, and 19,704 big-operand exact-oracle
+  records, of which 7,876 went through registers: 0 mismatches.
+- `tools/fuzz.sh 4000` against JS, two seeds: 0 disagreements.
+
+**Results** (A = main `f88bf59`, B = G1; A B B A twice, 2 warmups + 4 runs per process):
+
+| Measure | A | B |
+|---|---|---|
+| Mandelbrot | 49.53 ms | 43.81 ms (−11.6%; every B process faster) |
+| S1 / S3 / S5 / S6 | 506 / 198 / 226 / 218 ms | −1.4% / −0.5% / −3.0% / −2.1% |
+| S2 / S4 (full suite) | 4.36 / 7.46 ms | +3.8% / +13% |
+
+S2 and S4 run no ADD, SUB or MUL plan, and their swings are collection timing in short scenarios, not code:
+- Isolated over eight processes per side, S4 is +2.3% with overlapping processes.
+- S2 isolated reads +4.5%, but a build with registers switched off matches main (+0.8%).
+- With GOGC=off, S2 is −1% against both main and the registers-off build.
+
+**Tried and dropped** (the 3% rule):
+- **C1**: a comparison across scales aligns into a scratch the `Context` keeps (`decimal.CmpWith`).
+  - `SR*SR + SI*SI > 4.0` went from 8 to 6 allocations, and every lane passed.
+  - Mandelbrot over G1: −1.4%, with processes overlapping.
+- **C2**: a fresh `Dec` and its `big.Int` in one allocation.
+  - Every fresh-result budget dropped by 1, every lane passed, and no scenario was slower.
+  - Mandelbrot over G1: −2.4%, with processes overlapping.
+
+Each was measured alone. Together they might pass 3%, but the rule applies per change.
+
+Not tried, each under 2% by the profile: integer opcodes, the GO-P9 `uint64` mantissa (small intermediates now cost
+nothing), and planning `+=`.
