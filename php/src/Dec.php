@@ -35,8 +35,29 @@ final class Dec
      */
     private static function gmpInt(string $digits): \GMP
     {
+        self::$conversions++;
         return gmp_init($digits, 10);
     }
+
+    /** A GMP magnitude's digits; the other half of the conversion count. */
+    private static function gmpStr(\GMP $g): string
+    {
+        self::$conversions++;
+        return gmp_strval($g);
+    }
+
+    /**
+     * Test hook (item 1): base-10 conversions between digit strings and GMP so
+     * far, both ways. A test resets it and reads how many a computation cost.
+     */
+    public static int $conversions = 0;
+
+    /**
+     * Item 1: when true (and ext-gmp is there), a result too big for a native int
+     * keeps its magnitude as GMP and writes its digits only when text is asked
+     * for. Public so a test can hold both forms to the same answers.
+     */
+    public static bool $lazyDigits = false;
 
     /**
      * Test hook: false makes every operation take the pure-PHP digit-string
@@ -109,7 +130,7 @@ final class Dec
     private static function addAbs(string $a, string $b): string
     {
         if (self::hasGmp()) {
-            return gmp_strval(gmp_add(self::gmpInt($a), self::gmpInt($b)));
+            return self::gmpStr(gmp_add(self::gmpInt($a), self::gmpInt($b)));
         }
 
         $la = strlen($a);
@@ -156,7 +177,7 @@ final class Dec
     private static function subAbs(string $a, string $b): string
     {
         if (self::hasGmp()) {
-            return gmp_strval(gmp_sub(self::gmpInt($a), self::gmpInt($b)));
+            return self::gmpStr(gmp_sub(self::gmpInt($a), self::gmpInt($b)));
         }
 
         $la = strlen($a);
@@ -202,7 +223,7 @@ final class Dec
             return '0';
         }
         if (self::hasGmp()) {
-            return gmp_strval(gmp_mul(self::gmpInt($a), self::gmpInt($b)));
+            return self::gmpStr(gmp_mul(self::gmpInt($a), self::gmpInt($b)));
         }
 
         $la = strlen($a);
@@ -450,7 +471,7 @@ final class Dec
 
         if (self::hasGmp()) {
             [$q, $r] = gmp_div_qr(self::gmpInt($a), self::gmpInt($b));
-            return [gmp_strval($q), gmp_strval($r)];
+            return [self::gmpStr($q), self::gmpStr($r)];
         }
 
         if ($lb <= 9) {

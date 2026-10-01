@@ -11,6 +11,21 @@ require_once __DIR__ . '/../php/src/Dec.php';
 use Sel\Dec;
 use Sel\SelError;
 
+// Item 1 modes: SEL_PHP_FORCE_GMP=0 takes the pure-PHP paths on a machine that has
+// ext-gmp; SEL_PHP_LAZY_OPERANDS=1 turns lazy digits on and hands every operation
+// operands an earlier operation produced (adding zero keeps the value and, with
+// lazy digits, its GMP form).
+$mode = 'php';
+if (getenv('SEL_PHP_FORCE_GMP') === '0') {
+    Dec::forceGmp(false);
+    $mode = 'php (pure PHP)';
+}
+$lazyOperands = getenv('SEL_PHP_LAZY_OPERANDS') === '1';
+if ($lazyOperands) {
+    Dec::$lazyDigits = true;
+    $mode = 'php (lazy operands)';
+}
+
 $cases = [];
 foreach (explode("\n", file_get_contents($argv[1])) as $line) {
     if ($line === '') {
@@ -26,6 +41,12 @@ $mismatches = 0;
 foreach ($cases as $c) {
     $a = Dec::parse($c['a']);
     $b = Dec::parse($c['b']);
+    if ($lazyOperands) {
+        $a = Dec::add($a, Dec::zero());
+        if ($c['op'] !== 'round') {
+            $b = Dec::add($b, Dec::zero());
+        }
+    }
     try {
         $got = match ($c['op']) {
             '+' => Dec::format(Dec::add($a, $b)),
@@ -51,7 +72,7 @@ foreach ($cases as $c) {
 }
 
 $n = count($cases);
-echo "php: {$n} cases, {$mismatches} mismatches\n";
+echo "{$mode}: {$n} cases, {$mismatches} mismatches\n";
 foreach ($failures as $line) {
     echo "  {$line}\n";
 }

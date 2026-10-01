@@ -328,7 +328,7 @@ foreach ([true, false] as $gmp) {
                 Dec::$mulCarryEvery = $every;
                 Dec::forceGmp($gmp);
                 $a = str_repeat('9', 2100); $b = str_repeat('9', 2113);
-                $got = Dec::mul(Dec::parse($a), Dec::parse($b))['digits'];
+                $got = Dec::format(Dec::mul(Dec::parse($a), Dec::parse($b)));
                 // (10^m - 1)(10^n - 1) = 10^(m+n) - 10^m - 10^n + 1, worked by hand:
                 // 2099 nines, an 8, 13 nines, 2099 zeros and a 1.
                 $want = str_repeat('9', 2099) . '8' . str_repeat('9', 13) . str_repeat('0', 2099) . '1';
@@ -1048,6 +1048,154 @@ $expect('P30: a cached `i` pattern is not re-scanned, and a non-ASCII pattern st
     return true;
 });
 
+// --- Item 1 (2026-10-01): lazy digits -----------------------------------------
+// A big result may keep its magnitude as GMP and write its digits only when text
+// is asked for (Dec::$lazyDigits). Whatever it keeps, these must hold: every
+// operation answers as the pure-PHP digit-string path does, the host sees
+// today's arrays, the digit cap and its errors are where they were, and a chain
+// of big products does not convert digits in between (the conversion counter).
+$item1Modes = extension_loaded('gmp') ? [[true, true], [true, false], [false, false]] : [[false, false]];
+$item1With = static function (bool $gmp, bool $lazy, callable $f) {
+    $wasLazy = Dec::$lazyDigits;
+    Dec::forceGmp($gmp);
+    Dec::$lazyDigits = $lazy;
+    try { return $f(); } finally { Dec::forceGmp(null); Dec::$lazyDigits = $wasLazy; }
+};
+$item1Num = static function (int $w, int $sc, bool $neg): string {
+    $t = (string) mt_rand(1, 9);
+    for ($i = 1; $i < $w; $i++) $t .= (string) mt_rand(0, 9);
+    if ($sc > 0) {
+        $t = str_pad($t, $sc + 1, '0', STR_PAD_LEFT);
+        $t = substr($t, 0, -$sc) . '.' . substr($t, -$sc);
+    }
+    return ($neg ? '-' : '') . $t;
+};
+// What an answer is, whatever form it came in: a descriptor by its text and
+// scale, anything else (an int, a bool, an error code) as it is.
+$item1Canon = static fn ($x) => is_array($x) ? [$x['neg'], Dec::format($x), $x['scale']] : $x;
+$item1Try = static function (callable $f) {
+    try { return $f(); } catch (SelError $e) { return $e->code; }
+};
+$expect('item 1 T1: every operation agrees with lazy digits on and off, with and without GMP', function () use ($item1Modes, $item1With, $item1Num, $item1Canon, $item1Try) {
+    mt_srand(20261001);
+    $texts = ['0', '0.000', '7', '-7', '9223372036854775807', '-9223372036854775808', '9223372036854775808',
+              '18446744073709551616', '0.5', '-2.50'];
+    for ($i = 0; $i < 70; $i++) {
+        $w = [mt_rand(1, 18), mt_rand(19, 25), mt_rand(26, 120), mt_rand(100, 600)][mt_rand(0, 3)];
+        if (mt_rand(0, 19) === 0) $w = mt_rand(1500, 3000);
+        $texts[] = $item1Num($w, [0, 0, 1, mt_rand(0, 30), mt_rand(0, 30)][mt_rand(0, 4)], (bool) mt_rand(0, 1));
+    }
+    $ops = [
+        'add' => fn($a, $b) => Dec::add($a, $b), 'sub' => fn($a, $b) => Dec::sub($a, $b),
+        'mul' => fn($a, $b) => Dec::mul($a, $b), 'div' => fn($a, $b) => Dec::div($a, $b),
+        'mod' => fn($a, $b) => Dec::mod($a, $b), 'cmp' => fn($a, $b) => Dec::cmp($a, $b),
+        'round' => fn($a, $b) => Dec::round($a, 3), 'trunc' => fn($a, $b) => Dec::trunc($a),
+        'floor' => fn($a, $b) => Dec::floor($a), 'ceil' => fn($a, $b) => Dec::ceil($a),
+        'negate' => fn($a, $b) => Dec::negate($a), 'abs' => fn($a, $b) => Dec::abs($a),
+        'isZero' => fn($a, $b) => Dec::isZero($a), 'sign' => fn($a, $b) => Dec::sign($a),
+        'isInteger' => fn($a, $b) => Dec::isInteger($a), 'toInt' => fn($a, $b) => Dec::toInt($a),
+        'trimScale' => fn($a, $b) => Dec::trimScale($a), 'power' => fn($a, $b) => Dec::power($a, 3),
+        'sum' => function ($a, $b) { $acc = ['m' => 0, 's' => 0]; Dec::sumAccumulate($acc, $a); Dec::sumAccumulate($acc, $b); Dec::sumAccumulate($acc, $a); return Dec::sumResult($acc); },
+    ];
+    for ($i = 0; $i < 300; $i++) {
+        $x = $texts[mt_rand(0, count($texts) - 1)];
+        $y = $texts[mt_rand(0, count($texts) - 1)];
+        foreach ($ops as $name => $op) {
+            $want = $item1With(false, false, fn() => $item1Canon($item1Try(fn() => $op(Dec::parse($x), Dec::parse($y)))));
+            foreach ($item1Modes as [$gmp, $lazy]) {
+                // The operands as parsed, and as an earlier operation leaves them
+                // (adding zero keeps the value and, with lazy digits, its GMP form).
+                $got = $item1With($gmp, $lazy, function () use ($op, $x, $y, $item1Canon, $item1Try) {
+                    $a = Dec::parse($x); $b = Dec::parse($y);
+                    $la = Dec::add($a, Dec::zero()); $lb = Dec::add($b, Dec::zero());
+                    return [$item1Canon($item1Try(fn() => $op($a, $b))), $item1Canon($item1Try(fn() => $op($la, $lb))),
+                            $item1Canon($item1Try(fn() => $op($la, $b))), $item1Canon($item1Try(fn() => $op($a, $lb)))];
+                });
+                foreach ($got as $k => $g) {
+                    if ($g !== $want) return "$name($x, $y) gmp=" . (int) $gmp . ' lazy=' . (int) $lazy . " form $k: "
+                        . json_encode($g) . ' want ' . json_encode($want);
+                }
+            }
+        }
+    }
+    return true;
+});
+$expect('item 1 T2: a host sees today\'s arrays, and its edits take effect', function () use ($item1Modes, $item1With) {
+    foreach ($item1Modes as [$gmp, $lazy]) {
+        $r = $item1With($gmp, $lazy, function () {
+            $a = str_repeat('7', 40);
+            $v = \Sel\Sel::compile('A * A + 1')->run(['A' => $a]);
+            $d = $v->asDecimal();
+            if (!is_string($d['digits']) || array_key_exists('gmp', $d)) return 'asDecimal() is not today\'s array';
+            if (Dec::format($d) !== $v->asText()) return 'asDecimal() and asText() differ';
+            if (Value::num($v->decVal)->asText() !== $v->asText()) return 'Value::num(decVal) differs';
+            $big = Dec::mul(Dec::parse($a), Dec::parse($a));
+            $edited = $big; $edited['digits'] = '5'; unset($edited['gmp']);
+            if (Dec::format(Dec::add($edited, Dec::parse('1'))) !== '6') return 'an edited result kept its old value';
+            $parsed = Dec::parse(str_repeat('9', 300));
+            if (!is_string($parsed['digits']) || array_key_exists('gmp', $parsed)) return 'parse() gave a lazy value';
+            return true;
+        });
+        if ($r !== true) return "gmp=" . (int) $gmp . " lazy=" . (int) $lazy . ": $r";
+    }
+    return true;
+});
+$expect('item 1 T3: the integer-digit cap holds for every form, at the same place', function () use ($item1Modes, $item1With, $pos) {
+    $L = Dec::MAX_INT_DIGITS;
+    $nines = str_repeat('9', $L);
+    foreach ($item1Modes as [$gmp, $lazy]) {
+        $r = $item1With($gmp, $lazy, function () use ($L, $nines, $pos) {
+            foreach ([0, 5] as $sc) {
+                $top = Dec::parse($sc === 0 ? $nines : $nines . '.' . str_repeat('9', $sc));
+                $atCap = Dec::add($top, Dec::zero(), $pos);                   // exactly L integer digits
+                if (strlen(Dec::format($atCap)) !== $L + ($sc ? $sc + 1 : 0)) return "at the cap, scale $sc";
+                $ulp = Dec::parse($sc === 0 ? '1' : '0.' . str_repeat('0', $sc - 1) . '1');
+                try { Dec::add($atCap, $ulp, $pos); return "past the cap by add, scale $sc"; }
+                catch (SelError $e) { if ($e->code !== 'E_RANGE' || $e->line !== $pos['line'] || $e->col !== $pos['col']) return "add error {$e->code}"; }
+            }
+            if (!Dec::$lazyDigits) return true;   // the products below are GMP-sized: lazy mode only
+            $half = Dec::parse('1' . str_repeat('0', intdiv($L, 2)));
+            $ok = Dec::mul($half, Dec::parse(str_repeat('9', intdiv($L, 2))), $pos);   // 10^L - 10^(L/2): L digits
+            if (strlen(Dec::format($ok)) !== $L) return 'a product at the cap';
+            try { Dec::mul($half, $half, $pos); return 'past the cap by mul'; }
+            catch (SelError $e) { if ($e->code !== 'E_RANGE' || $e->col !== $pos['col']) return "mul error {$e->code}"; }
+            return true;
+        });
+        if ($r !== true) return "gmp=" . (int) $gmp . " lazy=" . (int) $lazy . ": $r";
+    }
+    return true;
+});
+$expect('item 1 T4: comparisons across scale gaps agree in every form', function () use ($item1Modes, $item1With, $item1Num) {
+    mt_srand(4);
+    for ($i = 0; $i < 300; $i++) {
+        $gap = [0, 1, 18, 19, 5000][mt_rand(0, 4)];
+        $a = $item1Num(mt_rand(20, 400), mt_rand(0, 20), (bool) mt_rand(0, 1));
+        $b = Dec::format(Dec::round(Dec::parse($a), Dec::parse($a)['scale'] + $gap));
+        if (mt_rand(0, 1)) { $b[strlen($b) - 1] = (string) ((int) $b[strlen($b) - 1] === 9 ? 8 : (int) $b[strlen($b) - 1] + 1); }
+        $want = $item1With(false, false, fn() => Dec::cmp(Dec::parse($a), Dec::parse($b)));
+        foreach ($item1Modes as [$gmp, $lazy]) {
+            $got = $item1With($gmp, $lazy, function () use ($a, $b) {
+                $x = Dec::add(Dec::parse($a), Dec::zero()); $y = Dec::add(Dec::parse($b), Dec::zero());
+                return [Dec::cmp($x, $y), Dec::cmp($y, $x), Dec::cmp($x, Dec::parse($b)), Dec::cmp(Dec::parse($a), $y)];
+            });
+            if ($got !== [$want, -$want, $want, $want]) return "$a vs $b gap $gap: " . json_encode($got) . " want $want";
+        }
+    }
+    return true;
+});
+$expect('item 1 T5: a chain of big products converts no digits in between', function () use ($run, $item1With) {
+    if (!extension_loaded('gmp')) return true;
+    return $item1With(true, Dec::$lazyDigits, function () use ($run) {
+        $count = function (int $k) use ($run): int {
+            Dec::$conversions = 0;
+            $run('X = A * A; Y = X; ' . str_repeat('Y = Y * X; ', $k) . 'Y > 1', ['A' => '123456789012345678901234567890']);
+            return Dec::$conversions;
+        };
+        $growth = $count(41) - $count(1);
+        // Three conversions a product before item 1 (two operands in, one result out).
+        return $growth <= 120 ? true : "$growth conversions for 40 more products";
+    });
+});
 if ($boundary) {
     fwrite(STDERR, 'PHP runtime: ' . count($boundary) . " host-boundary contract(s) broken:\n  " . implode("\n  ", $boundary) . "\n");
     exit(1);

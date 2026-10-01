@@ -319,7 +319,11 @@ impl_decimal() {
     # The oracle is a whitebox check on js/src/decimal.mjs, which the bundle
     # inlines verbatim. Running it twice would test the same code.
     js-bundle|js-bundle-min) echo "$impl: decimal core is js/src/decimal.mjs, covered above" ;;
-    php)  sel_php tools/check-decimal.php "$@" ;;
+    # Three ways (item 1): as configured, on the pure-PHP paths, and with lazy
+    # digits on and operands an earlier operation produced.
+    php)  sel_php tools/check-decimal.php "$@" \
+            && SEL_PHP_FORCE_GMP=0 sel_php tools/check-decimal.php "$@" \
+            && SEL_PHP_LAZY_OPERANDS=1 sel_php tools/check-decimal.php "$@" ;;
     cpp)  cpp/build/check-decimal "$@" ;;
     lisp) lisp/bin/check-decimal "$@" ;;
     python) PYTHONPATH="$PWD/python" python3 python/bin/check-decimal.py "$@" ;;
