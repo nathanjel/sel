@@ -606,6 +606,36 @@ about ten closure objects per plan, reclaimed at the first pass after the run;
 serves many queries over one large context can go further with `gc.freeze()`
 after loading it, which removes the context from every future full pass.
 
+**A frame keeps its names while it is pushed.** The `Context` counts the names
+its pushed frames bind (`Context.bound`, kept by `push_frame` and
+`pop_frame`), and `lookup` reads a name the count does not hold straight from
+the root, without walking the frames. A binding builtin — or a host's own,
+`define(..., binds=True)` — sets its binders' values in the frame it pushed and
+never adds a name to it afterwards; new names go in a new frame.
+`python/tests/test_binder_frames.py` checks every binding form and the
+conformance cases that bind. Do not try to resolve names at compile time from
+the binding forms instead: SPEC 7.4's three-argument `LINK` binds its
+relations' names and their lowercase, which no form lists
+(`rel.link.relation-names-bind-in-pred`).
+
+**A math plan has two executors, and they must agree.** `_interpret_math_plan`
+runs a plan step by step; once the plan has run `_PLAN_HOT` times,
+`_eval_planned` swaps in the function `_compile_math_plan` generates from the
+same steps (for plans up to `_PLAN_MAX_STEPS`). A new opcode, a moved coercion
+or a changed error position goes into both; an import-time check refuses an
+opcode the compiler cannot translate, and
+`test_a_compiled_math_plan_answers_as_the_interpreted_one` compares the two.
+Most conformance cases run a plan once and never reach the compiled tier, so
+after touching either, run the suite and `tools/check-eval-equivalence.py`
+with `_PLAN_HOT = 1` too.
+
+**The physical tree's nodes carry their evaluator.** `optimizer.bind_handlers`
+stamps `Node.ev` on every node the physical tree owns; `eval_node` uses it
+before its table (`_EVAL`). A node shared with the caller's AST has none, and
+neither has a `replaced()` copy: a rewrite that runs after binding and changes
+a node's `t`, `op` or plan must clear `ev`, or the node keeps running its old
+evaluator.
+
 **The physical tree is a function of the AST alone, in every host.** `run`
 evaluates a rewritten tree (TOP fusion, whatever a host adds), built once per
 program and kept; the data a program runs over never changes it, and

@@ -150,3 +150,40 @@ pass on both trees by design (they pin behaviour the optimisation must preserve)
 | task | decision | baseline (0.9.2) | after | growth | evidence | notes |
 |---|---|---|---|---|---|---|
 | PY-REG-1 | implemented (partial recovery; residual +11…16 % on scenarios 1–4 deferred) | scale-test scenarios 1–6 in-process CPU 2.312 / 0.043 / 1.022 / 0.065 / 0.835 / 0.881 s | 2.686 / 0.049 / 1.134 / 0.072 / 0.858 / 0.901 s (ratios 1.16 / 1.14 / 1.11 / 1.12 / 1.03 / 1.02; before the work 1.19 / 1.19 / 1.25 / 1.20 / 1.04 / 1.00) | n/a (fixed 10x dataset) | `tools/perf/python/ab_scale.py`, `ab_scale_cpu.py`, `profile_scale.py`, `profile_diff.py`; `python/tests/test_perf_regression.py` (24 tests: adoption only for read-only consumers, plain-vs-optimised equality, too-deep element refused identically with and without adoption, RECORD still copies aliased args and bounds containers, leaf clone, Args out-of-range reads); attribution table in `regression-vs-0.9.2.md` | revision 63cda0c + working tree; CPython 3.14.7; box load 2–12 from other agents (CPU time, alternating fresh processes) |
+
+# Item 2 (2026-10-01): the evaluator — four proposals verified, three applied
+
+After item 1, Python was the slowest host on Mandelbrot (374 ms; PHP 176 ms with OPcache's tracing JIT). CPython
+3.14's JIT changed nothing (380 vs 376 ms), and a sampled profile (py-spy, blocking) put 87% of a frame in
+interpreting the tree and 13% in bigint multiplication. The profile gave four proposals; each was prototyped in memory
+(an import hook over `python/sel`, nothing written) and measured A B B A, 2 warmups + 4 runs per process, every
+Mandelbrot frame `3d50a84d…`, every S1–S6 run in parity. Median ms; percentages are B against A.
+
+| step | decision | A B B A (A = the step before) | evidence | notes |
+|---|---|---|---|---|
+| T: tests first | committed green | — | `test_binder_frames.py`, `test_call_budgets.py`, awkward-operand plan test, `rel.link.relation-names-bind-in-pred` (all 7 hosts pass) | call budgets counted below `Program.run`: its recursion budget makes a call that depends on process state (2821 or 2822) |
+| P1: a name no frame binds goes straight to the root | implemented | Mandelbrot 376.7 → 331.4 (−12.0%); S1 −3.1, S2 −10.6, S3 −4.1, S4 −2.5, S5 −5.1, S6 −5.2% | `test_binder_frames.py`; conformance and 8000 fuzz programs with every lookup checked against the old frame walk | proposal 1 asked for compile-time slots; SPEC 7.4's LINK binds relation names no binding form lists, so it is done at run time. `do_top` now pushes one frame per pass: with the count, a push per element made S2–S4 2–3% slower |
+| P2: a hot math plan runs as one generated function | implemented (tiered) | Mandelbrot 329.9 → 277.9 (−15.8%); S1 −4.6, S2 +1.3, S3 +0.3, S4 −3.7, S5 −1.5, S6 −0.1% | 4 tests (compiled vs interpreted over every opcode, the tier boundary, the step cap, 8 threads); conformance, SQL cases, fuzz and `check-eval-equivalence.py` with every plan compiled | compiling costs 320–650 µs a plan and saves 1.4–3.6 µs a run (break-even 120–250 runs) and grows faster than the plan (10,000 sums: 18 s), hence `_PLAN_HOT = 256`, `_PLAN_MAX_STEPS = 256`; untiered, a one-shot plan of 100 sums took 15.8 ms against 0.4 ms. A follow-up removed a reference cycle per compiled plan |
+| P3a: a node's evaluator from a table by type | implemented | Mandelbrot 276.5 → 271.5 (−1.8%); S1 −1.6, S2 −4.1, S3 −3.6, S4 −0.0, S5 −2.5, S6 −3.7% | `test_evaluator_dispatch.py` (every parser node type has an entry; unknown type is E_SYNTAX at its node) | qualified on S3 and S6 (both B processes faster); in the prototype it was −3.3% on Mandelbrot |
+| P3b+c: the physical tree carries each node's evaluator; specialised AND/OR/compare/`$==` | implemented | Mandelbrot 271.0 → 266.8 (−1.6%); S1 −3.4, S2 −13.4, S3 −3.9, S4 −11.9, S5 −5.2, S6 −3.4% | the AST is never stamped; a tree past the depth cap runs as written; a copy has no handler and is still equal | `Node.ev` is `compare=False, repr=False`; `replaced()` does not carry it (`test_perf_node_copy.py` says so) |
+| P4: fewer Value objects | dropped | storing a fresh right-hand side without the assignment's copy: +2.6% (function-call test); −1.2% inlined, scalars only, processes overlapping; S1–S6 noise | — | the other ~11 Values a Mandelbrot iteration makes are results that must exist |
+
+**Item 2 as a whole**, 83a5af5 against the branch head, A B B A (every B process faster than every A process):
+
+| | Mandelbrot | S1 | S2 | S3 | S4 | S5 | S6 |
+|---|---|---|---|---|---|---|---|
+| before | 377.4 | 2488.6 | 44.8 | 1086.8 | 71.2 | 819.0 | 849.8 |
+| after | 265.8 | 2169.4 | 38.1 | 956.0 | 57.2 | 715.1 | 773.7 |
+| change | −29.6% | −12.8% | −14.8% | −12.0% | −19.7% | −12.7% | −9.0% |
+
+**Python calls in one warm evaluation** (`test_call_budgets.py`, CPython 3.14; lower, never raise): pixel 2808 →
+2489 (P1) → 2319 (P2) → 2253 (P3a, unchanged by P3b+c); rows 5690 → 5560 (P1) → 5360 (P3a).
+
+S2 is bimodal across Python processes (38.8 vs 46.3 ms with the same code): a verdict that rests on S2 alone needs a
+second A B B A cycle.
+
+Verification on the branch head: `python/tests` 1698 passed; conformance 2184/0 on every host (the new case
+included); SQL cases 1311/0; `tools/check-eval-equivalence.py` 2184 sources, 0 differ, also with every plan
+compiled; `tools/check-decimal.sh` (python) 104,038 cases, 0 mismatches; 12,000 fuzz programs (seeds 7, 20261001, 99)
+identical to the tree before item 2, with every plan compiled and every lookup checked; `tools/check.sh` ALL GREEN
+on the full roster with Docker databases (wall time 1489 s).
