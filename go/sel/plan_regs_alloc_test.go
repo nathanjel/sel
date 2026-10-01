@@ -9,7 +9,8 @@ import "testing"
 const planAllocVars = `ZR = 123456789012345678901234567890123456789012345.1234567890; ` +
 	`ZI = -98765432109876543210987654321098765432109876.5432109876; ` +
 	`CR = -0.5612345678; CI = 0.2666666667; ` +
-	`X = 12345678901234567890123.25; Y = -9876543210987654321.5; Z = 42.125`
+	`X = 12345678901234567890123.25; Y = -9876543210987654321.5; Z = 42.125; ` +
+	`SR = 0.1234567890123456789012345678901234567890123456789; SI = -0.9876543210987654321098765432109876543210987654321`
 
 func planAllocations(t *testing.T, expr string) float64 {
 	t.Helper()
@@ -56,5 +57,27 @@ func TestOneRunOfASmallPlanAllocationBudget(t *testing.T) {
 	}
 	if got := testing.AllocsPerRun(50, func() { prog.Run(root) }); got != 7 {
 		t.Errorf("one Run of X * Y + Z: %v allocations, budget 7", got)
+	}
+}
+
+// exprAllocations is planAllocations for any expression, planned or not.
+func exprAllocations(t *testing.T, expr string) float64 {
+	t.Helper()
+	root := NewNone()
+	if _, err := MustCompile(planAllocVars).Run(root); err != nil {
+		t.Fatal(err)
+	}
+	node := MustCompile(expr).PhysicalAST()
+	ctx := NewContext(root)
+	EvalNode(node, ctx) // warm
+	return testing.AllocsPerRun(50, func() { EvalNode(node, ctx) })
+}
+
+// Mandelbrot's escape test while z is still small: the bit lengths cannot
+// order the sum against 4.0, so the comparison brings 4.0 to the sum's scale
+// (98 fractional digits), a copy of the sum's size.
+func TestScaledComparisonAllocationBudget(t *testing.T) {
+	if got := exprAllocations(t, "SR * SR + SI * SI > 4.0"); got != 8 {
+		t.Errorf("SR * SR + SI * SI > 4.0: %v allocations, budget 8", got)
 	}
 }
