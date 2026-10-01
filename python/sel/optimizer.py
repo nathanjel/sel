@@ -824,7 +824,35 @@ def optimize_ast_logical(ast: Node, options: dict[str, Any] | None = None) -> No
 def optimize_ast_in_memory(ast: Node) -> Node:
     # The physical tree is a function of the AST alone, in every host: no
     # context, no schema. It is built once per program and kept (SEL-0049).
-    return optimize_root(ast, True, {})
+    physical = optimize_root(ast, True, {})
+    if physical is not ast:
+        bind_handlers(physical, ast)
+    return physical
+
+
+def _children(n: Node) -> tuple:
+    return (*n.args, *n.items, n.l, n.r, n.x, n.obj, n.idx, n.target, n.value)
+
+
+def bind_handlers(physical: Node, ast: Node) -> None:
+    """Stamps every node the physical tree owns with the function eval_node runs
+    it with (eval.handler_for; item 2, P3). A node it shares with the caller's
+    AST -- an assignment's target, a pipeline step's placeholder -- is never
+    written, and neither is anything below it: it takes the generic path."""
+    from .eval import handler_for
+    shared: set[int] = set()
+    stack: list = [ast]
+    while stack:
+        n = stack.pop()
+        if n is not None and id(n) not in shared:
+            shared.add(id(n))
+            stack.extend(_children(n))
+    stack = [physical]
+    while stack:
+        n = stack.pop()
+        if n is not None and id(n) not in shared and n.ev is None:
+            n.ev = handler_for(n)
+            stack.extend(_children(n))
 
 
 def optimize_ast(ast: Node) -> Node:

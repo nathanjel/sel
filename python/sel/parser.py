@@ -146,6 +146,12 @@ class Node:
     # kept elements and copies whatever it collects (optimizer.adopts_elements),
     # so FILTER hands them on as they are instead of cloning each one (PY-REG-1).
     adopt_items: bool = False
+    # Physical-tree metadata: the function eval_node runs this node with
+    # (eval.handler_for), stamped by the optimiser on the nodes its own copy
+    # holds (optimizer.bind_handlers). replaced() does not carry it -- a copy
+    # may be turned into another kind of node -- so a copy takes eval_node's
+    # generic path; and it is no part of what the node is (item 2, P3).
+    ev: Any = field(default=None, compare=False, repr=False)
 
     def replaced(self, **changes) -> 'Node':
         """A shallow copy with FIELD=VALUE overrides, like dataclasses.replace but

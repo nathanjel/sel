@@ -1,4 +1,6 @@
-"""Item 2, P3: eval_node takes a node's evaluator from a table by type (_EVAL)."""
+"""Item 2, P3: eval_node takes a node's evaluator from a table by type (_EVAL)
+and, on the optimiser's own copy of the tree, from the node itself (Node.ev,
+optimizer.bind_handlers). The caller's AST is never written."""
 import runpy
 from pathlib import Path
 
@@ -39,3 +41,33 @@ def test_a_node_of_no_known_type_is_E_SYNTAX_where_it_stands():
     with pytest.raises(SelError) as info:
         eval_node(Node('bogus', Pos(3, 4, 10)), Context())
     assert (info.value.code, info.value.line, info.value.col) == ('E_SYNTAX', 3, 4)
+
+
+def test_the_physical_tree_carries_its_handlers_and_the_ast_does_not():           # P3b
+    from sel.eval import handler_for
+    program = compile('A = LIST(1, 2); A[COUNT(A) + 1] = 3; X = A .> FILTER(_ > 1) .> MAP(_ * 2); '
+                      'MAP(X, V, V * V + 1 > 4.0 AND TRUE)')
+    program.run({})
+    assert all(n.ev is None for n in nodes(program.ast))
+    physical = nodes(program.physical_ast())
+    bound = [n for n in physical if n.ev is not None]
+    assert len(bound) > len(physical) // 2
+    assert all(n.ev is handler_for(n) for n in bound)
+
+
+def test_a_tree_past_the_depth_cap_runs_as_written():                              # P3b
+    program = compile('1' + ' + 1' * 201)
+    assert program.physical_ast() is program.ast
+    assert all(n.ev is None for n in nodes(program.ast))
+    with pytest.raises(SelError) as info:
+        program.run({})
+    assert info.value.code == 'E_DEPTH'
+
+
+def test_a_copy_does_not_carry_the_handler_and_is_still_equal():                  # P3b
+    program = compile('A * 2 > 1')
+    program.run({'A': 1})
+    node = program.physical_ast()
+    copy = node.replaced()
+    assert node.ev is not None and copy.ev is None
+    assert copy == node and repr(copy) == repr(node)

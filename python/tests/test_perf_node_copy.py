@@ -12,6 +12,11 @@ def test_replaced_carries_every_declared_field():
             setattr(n, f.name, object() if f.name != 'pos' else None)
     c = n.replaced()
     for f in dataclasses.fields(Node):
+        if f.name == 'ev':
+            # The handler bound for one physical tree (optimizer.bind_handlers)
+            # is not carried: a copy may be made into another kind of node.
+            assert c.ev is None
+            continue
         assert getattr(c, f.name) is getattr(n, f.name), f.name
 
 

@@ -225,6 +225,9 @@ def eval_node(node: Node, ctx: Context) -> Value:
         ctx.depth -= 1
         fail('E_DEPTH', 'evaluation nested too deeply', node.pos)
     try:
+        ev = node.ev
+        if ev is not None:
+            return ev(node, ctx)
         if node.math_plan is not None:
             return _eval_planned(node, ctx)
         return _EVAL.get(node.t, _eval_unknown)(node, ctx)
@@ -649,6 +652,60 @@ def _eval_binary(node: Node, ctx: Context) -> Value:
     fail('E_SYNTAX', f'unknown operator {op}', node.pos)
 
 
+def _eval_and(node: Node, ctx: Context) -> Value:
+    if not eval_node(node.l, ctx).as_bool(node.l.pos):
+        return Value.bool(False)
+    return Value.bool(eval_node(node.r, ctx).as_bool(node.r.pos))
+
+
+def _eval_or(node: Node, ctx: Context) -> Value:
+    if eval_node(node.l, ctx).as_bool(node.l.pos):
+        return Value.bool(True)
+    return Value.bool(eval_node(node.r, ctx).as_bool(node.r.pos))
+
+
+def _eval_compare(node: Node, ctx: Context) -> Value:
+    """The six numeric comparisons, exactly as _eval_binary runs them (only IN
+    carries a const_value, so the right operand is always evaluated)."""
+    l = eval_node(node.l, ctx)
+    r = eval_node(node.r, ctx)
+    a = l.as_decimal(node.l.pos); b = r.as_decimal(node.r.pos)
+    op = node.op
+    if a.scale == b.scale:
+        left = -a.digits if a.neg else a.digits
+        right = -b.digits if b.neg else b.digits
+        if op == '>':
+            return Value.bool(left > right)
+        if op == '<':
+            return Value.bool(left < right)
+        if op == '==':
+            return Value.bool(left == right)
+        if op == '!=':
+            return Value.bool(left != right)
+        if op == '>=':
+            return Value.bool(left >= right)
+        return Value.bool(left <= right)
+    return Value.bool(_compare_result(op, D.cmp(a, b), node.pos))
+
+
+def _eval_text_equal(node: Node, ctx: Context) -> Value:
+    """$== and $!=, as _eval_binary runs them."""
+    l = eval_node(node.l, ctx)
+    r = eval_node(node.r, ctx)
+    if l.kind == TEXT and r.kind == TEXT and not l.children and not r.children:
+        same = l.scalar == r.scalar
+    else:
+        a = l.as_bytes(node.l.pos); b = r.as_bytes(node.r.pos)
+        same = a == b
+    return Value.bool(same if node.op == '$==' else not same)
+
+
+_BINARY = {
+    'AND': _eval_and, 'OR': _eval_or, '$==': _eval_text_equal, '$!=': _eval_text_equal,
+    **{op: _eval_compare for op in ('==', '!=', '<', '<=', '>', '>=')},
+}
+
+
 def _compare_result(op: str, c: int, pos: Pos) -> bool:
     """The six comparisons, and nothing else.
 
@@ -829,3 +886,13 @@ _EVAL = {
     'var': _eval_var, 'index': _eval_index, 'seq': _eval_seq, 'list': _eval_list,
     'un': _eval_unary, 'bin': _eval_binary, 'assign': _eval_assign, 'call': _eval_call,
 }
+
+
+def handler_for(node: Node) -> Any:
+    """The function eval_node runs NODE with, for the optimiser to stamp on the
+    physical tree: a planned node's plan, or its type's entry in _EVAL."""
+    if node.math_plan is not None:
+        return _eval_planned
+    if node.t == 'bin':
+        return _BINARY.get(node.op, _eval_binary)
+    return _EVAL.get(node.t, _eval_unknown)
