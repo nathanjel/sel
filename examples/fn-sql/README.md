@@ -17,9 +17,9 @@ until somebody says otherwise, which is the opposite way round from most
 systems and is the whole reason the layer can be trusted. If you never map it,
 rules using it keep running in the host, exactly as they did before.
 
-## The part that is one file, not five
+## The part that is one file, not seven
 
-Unlike the function itself — five implementations that must agree — a SQL
+Unlike the function itself — seven implementations that must agree — a SQL
 mapping is **data, written once**. It lives in `sql/dialects/*.json` and
 `tools/gen-sql-map.mjs` renders it into every host's own source language. There
 is no per-host code here at all, which is why this directory has no `js.mjs`
@@ -63,4 +63,4 @@ value    → CONCAT(?, '/', ?)      bound values: t"abc", t"abc"
 
 The value is bound *twice*, and a volatile expression would be evaluated twice.
 If the argument must appear more than once and that matters, you need a builder
-— see [dialect](../dialect/), which has a working one in all five hosts.
+— see [dialect](../dialect/), which has a working one in all seven hosts.

@@ -16,6 +16,11 @@
 # rusqlite -- rust/Cargo.toml's `usage` feature), which tools/check-usage.sh
 # fetches into rust/target-usage on first use, not into the image. rusqlite
 # links the libsqlite3 below, found through pkg-config.
+#
+# Go likewise: Fedora's toolchain, and the drivers (pgx, go-sql-driver/mysql,
+# mattn/go-sqlite3 -- examples/go.usage.mod) are modules fetched into
+# go/build/usage. go-sqlite3 is built with the libsqlite3 tag, so it links the
+# same libsqlite3 rather than its own copy.
 
 FROM fedora:44
 
@@ -27,6 +32,7 @@ RUN dnf -y install --setopt=install_weak_deps=False \
         nodejs24 nodejs24-npm \
         sbcl curl ca-certificates \
         rust cargo pkgconf-pkg-config \
+        golang \
     && dnf clean all \
     && ln -sf /usr/bin/node-24 /usr/local/bin/node 2>/dev/null || true
 

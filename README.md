@@ -5,9 +5,9 @@
   </picture>
 </p>
 
-<p align="center"><b>Write a business rule once. Run it in five languages — or in your database — and get the same answer.</b></p>
+<p align="center"><b>Write a business rule once. Run it in seven languages — or in your database — and get the same answer.</b></p>
 
-<p align="center">Python · JavaScript · PHP · C++23 · Common Lisp &nbsp;|&nbsp; MariaDB · MySQL · PostgreSQL · SQLite</p>
+<p align="center">Python · JavaScript · PHP · C++23 · Common Lisp · Rust · Go &nbsp;|&nbsp; MariaDB · MySQL · PostgreSQL · SQLite</p>
 
 ---
 
@@ -22,7 +22,7 @@ COND(IS_BLANK(CUSTOMER),                   ABORT("customer is required"),
      "ok")
 ```
 
-Five independent implementations run it, held to one written specification, and
+Seven independent implementations run it, held to one written specification, and
 they agree to the byte — on the value, and on the error code and position when a
 rule fails. The browser and the server, the batch job and the API, give one
 verdict.
@@ -41,9 +41,10 @@ verdict.
   the longest exact prefix into the database and finishes the rest in memory —
   refusing, never guessing, wherever SQL would mean something else.
   [SQL conditions →](docs/usage/sql-conditions.md) · [SQL pipelines →](docs/usage/sql-pipelines.md)
-- **Easy to embed and to extend.** Python, PHP and JavaScript have no
+- **Easy to embed and to extend.** Python, PHP, JavaScript and Go have no
   dependencies; C++ is three files and a vendored regex engine; Lisp is an ASDF
-  system. An application adds its own functions with one call, and its own SQL
+  system; Rust is a crate on the regex crate (and serde_json for the SQL layer).
+  An application adds its own functions with one call, and its own SQL
   dialects and spellings the same way. [Extending SEL →](docs/extending.md)
 - **Small on purpose.** One expression per program. No loops, no user-defined
   functions, no dynamic names — so every rule terminates, and the inputs it reads
@@ -110,7 +111,7 @@ for (const auto& row : std::vector<std::pair<std::string, std::string>>{
 ```
 
 </details>
-<details>
+<details open>
 <summary>Rust</summary>
 
 <!-- from: examples/plain/rust.rs#compile -->
@@ -122,6 +123,25 @@ for (qty, price) in [("3", "19.99"), ("1", "5.00")] {
     ctx.set("PRICE", val(price), at)?;
     ctx.set("LIMIT", val("50.00"), at)?;
     println!("   QTY={qty} PRICE={price} => {}", text(&rule.run(Some(ctx))?)?);
+}
+```
+
+</details>
+<details open>
+<summary>Go</summary>
+
+<!-- from: examples/plain/go.go#compile -->
+```go
+rule, err := sel.Compile(`IF(QTY * PRICE > LIMIT, "over budget", "ok")`)
+check(err)
+for _, row := range [][2]string{{"3", "19.99"}, {"1", "5.00"}} {
+	ctx := sel.NewNone()
+	ctx.Set("QTY", sel.NewText(row[0]))
+	ctx.Set("PRICE", sel.NewText(row[1]))
+	ctx.Set("LIMIT", sel.NewText("50.00"))
+	v, err := rule.Run(ctx)
+	check(err)
+	fmt.Printf("   QTY=%s PRICE=%s => %s\n", row[0], row[1], v.AsText(at))
 }
 ```
 
@@ -142,7 +162,7 @@ for (qty, price) in [("3", "19.99"), ("1", "5.00")] {
 </details>
 <!-- /tabs -->
 
-Each of these is part of [`examples/plain`](examples/plain/), and the five print
+Each of these is part of [`examples/plain`](examples/plain/), and the seven print
 byte-identical output — which the test suite checks, on the code shown here.
 
 ## Documentation
@@ -150,7 +170,7 @@ byte-identical output — which the test suite checks, on the code shown here.
 | | |
 |---|---|
 | [Overview](docs/overview.md) | what SEL is, its principles, where it fits, what it leaves out |
-| [Parity](docs/parity.md) | how five hosts are made to agree, and how that is checked |
+| [Parity](docs/parity.md) | how seven hosts are made to agree, and how that is checked |
 | [Syntax](docs/syntax.md) · [Operators](docs/operators.md) · [Functions](docs/functions.md) | the language |
 | [Using SEL](docs/usage/README.md) | the host API; [a REPL](docs/usage/repl.md), [validation](docs/usage/validation.md), [scripting with host functions](docs/usage/scripting.md) |
 | [SEL and SQL](docs/usage/sql-conditions.md) | conditions; [pipelines](docs/usage/sql-pipelines.md) over [star](docs/usage/sql-star.md), [EAV](docs/usage/sql-eav.md), [3NF](docs/usage/sql-3nf.md), [flat](docs/usage/sql-flat.md) and [complex](docs/usage/in-memory.md) data; [reference](docs/sql.md) |
@@ -171,6 +191,13 @@ npm install sel-lang
 composer require nathanjel/sel-lang
 vcpkg install sel-lang            # or: conan install --requires sel-lang/0.9.2
 (ql:quickload :sel-lang)          # Quicklisp / Ultralisp
+```
+
+Rust and Go are not on a registry yet; take them from the repository:
+
+```sh
+cargo add sel-lang --git https://github.com/nathanjel/sel   # the crate is sel_lang
+go get github.com/nathanjel/sel/go@main                     # import .../go/sel and .../go/sel/sql
 ```
 
 In a browser, with nothing to install, from the jsDelivr (or unpkg) copy of the
@@ -200,4 +227,6 @@ tools/check.sh          # every layer, every host; prints ALL GREEN or it isn't 
 [MIT](LICENSE). Two third-party components keep their own BSD 2-Clause
 licences: **SRELL**, vendored into the C++ implementation, and **cl-ppcre**, which
 the Common Lisp system depends on; both are listed in [LICENSE](LICENSE). The
-Python, PHP and JavaScript implementations have no dependencies at all.
+Python, PHP, JavaScript and Go implementations have no dependencies at all; the
+Rust crate depends on the regex crates, and, for its SQL layer, on serde and
+serde_json.

@@ -124,6 +124,28 @@ const RULES: &[(&str, &str)] = &[
 
 </details>
 <details>
+<summary>Go</summary>
+
+<!-- from: examples/validation/go.go#rules -->
+```go
+var rules = []struct{ field, source string }{
+	{"name", `IF(IS_BLANK(NAME), ABORT("Please tell us your name"), "")`},
+	{"email", `IF(RMATCH('^[^@ ]+@[^@ ]+\.[a-z]{2,}$', TRIM(EMAIL), "i"), "",` +
+		` ABORT("{EMAIL} does not look like an e-mail address"))`},
+	{"postcode", `COND(COUNTRY $== "PL" AND NOT RMATCH('^\d{2}-\d{3}$', POSTCODE),` +
+		`       ABORT("Polish postcodes look like 00-000"),` +
+		`     COUNTRY $== "DE" AND NOT RMATCH('^\d{5}$', POSTCODE),` +
+		`       ABORT("German postcodes have five digits"),` +
+		`     "")`},
+	{"quantity", `IF(NOT ISNUM(QTY) OR QTY < 1 OR QTY > STOCK,` +
+		` ABORT("Choose between 1 and {STOCK}"), "")`},
+	{"total", `TOTAL = ROUND(QTY * PRICE * (1 - DISCOUNT), 2);` +
+		` IF(TOTAL > CREDIT_LIMIT, ABORT("{TOTAL} is over your limit of {CREDIT_LIMIT}"), "")`},
+}
+```
+
+</details>
+<details>
 <summary>Common Lisp</summary>
 
 <!-- from: examples/validation/lisp.lisp#rules -->
@@ -215,6 +237,22 @@ for (const auto& [field, source] : RULES) compiled.emplace_back(field, sel::comp
 let mut compiled = Rules::new();
 for &(field, source) in RULES {
     compiled.push((field, compile(source)?));
+}
+```
+
+</details>
+<details>
+<summary>Go</summary>
+
+<!-- from: examples/validation/go.go#compile -->
+```go
+var compiled []rule
+for _, r := range rules {
+	program, err := sel.Compile(r.source)
+	if err != nil {
+		panic(err) // a rule that does not parse fails the deployment
+	}
+	compiled = append(compiled, rule{r.field, program})
 }
 ```
 
@@ -363,6 +401,45 @@ fn validate(compiled: &mut Rules, form: &Form<'_>) -> Result<Problems, SelError>
         }
     }
     Ok(problems)
+}
+```
+
+</details>
+<details>
+<summary>Go</summary>
+
+<!-- from: examples/validation/go.go#validate -->
+```go
+type form [][2]string // field, what was typed
+type problem struct { // field, message
+	field, message string
+}
+
+func validate(compiled []rule, submitted form) []problem {
+	var problems []problem
+	for _, r := range compiled {
+		ctx := sel.NewNone()
+		for _, f := range submitted {
+			ctx.Set(f[0], sel.NewText(f[1]))
+		}
+		var verdict string
+		v, err := r.program.Run(ctx)
+		var e *sel.SelError
+		switch {
+		case err == nil:
+			verdict = v.AsText(sel.Pos{})
+		// E_ABORT is the rule speaking to the user; anything else is a broken
+		// rule or data it cannot read -- log it, show a generic line.
+		case errors.As(err, &e) && e.Code == "E_ABORT":
+			verdict = e.Message
+		case errors.As(err, &e):
+			verdict = fmt.Sprintf("could not be checked (%s)", e.Code)
+		}
+		if verdict != "" {
+			problems = append(problems, problem{r.field, verdict})
+		}
+	}
+	return problems
 }
 ```
 

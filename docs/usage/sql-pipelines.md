@@ -637,6 +637,510 @@ something other than the text PostgreSQL printed.")
 ```
 
 </details>
+<details>
+<summary>Rust</summary>
+
+<!-- from: examples/lib/db.rs#runner -->
+```rust
+pub enum Connection {
+    Postgresql(postgres::Client),
+    Mariadb(mysql::Conn),
+    Sqlite(rusqlite::Connection),
+}
+
+// "postgresql", "mariadb" or "sqlite".
+pub fn connect(dialect: &str) -> Result<Connection, DbError> {
+    if dialect == "sqlite" {
+        return Ok(Connection::Sqlite(rusqlite::Connection::open(var("SEL_DB_SQLITE_FILE")?)?));
+    }
+    let host = env::var("SEL_DB_HOST").unwrap_or_else(|_| "127.0.0.1".to_string());
+    let (user, password, name) = (var("SEL_DB_USER")?, var("SEL_DB_PASSWORD")?, var("SEL_DB_NAME")?);
+    match dialect {
+        "postgresql" => {
+            let client = postgres::Config::new()
+                .host(&host)
+                .port(var("SEL_DB_POSTGRESQL_PORT")?.parse()?)
+                .user(&user)
+                .password(&password)
+                .dbname(&name)
+                .connect(postgres::NoTls)?; // client_encoding is always UTF8
+            Ok(Connection::Postgresql(client))
+        }
+        "mariadb" => {
+            let opts = mysql::OptsBuilder::new()
+                .ip_or_hostname(Some(host))
+                .tcp_port(var("SEL_DB_MARIADB_PORT")?.parse()?)
+                .user(Some(user))
+                .pass(Some(password))
+                .db_name(Some(name))
+                .prefer_socket(false)
+                .init(vec!["SET NAMES utf8mb4"]);
+            Ok(Connection::Mariadb(mysql::Conn::new(opts)?))
+        }
+        _ => Err(format!("no runner for {dialect}").into()),
+    }
+}
+
+// The statement cut at every `?` that is a placeholder: n placeholders, n + 1
+// pieces.
+fn split_at_placeholders(sql: &str, backslash_escapes: bool) -> Vec<String> {
+    let mut pieces = vec![String::new()];
+    let mut quote: Option<char> = None;
+    let mut chars = sql.chars();
+    while let Some(c) = chars.next() {
+        let piece = pieces.last_mut().expect("never empty");
+        match quote {
+            Some('\'') if c == '\\' && backslash_escapes => {
+                piece.push(c);
+                piece.extend(chars.next());
+                continue;
+            }
+            Some(q) if c == q => quote = None,
+            Some(_) => {}
+            None if matches!(c, '\'' | '"' | '`') => quote = Some(c),
+            None if c == '?' => {
+                pieces.push(String::new());
+                continue;
+            }
+            None => {}
+        }
+        piece.push(c);
+    }
+    pieces
+}
+
+fn check_count(pieces: &[String], params: &[Value]) -> Result<(), DbError> {
+    if pieces.len() - 1 != params.len() {
+        return Err(format!("the statement has {} placeholders and {} values", pieces.len() - 1, params.len()).into());
+    }
+    Ok(())
+}
+
+// Each parameter as its text, NULL as None.
+fn texts(params: &[Value]) -> Result<Vec<Option<String>>, SelError> {
+    params.iter().map(|p| if p.is_null() { Ok(None) } else { p.as_text(Pos::default()).map(Some) }).collect()
+}
+
+// Every cell is TEXT as the database printed it, or NULL.
+fn cell(text: Option<&str>, is_float: bool) -> Result<Value, DbError> {
+    match text {
+        None => Ok(Value::null()),
+        Some(_) if is_float => Err("a float reached SEL; declare the column DECIMAL or TEXT".into()),
+        Some(text) => Ok(Value::text_owned(text.to_string())),
+    }
+}
+
+// The pieces joined again, a rendering of each parameter between them.
+fn inline(pieces: &[String], params: Vec<Option<String>>, literal: impl Fn(&str) -> String) -> String {
+    let mut sql = pieces[0].clone();
+    for (param, piece) in params.iter().zip(&pieces[1..]) {
+        sql += &param.as_deref().map_or_else(|| "NULL".to_string(), &literal);
+        sql += piece;
+    }
+    sql
+}
+
+fn query_postgresql(pg: &mut postgres::Client, sql: &str, params: &[Value]) -> Result<Value, DbError> {
+    use postgres::types::Type;
+    let pieces = split_at_placeholders(sql, false);
+    check_count(&pieces, params)?;
+    let mut numbered = pieces[0].clone();
+    for (i, piece) in pieces[1..].iter().enumerate() {
+        numbered += &format!("${}{piece}", i + 1);
+    }
+    let statement = pg.prepare(&numbered)?;
+    let floats: Vec<bool> =
+        statement.columns().iter().map(|c| *c.type_() == Type::FLOAT4 || *c.type_() == Type::FLOAT8).collect();
+    let inlined = inline(&pieces, texts(params)?, |text| {
+        format!("E'{}'", text.replace('\\', "\\\\").replace('\'', "''"))
+    });
+
+    let rows = Value::none();
+    let mut n = 0;
+    for message in pg.simple_query(&inlined)? {
+        if let postgres::SimpleQueryMessage::Row(row) = message {
+            let record = Value::none();
+            for (c, column) in row.columns().iter().enumerate() {
+                record.set(column.name(), cell(row.get(c), floats[c])?, Pos::default())?;
+            }
+            n += 1;
+            rows.set(&n.to_string(), record, Pos::default())?;
+        }
+    }
+    Ok(rows)
+}
+
+fn query_mariadb(maria: &mut mysql::Conn, sql: &str, params: &[Value]) -> Result<Value, DbError> {
+    use mysql::consts::ColumnType::{MYSQL_TYPE_DOUBLE, MYSQL_TYPE_FLOAT};
+    use mysql::prelude::Queryable;
+    let pieces = split_at_placeholders(sql, true);
+    check_count(&pieces, params)?;
+    let no_backslash_escapes = maria.no_backslash_escape();
+    let inlined = inline(&pieces, texts(params)?, |text| {
+        mysql::Value::from(text).as_sql(no_backslash_escapes)
+    });
+
+    let result = maria.query_iter(inlined)?;
+    let columns = result.columns().as_ref().to_vec();
+    let rows = Value::none();
+    let mut n = 0;
+    for row in result {
+        let row = row?;
+        let record = Value::none();
+        for (c, column) in columns.iter().enumerate() {
+            let text = match row.as_ref(c) {
+                Some(mysql::Value::Bytes(bytes)) => Some(std::str::from_utf8(bytes)?),
+                Some(mysql::Value::NULL) | None => None,
+                Some(other) => return Err(format!("the text protocol returned {other:?}").into()),
+            };
+            let is_float = matches!(column.column_type(), MYSQL_TYPE_FLOAT | MYSQL_TYPE_DOUBLE);
+            record.set(&column.name_str(), cell(text, is_float)?, Pos::default())?;
+        }
+        n += 1;
+        rows.set(&n.to_string(), record, Pos::default())?;
+    }
+    Ok(rows)
+}
+
+fn query_sqlite(lite: &rusqlite::Connection, sql: &str, params: &[Value]) -> Result<Value, DbError> {
+    use rusqlite::types::ValueRef;
+    let mut statement = lite.prepare(sql)?;
+    if statement.parameter_count() != params.len() {
+        return Err("the statement's placeholders and values do not match".into());
+    }
+    let names: Vec<String> = statement.column_names().into_iter().map(String::from).collect();
+    let mut result = statement.query(rusqlite::params_from_iter(texts(params)?))?;
+    let rows = Value::none();
+    let mut n = 0;
+    while let Some(row) = result.next()? {
+        let record = Value::none();
+        for (c, name) in names.iter().enumerate() {
+            let value = match row.get_ref(c)? {
+                ValueRef::Null => cell(None, false)?,
+                ValueRef::Integer(i) => cell(Some(&i.to_string()), false)?,
+                ValueRef::Real(r) => cell(Some(&r.to_string()), true)?,
+                ValueRef::Text(bytes) | ValueRef::Blob(bytes) => cell(Some(std::str::from_utf8(bytes)?), false)?,
+            };
+            record.set(name, value, Pos::default())?;
+        }
+        n += 1;
+        rows.set(&n.to_string(), record, Pos::default())?;
+    }
+    Ok(rows)
+}
+
+// Placeholders are `?`; params bind in order, each as its text, NULL as NULL.
+pub fn query(conn: &mut Connection, sql: &str, params: &[Value]) -> Result<Value, DbError> {
+    match conn {
+        Connection::Postgresql(pg) => query_postgresql(pg, sql, params),
+        Connection::Mariadb(maria) => query_mariadb(maria, sql, params),
+        Connection::Sqlite(lite) => query_sqlite(lite, sql, params),
+    }
+}
+
+// execute_hybrid() wants its runner's failure as a SelError, which carries a
+// catalogued code; a database's is none of them, so it travels as E_BAD_ARG
+// with the driver's message.
+pub fn runner(conn: &mut Connection) -> impl FnMut(&str, &[Value]) -> Result<Value, SelError> + '_ {
+    move |sql, params| {
+        query(conn, sql, params)
+            .map_err(|e| SelError::new("E_BAD_ARG", format!("the database refused the statement: {e}"), Pos::default()))
+    }
+}
+```
+
+</details>
+<details>
+<summary>Go</summary>
+
+<!-- from: examples/lib/db/db.go#runner -->
+```go
+// Conn is a connection to one of the three databases.
+type Conn struct {
+	pg                 *pgconn.PgConn // PostgreSQL
+	sql                *sql.DB        // MariaDB or SQLite, one connection
+	mariadb            bool
+	noBackslashEscapes bool
+}
+
+// Connect opens "postgresql", "mariadb" or "sqlite".
+func Connect(dialect string) (*Conn, error) {
+	if dialect == "sqlite" {
+		file, err := env("SEL_DB_SQLITE_FILE")
+		if err != nil {
+			return nil, err
+		}
+		lite, err := sql.Open("sqlite3", file)
+		if err != nil {
+			return nil, err
+		}
+		lite.SetMaxOpenConns(1)
+		return &Conn{sql: lite}, nil
+	}
+	host := os.Getenv("SEL_DB_HOST")
+	if host == "" {
+		host = "127.0.0.1"
+	}
+	var settings [4]string
+	for i, name := range []string{"SEL_DB_USER", "SEL_DB_PASSWORD", "SEL_DB_NAME", "SEL_DB_" + strings.ToUpper(dialect) + "_PORT"} {
+		v, err := env(name)
+		if err != nil {
+			return nil, err
+		}
+		settings[i] = v
+	}
+	user, password, name, port := settings[0], settings[1], settings[2], settings[3]
+	switch dialect {
+	case "postgresql":
+		config, err := pgconn.ParseConfig("")
+		if err != nil {
+			return nil, err
+		}
+		p, err := strconv.ParseUint(port, 10, 16)
+		if err != nil {
+			return nil, err
+		}
+		config.Host, config.Port, config.User, config.Password, config.Database = host, uint16(p), user, password, name
+		config.TLSConfig, config.Fallbacks = nil, nil // client_encoding is always UTF8
+		pg, err := pgconn.ConnectConfig(context.Background(), config)
+		if err != nil {
+			return nil, err
+		}
+		return &Conn{pg: pg}, nil
+	case "mariadb":
+		config := mysql.NewConfig()
+		config.User, config.Passwd, config.DBName = user, password, name
+		config.Net, config.Addr = "tcp", host+":"+port
+		config.Params = map[string]string{"charset": "utf8mb4"}
+		maria, err := sql.Open("mysql", config.FormatDSN())
+		if err != nil {
+			return nil, err
+		}
+		maria.SetMaxOpenConns(1)
+		var mode string
+		if err := maria.QueryRow("SELECT @@SESSION.sql_mode").Scan(&mode); err != nil {
+			return nil, err
+		}
+		return &Conn{sql: maria, mariadb: true,
+			noBackslashEscapes: strings.Contains(mode, "NO_BACKSLASH_ESCAPES")}, nil
+	}
+	return nil, fmt.Errorf("no runner for %s", dialect)
+}
+
+// Close ends the connection.
+func (c *Conn) Close() error {
+	if c.pg != nil {
+		return c.pg.Close(context.Background())
+	}
+	return c.sql.Close()
+}
+
+// splitAtPlaceholders cuts the statement at every `?` that is a placeholder:
+// n placeholders, n + 1 pieces.
+func splitAtPlaceholders(statement string, backslashEscapes bool) []string {
+	pieces := []string{""}
+	var quote rune
+	runes := []rune(statement)
+	for i := 0; i < len(runes); i++ {
+		c := runes[i]
+		last := &pieces[len(pieces)-1]
+		switch {
+		case quote == '\'' && c == '\\' && backslashEscapes && i+1 < len(runes):
+			*last += string(runes[i : i+2])
+			i++
+			continue
+		case quote != 0 && c == quote:
+			quote = 0
+		case quote == 0 && (c == '\'' || c == '"' || c == '`'):
+			quote = c
+		case quote == 0 && c == '?':
+			pieces = append(pieces, "")
+			continue
+		}
+		*last += string(c)
+	}
+	return pieces
+}
+
+// texts is each parameter's text, nil for NULL.
+func texts(params []*sel.Value) []*string {
+	out := make([]*string, len(params))
+	for i, p := range params {
+		if !p.IsNull() {
+			text := p.AsText(sel.Pos{})
+			out[i] = &text
+		}
+	}
+	return out
+}
+
+// cell is a column's value as SEL holds it: TEXT as the database printed it,
+// or NULL.
+func cell(text *string, isFloat bool) (*sel.Value, error) {
+	switch {
+	case text == nil:
+		return sel.NewNull(), nil
+	case isFloat:
+		return nil, errors.New("a float reached SEL; declare the column DECIMAL or TEXT")
+	}
+	return sel.NewText(*text), nil
+}
+
+// mariadbLiteral quotes a parameter the way mysql_real_escape_string does.
+func mariadbLiteral(text string, noBackslashEscapes bool) string {
+	if noBackslashEscapes {
+		return "'" + strings.ReplaceAll(text, "'", "''") + "'"
+	}
+	escaped := strings.NewReplacer("\\", `\\`, "'", `\'`, `"`, `\"`, "\x00", `\0`,
+		"\n", `\n`, "\r", `\r`, "\x1a", `\Z`).Replace(text)
+	return "'" + escaped + "'"
+}
+
+func queryPostgresql(pg *pgconn.PgConn, statement string, params []*sel.Value) (*sel.Value, error) {
+	pieces := splitAtPlaceholders(statement, false)
+	if len(pieces)-1 != len(params) {
+		return nil, fmt.Errorf("the statement has %d placeholders and %d values", len(pieces)-1, len(params))
+	}
+	numbered := pieces[0]
+	for i, piece := range pieces[1:] {
+		numbered += "$" + strconv.Itoa(i+1) + piece
+	}
+	values := make([][]byte, len(params))
+	for i, text := range texts(params) {
+		if text != nil {
+			values[i] = []byte(*text)
+		}
+	}
+	// No parameter types and text in both directions: PQexecParams.
+	result := pg.ExecParams(context.Background(), numbered, values, nil, nil, nil).Read()
+	if result.Err != nil {
+		return nil, result.Err
+	}
+	rows := sel.NewNone()
+	for n, row := range result.Rows {
+		record := sel.NewNone()
+		for c, column := range result.FieldDescriptions {
+			var text *string
+			if row[c] != nil {
+				s := string(row[c])
+				text = &s
+			}
+			isFloat := column.DataTypeOID == 700 || column.DataTypeOID == 701 // float4, float8
+			value, err := cell(text, isFloat)
+			if err != nil {
+				return nil, err
+			}
+			record.Set(column.Name, value)
+		}
+		rows.Set(strconv.Itoa(n+1), record)
+	}
+	return rows, nil
+}
+
+func querySQL(c *Conn, statement string, params []*sel.Value) (*sel.Value, error) {
+	var result *sql.Rows
+	var err error
+	if c.mariadb {
+		pieces := splitAtPlaceholders(statement, true)
+		if len(pieces)-1 != len(params) {
+			return nil, fmt.Errorf("the statement has %d placeholders and %d values", len(pieces)-1, len(params))
+		}
+		inlined := pieces[0]
+		for i, text := range texts(params) {
+			if text == nil {
+				inlined += "NULL"
+			} else {
+				inlined += mariadbLiteral(*text, c.noBackslashEscapes)
+			}
+			inlined += pieces[i+1]
+		}
+		result, err = c.sql.Query(inlined) // no arguments: the text protocol
+	} else {
+		args := make([]any, len(params))
+		for i, text := range texts(params) {
+			if text != nil {
+				args[i] = *text
+			}
+		}
+		result, err = c.sql.Query(statement, args...)
+	}
+	if err != nil {
+		return nil, err
+	}
+	defer result.Close()
+	columns, err := result.ColumnTypes()
+	if err != nil {
+		return nil, err
+	}
+	rows := sel.NewNone()
+	for n := 1; result.Next(); n++ {
+		raw := make([]any, len(columns))
+		for i := range raw {
+			raw[i] = new(any)
+		}
+		if err := result.Scan(raw...); err != nil {
+			return nil, err
+		}
+		record := sel.NewNone()
+		for i, column := range columns {
+			var text *string
+			isFloat := false
+			switch v := (*raw[i].(*any)).(type) {
+			case nil:
+			case []byte:
+				s := string(v)
+				text = &s
+				kind := column.DatabaseTypeName()
+				isFloat = kind == "FLOAT" || kind == "DOUBLE"
+			case string:
+				text = &v
+			case int64:
+				s := strconv.FormatInt(v, 10)
+				text = &s
+			case float64:
+				isFloat = true
+				s := ""
+				text = &s
+			case time.Time:
+				return nil, errors.New("the driver parsed a date; declare the column TEXT")
+			default:
+				return nil, fmt.Errorf("the driver returned %T", v)
+			}
+			value, err := cell(text, isFloat)
+			if err != nil {
+				return nil, err
+			}
+			record.Set(column.Name(), value)
+		}
+		rows.Set(strconv.Itoa(n), record)
+	}
+	return rows, result.Err()
+}
+
+// Query runs a statement whose placeholders are `?`; params bind in order,
+// each as its text, NULL as NULL.
+func Query(c *Conn, statement string, params []*sel.Value) (*sel.Value, error) {
+	if c.pg != nil {
+		return queryPostgresql(c.pg, statement, params)
+	}
+	return querySQL(c, statement, params)
+}
+
+// Runner is Query in the shape sql.ExecuteHybrid wants. A database's failure
+// has no SEL error code of its own, so it travels as E_BAD_ARG with the
+// driver's message.
+func Runner(c *Conn) selsql.DbRunner {
+	return func(statement string, params []*sel.Value) (*sel.Value, error) {
+		rows, err := Query(c, statement, params)
+		if err != nil {
+			return nil, &sel.SelError{Code: "E_BAD_ARG", Message: "the database refused the statement: " + err.Error()}
+		}
+		return rows, nil
+	}
+}
+```
+
+</details>
 <!-- /tabs -->
 
 Two things differ by host, and the runners show both:

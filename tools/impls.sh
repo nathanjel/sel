@@ -201,6 +201,7 @@ impl_example() {
     python) PYTHONPATH="$PWD/python" python3 "examples/$cat/python.py" "$@" ;;
     python-wheel) "$SEL_PY_WHEEL_BIN" "examples/$cat/python.py" "$@" ;;
     rust)   "rust/build/example-$cat" "$@" ;;
+    go)     "go/build/example-$cat" "$@" ;;
     *)      echo "no worked example for implementation: $impl" >&2; return 2 ;;
   esac
 }
@@ -210,7 +211,7 @@ example_impls() {
   local out=""
   for impl in $(available_impls); do
     case "$impl" in
-      js|php|cpp|lisp|python|python-wheel|rust) out="$out $impl" ;;
+      js|php|cpp|lisp|python|python-wheel|rust|go) out="$out $impl" ;;
     esac
   done
   echo "${out# }"
@@ -540,8 +541,10 @@ impl_available() {
       # *_test.go is not built into any binary in build/: editing a test must not
       # mark the Go host stale, which silently dropped it from every tool that
       # asks for two hosts (check-api.sh said "need at least two, have: js").
-      [ -n "$go_newest" ] && [ -z "$(find go -path go/build -prune -o \
-        -name '*.go' ! -name '*_test.go' -newer "$go_newest" -print -quit 2>/dev/null)" ] ;;
+      # The worked examples (examples/**/go.go, built by make into
+      # go/build/example-*) count as sources too.
+      [ -n "$go_newest" ] && [ -z "$(find go examples -path go/build -prune -o \
+        \( -name '*.go' -o -path examples/go.mod \) ! -name '*_test.go' -newer "$go_newest" -print -quit 2>/dev/null)" ] ;;
     rust)
       command -v cargo >/dev/null 2>&1 || return 1
       local rust_bin

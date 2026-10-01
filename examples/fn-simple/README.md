@@ -5,7 +5,7 @@ Worked example: `ORD_SUFFIX(n)`, returning `1st`, `2nd`, `3rd`, `4th`.
 **A function is a change to the language, not to your application.** No host
 exposes function registration as public API, and C++ has none at all —
 `sel.hpp` says so in as many words: *"The table is fixed at startup — SEL has no
-DEFUN."* That is deliberate. Five implementations exist in order to disagree
+DEFUN."* That is deliberate. Seven implementations exist in order to disagree
 with each other, and a function that lives in one of them is a function nobody
 has tested.
 
@@ -25,6 +25,7 @@ cpp/sel.cpp              implement                  → cpp.cpp
 lisp/src/builtins/*.lisp implement                  → lisp.lisp
 python/sel/builtins/*.py implement                  → python.py
 rust/src/builtins/*.rs   implement                  → rust.rs
+go/sel/builtins_*.go     implement                  → go.go
 tools/check.sh           all green, or it isn't done
 ```
 
@@ -44,4 +45,9 @@ The Args API is what makes a builtin four lines instead of twenty; see
 None of the four has an autoloader: a new file must be added to `:components`
 in `lisp/sel-lang.asd`, to `php/src/bootstrap.php`, to the imports in
 `python/sel/builtins/__init__.py`, and as a `pub mod` in
-`rust/src/builtins/mod.rs`.
+`rust/src/builtins/mod.rs`. Go needs nothing: every file of package `sel` is
+compiled, and its `init()` runs before the first program is parsed.
+
+The Go fragments are the one set that is compiled and run outside its host:
+`tools/check-go-fragments.sh` wraps each in an `init()` inside a copy of
+`go/sel`, builds the conformance runner with it and runs `cases.selt`.

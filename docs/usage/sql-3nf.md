@@ -169,6 +169,41 @@ fn schema() -> Bindings {
 
 </details>
 <details>
+<summary>Go</summary>
+
+<!-- from: examples/sql-3nf/go.go#bindings -->
+```go
+type field struct {
+	name string
+	kind sql.SqlKind
+}
+
+func relation(table, alias string, fields ...field) *sql.Binding {
+	columns := make([]sql.FieldEntry, len(fields))
+	for i, f := range fields {
+		columns[i] = sql.FieldEntry{Name: f.name,
+			Binding: sql.ColumnBinding(f.name, alias, f.kind, false, false, false, "", "", false)}
+	}
+	return sql.RelationBinding(table, alias, columns, "", "", "", false)
+}
+
+func schema() *sql.Bindings {
+	num, txt := sql.KindNum, sql.KindText
+	return sql.NewBindings(map[string]*sql.Binding{
+		"CUSTOMERS": relation("customers", "c", field{"customer_id", num}, field{"name", txt},
+			field{"email", txt}, field{"country", txt}),
+		"ORDERS": relation("orders", "o", field{"order_id", num}, field{"customer_id", num},
+			field{"status", txt}, field{"ordered_on", txt}),
+		"LINES": relation("order_lines", "l", field{"order_id", num}, field{"line_no", num},
+			field{"product_id", num}, field{"qty", num}, field{"unit_price", num}),
+		"PRODUCTS": relation("products", "p", field{"product_id", num}, field{"sku", txt},
+			field{"title", txt}, field{"category_id", num}, field{"list_price", num}),
+	})
+}
+```
+
+</details>
+<details>
 <summary>Common Lisp</summary>
 
 <!-- from: examples/sql-3nf/lisp.lisp#bindings -->
@@ -296,6 +331,23 @@ let rows = execute_hybrid(&plan, db::runner(&mut conn), plan.pure_memory.then_so
 
 </details>
 <details>
+<summary>Go</summary>
+
+<!-- from: examples/sql-3nf/go.go#run -->
+```go
+program, err := sel.Compile(read("examples/sql-3nf/" + file))
+check(err)
+plan := sql.PlanHybrid(program, "postgresql", schema, sql.Options{})
+var context *sel.Value
+if plan.PureMemory {
+	context = tables
+}
+rows, err := sql.ExecuteHybrid(plan, db.Runner(conn), context)
+check(err)
+```
+
+</details>
+<details>
 <summary>Common Lisp</summary>
 
 <!-- from: examples/sql-3nf/lisp.lisp#run -->
@@ -343,5 +395,5 @@ decimals give.
 
 The second is `hybrid`, split at the second `MAP`: the database returns each paid
 line's e-mail and amount, and the cohort, the grouping and the sums run in memory.
-The hash is SEL's `CRC32`, identical in all five hosts — the same cohort the
+The hash is SEL's `CRC32`, identical in all seven hosts — the same cohort the
 application computes wherever else it asks.

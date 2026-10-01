@@ -181,6 +181,48 @@ register_function("NOTIFY", 2, 2, |args| {
 
 </details>
 <details>
+<summary>Go</summary>
+
+<!-- from: examples/scripting/go.go#register -->
+```go
+sel.RegisterFunction("STOCK", 1, 1, func(args *sel.Args) *sel.Value {
+	sku := args.Text(0)
+	mu.Lock()
+	defer mu.Unlock()
+	return sel.NewInt(inventory[sku]) // a missing SKU reads as 0
+})
+
+sel.RegisterFunction("RESERVE", 2, 2, func(args *sel.Args) *sel.Value {
+	sku := args.Text(0)
+	qty := args.NonNegInt(1)
+	mu.Lock()
+	defer mu.Unlock()
+	left, ok := inventory[sku]
+	if !ok || left < qty {
+		return sel.NewBool(false)
+	}
+	inventory[sku] = left - qty
+	return sel.NewBool(true)
+})
+
+sel.RegisterFunction("WEIGHT", 1, 1, func(args *sel.Args) *sel.Value {
+	if w, ok := weights[args.Text(0)]; ok {
+		return sel.NewText(w)
+	}
+	return sel.NewText("0")
+})
+
+sel.RegisterFunction("NOTIFY", 2, 2, func(args *sel.Args) *sel.Value {
+	message := args.Text(0) + ": " + args.Text(1)
+	mu.Lock()
+	defer mu.Unlock()
+	outbox = append(outbox, message)
+	return sel.NewBool(true)
+})
+```
+
+</details>
+<details>
 <summary>Common Lisp</summary>
 
 <!-- from: examples/scripting/lisp.lisp#register -->
@@ -427,6 +469,56 @@ for (order, country, lines) in orders {
 
 </details>
 <details>
+<summary>Go</summary>
+
+<!-- from: examples/scripting/go.go#run -->
+```go
+// After registering: names resolve now.
+source, err := os.ReadFile("examples/scripting/fulfil.sel")
+if err != nil {
+	panic(err)
+}
+fulfil, err := sel.Compile(string(source))
+if err != nil {
+	panic(err)
+}
+
+fmt.Println("1. the script reads", strings.Join(fulfil.Dependencies(), ", "))
+fmt.Println("2. orders")
+type line struct{ sku, qty string }
+orders := []struct {
+	order, country string
+	lines          []line
+}{
+	{"A-1", "PL", []line{{"LAMP-01", "2"}, {"CHAIR-03", "1"}}},
+	{"A-2", "DE", []line{{"DESK-02", "1"}, {"CHAIR-03", "2"}}},
+	{"A-3", "PL", []line{{"LAMP-01", "3"}}},
+	{"A-4", "PL", []line{{"LAMP-01", "two"}}},
+}
+for _, o := range orders {
+	ctx := sel.NewNone()
+	ctx.Set("ORDER", sel.NewText(o.order))
+	ctx.Set("COUNTRY", sel.NewText(o.country))
+	var items []*sel.Value
+	for _, l := range o.lines {
+		item := sel.NewNone()
+		item.Set("sku", sel.NewText(l.sku))
+		item.Set("qty", sel.NewText(l.qty))
+		items = append(items, item)
+	}
+	ctx.Set("ITEMS", sel.NewList(items))
+	decision, err := fulfil.Run(ctx)
+	var e *sel.SelError
+	if errors.As(err, &e) {
+		fmt.Printf("   %s  %s at %d:%d\n", o.order, e.Code, e.Line(), e.Col())
+		continue
+	}
+	fmt.Printf("   %s  %s\n", o.order, decision.AsText(sel.Pos{}))
+}
+```
+
+</details>
+<details>
 <summary>Common Lisp</summary>
 
 <!-- from: examples/scripting/lisp.lisp#run -->
@@ -500,4 +592,4 @@ map.define('postgresql', 'funcs', 'VAT_RATE',
 The application promises that `vat_rate()` computes what its `VAT_RATE` computes;
 SEL checks the shape and marks every such fragment with the caveat
 `host-function`. [Your own functions, in SQL](sql-functions.md) is the worked
-example, with PostgreSQL stored functions and all five languages.
+example, with PostgreSQL stored functions and all seven languages.

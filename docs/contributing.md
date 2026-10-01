@@ -993,8 +993,8 @@ three rules:
   `tools/check-snippets.py` requires the block to be byte-identical to the
   region, dedented. A file with no regions — a `.sel` program, an `output.txt`
   transcript — is quoted whole. Every `examples/<category>/output.txt` is checked
-  against what all five hosts print.
-- **Code in five languages is a tab group**: `<!-- tabs -->`, then one
+  against what all seven hosts print.
+- **Code in seven languages is a tab group**: `<!-- tabs -->`, then one
   `<details><summary>Language</summary> … </details>` per language (the first
   `open`), then `<!-- /tabs -->`. GitHub shows collapsible sections; the site
   shows tabs.

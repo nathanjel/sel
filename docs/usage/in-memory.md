@@ -378,6 +378,65 @@ println!("{}", db::render(&result, "   | ")?);
 
 </details>
 <details>
+<summary>Go</summary>
+
+<!-- from: examples/sql-complex/go.go#load -->
+```go
+num, txt := sql.KindNum, sql.KindText
+schema := sql.NewBindings(map[string]*sql.Binding{
+	"TEAMS":     relation("teams", "g", field{"team_id", num}, field{"team", txt}),
+	"CUSTOMERS": relation("customers", "c", field{"customer_id", num}, field{"customer", txt}, field{"plan", txt}),
+	"SLA": relation("sla", "s", field{"plan", txt}, field{"priority", txt},
+		field{"respond_within", num}, field{"resolve_within", num}),
+	"TICKETS": relation("tickets", "t", field{"ticket_id", num}, field{"customer_id", num},
+		field{"team_id", num}, field{"priority", txt}, field{"subject", txt},
+		field{"opened_at", num}, field{"closed_at", num}),
+	"EVENTS": relation("events", "e", field{"event_id", num}, field{"ticket_id", num},
+		field{"seq", num}, field{"at", num}, field{"kind", txt}, field{"actor", txt}),
+})
+keys := map[string]string{
+	"TEAMS": "team_id", "CUSTOMERS": "customer_id", "SLA": "plan",
+	"TICKETS": "ticket_id", "EVENTS": "event_id",
+}
+
+report, err := sel.Compile(read("tickets-report.sel"))
+check(err)
+plan := sql.PlanHybrid(report, "postgresql", schema, sql.Options{})
+fmt.Println("1. the report, planned for PostgreSQL")
+shape := "pushed down"
+if plan.PureMemory {
+	shape = "pure_memory"
+}
+fmt.Println("   plan       ", shape)
+fmt.Println("   reads      ", strings.Join(plan.SourceTables, ", "))
+
+fmt.Println("2. so SQL only loads the tables it reads")
+conn, err := db.Connect("postgresql")
+check(err)
+defer conn.Close()
+tables := sel.NewNone()
+for _, name := range report.Dependencies() {
+	load, err := sel.Compile(fmt.Sprintf(`%s .> SORT_BY(_["%s"])`, name, keys[name]))
+	check(err)
+	statement, err := sql.TranslateStatement(load, "postgresql", schema, sql.Options{})
+	check(err)
+	text := statement.AsStatement(sql.ModeInline)
+	rows, err := db.Query(conn, text, nil)
+	check(err)
+	fmt.Printf("   %-10s  %3d rows  %s\n", name, rows.Size(), text)
+	tables.Set(name, rows)
+}
+
+fmt.Println("3. and SEL computes the report over them")
+result, err := report.Run(tables)
+check(err)
+rendered, err := db.Render(result, "   | ")
+check(err)
+fmt.Println(rendered)
+```
+
+</details>
+<details>
 <summary>Common Lisp</summary>
 
 <!-- from: examples/sql-complex/lisp.lisp#load -->
@@ -541,6 +600,29 @@ for name in data.keys() {
 let mut report = compile(&read("tickets-report.sel")?)?;
 println!("2. the report");
 println!("{}", render(&report.run(Some(data))?, "   | ")?);
+```
+
+</details>
+<details>
+<summary>Go</summary>
+
+<!-- from: examples/memory-complex/go.go#generate -->
+```go
+data, err := sel.Eval(read("tickets-generate.sel"), nil)
+check(err)
+fmt.Println("1. generated in memory")
+for _, name := range data.Keys() {
+	fmt.Printf("   %-10s  %3d rows\n", name, data.Get(name).Size())
+}
+
+report, err := sel.Compile(read("tickets-report.sel"))
+check(err)
+fmt.Println("2. the report")
+rows, err := report.Run(data)
+check(err)
+text, err := db.Render(rows, "   | ")
+check(err)
+fmt.Println(text)
 ```
 
 </details>

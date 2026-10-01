@@ -198,6 +198,39 @@ let rows = if let Some(condition) = &condition {
 
 </details>
 <details>
+<summary>Go</summary>
+
+<!-- from: examples/sql-conditions/go.go#naive -->
+```go
+rule, err := sel.Compile(source)
+check(err)
+columns := map[string]*sql.Binding{}
+for _, name := range rule.Dependencies() {
+	columns[name] = sql.ColumnBinding(strings.ToLower(name), "", sql.KindUnknown,
+		false, false, false, "", "", false)
+}
+bindings := sql.NewBindings(columns)
+condition := sql.TryTranslate(rule, dialect, bindings, sql.Options{})
+var rows *sel.Value
+if condition != nil {
+	query := "SELECT id FROM customers WHERE " + condition.AsCondition(sql.ModeParams) + " ORDER BY id"
+	rows, err = db.Query(conn, query, condition.Bindings())
+	check(err)
+} else {
+	// refused: the rule stays in the application, over rows it loads
+	rows = sel.NewNone()
+	for _, row := range everyone.Entries() {
+		keep, err := rule.Run(contextOf(row.Val))
+		check(err)
+		if keep.AsBool(at) {
+			rows.Set(row.Key, row.Val)
+		}
+	}
+}
+```
+
+</details>
+<details>
 <summary>Common Lisp</summary>
 
 <!-- from: examples/sql-conditions/lisp.lisp#naive -->
@@ -369,6 +402,33 @@ let bindings = Bindings::new(Some(HashMap::from([
 
 </details>
 <details>
+<summary>Go</summary>
+
+<!-- from: examples/sql-conditions/go.go#involved -->
+```go
+// sql.ColumnBinding's arguments are all positional; these are the four that vary.
+column := func(name, table string, kind sql.SqlKind, exact bool) *sql.Binding {
+	return sql.ColumnBinding(name, table, kind, exact, false, false, "", "", false)
+}
+num, txt := sql.KindNum, sql.KindText
+bindings := sql.NewBindings(map[string]*sql.Binding{
+	"STATUS":  column("status", "o", txt, true),
+	"TOTAL":   column("total", "o", num, false),
+	"CHANNEL": column("channel", "o", txt, true),
+	"TAGS": sql.ColumnsBinding([]*sql.Binding{column("tag1", "o", txt, false),
+		column("tag2", "o", txt, false),
+		column("tag3", "o", txt, false)}),
+	"ITEMS": sql.RelationBinding("order_items", "i", []sql.FieldEntry{
+		{Name: "sku", Binding: column("sku", "i", txt, false)},
+		{Name: "qty", Binding: column("qty", "i", num, false)},
+		{Name: "price", Binding: column("price", "i", num, false)},
+	}, "" /* scalar */, `"i"."order_id" = "o"."id"` /* correlate */, "", false),
+	"MIN_TOTAL": sql.ValueBinding(sel.NewText("100.00"), nil),
+})
+```
+
+</details>
+<details>
 <summary>Common Lisp</summary>
 
 <!-- from: examples/sql-conditions/lisp.lisp#involved -->
@@ -470,6 +530,21 @@ let mut rule = compile(source)?;
 let condition = translate(&rule, "postgresql", Some(&bindings), Options::default())?;
 let sql = format!("SELECT id FROM orders o WHERE {} ORDER BY id", condition.as_condition(Mode::Params)?);
 let rows = db::query(&mut conn, &sql, &condition.bindings())?;
+```
+
+</details>
+<details>
+<summary>Go</summary>
+
+<!-- from: examples/sql-conditions/go.go#involved-run -->
+```go
+rule, err := sel.Compile(source)
+check(err)
+condition, err := sql.Translate(rule, "postgresql", bindings, sql.Options{})
+check(err)
+query := "SELECT id FROM orders o WHERE " + condition.AsCondition(sql.ModeParams) + " ORDER BY id"
+rows, err := db.Query(conn, query, condition.Bindings())
+check(err)
 ```
 
 </details>

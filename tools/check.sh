@@ -222,12 +222,15 @@ step "regex ambiguity reference" bash -c "python3 tools/regex-ambiguity-ref.py -
 step "host SQL API parity" ./tools/check-sqlapi.sh
 step "documentation examples" ./tools/check-docs.sh
 step "worked examples, every host" ./tools/check-examples.sh
+# The Go builtin fragments the reference examples quote, compiled into go/sel
+# and run against their cases.
+case " $IMPLS " in *" go "*) step "Go builtin fragments" sel_slot ./tools/check-go-fragments.sh ;; esac
 step "documentation quotes" sel_slot ./tools/check-snippets.py
 # The site's build without its output: every page in docs/nav.json renders, and
 # every relative link and #anchor in the Markdown resolves -- on GitHub as much
 # as in the site.
 step "documentation links" sel_slot node tools/build-docs.mjs --check
-# The SQL examples the documentation quotes, in all five hosts against real
+# The SQL examples the documentation quotes, in all seven hosts against real
 # PostgreSQL, MariaDB and SQLite, in tools/usage.Dockerfile's image (built on
 # first use). Its own servers, so it needs no share of the db lock.
 step "usage examples, real databases" ./tools/check-usage.sh

@@ -131,6 +131,35 @@ fn schema() -> Bindings {
 
 </details>
 <details>
+<summary>Go</summary>
+
+<!-- from: examples/sql-eav/go.go#bindings -->
+```go
+type field struct {
+	name string
+	kind sql.SqlKind
+}
+
+func relation(table, alias string, fields ...field) *sql.Binding {
+	columns := make([]sql.FieldEntry, len(fields))
+	for i, f := range fields {
+		columns[i] = sql.FieldEntry{Name: f.name,
+			Binding: sql.ColumnBinding(f.name, alias, f.kind, false, false, false, "", "", false)}
+	}
+	return sql.RelationBinding(table, alias, columns, "", "", "", false)
+}
+
+func schema() *sql.Bindings {
+	num, txt := sql.KindNum, sql.KindText
+	return sql.NewBindings(map[string]*sql.Binding{
+		"PRODUCTS": relation("entities", "e", field{"id", num}, field{"sku", txt}, field{"kind", txt}),
+		"ATTRS":    relation("attributes", "a", field{"entity_id", num}, field{"name", txt}, field{"value", txt}),
+	})
+}
+```
+
+</details>
+<details>
 <summary>Common Lisp</summary>
 
 <!-- from: examples/sql-eav/lisp.lisp#bindings -->
@@ -258,6 +287,23 @@ const sel::Value rows = Sql::execute_hybrid(plan, db::runner(conn),
 let mut program = compile(&read(&format!("examples/sql-eav/{file}"))?)?;
 let plan = plan_hybrid(&program, "sqlite", Some(&schema), Options::default());
 let rows = execute_hybrid(&plan, db::runner(&mut conn), plan.pure_memory.then_some(&tables))?;
+```
+
+</details>
+<details>
+<summary>Go</summary>
+
+<!-- from: examples/sql-eav/go.go#run -->
+```go
+program, err := sel.Compile(read("examples/sql-eav/" + file))
+check(err)
+plan := sql.PlanHybrid(program, "sqlite", schema, sql.Options{})
+var context *sel.Value
+if plan.PureMemory {
+	context = tables
+}
+rows, err := sql.ExecuteHybrid(plan, db.Runner(conn), context)
+check(err)
 ```
 
 </details>

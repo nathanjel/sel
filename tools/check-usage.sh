@@ -10,8 +10,9 @@
 #
 # WHY A LANE OF ITS OWN. tools/check-examples.sh runs examples that need nothing
 # but the host. These need PostgreSQL, MariaDB and SQLite, and a driver for each
-# in each of six languages -- libpq and libmariadb for C++, postmodern and
-# cl-mysql for Lisp, three crates for Rust -- which no development box is
+# in each of seven languages -- libpq and libmariadb for C++, postmodern and
+# cl-mysql for Lisp, three crates for Rust, three modules for Go -- which no
+# development box is
 # expected to carry. So the drivers live in one image (tools/usage.Dockerfile,
 # built here when missing), the servers are pinned throwaway containers like
 # tools/oracle-db.sh's, and the repository is bind-mounted so the image never
@@ -19,7 +20,7 @@
 #
 # Every example checks itself as well: it prints whether the rows the database
 # returned are the rows the same program computes in memory. The diff here is
-# the other half -- that six hosts, their drivers each, print the same bytes.
+# the other half -- that seven hosts, their drivers each, print the same bytes.
 #
 # Each category gets its own database, sel_<category>, loaded from its
 # seed.<dialect>.sql; the examples find it through SEL_DB_* (examples/lib/db.*).
@@ -30,7 +31,7 @@ set -uo pipefail
 cd "$(dirname "$0")/.."
 ROOT="$PWD"
 IMAGE="${SEL_USAGE_IMAGE:-sel-usage:local}"
-HOSTS="python js php cpp lisp rust"
+HOSTS="python js php cpp lisp rust go"
 
 # --- inside the image ------------------------------------------------------------
 # Runs the hosts for each category, in parallel, and diffs them. Invoked by the
@@ -55,6 +56,23 @@ if [ "${1:-}" = "--inside" ]; then
     tail -20 "$WORK/cargo.log" | sed 's/^/       /'
     exit 1
   fi
+  # Go likewise: the drivers are modules (examples/go.usage.mod, `-tags usage`),
+  # fetched once and kept. Everything goes under go/build/usage -- binaries, module
+  # cache, build cache -- which the Go host's freshness check and go/Makefile
+  # already leave out (a cache under go/ would be thousands of "sources" newer
+  # than the build); -modcacherw so `make clean` can remove it. go-sqlite3 links
+  # the image's libsqlite3 (the libsqlite3 tag), as every other host's driver does.
+  export GOMODCACHE="$ROOT/go/build/usage/mod" GOCACHE="$ROOT/go/build/usage/cache" \
+         GOFLAGS=-modcacherw GOTOOLCHAIN=local
+  mkdir -p go/build/usage
+  for c in "$@"; do
+    if ! (cd examples && go build -modfile=go.usage.mod -tags usage,libsqlite3 \
+          -o "$ROOT/go/build/usage/example-$c" "./$c/go.go") >> "$WORK/go.log" 2>&1; then
+      echo "FAIL the Go examples do not build:"
+      tail -20 "$WORK/go.log" | sed 's/^/       /'
+      exit 1
+    fi
+  done
   for cat in "$@"; do
     export SEL_DB_NAME="sel_${cat//-/_}"
     export SEL_DB_SQLITE_FILE="$WORK/$SEL_DB_NAME.sqlite"
@@ -69,6 +87,7 @@ if [ "${1:-}" = "--inside" ]; then
         php)    cmd=(php "examples/$cat/php.php") ;;
         cpp)    cmd=("cpp/build-usage/example-$cat") ;;
         rust)   cmd=("rust/target-usage/release/examples/$cat") ;;
+        go)     cmd=("go/build/usage/example-$cat") ;;
         lisp)   cmd=(sbcl --noinform --disable-debugger --non-interactive
                      --load lisp/bin/boot.lisp --load "examples/$cat/lisp.lisp"
                      --eval '(sel-example:main)') ;;

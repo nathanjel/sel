@@ -1,7 +1,7 @@
 # Overview
 
 **SEL — the Simple Expression Language — is a small language for business
-rules, with five implementations that give the same answer.**
+rules, with seven implementations that give the same answer.**
 
 A rule is a piece of text:
 
@@ -13,7 +13,7 @@ COND(IS_BLANK(CUSTOMER),                   ABORT("customer is required"),
      "ok")
 ```
 
-Python, JavaScript, PHP, C++23 and Common Lisp each run it, and each gives the
+Python, JavaScript, PHP, C++23, Common Lisp, Rust and Go each run it, and each gives the
 same answer — the same value, or the same error code at the same line and
 column. The same rule can also run *inside a database*: it compiles to a SQL
 condition, and a pipeline of steps compiles to a whole `SELECT`, for MariaDB,
@@ -131,7 +131,7 @@ and the same everywhere.
 
 **Values alias, assignment copies.** A value is a reference while an expression
 works on it and a copy once it is stored, the same way in every host. That is a
-rule of the language, not an accident of five object models, and it is what
+rule of the language, not an accident of seven object models, and it is what
 makes an assignment land where it says it lands:
 
 ```sel

@@ -1,8 +1,8 @@
 # Examples
 
-Every directory here is one program written five times — `python.py`,
-`js.mjs`, `php.php`, `cpp.cpp`, `lisp.lisp` — and the five print byte-identical
-output, recorded in `output.txt`. The test suite runs them all and compares them,
+Every directory here is one program written seven times — `python.py`,
+`js.mjs`, `php.php`, `cpp.cpp`, `lisp.lisp`, `rust.rs`, `go.go` — and the seven
+print byte-identical output, recorded in `output.txt`. The test suite runs them all and compares them,
 so the code the documentation quotes is code that runs.
 
 | Directory | What it shows | Documented in |
@@ -43,3 +43,15 @@ with `make -C cpp BUILD=build-usage build-usage/example-<dir>`. The Rust ones
 `rust/build/example-<dir>`; the database ones need the drivers behind the crate's
 `usage` feature (`examples/lib/db.rs`), and the lane builds them in that image
 into `rust/target-usage`.
+
+The Go ones (`go.go`) are a module of their own, [`go.mod`](go.mod), which uses
+the library in `../go`; `make -C go examples` builds them into
+`go/build/example-<dir>`. Each is built by file name
+(`cd examples && go build ./plain/go.go`), because a directory also holds
+`cpp.cpp`, which Go would take for a cgo source. The database ones import
+[`lib/db`](lib/db/) — a directory of its own for the same reason — whose
+drivers are listed in [`go.usage.mod`](go.usage.mod), not `go.mod`, so the
+others build offline; the lane builds them in the image with
+`go build -modfile=go.usage.mod -tags usage,libsqlite3`. The `fn-*` fragments
+are compiled into a copy of `go/sel` and run against their cases by
+`tools/check-go-fragments.sh`.

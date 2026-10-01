@@ -1,13 +1,13 @@
 # How parity is achieved and guaranteed
 
-Five implementations giving the same answer is the whole product. This page is
+Seven implementations giving the same answer is the whole product. This page is
 how that is arranged, and how it is checked on every change. The contributor's
 side of it — the order of work and the traps each host has fallen into — is in
 [Contributing](contributing.md).
 
 - [The rule](#the-rule)
 - [Achieving it: never use the host's idea of anything the language defines](#achieving-it-never-use-the-hosts-idea-of-anything-the-language-defines)
-- [Authored once, rendered five times](#authored-once-rendered-five-times)
+- [Authored once, rendered seven times](#authored-once-rendered-seven-times)
 - [Guaranteeing it: the gate](#guaranteeing-it-the-gate)
 - [What a new implementation has to pass](#what-a-new-implementation-has-to-pass)
 
@@ -105,7 +105,7 @@ and `NULL`-aware shapes for the aggregates — and is refused otherwise. What a
 database may still do differently, it says as a *caveat* on the result.
 [SEL and SQL](sql.md) has the details.
 
-## Authored once, rendered five times
+## Authored once, rendered seven times
 
 What can be data is written once and generated into each host's own source
 language. The renderings are committed — a PHP or C++ user never needs Node —
@@ -155,7 +155,8 @@ digit — each time a disagreement no one had thought to write a test for.
 
 ## What a new implementation has to pass
 
-A sixth host — Rust, Go, Java — is finished when it passes the same gate.
+An eighth host — Java, say — is finished when it passes the same gate, as Rust
+and Go, the sixth and seventh, did.
 `tools/impls.sh` is where it registers, and [the harness](../tools/README.md)
 describes the entry points it provides: a conformance runner, a batch runner for
 the fuzzer and the documentation, an API probe, and the worked examples in its

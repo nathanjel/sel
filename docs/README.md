@@ -1,7 +1,7 @@
 # SEL documentation
 
-SEL is a small expression language for business rules with five
-implementations — Python, JavaScript, PHP, C++23 and Common Lisp — that give the
+SEL is a small expression language for business rules with seven
+implementations — Python, JavaScript, PHP, C++23, Common Lisp, Rust and Go — that give the
 same answer, in memory or translated for a database. Start wherever your
 question is.
 
@@ -10,7 +10,7 @@ question is.
 | If you want to… | Read |
 |---|---|
 | know what SEL is and why it is shaped this way | [Overview](overview.md) |
-| trust that five hosts really agree | [How parity is achieved and guaranteed](parity.md) |
+| trust that seven hosts really agree | [How parity is achieved and guaranteed](parity.md) |
 | write rules | [Syntax](syntax.md) → [Operators](operators.md) → [Functions](functions.md) |
 | call SEL from an application | [Using SEL](usage/README.md), then [Validation](usage/validation.md) or [Scripting](usage/scripting.md) |
 | filter rows in a database with a rule | [SQL conditions](usage/sql-conditions.md) |
@@ -37,7 +37,7 @@ question is.
 - [Functions](functions.md) — control, aggregates, sorting, grouping, slicing,
   joins, null safety, text, numbers, binary, regular expressions
 
-**Using SEL** — every snippet in five languages, quoted from programs the test
+**Using SEL** — every snippet in seven languages, quoted from programs the test
 suite runs
 
 - [Using SEL](usage/README.md) — installing; the host API in one page
@@ -67,7 +67,7 @@ suite runs
   spellings, and how a builtin joins the language
 - [Contributing](contributing.md) — the order of work, the argument and value
   APIs, operators, conformance cases, the traps each host has fallen into, the
-  checks, a sixth host
+  checks, a new host
 
 **Reference**
 
@@ -87,7 +87,7 @@ suite runs
 ## Two ways to read this
 
 These pages are Markdown, and read well on GitHub. The same pages are also a
-styled site — language tabs instead of five stacked code blocks, a navigation
+styled site — language tabs instead of seven stacked code blocks, a navigation
 sidebar, dark mode:
 
 ```sh
@@ -95,7 +95,7 @@ node tools/build-docs.mjs --serve 8080      # needs `npm install` once
 docker build -f docs/Dockerfile -t sel-docs . && docker run --rm -p 8080:80 sel-docs
 ```
 
-Every `expr  => result` example on these pages is executed by all five
+Every `expr  => result` example on these pages is executed by all seven
 implementations, every code block quoted from `examples/` is compared with the
 file it came from, and every link is checked — the documentation is part of the
 test suite.

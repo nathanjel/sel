@@ -7,7 +7,7 @@ costs:
 |---|---|---|---|
 | [Host functions](#host-functions) | an application | the application's own code, at start-up | one call per function, in one language |
 | [Extending the SQL layer](#extending-the-sql-layer) | an application | the application's own code, at start-up | one call per difference from a shipped dialect |
-| [A builtin for everyone](#a-builtin-for-everyone) | a contributor | the specification, the suite and all five hosts | a change to the language |
+| [A builtin for everyone](#a-builtin-for-everyone) | a contributor | the specification, the suite and all seven hosts | a change to the language |
 
 The first two change nothing about SEL and need no one's agreement. The third is
 how SEL itself grows — and why it grows slowly.
@@ -182,6 +182,48 @@ register_function("NOTIFY", 2, 2, |args| {
 
 </details>
 <details>
+<summary>Go</summary>
+
+<!-- from: examples/scripting/go.go#register -->
+```go
+sel.RegisterFunction("STOCK", 1, 1, func(args *sel.Args) *sel.Value {
+	sku := args.Text(0)
+	mu.Lock()
+	defer mu.Unlock()
+	return sel.NewInt(inventory[sku]) // a missing SKU reads as 0
+})
+
+sel.RegisterFunction("RESERVE", 2, 2, func(args *sel.Args) *sel.Value {
+	sku := args.Text(0)
+	qty := args.NonNegInt(1)
+	mu.Lock()
+	defer mu.Unlock()
+	left, ok := inventory[sku]
+	if !ok || left < qty {
+		return sel.NewBool(false)
+	}
+	inventory[sku] = left - qty
+	return sel.NewBool(true)
+})
+
+sel.RegisterFunction("WEIGHT", 1, 1, func(args *sel.Args) *sel.Value {
+	if w, ok := weights[args.Text(0)]; ok {
+		return sel.NewText(w)
+	}
+	return sel.NewText("0")
+})
+
+sel.RegisterFunction("NOTIFY", 2, 2, func(args *sel.Args) *sel.Value {
+	message := args.Text(0) + ": " + args.Text(1)
+	mu.Lock()
+	defer mu.Unlock()
+	outbox = append(outbox, message)
+	return sel.NewBool(true)
+})
+```
+
+</details>
+<details>
 <summary>Common Lisp</summary>
 
 <!-- from: examples/scripting/lisp.lisp#register -->
@@ -344,6 +386,25 @@ define("postgresql", "funcs", "HAS_TAG",
 
 </details>
 <details>
+<summary>Go</summary>
+
+<!-- from: examples/sql-functions/go.go#spell -->
+```go
+sql.Define("postgresql", "funcs", "SLUG",
+	map[string]any{"tpl": "slug({0})", "ret": "TEXT", "args": []string{"TEXT"}})
+sql.Define("postgresql", "funcs", "MARGIN_PCT",
+	map[string]any{"tpl": "margin_pct({0}, {1})", "ret": "NUM", "args": []string{"NUM", "NUM"}})
+sql.Define("postgresql", "funcs", "VAT_RATE",
+	map[string]any{"tpl": "vat_rate({0}, {1})", "ret": "NUM", "args": []string{"TEXT", "TEXT"}})
+sql.Define("postgresql", "funcs", "SHIPPING_COST",
+	map[string]any{"tpl": "shipping_cost({0}, {1})", "ret": "NUM", "args": []string{"NUM", "TEXT"}})
+sql.Define("postgresql", "funcs", "HAS_TAG",
+	map[string]any{"tpl": "({1} = ANY(ARRAY[{0}]))", "ret": "BOOL", "args": []string{"LIST", "TEXT"}})
+// WORDS returns a list: no spelling can say that, so it has none.
+```
+
+</details>
+<details>
 <summary>Common Lisp</summary>
 
 <!-- from: examples/sql-functions/lisp.lisp#spell -->
@@ -474,6 +535,24 @@ println!("   pg-libpq     => {}", sql_in("pg-libpq")?);
 
 </details>
 <details>
+<summary>Go</summary>
+
+<!-- from: examples/dialect/go.go#flavour -->
+```go
+sql.DefineDialect("pg-libpq", map[string]any{
+	"extends": "postgresql",
+	"version": "15",
+	"target":  true,                                  // a base is not a target; this is a server
+	"lexical": map[string]any{"placeholder": "${n}"}, // libpq numbers its parameters
+})
+fmt.Println("   targets      =>", strings.Join(sql.Dialects(), " "))
+fmt.Println("   chain        =>", strings.Join(sql.Chain("pg-libpq"), " -> "))
+fmt.Println("   base         =>", sqlIn("postgresql"))
+fmt.Println("   pg-libpq     =>", sqlIn("pg-libpq"))
+```
+
+</details>
+<details>
 <summary>Common Lisp</summary>
 
 <!-- from: examples/dialect/lisp.lisp#flavour -->
@@ -556,6 +635,18 @@ std::cout << "   upper        => " << upper << "\n";
 sql::define("pg-libpq", "funcs", "UPPER", &json!({ "tpl": "UPPER({0} COLLATE \"C\")", "ret": "TEXT" }));
 let upper = sql::translate(&compile("UPPER(NAME)")?, "pg-libpq", Some(&bindings), Options::default())?;
 println!("   upper        => {}", upper.as_value(Mode::Inline)?);
+```
+
+</details>
+<details>
+<summary>Go</summary>
+
+<!-- from: examples/dialect/go.go#respell -->
+```go
+sql.Define("pg-libpq", "funcs", "UPPER", map[string]any{"tpl": `UPPER({0} COLLATE "C")`, "ret": "TEXT"})
+upper, err := sql.Translate(sel.MustCompile("UPPER(NAME)"), "pg-libpq", bindings, sql.Options{})
+check(err)
+fmt.Println("   upper        =>", upper.AsValue(sql.ModeInline))
 ```
 
 </details>
@@ -660,6 +751,23 @@ for dialect in ["postgresql", "pg-libpq"] {
 
 </details>
 <details>
+<summary>Go</summary>
+
+<!-- from: examples/dialect/go.go#withdraw -->
+```go
+sql.Define("pg-libpq", "funcs", "RMATCH", nil)
+re := sel.MustCompile("RMATCH('^a', NAME)")
+for _, dialect := range []string{"postgresql", "pg-libpq"} {
+	answer := "translated"
+	if sql.TryTranslate(re, dialect, bindings, sql.Options{}) == nil {
+		answer = "refused"
+	}
+	fmt.Printf("   %-12s => %s\n", dialect, answer)
+}
+```
+
+</details>
+<details>
 <summary>Common Lisp</summary>
 
 <!-- from: examples/dialect/lisp.lisp#withdraw -->
@@ -759,6 +867,23 @@ println!("   len          => {}", len_sql.as_value(Mode::Inline)?);
 
 </details>
 <details>
+<summary>Go</summary>
+
+<!-- from: examples/dialect/go.go#builder -->
+```go
+sql.DefineBuilder("pg-libpq", "funcs", "LEN", func(emit *sql.Emit, args []*sql.Fragment, _ sel.Pos) *sql.Fragment {
+	parts := []sql.Part{{Sql: "length("}}
+	parts = append(parts, args[0].Parts...)
+	parts = append(parts, sql.Part{Sql: ")"})
+	return sql.NewFragment(parts, sql.KindNum, emit.Dialect(), nil, nil, nil)
+})
+length, err := sql.Translate(sel.MustCompile("LEN(NAME)"), "pg-libpq", bindings, sql.Options{})
+check(err)
+fmt.Println("   len          =>", length.AsValue(sql.ModeInline))
+```
+
+</details>
+<details>
 <summary>Common Lisp</summary>
 
 <!-- from: examples/dialect/lisp.lisp#builder -->
@@ -786,7 +911,7 @@ registration — worth calling between tests.
 
 ## A builtin for everyone
 
-A function in SEL itself is a change to the language, and it arrives in all five
+A function in SEL itself is a change to the language, and it arrives in all seven
 hosts at once or not at all — a function in one host is a function nobody has
 compared with anything. The order of work:
 
@@ -802,11 +927,11 @@ tools/check.sh                            ALL GREEN, or it isn't done
 Most functions are **strict** — they receive values, and the argument accessor
 does the arity, type and position work, so a function is a few lines per host.
 A function that must *not* evaluate something — a branch, a body per element —
-is **lazy** and receives syntax. Both are worked end to end, in all five hosts, in
+is **lazy** and receives syntax. Both are worked end to end, in all seven hosts, in
 [Contributing](contributing.md#adding-a-function), with the reference fragments in
 [`examples/fn-simple`](../examples/fn-simple/) and
 [`examples/fn-complex`](../examples/fn-complex/); giving a builtin a SQL spelling
 is [`examples/fn-sql`](../examples/fn-sql/).
 
-Adding an operator, and adding a sixth host, are in
+Adding an operator, and adding a new host, are in
 [Contributing](contributing.md) too.

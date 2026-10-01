@@ -150,6 +150,39 @@ fn schema() -> Bindings {
 
 </details>
 <details>
+<summary>Go</summary>
+
+<!-- from: examples/sql-flat/go.go#bindings -->
+```go
+type field struct {
+	name string
+	kind sql.SqlKind
+}
+
+func relation(table, alias string, fields ...field) *sql.Binding {
+	columns := make([]sql.FieldEntry, len(fields))
+	for i, f := range fields {
+		columns[i] = sql.FieldEntry{Name: f.name,
+			Binding: sql.ColumnBinding(f.name, alias, f.kind, false, false, false, "", "", false)}
+	}
+	return sql.RelationBinding(table, alias, columns, "", "", "", false)
+}
+
+func schema() *sql.Bindings {
+	num, txt := sql.KindNum, sql.KindText
+	return sql.NewBindings(map[string]*sql.Binding{
+		"EXPORT": relation("order_export", "x", field{"line_id", num}, field{"order_no", txt},
+			field{"order_date", txt}, field{"customer_name", txt},
+			field{"customer_email", txt}, field{"customer_city", txt},
+			field{"sku", txt}, field{"product_name", txt},
+			field{"category", txt}, field{"qty", num},
+			field{"unit_price", num}, field{"tags", txt}),
+	})
+}
+```
+
+</details>
+<details>
 <summary>Common Lisp</summary>
 
 <!-- from: examples/sql-flat/lisp.lisp#bindings -->
@@ -280,6 +313,23 @@ const sel::Value rows = Sql::execute_hybrid(plan, db::runner(conn),
 let mut program = compile(&read(&format!("examples/sql-flat/{file}"))?)?;
 let plan = plan_hybrid(&program, "mariadb", Some(&schema), Options::default());
 let rows = execute_hybrid(&plan, db::runner(&mut conn), plan.pure_memory.then_some(&tables))?;
+```
+
+</details>
+<details>
+<summary>Go</summary>
+
+<!-- from: examples/sql-flat/go.go#run -->
+```go
+program, err := sel.Compile(read("examples/sql-flat/" + file))
+check(err)
+plan := sql.PlanHybrid(program, "mariadb", schema, sql.Options{})
+var context *sel.Value
+if plan.PureMemory {
+	context = tables
+}
+rows, err := sql.ExecuteHybrid(plan, db.Runner(conn), context)
+check(err)
 ```
 
 </details>

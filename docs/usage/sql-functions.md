@@ -470,6 +470,105 @@ register_function("WORDS", 1, 1, |args: &mut Args| {
 
 </details>
 <details>
+<summary>Go</summary>
+
+<!-- from: examples/sql-functions/go.go#local -->
+```go
+func slug(text string) string {
+	var out strings.Builder
+	dash := false
+	for _, c := range text {
+		if c >= 'A' && c <= 'Z' { // ASCII only, as SQL's
+			c += 'a' - 'A' //         [^a-z0-9]+ sees it
+		}
+		if (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') {
+			if dash && out.Len() > 0 {
+				out.WriteByte('-')
+			}
+			out.WriteRune(c)
+			dash = false
+		} else {
+			dash = true
+		}
+	}
+	return out.String()
+}
+
+var (
+	margin   = sel.MustCompile("ROUND((PRICE - COST) * 100 / PRICE, 1)")
+	shipping = sel.MustCompile(`COND(KG <= 1, 4.90, KG <= 5, 9.90, KG <= 20, 19.90, 49.00) * IF(COUNTRY $== "PL", 1, 2)`)
+)
+
+// run is a host function's way to evaluate SEL: a failure inside is a
+// *sel.SelError, which panicking hands to the run that called the function.
+func run(program *sel.Program, ctx *sel.Value) *sel.Value {
+	v, err := program.Run(ctx)
+	if err != nil {
+		panic(err)
+	}
+	return v
+}
+
+func registerFunctions(conn *db.Conn) {
+	vatRates, err := db.Query(conn, "SELECT * FROM vat_rates", nil)
+	check(err)
+	rates := map[[2]string]string{}
+	for _, r := range vatRates.Values() {
+		rates[[2]string{r.Get("country").AsText(at), r.Get("category").AsText(at)}] = r.Get("rate").AsText(at)
+	}
+
+	sel.RegisterFunction("SLUG", 1, 1, func(args *sel.Args) *sel.Value {
+		return sel.NewText(slug(args.Text(0)))
+	})
+	sel.RegisterFunction("MARGIN_PCT", 2, 2, func(args *sel.Args) *sel.Value {
+		ctx := sel.NewNone()
+		ctx.Set("PRICE", args.Val(0))
+		ctx.Set("COST", args.Val(1))
+		return run(margin, ctx)
+	})
+	sel.RegisterFunction("VAT_RATE", 2, 2, func(args *sel.Args) *sel.Value {
+		country, category := args.Text(0), args.Text(1)
+		rate, ok := rates[[2]string{country, category}]
+		if !ok {
+			rate, ok = rates[[2]string{country, "*"}]
+		}
+		if !ok {
+			rate = "0"
+		}
+		return sel.NewText(rate)
+	})
+	sel.RegisterFunction("SHIPPING_COST", 2, 2, func(args *sel.Args) *sel.Value {
+		ctx := sel.NewNone()
+		ctx.Set("KG", args.Val(0))
+		ctx.Set("COUNTRY", args.Val(1))
+		return run(shipping, ctx)
+	})
+	sel.RegisterFunction("HAS_TAG", 2, 2, func(args *sel.Args) *sel.Value {
+		tags, tag := args.Val(0), args.Text(1)
+		if tags.Size() == 0 {
+			return sel.NewBool(tags.AsText(at) == tag) // a scalar is a list of one
+		}
+		for _, v := range tags.Values() {
+			if v.AsText(at) == tag {
+				return sel.NewBool(true)
+			}
+		}
+		return sel.NewBool(false)
+	})
+	sel.RegisterFunction("WORDS", 1, 1, func(args *sel.Args) *sel.Value {
+		var words []*sel.Value
+		for _, w := range strings.Split(slug(args.Text(0)), "-") {
+			if w != "" {
+				words = append(words, sel.NewText(w))
+			}
+		}
+		return sel.NewList(words)
+	})
+}
+```
+
+</details>
+<details>
 <summary>Common Lisp</summary>
 
 <!-- from: examples/sql-functions/lisp.lisp#local -->
@@ -645,6 +744,25 @@ define("postgresql", "funcs", "HAS_TAG",
 
 </details>
 <details>
+<summary>Go</summary>
+
+<!-- from: examples/sql-functions/go.go#spell -->
+```go
+sql.Define("postgresql", "funcs", "SLUG",
+	map[string]any{"tpl": "slug({0})", "ret": "TEXT", "args": []string{"TEXT"}})
+sql.Define("postgresql", "funcs", "MARGIN_PCT",
+	map[string]any{"tpl": "margin_pct({0}, {1})", "ret": "NUM", "args": []string{"NUM", "NUM"}})
+sql.Define("postgresql", "funcs", "VAT_RATE",
+	map[string]any{"tpl": "vat_rate({0}, {1})", "ret": "NUM", "args": []string{"TEXT", "TEXT"}})
+sql.Define("postgresql", "funcs", "SHIPPING_COST",
+	map[string]any{"tpl": "shipping_cost({0}, {1})", "ret": "NUM", "args": []string{"NUM", "TEXT"}})
+sql.Define("postgresql", "funcs", "HAS_TAG",
+	map[string]any{"tpl": "({1} = ANY(ARRAY[{0}]))", "ret": "BOOL", "args": []string{"LIST", "TEXT"}})
+// WORDS returns a list: no spelling can say that, so it has none.
+```
+
+</details>
+<details>
 <summary>Common Lisp</summary>
 
 <!-- from: examples/sql-functions/lisp.lisp#spell -->
@@ -730,6 +848,23 @@ const sel::Value rows = Sql::execute_hybrid(plan, db::runner(conn),
 let mut program = compile(&read(&format!("examples/sql-functions/{file}"))?)?;
 let plan = plan_hybrid(&program, "postgresql", Some(&schema), Options::default());
 let rows = execute_hybrid(&plan, db::runner(&mut conn), plan.pure_memory.then_some(&tables))?;
+```
+
+</details>
+<details>
+<summary>Go</summary>
+
+<!-- from: examples/sql-functions/go.go#run -->
+```go
+program, err := sel.Compile(read("examples/sql-functions/" + file))
+check(err)
+plan := sql.PlanHybrid(program, "postgresql", schema, sql.Options{})
+var context *sel.Value
+if plan.PureMemory {
+	context = tables
+}
+rows, err := sql.ExecuteHybrid(plan, db.Runner(conn), context)
+check(err)
 ```
 
 </details>
@@ -866,6 +1001,26 @@ let title = Bindings::new(Some(HashMap::from([(
 println!("   caveats     {}", translate(&rule, "postgresql", Some(&title), Options::default())?.caveats.join(", "));
 if let Err(e) = translate(&rule, "postgresql", Some(&title), Options { strict: true }) {
     println!("   strict      {}", e.code);
+}
+```
+
+</details>
+<details>
+<summary>Go</summary>
+
+<!-- from: examples/sql-functions/go.go#strict -->
+```go
+rule := sel.MustCompile(`SLUG(TITLE) $== "cast-iron-pan"`)
+title := sql.NewBindings(map[string]*sql.Binding{
+	"TITLE": sql.ColumnBinding("title", "p", sql.KindText, false, false, false, "", "", false),
+})
+condition, err := sql.Translate(rule, "postgresql", title, sql.Options{})
+check(err)
+fmt.Println("   caveats    ", strings.Join(condition.Caveats, ", "))
+_, err = sql.Translate(rule, "postgresql", title, sql.Options{Strict: true})
+var refused *sql.SqlError
+if errors.As(err, &refused) {
+	fmt.Println("   strict     ", refused.Code)
 }
 ```
 

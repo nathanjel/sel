@@ -12,7 +12,7 @@ FIRST((1, 2), _ > 5)                             # "" — nothing matched
 ```
 
 As with [fn-simple](../fn-simple/), these are fragments rather than programs:
-a function is a change to the language, implemented in all five hosts together.
+a function is a change to the language, implemented in all seven hosts together.
 See that README for why, and for the order of work.
 
 ## What makes this lane harder
@@ -30,7 +30,8 @@ strict lane is the default:
    body raises.** A body that fails must not leave the binder in scope for
    whatever runs next. Every implementation here uses its language's
    try/finally for exactly that — except Rust, which has none: it pops the
-   frame before `?` can leave with the body's error.
+   frame before `?` can leave with the body's error — and Go, where a failing
+   body panics with its `*SelError`, so the frame is popped by a `defer`.
 3. **Bind `_K` as well as the element**, so the body can see the key.
 4. **Handle the no-children cases** the way spec/SPEC.md §7.3 specifies: a
    scalar behaves as a one-element list containing itself, and a childless NONE

@@ -4,7 +4,7 @@ How a SEL program is written, and what its values are. The operators have
 [a page of their own](operators.md), and so do [the functions](functions.md).
 `spec/SPEC.md` is the normative text; this page is for people writing rules.
 
-Every line below of the form `EXPRESSION  => RESULT` is executed by all five
+Every line below of the form `EXPRESSION  => RESULT` is executed by all seven
 implementations on every commit (`tools/check-docs.sh`). A result is written the
 way the command-line tool prints it: text as it is, `TRUE`/`FALSE`, `bin:` and
 hex for bytes, a tree dump for a structure, and `!E_CODE` for an error.

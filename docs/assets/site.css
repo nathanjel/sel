@@ -207,6 +207,8 @@ code, pre, kbd {
   line-height: 1.55;
 }
 .code pre code { font-size: 13.5px; background: none; padding: 0; }
+/* Go is indented with tabs (gofmt); show them four columns wide, not eight. */
+pre { tab-size: 4; -moz-tab-size: 4; }
 .code:has(.code-lang) pre { padding-top: 30px; }
 .code-lang {
   position: absolute; top: 9px; left: 16px;

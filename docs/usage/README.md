@@ -1,8 +1,8 @@
 # Using SEL
 
 SEL is embedded: your application hands a rule and some data to the host
-library, and gets a value back. This page is that host API in all five
-languages. The pages after it are complete programs, each written five times:
+library, and gets a value back. This page is that host API in all seven
+languages. The pages after it are complete programs, each written seven times:
 
 | Page | What it shows |
 |---|---|
@@ -14,9 +14,9 @@ languages. The pages after it are complete programs, each written five times:
 | [Your own functions, in SQL](sql-functions.md) | host functions with a SQL spelling: PostgreSQL SQL and PL/pgSQL functions, list arguments, strict mode |
 
 Every snippet on these pages is quoted from a file under
-[`examples/`](../../examples/) that the test suite runs in all five languages
+[`examples/`](../../examples/) that the test suite runs in all seven languages
 and whose output it compares byte for byte — the code cannot drift from what the
-page says, and the five tabs cannot drift from each other.
+page says, and the seven tabs cannot drift from each other.
 
 - [Installing](#installing)
 - [Evaluate, or compile once and run many times](#evaluate-or-compile-once-and-run-many-times)
@@ -32,6 +32,7 @@ page says, and the five tabs cannot drift from each other.
 
 The package is `sel-lang` everywhere. Python, PHP and JavaScript have no
 dependencies, so copying the directory works just as well as a package manager.
+Rust and Go are not on a registry yet: both come straight from the repository.
 
 <!-- tabs -->
 <details open>
@@ -99,6 +100,32 @@ vcpkg install sel-lang               # or: conan install --requires sel-lang/0.9
 ```lisp
 (ql:quickload :sel-lang)             ; SBCL; depends on cl-ppcre
 (ql:quickload :sel-lang/sql)         ; the SQL layer
+```
+
+</details>
+<details>
+<summary>Rust</summary>
+
+```sh
+cargo add sel-lang --git https://github.com/nathanjel/sel    # not on crates.io yet
+```
+```rust
+use sel_lang::{compile, evaluate, Pos, SelError, Value};   // Rust 2021; depends on regex
+use sel_lang::sql::{plan_hybrid, Binding, Bindings};       // the SQL layer: the default `sql` feature
+```
+
+</details>
+<details>
+<summary>Go</summary>
+
+```sh
+go get github.com/nathanjel/sel/go@main    # no tagged release of the Go module yet
+```
+```go
+import (
+	"github.com/nathanjel/sel/go/sel"     // Go 1.22+, no dependencies
+	"github.com/nathanjel/sel/go/sel/sql" // the SQL layer
+)
 ```
 
 </details>
@@ -182,6 +209,25 @@ for (qty, price) in [("3", "19.99"), ("1", "5.00")] {
     ctx.set("PRICE", val(price), at)?;
     ctx.set("LIMIT", val("50.00"), at)?;
     println!("   QTY={qty} PRICE={price} => {}", text(&rule.run(Some(ctx))?)?);
+}
+```
+
+</details>
+<details>
+<summary>Go</summary>
+
+<!-- from: examples/plain/go.go#compile -->
+```go
+rule, err := sel.Compile(`IF(QTY * PRICE > LIMIT, "over budget", "ok")`)
+check(err)
+for _, row := range [][2]string{{"3", "19.99"}, {"1", "5.00"}} {
+	ctx := sel.NewNone()
+	ctx.Set("QTY", sel.NewText(row[0]))
+	ctx.Set("PRICE", sel.NewText(row[1]))
+	ctx.Set("LIMIT", sel.NewText("50.00"))
+	v, err := rule.Run(ctx)
+	check(err)
+	fmt.Printf("   QTY=%s PRICE=%s => %s\n", row[0], row[1], v.AsText(at))
 }
 ```
 
@@ -315,6 +361,32 @@ println!("   0.10+0.20 => {}", text(&evaluate("0.10 + 0.20", None)?)?);
 
 </details>
 <details>
+<summary>Go</summary>
+
+<!-- from: examples/plain/go.go#context -->
+```go
+order := sel.NewNone()
+order.Set("CUSTOMER", sel.NewText("Zażółć"))
+var items []*sel.Value
+for _, line := range [][3]string{{"AB-1234", "3", "19.99"}, {"CD-5678", "1", "5.01"}} {
+	item := sel.NewNone()
+	item.Set("SKU", sel.NewText(line[0]))
+	item.Set("QTY", sel.NewText(line[1]))
+	item.Set("PRICE", sel.NewText(line[2]))
+	items = append(items, item)
+}
+order.Set("ITEMS", sel.NewList(items)) // a list is keyed "1".."n"
+first, err := sel.MustCompile(`ITEMS[1]["SKU"]`).Run(order)
+check(err)
+total, err := sel.MustCompile(`SUM(ITEMS, _["QTY"] * _["PRICE"])`).Run(order)
+check(err)
+fmt.Println("   first SKU =>", first.AsText(at))
+fmt.Println("   total     =>", total.AsText(at))
+fmt.Println("   0.10+0.20 =>", eval("0.10 + 0.20").AsText(at))
+```
+
+</details>
+<details>
 <summary>Common Lisp</summary>
 
 <!-- from: examples/plain/lisp.lisp#context -->
@@ -364,25 +436,27 @@ piece, and every constructor holds the same rules
   In PHP and C++, a call whose argument types do not match the declared
   parameters is rejected by the language before SEL sees it.
 
-| | Python | JavaScript | PHP | C++ | Common Lisp |
-|---|---|---|---|---|---|
-| text, bytes, bool | `Value.text` `Value.bin` `Value.bool` | `Value.text` `Value.bin` `Value.bool` | `Value::text` `Value::bin` `Value::bool` | `Value::text` `Value::bin` `Value::boolean` | `make-text` `make-bin` `make-bool` |
-| number from a string | `Value.num("1.50")` | `Value.num('1.50')` | `Value::num('1.50')` | `Value::num("1.50")` | `(make-num "1.50")` |
-| number from the decimal form | `Value.num(Dec(neg, digits, scale))`, `Dec` from `sel.decimal` | `Value.num({ neg, digits, scale })`, `digits` a bigint | `Value::num(['neg' => …, 'digits' => '150', 'scale' => 2])` | `Value::num(const Dec&)` | `(make-num (dec-make neg digits scale))` |
-| native integer | `Value.int(n)` | `Value.int(n)`, a safe integer or a bigint | `Value::int($n)` | `Value::integer(n)` | `(make-int n)` |
-| list | `Value.list(values)` | `Value.list(values)` | `Value::list($values)` | `Value::list(values)` | `(make-list-value values)` |
-| list with its own keys | `Value.list(values, keys)` | `Value.fromEntries(entries, true)` | `Value::list($values, $keys)` | — | — |
-| record from keys and values | `Value.record(keys, values)`, `Value.shaped(keys, values)` | `Value.shaped(keys, values)` | `Value::record($keys, $values)`, `Value::shaped(…)` | `Value::record(keys, values)` | — |
-| record from pairs | `Value.from_entries(pairs)` | `Value.fromEntries(pairs)` | `Value::fromEntries($pairs)` | — | `(from-native alist)` |
-| record from a prepared shape | `Value.shaped(shape, values)` | — | `Value::fromShape(RecordShape::intern($keys), $values)` | `Value::shaped(shape, values)` | — |
-| many rows of one shape | — | — | `Value::fromNativeRows($rows)` | — | — |
-| one key | `v.set(k, x)` | `v.set(k, x)` | `$v->set($k, $x)` | `v.set(k, x)` | `(value-set v k x)` |
+| | Python | JavaScript | PHP | C++ | Common Lisp | Rust | Go |
+|---|---|---|---|---|---|---|---|
+| text, bytes, bool | `Value.text` `Value.bin` `Value.bool` | `Value.text` `Value.bin` `Value.bool` | `Value::text` `Value::bin` `Value::bool` | `Value::text` `Value::bin` `Value::boolean` | `make-text` `make-bin` `make-bool` | `Value::text_owned` `Value::bin` `Value::bool` | `sel.NewText` `sel.NewBin` `sel.NewBool` |
+| number from a string | `Value.num("1.50")` | `Value.num('1.50')` | `Value::num('1.50')` | `Value::num("1.50")` | `(make-num "1.50")` | `Value::num(dec_parse("1.50", pos)?)?` | — (a number is its text: `sel.NewText("1.50")`) |
+| number from the decimal form | `Value.num(Dec(neg, digits, scale))`, `Dec` from `sel.decimal` | `Value.num({ neg, digits, scale })`, `digits` a bigint | `Value::num(['neg' => …, 'digits' => '150', 'scale' => 2])` | `Value::num(const Dec&)` | `(make-num (dec-make neg digits scale))` | `Value::num(Dec::from_small(neg, mantissa, scale))?` | — (the decimal type is internal) |
+| native integer | `Value.int(n)` | `Value.int(n)`, a safe integer or a bigint | `Value::int($n)` | `Value::integer(n)` | `(make-int n)` | `Value::int(n)`, an `i64` | `sel.NewInt(n)`, an `int64` |
+| list | `Value.list(values)` | `Value.list(values)` | `Value::list($values)` | `Value::list(values)` | `(make-list-value values)` | `Value::list(values)` | `sel.NewList(values)` |
+| list with its own keys | `Value.list(values, keys)` | `Value.fromEntries(entries, true)` | `Value::list($values, $keys)` | — | — | — | `sel.NewListWithKeys(values, keys)` |
+| record from keys and values | `Value.record(keys, values)`, `Value.shaped(keys, values)` | `Value.shaped(keys, values)` | `Value::record($keys, $values)`, `Value::shaped(…)` | `Value::record(keys, values)` | — | — | — |
+| record from pairs | `Value.from_entries(pairs)` | `Value.fromEntries(pairs)` | `Value::fromEntries($pairs)` | — | `(from-native alist)` | — | — |
+| record from a prepared shape | `Value.shaped(shape, values)` | — | `Value::fromShape(RecordShape::intern($keys), $values)` | `Value::shaped(shape, values)` | — | — | — |
+| many rows of one shape | — | — | `Value::fromNativeRows($rows)` | — | — | — | — |
+| one key | `v.set(k, x)` | `v.set(k, x)` | `$v->set($k, $x)` | `v.set(k, x)` | `(value-set v k x)` | `v.set(k, x, pos)?` | `v.Set(k, x)` |
 
 The decimal form is `digits × 10^-scale`, negative when `neg`: `digits` is a
 non-negative whole number (a string of ASCII digits in PHP and C++) and
 `scale` a non-negative integer. Reading one back is `v.as_decimal()` in
 Python, `v.asDecimal()` in JS, `$v->asDecimal()` in PHP, `v.dec_val()` in C++
-(null when the value holds no parsed decimal) and `(as-dec v)` in Lisp.
+(null when the value holds no parsed decimal), `(as-dec v)` in Lisp,
+`v.as_decimal(pos)?` in Rust, and `v.AsDecimal(pos)` in Go, whose result can only
+be handed back to `sel.NewNum`.
 
 ## Variables flow back
 
@@ -454,6 +528,23 @@ ctx.set("PRICE", val("19.99"), at)?;
 compile("NET = QTY * PRICE; VAT = ROUND(NET * 0.23, 2); GROSS = NET + VAT")?.run(Some(ctx.clone()))?;
 for name in ["NET", "VAT", "GROSS"] {
     println!("   {name:<5} => {}", text(&ctx.get(name).expect("set by the rule"))?);
+}
+```
+
+</details>
+<details>
+<summary>Go</summary>
+
+<!-- from: examples/plain/go.go#variables -->
+```go
+ctx := sel.NewNone()
+ctx.Set("QTY", sel.NewText("3"))
+ctx.Set("PRICE", sel.NewText("19.99"))
+// A *sel.Value is a handle: the run assigns into the same record.
+_, err = sel.MustCompile("NET = QTY * PRICE; VAT = ROUND(NET * 0.23, 2); GROSS = NET + VAT").Run(ctx)
+check(err)
+for _, name := range []string{"NET", "VAT", "GROSS"} {
+	fmt.Printf("   %-5s => %s\n", name, ctx.Get(name).AsText(at))
 }
 ```
 
@@ -561,6 +652,23 @@ for src in ["3 + \"A\"", "NOSUCH(1)", "IF(1, \"a\", \"b\")", "ABORT(\"no stock\"
 
 </details>
 <details>
+<summary>Go</summary>
+
+<!-- from: examples/plain/go.go#errors -->
+```go
+for _, src := range []string{`3 + "A"`, "NOSUCH(1)", `IF(1, "a", "b")`, `ABORT("no stock")`} {
+	_, err := sel.Eval(src, nil)
+	var e *sel.SelError
+	if errors.As(err, &e) {
+		fmt.Printf("   %-17s => %s at %d:%d\n", src, e.Code, e.Line(), e.Col())
+	} else {
+		fmt.Printf("   %-17s => no error\n", src)
+	}
+}
+```
+
+</details>
+<details>
 <summary>Common Lisp</summary>
 
 <!-- from: examples/plain/lisp.lisp#errors -->
@@ -634,6 +742,16 @@ println!("   {}", deps.join(" "));
 
 </details>
 <details>
+<summary>Go</summary>
+
+<!-- from: examples/plain/go.go#dependencies -->
+```go
+deps := sel.MustCompile(`T = SUM(ITEMS, _["QTY"]); T > LIMIT AND CUSTOMER $!= ""`).Dependencies()
+fmt.Println("  ", strings.Join(deps, " "))
+```
+
+</details>
+<details>
 <summary>Common Lisp</summary>
 
 <!-- from: examples/plain/lisp.lisp#dependencies -->
@@ -676,17 +794,17 @@ elements. The repository's own budget and PHP 8.1 lanes run with
 
 ## The API side by side
 
-| | Python | JavaScript | PHP | C++ | Common Lisp |
-|---|---|---|---|---|---|
-| compile | `compile(src)` | `compile(src)` | `Sel::compile($src)` | `sel::compile(src)` | `(sel:compile-source src)` |
-| run | `p.run(ctx)` | `p.run(ctx)` | `$p->run($ctx)` | `p.run(ctx)` | `(sel:run p ctx)` |
-| evaluate | `evaluate(src, ctx)` | `evaluate(src, ctx)` | `Sel::evaluate($src, $ctx)` | `sel::evaluate(src, ctx)` | `(sel:evaluate src ctx)` |
-| inputs | `p.dependencies()` | `p.dependencies()` | `$p->dependencies()` | `p.dependencies()` | `(sel:dependencies p)` |
-| context | `Value.from_native({...})` | `Value.fromNative({...})` | `Value::fromNative([...])` | `Value::none()` + `set` | `(sel:from-native ...)` |
-| result | `.as_text()` `.as_bool()` `.dump()` | `.asText()` `.asBool()` `.dump()` | `->asText()` `->asBool()` `->dump()` | `.as_text()` `.as_bool()` `.dump()` | `(sel:as-text v)` `(sel:as-bool v)` `(sel:value-dump v)` |
-| errors | `SelError` `.code .line .col` | `SelError` `.code .line .col` | `SelError` `->code ->line ->col` | `sel::SelError` `.code() .line() .col()` | `sel:sel-error` `sel-error-code` … |
-| own functions | `register_function` | `registerFunction` | `Sel::registerFunction` | `sel::register_function` | `sel:register-function` |
+| | Python | JavaScript | PHP | C++ | Common Lisp | Rust | Go |
+|---|---|---|---|---|---|---|---|
+| compile | `compile(src)` | `compile(src)` | `Sel::compile($src)` | `sel::compile(src)` | `(sel:compile-source src)` | `compile(src)?` | `sel.Compile(src)` |
+| run | `p.run(ctx)` | `p.run(ctx)` | `$p->run($ctx)` | `p.run(ctx)` | `(sel:run p ctx)` | `p.run(Some(ctx))?` | `p.Run(ctx)` |
+| evaluate | `evaluate(src, ctx)` | `evaluate(src, ctx)` | `Sel::evaluate($src, $ctx)` | `sel::evaluate(src, ctx)` | `(sel:evaluate src ctx)` | `evaluate(src, Some(ctx))?` | `sel.Eval(src, ctx)` |
+| inputs | `p.dependencies()` | `p.dependencies()` | `$p->dependencies()` | `p.dependencies()` | `(sel:dependencies p)` | `p.dependencies()?` | `p.Dependencies()` |
+| context | `Value.from_native({...})` | `Value.fromNative({...})` | `Value::fromNative([...])` | `Value::none()` + `set` | `(sel:from-native ...)` | `Value::none()` + `set` | `sel.NewNone()` + `Set` |
+| result | `.as_text()` `.as_bool()` `.dump()` | `.asText()` `.asBool()` `.dump()` | `->asText()` `->asBool()` `->dump()` | `.as_text()` `.as_bool()` `.dump()` | `(sel:as-text v)` `(sel:as-bool v)` `(sel:value-dump v)` | `.as_text(pos)?` `.as_bool(pos)?` `.dump()?` | `.AsText(pos)` `.AsBool(pos)` `.Dump()` |
+| errors | `SelError` `.code .line .col` | `SelError` `.code .line .col` | `SelError` `->code ->line ->col` | `sel::SelError` `.code() .line() .col()` | `sel:sel-error` `sel-error-code` … | `SelError` `.code .pos.line .pos.col` | `*sel.SelError` `.Code .Line() .Col()` |
+| own functions | `register_function` | `registerFunction` | `Sel::registerFunction` | `sel::register_function` | `sel:register-function` | `register_function` | `sel.RegisterFunction` |
 
 The full contract is [spec/SPEC.md §8](../../spec/SPEC.md#8-host-interface), and
-`tools/check-api.sh` runs the same probes through all five bindings to keep the
+`tools/check-api.sh` runs the same probes through all seven bindings to keep the
 answers identical.

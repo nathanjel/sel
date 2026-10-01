@@ -221,7 +221,7 @@ A function the application registered ([spec §8.1](../spec/SPEC.md#81-host-func
 has no SQL until the application gives it a spelling for a dialect — a call to a
 database function, a stored function, or an inline expression — with the same
 `define` that respells a builtin. [Your own functions, in SQL](usage/sql-functions.md)
-is a worked example with PostgreSQL stored functions in all five languages;
+is a worked example with PostgreSQL stored functions in all seven languages;
 [sql/MAP.md §4.7](../sql/MAP.md#47-spelling-a-host-function) is the contract.
 
 | Rule | |
@@ -255,7 +255,7 @@ shipped one — for a driver that wants numbered placeholders, a server version 
 a missing function, an extension that adds one — and can respell, withdraw or
 add a builder for any of SEL's own functions. Only the difference is written;
 everything else is inherited.
-[Extending SEL](extending.md#extending-the-sql-layer) shows it in all five
+[Extending SEL](extending.md#extending-the-sql-layer) shows it in all seven
 languages. A permanent addition to a shipped dialect is a change to
 `sql/dialects/*.json`, followed by `node tools/gen-sql-map.mjs`; the format is
 [sql/MAP.md](../sql/MAP.md).
@@ -264,5 +264,7 @@ languages. A permanent addition to a shipped dialect is a change to
 
 The SQL layer is opt-in, so an application that only evaluates does not load a
 dialect map: `from sel.sql import …` in Python, `sel-lang/sql` in JavaScript,
-`php/src/Sql/bootstrap.php` in PHP, `sel_sql.hpp` and `sel_sql*.cpp` in C++, and
-the `sel-lang/sql` system in Lisp.
+`php/src/Sql/bootstrap.php` in PHP, `sel_sql.hpp` and `sel_sql*.cpp` in C++, the
+`sel-lang/sql` system in Lisp, `sel_lang::sql` in Rust (the default `sql`
+feature; build with `default-features = false` to leave it out), and the
+`github.com/nathanjel/sel/go/sel/sql` package in Go.

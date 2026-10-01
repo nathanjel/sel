@@ -2,7 +2,7 @@
 
 Every operator, its precedence, and the rules it follows. Values and literals
 are on [Syntax](syntax.md); the functions are on [Functions](functions.md).
-Every `=>` line is executed by all five implementations.
+Every `=>` line is executed by all seven implementations.
 
 - [Precedence](#precedence)
 - [Arithmetic](#arithmetic)
@@ -214,7 +214,7 @@ in the new `A`, and the result is `2` carrying a child `1`. Most languages would
 have written into the old, now unreachable `A` and silently lost the assignment;
 SEL prefers the visible answer to the vanished one, the same way it prefers an
 error to a truthy guess. Nobody writes this on purpose, but rules grow in layers,
-and the day two layers touch one variable, all five hosts still agree.
+and the day two layers touch one variable, all seven hosts still agree.
 
 Assignment **copies**. `,` is the only other operator that copies; everything
 else hands on the value itself:

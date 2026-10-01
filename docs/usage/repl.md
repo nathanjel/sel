@@ -200,6 +200,86 @@ fn main() -> Result<(), Box<dyn Error>> {
 
 </details>
 <details>
+<summary>Go</summary>
+
+<!-- from: examples/repl/go.go#repl -->
+```go
+func show(value *sel.Value) string {
+	at := sel.Pos{}
+	if value.IsBool() {
+		if value.AsBool(at) {
+			return "TRUE"
+		}
+		return "FALSE"
+	}
+	if value.IsNull() {
+		return "NULL"
+	}
+	if value.Size() > 0 || value.IsBin() {
+		return value.Dump()
+	}
+	return value.AsText(at)
+}
+
+// One line: a command, or an expression run against the context. A SEL failure
+// comes back as the error, to be printed where the line was read.
+func respond(line string, context **sel.Value) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			e, ok := r.(*sel.SelError)
+			if !ok {
+				panic(r)
+			}
+			err = e
+		}
+	}()
+	if line == ":reset" {
+		*context = sel.NewNone()
+		return nil
+	}
+	if expr, ok := strings.CutPrefix(line, ":deps "); ok {
+		program, err := sel.Compile(expr)
+		if err != nil {
+			return err
+		}
+		fmt.Println(strings.Join(program.Dependencies(), " "))
+		return nil
+	}
+	program, err := sel.Compile(line)
+	if err != nil {
+		return err
+	}
+	result, err := program.Run(*context)
+	if err != nil {
+		return err
+	}
+	fmt.Println(show(result))
+	return nil
+}
+
+func main() {
+	context := sel.NewNone()
+	input := bufio.NewScanner(os.Stdin)
+	for input.Scan() {
+		line := input.Text()
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		fmt.Println("sel>", line)
+		var e *sel.SelError
+		if err := respond(line, &context); errors.As(err, &e) {
+			fmt.Printf("%s at %d:%d\n", e.Code, e.Line(), e.Col())
+		}
+	}
+	if err := input.Err(); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+}
+```
+
+</details>
+<details>
 <summary>Common Lisp</summary>
 
 <!-- from: examples/repl/lisp.lisp#repl -->
@@ -236,7 +316,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 </details>
 <!-- /tabs -->
 
-Four details every version shares, because the five print the same bytes:
+Four details every version shares, because the seven print the same bytes:
 
 - **One context lives across lines**, so `A = (1, 2, 3)` on one line is `A` on
   the next. `:reset` replaces it with an empty one.

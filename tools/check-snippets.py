@@ -75,9 +75,11 @@ def lines_name(line):
 
 def dedent(lines):
     """A region inside a function or a block is quoted without the indent it
-    has there: the doc shows the code, not where it sits."""
-    indents = [len(l) - len(l.lstrip(' ')) for l in lines if l.strip()]
-    cut = min(indents) if indents else 0
+    has there: the doc shows the code, not where it sits. The indent is the
+    leading whitespace every non-blank line shares -- spaces in most hosts, tabs
+    in Go, where gofmt indents with them."""
+    leads = [l[:len(l) - len(l.lstrip(' \t'))] for l in lines if l.strip()]
+    cut = len(os.path.commonprefix(leads)) if leads else 0
     return [l[cut:] for l in lines]
 
 

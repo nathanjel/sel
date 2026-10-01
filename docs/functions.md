@@ -1,7 +1,7 @@
 # Functions
 
 Every builtin, by what it is for. Names are case-insensitive. Every `=>` line is
-executed by all five implementations; the generated
+executed by all seven implementations; the generated
 [builtin index](reference/builtins.md) lists each function's accepted argument
 counts and binding forms, and `spec/SPEC.md` §7 is the normative text.
 
