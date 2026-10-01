@@ -130,13 +130,16 @@ using dec_mantissa_t = __int128_t;
 using dec_mantissa_t = std::int64_t;
 #endif
 
+// (neg ? -1 : 1) * magnitude / 10^scale. The magnitude is the small mantissa
+// when `small`; otherwise the digit string or the binary words (little-endian
+// 64-bit, no zero high word), each a cache of the other made on demand.
 struct Dec {
   bool neg = false;
   mutable std::string digits;
   std::int32_t scale = 0;
   bool small = false;
   dec_mantissa_t mantissa = 0;
-  mutable std::vector<uint32_t> limbs;
+  mutable std::vector<std::uint64_t> words;
 };
 
 class Value {

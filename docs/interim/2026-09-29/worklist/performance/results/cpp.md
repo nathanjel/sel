@@ -194,3 +194,85 @@ RREPLACE was linear under ASan either way). `cpp/Makefile`'s `asan` target now s
 `intercept_memmem=0` (every read the interpreter itself makes is still checked) and runs the
 conformance files `ASAN_JOBS` (default `nproc`) at a time, each with its own summary line, failing the
 target if any file fails. `make tsan`, `tsan-registry` and `tsan-regex` are clean.
+
+## 2026-10-01: binary big-number engine (transcribed from Rust)
+
+**Why.** Once Rust had a binary engine (`docs/interim/2026-09-29/rust-completion-audit.md`, same date), C++ was
+the slowest compiled host on `examples/mandelbrot.sel`: 129 ms against Rust's 47 and Go's 50. It still ran the
+base-10^9 limb design Rust had just replaced, whose every multiplication step divides by 10^9. The user asked for
+Rust's engine to be transcribed to C++.
+
+**What** (`cpp/sel.cpp` `namespace bn` and its decimal section; `Dec::words` replaces `Dec::limbs` in `cpp/sel.hpp`):
+- `rust/src/large_dec.rs` function for function, with the same constants. Words are little-endian 64-bit with
+  `u128` carries. Multiplication is schoolbook below 32 words and Karatsuba above, with a squaring variant switching
+  at 48. Division is Knuth D, or Barrett with an exact Newton reciprocal: from 160 words with a cached power of
+  five's reciprocal, from 2,560 with a fresh one. 10^k is 5^k shifted k bits, and powers of five are cached
+  per thread with their reciprocals, up to 2^21 words. Digit counts come from the bit length plus one comparison
+  against a cached power. Decimal conversion is divide and conquer both ways, splitting at 19·2^j digits.
+- One C++-only change: `div_1`, `rem_1` and Knuth D's quotient estimate divide two words by one with `divq`
+  (`div_2by1`: inline asm on x86-64, `u128` arithmetic elsewhere). GCC compiles a `u128 / u64` division to a call
+  to libgcc's `__udivti3`. With `divq`, Knuth D at 1,000 digits went from 9.3 to 6.8 µs, level with Rust's 6.9.
+- The Dec keeps its three forms: the small `__int128` mantissa, the digit string, and the binary words, the last
+  two lazy caches of each other. Rust converts a numeral to words when it parses it. C++ converts a numeral when
+  arithmetic first needs its words, and a computed value when text is first asked for. `LEN` of a computed
+  number (`dec_format_len`), `dec_guard`, the early refusals in `dec_mul` and `dec_power`, and cross-scale
+  `dec_cmp` all decide from digit-count bounds without writing digits out.
+- `cpp/tests/unit.cpp` replaces the Karatsuba test with engine tests:
+  - Products and squares against schoolbook, at and across every threshold and at 1,500 words.
+  - Knuth D against Barrett, and against q·v + r = u with r < v.
+  - A construction whose every quotient word is B − 1, which always reaches Knuth's `qhat = B − 1` branch.
+  - The reciprocal's definition.
+  - Decimal round trips to 20,000 digits, against a digit-string product.
+  - Powers of ten and nines; `divmod_pow10` against string slicing on a 30,000-digit number; trailing zeros.
+
+**Validation:**
+- `cpp/build/unit` 797/797, conformance 2154/2154, sqlt 1311/1311.
+- `make asan` (unit, conformance, sqlunit and sqlt under ASan and UBSan) exits 0, and `make tsan-registry` is clean.
+- `tools/check-decimal.sh 20000`: 253,992 cases, 0 mismatches.
+- Big-operand records graded by `tools/decimal-oracle-exact.py`'s `calc`, all with 0 mismatches:
+  - 18,996 with operands of up to 9,002 characters;
+  - 600 of up to 39,001 characters;
+  - 108 at division scale: dividends of 115,000–125,000 digits over divisors of 50,000–62,000. All 48 of their
+    divisions take the fresh-reciprocal Barrett path.
+  The old C++ engine and Rust pass the same records.
+- The B − 1 branch, probed on its own: 20,000 constructed divisions reached it 70,189 times, and none was wrong.
+- `tools/fuzz.sh 4000` against JS with seeds 20261001 and 777: 0 disagreements.
+
+**Results.** A is the base-10^9 build of `5f54c24`, B this one, on the same machine in the same session:
+
+| Measure | A | B |
+|---|---|---|
+| Mandelbrot (C++ timer, 40 + 40 interleaved samples, identical frames) | 131.2 ms | 33.0 ms (0.251×) |
+| Six scale scenarios (`scale-bench`, reused context) | 596 / 6.8 / 166 / 7.6 / 241 / 275 ms | 0.98–1.03× |
+| 108 division-scale oracle records (`check-decimal`) | 15.3 s | 2.3 s (Rust 2.9 s) |
+| `24-decimal-boundaries.selt` | 0.067 s | 1.51 s (Rust 1.91, Go 2.59) |
+| `10-limits.selt` | 0.069 s | 0.49 s (Rust 0.70, Go 0.77) |
+
+Mandelbrot on all seven hosts afterwards (`tools/commit-benchmark` timers, 15 samples each over three rotated
+rounds, one frame across all 105 samples): C++ 32.3 ms, Rust 46.5, Go 50.3, JS 69.2, Lisp 75.0, Python 374.8,
+PHP 411.5.
+
+Engine kernels, whitebox (`bn::` against Rust's `LargeDec` on identical operands; µs per operation, best of
+three batches, C++ with Rust in parentheses):
+
+| Operation | 1,000 digits | 2,562 | 20,000 | 100,000 |
+|---|---|---|---|---|
+| multiply | 2.72 (3.04) | 13.4 (14.9) | 379 (414) | 5,285 (5,344) |
+| square | 1.92 (2.10) | 10.0 (10.1) | 278 (289) | 3,688 (3,792) |
+| divide with remainder | 6.64 (7.09) | 33.5 (33.9) | 1,622 (1,623) | 26,985 (28,707) |
+| parse decimal | 4.66 (5.57) | 16.7 (19.3) | 391 (431) | 4,923 (5,456) |
+| format decimal | 15.4 (16.1) | 48.1 (50.1) | 890 (962) | 10,132 (11,381) |
+
+C++ is at or below Rust on every row (0.80–1.00×); only a 300- and 1,000-digit addition is slower (42 against
+29 ns, 78 against 72), which is allocation.
+
+**Trade-off.** A million-digit numeral that is rounded, truncated, floored or ceiled must now be converted to
+words. `FLOOR(REPEAT("9", 1000000) & ".5")` and its seven siblings in `24-decimal-boundaries.selt` take 0.23 s
+each, where base-10^9 limbs were read off the digit string in linear time. Rust takes 0.27–0.31 s on the same records. A
+digit-string path for rounding a value that is still a numeral would remove the cost. It would also move the
+rounding of every oracle case, whose operands are numerals, off the binary path, so it was not added.
+
+**Open:**
+- No Toom-3, as in Rust: a 100,000-digit product takes 5.3 ms against num-bigint's 4.3.
+- Division from about 20,000 digits is 1.9–2.4× num-bigint's (1.6 ms against 0.87 at 20,000 digits). Barrett
+  reduction there runs on Karatsuba products.

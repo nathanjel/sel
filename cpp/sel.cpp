@@ -332,16 +332,6 @@ std::string strip(const std::string& s) {
   return i == 0 ? s : s.substr(i);
 }
 
-int cmp_abs(const std::string& a, const std::string& b) {
-  if (a.size() != b.size()) return a.size() < b.size() ? -1 : 1;
-  if (a == b) return 0;
-  return a < b ? -1 : 1;
-}
-
-// Base-10^9 constants
-constexpr uint32_t BASE_10E9 = 1000000000;
-constexpr int LIMB_DIGITS = 9;
-
 constexpr __int128_t POW10_128[39] = {
     1ull,
     10ull,
@@ -384,323 +374,858 @@ constexpr __int128_t POW10_128[39] = {
     static_cast<__int128_t>(1000000000000000000ull) * 1000000000000000000ull * 100
 };
 
-std::vector<uint32_t> string_to_limbs(const std::string& s) {
-  std::vector<uint32_t> limbs;
-  limbs.reserve((s.size() + LIMB_DIGITS - 1) / LIMB_DIGITS);
-  long long i = static_cast<long long>(s.size());
-  while (i > 0) {
-    long long start = std::max(0LL, i - LIMB_DIGITS);
-    uint32_t val = 0;
-    for (long long j = start; j < i; ++j) {
-      val = val * 10 + (s[j] - '0');
-    }
-    limbs.push_back(val);
-    i = start;
-  }
-  return limbs;
+// --- binary magnitudes
+//
+// The magnitude of a large Dec: little-endian 64-bit words, no zero high word,
+// and zero has no words at all. Transcribed from the Rust host's
+// rust/src/large_dec.rs (same algorithms, same thresholds), whose tests hold
+// them to num-bigint at every threshold; the two compiled hosts share one
+// design.
+//
+// Arithmetic stays binary; decimal digits exist only at the edges. A numeral is
+// read once (from_decimal) and a value written once (to_decimal), both divide
+// and conquer, so a million digits cost a few large multiplications rather than
+// a quadratic sweep. Between the edges -- products, sums, comparisons, digit
+// counts, scale alignment -- the words are never converted: a digit count comes
+// from the bit length (plus one comparison when a power of ten falls inside
+// that bit length), and 10^k is 5^k shifted left k bits. The powers of five are
+// cached per thread, each with the reciprocal that makes dividing by it two
+// multiplications.
+//
+// Schoolbook products below KARATSUBA words and Karatsuba above, each with a
+// squaring variant (a square needs about half the word products); Knuth's
+// algorithm D when the divisor or the quotient is short, and Barrett reduction
+// with a Newton reciprocal when both are long.
+namespace bn {
+
+using Nat = std::vector<std::uint64_t>;
+using Span = std::span<const std::uint64_t>;
+using Out = std::span<std::uint64_t>;
+
+constexpr std::size_t KARATSUBA = 32;
+constexpr std::size_t KARATSUBA_SQR = 48;
+// Divisor and quotient both at least this long: Barrett reduction, when the
+// divisor's reciprocal is cached (a power of five) ...
+constexpr std::size_t BARRETT_CACHED = 160;
+// ... or has to be computed for this one division.
+constexpr std::size_t BARRETT_FRESH = 2560;
+// Newton's recursion for a reciprocal ends in long division below this.
+constexpr std::size_t RECIP_BASE = 32;
+// Decimal conversion below this many words (digits) is word by word.
+constexpr std::size_t DEC_LEAF_WORDS = 12;
+constexpr std::size_t DEC_LEAF_DIGITS = 19 * DEC_LEAF_WORDS;
+// 10^19, the largest power of ten in a word.
+constexpr std::uint64_t TEN19 = 10000000000000000000ULL;
+// floor(log10(2) * 2^64).
+constexpr u128 LOG10_2_Q64 = 5553023288523357132ULL;
+// Cached powers of five, in words, before the cache starts over.
+constexpr std::size_t POW5_CACHE_WORDS = std::size_t{1} << 21;
+constexpr u128 WORD_MAX = std::numeric_limits<std::uint64_t>::max();
+
+// ---- words
+
+inline Span trimmed(Span a) {
+  std::size_t n = a.size();
+  while (n > 0 && a[n - 1] == 0) --n;
+  return a.first(n);
 }
 
-std::string limbs_to_string(const std::vector<uint32_t>& limbs) {
-  if (limbs.empty()) return "0";
-  size_t idx = limbs.size() - 1;
-  while (idx > 0 && limbs[idx] == 0) idx--;
-  std::string s = std::to_string(limbs[idx]);
-  while (idx > 0) {
-    idx--;
-    std::string part = std::to_string(limbs[idx]);
-    if (part.size() < LIMB_DIGITS) {
-      s.append(LIMB_DIGITS - part.size(), '0');
-    }
-    s += part;
-  }
-  return s;
+inline void normalize(Nat& v) {
+  while (!v.empty() && v.back() == 0) v.pop_back();
 }
 
-std::vector<uint32_t> add_limbs(const std::vector<uint32_t>& la, const std::vector<uint32_t>& lb) {
-  size_t n = std::max(la.size(), lb.size());
-  std::vector<uint32_t> res;
-  res.reserve(n + 1);
-  uint32_t carry = 0;
-  for (size_t i = 0; i < n || carry; ++i) {
-    uint64_t sum = carry + (i < la.size() ? la[i] : 0) + (i < lb.size() ? lb[i] : 0);
-    if (sum >= BASE_10E9) {
-      res.push_back(static_cast<uint32_t>(sum - BASE_10E9));
-      carry = 1;
-    } else {
-      res.push_back(static_cast<uint32_t>(sum));
-      carry = 0;
-    }
-  }
-  return res;
-}
-
-std::vector<uint32_t> sub_limbs(const std::vector<uint32_t>& la, const std::vector<uint32_t>& lb) {
-  std::vector<uint32_t> res;
-  res.reserve(la.size());
-  int64_t borrow = 0;
-  for (size_t i = 0; i < la.size(); ++i) {
-    int64_t diff = static_cast<int64_t>(la[i]) - (i < lb.size() ? lb[i] : 0) - borrow;
-    if (diff < 0) {
-      diff += BASE_10E9;
-      borrow = 1;
-    } else {
-      borrow = 0;
-    }
-    res.push_back(static_cast<uint32_t>(diff));
-  }
-  while (res.size() > 1 && res.back() == 0) res.pop_back();
-  return res;
-}
-
-int cmp_limbs(const std::vector<uint32_t>& la, const std::vector<uint32_t>& lb) {
-  if (la.size() != lb.size()) return la.size() < lb.size() ? -1 : 1;
-  for (size_t i = la.size(); i > 0; --i) {
-    if (la[i - 1] != lb[i - 1]) return la[i - 1] < lb[i - 1] ? -1 : 1;
+// Orders two trimmed magnitudes.
+inline int cmp(Span a, Span b) {
+  if (a.size() != b.size()) return a.size() < b.size() ? -1 : 1;
+  for (std::size_t i = a.size(); i-- > 0;) {
+    if (a[i] != b[i]) return a[i] < b[i] ? -1 : 1;
   }
   return 0;
 }
 
-std::vector<uint32_t> mul_limbs_school(const std::vector<uint32_t>& la, const std::vector<uint32_t>& lb) {
-  if ((la.size() == 1 && la[0] == 0) || (lb.size() == 1 && lb[0] == 0)) return {0};
-  if (la.size() == 1 && la[0] == 1) return lb;
-  if (lb.size() == 1 && lb[0] == 1) return la;
-
-  const size_t na = la.size(), nb = lb.size();
-  const size_t total = na + nb;
-
-  alignas(64) uint64_t stack_lo[2048];
-  alignas(64) uint32_t stack_hi[2048];
-  std::vector<uint64_t> heap_lo;
-  std::vector<uint32_t> heap_hi;
-  uint64_t* acc_lo = stack_lo;
-  uint32_t* acc_hi = stack_hi;
-
-  if (total <= 2048) {
-    std::fill_n(stack_lo, total, 0);
-    std::fill_n(stack_hi, total, 0);
-  } else {
-    heap_lo.assign(total, 0);
-    heap_hi.assign(total, 0);
-    acc_lo = heap_lo.data();
-    acc_hi = heap_hi.data();
+// acc += b, acc at least as long as b; whether a carry left acc.
+inline bool add_in(Out acc, Span b) {
+  std::uint64_t carry = 0;
+  for (std::size_t i = 0; i < b.size(); ++i) {
+    const u128 t = static_cast<u128>(acc[i]) + b[i] + carry;
+    acc[i] = static_cast<std::uint64_t>(t);
+    carry = static_cast<std::uint64_t>(t >> 64);
   }
-
-  const uint32_t* a = la.data();
-  const uint32_t* b = lb.data();
-  for (size_t i = 0; i < na; ++i) {
-    const uint64_t av = a[i];
-    if (av == 0) continue;
-    for (size_t j = 0; j < nb; ++j) {
-      uint64_t prod = av * b[j];
-      size_t idx = i + j;
-      acc_lo[idx] += prod;
-      if (acc_lo[idx] < prod) acc_hi[idx]++;
-    }
+  for (std::size_t i = b.size(); carry != 0 && i < acc.size(); ++i) {
+    acc[i] += 1;
+    carry = acc[i] == 0;
   }
+  return carry != 0;
+}
 
-  std::vector<uint32_t> res(total);
-  uint32_t* r_ptr = res.data();
-  uint64_t carry = 0;
-  for (size_t i = 0; i < total; ++i) {
-    uint64_t lo = acc_lo[i];
-    uint64_t hi = acc_hi[i];
-    lo += carry;
-    if (lo < carry) hi++;
-    uint64_t q_lo, r_lo;
+// acc -= b, acc at least as long as b; whether a borrow left acc.
+inline bool sub_in(Out acc, Span b) {
+  std::uint64_t borrow = 0;
+  for (std::size_t i = 0; i < b.size(); ++i) {
+    // Wrapping: a borrow leaves the high half all ones.
+    const u128 t = static_cast<u128>(acc[i]) - b[i] - borrow;
+    acc[i] = static_cast<std::uint64_t>(t);
+    borrow = static_cast<std::uint64_t>(t >> 127);
+  }
+  for (std::size_t i = b.size(); borrow != 0 && i < acc.size(); ++i) {
+    borrow = acc[i] == 0;
+    acc[i] -= 1;
+  }
+  return borrow != 0;
+}
+
+Nat add(Span a, Span b) {
+  const Span lng = a.size() >= b.size() ? a : b;
+  const Span sht = a.size() >= b.size() ? b : a;
+  Nat out;
+  out.reserve(lng.size() + 1);
+  out.assign(lng.begin(), lng.end());
+  if (add_in(out, sht)) out.push_back(1);
+  return out;
+}
+
+// a - b, for a >= b.
+Nat sub(Span a, Span b) {
+  Nat out(a.begin(), a.end());
+  if (sub_in(out, b)) throw std::logic_error("unsigned mantissa subtraction underflow");
+  normalize(out);
+  return out;
+}
+
+// acc[..a.size()] += a * m; the word carried out.
+inline std::uint64_t addmul_1(Out acc, Span a, std::uint64_t m) {
+  std::uint64_t carry = 0;
+  for (std::size_t i = 0; i < a.size(); ++i) {
+    const u128 t = static_cast<u128>(a[i]) * m + acc[i] + carry;
+    acc[i] = static_cast<std::uint64_t>(t);
+    carry = static_cast<std::uint64_t>(t >> 64);
+  }
+  return carry;
+}
+
+// acc[..a.size()] -= a * m; the word borrowed out.
+inline std::uint64_t submul_1(Out acc, Span a, std::uint64_t m) {
+  std::uint64_t borrow = 0;
+  for (std::size_t i = 0; i < a.size(); ++i) {
+    const u128 t = static_cast<u128>(a[i]) * m + borrow;
+    const std::uint64_t lo = static_cast<std::uint64_t>(t);
+    const std::uint64_t under = acc[i] < lo;
+    acc[i] -= lo;
+    borrow = static_cast<std::uint64_t>(t >> 64) + under;
+  }
+  return borrow;
+}
+
+// a *= m; the word carried out.
+inline std::uint64_t mul_1(Out a, std::uint64_t m) {
+  std::uint64_t carry = 0;
+  for (std::uint64_t& x : a) {
+    const u128 t = static_cast<u128>(x) * m + carry;
+    x = static_cast<std::uint64_t>(t);
+    carry = static_cast<std::uint64_t>(t >> 64);
+  }
+  return carry;
+}
+
+// (hi:lo) / d and its remainder, for hi < d (so the quotient is one word). One
+// divq on x86-64, where GCC would lower the u128 division to a library call;
+// the portable expression elsewhere.
+inline std::uint64_t div_2by1(std::uint64_t hi, std::uint64_t lo, std::uint64_t d, std::uint64_t& rem) {
 #if defined(__x86_64__)
-    __asm__("divq %4"
-            : "=a"(q_lo), "=d"(r_lo)
-            : "a"(lo), "d"(hi), "rm"(static_cast<uint64_t>(BASE_10E9)));
+  std::uint64_t q, r;
+  __asm__("divq %4" : "=a"(q), "=d"(r) : "a"(lo), "d"(hi), "rm"(d));
+  rem = r;
+  return q;
 #else
-    __uint128_t cur = (static_cast<__uint128_t>(hi) << 64) | lo;
-    q_lo = static_cast<uint64_t>(cur / BASE_10E9);
-    r_lo = static_cast<uint64_t>(cur % BASE_10E9);
+  const u128 t = static_cast<u128>(hi) << 64 | lo;
+  rem = static_cast<std::uint64_t>(t % d);
+  return static_cast<std::uint64_t>(t / d);
 #endif
-    r_ptr[i] = static_cast<uint32_t>(r_lo);
-    carry = q_lo;
-  }
-
-  size_t len = total;
-  while (len > 1 && res[len - 1] == 0) len--;
-  res.resize(len);
-  return res;
 }
 
-std::vector<uint32_t> sqr_limbs_school(const std::vector<uint32_t>& la) {
-  if (la.empty() || (la.size() == 1 && la[0] == 0)) return {0};
-  if (la.size() == 1 && la[0] == 1) return {1};
+// a /= d (d > 0); the remainder.
+inline std::uint64_t div_1(Out a, std::uint64_t d) {
+  std::uint64_t r = 0;
+  for (std::size_t i = a.size(); i-- > 0;) {
+    std::uint64_t next;
+    a[i] = div_2by1(r, a[i], d, next);
+    r = next;
+  }
+  return r;
+}
 
-  const size_t n = la.size();
-  const size_t total = 2 * n;
+// a mod d (d > 0).
+inline std::uint64_t rem_1(Span a, std::uint64_t d) {
+  std::uint64_t r = 0;
+  for (std::size_t i = a.size(); i-- > 0;) {
+    std::uint64_t next;
+    div_2by1(r, a[i], d, next);
+    r = next;
+  }
+  return r;
+}
 
-  alignas(64) uint64_t stack_lo[2048];
-  alignas(64) uint32_t stack_hi[2048];
-  std::vector<uint64_t> heap_lo;
-  std::vector<uint32_t> heap_hi;
-  uint64_t* acc_lo = stack_lo;
-  uint32_t* acc_hi = stack_hi;
+// a << bits for bits < 64: one word longer, not trimmed.
+Nat shl_bits(Span a, unsigned bits) {
+  Nat out;
+  out.reserve(a.size() + 1);
+  if (bits == 0) {
+    out.assign(a.begin(), a.end());
+    out.push_back(0);
+    return out;
+  }
+  std::uint64_t carry = 0;
+  for (const std::uint64_t x : a) {
+    out.push_back(x << bits | carry);
+    carry = x >> (64 - bits);
+  }
+  out.push_back(carry);
+  return out;
+}
 
-  if (total <= 2048) {
-    std::fill_n(stack_lo, total, 0);
-    std::fill_n(stack_hi, total, 0);
+// a >> bits for bits < 64, trimmed.
+Nat shr_bits(Span a, unsigned bits) {
+  Nat out(a.begin(), a.end());
+  if (bits != 0) {
+    for (std::size_t i = 0; i < out.size(); ++i) {
+      const std::uint64_t high = i + 1 < a.size() ? a[i + 1] << (64 - bits) : 0;
+      out[i] = a[i] >> bits | high;
+    }
+  }
+  normalize(out);
+  return out;
+}
+
+// a << k, trimmed.
+Nat shl(Span a, std::size_t k) {
+  if (a.empty()) return {};
+  Nat out(k / 64, 0);
+  const Nat shifted = shl_bits(a, static_cast<unsigned>(k % 64));
+  out.insert(out.end(), shifted.begin(), shifted.end());
+  normalize(out);
+  return out;
+}
+
+// a >> k, trimmed.
+Nat shr(Span a, std::size_t k) {
+  if (k / 64 >= a.size()) return {};
+  return shr_bits(a.subspan(k / 64), static_cast<unsigned>(k % 64));
+}
+
+// a mod 2^k, trimmed.
+Nat low_bits(Span a, std::size_t k) {
+  const std::size_t words = k / 64, bits = k % 64;
+  Nat out(a.begin(), a.begin() + std::min(a.size(), words + 1));
+  if (out.size() > words) {
+    if (bits == 0) {
+      out.resize(words);
+    } else {
+      out[words] &= (std::uint64_t{1} << bits) - 1;
+    }
+  }
+  normalize(out);
+  return out;
+}
+
+inline std::size_t bit_len(Span a) {
+  return a.empty() ? 0 : a.size() * 64 - static_cast<std::size_t>(__builtin_clzll(a.back()));
+}
+
+// For a nonzero a.
+inline std::size_t trailing_zero_bits(Span a) {
+  std::size_t i = 0;
+  while (a[i] == 0) ++i;
+  return i * 64 + static_cast<std::size_t>(__builtin_ctzll(a[i]));
+}
+
+// ---- multiplication
+
+// Karatsuba's temporaries, reused from product to product.
+thread_local Nat scratch_cache;
+
+// Words of scratch a product of `n` result words may need: each Karatsuba
+// level holds under 2.5n words and hands its children at most 2n/3.
+inline std::size_t scratch_len(std::size_t n) { return 8 * n + 512; }
+
+template <class F>
+void with_scratch(std::size_t len, F&& f) {
+  // Taken out of the cache, so a nested product (none today) would simply
+  // allocate its own. Every user zeroes the part it uses.
+  Nat buf = std::move(scratch_cache);
+  scratch_cache = Nat();
+  if (buf.size() < len) buf.resize(len);
+  struct GiveBack {
+    Nat& b;
+    ~GiveBack() {
+      if (scratch_cache.size() < b.size()) scratch_cache = std::move(b);
+    }
+  } give_back{buf};
+  f(Out(buf.data(), len));
+}
+
+// out = a * b by rows; out zeroed and at least a.size() + b.size() long.
+void basecase_mul(Out out, Span a, Span b) {
+  for (std::size_t j = 0; j < b.size(); ++j) {
+    if (b[j] != 0) out[j + a.size()] = addmul_1(out.subspan(j), a, b[j]);
+  }
+}
+
+// out = a^2; out zeroed and at least 2 a.size() long. Each cross product once,
+// doubled, then the squares of the words on the diagonal.
+void basecase_sqr(Out out, Span a) {
+  const std::size_t n = a.size();
+  for (std::size_t i = 0; i + 1 < n; ++i) {
+    out[i + n] = addmul_1(out.subspan(2 * i + 1), a.subspan(i + 1), a[i]);
+  }
+  std::uint64_t top = 0;
+  for (std::size_t i = 0; i < 2 * n; ++i) {
+    const std::uint64_t x = out[i];
+    out[i] = x << 1 | top;
+    top = x >> 63;
+  }
+  std::uint64_t carry = 0;
+  for (std::size_t i = 0; i < n; ++i) {
+    const u128 sq = static_cast<u128>(a[i]) * a[i];
+    const u128 lo = static_cast<u128>(out[2 * i]) + static_cast<std::uint64_t>(sq) + carry;
+    out[2 * i] = static_cast<std::uint64_t>(lo);
+    const u128 hi = static_cast<u128>(out[2 * i + 1]) + static_cast<std::uint64_t>(sq >> 64) +
+                    static_cast<std::uint64_t>(lo >> 64);
+    out[2 * i + 1] = static_cast<std::uint64_t>(hi);
+    carry = static_cast<std::uint64_t>(hi >> 64);
+  }
+}
+
+// d = |a - b| in d.size() == a.size() >= b.size() words; how a compares to b.
+int abs_diff_into(Out d, Span a, Span b) {
+  a = trimmed(a);
+  b = trimmed(b);
+  const int ord = cmp(a, b);
+  std::fill(d.begin(), d.end(), 0);
+  if (ord == 0) return 0;
+  const Span big = ord > 0 ? a : b;
+  const Span small = ord > 0 ? b : a;
+  std::copy(big.begin(), big.end(), d.begin());
+  sub_in(d, small);
+  return ord;
+}
+
+void karatsuba(Out out, Span x, Span y, Out scratch);
+
+// out = a * b. out is zeroed and one word longer than the product (Karatsuba's
+// intermediate sums use it and leave it zero); `scratch` holds the rest.
+void mul_into(Out out, Span a, Span b, Out scratch) {
+  if (a.size() < b.size()) std::swap(a, b);
+  if (b.empty()) return;
+  if (b.size() < KARATSUBA) {
+    basecase_mul(out, a, b);
+  } else if (a.size() >= 2 * b.size()) {
+    // Unbalanced: the long factor in pieces as long as the short one.
+    const std::size_t n = b.size();
+    const Out tmp = scratch.first(2 * n + 1);
+    const Out rest = scratch.subspan(2 * n + 1);
+    for (std::size_t k = 0; k * n < a.size(); ++k) {
+      const Span piece = trimmed(a.subspan(k * n, std::min(n, a.size() - k * n)));
+      if (piece.empty()) continue;
+      const Out t = tmp.first(piece.size() + n + 1);
+      std::fill(t.begin(), t.end(), 0);
+      mul_into(t, piece, b, rest);
+      add_in(out.subspan(k * n), trimmed(t));
+    }
   } else {
-    heap_lo.assign(total, 0);
-    heap_hi.assign(total, 0);
-    acc_lo = heap_lo.data();
-    acc_hi = heap_hi.data();
+    karatsuba(out, a, b, scratch);
   }
+}
 
-  const uint32_t* a = la.data();
-  for (size_t i = 0; i < n; ++i) {
-    const uint64_t av = a[i];
-    if (av == 0) continue;
-    uint64_t sq = av * av;
-    acc_lo[2 * i] += sq;
-    if (acc_lo[2 * i] < sq) acc_hi[2 * i]++;
+// x * y for y.size() <= x.size() < 2 y.size(): with x = x0 + x1 B^h and
+// y = y0 + y1 B^h, xy = x0 y0 (1 + B^h) + x1 y1 (B^h + B^2h) - (x1 - x0)(y1 - y0) B^h.
+void karatsuba(Out out, Span x, Span y, Out scratch) {
+  const std::size_t h = y.size() / 2;
+  const Span x0 = trimmed(x.first(h)), x1 = x.subspan(h);
+  const Span y0 = trimmed(y.first(h)), y1 = y.subspan(h);
+  const Out t0 = scratch.first(2 * h + 1);
+  const Out t2 = scratch.subspan(2 * h + 1, x1.size() + y1.size() + 1);
+  const Out rest = scratch.subspan(2 * h + 1 + x1.size() + y1.size() + 1);
+  std::fill(t0.begin(), t0.end(), 0);
+  std::fill(t2.begin(), t2.end(), 0);
+  mul_into(t0, x0, y0, rest);
+  mul_into(t2, x1, y1, rest);
+  const Span s0 = trimmed(t0), s2 = trimmed(t2);
+  std::copy(s0.begin(), s0.end(), out.begin());
+  std::copy(s2.begin(), s2.end(), out.begin() + static_cast<std::ptrdiff_t>(2 * h));
+  add_in(out.subspan(h), s0);
+  add_in(out.subspan(h), s2);
+  const Out dx = rest.first(x1.size());
+  const Out dy = rest.subspan(x1.size(), y1.size());
+  const int sx = abs_diff_into(dx, x1, x0);
+  const int sy = abs_diff_into(dy, y1, y0);
+  if (sx == 0 || sy == 0) return;
+  const Span dxt = trimmed(dx), dyt = trimmed(dy);
+  const Out after = rest.subspan(x1.size() + y1.size());
+  const Out p = after.first(dxt.size() + dyt.size() + 1);
+  std::fill(p.begin(), p.end(), 0);
+  mul_into(p, dxt, dyt, after.subspan(p.size()));
+  if (sx == sy) {
+    sub_in(out.subspan(h), trimmed(p));
+  } else {
+    add_in(out.subspan(h), trimmed(p));
+  }
+}
 
-    const uint64_t av2 = av * 2;
-    for (size_t j = i + 1; j < n; ++j) {
-      uint64_t prod = av2 * a[j];
-      size_t idx = i + j;
-      acc_lo[idx] += prod;
-      if (acc_lo[idx] < prod) acc_hi[idx]++;
+// out = a^2, out zeroed and 2 a.size() + 1 long: Karatsuba's squaring,
+// a^2 = a0^2 (1 + B^h) + a1^2 (B^h + B^2h) - (a1 - a0)^2 B^h.
+void sqr_into(Out out, Span a, Out scratch) {
+  if (a.size() < KARATSUBA_SQR) {
+    basecase_sqr(out, a);
+    return;
+  }
+  const std::size_t h = a.size() / 2;
+  const Span a0 = trimmed(a.first(h)), a1 = a.subspan(h);
+  const Out t0 = scratch.first(2 * h + 1);
+  const Out t2 = scratch.subspan(2 * h + 1, 2 * a1.size() + 1);
+  const Out rest = scratch.subspan(2 * h + 1 + 2 * a1.size() + 1);
+  std::fill(t0.begin(), t0.end(), 0);
+  std::fill(t2.begin(), t2.end(), 0);
+  sqr_into(t0, a0, rest);
+  sqr_into(t2, a1, rest);
+  const Span s0 = trimmed(t0), s2 = trimmed(t2);
+  std::copy(s0.begin(), s0.end(), out.begin());
+  std::copy(s2.begin(), s2.end(), out.begin() + static_cast<std::ptrdiff_t>(2 * h));
+  add_in(out.subspan(h), s0);
+  add_in(out.subspan(h), s2);
+  const Out d = rest.first(a1.size());
+  if (abs_diff_into(d, a1, a0) == 0) return;
+  const Span dt = trimmed(d);
+  const Out after = rest.subspan(a1.size());
+  const Out p = after.first(2 * dt.size() + 1);
+  std::fill(p.begin(), p.end(), 0);
+  sqr_into(p, dt, after.subspan(p.size()));
+  sub_in(out.subspan(h), trimmed(p));
+}
+
+Nat sqr(Span a) {
+  a = trimmed(a);
+  const std::size_t n = 2 * a.size() + 1;
+  Nat out(n, 0);
+  if (a.size() < KARATSUBA_SQR) {
+    basecase_sqr(out, a);
+  } else {
+    with_scratch(scratch_len(n), [&](Out s) { sqr_into(out, a, s); });
+  }
+  normalize(out);
+  return out;
+}
+
+Nat mul(Span a, Span b) {
+  a = trimmed(a);
+  b = trimmed(b);
+  if (a.empty() || b.empty()) return {};
+  // A square costs about half a product: a value times an equal one (zr * zr,
+  // reading the same variable twice) takes that road.
+  if (a.size() == b.size() && std::equal(a.begin(), a.end(), b.begin())) return sqr(a);
+  if (a.size() == 1 || b.size() == 1) {
+    const Span lng = b.size() == 1 ? a : b;
+    const std::uint64_t m = b.size() == 1 ? b[0] : a[0];
+    Nat out(lng.begin(), lng.end());
+    const std::uint64_t carry = mul_1(out, m);
+    if (carry != 0) out.push_back(carry);
+    return out;
+  }
+  const std::size_t n = a.size() + b.size() + 1;
+  Nat out(n, 0);
+  if (std::min(a.size(), b.size()) < KARATSUBA) {
+    if (a.size() >= b.size()) {
+      basecase_mul(out, a, b);
+    } else {
+      basecase_mul(out, b, a);
+    }
+  } else {
+    with_scratch(scratch_len(n), [&](Out s) { mul_into(out, a, b, s); });
+  }
+  normalize(out);
+  return out;
+}
+
+// ---- division
+
+// Knuth's algorithm D (TAOCP 4.3.1) for a divisor of two words or more and
+// u.size() >= v.size(): quotient and remainder, trimmed.
+std::pair<Nat, Nat> knuth_div(Span u, Span v) {
+  const unsigned shift = static_cast<unsigned>(__builtin_clzll(v.back()));
+  Nat vn = shl_bits(v, shift);
+  vn.pop_back();
+  Nat un = shl_bits(u, shift);
+  const std::size_t n = vn.size();
+  const std::size_t m = un.size() - n - 1;
+  Nat q(m + 1, 0);
+  const u128 vtop = vn[n - 1], vnext = vn[n - 2];
+  for (std::size_t j = m + 1; j-- > 0;) {
+    // The estimate from the top two words: a one-word division while the top
+    // word is below the divisor's (the normalised top word bounds it), else
+    // B - 1 (Hacker's Delight's divmnu; the same answers as dividing the
+    // 128-bit numerator and stepping down from B).
+    u128 qhat, rhat;
+    if (un[j + n] < vn[n - 1]) {
+      std::uint64_t r64;
+      qhat = div_2by1(un[j + n], un[j + n - 1], vn[n - 1], r64);
+      rhat = r64;
+    } else {
+      qhat = WORD_MAX;
+      rhat = static_cast<u128>(un[j + n - 1]) + vn[n - 1];
+    }
+    while (rhat <= WORD_MAX && qhat * vnext > (rhat << 64 | un[j + n - 2])) {
+      --qhat;
+      rhat += vtop;
+    }
+    const std::uint64_t borrow = submul_1(Out(un).subspan(j, n), vn, static_cast<std::uint64_t>(qhat));
+    const bool under = un[j + n] < borrow;
+    un[j + n] -= borrow;
+    if (under) {
+      --qhat;
+      const bool carry = add_in(Out(un).subspan(j, n), vn);
+      un[j + n] += carry ? 1 : 0;
+    }
+    q[j] = static_cast<std::uint64_t>(qhat);
+  }
+  normalize(q);
+  return {std::move(q), shr_bits(Span(un).first(n), shift)};
+}
+
+// A divisor prepared for Barrett reduction: shifted until its top bit is set
+// (`v`, n words), with r = floor(B^2n / v).
+struct Recip {
+  unsigned shift = 0;
+  Nat v;
+  Nat r;
+};
+
+Nat shl_words(Span a, std::size_t k) {
+  if (a.empty()) return {};
+  Nat out(k, 0);
+  out.insert(out.end(), a.begin(), a.end());
+  return out;
+}
+
+Nat shr_words(Span a, std::size_t k) {
+  if (k >= a.size()) return {};
+  return Nat(a.begin() + static_cast<std::ptrdiff_t>(k), a.end());
+}
+
+// floor(B^2n / v) for v of n words with its top bit set. Newton's iteration
+// from the reciprocal of v's top half: x1 = x0 + x0 (B^2n - v x0) / B^2n
+// doubles the correct words, then a product fixes the last unit or two.
+Nat reciprocal(Span v) {
+  const std::size_t n = v.size();
+  Nat b2n(2 * n + 1, 0);
+  b2n[2 * n] = 1;
+  if (n <= RECIP_BASE) return knuth_div(b2n, v).first;
+  const std::size_t h = n / 2 + 1;
+  const Nat rh = reciprocal(v.subspan(n - h));
+  // x0 = rh B^(n-h): its low n-h words are zero, so v x0 = (v rh) B^(n-h).
+  Nat x = shl_words(rh, n - h);
+  const Nat vx = shl_words(mul(v, rh), n - h);
+  const bool negative = cmp(vx, b2n) > 0;
+  const Nat e = negative ? sub(vx, b2n) : sub(b2n, vx);
+  // x0 e / B^2n = rh e / B^(n+h); e's low words cannot move the result by a unit.
+  const Nat t = shr_words(mul(rh, shr_words(e, n - 1)), h + 1);
+  x = negative ? sub(x, t) : add(x, t);
+  const Nat one{1};
+  Nat p = mul(v, x);
+  while (cmp(p, b2n) > 0) {
+    x = sub(x, one);
+    p = sub(p, v);
+  }
+  for (;;) {
+    const Nat rest = sub(b2n, p);
+    if (cmp(rest, v) < 0) break;
+    x = add(x, one);
+    p = add(p, v);
+  }
+  return x;
+}
+
+Recip make_recip(Span d) {
+  Recip rec;
+  rec.shift = static_cast<unsigned>(__builtin_clzll(d.back()));
+  rec.v = shl_bits(d, rec.shift);
+  rec.v.pop_back();
+  rec.r = reciprocal(rec.v);
+  return rec;
+}
+
+// x < v B^n for the prepared v of n words: floor(x / v) and x mod v. Barrett
+// (HAC 14.42): the estimate is at most two short.
+std::pair<Nat, Nat> barrett_step(Span x, const Recip& rec) {
+  const std::size_t n = rec.v.size();
+  if (cmp(x, rec.v) < 0) return {Nat{}, Nat(x.begin(), x.end())};
+  const Span q1 = x.subspan(std::min(n - 1, x.size()));
+  Nat q = shr_words(mul(q1, rec.r), n + 1);
+  Nat r = sub(x, mul(q, rec.v));
+  const Nat one{1};
+  while (cmp(r, rec.v) >= 0) {
+    r = sub(r, rec.v);
+    q = add(q, one);
+  }
+  return {std::move(q), std::move(r)};
+}
+
+// u / d with d prepared: long division in base B^n, one Barrett step per block.
+std::pair<Nat, Nat> barrett_div(Span u, const Recip& rec) {
+  const std::size_t n = rec.v.size();
+  Nat us = shl_bits(u, rec.shift);
+  normalize(us);
+  const std::size_t blocks = (us.size() + n - 1) / n;
+  Nat q(blocks * n, 0);
+  Nat r;
+  for (std::size_t b = blocks; b-- > 0;) {
+    const std::size_t lo = b * n;
+    const std::size_t hi = std::min(lo + n, us.size());
+    Nat x(us.begin() + static_cast<std::ptrdiff_t>(lo), us.begin() + static_cast<std::ptrdiff_t>(hi));
+    x.resize(n, 0);
+    x.insert(x.end(), r.begin(), r.end());
+    normalize(x);
+    auto [qb, rb] = barrett_step(x, rec);
+    std::copy(qb.begin(), qb.end(), q.begin() + static_cast<std::ptrdiff_t>(lo));
+    r = std::move(rb);
+  }
+  normalize(q);
+  return {std::move(q), shr_bits(r, rec.shift)};
+}
+
+// 5^k, trimmed, with its reciprocal made on first use.
+struct Power {
+  Nat value;
+  mutable std::optional<Recip> recip;
+  const Recip& rec() const {
+    if (!recip) recip = make_recip(value);
+    return *recip;
+  }
+};
+
+// Quotient and remainder of trimmed u and v, v nonzero; `power` supplies a
+// cached reciprocal when v is a power of five.
+std::pair<Nat, Nat> div_rem(Span u, Span v, const Power* power) {
+  if (v.empty()) throw std::logic_error("unsigned mantissa division by zero");
+  if (cmp(u, v) < 0) return {Nat{}, Nat(u.begin(), u.end())};
+  if (v.size() == 1) {
+    Nat q(u.begin(), u.end());
+    const std::uint64_t r = div_1(q, v[0]);
+    normalize(q);
+    return {std::move(q), r == 0 ? Nat{} : Nat{r}};
+  }
+  const std::size_t n = v.size(), m = u.size() - v.size();
+  if (power != nullptr && n >= BARRETT_CACHED && m >= BARRETT_CACHED) return barrett_div(u, power->rec());
+  if (power == nullptr && n >= BARRETT_FRESH && m >= BARRETT_FRESH) return barrett_div(u, make_recip(v));
+  return knuth_div(u, v);
+}
+
+// ---- powers of five and ten
+
+struct Pow5Cache {
+  std::unordered_map<std::size_t, std::shared_ptr<const Power>> map;
+  std::size_t words = 0;
+};
+
+thread_local Pow5Cache pow5_cache;
+
+// 5^k, cached with its halves.
+std::shared_ptr<const Power> pow5(std::size_t k) {
+  if (const auto it = pow5_cache.map.find(k); it != pow5_cache.map.end()) return it->second;
+  auto p = std::make_shared<Power>();
+  if (k <= 27) {
+    std::uint64_t v = 1;
+    for (std::size_t i = 0; i < k; ++i) v *= 5;
+    p->value = {v};
+  } else {
+    const std::shared_ptr<const Power> half = pow5(k / 2);
+    p->value = sqr(half->value);
+    if (k % 2 == 1) {
+      const std::uint64_t carry = mul_1(p->value, 5);
+      if (carry != 0) p->value.push_back(carry);
     }
   }
-
-  std::vector<uint32_t> res(total);
-  uint32_t* r_ptr = res.data();
-  uint64_t carry = 0;
-  for (size_t i = 0; i < total; ++i) {
-    uint64_t lo = acc_lo[i];
-    uint64_t hi = acc_hi[i];
-    lo += carry;
-    if (lo < carry) hi++;
-    uint64_t q_lo, r_lo;
-#if defined(__x86_64__)
-    __asm__("divq %4"
-            : "=a"(q_lo), "=d"(r_lo)
-            : "a"(lo), "d"(hi), "rm"(static_cast<uint64_t>(BASE_10E9)));
-#else
-    __uint128_t cur = (static_cast<__uint128_t>(hi) << 64) | lo;
-    q_lo = static_cast<uint64_t>(cur / BASE_10E9);
-    r_lo = static_cast<uint64_t>(cur % BASE_10E9);
-#endif
-    r_ptr[i] = static_cast<uint32_t>(r_lo);
-    carry = q_lo;
+  if (pow5_cache.words + p->value.size() > POW5_CACHE_WORDS) {
+    pow5_cache.map.clear();
+    pow5_cache.words = 0;
   }
-
-  size_t len = total;
-  while (len > 1 && res[len - 1] == 0) len--;
-  res.resize(len);
-  return res;
+  pow5_cache.words += p->value.size();
+  pow5_cache.map.emplace(k, p);
+  return p;
 }
 
-// Karatsuba above this many limbs (measured: tools/perf/cpp/bench.py p2-*). Below it
-// the schoolbook loops above win; above it the O(n^1.58) recursion does. The result
-// is the exact integer product either way.
-constexpr size_t KARATSUBA_LIMBS = 48;
-
-std::vector<uint32_t> trim_limbs(std::vector<uint32_t> v) {
-  while (v.size() > 1 && v.back() == 0) v.pop_back();
-  if (v.empty()) v.push_back(0);
-  return v;
+// 10^k for k <= 19.
+constexpr std::uint64_t pow10_word(std::size_t k) {
+  std::uint64_t p = 1;
+  for (std::size_t i = 0; i < k; ++i) p *= 10;
+  return p;
 }
 
-// dst += src << (off limbs), growing dst as needed.
-void limbs_add_into(std::vector<uint32_t>& dst, const std::vector<uint32_t>& src, size_t off) {
-  if (dst.size() < off + src.size() + 1) dst.resize(off + src.size() + 1, 0);
-  uint32_t carry = 0;
-  size_t i = 0;
-  for (; i < src.size(); ++i) {
-    uint32_t s = dst[off + i] + src[i] + carry;     // at most 2*(1e9-1)+1 < 2^32
-    if (s >= BASE_10E9) { s -= BASE_10E9; carry = 1; } else { carry = 0; }
-    dst[off + i] = s;
+// a * 10^k = (a * 5^k) << k.
+Nat mul_pow10(Span a, std::size_t k) {
+  if (a.empty() || k == 0) return Nat(a.begin(), a.end());
+  if (k <= 19) {
+    Nat out(a.begin(), a.end());
+    const std::uint64_t carry = mul_1(out, pow10_word(k));
+    if (carry != 0) out.push_back(carry);
+    return out;
   }
-  for (size_t k = off + i; carry; ++k) {
-    if (k >= dst.size()) dst.push_back(0);
-    uint32_t s = dst[k] + carry;
-    if (s >= BASE_10E9) { s -= BASE_10E9; carry = 1; } else { carry = 0; }
-    dst[k] = s;
-  }
+  return shl(mul(a, pow5(k)->value), k);
 }
 
-// dst -= src in place; requires dst >= src as numbers.
-void limbs_sub_from(std::vector<uint32_t>& dst, const std::vector<uint32_t>& src) {
-  int64_t borrow = 0;
-  for (size_t i = 0; i < src.size(); ++i) {
-    int64_t t = static_cast<int64_t>(dst[i]) - src[i] - borrow;
-    if (t < 0) { t += BASE_10E9; borrow = 1; } else { borrow = 0; }
-    dst[i] = static_cast<uint32_t>(t);
+// a / 5^k and a mod 5^k.
+std::pair<Nat, Nat> divmod_pow5(Span a, std::size_t k) {
+  if (k <= 27) {
+    std::uint64_t p = 1;
+    for (std::size_t i = 0; i < k; ++i) p *= 5;
+    Nat q(a.begin(), a.end());
+    const std::uint64_t r = div_1(q, p);
+    normalize(q);
+    return {std::move(q), r == 0 ? Nat{} : Nat{r}};
   }
-  for (size_t k = src.size(); borrow; ++k) {
-    if (dst[k] == 0) { dst[k] = BASE_10E9 - 1; } else { --dst[k]; borrow = 0; }
-  }
+  const std::shared_ptr<const Power> p = pow5(k);
+  return div_rem(a, p->value, p.get());
 }
 
-std::vector<uint32_t> mul_limbs_fast(const std::vector<uint32_t>& a, const std::vector<uint32_t>& b,
-                                     bool square) {
-  if (std::min(a.size(), b.size()) < KARATSUBA_LIMBS) {
-    return square ? sqr_limbs_school(a) : mul_limbs_school(a, b);
+// a / 10^k and a mod 10^k: a >> k divided by 5^k, the low k bits kept.
+std::pair<Nat, Nat> divmod_pow10(Span a, std::size_t k) {
+  if (a.empty() || k == 0) return {Nat(a.begin(), a.end()), Nat{}};
+  if (k <= 19) {
+    Nat q(a.begin(), a.end());
+    const std::uint64_t r = div_1(q, pow10_word(k));
+    normalize(q);
+    return {std::move(q), r == 0 ? Nat{} : Nat{r}};
   }
-  const std::vector<uint32_t>& big = a.size() >= b.size() ? a : b;
-  const std::vector<uint32_t>& small = a.size() >= b.size() ? b : a;
-  const size_t na = big.size(), nb = small.size();
-  if (na >= 2 * nb) {                         // unbalanced: multiply in chunks of the short side
-    std::vector<uint32_t> res(na + nb + 1, 0);
-    for (size_t off = 0; off < na; off += nb) {
-      std::vector<uint32_t> chunk(big.begin() + off, big.begin() + std::min(off + nb, na));
-      limbs_add_into(res, mul_limbs_fast(trim_limbs(std::move(chunk)), small, false), off);
+  auto [q, r5] = divmod_pow5(shr(a, k), k);
+  const Nat low = low_bits(a, k);
+  Nat r = shl(r5, k);
+  if (r.size() < low.size()) r.resize(low.size(), 0);
+  for (std::size_t i = 0; i < low.size(); ++i) r[i] |= low[i];
+  normalize(r);
+  return {std::move(q), std::move(r)};
+}
+
+// Whether a < 10^k: 10^k = 5^k 2^k, so a < 10^k exactly when a >> k < 5^k.
+bool below_pow10(Span a, std::size_t k) {
+  if (k <= 19) return a.size() <= 1 && (a.empty() ? 0 : a[0]) < pow10_word(k);
+  if (bit_len(a) <= k) return true;
+  return cmp(shr(a, k), pow5(k)->value) < 0;
+}
+
+// floor(b log10 2), and whether the Q64 constant proves it (it does unless
+// b log10 2 lies within b / 2^64 of an integer).
+std::pair<std::size_t, bool> floor_log10_pow2(std::size_t b) {
+  const u128 f = static_cast<u128>(b) * LOG10_2_Q64;
+  const bool exact = static_cast<u128>(static_cast<std::uint64_t>(f)) + b < (static_cast<u128>(1) << 64);
+  return {static_cast<std::size_t>(f >> 64), exact};
+}
+
+// Bounds on the decimal digit count of a nonzero a from its bit length alone:
+// 2^(b-1) <= a < 2^b.
+std::pair<std::size_t, std::size_t> digit_bounds(Span a) {
+  const std::size_t b = bit_len(a);
+  const auto [lo, lo_exact] = floor_log10_pow2(b - 1);
+  const auto [hi, hi_exact] = floor_log10_pow2(b);
+  return {lo + 1, hi + 1 + ((lo_exact && hi_exact) ? 0 : 1)};
+}
+
+// The exact decimal digit count of a nonzero a.
+std::size_t digits(Span a) {
+  const auto [lo, hi] = digit_bounds(a);
+  std::size_t d = lo;
+  while (d < hi && !below_pow10(a, d)) ++d;
+  return d;
+}
+
+// The number of decimal zeros ending a nonzero a, at most `cap`: the lesser of
+// its factors of two (free, the low zero bits) and of five (found in strides
+// that double while they divide).
+std::size_t trailing_decimal_zeros(Span a, std::size_t cap) {
+  cap = std::min(cap, trailing_zero_bits(a));
+  if (cap == 0 || rem_1(a, 5) != 0) return 0;
+  Nat x(a.begin(), a.end());
+  std::size_t t = 0, stride = 1;
+  for (;;) {
+    if (t + stride <= cap) {
+      auto [q, r] = divmod_pow5(x, stride);
+      if (r.empty()) {
+        x = std::move(q);
+        t += stride;
+        stride *= 2;
+        continue;
+      }
     }
-    return trim_limbs(std::move(res));
+    if (stride == 1) return t;
+    stride /= 2;
   }
-  const size_t m = na / 2;                    // nb > m because nb > na / 2
-  std::vector<uint32_t> a0(big.begin(), big.begin() + m), a1(big.begin() + m, big.end());
-  std::vector<uint32_t> b0(small.begin(), small.begin() + m), b1(small.begin() + m, small.end());
-  a0 = trim_limbs(std::move(a0));
-  b0 = trim_limbs(std::move(b0));
-  std::vector<uint32_t> z0 = mul_limbs_fast(a0, b0, square);
-  std::vector<uint32_t> z2 = mul_limbs_fast(a1, b1, square);
-  std::vector<uint32_t> sa = add_limbs(a0, a1);
-  std::vector<uint32_t> z1 = square ? mul_limbs_fast(sa, sa, true)
-                                    : mul_limbs_fast(sa, add_limbs(b0, b1), false);
-  z1 = trim_limbs(std::move(z1));
-  limbs_sub_from(z1, z0);
-  limbs_sub_from(z1, z2);
-  std::vector<uint32_t> res = z0;
-  res.resize(na + nb + 1, 0);
-  limbs_add_into(res, z1, m);
-  limbs_add_into(res, z2, 2 * m);
-  return trim_limbs(std::move(res));
 }
 
-std::vector<uint32_t> mul_limbs(const std::vector<uint32_t>& la, const std::vector<uint32_t>& lb) {
-  if (std::min(la.size(), lb.size()) < KARATSUBA_LIMBS) return mul_limbs_school(la, lb);
-  return mul_limbs_fast(la, lb, false);
+// ---- decimal text
+
+// Where a decimal conversion of `len` digits splits: the largest 19 * 2^j that
+// leaves the high part at least as long as the low one, so every split point is
+// a power of ten the cache already holds.
+std::size_t split_digits(std::size_t len) {
+  std::size_t k = 19;
+  while (4 * k <= len) k *= 2;
+  return k;
 }
 
-std::vector<uint32_t> sqr_limbs(const std::vector<uint32_t>& la) {
-  if (la.size() < KARATSUBA_LIMBS) return sqr_limbs_school(la);
-  return mul_limbs_fast(la, la, true);
-}
-
-void scale_up_limbs(std::vector<uint32_t>& limbs, long long diff) {
-  if (diff <= 0 || (limbs.size() == 1 && limbs[0] == 0)) return;
-  long long words = diff / 9;
-  long long rem = diff % 9;
-  if (rem > 0) {
-    uint64_t factor = static_cast<uint64_t>(POW10_128[rem]);
-    uint64_t carry = 0;
-    for (size_t i = 0; i < limbs.size(); ++i) {
-      uint64_t cur = static_cast<uint64_t>(limbs[i]) * factor + carry;
-      limbs[i] = static_cast<uint32_t>(cur % BASE_10E9);
-      carry = cur / BASE_10E9;
+// ASCII digits (validated by the caller) as a magnitude.
+Nat from_decimal(std::string_view digits) {
+  if (digits.size() <= DEC_LEAF_DIGITS) {
+    Nat acc;
+    std::size_t len = std::min(digits.size() % 19 == 0 ? std::size_t{19} : digits.size() % 19, digits.size());
+    for (std::size_t start = 0; start < digits.size(); start += len, len = 19) {
+      std::uint64_t chunk = 0;
+      for (std::size_t i = start; i < start + len; ++i) chunk = chunk * 10 + static_cast<std::uint64_t>(digits[i] - '0');
+      const std::uint64_t carry = mul_1(acc, pow10_word(len));
+      if (carry != 0) acc.push_back(carry);
+      if (chunk != 0) {
+        if (acc.empty()) acc.push_back(0);
+        const std::array<std::uint64_t, 1> word{chunk};
+        if (add_in(acc, word)) acc.push_back(1);
+      }
     }
-    if (carry > 0) limbs.push_back(static_cast<uint32_t>(carry));
+    normalize(acc);
+    return acc;
   }
-  if (words > 0) {
-    limbs.insert(limbs.begin(), static_cast<size_t>(words), 0);
-  }
+  const std::size_t k = split_digits(digits.size());
+  const Nat high = from_decimal(digits.substr(0, digits.size() - k));
+  const Nat low = from_decimal(digits.substr(digits.size() - k));
+  return add(mul_pow10(high, k), low);
 }
+
+// The digits of a < 10^len into out[0, len) (filled with '0' by the caller),
+// right-aligned.
+void write_decimal(Span a, char* out, std::size_t len) {
+  if (a.size() <= DEC_LEAF_WORDS) {
+    Nat cur(a.begin(), a.end());
+    std::size_t end = len;
+    while (!cur.empty()) {
+      std::uint64_t r = div_1(cur, TEN19);
+      normalize(cur);
+      const std::size_t start = end >= 19 ? end - 19 : 0;
+      for (std::size_t i = end; i-- > start;) {
+        out[i] = static_cast<char>('0' + r % 10);
+        r /= 10;
+      }
+      end = start;
+    }
+    return;
+  }
+  const std::size_t k = split_digits(len);
+  const auto [q, r] = divmod_pow10(a, k);
+  write_decimal(q, out, len - k);
+  write_decimal(r, out + (len - k), k);
+}
+
+std::string to_decimal(Span a) {
+  if (a.empty()) return "0";
+  std::string out(digits(a), '0');
+  write_decimal(a, out.data(), out.size());
+  return out;
+}
+
+}  // namespace bn
 
 // Decimal digits of `m`, least significant first, into buf (at least 40 bytes);
 // returns how many. A 128-bit `% 10` is a library call, so the magnitude is cut
@@ -746,183 +1271,44 @@ std::string dec_digits_from_magnitude(__uint128_t magnitude) {
   return std::string(buf, static_cast<size_t>(n));
 }
 
-std::string add_abs(const std::string& a, const std::string& b) {
-  if (a == "0") return b;
-  if (b == "0") return a;
-  if (a.size() <= 18 && b.size() <= 18) {
-    __uint128_t va = 0, vb = 0;
-    for (char c : a) va = va * 10 + (c - '0');
-    for (char c : b) vb = vb * 10 + (c - '0');
-    return dec_digits_from_magnitude(va + vb);
-  }
-  return limbs_to_string(add_limbs(string_to_limbs(a), string_to_limbs(b)));
-}
-
-// Knuth algorithm D (TAOCP 4.3.1) on little-endian base-1e9 limbs. Requires
-// b.size() >= 2, b.back() != 0 and a >= b (so a.size() >= b.size()).
-void divmod_limbs(const std::vector<uint32_t>& a, const std::vector<uint32_t>& b,
-                  std::vector<uint32_t>& q, std::vector<uint32_t>& r) {
-  const uint64_t B = BASE_10E9;
-  const size_t n = b.size();
-  const uint64_t d = B / (static_cast<uint64_t>(b.back()) + 1);   // normalisation factor
-  std::vector<uint32_t> u(a.size() + 1), v(n);
-  uint64_t carry = 0;
-  for (size_t i = 0; i < a.size(); ++i) {
-    uint64_t cur = static_cast<uint64_t>(a[i]) * d + carry;
-    u[i] = static_cast<uint32_t>(cur % B);
-    carry = cur / B;
-  }
-  u[a.size()] = static_cast<uint32_t>(carry);
-  carry = 0;
-  for (size_t i = 0; i < n; ++i) {
-    uint64_t cur = static_cast<uint64_t>(b[i]) * d + carry;
-    v[i] = static_cast<uint32_t>(cur % B);
-    carry = cur / B;
-  }
-  const size_t m = a.size() - n;
-  q.assign(m + 1, 0);
-  const uint64_t vt = v[n - 1], vs = v[n - 2];
-  for (size_t j = m + 1; j-- > 0;) {
-    uint64_t num = static_cast<uint64_t>(u[j + n]) * B + u[j + n - 1];
-    uint64_t qhat = num / vt, rhat = num % vt;
-    while (qhat >= B || qhat * vs > rhat * B + u[j + n - 2]) {
-      --qhat;
-      rhat += vt;
-      if (rhat >= B) break;
-    }
-    int64_t borrow = 0;
-    uint64_t c = 0;
-    for (size_t i = 0; i < n; ++i) {
-      uint64_t p = qhat * v[i] + c;
-      c = p / B;
-      int64_t t = static_cast<int64_t>(u[i + j]) - borrow - static_cast<int64_t>(p % B);
-      if (t < 0) { t += static_cast<int64_t>(B); borrow = 1; } else { borrow = 0; }
-      u[i + j] = static_cast<uint32_t>(t);
-    }
-    int64_t t = static_cast<int64_t>(u[j + n]) - borrow - static_cast<int64_t>(c);
-    if (t < 0) { t += static_cast<int64_t>(B); borrow = 1; } else { borrow = 0; }
-    u[j + n] = static_cast<uint32_t>(t);
-    if (borrow) {                       // qhat was one too large: add the divisor back
-      --qhat;
-      uint64_t carry2 = 0;
-      for (size_t i = 0; i < n; ++i) {
-        uint64_t sum = static_cast<uint64_t>(u[i + j]) + v[i] + carry2;
-        u[i + j] = static_cast<uint32_t>(sum % B);
-        carry2 = sum / B;
-      }
-      u[j + n] = static_cast<uint32_t>((static_cast<uint64_t>(u[j + n]) + carry2) % B);
-    }
-    q[j] = static_cast<uint32_t>(qhat);
-  }
-  r.assign(n, 0);
-  uint64_t rem = 0;
-  for (size_t i = n; i-- > 0;) {
-    uint64_t cur = rem * B + u[i];
-    r[i] = static_cast<uint32_t>(cur / d);
-    rem = cur % d;
-  }
-  while (q.size() > 1 && q.back() == 0) q.pop_back();
-  while (r.size() > 1 && r.back() == 0) r.pop_back();
-}
-
-// Long division: power-of-10 and single-limb fast paths, Knuth D beyond.
-bool divmod_abs(const std::string& a, const std::string& b, std::string& q, std::string& r) {
-  if (b == "0") return false;
-  if (cmp_abs(a, b) < 0) { q = "0"; r = a; return true; }
-  // Check power of 10
-  if (b[0] == '1') {
-    bool is_pow10 = true;
-    for (size_t i = 1; i < b.size(); ++i) {
-      if (b[i] != '0') { is_pow10 = false; break; }
-    }
-    if (is_pow10) {
-      size_t k = b.size() - 1;
-      if (a.size() <= k) {
-        q = "0";
-        r = strip(a);
-      } else {
-        q = a.substr(0, a.size() - k);
-        // k == 0 (dividing by exactly "1") leaves an empty tail, and an empty
-        // string is not the remainder "0": callers compare against it.
-        r = k == 0 ? std::string("0") : strip(a.substr(a.size() - k));
-      }
-      return true;
-    }
-  }
-  // Check single-limb divisor
-  if (b.size() <= 9) {
-    uint32_t divisor = std::stoul(b);
-    std::string quo;
-    quo.reserve(a.size());
-    uint64_t rem = 0;
-    for (char c : a) {
-      rem = rem * 10 + (c - '0');
-      quo.push_back(static_cast<char>('0' + (rem / divisor)));
-      rem %= divisor;
-    }
-    q = strip(quo);
-    r = std::to_string(rem);
-    return true;
-  }
-  // Multi-limb divisor: Knuth's algorithm D on the base-1e9 limbs. Schoolbook
-  // digit-by-digit division allocated a string per step and was O(n*m*9); this is
-  // O(n*m/81) with no allocation in the loop. The quotient and remainder are the
-  // exact integer ones, so the result is byte-identical.
-  {
-    std::vector<uint32_t> ql, rl;
-    divmod_limbs(string_to_limbs(a), string_to_limbs(b), ql, rl);
-    q = limbs_to_string(ql);
-    r = limbs_to_string(rl);
-    return true;
-  }
-}
-
 std::string scale_up(const std::string& digits, long long k) {
   if (k <= 0) return digits;
   if (digits == "0") return "0";
   return digits + std::string(static_cast<std::size_t>(k), '0');
 }
 
-std::string pow10(long long k) {
-  return k == 0 ? "1" : "1" + std::string(static_cast<std::size_t>(k), '0');
-}
-
 // --- construction
+//
+// A Dec holds its magnitude in up to three forms: the small mantissa (when it
+// fits, every operation's fast path), the digit string (a numeral as read, and
+// a large value once it has been written out), and the binary words (a large
+// value as arithmetic leaves it). The string and the words are caches of each
+// other, each made from the other only when something asks for it. A large Dec
+// is never zero, so empty words mean "not made yet".
 
-const std::vector<uint32_t>& dec_get_limbs(const Dec& d) {
-  if (!d.limbs.empty()) return d.limbs;
+const std::vector<std::uint64_t>& dec_get_words(const Dec& d) {
+  if (!d.words.empty()) return d.words;
   if (d.small) {
-    std::vector<uint32_t>& l = d.limbs;
-    __uint128_t mag = d.mantissa < 0 ? static_cast<__uint128_t>(-(d.mantissa))
+    const __uint128_t mag = d.mantissa < 0 ? static_cast<__uint128_t>(-(d.mantissa))
                                            : static_cast<__uint128_t>(d.mantissa);
-    if (mag == 0) {
-      l.push_back(0);
-    } else {
-      while (mag > 0) {
-        l.push_back(static_cast<uint32_t>(mag % BASE_10E9));
-        mag /= BASE_10E9;
-      }
-    }
-    return d.limbs;
+    d.words = {static_cast<std::uint64_t>(mag), static_cast<std::uint64_t>(mag >> 64)};
+    bn::normalize(d.words);
+    return d.words;
   }
-  if (!d.digits.empty()) {
-    d.limbs = string_to_limbs(d.digits);
-    return d.limbs;
-  }
-  d.limbs = {0};
-  return d.limbs;
+  if (!d.digits.empty() && d.digits != "0") d.words = bn::from_decimal(d.digits);
+  return d.words;
 }
 
 const std::string& dec_get_digits(const Dec& d) {
   if (!d.digits.empty()) return d.digits;
   if (d.small) {
     __uint128_t mag = d.mantissa < 0 ? static_cast<__uint128_t>(-(d.mantissa))
-                                           : static_cast<__uint128_t>(d.mantissa);
+                                     : static_cast<__uint128_t>(d.mantissa);
     d.digits = dec_digits_from_magnitude(mag);
     return d.digits;
   }
-  if (!d.limbs.empty()) {
-    d.digits = limbs_to_string(d.limbs);
+  if (!d.words.empty()) {
+    d.digits = bn::to_decimal(d.words);
     return d.digits;
   }
   d.digits = "0";
@@ -948,27 +1334,22 @@ Dec dec_from_mantissa(__int128_t mantissa, long long scale) {
   return d;
 }
 
-Dec dec_from_limbs(bool neg, std::vector<uint32_t> limbs, long long scale) {
-  while (limbs.size() > 1 && limbs.back() == 0) limbs.pop_back();
-  if (limbs.empty() || (limbs.size() == 1 && limbs[0] == 0)) {
-    return dec_from_mantissa(0, scale);
-  }
-  if (scale <= 38 && limbs.size() <= 4) {
-    __uint128_t mag = 0;
-    for (size_t i = limbs.size(); i > 0; --i) {
-      mag = mag * BASE_10E9 + limbs[i - 1];
-    }
-    const __uint128_t limit = static_cast<__uint128_t>(~((static_cast<__uint128_t>(1)) << 127));
-    if (mag <= limit) {
-      __int128_t mantissa = neg ? -static_cast<__int128_t>(mag) : static_cast<__int128_t>(mag);
-      return dec_from_mantissa(mantissa, scale);
-    }
+// A Dec from a magnitude arithmetic produced: small when it fits (as a numeral
+// of the same value would be), zero never negative.
+Dec dec_from_words(bool neg, std::vector<std::uint64_t> words, long long scale) {
+  bn::normalize(words);
+  if (words.empty()) return dec_from_mantissa(0, scale);
+  if (scale <= 38 && words.size() <= 2 && (words.size() < 2 || words[1] < (std::uint64_t{1} << 63))) {
+    const __uint128_t mag =
+        (words.size() == 2 ? static_cast<__uint128_t>(words[1]) << 64 : static_cast<__uint128_t>(0)) | words[0];
+    const __int128_t mantissa = static_cast<__int128_t>(mag);
+    return dec_from_mantissa(neg ? -mantissa : mantissa, scale);
   }
   Dec d;
   d.neg = neg;
   d.small = false;
   d.scale = static_cast<std::int32_t>(scale);
-  d.limbs = std::move(limbs);
+  d.words = std::move(words);
   return d;
 }
 
@@ -998,6 +1379,30 @@ Dec dec_make(bool neg, std::string digits, long long scale) {
   return d;
 }
 
+// Bounds on the magnitude's decimal digit count (at least one); for binary
+// words they come from the bit length, with no conversion and no division.
+std::pair<long long, long long> dec_digit_bounds(const Dec& d) {
+  if (d.small) {
+    __uint128_t m = d.mantissa < 0 ? static_cast<__uint128_t>(0) - static_cast<__uint128_t>(d.mantissa)
+                                   : static_cast<__uint128_t>(d.mantissa);
+    long long n = 1;
+    while (m >= 10) { m /= 10; ++n; }
+    return {n, n};
+  }
+  if (!d.words.empty()) {
+    const auto [lo, hi] = bn::digit_bounds(d.words);
+    return {static_cast<long long>(lo), static_cast<long long>(hi)};
+  }
+  const long long n = d.digits.empty() ? 1 : static_cast<long long>(d.digits.size());
+  return {n, n};
+}
+
+// Number of digits in the unscaled magnitude (at least 1), exactly.
+long long dec_ndigits(const Dec& d) {
+  if (!d.small && !d.words.empty()) return static_cast<long long>(bn::digits(d.words));
+  return dec_digit_bounds(d).first;
+}
+
 // Refuses a value SEL cannot hold, where it is built rather than where it is
 // rendered. Every operation that can grow a number passes its result through
 // here, so dec_power — repeated squaring over dec_mul — trips on an intermediate
@@ -1010,13 +1415,12 @@ Dec dec_guard(Dec&& d, Pos pos) {
   if (d.small) {
     return std::move(d);
   }
-  if (!d.limbs.empty()) {
-    if (static_cast<long long>(d.limbs.size()) * 9 - d.scale <= MAX_INT_DIGITS) {
-      return std::move(d);
-    }
-  }
-  const std::string& digits = dec_get_digits(d);
-  if (static_cast<long long>(digits.size()) - d.scale > MAX_INT_DIGITS) {
+  // At most scale + MAX_INT_DIGITS mantissa digits. The bounds decide every
+  // value not within a digit of that line; only those are counted exactly.
+  const long long limit = static_cast<long long>(d.scale) + MAX_INT_DIGITS;
+  const auto [lo, hi] = dec_digit_bounds(d);
+  const bool over = hi > limit && (lo > limit || dec_ndigits(d) > limit);
+  if (over) {
     fail("E_RANGE", "number has more than " + std::to_string(MAX_INT_DIGITS) + " integer digits",
          pos);
   }
@@ -1085,6 +1489,16 @@ std::string dec_format(const Dec& d) {
          padded.substr(padded.size() - scale);
 }
 
+// The length of dec_format(d) without producing it: the sign, the mantissa's
+// digits (padded to scale + 1 when all fractional), and the point. The text is
+// ASCII, so this is its code-point count too.
+std::size_t dec_format_len(const Dec& d) {
+  const std::size_t sign = d.neg ? 1 : 0;
+  const std::size_t digits = static_cast<std::size_t>(dec_ndigits(d));
+  const std::size_t scale = static_cast<std::size_t>(d.scale);
+  return sign + (scale == 0 ? digits : std::max(digits, scale + 1) + 1);
+}
+
 std::size_t dec_format_buf(const Dec& d, char* out) {
   char* p = out;
   if (d.neg) *p++ = '-';
@@ -1121,15 +1535,15 @@ Dec dec_from_int(long long n) {
 
 bool dec_is_zero(const Dec& d) {
   if (d.small) return d.mantissa == 0;
-  if (!d.limbs.empty()) return d.limbs.size() == 1 && d.limbs[0] == 0;
+  if (!d.words.empty()) return false;
   return dec_get_digits(d) == "0";
 }
 
 Dec dec_negate(const Dec& d) {
   if (d.small) return dec_from_mantissa(-d.mantissa, d.scale);
-  if (!d.limbs.empty()) {
+  if (!d.words.empty()) {
     Dec r = d;
-    if (!(r.limbs.size() == 1 && r.limbs[0] == 0)) r.neg = !r.neg;
+    r.neg = !r.neg;
     return r;
   }
   return dec_make(!d.neg, dec_get_digits(d), d.scale);
@@ -1137,7 +1551,7 @@ Dec dec_negate(const Dec& d) {
 
 // The value with the fraction's trailing zeros removed (§7.6 CANON): 1.50 is
 // 1.5, 2.000 is 2, 100 stays 100, and zero is 0 with no scale and no sign.
-// Counted on the digit string, not by repeated division.
+// Counted on the digit string when the value has one, else on the words.
 Dec dec_trim_scale(const Dec& d) {
   if (dec_is_zero(d)) return dec_from_mantissa(0, 0);
   if (d.scale == 0) return d;
@@ -1147,20 +1561,27 @@ Dec dec_trim_scale(const Dec& d) {
     trim_trailing_zeros(m, scale);
     return dec_from_mantissa(m, scale);
   }
-  const std::string& digits = dec_get_digits(d);
-  std::size_t end = digits.size();
-  const std::size_t stop = digits.size() > static_cast<std::size_t>(d.scale)
-                               ? digits.size() - static_cast<std::size_t>(d.scale)
-                               : 0;
-  while (end > stop && digits[end - 1] == '0') --end;
-  if (end == digits.size()) return d;
-  return dec_make(d.neg, digits.substr(0, end),
-                  static_cast<long long>(d.scale) - static_cast<long long>(digits.size() - end));
+  if (!d.digits.empty()) {
+    const std::string& digits = d.digits;
+    std::size_t end = digits.size();
+    const std::size_t stop = digits.size() > static_cast<std::size_t>(d.scale)
+                                 ? digits.size() - static_cast<std::size_t>(d.scale)
+                                 : 0;
+    while (end > stop && digits[end - 1] == '0') --end;
+    if (end == digits.size()) return d;
+    return dec_make(d.neg, digits.substr(0, end),
+                    static_cast<long long>(d.scale) - static_cast<long long>(digits.size() - end));
+  }
+  const std::vector<std::uint64_t>& words = dec_get_words(d);
+  const std::size_t zeros = bn::trailing_decimal_zeros(words, static_cast<std::size_t>(d.scale));
+  if (zeros == 0) return d;
+  return dec_from_words(d.neg, bn::divmod_pow10(words, zeros).first,
+                        static_cast<long long>(d.scale) - static_cast<long long>(zeros));
 }
 
 Dec dec_abs(const Dec& d) {
   if (d.small) return dec_from_mantissa(d.mantissa < 0 ? -d.mantissa : d.mantissa, d.scale);
-  if (!d.limbs.empty()) {
+  if (!d.words.empty()) {
     Dec r = d;
     r.neg = false;
     return r;
@@ -1170,25 +1591,16 @@ Dec dec_abs(const Dec& d) {
 
 int dec_sign(const Dec& d) {
   if (d.small) return d.mantissa == 0 ? 0 : (d.mantissa < 0 ? -1 : 1);
-  if (!d.limbs.empty()) {
-    if (d.limbs.size() == 1 && d.limbs[0] == 0) return 0;
-    return d.neg ? -1 : 1;
-  }
+  if (!d.words.empty()) return d.neg ? -1 : 1;
   return dec_is_zero(d) ? 0 : (d.neg ? -1 : 1);
 }
 
 // --- arithmetic
 
-void dec_aligned(const Dec& a, const Dec& b, std::string& A, std::string& B, long long& s) {
-  s = std::max(static_cast<long long>(a.scale), static_cast<long long>(b.scale));
-  A = scale_up(dec_get_digits(a), s - a.scale);
-  B = scale_up(dec_get_digits(b), s - b.scale);
-}
-
 // The checked native fast path shared by addition and comparison: both small
 // mantissas brought to the larger scale in __int128, or false when the scale
 // gap is past the power table or the multiply overflows. The caller falls
-// through to the limb path on false exactly as each did with its own copy;
+// through to the binary path on false exactly as each did with its own copy;
 // signed bounds are __builtin_mul_overflow's. Two callers, one rule (WL-001
 // SEL-0018); it is not a small-integer abstraction for the other hosts.
 inline bool align_small(const Dec& a, const Dec& b, __int128_t& sa, __int128_t& sb,
@@ -1202,6 +1614,15 @@ inline bool align_small(const Dec& a, const Dec& b, __int128_t& sa, __int128_t& 
   return true;
 }
 
+// The magnitude's words brought to a scale k places finer: a borrow of the
+// Dec's own words when k is zero, else the product kept in `keep`.
+const std::vector<std::uint64_t>& dec_words_scaled(const Dec& d, long long k, std::vector<std::uint64_t>& keep) {
+  const std::vector<std::uint64_t>& words = dec_get_words(d);
+  if (k <= 0) return words;
+  keep = bn::mul_pow10(words, static_cast<std::size_t>(k));
+  return keep;
+}
+
 Dec dec_add(const Dec& a, const Dec& b, Pos pos = {}) {
   if (a.small && b.small) {
     __int128_t sa, sb;
@@ -1213,52 +1634,20 @@ Dec dec_add(const Dec& a, const Dec& b, Pos pos = {}) {
       }
     }
   }
-  const std::vector<uint32_t>& ref_a = dec_get_limbs(a);
-  const std::vector<uint32_t>& ref_b = dec_get_limbs(b);
   const long long s = std::max(static_cast<long long>(a.scale), static_cast<long long>(b.scale));
-  const std::vector<uint32_t>* pa = &ref_a;
-  const std::vector<uint32_t>* pb = &ref_b;
-  std::vector<uint32_t> scaled_a, scaled_b;
-  if (s > a.scale) {
-    scaled_a = ref_a;
-    scale_up_limbs(scaled_a, s - a.scale);
-    pa = &scaled_a;
-  }
-  if (s > b.scale) {
-    scaled_b = ref_b;
-    scale_up_limbs(scaled_b, s - b.scale);
-    pb = &scaled_b;
-  }
-
+  std::vector<std::uint64_t> keep_a, keep_b;
+  const std::vector<std::uint64_t>& wa = dec_words_scaled(a, s - a.scale, keep_a);
+  const std::vector<std::uint64_t>& wb = dec_words_scaled(b, s - b.scale, keep_b);
   if (a.neg == b.neg) {
-    return dec_guard(dec_from_limbs(a.neg, add_limbs(*pa, *pb), s), pos);
+    return dec_guard(dec_from_words(a.neg, bn::add(wa, wb), s), pos);
   }
-  const int c = cmp_limbs(*pa, *pb);
+  const int c = bn::cmp(wa, wb);
   if (c == 0) return dec_from_mantissa(0, s);
-  return c > 0 ? dec_guard(dec_from_limbs(a.neg, sub_limbs(*pa, *pb), s), pos)
-               : dec_guard(dec_from_limbs(b.neg, sub_limbs(*pb, *pa), s), pos);
+  return c > 0 ? dec_guard(dec_from_words(a.neg, bn::sub(wa, wb), s), pos)
+               : dec_guard(dec_from_words(b.neg, bn::sub(wb, wa), s), pos);
 }
 
 Dec dec_sub(const Dec& a, const Dec& b, Pos pos = {}) { return dec_add(a, dec_negate(b), pos); }
-
-// Number of digits in the unscaled magnitude (at least 1).
-long long dec_ndigits(const Dec& d) {
-  if (d.small) {
-    __uint128_t m = d.mantissa < 0 ? static_cast<__uint128_t>(0) - static_cast<__uint128_t>(d.mantissa)
-                                   : static_cast<__uint128_t>(d.mantissa);
-    long long n = 1;
-    while (m >= 10) { m /= 10; ++n; }
-    return n;
-  }
-  const std::vector<uint32_t>& l = dec_get_limbs(d);
-  size_t top = l.size();
-  while (top > 1 && l[top - 1] == 0) --top;
-  long long n = static_cast<long long>(top - 1) * 9;
-  uint32_t v = l[top - 1];
-  long long t = 1;
-  while (v >= 10) { v /= 10; ++t; }
-  return n + t;
-}
 
 Dec dec_mul(const Dec& a, const Dec& b, Pos pos = {}) {
   if (a.small && b.small && a.scale <= MAX_FRAC_DIGITS - b.scale) {
@@ -1273,10 +1662,11 @@ Dec dec_mul(const Dec& a, const Dec& b, Pos pos = {}) {
   // A product that cannot fit is refused before it is computed: the result has at
   // least da + db - 1 digits and exactly sa + sb fractional ones, so the cap can
   // be decided from the operand sizes (the same E_RANGE the guard raises, at the
-  // same position, without spending minutes multiplying a doomed pair).
+  // same position, without spending minutes multiplying a doomed pair). The
+  // lower digit bounds prove it without counting.
   if (!dec_is_zero(a) && !dec_is_zero(b)) {
     const long long prod_scale = static_cast<long long>(a.scale) + b.scale;
-    const long long min_digits = dec_ndigits(a) + dec_ndigits(b) - 1;
+    const long long min_digits = dec_digit_bounds(a).first + dec_digit_bounds(b).first - 1;
     if (prod_scale > MAX_FRAC_DIGITS) {
       fail("E_RANGE", "number has more than " + std::to_string(MAX_FRAC_DIGITS) + " fractional digits", pos);
     }
@@ -1284,13 +1674,10 @@ Dec dec_mul(const Dec& a, const Dec& b, Pos pos = {}) {
       fail("E_RANGE", "number has more than " + std::to_string(MAX_INT_DIGITS) + " integer digits", pos);
     }
   }
-  const std::vector<uint32_t>& la = dec_get_limbs(a);
-  const std::vector<uint32_t>& lb = dec_get_limbs(b);
-  const bool res_neg = a.neg != b.neg;
-  if (&la == &lb || (a.scale == b.scale && a.neg == b.neg && la == lb)) {
-    return dec_guard(dec_from_limbs(false, sqr_limbs(la), static_cast<long long>(a.scale) + b.scale), pos);
-  }
-  return dec_guard(dec_from_limbs(res_neg, mul_limbs(la, lb), static_cast<long long>(a.scale) + b.scale), pos);
+  const std::vector<std::uint64_t>& wa = dec_get_words(a);
+  const std::vector<std::uint64_t>& wb = dec_get_words(b);
+  return dec_guard(dec_from_words(a.neg != b.neg, bn::mul(wa, wb), static_cast<long long>(a.scale) + b.scale),
+                   pos);
 }
 
 int dec_cmp(const Dec& a, const Dec& b) {
@@ -1301,21 +1688,38 @@ int dec_cmp(const Dec& a, const Dec& b) {
     long long target_scale;
     if (align_small(a, b, sa, sb, target_scale)) return (sa > sb) - (sa < sb);
   }
-  const std::vector<uint32_t>& ref_a = dec_get_limbs(a);
-  const std::vector<uint32_t>& ref_b = dec_get_limbs(b);
   int c = 0;
-  if (a.scale == b.scale) {
-    c = cmp_limbs(ref_a, ref_b);
-  } else if (a.scale < b.scale) {
-    std::vector<uint32_t> la = ref_a;
-    scale_up_limbs(la, b.scale - a.scale);
-    c = cmp_limbs(la, ref_b);
-  } else {
-    std::vector<uint32_t> lb = ref_b;
-    scale_up_limbs(lb, a.scale - b.scale);
-    c = cmp_limbs(ref_a, lb);
+  bool decided = false;
+  // Across scales the digit bounds decide most pairs without an aligned copy:
+  // |a| < 10^(hi_a - scale_a) <= 10^(lo_b - 1 - scale_b) <= |b|.
+  if (a.scale != b.scale && !dec_is_zero(a) && !dec_is_zero(b)) {
+    const auto [alo, ahi] = dec_digit_bounds(a);
+    const auto [blo, bhi] = dec_digit_bounds(b);
+    if (ahi - a.scale <= blo - 1 - b.scale) {
+      c = -1;
+      decided = true;
+    } else if (bhi - b.scale <= alo - 1 - a.scale) {
+      c = 1;
+      decided = true;
+    }
+  }
+  if (!decided) {
+    const long long s = std::max(static_cast<long long>(a.scale), static_cast<long long>(b.scale));
+    std::vector<std::uint64_t> keep_a, keep_b;
+    c = bn::cmp(dec_words_scaled(a, s - a.scale, keep_a), dec_words_scaled(b, s - b.scale, keep_b));
   }
   return a.neg ? -c : c;
+}
+
+// Whether two magnitudes are equal (scales and signs are the caller's): on the
+// digit strings when both have them, else on the words.
+bool dec_mag_equal(const Dec& a, const Dec& b) {
+  if (a.small && b.small) return a.mantissa == b.mantissa;
+  if (!a.small && !b.small && a.words.empty() && b.words.empty() && !a.digits.empty() &&
+      !b.digits.empty()) {
+    return a.digits == b.digits;
+  }
+  return dec_get_words(a) == dec_get_words(b);
 }
 
 // Exact when the quotient terminates within DIV_SCALE fractional digits (and
@@ -1353,25 +1757,24 @@ Dec dec_div(const Dec& a, const Dec& b, Pos pos = {}) {
       }
     }
   }
-  const std::string N = scale_up(dec_get_digits(a), b.scale);
-  const std::string D = scale_up(dec_get_digits(b), a.scale);
-  std::string q, r;
-  divmod_abs(scale_up(N, DIV_SCALE), D, q, r);
+  // |a| 10^(sb - sa + DIV_SCALE) / |b| 10^(sa - sb), whichever exponents are
+  // positive.
+  const long long sa = a.scale, sb = b.scale;
+  std::vector<std::uint64_t> keep_n, keep_d;
+  const std::vector<std::uint64_t>& num = dec_words_scaled(a, std::max(sb - sa, 0LL) + DIV_SCALE, keep_n);
+  const std::vector<std::uint64_t>& den = dec_words_scaled(b, std::max(sa - sb, 0LL), keep_d);
+  auto [q, r] = bn::div_rem(num, den, nullptr);
   const bool neg = a.neg != b.neg;
-
-  if (r == "0") {
-    // Exact: drop trailing zeros to reach the minimal scale.
-    std::string digits = q;
-    long long scale = DIV_SCALE;
-    while (scale > 0 && digits.size() > 1 && digits.back() == '0') {
-      digits.pop_back();
-      scale--;
-    }
-    if (digits == "0") scale = 0;
-    return dec_guard(dec_make(neg, digits, scale), pos);
+  if (r.empty()) {
+    // An exact quotient takes its minimal scale: drop up to DIV_SCALE zeros.
+    const std::size_t zeros = q.empty() ? 0 : bn::trailing_decimal_zeros(q, DIV_SCALE);
+    const long long scale = q.empty() ? 0 : DIV_SCALE - static_cast<long long>(zeros);
+    if (zeros != 0) q = bn::divmod_pow10(q, zeros).first;
+    return dec_guard(dec_from_words(neg, std::move(q), scale), pos);
   }
-  const std::string up = cmp_abs(add_abs(r, r), D) >= 0 ? add_abs(q, "1") : q;
-  return dec_guard(dec_make(neg, up, DIV_SCALE), pos);
+  // Half away from zero: 2r >= the divisor.
+  if (bn::cmp(bn::add(r, r), den) >= 0) q = bn::add(q, std::array<std::uint64_t, 1>{1});
+  return dec_guard(dec_from_words(neg, std::move(q), DIV_SCALE), pos);
 }
 
 // Remainder of truncated division: takes the sign of the dividend.
@@ -1396,12 +1799,11 @@ Dec dec_mod(const Dec& a, const Dec& b, Pos pos = {}) {
       }
     }
   }
-  std::string A, B;
-  long long s;
-  dec_aligned(a, b, A, B, s);
-  std::string q, r;
-  divmod_abs(A, B, q, r);
-  return dec_make(a.neg, r, s);
+  const long long s = std::max(static_cast<long long>(a.scale), static_cast<long long>(b.scale));
+  std::vector<std::uint64_t> keep_a, keep_b;
+  const std::vector<std::uint64_t>& wa = dec_words_scaled(a, s - a.scale, keep_a);
+  const std::vector<std::uint64_t>& wb = dec_words_scaled(b, s - b.scale, keep_b);
+  return dec_from_words(a.neg, bn::div_rem(wa, wb, nullptr).second, s);
 }
 
 // --- rounding. Every rounding in SEL is half away from zero (spec §4.4).
@@ -1414,7 +1816,13 @@ Dec dec_round(const Dec& d, long long n, Pos pos = {}) {
         return dec_guard(dec_from_mantissa(res, n), pos);
       }
     }
-    return dec_guard(dec_make(d.neg, scale_up(dec_get_digits(d), n - d.scale), n), pos);
+    // Padding the scale is appending zeros: on the digit string when the value
+    // has one, without converting it.
+    if (!d.small && !d.digits.empty()) {
+      return dec_guard(dec_make(d.neg, scale_up(d.digits, n - d.scale), n), pos);
+    }
+    return dec_guard(dec_from_words(d.neg, bn::mul_pow10(dec_get_words(d), static_cast<std::size_t>(n - d.scale)), n),
+                     pos);
   }
   if (d.small && (d.scale - n) <= 38) {
     __int128_t p = POW10_128[d.scale - n];
@@ -1425,13 +1833,14 @@ Dec dec_round(const Dec& d, long long n, Pos pos = {}) {
     __int128_t signed_q = d.neg ? -q : q;
     return dec_guard(dec_from_mantissa(signed_q, n), pos);
   }
-  const long long k = d.scale - n;
-  const std::string p = pow10(k);
-  std::string q, r;
-  divmod_abs(dec_get_digits(d), p, q, r);
+  const std::size_t k = static_cast<std::size_t>(d.scale - n);
+  auto [q, r] = bn::divmod_pow10(dec_get_words(d), k);
   // Rounding down still carries: 9.99 to one place is 10.0, a digit wider.
-  const std::string up = cmp_abs(add_abs(r, r), p) >= 0 ? add_abs(q, "1") : q;
-  return dec_guard(dec_make(d.neg, up, n), pos);
+  // Half away from zero: 2r >= 10^k.
+  if (!r.empty() && bn::cmp(bn::add(r, r), bn::mul_pow10(std::array<std::uint64_t, 1>{1}, k)) >= 0) {
+    q = bn::add(q, std::array<std::uint64_t, 1>{1});
+  }
+  return dec_guard(dec_from_words(d.neg, std::move(q), n), pos);
 }
 
 Dec dec_trunc(const Dec& d) {
@@ -1439,9 +1848,7 @@ Dec dec_trunc(const Dec& d) {
   if (d.small && d.scale <= 38) {
     return dec_from_mantissa(d.mantissa / POW10_128[d.scale], 0);
   }
-  std::string q, r;
-  divmod_abs(dec_get_digits(d), pow10(d.scale), q, r);
-  return dec_make(d.neg, q, 0);
+  return dec_from_words(d.neg, bn::divmod_pow10(dec_get_words(d), static_cast<std::size_t>(d.scale)).first, 0);
 }
 
 Dec dec_floor(const Dec& d, Pos pos = {}) {
@@ -1453,11 +1860,11 @@ Dec dec_floor(const Dec& d, Pos pos = {}) {
     if (d.mantissa < 0 && r != 0) q--;
     return dec_from_mantissa(q, 0);
   }
-  std::string q, r;
-  divmod_abs(dec_get_digits(d), pow10(d.scale), q, r);
+  auto [q, r] = bn::divmod_pow10(dec_get_words(d), static_cast<std::size_t>(d.scale));
   // A carry can widen the integer part past the cap (FLOOR of -99..9.5): the
   // result is checked where it is built, at the call.
-  return dec_guard(dec_make(d.neg, d.neg && r != "0" ? add_abs(q, "1") : q, 0), pos);
+  if (d.neg && !r.empty()) q = bn::add(q, std::array<std::uint64_t, 1>{1});
+  return dec_guard(dec_from_words(d.neg, std::move(q), 0), pos);
 }
 
 Dec dec_ceil(const Dec& d, Pos pos = {}) {
@@ -1469,20 +1876,23 @@ Dec dec_ceil(const Dec& d, Pos pos = {}) {
     if (d.mantissa > 0 && r != 0) q++;
     return dec_from_mantissa(q, 0);
   }
-  std::string q, r;
-  divmod_abs(dec_get_digits(d), pow10(d.scale), q, r);
-  return dec_guard(dec_make(d.neg, !d.neg && r != "0" ? add_abs(q, "1") : q, 0), pos);
+  auto [q, r] = bn::divmod_pow10(dec_get_words(d), static_cast<std::size_t>(d.scale));
+  if (!d.neg && !r.empty()) q = bn::add(q, std::array<std::uint64_t, 1>{1});
+  return dec_guard(dec_from_words(d.neg, std::move(q), 0), pos);
 }
 
-// True when the value has no fractional part left after its scale is honoured.
+// True when the value has no fractional part left after its scale is honoured:
+// a multiple of 10^scale, which needs scale factors of two (the low zero bits)
+// before it is worth dividing by the power of five.
 bool dec_is_integer(const Dec& d) {
   if (d.scale == 0) return true;
   if (d.small && d.scale <= 38) {
     return (d.mantissa % POW10_128[d.scale]) == 0;
   }
-  std::string q, r;
-  divmod_abs(dec_get_digits(d), pow10(d.scale), q, r);
-  return r == "0";
+  const std::vector<std::uint64_t>& words = dec_get_words(d);
+  if (words.empty()) return true;
+  if (bn::trailing_zero_bits(words) < static_cast<std::size_t>(d.scale)) return false;
+  return bn::divmod_pow10(words, static_cast<std::size_t>(d.scale)).second.empty();
 }
 
 // n must be a non-negative integer; the result scale is scale(x) * n, which
@@ -1491,8 +1901,9 @@ Dec dec_power(const Dec& a, long long n, Pos pos = {}) {
   // Same early refusal as dec_mul: a^n has exactly n*sa fractional digits and at
   // least n*(da-1)+1 digits, so a result past the caps is known before any
   // squaring (POWER(9999999999999999999999999999, 100000) spent 18 s finding out).
+  // A lower bound on da keeps the refusal provable.
   if (n > 0 && !dec_is_zero(a)) {
-    const long long da = dec_ndigits(a);
+    const long long da = dec_digit_bounds(a).first;
     const long long sa = a.scale;
     const __int128_t frac = static_cast<__int128_t>(sa) * n;
     if (frac > MAX_FRAC_DIGITS) {
@@ -1528,12 +1939,13 @@ long long dec_to_int(const Dec& d) {
     return static_cast<long long>(m);
   }
   const Dec t = dec_trunc(d);
-  long long v = 0;
-  for (char c : dec_get_digits(t)) {
-    if (v > (9223372036854775807LL - (c - '0')) / 10) return t.neg ? -9223372036854775807LL - 1
-                                                                  : 9223372036854775807LL;
-    v = v * 10 + (c - '0');
+  if (t.small) return dec_to_int(t);
+  const std::vector<std::uint64_t>& words = dec_get_words(t);
+  if (words.empty()) return 0;
+  if (words.size() > 1 || words[0] > static_cast<std::uint64_t>(9223372036854775807LL)) {
+    return t.neg ? -9223372036854775807LL - 1 : 9223372036854775807LL;
   }
+  const long long v = static_cast<long long>(words[0]);
   return t.neg ? -v : v;
 }
 
@@ -1659,6 +2071,17 @@ struct Internals {
     v.p_->decimal = std::make_unique<Dec>(std::move(d));
     v.p_->scalar_computed = false;
     return v;
+  }
+  // The length of a computed number's text while it has not been formatted
+  // (nothing otherwise): digits and scale decide it, so LEN of a large number
+  // never writes its digits out. The scalar is resolved as as_text resolves it,
+  // so an error is the same error at the same position.
+  static std::optional<std::size_t> unformatted_number_len(const Value& v, Pos pos) {
+    const Value& s = v.scalar_source(pos);
+    if (s.p_->kind == Kind::Text && !s.p_->scalar_computed && s.p_->decimal) {
+      return dec_format_len(*s.p_->decimal);
+    }
+    return std::nullopt;
   }
   static std::vector<Value>& storage(Value& v) {
     return v.p_->mutable_coll().storage;
@@ -1969,10 +2392,11 @@ void Value::destroy(Impl* p) {
 }
 
 // A Dec from host code (spec §8; review 2026-09-28 HOST-13, HOST-14): any of its
-// three forms -- the small mantissa, the digit string, the limbs -- must be a
-// decimal, and the value is rebuilt canonical (leading zeros go, a negative zero
-// loses its sign) and within the digit caps. The interpreter's own decimals go
-// through Internals::from_dec, unchecked.
+// three forms -- the small mantissa, the digit string, the binary words -- must
+// be a decimal, and the value is rebuilt canonical (leading zeros go, a negative
+// zero loses its sign) and within the digit caps. Any words are a magnitude, so
+// that form needs only rebuilding. The interpreter's own decimals go through
+// Internals::from_dec, unchecked.
 Value Value::num(const Dec& d) {
   auto bad = [](const std::string& why) -> Value {
     throw SelError("E_BAD_ARG", "not a decimal: " + why, Pos{});
@@ -1993,11 +2417,8 @@ Value Value::num(const Dec& d) {
       if (ch < '0' || ch > '9') return bad("the digits are not ASCII digits");
     }
     digits = d.digits;
-  } else if (!d.limbs.empty()) {
-    for (const std::uint32_t limb : d.limbs) {
-      if (limb >= BASE_10E9) return bad("a limb is not below 10^9");
-    }
-    digits = limbs_to_string(d.limbs);
+  } else if (!d.words.empty()) {
+    return Internals::from_dec(dec_guard(dec_from_words(d.neg, d.words, d.scale), Pos{}));
   } else {
     digits = "0";
   }
@@ -2433,11 +2854,7 @@ bool Value::eql_at(const Value& other, int depth, Pos pos) const {
       const Dec& a = (*p_->decimal);
       const Dec& b = (*other.p_->decimal);
       if (a.neg != b.neg || a.scale != b.scale) return false;
-      if (a.small && b.small) {
-        if (a.mantissa != b.mantissa) return false;
-      } else {
-        if (dec_get_digits(a) != dec_get_digits(b)) return false;
-      }
+      if (!dec_mag_equal(a, b)) return false;
     } else {
       if (scalar() != other.scalar()) return false;
     }
@@ -4095,7 +4512,7 @@ Value eval_list(const Node& node, Context& ctx) {
 // through Args::dec instead, which reports against the argument's own position.
 // The same decimal as as_dec, without the copy: a view of the cache on the Value
 // the number lives in (filled here on first use). Valid while `v` is. A Dec owns
-// a digit string and a limb vector, so a comparison loop that copied both sides
+// a digit string and a vector of binary words, so a comparison loop that copied both sides
 // on every call -- a sort does n log n of them -- spent a third of its time there.
 const Dec& as_dec_ref(const Value& v, Pos pos);
 
@@ -7364,6 +7781,11 @@ Value pad(Args& a, bool left) {
 
 void register_text() {
   define(Spec{"LEN", 1, 1, false, false, nullptr, [](Args& a, Context&) -> Value {
+                // A computed number's length follows from its digits and scale;
+                // its text is made only if something else asks for it.
+                if (const std::optional<std::size_t> len = Internals::unformatted_number_len(a.val(0), a.pos_of(0))) {
+                  return make_int(static_cast<long long>(*len));
+                }
                 return make_int(static_cast<long long>(cp_count(a.text(0))));
               }});
 

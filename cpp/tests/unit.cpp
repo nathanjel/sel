@@ -157,14 +157,14 @@ void test_decimal() {
 }
 
 // The decimal core's native-mantissa edges. Each of these was a wrong answer or
-// undefined behaviour in the __int128 fast path and is right in the limb path;
+// undefined behaviour in the __int128 fast path and is right in the large path;
 // tools/check-decimal.sh and conformance/24-decimal-boundaries.selt cover the
 // same ground through the oracle, these hold the internals directly.
-// CPP-P1: multi-limb division is Knuth algorithm D on base-1e9 limbs. Checked
-// against an independent digit-by-digit reference (the algorithm it replaced),
+// CPP-P1: multi-word division (Knuth algorithm D, or Barrett for long divisors,
+// on the binary words). Checked against an independent digit-by-digit reference,
 // on random operands and on the shapes that trigger D's rare steps: a divisor
-// whose top limb is small (large normalisation factor), all-nines limbs, and
-// quotient digits that need the add-back correction.
+// whose leading digits are small (a large normalising shift), all-nines
+// operands, and quotient digits that need the add-back correction.
 std::string ref_strip(std::string s) {
   size_t i = 0;
   while (i + 1 < s.size() && s[i] == '0') ++i;
@@ -195,7 +195,7 @@ std::string ref_mod(const std::string& a, const std::string& b) {
 }
 
 void test_knuth_division() {
-  selt::section("multi-limb division (CPP-P1)");
+  selt::section("multi-word division (CPP-P1)");
   auto parse = [](const std::string& s) {
     Dec d;
     dec_parse(s.c_str(), d);
@@ -223,7 +223,7 @@ void test_knuth_division() {
     size_t lb = 10 + next() % 70, la = lb + next() % 80;
     int shape = static_cast<int>(next() % 4);
     std::string b = digits(lb, shape), a = digits(la, static_cast<int>(next() % 4));
-    if (iter % 7 == 0) b = "5" + std::string(lb - 1, '0') + "7";      // small top limb pattern
+    if (iter % 7 == 0) b = "5" + std::string(lb - 1, '0') + "7";      // small leading digits
     if (iter % 11 == 0) b = std::string(lb, '9');
     ++total;
     std::string want = ref_mod(a, b);
@@ -242,33 +242,153 @@ void test_knuth_division() {
   selt::eq(dec_format(dec_mul(q, small)).size() + 12 >= dec_format(big).size(), true, "big/big quotient times divisor is within rounding of the dividend");
 }
 
-// CPP-P2: Karatsuba multiplication must equal the schoolbook product limb for
-// limb, on balanced, unbalanced, square, all-nines and zero-holed operands; and
-// a product or power past the digit caps is refused before it is computed, with
-// the code and position the guard would have reported.
+// A digit-string product, the algorithm a child learns: the independent
+// reference the binary engine's products and conversions are held to.
+std::string ref_mul(const std::string& a, const std::string& b) {
+  std::vector<int> acc(a.size() + b.size(), 0);
+  for (size_t i = 0; i < a.size(); ++i) {
+    for (size_t j = 0; j < b.size(); ++j) {
+      acc[i + j + 1] += (a[i] - '0') * (b[j] - '0');
+    }
+  }
+  for (size_t k = acc.size(); k-- > 1;) {
+    acc[k - 1] += acc[k] / 10;
+    acc[k] %= 10;
+  }
+  std::string out;
+  for (int d : acc) out.push_back(static_cast<char>('0' + d));
+  return ref_strip(out);
+}
+
+// The binary engine (bn::, transcribed from rust/src/large_dec.rs), held to
+// itself and to digit strings at and across every threshold: Karatsuba to the
+// schoolbook rows, squaring to a plain product, Barrett (fresh and cached
+// reciprocals) to Knuth D, the Newton reciprocal to its definition, decimal text
+// both ways to ref_mul and to slicing the digit string. And a product or power
+// past the digit caps is refused before it is computed, with the code and
+// position the guard would have reported.
 void test_karatsuba_and_early_range() {
-  selt::section("Karatsuba and early E_RANGE (CPP-P2)");
+  selt::section("binary engine and early E_RANGE");
   uint64_t seed = 0x9e3779b97f4a7c15ULL;
   auto next = [&]() { seed ^= seed << 13; seed ^= seed >> 7; seed ^= seed << 17; return seed; };
-  auto limbs = [&](size_t n, int shape) {
-    std::vector<uint32_t> v(n);
+  // About n words: random, all ones, or zero-holed (the carry-heavy shapes).
+  auto words = [&](size_t n, int shape) {
+    bn::Nat v(n);
     for (auto& x : v) {
-      x = static_cast<uint32_t>(next() % 1000000000u);
-      if (shape == 1) x = 999999999u;
+      x = next();
+      if (shape == 1) x = ~std::uint64_t{0};
       if (shape == 2 && next() % 3 == 0) x = 0;
     }
-    if (v.back() == 0) v.back() = 1;
+    bn::normalize(v);
     return v;
   };
-  int bad = 0, total = 0;
-  for (int it = 0; it < 120; ++it) {
-    size_t na = 1 + next() % 260, nb = 1 + next() % 260;
-    auto a = limbs(na, static_cast<int>(next() % 3)), b = limbs(nb, static_cast<int>(next() % 3));
-    ++total;
-    if (mul_limbs_fast(a, b, false) != mul_limbs_school(a, b)) ++bad;
-    if (mul_limbs_fast(a, a, true) != sqr_limbs_school(a)) ++bad;
+  auto school = [](const bn::Nat& a, const bn::Nat& b) {
+    if (a.empty() || b.empty()) return bn::Nat{};
+    bn::Nat out(a.size() + b.size() + 1, 0);
+    if (a.size() >= b.size()) bn::basecase_mul(out, a, b); else bn::basecase_mul(out, b, a);
+    bn::normalize(out);
+    return out;
+  };
+  int bad_mul = 0, bad_sqr = 0, products = 0;
+  for (int it = 0; it < 150; ++it) {
+    const size_t sizes[] = {1, 2, 31, 32, 33, 47, 48, 49, 64, 65, 97, 130, 200, 333};
+    const size_t na = it < 14 ? sizes[it] : 1 + next() % 340;
+    const size_t nb = it < 14 ? sizes[13 - it] : 1 + next() % 340;
+    const bn::Nat a = words(na, static_cast<int>(next() % 3)), b = words(nb, static_cast<int>(next() % 3));
+    ++products;
+    if (bn::mul(a, b) != school(a, b)) ++bad_mul;
+    if (bn::sqr(a) != school(a, a)) ++bad_sqr;
   }
-  selt::eq(bad, 0, "Karatsuba equals schoolbook on " + std::to_string(total) + " random operand pairs (product and square)");
+  for (auto [na, nb] : {std::pair<size_t, size_t>{40, 700}, {33, 1000}, {900, 901}, {1100, 1000}}) {
+    const bn::Nat a = words(na, 0), b = words(nb, 0);
+    ++products;
+    if (bn::mul(a, b) != school(a, b)) ++bad_mul;
+  }
+  const bn::Nat wide = words(1500, 0);
+  if (bn::sqr(wide) != school(wide, wide)) ++bad_sqr;
+  selt::eq(bad_mul, 0, "Karatsuba equals the schoolbook rows on " + std::to_string(products) + " products (unbalanced too)");
+  selt::eq(bad_sqr, 0, "the squaring variants equal a plain product, to 1,500 words");
+
+  // Division: Knuth D and Barrett (fresh reciprocal) agree, and q v + r = u, r < v.
+  int bad_div = 0, divisions = 0;
+  for (auto [n, m] : {std::pair<size_t, size_t>{2, 3}, {40, 20}, {64, 64}, {100, 33}, {160, 160}, {170, 400}, {300, 150}, {400, 399}}) {
+    for (int k = 0; k < 3; ++k) {
+      bn::Nat v = words(n, static_cast<int>(next() % 3));
+      v.resize(n, 5);
+      const bn::Nat u = words(n + m, static_cast<int>(next() % 3));
+      if (u.size() < v.size()) continue;
+      ++divisions;
+      const auto [q1, r1] = bn::knuth_div(u, v);
+      const auto [q2, r2] = bn::barrett_div(u, bn::make_recip(v));
+      if (q1 != q2 || r1 != r2) ++bad_div;
+      if (bn::add(bn::mul(q1, v), r1) != u || bn::cmp(r1, v) >= 0) ++bad_div;
+    }
+  }
+  // u = v (B^k - 1) + (v - 1): every quotient word is B - 1, so the partial
+  // remainders' top word meets the divisor's and Knuth's estimate takes its
+  // B - 1 branch (rare with random words; this shape hits it every time).
+  for (int it = 0; it < 200; ++it) {
+    bn::Nat v = words(2 + next() % 60, 0);
+    if (v.size() < 2) v.resize(2, 1);
+    if (it % 2) v.back() = ~std::uint64_t{0} - next() % 4;
+    const bn::Nat ones(1 + next() % 8, ~std::uint64_t{0});
+    const bn::Nat u = bn::add(bn::mul(v, ones), bn::sub(v, bn::Nat{1}));
+    ++divisions;
+    const auto [q1, r1] = bn::knuth_div(u, v);
+    const auto [q2, r2] = bn::barrett_div(u, bn::make_recip(v));
+    if (q1 != ones || q1 != q2 || r1 != r2) ++bad_div;
+    if (bn::add(bn::mul(q1, v), r1) != u || bn::cmp(r1, v) >= 0) ++bad_div;
+  }
+  selt::eq(bad_div, 0, "Barrett equals Knuth D, and q v + r = u with r < v, on " + std::to_string(divisions) + " divisions");
+  int bad_recip = 0;
+  for (size_t n : {2, 31, 32, 33, 34, 64, 65, 97, 150, 257}) {
+    bn::Nat v = words(n, 0);
+    v.resize(n, 1);
+    v.back() |= std::uint64_t{1} << 63;
+    const bn::Nat x = bn::reciprocal(v);
+    bn::Nat b2n(2 * n + 1, 0);
+    b2n[2 * n] = 1;
+    const bn::Nat vx = bn::mul(v, x);
+    if (bn::cmp(vx, b2n) > 0 || bn::cmp(bn::add(vx, v), b2n) <= 0) ++bad_recip;
+  }
+  selt::eq(bad_recip, 0, "the Newton reciprocal is floor(B^2n / v), past its long-division base");
+
+  // Decimal text: round trips, the exact digit count, and products against ref_mul.
+  auto digit_string = [&](size_t len) {
+    std::string s;
+    for (size_t i = 0; i < len; ++i) s.push_back(static_cast<char>('0' + next() % 10));
+    if (s[0] == '0') s[0] = '7';
+    return s;
+  };
+  int bad_text = 0, bad_ref = 0, texts = 0;
+  for (size_t len : {1, 18, 19, 20, 38, 39, 40, 227, 228, 229, 455, 456, 457, 1000, 4000, 20000}) {
+    const std::string s = digit_string(len);
+    const bn::Nat x = bn::from_decimal(s);
+    ++texts;
+    if (bn::to_decimal(x) != s || bn::digits(x) != len) ++bad_text;
+    if (len <= 1000) {
+      const std::string t = digit_string(len / 2 + 3);
+      if (bn::to_decimal(bn::mul(x, bn::from_decimal(t))) != ref_mul(s, t)) ++bad_ref;
+    }
+  }
+  selt::eq(bad_text, 0, "decimal text round-trips with its exact digit count at " + std::to_string(texts) + " lengths, to 20,000 digits");
+  selt::eq(bad_ref, 0, "products agree with the digit-string reference");
+  // Powers of ten: 10^k, its all-nines neighbour, and division by it is slicing
+  // the digit string (the large k go through Barrett with a cached reciprocal).
+  int bad_pow = 0;
+  const std::string big = digit_string(30000);
+  const bn::Nat bigx = bn::from_decimal(big);
+  for (size_t k : {1, 19, 20, 27, 28, 100, 1000, 4321, 9728, 19456}) {
+    const bn::Nat ten = bn::mul_pow10(bn::Nat{1}, k);
+    if (bn::to_decimal(ten) != "1" + std::string(k, '0') || bn::digits(ten) != k + 1) ++bad_pow;
+    const bn::Nat nines = bn::sub(ten, bn::Nat{1});
+    if (bn::to_decimal(nines) != std::string(k, '9') || bn::digits(nines) != k) ++bad_pow;
+    const auto [q, r] = bn::divmod_pow10(bigx, k);
+    if (bn::to_decimal(q) != big.substr(0, big.size() - k) || bn::to_decimal(r) != ref_strip(big.substr(big.size() - k))) ++bad_pow;
+    const bn::Nat scaled = bn::mul_pow10(bigx, k);
+    if (bn::trailing_decimal_zeros(scaled, ~std::size_t{0}) != k || bn::trailing_decimal_zeros(scaled, k / 2) != k / 2) ++bad_pow;
+  }
+  selt::eq(bad_pow, 0, "powers of ten, their nines, division by them and trailing zeros are exact");
   // The early refusal: code and position are what dec_guard raises.
   auto code_of = [&](const std::function<void()>& f) {
     try { f(); return std::string("ok"); } catch (const SelError& e) { return e.code() + "@" + std::to_string(e.pos().line) + ":" + std::to_string(e.pos().col); }
