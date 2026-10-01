@@ -95,3 +95,63 @@ Queue items: **PHP-P22, P23, P24, P25, P26, P27, P28, P29, P30** (same protocol;
 - `tools/perf/php/bench.php` — cases `p22 .. p30` (`p22.hybrid.execute`, `p23.translate.wide-or`, `p24.translate.small-x`, `p25.dedupe.text|distinct.text|bucket.projected`, `p26.top.small-limit|limit-over-rows`, `p27.sum.ints|decimals`, `p28.eval.count-map`, `p29.evaluate.one-shot|concat-literals.map`, `p30.regex.distinct-patterns|long-pattern`, `p30.planhybrid.prefix-search`).
 - Tests added to `tools/check-php-runtime.php` (201 checks now, with and without GMP): P22 (execute never writes the caller; `copyWritable` shares unwritten children on a shaped and an unshaped root; pure-memory plan), P24 (memo follows `defineDialect`/re-registration/`reset`; text literals escape the same), P25 (randomised mixed-kind DEDUPE/DISTINCT equivalence and the leaf-key shape), P26 (TOP vs SORT_BY+TAKE at six limits, `_K` and not), P27 (native running total vs a chain of `Dec::add`, 400 sequences), P29 (evaluate == run, the `&` fold), P30 (cached `i` pattern; non-ASCII refuses the flag on every call).
 - Verified after the round, with GMP and without (`php -n -d extension=ctype -d extension=mbstring`): `php php/bin/conformance` 2128/2128; `tools/check-php-runtime.php` 201; `tools/check-php-optimizer.php` 168; plain-vs-optimised `tools/check-eval-equivalence.php` 2128 sources 0 differ; `php php/bin/sqlt` 1304/1304; `SEL_IMPLS=php tools/check-decimal.sh` 94,040 cases 0 mismatches; the SQL oracle lanes on MariaDB 11.8 / MySQL 8.4 / PostgreSQL 17 / SQLite (`tools/oracle-db.sh run tools/check-sql-oracle.sh`, rc 0; hybrid lane 68 agree, 0 differ on SQLite).
+
+## 2026-10-01: item 1, lazy digits
+
+**Why.** The GC and JIT experiments of that day probed PHP's Mandelbrot (`examples/mandelbrot.sel`, 411 ms with GMP):
+- 148,812 GMP add/sub/mul calls in six runs. Each one parsed both operands' digit strings into GMP (`gmp_init`) and
+  wrote the result back out (`gmp_strval`).
+- That came to about 230 ms of conversions per run against 15 ms of GMP arithmetic. At 2,562 digits the multiply is
+  only a tenth of an operation's cost.
+
+PHP-P17 had deferred a Dec-as-object redesign. This keeps the array, and keeps a big result's magnitude as GMP between
+operations.
+
+**What** (`php/src/Dec.php`, `Value.php`, `Evaluator.php`, `Builtins/{Core,Structure}.php`):
+- **The lazy form.** With ext-gmp, a result too big for a native int is
+  `['neg', 'digits' => null, 'scale', 'native' => null, 'nativeDigits' => null, 'nativeNeg', 'gmp' => GMP]`.
+  - The digits are written only when text is asked for: `format()`, `digits()`, `eager()`.
+  - A result that fits a native int is exactly today's array, so PHP-P13/P15 hold. A lazy value is never zero.
+- **Operations.**
+  - `add`, `sub`, `mul` and `cmp` work in GMP, aligning scales by a cached GMP power of ten.
+  - `negate` and `abs` flip a flag.
+  - `guard` decides the digit cap from the bit length with `gmp_scan1` (O(1)), and builds 10^L only within a few bits
+    of it.
+  - `div`, `mod`, the rounding family, `trimScale`, `isInteger` and `toInt` write the digits out first; Mandelbrot's
+    loop uses none of them.
+- **The host sees today's arrays.** `Value::asDecimal()` writes a lazy value's digits out once and keeps the result;
+  `Args::dec()` uses it. `Dec::checked()` accepts the lazy form back.
+  - The evaluator reads through `Value::asDecimalLazy()`, and so does SUM's accumulator.
+  - `getScalar`, `eqlAt` and `canonicalDecimalKey` read digits through `Dec`.
+- **Switch.** `Dec::$lazyDigits` turns it off for tests, and has no effect without ext-gmp.
+
+**Tests first** (`ac58888`): `tools/check-php-runtime.php`.
+- **T1:** every Dec operation, on 300 pairs of operands up to 3,000 digits, agrees with the pure-PHP digit-string path
+  with lazy digits on and off, for parsed operands and for operands an earlier operation made.
+- **T2:** the host sees today's arrays and its edits take effect.
+- **T3:** the digit cap holds by add and by mul, at the same place.
+- **T4:** comparisons across scale gaps of 0 to 5,000.
+- **T5:** the conversion contract. 40 more big products in a chain cost 120 base-10 conversions before; the
+  implementation commit tightens it to 0.
+
+`tools/check-decimal.php` runs three ways: as configured, pure PHP, and lazy operands.
+
+These checks first sat after the host-boundary report, where a failure was collected but never printed. The red run
+showed it, and they were moved above the report.
+
+**Checked:**
+- `tools/check-php-runtime.php`: 206 checks with GMP, without it (`php -n`) and under JIT 1255.
+- `tools/check-php-optimizer.php`: 168. Conformance 2183/2183.
+- `tools/check-decimal.sh 4000`: 94,040 cases in each of the three modes, 0 mismatches.
+- 19,704 big-operand exact-oracle records in all three modes, 0 mismatches.
+- `tools/fuzz.sh 4000` against JS, two seeds: 0 disagreements.
+
+**Results** (A = main `f88bf59`, B = lazy digits; A B B A, 2 warmups + 4 runs per process, JIT 1255, ext-gmp):
+
+| Measure | A | B |
+|---|---|---|
+| Mandelbrot | 409.83 ms | 169.88 ms (−58.5%; every B process faster) |
+| S1–S6 | 2671 / 52.4 / 2702 / 85.5 / 1325 / 780 ms | 1.000 / 0.953 / 0.995 / 0.983 / 0.989 / 1.001 |
+| Mandelbrot without ext-gmp (`php -n`) | 3544–3592 ms | 3582–3599 ms (×1.006, unchanged) |
+
+The goal was 45–55%, with 30% acceptable.

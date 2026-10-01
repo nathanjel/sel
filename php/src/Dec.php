@@ -63,7 +63,7 @@ final class Dec
      * keeps its magnitude as GMP and writes its digits only when text is asked
      * for. Public so a test can hold both forms to the same answers.
      */
-    public static bool $lazyDigits = false;
+    public static bool $lazyDigits = true;
 
     /** @var array<int, \GMP> */
     private static array $pow10Gmp = [];

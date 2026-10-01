@@ -511,6 +511,14 @@ indexed `ITEMS[1]` directly.
 **Watch PHP's regex delimiter.** A pattern may contain `/`; `escapeDelimiter`
 handles it. JS needs no delimiter at all, so it is easy to forget.
 
+**Never read a PHP decimal's `digits` directly.** A big number the evaluator
+computes may be lazy: `digits` is null and its magnitude is a GMP in `gmp`, its
+digits written only when text is asked for (with ext-gmp; item 1 made Mandelbrot
+2.4x faster that way). Hand decimals to `Dec`; read digits with `Dec::digits()` or
+`Dec::format()`, or take today's array with `Dec::eager()`. `Value::asDecimal()`
+and `Args::dec()` always return today's array; the evaluator's
+`Value::asDecimalLazy()` does not.
+
 **Watch replacement syntax.** Never hand a user replacement string to
 `preg_replace` or `String.replace`. SEL splices matches by hand so that `$&`,
 `` $` `` and `\1` stay literal.

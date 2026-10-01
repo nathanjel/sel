@@ -1193,7 +1193,7 @@ $expect('item 1 T5: a chain of big products converts no digits in between', func
         };
         $growth = $count(41) - $count(1);
         // Three conversions a product before item 1 (two operands in, one result out).
-        return $growth <= 120 ? true : "$growth conversions for 40 more products";
+        return $growth <= 0 ? true : "$growth conversions for 40 more products";
     });
 });
 if ($boundary) {
