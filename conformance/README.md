@@ -167,7 +167,8 @@ exact-rational oracle `tools/decimal-oracle-exact.py`: every operator and ROUND 
 FLOOR / TRUNC / POWER at the magnitudes the decimal cores were found wrong at (scale 18/19,
 int64 / uint64 / int128 boundaries with both signs, remainders past 2^126, divisor spellings
 1, 1.0, 0.1 and 1e-N, half-way ties, negative zero, the carry across the digit cap). Edit
-the generator, not the file; `tools/gen-decimal-cases.py --check` fails when it is stale.
+the generator, not the file; `tools/gen-decimal-cases.py --check` fails when it is stale,
+and `tools/check-generated.sh` runs it in the gate for this file and for `32-*`.
 
 `25-value-ownership.selt` pins who copies and who aliases (`alias.*`, `struct.*`),
 what a warm decimal or identity cache must not remember (`cache.*`), record
@@ -195,3 +196,17 @@ RREPLACE, snapshot iteration of LINK's two sides, the `i` fold analysed only for
 ASCII pattern, POSIX bracket prefixes refused closed or not, and reversed class
 ranges refused at compile time in every host. Its `dependencies()` findings are API
 probes (`tools/api-pins.txt`), not cases.
+
+`32-numeric-plans.selt` is **generated** by the same generator as `24-*`, with every
+expectation composed from the exact oracle one operation at a time. It holds what a
+host that keeps numbers in arithmetic form between operations (reused registers, shared
+magnitudes, digits written on demand) must never change, per spec §3.4: an operand is
+unchanged after a plan that squared it, a copy is unchanged after its source is
+reassigned, an earlier result survives later plans, NEG/ABS/TRUNC/MAX of an intermediate
+survive, nested plans under an `IF` or `LEN` leaf, a zero keeps its scale, and `E_RANGE`
+is raised at the intermediate `*` that first passes the fractional-digit cap
+(`plan.own.*`). It also runs multi-operation chains on operands of 300–3000 digits:
+differences of squares, quotients, remainders, rounding, powers, MIN/MAX, MAP and SUM
+bodies, and unrolled Mandelbrot iterations (`plan.chain.*`). Operands come from
+`--- setup`, so every case reaches the plan executor at run time. Sources stay short and
+free of `000000`, so Go's planned-versus-plain test runs them too.

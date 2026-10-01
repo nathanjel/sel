@@ -18,7 +18,11 @@ the two reach the core through different paths.
 """
 import importlib.util
 import os
+import random
 import sys
+
+if hasattr(sys, 'set_int_max_str_digits'):   # the 32-* chains print products of thousands of digits
+    sys.set_int_max_str_digits(0)
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 spec = importlib.util.spec_from_file_location('oracle', os.path.join(ROOT, 'tools/decimal-oracle-exact.py'))
@@ -301,6 +305,147 @@ emit('dec.ceil.negative-at-the-digit-cap-does-not-carry', cap + ' Control: CEIL 
      'LEN(CEIL("-" & REPEAT("9", 1000000) & ".5")) - 1', 'num 1000000')
 
 
+# --- conformance/32-numeric-plans.selt: numbers around the math plans -----------------------------
+#
+# A host may keep numbers in arithmetic form between operations: Go reuses big.Int registers inside a
+# plan, Rust shares large mantissas, PHP carries GMP magnitudes and writes digits on demand. These cases
+# pin what that must never change -- a number an operation yields is its own (spec §3.4) -- and run
+# multi-operation chains on big operands. Operands come from `--- setup`, so every case reaches the plan
+# executor with run-time values; sources stay short and free of "000000", so Go's planned-versus-plain
+# test (go/sel/eval_order_test.go) runs them as well.
+
+OUT32 = os.path.join(ROOT, 'conformance/32-numeric-plans.selt')
+plan_cases = []
+RNG = random.Random(20261001)
+
+
+def emit32(name, note, source, expect, setup=None):
+    assert name not in names, name
+    assert len(source) < 20000 and '000000' not in source, name
+    names.add(name)
+    plan_cases.append((name, note, setup, source, expect))
+
+
+def big(ndigits, scale, neg=False):
+    """A numeral of `ndigits` significant digits, `scale` of them fractional, with no run of six zeros."""
+    assert ndigits > scale
+    while True:
+        s = str(RNG.randint(1, 9)) + ''.join(RNG.choice('0123456789') for _ in range(ndigits - 1))
+        if '000000' not in s:
+            break
+    return ('-' if neg else '') + (s if scale == 0 else s[:-scale] + '.' + s[-scale:])
+
+
+def V(text):
+    return O.parse(text)
+
+
+def T(v):
+    return O.fmt(*v)
+
+
+def neg_(v):
+    return -v[0], v[1]
+
+
+def abs_(v):
+    return abs(v[0]), v[1]
+
+
+def extreme(vs, sign):
+    """MAX (sign 1) or MIN (sign -1) of distinct values: the operand itself, scale included."""
+    best = vs[0]
+    for v in vs[1:]:
+        assert O.cmp_(v, best) != 0
+        if O.cmp_(v, best) == sign:
+            best = v
+    return best
+
+
+own = ('A number an operation yields is its own: no later evaluation changes it, however a host keeps '
+       'numbers between operations (spec §3.4). Item 1 lets hosts reuse registers, share mantissas or '
+       'write digits on demand; these cases are what that must not change.')
+A_, B_, C_ = big(420, 7), big(350, 3), big(300, 12, neg=True)
+ABC = f'A = {A_}; B = {B_}; C = {C_}'
+a, b, c = V(A_), V(B_), V(C_)
+ab, bc, ca = O.mul(a, b), O.mul(b, c), O.mul(c, a)
+
+emit32('plan.own.operand-unchanged-after-a-plan', own, 'R = A * A - B * B + C; A', 'num ' + T(a), ABC)
+emit32('plan.own.copy-unchanged-after-a-square', own, 'S = A; A = A * A; S', 'num ' + T(a), ABC)
+emit32('plan.own.square-through-a-copy', own, 'S = A; S * A', 'num ' + T(O.mul(a, a)), ABC)
+emit32('plan.own.assignment-leaves-an-earlier-operand', own + ' The left operand was read before the '
+       'assignment stored a new value in X.', 'X = A; X * (X = 2)', 'num ' + T(O.mul(a, V('2'))), ABC)
+x, y = O.add(ab, c), O.sub(ca, b)
+seq = 'X = A * B + C; Y = C * A - B; Z = B * B + A; '
+emit32('plan.own.earlier-result-survives-later-plans', own, seq + 'X', 'num ' + T(x), ABC)
+emit32('plan.own.middle-result-survives-a-later-plan', own, seq + 'Y', 'num ' + T(y), ABC)
+emit32('plan.own.negated-intermediate-survives', own, 'N = -(A * B + C); W = A * A + B; N', 'num ' + T(neg_(x)), ABC)
+emit32('plan.own.absolute-intermediate-survives', own, 'M = ABS(C * B - A); W = C * C + A; M',
+       'num ' + T(abs_(O.sub(O.mul(c, b), a))), ABC)
+emit32('plan.own.truncated-intermediate-survives', own, 'T = TRUNC(A * B / C); W = A * B + C; T',
+       'num ' + T(O.trunc_(O.div(ab, c))), ABC)
+emit32('plan.own.maximum-of-intermediates-survives', own, 'M = MAX(A * B, B * C); W = A * B - B * C; M',
+       'num ' + T(extreme([ab, bc], 1)), ABC)
+inner = O.sub(O.mul(a, a), b) if O.cmp_(a, b) > 0 else O.sub(O.mul(b, b), a)
+emit32('plan.own.nested-plan-in-a-branch', own + ' The IF is a leaf of the outer plan, with plans of its own.',
+       'R = A * B + IF(A > B, A * A - B, B * B - A) * C; R', 'num ' + T(O.add(ab, O.mul(inner, c))), ABC)
+inner_len = len(T(O.sub(O.mul(a, a), b)))
+emit32('plan.own.nested-plan-in-a-length', own + ' The LEN is a leaf of the outer plan, with a plan of its own.',
+       'R = A * B + LEN((A * A - B) & "") * C; R', 'num ' + T(O.add(ab, O.mul(V(str(inner_len)), c))), ABC)
+zero = O.sub(ab, ab)
+emit32('plan.own.zero-with-scale-survives', own + ' A zero keeps its scale.',
+       'Z = A * B - A * B; W = A + B; Z', 'num ' + T(zero), ABC)
+emit32('plan.own.zero-with-scale-adds', own, 'Z = A * B - A * B; Z + C', 'num ' + T(O.add(zero, c)), ABC)
+chain11 = ' * '.join(['X'] * 11)
+col = [i for i, ch in enumerate(chain11) if ch == '*'][9] + 1
+emit32('plan.own.range-error-at-an-intermediate-product', 'X has mantissa 1 and scale 100000, so each product '
+       'adds 100000 fractional digits and the tenth `*` is the first past MAX_FRAC_DIGITS (spec §6.4): E_RANGE '
+       'at that operator, wherever the host keeps the intermediate products.', chain11, f'error E_RANGE at 1:{col}',
+       'X = POWER(0.1, 100000)')
+
+chain = ('Multi-operation arithmetic on big operands through the math plans, with run-time operands; the '
+         'expectation is composed from tools/decimal-oracle-exact.py one operation at a time.')
+for tag, (na, sa, ga), (nb, sb, gb), (nc, sc, gc) in [
+    ('small-scales', (300, 2, False), (320, 0, True), (280, 5, False)),
+    ('wide', (1000, 40, True), (900, 3, False), (950, 77, True)),
+    ('widest', (3000, 120, False), (2800, 9, False), (2500, 400, True)),
+]:
+    p, q, r = big(na, sa, ga), big(nb, sb, gb), big(nc, sc, gc)
+    vp, vq, vr = V(p), V(q), V(r)
+    emit32(f'plan.chain.difference-of-squares.{tag}', chain, 'A * A - B * B + C',
+           'num ' + T(O.add(O.sub(O.mul(vp, vp), O.mul(vq, vq)), vr)), f'A = {p}; B = {q}; C = {r}')
+emit32('plan.chain.quotients', chain + ' Each `/` rounds to DIV_SCALE (spec §4.3).', '(A * B / C - A) / B',
+       'num ' + T(O.div(O.sub(O.div(ab, c), a), b)), ABC)
+emit32('plan.chain.remainder', chain + ' `%` takes the sign of the dividend.', '(A * B) % C + A',
+       'num ' + T(O.add(O.mod(ab, c), a)), ABC)
+emit32('plan.chain.rounding', chain, 'ROUND(A * B - C, 5) * B', 'num ' + T(O.mul(O.rnd(O.sub(ab, c), 5), b)), ABC)
+emit32('plan.chain.power', chain, 'POWER(B, 3) - A * A * B',
+       'num ' + T(O.sub(O.power(b, 3), O.mul(O.mul(a, a), b))), ABC)
+emit32('plan.chain.minimum-and-maximum', chain + ' MIN and MAX return an operand, scale included.',
+       'MIN(A * B, B * C, C * A) + MAX(A, B, C)', 'num ' + T(O.add(extreme([ab, bc, ca], -1), extreme([a, b, c], 1))),
+       ABC)
+ks = [O.div(O.mul(O.sub(O.mul(a, V(k)), b), O.add(a, V(k))), c) for k in ('1', '2', '3')]
+emit32('plan.chain.map-body', chain + ' The body plan runs once per element in one context.',
+       'L = MAP(LIST(1, 2, 3), K, (A * K - B) * (A + K) / C); L[3] - L[1]', 'num ' + T(O.sub(ks[2], ks[0])), ABC)
+sq = [O.sub(O.mul(v, v), a) for v in (a, b, c)]
+emit32('plan.chain.sum-body', chain, 'SUM(LIST(A, B, C), _ * _ - A)', 'num ' + T(O.add(O.add(sq[0], sq[1]), sq[2])),
+       ABC)
+
+mandel = ('Unrolled iterations of examples/mandelbrot.sel: the digits roughly double every step, and the same '
+          'variables are read, squared and reassigned. Composed from tools/decimal-oracle-exact.py.')
+step = 'TR = ZR * ZR - ZI * ZI + CR; ZI = 2.0 * ZR * ZI + CI; ZR = TR; '
+for tag, px, py, n in [('inside', 20, 12, 8), ('escaping', 31, 3, 7)]:
+    cr = O.div(O.sub(V(str(px)), V('27.0')), V('12.5'))
+    ci = O.div(O.sub(V(str(py)), V('10.0')), V('7.5'))
+    zr, zi = V('0.0'), V('0.0')
+    for _ in range(n):
+        zr, zi = O.add(O.sub(O.mul(zr, zr), O.mul(zi, zi)), cr), O.add(O.mul(O.mul(V('2.0'), zr), zi), ci)
+    src = 'ZR = 0.0; ZI = 0.0; ' + step * n
+    for part, want in (('zr', zr), ('zi', zi)):
+        emit32(f'plan.chain.mandelbrot.{tag}.{part}', mandel + f' Point X={px}, Y={py}, {n} iterations.',
+               src + part.upper(), 'num ' + T(want), f'CR = {T(cr)}; CI = {T(ci)}')
+
+
 # --- writer ------------------------------------------------------------------------------------
 HEADER = """% Exact decimal arithmetic at the magnitudes the cores were found wrong at (T02).
 %
@@ -316,9 +461,25 @@ HEADER = """% Exact decimal arithmetic at the magnitudes the cores were found wr
 """
 
 
-def render():
-    out = [HEADER]
-    for name, note, setup, source, expect in cases:
+HEADER32 = """% Numbers around the math plans: what reused storage must never change, and multi-operation chains on
+% big operands (item 1, 2026-10-01).
+%
+% GENERATED by tools/gen-decimal-cases.py -- do not edit by hand:
+%     python3 tools/gen-decimal-cases.py            # rewrite this file
+%     python3 tools/gen-decimal-cases.py --check    # fail if it is stale
+% Every expectation is composed from tools/decimal-oracle-exact.py, one operation at a time. Operands come
+% from `--- setup`, so each case reaches the plan executor with run-time values; sources stay short and free
+% of "000000", so Go's planned-versus-plain test (go/sel/eval_order_test.go) runs them as well.
+%
+% Normative. Every implementation must pass every case.
+"""
+
+OUTPUTS = [(OUT, HEADER, cases), (OUT32, HEADER32, plan_cases)]
+
+
+def render(header, items):
+    out = [header]
+    for name, note, setup, source, expect in items:
         out.append(f'\n### name: {name}\n--- note\n{note}\n')
         if setup:
             out.append(f'--- setup\n{setup}\n')
@@ -327,13 +488,19 @@ def render():
 
 
 if __name__ == '__main__':
-    text = render()
-    if '--check' in sys.argv:
-        have = open(OUT).read() if os.path.exists(OUT) else ''
-        if have != text:
-            print('conformance/24-decimal-boundaries.selt is stale: run tools/gen-decimal-cases.py', file=sys.stderr)
-            sys.exit(1)
-        print(f'decimal cases: {len(cases)} up to date')
-    else:
-        open(OUT, 'w').write(text)
-        print(f'wrote {OUT}: {len(cases)} cases')
+    stale = False
+    for path, header, items in OUTPUTS:
+        text = render(header, items)
+        rel = os.path.relpath(path, ROOT)
+        if '--check' in sys.argv:
+            have = open(path).read() if os.path.exists(path) else ''
+            if have != text:
+                print(f'{rel} is stale: run tools/gen-decimal-cases.py', file=sys.stderr)
+                stale = True
+            else:
+                print(f'{rel}: {len(items)} cases up to date')
+        else:
+            with open(path, 'w') as f:
+                f.write(text)
+            print(f'wrote {rel}: {len(items)} cases')
+    sys.exit(1 if stale else 0)

@@ -202,6 +202,20 @@ rule covers an aggregate binder, which names the element rather than a copy of
 it, and the compound assignment forms, which hold their target across the
 evaluation of the right-hand side.
 
+What a mutation reaches is children. The scalar a value holds — a number, a
+text — never changes once the value exists: an assignment stores a new value at
+its target rather than rewriting the old one, so an operand read before it keeps
+what it read:
+
+```
+X = 5; X * (X = 2)      ==>   10
+```
+
+How an implementation keeps numbers between operations — reused registers,
+shared magnitudes, digits written only when text is asked for — is its own
+affair, provided nothing can change a number once it has been yielded
+(`conformance/32-numeric-plans.selt`).
+
 **Only assignment and the collectors copy.** `=` deep-copies its right-hand
 side (§5.8), which is what stops two variables from sharing structure, and the
 operations that *collect* values into a new one copy what they collect for the

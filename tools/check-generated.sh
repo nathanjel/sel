@@ -181,6 +181,14 @@ check_group "usage example seed" "node tools/gen-usage-seed.mjs" \
   -- \
   examples/sql-complex/seed.postgresql.sql
 
+# The decimal conformance cases, with every expectation computed by the exact
+# oracle. A stale file would hold every host to yesterday's oracle. Python, not
+# Node, renders them; the gate needs Python anyway.
+check_group "decimal conformance cases" "python3 tools/gen-decimal-cases.py" \
+  tools/gen-decimal-cases.py tools/decimal-oracle-exact.py \
+  -- \
+  conformance/24-decimal-boundaries.selt conformance/32-numeric-plans.selt
+
 if [ "$status" -ne 0 ]; then
   echo "GENERATED ARTIFACTS ARE NOT CURRENT — run the command(s) above" >&2
 fi
