@@ -8,6 +8,12 @@
 // (neg ? -1 : 1) * digits / 10^scale.
 // Additional native/nativeDigits/nativeNeg fields cache checked conversion;
 // callers may still supply the original three-field descriptors.
+//
+// With ext-gmp, a result too big for a native int is lazy (item 1, 2026-10-01):
+// 'digits' is null and 'gmp' holds the magnitude, and the digits are written only
+// when text is asked for -- format(), digits(), eager(). Every function here takes
+// either form. Value::asDecimal() and Args::dec() hand a host today's array, and
+// checked() accepts the lazy one back.
 
 declare(strict_types=1);
 
@@ -58,6 +64,112 @@ final class Dec
      * for. Public so a test can hold both forms to the same answers.
      */
     public static bool $lazyDigits = false;
+
+    /** @var array<int, \GMP> */
+    private static array $pow10Gmp = [];
+    private static int $pow10GmpDigits = 0;
+    private static ?\GMP $int64MinMagnitude = null;
+
+    private static function lazy(): bool
+    {
+        return self::$lazyDigits && self::hasGmp();
+    }
+
+    /** 10^k as GMP, cached up to about four million digits in all (item 1). */
+    private static function pow10Gmp(int $k): \GMP
+    {
+        if (isset(self::$pow10Gmp[$k])) {
+            return self::$pow10Gmp[$k];
+        }
+        $p = gmp_pow(10, $k);
+        if (self::$pow10GmpDigits + $k > 4194304) {
+            self::$pow10Gmp = [];
+            self::$pow10GmpDigits = 0;
+        }
+        self::$pow10GmpDigits += $k;
+        return self::$pow10Gmp[$k] = $p;
+    }
+
+    /**
+     * $d's magnitude as GMP: a lazy value's own, a native one without a digit
+     * string, anything else parsed (item 1).
+     */
+    private static function gmpOf(array $d): \GMP
+    {
+        if ($d['digits'] === null) {
+            return $d['gmp'];
+        }
+        $n = self::intMantissa($d);
+        if ($n !== null && $n !== PHP_INT_MIN) {
+            return gmp_init($n < 0 ? -$n : $n);
+        }
+        return self::gmpInt($d['digits']);
+    }
+
+    /**
+     * A result from a GMP magnitude: today's array when it fits a native int (so
+     * the arrays PHP-P13/P15 hold identical still are), else the lazy form --
+     * digits null, the magnitude kept as GMP until text is asked for (item 1). A
+     * lazy value is never zero and never fits a native int.
+     */
+    private static function fromGmp(bool $neg, \GMP $mag, int $scale): array
+    {
+        if (gmp_cmp($mag, PHP_INT_MAX) <= 0) {
+            $v = gmp_intval($mag);
+            return self::make($neg, (string) $v, $scale, $neg ? -$v : $v);
+        }
+        self::$int64MinMagnitude ??= gmp_init('9223372036854775808', 10);
+        if ($neg && gmp_cmp($mag, self::$int64MinMagnitude) === 0) {
+            return self::make(true, '9223372036854775808', $scale);
+        }
+        return ['neg' => $neg, 'digits' => null, 'scale' => $scale,
+                'native' => null, 'nativeDigits' => null, 'nativeNeg' => $neg, 'gmp' => $mag];
+    }
+
+    /** The digits of $d, written from its GMP magnitude when it is lazy (item 1). */
+    public static function digits(array $d): string
+    {
+        return $d['digits'] ?? self::gmpStr($d['gmp']);
+    }
+
+    /** $d with its digits written out: today's array, never lazy (item 1). */
+    public static function eager(array $d): array
+    {
+        if ($d['digits'] !== null) {
+            return $d;
+        }
+        return self::make($d['neg'], self::gmpStr($d['gmp']), $d['scale']);
+    }
+
+    /** Whether two decimals have the same digits, whatever their forms. */
+    public static function sameDigits(array $a, array $b): bool
+    {
+        if ($a['digits'] !== null && $b['digits'] !== null) {
+            return $a['digits'] === $b['digits'];
+        }
+        if ($a['digits'] === null && $b['digits'] === null) {
+            return gmp_cmp($a['gmp'], $b['gmp']) === 0;
+        }
+        return self::digits($a) === self::digits($b);
+    }
+
+    /**
+     * Whether a positive GMP magnitude has more than MAX_INT_DIGITS + $scale
+     * digits, that is reaches 10^L. Its bit length decides, by gmp_scan1, unless
+     * it lies within a few bits of 10^L; only then is 10^L built and compared
+     * (item 1). 3.321928 < log2(10) < 3.321929.
+     */
+    private static function exceedsIntDigits(\GMP $g, int $scale): bool
+    {
+        $L = self::MAX_INT_DIGITS + $scale;
+        if (gmp_scan1($g, intdiv($L * 3321928, 1000000)) === -1) {
+            return false;   // below 2^floor(L * 3.321928), which is at most 10^L
+        }
+        if (gmp_scan1($g, intdiv($L * 3321929, 1000000) + 1) !== -1) {
+            return true;    // at least 2^(floor(L * 3.321929) + 1), which is past 10^L
+        }
+        return gmp_cmp($g, self::pow10Gmp($L)) >= 0;
+    }
 
     /**
      * Test hook: false makes every operation take the pure-PHP digit-string
@@ -645,6 +757,9 @@ final class Dec
      */
     private static function intMantissa(array $d): ?int
     {
+        if ($d['digits'] === null) {
+            return null;   // a lazy value never fits a native int
+        }
         // Decimal arrays are also accepted from host code. Validate the cache
         // against its source fields so edits to those arrays cannot stale it.
         if (array_key_exists('native', $d)
@@ -736,6 +851,12 @@ final class Dec
         if ($d['scale'] > self::MAX_FRAC_DIGITS) {
             fail('E_RANGE', 'number has more than ' . self::MAX_FRAC_DIGITS . ' fractional digits', $pos);
         }
+        if ($d['digits'] === null) {
+            if (self::exceedsIntDigits($d['gmp'], $d['scale'])) {
+                fail('E_RANGE', 'number has more than ' . self::MAX_INT_DIGITS . ' integer digits', $pos);
+            }
+            return $d;
+        }
         // Negative when the value is below 1: those render as a single "0".
         if (strlen($d['digits']) - $d['scale'] > self::MAX_INT_DIGITS) {
             fail('E_RANGE', 'number has more than ' . self::MAX_INT_DIGITS . ' integer digits', $pos);
@@ -754,6 +875,10 @@ final class Dec
      */
     public static function checked($d): array
     {
+        if (is_array($d) && array_key_exists('digits', $d) && $d['digits'] === null
+            && ($d['gmp'] ?? null) instanceof \GMP && is_bool($d['neg'] ?? null) && is_int($d['scale'] ?? null)) {
+            $d = self::eager($d);
+        }
         if (!is_array($d) || !is_bool($d['neg'] ?? null) || !is_string($d['digits'] ?? null)
             || !is_int($d['scale'] ?? null) || $d['scale'] < 0 || $d['digits'] === ''
             || strspn($d['digits'], '0123456789') !== strlen($d['digits'])) {
@@ -855,12 +980,13 @@ final class Dec
     public static function format(array $d): string
     {
         $sign = $d['neg'] ? '-' : '';
+        $digits = self::digits($d);
         if ($d['scale'] === 0) {
-            return $sign . $d['digits'];
+            return $sign . $digits;
         }
-        $padded = strlen($d['digits']) <= $d['scale']
-            ? str_repeat('0', $d['scale'] - strlen($d['digits']) + 1) . $d['digits']
-            : $d['digits'];
+        $padded = strlen($digits) <= $d['scale']
+            ? str_repeat('0', $d['scale'] - strlen($digits) + 1) . $digits
+            : $digits;
         $cut = strlen($padded) - $d['scale'];
         return $sign . substr($padded, 0, $cut) . '.' . substr($padded, $cut);
     }
@@ -883,6 +1009,10 @@ final class Dec
      */
     public static function negate(array $d): array
     {
+        if ($d['digits'] === null) {
+            $d['neg'] = $d['nativeNeg'] = !$d['neg'];
+            return $d;
+        }
         return self::make(!$d['neg'], $d['digits'], $d['scale']);
     }
 
@@ -895,6 +1025,7 @@ final class Dec
      */
     public static function trimScale(array $d): array
     {
+        $d = self::eager($d);
         if ($d['digits'] === '0') {
             return self::make(false, '0', 0);
         }
@@ -916,6 +1047,10 @@ final class Dec
      */
     public static function abs(array $d): array
     {
+        if ($d['digits'] === null) {
+            $d['neg'] = $d['nativeNeg'] = false;
+            return $d;
+        }
         return self::make(false, $d['digits'], $d['scale']);
     }
 
@@ -928,6 +1063,7 @@ final class Dec
     /** @param array{neg:bool,digits:string,scale:int} $d */
     public static function isInteger(array $d): bool
     {
+        $d = self::eager($d);
         if ($d['scale'] === 0) {
             return true;
         }
@@ -941,6 +1077,7 @@ final class Dec
     /** @param array{neg:bool,digits:string,scale:int} $d */
     public static function toInt(array $d): int
     {
+        $d = self::eager($d);
         $t = self::trunc($d);
         // Saturating: a value past the machine integer is PHP_INT_MAX (or its
         // negation), never the 0 that (int) gives a string PHP reads as INF.
@@ -983,6 +1120,11 @@ final class Dec
                 if ($value !== null) return self::guard($value, $pos);
             }
         }
+        if (self::lazy()) {
+            return self::addGmp($a, $b, $pos);
+        }
+        $a = self::eager($a);
+        $b = self::eager($b);
         [$A, $B, $s] = self::aligned($a, $b);
         if ($a['neg'] === $b['neg']) {
             // Only true addition can grow: a difference is never wider than its
@@ -996,6 +1138,30 @@ final class Dec
         return $c > 0
             ? self::make($a['neg'], self::subAbs($A, $B), $s)
             : self::make($b['neg'], self::subAbs($B, $A), $s);
+    }
+
+    /** add() in GMP, with the same scale, sign and guard rules (item 1). */
+    private static function addGmp(array $a, array $b, ?array $pos): array
+    {
+        $s = max($a['scale'], $b['scale']);
+        $A = self::gmpOf($a);
+        $B = self::gmpOf($b);
+        if ($a['scale'] < $s) {
+            $A = gmp_mul($A, self::pow10Gmp($s - $a['scale']));
+        }
+        if ($b['scale'] < $s) {
+            $B = gmp_mul($B, self::pow10Gmp($s - $b['scale']));
+        }
+        if ($a['neg'] === $b['neg']) {
+            return self::guard(self::fromGmp($a['neg'], gmp_add($A, $B), $s), $pos);
+        }
+        $c = gmp_cmp($A, $B);
+        if ($c === 0) {
+            return self::make(false, '0', $s);
+        }
+        return $c > 0
+            ? self::fromGmp($a['neg'], gmp_sub($A, $B), $s)
+            : self::fromGmp($b['neg'], gmp_sub($B, $A), $s);
     }
 
     /**
@@ -1082,6 +1248,15 @@ final class Dec
                 if ($value !== null) return self::guard($value, $pos);
             }
         }
+        if (self::lazy()) {
+            return self::guard(self::fromGmp(
+                $a['neg'] !== $b['neg'],
+                gmp_mul(self::gmpOf($a), self::gmpOf($b)),
+                $a['scale'] + $b['scale'],
+            ), $pos);
+        }
+        $a = self::eager($a);
+        $b = self::eager($b);
         return self::guard(self::make(
             $a['neg'] !== $b['neg'],
             self::mulAbs($a['digits'], $b['digits']),
@@ -1115,6 +1290,23 @@ final class Dec
             // fastAligned carries signed mantissas, so PHP's native comparison
             // already has the correct order for the negative branch too.
             return $c;
+        }
+        if ($a['digits'] === null || $b['digits'] === null) {
+            if (self::hasGmp()) {
+                $s = max($a['scale'], $b['scale']);
+                $A = self::gmpOf($a);
+                $B = self::gmpOf($b);
+                if ($a['scale'] < $s) {
+                    $A = gmp_mul($A, self::pow10Gmp($s - $a['scale']));
+                }
+                if ($b['scale'] < $s) {
+                    $B = gmp_mul($B, self::pow10Gmp($s - $b['scale']));
+                }
+                $c = gmp_cmp($A, $B) <=> 0;
+                return $a['neg'] ? -$c : $c;
+            }
+            $a = self::eager($a);
+            $b = self::eager($b);
         }
         [$A, $B] = self::aligned($a, $b);
         $c = self::cmpAbs($A, $B);
@@ -1187,6 +1379,8 @@ final class Dec
      */
     public static function div(array $a, array $b, ?array $pos = null): array
     {
+        $a = self::eager($a);
+        $b = self::eager($b);
         if (self::isZero($b)) {
             fail('E_DIV_ZERO', 'division by zero', $pos);
         }
@@ -1226,6 +1420,8 @@ final class Dec
      */
     public static function mod(array $a, array $b, ?array $pos = null): array
     {
+        $a = self::eager($a);
+        $b = self::eager($b);
         if (self::isZero($b)) {
             fail('E_DIV_ZERO', 'modulo by zero', $pos);
         }
@@ -1242,6 +1438,7 @@ final class Dec
      */
     public static function round(array $d, int $n, ?array $pos = null): array
     {
+        $d = self::eager($d);
         if ($n >= $d['scale']) {
             return self::guard(self::make($d['neg'], self::scaleUp($d['digits'], $n - $d['scale']), $n), $pos);
         }
@@ -1261,6 +1458,7 @@ final class Dec
         if ($d['scale'] === 0) {
             return $d;
         }
+        $d = self::eager($d);
         [$q] = self::divModAbs($d['digits'], self::pow10($d['scale']));
         return self::make($d['neg'], $q, 0);
     }
@@ -1274,6 +1472,7 @@ final class Dec
         if ($d['scale'] === 0) {
             return $d;
         }
+        $d = self::eager($d);
         [$q, $r] = self::divModAbs($d['digits'], self::pow10($d['scale']));
         // Rounding away from zero carries: -99.5 floors to -100, a digit wider,
         // and past the digit cap that is E_RANGE at the call, not at 0:0 when
@@ -1290,6 +1489,7 @@ final class Dec
         if ($d['scale'] === 0) {
             return $d;
         }
+        $d = self::eager($d);
         [$q, $r] = self::divModAbs($d['digits'], self::pow10($d['scale']));
         return self::guard(self::make($d['neg'], !$d['neg'] && $r !== '0' ? self::addAbs($q, '1') : $q, 0), $pos);
     }

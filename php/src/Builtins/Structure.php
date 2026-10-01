@@ -233,7 +233,7 @@ final class Structure
                 return ['bad' => $value];
             }
             if ($v->decVal !== null) {
-                return self::canonicalDecimalKey($v->decVal);
+                return self::canonicalDecimalKey(\Sel\Dec::eager($v->decVal));
             }
             $scalar = $v->getScalar();
             if (is_string($scalar)) {

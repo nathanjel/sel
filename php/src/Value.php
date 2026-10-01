@@ -190,7 +190,7 @@ final class Value
     public function getScalar(): mixed
     {
         if ($this->scalar === null && $this->decVal !== null) {
-            if ($this->decVal['scale'] === 0) {
+            if ($this->decVal['scale'] === 0 && $this->decVal['digits'] !== null) {
                 $this->scalar = ($this->decVal['neg'] ? '-' : '') . $this->decVal['digits'];
             } else {
                 $this->scalar = Dec::format($this->decVal);
@@ -920,6 +920,11 @@ final class Value
             fail('E_NOT_NUM', 'expected a number, got ' . \Sel\Utf8::lower($v->kind), $pos);
         }
         if ($v->decVal !== null) {
+            // The host sees today's array: a lazy value writes its digits out,
+            // once (item 1).
+            if ($v->decVal['digits'] === null) {
+                $v->decVal = Dec::eager($v->decVal);
+            }
             return $v->decVal;
         }
         $d = Dec::parse((string) $v->getScalar(), $pos);
@@ -928,6 +933,23 @@ final class Value
         }
         $v->decVal = $d;
         return $d;
+    }
+
+    /**
+     * asDecimal() for the evaluator: a value's decimal as it is kept, which a
+     * computed big number may keep lazily -- its magnitude as GMP, its digits not
+     * yet written (item 1). Everything it is handed to is Dec's.
+     *
+     * @param array{line:int,col:int,offset:int}|null $pos
+     * @return array{neg:bool,digits:?string,scale:int}
+     */
+    public function asDecimalLazy(?array $pos = null): array
+    {
+        $v = $this->scalarSource($pos);
+        if ($v->kind === self::TEXT && $v->decVal !== null) {
+            return $v->decVal;
+        }
+        return $this->asDecimal($pos);
     }
 
     /** Non-throwing probe for ISNUM. */
@@ -1162,7 +1184,7 @@ final class Value
                 && $this->decVal !== null && $other->decVal !== null) {
                 if ($this->decVal['neg'] !== $other->decVal['neg']
                     || $this->decVal['scale'] !== $other->decVal['scale']
-                    || $this->decVal['digits'] !== $other->decVal['digits']) {
+                    || !Dec::sameDigits($this->decVal, $other->decVal)) {
                     return false;
                 }
             } else {

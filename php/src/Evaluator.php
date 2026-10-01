@@ -59,7 +59,7 @@ final class Evaluator
      */
     private static function operand(array|Value $slot, ?array $pos): array
     {
-        return $slot instanceof Value ? $slot->asDecimal($pos) : $slot;
+        return $slot instanceof Value ? $slot->asDecimalLazy($pos) : $slot;
     }
 
     public static function evalMathPlan(array $plan, Context $ctx): Value
@@ -295,7 +295,7 @@ final class Evaluator
         if ($node['op'] === 'NOT') {
             return Value::bool(!$v->asBool($node['x']['pos']));
         }
-        return Value::numTrusted(Dec::negate($v->asDecimal($node['x']['pos'])));
+        return Value::numTrusted(Dec::negate($v->asDecimalLazy($node['x']['pos'])));
     }
 
     /** @param array<string,mixed> $node */
@@ -338,16 +338,16 @@ final class Evaluator
         $rp = $node['r']['pos'];
 
         switch ($op) {
-            case '+': return Value::numTrusted(Dec::add($l->asDecimal($lp), $r->asDecimal($rp), $node['pos']));
-            case '-': return Value::numTrusted(Dec::sub($l->asDecimal($lp), $r->asDecimal($rp), $node['pos']));
-            case '*': return Value::numTrusted(Dec::mul($l->asDecimal($lp), $r->asDecimal($rp), $node['pos']));
-            case '/': return Value::numTrusted(Dec::div($l->asDecimal($lp), $r->asDecimal($rp), $node['pos']));
-            case '%': return Value::numTrusted(Dec::mod($l->asDecimal($lp), $r->asDecimal($rp), $node['pos']));
+            case '+': return Value::numTrusted(Dec::add($l->asDecimalLazy($lp), $r->asDecimalLazy($rp), $node['pos']));
+            case '-': return Value::numTrusted(Dec::sub($l->asDecimalLazy($lp), $r->asDecimalLazy($rp), $node['pos']));
+            case '*': return Value::numTrusted(Dec::mul($l->asDecimalLazy($lp), $r->asDecimalLazy($rp), $node['pos']));
+            case '/': return Value::numTrusted(Dec::div($l->asDecimalLazy($lp), $r->asDecimalLazy($rp), $node['pos']));
+            case '%': return Value::numTrusted(Dec::mod($l->asDecimalLazy($lp), $r->asDecimalLazy($rp), $node['pos']));
 
             case '&': return self::concat($l, $r, $lp, $rp, $node['pos']);
 
             case '==': case '!=': case '<': case '<=': case '>': case '>=':
-                return Value::bool(self::compareResult($op, Dec::cmp($l->asDecimal($lp), $r->asDecimal($rp)), $node['pos']));
+                return Value::bool(self::compareResult($op, Dec::cmp($l->asDecimalLazy($lp), $r->asDecimalLazy($rp)), $node['pos']));
 
             case '$==': case '$!=': case '$<': case '$<=': case '$>': case '$>=':
                 // strcmp is bytewise, which is exactly what §5.3 requires.
@@ -480,8 +480,8 @@ final class Evaluator
             if ($binOp === '&') {
                 $value = self::concat($current, $rhs, $tp, $vp, $node['pos']);
             } else {
-                $a = $current->asDecimal($tp);
-                $b = $rhs->asDecimal($vp);
+                $a = $current->asDecimalLazy($tp);
+                $b = $rhs->asDecimalLazy($vp);
                 $value = Value::numTrusted(match ($binOp) {
                     '+' => Dec::add($a, $b, $node['pos']),
                     '-' => Dec::sub($a, $b, $node['pos']),

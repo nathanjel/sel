@@ -636,7 +636,7 @@ final class Core
                 // is the one a chain of Dec::add calls gives.
                 $total = ['m' => 0, 's' => 0];
                 self::walk($a, $ctx, static function (Value $r, $k, $i, array $body) use (&$total): ?Value {
-                    Dec::sumAccumulate($total, $r->asDecimal($body['pos']), $body['pos']);
+                    Dec::sumAccumulate($total, $r->asDecimalLazy($body['pos']), $body['pos']);
                     return null;
                 });
                 return Value::numTrusted(Dec::sumResult($total));
