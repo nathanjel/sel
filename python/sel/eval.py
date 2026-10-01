@@ -413,7 +413,9 @@ def _compile_math_plan(plan: MathPlan) -> Any:
            + ''.join(f'        {line}\n' for line in lines) + '    return run\n')
     scope: dict[str, Any] = {}
     exec(compile(src, '<math plan>', 'exec'), scope)
-    return scope['factory'](*env.values())
+    # Taken out of the dict that is its globals, so the two make no cycle and a
+    # dropped plan is freed by reference counting (see _gc.py).
+    return scope.pop('factory')(*env.values())
 
 
 # --- one function per node type, chosen by _EVAL (the table ends the module) --

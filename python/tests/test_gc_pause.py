@@ -88,6 +88,23 @@ def test_optimiser_garbage_is_bounded_and_collected_when_the_pause_ends():
     assert gc.collect() == 0
 
 
+def test_a_compiled_math_plan_is_freed_without_the_collector():
+    # Item 2, P2: a hot plan's function is generated through exec. Taken out of
+    # the dict that is its globals, the two form no cycle, so dropping the
+    # program frees the plans by reference counting (it left 2 cyclic objects
+    # per plan).
+    from sel import eval as E
+    program = sel.compile('; '.join(f'X{i} = A * B + {i}' for i in range(20)))
+    for _ in range(E._PLAN_HOT + 1):
+        program.run({'A': '2', 'B': '3'})
+    plans = [item.value.math_plan for item in program.physical_ast().items]
+    assert len(plans) == 20 and all(plan.run is not None for plan in plans)
+    del plans
+    gc.collect()
+    del program
+    assert gc.collect() == 0
+
+
 def test_collector_is_enabled_after_concurrent_runs():
     # PY-C2: the pause's enter/exit were an unlocked check-then-act on process
     # globals, so a second thread entering between `gc.disable()` and the
