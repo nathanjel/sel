@@ -227,7 +227,7 @@ def eval_node(node: Node, ctx: Context) -> Value:
     try:
         if node.math_plan is not None:
             return _eval_planned(node, ctx)
-        return _dispatch(node, ctx)
+        return _EVAL.get(node.t, _eval_unknown)(node, ctx)
     finally:
         ctx.depth -= 1
 
@@ -413,91 +413,93 @@ def _compile_math_plan(plan: MathPlan) -> Any:
     return scope['factory'](*env.values())
 
 
-def _dispatch(node: Node, ctx: Context) -> Value:
-    t = node.t
+# --- one function per node type, chosen by _EVAL (the table ends the module) --
 
-    if t == 'num':
-        v = Value(TEXT, node.v)
-        if node.dec is not None:
-            v._dec_val = node.dec
-        return v
-    if t == 'text':
-        # An ASCII literal needs no validation (and Value.text's isinstance + validate
-        # call cost as much as building the Value, per evaluation -- PY-P29); anything
-        # else, including a hand-built node carrying something that is not a str, takes
-        # the validating constructor as before.
-        v = node.v
-        if type(v) is str and v.isascii():
-            return Value(TEXT, v)
-        return Value.text(v)
-    if t == 'bool':
-        return Value.bool(node.v)
-    if t == 'null':
-        return Value.null()
+def _eval_num(node: Node, ctx: Context) -> Value:
+    v = Value(TEXT, node.v)
+    if node.dec is not None:
+        v._dec_val = node.dec
+    return v
 
-    if t == 'var':
-        v = ctx.lookup(node.name)
-        if v is None:
-            fail('E_UNDEF_VAR', f'undefined variable {node.name}', node.pos)
-        return v
 
-    if t == 'index':
-        obj_node = node.obj
-        if obj_node.t == 'var':
-            obj = ctx.lookup(obj_node.name)
-            if obj is None:
-                fail('E_UNDEF_VAR', f'undefined variable {obj_node.name}', obj_node.pos)
-        else:
-            obj = eval_node(obj_node, ctx)
+def _eval_text(node: Node, ctx: Context) -> Value:
+    # An ASCII literal needs no validation (and Value.text's isinstance + validate
+    # call cost as much as building the Value, per evaluation -- PY-P29); anything
+    # else, including a hand-built node carrying something that is not a str, takes
+    # the validating constructor as before.
+    v = node.v
+    if type(v) is str and v.isascii():
+        return Value(TEXT, v)
+    return Value.text(v)
 
-        # The slot cache is keyed on the record's shape alone, so it may only
-        # answer for a literal key: a computed key can differ at every read
-        # (and must be evaluated, errors included). Review 2026-09-25 SEM-01.
-        literal = node.idx.t == 'text'
-        if literal:
-            cached = node._cached_slot
-            if cached is not None and obj.shape is cached[0]:
-                return obj.storage[cached[1]]
-            key = node.idx.v
-        else:
-            key = eval_node(node.idx, ctx).as_text(node.idx.pos)
-        if obj.shape is not None:
-            index = obj.shape.key_map.get(key)
-            if index is not None:
-                if literal:
-                    node._cached_slot = (obj.shape, index)
-                return obj.storage[index]
-            fail('E_NO_KEY', f'no key "{key}"', node.pos)
 
-        child = obj.get(key)
-        if child is None:
-            fail('E_NO_KEY', f'no key "{key}"', node.pos)
-        return child
+def _eval_bool(node: Node, ctx: Context) -> Value:
+    return Value.bool(node.v)
 
-    if t == 'seq':
-        last = None
-        for item in node.items:
-            last = eval_node(item, ctx)
-        return last
 
-    if t == 'list':
-        return _eval_list(node, ctx)
-    if t == 'un':
-        return _eval_unary(node, ctx)
-    if t == 'bin':
-        return _eval_binary(node, ctx)
-    if t == 'assign':
-        return _eval_assign(node, ctx)
+def _eval_null(node: Node, ctx: Context) -> Value:
+    return Value.null()
 
-    if t == 'call':
-        args = Args(node, ctx)
-        if not node.spec.lazy:
-            # Strict: every argument evaluated once, left to right, before the body.
-            for i in range(len(node.args)):
-                args.val(i)
-        return node.spec.fn(args, ctx)
 
-    fail('E_SYNTAX', f'cannot evaluate node {t}', node.pos)
+def _eval_var(node: Node, ctx: Context) -> Value:
+    v = ctx.lookup(node.name)
+    if v is None:
+        fail('E_UNDEF_VAR', f'undefined variable {node.name}', node.pos)
+    return v
+
+
+def _eval_index(node: Node, ctx: Context) -> Value:
+    obj_node = node.obj
+    if obj_node.t == 'var':
+        obj = ctx.lookup(obj_node.name)
+        if obj is None:
+            fail('E_UNDEF_VAR', f'undefined variable {obj_node.name}', obj_node.pos)
+    else:
+        obj = eval_node(obj_node, ctx)
+
+    # The slot cache is keyed on the record's shape alone, so it may only
+    # answer for a literal key: a computed key can differ at every read
+    # (and must be evaluated, errors included). Review 2026-09-25 SEM-01.
+    literal = node.idx.t == 'text'
+    if literal:
+        cached = node._cached_slot
+        if cached is not None and obj.shape is cached[0]:
+            return obj.storage[cached[1]]
+        key = node.idx.v
+    else:
+        key = eval_node(node.idx, ctx).as_text(node.idx.pos)
+    if obj.shape is not None:
+        index = obj.shape.key_map.get(key)
+        if index is not None:
+            if literal:
+                node._cached_slot = (obj.shape, index)
+            return obj.storage[index]
+        fail('E_NO_KEY', f'no key "{key}"', node.pos)
+
+    child = obj.get(key)
+    if child is None:
+        fail('E_NO_KEY', f'no key "{key}"', node.pos)
+    return child
+
+
+def _eval_seq(node: Node, ctx: Context) -> Value:
+    last = None
+    for item in node.items:
+        last = eval_node(item, ctx)
+    return last
+
+
+def _eval_call(node: Node, ctx: Context) -> Value:
+    args = Args(node, ctx)
+    if not node.spec.lazy:
+        # Strict: every argument evaluated once, left to right, before the body.
+        for i in range(len(node.args)):
+            args.val(i)
+    return node.spec.fn(args, ctx)
+
+
+def _eval_unknown(node: Node, ctx: Context) -> Value:
+    fail('E_SYNTAX', f'cannot evaluate node {node.t}', node.pos)
 
 
 def _eval_list(node: Node, ctx: Context) -> Value:
@@ -820,3 +822,10 @@ def _resolve_target(target: Node, ctx: Context) -> list[str]:
     last = chain[-1]
     path.append(eval_node(last, ctx).as_text(last.pos))
     return path
+
+
+_EVAL = {
+    'num': _eval_num, 'text': _eval_text, 'bool': _eval_bool, 'null': _eval_null,
+    'var': _eval_var, 'index': _eval_index, 'seq': _eval_seq, 'list': _eval_list,
+    'un': _eval_unary, 'bin': _eval_binary, 'assign': _eval_assign, 'call': _eval_call,
+}

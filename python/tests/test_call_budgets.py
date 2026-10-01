@@ -22,7 +22,7 @@ PROGRAMS = {
     'rows': 'L .> FILTER(_["a"] $== "x") .> SORT_BY(_["b"], "DESC") .> TAKE(5) .> MAP(RECORD("b", _["b"]))',
 }
 CONTEXTS = {'rows': {'L': [{'a': 'x' if i % 3 == 0 else 'y', 'b': i} for i in range(1, 201)]}}
-BUDGETS = {'pixel': 2319, 'rows': 5560}
+BUDGETS = {'pixel': 2253, 'rows': 5360}
 
 
 def python_calls(label):
