@@ -52,6 +52,25 @@ type rule struct {
 	program *sel.Program
 }
 
+// EXAMPLE-BEGIN astext
+// asText is v.AsText for a result that might not be text. The accessors of a
+// *sel.Value panic with a *sel.SelError rather than return one, so a rule that
+// answered TRUE would otherwise take the request down with it.
+func asText(v *sel.Value) (text string, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			e, ok := r.(*sel.SelError)
+			if !ok {
+				panic(r)
+			}
+			err = e
+		}
+	}()
+	return v.AsText(sel.Pos{}), nil
+}
+
+// EXAMPLE-END astext
+
 // EXAMPLE-BEGIN validate
 type form [][2]string // field, what was typed
 type problem struct { // field, message
@@ -67,10 +86,12 @@ func validate(compiled []rule, submitted form) []problem {
 		}
 		var verdict string
 		v, err := r.program.Run(ctx)
+		if err == nil {
+			verdict, err = asText(v)
+		}
 		var e *sel.SelError
 		switch {
 		case err == nil:
-			verdict = v.AsText(sel.Pos{})
 		// E_ABORT is the rule speaking to the user; anything else is a broken
 		// rule or data it cannot read -- log it, show a generic line.
 		case errors.As(err, &e) && e.Code == "E_ABORT":

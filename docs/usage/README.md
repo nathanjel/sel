@@ -95,19 +95,11 @@ vcpkg install sel-lang               # or: conan install --requires sel-lang/0.9
 
 </details>
 <details>
-<summary>Common Lisp</summary>
-
-```lisp
-(ql:quickload :sel-lang)             ; SBCL; depends on cl-ppcre
-(ql:quickload :sel-lang/sql)         ; the SQL layer
-```
-
-</details>
-<details>
 <summary>Rust</summary>
 
 ```sh
 cargo add sel-lang --git https://github.com/nathanjel/sel    # not on crates.io yet
+cargo add serde_json        # only to extend the SQL layer: sql::define takes a serde_json::Value
 ```
 ```rust
 use sel_lang::{compile, evaluate, Pos, SelError, Value};   // Rust 2021; depends on regex
@@ -129,6 +121,15 @@ import (
 ```
 
 </details>
+<details>
+<summary>Common Lisp</summary>
+
+```lisp
+(ql:quickload :sel-lang)             ; SBCL; depends on cl-ppcre
+(ql:quickload :sel-lang/sql)         ; the SQL layer
+```
+
+</details>
 <!-- /tabs -->
 
 [PACKAGING.md](../../PACKAGING.md) has the details of each registry.
@@ -139,6 +140,13 @@ import (
 compiles each rule once and keeps the program: a `Program` is immutable and
 reusable, and compiling is where syntax errors, unknown functions and wrong
 argument counts are caught — before any data is involved.
+
+The snippets on this page come from [`examples/plain`](../../examples/plain/).
+The Rust and Go tabs use a few small helpers from it: `at` is "the host"
+as a position (`Pos::default()`, `sel.Pos{}`); Rust's `val(s)` is
+`Value::text_owned(s.to_string())` and `text(v)` is `v.as_text(at)`; Go's
+`check(err)` stops on an error a well-formed program never has, and
+`eval(src)` is `sel.Eval(src, nil)` with that check.
 
 <!-- tabs -->
 <details open>
@@ -255,8 +263,9 @@ pretend otherwise.
 ## Building a context
 
 The context is a value whose children are the rule's variables. Each host builds
-it from its own maps and lists; C++, which has no native map to convert from,
-builds it with `Value::none()` and `set()`.
+it from its own maps and lists; C++, Rust and Go, which have no native map to
+convert from, build it child by child — `Value::none()` and `set()`, or
+`sel.NewNone()` and `Set()`.
 
 <!-- tabs -->
 <details open>
@@ -433,8 +442,10 @@ piece, and every constructor holds the same rules
 - **A malformed call is `E_BAD_ARG`.** That covers a float, a non-integer where
   an integer goes, a decimal that is not one, and a native value with no
   conversion. It is a `SelError` in every host, never the host's own exception.
-  In PHP and C++, a call whose argument types do not match the declared
-  parameters is rejected by the language before SEL sees it.
+  In PHP, C++, Rust and Go, a call whose argument types do not match the
+  declared parameters is rejected by the language before SEL sees it. Go
+  reports these by panicking with the `*sel.SelError` rather than returning it
+  ([below](#go-and-rust-which-calls-return-the-error)).
 
 | | Python | JavaScript | PHP | C++ | Common Lisp | Rust | Go |
 |---|---|---|---|---|---|---|---|
@@ -449,6 +460,11 @@ piece, and every constructor holds the same rules
 | record from a prepared shape | `Value.shaped(shape, values)` | — | `Value::fromShape(RecordShape::intern($keys), $values)` | `Value::shaped(shape, values)` | — | — | — |
 | many rows of one shape | — | — | `Value::fromNativeRows($rows)` | — | — | — | — |
 | one key | `v.set(k, x)` | `v.set(k, x)` | `$v->set($k, $x)` | `v.set(k, x)` | `(value-set v k x)` | `v.set(k, x, pos)?` | `v.Set(k, x)` |
+
+Rust (`Value::list_with_keys`, `record_from_entries`, `shaped_record`) and Go
+(`sel.NewRecordFromEntries`, `NewShapedRecord`) have more constructors than the
+table shows, but those are the builtins' own: they take what they are given,
+without the checks above, so the table leaves them out.
 
 The decimal form is `digits × 10^-scale`, negative when `neg`: `digits` is a
 non-negative whole number (a string of ASCII digits in PHP and C++) and
@@ -685,6 +701,65 @@ for _, src := range []string{`3 + "A"`, "NOSUCH(1)", `IF(1, "a", "b")`, `ABORT("
 </details>
 <!-- /tabs -->
 
+### Go and Rust: which calls return the error
+
+In the five dynamic or exception-based hosts every failure is raised the same
+way. Go and Rust split it by call.
+
+**Go.** `sel.Compile`, `Program.Run`, `sel.Eval` and the SQL layer's
+`Translate`, `TryTranslate`, `TranslateStatement` and `ExecuteHybrid` return an
+`error`, which is always a `*sel.SelError` (or the SQL layer's `*sql.SqlError`).
+Everything else reports a failure by **panicking** with one — the way an index
+out of range does:
+
+- the accessors of a value — `AsText`, `AsBool`, `AsBytes`, `AsDecimal` — when the
+  value is not of that kind: a rule that answers `TRUE` where text was expected
+  is a panic at `v.AsText(pos)`, after `Run` returned no error;
+- constructors and `Set` given what SEL refuses (invalid UTF-8 is `E_UTF8`,
+  `NewListWithKeys` with counts that differ is `E_BAD_ARG`);
+- `sql.PlanHybrid` with a dialect that does not exist, and the dialect
+  extension calls `sql.Define`, `DefineDialect` and `DefineBuilder`;
+- `RegisterFunction` with a name or an arity that is not allowed — a programming
+  error, so it panics with a plain string, at start-up.
+
+Inside a host function that is the way to fail: `sel.Fail(code, message, pos)`
+panics with a `*sel.SelError`, the `Args` readers do the same, and `Run` turns
+it into its returned error. Outside one, a server that reads results it does
+not control recovers the accessor's panic, as the validation example does:
+
+<!-- from: examples/validation/go.go#astext -->
+```go
+// asText is v.AsText for a result that might not be text. The accessors of a
+// *sel.Value panic with a *sel.SelError rather than return one, so a rule that
+// answered TRUE would otherwise take the request down with it.
+func asText(v *sel.Value) (text string, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			e, ok := r.(*sel.SelError)
+			if !ok {
+				panic(r)
+			}
+			err = e
+		}
+	}()
+	return v.AsText(sel.Pos{}), nil
+}
+```
+
+A compiled `*sel.Program` is safe to share between goroutines.
+
+**Rust.** Every call that can fail returns `Result<_, SelError>`, accessors
+included (`v.as_text(pos)?`), so `?` carries a SEL error up to the caller. The
+exceptions are the SQL layer's configuration calls: `sql::define`,
+`define_dialect`, `define_builder`, the `Binding` constructors and
+`plan_hybrid` panic with a `SqlError` on a bad argument. A `Program` is neither
+`Send` nor `Sync`, and `run` takes `&mut self`: compile one per thread (it is
+cheap), or keep it in a `thread_local!`. For the same reason a host function —
+which `register_function` requires to be `Send + Sync + 'static` — cannot
+capture a compiled program or a `Value`; examples/sql-functions keeps its
+programs in a `thread_local!`. A host function fails by returning
+`Err(SelError::new(code, message, pos))`.
+
 ## What does a rule read?
 
 `dependencies()` answers statically, without running the rule — which is what
@@ -804,6 +879,10 @@ elements. The repository's own budget and PHP 8.1 lanes run with
 | result | `.as_text()` `.as_bool()` `.dump()` | `.asText()` `.asBool()` `.dump()` | `->asText()` `->asBool()` `->dump()` | `.as_text()` `.as_bool()` `.dump()` | `(sel:as-text v)` `(sel:as-bool v)` `(sel:value-dump v)` | `.as_text(pos)?` `.as_bool(pos)?` `.dump()?` | `.AsText(pos)` `.AsBool(pos)` `.Dump()` |
 | errors | `SelError` `.code .line .col` | `SelError` `.code .line .col` | `SelError` `->code ->line ->col` | `sel::SelError` `.code() .line() .col()` | `sel:sel-error` `sel-error-code` … | `SelError` `.code .pos.line .pos.col` | `*sel.SelError` `.Code .Line() .Col()` |
 | own functions | `register_function` | `registerFunction` | `Sel::registerFunction` | `sel::register_function` | `sel:register-function` | `register_function` | `sel.RegisterFunction` |
+
+In Go, the accessors in the *result* row and the constructors panic with a
+`*sel.SelError` rather than return it — see
+[Go and Rust: which calls return the error](#go-and-rust-which-calls-return-the-error).
 
 The full contract is [spec/SPEC.md §8](../../spec/SPEC.md#8-host-interface), and
 `tools/check-api.sh` runs the same probes through all seven bindings to keep the

@@ -53,23 +53,25 @@ Four properties hold throughout:
 | `sqlite` | `ansi` | yes | from 3.35; no exact decimal type, no `REGEXP` by default |
 
 A base cannot be translated for (`E_SQL_DIALECT`); it exists to be inherited.
-Lookups walk the chain key by key. `Sql.dialects()` lists the targets, including
-any the application registered.
+Lookups walk the chain key by key. `Sql.dialects()` (`sql::dialects()` in Rust,
+`sql.Dialects()` in Go) lists the targets, including any the application
+registered.
 
 ## Entry points
 
-| | Python | JavaScript | PHP | C++ | Common Lisp |
-|---|---|---|---|---|---|
-| expression | `Sql.translate(p, d, b)` | `Sql.translate(p, d, b)` | `Sql::translate($p, $d, $b)` | `Sql::translate(p, d, b)` | `(sel.sql:translate p d b)` |
-| …or `None` | `Sql.try_translate` | `Sql.tryTranslate` | `Sql::tryTranslate` | `Sql::try_translate` | `sel.sql:try-translate` |
-| statement | `Sql.translate_statement` | `Sql.translateStatement` | `Sql::translateStatement` | `Sql::translate_statement` | `sel.sql:translate-statement` |
-| plan | `plan_hybrid(p, d, b)` | `planHybrid(p, d, b)` | `Sql::planHybrid` | `Sql::plan_hybrid` | `sel.sql:plan-hybrid` |
-| run a plan | `execute_hybrid(plan, runner, ctx)` | `executeHybrid(plan, runner, ctx)` | `Sql::executeHybrid` | `Sql::execute_hybrid` | `sel.sql:execute-hybrid` |
+| | Python | JavaScript | PHP | C++ | Common Lisp | Rust | Go |
+|---|---|---|---|---|---|---|---|
+| expression | `Sql.translate(p, d, b)` | `Sql.translate(p, d, b)` | `Sql::translate($p, $d, $b)` | `Sql::translate(p, d, b)` | `(sel.sql:translate p d b)` | `sql::translate(&p, d, Some(&b), o)?` | `sql.Translate(p, d, b, o)` |
+| …or `None` | `Sql.try_translate` | `Sql.tryTranslate` | `Sql::tryTranslate` | `Sql::try_translate` | `sel.sql:try-translate` | `sql::try_translate` | `sql.TryTranslate` |
+| statement | `Sql.translate_statement` | `Sql.translateStatement` | `Sql::translateStatement` | `Sql::translate_statement` | `sel.sql:translate-statement` | `sql::translate_statement` | `sql.TranslateStatement` |
+| plan | `plan_hybrid(p, d, b)` | `planHybrid(p, d, b)` | `Sql::planHybrid` | `Sql::plan_hybrid` | `sel.sql:plan-hybrid` | `sql::plan_hybrid(&p, d, Some(&b), o)` | `sql.PlanHybrid(p, d, b, o)` |
+| run a plan | `execute_hybrid(plan, runner, ctx)` | `executeHybrid(plan, runner, ctx)` | `Sql::executeHybrid` | `Sql::execute_hybrid` | `sel.sql:execute-hybrid` | `sql::execute_hybrid(&plan, runner, Some(&ctx))?` | `sql.ExecuteHybrid(plan, runner, ctx)` |
 
-`p` is a compiled program, `d` a dialect name, `b` the bindings. An optional
-fourth argument carries options: `strict` (below) in every host, and in the three
+`p` is a compiled program, `d` a dialect name, `b` the bindings. A fourth
+argument carries options: `strict` (below) in every host, and in the three
 dynamic hosts the logical optimiser's `fuseFilters` and `foldConstants`, which the
-planner forwards. The planner is the only entry point that optimises;
+planner forwards. It is optional except in Rust and Go, where it is required and
+holds `strict` alone (`Options::default()`, `sql.Options{}`). The planner is the only entry point that optimises;
 `translate` and `translate_statement` render the program as written.
 
 A plan exposes `pure_sql`, `pure_memory` and `is_hybrid` (each host spells them
@@ -102,7 +104,12 @@ a placeholder, numbers inlined — what a driver should get). The placeholder is
 Built by constructors, in code — never decoded from a document, so a malformed
 binding is impossible to construct rather than something to detect. Each host
 spells them its own way (`Binding.column` / `Binding::column` /
-`sel.sql:binding-column`); the arguments are the same.
+`sel.sql:binding-column`); the arguments are the same. Go names them after what
+they build — `sql.ColumnBinding`, `RawBinding`, `ColumnsBinding`,
+`RelationBinding`, `RelationQueryBinding`, `ValueBinding`, and
+`b.WithUniqueKey("id")` — and Rust and Go take every argument positionally, with
+no defaults: a `column` or `raw` binding's flags below, then `split_sargable`, a
+shorthand for `prefilter: "separate"`.
 
 | Constructor | Describes |
 |---|---|

@@ -362,5 +362,5 @@ TRUE
 ```
 
 The project's own command-line tools — `node js/bin/sel.mjs`, `php php/bin/sel`,
-`cpp/build/sel`, `lisp/bin/sel`, `python3 -m sel` — are this loop with line
-editing, `-e 'expr'` for one-shot use and `--deps` for dependencies.
+`cpp/build/sel`, `lisp/bin/sel`, `python3 -m sel`, `rust/build/sel`,
+`go/build/sel` — are this loop with line editing, `-e 'expr'` for one-shot use and `--deps` for dependencies.

@@ -164,6 +164,11 @@ for _, row := range [][2]string{{"3", "19.99"}, {"1", "5.00"}} {
 
 Each of these is part of [`examples/plain`](examples/plain/), and the seven print
 byte-identical output — which the test suite checks, on the code shown here.
+The Rust and Go tabs use a few small helpers from that file: `at` is "the host"
+as a position (`Pos::default()`, `sel.Pos{}`); Rust's `val(s)` is
+`Value::text_owned(s.to_string())` and `text(v)` is `v.as_text(at)`; Go's
+`check(err)` stops on an error a well-formed program never has, and
+`eval(src)` is `sel.Eval(src, nil)` with that check.
 
 ## Documentation
 

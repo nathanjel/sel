@@ -70,6 +70,9 @@ func env(name string) (string, error) {
 }
 
 // EXAMPLE-BEGIN runner
+// In this file `sql` is the standard library's database/sql; SEL's own SQL
+// layer, github.com/nathanjel/sel/go/sel/sql, is imported as selsql.
+
 // Conn is a connection to one of the three databases.
 type Conn struct {
 	pg                 *pgconn.PgConn // PostgreSQL

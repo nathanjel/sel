@@ -500,144 +500,6 @@ sel::sql::Sql::DbRunner runner(const Connection& conn) {
 
 </details>
 <details>
-<summary>Common Lisp</summary>
-
-<!-- from: examples/lib/db.lisp#runner -->
-```lisp
-(defun connect (dialect)
-  (let ((host (env "SEL_DB_HOST" "127.0.0.1"))
-        (user (env "SEL_DB_USER"))
-        (password (env "SEL_DB_PASSWORD"))
-        (database (env "SEL_DB_NAME")))
-    (cond ((string= dialect "sqlite")
-           (sqlite:connect (env "SEL_DB_SQLITE_FILE")))
-          ((string= dialect "postgresql")
-           (postmodern:connect database user password host
-                               :port (parse-integer (env "SEL_DB_POSTGRESQL_PORT"))))
-          ((string= dialect "mariadb")
-           (cl-mysql:connect :host host :user user :password password :database database
-                             :port (parse-integer (env "SEL_DB_MARIADB_PORT"))))
-          (t (error "no runner for ~a" dialect)))))
-
-(defun placeholders (sql replacement backslash-escapes)
-  "SQL with its Nth placeholder, counting from 0, replaced by (REPLACEMENT N)."
-  (with-output-to-string (out)
-    (let ((in-quote nil) (n 0) (i 0))
-      (loop while (< i (length sql))
-            do (let ((c (char sql i)))
-                 (cond (in-quote
-                        (cond ((and (char= c #\\) (char= in-quote #\') backslash-escapes
-                                    (< (1+ i) (length sql)))
-                               (write-char c out)
-                               (setf c (char sql (incf i))))
-                              ((char= c in-quote)
-                               (setf in-quote nil)))
-                        (write-char c out))
-                       ((find c "'\"`")
-                        (setf in-quote c)
-                        (write-char c out))
-                       ((char= c #\?)
-                        (write-string (funcall replacement n) out)
-                        (incf n))
-                       (t (write-char c out)))
-                 (incf i))))))
-
-(defun param-text (p)
-  "A bound SEL value as the driver takes it: its text, or NIL for NULL."
-  (unless (sel:value-null-p p) (sel:as-text p)))
-
-(defgeneric fetch (conn sql params)
-  (:documentation "The rows of SQL, each an alist of column name and cell, where
-a cell is a string, an integer or :NULL."))
-
-(defmethod fetch ((db sqlite:sqlite-handle) sql params)
-  (let ((statement (sqlite:prepare-statement db sql)))   ; `?` is SQLite's own
-    (unwind-protect
-         (let ((names (sqlite:statement-column-names statement)))
-           (loop for p in params
-                 for i from 1
-                 do (sqlite:bind-parameter statement i (param-text p)))
-           (loop while (sqlite:step-statement statement)
-                 collect (loop for name in names
-                               for i from 0
-                               collect (cons name (or (sqlite:statement-column-value statement i)
-                                                      :null)))))
-      (sqlite:finalize-statement statement))))
-
-(defparameter *pg-readtable*
-  (let ((table (cl-postgres:copy-sql-readtable)))
-    (dolist (oid (list cl-postgres-oid:+int2+ cl-postgres-oid:+int4+ cl-postgres-oid:+int8+
-                       cl-postgres-oid:+numeric+ cl-postgres-oid:+date+))
-      (cl-postgres:set-sql-reader oid nil :table table))   ; NIL: read it as text
-    table)
-  "cl-postgres's readers, less the ones that would turn a number or a date into
-something other than the text PostgreSQL printed.")
-
-(defmethod fetch ((conn cl-postgres:database-connection) sql params)
-  (let ((cl-postgres:*sql-readtable* *pg-readtable*))
-    (cl-postgres:prepare-query conn "" (placeholders sql (lambda (n) (format nil "$~D" (1+ n))) nil))
-    (cl-postgres:exec-prepared conn "" (mapcar (lambda (p) (or (param-text p) :null)) params)
-                               'cl-postgres:alist-row-reader)))
-
-;;; cl-mysql reads a zero-length cell as NIL, so '' and NULL would come back
-;;; alike. The rows are read here instead, where a NULL cell is a null pointer.
-(cffi:defcfun ("mysql_fetch_row" mysql-fetch-row) :pointer (result :pointer))
-(cffi:defcfun ("mysql_fetch_lengths" mysql-fetch-lengths) :pointer (result :pointer))
-
-(defun mysql-literal (pool p)
-  (if (sel:value-null-p p)
-      "NULL"
-      (format nil "'~a'" (cl-mysql:escape-string (sel:as-text p) :database pool))))
-
-(defmethod fetch ((pool cl-mysql-system:connection-pool) sql params)
-  (let ((conn (cl-mysql:query (placeholders sql (lambda (n) (mysql-literal pool (nth n params))) t)
-                              :database pool :store nil)))
-    (unwind-protect
-         (progn
-           (cl-mysql:next-result-set conn :store t :dont-release t)
-           (let ((result (cl-mysql-system:result-set conn))
-                 (fields (first (cl-mysql:result-set-fields conn))))   ; (name type flags)
-             (loop for (name type) in fields
-                   when (member type '(:float :double))
-                     do (error "a float reached SEL (~a); declare the column DECIMAL or TEXT" name))
-             (loop for row = (mysql-fetch-row result)
-                   until (cffi:null-pointer-p row)
-                   collect (loop with lengths = (mysql-fetch-lengths result)
-                                 for (name) in fields
-                                 for i from 0
-                                 for cell = (cffi:mem-aref row :pointer i)
-                                 collect (cons name
-                                               (if (cffi:null-pointer-p cell)
-                                                   :null
-                                                   (cffi:foreign-string-to-lisp
-                                                    cell :count (cffi:mem-aref lengths :unsigned-long i)
-                                                         :encoding :utf-8)))))))
-      (cl-mysql-system:release conn))))
-
-(defun cell-text (cell)
-  (etypecase cell
-    (string cell)
-    (integer (format nil "~D" cell))
-    (float (error "a float reached SEL; declare the column DECIMAL or TEXT"))))
-
-(defun query (conn sql &optional params)
-  (let ((rows (sel:make-none)))
-    (loop for row in (fetch conn sql params)
-          for n from 1
-          do (let ((record (sel:make-none)))
-               (loop for (name . cell) in row
-                     do (sel:value-set record name (if (eq cell :null)
-                                                       (sel:make-null)
-                                                       (sel:make-text (cell-text cell)))))
-               (sel:value-set rows (format nil "~D" n) record)))
-    rows))
-
-(defun runner (conn)
-  (lambda (sql params) (query conn sql params)))
-```
-
-</details>
-<details>
 <summary>Rust</summary>
 
 <!-- from: examples/lib/db.rs#runner -->
@@ -855,6 +717,9 @@ pub fn runner(conn: &mut Connection) -> impl FnMut(&str, &[Value]) -> Result<Val
 
 <!-- from: examples/lib/db/db.go#runner -->
 ```go
+// In this file `sql` is the standard library's database/sql; SEL's own SQL
+// layer, github.com/nathanjel/sel/go/sel/sql, is imported as selsql.
+
 // Conn is a connection to one of the three databases.
 type Conn struct {
 	pg                 *pgconn.PgConn // PostgreSQL
@@ -1141,6 +1006,144 @@ func Runner(c *Conn) selsql.DbRunner {
 ```
 
 </details>
+<details>
+<summary>Common Lisp</summary>
+
+<!-- from: examples/lib/db.lisp#runner -->
+```lisp
+(defun connect (dialect)
+  (let ((host (env "SEL_DB_HOST" "127.0.0.1"))
+        (user (env "SEL_DB_USER"))
+        (password (env "SEL_DB_PASSWORD"))
+        (database (env "SEL_DB_NAME")))
+    (cond ((string= dialect "sqlite")
+           (sqlite:connect (env "SEL_DB_SQLITE_FILE")))
+          ((string= dialect "postgresql")
+           (postmodern:connect database user password host
+                               :port (parse-integer (env "SEL_DB_POSTGRESQL_PORT"))))
+          ((string= dialect "mariadb")
+           (cl-mysql:connect :host host :user user :password password :database database
+                             :port (parse-integer (env "SEL_DB_MARIADB_PORT"))))
+          (t (error "no runner for ~a" dialect)))))
+
+(defun placeholders (sql replacement backslash-escapes)
+  "SQL with its Nth placeholder, counting from 0, replaced by (REPLACEMENT N)."
+  (with-output-to-string (out)
+    (let ((in-quote nil) (n 0) (i 0))
+      (loop while (< i (length sql))
+            do (let ((c (char sql i)))
+                 (cond (in-quote
+                        (cond ((and (char= c #\\) (char= in-quote #\') backslash-escapes
+                                    (< (1+ i) (length sql)))
+                               (write-char c out)
+                               (setf c (char sql (incf i))))
+                              ((char= c in-quote)
+                               (setf in-quote nil)))
+                        (write-char c out))
+                       ((find c "'\"`")
+                        (setf in-quote c)
+                        (write-char c out))
+                       ((char= c #\?)
+                        (write-string (funcall replacement n) out)
+                        (incf n))
+                       (t (write-char c out)))
+                 (incf i))))))
+
+(defun param-text (p)
+  "A bound SEL value as the driver takes it: its text, or NIL for NULL."
+  (unless (sel:value-null-p p) (sel:as-text p)))
+
+(defgeneric fetch (conn sql params)
+  (:documentation "The rows of SQL, each an alist of column name and cell, where
+a cell is a string, an integer or :NULL."))
+
+(defmethod fetch ((db sqlite:sqlite-handle) sql params)
+  (let ((statement (sqlite:prepare-statement db sql)))   ; `?` is SQLite's own
+    (unwind-protect
+         (let ((names (sqlite:statement-column-names statement)))
+           (loop for p in params
+                 for i from 1
+                 do (sqlite:bind-parameter statement i (param-text p)))
+           (loop while (sqlite:step-statement statement)
+                 collect (loop for name in names
+                               for i from 0
+                               collect (cons name (or (sqlite:statement-column-value statement i)
+                                                      :null)))))
+      (sqlite:finalize-statement statement))))
+
+(defparameter *pg-readtable*
+  (let ((table (cl-postgres:copy-sql-readtable)))
+    (dolist (oid (list cl-postgres-oid:+int2+ cl-postgres-oid:+int4+ cl-postgres-oid:+int8+
+                       cl-postgres-oid:+numeric+ cl-postgres-oid:+date+))
+      (cl-postgres:set-sql-reader oid nil :table table))   ; NIL: read it as text
+    table)
+  "cl-postgres's readers, less the ones that would turn a number or a date into
+something other than the text PostgreSQL printed.")
+
+(defmethod fetch ((conn cl-postgres:database-connection) sql params)
+  (let ((cl-postgres:*sql-readtable* *pg-readtable*))
+    (cl-postgres:prepare-query conn "" (placeholders sql (lambda (n) (format nil "$~D" (1+ n))) nil))
+    (cl-postgres:exec-prepared conn "" (mapcar (lambda (p) (or (param-text p) :null)) params)
+                               'cl-postgres:alist-row-reader)))
+
+;;; cl-mysql reads a zero-length cell as NIL, so '' and NULL would come back
+;;; alike. The rows are read here instead, where a NULL cell is a null pointer.
+(cffi:defcfun ("mysql_fetch_row" mysql-fetch-row) :pointer (result :pointer))
+(cffi:defcfun ("mysql_fetch_lengths" mysql-fetch-lengths) :pointer (result :pointer))
+
+(defun mysql-literal (pool p)
+  (if (sel:value-null-p p)
+      "NULL"
+      (format nil "'~a'" (cl-mysql:escape-string (sel:as-text p) :database pool))))
+
+(defmethod fetch ((pool cl-mysql-system:connection-pool) sql params)
+  (let ((conn (cl-mysql:query (placeholders sql (lambda (n) (mysql-literal pool (nth n params))) t)
+                              :database pool :store nil)))
+    (unwind-protect
+         (progn
+           (cl-mysql:next-result-set conn :store t :dont-release t)
+           (let ((result (cl-mysql-system:result-set conn))
+                 (fields (first (cl-mysql:result-set-fields conn))))   ; (name type flags)
+             (loop for (name type) in fields
+                   when (member type '(:float :double))
+                     do (error "a float reached SEL (~a); declare the column DECIMAL or TEXT" name))
+             (loop for row = (mysql-fetch-row result)
+                   until (cffi:null-pointer-p row)
+                   collect (loop with lengths = (mysql-fetch-lengths result)
+                                 for (name) in fields
+                                 for i from 0
+                                 for cell = (cffi:mem-aref row :pointer i)
+                                 collect (cons name
+                                               (if (cffi:null-pointer-p cell)
+                                                   :null
+                                                   (cffi:foreign-string-to-lisp
+                                                    cell :count (cffi:mem-aref lengths :unsigned-long i)
+                                                         :encoding :utf-8)))))))
+      (cl-mysql-system:release conn))))
+
+(defun cell-text (cell)
+  (etypecase cell
+    (string cell)
+    (integer (format nil "~D" cell))
+    (float (error "a float reached SEL; declare the column DECIMAL or TEXT"))))
+
+(defun query (conn sql &optional params)
+  (let ((rows (sel:make-none)))
+    (loop for row in (fetch conn sql params)
+          for n from 1
+          do (let ((record (sel:make-none)))
+               (loop for (name . cell) in row
+                     do (sel:value-set record name (if (eq cell :null)
+                                                       (sel:make-null)
+                                                       (sel:make-text (cell-text cell)))))
+               (sel:value-set rows (format nil "~D" n) record)))
+    rows))
+
+(defun runner (conn)
+  (lambda (sql params) (query conn sql params)))
+```
+
+</details>
 <!-- /tabs -->
 
 Two things differ by host, and the runners show both:
@@ -1149,9 +1152,15 @@ Two things differ by host, and the runners show both:
   `?` as it is; libpq, node-postgres and postmodern want `$1`, `$2`, …; psycopg
   and PyMySQL want `%s`; libmariadb's text protocol and cl-mysql take no
   parameters at all, so the values are escaped into the statement the way PDO's
-  emulated prepares do it. Each runner finds the placeholders with a scan that
-  skips quoted text, because a translated statement can contain a `?` inside a
-  literal — the numeric guard's regular expression has one.
+  emulated prepares do it. Rust and Go do the same for MariaDB (the text
+  protocol is what returns the server's own text), and rusqlite and go-sqlite3
+  take `?` as it is. For PostgreSQL, Go's pgconn takes `$1`, `$2`, … with
+  untyped text values, as libpq does; the Rust runner prepares the `$n` form to
+  learn the column types, then sends the statement with each value as an escaped
+  `E'…'` literal through its simple-query protocol, which is where the postgres
+  crate returns the server's own text. Each runner finds the placeholders with a
+  scan that skips quoted text, because a translated statement can contain a `?`
+  inside a literal — the numeric guard's regular expression has one.
 - **Synchronous runners.** `execute_hybrid` calls the runner synchronously in
   every host. Node's database drivers are asynchronous, so the JavaScript runner
   runs the plan's one statement first and hands `executeHybrid` a function that

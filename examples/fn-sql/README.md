@@ -28,7 +28,7 @@ beside it. That is the lesson, not an omission.
 ```
 sql/dialects/mariadb.json     add the entry           → map-entry.json here
 sql/cases/*.sqlt              pin the SQL it emits    → cases.sqlt here
-node tools/gen-sql-map.mjs    regenerate all ten artifacts
+node tools/gen-sql-map.mjs    regenerate every host's map and replay data
 tools/check.sh                every host, same string
 tools/oracle-db.sh            and the server agrees it means the same thing
 ```

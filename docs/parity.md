@@ -32,8 +32,9 @@ regex, a copy. Where SEL defines one of those, no host uses its own.
 
 There is no floating point. Arithmetic is exact decimal, hand-written in each
 host, because none of them has a usable exact type that carries scale: PHP has
-no big integer and BCMath is optional, JavaScript and C++ have doubles, and a
-Lisp ratio cannot tell `2.50` from `2.5`. Python's `decimal` could do it and is
+no big integer and BCMath is optional, JavaScript and C++ have doubles, Rust and
+Go have no decimal type in their standard libraries at all, and a Lisp ratio
+cannot tell `2.50` from `2.5`. Python's `decimal` could do it and is
 deliberately *not* used — it is the oracle the other cores are tested against,
 and a host built on it would be marking its own homework.
 
@@ -45,12 +46,14 @@ and a host built on it would be marking its own homework.
 ### Text
 
 Every host validates UTF-8 strictly, and every length and position counts code
-points — not PHP's bytes, JavaScript's UTF-16 units or C++'s `char`s. Text
+points — not PHP's, Rust's or Go's bytes, JavaScript's UTF-16 units or C++'s
+`char`s. Text
 compares in UTF-8 byte order, because JavaScript's native order is UTF-16's and
 Lisp's is code points', and both differ from it above U+FFFF.
 
 `UPPER` and `LOWER` are ASCII-only. `strtoupper`, `toUpperCase`,
-`std::toupper`, `string-upcase` and `str.upper` cannot be reconciled without
+`std::toupper`, `string-upcase`, `str.upper`, `to_uppercase` and
+`strings.ToUpper` cannot be reconciled without
 shipping a case table, and the last can change a string's length. Even "digit"
 is defined here: SBCL's `DIGIT-CHAR-P` accepts U+0661 ARABIC-INDIC DIGIT ONE,
 and Python's `int()` accepts that and `"1_2"`, so every host checks for `0`–`9`
@@ -71,7 +74,9 @@ engine's idea of a word character. Each host's engine is bent to one shape —
 JavaScript's `RegExp` with `us`, PHP's `preg` with `usD`, the vendored SRELL in
 C++ (an ECMAScript engine, so it agrees with JavaScript by construction), and
 cl-ppcre and Python's `re` with `^`/`$` lowered to `\A`/`\z`, because Perl-style
-engines let `$` match before a trailing newline. Case-insensitive matching
+engines let `$` match before a trailing newline. Rust's `regex` crate and Go's
+RE2 `regexp` get the same lowering; both are linear-time engines, and RE2 caps
+a counted repeat at 1000, so Go writes a larger or nested count out as copies. Case-insensitive matching
 needed correcting in both directions: cl-ppcre folds neither of the two
 non-ASCII code points that fold to an ASCII letter, and Python folds those and
 two more.
@@ -82,7 +87,7 @@ Evaluating an expression yields a value, not a snapshot of one, so a change made
 by a later part of an expression is visible through a reference taken earlier.
 Only assignment and `,` copy. Every host aliases by default and copies exactly
 there — a rule, not an accident of each language's object model. (The C++
-`Value` used to copy on every assignment and disagreed with the other four in
+`Value` used to copy on every assignment and disagreed with the other hosts in
 six ways, one of which returned a wrong number rather than an error.)
 
 ### Evaluation order

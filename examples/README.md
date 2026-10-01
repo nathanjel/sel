@@ -1,6 +1,6 @@
 # Examples
 
-Every directory here is one program written seven times — `python.py`,
+Every example directory here is one program written seven times — `python.py`,
 `js.mjs`, `php.php`, `cpp.cpp`, `lisp.lisp`, `rust.rs`, `go.go` — and the seven
 print byte-identical output, recorded in `output.txt`. The test suite runs them all and compares them,
 so the code the documentation quotes is code that runs.
@@ -39,7 +39,7 @@ database of its own, and runs every host in an image that has every driver
 (`tools/usage.Dockerfile`). The C++ programs build with `cd cpp && make`; the
 database ones need the client libraries, so they are built inside that image
 with `make -C cpp BUILD=build-usage build-usage/example-<dir>`. The Rust ones
-(`rust.rs`, where a directory has one) build with `bash rust/build.sh` into
+(`rust.rs`) build with `bash rust/build.sh` into
 `rust/build/example-<dir>`; the database ones need the drivers behind the crate's
 `usage` feature (`examples/lib/db.rs`), and the lane builds them in that image
 into `rust/target-usage`.
@@ -47,11 +47,23 @@ into `rust/target-usage`.
 The Go ones (`go.go`) are a module of their own, [`go.mod`](go.mod), which uses
 the library in `../go`; `make -C go examples` builds them into
 `go/build/example-<dir>`. Each is built by file name
-(`cd examples && go build ./plain/go.go`), because a directory also holds
-`cpp.cpp`, which Go would take for a cgo source. The database ones import
+(`cd examples && go build -o /tmp/plain ./plain/go.go`), because a directory
+also holds `cpp.cpp`, which Go would take for a cgo source. The database ones import
 [`lib/db`](lib/db/) — a directory of its own for the same reason — whose
 drivers are listed in [`go.usage.mod`](go.usage.mod), not `go.mod`, so the
 others build offline; the lane builds them in the image with
 `go build -modfile=go.usage.mod -tags usage,libsqlite3`. The `fn-*` fragments
 are compiled into a copy of `go/sel` and run against their cases by
 `tools/check-go-fragments.sh`.
+
+Run every example from the repository root, whatever its language: those that
+read a file (`scripting/fulfil.sel`, `lib/tickets-*.sel`, the `.sel` pipelines)
+open it by that path.
+
+To run a database example by hand, give it what `tools/check-usage.sh` gives it:
+a database loaded from the directory's `seed.<dialect>.sql` and its whereabouts
+in the environment — `SEL_DB_HOST` (default `127.0.0.1`), `SEL_DB_USER`,
+`SEL_DB_PASSWORD`, `SEL_DB_NAME`, `SEL_DB_POSTGRESQL_PORT` or
+`SEL_DB_MARIADB_PORT`, and `SEL_DB_SQLITE_FILE` for SQLite. Built without the
+`libsqlite3` tag, the Go runner uses go-sqlite3's own copy of SQLite rather than
+the system's.

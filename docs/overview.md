@@ -154,9 +154,10 @@ A[1] = (A = 2); A                  => t"2"{"1"=t"2"}
   a SQL prefix plus an in-memory remainder when it can answer part, and plain
   in-memory processing when it can answer none — with identical results
   whichever route runs. [SQL pipelines](usage/sql-pipelines.md)
-- **A small, predictable language to embed.** Python, PHP and JavaScript need no
-  dependencies at all; C++ is three files and a vendored regex engine; Lisp is
-  an ASDF system. [Using SEL](usage/README.md)
+- **A small, predictable language to embed.** Python, PHP, JavaScript and Go
+  need no dependencies at all; C++ is three files and a vendored regex engine;
+  Lisp is an ASDF system; Rust is a crate on the regex crate (and serde_json for
+  the SQL layer). [Using SEL](usage/README.md)
 
 ## What SEL leaves out, and why
 

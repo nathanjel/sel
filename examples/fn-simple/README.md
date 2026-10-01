@@ -3,7 +3,9 @@
 Worked example: `ORD_SUFFIX(n)`, returning `1st`, `2nd`, `3rd`, `4th`.
 
 **A function is a change to the language, not to your application.** No host
-exposes function registration as public API, and C++ has none at all —
+offers builtin registration as part of its documented API (Go's `sel.Define`
+happens to be exported, but it is the builtin table's own registration, not an
+extension point), and C++ has none at all —
 `sel.hpp` says so in as many words: *"The table is fixed at startup — SEL has no
 DEFUN."* That is deliberate. Seven implementations exist in order to disagree
 with each other, and a function that lives in one of them is a function nobody

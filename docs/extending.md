@@ -272,7 +272,10 @@ The rules, the same in every host ([spec §8.1](../spec/SPEC.md#81-host-function
 - **Return a new value; do not modify the arguments.**
 - **Fail with a code.** Raise the host's `SelError` with a code from the
   catalogue — `E_BAD_ARG` is usually right — and the argument's position; any
-  other exception is the host's and passes through untouched.
+  other exception is the host's and passes through untouched. In Rust, return
+  `Err(SelError::new(code, message, args.pos_of(i)?))`; in Go, call
+  `sel.Fail(code, message, args.PosOf(i))`, which panics with the error for
+  `Run` to return.
 - **SQL only if you spell it.** Until it has a SQL spelling for a dialect, a rule
   that calls it is refused by the translator and kept in memory by the planner —
   [below](#giving-a-host-function-a-sql-spelling) is how to give it one.
@@ -918,7 +921,7 @@ compared with anything. The order of work:
 ```
 spec/SPEC.md §7 and spec/builtins.json    say what it does, and its arity
 conformance/*.selt                        cases that fail
-js/ php/ python/ cpp/ lisp/               implement, in that order or any other
+js/ php/ python/ cpp/ lisp/ rust/ go/     implement, in that order or any other
 node tools/gen-builtins.mjs               render the manifest into every host
 sql/dialects/*.json + sql/cases/*.sqlt    a SQL spelling, if it has an exact one
 tools/check.sh                            ALL GREEN, or it isn't done
