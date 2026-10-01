@@ -243,7 +243,7 @@ Rust's engine to be transcribed to C++.
 | Measure | A | B |
 |---|---|---|
 | Mandelbrot (C++ timer, 40 + 40 interleaved samples, identical frames) | 131.2 ms | 33.0 ms (0.251×) |
-| Six scale scenarios (`scale-bench`, reused context) | 596 / 6.8 / 166 / 7.6 / 241 / 275 ms | 0.98–1.03× |
+| Six scale scenarios (`scale-bench`, isolated context, medians of 20 runs) | 596 / 6.8 / 166 / 7.6 / 241 / 275 ms | 0.98–1.03× |
 | 108 division-scale oracle records (`check-decimal`) | 15.3 s | 2.3 s (Rust 2.9 s) |
 | `24-decimal-boundaries.selt` | 0.067 s | 1.51 s (Rust 1.91, Go 2.59) |
 | `10-limits.selt` | 0.069 s | 0.49 s (Rust 0.70, Go 0.77) |
