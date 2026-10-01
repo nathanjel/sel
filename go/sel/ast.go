@@ -59,10 +59,13 @@ type Spec struct {
 }
 
 type MathStep struct {
-	Op       string
-	Dst      uint16
-	Src1     uint16
-	Src2     uint16
+	Op   string
+	Dst  uint16
+	Src1 uint16
+	Src2 uint16
+	// Reg is where an ADD, SUB or MUL result lives: 0 for a fresh Dec, i for
+	// register i of the evaluation's register file (assignRegisters, item 1).
+	Reg      uint16
 	Pos      Pos
 	AuxPos   Pos
 	Name     string
@@ -74,6 +77,10 @@ type MathPlan struct {
 	Steps          []MathStep
 	OutputSlot     uint16
 	ScratchpadSize uint16
+	// UsesRegs: the plan has an ADD, SUB or MUL, so an evaluation takes a
+	// register file -- registers 1..NumRegs and the alignment scratch.
+	UsesRegs bool
+	NumRegs  uint16
 }
 
 type Node struct {

@@ -1131,6 +1131,7 @@ func compileMathPlan(root *Node) *MathPlan {
 	}
 	plan.OutputSlot = res.slot
 	plan.ScratchpadSize = uint16(slotCount)
+	assignRegisters(plan)
 	return plan
 }
 

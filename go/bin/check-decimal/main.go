@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"fmt"
+	"math/big"
 	"os"
 	"strconv"
 	"strings"
@@ -27,6 +28,9 @@ func main() {
 
 	var lines []string
 	scanner := bufio.NewScanner(file)
+	// A record of two 125,000-digit operands and their product is far longer
+	// than bufio's default 64 KB token.
+	scanner.Buffer(make([]byte, 1<<20), 64<<20)
 	for scanner.Scan() {
 		text := scanner.Text()
 		if len(text) > 0 {
@@ -44,6 +48,11 @@ func main() {
 
 	var failures []string
 	mismatches := 0
+	// Item 1: + - * are also run through registers the way a math plan runs them
+	// -- one long-lived result register and one scratch, each record's result
+	// written over the last -- so the oracle grades that path too.
+	reg, scratch := new(big.Int), new(big.Int)
+	registers := 0
 
 	for _, line := range lines {
 		parts := strings.Split(line, "|")
@@ -104,9 +113,44 @@ func main() {
 				failures = append(failures, fmt.Sprintf("%s %s %s => %s, oracle says %s", aStr, op, bStr, got, want))
 			}
 		}
+
+		if op == "+" || op == "-" || op == "*" {
+			registers++
+			var viaReg string
+			func() {
+				defer func() {
+					if r := recover(); r != nil {
+						if se, ok := r.(*sel.SelError); ok {
+							viaReg = "THREW " + se.Code
+						} else {
+							viaReg = fmt.Sprintf("THREW %v", r)
+						}
+					}
+				}()
+				pos := utf8.Pos{Line: 1, Col: 1}
+				a := decimal.NumOf(decimal.Parse(aStr, pos, failFn))
+				b := decimal.NumOf(decimal.Parse(bStr, pos, failFn))
+				var r decimal.Num
+				switch op {
+				case "+":
+					r = decimal.AddInto(reg, scratch, a, b, pos, failFn)
+				case "-":
+					r = decimal.SubInto(reg, scratch, a, b, pos, failFn)
+				default:
+					r = decimal.MulInto(reg, a, b, pos, failFn)
+				}
+				viaReg = decimal.Format(r.Dec())
+			}()
+			if viaReg != want {
+				mismatches++
+				if len(failures) < 20 {
+					failures = append(failures, fmt.Sprintf("%s %s %s => %s through registers, oracle says %s", aStr, op, bStr, viaReg, want))
+				}
+			}
+		}
 	}
 
-	fmt.Printf("go: %d cases, %d mismatches\n", len(lines), mismatches)
+	fmt.Printf("go: %d cases (%d also through registers), %d mismatches\n", len(lines), registers, mismatches)
 	for _, f := range failures {
 		fmt.Printf("  %s\n", f)
 	}

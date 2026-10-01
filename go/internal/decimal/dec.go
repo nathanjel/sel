@@ -149,16 +149,7 @@ func guardPow10(k int) *big.Int {
 // length decides every value that is not within a digit or two of the threshold;
 // only those pay for a comparison with the power of ten, which is cached.
 func Guard(d *Dec, pos Pos, fail FailFunc) *Dec {
-	if int(d.Scale) > MAX_FRAC_DIGITS {
-		fail("E_RANGE", fmt.Sprintf("number has more than %d fractional digits", MAX_FRAC_DIGITS), pos)
-	}
-	if bl := d.Digits.BitLen(); bl >= MAX_INT_BITS {
-		thr := MAX_INT_DIGITS + int(d.Scale)
-		lo, hi := digitBounds(bl)
-		if lo > thr || (hi > thr && d.Digits.Cmp(guardPow10(thr)) >= 0) {
-			fail("E_RANGE", fmt.Sprintf("number has more than %d integer digits", MAX_INT_DIGITS), pos)
-		}
-	}
+	guardMag(d.Digits, d.Scale, pos, fail)
 	return d
 }
 
@@ -476,46 +467,19 @@ func aligned(a, b *Dec) (*big.Int, *big.Int, int32) {
 	return scaledA, b.Digits, b.Scale
 }
 
+// Add, Sub and Mul return a Dec of their own; the arithmetic, and its sign,
+// scale and E_RANGE rules, is AddInto's, SubInto's and MulInto's (reg.go), which
+// a math plan also uses to keep intermediates in registers (item 1).
 func Add(a, b *Dec, pos Pos, fail FailFunc) *Dec {
-	A, B, s := aligned(a, b)
-	if a.Neg == b.Neg {
-		sum := new(big.Int).Add(A, B)
-		return Guard(makeOwned(a.Neg, sum, s), pos, fail)
-	}
-	cmp := A.Cmp(B)
-	if cmp == 0 {
-		return makeOwned(false, new(big.Int), s)
-	}
-	if cmp > 0 {
-		diff := new(big.Int).Sub(A, B)
-		return makeOwned(a.Neg, diff, s)
-	}
-	diff := new(big.Int).Sub(B, A)
-	return makeOwned(b.Neg, diff, s)
+	return AddNew(nil, NumOf(a), NumOf(b), pos, fail)
 }
 
 func Sub(a, b *Dec, pos Pos, fail FailFunc) *Dec {
-	A, B, s := aligned(a, b)
-	if a.Neg != b.Neg {
-		sum := new(big.Int).Add(A, B)
-		return Guard(makeOwned(a.Neg, sum, s), pos, fail)
-	}
-	cmp := A.Cmp(B)
-	if cmp == 0 {
-		return makeOwned(false, new(big.Int), s)
-	}
-	if cmp > 0 {
-		diff := new(big.Int).Sub(A, B)
-		return makeOwned(a.Neg, diff, s)
-	}
-	diff := new(big.Int).Sub(B, A)
-	return makeOwned(!a.Neg, diff, s)
+	return SubNew(nil, NumOf(a), NumOf(b), pos, fail)
 }
 
 func Mul(a, b *Dec, pos Pos, fail FailFunc) *Dec {
-	neg := a.Neg != b.Neg
-	prod := new(big.Int).Mul(a.Digits, b.Digits)
-	return Guard(makeOwned(neg, prod, a.Scale+b.Scale), pos, fail)
+	return MulNew(NumOf(a), NumOf(b), pos, fail)
 }
 
 func Cmp(a, b *Dec) int {

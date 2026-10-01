@@ -5,8 +5,10 @@ package sel
 import (
 	"bytes"
 	"fmt"
+	"math/big"
 
 	"github.com/nathanjel/sel/go/internal/decimal"
+	"github.com/nathanjel/sel/go/internal/mathops"
 )
 
 const (
@@ -572,24 +574,75 @@ type mathSlot struct {
 	d   *decimal.Dec
 	v   *Value
 	pos Pos
+	// n is an ADD, SUB or MUL result kept in a register (n.Mag != nil, item 1):
+	// the plan's own magnitude, read by exactly one later ADD, SUB or MUL
+	// (assignRegisters) and never seen by anything else.
+	n decimal.Num
 }
 
 func (s *mathSlot) dec() *decimal.Dec {
 	if s.d == nil {
-		s.d = s.v.AsDecimal(s.pos)
+		if s.n.Mag != nil {
+			// Not reached by a plan assignRegisters made; a Dec boxed out of a
+			// register is a copy, so it keeps its value whatever the register does.
+			s.d = s.n.Dec()
+		} else {
+			s.d = s.v.AsDecimal(s.pos)
+		}
 	}
 	return s.d
 }
 
+// num reads the slot in place for ADD, SUB and MUL: a register as it is, and a
+// loaded value coerced exactly as dec() coerces it.
+func (s *mathSlot) num() decimal.Num {
+	if s.n.Mag != nil {
+		return s.n
+	}
+	return decimal.NumOf(s.dec())
+}
+
+// mathPlanOps is every operation evalMathPlan carries out. spec/math-ops.md has
+// each host check at load time that the manifest names nothing it lacks.
+var mathPlanOps = map[string]bool{
+	"ADD": true, "SUB": true, "MUL": true, "DIV": true, "MOD": true, "NEG": true, "ABS": true, "SIGN": true,
+	"CEIL": true, "FLOOR": true, "TRUNC": true, "ROUND": true, "POWER": true, "MIN": true, "MAX": true,
+}
+
+func init() {
+	for _, op := range mathops.Ops {
+		if !mathPlanOps[op] {
+			panic("math plan: the manifest's operation " + op + " has no implementation")
+		}
+	}
+}
+
 func evalMathPlan(plan *MathPlan, ctx *Context) *Value {
-	// Up to eight slots live in the frame (GO-P12): a plan of a few operations is
-	// the common case and its scratchpad never outlives this call.
-	var slotBuf [8]mathSlot
+	// Up to sixteen slots live in the frame (GO-P12; Mandelbrot's
+	// `zr * zr - zi * zi + cr` needs nine), in one of two buffers so that the
+	// common plan of a few operations clears only eight: its scratchpad never
+	// outlives this call.
 	var slots []mathSlot
-	if int(plan.ScratchpadSize) <= len(slotBuf) {
-		slots = slotBuf[:plan.ScratchpadSize]
-	} else {
-		slots = make([]mathSlot, plan.ScratchpadSize)
+	switch n := int(plan.ScratchpadSize); {
+	case n <= 8:
+		var buf [8]mathSlot
+		slots = buf[:n]
+	case n <= 16:
+		var buf [16]mathSlot
+		slots = buf[:n]
+	default:
+		slots = make([]mathSlot, n)
+	}
+	// ADD, SUB and MUL work in this evaluation's register file: intermediates
+	// in its registers, an operand brought to a common scale in its scratch.
+	// A plan built by hand rather than by compileMathPlan takes none, and its
+	// ADD, SUB and MUL make fresh results.
+	var rf *regFile
+	var scratch *big.Int
+	if plan.UsesRegs {
+		rf = ctx.takeRegs()
+		defer ctx.releaseRegs(rf)
+		scratch = &rf.scratch
 	}
 	for si := range plan.Steps {
 		step := &plan.Steps[si]
@@ -612,16 +665,28 @@ func evalMathPlan(plan *MathPlan, ctx *Context) *Value {
 			slots[step.Dst].dec()
 
 		case "ADD":
-			a, b := slots[step.Src1].dec(), slots[step.Src2].dec()
-			slots[step.Dst] = mathSlot{d: decimal.Add(a, b, step.Pos, fail)}
+			a, b := slots[step.Src1].num(), slots[step.Src2].num()
+			if step.Reg == 0 || rf == nil {
+				slots[step.Dst] = mathSlot{d: decimal.AddNew(scratch, a, b, step.Pos, fail)}
+			} else {
+				slots[step.Dst] = mathSlot{n: decimal.AddInto(rf.reg(step.Reg), scratch, a, b, step.Pos, fail)}
+			}
 
 		case "SUB":
-			a, b := slots[step.Src1].dec(), slots[step.Src2].dec()
-			slots[step.Dst] = mathSlot{d: decimal.Sub(a, b, step.Pos, fail)}
+			a, b := slots[step.Src1].num(), slots[step.Src2].num()
+			if step.Reg == 0 || rf == nil {
+				slots[step.Dst] = mathSlot{d: decimal.SubNew(scratch, a, b, step.Pos, fail)}
+			} else {
+				slots[step.Dst] = mathSlot{n: decimal.SubInto(rf.reg(step.Reg), scratch, a, b, step.Pos, fail)}
+			}
 
 		case "MUL":
-			a, b := slots[step.Src1].dec(), slots[step.Src2].dec()
-			slots[step.Dst] = mathSlot{d: decimal.Mul(a, b, step.Pos, fail)}
+			a, b := slots[step.Src1].num(), slots[step.Src2].num()
+			if step.Reg == 0 || rf == nil {
+				slots[step.Dst] = mathSlot{d: decimal.MulNew(a, b, step.Pos, fail)}
+			} else {
+				slots[step.Dst] = mathSlot{n: decimal.MulInto(rf.reg(step.Reg), a, b, step.Pos, fail)}
+			}
 
 		case "DIV":
 			a, b := slots[step.Src1].dec(), slots[step.Src2].dec()

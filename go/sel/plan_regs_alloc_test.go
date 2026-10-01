@@ -31,11 +31,11 @@ func TestMathPlanAllocationBudgets(t *testing.T) {
 		expr   string
 		budget float64
 	}{
-		{"X * Y + Z", 7},
-		{"ZR * ZR - ZI * ZI + CR", 16},
-		{"2.0 * ZR * ZI + CI", 12},
-		{"ZR * ZR + ZI * ZI", 10},
-		{"X + 1", 6},
+		{"X * Y + Z", 4},
+		{"ZR * ZR - ZI * ZI + CR", 4},
+		{"2.0 * ZR * ZI + CI", 4},
+		{"ZR * ZR + ZI * ZI", 4},
+		{"X + 1", 4},
 	} {
 		if got := planAllocations(t, c.expr); got != c.budget {
 			t.Errorf("%s: %v allocations, budget %v", c.expr, got, c.budget)
@@ -54,7 +54,7 @@ func TestOneRunOfASmallPlanAllocationBudget(t *testing.T) {
 	if _, err := prog.Run(root); err != nil {
 		t.Fatal(err)
 	}
-	if got := testing.AllocsPerRun(50, func() { prog.Run(root) }); got != 8 {
-		t.Errorf("one Run of X * Y + Z: %v allocations, budget 8", got)
+	if got := testing.AllocsPerRun(50, func() { prog.Run(root) }); got != 7 {
+		t.Errorf("one Run of X * Y + Z: %v allocations, budget 7", got)
 	}
 }

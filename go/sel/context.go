@@ -14,6 +14,8 @@ type Context struct {
 	// FILTER at once; like the join prefilter state it is cleared when evaluation
 	// unwinds, so nothing else can find it there.
 	NoCopy *Node
+	// regs holds the math plans' register files (plan_regs.go), made on first use.
+	regs *regPool
 }
 
 func NewContext(root *Value) *Context {
