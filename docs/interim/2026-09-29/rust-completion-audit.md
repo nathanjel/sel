@@ -24,7 +24,7 @@ proposal's dependency goals rather than silently declaring them satisfied.
 | 1.8 | Update `tools/impls.sh` | Partial | Published binaries are checked against content digests of all production sources, Cargo files and build scripts; all 11 entry points are required. Failed/concurrently changed builds preserve the prior publication. Shared CLI/manifest/budget gates and full Cargo tests pass. SQL-fuzz/oracle drivers and full repository gate coverage remain open; the shared SQL-budget script explicitly skips Rust. |
 | 2.1 | Implement `Pos` and UTF-8 decoder in `rust/src/utf8.rs` | Needs focused audit | Shared CLI byte-position and operand-misuse probes pass. Unix argv now preserves bytes: malformed expression arguments report E_UTF8 at the code-point position and non-UTF-8 filenames work. Focused argv tests pass. REPL byte/error behavior and broader API audit remain open. |
 | 2.2 | Implement portable regex compiler in `rust/src/regex.rs` | Behavior verified; resource audit open | regex.rs plus regex_ambiguity.rs pass 8,000 reference comparisons. Counted-repeat fallback preserves counters, captures and ordering; 261,252 engine comparisons and a 600,000-character positive match pass. Core conformance now 2,103/2,103. Polynomial backtracking resource behavior remains to audit. |
-| 2.3 | Define `Dec` and `DecRepr` in `rust/src/dec.rs` | Verified representation | dec.rs has Small(i128) and Large(Box<LargeDec>); LargeDec stores a canonical binary magnitude (little-endian 64-bit words, no zero high word), exposed read-only to preserve invariants. Base-10^9 limbs until 2026-10-01 (see the binary-engine section below). |
+| 2.3 | Define `Dec` and `DecRepr` in `rust/src/dec.rs` | Verified representation | dec.rs has Small(i128) and Large(Arc<LargeDec>) (a Box until item 1, 2026-10-01: a shared mantissa is never copied on read); LargeDec stores a canonical binary magnitude (little-endian 64-bit words, no zero high word), exposed read-only to preserve invariants. Base-10^9 limbs until 2026-10-01 (see the binary-engine section below). |
 | 2.4 | Implement fast-path 128-bit arithmetic | Partial | Small arithmetic/promotion pass 94,040 oracle cases. Thread-local allocator test proves zero allocations for representative parsing (including i128::MAX), arithmetic, comparison, rounding and truncation. Allocation tests also cover million-digit-scale small mantissas and pre-allocation refusal of million-digit products, including scale/zero/carry boundaries. Broader resource audit remains. |
 | 2.5 | Implement exact division and rounding | Verified to current spec | Current DIV_SCALE=10, half-away division/ROUND; 94,040 oracle cases and 314 boundary fixtures pass. Proposal values are superseded. |
 | 2.6 | Implement multi-precision limb fallback | Replaced by a binary engine, oracle-verified | Since 2026-10-01 large_dec.rs is binary: 64-bit words; schoolbook and Karatsuba products with a dedicated squaring variant of each; Knuth D, or Barrett reduction with a Newton reciprocal for long divisors; 10^k as cached 5^k shifted k bits, each power with its reciprocal; decimal text only at parse and format, both divide and conquer. Production dependency tree still has no num-bigint/num-traits; BigUint is the test-only oracle at every threshold. See the binary-engine section below. |
@@ -342,5 +342,58 @@ Fixed. The Rust "S2/S4 weak spots" (49/51 ms against C++'s 7/10) were that teard
 **Open:**
 - Knuth D's inner loop is 1.8× num-bigint's on 1,000-word divisors. Mandelbrot never divides large numbers.
 - No Toom-3, so multiplications above about 20,000 digits trail num-bigint by 1.2–1.4×.
-- The value cell still clones a large mantissa on every read (`CellDec::unpack`), about 15% of the post-engine
-  Mandelbrot profile.
+- ~~The value cell still clones a large mantissa on every read (`CellDec::unpack`), about 15% of the post-engine
+  Mandelbrot profile.~~ Closed by item 1 (below).
+
+## 2026-10-01: item 1, shared mantissas
+
+**Why.** The GC and JIT experiments of the same day found that the hosts that pay most for exact decimals pay for
+how numbers are kept between operations, not for the arithmetic. In Rust that meant copies: about 25 large-mantissa
+copies per Mandelbrot iteration, from `CellDec::unpack` behind every `as_decimal`, from the math plan's operand and
+output clones, from `deep_copy` on every assignment, and from `dec_sub` building `-b`.
+
+**What** (`rust/src/{dec,value,math_plan,large_dec}.rs`):
+- `DecRepr::Large` and `CellDec` hold an `Arc<LargeDec>`. Reading, copying, negating and taking the absolute value of a
+  large number cost a reference count. Nothing changes a mantissa in place, so the sharing is unobservable, and `Dec`
+  stays `Send + Sync`, which a compile-time assertion now checks.
+- The math plan moves each operand out of its slot and moves its output. Every slot is read once;
+  `compile_math_plan` refuses a plan for which that would not hold, so the expression is evaluated as written.
+- `dec_sub` adds with b's sign flipped (`add_signed`, with `dec_negate`'s zero rule) instead of building `-b`.
+- `mul_nat` recognises a square by its shared buffer before comparing words.
+
+**Tests first** (commits `fad0ad3` and `b0891df`, then lowered by `0344703`):
+- `tests/value_allocations.rs` budgets:
+  - reading a large number: 2 → 0;
+  - its copy: 3 → 1;
+  - `ZR*ZR - ZI*ZI + CR`: 32 → 12;
+  - `T = ZR*ZR`: 17 → 9;
+  - `ZR*ZR + ZI*ZI`: 8.
+- `tests/decimal_allocations.rs`: clone, negate and abs 2 → 0; `dec_sub` 4 → 2.
+- Parity: `tests/shared_mantissas.rs`, with expectations from `tools/decimal-oracle-exact.py`.
+- `dec.rs`: `subtraction_is_addition_of_the_negation`, over signs, zeros (a negative zero too), scales and both
+  representations.
+- Cross-host: `conformance/32-numeric-plans.selt`.
+
+**Checked:**
+- `cargo test` (default, `--no-default-features`, `--release`) and `build_integration`.
+- Conformance 2183/2183.
+- `tools/check-decimal.sh 20000` (253,992 cases) and 19,704 big-operand exact-oracle records up to division scale:
+  0 mismatches.
+- `tools/fuzz.sh 4000` against JS, two seeds: 0 disagreements.
+
+**Results** (A = main `f88bf59`, whose Rust sources `5a7baf5` keeps; B = R1; A B B A, 2 warmups + 4 runs per process):
+
+| Measure | A | B |
+|---|---|---|
+| Mandelbrot | 46.89 ms | 43.76 ms (−6.7%; every B process faster) |
+| Six scale scenarios | 455 / 6.8 / 135 / 8.5 / 207 / 237 ms | within noise (worst +1.2%) |
+
+**Tried and dropped: R2b.** Adding into a plan intermediate's own buffer when it is the sole holder
+(`Arc::get_mut`), with in-place `add_assign`/`sub_assign`/`rsub_assign` kernels:
+- It lowered `ZR*ZR + ZI*ZI` to 6 allocations and `ZR*ZR - ZI*ZI + CR` to 8, and passed every correctness lane.
+- Over R1 it gained 3.1% in one A B B A cycle and 3.9% in two (44.18 → 42.45 ms), with B and A processes overlapping
+  and S3 at +2.4%. That is at the 3% line, so the rule keeps it out.
+- A Context slot stack (R2a) and integer opcodes were not tried: the profile puts each under 1%.
+
+After R1 the profile is: the multiplication kernel 21% (`addmul_1`); the allocator about 21%, now mostly result
+buffers; variable lookup by string scan about 5% (a separate cross-host item).
