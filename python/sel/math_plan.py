@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import IntEnum
 from typing import Any
 
@@ -59,6 +59,11 @@ class MathPlan:
     # hold an UNCOERCED Value (variables and leaves). Every other slot holds a
     # decimal already.
     slot_pos: list
+    # How often the plan has run interpreted, and the one Python function its
+    # steps compile to once it is hot (eval._eval_planned); not part of what
+    # the plan is.
+    hits: int = field(default=0, compare=False, repr=False)
+    run: Any = field(default=None, compare=False, repr=False)
 
 
 # The vocabulary -- which source nodes compile, to which operation, with how

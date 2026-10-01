@@ -226,13 +226,38 @@ def eval_node(node: Node, ctx: Context) -> Value:
         fail('E_DEPTH', 'evaluation nested too deeply', node.pos)
     try:
         if node.math_plan is not None:
-            return _eval_math_plan(node.math_plan, ctx)
+            return _eval_planned(node, ctx)
         return _dispatch(node, ctx)
     finally:
         ctx.depth -= 1
 
 
-def _eval_math_plan(plan: MathPlan, ctx: Context) -> Value:
+def _eval_planned(node: Node, ctx: Context) -> Value:
+    """Runs NODE's math plan (SPEC 6.2): step by step (_interpret_math_plan)
+    until it has run _PLAN_HOT times, then as one Python function built from
+    its steps (_compile_math_plan) -- unless it has more than _PLAN_MAX_STEPS.
+    Compiling costs about as much as a few hundred interpreted runs, so a plan
+    that runs once (a one-shot evaluate, a conformance case) never pays it
+    (item 2, P2).
+    """
+    plan = node.math_plan
+    run = plan.run
+    if run is not None:
+        return run(ctx)
+    hits = plan.hits = plan.hits + 1
+    if hits == _PLAN_HOT and len(plan.steps) <= _PLAN_MAX_STEPS:
+        plan.run = _compile_math_plan(plan)
+    return _interpret_math_plan(plan, ctx)
+
+
+# Measured on Mandelbrot's plans (3-9 steps): compiling costs 320-650 us and
+# saves 1.4-3.6 us a run, so it pays for itself after 120-250 runs. Compile time
+# grows faster than the plan, hence the cap.
+_PLAN_HOT = 256
+_PLAN_MAX_STEPS = 256
+
+
+def _interpret_math_plan(plan: MathPlan, ctx: Context) -> Value:
     """Runs a math plan as a pure optimisation of the plain tree (SPEC 6.2).
 
     A variable or leaf is loaded as the VALUE, not a decimal: the operation that
@@ -308,6 +333,84 @@ def _eval_math_plan(plan: MathPlan, ctx: Context) -> Value:
             a = dec(step.src1); b = dec(step.src2)
             scratchpad[step.dst] = b if D.cmp(b, a) > 0 else a
     return Value._num_owned(scratchpad[plan.output_slot])
+
+
+# What a generated plan function calls, bound into it as free variables.
+_PLAN_ENV = {
+    'fail': fail, 'num': Value._num_owned, 'add': D.add, 'sub': D.sub, 'mul': D.mul,
+    'div': D.div, 'mod': D.mod, 'negate': D.negate, 'abs_': D.abs_, 'sign': D.sign,
+    'make': D.make, 'ceil': D.ceil, 'floor': D.floor, 'trunc': D.trunc, 'round_': D.round,
+    'power': D.power, 'cmp': D.cmp, 'check_sized_int': check_sized_int,
+    'MAX_SCALE': MAX_SCALE, 'MAX_POWER': MAX_POWER, 'abs': abs,
+}
+_PLAN_BINARY = {_ADD: 'add', _SUB: 'sub', _MUL: 'mul', _DIV: 'div', _MOD: 'mod'}
+_PLAN_UNARY = {_NEG: 'negate', _ABS: 'abs_', _CEIL: 'ceil', _FLOOR: 'floor', _TRUNC: 'trunc'}
+# Every operation has a translation, checked at load time (spec/math-ops.md).
+_PLAN_MISSING = set(OpCode) - set(_PLAN_BINARY) - set(_PLAN_UNARY) - {
+    _LOAD_VAR, _LOAD_CONST, _LOAD_LEAF, _COERCE, _SIGN, _ROUND, _POWER, _MIN, _MAX}
+if _PLAN_MISSING:
+    raise ImportError(f'math plan compiler has no translation for {sorted(_PLAN_MISSING)}')
+
+
+def _compile_math_plan(plan: MathPlan) -> Any:
+    """The steps _interpret_math_plan runs, as straight-line Python with one
+    local per slot: the same loads, coercions (each at the operation that
+    consumes the slot), operations and error positions, in the same order --
+    without the per-step dispatch, the scratchpad list or a closure per run.
+    The source holds no program text: names, positions, constants and leaf
+    nodes reach it as free variables k<n>, as namedtuple and dataclasses build
+    their methods."""
+    env = dict(_PLAN_ENV, eval_node=eval_node)
+
+    def k(x: Any) -> str:
+        name = f'k{len(env)}'
+        env[name] = x
+        return name
+
+    loaded: set[int] = set()     # slots holding a loaded Value, not yet a decimal
+
+    def dec(slot: int) -> str:
+        if slot in loaded:
+            return f's{slot}.as_decimal({k(plan.slot_pos[slot])})'
+        return f's{slot}'
+
+    lines = []
+    for st in plan.steps:
+        op, d = st.op, f's{st.dst}'
+        if op == _LOAD_VAR:
+            lines.append(f'{d} = ctx.lookup({k(st.name)})')
+            lines.append(f'if {d} is None: fail("E_UNDEF_VAR", '
+                         f'{k(f"undefined variable {st.name}")}, {k(st.pos)})')
+            loaded.add(st.dst)
+        elif op == _LOAD_CONST:
+            lines.append(f'{d} = {k(st.const_val)}')
+            loaded.discard(st.dst)
+        elif op == _LOAD_LEAF:
+            lines.append(f'{d} = eval_node({k(st.leaf_node)}, ctx)')
+            loaded.add(st.dst)
+        elif op == _COERCE:
+            lines.append(f'{d} = {dec(st.src1)}')
+            loaded.discard(st.dst)
+        elif op in _PLAN_BINARY:
+            lines.append(f'{d} = {_PLAN_BINARY[op]}({dec(st.src1)}, {dec(st.src2)}, {k(st.pos)})')
+        elif op in _PLAN_UNARY:
+            lines.append(f'{d} = {_PLAN_UNARY[op]}({dec(st.src1)})')
+        elif op == _SIGN:
+            lines.append(f'{d} = sign({dec(st.src1)}); {d} = make({d} < 0, abs({d}), 0)')
+        elif op == _ROUND or op == _POWER:
+            fn, cap, what = ('round_', 'MAX_SCALE', 'ROUND') if op == _ROUND else ('power', 'MAX_POWER', 'POWER')
+            label = 'ROUND scale' if op == _ROUND else 'POWER exponent'
+            lines.append(f'{d} = {fn}({dec(st.src1)}, check_sized_int({dec(st.src2)}, "{what}", 2, '
+                         f'{cap}, "{label}", {k(st.aux_pos)}), {k(st.pos)})')
+        else:   # _MIN, _MAX
+            lines.append(f'a = {dec(st.src1)}; b = {dec(st.src2)}; '
+                         f'{d} = b if cmp(b, a) {"<" if op == _MIN else ">"} 0 else a')
+    lines.append(f'return num(s{plan.output_slot})')
+    src = (f'def factory({", ".join(env)}):\n    def run(ctx):\n'
+           + ''.join(f'        {line}\n' for line in lines) + '    return run\n')
+    scope: dict[str, Any] = {}
+    exec(compile(src, '<math plan>', 'exec'), scope)
+    return scope['factory'](*env.values())
 
 
 def _dispatch(node: Node, ctx: Context) -> Value:

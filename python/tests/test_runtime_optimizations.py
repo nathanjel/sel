@@ -1,7 +1,10 @@
 """Math-plan dispatch must retain AST results, errors and repeated-run behavior."""
+from concurrent.futures import ThreadPoolExecutor
+
 import pytest
 
 from sel import SelError, Value, compile
+from sel import eval as E
 from sel.eval import Context, eval_node
 from sel.math_plan import compile_math_plan
 
@@ -65,3 +68,45 @@ def test_math_plan_matches_ast_on_awkward_operands():
             want = outcome(lambda: eval_node(tree, Context(root)))
             tree.math_plan = plan
             assert outcome(lambda: eval_node(tree, Context(root))) == want, (source, data)
+
+
+# Item 2, P2: a hot plan runs as one generated function; it answers as the
+# interpreter does, compiles on its _PLAN_HOT-th run, and only up to _PLAN_MAX_STEPS.
+def test_a_compiled_math_plan_answers_as_the_interpreted_one():
+    for source in AWKWARD + ['A + B', 'A - B', 'A * B', 'A / B', 'A % B', '-A', 'ABS(A)', 'CEIL(A)',
+                             'FLOOR(A)', 'TRUNC(A)', 'ROUND(A, 1)', 'POWER(A, 3)', 'MIN(A, B, 0)',
+                             'R["x"] + A', 'MISSING + A', 'A / 0', 'ROUND(A, 1.5)', 'POWER(A, -1)']:
+        plan = compile_math_plan(compile(source).ast)
+        compiled = E._compile_math_plan(plan)
+        for data in DATA:
+            root = Value.from_native({**EXTRA, **data})
+            want = outcome(lambda: E._interpret_math_plan(plan, Context(root)))
+            assert outcome(lambda: compiled(Context(root))) == want, (source, data)
+
+
+def test_a_plan_runs_interpreted_until_hot_then_compiled():
+    program = compile('A * B - C')
+    plan = program.physical_ast().math_plan
+    context = {'A': '1.5', 'B': '2', 'C': '1'}
+    want = program.run(context).dump()
+    for runs in range(2, E._PLAN_HOT + 3):
+        assert program.run(context).dump() == want
+        assert (plan.run is not None) == (runs >= E._PLAN_HOT), runs
+
+
+def test_a_plan_past_the_step_cap_stays_interpreted():
+    program = compile('MAX(' + ', '.join(['A + B'] * 100) + ')')
+    plan = program.physical_ast().math_plan
+    assert len(plan.steps) > E._PLAN_MAX_STEPS
+    for _ in range(E._PLAN_HOT + 1):
+        program.run({'A': '1', 'B': '2'})
+    assert plan.run is None
+
+
+def test_threads_crossing_the_compile_threshold_agree():
+    program = compile('A * A - B * B + C')
+    context = {'A': '1.25', 'B': '0.5', 'C': '-3'}
+    want = program.run(context).dump()
+    with ThreadPoolExecutor(8) as pool:
+        got = set(pool.map(lambda _: program.run(context).dump(), range(4 * E._PLAN_HOT)))
+    assert got == {want}
