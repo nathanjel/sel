@@ -183,6 +183,18 @@ fn a_math_plan_allocates_only_its_results() {
 }
 
 #[test]
+fn a_sum_of_squares_allocates_only_its_results() {
+    // Mandelbrot's escape test, less its comparison.
+    let vars = [("ZR", large(ZR)), ("ZI", large(ZI))];
+    let (n, dump) = run_counted_with("ZR * ZR + ZI * ZI", &vars);
+    assert_eq!(
+        dump,
+        "t\"24996189333089469276367931961942691699624858883158769427226096964219179106571574851672123.48778724099955787476\""
+    );
+    assert_eq!(n, 8, "ZR * ZR + ZI * ZI");
+}
+
+#[test]
 fn assigning_a_large_result_copies_no_mantissa() {
     let vars = [("ZR", large(ZR))];
     let (n, dump) = run_counted_with("T = ZR * ZR; T", &vars);
