@@ -706,33 +706,42 @@ def do_top(args, ctx, forced_dir):
     eager = body is not None and _may_write(body)
     items = []
     keys = []
+    # One frame for the whole pass, like walk() and do_sort (PY-P25): a frame
+    # pushed per element was a dict and two frame updates per element.
+    frame = None
+    if binder is not None:
+        frame = {binder: None}
+        if needs_k:
+            frame['_K'] = None
 
     def consume(key, item):
         if binder is None:
             keys.append(sort_key(item))
         else:
-            frame = {binder: item}
+            frame[binder] = item
             if needs_k:
                 frame['_K'] = Value.text(key)
-            ctx.push_frame(frame)
-            try:
-                keys.append(sort_key(args.eval_node(body)))
-            finally:
-                ctx.pop_frame()
+            keys.append(sort_key(args.eval_node(body)))
         items.append(item.clone(args.pos, 2) if eager else item)
 
-    if value.is_list and value.storage is not None:
-        # A packed list may carry the keys a FILTER kept (list_keys); _K is
-        # those, not the positions (review 2026-09-25 SEM-02).
-        lkeys = value.list_keys
-        for i, item in enumerate(value.storage):
-            consume(lkeys[i] if lkeys is not None else str(i + 1), item)
-    elif value.shape is not None:
-        for i, item in enumerate(value.storage):
-            consume(value.shape.keys[i], item)
-    else:
-        for key, item in elements(value):
-            consume(key, item)
+    if frame is not None:
+        ctx.push_frame(frame)
+    try:
+        if value.is_list and value.storage is not None:
+            # A packed list may carry the keys a FILTER kept (list_keys); _K is
+            # those, not the positions (review 2026-09-25 SEM-02).
+            lkeys = value.list_keys
+            for i, item in enumerate(value.storage):
+                consume(lkeys[i] if lkeys is not None else str(i + 1), item)
+        elif value.shape is not None:
+            for i, item in enumerate(value.storage):
+                consume(value.shape.keys[i], item)
+        else:
+            for key, item in elements(value):
+                consume(key, item)
+    finally:
+        if frame is not None:
+            ctx.pop_frame()
 
     select = heapq.nlargest if direction == 'DESC' else heapq.nsmallest
     if limit >= len(items):

@@ -41,11 +41,16 @@ _COERCE = OpCode.COERCE
 
 
 class Context:
-    __slots__ = ('root', 'frames', 'depth', 'join_prefilter', 'join_prefilter_report')
+    __slots__ = ('root', 'frames', 'bound', 'depth', 'join_prefilter', 'join_prefilter_report')
 
     def __init__(self, root: Value | None = None) -> None:
         self.root = root if root is not None else Value.none()
         self.frames: list[dict[str, Value]] = []   # aggregate binders
+        # How many pushed frames bind each name. A frame's names are fixed while
+        # it is pushed (a binder changes its value, never its name), so a name
+        # missing here is in no frame: lookup goes straight to the root and
+        # is_bound is one test (item 2, P1).
+        self.bound: dict[str, int] = {}
         self.depth = 0
         # A FILTER whose source is a LINK hands the join its conjuncts here,
         # for the join to test on the rows it joins where that is provably
@@ -60,26 +65,41 @@ class Context:
 
     def lookup(self, name: str) -> Value | None:
         frames = self.frames
-        n = len(frames)
-        if n == 1:
-            v = frames[0].get(name)
+        if frames:
+            # The innermost frame first: it holds the binder nearly every read
+            # inside an aggregate asks for.
+            v = frames[-1].get(name)
             if v is not None:
                 return v
-        elif n > 1:
-            for i in range(n - 1, -1, -1):
-                v = frames[i].get(name)
-                if v is not None:
-                    return v
-        return self.root.get(name)
+            # Further out only when some frame binds the name at all.
+            if len(frames) > 1 and name in self.bound:
+                for i in range(len(frames) - 2, -1, -1):
+                    v = frames[i].get(name)
+                    if v is not None:
+                        return v
+        root = self.root
+        if root.storage is None:            # Value.get's own last case, without the call
+            children = root.children
+            return children.get(name) if children else None
+        return root.get(name)
 
     def is_bound(self, name: str) -> bool:
-        return any(name in frame for frame in self.frames)
+        return name in self.bound
 
     def push_frame(self, mapping: dict[str, Value]) -> None:
         self.frames.append(mapping)
+        bound = self.bound
+        for name in mapping:
+            bound[name] = bound.get(name, 0) + 1
 
     def pop_frame(self) -> None:
-        self.frames.pop()
+        bound = self.bound
+        for name in self.frames.pop():
+            n = bound[name] - 1
+            if n:
+                bound[name] = n
+            else:
+                del bound[name]
 
 
 # --- arguments --------------------------------------------------------------
