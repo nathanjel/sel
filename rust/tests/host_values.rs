@@ -17,7 +17,7 @@ fn host_decimals_are_canonicalised_at_the_boundary() {
     // A zero is never negative, in either representation.
     let neg_zero = Value::num(Dec { neg: true, scale: 2, repr: DecRepr::Small(0) }).unwrap();
     assert_eq!(neg_zero.dump().unwrap(), "t\"0.00\"");
-    let large_zero = Dec { neg: true, scale: 0, repr: DecRepr::Large(Box::new(LargeDec::from(0u128))) };
+    let large_zero = Dec { neg: true, scale: 0, repr: DecRepr::Large(LargeDec::from(0u128).into()) };
     assert_eq!(Value::num(large_zero).unwrap().dump().unwrap(), "t\"0\"");
 }
 

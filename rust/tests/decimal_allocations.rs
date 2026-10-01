@@ -145,3 +145,34 @@ fn tiny_small_mantissas_do_not_allocate_scale_sized_divisors() {
         }
     }
 }
+
+// Item 1: a large mantissa is shared, never copied. Lower these budgets when
+// the code gets cheaper; never raise them.
+#[test]
+fn large_copies_negations_and_differences_share_mantissas() {
+    let pos = Pos::default();
+    // Past i128, one scale, so no alignment and no power cache.
+    let a = dec_parse("1234567890123456789012345678901234567890123456789.25", pos).unwrap();
+    let b = dec_parse("987654321098765432109876543210987654321098765432.75", pos).unwrap();
+    assert!(matches!(a.repr, DecRepr::Large(_)) && matches!(b.repr, DecRepr::Large(_)));
+    fn counted<T>(f: impl FnOnce() -> T) -> (usize, T) {
+        ALLOCATIONS.with(|n| n.set(0));
+        TRACKING.with(|flag| flag.set(true));
+        let out = f();
+        TRACKING.with(|flag| flag.set(false));
+        (ALLOCATIONS.with(Cell::get), out)
+    }
+    let (n, copy) = counted(|| a.clone());
+    assert_eq!(copy, a);
+    assert_eq!(n, 2, "clone");
+    let (n, negated) = counted(|| dec_negate(&a));
+    assert_eq!(dec_format(&negated), "-1234567890123456789012345678901234567890123456789.25");
+    assert_eq!(n, 2, "dec_negate");
+    let (n, absolute) = counted(|| dec_abs(&negated));
+    assert_eq!(absolute, a);
+    assert_eq!(n, 2, "dec_abs");
+    // The difference's own buffer and its holder; nothing for negating b.
+    let (n, difference) = counted(|| dec_sub(&a, &b, pos).unwrap());
+    assert_eq!(dec_format(&difference), "246913569024691356902469135690246913569024691356.50");
+    assert_eq!(n, 4, "dec_sub");
+}

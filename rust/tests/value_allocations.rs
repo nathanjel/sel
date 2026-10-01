@@ -117,3 +117,78 @@ fn a_filter_predicate_allocates_nothing_per_row() {
         "n50={n50} n100={n100}"
     );
 }
+
+// --- Item 1: a large mantissa is shared, never copied -------------------------
+// Reading, copying and passing a number between plan steps must not copy its
+// mantissa (docs/interim/2026-09-29/rust-completion-audit.md). The operands are
+// past i128 (so `Large`) but far below the Karatsuba thresholds, and share one
+// scale, so no alignment or thread-local power cache disturbs the counts.
+// Lower these budgets when the code gets cheaper; never raise them.
+
+const ZR: &str = "123456789012345678901234567890123456789012345.1234567890";
+const ZI: &str = "-98765432109876543210987654321098765432109876.5432109876";
+const CR: &str = "-56123456789012345678901234567890123456789012.3456789012";
+
+fn large(text: &str) -> Value {
+    Value::num(sel_lang::dec::dec_parse(text, Pos::default()).unwrap()).unwrap()
+}
+
+fn run_counted_with(source: &str, vars: &[(&str, Value)]) -> (usize, String) {
+    let mut program = compile(source).unwrap();
+    let mut ctx = Context::new(Value::none());
+    for (name, value) in vars {
+        ctx.root.set(name, value.clone(), Pos::default()).unwrap();
+    }
+    program.run_with_context(&mut ctx).unwrap(); // warm caches
+    let (n, v) = count(|| program.run_with_context(&mut ctx).unwrap());
+    (n, v.dump().unwrap())
+}
+
+#[test]
+fn a_large_number_reads_without_copying() {
+    let pos = Pos::default();
+    // A computed number: its decimal is the cell's own.
+    let computed = large(ZR);
+    let (n, d) = count(|| computed.as_decimal(pos).unwrap());
+    assert!(matches!(d.repr, sel_lang::dec::DecRepr::Large(_)));
+    assert_eq!(n, 2, "reading a computed large number");
+    // A parsed number: the first read parses and keeps the decimal; later
+    // reads are the computed case.
+    let parsed = Value::text_owned(ZR.to_string());
+    parsed.as_decimal(pos).unwrap();
+    let (n, _) = count(|| parsed.as_decimal(pos).unwrap());
+    assert_eq!(n, 2, "reading a parsed large number again");
+}
+
+#[test]
+fn copying_a_large_number_shares_its_mantissa() {
+    let pos = Pos::default();
+    let v = large(ZR);
+    let (n, copy) = count(|| v.deep_copy(1, pos).unwrap());
+    assert_eq!(copy.dump().unwrap(), format!("t\"{ZR}\""));
+    assert_eq!(n, 3, "a copy is its value cell");
+}
+
+#[test]
+fn a_math_plan_allocates_only_its_results() {
+    // One plan, four operations: each result's buffer, plus the plan's slots
+    // and the result cell; nothing for reading the operands or between steps.
+    let vars = [("ZR", large(ZR)), ("ZI", large(ZI)), ("CR", large(CR))];
+    let (n, dump) = run_counted_with("ZR * ZR - ZI * ZI + CR", &vars);
+    assert_eq!(
+        dump,
+        "t\"5486968173388204224622771163190672190391906533176242395994453924525372552945129971343772.57725783530082316724\""
+    );
+    assert_eq!(n, 32, "ZR * ZR - ZI * ZI + CR");
+}
+
+#[test]
+fn assigning_a_large_result_copies_no_mantissa() {
+    let vars = [("ZR", large(ZR))];
+    let (n, dump) = run_counted_with("T = ZR * ZR; T", &vars);
+    assert_eq!(
+        dump,
+        "t\"15241578753238836750495351562566681945008382736229234306116448283822893113703414139902454.20536198875019052100\""
+    );
+    assert_eq!(n, 17, "T = ZR * ZR; T");
+}

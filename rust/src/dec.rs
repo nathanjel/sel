@@ -32,6 +32,14 @@ pub struct Dec {
     pub repr: DecRepr,
 }
 
+// A compiled program carries Decs (literals, plan constants) and may be moved
+// to another thread (tests/evaluator_stack.rs), so a Dec must stay Send + Sync:
+// a shared mantissa has to be an Arc, never an Rc.
+const _: () = {
+    const fn assert_send_sync<T: Send + Sync>() {}
+    assert_send_sync::<Dec>();
+};
+
 impl Dec {
     pub fn zero() -> Self {
         Self {
@@ -831,11 +839,6 @@ mod tests {
         ] {
             let a = dec_parse(a, pos).unwrap();
             let b = dec_parse(b, pos).unwrap();
-            let force_large = |d: &Dec| Dec {
-                neg: d.neg,
-                scale: d.scale,
-                repr: DecRepr::Large(Box::new(d.to_large())),
-            };
             assert_eq!(
                 dec_div(&a, &b, pos).unwrap(),
                 dec_div(&force_large(&a), &force_large(&b), pos).unwrap()
@@ -845,6 +848,42 @@ mod tests {
                     dec_round(&a, scale, pos).unwrap(),
                     dec_round(&force_large(&a), scale, pos).unwrap()
                 );
+            }
+        }
+    }
+
+    /// The same value with its mantissa forced into the large representation.
+    fn force_large(d: &Dec) -> Dec {
+        Dec { neg: d.neg, scale: d.scale, repr: DecRepr::Large(d.to_large().into()) }
+    }
+
+    #[test]
+    fn subtraction_is_addition_of_the_negation() {
+        // dec_sub must agree with dec_add(a, -b) whatever it does about the
+        // copy that negation implies: signs, zeros (a negative zero included),
+        // scales, and both representations of either operand.
+        let pos = Pos::default();
+        let texts = [
+            "0", "0.00", "5", "-5", "2.5", "-2.50", "0.0000000000000000000000000000000000001",
+            "170141183460469231731687303715884105727", "-170141183460469231731687303715884105728",
+            "1234567890123456789012345678901234567890123456789.25",
+            "-98765432109876543210987654321098765432109876543.5",
+        ];
+        let mut values: Vec<Dec> = texts.iter().map(|t| dec_parse(t, pos).unwrap()).collect();
+        values.push(Dec { neg: true, scale: 1, repr: DecRepr::Small(0) });
+        for a in &values {
+            for b in &values {
+                for (a, b) in [
+                    (a.clone(), b.clone()),
+                    (force_large(a), b.clone()),
+                    (a.clone(), force_large(b)),
+                    (force_large(a), force_large(b)),
+                ] {
+                    let want = dec_add(&a, &dec_negate(&b), pos).unwrap();
+                    let got = dec_sub(&a, &b, pos).unwrap();
+                    assert_eq!(dec_format(&got), dec_format(&want), "{a:?} - {b:?}");
+                    assert_eq!((got.neg, got.scale), (want.neg, want.scale), "{a:?} - {b:?}");
+                }
             }
         }
     }
