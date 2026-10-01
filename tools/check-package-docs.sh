@@ -11,8 +11,11 @@
 # the documents below, and none of the maintainer files.
 #
 # The wheel ships python/sel/ alone and Conan exports cpp/ sources alone, so
-# neither can carry docs. Quicklisp and Ultralisp clone the repository and
-# cannot be told otherwise.
+# neither can carry docs; nor can the Rust crate (rust/, its `include`) or the
+# Go module (go/, zipped by the proxy), whose READMEs link to the documentation
+# instead -- tools/check-rust-package.sh and tools/check-go-module.sh check what
+# they do carry. Quicklisp and Ultralisp clone the repository and cannot be told
+# otherwise.
 #
 #   tools/check-package-docs.sh
 

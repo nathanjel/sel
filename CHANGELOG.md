@@ -3,12 +3,69 @@
 SEL's releases, newest first. This file starts at 0.6.0; the entries below it
 were written afterwards, from the commits, and are shorter for it.
 
-Six manifests and `python/sel/__init__.py` carry the version, and so does the
-top heading here — `tools/check-version.sh` relates all eight, so a release
-whose notes were never written fails the check before the tag is cut.
+Seven manifests and `python/sel/__init__.py` carry the version, and so does the
+top heading here — `tools/check-version.sh` relates all nine, so a release
+whose notes were never written fails the check before the tag is cut. The Go
+module's version is its tag, `go/vX.Y.Z`.
 
 Each entry ends with the three lanes that gate a release: conformance cases
 (every host runs all of them), SQL translation cases, and mutations caught.
+
+## 0.10.0 — 2026-10-02
+
+**Two new hosts: Rust and Go.** SEL now has seven implementations, all held to
+the same conformance suite, fuzzers, decimal oracle, SQL cases and worked
+examples, and all in the default gate.
+
+  - **Rust**: the crate `sel-lang` on crates.io (`cargo add sel-lang`; the `sel`
+    CLI with `cargo install sel-lang`), Rust 1.85+. The SQL layer is the
+    default `sql` feature; `sel_lang::sql::serde_json` is re-exported for
+    `sql::define`. API reference on docs.rs.
+  - **Go**: the module `github.com/nathanjel/sel/go`, tagged `go/v0.10.0`
+    (`go get github.com/nathanjel/sel/go@v0.10.0`; the CLI with
+    `go install github.com/nathanjel/sel/go/bin/sel@v0.10.0`), Go 1.22+, no
+    dependencies. Packages `…/go/sel` and `…/go/sel/sql`; documentation and
+    runnable examples on pkg.go.dev.
+
+**Language contract changes** (written into `spec/` and `docs/internals/`):
+
+  - New caps in `spec/limits.json`: MAX_TEXT_LEN 16,777,216, MAX_COLLECTION
+    1,000,000, MAX_REGEX_PATTERN 65,535, MAX_REGEX_GROUPS 1,000, and
+    MAX_SQL_NODES 250,000 with the new error code `E_SQL_SIZE`.
+  - The portable regex subset is tighter (POSIX forms anywhere, quantified
+    anchors, class-escape ranges, only the `i` flag, literals checked at compile
+    time), and a pattern with exponential ambiguity is refused statically.
+  - Values: collectors copy an element when it is collected (a MAP body's
+    result, an element FILTER accepts, a SORT or TOP key, a BUCKET row); the
+    copy/alias table is SPEC §3.4.
+  - Evaluation: every operand is evaluated before any is coerced; `??`/`???`,
+    pipeline steps and an index over a bare variable each cost one depth level;
+    interpolation bodies must balance their brackets.
+  - Relational: aggregates visit a snapshot; one total order for sorting (NULL
+    < BOOL < numbers < text < BIN, stable); join keys compare as `==`; the right
+    binder shadows the left.
+  - Host API: `dependencies()` is flow-sensitive; `E_BAD_ARG` for unsupported
+    native input and missing host-function arguments; registration is
+    thread-safe.
+  - SQL: lexical scope for binders, kind guards, balanced folds above 256
+    operands, TAKE/DROP clamped at 2^63−1, and hybrid plans held to `run()` on
+    keys, errors, context, order and names (fewer plans are wholly pushed down;
+    results are unchanged).
+
+**Performance:** exact big-number arithmetic on binary mantissas in C++ and Rust
+(Mandelbrot 131 → 33 ms and 161 → 44 ms); numbers kept in arithmetic form
+between operations in PHP (lazy digits, −58%), Go (math-plan registers, −12%)
+and Rust (shared mantissas, −7%); and a faster Python evaluator (hot math plans
+compiled to Python, name lookups that skip unbound frames, evaluators bound to
+the physical tree: Mandelbrot −30%, the scale scenarios −9 to −20%). The
+review's 488 closed findings include 144 performance items across the hosts.
+
+**Documentation:** every example and tab group in all seven languages; Go and
+Rust error-handling notes; the database examples run against real PostgreSQL,
+MariaDB and SQLite in every host.
+
+Lanes: 2184 conformance cases in every host; 1311 SQL translation cases in every
+host; 222 SQL mutations caught, none surviving.
 
 ## 0.9.2 — 2026-09-29
 

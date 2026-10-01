@@ -1,6 +1,3 @@
-// Package sql implements the SEL-to-SQL translator and hybrid execution planner.
-// See docs/internals/sql-translation.md, sql/MAP.md, and sql/errors.md.
-
 package sql
 
 import (

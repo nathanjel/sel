@@ -1,6 +1,6 @@
 // A database runner for the SQL examples -- Rust.
 //
-//   #[path = "../lib/db.rs"] mod db;      and build with `--features usage`
+//   #[path = "../lib/db.rs"] mod db;      and build with `-p sel-lang-dev --features usage`
 //
 // Every example that talks to a database goes through the functions below, and
 // the files beside this one do the same with their own drivers. The contract is

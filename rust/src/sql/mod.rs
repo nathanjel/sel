@@ -1,3 +1,42 @@
+//! The SEL→SQL layer: a rule as a SQL condition, a pipeline as a statement, and
+//! the hybrid planner that splits a pipeline between the database and memory.
+//!
+//! The default `sql` feature. A translation is emitted only when the SQL means
+//! exactly what SEL means; anything else is refused with a [`SqlError`] whose
+//! code says why (`E_SQL_UNSUPPORTED`, `E_SQL_BINDING`, …).
+//!
+//! ```
+//! use sel_lang::compile;
+//! use sel_lang::sql::{translate, Binding, Bindings, Mode, Options, SqlKind};
+//! use std::collections::HashMap;
+//!
+//! # fn main() -> Result<(), Box<dyn std::error::Error>> {
+//! // Describe where the rule's variables live: here, two columns of `orders`.
+//! let column = |name: &str, kind| Binding::column(name, "orders", kind, false, false, false, "", "", false);
+//! let bindings = Bindings::new(Some(HashMap::from([
+//!     ("QTY".to_string(), column("qty", SqlKind::Num)),
+//!     ("STATUS".to_string(), column("status", SqlKind::Text)),
+//! ])));
+//!
+//! let rule = compile(r#"QTY > 5 AND STATUS $== "open""#)?;
+//! let fragment = translate(&rule, "postgresql", Some(&bindings), Options::default())?;
+//! assert_eq!(
+//!     fragment.as_condition(Mode::Params)?,
+//!     r#"(("orders"."qty" > 5) AND (CAST("orders"."status" AS TEXT) COLLATE "C" = CAST(? AS TEXT) COLLATE "C"))"#
+//! );
+//! // In params mode every text literal is a placeholder; these are its values.
+//! let values: Vec<String> = fragment.bindings().iter().map(|v| v.scalar()).collect();
+//! assert_eq!(values, ["open"]);
+//! # Ok(())
+//! # }
+//! ```
+//!
+//! Pipelines go through [`plan_hybrid`], which pushes the longest exact prefix
+//! into SQL, and [`execute_hybrid`], which runs the plan with a runner the
+//! application supplies (a closure from a statement and its parameters to rows).
+//! The worked examples in the repository's `examples/sql-*` directories run
+//! such plans against PostgreSQL, MariaDB and SQLite.
+
 pub mod binder;
 pub mod binding;
 pub mod constants;
@@ -13,6 +52,12 @@ pub mod row_model;
 pub mod statement;
 pub mod translator;
 pub mod types;
+
+/// The JSON crate the SQL layer is built on. `define`, `define_dialect` and
+/// `define_builder` take a `serde_json::Value`; this re-export lets an
+/// application build one (`sel_lang::sql::serde_json::json!`) without depending
+/// on a `serde_json` of its own whose version might not match.
+pub use serde_json;
 
 pub use binding::{Binding, Bindings, ColumnSpec, FieldEntry, RelationSpec};
 pub use emit::Emit;

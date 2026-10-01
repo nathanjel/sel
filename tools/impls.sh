@@ -472,7 +472,7 @@ impl_unit() {
             { [ -x cpp/build/sqlunit ] && cpp/build/sqlunit; } ;;
     lisp)   lisp/bin/test ;;
     go)     (cd go && go test -race ./...) ;;
-    rust)   (cd rust && cargo test && bash tests/build_integration.sh) ;;
+    rust)   (cd rust && cargo test --workspace && bash tests/build_integration.sh) ;;
     *)      echo "unknown implementation: $impl" >&2; return 2 ;;
   esac
 }

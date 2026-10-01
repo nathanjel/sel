@@ -6,7 +6,8 @@ work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
 mkdir -p "$work/rust/src" "$work/rust/tests" "$work/bin"
 cp "$repo/rust/build.sh" "$repo/rust/build-inputs.sh" "$work/rust/"
-touch "$work/rust/Cargo.toml" "$work/rust/Cargo.lock"
+mkdir -p "$work/rust/dev/src"
+touch "$work/rust/Cargo.toml" "$work/rust/Cargo.lock" "$work/rust/dev/Cargo.toml"
 echo '// original' > "$work/rust/src/lib.rs"
 cat > "$work/bin/cargo" <<'CARGO'
 #!/usr/bin/env bash

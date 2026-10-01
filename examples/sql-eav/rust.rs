@@ -12,7 +12,7 @@
 //
 // The files beside this one print byte-identical output.
 //
-// Built by `cargo build --release --features usage --example sql-eav` in rust/
+// Built by `cargo build --release -p sel-lang-dev --features usage --example sql-eav` in rust/
 // (tools/check-usage.sh does it in its image), which includes examples/lib/db.rs
 // and its PostgreSQL, MariaDB and SQLite drivers.
 

@@ -216,6 +216,10 @@ step "package contents: user docs only" sel_slot ./tools/check-package-docs.sh
 # The C++ package as a consumer gets it: the files cpp/conanfile.py exports,
 # built and installed, and cpp/test_package linked against the install.
 step "C++ package, as installed" sel_slot ./tools/check-cpp-package.sh
+# The Rust crate and the Go module as crates.io and the Go proxy deliver them:
+# only their own directory, built and used from outside the repository.
+case " $IMPLS " in *" rust "*) step "Rust package, as published" sel_slot ./tools/check-rust-package.sh ;; esac
+case " $IMPLS " in *" go "*) step "Go module, as published" sel_slot ./tools/check-go-module.sh ;; esac
 step "host API parity" ./tools/check-api.sh
 step "CLI source bytes" ./tools/check-cli-source.sh
 step "regex ambiguity reference" bash -c "python3 tools/regex-ambiguity-ref.py --self-check >/dev/null && python3 tools/regex-ambiguity-ref.py --cases conformance/28-regex-portability.selt >/dev/null && python3 tools/regex-ambiguity-ref.py --cases conformance/28b-regex-ambiguity.selt >/dev/null && python3 tools/gen-regex-ambiguity-cases.py --check"

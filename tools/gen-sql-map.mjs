@@ -1345,7 +1345,7 @@ const OUTPUTS = [
   ['go/sel/sql/map_data_gen.go', emitGo],
   ['go/bin/sqlreplay/replay_data_gen.go', emitReplayGo],
   ['rust/src/sql/map_data.rs', emitRust],
-  ['rust/src/bin/map_replay_data.rs', emitReplayRust],
+  ['rust/dev/src/bin/map_replay_data.rs', emitReplayRust],
 ];
 
 const docs = load();

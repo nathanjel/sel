@@ -48,9 +48,10 @@ if [ "${1:-}" = "--inside" ]; then
     exit 1
   fi
   # Rust likewise: its own target directory, and a CARGO_HOME beside it, so the
-  # driver crates (rust/Cargo.toml's `usage` feature) are fetched once and kept.
+  # driver crates (the `usage` feature of rust/dev, the unpublished harness
+  # crate the examples live in) are fetched once and kept.
   export CARGO_TARGET_DIR="$ROOT/rust/target-usage" CARGO_HOME="$ROOT/rust/target-usage/cargo"
-  if ! cargo build --locked --release --manifest-path rust/Cargo.toml --features usage \
+  if ! cargo build --locked --release --manifest-path rust/Cargo.toml -p sel-lang-dev --features usage \
        $(for c in "$@"; do printf -- '--example %s ' "$c"; done) > "$WORK/cargo.log" 2>&1; then
     echo "FAIL the Rust examples do not build:"
     tail -20 "$WORK/cargo.log" | sed 's/^/       /'

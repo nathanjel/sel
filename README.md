@@ -194,23 +194,21 @@ The package is `sel-lang` everywhere:
 pip install sel-lang
 npm install sel-lang
 composer require nathanjel/sel-lang
-vcpkg install sel-lang            # or: conan install --requires sel-lang/0.9.2
+vcpkg install sel-lang            # or: conan install --requires sel-lang/0.10.0
 (ql:quickload :sel-lang)          # Quicklisp / Ultralisp
+cargo add sel-lang                # the crate is sel_lang
+go get github.com/nathanjel/sel/go@v0.10.0   # import .../go/sel and .../go/sel/sql
 ```
 
-Rust and Go are not on a registry yet; take them from the repository:
-
-```sh
-cargo add sel-lang --git https://github.com/nathanjel/sel   # the crate is sel_lang
-go get github.com/nathanjel/sel/go@main                     # import .../go/sel and .../go/sel/sql
-```
+The command-line REPL (`sel -e 'expr'`, `sel --deps -e 'expr'`) installs with
+`cargo install sel-lang` or `go install github.com/nathanjel/sel/go/bin/sel@v0.10.0`.
 
 In a browser, with nothing to install, from the jsDelivr (or unpkg) copy of the
 npm package — a standalone module, without the SQL layer:
 
 ```html
 <script type="module">
-  import { evaluate } from 'https://cdn.jsdelivr.net/npm/sel-lang@0.9.2/dist/sel.min.mjs';
+  import { evaluate } from 'https://cdn.jsdelivr.net/npm/sel-lang@0.10.0/dist/sel.min.mjs';
 </script>
 ```
 

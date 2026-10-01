@@ -1561,7 +1561,7 @@ const OUTPUTS = [
   ['cpp/bin/case_data.cpp', emitCpp],
   ['lisp/bin/case-data.lisp', emitLispCases],
   ['go/bin/sqlt/case_data_gen.go', emitGo],
-  ['rust/src/bin/sqlt/case_data.rs', emitRust],
+  ['rust/dev/src/bin/sqlt/case_data.rs', emitRust],
 ];
 const check = process.argv.includes('--check');
 let stale = 0;

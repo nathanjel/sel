@@ -27,7 +27,7 @@ from benchmark_support import fixture_metadata, resolve_path, runtime_metadata, 
 
 IN_MEMORY_LANES = ("lisp", "cpp", "rust", "js", "php", "python")
 RUST_BUILD = ["cargo", "build", "--release", "--manifest-path", "rust/Cargo.toml",
-              "--example", "scale-bench"]
+              "-p", "sel-lang-dev", "--example", "scale-bench"]
 RUST_BINARY = ROOT / "rust/target/release/examples/scale-bench"
 DATABASE_LANES = ("postgresql", "mariadb")
 PHASES = ("program_run_ms", "materialize_ms", "prepared_total_ms")

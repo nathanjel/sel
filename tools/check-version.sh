@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Every manifest must declare the same version.
 #
-# There are eight of them now — six manifests, python/sel/__init__.py's
+# There are nine of them now — seven manifests (rust/Cargo.toml the latest),
+# python/sel/__init__.py's
 # __version__ (not a manifest, but published in the wheel metadata and just as
 # wrong if it drifted), and the top heading of CHANGELOG.md, so that a release
 # whose notes were never written fails here rather than at the tag. Nothing but
@@ -11,8 +12,12 @@
 # whose metadata disagrees with its siblings — which is the sort of thing
 # nobody notices until a downstream resolver does.
 #
-#   tools/check-version.sh            check they agree
-#   tools/check-version.sh 0.6.0      check they all equal 0.6.0
+#   tools/check-version.sh                 check they agree
+#   tools/check-version.sh 0.6.0           check they all equal 0.6.0
+#   tools/check-version.sh 0.6.0 --tags    and that tags v0.6.0 and go/v0.6.0 exist
+#                                          on one commit (the Go module is go/, and
+#                                          the Go toolchain reads its version from
+#                                          a tag with that prefix)
 
 set -uo pipefail
 cd "$(dirname "$0")/.."
@@ -25,16 +30,18 @@ extract() {
     cpp/vcpkg.json)    sed -n 's/.*"version-semver"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' cpp/vcpkg.json | head -1 ;;
     cpp/CMakeLists.txt) sed -n 's/.*project(sel-lang VERSION \([0-9.]*\).*/\1/p' cpp/CMakeLists.txt | head -1 ;;
     lisp/sel-lang.asd) sed -n 's/.*:version[[:space:]]*"\([^"]*\)".*/\1/p' lisp/sel-lang.asd | head -1 ;;
+    rust/Cargo.toml)   sed -n 's/^version[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' rust/Cargo.toml | head -1 ;;
     python/sel/__init__.py) sed -n "s/^__version__[[:space:]]*=[[:space:]]*'\([^']*\)'.*/\1/p" python/sel/__init__.py | head -1 ;;
     CHANGELOG.md)      sed -n 's/^## \([0-9][0-9.]*\) .*/\1/p' CHANGELOG.md | head -1 ;;
   esac
 }
 
 FILES="package.json pyproject.toml cpp/conanfile.py cpp/vcpkg.json
-       cpp/CMakeLists.txt lisp/sel-lang.asd python/sel/__init__.py
+       cpp/CMakeLists.txt lisp/sel-lang.asd rust/Cargo.toml python/sel/__init__.py
        CHANGELOG.md"
 
 want="${1:-}"
+tags="${2:-}"
 status=0
 first=""
 
@@ -82,10 +89,12 @@ if [ -n "$first" ]; then
 fi
 
 # The install instructions pin the version where a reader copies it: the CDN
-# URL (sel-lang@X) and the Conan reference (sel-lang/X). A release that bumped
-# the manifests and not these would send a browser to the previous version.
+# URL (sel-lang@X), the Conan reference (sel-lang/X), the Go module and command
+# (…/sel/go@vX, …/go/bin/sel@vX) and the Rust dependency line
+# (sel-lang = { version = "X" … }). A release that bumped the manifests and not
+# these would send a reader to the previous version.
 if [ -n "$first" ]; then
-  for f in README.md docs/usage/README.md; do
+  for f in README.md docs/usage/README.md docs/usage/repl.md rust/README.md go/README.md; do
     for pinned in $(grep -o 'sel-lang[@/][0-9][0-9.]*[0-9]' "$f" | sort -u); do
       if [ "${pinned#sel-lang?}" != "$first" ]; then
         printf '  %-24s %s\n' "$f" "$pinned"
@@ -93,7 +102,37 @@ if [ -n "$first" ]; then
         status=1
       fi
     done
+    for pinned in $(grep -o 'nathanjel/sel/go[a-z/]*@v[0-9][0-9.]*[0-9]' "$f" | sort -u); do
+      if [ "${pinned##*@v}" != "$first" ]; then
+        printf '  %-24s %s\n' "$f" "$pinned"
+        echo "    ^ expected @v$first" >&2
+        status=1
+      fi
+    done
+    for pinned in $(grep -o 'sel-lang = { version = "[0-9][0-9.]*[0-9]"' "$f" | grep -o '[0-9][0-9.]*[0-9]' | sort -u); do
+      if [ "$pinned" != "$first" ]; then
+        printf '  %-24s sel-lang = { version = "%s" }\n' "$f" "$pinned"
+        echo "    ^ expected $first" >&2
+        status=1
+      fi
+    done
   done
+fi
+
+# --tags: the release is tagged, and the Go module with it. A missing go/vX
+# leaves `go get …@vX` unresolvable however right everything else is.
+if [ "$tags" = "--tags" ] && [ -n "$want" ]; then
+  main_tag="$(git rev-parse -q --verify "refs/tags/v$want^{commit}" 2>/dev/null)"
+  go_tag="$(git rev-parse -q --verify "refs/tags/go/v$want^{commit}" 2>/dev/null)"
+  if [ -z "$main_tag" ] || [ -z "$go_tag" ]; then
+    echo "tags: v$want and go/v$want must both exist" >&2
+    status=1
+  elif [ "$main_tag" != "$go_tag" ]; then
+    echo "tags: v$want and go/v$want are on different commits" >&2
+    status=1
+  else
+    printf '  %-24s %s\n' "tags v$want, go/v$want" "${main_tag:0:12}"
+  fi
 fi
 
 if [ "$status" -eq 0 ]; then

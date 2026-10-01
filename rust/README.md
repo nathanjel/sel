@@ -1,89 +1,80 @@
-# SEL for Rust
+# sel-lang — SEL for Rust
 
-The Rust implementation follows the current files in `spec/` and `sql/`, and is
-held to them by the same shared suites as the other hosts. What is verified and
-what is still open is recorded in
-[the audit](../docs/interim/2026-09-29/rust-completion-audit.md).
+SEL is a small expression language for business rules — validation, pricing,
+eligibility, routing, reporting. A rule is text:
 
-Build the library and command-line tools with Cargo:
-
-```sh
-cargo build --release --manifest-path rust/Cargo.toml
-rust/target/release/sel -e '1 + 2'
-rust/target/release/sel --deps -e 'IF(X, A = 1, 0); A'
+```sel
+TOTAL = SUM(ITEMS, _["qty"] * _["price"]);
+IF(TOTAL > CREDIT_LIMIT, ABORT("total {TOTAL} exceeds {CREDIT_LIMIT}"), "ok")
 ```
 
-## Features and dependencies
+Seven independent implementations run it — Python, JavaScript, PHP, C++,
+Common Lisp, Go and this crate — held to one written specification and one
+conformance suite, and they agree to the byte: on the value, and on the error
+code and position when a rule fails. Arithmetic is exact decimal (no floating
+point), text is strict UTF-8, and the same rule compiles to a SQL condition or a
+whole `SELECT` for MariaDB, MySQL, PostgreSQL and SQLite.
 
-The core language depends only on the `regex` crate. The SEL→SQL layer is opt-in
-in every host; here it is the default-on `sql` feature (`sel_lang::sql`), which
-adds `serde`/`serde_json` for the dialect map and `define_dialect`. A build
-without it:
-
-```sh
-cargo build --release --manifest-path rust/Cargo.toml --no-default-features --lib
-```
-
-The SQL tools (`sqlt`, `map_replay`, `sqlapi`, `sqlfuzz`, `scale_bench`) require
-the feature.
-
-## Shared gates
-
-Publish the binaries first; the repository tools then run Rust like any other
-host (`SEL_IMPLS` names the roster):
+## Install
 
 ```sh
-bash rust/build.sh
-SEL_IMPLS="js rust" tools/check.sh
-SEL_IMPLS="js rust" tools/fuzz.sh 4000 <seed>
-SEL_IMPLS="js rust" tools/fuzz-sql.sh 2000 <seed>    # needs databases: tools/oracle-db.sh run ...
+cargo add sel-lang            # the library; `use sel_lang::…`
+cargo install sel-lang        # the `sel` command: a REPL, `sel -e 'expr'`, `sel --deps -e 'expr'`
 ```
 
-`build.sh` compiles and copies all required entry points to `rust/build/`, then
-publishes a digest of the production sources and Cargo inputs. Repository tools
-exclude Rust if an entry point is missing or the current inputs differ from that
-digest, so rebuild after editing `src/`. Edits under `rust/tests/` do not
-invalidate the published tools. If inputs change during compilation, the build
-refuses to publish; rerun it after the edit.
+Rust 1.85 or later. The core language depends on the `regex` crate; the SQL layer
+(`sel_lang::sql`, the default `sql` feature) adds `serde` and `serde_json`.
+Without it: `sel-lang = { version = "0.10.0", default-features = false }`.
 
-Run Rust tests and the isolated build-integration checks with:
+## Use
 
-```sh
-cargo test --manifest-path rust/Cargo.toml
-cargo test --manifest-path rust/Cargo.toml --no-default-features
-bash rust/tests/build_integration.sh
+```rust
+use sel_lang::{compile, Pos, SelError, Value};
+
+fn main() -> Result<(), SelError> {
+    let at = Pos::default(); // "the host", as a position
+    let mut rule = compile(r#"IF(QTY * PRICE > LIMIT, "over budget", "ok")"#)?;
+    let ctx = Value::none();
+    ctx.set("QTY", Value::text_owned("3".into()), at)?;
+    ctx.set("PRICE", Value::text_owned("19.99".into()), at)?; // money is text, never f64
+    ctx.set("LIMIT", Value::text_owned("50.00".into()), at)?;
+    println!("{}", rule.run(Some(ctx))?.as_text(at)?); // over budget
+    Ok(())
+}
 ```
 
-## Host API notes
+Every call that can fail returns `Result<_, SelError>`; a `SelError` carries a
+stable `code` (`E_NOT_NUM`, `E_ABORT`, …) and the `pos` of the node that failed.
+`Program::dependencies()` says which inputs a rule reads, without running it.
 
-- `Value::num(Dec)` checks what a host hands it: the sign is folded into `neg`, a
-  zero is never negative, and the digit caps apply (`E_RANGE`).
-- A host function's `Args` accessors (`val`, the typed readers, `node`, `pos_of`,
-  `symbol`, `is_symbol`) answer `E_BAD_ARG` for an index past the call's
-  arguments; none of them panics.
-- The CLI reads source files as bytes and reports invalid UTF-8 as `E_UTF8` with
-  a source position. On Unix, source paths may contain non-UTF-8 bytes;
-  expression arguments still must be valid UTF-8.
+## Documentation
 
-## Known limits
+- [Using SEL](https://github.com/nathanjel/sel/blob/main/docs/usage/README.md) —
+  the host API, with every snippet in all seven languages, and the pages after it:
+  validation, scripting with host functions, SQL conditions and pipelines.
+- [The language](https://github.com/nathanjel/sel/blob/main/docs/syntax.md),
+  [functions](https://github.com/nathanjel/sel/blob/main/docs/functions.md) and
+  [SEL and SQL](https://github.com/nathanjel/sel/blob/main/docs/sql.md).
+- [The specification](https://github.com/nathanjel/sel/blob/main/spec/SPEC.md).
+- The API reference is on [docs.rs](https://docs.rs/sel-lang).
 
-- Stack use is bounded: the lexer is iterative (any interpolation depth), and
-  compiling or evaluating a program nested past `MAX_DEPTH` (200) answers
-  `E_DEPTH` on a 256 KiB stack in a release build (2 MiB, the Rust thread
-  default, in a debug build).
-- API gaps the worked examples (`examples/*/rust.rs`) ran into, where the other
-  hosts are easier to call:
-  - `sql::define_dialect`, `define` and `define_builder`, the `Binding`
-    constructors and `plan_hybrid` report a bad argument by panicking with a
-    `SqlError` rather than returning one; a caller can only `catch_unwind`.
-  - `sql::define` takes a `&serde_json::Value`, which the crate does not
-    re-export, so an application depends on `serde_json` itself.
-  - `Binding::column` takes all nine of its fields positionally, with no
-    defaulted form.
-  - `Program` is neither `Send` nor `Sync`, and `register_function` requires a
-    `Send + Sync + 'static` closure, so a host function cannot capture a
-    compiled program or a `Value` (examples/sql-functions keeps its programs in
-    a `thread_local!`).
-  - A hybrid runner reports failure as a `SelError`, whose codes are the
-    language's; no code fits a database failure, so the examples' runner
-    passes driver errors on as `E_BAD_ARG`.
+## Notes for Rust
+
+- A `Program` is neither `Send` nor `Sync`, and `run` takes `&mut self`: compile
+  one per thread (it is cheap), or keep it in a `thread_local!`. A host function
+  (`register_function`) must be `Send + Sync + 'static`, so it cannot capture a
+  compiled program or a `Value`.
+- The SQL layer's configuration calls — `sql::define`, `define_dialect`,
+  `define_builder`, the `Binding` constructors and `plan_hybrid` — panic with a
+  `SqlError` on a bad argument rather than return one. `sql::define` takes a
+  `serde_json::Value`, re-exported as `sel_lang::sql::serde_json`.
+- `Binding::column` takes all nine of its fields positionally.
+- Stack use is bounded: compiling or evaluating a program nested past the
+  language's depth cap (200) answers `E_DEPTH` on a 256 KiB stack in a release
+  build.
+
+## Licence
+
+MIT. This crate is the Rust host of [SEL](https://github.com/nathanjel/sel); the
+repository holds the other six, the specification, the conformance suite and
+the tests that keep them in agreement.

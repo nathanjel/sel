@@ -28,7 +28,8 @@ tools/check.sh                       everything (~11 layers); "ALL GREEN" or it 
 cd cpp && make                       build build/{conformance,batch,e2e,api,sel,unit,sqlt,...}
 bash rust/build.sh                   rust/build/{conformance,sqlt,sel,...,example-<cat>}; tools see Rust
                                      only while rust/build/inputs.sha256 matches its sources, so an
-                                     edit under rust/src or examples/*/rust.rs needs a rebuild
+                                     edit under rust/src, rust/dev (the unpublished harness crate:
+                                     runners, examples, benchmarks) or examples/*/rust.rs needs a rebuild
 npm run build                        dist/sel.mjs + dist/sel.min.mjs (js-bundle roster entries)
 ```
 
@@ -78,7 +79,7 @@ node tools/build-docs.mjs [--check|--serve 8080]   the HTML site from the Markdo
 docker build -f docs/Dockerfile -t sel-docs .      the site as an nginx image
 ```
 
-REPLs: `node js/bin/sel.mjs`, `php php/bin/sel`, `cpp/build/sel`, `lisp/bin/sel`, `PYTHONPATH=$PWD/python python3 -m sel`, `rust/build/sel` (`-e 'expr'` for one-shot, `--deps` for static dependencies).
+REPLs: `node js/bin/sel.mjs`, `php php/bin/sel`, `cpp/build/sel`, `lisp/bin/sel`, `PYTHONPATH=$PWD/python python3 -m sel`, `rust/build/sel`, `go/build/sel` (`-e 'expr'` for one-shot, `--deps` for static dependencies).
 
 ## Generated, committed artifacts — regenerate, don't hand-edit
 

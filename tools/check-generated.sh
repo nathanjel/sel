@@ -130,7 +130,7 @@ check_group "sql dialect map" "node tools/gen-sql-map.mjs" \
   go/sel/sql/map_data_gen.go rust/src/sql/map_data.rs \
   php/bin/MapReplay.php python/bin/map_replay.py js/bin/map-replay.mjs \
   cpp/bin/map_replay.cpp lisp/bin/map-replay.lisp \
-  go/bin/sqlreplay/replay_data_gen.go rust/src/bin/map_replay_data.rs
+  go/bin/sqlreplay/replay_data_gen.go rust/dev/src/bin/map_replay_data.rs
 
 # The builtin manifest: names, arities, extra arity rules and lazy/binds flags,
 # authored once and rendered into the table each host checks itself against at
@@ -171,7 +171,7 @@ check_group "sql case data" "node tools/gen-sql-cases.mjs" \
   -- \
   php/bin/CaseData.php python/bin/case_data.py js/bin/case-data.mjs \
   cpp/bin/case_data.cpp lisp/bin/case-data.lisp \
-  go/bin/sqlt/case_data_gen.go rust/src/bin/sqlt/case_data.rs
+  go/bin/sqlt/case_data_gen.go rust/dev/src/bin/sqlt/case_data.rs
 
 # The support desk's PostgreSQL seed, rendered from the SEL program that
 # examples/memory-complex runs in memory: stale, and the two examples would be

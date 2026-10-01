@@ -39,10 +39,11 @@ database of its own, and runs every host in an image that has every driver
 (`tools/usage.Dockerfile`). The C++ programs build with `cd cpp && make`; the
 database ones need the client libraries, so they are built inside that image
 with `make -C cpp BUILD=build-usage build-usage/example-<dir>`. The Rust ones
-(`rust.rs`) build with `bash rust/build.sh` into
-`rust/build/example-<dir>`; the database ones need the drivers behind the crate's
-`usage` feature (`examples/lib/db.rs`), and the lane builds them in that image
-into `rust/target-usage`.
+(`rust.rs`) belong to `rust/dev`, the unpublished harness crate beside the
+library, and build with `bash rust/build.sh` into `rust/build/example-<dir>`; the
+database ones need the drivers behind that crate's `usage` feature
+(`examples/lib/db.rs`), and the lane builds them in that image into
+`rust/target-usage`.
 
 The Go ones (`go.go`) are a module of their own, [`go.mod`](go.mod), which uses
 the library in `../go`; `make -C go examples` builds them into

@@ -4,7 +4,8 @@ cd "$(dirname "$0")"
 stage="$(mktemp -d .build-stage.XXXXXX)"
 trap 'rm -rf "$stage"' EXIT
 bash build-inputs.sh > "$stage/inputs.sha256"
-cargo build --release
+# The library, its `sel` CLI and the harness in dev/ (one workspace, one target/).
+cargo build --release --workspace
 # The worked examples (../examples/<category>/rust.rs) that need only the host;
 # the database-backed ones (LIVE) are built by tools/check-usage.sh in its image.
 examples=()
@@ -14,7 +15,7 @@ for dir in ../examples/*/; do
   [ -f "$dir/LIVE" ] || [ -f "$dir/REFERENCE" ] || [ -f "$dir/LIBRARY" ] && continue
   examples+=("$cat")
 done
-cargo build --release --examples
+cargo build --release -p sel-lang-dev --examples
 # Refuse to label a build current if inputs changed while Cargo was running.
 bash build-inputs.sh > "$stage/inputs-after.sha256"
 cmp -s "$stage/inputs.sha256" "$stage/inputs-after.sha256" || {

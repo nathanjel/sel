@@ -5,10 +5,12 @@
 #   tools/release-assets.sh 0.9.2            build dist/release-0.9.2/ and its NOTES.md
 #   tools/release-assets.sh 0.9.2 --publish  and create the GitHub release v0.9.2 from them
 #
-# Run it after the tag is pushed and the npm and Python builds exist
+# Run it after the tags are pushed (v<VERSION> and, for the Go module,
+# go/v<VERSION> on the same commit) and the npm and Python builds exist
 # (PACKAGING.md §"GitHub release"). The source bundles are `git archive` of the
 # tag, cut down to one host each; the npm tarball, the browser bundles and the
-# Python files are copied from dist/, where the registry steps built them.
+# Python files are copied from dist/, where the registry steps built them; the
+# Rust crate is packaged here, from a rust/ that must match the tag.
 # Every archive is a .tar.gz: the npm tarball is renamed to say so, and npm
 # installs it by path under any name. The Python files keep their standard
 # names, because pip reads the version and tags from the file name; their
@@ -25,13 +27,16 @@ REPO="nathanjel/sel"
 
 git rev-parse -q --verify "refs/tags/$TAG" >/dev/null \
   || { echo "release-assets: no tag $TAG; tag the release first" >&2; exit 1; }
+# The Go module's version is its own tag, go/vX (the module is the go/ directory).
+[ "$(git rev-parse -q --verify "refs/tags/go/$TAG^{commit}")" = "$(git rev-parse "$TAG^{commit}")" ] \
+  || { echo "release-assets: tag go/$TAG is missing or not on $TAG's commit; tag the Go module too" >&2; exit 1; }
 for f in "dist/npm/sel-lang-$V.tgz" dist/sel.mjs dist/sel.min.mjs \
          "dist/python/sel_lang-$V-py3-none-any.whl" "dist/python/sel_lang-$V.tar.gz"; do
   [ -f "$f" ] || { echo "release-assets: $f is missing; run the npm and PyPI build steps first" >&2; exit 1; }
 done
 # The copied builds come from the working tree: it must hold what the tag holds.
-if ! git diff --quiet "$TAG" -- js/src python/sel package.json pyproject.toml; then
-  echo "release-assets: js/src, python/sel or a manifest differs from $TAG; build from the tag" >&2
+if ! git diff --quiet "$TAG" -- js/src python/sel package.json pyproject.toml rust; then
+  echo "release-assets: js/src, python/sel, rust/ or a manifest differs from $TAG; build from the tag" >&2
   exit 1
 fi
 
@@ -44,6 +49,13 @@ git archive --format=tar.gz --prefix="sel-lang-$V-cpp/" -o "$OUT/sel-lang-$V-cpp
 git archive --format=tar.gz --prefix="sel-lang-$V-php/" -o "$OUT/sel-lang-$V-php-source.tar.gz" "$TAG" $common composer.json php/src
 # shellcheck disable=SC2086
 git archive --format=tar.gz --prefix="sel-lang-$V-lisp/" -o "$OUT/sel-lang-$V-lisp-source.tar.gz" "$TAG" $common lisp/sel-lang.asd lisp/src
+# shellcheck disable=SC2086
+git archive --format=tar.gz --prefix="sel-lang-$V-go/" -o "$OUT/sel-lang-$V-go-source.tar.gz" "$TAG" $common go
+# The crate exactly as crates.io gets it (cargo verifies it builds on its own).
+crate_target="$(mktemp -d)"
+cargo package -q --manifest-path rust/Cargo.toml -p sel-lang --target-dir "$crate_target" --allow-dirty
+cp "$crate_target/package/sel-lang-$V.crate" "$OUT/sel-lang-$V.crate"
+rm -rf "$crate_target"
 cp "dist/npm/sel-lang-$V.tgz" "$OUT/sel-lang-$V-js-npm.tar.gz"
 cp dist/sel.mjs "$OUT/sel-lang-$V-js-bundle.mjs"
 cp dist/sel.min.mjs "$OUT/sel-lang-$V-js-bundle.min.mjs"
@@ -52,6 +64,8 @@ cp "dist/python/sel_lang-$V-py3-none-any.whl" "dist/python/sel_lang-$V.tar.gz" "
 php_min="$(sed -n 's/.*"php": *">=\([0-9.]*\)".*/\1/p' composer.json)"
 py_min="$(sed -n 's/^requires-python = ">=\([0-9.]*\)"/\1/p' pyproject.toml)"
 node_min="$(node -p 'require("./package.json").engines.node.replace(">=", "")')"
+rust_min="$(sed -n 's/^rust-version = "\([0-9.]*\)"/\1/p' rust/Cargo.toml)"
+go_min="$(sed -n 's/^go \([0-9.]*\)$/\1/p' go/go.mod)"
 
 # file|label, in the order the release page lists them.
 ASSETS=(
@@ -63,13 +77,15 @@ ASSETS=(
   "sel-lang-$V-php-source.tar.gz|PHP ≥ $php_min: sources — require php/src/bootstrap.php"
   "sel-lang-$V-cpp-source.tar.gz|C++23: library sources with CMake, Conan and vcpkg manifests"
   "sel-lang-$V-lisp-source.tar.gz|Common Lisp: ASDF system sel-lang"
+  "sel-lang-$V.crate|Rust ≥ $rust_min: the crate as published on crates.io"
+  "sel-lang-$V-go-source.tar.gz|Go ≥ $go_min: the module github.com/nathanjel/sel/go"
 )
 
 {
 cat <<EOF
 ## Which file do I want?
 
-SEL is one language implemented five times; every host evaluates every rule identically. The package is \`sel-lang\` everywhere, so most people want their registry rather than a file below.
+SEL is one language implemented seven times; every host evaluates every rule identically. The package is \`sel-lang\` everywhere, so most people want their registry rather than a file below.
 
 | Language | From a registry | From this page |
 |---|---|---|
@@ -79,6 +95,8 @@ SEL is one language implemented five times; every host evaluates every rule iden
 | **PHP ≥ $php_min** | \`composer require nathanjel/sel-lang\` | \`sel-lang-$V-php-source.tar.gz\`: \`require 'php/src/bootstrap.php';\` (no autoloader, no dependencies) |
 | **C++23** | \`vcpkg install sel-lang\` or \`conan install --requires sel-lang/$V\` | \`sel-lang-$V-cpp-source.tar.gz\`: the library sources with their CMake, Conan and vcpkg manifests; \`cmake -S cpp -B build && cmake --install build\`, then \`find_package(sel-lang)\` |
 | **Common Lisp** | \`(ql:quickload :sel-lang)\` (Quicklisp / Ultralisp) | \`sel-lang-$V-lisp-source.tar.gz\`: the ASDF system \`sel-lang\` (needs \`cl-ppcre\`); push \`lisp/\` onto \`asdf:*central-registry*\` |
+| **Rust ≥ $rust_min** | \`cargo add sel-lang\` (the CLI: \`cargo install sel-lang\`) | \`sel-lang-$V.crate\`: the published crate, a gzipped tarball; unpack it and depend on it by \`path\` |
+| **Go ≥ $go_min** | \`go get github.com/nathanjel/sel/go@$TAG\` (the CLI: \`go install github.com/nathanjel/sel/go/bin/sel@$TAG\`) | \`sel-lang-$V-go-source.tar.gz\`: the module directory; point a \`replace\` at it |
 
 The source tarballs are \`git archive\` of the \`$TAG\` tag, cut down to one host each. GitHub's own "Source code" archives are the whole repository.
 

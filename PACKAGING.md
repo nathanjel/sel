@@ -13,6 +13,8 @@ on PyPI.
 | Quicklisp / Ultralisp | `sel-lang` | `lisp/sel-lang.asd` |
 | Conan | `sel-lang` | `cpp/conanfile.py` |
 | vcpkg | `sel-lang` | `cpp/vcpkg.json` |
+| crates.io | `sel-lang` (the library is `sel_lang`) | `rust/Cargo.toml` |
+| Go module proxy | `github.com/nathanjel/sel/go` | `go/go.mod`, versioned by `go/vX.Y.Z` tags |
 
 Packagist requires a vendor prefix, so `nathanjel/` is unavoidable there. The
 repository itself is `nathanjel/sel`; only the published package is `sel-lang`.
@@ -34,6 +36,8 @@ tools/oracle-db.sh run python3 tools/mutate-sql.py # every mutation, none skippe
 tools/check-version.sh 0.9.1                      # every manifest agrees
 tools/check-package-docs.sh                       # user docs only, in every package
 tools/check-cpp-package.sh                        # the C++ package builds as a consumer gets it
+tools/check-rust-package.sh --publish-dry-run     # the crate as crates.io gets it, and cargo's dry run
+tools/check-go-module.sh                          # the Go module as the proxy zips it
 tools/check-usage.sh                              # the SQL examples, every host, real servers
 ```
 
@@ -43,7 +47,8 @@ to — `docs/README.md`, the language pages (`overview`, `parity`, `syntax`,
 `docs/usage/`, and the generated `docs/reference/` — go out with every package;
 the contributor guide (`docs/contributing.md`), the design documents in
 `docs/internals/`, the site's assets and build files, this file and `CLAUDE.md`
-do not. Three configurations carry that list — `files` in `package.json`, the sdist
+do not. The Rust crate and the Go module carry no `docs/` at all — each is
+only its own directory — so their READMEs link to the documentation. Three configurations carry that list — `files` in `package.json`, the sdist
 `include` in `pyproject.toml`, and `.gitattributes`' `export-ignore`, which is
 what `git archive` and so Packagist's dist and GitHub's tag tarballs honour — and
 each lists the user documents file by file, so a new note in `docs/` stays out
@@ -71,12 +76,14 @@ hand, and they must agree:
 
 ```
 git tag -a v0.9.1 -m "SEL 0.9.1"
-git push origin v0.9.1
+git tag go/v0.9.1 v0.9.1                  # the Go module's version: the module is go/
+git push origin v0.9.1 go/v0.9.1
+tools/check-version.sh 0.9.1 --tags       # both tags exist, on one commit
 ```
 
 **Never re-tag or move an existing tag.** Upstream registries forbid republishing under an existing version: Packagist blocks re-tagged releases with `Upstream re-tag blocked — Packagist may no longer match the VCS repo for this version`, while npm and PyPI permanently refuse file uploads for already-published versions. If a defect or correction is needed after pushing a tag, always bump to the next patch version.
 
-Versions live in six manifests. Keep them in step:
+Versions live in seven manifests. Keep them in step:
 
 ```
 package.json                     "version": "0.9.1"
@@ -85,7 +92,10 @@ cpp/conanfile.py                 version = "0.9.1"
 cpp/vcpkg.json                   "version-semver": "0.9.1"
 cpp/CMakeLists.txt               project(... VERSION 0.9.1 ...)
 lisp/sel-lang.asd                :version "0.9.1"
+rust/Cargo.toml                  version = "0.9.1"
 ```
+
+`go/go.mod` has no version: a Go module's version is its tag, `go/v0.9.1`.
 
 `python/sel/__init__.py` carries `__version__`, `CHANGELOG.md`'s top heading
 carries the version being released, and `composer.json` carries
@@ -110,7 +120,7 @@ tools/release-assets.sh 0.9.1              # dist/release-0.9.1/ and its NOTES.m
 tools/release-assets.sh 0.9.1 --publish    # the same, then gh release create v0.9.1 with them
 ```
 
-The script needs the pushed tag, the npm tarball in `dist/npm/`, the browser
+The script needs the pushed tags (`v0.9.1` and `go/v0.9.1`), the npm tarball in `dist/npm/`, the browser
 bundles in `dist/` and the wheel and sdist in `dist/python/`. It refuses when
 `js/src`, `python/sel` or a manifest differs from the tag, and when the
 CHANGELOG has no entry for the version. What it makes:
@@ -123,6 +133,8 @@ CHANGELOG has no entry for the version. What it makes:
 | `sel-lang-0.9.1-php-source.tar.gz` | `php/src` and `composer.json` |
 | `sel-lang-0.9.1-cpp-source.tar.gz` | the library sources, `third_party/srell`, `test_package` and the CMake, Conan and vcpkg manifests |
 | `sel-lang-0.9.1-lisp-source.tar.gz` | `lisp/sel-lang.asd` and `lisp/src` |
+| `sel-lang-0.9.1.crate` | the Rust crate exactly as crates.io gets it (`cargo package`, from a `rust/` that matches the tag) |
+| `sel-lang-0.9.1-go-source.tar.gz` | the Go module directory, `go/` |
 
 The source tarballs are `git archive` of the tag, so they carry exactly what
 the tag does, `LICENSE`, `README.md` and `CHANGELOG.md` included. Every archive
@@ -303,6 +315,60 @@ the package would change every call site in the public API; it has not been done
 because the collision is unlikely and loud rather than silent.
 
 ---
+
+## crates.io
+
+The crate is `rust/` — the library and the `sel` command-line tool. Everything
+the repository needs besides (the test harness binaries, the worked examples,
+the benchmark hosts and the database drivers they use) is `rust/dev`, a
+workspace member with `publish = false`. What the crate carries is decided by
+`include` in `rust/Cargo.toml`: the sources, `README.md` (the crates.io page) and
+`LICENSE` (a copy of the repository's, held identical by
+`tools/check-rust-package.sh`).
+
+```
+cargo login                                        # once, with a crates.io API token (the owner's)
+tools/check-rust-package.sh --publish-dry-run      # package, consumer, CLI, docs, doctests, dry run
+cargo publish --manifest-path rust/Cargo.toml -p sel-lang
+```
+
+docs.rs builds the API documentation by itself once the version is on crates.io
+(the crate front page is `README.md`); `tools/check-rust-package.sh` builds it the
+same way, with rustdoc warnings as errors, and runs its doctests.
+
+### One thing to know
+
+**A published version is permanent.** It can be yanked — new projects will not
+pick it — but never replaced or deleted; a fix is the next patch version.
+
+## Go modules
+
+The module is the `go/` directory, `github.com/nathanjel/sel/go`, with two
+packages: `…/go/sel`, the language, and `…/go/sel/sql`, the SQL layer. There is
+no registry to upload to: a version is a git tag. Because the module is not at
+the repository root, its tags carry the directory as a prefix — `go/v0.9.1` —
+and they go on the same commit as `v0.9.1` (`tools/check-version.sh --tags`
+checks both; `tools/release-assets.sh` refuses without them).
+
+```
+git push origin v0.9.1 go/v0.9.1
+GOPROXY=https://proxy.golang.org go list -m github.com/nathanjel/sel/go@v0.9.1   # the proxy fetches it
+```
+
+Then open https://pkg.go.dev/github.com/nathanjel/sel/go@v0.9.1 (or press
+"Request" there) and the documentation appears: the package comments
+(`go/sel/doc.go`, `go/sel/sql/doc.go`), the runnable `Example` functions
+(`example_test.go`, which `go test` also runs) and `go/README.md`. pkg.go.dev
+shows documentation only when it finds a licence in the module, so `go/LICENSE`
+is a copy of the repository's; `tools/check-go-module.sh` holds it identical and
+builds the module, a consumer and the `sel` command from exactly what the proxy
+would zip.
+
+### One thing to know
+
+**The proxy caches a tag forever.** Moving or re-pushing `go/v0.9.1` changes
+nothing for anyone who already fetched it, and the checksum database will
+reject the new contents as a security failure. Never move a Go tag; bump.
 
 ## A note for C++ consumers upgrading to 0.3.0
 

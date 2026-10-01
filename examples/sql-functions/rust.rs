@@ -20,7 +20,7 @@
 //
 // The files beside this one print byte-identical output.
 //
-// Built by `cargo build --release --features usage --example sql-functions` in
+// Built by `cargo build --release -p sel-lang-dev --features usage --example sql-functions` in
 // rust/ (tools/check-usage.sh does it in its image), which includes
 // examples/lib/db.rs and its PostgreSQL, MariaDB and SQLite drivers. A spelling
 // is registered with sql::define, whose entry is the dialect map's own JSON

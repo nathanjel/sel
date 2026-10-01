@@ -32,7 +32,6 @@ page says, and the seven tabs cannot drift from each other.
 
 The package is `sel-lang` everywhere. Python, PHP and JavaScript have no
 dependencies, so copying the directory works just as well as a package manager.
-Rust and Go are not on a registry yet: both come straight from the repository.
 
 <!-- tabs -->
 <details open>
@@ -60,7 +59,7 @@ import { Sql, Binding } from 'sel-lang/sql';                     // the SQL laye
 ```html
 <!-- In a browser, nothing to install: the standalone bundle from a CDN (no SQL layer) -->
 <script type="module">
-  import { compile, evaluate } from 'https://cdn.jsdelivr.net/npm/sel-lang@0.9.2/dist/sel.min.mjs';
+  import { compile, evaluate } from 'https://cdn.jsdelivr.net/npm/sel-lang@0.10.0/dist/sel.min.mjs';
 </script>
 ```
 
@@ -83,7 +82,7 @@ use Sel\Sql\Sql;                     // the SQL layer: also require php/src/Sql/
 <summary>C++</summary>
 
 ```sh
-vcpkg install sel-lang               # or: conan install --requires sel-lang/0.9.2
+vcpkg install sel-lang               # or: conan install --requires sel-lang/0.10.0
                                      # or copy cpp/sel.hpp, sel_ast.hpp, sel_limits.hpp,
                                      # sel_math_ops.hpp, sel_builtin_manifest.hpp, sel.cpp,
                                      # sel_optimizer.cpp and third_party/srell/, and compile sel.cpp
@@ -98,12 +97,12 @@ vcpkg install sel-lang               # or: conan install --requires sel-lang/0.9
 <summary>Rust</summary>
 
 ```sh
-cargo add sel-lang --git https://github.com/nathanjel/sel    # not on crates.io yet
-cargo add serde_json        # only to extend the SQL layer: sql::define takes a serde_json::Value
+cargo add sel-lang                   # Rust 1.85+; the `sel` CLI: cargo install sel-lang
 ```
 ```rust
-use sel_lang::{compile, evaluate, Pos, SelError, Value};   // Rust 2021; depends on regex
+use sel_lang::{compile, evaluate, Pos, SelError, Value};   // depends on regex
 use sel_lang::sql::{plan_hybrid, Binding, Bindings};       // the SQL layer: the default `sql` feature
+use sel_lang::sql::serde_json::json;                       // for sql::define, re-exported
 ```
 
 </details>
@@ -111,7 +110,8 @@ use sel_lang::sql::{plan_hybrid, Binding, Bindings};       // the SQL layer: the
 <summary>Go</summary>
 
 ```sh
-go get github.com/nathanjel/sel/go@main    # no tagged release of the Go module yet
+go get github.com/nathanjel/sel/go@v0.10.0
+go install github.com/nathanjel/sel/go/bin/sel@v0.10.0    # the `sel` CLI
 ```
 ```go
 import (

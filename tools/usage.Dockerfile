@@ -13,7 +13,7 @@
 # libsqlite3 and one PHP between the examples and every other lane.
 #
 # Rust is Fedora's own toolchain; its drivers are crates (postgres, mysql,
-# rusqlite -- rust/Cargo.toml's `usage` feature), which tools/check-usage.sh
+# rusqlite -- rust/dev/Cargo.toml's `usage` feature), which tools/check-usage.sh
 # fetches into rust/target-usage on first use, not into the image. rusqlite
 # links the libsqlite3 below, found through pkg-config.
 #

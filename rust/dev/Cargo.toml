@@ -1,0 +1,166 @@
+# The SEL test harness for Rust -- never published.
+#
+# The tools every gate layer runs (the conformance and corpus runners, the SQL
+# case and replay runners, the decimal oracle's checker, the API probes, the
+# fuzzer, the scale benchmark), the worked examples under ../../examples and the
+# benchmark hosts under ../../tools. They link the sel-lang library beside this
+# crate (..) exactly as an application would, through its public API, and they
+# live here so that the published crate is the library and its `sel` CLI alone.
+# rust/build.sh builds this workspace member with the library; tools/impls.sh
+# runs what it builds from rust/build/.
+
+[package]
+name = "sel-lang-dev"
+version = "0.0.0"
+edition = "2021"
+publish = false
+autobins = false
+autoexamples = false
+
+[features]
+default = []
+# The database drivers of the LIVE worked examples (../../examples/lib/db.rs),
+# which tools/check-usage.sh builds in its image. rusqlite links the system
+# libsqlite3 (the image's, which every other host there shares) rather than
+# bundling its own; the mysql crate uses its pure-Rust deflate backend, so no
+# zlib is linked either.
+usage = ["dep:postgres", "dep:mysql", "dep:rusqlite"]
+
+[dependencies]
+sel-lang = { path = "..", features = ["sql"] }
+regex = "1.10"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.151"
+postgres = { version = "0.19.14", optional = true }
+mysql = { version = "28.0.3", default-features = false, features = ["minimal-rust"], optional = true }
+rusqlite = { version = "0.40.2", optional = true }
+
+[[bin]]
+name = "regex_verdict"
+path = "src/bin/regex_verdict.rs"
+
+[[bin]]
+name = "scale_bench"
+path = "src/bin/scale_bench.rs"
+
+[[bin]]
+name = "conformance"
+path = "src/bin/conformance.rs"
+
+[[bin]]
+name = "sqlt"
+path = "src/bin/sqlt.rs"
+
+[[bin]]
+name = "map_replay"
+path = "src/bin/map_replay.rs"
+
+[[bin]]
+name = "check_decimal"
+path = "src/bin/check_decimal.rs"
+
+[[bin]]
+name = "batch"
+path = "src/bin/batch.rs"
+
+[[bin]]
+name = "e2e"
+path = "src/bin/e2e.rs"
+
+[[bin]]
+name = "sqlapi"
+path = "src/bin/sqlapi.rs"
+
+[[bin]]
+name = "api"
+path = "src/bin/api.rs"
+
+[[bin]]
+name = "sqlfuzz"
+path = "src/bin/sqlfuzz.rs"
+
+# The worked examples: one program per category under ../examples/, written in
+# every host and diffed by tools/check-examples.sh (rust/build.sh publishes them
+# as rust/build/example-<category>).
+[[example]]
+name = "plain"
+path = "../../examples/plain/rust.rs"
+
+[[example]]
+name = "complex"
+path = "../../examples/complex/rust.rs"
+
+[[example]]
+name = "repl"
+path = "../../examples/repl/rust.rs"
+
+[[example]]
+name = "validation"
+path = "../../examples/validation/rust.rs"
+
+[[example]]
+name = "scripting"
+path = "../../examples/scripting/rust.rs"
+
+[[example]]
+name = "sql"
+path = "../../examples/sql/rust.rs"
+
+[[example]]
+name = "dialect"
+path = "../../examples/dialect/rust.rs"
+
+# The report over generated rows: examples/lib/render.rs, no database client.
+[[example]]
+name = "memory-complex"
+path = "../../examples/memory-complex/rust.rs"
+
+# The database-backed examples (the categories with a LIVE marker). They include
+# examples/lib/db.rs and so need the drivers: tools/check-usage.sh builds them
+# in its image with `-p sel-lang-dev --features usage`; rust/build.sh leaves
+# them out.
+[[example]]
+name = "sql-3nf"
+path = "../../examples/sql-3nf/rust.rs"
+required-features = ["usage"]
+
+[[example]]
+name = "sql-complex"
+path = "../../examples/sql-complex/rust.rs"
+required-features = ["usage"]
+
+[[example]]
+name = "sql-conditions"
+path = "../../examples/sql-conditions/rust.rs"
+required-features = ["usage"]
+
+[[example]]
+name = "sql-eav"
+path = "../../examples/sql-eav/rust.rs"
+required-features = ["usage"]
+
+[[example]]
+name = "sql-flat"
+path = "../../examples/sql-flat/rust.rs"
+required-features = ["usage"]
+
+[[example]]
+name = "sql-functions"
+path = "../../examples/sql-functions/rust.rs"
+required-features = ["usage"]
+
+[[example]]
+name = "sql-star"
+path = "../../examples/sql-star/rust.rs"
+required-features = ["usage"]
+
+# The benchmark hosts, beside the other hosts' ones: the six-scenario runner
+# tools/scale-test/benchmark_all.py gates (its `rust` lane builds and runs it),
+# and the Mandelbrot timer of tools/commit-benchmark/.
+[[example]]
+name = "scale-bench"
+path = "../../tools/scale-test/sel_benchmarks.rs"
+
+[[example]]
+name = "mandelbrot"
+path = "../../tools/commit-benchmark/mandelbrot.rs"
