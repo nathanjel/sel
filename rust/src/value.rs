@@ -173,14 +173,16 @@ pub struct ValueInner {
 /// A number as a value cell keeps it (the parsed form of a TEXT scalar, or a
 /// computed result): the same value as `Dec`, with the small mantissa held as
 /// two u64 halves. An i128 field would make every cell 16-byte aligned and
-/// `Option<Dec>` 48 bytes; this is 32, and the cell 8-byte aligned.
+/// `Option<Dec>` 48 bytes; this is 32, and the cell 8-byte aligned. A large
+/// mantissa is the `Dec`'s own shared one: unpacking and copying a cell share
+/// it rather than copy it (item 1).
 #[derive(Clone, Debug)]
 pub struct CellDec {
     lo: u64,
     hi: u64,
     scale: u32,
     neg: bool,
-    large: Option<Box<LargeDec>>,
+    large: Option<Arc<LargeDec>>,
 }
 
 impl CellDec {
@@ -383,7 +385,7 @@ impl Value {
     pub fn num(d: Dec) -> Result<Self, SelError> {
         let d = match d.repr {
             crate::dec::DecRepr::Small(m) => Dec::from_small(d.neg, m, d.scale),
-            crate::dec::DecRepr::Large(b) => Dec::from_large(d.neg, *b, d.scale),
+            crate::dec::DecRepr::Large(b) => Dec::from_large(d.neg, Arc::unwrap_or_clone(b), d.scale),
         };
         let d = crate::dec::dec_guard(d, Pos::default())?;
         Ok(Self::num_trusted(d))

@@ -164,15 +164,15 @@ fn large_copies_negations_and_differences_share_mantissas() {
     }
     let (n, copy) = counted(|| a.clone());
     assert_eq!(copy, a);
-    assert_eq!(n, 2, "clone");
+    assert_eq!(n, 0, "clone");
     let (n, negated) = counted(|| dec_negate(&a));
     assert_eq!(dec_format(&negated), "-1234567890123456789012345678901234567890123456789.25");
-    assert_eq!(n, 2, "dec_negate");
+    assert_eq!(n, 0, "dec_negate");
     let (n, absolute) = counted(|| dec_abs(&negated));
     assert_eq!(absolute, a);
-    assert_eq!(n, 2, "dec_abs");
+    assert_eq!(n, 0, "dec_abs");
     // The difference's own buffer and its holder; nothing for negating b.
     let (n, difference) = counted(|| dec_sub(&a, &b, pos).unwrap());
     assert_eq!(dec_format(&difference), "246913569024691356902469135690246913569024691356.50");
-    assert_eq!(n, 4, "dec_sub");
+    assert_eq!(n, 2, "dec_sub");
 }

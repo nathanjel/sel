@@ -94,7 +94,7 @@ pub fn compile_math_plan(root: &Node) -> Option<MathPlan> {
     let mut overflow = false;
 
     let res = emit(root, 1, &mut steps, &mut slot_count, &mut overflow)?;
-    if overflow || steps.is_empty() {
+    if overflow || steps.is_empty() || !slots_read_once(&steps, res.slot, slot_count) {
         return None;
     }
 
@@ -103,6 +103,30 @@ pub fn compile_math_plan(root: &Node) -> Option<MathPlan> {
         output_slot: res.slot,
         scratchpad_size: slot_count as u16,
     })
+}
+
+/// Every slot is read at most once -- by one step, or as the output -- which is
+/// what lets the executor move a value out of its slot instead of copying it.
+/// `emit` gives every node a fresh slot, so this holds; a plan for which it
+/// did not would be evaluated as written instead.
+fn slots_read_once(steps: &[MathStep], output: u16, size: usize) -> bool {
+    let mut reads = vec![0u8; size];
+    let mut read = |slot: u16| {
+        let n = &mut reads[slot as usize];
+        *n = n.saturating_add(1);
+    };
+    for step in steps {
+        match step.op {
+            "LOAD_VAR" | "LOAD_CONST" | "LOAD_LEAF" => {}
+            "NEG" | "ABS" | "SIGN" | "CEIL" | "FLOOR" | "TRUNC" => read(step.src1),
+            _ => {
+                read(step.src1);
+                read(step.src2);
+            }
+        }
+    }
+    read(output);
+    reads.iter().all(|&n| n <= 1)
 }
 
 fn alloc_slot(slot_count: &mut usize, overflow: &mut bool) -> u16 {
@@ -320,9 +344,10 @@ enum MathValue {
 }
 
 impl MathValue {
-    fn decimal(&self) -> Result<Dec, SelError> {
+    /// The slot's number, moved out: each slot is read once (`slots_read_once`).
+    fn take(&mut self) -> Result<Dec, SelError> {
         match self {
-            Self::Number(d) => Ok(d.clone()),
+            Self::Number(d) => Ok(std::mem::replace(d, Dec::zero())),
             Self::Reference(v, pos) => v.as_decimal(*pos),
         }
     }
@@ -353,7 +378,7 @@ pub fn eval_math_plan(plan: &MathPlan, ctx: &mut Context) -> Result<Value, SelEr
         }
         // Each operand subtree has finished by this point. Coercion occurs at
         // this operation, left to right, just as in the unoptimized evaluator.
-        let a = scratchpad[step.src1 as usize].decimal()?;
+        let a = scratchpad[step.src1 as usize].take()?;
         let result = match step.op {
             "NEG" => dec_negate(&a),
             "ABS" => dec_abs(&a),
@@ -362,7 +387,7 @@ pub fn eval_math_plan(plan: &MathPlan, ctx: &mut Context) -> Result<Value, SelEr
             "FLOOR" => dec_floor(&a, step.pos)?,
             "TRUNC" => dec_trunc(&a),
             op => {
-                let b = scratchpad[step.src2 as usize].decimal()?;
+                let b = scratchpad[step.src2 as usize].take()?;
                 match op {
                     "ADD" => dec_add(&a, &b, step.pos)?,
                     "SUB" => dec_sub(&a, &b, step.pos)?,
@@ -416,5 +441,5 @@ pub fn eval_math_plan(plan: &MathPlan, ctx: &mut Context) -> Result<Value, SelEr
         };
         scratchpad[dst] = MathValue::Number(result);
     }
-    Ok(Value::num_trusted(scratchpad[plan.output_slot as usize].decimal()?))
+    Ok(Value::num_trusted(scratchpad[plan.output_slot as usize].take()?))
 }

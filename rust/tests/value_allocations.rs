@@ -151,13 +151,13 @@ fn a_large_number_reads_without_copying() {
     let computed = large(ZR);
     let (n, d) = count(|| computed.as_decimal(pos).unwrap());
     assert!(matches!(d.repr, sel_lang::dec::DecRepr::Large(_)));
-    assert_eq!(n, 2, "reading a computed large number");
+    assert_eq!(n, 0, "reading a computed large number");
     // A parsed number: the first read parses and keeps the decimal; later
     // reads are the computed case.
     let parsed = Value::text_owned(ZR.to_string());
     parsed.as_decimal(pos).unwrap();
     let (n, _) = count(|| parsed.as_decimal(pos).unwrap());
-    assert_eq!(n, 2, "reading a parsed large number again");
+    assert_eq!(n, 0, "reading a parsed large number again");
 }
 
 #[test]
@@ -166,7 +166,7 @@ fn copying_a_large_number_shares_its_mantissa() {
     let v = large(ZR);
     let (n, copy) = count(|| v.deep_copy(1, pos).unwrap());
     assert_eq!(copy.dump().unwrap(), format!("t\"{ZR}\""));
-    assert_eq!(n, 3, "a copy is its value cell");
+    assert_eq!(n, 1, "a copy is its value cell");
 }
 
 #[test]
@@ -179,7 +179,7 @@ fn a_math_plan_allocates_only_its_results() {
         dump,
         "t\"5486968173388204224622771163190672190391906533176242395994453924525372552945129971343772.57725783530082316724\""
     );
-    assert_eq!(n, 32, "ZR * ZR - ZI * ZI + CR");
+    assert_eq!(n, 12, "ZR * ZR - ZI * ZI + CR");
 }
 
 #[test]
@@ -190,5 +190,5 @@ fn assigning_a_large_result_copies_no_mantissa() {
         dump,
         "t\"15241578753238836750495351562566681945008382736229234306116448283822893113703414139902454.20536198875019052100\""
     );
-    assert_eq!(n, 17, "T = ZR * ZR; T");
+    assert_eq!(n, 9, "T = ZR * ZR; T");
 }

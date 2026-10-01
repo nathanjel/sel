@@ -6,6 +6,7 @@ use crate::utf8::{Pos, SelError};
 use std::borrow::Cow;
 use std::cmp::Ordering;
 use std::fmt;
+use std::sync::Arc;
 
 pub const POW10_128: [i128; 39] = {
     let mut arr = [1i128; 39];
@@ -19,10 +20,14 @@ pub const POW10_128: [i128; 39] = {
     arr
 };
 
+/// A large mantissa is shared: cloning a `Dec` -- reading a number out of a
+/// value, copying it, negating it -- costs a reference count, not a copy
+/// (item 1). Nothing changes a mantissa once it is built, so sharing is never
+/// observable; anything that ever needs to would go through `Arc::make_mut`.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum DecRepr {
     Small(i128),
-    Large(Box<LargeDec>),
+    Large(Arc<LargeDec>),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -105,7 +110,7 @@ impl Dec {
         Self {
             neg,
             scale,
-            repr: DecRepr::Large(Box::new(digits)),
+            repr: DecRepr::Large(Arc::new(digits)),
         }
     }
 
@@ -456,15 +461,26 @@ fn align_small(a: &Dec, b: &Dec) -> Option<(i128, i128, u32)> {
 }
 
 pub fn dec_add(a: &Dec, b: &Dec, pos: Pos) -> Result<Dec, SelError> {
+    add_signed(a, b, b.neg, pos)
+}
+
+/// a - b is a + (-b), and negating only flips the sign, so b's mantissa is
+/// used where it is. The sign rule is `dec_negate`'s: a zero keeps its own.
+pub fn dec_sub(a: &Dec, b: &Dec, pos: Pos) -> Result<Dec, SelError> {
+    add_signed(a, b, if b.is_zero() { b.neg } else { !b.neg }, pos)
+}
+
+/// a + b, with `b_neg` standing for b's sign.
+fn add_signed(a: &Dec, b: &Dec, b_neg: bool, pos: Pos) -> Result<Dec, SelError> {
     if let Some((ma, mb, scale)) = align_small(a, b) {
-        if a.neg == b.neg {
+        if a.neg == b_neg {
             if let Some(sum) = ma.checked_add(mb) {
                 return dec_guard(Dec::from_small(a.neg, sum, scale), pos);
             }
         } else if ma >= mb {
             return dec_guard(Dec::from_small(a.neg, ma - mb, scale), pos);
         } else {
-            return dec_guard(Dec::from_small(b.neg, mb - ma, scale), pos);
+            return dec_guard(Dec::from_small(b_neg, mb - ma, scale), pos);
         }
     }
 
@@ -472,7 +488,7 @@ pub fn dec_add(a: &Dec, b: &Dec, pos: Pos) -> Result<Dec, SelError> {
     let ba = mag_scaled(a, (scale - a.scale) as usize);
     let bb = mag_scaled(b, (scale - b.scale) as usize);
 
-    if a.neg == b.neg {
+    if a.neg == b_neg {
         let sum = ba.add(&bb);
         dec_guard(Dec::from_large(a.neg, sum, scale), pos)
     } else if ba >= bb {
@@ -480,12 +496,8 @@ pub fn dec_add(a: &Dec, b: &Dec, pos: Pos) -> Result<Dec, SelError> {
         dec_guard(Dec::from_large(a.neg, diff, scale), pos)
     } else {
         let diff = bb.sub(&ba);
-        dec_guard(Dec::from_large(b.neg, diff, scale), pos)
+        dec_guard(Dec::from_large(b_neg, diff, scale), pos)
     }
-}
-
-pub fn dec_sub(a: &Dec, b: &Dec, pos: Pos) -> Result<Dec, SelError> {
-    dec_add(a, &dec_negate(b), pos)
 }
 
 pub fn dec_mul(a: &Dec, b: &Dec, pos: Pos) -> Result<Dec, SelError> {
