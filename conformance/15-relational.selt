@@ -1282,3 +1282,16 @@ A=RECORD("x",RECORD("k",1)); B=RECORD("y",RECORD("k","bad")); COUNT(LINK_LEFT(A,
 --- expect
 error E_NOT_NUM at 1:98
 ===
+
+### name: rel.link.relation-names-bind-in-pred
+--- note
+SPEC 7.4: in the three-argument form a relation given by name binds, inside
+`pred`, that name and its ASCII lowercase to the element. The manifest's binding
+forms list only `_`, `_1`, `_2` and `_K` -- the names come from the arguments --
+so an evaluator that resolved names at compile time from the forms would read
+the relation itself here (item 2, P1).
+--- source
+X = LIST(RECORD("k", 1), RECORD("k", 2)); Y = LIST(RECORD("id", 2)); LIST(COUNT(X .> LINK(Y, x["k"] == y["id"])), COUNT(X .> LINK(Y, X["k"] == Y["id"])))
+--- expect
+tree -{"1"=t"1", "2"=t"1"}
+===
