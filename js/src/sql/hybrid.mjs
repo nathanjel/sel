@@ -26,6 +26,7 @@ import { MAX_DEPTH } from '../eval.mjs';
 import { optimizeAstLogical, unwindPipeline, buildPipeline, PIPELINE_OPS } from '../optimizer.mjs';
 import { asciiUpper } from '../lexer.mjs';
 import { bindingForm } from '../registry.mjs';
+import { BUILTIN_MANIFEST } from '../_builtin_manifest.mjs';
 import * as sqlmap from './map.mjs';
 import * as constants from './constants.mjs';
 import * as normalise from './normalise.mjs';
@@ -920,34 +921,55 @@ export function planHybrid(program, dialect, bindings = null, options = null) {
 // The names a program may write through: the base variable of every assignment
 // target anywhere in the tree (an over-approximation is safe; it only costs a copy).
 // Iterative, like every other walk of a tree that can be as deep as its source is long.
-const ASSIGNED = new WeakMap();
-function assignedRoots(program) {
-  let names = ASSIGNED.get(program);
-  if (names) return names;
-  names = new Set();
-  const stack = [program.ast];
+const EFFECTS = new WeakMap();
+
+function continuationEffects(ast) {
+  if (!ast || typeof ast !== 'object') {
+    return { assignedRoots: new Set(), callsApplicationFunction: false };
+  }
+  let cached = EFFECTS.get(ast);
+  if (cached) return cached;
+  const names = new Set();
+  let callsApp = false;
+  const stack = [ast];
   while (stack.length > 0) {
     const n = stack.pop();
     if (!n || typeof n !== 'object') continue;
     if (n.t === 'assign') {
       let target = n.target;
-      while (target && target.t === 'index') { stack.push(target.idx); target = target.obj; }
+      while (target && target.t === 'index') {
+        if (target.idx) stack.push(target.idx);
+        target = target.obj;
+      }
       if (target && target.t === 'var') names.add(target.name);
-      stack.push(n.value);
+      if (n.value) stack.push(n.value);
       continue;
+    }
+    if (n.t === 'call') {
+      const upper = (n.name || '').toUpperCase();
+      if (!Object.prototype.hasOwnProperty.call(BUILTIN_MANIFEST, upper)) {
+        callsApp = true;
+      }
     }
     if (n.args) for (const item of n.args) stack.push(item);
     if (n.items) for (const item of n.items) stack.push(item);
     for (const key of ['l', 'r', 'x', 'obj', 'idx', 'value']) if (n[key]) stack.push(n[key]);
   }
-  ASSIGNED.set(program, names);
-  return names;
+  cached = { assignedRoots: names, callsApplicationFunction: callsApp };
+  EFFECTS.set(ast, cached);
+  return cached;
 }
 
 function continuationRoot(plan, context) {
-  return context instanceof Value
-    ? context.shallowRoot(assignedRoots(plan.continuationProgram))
-    : Value.fromNative(context || {});
+  if (!(context instanceof Value)) {
+    return Value.fromNative(context || {});
+  }
+  const ast = plan.continuationProgram ? plan.continuationProgram.ast : null;
+  const effects = continuationEffects(ast);
+  if (effects.callsApplicationFunction) {
+    return context.clone();
+  }
+  return context.shallowRoot(effects.assignedRoots);
 }
 
 export function executeHybrid(plan, dbRunner, context = null) {

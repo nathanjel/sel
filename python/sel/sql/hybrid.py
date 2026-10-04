@@ -20,10 +20,12 @@ optimiser and the translator.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Any, Callable
 
 from .. import Program, Value
 from .. import registry as _registry
+from .._builtin_manifest import BUILTIN_MANIFEST
 from ..eval import MAX_DEPTH
 from .._stack import recursion_budget as _recursion_budget
 from ..lexer import ascii_upper
@@ -1028,11 +1030,18 @@ def _plan_hybrid(program: Program, dialect: str,
     return _pure_memory_plan(program, dialect, catalog)
 
 
-def _assigned_roots(ast: Node | None) -> frozenset[str]:
-    """The variable names the program writes to: the root of every assignment
-    target (`A`, `A[1]`, `A[1]["k"]`), wherever it sits -- inside an aggregate
-    body too. Iterative, for the same reason the walk above is."""
+@dataclass(frozen=True, slots=True)
+class ContinuationEffects:
+    assigned_roots: frozenset[str]
+    calls_application_function: bool
+
+
+def continuation_effects(ast: Node | None) -> ContinuationEffects:
+    """Analyze AST for variable assignments and application function calls.
+    Walks the whole AST iteratively, including assignment targets, index expressions,
+    nested calls, and aggregate bodies."""
     roots: set[str] = set()
+    calls_app = False
     stack: list[Node | None] = [ast]
     while stack:
         node = stack.pop()
@@ -1041,32 +1050,48 @@ def _assigned_roots(ast: Node | None) -> frozenset[str]:
         if node.t == 'assign':
             target = node.target
             while target is not None and target.t == 'index':
+                if target.idx is not None:
+                    stack.append(target.idx)
                 target = target.obj
             if target is not None and target.t == 'var':
                 roots.add(target.name)
+            if node.value is not None:
+                stack.append(node.value)
+            continue
+        if node.t == 'call':
+            if ascii_upper(node.name or '') not in BUILTIN_MANIFEST:
+                calls_app = True
         stack.extend(node.args)
         stack.extend(node.items)
-        stack.extend((node.l, node.r, node.x, node.obj, node.idx, node.target, node.value))
-    return frozenset(roots)
+        stack.extend((node.l, node.r, node.x, node.obj, node.idx, node.value))
+    return ContinuationEffects(frozenset(roots), calls_app)
 
 
 def _private_root(plan: HybridPlan, context: Value | dict[str, Any] | None) -> Value:
     """The context the continuation runs on: the caller's is never written to
     (PY-C51), but it used to be deep-copied whole -- a 100,000-row context cost
     over a second per call for a program that wrote nothing to it (PY-P16).
-    A caller's Value is now copied one level: its variables are shared, except
-    the ones the continuation assigns to, which are deep-copied. The program
-    cannot change a shared variable because it never assigns into it; a native
-    context is converted fresh as before."""
+    A continuation containing any application-defined call receives a full private
+    context copy. Builtin-only continuations retain their existing assignment-based
+    copy optimization."""
     if not isinstance(context, Value):
         return Value.from_native(context or {})
     if context.kind != Value.NONE or context.is_list or context._scalar is not None:
         return context.clone()             # not a plain record of variables
-    writes = plan.__dict__.get('_writes')
-    if writes is None:
-        writes = plan.__dict__['_writes'] = _assigned_roots(plan.continuation_program.ast)
+
+    ast = plan.continuation_program.ast if plan.continuation_program else None
+    if getattr(plan, '_cached_ast', None) is not ast:
+        effects = continuation_effects(ast)
+        plan._cached_ast = ast
+        plan._cached_effects = effects
+    else:
+        effects = plan._cached_effects
+
+    if effects.calls_application_function:
+        return context.clone()
+
     return Value._from_entries_owned(
-        [(k, v.clone() if k in writes else v) for k, v in context.entries()])
+        [(k, v.clone() if k in effects.assigned_roots else v) for k, v in context.entries()])
 
 
 def execute_hybrid(plan: HybridPlan, db_runner: Callable[[str, list[Value]], Any],

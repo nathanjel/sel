@@ -1235,45 +1235,85 @@ func PlanHybrid(program *sel.Program, dialect string, bindings *Bindings, option
 	return pureMemoryPlan(program, dialect, checked)
 }
 
-// writesContext reports whether the program can assign to anything: only then does
-// a run need a private deep copy of the caller's variables. A program with no
-// assignment node cannot modify a value it reads, and aggregates copy what they
-// collect, so its run can read the caller's own values (GO-P18): the copy of a
-// 50,000-row table was the whole cost of a hybrid execution with a small
-// continuation.
-func writesContext(n *sel.Node) bool {
-	if n == nil {
-		return false
+type continuationEffects struct {
+	assignedRoots            map[string]bool
+	callsApplicationFunction bool
+}
+
+func continuationEffectsOf(ast *sel.Node) continuationEffects {
+	effects := continuationEffects{
+		assignedRoots: make(map[string]bool),
 	}
-	if n.T == sel.NodeAssign {
-		return true
+	if ast == nil {
+		return effects
 	}
-	if writesContext(n.L) || writesContext(n.R) {
-		return true
-	}
-	for _, it := range n.Items {
-		if writesContext(it) {
-			return true
+	stack := []*sel.Node{ast}
+	for len(stack) > 0 {
+		n := stack[len(stack)-1]
+		stack = stack[:len(stack)-1]
+		if n == nil {
+			continue
+		}
+		if n.T == sel.NodeAssign {
+			target := n.L
+			for target != nil && target.T == sel.NodeIndex {
+				if target.R != nil {
+					stack = append(stack, target.R)
+				}
+				target = target.L
+			}
+			if target != nil && target.T == sel.NodeVar {
+				effects.assignedRoots[target.S] = true
+			}
+			if n.R != nil {
+				stack = append(stack, n.R)
+			}
+			continue
+		}
+		if n.T == sel.NodeCall {
+			upper := utf8.AsciiUpper(n.S)
+			if _, ok := manifest.Builtins[upper]; !ok {
+				effects.callsApplicationFunction = true
+			}
+		}
+		if n.L != nil {
+			stack = append(stack, n.L)
+		}
+		if n.R != nil {
+			stack = append(stack, n.R)
+		}
+		for _, item := range n.Items {
+			if item != nil {
+				stack = append(stack, item)
+			}
 		}
 	}
-	return false
+	return effects
 }
 
 // privateContext is the context a continuation runs in: the caller's variables,
-// copied only as far as the program can change them. A continuation that never
-// assigns gets a new root holding the caller's own children (the caller's context
-// is never written to, because nothing is assigned); one that assigns gets a deep
-// copy.
+// copied only as far as the program can change them. A continuation containing
+// any application-defined call receives a full private context copy. Builtin-only
+// continuations retain their existing assignment-based copy optimization:
+// a continuation that never assigns gets a new root holding the caller's own
+// children; one that assigns gets a deep copy.
 func privateContext(plan *HybridPlan, context *sel.Value) *sel.Value {
 	if context == nil || context.IsNull() {
 		return sel.NewRecordFromEntries(nil)
 	}
-	if plan.ContinuationAst != nil && !writesContext(plan.ContinuationAst) {
-		root := sel.NewNone()
-		for _, e := range context.Entries() {
-			root.Set(e.Key, e.Val)
+	ast := plan.ContinuationAst
+	if ast == nil && plan.ContinuationProgram != nil {
+		ast = plan.ContinuationProgram.AST()
+	}
+	if ast != nil {
+		effects := continuationEffectsOf(ast)
+		if !effects.callsApplicationFunction && len(effects.assignedRoots) == 0 {
+			root := sel.NewNone()
+			for _, e := range context.Entries() {
+				root.Set(e.Key, e.Val)
+			}
+			return root
 		}
-		return root
 	}
 	return context.Clone()
 }

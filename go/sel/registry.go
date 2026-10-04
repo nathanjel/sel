@@ -219,8 +219,6 @@ func HostArity(name string) (int, int, bool) {
 // (which may have effects) rather than a builtin.
 func isHostFunction(name string) bool {
 	key := utf8.AsciiUpper(name)
-	registryMu.RLock()
-	defer registryMu.RUnlock()
-	_, ok := hostFuncs[key]
-	return ok
+	_, inManifest := manifest.Builtins[key]
+	return !inManifest
 }

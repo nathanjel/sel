@@ -8,6 +8,7 @@
 
 import { compile, Value } from '../js/src/sel.mjs';
 import * as sql from '../js/src/sql/index.mjs';
+import { registerFunction, define } from '../js/src/registry.mjs';
 
 const { Binding, Sql, SqlError } = sql;
 let failures = 0;
@@ -182,6 +183,148 @@ const R = { ORDERS: Binding.relation('orders', 'o', { ID: Binding.column('id', '
   // (No ORDERS in the context: the program's own E_UNDEF_VAR is the honest answer.)
   check('...and answers as run() does', run.error === undefined || run.error.code === 'E_UNDEF_VAR',
     String(run.error));
+}
+
+// 1. Pure-memory plan invokes mutating callback
+{
+  registerFunction('JS_POKE_1', 1, 1, (args) => {
+    const v = args.val(0);
+    v.set('k', Value.text('9'));
+    return v;
+  });
+  const ctx = Value.fromNative({ A: { k: '1' } });
+  const plan = sql.planHybrid(compile('JS_POKE_1(A)'), 'sqlite');
+  check('pure-memory plan invokes mutating callback: pureMemory', plan.pureMemory === true);
+  const res = sql.executeHybrid(plan, null, ctx);
+  check('pure-memory plan invokes mutating callback: result reflects mutation', res.get('k').asText() === '9');
+  check('pure-memory plan invokes mutating callback: caller context unchanged', ctx.get('A').get('k').asText() === '1');
+}
+
+// 2. Callback mutates then raises error
+{
+  registerFunction('JS_POKE_ERR', 1, 1, (args) => {
+    const v = args.val(0);
+    v.set('k', Value.text('99'));
+    throw new sql.SqlError('E_CUSTOM', 'callback error');
+  });
+  const ctx = Value.fromNative({ A: { k: '1' } });
+  const plan = sql.planHybrid(compile('JS_POKE_ERR(A)'), 'sqlite');
+  const run = outcome(() => sql.executeHybrid(plan, null, ctx));
+  check('callback mutates then raises: error propagates', run.error !== undefined);
+  check('callback mutates then raises: caller context unchanged', ctx.get('A').get('k').asText() === '1');
+}
+
+// 3. Callback nested inside aggregate or lazy branch
+{
+  registerFunction('JS_POKE_NESTED', 1, 1, (args) => {
+    const v = args.val(0);
+    v.set('k', Value.text('999'));
+    return v;
+  });
+  const ctx1 = Value.fromNative({ A: { k: '1' } });
+  const plan1 = sql.planHybrid(compile('IF(TRUE, JS_POKE_NESTED(A), 0)'), 'sqlite');
+  sql.executeHybrid(plan1, null, ctx1);
+  check('callback in lazy branch: caller context unchanged', ctx1.get('A').get('k').asText() === '1');
+
+  const ctx2 = Value.fromNative({ A: { k: '1' } });
+  const plan2 = sql.planHybrid(compile('MAP(LIST(1), JS_POKE_NESTED(A))'), 'sqlite');
+  sql.executeHybrid(plan2, null, ctx2);
+  check('callback in aggregate: caller context unchanged', ctx2.get('A').get('k').asText() === '1');
+}
+
+// 4. Application function uses lower-level definition API
+{
+  define({
+    name: 'JS_POKE_LOW',
+    min: 1,
+    max: 1,
+    fn: (args) => {
+      const v = args.val(0);
+      v.set('k', Value.text('888'));
+      return v;
+    },
+  });
+  const ctx = Value.fromNative({ A: { k: '1' } });
+  const plan = sql.planHybrid(compile('JS_POKE_LOW(A)'), 'sqlite');
+  sql.executeHybrid(plan, null, ctx);
+  check('define API callback: caller context unchanged', ctx.get('A').get('k').asText() === '1');
+}
+
+// 5. SQL prefix followed by a local callback
+{
+  registerFunction('JS_POKE_SPLIT', 1, 1, (args) => {
+    const v = args.val(0);
+    v.set('k', Value.text('777'));
+    return v;
+  });
+  const src = 'ORDERS .> SORT_BY(_["id"]) .> MAP(JS_POKE_SPLIT(A))';
+  const plan = sql.planHybrid(compile(src), 'sqlite', R);
+  check('split plan with callback: not pure memory', plan.pureMemory === false);
+  check('split plan with callback: has sqlStatement', plan.sqlStatement !== null);
+  let calls = 0;
+  const runner = () => {
+    calls++;
+    return Value.fromNative([{ id: 1 }, { id: 2 }]);
+  };
+  const ctx = Value.fromNative({ A: { k: '1' } });
+  const res = sql.executeHybrid(plan, runner, ctx);
+  check('split plan runner called once', calls === 1);
+  check('split plan result reflects mutation', res.values()[0].get('k').asText() === '777');
+  check('split plan caller context unchanged', ctx.get('A').get('k').asText() === '1');
+}
+
+// 6. Same plan executes twice
+{
+  registerFunction('JS_POKE_TWICE', 1, 1, (args) => {
+    const v = args.val(0);
+    v.set('k', Value.text('555'));
+    return v;
+  });
+  const plan = sql.planHybrid(compile('JS_POKE_TWICE(A)'), 'sqlite');
+  const ctx1 = Value.fromNative({ A: { k: '1' } });
+  const ctx2 = Value.fromNative({ A: { k: '1' } });
+  sql.executeHybrid(plan, null, ctx1);
+  sql.executeHybrid(plan, null, ctx2);
+  check('same plan twice: ctx1 unchanged', ctx1.get('A').get('k').asText() === '1');
+  check('same plan twice: ctx2 unchanged', ctx2.get('A').get('k').asText() === '1');
+}
+
+// 7. Builtin-only, read-only continuation with a large context
+{
+  const inner = Value.fromNative({ k: '1' });
+  const ctx = Value.fromNative({ A: inner });
+  const plan = sql.planHybrid(compile('A["k"]'), 'sqlite');
+  const res = sql.executeHybrid(plan, null, ctx);
+  check('read-only continuation answers correctly', res.asText() === '1');
+}
+
+// 8. Builtin-only continuation assigns to nested field
+{
+  const ctx = Value.fromNative({ A: { k: '1' } });
+  const plan = sql.planHybrid(compile('A["k"] = "99"; A'), 'sqlite');
+  const res = sql.executeHybrid(plan, null, ctx);
+  check('builtin assignment: result reflects assign', res.get('k').asText() === '99');
+  check('builtin assignment: caller context unchanged', ctx.get('A').get('k').asText() === '1');
+}
+
+// 9. AST replacement from read-only to callback invalidates cache
+{
+  registerFunction('JS_POKE_REPLACE', 1, 1, (args) => {
+    const v = args.val(0);
+    v.set('k', Value.text('333'));
+    return v;
+  });
+  const prog = compile('A');
+  const plan = sql.planHybrid(prog, 'sqlite');
+  const ctx = Value.fromNative({ A: { k: '1' } });
+  const r1 = sql.executeHybrid(plan, null, ctx);
+  check('ast replace: r1 correct', r1.get('k').asText() === '1');
+  check('ast replace: ctx unchanged initially', ctx.get('A').get('k').asText() === '1');
+
+  prog.ast = compile('JS_POKE_REPLACE(A)').ast;
+  const r2 = sql.executeHybrid(plan, null, ctx);
+  check('ast replace: r2 reflects callback', r2.get('k').asText() === '333');
+  check('ast replace: ctx unchanged after replacement', ctx.get('A').get('k').asText() === '1');
 }
 
 console.log(count === 0 ? 'no checks' : `js sql: ${count - failures}/${count} checks pass`);
