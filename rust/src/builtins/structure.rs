@@ -1,5 +1,7 @@
+#[cfg(test)]
+use std::cell::Cell;
 use std::cmp::Ordering;
-use std::collections::{HashMap, HashSet};
+use std::collections::{BinaryHeap, HashMap, HashSet};
 use std::rc::Rc;
 use std::sync::Arc;
 
@@ -844,6 +846,140 @@ pub fn fn_sort_by(args: &mut Args) -> Result<Value, SelError> {
     do_sort(args, None)
 }
 
+fn is_builtin_name(name: &str) -> bool {
+    let mut buf = [0u8; 64];
+    if name.len() <= 64 {
+        for (i, b) in name.bytes().enumerate() {
+            buf[i] = b.to_ascii_uppercase();
+        }
+        if let Ok(s) = std::str::from_utf8(&buf[..name.len()]) {
+            return crate::manifest::lookup_builtin(s).is_some();
+        }
+    }
+    crate::manifest::lookup_builtin(&name.to_ascii_uppercase()).is_some()
+}
+
+/// Whether evaluating `root` might write: an assignment or any call
+/// not listed in the generated builtin manifest. Iterative AST walk
+/// using a fixed stack to avoid heap allocation.
+fn top_key_may_write(root: &Node) -> bool {
+    let mut stack: [&Node; 64] = [root; 64];
+    let mut len = 1;
+    while len > 0 {
+        len -= 1;
+        let node = stack[len];
+        if node.t == NodeType::Assign {
+            return true;
+        }
+        if node.t == NodeType::Call {
+            if !is_builtin_name(&node.s) {
+                return true;
+            }
+        }
+        let push_cnt = (node.l.is_some() as usize) + (node.r.is_some() as usize) + node.items.len();
+        if len + push_cnt > stack.len() {
+            return true;
+        }
+        if let Some(l) = &node.l {
+            stack[len] = l;
+            len += 1;
+        }
+        if let Some(r) = &node.r {
+            stack[len] = r;
+            len += 1;
+        }
+        for item in &node.items {
+            stack[len] = item;
+            len += 1;
+        }
+    }
+    false
+}
+
+#[cfg(test)]
+thread_local! {
+    pub(crate) static TOP_COMPARISON_COUNT: Cell<usize> = const { Cell::new(0) };
+}
+
+fn compare_sort_keys(
+    a_key: &Value,
+    a_idx: usize,
+    b_key: &Value,
+    b_idx: usize,
+    descending: bool,
+) -> Ordering {
+    #[cfg(test)]
+    TOP_COMPARISON_COUNT.with(|c| c.set(c.get() + 1));
+
+    let mut c = compare_values(a_key, b_key);
+    if descending {
+        c = c.reverse();
+    }
+    if c != Ordering::Equal {
+        c
+    } else {
+        a_idx.cmp(&b_idx)
+    }
+}
+
+struct TopHeapEntry<'a> {
+    item_idx: usize,
+    key: &'a Value,
+    input_idx: usize,
+    descending: bool,
+}
+
+impl<'a> PartialEq for TopHeapEntry<'a> {
+    fn eq(&self, other: &Self) -> bool {
+        self.item_idx == other.item_idx
+    }
+}
+
+impl<'a> Eq for TopHeapEntry<'a> {}
+
+impl<'a> PartialOrd for TopHeapEntry<'a> {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl<'a> Ord for TopHeapEntry<'a> {
+    fn cmp(&self, other: &Self) -> Ordering {
+        compare_sort_keys(self.key, self.input_idx, other.key, other.input_idx, self.descending)
+    }
+}
+
+fn select_top_indices(
+    items: &[SortItem],
+    limit: usize,
+    descending: bool,
+) -> Vec<usize> {
+    if limit == 0 || items.is_empty() {
+        return Vec::new();
+    }
+    let k = limit.min(items.len());
+    let mut heap = BinaryHeap::with_capacity(k);
+
+    for (i, item) in items.iter().enumerate() {
+        let entry = TopHeapEntry {
+            item_idx: i,
+            key: &item.key,
+            input_idx: item.idx,
+            descending,
+        };
+        if heap.len() < k {
+            heap.push(entry);
+        } else if let Some(mut root) = heap.peek_mut() {
+            if entry.cmp(&root) == Ordering::Less {
+                *root = entry;
+            }
+        }
+    }
+
+    let sorted = heap.into_sorted_vec();
+    sorted.into_iter().map(|e| e.item_idx).collect()
+}
+
 fn do_top(args: &mut Args, forced_dir: Option<&str>) -> Result<Value, SelError> {
     let val = args.val(0)?;
     let limit = args.non_neg_int(args.count() - 1)? as usize;
@@ -895,6 +1031,8 @@ fn do_top(args: &mut Args, forced_dir: Option<&str>) -> Result<Value, SelError> 
         return Ok(Value::list_owned(Vec::new()));
     }
 
+    let eager = body_opt.as_ref().is_some_and(top_key_may_write);
+
     let needs_k = body_opt.as_ref().map_or(false, |b| node_contains_var(b, "_K"));
     let mut frame = HashMap::new();
     if !binder.is_empty() {
@@ -910,6 +1048,28 @@ fn do_top(args: &mut Args, forced_dir: Option<&str>) -> Result<Value, SelError> 
         args.ctx.push_frame(frame);
     }
     for (ei, ev) in ents.vals.iter().enumerate() {
+        let item = if eager {
+            match ev.deep_copy(2, args.pos()) {
+                Ok(c) => c,
+                Err(err) => {
+                    if framed {
+                        args.ctx.pop_frame();
+                    }
+                    return Err(err);
+                }
+            }
+        } else {
+            match ev.check_copy_depth(2, args.pos()) {
+                Ok(()) => ev.clone(),
+                Err(err) => {
+                    if framed {
+                        args.ctx.pop_frame();
+                    }
+                    return Err(err);
+                }
+            }
+        };
+
         let k_val = if !framed {
             ev.clone()
         } else {
@@ -917,10 +1077,16 @@ fn do_top(args: &mut Args, forced_dir: Option<&str>) -> Result<Value, SelError> 
             if needs_k {
                 args.ctx.bind("_K", Value::text_owned(ents.key(ei)));
             }
-            args.eval_node(body_opt.as_ref().unwrap())?
+            match args.eval_node(body_opt.as_ref().unwrap()) {
+                Ok(k) => k,
+                Err(err) => {
+                    args.ctx.pop_frame();
+                    return Err(err);
+                }
+            }
         };
         indexed.push(SortItem {
-            item: ev.clone().deep_copy(2, args.pos())?,
+            item,
             key: k_val,
             idx: ei,
         });
@@ -931,22 +1097,39 @@ fn do_top(args: &mut Args, forced_dir: Option<&str>) -> Result<Value, SelError> 
     }
     prepare_sort_keys(&mut indexed, args.pos())?;
     let desc = direction == "DESC";
-    indexed.sort_by(|a, b| {
-        let mut c = compare_values(&a.key, &b.key);
-        if desc {
-            c = c.reverse();
-        }
-        if c != Ordering::Equal {
-            c
-        } else {
-            a.idx.cmp(&b.idx)
-        }
-    });
 
-    let take_n = limit.min(indexed.len());
-    let out = indexed[..take_n].iter().map(|x| x.item.clone()).collect();
+    let n = indexed.len();
+    let out = if limit <= n / 4 {
+        let indices = select_top_indices(&indexed, limit, desc);
+        let mut out = Vec::with_capacity(indices.len());
+        for idx in indices {
+            let it = &indexed[idx].item;
+            out.push(if eager { it.clone() } else { it.deep_copy(2, args.pos())? });
+        }
+        out
+    } else {
+        indexed.sort_by(|a, b| {
+            let mut c = compare_values(&a.key, &b.key);
+            if desc {
+                c = c.reverse();
+            }
+            if c != Ordering::Equal {
+                c
+            } else {
+                a.idx.cmp(&b.idx)
+            }
+        });
+        let take_n = limit.min(n);
+        let mut out = Vec::with_capacity(take_n);
+        for item in &indexed[..take_n] {
+            let it = &item.item;
+            out.push(if eager { it.clone() } else { it.deep_copy(2, args.pos())? });
+        }
+        out
+    };
     Ok(Value::list_owned(out))
 }
+
 
 pub fn fn_top(args: &mut Args) -> Result<Value, SelError> {
     do_top(args, None)
@@ -2083,4 +2266,33 @@ mod alias_tests {
         assert_eq!(first.get("id").unwrap().scalar(), "1");
         assert_eq!(first.get("ITEMS").unwrap().get("id").unwrap().scalar(), "3");
     }
+
+    #[test]
+    fn test_selector_comparison_count_bounded() {
+        let n = 10000;
+        let mut keys = Vec::with_capacity(n);
+        let mut state: u64 = 123456789;
+        for i in 0..n {
+            state = state.wrapping_mul(6364136223846793005).wrapping_add(1);
+            let val = (state >> 33) as i64;
+            keys.push(SortItem {
+                item: Value::none(),
+                key: Value::int(val),
+                idx: i,
+            });
+        }
+
+        TOP_COMPARISON_COUNT.with(|c| c.set(0));
+        let winners = select_top_indices(&keys, 1, false);
+        let comps = TOP_COMPARISON_COUNT.with(|c| c.get());
+
+        assert_eq!(winners.len(), 1);
+        eprintln!("Selector comparisons for {n} keys: {comps} (budget <= {})", 2 * n);
+        assert!(
+            comps <= 2 * n,
+            "comparisons {comps} exceeded budget of {}",
+            2 * n
+        );
+    }
 }
+
