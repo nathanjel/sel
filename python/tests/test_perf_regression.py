@@ -176,3 +176,145 @@ def test_args_reads_out_of_range_are_bad_arg_not_index_error():
         for n in ('PERF_REG_BADREAD', 'PERF_REG_NEGREAD'):
             registry._table.pop(n)
             registry._host.discard(n)
+
+
+def test_filter_mutation_of_earlier_collected_row_by_later_predicate():
+    src = '''
+    X = LIST(RECORD("k", 1), RECORD("k", 2));
+    (X .> FILTER((X[1]["k"] = _["k"]; TRUE)) .> MAP(_["k"]))
+    '''
+    prog = sel.compile(src)
+    assert [s.adopt_items for s in filter_steps(prog.physical_ast())] == [False]
+    ctx1 = Value.none()
+    ctx2 = Value.none()
+    r1 = plain(prog, ctx1)
+    r2 = prog.run(ctx2)
+    assert [v.scalar for v in r1.values()] == ['1', '2']
+    assert [v.scalar for v in r2.values()] == ['1', '2']
+    assert ctx1.dump() == ctx2.dump()
+
+
+def test_filter_sparse_input_keys_and_explicit_binder():
+    src = '''
+    X = RECORD("first", RECORD("k", 1), "second", RECORD("k", 2));
+    (X .> FILTER(row, (IF(row["k"] == 2, (X["first"]["k"] = 99), 0); TRUE)) .> MAP(row, row["k"]))
+    '''
+    prog = sel.compile(src)
+    assert [s.adopt_items for s in filter_steps(prog.physical_ast())] == [False]
+    ctx1 = Value.none()
+    ctx2 = Value.none()
+    r1 = plain(prog, ctx1)
+    r2 = prog.run(ctx2)
+    assert [v.scalar for v in r1.values()] == ['1', '2']
+    assert [v.scalar for v in r2.values()] == ['1', '2']
+    assert ctx1.dump() == ctx2.dump()
+
+
+def test_filter_rejected_later_row_whose_predicate_mutates_earlier_kept_row():
+    src = '''
+    X = LIST(RECORD("k", 1), RECORD("k", 2));
+    (X .> FILTER((IF(_["k"] == 2, (X[1]["k"] = 99; FALSE), TRUE))) .> MAP(_["k"]))
+    '''
+    prog = sel.compile(src)
+    assert [s.adopt_items for s in filter_steps(prog.physical_ast())] == [False]
+    ctx1 = Value.none()
+    ctx2 = Value.none()
+    r1 = plain(prog, ctx1)
+    r2 = prog.run(ctx2)
+    assert [v.scalar for v in r1.values()] == ['1']
+    assert [v.scalar for v in r2.values()] == ['1']
+    assert ctx1.dump() == ctx2.dump()
+
+
+def test_filter_nested_assignments_inside_predicate_calls_or_index():
+    src_idx = '''
+    X = LIST(RECORD("k", 1), RECORD("k", 2));
+    (X .> FILTER(_[(X[1]["k"] = 99; "k")] > 0) .> MAP(_["k"]))
+    '''
+    prog_idx = sel.compile(src_idx)
+    assert [s.adopt_items for s in filter_steps(prog_idx.physical_ast())] == [False]
+    ctx1 = Value.none()
+    ctx2 = Value.none()
+    assert plain(prog_idx, ctx1).dump() == prog_idx.run(ctx2).dump()
+    assert ctx1.dump() == ctx2.dump()
+
+    src_call = '''
+    X = LIST(RECORD("k", 1), RECORD("k", 2));
+    (X .> FILTER(IF(X[1]["k"] == 1, (X[1]["k"] = 99; TRUE), TRUE)) .> MAP(_["k"]))
+    '''
+    prog_call = sel.compile(src_call)
+    assert [s.adopt_items for s in filter_steps(prog_call.physical_ast())] == [False]
+    ctx1 = Value.none()
+    ctx2 = Value.none()
+    assert plain(prog_call, ctx1).dump() == prog_call.run(ctx2).dump()
+    assert ctx1.dump() == ctx2.dump()
+
+
+def test_filter_registered_host_function_mutates_previously_collected_row():
+    def mutator(args):
+        v = args.val(0)
+        v.set('k', Value.text('99'))
+        return Value.bool(True)
+
+    registry.register_function('MUTATE_PREV_HOST', 1, 1, mutator)
+    try:
+        src = '''
+        X = LIST(RECORD("k", 1), RECORD("k", 2));
+        (X .> FILTER(MUTATE_PREV_HOST(X[1])) .> MAP(_["k"]))
+        '''
+        prog = sel.compile(src)
+        assert [s.adopt_items for s in filter_steps(prog.physical_ast())] == [False]
+        ctx1 = Value.none()
+        ctx2 = Value.none()
+        assert plain(prog, ctx1).dump() == prog.run(ctx2).dump()
+        assert ctx1.dump() == ctx2.dump()
+    finally:
+        registry._table.pop('MUTATE_PREV_HOST', None)
+        registry._host.discard('MUTATE_PREV_HOST')
+
+
+def test_filter_application_defined_function_installed_through_lower_level_api():
+    def dummy(args, ctx):
+        return Value.bool(True)
+
+    registry.define('LOW_LEVEL_PRED', 1, 1, fn=dummy)
+    try:
+        src = '''
+        X = LIST(RECORD("k", 1), RECORD("k", 2));
+        (X .> FILTER(LOW_LEVEL_PRED(_["k"])) .> MAP(_["k"]))
+        '''
+        prog = sel.compile(src)
+        assert [s.adopt_items for s in filter_steps(prog.physical_ast())] == [False]
+        ctx1 = Value.none()
+        ctx2 = Value.none()
+        assert plain(prog, ctx1).dump() == prog.run(ctx2).dump()
+        assert ctx1.dump() == ctx2.dump()
+    finally:
+        registry._table.pop('LOW_LEVEL_PRED', None)
+
+
+def test_filter_mutating_map_consumer_disables_elision():
+    src = '''
+    X = LIST(RECORD("k", 1), RECORD("k", 2));
+    (X .> FILTER(_["k"] > 0) .> MAP((X[1]["k"] = 99; _["k"])))
+    '''
+    prog = sel.compile(src)
+    assert [s.adopt_items for s in filter_steps(prog.physical_ast())] == [False]
+    ctx1 = Value.none()
+    ctx2 = Value.none()
+    assert plain(prog, ctx1).dump() == prog.run(ctx2).dump()
+    assert ctx1.dump() == ctx2.dump()
+
+
+def test_filter_read_only_filter_and_map_enables_copy_elision():
+    src = '''
+    X = LIST(RECORD("k", 1), RECORD("k", 2));
+    (X .> FILTER(_["k"] > 0) .> MAP(_["k"] * 2))
+    '''
+    prog = sel.compile(src)
+    assert [s.adopt_items for s in filter_steps(prog.physical_ast())] == [True]
+    ctx1 = Value.none()
+    ctx2 = Value.none()
+    assert plain(prog, ctx1).dump() == prog.run(ctx2).dump()
+    assert ctx1.dump() == ctx2.dump()
+

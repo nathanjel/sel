@@ -800,6 +800,18 @@ R = LIST(RECORD("id",1), RECORD("id",2)); FILTER(R, (IF(_["id"] == 2, (R[1]["id"
 num 1
 ===
 
+### name: alias.collected-copy-timing.pipeline-filter-predicate-mutation
+--- note
+A pipeline FILTER followed by MAP must preserve the collection-time snapshot when the filter predicate mutates an earlier row.
+--- source
+X = LIST(RECORD("k",1), RECORD("k",2));
+(X .> FILTER((X[1]["k"] = _["k"]; TRUE))
+   .> MAP(_["k"])) EQL LIST(1,2)
+--- expect
+bool TRUE
+===
+
+
 ### name: alias.collected-copy-timing.sort
 --- note
 SORT with a body: a collector copies an element when it collects it (SPEC §3.4). A later body in the same aggregate writes into a source element already collected; the write must not reach the result. Before this was pinned the hosts disagreed on when the copy was made.

@@ -171,9 +171,10 @@ def register_function(name: str, min: int, max: int,   # noqa: A002
 
 
 def is_host_function(name: str) -> bool:
-    """Whether NAME is an application's own function (register_function), which
-    the optimiser must assume can do anything with the values it is handed."""
-    return ascii_upper(name) in _host
+    """Whether NAME is an application's own function (register_function or define),
+    which the optimiser must assume can do anything with the values it is handed."""
+    key = ascii_upper(name)
+    return key in _host or key not in BUILTIN_MANIFEST
 
 
 def host_arity(name: str) -> tuple[int, int] | None:

@@ -291,7 +291,7 @@ def body_only_reads(node: Node | None) -> bool:
         if t == 'assign':
             return False
         if t == 'call':
-            if is_host_function(n.name):
+            if is_host_function(n.name or ''):
                 return False
             stack.extend(n.args)
         elif t == 'index':
@@ -696,7 +696,10 @@ def optimize_tree(node: Node | None, physical: bool, depth: int = 1,
                 if step.name == 'FILTER':
                     following = final_steps[index + 1] if index + 1 < len(final_steps) else None
                     step.args[-1].keys_unobserved = keys_renumbered_by(following)
-                    step.adopt_items = adopts_elements(following)
+                    step.adopt_items = (
+                        body_only_reads(step)
+                        and adopts_elements(following)
+                    )
         root = build_pipeline(optimized_source, final_steps)
         if physical and final_steps:
             # A fused or dropped step leaves a node standing for the whole call:
