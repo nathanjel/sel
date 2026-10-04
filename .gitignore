@@ -126,3 +126,6 @@ cpp/build-usage/
 # go test binaries
 go/*.test
 go/**/*.test
+
+# Working notes, reviews and measurement logs: never committed, never published.
+docs/interim/

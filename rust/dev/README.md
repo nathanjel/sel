@@ -60,6 +60,3 @@ bash rust/tests/build_integration.sh
 - A hybrid runner reports failure as a `SelError`, whose codes are the
   language's; no code fits a database failure, so the examples' runner passes
   driver errors on as `E_BAD_ARG`.
-
-What is verified and what is still open is recorded in
-[the audit](../../docs/interim/2026-09-29/rust-completion-audit.md).

@@ -11,7 +11,7 @@ module's version is its tag, `go/vX.Y.Z`.
 Each entry ends with the three lanes that gate a release: conformance cases
 (every host runs all of them), SQL translation cases, and mutations caught.
 
-## 0.10.0 — 2026-10-02
+## 0.10.0 — 2026-10-04
 
 **Two new hosts: Rust and Go.** SEL now has seven implementations, all held to
 the same conformance suite, fuzzers, decimal oracle, SQL cases and worked
@@ -79,10 +79,10 @@ MariaDB and SQLite in every host.
     modifications from leaking into upstream row collections.
   - **Hybrid context isolation (Go, Python, JavaScript)**:
     Isolated evaluation environments across hybrid SQL pipeline boundaries in
-    Go, Python, and JavaScript/TypeScript, ensuring temporary pipeline bindings
+    Go, Python, and JavaScript, ensuring temporary pipeline bindings
     never escape into outer evaluation contexts.
   - **Python collector depth enforcement**:
-    Fixed Python collector builtins (`MAP`, `BUCKET`, `COLLECT`) to strictly
+    Fixed Python collector builtins (`MAP`, `BUCKET`) to strictly
     enforce nesting depth limits during item collection matching the portable
     specification limit.
   - **Rust `TOP` selection and allocation improvements**:
@@ -91,7 +91,7 @@ MariaDB and SQLite in every host.
     payload allocations for discarded rows while strictly preserving evaluation
     error timing and collection depth checks.
 
-Lanes: 2184 conformance cases in every host; 1311 SQL translation cases in every
+Lanes: 2187 conformance cases in every host; 1311 SQL translation cases in every
 host; 222 SQL mutations caught, none surviving.
 
 ## 0.9.2 — 2026-09-29
