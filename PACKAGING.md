@@ -112,8 +112,9 @@ publish a lie.
 
 ## GitHub release and CDN
 
-After the tag and the registries (PyPI, npm; Packagist follows the tag by
-itself), the release page gets one file per host:
+After the tag and the registries (PyPI, npm, crates.io, the Go proxy;
+Packagist follows the tag by itself), the release page gets one file per host,
+built from a checkout of the tag:
 
 ```
 tools/release-assets.sh 0.9.1              # dist/release-0.9.1/ and its NOTES.md, to look over
@@ -123,7 +124,10 @@ tools/release-assets.sh 0.9.1 --publish    # the same, then gh release create v0
 The script needs the pushed tags (`v0.9.1` and `go/v0.9.1`), the npm tarball in `dist/npm/`, the browser
 bundles in `dist/` and the wheel and sdist in `dist/python/`. It refuses when
 `js/src`, `python/sel` or a manifest differs from the tag, and when the
-CHANGELOG has no entry for the version. What it makes:
+CHANGELOG has no entry for the version, and with `--publish` it refuses unless
+`tools/check-release-registries.sh` confirms that crates.io and the Go proxy
+serve this release, with the same bytes and from the same commit (without
+`--publish`, a failed check is a warning). What it makes:
 
 | File | For |
 |---|---|
@@ -328,9 +332,19 @@ workspace member with `publish = false`. What the crate carries is decided by
 
 ```
 cargo login                                        # once, with a crates.io API token (the owner's)
+git checkout v0.9.1                                # publish from the tagged commit, with rust/ clean
 tools/check-rust-package.sh --publish-dry-run      # package, consumer, CLI, docs, doctests, dry run
 cargo publish --manifest-path rust/Cargo.toml -p sel-lang
 ```
+
+**Publish from the tag.** Cargo records the checked-out commit inside the
+`.crate` (`.cargo_vcs_info.json`), and packaging is otherwise reproducible, so a
+crate packaged at the tag is byte for byte the one crates.io serves.
+`tools/release-assets.sh` builds the release page's `.crate` that way (it
+refuses unless `HEAD` is the tag) and, before it publishes, has
+`tools/check-release-registries.sh` prove it: crates.io has the version, not
+yanked, with that SHA-256; the Go proxy serves the module from the commit
+`go/v0.9.1` names, and `go mod download` verifies it against sum.golang.org.
 
 docs.rs builds the API documentation by itself once the version is on crates.io
 (the crate front page is `README.md`); `tools/check-rust-package.sh` builds it the

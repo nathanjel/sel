@@ -5,6 +5,13 @@
 #   tools/release-assets.sh 0.9.2            build dist/release-0.9.2/ and its NOTES.md
 #   tools/release-assets.sh 0.9.2 --publish  and create the GitHub release v0.9.2 from them
 #
+# Before it publishes, tools/check-release-registries.sh must confirm that
+# crates.io serves sel-lang 0.9.2 with the very bytes of the .crate built here,
+# and that the Go proxy serves the module at v0.9.2 from the commit go/v0.9.2
+# names: the notes send readers to both. Without --publish a failed check is a
+# warning (the registries may simply not be published yet); with it, nothing is
+# uploaded.
+#
 # Run it after the tags are pushed (v<VERSION> and, for the Go module,
 # go/v<VERSION> on the same commit) and the npm and Python builds exist
 # (PACKAGING.md §"GitHub release"). The source bundles are `git archive` of the
@@ -35,6 +42,11 @@ for f in "dist/npm/sel-lang-$V.tgz" dist/sel.mjs dist/sel.min.mjs \
   [ -f "$f" ] || { echo "release-assets: $f is missing; run the npm and PyPI build steps first" >&2; exit 1; }
 done
 # The copied builds come from the working tree: it must hold what the tag holds.
+# cargo records the checked-out commit in the .crate (.cargo_vcs_info.json), so
+# the crate built here is byte for byte crates.io's only when both were packaged
+# at the tag -- which tools/check-release-registries.sh then proves.
+[ "$(git rev-parse HEAD)" = "$(git rev-parse "$TAG^{commit}")" ] \
+  || { echo "release-assets: HEAD is not $TAG; check out the tag (cargo records HEAD in the crate)" >&2; exit 1; }
 if ! git diff --quiet "$TAG" -- js/src python/sel package.json pyproject.toml rust; then
   echo "release-assets: js/src, python/sel, rust/ or a manifest differs from $TAG; build from the tag" >&2
   exit 1
@@ -113,7 +125,20 @@ grep -q . <(awk -v v="$V" '$0 ~ "^## "v" " {f=1; next} f && /^## [0-9]/ {exit} f
 echo "release-assets: $OUT"
 for a in "${ASSETS[@]}"; do printf '  %-40s %s\n' "${a%%|*}" "${a#*|}"; done
 
-if [ "$PUBLISH" = "--publish" ]; then
+# The registries the notes send readers to: published, and the same bytes.
+echo
+if tools/check-release-registries.sh "$V" "$OUT/sel-lang-$V.crate"; then
+  registries=ok
+else
+  registries=missing
+  if [ "$PUBLISH" = "--publish" ]; then
+    echo "release-assets: not publishing -- crates.io or the Go proxy does not have this release, or has other bytes (PACKAGING.md: crates.io, Go modules)" >&2
+    exit 1
+  fi
+  echo "release-assets: warning -- the registries above are not ready; --publish would refuse" >&2
+fi
+
+if [ "$PUBLISH" = "--publish" ] && [ "$registries" = ok ]; then
   args=()
   for a in "${ASSETS[@]}"; do args+=("$OUT/${a%%|*}#${a#*|}"); done
   gh release create "$TAG" --repo "$REPO" --title "SEL $V" --notes-file "$OUT/NOTES.md" --verify-tag "${args[@]}"
