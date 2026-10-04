@@ -773,6 +773,25 @@ A[1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][
 num 7
 ===
 
+### name: lim.collector-depth-map-just-under
+--- note
+CONTROL: one level shallower (197 brackets makes A 198, LIST(A) 199, and MAP collection exactly 200) succeeds.
+--- source
+A[1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1] = 1; MAP(LIST(1), LIST(A)); 7
+--- expect
+num 7
+===
+
+### name: lim.collector-depth-bucket-just-under
+--- note
+CONTROL: one level shallower with projected BUCKET reaches exactly 200 and succeeds.
+--- source
+A[1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1] = 1; BUCKET(LIST(1), "g", LIST(A)); 7
+--- expect
+num 7
+===
+
+
 ### name: alias.assign-copy-then-write-through-an-alias-read
 --- note
 A copy of a value is independent (§3.4), but a read of `A` inside the index of a write to `A` is a live alias: the write happens in place and the pending read must see it. A host that implements copies lazily (copy-on-write with path copying) breaks exactly this: the write relocates A's root and the pending read holds the old one, which has no key "k". Regression guard against any such optimisation.

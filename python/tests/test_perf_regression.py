@@ -318,3 +318,65 @@ def test_filter_read_only_filter_and_map_enables_copy_elision():
     assert plain(prog, ctx1).dump() == prog.run(ctx2).dump()
     assert ctx1.dump() == ctx2.dump()
 
+
+def test_collector_depth_enforcement_boundary():
+    def nested_source(wraps, expression):
+        return 'X = "x";' + 'X = LIST(X);' * wraps + expression
+
+    cases = [
+        ('COUNT(MAP(LIST(1), LIST(X)))', 'MAP'),
+        ('COUNT(MAP(LIST(1), RECORD("k", X)))', 'MAP'),
+        ('COUNT(BUCKET(LIST(1), "g", LIST(X)))', 'BUCKET'),
+        ('COUNT(BUCKET(LIST(1), "g", RECORD("k", X)))', 'BUCKET'),
+    ]
+
+    for expr, call_name in cases:
+        # 197 wrappers: reaches depth 200, succeeds on both plain and optimized paths
+        src_197 = nested_source(197, expr)
+        prog_197 = sel.compile(src_197)
+        c1 = Context()
+        plain_res = eval_node(prog_197.ast, c1)
+        c2 = Context()
+        opt_res = prog_197.run(c2.root)
+        assert plain_res.as_text() == '1'
+        assert opt_res.as_text() == '1'
+
+        # 198 wrappers: reaches depth 201, raises E_DEPTH pointing to the collecting operation
+        src_198 = nested_source(198, expr)
+        prog_198 = sel.compile(src_198)
+
+        # Plain path
+        c_plain = Context()
+        with pytest.raises(SelError) as exc_plain:
+            eval_node(prog_198.ast, c_plain)
+        assert exc_plain.value.code == 'E_DEPTH'
+
+        # Optimized path
+        c_opt = Context()
+        with pytest.raises(SelError) as exc_opt:
+            prog_198.run(c_opt.root)
+        assert exc_opt.value.code == 'E_DEPTH'
+
+        # Both paths agree on position and point to the collector call
+        assert exc_plain.value.line == exc_opt.value.line == 1
+        assert exc_plain.value.col == exc_opt.value.col
+        prefix_len = len('X = "x";' + 'X = LIST(X);' * 198)
+        col_offset = expr.index(call_name)
+        assert exc_opt.value.col == prefix_len + col_offset + 1
+
+
+def test_collector_fresh_scalar_bodies_avoid_copying():
+    def nested_source(wraps, expression):
+        return 'X = "x";' + 'X = LIST(X);' * wraps + expression
+
+    for expr in (
+        'COUNT(MAP(LIST(1), 1 + 2))',
+        'COUNT(MAP(LIST(1), -5))',
+        'COUNT(MAP(LIST(1), LEN("abc")))',
+        'COUNT(MAP(LIST(1), UPPER("abc")))',
+        'COUNT(BUCKET(LIST(1), "g", 1 + 2))',
+    ):
+        src = nested_source(198, expr)
+        prog = sel.compile(src)
+        assert prog.run().as_text() == '1'
+

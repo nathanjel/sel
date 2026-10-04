@@ -166,7 +166,10 @@ _SCALAR_FRESH_CALLS = _FRESH_CALLS - {'LIST', 'RECORD'}
 def collected(value, body, args):
     """What an aggregate stores in its result (SPEC 3.4): a copy, one level down,
     unless the body's node cannot have produced anything shared."""
-    return value if _is_fresh(body) else value.clone(args.pos, 2)
+    if _is_fresh(body):
+        value.check_depth(2, args.pos)
+        return value
+    return value.clone(args.pos, 2)
 
 
 def _map(args, ctx):
