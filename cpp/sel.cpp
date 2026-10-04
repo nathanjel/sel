@@ -10460,7 +10460,11 @@ std::vector<NodePtr> opt_logical_steps(const NodePtr& source, std::vector<NodePt
         const OptFilterInfo right = opt_filter_info(**second);
         // Fused, the second predicate runs on a row before the first has seen
         // the rows after it: only one that cannot raise may be fused.
-        if (left.valid && right.valid && opt_predicate_cannot_raise(right.predicate, right.binder, logical)) {
+        const auto* saved_declared = tl_opt_declared;
+        tl_opt_declared = nullptr;
+        const bool can_fuse = left.valid && right.valid && opt_predicate_cannot_raise(right.predicate, right.binder, logical);
+        tl_opt_declared = saved_declared;
+        if (can_fuse) {
           const NodePtr right_pred = upper_name(left.binder) == upper_name(right.binder)
               ? right.predicate : opt_rename_var(right.predicate, right.binder, left.binder);
           const NodePtr predicate = opt_combine_and({left.predicate, right_pred}, left.predicate->pos);
