@@ -64,6 +64,33 @@ review's 488 closed findings include 144 performance items across the hosts.
 Rust error-handling notes; the database examples run against real PostgreSQL,
 MariaDB and SQLite in every host.
 
+**Review findings and hardening (2026-10-04):**
+
+  - **Rust `SelStr` representation safety (source incompatibility)**:
+    `SelStr` internal storage representation is now private and opaque to prevent
+    construction of invalid UTF-8 sequences. Direct variant construction
+    (`SelStr::Inline { .. }`, `SelStr::Shared(..)`) and pattern matching are
+    disallowed. Existing callers should migrate from variant construction to
+    `SelStr::new(&str)` or `From`/`Into`, and migrate from enum matching to
+    `.as_str()`, `.len()`, `.is_empty()`, and `.is_inline()`.
+  - **Python `FILTER` snapshot preservation**:
+    The fused pipeline optimizer now respects snapshot isolation when `FILTER`
+    expressions contain mutating expressions or side-effects, preventing
+    modifications from leaking into upstream row collections.
+  - **Hybrid context isolation (Go, Python, JavaScript)**:
+    Isolated evaluation environments across hybrid SQL pipeline boundaries in
+    Go, Python, and JavaScript/TypeScript, ensuring temporary pipeline bindings
+    never escape into outer evaluation contexts.
+  - **Python collector depth enforcement**:
+    Fixed Python collector builtins (`MAP`, `BUCKET`, `COLLECT`) to strictly
+    enforce nesting depth limits during item collection matching the portable
+    specification limit.
+  - **Rust `TOP` selection and allocation improvements**:
+    `TOP` and `TOP_BY` now perform deferred deep copying of winner rows and use
+    bounded heap selection when `limit <= n / 4`, avoiding redundant sorting and
+    payload allocations for discarded rows while strictly preserving evaluation
+    error timing and collection depth checks.
+
 Lanes: 2184 conformance cases in every host; 1311 SQL translation cases in every
 host; 222 SQL mutations caught, none surviving.
 
