@@ -22,7 +22,10 @@ PROGRAMS = {
     'rows': 'L .> FILTER(_["a"] $== "x") .> SORT_BY(_["b"], "DESC") .> TAKE(5) .> MAP(RECORD("b", _["b"]))',
 }
 CONTEXTS = {'rows': {'L': [{'a': 'x' if i % 3 == 0 else 'y', 'b': i} for i in range(1, 201)]}}
-BUDGETS = {'pixel': 2253, 'rows': 5360}
+# rows went 5360 -> 5365 with the collector depth fix (fd24024): a fresh value a
+# collector keeps without copying is depth-checked, one call per collected row
+# (MAP over TAKE(5)). That is the price of a correctness fix, not a regression.
+BUDGETS = {'pixel': 2253, 'rows': 5365}
 
 
 def python_calls(label):
