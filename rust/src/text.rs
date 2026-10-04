@@ -10,6 +10,15 @@
 //!
 //! Only whole strings are ever stored: text is never cut at the inline limit,
 //! so an inline string is always valid UTF-8.
+//!
+//! # Migration from enum representation
+//!
+//! `SelStr` previously exposed `Inline` and `Shared` enum variants. To prevent
+//! construction of invalid UTF-8 and protect representation invariants, the
+//! internal representation is now private.
+//! - To construct a `SelStr`, use [`SelStr::new`], [`SelStr::from`], or [`SelStr::EMPTY`].
+//! - To inspect whether storage is inline, use [`SelStr::is_inline`].
+//! - To read the string slice, use [`SelStr::as_str`] or the [`Deref`] / [`AsRef`] implementations.
 
 use std::borrow::Borrow;
 use std::cmp::Ordering;
@@ -20,37 +29,55 @@ use std::rc::Rc;
 
 const INLINE: usize = 22;
 
+/// Scalar text storage for values.
+///
+/// Representation is private to guarantee valid UTF-8 and invariant enforcement.
+/// External code cannot construct invalid internal storage:
+///
+/// ```compile_fail
+/// use sel_lang::text::SelStr;
+///
+/// let _ = SelStr::Inline {
+///     len: 1,
+///     buf: [0xff; 22],
+/// };
+/// ```
 #[derive(Clone)]
-pub enum SelStr {
+pub struct SelStr(Repr);
+
+#[derive(Clone)]
+enum Repr {
     Inline { len: u8, buf: [u8; INLINE] },
     Shared(Rc<str>),
 }
 
 impl SelStr {
-    pub const EMPTY: SelStr = SelStr::Inline { len: 0, buf: [0; INLINE] };
+    pub const EMPTY: Self = Self(Repr::Inline { len: 0, buf: [0; INLINE] });
 
     pub fn new(s: &str) -> Self {
         if s.len() <= INLINE {
             let mut buf = [0u8; INLINE];
             buf[..s.len()].copy_from_slice(s.as_bytes());
-            SelStr::Inline { len: s.len() as u8, buf }
+            Self(Repr::Inline { len: s.len() as u8, buf })
         } else {
-            SelStr::Shared(Rc::from(s))
+            Self(Repr::Shared(Rc::from(s)))
         }
     }
 
     #[inline]
     pub fn as_str(&self) -> &str {
-        match self {
-            // SAFETY: `buf[..len]` is a copy of a whole `&str` (see `new`).
-            SelStr::Inline { len, buf } => unsafe { std::str::from_utf8_unchecked(&buf[..*len as usize]) },
-            SelStr::Shared(s) => s,
+        match &self.0 {
+            // SAFETY: All representations originate from complete, valid strings (see `new`).
+            Repr::Inline { len, buf } => unsafe {
+                std::str::from_utf8_unchecked(&buf[..*len as usize])
+            },
+            Repr::Shared(s) => s,
         }
     }
 
     /// Whether the text is held inline (no allocation behind it).
     pub fn is_inline(&self) -> bool {
-        matches!(self, SelStr::Inline { .. })
+        matches!(&self.0, Repr::Inline { .. })
     }
 }
 
