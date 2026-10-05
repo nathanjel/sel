@@ -509,7 +509,7 @@ impl Value {
         }
         if inner.kind == Kind::Text && inner.size() == 0 {
             drop(inner);
-            return self.scalar_str().trim().is_empty();
+            return crate::utf8::is_sel_blank(&self.scalar_str());
         }
         false
     }

@@ -1,10 +1,6 @@
 use crate::args::Args;
-use crate::utf8::{cap_collection, cap_text, to_code_points, validate_text, SelError};
+use crate::utf8::{cap_collection, cap_text, is_sel_space, to_code_points, validate_text, SelError};
 use crate::value::Value;
-
-fn is_sel_space(c: char) -> bool {
-    c == ' ' || c == '\t' || c == '\r' || c == '\n'
-}
 
 fn trim_text(s: &str, left: bool, right: bool) -> String {
     let chars: Vec<char> = s.chars().collect();

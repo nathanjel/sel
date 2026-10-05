@@ -411,6 +411,34 @@ MISSING_VAR ??? "def"
 text "def"
 ===
 
+### name: op.vacuous.nbsp-is-not-blank
+--- source
+"\u{A0}" ??? "fallback"
+--- expect
+text "\u00a0"
+===
+
+### name: op.vacuous.vt-is-not-blank
+--- source
+"\u{B}" ??? "fallback"
+--- expect
+text "\u000b"
+===
+
+### name: op.vacuous.ff-is-not-blank
+--- source
+"\u{C}" ??? "fallback"
+--- expect
+text "\u000c"
+===
+
+### name: op.vacuous.ideographic-space-is-not-blank
+--- source
+"\u{3000}" ??? "fallback"
+--- expect
+text "\u3000"
+===
+
 %
 % --- Built-in functions: IS_NULL, IS_NOT_NULL, COALESCE, IS_BLANK, IS_PRESENT, GET, PATH
 %
@@ -506,6 +534,46 @@ IS_BLANK(0)
 bool FALSE
 ===
 
+### name: func.is-blank.nbsp-is-not-whitespace
+--- source
+IS_BLANK("\u{A0}")
+--- expect
+bool FALSE
+===
+
+### name: func.is-blank.vt-is-not-whitespace
+--- source
+IS_BLANK("\u{B}")
+--- expect
+bool FALSE
+===
+
+### name: func.is-blank.ff-is-not-whitespace
+--- source
+IS_BLANK("\u{C}")
+--- expect
+bool FALSE
+===
+
+### name: func.is-blank.ideographic-space-is-not-whitespace
+--- source
+IS_BLANK("\u{3000}")
+--- expect
+bool FALSE
+===
+
+### name: func.is-blank.sel-space-around-nbsp
+--- note
+Blank means NULL, "", an empty list, or text made only of SEL whitespace: the
+four characters of SPEC §2.2 (space, TAB, CR, LF). A host's own trim (Rust
+str::trim, Python str.strip) also strips NBSP, VT, FF, U+3000 and the rest of
+Unicode White_Space; that is a divergence, not a convenience.
+--- source
+IS_BLANK(" \t\r\n\u{A0} ")
+--- expect
+bool FALSE
+===
+
 ### name: func.is-present.true
 --- source
 IS_PRESENT("x")
@@ -518,6 +586,34 @@ bool TRUE
 IS_PRESENT(" ")
 --- expect
 bool FALSE
+===
+
+### name: func.is-present.nbsp
+--- source
+IS_PRESENT("\u{A0}")
+--- expect
+bool TRUE
+===
+
+### name: func.is-present.vt
+--- source
+IS_PRESENT("\u{B}")
+--- expect
+bool TRUE
+===
+
+### name: func.is-present.ff
+--- source
+IS_PRESENT("\u{C}")
+--- expect
+bool TRUE
+===
+
+### name: func.is-present.ideographic-space
+--- source
+IS_PRESENT("\u{3000}")
+--- expect
+bool TRUE
 ===
 
 ### name: func.get.present

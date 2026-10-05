@@ -227,7 +227,7 @@ impl Lexer {
         while i < to {
             let c = self.chars[i];
 
-            if c == ' ' || c == '\t' || c == '\r' || c == '\n' {
+            if crate::utf8::is_sel_space(c) {
                 i += 1;
                 continue;
             }

@@ -2,6 +2,19 @@
 
 use std::fmt;
 
+/// SEL whitespace (SPEC §2.2): space, TAB, CR and LF, and nothing else. Never
+/// `char::is_whitespace` or `str::trim`, which follow Unicode White_Space and
+/// would also take NBSP, VT, FF, U+3000 and the rest.
+pub(crate) fn is_sel_space(c: char) -> bool {
+    matches!(c, ' ' | '\t' | '\r' | '\n')
+}
+
+/// True when `s` holds nothing but SEL whitespace (the empty text included):
+/// the "blank" of `IS_BLANK` and `???`.
+pub(crate) fn is_sel_blank(s: &str) -> bool {
+    s.bytes().all(|b| matches!(b, b' ' | b'\t' | b'\r' | b'\n'))
+}
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Pos {
     pub line: usize,
