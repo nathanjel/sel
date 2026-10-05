@@ -7,7 +7,7 @@
 // The bundle is NOT committed. It is built by `npm run build`, rebuilt by
 // `prepublishOnly` so the published tarball always carries one made from the
 // tagged source, and `dist/` is gitignored. A generated file in version control
-// is a file that goes stale, and a stale bundle would be a fifth implementation
+// is a file that goes stale, and a stale bundle would be one more implementation
 // disagreeing with the other hosts while sitting outside the test bench.
 //
 // It does not sit outside the bench here: tools/impls.sh registers the bundle as

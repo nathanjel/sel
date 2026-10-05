@@ -1,4 +1,4 @@
-// C++ SQL-layer benchmark driver (worklist CPP-P3, CPP-P14).
+// C++ SQL-layer benchmark driver (CPP-P3, CPP-P14).
 //
 //   g++ -std=c++23 -O2 -o cpp/build/sqlbench tools/perf/cpp/sqlbench.cpp cpp/build/sel_sql*.o cpp/build/sel.o
 //   cpp/build/sqlbench fold 1000 4000 16000

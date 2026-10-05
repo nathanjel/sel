@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""C++ host performance scenarios (worklist 2026-09-29, CPP-P*).
+"""C++ host performance scenarios (CPP-P*; labels: tools/perf/cpp/README.md).
 
 Each scenario is a SEL program generator of size n run through the `sel` CLI
 (`cpp/build/sel file`); the harness reports the MEDIAN CPU time (user+sys, from

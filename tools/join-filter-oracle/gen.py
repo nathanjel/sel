@@ -79,7 +79,8 @@ def pipeline_pair():
     """Rows, then two to four steps, some of which fail on one row. The oracle
     binds every step's result to a helper variable, so no rewrite can move,
     fuse or skip a step: the as-written form must raise what it raises, keep
-    the keys it keeps and answer what it answers (SEM-07/SEM-08)."""
+    the keys it keeps and answer what it answers -- no optimiser rewrite may
+    change any of the three."""
     n = R.randint(2, 5)
     rows = 'LIST(' + ', '.join(f'RECORD("id", {i}, "v", {R.randint(0, 3)}, "s", "{R.choice("PQy")}")'
                                for i in range(1, n + 1)) + ')'

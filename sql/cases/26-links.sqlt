@@ -339,7 +339,7 @@ SELECT `c`.`name` AS `n` FROM `orders` `o` INNER JOIN `customers` `c` ON (`o`.`c
 
 ### name: link.binder.left-name-reads-the-left-relation
 --- note
-Review 2026-09-25 SQL-01. R and S share every field name, with different values
+R and S share every field name, with different values
 (in memory _["SS"]["VAL"] is R's). The left binder names the LEFT relation;
 JS, PHP, Python and C++ resolved both explicit binders to the joined source and
 selected s.val. Only same-named fields reveal it.
@@ -452,7 +452,7 @@ SELECT `r`.`val` AS `l`, `s`.`val` AS `r` FROM `r` `r` INNER JOIN `s` `s` ON (`r
 ===
 ### name: link.binder.eszett-is-not-the-ss-binder
 --- note
-Review 2026-09-25 SQL-02. In memory _["ß"] is E_NO_KEY: no binder is named ß.
+In memory _["ß"] is E_NO_KEY: no binder is named ß.
 JS and Python upper-cased with Unicode rules (ß → SS) and translated it as the
 SS binder. A qualifier is compared ASCII-case-insensitively, like every name.
 --- dialect

@@ -263,8 +263,8 @@ export SEL_MUTATE_JOBS="${SEL_MUTATE_JOBS:-$(( (SEL_JOBS * 2 + 2) / 3 ))}"
 step "sql mutations" ./tools/mutate-sql.sh
 db_step "sql semantic oracle" ./tools/check-sql-oracle.sh
 step "manifest versions and descriptions" sel_slot ./tools/check-version.sh
-# No sentence counts the hosts ("all five", "the other four hosts") and no
-# documented host list leaves one out: the roster grew twice and left both behind.
+# No sentence counts the hosts and no documented host list leaves one out: the
+# roster grew twice and left stale counts and lists behind both times.
 step "host roster, every document" sel_slot python3 tools/check-roster.py
 step "package contents: user docs only" sel_slot ./tools/check-package-docs.sh
 # The C++ package as a consumer gets it: the files cpp/conanfile.py exports,
@@ -328,7 +328,7 @@ step "end to end, every host API" ./tools/e2e.sh
 step "differential fuzz" ./tools/fuzz.sh "${FUZZ_COUNT:-4000}" "${FUZZ_SEED:-20260813}"
 # Joined rows over relations of mixed shapes, every host against a model of
 # spec §7.4 written from the text (SEL-0053): conformance cases use rows of one
-# shape, which is how five hosts came to build rows from their first element.
+# shape, which is how most hosts came to build rows from their first element.
 step "joined rows vs spec model" ./tools/join-rows-oracle/run.sh "${JOIN_ROWS_COUNT:-2000}" "${JOIN_ROWS_SEED:-530001}"
 # A FILTER after a LINK against the same program with the join bound to a
 # variable first (SEL-0054): the join tests conjuncts early at run time, and

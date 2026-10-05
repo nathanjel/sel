@@ -1,5 +1,5 @@
-// Shared harness for the JS performance worklist (docs/interim/2026-09-29/worklist/
-// performance/js.md). Fixed seeds, semantic checksums, warm-up, repeated runs with the
+// Shared harness for the JS performance benchmarks (tools/perf/cpp/README.md says
+// what their labels are). Fixed seeds, semantic checksums, warm-up, repeated runs with the
 // median and spread reported. `SEL_JS_ENTRY` selects src (default), dist/sel.mjs or
 // dist/sel.min.mjs like the other JS tools.
 import { pathToFileURL } from 'node:url';

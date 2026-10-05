@@ -1,4 +1,4 @@
-"""Shared harness for the Python performance benchmarks (worklist 07-performance).
+"""Shared harness for the Python performance benchmarks (labels: tools/perf/cpp/README.md).
 
 Protocol: fixed seeds, a semantic checksum per workload, CPU time (process_time,
 robust against the other jobs on the box), warm-up, >= 5 repetitions, median and

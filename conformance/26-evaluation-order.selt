@@ -18,7 +18,7 @@
 
 ### name: ord.fn.max-later-argument-error-beats-earlier-coercion
 --- note
-A strict function evaluates ALL its arguments left to right before its body runs (SPEC 7.1), so a bad later argument is found before an earlier one is coerced. MAX(TRUE, U): the undefined variable, not the BOOL. (LISP-C13; the math-plan compilers coerced each operand as it loaded it.)
+A strict function evaluates ALL its arguments left to right before its body runs (SPEC 7.1), so a bad later argument is found before an earlier one is coerced. MAX(TRUE, U): the undefined variable, not the BOOL. (Lisp's math-plan compilers coerced each operand as it loaded it.)
 --- source
 MAX(TRUE, U)
 --- expect

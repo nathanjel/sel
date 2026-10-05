@@ -140,8 +140,8 @@ fi
 
 # One description, every registry. npm, Packagist, PyPI, crates.io, Conan,
 # vcpkg and Quicklisp each show the package's description on its page, and the
-# copies were hand-edited apart until five of them named five languages and one
-# named seven. package.json's is the one; the others must equal it (vcpkg's is
+# copies were hand-edited apart until most of them named the hosts of an older
+# roster and one named the current one. package.json's is the one; the others must equal it (vcpkg's is
 # the first line of its description list, Conan's the concatenated string).
 if ! python3 - <<'PY'
 import ast, json, re, sys

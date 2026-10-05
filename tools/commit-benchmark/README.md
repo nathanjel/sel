@@ -46,7 +46,7 @@ not production fixes. Their source changes exist only in temporary snapshots.
 The power-cache profiler runs from a snapshot root and accepts an output path;
 it counts calls/misses over three Mandelbrot frames and is not a timing test.
 
-The interpretation of the last published run (`docs/interim/commit-benchmark-review.md`) is in the git history.
+The interpretation of the last published run is in the git history.
 
 `targeted-repeat.py` repeats PHP S4/S6 and JS S2, tests explicit PHP scalar
 getters, records Python power-cache calls, reproduces the JS frozen-prototype

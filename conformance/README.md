@@ -29,16 +29,18 @@ A line is a **marker** if it starts with `### `, starts with `--- `, or is exact
 
 **A section's content is its lines joined with `\n`, with leading and trailing
 runs of space, tab, CR and LF removed — those four characters and no others.**
-That sentence is normative for the five readers, and it is fussier than it
+That sentence is normative for every host's reader, and it is fussier than it
 looks. Each host has a trim function to hand and no two of them strip the same
 set: JavaScript's `String.prototype.trim()` removes ECMA-262's WhiteSpace, which
 includes U+FEFF and every Unicode `Zs`; Python's `str.strip()` removes Unicode
-whitespace but not U+FEFF; PHP's `trim()` adds NUL and a vertical tab; C++ and
-Common Lisp were already spelling out the four.
+whitespace but not U+FEFF; PHP's `trim()` adds NUL and a vertical tab; Go's
+`strings.TrimSpace` and Rust's `str::trim` remove Unicode White_Space. C++ and
+Common Lisp were already spelling out the four, and Go and Rust spell them out
+too (`strings.Trim(s, " \t\r\n")`, `trim_matches`).
 
 Reaching for the native one is therefore a way to run a *different program* in
 one host than in another, invisibly. `lex.space.bom-is-not-whitespace` is the
-case that found it: four hosts raised `E_SYNTAX` at the byte-order mark and
+case that found it: the other hosts of the day raised `E_SYNTAX` at the byte-order mark and
 JavaScript answered `TRUE`, because its reader had deleted the BOM before the
 lexer ever saw it. The lexers had agreed all along. The same trap is why
 `tools/README.md` is normative about the corpus format's trailing newline.

@@ -1,4 +1,4 @@
-// A/B runner for the JS performance worklist: alternates a baseline copy of js/src with
+// A/B runner for the JS performance benchmarks: alternates a baseline copy of js/src with
 // the working tree, N rounds each, and reports the MIN wall and CPU time per benchmark
 // line (the load from other processes only ever adds time, so the minimum is the least
 // contaminated estimate).

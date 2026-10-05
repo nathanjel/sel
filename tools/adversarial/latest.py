@@ -1,4 +1,4 @@
-"""F6 live regression: five hosts + fresh wheel, three disposable DB platforms.
+"""F6 live regression: every adapter host + fresh wheel, three disposable DB platforms.
 
 Uses existing disposable containers; creates and drops only uniquely named
 databases of its own. See README.md for container/build prerequisites. Historical

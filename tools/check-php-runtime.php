@@ -423,7 +423,7 @@ $expect('an error after a 250,000-operator chain is reported, not a crash', func
     return true;
 });
 
-// --- T05/T06/T07: relational edges, regex portability, text budgets ----------
+// --- relational edges, regex portability, text budgets ----------------------
 // The host-level mechanisms behind conformance/27, 28 and 29; each check names the
 // finding it holds.
 $val = function (string $src, array $ctx = []) use ($run): string {
@@ -605,7 +605,7 @@ $expect('an exact count of a group PCRE cannot hold matches, with the pattern\'s
     && $val('RREPLACE(\'^(x)(?:ab){40000}$\', "[$1]", "x" & REPEAT("ab", 40000))') === '[x]');
 
 
-// --- SQL layer (T08-T11): API-level contracts the shared .sqlt cases cannot state ---
+// --- SQL layer: API-level contracts the shared .sqlt cases cannot state ---
 require_once __DIR__ . '/../php/src/Sql/bootstrap.php';
 $sqlRefused = function (callable $f, string $code): bool {
     try { $f(); } catch (\Sel\Sql\SqlError $e) { return $e->code === $code; }
@@ -699,7 +699,7 @@ $expect('records sort by scalar context and tied records keep input order (SPEC 
         && $j($ties . ' .> SORT_DESC()') === 'b,a,c,d'
         && $j($ties . ' .> TOP_DESC(4)') === 'b,a,c,d';
 });
-// --- T12: flow-sensitive dependencies(), E_BAD_ARG at the host boundary (SPEC §8, §8.1).
+// --- flow-sensitive dependencies(), E_BAD_ARG at the host boundary (SPEC §8, §8.1).
 $deps = fn(string $src): string => implode(' ', \Sel\Sel::compile($src)->dependencies());
 $expect('dependencies(): a read before the definite assignment is a dependency', fn() =>
     $deps('A + 1; A = 2') === 'A' && $deps('A = 1; A + B') === 'B' && $deps('A = A + 1') === 'A');
@@ -1102,7 +1102,7 @@ $item1Canon = static fn ($x) => is_array($x) ? [$x['neg'], Dec::format($x), $x['
 $item1Try = static function (callable $f) {
     try { return $f(); } catch (SelError $e) { return $e->code; }
 };
-$expect('lazy digits T1: every operation agrees with lazy digits on and off, with and without GMP', function () use ($item1Modes, $item1With, $item1Num, $item1Canon, $item1Try) {
+$expect('lazy digits: every operation agrees with lazy digits on and off, with and without GMP', function () use ($item1Modes, $item1With, $item1Num, $item1Canon, $item1Try) {
     mt_srand(20261001);
     $texts = ['0', '0.000', '7', '-7', '9223372036854775807', '-9223372036854775808', '9223372036854775808',
               '18446744073709551616', '0.5', '-2.50'];
@@ -1146,7 +1146,7 @@ $expect('lazy digits T1: every operation agrees with lazy digits on and off, wit
     }
     return true;
 });
-$expect('lazy digits T2: a host sees today\'s arrays, and its edits take effect', function () use ($item1Modes, $item1With) {
+$expect('lazy digits: a host sees today\'s arrays, and its edits take effect', function () use ($item1Modes, $item1With) {
     foreach ($item1Modes as [$gmp, $lazy]) {
         $r = $item1With($gmp, $lazy, function () {
             $a = str_repeat('7', 40);
@@ -1166,7 +1166,7 @@ $expect('lazy digits T2: a host sees today\'s arrays, and its edits take effect'
     }
     return true;
 });
-$expect('lazy digits T3: the integer-digit cap holds for every form, at the same place', function () use ($item1Modes, $item1With, $pos) {
+$expect('lazy digits: the integer-digit cap holds for every form, at the same place', function () use ($item1Modes, $item1With, $pos) {
     $L = Dec::MAX_INT_DIGITS;
     $nines = str_repeat('9', $L);
     foreach ($item1Modes as [$gmp, $lazy]) {
@@ -1191,7 +1191,7 @@ $expect('lazy digits T3: the integer-digit cap holds for every form, at the same
     }
     return true;
 });
-$expect('lazy digits T4: comparisons across scale gaps agree in every form', function () use ($item1Modes, $item1With, $item1Num) {
+$expect('lazy digits: comparisons across scale gaps agree in every form', function () use ($item1Modes, $item1With, $item1Num) {
     mt_srand(4);
     for ($i = 0; $i < 300; $i++) {
         $gap = [0, 1, 18, 19, 5000][mt_rand(0, 4)];
@@ -1209,7 +1209,7 @@ $expect('lazy digits T4: comparisons across scale gaps agree in every form', fun
     }
     return true;
 });
-$expect('lazy digits T5: a chain of big products converts no digits in between', function () use ($run, $item1With) {
+$expect('lazy digits: a chain of big products converts no digits in between', function () use ($run, $item1With) {
     if (!extension_loaded('gmp')) return true;
     return $item1With(true, Dec::testHooks()['lazyDigits'], function () use ($run) {
         $count = function (int $k) use ($run): int {

@@ -11,7 +11,7 @@
 // site is a rendering of it rather than a second copy, so nothing here may need
 // syntax GitHub does not show sensibly:
 //
-//   - A code sample in five languages is a run of <details> blocks between
+//   - A code sample in several languages is a run of <details> blocks between
 //     <!-- tabs --> and <!-- /tabs -->. GitHub shows collapsible sections, the
 //     first one open; the site shows tabs, and remembers the language a reader
 //     picked across pages.

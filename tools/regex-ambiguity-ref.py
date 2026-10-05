@@ -2,7 +2,7 @@
 """Reference implementation of the SPEC §7.8 regex validator: the portable-subset
 parser, the structural rules (P1-P4 and the size caps) and the exponential-
 ambiguity rule. Standalone -- it imports nothing from sel/ -- and it is the
-oracle the six hosts' validators are written against: the conformance cases in
+oracle every host's validator is written against: the conformance cases in
 conformance/28b-regex-ambiguity.selt were checked against it before they were
 pinned, and `--self-check` re-checks them.
 

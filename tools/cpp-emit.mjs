@@ -33,7 +33,7 @@ export function cppStr(s) {
     // was written as c3 85 c2 bc. The generated case data carried the
     // double-encoded string, and the cases still passed, because the source and
     // the expectation were corrupted identically -- so C++ was quietly running
-    // `zaÅ¼Ã³ÅÄ` where the other three hosts ran `zażółć`. Octal keeps the file
+    // `zaÅ¼Ã³ÅÄ` where the other hosts ran `zażółć`. Octal keeps the file
     // pure ASCII and byte-exact, and no encoding step can touch it.
     else if (b < 0x20 || b >= 0x7f) out += '\\' + b.toString(8).padStart(3, '0');
     else out += String.fromCharCode(b);

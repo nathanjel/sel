@@ -1,4 +1,4 @@
-// C++ one-shot evaluation benchmark (worklist CPP-P15).
+// C++ one-shot evaluation benchmark (CPP-P15).
 //
 //   g++ -std=c++23 -O2 -o cpp/build/evalbench tools/perf/cpp/evalbench.cpp cpp/build/sel.o
 //   cpp/build/evalbench 100000

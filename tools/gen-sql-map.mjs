@@ -150,7 +150,7 @@ const SKEL_SLOTS = {
 //
 // Emitted, and read at run time by every host's Map::define, because a lexical
 // value with the wrong type is not a style problem: `textEscape` given as a
-// STRING made both hosts skip escaping entirely and emit 'it's' unquoted, which
+// STRING made the PHP and Python hosts skip escaping entirely and emit 'it's' unquoted, which
 // is an injection, and `true` given as a JSON boolean rendered as `1` on one
 // host and `True` on the other. Neither was noticed because nothing checked.
 //
@@ -173,11 +173,11 @@ const LEXICAL_TYPES = {
  * Everything above is what this file checks the shipped map against. Nothing
  * checked a map entry registered at RUN time, so `Map::define` accepted an entry
  * with no `ret`, a `tpl` that was a JSON list, an `arity` of strings, a `since`
- * of "abc" and a caveat somebody invented -- and the two hosts then improvised
+ * of "abc" and a caveat somebody invented -- and PHP and Python then improvised
  * differently over each one, because improvising is what code does when it has
  * no rule. Every one of those is an entry this file would have rejected.
  *
- * So the lists are emitted rather than retyped in six languages. The LOGIC is
+ * So the lists are emitted rather than retyped in every host's language. The LOGIC is
  * necessarily per host, because the translator is; the VOCABULARY is data, and
  * data is generated.
  */
@@ -358,7 +358,7 @@ function expandLexical(tpl, lexical, where) {
 
 // The one slot grammar, shared with php/src/Sql/Emit.php and
 // python/sel/sql/emit.py. Canonical and full-match: `{01}` is not `{1}` and
-// `{1\n}` is not a slot at all. It was `/^[0-9]+$/` here and in both hosts,
+// `{1\n}` is not a slot at all. It was `/^[0-9]+$/` here and in PHP and Python,
 // which JS reads strictly and PHP does not -- so a template this file refused
 // was accepted at run time by Map::define, and the shipped map and a registered
 // entry were read by two different grammars. Three digits is far above any
@@ -677,7 +677,7 @@ ${body}
      * review found in runtime registration -- an entry with no "ret", a "tpl"
      * that was a JSON list, an "arity" of strings, a caveat somebody invented --
      * was an entry the generator would have rejected and the runtime would not,
-     * after which the two hosts improvised differently. Improvising is what code
+     * after which the hosts improvised differently. Improvising is what code
      * does when it has no rule; this is the rule, as data.
      *
      * @var array<string, mixed>
@@ -764,7 +764,7 @@ export const RULES = ${JSON.stringify(rules, null, 2)};
 
 // --- C++ -------------------------------------------------------------------
 //
-// The other three hosts get a literal of their language's own map type. C++
+// The other hosts get a literal of their language's own map type. C++
 // gets `constexpr` aggregates over static arrays, which is the same data with
 // three properties the others have no need of: it is entirely .rodata, no
 // static constructor runs to build it, and a link that never calls

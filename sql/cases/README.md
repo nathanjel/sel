@@ -51,8 +51,8 @@ AST is the same tree after planning and after the physical optimiser as
 before — which is how the fixtures see an optimiser that writes into its input.
 
 `bindings` and `options` are JSON, which `conformance/*.selt` deliberately
-avoids. The reason the rule differs here: `.selt` is read by five hosts, two of
-which have no JSON parser in their standard library, while this directory is
+avoids. The reason the rule differs here: `.selt` is read by every host, and some
+of them have no JSON parser in their standard library, while this directory is
 read only by hosts that have a SQL layer — and every one of those does. The
 sections are nested records rather than flat text blocks, so the format that
 fits them is the one that nests.
@@ -115,7 +115,7 @@ is stale, so editing a case means regenerating:
 It works this way because the alternative did not. Each runner used to parse the
 files itself and decode the `--- bindings` block with its own JSON parser, and
 PHP's decoder represents a JSON object and a JSON array as the same type while
-Python's tells them apart — so the two hosts disagreed about what `"items": {…}`
+Python's tells them apart — so PHP and Python disagreed about what `"items": {…}`
 meant, and the two mappings had to be patched separately to agree. One reader
 cannot disagree with itself.
 

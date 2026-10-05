@@ -6,7 +6,7 @@
 # The conformance suite is text-in: a .selt file cannot carry an invalid byte or
 # a bare CR, and a host API is handed a string that some other layer already
 # decoded. The command line is where a person's file becomes source, and it is
-# where four of the five hosts mangled it -- Python read a file in universal-
+# where most hosts mangled it -- Python read a file in universal-
 # newline mode (CRLF inside a literal became LF, and a lone CR shifted every line
 # number), JS and Python replaced or choked on invalid UTF-8 instead of raising
 # E_UTF8, Lisp died on a stream-decoding error, and every host that did raise

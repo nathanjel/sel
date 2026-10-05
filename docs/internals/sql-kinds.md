@@ -395,7 +395,7 @@ now "the guard is never applied", which is bounded; the fast path is pinned by
 `warrant.numeric.a-declared-num-is-not-guarded` and by this note, and NOT by a
 mutation, because the natural mutation for it is pathological.
 
-### Translator and Emit — two seams, five hosts
+### Translator and Emit — two seams, every host
 
 - `Emit::numericOperand($f)`, mirroring the existing `Emit::textOperand($f)`,
   which already transforms an operand fragment for the `$` family. A guarded
@@ -454,7 +454,7 @@ mariadb     T == 0   matched: ["0"]      was also "abc" and ""
 postgresql  T == 25  matched: ["25"]     was a 22P02 error
 ```
 
-Five hosts, 409 cases, 139 mutations. `sql/cases/19-kind-warrant.sqlt` pins the
+Every host of the day, 409 cases, 139 mutations. `sql/cases/19-kind-warrant.sqlt` pins the
 rules; `tools/gen-sql-map.mjs` requires `numericGuard` and `funcs.ISNUM` to carry
 the same pattern, because two copies of a numeral grammar is the drift the map's
 one-place rule exists to prevent.
@@ -463,7 +463,7 @@ one-place rule exists to prevent.
 
 Commit `6ed4e60` on `sql-typing`. A constant in a numeric position must be a
 number, asked **per operand** rather than per whole expression — so
-`(T + 1) + "x"` refuses as `T + (1 + "x")` always did. Five hosts, nine cases,
+`(T + 1) + "x"` refuses as `T + (1 + "x")` always did. Every host of the day, nine cases,
 ten mutations (two per host, all caught), `tools/check.sh` ALL GREEN,
 124/0/0 under `tools/oracle-db.sh`.
 

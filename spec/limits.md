@@ -16,10 +16,11 @@ Change the spec first; the check tells you when this file has fallen behind.
 | `errors.<CODE>.phase` | `compile`, `run` or `both` |
 
 Renderings, all committed: `js/src/_limits.mjs`, `python/sel/_limits.py`,
-`php/src/Limits.php`, `cpp/sel_limits.hpp`, `lisp/src/limits.lisp` and
+`php/src/Limits.php`, `cpp/sel_limits.hpp`, `lisp/src/limits.lisp`,
+`go/internal/limits/limits.go`, `rust/src/limits.rs` and
 `docs/reference/limits.md`. Each host's own constants (`MAX_DEPTH`, `MAX_INT_DIGITS`,
 `MAX_FRAC_DIGITS`, `DIV_SCALE`) are defined from its rendering rather than as
-literals, so the five cannot drift. `tools/check-error-codes.sh` then reads
+literals, so no host can drift. `tools/check-error-codes.sh` then reads
 every host's sources and requires that the codes a host raises are exactly the
 catalogue's (plus the SQL layer's own, from `sql/errors.md`), so a new error can
 neither be raised unlisted nor listed unraised.

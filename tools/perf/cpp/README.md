@@ -11,8 +11,12 @@ and reports min/median of each — the robust mode on a loaded machine.
     python3 tools/perf/cpp/bench.py --ab /tmp/sel-base --reps 5 p7 p9
 
 `sqlbench.cpp` measures the SQL layer (`fold`, `bindings`); `evalbench.cpp` measures one-shot
-`compile`/`evaluate` per call (CPP-P15). Build lines are in the file headers. Results and decisions per finding: `docs/interim/2026-09-29/worklist/
-performance/results/cpp.md`.
+`compile`/`evaluate` per call (CPP-P15). Build lines are in the file headers.
+
+The labels (`CPP-P4`, `p7`, `LISP-P2`, `PY-P9`, `p04-…` and the like, here and
+under `tools/perf/*/`) are the names the benchmarks were filed under; they name
+benchmarks, not documents. `CHANGELOG.md` records the changes they measured, and
+each script regenerates its own results, which are not committed.
 
 Round 3 additions: `bench.py` scenarios `p21`–`p25` (RECORD literal keys, DISTINCT, strict calls, front-end
 throughput on 2–8 MB sources); `sqlbench.cpp` modes `plan` (plan_hybrid over N FILTERs after an unsupported

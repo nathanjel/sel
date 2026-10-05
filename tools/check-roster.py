@@ -45,7 +45,7 @@ COUNTED = [
     re.compile(rf'\b(?:four|five|six) (?:hosts|languages|implementations)\b', re.I),
     # "all five", "the other four" standing alone ("all four" counts flags,
     # steps and places too often to be refused)
-    re.compile(r'\ball (?:five|six)\b(?! (?:dialects?|servers|databases|SQL dialects|of the dialects|forms|kinds|steps|lanes|places|cases|layers)\b)', re.I),
+    re.compile(r'\ball (?:five|six)\b(?! (?:dialects?|servers|databases|SQL dialects|of the dialects|forms|kinds|steps|lanes|places|cases|layers|targets|scenarios)\b)', re.I),
     re.compile(r'\b(?:the )?other (?:four|five|six)\b(?! (?:dialects?|servers|databases|forms|kinds|lanes|places|cases)\b)', re.I),
     re.compile(r'\bboth hosts\b', re.I),
     re.compile(r'\b(?:fifth|sixth|seventh) (?:implementation|host)\b', re.I),

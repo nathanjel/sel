@@ -369,7 +369,7 @@ def extreme(vs, sign):
 
 
 own = ('A number an operation yields is its own: no later evaluation changes it, however a host keeps '
-       'numbers between operations (spec §3.4). Item 1 lets hosts reuse registers, share mantissas or '
+       'numbers between operations (spec §3.4). A host may reuse registers, share mantissas or '
        'write digits on demand; these cases are what that must not change.')
 A_, B_, C_ = big(420, 7), big(350, 3), big(300, 12, neg=True)
 ABC = f'A = {A_}; B = {B_}; C = {C_}'
