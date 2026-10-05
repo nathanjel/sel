@@ -42,7 +42,7 @@ func (k SqlKind) String() string {
 }
 
 func KindFromName(name string) SqlKind {
-	switch strings.ToUpper(strings.TrimSpace(name)) {
+	switch utf8.AsciiUpper(strings.TrimSpace(name)) {
 	case "NUM":
 		return KindNum
 	case "TEXT":
@@ -80,7 +80,7 @@ func (m Mode) String() string {
 }
 
 func ModeFromName(name string) Mode {
-	switch strings.ToLower(strings.TrimSpace(name)) {
+	switch utf8.AsciiLower(strings.TrimSpace(name)) {
 	case "params":
 		return ModeParams
 	case "debug":

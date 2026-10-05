@@ -668,7 +668,7 @@ func planRowTableAlias(oldShape *RecordShape, tableName string) aliasPlan {
 	if ok {
 		return p
 	}
-	lower := strings.ToLower(tableName)
+	lower := utf8.AsciiLower(tableName)
 	_, lowerTaken := oldShape.keyMap[lower]
 	addLower := lower != tableName && !lowerTaken
 	keys := make([]string, len(oldShape.keys)+1, len(oldShape.keys)+2)
@@ -691,7 +691,7 @@ func ensureRowTableAlias(row *Value, tableName string) *Value {
 	if tableName == "" || isPositionalBinder(tableName) || row.Has(tableName) {
 		return row
 	}
-	lower := strings.ToLower(tableName)
+	lower := utf8.AsciiLower(tableName)
 	if row.shape != nil {
 		oldShape := row.shape
 		if plan := planRowTableAlias(oldShape, tableName); plan.target != nil {
@@ -725,7 +725,7 @@ func makeNullRecord(sample *Value, tableName string) *Value {
 	var entries []Entry
 	if tableName != "" && !isPositionalBinder(tableName) {
 		entries = append(entries, Entry{Key: tableName, Val: NewNull()})
-		lower := strings.ToLower(tableName)
+		lower := utf8.AsciiLower(tableName)
 		if lower != tableName {
 			entries = append(entries, Entry{Key: lower, Val: NewNull()})
 		}
@@ -751,7 +751,7 @@ func joinCategory(v *Value) int {
 
 func binderKeys(name, positional string) []string {
 	keys := []string{name}
-	lower := strings.ToLower(name)
+	lower := utf8.AsciiLower(name)
 	if lower != name {
 		keys = append(keys, lower)
 	}
@@ -1210,7 +1210,7 @@ func doLink(args *Args, ctx *Context, leftJoin bool) *Value {
 		}
 		if len(handed) > 0 {
 			sides := append([]*joinSideFacts{rightSide}, above...)
-			lowerB1 := strings.ToLower(jb1)
+			lowerB1 := utf8.AsciiLower(jb1)
 			rowNames := map[string]bool{jb1: true, lowerB1: true, "_1": true, "_": true}
 			ownKey := joinObligation{
 				Key:      jequi.leftExpr,
@@ -1271,7 +1271,7 @@ func doLink(args *Args, ctx *Context, leftJoin bool) *Value {
 		rFrame := map[string]*Value{
 			b2:                  nil,
 			"_2":                nil,
-			strings.ToLower(b2): nil,
+			utf8.AsciiLower(b2): nil,
 		}
 		ctx.PushFrame(rFrame)
 		buckets := make(map[joinKey][]*Value)
@@ -1282,7 +1282,7 @@ func doLink(args *Args, ctx *Context, leftJoin bool) *Value {
 			right := ensureRowTableAlias(rEntry.Val, b2)
 			rFrame[b2] = right
 			rFrame["_2"] = right
-			if lowerB2 := strings.ToLower(b2); lowerB2 != b2 {
+			if lowerB2 := utf8.AsciiLower(b2); lowerB2 != b2 {
 				rFrame[lowerB2] = right
 			}
 			keyVal := args.EvalNode(equi.rightExpr)
@@ -1435,7 +1435,7 @@ func doLink(args *Args, ctx *Context, leftJoin bool) *Value {
 			b1:                  nil,
 			"_1":                nil,
 			"_":                 nil,
-			strings.ToLower(b1): nil,
+			utf8.AsciiLower(b1): nil,
 		}
 		for _, b := range binders {
 			lFrame[b] = nil
@@ -1447,7 +1447,7 @@ func doLink(args *Args, ctx *Context, leftJoin bool) *Value {
 			lFrame[b1] = row
 			lFrame["_1"] = row
 			lFrame["_"] = row
-			if lowerB1 := strings.ToLower(b1); lowerB1 != b1 {
+			if lowerB1 := utf8.AsciiLower(b1); lowerB1 != b1 {
 				lFrame[lowerB1] = row
 			}
 			for _, b := range binders {
@@ -1589,13 +1589,13 @@ func doLink(args *Args, ctx *Context, leftJoin bool) *Value {
 		"_":                 nil,
 		b2:                  nil,
 		"_2":                nil,
-		strings.ToLower(b1): nil,
-		strings.ToLower(b2): nil,
+		utf8.AsciiLower(b1): nil,
+		utf8.AsciiLower(b2): nil,
 	}
 	ctx.PushFrame(frame)
 	defer ctx.PopFrame()
 
-	lowerB1, lowerB2 := strings.ToLower(b1), strings.ToLower(b2)
+	lowerB1, lowerB2 := utf8.AsciiLower(b1), utf8.AsciiLower(b2)
 	setLeft := func(left *Value) {
 		frame[b1] = left
 		frame["_1"] = left

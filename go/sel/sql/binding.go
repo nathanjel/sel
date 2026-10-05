@@ -126,7 +126,7 @@ func checkNumeric(where string, v *sel.Value) {
 // it raw: `collation="sargable"` did nothing and `prefilter="bogus"` was accepted.
 func columnFlags(exact, sargable bool, collation, prefilter string, splitSargable bool) (bool, bool, string) {
 	if collation != "" {
-		switch strings.ToLower(collation) {
+		switch utf8.AsciiLower(collation) {
 		case "binary", "exact":
 			exact = true
 		case "sargable", "prefilter":
@@ -145,7 +145,7 @@ func columnFlags(exact, sargable bool, collation, prefilter string, splitSargabl
 // checkPrefilter normalises the spellings of a prefilter strategy and refuses
 // the rest.
 func checkPrefilter(p string) string {
-	switch strings.ToLower(p) {
+	switch utf8.AsciiLower(p) {
 	case "":
 		return ""
 	case "separate", "splitsargable", "split_sargable":

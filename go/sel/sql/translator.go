@@ -2229,7 +2229,7 @@ func aggFold(name string) string {
 }
 
 func aggSkeleton(name string) string {
-	return strings.ToLower(name)
+	return utf8.AsciiLower(name)
 }
 
 func aggReturns(name string) SqlKind {

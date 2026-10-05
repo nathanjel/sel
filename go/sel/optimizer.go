@@ -9,6 +9,7 @@ import (
 
 	"github.com/nathanjel/sel/go/internal/decimal"
 	"github.com/nathanjel/sel/go/internal/mathops"
+	"github.com/nathanjel/sel/go/internal/utf8"
 	"github.com/nathanjel/sel/go/internal/vocab"
 )
 
@@ -181,10 +182,6 @@ func optFold(node *Node) *Node {
 	return node
 }
 
-func upperName(s string) string {
-	return strings.ToUpper(s)
-}
-
 func optFieldRefs(node *Node, binder string) []string {
 	var refs []string
 	seen := make(map[string]bool)
@@ -194,8 +191,8 @@ func optFieldRefs(node *Node, binder string) []string {
 			return
 		}
 		if n.T == NodeIndex && n.L != nil && n.R != nil && n.L.T == NodeVar && n.R.T == NodeText {
-			v := upperName(n.L.S)
-			if binder == "" || v == upperName(binder) || v == "_" || v == "_1" || v == "_2" {
+			v := utf8.AsciiUpper(n.L.S)
+			if binder == "" || v == utf8.AsciiUpper(binder) || v == "_" || v == "_1" || v == "_2" {
 				if !seen[n.R.S] {
 					seen[n.R.S] = true
 					refs = append(refs, n.R.S)
@@ -219,7 +216,7 @@ func optFieldRefs(node *Node, binder string) []string {
 func optReadsVar(node *Node, names []string) bool {
 	wanted := make(map[string]bool)
 	for _, n := range names {
-		wanted[upperName(n)] = true
+		wanted[utf8.AsciiUpper(n)] = true
 	}
 	found := false
 	var walk func(n *Node)
@@ -227,7 +224,7 @@ func optReadsVar(node *Node, names []string) bool {
 		if n == nil || found {
 			return
 		}
-		if n.T == NodeVar && wanted[upperName(n.S)] {
+		if n.T == NodeVar && wanted[utf8.AsciiUpper(n.S)] {
 			found = true
 			return
 		}
@@ -336,7 +333,7 @@ func optMapPassthroughs(step *Node) []string {
 		v := info.body.Items[i+1]
 		if k.T == NodeText && v.T == NodeIndex && v.L != nil && v.R != nil &&
 			v.L.T == NodeVar && v.R.T == NodeText &&
-			upperName(v.L.S) == upperName(info.binder) && v.R.S == k.S {
+			utf8.AsciiUpper(v.L.S) == utf8.AsciiUpper(info.binder) && v.R.S == k.S {
 			fields = append(fields, k.S)
 		}
 	}
@@ -428,7 +425,7 @@ func optRenameVar(node *Node, oldName string, newName string) *Node {
 	// A compiled plan names the old binder in its loads; the copy is renamed, so
 	// the plan is stale and the copy is evaluated as a tree (or planned again).
 	cp.mathPlan = nil
-	if cp.T == NodeVar && upperName(cp.S) == upperName(oldName) {
+	if cp.T == NodeVar && utf8.AsciiUpper(cp.S) == utf8.AsciiUpper(oldName) {
 		cp.S = newName
 	}
 	if cp.L != nil {
@@ -457,10 +454,10 @@ func optCannotRaise(node *Node, binder string, logical bool) bool {
 	case NodeNum, NodeText, NodeBool, NodeNull:
 		return true
 	case NodeVar:
-		name := upperName(node.S)
-		return name == "_K" || name == upperName(binder)
+		name := utf8.AsciiUpper(node.S)
+		return name == "_K" || name == utf8.AsciiUpper(binder)
 	case NodeIndex:
-		return logical && node.L != nil && node.L.T == NodeVar && upperName(node.L.S) == upperName(binder) &&
+		return logical && node.L != nil && node.L.T == NodeVar && utf8.AsciiUpper(node.L.S) == utf8.AsciiUpper(binder) &&
 			node.R != nil && node.R.T == NodeText
 	case NodeBin:
 		return logical && safeLogicalOps[node.S] &&
@@ -697,7 +694,7 @@ func optLogicalSteps(source *Node, current []*Node, logical bool) []*Node {
 				}
 				if left.valid && right.valid && optFilterPredicateCannotRaise(right.predicate, right.binder, logical) {
 					rightPred := right.predicate
-					if upperName(left.binder) != upperName(right.binder) {
+					if utf8.AsciiUpper(left.binder) != utf8.AsciiUpper(right.binder) {
 						rightPred = optRenameVar(right.predicate, right.binder, left.binder)
 					}
 					combined := NewNode(NodeBin, left.predicate.Pos)

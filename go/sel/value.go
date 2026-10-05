@@ -621,7 +621,7 @@ func (v *Value) AsBool(pos Pos) bool {
 func (v *Value) AsDecimal(pos Pos) *decimal.Dec {
 	s := v.ScalarSource(pos)
 	if s.kind != KindText {
-		fail("E_NOT_NUM", fmt.Sprintf("expected a number, got %s", strings.ToLower(s.kind.String())), pos)
+		fail("E_NOT_NUM", fmt.Sprintf("expected a number, got %s", utf8.AsciiLower(s.kind.String())), pos)
 	}
 	if s.decVal != nil {
 		return s.decVal

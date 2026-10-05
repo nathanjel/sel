@@ -1,8 +1,6 @@
 package sql
 
 import (
-	"strings"
-
 	"github.com/nathanjel/sel/go/internal/utf8"
 )
 
@@ -71,7 +69,7 @@ func orderedSet[V any](list *[]pair[string, V], k string, v V) {
 func binderKeys(names []string) []string {
 	var out []string
 	for _, name := range names {
-		lower := strings.ToLower(name)
+		lower := utf8.AsciiLower(name)
 		for _, k := range []string{name, lower} {
 			if !containsString(out, k) {
 				out = append(out, k)

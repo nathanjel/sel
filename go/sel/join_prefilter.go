@@ -1,8 +1,6 @@
 package sel
 
 import (
-	"strings"
-
 	"github.com/nathanjel/sel/go/internal/utf8"
 	"github.com/nathanjel/sel/go/internal/vocab"
 )
@@ -261,7 +259,7 @@ func newJoinSideFacts(val *Value, keys map[string]bool, nullable bool, bound []s
 			continue
 		}
 		side.Names[b] = true
-		side.Names[strings.ToLower(b)] = true
+		side.Names[utf8.AsciiLower(b)] = true
 	}
 	first := firstCollectionItem(val)
 	if first != nil {
