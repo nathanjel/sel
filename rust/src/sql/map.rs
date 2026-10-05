@@ -817,6 +817,12 @@ fn quoted_runs(tpl: &str) -> Vec<String> {
     out
 }
 
+/// Holds a dialect's numericGuard to its funcs.ISNUM, once, at its first use.
+/// A disagreement is a mistake in the application's dialect, not a rule that
+/// cannot be translated: it panics (the start-up error other hosts raise as a
+/// LogicException/Error, `register.guard.*` in 50-rendering-and-
+/// registration.sqlt), on every use until fixed, rather than return a
+/// SqlError that try_translate would swallow.
 pub fn check_numeric_guard(dialect: &str) {
     {
         let gc = guard_checked_store().read().unwrap();

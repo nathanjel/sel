@@ -3008,6 +3008,8 @@ pub fn merge_slots(a: &mut SlotMap, b: SlotMap) {
     for kv_b in b {
         for kv_a in a.iter() {
             if kv_a.0 == kv_b.0 {
+                // An invariant of the translator (its sources never share a
+                // slot), not something a program or dialect can do: a bug.
                 panic!("two sources both supply the skeleton slot {{{}}}; one would silently shadow the other", kv_b.0);
             }
         }

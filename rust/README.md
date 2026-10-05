@@ -74,9 +74,15 @@ stable `code` (`E_NOT_NUM`, `E_ABORT`, …) and the `pos` of the node that faile
   `sql`, `limits` and `text::SelStr`. The other modules are public only so the
   repository's own tests and harness can reach them, are hidden from the
   documentation, and may change in any release.
-- The SQL layer's configuration calls — `sql::define`, `define_dialect`,
-  `define_builder`, the `Binding` constructors and `plan_hybrid` — panic with a
-  `SqlError` on a bad argument rather than return one. `sql::define` takes a
+- The SQL layer's configuration calls panic on a bad argument rather than
+  return an error, in two kinds. A `Binding` constructor, or `plan_hybrid` given
+  bindings it cannot use, panics with a `SqlError` (`E_SQL_BINDING`,
+  `E_SQL_DIALECT`, …), as `translate` would return it. A map registration that
+  is a programming mistake — `sql::define`, `define_dialect` or
+  `define_builder` given a malformed entry, or a dialect whose `numericGuard`
+  disagrees with its `ISNUM`, found at its first use — panics with a plain
+  message: it is the start-up error the other hosts raise as a non-SQL exception,
+  which no "could not translate" path may swallow. `sql::define` takes a
   `serde_json::Value`, re-exported as `sel_lang::sql::serde_json`.
 - `Binding::column` takes all nine of its fields positionally.
 - Stack use is bounded: compiling or evaluating a program nested past the

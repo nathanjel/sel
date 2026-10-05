@@ -85,14 +85,19 @@ pub struct Binding {
     pub(crate) value_type: Option<SqlKind>,
 }
 
+/// A malformed binding: the constructors panic with an `E_SQL_BINDING`
+/// SqlError rather than return one (the README says so), as plan_hybrid does
+/// for a binding set it cannot use.
+fn binding_error(message: impl Into<String>) -> ! {
+    std::panic::panic_any(SqlError::new("E_SQL_BINDING", message, Pos::default()))
+}
+
 fn check_name(what: &str, v: &str) {
     if v.is_empty() {
-        let _ = refuse::<()>("E_SQL_BINDING", format!("a binding has an empty {} name", what), Pos::default())
-            .unwrap_or_else(|e| std::panic::panic_any(e));
+        binding_error(format!("a binding has an empty {} name", what));
     }
     if v.contains('\0') {
-        let _ = refuse::<()>("E_SQL_BINDING", format!("a binding has a {} name containing a NUL, which no dialect can quote", what), Pos::default())
-            .unwrap_or_else(|e| std::panic::panic_any(e));
+        binding_error(format!("a binding has a {} name containing a NUL, which no dialect can quote", what));
     }
 }
 
@@ -100,12 +105,7 @@ fn check_name(what: &str, v: &str) {
 // kinds of fragment a translation can produce, not of a column.
 fn check_column_type(typ: SqlKind) {
     if typ == SqlKind::List || typ == SqlKind::Statement {
-        refuse::<()>(
-            "E_SQL_BINDING",
-            format!("a binding has type {}; use one of UNKNOWN, NUM, TEXT, BOOL, BIN", typ.as_str()),
-            Pos::default(),
-        )
-        .unwrap_or_else(|e| std::panic::panic_any(e));
+        binding_error(format!("a binding has type {}; use one of UNKNOWN, NUM, TEXT, BOOL, BIN", typ.as_str()));
     }
 }
 
@@ -119,12 +119,7 @@ fn check_collation(c: &str) -> (bool, bool) {
         "binary" | "exact" => (true, false),
         "sargable" | "prefilter" => (false, true),
         "default" | "none" => (false, false),
-        _ => refuse::<(bool, bool)>(
-            "E_SQL_BINDING",
-            format!("unknown collation '{}'; use 'binary', 'exact', 'sargable', or 'default'", c),
-            Pos::default(),
-        )
-        .unwrap_or_else(|e| std::panic::panic_any(e)),
+        _ => binding_error(format!("unknown collation '{}'; use 'binary', 'exact', 'sargable', or 'default'", c)),
     }
 }
 
@@ -136,12 +131,7 @@ fn check_prefilter(p: &str) -> String {
     match p.to_ascii_lowercase().as_str() {
         "separate" | "splitsargable" | "split_sargable" => "separate".to_string(),
         "inline" => "inline".to_string(),
-        _ => refuse::<String>(
-            "E_SQL_BINDING",
-            format!("unknown prefilter '{}'; use 'separate' or 'inline'", p),
-            Pos::default(),
-        )
-        .unwrap_or_else(|e| std::panic::panic_any(e)),
+        _ => binding_error(format!("unknown prefilter '{}'; use 'separate' or 'inline'", p)),
     }
 }
 
@@ -175,20 +165,12 @@ fn check_numeric(where_str: &str, v: &Value) {
         } else {
             &v.scalar()
         };
-        let _ = refuse::<()>(
-            "E_SQL_BINDING",
-            format!("{} declares type NUM, which asks for it to be emitted unquoted, but {:?} is not a number", where_str, shown),
-            Pos::default(),
-        ).unwrap_or_else(|e| std::panic::panic_any(e));
+        binding_error(format!("{} declares type NUM, which asks for it to be emitted unquoted, but {:?} is not a number", where_str, shown));
     }
     let text = v.scalar();
     let d = dec_parse(&text, Pos::default()).ok();
     if d.is_none() || dec_format(d.as_ref().unwrap()) != text {
-        let _ = refuse::<()>(
-            "E_SQL_BINDING",
-            format!("{} declares type NUM and is {:?}, which is not how SEL canonicalises it; write canonical decimals or omit type: NUM", where_str, text),
-            Pos::default(),
-        ).unwrap_or_else(|e| std::panic::panic_any(e));
+        binding_error(format!("{} declares type NUM and is {:?}, which is not how SEL canonicalises it; write canonical decimals or omit type: NUM", where_str, text));
     }
 }
 
@@ -247,8 +229,7 @@ impl Binding {
         split_sargable: bool,
     ) -> Self {
         if raw.is_empty() {
-            let _ = refuse::<()>("E_SQL_BINDING", "a raw column binding cannot be empty", Pos::default())
-                .unwrap_or_else(|e| std::panic::panic_any(e));
+            binding_error("a raw column binding cannot be empty");
         }
         check_column_type(typ);
         let (exact, sargable, prefilter) =
@@ -280,17 +261,12 @@ impl Binding {
 
     pub fn columns(items: Vec<Binding>) -> Self {
         if items.is_empty() {
-            let _ = refuse::<()>("E_SQL_BINDING", "a columns binding needs at least one column", Pos::default())
-                .unwrap_or_else(|e| std::panic::panic_any(e));
+            binding_error("a columns binding needs at least one column");
         }
         let mut specs = Vec::with_capacity(items.len());
         for (i, item) in items.into_iter().enumerate() {
             if item.kind != BindingKind::Column || item.column.is_none() {
-                let _ = refuse::<()>(
-                    "E_SQL_BINDING",
-                    format!("a columns binding takes column bindings, and item {} is not a column", i + 1),
-                    Pos::default(),
-                ).unwrap_or_else(|e| std::panic::panic_any(e));
+                binding_error(format!("a columns binding takes column bindings, and item {} is not a column", i + 1));
             }
             specs.push(item.column.unwrap());
         }
@@ -346,8 +322,7 @@ impl Binding {
         split_sargable: bool,
     ) -> Self {
         if query.is_empty() {
-            let _ = refuse::<()>("E_SQL_BINDING", "a relation query cannot be empty", Pos::default())
-                .unwrap_or_else(|e| std::panic::panic_any(e));
+            binding_error("a relation query cannot be empty");
         }
         if !alias.is_empty() {
             check_name("alias", alias);
@@ -390,13 +365,11 @@ impl Binding {
     pub fn with_unique_key(mut self, key: &str) -> Self {
         check_name("unique key", key);
         if self.kind != BindingKind::Relation || self.relation.is_none() {
-            let _ = refuse::<()>("E_SQL_BINDING", "a unique key must name a declared relation field", Pos::default())
-                .unwrap_or_else(|e| std::panic::panic_any(e));
+            binding_error("a unique key must name a declared relation field");
         }
         let rel = self.relation.as_mut().unwrap();
         if !rel.fields.contains_key(&key.to_ascii_uppercase()) {
-            let _ = refuse::<()>("E_SQL_BINDING", "a unique key must name a declared relation field", Pos::default())
-                .unwrap_or_else(|e| std::panic::panic_any(e));
+            binding_error("a unique key must name a declared relation field");
         }
         rel.unique_key = key.to_string();
         self
@@ -418,27 +391,18 @@ fn make_relation(
 
     for fe in fields {
         if fe.binding.kind != BindingKind::Column || fe.binding.column.is_none() {
-            let _ = refuse::<()>(
-                "E_SQL_BINDING",
-                format!("the field {} of a relation binding must be a column binding", fe.name),
-                Pos::default(),
-            ).unwrap_or_else(|e| std::panic::panic_any(e));
+            binding_error(format!("the field {} of a relation binding must be a column binding", fe.name));
         }
         let uc = fe.name.to_ascii_uppercase();
         if field_specs.contains_key(&uc) {
-            refuse::<()>("E_SQL_BINDING", "relation fields collide ignoring ASCII case", Pos::default())
-                .unwrap_or_else(|e| std::panic::panic_any(e));
+            binding_error("relation fields collide ignoring ASCII case");
         }
         field_specs.insert(uc.clone(), fe.binding.column.unwrap());
         field_order.push(uc);
     }
 
     if !scalar.is_empty() && !field_specs.contains_key(&scalar.to_ascii_uppercase()) {
-        let _ = refuse::<()>(
-            "E_SQL_BINDING",
-            format!("a relation binding names {} as its scalar, which is not one of its fields", scalar),
-            Pos::default(),
-        ).unwrap_or_else(|e| std::panic::panic_any(e));
+        binding_error(format!("a relation binding names {} as its scalar, which is not one of its fields", scalar));
     }
 
     Binding {
@@ -472,8 +436,7 @@ impl Bindings {
             for (k, v) in items {
                 let key = k.to_ascii_uppercase();
                 if m.contains_key(&key) {
-                    refuse::<()>("E_SQL_BINDING", "binding names collide ignoring ASCII case", Pos::default())
-                        .unwrap_or_else(|e| std::panic::panic_any(e));
+                    binding_error("binding names collide ignoring ASCII case");
                 }
                 m.insert(key, v);
             }
