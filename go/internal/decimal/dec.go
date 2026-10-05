@@ -22,8 +22,25 @@ const (
 	DIV_SCALE       = limits.DIV_SCALE
 	MAX_INT_DIGITS  = limits.MAX_INT_DIGITS
 	MAX_FRAC_DIGITS = limits.MAX_FRAC_DIGITS
-	MAX_INT_BITS    = 3321929
+	// MAX_INT_BITS is ⌈MAX_INT_DIGITS·log2 10⌉: a magnitude of fewer bits is
+	// below 2^(MAX_INT_BITS-1) < 10^MAX_INT_DIGITS, so Guard counts digits only
+	// from this bit length up. Derived in integer arithmetic between two bounds
+	// on log2 10 (log2Of10Lo/Hi over 10^9); D·log2 10 is irrational, so its
+	// ceiling is its floor plus one, and the floor is exact when both bounds
+	// agree, which the array length below asserts at compile time.
+	MAX_INT_BITS = MAX_INT_DIGITS*log2Of10Hi/log2Of10Den + 1
 )
+
+// log2 10 = 3.3219280948…, bracketed to nine decimals.
+const (
+	log2Of10Lo  = 3321928094
+	log2Of10Hi  = 3321928095
+	log2Of10Den = 1000000000
+)
+
+// A compile-time assertion: the array length is negative, and the package does
+// not compile, unless the lower bound gives the same MAX_INT_BITS.
+var _ [1 - 2*(MAX_INT_BITS-(MAX_INT_DIGITS*log2Of10Lo/log2Of10Den+1))*(MAX_INT_BITS-(MAX_INT_DIGITS*log2Of10Lo/log2Of10Den+1))]struct{}
 
 type Dec struct {
 	Neg    bool

@@ -97,7 +97,7 @@ func sortLeaf(v *Value) *Value {
 			v = v.entries[0].Val
 		}
 		guard++
-		if guard > 1000 {
+		if guard > maxDepth { // as ScalarSource
 			return nil
 		}
 	}

@@ -8,6 +8,12 @@ use crate::sql::binding::{BindingKind, Bindings};
 use crate::sql::errors::{refuse, SqlError};
 use crate::sql::node::{SNode, SNodeType};
 
+/// Where the static walks below stop with their conservative answer. They
+/// recurse over a tree whose depth is already capped at MAX_DEPTH (the parser's
+/// and stage 1's E_SQL_DEPTH), and stop short of it to leave headroom for the
+/// caller's frames.
+const WALK_DEPTH: usize = crate::limits::MAX_DEPTH - 20;
+
 pub fn scope(bindings: Option<&Bindings>) -> (HashSet<String>, Value) {
     let mut names = HashSet::new();
     let root = Value::null();
@@ -57,7 +63,7 @@ pub fn text_literal_results(node: Option<&SNode>, depth: usize) -> bool {
         Some(n) => n,
         None => return false,
     };
-    if depth >= 180 || n.t != SNodeType::Call || (n.str != "IF" && n.str != "COND") {
+    if depth >= WALK_DEPTH || n.t != SNodeType::Call || (n.str != "IF" && n.str != "COND") {
         return false;
     }
     let args = &n.kids;
@@ -94,7 +100,7 @@ pub fn identity_projection(node: Option<&SNode>, depth: usize) -> bool {
         Some(n) => n,
         None => return false,
     };
-    if depth >= 180 {
+    if depth >= WALK_DEPTH {
         return false;
     }
     match n.t {
@@ -134,7 +140,7 @@ pub fn identity_inputs(node: Option<&SNode>, depth: usize) -> NeededFields {
         Some(n) => n,
         None => return NeededFields { all: true, fields: HashSet::new() },
     };
-    if depth >= 180 {
+    if depth >= WALK_DEPTH {
         return NeededFields { all: true, fields: HashSet::new() };
     }
     match n.t {

@@ -42,6 +42,12 @@ const TEN19: u64 = 10_000_000_000_000_000_000;
 const LOG10_2_Q64: u128 = 5_553_023_288_523_357_132;
 /// Cached powers of five, in words, before the cache starts over.
 const POW5_CACHE_WORDS: usize = 1 << 21;
+/// The largest k with 5^k in one u64 word (5^27 < 2^64 < 5^28).
+const POW5_WORD_MAX: usize = 27;
+const _: () = assert!(
+    5u128.pow(POW5_WORD_MAX as u32) <= u64::MAX as u128
+        && 5u128.pow(POW5_WORD_MAX as u32 + 1) > u64::MAX as u128
+);
 
 // ---- words -----------------------------------------------------------------
 
@@ -683,12 +689,12 @@ thread_local! {
     static POW5: RefCell<Pow5Cache> = RefCell::new(Pow5Cache::default());
 }
 
-/// 5^k (k > 27), cached with its halves.
+/// 5^k (k > POW5_WORD_MAX), cached with its halves.
 fn pow5(k: usize) -> Rc<Power> {
     if let Some(p) = POW5.with(|c| c.borrow().map.get(&k).cloned()) {
         return p;
     }
-    let value = if k <= 27 {
+    let value = if k <= POW5_WORD_MAX {
         vec![5u64.pow(k as u32)]
     } else {
         let half = pow5(k / 2);
@@ -743,7 +749,7 @@ fn mul_pow10_nat(a: &[u64], k: usize) -> Vec<u64> {
 
 /// a / 5^k and a mod 5^k.
 fn divmod_pow5(a: &[u64], k: usize) -> (Vec<u64>, Vec<u64>) {
-    if k <= 27 {
+    if k <= POW5_WORD_MAX {
         let mut q = a.to_vec();
         let r = div_1(&mut q, 5u64.pow(k as u32));
         normalize(&mut q);

@@ -6,7 +6,10 @@ use regex::Regex;
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex, OnceLock};
 
-const MAX_QUANTIFIER: usize = 65535;
+const MAX_QUANTIFIER: usize = crate::limits::MAX_REGEX_QUANTIFIER;
+/// The compiled-pattern cache keeps at most this many patterns (§7.8), the
+/// oldest evicted first.
+const REGEX_CACHE_SIZE: usize = 256;
 
 fn bad_regex(message: &str, pattern: &str, at: usize, pos: Pos) -> SelError {
     SelError::new(
@@ -621,7 +624,7 @@ impl RegexCache {
         {
             return;
         }
-        if self.0.len() == 256 {
+        if self.0.len() == REGEX_CACHE_SIZE {
             self.0.pop_front();
         }
         self.0
@@ -934,11 +937,11 @@ mod tests {
         for n in 0..254 {
             cache.insert(&format!("p{n}"), false, compiled.clone());
         }
-        assert_eq!(cache.0.len(), 256);
+        assert_eq!(cache.0.len(), REGEX_CACHE_SIZE);
         assert!(cache.get("a", false).is_some());
         cache.insert("a", false, compiled.clone());
         cache.insert("new", false, compiled);
-        assert_eq!(cache.0.len(), 256);
+        assert_eq!(cache.0.len(), REGEX_CACHE_SIZE);
         assert!(cache.get("a", false).is_none());
         assert!(cache.get("a", true).is_some());
     }

@@ -10,8 +10,10 @@ use crate::math_ops::{BUILTINS, OPERATORS, PREFIX};
 use crate::utf8::{Pos, SelError};
 use crate::value::Value;
 
-pub const MAX_SCALE: i64 = 1_000_000;
-pub const MAX_POWER: i64 = 100_000;
+// The §6.4 argument caps, from spec/limits.json; check_sized_int below is the
+// one checker the math plan and the ROUND/POWER builtins share.
+pub const MAX_SCALE: i64 = crate::limits::MAX_ROUND_SCALE as i64;
+pub const MAX_POWER: i64 = crate::limits::MAX_POWER_EXPONENT as i64;
 
 pub fn check_sized_int(
     d: &Dec,

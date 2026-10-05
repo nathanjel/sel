@@ -1,5 +1,9 @@
 //! SPEC 7.8 position-automaton ambiguity analysis. The AST is deliberately
 //! unsimplified: duplicate alternatives are significant to this analysis.
+use crate::limits::{
+    REGEX_AMBIGUITY_BUDGET, REGEX_ANALYSIS_EDGES, REGEX_ANALYSIS_PAIR_WORK,
+    REGEX_ANALYSIS_POSITIONS, REGEX_ANALYSIS_RANGES,
+};
 use regex_syntax::ast::{
     self, Ast, ClassSet, ClassSetItem as C, RepetitionKind as R, RepetitionRange as RR,
 };
@@ -182,7 +186,7 @@ impl Analysis {
                 return Err("nullable choice inside a loop");
             }
             self.budget += n;
-            if self.budget > 16 {
+            if self.budget > REGEX_AMBIGUITY_BUDGET {
                 return Err("ambiguity budget");
             }
         }
@@ -191,7 +195,7 @@ impl Analysis {
     fn join(&mut self, l: &[usize], f: &[usize], fixed: bool) -> Result<()> {
         self.edges += l.len() * f.len();
         self.ranges += l.len() * f.iter().map(|&q| self.classes[q].len()).sum::<usize>();
-        if self.edges > 1 << 18 || self.ranges > 1 << 21 {
+        if self.edges > REGEX_ANALYSIS_EDGES || self.ranges > REGEX_ANALYSIS_RANGES {
             return Err("analysis edge cap");
         }
         for &p in l {
@@ -212,7 +216,7 @@ impl Analysis {
         match &t.kind {
             Kind::Eps => Ok((true, vec![], vec![])),
             Kind::Letter(c) => {
-                if self.classes.len() >= 1 << 17 {
+                if self.classes.len() >= REGEX_ANALYSIS_POSITIONS {
                     return Err("position cap");
                 }
                 let p = self.classes.len();
@@ -401,7 +405,7 @@ pub fn analyse(pattern: &str, icase: bool) -> Result<()> {
     let mut work = 0;
     while let Some((p, r)) = todo.pop() {
         work += inside[p].len() * inside[r].len();
-        if work > 1 << 20 {
+        if work > REGEX_ANALYSIS_PAIR_WORK {
             return Err("pair-graph cap");
         }
         for &pp in &inside[p] {

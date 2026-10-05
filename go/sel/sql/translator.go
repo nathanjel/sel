@@ -1174,15 +1174,19 @@ func (t *translator) apply(section string, key string, args []*Fragment, pos Pos
 	return NewFragment(parts, rk, t.dialect, nil, nil, nil)
 }
 
+// foldChainMax is the most operands foldPairwise renders as one left-to-right
+// chain; a longer unroll becomes a balanced tree.
+const foldChainMax = 256
+
 // foldPairwise combines the operands of an unroll through the operator's own
-// binary template: left to right up to 256 operands (byte for byte what a
+// binary template: left to right up to foldChainMax operands (byte for byte what a
 // hand-written chain renders), and above that a balanced tree, the left half the
 // larger, each half folded again. A left fold n deep is a tree servers refuse:
 // SQLite stops at depth 1000, MariaDB and MySQL overrun their stack at about 900
 // terms, PostgreSQL runs out of memory at 5000 (docs/internals/sql-translation.md
 // 7.1).
 func (t *translator) foldPairwise(op string, parts []*Fragment, pos Pos) *Fragment {
-	if len(parts) > 256 {
+	if len(parts) > foldChainMax {
 		m := (len(parts) + 1) / 2
 		pair := []*Fragment{t.foldPairwise(op, parts[:m], pos), t.foldPairwise(op, parts[m:], pos)}
 		return t.apply("ops", op, pair, pos, t.variantFor(op, pair))

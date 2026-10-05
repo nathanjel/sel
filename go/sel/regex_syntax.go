@@ -15,8 +15,8 @@ import (
 )
 
 const (
-	maxQuantifier   = 65535
-	maxRegexDepth   = 200
+	maxQuantifier   = limits.MAX_REGEX_QUANTIFIER
+	maxRegexDepth   = limits.MAX_DEPTH
 	maxRegexGroups  = limits.MAX_REGEX_GROUPS
 	maxRegexPattern = limits.MAX_REGEX_PATTERN
 	regexSat        = int64(1) << 40

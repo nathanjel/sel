@@ -12,6 +12,8 @@ package sel
 import (
 	"math/bits"
 	"sort"
+
+	"github.com/nathanjel/sel/go/internal/limits"
 )
 
 type rng struct{ lo, hi rune }
@@ -20,11 +22,11 @@ const (
 	maxCodePoint = rune(0x10FFFF)
 
 	reUnroll = 8
-	reAmbMax = 16
-	rePMax   = 1 << 17 // positions
-	reEMax   = 1 << 18 // follow edges
-	reDMax   = 1 << 21 // sum over edges of the range count at the target
-	reQMax   = 1 << 20 // pair-graph work
+	reAmbMax = limits.REGEX_AMBIGUITY_BUDGET
+	rePMax   = limits.REGEX_ANALYSIS_POSITIONS // positions
+	reEMax   = limits.REGEX_ANALYSIS_EDGES     // follow edges
+	reDMax   = limits.REGEX_ANALYSIS_RANGES    // sum over edges of the range count at the target
+	reQMax   = limits.REGEX_ANALYSIS_PAIR_WORK // pair-graph work
 )
 
 // ---- range sets -------------------------------------------------------------

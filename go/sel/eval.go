@@ -8,12 +8,14 @@ import (
 	"math/big"
 
 	"github.com/nathanjel/sel/go/internal/decimal"
+	"github.com/nathanjel/sel/go/internal/limits"
 	"github.com/nathanjel/sel/go/internal/mathops"
 )
 
+// The §6.4 argument caps, from spec/limits.json.
 const (
-	maxScale = 1000000
-	maxPower = 100000
+	maxScale = limits.MAX_ROUND_SCALE
+	maxPower = limits.MAX_POWER_EXPONENT
 )
 
 // wholeArgument is argument argNum of name read as a whole number (E_NOT_INT
