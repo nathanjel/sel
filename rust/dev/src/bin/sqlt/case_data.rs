@@ -9117,6 +9117,12 @@ fn c1363_bind() -> HashMap<String, Binding> {
     m
 }
 
+fn c1364_bind() -> HashMap<String, Binding> {
+    let mut m = HashMap::new();
+        m.insert("F".to_string(), bind_col("f", "", SqlKind::Bool, false, false, false, ""));
+    m
+}
+
 pub struct SqlCase {
     pub name: &'static str,
     pub at: &'static str,
@@ -35053,5 +35059,24 @@ pub const SQL_CASES: &[SqlCase] = &[
         unrepresentable: None,
         register_fn: None,
         bindings_fn: Some(c1363_bind),
+    },
+    SqlCase {
+        name: "op.in.list.boolean-needle-is-refused-at-the-element",
+        at: "53-in-is-eql.sqlt:302",
+        dialect: "mariadb",
+        source: "F IN (1, 2)",
+        expect: None,
+        error: Some("E_SQL_SHAPE 1:7"),
+        throws: None,
+        params: None,
+        as_mode: None,
+        mode: None,
+        strict: false,
+        plan: None,
+        has_tables: false,
+        tables: &[],
+        unrepresentable: None,
+        register_fn: None,
+        bindings_fn: Some(c1364_bind),
     },
 ];

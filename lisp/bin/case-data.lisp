@@ -22029,4 +22029,20 @@ ORDERS .> TAKE(1)"
    :plan nil
    :tables :none
    :register nil
-   :bindings (lambda () (list )))))
+   :bindings (lambda () (list )))
+  (list
+   :name "op.in.list.boolean-needle-is-refused-at-the-element"
+   :at "53-in-is-eql.sqlt:302"
+   :dialect "mariadb"
+   :source "F IN (1, 2)"
+   :expect nil
+   :error "E_SQL_SHAPE 1:7"
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "F" (binding-column "f" nil :bool)))))))

@@ -299,3 +299,17 @@ G IN H
 --- error
 E_SQL_UNBOUND 1:1
 ===
+### name: op.in.list.boolean-needle-is-refused-at-the-element
+--- note
+The list branch's own kind guard: a BOOL needle against number elements is refused at the
+first element, as `F EQL 1` is at its operand (sql/mutations.json
+bool-compared-to-a-number-in-a-list).
+--- dialect
+mariadb
+--- bindings
+{"F": {"kind": "column", "column": "f", "type": "BOOL"}}
+--- source
+F IN (1, 2)
+--- error
+E_SQL_SHAPE 1:7
+===

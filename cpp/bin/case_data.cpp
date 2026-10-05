@@ -9001,6 +9001,12 @@ static std::vector<std::pair<std::string, Binding>> c1363_bind() {
   };
 }
 
+static std::vector<std::pair<std::string, Binding>> c1364_bind() {
+  return {
+      {"F", Binding::column("f", std::nullopt, SqlKind::Bool)},
+  };
+}
+
 static const SqlCase CASES[] = {
     {.name = "lex.number.canonical-form-survives",
      .at = "01-lexical.sqlt:4",
@@ -32190,6 +32196,23 @@ static const SqlCase CASES[] = {
      .unrepresentable = nullptr,
      .register_fn = nullptr,
      .bindings_fn = c1363_bind},
+    {.name = "op.in.list.boolean-needle-is-refused-at-the-element",
+     .at = "53-in-is-eql.sqlt:302",
+     .dialect = "mariadb",
+     .source = "F IN (1, 2)",
+     .expect = nullptr,
+     .error = "E_SQL_SHAPE 1:7",
+     .throws = nullptr,
+     .params = nullptr,
+     .as_ = nullptr,
+     .mode = nullptr,
+     .strict = false,
+     .plan = nullptr,
+     .has_tables = false,
+     .tables = {},
+     .unrepresentable = nullptr,
+     .register_fn = nullptr,
+     .bindings_fn = c1364_bind},
 };
 
 std::span<const SqlCase> sql_cases() { return CASES; }

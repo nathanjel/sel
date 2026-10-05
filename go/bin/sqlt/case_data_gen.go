@@ -9487,6 +9487,12 @@ func c1363Bind() map[string]*sql.Binding {
 	}
 }
 
+func c1364Bind() map[string]*sql.Binding {
+	return map[string]*sql.Binding{
+		"F": bindCol("f", "", sql.KindBool, false, false, false, ""),
+	}
+}
+
 type SqlCase struct {
 	Name            string
 	At              string
@@ -32696,4 +32702,21 @@ var sqlCases = []SqlCase{
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
 	 BindingsFn: c1363Bind},
+	{Name: "op.in.list.boolean-needle-is-refused-at-the-element",
+	 At: "53-in-is-eql.sqlt:302",
+	 Dialect: "mariadb",
+	 Source: "F IN (1, 2)",
+	 Expect: nil,
+	 Error: strPtr("E_SQL_SHAPE 1:7"),
+	 Throws: nil,
+	 Params: nil,
+	 As: nil,
+	 Mode: nil,
+	 Strict: false,
+	 Plan: nil,
+	 HasTables: false,
+	 Tables: nil,
+	 Unrepresentable: nil,
+	 RegisterFn: nil,
+	 BindingsFn: c1364Bind},
 }
