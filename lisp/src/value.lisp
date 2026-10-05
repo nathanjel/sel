@@ -361,17 +361,10 @@ shared with V's shape and with every list.)"
      (mapcar #'car (value-children v)))))
 
 (defun value-values (v)
-  (cond
-    ((value-shape v)
-     (let ((storage (value-storage v)))
-       (loop for i from 0 below (length storage)
-             collect (svref storage i))))
-    ((and (value-is-list v) (value-storage v))
-     (let ((storage (value-storage v)))
-       (loop for i from 0 below (length storage)
-             collect (svref storage i))))
-    (t
-     (mapcar #'cdr (value-children v)))))
+  (let ((vec (value-element-vector v)))
+    (if vec
+        (coerce vec 'list)
+        (mapcar #'cdr (value-children v)))))
 
 (defun value-entries (v)
   "V's children as a fresh alist of (key . child): the conses and key strings
@@ -444,13 +437,10 @@ are the caller's; each child is V's own value, as VALUE-GET returns it."
                    (fail "E_NULL" "value is NULL" at))
                  (when (zerop (value-size cur))
                    (fail "E_NO_SCALAR" "value has no scalar and no children" at))
-                 (let ((first-val (cond
-                                    ((value-shape cur)
-                                     (svref (value-storage cur) 0))
-                                    ((and (value-is-list cur) (value-storage cur))
-                                     (svref (value-storage cur) 0))
-                                    (t
-                                     (cdr (first (value-children-internal cur)))))))
+                 (let ((first-val (let ((vec (value-element-vector cur)))
+                                    (if vec
+                                        (svref vec 0)
+                                        (cdr (first (value-children-internal cur)))))))
                    (setf cur first-val))
                  ;; Not reachable from SEL (values are capped at depth 200), but a
                  ;; host can chain VALUE-SETs deeper than that, so the walk stays
@@ -570,18 +560,12 @@ private to the caller and need only be checked against the cap (§6.4)."
   (declare (type fixnum depth))
   (when (> depth +max-depth+)
     (fail "E_DEPTH" "value nested too deeply" pos))
-  (cond
-    ((value-shape v)
-     (let ((storage (value-storage v)))
-       (loop for child across (the simple-vector storage)
-             do (value-depth-check child (1+ depth) pos))))
-    ((and (value-is-list v) (value-storage v))
-     (let ((storage (value-storage v)))
-       (loop for child across (the simple-vector storage)
-             do (value-depth-check child (1+ depth) pos))))
-    (t
-     (dolist (cell (value-children-internal v))
-       (value-depth-check (cdr cell) (1+ depth) pos)))))
+  (let ((vec (value-element-vector v)))
+    (if vec
+        (loop for child across (the simple-vector vec)
+              do (value-depth-check child (1+ depth) pos))
+        (dolist (cell (value-children-internal v))
+          (value-depth-check (cdr cell) (1+ depth) pos)))))
 
 ;;; --- structural equality (§5.4) --------------------------------------------
 
