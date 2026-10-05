@@ -2059,7 +2059,10 @@ notices the difference.
 it compares kind, scalar bytes and children. SQL's `IN` is a value comparison
 under a collation. For scalar operands under `textCollate` the two agree, and
 that is the only case the translator accepts: `IN` where either side has
-children is `E_SQL_SHAPE`.
+children is `E_SQL_SHAPE`. A childless right operand is not a one-item list —
+`("ab")` is parentheses — and spec §5.4 makes `x IN y` then `x EQL y`, so the
+translator translates it as `EQL`, with `EQL`'s code, and not with a copy of its
+rule (`sql/cases/53-in-is-eql.sqlt`).
 
 ### 11.3 Where numbers stop being exact
 

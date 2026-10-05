@@ -691,8 +691,11 @@ class Translator:
             x = self._guard_numeric(x, n.x)
         return self._apply('ops', n.op, [x], n.pos)
 
-    def _binary(self, n: Node) -> Fragment:
-        op = n.op
+    def _binary(self, n: Node, op: str | None = None) -> Fragment:
+        # `op` is the operator translated: the node's own, except where a
+        # spelling the spec defines as another operator borrows its translation.
+        if op is None:
+            op = n.op
 
         if op == 'IN':
             return self._in_operator(n)
@@ -859,13 +862,13 @@ class Translator:
                 elements = [binder.payload
                             for binder in self._value_elements(b, rhs.pos).values()]
 
+        # A scalar: spec §5.4's second case, where `x IN y` IS `x EQL y`. So it
+        # is translated AS EQL, through the same code, rather than by a
+        # transcription of EQL's rule that can drift from it: the copy that stood
+        # here cast an exact column's text operand that EQL leaves plain
+        # (op.in.one-value.* in sql/cases/53-in-is-eql.sqlt).
         if elements is None:
-            r = self._node(rhs)              # a scalar; spec §5.4's second case
-            l = self._node(n.l)
-            _require_comparable_kinds(l, r, 'IN', n.pos)
-            return self._apply('ops', 'IN',
-                               [self.emit.text_operand(l), self.emit.text_operand(r)],
-                               n.pos, 'scalar')
+            return self._binary(n, 'EQL')
 
         # A literal list becomes a chain of byte comparisons rather than SQL's
         # IN. Casting each element inside a variadic template is not expressible,

@@ -1,0 +1,301 @@
+### name: op.in.one-value.exact-column.mariadb
+--- note
+SPEC §5.4: `x IN y` with a childless `y` IS `x EQL y`, and `("ab")` is parentheses around one value, not a one-item list. The scalar branch of IN used its own transcription of EQL's operand rule, which cast the literal beside a column declared exact, where EQL leaves the column plain against a text literal: the comparison became case-exact under the binary collation and the column's index could not serve it. It is now translated AS EQL; the `eql-twin` case beside each pins the same bytes.
+--- dialect
+mariadb
+--- bindings
+{"A": {"kind": "column", "column": "value", "type": "TEXT", "exact": true}}
+--- source
+A IN ("ab")
+--- expect
+(`value` = 'ab')
+===
+
+### name: op.in.one-value.exact-column.eql-twin.mariadb
+--- dialect
+mariadb
+--- bindings
+{"A": {"kind": "column", "column": "value", "type": "TEXT", "exact": true}}
+--- source
+A EQL "ab"
+--- expect
+(`value` = 'ab')
+===
+
+### name: op.in.one-value.exact-column.two-values.mariadb
+--- note
+The list branch beside it: a literal list keeps the exact column plain as well, so one value and two read alike.
+--- dialect
+mariadb
+--- bindings
+{"A": {"kind": "column", "column": "value", "type": "TEXT", "exact": true}}
+--- source
+A IN ("a", "b")
+--- expect
+((`value` = 'a') OR (`value` = 'b'))
+===
+
+### name: op.in.one-value.plain-column.mariadb
+--- dialect
+mariadb
+--- bindings
+{"T": {"kind": "column", "column": "name", "type": "TEXT"}}
+--- source
+T IN ("ab")
+--- expect
+(CAST(`name` AS CHAR) COLLATE utf8mb4_nopad_bin = CAST('ab' AS CHAR) COLLATE utf8mb4_nopad_bin)
+===
+
+### name: op.in.one-value.plain-column.eql-twin.mariadb
+--- dialect
+mariadb
+--- bindings
+{"T": {"kind": "column", "column": "name", "type": "TEXT"}}
+--- source
+T EQL "ab"
+--- expect
+(CAST(`name` AS CHAR) COLLATE utf8mb4_nopad_bin = CAST('ab' AS CHAR) COLLATE utf8mb4_nopad_bin)
+===
+
+### name: op.in.one-value.exact-column.postgresql
+--- dialect
+postgresql
+--- bindings
+{"A": {"kind": "column", "column": "value", "type": "TEXT", "exact": true}}
+--- source
+A IN ("ab")
+--- expect
+("value" = 'ab')
+===
+
+### name: op.in.one-value.exact-column.eql-twin.postgresql
+--- dialect
+postgresql
+--- bindings
+{"A": {"kind": "column", "column": "value", "type": "TEXT", "exact": true}}
+--- source
+A EQL "ab"
+--- expect
+("value" = 'ab')
+===
+
+### name: op.in.one-value.exact-column.two-values.postgresql
+--- dialect
+postgresql
+--- bindings
+{"A": {"kind": "column", "column": "value", "type": "TEXT", "exact": true}}
+--- source
+A IN ("a", "b")
+--- expect
+(("value" = 'a') OR ("value" = 'b'))
+===
+
+### name: op.in.one-value.plain-column.postgresql
+--- dialect
+postgresql
+--- bindings
+{"T": {"kind": "column", "column": "name", "type": "TEXT"}}
+--- source
+T IN ("ab")
+--- expect
+(CAST("name" AS TEXT) COLLATE "C" = CAST('ab' AS TEXT) COLLATE "C")
+===
+
+### name: op.in.one-value.plain-column.eql-twin.postgresql
+--- dialect
+postgresql
+--- bindings
+{"T": {"kind": "column", "column": "name", "type": "TEXT"}}
+--- source
+T EQL "ab"
+--- expect
+(CAST("name" AS TEXT) COLLATE "C" = CAST('ab' AS TEXT) COLLATE "C")
+===
+
+### name: op.in.one-value.exact-column.sqlite
+--- dialect
+sqlite
+--- bindings
+{"A": {"kind": "column", "column": "value", "type": "TEXT", "exact": true}}
+--- source
+A IN ("ab")
+--- expect
+("value" = 'ab')
+===
+
+### name: op.in.one-value.exact-column.eql-twin.sqlite
+--- dialect
+sqlite
+--- bindings
+{"A": {"kind": "column", "column": "value", "type": "TEXT", "exact": true}}
+--- source
+A EQL "ab"
+--- expect
+("value" = 'ab')
+===
+
+### name: op.in.one-value.exact-column.two-values.sqlite
+--- dialect
+sqlite
+--- bindings
+{"A": {"kind": "column", "column": "value", "type": "TEXT", "exact": true}}
+--- source
+A IN ("a", "b")
+--- expect
+(("value" = 'a') OR ("value" = 'b'))
+===
+
+### name: op.in.one-value.plain-column.sqlite
+--- dialect
+sqlite
+--- bindings
+{"T": {"kind": "column", "column": "name", "type": "TEXT"}}
+--- source
+T IN ("ab")
+--- expect
+(CAST("name" AS TEXT) COLLATE BINARY = CAST('ab' AS TEXT) COLLATE BINARY)
+===
+
+### name: op.in.one-value.plain-column.eql-twin.sqlite
+--- dialect
+sqlite
+--- bindings
+{"T": {"kind": "column", "column": "name", "type": "TEXT"}}
+--- source
+T EQL "ab"
+--- expect
+(CAST("name" AS TEXT) COLLATE BINARY = CAST('ab' AS TEXT) COLLATE BINARY)
+===
+
+### name: op.in.one-value.plain-column.two-values
+--- dialect
+mariadb
+--- bindings
+{"T": {"kind": "column", "column": "name", "type": "TEXT"}}
+--- source
+T IN ("a", "b")
+--- expect
+((CAST(`name` AS CHAR) COLLATE utf8mb4_nopad_bin = CAST('a' AS CHAR) COLLATE utf8mb4_nopad_bin) OR (CAST(`name` AS CHAR) COLLATE utf8mb4_nopad_bin = CAST('b' AS CHAR) COLLATE utf8mb4_nopad_bin))
+===
+
+### name: op.in.one-value.value-binding
+--- note
+A scalar value binding on the right is the same one value: EQL's rule, which casts it beside an exact column because it is not a text literal.
+--- dialect
+mariadb
+--- bindings
+{"A": {"kind": "column", "column": "value", "type": "TEXT", "exact": true}, "V": {"kind": "value", "value": "ab"}}
+--- source
+A IN V
+--- expect
+(`value` = CAST('ab' AS CHAR) COLLATE utf8mb4_nopad_bin)
+===
+
+### name: op.in.one-value.value-binding.eql-twin
+--- dialect
+mariadb
+--- bindings
+{"A": {"kind": "column", "column": "value", "type": "TEXT", "exact": true}, "V": {"kind": "value", "value": "ab"}}
+--- source
+A EQL V
+--- expect
+(`value` = CAST('ab' AS CHAR) COLLATE utf8mb4_nopad_bin)
+===
+
+### name: op.in.one-value.literal-on-the-left
+--- dialect
+mariadb
+--- bindings
+{"A": {"kind": "column", "column": "value", "type": "TEXT", "exact": true}}
+--- source
+"ab" IN A
+--- expect
+('ab' = `value`)
+===
+
+### name: op.in.one-value.literal-on-the-left.eql-twin
+--- dialect
+mariadb
+--- bindings
+{"A": {"kind": "column", "column": "value", "type": "TEXT", "exact": true}}
+--- source
+"ab" EQL A
+--- expect
+('ab' = `value`)
+===
+
+### name: op.in.one-value.number-beside-an-exact-column
+--- note
+A number is cast beside an exact column, as EQL casts it: compared as numbers, '3.0' = 3 would match where SEL says FALSE.
+--- dialect
+mariadb
+--- bindings
+{"A": {"kind": "column", "column": "value", "type": "TEXT", "exact": true}}
+--- source
+A IN 3
+--- expect
+(`value` = CAST(3 AS CHAR) COLLATE utf8mb4_nopad_bin)
+===
+
+### name: op.in.one-value.number-beside-an-exact-column.eql-twin
+--- dialect
+mariadb
+--- bindings
+{"A": {"kind": "column", "column": "value", "type": "TEXT", "exact": true}}
+--- source
+A EQL 3
+--- expect
+(`value` = CAST(3 AS CHAR) COLLATE utf8mb4_nopad_bin)
+===
+
+### name: op.in.one-value.params
+--- dialect
+mariadb
+--- bindings
+{"A": {"kind": "column", "column": "value", "type": "TEXT", "exact": true}}
+--- mode
+params
+--- source
+A IN ("ab")
+--- expect
+(`value` = ?)
+--- params
+t"ab"
+===
+
+### name: op.in.one-value.none-is-refused-at-the-operand
+--- note
+Refused as `T EQL NULL` is, at the NULL.
+--- dialect
+mariadb
+--- bindings
+{"T": {"kind": "column", "column": "name", "type": "TEXT"}}
+--- source
+T IN NULL
+--- error
+E_SQL_SHAPE 1:6
+===
+
+### name: op.in.one-value.boolean-is-refused-at-the-operand
+--- dialect
+mariadb
+--- bindings
+{"F": {"kind": "column", "column": "f", "type": "BOOL"}}
+--- source
+F IN "x"
+--- error
+E_SQL_SHAPE 1:3
+===
+
+### name: op.in.one-value.left-operand-is-translated-first
+--- note
+EQL translates left to right, so the first refusal is the left operand's. The scalar branch rendered the right operand first and blamed H.
+--- dialect
+mariadb
+--- bindings
+{}
+--- source
+G IN H
+--- error
+E_SQL_UNBOUND 1:1
+===

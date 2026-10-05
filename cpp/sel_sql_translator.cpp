@@ -1572,8 +1572,8 @@ Fragment Translator::unary(const SNode& n) {
   return apply(Section::Ops, n.s(), one, n.pos());
 }
 
-Fragment Translator::binary(const SNode& n) {
-  const std::string op = n.s();
+Fragment Translator::binary(const SNode& n, const std::string* as) {
+  const std::string op = as ? *as : n.s();
   if (op == "IN") return in_operator(n);
 
   // Strictly left then right: parameter slots are numbered in this order.
@@ -1960,13 +1960,14 @@ Fragment Translator::in_operator(const SNode& n) {
     }
   }
 
-  // --- branch B: the scalar fallback
+  // --- branch B: a scalar, spec §5.4's second case, where `x IN y` IS
+  // `x EQL y`. So it is translated AS EQL, through the same code, rather than by
+  // a transcription of EQL's rule that can drift from it: the copy that stood
+  // here cast an exact column's text operand that EQL leaves plain
+  // (op.in.one-value.* in sql/cases/53-in-is-eql.sqlt).
   if (!elements) {
-    const Fragment r = node(n.r());   // RIGHT operand rendered FIRST
-    const Fragment l = node(n.l());
-    require_comparable_kinds(l, r, "IN", n.pos());
-    const Fragment args[] = {emit_.text_operand(l), emit_.text_operand(r)};
-    return apply(Section::Ops, "IN", args, n.pos(), "scalar");
+    static const std::string eql = "EQL";
+    return binary(n, &eql);
   }
 
   // --- branch C: an empty list

@@ -763,8 +763,9 @@ export class Translator {
     return this.apply('ops', n.op, [x], n.pos);
   }
 
-  binary(n) {
-    const op = n.op;
+  // `op` is the operator translated, which is the node's own except where a
+  // spelling the spec defines as another operator borrows its translation.
+  binary(n, op = n.op) {
 
     if (op === 'IN') return this.inOperator(n);
 
@@ -936,13 +937,12 @@ export class Translator {
       }
     }
 
-    if (elements === null) {
-      const r = this.node(rhs);              // a scalar; spec §5.4's second case
-      const l = this.node(n.l);
-      requireComparableKinds(l, r, 'IN', n.pos);
-      return this.apply('ops', 'IN',
-        [this.emit.textOperand(l), this.emit.textOperand(r)], n.pos, 'scalar');
-    }
+    // A scalar: spec §5.4's second case, where `x IN y` IS `x EQL y`. So it is
+    // translated AS EQL, through the same code, rather than by a transcription
+    // of EQL's rule that can drift from it: the copy that stood here cast an
+    // exact column's text operand that EQL leaves plain
+    // (op.in.one-value.* in sql/cases/53-in-is-eql.sqlt).
+    if (elements === null) return this.binary(n, 'EQL');
 
     // A literal list becomes a chain of byte comparisons rather than SQL's IN.
     // Casting each element inside a variadic template is not expressible, and

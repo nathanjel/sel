@@ -21335,4 +21335,420 @@ ORDERS .> TAKE(1)"
    :plan "pure_memory"
    :tables (list "orders")
    :register nil
-   :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num)) (cons "CUSTOMER_ID" (binding-column "customer_id" "o" :num)) (cons "AMOUNT" (binding-column "amount" "o" :num)) (cons "NAME" (binding-column "name" "o" :text))) nil nil)))))))
+   :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num)) (cons "CUSTOMER_ID" (binding-column "customer_id" "o" :num)) (cons "AMOUNT" (binding-column "amount" "o" :num)) (cons "NAME" (binding-column "name" "o" :text))) nil nil)))))
+  (list
+   :name "op.in.one-value.exact-column.mariadb"
+   :at "53-in-is-eql.sqlt:1"
+   :dialect "mariadb"
+   :source "A IN (\"ab\")"
+   :expect "(`value` = 'ab')"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "A" (binding-column "value" nil :text :exact t :sargable nil :guard nil)))))
+  (list
+   :name "op.in.one-value.exact-column.eql-twin.mariadb"
+   :at "53-in-is-eql.sqlt:14"
+   :dialect "mariadb"
+   :source "A EQL \"ab\""
+   :expect "(`value` = 'ab')"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "A" (binding-column "value" nil :text :exact t :sargable nil :guard nil)))))
+  (list
+   :name "op.in.one-value.exact-column.two-values.mariadb"
+   :at "53-in-is-eql.sqlt:25"
+   :dialect "mariadb"
+   :source "A IN (\"a\", \"b\")"
+   :expect "((`value` = 'a') OR (`value` = 'b'))"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "A" (binding-column "value" nil :text :exact t :sargable nil :guard nil)))))
+  (list
+   :name "op.in.one-value.plain-column.mariadb"
+   :at "53-in-is-eql.sqlt:38"
+   :dialect "mariadb"
+   :source "T IN (\"ab\")"
+   :expect "(CAST(`name` AS CHAR) COLLATE utf8mb4_nopad_bin = CAST('ab' AS CHAR) COLLATE utf8mb4_nopad_bin)"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "T" (binding-column "name" nil :text)))))
+  (list
+   :name "op.in.one-value.plain-column.eql-twin.mariadb"
+   :at "53-in-is-eql.sqlt:49"
+   :dialect "mariadb"
+   :source "T EQL \"ab\""
+   :expect "(CAST(`name` AS CHAR) COLLATE utf8mb4_nopad_bin = CAST('ab' AS CHAR) COLLATE utf8mb4_nopad_bin)"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "T" (binding-column "name" nil :text)))))
+  (list
+   :name "op.in.one-value.exact-column.postgresql"
+   :at "53-in-is-eql.sqlt:60"
+   :dialect "postgresql"
+   :source "A IN (\"ab\")"
+   :expect "(\"value\" = 'ab')"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "A" (binding-column "value" nil :text :exact t :sargable nil :guard nil)))))
+  (list
+   :name "op.in.one-value.exact-column.eql-twin.postgresql"
+   :at "53-in-is-eql.sqlt:71"
+   :dialect "postgresql"
+   :source "A EQL \"ab\""
+   :expect "(\"value\" = 'ab')"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "A" (binding-column "value" nil :text :exact t :sargable nil :guard nil)))))
+  (list
+   :name "op.in.one-value.exact-column.two-values.postgresql"
+   :at "53-in-is-eql.sqlt:82"
+   :dialect "postgresql"
+   :source "A IN (\"a\", \"b\")"
+   :expect "((\"value\" = 'a') OR (\"value\" = 'b'))"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "A" (binding-column "value" nil :text :exact t :sargable nil :guard nil)))))
+  (list
+   :name "op.in.one-value.plain-column.postgresql"
+   :at "53-in-is-eql.sqlt:93"
+   :dialect "postgresql"
+   :source "T IN (\"ab\")"
+   :expect "(CAST(\"name\" AS TEXT) COLLATE \"C\" = CAST('ab' AS TEXT) COLLATE \"C\")"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "T" (binding-column "name" nil :text)))))
+  (list
+   :name "op.in.one-value.plain-column.eql-twin.postgresql"
+   :at "53-in-is-eql.sqlt:104"
+   :dialect "postgresql"
+   :source "T EQL \"ab\""
+   :expect "(CAST(\"name\" AS TEXT) COLLATE \"C\" = CAST('ab' AS TEXT) COLLATE \"C\")"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "T" (binding-column "name" nil :text)))))
+  (list
+   :name "op.in.one-value.exact-column.sqlite"
+   :at "53-in-is-eql.sqlt:115"
+   :dialect "sqlite"
+   :source "A IN (\"ab\")"
+   :expect "(\"value\" = 'ab')"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "A" (binding-column "value" nil :text :exact t :sargable nil :guard nil)))))
+  (list
+   :name "op.in.one-value.exact-column.eql-twin.sqlite"
+   :at "53-in-is-eql.sqlt:126"
+   :dialect "sqlite"
+   :source "A EQL \"ab\""
+   :expect "(\"value\" = 'ab')"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "A" (binding-column "value" nil :text :exact t :sargable nil :guard nil)))))
+  (list
+   :name "op.in.one-value.exact-column.two-values.sqlite"
+   :at "53-in-is-eql.sqlt:137"
+   :dialect "sqlite"
+   :source "A IN (\"a\", \"b\")"
+   :expect "((\"value\" = 'a') OR (\"value\" = 'b'))"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "A" (binding-column "value" nil :text :exact t :sargable nil :guard nil)))))
+  (list
+   :name "op.in.one-value.plain-column.sqlite"
+   :at "53-in-is-eql.sqlt:148"
+   :dialect "sqlite"
+   :source "T IN (\"ab\")"
+   :expect "(CAST(\"name\" AS TEXT) COLLATE BINARY = CAST('ab' AS TEXT) COLLATE BINARY)"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "T" (binding-column "name" nil :text)))))
+  (list
+   :name "op.in.one-value.plain-column.eql-twin.sqlite"
+   :at "53-in-is-eql.sqlt:159"
+   :dialect "sqlite"
+   :source "T EQL \"ab\""
+   :expect "(CAST(\"name\" AS TEXT) COLLATE BINARY = CAST('ab' AS TEXT) COLLATE BINARY)"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "T" (binding-column "name" nil :text)))))
+  (list
+   :name "op.in.one-value.plain-column.two-values"
+   :at "53-in-is-eql.sqlt:170"
+   :dialect "mariadb"
+   :source "T IN (\"a\", \"b\")"
+   :expect "((CAST(`name` AS CHAR) COLLATE utf8mb4_nopad_bin = CAST('a' AS CHAR) COLLATE utf8mb4_nopad_bin) OR (CAST(`name` AS CHAR) COLLATE utf8mb4_nopad_bin = CAST('b' AS CHAR) COLLATE utf8mb4_nopad_bin))"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "T" (binding-column "name" nil :text)))))
+  (list
+   :name "op.in.one-value.value-binding"
+   :at "53-in-is-eql.sqlt:181"
+   :dialect "mariadb"
+   :source "A IN V"
+   :expect "(`value` = CAST('ab' AS CHAR) COLLATE utf8mb4_nopad_bin)"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "A" (binding-column "value" nil :text :exact t :sargable nil :guard nil)) (cons "V" (binding-value (sel:make-text "ab") nil)))))
+  (list
+   :name "op.in.one-value.value-binding.eql-twin"
+   :at "53-in-is-eql.sqlt:194"
+   :dialect "mariadb"
+   :source "A EQL V"
+   :expect "(`value` = CAST('ab' AS CHAR) COLLATE utf8mb4_nopad_bin)"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "A" (binding-column "value" nil :text :exact t :sargable nil :guard nil)) (cons "V" (binding-value (sel:make-text "ab") nil)))))
+  (list
+   :name "op.in.one-value.literal-on-the-left"
+   :at "53-in-is-eql.sqlt:205"
+   :dialect "mariadb"
+   :source "\"ab\" IN A"
+   :expect "('ab' = `value`)"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "A" (binding-column "value" nil :text :exact t :sargable nil :guard nil)))))
+  (list
+   :name "op.in.one-value.literal-on-the-left.eql-twin"
+   :at "53-in-is-eql.sqlt:216"
+   :dialect "mariadb"
+   :source "\"ab\" EQL A"
+   :expect "('ab' = `value`)"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "A" (binding-column "value" nil :text :exact t :sargable nil :guard nil)))))
+  (list
+   :name "op.in.one-value.number-beside-an-exact-column"
+   :at "53-in-is-eql.sqlt:227"
+   :dialect "mariadb"
+   :source "A IN 3"
+   :expect "(`value` = CAST(3 AS CHAR) COLLATE utf8mb4_nopad_bin)"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "A" (binding-column "value" nil :text :exact t :sargable nil :guard nil)))))
+  (list
+   :name "op.in.one-value.number-beside-an-exact-column.eql-twin"
+   :at "53-in-is-eql.sqlt:240"
+   :dialect "mariadb"
+   :source "A EQL 3"
+   :expect "(`value` = CAST(3 AS CHAR) COLLATE utf8mb4_nopad_bin)"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "A" (binding-column "value" nil :text :exact t :sargable nil :guard nil)))))
+  (list
+   :name "op.in.one-value.params"
+   :at "53-in-is-eql.sqlt:251"
+   :dialect "mariadb"
+   :source "A IN (\"ab\")"
+   :expect "(`value` = ?)"
+   :error nil
+   :throws nil
+   :params "t\"ab\""
+   :as nil
+   :mode "params"
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "A" (binding-column "value" nil :text :exact t :sargable nil :guard nil)))))
+  (list
+   :name "op.in.one-value.none-is-refused-at-the-operand"
+   :at "53-in-is-eql.sqlt:266"
+   :dialect "mariadb"
+   :source "T IN NULL"
+   :expect nil
+   :error "E_SQL_SHAPE 1:6"
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "T" (binding-column "name" nil :text)))))
+  (list
+   :name "op.in.one-value.boolean-is-refused-at-the-operand"
+   :at "53-in-is-eql.sqlt:279"
+   :dialect "mariadb"
+   :source "F IN \"x\""
+   :expect nil
+   :error "E_SQL_SHAPE 1:3"
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "F" (binding-column "f" nil :bool)))))
+  (list
+   :name "op.in.one-value.left-operand-is-translated-first"
+   :at "53-in-is-eql.sqlt:290"
+   :dialect "mariadb"
+   :source "G IN H"
+   :expect nil
+   :error "E_SQL_UNBOUND 1:1"
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list )))))

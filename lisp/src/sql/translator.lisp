@@ -1166,8 +1166,10 @@ placeholder uses."
     ;; No variant: a unary entry must be a plain template.
     (apply-entry tr :ops op (list x) (snode-pos n))))
 
-(defun translate-binary (tr n)
-  (let ((op (sel::node-s n)))
+(defun translate-binary (tr n &optional (op (sel::node-s n)))
+  "OP is the operator translated: N's own, except where a spelling the spec
+defines as another operator borrows its translation."
+  (progn
     (when (equal op "IN") (return-from translate-binary (translate-in tr n)))
     ;; Strictly left then right: parameter slots are numbered in this order.
     (let* ((arith (member op +arithmetic-ops+ :test #'equal))
@@ -2390,15 +2392,13 @@ projected column as a relation with that one field." (sel::node-s rhs) (length f
                           (plusp (sel:value-size (getf spec :value))))
                  (setf elements (mapcar (lambda (c) (binder-payload (cdr c)))
                                         (value-elements spec (snode-pos rhs)))))))))
-      ;; --- branch B: the scalar fallback
+      ;; --- branch B: a scalar, spec 5.4's second case, where `x IN y` IS
+      ;; `x EQL y`. So it is translated AS EQL, through the same code, rather
+      ;; than by a transcription of EQL's rule that can drift from it: the copy
+      ;; that stood here cast an exact column's text operand that EQL leaves
+      ;; plain (op.in.one-value.* in sql/cases/53-in-is-eql.sqlt).
       (when (eq elements :none)
-        (let* ((r (walk-node tr rhs))                 ; RIGHT operand rendered FIRST
-               (l (walk-node tr (sel::node-l n))))
-          (require-comparable-kinds l r "IN" (snode-pos n))
-          (return-from translate-in
-            (apply-entry tr :ops "IN"
-                         (list (emit-text-operand d l) (emit-text-operand d r))
-                         (snode-pos n) "scalar"))))
+        (return-from translate-in (translate-binary tr n "EQL")))
       ;; --- branch C: an empty list
       (when (null elements)
         (return-from translate-in (make-literal tr (sel:make-bool nil) :bool)))

@@ -583,10 +583,15 @@ final class Translator
         return $this->apply('ops', $n['op'], [$x], $n['pos']);
     }
 
-    /** @param array<string,mixed> $n */
-    private function binary(array $n): Fragment
+    /**
+     * @param array<string,mixed> $n
+     * @param ?string $op the operator translated: the node's own, except where a
+     *                    spelling the spec defines as another operator borrows
+     *                    its translation
+     */
+    private function binary(array $n, ?string $op = null): Fragment
     {
-        $op = $n['op'];
+        $op ??= $n['op'];
 
         if ($op === 'IN') {
             return $this->inOperator($n);
@@ -778,13 +783,13 @@ final class Translator
             }
         }
 
+        // A scalar: spec §5.4's second case, where `x IN y` IS `x EQL y`. So it
+        // is translated AS EQL, through the same code, rather than by a
+        // transcription of EQL's rule that can drift from it: the copy that
+        // stood here cast an exact column's text operand that EQL leaves plain
+        // (op.in.one-value.* in sql/cases/53-in-is-eql.sqlt).
         if ($elements === null) {
-            $r = $this->node($rhs);          // a scalar; spec §5.4's second case
-            $l = $this->node($n['l']);
-            self::requireComparableKinds($l, $r, 'IN', $n['pos']);
-            return $this->apply('ops', 'IN',
-                [$this->emit->textOperand($l), $this->emit->textOperand($r)],
-                $n['pos'], 'scalar');
+            return $this->binary($n, 'EQL');
         }
 
         // A literal list becomes a chain of byte comparisons rather than SQL's

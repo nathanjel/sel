@@ -1233,10 +1233,15 @@ func (t *translator) unary(n *sNode) *Fragment {
 }
 
 func (t *translator) binary(n *sNode) *Fragment {
-	op := n.Str
-	if op == "IN" {
+	if n.Str == "IN" {
 		return t.inOperator(n)
 	}
+	return t.binaryAs(n, n.Str)
+}
+
+// binaryAs translates n as the operator op: the node's own, except where a
+// spelling the spec defines as another operator borrows its translation.
+func (t *translator) binaryAs(n *sNode, op string) *Fragment {
 
 	var l, r *Fragment
 	if arithmeticOpsSet[op] {
@@ -1575,13 +1580,13 @@ func (t *translator) inOperator(n *sNode) *Fragment {
 		}
 	}
 
+	// A scalar: spec §5.4's second case, where `x IN y` IS `x EQL y`. So it is
+	// translated AS EQL, through the same code, rather than by a transcription
+	// of EQL's rule that can drift from it: the copy that stood here cast an
+	// exact column's text operand that EQL leaves plain
+	// (op.in.one-value.* in sql/cases/53-in-is-eql.sqlt).
 	if !hasElements {
-		r := t.node(n.R())
-		l := t.node(n.L())
-		requireComparableKinds(l, r, "IN", n.Pos)
-		args := []*Fragment{t.emit.TextOperand(l), t.emit.TextOperand(r)}
-		scalarVar := "scalar"
-		return t.apply("ops", "IN", args, n.Pos, &scalarVar)
+		return t.binaryAs(n, "EQL")
 	}
 
 	if len(elements) == 0 {

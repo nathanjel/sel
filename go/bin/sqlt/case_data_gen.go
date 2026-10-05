@@ -9188,6 +9188,164 @@ func c1320Bind() map[string]*sql.Binding {
 	}
 }
 
+func c1321Bind() map[string]*sql.Binding {
+	return map[string]*sql.Binding{
+		"A": bindCol("value", "", sql.KindText, true, false, false, ""),
+	}
+}
+
+func c1322Bind() map[string]*sql.Binding {
+	return map[string]*sql.Binding{
+		"A": bindCol("value", "", sql.KindText, true, false, false, ""),
+	}
+}
+
+func c1323Bind() map[string]*sql.Binding {
+	return map[string]*sql.Binding{
+		"A": bindCol("value", "", sql.KindText, true, false, false, ""),
+	}
+}
+
+func c1324Bind() map[string]*sql.Binding {
+	return map[string]*sql.Binding{
+		"T": bindCol("name", "", sql.KindText, false, false, false, ""),
+	}
+}
+
+func c1325Bind() map[string]*sql.Binding {
+	return map[string]*sql.Binding{
+		"T": bindCol("name", "", sql.KindText, false, false, false, ""),
+	}
+}
+
+func c1326Bind() map[string]*sql.Binding {
+	return map[string]*sql.Binding{
+		"A": bindCol("value", "", sql.KindText, true, false, false, ""),
+	}
+}
+
+func c1327Bind() map[string]*sql.Binding {
+	return map[string]*sql.Binding{
+		"A": bindCol("value", "", sql.KindText, true, false, false, ""),
+	}
+}
+
+func c1328Bind() map[string]*sql.Binding {
+	return map[string]*sql.Binding{
+		"A": bindCol("value", "", sql.KindText, true, false, false, ""),
+	}
+}
+
+func c1329Bind() map[string]*sql.Binding {
+	return map[string]*sql.Binding{
+		"T": bindCol("name", "", sql.KindText, false, false, false, ""),
+	}
+}
+
+func c1330Bind() map[string]*sql.Binding {
+	return map[string]*sql.Binding{
+		"T": bindCol("name", "", sql.KindText, false, false, false, ""),
+	}
+}
+
+func c1331Bind() map[string]*sql.Binding {
+	return map[string]*sql.Binding{
+		"A": bindCol("value", "", sql.KindText, true, false, false, ""),
+	}
+}
+
+func c1332Bind() map[string]*sql.Binding {
+	return map[string]*sql.Binding{
+		"A": bindCol("value", "", sql.KindText, true, false, false, ""),
+	}
+}
+
+func c1333Bind() map[string]*sql.Binding {
+	return map[string]*sql.Binding{
+		"A": bindCol("value", "", sql.KindText, true, false, false, ""),
+	}
+}
+
+func c1334Bind() map[string]*sql.Binding {
+	return map[string]*sql.Binding{
+		"T": bindCol("name", "", sql.KindText, false, false, false, ""),
+	}
+}
+
+func c1335Bind() map[string]*sql.Binding {
+	return map[string]*sql.Binding{
+		"T": bindCol("name", "", sql.KindText, false, false, false, ""),
+	}
+}
+
+func c1336Bind() map[string]*sql.Binding {
+	return map[string]*sql.Binding{
+		"T": bindCol("name", "", sql.KindText, false, false, false, ""),
+	}
+}
+
+func c1337Bind() map[string]*sql.Binding {
+	return map[string]*sql.Binding{
+		"A": bindCol("value", "", sql.KindText, true, false, false, ""),
+		"V": bindValue(sel.NewText("ab"), nil),
+	}
+}
+
+func c1338Bind() map[string]*sql.Binding {
+	return map[string]*sql.Binding{
+		"A": bindCol("value", "", sql.KindText, true, false, false, ""),
+		"V": bindValue(sel.NewText("ab"), nil),
+	}
+}
+
+func c1339Bind() map[string]*sql.Binding {
+	return map[string]*sql.Binding{
+		"A": bindCol("value", "", sql.KindText, true, false, false, ""),
+	}
+}
+
+func c1340Bind() map[string]*sql.Binding {
+	return map[string]*sql.Binding{
+		"A": bindCol("value", "", sql.KindText, true, false, false, ""),
+	}
+}
+
+func c1341Bind() map[string]*sql.Binding {
+	return map[string]*sql.Binding{
+		"A": bindCol("value", "", sql.KindText, true, false, false, ""),
+	}
+}
+
+func c1342Bind() map[string]*sql.Binding {
+	return map[string]*sql.Binding{
+		"A": bindCol("value", "", sql.KindText, true, false, false, ""),
+	}
+}
+
+func c1343Bind() map[string]*sql.Binding {
+	return map[string]*sql.Binding{
+		"A": bindCol("value", "", sql.KindText, true, false, false, ""),
+	}
+}
+
+func c1344Bind() map[string]*sql.Binding {
+	return map[string]*sql.Binding{
+		"T": bindCol("name", "", sql.KindText, false, false, false, ""),
+	}
+}
+
+func c1345Bind() map[string]*sql.Binding {
+	return map[string]*sql.Binding{
+		"F": bindCol("f", "", sql.KindBool, false, false, false, ""),
+	}
+}
+
+func c1346Bind() map[string]*sql.Binding {
+	return map[string]*sql.Binding{
+
+	}
+}
+
 type SqlCase struct {
 	Name            string
 	At              string
@@ -31666,4 +31824,446 @@ var sqlCases = []SqlCase{
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
 	 BindingsFn: c1320Bind},
+	{Name: "op.in.one-value.exact-column.mariadb",
+	 At: "53-in-is-eql.sqlt:1",
+	 Dialect: "mariadb",
+	 Source: "A IN (\"ab\")",
+	 Expect: strPtr("(`value` = 'ab')"),
+	 Error: nil,
+	 Throws: nil,
+	 Params: nil,
+	 As: nil,
+	 Mode: nil,
+	 Strict: false,
+	 Plan: nil,
+	 HasTables: false,
+	 Tables: nil,
+	 Unrepresentable: nil,
+	 RegisterFn: nil,
+	 BindingsFn: c1321Bind},
+	{Name: "op.in.one-value.exact-column.eql-twin.mariadb",
+	 At: "53-in-is-eql.sqlt:14",
+	 Dialect: "mariadb",
+	 Source: "A EQL \"ab\"",
+	 Expect: strPtr("(`value` = 'ab')"),
+	 Error: nil,
+	 Throws: nil,
+	 Params: nil,
+	 As: nil,
+	 Mode: nil,
+	 Strict: false,
+	 Plan: nil,
+	 HasTables: false,
+	 Tables: nil,
+	 Unrepresentable: nil,
+	 RegisterFn: nil,
+	 BindingsFn: c1322Bind},
+	{Name: "op.in.one-value.exact-column.two-values.mariadb",
+	 At: "53-in-is-eql.sqlt:25",
+	 Dialect: "mariadb",
+	 Source: "A IN (\"a\", \"b\")",
+	 Expect: strPtr("((`value` = 'a') OR (`value` = 'b'))"),
+	 Error: nil,
+	 Throws: nil,
+	 Params: nil,
+	 As: nil,
+	 Mode: nil,
+	 Strict: false,
+	 Plan: nil,
+	 HasTables: false,
+	 Tables: nil,
+	 Unrepresentable: nil,
+	 RegisterFn: nil,
+	 BindingsFn: c1323Bind},
+	{Name: "op.in.one-value.plain-column.mariadb",
+	 At: "53-in-is-eql.sqlt:38",
+	 Dialect: "mariadb",
+	 Source: "T IN (\"ab\")",
+	 Expect: strPtr("(CAST(`name` AS CHAR) COLLATE utf8mb4_nopad_bin = CAST('ab' AS CHAR) COLLATE utf8mb4_nopad_bin)"),
+	 Error: nil,
+	 Throws: nil,
+	 Params: nil,
+	 As: nil,
+	 Mode: nil,
+	 Strict: false,
+	 Plan: nil,
+	 HasTables: false,
+	 Tables: nil,
+	 Unrepresentable: nil,
+	 RegisterFn: nil,
+	 BindingsFn: c1324Bind},
+	{Name: "op.in.one-value.plain-column.eql-twin.mariadb",
+	 At: "53-in-is-eql.sqlt:49",
+	 Dialect: "mariadb",
+	 Source: "T EQL \"ab\"",
+	 Expect: strPtr("(CAST(`name` AS CHAR) COLLATE utf8mb4_nopad_bin = CAST('ab' AS CHAR) COLLATE utf8mb4_nopad_bin)"),
+	 Error: nil,
+	 Throws: nil,
+	 Params: nil,
+	 As: nil,
+	 Mode: nil,
+	 Strict: false,
+	 Plan: nil,
+	 HasTables: false,
+	 Tables: nil,
+	 Unrepresentable: nil,
+	 RegisterFn: nil,
+	 BindingsFn: c1325Bind},
+	{Name: "op.in.one-value.exact-column.postgresql",
+	 At: "53-in-is-eql.sqlt:60",
+	 Dialect: "postgresql",
+	 Source: "A IN (\"ab\")",
+	 Expect: strPtr("(\"value\" = 'ab')"),
+	 Error: nil,
+	 Throws: nil,
+	 Params: nil,
+	 As: nil,
+	 Mode: nil,
+	 Strict: false,
+	 Plan: nil,
+	 HasTables: false,
+	 Tables: nil,
+	 Unrepresentable: nil,
+	 RegisterFn: nil,
+	 BindingsFn: c1326Bind},
+	{Name: "op.in.one-value.exact-column.eql-twin.postgresql",
+	 At: "53-in-is-eql.sqlt:71",
+	 Dialect: "postgresql",
+	 Source: "A EQL \"ab\"",
+	 Expect: strPtr("(\"value\" = 'ab')"),
+	 Error: nil,
+	 Throws: nil,
+	 Params: nil,
+	 As: nil,
+	 Mode: nil,
+	 Strict: false,
+	 Plan: nil,
+	 HasTables: false,
+	 Tables: nil,
+	 Unrepresentable: nil,
+	 RegisterFn: nil,
+	 BindingsFn: c1327Bind},
+	{Name: "op.in.one-value.exact-column.two-values.postgresql",
+	 At: "53-in-is-eql.sqlt:82",
+	 Dialect: "postgresql",
+	 Source: "A IN (\"a\", \"b\")",
+	 Expect: strPtr("((\"value\" = 'a') OR (\"value\" = 'b'))"),
+	 Error: nil,
+	 Throws: nil,
+	 Params: nil,
+	 As: nil,
+	 Mode: nil,
+	 Strict: false,
+	 Plan: nil,
+	 HasTables: false,
+	 Tables: nil,
+	 Unrepresentable: nil,
+	 RegisterFn: nil,
+	 BindingsFn: c1328Bind},
+	{Name: "op.in.one-value.plain-column.postgresql",
+	 At: "53-in-is-eql.sqlt:93",
+	 Dialect: "postgresql",
+	 Source: "T IN (\"ab\")",
+	 Expect: strPtr("(CAST(\"name\" AS TEXT) COLLATE \"C\" = CAST('ab' AS TEXT) COLLATE \"C\")"),
+	 Error: nil,
+	 Throws: nil,
+	 Params: nil,
+	 As: nil,
+	 Mode: nil,
+	 Strict: false,
+	 Plan: nil,
+	 HasTables: false,
+	 Tables: nil,
+	 Unrepresentable: nil,
+	 RegisterFn: nil,
+	 BindingsFn: c1329Bind},
+	{Name: "op.in.one-value.plain-column.eql-twin.postgresql",
+	 At: "53-in-is-eql.sqlt:104",
+	 Dialect: "postgresql",
+	 Source: "T EQL \"ab\"",
+	 Expect: strPtr("(CAST(\"name\" AS TEXT) COLLATE \"C\" = CAST('ab' AS TEXT) COLLATE \"C\")"),
+	 Error: nil,
+	 Throws: nil,
+	 Params: nil,
+	 As: nil,
+	 Mode: nil,
+	 Strict: false,
+	 Plan: nil,
+	 HasTables: false,
+	 Tables: nil,
+	 Unrepresentable: nil,
+	 RegisterFn: nil,
+	 BindingsFn: c1330Bind},
+	{Name: "op.in.one-value.exact-column.sqlite",
+	 At: "53-in-is-eql.sqlt:115",
+	 Dialect: "sqlite",
+	 Source: "A IN (\"ab\")",
+	 Expect: strPtr("(\"value\" = 'ab')"),
+	 Error: nil,
+	 Throws: nil,
+	 Params: nil,
+	 As: nil,
+	 Mode: nil,
+	 Strict: false,
+	 Plan: nil,
+	 HasTables: false,
+	 Tables: nil,
+	 Unrepresentable: nil,
+	 RegisterFn: nil,
+	 BindingsFn: c1331Bind},
+	{Name: "op.in.one-value.exact-column.eql-twin.sqlite",
+	 At: "53-in-is-eql.sqlt:126",
+	 Dialect: "sqlite",
+	 Source: "A EQL \"ab\"",
+	 Expect: strPtr("(\"value\" = 'ab')"),
+	 Error: nil,
+	 Throws: nil,
+	 Params: nil,
+	 As: nil,
+	 Mode: nil,
+	 Strict: false,
+	 Plan: nil,
+	 HasTables: false,
+	 Tables: nil,
+	 Unrepresentable: nil,
+	 RegisterFn: nil,
+	 BindingsFn: c1332Bind},
+	{Name: "op.in.one-value.exact-column.two-values.sqlite",
+	 At: "53-in-is-eql.sqlt:137",
+	 Dialect: "sqlite",
+	 Source: "A IN (\"a\", \"b\")",
+	 Expect: strPtr("((\"value\" = 'a') OR (\"value\" = 'b'))"),
+	 Error: nil,
+	 Throws: nil,
+	 Params: nil,
+	 As: nil,
+	 Mode: nil,
+	 Strict: false,
+	 Plan: nil,
+	 HasTables: false,
+	 Tables: nil,
+	 Unrepresentable: nil,
+	 RegisterFn: nil,
+	 BindingsFn: c1333Bind},
+	{Name: "op.in.one-value.plain-column.sqlite",
+	 At: "53-in-is-eql.sqlt:148",
+	 Dialect: "sqlite",
+	 Source: "T IN (\"ab\")",
+	 Expect: strPtr("(CAST(\"name\" AS TEXT) COLLATE BINARY = CAST('ab' AS TEXT) COLLATE BINARY)"),
+	 Error: nil,
+	 Throws: nil,
+	 Params: nil,
+	 As: nil,
+	 Mode: nil,
+	 Strict: false,
+	 Plan: nil,
+	 HasTables: false,
+	 Tables: nil,
+	 Unrepresentable: nil,
+	 RegisterFn: nil,
+	 BindingsFn: c1334Bind},
+	{Name: "op.in.one-value.plain-column.eql-twin.sqlite",
+	 At: "53-in-is-eql.sqlt:159",
+	 Dialect: "sqlite",
+	 Source: "T EQL \"ab\"",
+	 Expect: strPtr("(CAST(\"name\" AS TEXT) COLLATE BINARY = CAST('ab' AS TEXT) COLLATE BINARY)"),
+	 Error: nil,
+	 Throws: nil,
+	 Params: nil,
+	 As: nil,
+	 Mode: nil,
+	 Strict: false,
+	 Plan: nil,
+	 HasTables: false,
+	 Tables: nil,
+	 Unrepresentable: nil,
+	 RegisterFn: nil,
+	 BindingsFn: c1335Bind},
+	{Name: "op.in.one-value.plain-column.two-values",
+	 At: "53-in-is-eql.sqlt:170",
+	 Dialect: "mariadb",
+	 Source: "T IN (\"a\", \"b\")",
+	 Expect: strPtr("((CAST(`name` AS CHAR) COLLATE utf8mb4_nopad_bin = CAST('a' AS CHAR) COLLATE utf8mb4_nopad_bin) OR (CAST(`name` AS CHAR) COLLATE utf8mb4_nopad_bin = CAST('b' AS CHAR) COLLATE utf8mb4_nopad_bin))"),
+	 Error: nil,
+	 Throws: nil,
+	 Params: nil,
+	 As: nil,
+	 Mode: nil,
+	 Strict: false,
+	 Plan: nil,
+	 HasTables: false,
+	 Tables: nil,
+	 Unrepresentable: nil,
+	 RegisterFn: nil,
+	 BindingsFn: c1336Bind},
+	{Name: "op.in.one-value.value-binding",
+	 At: "53-in-is-eql.sqlt:181",
+	 Dialect: "mariadb",
+	 Source: "A IN V",
+	 Expect: strPtr("(`value` = CAST('ab' AS CHAR) COLLATE utf8mb4_nopad_bin)"),
+	 Error: nil,
+	 Throws: nil,
+	 Params: nil,
+	 As: nil,
+	 Mode: nil,
+	 Strict: false,
+	 Plan: nil,
+	 HasTables: false,
+	 Tables: nil,
+	 Unrepresentable: nil,
+	 RegisterFn: nil,
+	 BindingsFn: c1337Bind},
+	{Name: "op.in.one-value.value-binding.eql-twin",
+	 At: "53-in-is-eql.sqlt:194",
+	 Dialect: "mariadb",
+	 Source: "A EQL V",
+	 Expect: strPtr("(`value` = CAST('ab' AS CHAR) COLLATE utf8mb4_nopad_bin)"),
+	 Error: nil,
+	 Throws: nil,
+	 Params: nil,
+	 As: nil,
+	 Mode: nil,
+	 Strict: false,
+	 Plan: nil,
+	 HasTables: false,
+	 Tables: nil,
+	 Unrepresentable: nil,
+	 RegisterFn: nil,
+	 BindingsFn: c1338Bind},
+	{Name: "op.in.one-value.literal-on-the-left",
+	 At: "53-in-is-eql.sqlt:205",
+	 Dialect: "mariadb",
+	 Source: "\"ab\" IN A",
+	 Expect: strPtr("('ab' = `value`)"),
+	 Error: nil,
+	 Throws: nil,
+	 Params: nil,
+	 As: nil,
+	 Mode: nil,
+	 Strict: false,
+	 Plan: nil,
+	 HasTables: false,
+	 Tables: nil,
+	 Unrepresentable: nil,
+	 RegisterFn: nil,
+	 BindingsFn: c1339Bind},
+	{Name: "op.in.one-value.literal-on-the-left.eql-twin",
+	 At: "53-in-is-eql.sqlt:216",
+	 Dialect: "mariadb",
+	 Source: "\"ab\" EQL A",
+	 Expect: strPtr("('ab' = `value`)"),
+	 Error: nil,
+	 Throws: nil,
+	 Params: nil,
+	 As: nil,
+	 Mode: nil,
+	 Strict: false,
+	 Plan: nil,
+	 HasTables: false,
+	 Tables: nil,
+	 Unrepresentable: nil,
+	 RegisterFn: nil,
+	 BindingsFn: c1340Bind},
+	{Name: "op.in.one-value.number-beside-an-exact-column",
+	 At: "53-in-is-eql.sqlt:227",
+	 Dialect: "mariadb",
+	 Source: "A IN 3",
+	 Expect: strPtr("(`value` = CAST(3 AS CHAR) COLLATE utf8mb4_nopad_bin)"),
+	 Error: nil,
+	 Throws: nil,
+	 Params: nil,
+	 As: nil,
+	 Mode: nil,
+	 Strict: false,
+	 Plan: nil,
+	 HasTables: false,
+	 Tables: nil,
+	 Unrepresentable: nil,
+	 RegisterFn: nil,
+	 BindingsFn: c1341Bind},
+	{Name: "op.in.one-value.number-beside-an-exact-column.eql-twin",
+	 At: "53-in-is-eql.sqlt:240",
+	 Dialect: "mariadb",
+	 Source: "A EQL 3",
+	 Expect: strPtr("(`value` = CAST(3 AS CHAR) COLLATE utf8mb4_nopad_bin)"),
+	 Error: nil,
+	 Throws: nil,
+	 Params: nil,
+	 As: nil,
+	 Mode: nil,
+	 Strict: false,
+	 Plan: nil,
+	 HasTables: false,
+	 Tables: nil,
+	 Unrepresentable: nil,
+	 RegisterFn: nil,
+	 BindingsFn: c1342Bind},
+	{Name: "op.in.one-value.params",
+	 At: "53-in-is-eql.sqlt:251",
+	 Dialect: "mariadb",
+	 Source: "A IN (\"ab\")",
+	 Expect: strPtr("(`value` = ?)"),
+	 Error: nil,
+	 Throws: nil,
+	 Params: strPtr("t\"ab\""),
+	 As: nil,
+	 Mode: strPtr("params"),
+	 Strict: false,
+	 Plan: nil,
+	 HasTables: false,
+	 Tables: nil,
+	 Unrepresentable: nil,
+	 RegisterFn: nil,
+	 BindingsFn: c1343Bind},
+	{Name: "op.in.one-value.none-is-refused-at-the-operand",
+	 At: "53-in-is-eql.sqlt:266",
+	 Dialect: "mariadb",
+	 Source: "T IN NULL",
+	 Expect: nil,
+	 Error: strPtr("E_SQL_SHAPE 1:6"),
+	 Throws: nil,
+	 Params: nil,
+	 As: nil,
+	 Mode: nil,
+	 Strict: false,
+	 Plan: nil,
+	 HasTables: false,
+	 Tables: nil,
+	 Unrepresentable: nil,
+	 RegisterFn: nil,
+	 BindingsFn: c1344Bind},
+	{Name: "op.in.one-value.boolean-is-refused-at-the-operand",
+	 At: "53-in-is-eql.sqlt:279",
+	 Dialect: "mariadb",
+	 Source: "F IN \"x\"",
+	 Expect: nil,
+	 Error: strPtr("E_SQL_SHAPE 1:3"),
+	 Throws: nil,
+	 Params: nil,
+	 As: nil,
+	 Mode: nil,
+	 Strict: false,
+	 Plan: nil,
+	 HasTables: false,
+	 Tables: nil,
+	 Unrepresentable: nil,
+	 RegisterFn: nil,
+	 BindingsFn: c1345Bind},
+	{Name: "op.in.one-value.left-operand-is-translated-first",
+	 At: "53-in-is-eql.sqlt:290",
+	 Dialect: "mariadb",
+	 Source: "G IN H",
+	 Expect: nil,
+	 Error: strPtr("E_SQL_UNBOUND 1:1"),
+	 Throws: nil,
+	 Params: nil,
+	 As: nil,
+	 Mode: nil,
+	 Strict: false,
+	 Plan: nil,
+	 HasTables: false,
+	 Tables: nil,
+	 Unrepresentable: nil,
+	 RegisterFn: nil,
+	 BindingsFn: c1346Bind},
 }
