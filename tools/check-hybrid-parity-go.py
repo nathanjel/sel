@@ -25,7 +25,8 @@ ORACLE = ROOT / 'sql' / 'oracle'
 verbose = '--verbose' in sys.argv
 # `--application` (or SEL_HYBRID_APPLICATION=1) adds the corpus's `application`
 # section: programs that call the application functions POKE and HOSTF, which
-# the host's driver registers. Opt-in until every driver registers them.
+# the host's driver registers. Every driver registers them and tools/check.sh
+# passes the flag; it stays a flag for a driver under construction.
 APPLICATION = '--application' in sys.argv or os.environ.get('SEL_HYBRID_APPLICATION') == '1'
 spec = json.loads((ORACLE / 'hybrid.json').read_text(encoding='utf-8'))
 # go/build/hybrid-driver (go/build/hybridparity before it was renamed).

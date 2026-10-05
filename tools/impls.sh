@@ -210,7 +210,7 @@ impl_batch() {
 # One worked example, in one language. `cat` is a directory under examples/ and
 # every language file in it prints byte-identical output -- that is what
 # tools/check-examples.sh checks, and what makes the set documentation rather
-# than five programs that merely look alike.
+# than a set of programs that merely look alike.
 #
 # The bundle configurations are deliberately absent. examples/*/js.mjs imports
 # ../../js/src/sel.mjs with a plain static import, because that is what a reader
@@ -561,7 +561,7 @@ impl_available() {
     # js-bundle and python-wheel have, and it was the one host without it. A
     # release was very nearly measured against a cpp/build left over from an
     # earlier branch: it passed 631 conformance cases, and disagreed with the
-    # other four hosts only in the SQL fuzz, which reads like a translator bug
+    # other hosts only in the SQL fuzz, which reads like a translator bug
     # in C++ and is nothing of the kind. `cmake --build cpp/build` does not
     # build these -- CMake builds the installable library and the Makefile
     # builds the harness -- so a plausible-looking build command leaves them
@@ -629,7 +629,7 @@ impl_available() {
 
 # The subset of SEL_IMPLS that is runnable. Quiet, because every tool calls it
 # and a fresh clone with no C++ toolchain would otherwise repeat the same warning
-# five times; check.sh reports the roster once at the top instead.
+# once per tool; check.sh reports the roster once at the top instead.
 available_impls() {
   local out=""
   for impl in $SEL_IMPLS; do
