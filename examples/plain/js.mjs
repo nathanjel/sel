@@ -2,7 +2,7 @@
 //
 //   node examples/plain/js.mjs
 //
-// The four files beside this one do the same thing through their own host API
+// The files beside this one do the same thing through their own host API
 // and print byte-identical output; tools/check-examples.sh diffs them. That is
 // the point of the example as much as the code is: the differences you see
 // between these files are the languages', never SEL's.
@@ -52,15 +52,15 @@ console.log('4. reading results');
 const v = evaluate('SPLIT("a,b,c", ",")');
 // String(), because console.log formats a raw number through util.inspect and
 // colourises it when colour is on -- under FORCE_COLOR this line printed
-// `size   => \x1b[33m3\x1b[39m` and disagreed with the other four hosts. The
+// `size   => \x1b[33m3\x1b[39m` and disagreed with the other hosts. The
 // output of these files is a cross-host contract, so nothing here may be left
 // to the host's idea of how to render a value.
 console.log('   size   =>', String(v.size()));
 console.log('   keys   =>', v.keys().join(','));
 console.log('   [2]    =>', v.get('2').asText());
 console.log('   scalar =>', v.asText());            // scalar context: first child
-// A host bool prints differently in all five languages (true/1/True/T), and
-// this file's output has to be byte-identical to its four siblings, so say it
+// A host bool prints differently in every host language (true/1/True/T), and
+// this file's output has to be byte-identical to its siblings, so say it
 // in SEL's own spelling rather than the host's.
 console.log('   bool   =>', evaluate('1 < 2').asBool() ? 'TRUE' : 'FALSE');
 

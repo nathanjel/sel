@@ -38,7 +38,7 @@ CHECKS = [
     # And the third host, for the same reason. js/src/sql is 3,300 lines whose
     # host-shaped decisions -- Map where the others use a native ordered map,
     # Object.hasOwn where they use plain membership -- are exactly the kind the
-    # other two hosts cannot fail on, so nothing else here can measure them.
+    # other hosts cannot fail on, so nothing else here can measure them.
     ('sqlt (js)',         ['node', 'js/bin/sqlt.mjs']),
     # And the fifth. Grouped with the other sqlt runners rather than last: a
     # quickload-and-run is cheap next to a C++ build, and Lisp-local mutations

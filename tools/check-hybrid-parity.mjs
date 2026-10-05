@@ -3,7 +3,7 @@
 // SQLite (node:sqlite): the plan's prefix statement is EXECUTED and the answer of
 // executeHybrid must be what run() answers, under the contract in that file's note.
 // php/bin/sqlo runs the same corpus for the PHP host on all four servers; this is
-// the JS host's own lane (T11), and python/bin/... has the twin.
+// the JS host's own lane, and tools/check-hybrid-parity.py is the Python twin.
 //
 //   node tools/check-hybrid-parity.mjs [--verbose]
 

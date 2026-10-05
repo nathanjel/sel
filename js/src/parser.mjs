@@ -92,10 +92,8 @@ class Parser {
 
   // sequence = list { ";" list } [ ";" ]
   //
-  // The try/finally is new here. It costs nothing — a failing parse abandons the
-  // Parser either way — and the Lisp and Python hosts already protect this
-  // counter, so this is the shape the five hosts converged on rather than a
-  // deviation. All five protect it now.
+  // The try/finally costs nothing — a failing parse abandons the Parser either
+  // way — and every host protects this counter the same way.
   parseSequence() {
     const start = this.peek();
     this.enter(start);

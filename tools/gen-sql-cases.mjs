@@ -234,7 +234,7 @@ function bindingCall(b, where) {
  * A JSON NUMBER is refused, here, at generation time -- the one place that reads
  * JSON at all. PHP's decoder turns a 20-digit integer into a float, Python keeps
  * it exact, and JS cannot tell 1.0 from 1, so no decoding rule is implementable
- * in all six hosts. Test data spells its numbers as strings and declares
+ * in every host. Test data spells its numbers as strings and declares
  * `"type": "NUM"` when it wants them unquoted, which is exactly what the library
  * asks of an application.
  */
@@ -488,7 +488,7 @@ if (errors.length) {
 // --- Common Lisp ------------------------------------------------------------
 //
 // Every case, as a plist, with the `bindings` and `register` blocks emitted as
-// CALLS rather than data -- the same rule the other four follow, so this runner
+// CALLS rather than data -- the same rule the other hosts follow, so this runner
 // parses nothing either.
 //
 // Unlike C++, nothing here is unrepresentable. Lisp's constructors take whatever

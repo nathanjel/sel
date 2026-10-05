@@ -14,7 +14,7 @@
 // right, through the same typed readers the builtins use, so a script passing
 // the wrong kind gets the usual error at the usual position.
 //
-// The four files beside this one print byte-identical output.
+// The files beside this one print byte-identical output.
 //
 // The visible difference here is that C++ has no from_native: each order is
 // built into a Value child by child, the way examples/plain/ builds one.
@@ -33,8 +33,8 @@
 
 namespace {
 
-// Left-pad to a fixed width, so this file's columns line up with the four
-// written in languages that have printf-style padding built in.
+// Left-pad to a fixed width, so this file's columns line up with the
+// files written in languages that have printf-style padding built in.
 std::string pad(const std::string& s, std::size_t n) {
   return s.size() >= n ? s : s + std::string(n - s.size(), ' ');
 }

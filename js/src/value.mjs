@@ -215,7 +215,7 @@ export class Value {
   static get BOOL() { return BOOL; }
 
   // Kind predicates. The recommended way to branch on kind in every host,
-  // because it is the one spelling that reads the same in all four: the kind
+  // because it is the one spelling that reads the same in all of them: the kind
   // *values* are a string here, a class constant in PHP, an enum in C++ and a
   // keyword in Lisp, so only a predicate can be documented uniformly.
   // These test the value's own kind and do not apply scalar context.
@@ -400,7 +400,7 @@ export class Value {
   // --- children -------------------------------------------------------------
 
   // A method, not a getter, so it reads the same as $v->size(), v.size() and
-  // (sel:value-size v) in the other three hosts. tools/check-api.sh keeps it
+  // (sel:value-size v) in the other hosts. tools/check-api.sh keeps it
   // that way.
   size() {
     if (this.storage !== null) return this.storage.length;
@@ -621,7 +621,7 @@ export class Value {
   // program.
   //
   // The depth rides as a parameter, as it does in dependencies(): nothing has to be
-  // released on the way out, so no guard object is needed and all five hosts spell it
+  // released on the way out, so no guard object is needed and every host spells it
   // the same way. A value of exactly MAX_DEPTH levels is fine; the level past it is
   // refused. `pos` is reported when the caller has one — the evaluator knows which
   // node asked — and is null for a call from host code, the same convention as

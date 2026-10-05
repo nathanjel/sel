@@ -10,7 +10,7 @@
 // (pure_memory). The answer is checked against a run of the same program over
 // the tables loaded into memory.
 //
-// The four files beside this one print byte-identical output.
+// The files beside this one print byte-identical output.
 //
 // Built by `make -C cpp BUILD=build-usage build-usage/example-sql-star`,
 // which links examples/lib/db.cpp and the PostgreSQL, MariaDB and SQLite

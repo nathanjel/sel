@@ -24,8 +24,10 @@ class SelConan(ConanFile):
     url = "https://github.com/nathanjel/sel"
     homepage = "https://github.com/nathanjel/sel"
     description = (
-        "A small expression language for validation rules that evaluate "
-        "identically on PHP, JavaScript, Python, C++, Common Lisp, Rust and Go"
+        "A small expression language for business rules: one rule gives the "
+        "same answer in Python, JavaScript, PHP, C++23, Common Lisp, Rust and "
+        "Go, or in your database as SQL. Exact decimal arithmetic, no "
+        "floating point, no truthiness."
     )
     topics = ("expression-language", "validation", "rules", "decimal", "interpreter")
 

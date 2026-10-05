@@ -305,12 +305,13 @@ function sizedCall(d) {
 // Targeted families. Random combinations of
 // ASCII fields and short pipelines were too unlikely ever to produce these
 // shapes, and each one hid a defect in one host or more: a computed index read
-// again by one node (SEM-01), _K over the keys a FILTER kept (SEM-02), field
-// names that differ only outside ASCII (SEM-04/05), equijoin keys that are not
-// TEXT or not numbers (SEM-06), an erroring step before a FILTER the optimiser
-// moves (SEM-07/08), kept keys that only look numeric (SEM-09), a copied scalar
-// leaf given a child (SEM-12) -- and, over the SQL relations, explicit binders
-// reading a field both sides carry (SQL-01) and non-ASCII qualifiers (SQL-02).
+// again by one node, _K over the keys a FILTER kept, field names that differ
+// only outside ASCII, equijoin keys that are not TEXT or not numbers, an
+// erroring step before a FILTER the optimiser moves, kept keys that only look
+// numeric, a copied scalar leaf given a child -- and, over the SQL relations,
+// explicit binders reading a field both sides carry and non-ASCII qualifiers
+// (the notes in conformance/04-values.selt, 06-aggregates.selt and
+// sql/cases/26-links.sqlt pin each one).
 // The first programs of a corpus cycle through every family, so each appears at
 // least once whatever the count; the counts go to stderr.
 const CASE_PAIRS = [['"ß"', '"SS"'], ['"ſ"', '"s"'], ['"é"', '"É"'], ['"x"', '"X"'], ['"ı"', '"I"'], ['"K"', '"k"']];

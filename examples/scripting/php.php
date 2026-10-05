@@ -14,7 +14,7 @@
 // right, through the same typed readers the builtins use, so a script passing
 // the wrong kind gets the usual error at the usual position.
 //
-// The four files beside this one print byte-identical output.
+// The files beside this one print byte-identical output.
 
 declare(strict_types=1);
 

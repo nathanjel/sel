@@ -3,9 +3,8 @@
   "name": "sel-lang",
   "version-semver": "0.10.0",
   "description": [
-    "A small expression language for validation rules.",
-    "One rule file evaluates identically on PHP, JavaScript, Python, C++23, Common Lisp, Rust and Go, held to a normative spec by a conformance suite and a differential fuzzer that runs all seven and compares them byte for byte.",
-    "Exact decimal arithmetic, no floating point, no truthiness, code-point-accurate text, and a regex subset every host's engine agrees on."
+    "A small expression language for business rules: one rule gives the same answer in Python, JavaScript, PHP, C++23, Common Lisp, Rust and Go, or in your database as SQL. Exact decimal arithmetic, no floating point, no truthiness.",
+    "Held to a normative spec by a conformance suite and a differential fuzzer that runs every host and compares them byte for byte; code-point-accurate text and a regex subset every host's engine agrees on."
   ],
   "homepage": "https://github.com/nathanjel/sel",
   "license": "MIT",

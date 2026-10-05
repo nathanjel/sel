@@ -11,7 +11,7 @@
 ;;;; identity is exact bytes. The third explodes a `;`-separated column, which no
 ;;;; SQL step can express, so it runs in memory entirely.
 ;;;;
-;;;; The four files beside this one print byte-identical output.
+;;;; The files beside this one print byte-identical output.
 
 ;;; Before the DEFPACKAGE, because --load reads and evaluates one top-level form
 ;;; at a time: the SEL.SQL and SEL-DB symbols further down are only readable once

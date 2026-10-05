@@ -123,7 +123,7 @@ const hostNames = new Set();
 // _builtin_manifest.mjs. define() is how the shipped builtins register, so a
 // name the manifest knows is held to it: min/max/lazy/binds must agree, and the
 // extra arity rule (COND's odd count, LINK's three-or-five) is taken from the
-// manifest rather than written here — one body for all five hosts. A name the
+// manifest rather than written here — one body for every host. A name the
 // manifest does not know is a host's own function (examples/fn-*) and passes.
 export function define(spec) {
   const name = asciiUpper(spec.name);

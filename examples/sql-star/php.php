@@ -11,7 +11,7 @@
 // (pureMemory). The answer is checked against a run of the same program over
 // the tables loaded into memory.
 //
-// The four files beside this one print byte-identical output.
+// The files beside this one print byte-identical output.
 
 declare(strict_types=1);
 

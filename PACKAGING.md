@@ -33,7 +33,7 @@ tools/check.sh                                    # ALL GREEN, full roster
 SEL_IMPLS="$SEL_IMPLS python-wheel" tools/check.sh # and through the built wheel
 tools/oracle-db.sh                                # the map, against real servers
 tools/oracle-db.sh run python3 tools/mutate-sql.py # every mutation, none skipped
-tools/check-version.sh 0.9.1                      # every manifest agrees
+tools/check-version.sh 0.9.1                      # every manifest agrees, one description
 tools/check-package-docs.sh                       # user docs only, in every package
 tools/check-cpp-package.sh                        # the C++ package builds as a consumer gets it
 tools/check-rust-package.sh --publish-dry-run     # the crate as crates.io gets it, and cargo's dry run
@@ -182,9 +182,9 @@ whitelists.
 
 The package has **no runtime dependencies**, and that is a property worth
 keeping: the regex subset is small enough that `re` covers it after the anchor
-rewrite, and the decimal core is deliberately hand-written (see below). Python
-and JavaScript are the only two hosts with neither a vendored engine nor an
-external one.
+rewrite, and the decimal core is deliberately hand-written (see below). Python,
+JavaScript and Go are the hosts with neither a vendored regex engine nor an
+external one: each uses its standard library's.
 
 Verify the built package rather than the source tree, which is what the
 `python-wheel` implementation in `tools/impls.sh` is for:
@@ -396,7 +396,7 @@ Value b = a;            // 0.2.0: an independent deep copy
 Value b = a.clone();    // an independent deep copy, both versions
 ```
 
-The interpreter needed this to agree with the other four hosts (spec/SPEC.md
+The interpreter needed this to agree with the other hosts (spec/SPEC.md
 §3.4), and it makes copies cheap. Code that builds each value fresh and moves it
 into place — the idiom `cpp/bin/e2e.cpp` already uses — needs no change at all.
 
@@ -463,8 +463,8 @@ Where each package manager stands:
 
 The vendored copy is the default everywhere, on purpose. It is what keeps "copy
 `sel.hpp`, `sel_ast.hpp`, the generated `sel_limits.hpp`, `sel_math_ops.hpp`,
-`sel_lexicon.hpp` and `sel_builtin_manifest.hpp`, `sel.cpp`, `sel_optimizer.cpp` (which `sel.cpp`
-includes) and `third_party/srell/`, and compile `sel.cpp`" true
+`sel_lexicon.hpp` and `sel_builtin_manifest.hpp`, `sel.cpp` and `third_party/srell/`, and compile
+`sel.cpp`" true
 — and, with `sel_sql*.{hpp,cpp}` added, the same for the SQL layer — it is the only
 option for Conan, and it removes any chance of a resolver quietly selecting a
 different engine version — which would not be a build difference, it would be a
@@ -480,4 +480,4 @@ vcpkg install sel-lang[system-srell]
 `cpp/vcpkg.json` pins `srell` to `2026.05` in `overrides` so the feature cannot
 silently drift to another release. Either way, **run `tools/check.sh`**: the
 regex cases in `conformance/09-regex.selt` are what actually decide whether a
-given SRELL still agrees with the other three implementations.
+given SRELL still agrees with the other implementations.

@@ -548,7 +548,7 @@ that host takes a dialect as its first argument, so the dialect *is* the emitter
 there; it also has no exported Fragment constructor, so a builder must use
 `sel.sql::%fragment`.
 
-A working builder in all five hosts is in
+A working builder in every host is in
 [examples/dialect/](../../examples/dialect/), which `tools/check-examples.sh` runs.
 
 Two differences from `Registry::define`, both deliberate:
@@ -613,7 +613,7 @@ The checks live in the constructor *bodies* rather than in parameter types, and
 that is deliberate: PHP would enforce a `string` parameter and refuse an array
 with a `TypeError`, but Python's annotations enforce nothing at run time, JS has
 no types to declare and Lisp's are advisory. A guarantee written as a signature
-is a guarantee three of the six hosts do not make. Written in the body it is the
+is a guarantee some hosts do not make. Written in the body it is the
 same refusal, with the same `E_SQL_BINDING` code, everywhere — and `SqlError` is
 the class an application catches, where a `TypeError` is not.
 
@@ -2433,8 +2433,8 @@ every host to:
 
 The grouped-latest-member strategy is a deliberately narrow exception to a
 literal prefix split. A relation binding can declare a single-column unique,
-non-null key using Python/C++ `with_unique_key("id")`, JS/PHP
-`withUniqueKey("id")`, or Lisp `binding-with-unique-key`. These methods return
+non-null key using Python/C++/Rust `with_unique_key("id")`, JS/PHP
+`withUniqueKey("id")`, Go `WithUniqueKey("id")`, or Lisp `binding-with-unique-key`. These methods return
 a new binding and validate that the named field exists; uniqueness and NOT NULL
 are caller/schema promises, not inferred from a name such as `id`.
 
@@ -2506,7 +2506,7 @@ The ordinary prefix planner promises:
   translator.** `strict` is the translator's and is the one every host accepts;
   the three dynamic hosts also accept the optimiser's `fuseFilters` and
   `foldConstants`, and the planner forwards them rather than swallowing them.
-  C++ and Lisp take `strict` alone. The logical optimiser does **not** fold
+  C++, Lisp, Go and Rust take `strict` alone. The logical optimiser does **not** fold
   `&` of text literals: `"a" & "b"` reaches the translator as the
   concatenation it was written as and is emitted as the dialect's `CONCAT(…)`
   or `||` on every host, so the hybrid SQL text is the same everywhere.
@@ -2526,7 +2526,7 @@ The ordinary prefix planner promises:
   (`rel.sort.then-sort-keeps-the-tie-order`). A sort after a `TAKE`/`DROP`
   sorts the page — grouped or not, the paginated statement is wrapped —
   and the Lisp optimiser applies the rewrites in the same single
-  left-to-right sweep as the other four, so a pipeline reaches the translator
+  left-to-right sweep as the other hosts, so a pipeline reaches the translator
   in one shape everywhere (finding V; `stmt.order-by.later-sort-*`,
   `plan.sort.later-sort-is-the-primary-key`, `plan.map.computed-then-sort-then-take`).
 - **The rewrites keep keys.** The logical optimiser moves a `FILTER` in
@@ -2565,7 +2565,7 @@ The ordinary prefix planner promises:
   (text literals, binary), numbers inlined, values in placeholder order — in
   every host, so a driver binds what it is handed as it is. Lisp handed the
   runner inline-mode SQL and its creation-order slot list, so a runner
-  written against the other four bound values into a statement that had no
+  written against the other hosts bound values into a statement that had no
   placeholders (finding AK); each host's unit lane now pins the contract.
 - **A bucket is split only where SQL still has its members.** `BUCKET(src,
   key)` on its own renders as the group *keys* — SQL has no nested row — while
@@ -2637,7 +2637,7 @@ The ordinary prefix planner promises:
   pins the plans, `sql/oracle/hybrid.json` executes them on SQLite, MariaDB,
   MySQL and PostgreSQL through `php/bin/sqlo hybrid`, and
   `tools/check-hybrid-parity.{mjs,py}`, `-driver.py` and `-go.py` do the same for the JS,
-  Python, Lisp and Go hosts on SQLite; `tools/check-php-optimizer.php` also runs
+  Python, Lisp, Go and Rust hosts on SQLite; `tools/check-php-optimizer.php` also runs
   `hybrid.json` against an in-memory SQLite for PHP):
   - **Row keys.** SEL's FILTER keeps its input's keys and every other step
     renumbers from `"1"` (spec §7.3); the database answers a *rowset* numbered
@@ -2842,7 +2842,7 @@ is needed to find out.
 
 **Two runners read them now** — `php/bin/sqlt` and `python/bin/sqlt` — and both
 report `xxx passed, 0 failed`. Each host parses the file format itself, because a
-parser shared across five languages is not a thing that exists, so
+parser shared across every host's language is not a thing that exists, so
 `tools/check-sql-cases.sh` diffs what each one *loaded*: the `at` and the name of
 every case, in file order, byte for byte. Comparing the counts would not do —
 two parsers can lose and gain a case each and agree on the total, and a runner

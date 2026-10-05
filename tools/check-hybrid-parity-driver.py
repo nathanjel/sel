@@ -5,9 +5,10 @@ SQL on a real SQLite, and the answers are held to the contract in the corpus not
 (docs/internals/sql-translation.md 12.1). The Python and JS hosts have their own
 in-process twins (tools/check-hybrid-parity.py, .mjs) and PHP has `sqlo hybrid`;
 this is the same check through a DRIVER -- a child process that speaks JSON lines
-(see lisp/bin/hybrid-driver.lisp for the protocol). Lisp is the host held to it
-this way; Go has its own driver protocol and script (tools/check-hybrid-parity-
-go.py), and C++ and Rust have no hybrid driver yet.
+(see lisp/bin/hybrid-driver.lisp for the protocol). Lisp (lisp/bin/hybrid-driver)
+and Rust (rust/build/hybrid-driver) are the hosts held to it this way; Go has its
+own driver protocol and script (tools/check-hybrid-parity-go.py), and C++ has no
+hybrid driver yet.
 
     python3 tools/check-hybrid-parity-driver.py NAME DRIVER [ARGS...] [--verbose] [--application]
 """
@@ -26,7 +27,8 @@ argv = [a for a in sys.argv[1:] if a not in ('--verbose', '--application')]
 verbose = '--verbose' in sys.argv
 # `--application` (or SEL_HYBRID_APPLICATION=1) adds the corpus's `application`
 # section: programs that call the application functions POKE and HOSTF, which
-# the host's driver registers. Opt-in until every driver registers them.
+# the host's driver registers. Every driver registers them and tools/check.sh
+# passes the flag; it stays a flag for a driver under construction.
 APPLICATION = '--application' in sys.argv or os.environ.get('SEL_HYBRID_APPLICATION') == '1'
 NAME, CMD = argv[0], argv[1:]
 spec = json.loads((ORACLE / 'hybrid.json').read_text(encoding='utf-8'))

@@ -2437,7 +2437,7 @@ final class MapData
      * review found in runtime registration -- an entry with no "ret", a "tpl"
      * that was a JSON list, an "arity" of strings, a caveat somebody invented --
      * was an entry the generator would have rejected and the runtime would not,
-     * after which the two hosts improvised differently. Improvising is what code
+     * after which the hosts improvised differently. Improvising is what code
      * does when it has no rule; this is the rule, as data.
      *
      * @var array<string, mixed>

@@ -3,7 +3,7 @@
 //
 //   php examples/plain/php.php
 //
-// The four files beside this one do the same thing through their own host API
+// The files beside this one do the same thing through their own host API
 // and print byte-identical output; tools/check-examples.sh diffs them. That is
 // the point of the example as much as the code is: the differences you see
 // between these files are the languages', never SEL's.
@@ -61,8 +61,8 @@ echo '   size   => ', $v->size(), "\n";
 echo '   keys   => ', implode(',', $v->keys()), "\n";
 echo '   [2]    => ', $v->get('2')->asText(), "\n";
 echo '   scalar => ', $v->asText(), "\n";               // scalar context: first child
-// A host bool prints differently in all five languages (true/1/True/T), and
-// this file's output has to be byte-identical to its four siblings, so say it
+// A host bool prints differently in every host language (true/1/True/T), and
+// this file's output has to be byte-identical to its siblings, so say it
 // in SEL's own spelling rather than the host's.
 echo '   bool   => ', Sel::evaluate('1 < 2')->asBool() ? 'TRUE' : 'FALSE', "\n";
 

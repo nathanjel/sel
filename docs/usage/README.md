@@ -84,8 +84,8 @@ use Sel\Sql\Sql;                     // the SQL layer: also require php/src/Sql/
 ```sh
 vcpkg install sel-lang               # or: conan install --requires sel-lang/0.10.0
                                      # or copy cpp/sel.hpp, sel_ast.hpp, sel_limits.hpp,
-                                     # sel_math_ops.hpp, sel_lexicon.hpp, sel_builtin_manifest.hpp, sel.cpp,
-                                     # sel_optimizer.cpp and third_party/srell/, and compile sel.cpp
+                                     # sel_math_ops.hpp, sel_lexicon.hpp, sel_builtin_manifest.hpp, sel.cpp
+                                     # and third_party/srell/, and compile sel.cpp
 ```
 ```cpp
 #include "sel.hpp"                   // C++23; find_package(sel-lang) with CMake
@@ -451,28 +451,33 @@ piece, and every constructor holds the same rules
 |---|---|---|---|---|---|---|---|
 | text, bytes, bool | `Value.text` `Value.bin` `Value.bool` | `Value.text` `Value.bin` `Value.bool` | `Value::text` `Value::bin` `Value::bool` | `Value::text` `Value::bin` `Value::boolean` | `make-text` `make-bin` `make-bool` | `Value::text_owned` `Value::bin` `Value::bool` | `sel.NewText` `sel.NewBin` `sel.NewBool` |
 | number from a string | `Value.num("1.50")` | `Value.num('1.50')` | `Value::num('1.50')` | `Value::num("1.50")` | `(make-num "1.50")` | `Value::num(dec_parse("1.50", pos)?)?` | — (a number is its text: `sel.NewText("1.50")`) |
-| number from the decimal form | `Value.num(Dec(neg, digits, scale))`, `Dec` from `sel.decimal` | `Value.num({ neg, digits, scale })`, `digits` a bigint | `Value::num(['neg' => …, 'digits' => '150', 'scale' => 2])` | `Value::num(const Dec&)` | `(make-num (dec-make neg digits scale))` | `Value::num(Dec::from_small(neg, mantissa, scale))?` | — (the decimal type is internal) |
+| number from the decimal form | `Value.num(Dec(neg, digits, scale))`, `Dec` from `sel.decimal` | `Value.num({ neg, digits, scale })`, `digits` a bigint | `Value::num(['neg' => …, 'digits' => '150', 'scale' => 2])` | `Value::num(const Dec&)` | `(make-num (dec-make neg digits scale))` | `Value::num(Dec::from_small(neg, mantissa, scale))?` | `sel.NewDecimal(sel.Decimal{Neg: neg, Digits: digits, Scale: scale})`, `Digits` a `*big.Int` |
 | native integer | `Value.int(n)` | `Value.int(n)`, a safe integer or a bigint | `Value::int($n)` | `Value::integer(n)` | `(make-int n)` | `Value::int(n)`, an `i64` | `sel.NewInt(n)`, an `int64` |
 | list | `Value.list(values)` | `Value.list(values)` | `Value::list($values)` | `Value::list(values)` | `(make-list-value values)` | `Value::list(values)` | `sel.NewList(values)` |
 | list with its own keys | `Value.list(values, keys)` | `Value.fromEntries(entries, true)` | `Value::list($values, $keys)` | — | — | — | `sel.NewListWithKeys(values, keys)` |
 | record from keys and values | `Value.record(keys, values)`, `Value.shaped(keys, values)` | `Value.shaped(keys, values)` | `Value::record($keys, $values)`, `Value::shaped(…)` | `Value::record(keys, values)` | — | — | — |
-| record from pairs | `Value.from_entries(pairs)` | `Value.fromEntries(pairs)` | `Value::fromEntries($pairs)` | — | `(from-native alist)` | — | — |
-| record from a prepared shape | `Value.shaped(shape, values)` | — | `Value::fromShape(RecordShape::intern($keys), $values)` | `Value::shaped(shape, values)` | — | — | — |
+| record from pairs | `Value.from_entries(pairs)` | `Value.fromEntries(pairs)` | `Value::fromEntries($pairs)` | — | `(from-native alist)` | — | `sel.NewRecordFromEntries(entries)` |
+| record from a prepared shape | `Value.shaped(shape, values)` | — | `Value::fromShape(RecordShape::intern($keys), $values)` | `Value::shaped(shape, values)` | — | — | `sel.NewShapedRecord(sel.InternRecordShape(keys), values)` |
 | many rows of one shape | — | — | `Value::fromNativeRows($rows)` | — | — | — | — |
 | one key | `v.set(k, x)` | `v.set(k, x)` | `$v->set($k, $x)` | `v.set(k, x)` | `(value-set v k x)` | `v.set(k, x, pos)?` | `v.Set(k, x)` |
 
-Rust (`Value::list_with_keys`, `record_from_entries`, `shaped_record`) and Go
-(`sel.NewRecordFromEntries`, `NewShapedRecord`) have more constructors than the
-table shows, but those are the builtins' own: they take what they are given,
-without the checks above, so the table leaves them out.
+Rust (`Value::list_with_keys`, `record_from_entries`, `shaped_record`) has more
+constructors than the table shows, but those are the builtins' own: they take
+what they are given, without the checks above, so the table leaves them out.
+Go's record constructors check their input (a key that is not UTF-8, a repeated
+key in a shape, a count that is not the shape's, a nil value), panicking with
+the `*sel.SelError` like the others.
 
 The decimal form is `digits × 10^-scale`, negative when `neg`: `digits` is a
 non-negative whole number (a string of ASCII digits in PHP and C++) and
 `scale` a non-negative integer. Reading one back is `v.as_decimal()` in
-Python, `v.asDecimal()` in JS, `$v->asDecimal()` in PHP, `v.dec_val()` in C++
-(null when the value holds no parsed decimal), `(as-dec v)` in Lisp,
-`v.as_decimal(pos)?` in Rust, and `v.AsDecimal(pos)` in Go, whose result can only
-be handed back to `sel.NewNum`.
+Python, `v.asDecimal()` in JS, `$v->asDecimal()` in PHP, `v.as_decimal(pos)` in
+C++ (read its digits with `sel::dec_digits(d)`, whatever form the magnitude is
+held in; `v.dec_val()` is the cache read, null when the value holds no parsed
+decimal yet), `(as-dec v)` in Lisp, `v.as_decimal(pos)?` in Rust, and
+`v.Decimal(pos)` in Go, a `sel.Decimal` whose `Digits` is the caller's own copy.
+Go's `sel.NewNum` and `Value.AsDecimal` are deprecated: their decimal type
+cannot be named outside the module.
 
 ## Variables flow back
 
@@ -856,6 +861,25 @@ an argument the call does not have (a function declared with one or two argument
 asking for the fifth) is `E_BAD_ARG`, and a registration that is not callable, or a
 name that is not allowed, is refused when registering, in each host's own
 argument-error class.
+
+### Sharing a compiled program
+
+A compiled program may be shared between threads in C++: a `Program` is
+immutable once `compile()` returns and may run on several threads at once, its
+first run included, **provided every run gets a context of its own**. A C++
+`Value` is not thread-safe even for reading (its reference count is a plain
+integer), so a context and every value reachable from it belong to one thread at
+a time: build each thread's context on that thread, or `clone()` it there from a
+value no other thread is touching. The SQL layer's translation may run on
+several threads once the dialects it uses are registered. `cpp/sel.hpp` states
+the contract, and `make -C cpp tsan` holds it.
+
+In Rust a `Program` is `Send` but not `Sync`, and `run` takes `&mut self`: move
+a compiled program to the thread that runs it, or give each thread its own —
+`program.clone()` before spawning, a program compiled per thread, or one in a
+`thread_local!`. A `Value` (and so a context or a result) is neither `Send` nor
+`Sync`; hand other threads its text (`dump()`, `as_text()`) instead. A host
+function must be `Send + Sync + 'static`, so it cannot capture either.
 
 ## PHP memory
 

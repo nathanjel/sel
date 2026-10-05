@@ -261,7 +261,7 @@ num 2
 
 ### name: val.index.computed-key-read-per-element
 --- note
-Review 2026-09-25 SEM-01. One index node evaluated once per element, over
+One index node evaluated once per element, over
 records that share a shape: each read is of the key the index expression
 yields THIS time. Python cached the record slot of the first read on the node
 and answered 1 twice.
@@ -299,7 +299,7 @@ error E_ABORT at 1:50
 
 ### name: val.copy.scalar-leaf-that-gains-a-child
 --- note
-Review 2026-09-25 SEM-12. Assignment copies (spec §5.7), and the copy of a
+Assignment copies (spec §5.7), and the copy of a
 list reaches its scalar leaves: giving B's leaf a child must not give A's one.
 Python's clone returned a leaf below the top level as it was, shared.
 --- source

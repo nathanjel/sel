@@ -1,6 +1,6 @@
 <?php
 declare(strict_types=1);
-// T12, PHP's own lane: what an application holding the library across requests, queues
+// PHP's own lane: what an application holding the library across requests, queues
 // and caches relies on. The contracts every host shares are probed by tools/api.php
 // (pinned in tools/api-pins.txt); these are the PHP-shaped ones.
 require __DIR__ . '/../php/src/bootstrap.php';

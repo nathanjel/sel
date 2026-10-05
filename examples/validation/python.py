@@ -12,7 +12,7 @@ the rule itself is broken and the user should never see it. dependencies()
 tells a browser which rules to re-run when a field changes -- and the browser
 runs the very same rule text, in JavaScript.
 
-The four files beside this one print byte-identical output.
+The files beside this one print byte-identical output.
 """
 
 import os

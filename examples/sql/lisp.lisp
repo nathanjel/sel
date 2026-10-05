@@ -9,7 +9,7 @@
 ;;;; translation refuses rather than guesses: if SQL cannot be made to mean what
 ;;;; SEL means, no SQL is emitted and the rule stays where it already worked.
 ;;;;
-;;;; The four files beside this one print byte-identical output;
+;;;; The files beside this one print byte-identical output;
 ;;;; tools/check-examples.sh diffs them.
 ;;;;
 ;;;; The visible difference here is the load below. boot.lisp brings in
@@ -87,7 +87,7 @@
     (format t "5. refusal~%")
     (let ((unbound (sel:compile-source "MYSTERY > 1")))
       ;; The word printed is `null`, not NIL: this file's output has to be
-      ;; byte-identical to its four siblings, so the answer is spelled the same
+      ;; byte-identical to its siblings, so the answer is spelled the same
       ;; way on every host rather than in each one's own vocabulary.
       (format t "   tryTranslate => ~a~%"
               (if (null (sel.sql:try-translate unbound "mariadb" bindings))

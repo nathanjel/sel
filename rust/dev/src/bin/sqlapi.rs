@@ -268,7 +268,7 @@ fn main() {
     say(&mut counter, &mut out, "host.spell.after-reset.local",
         &evaluate("HSLUG(\"A\")", None).unwrap_or_else(|e| std::panic::panic_any(e)).as_text(Pos::default()).unwrap_or_else(|e| std::panic::panic_any(e)));
 
-    // --- rendering and registration state (T10) ---
+    // --- rendering and registration state ---
     let one_bindings = {
         let mut m = std::collections::HashMap::new();
         m.insert(

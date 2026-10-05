@@ -2546,7 +2546,7 @@ AggShape agg_shape(const SNode& n) {
     // BOTH halves of is_binder_name matter. `(C)` parses as a var carrying the
     // parser's grouped flag, and the evaluator refuses it with
     // E_EXPECT_SYMBOL; testing only the kind accepted a binder the language
-    // rejects, in all three hosts.
+    // rejects, in every host that did it.
     if (!is_binder_name(*args[1])) {
       refuse("E_SQL_SHAPE", "the binder of " + n.s() + " must be a bare name",
              args[1]->pos());

@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Runs the builtin fragments of the reference examples against their cases, in
 # the hosts where a fragment can be dropped into a copy of the source tree
-# without a compiler: JS, Python, PHP and Lisp. Go has its own lane
-# (tools/check-go-fragments.sh), which also vets and gofmt-checks the fragment.
+# without a compiler: JS, Python, PHP and Lisp. Go and Rust have their own lanes
+# (tools/check-go-fragments.sh, which also vets and gofmt-checks the fragment,
+# and tools/check-rust-fragments.sh).
 #
 #   tools/check-ref-fragments.sh [js|python|php|lisp ...]
 #
@@ -17,9 +18,9 @@
 # examples/<cat>/cases.selt with that host's conformance runner -- which the
 # stock tree fails, because the function does not exist there.
 #
-# Not covered here: C++ and Rust, whose fragments compile only inside the
-# library's own translation unit / crate; adding them means a rebuild of the
-# library per category and is left to those hosts' own lanes.
+# Not covered anywhere yet: C++, whose fragments compile only inside the
+# library's own translation unit; adding them means a rebuild of the library
+# per category.
 set -uo pipefail
 cd "$(dirname "$0")/.."
 . tools/impls.sh

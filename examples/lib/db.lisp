@@ -5,8 +5,8 @@
 ;;;;   (sel-db:runner conn)           (sel-db:render rows pad)
 ;;;;
 ;;;; Every example that talks to a database goes through the functions below,
-;;;; and the four files beside this one do the same with their own drivers. The
-;;;; contract is small on purpose, because it is what makes five hosts print the
+;;;; and the files beside this one do the same with their own drivers. The
+;;;; contract is small on purpose, because it is what makes every host print the
 ;;;; same thing:
 ;;;;
 ;;;;   - CONNECT opens PostgreSQL, MariaDB or SQLite from SEL_DB_* in the

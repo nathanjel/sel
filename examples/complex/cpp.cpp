@@ -4,7 +4,7 @@
 //   cpp/build/sel-example-complex
 //
 // examples/plain/ is the API. This is the language: aggregates, named binders,
-// text and regex, structured results, and a rule that refuses. The four files
+// text and regex, structured results, and a rule that refuses. The files
 // beside this one print byte-identical output; tools/check-examples.sh diffs
 // them.
 
@@ -17,8 +17,8 @@
 
 namespace {
 
-// Left-pad to a fixed width, so this file's columns line up with the four
-// written in languages that have printf-style padding built in.
+// Left-pad to a fixed width, so this file's columns line up with the
+// files written in languages that have printf-style padding built in.
 std::string pad(const std::string& s, std::size_t n) {
   return s.size() >= n ? s : s + std::string(n - s.size(), ' ');
 }

@@ -11,7 +11,7 @@
 // against the report over the data generated in memory (examples/memory-complex),
 // which is where the rows in this database came from.
 //
-// The four files beside this one print byte-identical output.
+// The files beside this one print byte-identical output.
 //
 // Built by `make -C cpp BUILD=build-usage build-usage/example-sql-complex`,
 // which links examples/lib/db.cpp and the PostgreSQL, MariaDB and SQLite

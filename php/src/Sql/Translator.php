@@ -2448,7 +2448,7 @@ final class Translator
      * right, plus the names the LINK gives them (spec §7.4) and nothing else:
      * a relation's name outside those, its alias or its table is not a binder
      *, and the left element of a later LINK is the
-     * joined row so far, not the source (SQL-05).
+     * joined row so far, not the source (sql/cases/47-link-rows.sqlt).
      *
      * @param callable():Fragment $render
      */

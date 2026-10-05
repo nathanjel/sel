@@ -114,7 +114,7 @@ for cat in $CATEGORIES; do
     status=1
   fi
   # output.txt is the transcript the documentation quotes, so it is held to what
-  # the hosts print: agreeing with each other is not enough if all five changed.
+  # the hosts print: agreeing with each other is not enough if every host changed.
   if [ -n "$ref" ] && [ -f "examples/$cat/output.txt" ] \
      && ! diff -u "examples/$cat/output.txt" "$WORK/$cat.$ref" > "$WORK/$cat.output.diff"; then
     printf 'FAIL %s: the hosts no longer print examples/%s/output.txt (--- recorded, +++ %s)\n' "$cat" "$cat" "$ref"
@@ -127,6 +127,6 @@ done
 
 if [ "$status" -ne 0 ]; then
   echo
-  echo "EXAMPLES DISAGREE — the five hosts must print the same thing" >&2
+  echo "EXAMPLES DISAGREE — every host must print the same thing" >&2
 fi
 exit $status

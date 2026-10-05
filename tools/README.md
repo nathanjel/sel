@@ -11,19 +11,26 @@ tools/check-docs.sh         every worked example in the documentation
 tools/check-decimal.sh      every decimal core against Python's `decimal`
 tools/e2e.sh                one rule set through every host API
 tools/check-api.sh          the same API probes through every host binding
-tools/check-version.sh      every manifest declares the same version
+tools/check-version.sh      every manifest declares the same version and one description
+tools/check-roster.py       no sentence that counts the hosts and no host list missing a host
 cd cpp && make asan         the C++ suite under the address and leak sanitizers
+cd cpp && make tsan         every C++ race probe under the thread sanitizer
 tools/check-cli-source.sh   every `sel` CLI: source bytes and the CLI contract (docs/usage/repl.md)
 tools/check-corpus-bytes.sh every batch runner on byte fixtures (CR, CRLF, final blank line)
 tools/check-runners.sh      every runner refuses a bad path and an empty run (the runner contract)
 tools/check-registry.sh     every roster configuration has an arm in every role of impls.sh
 tools/check-budgets.sh      output/work budgets refused cheaply, per host, under ceilings
+                            (SEL_BUDGET_PARSE_TIME, default 300 s: the parse-sized requests' ceiling)
+tools/check-messages.py     every host's error messages follow the message conventions
 tools/check-sql-budgets.sh  translator work/depth budgets, per host, under ceilings
 tools/check-regex-resources.py   regex resource behaviour, per host, under ceilings
 tools/check-regex-ambiguity-diff.sh  every host's regex validator vs the reference
 tools/check-host-examples.sh     the six top-level host programs in examples/ run cleanly
 tools/check-generators.sh   every gen-* refuses an unknown argument and writes nothing for --help
-tools/check-ref-fragments.sh     the fn-* reference fragments run against their cases
+tools/check-ref-fragments.sh     the fn-* reference fragments run against their cases (JS, Python, PHP, Lisp)
+tools/check-go-fragments.sh      the same for Go, compiled into a copy of go/sel (also vet and gofmt)
+tools/check-rust-fragments.sh    the same for Rust, compiled into a copy of rust/
+tools/check-hybrid-parity*.{py,mjs}  hybrid plans vs a real SQLite (in-process twins, or a host driver)
 tools/fuzz.sh               seeded differential fuzzing, N-way
 tools/check-sql-map.sh      the dialect map, regenerated and diffed
 tools/check-sql-docs.sh     the design document quotes cases that run
@@ -66,10 +73,12 @@ command line and one write-or-check loop — `tools/gen-lib.mjs` and
 is exit 2. The Node side also takes every host language's string-literal
 escaper from `gen-lib.mjs`, so no generator carries its own.
 
-Only the JS side owns the corpus generators: `gen-programs.mjs` (fuzz corpus),
-`extract-docs.mjs` (documentation corpus) and `decimal-oracle.py` (Python) run
-once and feed every implementation. A port never re-implements a generator, only
-the five consumers.
+The corpus generators — `gen-programs.mjs` (fuzz corpus), `extract-docs.mjs`
+(documentation corpus) and `decimal-oracle.py` — run once and feed every
+implementation, and three Python generators write shared case files
+(`gen-decimal-cases.py`, `gen-regex-ambiguity-cases.py`,
+`gen-sql-scope-cases.py`). A port never re-implements a generator, only the
+consumers.
 
 `decimal-oracle.py` being Python is worth one sentence now that a Python host
 exists: `python/sel/decimal.py` deliberately does **not** use the `decimal`
@@ -122,8 +131,12 @@ exits non-zero and says so: a mistyped path that reports `0 passed` is a gate
 that went green having run nothing. `tools/check-runners.sh` holds every host
 to both.
 
-The first five are required. `sql` and `oracle` are optional in the same way
-`unit` is: a host with no SQL layer succeeds silently and the harness moves on.
+`conformance`, `batch`, `e2e`, `api` and `check-decimal` are required of every
+host. The SQL roles (`sqlreplay`, `sqlfuzz`, `sqlapi`, `sql`, `oracle`,
+`sqldoc`) belong to a host with a SQL layer — every host has one now — and
+`sql`, `sqlapi` and `oracle` succeed silently where there is none, the way
+`unit` does, so the harness moves on. `regex_verdict` joins the validator
+differential once a host provides it.
 
 All of them run from the repository root and take paths relative to it.
 

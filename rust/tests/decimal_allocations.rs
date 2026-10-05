@@ -145,7 +145,7 @@ fn tiny_small_mantissas_do_not_allocate_scale_sized_divisors() {
     }
 }
 
-// Item 1: a large mantissa is shared, never copied. Lower these budgets when
+// A large mantissa is shared, never copied. Lower these budgets when
 // the code gets cheaper; never raise them.
 #[test]
 fn large_copies_negations_and_differences_share_mantissas() {

@@ -10,7 +10,7 @@ EMPTY_LINES = FILTER(ITEMS, _["QTY"] <= 0);
 
 BAD_SKUS = JOIN(MAP(FILTER(ITEMS, NOT RMATCH('^[A-Z]{2}-\d{4}$', _["SKU"])), _["SKU"]), ", ");
 
-# Indexed by position on purpose: lists are 1-based, and both hosts must agree
+# Indexed by position on purpose: lists are 1-based, and every host must agree
 # that ITEMS[1] is the first line.
 FIRST_SKU = IF(COUNT(ITEMS) > 0, ITEMS[1]["SKU"], "-");
 

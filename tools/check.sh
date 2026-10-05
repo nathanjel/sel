@@ -89,11 +89,15 @@ for impl in $SEL_DEFAULT_IMPLS; do
 done
 NOT_RUN="${NOT_RUN# }"
 
-# Lanes a caller may opt out of because they are slow, each named here and in
-# the last line when it is skipped.
+# Lanes a caller may opt out of (slow ones, and ones that need a server or
+# pytest), each named here and in the last line when it is skipped.
 SKIPPED=""
 [ "${SEL_SKIP_SANITIZERS:-0}" = 1 ] && SKIPPED="$SKIPPED SEL_SKIP_SANITIZERS"
 [ "${SEL_SKIP_SQL_BUDGETS:-0}" = 1 ] && SKIPPED="$SKIPPED SEL_SKIP_SQL_BUDGETS"
+# The database layers and the Python unit lane pass with a printed skip when
+# opted out, so they are named here too: an opted-out run is not the gate.
+[ "${SEL_SKIP_DB_TESTS:-0}" = 1 ] && SKIPPED="$SKIPPED SEL_SKIP_DB_TESTS"
+[ "${SEL_SKIP_PYTHON_UNIT:-0}" = 1 ] && SKIPPED="$SKIPPED SEL_SKIP_PYTHON_UNIT"
 SKIPPED="${SKIPPED# }"
 
 echo "implementations: $IMPLS"
@@ -162,13 +166,15 @@ case " $IMPLS " in *" js "*) step "JS optimizer" sel_slot node tools/check-js-op
 case " $IMPLS " in *" php "*) step "PHP optimizer" sel_slot sel_php tools/check-php-optimizer.php ;; esac
 case " $IMPLS " in *" js "*) step "JS SQL unit" sel_slot node tools/check-js-sql.mjs ;; esac
 # The hybrid-parity corpus (sql/oracle/hybrid.json) against a real SQLite: the
-# JS and Python twins run in process, Lisp and Go through a driver. PHP runs it
-# as `sqlo hybrid` in the oracle lane. C++ and Rust have no SQLite binding in
-# their standard libraries and no driver yet; their hybrid planners are held to
-# the sqlt cases, sqlapi, and their own executed-plan unit tests
-# (cpp/tests/sql_unit.cpp, rust/tests/sql_hybrid.rs).
-case " $IMPLS " in *" lisp "*) step "Lisp hybrid parity (SQLite)" sel_slot python3 tools/check-hybrid-parity-driver.py lisp lisp/bin/hybrid-driver ;; esac
-case " $IMPLS " in *" go "*) step "Go hybrid parity (SQLite)" sel_slot python3 tools/check-hybrid-parity-go.py ;; esac
+# JS and Python twins run in process, Lisp, Go and Rust through a driver. PHP
+# runs it as `sqlo hybrid` in the oracle lane. Every driver registers the
+# corpus's application functions (POKE, HOSTF), so every run includes its
+# `application` section (the twins always do). C++ has no SQLite binding in its
+# standard library and no driver yet; its hybrid planner is held to the sqlt
+# cases, sqlapi, and its own executed-plan unit tests (cpp/tests/sql_unit.cpp).
+case " $IMPLS " in *" lisp "*) step "Lisp hybrid parity (SQLite)" sel_slot python3 tools/check-hybrid-parity-driver.py lisp lisp/bin/hybrid-driver --application ;; esac
+case " $IMPLS " in *" go "*) step "Go hybrid parity (SQLite)" sel_slot python3 tools/check-hybrid-parity-go.py --application ;; esac
+case " $IMPLS " in *" rust "*) step "Rust hybrid parity (SQLite)" sel_slot python3 tools/check-hybrid-parity-driver.py rust rust/build/hybrid-driver --application ;; esac
 case " $IMPLS " in *" js "*) step "JS hybrid parity (SQLite)" sel_slot node tools/check-hybrid-parity.mjs ;; esac
 case " $IMPLS " in *" python "*) step "Python hybrid parity (SQLite)" sel_slot env PYTHONPATH="$PWD/python" python3 tools/check-hybrid-parity.py ;; esac
 case " $IMPLS " in *" js "*) step "JS plain vs optimised" sel_slot node tools/check-eval-equivalence.mjs ;; esac
@@ -181,14 +187,14 @@ case " $IMPLS " in *" js-bundle-min "*) step "JS minified runtime isolation" sel
 case " $IMPLS " in *" php "*) step "PHP runtime" sel_slot sel_php tools/check-php-runtime.php ;; esac
 case " $IMPLS " in *" php "*) step "PHP integration" sel_slot sel_php tools/check-php-integration.php ;; esac
 case " $IMPLS " in *" php "*) step "PHP 8.1 (oldest supported)" sel_slot tools/check-php-version.sh ;; esac
-# The three C++ race probes (the SQL layer, the regex cache, the host-function
-# table) under ThreadSanitizer, and the unit tests, the suite, the SQL cases and
+# The four C++ race probes (a shared Program, the SQL layer, the regex cache, the
+# host-function table) under ThreadSanitizer -- `make tsan` runs every one -- and the unit tests, the suite, the SQL cases and
 # the SQL unit under AddressSanitizer + UBSan -- the clone-site and no-cycle
 # invariants docs/contributing.md relies on. Each builds its own instrumented
 # copy of the library, so they are the slowest C++ steps; SEL_SKIP_SANITIZERS=1
 # opts out of both (and the last line says so).
 if [ "${SEL_SKIP_SANITIZERS:-0}" != 1 ]; then
-  case " $IMPLS " in *" cpp "*) step "C++ races (TSan)" sel_slot make -j4 -C cpp tsan tsan-regex tsan-registry ;; esac
+  case " $IMPLS " in *" cpp "*) step "C++ races (TSan)" sel_slot make -j4 -C cpp tsan ;; esac
   case " $IMPLS " in *" cpp "*) step "C++ sanitizers (ASan, UBSan)" sel_slot make -j4 -C cpp asan ;; esac
 fi
 case " $IMPLS " in *" js "*) step "JS metadata" sel_slot node tools/metadata/js.mjs ;; esac
@@ -256,7 +262,10 @@ export SEL_DB_LOCK="$LOGS/db.lock"
 export SEL_MUTATE_JOBS="${SEL_MUTATE_JOBS:-$(( (SEL_JOBS * 2 + 2) / 3 ))}"
 step "sql mutations" ./tools/mutate-sql.sh
 db_step "sql semantic oracle" ./tools/check-sql-oracle.sh
-step "manifest versions" sel_slot ./tools/check-version.sh
+step "manifest versions and descriptions" sel_slot ./tools/check-version.sh
+# No sentence counts the hosts and no documented host list leaves one out: the
+# roster grew twice and left stale counts and lists behind both times.
+step "host roster, every document" sel_slot python3 tools/check-roster.py
 step "package contents: user docs only" sel_slot ./tools/check-package-docs.sh
 # The C++ package as a consumer gets it: the files cpp/conanfile.py exports,
 # built and installed, and cpp/test_package linked against the install.
@@ -274,6 +283,10 @@ step "host registry complete" ./tools/check-registry.sh
 step "output and work budgets" ./tools/check-budgets.sh
 [ "${SEL_SKIP_SQL_BUDGETS:-0}" = 1 ] || step "SQL translator budgets" ./tools/check-sql-budgets.sh
 step "regex resources" sel_slot python3 tools/check-regex-resources.py
+# Every host's error messages follow one set of conventions (the codes and
+# positions are the contract; the wording is held to the same rules). Guarded on
+# the file so a tree that does not have the check yet still runs.
+[ ! -f tools/check-messages.py ] || step "message conventions" python3 tools/check-messages.py
 step "regex validator vs reference, every host" ./tools/check-regex-ambiguity-diff.sh
 step "CLI source bytes and contract" ./tools/check-cli-source.sh
 # Every runner refuses a path it cannot read and a run that executed nothing.
@@ -288,9 +301,21 @@ step "worked examples, every host" ./tools/check-examples.sh
 # The Go builtin fragments the reference examples quote, compiled into go/sel
 # and run against their cases.
 case " $IMPLS " in *" go "*) step "Go builtin fragments" sel_slot ./tools/check-go-fragments.sh ;; esac
+# ...and the Rust ones, compiled into a copy of rust/ the same way.
+case " $IMPLS " in *" rust "*) step "Rust builtin fragments" sel_slot ./tools/check-rust-fragments.sh ;; esac
 # The same for the hosts whose fragments drop into a copy of the sources with no
-# compiler: JS, Python, PHP and Lisp (C++ and Rust: see the script's header).
+# compiler: JS, Python, PHP and Lisp (C++: see the script's header).
 step "reference builtin fragments" ./tools/check-ref-fragments.sh
+# Clippy over the published crate and the harness crate, warnings denied. The
+# lint set moves with the toolchain, so the lane runs only where clippy is
+# installed and says so when it is not.
+case " $IMPLS " in *" rust "*)
+  if cargo clippy --version >/dev/null 2>&1; then
+    step "Rust clippy" sel_slot sh -c 'cd rust && cargo clippy -q -p sel-lang --all-targets -- -D warnings && cargo clippy -q -p sel-lang-dev --all-targets -- -D warnings'
+  else
+    echo "note     Rust clippy: not installed (cargo clippy), lane not run"
+  fi ;;
+esac
 # The six top-level host programs that ship in the packages run to exit 0.
 step "top-level host examples" ./tools/check-host-examples.sh
 step "documentation quotes" sel_slot ./tools/check-snippets.py
@@ -298,7 +323,7 @@ step "documentation quotes" sel_slot ./tools/check-snippets.py
 # every relative link and #anchor in the Markdown resolves -- on GitHub as much
 # as in the site.
 step "documentation links" sel_slot node tools/build-docs.mjs --check
-# The SQL examples the documentation quotes, in all seven hosts against real
+# The SQL examples the documentation quotes, in every host against real
 # PostgreSQL, MariaDB and SQLite, in tools/usage.Dockerfile's image (built on
 # first use). Its own servers, so it needs no share of the db lock.
 step "usage examples, real databases" ./tools/check-usage.sh
@@ -307,7 +332,7 @@ step "end to end, every host API" ./tools/e2e.sh
 step "differential fuzz" ./tools/fuzz.sh "${FUZZ_COUNT:-4000}" "${FUZZ_SEED:-20260813}"
 # Joined rows over relations of mixed shapes, every host against a model of
 # spec §7.4 written from the text (SEL-0053): conformance cases use rows of one
-# shape, which is how five hosts came to build rows from their first element.
+# shape, which is how most hosts came to build rows from their first element.
 step "joined rows vs spec model" ./tools/join-rows-oracle/run.sh "${JOIN_ROWS_COUNT:-2000}" "${JOIN_ROWS_SEED:-530001}"
 # A FILTER after a LINK against the same program with the join bound to a
 # variable first (SEL-0054): the join tests conjuncts early at run time, and

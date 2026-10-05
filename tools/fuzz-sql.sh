@@ -3,7 +3,7 @@
 # evaluate them, translate them, execute them, and demand agreement.
 #
 # A separate lane from tools/fuzz.sh rather than a mode of it, because the two
-# compare different things. fuzz.sh demands that six implementations produce the
+# compare different things. fuzz.sh demands that every implementation produce the
 # same string; that is right for the language and wrong here — a translated
 # expression may legitimately answer 2.5000 where SEL says 2.5, may refuse
 # outright, and may yield a list, which is not a SQL value at all. This lane

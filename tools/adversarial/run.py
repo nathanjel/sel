@@ -1,4 +1,4 @@
-"""Reproduce the audit across all five translators and database variants.
+"""Reproduce the audit across every adapter host's translator and database variants.
 
 Provision sel-audit-tools-0915 (PHP/Lisp), sel-audit-pg-0915 and
 sel-audit-maria-0915 first. See README.md. All generated outputs stay here.

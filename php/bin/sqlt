@@ -543,9 +543,9 @@ $filters = array_slice($argv, 1);
 $cases = sql_cases();
 
 // `--names` prints what this host loaded and stops. Kept as a cheap way to see
-// the roster; the two hosts cannot disagree about it any more, because
-// tools/gen-sql-cases.mjs is the only thing that reads sql/cases/*.sqlt and both
-// load what it wrote.
+// the roster; the hosts cannot disagree about it any more, because
+// tools/gen-sql-cases.mjs is the only thing that reads sql/cases/*.sqlt and every
+// runner loads what it wrote.
 if ($filters === ['--names']) {
     foreach ($cases as $c) {
         echo "{$c['at']}\t{$c['name']}\n";

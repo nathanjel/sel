@@ -83,11 +83,12 @@ conventions\")."
 (defun validate-braces (p start pattern pos)
   "Validate a {n}, {n,} or {n,m} quantifier and return the index just past it.
 
-The other three hosts get the reversed-bound check free from their engines —
-JS, PCRE2 and SRELL all reject {2,1} as a syntax error. cl-ppcre accepts it and
+The other hosts get the reversed-bound check free from their engines —
+JS, PCRE2, SRELL, Python's re, RE2 and the regex crate all reject {2,1} as a
+syntax error. cl-ppcre accepts it and
 matches nothing, so the check has to be explicit here. That is the general shape
 of the risk in this file: every rule the other hosts delegate to their engine has
-to be written out, because cl-ppcre is the more permissive of the four."
+to be written out, because cl-ppcre is the most permissive of the engines."
   (let ((i (1+ start))
         (n (length p))
         (lo-start (1+ start))
@@ -174,7 +175,7 @@ to be written out, because cl-ppcre is the more permissive of the four."
     (bad-regex "unterminated character class" pattern start pos)))
 
 ;;; Validates and rewrites in one pass, returning source that means the same
-;;; thing to every engine. All four hosts run this, so all four compile the same
+;;; thing to every engine. Every host runs this, so every engine compiles the same
 ;;; pattern — apart from the anchor lowering noted at the top of this file.
 (defun validate-pattern (pattern pos &optional (anchored-at-start t)
                                        (lower-anchors t))

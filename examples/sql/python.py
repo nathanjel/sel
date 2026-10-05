@@ -8,7 +8,7 @@ of them in the database. What makes that safe is that the translation refuses
 rather than guesses: if SQL cannot be made to mean what SEL means, no SQL is
 emitted and the rule stays where it already worked.
 
-The four files beside this one print byte-identical output;
+The files beside this one print byte-identical output;
 tools/check-examples.sh diffs them.
 """
 
@@ -74,7 +74,7 @@ print('   sql          =>', Sql.translate(lines, 'mariadb', {
 # written out, which is what you want in a build-time audit of a rule set.
 #
 # The line below says `tryTranslate` and `null` rather than `try_translate` and
-# `None`: the four files beside this one must print the same bytes, so the label
+# `None`: the files beside this one must print the same bytes, so the label
 # is the shared API's name and not this host's spelling of it.
 
 print('5. refusal')

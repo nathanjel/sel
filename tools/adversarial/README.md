@@ -11,11 +11,12 @@ its own results, which are not committed.
 Run `bash tools/adversarial/regressions.sh` from the repository root. It requires
 Docker, Python, Node (for the JS adapter), make and a C++23 compiler. It builds
 the current C++ adapter, creates four uniquely named disposable containers,
-installs PHP/Lisp tooling and a fresh Python wheel, and runs:
+installs PHP/Lisp tooling and a fresh Python wheel, and runs (Go and Rust have
+no adapter here; see the roster below):
 
 - `identity.py`: direct and derived text/numeric group keys, DISTINCT and exact
   filters; SQLite NOCASE/RTRIM schemas, PostgreSQL numeric scale, and MariaDB
-  case/trailing-space identity. Five source hosts plus the installed wheel,
+  case/trailing-space identity. Every source host with an adapter, plus the installed wheel,
   strict off/on, inline and native prepared statements; unordered group output
   is compared by exact record multiplicity.
 - `latest.py`: normalized and EAV latest-member results, empty and filtered
@@ -23,7 +24,7 @@ installs PHP/Lisp tooling and a fresh Python wheel, and runs:
   It asserts 100 transferred winners for the 100,000-row fixture, rather than
   accepting merely a promising SQL string or planner classification.
 - `witnesses.py`: the original F1–F5 reproduction queries plus composite grouping
-  and slice controls, asserted against current local SEL in all six SQL lanes.
+  and slice controls, asserted against current local SEL in every SQL lane.
   Documented arithmetic/validation differences (C1) are deliberately separate.
 - The full expression/row/statement oracle on PostgreSQL, MariaDB, MySQL and
   SQLite. The new identity/latest adapter matrix itself covers the first,
@@ -61,7 +62,9 @@ An existing container with any of these names causes the script to stop before
 creating or deleting anything. Database images are pinned to this audit's digests;
 tooling packages are installed from the image's Debian repositories.
 
-The source roster is Python, JS, PHP, C++ and Lisp. Local execution additionally
+The source roster is the hosts the audit had: Python, JS, PHP, C++ and Lisp; Go
+and Rust, added since, have no adapter here, and their SQL layers are held to the
+shared `sql/cases/` and the oracle lanes instead. Local execution additionally
 covers the JS bundle, minified bundle and installed Python wheel. SQL additionally
 covers the installed wheel; the JS bundles export only the evaluator, not a
 separate bundled SQL implementation.

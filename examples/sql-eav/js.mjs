@@ -10,7 +10,7 @@
 // the rest -- pivoting attributes into records, comparing text as a number -- in
 // memory, where ISNUM can say what SQLite cannot.
 //
-// The four files beside this one print byte-identical output.
+// The files beside this one print byte-identical output.
 
 import { readFileSync } from 'node:fs';
 import { compile, Value } from '../../js/src/sel.mjs';

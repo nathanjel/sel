@@ -16,7 +16,7 @@
 // PHP would enforce a `string` parameter and refuse a list with a TypeError;
 // Python's annotations enforce nothing at run time, JS has no types to declare,
 // and Lisp's are advisory. A guarantee written as a signature is a guarantee
-// three of the six hosts do not make. Written in the body it is the same refusal,
+// several hosts do not make. Written in the body it is the same refusal,
 // with the same code, everywhere — and `SqlError` is the class an application
 // catches, where a `TypeError` is not.
 //

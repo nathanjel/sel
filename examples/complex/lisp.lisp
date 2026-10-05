@@ -5,7 +5,7 @@
 ;;;;        --eval '(sel-example:main)'
 ;;;;
 ;;;; examples/plain/ is the API. This is the language: aggregates, named binders,
-;;;; text and regex, structured results, and a rule that refuses. The four files
+;;;; text and regex, structured results, and a rule that refuses. The files
 ;;;; beside this one print byte-identical output; tools/check-examples.sh diffs
 ;;;; them.
 ;;;;
@@ -106,9 +106,9 @@
     (format t "5. text and regex~%")
     ;; UPPER and LOWER touch A-Z and nothing else, by specification -- so the ż and
     ;; ę below come back unchanged. That is not a shortcoming, it is the only way
-    ;; five hosts can agree. Measured on a sharp s: JS's toUpperCase and Python's
+    ;; every host can agree. Measured on a sharp s: JS's toUpperCase and Python's
     ;; str.upper both answer SS, PHP's strtoupper answers ß, and C's toupper cannot
-    ;; see it at all. SEL answers ß on all five, because it never asks the host.
+    ;; see it at all. SEL answers ß on every host, because it never asks the host.
     (format t "   upper        => ~a~%" (ask order "UPPER(CUSTOMER)"))
     (format t "   initials     => ~a~%"
             (ask order "JOIN(MAP(SPLIT(CUSTOMER, \" \"), LEFT(_, 1)), \".\")"))

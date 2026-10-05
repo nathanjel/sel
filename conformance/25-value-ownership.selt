@@ -1,5 +1,5 @@
 % Value ownership: what is copied, what is aliased, and what a warm cache must
-% never remember (spec/SPEC.md §3.4, §5.8, §5.9, §6.4).
+% never remember (spec/SPEC.md §3.4, §5.7, §5.9, §6.4).
 %
 % Every expectation is derived from the spec, not from what a host printed. The
 % rule, in one line: assignment copies, `,` copies what it collects, the §7.3
@@ -390,7 +390,7 @@ text "9,abc"
 
 ### name: alias.assignment-copies-nested-children
 --- note
-CONTROL. Assignment deep-copies (§5.8): S does not share R's nested child.
+CONTROL. Assignment deep-copies (§5.7): S does not share R's nested child.
 --- source
 R = RECORD("a", RECORD("b", 1)); S = R; S["a"]["b"] = 2; R["a"]["b"]
 --- expect

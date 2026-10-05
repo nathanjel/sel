@@ -359,8 +359,8 @@ final class Evaluator
      * The match had no default arm, so an operator it did not name raised
      * \UnhandledMatchError -- loud, which is right, but a PHP error rather than
      * a SEL one, so it carried no code and no position and could not be caught
-     * where every other failure in this file is caught. The other four hosts
-     * answered silently in their own ways; all five now refuse identically.
+     * where every other failure in this file is caught. The other hosts
+     * answered silently in their own ways; every host now refuses identically.
      * Unreachable today, since every caller (this file's and the optimizer's
      * constant folding) reaches it only with the six.
      *

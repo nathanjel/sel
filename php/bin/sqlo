@@ -827,8 +827,8 @@ function run_statements(PDO $pdo, string $dialect, bool $verbose, string $label 
  * Every host's translator against the same server.
  *
  * The statement oracle above runs PHP's translator only, so a defect every
- * translator shares — or one four of five share — passed it: a LINK's left
- * binder resolved to the joined relation in four hosts (SQL-01) and only a
+ * translator shares — or one most of them share — passed it: a LINK's left
+ * binder resolved to the joined relation in most hosts and only a
  * two-relation program over same-named fields could tell. Here the corpus
  * `cross.selc` reads ORDERS and CUSTOMERS, the relations every host's sqlfuzz
  * binds; each host's `sqlfuzz CORPUS DIALECT statement` output (one inline
@@ -914,9 +914,9 @@ function run_cross(PDO $pdo, string $dialect, bool $verbose, string $label = '')
     $bad = [];
     foreach ($programs as $i => $src) {
         // A program named "refused: ..." is one run() rejects over the fixture:
-        // every translator must refuse it too. The four SQL defects of review
-        // 2026-09-28 were all SQL for such a program, which this oracle, reading
-        // only programs SEL answers, could not see (TEST-13).
+        // every translator must refuse it too. Several SQL defects (the LINK
+        // cases of sql/cases/47-link-rows.sqlt) were all SQL for such a program,
+        // which this oracle, reading only programs SEL answers, could not see.
         if (str_starts_with($names[$i], 'refused: ')) {
             try {
                 Sel::compile($src)->run($context);

@@ -10,7 +10,7 @@
 ;;;; and position — the message is human text and may differ between hosts; the
 ;;;; code and the position may not.
 ;;;;
-;;;; The four files beside this one print byte-identical output for the session
+;;;; The files beside this one print byte-identical output for the session
 ;;;; in session.txt.
 
 (defpackage #:sel-example

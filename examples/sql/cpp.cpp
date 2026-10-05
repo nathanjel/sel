@@ -8,7 +8,7 @@
 // refuses rather than guesses: if SQL cannot be made to mean what SEL means, no
 // SQL is emitted and the rule stays where it already worked.
 //
-// The four files beside this one print byte-identical output;
+// The files beside this one print byte-identical output;
 // tools/check-examples.sh diffs them.
 //
 // The visible difference here is that C++ has no untyped map to hand over as
@@ -36,8 +36,8 @@ using sel::sql::Sql;
 using sel::sql::SqlError;
 using sel::sql::SqlKind;
 
-// Left-pad to a fixed width, so this file's columns line up with the four
-// written in languages that have printf-style padding built in.
+// Left-pad to a fixed width, so this file's columns line up with the
+// files written in languages that have printf-style padding built in.
 std::string pad(const std::string& s, std::size_t n) {
   return s.size() >= n ? s : s + std::string(n - s.size(), ' ');
 }
@@ -119,7 +119,7 @@ int main() {
 
   std::cout << "5. refusal\n";
   const sel::Program unbound = sel::compile("MYSTERY > 1");
-  // The label is JS's spelling of the method, in every one of the five files.
+  // The label is JS's spelling of the method, in every one of the files.
   // The outputs have to be byte-identical, so one host's name for the call is
   // what all of them print; this host's is try_translate.
   std::cout << "   tryTranslate => "

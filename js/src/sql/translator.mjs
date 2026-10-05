@@ -2754,7 +2754,7 @@ export class Translator {
     const { name, args } = step;
     // The same rule as a MAP's: an ORDER BY alone does not wrap (a
     // derived table is where MariaDB drops an ORDER BY with no LIMIT
-    // beside it), everything else above the rows does. Four hosts used
+    // beside it), everything else above the rows does. The other hosts used
     // the rows-above test here and wrapped a sorted plan; the Lisp host
     // did not, and the SQL fuzz corpus in its SQL mode found the
     // difference (SEL-0048).

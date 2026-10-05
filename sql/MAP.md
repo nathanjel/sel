@@ -158,8 +158,8 @@ entry — §3's "a null `binaryLiteral` refuses BIN literals" is exactly this �
 a `null` at one count of an arity-keyed template withdraws that form, which the
 `*` fallback does not rescue. Both were read as *absent* until a cross-host
 review asked what a withdrawal actually did: the base's live value was inherited
-in its place, so the documented withdrawal was unwritable in both hosts, and on
-one of them the `null` reached the renderer and emitted the literal text `None`
+in its place, so the documented withdrawal was unwritable in each host that had a SQL layer then (PHP and
+Python), and on one of them the `null` reached the renderer and emitted the literal text `None`
 into the SQL.
 
 ---

@@ -344,8 +344,8 @@ grouping *expression* — both are why the fixture holds `'A'`, `'a'`, `'B'`,
 ## `cross.selc` and `fixture-cross-*.sql`
 
 The statement oracle runs PHP's translator only, so a defect every translator
-shared — or four of five — passed it. Review 2026-09-25 found one: a `LINK`'s
-left binder resolved to the joined relation in JS, PHP, Python and C++ (SQL-01),
+shared — or most of them — passed it. A cross-host review found one: a `LINK`'s
+left binder resolved to the joined relation in JS, PHP, Python and C++,
 visible only when both relations carry a field of the same name with different
 values. `cross.selc` holds such programs over `ORDERS` and `CUSTOMERS`, the two
 relations every host's `sqlfuzz` binds, and `fixture-cross-*.sql` holds their

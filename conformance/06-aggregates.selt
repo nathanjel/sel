@@ -295,7 +295,7 @@ num 1
 
 ### name: agg.top-by.k-sees-the-keys-filter-kept
 --- note
-Review 2026-09-25 SEM-02. FILTER keeps its input's keys (spec §7.3), and a
+FILTER keeps its input's keys (spec §7.3), and a
 _K read in the next step sees them: the kept elements are "2" and "3". Python
 renumbered the list it was handed before binding _K and answered 2.
 --- source
@@ -334,7 +334,7 @@ tree -{"1"=t"20"}
 
 ### name: agg.k.every-binding-form-sees-the-kept-keys
 --- note
-Review 2026-09-25 SEM-03: the same _K reads through every step that binds it,
+The same _K reads through every step that binds it,
 so a renumbering anywhere shows up here.
 --- source
 L=FILTER(LIST(10,20,30), _ > 10); LIST(ALL(L, _K $!= "1"), ANY(L, _K $== "3"), SUM(L, IF(_K $== "2", 100, 1)), JOIN(SORT(L, IF(_K $== "2", 0, 1)),","), JOIN(SORT_DESC(L, IF(_K $== "2", 1, 0)),","), JOIN(SORT_BY(L, IF(_K $== "2", 0, 1)),","), JOIN(SORT_BY(L, X, IF(_K $== "2", 0, 1)),","), JOIN(BUCKET(L, IF(_K $== "2", "a", "b"), JOIN(_,"+")),","), JOIN(MAP(L, X, _K),","))
@@ -344,7 +344,7 @@ tree -{"1"=TRUE, "2"=TRUE, "3"=t"101", "4"=t"20,30", "5"=t"20,30", "6"=t"20,30",
 
 ### name: agg.filter.keeps-a-first-key-that-only-looks-numeric
 --- note
-Review 2026-09-25 SEM-09. A kept key is kept as written. PHP cast each key to
+A kept key is kept as written. PHP cast each key to
 an integer to decide whether the kept keys were still 1, 2, 3 … and so wrote
 "1" for a first key of "1x", "01", " 1", "+1", "1e0" or "1.0".
 --- source
@@ -355,7 +355,7 @@ tree -{"1"=-{"1x"=t"10"}, "2"=-{"01"=t"10", "2"=t"11"}, "3"=-{" 1"=t"10"}, "4"=-
 
 ### name: agg.sort-by.direction-is-ascii-case-folded-only
 --- note
-Review 2026-09-25 SEM-05. The direction is compared after ASCII upper-casing
+The direction is compared after ASCII upper-casing
 only; "ſ" (U+017F) upper-cases to "S" under Unicode rules, which let JS and
 Python take "deſc" for DESC.
 --- source

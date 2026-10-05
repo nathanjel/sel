@@ -242,7 +242,7 @@ b\"c\\d")))
 
 (test regex-portability
   ;; The cl-ppcre-specific lowering. Perl's `$` also matches before a trailing
-  ;; newline; SEL's does not, and neither do the other three hosts.
+  ;; newline; SEL's does not, and neither do the other hosts.
   (is (string= "FALSE" (dump-of "RMATCH('^a$', \"a\\n\")")))
   (is (string= "TRUE" (dump-of "RMATCH('^a$', \"a\")")))
   ;; Dotall is permanently on.
@@ -266,7 +266,7 @@ b\"c\\d")))
 
 ;;; The SEL->SQL layer. Everything about it that a case file can state lives in
 ;;; sql/cases/ and is run by lisp/bin/sqlt against the same corpus as the other
-;;; four hosts. These two cannot be stated there: a `.sqlt` case carries its
+;;; hosts. These two cannot be stated there: a `.sqlt` case carries its
 ;;; dialect as a string and runs under the standard printer, so neither the
 ;;; shape of a host-supplied dialect nor the caller's printer settings is
 ;;; something the corpus can vary. Both were live defects in this host alone.
@@ -1246,9 +1246,9 @@ X .> MAP(COUNT(X) + _[\"id\"]
                                                context))))))))))
 
 (test executed-plans-answer-what-run-answers
-  ;; Review 2026-09-15 findings I, AI and P: plans that pushed a bare bucket
-  ;; to the end, re-grouped a bucket, or re-applied a MAP's RECORD over rows
-  ;; the SQL had already projected, all answered something else than run.
+  ;; Plans that pushed a bare bucket to the end, re-grouped a bucket, or
+  ;; re-applied a MAP's RECORD over rows the SQL had already projected, all
+  ;; answered something else than run.
   ;; The database is stood in for by SEL itself: the SQL prefix's own AST
   ;; evaluated over the same rows is what the SQL would return, which is the
   ;; planner's premise.
@@ -2388,7 +2388,7 @@ the statement sent (or NIL)."
 (test every-raised-code-is-catalogued
   ;; spec/limits.json's catalogue, rendered as +ERROR-CODES+, is the list of
   ;; codes a host may raise; every code this host's sources raise with FAIL is in
-  ;; it (tools/check-error-codes.sh holds the five hosts to it from outside).
+  ;; it (tools/check-error-codes.sh holds every host to it from outside).
   (let* ((root (asdf:system-source-directory :sel-lang))
          (catalogue (mapcar #'first sel::+error-codes+))
          (raised '()))
@@ -3220,7 +3220,7 @@ longer the leading equality."
       ;; binaryCast keeps an already-BIN operand as it is
       (is (string= "C" (text (sel.sql::emit-fill "mariadb" "{binaryCast:0}" (list c))))))))
 
-;;; LISP-REG-1: a result built fresh is adopted, never copied again, and the adoption
+;;; A result built fresh is adopted, never copied again, and the adoption
 ;;; shares nothing it should not.
 (test reg-fresh-results-are-adopted-without-aliasing
   (flet ((d (src) (sel:value-dump (sel:evaluate src))))

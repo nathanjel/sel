@@ -43,7 +43,7 @@ start with a manifest name it never defined. A host therefore cannot drift
 from this file; it can only fail to load.
 
 Adding a builtin: add its entry here, run `node tools/gen-builtins.mjs`, commit
-the five renderings and `docs/reference/builtins.md` with it, then define it in every
+every host's rendering and `docs/reference/builtins.md` with it, then define it in every
 host. `tools/check-generated.sh` fails while a rendering is stale.
 
 ## Binding forms

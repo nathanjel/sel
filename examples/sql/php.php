@@ -8,7 +8,7 @@
 // refuses rather than guesses: if SQL cannot be made to mean what SEL means, no
 // SQL is emitted and the rule stays where it already worked.
 //
-// The four files beside this one print byte-identical output;
+// The files beside this one print byte-identical output;
 // tools/check-examples.sh diffs them.
 
 declare(strict_types=1);

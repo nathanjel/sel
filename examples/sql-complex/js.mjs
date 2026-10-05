@@ -11,7 +11,7 @@
 // against the report over the data generated in memory (examples/memory-complex),
 // which is where the rows in this database came from.
 //
-// The four files beside this one print byte-identical output.
+// The files beside this one print byte-identical output.
 
 import { readFileSync } from 'node:fs';
 import { compile, evaluate, Value } from '../../js/src/sel.mjs';

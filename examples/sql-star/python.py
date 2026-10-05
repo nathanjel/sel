@@ -11,7 +11,7 @@ runs in memory over the rows the prefix returned), or none of it
 (pure_memory). The answer is checked against a run of the same program over
 the tables loaded into memory.
 
-The four files beside this one print byte-identical output.
+The files beside this one print byte-identical output.
 """
 
 import os

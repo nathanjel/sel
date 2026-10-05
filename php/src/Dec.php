@@ -1604,7 +1604,7 @@ final class Dec
         while ($e > 0) {
             // intdiv/% rather than the bit operators: PHP's are 64-bit here,
             // but the same code in JS is 32-bit and silently truncated a large
-            // exponent. Keeping the four cores literally the same code is the
+            // exponent. Keeping the decimal cores literally the same code is the
             // point — see js/src/decimal.mjs.
             if ($e % 2 === 1) {
                 $result = self::mul($result, $base, $pos);

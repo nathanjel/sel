@@ -77,7 +77,7 @@ function parse_selt(string $text, string $file): array
             throw new RuntimeException("{$c['at']}: case {$c['name']} has no --- expect");
         }
         // WS, not trim(): PHP's default set adds NUL and a vertical tab, which
-        // the other four readers do not strip. Narrower than it needs to be
+        // the other hosts' readers do not strip. Narrower than it needs to be
         // today and the same width as everybody else, which is the point.
         $c['setup'] = $c['setup'] === null ? null : trim(implode("\n", $c['setup']), WS);
         $c['source'] = trim(implode("\n", $c['source']), WS);

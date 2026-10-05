@@ -13,8 +13,8 @@
 // thing: it generates the calls. See docs/internals/sql-translation.md §5.
 //
 // Used by php/bin/sqlo alone. The case files no longer come through here:
-// tools/gen-sql-cases.mjs reads them and emits php/bin/CaseData.php and
-// python/bin/case_data.py, so the two runners load code rather than each
+// tools/gen-sql-cases.mjs reads them and emits one rendering per host
+// (php/bin/CaseData.php among them), so the runners load code rather than each
 // decoding the same document with a different decoder -- which they did, and
 // disagreed about.
 //
@@ -129,7 +129,7 @@ function binding_from_json(array $b, string $where): Binding
             // A JSON number is refused, in both tools, and that is a decision
             // rather than an omission: PHP's json_decode turns a 20-digit
             // integer into a float, Python keeps it exact, and JS cannot tell
-            // 1.0 from 1. No decoding rule is implementable in all six hosts, so
+            // 1.0 from 1. No decoding rule is implementable in every host, so
             // test data spells its numbers as strings and says `"type": "NUM"`
             // when it wants them unquoted -- which is what the library asks of
             // an application too.

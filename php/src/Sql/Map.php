@@ -402,7 +402,7 @@ final class Map
         // sql/MAP.md §3 says a null lexical value is a WITHDRAWAL -- "a null
         // binaryLiteral refuses BIN literals" -- and isset() reads that as
         // "absent" and walks on to the base, which handed the withdrawn value
-        // back. The documented withdrawal was unimplementable, in both hosts.
+        // back. The documented withdrawal was unimplementable, in every host that had it.
         if (isset(self::$lexMemo[$dialect]) && array_key_exists($key, self::$lexMemo[$dialect])) {
             return self::$lexMemo[$dialect][$key];
         }
@@ -621,7 +621,7 @@ final class Map
     // What tools/gen-sql-map.mjs enforces at generation time, enforced here at
     // registration time, against the vocabulary that file EMITS rather than a
     // second copy of it. Every one of these refusals closes a place where the
-    // two hosts improvised differently over an entry the generator would never
+    // hosts improvised differently over an entry the generator would never
     // have accepted -- a JSON list where a template belongs, an arity of
     // strings, a `ret` that was not there at all.
     //
@@ -643,9 +643,9 @@ final class Map
             return;
         }
         if ($types[$key] === 'map') {
-            // textEscape given as a STRING made both hosts skip escaping
-            // entirely and emit 'it's' unquoted. That is an injection, it was in
-            // both hosts, and nothing checked.
+            // textEscape given as a STRING made the hosts of the day skip
+            // escaping entirely and emit 'it's' unquoted. That is an injection,
+            // it was in every one of them, and nothing checked.
             if (!is_array($v)) {
                 throw new \LogicException("{$where} sets {$key} to a "
                     . get_debug_type($v) . '; it must be a map of character to replacement');

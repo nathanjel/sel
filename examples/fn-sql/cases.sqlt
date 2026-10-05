@@ -1,6 +1,6 @@
 % SQL conformance cases for the ORD_SUFFIX mapping. These go in the matching
 % sql/cases/*.sqlt and pin the string every host emits -- which is what makes
-% "all five hosts translate identically" a check rather than a hope.
+% "every host translates identically" a check rather than a hope.
 %
 % What they do NOT establish is that the database agrees with SEL about what the
 % answer means. Only sql/oracle/ does that, run against real servers by

@@ -1,5 +1,5 @@
 ;;;; API parity probe — Common Lisp. See tools/api.mjs for what this is and why.
-;;;; The four drivers must stay in the same order with the same probe names; the
+;;;; The drivers (one per host) must stay in the same order with the same probe names; the
 ;;;; diff between their reports is the whole mechanism.
 
 (in-package #:sel-cli)
@@ -117,7 +117,7 @@
     (sel:sel-error (e) (say "error.host.badnum" (sel:sel-error-code e))))
   ;; Every character is a digit, so this is E_RANGE and not E_NOT_NUM. MAKE-NUM
   ;; is public API, so an embedding application can reach the numeral cap without
-  ;; compiling a rule at all -- and all six hosts must refuse it the same way.
+  ;; compiling a rule at all -- and every host must refuse it the same way.
   (handler-case (sel:make-num (make-string 2000001 :initial-element #\1))
     (sel:sel-error (e) (say "error.host.hugenum" (sel:sel-error-code e))))
 
@@ -280,7 +280,7 @@
   ;; --- input the API cannot take is E_BAD_ARG, never a host condition or a
   ;; different SEL error (spec/SPEC.md 8). A statically typed host cannot be handed
   ;; a non-string source and prints n/a; tools/check-api.sh leaves an n/a line out
-  ;; of the diff for that host. (Lisp is dynamically typed: all four are posed.)
+  ;; of the diff for that host. (Lisp is dynamically typed: every one is posed.)
   (flet ((code (thunk)
            (handler-case (progn (funcall thunk) "no error")
              (sel:sel-error (e) (sel:sel-error-code e))

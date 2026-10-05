@@ -3,7 +3,7 @@
 //
 // Constructed in code, never decoded from a document. That is the whole point:
 // this layer used to take a nested array shaped like JSON and validate it by
-// hand, and a cross-host review found the two hosts disagreeing about what a
+// hand, and a cross-host review found PHP and Python disagreeing about what a
 // malformed one meant -- `from: ["order_items"]` was refused by PHP and spliced
 // into an identifier by Python; `items` as an object was accepted by one and
 // refused by the other. None of that was a decision anybody made; it was
@@ -308,7 +308,7 @@ final class Binding
      * PHP would enforce `string $column` and refuse an array with a TypeError.
      * Python's annotations enforce nothing at run time, JS has no types to
      * declare, and Lisp's are advisory -- so a guarantee written as a signature
-     * is a guarantee three of the six hosts do not make. Written here it is the
+     * is a guarantee several hosts do not make. Written here it is the
      * same refusal, with the same code, everywhere. And a TypeError would be
      * the wrong class anyway: SqlError is what an application catches.
      */

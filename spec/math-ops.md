@@ -20,7 +20,7 @@ retyped in five compilers. This file authors it once.
 
 What is **not** here, on purpose: the plan's loads (`LOAD_VAR`, `LOAD_CONST`,
 `LOAD_LEAF`), the opcode *numbers* (Python and PHP count from 4, JS the same,
-C++ has an enum, Lisp keywords), the scratchpad layout, the copy-propagation
+C++ and Rust have an enum, Lisp keywords, Go strings), the scratchpad layout, the copy-propagation
 rules and the arithmetic itself. Those are each host's own; a common binary
 encoding was never the goal. The generated table gives each host the source
 mapping, the operand counts and the position rule, and each host maps the

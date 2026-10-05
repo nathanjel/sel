@@ -37,4 +37,4 @@ offsets, which is what SEL reports.
 
 Replace `srell.hpp` from a newer tag, update the commit above, and run
 `tools/check.sh`. The regex cases in `conformance/09-regex.selt` are what decide
-whether the new version still agrees with the other three implementations.
+whether the new version still agrees with the other implementations.

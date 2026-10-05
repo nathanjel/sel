@@ -10,7 +10,7 @@
 // whole, and runs in memory instead; every answer below is checked against the
 // in-memory one.
 //
-// The four files beside this one print byte-identical output.
+// The files beside this one print byte-identical output.
 
 import { compile, Value } from '../../js/src/sel.mjs';
 import { Binding, Sql, SqlError } from '../../js/src/sql/index.mjs';

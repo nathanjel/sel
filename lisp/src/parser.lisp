@@ -464,7 +464,7 @@ left to the run."
 ;;; stack before the 200-level guard could fire: a host crash through the public
 ;;; CLI, while this host still answered. Counting the bracket halves the density
 ;;; and moves the boundary from about 198 nestings to 99, which is where the
-;;; other four hosts have been since they took the same change.
+;;; other hosts have been since they took the same change.
 (defun parse-postfix (p)
   (let ((node (parse-primary p)))
     (loop while (or (p-at-op p "[") (p-at-op p ".>"))

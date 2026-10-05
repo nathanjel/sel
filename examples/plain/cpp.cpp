@@ -3,7 +3,7 @@
 //   cmake -S cpp -B cpp/build -DSEL_BUILD_TOOLS=ON && cmake --build cpp/build
 //   cpp/build/sel-example-plain
 //
-// The four files beside this one do the same thing through their own host API
+// The files beside this one do the same thing through their own host API
 // and print byte-identical output; tools/check-examples.sh diffs them. That is
 // the point of the example as much as the code is: the differences you see
 // between these files are the languages', never SEL's.
@@ -21,8 +21,8 @@
 
 namespace {
 
-// Left-pad to a fixed width, so this file's columns line up with the four
-// written in languages that have printf-style padding built in.
+// Left-pad to a fixed width, so this file's columns line up with the
+// files written in languages that have printf-style padding built in.
 std::string pad(const std::string& s, std::size_t n) {
   return s.size() >= n ? s : s + std::string(n - s.size(), ' ');
 }

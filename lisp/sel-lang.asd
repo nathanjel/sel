@@ -24,7 +24,7 @@
 
 (defsystem "sel-lang"
   :around-compile call-muffling-compiler-notes
-  :description "SEL — a small expression language that evaluates identically on every host"
+  :description "A small expression language for business rules: one rule gives the same answer in Python, JavaScript, PHP, C++23, Common Lisp, Rust and Go, or in your database as SQL. Exact decimal arithmetic, no floating point, no truthiness."
   :author "Marcin Gałczyński"
   :license "MIT"
   :version "0.10.0"

@@ -5,7 +5,7 @@
 
 ### name: link.chain.shared-name-through-a-later-left-binder
 --- note
-Review 2026-09-28 SQL-05, the reported probe. The second LINK's left element
+The reported probe. The second LINK's left element
 is the first joined row, and `id` is on both R and S, so that row has no
 `id`: `run()` raises E_NO_KEY at `A["id"]`. Every translator read `A` as R
 and joined on `r.id`.
@@ -44,7 +44,7 @@ SELECT "t"."tv" AS "v" FROM "r" "r" INNER JOIN "s" "s" ON (CAST("r"."id" AS NUME
 
 ### name: link.chain.right-only-field-through-a-later-left-binder
 --- note
-Review 2026-09-28 SQL-06: `sv` is only on S, a promoted field of the first
+`sv` is only on S, a promoted field of the first
 joined row, which every translator refused as "not a field" of R.
 --- dialect
 sqlite
@@ -318,7 +318,7 @@ E_SQL_SHAPE 1:63
 
 ### name: link.qualifier.relation-name-after-a-five-argument-link
 --- note
-Review 2026-09-28 SQL-07. The five-argument form binds `_1`, the name it
+The five-argument form binds `_1`, the name it
 gives and its lowercase: the joined row has no key `R`.
 --- dialect
 sqlite
@@ -503,7 +503,7 @@ E_SQL_UNBOUND 1:26
 
 ### name: link.left.right-only-promoted-read
 --- note
-Review 2026-09-28 SQL-08. An unmatched LINK_LEFT row promotes nothing from
+An unmatched LINK_LEFT row promotes nothing from
 the right, so it has no `sv` (E_NO_KEY), where the LEFT JOIN's column is
 NULL.
 --- dialect
@@ -557,7 +557,7 @@ SELECT "r"."rv" AS "v" FROM "r" "r" LEFT JOIN "s" "s" ON (CAST("r"."id" AS NUMER
 
 ### name: link.twice.a-relation-joined-again-under-its-alias
 --- note
-Review 2026-09-28 SQL-09. Joining CUSTOMERS a second time rendered its alias
+Joining CUSTOMERS a second time rendered its alias
 `c` twice, which the server rejects as ambiguous; SEL answers, so the
 translator refuses and the program runs in memory. The position is the
 relation joined again.
@@ -621,7 +621,7 @@ SELECT "_2"."v" AS "n" FROM "plain" INNER JOIN "plain" "_2" ON (CAST("plain"."id
 
 ### name: link.order.an-earlier-sort-key-refuses-before-the-join
 --- note
-Review 2026-09-28 SQL-10, from the widened SQL fuzzer. The first TOP_BY
+From the widened SQL fuzzer. The first TOP_BY
 reads a field CUSTOMERS lacks, which run() reaches first; JS, PHP, Python
 and C++ reported the derived table over the join instead, which Lisp had
 already stopped doing.
@@ -673,7 +673,7 @@ E_SQL_SHAPE 1:52
 
 ### name: link.plan.chain-read-the-row-lacks-stays-in-memory
 --- note
-The reported probe of SQL-05 was planned pure_sql in every host, so
+The probe of link.chain.shared-name-through-a-later-left-binder was planned pure_sql in every host, so
 execute_hybrid ran a join run() refuses.
 --- dialect
 sqlite
