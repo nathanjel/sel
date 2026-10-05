@@ -81,69 +81,84 @@ def column(native, field):
 bad = []
 ok = skipped = 0
 kinds = {'pure_sql': 0, 'hybrid': 0, 'pure_memory': 0}
-for c in spec['programs']:
-    for cs in spec['contexts']:
-        if any(v not in cs['vars'] for v in c.get('requires', [])):
-            skipped += 1
-            continue
-        name = f"{c['name']} [{cs['name']}]"
+# The application section (spec 8.1): its programs call two functions every
+# runner registers -- POKE writes "9" at "k" of the value it receives, in place,
+# and HOSTF returns its argument -- and run over the relations plus its own vars.
+application = spec.get('application')
+if application is not None:
+    def _poke(args):
+        v = args.val(0)
+        v.set('k', Value.text('9'))
+        return v
+    sel.register_function('POKE', 1, 1, _poke)
+    sel.register_function('HOSTF', 1, 1, lambda args: args.val(0))
+work = [(c, cs) for c in spec['programs'] for cs in spec['contexts']]
+if application is not None:
+    work += [(c, {'name': 'application', 'vars': application['vars']}) for c in application['programs']]
+for c, cs in work:
+    if any(v not in cs['vars'] for v in c.get('requires', [])):
+        skipped += 1
+        continue
+    name = f"{c['name']} [{cs['name']}]"
 
-        def fresh():
-            return {**copy.deepcopy(base), **cs['vars']}
-        program = sel.compile(c['sel'])
-        direct = outcome(lambda: program.run(fresh()))
-        exp = c.get('expect', {})
-        guard = None
-        if 'error' in exp:
-            if direct[0] != 'err' or not direct[1].startswith(exp['error'] + '@'):
-                guard = f"SEL answered {direct[1] if direct[0] == 'err' else 'a value'} where the corpus says {exp['error']}"
-        elif direct[0] != 'ok':
-            guard = f'SEL raised {direct[1]}'
+    def fresh():
+        return {**copy.deepcopy(base), **copy.deepcopy(cs['vars'])}
+    program = sel.compile(c['sel'])
+    direct = outcome(lambda: program.run(fresh()))
+    exp = c.get('expect', {})
+    guard = None
+    if 'error' in exp:
+        if direct[0] != 'err' or not direct[1].startswith(exp['error'] + '@'):
+            guard = f"SEL answered {direct[1] if direct[0] == 'err' else 'a value'} where the corpus says {exp['error']}"
+    elif direct[0] != 'ok':
+        guard = f'SEL raised {direct[1]}'
+    else:
+        for f, want in exp.get('fields', {}).items():
+            got = column(direct[1].to_native(), f)
+            if got != want:
+                guard = f'run() column {f} is {got}, the corpus says {want}'
+        if 'value' in exp and norm(direct[1].to_native()) != exp['value']:
+            guard = f"run() is {norm(direct[1].to_native())}, the corpus says {exp['value']}"
+        if 'keys' in exp and [str(k) for k in direct[1].keys()] != exp['keys']:
+            guard = f"run() keys are {direct[1].keys()}, the corpus says {exp['keys']}"
+    if guard:
+        bad.append((name, '', 'CORPUS: ' + guard))
+        continue
+    try:
+        plan = Sql.plan_hybrid(program, 'sqlite', bindings)
+    except Exception as e:                                    # noqa: BLE001
+        bad.append((name, '', f'plan_hybrid raised {type(e).__name__}: {e}'))
+        continue
+    kind = 'pure_sql' if plan.pure_sql else 'pure_memory' if plan.pure_memory else 'hybrid'
+    kinds[kind] += 1
+    statement = plan.sql_statement.as_statement() if plan.sql_statement else '-'
+    caller = Value.from_native(fresh())
+    before = caller.dump()
+    ex = outcome(lambda: Sql.execute_hybrid(plan, runner, caller))
+    after = caller.dump()
+    why = None
+    if direct[0] == 'err':
+        if ex != direct:
+            why = f"run() raises {direct[1]} and the executed {kind} plan gives {ex[1] if ex[0] == 'err' else 'a value'}"
+    elif ex[0] == 'err':
+        why = f'the executed {kind} plan raises {ex[1]} where run() answers'
+    else:
+        want, got = norm(direct[1].to_native()), norm(ex[1].to_native())
+        if kind == 'pure_sql':
+            want, got = rows(want), rows(got)
         else:
-            for f, want in exp.get('fields', {}).items():
-                got = column(direct[1].to_native(), f)
-                if got != want:
-                    guard = f'run() column {f} is {got}, the corpus says {want}'
-            if 'keys' in exp and [str(k) for k in direct[1].keys()] != exp['keys']:
-                guard = f"run() keys are {direct[1].keys()}, the corpus says {exp['keys']}"
-        if guard:
-            bad.append((name, '', 'CORPUS: ' + guard))
-            continue
-        try:
-            plan = Sql.plan_hybrid(program, 'sqlite', bindings)
-        except Exception as e:                                    # noqa: BLE001
-            bad.append((name, '', f'plan_hybrid raised {type(e).__name__}: {e}'))
-            continue
-        kind = 'pure_sql' if plan.pure_sql else 'pure_memory' if plan.pure_memory else 'hybrid'
-        kinds[kind] += 1
-        statement = plan.sql_statement.as_statement() if plan.sql_statement else '-'
-        caller = Value.from_native(fresh())
-        before = caller.dump()
-        ex = outcome(lambda: Sql.execute_hybrid(plan, runner, caller))
-        after = caller.dump()
-        why = None
-        if direct[0] == 'err':
-            if ex != direct:
-                why = f"run() raises {direct[1]} and the executed {kind} plan gives {ex[1] if ex[0] == 'err' else 'a value'}"
-        elif ex[0] == 'err':
-            why = f'the executed {kind} plan raises {ex[1]} where run() answers'
-        else:
-            want, got = norm(direct[1].to_native()), norm(ex[1].to_native())
-            if kind == 'pure_sql':
-                want, got = rows(want), rows(got)
-            else:
-                want = {'keys': [str(k) for k in direct[1].keys()], 'rows': rows(want)}
-                got = {'keys': [str(k) for k in ex[1].keys()], 'rows': rows(got)}
-            if want != got:
-                why = f'run()={json.dumps(want)}\n        plan={json.dumps(got)}'
-        if not why and before != after:
-            why = f"execute_hybrid changed the caller's context ({kind} plan)"
-        if why:
-            bad.append((name, f'[{kind}] {statement}', why))
-            continue
-        ok += 1
-        if verbose:
-            print(f'  ok       {name:<64} {kind}')
+            want = {'keys': [str(k) for k in direct[1].keys()], 'rows': rows(want)}
+            got = {'keys': [str(k) for k in ex[1].keys()], 'rows': rows(got)}
+        if want != got:
+            why = f'run()={json.dumps(want)}\n        plan={json.dumps(got)}'
+    if not why and before != after:
+        why = f"execute_hybrid changed the caller's context ({kind} plan)"
+    if why:
+        bad.append((name, f'[{kind}] {statement}', why))
+        continue
+    ok += 1
+    if verbose:
+        print(f'  ok       {name:<64} {kind}')
 
 for c in spec.get('bounded', []):
     program = sel.compile(c['sel'])
