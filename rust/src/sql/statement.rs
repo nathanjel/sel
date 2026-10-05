@@ -292,9 +292,7 @@ impl Translator {
                 col_type = canon_kind;
                 canonical = true;
             }
-            let mut b = Binding::column(
-                &col_name, &alias, col_type, false, false, false, "", "", false,
-            );
+            let mut b = Binding::column_with(&col_name, &alias, col_type, Default::default());
             if let Some(ref mut c) = b.column {
                 c.canonical = canonical;
                 c.unavailable = source_field.map_or(false, |f| f.is_raw || f.unavailable);

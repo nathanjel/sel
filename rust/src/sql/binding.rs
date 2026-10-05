@@ -174,7 +174,48 @@ fn check_numeric(where_str: &str, v: &Value) {
     }
 }
 
+/// The optional parts of a column binding, by name: what `Binding::column` and
+/// `Binding::raw` take as six trailing positional arguments.
+///
+/// ```
+/// use sel_lang::sql::{Binding, ColumnOptions, SqlKind};
+/// let qty = Binding::column_with("qty", "orders", SqlKind::Num, ColumnOptions::default());
+/// let name = Binding::column_with("name", "orders", SqlKind::Text,
+///     ColumnOptions { collation: "binary".into(), ..Default::default() });
+/// # let _ = (qty, name);
+/// ```
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct ColumnOptions {
+    /// The column compares exactly as SEL compares (a binary collation).
+    pub exact: bool,
+    /// The column's own collation may pre-filter rows (sargable).
+    pub sargable: bool,
+    /// Guard numeric reads of a column declared UNKNOWN.
+    pub guard: bool,
+    /// A collation spelling: "binary"/"exact", "sargable"/"prefilter",
+    /// "default"/"none", or empty.
+    pub collation: String,
+    /// A pre-filter strategy: "separate", "inline", or empty.
+    pub prefilter: String,
+    /// Split a sargable pre-filter from the exact test.
+    pub split_sargable: bool,
+}
+
 impl Binding {
+    /// A column binding with its options by name (see `ColumnOptions`); the
+    /// same binding as `column` with the options spelt positionally.
+    pub fn column_with(column: &str, table: &str, typ: SqlKind, options: ColumnOptions) -> Self {
+        let o = options;
+        Self::column(column, table, typ, o.exact, o.sargable, o.guard, &o.collation, &o.prefilter, o.split_sargable)
+    }
+
+    /// A raw SQL column expression with its options by name; see `raw`.
+    pub fn raw_with(raw: &str, typ: SqlKind, options: ColumnOptions) -> Self {
+        let o = options;
+        Self::raw(raw, typ, o.exact, o.sargable, o.guard, &o.collation, &o.prefilter, o.split_sargable)
+    }
+
+    #[allow(clippy::too_many_arguments)] // the documented positional form; column_with names them
     pub fn column(
         column: &str,
         table: &str,
@@ -218,6 +259,7 @@ impl Binding {
         }
     }
 
+    #[allow(clippy::too_many_arguments)] // the documented positional form; raw_with names them
     pub fn raw(
         raw: &str,
         typ: SqlKind,

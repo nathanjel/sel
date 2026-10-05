@@ -84,7 +84,9 @@ stable `code` (`E_NOT_NUM`, `E_ABORT`, …) and the `pos` of the node that faile
   message: it is the start-up error the other hosts raise as a non-SQL exception,
   which no "could not translate" path may swallow. `sql::define` takes a
   `serde_json::Value`, re-exported as `sel_lang::sql::serde_json`.
-- `Binding::column` takes all nine of its fields positionally.
+- `Binding::column` and `Binding::raw` take their options positionally (as the
+  other hosts' bindings do); `Binding::column_with` and `raw_with` take the
+  same options by name, as a `sql::ColumnOptions` with a `Default`.
 - Stack use is bounded: compiling or evaluating a program nested past the
   language's depth cap (200) answers `E_DEPTH` on a 256 KiB stack in a release
   build.

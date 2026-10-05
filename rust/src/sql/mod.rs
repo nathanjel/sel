@@ -12,7 +12,7 @@
 //!
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
 //! // Describe where the rule's variables live: here, two columns of `orders`.
-//! let column = |name: &str, kind| Binding::column(name, "orders", kind, false, false, false, "", "", false);
+//! let column = |name: &str, kind| Binding::column_with(name, "orders", kind, Default::default());
 //! let bindings = Bindings::new(Some(HashMap::from([
 //!     ("QTY".to_string(), column("qty", SqlKind::Num)),
 //!     ("STATUS".to_string(), column("status", SqlKind::Text)),
@@ -77,7 +77,7 @@ pub mod types;
 /// on a `serde_json` of its own whose version might not match.
 pub use serde_json;
 
-pub use binding::{Binding, Bindings, ColumnSpec, FieldEntry, RelationSpec};
+pub use binding::{Binding, Bindings, ColumnOptions, ColumnSpec, FieldEntry, RelationSpec};
 pub use emit::Emit;
 pub use errors::SqlError;
 pub use hybrid::{execute_hybrid, plan_hybrid, HybridPlan, SelectedMember};
