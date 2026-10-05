@@ -20,11 +20,11 @@ import * as constants from './constants.mjs';
 import * as map from './map.mjs';
 import * as normalise from './normalise.mjs';
 import { Binder } from './binder.mjs';
-import { Emit } from './emit.mjs';
+import { Emit, appendSql } from './emit.mjs';
 import { refuse } from './errors.mjs';
 import { Fragment } from './fragment.mjs';
 import { JoinPlan, RelationalPlan } from './relational-plan.mjs';
-import { PIPELINE_OPS as OPTIMIZER_PIPELINE_OPS } from '../optimizer.mjs';
+import { PIPELINE_OPS as OPTIMIZER_PIPELINE_OPS, unwindPipeline } from '../optimizer.mjs';
 
 // SEL list keys are the canonical decimals "1", "2", … — so "01" is not a key and
 // neither is "1\n", and the evaluator answers E_NO_KEY for both. This layer used
@@ -2331,14 +2331,7 @@ export class Translator {
   fillNamed(tpl, slotMap, pos) {
     const parts = [];
 
-    const push = (s) => {
-      if (s === '') return;
-      if (parts.length && typeof parts[parts.length - 1] === 'string') {
-        parts[parts.length - 1] += s;
-      } else {
-        parts.push(s);
-      }
-    };
+    const push = (s) => appendSql(parts, s);
 
     let i = 0;
     const nTpl = tpl.length;
@@ -2588,13 +2581,7 @@ export class Translator {
     if (constants.identityLossBeforeGrouping(n)) {
       refuse('E_SQL_SHAPE', 'grouping depends on a computed projection without identity preservation', n.pos);
     }
-    const steps = [];
-    let curr = n;
-    while (curr.t === 'call' && PIPELINE_OPS.has(curr.name)) {
-      if (!curr.args || curr.args.length === 0) break;
-      steps.push(curr);
-      curr = curr.args[0];
-    }
+    const { source: curr, steps } = unwindPipeline(n);
 
     if (curr.t !== 'var') return null;
 
@@ -2611,8 +2598,6 @@ export class Translator {
     plan.correlate = b.correlate && typeof b.correlate === 'object' && b.correlate.raw
       ? String(b.correlate.raw)
       : (typeof b.correlate === 'string' ? b.correlate : null);
-
-    steps.reverse();
 
     for (const step of steps) {
       const name = step.name;

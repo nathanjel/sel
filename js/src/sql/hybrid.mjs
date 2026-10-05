@@ -23,7 +23,7 @@
 
 import { Program, Value } from '../sel.mjs';
 import { MAX_DEPTH } from '../eval.mjs';
-import { optimizeAstLogical, unwindPipeline, buildPipeline } from '../optimizer.mjs';
+import { optimizeAstLogical, unwindPipeline, buildPipeline, LITERAL_TYPES } from '../optimizer.mjs';
 import { asciiUpper } from '../lexer.mjs';
 import { bindingForm } from '../registry.mjs';
 import { BUILTIN_MANIFEST } from '../_builtin_manifest.mjs';
@@ -543,7 +543,6 @@ function tryPlanFallthrough(source, steps, dialect, catalog, options, helpers) {
 //     assignment nothing after the split reads is dropped, as stage 1 drops
 //     it for translate() -- the one departure, and the same one.
 
-const LITERAL_TYPES = new Set(['num', 'text', 'bool', 'null']);
 
 // The leading statements and the result expression of a program.
 function statements(ast) {

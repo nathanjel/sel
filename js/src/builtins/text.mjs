@@ -5,7 +5,7 @@
 import { fail } from '../errors.mjs';
 import { Value } from '../value.mjs';
 import { define } from '../registry.mjs';
-import { toCodePoints, fromCodePoints } from '../utf8.mjs';
+import { toCodePoints, fromCodePoints, ANY_SURROGATE, cpIndex } from '../utf8.mjs';
 import { cpLength, checkText, checkCollection } from '../budget.mjs';
 
 const cps = (s) => toCodePoints(s, null);
@@ -14,7 +14,6 @@ const cps = (s) => toCodePoints(s, null);
 // and slice below is the native one; the code point arrays are only for text that has an
 // astral character. A Value's text is well formed, so a surrogate in it is half of
 // a valid pair.
-const ANY_SURROGATE = /[\uD800-\uDFFF]/;
 const plain = (s) => !ANY_SURROGATE.test(s);
 
 // The UTF-16 offset of the code point at index `cp` (or the end when past it).
@@ -25,17 +24,6 @@ function unitOffset(s, cp) {
     i += c >= 0xd800 && c <= 0xdbff ? 2 : 1;
   }
   return i;
-}
-
-// The code point index of the UTF-16 offset `u`.
-function cpIndex(s, u) {
-  let n = 0;
-  for (let i = 0; i < u; i++) {
-    const c = s.charCodeAt(i);
-    if (c >= 0xd800 && c <= 0xdbff) i++;
-    n++;
-  }
-  return n;
 }
 
 define({ name: 'LEN', min: 1, max: 1, fn: (args) => Value.int(cpLength(args.text(0))) });

@@ -1,4 +1,4 @@
-import { Value, RecordShape, NONE, TEXT, structuralHash, scalarKey, recordShape } from '../value.mjs';
+import { Value, RecordShape, NONE, TEXT, structuralHash, scalarKey, recordShape, elements } from '../value.mjs';
 import * as D from '../decimal.mjs';
 import { define, hostArity } from '../registry.mjs';
 import { BUILTIN_MANIFEST } from '../_builtin_manifest.mjs';
@@ -12,11 +12,6 @@ import { checkCollection } from '../budget.mjs';
 // the all-ASCII names that are nearly every name.
 const NON_ASCII = /[^\x00-\x7f]/;
 function upperName(s) { return NON_ASCII.test(s) ? asciiUpper(s) : s.toUpperCase(); }
-
-function elements(value) {
-  if (value.size() > 0) return value.entries();
-  return value.kind === NONE ? [] : [['1', value]];
-}
 
 function firstCollectionItem(value) {
   if (value.kind === NONE && value.size() === 0) return null;

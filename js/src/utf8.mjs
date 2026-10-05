@@ -64,6 +64,24 @@ export function fromCodePoints(cps) {
   return out;
 }
 
+// Any UTF-16 surrogate unit. A string without one has one unit per code point,
+// so its native length, positions and order are SEL's; one with them is the slow
+// path everywhere (and, at the host boundary, checked for an unpaired one).
+export const ANY_SURROGATE = /[\uD800-\uDFFF]/;
+
+// The code point index of UTF-16 offset `u` in `s` (for engine offsets: indexOf,
+// regex match positions).
+export function cpIndex(s, u) {
+  let count = 0;
+  let i = 0;
+  while (i < u) {
+    const c = s.charCodeAt(i);
+    i += (c >= 0xd800 && c <= 0xdbff && i + 1 < s.length) ? 2 : 1;
+    count++;
+  }
+  return count;
+}
+
 // --- bytes ------------------------------------------------------------------
 
 // The UTF-8 length of one code point (SEL text has no lone surrogates).
@@ -209,7 +227,6 @@ export function bytesEqual(a, b) {
 // same order except where a surrogate meets U+E000..U+FFFF, so two strings with no
 // surrogate in either compare natively (a fast path the engine optimises), and
 // anything else compares as encoded bytes.
-const ANY_SURROGATE = /[\uD800-\uDFFF]/;
 export function compareText(a, b) {
   if (!ANY_SURROGATE.test(a) && !ANY_SURROGATE.test(b)) return a < b ? -1 : a > b ? 1 : 0;
   return bytesCompare(encodeUtf8(a, null), encodeUtf8(b, null));

@@ -3,13 +3,12 @@
 
 import { fail, MAX_DEPTH } from './errors.mjs';
 import * as D from './decimal.mjs';
-import { encodeUtf8, bytesToHex, bytesEqual } from './utf8.mjs';
+import { encodeUtf8, bytesToHex, bytesEqual, ANY_SURROGATE } from './utf8.mjs';
 
 export const NONE = 'NONE';
 
 // An unpaired surrogate is not text (spec §8): JS strings are UTF-16, so the
 // check a UTF-8 host makes on bytes is made here on code units.
-const ANY_SURROGATE = /[\uD800-\uDFFF]/;
 const LONE_SURROGATE = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?:^|[^\uD800-\uDBFF])[\uDC00-\uDFFF]/;
 function checkText(s) {
   if (typeof s === 'string' && ANY_SURROGATE.test(s) && LONE_SURROGATE.test(s)) {
@@ -59,12 +58,6 @@ function checkDecimal(d) {
   D.guard(d, null);
   return { neg: d.digits === 0n ? false : d.neg, digits: d.digits, scale: d.scale };
 }
-
-let INT_CAP = null;
-// Anything below 10^18 is under the digit cap whatever the cap is (it is at least 18), so the
-// first BigInt a program ever passes does not have to build 10^1000000 to be waved through.
-const SMALL_INT = 10n ** 18n;
-function intCap() { return INT_CAP ??= 10n ** BigInt(D.MAX_INT_DIGITS); }
 
 export const TEXT = 'TEXT';
 export const BIN = 'BIN';
@@ -381,12 +374,11 @@ export class Value {
     if (typeof n === 'number' ? !Number.isInteger(n) : typeof n !== 'bigint') {
       badArg(`not a whole number: ${String(n)}`);
     }
-    // A native integer obeys the digit cap like the same digits in source
-    // (spec §8, §6.4).
-    if (typeof n === 'bigint' && (n < 0n ? -n : n) >= SMALL_INT && (n < 0n ? -n : n) >= intCap()) {
-      fail('E_RANGE', `number has more than ${D.MAX_INT_DIGITS} integer digits`, null);
-    }
     const d = D.fromInt(n);
+    // A native integer obeys the digit cap like the same digits in source
+    // (spec §8, §6.4), through the decimal core's own guard (a double cannot
+    // reach the cap: its largest whole value has 309 digits).
+    if (typeof n === 'bigint') D.guard(d, null);
     const v = new Value(TEXT, null);
     v._decimal = d;
     return v;
@@ -832,6 +824,16 @@ export class Value {
     if (Object.hasOwn(obj, '_')) fail('E_BAD_ARG', 'a value with both a scalar and a child named "_" has no native form', null);
     return { _: this.kind === BIN ? scalar.slice() : scalar, ...obj };
   }
+}
+
+// What an aggregate iterates (spec §7.3): a value's [key, child] pairs. A
+// scalar with no children behaves as a one-element list containing itself,
+// consistent with scalar context (§3.2). A NONE with no children is genuinely
+// empty — that is what FILTER returns when nothing matched, and ALL over it must
+// be TRUE rather than a scalar-context failure.
+export function elements(value) {
+  if (value.size() > 0) return value.entries();
+  return value.kind === NONE ? [] : [['1', value]];
 }
 
 // The hash of the key a packed list's element i has ("1", "2", ...), so a packed list

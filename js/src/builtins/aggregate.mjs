@@ -2,9 +2,9 @@
 // once per element, which is the same move IF makes, repeated.
 
 import * as D from '../decimal.mjs';
-import { Value, NONE, structuralHash, scalarKey } from '../value.mjs';
+import { Value, NONE, structuralHash, scalarKey, elements } from '../value.mjs';
 import { define, isHostFunction } from '../registry.mjs';
-import { bytesCompare, compareText } from '../utf8.mjs';
+import { bytesCompare, compareText, ANY_SURROGATE } from '../utf8.mjs';
 import { fail, SelError } from '../errors.mjs';
 import { cpLength, checkText, MAX_TEXT_LEN } from '../budget.mjs';
 // The direction and field names fold ASCII-only:
@@ -17,15 +17,6 @@ function shape(args) {
   return args.count() === 3
     ? { binder: args.symbol(1), body: args.node(2) }
     : { binder: '_', body: args.node(1) };
-}
-
-// A scalar with no children behaves as a one-element list containing itself,
-// consistent with scalar context (§3.2). A NONE with no children is genuinely
-// empty — that is what FILTER returns when nothing matched, and ALL over it must
-// be TRUE rather than a scalar-context failure.
-function elements(value) {
-  if (value.size() > 0) return value.entries();
-  return value.kind === NONE ? [] : [['1', value]];
 }
 
 // Whether `node` mentions the variable `name`. Iterative, with an explicit
@@ -385,8 +376,6 @@ function keyInfo(key) {
     flag: rk === 1 ? (leaf.scalar ? 1 : 0) : 0,
   };
 }
-
-const ANY_SURROGATE = /[\uD800-\uDFFF]/;
 
 function compareInfo(a, b) {
   if (a.rk !== b.rk) return a.rk - b.rk;

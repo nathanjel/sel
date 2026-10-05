@@ -1,9 +1,11 @@
 // SEL errors. See spec/errors.md — codes are contract, messages are not.
 
-export class SelError extends Error {
-  constructor(code, message, pos) {
+// What SelError and the SQL layer's SqlError share: a stable code and the
+// position of the node responsible. Neither is an instance of the other.
+export class CodedError extends Error {
+  constructor(name, code, message, pos) {
     super(message);
-    this.name = 'SelError';
+    this.name = name;            // given, not new.target.name: a minifier renames classes
     this.code = code;
     this.line = pos ? pos.line : 0;
     this.col = pos ? pos.col : 0;
@@ -12,6 +14,12 @@ export class SelError extends Error {
 
   toString() {
     return `${this.code} at ${this.line}:${this.col}: ${this.message}`;
+  }
+}
+
+export class SelError extends CodedError {
+  constructor(code, message, pos) {
+    super('SelError', code, message, pos);
   }
 }
 

@@ -14,7 +14,7 @@
 import { fail } from '../errors.mjs';
 import { Value } from '../value.mjs';
 import { define } from '../registry.mjs';
-import { toCodePoints, fromCodePoints } from '../utf8.mjs';
+import { toCodePoints, fromCodePoints, cpIndex } from '../utf8.mjs';
 import { MAX_DEPTH } from '../errors.mjs';
 import { MAX_REGEX_PATTERN, MAX_REGEX_GROUPS } from '../_limits.mjs';
 import { cpLength, checkText } from '../budget.mjs';
@@ -496,17 +496,6 @@ function compile(pattern, flags, pos, patPos) {
 }
 
 // JS reports UTF-16 offsets; SEL reports code point offsets.
-function cpIndex(str, utf16Index) {
-  let count = 0;
-  let i = 0;
-  while (i < utf16Index) {
-    const c = str.charCodeAt(i);
-    i += (c >= 0xd800 && c <= 0xdbff && i + 1 < str.length) ? 2 : 1;
-    count++;
-  }
-  return count;
-}
-
 function* matches(re, subject) {
   re.lastIndex = 0;
   for (;;) {

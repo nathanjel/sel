@@ -43,6 +43,17 @@ function slotIndex(s) {
 //
 // split/join is literal and global, which is exactly str.replace's contract.
 // Emit.ident already used this idiom for the same reason; these sites did not.
+// Appends SQL text to a part list, joining it to a string part already at the
+// end: a part list alternates text and parameter slots, never two texts.
+export function appendSql(parts, s) {
+  if (s === '') return;
+  if (parts.length && typeof parts[parts.length - 1] === 'string') {
+    parts[parts.length - 1] += s;
+  } else {
+    parts.push(s);
+  }
+}
+
 function fillSlot(tpl, slot, value) {
   return tpl.split(slot).join(value);
 }
@@ -333,14 +344,7 @@ export class Emit {
   fill(tpl, args, pos = null, expanding = null) {
     const parts = [];
 
-    const push = (s) => {
-      if (s === '') return;
-      if (parts.length && typeof parts[parts.length - 1] === 'string') {
-        parts[parts.length - 1] += s;
-      } else {
-        parts.push(s);
-      }
-    };
+    const push = (s) => appendSql(parts, s);
 
     const splice = (f) => {
       for (const p of f.parts) {

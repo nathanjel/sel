@@ -315,17 +315,7 @@ class Parser {
       fail('E_SYNTAX', 'right-hand side of .> must be a function call or function name', t);
     }
     const nameTok = this.next();
-    let args = [];
-    if (this.atOp('(')) {
-      this.next();
-      if (this.atOp(')')) {
-        this.next();
-      } else {
-        const inner = this.parseSequence();
-        this.expectOp(')');
-        args = (inner.t === 'list' && !inner.grouped) ? inner.items : [inner];
-      }
-    }
+    const args = this.atOp('(') ? this.parseArgs() : [];
 
     const spec = lookup(nameTok.value);
     if (!spec) fail('E_UNKNOWN_FUNC', `unknown function ${nameTok.value}`, nameTok);
@@ -392,18 +382,22 @@ class Parser {
     }
   }
 
-  parseCall() {
-    const nameTok = this.next();
+  // `( args )`, the opening parenthesis next: a comma list's items, one
+  // argument otherwise, none for `()`.
+  parseArgs() {
     this.expectOp('(');
-    let args;
     if (this.atOp(')')) {
       this.next();
-      args = [];
-    } else {
-      const inner = this.parseSequence();
-      this.expectOp(')');
-      args = (inner.t === 'list' && !inner.grouped) ? inner.items : [inner];
+      return [];
     }
+    const inner = this.parseSequence();
+    this.expectOp(')');
+    return (inner.t === 'list' && !inner.grouped) ? inner.items : [inner];
+  }
+
+  parseCall() {
+    const nameTok = this.next();
+    const args = this.parseArgs();
 
     const spec = lookup(nameTok.value);
     if (!spec) fail('E_UNKNOWN_FUNC', `unknown function ${nameTok.value}`, nameTok);

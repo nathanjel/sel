@@ -14,7 +14,7 @@
 import { asciiUpper } from '../lexer.mjs';
 import { hostArity } from '../registry.mjs';
 import { DIALECTS, RULES } from './_map.mjs';
-import { refuse } from './errors.mjs';
+import { refuse, typeName } from './errors.mjs';
 
 export const SECTIONS = ['ops', 'funcs', 'skel'];
 
@@ -416,12 +416,6 @@ const SLOT_IN_TPL = /\{([^}]*)\}/g;
 // `typeof` is not the name Python's type().__name__ gives, and it does not need
 // to be: sql/cases/README.md says messages are never asserted. What matters is
 // that a reader can tell what they passed.
-function typeName(v) {
-  if (v === null) return 'null';
-  if (Array.isArray(v)) return 'list';
-  return typeof v;
-}
-
 function checkLexical(key, v, where) {
   const types = RULES.lexicalTypes;
   if (!has(types, key)) {

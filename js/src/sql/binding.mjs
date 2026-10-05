@@ -25,7 +25,7 @@
 import * as D from '../decimal.mjs';
 import { asciiUpper } from '../lexer.mjs';
 import { Value, quoteDump } from '../value.mjs';
-import { SqlError } from './errors.mjs';
+import { SqlError, typeName } from './errors.mjs';
 import { KINDS as FRAGMENT_KINDS } from './fragment.mjs';
 
 // A validated, normalised binding record.
@@ -101,9 +101,7 @@ export class Binding {
   static relation(from, alias = null, fields = null, scalar = null, correlate = null, prefilter = null, splitSargable = false) {
     checkName('from', from);
     if (alias !== null && alias !== undefined) checkName('alias', alias);
-    if (splitSargable && (prefilter === null || prefilter === undefined)) {
-      prefilter = 'separate';
-    }
+    prefilter = prefilterDefault(prefilter, splitSargable);
     return makeRelation({ kind: 'relation', from }, alias, fields, scalar, correlate, prefilter);
   }
 
@@ -112,9 +110,7 @@ export class Binding {
     checkString('a relation query', query);
     if (query === '') throw new SqlError('E_SQL_BINDING', 'a relation query cannot be empty');
     if (alias !== null && alias !== undefined) checkName('alias', alias);
-    if (splitSargable && (prefilter === null || prefilter === undefined)) {
-      prefilter = 'separate';
-    }
+    prefilter = prefilterDefault(prefilter, splitSargable);
     return makeRelation({ kind: 'relation', from: { raw: query } },
       alias, fields, scalar, correlate, prefilter);
   }
@@ -148,14 +144,6 @@ export class Binding {
     }
     return new Binding({ ...this.spec, unique_key: key });
   }
-}
-
-export function typeName(v) {
-  if (v === null) return 'null';
-  if (v === undefined) return 'undefined';
-  if (Array.isArray(v)) return 'list';
-  if (typeof v === 'object') return v.constructor ? v.constructor.name : 'object';
-  return typeof v;
 }
 
 // --- internals ---------------------------------------------------------------
@@ -304,6 +292,12 @@ function checkPrefilter(p) {
     `unknown prefilter '${p}'; use 'separate' or 'inline'`);
 }
 
+// `splitSargable` is a shorthand for `prefilter: 'separate'`, and an explicit
+// prefilter wins.
+function prefilterDefault(prefilter, splitSargable) {
+  return splitSargable && (prefilter === null || prefilter === undefined) ? 'separate' : prefilter;
+}
+
 // The flags column() and raw() share: a collation spelling folded into
 // exact/sargable, the three flags checked, then the prefilter. `label` names
 // the binding in error messages.
@@ -316,10 +310,7 @@ function columnFlags(label, exact, sargable, guard, collation, prefilter, splitS
   checkBool(`${label}'s exact flag`, exact);
   checkBool(`${label}'s sargable flag`, sargable);
   checkBool(`${label}'s guard flag`, guard);
-  if (splitSargable && (prefilter === null || prefilter === undefined)) {
-    prefilter = 'separate';
-  }
-  const pref = checkPrefilter(prefilter);
+  const pref = checkPrefilter(prefilterDefault(prefilter, splitSargable));
   const flags = { exact: Boolean(exact), sargable: Boolean(sargable), guard: Boolean(guard) };
   if (pref !== null) flags.prefilter = pref;
   return flags;

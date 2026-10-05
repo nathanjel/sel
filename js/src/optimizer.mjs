@@ -53,7 +53,7 @@ function literalNum(value, pos) { return { t: 'num', v: value, pos }; }
 // only exact for a leaf literal, the one shape that carries no positions of
 // its own and cannot fail by itself. A variable is a leaf that can (E_UNDEF_VAR
 // at its own column), so it is not a literal here.
-const LITERAL_TYPES = new Set(['num', 'text', 'bool', 'null']);
+export const LITERAL_TYPES = new Set(['num', 'text', 'bool', 'null']);
 function isLiteral(node) { return node != null && LITERAL_TYPES.has(node.t); }
 function hoistLiteral(child, pos) { return { ...child, pos }; }
 
