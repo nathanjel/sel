@@ -123,11 +123,6 @@ export class Args {
     }
     return n.name;
   }
-
-  isSymbol(i) {
-    const n = this.at(i);
-    return n.t === 'var' && !n.grouped;
-  }
 }
 
 // --- evaluation -------------------------------------------------------------

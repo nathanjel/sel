@@ -3,7 +3,7 @@
 
 import * as D from '../decimal.mjs';
 import { Value, NONE, structuralHash, scalarKey, elements } from '../value.mjs';
-import { define, isHostFunction } from '../registry.mjs';
+import { define, isHostFunction, callRoles } from '../registry.mjs';
 import { bytesCompare, compareText, ANY_SURROGATE } from '../utf8.mjs';
 import { fail, SelError } from '../errors.mjs';
 import { cpLength, checkText, MAX_TEXT_LEN } from '../budget.mjs';
@@ -11,12 +11,33 @@ import { cpLength, checkText, MAX_TEXT_LEN } from '../budget.mjs';
 // toUpperCase took "deſc" for DESC.
 import { asciiUpper } from '../lexer.mjs';
 
-// Two-argument form binds `_`; three-argument form takes a bare identifier as
-// the binder, checked by inspecting the AST node the caller handed us.
+// The binder and the per-element body of a binding aggregate, where the
+// manifest's form puts them (registry.argRoles): the two-argument form binds
+// `_`, the three-argument form takes a bare identifier as the binder (checked
+// on the AST node: E_EXPECT_SYMBOL otherwise).
 function shape(args) {
-  return args.count() === 3
-    ? { binder: args.symbol(1), body: args.node(2) }
-    : { binder: '_', body: args.node(1) };
+  const roles = callRoles(args.name, args.nodes);
+  return { binder: roles.binder < 0 ? '_' : args.symbol(roles.binder), body: args.node(roles.body) };
+}
+
+// A sort's decoded arguments: binder, key node (null when the elements are
+// their own keys) and direction. The source -- and for a TOP the count -- is
+// evaluated by the caller first; then the binder is checked, then the
+// direction evaluated: a text literal there is a direction even beside a bare
+// name (the manifest's form order), and a computed one is evaluated as one.
+function sortArgs(args, forcedDir, directionSlots) {
+  const roles = callRoles(args.name, args.nodes);
+  const binder = roles.binder < 0 ? '_' : args.symbol(roles.binder);
+  const body = roles.body < 0 ? null : args.node(roles.body);
+  let dir = forcedDir || 'ASC';
+  if (roles.after.length > directionSlots) {
+    const at = roles.after[0];
+    dir = asciiUpper(args.text(at));
+    if (dir !== 'ASC' && dir !== 'DESC') {
+      fail('E_BAD_ARG', "sort direction must be 'ASC' or 'DESC'", args.posOf(at));
+    }
+  }
+  return { binder, body, dir };
 }
 
 // Whether `node` mentions the variable `name`. Iterative, with an explicit
@@ -392,53 +413,13 @@ function doSort(args, ctx, forcedDir) {
   const val = args.val(0);
   const entries = val.isNull() ? [] : elements(val);
 
-  const count = args.count();
-  let dir;
+  const { binder, body, dir } = sortArgs(args, forcedDir, 0);
   let indexed;
-  let binder;
-  let body;
-
-  if (count === 1) {
-    dir = forcedDir || 'ASC';
-  } else {
-    if (count === 2) {
-      binder = '_';
-      body = args.node(1);
-      dir = forcedDir || 'ASC';
-    } else if (count === 3) {
-      if (forcedDir !== null) {
-        binder = args.symbol(1);
-        body = args.node(2);
-        dir = forcedDir;
-      } else if (args.node(2).t === 'text') {
-        binder = '_';
-        body = args.node(1);
-        dir = asciiUpper(args.text(2));
-      } else if (args.isSymbol(1)) {
-        binder = args.symbol(1);
-        body = args.node(2);
-        dir = 'ASC';
-      } else {
-        binder = '_';
-        body = args.node(1);
-        dir = asciiUpper(args.text(2));
-      }
-    } else {
-      binder = args.symbol(1);
-      body = args.node(2);
-      dir = asciiUpper(args.text(3));
-    }
-
-    if (dir !== 'ASC' && dir !== 'DESC') {
-      const posIdx = count === 4 ? 3 : 2;
-      fail('E_BAD_ARG', "sort direction must be 'ASC' or 'DESC'", args.posOf(posIdx));
-    }
-  }
   // The direction was evaluated and checked above whether or not there is
   // anything to sort (SPEC 7.4): an empty list does not excuse a bad one.
   if (entries.length === 0) return Value.list([]);
 
-  if (count === 1) {
+  if (body === null) {
     indexed = entries.map(([, item]) => ({ item, info: keyInfo(item) }));
   } else {
     const needsK = nodeContainsVar(body, '_K');
@@ -480,37 +461,8 @@ function doTop(args, ctx, forcedDir) {
   const value = args.val(0);
   const limit = args.nonNegInt(args.count() - 1);
 
-  const sortCount = args.count() - 1;
-  let binder = '_';
-  let body = null;
-  let dir = forcedDir || 'ASC';
-  if (sortCount === 1) {
-    binder = null;
-  } else if (sortCount === 2) {
-    body = args.node(1);
-  } else if (sortCount === 3) {
-    if (forcedDir !== null) {
-      binder = args.symbol(1);
-      body = args.node(2);
-    } else if (args.node(2).t === 'text') {
-      body = args.node(1);
-      dir = asciiUpper(args.text(2));
-    } else if (args.isSymbol(1)) {
-      binder = args.symbol(1);
-      body = args.node(2);
-    } else {
-      body = args.node(1);
-      dir = asciiUpper(args.text(2));
-    }
-  } else { // 4 (the manifest's arity bounds the count at compile time)
-    binder = args.symbol(1);
-    body = args.node(2);
-    dir = asciiUpper(args.text(3));
-  }
-  if (dir !== 'ASC' && dir !== 'DESC') {
-    const directionIndex = sortCount === 4 ? 3 : 2;
-    fail('E_BAD_ARG', "sort direction must be 'ASC' or 'DESC'", args.posOf(directionIndex));
-  }
+  // The count is the last slot; a direction, when there is one, precedes it.
+  const { binder, body, dir } = sortArgs(args, forcedDir, 1);
   // Count and direction are evaluated and checked first, empty source or not.
   if (limit === 0 || (value.kind === NONE && value.size() === 0)) return Value.list([]);
 
@@ -553,7 +505,7 @@ function doTop(args, ctx, forcedDir) {
   let idx = 0;
   const consume = (key, item) => {
     let candidate;
-    if (binder === null) {
+    if (body === null) {
       candidate = { item, info: keyInfo(item), idx };
     } else {
       const frame = new Map([[binder, item]]);
@@ -635,20 +587,10 @@ function doBucket(args, ctx) {
   // (SPEC 3.2), so it makes one group.
   if (value.kind === NONE && value.size() === 0) return Value.list([]);
 
-  const count = args.count();
-  let binder = '_';
-  let keyNode;
-  let aggregateNode = null;
-  if (count === 2) {
-    keyNode = args.node(1);
-  } else if (count === 3) {
-    keyNode = args.node(1);
-    aggregateNode = args.node(2);
-  } else {
-    binder = args.symbol(1);
-    keyNode = args.node(2);
-    aggregateNode = args.node(3);
-  }
+  const roles = callRoles(args.name, args.nodes);
+  const binder = roles.binder < 0 ? '_' : args.symbol(roles.binder);
+  const keyNode = args.node(roles.body);
+  const aggregateNode = roles.extra < 0 ? null : args.node(roles.extra);
 
   const needsK = nodeContainsVar(keyNode, '_K');
   const frame = new Map([[binder, null]]);

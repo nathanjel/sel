@@ -385,6 +385,17 @@ LIST(RECORD("name", "a")) .> SORT_BY(_["nosuch"]) .> FILTER(_["name"] $== "zzz")
 error E_NO_KEY at 1:39
 ===
 
+### name: opt.filter-does-not-hide-sort-key-error-under-computed-direction
+--- note
+SORT_BY(key, D) with a direction that is not a literal is the (source, key,
+direction) form (spec/builtins.json): its key still runs per element, so a
+FILTER after it cannot be moved in front of it when the key can raise.
+--- source
+D = "ASC"; COUNT(LIST(RECORD("a", 1)) .> SORT_BY(_["a"] / 0, D) .> FILTER(FALSE) .> MAP(_))
+--- expect
+error E_DIV_ZERO at 1:57
+===
+
 ### name: opt.map-error-position-not-moved-by-filter-swap
 --- note
 The MAP's own error is reported at the MAP body, not at the FILTER that would have followed it after a swap.

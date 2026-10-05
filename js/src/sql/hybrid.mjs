@@ -23,7 +23,7 @@
 
 import { Program, Value } from '../sel.mjs';
 import { MAX_DEPTH } from '../eval.mjs';
-import { optimizeAstLogical, unwindPipeline, buildPipeline, LITERAL_TYPES } from '../optimizer.mjs';
+import { optimizeAstLogical, unwindPipeline, buildPipeline, LITERAL_TYPES, mapDetails } from '../optimizer.mjs';
 import { asciiUpper } from '../lexer.mjs';
 import { bindingForm } from '../registry.mjs';
 import { BUILTIN_MANIFEST } from '../_builtin_manifest.mjs';
@@ -379,11 +379,8 @@ function isOwnFieldRead(pair, binder) {
 }
 
 function mapRecordDetails(step) {
-  const args = step.args;
-  const explicit = args.length === 3 && args[1].t === 'var' && !args[1].grouped;
-  const binder = explicit ? args[1].name : '_';
-  const body = explicit ? args[2] : args[1];
-  if (!body || body.t !== 'call' || body.name !== 'RECORD'
+  const { explicit, binder, body, valid } = mapDetails(step);
+  if (!valid || !body || body.t !== 'call' || body.name !== 'RECORD'
       || body.args.length % 2 !== 0) return null;
   const pairs = [];
   const seen = new Set();

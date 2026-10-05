@@ -21,7 +21,23 @@ const GENERIC_FORMS = Object.freeze([
 // consumer treats every argument as outer. The dependency walker and the SQL
 // layer's stage 1 both classify through here, so they cannot disagree.
 export function bindingForm(name, args, spec = lookup(name)) {
-  const forms = BINDING_FORMS[name.toUpperCase()] || (spec && spec.binds ? GENERIC_FORMS : null);
+  const form = matchForm(name, args, spec);
+  if (!form) return null;
+  const binds = [...form.binds];
+  form.scopes.forEach((scope, i) => {
+    if (scope === 'binder' && args[i].t === 'var') binds.push(args[i].name);
+  });
+  return { scopes: form.scopes, binds };
+}
+
+// The manifest form a call's argument nodes take: the first whose count
+// matches and whose `when` holds. The order is the manifest's, which is what
+// makes a text literal in SORT_BY's third slot a direction even when the
+// second slot is a bare name (spec/builtins.md, "Binding forms").
+// `name` is a call node's, which the lexer has already upper-cased.
+function matchForm(name, args, spec) {
+  const forms = Object.hasOwn(BINDING_FORMS, name) ? BINDING_FORMS[name]
+    : (spec && spec.binds ? GENERIC_FORMS : null);
   if (!forms) return null;
   for (const form of forms) {
     if (form.scopes.length !== args.length) continue;
@@ -30,13 +46,69 @@ export function bindingForm(name, args, spec = lookup(name)) {
       const ok = form.when.is === 'name' ? (a.t === 'var' && !a.grouped) : a.t === 'text';
       if (!ok) continue;
     }
-    const binds = [...form.binds];
-    form.scopes.forEach((scope, i) => {
-      if (scope === 'binder' && args[i].t === 'var') binds.push(args[i].name);
-    });
-    return { scopes: form.scopes, binds };
+    return form;
   }
   return null;
+}
+
+// Where a binding call's arguments sit, read off the form matchForm picks --
+// the one decoder the evaluator, the optimiser, the planner and the translator
+// share, so "which slot is the key, which the direction" is answered once:
+//   binder  the index of the bare-name binder, or -1 for the implicit `_`
+//           (the slot may still hold a non-name: the evaluator then raises
+//           E_EXPECT_SYMBOL, and a static reader treats the call as opaque);
+//   body    the first argument evaluated per element -- MAP's projection,
+//           FILTER's predicate, a sort's key, BUCKET's key -- or -1 (SORT(L),
+//           TOP(L, n): the elements are their own keys);
+//   extra   a second per-element argument (BUCKET's projection), or -1;
+//   after   the arguments after the body evaluated where the call stands, in
+//           order: a sort's direction, then a TOP's count.
+// Null where bindingForm is null. The answer for a form is built once.
+export function argRoles(name, args, spec = lookup(name)) {
+  const form = matchForm(name, args, spec);
+  return form === null ? null : rolesOf(form);
+}
+
+// Whether a text literal in slot `index` is what selects one of NAME's forms at
+// this argument count (SORT_BY's and TOP_BY's direction): folding a constant
+// into a text literal there would change the form the call takes.
+export function textSelectsForm(name, count, index) {
+  const forms = Object.hasOwn(BINDING_FORMS, name) ? BINDING_FORMS[name] : null;
+  return forms !== null && forms.some((f) => f.scopes.length === count && f.when !== null
+    && f.when.is === 'text' && f.when.arg === index);
+}
+
+// argRoles for the evaluator, which asks once per call it evaluates: cached by
+// the call's argument array (a parse tree is immutable once built, and the
+// optimised tree run() evaluates is built once). Manifest forms only: a host's
+// own binding function decodes its arguments itself.
+const ROLES_BY_ARGS = new WeakMap();
+export function callRoles(name, args) {
+  let roles = ROLES_BY_ARGS.get(args);
+  if (roles === undefined) {
+    roles = argRoles(name, args, null);
+    ROLES_BY_ARGS.set(args, roles);
+  }
+  return roles;
+}
+
+const ROLES = new WeakMap();
+function rolesOf(form) {
+  let roles = ROLES.get(form);
+  if (roles === undefined) {
+    const s = form.scopes;
+    const body = s.indexOf('inner');
+    const after = [];
+    for (let i = (body < 0 ? 0 : body) + 1; i < s.length; i++) if (s[i] === 'outer') after.push(i);
+    roles = Object.freeze({
+      binder: s.indexOf('binder'),
+      body,
+      extra: body < 0 ? -1 : s.indexOf('inner', body + 1),
+      after: Object.freeze(after),
+    });
+    ROLES.set(form, roles);
+  }
+  return roles;
 }
 
 const table = new Map();

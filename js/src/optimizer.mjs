@@ -3,7 +3,7 @@
 // shallow copies, and nested nodes are copied as they are visited.
 
 import * as D from './decimal.mjs';
-import { lookup } from './registry.mjs';
+import { lookup, argRoles, textSelectsForm } from './registry.mjs';
 import { MAX_DEPTH } from './errors.mjs';
 import { compileMathPlan, isMathOp } from './math_plan.mjs';
 
@@ -203,17 +203,31 @@ function sourceIsList(source) {
     || (source.t === 'call' && (source.name === 'LIST' || source.name === 'RECORD'));
 }
 
-function mapDetails(step) {
-  const args = step.args;
-  const explicit = args.length === 3 && args[1].t === 'var' && !args[1].grouped;
-  const binder = explicit ? args[1].name : '_';
-  const body = explicit ? args[2] : args[1];
-  return { binder, body, explicit };
+const isBareName = (n) => n != null && n.t === 'var' && !n.grouped;
+
+// A binding step's binder and per-element body, where the manifest's form puts
+// them (registry.argRoles, the decoder the evaluator uses). `explicit`: the
+// form names its binder. `valid`: that binder is a bare name -- a step whose
+// binder slot holds anything else is one the evaluator refuses
+// (E_EXPECT_SYMBOL), and no rule moves anything across it.
+function stepBinding(step) {
+  const roles = argRoles(step.name, step.args, null);
+  if (roles === null) return { binder: '_', body: null, explicit: false, valid: false, roles };
+  const body = roles.body < 0 ? null : step.args[roles.body];
+  if (roles.binder < 0) return { binder: '_', body, explicit: false, valid: true, roles };
+  const slot = step.args[roles.binder];
+  return isBareName(slot)
+    ? { binder: slot.name, body, explicit: true, valid: true, roles }
+    : { binder: '_', body, explicit: false, valid: false, roles };
+}
+
+export function mapDetails(step) {
+  return stepBinding(step);
 }
 
 function mapPassthroughs(step) {
-  const { binder, body } = mapDetails(step);
-  if (!body || body.t !== 'call' || body.name !== 'RECORD') return [];
+  const { binder, body, valid } = mapDetails(step);
+  if (!valid || !body || body.t !== 'call' || body.name !== 'RECORD') return [];
   const fields = [];
   for (let i = 0; i + 1 < body.args.length; i += 2) {
     const key = body.args[i], value = body.args[i + 1];
@@ -258,7 +272,8 @@ function cannotRaise(node, binder, logical) {
 
 // Every field a MAP computes (or its whole body) cannot raise.
 function mapCannotRaise(step, logical) {
-  const { binder, body } = mapDetails(step);
+  const { binder, body, valid } = mapDetails(step);
+  if (!valid) return false;
   if (body && body.t === 'call' && body.name === 'RECORD') {
     for (let i = 1; i < body.args.length; i += 2) if (!cannotRaise(body.args[i], binder, logical)) return false;
     return body.args.every((arg, i) => i % 2 === 1 || arg.t === 'text');
@@ -299,49 +314,28 @@ function boundedDepth(root, cap) {
 }
 
 function mapHasComputedFields(step) {
-  const { body } = mapDetails(step);
-  if (!body || body.t !== 'call' || body.name !== 'RECORD') return true;
+  const { body, valid } = mapDetails(step);
+  if (!valid || !body || body.t !== 'call' || body.name !== 'RECORD') return true;
   return mapPassthroughs(step).length * 2 !== body.args.length;
 }
 
 function filterDetails(step) {
-  const args = step.args;
-  const explicit = args.length === 3 && args[1].t === 'var' && !args[1].grouped;
-  const valid = args.length === 2 || explicit;
-  return {
-    binder: explicit ? args[1].name : '_',
-    predicate: explicit ? args[2] : args[1],
-    explicit,
-    valid,
-  };
+  const { binder, body, explicit, valid } = stepBinding(step);
+  return { binder, predicate: body, explicit, valid };
 }
 
+// A sort step's binder and key. A keyless sort (SORT(L), TOP(L, n)) has key
+// null: it compares the elements, which cannot raise. `valid` is false for a
+// step no rule may move: a binder slot that is not a bare name, or a direction
+// that is not a text literal -- the evaluator computes that one, and the key
+// beside it still runs per element.
 function sortDetails(step) {
-  const args = step.args;
-  const count = args.length;
-  let binder = '_', key = null;
-  if (step.name === 'SORT' || step.name === 'SORT_DESC') {
-    if (count === 1) return { binder: null, key: null };
-    binder = count === 3 && args[1].t === 'var' && !args[1].grouped ? args[1].name : '_';
-    key = count === 3 ? args[2] : args[1];
-  } else if (step.name === 'TOP' || step.name === 'TOP_DESC') {
-    if (count === 2) return { binder: null, key: null };
-    const sortCount = count - 1;
-    // TOP(source, key, n) has three arguments and
-    // TOP(source, binder, key, n) has four. `sortCount` excludes n, so the
-    // explicit-binder form is 3, not 4.
-    binder = sortCount === 3 && args[1].t === 'var' && !args[1].grouped ? args[1].name : '_';
-    key = sortCount === 3 ? args[2] : args[1];
-  } else if (step.name === 'SORT_BY' || step.name === 'TOP_BY') {
-    const sortCount = step.name === 'TOP_BY' ? count - 1 : count;
-    if (sortCount === 2 || sortCount === 3 && args[2]?.t === 'text') {
-      key = args[1];
-    } else if (args[1]?.t === 'var' && !args[1].grouped) {
-      binder = args[1].name;
-      key = args[2];
-    }
-  }
-  return { binder, key };
+  const { binder, body, valid, roles } = stepBinding(step);
+  if (roles === null) return { binder: null, key: null, valid: false };
+  if (body === null) return { binder: null, key: null, valid: true };
+  const directions = roles.after.length - (step.name.startsWith('TOP') ? 1 : 0);
+  const literal = directions === 0 || step.args[roles.after[0]].t === 'text';
+  return { binder, key: body, valid: valid && literal };
 }
 
 function selectFields(step) {
@@ -441,7 +435,7 @@ function logicalSteps(source, steps, options = {}) {
         }
       }
       if (second && ['SORT', 'SORT_DESC', 'SORT_BY'].includes(first.name) && second.name === 'FILTER'
-          && !stepReadsKey(second) && keysRenumberedBy(current[i + 2])
+          && !stepReadsKey(second) && keysRenumberedBy(current[i + 2]) && sortDetails(first).valid
           && cannotRaise(sortDetails(first).key, sortDetails(first).binder || '_', options.logical)
           && (options.logical || cannotRaise(filterDetails(second).predicate, filterDetails(second).binder, false))) {
         next.push(second, first);
@@ -469,7 +463,7 @@ function logicalSteps(source, steps, options = {}) {
         // reads the whole row or `_K` reads what the MAP changes.
         const details = sortDetails(second);
         const refs = details.key ? fieldRefs(details.key, details.binder || '_') : [];
-        if (details.key && refs.length > 0 && refs.every((field) => mapPassthroughs(first).includes(field))
+        if (details.valid && details.key && refs.length > 0 && refs.every((field) => mapPassthroughs(first).includes(field))
             && !readsRowOrKey(details.key, details.binder || '_')
             && mapCannotRaise(first, options.logical) && cannotRaise(details.key, details.binder || '_', options.logical)) {
           next.push(second, first);
@@ -535,11 +529,13 @@ function logicalSteps(source, steps, options = {}) {
 // bare name in the second slot is the binder and the third slot is its key.
 // A fold that hoists a text literal into that slot -- `IF(TRUE, "DESC",
 // "ASC")` -- would change the form, so the slot is walked without folding.
+// A slot whose being a text literal selects the call's form is not folded while
+// another form holds: SORT_BY(L, X, "a" & "b") sorts by the constant with the
+// binder X, and folding it to "ab" would make it a direction.
 function stepArgOptions(step, index, options) {
-  const sortCount = step.name === 'SORT_BY' ? step.args.length
-    : step.name === 'TOP_BY' ? step.args.length - 1 : 0;
-  if (sortCount === 3 && index === 2 && step.args[1].t === 'var' && !step.args[1].grouped) {
-    return { ...options, foldConstants: false };
+  if (textSelectsForm(step.name, step.args.length, index)) {
+    const roles = argRoles(step.name, step.args, null);
+    if (roles !== null && roles.binder >= 0) return { ...options, foldConstants: false };
   }
   return options;
 }

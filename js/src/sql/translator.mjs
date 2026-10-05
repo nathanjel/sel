@@ -14,7 +14,7 @@ import { SelError } from '../errors.mjs';
 import { MAX_SQL_NODES } from '../_limits.mjs';
 import { evalNode, MAX_DEPTH, Context } from '../eval.mjs';
 import { asciiUpper } from '../lexer.mjs';
-import { bindingForm, hostArity, lookup } from '../registry.mjs';
+import { bindingForm, hostArity, lookup, argRoles } from '../registry.mjs';
 import { Value, quoteDump } from '../value.mjs';
 import * as constants from './constants.mjs';
 import * as map from './map.mjs';
@@ -2631,18 +2631,7 @@ export class Translator {
             candidate.limit !== null || candidate.offset !== null
               || (candidate.groupBy === null && Boolean(candidate.projections || candidate.selectCols
                 || candidate.distinct)));
-          let binder;
-          let pred;
-          if (args.length === 2) {
-            binder = '_';
-            pred = args[1];
-          } else { // (source, binder, pred)
-            if (!constants.isBinderName(args[1])) {
-              refuse('E_SQL_SHAPE', 'the binder of FILTER must be a bare name', args[1].pos);
-            }
-            binder = args[1].name;
-            pred = args[2];
-          }
+          const [binder, pred] = aggShape(step);
           if (plan.groupBy !== null) {
             plan.having.push({ binder, node: pred, pos: step.pos, overGroups });
           } else {
@@ -2669,24 +2658,9 @@ export class Translator {
               + 'has them in the order of their first member in the sorted list', step.pos);
           }
           plan = this.ensureDerived(plan, (candidate) => this.planHasRowsAbove(candidate));
-          let binder;
-          let keyNode;
-          let aggNode = null;
-          if (args.length === 2) {
-            binder = '_';
-            keyNode = args[1];
-          } else if (args.length === 3) {
-            binder = '_';
-            keyNode = args[1];
-            aggNode = args[2];
-          } else { // (source, binder, key, projection)
-            if (!constants.isBinderName(args[1])) {
-              refuse('E_SQL_SHAPE', 'the binder of BUCKET must be a bare name', args[1].pos);
-            }
-            binder = args[1].name;
-            keyNode = args[2];
-            aggNode = args[3];
-          }
+          const roles = argRoles(name, args, null);
+          const [binder, keyNode] = aggShape(step, roles);
+          const aggNode = roles.extra < 0 ? null : args[roles.extra];
 
           // A bare bucket's key is an index key (spec §7.4): one text or
           // number. A list or record key is refused by the evaluator, and
@@ -2783,18 +2757,7 @@ export class Translator {
               + 'FILTER between: SQL keeps a bucket\'s members only for the projection '
               + 'that ends the grouping', step.pos);
           }
-          let binder;
-          let expr;
-          if (args.length === 2) {
-            binder = '_';
-            expr = args[1];
-          } else { // (source, binder, projection)
-            if (!constants.isBinderName(args[1])) {
-              refuse('E_SQL_SHAPE', 'the binder of MAP must be a bare name', args[1].pos);
-            }
-            binder = args[1].name;
-            expr = args[2];
-          }
+          const [binder, expr] = aggShape(step);
           // BUCKET(src, key) .> MAP(proj) is BUCKET(src, key, proj): the MAP's
           // body is evaluated once per group, so it is the bucket's projection.
           if (plan.bucket === 'open') {
@@ -3015,114 +2978,44 @@ export class Translator {
     const name = step.name;
     const args = step.args;
     const isTop = name === 'TOP' || name === 'TOP_DESC' || name === 'TOP_BY';
-    const count = isTop ? args.length - 1 : args.length;
     if (isTop) {
       const limit = this.evalIntParam(args[args.length - 1], name);
       plan.limit = plan.limit === null || limit < plan.limit ? limit : plan.limit;
     }
-
-    if (name === 'SORT' || name === 'SORT_DESC' || name === 'TOP' || name === 'TOP_DESC') {
-      const dir = name === 'SORT' || name === 'TOP' ? 'ASC' : 'DESC';
-      if (count === 1) {
-        if (plan.sourceRelation.scalar) {
-          const scalarCol = plan.sourceRelation.scalar;
-          plan.orderBy.push({
-            binder: '_',
-            node: {
-              t: 'index',
-              obj: { t: 'var', name: '_', pos: step.pos },
-              idx: { t: 'text', v: scalarCol, pos: step.pos },
-              pos: step.pos,
-            },
-            dir,
-            pos: step.pos,
-          });
-          return;
-        }
-        const fieldKeys = Object.keys(plan.sourceRelation.fields ?? {});
-        if (fieldKeys.length === 1) {
-          const fieldName = fieldKeys[0];
-          plan.orderBy.push({
-            binder: '_',
-            node: {
-              t: 'index',
-              obj: { t: 'var', name: '_', pos: step.pos },
-              idx: { t: 'text', v: fieldName, pos: step.pos },
-              pos: step.pos,
-            },
-            dir,
-            pos: step.pos,
-          });
-          return;
-        }
-        refuse('E_SQL_SHAPE', 'SORT on a multi-field relation requires a key expression; use SORT_BY', step.pos);
-      } else if (count === 2) {
-        plan.orderBy.push({
-          binder: '_',
-          node: args[1],
-          dir,
-          pos: step.pos,
-        });
-        return;
-      } else { // (source, binder, key)
-        if (!constants.isBinderName(args[1])) {
-          refuse('E_SQL_SHAPE', 'the binder of SORT must be a bare name', args[1].pos);
-        }
-        plan.orderBy.push({
-          binder: args[1].name,
-          node: args[2],
-          dir,
-          pos: step.pos,
-        });
-        return;
+    // The form, as the evaluator decodes it (registry.argRoles): the key, its
+    // binder, and for SORT_BY/TOP_BY the direction slot after the key when the
+    // form has one -- a TOP's count is the last slot, not a direction.
+    const roles = argRoles(name, args, null);
+    const [binder, key] = roles.body < 0 ? ['_', this.keylessSortKey(plan, step)] : aggShape(step, roles);
+    let dir = name === 'SORT_DESC' || name === 'TOP_DESC' ? 'DESC' : 'ASC';
+    if (roles.after.length > (isTop ? 1 : 0)) {
+      // A direction SQL cannot compute: the evaluator would, so it is refused
+      // unless it is a literal.
+      const slot = args[roles.after[0]];
+      if (slot.t !== 'text') refuse('E_BAD_ARG', "sort direction must be 'ASC' or 'DESC'", slot.pos);
+      dir = asciiUpper(slot.v);
+      if (dir !== 'ASC' && dir !== 'DESC') {
+        refuse('E_BAD_ARG', "sort direction must be 'ASC' or 'DESC'", slot.pos);
       }
     }
+    plan.orderBy.push({ binder, node: key, dir, pos: step.pos });
+  }
 
-    // SORT_BY / TOP_BY
-    let binder;
-    let key;
-    let dir;
-    if (count === 2) {
-      binder = '_';
-      key = args[1];
-      dir = 'ASC';
-    } else if (count === 3) {
-      if (args[2].t === 'text') {
-        binder = '_';
-        key = args[1];
-        dir = asciiUpper(args[2].v);
-      } else if (constants.isBinderName(args[1])) {
-        binder = args[1].name;
-        key = args[2];
-        dir = 'ASC';
-      } else {
-        // Neither form: the third slot is a direction the evaluator would
-        // compute, and SQL cannot -- the four-argument form's refusal.
-        refuse('E_BAD_ARG', "sort direction must be 'ASC' or 'DESC'", args[2].pos);
-      }
-    } else { // (source, binder, key, direction)
-      if (!constants.isBinderName(args[1])) {
-        refuse('E_SQL_SHAPE', 'the binder of SORT_BY must be a bare name', args[1].pos);
-      }
-      binder = args[1].name;
-      key = args[2];
-      if (args[3].t !== 'text') {
-        refuse('E_BAD_ARG', "sort direction must be 'ASC' or 'DESC'", args[3].pos);
-      }
-      dir = asciiUpper(args[3].v);
+  // SORT(L) and TOP(L, n) sort the elements themselves: in SQL, a relation's
+  // scalar field, or its only field.
+  keylessSortKey(plan, step) {
+    const field = plan.sourceRelation.scalar
+      || (Object.keys(plan.sourceRelation.fields ?? {}).length === 1
+        ? Object.keys(plan.sourceRelation.fields)[0] : null);
+    if (!field) {
+      refuse('E_SQL_SHAPE', 'SORT on a multi-field relation requires a key expression; use SORT_BY', step.pos);
     }
-
-    if (dir !== 'ASC' && dir !== 'DESC') {
-      const dirPos = count === 4 ? args[3].pos : args[2].pos;
-      refuse('E_BAD_ARG', "sort direction must be 'ASC' or 'DESC'", dirPos);
-    }
-
-    plan.orderBy.push({
-      binder,
-      node: key,
-      dir,
+    return {
+      t: 'index',
+      obj: { t: 'var', name: '_', pos: step.pos },
+      idx: { t: 'text', v: field, pos: step.pos },
       pos: step.pos,
-    });
+    };
   }
 
   compileStatement(plan) {
@@ -3356,15 +3249,18 @@ function staticSource(elements, scalarRule = false) {
   return { shape: 'static', elements, filters: [], scalarRule };
 }
 
-// The 2- and 3-argument forms: `_` by default, a bare name when given.
-function aggShape(n) {
-  if (n.args.length === 3) {
-    if (!constants.isBinderName(n.args[1])) {
-      refuse('E_SQL_SHAPE', `the binder of ${n.name} must be a bare name`, n.args[1].pos);
-    }
-    return [n.args[1].name, n.args[2]];
+// A binding call's binder and per-element body, where the manifest's form puts
+// them (registry.argRoles, the evaluator's decoder): `_` when the form names no
+// binder, else the bare name in its slot -- anything else there is refused,
+// as SEL raises E_EXPECT_SYMBOL for it. BUCKET's projection is `extra`.
+function aggShape(n, roles = argRoles(n.name, n.args, null)) {
+  const body = n.args[roles.body];
+  if (roles.binder < 0) return ['_', body];
+  const slot = n.args[roles.binder];
+  if (!constants.isBinderName(slot)) {
+    refuse('E_SQL_SHAPE', `the binder of ${n.name} must be a bare name`, slot.pos);
   }
-  return ['_', n.args[1]];
+  return [slot.name, body];
 }
 
 // A binder's keys: its name and that name's ASCII lowercase (spec §7.4).
