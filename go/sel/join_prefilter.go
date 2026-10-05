@@ -218,7 +218,7 @@ func joinRowKeys(val *Value, bound []string) map[string]bool {
 	}
 	shapes := make(map[*RecordShape]bool)
 	if val != nil {
-		for _, item := range val.Values() {
+		for _, item := range val.valuesView() {
 			if item.shape != nil {
 				if shapes[item.shape] {
 					continue
@@ -237,13 +237,19 @@ func joinRowKeys(val *Value, bound []string) map[string]bool {
 	return keys
 }
 
+// firstCollectionItem is the first child of val, read in place, or nil.
 func firstCollectionItem(val *Value) *Value {
 	if val == nil {
 		return nil
 	}
-	vals := val.Values()
-	if len(vals) > 0 {
-		return vals[0]
+	if val.storage != nil {
+		if len(val.storage) > 0 {
+			return val.storage[0]
+		}
+		return nil
+	}
+	if len(val.entries) > 0 {
+		return val.entries[0].Val
 	}
 	return nil
 }
@@ -285,7 +291,7 @@ func joinSideTotal(side *joinSideFacts, name string, numeric bool) bool {
 		return v
 	}
 	ok := true
-	vals := side.Val.Values()
+	vals := side.Val.valuesView()
 	for _, row := range vals {
 		v := row.Get(name)
 		if v == nil || v.kind != KindText {
@@ -308,7 +314,7 @@ func joinSidePresent(side *joinSideFacts, name string) bool {
 	if v, ok := side.Facts[id]; ok {
 		return v
 	}
-	vals := side.Val.Values()
+	vals := side.Val.valuesView()
 	ok := len(vals) > 0
 	for _, row := range vals {
 		if !row.Has(name) {
@@ -329,7 +335,7 @@ func joinSideAny(side *joinSideFacts, name string) bool {
 		return v
 	}
 	ok := true
-	vals := side.Val.Values()
+	vals := side.Val.valuesView()
 	for _, row := range vals {
 		v := row.Get(name)
 		if v == nil || v.IsNull() || isNestedRecord(v) {
@@ -380,7 +386,7 @@ func joinKeysSafe(obligations []joinObligation, left, right *joinSideFacts, abov
 				}
 				continue
 			}
-			vals := left.Val.Values()
+			vals := left.Val.valuesView()
 			allPresent := true
 			for _, item := range vals {
 				inner := item.Get(member)

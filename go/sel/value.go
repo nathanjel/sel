@@ -506,6 +506,15 @@ func (v *Value) Keys() []string {
 	return res
 }
 
+// valuesView is Values without the copy when the children are kept in a slice:
+// for a caller that only reads it, and keeps it no longer than the value.
+func (v *Value) valuesView() []*Value {
+	if v.storage != nil {
+		return v.storage
+	}
+	return v.Values()
+}
+
 func (v *Value) Values() []*Value {
 	if v.storage != nil {
 		res := make([]*Value, len(v.storage))
