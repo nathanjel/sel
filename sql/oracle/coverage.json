@@ -35,7 +35,12 @@
     "target's because ansi refuses most of what it declares."
   ],
   "exclude": {
-    "skel.prefilter": "internal relation prefilter skeleton; its correlated slots are only emitted when a caller opts into split prefiltering, and no closed oracle rule exercises that host-supplied shape"
+    "skel.prefilter": "internal relation prefilter skeleton; its correlated slots are only emitted when a caller opts into split prefiltering, and no closed oracle rule exercises that host-supplied shape",
+    "skel.limit": "a statement clause: the coverage trace translates expressions and rows.json rules, which never compile a statement. statements.json executes TAKE, DROP and both on every pinned server, and tools/check-sql-limits.php the clamped counts; sql/cases pins each dialect's spelling and a registered child's",
+    "skel.limitOffset": "a statement clause, as skel.limit: executed by statements.json (the bounded slices), never reached by an expression",
+    "skel.offsetOnly": "a statement clause, as skel.limit: executed by statements.json (an offset with no limit) and by tools/check-sql-limits.php, never reached by an expression",
+    "skel.latestMember": "the hybrid planner's statement, filled only by plan_hybrid; no expression reaches it and no oracle executes it yet. sql/cases/36-latest-member.sqlt pins its spelling on every target and on registered children",
+    "skel.guardedSum": "reached by rows.json's undeclared SUM rules on every dialect that declares numericGuard (mariadb, mysql, postgresql); sqlite and ansi declare none, so the SUM is refused before the inherited entry is looked up"
   },
   "supported": {
     "mariadb": [
@@ -114,7 +119,12 @@
       "skel.count",
       "skel.inRelation",
       "skel.sum",
-      "skel.prefilter"
+      "skel.prefilter",
+      "skel.guardedSum",
+      "skel.limit",
+      "skel.limitOffset",
+      "skel.offsetOnly",
+      "skel.latestMember"
     ],
     "mysql": [
       "funcs.ABS",
@@ -192,7 +202,12 @@
       "skel.count",
       "skel.inRelation",
       "skel.sum",
-      "skel.prefilter"
+      "skel.prefilter",
+      "skel.guardedSum",
+      "skel.limit",
+      "skel.limitOffset",
+      "skel.offsetOnly",
+      "skel.latestMember"
     ],
     "postgresql": [
       "funcs.ABS",
@@ -271,7 +286,12 @@
       "skel.count",
       "skel.inRelation",
       "skel.sum",
-      "skel.prefilter"
+      "skel.prefilter",
+      "skel.guardedSum",
+      "skel.limit",
+      "skel.limitOffset",
+      "skel.offsetOnly",
+      "skel.latestMember"
     ],
     "sqlite": [
       "funcs.ABS",
@@ -340,7 +360,12 @@
       "skel.count",
       "skel.inRelation",
       "skel.sum",
-      "skel.prefilter"
+      "skel.prefilter",
+      "skel.guardedSum",
+      "skel.limit",
+      "skel.limitOffset",
+      "skel.offsetOnly",
+      "skel.latestMember"
     ],
     "ansi-probe": [
       "funcs.ABS",
@@ -394,7 +419,12 @@
       "skel.count",
       "skel.inRelation",
       "skel.sum",
-      "skel.prefilter"
+      "skel.prefilter",
+      "skel.guardedSum",
+      "skel.limit",
+      "skel.limitOffset",
+      "skel.offsetOnly",
+      "skel.latestMember"
     ]
   },
   "caveats_unwitnessable": {

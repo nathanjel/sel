@@ -134,6 +134,11 @@
       "sel": "ITEMS .> SORT_BY(_[\"id\"]) .> TAKE(0) .> DROP(2) .> MAP(RECORD(\"id\", _[\"id\"]))"
     },
     {
+      "name": "offset with no limit",
+      "ordered": true,
+      "sel": "ITEMS .> SORT_BY(_[\"id\"]) .> DROP(1) .> MAP(RECORD(\"id\", _[\"id\"]))"
+    },
+    {
       "name": "bounded slice zero-drop",
       "ordered": true,
       "sel": "ITEMS .> SORT_BY(_[\"id\"]) .> TAKE(2) .> DROP(0) .> MAP(RECORD(\"id\", _[\"id\"]))"
