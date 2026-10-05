@@ -326,6 +326,31 @@ const R = { ORDERS: Binding.relation('orders', 'o', { ID: Binding.column('id', '
   check('ast replace: ctx unchanged after replacement', ctx.get('A').get('k').asText() === '1');
 }
 
+// js/src is plain ESM with no Node built-ins (the bundle is built for the
+// neutral platform, and sel-lang/sql ships unbundled): no Buffer, no process,
+// no node: import. The 63-byte PostgreSQL alias check counts UTF-8 bytes with
+// the host's own codec arithmetic, at the boundary of a two-byte character.
+{
+  const { readdirSync, readFileSync } = await import('node:fs');
+  const { join } = await import('node:path');
+  const walkDir = (dir) => readdirSync(dir, { withFileTypes: true }).flatMap((e) =>
+    e.isDirectory() ? walkDir(join(dir, e.name)) : e.name.endsWith('.mjs') ? [join(dir, e.name)] : []);
+  const srcDir = new URL('../js/src/', import.meta.url).pathname;
+  const offenders = walkDir(srcDir).filter((f) => /\bBuffer\.|\bprocess\.|from 'node:|\brequire\(/
+    .test(readFileSync(f, 'utf8').replace(/\/\/[^\n]*/g, '')));
+  check('js/src uses no Node built-ins', offenders.length === 0, offenders.join(' '));
+  const keys = (a, b) => `T .> MAP(RECORD("${a}", _["X"], "${b}", _["X"]))`;
+  const T = { T: Binding.relation('t', null, { X: Binding.column('x', 't', 'NUM') }) };
+  const pg = (src) => outcome(() => Sql.translateStatement(compile(src), 'postgresql', T).asStatement());
+  const e31 = 'é'.repeat(31);
+  check('63 bytes: two names differing in their 63rd byte are two aliases',
+    pg(keys(`${e31}a`, `${e31}b`)).value !== undefined);
+  check('64 bytes: two names differing only in byte 64 collide',
+    pg(keys(`${e31}aa`, `${e31}ab`)).error?.code === 'E_SQL_UNSUPPORTED');
+  check('a two-byte character that would straddle byte 63 is cut whole',
+    pg(keys(`${e31}éx`, `${e31}éy`)).error?.code === 'E_SQL_UNSUPPORTED');
+}
+
 // The parser holds every call to its arity, so the statement planner decodes
 // only the counts a form takes; a hand-built tree with another count is a bug
 // in its builder, an Error, which tryTranslateStatement does not swallow.

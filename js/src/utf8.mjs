@@ -66,6 +66,11 @@ export function fromCodePoints(cps) {
 
 // --- bytes ------------------------------------------------------------------
 
+// The UTF-8 length of one code point (SEL text has no lone surrogates).
+export function cpUtf8Length(cp) {
+  return cp < 0x80 ? 1 : cp < 0x800 ? 2 : cp < 0x10000 ? 3 : 4;
+}
+
 export function encodeUtf8(str, pos) {
   // Two passes over the code units: the first measures the result and finds an unpaired
   // surrogate (handed to toCodePoints, which raises E_UTF8 with the same message and

@@ -8,7 +8,7 @@
 // `Fragment.asValue()` is called, so a kind failure still escapes with no partial
 // output.
 
-import { toCodePoints } from '../utf8.mjs';
+import { toCodePoints, cpUtf8Length } from '../utf8.mjs';
 import { validate as regexValidate } from '../builtins/regex.mjs';
 import { SelError } from '../errors.mjs';
 import { MAX_SQL_NODES } from '../_limits.mjs';
@@ -225,7 +225,7 @@ export class Translator {
     let bytes = 0;
     let cut = '';
     for (const ch of name) {
-      const n = Buffer.byteLength(ch);
+      const n = cpUtf8Length(ch.codePointAt(0));
       if (bytes + n > 63) break;
       bytes += n;
       cut += ch;
