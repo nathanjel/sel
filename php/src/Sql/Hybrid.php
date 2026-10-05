@@ -137,6 +137,14 @@ final class Hybrid
         if ($unwound['steps'] === [] || !$isRelation($unwound['source'])) {
             return self::pureMemoryPlan($program, $dialect, $catalog);
         }
+        // A pipeline this long, unwound through its helpers, is a tree deeper than
+        // the evaluator's cap whatever prefix is asked for, and every probe of a
+        // prefix costs a walk in proportion: more than MAX_DEPTH steps is a
+        // pure-memory plan (the cut-off every host states the same way,
+        // plan.pure-memory.pipeline-longer-than-the-depth-cap).
+        if (count($unwound['steps']) > \Sel\Limits::MAX_DEPTH) {
+            return self::pureMemoryPlan($program, $dialect, $catalog);
+        }
         $optimized = Optimizer::optimize(
             Optimizer::buildPipeline($unwound['source'], $unwound['steps']), false, $options);
         $unwound = Optimizer::unwindPipeline($optimized);
