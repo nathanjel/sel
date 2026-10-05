@@ -1264,8 +1264,7 @@ is `E_SQL_SHAPE` at the `FILTER`. It must not translate as a `JOIN` of the
 unfiltered list.
 
 **The size budget: `E_SQL_SIZE`.** Helper reuse is inlined as a tree, so a
-program of *n* short statements can render 2^*n* nodes (`A1 = A0 + A0; ...`;
-JS-C8, PHP-C32, PY-C6, CPP-C17, LISP-C23, GO-C20), and nested aggregates over
+program of *n* short statements can render 2^*n* nodes (`A1 = A0 + A0; ...`), and nested aggregates over
 static lists multiply the same way, while SEL evaluates the same program in
 linear time. The translator therefore counts, and refuses past
 `MAX_SQL_NODES` (250 000, `spec/limits.json`) with `E_SQL_SIZE` (`sql/errors.md`).
@@ -2438,7 +2437,16 @@ The ordinary prefix planner promises:
   pure memory in two hosts while three pushed it down; planning stage 1's
   tree, in which every helper is inlined at its definition-site position,
   made the continuation report an error where the helper was *defined* rather
-  than where `run` reads it (finding AJ, below).
+  than where `run` reads it (finding AJ, below). Unwinding is bounded: a
+  pipeline of more than `MAX_DEPTH` unwound steps (`spec/limits.json`) is not
+  planned at all and is `pure_memory`, as the translator's own depth limit
+  would refuse it anyway.
+  A source name the program **reassigns** is read the way `run()` reads it.
+  In `ORDERS = ORDERS .> DROP(2); ORDERS .> TAKE(3) .> MAP(RECORD("n",
+  COUNT(ORDERS), …))` the unwound source is marked as a read of the binding, so
+  the prefix is `… LIMIT 3 OFFSET 2` and a continuation step that reads
+  `ORDERS` sees the helper's value — the four rows after the `DROP` — not the
+  bound relation: `n` is 4, as in `run()`.
 - **A program stage 1 refuses is a `pure_memory` plan, not an error.**
   `A += 1; ORDERS .> TAKE(1)` cannot be pushed down, and "none of it" is one of
   the planner's answers. What planning does refuse, up front and for every
@@ -2460,13 +2468,17 @@ The ordinary prefix planner promises:
   translator.** `strict` is the translator's and is the one every host accepts;
   the three dynamic hosts also accept the optimiser's `fuseFilters` and
   `foldConstants`, and the planner forwards them rather than swallowing them.
-  C++ and Lisp take `strict` alone. **The planner is the only entry point
+  C++ and Lisp take `strict` alone. The logical optimiser does **not** fold
+  `&` of text literals: `"a" & "b"` reaches the translator as the
+  concatenation it was written as and is emitted as the dialect's `CONCAT(…)`
+  or `||` on every host, so the hybrid SQL text is the same everywhere.
+  **The planner is the only entry point
   that optimises**: `translate()` and `translate_statement()` run stage 1
   and render the tree they are handed, in every host — a constant `IF` is a
   `CASE`, `FILTER(TRUE)` is `WHERE TRUE`, two sorts are two sort keys. Two
   hosts used to run the pipeline rewrites inside the translator and one
   folded constants there, so the same program rendered differently per host
-  through a public entry point (review 2026-09-15 finding C); the `.sqlt`
+  through a public entry point; the `.sqlt`
   runners now put every `--- as statement` case through both entry points
   and require the same text or the same refusal.
 - **A later sort's keys come first.** SEL's sorts are stable, so `SORT_BY(a)
@@ -2534,8 +2546,8 @@ The ordinary prefix planner promises:
   because the key is constant within its group, and which MariaDB and MySQL
   accept where they reject the bare column) — because the evaluator groups
   by the key's exact bytes and MariaDB's default collation merged `'A'` and
-  `'a'` into one group; a TEXT `ORDER BY` key likewise (review 2026-09-15
-  finding L, witnessed by `sql/oracle/statements.json` on live servers).
+  `'a'` into one group; a TEXT `ORDER BY` key likewise (witnessed by
+  `sql/oracle/statements.json` on live servers).
   **The bucket body's scope is the evaluator's** (findings J, K): inside the
   projection, and in a `FILTER` or sort written directly after the bare
   `BUCKET`, the binder is the group — the list of its members — and only
@@ -2573,7 +2585,7 @@ The ordinary prefix planner promises:
   or reorders the rows behind it: a `FILTER`, a `TAKE`, a `DROP`, a sort or a
   `TOP_BY` written after the `MAP` stays in the continuation, because `run()`
   evaluates the local pairs on EVERY row first and a pair that raises on a row
-  the LIMIT or WHERE would have dropped must still raise (T11, below:
+  the LIMIT or WHERE would have dropped must still raise (below:
   *errors are not hidden*). Steps written BEFORE the `MAP` are the prefix
   as usual. A step that changes the row shape (`MAP`, `SELECT_COLS`, `LINK`,
   `BUCKET`), a whole-row comparison (`DEDUPE`, `DISTINCT`, the keyless sorts),
@@ -2583,10 +2595,12 @@ The ordinary prefix planner promises:
   move the split before the `MAP` instead. The continuation passes a projected
   pair through *by key* — `"cid", _["customer_id"]` comes back as `cid` and is
   read as `cid`, `_["amount"] + 1` is not added twice.
-- **A plan is held to `run()` on four counts** (T11; `sql/cases/51-hybrid-parity.sqlt`
+- **A plan is held to `run()` on four counts** (`sql/cases/51-hybrid-parity.sqlt`
   pins the plans, `sql/oracle/hybrid.json` executes them on SQLite, MariaDB,
   MySQL and PostgreSQL through `php/bin/sqlo hybrid`, and
-  `tools/check-hybrid-parity.{mjs,py}` do the same for the JS and Python hosts):
+  `tools/check-hybrid-parity.{mjs,py}`, `-driver.py` and `-go.py` do the same for the JS,
+  Python, Lisp and Go hosts on SQLite; `tools/check-php-optimizer.php` also runs
+  `hybrid.json` against an in-memory SQLite for PHP):
   - **Row keys.** SEL's FILTER keeps its input's keys and every other step
     renumbers from `"1"` (spec §7.3); the database answers a *rowset* numbered
     `1..n`. So a boundary directly after a `FILTER` hands the continuation
@@ -2611,7 +2625,12 @@ The ordinary prefix planner promises:
     assignment, so no plan can promise `run()`'s side effect, and a `pure_memory`
     plan runs on a private copy for the same reason. Variables the caller
     holds stay readable by the continuation (Go once replaced the context with
-    an empty record), and unrelated ones are preserved.
+    an empty record), and unrelated ones are preserved. A continuation that
+    calls an **application function** — any function not in the builtin
+    manifest — runs on a copy of the whole context, because such a function
+    may mutate the value it is handed, directly (`POKE(A)`), under a branch
+    (`IF(TRUE, POKE(A), 0)`) or inside a body (`MAP(LIST(1), POKE(A))`), and
+    the caller's context must come back untouched all the same.
   - **Order.** No plan relies on a database's natural row order: a program
     that observes an order names a unique `ORDER BY` key, and the contract
     tests do the same. A sort's `ORDER BY` survives the steps after it — a
@@ -2741,7 +2760,7 @@ The ordinary prefix planner promises:
   call the evaluator resolves by shape: the third slot of a three-argument
   `SORT_BY` or `TOP_BY` whose second is a bare name is the binder form's key,
   and `IF(TRUE, "DESC", "ASC")` there stays an `IF` rather than becoming the
-  direction (review 2026-09-15 findings A, E, C2; `plan.sort.*`,
+  direction (`plan.sort.*`,
   `plan.map.*` and `plan.pure-sql.constant-true-filter` in the fixtures).
 - **The continuation reports errors where `run` would.** The planner folds
   one tree and cuts it in two, so what the memory half carries is what the

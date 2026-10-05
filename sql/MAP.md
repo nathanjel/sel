@@ -347,7 +347,7 @@ involved.
 `{key:*}` is `{key:n}` for every argument, in order. SQLite's multi-argument
 `min()` and `max()` rank every number below every text value, so an argument that
 reaches them as text (a column of TEXT affinity, a literal) is never compared with
-the numbers beside it: `min(100.0, '60')` is `100.0` (GO-C17). The entry reads every
+the numbers beside it: `min(100.0, '60')` is `100.0`. The entry reads every
 argument as a number first, and says so as data:
 
 ```jsonc

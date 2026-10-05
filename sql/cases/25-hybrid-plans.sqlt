@@ -146,7 +146,7 @@ The MAP fall-through: the pushable half of the RECORD is projected in SQL and
 the custom half stays in memory. The TAKE written AFTER the MAP stays behind it
 too: run() evaluates the local half on every row before the TAKE cuts the list,
 so a raising local pair (this one always raises) must not be hidden by a LIMIT
-in the statement (contract of T11, docs/internals/sql-translation.md 12.1;
+in the statement (the contract in docs/internals/sql-translation.md 12.1;
 sql/cases/51-hybrid-parity.sqlt `plan.errors.*`). The projection is all the
 statement carries.
 --- dialect
@@ -758,7 +758,7 @@ The key guard on its own. This MAP cannot raise (a field read and an
 addition over a relation's typed columns), so the only thing keeping the FILTER
 after it is that a FILTER at the end of a pipeline keeps the MAP's keys: the
 WHERE goes over the MAP's derived table. The ABORT case above no longer tests
-that guard -- since review 2026-09-25 SEM-07 a MAP that can raise keeps its
+that guard -- a MAP that can raise keeps its
 FILTER behind it whatever the keys -- and a guard that always said yes then
 survived every check (the *-filter-swap-ignores-keys mutations).
 --- dialect
@@ -1630,7 +1630,7 @@ SELECT `c`.`name` AS `n` FROM `orders` `o` INNER JOIN `customers` `c` ON (`o`.`c
 
 ### name: plan.index.an-alias-is-not-a-qualifier
 --- note
-A relation's row is a plain record: `_["o"]` is E_NO_KEY in memory, whatever the binding's SQL alias. Every host translated it as a qualified read until review 2026-09-28 SQL-07; the read stays in memory.
+A relation's row is a plain record: `_["o"]` is E_NO_KEY in memory, whatever the binding's SQL alias. Every host once translated it as a qualified read; the read stays in memory.
 --- dialect
 mariadb
 --- bindings
@@ -1661,7 +1661,7 @@ SELECT `c`.`name` AS `n` FROM `orders` `o` INNER JOIN `customers` `c` ON (`o`.`c
 
 ### name: plan.index.positional-binders-are-keys-of-the-row
 --- note
-`_1` and `_2` are keys of the joined row (spec §7.4), holding the left and the right element, so `_["_2"]["NAME"]` is the right side's `name`. This case said they named nothing, and so did every host until review 2026-09-28 SQL-07; in memory the read answers.
+`_1` and `_2` are keys of the joined row (spec §7.4), holding the left and the right element, so `_["_2"]["NAME"]` is the right side's `name`. This case once said they named nothing, and so did every host; in memory the read answers.
 --- dialect
 mariadb
 --- bindings

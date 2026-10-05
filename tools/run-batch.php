@@ -14,9 +14,28 @@ use Sel\Sel;
 use Sel\SelError;
 use Sel\Value;
 
+// The runner contract (tools/README.md): a path that cannot be read, or a
+// corpus with no program in it, is a one-line refusal and a non-zero exit --
+// never a stack trace, and never a successful run that compared nothing.
+function refuse(int $status, string $msg): never
+{
+    fwrite(STDERR, "run-batch: {$msg}\n");
+    exit($status);
+}
+
 $args = array_slice($argv, 1);
 $show = in_array('--show', $args, true);
-$path = array_values(array_filter($args, fn ($a) => $a !== '--show'))[0];
+$paths = array_values(array_filter($args, fn ($a) => $a !== '--show'));
+if (count($paths) !== 1 || str_starts_with($paths[0], '-')) {
+    refuse(2, 'usage: run-batch.php [--show] <corpus>');
+}
+$path = $paths[0];
+// is_file first: file_get_contents on a directory warns and returns '' on some
+// builds, and a warning is not a refusal.
+$text = is_file($path) && is_readable($path) ? @file_get_contents($path) : false;
+if ($text === false) {
+    refuse(2, "cannot read {$path}");
+}
 
 /**
  * A line beginning `### ` starts a record; everything after it is source until
@@ -69,8 +88,12 @@ function render(Value $v): string
     return $v->dump();
 }
 
+$programs = read_corpus($text);
+if ($programs === []) {
+    refuse(1, "no programs in {$path}: a corpus is `### ` records");
+}
 $lines = [];
-foreach (read_corpus(file_get_contents($path)) as $src) {
+foreach ($programs as $src) {
     try {
         $v = Sel::compile($src)->run(Value::none());
         $lines[] = $show ? render($v) : $v->dump();

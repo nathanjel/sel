@@ -212,7 +212,7 @@ LIST(RECORD("k", 1, "a", 2)) .> LINK_LEFT(LIST(), _1["k"] == _2["id"]) .> MAP(LI
 tree -{"1"=-{"1"=-{"1"=t"_1", "2"=t"_2", "3"=t"k", "4"=t"a"}, "2"=-}}
 ===
 
-% --- review 2026-09-25 SEM-04: promotion compares names ASCII-case-insensitively
+% --- promotion compares names ASCII-case-insensitively
 % (spec §7.4), so names that differ outside ASCII are different names. JS and
 % Python used full Unicode upper-casing ("ß" → "SS", "ſ" → "S") and Lisp SBCL's
 % (é ↔ É): both fields were then dropped as a collision.

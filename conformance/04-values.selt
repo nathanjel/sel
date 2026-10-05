@@ -256,7 +256,7 @@ A = 1; A["k"] = 1; A[(A["k"] += 1); "k"]
 num 2
 ===
 
-% --- review 2026-09-25: an index read of a computed key, evaluated again and
+% --- an index read of a computed key, evaluated again and
 % again by one node, and the copy an assignment makes of a scalar leaf.
 
 ### name: val.index.computed-key-read-per-element

@@ -1,6 +1,5 @@
--- The cross-host statement fixture (php/bin/sqlo `cross`, review 2026-09-25
--- TEST-03/04): the two relations every host's sqlfuzz binds, ORDERS and
--- CUSTOMERS. They share the field names `id` and `name` with different
+-- The cross-host statement fixture (php/bin/sqlo `cross`): the two relations
+-- every host's sqlfuzz binds, ORDERS and CUSTOMERS. They share the field names `id` and `name` with different
 -- values, so a read that resolves to the wrong relation answers different rows;
 -- order 4 has no customer, and customer 40 no order, for LINK_LEFT.
 

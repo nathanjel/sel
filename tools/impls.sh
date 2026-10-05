@@ -1,19 +1,30 @@
 #!/usr/bin/env bash
 # The registry of SEL implementations.
 #
-# Every tool in this directory iterates this list rather than naming hosts, so
-# adding a fifth implementation is one entry here plus the five entry points
-# described in tools/README.md — no changes to check.sh, fuzz.sh or the rest.
+# Every tool in this directory iterates this list rather than naming hosts. A
+# host is a set of ROLES -- conformance, batch, e2e, api, cli, sql, ... -- each
+# an `impl_<role>` function below with one `case` arm per configuration, plus
+# its line in impl_available. Adding a configuration means an arm in every role
+# function (or an explicit `return 0` arm where the role does not apply, as the
+# JS bundles do for the SQL roles); tools/check-registry.sh fails the gate when
+# a configuration of the default roster is missing from any role, so the matrix
+# cannot drift silently. tools/README.md describes the roles; check.sh itself
+# also has a few host-specific lanes (the optimiser and metadata checks), each
+# one `case " $IMPLS "` line.
 #
 # Override to narrow a run:   SEL_IMPLS="js cpp" tools/fuzz.sh
 #
-# python-wheel is an eighth configuration and is deliberately not in the default
-# list: it
-# runs the *built package* rather than the source tree, so it needs a build and
-# an install before it means anything, and a run that silently skipped it would
-# be worse than one that never offered it. Widen to include it:
+# A narrowed run is a narrowed run: tools/check.sh prints the configurations of
+# the default roster it is NOT running and never says plain "ALL GREEN" for
+# them. To ADD a configuration to the roster rather than replace it, name it in
+# SEL_EXTRA_IMPLS:
 #
-#   SEL_IMPLS="js js-bundle php cpp lisp python python-wheel" tools/check.sh
+#   SEL_EXTRA_IMPLS=python-wheel tools/check.sh
+#
+# python-wheel is the tenth configuration and is deliberately not in the default
+# list: it runs the *built package* rather than the source tree, so it needs a
+# build and an install before it means anything, and a run that silently
+# skipped it would be worse than one that never offered it.
 #
 # js-bundle-min IS in the default list, unlike python-wheel, because it needs no
 # install: `npm run build` writes dist/sel.mjs and dist/sel.min.mjs in one step,
@@ -22,7 +33,11 @@
 # a minifier that renamed something it should not have would have reached a user
 # before it reached the suite.
 
-SEL_IMPLS="${SEL_IMPLS:-js js-bundle js-bundle-min php cpp lisp python go rust}"
+SEL_DEFAULT_IMPLS="js js-bundle js-bundle-min php cpp lisp python go rust"
+# Each name once, in order: nested tools source this file again, and an exported
+# SEL_IMPLS must not grow by SEL_EXTRA_IMPLS every time.
+SEL_IMPLS="$(_r=" "; for _i in ${SEL_IMPLS:-$SEL_DEFAULT_IMPLS} ${SEL_EXTRA_IMPLS:-}; do
+  case "$_r" in *" $_i "*) ;; *) _r="$_r$_i " ;; esac; done; _r="${_r# }"; echo "${_r% }")"
 
 # Where python-wheel looks for its interpreter: a venv with the built wheel
 # installed, so the *package* is held to the same suite as the source tree.
@@ -45,15 +60,18 @@ SEL_PHP_FLAGS="${SEL_PHP_FLAGS:-}"
 # leaf commands rather than by the scripts that queue them, so the bound holds
 # however deeply the scripts nest:
 #
-#   SEL_JOBS      how many leaf commands run at once — half the hardware threads,
-#                 rounded up (8 on a 16-thread box)
-#   SEL_PHP_JOBS  how many of them may be PHP — a quarter, rounded up. On a box
+#   SEL_JOBS      how many leaf commands run at once -- three quarters of the
+#                 hardware threads when the box is mostly idle, half of them when
+#                 it is busy (see _sel_default_jobs below)
+#   SEL_PHP_JOBS  how many of them may be PHP -- half of SEL_JOBS. On a box
 #                 without a php binary, `php` is a Docker wrapper, and each
 #                 invocation is a container start
 #
 # Both are flock(1) slots in one directory (SEL_SLOT_DIR), so a nested tool
 # started by the gate shares the gate's bound rather than adding its own. A leaf
-# waits for a free slot; nothing is ever refused.
+# waits for a free slot; nothing is ever refused. A leaf must not take a second
+# slot of the same kind while holding one (sel_slot inside sel_slot): with every
+# slot held by such a leaf, none can proceed.
 _sel_threads() { nproc 2>/dev/null || getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4; }
 # The default bound adapts to the box at the moment the FIRST tool starts: three
 # quarters of the hardware threads (12 of 16) when the one-minute load average
@@ -133,6 +151,19 @@ sel_wait() {
 # The first implementation in the list is the reference the others are diffed
 # against in fuzz.sh. It is only a reporting convenience: a disagreement is a
 # disagreement whichever side of it you stand on, and spec/ decides who is wrong.
+
+# _sel_exe <path...>: the first of the paths that exists, else the first
+# path (so the error names the canonical one). One spelling per role is the rule
+# -- hyphenated, as most hosts already build them: regex-verdict, check-decimal,
+# scale-bench, sqlreplay -- and a host build still on an older spelling
+# (rust's regex_verdict / check_decimal / scale_bench / map_replay, go's
+# regexverdict, cpp's regex_verdict) is accepted as the second candidate until
+# it is renamed.
+_sel_exe() {
+  local p
+  for p in "$@"; do [ -e "$p" ] && { echo "$p"; return 0; }; done
+  echo "$1"
+}
 
 # --- entry points -----------------------------------------------------------
 #
@@ -234,11 +265,11 @@ impl_e2e() {
   esac
 }
 
-# The host API surface: same probes, each through its own binding. See
-# tools/check-api.sh.
-# `--deps` on one source file, for tools/stress.sh. Every CLI prints one name per
-# line and they already agree byte for byte, so this needs no normalising layer
-# the way impl_batch does -- it is here so the roster lives in one file.
+# `--deps` on one source file, for tools/stress.sh. The CLI contract
+# (docs/usage/repl.md) is one name per line, sorted, and NOTHING for an empty
+# list -- not an empty line; tools/check-cli-source.sh pins it in every host, so
+# this needs no normalising layer the way impl_batch does. It is here so the
+# roster lives in one file.
 impl_deps() {
   local impl="$1"; shift
   case "$impl" in
@@ -296,6 +327,8 @@ impl_sqlapi() {
   esac
 }
 
+# The host API surface: same probes, each through its own binding. See
+# tools/check-api.sh.
 impl_api() {
   local impl="$1"; shift
   case "$impl" in
@@ -320,7 +353,7 @@ impl_decimal() {
     # The oracle is a whitebox check on js/src/decimal.mjs, which the bundle
     # inlines verbatim. Running it twice would test the same code.
     js-bundle|js-bundle-min) echo "$impl: decimal core is js/src/decimal.mjs, covered above" ;;
-    # Three ways (item 1): as configured, on the pure-PHP paths, and with lazy
+    # Three ways: as configured, on the pure-PHP paths, and with lazy
     # digits on and operands an earlier operation produced.
     php)  sel_php tools/check-decimal.php "$@" \
             && SEL_PHP_FORCE_GMP=0 sel_php tools/check-decimal.php "$@" \
@@ -332,7 +365,28 @@ impl_decimal() {
     # ships verbatim. Running it twice would test the same code.
     python-wheel) echo "python-wheel: decimal core is python/sel/decimal.py, covered above" ;;
     go)   go/build/check-decimal "$@" ;;
-    rust) rust/build/check_decimal "$@" ;;
+    rust) "$(_sel_exe rust/build/check-decimal rust/build/check_decimal)" "$@" ;;
+    *)    echo "unknown implementation: $impl" >&2; return 2 ;;
+  esac
+}
+
+# The regex validator's verdict, one pattern per stdin line -> `A` (accepted) or
+# `R` (refused with E_REGEX_SYNTAX); a trailing `i` argument checks under the
+# case-insensitive flag. tools/check-regex-ambiguity-diff.py holds every host to
+# the reference (tools/regex-ambiguity-ref.py) through it. The bundles carry
+# js/src's validator verbatim, so they have no driver of their own.
+impl_regex_verdict() {
+  local impl="$1"; shift
+  case "$impl" in
+    js)   node js/bin/regex-verdict.mjs "$@" ;;
+    js-bundle|js-bundle-min) return 0 ;;
+    php)  sel_php php/bin/regex-verdict "$@" ;;
+    cpp)  "$(_sel_exe cpp/build/regex-verdict cpp/build/regex_verdict)" "$@" ;;
+    lisp) lisp/bin/regex-verdict "$@" ;;
+    python) PYTHONPATH="$PWD/python" python3 "$(_sel_exe python/bin/regex-verdict.py python/bin/regex_verdict.py)" "$@" ;;
+    python-wheel) "$SEL_PY_WHEEL_BIN" "$(_sel_exe python/bin/regex-verdict.py python/bin/regex_verdict.py)" "$@" ;;
+    go)   "$(_sel_exe go/build/regex-verdict go/build/regexverdict)" "$@" ;;
+    rust) "$(_sel_exe rust/build/regex-verdict rust/build/regex_verdict)" "$@" ;;
     *)    echo "unknown implementation: $impl" >&2; return 2 ;;
   esac
 }
@@ -363,17 +417,6 @@ impl_sql() {
   esac
 }
 
-# The SQL semantic oracle in sql/oracle/: the same expressions evaluated by SEL
-# and by a real database. Where impl_sql asks "is this the string we meant to
-# emit?", this asks "does that string mean what SEL means?" -- the question a
-# case file cannot answer about itself. Skips itself when no DSN is set.
-# Translate a corpus and print one canonical line per program, so that the hosts
-# WITH a translator can be diffed against each other. This is the lane
-# docs/internals/sql-translation.md §14 M7 asked for: impl_oracle answers "does the emitted
-# SQL mean what SEL means?" and needs a database, this one answers "do the hosts
-# emit the same thing?" and needs nothing -- which matters, because without it
-# the SQL fuzz step did nothing at all on a machine with no DSN, and that is
-# every machine by default.
 # Rebuild the shipped map through the public registration API and diff it. The
 # property sql/MAP.md §4.5¼ states -- anything the shipped map contains, an
 # application could have registered -- is what lets a host emit its map as CODE
@@ -391,11 +434,18 @@ impl_sqlreplay() {
     python) PYTHONPATH="$PWD/python" python3 python/bin/sqlreplay "$@" ;;
     python-wheel) "$SEL_PY_WHEEL_BIN" python/bin/sqlreplay "$@" ;;
     go)   go/build/sqlreplay "$@" ;;
-    rust) rust/build/map_replay "$@" ;;
+    rust) "$(_sel_exe rust/build/sqlreplay rust/build/map_replay)" "$@" ;;
     *)    echo "unknown implementation: $impl" >&2; return 2 ;;
   esac
 }
 
+# Translate a corpus and print one canonical line per program, so that the hosts
+# WITH a translator can be diffed against each other. This is the lane
+# docs/internals/sql-translation.md §14 M7 asked for: impl_oracle answers "does the emitted
+# SQL mean what SEL means?" and needs a database, this one answers "do the hosts
+# emit the same thing?" and needs nothing -- which matters, because without it
+# the SQL fuzz step did nothing at all on a machine with no DSN, and that is
+# every machine by default.
 impl_sqlfuzz() {
   local impl="$1"; shift
   case "$impl" in
@@ -413,6 +463,10 @@ impl_sqlfuzz() {
   esac
 }
 
+# The SQL semantic oracle in sql/oracle/: the same expressions evaluated by SEL
+# and by a real database. Where impl_sql asks "is this the string we meant to
+# emit?", this asks "does that string mean what SEL means?" -- the question a
+# case file cannot answer about itself. Skips itself when no DSN is set.
 impl_oracle() {
   local impl="$1"; shift
   case "$impl" in
@@ -440,18 +494,28 @@ impl_sqldoc() {
 }
 
 # Each implementation's own unit tests, covering the layers underneath the
-# conformance suite. Optional: js and php have none, and say so by succeeding.
+# conformance suite. Optional: js has none of its own (its host-local checks are
+# tools/check-js-*.mjs, gate lanes of their own), and says so by succeeding.
 impl_unit() {
   local impl="$1"; shift
   case "$impl" in
-    js|js-bundle|js-bundle-min|php) return 0 ;;
+    js|js-bundle|js-bundle-min) return 0 ;;
+    # Every script in php/tests: standalone PHP files that exit non-zero on a
+    # failed check (the optimiser, runtime and integration checks are gate
+    # lanes of their own, tools/check-php-*.php).
+    php)
+      local t
+      for t in php/tests/*.php; do
+        [ -e "$t" ] || continue
+        sel_php "$t" || { echo "php: $t failed" >&2; return 1; }
+      done ;;
     # `python3 -m pytest`, not `pytest`: the binary is often only on a venv's
     # PATH while the module is importable by the interpreter we actually use.
     # A missing test dependency is an infrastructure failure, not a passing
     # result: this lane holds checks no other host has (the executed-plan
     # comparison against SQLite, the planner contract, the physical-tree
     # cache), and it used to print a skip and succeed when python3 had no
-    # pytest -- ALL GREEN without them (review 2026-09-15, critic). Put a
+    # pytest -- ALL GREEN without them. Put a
     # venv with pytest first on PATH, or opt out with SEL_SKIP_PYTHON_UNIT=1.
     python)
       python3 -c 'import pytest' 2>/dev/null || {
@@ -471,7 +535,10 @@ impl_unit() {
     cpp)    { [ -x cpp/build/unit ] && cpp/build/unit; } &&
             { [ -x cpp/build/sqlunit ] && cpp/build/sqlunit; } ;;
     lisp)   lisp/bin/test ;;
-    go)     (cd go && go test -race ./...) ;;
+    # -timeout: the race detector multiplies the suite's time several-fold, and
+    # beside the rest of the gate on a busy box the default 10 minutes expired
+    # in a run whose every test passed when the box was quiet.
+    go)     (cd go && go test -race -timeout 30m ./...) ;;
     rust)   (cd rust && cargo test --workspace && bash tests/build_integration.sh) ;;
     *)      echo "unknown implementation: $impl" >&2; return 2 ;;
   esac
@@ -547,9 +614,12 @@ impl_available() {
         \( -name '*.go' -o -path examples/go.mod \) ! -name '*_test.go' -newer "$go_newest" -print -quit 2>/dev/null)" ] ;;
     rust)
       command -v cargo >/dev/null 2>&1 || return 1
+      # Every binary a role runs (see the role functions; two spellings where the
+      # build is still on the old one).
       local rust_bin
-      for rust_bin in conformance sqlt map_replay check_decimal batch e2e sel sqlapi api regex_verdict scale_bench sqlfuzz; do
-        [ -x "rust/build/$rust_bin" ] || return 1
+      for rust_bin in conformance sqlt sqlreplay:map_replay check-decimal:check_decimal batch e2e \
+                      sel sqlapi api regex-verdict:regex_verdict sqlfuzz; do
+        [ -x "rust/build/${rust_bin%%:*}" ] || [ -x "rust/build/${rust_bin#*:}" ] || return 1
       done
       [ -f rust/build/inputs.sha256 ] || return 1
       cmp -s rust/build/inputs.sha256 <(bash rust/build-inputs.sh) ;;

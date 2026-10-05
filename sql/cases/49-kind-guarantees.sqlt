@@ -1,19 +1,18 @@
-% Kind guarantees, exact comparison, counts, and server limits (T09).
+% Kind guarantees, exact comparison, counts, and server limits.
 %
-% Scenario source: docs/interim/2026-09-29/worklist/tests/09-sql-kinds.md.
 % The kind warrant (docs/internals/sql-kinds.md 1): SQL never reports a match for a
 % row SEL would have refused. Expected strings are derived from that document and
 % from the renderings already pinned in 19-kind-warrant.sqlt, 22-sargable-bindings.sqlt,
 % 23-statements.sqlt and 27-slices.sqlt -- never copied from a host's output.
 %
-% Deliberately NOT pinned: literal width past DECIMAL(65) (PHP-C52, unreproduced),
+% Deliberately NOT pinned: literal width past DECIMAL(65) (reported once, never reproduced),
 % a compound SUM body over an UNKNOWN field (open, docs/internals/sql-kinds.md 5a),
 % text-literal arithmetic and SQLite MIN/MAX storage classes (the oracle decides:
 % sql/oracle/expressions.selo and rows.json).
 
 ### name: warrant.bool.if-cannot-launder-an-undeclared-column
 --- note
-The kind warrant (docs/internals/sql-kinds.md 1, 5): an operand nobody has vouched for is UNCERTAIN, and an uncertain operand in a boolean position is refused, on every dialect, because no dialect can ask "is this a boolean". A kind that becomes certain by passing THROUGH a conditional is the same hole: IF, COND, `??` and `???` yield UNKNOWN when any branch is UNKNOWN, whatever the other branches are. (JS-C27, PHP-C28)
+The kind warrant (docs/internals/sql-kinds.md 1, 5): an operand nobody has vouched for is UNCERTAIN, and an uncertain operand in a boolean position is refused, on every dialect, because no dialect can ask "is this a boolean". A kind that becomes certain by passing THROUGH a conditional is the same hole: IF, COND, `??` and `???` yield UNKNOWN when any branch is UNKNOWN, whatever the other branches are.
 --- dialect
 mariadb
 --- bindings
@@ -26,7 +25,7 @@ E_SQL_SHAPE
 
 ### name: warrant.bool.if-cannot-launder-with-a-bool-condition
 --- note
-The condition being a certain BOOL changes nothing: the VALUE branches decide the kind of the result. (CPP-C29)
+The condition being a certain BOOL changes nothing: the VALUE branches decide the kind of the result.
 --- dialect
 mariadb
 --- bindings
@@ -39,7 +38,7 @@ E_SQL_SHAPE
 
 ### name: warrant.bool.coalesce-cannot-launder-an-undeclared-column
 --- note
-`??` is a conditional too. (JS-C27, PHP-C28)
+`??` is a conditional too.
 --- dialect
 mariadb
 --- bindings
@@ -143,7 +142,7 @@ mariadb
 
 ### name: warrant.numeric.coalesce-over-an-undeclared-column-is-guarded
 --- note
-An undeclared column in a numeric position is wrapped in the guard on a dialect that can ask "is this a number" and refused on one that cannot (docs/internals/sql-kinds.md 5). Passing through IF / COND / `??` / `COALESCE` does not make it certain: the conditional's kind is UNKNOWN when any value branch is, so the guard wraps the WHOLE conditional -- naming it twice, as every guard names its operand twice (warrant.raw.the-guard-evaluates-it-twice). Otherwise `'abc' + 1` is 1 on MariaDB where SEL raises E_NOT_NUM. (PHP-C28, LISP-C24)
+An undeclared column in a numeric position is wrapped in the guard on a dialect that can ask "is this a number" and refused on one that cannot (docs/internals/sql-kinds.md 5). Passing through IF / COND / `??` / `COALESCE` does not make it certain: the conditional's kind is UNKNOWN when any value branch is, so the guard wraps the WHOLE conditional -- naming it twice, as every guard names its operand twice (warrant.raw.the-guard-evaluates-it-twice). Otherwise `'abc' + 1` is 1 on MariaDB where SEL raises E_NOT_NUM.
 --- dialect
 mariadb
 --- bindings
@@ -156,7 +155,7 @@ mariadb
 
 ### name: warrant.numeric.if-branch-unknown-is-guarded
 --- note
-An undeclared column in a numeric position is wrapped in the guard on a dialect that can ask "is this a number" and refused on one that cannot (docs/internals/sql-kinds.md 5). Passing through IF / COND / `??` / `COALESCE` does not make it certain: the conditional's kind is UNKNOWN when any value branch is, so the guard wraps the WHOLE conditional -- naming it twice, as every guard names its operand twice (warrant.raw.the-guard-evaluates-it-twice). Otherwise `'abc' + 1` is 1 on MariaDB where SEL raises E_NOT_NUM. (JS-C27, CPP-C29, LISP-C24)
+An undeclared column in a numeric position is wrapped in the guard on a dialect that can ask "is this a number" and refused on one that cannot (docs/internals/sql-kinds.md 5). Passing through IF / COND / `??` / `COALESCE` does not make it certain: the conditional's kind is UNKNOWN when any value branch is, so the guard wraps the WHOLE conditional -- naming it twice, as every guard names its operand twice (warrant.raw.the-guard-evaluates-it-twice). Otherwise `'abc' + 1` is 1 on MariaDB where SEL raises E_NOT_NUM.
 --- dialect
 mariadb
 --- bindings
@@ -169,7 +168,7 @@ IF(P, U, 1) + 1 == 2
 
 ### name: warrant.numeric.coalesce-function-over-an-undeclared-column-is-guarded
 --- note
-The function spelling of `??`. (LISP-C24)
+The function spelling of `??`.
 --- dialect
 mariadb
 --- bindings
@@ -182,7 +181,7 @@ COALESCE(U, 0) > 5
 
 ### name: warrant.numeric.abs-over-a-laundered-conditional
 --- note
-A function argument that reads a number: the same wrap. (PHP-C28)
+A function argument that reads a number: the same wrap.
 --- dialect
 mariadb
 --- bindings
@@ -195,7 +194,7 @@ ABS(CASE WHEN (COALESCE(`u`, 1) REGEXP '\\A-?[0-9]+(\\.[0-9]+)?\\z') THEN CAST(C
 
 ### name: warrant.numeric.min-over-a-laundered-conditional
 --- note
-(PHP-C28)
+
 --- dialect
 mariadb
 --- bindings
@@ -208,7 +207,7 @@ LEAST(CASE WHEN (COALESCE(`u`, 1) REGEXP '\\A-?[0-9]+(\\.[0-9]+)?\\z') THEN CAST
 
 ### name: warrant.numeric.length-over-a-laundered-conditional
 --- note
-(PHP-C28)
+
 --- dialect
 mariadb
 --- bindings
@@ -221,7 +220,7 @@ LEFT('abc', CASE WHEN (COALESCE(`u`, 1) REGEXP '\\A-?[0-9]+(\\.[0-9]+)?\\z') THE
 
 ### name: warrant.numeric.an-undeclared-branch-on-the-right-is-guarded
 --- note
-Either side. (GO-C15)
+Either side.
 --- dialect
 mariadb
 --- bindings
@@ -234,7 +233,7 @@ N < IF(TRUE, U, -1)
 
 ### name: warrant.numeric.cond-branch-unknown-is-guarded
 --- note
-(GO-C15)
+
 --- dialect
 mariadb
 --- bindings
@@ -247,7 +246,7 @@ COND(P, U, 1) + 1 == 2
 
 ### name: warrant.numeric.sqlite-refuses-a-laundered-coalesce
 --- note
-SQLite cannot ask whether a value is a number, so a numeric position holding an UNCERTAIN operand is refused (warrant.numeric.sqlite-cannot-ask-and-refuses); a conditional does not make it certain. Measured against SQLite: `IF(FLAG,1,UNK) < 1` answered TRUE for unk='abc' where SEL raises E_NOT_NUM. (GO-C15)
+SQLite cannot ask whether a value is a number, so a numeric position holding an UNCERTAIN operand is refused (warrant.numeric.sqlite-cannot-ask-and-refuses); a conditional does not make it certain. Measured against SQLite: `IF(FLAG,1,UNK) < 1` answered TRUE for unk='abc' where SEL raises E_NOT_NUM.
 --- dialect
 sqlite
 --- bindings
@@ -260,7 +259,7 @@ E_SQL_UNSUPPORTED
 
 ### name: warrant.numeric.sqlite-refuses-a-laundered-if-branch
 --- note
-SQLite cannot ask whether a value is a number, so a numeric position holding an UNCERTAIN operand is refused (warrant.numeric.sqlite-cannot-ask-and-refuses); a conditional does not make it certain. Measured against SQLite: `IF(FLAG,1,UNK) < 1` answered TRUE for unk='abc' where SEL raises E_NOT_NUM. (GO-C15)
+SQLite cannot ask whether a value is a number, so a numeric position holding an UNCERTAIN operand is refused (warrant.numeric.sqlite-cannot-ask-and-refuses); a conditional does not make it certain. Measured against SQLite: `IF(FLAG,1,UNK) < 1` answered TRUE for unk='abc' where SEL raises E_NOT_NUM.
 --- dialect
 sqlite
 --- bindings
@@ -273,7 +272,7 @@ E_SQL_UNSUPPORTED
 
 ### name: warrant.numeric.sqlite-refuses-a-laundered-abs
 --- note
-SQLite cannot ask whether a value is a number, so a numeric position holding an UNCERTAIN operand is refused (warrant.numeric.sqlite-cannot-ask-and-refuses); a conditional does not make it certain. Measured against SQLite: `IF(FLAG,1,UNK) < 1` answered TRUE for unk='abc' where SEL raises E_NOT_NUM. (GO-C15)
+SQLite cannot ask whether a value is a number, so a numeric position holding an UNCERTAIN operand is refused (warrant.numeric.sqlite-cannot-ask-and-refuses); a conditional does not make it certain. Measured against SQLite: `IF(FLAG,1,UNK) < 1` answered TRUE for unk='abc' where SEL raises E_NOT_NUM.
 --- dialect
 sqlite
 --- bindings
@@ -286,7 +285,7 @@ E_SQL_UNSUPPORTED
 
 ### name: warrant.numeric.sqlite-refuses-a-laundered-vacuous-coalesce
 --- note
-SQLite cannot ask whether a value is a number, so a numeric position holding an UNCERTAIN operand is refused (warrant.numeric.sqlite-cannot-ask-and-refuses); a conditional does not make it certain. Measured against SQLite: `IF(FLAG,1,UNK) < 1` answered TRUE for unk='abc' where SEL raises E_NOT_NUM. (GO-C15)
+SQLite cannot ask whether a value is a number, so a numeric position holding an UNCERTAIN operand is refused (warrant.numeric.sqlite-cannot-ask-and-refuses); a conditional does not make it certain. Measured against SQLite: `IF(FLAG,1,UNK) < 1` answered TRUE for unk='abc' where SEL raises E_NOT_NUM.
 --- dialect
 sqlite
 --- bindings
@@ -325,7 +324,7 @@ IF(P, N, 1) + 1 == 2
 
 ### name: agg.join.bool-element-is-refused
 --- note
-SEL: JOIN takes text (`&` rules, spec 5.2/7.5): a BOOL or BIN element or separator is E_NOT_TEXT. The translator must refuse as `&` does (kinds.a-bool-is-not-concatenable), not concatenate a server's spelling of the value ('1'/'true'). (PY-C19, PHP-C31)
+SEL: JOIN takes text (`&` rules, spec 5.2/7.5): a BOOL or BIN element or separator is E_NOT_TEXT. The translator must refuse as `&` does (kinds.a-bool-is-not-concatenable), not concatenate a server's spelling of the value ('1'/'true').
 --- dialect
 mariadb
 --- bindings
@@ -338,7 +337,7 @@ E_SQL_SHAPE
 
 ### name: agg.join.bool-first-element-is-refused
 --- note
-SEL: JOIN takes text (`&` rules, spec 5.2/7.5): a BOOL or BIN element or separator is E_NOT_TEXT. The translator must refuse as `&` does (kinds.a-bool-is-not-concatenable), not concatenate a server's spelling of the value ('1'/'true'). (PY-C19, PHP-C31)
+SEL: JOIN takes text (`&` rules, spec 5.2/7.5): a BOOL or BIN element or separator is E_NOT_TEXT. The translator must refuse as `&` does (kinds.a-bool-is-not-concatenable), not concatenate a server's spelling of the value ('1'/'true').
 --- dialect
 mariadb
 --- bindings
@@ -351,7 +350,7 @@ E_SQL_SHAPE
 
 ### name: agg.join.bool-separator-is-refused
 --- note
-SEL: JOIN takes text (`&` rules, spec 5.2/7.5): a BOOL or BIN element or separator is E_NOT_TEXT. The translator must refuse as `&` does (kinds.a-bool-is-not-concatenable), not concatenate a server's spelling of the value ('1'/'true'). (PY-C19, PHP-C31)
+SEL: JOIN takes text (`&` rules, spec 5.2/7.5): a BOOL or BIN element or separator is E_NOT_TEXT. The translator must refuse as `&` does (kinds.a-bool-is-not-concatenable), not concatenate a server's spelling of the value ('1'/'true').
 --- dialect
 mariadb
 --- bindings
@@ -364,7 +363,7 @@ E_SQL_SHAPE
 
 ### name: agg.join.bin-element-is-refused
 --- note
-SEL: JOIN takes text (`&` rules, spec 5.2/7.5): a BOOL or BIN element or separator is E_NOT_TEXT. The translator must refuse as `&` does (kinds.a-bool-is-not-concatenable), not concatenate a server's spelling of the value ('1'/'true'). (PY-C19, PHP-C31)
+SEL: JOIN takes text (`&` rules, spec 5.2/7.5): a BOOL or BIN element or separator is E_NOT_TEXT. The translator must refuse as `&` does (kinds.a-bool-is-not-concatenable), not concatenate a server's spelling of the value ('1'/'true').
 --- dialect
 mariadb
 --- bindings
@@ -377,7 +376,7 @@ E_SQL_SHAPE
 
 ### name: agg.join.bin-separator-is-refused
 --- note
-SEL: JOIN takes text (`&` rules, spec 5.2/7.5): a BOOL or BIN element or separator is E_NOT_TEXT. The translator must refuse as `&` does (kinds.a-bool-is-not-concatenable), not concatenate a server's spelling of the value ('1'/'true'). (PY-C19, PHP-C31)
+SEL: JOIN takes text (`&` rules, spec 5.2/7.5): a BOOL or BIN element or separator is E_NOT_TEXT. The translator must refuse as `&` does (kinds.a-bool-is-not-concatenable), not concatenate a server's spelling of the value ('1'/'true').
 --- dialect
 mariadb
 --- bindings
@@ -390,7 +389,7 @@ E_SQL_SHAPE
 
 ### name: agg.join.columns-binding-with-a-bool-is-refused
 --- note
-SEL: JOIN takes text (`&` rules, spec 5.2/7.5): a BOOL or BIN element or separator is E_NOT_TEXT. The translator must refuse as `&` does (kinds.a-bool-is-not-concatenable), not concatenate a server's spelling of the value ('1'/'true'). (PY-C19, PHP-C31)
+SEL: JOIN takes text (`&` rules, spec 5.2/7.5): a BOOL or BIN element or separator is E_NOT_TEXT. The translator must refuse as `&` does (kinds.a-bool-is-not-concatenable), not concatenate a server's spelling of the value ('1'/'true').
 --- dialect
 mariadb
 --- bindings
@@ -403,7 +402,7 @@ E_SQL_SHAPE
 
 ### name: agg.join.columns-binding-with-a-bin-is-refused
 --- note
-SEL: JOIN takes text (`&` rules, spec 5.2/7.5): a BOOL or BIN element or separator is E_NOT_TEXT. The translator must refuse as `&` does (kinds.a-bool-is-not-concatenable), not concatenate a server's spelling of the value ('1'/'true'). (PY-C19, PHP-C31)
+SEL: JOIN takes text (`&` rules, spec 5.2/7.5): a BOOL or BIN element or separator is E_NOT_TEXT. The translator must refuse as `&` does (kinds.a-bool-is-not-concatenable), not concatenate a server's spelling of the value ('1'/'true').
 --- dialect
 mariadb
 --- bindings
@@ -416,7 +415,7 @@ E_SQL_SHAPE
 
 ### name: agg.join.bool-element-is-refused-on-postgresql
 --- note
-SEL: JOIN takes text (`&` rules, spec 5.2/7.5): a BOOL or BIN element or separator is E_NOT_TEXT. The translator must refuse as `&` does (kinds.a-bool-is-not-concatenable), not concatenate a server's spelling of the value ('1'/'true'). (PY-C19, PHP-C31)
+SEL: JOIN takes text (`&` rules, spec 5.2/7.5): a BOOL or BIN element or separator is E_NOT_TEXT. The translator must refuse as `&` does (kinds.a-bool-is-not-concatenable), not concatenate a server's spelling of the value ('1'/'true').
 --- dialect
 postgresql
 --- bindings
@@ -429,7 +428,7 @@ E_SQL_SHAPE
 
 ### name: agg.join.bool-element-is-refused-on-sqlite
 --- note
-SEL: JOIN takes text (`&` rules, spec 5.2/7.5): a BOOL or BIN element or separator is E_NOT_TEXT. The translator must refuse as `&` does (kinds.a-bool-is-not-concatenable), not concatenate a server's spelling of the value ('1'/'true'). (PY-C19, PHP-C31)
+SEL: JOIN takes text (`&` rules, spec 5.2/7.5): a BOOL or BIN element or separator is E_NOT_TEXT. The translator must refuse as `&` does (kinds.a-bool-is-not-concatenable), not concatenate a server's spelling of the value ('1'/'true').
 --- dialect
 sqlite
 --- bindings
@@ -455,7 +454,7 @@ CONCAT(CONCAT(`t`, '-'), 'a')
 
 ### name: agg.bucket-sum.a-declared-text-field-is-refused
 --- note
-The relation path refuses a declared TEXT or BOOL body (notaddressed.an-aggregate-body-declared-text-is-refused: the aggregate's own kind check); the GROUP path (`SUM(_, body)` inside BUCKET) applied no kind check at all and emitted SUM(`status`) / SUM(`flag`). SEL: SUM of a text field is E_NOT_NUM, of a BOOL E_NOT_NUM. (PHP-C27)
+The relation path refuses a declared TEXT or BOOL body (notaddressed.an-aggregate-body-declared-text-is-refused: the aggregate's own kind check); the GROUP path (`SUM(_, body)` inside BUCKET) applied no kind check at all and emitted SUM(`status`) / SUM(`flag`). SEL: SUM of a text field is E_NOT_NUM, of a BOOL E_NOT_NUM.
 --- dialect
 mariadb
 --- bindings
@@ -470,7 +469,7 @@ E_SQL_SHAPE
 
 ### name: agg.bucket-sum.a-declared-bool-field-is-refused
 --- note
-The relation path refuses a declared TEXT or BOOL body (notaddressed.an-aggregate-body-declared-text-is-refused: the aggregate's own kind check); the GROUP path (`SUM(_, body)` inside BUCKET) applied no kind check at all and emitted SUM(`status`) / SUM(`flag`). SEL: SUM of a text field is E_NOT_NUM, of a BOOL E_NOT_NUM. (PHP-C27)
+The relation path refuses a declared TEXT or BOOL body (notaddressed.an-aggregate-body-declared-text-is-refused: the aggregate's own kind check); the GROUP path (`SUM(_, body)` inside BUCKET) applied no kind check at all and emitted SUM(`status`) / SUM(`flag`). SEL: SUM of a text field is E_NOT_NUM, of a BOOL E_NOT_NUM.
 --- dialect
 mariadb
 --- bindings
@@ -485,7 +484,7 @@ E_SQL_SHAPE
 
 ### name: agg.bucket-sum.a-constant-text-body-is-refused
 --- note
-`SUM(_, "x")`: every argument knowable and SEL rejects it (E_NOT_NUM); it must not degrade to SUM(1) (PHP-C7 interplay). E_SQL_INVALID: docs sql/errors.md.
+`SUM(_, "x")`: every argument knowable and SEL rejects it (E_NOT_NUM); it must not degrade to SUM(1). E_SQL_INVALID: docs sql/errors.md.
 --- dialect
 mariadb
 --- bindings
@@ -515,7 +514,7 @@ E_SQL_SHAPE
 
 ### name: agg.in-relation.bool-column-needle-is-refused
 --- note
-`x IN <relation>` must check that needle and column kinds are comparable, as `x IN (list)` does (F IN (T, T) and TRUE IN ("1","a") are refused): a BOOL or BIN needle against a TEXT column would match rows whose text happens to be '1'/'true' or the same bytes. (PY-C21)
+`x IN <relation>` must check that needle and column kinds are comparable, as `x IN (list)` does (F IN (T, T) and TRUE IN ("1","a") are refused): a BOOL or BIN needle against a TEXT column would match rows whose text happens to be '1'/'true' or the same bytes.
 --- dialect
 mariadb
 --- bindings
@@ -528,7 +527,7 @@ E_SQL_SHAPE
 
 ### name: agg.in-relation.bool-literal-needle-is-refused
 --- note
-`x IN <relation>` must check that needle and column kinds are comparable, as `x IN (list)` does (F IN (T, T) and TRUE IN ("1","a") are refused): a BOOL or BIN needle against a TEXT column would match rows whose text happens to be '1'/'true' or the same bytes. (PY-C21)
+`x IN <relation>` must check that needle and column kinds are comparable, as `x IN (list)` does (F IN (T, T) and TRUE IN ("1","a") are refused): a BOOL or BIN needle against a TEXT column would match rows whose text happens to be '1'/'true' or the same bytes.
 --- dialect
 mariadb
 --- bindings
@@ -541,7 +540,7 @@ E_SQL_SHAPE
 
 ### name: agg.in-relation.bin-column-needle-is-refused
 --- note
-`x IN <relation>` must check that needle and column kinds are comparable, as `x IN (list)` does (F IN (T, T) and TRUE IN ("1","a") are refused): a BOOL or BIN needle against a TEXT column would match rows whose text happens to be '1'/'true' or the same bytes. (PY-C21)
+`x IN <relation>` must check that needle and column kinds are comparable, as `x IN (list)` does (F IN (T, T) and TRUE IN ("1","a") are refused): a BOOL or BIN needle against a TEXT column would match rows whose text happens to be '1'/'true' or the same bytes.
 --- dialect
 mariadb
 --- bindings
@@ -554,7 +553,7 @@ E_SQL_SHAPE
 
 ### name: bind.in.exact.numeric-literal-item-is-cast
 --- note
-An `exact` column skips the byte cast on the column only because both sides are then text; a NUMBER item compared with bare `=` makes MariaDB compare numerically ('3.0' = 3 and '3abc' = 3 are TRUE), a match SEL refuses ('3.0' IN ("a", 3) is FALSE: EQL is structural). The item is cast the way `EQL` casts a number: S IN (1) is (`s` = CAST(1 AS CHAR) COLLATE utf8mb4_nopad_bin). (PY-C20, CPP-C30, LISP-C25)
+An `exact` column skips the byte cast on the column only because both sides are then text; a NUMBER item compared with bare `=` makes MariaDB compare numerically ('3.0' = 3 and '3abc' = 3 are TRUE), a match SEL refuses ('3.0' IN ("a", 3) is FALSE: EQL is structural). The item is cast the way `EQL` casts a number: S IN (1) is (`s` = CAST(1 AS CHAR) COLLATE utf8mb4_nopad_bin).
 --- dialect
 mariadb
 --- bindings
@@ -567,7 +566,7 @@ T IN ("a", 3)
 
 ### name: bind.in.exact.numeric-literal-items-only
 --- note
-(LISP-C25, CPP-C30)
+
 --- dialect
 mariadb
 --- bindings
@@ -580,7 +579,7 @@ S IN (1, 2)
 
 ### name: stmt.take.whole-number-with-scale.mariadb
 --- note
-SEL accepts a count written with a scale when its value is a whole number (`TAKE((1,2,3), 2.0)` is the first two): 2.0 is 2. The translator answered E_NOT_INT although the evaluator does not; a refusal in the safe direction, but a refusal SEL would not make (JS-C56, PHP-C50, CPP-C59).
+SEL accepts a count written with a scale when its value is a whole number (`TAKE((1,2,3), 2.0)` is the first two): 2.0 is 2. The translator answered E_NOT_INT although the evaluator does not; a refusal in the safe direction, but a refusal SEL would not make.
 --- dialect
 mariadb
 --- bindings
@@ -595,7 +594,7 @@ SELECT * FROM `items` LIMIT 2
 
 ### name: stmt.take.zero-with-scale.mariadb
 --- note
-`0.0` and `-0` are zero: TAKE gives nothing, as SEL does. (CPP-C59)
+`0.0` and `-0` are zero: TAKE gives nothing, as SEL does.
 --- dialect
 mariadb
 --- bindings
@@ -610,7 +609,7 @@ SELECT * FROM `items` LIMIT 0
 
 ### name: stmt.take.count-past-2^53.mariadb
 --- note
-A count is a decimal SEL number and is emitted exactly. JS routed it through a Number: 9007199254740993 became 9007199254740992 and 1e23 became `1e+23`. 2^53+1 and int64 max are inside every dialect's range. (JS-C55, GO-C38)
+A count is a decimal SEL number and is emitted exactly. JS routed it through a Number: 9007199254740993 became 9007199254740992 and 1e23 became `1e+23`. 2^53+1 and int64 max are inside every dialect's range.
 --- dialect
 mariadb
 --- bindings
@@ -625,7 +624,7 @@ SELECT * FROM `items` LIMIT 9007199254740993
 
 ### name: stmt.take.int64-max.mariadb
 --- note
-The largest count all three servers accept. (JS-C55, LISP-C39)
+The largest count all three servers accept.
 --- dialect
 mariadb
 --- bindings
@@ -640,7 +639,7 @@ SELECT * FROM `items` LIMIT 9223372036854775807
 
 ### name: stmt.take.whole-number-with-scale.postgresql
 --- note
-SEL accepts a count written with a scale when its value is a whole number (`TAKE((1,2,3), 2.0)` is the first two): 2.0 is 2. The translator answered E_NOT_INT although the evaluator does not; a refusal in the safe direction, but a refusal SEL would not make (JS-C56, PHP-C50, CPP-C59).
+SEL accepts a count written with a scale when its value is a whole number (`TAKE((1,2,3), 2.0)` is the first two): 2.0 is 2. The translator answered E_NOT_INT although the evaluator does not; a refusal in the safe direction, but a refusal SEL would not make.
 --- dialect
 postgresql
 --- bindings
@@ -655,7 +654,7 @@ SELECT * FROM "items" LIMIT 2
 
 ### name: stmt.take.zero-with-scale.postgresql
 --- note
-`0.0` and `-0` are zero: TAKE gives nothing, as SEL does. (CPP-C59)
+`0.0` and `-0` are zero: TAKE gives nothing, as SEL does.
 --- dialect
 postgresql
 --- bindings
@@ -670,7 +669,7 @@ SELECT * FROM "items" LIMIT 0
 
 ### name: stmt.take.count-past-2^53.postgresql
 --- note
-A count is a decimal SEL number and is emitted exactly. JS routed it through a Number: 9007199254740993 became 9007199254740992 and 1e23 became `1e+23`. 2^53+1 and int64 max are inside every dialect's range. (JS-C55, GO-C38)
+A count is a decimal SEL number and is emitted exactly. JS routed it through a Number: 9007199254740993 became 9007199254740992 and 1e23 became `1e+23`. 2^53+1 and int64 max are inside every dialect's range.
 --- dialect
 postgresql
 --- bindings
@@ -685,7 +684,7 @@ SELECT * FROM "items" LIMIT 9007199254740993
 
 ### name: stmt.take.int64-max.postgresql
 --- note
-The largest count all three servers accept. (JS-C55, LISP-C39)
+The largest count all three servers accept.
 --- dialect
 postgresql
 --- bindings
@@ -700,7 +699,7 @@ SELECT * FROM "items" LIMIT 9223372036854775807
 
 ### name: stmt.take.whole-number-with-scale.sqlite
 --- note
-SEL accepts a count written with a scale when its value is a whole number (`TAKE((1,2,3), 2.0)` is the first two): 2.0 is 2. The translator answered E_NOT_INT although the evaluator does not; a refusal in the safe direction, but a refusal SEL would not make (JS-C56, PHP-C50, CPP-C59).
+SEL accepts a count written with a scale when its value is a whole number (`TAKE((1,2,3), 2.0)` is the first two): 2.0 is 2. The translator answered E_NOT_INT although the evaluator does not; a refusal in the safe direction, but a refusal SEL would not make.
 --- dialect
 sqlite
 --- bindings
@@ -715,7 +714,7 @@ SELECT * FROM "items" LIMIT 2
 
 ### name: stmt.take.zero-with-scale.sqlite
 --- note
-`0.0` and `-0` are zero: TAKE gives nothing, as SEL does. (CPP-C59)
+`0.0` and `-0` are zero: TAKE gives nothing, as SEL does.
 --- dialect
 sqlite
 --- bindings
@@ -730,7 +729,7 @@ SELECT * FROM "items" LIMIT 0
 
 ### name: stmt.take.count-past-2^53.sqlite
 --- note
-A count is a decimal SEL number and is emitted exactly. JS routed it through a Number: 9007199254740993 became 9007199254740992 and 1e23 became `1e+23`. 2^53+1 and int64 max are inside every dialect's range. (JS-C55, GO-C38)
+A count is a decimal SEL number and is emitted exactly. JS routed it through a Number: 9007199254740993 became 9007199254740992 and 1e23 became `1e+23`. 2^53+1 and int64 max are inside every dialect's range.
 --- dialect
 sqlite
 --- bindings
@@ -745,7 +744,7 @@ SELECT * FROM "items" LIMIT 9007199254740993
 
 ### name: stmt.take.int64-max.sqlite
 --- note
-The largest count all three servers accept. (JS-C55, LISP-C39)
+The largest count all three servers accept.
 --- dialect
 sqlite
 --- bindings
@@ -760,7 +759,7 @@ SELECT * FROM "items" LIMIT 9223372036854775807
 
 ### name: stmt.drop.whole-number-with-scale.mariadb
 --- note
-DROP takes the same counts as TAKE. (JS-C56, PHP-C50)
+DROP takes the same counts as TAKE.
 --- dialect
 mariadb
 --- bindings
@@ -775,7 +774,7 @@ SELECT * FROM `items` LIMIT 18446744073709551615 OFFSET 2
 
 ### name: stmt.drop.count-past-2^53.mariadb
 --- note
-(JS-C55)
+
 --- dialect
 mariadb
 --- bindings
@@ -790,7 +789,7 @@ SELECT * FROM `items` LIMIT 18446744073709551615 OFFSET 9007199254740993
 
 ### name: stmt.drop.count-past-2^53.postgresql
 --- note
-(JS-C55)
+
 --- dialect
 postgresql
 --- bindings
@@ -805,7 +804,7 @@ SELECT * FROM "items" OFFSET 9007199254740993
 
 ### name: stmt.drop.count-past-2^53.sqlite
 --- note
-(JS-C55)
+
 --- dialect
 sqlite
 --- bindings
@@ -820,7 +819,7 @@ SELECT * FROM "items" LIMIT -1 OFFSET 9007199254740993
 
 ### name: stmt.take.count-past-int64-is-clamped.mariadb
 --- note
-SEL has no limit and a TAKE count past the end of any list is the whole list; the servers accept at most 2^63-1 (PostgreSQL, SQLite) or 2^64-1 (MariaDB, MySQL). The rendered count is clamped to 9223372036854775807 on every dialect -- a value all four accept -- so 1e23 is never emitted (LIMIT 99999999999999999999999 is rejected by PostgreSQL and SQLite). Verified on the servers by tools/check-sql-limits.php. (PY-C41, LISP-C39, GO-C38, JS-C55, CPP-C59)
+SEL has no limit and a TAKE count past the end of any list is the whole list; the servers accept at most 2^63-1 (PostgreSQL, SQLite) or 2^64-1 (MariaDB, MySQL). The rendered count is clamped to 9223372036854775807 on every dialect -- a value all four accept -- so 1e23 is never emitted (LIMIT 99999999999999999999999 is rejected by PostgreSQL and SQLite). Verified on the servers by tools/check-sql-limits.php.
 --- dialect
 mariadb
 --- bindings
@@ -850,7 +849,7 @@ SELECT * FROM `items` LIMIT 9223372036854775807
 
 ### name: stmt.take.count-past-int64-is-clamped.postgresql
 --- note
-SEL has no limit and a TAKE count past the end of any list is the whole list; the servers accept at most 2^63-1 (PostgreSQL, SQLite) or 2^64-1 (MariaDB, MySQL). The rendered count is clamped to 9223372036854775807 on every dialect -- a value all four accept -- so 1e23 is never emitted (LIMIT 99999999999999999999999 is rejected by PostgreSQL and SQLite). Verified on the servers by tools/check-sql-limits.php. (PY-C41, LISP-C39, GO-C38, JS-C55, CPP-C59)
+SEL has no limit and a TAKE count past the end of any list is the whole list; the servers accept at most 2^63-1 (PostgreSQL, SQLite) or 2^64-1 (MariaDB, MySQL). The rendered count is clamped to 9223372036854775807 on every dialect -- a value all four accept -- so 1e23 is never emitted (LIMIT 99999999999999999999999 is rejected by PostgreSQL and SQLite). Verified on the servers by tools/check-sql-limits.php.
 --- dialect
 postgresql
 --- bindings
@@ -880,7 +879,7 @@ SELECT * FROM "items" LIMIT 9223372036854775807
 
 ### name: stmt.take.count-past-int64-is-clamped.sqlite
 --- note
-SEL has no limit and a TAKE count past the end of any list is the whole list; the servers accept at most 2^63-1 (PostgreSQL, SQLite) or 2^64-1 (MariaDB, MySQL). The rendered count is clamped to 9223372036854775807 on every dialect -- a value all four accept -- so 1e23 is never emitted (LIMIT 99999999999999999999999 is rejected by PostgreSQL and SQLite). Verified on the servers by tools/check-sql-limits.php. (PY-C41, LISP-C39, GO-C38, JS-C55, CPP-C59)
+SEL has no limit and a TAKE count past the end of any list is the whole list; the servers accept at most 2^63-1 (PostgreSQL, SQLite) or 2^64-1 (MariaDB, MySQL). The rendered count is clamped to 9223372036854775807 on every dialect -- a value all four accept -- so 1e23 is never emitted (LIMIT 99999999999999999999999 is rejected by PostgreSQL and SQLite). Verified on the servers by tools/check-sql-limits.php.
 --- dialect
 sqlite
 --- bindings
@@ -1011,7 +1010,7 @@ SELECT * FROM `items` LIMIT 5
 
 ### name: agg.bucket-sum.an-undeclared-field-is-guarded-as-a-whole
 --- note
-The group path applies the same all-or-nothing guard as the relation path (warrant.sum.unknown-body-is-guarded-as-a-whole): one element that is not a number, or is NULL, makes the group's sum NULL, not a smaller sum. (PHP-C27)
+The group path applies the same all-or-nothing guard as the relation path (warrant.sum.unknown-body-is-guarded-as-a-whole): one element that is not a number, or is NULL, makes the group's sum NULL, not a smaller sum.
 --- dialect
 mariadb
 --- bindings
@@ -1039,7 +1038,7 @@ E_SQL_UNSUPPORTED
 
 ### name: agg.fold.any.at-256-is-a-left-fold
 --- note
-Above 256 operands an associative unroll is folded as a balanced tree: n operands split ceil(n/2) left and the rest right, recursively, and 256 or fewer stay a plain left fold (docs/internals/sql-translation.md 7.1). The servers refuse a chain n deep: SQLite at an expression tree of 1000, MariaDB/MySQL by thread-stack overrun in a SUM unroll at about 900, PostgreSQL by memory at 5000. (PHP-C58, PY-C42)
+Above 256 operands an associative unroll is folded as a balanced tree: n operands split ceil(n/2) left and the rest right, recursively, and 256 or fewer stay a plain left fold (docs/internals/sql-translation.md 7.1). The servers refuse a chain n deep: SQLite at an expression tree of 1000, MariaDB/MySQL by thread-stack overrun in a SUM unroll at about 900, PostgreSQL by memory at 5000.
 --- dialect
 mariadb
 --- bindings
@@ -1085,7 +1084,7 @@ T IN ("v0", "v1", "v2", "v3", "v4", "v5", "v6", "v7", "v8", "v9", "v10", "v11", 
 
 ### name: agg.fold.any.at-257-is-balanced
 --- note
-Above 256 operands an associative unroll is folded as a balanced tree: n operands split ceil(n/2) left and the rest right, recursively, and 256 or fewer stay a plain left fold (docs/internals/sql-translation.md 7.1). The servers refuse a chain n deep: SQLite at an expression tree of 1000, MariaDB/MySQL by thread-stack overrun in a SUM unroll at about 900, PostgreSQL by memory at 5000. (PHP-C58, PY-C42)
+Above 256 operands an associative unroll is folded as a balanced tree: n operands split ceil(n/2) left and the rest right, recursively, and 256 or fewer stay a plain left fold (docs/internals/sql-translation.md 7.1). The servers refuse a chain n deep: SQLite at an expression tree of 1000, MariaDB/MySQL by thread-stack overrun in a SUM unroll at about 900, PostgreSQL by memory at 5000.
 --- dialect
 mariadb
 --- bindings

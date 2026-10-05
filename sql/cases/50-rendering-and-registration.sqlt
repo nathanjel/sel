@@ -1,4 +1,4 @@
-% T10 (2026-09-29 review remediation): registration that must keep refusing,
+% Registration that must keep refusing,
 % templates that must keep their bytes, and the rendering questions a snapshot
 % of one translation cannot see. Every runner translates each case a second
 % time on the SAME bindings and program object and requires the same outcome
@@ -10,7 +10,7 @@
 --- note
 sql/MAP.md section 7, rule 10 at run time: a `numericGuard` that does not carry
 the numeral pattern of the dialect's `ISNUM` raises the registration error every
-time the guard is used. JS-C24, PHP-C49, PY-C49, CPP-C36 and LISP-C42 marked the
+time the guard is used. Five hosts once marked the
 dialect as checked BEFORE checking it, so the first translation was refused and
 every later one emitted the SQL the check had rejected. The runner's second
 translation of this case is what asserts the refusal repeats.
@@ -61,7 +61,7 @@ NAME + 1
 
 ### name: register.template.non-ascii-bytes-are-kept
 --- note
-GO-C24: Emit.Fill copied a template one BYTE at a time as a character, so every
+Emit.Fill copied a template one BYTE at a time as a character, so every
 byte of a multi-byte character above U+007F came out as a separate code point
 (`Ã©`, `Å¼`). A template is UTF-8 text and is copied as such.
 --- dialect
@@ -94,7 +94,7 @@ MY_CRC('zażółć', 'źdźbło')
 --- note
 sql/MAP.md section 4 spells `{n:}` "arguments n onward, joined with `, `". With
 no argument at n or beyond the join is over nothing and emits nothing; it is not
-a refusal (GO-C39a: Go refused it as neither an argument nor a lexical entry).
+a refusal (one host refused it as neither an argument nor a lexical entry).
 --- dialect
 mariadb
 --- register
@@ -110,7 +110,7 @@ F(`o`.`name`, )
 ### name: register.template.empty-lexical-value-emits-nothing
 --- note
 `null` withdraws a lexical key (sql/MAP.md section 3); the empty string is a
-value, and it fills as nothing. GO-C39b: Go refused `valStr == ""` as if it
+value, and it fills as nothing. Go refused `valStr == ""` as if it
 were withdrawn.
 --- dialect
 mdempty
@@ -151,7 +151,7 @@ t"yy", t"zz"
 
 ### name: mode.params.no-orphan-slot-through-sort-take-link
 --- note
-CPP-C57 and LISP-C40: a statement with a literal in a FILTER before a SORT, a TAKE and a
+A statement with a literal in a FILTER before a SORT, a TAKE and a
 LINK is validated once as a prefix and discarded, and the slots of that pass
 stayed in `params`: three values bound for two slots, so an application binding
 `params` sends a parameter the statement has no place for. The runner asserts,
@@ -175,7 +175,7 @@ t"zz", t"yy"
 
 ### name: stmt.derived.wrapped-columns-keep-a-fixed-order
 --- note
-GO-C18: the derived table a TAKE puts under a LINK lists the relation's columns,
+The derived table a TAKE puts under a LINK lists the relation's columns,
 and Go listed them in the order it happened to range over a map, so the same
 program gave a different select list on different runs. The columns come out in
 the binding's declaration order. The runner translates this case five times, and a
@@ -195,7 +195,7 @@ SELECT `_sub1`.`price`, `_sub1`.`qty`, `_sub1`.`name`, `_sub1`.`sku`, `t`.`tag`,
 
 ### name: bind.column.statement-is-not-a-column-type
 --- note
-PY-C44: a column holds a NUM, TEXT, BOOL, BIN or UNKNOWN value (docs/internals/
+A column holds a NUM, TEXT, BOOL, BIN or UNKNOWN value (docs/internals/
 sql-translation.md, kinds). STATEMENT and LIST are what a whole fragment can be;
 a binding declared as one made `Fragment.kind` answer STATEMENT for a column.
 --- dialect
@@ -221,7 +221,7 @@ E_SQL_BINDING
 
 ### name: register.dialect.text-escape-must-escape-the-quote
 --- note
-JS-C25, PHP-C37, PY-C50, CPP-C53, LISP-C36: a textEscape of `{"\\": "\\\\"}` on a
+A textEscape of `{"\\": "\\\\"}` on a
 MariaDB base escapes the backslash and nothing else, so `x' OR '1'='1` came out
 as `'x' OR '1'='1'` inline. Decided: refused at registration.
 --- dialect
@@ -238,7 +238,7 @@ LogicException
 
 ### name: register.dialect.empty-text-escape-is-refused
 --- note
-CPP-C53, LISP-C36, PHP-C37: an empty textEscape (or one dropped with null) on a
+An empty textEscape (or one dropped with null) on a
 base that doubles quotes leaves every literal unescaped. R1.
 --- dialect
 sqlite-noesc
@@ -252,7 +252,7 @@ LogicException
 
 ### name: register.dialect.escape-character-must-escape-itself
 --- note
-PHP-C37: `textEscape {"'": "\\'"}` on a MySQL-family base escapes the quote with a
+`textEscape {"'": "\\'"}` on a MySQL-family base escapes the quote with a
 backslash but does not touch a backslash in the input, so the input `\'` becomes
 `\\'` -- an escaped backslash followed by a quote that terminates the literal.
 R1: an escape character must itself be a key.
@@ -268,7 +268,7 @@ LogicException
 
 ### name: register.dialect.text-quote-must-differ-from-identifier-quote
 --- note
-PHP-C37, PY-C50: `textQuote: "` on ansi makes a text literal look like a quoted
+`textQuote: "` on ansi makes a text literal look like a quoted
 identifier. R1: textQuote differs from identQuote.
 --- dialect
 dq
@@ -290,7 +290,7 @@ LogicException
 
 ### name: alias.record-key-with-nul
 --- note
-PHP-C53, PY-C43, CPP-C58, GO-C37: `AS "a<NUL>b"` reached the statement on every dialect.
+`AS "a<NUL>b"` reached the statement on every dialect.
 --- dialect
 postgresql
 --- bindings
@@ -305,7 +305,7 @@ E_SQL_UNSUPPORTED 1:21
 
 ### name: alias.record-key-empty
 --- note
-PHP-C54, PY-C43, GO-C37: `AS ""` is refused by PostgreSQL and MariaDB.
+`AS ""` is refused by PostgreSQL and MariaDB.
 --- dialect
 postgresql
 --- bindings
@@ -320,7 +320,7 @@ E_SQL_UNSUPPORTED 1:21
 
 ### name: alias.select-cols-name-with-nul
 --- note
-PY-C43, JS-C57: SELECT_COLS names on a relation with no declared fields bypass the allow-list and the NUL check.
+SELECT_COLS names on a relation with no declared fields bypass the allow-list and the NUL check.
 --- dialect
 postgresql
 --- bindings
@@ -335,7 +335,7 @@ E_SQL_UNSUPPORTED 1:31
 
 ### name: alias.pg-truncated-aliases-collide
 --- note
-PHP-C54: PostgreSQL truncates an identifier to 63 bytes, so two 71-character keys
+PostgreSQL truncates an identifier to 63 bytes, so two 71-character keys
 sharing their first 63 bytes name one column and SEL's two record keys become one.
 --- dialect
 postgresql
@@ -356,7 +356,7 @@ E_SQL_UNSUPPORTED 1:102
 
 ### name: lex.text.nul-is-refused-in-every-mode
 --- note
-GO-C43, PHP-C53, LISP-C41: the NUL byte was emitted raw in inline mode; params mode
+The NUL byte was emitted raw in inline mode; params mode
 hands it to the driver, which then decides. R3 refuses both.
 --- dialect
 mariadb
@@ -376,7 +376,7 @@ E_SQL_UNSUPPORTED 1:7
 
 ### name: bind.raw-field.select-cols-refuses
 --- note
-JS-C28, CPP-C32: `SELECT i.total` for a raw field that has no column of that name.
+`SELECT i.total` for a raw field that has no column of that name.
 --- dialect
 mariadb
 --- bindings
@@ -391,7 +391,7 @@ E_SQL_SHAPE 1:22
 
 ### name: bind.raw-field.across-a-derived-table-refuses
 --- note
-JS-C28, CPP-C32: after SORT_BY .> TAKE the relation is a derived table that has no TOTAL column.
+After SORT_BY .> TAKE the relation is a derived table that has no TOTAL column.
 --- dialect
 mariadb
 --- bindings
@@ -410,7 +410,7 @@ E_SQL_SHAPE 1:49
 
 ### name: bind.relation.fields-differing-only-by-case
 --- note
-CPP-C55, PY-C44, PHP-C57: C++ kept the first, Python the last, PHP the last.
+C++ kept the first, Python the last, PHP the last.
 --- dialect
 mariadb
 --- bindings
@@ -439,7 +439,7 @@ E_SQL_BINDING
 
 ### name: agg.correlate.is-parenthesised
 --- note
-CPP-C56: `oi.a=o.id OR oi.b=o.id AND (body)` binds the AND to the second operand only.
+`oi.a=o.id OR oi.b=o.id AND (body)` binds the AND to the second operand only.
 --- dialect
 mariadb
 --- bindings

@@ -144,6 +144,9 @@ error E_BAD_ARG
 % different things in PCRE and ECMAScript.
 
 ### name: re.reject.lookahead
+--- note
+The readable basic; re.ambiguity.structural.reject.14 in the generated 28b-regex-ambiguity.selt
+is the same program, held there against the reference validator.
 --- source
 RMATCH('(?=a)', "a")
 --- expect
@@ -424,6 +427,9 @@ RMATCH('a{65535}', "a")
 bool FALSE
 ===
 ### name: re.quantifier.bound-beyond-the-cap
+--- note
+The readable basic; re.ambiguity.structural.reject.17 in the generated 28b-regex-ambiguity.selt
+is the same program, held there against the reference validator.
 --- source
 RMATCH('a{65536}', "a")
 --- expect

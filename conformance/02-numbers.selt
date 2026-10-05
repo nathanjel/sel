@@ -126,12 +126,18 @@ num 1.5
 ===
 
 ### name: num.round.half-away-positive
+--- note
+The readable basic; dec.round.tie-positive in the generated 24-decimal-boundaries.selt is
+the same program, kept there with the oracle-computed boundary cases.
 --- source
 ROUND(2.5, 0)
 --- expect
 num 3
 ===
 ### name: num.round.half-away-negative
+--- note
+The readable basic; dec.round.tie-negative in the generated 24-decimal-boundaries.selt is
+the same program, kept there with the oracle-computed boundary cases.
 --- source
 ROUND(-2.5, 0)
 --- expect

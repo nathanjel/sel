@@ -1,9 +1,13 @@
 #!/usr/bin/env python3
-"""Compare the per-host API reports written by tools/check-api.sh.
+"""Compare the per-host probe reports written by tools/check-api.sh and
+tools/check-sqlapi.sh.
 
-usage: check-api-compare.py WORKDIR PINS REF HOST...
+usage: check-api-compare.py [--label NAME] WORKDIR PINS|- REF HOST...
 
-WORKDIR/<host>.txt holds `NN name = value` lines. Two things are checked:
+WORKDIR/<host>.txt holds `NN name = value` lines. Probes are matched by NAME,
+not by number or position, so a driver that reorders or renumbers its probes
+cannot shift every comparison after it; each host must report the same set of
+names, each once. Two things are checked:
 
   * agreement: for every probe, every host that answers (does not print `n/a (...)`)
     prints the same value as the reference host's answer;
@@ -16,8 +20,12 @@ Exit status 1 with a diff-style report on any failure, 0 otherwise.
 import re
 import sys
 
-work, pins_path, ref = sys.argv[1:4]
-hosts = sys.argv[4:]
+argv = sys.argv[1:]
+label = 'API'
+if argv[:1] == ['--label']:
+    label, argv = argv[1], argv[2:]
+work, pins_path, ref = argv[0:3]
+hosts = argv[3:]
 
 LINE = re.compile(r'^(\d+) (\S+) = ?(.*)$')
 NA = re.compile(r'^n/a \(.+\)$')
@@ -26,13 +34,15 @@ NA = re.compile(r'^n/a \(.+\)$')
 def load(host):
     rows = {}
     order = []
-    for raw in open(f'{work}/{host}.txt', encoding='utf-8').read().split('\n'):
+    for raw in open(f'{work}/{host}.txt', encoding='utf-8', newline='').read().split('\n'):
         if not raw:
             continue
         m = LINE.match(raw)
         if not m:
             rows.setdefault('?malformed', []).append(raw)
             continue
+        if m.group(2) in rows:
+            rows.setdefault('?duplicate', []).append(m.group(2))
         rows[m.group(2)] = (m.group(1), m.group(3))
         order.append(m.group(2))
     return rows, order
@@ -40,7 +50,7 @@ def load(host):
 
 reports = {h: load(h) for h in hosts}
 pins, na = {}, {}
-for raw in open(pins_path, encoding='utf-8'):
+for raw in ([] if pins_path == '-' else open(pins_path, encoding='utf-8')):
     raw = raw.strip()
     if not raw or raw.startswith('#'):
         continue
@@ -59,7 +69,9 @@ names = reports[ref][1]
 for h in hosts:
     if '?malformed' in reports[h][0]:
         failures.append(f'{h}: malformed report lines: {reports[h][0]["?malformed"][:3]}')
-    if reports[h][1] != names:
+    if '?duplicate' in reports[h][0]:
+        failures.append(f'{h}: probe names reported twice: {reports[h][0]["?duplicate"][:5]}')
+    if set(reports[h][1]) != set(names):
         missing = [n for n in names if n not in reports[h][0]]
         extra = [n for n in reports[h][1] if n not in names]
         failures.append(f'{h}: probes differ from {ref}: missing {missing[:5]} extra {extra[:5]}')
@@ -98,8 +110,8 @@ for name in pins:
         failures.append(f'api-pins.txt pins an unknown probe: {name}')
 
 if failures:
-    print(f'API CHECK FAILED ({len(failures)}):')
+    print(f'{label} CHECK FAILED ({len(failures)}):')
     for f in failures:
         print('  ' + f)
     sys.exit(1)
-print(f'{len(names)} API probes, {" ".join(hosts)} agree on every one ({len(pins)} pinned)')
+print(f'{len(names)} {label} probes, {" ".join(hosts)} agree on every one ({len(pins)} pinned)')

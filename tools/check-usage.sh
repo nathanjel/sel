@@ -169,15 +169,18 @@ fi
 
 TAG="selu-$$"
 PASS="sel-usage"
+# The pinned images live in one table, tools/oracle-db.sh's.
+PG_IMAGE="$(./tools/oracle-db.sh image postgresql)" || exit 1
+MARIA_IMAGE="$(./tools/oracle-db.sh image mariadb)" || exit 1
 cleanup() { docker rm -f "$TAG-pg" "$TAG-maria" >/dev/null 2>&1; }
 trap cleanup EXIT INT TERM
 
 docker run -d --name "$TAG-pg" --tmpfs /var/lib/postgresql/data --cpus 1 -m 512m \
   -e POSTGRES_USER=sel -e POSTGRES_PASSWORD="$PASS" -e POSTGRES_DB=sel \
-  -p 127.0.0.1::5432 postgres:17 >/dev/null || exit 1
+  -p 127.0.0.1::5432 "$PG_IMAGE" >/dev/null || exit 1
 docker run -d --name "$TAG-maria" --tmpfs /var/lib/mysql --cpus 1 -m 512m \
   -e MARIADB_ROOT_PASSWORD="$PASS" -e MARIADB_USER=sel -e MARIADB_PASSWORD="$PASS" \
-  -e MARIADB_DATABASE=sel -p 127.0.0.1::3306 mariadb:11.8 >/dev/null || exit 1
+  -e MARIADB_DATABASE=sel -p 127.0.0.1::3306 "$MARIA_IMAGE" >/dev/null || exit 1
 PG_PORT="$(docker port "$TAG-pg" 5432/tcp | head -1 | sed 's/.*://')"
 MARIA_PORT="$(docker port "$TAG-maria" 3306/tcp | head -1 | sed 's/.*://')"
 

@@ -6,6 +6,7 @@
 #   tools/oracle-db.sh run <cmd>...    up, run <cmd> with the DSNs exported, down
 #   tools/oracle-db.sh up              start and print the exports, leave running
 #   tools/oracle-db.sh down            stop and remove whatever this run started
+#   tools/oracle-db.sh image <dialect> print the pinned image (tools/check-usage.sh reads it)
 #
 # WHY THIS EXISTS. `sql/oracle/` is the only check that asks whether the map
 # MEANS what SEL means: a .sqlt case asserts the string the translator emits,
@@ -173,6 +174,11 @@ print_exports() {
 
 case "${1:-oracle}" in
   down) down; note "nothing of $TAG is left"; exit 0 ;;
+  # The one table of pinned images: every tool that starts a server asks here.
+  image)
+    img="$(printf '%s\n' "$SERVERS" | awk -F'|' -v d="${2:-}" '$1 == d { print $2 }')"
+    [ -n "$img" ] || { note "image: no pinned server for dialect '${2:-}'"; exit 2; }
+    printf '%s\n' "$img"; exit 0 ;;
   up)
     up || exit 1
     trap - EXIT INT TERM        # leave them running, on purpose
@@ -187,5 +193,5 @@ case "${1:-oracle}" in
   oracle)
     up || exit 1
     ./tools/check-sql-oracle.sh; exit $? ;;
-  *) note "usage: $0 [oracle|run <cmd>...|up|down]"; exit 2 ;;
+  *) note "usage: $0 [oracle|run <cmd>...|up|down|image <dialect>]"; exit 2 ;;
 esac

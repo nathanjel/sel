@@ -332,21 +332,21 @@ def main(argv):
             # whose second matches the source as current, so a restore landing
             # inside the same second leaves the previous compile in play.
             path = os.path.join(tree, m['file'])
-            text = open(path, encoding='utf-8').read()
+            text = open(path, encoding='utf-8', newline='').read()
             n = text.count(m['from'])
             if n != 1:
                 return name, 'error', (f'{name}: pattern occurs {n} times in {m["file"]}, '
                                        'expected exactly 1 — the mutation is stale')
-            open(path, 'w', encoding='utf-8').write(text.replace(m['from'], m['to'], 1))
+            open(path, 'w', encoding='utf-8', newline='').write(text.replace(m['from'], m['to'], 1))
 
             # Proof it landed. A silent no-op would be scored by whatever the
             # checks say about unmutated code, which is this tool's own failure
             # mode and the reason it exists.
-            if open(path, encoding='utf-8').read() == text:
+            if open(path, encoding='utf-8', newline='').read() == text:
                 return name, 'error', f'{name}: {m["file"]} is unchanged after mutation'
 
             if m['file'].startswith('sql/dialects/'):
-                before = [open(os.path.join(tree, g), encoding='utf-8').read()
+                before = [open(os.path.join(tree, g), encoding='utf-8', newline='').read()
                           for g in GENERATED]
                 if run(['node', 'tools/gen-sql-map.mjs'], tree) != 0:
                     return name, 'error', f'{name}: the mutated map would not regenerate'
@@ -357,7 +357,7 @@ def main(argv):
                 # target sql/dialects/*.json and nothing checked that any of
                 # them changed the map the checks actually read. Verified by
                 # adding a key the generator ignores and watching this fire.
-                after = [open(os.path.join(tree, g), encoding='utf-8').read()
+                after = [open(os.path.join(tree, g), encoding='utf-8', newline='').read()
                          for g in GENERATED]
                 if after == before:
                     return name, 'error', (f'{name}: {m["file"]} changed but the generated '

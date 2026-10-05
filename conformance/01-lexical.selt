@@ -188,6 +188,29 @@ what a truncated CRLF leaves behind.
 --- expect
 bool TRUE
 ===
+### name: lex.space.crlf-inside-a-text-literal
+--- note
+A CRLF inside a text literal is two characters of the text. The case is also
+a check on the runner: a .selt reader that opens the file with newline
+translation (Python's universal newlines, a line API that strips the CR
+before LF) hands the lexer "a\nb" and gets 3 -- the two lex.space CR cases
+above pass either way, because there the CR is whitespace.
+--- source
+LEN("a
+b")
+--- expect
+num 4
+===
+### name: lex.space.lone-cr-inside-a-text-literal-is-not-lf
+--- note
+A bare CR inside a literal stays a CR; a reader that translates it to LF
+makes the two texts equal.
+--- source
+"ab" $== "a
+b"
+--- expect
+bool FALSE
+===
 ### name: lex.space.unicode-spaces-are-not-whitespace
 --- note
 NBSP is the one a user actually produces, by copying an expression out of a

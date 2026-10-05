@@ -533,7 +533,7 @@
    :bindings (lambda () (list (cons "A" (binding-column "a" nil :text)))))
   (list
    :name "op.compare.coerce-variant-for-unknown-columns"
-   :at "02-operators.sqlt:117"
+   :at "02-operators.sqlt:120"
    :dialect "mariadb"
    :source "A >= 10"
    :expect "(CASE WHEN (`a` REGEXP '\\\\A-?[0-9]+(\\\\.[0-9]+)?\\\\z') THEN CAST(`a` AS DECIMAL(65,10)) ELSE NULL END >= 10)"
@@ -549,7 +549,7 @@
    :bindings (lambda () (list (cons "A" (binding-column "a" nil :unknown)))))
   (list
    :name "op.compare.text-family-forces-a-binary-collation"
-   :at "02-operators.sqlt:127"
+   :at "02-operators.sqlt:130"
    :dialect "mariadb"
    :source "\"A\" $== \"a\""
    :expect "(CAST('A' AS CHAR) COLLATE utf8mb4_nopad_bin = CAST('a' AS CHAR) COLLATE utf8mb4_nopad_bin)"
@@ -565,7 +565,7 @@
    :bindings (lambda () (list )))
   (list
    :name "op.compare.text-family-ordering"
-   :at "02-operators.sqlt:138"
+   :at "02-operators.sqlt:141"
    :dialect "mariadb"
    :source "\"a\" $< \"b\""
    :expect "(CAST('a' AS CHAR) COLLATE utf8mb4_nopad_bin < CAST('b' AS CHAR) COLLATE utf8mb4_nopad_bin)"
@@ -581,7 +581,7 @@
    :bindings (lambda () (list )))
   (list
    :name "op.eql.scalars-are-a-text-compare"
-   :at "02-operators.sqlt:146"
+   :at "02-operators.sqlt:149"
    :dialect "mariadb"
    :source "\"a\" EQL \"a\""
    :expect "(CAST('a' AS CHAR) COLLATE utf8mb4_nopad_bin = CAST('a' AS CHAR) COLLATE utf8mb4_nopad_bin)"
@@ -597,7 +597,7 @@
    :bindings (lambda () (list )))
   (list
    :name "op.in.literal-list"
-   :at "02-operators.sqlt:154"
+   :at "02-operators.sqlt:157"
    :dialect "mariadb"
    :source "S IN (\"open\", \"held\")"
    :expect "((CAST(`state` AS CHAR) COLLATE utf8mb4_nopad_bin = CAST('open' AS CHAR) COLLATE utf8mb4_nopad_bin) OR (CAST(`state` AS CHAR) COLLATE utf8mb4_nopad_bin = CAST('held' AS CHAR) COLLATE utf8mb4_nopad_bin))"
@@ -613,7 +613,7 @@
    :bindings (lambda () (list (cons "S" (binding-column "state" nil :text)))))
   (list
    :name "op.in.scalar-right-hand-side"
-   :at "02-operators.sqlt:170"
+   :at "02-operators.sqlt:173"
    :dialect "mariadb"
    :source "\"a\" IN \"a\""
    :expect "(CAST('a' AS CHAR) COLLATE utf8mb4_nopad_bin = CAST('a' AS CHAR) COLLATE utf8mb4_nopad_bin)"
@@ -629,7 +629,7 @@
    :bindings (lambda () (list )))
   (list
    :name "op.bitwise.refused-with-a-reason"
-   :at "02-operators.sqlt:180"
+   :at "02-operators.sqlt:183"
    :dialect "mariadb"
    :source "TO_UTF8(\"a\") BAND TO_UTF8(\"b\")"
    :expect nil
@@ -820,7 +820,7 @@
    :register nil
    :bindings (lambda () (list )))
   (list
-   :name "func.num.min-of-several"
+   :name "func.number.min-is-a-scalar-not-an-aggregate"
    :at "03-functions.sqlt:109"
    :dialect "mariadb"
    :source "MIN(3, 1, 2)"
@@ -836,24 +836,8 @@
    :register nil
    :bindings (lambda () (list )))
   (list
-   :name "func.number.min-is-a-scalar-not-an-aggregate"
-   :at "03-functions.sqlt:117"
-   :dialect "mariadb"
-   :source "MIN(3, 1, 2)"
-   :expect "LEAST(3, 1, 2)"
-   :error nil
-   :throws nil
-   :params nil
-   :as nil
-   :mode nil
-   :strict nil
-   :plan nil
-   :tables :none
-   :register nil
-   :bindings (lambda () (list )))
-  (list
    :name "func.number.min-is-variadic"
-   :at "03-functions.sqlt:125"
+   :at "03-functions.sqlt:117"
    :dialect "mariadb"
    :source "MIN(5, 4, 3, 2, 1)"
    :expect "LEAST(5, 4, 3, 2, 1)"
@@ -869,7 +853,7 @@
    :bindings (lambda () (list )))
   (list
    :name "func.number.round"
-   :at "03-functions.sqlt:133"
+   :at "03-functions.sqlt:125"
    :dialect "mariadb"
    :source "ROUND(2.5, 0)"
    :expect "ROUND(2.5, 0)"
@@ -885,7 +869,7 @@
    :bindings (lambda () (list )))
   (list
    :name "func.number.isnum-is-a-regex"
-   :at "03-functions.sqlt:141"
+   :at "03-functions.sqlt:133"
    :dialect "mariadb"
    :source "ISNUM(\"-12.50\")"
    :expect "('-12.50' REGEXP '\\\\A-?[0-9]+(\\\\.[0-9]+)?\\\\z')"
@@ -901,7 +885,7 @@
    :bindings (lambda () (list )))
   (list
    :name "func.binary.to-hex-is-lower-cased"
-   :at "03-functions.sqlt:155"
+   :at "03-functions.sqlt:147"
    :dialect "mariadb"
    :source "TO_HEX(TO_UTF8(\"a\"))"
    :expect "LOWER(HEX(CAST('a' AS BINARY)))"
@@ -917,7 +901,7 @@
    :bindings (lambda () (list )))
   (list
    :name "func.binary.base64-strips-the-wrapping"
-   :at "03-functions.sqlt:165"
+   :at "03-functions.sqlt:157"
    :dialect "mariadb"
    :source "ENCODE_BASE64(TO_UTF8(\"a\"))"
    :expect "REPLACE(REPLACE(TO_BASE64(CAST('a' AS BINARY)), CHAR(10), ''), CHAR(13), '')"
@@ -933,7 +917,7 @@
    :bindings (lambda () (list )))
   (list
    :name "func.binary.crc32-is-padded-hex"
-   :at "03-functions.sqlt:180"
+   :at "03-functions.sqlt:172"
    :dialect "mariadb"
    :source "CRC32(\"hello\")"
    :expect "LPAD(LOWER(HEX(CRC32(CAST('hello' AS BINARY)))), 8, '0')"
@@ -949,7 +933,7 @@
    :bindings (lambda () (list )))
   (list
    :name "func.regex.rmatch-forces-collation-and-dotall"
-   :at "03-functions.sqlt:188"
+   :at "03-functions.sqlt:180"
    :dialect "mariadb"
    :source "RMATCH('^a.c$', \"abc\")"
    :expect "('abc' COLLATE utf8mb4_nopad_bin REGEXP '(?s)^a.c$')"
@@ -965,7 +949,7 @@
    :bindings (lambda () (list )))
   (list
    :name "func.regex.rfind"
-   :at "03-functions.sqlt:199"
+   :at "03-functions.sqlt:191"
    :dialect "mariadb"
    :source "RFIND('ó', \"zażółć\")"
    :expect "REGEXP_INSTR('zażółć' COLLATE utf8mb4_nopad_bin, '(?s)ó')"
@@ -981,7 +965,7 @@
    :bindings (lambda () (list )))
   (list
    :name "func.refused.code-is-not-a-code-point"
-   :at "03-functions.sqlt:207"
+   :at "03-functions.sqlt:199"
    :dialect "mariadb"
    :source "CODE(\"a\")"
    :expect nil
@@ -997,7 +981,7 @@
    :bindings (lambda () (list )))
   (list
    :name "func.refused.char-is-the-inverse"
-   :at "03-functions.sqlt:218"
+   :at "03-functions.sqlt:210"
    :dialect "mariadb"
    :source "CHAR(233)"
    :expect nil
@@ -1013,7 +997,7 @@
    :bindings (lambda () (list )))
   (list
    :name "func.refused.rreplace-replacement-syntax-differs"
-   :at "03-functions.sqlt:226"
+   :at "03-functions.sqlt:218"
    :dialect "mariadb"
    :source "RREPLACE('a', \"b\", \"banana\")"
    :expect nil
@@ -1029,7 +1013,7 @@
    :bindings (lambda () (list )))
   (list
    :name "func.refused.split-yields-a-list"
-   :at "03-functions.sqlt:234"
+   :at "03-functions.sqlt:226"
    :dialect "mariadb"
    :source "SPLIT(\"a,b\", \",\")"
    :expect nil
@@ -1045,7 +1029,7 @@
    :bindings (lambda () (list )))
   (list
    :name "func.bin.reads-its-argument-as-bytes"
-   :at "03-functions.sqlt:241"
+   :at "03-functions.sqlt:233"
    :dialect "mariadb"
    :source "TO_HEX(1)"
    :expect "LOWER(HEX(CAST(1 AS BINARY)))"
@@ -1061,7 +1045,7 @@
    :bindings (lambda () (list )))
   (list
    :name "func.bin.length-of-a-number"
-   :at "03-functions.sqlt:257"
+   :at "03-functions.sqlt:249"
    :dialect "mariadb"
    :source "BLEN(2.50)"
    :expect "LENGTH(CAST(2.50 AS BINARY))"
@@ -1077,7 +1061,7 @@
    :bindings (lambda () (list )))
   (list
    :name "func.regex.unportable-pattern-is-refused-not-thrown"
-   :at "03-functions.sqlt:265"
+   :at "03-functions.sqlt:257"
    :dialect "mariadb"
    :source "RMATCH(IF(TRUE, '\\p{L}', 'x'), \"x\")"
    :expect nil
@@ -1093,7 +1077,7 @@
    :bindings (lambda () (list )))
   (list
    :name "func.text.ltrim-strips-sel-s-four-characters"
-   :at "03-functions.sqlt:280"
+   :at "03-functions.sqlt:272"
    :dialect "mariadb"
    :source "LTRIM(\" a\")"
    :expect "REGEXP_REPLACE(' a', '^[ \\\\t\\\\r\\\\n]+', '')"
@@ -1109,7 +1093,7 @@
    :bindings (lambda () (list )))
   (list
    :name "func.text.rtrim-strips-sel-s-four-characters"
-   :at "03-functions.sqlt:294"
+   :at "03-functions.sqlt:286"
    :dialect "mariadb"
    :source "RTRIM(\"a \")"
    :expect "REGEXP_REPLACE('a ', '[ \\\\t\\\\r\\\\n]+$', '')"
@@ -1125,7 +1109,7 @@
    :bindings (lambda () (list )))
   (list
    :name "func.bin.from-hex"
-   :at "03-functions.sqlt:302"
+   :at "03-functions.sqlt:294"
    :dialect "mariadb"
    :source "FROM_HEX(\"4869\")"
    :expect "UNHEX('4869')"
@@ -2452,24 +2436,8 @@
    :register nil
    :bindings (lambda () (list (cons "X" (binding-value (sel:make-text "007") :num)))))
   (list
-   :name "bind.value.canonical-num-still-emits-bare"
-   :at "10-bindings.sqlt:134"
-   :dialect "mariadb"
-   :source "X + 1"
-   :expect "(2.50 + 1)"
-   :error nil
-   :throws nil
-   :params nil
-   :as nil
-   :mode nil
-   :strict nil
-   :plan nil
-   :tables :none
-   :register nil
-   :bindings (lambda () (list (cons "X" (binding-value (sel:make-text "2.50") :num)))))
-  (list
    :name "bind.value.negative-zero-is-not-canonical"
-   :at "10-bindings.sqlt:147"
+   :at "10-bindings.sqlt:134"
    :dialect "mariadb"
    :source "X + 1"
    :expect nil
@@ -2485,7 +2453,7 @@
    :bindings (lambda () (list (cons "X" (binding-value (sel:make-text "-0") :num)))))
   (list
    :name "bind.value.untyped-non-canonical-is-fine"
-   :at "10-bindings.sqlt:157"
+   :at "10-bindings.sqlt:144"
    :dialect "mariadb"
    :source "X & \"\""
    :expect "CONCAT('007', '')"
@@ -2501,7 +2469,7 @@
    :bindings (lambda () (list (cons "X" (binding-value (sel:make-text "007") nil)))))
   (list
    :name "bind.value.empty-is-not-a-scalar"
-   :at "10-bindings.sqlt:170"
+   :at "10-bindings.sqlt:157"
    :dialect "mariadb"
    :source "X $== \"a\""
    :expect nil
@@ -2517,7 +2485,7 @@
    :bindings (lambda () (list (cons "X" (binding-value (value-tree (list )) nil)))))
   (list
    :name "bind.value.empty-is-still-an-aggregate-source"
-   :at "10-bindings.sqlt:185"
+   :at "10-bindings.sqlt:172"
    :dialect "mariadb"
    :source "ALL(X, _ > 0)"
    :expect "TRUE"
@@ -2533,7 +2501,7 @@
    :bindings (lambda () (list (cons "X" (binding-value (value-tree (list )) nil)))))
   (list
    :name "bind.column.nul-in-a-name-is-refused"
-   :at "10-bindings.sqlt:195"
+   :at "10-bindings.sqlt:182"
    :dialect "mariadb"
    :source "X"
    :expect nil
@@ -2549,7 +2517,7 @@
    :bindings (lambda () (list (cons "X" (binding-column "a b" nil :unknown)))))
   (list
    :name "bind.column.array-column-is-refused"
-   :at "10-bindings.sqlt:212"
+   :at "10-bindings.sqlt:199"
    :dialect "mariadb"
    :source "X"
    :expect nil
@@ -2565,7 +2533,7 @@
    :bindings (lambda () (list (cons "X" (binding-column (list "a" "b") nil :unknown)))))
   (list
    :name "bind.column.array-table-is-refused"
-   :at "10-bindings.sqlt:227"
+   :at "10-bindings.sqlt:214"
    :dialect "mariadb"
    :source "X"
    :expect nil
@@ -2581,7 +2549,7 @@
    :bindings (lambda () (list (cons "X" (binding-column "c" (list (cons "raw" "x")) :unknown)))))
   (list
    :name "bind.relation.array-alias-is-refused"
-   :at "10-bindings.sqlt:241"
+   :at "10-bindings.sqlt:228"
    :dialect "mariadb"
    :source "ALL(R, I, I[\"Q\"] > 0)"
    :expect nil
@@ -2597,7 +2565,7 @@
    :bindings (lambda () (list (cons "R" (binding-relation "t" (list "x") (list (cons "Q" (binding-column "q" nil :unknown))) nil nil)))))
   (list
    :name "bind.value.num-keeps-its-scale"
-   :at "10-bindings.sqlt:251"
+   :at "10-bindings.sqlt:238"
    :dialect "mariadb"
    :source "X + 1"
    :expect "(2.50 + 1)"
@@ -2613,7 +2581,7 @@
    :bindings (lambda () (list (cons "X" (binding-value (sel:make-text "2.50") :num)))))
   (list
    :name "bind.relation.correlate-must-be-raw-string"
-   :at "10-bindings.sqlt:264"
+   :at "10-bindings.sqlt:252"
    :dialect "mariadb"
    :source "COUNT(R)"
    :expect nil
@@ -2629,7 +2597,7 @@
    :bindings (lambda () (list (cons "R" (binding-relation "t" "r" (list (cons "A" (binding-column "a" "r" :num))) nil (list (cons "mariadb" "1=1")))))))
   (list
    :name "bind.relation.from-array-must-be-raw-string"
-   :at "10-bindings.sqlt:279"
+   :at "10-bindings.sqlt:267"
    :dialect "mariadb"
    :source "COUNT(R)"
    :expect nil
@@ -3414,24 +3382,8 @@
    :register nil
    :bindings (lambda () (list (cons "E" (binding-value (value-tree (list )) nil)))))
   (list
-   :name "agg.has.static-is-decided-at-translation-time"
-   :at "12-aggregates.sqlt:339"
-   :dialect "mariadb"
-   :source "HAS((1, 2), \"2\")"
-   :expect "TRUE"
-   :error nil
-   :throws nil
-   :params nil
-   :as nil
-   :mode nil
-   :strict nil
-   :plan nil
-   :tables :none
-   :register nil
-   :bindings (lambda () (list )))
-  (list
    :name "agg.has.relation-is-refused"
-   :at "12-aggregates.sqlt:347"
+   :at "12-aggregates.sqlt:339"
    :dialect "mariadb"
    :source "HAS(ITEMS, \"price\")"
    :expect nil
@@ -3447,7 +3399,7 @@
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "order_items" "oi" (list (cons "QTY" (binding-column "qty" "oi" :num))) nil nil)))))
   (list
    :name "agg.has.relation-field-name-is-refused-too"
-   :at "12-aggregates.sqlt:368"
+   :at "12-aggregates.sqlt:360"
    :dialect "mariadb"
    :source "HAS(ITEMS, \"QTY\")"
    :expect nil
@@ -3463,7 +3415,7 @@
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "order_items" "oi" (list (cons "QTY" (binding-column "qty" "oi" :num))) nil nil)))))
   (list
    :name "agg.has.a-list-still-answers"
-   :at "12-aggregates.sqlt:378"
+   :at "12-aggregates.sqlt:370"
    :dialect "mariadb"
    :source "HAS((1, 2), \"2\")"
    :expect "TRUE"
@@ -3479,7 +3431,7 @@
    :bindings (lambda () (list )))
   (list
    :name "agg.refuse.k-on-a-relation"
-   :at "12-aggregates.sqlt:389"
+   :at "12-aggregates.sqlt:381"
    :dialect "mariadb"
    :source "ALL(ITEMS, _K $!= \"\")"
    :expect nil
@@ -3495,7 +3447,7 @@
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "order_items" "oi" (list (cons "QTY" (binding-column "qty" "oi" :num))) nil nil)))))
   (list
    :name "agg.refuse.relation-indexed-by-position"
-   :at "12-aggregates.sqlt:402"
+   :at "12-aggregates.sqlt:394"
    :dialect "mariadb"
    :source "ITEMS[1]"
    :expect nil
@@ -3511,7 +3463,7 @@
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "order_items" "oi" (list (cons "SKU" (binding-column "sku" "oi" :text))) nil nil)))))
   (list
    :name "agg.refuse.bare-row-without-a-scalar"
-   :at "12-aggregates.sqlt:412"
+   :at "12-aggregates.sqlt:404"
    :dialect "mariadb"
    :source "ALL(ITEMS, I, I > 0)"
    :expect nil
@@ -3527,7 +3479,7 @@
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "order_items" "oi" (list (cons "QTY" (binding-column "qty" "oi" :num))) nil nil)))))
   (list
    :name "agg.refuse.non-bool-body"
-   :at "12-aggregates.sqlt:422"
+   :at "12-aggregates.sqlt:414"
    :dialect "mariadb"
    :source "ALL((1, 2), _ + 1)"
    :expect nil
@@ -3543,7 +3495,7 @@
    :bindings (lambda () (list )))
   (list
    :name "agg.refuse.non-num-body-for-sum"
-   :at "12-aggregates.sqlt:430"
+   :at "12-aggregates.sqlt:422"
    :dialect "mariadb"
    :source "SUM((1, 2), _ > 0)"
    :expect nil
@@ -3559,7 +3511,7 @@
    :bindings (lambda () (list )))
   (list
    :name "agg.refuse.map-in-a-value-position"
-   :at "12-aggregates.sqlt:438"
+   :at "12-aggregates.sqlt:430"
    :dialect "mariadb"
    :source "MAP((1, 2), _ * 2)"
    :expect nil
@@ -3575,7 +3527,7 @@
    :bindings (lambda () (list )))
   (list
    :name "agg.refuse.join-over-a-relation"
-   :at "12-aggregates.sqlt:446"
+   :at "12-aggregates.sqlt:438"
    :dialect "mariadb"
    :source "JOIN(ITEMS, \", \")"
    :expect nil
@@ -3591,7 +3543,7 @@
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "order_items" "oi" (list (cons "SKU" (binding-column "sku" "oi" :text))) "SKU" nil)))))
   (list
    :name "agg.refuse.binder-must-be-a-name"
-   :at "12-aggregates.sqlt:459"
+   :at "12-aggregates.sqlt:451"
    :dialect "mariadb"
    :source "ALL((1, 2), 5, _ > 0)"
    :expect nil
@@ -3607,7 +3559,7 @@
    :bindings (lambda () (list )))
   (list
    :name "agg.contract.over-credit-limit"
-   :at "12-aggregates.sqlt:466"
+   :at "12-aggregates.sqlt:458"
    :dialect "mariadb"
    :source "SUM(ITEMS, _[\"QTY\"] * _[\"PRICE\"]) > CREDIT_LIMIT"
    :expect "((SELECT COALESCE(SUM((`oi`.`qty` * `oi`.`price`)), 0) FROM `order_items` `oi` WHERE (`oi`.`order_id` = `o`.`id`)) > `o`.`credit_limit`)"
@@ -3623,7 +3575,7 @@
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "order_items" "oi" (list (cons "QTY" (binding-column "qty" "oi" :num)) (cons "PRICE" (binding-column "price" "oi" :num)) (cons "SKU" (binding-column "sku" "oi" :text))) "SKU" "`oi`.`order_id` = `o`.`id`")) (cons "CREDIT_LIMIT" (binding-column "credit_limit" "o" :num)))))
   (list
    :name "agg.contract.all-skus-well-formed"
-   :at "12-aggregates.sqlt:479"
+   :at "12-aggregates.sqlt:471"
    :dialect "mariadb"
    :source "ALL(ITEMS, RMATCH('^[A-Z]{2}-\\d{4}$', _[\"SKU\"]))"
    :expect "NOT EXISTS (SELECT 1 FROM `order_items` `oi` WHERE (`oi`.`order_id` = `o`.`id`) AND ((`oi`.`sku` COLLATE utf8mb4_nopad_bin REGEXP '(?s)^[A-Z]{2}-[0-9]{4}$')) IS NOT TRUE)"
@@ -3639,7 +3591,7 @@
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "order_items" "oi" (list (cons "QTY" (binding-column "qty" "oi" :num)) (cons "PRICE" (binding-column "price" "oi" :num)) (cons "SKU" (binding-column "sku" "oi" :text))) "SKU" "`oi`.`order_id` = `o`.`id`")) (cons "CREDIT_LIMIT" (binding-column "credit_limit" "o" :num)))))
   (list
    :name "agg.filter.absorbed-into-count-bare"
-   :at "12-aggregates.sqlt:493"
+   :at "12-aggregates.sqlt:485"
    :dialect "mariadb"
    :source "COUNT(FILTER(ITEMS, I, I[\"qty\"] <= 0))"
    :expect "(SELECT COALESCE(SUM(CASE WHEN (`oi`.`qty` <= 0) THEN 1 ELSE 0 END), 0) FROM `order_items` `oi` WHERE (`oi`.`order_id` = `o`.`id`))"
@@ -3655,7 +3607,7 @@
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "order_items" "oi" (list (cons "QTY" (binding-column "qty" "oi" :num)) (cons "PRICE" (binding-column "price" "oi" :num)) (cons "SKU" (binding-column "sku" "oi" :text))) "SKU" "`oi`.`order_id` = `o`.`id`")) (cons "CREDIT_LIMIT" (binding-column "credit_limit" "o" :num)))))
   (list
    :name "agg.relation.bare-binder-over-a-multi-field-row"
-   :at "12-aggregates.sqlt:506"
+   :at "12-aggregates.sqlt:498"
    :dialect "mariadb"
    :source "ANY(ITEMS, _ $== \"AB-1000\")"
    :expect nil
@@ -3671,7 +3623,7 @@
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "order_items" "oi" (list (cons "QTY" (binding-column "qty" nil :num)) (cons "SKU" (binding-column "sku" nil :text))) "SKU" nil)))))
   (list
    :name "agg.relation.bare-binder-over-a-one-field-row"
-   :at "12-aggregates.sqlt:523"
+   :at "12-aggregates.sqlt:515"
    :dialect "mariadb"
    :source "ANY(SKUS, _ $== \"AB-1000\")"
    :expect "EXISTS (SELECT 1 FROM `order_items` `s2` WHERE TRUE AND ((CAST(`s2`.`sku` AS CHAR) COLLATE utf8mb4_nopad_bin = CAST('AB-1000' AS CHAR) COLLATE utf8mb4_nopad_bin)) IS TRUE)"
@@ -3687,7 +3639,7 @@
    :bindings (lambda () (list (cons "SKUS" (binding-relation "order_items" "s2" (list (cons "SKU" (binding-column "sku" "s2" :text))) "SKU" nil)))))
   (list
    :name "agg.relation.row-is-not-a-scalar-source"
-   :at "12-aggregates.sqlt:536"
+   :at "12-aggregates.sqlt:528"
    :dialect "mariadb"
    :source "ANY(ITEMS, I, COUNT(I) == 2)"
    :expect nil
@@ -3703,7 +3655,7 @@
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "order_items" "oi" (list (cons "QTY" (binding-column "qty" nil :num)) (cons "SKU" (binding-column "sku" nil :text))) "SKU" nil)))))
   (list
    :name "agg.relation.nested-in-itself"
-   :at "12-aggregates.sqlt:550"
+   :at "12-aggregates.sqlt:542"
    :dialect "mariadb"
    :source "ANY(ITEMS, I, ANY(ITEMS, J, J[\"QTY\"] > I[\"QTY\"]))"
    :expect nil
@@ -3719,7 +3671,7 @@
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "order_items" "oi" (list (cons "QTY" (binding-column "qty" nil :num))) nil nil)))))
   (list
    :name "agg.relation.two-relations-nest-fine"
-   :at "12-aggregates.sqlt:567"
+   :at "12-aggregates.sqlt:559"
    :dialect "mariadb"
    :source "ANY(ITEMS, I, ANY(SKUS, S, S $== I[\"SKU\"]))"
    :expect "EXISTS (SELECT 1 FROM `order_items` `oi` WHERE TRUE AND (EXISTS (SELECT 1 FROM `skus` `s2` WHERE TRUE AND ((CAST(`s2`.`sku` AS CHAR) COLLATE utf8mb4_nopad_bin = CAST(`oi`.`sku` AS CHAR) COLLATE utf8mb4_nopad_bin)) IS TRUE)) IS TRUE)"
@@ -3735,7 +3687,7 @@
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "order_items" "oi" (list (cons "SKU" (binding-column "sku" "oi" :text))) nil nil)) (cons "SKUS" (binding-relation "skus" "s2" (list (cons "SKU" (binding-column "sku" "s2" :text))) "SKU" nil)))))
   (list
    :name "agg.count.list-yielding-call-is-not-a-scalar"
-   :at "12-aggregates.sqlt:579"
+   :at "12-aggregates.sqlt:571"
    :dialect "mariadb"
    :source "COUNT(SPLIT(\"a,b\", \",\"))"
    :expect nil
@@ -3751,7 +3703,7 @@
    :bindings (lambda () (list )))
   (list
    :name "agg.has.list-yielding-call-is-not-a-scalar"
-   :at "12-aggregates.sqlt:592"
+   :at "12-aggregates.sqlt:584"
    :dialect "sqlite"
    :source "HAS(SPLIT(\"a,b\", \",\"), 1)"
    :expect nil
@@ -3767,7 +3719,7 @@
    :bindings (lambda () (list )))
   (list
    :name "agg.relation.in-folds-null-to-false"
-   :at "12-aggregates.sqlt:600"
+   :at "12-aggregates.sqlt:592"
    :dialect "mariadb"
    :source "NOT(\"flag\" IN NOTES)"
    :expect "(NOT ((CAST('flag' AS CHAR) COLLATE utf8mb4_nopad_bin IN (SELECT CAST(`nt`.`note` AS CHAR) COLLATE utf8mb4_nopad_bin FROM `order_items` `nt` WHERE TRUE)) IS TRUE))"
@@ -3783,7 +3735,7 @@
    :bindings (lambda () (list (cons "NOTES" (binding-relation "order_items" "nt" (list (cons "NOTE" (binding-column "note" "nt" :text))) "NOTE" nil)))))
   (list
    :name "agg.count.structure-yielding-call-is-not-a-scalar"
-   :at "12-aggregates.sqlt:617"
+   :at "12-aggregates.sqlt:609"
    :dialect "mariadb"
    :source "COUNT(LIST(1, 2, 3))"
    :expect nil
@@ -3799,7 +3751,7 @@
    :bindings (lambda () (list )))
   (list
    :name "agg.count.record-is-not-a-scalar"
-   :at "12-aggregates.sqlt:632"
+   :at "12-aggregates.sqlt:624"
    :dialect "mariadb"
    :source "COUNT(RECORD(\"a\", 1, \"b\", 2))"
    :expect nil
@@ -3815,7 +3767,7 @@
    :bindings (lambda () (list )))
   (list
    :name "agg.count.bucket-is-not-a-scalar"
-   :at "12-aggregates.sqlt:640"
+   :at "12-aggregates.sqlt:632"
    :dialect "mariadb"
    :source "COUNT(BUCKET((1, 2), _))"
    :expect nil
@@ -3831,7 +3783,7 @@
    :bindings (lambda () (list )))
   (list
    :name "agg.count.take-is-not-a-scalar"
-   :at "12-aggregates.sqlt:648"
+   :at "12-aggregates.sqlt:640"
    :dialect "mariadb"
    :source "COUNT(TAKE((1, 2, 3), 2))"
    :expect nil
@@ -3847,7 +3799,7 @@
    :bindings (lambda () (list )))
   (list
    :name "agg.has.structure-yielding-call-is-not-a-scalar"
-   :at "12-aggregates.sqlt:656"
+   :at "12-aggregates.sqlt:648"
    :dialect "sqlite"
    :source "HAS(DISTINCT((1, 1, 2)), 1)"
    :expect nil
@@ -3863,7 +3815,7 @@
    :bindings (lambda () (list )))
   (list
    :name "agg.count.scalar-call-must-translate"
-   :at "12-aggregates.sqlt:664"
+   :at "12-aggregates.sqlt:656"
    :dialect "mariadb"
    :source "COUNT(IF(TRUE, LIST(1, 2), 3))"
    :expect nil
@@ -6161,7 +6113,7 @@
    :bindings (lambda () (list (cons "A" (binding-column "a" nil :text)))))
   (list
    :name "const.numeric.a-numeric-text-literal-is-fine"
-   :at "16-constants.sqlt:589"
+   :at "16-constants.sqlt:592"
    :dialect "mariadb"
    :source "T == \"5\""
    :expect "(CAST(`t` AS DECIMAL(65,10)) = CAST('5' AS DECIMAL(65,10)))"
@@ -6177,7 +6129,7 @@
    :bindings (lambda () (list (cons "T" (binding-column "t" nil :num)))))
   (list
    :name "const.residual.argument-constraint-beside-a-column"
-   :at "16-constants.sqlt:602"
+   :at "16-constants.sqlt:605"
    :dialect "mariadb"
    :source "LEFT(T, -1)"
    :expect "LEFT(`t`, (-1))"
@@ -6193,7 +6145,7 @@
    :bindings (lambda () (list (cons "T" (binding-column "t" nil :text)))))
   (list
    :name "const.arith.numeric-text-is-the-number.add.mariadb"
-   :at "16-constants.sqlt:630"
+   :at "16-constants.sqlt:633"
    :dialect "mariadb"
    :source "\"0.1\" + \"0.2\" == 0.3"
    :expect "((0.1 + 0.2) = 0.3)"
@@ -6209,7 +6161,7 @@
    :bindings (lambda () (list )))
   (list
    :name "const.arith.numeric-text-is-the-number.max.mariadb"
-   :at "16-constants.sqlt:639"
+   :at "16-constants.sqlt:642"
    :dialect "mariadb"
    :source "MAX(\"10\", \"9\") == 10"
    :expect "(GREATEST(10, 9) = 10)"
@@ -6225,7 +6177,7 @@
    :bindings (lambda () (list )))
   (list
    :name "const.arith.numeric-text-is-the-number.folded-call.mariadb"
-   :at "16-constants.sqlt:648"
+   :at "16-constants.sqlt:651"
    :dialect "mariadb"
    :source "LTRIM(\"41\") + 1"
    :expect "(41 + 1)"
@@ -6241,7 +6193,7 @@
    :bindings (lambda () (list )))
   (list
    :name "const.arith.numeric-text-is-the-number.unary.mariadb"
-   :at "16-constants.sqlt:657"
+   :at "16-constants.sqlt:660"
    :dialect "mariadb"
    :source "-\"5\" + 1"
    :expect "((-5) + 1)"
@@ -6257,7 +6209,7 @@
    :bindings (lambda () (list )))
   (list
    :name "const.arith.numeric-text-is-the-number.scale-kept.mariadb"
-   :at "16-constants.sqlt:666"
+   :at "16-constants.sqlt:669"
    :dialect "mariadb"
    :source "\"1.10\" + 2 > 3"
    :expect "((1.10 + 2) > 3)"
@@ -6273,7 +6225,7 @@
    :bindings (lambda () (list )))
   (list
    :name "const.arith.numeric-text-is-the-number.add.postgresql"
-   :at "16-constants.sqlt:675"
+   :at "16-constants.sqlt:678"
    :dialect "postgresql"
    :source "\"0.1\" + \"0.2\" == 0.3"
    :expect "((CAST(0.1 AS NUMERIC) + CAST(0.2 AS NUMERIC)) = 0.3)"
@@ -6289,7 +6241,7 @@
    :bindings (lambda () (list )))
   (list
    :name "const.arith.numeric-text-is-the-number.max.postgresql"
-   :at "16-constants.sqlt:684"
+   :at "16-constants.sqlt:687"
    :dialect "postgresql"
    :source "MAX(\"10\", \"9\") == 10"
    :expect "(greatest(10, 9) = 10)"
@@ -6305,7 +6257,7 @@
    :bindings (lambda () (list )))
   (list
    :name "const.arith.numeric-text-is-the-number.folded-call.postgresql"
-   :at "16-constants.sqlt:693"
+   :at "16-constants.sqlt:696"
    :dialect "postgresql"
    :source "LTRIM(\"41\") + 1"
    :expect "(CAST(41 AS NUMERIC) + CAST(1 AS NUMERIC))"
@@ -6321,7 +6273,7 @@
    :bindings (lambda () (list )))
   (list
    :name "const.arith.numeric-text-is-the-number.unary.postgresql"
-   :at "16-constants.sqlt:702"
+   :at "16-constants.sqlt:705"
    :dialect "postgresql"
    :source "-\"5\" + 1"
    :expect "(CAST((-CAST(5 AS NUMERIC)) AS NUMERIC) + CAST(1 AS NUMERIC))"
@@ -6337,7 +6289,7 @@
    :bindings (lambda () (list )))
   (list
    :name "const.arith.numeric-text-is-the-number.scale-kept.postgresql"
-   :at "16-constants.sqlt:711"
+   :at "16-constants.sqlt:714"
    :dialect "postgresql"
    :source "\"1.10\" + 2 > 3"
    :expect "((CAST(1.10 AS NUMERIC) + CAST(2 AS NUMERIC)) > 3)"
@@ -6353,7 +6305,7 @@
    :bindings (lambda () (list )))
   (list
    :name "const.arith.numeric-text-is-the-number.add.sqlite"
-   :at "16-constants.sqlt:720"
+   :at "16-constants.sqlt:723"
    :dialect "sqlite"
    :source "\"0.1\" + \"0.2\" == 0.3"
    :expect "(CAST(('0.1' + '0.2') AS NUMERIC) = CAST('0.3' AS NUMERIC))"
@@ -6369,7 +6321,7 @@
    :bindings (lambda () (list )))
   (list
    :name "const.arith.numeric-text-is-the-number.max.sqlite"
-   :at "16-constants.sqlt:729"
+   :at "16-constants.sqlt:732"
    :dialect "sqlite"
    :source "MAX(\"10\", \"9\") == 10"
    :expect "(CAST(max(CAST('10' AS NUMERIC), CAST('9' AS NUMERIC)) AS NUMERIC) = CAST('10' AS NUMERIC))"
@@ -6385,7 +6337,7 @@
    :bindings (lambda () (list )))
   (list
    :name "const.arith.numeric-text-is-the-number.folded-call.sqlite"
-   :at "16-constants.sqlt:738"
+   :at "16-constants.sqlt:741"
    :dialect "sqlite"
    :source "LTRIM(\"41\") + 1"
    :expect "('41' + '1')"
@@ -6401,7 +6353,7 @@
    :bindings (lambda () (list )))
   (list
    :name "const.arith.numeric-text-is-the-number.unary.sqlite"
-   :at "16-constants.sqlt:747"
+   :at "16-constants.sqlt:750"
    :dialect "sqlite"
    :source "-\"5\" + 1"
    :expect "((-'5') + '1')"
@@ -6417,7 +6369,7 @@
    :bindings (lambda () (list )))
   (list
    :name "const.arith.numeric-text-is-the-number.scale-kept.sqlite"
-   :at "16-constants.sqlt:756"
+   :at "16-constants.sqlt:759"
    :dialect "sqlite"
    :source "\"1.10\" + 2 > 3"
    :expect "(CAST(('1.10' + '2') AS NUMERIC) > CAST('3' AS NUMERIC))"
@@ -18693,7 +18645,7 @@ ORDERS .> TAKE(1)"
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" "i" (list (cons "DEPT" (binding-column "dept" "i" :text)) (cons "QTY" (binding-column "qty" "i" :num))) nil nil)))))
   (list
    :name "warrant.bool.if-cannot-launder-an-undeclared-column"
-   :at "49-kind-guarantees.sqlt:14"
+   :at "49-kind-guarantees.sqlt:13"
    :dialect "mariadb"
    :source "IF(TRUE, F, TRUE) AND TRUE"
    :expect nil
@@ -18709,7 +18661,7 @@ ORDERS .> TAKE(1)"
    :bindings (lambda () (list (cons "F" (binding-column "f" nil :unknown)) (cons "P" (binding-column "p" nil :bool)))))
   (list
    :name "warrant.bool.if-cannot-launder-with-a-bool-condition"
-   :at "49-kind-guarantees.sqlt:27"
+   :at "49-kind-guarantees.sqlt:26"
    :dialect "mariadb"
    :source "IF(P, F, TRUE) AND TRUE"
    :expect nil
@@ -18725,7 +18677,7 @@ ORDERS .> TAKE(1)"
    :bindings (lambda () (list (cons "F" (binding-column "f" nil :unknown)) (cons "P" (binding-column "p" nil :bool)))))
   (list
    :name "warrant.bool.coalesce-cannot-launder-an-undeclared-column"
-   :at "49-kind-guarantees.sqlt:40"
+   :at "49-kind-guarantees.sqlt:39"
    :dialect "mariadb"
    :source "(F ?? TRUE) AND TRUE"
    :expect nil
@@ -18741,7 +18693,7 @@ ORDERS .> TAKE(1)"
    :bindings (lambda () (list (cons "F" (binding-column "f" nil :unknown)) (cons "P" (binding-column "p" nil :bool)))))
   (list
    :name "warrant.bool.vacuous-coalesce-cannot-launder-an-undeclared-column"
-   :at "49-kind-guarantees.sqlt:53"
+   :at "49-kind-guarantees.sqlt:52"
    :dialect "mariadb"
    :source "(F ??? TRUE) AND TRUE"
    :expect nil
@@ -18757,7 +18709,7 @@ ORDERS .> TAKE(1)"
    :bindings (lambda () (list (cons "F" (binding-column "f" nil :unknown)) (cons "P" (binding-column "p" nil :bool)))))
   (list
    :name "warrant.bool.cond-cannot-launder-an-undeclared-column"
-   :at "49-kind-guarantees.sqlt:66"
+   :at "49-kind-guarantees.sqlt:65"
    :dialect "mariadb"
    :source "COND(P, F, TRUE) AND TRUE"
    :expect nil
@@ -18773,7 +18725,7 @@ ORDERS .> TAKE(1)"
    :bindings (lambda () (list (cons "F" (binding-column "f" nil :unknown)) (cons "P" (binding-column "p" nil :bool)))))
   (list
    :name "warrant.bool.not-over-a-laundered-conditional"
-   :at "49-kind-guarantees.sqlt:79"
+   :at "49-kind-guarantees.sqlt:78"
    :dialect "mariadb"
    :source "NOT IF(TRUE, F, TRUE)"
    :expect nil
@@ -18789,7 +18741,7 @@ ORDERS .> TAKE(1)"
    :bindings (lambda () (list (cons "F" (binding-column "f" nil :unknown)) (cons "P" (binding-column "p" nil :bool)))))
   (list
    :name "warrant.bool.if-cannot-launder-on-postgresql"
-   :at "49-kind-guarantees.sqlt:92"
+   :at "49-kind-guarantees.sqlt:91"
    :dialect "postgresql"
    :source "IF(TRUE, F, TRUE) AND TRUE"
    :expect nil
@@ -18805,7 +18757,7 @@ ORDERS .> TAKE(1)"
    :bindings (lambda () (list (cons "F" (binding-column "f" nil :unknown)) (cons "P" (binding-column "p" nil :bool)))))
   (list
    :name "warrant.bool.coalesce-cannot-launder-on-sqlite"
-   :at "49-kind-guarantees.sqlt:105"
+   :at "49-kind-guarantees.sqlt:104"
    :dialect "sqlite"
    :source "(F ?? TRUE) AND TRUE"
    :expect nil
@@ -18821,7 +18773,7 @@ ORDERS .> TAKE(1)"
    :bindings (lambda () (list (cons "F" (binding-column "f" nil :unknown)) (cons "P" (binding-column "p" nil :bool)))))
   (list
    :name "warrant.bool.if-over-a-declared-bool-is-not-refused"
-   :at "49-kind-guarantees.sqlt:118"
+   :at "49-kind-guarantees.sqlt:117"
    :dialect "mariadb"
    :source "IF(TRUE, F, TRUE) AND TRUE"
    :expect "(CASE WHEN TRUE THEN `f` ELSE TRUE END AND TRUE)"
@@ -18837,7 +18789,7 @@ ORDERS .> TAKE(1)"
    :bindings (lambda () (list (cons "F" (binding-column "f" nil :bool)) (cons "P" (binding-column "p" nil :bool)))))
   (list
    :name "warrant.bool.coalesce-over-a-declared-bool-is-not-refused"
-   :at "49-kind-guarantees.sqlt:131"
+   :at "49-kind-guarantees.sqlt:130"
    :dialect "mariadb"
    :source "(F ?? TRUE) AND TRUE"
    :expect "(COALESCE(`f`, TRUE) AND TRUE)"
@@ -18853,7 +18805,7 @@ ORDERS .> TAKE(1)"
    :bindings (lambda () (list (cons "F" (binding-column "f" nil :bool)) (cons "P" (binding-column "p" nil :bool)))))
   (list
    :name "warrant.numeric.coalesce-over-an-undeclared-column-is-guarded"
-   :at "49-kind-guarantees.sqlt:144"
+   :at "49-kind-guarantees.sqlt:143"
    :dialect "mariadb"
    :source "(U ?? 1) + 1 > 0"
    :expect "((CASE WHEN (COALESCE(`u`, 1) REGEXP '\\\\A-?[0-9]+(\\\\.[0-9]+)?\\\\z') THEN CAST(COALESCE(`u`, 1) AS DECIMAL(65,10)) ELSE NULL END + 1) > 0)"
@@ -18869,7 +18821,7 @@ ORDERS .> TAKE(1)"
    :bindings (lambda () (list (cons "U" (binding-column "u" nil :unknown)) (cons "P" (binding-column "p" nil :bool)) (cons "N" (binding-column "n" nil :num)))))
   (list
    :name "warrant.numeric.if-branch-unknown-is-guarded"
-   :at "49-kind-guarantees.sqlt:157"
+   :at "49-kind-guarantees.sqlt:156"
    :dialect "mariadb"
    :source "IF(P, U, 1) + 1 == 2"
    :expect "((CASE WHEN (CASE WHEN `p` THEN `u` ELSE 1 END REGEXP '\\\\A-?[0-9]+(\\\\.[0-9]+)?\\\\z') THEN CAST(CASE WHEN `p` THEN `u` ELSE 1 END AS DECIMAL(65,10)) ELSE NULL END + 1) = 2)"
@@ -18885,7 +18837,7 @@ ORDERS .> TAKE(1)"
    :bindings (lambda () (list (cons "U" (binding-column "u" nil :unknown)) (cons "P" (binding-column "p" nil :bool)) (cons "N" (binding-column "n" nil :num)))))
   (list
    :name "warrant.numeric.coalesce-function-over-an-undeclared-column-is-guarded"
-   :at "49-kind-guarantees.sqlt:170"
+   :at "49-kind-guarantees.sqlt:169"
    :dialect "mariadb"
    :source "COALESCE(U, 0) > 5"
    :expect "(CASE WHEN (COALESCE(`u`, 0) REGEXP '\\\\A-?[0-9]+(\\\\.[0-9]+)?\\\\z') THEN CAST(COALESCE(`u`, 0) AS DECIMAL(65,10)) ELSE NULL END > 5)"
@@ -18901,7 +18853,7 @@ ORDERS .> TAKE(1)"
    :bindings (lambda () (list (cons "U" (binding-column "u" nil :unknown)) (cons "P" (binding-column "p" nil :bool)) (cons "N" (binding-column "n" nil :num)))))
   (list
    :name "warrant.numeric.abs-over-a-laundered-conditional"
-   :at "49-kind-guarantees.sqlt:183"
+   :at "49-kind-guarantees.sqlt:182"
    :dialect "mariadb"
    :source "ABS(U ?? 1)"
    :expect "ABS(CASE WHEN (COALESCE(`u`, 1) REGEXP '\\\\A-?[0-9]+(\\\\.[0-9]+)?\\\\z') THEN CAST(COALESCE(`u`, 1) AS DECIMAL(65,10)) ELSE NULL END)"
@@ -18917,7 +18869,7 @@ ORDERS .> TAKE(1)"
    :bindings (lambda () (list (cons "U" (binding-column "u" nil :unknown)) (cons "P" (binding-column "p" nil :bool)) (cons "N" (binding-column "n" nil :num)))))
   (list
    :name "warrant.numeric.min-over-a-laundered-conditional"
-   :at "49-kind-guarantees.sqlt:196"
+   :at "49-kind-guarantees.sqlt:195"
    :dialect "mariadb"
    :source "MIN(U ?? 1, 2)"
    :expect "LEAST(CASE WHEN (COALESCE(`u`, 1) REGEXP '\\\\A-?[0-9]+(\\\\.[0-9]+)?\\\\z') THEN CAST(COALESCE(`u`, 1) AS DECIMAL(65,10)) ELSE NULL END, 2)"
@@ -18933,7 +18885,7 @@ ORDERS .> TAKE(1)"
    :bindings (lambda () (list (cons "U" (binding-column "u" nil :unknown)) (cons "P" (binding-column "p" nil :bool)) (cons "N" (binding-column "n" nil :num)))))
   (list
    :name "warrant.numeric.length-over-a-laundered-conditional"
-   :at "49-kind-guarantees.sqlt:209"
+   :at "49-kind-guarantees.sqlt:208"
    :dialect "mariadb"
    :source "LEFT(\"abc\", U ?? 1)"
    :expect "LEFT('abc', CASE WHEN (COALESCE(`u`, 1) REGEXP '\\\\A-?[0-9]+(\\\\.[0-9]+)?\\\\z') THEN CAST(COALESCE(`u`, 1) AS DECIMAL(65,10)) ELSE NULL END)"
@@ -18949,7 +18901,7 @@ ORDERS .> TAKE(1)"
    :bindings (lambda () (list (cons "U" (binding-column "u" nil :unknown)) (cons "P" (binding-column "p" nil :bool)) (cons "N" (binding-column "n" nil :num)))))
   (list
    :name "warrant.numeric.an-undeclared-branch-on-the-right-is-guarded"
-   :at "49-kind-guarantees.sqlt:222"
+   :at "49-kind-guarantees.sqlt:221"
    :dialect "mariadb"
    :source "N < IF(TRUE, U, -1)"
    :expect "(`n` < CASE WHEN (CASE WHEN TRUE THEN `u` ELSE (-1) END REGEXP '\\\\A-?[0-9]+(\\\\.[0-9]+)?\\\\z') THEN CAST(CASE WHEN TRUE THEN `u` ELSE (-1) END AS DECIMAL(65,10)) ELSE NULL END)"
@@ -18965,7 +18917,7 @@ ORDERS .> TAKE(1)"
    :bindings (lambda () (list (cons "U" (binding-column "u" nil :unknown)) (cons "P" (binding-column "p" nil :bool)) (cons "N" (binding-column "n" nil :num)))))
   (list
    :name "warrant.numeric.cond-branch-unknown-is-guarded"
-   :at "49-kind-guarantees.sqlt:235"
+   :at "49-kind-guarantees.sqlt:234"
    :dialect "mariadb"
    :source "COND(P, U, 1) + 1 == 2"
    :expect "((CASE WHEN (CASE WHEN `p` THEN `u` ELSE 1 END REGEXP '\\\\A-?[0-9]+(\\\\.[0-9]+)?\\\\z') THEN CAST(CASE WHEN `p` THEN `u` ELSE 1 END AS DECIMAL(65,10)) ELSE NULL END + 1) = 2)"
@@ -18981,7 +18933,7 @@ ORDERS .> TAKE(1)"
    :bindings (lambda () (list (cons "U" (binding-column "u" nil :unknown)) (cons "P" (binding-column "p" nil :bool)) (cons "N" (binding-column "n" nil :num)))))
   (list
    :name "warrant.numeric.sqlite-refuses-a-laundered-coalesce"
-   :at "49-kind-guarantees.sqlt:248"
+   :at "49-kind-guarantees.sqlt:247"
    :dialect "sqlite"
    :source "(U ?? 1) + 1 > 0"
    :expect nil
@@ -18997,7 +18949,7 @@ ORDERS .> TAKE(1)"
    :bindings (lambda () (list (cons "U" (binding-column "u" nil :unknown)) (cons "P" (binding-column "p" nil :bool)) (cons "N" (binding-column "n" nil :num)))))
   (list
    :name "warrant.numeric.sqlite-refuses-a-laundered-if-branch"
-   :at "49-kind-guarantees.sqlt:261"
+   :at "49-kind-guarantees.sqlt:260"
    :dialect "sqlite"
    :source "IF(P, U, 1) + 1 == 2"
    :expect nil
@@ -19013,7 +18965,7 @@ ORDERS .> TAKE(1)"
    :bindings (lambda () (list (cons "U" (binding-column "u" nil :unknown)) (cons "P" (binding-column "p" nil :bool)) (cons "N" (binding-column "n" nil :num)))))
   (list
    :name "warrant.numeric.sqlite-refuses-a-laundered-abs"
-   :at "49-kind-guarantees.sqlt:274"
+   :at "49-kind-guarantees.sqlt:273"
    :dialect "sqlite"
    :source "ABS(U ?? 1)"
    :expect nil
@@ -19029,7 +18981,7 @@ ORDERS .> TAKE(1)"
    :bindings (lambda () (list (cons "U" (binding-column "u" nil :unknown)) (cons "P" (binding-column "p" nil :bool)) (cons "N" (binding-column "n" nil :num)))))
   (list
    :name "warrant.numeric.sqlite-refuses-a-laundered-vacuous-coalesce"
-   :at "49-kind-guarantees.sqlt:287"
+   :at "49-kind-guarantees.sqlt:286"
    :dialect "sqlite"
    :source "(U ??? 1) + 1 > 0"
    :expect nil
@@ -19045,7 +18997,7 @@ ORDERS .> TAKE(1)"
    :bindings (lambda () (list (cons "U" (binding-column "u" nil :unknown)) (cons "P" (binding-column "p" nil :bool)) (cons "N" (binding-column "n" nil :num)))))
   (list
    :name "warrant.numeric.declared-num-through-coalesce-is-not-guarded"
-   :at "49-kind-guarantees.sqlt:300"
+   :at "49-kind-guarantees.sqlt:299"
    :dialect "mariadb"
    :source "(N ?? 1) + 1 > 0"
    :expect "((COALESCE(`n`, 1) + 1) > 0)"
@@ -19061,7 +19013,7 @@ ORDERS .> TAKE(1)"
    :bindings (lambda () (list (cons "U" (binding-column "u" nil :unknown)) (cons "P" (binding-column "p" nil :bool)) (cons "N" (binding-column "n" nil :num)))))
   (list
    :name "warrant.numeric.declared-num-through-if-is-not-guarded"
-   :at "49-kind-guarantees.sqlt:313"
+   :at "49-kind-guarantees.sqlt:312"
    :dialect "mariadb"
    :source "IF(P, N, 1) + 1 == 2"
    :expect "((CASE WHEN `p` THEN `n` ELSE 1 END + 1) = 2)"
@@ -19077,7 +19029,7 @@ ORDERS .> TAKE(1)"
    :bindings (lambda () (list (cons "U" (binding-column "u" nil :unknown)) (cons "P" (binding-column "p" nil :bool)) (cons "N" (binding-column "n" nil :num)))))
   (list
    :name "agg.join.bool-element-is-refused"
-   :at "49-kind-guarantees.sqlt:326"
+   :at "49-kind-guarantees.sqlt:325"
    :dialect "mariadb"
    :source "JOIN((T, F), \",\")"
    :expect nil
@@ -19093,7 +19045,7 @@ ORDERS .> TAKE(1)"
    :bindings (lambda () (list (cons "T" (binding-column "t" nil :text)) (cons "T2" (binding-column "t2" nil :text)) (cons "F" (binding-column "f" nil :bool)) (cons "X" (binding-column "x" nil :bin)) (cons "V" (binding-columns (binding-column "a" nil :text) (binding-column "b" nil :bool))) (cons "W" (binding-columns (binding-column "a" nil :text) (binding-column "b" nil :bin))))))
   (list
    :name "agg.join.bool-first-element-is-refused"
-   :at "49-kind-guarantees.sqlt:339"
+   :at "49-kind-guarantees.sqlt:338"
    :dialect "mariadb"
    :source "JOIN((F, \"a\"), \"-\")"
    :expect nil
@@ -19109,7 +19061,7 @@ ORDERS .> TAKE(1)"
    :bindings (lambda () (list (cons "T" (binding-column "t" nil :text)) (cons "T2" (binding-column "t2" nil :text)) (cons "F" (binding-column "f" nil :bool)) (cons "X" (binding-column "x" nil :bin)) (cons "V" (binding-columns (binding-column "a" nil :text) (binding-column "b" nil :bool))) (cons "W" (binding-columns (binding-column "a" nil :text) (binding-column "b" nil :bin))))))
   (list
    :name "agg.join.bool-separator-is-refused"
-   :at "49-kind-guarantees.sqlt:352"
+   :at "49-kind-guarantees.sqlt:351"
    :dialect "mariadb"
    :source "JOIN((T, T2), F)"
    :expect nil
@@ -19125,7 +19077,7 @@ ORDERS .> TAKE(1)"
    :bindings (lambda () (list (cons "T" (binding-column "t" nil :text)) (cons "T2" (binding-column "t2" nil :text)) (cons "F" (binding-column "f" nil :bool)) (cons "X" (binding-column "x" nil :bin)) (cons "V" (binding-columns (binding-column "a" nil :text) (binding-column "b" nil :bool))) (cons "W" (binding-columns (binding-column "a" nil :text) (binding-column "b" nil :bin))))))
   (list
    :name "agg.join.bin-element-is-refused"
-   :at "49-kind-guarantees.sqlt:365"
+   :at "49-kind-guarantees.sqlt:364"
    :dialect "mariadb"
    :source "JOIN((X, T), \",\")"
    :expect nil
@@ -19141,7 +19093,7 @@ ORDERS .> TAKE(1)"
    :bindings (lambda () (list (cons "T" (binding-column "t" nil :text)) (cons "T2" (binding-column "t2" nil :text)) (cons "F" (binding-column "f" nil :bool)) (cons "X" (binding-column "x" nil :bin)) (cons "V" (binding-columns (binding-column "a" nil :text) (binding-column "b" nil :bool))) (cons "W" (binding-columns (binding-column "a" nil :text) (binding-column "b" nil :bin))))))
   (list
    :name "agg.join.bin-separator-is-refused"
-   :at "49-kind-guarantees.sqlt:378"
+   :at "49-kind-guarantees.sqlt:377"
    :dialect "mariadb"
    :source "JOIN((T, T2), X)"
    :expect nil
@@ -19157,7 +19109,7 @@ ORDERS .> TAKE(1)"
    :bindings (lambda () (list (cons "T" (binding-column "t" nil :text)) (cons "T2" (binding-column "t2" nil :text)) (cons "F" (binding-column "f" nil :bool)) (cons "X" (binding-column "x" nil :bin)) (cons "V" (binding-columns (binding-column "a" nil :text) (binding-column "b" nil :bool))) (cons "W" (binding-columns (binding-column "a" nil :text) (binding-column "b" nil :bin))))))
   (list
    :name "agg.join.columns-binding-with-a-bool-is-refused"
-   :at "49-kind-guarantees.sqlt:391"
+   :at "49-kind-guarantees.sqlt:390"
    :dialect "mariadb"
    :source "JOIN(V, \",\")"
    :expect nil
@@ -19173,7 +19125,7 @@ ORDERS .> TAKE(1)"
    :bindings (lambda () (list (cons "T" (binding-column "t" nil :text)) (cons "T2" (binding-column "t2" nil :text)) (cons "F" (binding-column "f" nil :bool)) (cons "X" (binding-column "x" nil :bin)) (cons "V" (binding-columns (binding-column "a" nil :text) (binding-column "b" nil :bool))) (cons "W" (binding-columns (binding-column "a" nil :text) (binding-column "b" nil :bin))))))
   (list
    :name "agg.join.columns-binding-with-a-bin-is-refused"
-   :at "49-kind-guarantees.sqlt:404"
+   :at "49-kind-guarantees.sqlt:403"
    :dialect "mariadb"
    :source "JOIN(W, \",\")"
    :expect nil
@@ -19189,7 +19141,7 @@ ORDERS .> TAKE(1)"
    :bindings (lambda () (list (cons "T" (binding-column "t" nil :text)) (cons "T2" (binding-column "t2" nil :text)) (cons "F" (binding-column "f" nil :bool)) (cons "X" (binding-column "x" nil :bin)) (cons "V" (binding-columns (binding-column "a" nil :text) (binding-column "b" nil :bool))) (cons "W" (binding-columns (binding-column "a" nil :text) (binding-column "b" nil :bin))))))
   (list
    :name "agg.join.bool-element-is-refused-on-postgresql"
-   :at "49-kind-guarantees.sqlt:417"
+   :at "49-kind-guarantees.sqlt:416"
    :dialect "postgresql"
    :source "JOIN((T, F), \",\")"
    :expect nil
@@ -19205,7 +19157,7 @@ ORDERS .> TAKE(1)"
    :bindings (lambda () (list (cons "T" (binding-column "t" nil :text)) (cons "T2" (binding-column "t2" nil :text)) (cons "F" (binding-column "f" nil :bool)) (cons "X" (binding-column "x" nil :bin)) (cons "V" (binding-columns (binding-column "a" nil :text) (binding-column "b" nil :bool))) (cons "W" (binding-columns (binding-column "a" nil :text) (binding-column "b" nil :bin))))))
   (list
    :name "agg.join.bool-element-is-refused-on-sqlite"
-   :at "49-kind-guarantees.sqlt:430"
+   :at "49-kind-guarantees.sqlt:429"
    :dialect "sqlite"
    :source "JOIN((T, F), \",\")"
    :expect nil
@@ -19221,7 +19173,7 @@ ORDERS .> TAKE(1)"
    :bindings (lambda () (list (cons "T" (binding-column "t" nil :text)) (cons "T2" (binding-column "t2" nil :text)) (cons "F" (binding-column "f" nil :bool)) (cons "X" (binding-column "x" nil :bin)) (cons "V" (binding-columns (binding-column "a" nil :text) (binding-column "b" nil :bool))) (cons "W" (binding-columns (binding-column "a" nil :text) (binding-column "b" nil :bin))))))
   (list
    :name "agg.join.text-elements-still-translate"
-   :at "49-kind-guarantees.sqlt:443"
+   :at "49-kind-guarantees.sqlt:442"
    :dialect "mariadb"
    :source "JOIN((T, \"a\"), \"-\")"
    :expect "CONCAT(CONCAT(`t`, '-'), 'a')"
@@ -19237,7 +19189,7 @@ ORDERS .> TAKE(1)"
    :bindings (lambda () (list (cons "T" (binding-column "t" nil :text)) (cons "T2" (binding-column "t2" nil :text)) (cons "F" (binding-column "f" nil :bool)) (cons "X" (binding-column "x" nil :bin)) (cons "V" (binding-columns (binding-column "a" nil :text) (binding-column "b" nil :bool))) (cons "W" (binding-columns (binding-column "a" nil :text) (binding-column "b" nil :bin))))))
   (list
    :name "agg.bucket-sum.a-declared-text-field-is-refused"
-   :at "49-kind-guarantees.sqlt:456"
+   :at "49-kind-guarantees.sqlt:455"
    :dialect "mariadb"
    :source "O .> BUCKET(_[\"CAT\"], RECORD(\"s\", SUM(_, _[\"STATUS\"])))"
    :expect nil
@@ -19253,7 +19205,7 @@ ORDERS .> TAKE(1)"
    :bindings (lambda () (list (cons "O" (binding-relation "orders" "o" (list (cons "CAT" (binding-column "cat" "o" :text)) (cons "STATUS" (binding-column "status" "o" :text)) (cons "FLAG" (binding-column "flag" "o" :bool))) nil nil)))))
   (list
    :name "agg.bucket-sum.a-declared-bool-field-is-refused"
-   :at "49-kind-guarantees.sqlt:471"
+   :at "49-kind-guarantees.sqlt:470"
    :dialect "mariadb"
    :source "O .> BUCKET(_[\"CAT\"], RECORD(\"s\", SUM(_, _[\"FLAG\"])))"
    :expect nil
@@ -19269,7 +19221,7 @@ ORDERS .> TAKE(1)"
    :bindings (lambda () (list (cons "O" (binding-relation "orders" "o" (list (cons "CAT" (binding-column "cat" "o" :text)) (cons "STATUS" (binding-column "status" "o" :text)) (cons "FLAG" (binding-column "flag" "o" :bool))) nil nil)))))
   (list
    :name "agg.bucket-sum.a-constant-text-body-is-refused"
-   :at "49-kind-guarantees.sqlt:486"
+   :at "49-kind-guarantees.sqlt:485"
    :dialect "mariadb"
    :source "O .> BUCKET(_[\"CAT\"], RECORD(\"s\", SUM(_, \"x\")))"
    :expect nil
@@ -19285,7 +19237,7 @@ ORDERS .> TAKE(1)"
    :bindings (lambda () (list (cons "O" (binding-relation "orders" "o" (list (cons "CAT" (binding-column "cat" "o" :text)) (cons "STATUS" (binding-column "status" "o" :text)) (cons "FLAG" (binding-column "flag" "o" :bool))) nil nil)))))
   (list
    :name "agg.bucket-sum.a-non-name-binder-is-refused"
-   :at "49-kind-guarantees.sqlt:501"
+   :at "49-kind-guarantees.sqlt:500"
    :dialect "mariadb"
    :source "O .> BUCKET(_[\"CAT\"], RECORD(\"s\", SUM(_, 1, _[\"AMT\"])))"
    :expect nil
@@ -19301,7 +19253,7 @@ ORDERS .> TAKE(1)"
    :bindings (lambda () (list (cons "O" (binding-relation "orders" "o" (list (cons "CAT" (binding-column "cat" "o" :text)) (cons "AMT" (binding-column "amt" "o" :num))) nil nil)))))
   (list
    :name "agg.in-relation.bool-column-needle-is-refused"
-   :at "49-kind-guarantees.sqlt:516"
+   :at "49-kind-guarantees.sqlt:515"
    :dialect "mariadb"
    :source "F IN S"
    :expect nil
@@ -19317,7 +19269,7 @@ ORDERS .> TAKE(1)"
    :bindings (lambda () (list (cons "S" (binding-relation "sk" "s" (list (cons "SKU" (binding-column "sku" "s" :text))) "SKU" nil)) (cons "F" (binding-column "f" nil :bool)) (cons "X" (binding-column "x" nil :bin)) (cons "N" (binding-column "n" nil :num)))))
   (list
    :name "agg.in-relation.bool-literal-needle-is-refused"
-   :at "49-kind-guarantees.sqlt:529"
+   :at "49-kind-guarantees.sqlt:528"
    :dialect "mariadb"
    :source "TRUE IN S"
    :expect nil
@@ -19333,7 +19285,7 @@ ORDERS .> TAKE(1)"
    :bindings (lambda () (list (cons "S" (binding-relation "sk" "s" (list (cons "SKU" (binding-column "sku" "s" :text))) "SKU" nil)) (cons "F" (binding-column "f" nil :bool)) (cons "X" (binding-column "x" nil :bin)) (cons "N" (binding-column "n" nil :num)))))
   (list
    :name "agg.in-relation.bin-column-needle-is-refused"
-   :at "49-kind-guarantees.sqlt:542"
+   :at "49-kind-guarantees.sqlt:541"
    :dialect "mariadb"
    :source "X IN S"
    :expect nil
@@ -19349,7 +19301,7 @@ ORDERS .> TAKE(1)"
    :bindings (lambda () (list (cons "S" (binding-relation "sk" "s" (list (cons "SKU" (binding-column "sku" "s" :text))) "SKU" nil)) (cons "F" (binding-column "f" nil :bool)) (cons "X" (binding-column "x" nil :bin)) (cons "N" (binding-column "n" nil :num)))))
   (list
    :name "bind.in.exact.numeric-literal-item-is-cast"
-   :at "49-kind-guarantees.sqlt:555"
+   :at "49-kind-guarantees.sqlt:554"
    :dialect "mariadb"
    :source "T IN (\"a\", 3)"
    :expect "((`t` = 'a') OR (`t` = CAST(3 AS CHAR) COLLATE utf8mb4_nopad_bin))"
@@ -19365,7 +19317,7 @@ ORDERS .> TAKE(1)"
    :bindings (lambda () (list (cons "T" (binding-column "t" nil :text :exact t :sargable nil :guard nil)) (cons "S" (binding-column "s" nil :text :exact t :sargable nil :guard nil)))))
   (list
    :name "bind.in.exact.numeric-literal-items-only"
-   :at "49-kind-guarantees.sqlt:568"
+   :at "49-kind-guarantees.sqlt:567"
    :dialect "mariadb"
    :source "S IN (1, 2)"
    :expect "((`s` = CAST(1 AS CHAR) COLLATE utf8mb4_nopad_bin) OR (`s` = CAST(2 AS CHAR) COLLATE utf8mb4_nopad_bin))"
@@ -19381,7 +19333,7 @@ ORDERS .> TAKE(1)"
    :bindings (lambda () (list (cons "T" (binding-column "t" nil :text :exact t :sargable nil :guard nil)) (cons "S" (binding-column "s" nil :text :exact t :sargable nil :guard nil)))))
   (list
    :name "stmt.take.whole-number-with-scale.mariadb"
-   :at "49-kind-guarantees.sqlt:581"
+   :at "49-kind-guarantees.sqlt:580"
    :dialect "mariadb"
    :source "ITEMS .> TAKE(2.0)"
    :expect "SELECT * FROM `items` LIMIT 2"
@@ -19397,7 +19349,7 @@ ORDERS .> TAKE(1)"
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list ) nil nil)))))
   (list
    :name "stmt.take.zero-with-scale.mariadb"
-   :at "49-kind-guarantees.sqlt:596"
+   :at "49-kind-guarantees.sqlt:595"
    :dialect "mariadb"
    :source "ITEMS .> TAKE(0.0)"
    :expect "SELECT * FROM `items` LIMIT 0"
@@ -19413,7 +19365,7 @@ ORDERS .> TAKE(1)"
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list ) nil nil)))))
   (list
    :name "stmt.take.count-past-2^53.mariadb"
-   :at "49-kind-guarantees.sqlt:611"
+   :at "49-kind-guarantees.sqlt:610"
    :dialect "mariadb"
    :source "ITEMS .> TAKE(9007199254740993)"
    :expect "SELECT * FROM `items` LIMIT 9007199254740993"
@@ -19429,7 +19381,7 @@ ORDERS .> TAKE(1)"
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list ) nil nil)))))
   (list
    :name "stmt.take.int64-max.mariadb"
-   :at "49-kind-guarantees.sqlt:626"
+   :at "49-kind-guarantees.sqlt:625"
    :dialect "mariadb"
    :source "ITEMS .> TAKE(9223372036854775807)"
    :expect "SELECT * FROM `items` LIMIT 9223372036854775807"
@@ -19445,7 +19397,7 @@ ORDERS .> TAKE(1)"
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list ) nil nil)))))
   (list
    :name "stmt.take.whole-number-with-scale.postgresql"
-   :at "49-kind-guarantees.sqlt:641"
+   :at "49-kind-guarantees.sqlt:640"
    :dialect "postgresql"
    :source "ITEMS .> TAKE(2.0)"
    :expect "SELECT * FROM \"items\" LIMIT 2"
@@ -19461,7 +19413,7 @@ ORDERS .> TAKE(1)"
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list ) nil nil)))))
   (list
    :name "stmt.take.zero-with-scale.postgresql"
-   :at "49-kind-guarantees.sqlt:656"
+   :at "49-kind-guarantees.sqlt:655"
    :dialect "postgresql"
    :source "ITEMS .> TAKE(0.0)"
    :expect "SELECT * FROM \"items\" LIMIT 0"
@@ -19477,7 +19429,7 @@ ORDERS .> TAKE(1)"
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list ) nil nil)))))
   (list
    :name "stmt.take.count-past-2^53.postgresql"
-   :at "49-kind-guarantees.sqlt:671"
+   :at "49-kind-guarantees.sqlt:670"
    :dialect "postgresql"
    :source "ITEMS .> TAKE(9007199254740993)"
    :expect "SELECT * FROM \"items\" LIMIT 9007199254740993"
@@ -19493,7 +19445,7 @@ ORDERS .> TAKE(1)"
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list ) nil nil)))))
   (list
    :name "stmt.take.int64-max.postgresql"
-   :at "49-kind-guarantees.sqlt:686"
+   :at "49-kind-guarantees.sqlt:685"
    :dialect "postgresql"
    :source "ITEMS .> TAKE(9223372036854775807)"
    :expect "SELECT * FROM \"items\" LIMIT 9223372036854775807"
@@ -19509,7 +19461,7 @@ ORDERS .> TAKE(1)"
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list ) nil nil)))))
   (list
    :name "stmt.take.whole-number-with-scale.sqlite"
-   :at "49-kind-guarantees.sqlt:701"
+   :at "49-kind-guarantees.sqlt:700"
    :dialect "sqlite"
    :source "ITEMS .> TAKE(2.0)"
    :expect "SELECT * FROM \"items\" LIMIT 2"
@@ -19525,7 +19477,7 @@ ORDERS .> TAKE(1)"
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list ) nil nil)))))
   (list
    :name "stmt.take.zero-with-scale.sqlite"
-   :at "49-kind-guarantees.sqlt:716"
+   :at "49-kind-guarantees.sqlt:715"
    :dialect "sqlite"
    :source "ITEMS .> TAKE(0.0)"
    :expect "SELECT * FROM \"items\" LIMIT 0"
@@ -19541,7 +19493,7 @@ ORDERS .> TAKE(1)"
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list ) nil nil)))))
   (list
    :name "stmt.take.count-past-2^53.sqlite"
-   :at "49-kind-guarantees.sqlt:731"
+   :at "49-kind-guarantees.sqlt:730"
    :dialect "sqlite"
    :source "ITEMS .> TAKE(9007199254740993)"
    :expect "SELECT * FROM \"items\" LIMIT 9007199254740993"
@@ -19557,7 +19509,7 @@ ORDERS .> TAKE(1)"
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list ) nil nil)))))
   (list
    :name "stmt.take.int64-max.sqlite"
-   :at "49-kind-guarantees.sqlt:746"
+   :at "49-kind-guarantees.sqlt:745"
    :dialect "sqlite"
    :source "ITEMS .> TAKE(9223372036854775807)"
    :expect "SELECT * FROM \"items\" LIMIT 9223372036854775807"
@@ -19573,7 +19525,7 @@ ORDERS .> TAKE(1)"
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list ) nil nil)))))
   (list
    :name "stmt.drop.whole-number-with-scale.mariadb"
-   :at "49-kind-guarantees.sqlt:761"
+   :at "49-kind-guarantees.sqlt:760"
    :dialect "mariadb"
    :source "ITEMS .> DROP(2.0)"
    :expect "SELECT * FROM `items` LIMIT 18446744073709551615 OFFSET 2"
@@ -19589,7 +19541,7 @@ ORDERS .> TAKE(1)"
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list ) nil nil)))))
   (list
    :name "stmt.drop.count-past-2^53.mariadb"
-   :at "49-kind-guarantees.sqlt:776"
+   :at "49-kind-guarantees.sqlt:775"
    :dialect "mariadb"
    :source "ITEMS .> DROP(9007199254740993)"
    :expect "SELECT * FROM `items` LIMIT 18446744073709551615 OFFSET 9007199254740993"
@@ -19605,7 +19557,7 @@ ORDERS .> TAKE(1)"
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list ) nil nil)))))
   (list
    :name "stmt.drop.count-past-2^53.postgresql"
-   :at "49-kind-guarantees.sqlt:791"
+   :at "49-kind-guarantees.sqlt:790"
    :dialect "postgresql"
    :source "ITEMS .> DROP(9007199254740993)"
    :expect "SELECT * FROM \"items\" OFFSET 9007199254740993"
@@ -19621,7 +19573,7 @@ ORDERS .> TAKE(1)"
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list ) nil nil)))))
   (list
    :name "stmt.drop.count-past-2^53.sqlite"
-   :at "49-kind-guarantees.sqlt:806"
+   :at "49-kind-guarantees.sqlt:805"
    :dialect "sqlite"
    :source "ITEMS .> DROP(9007199254740993)"
    :expect "SELECT * FROM \"items\" LIMIT -1 OFFSET 9007199254740993"
@@ -19637,7 +19589,7 @@ ORDERS .> TAKE(1)"
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list ) nil nil)))))
   (list
    :name "stmt.take.count-past-int64-is-clamped.mariadb"
-   :at "49-kind-guarantees.sqlt:821"
+   :at "49-kind-guarantees.sqlt:820"
    :dialect "mariadb"
    :source "ITEMS .> TAKE(99999999999999999999999)"
    :expect "SELECT * FROM `items` LIMIT 9223372036854775807"
@@ -19653,7 +19605,7 @@ ORDERS .> TAKE(1)"
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list ) nil nil)))))
   (list
    :name "stmt.take.count-2^63-is-clamped.mariadb"
-   :at "49-kind-guarantees.sqlt:836"
+   :at "49-kind-guarantees.sqlt:835"
    :dialect "mariadb"
    :source "ITEMS .> TAKE(9223372036854775808)"
    :expect "SELECT * FROM `items` LIMIT 9223372036854775807"
@@ -19669,7 +19621,7 @@ ORDERS .> TAKE(1)"
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list ) nil nil)))))
   (list
    :name "stmt.take.count-past-int64-is-clamped.postgresql"
-   :at "49-kind-guarantees.sqlt:851"
+   :at "49-kind-guarantees.sqlt:850"
    :dialect "postgresql"
    :source "ITEMS .> TAKE(99999999999999999999999)"
    :expect "SELECT * FROM \"items\" LIMIT 9223372036854775807"
@@ -19685,7 +19637,7 @@ ORDERS .> TAKE(1)"
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list ) nil nil)))))
   (list
    :name "stmt.take.count-2^63-is-clamped.postgresql"
-   :at "49-kind-guarantees.sqlt:866"
+   :at "49-kind-guarantees.sqlt:865"
    :dialect "postgresql"
    :source "ITEMS .> TAKE(9223372036854775808)"
    :expect "SELECT * FROM \"items\" LIMIT 9223372036854775807"
@@ -19701,7 +19653,7 @@ ORDERS .> TAKE(1)"
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list ) nil nil)))))
   (list
    :name "stmt.take.count-past-int64-is-clamped.sqlite"
-   :at "49-kind-guarantees.sqlt:881"
+   :at "49-kind-guarantees.sqlt:880"
    :dialect "sqlite"
    :source "ITEMS .> TAKE(99999999999999999999999)"
    :expect "SELECT * FROM \"items\" LIMIT 9223372036854775807"
@@ -19717,7 +19669,7 @@ ORDERS .> TAKE(1)"
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list ) nil nil)))))
   (list
    :name "stmt.take.count-2^63-is-clamped.sqlite"
-   :at "49-kind-guarantees.sqlt:896"
+   :at "49-kind-guarantees.sqlt:895"
    :dialect "sqlite"
    :source "ITEMS .> TAKE(9223372036854775808)"
    :expect "SELECT * FROM \"items\" LIMIT 9223372036854775807"
@@ -19733,7 +19685,7 @@ ORDERS .> TAKE(1)"
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list ) nil nil)))))
   (list
    :name "stmt.take.count-uint64-max-is-clamped.mariadb"
-   :at "49-kind-guarantees.sqlt:911"
+   :at "49-kind-guarantees.sqlt:910"
    :dialect "mariadb"
    :source "ITEMS .> TAKE(18446744073709551615)"
    :expect "SELECT * FROM `items` LIMIT 9223372036854775807"
@@ -19749,7 +19701,7 @@ ORDERS .> TAKE(1)"
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list ) nil nil)))))
   (list
    :name "stmt.drop.count-past-int64-is-clamped.mariadb"
-   :at "49-kind-guarantees.sqlt:926"
+   :at "49-kind-guarantees.sqlt:925"
    :dialect "mariadb"
    :source "ITEMS .> DROP(18446744073709551616)"
    :expect "SELECT * FROM `items` LIMIT 18446744073709551615 OFFSET 9223372036854775807"
@@ -19765,7 +19717,7 @@ ORDERS .> TAKE(1)"
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list ) nil nil)))))
   (list
    :name "stmt.drop.count-past-int64-is-clamped.postgresql"
-   :at "49-kind-guarantees.sqlt:941"
+   :at "49-kind-guarantees.sqlt:940"
    :dialect "postgresql"
    :source "ITEMS .> DROP(18446744073709551616)"
    :expect "SELECT * FROM \"items\" OFFSET 9223372036854775807"
@@ -19781,7 +19733,7 @@ ORDERS .> TAKE(1)"
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list ) nil nil)))))
   (list
    :name "stmt.drop.count-past-int64-is-clamped.sqlite"
-   :at "49-kind-guarantees.sqlt:954"
+   :at "49-kind-guarantees.sqlt:953"
    :dialect "sqlite"
    :source "ITEMS .> DROP(18446744073709551616)"
    :expect "SELECT * FROM \"items\" LIMIT -1 OFFSET 9223372036854775807"
@@ -19797,7 +19749,7 @@ ORDERS .> TAKE(1)"
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list ) nil nil)))))
   (list
    :name "stmt.drop.merged-offset-past-int64-is-clamped.mariadb"
-   :at "49-kind-guarantees.sqlt:967"
+   :at "49-kind-guarantees.sqlt:966"
    :dialect "mariadb"
    :source "ITEMS .> DROP(9223372036854775807) .> DROP(1)"
    :expect "SELECT * FROM `items` LIMIT 18446744073709551615 OFFSET 9223372036854775807"
@@ -19813,7 +19765,7 @@ ORDERS .> TAKE(1)"
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list ) nil nil)))))
   (list
    :name "stmt.drop.merged-offset-below-int64-is-exact.mariadb"
-   :at "49-kind-guarantees.sqlt:982"
+   :at "49-kind-guarantees.sqlt:981"
    :dialect "mariadb"
    :source "ITEMS .> DROP(9223372036854775806) .> DROP(1)"
    :expect "SELECT * FROM `items` LIMIT 18446744073709551615 OFFSET 9223372036854775807"
@@ -19829,7 +19781,7 @@ ORDERS .> TAKE(1)"
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list ) nil nil)))))
   (list
    :name "stmt.take.then-take-past-int64-keeps-the-smaller.mariadb"
-   :at "49-kind-guarantees.sqlt:997"
+   :at "49-kind-guarantees.sqlt:996"
    :dialect "mariadb"
    :source "ITEMS .> TAKE(5) .> TAKE(9223372036854775808)"
    :expect "SELECT * FROM `items` LIMIT 5"
@@ -19845,7 +19797,7 @@ ORDERS .> TAKE(1)"
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list ) nil nil)))))
   (list
    :name "agg.bucket-sum.an-undeclared-field-is-guarded-as-a-whole"
-   :at "49-kind-guarantees.sqlt:1012"
+   :at "49-kind-guarantees.sqlt:1011"
    :dialect "mariadb"
    :source "O .> BUCKET(_[\"CAT\"], RECORD(\"s\", SUM(_, _[\"MISC\"])))"
    :expect "SELECT CASE WHEN COUNT(*) = COUNT(CASE WHEN (`o`.`misc` REGEXP '\\\\A-?[0-9]+(\\\\.[0-9]+)?\\\\z') THEN 1 END) THEN COALESCE(SUM(CAST(`o`.`misc` AS DECIMAL(65,10))), 0) ELSE NULL END AS `s` FROM `orders` `o` GROUP BY CAST(`o`.`cat` AS CHAR) COLLATE utf8mb4_nopad_bin"
@@ -19861,7 +19813,7 @@ ORDERS .> TAKE(1)"
    :bindings (lambda () (list (cons "O" (binding-relation "orders" "o" (list (cons "CAT" (binding-column "cat" "o" :text)) (cons "MISC" (binding-column "misc" "o" :unknown))) nil nil)))))
   (list
    :name "agg.bucket-sum.an-undeclared-field-sqlite-refuses"
-   :at "49-kind-guarantees.sqlt:1027"
+   :at "49-kind-guarantees.sqlt:1026"
    :dialect "sqlite"
    :source "O .> BUCKET(_[\"CAT\"], RECORD(\"s\", SUM(_, _[\"MISC\"])))"
    :expect nil
@@ -19877,7 +19829,7 @@ ORDERS .> TAKE(1)"
    :bindings (lambda () (list (cons "O" (binding-relation "orders" "o" (list (cons "CAT" (binding-column "cat" "o" :text)) (cons "MISC" (binding-column "misc" "o" :unknown))) nil nil)))))
   (list
    :name "agg.fold.any.at-256-is-a-left-fold"
-   :at "49-kind-guarantees.sqlt:1040"
+   :at "49-kind-guarantees.sqlt:1039"
    :dialect "mariadb"
    :source "ANY((N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N), _ > 0)"
    :expect "((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((`k`.`n` > 0) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0))"
@@ -19893,7 +19845,7 @@ ORDERS .> TAKE(1)"
    :bindings (lambda () (list (cons "N" (binding-column "n" "k" :num)) (cons "T" (binding-column "t" "k" :text :exact t :sargable nil :guard nil)))))
   (list
    :name "agg.fold.all.at-256-is-a-left-fold"
-   :at "49-kind-guarantees.sqlt:1053"
+   :at "49-kind-guarantees.sqlt:1052"
    :dialect "mariadb"
    :source "ALL((N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N), _ > 0)"
    :expect "((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((`k`.`n` > 0) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0))"
@@ -19909,7 +19861,7 @@ ORDERS .> TAKE(1)"
    :bindings (lambda () (list (cons "N" (binding-column "n" "k" :num)) (cons "T" (binding-column "t" "k" :text :exact t :sargable nil :guard nil)))))
   (list
    :name "agg.fold.sum.at-256-is-a-left-fold"
-   :at "49-kind-guarantees.sqlt:1064"
+   :at "49-kind-guarantees.sqlt:1063"
    :dialect "mariadb"
    :source "SUM((N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N), _)"
    :expect "(((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((`k`.`n` + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`)"
@@ -19925,7 +19877,7 @@ ORDERS .> TAKE(1)"
    :bindings (lambda () (list (cons "N" (binding-column "n" "k" :num)) (cons "T" (binding-column "t" "k" :text :exact t :sargable nil :guard nil)))))
   (list
    :name "agg.fold.in-list.at-256-is-a-left-fold"
-   :at "49-kind-guarantees.sqlt:1075"
+   :at "49-kind-guarantees.sqlt:1074"
    :dialect "mariadb"
    :source "T IN (\"v0\", \"v1\", \"v2\", \"v3\", \"v4\", \"v5\", \"v6\", \"v7\", \"v8\", \"v9\", \"v10\", \"v11\", \"v12\", \"v13\", \"v14\", \"v15\", \"v16\", \"v17\", \"v18\", \"v19\", \"v20\", \"v21\", \"v22\", \"v23\", \"v24\", \"v25\", \"v26\", \"v27\", \"v28\", \"v29\", \"v30\", \"v31\", \"v32\", \"v33\", \"v34\", \"v35\", \"v36\", \"v37\", \"v38\", \"v39\", \"v40\", \"v41\", \"v42\", \"v43\", \"v44\", \"v45\", \"v46\", \"v47\", \"v48\", \"v49\", \"v50\", \"v51\", \"v52\", \"v53\", \"v54\", \"v55\", \"v56\", \"v57\", \"v58\", \"v59\", \"v60\", \"v61\", \"v62\", \"v63\", \"v64\", \"v65\", \"v66\", \"v67\", \"v68\", \"v69\", \"v70\", \"v71\", \"v72\", \"v73\", \"v74\", \"v75\", \"v76\", \"v77\", \"v78\", \"v79\", \"v80\", \"v81\", \"v82\", \"v83\", \"v84\", \"v85\", \"v86\", \"v87\", \"v88\", \"v89\", \"v90\", \"v91\", \"v92\", \"v93\", \"v94\", \"v95\", \"v96\", \"v97\", \"v98\", \"v99\", \"v100\", \"v101\", \"v102\", \"v103\", \"v104\", \"v105\", \"v106\", \"v107\", \"v108\", \"v109\", \"v110\", \"v111\", \"v112\", \"v113\", \"v114\", \"v115\", \"v116\", \"v117\", \"v118\", \"v119\", \"v120\", \"v121\", \"v122\", \"v123\", \"v124\", \"v125\", \"v126\", \"v127\", \"v128\", \"v129\", \"v130\", \"v131\", \"v132\", \"v133\", \"v134\", \"v135\", \"v136\", \"v137\", \"v138\", \"v139\", \"v140\", \"v141\", \"v142\", \"v143\", \"v144\", \"v145\", \"v146\", \"v147\", \"v148\", \"v149\", \"v150\", \"v151\", \"v152\", \"v153\", \"v154\", \"v155\", \"v156\", \"v157\", \"v158\", \"v159\", \"v160\", \"v161\", \"v162\", \"v163\", \"v164\", \"v165\", \"v166\", \"v167\", \"v168\", \"v169\", \"v170\", \"v171\", \"v172\", \"v173\", \"v174\", \"v175\", \"v176\", \"v177\", \"v178\", \"v179\", \"v180\", \"v181\", \"v182\", \"v183\", \"v184\", \"v185\", \"v186\", \"v187\", \"v188\", \"v189\", \"v190\", \"v191\", \"v192\", \"v193\", \"v194\", \"v195\", \"v196\", \"v197\", \"v198\", \"v199\", \"v200\", \"v201\", \"v202\", \"v203\", \"v204\", \"v205\", \"v206\", \"v207\", \"v208\", \"v209\", \"v210\", \"v211\", \"v212\", \"v213\", \"v214\", \"v215\", \"v216\", \"v217\", \"v218\", \"v219\", \"v220\", \"v221\", \"v222\", \"v223\", \"v224\", \"v225\", \"v226\", \"v227\", \"v228\", \"v229\", \"v230\", \"v231\", \"v232\", \"v233\", \"v234\", \"v235\", \"v236\", \"v237\", \"v238\", \"v239\", \"v240\", \"v241\", \"v242\", \"v243\", \"v244\", \"v245\", \"v246\", \"v247\", \"v248\", \"v249\", \"v250\", \"v251\", \"v252\", \"v253\", \"v254\", \"v255\")"
    :expect "((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((`k`.`t` = 'v0') OR (`k`.`t` = 'v1')) OR (`k`.`t` = 'v2')) OR (`k`.`t` = 'v3')) OR (`k`.`t` = 'v4')) OR (`k`.`t` = 'v5')) OR (`k`.`t` = 'v6')) OR (`k`.`t` = 'v7')) OR (`k`.`t` = 'v8')) OR (`k`.`t` = 'v9')) OR (`k`.`t` = 'v10')) OR (`k`.`t` = 'v11')) OR (`k`.`t` = 'v12')) OR (`k`.`t` = 'v13')) OR (`k`.`t` = 'v14')) OR (`k`.`t` = 'v15')) OR (`k`.`t` = 'v16')) OR (`k`.`t` = 'v17')) OR (`k`.`t` = 'v18')) OR (`k`.`t` = 'v19')) OR (`k`.`t` = 'v20')) OR (`k`.`t` = 'v21')) OR (`k`.`t` = 'v22')) OR (`k`.`t` = 'v23')) OR (`k`.`t` = 'v24')) OR (`k`.`t` = 'v25')) OR (`k`.`t` = 'v26')) OR (`k`.`t` = 'v27')) OR (`k`.`t` = 'v28')) OR (`k`.`t` = 'v29')) OR (`k`.`t` = 'v30')) OR (`k`.`t` = 'v31')) OR (`k`.`t` = 'v32')) OR (`k`.`t` = 'v33')) OR (`k`.`t` = 'v34')) OR (`k`.`t` = 'v35')) OR (`k`.`t` = 'v36')) OR (`k`.`t` = 'v37')) OR (`k`.`t` = 'v38')) OR (`k`.`t` = 'v39')) OR (`k`.`t` = 'v40')) OR (`k`.`t` = 'v41')) OR (`k`.`t` = 'v42')) OR (`k`.`t` = 'v43')) OR (`k`.`t` = 'v44')) OR (`k`.`t` = 'v45')) OR (`k`.`t` = 'v46')) OR (`k`.`t` = 'v47')) OR (`k`.`t` = 'v48')) OR (`k`.`t` = 'v49')) OR (`k`.`t` = 'v50')) OR (`k`.`t` = 'v51')) OR (`k`.`t` = 'v52')) OR (`k`.`t` = 'v53')) OR (`k`.`t` = 'v54')) OR (`k`.`t` = 'v55')) OR (`k`.`t` = 'v56')) OR (`k`.`t` = 'v57')) OR (`k`.`t` = 'v58')) OR (`k`.`t` = 'v59')) OR (`k`.`t` = 'v60')) OR (`k`.`t` = 'v61')) OR (`k`.`t` = 'v62')) OR (`k`.`t` = 'v63')) OR (`k`.`t` = 'v64')) OR (`k`.`t` = 'v65')) OR (`k`.`t` = 'v66')) OR (`k`.`t` = 'v67')) OR (`k`.`t` = 'v68')) OR (`k`.`t` = 'v69')) OR (`k`.`t` = 'v70')) OR (`k`.`t` = 'v71')) OR (`k`.`t` = 'v72')) OR (`k`.`t` = 'v73')) OR (`k`.`t` = 'v74')) OR (`k`.`t` = 'v75')) OR (`k`.`t` = 'v76')) OR (`k`.`t` = 'v77')) OR (`k`.`t` = 'v78')) OR (`k`.`t` = 'v79')) OR (`k`.`t` = 'v80')) OR (`k`.`t` = 'v81')) OR (`k`.`t` = 'v82')) OR (`k`.`t` = 'v83')) OR (`k`.`t` = 'v84')) OR (`k`.`t` = 'v85')) OR (`k`.`t` = 'v86')) OR (`k`.`t` = 'v87')) OR (`k`.`t` = 'v88')) OR (`k`.`t` = 'v89')) OR (`k`.`t` = 'v90')) OR (`k`.`t` = 'v91')) OR (`k`.`t` = 'v92')) OR (`k`.`t` = 'v93')) OR (`k`.`t` = 'v94')) OR (`k`.`t` = 'v95')) OR (`k`.`t` = 'v96')) OR (`k`.`t` = 'v97')) OR (`k`.`t` = 'v98')) OR (`k`.`t` = 'v99')) OR (`k`.`t` = 'v100')) OR (`k`.`t` = 'v101')) OR (`k`.`t` = 'v102')) OR (`k`.`t` = 'v103')) OR (`k`.`t` = 'v104')) OR (`k`.`t` = 'v105')) OR (`k`.`t` = 'v106')) OR (`k`.`t` = 'v107')) OR (`k`.`t` = 'v108')) OR (`k`.`t` = 'v109')) OR (`k`.`t` = 'v110')) OR (`k`.`t` = 'v111')) OR (`k`.`t` = 'v112')) OR (`k`.`t` = 'v113')) OR (`k`.`t` = 'v114')) OR (`k`.`t` = 'v115')) OR (`k`.`t` = 'v116')) OR (`k`.`t` = 'v117')) OR (`k`.`t` = 'v118')) OR (`k`.`t` = 'v119')) OR (`k`.`t` = 'v120')) OR (`k`.`t` = 'v121')) OR (`k`.`t` = 'v122')) OR (`k`.`t` = 'v123')) OR (`k`.`t` = 'v124')) OR (`k`.`t` = 'v125')) OR (`k`.`t` = 'v126')) OR (`k`.`t` = 'v127')) OR (`k`.`t` = 'v128')) OR (`k`.`t` = 'v129')) OR (`k`.`t` = 'v130')) OR (`k`.`t` = 'v131')) OR (`k`.`t` = 'v132')) OR (`k`.`t` = 'v133')) OR (`k`.`t` = 'v134')) OR (`k`.`t` = 'v135')) OR (`k`.`t` = 'v136')) OR (`k`.`t` = 'v137')) OR (`k`.`t` = 'v138')) OR (`k`.`t` = 'v139')) OR (`k`.`t` = 'v140')) OR (`k`.`t` = 'v141')) OR (`k`.`t` = 'v142')) OR (`k`.`t` = 'v143')) OR (`k`.`t` = 'v144')) OR (`k`.`t` = 'v145')) OR (`k`.`t` = 'v146')) OR (`k`.`t` = 'v147')) OR (`k`.`t` = 'v148')) OR (`k`.`t` = 'v149')) OR (`k`.`t` = 'v150')) OR (`k`.`t` = 'v151')) OR (`k`.`t` = 'v152')) OR (`k`.`t` = 'v153')) OR (`k`.`t` = 'v154')) OR (`k`.`t` = 'v155')) OR (`k`.`t` = 'v156')) OR (`k`.`t` = 'v157')) OR (`k`.`t` = 'v158')) OR (`k`.`t` = 'v159')) OR (`k`.`t` = 'v160')) OR (`k`.`t` = 'v161')) OR (`k`.`t` = 'v162')) OR (`k`.`t` = 'v163')) OR (`k`.`t` = 'v164')) OR (`k`.`t` = 'v165')) OR (`k`.`t` = 'v166')) OR (`k`.`t` = 'v167')) OR (`k`.`t` = 'v168')) OR (`k`.`t` = 'v169')) OR (`k`.`t` = 'v170')) OR (`k`.`t` = 'v171')) OR (`k`.`t` = 'v172')) OR (`k`.`t` = 'v173')) OR (`k`.`t` = 'v174')) OR (`k`.`t` = 'v175')) OR (`k`.`t` = 'v176')) OR (`k`.`t` = 'v177')) OR (`k`.`t` = 'v178')) OR (`k`.`t` = 'v179')) OR (`k`.`t` = 'v180')) OR (`k`.`t` = 'v181')) OR (`k`.`t` = 'v182')) OR (`k`.`t` = 'v183')) OR (`k`.`t` = 'v184')) OR (`k`.`t` = 'v185')) OR (`k`.`t` = 'v186')) OR (`k`.`t` = 'v187')) OR (`k`.`t` = 'v188')) OR (`k`.`t` = 'v189')) OR (`k`.`t` = 'v190')) OR (`k`.`t` = 'v191')) OR (`k`.`t` = 'v192')) OR (`k`.`t` = 'v193')) OR (`k`.`t` = 'v194')) OR (`k`.`t` = 'v195')) OR (`k`.`t` = 'v196')) OR (`k`.`t` = 'v197')) OR (`k`.`t` = 'v198')) OR (`k`.`t` = 'v199')) OR (`k`.`t` = 'v200')) OR (`k`.`t` = 'v201')) OR (`k`.`t` = 'v202')) OR (`k`.`t` = 'v203')) OR (`k`.`t` = 'v204')) OR (`k`.`t` = 'v205')) OR (`k`.`t` = 'v206')) OR (`k`.`t` = 'v207')) OR (`k`.`t` = 'v208')) OR (`k`.`t` = 'v209')) OR (`k`.`t` = 'v210')) OR (`k`.`t` = 'v211')) OR (`k`.`t` = 'v212')) OR (`k`.`t` = 'v213')) OR (`k`.`t` = 'v214')) OR (`k`.`t` = 'v215')) OR (`k`.`t` = 'v216')) OR (`k`.`t` = 'v217')) OR (`k`.`t` = 'v218')) OR (`k`.`t` = 'v219')) OR (`k`.`t` = 'v220')) OR (`k`.`t` = 'v221')) OR (`k`.`t` = 'v222')) OR (`k`.`t` = 'v223')) OR (`k`.`t` = 'v224')) OR (`k`.`t` = 'v225')) OR (`k`.`t` = 'v226')) OR (`k`.`t` = 'v227')) OR (`k`.`t` = 'v228')) OR (`k`.`t` = 'v229')) OR (`k`.`t` = 'v230')) OR (`k`.`t` = 'v231')) OR (`k`.`t` = 'v232')) OR (`k`.`t` = 'v233')) OR (`k`.`t` = 'v234')) OR (`k`.`t` = 'v235')) OR (`k`.`t` = 'v236')) OR (`k`.`t` = 'v237')) OR (`k`.`t` = 'v238')) OR (`k`.`t` = 'v239')) OR (`k`.`t` = 'v240')) OR (`k`.`t` = 'v241')) OR (`k`.`t` = 'v242')) OR (`k`.`t` = 'v243')) OR (`k`.`t` = 'v244')) OR (`k`.`t` = 'v245')) OR (`k`.`t` = 'v246')) OR (`k`.`t` = 'v247')) OR (`k`.`t` = 'v248')) OR (`k`.`t` = 'v249')) OR (`k`.`t` = 'v250')) OR (`k`.`t` = 'v251')) OR (`k`.`t` = 'v252')) OR (`k`.`t` = 'v253')) OR (`k`.`t` = 'v254')) OR (`k`.`t` = 'v255'))"
@@ -19941,7 +19893,7 @@ ORDERS .> TAKE(1)"
    :bindings (lambda () (list (cons "N" (binding-column "n" "k" :num)) (cons "T" (binding-column "t" "k" :text :exact t :sargable nil :guard nil)))))
   (list
    :name "agg.fold.any.at-257-is-balanced"
-   :at "49-kind-guarantees.sqlt:1086"
+   :at "49-kind-guarantees.sqlt:1085"
    :dialect "mariadb"
    :source "ANY((N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N), _ > 0)"
    :expect "((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((`k`.`n` > 0) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR ((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((`k`.`n` > 0) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)))"
@@ -19957,7 +19909,7 @@ ORDERS .> TAKE(1)"
    :bindings (lambda () (list (cons "N" (binding-column "n" "k" :num)) (cons "T" (binding-column "t" "k" :text :exact t :sargable nil :guard nil)))))
   (list
    :name "agg.fold.all.at-257-is-balanced"
-   :at "49-kind-guarantees.sqlt:1099"
+   :at "49-kind-guarantees.sqlt:1098"
    :dialect "mariadb"
    :source "ALL((N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N), _ > 0)"
    :expect "((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((`k`.`n` > 0) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND ((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((`k`.`n` > 0) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)))"
@@ -19973,7 +19925,7 @@ ORDERS .> TAKE(1)"
    :bindings (lambda () (list (cons "N" (binding-column "n" "k" :num)) (cons "T" (binding-column "t" "k" :text :exact t :sargable nil :guard nil)))))
   (list
    :name "agg.fold.sum.at-257-is-balanced"
-   :at "49-kind-guarantees.sqlt:1110"
+   :at "49-kind-guarantees.sqlt:1109"
    :dialect "mariadb"
    :source "SUM((N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N), _)"
    :expect "(((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((`k`.`n` + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + (((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((`k`.`n` + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`))"
@@ -19989,7 +19941,7 @@ ORDERS .> TAKE(1)"
    :bindings (lambda () (list (cons "N" (binding-column "n" "k" :num)) (cons "T" (binding-column "t" "k" :text :exact t :sargable nil :guard nil)))))
   (list
    :name "agg.fold.in-list.at-257-is-balanced"
-   :at "49-kind-guarantees.sqlt:1121"
+   :at "49-kind-guarantees.sqlt:1120"
    :dialect "mariadb"
    :source "T IN (\"v0\", \"v1\", \"v2\", \"v3\", \"v4\", \"v5\", \"v6\", \"v7\", \"v8\", \"v9\", \"v10\", \"v11\", \"v12\", \"v13\", \"v14\", \"v15\", \"v16\", \"v17\", \"v18\", \"v19\", \"v20\", \"v21\", \"v22\", \"v23\", \"v24\", \"v25\", \"v26\", \"v27\", \"v28\", \"v29\", \"v30\", \"v31\", \"v32\", \"v33\", \"v34\", \"v35\", \"v36\", \"v37\", \"v38\", \"v39\", \"v40\", \"v41\", \"v42\", \"v43\", \"v44\", \"v45\", \"v46\", \"v47\", \"v48\", \"v49\", \"v50\", \"v51\", \"v52\", \"v53\", \"v54\", \"v55\", \"v56\", \"v57\", \"v58\", \"v59\", \"v60\", \"v61\", \"v62\", \"v63\", \"v64\", \"v65\", \"v66\", \"v67\", \"v68\", \"v69\", \"v70\", \"v71\", \"v72\", \"v73\", \"v74\", \"v75\", \"v76\", \"v77\", \"v78\", \"v79\", \"v80\", \"v81\", \"v82\", \"v83\", \"v84\", \"v85\", \"v86\", \"v87\", \"v88\", \"v89\", \"v90\", \"v91\", \"v92\", \"v93\", \"v94\", \"v95\", \"v96\", \"v97\", \"v98\", \"v99\", \"v100\", \"v101\", \"v102\", \"v103\", \"v104\", \"v105\", \"v106\", \"v107\", \"v108\", \"v109\", \"v110\", \"v111\", \"v112\", \"v113\", \"v114\", \"v115\", \"v116\", \"v117\", \"v118\", \"v119\", \"v120\", \"v121\", \"v122\", \"v123\", \"v124\", \"v125\", \"v126\", \"v127\", \"v128\", \"v129\", \"v130\", \"v131\", \"v132\", \"v133\", \"v134\", \"v135\", \"v136\", \"v137\", \"v138\", \"v139\", \"v140\", \"v141\", \"v142\", \"v143\", \"v144\", \"v145\", \"v146\", \"v147\", \"v148\", \"v149\", \"v150\", \"v151\", \"v152\", \"v153\", \"v154\", \"v155\", \"v156\", \"v157\", \"v158\", \"v159\", \"v160\", \"v161\", \"v162\", \"v163\", \"v164\", \"v165\", \"v166\", \"v167\", \"v168\", \"v169\", \"v170\", \"v171\", \"v172\", \"v173\", \"v174\", \"v175\", \"v176\", \"v177\", \"v178\", \"v179\", \"v180\", \"v181\", \"v182\", \"v183\", \"v184\", \"v185\", \"v186\", \"v187\", \"v188\", \"v189\", \"v190\", \"v191\", \"v192\", \"v193\", \"v194\", \"v195\", \"v196\", \"v197\", \"v198\", \"v199\", \"v200\", \"v201\", \"v202\", \"v203\", \"v204\", \"v205\", \"v206\", \"v207\", \"v208\", \"v209\", \"v210\", \"v211\", \"v212\", \"v213\", \"v214\", \"v215\", \"v216\", \"v217\", \"v218\", \"v219\", \"v220\", \"v221\", \"v222\", \"v223\", \"v224\", \"v225\", \"v226\", \"v227\", \"v228\", \"v229\", \"v230\", \"v231\", \"v232\", \"v233\", \"v234\", \"v235\", \"v236\", \"v237\", \"v238\", \"v239\", \"v240\", \"v241\", \"v242\", \"v243\", \"v244\", \"v245\", \"v246\", \"v247\", \"v248\", \"v249\", \"v250\", \"v251\", \"v252\", \"v253\", \"v254\", \"v255\", \"v256\")"
    :expect "((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((`k`.`t` = 'v0') OR (`k`.`t` = 'v1')) OR (`k`.`t` = 'v2')) OR (`k`.`t` = 'v3')) OR (`k`.`t` = 'v4')) OR (`k`.`t` = 'v5')) OR (`k`.`t` = 'v6')) OR (`k`.`t` = 'v7')) OR (`k`.`t` = 'v8')) OR (`k`.`t` = 'v9')) OR (`k`.`t` = 'v10')) OR (`k`.`t` = 'v11')) OR (`k`.`t` = 'v12')) OR (`k`.`t` = 'v13')) OR (`k`.`t` = 'v14')) OR (`k`.`t` = 'v15')) OR (`k`.`t` = 'v16')) OR (`k`.`t` = 'v17')) OR (`k`.`t` = 'v18')) OR (`k`.`t` = 'v19')) OR (`k`.`t` = 'v20')) OR (`k`.`t` = 'v21')) OR (`k`.`t` = 'v22')) OR (`k`.`t` = 'v23')) OR (`k`.`t` = 'v24')) OR (`k`.`t` = 'v25')) OR (`k`.`t` = 'v26')) OR (`k`.`t` = 'v27')) OR (`k`.`t` = 'v28')) OR (`k`.`t` = 'v29')) OR (`k`.`t` = 'v30')) OR (`k`.`t` = 'v31')) OR (`k`.`t` = 'v32')) OR (`k`.`t` = 'v33')) OR (`k`.`t` = 'v34')) OR (`k`.`t` = 'v35')) OR (`k`.`t` = 'v36')) OR (`k`.`t` = 'v37')) OR (`k`.`t` = 'v38')) OR (`k`.`t` = 'v39')) OR (`k`.`t` = 'v40')) OR (`k`.`t` = 'v41')) OR (`k`.`t` = 'v42')) OR (`k`.`t` = 'v43')) OR (`k`.`t` = 'v44')) OR (`k`.`t` = 'v45')) OR (`k`.`t` = 'v46')) OR (`k`.`t` = 'v47')) OR (`k`.`t` = 'v48')) OR (`k`.`t` = 'v49')) OR (`k`.`t` = 'v50')) OR (`k`.`t` = 'v51')) OR (`k`.`t` = 'v52')) OR (`k`.`t` = 'v53')) OR (`k`.`t` = 'v54')) OR (`k`.`t` = 'v55')) OR (`k`.`t` = 'v56')) OR (`k`.`t` = 'v57')) OR (`k`.`t` = 'v58')) OR (`k`.`t` = 'v59')) OR (`k`.`t` = 'v60')) OR (`k`.`t` = 'v61')) OR (`k`.`t` = 'v62')) OR (`k`.`t` = 'v63')) OR (`k`.`t` = 'v64')) OR (`k`.`t` = 'v65')) OR (`k`.`t` = 'v66')) OR (`k`.`t` = 'v67')) OR (`k`.`t` = 'v68')) OR (`k`.`t` = 'v69')) OR (`k`.`t` = 'v70')) OR (`k`.`t` = 'v71')) OR (`k`.`t` = 'v72')) OR (`k`.`t` = 'v73')) OR (`k`.`t` = 'v74')) OR (`k`.`t` = 'v75')) OR (`k`.`t` = 'v76')) OR (`k`.`t` = 'v77')) OR (`k`.`t` = 'v78')) OR (`k`.`t` = 'v79')) OR (`k`.`t` = 'v80')) OR (`k`.`t` = 'v81')) OR (`k`.`t` = 'v82')) OR (`k`.`t` = 'v83')) OR (`k`.`t` = 'v84')) OR (`k`.`t` = 'v85')) OR (`k`.`t` = 'v86')) OR (`k`.`t` = 'v87')) OR (`k`.`t` = 'v88')) OR (`k`.`t` = 'v89')) OR (`k`.`t` = 'v90')) OR (`k`.`t` = 'v91')) OR (`k`.`t` = 'v92')) OR (`k`.`t` = 'v93')) OR (`k`.`t` = 'v94')) OR (`k`.`t` = 'v95')) OR (`k`.`t` = 'v96')) OR (`k`.`t` = 'v97')) OR (`k`.`t` = 'v98')) OR (`k`.`t` = 'v99')) OR (`k`.`t` = 'v100')) OR (`k`.`t` = 'v101')) OR (`k`.`t` = 'v102')) OR (`k`.`t` = 'v103')) OR (`k`.`t` = 'v104')) OR (`k`.`t` = 'v105')) OR (`k`.`t` = 'v106')) OR (`k`.`t` = 'v107')) OR (`k`.`t` = 'v108')) OR (`k`.`t` = 'v109')) OR (`k`.`t` = 'v110')) OR (`k`.`t` = 'v111')) OR (`k`.`t` = 'v112')) OR (`k`.`t` = 'v113')) OR (`k`.`t` = 'v114')) OR (`k`.`t` = 'v115')) OR (`k`.`t` = 'v116')) OR (`k`.`t` = 'v117')) OR (`k`.`t` = 'v118')) OR (`k`.`t` = 'v119')) OR (`k`.`t` = 'v120')) OR (`k`.`t` = 'v121')) OR (`k`.`t` = 'v122')) OR (`k`.`t` = 'v123')) OR (`k`.`t` = 'v124')) OR (`k`.`t` = 'v125')) OR (`k`.`t` = 'v126')) OR (`k`.`t` = 'v127')) OR (`k`.`t` = 'v128')) OR ((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((`k`.`t` = 'v129') OR (`k`.`t` = 'v130')) OR (`k`.`t` = 'v131')) OR (`k`.`t` = 'v132')) OR (`k`.`t` = 'v133')) OR (`k`.`t` = 'v134')) OR (`k`.`t` = 'v135')) OR (`k`.`t` = 'v136')) OR (`k`.`t` = 'v137')) OR (`k`.`t` = 'v138')) OR (`k`.`t` = 'v139')) OR (`k`.`t` = 'v140')) OR (`k`.`t` = 'v141')) OR (`k`.`t` = 'v142')) OR (`k`.`t` = 'v143')) OR (`k`.`t` = 'v144')) OR (`k`.`t` = 'v145')) OR (`k`.`t` = 'v146')) OR (`k`.`t` = 'v147')) OR (`k`.`t` = 'v148')) OR (`k`.`t` = 'v149')) OR (`k`.`t` = 'v150')) OR (`k`.`t` = 'v151')) OR (`k`.`t` = 'v152')) OR (`k`.`t` = 'v153')) OR (`k`.`t` = 'v154')) OR (`k`.`t` = 'v155')) OR (`k`.`t` = 'v156')) OR (`k`.`t` = 'v157')) OR (`k`.`t` = 'v158')) OR (`k`.`t` = 'v159')) OR (`k`.`t` = 'v160')) OR (`k`.`t` = 'v161')) OR (`k`.`t` = 'v162')) OR (`k`.`t` = 'v163')) OR (`k`.`t` = 'v164')) OR (`k`.`t` = 'v165')) OR (`k`.`t` = 'v166')) OR (`k`.`t` = 'v167')) OR (`k`.`t` = 'v168')) OR (`k`.`t` = 'v169')) OR (`k`.`t` = 'v170')) OR (`k`.`t` = 'v171')) OR (`k`.`t` = 'v172')) OR (`k`.`t` = 'v173')) OR (`k`.`t` = 'v174')) OR (`k`.`t` = 'v175')) OR (`k`.`t` = 'v176')) OR (`k`.`t` = 'v177')) OR (`k`.`t` = 'v178')) OR (`k`.`t` = 'v179')) OR (`k`.`t` = 'v180')) OR (`k`.`t` = 'v181')) OR (`k`.`t` = 'v182')) OR (`k`.`t` = 'v183')) OR (`k`.`t` = 'v184')) OR (`k`.`t` = 'v185')) OR (`k`.`t` = 'v186')) OR (`k`.`t` = 'v187')) OR (`k`.`t` = 'v188')) OR (`k`.`t` = 'v189')) OR (`k`.`t` = 'v190')) OR (`k`.`t` = 'v191')) OR (`k`.`t` = 'v192')) OR (`k`.`t` = 'v193')) OR (`k`.`t` = 'v194')) OR (`k`.`t` = 'v195')) OR (`k`.`t` = 'v196')) OR (`k`.`t` = 'v197')) OR (`k`.`t` = 'v198')) OR (`k`.`t` = 'v199')) OR (`k`.`t` = 'v200')) OR (`k`.`t` = 'v201')) OR (`k`.`t` = 'v202')) OR (`k`.`t` = 'v203')) OR (`k`.`t` = 'v204')) OR (`k`.`t` = 'v205')) OR (`k`.`t` = 'v206')) OR (`k`.`t` = 'v207')) OR (`k`.`t` = 'v208')) OR (`k`.`t` = 'v209')) OR (`k`.`t` = 'v210')) OR (`k`.`t` = 'v211')) OR (`k`.`t` = 'v212')) OR (`k`.`t` = 'v213')) OR (`k`.`t` = 'v214')) OR (`k`.`t` = 'v215')) OR (`k`.`t` = 'v216')) OR (`k`.`t` = 'v217')) OR (`k`.`t` = 'v218')) OR (`k`.`t` = 'v219')) OR (`k`.`t` = 'v220')) OR (`k`.`t` = 'v221')) OR (`k`.`t` = 'v222')) OR (`k`.`t` = 'v223')) OR (`k`.`t` = 'v224')) OR (`k`.`t` = 'v225')) OR (`k`.`t` = 'v226')) OR (`k`.`t` = 'v227')) OR (`k`.`t` = 'v228')) OR (`k`.`t` = 'v229')) OR (`k`.`t` = 'v230')) OR (`k`.`t` = 'v231')) OR (`k`.`t` = 'v232')) OR (`k`.`t` = 'v233')) OR (`k`.`t` = 'v234')) OR (`k`.`t` = 'v235')) OR (`k`.`t` = 'v236')) OR (`k`.`t` = 'v237')) OR (`k`.`t` = 'v238')) OR (`k`.`t` = 'v239')) OR (`k`.`t` = 'v240')) OR (`k`.`t` = 'v241')) OR (`k`.`t` = 'v242')) OR (`k`.`t` = 'v243')) OR (`k`.`t` = 'v244')) OR (`k`.`t` = 'v245')) OR (`k`.`t` = 'v246')) OR (`k`.`t` = 'v247')) OR (`k`.`t` = 'v248')) OR (`k`.`t` = 'v249')) OR (`k`.`t` = 'v250')) OR (`k`.`t` = 'v251')) OR (`k`.`t` = 'v252')) OR (`k`.`t` = 'v253')) OR (`k`.`t` = 'v254')) OR (`k`.`t` = 'v255')) OR (`k`.`t` = 'v256')))"
@@ -20005,7 +19957,7 @@ ORDERS .> TAKE(1)"
    :bindings (lambda () (list (cons "N" (binding-column "n" "k" :num)) (cons "T" (binding-column "t" "k" :text :exact t :sargable nil :guard nil)))))
   (list
    :name "agg.fold.join.at-255-pieces-is-a-left-fold"
-   :at "49-kind-guarantees.sqlt:1132"
+   :at "49-kind-guarantees.sqlt:1131"
    :dialect "mariadb"
    :source "JOIN((T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T), \"-\")"
    :expect "CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(`k`.`t`, '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`)"
@@ -20021,7 +19973,7 @@ ORDERS .> TAKE(1)"
    :bindings (lambda () (list (cons "N" (binding-column "n" "k" :num)) (cons "T" (binding-column "t" "k" :text :exact t :sargable nil :guard nil)))))
   (list
    :name "agg.fold.join.at-257-pieces-is-balanced"
-   :at "49-kind-guarantees.sqlt:1145"
+   :at "49-kind-guarantees.sqlt:1144"
    :dialect "mariadb"
    :source "JOIN((T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T), \"-\")"
    :expect "CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(`k`.`t`, '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT('-', `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`))"
@@ -20037,7 +19989,7 @@ ORDERS .> TAKE(1)"
    :bindings (lambda () (list (cons "N" (binding-column "n" "k" :num)) (cons "T" (binding-column "t" "k" :text :exact t :sargable nil :guard nil)))))
   (list
    :name "agg.fold.any.at-600-splits-again"
-   :at "49-kind-guarantees.sqlt:1158"
+   :at "49-kind-guarantees.sqlt:1157"
    :dialect "mariadb"
    :source "ANY((N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N), _ > 0)"
    :expect "((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((`k`.`n` > 0) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR ((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((`k`.`n` > 0) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0))) OR (((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((`k`.`n` > 0) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR ((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((`k`.`n` > 0) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0))))"
@@ -20053,7 +20005,7 @@ ORDERS .> TAKE(1)"
    :bindings (lambda () (list (cons "N" (binding-column "n" "k" :num)) (cons "T" (binding-column "t" "k" :text :exact t :sargable nil :guard nil)))))
   (list
    :name "agg.fold.any.at-257-on-sqlite"
-   :at "49-kind-guarantees.sqlt:1171"
+   :at "49-kind-guarantees.sqlt:1170"
    :dialect "sqlite"
    :source "ANY((N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N), _ > 0)"
    :expect "((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC)) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR ((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC)) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))))"
@@ -20069,7 +20021,7 @@ ORDERS .> TAKE(1)"
    :bindings (lambda () (list (cons "N" (binding-column "n" "k" :num)))))
   (list
    :name "stmt.take.negative-fraction.mariadb"
-   :at "49-kind-guarantees.sqlt:1184"
+   :at "49-kind-guarantees.sqlt:1183"
    :dialect "mariadb"
    :source "ITEMS .> TAKE(-1.5)"
    :expect nil
@@ -20085,7 +20037,7 @@ ORDERS .> TAKE(1)"
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "ID" (binding-column "id" "items" :num))) nil nil)))))
   (list
    :name "stmt.drop.negative-fraction.mariadb"
-   :at "49-kind-guarantees.sqlt:1199"
+   :at "49-kind-guarantees.sqlt:1198"
    :dialect "mariadb"
    :source "ITEMS .> DROP(-0.5)"
    :expect nil
@@ -20101,7 +20053,7 @@ ORDERS .> TAKE(1)"
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "ID" (binding-column "id" "items" :num))) nil nil)))))
   (list
    :name "stmt.top-by.negative-fraction.mariadb"
-   :at "49-kind-guarantees.sqlt:1214"
+   :at "49-kind-guarantees.sqlt:1213"
    :dialect "mariadb"
    :source "ITEMS .> TOP_BY(_[\"id\"], -2.5)"
    :expect nil

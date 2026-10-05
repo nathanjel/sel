@@ -131,19 +131,6 @@ X + 1
 --- error
 E_SQL_BINDING
 ===
-### name: bind.value.canonical-num-still-emits-bare
---- note
-The other half: 2.50 round-trips, so it is unaffected. Scale is part of a SEL
-number and survives.
---- dialect
-mariadb
---- bindings
-{"X": {"kind": "value", "value": "2.50", "type": "NUM"}}
---- source
-X + 1
---- expect
-(2.50 + 1)
-===
 ### name: bind.value.negative-zero-is-not-canonical
 --- dialect
 mariadb
@@ -252,6 +239,7 @@ E_SQL_BINDING
 --- note
 Canonical is not the same as shortest: scale is part of a SEL number (spec §4.1)
 and part of what SQL DECIMAL arithmetic reads, so 2.50 stays 2.50.
+A value that already round-trips (2.50) is unaffected by canonicalisation.
 --- dialect
 mariadb
 --- bindings

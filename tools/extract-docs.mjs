@@ -66,7 +66,16 @@ export function extract(text, file) {
   return tests;
 }
 
-const [prefix, ...files] = process.argv.slice(2);
+const USAGE = 'usage: node tools/extract-docs.mjs OUT-PREFIX FILE.md...\n'
+  + '       writes OUT-PREFIX.{selc,want,src,where}\n';
+const argv = process.argv.slice(2);
+if (argv.includes('--help') || argv.includes('-h')) { process.stdout.write(USAGE); process.exit(0); }
+const badOption = argv.find((a) => a.startsWith('-'));
+if (badOption || argv.length < 2) {
+  process.stderr.write(`extract-docs: ${badOption ? `unknown option ${badOption}` : 'need an output prefix and at least one file'}\n${USAGE}`);
+  process.exit(2);
+}
+const [prefix, ...files] = argv;
 if (!prefix || files.length === 0) {
   process.stderr.write('usage: extract-docs.mjs out-prefix file.md...\n');
   process.exit(2);

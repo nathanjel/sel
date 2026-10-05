@@ -15,8 +15,8 @@
 // harness.
 //
 // A probe belongs here when it is part of the host contract in spec/SPEC.md §8.
-// Keep every driver in the same order with the same names; the diff is the
-// whole mechanism.
+// Every driver prints the same probe NAMES; tools/check-api-compare.py matches
+// them by name, so order and numbering are each driver's own.
 
 const { compile, evaluate, Value, SelError, functionNames, registerFunction, NONE, TEXT, BIN, BOOL } =
   await import(process.env.SEL_JS_ENTRY ?? '../js/src/sel.mjs');
@@ -107,7 +107,7 @@ say('program.run.mutates.context', ctx.get('SEEN').asText());
 // A BOOL a host hands in is an ordinary value: a program that assigns into it
 // changes that one value and nothing else. PHP kept two shared instances behind
 // Value::bool() and a run that wrote a child into one poisoned TRUE for the whole
-// process (PHP-C1). Two contexts, each holding its own TRUE, then a fresh TRUE.
+// process. Two contexts, each holding its own TRUE, then a fresh TRUE.
 {
   const a = Value.none(); a.set('FLAG', Value.bool(true));
   const b = Value.none(); b.set('FLAG', Value.bool(true));
@@ -145,7 +145,7 @@ try {
   say('error.host.hugenum', e.code);
 }
 
-// Every public constructor holds the same rules (spec §8, review 2026-09-28):
+// Every public constructor holds the same rules (spec §8):
 // the decimal form within the caps and canonical, keys checked, a malformed
 // call E_BAD_ARG -- each host through its own spelling of the constructor.
 for (const [name, build] of [
@@ -259,7 +259,7 @@ registerFunction('HOST_V', 0, 0, () => Value.text('old'));
   say('host.fn.replace', `${early.run().asText()} ${evaluate('HOST_V()').asText()}`);
 }
 
-// --- T12: dependencies() is FLOW-SENSITIVE (spec/SPEC.md §8): a variable is a
+// --- dependencies() is FLOW-SENSITIVE (spec/SPEC.md §8): a variable is a
 // dependency when some read of it can happen before the program has definitely
 // assigned it, in evaluation order. Assignments under a condition, a short
 // circuit, `??` or an aggregate body are not definite; `op=` and `A[k] op= x`
@@ -286,7 +286,7 @@ say('program.deps.index-key-read-before-a-later-key-assigns', deps('A[K][(K = 1)
 say('program.deps.top-arg-is-not-a-binder-in-the-three-argument-form', deps('L = LIST(1,2); TOP(L, A, (A = 1; 1))'));
 say('program.deps.bucket-key-phase-assignment-is-not-definite-for-the-projection', deps('L = LIST(1,2); BUCKET(L, G, (A = G; A), COUNT(G) + A)'));
 
-// --- T12: a Program is reusable: after a caught error it runs again, and two
+// --- a Program is reusable: after a caught error it runs again, and two
 // contexts are independent whatever the interleaving.
 {
   const divide = compile('A / B');
@@ -302,7 +302,7 @@ say('program.deps.bucket-key-phase-assignment-is-not-definite-for-the-projection
   say('program.reuse.two-contexts', [bump.run(a), bump.run(c), bump.run(a), bump.run(c)].map((v) => v.asText()).join(' '));
 }
 
-// --- T12: input the API cannot take is E_BAD_ARG, never a host exception or a
+// --- input the API cannot take is E_BAD_ARG, never a host exception or a
 // different SEL error (spec/SPEC.md §8). Statically typed hosts cannot be handed
 // a non-string source or a value of no native form, so they print n/a and the
 // reason; tools/check-api.sh leaves an n/a line out of the diff for that host.
@@ -319,7 +319,7 @@ registerFunction('HOST_OOB', 1, 2, (a) => (a.count() > 1 ? a.text(1) : a.text(5)
 say('host.fn.arg.out-of-range', code(() => evaluate('HOST_OOB("x")')));
 
 
-// --- T12 (CPP-C15): a host-supplied value nested past the cap, handed to RECORD beside a
+// --- a host-supplied value nested past the cap, handed to RECORD beside a
 // key that is not text. Arguments are evaluated first and coerced after (spec/SPEC.md §6.2),
 // so the key's E_NOT_TEXT wins; copying the over-deep value (E_DEPTH) happens only once the
 // arguments are known good. C++ built the pair in one expression and let the copy run first.

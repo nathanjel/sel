@@ -336,14 +336,6 @@ SUM(E, _ * 2)
 --- expect
 0
 ===
-### name: agg.has.static-is-decided-at-translation-time
---- dialect
-mariadb
---- source
-HAS((1, 2), "2")
---- expect
-TRUE
-===
 ### name: agg.has.relation-is-refused
 --- note
 This case used to assert FALSE for HAS(ITEMS, "price"), and FALSE was the right

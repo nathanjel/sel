@@ -1,17 +1,15 @@
 #!/usr/bin/env php
 <?php
-// Plain AST versus optimised execution over the conformance corpus (T04 /
-// T00-B): the PHP twin of tools/check-eval-equivalence.mjs -- see that file for
-// the rule. Each `.selt` source (with its setup), runs on fresh contexts as
+// Plain AST versus optimised execution over the conformance corpus: the PHP
+// twin of tools/check-eval-equivalence.mjs -- see that file for the rule. Each `.selt` source (with its setup), runs on fresh contexts as
 // Evaluator::evalNode($program->ast) (plain) and as $program->run() (optimiser
 // and math plans), twice each on one Program; value dump, error code and
 // position, and the final context dump must agree.
 //
 //   php -d memory_limit=-1 tools/check-eval-equivalence.php [file.selt ...]
 //
-// Exit status is non-zero on any difference. Not in tools/check.sh until the
-// divergences in docs/interim/2026-09-29/worklist/tests/04-evaluation.md are
-// fixed.
+// Exit status is non-zero on any difference. A gate lane of tools/check.sh
+// ("PHP plain vs optimised").
 
 declare(strict_types=1);
 

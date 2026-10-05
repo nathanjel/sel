@@ -275,3 +275,8 @@ dialect map: `from sel.sql import …` in Python, `sel-lang/sql` in JavaScript,
 `sel-lang/sql` system in Lisp, `sel_lang::sql` in Rust (the default `sql`
 feature; build with `default-features = false` to leave it out), and the
 `github.com/nathanjel/sel/go/sel/sql` package in Go.
+
+In PHP, a Composer install needs no `require` at all: the first use of a
+`Sel\Sql` class loads the layer (`php/src/Sql/autoload.php`, registered by the
+package's autoload). Without Composer, require `php/src/Sql/bootstrap.php`
+after `php/src/bootstrap.php`.

@@ -785,7 +785,7 @@ def self_check():
 
 def cases_check(path):
     import re
-    text = open(path, encoding='utf-8').read()
+    text = open(path, encoding='utf-8', newline='').read()
     bad = n = 0
     for rec in text.split('\n===')[:-1] if False else re.split(r'\n===\n?', text):
         m = re.search(r"--- source\n(?:IF\(FALSE, )?RMATCH\('((?:[^']|'')*)', (?:\"(?:[^\"\\]|\\.)*\")(?:, \"(i)\")?\)", rec)

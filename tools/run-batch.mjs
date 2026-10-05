@@ -12,9 +12,21 @@ import { readFileSync } from 'node:fs';
 const { compile, Value, SelError } =
   await import(process.env.SEL_JS_ENTRY ?? '../js/src/sel.mjs');
 
+// The runner contract (tools/README.md): a path that cannot be read, or a
+// corpus with no program in it, is a one-line refusal and a non-zero exit --
+// never a stack trace, and never a successful run that compared nothing.
 const args = process.argv.slice(2);
 const show = args.includes('--show');
-const path = args.filter((a) => a !== '--show')[0];
+const paths = args.filter((a) => a !== '--show');
+const refuse = (status, msg) => { process.stderr.write(`run-batch: ${msg}\n`); process.exit(status); };
+if (paths.length !== 1 || paths[0].startsWith('-')) refuse(2, 'usage: run-batch.mjs [--show] <corpus>');
+const path = paths[0];
+let text;
+try {
+  text = readFileSync(path, 'utf8');
+} catch (e) {
+  refuse(2, `cannot read ${path}: ${e.code ?? e.message}`);
+}
 
 // A line beginning `### ` starts a record; everything after it is source until
 // the next marker. Five lines, in any language — that is the whole point.
@@ -39,8 +51,10 @@ function render(v) {
   return v.dump();
 }
 
+const programs = readCorpus(text);
+if (programs.length === 0) refuse(1, `no programs in ${path}: a corpus is \`### \` records`);
 const lines = [];
-for (const src of readCorpus(readFileSync(path, 'utf8'))) {
+for (const src of programs) {
   try {
     const v = compile(src).run(Value.none());
     lines.push(show ? render(v) : v.dump());

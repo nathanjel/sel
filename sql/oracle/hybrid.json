@@ -1,6 +1,6 @@
 {
  "note": [
-  "The hybrid-parity oracle (T11). Each program is planned with planHybrid for the dialect, its SQL",
+  "The hybrid-parity oracle. Each program is planned with planHybrid for the dialect, its SQL",
   "prefix is EXECUTED on a real server through the runner executeHybrid is handed, and the answer must",
   "equal what SEL answers for the whole program over the same rows loaded as the context (run()).",
   "",
@@ -106,7 +106,7 @@
   {
    "name": "keys.filter-then-key-reader-map",
    "sel": "ORDERS .> SORT_BY(_[\"id\"]) .> FILTER(_[\"id\"] > 5) .> MAP(RECORD(\"k\", _K, \"i\", _[\"id\"], \"z\", COUNT(SPLIT(_[\"name\"], \"a\"))))",
-   "note": "FILTER keeps the ordinals of the sorted list (6, 7, 8); a continuation that reads `_K` after a split must see them, not the rows' ordinals in the SQL rowset. LISP-C8/C27, CPP-C33, PY-C22, PHP-C8, JS-C22.",
+   "note": "FILTER keeps the ordinals of the sorted list (6, 7, 8); a continuation that reads `_K` after a split must see them, not the rows' ordinals in the SQL rowset.",
    "expect": {
     "fields": {
      "k": [
@@ -125,7 +125,7 @@
   {
    "name": "keys.filter-then-unsupported-filter",
    "sel": "ORDERS .> SORT_BY(_[\"id\"]) .> FILTER(_[\"id\"] > 5) .> FILTER(COUNT(SPLIT(_[\"name\"], \"a\")) > 1)",
-   "note": "The result keys are part of the value: the one row that survives is `6`, not `1`. JS-C22, CPP-C33, PY-C22, PHP-C8.",
+   "note": "The result keys are part of the value: the one row that survives is `6`, not `1`.",
    "expect": {
     "keys": [
      "6"
@@ -135,7 +135,7 @@
   {
    "name": "keys.take-filter-filter",
    "sel": "ORDERS .> SORT_BY(_[\"id\"]) .> TAKE(6) .> FILTER(_[\"id\"] > 2) .> FILTER(COUNT(SPLIT(_[\"name\"], \"a\")) > 1)",
-   "note": "TAKE renumbers, FILTER then keeps the renumbered ordinals: 3, 5, 6. PHP-C8.",
+   "note": "TAKE renumbers, FILTER then keeps the renumbered ordinals: 3, 5, 6.",
    "expect": {
     "keys": [
      "3",
@@ -197,7 +197,7 @@
   {
    "name": "context.continuation-reads-the-callers-names",
    "sel": "ORDERS .> SORT_BY(_[\"id\"]) .> FILTER(COUNT(SPLIT(_[\"name\"], \"a\")) > LIM)",
-   "note": "The continuation reads LIM from the caller's context, as run() does. GO-C5: Go replaced the context with an empty record.",
+   "note": "The continuation reads LIM from the caller's context, as run() does. Go replaced the context with an empty record.",
    "requires": [
     "LIM"
    ],
@@ -233,7 +233,7 @@
   {
    "name": "context.non-literal-helper-read-by-the-continuation",
    "sel": "H = LEN(ENCODE_BASE64(TO_UTF8(\"abc\"))); ORDERS .> SORT_BY(_[\"id\"]) .> MAP(RECORD(\"i\", _[\"id\"], \"z\", COUNT(SPLIT(_[\"name\"], \"a\")) + H)) .> TAKE(2)",
-   "note": "A helper the continuation reads stays an assignment in front of the steps and is evaluated once. PY-C51: the caller's context must not gain it.",
+   "note": "A helper the continuation reads stays an assignment in front of the steps and is evaluated once. The caller's context must not gain it.",
    "expect": {
     "fields": {
      "i": [
@@ -246,7 +246,7 @@
   {
    "name": "error.take-after-a-map-that-can-raise",
    "sel": "ORDERS .> SORT_BY(_[\"id\"]) .> MAP(RECORD(\"i\", _[\"id\"], \"z\", IF(_[\"id\"] > 4, ABORT(\"x\"), 1))) .> TAKE(2)",
-   "note": "run() evaluates the MAP body on every row before TAKE cuts: row 5 raises. A plan that pushes the LIMIT past the MAP's local half hides it. JS-C23, PY-C47, CPP-C34, LISP-C30.",
+   "note": "run() evaluates the MAP body on every row before TAKE cuts: row 5 raises. A plan that pushes the LIMIT past the MAP's local half hides it.",
    "expect": {
     "error": "E_ABORT"
    }
@@ -270,7 +270,7 @@
   {
    "name": "error.missing-key-in-a-sort-behind-a-filter",
    "sel": "ORDERS .> SORT_BY(_[\"nokey\"]) .> FILTER(_[\"customer_id\"] == 7) .> MAP(RECORD(\"i\", _[\"id\"]))",
-   "note": "A sort key no row has is E_NO_KEY even when the FILTER after it would keep nothing. PHP-C36.",
+   "note": "A sort key no row has is E_NO_KEY even when the FILTER after it would keep nothing.",
    "expect": {
     "error": "E_NO_KEY"
    }
@@ -304,7 +304,7 @@
   {
    "name": "order.bucket-follows-the-explicit-sort",
    "sel": "ORDERS .> SORT_BY(_[\"customer_id\"], \"DESC\") .> BUCKET(_[\"customer_id\"], RECORD(\"c\", _K, \"n\", COUNT(_)))",
-   "note": "Groups appear in the order the sort put their first member. JS-C59: the SQL dropped the sort's ORDER BY around the GROUP BY.",
+   "note": "Groups appear in the order the sort put their first member. The SQL dropped the sort's ORDER BY around the GROUP BY.",
    "expect": {
     "fields": {
      "c": [
@@ -325,7 +325,7 @@
   {
    "name": "order.bucket-after-a-descending-sort-then-map",
    "sel": "ORDERS .> SORT_BY(_[\"id\"], \"DESC\") .> BUCKET(_[\"customer_id\"]) .> MAP(RECORD(\"c\", _K, \"n\", COUNT(_)))",
-   "note": "PHP-C35: memory gives 12, 11, 9, 7; the statement grouped in ascending key order.",
+   "note": "Memory gives 12, 11, 9, 7; the statement grouped in ascending key order.",
    "expect": {
     "fields": {
      "c": [
@@ -346,7 +346,7 @@
   {
    "name": "order.link-after-a-sort",
    "sel": "ORDERS .> SORT_BY(_[\"id\"], \"DESC\") .> LINK(CUSTOMERS, O, C, O[\"customer_id\"] == C[\"id\"]) .> MAP(RECORD(\"o\", _[\"O\"][\"id\"], \"n\", _[\"C\"][\"name\"])) .> TAKE(3)",
-   "note": "PHP-C35, LISP-C26: the ORDER BY of the sort must survive the join and the limit.",
+   "note": "The ORDER BY of the sort must survive the join and the limit.",
    "expect": {
     "fields": {
      "o": [
@@ -365,7 +365,7 @@
   {
    "name": "order.stable-ties-across-a-select-cols",
    "sel": "ORDERS .> SORT_BY(_[\"name\"], \"DESC\") .> SELECT_COLS(\"id\", \"customer_id\") .> TOP_BY(_[\"customer_id\"], \"DESC\", 2)",
-   "note": "Customer 12 is rows 8 (foxtrot) and 7 (echo); the sort by name put 8 first and SEL's TOP_BY keeps ties in that order. A database that discards the inner ORDER BY may answer 7, 8. PY-C52.",
+   "note": "Customer 12 is rows 8 (foxtrot) and 7 (echo); the sort by name put 8 first and SEL's TOP_BY keeps ties in that order. A database that discards the inner ORDER BY may answer 7, 8.",
    "expect": {
     "fields": {
      "id": [
@@ -378,7 +378,7 @@
   {
    "name": "order.distinct-after-a-sort-on-an-unprojected-column",
    "sel": "ORDERS .> SORT_BY(_[\"amount\"]) .> MAP(RECORD(\"c\", _[\"customer_id\"])) .> DISTINCT",
-   "note": "CPP-C60: SELECT DISTINCT with an ORDER BY column that is not in the select list is invalid on PostgreSQL. The plan must run and answer 11, 12, 7, 9 (first appearances in amount order).",
+   "note": "SELECT DISTINCT with an ORDER BY column that is not in the select list is invalid on PostgreSQL. The plan must run and answer 11, 12, 7, 9 (first appearances in amount order).",
    "expect": {
     "fields": {
      "c": [
@@ -433,7 +433,7 @@
   {
    "name": "binder.helper-named-like-the-explicit-binder-sort",
    "sel": "N = 5; ORDERS .> FILTER(_[\"id\"] > 1) .> SORT_BY(N, N[\"id\"], \"DESC\") .> MAP(RECORD(\"i\", _[\"id\"]))",
-   "note": "PY-C24, LISP-C28: the literal helper N must not be inlined into the binder position.",
+   "note": "The literal helper N must not be inlined into the binder position.",
    "expect": {
     "fields": {
      "i": [
@@ -514,7 +514,7 @@
   {
    "name": "binder.split-before-a-link-keeps-the-left-name",
    "sel": "ORDERS .> SORT_BY(_[\"id\"]) .> TAKE(4) .> LINK(CUSTOMERS, _1[\"customer_id\"] == _2[\"id\"] AND COUNT(SPLIT(_1[\"name\"], \"a\")) > 0) .> MAP(RECORD(\"n\", _[\"ORDERS\"][\"name\"], \"c\", _[\"CUSTOMERS\"][\"name\"]))",
-   "note": "The unrenderable predicate keeps the LINK in memory behind a SQL prefix; the joined row must still carry the left side under ORDERS (spec 7.4), not `_INPUT`. PHP-C9, PY-C23, LISP-C29, GO-C22.",
+   "note": "The unrenderable predicate keeps the LINK in memory behind a SQL prefix; the joined row must still carry the left side under ORDERS (spec 7.4), not `_INPUT`.",
    "expect": {
     "fields": {
      "n": [
@@ -535,7 +535,7 @@
   {
    "name": "context.pure-memory-plan-does-not-mutate-the-caller",
    "sel": "A = 1; A += 1; ORDERS .> SORT_BY(_[\"id\"]) .> TAKE(A) .> MAP(RECORD(\"i\", _[\"id\"]))",
-   "note": "Stage 1 refuses a compound assignment, so this is a pure_memory plan: run()'s assignments would leave A in the caller's context. executeHybrid never mutates the caller's context, whatever the classification (a SQL prefix cannot perform a helper's assignment, so the contract cannot promise it for the others). JS-C60, PY-C51, CPP-C54.",
+   "note": "Stage 1 refuses a compound assignment, so this is a pure_memory plan: run()'s assignments would leave A in the caller's context. executeHybrid never mutates the caller's context, whatever the classification (a SQL prefix cannot perform a helper's assignment, so the contract cannot promise it for the others).",
    "expect": {
     "fields": {
      "i": [
@@ -548,7 +548,7 @@
   {
    "name": "context.helper-assignment-in-a-split-plan-does-not-leak",
    "sel": "T = \"x\"; ORDERS .> SORT_BY(_[\"id\"]) .> MAP(RECORD(\"i\", _[\"id\"], \"x\", COUNT(SPLIT(_[\"name\"], T)))) .> TAKE(2)",
-   "note": "A helper the continuation reads is assigned inside the continuation's private context; the caller's context does not gain T. PY-C51.",
+   "note": "A helper the continuation reads is assigned inside the continuation's private context; the caller's context does not gain T.",
    "expect": {
     "fields": {
      "i": [
@@ -799,7 +799,7 @@
    "name": "planning.nested-calls-are-linear",
    "sel": "ORDERS .> MAP(RECORD(\"plus\", ABS(ABS(ABS(ABS(ABS(ABS(ABS(ABS(ABS(ABS(ABS(ABS(ABS(ABS(ABS(ABS(ABS(ABS(ABS(ABS(ABS(ABS(ABS(ABS(ABS(ABS(ABS(ABS(ABS(ABS(ABS(ABS(ABS(ABS(ABS(ABS(ABS(ABS(ABS(ABS(_[\"amount\"])))))))))))))))))))))))))))))))))))))))), \"tag\", ABORT(\"x\")))",
    "max_ms": 5000,
-   "note": "GO-C21: the planner visited every call's arguments twice, so time doubled per level of nesting; 40 levels must plan in well under a second."
+   "note": "The planner visited every call's arguments twice, so time doubled per level of nesting; 40 levels must plan in well under a second."
   }
  ]
 }

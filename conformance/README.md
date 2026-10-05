@@ -43,6 +43,12 @@ JavaScript answered `TRUE`, because its reader had deleted the BOM before the
 lexer ever saw it. The lexers had agreed all along. The same trap is why
 `tools/README.md` is normative about the corpus format's trailing newline.
 
+The file itself is read as bytes and decoded as UTF-8 with **no newline
+translation**: a CR inside a section is content, so a reader built on universal
+newlines or a line API that drops the CR before LF is running a different case.
+`lex.space.crlf-inside-a-text-literal` and
+`lex.space.lone-cr-inside-a-text-literal-is-not-lf` fail on such a reader.
+
 The four are SEL's own whitespace, which is the only set that can be right here:
 a reader that strips something the language does not is asserting that two
 different programs are the same one.

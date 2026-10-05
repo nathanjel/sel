@@ -11,6 +11,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 . tools/impls.sh
+. tools/parity-lib.sh
 
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
@@ -26,20 +27,9 @@ fi
 # A driver that dies part way (a segfault, an uncaught host exception) is a failure of
 # that host, reported with everything it printed first: the other hosts' probes are
 # still compared, so one crash does not hide the rest of the matrix.
-pids=()
-for impl in $IMPLS; do
-  ( sel_slot impl_api "$impl" > "$WORK/$impl.txt"; echo $? > "$WORK/$impl.rc" ) &
-  pids+=($!)
-done
-wait "${pids[@]}" || true
 crashed=0
-for impl in $IMPLS; do
-  rc="$(cat "$WORK/$impl.rc" 2>/dev/null || echo 255)"
-  if [ "$rc" != 0 ]; then
-    echo "API probe driver for $impl exited with status $rc" >&2
-    crashed=1
-  fi
-done
+# shellcheck disable=SC2086
+parity_run api "$WORK" $IMPLS || crashed=1
 for impl in $IMPLS; do
   # An implementation that printed nothing must not compare equal to another
   # that printed nothing.

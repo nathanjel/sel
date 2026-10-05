@@ -1,6 +1,6 @@
 #!/usr/bin/env php
 <?php
-// Executing evidence for the server-limit half of the SQL contract (T09).
+// Executing evidence for the server-limit half of the SQL contract.
 //
 // A .sqlt case asserts the string a translator emits; only a server can say
 // whether that string RUNS. Two claims need one:
@@ -9,11 +9,10 @@
 //      translate to an expression nested O(N) deep, and SQLite refuses a tree
 //      deeper than 1000 at run time ("Expression tree is too large (maximum
 //      depth 1000)"). A translation the server cannot run is not a refusal and
-//      not an answer (PHP-C58, PY-C42).
+//      not an answer.
 //   2. Counts. TAKE/DROP counts are emitted exactly, and each server accepts a
 //      different range: PostgreSQL and SQLite stop at 2^63-1, MariaDB/MySQL at
-//      2^64-1. A count the server rejects must not be emitted (JS-C55, PY-C41,
-//      LISP-C39, GO-C38).
+//      2^64-1. A count the server rejects must not be emitted.
 //
 // The rule applied to each probe: the translator REFUSES (SqlError), or the
 // emitted SQL RUNS on the server and, where there is a data question, agrees

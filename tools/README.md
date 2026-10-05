@@ -1,8 +1,9 @@
 # The harness
 
-Five layers, run together by `tools/check.sh`. Everything here iterates
+The layers run together by `tools/check.sh`. Everything here iterates
 `tools/impls.sh` rather than naming hosts, so a new implementation joins by
-adding one entry there and providing the five entry points below.
+adding an arm to each role function there (`tools/check-registry.sh` fails until
+every role has one) and providing the entry points below.
 
 ```
 tools/check.sh              everything, side by side (SEL_JOBS, SEL_PHP_JOBS: see impls.sh)
@@ -12,6 +13,17 @@ tools/e2e.sh                one rule set through every host API
 tools/check-api.sh          the same API probes through every host binding
 tools/check-version.sh      every manifest declares the same version
 cd cpp && make asan         the C++ suite under the address and leak sanitizers
+tools/check-cli-source.sh   every `sel` CLI: source bytes and the CLI contract (docs/usage/repl.md)
+tools/check-corpus-bytes.sh every batch runner on byte fixtures (CR, CRLF, final blank line)
+tools/check-runners.sh      every runner refuses a bad path and an empty run (the runner contract)
+tools/check-registry.sh     every roster configuration has an arm in every role of impls.sh
+tools/check-budgets.sh      output/work budgets refused cheaply, per host, under ceilings
+tools/check-sql-budgets.sh  translator work/depth budgets, per host, under ceilings
+tools/check-regex-resources.py   regex resource behaviour, per host, under ceilings
+tools/check-regex-ambiguity-diff.sh  every host's regex validator vs the reference
+tools/check-host-examples.sh     the six top-level host programs in examples/ run cleanly
+tools/check-generators.sh   every gen-* refuses an unknown argument and writes nothing for --help
+tools/check-ref-fragments.sh     the fn-* reference fragments run against their cases
 tools/fuzz.sh               seeded differential fuzzing, N-way
 tools/check-sql-map.sh      the dialect map, regenerated and diffed
 tools/check-sql-docs.sh     the design document quotes cases that run
@@ -47,7 +59,14 @@ the baseline there, and copies the seed, objects included, per mutation, so a
 mutation of one C++ translation unit recompiles that unit, not the library. A
 mutation to a C++ header gets a clean build.
 
-Only the JS side owns generators: `gen-programs.mjs` (fuzz corpus),
+The generators of committed artifacts (`gen-*.mjs`, `gen-*.py`) share one
+command line and one write-or-check loop — `tools/gen-lib.mjs` and
+`tools/gen_lib.py`: no argument writes (only the files whose content changed),
+`--check` compares and writes nothing, `--help` prints the usage, anything else
+is exit 2. The Node side also takes every host language's string-literal
+escaper from `gen-lib.mjs`, so no generator carries its own.
+
+Only the JS side owns the corpus generators: `gen-programs.mjs` (fuzz corpus),
 `extract-docs.mjs` (documentation corpus) and `decimal-oracle.py` (Python) run
 once and feed every implementation. A port never re-implements a generator, only
 the five consumers.
@@ -57,23 +76,53 @@ exists: `python/sel/decimal.py` deliberately does **not** use the `decimal`
 module, so the oracle remains a genuinely independent opinion for that host
 rather than a comparison of the standard library with itself.
 
+## Measurement harnesses (manual, never gated)
+
+Timings are not pass/fail, so nothing below runs in `tools/check.sh`; each
+writes its results into its own ignored `results/` directory or to stdout.
+
+| Harness | What it measures |
+|---|---|
+| `tools/scale-test/` (`benchmark_all.py`, `run_benchmarks.py`) | the S1–S6 scale scenarios in every host; `run_benchmarks.py --plans-only` IS gated, as "scale plans vs reference" |
+| `tools/commit-benchmark/` | Mandelbrot and application timers per host, for A/B between commits |
+| `tools/python-runtime/`, `tools/benchmark-python-runtime.py` | Python arithmetic and metadata micro-measurements |
+| `tools/php-runtime/`, `tools/lisp-runtime/` | the PHP scalar-access and Lisp runtime comparisons |
+| `tools/adversarial/` | the SQL-layer adversarial audit's scripts; `regressions.sh` re-asserts its findings |
+| `tools/stress.sh` | programs of several hundred thousand nodes through every host |
+
+**Historical, unmaintained:** `tools/perf/` (the per-item A/B scripts of closed
+performance worklists), `tools/benchmark-{cpp-value.cpp,js-decimal-guard.mjs,
+lisp-traversal.lisp,php-runtime.php}`, `tools/js-runtime/`, `tools/code-scan/`
+and `tools/cpp-collection/`. Nothing runs or references them; they are kept only
+as worked examples of an A/B measurement and are not updated when an API they
+call changes. Their results and decisions are in git history.
+
 ---
 
 ## What an implementation must provide
 
 | Role | Reads | Writes | Exit |
 |---|---|---|---|
-| `conformance [file…]` | `conformance/*.selt` | a human report | non-zero on any failure |
-| `batch [--show] <corpus>` | a corpus file | one canonical line per program | 0 unless it cannot read the corpus |
+| `conformance [file…]` | `conformance/*.selt` | a human report | non-zero on any failure, and when it ran no case |
+| `batch [--show] <corpus>` | a corpus file | one canonical line per program | 0 unless it cannot read the corpus or the corpus holds no program |
 | `sqlreplay` | nothing | the shipped map rebuilt through the public registration API, and diffed against itself | 0 unless the API cannot express the map |
 | `sqlfuzz <corpus> [dialect]` | a corpus file | one canonical line per program, three `\|\|`-separated lanes: `translate` (the inline SQL, the `params` SQL and the bound values, or a refusal), `translate_statement` likewise, and `plan_hybrid` (the classification, then the prefix statement in `params` mode); every runner binds the same ORDERS and CUSTOMERS relations, which `gen-programs.mjs --sql` writes pipelines over (the AMOUNT field declares no table, so a join must qualify it by the relation's alias — SEL-0042) | 0 unless it cannot read the corpus |
 | `e2e` | `examples/order-validation.sel` | the scenario report | 0 |
 | `api` | nothing | the API parity report, one `NN name = value` line per probe | 0 |
 | `sqlapi` | nothing | the planner's contract, one `NN name = value` line per probe (tools/check-sqlapi.sh); **0 and silent** for a host with no SQL layer | 0 |
 | `check-decimal <oracle>` | an oracle file | `<impl>: N cases, M mismatches` | non-zero on any mismatch |
-| `sql [filter…]` | `sql/cases/*.sqlt` | `N passed, M failed` | non-zero on any failure; **0 and silent** for a host with no SQL layer |
+| `sql [filter…]` | `sql/cases/*.sqlt` | `N passed, M failed` | non-zero on any failure and when no case ran; **0 and silent** for a host with no SQL layer |
 | `oracle [mode]` | `sql/oracle/*` | a per-mode agreement report | non-zero on any disagreement; **0 with a skip line** when no DSN is set |
+| `regex_verdict [i]` | one pattern per stdin line | `A` (accepted) or `R` (refused with `E_REGEX_SYNTAX`) per line | 0 |
 | `sqldoc [file.md…]` | `docs/internals/sql-translation.md`, `sql/cases/*.sqlt` | `N quote a case, M wrong` | non-zero on any mismatch, and on finding no blocks |
+
+**The runner contract.** Every runner given a path it cannot read — missing,
+unreadable, or a directory — exits non-zero with one line containing
+`cannot read <path>`, never a stack trace. A `conformance`, `batch` or `sql` run
+that executed **zero** cases (an empty file, a filter that matched nothing)
+exits non-zero and says so: a mistyped path that reports `0 passed` is a gate
+that went green having run nothing. `tools/check-runners.sh` holds every host
+to both.
 
 The first five are required. `sql` and `oracle` are optional in the same way
 `unit` is: a host with no SQL layer succeeds silently and the harness moves on.
@@ -195,6 +244,17 @@ Python has two ways to join the list. `str.splitlines()` also breaks on `\v`,
 contain any of them — and the suite contains such characters deliberately.
 `str.rstrip('\n')` strips *every* trailing newline rather than exactly one.
 `python/bin/batch.py` uses `.split('\n')` and removes one, and says so.
+
+**The file is bytes, decoded as UTF-8 with no newline translation.** A CR is
+program text wherever it appears, including immediately before the LF that ends
+a line: the newline removed is one `\n`, never a `\r` and never a second `\n`.
+That rules out every line-reading convenience that normalises line ends —
+Python's universal newlines (`open(path)` without `newline=''`), Go's
+`bufio.ScanLines`, Rust's `BufRead::lines()` — all of which strip the CR before
+an LF. `tools/check-corpus-bytes.sh` holds every host's `batch` runner to this
+with the byte fixtures in `tools/fixtures/corpus/`: CR and CRLF inside a literal
+and at a line end, a record with leading and inner blank lines, and a final
+record that ends in a blank line, at its newline, and at end of file.
 
 A program containing a line that itself begins with `### ` splits into two
 records. Every reader does this identically, so it over-counts rather than

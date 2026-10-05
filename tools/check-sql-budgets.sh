@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Translator work and depth budgets (T08): a small program must never cost a host
+# Translator work and depth budgets: a small program must never cost a host
 # its process. Every program below is translated by every host with a SQL layer
 # under a wall-time ceiling and a memory ceiling, and the ONLY things asserted are
 # that the host terminates, exits cleanly, and prints an answer of the protocol's
@@ -16,9 +16,11 @@
 #
 #   tools/check-sql-budgets.sh [ceiling-seconds]      # default 20
 #
-# Not in tools/check.sh until every host passes it. The programs are the review's
-# own reproducers (JS-C8, JS-C54, PHP-C32, PY-C6, CPP-C10, CPP-C17, LISP-C23,
-# GO-C2, GO-C20), scaled down to what a bounded lane can afford.
+# A gate lane of tools/check.sh ("SQL translator budgets"; SEL_SKIP_SQL_BUDGETS=1
+# opts out, it is a few minutes of sequential translation). The programs are
+# reproducers of real exhaustion bugs found in review -- doubling helper DAGs,
+# quadrupling nested aggregates, long helper chains, non-name binders -- scaled
+# down to what a bounded lane can afford.
 
 set -uo pipefail
 cd "$(dirname "$0")/.."

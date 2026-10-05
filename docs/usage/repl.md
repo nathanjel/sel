@@ -361,8 +361,66 @@ sel> RMATCH('^\d{2}-\d{3}$', "31-874")
 TRUE
 ```
 
+## The `sel` command line
+
 The project's own command-line tools — `node js/bin/sel.mjs`, `php php/bin/sel`,
 `cpp/build/sel`, `lisp/bin/sel`, `python3 -m sel`, `rust/build/sel`,
-`go/build/sel` — are this loop with line editing, `-e 'expr'` for one-shot use
-and `--deps` for dependencies. The last two install as `cargo install sel-lang`
-and `go install github.com/nathanjel/sel/go/bin/sel@v0.10.0`.
+`go/build/sel` — are **not** the loop above. They are one program written seven
+times, held to the contract below by `tools/check-cli-source.sh`; the last two
+install as `cargo install sel-lang` and
+`go install github.com/nathanjel/sel/go/bin/sel@v0.10.0`. Where the loop above
+is an example of the host API, the CLI is a tool, and the two differ on
+purpose: the CLI has no `:deps` or `:reset` commands, prints `NULL` as `-` and
+BIN as `bin:<hex>`, and writes errors with their message to standard error.
+
+```text
+sel -e EXPR          evaluate EXPR and print the result
+sel FILE             evaluate the program in FILE
+sel --deps -e EXPR   print the variables EXPR reads, one per line, sorted
+sel --deps FILE      the same for a file
+sel --functions      print the function table, one name per line
+sel --help, sel -h   print the usage text
+sel --version        print "sel <version>", e.g. sel 0.10.0
+sel                  read programs from standard input, one per line
+```
+
+**Results** go to standard output, one line each, in the CLI's rendering:
+`TRUE`/`FALSE`; `-` for `NULL`; `bin:` and lower-case hex for BIN (`bin:6162`);
+text and numbers bare, as their characters (`0.3333333333`); anything with
+children as its dump (`-{"1"=t"1", "2"=t"a"}`). An empty dependency list prints
+**nothing** — not an empty line.
+
+**A file** is read as bytes and decoded as UTF-8 with no newline translation
+(SPEC §2): a CR is program text, and an invalid byte is `E_UTF8` at its
+position.
+
+**Errors and exit status:**
+
+| Situation | Exit | Standard error |
+|---|---|---|
+| success, including `--help`, `-h`, `--version`, `--functions` | 0 | nothing |
+| a compile or run error in `-e` or a file | 1 | `E_CODE at line L column C: message` |
+| a file that cannot be read — missing, unreadable, or a directory | 1 | `sel: cannot read PATH…` |
+| `-e` with no expression after it | 2 | `sel: -e needs an expression` |
+| an option the CLI does not have | 2 | `sel: unknown option OPT` |
+| a second operand (`sel -e 1 extra`, `sel a.sel b.sel`; in `sel a.sel -e X` the file is the operand and `X` the extra one) | 2 | `sel: unexpected argument ARG` |
+
+Every refusal is that one line, never a stack trace, and writes nothing to
+standard output. Only the code and position of an evaluation error are
+contract; the message is human text.
+
+**Standard input** (no operand) is a REPL: one context is kept across lines, so
+`A = 1` on one line is `A` on the next. Each line is one program; its result
+goes to standard output and its error, as above, to standard error, and the
+session goes on; at the end of input the CLI exits 0. The last line needs no
+newline. A line is skipped as blank only when it consists solely of
+SEL's whitespace — space, TAB, CR and LF; a line holding only a no-break space,
+a vertical tab or U+3000 is a program, and fails with `E_SYNTAX`. The `sel> `
+prompt is written **only when standard input is a terminal**: on a pipe the
+output is the results and nothing else, so
+
+```text
+$ printf 'A = 1\nA + 1\n' | sel
+1
+2
+```

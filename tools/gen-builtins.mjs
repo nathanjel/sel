@@ -17,11 +17,15 @@
 // no host has to defend against a malformed manifest. A validation failure is
 // a non-zero exit naming the entry and the key.
 
-import { readFileSync, writeFileSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
+import { genArgs, writeOrCheck, jsStr, pyStr, phpStr, cppStr, lispStr } from './gen-lib.mjs';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+const USAGE = `usage: node tools/gen-builtins.mjs            write the generated files
+       node tools/gen-builtins.mjs --check    validate and diff, write nothing`;
+const { check } = genArgs('gen-builtins', USAGE);
 const SOURCE = 'spec/builtins.json';
 
 const OUTPUTS = {
@@ -159,11 +163,6 @@ function load() {
 // descriptive role names stay in the manifest and the docs.
 const scopeOf = (role) => (role === 'binder' ? 'binder' : INNER.has(role) ? 'inner' : 'outer');
 
-const jsStr = (s) => JSON.stringify(s);
-const pyStr = (s) => "'" + s.replace(/\\/g, '\\\\').replace(/'/g, "\\'") + "'";
-const phpStr = (s) => "'" + s.replace(/\\/g, '\\\\').replace(/'/g, "\\'") + "'";
-const cppStr = (s) => '"' + s.replace(/\\/g, '\\\\').replace(/"/g, '\\"') + '"';
-const lispStr = (s) => '"' + s.replace(/\\/g, '\\\\').replace(/"/g, '\\"') + '"';
 
 function renderJs(entries) {
   const lines = [
@@ -618,21 +617,6 @@ const rendered = {
   rust: renderRust(entries), docs: renderDocs(entries),
 };
 
-if (process.argv.includes('--check')) {
-  let stale = 0;
-  for (const [host, path] of Object.entries(OUTPUTS)) {
-    let current = null;
-    try { current = readFileSync(resolve(ROOT, path), 'utf8'); } catch { /* missing */ }
-    if (current !== rendered[host]) {
-      process.stderr.write(`gen-builtins: ${path} is ${current === null ? 'missing' : 'stale'}\n`);
-      stale++;
-    }
-  }
-  if (stale) process.exit(1);
-  process.stdout.write(`gen-builtins: ${entries.length} builtins, ${Object.keys(OUTPUTS).length} renderings current\n`);
-} else {
-  for (const [host, path] of Object.entries(OUTPUTS)) {
-    writeFileSync(resolve(ROOT, path), rendered[host]);
-    process.stdout.write(`wrote ${path}\n`);
-  }
-}
+writeOrCheck('gen-builtins', ROOT, Object.entries(OUTPUTS).map(([host, path]) => [path, rendered[host]]),
+  { check, rerun: 'node tools/gen-builtins.mjs' });
+if (check) process.stdout.write(`gen-builtins: ${entries.length} builtins, ${Object.keys(OUTPUTS).length} renderings current\n`);

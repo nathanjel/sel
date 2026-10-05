@@ -1,5 +1,9 @@
-# Build output. Everything in the repository is source; nothing generated is
-# committed, so a fresh clone plus `tools/check.sh` is the whole story.
+# Build output and local scratch. Some GENERATED files are committed on purpose
+# -- the per-host renderings of sql/dialects, sql/cases, spec/builtins.json,
+# spec/limits.json and spec/math-ops.json, and two generated case files -- so a
+# consumer of any host never needs Node; tools/check-generated.sh keeps them
+# current (see CLAUDE.md, "Generated, committed artifacts"). Nothing that a
+# build or a tool run produces belongs in the tree.
 
 # --- C++
 cpp/build/
@@ -60,6 +64,8 @@ vcpkg_installed/
 *.selc
 # ...except the cross-host SQL oracle's corpus, which tools/check-sql-oracle.sh reads.
 !sql/oracle/cross.selc
+# ...and the byte fixtures tools/check-corpus-bytes.sh feeds every batch runner.
+!tools/fixtures/corpus/*.selc
 oracle.txt
 programs.json
 /tmp-*

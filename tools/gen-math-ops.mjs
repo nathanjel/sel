@@ -12,11 +12,15 @@
 // names is checked against spec/builtins.json here, so the two authored
 // sources cannot disagree about an arity.
 
-import { readFileSync, writeFileSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
+import { genArgs, writeOrCheck, jsStr, pyStr, phpStr, cppStr, lispStr } from './gen-lib.mjs';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+const USAGE = `usage: node tools/gen-math-ops.mjs            write the generated files
+       node tools/gen-math-ops.mjs --check    validate and diff, write nothing`;
+const { check } = genArgs('gen-math-ops', USAGE);
 const SOURCE = 'spec/math-ops.json';
 const BUILTINS = 'spec/builtins.json';
 
@@ -82,11 +86,6 @@ function load() {
   return out;
 }
 
-const jsStr = (s) => JSON.stringify(s);
-const pyStr = (s) => "'" + s.replace(/\\/g, '\\\\').replace(/'/g, "\\'") + "'";
-const phpStr = pyStr;
-const cppStr = (s) => '"' + s.replace(/\\/g, '\\\\').replace(/"/g, '\\"') + '"';
-const lispStr = cppStr;
 
 function renderJs(ops) {
   const l = [`// ${HEADER}`, '//',
@@ -100,7 +99,7 @@ function renderJs(ops) {
   l.push('});', '', 'export const MATH_PREFIX = Object.freeze({');
   for (const o of ops) if (o.kind === 'prefix') l.push(`  ${jsStr(o.token)}: ${jsStr(o.name)},`);
   l.push('});', '', 'export const MATH_BUILTINS = Object.freeze({');
-  for (const o of ops) if (o.kind === 'builtin') l.push(`  ${jsStr(o.token)}: { op: ${jsStr(o.name)}, arity: ${jsStr(o.arity)}, aux: ${o.aux === null ? 'null' : o.aux} },`);
+  for (const o of ops) if (o.kind === 'builtin') l.push(`  ${jsStr(o.token)}: { op: ${jsStr(o.name)}, arity: ${typeof o.arity === 'string' ? jsStr(o.arity) : o.arity}, aux: ${o.aux === null ? 'null' : o.aux} },`);
   l.push('});', '', `export const MATH_OPS = Object.freeze([${ops.map((o) => jsStr(o.name)).join(', ')}]);`, '');
   return l.join('\n');
 }
@@ -266,18 +265,6 @@ const rendered = {
   cpp: renderCpp(ops), lisp: renderLisp(ops), go: renderGo(ops),
   rust: renderRust(ops), docs: renderDocs(ops),
 };
-if (process.argv.includes('--check')) {
-  let stale = 0;
-  for (const [host, path] of Object.entries(OUTPUTS)) {
-    let current = null;
-    try { current = readFileSync(resolve(ROOT, path), 'utf8'); } catch { /* missing */ }
-    if (current !== rendered[host]) { process.stderr.write(`gen-math-ops: ${path} is ${current === null ? 'missing' : 'stale'}\n`); stale++; }
-  }
-  if (stale) process.exit(1);
-  process.stdout.write(`gen-math-ops: ${ops.length} operations, ${Object.keys(OUTPUTS).length} renderings current\n`);
-} else {
-  for (const [host, path] of Object.entries(OUTPUTS)) {
-    writeFileSync(resolve(ROOT, path), rendered[host]);
-    process.stdout.write(`wrote ${path}\n`);
-  }
-}
+writeOrCheck('gen-math-ops', ROOT, Object.entries(OUTPUTS).map(([host, path]) => [path, rendered[host]]),
+  { check, rerun: 'node tools/gen-math-ops.mjs' });
+if (check) process.stdout.write(`gen-math-ops: ${ops.length} operations, ${Object.keys(OUTPUTS).length} renderings current\n`);

@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# The oldest PHP that composer.json still allows (T12, PHP-C43 family).
+# The oldest PHP that composer.json still allows.
 #
 # composer.json says `"php": ">=8.1"`; every other lane here runs whatever `php` the
 # machine has (8.5 today), so a host feature added in 8.2+ or a memory footprint that
 # grows on the older engine would ship unnoticed. This runs the conformance suite, the
-# optimizer and runtime lanes and the API probes on the pinned `php:8.1-cli` image --
+# optimizer and runtime lanes, the SQL cases and the API probes on the pinned `php:8.1-cli` image --
 # which has no ext-gmp, so it is also the no-GMP configuration on the oldest engine.
 #
 #   tools/check-php-version.sh            fails if the image cannot be run
@@ -51,4 +51,5 @@ step "conformance (all files)" php/bin/conformance
 step "optimizer" tools/check-php-optimizer.php
 step "runtime" tools/check-php-runtime.php
 step "plain vs optimised" tools/check-eval-equivalence.php
+step "sql cases" php/bin/sqlt
 exit "$status"

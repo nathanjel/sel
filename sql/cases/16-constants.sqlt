@@ -577,6 +577,9 @@ is TRUE and a bare `=` between two text columns would say FALSE. A TEXT column
 holding numerals is a legitimate schema and must keep translating; refusing on
 the declared kind would break it. Pinned as op.compare.coerce-variant-when-a-
 side-is-not, and pinned again here so this check cannot grow into that one.
+The same program as op.compare.coerce-variant-when-a-side-is-not in
+02-operators.sqlt, deliberately: there it pins the operator rule, here that the
+constant folder leaves it alone.
 --- dialect
 mariadb
 --- bindings
@@ -625,7 +628,7 @@ LEFT(T, -1)
 LEFT(`t`, (-1))
 ===
 
-% PHP-C33 (gate fuzz, seed 20260905): a constant TEXT that is a number, in an arithmetic position (+ - * / %, unary minus, MIN and MAX arguments), is spelled as the exact numeric literal it stands for -- MariaDB and MySQL would read the quoted string as a DOUBLE ('0.1' + '0.2' = 0.3 is false there); the executing evidence is sql/oracle/expressions.selo. SQLite keeps the text and the dialect's numeric cast handles it.
+% Found by the SQL fuzz lane (seed 20260905): a constant TEXT that is a number, in an arithmetic position (+ - * / %, unary minus, MIN and MAX arguments), is spelled as the exact numeric literal it stands for -- MariaDB and MySQL would read the quoted string as a DOUBLE ('0.1' + '0.2' = 0.3 is false there); the executing evidence is sql/oracle/expressions.selo. SQLite keeps the text and the dialect's numeric cast handles it.
 
 ### name: const.arith.numeric-text-is-the-number.add.mariadb
 --- dialect

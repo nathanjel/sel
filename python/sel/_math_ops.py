@@ -7,27 +7,27 @@
 # one is missing.
 
 MATH_OPERATORS = {
-    '+': 'ADD',
-    '-': 'SUB',
-    '*': 'MUL',
-    '/': 'DIV',
-    '%': 'MOD',
+    "+": "ADD",
+    "-": "SUB",
+    "*": "MUL",
+    "/": "DIV",
+    "%": "MOD",
 }
 
 MATH_PREFIX = {
-    'NEG': 'NEG',
+    "NEG": "NEG",
 }
 
 MATH_BUILTINS = {
-    'ABS': ('ABS', 1, None),
-    'SIGN': ('SIGN', 1, None),
-    'CEIL': ('CEIL', 1, None),
-    'FLOOR': ('FLOOR', 1, None),
-    'TRUNC': ('TRUNC', 1, None),
-    'ROUND': ('ROUND', 2, 1),
-    'POWER': ('POWER', 2, 1),
-    'MIN': ('MIN', 'fold', None),
-    'MAX': ('MAX', 'fold', None),
+    "ABS": ("ABS", 1, None),
+    "SIGN": ("SIGN", 1, None),
+    "CEIL": ("CEIL", 1, None),
+    "FLOOR": ("FLOOR", 1, None),
+    "TRUNC": ("TRUNC", 1, None),
+    "ROUND": ("ROUND", 2, 1),
+    "POWER": ("POWER", 2, 1),
+    "MIN": ("MIN", "fold", None),
+    "MAX": ("MAX", "fold", None),
 }
 
-MATH_OPS = ('ADD', 'SUB', 'MUL', 'DIV', 'MOD', 'NEG', 'ABS', 'SIGN', 'CEIL', 'FLOOR', 'TRUNC', 'ROUND', 'POWER', 'MIN', 'MAX')
+MATH_OPS = ("ADD", "SUB", "MUL", "DIV", "MOD", "NEG", "ABS", "SIGN", "CEIL", "FLOOR", "TRUNC", "ROUND", "POWER", "MIN", "MAX")

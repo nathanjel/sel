@@ -1,4 +1,4 @@
-% Aggregates, ordering, grouping and joins: the edges (T05, review of 2026-09-29).
+% Aggregates, ordering, grouping and joins: the edges.
 %
 % Every expectation is derived from spec/SPEC.md (7.3 aggregates, 7.4 structure,
 % 3.4 identity, 6.4 limits), not from a host's output. Where the spec leaves a
