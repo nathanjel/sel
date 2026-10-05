@@ -182,4 +182,96 @@ inline const Form FORMS[] = {
 
 inline constexpr int FORM_COUNT = 39;
 
+// Classification (spec/builtins.md): the pipeline steps (whether each keeps
+// its rows as they are, and whether it sorts), where each regex builtin takes
+// its pattern and its flags, how the SQL translators type a builtin's
+// arguments (numeric positions; whether a BIN or a BOOL argument is accepted),
+// and the builtins whose result is a list. Hosts classify through these
+// rather than keeping lists of their own.
+struct PipelineStep {
+  const char* name;
+  bool keeps_rows;
+  bool sorts;
+};
+
+inline const PipelineStep PIPELINE_STEPS[] = {
+  {"BUCKET", false, false},
+  {"DEDUPE", true, false},
+  {"DISTINCT", true, false},
+  {"DROP", true, false},
+  {"FILTER", true, false},
+  {"LINK", false, false},
+  {"LINK_LEFT", false, false},
+  {"MAP", false, false},
+  {"SELECT_COLS", false, false},
+  {"SORT", true, true},
+  {"SORT_BY", true, true},
+  {"SORT_DESC", true, true},
+  {"TAKE", true, false},
+  {"TOP", true, true},
+  {"TOP_BY", true, true},
+  {"TOP_DESC", true, true},
+};
+
+inline constexpr int PIPELINE_STEP_COUNT = 16;
+
+struct RegexCall {
+  const char* name;
+  int pattern;
+  int flags;
+};
+
+inline const RegexCall REGEX_CALLS[] = {
+  {"RFIND", 0, 2},
+  {"RGROUPS", 0, 2},
+  {"RMATCH", 0, 2},
+  {"RREPLACE", 0, 3},
+};
+
+inline constexpr int REGEX_CALL_COUNT = 4;
+
+// numeric_all: every argument is a number; otherwise numeric[0..numeric_count).
+struct SqlArgs {
+  const char* name;
+  bool numeric_all;
+  int numeric[4];
+  int numeric_count;
+  bool bin;
+  bool boolean;
+};
+
+inline const SqlArgs SQL_ARGS[] = {
+  {"ABS", false, {0, -1, -1, -1}, 1, false, false},
+  {"BLEN", false, {-1, -1, -1, -1}, 0, true, false},
+  {"CANON", false, {0, -1, -1, -1}, 1, false, false},
+  {"CEIL", false, {0, -1, -1, -1}, 1, false, false},
+  {"CHAR", false, {0, -1, -1, -1}, 1, false, false},
+  {"CRC32", false, {-1, -1, -1, -1}, 0, true, false},
+  {"ENCODE_BASE64", false, {-1, -1, -1, -1}, 0, true, false},
+  {"FIND", false, {2, -1, -1, -1}, 1, false, false},
+  {"FLOOR", false, {0, -1, -1, -1}, 1, false, false},
+  {"FROM_UTF8", false, {-1, -1, -1, -1}, 0, true, false},
+  {"ISNUM", false, {-1, -1, -1, -1}, 0, true, true},
+  {"LEFT", false, {1, -1, -1, -1}, 1, false, false},
+  {"MAX", true, {-1, -1, -1, -1}, 0, false, false},
+  {"MIN", true, {-1, -1, -1, -1}, 0, false, false},
+  {"PADL", false, {1, -1, -1, -1}, 1, false, false},
+  {"PADR", false, {1, -1, -1, -1}, 1, false, false},
+  {"POWER", false, {0, 1, -1, -1}, 2, false, false},
+  {"REPEAT", false, {1, -1, -1, -1}, 1, false, false},
+  {"RIGHT", false, {1, -1, -1, -1}, 1, false, false},
+  {"ROUND", false, {0, 1, -1, -1}, 2, false, false},
+  {"SIGN", false, {0, -1, -1, -1}, 1, false, false},
+  {"SUBSTR", false, {1, 2, -1, -1}, 2, false, false},
+  {"TO_HEX", false, {-1, -1, -1, -1}, 0, true, false},
+  {"TO_UTF8", false, {-1, -1, -1, -1}, 0, true, false},
+  {"TRUNC", false, {0, -1, -1, -1}, 1, false, false},
+};
+
+inline constexpr int SQL_ARGS_COUNT = 25;
+
+inline const char* const YIELDS_LIST[] = {"BTL", "BUCKET", "DEDUPE", "DISTINCT", "DROP", "FILTER", "INDEXES", "LINK", "LINK_LEFT", "LIST", "MAP", "RECORD", "RGROUPS", "SELECT_COLS", "SORT", "SORT_BY", "SORT_DESC", "SPLIT", "TAKE", "TOP", "TOP_BY", "TOP_DESC"};
+
+inline constexpr int YIELDS_LIST_COUNT = 22;
+
 }  // namespace sel_builtin_manifest

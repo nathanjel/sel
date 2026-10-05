@@ -17,6 +17,46 @@ func isPipelineOp(name string) bool {
 	return vocab.IsPipelineOp(name)
 }
 
+// stepKind is how the statement planner handles a pipeline step: the planner's
+// per-step dispatch, as a table so that a step the manifest adds and the planner
+// does not know is refused at load rather than silently skipped.
+type stepKind uint8
+
+const (
+	stepUnknown stepKind = iota
+	stepFilter
+	stepBucket
+	stepSelectCols
+	stepMap
+	stepDistinct
+	stepTake
+	stepDrop
+	stepSort
+	stepLink
+)
+
+var statementSteps = func() map[string]stepKind {
+	m := map[string]stepKind{
+		"FILTER": stepFilter, "BUCKET": stepBucket, "SELECT_COLS": stepSelectCols, "MAP": stepMap,
+		"DISTINCT": stepDistinct, "DEDUPE": stepDistinct, "TAKE": stepTake, "DROP": stepDrop,
+		"LINK": stepLink, "LINK_LEFT": stepLink,
+	}
+	for name, step := range manifest.PipelineSteps {
+		if step.Sorts {
+			m[name] = stepSort
+		}
+	}
+	return m
+}()
+
+func init() {
+	for name := range manifest.PipelineSteps {
+		if statementSteps[name] == stepUnknown {
+			panic("sql: the manifest's pipeline step " + name + " has no statement-planner handler")
+		}
+	}
+}
+
 type joinedRowField struct {
 	Name  string
 	Spec  columnSpec
@@ -393,8 +433,8 @@ func (t *translator) AnalyzePipeline(ast *sNode) *relationalPlan {
 			plan.Bucket = bucketSealed
 		}
 
-		switch name {
-		case "FILTER":
+		switch statementSteps[name] {
+		case stepFilter:
 			if plan.Bucket == bucketSealed {
 				refuse("E_SQL_SHAPE",
 					"a FILTER over buckets must follow the BUCKET directly: SQL keeps a bucket's members only for the projection that ends the grouping",
@@ -436,7 +476,7 @@ func (t *translator) AnalyzePipeline(ast *sNode) *relationalPlan {
 				})
 			}
 
-		case "BUCKET":
+		case stepBucket:
 			if plan.Bucket != bucketNone {
 				refuse("E_SQL_SHAPE",
 					"a BUCKET over buckets: SQL keeps a bucket's members only for the projection that ends the grouping",
@@ -512,7 +552,7 @@ func (t *translator) AnalyzePipeline(ast *sNode) *relationalPlan {
 			}
 			t.bucketProjection(plan, binder, aggNode)
 
-		case "SELECT_COLS":
+		case stepSelectCols:
 			needDerived := t.planNeedsWrapBeforeMap(plan)
 			plan = t.ensureDerived(plan, needDerived)
 
@@ -568,7 +608,7 @@ func (t *translator) AnalyzePipeline(ast *sNode) *relationalPlan {
 			plan.SelectCols = cols
 			plan.Projections = nil
 
-		case "MAP":
+		case stepMap:
 			if plan.Bucket == bucketSealed {
 				refuse("E_SQL_SHAPE",
 					"a MAP over buckets must follow the BUCKET, with at most a FILTER between: SQL keeps a bucket's members only for the projection that ends the grouping",
@@ -618,7 +658,7 @@ func (t *translator) AnalyzePipeline(ast *sNode) *relationalPlan {
 			}
 			plan.SelectCols = nil
 
-		case "DISTINCT", "DEDUPE":
+		case stepDistinct:
 			needDerived := plan.Limit != nil || plan.Offset != nil
 			plan = t.ensureDerived(plan, needDerived)
 			if plan.Projections == nil && plan.SelectCols == nil {
@@ -630,7 +670,7 @@ func (t *translator) AnalyzePipeline(ast *sNode) *relationalPlan {
 			}
 			plan.Distinct = true
 
-		case "TAKE":
+		case stepTake:
 			t.requireOrderSurvives(plan, "TAKE", step.Pos)
 			lim := t.evalIntParam(args[1], "TAKE")
 			if plan.Limit == nil {
@@ -640,7 +680,7 @@ func (t *translator) AnalyzePipeline(ast *sNode) *relationalPlan {
 			}
 			plan.LimitPos = step.Pos
 
-		case "DROP":
+		case stepDrop:
 			t.requireOrderSurvives(plan, "DROP", step.Pos)
 			off := t.evalIntParam(args[1], "DROP")
 			skipped := off
@@ -665,7 +705,7 @@ func (t *translator) AnalyzePipeline(ast *sNode) *relationalPlan {
 			plan.Offset = &newOff
 			plan.LimitPos = step.Pos
 
-		case "SORT", "SORT_DESC", "SORT_BY", "TOP", "TOP_DESC", "TOP_BY":
+		case stepSort:
 			// Sorts are stable, so an earlier sort is the later one's tie-break; a derived
 			// table with no LIMIT beside its ORDER BY does not keep it, and its keys may
 			// not even be columns the outer level can name.
@@ -685,7 +725,7 @@ func (t *translator) AnalyzePipeline(ast *sNode) *relationalPlan {
 			}
 			plan.OrderBy = append(added, plan.OrderBy[:before]...)
 
-		case "LINK", "LINK_LEFT":
+		case stepLink:
 			if len(plan.OrderBy) > 0 || plan.Projections != nil || plan.SelectCols != nil || plan.GroupBy != nil {
 				// Compiled only to see whether the prefix can be spelled; the
 				// fragment is discarded, and so must be the parameter slots its

@@ -397,32 +397,57 @@
       (loop for child in (value-values hay)
             thereis (value-eql child needle))))
 
-(defun sel-bitwise (op a b at)
+(defun sel-bitwise (op code a b at)
   (unless (= (length a) (length b))
     (fail "E_LEN_MISMATCH"
           (format nil "~a needs operands of equal length (~d vs ~d)" op (length a) (length b))
           at))
   (make-bin (map '(vector (unsigned-byte 8))
-                 (cond ((string= op "BAND") #'logand)
-                       ((string= op "BOR") #'logior)
-                       (t #'logxor))
+                 (ecase code
+                   (:band #'logand)
+                   (:bor #'logior)
+                   (:bxor #'logxor))
                  a b)))
+
+;;; The evaluator's own keyword for each binary operator. The comparisons take
+;;; theirs from the lexicon's relation (one keyword set per family, in the
+;;; order eq ne lt le gt ge); the rest are named here. The keywords are this
+;;; host's dispatch, not a second vocabulary: the table is checked against
+;;; spec/lexicon.json when it is built, so an operator the lexicon has and this
+;;; evaluator does not is a load failure, never a run-time :UNKNOWN.
+(defparameter +native-op-codes+
+  '(("AND" . :and) ("OR" . :or) ("??" . :coalesce) ("???" . :vacuous)
+    ("+" . :add) ("-" . :sub) ("*" . :mul) ("/" . :div) ("%" . :mod)
+    ("&" . :concat) ("EQL" . :eql) ("IN" . :in) ("XOR" . :xor)
+    ("BAND" . :band) ("BOR" . :bor) ("BXOR" . :bxor)))
+
+;;; Every keyword EVAL-BINARY has an arm for.
+(defparameter +evaluated-op-codes+
+  '(:and :or :coalesce :vacuous :add :sub :mul :div :mod :concat :eql :in :xor
+    :band :bor :bxor :eq :ne :lt :le :gt :ge :teq :tne :tlt :tle :tgt :tge))
+
+(defparameter +binary-op-codes+
+  (let ((m (make-hash-table :test #'equal)))
+    (maphash
+     (lambda (token info)
+       (when (eq (op-info-node info) :bin)
+         (let ((code (case (op-info-family info)
+                       (:compare (nth (op-info-relation info) '(:eq :ne :lt :le :gt :ge)))
+                       (:text-compare (nth (op-info-relation info) '(:teq :tne :tlt :tle :tgt :tge)))
+                       (t (cdr (assoc token +native-op-codes+ :test #'string=))))))
+           (unless (and code (member code +evaluated-op-codes+))
+             (error "SEL: spec/lexicon.json's operator ~a has no evaluation in eval.lisp" token))
+           (setf (gethash token m) code))))
+     +infix-op-info+)
+    (dolist (pair +native-op-codes+)
+      (unless (gethash (car pair) m)
+        (error "SEL: eval.lisp evaluates ~a, which spec/lexicon.json does not have" (car pair))))
+    m))
 
 (defun binary-op-code (op)
   "The operator's keyword. The one place operator spellings are matched; the
 evaluator asks it once per node and dispatches with CASE."
-  (cond ((string= op "AND") :and) ((string= op "OR") :or)
-        ((string= op "??") :coalesce) ((string= op "???") :vacuous)
-        ((string= op "+") :add) ((string= op "-") :sub) ((string= op "*") :mul)
-        ((string= op "/") :div) ((string= op "%") :mod)
-        ((string= op "&") :concat) ((string= op "EQL") :eql) ((string= op "IN") :in)
-        ((string= op "XOR") :xor)
-        ((string= op "BAND") :band) ((string= op "BOR") :bor) ((string= op "BXOR") :bxor)
-        ((string= op "==") :eq) ((string= op "!=") :ne) ((string= op "<") :lt)
-        ((string= op "<=") :le) ((string= op ">") :gt) ((string= op ">=") :ge)
-        ((string= op "$==") :teq) ((string= op "$!=") :tne) ((string= op "$<") :tlt)
-        ((string= op "$<=") :tle) ((string= op "$>") :tgt) ((string= op "$>=") :tge)
-        (t :unknown)))
+  (gethash op +binary-op-codes+ :unknown))
 
 (declaim (inline node-op-code))
 (defun node-op-code (node)
@@ -493,7 +518,7 @@ evaluator asks it once per node and dispatches with CASE."
            ((:band :bor :bxor)
             (let* ((a (as-bytes l lp))
                    (b (as-bytes r rp)))
-              (sel-bitwise op a b (node-pos node))))
+              (sel-bitwise op code a b (node-pos node))))
 
            ((:teq :tne :tlt :tle :tgt :tge)
             (let* ((a (as-bytes l lp))
@@ -618,17 +643,18 @@ evaluator asks it once per node and dispatches with CASE."
                          (format nil "~a needs an existing target" (node-s node))
                          (node-pos (node-l node))))
                  (let ((rhs (eval-node (node-r node) ctx))
-                       (binop (char (node-s node) 0))
+                       ;; The binary operator the compound applies (the lexicon's
+                       ;; :compound), as its keyword, cached on the node.
+                       (code (or (node-opc node)
+                                 (setf (node-opc node)
+                                       (binary-op-code (compound-op (node-s node))))))
                        (tp (node-pos (node-l node)))
                        (vp (node-pos (node-r node))))
-                   (if (char= binop #\&)
+                   (if (eq code :concat)
                        (sel-concat current rhs tp vp (node-pos node))
                        (let* ((a (as-dec current tp))
                               (b (as-dec rhs vp)))
-                         (make-num (dec-arith (case binop
-                                                (#\+ :add) (#\- :sub) (#\* :mul) (#\/ :div)
-                                                (t :mod))
-                                              a b (node-pos node)))))))))) 
+                         (make-num (dec-arith code a b (node-pos node)))))))))) 
     ;; Re-derived after the right-hand side ran, which may have replaced or
     ;; removed any level along the path.
     (value-set (walk-create ctx path upto) key value)

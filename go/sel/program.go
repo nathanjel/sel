@@ -7,6 +7,7 @@ import (
 	"sync/atomic"
 
 	"github.com/nathanjel/sel/go/internal/manifest"
+	"github.com/nathanjel/sel/go/internal/vocab"
 )
 
 type Program struct {
@@ -278,8 +279,7 @@ func collectDependencies(node *Node, bound map[string]bool, reads map[string]boo
 
 	case NodeBin:
 		def = collectDependencies(node.L, bound, reads, def, depth+1)
-		switch node.S {
-		case "AND", "OR", "??", "???":
+		if vocab.IsShortCircuit(node.S) {
 			// The right side may not run, so nothing it assigns is definite.
 			collectDependencies(node.R, bound, reads, copyNames(def), depth+1)
 			return def

@@ -113,11 +113,11 @@ pub fn join_pure_source(node: &Node) -> bool {
 }
 
 fn is_text_compare_op(op: &str) -> bool {
-    matches!(op, "$==" | "$!=" | "$<" | "$<=" | "$>" | "$>=")
+    crate::ops::is_text_comparison(op)
 }
 
 fn is_num_compare_op(op: &str) -> bool {
-    matches!(op, "==" | "!=" | "<" | "<=" | ">" | ">=")
+    crate::ops::is_numeric_comparison(op)
 }
 
 pub fn leading_field_conjuncts(body: &Node, binder: &str) -> Vec<JoinConjunct> {

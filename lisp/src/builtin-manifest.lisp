@@ -134,3 +134,69 @@
         ("TOP_DESC" (:outer :outer) nil ("_" "_K"))
         ("TOP_DESC" (:outer :inner :outer) nil ("_" "_K"))
         ("TOP_DESC" (:outer :binder :inner :outer) nil ("_K"))))
+
+;;;; Classification (spec/builtins.md): the pipeline steps (whether each keeps
+;;;; its rows as they are, and whether it sorts), where each regex builtin takes
+;;;; its pattern and its flags, how the SQL translators type a builtin's
+;;;; arguments (numeric positions; whether a BIN or a BOOL argument is accepted),
+;;;; and the builtins whose result is a list. Hosts classify through these
+;;;; rather than keeping lists of their own.
+;;;; *BUILTIN-PIPELINE-DATA*: (name keeps-rows sorts). *BUILTIN-REGEX-DATA*:
+;;;; (name pattern flags). *BUILTIN-SQL-ARG-DATA*: (name numeric bin bool),
+;;;; numeric a list of indexes, :ALL or NIL. *BUILTIN-YIELDS-LIST*: names.
+
+(defparameter *builtin-pipeline-data*
+  '(
+    ("BUCKET" nil nil)
+    ("DEDUPE" t nil)
+    ("DISTINCT" t nil)
+    ("DROP" t nil)
+    ("FILTER" t nil)
+    ("LINK" nil nil)
+    ("LINK_LEFT" nil nil)
+    ("MAP" nil nil)
+    ("SELECT_COLS" nil nil)
+    ("SORT" t t)
+    ("SORT_BY" t t)
+    ("SORT_DESC" t t)
+    ("TAKE" t nil)
+    ("TOP" t t)
+    ("TOP_BY" t t)
+    ("TOP_DESC" t t)))
+
+(defparameter *builtin-regex-data*
+  '(
+    ("RFIND" 0 2)
+    ("RGROUPS" 0 2)
+    ("RMATCH" 0 2)
+    ("RREPLACE" 0 3)))
+
+(defparameter *builtin-sql-arg-data*
+  '(
+    ("ABS" (0) nil nil)
+    ("BLEN" nil t nil)
+    ("CANON" (0) nil nil)
+    ("CEIL" (0) nil nil)
+    ("CHAR" (0) nil nil)
+    ("CRC32" nil t nil)
+    ("ENCODE_BASE64" nil t nil)
+    ("FIND" (2) nil nil)
+    ("FLOOR" (0) nil nil)
+    ("FROM_UTF8" nil t nil)
+    ("ISNUM" nil t t)
+    ("LEFT" (1) nil nil)
+    ("MAX" :all nil nil)
+    ("MIN" :all nil nil)
+    ("PADL" (1) nil nil)
+    ("PADR" (1) nil nil)
+    ("POWER" (0 1) nil nil)
+    ("REPEAT" (1) nil nil)
+    ("RIGHT" (1) nil nil)
+    ("ROUND" (0 1) nil nil)
+    ("SIGN" (0) nil nil)
+    ("SUBSTR" (1 2) nil nil)
+    ("TO_HEX" nil t nil)
+    ("TO_UTF8" nil t nil)
+    ("TRUNC" (0) nil nil)))
+
+(defparameter *builtin-yields-list* '("BTL" "BUCKET" "DEDUPE" "DISTINCT" "DROP" "FILTER" "INDEXES" "LINK" "LINK_LEFT" "LIST" "MAP" "RECORD" "RGROUPS" "SELECT_COLS" "SORT" "SORT_BY" "SORT_DESC" "SPLIT" "TAKE" "TOP" "TOP_BY" "TOP_DESC"))

@@ -11,6 +11,7 @@ import { cpLength, checkText, MAX_TEXT_LEN } from '../budget.mjs';
 // The direction and field names fold ASCII-only:
 // toUpperCase took "deſc" for DESC.
 import { asciiUpper } from '../lexer.mjs';
+import { ARITH_OPS, NUM_COMPARE_OPS, TEXT_COMPARE_OPS } from '../ops.mjs';
 
 // The binder and the per-element body of a binding aggregate, where the
 // manifest's form puts them (registry.argRoles): the two-argument form binds
@@ -116,7 +117,8 @@ define({
   },
 });
 
-const BUILDS_NUMBER = new Set(['+', '-', '*', '/', '%']);
+// The arithmetic family (spec/lexicon.json): each builds a fresh number.
+const BUILDS_NUMBER = ARITH_OPS;
 // Whether evaluating `node` always yields a value no other reference holds: a
 // RECORD/LIST call (their arguments are copied into them, SPEC 3.4) or arithmetic.
 function buildsItsResult(node) {
@@ -144,8 +146,8 @@ define({
   },
 });
 
-const TEXT_COMPARE = new Set(['$==', '$!=', '$<', '$<=', '$>', '$>=']);
-const NUM_COMPARE = new Set(['==', '!=', '<', '<=', '>', '>=']);
+const TEXT_COMPARE = TEXT_COMPARE_OPS;
+const NUM_COMPARE = NUM_COMPARE_OPS;
 
 // Every AND-conjunct of a FILTER body, in order, as { node, fields, total }
 // for a LINK to pre-apply to its left rows (structure.mjs, doLink; SEL-0052).

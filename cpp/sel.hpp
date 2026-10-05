@@ -1,7 +1,7 @@
 // SEL — Simple Expression Language, C++23 implementation.
 //
-// Drop `sel.hpp`, `sel_ast.hpp`, the three generated headers `sel_limits.hpp`,
-// `sel_math_ops.hpp` and `sel_builtin_manifest.hpp`, `sel.cpp` and
+// Drop `sel.hpp`, `sel_ast.hpp`, the four generated headers `sel_limits.hpp`,
+// `sel_math_ops.hpp`, `sel_lexicon.hpp` and `sel_builtin_manifest.hpp`, `sel.cpp` and
 // `third_party/srell/` into a project and compile sel.cpp. There is nothing else
 // to fetch and nothing to build first. You include this file; the others are
 // internal and only have to sit beside `sel.cpp`.

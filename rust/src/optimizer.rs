@@ -6,27 +6,17 @@ use crate::limits::MAX_DEPTH;
 use crate::math_plan::{compile_math_plan, is_math_op};
 use crate::utf8::Pos;
 
-const PIPELINE_OPS: &[&str] = &[
-    "FILTER",
-    "BUCKET",
-    "SELECT_COLS",
-    "MAP",
-    "DISTINCT",
-    "DEDUPE",
-    "TAKE",
-    "DROP",
-    "SORT",
-    "SORT_DESC",
-    "SORT_BY",
-    "TOP",
-    "TOP_DESC",
-    "TOP_BY",
-    "LINK",
-    "LINK_LEFT",
-];
-
+/// The pipeline vocabulary: the steps `.>` chains, whose first argument is the
+/// rows the step before produced. The one list in this host is the manifest's
+/// `pipeline` (spec/builtins.json); the optimiser, the evaluator's pipeline
+/// loop, the statement planner and the translator all ask here.
 pub fn is_pipeline_op(name: &str) -> bool {
-    PIPELINE_OPS.contains(&name)
+    crate::manifest::builtins::pipeline_step(name).is_some()
+}
+
+/// A step that sorts (SORT, SORT_DESC, SORT_BY and the TOPs).
+pub(crate) fn is_sort_step(name: &str) -> bool {
+    crate::manifest::builtins::pipeline_step(name).is_some_and(|p| p.sorts)
 }
 
 pub fn unwind_pipeline(root: &Node) -> (&Node, Vec<&Node>) {
@@ -129,23 +119,22 @@ pub fn opt_fold(node: &Node) -> Node {
                 if let (Some(dl), Some(dr)) = (dec_l, dec_r) {
                     // The evaluator's own dispatch: a fold answers what a run
                     // would (an error leaves the node for the run to raise).
-                    match node.s.as_str() {
-                        op @ ("+" | "-" | "*" | "/" | "%") => {
-                            if let Ok(res) = crate::eval::arith(op, &dl, &dr, node.pos) {
-                                return opt_num(dec_format(&res), res, node.pos);
-                            }
+                    let op = node.s.as_str();
+                    if crate::ops::is_arithmetic(op) {
+                        if let Ok(res) = crate::eval::arith(op, &dl, &dr, node.pos) {
+                            return opt_num(dec_format(&res), res, node.pos);
                         }
-                        op @ ("==" | "!=" | "<" | "<=" | ">" | ">=") => {
-                            return opt_bool(crate::eval::compare_result(op, dec_cmp(&dl, &dr)), node.pos);
-                        }
-                        _ => {}
+                    } else if crate::ops::is_numeric_comparison(op) {
+                        let rel = crate::ops::relation(op).expect("a comparison has a relation");
+                        return opt_bool(crate::ops::holds(rel, dec_cmp(&dl, &dr)), node.pos);
                     }
                 }
             }
             if l.t == NodeType::Text && r.t == NodeType::Text {
                 // Byte order: a &str compares by its UTF-8 bytes.
-                if let Some(op @ ("==" | "!=" | "<" | "<=" | ">" | ">=")) = node.s.strip_prefix('$') {
-                    return opt_bool(crate::eval::compare_result(op, l.s.as_bytes().cmp(r.s.as_bytes())), node.pos);
+                if crate::ops::is_text_comparison(&node.s) {
+                    let rel = crate::ops::relation(&node.s).expect("a comparison has a relation");
+                    return opt_bool(crate::ops::holds(rel, l.s.as_bytes().cmp(r.s.as_bytes())), node.pos);
                 }
             }
         }
@@ -166,23 +155,11 @@ pub fn opt_fold(node: &Node) -> Node {
     node.clone()
 }
 
+// Whether a step's argument may be folded: not where a text literal is what
+// selects the step's form (SORT_BY's and TOP_BY's direction beside a bare
+// name), since folding a constant into one there would change the form.
 fn opt_step_arg_folds(step: &Node, index: usize) -> bool {
-    let sort_count = if step.s == "SORT_BY" {
-        step.items.len()
-    } else if step.s == "TOP_BY" {
-        if step.items.len() > 1 {
-            step.items.len() - 1
-        } else {
-            0
-        }
-    } else {
-        0
-    };
-    !(sort_count == 3
-        && index == 2
-        && step.items.len() > 1
-        && step.items[1].t == NodeType::Var
-        && !step.items[1].grouped)
+    !crate::manifest::text_selects_form(&step.s, &step.items, index)
 }
 
 fn opt_exceeds_depth(node: &Node, depth: usize) -> bool {
@@ -270,12 +247,12 @@ fn opt_cannot_raise(node: &Node, binder: &str, logical: bool) -> bool {
                 return false;
             }
             let op = node.s.as_str();
-            let is_safe = matches!(
-                op,
-                "==" | "!=" | "<" | "<=" | ">" | ">="
-                    | "$==" | "$!=" | "$<" | "$<=" | "$>" | "$>="
-                    | "AND" | "OR" | "+" | "-" | "*"
-            );
+            // Policy, not a family: both comparison families, AND and OR, and
+            // the arithmetic operators that cannot divide (`/` and `%` raise
+            // E_DIV_ZERO on a row's value).
+            let is_safe = crate::ops::is_comparison(op)
+                || matches!(op, "AND" | "OR")
+                || (crate::ops::is_arithmetic(op) && !matches!(op, "/" | "%"));
             is_safe
                 && node.l.as_ref().is_none_or(|l| opt_cannot_raise(l, binder, logical))
                 && node.r.as_ref().is_none_or(|r| opt_cannot_raise(r, binder, logical))
@@ -366,46 +343,26 @@ struct OptSortInfo<'a> {
 
 fn get_opt_sort_info(step: &Node) -> OptSortInfo<'_> {
     let args = &step.items;
-    let count = args.len();
     let is_name = |i: usize| args.get(i).is_some_and(|a| a.t == NodeType::Var && !a.grouped);
     let is_text = |i: usize| args.get(i).is_some_and(|a| a.t == NodeType::Text);
     let mut info = OptSortInfo { binder: "_".to_string(), key: None, valid: true };
-    let s = step.s.as_str();
-    // TOP* carry the limit last; what precedes it is the sort's own form.
-    let sort_count = if s.starts_with("TOP") { count.saturating_sub(1) } else { count };
-    if s == "SORT" || s == "SORT_DESC" || s == "TOP" || s == "TOP_DESC" {
-        match sort_count {
-            2 => info.key = args.get(1),
-            3 => {
-                info.valid = is_name(1);
-                info.binder = args[1].s.clone();
-                info.key = args.get(2);
-            }
-            _ => {}
-        }
-    } else if s == "SORT_BY" || s == "TOP_BY" {
-        match sort_count {
-            2 => info.key = args.get(1),
-            // A text literal in the third place is a direction and wins over a
-            // bare name in the second; otherwise a bare name is the binder, and
-            // anything else leaves a computed direction.
-            3 if is_text(2) => info.key = args.get(1),
-            3 if is_name(1) => {
-                info.binder = args[1].s.clone();
-                info.key = args.get(2);
-            }
-            3 => {
-                info.key = args.get(1);
-                info.valid = false;
-            }
-            4 => {
-                info.valid = is_name(1) && is_text(3);
-                info.binder = args[1].s.clone();
-                info.key = args.get(2);
-            }
-            _ => {}
-        }
+    // The manifest's form decides the roles (a text literal in the
+    // direction's place wins over a bare name in the binder's). The rewrite
+    // needs a binder that IS a bare name and a direction known now.
+    if !is_sort_step(&step.s) {
+        return info;
     }
+    let Some(roles) = crate::manifest::sort_roles(&step.s, args) else {
+        return info;
+    };
+    if let Some(b) = roles.binder {
+        info.valid = is_name(b);
+        info.binder = args[b].s.clone();
+    }
+    if let Some(d) = roles.dir {
+        info.valid = info.valid && is_text(d);
+    }
+    info.key = roles.key.and_then(|k| args.get(k));
     info
 }
 
@@ -719,8 +676,7 @@ fn opt_logical_steps(source: &Node, mut current: Vec<Node>, logical: bool) -> Ve
             // MAP + SORT...
             if let Some(s2) = second {
                 if first.s == "MAP"
-                    && (s2.s == "TOP" || s2.s == "TOP_DESC" || s2.s == "TOP_BY"
-                        || s2.s == "SORT" || s2.s == "SORT_DESC" || s2.s == "SORT_BY")
+                    && is_sort_step(&s2.s)
                     && opt_map_has_computed(first)
                 {
                     let sort = get_opt_sort_info(s2);
@@ -829,6 +785,8 @@ fn opt_logical_steps(source: &Node, mut current: Vec<Node>, logical: bool) -> Ve
 
 // This proof concerns mutation, not errors. FILTER still completes and checks
 // every selected row's copy depth before MAP starts, preserving error order.
+// The call allow-list is this proof's own (builtins known to build or read
+// without aliasing their arguments), not a manifest class.
 fn read_only_expression(node: &Node) -> bool {
     if node.t == NodeType::Assign { return false; }
     if node.t == NodeType::Call && !matches!(node.s.as_str(),

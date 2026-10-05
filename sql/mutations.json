@@ -159,8 +159,8 @@
       "name": "concat-treated-as-comparison",
       "was": "Class F. The collation fix keyed on the variant name `text`, which `&` also uses.",
       "file": "php/src/Sql/Translator.php",
-      "from": "static $ops = ['$==' => 0,",
-      "to": "static $ops = ['&' => 0, '$==' => 0,"
+      "from": "        return isset(Ops::$family['text-compare'][$op]) || isset(Ops::$family['deep-compare'][$op]);",
+      "to": "        return $op === '&' || isset(Ops::$family['text-compare'][$op]) || isset(Ops::$family['deep-compare'][$op]);"
     },
     {
       "name": "define-upper-cases-everything",
@@ -481,8 +481,8 @@
       "name": "byte-functions-lose-their-exemption",
       "was": "The other direction: over-refusing. BLEN, TO_HEX and the rest genuinely take bytes, and a guard that refuses them would make the BIN half of the layer unusable while every check still passed.",
       "file": "php/src/Sql/Translator.php",
-      "from": "    private const BIN_ARGUMENT_OK = ['BLEN' => 0, 'CRC32' => 0, 'ENCODE_BASE64' => 0,",
-      "to": "    private const BIN_ARGUMENT_OK = ['CRC32' => 0, 'ENCODE_BASE64' => 0,"
+      "from": "        if ($f->kind === 'BIN' && !(BuiltinManifest::SQL_ARGS[$name][1] ?? false)) {",
+      "to": "        if ($f->kind === 'BIN' && ($name === 'BLEN' || !(BuiltinManifest::SQL_ARGS[$name][1] ?? false))) {"
     },
     {
       "name": "bare-binder-takes-the-scalar-field",
@@ -795,7 +795,7 @@
     {
       "name": "cpp-list-key-accepts-leading-zero",
       "was": "SEL list keys are the canonical decimals, so \"01\" is not a key and the evaluator answers E_NO_KEY. Accepting a leading zero made this layer answer element 1 for it, in every host; the C++ port has its own copy of the rule and so its own way to lose it.",
-      "file": "cpp/sel_sql_translator.cpp",
+      "file": "cpp/sel_ast.hpp",
       "from": "if (k.empty() || k.size() > 9 || k[0] < '1' || k[0] > '9') return std::nullopt;",
       "to": "if (k.empty() || k.size() > 9 || k[0] < '0' || k[0] > '9') return std::nullopt;"
     },

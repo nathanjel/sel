@@ -155,8 +155,8 @@ bool order_is_lost(const std::vector<NodePtr>& steps, std::size_t count) {
   bool projected = false;
   for (std::size_t i = 0; i < count && i < steps.size(); ++i) {
     const std::string& name = steps[i]->s;
-    const bool is_sort = name == "SORT" || name == "SORT_DESC" || name == "SORT_BY" ||
-                         name == "TOP" || name == "TOP_DESC" || name == "TOP_BY";
+    const sel_builtin_manifest::PipelineStep* kind = pipeline_step(name);
+    const bool is_sort = kind != nullptr && kind->sorts;   // the manifest's sort steps
     if (is_sort) {
       if (sorted && projected) return true;
       sorted = true;

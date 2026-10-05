@@ -1179,12 +1179,21 @@ std::optional<EqlClass> eql_class(SqlKind k) {
 }
 
 
-constexpr std::string_view NUMERIC_OPS[] = {"==", "!=", "<", "<=", ">", ">="};
-constexpr std::string_view TEXTUAL_OPS[] = {"$==", "$!=", "$<", "$<=",
-                                            "$>",  "$>=", "EQL"};
-constexpr std::string_view BYTE_COMPARISONS[] = {"$==", "$!=", "$<",  "$<=",
-                                                 "$>",  "$>=", "EQL", "IN"};
-constexpr std::string_view ARITHMETIC_OPS[] = {"+", "-", "*", "/", "%"};
+// The operator classes the translator renders by, from the lexicon's families
+// (spec/lexicon.json via sel::infix_op) rather than lists of its own.
+using sel_lexicon::Family;
+// `==` ... `>=`: numbers compared by value.
+bool is_numeric_op(const std::string& op) { return sel::infix_in(op, Family::Compare); }
+// `$==` ... `$>=` and EQL: the map's `text` variant.
+bool is_textual_op(const std::string& op) {
+  return sel::infix_in(op, Family::TextCompare) || op == "EQL";
+}
+// `$==` ... `$>=`, EQL and IN: operands compared as bytes, so their kinds must
+// agree (the text comparisons and the deep comparisons).
+bool is_byte_comparison(const std::string& op) {
+  return sel::infix_in(op, Family::TextCompare) || sel::infix_in(op, Family::DeepCompare);
+}
+bool is_arithmetic_op(const std::string& op) { return sel::infix_in(op, Family::Arith); }
 
 // Module-level in the Python host too: it needs no translator state, and it is
 // void -- it either returns or throws, and never transforms its operands, which
@@ -1426,12 +1435,12 @@ std::optional<std::string> Translator::variant_for(const std::string& op,
   // data in the dialect map. The `num` test is AND and the `bin` test is OR,
   // and the asymmetry is intentional: an unknown numeric operand must be
   // coerced, an unknown concat operand must not be treated as bytes.
-  if (contains(NUMERIC_OPS, op)) {
+  if (is_numeric_op(op)) {
     return args[0].kind() == SqlKind::Num && args[1].kind() == SqlKind::Num
                ? "num"
                : "coerce";
   }
-  if (contains(TEXTUAL_OPS, op)) return "text";
+  if (is_textual_op(op)) return "text";
   if (op == "&") {
     return args[0].kind() == SqlKind::Bin || args[1].kind() == SqlKind::Bin
                ? "bin"
@@ -1606,15 +1615,15 @@ Fragment Translator::binary(const SNode& n) {
   if (op == "IN") return in_operator(n);
 
   // Strictly left then right: parameter slots are numbered in this order.
-  const bool arith = contains(ARITHMETIC_OPS, op);
+  const bool arith = is_arithmetic_op(op);
   Fragment l = arith ? arithmetic_operand(n.l()) : node(n.l());
   Fragment r = arith ? arithmetic_operand(n.r()) : node(n.r());
 
-  if (op == "AND" || op == "OR" || op == "XOR") {
+  if (sel::infix_in(op, Family::Logic)) {   // AND, OR, XOR
     l = require_bool(l, n.l()->pos(), op);
     r = require_bool(r, n.r()->pos(), op);
   }
-  if (contains(ARITHMETIC_OPS, op) || contains(NUMERIC_OPS, op)) {
+  if (arith || is_numeric_op(op)) {
     require_not_bool(l, n.l()->pos(), op);
     require_not_bool(r, n.r()->pos(), op);
     // And an operand whose value is written down has to BE a number. After the
@@ -1629,7 +1638,7 @@ Fragment Translator::binary(const SNode& n) {
     r = guard_numeric(r, *n.r());
   }
   // BAND/BOR/BXOR get NO kind guard: they are refused by the map entry itself.
-  if (op == "&" || (op.size() > 1 && op[0] == '$')) {
+  if (sel::infix_in(op, Family::Concat) || sel::infix_in(op, Family::TextCompare)) {   // & and $==...$>=
     require_not_bool_operand(l, n.l()->pos(), op);
     require_not_bool_operand(r, n.r()->pos(), op);
   }
@@ -1642,7 +1651,7 @@ Fragment Translator::binary(const SNode& n) {
     coerce_scale_limits(operands);
   }
 
-  if (contains(BYTE_COMPARISONS, op)) {
+  if (is_byte_comparison(op)) {
     require_comparable_kinds(l, r, op, n.pos());
     const bool l_exact = l.exact();
     const bool r_exact = r.exact();
@@ -2116,38 +2125,33 @@ namespace {
 // TO_UTF8("a") and with TRUE, and these are the ones SEL did not answer
 // E_NOT_* for. Writing them by hand would be the second copy of SEL's argument
 // rules that §11.4 exists to avoid. sql/oracle/ re-measures them.
-constexpr std::string_view BIN_ARGUMENT_OK[] = {
-    "BLEN", "CRC32", "ENCODE_BASE64", "FROM_UTF8", "ISNUM", "TO_HEX", "TO_UTF8"};
-constexpr std::string_view BOOL_ARGUMENT_OK[] = {"ISNUM"};
+bool bin_argument_ok(std::string_view name) {
+  const sel_builtin_manifest::SqlArgs* a = sel::sql_args(name);
+  return a != nullptr && a->bin;
+}
+bool bool_argument_ok(std::string_view name) {
+  const sel_builtin_manifest::SqlArgs* a = sel::sql_args(name);
+  return a != nullptr && a->boolean;
+}
 
 constexpr std::string_view AGGREGATES[] = {"ALL", "ANY", "MAP",
                                            "FILTER", "SUM", "JOIN"};
 
-// Which funcs take a regex, and at which 0-based argument. All four name index
-// 0; the shape exists so a function taking a regex elsewhere is one entry
-// rather than a code change.
+// Which funcs take a regex, and at which 0-based argument: the manifest's
+// REGEX_CALLS (spec/builtins.json), which also says where the flags are.
 std::optional<int> regex_at(std::string_view name) {
-  if (name == "RMATCH" || name == "RFIND" || name == "RREPLACE" ||
-      name == "RGROUPS") {
-    return 0;
-  }
-  return std::nullopt;
+  const sel_builtin_manifest::RegexCall* rx = sel::regex_call(name);
+  return rx ? std::optional<int>(rx->pattern) : std::nullopt;
 }
 
+// Whether argument `i` of `name` must be a number: the manifest's SQL argument
+// typing (spec/builtins.json, `sql.numericArgs`).
 bool is_numeric_argument(std::string_view name, size_t i) {
-  if (name == "MIN" || name == "MAX") return true;
-  if (i == 0) {
-    return name == "ABS" || name == "SIGN" || name == "CEIL" ||
-           name == "FLOOR" || name == "TRUNC" || name == "ROUND" ||
-           name == "POWER" || name == "CHAR" || name == "CANON";
-  }
-  if (i == 1) {
-    return name == "ROUND" || name == "POWER" || name == "LEFT" ||
-           name == "RIGHT" || name == "SUBSTR" || name == "REPEAT" ||
-           name == "PADL" || name == "PADR";
-  }
-  if (i == 2) {
-    return name == "SUBSTR" || name == "FIND";
+  const sel_builtin_manifest::SqlArgs* a = sel::sql_args(name);
+  if (a == nullptr) return false;
+  if (a->numeric_all) return true;
+  for (int k = 0; k < a->numeric_count; k++) {
+    if (static_cast<size_t>(a->numeric[k]) == i) return true;
   }
   return false;
 }
@@ -2156,13 +2160,13 @@ bool is_numeric_argument(std::string_view name, size_t i) {
 
 void Translator::require_argument_kind(const std::string& name, const Fragment& f,
                                        Pos pos) {
-  if (f.kind() == SqlKind::Bool && !contains(BOOL_ARGUMENT_OK, name)) {
+  if (f.kind() == SqlKind::Bool && !bool_argument_ok(name)) {
     refuse("E_SQL_SHAPE",
            name + " does not take a BOOL argument; SEL raises here rather than "
                   "reading a boolean as text or as 1",
            pos);
   }
-  if (f.kind() == SqlKind::Bin && !contains(BIN_ARGUMENT_OK, name)) {
+  if (f.kind() == SqlKind::Bin && !bin_argument_ok(name)) {
     refuse("E_SQL_SHAPE",
            name + " reads its argument as text, and this is BIN; SEL raises "
                   "here rather than reinterpreting bytes as characters",
@@ -2212,7 +2216,7 @@ SNodePtr Translator::rewrite_regex(const SNodePtr& n) {
   // the flag bound as a parameter nothing emitted.
   std::string inline_flags = "(?s)";
 
-  const std::size_t flag_at = n->s() == "RREPLACE" ? 3 : 2;
+  const std::size_t flag_at = static_cast<std::size_t>(sel::regex_call(n->s())->flags);
   if (flag_at >= args.size()) {
     args[pat_at] =
         SNode::leaf(lit_node(NT::Text, inline_flags + source, false, pat->pos()));
@@ -2496,13 +2500,6 @@ Fragment Translator::host_list_argument(const std::string& name, const SNodePtr&
 namespace sel::sql {
 namespace {
 
-// The funcs whose SEL result has children, so the scalar rule does not apply.
-// Measured -- every non-lazy registry name called, the results with size() > 0
-// kept -- not designed. Each is already refused by the dialect documents; the
-// list exists so the aggregate-source path consults the map instead of falling
-// through to the scalar branch, where COUNT and HAS folded to 0 and FALSE.
-constexpr std::string_view YIELDS_LIST[] = {"BTL", "INDEXES", "RGROUPS", "SPLIT"};
-
 std::string_view agg_fold(const std::string& name) {
   if (name == "ALL") return "AND";
   if (name == "ANY") return "OR";
@@ -2686,12 +2683,14 @@ Translator::Source Translator::classify_impl(const SNodePtr& src) {
     }
     // A plain `column` binding falls through, exactly as in Python.
   }
-  // The four text functions that yield a list, the constructors, and every
-  // pipeline step -- the optimiser's vocabulary, so a new step is covered by
-  // being one (COUNT(LIST(1, 2, 3)) was once translated as 0).
-  if (src->t() == SNode::T::Call &&
-      (contains(YIELDS_LIST, src->s()) || src->s() == "LIST" || src->s() == "RECORD" ||
-       sel::is_pipeline_op(src->s()))) {
+  // The funcs whose SEL result has children, so the scalar rule does not
+  // apply: the manifest's yieldsList (spec/builtins.json) -- the text functions
+  // that yield a list, the constructors and every pipeline step, so a new step
+  // is covered by being one (COUNT(LIST(1, 2, 3)) was once translated as 0, and
+  // COUNT and HAS folded to 0 and FALSE through the scalar branch). Each is
+  // already refused by the dialect documents; this makes the aggregate-source
+  // path consult the map instead of falling through.
+  if (src->t() == SNode::T::Call && sel::yields_list(src->s())) {
     refuse("E_SQL_SHAPE",
            src->s() + " yields a list, and the scalar rule does not apply to "
                       "it; SQL has no way to count or index what it produces",
@@ -3680,8 +3679,7 @@ std::optional<RelationalPlan> Translator::analyze_pipeline(const SNodePtr& ast) 
       const int64_t have = plan.offset.value_or(0);
       plan.offset = have > COUNT_MAX - skipped ? COUNT_MAX : have + skipped;
       plan.limit_pos = step->pos();
-    } else if (name == "SORT" || name == "SORT_DESC" || name == "SORT_BY" ||
-               name == "TOP" || name == "TOP_DESC" || name == "TOP_BY") {
+    } else if (sel::pipeline_step(name)->sorts) {   // the manifest's sort steps
       // A sort after a LIMIT or OFFSET sorts the rows that survived them,
       // grouped or not, so those wrap; a sort over a projection or a DISTINCT
       // wraps so its key can name what they produced. A sort after a sort
@@ -3804,6 +3802,10 @@ std::optional<RelationalPlan> Translator::analyze_pipeline(const SNodePtr& ast) 
       }
       join.pos = step->pos();
       plan.joins.push_back(std::move(join));
+    } else {
+      // Every manifest pipeline step (spec/builtins.json) needs a branch above;
+      // one without would otherwise be dropped from the statement silently.
+      throw std::logic_error("the SQL statement planner has no branch for the pipeline step " + name);
     }
   }
 

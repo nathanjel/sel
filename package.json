@@ -73,6 +73,7 @@
     "docs/usage/in-memory.md",
     "docs/reference/builtins.md",
     "docs/reference/limits.md",
+    "docs/reference/lexicon.md",
     "spec/",
     "examples/order-validation.sel",
     "examples/host-js.mjs",

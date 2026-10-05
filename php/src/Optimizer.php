@@ -10,7 +10,14 @@ namespace Sel;
 
 final class Optimizer
 {
-    /** @var list<string> */
+    /**
+     * The pipeline steps, kept for callers that read this list. The host itself
+     * asks BuiltinManifest::PIPELINE_STEPS (spec/builtins.json, "Classification"),
+     * and this copy is checked against it when the file loads.
+     *
+     * @deprecated use BuiltinManifest::PIPELINE_STEPS
+     * @var list<string>
+     */
     public const PIPELINE_OPS = [
         'FILTER', 'BUCKET', 'SELECT_COLS', 'MAP', 'DISTINCT', 'DEDUPE',
         'TAKE', 'DROP', 'SORT', 'SORT_DESC', 'SORT_BY', 'TOP', 'TOP_DESC', 'TOP_BY',
@@ -79,7 +86,7 @@ final class Optimizer
         $steps = [];
         $current = $node;
         while (($current['t'] ?? null) === 'call'
-            && in_array($current['name'], self::PIPELINE_OPS, true)
+            && isset(BuiltinManifest::PIPELINE_STEPS[$current['name']])
             && !empty($current['args'])) {
             $steps[] = $current;
             $current = $current['args'][0];
@@ -110,7 +117,7 @@ final class Optimizer
         }
 
         if (($node['t'] ?? null) === 'call'
-            && in_array($node['name'], self::PIPELINE_OPS, true)) {
+            && isset(BuiltinManifest::PIPELINE_STEPS[$node['name']])) {
             $unwound = self::unwindPipeline($node);
             $source = self::optimizeTree($unwound['source'], $physical, $depth + 1, $options, false);
             $steps = [];
@@ -284,11 +291,11 @@ final class Optimizer
                     $l = Dec::parse((string) $left['v'], $left['pos'] ?? null);
                     $r = Dec::parse((string) $right['v'], $right['pos'] ?? null);
                     if ($l !== null && $r !== null) {
-                        if (in_array($op, ['+', '-', '*', '/', '%'], true)) {
+                        if (isset(Ops::$family['arith'][$op])) {
                             $value = Dec::arith($op, $l, $r, $node['pos']);
                             return self::numNode(Dec::format($value), $node['pos']);
                         }
-                        if (in_array($op, ['==', '!=', '<', '<=', '>', '>='], true)) {
+                        if (isset(Ops::$family['compare'][$op])) {
                             return self::boolNode(Evaluator::compareResult($op, Dec::cmp($l, $r), $node['pos']), $node['pos']);
                         }
                     }
@@ -470,7 +477,7 @@ final class Optimizer
                     }
                 }
                 if ($second !== null && $firstName === 'MAP'
-                    && in_array($secondName, ['TOP', 'TOP_DESC', 'TOP_BY', 'SORT', 'SORT_DESC', 'SORT_BY'], true)
+                    && (BuiltinManifest::PIPELINE_STEPS[$secondName][1] ?? false)
                     && self::mapHasComputedFields($first)) {
                     // Only a key over pass-through fields is the same value before
                     // the MAP: a keyless sort compares the MAP's outputs, and a key
@@ -586,7 +593,7 @@ final class Optimizer
                     && Utf8::casecmp((string) $node['obj']['name'], $binder) === 0
                     && ($node['idx']['t'] ?? null) === 'text';
             case 'bin':
-                return $logical && in_array($node['op'], self::SAFE_LOGICAL_OPS, true)
+                return $logical && isset(self::safeLogicalOps()[$node['op']])
                     && self::cannotRaise($node['l'] ?? null, $binder, $logical)
                     && self::cannotRaise($node['r'] ?? null, $binder, $logical);
             case 'un':
@@ -617,8 +624,22 @@ final class Optimizer
         }
     }
 
-    private const SAFE_LOGICAL_OPS = ['==', '!=', '<', '<=', '>', '>=', '$==', '$!=', '$<', '$<=', '$>', '$>=',
-        'AND', 'OR', '+', '-', '*'];
+    /** @var array<string,true>|null */
+    private static ?array $safeLogicalOps = null;
+
+    /**
+     * The binary operators cannotRaise lets through on the logical path: the
+     * numeric and text comparisons (by family, from the lexicon), and by
+     * decision AND, OR, `+`, `-` and `*` -- not XOR, `/` or `%`. A policy, not
+     * a family, so the remainder is named here.
+     *
+     * @return array<string,true>
+     */
+    private static function safeLogicalOps(): array
+    {
+        return self::$safeLogicalOps ??= Ops::$family['compare'] + Ops::$family['text-compare']
+            + ['AND' => true, 'OR' => true, '+' => true, '-' => true, '*' => true];
+    }
 
     /** Every field a MAP computes (or its whole body) cannot raise. */
     private static function mapCannotRaise(array $step, bool $logical): bool
@@ -873,3 +894,14 @@ final class Optimizer
         return Ast::mapChildren($copy, static fn (array $child): array => self::renameVar($child, $old, $new));
     }
 }
+
+// The deprecated copy cannot drift from the manifest: checked as the file loads.
+(static function (): void {
+    $copy = Optimizer::PIPELINE_OPS;
+    $manifest = array_keys(BuiltinManifest::PIPELINE_STEPS);
+    sort($copy);
+    sort($manifest);
+    if ($copy !== $manifest) {
+        throw new \LogicException('Optimizer::PIPELINE_OPS disagrees with spec/builtins.json');
+    }
+})();

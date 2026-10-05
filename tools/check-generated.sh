@@ -155,6 +155,17 @@ check_group "math-operation manifest" "node tools/gen-math-ops.mjs" \
   rust/src/math_ops.rs \
   docs/internals/math-ops.md
 
+# The lexicon: reserved words, operator tokens and the precedence table,
+# checked against spec/grammar.md and spec/SPEC.md §5 and rendered into every
+# host's lexer and parser vocabulary.
+check_group "lexicon" "node tools/gen-lexicon.mjs" \
+  spec/lexicon.json spec/grammar.md spec/SPEC.md tools/gen-lexicon.mjs \
+  -- \
+  js/src/_lexicon.mjs python/sel/_lexicon.py php/src/Lexicon.php \
+  cpp/sel_lexicon.hpp lisp/src/lexicon.lisp go/internal/lexicon/lexicon.go \
+  rust/src/lexicon.rs \
+  docs/reference/lexicon.md
+
 # The limits and error catalogue, checked against the spec text and rendered
 # into each host's constants.
 check_group "limits and error catalogue" "node tools/gen-limits.mjs" \

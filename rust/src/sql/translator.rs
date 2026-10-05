@@ -1028,7 +1028,7 @@ impl Translator {
             self.node(n.r().unwrap())?
         };
 
-        if op == "AND" || op == "OR" || op == "XOR" {
+        if crate::ops::is_logic(op) {
             l = self.require_bool(l, n.l().unwrap().pos, op)?;
             r = self.require_bool(r, n.r().unwrap().pos, op)?;
         }
@@ -1040,7 +1040,7 @@ impl Translator {
             l = self.guard_numeric(l, n.l().unwrap())?;
             r = self.guard_numeric(r, n.r().unwrap())?;
         }
-        if op == "&" || (op.len() > 1 && op.starts_with('$')) {
+        if crate::ops::is_concat(op) || crate::ops::is_text_comparison(op) {
             self.require_not_bool_operand(&l, n.l().unwrap().pos, op)?;
             self.require_not_bool_operand(&r, n.r().unwrap().pos, op)?;
         }
@@ -1731,7 +1731,7 @@ impl Translator {
         }
 
         if src.t == SNodeType::Call
-            && (yields_list(&src.str) || src.str == "LIST" || src.str == "RECORD" || is_pipeline_op(&src.str))
+            && yields_list(&src.str)
         {
             return refuse(
                 "E_SQL_SHAPE",
@@ -2743,8 +2743,8 @@ impl Translator {
     }
 
     fn rewrite_regex(&self, n: &SNode) -> Result<SNode, SqlError> {
-        let pat_at = match regex_at(&n.str) {
-            Some(at) => at,
+        let (pat_at, flag_at) = match regex_call(&n.str) {
+            Some(rx) => (rx.pattern, rx.flags),
             None => return Ok(n.clone()),
         };
         let mut args = n.kids.clone();
@@ -2778,7 +2778,6 @@ impl Translator {
         };
 
         let mut inline_flags = "(?s)";
-        let flag_at = if n.str == "RREPLACE" { 3 } else { 2 };
         if flag_at >= args.len() {
             let mut pat_node = Node::new(NodeType::Text, pat_pos);
             pat_node.s = format!("{}{}", inline_flags, source);
@@ -3091,90 +3090,58 @@ fn agg_returns(name: &str) -> SqlKind {
     }
 }
 
-fn regex_at(name: &str) -> Option<usize> {
-    match name {
-        "RMATCH" | "RFIND" | "RREPLACE" | "RGROUPS" => Some(0),
-        _ => None,
-    }
+// The argument facts below are the manifest's (spec/builtins.json: `regex`,
+// `sql`, `yieldsList`), measured against SEL and re-measured by sql/oracle/.
+
+fn regex_call(name: &str) -> Option<crate::manifest::builtins::RegexCall> {
+    crate::manifest::builtins::regex_call(name)
 }
 
 fn is_numeric_argument(name: &str, i: usize) -> bool {
-    if name == "MIN" || name == "MAX" {
-        return true;
-    }
-    if i == 0 {
-        return matches!(
-            name,
-            "ABS" | "SIGN" | "CEIL" | "FLOOR" | "TRUNC" | "ROUND" | "POWER" | "CHAR" | "CANON"
-        );
-    }
-    if i == 1 {
-        return matches!(
-            name,
-            "ROUND" | "POWER" | "LEFT" | "RIGHT" | "SUBSTR" | "REPEAT" | "PADL" | "PADR"
-        );
-    }
-    if i == 2 {
-        return matches!(name, "SUBSTR" | "FIND");
-    }
-    false
+    use crate::manifest::builtins::NumericArgs;
+    crate::manifest::builtins::sql_args(name).is_some_and(|a| match a.numeric {
+        NumericArgs::All => true,
+        NumericArgs::At(at) => at.contains(&i),
+        NumericArgs::None => false,
+    })
 }
 
 fn is_bool_argument_ok(name: &str) -> bool {
-    name == "ISNUM"
+    crate::manifest::builtins::sql_args(name).is_some_and(|a| a.bool_arg)
 }
 
 fn is_bin_argument_ok(name: &str) -> bool {
-    matches!(
-        name,
-        "BLEN" | "CRC32" | "ENCODE_BASE64" | "FROM_UTF8" | "ISNUM" | "TO_HEX" | "TO_UTF8"
-    )
+    crate::manifest::builtins::sql_args(name).is_some_and(|a| a.bin_arg)
 }
 
 fn is_aggregate(name: &str) -> bool {
     matches!(name, "ALL" | "ANY" | "MAP" | "FILTER" | "SUM" | "JOIN")
 }
 
+// LIST, RECORD and every pipeline step are in the manifest's list too.
 fn yields_list(name: &str) -> bool {
-    matches!(name, "BTL" | "INDEXES" | "RGROUPS" | "SPLIT")
+    crate::manifest::builtins::yields_list(name)
 }
 
-pub fn is_pipeline_op(name: &str) -> bool {
-    matches!(
-        name,
-        "FILTER"
-            | "BUCKET"
-            | "SELECT_COLS"
-            | "MAP"
-            | "DISTINCT"
-            | "DEDUPE"
-            | "TAKE"
-            | "DROP"
-            | "SORT"
-            | "SORT_DESC"
-            | "SORT_BY"
-            | "TOP"
-            | "TOP_DESC"
-            | "TOP_BY"
-            | "LINK"
-            | "LINK_LEFT"
-    )
-}
 
+// The operator families, from the lexicon (crate::ops).
 fn is_numeric_op(op: &str) -> bool {
-    matches!(op, "==" | "!=" | "<" | "<=" | ">" | ">=")
+    crate::ops::is_numeric_comparison(op)
 }
 
+// The comparisons that take the dialect's "text" variant: the byte
+// comparisons and EQL (IN goes through in_operator, which applies EQL).
 fn is_textual_op(op: &str) -> bool {
-    matches!(op, "$==" | "$!=" | "$<" | "$<=" | "$>" | "$>=" | "EQL")
+    crate::ops::is_text_comparison(op) || op == "EQL"
 }
 
+// The comparisons that read their operands as bytes (§5.3, §5.4).
 fn is_byte_comparison(op: &str) -> bool {
-    matches!(op, "$==" | "$!=" | "$<" | "$<=" | "$>" | "$>=" | "EQL" | "IN")
+    crate::ops::is_text_comparison(op) || crate::ops::is_deep_comparison(op)
 }
 
 fn is_arithmetic_op(op: &str) -> bool {
-    matches!(op, "+" | "-" | "*" | "/" | "%")
+    crate::ops::is_arithmetic(op)
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]

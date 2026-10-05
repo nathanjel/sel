@@ -10,12 +10,14 @@ import { recordShape } from './value.mjs';
 import { compareText } from './utf8.mjs';
 import { ARITHMETIC, compareResult } from './eval.mjs';
 import { compileMathPlan, isMathOp } from './math_plan.mjs';
+import { ARITH_OPS, NUM_COMPARE_OPS, TEXT_COMPARE_OPS } from './ops.mjs';
+import { PIPELINE_STEPS } from './_builtin_manifest.mjs';
 
-const PIPELINE_OPS = new Set([
-  'FILTER', 'BUCKET', 'SELECT_COLS', 'MAP', 'DISTINCT', 'DEDUPE',
-  'TAKE', 'DROP', 'SORT', 'SORT_DESC', 'SORT_BY', 'TOP', 'TOP_DESC', 'TOP_BY',
-  'LINK', 'LINK_LEFT',
-]);
+// The pipeline vocabulary: the manifest's pipeline steps (spec/builtins.json,
+// "Classification"), shared with the SQL translator and planner.
+const PIPELINE_OPS = new Set(Object.keys(PIPELINE_STEPS));
+// The steps that sort (SORT, SORT_DESC, SORT_BY and the TOPs).
+const SORT_STEPS = new Set(Object.keys(PIPELINE_STEPS).filter((name) => PIPELINE_STEPS[name].sorts));
 
 function copyNode(node) {
   if (!node || typeof node !== 'object') return node;
@@ -80,7 +82,7 @@ function fold(node) {
       if (node.l.t === 'bool' && node.r.t === 'bool') return literalBool(node.l.v || node.r.v, node.pos);
     }
     if (node.l.t === 'num' && node.r.t === 'num'
-        && ['+', '-', '*', '/', '%'].includes(node.op)) {
+        && ARITH_OPS.has(node.op)) {
       try {
         const left = D.parse(node.l.v, node.pos);
         const right = D.parse(node.r.v, node.pos);
@@ -88,14 +90,14 @@ function fold(node) {
       } catch (_) { return node; }
     }
     if (node.l.t === 'num' && node.r.t === 'num'
-        && ['==', '!=', '<', '<=', '>', '>='].includes(node.op)) {
+        && NUM_COMPARE_OPS.has(node.op)) {
       try {
         const c = D.cmp(D.parse(node.l.v, node.pos), D.parse(node.r.v, node.pos));
         return literalBool(compareResult(node.op, c, node.pos), node.pos);
       } catch (_) { return node; }
     }
     if (node.l.t === 'text' && node.r.t === 'text'
-        && ['$==', '$!=', '$<', '$<=', '$>', '$>='].includes(node.op)) {
+        && TEXT_COMPARE_OPS.has(node.op)) {
       return literalBool(compareResult(node.op.slice(1), compareText(node.l.v, node.r.v), node.pos), node.pos);
     }
     return node;
@@ -192,8 +194,11 @@ function mapPassthroughs(step) {
 // a comparison, AND/OR/NOT or + - * over such reads; `/` and `%` (E_DIV_ZERO),
 // calls and anything else may. The in-memory path has no schema, and a field
 // read there can raise E_NO_KEY.
-const SAFE_LOGICAL_OPS = new Set(['==', '!=', '<', '<=', '>', '>=', '$==', '$!=', '$<', '$<=', '$>', '$>=',
-  'AND', 'OR', '+', '-', '*']);
+//
+// Policy, not a family: the two comparison families of the lexicon, AND and OR,
+// and the arithmetic operators other than `/` and `%`.
+const SAFE_LOGICAL_OPS = new Set([...NUM_COMPARE_OPS, ...TEXT_COMPARE_OPS, 'AND', 'OR',
+  ...[...ARITH_OPS].filter((op) => op !== '/' && op !== '%')]);
 function cannotRaise(node, binder, logical) {
   if (!node) return true;
   switch (node.t) {
@@ -387,7 +392,7 @@ function logicalSteps(source, steps, options = {}) {
         }
       }
       if (second && first.name === 'MAP'
-          && ['TOP', 'TOP_DESC', 'TOP_BY', 'SORT', 'SORT_DESC', 'SORT_BY'].includes(second.name)
+          && SORT_STEPS.has(second.name)
           && mapHasComputedFields(first)) {
         // Only a key over pass-through fields is the same value before the
         // MAP: a keyless sort compares the MAP's outputs, and a key that

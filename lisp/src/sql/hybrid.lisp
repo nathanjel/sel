@@ -658,7 +658,7 @@ and not a full pushdown: its continuation would read
         (cond ((member name '("LINK" "LINK_LEFT") :test #'equal) (setf joined t))
               ((member name '("MAP" "SELECT_COLS" "BUCKET") :test #'equal) (setf joined nil)))))))
 
-(defparameter +order-sorts+ '("SORT" "SORT_DESC" "SORT_BY" "TOP" "TOP_DESC" "TOP_BY"))
+(defparameter +order-sorts+ sel::+sort-steps+)   ; spec/builtins.json `sorts`
 (defparameter +order-wraps+
   '("SELECT_COLS" "MAP"))
 (defparameter +order-joins+ '("LINK" "LINK_LEFT"))

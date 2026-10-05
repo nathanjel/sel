@@ -12,6 +12,7 @@ use Sel\BuiltinManifest;
 use Sel\Context;
 use Sel\Dec;
 use Sel\Limits;
+use Sel\Ops;
 use Sel\RecordShape;
 use Sel\Registry;
 use Sel\SelError;
@@ -925,8 +926,8 @@ final class Structure
     // here from the rows, at run time, so the physical tree stays a function
     // of the AST.
 
-    private const TEXT_COMPARE = ['$==' => true, '$!=' => true, '$<' => true, '$<=' => true, '$>' => true, '$>=' => true];
-    private const NUM_COMPARE = ['==' => true, '!=' => true, '<' => true, '<=' => true, '>' => true, '>=' => true];
+    // The comparisons a conjunct may be (\Sel\Ops: the lexicon's text-compare
+    // and numeric compare families).
 
     /**
      * Every AND-conjunct of a FILTER body, in order, as
@@ -970,8 +971,8 @@ final class Structure
             };
             $ok = $readsOnlyFields($c) && $fields !== [];
             $total = null;
-            if ($c['t'] === 'bin' && (isset(self::TEXT_COMPARE[$c['op']]) || isset(self::NUM_COMPARE[$c['op']]))) {
-                $kind = isset(self::TEXT_COMPARE[$c['op']]) ? 'TEXT' : 'NUM';
+            if ($c['t'] === 'bin' && (isset(Ops::$family['text-compare'][$c['op']]) || isset(Ops::$family['compare'][$c['op']]))) {
+                $kind = isset(Ops::$family['text-compare'][$c['op']]) ? 'TEXT' : 'NUM';
                 $total = [];
                 foreach ([$c['l'], $c['r']] as $operand) {
                     $lit = $operand['t'] === 'num' ? 'NUM' : ($operand['t'] === 'text' ? 'TEXT' : null);

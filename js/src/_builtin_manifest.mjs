@@ -158,3 +158,65 @@ export const BINDING_FORMS = Object.freeze({
     { scopes: ["outer", "binder", "inner", "outer"], when: null, binds: ["_K"] },
   ],
 });
+
+// Classification (spec/builtins.md): the pipeline steps (whether each keeps
+// its rows as they are, and whether it sorts), where each regex builtin takes
+// its pattern and its flags, how the SQL translators type a builtin's
+// arguments (numeric positions; whether a BIN or a BOOL argument is accepted),
+// and the builtins whose result is a list. Hosts classify through these
+// rather than keeping lists of their own.
+export const PIPELINE_STEPS = Object.freeze({
+  BUCKET: Object.freeze({ keepsRows: false, sorts: false }),
+  DEDUPE: Object.freeze({ keepsRows: true, sorts: false }),
+  DISTINCT: Object.freeze({ keepsRows: true, sorts: false }),
+  DROP: Object.freeze({ keepsRows: true, sorts: false }),
+  FILTER: Object.freeze({ keepsRows: true, sorts: false }),
+  LINK: Object.freeze({ keepsRows: false, sorts: false }),
+  LINK_LEFT: Object.freeze({ keepsRows: false, sorts: false }),
+  MAP: Object.freeze({ keepsRows: false, sorts: false }),
+  SELECT_COLS: Object.freeze({ keepsRows: false, sorts: false }),
+  SORT: Object.freeze({ keepsRows: true, sorts: true }),
+  SORT_BY: Object.freeze({ keepsRows: true, sorts: true }),
+  SORT_DESC: Object.freeze({ keepsRows: true, sorts: true }),
+  TAKE: Object.freeze({ keepsRows: true, sorts: false }),
+  TOP: Object.freeze({ keepsRows: true, sorts: true }),
+  TOP_BY: Object.freeze({ keepsRows: true, sorts: true }),
+  TOP_DESC: Object.freeze({ keepsRows: true, sorts: true }),
+});
+
+export const REGEX_CALLS = Object.freeze({
+  RFIND: Object.freeze({ pattern: 0, flags: 2 }),
+  RGROUPS: Object.freeze({ pattern: 0, flags: 2 }),
+  RMATCH: Object.freeze({ pattern: 0, flags: 2 }),
+  RREPLACE: Object.freeze({ pattern: 0, flags: 3 }),
+});
+
+export const SQL_ARGS = Object.freeze({
+  ABS: Object.freeze({ numeric: Object.freeze([0]), bin: false, bool: false }),
+  BLEN: Object.freeze({ numeric: null, bin: true, bool: false }),
+  CANON: Object.freeze({ numeric: Object.freeze([0]), bin: false, bool: false }),
+  CEIL: Object.freeze({ numeric: Object.freeze([0]), bin: false, bool: false }),
+  CHAR: Object.freeze({ numeric: Object.freeze([0]), bin: false, bool: false }),
+  CRC32: Object.freeze({ numeric: null, bin: true, bool: false }),
+  ENCODE_BASE64: Object.freeze({ numeric: null, bin: true, bool: false }),
+  FIND: Object.freeze({ numeric: Object.freeze([2]), bin: false, bool: false }),
+  FLOOR: Object.freeze({ numeric: Object.freeze([0]), bin: false, bool: false }),
+  FROM_UTF8: Object.freeze({ numeric: null, bin: true, bool: false }),
+  ISNUM: Object.freeze({ numeric: null, bin: true, bool: true }),
+  LEFT: Object.freeze({ numeric: Object.freeze([1]), bin: false, bool: false }),
+  MAX: Object.freeze({ numeric: 'all', bin: false, bool: false }),
+  MIN: Object.freeze({ numeric: 'all', bin: false, bool: false }),
+  PADL: Object.freeze({ numeric: Object.freeze([1]), bin: false, bool: false }),
+  PADR: Object.freeze({ numeric: Object.freeze([1]), bin: false, bool: false }),
+  POWER: Object.freeze({ numeric: Object.freeze([0, 1]), bin: false, bool: false }),
+  REPEAT: Object.freeze({ numeric: Object.freeze([1]), bin: false, bool: false }),
+  RIGHT: Object.freeze({ numeric: Object.freeze([1]), bin: false, bool: false }),
+  ROUND: Object.freeze({ numeric: Object.freeze([0, 1]), bin: false, bool: false }),
+  SIGN: Object.freeze({ numeric: Object.freeze([0]), bin: false, bool: false }),
+  SUBSTR: Object.freeze({ numeric: Object.freeze([1, 2]), bin: false, bool: false }),
+  TO_HEX: Object.freeze({ numeric: null, bin: true, bool: false }),
+  TO_UTF8: Object.freeze({ numeric: null, bin: true, bool: false }),
+  TRUNC: Object.freeze({ numeric: Object.freeze([0]), bin: false, bool: false }),
+});
+
+export const YIELDS_LIST = Object.freeze(new Set(["BTL", "BUCKET", "DEDUPE", "DISTINCT", "DROP", "FILTER", "INDEXES", "LINK", "LINK_LEFT", "LIST", "MAP", "RECORD", "RGROUPS", "SELECT_COLS", "SORT", "SORT_BY", "SORT_DESC", "SPLIT", "TAKE", "TOP", "TOP_BY", "TOP_DESC"]));

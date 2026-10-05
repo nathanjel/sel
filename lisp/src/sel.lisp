@@ -172,7 +172,8 @@ computed is exactly a program that could not have been evaluated."
         (:bin
          (let ((op (node-s node)))
            (walk (node-l node))
-           (if (member op '("AND" "OR" "??" "???") :test #'string=)
+           ;; The lexicon's short-circuit operators: the right side may not run.
+           (if (short-circuit-op-p op)
                (maybe (node-r node))
                (walk (node-r node)))))
 

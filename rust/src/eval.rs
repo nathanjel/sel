@@ -3,6 +3,7 @@ use crate::ast::{Node, NodeType, SlotCache};
 use crate::builtins::{lookup_spec, BuiltinFn, Spec, SpecFn};
 use crate::context::Context;
 use crate::dec::{dec_add, dec_cmp, dec_div, dec_mod, dec_mul, dec_negate, dec_sub, Dec};
+use crate::lexicon::{Family, Relation};
 use crate::limits::MAX_DEPTH;
 use crate::math_plan::eval_math_plan;
 use crate::utf8::{cap_collection, cap_text, Pos, SelError};
@@ -190,7 +191,7 @@ fn eval_binary(node: &Node, ctx: &mut Context) -> Result<Value, SelError> {
         }
     }
 
-    if is_comparison(op) {
+    if crate::ops::is_comparison(op) {
         return compare_nodes(op, l_node, r_node, ctx).map(Value::bool);
     }
 
@@ -200,13 +201,6 @@ fn eval_binary(node: &Node, ctx: &mut Context) -> Result<Value, SelError> {
     let rp = r_node.pos;
 
     apply_binary(op, &l, &r, lp, rp, node.pos)
-}
-
-fn is_comparison(op: &str) -> bool {
-    matches!(
-        op,
-        "==" | "!=" | "<" | "<=" | ">" | ">=" | "$==" | "$!=" | "$<" | "$<=" | "$>" | "$>="
-    )
 }
 
 /// A comparison operand. A literal is only read by a comparison and never
@@ -261,13 +255,16 @@ fn compare_nodes(op: &str, l_node: &Node, r_node: &Node, ctx: &mut Context) -> R
     let l = Operand::of(l_node, ctx)?;
     let r = Operand::of(r_node, ctx)?;
     let (lp, rp) = (l_node.pos, r_node.pos);
-    match op {
-        "==" | "!=" | "<" | "<=" | ">" | ">=" => {
+    // Callers pass only the two comparison families (ops::is_comparison).
+    let info = crate::ops::binary(op).expect("a comparison operator");
+    let rel = info.relation.expect("a comparison has a relation");
+    match (info.family, rel) {
+        (Family::Compare, _) => {
             let a = l.decimal(lp)?;
             let b = r.decimal(rp)?;
-            Ok(compare_result(op, dec_cmp(&a, &b)))
+            Ok(crate::ops::holds(rel, dec_cmp(&a, &b)))
         }
-        "$==" | "$!=" => {
+        (_, Relation::Eq | Relation::Ne) => {
             let equal = match (l.plain_text(), r.plain_text()) {
                 (Some(a), Some(b)) => a == b,
                 _ => {
@@ -276,12 +273,12 @@ fn compare_nodes(op: &str, l_node: &Node, r_node: &Node, ctx: &mut Context) -> R
                     a == b
                 }
             };
-            Ok(if op == "$==" { equal } else { !equal })
+            Ok(if rel == Relation::Eq { equal } else { !equal })
         }
         _ => {
             let a = l.bytes(lp)?;
             let b = r.bytes(rp)?;
-            Ok(compare_result(&op[1..], a.cmp(&b)))
+            Ok(crate::ops::holds(rel, a.cmp(&b)))
         }
     }
 }
@@ -292,7 +289,7 @@ fn compare_nodes(op: &str, l_node: &Node, r_node: &Node, ctx: &mut Context) -> R
 pub(crate) fn eval_bool(node: &Node, ctx: &mut Context) -> Result<bool, SelError> {
     let direct = node.t == NodeType::Bin
         && node.math_plan.is_none()
-        && (node.s == "AND" || node.s == "OR" || is_comparison(&node.s));
+        && (node.s == "AND" || node.s == "OR" || crate::ops::is_comparison(&node.s));
     if !direct {
         return eval_node(node, ctx)?.as_bool(node.pos);
     }
@@ -374,20 +371,6 @@ pub(crate) fn arith(op: &str, a: &Dec, b: &Dec, pos: Pos) -> Result<Dec, SelErro
         "/" => dec_div(a, b, pos),
         "%" => dec_mod(a, b, pos),
         _ => unreachable!("arith on {op}"),
-    }
-}
-
-/// Whether an ordering satisfies a comparison operator (`==` … `>=`; the
-/// byte comparisons pass their operator without the `$`).
-pub(crate) fn compare_result(op: &str, c: std::cmp::Ordering) -> bool {
-    match op {
-        "==" => c.is_eq(),
-        "!=" => c.is_ne(),
-        "<" => c.is_lt(),
-        "<=" => c.is_le(),
-        ">" => c.is_gt(),
-        ">=" => c.is_ge(),
-        _ => false,
     }
 }
 
@@ -494,10 +477,7 @@ fn eval_assign(node: &Node, ctx: &mut Context) -> Result<Value, SelError> {
             SelError::undef_var(format!("{} needs an existing target", node.s), l_node.pos)
         })?;
         let rhs = eval_node(r_node, ctx)?;
-        let op = node
-            .s
-            .strip_suffix('=')
-            .expect("assignment operator suffix");
+        let op = crate::ops::compound(&node.s).expect("a compound assignment operator");
         apply_binary(op, &current, &rhs, l_node.pos, r_node.pos, node.pos)?
     };
 
@@ -574,18 +554,13 @@ fn call_spec(node: &Node) -> Result<Arc<Spec>, SelError> {
         })
 }
 
-// Eager calls always evaluate their first argument first. For lazy calls,
-// only these native implementations guarantee that order; a host callback
-// with the same AST name need not do so.
-fn source_first_call(node: &Node, spec: &Spec) -> bool {
+// The native implementation of each pipeline step (the manifest's `pipeline`).
+// A step without one here never runs as a pipeline stage -- correct, but slow
+// and stack-hungry -- so tests::every_pipeline_step_has_a_native_stage holds
+// this table to the manifest.
+fn pipeline_native(name: &str) -> Option<BuiltinFn> {
     use crate::builtins::structure::*;
-    if node.items.is_empty() {
-        return false;
-    }
-    if !spec.lazy {
-        return true;
-    }
-    let expected: BuiltinFn = match node.s.as_str() {
+    Some(match name {
         "MAP" => fn_map,
         "FILTER" => fn_filter,
         "BUCKET" => fn_bucket,
@@ -602,7 +577,22 @@ fn source_first_call(node: &Node, spec: &Spec) -> bool {
         "TOP_BY" => fn_top_by,
         "LINK" => fn_link,
         "LINK_LEFT" => fn_link_left,
-        _ => return false,
+        _ => return None,
+    })
+}
+
+// Eager calls always evaluate their first argument first. For lazy calls,
+// only these native implementations guarantee that order; a host callback
+// with the same AST name need not do so.
+fn source_first_call(node: &Node, spec: &Spec) -> bool {
+    if node.items.is_empty() {
+        return false;
+    }
+    if !spec.lazy {
+        return true;
+    }
+    let Some(expected) = pipeline_native(&node.s) else {
+        return false;
     };
     if !matches!(&spec.func, SpecFn::Native(f) if std::ptr::fn_addr_eq(*f, expected)) {
         return false;
@@ -721,3 +711,27 @@ fn invoke_call(
     args.ctx.frames.truncate(frame_depth);
     res
 }
+
+#[cfg(test)]
+mod pipeline_vocabulary_tests {
+    use super::pipeline_native;
+    use crate::builtins::{lookup_spec, SpecFn};
+    use crate::manifest::builtins::PIPELINE_STEPS;
+
+    // Every manifest pipeline step has its native stage, and that stage is the
+    // function the registry installed under the name; nothing else claims one.
+    #[test]
+    fn every_pipeline_step_has_a_native_stage() {
+        for (name, _) in PIPELINE_STEPS {
+            let f = pipeline_native(name).unwrap_or_else(|| panic!("{name} has no native pipeline stage"));
+            let spec = lookup_spec(name).expect("registered");
+            assert!(matches!(&spec.func, SpecFn::Native(g) if std::ptr::fn_addr_eq(*g, f)), "{name}");
+        }
+        for name in crate::builtins::function_names() {
+            if pipeline_native(&name).is_some() {
+                assert!(crate::optimizer::is_pipeline_op(&name), "{name} is not a manifest step");
+            }
+        }
+    }
+}
+

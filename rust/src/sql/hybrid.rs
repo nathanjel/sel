@@ -212,12 +212,11 @@ fn join_rows_lack_binders(steps: &[Node], count: usize) -> bool {
 // survive, not any of this. A prefix that ends before that step is exact
 // (docs/internals/sql-translation.md 12.1, "Order").
 fn order_is_lost(steps: &[Node], count: usize) -> bool {
-    const ORDER_SORTS: [&str; 6] = ["SORT", "SORT_DESC", "SORT_BY", "TOP", "TOP_DESC", "TOP_BY"];
     let mut sorted = false;
     let mut projected = false;
     for step in &steps[..count.min(steps.len())] {
         let name = step.s.as_str();
-        if ORDER_SORTS.contains(&name) {
+        if crate::optimizer::is_sort_step(name) {
             if sorted && projected {
                 return true;
             }

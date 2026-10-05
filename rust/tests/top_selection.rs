@@ -177,7 +177,7 @@ fn test_top_variants_semantics_coverage() {
     let mut p_desc = compile(&format!("{src_rows} TOP_DESC(ROWS, _[\"k\"], 2) .> MAP(_[\"v\"]) .> JOIN(\",\")")).unwrap();
     assert_eq!(p_desc.run(None).unwrap().as_text(Pos::default()).unwrap(), "e,c");
 
-    let mut p_desc2 = compile(&format!("{src_rows} TOP(ROWS, _[\"k\"], \"DESC\", 2) .> MAP(_[\"v\"]) .> JOIN(\",\")")).unwrap();
+    let mut p_desc2 = compile(&format!("{src_rows} TOP_BY(ROWS, _[\"k\"], \"DESC\", 2) .> MAP(_[\"v\"]) .> JOIN(\",\")")).unwrap();
     assert_eq!(p_desc2.run(None).unwrap().as_text(Pos::default()).unwrap(), "e,c");
 
     let mut p_empty = compile("TOP(LIST(), 3)").unwrap();

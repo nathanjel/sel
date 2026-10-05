@@ -1108,7 +1108,7 @@ it is called where the evaluation order puts it."
            (repl (args-text a 1))
            (subject (args-text a 2))
            (at (args-pos-of a 1)))
-      (multiple-value-bind (flags flag-pos) (regex-flags a (regex-flag-index "RREPLACE"))
+      (multiple-value-bind (flags flag-pos) (regex-flags a (load-time-value (regex-flag-index "RREPLACE")))
         (multiple-value-bind (scanner tail-scanner ignore-case)
             (compile-regex pattern flags flag-pos (args-pos-of a 0))
           (let ((folded (if ignore-case (fold-subject subject) subject)))

@@ -16,6 +16,11 @@
         "min": 1,
         "max": 1
       },
+      "sql": {
+        "numericArgs": [
+          0
+        ]
+      },
       "signatures": [
         "ABS(x)"
       ],
@@ -104,6 +109,9 @@
         "min": 1,
         "max": 1
       },
+      "sql": {
+        "binArg": true
+      },
       "signatures": [
         "BLEN(x)"
       ],
@@ -114,6 +122,7 @@
         "min": 1,
         "max": 1
       },
+      "yieldsList": true,
       "signatures": [
         "BTL(x)"
       ],
@@ -160,6 +169,11 @@
           ]
         }
       ],
+      "pipeline": {
+        "keepsRows": false,
+        "sorts": false
+      },
+      "yieldsList": true,
       "signatures": [
         "BUCKET(list, key)",
         "BUCKET(list, key, proj)",
@@ -172,6 +186,11 @@
         "min": 1,
         "max": 1
       },
+      "sql": {
+        "numericArgs": [
+          0
+        ]
+      },
       "signatures": [
         "CANON(x)"
       ],
@@ -182,6 +201,11 @@
         "min": 1,
         "max": 1
       },
+      "sql": {
+        "numericArgs": [
+          0
+        ]
+      },
       "signatures": [
         "CEIL(x)"
       ],
@@ -191,6 +215,11 @@
       "arity": {
         "min": 1,
         "max": 1
+      },
+      "sql": {
+        "numericArgs": [
+          0
+        ]
       },
       "signatures": [
         "CHAR(n)"
@@ -246,6 +275,9 @@
         "min": 1,
         "max": 1
       },
+      "sql": {
+        "binArg": true
+      },
       "signatures": [
         "CRC32(x)"
       ],
@@ -266,6 +298,11 @@
         "min": 1,
         "max": 1
       },
+      "pipeline": {
+        "keepsRows": true,
+        "sorts": false
+      },
+      "yieldsList": true,
       "signatures": [
         "DEDUPE(list)"
       ],
@@ -276,6 +313,11 @@
         "min": 1,
         "max": 1
       },
+      "pipeline": {
+        "keepsRows": true,
+        "sorts": false
+      },
+      "yieldsList": true,
       "signatures": [
         "DISTINCT(list)"
       ],
@@ -286,6 +328,11 @@
         "min": 2,
         "max": 2
       },
+      "pipeline": {
+        "keepsRows": true,
+        "sorts": false
+      },
+      "yieldsList": true,
       "signatures": [
         "DROP(list, n)"
       ],
@@ -295,6 +342,9 @@
       "arity": {
         "min": 1,
         "max": 1
+      },
+      "sql": {
+        "binArg": true
       },
       "signatures": [
         "ENCODE_BASE64(x)"
@@ -330,6 +380,11 @@
           ]
         }
       ],
+      "pipeline": {
+        "keepsRows": true,
+        "sorts": false
+      },
+      "yieldsList": true,
       "signatures": [
         "FILTER(list, [binder,] body)"
       ],
@@ -340,6 +395,11 @@
         "min": 2,
         "max": 3
       },
+      "sql": {
+        "numericArgs": [
+          2
+        ]
+      },
       "signatures": [
         "FIND(needle, hay [, from])"
       ],
@@ -349,6 +409,11 @@
       "arity": {
         "min": 1,
         "max": 1
+      },
+      "sql": {
+        "numericArgs": [
+          0
+        ]
       },
       "signatures": [
         "FLOOR(x)"
@@ -369,6 +434,9 @@
       "arity": {
         "min": 1,
         "max": 1
+      },
+      "sql": {
+        "binArg": true
       },
       "signatures": [
         "FROM_UTF8(x)"
@@ -412,6 +480,7 @@
         "min": 1,
         "max": 1
       },
+      "yieldsList": true,
       "signatures": [
         "INDEXES(x)"
       ],
@@ -421,6 +490,10 @@
       "arity": {
         "min": 1,
         "max": 1
+      },
+      "sql": {
+        "binArg": true,
+        "boolArg": true
       },
       "signatures": [
         "ISNUM(x)"
@@ -482,6 +555,11 @@
         "min": 2,
         "max": 2
       },
+      "sql": {
+        "numericArgs": [
+          1
+        ]
+      },
       "signatures": [
         "LEFT(x, n)"
       ],
@@ -539,6 +617,11 @@
           ]
         }
       ],
+      "pipeline": {
+        "keepsRows": false,
+        "sorts": false
+      },
+      "yieldsList": true,
       "signatures": [
         "LINK(left, right, pred)",
         "LINK(left, right, L, R, pred)"
@@ -587,6 +670,11 @@
           ]
         }
       ],
+      "pipeline": {
+        "keepsRows": false,
+        "sorts": false
+      },
+      "yieldsList": true,
       "signatures": [
         "LINK_LEFT(left, right, pred)",
         "LINK_LEFT(left, right, L, R, pred)"
@@ -598,6 +686,7 @@
         "min": 0,
         "max": "variadic"
       },
+      "yieldsList": true,
       "signatures": [
         "LIST(v1, v2, …)"
       ],
@@ -662,6 +751,11 @@
           ]
         }
       ],
+      "pipeline": {
+        "keepsRows": false,
+        "sorts": false
+      },
+      "yieldsList": true,
       "signatures": [
         "MAP(list, [binder,] body)"
       ],
@@ -671,6 +765,9 @@
       "arity": {
         "min": 1,
         "max": "variadic"
+      },
+      "sql": {
+        "numericArgs": "all"
       },
       "signatures": [
         "MAX(a, b, …)"
@@ -682,6 +779,9 @@
         "min": 1,
         "max": "variadic"
       },
+      "sql": {
+        "numericArgs": "all"
+      },
       "signatures": [
         "MIN(a, b, …)"
       ],
@@ -692,6 +792,11 @@
         "min": 3,
         "max": 3
       },
+      "sql": {
+        "numericArgs": [
+          1
+        ]
+      },
       "signatures": [
         "PADL(x, n, fill)"
       ],
@@ -701,6 +806,11 @@
       "arity": {
         "min": 3,
         "max": 3
+      },
+      "sql": {
+        "numericArgs": [
+          1
+        ]
       },
       "signatures": [
         "PADR(x, n, fill)"
@@ -723,6 +833,12 @@
         "min": 2,
         "max": 2
       },
+      "sql": {
+        "numericArgs": [
+          0,
+          1
+        ]
+      },
       "signatures": [
         "POWER(x, n)"
       ],
@@ -735,6 +851,7 @@
         "parity": "even",
         "message": "RECORD takes an even number of arguments (key-value pairs), got {count}"
       },
+      "yieldsList": true,
       "signatures": [
         "RECORD(k1, v1, k2, v2, …)"
       ],
@@ -744,6 +861,11 @@
       "arity": {
         "min": 2,
         "max": 2
+      },
+      "sql": {
+        "numericArgs": [
+          1
+        ]
       },
       "signatures": [
         "REPEAT(x, n)"
@@ -765,6 +887,10 @@
         "min": 2,
         "max": 3
       },
+      "regex": {
+        "pattern": 0,
+        "flags": 2
+      },
       "signatures": [
         "RFIND(pat, subj [, flags])"
       ],
@@ -775,6 +901,11 @@
         "min": 2,
         "max": 3
       },
+      "regex": {
+        "pattern": 0,
+        "flags": 2
+      },
+      "yieldsList": true,
       "signatures": [
         "RGROUPS(pat, subj [, flags])"
       ],
@@ -784,6 +915,11 @@
       "arity": {
         "min": 2,
         "max": 2
+      },
+      "sql": {
+        "numericArgs": [
+          1
+        ]
       },
       "signatures": [
         "RIGHT(x, n)"
@@ -795,6 +931,10 @@
         "min": 2,
         "max": 3
       },
+      "regex": {
+        "pattern": 0,
+        "flags": 2
+      },
       "signatures": [
         "RMATCH(pat, subj [, flags])"
       ],
@@ -805,6 +945,12 @@
         "min": 2,
         "max": 2
       },
+      "sql": {
+        "numericArgs": [
+          0,
+          1
+        ]
+      },
       "signatures": [
         "ROUND(x, n)"
       ],
@@ -814,6 +960,10 @@
       "arity": {
         "min": 3,
         "max": 4
+      },
+      "regex": {
+        "pattern": 0,
+        "flags": 3
       },
       "signatures": [
         "RREPLACE(pat, repl, subj [, flags])"
@@ -835,6 +985,11 @@
         "min": 2,
         "max": "variadic"
       },
+      "pipeline": {
+        "keepsRows": false,
+        "sorts": false
+      },
+      "yieldsList": true,
       "signatures": [
         "SELECT_COLS(rel, c1, c2, …)"
       ],
@@ -844,6 +999,11 @@
       "arity": {
         "min": 1,
         "max": 1
+      },
+      "sql": {
+        "numericArgs": [
+          0
+        ]
       },
       "signatures": [
         "SIGN(x)"
@@ -888,6 +1048,11 @@
           ]
         }
       ],
+      "pipeline": {
+        "keepsRows": true,
+        "sorts": true
+      },
+      "yieldsList": true,
       "signatures": [
         "SORT(list, [binder,] [body])"
       ],
@@ -963,6 +1128,11 @@
           ]
         }
       ],
+      "pipeline": {
+        "keepsRows": true,
+        "sorts": true
+      },
+      "yieldsList": true,
       "signatures": [
         "SORT_BY(list, [binder,] key [, dir])"
       ],
@@ -1006,6 +1176,11 @@
           ]
         }
       ],
+      "pipeline": {
+        "keepsRows": true,
+        "sorts": true
+      },
+      "yieldsList": true,
       "signatures": [
         "SORT_DESC(list, [binder,] [body])"
       ],
@@ -1016,6 +1191,7 @@
         "min": 2,
         "max": 2
       },
+      "yieldsList": true,
       "signatures": [
         "SPLIT(x, sep)"
       ],
@@ -1025,6 +1201,12 @@
       "arity": {
         "min": 2,
         "max": 3
+      },
+      "sql": {
+        "numericArgs": [
+          1,
+          2
+        ]
       },
       "signatures": [
         "SUBSTR(x, start [, len])"
@@ -1070,6 +1252,11 @@
         "min": 2,
         "max": 2
       },
+      "pipeline": {
+        "keepsRows": true,
+        "sorts": false
+      },
+      "yieldsList": true,
       "signatures": [
         "TAKE(list, n)"
       ],
@@ -1116,6 +1303,11 @@
           ]
         }
       ],
+      "pipeline": {
+        "keepsRows": true,
+        "sorts": true
+      },
+      "yieldsList": true,
       "signatures": [
         "TOP(list, [binder,] [body,] n)"
       ],
@@ -1196,6 +1388,11 @@
           ]
         }
       ],
+      "pipeline": {
+        "keepsRows": true,
+        "sorts": true
+      },
+      "yieldsList": true,
       "signatures": [
         "TOP_BY(list, [binder,] key, [dir,] n)"
       ],
@@ -1242,6 +1439,11 @@
           ]
         }
       ],
+      "pipeline": {
+        "keepsRows": true,
+        "sorts": true
+      },
+      "yieldsList": true,
       "signatures": [
         "TOP_DESC(list, [binder,] [body,] n)"
       ],
@@ -1252,6 +1454,9 @@
         "min": 1,
         "max": 1
       },
+      "sql": {
+        "binArg": true
+      },
       "signatures": [
         "TO_HEX(x)"
       ],
@@ -1261,6 +1466,9 @@
       "arity": {
         "min": 1,
         "max": 1
+      },
+      "sql": {
+        "binArg": true
       },
       "signatures": [
         "TO_UTF8(x)"
@@ -1281,6 +1489,11 @@
       "arity": {
         "min": 1,
         "max": 1
+      },
+      "sql": {
+        "numericArgs": [
+          0
+        ]
       },
       "signatures": [
         "TRUNC(x)"

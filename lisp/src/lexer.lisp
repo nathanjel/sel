@@ -10,16 +10,12 @@
 
 (in-package #:sel)
 
-;;; Longest match first: `$<=` must not lex as `$<` followed by `=`.
-(defparameter +operators+
-  '("???" "??"
-    "$==" "$!=" "$<=" "$>="
-    "$<" "$>" "==" "!=" "<=" ">=" "+=" "-=" "*=" "/=" "%=" "&="
-    ".>"
-    "+" "-" "*" "/" "%" "&" "=" "<" ">" "(" ")" "[" "]" "," ";"))
+;;; The symbol tokens, longest match first (`$<=` must not lex as `$<` then
+;;; `=`), and the reserved words: both from spec/lexicon.json's rendering
+;;; (lexicon.lisp), so every host's lexer knows the same tokens.
+(defparameter +operators+ *lexicon-symbols*)
 
-(defparameter +reserved+
-  '("TRUE" "FALSE" "NULL" "AND" "OR" "NOT" "XOR" "EQL" "IN" "BAND" "BOR" "BXOR"))
+(defparameter +reserved+ *lexicon-reserved*)
 
 (defun reservedp (word) (member word +reserved+ :test #'string=))
 

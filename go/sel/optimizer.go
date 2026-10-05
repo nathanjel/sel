@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/nathanjel/sel/go/internal/decimal"
+	"github.com/nathanjel/sel/go/internal/lexicon"
 	"github.com/nathanjel/sel/go/internal/mathops"
 	"github.com/nathanjel/sel/go/internal/utf8"
 	"github.com/nathanjel/sel/go/internal/vocab"
@@ -118,8 +119,8 @@ func optFold(node *Node) *Node {
 			}
 		}
 		if left.T == NodeNum && right.T == NodeNum {
-			switch node.S {
-			case "+", "-", "*", "/", "%":
+			switch {
+			case vocab.IsArithmetic(node.S):
 				decL := left.dec
 				if decL == nil {
 					decL = tryDec(func() *decimal.Dec {
@@ -140,7 +141,7 @@ func optFold(node *Node) *Node {
 						return optNum(decimal.Format(res), res, node.Pos)
 					}
 				}
-			case "==", "!=", "<", "<=", ">", ">=":
+			case vocab.IsNumericComparison(node.S):
 				decL := left.dec
 				if decL == nil {
 					decL = tryDec(func() *decimal.Dec {
@@ -440,11 +441,19 @@ func optRenameVar(node *Node, oldName string, newName string) *Node {
 	return cp
 }
 
-var safeLogicalOps = map[string]bool{
-	"==": true, "!=": true, "<": true, "<=": true, ">": true, ">=": true,
-	"$==": true, "$!=": true, "$<": true, "$<=": true, "$>": true, "$>=": true,
-	"AND": true, "OR": true, "+": true, "-": true, "*": true,
-}
+// safeLogicalOps are the binary operators the logical rewrites take as unable
+// to raise once their operands cannot: both comparison families (from the
+// lexicon), and -- policy, not a family -- AND, OR and the arithmetic that has no
+// division (/ and % raise E_DIV_ZERO).
+var safeLogicalOps = func() map[string]bool {
+	m := map[string]bool{"AND": true, "OR": true, "+": true, "-": true, "*": true}
+	for _, op := range lexicon.Ops {
+		if op.Family == lexicon.FamilyCompare || op.Family == lexicon.FamilyTextCompare {
+			m[op.Token] = true
+		}
+	}
+	return m
+}()
 
 func optCannotRaise(node *Node, binder string, logical bool) bool {
 	if node == nil {
@@ -649,8 +658,7 @@ func optLogicalSteps(source *Node, current []*Node, logical bool) []*Node {
 
 			// MAP + SORT...
 			if second != nil && first.S == "MAP" &&
-				(second.S == "TOP" || second.S == "TOP_DESC" || second.S == "TOP_BY" ||
-					second.S == "SORT" || second.S == "SORT_DESC" || second.S == "SORT_BY") &&
+				vocab.IsSortStep(second.S) &&
 				optMapHasComputed(first) {
 				sort := getOptSortInfo(second)
 				refs := optFieldRefs(sort.key, sort.binder)

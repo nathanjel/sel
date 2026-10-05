@@ -794,10 +794,17 @@ no first row without an ORDER BY that nothing here can supply" name key)
 
 ;;; --- kind guards ----------------------------------------------------------
 
-(defparameter +numeric-ops+ '("==" "!=" "<" "<=" ">" ">="))
-(defparameter +textual-ops+ '("$==" "$!=" "$<" "$<=" "$>" "$>=" "EQL"))
-(defparameter +byte-comparisons+ '("$==" "$!=" "$<" "$<=" "$>" "$>=" "EQL" "IN"))
-(defparameter +arithmetic-ops+ '("+" "-" "*" "/" "%"))
+;;; From the lexicon (sel::*lexicon-ops*, through the parser's op-info table):
+;;; the numeric comparisons; the operators that type their operands as text --
+;;; the text comparisons and EQL (IN's needle is any kind); the ones that
+;;; compare bytes -- the text comparisons and both deep comparisons; and the
+;;; binary arithmetic operators.
+(defparameter +numeric-ops+ (sel::ops-where (lambda (i) (eq (sel::op-info-family i) :compare))))
+(defparameter +textual-ops+
+  (append (sel::ops-where (lambda (i) (eq (sel::op-info-family i) :text-compare))) '("EQL")))
+(defparameter +byte-comparisons+
+  (sel::ops-where (lambda (i) (member (sel::op-info-family i) '(:text-compare :deep-compare)))))
+(defparameter +arithmetic-ops+ (sel::ops-where (lambda (i) (eq (sel::op-info-family i) :arith))))
 
 (defun eql-class (k)
   "The RUNTIME kind class EQL and IN compare, which is not the static kind. A SEL
@@ -1169,7 +1176,7 @@ placeholder uses."
            (r (if arith (arithmetic-operand tr (sel::node-r n)) (walk-node tr (sel::node-r n))))
           (lpos (snode-pos (sel::node-l n)))
           (rpos (snode-pos (sel::node-r n))))
-      (when (member op '("AND" "OR" "XOR") :test #'equal)
+      (when (eq (sel::op-family op) :logic)   ; AND OR XOR
         (setf l (require-bool l lpos op) r (require-bool r rpos op)))
       (when (or (member op +arithmetic-ops+ :test #'equal)
                 (member op +numeric-ops+ :test #'equal))
@@ -1186,7 +1193,7 @@ placeholder uses."
         (setf l (guard-numeric tr l (sel::node-l n))
               r (guard-numeric tr r (sel::node-r n))))
       ;; BAND/BOR/BXOR get NO kind guard: they are refused by the map entry.
-      (when (or (equal op "&") (and (> (length op) 1) (char= (char op 0) #\$)))
+      (when (or (eq (sel::op-family op) :concat) (sel::text-compare-op-p op))
         (require-not-bool-operand l lpos op)
         (require-not-bool-operand r rpos op))
       ;; Captured BEFORE the rewrite below, which forces both kinds to TEXT.
@@ -1421,21 +1428,25 @@ and so which downstream guards fire."
 ;;; TO_UTF8("a") and with TRUE, and these are the ones SEL did not answer
 ;;; E_NOT_* for. Writing them by hand would be the second copy of SEL's argument
 ;;; rules that §11.4 exists to avoid.
+;;; Kept in spec/builtins.json's `sql` (binArg, boolArg), sql/oracle/
+;;; re-measures them.
 (defparameter +bin-argument-ok+
-  '("BLEN" "CRC32" "ENCODE_BASE64" "FROM_UTF8" "ISNUM" "TO_HEX" "TO_UTF8"))
-(defparameter +bool-argument-ok+ '("ISNUM"))
+  (loop for (name nil bin) in sel::*builtin-sql-arg-data* when bin collect name))
+(defparameter +bool-argument-ok+
+  (loop for (name nil nil bool) in sel::*builtin-sql-arg-data* when bool collect name))
 (defparameter +aggregates+ '("ALL" "ANY" "MAP" "FILTER" "SUM" "JOIN"))
 ;;; The funcs whose SEL result has children, so the scalar rule does not apply.
 ;;; Also measured. Each is already refused by the dialect documents; the list
 ;;; exists so the aggregate-source path consults the map instead of falling
 ;;; through to the scalar branch, where COUNT and HAS folded to 0 and FALSE.
-(defparameter +yields-list+ '("BTL" "INDEXES" "RGROUPS" "SPLIT"))
+;;; spec/builtins.json's `yieldsList`: the text functions that yield a list,
+;;; the constructors and every pipeline step.
+(defparameter +yields-list+ sel::*builtin-yields-list*)
 
 (defun regex-at (name)
-  "Which funcs take a regex, and at which 0-based argument. All four name index
-0; the shape exists so a function taking a regex elsewhere is one entry rather
-than a code change."
-  (when (sel::regex-flag-index name) 0))
+  "Which funcs take a regex, and at which 0-based argument (spec/builtins.json's
+`regex`)."
+  (sel::regex-pattern-index name))
 
 (defun require-argument-kind (name f pos)
   (when (and (eq (fragment-kind f) :bool)
@@ -1452,15 +1463,10 @@ raises here rather than reinterpreting bytes as characters" name)
             pos)))
 
 (defun numeric-argument-p (name i)
-  (cond
-    ((or (equal name "MIN") (equal name "MAX")) t)
-    ((= i 0)
-     (member name '("ABS" "SIGN" "CEIL" "FLOOR" "TRUNC" "ROUND" "POWER" "CHAR" "CANON") :test #'equal))
-    ((= i 1)
-     (member name '("ROUND" "POWER" "LEFT" "RIGHT" "SUBSTR" "REPEAT" "PADL" "PADR") :test #'equal))
-    ((= i 2)
-     (member name '("SUBSTR" "FIND") :test #'equal))
-    (t nil)))
+  "Whether argument I of NAME must be a number: spec/builtins.json's
+`sql.numericArgs` (a list of indexes, or :ALL)."
+  (let ((numeric (second (assoc name sel::*builtin-sql-arg-data* :test #'equal))))
+    (if (eq numeric :all) t (and (member i numeric) t))))
 
 (defun rewrite-regex (n)
   (let* ((name (sel::node-s n))
@@ -1907,13 +1913,12 @@ which is a map with one child per field; SQL has no way to iterate or count that
            ;; A plain `column` binding falls through, exactly as in Python.
            (t nil)))))
     (t nil))
-  ;; The four text functions that yield a list, the constructors, and every
-  ;; pipeline step -- the optimiser's vocabulary, so a new step is covered by
-  ;; being one (COUNT(LIST(1, 2, 3)) was once 0).
+  ;; The builtins whose result is a list (spec/builtins.json's `yieldsList`):
+  ;; the four text functions, the constructors, and every pipeline step -- the
+  ;; generator requires it of a step, so a new step is covered by being one
+  ;; (COUNT(LIST(1, 2, 3)) was once 0).
   (when (and (eq (snode-kind src) :call)
-             (or (member (sel::node-s src) +yields-list+ :test #'equal)
-                 (member (sel::node-s src) '("LIST" "RECORD") :test #'equal)
-                 (member (sel::node-s src) sel::+pipeline-ops+ :test #'equal)))
+             (member (sel::node-s src) +yields-list+ :test #'equal))
     (refuse "E_SQL_SHAPE"
             (format nil "~a yields a list, and the scalar rule does not apply to ~
 it; SQL has no way to count or index what it produces" (sel::node-s src))
@@ -2862,6 +2867,19 @@ can say about a bucket on its own."
         (setf n (first args))))
     nil))
 
+;;; The steps ANALYZE-PIPELINE has an arm for, besides the sorts (one arm for
+;;; spec/builtins.json's `sorts`). Its COND has no fallback, so a pipeline step
+;;; the manifest gains and this planner never learns would be skipped silently;
+;;; instead the system refuses to load.
+(defparameter +planned-steps+
+  '("FILTER" "BUCKET" "LINK" "LINK_LEFT" "SELECT_COLS" "MAP" "DISTINCT" "DEDUPE" "TAKE" "DROP"))
+
+(let ((planned (append +planned-steps+ sel::+sort-steps+)))
+  (unless (and (subsetp planned sel::+pipeline-ops+ :test #'equal)
+               (subsetp sel::+pipeline-ops+ planned :test #'equal))
+    (error "SEL: the SQL planner's steps (~{~a~^ ~}) are not spec/builtins.json's pipeline steps (~{~a~^ ~})"
+           planned sel::+pipeline-ops+)))
+
 (defun analyze-pipeline (tr ast)
   (when (identity-loss-before-grouping-p ast)
     (refuse "E_SQL_SHAPE" "grouping depends on a computed projection without identity preservation" (snode-pos ast)))
@@ -3252,7 +3270,7 @@ FILTER between: SQL keeps a bucket's members only for the projection that ends t
                                   +max-slice-count+)
                              (relational-plan-limit-pos plan) pos))))
 
-                  ((member sname '("SORT" "SORT_DESC" "SORT_BY" "TOP" "TOP_DESC" "TOP_BY") :test #'equal)
+                  ((member sname sel::+sort-steps+ :test #'equal)
                    ;; A sort after a LIMIT or OFFSET sorts the rows that survived
                    ;; them, grouped or not, so those wrap; a sort over a
                    ;; projection, SELECT_COLS or DISTINCT wraps so its key can

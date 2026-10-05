@@ -13,7 +13,8 @@
 
 import { fail } from '../errors.mjs';
 import { Value } from '../value.mjs';
-import { define } from '../registry.mjs';
+import { define, lookup } from '../registry.mjs';
+import { REGEX_CALLS } from '../_builtin_manifest.mjs';
 import { toCodePoints, fromCodePoints, cpIndex } from '../utf8.mjs';
 import { MAX_DEPTH } from '../errors.mjs';
 import { MAX_REGEX_PATTERN, MAX_REGEX_GROUPS, MAX_REGEX_QUANTIFIER } from '../_limits.mjs';
@@ -546,34 +547,48 @@ function argsFor(args, patIndex, subjIndex, flagIndex) {
   return { re: compile(pattern, flags, flagPos, args.posOf(patIndex)), subject };
 }
 
+// Where each regex builtin takes its pattern and its flags: spec/builtins.json
+// ("Classification", rendered into _builtin_manifest.mjs), not a table of this
+// module's own. A builtin defined here that the manifest does not list as a
+// regex call refuses to load, and so (below) does a listed one defined without
+// its compile-time check.
+function regexCall(name) {
+  if (!Object.hasOwn(REGEX_CALLS, name)) throw new Error(`spec/builtins.json does not list ${name} as a regex builtin`);
+  return REGEX_CALLS[name];
+}
+const RMATCH = regexCall('RMATCH');
+const RFIND = regexCall('RFIND');
+const RGROUPS = regexCall('RGROUPS');
+const RREPLACE = regexCall('RREPLACE');
+
 // A literal pattern is checked when the program is compiled (SPEC 7.8): a
-// rejected pattern in a branch that never runs is still an error. `flagIndex` is
-// where the flags argument sits; a flags argument that is not a literal is taken
-// as no flags, which changes no verdict (the flag only ever narrows what a later
-// rule accepts, and the run-time check repeats it with the real flags).
-function literalCheck(flagIndex) {
+// rejected pattern in a branch that never runs is still an error. A flags
+// argument that is not a literal is taken as no flags, which changes no verdict
+// (the flag only ever narrows what a later rule accepts, and the run-time check
+// repeats it with the real flags).
+function literalCheck(call) {
   return (args) => {
-    const pat = args[0];
+    const pat = args[call.pattern];
     if (!pat || pat.t !== 'text') return;
-    const fl = args[flagIndex];
+    const fl = args[call.flags];
     const ic = !!(fl && fl.t === 'text' && fl.v.includes('i'));
     validate(pat.v, pat.pos, ic);
   };
 }
 
 define({
-  name: 'RMATCH', min: 2, max: 3, compileCheck: literalCheck(2),
+  name: 'RMATCH', min: 2, max: 3, compileCheck: literalCheck(RMATCH),
   fn: (args) => {
-    const { re, subject } = argsFor(args, 0, 1, 2);
+    const { re, subject } = argsFor(args, RMATCH.pattern, 1, RMATCH.flags);
     re.lastIndex = 0;
     return guarded(args, () => Value.bool(re.test(subject)));
   },
 });
 
 define({
-  name: 'RFIND', min: 2, max: 3, compileCheck: literalCheck(2),
+  name: 'RFIND', min: 2, max: 3, compileCheck: literalCheck(RFIND),
   fn: (args) => {
-    const { re, subject } = argsFor(args, 0, 1, 2);
+    const { re, subject } = argsFor(args, RFIND.pattern, 1, RFIND.flags);
     re.lastIndex = 0;
     return guarded(args, () => {
       const m = re.exec(subject);
@@ -583,9 +598,9 @@ define({
 });
 
 define({
-  name: 'RGROUPS', min: 2, max: 3, compileCheck: literalCheck(2),
+  name: 'RGROUPS', min: 2, max: 3, compileCheck: literalCheck(RGROUPS),
   fn: (args) => {
-    const { re, subject } = argsFor(args, 0, 1, 2);
+    const { re, subject } = argsFor(args, RGROUPS.pattern, 1, RGROUPS.flags);
     re.lastIndex = 0;
     return guarded(args, () => {
       const m = re.exec(subject);
@@ -600,14 +615,15 @@ define({
 // Replacement is spliced by hand rather than handed to String.replace, whose
 // $&, $` and $' have no PCRE equivalent. SEL understands $0-$9 and $$ only.
 define({
-  name: 'RREPLACE', min: 3, max: 4, compileCheck: literalCheck(3),
+  name: 'RREPLACE', min: 3, max: 4, compileCheck: literalCheck(RREPLACE),
   fn: (args) => {
-    const pattern = args.text(0);
+    const pattern = args.text(RREPLACE.pattern);
     const repl = args.text(1);
     const subject = args.text(2);
-    const flags = args.count() > 3 ? args.text(3) : '';
-    const flagPos = args.count() > 3 ? args.posOf(3) : args.pos;
-    const re = compile(pattern, flags, flagPos, args.posOf(0));
+    const fi = RREPLACE.flags;
+    const flags = args.count() > fi ? args.text(fi) : '';
+    const flagPos = args.count() > fi ? args.posOf(fi) : args.pos;
+    const re = compile(pattern, flags, flagPos, args.posOf(RREPLACE.pattern));
 
     return guarded(args, () => {
       let out = '';
@@ -646,4 +662,11 @@ function expand(repl, m, pos) {
     out += '$';
   }
   return out;
+}
+
+// Every regex builtin the manifest lists is defined, with its compile-time
+// pattern check.
+for (const name of Object.keys(REGEX_CALLS)) {
+  const spec = lookup(name);
+  if (!spec || !spec.compileCheck) throw new Error(`spec/builtins.json lists ${name} as a regex builtin; this host defines no compile-time check for it`);
 }

@@ -50,11 +50,19 @@ const PAGES = NAV.sections.flatMap((s) => s.pages.map(entryPage));
 const PAGE_SET = new Set(PAGES);
 
 // --- SEL for highlight.js ---------------------------------------------------------
-// Keywords from the lexer, builtins from the manifest, and one thing no other
+// Keywords and operators from the lexicon, builtins from the manifest, and one thing no other
 // language has: in a documentation block, `expr  => result` shows the result as
 // a dimmed annotation, since that is what the doc checker reads it as.
 
 const BUILTINS = Object.keys(JSON.parse(readFileSync(join(ROOT, 'spec/builtins.json'), 'utf8')).builtins ?? {});
+const LEXICON = JSON.parse(readFileSync(join(ROOT, 'spec/lexicon.json'), 'utf8'));
+const LEXICON_OPS = LEXICON.levels.flatMap((lv) => Object.keys(lv.operators));
+const isWord = (t) => /^[A-Z]+$/.test(t);
+const WORD_OPS = [...new Set(LEXICON_OPS.filter(isWord))];
+// Every symbol operator except the brackets, longest first so `$<=` is one token.
+const SYMBOL_OPS = [...new Set(LEXICON_OPS.filter((t) => !isWord(t) && t !== '['))]
+  .sort((a, b) => b.length - a.length)
+  .map((t) => t.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&'));
 function selLanguage(h) {
   const interpolation = { scope: 'subst', begin: /\{/, end: /\}/, contains: [] };
   const quoted = {
@@ -64,12 +72,12 @@ function selLanguage(h) {
   const raw = { scope: 'string', begin: /'/, end: /'/, contains: [{ begin: /''/ }] };
   const number = { scope: 'number', begin: /\b\d+(\.\d+)?\b/ };
   const result = { scope: 'comment', begin: /\s=>\s/, end: /$/, excludeBegin: false };
-  const operator = { scope: 'operator', begin: /\.>|\?\?\?|\?\?|\$(==|!=|<=|>=|<|>)|==|!=|<=|>=|[-+*/%&=<>;,]/ };
+  const operator = { scope: 'operator', begin: new RegExp(SYMBOL_OPS.join('|')) };
   const binder = { scope: 'variable.language', begin: /\b_K\b|\b_\b|\b_[12]\b/ };
   const keywords = {
     $pattern: /[A-Za-z_][A-Za-z0-9_]*/,
-    literal: ['TRUE', 'FALSE', 'NULL'],
-    keyword: ['AND', 'OR', 'NOT', 'XOR', 'EQL', 'IN', 'BAND', 'BOR', 'BXOR'],
+    literal: LEXICON.reserved.filter((w) => !WORD_OPS.includes(w)),
+    keyword: WORD_OPS,
     built_in: BUILTINS,
   };
   interpolation.contains = [quoted, raw, number, operator, binder];

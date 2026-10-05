@@ -84,7 +84,7 @@ use Sel\Sql\Sql;                     // the SQL layer: also require php/src/Sql/
 ```sh
 vcpkg install sel-lang               # or: conan install --requires sel-lang/0.10.0
                                      # or copy cpp/sel.hpp, sel_ast.hpp, sel_limits.hpp,
-                                     # sel_math_ops.hpp, sel_builtin_manifest.hpp, sel.cpp,
+                                     # sel_math_ops.hpp, sel_lexicon.hpp, sel_builtin_manifest.hpp, sel.cpp,
                                      # sel_optimizer.cpp and third_party/srell/, and compile sel.cpp
 ```
 ```cpp

@@ -175,12 +175,6 @@ impl<'a> Args<'a> {
         self.node(i).map(|n| n.t == NodeType::Var && !n.grouped)
     }
 
-    pub(crate) fn is_symbol_at(&self, i: usize) -> bool {
-        self.nodes
-            .get(i)
-            .is_some_and(|n| n.t == NodeType::Var && !n.grouped)
-    }
-
     pub fn record_shape(&self) -> Option<Arc<RecordShape>> {
         self.record_shape.clone()
     }

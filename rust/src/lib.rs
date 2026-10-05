@@ -61,6 +61,8 @@ pub mod join_plan;
 #[doc(hidden)]
 pub mod join_prefilter;
 mod large_dec;
+#[doc(hidden)]
+pub mod lexicon;
 pub mod limits;
 #[doc(hidden)]
 pub mod manifest;
@@ -68,6 +70,7 @@ pub mod manifest;
 pub mod math_ops;
 #[doc(hidden)]
 pub mod math_plan;
+mod ops;
 #[doc(hidden)]
 pub mod optimizer;
 #[doc(hidden)]

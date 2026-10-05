@@ -1331,3 +1331,14 @@ LINK(LIST(1), LIST(2), 1, 2, TRUE)
 --- expect
 error E_EXPECT_SYMBOL at 1:24
 ===
+### name: rel.top.four-arguments-take-a-binder-not-a-direction
+--- note
+TOP and TOP_DESC have no direction argument (spec/builtins.json: their
+four-argument form is list, binder, body, count), so a text literal third
+is the key, and the second must be a binder. Rust read it as SORT_BY's
+direction and answered a list.
+--- source
+TOP(LIST(3, 1, 2), -_, "DESC", 2)
+--- expect
+error E_EXPECT_SYMBOL at 1:20
+===

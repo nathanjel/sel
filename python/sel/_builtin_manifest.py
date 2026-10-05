@@ -160,3 +160,68 @@ BINDING_FORMS = {
         (("outer", "binder", "inner", "outer"), None, ("_K",)),
     ),
 }
+
+# Classification (spec/builtins.md): the pipeline steps (whether each keeps
+# its rows as they are, and whether it sorts), where each regex builtin takes
+# its pattern and its flags, how the SQL translators type a builtin's
+# arguments (numeric positions; whether a BIN or a BOOL argument is accepted),
+# and the builtins whose result is a list. Hosts classify through these
+# rather than keeping lists of their own.
+# PIPELINE_STEPS: name -> (keeps_rows, sorts). REGEX_CALLS: name -> (pattern,
+# flags). SQL_ARGS: name -> (numeric, bin, bool), numeric a tuple of indexes,
+# 'all' or None.
+PIPELINE_STEPS = {
+    "BUCKET": (False, False),
+    "DEDUPE": (True, False),
+    "DISTINCT": (True, False),
+    "DROP": (True, False),
+    "FILTER": (True, False),
+    "LINK": (False, False),
+    "LINK_LEFT": (False, False),
+    "MAP": (False, False),
+    "SELECT_COLS": (False, False),
+    "SORT": (True, True),
+    "SORT_BY": (True, True),
+    "SORT_DESC": (True, True),
+    "TAKE": (True, False),
+    "TOP": (True, True),
+    "TOP_BY": (True, True),
+    "TOP_DESC": (True, True),
+}
+
+REGEX_CALLS = {
+    "RFIND": (0, 2),
+    "RGROUPS": (0, 2),
+    "RMATCH": (0, 2),
+    "RREPLACE": (0, 3),
+}
+
+SQL_ARGS = {
+    "ABS": ((0,), False, False),
+    "BLEN": (None, True, False),
+    "CANON": ((0,), False, False),
+    "CEIL": ((0,), False, False),
+    "CHAR": ((0,), False, False),
+    "CRC32": (None, True, False),
+    "ENCODE_BASE64": (None, True, False),
+    "FIND": ((2,), False, False),
+    "FLOOR": ((0,), False, False),
+    "FROM_UTF8": (None, True, False),
+    "ISNUM": (None, True, True),
+    "LEFT": ((1,), False, False),
+    "MAX": ('all', False, False),
+    "MIN": ('all', False, False),
+    "PADL": ((1,), False, False),
+    "PADR": ((1,), False, False),
+    "POWER": ((0, 1), False, False),
+    "REPEAT": ((1,), False, False),
+    "RIGHT": ((1,), False, False),
+    "ROUND": ((0, 1), False, False),
+    "SIGN": ((0,), False, False),
+    "SUBSTR": ((1, 2), False, False),
+    "TO_HEX": (None, True, False),
+    "TO_UTF8": (None, True, False),
+    "TRUNC": ((0,), False, False),
+}
+
+YIELDS_LIST = frozenset(("BTL", "BUCKET", "DEDUPE", "DISTINCT", "DROP", "FILTER", "INDEXES", "LINK", "LINK_LEFT", "LIST", "MAP", "RECORD", "RGROUPS", "SELECT_COLS", "SORT", "SORT_BY", "SORT_DESC", "SPLIT", "TAKE", "TOP", "TOP_BY", "TOP_DESC"))

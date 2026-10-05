@@ -15,18 +15,13 @@ namespace Sel;
 
 final class Lexer
 {
-    /** Longest first: `$<=` must not lex as `$<` then `=`. */
-    public const OPERATORS = [
-        '???', '??',
-        '$==', '$!=', '$<=', '$>=',
-        '$<', '$>', '==', '!=', '<=', '>=', '+=', '-=', '*=', '/=', '%=', '&=',
-        '.>',
-        '+', '-', '*', '/', '%', '&', '=', '<', '>', '(', ')', '[', ']', ',', ';',
-    ];
+    /**
+     * Every symbol token, longest first: `$<=` must not lex as `$<` then `=`.
+     * From the lexicon (spec/lexicon.json), like the reserved words.
+     */
+    public const OPERATORS = Lexicon::SYMBOLS;
 
-    public const RESERVED = [
-        'TRUE', 'FALSE', 'NULL', 'AND', 'OR', 'NOT', 'XOR', 'EQL', 'IN', 'BAND', 'BOR', 'BXOR',
-    ];
+    public const RESERVED = Lexicon::RESERVED;
 
     private const SIMPLE_ESCAPES = [
         '\\' => '\\', '"' => '"', 'n' => "\n", 't' => "\t", 'r' => "\r",

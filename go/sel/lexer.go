@@ -8,22 +8,31 @@ import (
 	"strconv"
 	gout "unicode/utf8"
 
+	"github.com/nathanjel/sel/go/internal/lexicon"
 	"github.com/nathanjel/sel/go/internal/utf8"
 )
 
-var operators = []string{
-	"???", "??",
-	"$==", "$!=", "$<=", "$>=",
-	"$<", "$>", "==", "!=", "<=", ">=", "+=", "-=", "*=", "/=", "%=", "&=",
-	".>",
-	"+", "-", "*", "/", "%", "&", "=", "<", ">", "(", ")", "[", "]", ",", ";",
-}
+// The symbol tokens, longest first, and the reserved words: the lexicon's
+// (spec/lexicon.json, rendered into internal/lexicon), not a copy of it.
+var operators = lexicon.Symbols
 
-var reserved = map[string]struct{}{
-	"TRUE": {}, "FALSE": {}, "NULL": {},
-	"AND": {}, "OR": {}, "NOT": {}, "XOR": {},
-	"EQL": {}, "IN": {}, "BAND": {}, "BOR": {}, "BXOR": {},
-}
+// operatorsByFirst is operators grouped by first byte, each group still longest
+// first, so a scan tries the two or three tokens that can start with the
+// character in hand rather than all of them.
+var operatorsByFirst = func() (t [128][]string) {
+	for _, op := range operators {
+		t[op[0]] = append(t[op[0]], op)
+	}
+	return t
+}()
+
+var reserved = func() map[string]struct{} {
+	m := make(map[string]struct{}, len(lexicon.Reserved))
+	for _, w := range lexicon.Reserved {
+		m[w] = struct{}{}
+	}
+	return m
+}()
 
 var simpleEscapes = map[rune]rune{
 	'\\': '\\', '"': '"', 'n': '\n', 't': '\t', 'r': '\r', '{': '{', '}': '}',
@@ -349,7 +358,11 @@ func (l *lexer) emitPart(task lexTask, out *[]token, stack []lexTask) []lexTask 
 // Every operator is ASCII, so it is compared byte against code point, with no
 // []rune(op) conversion per probe.
 func (l *lexer) matchOperator(i, to int) (string, bool) {
-	for _, op := range operators {
+	c := l.chars[i]
+	if c < 0 || c >= 128 {
+		return "", false
+	}
+	for _, op := range operatorsByFirst[c] {
 		if i+len(op) > to {
 			continue
 		}

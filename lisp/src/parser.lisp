@@ -34,8 +34,8 @@
   ;; reading `_K`, so nothing observes the keys its result carries and the
   ;; evaluator's join pre-filter may drop rows below the join (SEL-0052).
   (keys-unobserved nil)
-  ;; A :bin node's operator as a keyword, filled on first evaluation (EVAL's
-  ;; BINARY-OP-CODE) so the evaluator dispatches with CASE instead of a chain of
+  ;; A :bin node's operator as a keyword -- or a compound :assign node's
+  ;; binary operator -- filled on first evaluation (EVAL's BINARY-OP-CODE) so the evaluator dispatches with CASE instead of a chain of
   ;; STRING= on every evaluation. Never copied: a copy re-derives it.
   (opc nil)
   ;; On a :var node the hybrid planner builds: this read is of the variable's
@@ -54,74 +54,155 @@ node was compiled with, so it costs no table lookup."
   (let ((spec (node-spec node)))
     (and spec (spec-shipped spec))))
 
-;;; The operator families, named once for the PARSER: the precedence table below
-;;; is BUILT from these rather than repeating them. +compare-ops+ holds both the
-;;; numeric and the `$` text comparisons, all at one binding power. The
-;;; evaluator does not read these lists; it dispatches on the keyword
-;;; BINARY-OP-CODE (eval.lisp) gives each operator, cached per node by
-;;; NODE-OP-CODE.
-(defparameter +assign-ops+ '("=" "+=" "-=" "*=" "/=" "%=" "&="))
-(defparameter +compare-ops+
-  '("==" "!=" "<" "<=" ">" ">=" "$==" "$!=" "$<" "$<=" "$>" "$>="))
-(defparameter +compare-words+ '("EQL" "IN"))
+;;; --- operators: one table, from the lexicon ---------------------------------
+;;;
+;;; Every question about an operator -- its binding power and associativity, its
+;;; family, which comparison it is, what a compound assignment applies, whether
+;;; its right side may never run -- is answered from *LEXICON-OPS*, the rendering
+;;; of spec/lexicon.json (lexicon.lisp). The parser's precedence table, the
+;;; evaluator's opcode keywords, the constant folder, the optimiser, the join
+;;; pre-filter, the dependency walker and the SQL translator all ask the
+;;; predicates below; none of them keeps a list of operator spellings.
 
-;;; spec/SPEC.md §5, as a table. Higher binds tighter. The gaps are the levels
-;;; that are not infix: 16 is postfix/primary, 15 is unary minus, 7 is NOT.
+(defstruct (op-info (:constructor %make-op-info))
+  (token "" :type string)
+  (word nil)
+  (fixity :infix :type keyword)        ; :infix :prefix :postfix
+  (bp 0 :type fixnum)
+  (assoc nil)                          ; #\L #\R #\N, NIL unless infix
+  (family nil :type keyword)           ; :arith :compare :text-compare ...
+  (node nil :type keyword)             ; :bin :assign :list :seq :un :index :pipe
+  (name nil)                           ; a prefix operator's node name
+  (relation -1 :type fixnum)           ; index into eq ne lt le gt ge
+  (compound nil)                       ; the binary operator a compound assignment applies
+  (short-circuit nil))
+
+(defun %op-info-from (row)
+  (destructuring-bind (token &key word fixity level bp assoc family node name relation compound short-circuit) row
+    (declare (ignore level))
+    (%make-op-info :token token :word word :fixity fixity :bp bp :assoc assoc :family family
+                   :node node :name name :relation relation :compound compound
+                   :short-circuit short-circuit)))
+
+;;; Infix operators by token (symbol and word spellings share no key, so one
+;;; table holds both), and prefix operators by token. :test #'equal is
+;;; mandatory: the keys are strings, and EQL never matches two separately-read
+;;; strings.
+(defparameter +infix-op-info+
+  (let ((m (make-hash-table :test #'equal)))
+    (dolist (row *lexicon-ops* m)
+      (when (eq (getf (rest row) :fixity) :infix)
+        (setf (gethash (first row) m) (%op-info-from row))))))
+
+(defparameter +prefix-op-info+
+  (let ((m (make-hash-table :test #'equal)))
+    (dolist (row *lexicon-ops* m)
+      (when (eq (getf (rest row) :fixity) :prefix)
+        (setf (gethash (first row) m) (%op-info-from row))))))
+
+(declaim (inline infix-op-info))
+(defun infix-op-info (op)
+  "OP's record as an infix operator, or NIL."
+  (gethash op +infix-op-info+))
+
+(defun ops-where (pred)
+  "The infix operator tokens satisfying PRED, in lexicon order."
+  (loop for row in *lexicon-ops*
+        for info = (and (eq (getf (rest row) :fixity) :infix) (gethash (first row) +infix-op-info+))
+        when (and info (funcall pred info)) collect (op-info-token info)))
+
+(defun op-family (op)
+  (let ((info (infix-op-info op))) (and info (op-info-family info))))
+
+(defun compare-op-p (op)
+  "== != < <= > >=: the numeric comparisons (§4.5)."
+  (eq (op-family op) :compare))
+
+(defun text-compare-op-p (op)
+  "$== $!= $< $<= $> $>=: the bytewise text comparisons (§5.3)."
+  (eq (op-family op) :text-compare))
+
+(defun relational-op-p (op)
+  "Either comparison family: the twelve operators with a relation."
+  (let ((f (op-family op))) (or (eq f :compare) (eq f :text-compare))))
+
+(defun arith-op-p (op)
+  "+ - * / %: the binary arithmetic operators (§5.1)."
+  (eq (op-family op) :arith))
+
+(defun byte-compare-op-p (op)
+  "The operators that compare their operands as bytes in SQL: the text
+comparisons and the deep comparisons (EQL, IN)."
+  (let ((f (op-family op))) (or (eq f :text-compare) (eq f :deep-compare))))
+
+(defun short-circuit-op-p (op)
+  "AND, OR, ?? and ???: the right operand may never run."
+  (let ((info (infix-op-info op))) (and info (op-info-short-circuit info))))
+
+(defun op-relation (op)
+  "OP's comparison relation as a keyword (:eq :ne :lt :le :gt :ge), or NIL."
+  (let ((info (infix-op-info op)))
+    (and info (>= (op-info-relation info) 0)
+         (nth (op-info-relation info) '(:eq :ne :lt :le :gt :ge)))))
+
+(defun compound-op (op)
+  "The binary operator the compound assignment OP applies (\"+\" for \"+=\"), or NIL."
+  (let ((info (infix-op-info op))) (and info (op-info-compound info))))
+
+;;; The assignment operators, which the climbing loop treats apart (target
+;;; check, :assign node).
+(defparameter +assign-ops+ (ops-where (lambda (i) (eq (op-info-node i) :assign))))
+
+;;; spec/SPEC.md §5, as binding powers: higher binds tighter. Constants, because
+;;; the climbing loop compares fixnums; their values are the lexicon's, read at
+;;; compile time (lexicon.lisp is loaded before this file is compiled).
 ;;; +BP-SEQ+ and +BP-LIST+ are never read -- `;` and `,` are N-ary loops outside
-;;; the table -- and are here because a table missing two of §5's sixteen levels
-;;; stops being a reading of §5.
-(defconstant +bp-seq+ 1)       ; ;
-(defconstant +bp-list+ 2)      ; ,
-(defconstant +bp-assign+ 3)    ; = += -= *= /= %= &=   (right associative)
-(defconstant +bp-or+ 4)
-(defconstant +bp-xor+ 5)
-(defconstant +bp-and+ 6)
-(defconstant +bp-not+ 7)       ; prefix
-(defconstant +bp-compare+ 8)   ; non-associative
-(defconstant +bp-coalesce+ 9)  ; ?? ??? (right associative)
-(defconstant +bp-bor+ 10)
-(defconstant +bp-bxor+ 11)
-(defconstant +bp-band+ 12)
-(defconstant +bp-concat+ 13)   ; &
-(defconstant +bp-add+ 14)      ; + -
-(defconstant +bp-mul+ 15)      ; * / %
-(defconstant +bp-neg+ 16)      ; prefix
+;;; the table -- and are here because a table missing two of §5's levels stops
+;;; being a reading of §5.
+(defconstant +bp-seq+ (cdr (assoc :seq *lexicon-bp*)))
+(defconstant +bp-list+ (cdr (assoc :list *lexicon-bp*)))
+(defconstant +bp-assign+ (cdr (assoc :assign *lexicon-bp*)))
+(defconstant +bp-or+ (cdr (assoc :or *lexicon-bp*)))
+(defconstant +bp-xor+ (cdr (assoc :xor *lexicon-bp*)))
+(defconstant +bp-and+ (cdr (assoc :and *lexicon-bp*)))
+(defconstant +bp-not+ (cdr (assoc :not *lexicon-bp*)))
+(defconstant +bp-compare+ (cdr (assoc :compare *lexicon-bp*)))
+(defconstant +bp-coalesce+ (cdr (assoc :coalesce *lexicon-bp*)))
+(defconstant +bp-bor+ (cdr (assoc :bor *lexicon-bp*)))
+(defconstant +bp-bxor+ (cdr (assoc :bxor *lexicon-bp*)))
+(defconstant +bp-band+ (cdr (assoc :band *lexicon-bp*)))
+(defconstant +bp-concat+ (cdr (assoc :concat *lexicon-bp*)))
+(defconstant +bp-add+ (cdr (assoc :add *lexicon-bp*)))
+(defconstant +bp-mul+ (cdr (assoc :mul *lexicon-bp*)))
+(defconstant +bp-neg+ (cdr (assoc :neg *lexicon-bp*)))
+
+;;; The prefix operators the parser handles by name must be the lexicon's, at
+;;; the binding powers PARSE-PREFIX uses.
+(let ((neg (gethash "-" +prefix-op-info+))
+      (not-op (gethash "NOT" +prefix-op-info+)))
+  (unless (and neg not-op (= (hash-table-count +prefix-op-info+) 2)
+               (equal (op-info-name neg) "NEG") (= (op-info-bp neg) +bp-neg+)
+               (equal (op-info-name not-op) "NOT") (= (op-info-bp not-op) +bp-not+))
+    (error "SEL: the parser's prefix operators are not spec/lexicon.json's")))
 
 ;;; An infix operator's binding power and associativity, as (BP . ASSOC) where
 ;;; ASSOC is #\L, #\R or #\N. #\L parses its right side at BP + 1, #\R at BP --
 ;;; that is what makes it right-associative -- and #\N at BP + 1 and then rejects
-;;; a second operator at the same level.
-;;;
-;;; DEFPARAMETER rather than DEFCONSTANT, following the +assign-ops+ style above:
-;;; DEFCONSTANT on a fresh hash table signals on every reload.
-;;;
-;;; :test #'equal is mandatory. The keys are strings, and EQL never matches two
-;;; separately-read strings, so with the default test every operator would look
-;;; unknown and every program would be a syntax error at its first operator.
-(defparameter +infix-ops+
+;;; a second operator at the same level. Two tables because word operators lex
+;;; as identifiers and symbol operators as ops; the `,` and `;` levels are the
+;;; parser's own N-ary loops and stay out.
+(defun %infix-table (words)
   (let ((m (make-hash-table :test #'equal)))
-    (setf (gethash "??" m) (cons +bp-coalesce+ #\R)
-          (gethash "???" m) (cons +bp-coalesce+ #\R)
-          (gethash "&" m) (cons +bp-concat+ #\L)
-          (gethash "+" m) (cons +bp-add+ #\L)
-          (gethash "-" m) (cons +bp-add+ #\L)
-          (gethash "*" m) (cons +bp-mul+ #\L)
-          (gethash "/" m) (cons +bp-mul+ #\L)
-          (gethash "%" m) (cons +bp-mul+ #\L))
-    (dolist (op +assign-ops+) (setf (gethash op m) (cons +bp-assign+ #\R)))
-    (dolist (op +compare-ops+) (setf (gethash op m) (cons +bp-compare+ #\N)))
+    (maphash (lambda (token info)
+               (when (and (eq (and (op-info-word info) t) words)
+                          (member (op-info-node info) '(:bin :assign)))
+                 (setf (gethash token m) (cons (op-info-bp info) (op-info-assoc info)))))
+             +infix-op-info+)
     m))
 
-(defparameter +infix-words+
-  (let ((m (make-hash-table :test #'equal)))
-    (setf (gethash "OR" m) (cons +bp-or+ #\L)
-          (gethash "XOR" m) (cons +bp-xor+ #\L)
-          (gethash "AND" m) (cons +bp-and+ #\L)
-          (gethash "BOR" m) (cons +bp-bor+ #\L)
-          (gethash "BXOR" m) (cons +bp-bxor+ #\L)
-          (gethash "BAND" m) (cons +bp-band+ #\L))
-    (dolist (w +compare-words+) (setf (gethash w m) (cons +bp-compare+ #\N)))
-    m))
+(defparameter +infix-ops+ (%infix-table nil))
+
+(defparameter +infix-words+ (%infix-table t))
 
 ;;; The two tables are one lookup. Every question about an operator -- what it
 ;;; binds at, how it associates, and whether it may follow a comparison -- is
@@ -163,11 +244,15 @@ operand in ARGS. Every refusal reports the name token."
       n)))
 
 (defun regex-flag-index (name)
-  "The argument index of a regex builtin's flags -- its pattern is argument 0
--- or NIL when NAME takes no regex. The one list of them: the compile-time
+  "The argument index of a regex builtin's flags, or NIL when NAME takes no
+regex: spec/builtins.json's `regex` (builtin-manifest.lisp). The compile-time
 pattern check here, the evaluator's builtins and the SQL translator read it."
-  (cond ((member name '("RMATCH" "RFIND" "RGROUPS") :test #'string=) 2)
-        ((string= name "RREPLACE") 3)))
+  (third (assoc name *builtin-regex-data* :test #'string=)))
+
+(defun regex-pattern-index (name)
+  "The argument index of a regex builtin's pattern, or NIL when NAME takes no
+regex (spec/builtins.json's `regex`)."
+  (second (assoc name *builtin-regex-data* :test #'string=)))
 
 (defun check-literal-regex-pattern (spec args)
   "A regex call whose pattern is a text literal is checked when the program is
@@ -178,7 +263,7 @@ left to the run."
   (let ((name (spec-name spec)))
     (let ((flag-index (regex-flag-index name)))
      (when flag-index
-      (let* ((pattern (first args))
+      (let* ((pattern (nth (regex-pattern-index name) args))
              (flags (nth flag-index args)))
         (when (and pattern (eq (node-kind pattern) :text))
           (funcall 'regex-literal-check (node-s pattern)

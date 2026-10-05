@@ -236,10 +236,7 @@ pub fn lookup_spec(name: &str) -> Option<Arc<Spec>> {
 }
 
 pub fn is_reserved(name: &str) -> bool {
-    matches!(
-        name,
-        "TRUE" | "FALSE" | "NULL" | "AND" | "OR" | "NOT" | "XOR" | "EQL" | "IN" | "BAND" | "BOR" | "BXOR"
-    )
+    crate::ops::is_reserved(name)
 }
 
 pub fn function_names() -> Vec<String> {

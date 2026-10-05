@@ -554,7 +554,7 @@ final class Hybrid
         $projected = false;
         foreach ($steps as $step) {
             $name = $step['name'] ?? '';
-            if (in_array($name, ['SORT', 'SORT_DESC', 'SORT_BY', 'TOP', 'TOP_DESC', 'TOP_BY'], true)) {
+            if (BuiltinManifest::PIPELINE_STEPS[$name][1] ?? false) {   // a step that sorts
                 if ($sorted && $projected) return true;
                 $sorted = true;
                 $projected = false;
