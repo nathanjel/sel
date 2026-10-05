@@ -44,8 +44,9 @@ echo '   total:     ', Sel::compile('SUM(ITEMS, _["QTY"] * _["PRICE"])')->run($o
 
 try {
     Value::fromNative(['PRICE' => 19.99]);
-} catch (InvalidArgumentException $e) {
-    echo '   float rejected: ', $e->getMessage(), "\n";
+} catch (SelError $e) {
+    if ($e->code !== 'E_BAD_ARG') throw $e;
+    echo '   float rejected: ', $e->code, ' — ', $e->getMessage(), "\n";
 }
 
 // 4 — reading results back ----------------------------------------------------

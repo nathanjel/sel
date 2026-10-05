@@ -252,13 +252,13 @@ final class Parser
         // Every key that holds a node. `pos` holds a token, `spec` a function
         // entry and `v`/`op`/`name` scalars: naming the child keys rather than
         // testing is_array() is what keeps those out of the worklist.
-        foreach (['l', 'r', 'target', 'value', 'obj', 'idx', 'x'] as $k) {
+        foreach (Ast::CHILD_NODES as $k) {
             if (isset($node[$k])) {
                 $pending[] = $node[$k];
                 unset($node[$k]);
             }
         }
-        foreach (['items', 'args'] as $k) {
+        foreach (Ast::CHILD_LISTS as $k) {
             if (isset($node[$k])) {
                 foreach ($node[$k] as $child) {
                     $pending[] = $child;
@@ -290,7 +290,7 @@ final class Parser
         $node = $this->parseSequence();
         if (!$this->atEof()) {
             // The whole tree is abandoned: a flat chain of a few hundred thousand
-            // operators, then a stray `)`, freed recursively on unwind (PHP-C15).
+            // operators, then a stray `)`, freed recursively on unwind.
             self::dismantle($node);
             $t = $this->peek();
             fail('E_SYNTAX', 'unexpected ' . self::describe($t), $t);
@@ -708,20 +708,19 @@ final class Parser
         }
     }
 
-    /** @param array<string,mixed> $spec */
+    /** The calls that take a regex pattern first, and the index of their flags argument. */
+    private const REGEX_CALLS = ['RMATCH' => 2, 'RFIND' => 2, 'RGROUPS' => 2, 'RREPLACE' => 3];
+
     /**
-     * The compile-time arity rule (spec §6.2, SEL-0002) and the call node, in
-     * one place for both call forms; the pipeline form has already placed its
-     * left operand in $args. Every refusal reports the name token.
+     * The compile-time arity rule (spec §6.2) and the call node, in one place
+     * for both call forms; the pipeline form has already placed its left
+     * operand in $args. Every refusal reports the name token.
      *
      * @param array<string,mixed> $nameTok
      * @param array<string,mixed> $spec
      * @param list<array<string,mixed>> $args
      * @return array<string,mixed>
      */
-    /** The calls that take a regex pattern first, and the index of their flags argument. */
-    private const REGEX_CALLS = ['RMATCH' => 2, 'RFIND' => 2, 'RGROUPS' => 2, 'RREPLACE' => 3];
-
     private static function finishCall(array $nameTok, array $spec, array $args): array
     {
         $count = count($args);

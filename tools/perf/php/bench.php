@@ -1,6 +1,6 @@
 #!/usr/bin/env php
 <?php
-// PHP performance benchmarks for worklist wave PHP-P1..P11 (docs/interim/2026-09-29/worklist/performance/php.md).
+// PHP micro-benchmarks for the evaluator's hot paths (text, decimals, joins, sorts), CPU time per case.
 //
 //   php [-d memory_limit=-1] tools/perf/php/bench.php [--gmp=on|off] [--reps=N] [--json] [case-substring ...]
 //
@@ -27,7 +27,7 @@ foreach (array_slice($argv, 1) as $a) {
     elseif ($a === '--json') $opts['json'] = true;
     else $filters[] = $a;
 }
-Dec::forceGmp($opts['gmp'] === 'on' ? null : false);
+Dec::testHooks(['gmp' => $opts['gmp'] === 'on' ? null : false]);
 mt_srand(20260930);
 
 function lcheck(mixed $v): string

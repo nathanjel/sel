@@ -52,6 +52,8 @@ split-two-million|'COUNT(SPLIT(REPEAT("a,", 2000000) & "a", ","))'
 replace-fan-out|'REPLACE("a", REPEAT("b", 200000), REPEAT("a", 200000))'
 rreplace-fan-out|'RREPLACE("a", REPEAT("b", 100), REPEAT("a", 500000))'
 hex-of-a-giant|'TO_HEX(TO_UTF8(REPEAT("a", 16777216)))'
+list-args-past-cap|'COUNT(LIST(' + '1, ' * 1000000 + '1))'
+record-pairs-past-cap|'COUNT(RECORD(' + ', '.join('"k%d", 1' % i for i in range(1000001)) + '))'
 REQUESTS_END
 
 failures=0

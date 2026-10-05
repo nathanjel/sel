@@ -1207,6 +1207,66 @@ COUNT(LINK(X, Y, L, R, L["id"] == R["id"]))
 --- expect
 num 1
 ===
+### name: link.equi-numeric-key-signed-zero-with-scale
+--- note
+A `LINK` whose predicate is one comparison reading one binder on each side may be matched by key; every other predicate is evaluated per pair. Appending `AND TRUE` turns the first into the second and must never change the rows. Negative zero and a scaled zero are one number (`-0 == 0.00`): PHP's key kept the scale of a zero and missed the match.
+--- setup
+A = LIST(RECORD("k", -0)); B = LIST(RECORD("k", 0.00))
+--- source
+COUNT(LINK(A, B, a["k"] == b["k"]))
+--- expect
+num 1
+===
+### name: link.equi-numeric-key-signed-zero-with-scale-general-path
+--- note
+A `LINK` whose predicate is one comparison reading one binder on each side may be matched by key; every other predicate is evaluated per pair. Appending `AND TRUE` turns the first into the second and must never change the rows.
+--- setup
+A = LIST(RECORD("k", -0)); B = LIST(RECORD("k", 0.00))
+--- source
+COUNT(LINK(A, B, a["k"] == b["k"] AND TRUE))
+--- expect
+num 1
+===
+### name: link.equi-numeric-key-text-zeros
+--- note
+A `LINK` whose predicate is one comparison reading one binder on each side may be matched by key; every other predicate is evaluated per pair. Appending `AND TRUE` turns the first into the second and must never change the rows. Zero written as text, signed and scaled, meets every other spelling of zero, number or text.
+--- setup
+A = LIST(RECORD("k", "-0"), RECORD("k", "0.0"), RECORD("k", "-0.000")); B = LIST(RECORD("k", 0), RECORD("k", 0.00), RECORD("k", "0"))
+--- source
+COUNT(LINK(A, B, a["k"] == b["k"]))
+--- expect
+num 9
+===
+### name: link.equi-numeric-key-text-zeros-general-path
+--- note
+A `LINK` whose predicate is one comparison reading one binder on each side may be matched by key; every other predicate is evaluated per pair. Appending `AND TRUE` turns the first into the second and must never change the rows.
+--- setup
+A = LIST(RECORD("k", "-0"), RECORD("k", "0.0"), RECORD("k", "-0.000")); B = LIST(RECORD("k", 0), RECORD("k", 0.00), RECORD("k", "0"))
+--- source
+COUNT(LINK(A, B, a["k"] == b["k"] AND TRUE))
+--- expect
+num 9
+===
+### name: link.equi-numeric-key-small-scales-and-text
+--- note
+A `LINK` whose predicate is one comparison reading one binder on each side may be matched by key; every other predicate is evaluated per pair. Appending `AND TRUE` turns the first into the second and must never change the rows. Within int64: trailing fraction zeros, text against number, and a negative fraction are matched by value; `1.1` and `1.01` stay apart.
+--- setup
+A = LIST(RECORD("k", "1.10"), RECORD("k", -1.50), RECORD("k", "2"), RECORD("k", 1.01)); B = LIST(RECORD("k", 1.1), RECORD("k", "-1.5"), RECORD("k", 2.000))
+--- source
+LINK(A, B, _1["k"] == _2["k"]) .> MAP(_["_1"]["k"] & "=" & _["_2"]["k"]) .> JOIN(",")
+--- expect
+text "1.10=1.1,-1.50=-1.5,2=2.000"
+===
+### name: link.equi-numeric-key-small-scales-and-text-general-path
+--- note
+A `LINK` whose predicate is one comparison reading one binder on each side may be matched by key; every other predicate is evaluated per pair. Appending `AND TRUE` turns the first into the second and must never change the rows.
+--- setup
+A = LIST(RECORD("k", "1.10"), RECORD("k", -1.50), RECORD("k", "2"), RECORD("k", 1.01)); B = LIST(RECORD("k", 1.1), RECORD("k", "-1.5"), RECORD("k", 2.000))
+--- source
+LINK(A, B, _1["k"] == _2["k"] AND TRUE) .> MAP(_["_1"]["k"] & "=" & _["_2"]["k"]) .> JOIN(",")
+--- expect
+text "1.10=1.1,-1.50=-1.5,2=2.000"
+===
 ### name: link.equi-text-key-case-is-significant
 --- note
 A `LINK` whose predicate is one comparison reading one binder on each side may be matched by key; every other predicate is evaluated per pair. Appending `AND TRUE` turns the first into the second and must never change the rows. `$==` compares bytes.

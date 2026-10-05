@@ -26,10 +26,10 @@ use Sel\Value;
 
 const SUITE = __DIR__ . '/../../conformance';
 
-/** @return list<array<string,mixed>> */
 // SEL's four whitespace characters. See conformance/README.md.
 const WS = " \t\r\n";
 
+/** @return list<array<string,mixed>> */
 function parse_selt(string $text, string $file): array
 {
     $cases = [];
@@ -134,7 +134,7 @@ function check_expect(string $expect, ?Value $value, ?SelError $error, string $a
 {
     $space = strpos($expect, ' ');
     $form = $space === false ? $expect : substr($expect, 0, $space);
-    $rest = $space === false ? '' : trim(substr($expect, $space + 1));
+    $rest = $space === false ? '' : trim(substr($expect, $space + 1), WS);
 
     if ($form === 'error') {
         if ($error === null) {
@@ -205,7 +205,21 @@ $seen = [];
 
 foreach ($files as $file) {
     $short = basename($file);
-    foreach (parse_selt(file_get_contents($file), $short) as $c) {
+    // A path that is missing, unreadable or a directory is a suite error with
+    // one line, not a PHP warning and a stack trace (tools/README.md: runners).
+    $text = is_file($file) && is_readable($file) ? @file_get_contents($file) : false;
+    if ($text === false) {
+        fwrite(STDERR, "cannot read {$file}\n");
+        $suiteErrors[] = "cannot read {$file}";
+        continue;
+    }
+    try {
+        $cases = parse_selt($text, $short);
+    } catch (RuntimeException $e) {
+        $suiteErrors[] = $e->getMessage();
+        continue;
+    }
+    foreach ($cases as $c) {
         if (isset($seen[$c['name']])) {
             $suiteErrors[] = "{$c['at']}: duplicate case name {$c['name']} (also {$seen[$c['name']]})";
             continue;
@@ -257,4 +271,9 @@ foreach ($suiteErrors as $e) {
 $nf = count($failures);
 $ns = count($suiteErrors);
 echo "\n{$pass} passed, {$nf} failed, {$ns} suite errors\n";
+if ($pass + $nf === 0) {
+    // An empty file or a run that selected nothing proves nothing.
+    echo "no cases were run\n";
+    exit(1);
+}
 exit($nf + $ns > 0 ? 1 : 0);

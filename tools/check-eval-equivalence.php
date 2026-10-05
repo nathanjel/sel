@@ -8,8 +8,8 @@
 //
 //   php -d memory_limit=-1 tools/check-eval-equivalence.php [file.selt ...]
 //
-// Exit status is non-zero on any difference. A gate lane of tools/check.sh
-// ("PHP plain vs optimised").
+// Exit status is non-zero on any difference. tools/check.sh runs it as
+// "PHP plain vs optimised".
 
 declare(strict_types=1);
 

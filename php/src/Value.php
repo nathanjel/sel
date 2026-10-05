@@ -29,6 +29,11 @@ final class RecordShape
     private const CACHE_ENTRIES = 256;
     private const CACHE_MAX_KEYS = 256;
     private const CACHE_MAX_BYTES = 16384;
+    /**
+     * Benchmark counters, off unless tools/scale-test turns them on
+     * (enableInstrumentation): one static bool test per intern or alias when
+     * off. Production observability is cacheSizes(), which costs nothing.
+     */
     private static bool $instrumentation = false;
     /** @var array<string,int> */
     private static array $stats = [
@@ -67,18 +72,8 @@ final class RecordShape
         }
         if (self::$instrumentation) self::$stats['new_shapes']++;
         // A shape is built once per key sequence, so this is where its keys are
-        // checked: text, distinct (spec §8; review 2026-09-28 HOST-12, HOST-18).
-        $seen = [];
-        foreach ($keys as $key) {
-            if (!is_string($key)) {
-                fail('E_BAD_ARG', 'a key must be a string, not ' . gettype($key), null);
-            }
-            Value::checkKey($key);
-            if (isset($seen[$key])) {
-                fail('E_BAD_ARG', 'a record shape cannot hold the key ' . json_encode($key) . ' twice', null);
-            }
-            $seen[$key] = true;
-        }
+        // checked: text, distinct (spec §8).
+        Value::checkDistinctKeys($keys, 'a record shape');
         $shape = new self($keys);
         if (count($keys) <= self::CACHE_MAX_KEYS &&
             array_sum(array_map('strlen', $keys)) <= self::CACHE_MAX_BYTES) {
@@ -88,23 +83,39 @@ final class RecordShape
         return $shape;
     }
 
+    /**
+     * How full the two bounded caches are: interned shapes (`cache_size`) and
+     * LINK alias plans (`alias_cache_entries`), each at most 256 entries. The
+     * PHP metadata check (tools/metadata/php.php) holds them to that bound.
+     *
+     * @return array{cache_size:int, alias_cache_entries:int}
+     */
+    public static function cacheSizes(): array
+    {
+        return ['cache_size' => count(self::$cache), 'alias_cache_entries' => count(self::$aliasPlans)];
+    }
+
+    /** @internal benchmark hook (tools/scale-test): count interns and alias builds. */
     public static function enableInstrumentation(bool $enabled): void
     {
         self::$instrumentation = $enabled;
     }
 
+    /** @internal benchmark hook (tools/scale-test): zero the counters. */
     public static function resetStats(): void
     {
         foreach (self::$stats as $key => $_) self::$stats[$key] = 0;
     }
 
-    /** @return array<string,int> */
+    /**
+     * @internal benchmark hook (tools/scale-test): the counters, which move
+     * only while instrumentation is on, plus cacheSizes().
+     *
+     * @return array<string,int>
+     */
     public static function stats(): array
     {
-        $stats = self::$stats;
-        $stats['cache_size'] = count(self::$cache);
-        $stats['alias_cache_entries'] = count(self::$aliasPlans);
-        return $stats;
+        return self::$stats + self::cacheSizes();
     }
 
     /** @param list<string> $keys */
@@ -133,7 +144,7 @@ final class RecordShape
             if (self::$instrumentation) self::$stats['alias_hits']++;
             return $cached;
         }
-        $lower = \Sel\Utf8::lower($tableName);
+        $lower = Utf8::lower($tableName);
         $addLower = $lower !== $tableName && !isset($this->keyMap[$lower]);
         $keys = $this->keys;
         $keys[] = $tableName;
@@ -156,6 +167,10 @@ final class RecordShape
     }
 }
 
+/**
+ * @phpstan-import-type Decimal from Dec
+ * @phpstan-import-type EagerDecimal from Dec
+ */
 final class Value
 {
     public const NONE = 'NONE';
@@ -176,7 +191,7 @@ final class Value
     public ?array $listKeys = null;
     /** @var array<string,int>|null */
     private ?array $listKeyMap = null;
-    /** @var array{neg:bool,digits:string,scale:int}|null */
+    /** @var Decimal|null */
     public ?array $decVal = null;
 
     /** @param string|bool|null $scalar */
@@ -199,12 +214,18 @@ final class Value
         return $this->scalar;
     }
 
+    /**
+     * The magic accessors exist for one name: `scalar`, private so a number's
+     * text can be written lazily. Any other name is a mistake (a typo such as
+     * `->scaler`, or a private property) and raises rather than reading null
+     * or writing nothing.
+     */
     public function __get(string $name): mixed
     {
         if ($name === 'scalar') {
             return $this->getScalar();
         }
-        return null;
+        throw new \Error('Undefined property: ' . self::class . '::$' . $name);
     }
 
     public function __set(string $name, mixed $value): void
@@ -212,7 +233,9 @@ final class Value
         if ($name === 'scalar') {
             $this->scalar = $value;
             $this->decVal = null;
+            return;
         }
+        throw new \Error('Cannot set undefined or private property ' . self::class . '::$' . $name);
     }
 
     public function __isset(string $name): bool
@@ -255,7 +278,7 @@ final class Value
      * parser literal (the lexer validated the source and every escape it decodes
      * is a scalar value), a number's digits, a cut of a valid text at character
      * boundaries, the concatenation of two valid texts. Skips the PCRE validity
-     * pass Value::text makes (~280 ns, ~40% of evaluating a literal, PHP-P11).
+     * pass Value::text makes (~280 ns, ~40% of evaluating a literal).
      * Anything from outside — host input, bytes decoded from BIN — must still
      * go through Value::text.
      */
@@ -264,7 +287,6 @@ final class Value
         return new self(self::TEXT, $s);
     }
 
-    /** A key entering from host code (spec §8): valid UTF-8, like every text. */
     /** @param mixed $x */
     private static function describe($x): string
     {
@@ -277,14 +299,39 @@ final class Value
         fail('E_BAD_ARG', "Value::{$ctor} takes {$wants}, not " . self::describe($got), null);
     }
 
+    /** A key entering from host code (spec §8): valid UTF-8, like every text. */
     public static function checkKey(string $key): void
     {
         self::checkText($key);
     }
 
+    /** @param mixed $key */
+    private static function keyNotString($key): never
+    {
+        fail('E_BAD_ARG', 'a key must be a string, not ' . gettype($key), null);
+    }
+
     /**
-     * Every text entering is valid UTF-8, keys included (spec §8; review
-     * 2026-09-25 HOST-05). PCRE's strict UTF-8 check is the fast path; only a
+     * Keys a host hands in for a list or a record shape: strings, valid UTF-8,
+     * each once (spec §8).
+     *
+     * @param array<mixed> $keys
+     */
+    public static function checkDistinctKeys(array $keys, string $what): void
+    {
+        $seen = [];
+        foreach ($keys as $key) {
+            if (!is_string($key)) self::keyNotString($key);
+            self::checkText($key);
+            if (isset($seen[$key])) {
+                fail('E_BAD_ARG', "{$what} cannot hold the key " . json_encode($key) . ' twice', null);
+            }
+            $seen[$key] = true;
+        }
+    }
+
+    /**
+     * Every text entering is valid UTF-8, keys included (spec §8). PCRE's strict UTF-8 check is the fast path; only a
      * string it rejects meets the hand-written codec, which raises E_UTF8.
      */
     private static function checkText(string $s): void
@@ -319,10 +366,11 @@ final class Value
      * A fresh value every time. The two BOOL values used to be shared
      * flyweights, and a Value is mutable (`set`, the `scalar` setter, a
      * host's own `$v->children[...]`), so one program's assignment into TRUE
-     * changed TRUE for every other program in the process (PHP-C1). The
-     * allocation is what every other kind pays.
+     * changed TRUE for every other program in the process. The allocation is
+     * what every other kind pays.
+     *
+     * @param mixed $b
      */
-    /** @param mixed $b */
     public static function bool($b): self
     {
         if (!is_bool($b)) {
@@ -331,13 +379,12 @@ final class Value
         return new self(self::BOOL, $b);
     }
 
-    /** @param array{neg:bool,digits:string,scale:int}|string $d */
     /**
      * A string is canonicalised and validated: "007" becomes "7", and anything
      * that is not a number is E_NOT_NUM here rather than a TEXT value that fails
      * later somewhere else. Internal callers pass a decimal record, not a string.
      *
-     * @param array{neg:bool,digits:string,scale:int}|string $d
+     * @param Decimal|string $d
      */
     public static function num($d): self
     {
@@ -352,7 +399,7 @@ final class Value
         }
         // The scalar is derived from the parsed decimal, not kept as typed:
         // "007" is 7 and "-0" is 0 (spec §4, §8), and a caller that spelled it
-        // otherwise still gets one canonical text (PHP-C10, a 0.9.2 regression).
+        // otherwise still gets one canonical text (a 0.9.2 regression).
         $v = new self(self::TEXT, null);
         $v->decVal = $parsed;
         return $v;
@@ -361,11 +408,11 @@ final class Value
     /**
      * The number for a decimal an operation of this library just built. Dec's own
      * arithmetic has already canonicalised it and enforced the digit caps, so the
-     * well-formedness pass `num()` runs on host input (HOST-13/14, PHP-C40) is
-     * skipped: a quarter of each numeric result went to it (PHP-P12). Never call
+     * well-formedness pass `num()` runs on host input is
+     * skipped: a quarter of each numeric result went to it. Never call
      * this with a decimal that came from outside the library.
      *
-     * @param array{neg:bool,digits:string,scale:int} $d
+     * @param Decimal $d
      */
     public static function numTrusted(array $d): self
     {
@@ -387,8 +434,13 @@ final class Value
         return new self(self::TEXT, (string) $n);
     }
 
-    /** Builds a list keyed "1".."n" (or preserved keys). Used by `,` and by list-returning built-ins. */
-    /** @param list<Value> $values @param list<string>|null $keys */
+    /**
+     * Builds a list keyed "1".."n" (or preserved keys). Used by `,` and by
+     * list-returning built-ins.
+     *
+     * @param list<Value> $values
+     * @param list<string>|null $keys
+     */
     public static function list($values, $keys = null): self
     {
         if (!is_array($values) || ($keys !== null && !is_array($keys))) {
@@ -401,21 +453,11 @@ final class Value
         }
         if ($keys !== null) {
             // A list's keys pair up with its values and are distinct text
-            // (spec §8; review 2026-09-28 HOST-12, HOST-17, HOST-18).
+            // (spec §8).
             if (count($keys) !== count($values)) {
                 fail('E_BAD_ARG', count($keys) . ' key(s) and ' . count($values) . ' value(s) do not pair up', null);
             }
-            $seen = [];
-            foreach ($keys as $key) {
-                if (!is_string($key)) {
-                    fail('E_BAD_ARG', 'a key must be a string, not ' . gettype($key), null);
-                }
-                self::checkText($key);
-                if (isset($seen[$key])) {
-                    fail('E_BAD_ARG', 'list key ' . json_encode($key) . ' is given twice', null);
-                }
-                $seen[$key] = true;
-            }
+            self::checkDistinctKeys($keys, 'a list');
         }
         $v = new self(self::NONE, null, true);
         // Keep PHP's packed representation when the caller already supplied a
@@ -425,12 +467,12 @@ final class Value
         return $v;
     }
 
-    /** @param list<string> $keys @param list<Value> $values */
     /**
      * A record from keys and values side by side. A repeated key keeps its
      * first position and takes its last value, as RECORD does (spec §8).
      *
-     * @param list<string> $keys @param list<Value> $values
+     * @param list<string> $keys
+     * @param list<Value> $values
      */
     public static function shaped(array $keys, array $values): self
     {
@@ -479,19 +521,11 @@ final class Value
         if ($keys === []) {
             return self::none();
         }
-        $seen = [];
-        $unique = true;
         foreach ($keys as $key) {
-            if (!is_string($key)) {
-                fail('E_BAD_ARG', 'a key must be a string, not ' . gettype($key), null);
-            }
-            if (array_key_exists($key, $seen)) {
-                $unique = false;
-                break;
-            }
-            $seen[$key] = true;
+            if (!is_string($key)) self::keyNotString($key);
         }
-        if ($unique) {
+        // Distinct keys share a shape; a repeated key is set again, last wins.
+        if (count(array_flip($keys)) === count($keys)) {
             return self::fromShape(RecordShape::intern($keys), $values);
         }
         $v = self::none();
@@ -655,9 +689,7 @@ final class Value
         }
         if ($this->isList && $this->storage !== null) {
             if ($this->listKeys !== null) {
-                if ($this->listKeyMap === null) {
-                    $this->listKeyMap = array_flip($this->listKeys);
-                }
+                $this->listKeyMap ??= array_flip($this->listKeys);
                 return isset($this->listKeyMap[$key]);
             }
             $index = self::listIndex($key, count($this->storage));
@@ -674,9 +706,7 @@ final class Value
         }
         if ($this->isList && $this->storage !== null) {
             if ($this->listKeys !== null) {
-                if ($this->listKeyMap === null) {
-                    $this->listKeyMap = array_flip($this->listKeys);
-                }
+                $this->listKeyMap ??= array_flip($this->listKeys);
                 $index = $this->listKeyMap[$key] ?? null;
                 return $index === null ? null : $this->storage[$index];
             }
@@ -798,44 +828,44 @@ final class Value
                 $this->storage[$index] = $value;
                 return $this;
             }
-            $this->children = [];
-            foreach ($this->entries() as [$existingKey, $existingValue]) {
-                $this->children[$existingKey] = $existingValue;
-            }
-            $this->shape = null;
-            $this->storage = null;
+            $this->demote();
         } elseif ($this->isList && $this->storage !== null) {
             if ($this->listKeys !== null) {
-                if ($this->listKeyMap === null) {
-                    $this->listKeyMap = array_flip($this->listKeys);
-                }
+                $this->listKeyMap ??= array_flip($this->listKeys);
                 $index = $this->listKeyMap[$key] ?? null;
                 if ($index !== null) {
                     $this->storage[$index] = $value;
                     return $this;
                 }
-                $this->children = [];
-                foreach ($this->entries() as [$existingKey, $existingValue]) {
-                    $this->children[$existingKey] = $existingValue;
-                }
-                $this->storage = null;
-                $this->listKeys = null;
-                $this->listKeyMap = null;
+                $this->demote();
             } else {
                 $index = self::listIndex($key, count($this->storage));
                 if ($index >= 0) {
                     $this->storage[$index] = $value;
                     return $this;
                 }
-                $this->children = [];
-                foreach ($this->entries() as [$existingKey, $existingValue]) {
-                    $this->children[$existingKey] = $existingValue;
-                }
-                $this->storage = null;
+                $this->demote();
             }
         }
         $this->children[$key] = $value;
         return $this;
+    }
+
+    /**
+     * A shaped record or a packed list about to take a key its layout cannot
+     * hold becomes an ordinary children map, entries in order.
+     */
+    private function demote(): void
+    {
+        $children = [];
+        foreach ($this->entries() as [$key, $value]) {
+            $children[$key] = $value;
+        }
+        $this->children = $children;
+        $this->shape = null;
+        $this->storage = null;
+        $this->listKeys = null;
+        $this->listKeyMap = null;
     }
 
     private static function listIndex(string $key, int $length): int
@@ -911,17 +941,17 @@ final class Value
 
     /**
      * @param array{line:int,col:int,offset:int}|null $pos
-     * @return array{neg:bool,digits:string,scale:int}
+     * @return EagerDecimal
      */
     public function asDecimal(?array $pos = null): array
     {
         $v = $this->scalarSource($pos);
         if ($v->kind !== self::TEXT) {
-            fail('E_NOT_NUM', 'expected a number, got ' . \Sel\Utf8::lower($v->kind), $pos);
+            fail('E_NOT_NUM', 'expected a number, got ' . Utf8::lower($v->kind), $pos);
         }
         if ($v->decVal !== null) {
             // The host sees today's array: a lazy value writes its digits out,
-            // once (item 1).
+            // once.
             if ($v->decVal['digits'] === null) {
                 $v->decVal = Dec::eager($v->decVal);
             }
@@ -938,10 +968,10 @@ final class Value
     /**
      * asDecimal() for the evaluator: a value's decimal as it is kept, which a
      * computed big number may keep lazily -- its magnitude as GMP, its digits not
-     * yet written (item 1). Everything it is handed to is Dec's.
+     * yet written. Everything it is handed to is Dec's.
      *
      * @param array{line:int,col:int,offset:int}|null $pos
-     * @return array{neg:bool,digits:?string,scale:int}
+     * @return Decimal
      */
     public function asDecimalLazy(?array $pos = null): array
     {
@@ -965,7 +995,7 @@ final class Value
             // Dec::parse answers null for text that is not a number, so a probe
             // never needs asDecimal()'s fail(): building a SelError (trace and a
             // json_encode'd message) and catching it made every non-numeric text
-            // key cost ~7x a parsed one (PHP-P3).
+            // key cost ~7x a parsed one.
             // A well-formed numeral too big to hold raises E_RANGE out of parse.
             // The probe answers no rather than raising, so ISNUM is true exactly
             // when the value can be used as a number — before the cap it said
@@ -1019,7 +1049,7 @@ final class Value
 
     /**
      * A copy of a record made to be written through by a program that assigns
-     * only to the top-level names in `$writable` (PHP-P22): those children are
+     * only to the top-level names in `$writable`: those children are
      * deep-copied, every other top-level child is shared with the original. The
      * program cannot reach a shared child through an assignment, so the original is
      * never written to, and the copy costs the size of what is written rather than
@@ -1072,7 +1102,7 @@ final class Value
             // Values and the keys are this list's own, already validated (text,
             // distinct, paired), so list()'s instanceof pass, per-key preg and
             // duplicate table would only re-prove it on every assignment, `,` and
-            // aggregate collect of a keyed list (PHP-P16). The key map is rebuilt
+            // aggregate collect of a keyed list. The key map is rebuilt
             // lazily, as for any fresh list.
             $v = new self(self::NONE, null, true);
             $v->storage = $values;
@@ -1100,21 +1130,27 @@ final class Value
 
     public function structuralHash(): string
     {
-        // A value with no children is keyed by its own kind, length and scalar
-        // (PHP-P25): no HashContext, and injective, which is all a bucket key has
+        // A value with no children is keyed by its own kind, length and scalar:
+        // no HashContext, and injective, which is all a bucket key has
         // to be -- every bucket confirms with eql(). It cannot equal the digest of
         // a container, which is sixteen hex digits and has no ':'.
         if ($this->size() === 0) {
-            $scalar = match ($this->kind) {
-                self::NONE => '',
-                self::TEXT, self::BIN => (string) $this->getScalar(),
-                self::BOOL => $this->scalar ? '1' : '0',
-            };
-            return $this->kind . ':' . strlen($scalar) . ':' . $scalar;
+            return $this->scalarHashPart();
         }
         $hash = hash_init('xxh3');
         $this->updateStructuralHash($hash, 1);
         return hash_final($hash);
+    }
+
+    /** The kind, length and scalar, unambiguously: `TEXT:2:ab`. */
+    private function scalarHashPart(): string
+    {
+        $scalar = match ($this->kind) {
+            self::NONE => '',
+            self::TEXT, self::BIN => (string) $this->getScalar(),
+            self::BOOL => $this->scalar ? '1' : '0',
+        };
+        return $this->kind . ':' . strlen($scalar) . ':' . $scalar;
     }
 
     private function updateStructuralHash(\HashContext $hash, int $depth): void
@@ -1124,12 +1160,7 @@ final class Value
         }
         // Hash logical scalar/children only: eqlAt ignores the storage layout
         // and list marker. Packed storage may also carry a host-set scalar.
-        $scalar = match ($this->kind) {
-            self::NONE => '',
-            self::TEXT, self::BIN => (string) $this->getScalar(),
-            self::BOOL => $this->scalar ? '1' : '0',
-        };
-        hash_update($hash, $this->kind . ':' . strlen($scalar) . ':' . $scalar . ';');
+        hash_update($hash, $this->scalarHashPart() . ';');
         if ($this->shape !== null) {
             $storage = $this->storage;
             $nextDepth = $depth + 1;
@@ -1396,7 +1427,7 @@ final class Value
             return $out;
         }
         // Any other keys -- the ones a FILTER kept, say -- travel as written, so
-        // the round trip keeps them (spec §8; review 2026-09-25 HOST-08). The one
+        // the round trip keeps them (spec §8). The one
         // shape PHP cannot keep is a record keyed "0" .. "n-1", which is a list
         // to PHP (the named exception).
         $out = [];
@@ -1408,7 +1439,7 @@ final class Value
         }
         if ($scalar !== null) {
             // A value's own scalar travels under "_"; with a child of that name
-            // too, one of them would be lost (review 2026-09-25 HOST-01).
+            // too, one of them would be lost.
             if ($this->has('_')) {
                 fail('E_BAD_ARG', 'a value with both a scalar and a child named "_" has no native form', null);
             }

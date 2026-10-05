@@ -6,9 +6,14 @@ declare(strict_types=1);
 namespace Sel\Builtins;
 
 use Sel\Args;
+use Sel\Ast;
+use Sel\Budget;
 use Sel\Context;
 use Sel\Dec;
+use Sel\Limits;
 use Sel\Registry;
+use Sel\SelError;
+use Sel\Utf8;
 use Sel\Value;
 
 use function Sel\fail;
@@ -68,6 +73,7 @@ final class Core
         Registry::define(['name' => 'LIST', 'min' => 0, 'max' => PHP_INT_MAX,
             'fn' => static function (Args $a): Value {
                 $n = $a->count();
+                if ($n > Limits::MAX_COLLECTION) Budget::checkCollection($n, $a->pos, 'the list');
                 $out = [];
                 for ($i = 0; $i < $n; $i++) {
                     $out[] = $a->val($i)->copyBelow(1, $a->pos);
@@ -79,6 +85,7 @@ final class Core
             'fn' => static function (Args $a): Value {
                 $n = $a->count();
                 if ($n === 0) return Value::none();
+                if ($n >> 1 > Limits::MAX_COLLECTION) Budget::checkCollection($n >> 1, $a->pos, 'the record');
                 if ($a->recordShape !== null) {
                     $values = [];
                     for ($i = 1; $i < $n; $i += 2) {
@@ -156,41 +163,7 @@ final class Core
                 return Value::list($out);
             }]);
 
-        Registry::define(['name' => 'DISTINCT', 'min' => 1, 'max' => 1,
-            'fn' => static function (Args $a): Value {
-                $val = $a->val(0);
-                if ($val->isNull()) {
-                    return Value::list([]);
-                }
-                $buckets = [];
-                $out = [];
-                $val->forEachElement(static function (string $key, Value $item) use (&$buckets, &$out): void {
-                    $hash = $item->structuralHash();
-                    // One item per hash is stored as the item itself and becomes a
-                    // list only when a second, unequal one collides (PHP-P25).
-                    $slot = $buckets[$hash] ?? null;
-                    if ($slot === null) {
-                        $buckets[$hash] = $item;
-                        $out[] = $item;
-                        return;
-                    }
-                    if ($slot instanceof Value) {
-                        if (!$item->eql($slot)) {
-                            $buckets[$hash] = [$slot, $item];
-                            $out[] = $item;
-                        }
-                        return;
-                    }
-                    foreach ($slot as $existing) {
-                        if ($item->eql($existing)) {
-                            return;
-                        }
-                    }
-                    $buckets[$hash][] = $item;
-                    $out[] = $item;
-                });
-                return Value::list($out);
-            }]);
+        Registry::define(['name' => 'DISTINCT', 'min' => 1, 'max' => 1, 'fn' => Structure::distinct(...)]);
 
         Registry::define(['name' => 'SORT', 'min' => 1, 'max' => 3, 'lazy' => true, 'binds' => true,
             'fn' => static function (Args $a, Context $ctx): Value {
@@ -211,9 +184,10 @@ final class Core
     }
 
     /**
-     * The ordering of SORT, SORT_BY, TOP and TOP_BY (spec §7.4): NULL first,
-     * then numbers by value, booleans, text/binary bytewise, then by kind.
-     * Structure::doTop shares it — one routine, so the two cannot drift.
+     * The ordering of SORT, SORT_BY, TOP and TOP_BY (spec §7.3), as one
+     * comparison: compareKeys over two sortKeys, which is what SORT and
+     * Structure::doTop use (they build each key once). Kept for the tests,
+     * which hold the keyed form to it.
      */
     public static function compareValues(Value $a, Value $b): int
     {
@@ -221,7 +195,7 @@ final class Core
     }
 
     /**
-     * The sort key of a value, classified ONCE (PHP-P3): its rank under the
+     * The sort key of a value, classified ONCE: its rank under the
      * total order and what is compared inside that rank. A sort builds one per
      * element and compares the keys, instead of re-classifying both operands on
      * every comparison (n log n classifications, each a scalar-context walk and
@@ -278,7 +252,7 @@ final class Core
         if ($v->kind !== Value::NONE) return $v;
         try {
             return $v->scalarSource(null);
-        } catch (\Sel\SelError $e) {
+        } catch (SelError $e) {
             return null;
         }
     }
@@ -291,6 +265,20 @@ final class Core
         if ($v->kind === Value::TEXT) return 3;
         if ($v->kind === Value::BIN) return 4;
         return 5;
+    }
+
+    /**
+     * The decoded sort form of this SORT* / TOP* call (Registry::sortForm).
+     *
+     * @return array{binder:?int,key:?int,dir:?int}
+     */
+    public static function sortFormOf(Args $a): array
+    {
+        $nodes = [];
+        for ($i = 0, $n = $a->count(); $i < $n; $i++) $nodes[] = $a->node($i);
+        return Registry::sortForm($a->name, $nodes)
+            // The manifest refuses any other count when the program is compiled.
+            ?? throw new \LogicException("unreachable: {$a->name} with {$a->count()} arguments");
     }
 
     private static function doSort(Args $a, Context $ctx, ?string $forcedDir): Value
@@ -307,37 +295,14 @@ final class Core
                 $indexed[] = ['item' => $item->copyBelow(1, $pos), 'sk' => self::sortKey($item), 'idx' => $idx++];
             });
         } else {
-            if ($count === 2) {
-                $binder = '_';
-                $body = $a->node(1);
-                $dir = $forcedDir ?? 'ASC';
-            } elseif ($count === 3) {
-                if ($forcedDir !== null) {
-                    $binder = $a->symbol(1);
-                    $body = $a->node(2);
-                    $dir = $forcedDir;
-                } elseif ($a->node(2)['t'] === 'text') {
-                    $binder = '_';
-                    $body = $a->node(1);
-                    $dir = \Sel\Utf8::upper($a->text(2));
-                } elseif ($a->isSymbol(1)) {
-                    $binder = $a->symbol(1);
-                    $body = $a->node(2);
-                    $dir = 'ASC';
-                } else {
-                    $binder = '_';
-                    $body = $a->node(1);
-                    $dir = \Sel\Utf8::upper($a->text(2));
-                }
-            } else {
-                $binder = $a->symbol(1);
-                $body = $a->node(2);
-                $dir = \Sel\Utf8::upper($a->text(3));
-            }
-
+            // The form (Registry::sortForm): a text-literal third slot is the
+            // direction even where a bare name stands second.
+            $form = self::sortFormOf($a);
+            $binder = $form['binder'] === null ? '_' : $a->symbol($form['binder']);
+            $body = $a->node($form['key']);
+            $dir = $form['dir'] === null ? ($forcedDir ?? 'ASC') : Utf8::upper($a->text($form['dir']));
             if ($dir !== 'ASC' && $dir !== 'DESC') {
-                $posIdx = $count === 4 ? 3 : 2;
-                fail('E_BAD_ARG', "sort direction must be 'ASC' or 'DESC'", $a->posOf($posIdx));
+                fail('E_BAD_ARG', "sort direction must be 'ASC' or 'DESC'", $a->posOf($form['dir']));
             }
             // The direction is an argument like any other (spec §7.4): it is
             // checked above whether or not there is anything to sort.
@@ -468,13 +433,14 @@ final class Core
         return $result;
     }
 
-    /** @param array<string,mixed>|null $node */
     /**
      * Whether evaluating $node might write into a value: it holds an assignment or
      * calls a host function. A collector copies an element when it collects it
      * (spec §3.4); while nothing below the body can write, deferring the copy to
      * the end is unobservable, so only a body that might write copies at
      * collection. Iterative: a body can be a flat chain as long as the source.
+     *
+     * @param array<string,mixed>|null $node
      */
     public static function mayWrite(?array $node): bool
     {
@@ -485,31 +451,20 @@ final class Core
             $t = $n['t'] ?? null;
             if ($t === 'assign') return true;
             if ($t === 'call' && Registry::isHostFunction((string) ($n['name'] ?? ''))) return true;
-            foreach (['args', 'items'] as $key) {
-                foreach ($n[$key] ?? [] as $child) $stack[] = $child;
-            }
-            foreach (['l', 'r', 'x', 'obj', 'idx', 'target', 'value'] as $key) {
-                if (isset($n[$key]) && is_array($n[$key])) $stack[] = $n[$key];
-            }
+            foreach (Ast::children($n) as $child) $stack[] = $child;
         }
         return false;
     }
 
+    /** Does the tree read the variable NAME anywhere? @param array<string,mixed>|null $node */
     public static function containsVar(?array $node, string $name): bool
     {
         if ($node === null) return false;
         if (($node['t'] ?? null) === 'var') {
-            return \Sel\Utf8::casecmp((string) ($node['name'] ?? ''), $name) === 0;
+            return Utf8::casecmp((string) ($node['name'] ?? ''), $name) === 0;
         }
-        foreach (['args', 'items'] as $key) {
-            foreach ($node[$key] ?? [] as $child) {
-                if (self::containsVar($child, $name)) return true;
-            }
-        }
-        foreach (['l', 'r', 'x', 'obj', 'idx', 'target', 'value'] as $key) {
-            if (isset($node[$key]) && is_array($node[$key]) && self::containsVar($node[$key], $name)) {
-                return true;
-            }
+        foreach (Ast::children($node) as $child) {
+            if (self::containsVar($child, $name)) return true;
         }
         return false;
     }
@@ -612,7 +567,7 @@ final class Core
                     if ($r->asBool($body['pos'])) {
                         $storage[] = $item->copyBelow(1, $pos);
                         // The key as written, not (int) of it: "1x", "01" and
-                        // " 1" all cast to 1 (review 2026-09-25 SEM-09).
+                        // " 1" all cast to 1.
                         $inPlace = is_int($key) ? $key === $expectedIndex : $key === (string) $expectedIndex;
                         if (!$needsCustomKeys && !$inPlace) {
                             $needsCustomKeys = true;
@@ -632,7 +587,7 @@ final class Core
 
         Registry::define(['name' => 'SUM', 'min' => 2, 'max' => 3, 'lazy' => true, 'binds' => true,
             'fn' => static function (Args $a, Context $ctx): Value {
-                // A native running total while every step fits (PHP-P27); the answer
+                // A native running total while every step fits; the answer
                 // is the one a chain of Dec::add calls gives.
                 $total = ['m' => 0, 's' => 0];
                 self::walk($a, $ctx, static function (Value $r, $k, $i, array $body) use (&$total): ?Value {
@@ -656,12 +611,10 @@ final class Core
                 // The result's size is known before it is built: refuse it at the
                 // call (spec §6.4). The byte length bounds the code point length.
                 $bytes += strlen($sep) * max(0, count($parts) - 1);
-                if ($bytes > \Sel\Limits::MAX_TEXT_LEN) {
-                    $cps = \Sel\Utf8::length($sep) * max(0, count($parts) - 1);
-                    foreach ($parts as $part) $cps += \Sel\Utf8::length($part);
-                    if ($cps > \Sel\Limits::MAX_TEXT_LEN) {
-                        fail('E_RANGE', 'JOIN result would be longer than ' . \Sel\Limits::MAX_TEXT_LEN, $a->pos);
-                    }
+                if ($bytes > Limits::MAX_TEXT_LEN) {
+                    $cps = Utf8::length($sep) * max(0, count($parts) - 1);
+                    foreach ($parts as $part) $cps += Utf8::length($part);
+                    Budget::checkText($cps, $a->pos, 'the JOIN result');
                 }
                 return Value::text(implode($sep, $parts));
             }]);

@@ -13,6 +13,12 @@ namespace Sel;
 final class Utf8
 {
     /**
+     * The length of a code point's encoding, by its lead byte's high nibble
+     * (`LEAD_LENGTH[$byte >> 4]`), for walking text already known to be valid.
+     */
+    public const LEAD_LENGTH = [1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2, 3, 4];
+
+    /**
      * Strict validation: rejects overlong forms, surrogates, values above
      * U+10FFFF and truncated sequences. No replacement characters, ever.
      *
@@ -141,9 +147,9 @@ final class Utf8
      */
     public static function chars(string $s): array
     {
-        // ASCII: one byte per code point, split in C (PHP-P1/P9). The empty
+        // ASCII: one byte per code point, split in C. The empty
         // guard is for PHP < 8.2, where str_split('') is [''].
-        if (!preg_match('/[\x80-\xff]/', $s)) {
+        if (self::isAscii($s)) {
             return $s === '' ? [] : str_split($s);
         }
         $out = [];
@@ -151,7 +157,7 @@ final class Utf8
         $i = 0;
         while ($i < $n) {
             $c = ord($s[$i]);
-            $len = $c < 0x80 ? 1 : ($c < 0xe0 ? 2 : ($c < 0xf0 ? 3 : 4));
+            $len = self::LEAD_LENGTH[$c >> 4];
             $out[] = substr($s, $i, $len);
             $i += $len;
         }
@@ -176,7 +182,7 @@ final class Utf8
         // Every code point has exactly one byte that is not a continuation byte.
         // count_chars() tallies all 256 byte values in one C pass (~1 ms/MB, no
         // allocation beyond a 256-entry table): preg_match_all over a megabyte
-        // chunk built a match array per chunk and was ~150x slower (PHP-P1).
+        // chunk built a match array per chunk and was ~150x slower.
         $continuation = 0;
         foreach (count_chars($s, 1) as $byte => $times) {
             if ($byte >= 0x80 && $byte <= 0xbf) $continuation += $times;
@@ -213,7 +219,7 @@ final class Utf8
         $i = $from;
         while ($cps > 0 && $i < $n) {
             $c = ord($s[$i]);
-            $i += $c < 0x80 ? 1 : ($c < 0xe0 ? 2 : ($c < 0xf0 ? 3 : 4));
+            $i += self::LEAD_LENGTH[$c >> 4];
             $cps--;
         }
         return min($i, $n);
@@ -225,29 +231,6 @@ final class Utf8
         $from = self::advance($s, $start);
         if ($len === null) return substr($s, $from);
         return substr($s, $from, self::advance($s, $len, $from) - $from);
-    }
-
-    /**
-     * Raises E_RANGE when a text or binary value would be longer than the cap
-     * (spec §6.4, MAX_TEXT_LEN), at the node that builds it. `$bytes` is the
-     * byte length, which bounds the code point length from above, so only a
-     * candidate over the cap pays for counting.
-     *
-     * @param array<string,mixed>|null $pos
-     */
-    public static function checkTextLen(int $bytes, ?array $pos, string $what, ?string $s = null, bool $isText = true): void
-    {
-        if ($bytes <= Limits::MAX_TEXT_LEN) return;
-        if ($isText && $s !== null && self::length($s) <= Limits::MAX_TEXT_LEN) return;
-        fail('E_RANGE', "{$what} would be longer than " . Limits::MAX_TEXT_LEN, $pos);
-    }
-
-    /** Raises E_RANGE when a collection an operation builds would have more children than the cap. @param array<string,mixed>|null $pos */
-    public static function checkCount(int $n, ?array $pos, string $what): void
-    {
-        if ($n > Limits::MAX_COLLECTION) {
-            fail('E_RANGE', "{$what} would have more than " . Limits::MAX_COLLECTION . ' elements', $pos);
-        }
     }
 
     /** @return list<int> */
@@ -303,7 +286,7 @@ final class Utf8
         $i = 0;
         while ($i < $byteOffset) {
             $c = ord($s[$i]);
-            $i += $c < 0x80 ? 1 : ($c < 0xe0 ? 2 : ($c < 0xf0 ? 3 : 4));
+            $i += self::LEAD_LENGTH[$c >> 4];
             $count++;
         }
         return $count;

@@ -1,18 +1,22 @@
 <?php
 // The portable regex subset. See spec/SPEC.md §7.8. Ported from
-// js/src/builtins/regex.mjs — the validator must reject exactly the same
-// patterns in both hosts, or the whole point is lost.
+// js/src/builtins/regex.mjs — the validator must reject exactly the patterns
+// every other host rejects, or the whole point is lost.
 //
-// PHP compiles with `usD`: `u` for code point matching (which leaves \d \w \s
-// ASCII, as ECMAScript's `u` also does), `s` because dotall is permanently on,
-// and `D` so that `$` does not also match before a trailing newline the way PCRE
-// otherwise would.
+// PHP compiles with `usD`: `u` for code point matching, `s` because dotall is
+// permanently on, and `D` so that `$` does not also match before a trailing
+// newline the way PCRE otherwise would. `u` also turns on PCRE2's UCP, under
+// which \d matches Arabic-Indic digits and \w matches `é` -- unlike
+// ECMAScript's `u` -- which is why \d \w \s are rewritten into explicit ASCII
+// classes below (EXPAND_OUTSIDE / EXPAND_INSIDE) rather than passed through.
 
 declare(strict_types=1);
 
 namespace Sel\Builtins;
 
 use Sel\Args;
+use Sel\Budget;
+use Sel\Limits;
 use Sel\Registry;
 use Sel\Utf8;
 use Sel\Value;
@@ -50,21 +54,28 @@ final class Regex
     private const CACHE_MAX = 256;
     /** @var list<string>|null group definitions collected while emitting for the engine */
     private static ?array $defs = null;
+    /** Set while re-emitting a pattern PCRE found too large: see emitRep. */
+    private static bool $lowerAll = false;
 
     /** @param array<string,mixed>|null $pos */
-    private static function bad(string $message, string $pattern, int $at, ?array $pos): void
+    private static function bad(string $message, string $pattern, int $at, ?array $pos): never
     {
         fail('E_REGEX_SYNTAX', "{$message} (at offset {$at} of /" . self::excerpt($pattern) . "/)", $pos);
     }
 
-    /** The message quotes the pattern; a 65 000-character one is not quoted whole. */
+    /**
+     * The message quotes the pattern, but a 65 000-character one is not quoted
+     * whole: at most 80 code points, cut between code points so the message
+     * stays UTF-8.
+     */
     private static function excerpt(string $pattern): string
     {
-        return strlen($pattern) > 80 ? substr($pattern, 0, 77) . '...' : $pattern;
+        if (strlen($pattern) <= 80 || Utf8::length($pattern) <= 80) return $pattern;
+        return substr($pattern, 0, Utf8::advance($pattern, 77)) . '...';
     }
 
     /** @param array<string,mixed>|null $pos */
-    private static function rejectEscape(string $e, string $pattern, int $at, ?array $pos): void
+    private static function rejectEscape(string $e, string $pattern, int $at, ?array $pos): never
     {
         if ($e === 'b' || $e === 'B') {
             self::bad(
@@ -120,8 +131,8 @@ final class Regex
     private static function parse(array $p, string $pattern, ?array $pos): array
     {
         $n = count($p);
-        if ($n > \Sel\Limits::MAX_REGEX_PATTERN) {
-            self::bad('the pattern is longer than ' . \Sel\Limits::MAX_REGEX_PATTERN . ' code points', $pattern, 0, $pos);
+        if ($n > Limits::MAX_REGEX_PATTERN) {
+            self::bad('the pattern is longer than ' . Limits::MAX_REGEX_PATTERN . ' code points', $pattern, 0, $pos);
         }
         $st = ['p' => $p, 'n' => $n, 'i' => 0, 'groups' => 0, 'pattern' => $pattern, 'pos' => $pos];
         $tree = self::parseAlt($st, 0);
@@ -277,7 +288,7 @@ final class Regex
             if (isset(self::EXPAND_OUTSIDE[$e])) {
                 $neg = $e === 'D' || $e === 'W' || $e === 'S';
                 return ['k' => 'cls', 'src' => self::EXPAND_OUTSIDE[$e], 'esc' => true,
-                    'ranges' => self::CLASS_RANGES[strtolower($e)], 'neg' => $neg];
+                    'ranges' => self::CLASS_RANGES[Utf8::lower($e)], 'neg' => $neg];
             }
             if (in_array($e, self::CONTROL_ESCAPES, true)) {
                 return ['k' => 'lit', 'src' => $c . $e, 'ranges' => [[self::CONTROL_CP[$e], self::CONTROL_CP[$e]]]];
@@ -314,11 +325,11 @@ final class Regex
                     self::bad("{$kind} is not portable — only (?: ) is", $pattern, $i, $pos);
                 }
             }
-            if ($depth + 1 > \Sel\Limits::MAX_DEPTH) {
-                self::bad('groups nest deeper than ' . \Sel\Limits::MAX_DEPTH, $pattern, $i, $pos);
+            if ($depth + 1 > Limits::MAX_DEPTH) {
+                self::bad('groups nest deeper than ' . Limits::MAX_DEPTH, $pattern, $i, $pos);
             }
-            if (++$st['groups'] > \Sel\Limits::MAX_REGEX_GROUPS) {
-                self::bad('more than ' . \Sel\Limits::MAX_REGEX_GROUPS . ' groups', $pattern, $i, $pos);
+            if (++$st['groups'] > Limits::MAX_REGEX_GROUPS) {
+                self::bad('more than ' . Limits::MAX_REGEX_GROUPS . ' groups', $pattern, $i, $pos);
             }
             $st['i'] = $after;
             $inner = self::parseAlt($st, $depth + 1);
@@ -505,7 +516,6 @@ final class Regex
         $m = count($atoms);
         for ($k = 0; $k < $m; $k++) {
             $a = $atoms[$k];
-            $isRange = $k + 2 < $m + 0 && ($atoms[$k + 1]['dash'] ?? false);
             // `a-b` needs a third atom after the dash; `a-` at the end is literal.
             $isRange = ($k + 2 < $m) && $atoms[$k + 1]['dash'];
             if ($a['esc']) {
@@ -604,7 +614,7 @@ final class Regex
             }
             if (!$x['cap'] && $hi === $lo && self::$defs !== null && !self::hasCapture($body)) {
                 $bodySrc = self::emit($body, true);
-                if ($lo * max(1, strlen($bodySrc)) > 20000) {
+                if ($lo * max(1, strlen($bodySrc)) > 20000 || (self::$lowerAll && $lo >= 2)) {
                     return self::counted($bodySrc, $lo);
                 }
             }
@@ -618,8 +628,47 @@ final class Regex
                 }
                 return '(?:' . $c . $q(0, $hi === null ? null : $hi - 1) . $lazy . '(' . $c . '))?' . $lazy;
             }
+            if (self::$lowerAll && $lo >= 2 && self::$defs !== null) {
+                // (G){lo,hi} is lo-1 iterations, then G{1,hi-lo+1}: the same
+                // iterations, mandatory ones first, the optional ones nested after
+                // them, in the same order of preference. Every capture in the body
+                // takes part in every iteration (spec §7.8), so the last iteration
+                // sets them all and the first lo-1 may be copies without captures,
+                // which counted() defines once instead of PCRE copying them.
+                // Used only when the plain form did not fit (compiled()).
+                $head = self::counted(self::emit(self::uncaptured($body), true), $lo - 1);
+                if ($hi === $lo) return $head . self::emit($x, true);
+                return $head . self::emit($x, true) . $q(1, $hi === null ? null : $hi - $lo + 1) . $lazy;
+            }
         }
         return self::emit($x, $compact) . $q($lo, $hi) . $lazy;
+    }
+
+    /**
+     * The tree with every capturing group made non-capturing.
+     *
+     * @param array<string,mixed> $node
+     * @return array<string,mixed>
+     */
+    private static function uncaptured(array $node): array
+    {
+        switch ($node['k']) {
+            case 'cat':
+                $node['items'] = array_map(self::uncaptured(...), $node['items']);
+                return $node;
+            case 'alt':
+                $node['br'] = array_map(self::uncaptured(...), $node['br']);
+                return $node;
+            case 'grp':
+                $node['cap'] = false;
+                $node['x'] = self::uncaptured($node['x']);
+                return $node;
+            case 'rep':
+                $node['x'] = self::uncaptured($node['x']);
+                return $node;
+            default:
+                return $node;
+        }
     }
 
     /** How many capturing groups the tree holds. @param array<string,mixed> $node */
@@ -675,9 +724,8 @@ final class Regex
     {
         $id = count(self::$defs);
         $name = "sel{$id}_";
-        $bits = (int) floor(log($n, 2));
-        while ((1 << ($bits + 1)) <= $n) $bits++;
-        while ((1 << $bits) > $n) $bits--;
+        $bits = 0;                                   // floor(log2(n)), n >= 1
+        while ((2 << $bits) <= $n) $bits++;
         $defs = "(?P<{$name}0>{$bodySrc})";
         for ($j = 1; $j <= $bits; $j++) {
             $prev = $j - 1;
@@ -804,7 +852,7 @@ final class Regex
         $ignoreCase = self::ignoreCase($flags, $pos);
         // A cached `i` pattern has already passed the ASCII check (only ASCII
         // patterns are ever compiled with the flag on), so the scan is for the
-        // first use only (PHP-P30).
+        // first use only.
         if ($ignoreCase && !isset(self::$cache['i ' . $pattern])) {
             foreach (Utf8::codePoints($pattern) as $cp) {
                 if ($cp > 0x7f) {
@@ -837,29 +885,13 @@ final class Regex
 
         $tree = self::parse(Utf8::chars($pattern), $pattern, $patPos);
         RegexAmbiguity::check($tree, $ignoreCase, $pattern, $patPos);
-        self::$defs = [];
-        try {
-            $source = self::emit($tree, true);
-            if (self::$defs !== []) {
-                $source .= '(?(DEFINE)' . implode('', self::$defs) . ')';
-            }
-        } finally {
-            self::$defs = null;
-        }
-        $source = self::escapeDelimiter($source);
         $flags = '/usD' . ($ignoreCase ? 'i' : '');
-        $re = '/' . $source . $flags;
-
-        $message = null;
-        set_error_handler(static function (int $no, string $str) use (&$message): bool {
-            $message = $str;
-            return true;
-        });
-        try {
-            $ok = preg_match($re, '');
-        } finally {
-            restore_error_handler();
+        [$source, $ok, $message] = self::engineSource($tree, $flags, false);
+        if ($ok === false && $message !== null && str_contains($message, 'too large')) {
+            // Too large as written: lower every counted group (see emitRep).
+            [$source, $ok, $message] = self::engineSource($tree, $flags, true);
         }
+        $re = '/' . $source . $flags;
         $tooLarge = false;
         if ($ok === false) {
             // The validator has accepted the pattern, so PCRE refusing it is a
@@ -891,11 +923,47 @@ final class Regex
     }
 
     /**
+     * The tree as PCRE source, and whether PCRE compiles it (false, with its
+     * warning, when it does not).
+     *
+     * @param array<string,mixed> $tree
+     * @return array{0:string,1:int|false,2:?string}
+     */
+    private static function engineSource(array $tree, string $flags, bool $lowerAll): array
+    {
+        self::$defs = [];
+        self::$lowerAll = $lowerAll;
+        try {
+            $source = self::emit($tree, true);
+            if (self::$defs !== []) {
+                $source .= '(?(DEFINE)' . implode('', self::$defs) . ')';
+            }
+        } finally {
+            self::$defs = null;
+            self::$lowerAll = false;
+        }
+        $source = self::escapeDelimiter($source);
+        $message = null;
+        set_error_handler(static function (int $no, string $str) use (&$message): bool {
+            $message = $str;
+            return true;
+        });
+        try {
+            $ok = preg_match('/' . $source . $flags, '');
+        } finally {
+            restore_error_handler();
+        }
+        return [$source, $ok, $message];
+    }
+
+    /**
      * Literal patterns are checked when the program is compiled (spec §7.8), not
      * when the call runs, so a bad pattern in a branch that never executes is
      * still refused. `$flags` is the flags argument when it is a literal too,
      * else null; a bad flag is not this check's business (it is E_BAD_ARG when
-     * the call runs), so it only decides whether `i` is on.
+     * the call runs), so it only decides whether `i` is on. A non-ASCII
+     * pattern under `i` is still checked, without the fold (spec §7.8: the
+     * `i` refusal is a run-time one and comes last).
      *
      * @param array<string,mixed>|null $patPos
      */
@@ -904,7 +972,10 @@ final class Regex
         $ignoreCase = $flags !== null && in_array('i', Utf8::chars($flags), true);
         if ($ignoreCase) {
             foreach (Utf8::codePoints($pattern) as $cp) {
-                if ($cp > 0x7f) return;     // E_BAD_ARG at run time, as before
+                if ($cp > 0x7f) {
+                    $ignoreCase = false;
+                    break;
+                }
             }
         }
         self::compiled($pattern, $ignoreCase, $patPos);
@@ -1034,7 +1105,7 @@ final class Regex
 
                 $out = '';
                 $built = 0;     // code points of the result so far
-                $ascii = \Sel\Utf8::isAscii($subject) && \Sel\Utf8::isAscii($repl);
+                $ascii = Utf8::isAscii($subject) && Utf8::isAscii($repl);
                 $last = 0;      // bytes of the subject already copied or replaced
                 $at = 0;        // where the next search starts
                 $len = strlen($subject);
@@ -1069,26 +1140,22 @@ final class Regex
                     // would run past the cap (spec §6.4) is refused at the call
                     // with at most one cap's worth built, not after the fact.
                     $out .= $piece;
-                    $built += $ascii ? strlen($piece) : \Sel\Utf8::length($piece);
-                    if ($built > \Sel\Limits::MAX_TEXT_LEN) {
-                        fail('E_RANGE', 'RREPLACE result would be longer than ' . \Sel\Limits::MAX_TEXT_LEN, $a->pos);
-                    }
+                    $built += $ascii ? strlen($piece) : Utf8::length($piece);
+                    if ($built > Limits::MAX_TEXT_LEN) Budget::checkText($built, $a->pos, 'the RREPLACE result');
                     $last = $start + strlen($matched);
                     if ($matched === '') {
                         // Resume one code point on; the code point is copied
                         // through by the next substr.
                         if ($start >= $len) break;
                         $b = ord($subject[$start]);
-                        $at = $start + ($b < 0x80 ? 1 : ($b < 0xE0 ? 2 : ($b < 0xF0 ? 3 : 4)));
+                        $at = $start + Utf8::LEAD_LENGTH[$b >> 4];
                     } else {
                         $at = $last;
                     }
                 }
                 $tail = substr($subject, $last);
-                $built += $ascii ? strlen($tail) : \Sel\Utf8::length($tail);
-                if ($built > \Sel\Limits::MAX_TEXT_LEN) {
-                    fail('E_RANGE', 'RREPLACE result would be longer than ' . \Sel\Limits::MAX_TEXT_LEN, $a->pos);
-                }
+                $built += $ascii ? strlen($tail) : Utf8::length($tail);
+                Budget::checkText($built, $a->pos, 'the RREPLACE result');
                 return Value::text($out . $tail);
             }]);
     }
@@ -1096,7 +1163,7 @@ final class Regex
     /**
      * The replacement text cut once into literal strings and group numbers
      * ($0-$9), so a replacement with a thousand matches is not re-scanned a
-     * thousand times (PHP-P18). `$$` is a literal dollar and any other `$` stays one.
+     * thousand times. `$$` is a literal dollar and any other `$` stays one.
      * A replacement with no `$` at all is a single literal.
      *
      * @return list<string|int>

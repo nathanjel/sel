@@ -4,6 +4,8 @@ declare(strict_types=1);
 namespace Sel\Builtins;
 
 use Sel\Args;
+use Sel\Budget;
+use Sel\Dec;
 use Sel\Registry;
 use Sel\Utf8;
 use Sel\Value;
@@ -25,9 +27,7 @@ final class Binary
         Registry::define(['name' => 'TO_UTF8', 'min' => 1, 'max' => 1,
             'fn' => static function (Args $a): Value {
                 $b = $a->bytes(0);
-                if (strlen($b) > \Sel\Limits::MAX_TEXT_LEN) {
-                    fail('E_RANGE', 'TO_UTF8 result would be longer than ' . \Sel\Limits::MAX_TEXT_LEN, $a->pos);
-                }
+                Budget::checkText(strlen($b), $a->pos, 'the TO_UTF8 result');
                 return Value::bin($b);
             }]);
 
@@ -41,9 +41,7 @@ final class Binary
         Registry::define(['name' => 'TO_HEX', 'min' => 1, 'max' => 1,
             'fn' => static function (Args $a): Value {
                 $b = $a->bytes(0);
-                if (2 * strlen($b) > \Sel\Limits::MAX_TEXT_LEN) {
-                    fail('E_RANGE', 'TO_HEX result would be longer than ' . \Sel\Limits::MAX_TEXT_LEN, $a->pos);
-                }
+                Budget::checkText(2 * strlen($b), $a->pos, 'the TO_HEX result');
                 return Value::text(bin2hex($b));
             }]);
 
@@ -62,9 +60,7 @@ final class Binary
         Registry::define(['name' => 'ENCODE_BASE64', 'min' => 1, 'max' => 1,
             'fn' => static function (Args $a): Value {
                 $b = $a->bytes(0);
-                if (4 * intdiv(strlen($b) + 2, 3) > \Sel\Limits::MAX_TEXT_LEN) {
-                    fail('E_RANGE', 'ENCODE_BASE64 result would be longer than ' . \Sel\Limits::MAX_TEXT_LEN, $a->pos);
-                }
+                Budget::checkText(4 * intdiv(strlen($b) + 2, 3), $a->pos, 'the ENCODE_BASE64 result');
                 // The standard alphabet with padding: what the loop this replaces wrote.
                 return Value::text(base64_encode($b));
             }]);
@@ -78,7 +74,7 @@ final class Binary
                 if ($len % 4 !== 0) {
                     fail('E_BAD_ARG', 'DECODE_BASE64 needs a length that is a multiple of 4', $pos);
                 }
-                // The strict shape by strspn, then PHP's own decoder (PHP-P19): the
+                // The strict shape by strspn, then PHP's own decoder: the
                 // standard alphabet, at most two `=` and only at the end, and — like
                 // the loop below — non-canonical trailing bits accepted. (A regex with
                 // a quantified group runs out of PCRE's JIT stack past ~300 KB.) Anything
@@ -126,21 +122,19 @@ final class Binary
             }]);
 
         // CRC-32/ISO-HDLC: reflected, polynomial 0xEDB88320, init and final xor
-        // all ones. Written out rather than delegated to crc32() so the algorithm
-        // is visibly the same one the JS host runs.
+        // all ones. PHP's crc32() is this very CRC as a C loop: 1 MB in 0.1 ms
+        // against 80 ms for a PHP table loop. crc32Reference() keeps the
+        // written-out algorithm, the one the JS host runs, for the tests to
+        // compare crc32() with.
         Registry::define(['name' => 'CRC32', 'min' => 1, 'max' => 1,
             'fn' => static function (Args $a): Value {
-                // PHP's crc32() is this very CRC (ISO-HDLC, polynomial 0xEDB88320, init and
-                // final xor all ones) as a C loop: 1 MB in 0.1 ms against 80 ms for the
-                // PHP table loop it replaces (PHP-P19). crc32Reference() keeps the
-                // written-out algorithm for the tests to compare it with.
                 return Value::text(sprintf('%08x', crc32($a->bytes(0))));
             }]);
 
         Registry::define(['name' => 'BTL', 'min' => 1, 'max' => 1,
             'fn' => static function (Args $a): Value {
                 $b = $a->bytes(0);
-                Utf8::checkCount(strlen($b), $a->pos, 'BTL result');
+                Budget::checkCollection(strlen($b), $a->pos, 'the BTL result');
                 $out = [];
                 if ($b !== '') {
                     foreach (unpack('C*', $b) as $byte) {
@@ -164,11 +158,11 @@ final class Binary
                 $out = '';
                 foreach ($items as $i => $item) {
                     $d = $item->asDecimal($a->posOf(0));
-                    if (!\Sel\Dec::isInteger($d)) {
+                    if (!Dec::isInteger($d)) {
                         $k = $i + 1;
                         fail('E_NOT_INT', "LTB element {$k} is not a whole number", $a->posOf(0));
                     }
-                    $n = \Sel\Dec::toInt($d);
+                    $n = Dec::toInt($d);
                     if ($n < 0 || $n > 255) {
                         $k = $i + 1;
                         fail('E_RANGE', "LTB element {$k} is not a byte value", $a->posOf(0));
@@ -179,7 +173,6 @@ final class Binary
             }]);
     }
 
-    /** @return array<int,int> */
     /** The table-driven CRC-32/ISO-HDLC, kept as the reference `crc32()` is tested against. */
     public static function crc32Reference(string $b): int
     {
@@ -191,6 +184,7 @@ final class Binary
         return $crc ^ 0xffffffff;
     }
 
+    /** @return array<int,int> */
     private static function crcTable(): array
     {
         if (self::$crcTable !== null) {

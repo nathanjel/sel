@@ -10,6 +10,9 @@ declare(strict_types=1);
 
 namespace Sel;
 
+/**
+ * @phpstan-import-type EagerDecimal from Dec
+ */
 final class Args
 {
     /** @var list<array<string,mixed>> */
@@ -94,7 +97,7 @@ final class Args
         return $this->val($i)->asBool($this->posOf($i));
     }
 
-    /** @return array{neg:bool,digits:string,scale:int} */
+    /** @return EagerDecimal */
     public function dec(int $i): array
     {
         return $this->val($i)->asDecimal($this->posOf($i));

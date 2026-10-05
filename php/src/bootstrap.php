@@ -9,6 +9,8 @@ declare(strict_types=1);
 require_once __DIR__ . '/Limits.php';
 require_once __DIR__ . '/SelError.php';
 require_once __DIR__ . '/Utf8.php';
+require_once __DIR__ . '/Budget.php';
+require_once __DIR__ . '/Ast.php';
 require_once __DIR__ . '/Dec.php';
 require_once __DIR__ . '/Value.php';
 require_once __DIR__ . '/BuiltinManifest.php';

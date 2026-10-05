@@ -23,7 +23,7 @@ final class Registry
      */
     public static function define(array $spec): void
     {
-        $name = \Sel\Utf8::upper($spec['name']);
+        $name = Utf8::upper($spec['name']);
         if (isset(self::$table[$name])) {
             throw new \LogicException("SEL function {$name} defined twice");
         }
@@ -97,7 +97,7 @@ final class Registry
      */
     public static function bindingForm(string $name, array $args): ?array
     {
-        $upper = \Sel\Utf8::upper($name);
+        $upper = Utf8::upper($name);
         $forms = BuiltinManifest::FORMS[$upper] ?? null;
         if ($forms === null) {
             $spec = self::$table[$upper] ?? null;
@@ -123,6 +123,35 @@ final class Registry
     }
 
     /**
+     * The sort part of a SORT, SORT_DESC, SORT_BY, TOP, TOP_DESC or TOP_BY call,
+     * read off the manifest's forms (bindingForm) so the evaluator and the
+     * optimizer decode it alike: which argument is the binder (null: `_`), the
+     * key (null: the element itself) and the direction (null: the name's own,
+     * or ASC). For SORT_BY/TOP_BY the forms put a text-literal direction
+     * before a bare name as binder, and take any other third slot as a
+     * computed direction (spec/builtins.json). A TOP call's last argument is
+     * its count, never the direction. Null when no form takes this count,
+     * which the compile-time arity check has already refused.
+     *
+     * @param list<array<string,mixed>> $args
+     * @return array{binder:?int,key:?int,dir:?int}|null
+     */
+    public static function sortForm(string $name, array $args): ?array
+    {
+        $form = self::bindingForm($name, $args);
+        if ($form === null) return null;
+        $last = str_starts_with(Utf8::upper($name), 'TOP') ? count($args) - 1 : count($args);
+        $out = ['binder' => null, 'key' => null, 'dir' => null];
+        foreach ($form['scopes'] as $i => $scope) {
+            if ($i === 0 || $i >= $last) continue;
+            if ($scope === 'binder') $out['binder'] = $i;
+            elseif ($scope === 'inner') $out['key'] = $i;
+            else $out['dir'] = $i;
+        }
+        return $out;
+    }
+
+    /**
      * Called once the shipped modules have registered: a manifest entry with
      * no definition is a host that would silently lack a builtin the others
      * have.
@@ -138,7 +167,6 @@ final class Registry
         }
     }
 
-    /** @return array<string,mixed>|null */
     /** @var array<string, true> names registered through registerFunction(), which alone may be replaced */
     private static array $host = [];
 
@@ -157,7 +185,7 @@ final class Registry
             throw new \InvalidArgumentException(
                 "SEL function name must be ASCII letters, digits and _, starting with a letter: {$name}");
         }
-        $key = \Sel\Utf8::upper($name);
+        $key = Utf8::upper($name);
         if (in_array($key, Lexer::RESERVED, true)) {
             throw new \InvalidArgumentException("{$key} is a reserved word");
         }
@@ -189,7 +217,7 @@ final class Registry
     /** Whether $name is a function an application registered (and so may do anything, writes included). */
     public static function isHostFunction(string $name): bool
     {
-        return isset(self::$host[\Sel\Utf8::upper($name)]);
+        return isset(self::$host[Utf8::upper($name)]);
     }
 
     /**
@@ -201,16 +229,17 @@ final class Registry
      */
     public static function hostArity(string $name): ?array
     {
-        $key = \Sel\Utf8::upper($name);
+        $key = Utf8::upper($name);
         if (!isset(self::$host[$key])) {
             return null;
         }
         return [self::$table[$key]['min'], (int) self::$table[$key]['max']];
     }
 
+    /** @return array<string,mixed>|null */
     public static function lookup(string $name): ?array
     {
-        return self::$table[\Sel\Utf8::upper($name)] ?? null;
+        return self::$table[Utf8::upper($name)] ?? null;
     }
 
     /** @return list<string> */

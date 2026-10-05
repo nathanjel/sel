@@ -79,27 +79,11 @@ final class Program
      */
     public function run($context = null): Value
     {
-        $root = $context instanceof Value ? $context : Value::fromNative($context ?? []);
-        $wasGcEnabled = gc_enabled();
-        if ($wasGcEnabled) {
-            gc_disable();
-        }
-        try {
-            return Evaluator::evalNode($this->physicalAst(), new Context($root));
-        } finally {
-            if ($wasGcEnabled) {
-                gc_enable();
-            }
-        }
+        return $this->evaluate($context, true);
     }
 
     /**
-     * The optimised tree run() evaluates, built once.
-     *
-     * @return array<string,mixed>
-     */
-    /**
-     * `run()` for a program that will not run again (PHP-P29). Building the
+     * `run()` for a program that will not run again. Building the
      * physical tree costs about as much as evaluating a small rule twice, and
      * pays for itself only when a body is evaluated per element (an aggregate) or
      * a pipeline can be fused. A program with neither is evaluated as written --
@@ -113,13 +97,26 @@ final class Program
         if ($this->physical !== null || self::repeatsWork($this->ast)) {
             return $this->run($context);
         }
+        return $this->evaluate($context, false);
+    }
+
+    /**
+     * run() and runOnce(): the context as a Value, then the optimised tree
+     * ($physical) or the tree as written, evaluated with PHP's cycle collector
+     * paused (SEL's values form no cycles, and a collection pass would walk the
+     * whole resident context to find none).
+     *
+     * @param Value|array<mixed>|null $context
+     */
+    private function evaluate($context, bool $physical): Value
+    {
         $root = $context instanceof Value ? $context : Value::fromNative($context ?? []);
         $wasGcEnabled = gc_enabled();
         if ($wasGcEnabled) {
             gc_disable();
         }
         try {
-            return Evaluator::evalNode($this->ast, new Context($root));
+            return Evaluator::evalNode($physical ? $this->physicalAst() : $this->ast, new Context($root));
         } finally {
             if ($wasGcEnabled) {
                 gc_enable();
@@ -146,18 +143,16 @@ final class Program
                     return true;
                 }
             }
-            foreach (['args', 'items'] as $key) {
-                foreach ($n[$key] ?? [] as $child) {
-                    if (is_array($child)) $stack[] = $child;
-                }
-            }
-            foreach (['l', 'r', 'x', 'obj', 'idx', 'value', 'target'] as $key) {
-                if (isset($n[$key]) && is_array($n[$key])) $stack[] = $n[$key];
-            }
+            foreach (Ast::children($n) as $child) $stack[] = $child;
         }
         return false;
     }
 
+    /**
+     * The optimised tree run() evaluates, built once.
+     *
+     * @return array<string,mixed>
+     */
     public function physicalAst(): array
     {
         // Keyed by the identity of $ast: PHP arrays are values, but a copy on
@@ -172,8 +167,9 @@ final class Program
     }
 
     /**
-     * Every variable the program can read before it has DEFINITELY assigned it, in
-     * evaluation order (spec/SPEC.md §8), found statically. Only possible because
+     * Every variable the program can read before it has DEFINITELY assigned it
+     * (spec/SPEC.md §8), found statically by a walk in evaluation order and
+     * returned sorted, as every host returns it. Only possible because
      * SEL has no dynamic symbol operator; this is what tells a frontend which
      * inputs should re-trigger which rule.
      *
@@ -401,6 +397,9 @@ final class Program
 
 final class Sel
 {
+    /** The package version (the CHANGELOG's top heading; tools/check-version.sh). */
+    public const VERSION = '0.10.0';
+
     /** @param mixed $source anything but a string is E_BAD_ARG (spec/SPEC.md §8) */
     public static function compile($source): Program
     {

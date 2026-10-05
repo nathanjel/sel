@@ -8,15 +8,12 @@ declare(strict_types=1);
 
 namespace Sel;
 
+/**
+ * @phpstan-import-type Decimal from Dec
+ */
 final class Evaluator
 {
-    /**
-     * Public because the SQL translator refuses at the same limit, and reading
-     * it is the point: a translation that succeeds must be a rule the evaluator
-     * would have evaluated. A second copy of 200 would be a second thing to keep
-     * in step, and the two drifting means the database answers where SEL raises.
-     */
-
+    /** A compound assignment's operator, by its spelling. */
     private const COMPOUND = [
         '+=' => '+', '-=' => '-', '*=' => '*', '/=' => '/', '%=' => '%', '&=' => '&',
     ];
@@ -43,9 +40,6 @@ final class Evaluator
     private const DEC_ONE = ['neg' => false, 'digits' => '1', 'scale' => 0];
 
     /**
-     * @param array{steps:list<array<string,mixed>>,outputSlot:int,outputPos:array<string,mixed>|null,scratchpadSize:int} $plan
-     */
-    /**
      * A scratchpad slot holds either a decimal a step computed or the Value a
      * load produced. The Value is coerced here, when an operation consumes it,
      * and not when it was loaded: SPEC 6.2 evaluates every operand first and
@@ -55,13 +49,16 @@ final class Evaluator
      *
      * @param array<string,mixed>|Value $slot
      * @param array<string,mixed>|null $pos
-     * @return array{neg:bool,digits:string,scale:int}
+     * @return Decimal
      */
     private static function operand(array|Value $slot, ?array $pos): array
     {
         return $slot instanceof Value ? $slot->asDecimalLazy($pos) : $slot;
     }
 
+    /**
+     * @param array{steps:list<array<string,mixed>>,outputSlot:int,outputPos:array<string,mixed>|null,scratchpadSize:int} $plan
+     */
     public static function evalMathPlan(array $plan, Context $ctx): Value
     {
         $scratchpad = [];
@@ -276,7 +273,7 @@ final class Evaluator
             if ($v->kind === Value::NONE && $v->size() > 0) {
                 // Refused before the children are copied (spec §6.4): a list that
                 // flattens past the collection cap is not built.
-                Utf8::checkCount(count($out) + $v->size(), $node['pos'], 'the list');
+                Budget::checkCollection(count($out) + $v->size(), $node['pos'], 'the list');
                 foreach ($v->values() as $child) {
                     $out[] = $child->copyBelow(1, $node['pos']);
                 }
@@ -284,7 +281,7 @@ final class Evaluator
                 $out[] = $v->copyBelow(1, $node['pos']);
             }
         }
-        Utf8::checkCount(count($out), $node['pos'], 'the list');
+        if (count($out) > Limits::MAX_COLLECTION) Budget::checkCollection(count($out), $node['pos'], 'the list');
         return Value::list($out);
     }
 
@@ -338,6 +335,7 @@ final class Evaluator
         $rp = $node['r']['pos'];
 
         switch ($op) {
+            // Dec::arith's table, spelled out: this runs per node.
             case '+': return Value::numTrusted(Dec::add($l->asDecimalLazy($lp), $r->asDecimalLazy($rp), $node['pos']));
             case '-': return Value::numTrusted(Dec::sub($l->asDecimalLazy($lp), $r->asDecimalLazy($rp), $node['pos']));
             case '*': return Value::numTrusted(Dec::mul($l->asDecimalLazy($lp), $r->asDecimalLazy($rp), $node['pos']));
@@ -373,11 +371,12 @@ final class Evaluator
      * a SEL one, so it carried no code and no position and could not be caught
      * where every other failure in this file is caught. The other four hosts
      * answered silently in their own ways; all five now refuse identically.
-     * Unreachable today, since the caller only reaches this with the six.
+     * Unreachable today, since every caller (this file's and the optimizer's
+     * constant folding) reaches it only with the six.
      *
      * @param array<string,mixed>|null $pos
      */
-    private static function compareResult(string $op, int $c, ?array $pos): bool
+    public static function compareResult(string $op, int $c, ?array $pos): bool
     {
         return match ($op) {
             '==' => $c === 0,
@@ -412,17 +411,14 @@ final class Evaluator
             // The length is checked before the result is built (spec §6.4); the
             // byte length bounds the code point length, so only a candidate over
             // the cap is counted.
-            if (strlen($ls) + strlen($rs) > Limits::MAX_TEXT_LEN
-                && Utf8::length($ls) + Utf8::length($rs) > Limits::MAX_TEXT_LEN) {
-                fail('E_RANGE', 'concatenation would be longer than ' . Limits::MAX_TEXT_LEN, $opPos);
+            if (strlen($ls) + strlen($rs) > Limits::MAX_TEXT_LEN) {
+                Budget::checkText(Utf8::length($ls) + Utf8::length($rs), $opPos, 'the concatenation');
             }
             return Value::text($ls . $rs);
         }
         $lb = $l->asBytes($lp);
         $rb = $r->asBytes($rp);
-        if (strlen($lb) + strlen($rb) > Limits::MAX_TEXT_LEN) {
-            fail('E_RANGE', 'concatenation would be longer than ' . Limits::MAX_TEXT_LEN, $opPos);
-        }
+        Budget::checkText(strlen($lb) + strlen($rb), $opPos, 'the concatenation');
         return Value::bin($lb . $rb);
     }
 
@@ -482,13 +478,7 @@ final class Evaluator
             } else {
                 $a = $current->asDecimalLazy($tp);
                 $b = $rhs->asDecimalLazy($vp);
-                $value = Value::numTrusted(match ($binOp) {
-                    '+' => Dec::add($a, $b, $node['pos']),
-                    '-' => Dec::sub($a, $b, $node['pos']),
-                    '*' => Dec::mul($a, $b, $node['pos']),
-                    '/' => Dec::div($a, $b, $node['pos']),
-                    '%' => Dec::mod($a, $b, $node['pos']),
-                });
+                $value = Value::numTrusted(Dec::arith($binOp, $a, $b, $node['pos']));
             }
         }
 
@@ -538,7 +528,7 @@ final class Evaluator
         $n = $target;
         while ($n['t'] === 'index') {
             // Appended and reversed once: array_unshift moves every element, so a
-            // 40,000-bracket target cost ten seconds (PHP-C14).
+            // 40,000-bracket target cost ten seconds.
             $chain[] = $n['idx'];
             $n = $n['obj'];
         }
@@ -551,7 +541,7 @@ final class Evaluator
                 $target['pos'],
             );
         }
-                // The chain was walked iteratively, which is why nothing has counted it
+        // The chain was walked iteratively, which is why nothing has counted it
         // yet: `A[1][2][3]` is a chain of index nodes, not a nesting of them, so
         // neither the parser's depth nor the evaluator's ever sees it -- and the
         // value it is about to build is one level deeper than the chain is long.
@@ -561,7 +551,7 @@ final class Evaluator
         if (count($chain) + 1 > MAX_DEPTH) {
             fail('E_DEPTH', 'value nested too deeply', $target['pos']);
         }
-$path = [$n['name']];
+        $path = [$n['name']];
         if (!$chain) {
             return $path;
         }

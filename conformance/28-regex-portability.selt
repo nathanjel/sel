@@ -378,6 +378,69 @@ RMATCH('^a{65535}$', REPEAT("a", 65534))
 bool FALSE
 ===
 
+### name: re.repeat.capturing-group-at-the-cap-matches
+--- note
+A counted GROUP at the cap, with a matching subject: PCRE copies a counted group once per iteration into a program capped at 64 KB, and PHP refused these as too large for its engine; the other hosts answered.
+--- source
+RMATCH('^(ab){65535}$', REPEAT("ab", 65535))
+--- expect
+bool TRUE
+===
+
+### name: re.repeat.capturing-group-at-the-cap-one-short
+--- note
+A counted GROUP at the cap, with a matching subject: PCRE copies a counted group once per iteration into a program capped at 64 KB, and PHP refused these as too large for its engine; the other hosts answered. One iteration short is FALSE, not an error.
+--- source
+RMATCH('^(ab){65535}$', REPEAT("ab", 65534))
+--- expect
+bool FALSE
+===
+
+### name: re.repeat.capturing-group-at-the-cap-short-subject
+--- note
+A counted GROUP at the cap, with a matching subject: PCRE copies a counted group once per iteration into a program capped at 64 KB, and PHP refused these as too large for its engine; the other hosts answered. A subject too short to match.
+--- source
+RMATCH('^(ab){65535}$', "ab")
+--- expect
+bool FALSE
+===
+
+### name: re.repeat.group-holding-captures-at-the-cap-reports-the-last-iteration
+--- note
+A counted GROUP at the cap, with a matching subject: PCRE copies a counted group once per iteration into a program capped at 64 KB, and PHP refused these as too large for its engine; the other hosts answered. Every capture takes part in every iteration (SPEC 7.8), so each reports the last one.
+--- source
+G = RGROUPS('^((a|b)c){65535}$', REPEAT("ac", 65534) & "bc"); G["2"] & G["3"]
+--- expect
+text "bcb"
+===
+
+### name: re.repeat.open-ended-group-at-the-cap
+--- note
+A counted GROUP at the cap, with a matching subject: PCRE copies a counted group once per iteration into a program capped at 64 KB, and PHP refused these as too large for its engine; the other hosts answered.
+--- source
+RMATCH('^(?:ab){65535,}$', REPEAT("ab", 65536))
+--- expect
+bool TRUE
+===
+
+### name: re.repeat.lazy-open-ended-capturing-group-near-the-cap
+--- note
+A counted GROUP at the cap, with a matching subject: PCRE copies a counted group once per iteration into a program capped at 64 KB, and PHP refused these as too large for its engine; the other hosts answered. The lazy loop stops at its minimum and leaves the rest to `(.*)`.
+--- source
+G = RGROUPS('^((a|b)c){65534,}?(.*)$', REPEAT("ac", 65533) & "bcac"); G["2"] & "/" & G["3"] & "/" & G["4"]
+--- expect
+text "bc/b/ac"
+===
+
+### name: re.repeat.group-300-times-300
+--- note
+A counted GROUP at the cap, with a matching subject: PCRE copies a counted group once per iteration into a program capped at 64 KB, and PHP refused these as too large for its engine; the other hosts answered. Nested counted groups multiply.
+--- source
+RMATCH('^(?:(?:ab){300}){300}$', REPEAT("ab", 90000))
+--- expect
+bool TRUE
+===
+
 ### name: re.repeat.beyond-the-cap-lower-bound
 --- note
 The cap applies to either bound of a range.

@@ -40,7 +40,8 @@ final class SelError extends \Exception
 
     /**
      * An error that goes through a queue, a session or a cache must come back with its
-     * code and position (PY-C16's PHP equivalent): Exception's own serialisation does
+     * code and position (the Python host's SelError once could not be pickled):
+     * Exception's own serialisation does
      * not round-trip this class, whose `code` is a string and whose `line` is a
      * source line, not the file line Exception uses it for.
      *
@@ -74,9 +75,8 @@ final class SelError extends \Exception
  * Raise at the innermost point of failure. Nothing wraps this on the way out.
  *
  * @param array{line:int,col:int,offset:int}|null $pos
- * @return never
  */
-function fail(string $code, string $message, ?array $pos = null): void
+function fail(string $code, string $message, ?array $pos = null): never
 {
     throw new SelError($code, $message, $pos);
 }

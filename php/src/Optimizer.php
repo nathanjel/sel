@@ -33,6 +33,28 @@ final class Optimizer
     }
 
     /**
+     * How deep an expression goes, its root counted as 1, and never more than
+     * `$cap` + 1 (the walk stops there), so it is bounded whatever the source's
+     * length.
+     *
+     * @param array<string,mixed> $root
+     */
+    private static function boundedDepth(array $root, int $cap): int
+    {
+        $deepest = 0;
+        $level = [$root];
+        while ($level !== [] && $deepest <= $cap) {
+            $deepest++;
+            $next = [];
+            foreach ($level as $node) {
+                foreach (Ast::children($node, false) as $child) $next[] = $child;
+            }
+            $level = $next;
+        }
+        return $deepest;
+    }
+
+    /**
      * Whether any node of the tree lies past the evaluator's depth cap, counted
      * the way the evaluator counts: the root at 1, every child one deeper, an
      * assignment's target excluded (the evaluator walks it iteratively). The walk
@@ -45,15 +67,9 @@ final class Optimizer
         if ($node === null) return false;
         if ($depth > MAX_DEPTH) return true;
         $next = $depth + 1;
-        foreach (['args', 'items'] as $key) {
-            foreach ($node[$key] ?? [] as $item) {
-                if (is_array($item) && self::exceedsDepth($item, $next)) return true;
-            }
+        foreach (Ast::children($node, false) as $child) {
+            if (self::exceedsDepth($child, $next)) return true;
         }
-        foreach (['l', 'r', 'x', 'obj', 'idx'] as $key) {
-            if (isset($node[$key]) && is_array($node[$key]) && self::exceedsDepth($node[$key], $next)) return true;
-        }
-        if (isset($node['value']) && is_array($node['value']) && self::exceedsDepth($node['value'], $next)) return true;
         return false;
     }
 
@@ -98,8 +114,13 @@ final class Optimizer
             $unwound = self::unwindPipeline($node);
             $source = self::optimizeTree($unwound['source'], $physical, $depth + 1, $options, false);
             $steps = [];
-            foreach ($unwound['steps'] as $step) {
+            $last = count($unwound['steps']) - 1;
+            foreach ($unwound['steps'] as $at => $step) {
                 $copy = self::copyNode($step);
+                // Where this step stands in the tree as written, for the rules that
+                // would deepen a subtree (FILTER fusion): the outermost step is the
+                // node itself.
+                $copy['stepDepth'] = $depth + ($last - $at);
                 $copy['args'] = [$copy['args'][0]];
                 foreach (array_slice($step['args'], 1, null, true) as $index => $arg) {
                     $copy['args'][] = self::optimizeTree($arg, $physical, $depth + 1, self::stepArgOptions($step, $index, $options), false);
@@ -131,6 +152,9 @@ final class Optimizer
         $nextInMath = $isCurrMath;
 
         $copy = self::copyNode($node);
+        // Every child key of Ast, each walked with its own context: a math
+        // operand stays in the math plan (args, l, r, x), a list item or an
+        // index does not, and an assignment's target is walked below.
         if (isset($copy['args'])) {
             $copy['args'] = array_map(
                 static fn (array $item): array => self::optimizeTree($item, $physical, $depth + 1, $options, $nextInMath),
@@ -159,7 +183,7 @@ final class Optimizer
             $copy['value'] = self::optimizeTree($copy['value'], $physical, $depth + 1, $options, false);
         }
         // Only an explicit false disables folding, as in JS and Python.
-        $folded = (($options['foldConstants'] ?? true) === false) ? $copy : self::foldNode($copy);
+        $folded = (($options['foldConstants'] ?? true) === false) ? $copy : self::foldNode($copy, $physical);
         if ($physical && !$inMath && MathPlan::isMathOp($folded)) {
             $plan = MathPlan::compile($folded);
             if ($plan !== null) {
@@ -214,7 +238,7 @@ final class Optimizer
     }
 
     /** @param array<string,mixed> $node @return array<string,mixed> */
-    private static function foldNode(array $node): array
+    private static function foldNode(array $node, bool $physical): array
     {
         $type = $node['t'] ?? null;
         if ($type === 'un') {
@@ -261,17 +285,11 @@ final class Optimizer
                     $r = Dec::parse((string) $right['v'], $right['pos'] ?? null);
                     if ($l !== null && $r !== null) {
                         if (in_array($op, ['+', '-', '*', '/', '%'], true)) {
-                            $value = match ($op) {
-                                '+' => Dec::add($l, $r, $node['pos']),
-                                '-' => Dec::sub($l, $r, $node['pos']),
-                                '*' => Dec::mul($l, $r, $node['pos']),
-                                '/' => Dec::div($l, $r, $node['pos']),
-                                '%' => Dec::mod($l, $r, $node['pos']),
-                            };
+                            $value = Dec::arith($op, $l, $r, $node['pos']);
                             return self::numNode(Dec::format($value), $node['pos']);
                         }
                         if (in_array($op, ['==', '!=', '<', '<=', '>', '>='], true)) {
-                            return self::boolNode(self::compareLiteral($op, Dec::cmp($l, $r)), $node['pos']);
+                            return self::boolNode(Evaluator::compareResult($op, Dec::cmp($l, $r), $node['pos']), $node['pos']);
                         }
                     }
                 } catch (\Throwable) {
@@ -280,17 +298,20 @@ final class Optimizer
                 }
             }
 
-            // Two text literals joined by `&` are one text literal (PHP-P29): the
-            // fold cannot fail, since the result is shorter than the cap unless the
-            // source itself was enormous, and then the node is left for the evaluator.
-            if ($op === '&' && ($left['t'] ?? null) === 'text' && ($right['t'] ?? null) === 'text'
-                && strlen((string) $left['v']) + strlen((string) $right['v']) <= \Sel\Limits::MAX_TEXT_LEN) {
+            // Two text literals joined by `&` are one text literal: the fold cannot
+            // fail, since the result is shorter than the cap unless the source itself
+            // was enormous, and then the node is left for the evaluator. Only in the
+            // PHYSICAL tree, which the evaluator alone runs: the logical tree is what
+            // the SQL planner renders, and every host's planner leaves `&` to the
+            // dialect's concatenation (sql/cases plan.fold.text-concat-is-not-folded).
+            if ($physical && $op === '&' && ($left['t'] ?? null) === 'text' && ($right['t'] ?? null) === 'text'
+                && strlen((string) $left['v']) + strlen((string) $right['v']) <= Limits::MAX_TEXT_LEN) {
                 return ['t' => 'text', 'v' => (string) $left['v'] . (string) $right['v'], 'pos' => $node['pos']];
             }
             if (($left['t'] ?? null) === 'text' && ($right['t'] ?? null) === 'text'
                 && in_array($op, ['$==', '$!=', '$<', '$<=', '$>', '$>='], true)) {
                 $cmp = strcmp((string) $left['v'], (string) $right['v']) <=> 0;
-                return self::boolNode(self::compareLiteral(substr($op, 1), $cmp), $node['pos']);
+                return self::boolNode(Evaluator::compareResult(substr($op, 1), $cmp, $node['pos']), $node['pos']);
             }
             return $node;
         }
@@ -304,28 +325,13 @@ final class Optimizer
         return $node;
     }
 
-    private static function compareLiteral(string $op, int $cmp): bool
-    {
-        return match ($op) {
-            '==' => $cmp === 0,
-            '!=' => $cmp !== 0,
-            '<' => $cmp < 0,
-            '<=' => $cmp <= 0,
-            '>' => $cmp > 0,
-            '>=' => $cmp >= 0,
-            default => false,
-        };
-    }
-
     /** @return ?int */
     private static function numericLiteral(?array $node): ?int
     {
         if ($node === null || ($node['t'] ?? null) !== 'num') return null;
         $d = Dec::parse((string) $node['v'], $node['pos'] ?? null);
         if ($d === null || $d['scale'] !== 0 || $d['neg']) return null;
-        if (strlen($d['digits']) > strlen((string) PHP_INT_MAX)
-            || (strlen($d['digits']) === strlen((string) PHP_INT_MAX)
-                && $d['digits'] > (string) PHP_INT_MAX)) return null;
+        if (!Dec::fitsInt($d['digits'])) return null;
         return (int) $d['digits'];
     }
 
@@ -440,7 +446,7 @@ final class Optimizer
                 if ($second !== null && in_array($firstName, ['SORT', 'SORT_DESC', 'SORT_BY'], true)
                     && $secondName === 'FILTER' && !self::stepReadsKey($second)
                     && self::keysRenumberedBy($steps[$i + 2] ?? null)
-                    && self::cannotRaise(self::sortDetails($first)['key'], self::sortDetails($first)['binder'] ?? '_', $logical)
+                    && self::sortCannotRaise($first, $logical)
                     && ($logical || self::predicateCannotRaise(self::filterDetails($second)['predicate'], self::filterDetails($second)['binder'], false))) {
                     [$first['pos'], $second['pos']] = [$second['pos'], $first['pos']];
                     $next[] = $second;
@@ -471,7 +477,7 @@ final class Optimizer
                     // that reads the whole row or `_K` reads what the MAP changes.
                     $details = self::sortDetails($second);
                     $refs = $details['key'] === null ? [] : self::fieldRefs($details['key'], $details['binder'] ?? '_');
-                    if ($details['key'] !== null && $refs !== [] && self::allIn($refs, self::mapPassthroughs($first))
+                    if (!$details['opaque'] && $details['key'] !== null && $refs !== [] && self::allIn($refs, self::mapPassthroughs($first))
                         && !self::readsRowOrKey($details['key'], $details['binder'] ?? '_')
                         && self::mapCannotRaise($first, $logical)
                         && self::cannotRaise($details['key'], $details['binder'] ?? '_', $logical)) {
@@ -489,8 +495,14 @@ final class Optimizer
                     $right = self::filterDetails($second);
                     // Fused, the second predicate runs on a row before the first
                     // has seen the rows after it: only one that cannot raise.
-                    if ($left['valid'] && $right['valid'] && self::predicateCannotRaise($right['predicate'], $right['binder'], $logical)) {
-                        $predicate = \Sel\Utf8::casecmp($right['binder'], $left['binder']) === 0
+                    // Fused, the second predicate also sits one level deeper: under
+                    // the AND. A fused pair must spend what the two stages spent
+                    // (SPEC 6.4), so a predicate that would reach the cap that way
+                    // stays a second FILTER (plan.pure-sql.fusion-stops-at-the-depth-cap).
+                    if ($left['valid'] && $right['valid'] && self::predicateCannotRaise($right['predicate'], $right['binder'], $logical)
+                        && !(isset($second['stepDepth'])
+                            && $second['stepDepth'] + self::boundedDepth($right['predicate'], MAX_DEPTH) + 1 > MAX_DEPTH)) {
+                        $predicate = Utf8::casecmp($right['binder'], $left['binder']) === 0
                             ? $right['predicate']
                             : self::renameVar($right['predicate'], $right['binder'], $left['binder']);
                         $merged = self::copyNode($first);
@@ -547,13 +559,12 @@ final class Optimizer
         return true;
     }
 
-    /** @return array{binder:string,predicate:array<string,mixed>,explicit:bool,valid:bool} */
     /**
      * Whether evaluating NODE for one row can raise -- conservatively: a rewrite
      * that moves a FILTER in front of a step, runs a step on fewer rows, or fuses
      * two FILTERs changes which rows reach what, so it may only pass over
-     * expressions that cannot raise on any of them (spec §7.3; review 2026-09-25
-     * SEM-07/SEM-08). Literals, _K and the binder itself never raise. On the
+     * expressions that cannot raise on any of them (spec §7.3).
+     * Literals, _K and the binder itself never raise. On the
      * logical path the rows are a bound relation's, which always carry their
      * typed columns, so a field read through the binder cannot raise either, nor
      * a comparison, AND/OR/NOT or + - * over such reads; `/` and `%`, calls and
@@ -568,11 +579,11 @@ final class Optimizer
             case 'num': case 'text': case 'bool': case 'null':
                 return true;
             case 'var':
-                $name = \Sel\Utf8::upper((string) $node['name']);
-                return $name === '_K' || $name === \Sel\Utf8::upper($binder);
+                $name = Utf8::upper((string) $node['name']);
+                return $name === '_K' || $name === Utf8::upper($binder);
             case 'index':
                 return $logical && ($node['obj']['t'] ?? null) === 'var'
-                    && \Sel\Utf8::casecmp((string) $node['obj']['name'], $binder) === 0
+                    && Utf8::casecmp((string) $node['obj']['name'], $binder) === 0
                     && ($node['idx']['t'] ?? null) === 'text';
             case 'bin':
                 return $logical && in_array($node['op'], self::SAFE_LOGICAL_OPS, true)
@@ -591,7 +602,7 @@ final class Optimizer
      * which cannot raise as an expression, raises E_NOT_BOOL as a predicate: a
      * fusion (or a swap) that treated a bare variable as harmless ran the second
      * predicate before the first had seen the rows after it and reported the
-     * wrong error (PHP-C11). Only a BOOL literal is known to pass; the rest
+     * wrong error. Only a BOOL literal is known to pass; the rest
      * defers to cannotRaise, whose logical-path forms are all boolean.
      *
      * @param array<string,mixed>|null $node
@@ -615,6 +626,8 @@ final class Optimizer
         $details = self::mapDetails($step);
         $body = $details['body'] ?? null;
         if (($body['t'] ?? null) === 'call' && $body['name'] === 'RECORD') {
+            // Past MAX_COLLECTION pairs the record itself raises E_RANGE.
+            if (count($body['args']) >> 1 > Limits::MAX_COLLECTION) return false;
             foreach ($body['args'] as $i => $arg) {
                 if ($i % 2 === 0 ? ($arg['t'] ?? null) !== 'text' : !self::cannotRaise($arg, $details['binder'], $logical)) return false;
             }
@@ -623,6 +636,7 @@ final class Optimizer
         return self::cannotRaise($body, $details['binder'], $logical);
     }
 
+    /** @return array{binder:string,predicate:array<string,mixed>,explicit:bool,valid:bool} */
     private static function filterDetails(array $step): array
     {
         $args = $step['args'];
@@ -658,7 +672,7 @@ final class Optimizer
             $value = $body['args'][$i + 1];
             if (($key['t'] ?? null) === 'text' && ($value['t'] ?? null) === 'index'
                 && ($value['obj']['t'] ?? null) === 'var'
-                && \Sel\Utf8::casecmp($value['obj']['name'], $details['binder']) === 0
+                && Utf8::casecmp($value['obj']['name'], $details['binder']) === 0
                 && ($value['idx']['t'] ?? null) === 'text'
                 && $value['idx']['v'] === $key['v']) {
                 $fields[] = $key['v'];
@@ -677,29 +691,16 @@ final class Optimizer
     }
 
     /**
-     * The keys under which a parser node holds children: the two list-valued
-     * ones and the seven single-valued ones. The one place the optimizer's
-     * walks know the node shapes; fieldRefs and readsVar each used to spell
-     * the loops out (SEL-0040).
-     */
-    private const CHILD_LISTS = ['args', 'items'];
-    private const CHILD_NODES = ['l', 'r', 'x', 'obj', 'idx', 'target', 'value'];
-
-    /**
-     * Calls $visit on every direct child of $node, lists first, in the order
-     * the keys are declared above.
+     * Calls $visit on every direct child of $node (Ast::children, the one
+     * statement of the node shapes; fieldRefs and readsVar each used to spell
+     * the loops out, SEL-0040).
      *
      * @param array<string,mixed> $node
      * @param callable(?array):void $visit
      */
     private static function forEachChild(array $node, callable $visit): void
     {
-        foreach (self::CHILD_LISTS as $key) {
-            foreach ($node[$key] ?? [] as $child) $visit($child);
-        }
-        foreach (self::CHILD_NODES as $key) {
-            if (isset($node[$key]) && is_array($node[$key])) $visit($node[$key]);
-        }
+        foreach (Ast::children($node) as $child) $visit($child);
     }
 
     /** @return list<string> */
@@ -710,7 +711,7 @@ final class Optimizer
             if ($item === null) return;
             if (($item['t'] ?? null) === 'index' && ($item['obj']['t'] ?? null) === 'var'
                 && ($item['idx']['t'] ?? null) === 'text'
-                && in_array(\Sel\Utf8::upper($item['obj']['name']), array_map([\Sel\Utf8::class, 'upper'], [$binder, '_', '_1', '_2']), true)) {
+                && in_array(Utf8::upper($item['obj']['name']), array_map([Utf8::class, 'upper'], [$binder, '_', '_1', '_2']), true)) {
                 $result[] = (string) $item['idx']['v'];
             }
             self::forEachChild($item, $visit);
@@ -729,11 +730,11 @@ final class Optimizer
      */
     private static function readsVar(?array $node, array $names): bool
     {
-        $wanted = array_map([\Sel\Utf8::class, 'upper'], $names);
+        $wanted = array_map([Utf8::class, 'upper'], $names);
         $found = false;
         $visit = function (?array $item) use (&$visit, &$found, $wanted): void {
             if ($item === null || $found) return;
-            if (($item['t'] ?? null) === 'var' && in_array(\Sel\Utf8::upper($item['name']), $wanted, true)) {
+            if (($item['t'] ?? null) === 'var' && in_array(Utf8::upper($item['name']), $wanted, true)) {
                 $found = true;
                 return;
             }
@@ -819,49 +820,56 @@ final class Optimizer
     }
 
     /** @return array{binder:?string,key:?array<string,mixed>} */
+    /**
+     * The sort part of a SORT* / TOP* step, decoded as the evaluator decodes it
+     * (Registry::sortForm): the binder's name, the key node (null: the element
+     * itself), the direction node (null: none), and `opaque` when the step
+     * cannot be read at all here -- no form fits, or the binder slot is not a
+     * bare name (the evaluator raises E_EXPECT_SYMBOL) -- so no rewrite may
+     * pass over it.
+     *
+     * @return array{binder:?string,key:?array<string,mixed>,dir:?array<string,mixed>,opaque:bool}
+     */
     private static function sortDetails(array $step): array
     {
         $args = $step['args'];
-        $count = count($args);
-        $name = $step['name'];
+        $form = Registry::sortForm($step['name'], $args);
+        if ($form === null) return ['binder' => null, 'key' => null, 'dir' => null, 'opaque' => true];
         $binder = '_';
-        $key = null;
-        if (in_array($name, ['SORT', 'SORT_DESC'], true)) {
-            if ($count === 1) return ['binder' => null, 'key' => null];
-            $binder = $count === 3 && ($args[1]['t'] ?? null) === 'var' ? $args[1]['name'] : '_';
-            $key = $count === 3 ? $args[2] : $args[1];
-        } elseif (in_array($name, ['TOP', 'TOP_DESC'], true)) {
-            if ($count === 2) return ['binder' => null, 'key' => null];
-            $sortCount = $count - 1;
-            $binder = $sortCount === 3 && ($args[1]['t'] ?? null) === 'var' ? $args[1]['name'] : '_';
-            $key = $sortCount === 3 ? $args[2] : $args[1];
-        } elseif (in_array($name, ['SORT_BY', 'TOP_BY'], true)) {
-            $sortCount = $name === 'TOP_BY' ? $count - 1 : $count;
-            if ($sortCount === 2 || ($sortCount === 3 && ($args[2]['t'] ?? null) === 'text')) {
-                $key = $args[1];
-            } elseif (($args[1]['t'] ?? null) === 'var' && !($args[1]['grouped'] ?? false)) {
-                // The binder form, three slots or four (with a direction): the
-                // other hosts read both, and PHP's missing four-slot branch made
-                // its rewrites differ (review 2026-09-25 HYG-05).
-                $binder = $args[1]['name'];
-                $key = $args[2];
+        if ($form['binder'] !== null) {
+            $slot = $args[$form['binder']];
+            if (($slot['t'] ?? null) !== 'var' || ($slot['grouped'] ?? false)) {
+                return ['binder' => null, 'key' => null, 'dir' => null, 'opaque' => true];
             }
+            $binder = $slot['name'];
         }
-        return ['binder' => $binder, 'key' => $key];
+        return [
+            'binder' => $form['key'] === null ? null : $binder,
+            'key' => $form['key'] === null ? null : $args[$form['key']],
+            'dir' => $form['dir'] === null ? null : $args[$form['dir']],
+            'opaque' => false,
+        ];
+    }
+
+    /**
+     * Whether a SORT* step's own work -- its key per element and its direction
+     * -- cannot raise, so a FILTER may be moved in front of it. A computed
+     * direction is an expression like any other.
+     */
+    private static function sortCannotRaise(array $step, bool $logical): bool
+    {
+        $d = self::sortDetails($step);
+        if ($d['opaque']) return false;
+        $binder = $d['binder'] ?? '_';
+        return ($d['key'] === null || self::cannotRaise($d['key'], $binder, $logical))
+            && ($d['dir'] === null || self::cannotRaise($d['dir'], $binder, $logical));
     }
 
     /** @param array<string,mixed> $node */
     private static function renameVar(array $node, string $old, string $new): array
     {
         $copy = self::copyNode($node);
-        if (($copy['t'] ?? null) === 'var' && \Sel\Utf8::casecmp($copy['name'], $old) === 0) $copy['name'] = $new;
-        foreach (['args', 'items'] as $key) {
-            if (isset($copy[$key])) $copy[$key] = array_map(
-                static fn (array $child): array => self::renameVar($child, $old, $new), $copy[$key]);
-        }
-        foreach (['l', 'r', 'x', 'obj', 'idx', 'target', 'value'] as $key) {
-            if (isset($copy[$key]) && is_array($copy[$key])) $copy[$key] = self::renameVar($copy[$key], $old, $new);
-        }
-        return $copy;
+        if (($copy['t'] ?? null) === 'var' && Utf8::casecmp($copy['name'], $old) === 0) $copy['name'] = $new;
+        return Ast::mapChildren($copy, static fn (array $child): array => self::renameVar($child, $old, $new));
     }
 }

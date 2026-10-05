@@ -61,7 +61,7 @@ final class Lexer
         // PCRE's strict UTF-8 check is exactly "valid UTF-8" (the same strictness
         // as the hand-written codec: overlongs, surrogates and > U+10FFFF are
         // refused), so the byte loop only runs for a source that is about to be
-        // refused and has to say where (PHP-P9).
+        // refused and has to say where.
         if (preg_match('//u', $source) !== 1) {
             $bad = Utf8::firstInvalid($source);
             if ($bad !== null) {
@@ -225,7 +225,7 @@ final class Lexer
                 while ($j < $to && self::isIdent($this->chars[$j])) {
                     $j++;
                 }
-                $out[] = ['type' => 'ident', 'value' => \Sel\Utf8::upper($this->slice($i, $j))] + $pos;
+                $out[] = ['type' => 'ident', 'value' => Utf8::upper($this->slice($i, $j))] + $pos;
                 $i = $j;
                 continue;
             }
@@ -304,7 +304,7 @@ final class Lexer
      * The operators by first character, each list in OPERATORS order (longest
      * first) so the first match is the same one a scan of the whole table finds;
      * built once. A token starting with anything else cannot be an operator
-     * (PHP-P9: 31 comparisons per operator token before).
+     * (it used to cost 31 comparisons per operator token).
      *
      * @var array<string,list<string>>|null
      */
@@ -446,7 +446,7 @@ final class Lexer
             }
             $cp = (int) hexdec($hex);
             if ($cp > 0x10ffff || ($cp >= 0xd800 && $cp <= 0xdfff)) {
-                fail('E_RANGE', 'code point U+' . \Sel\Utf8::upper($hex) . ' is not encodable', $pos);
+                fail('E_RANGE', 'code point U+' . Utf8::upper($hex) . ' is not encodable', $pos);
             }
             return [Utf8::chr($cp), $j + 1];
         }

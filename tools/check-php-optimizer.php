@@ -402,8 +402,8 @@ foreach ([
   // guard, so nothing pushes down. A later step that renumbers again lets the
   // swap through.
   ['ORDERS .> MAP(r, RECORD("id", r["id"], "shout", REPEAT(r["name"], 2))) .> FILTER(s, s["id"] > 1)', 'pure_memory'],
-  // REPEAT can raise, so the FILTER stays behind the MAP and nothing pushes
-  // down; a MAP that cannot raise lets it through.
+  // REPEAT can raise, so the FILTER stays behind the MAP (spec §7.3)
+  // and nothing pushes down; a MAP that cannot raise lets it through.
   ['ORDERS .> MAP(r, RECORD("id", r["id"], "shout", REPEAT(r["name"], 2))) .> FILTER(s, s["id"] > 1) .> TAKE(5)', 'pure_memory'],
   ['ORDERS .> MAP(r, RECORD("id", r["id"], "plus", r["amount"] + 1)) .> FILTER(s, s["id"] > 1) .> TAKE(5)', 'pure_sql'],
   ['ORDERS .> MAP(RECORD("Name", _["name"], "shout", REPEAT(_["name"], 2))) .> TAKE(2)', 'pure_memory'],

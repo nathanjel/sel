@@ -1,11 +1,13 @@
 #!/usr/bin/env php
 <?php
-// SEL command line: evaluate an expression, a file, or start a REPL.
+// SEL command line: evaluate an expression, a file, or start a REPL. The
+// contract every host's CLI keeps is in docs/usage/repl.md.
 //
 //   sel -e 'EXPR'          evaluate and print
 //   sel file.sel           evaluate a file
-//   sel --deps -e 'EXPR'   print the variables the expression reads
-//   sel                    REPL, keeping one context across lines
+//   sel --deps -e 'EXPR'   print the variables the expression reads, one per line
+//   sel                    REPL on stdin, keeping one context across lines
+//   sel --help | --version
 
 declare(strict_types=1);
 
@@ -36,36 +38,66 @@ function report(SelError $e): void
     fwrite(STDERR, "{$e->code} at line {$e->line} column {$e->col}: {$e->getMessage()}\n");
 }
 
-$argvRest = array_slice($argv, 1);
-$wantDeps = in_array('--deps', $argvRest, true);
-$args = array_values(array_filter($argvRest, static fn (string $a): bool => $a !== '--deps'));
+const USAGE = <<<'TXT'
+usage: sel -e EXPR          evaluate EXPR and print the result
+       sel FILE             evaluate the program in FILE
+       sel --deps -e EXPR   print the variables EXPR reads, one per line
+       sel --deps FILE      the same for the program in FILE
+       sel                  read programs from stdin, one per line (a REPL)
+       sel --help           this text
+       sel --version        the version
 
-if (($args[0] ?? '') === '--functions') {
-    echo implode("\n", Sel::functionNames()), "\n";
-    exit(0);
-}
+TXT;
 
 // Misuse is a controlled refusal: one plain line on stderr, nothing on stdout,
-// a small non-zero status -- never a PHP warning or a status of 255.
-function usage(string $message): void
+// exit status 2 -- never a PHP warning or a status of 255.
+function usage(string $message): never
 {
     fwrite(STDERR, "sel: {$message}\n");
     exit(2);
 }
 
-$source = null;
-if (($args[0] ?? '') === '-e') {
-    if (!isset($args[1])) {
-        usage('-e needs an expression');
+$args = array_slice($argv, 1);
+$wantDeps = false;
+$expr = null;
+$file = null;
+for ($i = 0, $n = count($args); $i < $n; $i++) {
+    $arg = $args[$i];
+    if ($arg === '--help' || $arg === '-h') {
+        echo USAGE;
+        exit(0);
     }
-    $source = $args[1];
-} elseif ($args) {
-    if (!is_file($args[0]) || !is_readable($args[0])) {
-        usage("cannot read {$args[0]}");
+    if ($arg === '--version') {
+        echo 'sel ', Sel::VERSION, "\n";
+        exit(0);
     }
-    $source = file_get_contents($args[0]);
+    if ($arg === '--functions') {
+        echo implode("\n", Sel::functionNames()), "\n";
+        exit(0);
+    }
+    if ($arg === '--deps') {
+        $wantDeps = true;
+        continue;
+    }
+    if ($arg === '-e') {
+        if ($i + 1 >= $n) usage('-e needs an expression');
+        // A second program: the expression is the extra operand (docs/usage/repl.md).
+        if ($expr !== null || $file !== null) usage("unexpected argument {$args[$i + 1]}");
+        $expr = $args[++$i];
+        continue;
+    }
+    if (strlen($arg) > 1 && $arg[0] === '-') usage("unknown option {$arg}");
+    if ($expr !== null || $file !== null) usage("unexpected argument {$arg}");
+    $file = $arg;
+}
+
+$source = $expr;
+if ($file !== null) {
+    // Missing, unreadable or a directory: exit 1, like any other failure to run.
+    $source = is_file($file) && is_readable($file) ? @file_get_contents($file) : false;
     if ($source === false) {
-        usage("cannot read {$args[0]}");
+        fwrite(STDERR, "sel: cannot read {$file}\n");
+        exit(1);
     }
 }
 
@@ -73,7 +105,7 @@ if ($source !== null) {
     try {
         $program = Sel::compile($source);
         if ($wantDeps) {
-            echo implode("\n", $program->dependencies()), "\n";
+            foreach ($program->dependencies() as $name) echo $name, "\n";
         } else {
             echo show($program->run(Value::none())), "\n";
         }
@@ -83,19 +115,35 @@ if ($source !== null) {
     }
     exit(0);
 }
+if ($wantDeps) usage('--deps needs -e EXPR or a FILE');
 
-// REPL: one context for the whole session, so assignments persist.
+// REPL: one context for the whole session, so assignments persist. The prompt
+// is for a person; on a pipe only results and errors are written.
+$tty = stream_isatty(STDIN);
+$useReadline = $tty && function_exists('readline');
 $root = Value::none();
 while (true) {
-    $line = readline('sel> ');
+    if ($useReadline) {
+        $line = readline('sel> ');
+    } else {
+        if ($tty) {
+            echo 'sel> ';
+        }
+        $line = fgets(STDIN);
+        if ($line !== false && str_ends_with($line, "\n")) {
+            $line = substr($line, 0, -1);
+        }
+    }
     if ($line === false) {
-        echo "\n";
+        if ($tty) echo "\n";
         break;
     }
-    if (trim($line) === '') {
+    // Blank means SEL whitespace only (space, TAB, CR, LF): a line of NBSP or
+    // VT is a program, and an E_SYNTAX one.
+    if (strspn($line, " \t\r\n") === strlen($line)) {
         continue;
     }
-    readline_add_history($line);
+    if ($useReadline) readline_add_history($line);
     try {
         echo show(Sel::compile($line)->run($root)), "\n";
     } catch (SelError $e) {
