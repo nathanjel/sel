@@ -68,6 +68,10 @@ pub struct Node {
     pub math_plan: Option<MathPlan>,
     pub keys_unobserved: bool,
     pub borrowed_filter: bool,
+    /// Optimiser only: where a pipeline step stands in the tree as written (the
+    /// outermost step is the call itself), for rewrites that would deepen a
+    /// subtree -- FILTER fusion. 0 when unknown.
+    pub step_depth: u16,
     pub spec: Option<Arc<crate::builtins::Spec>>,
 }
 
@@ -89,15 +93,17 @@ impl Node {
             math_plan: None,
             keys_unobserved: false,
             borrowed_filter: false,
+            step_depth: 0,
             spec: None,
         }
     }
 }
 
-impl Clone for Node {
-    fn clone(&self) -> Self {
-        fn head(n: &Node) -> Node {
-            Node {
+impl Node {
+    /// This node's own fields, without its children (`l`, `r`, `items`).
+    pub(crate) fn head(&self) -> Node {
+        let n = self;
+        Node {
                 t: n.t,
                 pos: n.pos,
                 s: n.s.clone(),
@@ -113,8 +119,16 @@ impl Clone for Node {
                 math_plan: n.math_plan.clone(),
                 keys_unobserved: n.keys_unobserved,
                 borrowed_filter: n.borrowed_filter,
+                step_depth: n.step_depth,
                 spec: n.spec.clone(),
             }
+    }
+}
+
+impl Clone for Node {
+    fn clone(&self) -> Self {
+        fn head(n: &Node) -> Node {
+            n.head()
         }
         if self.l.is_none() && self.r.is_none() && self.items.is_empty() {
             return head(self);

@@ -48,24 +48,12 @@ fn clone_step_with_source(step: &Node, source: Node) -> Node {
     let mut items = Vec::with_capacity(step.items.len().max(1));
     items.push(source);
     items.extend(step.items.iter().skip(1).cloned());
-    Node {
-        t: step.t,
-        pos: step.pos,
-        s: step.s.clone(),
-        b: step.b,
-        grouped: step.grouped,
-        sql_binding: step.sql_binding,
-        l: step.l.clone(),
-        r: step.r.clone(),
-        items,
-        dec: step.dec.clone(),
-        shape: step.shape.clone(),
-        slot_cache: step.slot_cache.clone(),
-        math_plan: step.math_plan.clone(),
-        keys_unobserved: step.keys_unobserved,
-        borrowed_filter: step.borrowed_filter,
-        spec: step.spec.clone(),
-    }
+    // Node implements Drop, so no struct update: fill the head in.
+    let mut out = step.head();
+    out.l = step.l.clone();
+    out.r = step.r.clone();
+    out.items = items;
+    out
 }
 
 pub fn build_pipeline(source: &Node, steps: &[Node]) -> Node {
@@ -790,7 +778,14 @@ fn opt_logical_steps(source: &Node, mut current: Vec<Node>, logical: bool) -> Ve
                     let right = get_opt_filter_info(s2);
                     if left.valid && right.valid {
                         if let (Some(l_pred), Some(r_pred)) = (left.predicate, right.predicate) {
-                            if opt_filter_predicate_cannot_raise(r_pred, &right.binder, logical) {
+                            // Fused, the second predicate sits one level deeper
+                            // than it did: under the AND that joins them. A fused
+                            // pair must spend what the two stages spent (SPEC
+                            // 6.4), so one that reaches the cap that way stays a
+                            // second FILTER.
+                            let fits = s2.step_depth == 0
+                                || s2.step_depth as usize + bounded_depth(r_pred, MAX_DEPTH) < MAX_DEPTH;
+                            if fits && opt_filter_predicate_cannot_raise(r_pred, &right.binder, logical) {
                                 let right_pred = if !left.binder.eq_ignore_ascii_case(&right.binder) {
                                     opt_rename_var(r_pred, &right.binder, &left.binder)
                                 } else {
@@ -894,6 +889,24 @@ fn opt_inmemory_steps(source: &Node, steps: Vec<Node>) -> Vec<Node> {
     rewritten
 }
 
+/// How deep an expression goes, its root counted as 1, never more than `cap` +
+/// 1: the walk stops there, so it is bounded whatever the expression's size.
+fn bounded_depth(root: &Node, cap: usize) -> usize {
+    let mut deepest = 0;
+    let mut level = vec![root];
+    while !level.is_empty() && deepest <= cap {
+        deepest += 1;
+        let mut next = Vec::new();
+        for node in level {
+            next.extend(node.items.iter());
+            next.extend(node.l.as_deref());
+            next.extend(node.r.as_deref());
+        }
+        level = next;
+    }
+    deepest
+}
+
 pub fn opt_tree(node: &Node, physical: bool, depth: usize, fold: bool, in_math: bool) -> Node {
     if depth > MAX_DEPTH {
         return node.clone();
@@ -903,13 +916,16 @@ pub fn opt_tree(node: &Node, physical: bool, depth: usize, fold: bool, in_math: 
         let (source, steps) = unwind_pipeline(node);
         let optimized_source = opt_tree(source, physical, depth + 1, fold, false);
         let mut optimized_steps = Vec::with_capacity(steps.len());
-        for step in steps {
+        let count = steps.len();
+        for (index, step) in steps.into_iter().enumerate() {
             // Rewrites inspect stage arguments, never the old input. Reconnect
             // the optimized source only after all stage rewrites complete.
             let mut cp = clone_step_with_source(
                 step,
                 Node::new(NodeType::Null, step.items[0].pos),
             );
+            // Where it stands as written: the outermost step is this node.
+            cp.step_depth = (depth + (count - 1 - index)).min(u16::MAX as usize) as u16;
             for i in 1..cp.items.len() {
                 let fold_arg = fold && opt_step_arg_folds(&step, i);
                 cp.items[i] = opt_tree(&cp.items[i], physical, depth + 1, fold_arg, false);

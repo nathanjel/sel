@@ -1108,6 +1108,14 @@ pub fn plan_hybrid(
     if unwound_steps.is_empty() || !is_relation(&unwound_source) {
         return pure_memory_plan(program, dialect, checked);
     }
+    // A pipeline this long, unwound through its helpers, is a tree deeper than
+    // the evaluator's cap whatever prefix is asked for, and every probe of a
+    // prefix costs a walk in proportion: more than MAX_DEPTH steps, counted as
+    // written (before the optimiser drops any), is a pure-memory plan in every
+    // host (plan.pure-memory.pipeline-longer-than-the-depth-cap).
+    if unwound_steps.len() > crate::limits::MAX_DEPTH {
+        return pure_memory_plan(program, dialect, checked);
+    }
 
     let optimized = optimize_ast_logical(&build_pipeline(&unwound_source, &unwound_steps));
     let (source_ref, steps_ref) = unwind_pipeline(&optimized);
