@@ -224,12 +224,18 @@ final class Value
         return $this->scalar;
     }
 
+    /**
+     * The magic accessors exist for one name: `scalar`, private so a number's
+     * text can be written lazily. Any other name is a mistake (a typo such as
+     * `->scaler`, or a private property) and raises rather than reading null
+     * or writing nothing.
+     */
     public function __get(string $name): mixed
     {
         if ($name === 'scalar') {
             return $this->getScalar();
         }
-        return null;
+        throw new \Error('Undefined property: ' . self::class . '::$' . $name);
     }
 
     public function __set(string $name, mixed $value): void
@@ -237,7 +243,9 @@ final class Value
         if ($name === 'scalar') {
             $this->scalar = $value;
             $this->decVal = null;
+            return;
         }
+        throw new \Error('Cannot set undefined or private property ' . self::class . '::$' . $name);
     }
 
     public function __isset(string $name): bool
