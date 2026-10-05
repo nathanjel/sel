@@ -535,7 +535,10 @@ impl_unit() {
     cpp)    { [ -x cpp/build/unit ] && cpp/build/unit; } &&
             { [ -x cpp/build/sqlunit ] && cpp/build/sqlunit; } ;;
     lisp)   lisp/bin/test ;;
-    go)     (cd go && go test -race ./...) ;;
+    # -timeout: the race detector multiplies the suite's time several-fold, and
+    # beside the rest of the gate on a busy box the default 10 minutes expired
+    # in a run whose every test passed when the box was quiet.
+    go)     (cd go && go test -race -timeout 30m ./...) ;;
     rust)   (cd rust && cargo test --workspace && bash tests/build_integration.sh) ;;
     *)      echo "unknown implementation: $impl" >&2; return 2 ;;
   esac
