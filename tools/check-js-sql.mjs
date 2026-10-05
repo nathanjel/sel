@@ -327,6 +327,22 @@ const R = { ORDERS: Binding.relation('orders', 'o', { ID: Binding.column('id', '
   check('ast replace: ctx unchanged after replacement', ctx.get('A').get('k').asText() === '1');
 }
 
+// A Bindings instance is accepted wherever a plain map of bindings is: by
+// translate and translateStatement as by planHybrid (and by Python's twins).
+{
+  const catalog = new sql.Bindings({ X: Binding.column('x', null, 'NUM'), ...R });
+  const viaMap = { X: Binding.column('x', null, 'NUM'), ...R };
+  const t = outcome(() => Sql.translate(compile('X > 1'), 'sqlite', catalog).asCondition());
+  check('translate takes a Bindings instance', t.value === Sql.translate(compile('X > 1'), 'sqlite', viaMap).asCondition(),
+    t.error ? `${t.error.code} ${t.error.message}` : t.value);
+  const pipe = compile('ORDERS .> FILTER(_["ID"] > 1)');
+  const s = outcome(() => Sql.translateStatement(pipe, 'sqlite', catalog).asStatement());
+  check('translateStatement takes a Bindings instance', s.value === Sql.translateStatement(pipe, 'sqlite', viaMap).asStatement(),
+    s.error ? `${s.error.code} ${s.error.message}` : s.value);
+  const copy = outcome(() => new sql.Bindings(catalog).names().join());
+  check('a Bindings built from a Bindings keeps its names', copy.value === catalog.names().join(), copy.error?.message);
+}
+
 // A source the program reassigns and a continuation step then reads as a value
 // (sql/cases/48-scope-and-slots.sqlt pins only the form no step reads): the SQL
 // takes the DROP as its OFFSET, and COUNT(ORDERS) in the continuation is the
