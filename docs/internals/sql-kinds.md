@@ -207,16 +207,16 @@ boolean".** In MySQL-family a boolean *is* `TINYINT`, so the column may hold
 `2`; testing `IN (0, 1)` would also admit a NUM column holding 0 or 1, which SEL
 refuses. PostgreSQL has a real boolean type and enforces it itself, by erroring.
 
-**The function-argument row needs data that does not exist.** Closing it means
-knowing that `ABS` reads argument 0 as a number and `LEFT` reads argument 1 that
-way, and nothing records it: the dialect entries carry only `tpl`, `ret` and
-`caveat`. That table is a property of **SEL**, not of a dialect -- `ABS` takes a
-number on every server -- so it belongs in one shared, generated table rather
-than in 42 entries per dialect. It would also subsume `BIN_ARGUMENT_OK` and
-`BOOL_ARGUMENT_OK`, which are the same kind of information hand-written in five
-copies today.
+**The function-argument row's data lives in the builtin manifest.** Closing it
+means knowing that `ABS` reads argument 0 as a number and `LEFT` reads argument
+1 that way, and the dialect entries carry only `tpl`, `ret` and `caveat`. That
+table is a property of **SEL**, not of a dialect -- `ABS` takes a number on every
+server -- so it is recorded once, in `spec/builtins.json`'s `sql` keys
+(`numericArgs`, `binArg`, `boolArg`), and rendered into every host by
+`tools/gen-builtins.mjs`; `binArg` and `boolArg` replace the `BIN_ARGUMENT_OK`
+and `BOOL_ARGUMENT_OK` tables each host used to hand-write.
 
-It would *not* close `LEFT(T, -1)`: `-1` is a number and passes a kind test.
+Kind data does *not* close `LEFT(T, -1)`: `-1` is a number and passes a kind test.
 That is a value constraint rather than a kind, and it stays recorded as the
 case `const.residual.argument-constraint-beside-a-column`. It is not one of §6's
 exclusions: those are shapes the warrant deliberately does not cover, and this

@@ -20,6 +20,8 @@ tools/check-corpus-bytes.sh every batch runner on byte fixtures (CR, CRLF, final
 tools/check-runners.sh      every runner refuses a bad path and an empty run (the runner contract)
 tools/check-registry.sh     every roster configuration has an arm in every role of impls.sh
 tools/check-budgets.sh      output/work budgets refused cheaply, per host, under ceilings
+                            (SEL_BUDGET_PARSE_TIME, default 300 s: the parse-sized requests' ceiling)
+tools/check-messages.py     every host's error messages follow the message conventions
 tools/check-sql-budgets.sh  translator work/depth budgets, per host, under ceilings
 tools/check-regex-resources.py   regex resource behaviour, per host, under ceilings
 tools/check-regex-ambiguity-diff.sh  every host's regex validator vs the reference

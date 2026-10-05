@@ -283,6 +283,10 @@ step "host registry complete" ./tools/check-registry.sh
 step "output and work budgets" ./tools/check-budgets.sh
 [ "${SEL_SKIP_SQL_BUDGETS:-0}" = 1 ] || step "SQL translator budgets" ./tools/check-sql-budgets.sh
 step "regex resources" sel_slot python3 tools/check-regex-resources.py
+# Every host's error messages follow one set of conventions (the codes and
+# positions are the contract; the wording is held to the same rules). Guarded on
+# the file so a tree that does not have the check yet still runs.
+[ ! -f tools/check-messages.py ] || step "message conventions" python3 tools/check-messages.py
 step "regex validator vs reference, every host" ./tools/check-regex-ambiguity-diff.sh
 step "CLI source bytes and contract" ./tools/check-cli-source.sh
 # Every runner refuses a path it cannot read and a run that executed nothing.
