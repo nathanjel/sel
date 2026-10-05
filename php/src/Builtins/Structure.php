@@ -1217,9 +1217,8 @@ final class Structure
         $prefilter = $ctx->joinPrefilter;
         $ctx->joinPrefilter = null;
         $count = $a->count();
-        if ($count !== 3 && $count !== 5) {
-            fail('E_ARITY', "{$a->name} takes 3 or 5 arguments, got {$count}", $a->pos);
-        }
+        // The manifest refuses any other count when the program is compiled.
+        if ($count !== 3 && $count !== 5) throw new \LogicException("unreachable: {$a->name} with {$count} arguments");
         $leftNode = $a->node(0);
         $rightNode = $a->node(1);
         [$stages, $deep, $above, $obligations] = $prefilter ?? [[], false, [], []];
@@ -1733,7 +1732,8 @@ final class Structure
             $body = $a->node(2);
             $dir = Utf8::upper($a->text(3));
         } else {
-            fail('E_ARITY', "{$a->name} has an invalid sort form", $a->pos);
+            // The manifest refuses any other count when the program is compiled.
+            throw new \LogicException("unreachable: {$a->name} with {$a->count()} arguments");
         }
         if ($dir !== 'ASC' && $dir !== 'DESC') {
             $directionIndex = $sortCount === 4 ? 3 : 2;
@@ -1859,7 +1859,8 @@ final class Structure
             $keyNode = $a->node(2);
             $aggregateNode = $a->node(3);
         } else {
-            fail('E_ARITY', 'BUCKET takes 2, 3 or 4 arguments', $a->pos);
+            // The manifest refuses any other count when the program is compiled.
+            throw new \LogicException("unreachable: BUCKET with {$count} arguments");
         }
 
         $groups = [];
