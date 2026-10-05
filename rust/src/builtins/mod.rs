@@ -219,6 +219,13 @@ fn registry() -> &'static RwLock<HashMap<String, Arc<Spec>>> {
         #[cfg(test)]
         define(&mut m, "UNLISTED_ANY", 2, Some(3), true, true, structure::fn_any);
 
+        // spec/builtins.md: once registration is complete a host refuses to
+        // start with a manifest name it never defined (register_native() above
+        // already refuses one the manifest lacks).
+        let missing: Vec<&str> =
+            crate::manifest::builtins::BUILTINS.iter().map(|(name, _)| *name).filter(|name| !m.contains_key(*name)).collect();
+        assert!(missing.is_empty(), "spec/builtins.json lists functions this host never defined: {}", missing.join(", "));
+
         RwLock::new(m)
     })
 }
