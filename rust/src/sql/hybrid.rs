@@ -1243,6 +1243,61 @@ pub fn plan_hybrid(
     pure_memory_plan(program, dialect, checked)
 }
 
+/// The context a continuation runs in: never the caller's own (C4 -- hybrid
+/// execution does not write the caller's context). A fresh root holds the
+/// caller's variables; the ones the continuation writes into through a path
+/// (`X["k"] = ...`, anywhere in it) are deep copies, the rest are the caller's
+/// own values, shared, since nothing else in a builtin-only program writes. A
+/// program that calls an application function (one the manifest does not
+/// list) could write anything it is handed, so it gets a deep copy of the
+/// whole context, as does a root that is not a plain record.
+fn continuation_root(caller: &Value, program: &Node) -> Result<Value, SelError> {
+    let mut assigned = HashSet::new();
+    let mut calls_application = false;
+    writes_of(program, &mut assigned, &mut calls_application);
+    if calls_application || caller.is_list() || caller.kind() != crate::value::Kind::None {
+        return caller.deep_copy(1, Pos::default());
+    }
+    let entries = caller
+        .entries()
+        .into_iter()
+        .map(|e| {
+            let val = if assigned.contains(&e.key) { e.val.deep_copy(2, Pos::default())? } else { e.val };
+            Ok(crate::value::Entry { key: e.key, val })
+        })
+        .collect::<Result<Vec<_>, SelError>>()?;
+    Ok(Value::record_from_entries(entries))
+}
+
+/// The root names `node` assigns to, and whether it calls an application
+/// function. Iterative: a continuation may be as deep as the cap allows.
+fn writes_of(node: &Node, assigned: &mut HashSet<String>, calls_application: &mut bool) {
+    let mut pending = vec![node];
+    while let Some(n) = pending.pop() {
+        match n.t {
+            // `X = ...` (and `X += ...`) only rebinds X in the root, which is
+            // the continuation's own; a path target writes INTO X's value, which
+            // is the caller's unless copied. (A stored value is always a copy,
+            // so `X = A; X["k"] = 1` never reaches A.)
+            NodeType::Assign if n.l.as_deref().is_some_and(|t| t.t == NodeType::Index) => {
+                let mut target = n.l.as_deref();
+                while let Some(t) = target {
+                    if t.t == NodeType::Var {
+                        assigned.insert(t.s.clone());
+                        break;
+                    }
+                    target = t.l.as_deref();
+                }
+            }
+            NodeType::Call if crate::manifest::lookup_builtin(&n.s).is_none() => *calls_application = true,
+            _ => {}
+        }
+        pending.extend(n.l.as_deref());
+        pending.extend(n.r.as_deref());
+        pending.extend(n.items.iter());
+    }
+}
+
 pub fn execute_hybrid<F>(
     plan: &HybridPlan,
     mut db_runner: F,
@@ -1257,7 +1312,7 @@ where
             .clone()
             .ok_or_else(|| SelError::new("E_BAD_ARG", "pure-memory hybrid plan has no continuation program", Pos::default()))?;
         let ctx = match context {
-            Some(c) => c.deep_copy(1, Pos::default())?,
+            Some(c) => continuation_root(c, prog.ast())?,
             None => Value::null(),
         };
         return prog.run(Some(ctx));
@@ -1300,7 +1355,7 @@ where
     let cont_ctx = match context {
         // is_none() is true of every list and record (their kind is None): the test
         // for "no context" is is_null(), or the caller's whole context is dropped.
-        Some(c) if !c.is_null() => c.deep_copy(1, Pos::default())?,
+        Some(c) if !c.is_null() => continuation_root(c, prog.ast())?,
         _ => Value::record_from_entries(Vec::new()),
     };
     cont_ctx.set(&plan.continuation_source_var, rows, Pos::default())?;

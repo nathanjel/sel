@@ -200,3 +200,50 @@ fn a_continuation_rereading_a_reassigned_source_sees_the_reassignment() {
     assert!(statements[0].contains("LIMIT 3 OFFSET 2"), "{}", statements[0]);
     assert_eq!(context.get("ORDERS").unwrap().size(), 6);
 }
+
+fn same_cell(a: &Value, b: &Value) -> bool {
+    std::ptr::eq(&*a.inner(), &*b.inner())
+}
+
+// The continuation's context is a fresh root: a variable it never writes into
+// is the caller's own value, shared rather than deep-copied (copying an
+// untouched 100k-row variable cost ~50 ms a run); one it writes into through a
+// path -- at any depth, inside an aggregate body too -- is a copy; and an
+// application call still copies everything.
+#[test]
+fn only_written_variables_are_copied_for_a_continuation() {
+    let context = || record(vec![
+        ("A", record(vec![("k", Value::text_owned("1".into())), ("deep", record(vec![("k", Value::text_owned("1".into()))]))])),
+        ("BIG", orders(1..=1000)),
+    ]);
+    let run = |source: &str, context: &Value| {
+        let plan = plan_hybrid(&compile(source).unwrap(), "sqlite", None, Options::default());
+        assert!(plan.pure_memory, "{source}");
+        execute_hybrid(&plan, |_, _| panic!("no SQL"), Some(context)).unwrap()
+    };
+    let caller = context();
+    let big = run("BIG", &caller);
+    assert!(same_cell(&big, &caller.get("BIG").unwrap()), "an untouched variable is shared");
+    for source in [
+        r#"A["k"] = "9"; BIG"#,
+        r#"A["deep"]["k"] = "9"; BIG"#,
+        r#"COUNT(MAP(LIST(1, 2), (A["deep"]["k"] = _; 1))); BIG"#,
+        r#"A["k"] += 1; BIG"#,
+    ] {
+        let caller = context();
+        let big = run(source, &caller);
+        assert!(same_cell(&big, &caller.get("BIG").unwrap()), "{source}: BIG is shared");
+        assert_eq!(caller.get("A").unwrap().get("k").unwrap().scalar(), "1", "{source}");
+        assert_eq!(caller.get("A").unwrap().get("deep").unwrap().get("k").unwrap().scalar(), "1", "{source}");
+    }
+    // Rebinding a name is the continuation's own business: nothing is copied.
+    let caller = context();
+    let out = run(r#"A = 1; BIG"#, &caller);
+    assert!(same_cell(&out, &caller.get("BIG").unwrap()));
+    assert_eq!(caller.get("A").unwrap().get("k").unwrap().scalar(), "1");
+    // An application function might write anything it is handed.
+    sel_lang::register_function("RS_LOOK", 1, 1, |args| args.val(0)).unwrap();
+    let caller = context();
+    let out = run("RS_LOOK(BIG)", &caller);
+    assert!(!same_cell(&out, &caller.get("BIG").unwrap()), "an application call gets a copy");
+}
