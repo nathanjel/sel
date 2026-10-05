@@ -16,16 +16,20 @@
 #   SEL_BUDGET_TIME=30 SEL_BUDGET_ULIMIT_KB=4000000 tools/check-budgets.sh
 #
 # The ceilings: SEL_BUDGET_TIME seconds of wall time per request (default 20),
-# except for the requests marked `parse` below, whose SOURCE is the large thing —
-# a call of 1 000 001 arguments, 3 MB and 17 MB of program text. A host has to
-# lex and parse all of it before the refusal can happen, and that is linear but
-# not quick: CPython spends about 22 µs of CPU per LIST argument and 48 µs per
-# RECORD pair (lexing, the parse tree, the cyclic collector walking the growing
-# tree — a third of it; measured at 100 000 to 400 000 arguments, with no
-# superlinear term), so 22 s and 48 s of CPU on an idle box and two to three
-# times that in wall time on a loaded one. Those get SEL_BUDGET_PARSE_TIME
-# (default 300): the refusal itself is still one comparison, and the ceiling
-# there only has to tell a slow parse from a hang or an allocation-sized answer;
+# except for the requests marked @parse below, whose SOURCE is the large thing —
+# a call of 1 000 001 arguments, 3 MB and 14 MB of program text. Every host has
+# to lex and parse all of it before LIST or RECORD can refuse, and that is linear
+# in the arguments but not quick. Measured standalone (CPU seconds for the LIST
+# and the RECORD request, on a box at load 30-50, so wall time was up to 3x
+# that): C++ 2.5 / 6, Lisp 5 / 11, JS 4 / 10, PHP 17 / 39, Python 38 / 80 —
+# CPython at about 35 us of CPU per LIST argument and 75 per RECORD pair, a
+# third of it the cyclic collector walking the growing tree, with no
+# superlinear term (checked from 100 000 to 400 000 arguments). Under the
+# gate's own load the 20 s ceiling failed JS, PHP, Python and Rust on them, so
+# they get SEL_BUDGET_PARSE_TIME (default 300 s, about twice the worst wall time
+# seen): the refusal itself is still one comparison, and the ceiling there has
+# only to tell a slow parse from a hang or an allocation-sized answer, which the
+# address-space ceiling below catches anyway;
 # and SEL_BUDGET_ULIMIT_KB of address space (default 6 000 000) for the hosts
 # whose runtime survives `ulimit -v` — not JS (V8 reserves address space up
 # front) or Lisp (SBCL maps its whole dynamic space); those two bound themselves
