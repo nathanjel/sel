@@ -96,20 +96,24 @@
   "The elements of the collection V as a fresh simple-vector: a SNAPSHOT of the
 references (spec 7.3), so a body or predicate that appends to, adds to or replaces
 V afterwards neither extends the walk nor moves what it stands on."
-  (if (and (value-is-list v) (value-storage v))
-      (copy-seq (value-storage v))
-      (coerce (mapcar #'cdr (aggregate-elements v)) 'simple-vector)))
+  (let ((vec (value-element-vector v)))
+    (if vec
+        (copy-seq vec)
+        (coerce (mapcar #'cdr (aggregate-elements v)) 'simple-vector))))
 
 (defmacro for-each-collection-item ((item-var coll) &body body)
   `(loop for ,item-var across (collection-items ,coll)
          do (progn ,@body)))
 
 (defun first-collection-item (v)
+  "V's first element: the first child of a collection, a scalar itself, NIL
+when there is none. Read straight from a list's or shaped record's storage;
+only an alist record walks its entries."
   (cond
     ((and (eq (value-kind v) :none) (zerop (value-size v)))
      nil)
-    ((and (value-is-list v) (value-storage v) (plusp (length (value-storage v))))
-     (svref (value-storage v) 0))
+    ((let ((vec (value-element-vector v)))
+       (and vec (plusp (length vec)) (svref vec 0))))
     ((plusp (value-size v))
      (cdr (first (aggregate-elements v))))
     ((not (eq (value-kind v) :none))

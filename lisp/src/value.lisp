@@ -311,6 +311,14 @@ kept in step with the limit by hand.")
 (defun value-size (v)
   (value-count v))
 
+(declaim (inline value-element-vector))
+(defun value-element-vector (v)
+  "The simple-vector holding V's children in order when V keeps them in one --
+a shaped record (in its shape's key order) or a stored list -- else NIL, and
+the children are V's alist. Read only: the vector is V's own storage."
+  (and (or (value-shape v) (value-is-list v))
+       (value-storage v)))
+
 (defun value-has (v key)
   (cond
     ((value-shape v)
