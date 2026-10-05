@@ -4134,7 +4134,9 @@ class Parser {
   // left operand in `args`. Every refusal reports the name token.
   NodePtr finish_call(const Token& name_tok, const Spec* spec, std::vector<NodePtr> args) {
     const int count = static_cast<int>(args.size());
-    if (count < spec->min || count > spec->max) {
+    // VARIADIC is "no upper bound", not a bound of 2^20: past it the count is the
+    // size caps' business (spec §6.4, E_RANGE at the call), never E_ARITY.
+    if (count < spec->min || (spec->max < VARIADIC && count > spec->max)) {
       fail("E_ARITY", spec->name + " takes " + arity_text(*spec) + ", got " + std::to_string(count),
            name_tok.pos);
     }
