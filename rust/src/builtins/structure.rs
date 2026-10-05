@@ -653,48 +653,40 @@ fn prepare_sort_keys(items: &mut [SortItem], pos: Pos) -> Result<(), SelError> {
     Ok(())
 }
 
-fn do_sort(args: &mut Args, forced_dir: Option<&str>) -> Result<Value, SelError> {
+/// The argument roles of a SORT/TOP call, from the manifest form it takes
+/// (manifest::sort_roles). The arity was checked at compile time, so every
+/// count has a form.
+fn sort_call_roles(name: &str, nodes: &[Node]) -> crate::manifest::SortRoles {
+    crate::manifest::sort_roles(name, nodes).expect("every accepted SORT/TOP count has a manifest form")
+}
+
+fn do_sort(args: &mut Args, name: &str, forced_dir: Option<&str>) -> Result<Value, SelError> {
     let val = args.val(0)?;
     let count = args.count();
-    let mut direction = forced_dir.unwrap_or("ASC").to_string();
-
-    let mut binder = "_".to_string();
     // The call's nodes, borrowed apart from `args`: the key is read from
     // them, never cloned per call.
     let nodes = args.nodes;
-    let mut body_opt: Option<&Node> = None;
+    // Which argument is the binder, the key and the direction is the
+    // manifest's: for SORT_BY's three arguments a text literal third is a
+    // direction even when the second is a bare name (the guarded form comes
+    // first), then a bare name second is a binder, else the third is a
+    // computed direction.
+    let roles = sort_call_roles(name, nodes);
+    let binder = match roles.binder {
+        Some(i) => args.symbol(i)?,
+        None => "_".to_string(),
+    };
+    let body_opt: Option<&Node> = roles.key.map(|i| &nodes[i]);
+    let direction = match roles.dir {
+        Some(i) => args.text(i)?.to_ascii_uppercase(),
+        None => forced_dir.unwrap_or("ASC").to_string(),
+    };
 
-    if count == 1 {
-        // no binder, no body
-    } else if count == 2 {
-        body_opt = Some(&nodes[1]);
-    } else if count == 3 {
-        if forced_dir.is_some() {
-            binder = args.symbol(1)?;
-            body_opt = Some(&nodes[2]);
-        } else if args.node_at(2).t == NodeType::Text {
-            body_opt = Some(&nodes[1]);
-            direction = args.text(2)?.to_ascii_uppercase();
-        } else if args.is_symbol_at(1) {
-            binder = args.symbol(1)?;
-            body_opt = Some(&nodes[2]);
-            direction = "ASC".to_string();
-        } else {
-            body_opt = Some(&nodes[1]);
-            direction = args.text(2)?.to_ascii_uppercase();
-        }
-    } else {
-        binder = args.symbol(1)?;
-        body_opt = Some(&nodes[2]);
-        direction = args.text(3)?.to_ascii_uppercase();
-    }
-
-    if count > 1 && direction != "ASC" && direction != "DESC" {
-        let pos_idx = if count == 4 { 3 } else { 2 };
+    if direction != "ASC" && direction != "DESC" {
         return Err(SelError::new(
             "E_BAD_ARG",
             "sort direction must be 'ASC' or 'DESC'",
-            args.pos_at(pos_idx),
+            args.pos_at(roles.dir.expect("only a direction argument can be bad")),
         ));
     }
 
@@ -759,15 +751,15 @@ fn do_sort(args: &mut Args, forced_dir: Option<&str>) -> Result<Value, SelError>
 }
 
 pub fn fn_sort(args: &mut Args) -> Result<Value, SelError> {
-    do_sort(args, None)
+    do_sort(args, "SORT", None)
 }
 
 pub fn fn_sort_desc(args: &mut Args) -> Result<Value, SelError> {
-    do_sort(args, Some("DESC"))
+    do_sort(args, "SORT_DESC", Some("DESC"))
 }
 
 pub fn fn_sort_by(args: &mut Args) -> Result<Value, SelError> {
-    do_sort(args, None)
+    do_sort(args, "SORT_BY", None)
 }
 
 #[cfg(test)]
@@ -854,48 +846,32 @@ fn select_top_indices(
     sorted.into_iter().map(|e| e.item_idx).collect()
 }
 
-fn do_top(args: &mut Args, forced_dir: Option<&str>) -> Result<Value, SelError> {
-    let val = args.val(0)?;
-    let limit = args.non_neg_int(args.count() - 1)? as usize;
-
-    let sort_count = args.count() - 1;
-    let mut binder = "_".to_string();
+fn do_top(args: &mut Args, name: &str, forced_dir: Option<&str>) -> Result<Value, SelError> {
     // The call's nodes, borrowed apart from `args`: the key is read from
     // them, never cloned per call.
     let nodes = args.nodes;
-    let mut body_opt: Option<&Node> = None;
-    let mut direction = forced_dir.unwrap_or("ASC").to_string();
+    // The manifest's roles, as for do_sort; the count is the last argument.
+    let roles = sort_call_roles(name, nodes);
+    let val = args.val(0)?;
+    let limit = args.non_neg_int(roles.limit.expect("a TOP form has a count"))? as usize;
 
-    if sort_count == 1 {
-        binder = String::new();
-    } else if sort_count == 2 {
-        body_opt = Some(&nodes[1]);
-    } else if sort_count == 3 {
-        if forced_dir.is_some() {
-            binder = args.symbol(1)?;
-            body_opt = Some(&nodes[2]);
-        } else if args.node_at(2).t == NodeType::Text {
-            body_opt = Some(&nodes[1]);
-            direction = args.text(2)?.to_ascii_uppercase();
-        } else if args.is_symbol_at(1) {
-            binder = args.symbol(1)?;
-            body_opt = Some(&nodes[2]);
-        } else {
-            body_opt = Some(&nodes[1]);
-            direction = args.text(2)?.to_ascii_uppercase();
-        }
-    } else if sort_count == 4 {
-        binder = args.symbol(1)?;
-        body_opt = Some(&nodes[2]);
-        direction = args.text(3)?.to_ascii_uppercase();
-    }
+    // No key: the elements are their own keys, and no frame is pushed.
+    let binder = match (roles.binder, roles.key) {
+        (Some(i), _) => args.symbol(i)?,
+        (None, Some(_)) => "_".to_string(),
+        (None, None) => String::new(),
+    };
+    let body_opt: Option<&Node> = roles.key.map(|i| &nodes[i]);
+    let direction = match roles.dir {
+        Some(i) => args.text(i)?.to_ascii_uppercase(),
+        None => forced_dir.unwrap_or("ASC").to_string(),
+    };
 
     if direction != "ASC" && direction != "DESC" {
-        let dir_idx = if sort_count == 4 { 3 } else { 2 };
         return Err(SelError::new(
             "E_BAD_ARG",
             "sort direction must be 'ASC' or 'DESC'",
-            args.pos_at(dir_idx),
+            args.pos_at(roles.dir.expect("only a direction argument can be bad")),
         ));
     }
 
@@ -988,15 +964,15 @@ fn do_top(args: &mut Args, forced_dir: Option<&str>) -> Result<Value, SelError> 
 
 
 pub fn fn_top(args: &mut Args) -> Result<Value, SelError> {
-    do_top(args, None)
+    do_top(args, "TOP", None)
 }
 
 pub fn fn_top_desc(args: &mut Args) -> Result<Value, SelError> {
-    do_top(args, Some("DESC"))
+    do_top(args, "TOP_DESC", Some("DESC"))
 }
 
 pub fn fn_top_by(args: &mut Args) -> Result<Value, SelError> {
-    do_top(args, None)
+    do_top(args, "TOP_BY", None)
 }
 
 struct BucketGroup {

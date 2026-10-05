@@ -155,23 +155,11 @@ pub fn opt_fold(node: &Node) -> Node {
     node.clone()
 }
 
+// Whether a step's argument may be folded: not where a text literal is what
+// selects the step's form (SORT_BY's and TOP_BY's direction beside a bare
+// name), since folding a constant into one there would change the form.
 fn opt_step_arg_folds(step: &Node, index: usize) -> bool {
-    let sort_count = if step.s == "SORT_BY" {
-        step.items.len()
-    } else if step.s == "TOP_BY" {
-        if step.items.len() > 1 {
-            step.items.len() - 1
-        } else {
-            0
-        }
-    } else {
-        0
-    };
-    !(sort_count == 3
-        && index == 2
-        && step.items.len() > 1
-        && step.items[1].t == NodeType::Var
-        && !step.items[1].grouped)
+    !crate::manifest::text_selects_form(&step.s, &step.items, index)
 }
 
 fn opt_exceeds_depth(node: &Node, depth: usize) -> bool {
@@ -355,46 +343,26 @@ struct OptSortInfo<'a> {
 
 fn get_opt_sort_info(step: &Node) -> OptSortInfo<'_> {
     let args = &step.items;
-    let count = args.len();
     let is_name = |i: usize| args.get(i).is_some_and(|a| a.t == NodeType::Var && !a.grouped);
     let is_text = |i: usize| args.get(i).is_some_and(|a| a.t == NodeType::Text);
     let mut info = OptSortInfo { binder: "_".to_string(), key: None, valid: true };
-    let s = step.s.as_str();
-    // TOP* carry the limit last; what precedes it is the sort's own form.
-    let sort_count = if s.starts_with("TOP") { count.saturating_sub(1) } else { count };
-    if s == "SORT" || s == "SORT_DESC" || s == "TOP" || s == "TOP_DESC" {
-        match sort_count {
-            2 => info.key = args.get(1),
-            3 => {
-                info.valid = is_name(1);
-                info.binder = args[1].s.clone();
-                info.key = args.get(2);
-            }
-            _ => {}
-        }
-    } else if s == "SORT_BY" || s == "TOP_BY" {
-        match sort_count {
-            2 => info.key = args.get(1),
-            // A text literal in the third place is a direction and wins over a
-            // bare name in the second; otherwise a bare name is the binder, and
-            // anything else leaves a computed direction.
-            3 if is_text(2) => info.key = args.get(1),
-            3 if is_name(1) => {
-                info.binder = args[1].s.clone();
-                info.key = args.get(2);
-            }
-            3 => {
-                info.key = args.get(1);
-                info.valid = false;
-            }
-            4 => {
-                info.valid = is_name(1) && is_text(3);
-                info.binder = args[1].s.clone();
-                info.key = args.get(2);
-            }
-            _ => {}
-        }
+    // The manifest's form decides the roles (a text literal in the
+    // direction's place wins over a bare name in the binder's). The rewrite
+    // needs a binder that IS a bare name and a direction known now.
+    if !is_sort_step(&step.s) {
+        return info;
     }
+    let Some(roles) = crate::manifest::sort_roles(&step.s, args) else {
+        return info;
+    };
+    if let Some(b) = roles.binder {
+        info.valid = is_name(b);
+        info.binder = args[b].s.clone();
+    }
+    if let Some(d) = roles.dir {
+        info.valid = info.valid && is_text(d);
+    }
+    info.key = roles.key.and_then(|k| args.get(k));
     info
 }
 
