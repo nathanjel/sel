@@ -54,5 +54,7 @@ The fragments are run outside their host, against `cases.selt`:
 `tools/check-go-fragments.sh` wraps each Go one in an `init()` inside a copy of
 `go/sel` and builds the conformance runner with it, and
 `tools/check-ref-fragments.sh` adds the JS, Python, PHP and Lisp ones to a copy
-of their builtin table. The C++ and Rust fragments compile only inside the
+of their builtin table, and `tools/check-rust-fragments.sh` appends each Rust
+one to the builtins module its `define()` line names in a copy of `rust/` and
+builds the conformance runner with it. The C++ fragments compile only inside the
 library itself and are not run by a lane.

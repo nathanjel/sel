@@ -27,7 +27,7 @@ def show(value):
 context = Value.none()
 for line in sys.stdin:
     line = line.rstrip('\n')
-    if line.strip() == '':
+    if line.strip(' \t\r\n') == '':
         continue
     print('sel>', line)
     try:

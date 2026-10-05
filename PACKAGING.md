@@ -463,8 +463,8 @@ Where each package manager stands:
 
 The vendored copy is the default everywhere, on purpose. It is what keeps "copy
 `sel.hpp`, `sel_ast.hpp`, the generated `sel_limits.hpp`, `sel_math_ops.hpp` and
-`sel_builtin_manifest.hpp`, `sel.cpp`, `sel_optimizer.cpp` (which `sel.cpp`
-includes) and `third_party/srell/`, and compile `sel.cpp`" true
+`sel_builtin_manifest.hpp`, `sel.cpp` and `third_party/srell/`, and compile
+`sel.cpp`" true
 — and, with `sel_sql*.{hpp,cpp}` added, the same for the SQL layer — it is the only
 option for Conan, and it removes any chance of a resolver quietly selecting a
 different engine version — which would not be a build difference, it would be a
@@ -480,4 +480,4 @@ vcpkg install sel-lang[system-srell]
 `cpp/vcpkg.json` pins `srell` to `2026.05` in `overrides` so the feature cannot
 silently drift to another release. Either way, **run `tools/check.sh`**: the
 regex cases in `conformance/09-regex.selt` are what actually decide whether a
-given SRELL still agrees with the other three implementations.
+given SRELL still agrees with the other implementations.

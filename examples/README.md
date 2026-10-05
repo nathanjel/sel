@@ -57,7 +57,8 @@ others build offline; the lane builds them in the image with
 are compiled into a copy of `go/sel` and run against their cases by
 `tools/check-go-fragments.sh`; the JS, Python, PHP and Lisp ones are added to a
 copy of their host's builtin table and run against the same cases by
-`tools/check-ref-fragments.sh`. The six top-level programs
+`tools/check-ref-fragments.sh`, and the Rust ones are compiled into a copy of
+`rust/` by `tools/check-rust-fragments.sh`. The six top-level programs
 (`host-*.{mjs,php,py}`, `integration-*`) are run to a clean exit by
 `tools/check-host-examples.sh`.
 
