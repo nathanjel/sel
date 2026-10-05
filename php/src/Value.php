@@ -29,6 +29,11 @@ final class RecordShape
     private const CACHE_ENTRIES = 256;
     private const CACHE_MAX_KEYS = 256;
     private const CACHE_MAX_BYTES = 16384;
+    /**
+     * Benchmark counters, off unless tools/scale-test turns them on
+     * (enableInstrumentation): one static bool test per intern or alias when
+     * off. Production observability is cacheSizes(), which costs nothing.
+     */
     private static bool $instrumentation = false;
     /** @var array<string,int> */
     private static array $stats = [
@@ -88,23 +93,39 @@ final class RecordShape
         return $shape;
     }
 
+    /**
+     * How full the two bounded caches are: interned shapes (`cache_size`) and
+     * LINK alias plans (`alias_cache_entries`), each at most 256 entries. The
+     * PHP metadata check (tools/metadata/php.php) holds them to that bound.
+     *
+     * @return array{cache_size:int, alias_cache_entries:int}
+     */
+    public static function cacheSizes(): array
+    {
+        return ['cache_size' => count(self::$cache), 'alias_cache_entries' => count(self::$aliasPlans)];
+    }
+
+    /** @internal benchmark hook (tools/scale-test): count interns and alias builds. */
     public static function enableInstrumentation(bool $enabled): void
     {
         self::$instrumentation = $enabled;
     }
 
+    /** @internal benchmark hook (tools/scale-test): zero the counters. */
     public static function resetStats(): void
     {
         foreach (self::$stats as $key => $_) self::$stats[$key] = 0;
     }
 
-    /** @return array<string,int> */
+    /**
+     * @internal benchmark hook (tools/scale-test): the counters, which move
+     * only while instrumentation is on, plus cacheSizes().
+     *
+     * @return array<string,int>
+     */
     public static function stats(): array
     {
-        $stats = self::$stats;
-        $stats['cache_size'] = count(self::$cache);
-        $stats['alias_cache_entries'] = count(self::$aliasPlans);
-        return $stats;
+        return self::$stats + self::cacheSizes();
     }
 
     /** @param list<string> $keys */

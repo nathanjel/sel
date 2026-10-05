@@ -40,7 +40,7 @@ if(($argv[1]??'')==='bench') {
     verify($held->shape!==$again->shape && $held->eql($again));
     verify($held->structuralHash()===$again->structuralHash());
     verify($program->run($ctx)->shape===$prepared);
-    verify(RecordShape::stats()['cache_size']<=256);
+    verify(RecordShape::cacheSizes()['cache_size']<=256);
     foreach([array_map(fn($i)=>'wide_'.$i,range(0,256)),[str_repeat('x',16385)]] as $keys) {
         $values=array_fill(0,count($keys),$leaf);
         verify(Value::record($keys,$values)->shape!==Value::record($keys,$values)->shape);
@@ -49,6 +49,6 @@ if(($argv[1]??'')==='bench') {
     $ctx->set('K',Value::text('first')); verify($dynamic->run($ctx)->get('first')->scalar==='1');
     $ctx->set('K',Value::text('second')); verify($dynamic->run($ctx)->get('second')->scalar==='1');
     verify(Sel::compile('RECORD("id", X, "id", Y)')->run($ctx)->get('id')->scalar==='two');
-    aliases(1000); verify(RecordShape::stats()['alias_cache_entries']<=256);
+    aliases(1000); verify(RecordShape::cacheSizes()['alias_cache_entries']<=256);
     echo "PHP metadata checks passed\n";
 }
