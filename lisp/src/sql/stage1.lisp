@@ -294,7 +294,8 @@ accepts was decided by the host."
      ;; BOUND before DEFS: an aggregate binder SHADOWS a same-named helper.
      ;; `B = 7; ALL((1,2), B, B > 0)` translates to (1 > 0) AND (2 > 0) -- the
      ;; helper is never inlined into the body.
-     (if (member (sel::node-s node) bound :test #'equal)
+     (if (or (sel::node-binding-read node)
+             (member (sel::node-s node) bound :test #'equal))
          node
          (let ((cell (defs-get (sel::node-s node) defs)))
            (if cell (snapshot-def (cdr cell)) node))))

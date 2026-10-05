@@ -245,7 +245,8 @@ only keep an assignment the tree does not need, never drop one it does."
                (when (and n (sel::node-p n))
                  (if (eq (sel::node-kind n) :var)
                      (let ((name (sel::node-s n)))
-                       (unless (gethash name seen)
+                       ;; A read of the binding is not a read of a same-named helper.
+                       (unless (or (sel::node-binding-read n) (gethash name seen))
                          (setf (gethash name seen) t)
                          (push name out)))
                      (walk-node-children n #'walk)))))
@@ -323,6 +324,14 @@ relation. That split is not made; the join stays in memory, over the relation."
                            (rest (sel::node-items st))))
                    (subseq steps k))))))
 
+(defun binding-read-var (name pos)
+  "A :var node reading NAME's binding (see NODE-BINDING-READ): the root of a
+continuation, which reads the rows the SQL prefix returned under that name."
+  (let ((v (sel::make-node :var pos)))
+    (setf (sel::node-s v) name
+          (sel::node-binding-read v) t)
+    v))
+
 (defun plan-hybrid (program dialect &optional bindings options)
   "Analyzes PROGRAM and splits it into a maximal SQL pushdown prefix and an in-memory continuation.
 Returns a HYBRID-PLAN struct. OPTIONS is a plist; :strict reaches the translator."
@@ -349,8 +358,8 @@ Returns a HYBRID-PLAN struct. OPTIONS is a plist; :strict reaches the translator
       (multiple-value-bind (leading result) (statements (sel:program-ast program))
         (let ((literals (literal-helpers leading))
               (defs (definitions leading))
-              ;; The assignments a wrapped tree may carry in front of it. Starts as
-              ;; all of them; see below for the one the unwinding consumes.
+              ;; The assignments a wrapped tree may carry in front of it: those
+              ;; it reads (WITH-HELPERS), never for a binding read.
               (wrap-leading leading))
           (flet ((relation-p (node)
                    (and node (sel::node-p node) (eq (sel::node-kind node) :var)
@@ -364,17 +373,6 @@ Returns a HYBRID-PLAN struct. OPTIONS is a plist; :strict reaches the translator
                  (tables (wrapped) (source-tables (normalise wrapped names root) bs)))
             (multiple-value-bind (unwound-source unwound-steps)
                 (unwind-through-helpers result defs literals)
-              ;; A helper that shadows its own source -- `ORDERS = ORDERS .>
-              ;; DROP(2); ORDERS .> TAKE(3)` -- has been unwound INTO the pipeline:
-              ;; its steps are already in `unwound-steps`, and the source that is
-              ;; left is the binding of that name. Carrying the assignment in front
-              ;; of the pipeline as well makes stage 1 inline it a second time
-              ;; under the source read, and the DROP runs twice (PHP-C34).
-              (when (and (relation-p unwound-source)
-                         (assoc (sel::node-s unwound-source) defs :test #'equal))
-                (setf wrap-leading
-                      (remove-if (lambda (st) (equal (assigned-name st) (sel::node-s unwound-source)))
-                                 leading)))
               ;; No steps, or a source that is not a bound relation: nothing to push.
               (unless (and unwound-steps (relation-p unwound-source))
                 (return-from plan-hybrid (pure-memory-plan program dialect bs)))
@@ -383,6 +381,17 @@ Returns a HYBRID-PLAN struct. OPTIONS is a plist; :strict reaches the translator
                    (sel:optimize-ast-logical (sel::build-pipeline-ast unwound-source unwound-steps)))
                 (unless (and steps (relation-p source-node))
                   (return-from plan-hybrid (pure-memory-plan program dialect bs)))
+                ;; A helper that shadows its own source -- `ORDERS = ORDERS .>
+                ;; DROP(2); ORDERS .> TAKE(3)` -- has been unwound INTO the
+                ;; pipeline: its steps are already in STEPS, and the source left is
+                ;; the binding of that name. Mark that read, so the helper is not
+                ;; inlined under it a second time (the DROP would run twice), while
+                ;; a step that reads ORDERS as a value -- `COUNT(ORDERS)` in the
+                ;; continuation -- still carries the helper and sees what run()
+                ;; sees.
+                (when (assoc (sel::node-s source-node) defs :test #'equal)
+                  (setf source-node (binding-read-var (sel::node-s source-node)
+                                                      (sel::node-pos source-node))))
                 (let ((n-steps (length steps))
                       (input-var "_INPUT"))
                   ;; 1. The whole pipeline, unless its rows would be a bucket's keys or
@@ -435,9 +444,7 @@ Returns a HYBRID-PLAN struct. OPTIONS is a plist; :strict reaches the translator
                                (link-p (needs-left-name-p (subseq steps 0 k) rem-steps))
                                (root-name (sel::node-s source-node))
                                (cont-var (if link-p root-name input-var))
-                               (cont-root (let ((v (sel::make-node :var (sel::node-pos (first rem-steps)))))
-                                            (setf (sel::node-s v) cont-var)
-                                            v))
+                               (cont-root (binding-read-var cont-var (sel::node-pos (first rem-steps))))
                                (cont-ast (wrap (sel::build-pipeline-ast cont-root rem-steps)))
                                (cont-prog (sel::%make-program "" cont-ast)))
                           (return-from plan-hybrid
@@ -561,10 +568,9 @@ LISP-C30, PHP-C36)."
                        (parts (append (list (format nil "WITH ~a AS (" qi)) (fragment-parts sql)
                                       (list (format nil "), ~a AS (SELECT MAX(~a) AS ~a, MIN(~a) AS ~a FROM ~a GROUP BY ~a) SELECT ~a.* FROM ~a JOIN ~a ON ~a.~a = ~a.~a ORDER BY ~a.~a ASC"
                                                     qg qr qmax qr qfirst qi partition-sql qi qi qg qi qr qg qmax qg qfirst))))
-                       (cont-root (sel::make-node :var (sel::node-pos bucket)))
+                       (cont-root (binding-read-var "_INPUT" (sel::node-pos bucket)))
                        (cont nil))
-                  (setf (sel::node-s cont-root) "_INPUT"
-                        cont (funcall wrap (sel::build-pipeline-ast cont-root (subseq steps at))))
+                  (setf cont (funcall wrap (sel::build-pipeline-ast cont-root (subseq steps at))))
                   (make-hybrid-plan :dialect dialect :sql-statement
                     (%fragment parts :statement dialect (fragment-params sql) (fragment-param-kinds sql) (fragment-caveats sql))
                     :sql-prefix-ast prefix :continuation-ast cont :continuation-program (sel::%make-program "" cont)
@@ -694,7 +700,7 @@ unsupported as its definition, since the translator will inline it. SEEN is the
 list of helper names already looked through on this path."
   (labels ((walk (n seen)
              (when (and n (sel::node-p n))
-               (when (eq (sel::node-kind n) :var)
+               (when (and (eq (sel::node-kind n) :var) (not (sel::node-binding-read n)))
                  (let ((cell (and defs (assoc (sel::node-s n) defs :test #'equal))))
                    (when (and cell (not (member (sel::node-s n) seen :test #'equal)))
                      (return-from walk (walk (cdr cell) (cons (sel::node-s n) seen))))))
@@ -887,10 +893,9 @@ may read; WRAP puts a tree behind the assignments it depends on."
                                 (second p))
                             cont-items))
                     (let* ((cont-rec (sel::copy-node rec-node))
-                           (cont-root (sel::make-node :var (sel::node-pos map-step)))
+                           (cont-root (binding-read-var input-var (sel::node-pos map-step)))
                            (cont-map (sel::copy-node map-step)))
                       (setf (sel::node-items cont-rec) (nreverse cont-items))
-                      (setf (sel::node-s cont-root) input-var)
                       (setf (sel::node-items cont-map)
                             (if explicit
                                 (list cont-root (second args) cont-rec)

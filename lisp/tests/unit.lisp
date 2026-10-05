@@ -2245,6 +2245,57 @@ run of the program that built it, not a value set with the caller's string."
     (is (search "OFFSET 2" (sel.sql:as-statement (sel.sql::hybrid-plan-sql-statement plan))))
     (is (not (search "OFFSET 4" (sel.sql:as-statement (sel.sql::hybrid-plan-sql-statement plan)))))))
 
+(defun hybrid-rows (ids)
+  (sel:from-native (mapcar (lambda (i) (list (cons "id" i))) ids)))
+
+(defun run-hybrid-against (src context db)
+  "Plan SRC for sqlite over an ORDERS relation and execute it on CONTEXT, with
+DB (statement -> rows) standing in for the database. Returns the result and
+the statement sent (or NIL)."
+  (let* ((b (list (cons "ORDERS" (sel.sql:binding-relation
+                                  "orders" "o"
+                                  (list (cons "id" (sel.sql:binding-column "id" "o" :num)))))))
+         (plan (sel.sql:plan-hybrid (sel:compile-source src) "sqlite" b))
+         (sent nil))
+    (values (sel.sql:execute-hybrid plan (lambda (sql params) (declare (ignore params))
+                                           (setf sent sql)
+                                           (funcall db sql))
+                                    context)
+            sent)))
+
+(test sql-hybrid-continuation-rereads-a-self-shadowing-helper
+  ;; The helper is unwound into the SQL prefix (OFFSET 2, once), and a
+  ;; continuation step that reads ORDERS as a value sees the helper's value, as
+  ;; run() does: n = 4, not the caller's 6.
+  (sel:register-function "T_HOSTF" 1 1 (lambda (a) (sel:args-val a 0)))
+  (unwind-protect
+       (let ((src "ORDERS = ORDERS .> DROP(2); ORDERS .> TAKE(3) .> MAP(RECORD(\"n\", COUNT(ORDERS), \"x\", T_HOSTF(_[\"id\"])))")
+             (want "-{\"1\"=-{\"n\"=t\"4\", \"x\"=t\"3\"}, \"2\"=-{\"n\"=t\"4\", \"x\"=t\"4\"}, \"3\"=-{\"n\"=t\"4\", \"x\"=t\"5\"}}"))
+         (flet ((ctx () (let ((c (sel:make-none))) (sel:value-set c "ORDERS" (hybrid-rows '(1 2 3 4 5 6))) c)))
+           (multiple-value-bind (result sql)
+               (run-hybrid-against src (ctx)
+                                   (lambda (sql) (if (search "LIMIT 3 OFFSET 2" sql) (hybrid-rows '(3 4 5)) (sel:make-none))))
+             (is (search "LIMIT 3 OFFSET 2" sql) "~a" sql)
+             (is (string= want (sel:value-dump result)))
+             (is (string= want (sel:value-dump (sel:run (sel:compile-source src) (ctx))))))))
+    (sel::unregister-function "T_HOSTF")))
+
+(test sql-hybrid-application-function-cannot-write-the-callers-context
+  ;; An application function that writes into its argument runs on a copy of
+  ;; the caller's context, called directly, under IF, or inside an aggregate,
+  ;; in a pure-memory plan and in a continuation.
+  (sel:register-function "T_POKE" 1 1
+                         (lambda (a) (sel:value-set (sel:args-val a 0) "k" (sel:make-text "9"))
+                           (sel:make-text "p")))
+  (unwind-protect
+       (dolist (src '("T_POKE(A)" "IF(TRUE, T_POKE(A), 0)" "MAP(LIST(1), T_POKE(A))"
+                      "ORDERS .> FILTER(_[\"id\"] > 1) .> MAP(T_POKE(A))"
+                      "ORDERS .> TAKE(1) .> MAP(IF(TRUE, T_POKE(A), 0))"))
+         (let ((ctx (sel:from-native (list (cons "A" (list (cons "k" "1")))))))
+           (run-hybrid-against src ctx (lambda (sql) (declare (ignore sql)) (hybrid-rows '(2 3))))
+           (is (string= "1" (sel:as-text (sel:value-get (sel:value-get ctx "A") "k"))) "~a" src)))
+    (sel::unregister-function "T_POKE")))
+
 (test sql-hybrid-pure-memory-runs-on-a-copy
   (let* ((plan (sel.sql:plan-hybrid (sel:compile-source "A = 1; A") "mariadb"))
          (ctx (sel:from-native (list (cons "K" "v")))))

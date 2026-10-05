@@ -37,7 +37,13 @@
   ;; A :bin node's operator as a keyword, filled on first evaluation (EVAL's
   ;; BINARY-OP-CODE) so the evaluator dispatches with CASE instead of a chain of
   ;; STRING= on every evaluation (LISP-P3). Never copied: a copy re-derives it.
-  (opc nil))
+  (opc nil)
+  ;; On a :var node the hybrid planner builds: this read is of the variable's
+  ;; BINDING (the relation, or the rows a SQL prefix returned), even where a
+  ;; leading helper assignment has the same name -- `ORDERS = ORDERS .> DROP(2)`
+  ;; unwound into the pipeline. Stage 1 never inlines a helper into it, and it
+  ;; does not make the planner carry that helper. The evaluator ignores it.
+  (binding-read nil))
 
 (declaim (inline shipped-call-p))
 (defun shipped-call-p (node)
