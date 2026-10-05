@@ -7,9 +7,17 @@
 
 (in-package #:sel)
 
-(defparameter +pipeline-ops+
-  '("FILTER" "BUCKET" "SELECT_COLS" "MAP" "DISTINCT" "DEDUPE" "TAKE" "DROP"
-    "SORT" "SORT_DESC" "SORT_BY" "TOP" "TOP_DESC" "TOP_BY" "LINK" "LINK_LEFT"))
+(defparameter +pipeline-ops+ (mapcar #'first *builtin-pipeline-data*)
+  "The pipeline steps, from spec/builtins.json's `pipeline` (builtin-manifest.lisp).")
+
+(defparameter +row-keeping-steps+
+  (loop for (name keeps-rows) in *builtin-pipeline-data* when keeps-rows collect name)
+  "The steps whose rows are input rows, unchanged (fewer, or reordered): the
+manifest's `keepsRows`.")
+
+(defparameter +sort-steps+
+  (loop for (name nil sorts) in *builtin-pipeline-data* when sorts collect name)
+  "The steps that sort: the manifest's `sorts`.")
 
 (defun copy-node-shallow (n)
   (let ((copy (make-node (node-kind n) (node-pos n))))
@@ -85,10 +93,10 @@ text is not a number)."
       (:bin
        (let ((l (node-l node))
              (r (node-r node))
-             (op (node-s node)))
+             (code (binary-op-code (node-s node))))
          (cond
            ;; Short-circuit and literal boolean logic
-           ((string= op "AND")
+           ((eq code :and)
             (cond
               ;; FALSE AND x -> FALSE (left operand is literally FALSE, short-circuits without touching x)
               ((and l (eq (node-kind l) :bool) (null (node-b l))) (literal-bool nil (node-pos node)))
@@ -97,7 +105,7 @@ text is not a number)."
                (literal-bool (and (node-b l) (node-b r)) (node-pos node)))
               (t node)))
 
-           ((string= op "OR")
+           ((eq code :or)
             (cond
               ;; TRUE OR x -> TRUE (left operand is literally TRUE, short-circuits without touching x)
               ((and l (eq (node-kind l) :bool) (node-b l)) (literal-bool t (node-pos node)))
@@ -108,13 +116,13 @@ text is not a number)."
 
            ;; Numeric arithmetic
            ((and l r (eq (node-kind l) :num) (eq (node-kind r) :num)
-                 (member op '("+" "-" "*" "/" "%") :test #'string=))
+                 (member code '(:add :sub :mul :div :mod)))
             (let ((pos (node-pos node)))
               (handler-case
                   (let* ((dl (node-dec l pos))
                          (dr (node-dec r pos))
                          (dres (when (and dl dr)
-                                 (dec-arith (binary-op-code op) dl dr pos))))
+                                 (dec-arith code dl dr pos))))
                     (if dres
                         (let ((res (make-node :num pos)))
                           (setf (node-s res) (dec-format dres)
@@ -125,38 +133,24 @@ text is not a number)."
 
            ;; Numeric comparisons
            ((and l r (eq (node-kind l) :num) (eq (node-kind r) :num)
-                 (member op '("==" "!=" "<" "<=" ">" ">=") :test #'string=))
+                 (member code '(:eq :ne :lt :le :gt :ge)))
             (let ((pos (node-pos node)))
               (handler-case
                   (let* ((dl (node-dec l pos))
                          (dr (node-dec r pos)))
                     (if (and dl dr)
-                        (let* ((cmp (dec-cmp dl dr))
-                               (b (cond
-                                    ((string= op "==") (zerop cmp))
-                                    ((string= op "!=") (not (zerop cmp)))
-                                    ((string= op "<")  (< cmp 0))
-                                    ((string= op "<=") (<= cmp 0))
-                                    ((string= op ">")  (> cmp 0))
-                                    ((string= op ">=") (>= cmp 0)))))
-                          (literal-bool b pos))
+                        (literal-bool (compare-code-result code (dec-cmp dl dr)) pos)
                         node))
                 (error () node))))
 
            ;; String comparisons
            ((and l r (eq (node-kind l) :text) (eq (node-kind r) :text)
-                 (member op '("$==" "$!=" "$<" "$<=" "$>" "$>=") :test #'string=))
+                 (member code '(:teq :tne :tlt :tle :tgt :tge)))
+            ;; Code point order, which is byte order for the UTF-8 SEL compares.
             (let* ((sl (node-s l))
                    (sr (node-s r))
-                   (b (cond
-                        ((string= op "$==") (string= sl sr))
-                        ((string= op "$!=") (string/= sl sr))
-                        ;; STRING< and kin answer a mismatch index; a boolean here.
-                        ((string= op "$<")  (and (string< sl sr) t))
-                        ((string= op "$<=") (and (string<= sl sr) t))
-                        ((string= op "$>")  (and (string> sl sr) t))
-                        ((string= op "$>=") (and (string>= sl sr) t)))))
-              (literal-bool b (node-pos node))))
+                   (cmp (cond ((string< sl sr) -1) ((string= sl sr) 0) (t 1))))
+              (literal-bool (compare-code-result code cmp) (node-pos node))))
 
            (t node))))
 
@@ -427,7 +421,11 @@ fold, as in the other hosts (a negative count is the evaluator's error)."
 ;; comparison, AND/OR/NOT or + - * over such reads; `/` and `%`, calls and
 ;; anything else may. The in-memory path has no schema.
 (defparameter +safe-logical-ops+
-  '("==" "!=" "<" "<=" ">" ">=" "$==" "$!=" "$<" "$<=" "$>" "$>=" "AND" "OR" "+" "-" "*"))
+  (append (ops-where (lambda (i) (member (op-info-family i) '(:compare :text-compare))))
+          (ops-where (lambda (i) (and (eq (op-info-family i) :logic) (op-info-short-circuit i))))
+          ;; Arithmetic but `/` and `%`, which raise on a zero divisor.
+          (remove-if (lambda (op) (member op '("/" "%") :test #'string=))
+                     (ops-where (lambda (i) (eq (op-info-family i) :arith))))))
 
 (defvar *shape-fields* :relation
   "What the rows a rewrite looks at are: :RELATION, the bound relation's own
@@ -459,7 +457,7 @@ MAP RECORD(...) gave them -- a read of any other name would raise E_NO_KEY.")
 ;; expressions, but as predicates each is E_NOT_BOOL -- and a FILTER fused behind
 ;; another would raise it before the first FILTER had seen its later rows.
 (defparameter +comparison-ops+
-  '("==" "!=" "<" "<=" ">" ">=" "$==" "$!=" "$<" "$<=" "$>" "$>="))
+  (ops-where (lambda (i) (member (op-info-family i) '(:compare :text-compare)))))
 
 (defun predicate-cannot-raise-p (node binder logical)
   (and node (node-p node)
@@ -583,7 +581,7 @@ everywhere else)."
       ;; sort compares the MAP's outputs, and a key that reads the whole row
       ;; or _K reads what the MAP changes.
       ((and s2 (string= n1 "MAP")
-            (member n2 '("TOP" "TOP_DESC" "TOP_BY" "SORT" "SORT_DESC" "SORT_BY") :test #'string=)
+            (member n2 +sort-steps+ :test #'string=)
             (map-has-computed-fields-p s1)
             (let ((s-fields (sort-fields s2)))
               (and s-fields (fields-all-in-p s-fields (map-passthrough-fields s1))))
@@ -657,9 +655,7 @@ with literal keys, else :UNKNOWN."
           (t :unknown))))
 
 (defun row-preserving-step-p (step)
-  (member (node-s step) '("FILTER" "SORT" "SORT_DESC" "SORT_BY" "TOP" "TOP_DESC" "TOP_BY"
-                          "TAKE" "DROP" "DISTINCT" "DEDUPE")
-          :test #'string=))
+  (member (node-s step) +row-keeping-steps+ :test #'string=))
 
 (defun optimize-logical-pipeline-steps (source curr-steps &optional (logical t) step-depth)
   "Tier 1: Engine-agnostic logical relational rewrites on flat pipeline steps,

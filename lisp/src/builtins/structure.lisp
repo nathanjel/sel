@@ -239,11 +239,12 @@ when the operator's left operand reads the right side."
   (when (and pred-node
              (node-p pred-node)
              (eq (node-kind pred-node) :bin)
-             (member (node-s pred-node) '("==" "$==") :test #'string=)
+             ;; `==` or `$==`: the equality of either comparison family.
+             (eq (op-relation (node-s pred-node)) :eq)
              (not (ascii-equal b1 b2)))
     (let ((l (node-l pred-node))
           (r (node-r pred-node))
-          (is-numeric (string= (node-s pred-node) "=="))
+          (is-numeric (compare-op-p (node-s pred-node)))
           (b1-names (list b1 (ascii-downcase b1) "_1" "_"))
           (b2-names (list b2 (ascii-downcase b2) "_2")))
       (cond
@@ -843,8 +844,6 @@ holds for every flat row of its shape."
 ;; rows must prove it cannot raise on them (JOIN-KEYS-SAFE-P).
 (defstruct join-obligation key row-names outer)
 
-(defparameter +text-compare+ '("$==" "$!=" "$<" "$<=" "$>" "$>="))
-(defparameter +num-compare+ '("==" "!=" "<" "<=" ">" ">="))
 
 (defun leading-field-conjuncts (body binder)
   "Every AND-conjunct of a FILTER body, in order, as JCONJs."
@@ -880,9 +879,8 @@ holds for every flat row of its shape."
                                (t nil))))
                 (let* ((field-only (and (reads-only-fields c) fields t))
                        (compare (and c (eq (node-kind c) :bin)
-                                     (or (member (node-s c) +text-compare+ :test #'string=)
-                                         (member (node-s c) +num-compare+ :test #'string=))))
-                       (numeric (and compare (member (node-s c) +num-compare+ :test #'string=) t))
+                                     (relational-op-p (node-s c))))
+                       (numeric (and compare (compare-op-p (node-s c)) t))
                        (has-total compare)
                        (total '()))
                   (when compare
