@@ -9,10 +9,11 @@ this is the same check through a DRIVER -- a child process that speaks JSON line
 this way; Go has its own driver protocol and script (tools/check-hybrid-parity-
 go.py), and C++ and Rust have no hybrid driver yet.
 
-    python3 tools/check-hybrid-parity-driver.py NAME DRIVER [ARGS...] [--verbose]
+    python3 tools/check-hybrid-parity-driver.py NAME DRIVER [ARGS...] [--verbose] [--application]
 """
 import copy
 import json
+import os
 import re
 import sqlite3
 import subprocess
@@ -21,8 +22,12 @@ import time
 from pathlib import Path
 
 ORACLE = Path(__file__).resolve().parent.parent / 'sql' / 'oracle'
-argv = [a for a in sys.argv[1:] if a != '--verbose']
+argv = [a for a in sys.argv[1:] if a not in ('--verbose', '--application')]
 verbose = '--verbose' in sys.argv
+# `--application` (or SEL_HYBRID_APPLICATION=1) adds the corpus's `application`
+# section: programs that call the application functions POKE and HOSTF, which
+# the host's driver registers. Opt-in until every driver registers them.
+APPLICATION = '--application' in sys.argv or os.environ.get('SEL_HYBRID_APPLICATION') == '1'
 NAME, CMD = argv[0], argv[1:]
 spec = json.loads((ORACLE / 'hybrid.json').read_text(encoding='utf-8'))
 
@@ -83,8 +88,12 @@ def fresh(cs):
 bad = []
 ok = skipped = 0
 kinds = {'pure_sql': 0, 'hybrid': 0, 'pure_memory': 0}
-for c in spec['programs']:
-    for cs in spec['contexts']:
+work = [(c, cs) for c in spec['programs'] for cs in spec['contexts']]
+if APPLICATION and 'application' in spec:
+    work += [(c, {'name': 'application', 'vars': spec['application']['vars']})
+             for c in spec['application']['programs']]
+for c, cs in work:
+    if True:
         if any(v not in cs['vars'] for v in c.get('requires', [])):
             skipped += 1
             continue
@@ -98,6 +107,8 @@ for c in spec['programs']:
         elif direct['status'] != 'ok':
             guard = f'SEL raised {describe(direct)}'
         else:
+            if 'value' in exp and norm(direct['native']) != exp['value']:
+                guard = f"run() answers {json.dumps(norm(direct['native']))}, the corpus says {json.dumps(exp['value'])}"
             for f, want in exp.get('fields', {}).items():
                 got = column(direct['native'], f)
                 if got != want:

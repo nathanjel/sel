@@ -33,6 +33,17 @@ docs/usage/in-memory.md       -export-ignore
 docs/reference/builtins.md    -export-ignore
 docs/reference/limits.md      -export-ignore
 
+# Test data and harness nothing in php/src loads: the generated SQL case tables
+# (1 MB) and map-replay table, the three PHP runners that cannot run without
+# them, and the 26 MB scale-test datasets. A Packagist install needs php/src
+# only; the runners stay in the repository.
+php/bin/CaseData.php     export-ignore
+php/bin/MapReplay.php    export-ignore
+php/bin/sqlt             export-ignore
+php/bin/sqldoc           export-ignore
+php/bin/sqlreplay        export-ignore
+tools/scale-test/        export-ignore
+
 # Maintainer and agent instructions.
 PACKAGING.md             export-ignore
 CLAUDE.md                export-ignore

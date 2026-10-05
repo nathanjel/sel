@@ -9,9 +9,10 @@ execute_hybrid's continuation. The comparison is tools/check-hybrid-parity.py's:
 the value, the error, the caller's context and, for a pure_sql plan, the rows in
 order and not their keys.
 
-    python3 tools/check-hybrid-parity-go.py [--verbose]     # after: make -C go
+    python3 tools/check-hybrid-parity-go.py [--verbose] [--application]   # after: make -C go
 """
 import json
+import os
 import re
 import sqlite3
 import subprocess
@@ -22,6 +23,10 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 ORACLE = ROOT / 'sql' / 'oracle'
 verbose = '--verbose' in sys.argv
+# `--application` (or SEL_HYBRID_APPLICATION=1) adds the corpus's `application`
+# section: programs that call the application functions POKE and HOSTF, which
+# the host's driver registers. Opt-in until every driver registers them.
+APPLICATION = '--application' in sys.argv or os.environ.get('SEL_HYBRID_APPLICATION') == '1'
 spec = json.loads((ORACLE / 'hybrid.json').read_text(encoding='utf-8'))
 binary = ROOT / 'go' / 'build' / 'hybridparity'
 if not binary.exists():
@@ -68,8 +73,12 @@ def fmt(o):
 bad = []
 ok = skipped = 0
 kinds = {'pure_sql': 0, 'hybrid': 0, 'pure_memory': 0}
-for c in spec['programs']:
-    for cs in spec['contexts']:
+work = [(c, cs) for c in spec['programs'] for cs in spec['contexts']]
+if APPLICATION and 'application' in spec:
+    work += [(c, {'name': 'application', 'vars': spec['application']['vars']})
+             for c in spec['application']['programs']]
+for c, cs in work:
+    if True:
         if any(v not in cs['vars'] for v in c.get('requires', [])):
             skipped += 1
             continue
@@ -83,6 +92,12 @@ for c in spec['programs']:
         elif direct['status'] != 'ok':
             guard = f'SEL raised {fmt(direct)}'
         else:
+            if 'value' in exp:
+                # The Go driver answers a value as its keys and its children.
+                got = (dict(zip(direct['keys'], direct['rows'])) if isinstance(exp['value'], dict)
+                       else direct['rows'])
+                if got != exp['value']:
+                    guard = f"run() answers {json.dumps(got)}, the corpus says {json.dumps(exp['value'])}"
             for f, want in exp.get('fields', {}).items():
                 got = [r.get(f, '<absent>') if isinstance(r, dict) else '<absent>' for r in direct['rows']]
                 if got != want:
