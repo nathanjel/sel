@@ -158,9 +158,6 @@ final class Translator
      */
     private static function recordFields(array $node): array
     {
-        if (count($node['args']) % 2 !== 0) {
-            refuse('E_ARITY', 'RECORD takes an even number of arguments', $node['pos']);
-        }
         $fields = [];
         for ($i = 0; $i < count($node['args']); $i += 2) {
             $key = $node['args'][$i];
@@ -3705,9 +3702,6 @@ final class Translator
         $steps = [];
         $curr = $n;
         while ($curr['t'] === 'call' && in_array($curr['name'], self::PIPELINE_OPS, true)) {
-            if (empty($curr['args'])) {
-                break;
-            }
             $steps[] = $curr;
             $curr = $curr['args'][0];
         }
@@ -3779,14 +3773,12 @@ final class Translator
                     if (count($args) === 2) {
                         $binder = '_';
                         $pred = $args[1];
-                    } elseif (count($args) === 3) {
+                    } else {                    // 3: the arity is the manifest's, checked at compile time
                         if (!Constants::isBinderName($args[1])) {
                             refuse('E_SQL_SHAPE', 'the binder of FILTER must be a bare name', $args[1]['pos']);
                         }
                         $binder = $args[1]['name'];
                         $pred = $args[2];
-                    } else {
-                        refuse('E_ARITY', 'FILTER takes 2 or 3 arguments', $step['pos']);
                     }
                     if ($plan->groupBy !== null) {
                         $plan->having[] = [
@@ -3832,15 +3824,13 @@ final class Translator
                         $binder = '_';
                         $keyNode = $args[1];
                         $aggNode = $args[2];
-                    } elseif (count($args) === 4) {
+                    } else {                    // 4
                         if (!Constants::isBinderName($args[1])) {
                             refuse('E_SQL_SHAPE', 'the binder of BUCKET must be a bare name', $args[1]['pos']);
                         }
                         $binder = $args[1]['name'];
                         $keyNode = $args[2];
                         $aggNode = $args[3];
-                    } else {
-                        refuse('E_ARITY', 'BUCKET takes 2 to 4 arguments', $step['pos']);
                     }
 
                     // A bare bucket's key is an index key (spec §7.4): one text
@@ -3941,14 +3931,12 @@ final class Translator
                     if (count($args) === 2) {
                         $binder = '_';
                         $expr = $args[1];
-                    } elseif (count($args) === 3) {
+                    } else {                    // 3
                         if (!Constants::isBinderName($args[1])) {
                             refuse('E_SQL_SHAPE', 'the binder of MAP must be a bare name', $args[1]['pos']);
                         }
                         $binder = $args[1]['name'];
                         $expr = $args[2];
-                    } else {
-                        refuse('E_ARITY', 'MAP takes 2 or 3 arguments', $step['pos']);
                     }
                     // BUCKET(src, key) .> MAP(proj) is BUCKET(src, key, proj): the
                     // MAP's body is evaluated once per group, so it is the bucket's
@@ -3997,17 +3985,11 @@ final class Translator
                     break;
 
                 case 'TAKE':
-                    if (count($args) !== 2) {
-                        refuse('E_ARITY', 'TAKE takes 2 arguments', $step['pos']);
-                    }
                     $lim = $this->evalIntParam($args[1], 'TAKE');
                     $plan->limit = $plan->limit === null ? $lim : min($plan->limit, $lim);
                     break;
 
                 case 'DROP':
-                    if (count($args) !== 2) {
-                        refuse('E_ARITY', 'DROP takes 2 arguments', $step['pos']);
-                    }
                     $off = $this->evalIntParam($args[1], 'DROP');
                     // Consume the bounded slice; retain a SQL boundary for large sums.
                     $skipped = $plan->limit === null ? $off : min($off, $plan->limit);
@@ -4090,9 +4072,6 @@ final class Translator
                             . "where SEL has the left list's order", $step['pos']);
                     }
                     $plan = $this->ensureDerived($plan, $this->planHasRowsAbove($plan));
-                    if (count($args) !== 3 && count($args) !== 5) {
-                        refuse('E_ARITY', "{$name} takes 3 or 5 arguments", $step['pos']);
-                    }
                     $rightNode = $args[1];
                     if (($rightNode['t'] ?? null) !== 'var' || !$this->bindings->has($rightNode['name'])) {
                         refuse('E_SQL_SHAPE', "{$name} requires a bound relation as its right side", $rightNode['pos']);
@@ -4242,14 +4221,12 @@ final class Translator
             } elseif ($count === 2) {
                 $binder = '_';
                 $key = $args[1];
-            } elseif ($count === 3) {
+            } else {                            // 3: the manifest's arity
                 if (!Constants::isBinderName($args[1])) {
                     refuse('E_SQL_SHAPE', 'the binder of SORT must be a bare name', $args[1]['pos']);
                 }
                 $binder = $args[1]['name'];
                 $key = $args[2];
-            } else {
-                refuse('E_ARITY', "{$name} takes 1 to 3 arguments", $step['pos']);
             }
             $plan->orderBy[] = [
                 'binder' => $binder,
@@ -4280,7 +4257,7 @@ final class Translator
                 // refusal.
                 refuse('E_BAD_ARG', "sort direction must be 'ASC' or 'DESC'", $args[2]['pos']);
             }
-        } elseif ($count === 4) {
+        } else {                                // 4: the manifest's arity
             if (!Constants::isBinderName($args[1])) {
                 refuse('E_SQL_SHAPE', 'the binder of SORT_BY must be a bare name', $args[1]['pos']);
             }
@@ -4290,8 +4267,6 @@ final class Translator
                 refuse('E_BAD_ARG', "sort direction must be 'ASC' or 'DESC'", $args[3]['pos']);
             }
             $dir = Utf8::upper($args[3]['v']);
-        } else {
-            refuse('E_ARITY', 'SORT_BY takes 2 to 4 arguments', $step['pos']);
         }
 
         if ($dir !== 'ASC' && $dir !== 'DESC') {

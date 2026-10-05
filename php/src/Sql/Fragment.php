@@ -239,9 +239,7 @@ final class Fragment
                 // id would not: it is a creation number, and a reordering
                 // template emits creation numbers out of order.
                 'params' => Emit::placeholder($this->dialect, $nth),
-                'debug' => "~{$nth}~",
-                default => throw new \InvalidArgumentException(
-                    "unknown render mode {$mode}; use inline, params or debug"),
+                'debug' => "~{$nth}~",       // the mode was checked above
             };
         }
         return $out;
