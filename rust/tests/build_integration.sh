@@ -14,7 +14,7 @@ cat > "$work/bin/cargo" <<'CARGO'
 set -eu
 [ "${FAIL_BUILD:-0}" != 1 ] || exit 1
 mkdir -p target/release
-for bin in conformance sqlt map_replay check_decimal batch e2e sel sqlapi api regex_verdict scale_bench sqlfuzz; do
+for bin in conformance sqlt map_replay check_decimal batch e2e sel sqlapi api regex_verdict scale_bench sqlfuzz hybrid_driver; do
   printf '#!/bin/sh\nexit 0\n' > "target/release/$bin"
   chmod +x "target/release/$bin"
 done

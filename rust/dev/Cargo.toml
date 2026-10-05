@@ -83,6 +83,10 @@ path = "src/bin/api.rs"
 name = "sqlfuzz"
 path = "src/bin/sqlfuzz.rs"
 
+[[bin]]
+name = "hybrid_driver"
+path = "src/bin/hybrid_driver.rs"
+
 # The worked examples: one program per category under ../examples/, written in
 # every host and diffed by tools/check-examples.sh (rust/build.sh publishes them
 # as rust/build/example-<category>).
