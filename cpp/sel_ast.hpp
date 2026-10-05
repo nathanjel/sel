@@ -31,10 +31,12 @@
 #include <optional>
 #include <set>
 #include <string>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
 #include "sel_builtin_manifest.hpp"
+#include "sel_lexicon.hpp"
 
 namespace sel {
 
@@ -187,10 +189,68 @@ NodePtr optimize_ast_in_memory(const NodePtr& ast);
 // different source or step list, copying each step so the input tree is never
 // touched. `last_pos`, when given, is stamped on the outermost step: the
 // optimiser keeps a rewritten pipeline reporting the position written.
+//
+// Which names are steps, which keep their rows and which sort is the manifest's
+// (spec/builtins.json, "Classification"), not a list kept here.
 bool is_pipeline_op(std::string_view name);
 std::pair<NodePtr, std::vector<NodePtr>> unwind_pipeline(const NodePtr& root);
 NodePtr build_pipeline(NodePtr source, const std::vector<NodePtr>& steps,
                        const Pos* last_pos = nullptr);
+
+// --- the lexicon and the builtin classification ------------------------------
+//
+// What an operator IS -- its family (arithmetic, numeric or text comparison,
+// logic, ...), its comparison relation, whether its right side may not run, the
+// operator a compound assignment applies -- is spec/lexicon.json's, rendered into
+// sel_lexicon.hpp. The lexer, the parser, the evaluator's checks, the optimiser,
+// the join pre-filter and the SQL translator all ask these instead of keeping
+// string lists of their own, so a new operator is one data edit.
+
+// The infix operator spelled `token` (a symbol or a reserved word), or nullptr.
+inline const sel_lexicon::Op* infix_op(std::string_view token) {
+  static const std::unordered_map<std::string_view, const sel_lexicon::Op*> table = [] {
+    std::unordered_map<std::string_view, const sel_lexicon::Op*> m;
+    for (const sel_lexicon::Op& op : sel_lexicon::OPS) {
+      if (op.fixity == sel_lexicon::Fixity::Infix) m.emplace(op.token, &op);
+    }
+    return m;
+  }();
+  const auto it = table.find(token);
+  return it == table.end() ? nullptr : it->second;
+}
+
+// Whether `token` is an infix operator of family `f`.
+inline bool infix_in(std::string_view token, sel_lexicon::Family f) {
+  const sel_lexicon::Op* op = infix_op(token);
+  return op != nullptr && op->family == f;
+}
+
+// The manifest's classification of a builtin name (spec/builtins.json): the
+// pipeline step, the regex call, the SQL argument typing; nullptr when the name
+// has none.
+template <typename T, std::size_t N>
+const T* manifest_entry(const T (&table)[N], std::string_view name) {
+  static const std::unordered_map<std::string_view, const T*> index = [&table] {
+    std::unordered_map<std::string_view, const T*> m;
+    for (const T& e : table) m.emplace(e.name, &e);
+    return m;
+  }();
+  const auto it = index.find(name);
+  return it == index.end() ? nullptr : it->second;
+}
+inline const sel_builtin_manifest::PipelineStep* pipeline_step(std::string_view name) {
+  return manifest_entry(sel_builtin_manifest::PIPELINE_STEPS, name);
+}
+inline const sel_builtin_manifest::RegexCall* regex_call(std::string_view name) {
+  return manifest_entry(sel_builtin_manifest::REGEX_CALLS, name);
+}
+inline const sel_builtin_manifest::SqlArgs* sql_args(std::string_view name) {
+  return manifest_entry(sel_builtin_manifest::SQL_ARGS, name);
+}
+// Whether a builtin's result is a list whatever its arguments.
+inline bool yields_list(std::string_view name) {
+  return contains(sel_builtin_manifest::YIELDS_LIST, name);
+}
 
 // Validates and rewrites a regex in one pass, returning source that means the
 // same thing to every engine. Throws SelError for a pattern outside the

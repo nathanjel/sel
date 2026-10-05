@@ -3074,6 +3074,7 @@ const Spec* registry_lookup(const std::string& name) {
 
 void register_builtins();   // defined after the built-ins themselves
 void math_ops_check();      // defined with the math plan; every manifest operation has an opcode
+void lexicon_check();       // defined with the operator codes; every lexicon operator has one
 
 // Every entry point that can parse must go through this first: the table has to
 // be complete before any source is read.
@@ -3082,6 +3083,7 @@ void ensure_registered() {
     register_builtins();
     assert_manifest_covered();
     math_ops_check();
+    lexicon_check();
     return true;
   }();
   (void)done;
@@ -3099,22 +3101,16 @@ void ensure_registered() {
 // never learns that interpolation exists.
 // ============================================================================
 
-// Longest match first: `$<=` must not lex as `$<` followed by `=`.
+// The symbol tokens and the reserved words are spec/lexicon.json's
+// (sel_lexicon.hpp). Longest match first: `$<=` must not lex as `$<` followed
+// by `=`, and the rendering is in that order.
 const std::vector<std::string>& operators() {
-  static const std::vector<std::string> ops = {
-      "???", "??",
-      "$==", "$!=", "$<=", "$>=",
-      "$<", "$>", "==", "!=", "<=", ">=", "+=", "-=", "*=", "/=", "%=", "&=",
-      ".>",
-      "+", "-", "*", "/", "%", "&", "=", "<", ">", "(", ")", "[", "]", ",", ";",
-  };
+  static const std::vector<std::string> ops(std::begin(sel_lexicon::SYMBOLS), std::end(sel_lexicon::SYMBOLS));
   return ops;
 }
 
 bool is_reserved(const std::string& w) {
-  static const std::set<std::string> r = {
-      "TRUE", "FALSE", "NULL", "AND", "OR", "NOT", "XOR", "EQL", "IN", "BAND", "BOR", "BXOR",
-  };
+  static const std::set<std::string> r(std::begin(sel_lexicon::RESERVED), std::end(sel_lexicon::RESERVED));
   return r.count(w) > 0;
 }
 
@@ -3598,36 +3594,24 @@ std::string arity_text(const Spec& spec) {
   return std::to_string(spec.min) + " to " + std::to_string(spec.max) + " arguments";
 }
 
-// The operator families, named once for the PARSER. The precedence table is
-// built from these rather than repeating them, and the evaluator asks
-// compare_ops() whether an operator is a numeric comparison -- so the parser
-// and the evaluator cannot disagree about what a comparison is.
+// The operator vocabulary is spec/lexicon.json's (sel_lexicon.hpp): the tokens,
+// the reserved words, every infix and prefix operator's binding power and
+// associativity, its family and comparison relation. The parser's tables are
+// BUILT from it below, and the optimiser, the join pre-filter and the SQL
+// translator ask infix_op() (sel_ast.hpp) rather than keeping lists -- so the
+// parser and everything after it cannot disagree about what a comparison is.
 //
-// That is the whole of the claim. Adding a comparison operator is still three
-// edits, and they are here, in operators() for the lexer, and in
-// compare_result() for its meaning. The third used to be the dangerous one: its
-// last branch answered for every operator it did not name, so an operator added
-// to the first two and forgotten here silently meant ">=". It now fails.
-const std::set<std::string>& assign_ops() {
-  static const std::set<std::string> ops = {"=", "+=", "-=", "*=", "/=", "%=", "&="};
-  return ops;
-}
-
-const std::set<std::string>& compare_ops() {
-  static const std::set<std::string> ops = {"==", "!=", "<", "<=", ">", ">=",
-                                            "$==", "$!=", "$<", "$<=", "$>", "$>="};
-  return ops;
-}
-
-const std::set<std::string>& compare_words() {
-  static const std::set<std::string> words = {"EQL", "IN"};
-  return words;
-}
+// What stays this host's own is the operators' MEANING: the BinOp codes and
+// the evaluator's dispatch on them. lexicon_check() refuses to start when the
+// two disagree -- a lexicon binary operator with no code, a code no lexicon
+// operator has, a comparison whose code is not at its relation's offset, an
+// arithmetic operator outside BO_ADD..BO_MOD -- so an operator added to the
+// lexicon and forgotten here fails at startup instead of meaning something else.
 
 // A binary operator as a number, resolved once per node (Node::opc) instead of by
 // a chain of string comparisons on every evaluation. The comparison codes
-// are contiguous and in the order compare_result() names them, so the kind of a
-// comparison is `code - BO_NUM_EQ` / `code - BO_TXT_EQ`.
+// are contiguous and in the lexicon's relation order (eq ne lt le gt ge), so the
+// relation of a comparison is `code - BO_NUM_EQ` / `code - BO_TXT_EQ`.
 enum BinOp : unsigned char {
   BO_NONE = 0,
   BO_AND, BO_OR, BO_COALESCE, BO_VACUOUS,
@@ -3635,6 +3619,7 @@ enum BinOp : unsigned char {
   BO_EQL, BO_IN, BO_XOR, BO_BAND, BO_BOR, BO_BXOR,
   BO_NUM_EQ, BO_NUM_NE, BO_NUM_LT, BO_NUM_LE, BO_NUM_GT, BO_NUM_GE,
   BO_TXT_EQ, BO_TXT_NE, BO_TXT_LT, BO_TXT_LE, BO_TXT_GT, BO_TXT_GE,
+  BO_COUNT
 };
 
 unsigned char bin_opcode(const std::string& op) {
@@ -3649,8 +3634,27 @@ unsigned char bin_opcode(const std::string& op) {
   return it == table.end() ? static_cast<unsigned char>(BO_NONE) : it->second;
 }
 
-// Whether the comparison `kind` (0 == 1 != 2 < 3 <= 4 > 5 >=) holds for the
-// three-way result `c`: compare_result() without the string.
+// The lexicon record of each BinOp code: the evaluator asks it by code with one
+// array read. Filled by lexicon_check(), which ensure_registered() runs before
+// anything is parsed -- so before any node exists to ask about, and with no
+// dependence on the order static initialisers run in.
+std::array<const sel_lexicon::Op*, BO_COUNT> OP_BY_CODE{};
+
+// Whether the binary operator with code `opc` has the lexicon family `f`.
+inline bool opc_in(unsigned char opc, sel_lexicon::Family f) {
+  const sel_lexicon::Op* op = opc < BO_COUNT ? OP_BY_CODE[opc] : nullptr;
+  return op != nullptr && op->family == f;
+}
+
+// Whether the right side of the operator with code `opc` may never run (AND,
+// OR, `??`, `???`): the lexicon's short-circuit flag, by code.
+inline bool opc_short_circuits(unsigned char opc) {
+  const sel_lexicon::Op* op = opc < BO_COUNT ? OP_BY_CODE[opc] : nullptr;
+  return op != nullptr && op->short_circuit;
+}
+
+// Whether the comparison relation `kind` -- the lexicon's relation index, 0 ==
+// 1 != 2 < 3 <= 4 > 5 >= -- holds for the three-way result `c`.
 bool cmp_holds(int kind, int c) {
   switch (kind) {
     case 0: return c == 0;
@@ -3674,43 +3678,60 @@ Dec dec_arith(unsigned char opc, const Dec& a, const Dec& b, Pos pos) {
   }
 }
 
-// The binary operator a compound assignment applies: `+=` is BO_ADD, and so on.
+// The binary operator a compound assignment applies (`+=` is BO_ADD, ...): the
+// lexicon's `compound`, indexed by the assignment's first byte -- one array read
+// per evaluation. lexicon_check() refuses two compound forms sharing a first byte.
+// Filled by lexicon_check(), like OP_BY_CODE.
+std::array<unsigned char, 256> COMPOUND_BY_FIRST{};
+
 unsigned char compound_opcode(char first) {
-  switch (first) {
-    case '+': return BO_ADD;
-    case '-': return BO_SUB;
-    case '*': return BO_MUL;
-    case '/': return BO_DIV;
-    case '%': return BO_MOD;
-    default: return BO_CONCAT;   // `&=`, the only other compound form the parser makes
-  }
+  return COMPOUND_BY_FIRST[static_cast<unsigned char>(first)];
 }
 
-// spec/SPEC.md §5, as a table. Higher binds tighter. The gaps are the levels
-// that are not infix: 16 is postfix/primary, 15 is unary minus, 7 is NOT.
-[[maybe_unused]] constexpr int BP_SEQ = 1;    // ;  documentation only:
-[[maybe_unused]] constexpr int BP_LIST = 2;   // ,  both are N-ary loops
-constexpr int BP_ASSIGN = 3;    // = += -= *= /= %= &=   (right associative)
-constexpr int BP_OR = 4;
-constexpr int BP_XOR = 5;
-constexpr int BP_AND = 6;
-constexpr int BP_NOT = 7;       // prefix
-constexpr int BP_COMPARE = 8;   // non-associative
-constexpr int BP_COALESCE = 9;  // ?? ??? (right associative)
-constexpr int BP_BOR = 10;
-constexpr int BP_BXOR = 11;
-constexpr int BP_BAND = 12;
-constexpr int BP_CONCAT = 13;   // &
-constexpr int BP_ADD = 14;      // + -
-constexpr int BP_MUL = 15;      // * / %
-constexpr int BP_NEG = 16;      // prefix
+// Called once at startup (ensure_registered): fills the by-code tables, then
+// requires the host's operator codes and the lexicon to describe the same
+// operators.
+void lexicon_check() {
+  for (const sel_lexicon::Op& op : sel_lexicon::OPS) {
+    if (op.compound != nullptr) COMPOUND_BY_FIRST[static_cast<unsigned char>(op.token[0])] = bin_opcode(op.compound);
+    if (op.fixity != sel_lexicon::Fixity::Infix || std::strcmp(op.node, "bin") != 0) continue;
+    const unsigned char code = bin_opcode(op.token);
+    if (code != BO_NONE) OP_BY_CODE[code] = &op;
+  }
+  const auto refuse = [](const std::string& what) {
+    throw std::logic_error("spec/lexicon.json and this host's operator codes disagree: " + what);
+  };
+  int bin_ops = 0;
+  for (const sel_lexicon::Op& op : sel_lexicon::OPS) {
+    if (op.compound != nullptr) {
+      const unsigned char code = bin_opcode(op.compound);
+      if (code != BO_CONCAT && !(code >= BO_ADD && code <= BO_MOD)) refuse(std::string(op.token) + " applies no arithmetic or concatenation code");
+      if (compound_opcode(op.token[0]) != code) refuse(std::string(op.token) + " shares its first byte with another compound form");
+    }
+    if (op.fixity != sel_lexicon::Fixity::Infix || std::strcmp(op.node, "bin") != 0) continue;
+    ++bin_ops;
+    const unsigned char code = bin_opcode(op.token);
+    if (code == BO_NONE) refuse(std::string(op.token) + " has no BinOp code");
+    using F = sel_lexicon::Family;
+    if (op.family == F::Compare && code != BO_NUM_EQ + op.relation) refuse(std::string(op.token) + " is not at its relation's numeric-comparison code");
+    if (op.family == F::TextCompare && code != BO_TXT_EQ + op.relation) refuse(std::string(op.token) + " is not at its relation's text-comparison code");
+    if ((op.family == F::Arith) != (code >= BO_ADD && code <= BO_MOD)) refuse(std::string(op.token) + ": arithmetic is exactly BO_ADD..BO_MOD");
+  }
+  if (bin_ops != BO_COUNT - 1) refuse("the host has " + std::to_string(BO_COUNT - 1) + " codes for " + std::to_string(bin_ops) + " binary operators");
+}
 
-// An infix operator's binding power and associativity. 'L' parses its right
-// side at bp + 1, 'R' at bp -- that is what makes it right-associative -- and
-// 'N' at bp + 1 and then rejects a second operator at the same level.
+// The binding powers, higher binds tighter: the lexicon's levels (SPEC §5 read
+// loosest first). `;` and `,` are N-ary loops outside the infix table.
+constexpr int BP_ASSIGN = sel_lexicon::BP_ASSIGN;
+
+// An infix operator's binding power and associativity, and its lexicon record.
+// 'L' parses its right side at bp + 1, 'R' at bp -- that is what makes it
+// right-associative -- and 'N' at bp + 1 and then rejects a second operator at
+// the same level.
 struct Infix {
   int bp;
   char assoc;
+  const sel_lexicon::Op* op;
 };
 
 // The target must be an identifier followed by zero or more index operations.
@@ -3823,26 +3844,22 @@ class Parser {
   // operators as ops, so they cannot share a key space; the binding powers are
   // one scale. Returns nullptr for a token that is not an infix operator, which
   // is the same answer as "stop here".
+  //
+  // Both are built from the lexicon's infix records; `;` and `,` stay out, since
+  // parse_sequence and parse_list loop over them as N-ary operators.
+  static std::map<std::string, Infix> infix_table(bool words) {
+    std::map<std::string, Infix> m;
+    for (const sel_lexicon::Op& op : sel_lexicon::OPS) {
+      if (op.fixity != sel_lexicon::Fixity::Infix || op.word != words) continue;
+      if (op.family == sel_lexicon::Family::List || op.family == sel_lexicon::Family::Sequence) continue;
+      m[op.token] = Infix{op.bp, op.assoc, &op};
+    }
+    return m;
+  }
+
   static const Infix* infix_entry(const Token& t) {
-    static const std::map<std::string, Infix> ops = [] {
-      std::map<std::string, Infix> m = {
-          {"??", {BP_COALESCE, 'R'}}, {"???", {BP_COALESCE, 'R'}},
-          {"&", {BP_CONCAT, 'L'}},
-          {"+", {BP_ADD, 'L'}}, {"-", {BP_ADD, 'L'}},
-          {"*", {BP_MUL, 'L'}}, {"/", {BP_MUL, 'L'}}, {"%", {BP_MUL, 'L'}},
-      };
-      for (const std::string& op : assign_ops()) m[op] = {BP_ASSIGN, 'R'};
-      for (const std::string& op : compare_ops()) m[op] = {BP_COMPARE, 'N'};
-      return m;
-    }();
-    static const std::map<std::string, Infix> words = [] {
-      std::map<std::string, Infix> m = {
-          {"OR", {BP_OR, 'L'}}, {"XOR", {BP_XOR, 'L'}}, {"AND", {BP_AND, 'L'}},
-          {"BOR", {BP_BOR, 'L'}}, {"BXOR", {BP_BXOR, 'L'}}, {"BAND", {BP_BAND, 'L'}},
-      };
-      for (const std::string& w : compare_words()) m[w] = {BP_COMPARE, 'N'};
-      return m;
-    }();
+    static const std::map<std::string, Infix> ops = infix_table(false);
+    static const std::map<std::string, Infix> words = infix_table(true);
 
     const std::map<std::string, Infix>* table = nullptr;
     if (t.type == Tok::Op) table = &ops;
@@ -3863,7 +3880,7 @@ class Parser {
       next();
 
       if (e->assoc == 'R') {
-        if (assign_ops().count(t.value)) {
+        if (e->op->family == sel_lexicon::Family::Assign) {
           // Assignment. The target is validated against the AST shape, not against
           // a value, which is what makes `(A) = 1` a compile error.
           check_target(left, t);
@@ -3945,27 +3962,34 @@ class Parser {
   // of E_DEPTH -- `--------...1` at about twenty thousand characters segfaulted
   // the process. Entered only when a prefix operator is actually consumed, so
   // every other expression's trip point is unchanged.
+  //
+  // The prefix operators -- their tokens, binding powers and the names their
+  // nodes record (NOT, NEG) -- are the lexicon's.
+  static const std::vector<const sel_lexicon::Op*>& prefix_ops() {
+    static const std::vector<const sel_lexicon::Op*> ops = [] {
+      std::vector<const sel_lexicon::Op*> v;
+      for (const sel_lexicon::Op& op : sel_lexicon::OPS) {
+        if (op.fixity == sel_lexicon::Fixity::Prefix) v.push_back(&op);
+      }
+      return v;
+    }();
+    return ops;
+  }
+
   NodePtr parse_prefix(int min_bp) {
     const Token& t = peek();
 
-    if (t.type == Tok::Ident && t.value == "NOT" && min_bp <= BP_NOT) {
-      next();
-      enter(t.pos);
-      const Leave leave_guard{this};
-      auto n = make(NT::Un, t.pos);
-      n->s = "NOT";
-      n->l = parse_term(BP_NOT);
-      return n;
-    }
-
-    if (t.type == Tok::Op && t.value == "-" && min_bp <= BP_NEG) {
-      next();
-      enter(t.pos);
-      const Leave leave_guard{this};
-      auto n = make(NT::Un, t.pos);
-      n->s = "NEG";
-      n->l = parse_term(BP_NEG);
-      return n;
+    if (t.type == Tok::Ident || t.type == Tok::Op) {
+      for (const sel_lexicon::Op* op : prefix_ops()) {
+        if (op->word != (t.type == Tok::Ident) || t.value != op->token || min_bp > op->bp) continue;
+        next();
+        enter(t.pos);
+        const Leave leave_guard{this};
+        auto n = make(NT::Un, t.pos);
+        n->s = op->name;
+        n->l = parse_term(op->bp);
+        return n;
+      }
     }
 
     return parse_postfix();
@@ -4148,13 +4172,14 @@ class Parser {
     // branch that never runs is still a bad program. A computed pattern is checked
     // when it is used. The flag argument is read only to know whether `i` is on,
     // which the ambiguity analysis needs; a bad flag is still E_BAD_ARG at run time.
-    if (spec->name == "RMATCH" || spec->name == "RFIND" || spec->name == "RGROUPS" ||
-        spec->name == "RREPLACE") {
-      const std::size_t flag_at = spec->name == "RREPLACE" ? 3 : 2;
-      if (!args.empty() && args[0]->t == NT::Text) {
+    // Where the pattern and the flags are is the manifest's (REGEX_CALLS).
+    if (const sel_builtin_manifest::RegexCall* rx = regex_call(spec->name)) {
+      const auto pat_at = static_cast<std::size_t>(rx->pattern);
+      const auto flag_at = static_cast<std::size_t>(rx->flags);
+      if (args.size() > pat_at && args[pat_at]->t == NT::Text) {
         bool ic = false;
         if (args.size() > flag_at && args[flag_at]->t == NT::Text) ic = args[flag_at]->s.find('i') != std::string::npos;
-        (void)validate_pattern(args[0]->s, args[0]->pos, ic);
+        (void)validate_pattern(args[pat_at]->s, args[pat_at]->pos, ic);
       }
     }
     auto n = make(NT::Call, name_tok.pos);
@@ -4549,7 +4574,7 @@ int probe_size(const Node& n, int limit) {
     case NT::Un: return n.math_plan ? 1 : 1 + probe_size(*n.l, limit - 1);
     case NT::Bin: {
       const unsigned char opc = n.opc ? n.opc : bin_opcode(n.s);
-      if (n.math_plan || opc == BO_AND || opc == BO_OR || opc == BO_COALESCE || opc == BO_VACUOUS) return 1;
+      if (n.math_plan || opc_short_circuits(opc)) return 1;
       const int left = probe_size(*n.l, limit - 1);
       return 1 + left + probe_size(*n.r, limit - 1 - left);
     }
@@ -4632,7 +4657,7 @@ bool probe_eval(const Node& n, Context& ctx, Value& out, int level) {
     }
     case NT::Bin: {
       const unsigned char opc = n.opc ? n.opc : bin_opcode(n.s);
-      if (n.math_plan || opc == BO_AND || opc == BO_OR || opc == BO_COALESCE || opc == BO_VACUOUS) break;
+      if (n.math_plan || opc_short_circuits(opc)) break;
       Value l, r;
       if (!probe_eval(*n.l, ctx, l, level + 1)) return false;
       if (!probe_eval(*n.r, ctx, r, level + 1)) return false;
@@ -5750,7 +5775,13 @@ struct JoinEqui {
 
 std::optional<JoinEqui> extract_join_equi(const Node& node, const std::string& b1,
                                           const std::string& b2) {
-  if (node.t != NT::Bin || (node.s != "==" && node.s != "$==")) return std::nullopt;
+  // An equality of either comparison family (relation eq: `==`, `$==`).
+  const sel_lexicon::Op* op = node.t == NT::Bin ? infix_op(node.s) : nullptr;
+  if (!op || op->relation != 0 ||
+      (op->family != sel_lexicon::Family::Compare && op->family != sel_lexicon::Family::TextCompare)) {
+    return std::nullopt;
+  }
+  const bool numeric = op->family == sel_lexicon::Family::Compare;
   // With the same name on both sides the right binder shadows the left (spec
   // §7.4): every read of the name is the RIGHT element, so there is no left key
   // to extract, and the general path -- which binds the right last -- answers.
@@ -5758,10 +5789,10 @@ std::optional<JoinEqui> extract_join_equi(const Node& node, const std::string& b
   const std::set<std::string> left{ascii_upper(b1), "_1", "_"};
   const std::set<std::string> right{ascii_upper(b2), "_2"};
   if (expr_depends_only(*node.l, left) && expr_depends_only(*node.r, right)) {
-    return JoinEqui{node.l, node.r, node.s == "==", false};
+    return JoinEqui{node.l, node.r, numeric, false};
   }
   if (expr_depends_only(*node.r, left) && expr_depends_only(*node.l, right)) {
-    return JoinEqui{node.r, node.l, node.s == "==", true};
+    return JoinEqui{node.r, node.l, numeric, true};
   }
   return std::nullopt;
 }
@@ -6848,8 +6879,6 @@ std::vector<JoinConjunct> leading_field_conjuncts(const Node& body, const std::s
   const auto bare_read = [&](const Node* n) {
     return n && n->t == NT::Index && row_var(n->l.get()) && n->r && n->r->t == NT::Text;
   };
-  static const std::unordered_set<std::string> text_compare{"$==", "$!=", "$<", "$<=", "$>", "$>="};
-  static const std::unordered_set<std::string> num_compare{"==", "!=", "<", "<=", ">", ">="};
   std::vector<JoinConjunct> out;
   for (const Node* c : conjuncts) {
     JoinConjunct entry;
@@ -6878,8 +6907,9 @@ std::vector<JoinConjunct> leading_field_conjuncts(const Node& body, const std::s
     };
     entry.field_only = reads_only_fields(c) && !entry.fields.empty();
     if (!entry.field_only) entry.fields.clear();
-    if (c && c->t == NT::Bin && (text_compare.count(c->s) || num_compare.count(c->s))) {
-      const bool numeric = num_compare.count(c->s) > 0;
+    const sel_lexicon::Op* cmp = c && c->t == NT::Bin ? infix_op(c->s) : nullptr;
+    if (cmp && (cmp->family == sel_lexicon::Family::TextCompare || cmp->family == sel_lexicon::Family::Compare)) {
+      const bool numeric = cmp->family == sel_lexicon::Family::Compare;
       entry.has_total = true;
       for (const Node* operand : {c->l.get(), c->r.get()}) {
         if (operand && (operand->t == NT::Num || operand->t == NT::Text)) {
@@ -9631,8 +9661,8 @@ void collect(const Node* node, std::set<std::string>& bound, std::set<std::strin
     case NT::Bin: {
       collect(node->l.get(), bound, reads, definite, depth + 1);
       // The right side of AND, OR, `??` and `???` may never run.
-      const bool short_circuit =
-          node->s == "AND" || node->s == "OR" || node->s == "??" || node->s == "???";
+      const sel_lexicon::Op* op = infix_op(node->s);
+      const bool short_circuit = op != nullptr && op->short_circuit;
       if (short_circuit) {
         std::set<std::string> rhs = definite;
         collect(node->r.get(), bound, reads, rhs, depth + 1);
@@ -9666,20 +9696,9 @@ const Spec* lookup_builtin(const std::string& name) {
 // numeric model.  The AST itself remains immutable to callers; every rewrite
 // below starts with a shallow copy and only replaces the path it changes.
 
-namespace {
-
-constexpr std::string_view OPT_PIPELINE_OPS[] = {
-    "FILTER", "BUCKET", "SELECT_COLS", "MAP", "DISTINCT", "DEDUPE",
-    "TAKE", "DROP", "SORT", "SORT_DESC", "SORT_BY", "TOP", "TOP_DESC", "TOP_BY",
-    "LINK", "LINK_LEFT"};
-
-}  // namespace
-
-// The pipeline vocabulary (sel_ast.hpp), shared with the SQL planner.
-bool is_pipeline_op(std::string_view name) {
-  return std::find(std::begin(OPT_PIPELINE_OPS), std::end(OPT_PIPELINE_OPS), name) !=
-         std::end(OPT_PIPELINE_OPS);
-}
+// The pipeline vocabulary (sel_ast.hpp), shared with the SQL planner: the
+// manifest's pipeline steps (spec/builtins.json).
+bool is_pipeline_op(std::string_view name) { return pipeline_step(name) != nullptr; }
 
 namespace {
 
@@ -9781,7 +9800,7 @@ NodePtr opt_fold(const NodePtr& node) {
     // The evaluator's own dispatch (dec_arith, cmp_holds), so a fold cannot
     // answer differently from the operator it replaces.
     const unsigned char opc = node->opc ? node->opc : bin_opcode(node->s);
-    if (left->t == NT::Num && right->t == NT::Num && opc >= BO_ADD && opc <= BO_MOD) {
+    if (left->t == NT::Num && right->t == NT::Num && opc_in(opc, sel_lexicon::Family::Arith)) {
       try {
         Dec a, b;
         if (dec_parse(left->s, a, node->pos) && dec_parse(right->s, b, node->pos)) {
@@ -9790,7 +9809,7 @@ NodePtr opt_fold(const NodePtr& node) {
       } catch (const SelError&) {
       }
     }
-    if (left->t == NT::Num && right->t == NT::Num && opc >= BO_NUM_EQ && opc <= BO_NUM_GE) {
+    if (left->t == NT::Num && right->t == NT::Num && opc_in(opc, sel_lexicon::Family::Compare)) {
       try {
         Dec a, b;
         if (dec_parse(left->s, a, node->pos) && dec_parse(right->s, b, node->pos)) {
@@ -9799,7 +9818,7 @@ NodePtr opt_fold(const NodePtr& node) {
       } catch (const SelError&) {
       }
     }
-    if (left->t == NT::Text && right->t == NT::Text && opc >= BO_TXT_EQ && opc <= BO_TXT_GE) {
+    if (left->t == NT::Text && right->t == NT::Text && opc_in(opc, sel_lexicon::Family::TextCompare)) {
       return opt_bool(cmp_holds(opc - BO_TXT_EQ, bytes_compare(left->s, right->s)), node->pos);
     }
     return node;
@@ -10058,10 +10077,27 @@ struct OptFields {
   bool shape_known = false;   // the row is still the source's at this step
 };
 
+// Whether a comparison of either family: `==` ... `>=` and `$==` ... `$>=`.
+bool opt_is_comparison(const std::string& op) {
+  const sel_lexicon::Op* info = infix_op(op);
+  return info != nullptr &&
+         (info->family == sel_lexicon::Family::Compare || info->family == sel_lexicon::Family::TextCompare);
+}
+
+// The binary operators opt_cannot_raise lets through. A policy, not a family:
+// the comparisons, the short-circuit logic operators AND and OR, and the
+// arithmetic operators that cannot divide (`+`, `-`, `*`; `/` and `%` raise
+// E_DIV_ZERO).
+bool opt_safe_binary(const std::string& op) {
+  if (opt_is_comparison(op)) return true;
+  const sel_lexicon::Op* info = infix_op(op);
+  if (info == nullptr) return false;
+  if (info->family == sel_lexicon::Family::Logic) return info->short_circuit;
+  return info->family == sel_lexicon::Family::Arith && op != "/" && op != "%";
+}
+
 bool opt_cannot_raise(const NodePtr& node, const std::string& binder, bool logical,
                       const OptFields* fields) {
-  static const std::set<std::string> safe_ops{"==", "!=", "<", "<=", ">", ">=", "$==", "$!=", "$<", "$<=",
-                                              "$>", "$>=", "AND", "OR", "+", "-", "*"};
   if (!node) return true;
   switch (node->t) {
     case NT::Num: case NT::Text: case NT::Bool: case NT::Null: return true;
@@ -10081,7 +10117,7 @@ bool opt_cannot_raise(const NodePtr& node, const std::string& binder, bool logic
       return !fields || !fields->declared ||
              (fields->shape_known && fields->declared->count(ascii_upper(node->r->s)) > 0);
     case NT::Bin:
-      return logical && safe_ops.count(node->s) > 0 && opt_cannot_raise(node->l, binder, logical, fields) &&
+      return logical && opt_safe_binary(node->s) && opt_cannot_raise(node->l, binder, logical, fields) &&
              opt_cannot_raise(node->r, binder, logical, fields);
     case NT::Un:
       return logical && node->s == "NOT" && opt_cannot_raise(node->l, binder, logical, fields);
@@ -10097,8 +10133,6 @@ bool opt_cannot_raise(const NodePtr& node, const std::string& binder, bool logic
 // (logical path) or AND/OR/NOT over such, is safe to move or to fuse.
 bool opt_predicate_cannot_raise(const NodePtr& node, const std::string& binder, bool logical,
                                 const OptFields* fields) {
-  static const std::set<std::string> compare_ops{"==", "!=", "<", "<=", ">", ">=", "$==", "$!=", "$<", "$<=",
-                                                 "$>", "$>="};
   if (!node) return false;
   switch (node->t) {
     case NT::Bool: return true;
@@ -10107,7 +10141,7 @@ bool opt_predicate_cannot_raise(const NodePtr& node, const std::string& binder, 
         return opt_predicate_cannot_raise(node->l, binder, logical, fields) &&
                opt_predicate_cannot_raise(node->r, binder, logical, fields);
       }
-      return logical && compare_ops.count(node->s) > 0 && opt_cannot_raise(node->l, binder, logical, fields) &&
+      return logical && opt_is_comparison(node->s) && opt_cannot_raise(node->l, binder, logical, fields) &&
              opt_cannot_raise(node->r, binder, logical, fields);
     case NT::Un:
       return node->s == "NOT" && opt_predicate_cannot_raise(node->l, binder, logical, fields);
@@ -10165,13 +10199,12 @@ std::vector<NodePtr> opt_logical_steps(const NodePtr& source, std::vector<NodePt
       const NodePtr& first = current[i];
       const NodePtr* second = i + 1 < current.size() ? &current[i + 1] : nullptr;
       const NodePtr* third = i + 2 < current.size() ? &current[i + 2] : nullptr;
-      // The row is the source's while every step before this one keeps its shape.
+      // The row is the source's while every step before this one keeps its rows
+      // as they are (the manifest's keepsRows).
       OptFields fields{declared, true};
       for (std::size_t k = 0; k < i; ++k) {
-        const std::string& name = current[k]->s;
-        if (name != "FILTER" && name != "SORT" && name != "SORT_DESC" && name != "SORT_BY" &&
-            name != "TOP" && name != "TOP_DESC" && name != "TOP_BY" && name != "TAKE" &&
-            name != "DROP" && name != "DISTINCT" && name != "DEDUPE") {
+        const sel_builtin_manifest::PipelineStep* step = pipeline_step(current[k]->s);
+        if (step == nullptr || !step->keeps_rows) {
           fields.shape_known = false;
           break;
         }
@@ -10263,10 +10296,8 @@ std::vector<NodePtr> opt_logical_steps(const NodePtr& source, std::vector<NodePt
           continue;
         }
       }
-      if (second && first->s == "MAP" &&
-          ((*second)->s == "TOP" || (*second)->s == "TOP_DESC" || (*second)->s == "TOP_BY" ||
-           (*second)->s == "SORT" || (*second)->s == "SORT_DESC" || (*second)->s == "SORT_BY") &&
-          opt_map_has_computed(*first)) {
+      if (second && first->s == "MAP" && pipeline_step((*second)->s) != nullptr &&
+          pipeline_step((*second)->s)->sorts && opt_map_has_computed(*first)) {
         // Only a key over pass-through fields is the same value before the
         // MAP: a keyless sort compares the MAP's outputs, and a key that
         // reads the whole row or `_K` reads what the MAP changes.
@@ -10491,7 +10522,7 @@ std::shared_ptr<const MathPlan> opt_compile_math_plan(const NodePtr& root) {
       return EmitResult{slot, true, dec, false, {}};
     }
 
-    if (node->t == NT::Bin && (node->s == "+" || node->s == "-" || node->s == "*" || node->s == "/" || node->s == "%")) {
+    if (node->t == NT::Bin && is_math_op(*node)) {
       if (!node->l || !node->r) return std::nullopt;
       const auto res_l = self(self, node->l, depth + 1);
       if (!res_l) return std::nullopt;
