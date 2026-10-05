@@ -1,6 +1,7 @@
 // See sel_sql_emit.hpp.
 
 #include "sel_sql_emit.hpp"
+#include "sel_ast.hpp"
 
 #include <algorithm>
 
@@ -30,16 +31,6 @@ std::string replace_all(std::string_view in, std::string_view from,
   return out;
 }
 
-std::string to_hex(std::string_view bytes) {
-  static constexpr char DIGITS[] = "0123456789abcdef";
-  std::string out;
-  out.reserve(bytes.size() * 2);
-  for (unsigned char b : bytes) {
-    out += DIGITS[b >> 4];
-    out += DIGITS[b & 0x0f];
-  }
-  return out;
-}
 
 // The only unquoted output in the layer, and therefore the one thing that has to
 // be a number.

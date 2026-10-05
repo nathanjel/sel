@@ -83,9 +83,6 @@ bool is_unify(std::string_view s) {
   }
 }
 
-bool contains(std::span<const std::string_view> xs, std::string_view k) {
-  return std::find(xs.begin(), xs.end(), k) != xs.end();
-}
 
 const Arity* find_arity(std::span<const Arity> xs, std::string_view k) {
   for (const Arity& a : xs) {

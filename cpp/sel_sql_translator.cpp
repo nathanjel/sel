@@ -39,9 +39,9 @@ SqlKind declared_kind(const Binding& b, const Value& v) {
 // one function: numeric position for a list, EXACT string for a clist.
 SNodePtr child_of(const SNode& n, const std::string& key) {
   if (n.t() == SNode::T::List) {
-    const std::optional<int> i = list_key(key);
-    if (!i || static_cast<std::size_t>(*i) > n.kids().size()) return nullptr;
-    return n.kids()[static_cast<std::size_t>(*i) - 1];
+    const std::optional<std::size_t> i = list_key_number(key);
+    if (!i || *i > n.kids().size()) return nullptr;
+    return n.kids()[*i - 1];
   }
   if (n.t() == SNode::T::CList) {
     // Insertion-ordered, first match. Stage 1 already refused duplicates, so at
@@ -71,9 +71,6 @@ bool same_relation(const RelationSpec& a, const RelationSpec& b) {
   return a.from == b.from && a.alias == b.alias && a.from_is_raw == b.from_is_raw;
 }
 
-bool contains(const std::vector<std::string>& xs, const std::string& x) {
-  return std::find(xs.begin(), xs.end(), x) != xs.end();
-}
 
 // A binder's keys: its name and that name's ASCII lowercase (spec §7.4).
 std::vector<std::string> binder_keys(const std::vector<std::string>& names) {
@@ -280,15 +277,6 @@ Binder Binder::projected(std::shared_ptr<const RelationSpec> r,
   return b;
 }
 
-std::optional<int> list_key(std::string_view k) {
-  if (k.empty() || k.size() > 9 || k[0] < '1' || k[0] > '9') return std::nullopt;
-  int n = 0;
-  for (char c : k) {
-    if (c < '0' || c > '9') return std::nullopt;
-    n = n * 10 + (c - '0');
-  }
-  return n;
-}
 
 // --- lifecycle ---------------------------------------------------------------
 
@@ -690,15 +678,15 @@ Fragment Translator::index(const SNode& n) {
                        "index the row its binder gives you",
              n.pos());
     case Binding::Kind::Columns: {
-      const std::optional<int> i = list_key(key);
+      const std::optional<std::size_t> i = list_key_number(key);
       const std::size_t count = b.as_columns().size();
-      if (!i || static_cast<std::size_t>(*i) > count) {
+      if (!i || *i > count) {
         refuse("E_SQL_BINDING",
                obj.s() + "[" + key + "] is outside that binding's " +
                    std::to_string(count) + " column(s)",
                n.pos());
       }
-      return column_ref(b.as_columns()[static_cast<std::size_t>(*i) - 1]);
+      return column_ref(b.as_columns()[*i - 1]);
     }
     case Binding::Kind::Value: {
       const Value* child = b.as_value().get(key);
@@ -813,7 +801,7 @@ RowModelPtr Translator::row_path(const SNode& node, const SNode& outer) {
 RowModelPtr Translator::row_nested(const RowModelPtr& row, const std::string& key,
                                    const SNode& n, const SNode& outer) {
   if (RowModelPtr nested = nested_of(row, key)) return nested;
-  if (list_key(key)) {
+  if (list_key_number(key)) {
     refuse("E_SQL_SHAPE",
            "[" + key + "] asks for a row by position, and a relation has no first row "
                        "without an ORDER BY that nothing here can supply",
@@ -833,7 +821,7 @@ RowModelPtr Translator::row_nested(const RowModelPtr& row, const std::string& ke
 // message: the binder, or "the row" for a nested record.
 Fragment Translator::row_field(const RowModelPtr& row, const std::string& label,
                                const std::string& key, const SNode& n) {
-  if (list_key(key)) {
+  if (list_key_number(key)) {
     refuse("E_SQL_SHAPE",
            label + "[" + key + "] asks for a row by position, and a relation has no "
                                "first row without an ORDER BY that nothing here can supply",
@@ -1051,7 +1039,7 @@ Fragment Translator::index_binder(const Binder& b, const std::string& name,
   if (b.shape() == Binder::Shape::Row) {
     // The positional check comes before the field lookup, so a relation field
     // literally named "1" is unreachable through I[1] and I["1"] alike.
-    if (list_key(key)) {
+    if (list_key_number(key)) {
       refuse("E_SQL_SHAPE",
              name + "[" + key + "] asks for a row by position, and a relation "
                                 "has no first row without an ORDER BY that "
@@ -1161,9 +1149,6 @@ std::optional<EqlClass> eql_class(SqlKind k) {
   }
 }
 
-bool contains(std::span<const std::string_view> xs, std::string_view k) {
-  return std::find(xs.begin(), xs.end(), k) != xs.end();
-}
 
 constexpr std::string_view NUMERIC_OPS[] = {"==", "!=", "<", "<=", ">", ">="};
 constexpr std::string_view TEXTUAL_OPS[] = {"$==", "$!=", "$<", "$<=",

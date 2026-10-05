@@ -59,6 +59,10 @@ namespace {
 // --- errors
 // ============================================================================
 
+// SEL whitespace (spec §2.2): space, TAB, CR, LF and nothing else -- for the
+// lexer, IS_BLANK/??? and TRIM alike.
+constexpr bool is_sel_space(char32_t c) { return c == U' ' || c == U'\t' || c == U'\r' || c == U'\n'; }
+
 [[noreturn]] void fail(const char* code, const std::string& message, Pos pos = {}) {
   throw SelError(code, message, pos);
 }
@@ -207,17 +211,6 @@ bool is_valid_utf8(std::string_view bytes) {
   }
 }
 
-std::string to_hex(std::string_view bytes) {
-  static const char* DIGITS = "0123456789abcdef";
-  std::string out;
-  out.reserve(bytes.size() * 2);
-  for (char ch : bytes) {
-    const unsigned char b = static_cast<unsigned char>(ch);
-    out.push_back(DIGITS[b >> 4]);
-    out.push_back(DIGITS[b & 0x0f]);
-  }
-  return out;
-}
 
 // Bytewise, as spec/SPEC.md §5.3 requires. std::string::compare is bytewise on
 // every implementation, but say so explicitly rather than rely on it.
@@ -2026,16 +2019,11 @@ std::shared_ptr<const RecordShape> prepare_record_shape(const Node& node) {
 // Match Lisp's list-key contract: decimal keys 1..9 digits, no leading zero,
 // and at most nine characters.  Keeping this parser on the flat path avoids
 // materializing "1", "2", ... entries merely to answer LIST[index].
+// The 0-based slot a list key names (list_key_number, sel_ast.hpp).
 std::optional<std::size_t> parse_list_slot(const std::string& key) {
-  if (key.empty() || key.size() > 9 || key[0] < '1' || key[0] > '9') {
-    return std::nullopt;
-  }
-  std::size_t value = static_cast<std::size_t>(key[0] - '0');
-  for (std::size_t i = 1; i < key.size(); i++) {
-    if (key[i] < '0' || key[i] > '9') return std::nullopt;
-    value = value * 10 + static_cast<std::size_t>(key[i] - '0');
-  }
-  return value - 1;
+  const std::optional<std::size_t> n = list_key_number(key);
+  if (!n) return std::nullopt;
+  return *n - 1;
 }
 
 }  // namespace
@@ -2647,18 +2635,10 @@ const Value* Value::get(const std::string& key) const {
   return it == p_->coll().children.end() ? nullptr : &it->second;
 }
 
+// The const lookup, handing back a pointer the caller may write through: the
+// handle is non-const, and the storage it points into is this value's own.
 Value* Value::get(const std::string& key) {
-  if (!p_->collection) return nullptr;
-  if (p_->mutable_coll().shape) {
-    const auto it = p_->mutable_coll().shape->key_map.find(key);
-    return it == p_->mutable_coll().shape->key_map.end() ? nullptr : &p_->mutable_coll().storage[it->second];
-  }
-  if (p_->is_list && !p_->mutable_coll().storage.empty()) {
-    const auto index = parse_list_slot(key);
-    return index && *index < p_->mutable_coll().storage.size() ? &p_->mutable_coll().storage[*index] : nullptr;
-  }
-  auto it = find(key);
-  return it == p_->mutable_coll().children.end() ? nullptr : &it->second;
+  return const_cast<Value*>(std::as_const(*this).get(key));
 }
 
 std::vector<std::string> Value::keys() const {
@@ -2740,8 +2720,8 @@ bool Value::is_vacuous() const {
   if (p_->kind == Kind::Text && size() == 0) {
     const std::string& sc = scalar();
     if (sc.empty()) return true;
-    for (char ch : sc) {
-      if (ch != ' ' && ch != '\t' && ch != '\r' && ch != '\n') return false;
+    for (const char ch : sc) {
+      if (!is_sel_space(static_cast<unsigned char>(ch))) return false;
     }
     return true;
   }
@@ -3151,7 +3131,6 @@ bool is_alpha(char32_t c) {
   return (c >= U'A' && c <= U'Z') || (c >= U'a' && c <= U'z') || c == U'_';
 }
 bool is_ident(char32_t c) { return is_alpha(c) || is_digit(c); }
-bool is_space(char32_t c) { return c == U' ' || c == U'\t' || c == U'\r' || c == U'\n'; }
 
 class Lexer {
  public:
@@ -3277,7 +3256,7 @@ class Lexer {
     while (i < to) {
       const char32_t c = chars_[i];
 
-      if (is_space(c)) { i++; continue; }
+      if (is_sel_space(c)) { i++; continue; }
 
       if (c == U'#') {
         while (i < to && chars_[i] != U'\n') i++;
@@ -5294,12 +5273,16 @@ struct AliasPlanKey {
   }
 };
 
+// boost's hash_combine: folds `v` into `h`.
+constexpr std::size_t hash_combine(std::size_t h, std::size_t v) {
+  return h ^ (v + static_cast<std::size_t>(0x9e3779b9) + (h << 6) + (h >> 2));
+}
+
 struct AliasPlanKeyHash {
   std::size_t operator()(const AliasPlanKey& key) const noexcept {
     const std::size_t source_hash = std::hash<const RecordShape*>{}(key.source.get());
     const std::size_t table_hash = std::hash<std::string>{}(key.table);
-    return source_hash ^ (table_hash + static_cast<std::size_t>(0x9e3779b9) +
-                          (source_hash << 6) + (source_hash >> 2));
+    return hash_combine(source_hash, table_hash);
   }
 };
 
@@ -5814,13 +5797,13 @@ struct FastJoinKeyHash {
         return std::hash<int64_t>{}(k.int_val);
       case FastJoinKey::Type::SmallDec: {
         std::size_t h = std::hash<int64_t>{}(k.int_val);
-        h ^= std::hash<int32_t>{}(k.scale) + 0x9e3779b9 + (h << 6) + (h >> 2);
+        h = hash_combine(h, std::hash<int32_t>{}(k.scale));
         h ^= (k.neg ? 1 : 0);
         return h;
       }
       case FastJoinKey::Type::BigDec: {
         std::size_t h = std::hash<std::string>{}(k.text);
-        h ^= std::hash<int32_t>{}(k.scale) + 0x9e3779b9 + (h << 6) + (h >> 2);
+        h = hash_combine(h, std::hash<int32_t>{}(k.scale));
         h ^= (k.neg ? 1 : 0);
         return h;
       }
@@ -7599,9 +7582,6 @@ std::size_t cp_count_range(const std::string& s, std::size_t from, std::size_t t
 }
 
 
-bool is_sel_space(char32_t c) {
-  return c == 0x20 || c == 0x09 || c == 0x0d || c == 0x0a;
-}
 
 std::string trim_text(const std::string& s, bool left, bool right) {
   std::size_t a = 0, b = s.size();
@@ -8663,24 +8643,6 @@ class RxParser {
   }
 };
 
-bool rx_nullable(const RxTree& t, int n) {
-  const RxNode& x = t.nodes[static_cast<std::size_t>(n)];
-  switch (x.k) {
-    case RxNode::K::Empty:
-    case RxNode::K::Anchor: return true;
-    case RxNode::K::Atom: return false;
-    case RxNode::K::Cat:
-      for (const int k : x.kids) if (!rx_nullable(t, k)) return false;
-      return true;
-    case RxNode::K::Alt:
-      for (const int k : x.kids) if (rx_nullable(t, k)) return true;
-      return false;
-    case RxNode::K::Group: return rx_nullable(t, x.kids[0]);
-    case RxNode::K::Repeat: return x.lo == 0 || rx_nullable(t, x.kids[0]);
-  }
-  return false;
-}
-
 // True when a capture inside `n` need not take part every time `n` is entered:
 // it sits under an alternation with other branches, or under a quantifier whose
 // minimum is 0.
@@ -8715,7 +8677,8 @@ void check_loops(const RxTree& t, const std::string& pattern, Pos pos) {
     work.pop_back();
     const RxNode& x = t.nodes[static_cast<std::size_t>(n)];
     if (x.k == RxNode::K::Repeat && (x.hi == -1 || x.hi > 1)) {
-      if (rx_nullable(t, x.kids[0])) {
+      // RxParser::measure stored it on every node as the tree was built.
+      if (t.nodes[static_cast<std::size_t>(x.kids[0])].nullable) {
         bad_regex("a loop whose body can match the empty string is not portable", pattern, 0, pos);
       }
       if (rx_optional_capture(t, x.kids[0], false)) {
@@ -9979,12 +9942,11 @@ OptMapInfo opt_map_info(const Node& step) {
           explicit_binder};
 }
 
+// MAP's reading of the arguments, plus whether it is a FILTER form at all.
 OptFilterInfo opt_filter_info(const Node& step) {
-  const auto& args = step.items;
-  const bool explicit_binder = args.size() == 3 && args[1]->t == NT::Var && !args[1]->grouped;
-  return {explicit_binder ? args[1]->s : "_",
-          explicit_binder ? args[2] : args.size() > 1 ? args[1] : nullptr,
-          explicit_binder, args.size() == 2 || explicit_binder};
+  OptMapInfo m = opt_map_info(step);
+  const bool valid = step.items.size() == 2 || m.explicit_binder;
+  return {std::move(m.binder), std::move(m.body), m.explicit_binder, valid};
 }
 
 std::vector<std::string> opt_map_passthroughs(const Node& step) {
@@ -10558,34 +10520,22 @@ std::shared_ptr<const MathPlan> opt_compile_math_plan(const NodePtr& root) {
         return EmitResult{dst, false, {}, false, {}};
       };
 
-      // Copy propagation:
-      // x + 0
-      if (op == "+" && res_r->is_const && dec_is_zero(res_r->const_val) && res_r->const_val.scale == 0) {
+      // Copy propagation: x + 0, 0 + x, x - 0, x * 1, 1 * x (an integer 0 or 1,
+      // scale 0, so the result's scale is the other operand's).
+      const auto is_zero = [](const auto& r) {
+        return r.is_const && dec_is_zero(r.const_val) && r.const_val.scale == 0;
+      };
+      const auto is_one = [](const auto& r) {
+        return r.is_const && !r.const_val.neg && dec_get_digits(r.const_val) == "1" && r.const_val.scale == 0;
+      };
+      if (((op == "+" || op == "-") && is_zero(*res_r)) || (op == "*" && is_one(*res_r))) {
+        // The constant's own load step, when it was just emitted, is dropped.
         if (node->r->t == NT::Num && !plan->steps.empty() && plan->steps.back().dst == res_r->slot) {
           plan->steps.pop_back();
         }
         return propagate(*res_l);
       }
-      // 0 + x
-      if (op == "+" && res_l->is_const && dec_is_zero(res_l->const_val) && res_l->const_val.scale == 0) {
-        return propagate(*res_r);
-      }
-      // x - 0
-      if (op == "-" && res_r->is_const && dec_is_zero(res_r->const_val) && res_r->const_val.scale == 0) {
-        if (node->r->t == NT::Num && !plan->steps.empty() && plan->steps.back().dst == res_r->slot) {
-          plan->steps.pop_back();
-        }
-        return propagate(*res_l);
-      }
-      // x * 1
-      if (op == "*" && res_r->is_const && !res_r->const_val.neg && dec_get_digits(res_r->const_val) == "1" && res_r->const_val.scale == 0) {
-        if (node->r->t == NT::Num && !plan->steps.empty() && plan->steps.back().dst == res_r->slot) {
-          plan->steps.pop_back();
-        }
-        return propagate(*res_l);
-      }
-      // 1 * x
-      if (op == "*" && res_l->is_const && !res_l->const_val.neg && dec_get_digits(res_l->const_val) == "1" && res_l->const_val.scale == 0) {
+      if ((op == "+" && is_zero(*res_l)) || (op == "*" && is_one(*res_l))) {
         return propagate(*res_r);
       }
 

@@ -23,7 +23,9 @@
 
 #include "sel.hpp"
 
+#include <algorithm>
 #include <cstring>
+#include <iterator>
 #include <memory>
 #include <string_view>
 #include <optional>
@@ -121,6 +123,38 @@ inline std::string ascii_lower(std::string_view s) {
   std::string out(s);
   for (char& c : out) c = ascii_down(c);
   return out;
+}
+
+// Small shared helpers, one copy each for the evaluator and the SQL layer.
+
+// Whether `x` is among `xs` (any range: a vector, a span, a constexpr array).
+template <class Range, class T>
+bool contains(const Range& xs, const T& x) {
+  return std::find(std::begin(xs), std::end(xs), x) != std::end(xs);
+}
+
+// Lower-case hex of every byte, as HEX and a BIN dump spell it.
+inline std::string to_hex(std::string_view bytes) {
+  static constexpr char DIGITS[] = "0123456789abcdef";
+  std::string out;
+  out.reserve(bytes.size() * 2);
+  for (const unsigned char b : bytes) {
+    out += DIGITS[b >> 4];
+    out += DIGITS[b & 0x0f];
+  }
+  return out;
+}
+
+// The position a list key names (spec §3.3): "1".."999999999", no sign, no
+// leading zero. Empty for any other text, which is a record key instead.
+inline std::optional<std::size_t> list_key_number(std::string_view k) {
+  if (k.empty() || k.size() > 9 || k[0] < '1' || k[0] > '9') return std::nullopt;
+  std::size_t n = 0;
+  for (const char c : k) {
+    if (c < '0' || c > '9') return std::nullopt;
+    n = n * 10 + static_cast<std::size_t>(c - '0');
+  }
+  return n;
 }
 
 // Internal services shared by the evaluator and the SQL translation unit.
