@@ -9,6 +9,26 @@ pub(crate) fn is_sel_space(c: char) -> bool {
     matches!(c, ' ' | '\t' | '\r' | '\n')
 }
 
+/// The value of a canonical positive integer key -- ASCII digits, no leading
+/// zero, at most `max_digits` of them -- the only spelling that names a list
+/// position. Anything else (an empty key, "01", "+1", a non-ASCII digit) is
+/// no position at all.
+#[inline]
+pub(crate) fn canonical_index(key: &str, max_digits: usize) -> Option<usize> {
+    let bytes = key.as_bytes();
+    if bytes.is_empty() || bytes.len() > max_digits || !(b'1'..=b'9').contains(&bytes[0]) {
+        return None;
+    }
+    let mut val = 0usize;
+    for &b in bytes {
+        if !b.is_ascii_digit() {
+            return None;
+        }
+        val = val * 10 + (b - b'0') as usize;
+    }
+    Some(val)
+}
+
 /// True when `s` holds nothing but SEL whitespace (the empty text included):
 /// the "blank" of `IS_BLANK` and `???`.
 pub(crate) fn is_sel_blank(s: &str) -> bool {

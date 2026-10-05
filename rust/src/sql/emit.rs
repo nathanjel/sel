@@ -15,19 +15,7 @@ fn parse_slot_num(s: &str) -> Option<usize> {
     if s == "0" {
         return Some(0);
     }
-    if s.is_empty() || s.len() > 3 {
-        return None;
-    }
-    let b = s.as_bytes();
-    if b[0] < b'1' || b[0] > b'9' {
-        return None;
-    }
-    for &c in b {
-        if !c.is_ascii_digit() {
-            return None;
-        }
-    }
-    s.parse::<usize>().ok()
+    crate::utf8::canonical_index(s, 3)
 }
 
 pub fn format_literal(dialect: &str, v: Option<&Value>, form: SqlKind, pos: Pos) -> Result<String, SqlError> {

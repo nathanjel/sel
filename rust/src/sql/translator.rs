@@ -3014,19 +3014,7 @@ fn same_relation(a: &RelationSpec, b: &RelationSpec) -> bool {
 }
 
 pub fn list_key(k: &str) -> Option<usize> {
-    if k.is_empty() || k.len() > 9 {
-        return None;
-    }
-    let b = k.as_bytes();
-    if b[0] < b'1' || b[0] > b'9' {
-        return None;
-    }
-    for &c in b {
-        if !c.is_ascii_digit() {
-            return None;
-        }
-    }
-    k.parse::<usize>().ok()
+    crate::utf8::canonical_index(k, 9)
 }
 
 pub fn child_of<'a>(n: &'a SNode, key: &str) -> Option<&'a SNode> {
@@ -3088,7 +3076,7 @@ fn agg_fold(name: &str) -> &'static str {
 }
 
 fn agg_skeleton(name: &str) -> String {
-    name.to_lowercase()
+    name.to_ascii_lowercase()
 }
 
 fn agg_returns(name: &str) -> SqlKind {

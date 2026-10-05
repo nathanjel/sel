@@ -60,7 +60,7 @@ fn ordered_set_promoted(list: &mut Vec<(String, RowField)>, k: String, v: RowFie
 fn binder_keys(names: &[String]) -> Vec<String> {
     let mut out = Vec::new();
     for name in names {
-        let lower = name.to_lowercase();
+        let lower = name.to_ascii_lowercase();
         for k in [name.clone(), lower] {
             if !out.contains(&k) {
                 out.push(k);

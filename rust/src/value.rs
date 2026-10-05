@@ -64,12 +64,7 @@ impl ListKeys {
         match self {
             ListKeys::Index(ix) => {
                 // Only a canonical positive integer names a position.
-                let b = key.as_bytes();
-                if b.is_empty() || b.len() > 10 || b[0] == b'0' || !b.iter().all(|c| c.is_ascii_digit()) {
-                    return None;
-                }
-                let n: u64 = key.parse().ok()?;
-                let n = u32::try_from(n).ok()?;
+                let n = u32::try_from(crate::utf8::canonical_index(key, 10)?).ok()?;
                 ix.binary_search(&n).ok()
             }
             ListKeys::Text(t) => t.iter().position(|k| k == key),
@@ -883,7 +878,7 @@ impl Value {
         let s = self.scalar_source(pos)?;
         if s.kind() != Kind::Text {
             return Err(SelError::not_num(
-                format!("expected a number, got {}", s.kind().as_str().to_lowercase()),
+                format!("expected a number, got {}", s.kind().as_str().to_ascii_lowercase()),
                 pos,
             ));
         }
