@@ -88,8 +88,8 @@ func initShipped() {
 		Skel    map[string]interface{} `json:"skel"`
 	}
 
-	if err := json.Unmarshal([]byte(ShippedDialectsJSON), &rawDialects); err != nil {
-		panic("failed to parse ShippedDialectsJSON: " + err.Error())
+	if err := json.Unmarshal([]byte(shippedDialectsJSON), &rawDialects); err != nil {
+		panic("failed to parse shippedDialectsJSON: " + err.Error())
 	}
 
 	var rawRules struct {
@@ -103,8 +103,8 @@ func initShipped() {
 		LexicalTypes map[string]string        `json:"lexicalTypes"`
 		TemplateKeys []string                 `json:"templateKeys"`
 	}
-	if err := json.Unmarshal([]byte(ShippedRulesJSON), &rawRules); err != nil {
-		panic("failed to parse ShippedRulesJSON: " + err.Error())
+	if err := json.Unmarshal([]byte(shippedRulesJSON), &rawRules); err != nil {
+		panic("failed to parse shippedRulesJSON: " + err.Error())
 	}
 
 	shippedRules.OpArity = rawRules.OpArity

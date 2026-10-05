@@ -1295,9 +1295,9 @@ function emitGo(dialects, rules, raw) {
 
 package sql
 
-const ShippedDialectsJSON = ${JSON.stringify(dJson)}
+const shippedDialectsJSON = ${JSON.stringify(dJson)}
 
-const ShippedRulesJSON = ${JSON.stringify(rJson)}
+const shippedRulesJSON = ${JSON.stringify(rJson)}
 `;
 }
 
