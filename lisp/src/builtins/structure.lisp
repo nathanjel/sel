@@ -5,6 +5,25 @@
 ;;; CL's STRING-DOWNCASE / STRING-EQUAL, which SBCL applies to every 1:1 Unicode
 ;;; case pair -- "é" and "É" once collided in joined rows.
 
+;;; A LINK side's row is bound under its name, the name's ASCII lowercase and
+;;; its positional names (spec §7.4): "_1" and "_" on the left, "_2" on the
+;;; right. WITH-ROW-BINDER makes those cells once -- FRAME is the list to push
+;;; -- and (SET row) stores a row in every one of them, unrolled, since it runs
+;;; once per row.
+(defmacro with-row-binder ((frame set) name positionals &body body)
+  (let ((cells (loop repeat (+ 2 (length positionals)) collect (gensym "CELL")))
+        (n (gensym "NAME")))
+    `(let* ((,n ,name)
+            (,(first cells) (cons ,n nil))
+            (,(second cells) (cons (ascii-downcase ,n) nil))
+            ,@(loop for c in (cddr cells) for pos in positionals collect `(,c (cons ,pos nil)))
+            (,frame (list ,@cells)))
+       (declare (ignorable ,frame))
+       (macrolet ((,set (row)
+                    (list 'let (list (list '%row row))
+                          (cons 'setf (loop for c in ',cells append (list (list 'cdr c) '%row))))))
+         ,@body))))
+
 ;;; A scalar with no children behaves as a one-element list containing itself,
 ;;; consistent with scalar context (§3.2). A NONE with no children is genuinely
 ;;; empty — that is what FILTER returns when nothing matched, and ALL over it
@@ -367,31 +386,29 @@ join is not of this shape or any key is not a live, good one."
         (when (and left-expr right-expr)
           (handler-case
               (let ((table (make-hash-table :test #'equal))
-                    (left-keys (make-array (length items1)))
-                    (b1-cell (cons b1 nil)) (b1-low (cons (ascii-downcase b1) nil))
-                    (b1-1 (cons "_1" nil)) (b1-_ (cons "_" nil))
-                    (b2-cell (cons b2 nil)) (b2-low (cons (ascii-downcase b2) nil))
-                    (b2-2 (cons "_2" nil)))
+                    (left-keys (make-array (length items1))))
+               (with-row-binder (frame1 set-left) b1 ("_1" "_")
+               (with-row-binder (frame2 set-right) b2 ("_2")
                 (flet ((live-key (expr)
                          (let ((key (extract-join-key (args-eval a expr) is-numeric)))
                            (when (or (null key) (join-key-bad-p key))
                              (return-from and-residual-candidates nil))
                            key)))
-                  (ctx-push-frame ctx (list b2-cell b2-low b2-2))
+                  (ctx-push-frame ctx frame2)
                   (unwind-protect
                        (loop for item2 across items2 for j from 0
                              do (let ((r2 (ensure-row-table-alias item2 b2)))
-                                  (setf (cdr b2-cell) r2 (cdr b2-low) r2 (cdr b2-2) r2)
+                                  (set-right r2)
                                   (push j (gethash (live-key right-expr) table))))
                     (ctx-pop-frame ctx))
                   (maphash (lambda (k v) (setf (gethash k table) (nreverse v))) table)
-                  (ctx-push-frame ctx (list b1-cell b1-low b1-1 b1-_))
+                  (ctx-push-frame ctx frame1)
                   (unwind-protect
                        (loop for item1 across items1 for i from 0
                              do (let ((r1 (ensure-row-table-alias item1 b1)))
-                                  (setf (cdr b1-cell) r1 (cdr b1-low) r1 (cdr b1-1) r1 (cdr b1-_) r1)
+                                  (set-left r1)
                                   (setf (svref left-keys i) (live-key left-expr))))
-                    (ctx-pop-frame ctx)))
+                    (ctx-pop-frame ctx)))))
                 (values left-keys table))
             (sel-error () nil)))))))
 
@@ -1110,18 +1127,19 @@ carry is promoted from neither, spec §7.4)."
          ;; The keys a side contributes to the joined row include the names
          ;; its row is bound under: `_["products"]` after LINK(PRODUCTS, ...)
          ;; is the right row, not a field of the left ones.
-         (b1-names (if (= count 5) (list (args-symbol a 2) "_1") (list (or (single-relation-name node0) "_1") "_1")))
-         (b2-names (if (= count 5) (list (args-symbol a 3) "_2") (list (or (single-relation-name node1) "_2") "_2")))
-         (obligations (and prefilter (join-prefilter-obligations prefilter)))
+         ;; The names the sides' rows are bound under (spec §7.4), read once
+         ;; here -- an explicit binder that is not a bare name is E_EXPECT_SYMBOL
+         ;; before either source runs -- and handed down.
          (jb1 (if (= count 5) (args-symbol a 2) (or (single-relation-name node0) "_1")))
          (jb2 (if (= count 5) (args-symbol a 3) (or (single-relation-name node1) "_2")))
-         (jequi-left (and (member count '(3 5))
-                          (nth-value 0 (try-extract-equi-keys (args-node a (if (= count 5) 4 2)) jb1 jb2))))
+         (b1-names (list jb1 "_1"))
+         (b2-names (list jb2 "_2"))
+         (pred-node (args-node a (if (= count 5) 4 2)))
+         (obligations (and prefilter (join-prefilter-obligations prefilter)))
+         (jequi-left (nth-value 0 (try-extract-equi-keys pred-node jb1 jb2)))
          (right-side nil)
          (owned-by-left (lambda (fields stage)
-                          (let ((upper (funcall above-keys stage)))
-                            (notany (lambda (f) (or (gethash f (join-side-keys right-side)) (gethash f upper)))
-                                    fields)))))
+                          (fields-owned-by-left-p fields stage above-keys right-side))))
     ;; With conjuncts to pre-apply and a left source that is itself a join,
     ;; the right source is evaluated first -- unobservable when both sources
     ;; are pure -- so the conjuncts still askable of the rows below travel down
@@ -1168,19 +1186,23 @@ carry is promoted from neither, spec §7.4)."
       (unwind-protect
            (multiple-value-prog1
                (do-link-rows a ctx is-left prefilter stages deep above above-keys b1-names b2-names
-                             right-side obligations)
+                             right-side obligations jb1 jb2 pred-node)
              (setf completed t))
         (unless completed
           (setf (context-join-prefilter ctx) nil
                 (context-join-prefilter-report ctx) nil))))))
 
+(defun fields-owned-by-left-p (fields stage above-keys right-side)
+  "Whether none of FIELDS is a key the right side, or a join above STAGE,
+contributes: a conjunct reading only such fields is the left rows' own."
+  (let ((upper (funcall above-keys stage)))
+    (notany (lambda (f) (or (gethash f (join-side-keys right-side)) (gethash f upper)))
+            fields)))
+
 (defun do-link-rows (a ctx is-left prefilter stages deep above above-keys b1-names b2-names
-                     right-side obligations)
+                     right-side obligations b1 b2 pred-node)
   (let* ((owned-by-left (lambda (fields stage)
-                          (let ((upper (funcall above-keys stage)))
-                            (notany (lambda (f) (or (gethash f (join-side-keys right-side)) (gethash f upper)))
-                                    fields))))
-         (count (args-count a))
+                          (fields-owned-by-left-p fields stage above-keys right-side)))
          (given1 (args-val a 0))
          (val2 (args-val a 1))
          ;; The join below, if it applied some of these conjuncts, says which
@@ -1199,23 +1221,7 @@ carry is promoted from neither, spec §7.4)."
                      (setf (context-join-prefilter-report ctx) nil
                            below nil))
                    given1))
-         (applied-below (and below (not (join-report-errored below)) (join-report-applied below)))
-         (b1 "_1")
-         (b2 "_2")
-         pred-node)
-    (cond
-      ((= count 3)
-       (let ((node0 (args-node a 0))
-             (node1 (args-node a 1)))
-         (let ((name0 (single-relation-name node0))
-               (name1 (single-relation-name node1)))
-           (when name0 (setf b1 name0))
-           (when name1 (setf b2 name1))))
-       (setf pred-node (args-node a 2)))
-      (t ; 5: the manifest's (3 5) refused any other count at compile time
-       (setf b1 (args-symbol a 2)
-             b2 (args-symbol a 3)
-             pred-node (args-node a 4))))
+         (applied-below (and below (not (join-report-errored below)) (join-report-applied below))))
     ;; Spec §7.4 "How a LINK evaluates": with no right elements PRED is never
     ;; evaluated. A LINK over an empty side is the empty list; a LINK_LEFT
     ;; with left rows but no right rows emits each unmatched row below
@@ -1243,16 +1249,13 @@ carry is promoted from neither, spec §7.4)."
                   ;; evaluates the left key per left row, and with no pairs
                   ;; PRED must not run at all)
                   (let ((ht (make-hash-table :test #'equal))
-                        (right-facts (make-join-right-facts))
-                        (b2-cell (cons b2 nil))
-                        (b2-low-cell (cons (ascii-downcase b2) nil))
-                        (b2-2-cell (cons "_2" nil)))
+                        (right-facts (make-join-right-facts)))
+                   (with-row-binder (frame2 set-right) b2 ("_2")
                     ;; Build phase on right relation with reusable frame. The
                     ;; rows are read in order here, where they are close
                     ;; together, rather than scattered pair by pair in the
                     ;; projector.
-                    (let ((frame2 (list b2-cell b2-low-cell b2-2-cell))
-                          (flat-row-p (make-join-flat-test
+                    (let ((flat-row-p (make-join-flat-test
                                        (append (join-binder-keys b1 "_1") (join-binder-keys b2 "_2"))))
                           (flat t))
                       (ctx-push-frame ctx frame2)
@@ -1261,9 +1264,7 @@ carry is promoted from neither, spec §7.4)."
                              (let ((r2 (ensure-row-table-alias item2 b2)))
                                (when (and flat (not (funcall flat-row-p r2)))
                                  (setf flat nil))
-                               (setf (cdr b2-cell) r2
-                                     (cdr b2-low-cell) r2
-                                     (cdr b2-2-cell) r2)
+                               (set-right r2)
                                (let* ((key-val (args-eval a right-expr))
                                       (key (extract-join-key key-val is-numeric)))
                                  (note-right-join-key right-facts key)
@@ -1351,148 +1352,135 @@ carry is promoted from neither, spec §7.4)."
                       ;; kept, unless nothing observes it (DEEP). When the join
                       ;; key is a literal field of the row, a row that HAS it
                       ;; may be rejected before its key is computed.
-                      (let* ((rejected (and right-prefix (make-hash-table :test #'eq)))
-                             (numbered (and (or prefix rejected) (not deep)))
-                             (dropped nil)
-                             (position 1)
-                             (keyed '())
-                             (fast-field (and prefix deep (eq (node-kind left-expr) :index)
-                                              (node-l left-expr) (eq (node-kind (node-l left-expr)) :var)
-                                              (node-r left-expr) (eq (node-kind (node-r left-expr)) :text)
-                                              (member (ascii-upcase (node-s (node-l left-expr)))
-                                                      (list (ascii-upcase b1) "_1" "_") :test #'string=)
-                                              (node-s (node-r left-expr))))
-                             (b1-cell (cons b1 nil))
-                             (b1-low-cell (cons (ascii-downcase b1) nil))
-                             (b1-1-cell (cons "_1" nil))
-                             (b1-_-cell (cons "_" nil))
-                             (frame1 (list b1-cell b1-low-cell b1-1-cell b1-_-cell))
-                             (binder-cells (loop for binder in (remove-duplicates binders :test #'string=)
-                                                 collect (or (find binder frame1 :key #'car :test #'string=)
-                                                             (let ((cell (cons binder nil)))
-                                                               (setf frame1 (append frame1 (list cell)))
-                                                               cell)))))
-                        ;; The binders the conjuncts read come first: a frame
-                        ;; is searched in order, once per read, every row.
-                        (setf frame1 (append binder-cells (set-difference frame1 binder-cells :test #'eq)))
-                        (labels ((verdict (conjuncts row cells)
-                                   ;; 0: keep the row; 1: drop it; 2: keep it,
-                                   ;; a conjunct raised on it.
-                                   (dolist (cell cells) (setf (cdr cell) row))
-                                   (dolist (conjunct conjuncts 0)
-                                     (let ((keep (handler-case (as-bool (args-eval a conjunct) (node-pos conjunct))
-                                                   (sel-error ()
-                                                     (setf (join-report-errored report) t)
-                                                     (return 2)))))
-                                       (unless keep (return 1)))))
-                                 (emit (joined)
-                                   (check-collection-cap (incf nout) (args-pos a))
-                                   (if numbered
-                                       (push (cons (format-index-string position) joined) keyed)
-                                       (push joined out))
-                                   (incf position)))
-                          ;; The right rows the right conjuncts reject, once
-                          ;; each, after every right key was computed. They
-                          ;; stay in their buckets: a left row still counts
-                          ;; them towards the numbering, and one kept on an
-                          ;; error joins them.
-                          (when rejected
-                            (let* ((cells (loop for binder in (remove-duplicates binders :test #'string=)
-                                                collect (cons binder nil)))
-                                   (before (join-report-errored report)))
-                              (setf (join-report-errored report) nil)
-                              (ctx-push-frame ctx cells)
-                              (unwind-protect
-                                   (maphash (lambda (key bucket)
-                                              (declare (ignore key))
-                                              (dolist (r2 bucket)
-                                                (when (= (verdict right-prefix r2 cells) 1)
-                                                  (setf (gethash r2 rejected) t))))
-                                            ht)
-                                (ctx-pop-frame ctx))
-                              (when (join-report-errored report)
-                                (setf prefix (subseq prefix 0 left-before-right)
-                                      fast-field (and prefix fast-field)))
-                              (setf (join-report-errored report) (or (join-report-errored report) before))))
-                          ;; A prefix that reads the left element only
-                          ;; through fields other than its relation's name is
-                          ;; asked of the element as it arrives, before it is
-                          ;; extended: a row it drops is never extended.
-                          (let ((raw (and prefix
-                                          (every (lambda (c) (join-raw-safe-p c binders (ascii-upcase b1))) prefix)
-                                          (or (null fast-field) (not (ascii-equal fast-field b1))))))
-                          (ctx-push-frame ctx frame1)
-                          (unwind-protect
-                               (for-each-collection-item (item1 val1)
-                                 (block row
-                                   (let ((r1 nil)
-                                         (asked nil))
-                                     (when raw
-                                       (setf asked (verdict prefix item1 binder-cells))
-                                       ;; A dropped row whose key is a field it
-                                       ;; has cannot raise in the key.
-                                       (when (and (= asked 1) fast-field (value-get item1 fast-field))
-                                         ;; Dropped before its key was computed -- but the
-                                         ;; key is this very field, and a rejected one still
-                                         ;; raises in the join as written.
-                                         (check-join-pair (extract-join-key (value-get item1 fast-field) is-numeric)
-                                                          right-facts left-expr right-expr is-numeric swapped)
-                                         (setf dropped t)
-                                         (return-from row)))
-                                     (setf r1 (ensure-row-table-alias item1 b1))
-                                     (when (and (not asked) fast-field (value-get r1 fast-field))
-                                       (setf asked (verdict prefix r1 binder-cells))
-                                       (when (= asked 1)
-                                         (check-join-pair (extract-join-key (value-get r1 fast-field) is-numeric)
-                                                          right-facts left-expr right-expr is-numeric swapped)
-                                         (setf dropped t)
-                                         (return-from row)))
-                                     (setf (cdr b1-cell) r1
-                                           (cdr b1-low-cell) r1
-                                           (cdr b1-1-cell) r1
-                                           (cdr b1-_-cell) r1)
-                                     (let* ((key-val (args-eval a left-expr))
-                                            (key (extract-join-key key-val is-numeric))
-                                            (matches (progn
-                                                       (check-join-pair key right-facts left-expr right-expr is-numeric swapped)
-                                                       (and key (not (join-key-bad-p key)) (gethash key ht)))))
-                                       (unless asked
-                                         (setf asked (if prefix (verdict prefix r1 binder-cells) 0)))
-                                       (when (= asked 1)
-                                         (setf dropped t)
-                                         (when numbered
-                                           (incf position (cond (matches (length matches)) (is-left 1) (t 0))))
-                                         (return-from row))
-                                       (if matches
-                                           ;; A left row kept on an error
-                                           ;; meets every right row: its
-                                           ;; joined rows raise in the FILTER,
-                                           ;; in order, where they would have.
-                                           (let ((skip (and rejected (= asked 0) rejected)))
-                                             (dolist (r2 matches)
-                                               (if (and skip (gethash r2 skip))
-                                                   (progn (setf dropped t) (incf position))
-                                                   (emit (funcall projector r1 r2)))))
-                                           (when is-left
-                                             (emit (funcall projector r1 nil))))))))
-                            (ctx-pop-frame ctx))))
-                        (when dropped (setf (join-report-dropped report) t))
-                        (when prefilter (setf (context-join-prefilter-report ctx) report))
-                        (when numbered
-                          (if (and dropped keyed)
-                              (return-from do-link-rows
-                                (%value-with-children :none nil (nreverse keyed) t))
-                              (setf out (append (mapcar #'cdr keyed) out)))))))
+                      (with-row-binder (frame1 set-left) b1 ("_1" "_")
+                       (let* ((rejected (and right-prefix (make-hash-table :test #'eq)))
+                              (numbered (and (or prefix rejected) (not deep)))
+                              (dropped nil)
+                              (position 1)
+                              (keyed '())
+                              (fast-field (and prefix deep (eq (node-kind left-expr) :index)
+                                               (node-l left-expr) (eq (node-kind (node-l left-expr)) :var)
+                                               (node-r left-expr) (eq (node-kind (node-r left-expr)) :text)
+                                               (member (ascii-upcase (node-s (node-l left-expr)))
+                                                       (list (ascii-upcase b1) "_1" "_") :test #'string=)
+                                               (node-s (node-r left-expr))))
+                              (binder-cells (loop for binder in (remove-duplicates binders :test #'string=)
+                                                  collect (or (find binder frame1 :key #'car :test #'string=)
+                                                              (let ((cell (cons binder nil)))
+                                                                (setf frame1 (append frame1 (list cell)))
+                                                                cell)))))
+                         ;; The binders the conjuncts read come first: a frame
+                         ;; is searched in order, once per read, every row.
+                         (setf frame1 (append binder-cells (set-difference frame1 binder-cells :test #'eq)))
+                         (labels ((verdict (conjuncts row cells)
+                                    ;; 0: keep the row; 1: drop it; 2: keep it,
+                                    ;; a conjunct raised on it.
+                                    (dolist (cell cells) (setf (cdr cell) row))
+                                    (dolist (conjunct conjuncts 0)
+                                      (let ((keep (handler-case (as-bool (args-eval a conjunct) (node-pos conjunct))
+                                                    (sel-error ()
+                                                      (setf (join-report-errored report) t)
+                                                      (return 2)))))
+                                        (unless keep (return 1)))))
+                                  (emit (joined)
+                                    (check-collection-cap (incf nout) (args-pos a))
+                                    (if numbered
+                                        (push (cons (format-index-string position) joined) keyed)
+                                        (push joined out))
+                                    (incf position)))
+                           ;; The right rows the right conjuncts reject, once
+                           ;; each, after every right key was computed. They
+                           ;; stay in their buckets: a left row still counts
+                           ;; them towards the numbering, and one kept on an
+                           ;; error joins them.
+                           (when rejected
+                             (let* ((cells (loop for binder in (remove-duplicates binders :test #'string=)
+                                                 collect (cons binder nil)))
+                                    (before (join-report-errored report)))
+                               (setf (join-report-errored report) nil)
+                               (ctx-push-frame ctx cells)
+                               (unwind-protect
+                                    (maphash (lambda (key bucket)
+                                               (declare (ignore key))
+                                               (dolist (r2 bucket)
+                                                 (when (= (verdict right-prefix r2 cells) 1)
+                                                   (setf (gethash r2 rejected) t))))
+                                             ht)
+                                 (ctx-pop-frame ctx))
+                               (when (join-report-errored report)
+                                 (setf prefix (subseq prefix 0 left-before-right)
+                                       fast-field (and prefix fast-field)))
+                               (setf (join-report-errored report) (or (join-report-errored report) before))))
+                           ;; A prefix that reads the left element only
+                           ;; through fields other than its relation's name is
+                           ;; asked of the element as it arrives, before it is
+                           ;; extended: a row it drops is never extended.
+                           (let ((raw (and prefix
+                                           (every (lambda (c) (join-raw-safe-p c binders (ascii-upcase b1))) prefix)
+                                           (or (null fast-field) (not (ascii-equal fast-field b1))))))
+                           (ctx-push-frame ctx frame1)
+                           (unwind-protect
+                                (for-each-collection-item (item1 val1)
+                                  (block row
+                                    (let ((r1 nil)
+                                          (asked nil))
+                                      (when raw
+                                        (setf asked (verdict prefix item1 binder-cells))
+                                        ;; A dropped row whose key is a field it
+                                        ;; has cannot raise in the key.
+                                        (when (and (= asked 1) fast-field (value-get item1 fast-field))
+                                          ;; Dropped before its key was computed -- but the
+                                          ;; key is this very field, and a rejected one still
+                                          ;; raises in the join as written.
+                                          (check-join-pair (extract-join-key (value-get item1 fast-field) is-numeric)
+                                                           right-facts left-expr right-expr is-numeric swapped)
+                                          (setf dropped t)
+                                          (return-from row)))
+                                      (setf r1 (ensure-row-table-alias item1 b1))
+                                      (when (and (not asked) fast-field (value-get r1 fast-field))
+                                        (setf asked (verdict prefix r1 binder-cells))
+                                        (when (= asked 1)
+                                          (check-join-pair (extract-join-key (value-get r1 fast-field) is-numeric)
+                                                           right-facts left-expr right-expr is-numeric swapped)
+                                          (setf dropped t)
+                                          (return-from row)))
+                                      (set-left r1)
+                                      (let* ((key-val (args-eval a left-expr))
+                                             (key (extract-join-key key-val is-numeric))
+                                             (matches (progn
+                                                        (check-join-pair key right-facts left-expr right-expr is-numeric swapped)
+                                                        (and key (not (join-key-bad-p key)) (gethash key ht)))))
+                                        (unless asked
+                                          (setf asked (if prefix (verdict prefix r1 binder-cells) 0)))
+                                        (when (= asked 1)
+                                          (setf dropped t)
+                                          (when numbered
+                                            (incf position (cond (matches (length matches)) (is-left 1) (t 0))))
+                                          (return-from row))
+                                        (if matches
+                                            ;; A left row kept on an error
+                                            ;; meets every right row: its
+                                            ;; joined rows raise in the FILTER,
+                                            ;; in order, where they would have.
+                                            (let ((skip (and rejected (= asked 0) rejected)))
+                                              (dolist (r2 matches)
+                                                (if (and skip (gethash r2 skip))
+                                                    (progn (setf dropped t) (incf position))
+                                                    (emit (funcall projector r1 r2)))))
+                                            (when is-left
+                                              (emit (funcall projector r1 nil))))))))
+                             (ctx-pop-frame ctx))))
+                         (when dropped (setf (join-report-dropped report) t))
+                         (when prefilter (setf (context-join-prefilter-report ctx) report))
+                         (when numbered
+                           (if (and dropped keyed)
+                               (return-from do-link-rows
+                                 (%value-with-children :none nil (nreverse keyed) t))
+                               (setf out (append (mapcar #'cdr keyed) out)))))))))
                   ;; --- NESTED LOOP FALLBACK ---
-                  (let ((b1-cell (cons b1 nil))
-                        (b1-low-cell (cons (ascii-downcase b1) nil))
-                        (b1-1-cell (cons "_1" nil))
-                        (b1-_-cell (cons "_" nil))
-                        (b2-cell (cons b2 nil))
-                        (b2-low-cell (cons (ascii-downcase b2) nil))
-                        (b2-2-cell (cons "_2" nil)))
-                    (let ((frame (list b1-cell b1-low-cell b1-1-cell b1-_-cell
-                                       b2-cell b2-low-cell b2-2-cell)))
+                  (with-row-binder (frame1 set-left) b1 ("_1" "_")
+                   (with-row-binder (frame2 set-right) b2 ("_2")
+                    (let ((frame (append frame1 frame2)))
                       (ctx-push-frame ctx frame)
                       (unwind-protect
                            ;; Each side is listed ONCE (spec 7.3): the right side is
@@ -1515,12 +1503,11 @@ carry is promoted from neither, spec §7.4)."
                                   for i of-type fixnum from 0
                                   do (let ((r1 (ensure-row-table-alias item1 b1))
                                            (matched nil))
-                                    (setf (cdr b1-cell) r1 (cdr b1-low-cell) r1
-                                          (cdr b1-1-cell) r1 (cdr b1-_-cell) r1)
+                                    (set-left r1)
                                     (when sample-r2
                                       (flet ((try (item2)
                                                (let ((r2 (ensure-row-table-alias item2 b2)))
-                                                 (setf (cdr b2-cell) r2 (cdr b2-low-cell) r2 (cdr b2-2-cell) r2)
+                                                 (set-right r2)
                                                  (when (as-bool (args-eval a pred-node) (node-pos pred-node))
                                                    (setf matched t)
                                                    (progn (check-collection-cap (incf nout) (args-pos a))
@@ -1532,7 +1519,7 @@ carry is promoted from neither, spec §7.4)."
                                     (when (and is-left (not matched))
                                       (progn (check-collection-cap (incf nout) (args-pos a))
                                              (push (funcall projector r1 nil) out))))))
-                        (ctx-pop-frame ctx))))))
+                        (ctx-pop-frame ctx)))))))
             (make-list-value (nreverse out))))))))
 
 ;; Three or five arguments, refused at compile time like every E_ARITY (spec
