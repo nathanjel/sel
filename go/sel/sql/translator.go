@@ -850,13 +850,16 @@ func requireComparableKinds(l, r *Fragment, op string, pos Pos) {
 	if cl == nil || cr == nil || *cl == *cr {
 		return
 	}
-	other := l.Kind
-	if l.Kind == KindBool {
-		other = r.Kind
+	// Both kinds as they are: a BIN and a TEXT reach here too, and were reported
+	// as "a BOOL with a BIN".
+	what := fmt.Sprintf("%s compares a %s with a %s", op, l.Kind, r.Kind)
+	if strings.HasPrefix(op, "$") {
+		// SEL reads a BIN and a TEXT here as bytes, and a BOOL is not an operand
+		// of the byte comparisons at all (E_NOT_BIN); SQL would cast both sides
+		// to characters, which says neither.
+		refuse("E_SQL_SHAPE", what+", which SEL compares as bytes (or refuses, for a BOOL); SQL has no way to say that: both sides cast to the same characters", pos)
 	}
-	refuse("E_SQL_SHAPE",
-		fmt.Sprintf("%s compares a BOOL with a %s, which SEL answers FALSE for every value because the kinds differ. SQL has no way to say that: both sides cast to the same characters", op, other),
-		pos)
+	refuse("E_SQL_SHAPE", what+", which SEL answers FALSE for every value because the kinds differ. SQL has no way to say that: both sides cast to the same characters", pos)
 }
 
 func unify(fs []*Fragment, pos Pos) SqlKind {
