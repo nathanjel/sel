@@ -555,26 +555,50 @@ step must not hide a row whose evaluation would have."
                    (prefix (funcall wrap (sel::build-pipeline-ast source (or input-steps (list dummy)))))
                    (sql (try-translate-statement (sel::%make-program "" prefix) dialect (binding-map-sorted bindings) options)))
               (unless sql (return-from candidate nil))
-              (let ((input "_sel_input") (groups "_sel_latest"))
-                (loop while (equal (sel::ascii-upcase input) (sel::ascii-upcase (getf rel :from))) do (setf input (concatenate 'string input "_")))
-                (loop while (or (equal (sel::ascii-upcase groups) (sel::ascii-upcase (getf rel :from))) (equal groups input)) do (setf groups (concatenate 'string groups "_")))
-                (let* ((qi (emit-ident dialect input)) (qg (emit-ident dialect groups))
-                       (qr (emit-ident dialect revision)) (qmax (emit-ident dialect "_sel_revision"))
-                       (qfirst (emit-ident dialect "_sel_first"))
-                       (partition-sql (as-value
-                                       (emit-text-operand dialect (%fragment (list (emit-ident dialect partition)) (getf pf :type) dialect))))
-                       (parts (append (list (format nil "WITH ~a AS (" qi)) (fragment-parts sql)
-                                      (list (format nil "), ~a AS (SELECT MAX(~a) AS ~a, MIN(~a) AS ~a FROM ~a GROUP BY ~a) SELECT ~a.* FROM ~a JOIN ~a ON ~a.~a = ~a.~a ORDER BY ~a.~a ASC"
-                                                    qg qr qmax qr qfirst qi partition-sql qi qi qg qi qr qg qmax qg qfirst))))
-                       (cont-root (binding-read-var "_INPUT" (sel::node-pos bucket)))
-                       (cont nil))
-                  (setf cont (funcall wrap (sel::build-pipeline-ast cont-root (subseq steps at))))
-                  (make-hybrid-plan :dialect dialect :sql-statement
-                    (%fragment parts :statement dialect (fragment-params sql) (fragment-param-kinds sql) (fragment-caveats sql))
-                    :sql-prefix-ast prefix :continuation-ast cont :continuation-program (sel::%make-program "" cont)
-                    :source-tables (list (getf rel :from))
-                    :selected-member (list :partition-key partition :revision-key revision))))))))
+              (let* ((from (getf rel :from))
+                     (input (unclashing-name "_sel_input" (list from)))
+                     (groups (unclashing-name "_sel_latest" (list from input)))
+                     (parts (latest-member-statement-parts
+                             dialect sql input groups revision
+                             (as-value (emit-text-operand
+                                        dialect (%fragment (list (emit-ident dialect partition))
+                                                           (getf pf :type) dialect)))))
+                     (cont (funcall wrap (sel::build-pipeline-ast
+                                          (binding-read-var "_INPUT" (sel::node-pos bucket))
+                                          (subseq steps at)))))
+                (make-hybrid-plan
+                 :dialect dialect
+                 :sql-statement (%fragment parts :statement dialect (fragment-params sql)
+                                           (fragment-param-kinds sql) (fragment-caveats sql))
+                 :sql-prefix-ast prefix
+                 :continuation-ast cont
+                 :continuation-program (sel::%make-program "" cont)
+                 :source-tables (list from)
+                 :selected-member (list :partition-key partition :revision-key revision)))))))
     (sql-error () nil)))
+
+(defun unclashing-name (base taken)
+  "BASE, with underscores appended until it is none of TAKEN (the first ASCII
+case-insensitively, as a table name compares, the rest exactly)."
+  (let ((name base))
+    (loop while (or (equal (sel::ascii-upcase name) (sel::ascii-upcase (first taken)))
+                    (member name (rest taken) :test #'equal))
+          do (setf name (concatenate 'string name "_")))
+    name))
+
+(defun latest-member-statement-parts (dialect sql input groups revision partition-sql)
+  "The latest-member statement around the prefix SQL: the prefix as CTE INPUT,
+each partition's highest REVISION (and its first position) as CTE GROUPS, and
+the input rows joined back to them, in first-seen partition order."
+  (let ((qi (emit-ident dialect input)) (qg (emit-ident dialect groups))
+        (qr (emit-ident dialect revision)) (qmax (emit-ident dialect "_sel_revision"))
+        (qfirst (emit-ident dialect "_sel_first")))
+    (append (list (format nil "WITH ~a AS (" qi))
+            (fragment-parts sql)
+            (list (format nil "), ~a AS (SELECT MAX(~a) AS ~a, MIN(~a) AS ~a FROM ~a GROUP BY ~a) ~
+                               SELECT ~a.* FROM ~a JOIN ~a ON ~a.~a = ~a.~a ORDER BY ~a.~a ASC"
+                          qg qr qmax qr qfirst qi partition-sql
+                          qi qi qg qi qr qg qmax qg qfirst)))))
 
 (defun bucket-rows-are-keys-p (steps)
   "Whether the SQL rows for STEPS are a bucket's KEYS rather than the value SEL
