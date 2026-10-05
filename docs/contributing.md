@@ -578,7 +578,8 @@ another, it belongs on that list, and if you add a copy anywhere else you have
 invented a divergence.
 
 C++ is the host where this is easy to get wrong, because `Value` is a handle
-over a `shared_ptr` and copying it *looks* like a deep copy. It is not: use
+over an intrusive, reference-counted `Impl` and copying it *looks* like a deep
+copy. It is not: use
 `clone()`. Up to and including 0.2.0 the C++ `Value` really did deep-copy on
 assignment, which made it disagree with the other hosts in six ways — three
 `E_NO_KEY`s where an index expression created the key its own base then read,
