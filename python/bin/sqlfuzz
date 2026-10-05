@@ -25,7 +25,7 @@ import sel                                                          # noqa: E402
 from sel.errors import SelError                                     # noqa: E402
 from sel.sql import Binding, Sql, SqlError                          # noqa: E402
 
-from _harness import read_corpus, read_text                         # noqa: E402
+from _harness import none_ran, read_corpus, read_text, usage  # noqa: E402
 
 # The relations the corpus's pipelines read (tools/gen-programs.mjs --sql), the
 # same in every host's runner: two tables, a NUM join key, a TEXT field whose
@@ -64,11 +64,15 @@ def plan_line(program, dialect: str) -> str:
 
 
 def main(argv: list[str]) -> int:
+    if len(argv) < 2:
+        usage('sqlfuzz corpus.selc [dialect] [all|statement]')
     path = argv[1]
     dialect = argv[2] if len(argv) > 2 else 'mariadb'
     # `statement`: only translate_statement's inline SQL; see js/bin/sqlfuzz.mjs.
     mode = argv[3] if len(argv) > 3 else 'all'
     corpus = read_corpus(read_text(path))
+    if not corpus:
+        return none_ran(f'no programs ran: {path} holds no records')
 
     lines = []
     for src in corpus:

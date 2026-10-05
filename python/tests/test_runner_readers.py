@@ -6,6 +6,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 ROOT = Path(__file__).resolve().parents[2]
 BIN = ROOT / 'python/bin'
 if str(BIN) not in sys.path:
@@ -47,3 +49,30 @@ def test_batch_gives_the_final_record_its_own_position(tmp_path):
                            capture_output=True, env={'PYTHONPATH': str(ROOT / 'python')})
         assert r.returncode == 0, r.stderr
         assert r.stdout.decode('utf-8').split('\n')[:-1] == want
+
+
+# --- the runner contract: a bad path or an empty run is never a green run ------
+
+def runner(*args):
+    r = subprocess.run([sys.executable, *args], capture_output=True, cwd=ROOT,
+                       env={'PYTHONPATH': str(ROOT / 'python')})
+    return r.returncode, r.stdout.decode('utf-8'), r.stderr.decode('utf-8')
+
+
+@pytest.mark.parametrize('script', ['conformance.py', 'batch.py', 'sqlfuzz', 'check-decimal.py'])
+@pytest.mark.parametrize('path', ['no/such/file', 'conformance'])
+def test_an_unreadable_path_is_one_line_and_a_failure(script, path):
+    rc, _, errs = runner(str(BIN / script), path)
+    assert rc != 0
+    assert errs.startswith(f'cannot read {path}: ') and errs.count('\n') == 1, errs
+
+
+@pytest.mark.parametrize('script', ['conformance.py', 'batch.py', 'sqlfuzz', 'check-decimal.py'])
+def test_an_empty_input_is_a_failure(tmp_path, script):
+    rc, _, errs = runner(str(BIN / script), write(tmp_path, b''))
+    assert rc == 1 and errs.startswith('no '), errs
+
+
+def test_a_sqlt_filter_that_matches_nothing_is_a_failure():
+    rc, _, errs = runner(str(BIN / 'sqlt'), 'zzz-no-such-case')
+    assert rc == 1 and errs == 'no case matched zzz-no-such-case\n'

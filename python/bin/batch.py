@@ -21,7 +21,7 @@ except ImportError:
 
 from sel import SelError, Value, compile as sel_compile   # noqa: E402
 
-from _harness import read_corpus, read_text                # noqa: E402
+from _harness import none_ran, read_corpus, read_text, usage  # noqa: E402
 
 
 def render(v):
@@ -41,12 +41,15 @@ def render(v):
 def main():
     args = sys.argv[1:]
     show = '--show' in args
-    path = [a for a in args if a != '--show'][0]
-
-    text = read_text(path)
+    paths = [a for a in args if a != '--show']
+    if len(paths) != 1:
+        usage('batch.py [--show] corpus.selc')
+    corpus = read_corpus(read_text(paths[0]))
+    if not corpus:
+        return none_ran(f'no programs ran: {paths[0]} holds no records')
 
     lines = []
-    for src in read_corpus(text):
+    for src in corpus:
         try:
             v = sel_compile(src).run(Value.none())
             lines.append(render(v) if show else v.dump())

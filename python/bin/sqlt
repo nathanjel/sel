@@ -483,6 +483,9 @@ def main(argv: list[str]) -> int:
 
     print(f'\n{passed} passed ({mirrored} also checked against a mirrored '
           f'dialect), {len(failures)} failed, {suite_errors} suite errors')
+    if not (passed or failures or suite_errors):
+        sys.stderr.write(f"no case matched {' '.join(filters)}\n" if filters else 'no cases ran\n')
+        return 1
     return 0 if not failures and suite_errors == 0 else 1
 
 

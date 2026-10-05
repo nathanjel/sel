@@ -13,6 +13,8 @@ The rules are tools/README.md's, and every host's runners follow them:
 - A path that cannot be read -- missing, unreadable, a directory -- ends the
   run with one line, ``cannot read <path>: <reason>``, on stderr and a non-zero
   status; never a traceback.
+- A run that executed no case at all -- an empty file, a filter that matched
+  nothing -- is a failure, not a green ``0 passed``.
 """
 
 from __future__ import annotations
@@ -30,6 +32,18 @@ def read_text(path: str) -> str:
         sys.stderr.write(f'cannot read {path}: {e.strerror or e}\n')
         sys.exit(1)
     return data.decode('utf-8')
+
+
+def usage(text: str) -> None:
+    """A runner called without what it needs: one line on stderr, status 2."""
+    sys.stderr.write(f'usage: {text}\n')
+    sys.exit(2)
+
+
+def none_ran(message: str) -> int:
+    """Report a run that executed nothing; returns the exit status, 1."""
+    sys.stderr.write(f'{message}\n')
+    return 1
 
 
 def read_corpus(text: str) -> list[str]:
