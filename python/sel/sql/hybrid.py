@@ -1,7 +1,7 @@
 """SQL-prefix planning with an in-memory SEL continuation.
 
-The planner follows the Lisp reference implementation: normalize and logically
-optimize a relational pipeline, try the complete pipeline first, then try a
+The planner does what every host's does, in the same order: normalize and
+logically optimize a relational pipeline, try the complete pipeline first, then try a
 safe mixed MAP fall-through, and finally choose the longest translatable prefix.
 
 The contract every host's planner meets is in docs/internals/sql-translation.md §12.1

@@ -341,8 +341,8 @@ class Emit:
 
         The cycle is refused rather than a depth capped, because the cycle is the
         actual mistake and a depth cap would need a number nobody can justify.
-        With cycles refused the chain is bounded by the number of lexical keys,
-        which is fifteen.
+        With cycles refused the chain is bounded by the number of lexical keys
+        (``RULES['lexicalTypes']``).
         """
         from .fragment import Fragment
         parts: list = []
