@@ -21,17 +21,22 @@ function mulberry32(a) {
   };
 }
 
-const count = Number(process.argv[2] || 3000);
-if (!Number.isInteger(count) || count < 1) {
-  process.stderr.write(`gen-programs: count must be a positive integer, got ${process.argv[2]}\n`);
-  process.exit(2);
-}
-const seed = Number(process.argv[3] || 20260813);
-const rnd = mulberry32(seed);
+const USAGE = 'usage: node tools/gen-programs.mjs [count [seed]] [--sql] > corpus.selc\n'
+  + '       writes the corpus to standard output, never to a file\n';
+const argv = process.argv.slice(2);
+if (argv.includes('--help') || argv.includes('-h')) { process.stdout.write(USAGE); process.exit(0); }
 // --sql: the pipelines read the relations the SQL fuzz runners bind (ORDERS,
 // CUSTOMERS) rather than lists the prelude builds, so they reach the
 // translator and the planner instead of being refused as unbound.
-const SQL_MODE = process.argv.slice(4).includes('--sql');
+const SQL_MODE = argv.includes('--sql');
+const positional = argv.filter((a) => a !== '--sql');
+const usageError = (msg) => { process.stderr.write(`gen-programs: ${msg}\n${USAGE}`); process.exit(2); };
+if (positional.length > 2) usageError(`unexpected argument ${positional[2]}`);
+const count = Number(positional[0] ?? 3000);
+if (!Number.isInteger(count) || count < 1) usageError(`count must be a positive integer, got ${positional[0]}`);
+const seed = Number(positional[1] ?? 20260813);
+if (!Number.isInteger(seed)) usageError(`seed must be an integer, got ${positional[1]}`);
+const rnd = mulberry32(seed);
 
 const pick = (xs) => xs[Math.floor(rnd() * xs.length)];
 const chance = (p) => rnd() < p;

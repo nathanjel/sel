@@ -24,6 +24,12 @@ import sys
 if hasattr(sys, 'set_int_max_str_digits'):   # the 32-* chains print products of thousands of digits
     sys.set_int_max_str_digits(0)
 
+sys.dont_write_bytecode = True
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import gen_lib  # noqa: E402
+CHECK = gen_lib.gen_args('gen-decimal-cases', '''usage: python3 tools/gen-decimal-cases.py            rewrite the files
+       python3 tools/gen-decimal-cases.py --check    fail if they are stale''')
+
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 spec = importlib.util.spec_from_file_location('oracle', os.path.join(ROOT, 'tools/decimal-oracle-exact.py'))
 O = importlib.util.module_from_spec(spec)
@@ -488,19 +494,8 @@ def render(header, items):
 
 
 if __name__ == '__main__':
-    stale = False
     for path, header, items in OUTPUTS:
-        text = render(header, items)
-        rel = os.path.relpath(path, ROOT)
-        if '--check' in sys.argv:
-            have = open(path).read() if os.path.exists(path) else ''
-            if have != text:
-                print(f'{rel} is stale: run tools/gen-decimal-cases.py', file=sys.stderr)
-                stale = True
-            else:
-                print(f'{rel}: {len(items)} cases up to date')
-        else:
-            with open(path, 'w') as f:
-                f.write(text)
-            print(f'wrote {rel}: {len(items)} cases')
-    sys.exit(1 if stale else 0)
+        print(f'{os.path.relpath(path, ROOT)}: {len(items)} cases')
+    gen_lib.write_or_check('gen-decimal-cases', ROOT,
+                           [(os.path.relpath(path, ROOT), render(header, items)) for path, header, items in OUTPUTS],
+                           CHECK, 'python3 tools/gen-decimal-cases.py')

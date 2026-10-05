@@ -10,11 +10,15 @@
 // manifest is deliberately NOT an authority: spec/SPEC.md and spec/errors.md
 // are, and this generator fails when the manifest says something they do not.
 
-import { readFileSync, writeFileSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
+import { genArgs, writeOrCheck, jsStr, pyStr, phpStr, cppStr, lispStr } from './gen-lib.mjs';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+const USAGE = `usage: node tools/gen-limits.mjs            write the generated files
+       node tools/gen-limits.mjs --check    validate and diff, write nothing`;
+const { check } = genArgs('gen-limits', USAGE);
 const SOURCE = 'spec/limits.json';
 const OUTPUTS = {
   js: 'js/src/_limits.mjs',
@@ -95,8 +99,6 @@ function load() {
   return { limits, codes };
 }
 
-const jsStr = JSON.stringify;
-const pyStr = (s) => "'" + s + "'";
 
 function renderJs({ limits, codes }) {
   return [`// ${HEADER}`, '',
@@ -119,7 +121,7 @@ function renderPhp({ limits, codes }) {
     ...limits.map((l) => `    /** ${l.spec}: ${l.meaning} */\n    public const ${l.name} = ${l.value};`),
     '', "    /** The language's error codes and the phase that raises each: 'compile', 'run' or 'both'. @var array<string,string> */",
     '    public const ERROR_CODES = [',
-    ...codes.map((c) => `        ${pyStr(c.code)} => ${pyStr(c.phase)},`),
+    ...codes.map((c) => `        ${phpStr(c.code)} => ${phpStr(c.phase)},`),
     '    ];', '}', ''].join('\n');
 }
 function renderCpp({ limits, codes }) {
@@ -174,18 +176,6 @@ function renderDocs({ limits, codes }) {
 
 const data = load();
 const rendered = { js: renderJs(data), python: renderPython(data), php: renderPhp(data), cpp: renderCpp(data), lisp: renderLisp(data), go: renderGo(data), rust: renderRust(data), docs: renderDocs(data) };
-if (process.argv.includes('--check')) {
-  let stale = 0;
-  for (const [host, path] of Object.entries(OUTPUTS)) {
-    let current = null;
-    try { current = readFileSync(resolve(ROOT, path), 'utf8'); } catch { /* missing */ }
-    if (current !== rendered[host]) { process.stderr.write(`gen-limits: ${path} is ${current === null ? 'missing' : 'stale'}\n`); stale++; }
-  }
-  if (stale) process.exit(1);
-  process.stdout.write(`gen-limits: ${data.limits.length} limits and ${data.codes.length} error codes agree with the spec; ${Object.keys(OUTPUTS).length} renderings current\n`);
-} else {
-  for (const [host, path] of Object.entries(OUTPUTS)) {
-    writeFileSync(resolve(ROOT, path), rendered[host]);
-    process.stdout.write(`wrote ${path}\n`);
-  }
-}
+writeOrCheck('gen-limits', ROOT, Object.entries(OUTPUTS).map(([host, path]) => [path, rendered[host]]),
+  { check, rerun: 'node tools/gen-limits.mjs' });
+if (check) process.stdout.write(`gen-limits: ${data.limits.length} limits and ${data.codes.length} error codes agree with the spec; ${Object.keys(OUTPUTS).length} renderings current\n`);

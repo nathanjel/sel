@@ -21,6 +21,7 @@ tools/check-sql-budgets.sh  translator work/depth budgets, per host, under ceili
 tools/check-regex-resources.py   regex resource behaviour, per host, under ceilings
 tools/check-regex-ambiguity-diff.sh  every host's regex validator vs the reference
 tools/check-host-examples.sh     the six top-level host programs in examples/ run cleanly
+tools/check-generators.sh   every gen-* refuses an unknown argument and writes nothing for --help
 tools/check-ref-fragments.sh     the fn-* reference fragments run against their cases
 tools/fuzz.sh               seeded differential fuzzing, N-way
 tools/check-sql-map.sh      the dialect map, regenerated and diffed
@@ -57,7 +58,14 @@ the baseline there, and copies the seed, objects included, per mutation, so a
 mutation of one C++ translation unit recompiles that unit, not the library. A
 mutation to a C++ header gets a clean build.
 
-Only the JS side owns generators: `gen-programs.mjs` (fuzz corpus),
+The generators of committed artifacts (`gen-*.mjs`, `gen-*.py`) share one
+command line and one write-or-check loop — `tools/gen-lib.mjs` and
+`tools/gen_lib.py`: no argument writes (only the files whose content changed),
+`--check` compares and writes nothing, `--help` prints the usage, anything else
+is exit 2. The Node side also takes every host language's string-literal
+escaper from `gen-lib.mjs`, so no generator carries its own.
+
+Only the JS side owns the corpus generators: `gen-programs.mjs` (fuzz corpus),
 `extract-docs.mjs` (documentation corpus) and `decimal-oracle.py` (Python) run
 once and feed every implementation. A port never re-implements a generator, only
 the five consumers.

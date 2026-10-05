@@ -14,7 +14,8 @@
 // defend against a malformed map. A validation failure is a non-zero exit and a
 // message naming the file, the section and the key.
 
-import { readFileSync, writeFileSync, readdirSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
+import { genArgs, writeOrCheck, phpStr, lispStr } from './gen-lib.mjs';
 import { cppEntrySpec, cppDialectSpec, cppStr, SECTIONS as CPP_SECTIONS }
   from './cpp-emit.mjs';
 import { fileURLToPath } from 'node:url';
@@ -29,6 +30,9 @@ import { dirname, resolve, basename } from 'node:path';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const DIALECT_DIR = resolve(ROOT, 'sql/dialects');
+const USAGE = `usage: node tools/gen-sql-map.mjs            write the generated files
+       node tools/gen-sql-map.mjs --check    validate and diff, write nothing`;
+const { check } = genArgs('gen-sql-map', USAGE);
 
 const BUILTIN_MANIFEST = JSON.parse(readFileSync(resolve(ROOT, 'spec/builtins.json'), 'utf8')).builtins;
 function selNames() { return Object.keys(BUILTIN_MANIFEST); }
@@ -622,7 +626,6 @@ const BANNER = (tool) => [
   'The format is normative in sql/MAP.md; the design is in docs/internals/sql-translation.md.',
 ];
 
-const phpStr = (s) => "'" + s.replace(/\\/g, '\\\\').replace(/'/g, "\\'") + "'";
 
 function phpValue(v, indent) {
   const pad = ' '.repeat(indent);
@@ -1072,7 +1075,6 @@ export const RAW = ${JSON.stringify(raw, null, 2)};
 // emitter turned every non-ASCII character into its double-encoded form, and
 // the generated file carried it silently.
 
-const lispStr = (s) => '"' + String(s).replace(/\\/g, '\\\\').replace(/"/g, '\\"') + '"';
 
 const lispBool = (b) => (b ? 't' : 'nil');
 
@@ -1363,42 +1365,13 @@ if (errors.length) {
   process.exit(1);
 }
 
-const check = process.argv.includes('--check');
-let stale = 0;
 const rules = buildRules(dialects);
 const raw = rawInOrder(docs);
 // An artifact whose content has not changed is not written, so its timestamp
-// does not move. Rewriting all ten unconditionally made every no-op run look
-// like work to anything downstream that compares mtimes -- in particular the JS
-// bundle guard, which then reported `MISSING: js-bundle js-bundle-min` after a
-// regeneration that changed nothing. That cost two battery runs during 0.4.1
-// and would cost one on every release. `make` and every file watcher take the
-// same view: writing is what you do when the answer differs.
-let unchanged = 0;
-for (const [rel, emit] of OUTPUTS) {
-  const path = resolve(ROOT, rel);
-  const text = emit(dialects, rules, raw);
-  let have = null;
-  try { have = readFileSync(path, 'utf8'); } catch { /* absent counts as stale */ }
-  if (check) {
-    if (have !== text) { process.stderr.write(`stale: ${rel}\n`); stale++; }
-  } else if (have === text) {
-    unchanged++;
-  } else {
-    writeFileSync(path, text);
-    process.stdout.write(`wrote ${rel}\n`);
-  }
-}
-// Said out loud, because a run that prints nothing at all reads as a run that
-// failed to do anything.
-if (!check && unchanged) {
-  process.stdout.write(`${unchanged} artifact(s) already current\n`);
-}
-
-if (check) {
-  if (stale) {
-    process.stderr.write('\nrun: node tools/gen-sql-map.mjs\n');
-    process.exit(1);
-  }
-  process.stdout.write(`sql map is current — ${Object.keys(dialects).length} dialect(s)\n`);
-}
+// does not move (gen-lib.mjs): rewriting all of them unconditionally made every
+// no-op run look like work to anything that compares mtimes -- the JS bundle
+// guard reported `MISSING: js-bundle js-bundle-min` after a regeneration that
+// changed nothing.
+writeOrCheck('gen-sql-map', ROOT, OUTPUTS.map(([rel, emit]) => [rel, emit(dialects, rules, raw)]),
+  { check, rerun: 'node tools/gen-sql-map.mjs' });
+if (check) process.stdout.write(`sql map is current — ${Object.keys(dialects).length} dialect(s)\n`);

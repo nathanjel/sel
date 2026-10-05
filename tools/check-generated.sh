@@ -189,6 +189,21 @@ check_group "decimal conformance cases" "python3 tools/gen-decimal-cases.py" \
   -- \
   conformance/24-decimal-boundaries.selt conformance/32-numeric-plans.selt
 
+# The regex-ambiguity cases: the reference validator's verdicts and Python re's
+# match results, pinned.
+check_group "regex ambiguity cases" "python3 tools/gen-regex-ambiguity-cases.py" \
+  tools/gen-regex-ambiguity-cases.py tools/regex-ambiguity-ref.py \
+  -- \
+  conformance/28b-regex-ambiguity.selt
+
+# The SQL scope and literal-slot cases: every expectation is the JS translator's
+# rendering of an alpha-equivalent control (tools/sql-scope-ref.mjs), so this
+# group also needs the JS SQL layer current.
+check_group "sql scope cases" "python3 tools/gen-sql-scope-cases.py" \
+  tools/gen-sql-scope-cases.py tools/sql-scope-ref.mjs \
+  -- \
+  sql/cases/48-scope-and-slots.sqlt
+
 if [ "$status" -ne 0 ]; then
   echo "GENERATED ARTIFACTS ARE NOT CURRENT — run the command(s) above" >&2
 fi

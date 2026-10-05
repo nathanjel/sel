@@ -144,6 +144,8 @@ done
 # downstream user needs Node, and the machine cutting the release is exactly
 # where a stale one would go unnoticed.
 step "generated artifacts" sel_slot ./tools/check-generated.sh
+# ...and no generator writes on --help or an argument it does not know.
+step "generator command lines" ./tools/check-generators.sh
 step "error codes" sel_slot ./tools/check-error-codes.sh
 step "manifest semantics" ./tools/check-manifest.sh
 step "sql dialect map" sel_slot ./tools/check-sql-map.sh
@@ -271,7 +273,7 @@ step "CLI source bytes and contract" ./tools/check-cli-source.sh
 # Every batch runner reads a corpus as bytes and removes exactly one newline per
 # record: CR and CRLF fixtures, and final records with and without a blank line.
 step "corpus bytes, every batch runner" ./tools/check-corpus-bytes.sh
-step "regex ambiguity reference" bash -c "python3 tools/regex-ambiguity-ref.py --self-check >/dev/null && python3 tools/regex-ambiguity-ref.py --cases conformance/28-regex-portability.selt >/dev/null && python3 tools/regex-ambiguity-ref.py --cases conformance/28b-regex-ambiguity.selt >/dev/null && python3 tools/gen-regex-ambiguity-cases.py --check"
+step "regex ambiguity reference" bash -c "python3 tools/regex-ambiguity-ref.py --self-check >/dev/null && python3 tools/regex-ambiguity-ref.py --cases conformance/28-regex-portability.selt >/dev/null && python3 tools/regex-ambiguity-ref.py --cases conformance/28b-regex-ambiguity.selt >/dev/null"
 step "host SQL API parity" ./tools/check-sqlapi.sh
 step "documentation examples" ./tools/check-docs.sh
 step "worked examples, every host" ./tools/check-examples.sh

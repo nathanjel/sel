@@ -15,6 +15,12 @@ import os
 import re
 import sys
 
+sys.dont_write_bytecode = True
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import gen_lib  # noqa: E402
+CHECK = gen_lib.gen_args('gen-regex-ambiguity-cases', '''usage: tools/gen-regex-ambiguity-cases.py            write the file
+       tools/gen-regex-ambiguity-cases.py --check    fail if the file is stale''')
+
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 spec = importlib.util.spec_from_file_location('ref', os.path.join(ROOT, 'tools/regex-ambiguity-ref.py'))
 ref = importlib.util.module_from_spec(spec)
@@ -170,14 +176,8 @@ def build():
 
 def main():
     text = build()
-    if sys.argv[1:] == ['--check']:
-        cur = open(OUT, encoding='utf-8').read() if os.path.exists(OUT) else ''
-        if cur != text:
-            sys.exit(f'{OUT} is stale: run tools/gen-regex-ambiguity-cases.py')
-        print('28b-regex-ambiguity.selt is current')
-        return
-    open(OUT, 'w', encoding='utf-8').write(text)
-    print('wrote', OUT, text.count('### name:'), 'cases')
-
+    print(f'28b-regex-ambiguity.selt: {text.count("### name:")} cases')
+    gen_lib.write_or_check('gen-regex-ambiguity-cases', ROOT, [(os.path.relpath(OUT, ROOT), text)],
+                           CHECK, 'python3 tools/gen-regex-ambiguity-cases.py')
 
 main()

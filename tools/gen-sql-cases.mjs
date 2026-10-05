@@ -27,7 +27,8 @@
 //   node tools/gen-sql-cases.mjs            write the files
 //   node tools/gen-sql-cases.mjs --check    verify they are current
 
-import { readFileSync, writeFileSync, readdirSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
+import { genArgs, writeOrCheck, jsStr, pyStr, phpStr, lispStr, goStr, rustStr } from './gen-lib.mjs';
 import { Unrepresentable, shapeOf, cppStr, cppName, cppEntrySpec, cppDialectSpec,
          SECTIONS as CPP_SECTIONS }
   from './cpp-emit.mjs';
@@ -36,6 +37,9 @@ import { fileURLToPath } from 'node:url';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const SUITE = resolve(ROOT, 'sql/cases');
+const USAGE = `usage: node tools/gen-sql-cases.mjs            write the files
+       node tools/gen-sql-cases.mjs --check    verify they are current`;
+const { check } = genArgs('gen-sql-cases', USAGE);
 
 const SECTIONS = ['dialect', 'register', 'bindings', 'options', 'as', 'mode',
                   'source', 'expect', 'params', 'error', 'throws', 'plan', 'tables'];
@@ -293,9 +297,6 @@ function valueCall(v, where) {
 
 // --- emitters ---------------------------------------------------------------
 
-const phpStr = (s) => "'" + String(s).replace(/\\/g, '\\\\').replace(/'/g, "\\'") + "'";
-const pyStr = (s) => JSON.stringify(String(s));
-const jsStr = (s) => JSON.stringify(String(s));
 
 function emitPhpArg(v) {
   if (v?.__call === 'withUniqueKey') return `(${emitPhpArg(v.args[0])})->withUniqueKey(${emitPhpArg(v.args[1])})`;
@@ -496,10 +497,8 @@ if (errors.length) {
 
 // Function declarations, not consts: valueCall runs while the case files are
 // being parsed, which is before this section of the module is evaluated, and a
-// const would still be in its temporal dead zone.
-function lispStr(s) {
-  return '"' + String(s).replace(/\\/g, '\\\\').replace(/"/g, '\\"') + '"';
-}
+// const would still be in its temporal dead zone. (The string escapers are
+// imported from gen-lib.mjs, and imports are bound before the module runs.)
 function lispOpt(v) { return v === null || v === undefined ? 'nil' : lispStr(v); }
 
 const LISP_KIND = { NUM: ':num', TEXT: ':text', BOOL: ':bool', BIN: ':bin',
@@ -906,27 +905,6 @@ function emitCpp(cases) {
 
 const GO_ENTRY_FIELDS = ['args', 'tpl', 'variants', 'ret', 'caveat', 'since', 'arity', 'builder'];
 
-function goStr(s) {
-  if (s === null || s === undefined) return '""';
-  let out = '"';
-  for (const ch of String(s)) {
-    if (ch === '\\') out += '\\\\';
-    else if (ch === '"') out += '\\"';
-    else if (ch === '\n') out += '\\n';
-    else if (ch === '\r') out += '\\r';
-    else if (ch === '\t') out += '\\t';
-    else {
-      const code = ch.codePointAt(0);
-      if (code < 0x20 || code === 0x7f) {
-        out += '\\x' + code.toString(16).padStart(2, '0');
-      } else {
-        out += ch;
-      }
-    }
-  }
-  out += '"';
-  return out;
-}
 
 function goOptStr(v) {
   if (v === null || v === undefined) return 'nil';
@@ -1286,27 +1264,6 @@ function emitGo(cases) {
     + `var sqlCases = []SqlCase{\n${rows.join('\n')}\n}\n`;
 }
 
-function rustStr(s) {
-  if (s === null || s === undefined) return '""';
-  let out = '"';
-  for (const ch of String(s)) {
-    if (ch === '\\') out += '\\\\';
-    else if (ch === '"') out += '\\"';
-    else if (ch === '\n') out += '\\n';
-    else if (ch === '\r') out += '\\r';
-    else if (ch === '\t') out += '\\t';
-    else {
-      const code = ch.codePointAt(0);
-      if (code < 0x20 || code === 0x7f) {
-        out += '\\x' + code.toString(16).padStart(2, '0');
-      } else {
-        out += ch;
-      }
-    }
-  }
-  out += '"';
-  return out;
-}
 
 function rustOptStr(v) {
   if (v === null || v === undefined) return 'None';
@@ -1563,29 +1520,6 @@ const OUTPUTS = [
   ['go/bin/sqlt/case_data_gen.go', emitGo],
   ['rust/dev/src/bin/sqlt/case_data.rs', emitRust],
 ];
-const check = process.argv.includes('--check');
-let stale = 0;
-// Unchanged content is not rewritten, so a no-op run leaves every timestamp
-// alone. See the same loop in tools/gen-sql-map.mjs for what moving them cost.
-let unchanged = 0;
-for (const [rel, emit] of OUTPUTS) {
-  const path = resolve(ROOT, rel);
-  const text = emit(cases);
-  let have = null;
-  try { have = readFileSync(path, 'utf8'); } catch { /* absent counts as stale */ }
-  if (check) {
-    if (have !== text) { process.stderr.write(`stale: ${rel}\n`); stale++; }
-  } else if (have === text) {
-    unchanged++;
-  } else {
-    writeFileSync(path, text);
-    process.stdout.write(`wrote ${rel}\n`);
-  }
-}
-if (!check && unchanged) {
-  process.stdout.write(`${unchanged} artifact(s) already current\n`);
-}
-if (check) {
-  if (stale) { process.stderr.write('\nrun: node tools/gen-sql-cases.mjs\n'); process.exit(1); }
-  process.stdout.write(`sql cases are current — ${cases.length} case(s)\n`);
-}
+writeOrCheck('gen-sql-cases', ROOT, OUTPUTS.map(([rel, emit]) => [rel, emit(cases)]),
+  { check, rerun: 'node tools/gen-sql-cases.mjs' });
+if (check) process.stdout.write(`sql cases are current — ${cases.length} case(s)\n`);

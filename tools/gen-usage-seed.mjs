@@ -11,13 +11,17 @@
 // sql-complex example compares its report over the loaded rows with the report
 // over the generated ones).
 
-import { readFileSync, writeFileSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
+import { genArgs, writeOrCheck } from './gen-lib.mjs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { evaluate } from '../js/src/sel.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const OUT = join(ROOT, 'examples/sql-complex/seed.postgresql.sql');
+const USAGE = `usage: node tools/gen-usage-seed.mjs            write examples/sql-complex/seed.postgresql.sql
+       node tools/gen-usage-seed.mjs --check    fail if the committed seed is stale`;
+const { check } = genArgs('gen-usage-seed', USAGE);
 
 // Column order and SQL type per table; the generator's records carry the same
 // names in the same order, which is checked below rather than assumed.
@@ -64,13 +68,5 @@ for (const [name, table, columns] of TABLES) {
 }
 const text = out.join('\n') + '\n';
 
-if (process.argv.includes('--check')) {
-  let have = '';
-  try { have = readFileSync(OUT, 'utf8'); } catch { /* missing is stale */ }
-  if (have !== text) {
-    process.stderr.write('examples/sql-complex/seed.postgresql.sql is stale: run node tools/gen-usage-seed.mjs\n');
-    process.exit(1);
-  }
-} else {
-  writeFileSync(OUT, text);
-}
+writeOrCheck('gen-usage-seed', ROOT, [['examples/sql-complex/seed.postgresql.sql', text]],
+  { check, rerun: 'node tools/gen-usage-seed.mjs' });

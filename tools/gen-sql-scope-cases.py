@@ -11,14 +11,24 @@ Every expectation in it is DERIVED, never copied from the translator under test:
     out as a case of its own, so a host that gets the control wrong is
     distinguishable from one that gets the capture wrong.
 
-  * the derivation is done by a reference translator (the JS host) and then
-    checked: `--check` fails unless every OTHER host agrees on every control.
+  * the derivation is done by a reference translator (the JS host,
+    tools/sql-scope-ref.mjs). Every host is then held to it by its own sqlt
+    runner, and because each control is a case of its own, a host that
+    disagrees with the reference on the control is told apart from one that
+    gets the capture wrong. `--check` regenerates and compares the file; it is a
+    group of tools/check-generated.sh.
 
 Usage:
     python3 tools/gen-sql-scope-cases.py            # rewrite sql/cases/48-...
     python3 tools/gen-sql-scope-cases.py --check    # fail if it is stale
 """
 import json, os, subprocess, sys
+
+sys.dont_write_bytecode = True
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import gen_lib  # noqa: E402
+CHECK = gen_lib.gen_args('gen-sql-scope-cases', '''usage: python3 tools/gen-sql-scope-cases.py            rewrite sql/cases/48-scope-and-slots.sqlt
+       python3 tools/gen-sql-scope-cases.py --check    fail if it is stale''')
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OUT = os.path.join(ROOT, 'sql/cases/48-scope-and-slots.sqlt')
@@ -83,9 +93,11 @@ case('agg.scope.outer-key-in-named-binder-body',
      {}, 'ANY(("a","b"), o, ANY((_K, "zz"), c, c $== "2"))',
      'ANY(("1","zz"), c, c $== "2") OR ANY(("2","zz"), c, c $== "2")')
 case('agg.scope.outer-key-compared-in-inner-body',
-     "The inner BODY reads the outer `_K` too.",
+     "The inner BODY reads the INNER key: `_K` is the innermost aggregate's key "
+     "(SEL: ALL((\"a\",\"b\"), o, ANY((_K, \"zz\"), c, c $== _K)) is FALSE), "
+     "while the outer key in the inner LIST is still the outer one.",
      {}, 'ALL(("a","b"), o, ANY((_K, "zz"), c, c $== _K))',
-     'ANY(("1","zz"), c, c $== "1") AND ANY(("2","zz"), c, c $== "2")')
+     'ANY(("1","zz"), c, c $== _K) AND ANY(("2","zz"), c, c $== _K)')
 case('agg.scope.outer-key-in-join-source',
      "`JOIN` over a static list whose element is the outer key.",
      {}, 'ANY(("a","b"), o, JOIN((_K, "x"), "-") $== "2-x")',
@@ -390,11 +402,5 @@ def emit():
     return '\n'.join(lines).rstrip('\n') + '\n'
 
 if __name__ == '__main__':
-    text = emit()
-    if '--check' in sys.argv:
-        if not os.path.exists(OUT) or open(OUT).read() != text:
-            sys.exit('sql/cases/48-scope-and-slots.sqlt is stale: run tools/gen-sql-scope-cases.py')
-        print('ok')
-    else:
-        open(OUT, 'w').write(text)
-        print('wrote', OUT, len(CASES), 'scenarios')
+    gen_lib.write_or_check('gen-sql-scope-cases', ROOT, [(os.path.relpath(OUT, ROOT), emit())],
+                           CHECK, 'python3 tools/gen-sql-scope-cases.py')
