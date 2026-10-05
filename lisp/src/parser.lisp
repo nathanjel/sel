@@ -550,6 +550,28 @@ left to the run."
               *binding-forms-index* cache)))
     (gethash (string-upcase name) (cdr cache))))
 
+(defun form-when-holds-p (when args)
+  "Whether the argument a manifest form's WHEN names -- (index :name) or (index
+:text) -- is that: a bare, unparenthesised name, or a text literal."
+  (let ((a (elt args (first when))))
+    (and (node-p a)
+         (ecase (second when)
+           (:name (and (eq (node-kind a) :var) (not (node-grouped a))))
+           (:text (eq (node-kind a) :text))))))
+
+(defun match-binding-form (forms args)
+  "The first of FORMS (manifest rows: name, scopes, when, binds) that takes
+ARGS, a list or vector of argument nodes; NIL when none does. The rows' order
+is the precedence: SORT_BY's text-literal-direction form comes
+before its bare-binder form, so `SORT_BY(L, _, \"DESC\")` sorts by `_`, DESC."
+  (let ((count (length args)))
+    (dolist (form forms nil)
+      (let ((scopes (second form))
+            (when (third form)))
+        (when (and (= (length scopes) count)
+                   (or (null when) (form-when-holds-p when args)))
+          (return form))))))
+
 (defun binding-form (name args &optional (spec (registry-lookup name)))
   "Which argument of a binding call runs where (spec/builtins.md, \"Binding
 forms\"): two values, the per-argument scopes -- :OUTER (evaluated where the
@@ -560,21 +582,30 @@ reads every argument where the call stands. The dependency walker and the SQL
 layer's stage 1 both classify through here, so they cannot disagree."
   (let* ((forms (or (binding-forms-named name)
                     (and spec (spec-binds spec) *generic-binding-forms*)))
-         (count (length args)))
-    (dolist (form forms nil)
-      (destructuring-bind (nm scopes when binds) form
-        (declare (ignore nm))
-        (when (and (= (length scopes) count)
-                   (or (null when)
-                       (let ((a (nth (first when) args)))
-                         (and (node-p a)
-                              (ecase (second when)
-                                (:name (and (eq (node-kind a) :var) (not (node-grouped a))))
-                                (:text (eq (node-kind a) :text)))))))
-          (let ((bound (copy-list binds)))
-            (loop for scope in scopes
-                  for a in args
-                  when (and (eq scope :binder) (node-p a) (eq (node-kind a) :var))
-                    do (push (node-s a) bound))
-            (return (values scopes bound))))))))
+         (form (match-binding-form forms args))
+         (scopes (second form)))
+    (when form
+      (let ((bound (copy-list (fourth form))))
+        (loop for scope in scopes
+              for a in args
+              when (and (eq scope :binder) (node-p a) (eq (node-kind a) :var))
+                do (push (node-s a) bound))
+        (values scopes bound)))))
+
+(defun call-form (forms args &optional counted)
+  "The roles of a binding call's arguments under the manifest form that takes
+ARGS (MATCH-BINDING-FORM), as four values, each an argument index or NIL: the
+binder (NIL: the binder is `_`), the first and the second argument evaluated
+once per element (:INNER -- a sort's key; a bucket's key and projection), and
+a direction: the first :OUTER argument after the first :INNER one, short of the
+last argument when COUNTED (the TOP family, whose last argument is the count).
+The one decoder of SORT/SORT_BY/TOP/TOP_BY/BUCKET forms the evaluator, the
+optimiser and the translator share."
+  (let ((scopes (second (match-binding-form forms args))))
+    (when scopes
+      (let* ((end (if counted (1- (length scopes)) (length scopes)))
+             (inner1 (position :inner scopes))
+             (inner2 (and inner1 (position :inner scopes :start (1+ inner1))))
+             (dir (and inner1 (position :outer scopes :start (1+ inner1) :end end))))
+        (values (position :binder scopes) inner1 inner2 dir)))))
 
