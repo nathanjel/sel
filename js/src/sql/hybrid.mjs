@@ -236,7 +236,7 @@ function rowsAreNotTheValue(steps) {
 }
 
 const SQL_SPECIAL_CALLS = new Set([
-  'IF', 'COND', 'COALESCE', 'COUNT', 'SUM', 'AVG', 'MIN', 'MAX', 'RECORD', 'LIST',
+  'IF', 'COND', 'COALESCE', 'COUNT', 'SUM', 'MIN', 'MAX', 'RECORD', 'LIST',
 ]);
 
 // `defs` are the helper definitions: a read of one is as unsupported as its
