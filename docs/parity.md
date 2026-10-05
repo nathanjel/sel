@@ -66,8 +66,8 @@ UPPER("straße")        => STRAßE
 
 ### Regular expressions
 
-Patterns are checked against a subset that both PCRE and ECMAScript read the
-same way, at compile time. `\d`, `\w` and `\s` are rewritten into explicit ASCII
+Patterns are checked against a subset that every host's engine reads the same
+way, at compile time. `\d`, `\w` and `\s` are rewritten into explicit ASCII
 classes, because PHP's `u` modifier turns on Unicode properties and
 JavaScript's does not. `\b` is refused outright: a word boundary depends on the
 engine's idea of a word character. Each host's engine is bent to one shape —
@@ -76,10 +76,20 @@ C++ (an ECMAScript engine, so it agrees with JavaScript by construction), and
 cl-ppcre and Python's `re` with `^`/`$` lowered to `\A`/`\z`, because Perl-style
 engines let `$` match before a trailing newline. Rust's `regex` crate and Go's
 RE2 `regexp` get the same lowering; both are linear-time engines, and RE2 caps
-a counted repeat at 1000, so Go writes a larger or nested count out as copies. Case-insensitive matching
-needed correcting in both directions: cl-ppcre folds neither of the two
-non-ASCII code points that fold to an ASCII letter, and Python folds those and
-two more.
+a counted repeat at 1000, so Go writes a larger or nested count out as copies,
+and runs a pattern too large for RE2's program on a counter-based matcher of
+its own (Rust does the same when the `regex` crate's program would be too
+large). Case-insensitive matching needed correcting in both directions:
+cl-ppcre folds neither of the two non-ASCII code points that fold to an ASCII
+letter, and Python folds those and two more.
+
+One engine limit is still visible, and it is PHP's. On PHP, a counted repeat of
+a group whose optional iterations (m−n in {n,m}) do not fit PCRE2's 64 KB
+compiled program raises `E_REGEX_SYNTAX` at the pattern when the subject is at
+least the pattern's minimum length; a shorter subject answers `FALSE`. Every
+other count at the language's 65 535 cap — `(ab){65535}`, `(?:ab){65535,}`,
+nested `{300}{300}` — PHP rewrites into a program PCRE2 can hold, with the same
+answer as every other host (SPEC §7.8).
 
 ### Identity
 

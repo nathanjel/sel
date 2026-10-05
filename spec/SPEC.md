@@ -217,15 +217,15 @@ affair, provided nothing can change a number once it has been yielded
 (`conformance/32-numeric-plans.selt`).
 
 **Only assignment and the collectors copy.** `=` deep-copies its right-hand
-side (§5.8), which is what stops two variables from sharing structure, and the
+side (§5.7), which is what stops two variables from sharing structure, and the
 operations that *collect* values into a new one copy what they collect for the
 same reason. Nothing else copies — an implementation that copies anywhere else
 will disagree with this section, and an implementation that copies nowhere will
-disagree with §5.8. The rule is a table, not a judgement call:
+disagree with §5.7. The rule is a table, not a judgement call:
 
 | Operation | Container | Elements it collects |
 |---|---|---|
-| `=` (§5.8) | the stored value | **copied** (deep) |
+| `=` (§5.7) | the stored value | **copied** (deep) |
 | `,` (§5.9) | new | **copied** |
 | `LIST`, `RECORD` (§7.4) | new | **copied**, as `,` does |
 | the §7.3 aggregates — `MAP`, `FILTER`, `SORT`, `SORT_DESC`, `SORT_BY`, `BUCKET` (both spellings), `TOP`, `TOP_DESC`, `TOP_BY` | new | **copied** |
@@ -436,7 +436,7 @@ yielded and `b` is not evaluated.
 
 Both operators short-circuit: if `a` is non-vacuous, `b` is never evaluated.
 
-### 5.6 Logic — `AND` `OR` `NOT` `XOR`
+### 5.6 Logic — `AND` `OR` `NOT` `XOR`, and bitwise `BAND` `BOR` `BXOR`
 
 Operands must be BOOL (`E_NOT_BOOL`). There is no truthiness: `IF(name, …)` is an
 error, not a shortcut. Write `IF(name $!= "", …)`.
@@ -444,12 +444,11 @@ error, not a shortcut. Write `IF(name $!= "", …)`.
 `AND` and `OR` **short-circuit**: `FALSE AND (1/0)` is `FALSE`, not an error.
 `XOR` evaluates both.
 
-### 5.7 Bitwise — `BAND` `BOR` `BXOR`
+**Bitwise — `BAND` `BOR` `BXOR`.** Both operands must be BIN of **equal length**
+(`E_NOT_BIN`, `E_LEN_MISMATCH`). The result is BIN of that length. These operate
+on byte strings, not integers, and evaluate both operands.
 
-Both operands must be BIN of **equal length** (`E_NOT_BIN`, `E_LEN_MISMATCH`).
-The result is BIN of that length. These operate on byte strings, not integers.
-
-### 5.8 Assignment
+### 5.7 Assignment
 
 The target must be an identifier, optionally followed by index operations
 (`A`, `A[1]`, `A["x"][2]`). Anything else is `E_BAD_ASSIGN` at parse time.
@@ -992,7 +991,12 @@ holding the element (the lowercase only where the element has no such key,
 and neither when the element already has a field of the name itself, which it
 is then bound as), and for an argument with no name (a literal, or any
 other expression) is the bare element — `_1` and `_2` are never added as
-keys. Each key appears once, where it first occurred: a binder
+keys. The extended element has **no scalar of its own** (it is `NONE`), whatever
+the element's kind: its own fields come first (a list's children, a record's
+fields), then the name keys, and an element's scalar — text, a number, `BOOL`,
+`BIN` — is not kept beside them. `LINK(LIST(5), LIST(7), A, B, TRUE)` binds `A`
+to the record `A=5, a=5`, and a scalar read of the binder reaches the `5`
+through its first field (§3.2) (`rel.link.alias.*` pins the whole row). Each key appears once, where it first occurred: a binder
 key holds the row *this* `LINK` bound even when the left element carried a
 nested record of the same name from an earlier one (the earlier `_1`, or a
 relation joined twice), and every other key holds its first value. An
@@ -1128,9 +1132,9 @@ Functions taking BIN accept TEXT and encode it as UTF-8 first.
 ### 7.8 Regular expressions
 
 SEL accepts a **subset of syntax every host's regex engine agrees on**, checked
-at compile time. There are four of them behind five hosts — PCRE in PHP,
-ECMAScript in JS and (through SRELL) in C++, Python's `re`, and cl-ppcre in Lisp
-— and the subset is the intersection. Anything outside the subset is `E_REGEX_SYNTAX` with the offset of
+at compile time. The engines are PCRE in PHP, ECMAScript in JS and (through
+SRELL) in C++, Python's `re`, cl-ppcre in Lisp, RE2's `regexp` in Go and the
+`regex` crate in Rust, and the subset is the intersection. Anything outside the subset is `E_REGEX_SYNTAX` with the offset of
 the offending character — a clear failure instead of a silent divergence between
 backend and frontend.
 
@@ -1182,7 +1186,13 @@ lookbehind, atomic groups, possessive quantifiers, inline modifiers `(?i)`,
   **or holds more than 1 000 groups** (`MAX_REGEX_GROUPS`). Each host's engine has
   its own limits for these (PCRE refuses depth 251, SRELL 257, RE2 a large
   program), and some hosts recursed until they crashed; the language states one.
-  `{n}` bounds are capped at 65 535 as before.
+  `{n}` bounds are capped at 65 535 as before. One engine limit remains visible:
+  on PHP, a counted repeat of a group whose optional iterations (m−n in {n,m})
+  do not fit PCRE2's 64 KB compiled program raises `E_REGEX_SYNTAX` at the
+  pattern when the subject is at least the pattern's minimum length; a shorter
+  subject answers `FALSE`. (Every other count PCRE2, RE2 or the `regex` crate
+  cannot compile is rewritten or run on a counter-based matcher, with the same
+  answer as the other hosts.)
 
 - **`\b` and `\B`.** A word boundary is defined in terms of the engine's notion of
   a word character, and the two engines disagree — PHP's `u` modifier enables
@@ -1223,21 +1233,22 @@ line terminators and PCRE treats only `\n` as one, so every construct whose
 meaning depends on where a line ends — `.`, `^`, `$` under `m` — would differ
 between backend and frontend. Instead:
 
-- **Dotall is permanently on.** `.` means "any code point", in both hosts. Write
+- **Dotall is permanently on.** `.` means "any code point", in every host. Write
   `[^\n]` when you mean "not a newline"; that is portable and says what it means.
 - **`^` and `$` anchor only to the ends of the subject.** PCRE's `$` otherwise
   also matches before a trailing newline, so PHP must additionally compile with
   the `D` modifier. Python's `re` and cl-ppcre behave like PCRE here and have no
-  such modifier, so both hosts instead **lower `^` and `$` to `\A` and `\Z`**
+  such modifier, so those hosts (and Go and Rust, whose engines spell it the
+  same way) instead **lower `^` and `$` to `\A` and `\Z`**
   after validating the pattern — the same rule reached by rewriting rather than
   by a flag.
 
 Four requirements on implementations, without which the hosts diverge. Each is
-written for the two engines SEL started with; the three added since each needed
+written for the two engines SEL started with; each engine added since needed
 its own spelling of the same rule, and the third requirement below is where they
 differ most:
 
-1. **Compile with `u` and dotall in both hosts** (`us` in JS, `usD` in PHP), and
+1. **Compile with `u` and dotall** (`us` in JS, `usD` in PHP), and
    expand the class escapes as above. `u` gives code point matching in both; the
    expansion is what makes `\d`, `\w` and `\s` mean the same thing, since PHP's
    `u` also enables UCP and JS's does not.
@@ -1250,7 +1261,8 @@ differ most:
    `` $& ``, `` $' `` and `` $` ``.
 
 **Refused for its running time: exponential ambiguity.** A backtracking engine
-(every host's, except Go's) takes time exponential in the subject on a pattern
+(every host's, except the linear-time engines of Go and Rust) takes time
+exponential in the subject on a pattern
 that can match some word in exponentially many ways — `^(a+)+$` on `aaaa…a!` — and
 the hosts disagreed about the outcome: minutes, an aborted process, `FALSE`. The
 subset therefore refuses such patterns at compile time, by one static rule that

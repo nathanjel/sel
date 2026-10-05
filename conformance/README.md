@@ -181,7 +181,7 @@ what a warm decimal or identity cache must not remember (`cache.*`), record
 shapes of 14–20 fields with awkward keys (`record.shape.*`; the cases run in one
 process, so a poisoned shape shows up in the cases after it) and the value-depth
 cap for a target plus the value stored under it (`lim.assign-depth-target-*`).
-Only what spec §3.4/§5.8/§5.9/§7.3 decide is pinned there: assignment, `,` and the
+Only what spec §3.4/§5.7/§5.9/§7.3 decide is pinned there: assignment, `,` and the
 §7.3 aggregates copy what they collect, and every list a function returns is a new
 container. Whether `LIST`/`RECORD` and the §7.4 structure functions copy their
 elements is not pinned until the spec says.
