@@ -5,6 +5,7 @@ package sql
 import (
 	"fmt"
 
+	"github.com/nathanjel/sel/go/internal/limits"
 	"github.com/nathanjel/sel/go/internal/manifest"
 	"github.com/nathanjel/sel/go/internal/utf8"
 	"github.com/nathanjel/sel/go/sel"
@@ -1081,6 +1082,13 @@ func PlanHybrid(program *sel.Program, dialect string, bindings *Bindings, option
 
 	unwoundSource, unwoundSteps := unwindThroughHelpers(partsResult, defs, literals)
 	if len(unwoundSteps) == 0 || !isRelation(unwoundSource) {
+		return pureMemoryPlan(program, dialect, checked)
+	}
+	// A pipeline of more than MAX_DEPTH steps, counted as written (through its
+	// helpers, before the optimiser drops any), is a pure-memory plan in every
+	// host: rendered whole it is deeper than the cap, and probing each shorter
+	// prefix costs time quadratic in the chain to push down a step or two.
+	if len(unwoundSteps) > limits.MAX_DEPTH {
 		return pureMemoryPlan(program, dialect, checked)
 	}
 

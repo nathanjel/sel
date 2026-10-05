@@ -771,6 +771,16 @@ func optLogicalSteps(source *Node, current []*Node, logical bool) []*Node {
 			if second != nil && first.S == "FILTER" && second.S == "FILTER" {
 				left := getOptFilterInfo(first)
 				right := getOptFilterInfo(second)
+				// Fused, the second predicate sits one level deeper than it did:
+				// under the AND that joins them. A fused pair must spend what the
+				// two stages spent (SPEC 6.4), so a predicate that would reach the
+				// cap that way stays a second FILTER.
+				if left.valid && right.valid && second.stepDepth != 0 &&
+					int(second.stepDepth)+boundedDepth(right.predicate, maxDepth)+1 > maxDepth {
+					next = append(next, first)
+					i++
+					continue
+				}
 				if left.valid && right.valid && optFilterPredicateCannotRaise(right.predicate, right.binder, logical) {
 					rightPred := right.predicate
 					if upperName(left.binder) != upperName(right.binder) {
@@ -1140,6 +1150,7 @@ func optTree(node *Node, physical bool, depth int, fold bool, inMath bool) *Node
 		optimizedSteps := make([]*Node, len(steps))
 		for sIdx, step := range steps {
 			cp := copyNode(step)
+			cp.stepDepth = int32(depth + len(steps) - 1 - sIdx)
 			cp.Items = make([]*Node, len(step.Items))
 			cp.Items[0] = step.Items[0]
 			for i := 1; i < len(step.Items); i++ {
@@ -1201,6 +1212,31 @@ func optExceedsDepth(node *Node, depth int) bool {
 		return true
 	}
 	return false
+}
+
+// boundedDepth is how deep an expression goes, its root counted as 1, and never
+// more than limit+1 (the walk stops there), so it is bounded whatever its size.
+func boundedDepth(root *Node, limit int) int {
+	deepest := 0
+	level := []*Node{root}
+	for len(level) > 0 && deepest <= limit {
+		deepest++
+		var next []*Node
+		for _, n := range level {
+			if n == nil {
+				continue
+			}
+			if n.L != nil {
+				next = append(next, n.L)
+			}
+			if n.R != nil {
+				next = append(next, n.R)
+			}
+			next = append(next, n.Items...)
+		}
+		level = next
+	}
+	return deepest
 }
 
 func optRoot(ast *Node, physical bool) *Node {

@@ -102,6 +102,10 @@ type Node struct {
 	// DROP(2)`, so neither the helper's dependency walk nor the translator's
 	// inlining reads that source as the helper. The evaluator ignores it.
 	BindingRead bool
+	// stepDepth is where a pipeline step stood in the tree as written (the
+	// outermost step at its pipeline's own depth), 0 when unknown: the optimiser
+	// sets it for the rules that would deepen a subtree (FILTER fusion).
+	stepDepth int32
 
 	L     *Node
 	R     *Node
