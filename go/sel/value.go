@@ -436,7 +436,6 @@ func (v *Value) rebuildIndex() {
 	}
 }
 
-
 // denseEntries is the entry list of a positional list: key i+1 for child i. The
 // keys of a list past 99 children are strconv.Itoa strings, one allocation each
 // (GO-P12); here they are written once into one blob and sliced out of it, so the
@@ -928,4 +927,3 @@ func (v *Value) Elements() []Entry {
 	}
 	return nil
 }
-

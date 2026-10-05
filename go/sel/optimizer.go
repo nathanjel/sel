@@ -353,9 +353,9 @@ func optStepArgFolds(step *Node, index int) bool {
 }
 
 type optMapInfo struct {
-	binder          string
-	body            *Node
-	explicitBinder  bool
+	binder         string
+	body           *Node
+	explicitBinder bool
 }
 
 type optFilterInfo struct {

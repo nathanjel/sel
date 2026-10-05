@@ -11,15 +11,15 @@ import (
 
 // Binding power levels (spec/SPEC.md §5). Higher binds tighter.
 const (
-	bpSeq      = 1  // ;
-	bpList     = 2  // ,
-	bpAssign   = 3  // = += -= *= /= %= &= (right associative)
+	bpSeq      = 1 // ;
+	bpList     = 2 // ,
+	bpAssign   = 3 // = += -= *= /= %= &= (right associative)
 	bpOr       = 4
 	bpXor      = 5
 	bpAnd      = 6
-	bpNot      = 7  // prefix
-	bpCompare  = 8  // non-associative
-	bpCoalesce = 9  // ?? ??? (right associative)
+	bpNot      = 7 // prefix
+	bpCompare  = 8 // non-associative
+	bpCoalesce = 9 // ?? ??? (right associative)
 	bpBOr      = 10
 	bpBXor     = 11
 	bpBAnd     = 12

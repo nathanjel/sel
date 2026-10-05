@@ -371,7 +371,7 @@ func main() {
 
 		statsMap := map[string]Stats{
 			"program_run_ms":    computeStats(runMsList),
-			"materialize_ms":   computeStats(matMsList),
+			"materialize_ms":    computeStats(matMsList),
 			"prepared_total_ms": computeStats(totMsList),
 		}
 

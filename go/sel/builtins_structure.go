@@ -81,7 +81,7 @@ func init() {
 			for i := 0; i < count; i += 2 {
 				keys[i/2] = args.Text(i)
 				// SPEC §3.4: RECORD copies its values, like `,`.
-				values[i/2] = args.Val(i + 1).CloneAt(2, args.Pos())
+				values[i/2] = args.Val(i+1).CloneAt(2, args.Pos())
 			}
 			shape := args.RecordShape()
 			if shape != nil && reflect.DeepEqual(shape.keys, keys) {

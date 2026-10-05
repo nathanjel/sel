@@ -69,4 +69,3 @@ func TestAllManifestBuiltinsRegistered(t *testing.T) {
 	}
 	t.Logf("Total registered functions: %d", len(names))
 }
-

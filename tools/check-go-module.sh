@@ -48,6 +48,14 @@ for pkg in sel sel/sql; do
   (cd "$mod" && go doc "./$pkg" 2>/dev/null | grep -q "^Package ${pkg##*/} ") || fail "$pkg has no package documentation"
 done
 
+# The hand-written sources are gofmt-clean. The generated ones (*_gen.go and the
+# three manifests under internal/) are left out until their generators emit
+# gofmt's layout; the generators, not gofmt -w, decide those bytes
+# (tools/check-generated.sh).
+unformatted="$(cd "$mod" && gofmt -l . | grep -v -e '_gen\.go$' -e '^internal/limits/limits\.go$' \
+  -e '^internal/manifest/builtins\.go$' -e '^internal/mathops/math_ops\.go$')"
+[ -z "$unformatted" ] || fail "not gofmt-clean: $(echo $unformatted)"
+
 # Every package builds and vets, and the examples pkg.go.dev shows still print
 # what they say.
 export GOFLAGS=-mod=mod GOTOOLCHAIN=local

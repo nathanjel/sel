@@ -31,7 +31,7 @@ type EntryRecord struct {
 	Key      string
 	Kind     EntryKind
 	Reason   string
-	Tpl      interface{}       // string or map[string]string
+	Tpl      interface{} // string or map[string]string
 	Variants map[string]string
 	Ret      string
 	Caveat   string
@@ -88,22 +88,22 @@ func initShipped() {
 		Skel    map[string]interface{} `json:"skel"`
 	}
 
-	if err := json.Unmarshal([]byte(shippedDialectsJSON), &rawDialects); err != nil {
+	if err := json.Unmarshal([]byte(ShippedDialectsJSON), &rawDialects); err != nil {
 		panic("failed to parse ShippedDialectsJSON: " + err.Error())
 	}
 
 	var rawRules struct {
-		OpArity      map[string][2]int      `json:"opArity"`
+		OpArity      map[string][2]int        `json:"opArity"`
 		FuncArity    map[string][]interface{} `json:"funcArity"`
-		SkelSlots    map[string][]string    `json:"skelSlots"`
-		Variants     map[string][]string    `json:"variants"`
-		Caveats      []string               `json:"caveats"`
-		RetKinds     []string               `json:"retKinds"`
-		ArgKinds     []string               `json:"argKinds"`
-		LexicalTypes map[string]string      `json:"lexicalTypes"`
-		TemplateKeys []string               `json:"templateKeys"`
+		SkelSlots    map[string][]string      `json:"skelSlots"`
+		Variants     map[string][]string      `json:"variants"`
+		Caveats      []string                 `json:"caveats"`
+		RetKinds     []string                 `json:"retKinds"`
+		ArgKinds     []string                 `json:"argKinds"`
+		LexicalTypes map[string]string        `json:"lexicalTypes"`
+		TemplateKeys []string                 `json:"templateKeys"`
 	}
-	if err := json.Unmarshal([]byte(shippedRulesJSON), &rawRules); err != nil {
+	if err := json.Unmarshal([]byte(ShippedRulesJSON), &rawRules); err != nil {
 		panic("failed to parse ShippedRulesJSON: " + err.Error())
 	}
 

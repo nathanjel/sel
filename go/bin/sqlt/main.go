@@ -284,15 +284,15 @@ func runCase(c SqlCase, dialect string) (problem string, sErr error) {
 	}
 
 	var (
-		haveSql     bool
-		haveError   bool
-		haveThrown  bool
-		sqlStr      string
-		thrownWhat  string
-		sqlErr      *sql.SqlError
-		frag        *sql.Fragment
-		prog        *sel.Program
-		binds       *sql.Bindings
+		haveSql    bool
+		haveError  bool
+		haveThrown bool
+		sqlStr     string
+		thrownWhat string
+		sqlErr     *sql.SqlError
+		frag       *sql.Fragment
+		prog       *sel.Program
+		binds      *sql.Bindings
 	)
 
 	opts := sql.Options{Strict: c.Strict}

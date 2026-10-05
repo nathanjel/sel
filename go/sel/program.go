@@ -10,8 +10,8 @@ import (
 )
 
 type Program struct {
-	source      string
-	ast         *Node
+	source string
+	ast    *Node
 	// The optimised tree, built on first use. An atomic pointer rather than a
 	// sync.Once: a panic inside the optimizer counts a Once as done and every
 	// later Run would evaluate a nil tree. Here a failed build leaves the

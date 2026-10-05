@@ -1,8 +1,8 @@
 package sql
 
 import (
-	"github.com/nathanjel/sel/go/internal/decimal"
 	"fmt"
+	"github.com/nathanjel/sel/go/internal/decimal"
 	"strings"
 
 	"github.com/nathanjel/sel/go/internal/limits"

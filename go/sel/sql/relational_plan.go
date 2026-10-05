@@ -66,17 +66,17 @@ type relationalPlan struct {
 	// order, so a step that needs the rows in that order (a BUCKET's groups, a LINK's
 	// rows, a later sort's ties) cannot be built on it.
 	OrderDropped bool
-	Distinct        bool
-	SelectCols      []string
-	Projections     []relationalProjection
-	Filters         []relationalFilter
-	GroupBy         []relationalGroup
-	Bucket          bucketState
-	BareKey         bool
-	Having          []relationalFilter
-	OrderBy         []relationalOrder
-	Limit           *int64
-	Offset          *int64
+	Distinct     bool
+	SelectCols   []string
+	Projections  []relationalProjection
+	Filters      []relationalFilter
+	GroupBy      []relationalGroup
+	Bucket       bucketState
+	BareKey      bool
+	Having       []relationalFilter
+	OrderBy      []relationalOrder
+	Limit        *int64
+	Offset       *int64
 }
 
 func newRelationalPlan() *relationalPlan {
