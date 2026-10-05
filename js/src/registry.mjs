@@ -124,7 +124,7 @@ const hostNames = new Set();
 // manifest rather than written here — one body for all five hosts. A name the
 // manifest does not know is a host's own function (examples/fn-*) and passes.
 export function define(spec) {
-  const name = spec.name.toUpperCase();
+  const name = asciiUpper(spec.name);
   if (table.has(name)) throw new Error(`SEL function ${name} defined twice`);
   table.set(name, makeSpec(reconcile(name, spec)));
 }
@@ -184,7 +184,7 @@ export function register(nameOrSpec, min, max, fn, options = {}) {
         + `'${key}' is not supported`);
     }
   }
-  const key = typeof spec.name === 'string' ? spec.name.toUpperCase() : spec.name;
+  const key = typeof spec.name === 'string' ? asciiUpper(spec.name) : spec.name;
   if (spec.overwrite === false && hostNames.has(key)) {
     throw new Error(`SEL function ${key} defined twice`);
   }
@@ -200,7 +200,7 @@ export function registerFunction(name, min, max, fn) {
   if (typeof name !== 'string' || !/^[A-Za-z][A-Za-z0-9_]*$/.test(name)) {
     throw new TypeError(`SEL function name must be ASCII letters, digits and _, starting with a letter: ${String(name)}`);
   }
-  const key = name.toUpperCase();
+  const key = asciiUpper(name);
   if (RESERVED.has(key)) throw new RangeError(`${key} is a reserved word`);
   if (table.has(key) && !hostNames.has(key)) {
     throw new RangeError(`${key} is a builtin; a host function cannot replace it`);
@@ -233,7 +233,7 @@ export function hostArity(name) {
 }
 
 function makeSpec(spec) {
-  const name = spec.name.toUpperCase();
+  const name = asciiUpper(spec.name);
   return {
     name,
     min: spec.min,
@@ -250,8 +250,8 @@ function makeSpec(spec) {
   };
 }
 
-export function lookup(name) { return table.get(name.toUpperCase()); }
+export function lookup(name) { return table.get(asciiUpper(name)); }
 // Whether `name` is a function a host registered (and so could do anything,
 // including write into the values it is handed).
-export function isHostFunction(name) { return hostNames.has(String(name).toUpperCase()); }
+export function isHostFunction(name) { return hostNames.has(asciiUpper(String(name))); }
 export function names() { return Array.from(table.keys()).sort(); }

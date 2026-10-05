@@ -177,7 +177,7 @@ function mapPassthroughs(step) {
   for (let i = 0; i + 1 < body.args.length; i += 2) {
     const key = body.args[i], value = body.args[i + 1];
     if (key.t === 'text' && value.t === 'index' && value.obj.t === 'var'
-        && value.obj.name.toUpperCase() === binder.toUpperCase() && value.idx.t === 'text'
+        && value.obj.name === binder && value.idx.t === 'text'
         && value.idx.v === key.v) fields.push(key.v);
   }
   return fields;
@@ -198,12 +198,10 @@ function cannotRaise(node, binder, logical) {
   if (!node) return true;
   switch (node.t) {
     case 'num': case 'text': case 'bool': case 'null': return true;
-    case 'var': {
-      const name = node.name.toUpperCase();
-      return name === '_K' || name === binder.toUpperCase();
-    }
+    case 'var':
+      return node.name === '_K' || node.name === binder;
     case 'index':
-      return logical && node.obj && node.obj.t === 'var' && node.obj.name.toUpperCase() === binder.toUpperCase()
+      return logical && node.obj && node.obj.t === 'var' && node.obj.name === binder
         && node.idx && node.idx.t === 'text';
     case 'bin':
       return logical && SAFE_LOGICAL_OPS.has(node.op)
@@ -301,7 +299,7 @@ function numericLiteral(node) {
 
 function renameVar(node, oldName, newName) {
   if (!node) return node;
-  if (node.t === 'var' && node.name.toUpperCase() === oldName.toUpperCase()) return { ...node, name: newName };
+  if (node.t === 'var' && node.name === oldName) return { ...node, name: newName };
   return mapChildren(node, (child) => renameVar(child, oldName, newName));
 }
 
@@ -422,7 +420,7 @@ function logicalSteps(source, steps, options = {}) {
           next.push(first);
           continue;
         }
-        const predicate = right.binder.toUpperCase() === left.binder.toUpperCase()
+        const predicate = right.binder === left.binder
           ? right.predicate : renameVar(right.predicate, right.binder, left.binder);
         const merged = copyNode(first);
         const body = { t: 'bin', op: 'AND', l: left.predicate, r: predicate, pos: left.predicate.pos };

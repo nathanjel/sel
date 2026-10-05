@@ -13,7 +13,7 @@ import { validate as regexValidate } from '../builtins/regex.mjs';
 import { SelError } from '../errors.mjs';
 import { MAX_SQL_NODES } from '../_limits.mjs';
 import { evalNode, MAX_DEPTH, Context } from '../eval.mjs';
-import { asciiUpper } from '../lexer.mjs';
+import { asciiUpper, asciiLower } from '../lexer.mjs';
 import { bindingForm, hostArity, lookup, argRoles } from '../registry.mjs';
 import { Value, quoteDump } from '../value.mjs';
 import * as constants from './constants.mjs';
@@ -3271,7 +3271,7 @@ function aggShape(n, roles = argRoles(n.name, n.args, null)) {
 function binderKeys(names) {
   const out = [];
   for (const name of names) {
-    for (const k of [name, name.replace(/[A-Z]/g, (c) => c.toLowerCase())]) if (!out.includes(k)) out.push(k);
+    for (const k of [name, asciiLower(name)]) if (!out.includes(k)) out.push(k);
   }
   return out;
 }

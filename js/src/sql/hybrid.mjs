@@ -312,7 +312,7 @@ function readsWholeRow(node, binder) {
 function isOwnFieldRead(pair, binder) {
   const value = pair.value;
   return value.t === 'index' && value.obj?.t === 'var' && value.idx?.t === 'text'
-    && value.obj.name.toUpperCase() === binder.toUpperCase()
+    && value.obj.name === binder
     && String(value.idx.v) === String(pair.key.v);
 }
 

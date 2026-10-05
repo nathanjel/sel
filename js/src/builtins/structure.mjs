@@ -3,15 +3,13 @@ import * as D from '../decimal.mjs';
 import { define } from '../registry.mjs';
 import { anyNode, callsApplication, mayWrite } from '../ast.mjs';
 import { SelError, MAX_DEPTH } from '../errors.mjs';
-import { asciiUpper } from '../lexer.mjs';
+import { asciiUpper, asciiLower } from '../lexer.mjs';
 import { checkCollection } from '../budget.mjs';
 
-// Names compare ASCII-case-insensitively (spec §2, §7.4): only a-z move.
-// toUpperCase folds "ß" to "SS" and "ſ" to "S", which made distinct field names
-// collide in joined rows. The native call is kept for
-// the all-ASCII names that are nearly every name.
-const NON_ASCII = /[^\x00-\x7f]/;
-function upperName(s) { return NON_ASCII.test(s) ? asciiUpper(s) : s.toUpperCase(); }
+// Names compare ASCII-case-insensitively (spec §2, §7.4): only a-z move
+// (lexer.mjs asciiUpper; toUpperCase folds "ß" to "SS" and "ſ" to "S", which
+// made distinct field names collide in joined rows).
+const upperName = asciiUpper;
 
 function firstCollectionItem(value) {
   if (value.kind === NONE && value.size() === 0) return null;
@@ -191,8 +189,8 @@ function tryExtractEquiKeys(node, b1, b2) {
   // read of that name is the right element on BOTH sides of the comparison and
   // there is no left key to extract. The general path evaluates it as written.
   if (upperName(b1) === upperName(b2)) return null;
-  const leftNames = new Set([b1, b1.toLowerCase(), '_1', '_'].map((x) => upperName(x)));
-  const rightNames = new Set([b2, b2.toLowerCase(), '_2'].map((x) => upperName(x)));
+  const leftNames = new Set([b1, asciiLower(b1), '_1', '_'].map((x) => upperName(x)));
+  const rightNames = new Set([b2, asciiLower(b2), '_2'].map((x) => upperName(x)));
   if (exprDependsOnlyOn(node.l, leftNames) && exprDependsOnlyOn(node.r, rightNames)) {
     return { left: node.l, right: node.r, numeric: node.op === '==', swapped: false };
   }
@@ -278,7 +276,7 @@ const ALIAS_PLANS = new WeakMap();
 
 function ensureRowTableAlias(row, tableName) {
   if (!tableName || isPositionalBinder(tableName) || row.has(tableName)) return row;
-  const lower = tableName.toLowerCase();
+  const lower = asciiLower(tableName);
   if (row.shape) {
     const oldShape = row.shape;
     let cached = ALIAS_PLANS.get(oldShape);
@@ -310,7 +308,7 @@ function makeNullRecord(sample, tableName) {
   const seen = new Set();
   if (sample) for (const key of sample.keys()) { entries.push([key, Value.none()]); seen.add(key); }
   if (!sample && tableName && !isPositionalBinder(tableName)) {
-    for (const name of [tableName, tableName.toLowerCase()]) {
+    for (const name of [tableName, asciiLower(tableName)]) {
       if (!seen.has(name)) { entries.push([name, Value.none()]); seen.add(name); }
     }
   }
@@ -334,7 +332,7 @@ function category(value) {
 
 function binderKeys(name, positional) {
   const keys = [name];
-  const lower = name.toLowerCase();
+  const lower = asciiLower(name);
   if (lower !== name) keys.push(lower);
   if (name !== positional) keys.push(positional);
   return keys;
@@ -717,7 +715,7 @@ class SideFacts {
     // later joins rebind.
     this.names = new Set();
     for (const b of names) {
-      if (!isPositionalBinder(b)) { this.names.add(b); this.names.add(b.toLowerCase()); }
+      if (!isPositionalBinder(b)) { this.names.add(b); this.names.add(asciiLower(b)); }
     }
     this.facts = new Map();
   }
@@ -873,7 +871,7 @@ function doLink(args, ctx, leftJoin) {
       // This join computes its left key on every row it receives; a row
       // dropped below never arrives, so the key goes down as an obligation
       // for the join that drops to prove (keysSafe).
-      const ownKey = { key: equi.left, rowNames: new Set([b1, b1.toLowerCase(), '_1', '_']), outer: above.length + 1 };
+      const ownKey = { key: equi.left, rowNames: new Set([b1, asciiLower(b1), '_1', '_']), outer: above.length + 1 };
       ctx.joinPrefilter = { stages: handed, deep: true, above: [rightSide, ...above],
         obligations: [ownKey, ...obligations] };
     }
@@ -1011,7 +1009,7 @@ function doLink(args, ctx, leftJoin) {
     const buckets = new Map();
     const rightFacts = { firstLive: null, firstBad: null };
     const gather = prefilter && rightSide === null ? { keys: new Set(), shapes: new Set() } : null;
-    const frameRight = new Map([[b2, null], [b2.toLowerCase(), null], ['_2', null]]);
+    const frameRight = new Map([[b2, null], [asciiLower(b2), null], ['_2', null]]);
     // Read in order here, where they are close together, rather than
     // scattered pair by pair in the projector.
     const binderNames = new Set([...binderKeys(b1, '_1'), ...binderKeys(b2, '_2')]);
@@ -1022,7 +1020,7 @@ function doLink(args, ctx, leftJoin) {
         const row = ensureRowTableAlias(item, b2);
         if (rightFlat && !flatRow(row, binderNames)) rightFlat = false;
         frameRight.set(b2, row);
-        frameRight.set(b2.toLowerCase(), row);
+        frameRight.set(asciiLower(b2), row);
         frameRight.set('_2', row);
         const keyValue = args.evalNode(equi.right);
         const key = canonicalJoinKey(keyValue, equi.numeric);
@@ -1096,7 +1094,7 @@ function doLink(args, ctx, leftJoin) {
         && [upperName(b1), '_1', '_'].includes(upperName(equi.left.obj.name))) {
       fastField = equi.left.idx.v;
     }
-    const frameLeft = new Map([[b1, null], [b1.toLowerCase(), null], ['_1', null], ['_', null]]);
+    const frameLeft = new Map([[b1, null], [asciiLower(b1), null], ['_1', null], ['_', null]]);
     for (const binder of binders) if (!frameLeft.has(binder)) frameLeft.set(binder, null);
     ctx.pushFrame(frameLeft);
     try {
@@ -1115,7 +1113,7 @@ function doLink(args, ctx, leftJoin) {
           }
         }
         frameLeft.set(b1, row);
-        frameLeft.set(b1.toLowerCase(), row);
+        frameLeft.set(asciiLower(b1), row);
         frameLeft.set('_1', row);
         frameLeft.set('_', row);
         const keyValue = args.evalNode(equi.left);
@@ -1156,8 +1154,8 @@ function doLink(args, ctx, leftJoin) {
     if (keyed !== null) return keyed;
   } else {
     const frame = new Map([
-      [b1, null], [b1.toLowerCase(), null], ['_1', null], ['_', null],
-      [b2, null], [b2.toLowerCase(), null], ['_2', null],
+      [b1, null], [asciiLower(b1), null], ['_1', null], ['_', null],
+      [b2, null], [asciiLower(b2), null], ['_2', null],
     ]);
     ctx.pushFrame(frame);
     // A predicate that can change no value (no assignment, no host function) sees the
@@ -1170,13 +1168,13 @@ function doLink(args, ctx, leftJoin) {
       each(leftValue, (leftItem) => {
         const left = ensureRowTableAlias(leftItem, b1);
         frame.set(b1, left);
-        frame.set(b1.toLowerCase(), left);
+        frame.set(asciiLower(b1), left);
         frame.set('_1', left);
         frame.set('_', left);
         let matched = false;
         const pair = (right) => {
           frame.set(b2, right);
-          frame.set(b2.toLowerCase(), right);
+          frame.set(asciiLower(b2), right);
           frame.set('_2', right);
           if (args.evalNode(predicate).asBool(predicate.pos)) {
             matched = true;

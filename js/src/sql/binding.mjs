@@ -23,7 +23,7 @@
 // See docs/internals/sql-translation.md §5.
 
 import * as D from '../decimal.mjs';
-import { asciiUpper } from '../lexer.mjs';
+import { asciiUpper, asciiLower } from '../lexer.mjs';
 import { Value, quoteDump } from '../value.mjs';
 import { SqlError, typeName } from './errors.mjs';
 import { KINDS as FRAGMENT_KINDS } from './fragment.mjs';
@@ -268,7 +268,7 @@ function checkCollation(c) {
     throw new SqlError('E_SQL_BINDING',
       `collation must be a string, and this is ${typeName(c)}`);
   }
-  const lower = c.toLowerCase();
+  const lower = asciiLower(c);
   if (lower === 'binary' || lower === 'exact') return [true, false];
   if (lower === 'sargable' || lower === 'prefilter') return [false, true];
   if (lower === 'default' || lower === 'none') return [false, false];
@@ -283,7 +283,7 @@ function checkPrefilter(p) {
     throw new SqlError('E_SQL_BINDING',
       `a binding prefilter must be a string or boolean, and this is ${typeName(p)}`);
   }
-  const lower = p.toLowerCase();
+  const lower = asciiLower(p);
   if (lower === 'separate' || lower === 'splitsargable' || lower === 'split_sargable') {
     return 'separate';
   }

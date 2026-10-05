@@ -5,6 +5,7 @@
 import { fail } from '../errors.mjs';
 import { Value } from '../value.mjs';
 import { define } from '../registry.mjs';
+import { asciiUpper, asciiLower } from '../lexer.mjs';
 import { toCodePoints, fromCodePoints, ANY_SURROGATE, cpIndex } from '../utf8.mjs';
 import { cpLength, checkText, checkCollection } from '../budget.mjs';
 
@@ -133,17 +134,11 @@ define({ name: 'TRIM', min: 1, max: 1, fn: (a) => Value.textOwned(trim(a.text(0)
 define({ name: 'LTRIM', min: 1, max: 1, fn: (a) => Value.textOwned(trim(a.text(0), true, false)) });
 define({ name: 'RTRIM', min: 1, max: 1, fn: (a) => Value.textOwned(trim(a.text(0), false, true)) });
 
-// ASCII only, deliberately. PHP's strtoupper is byte- and locale-based while JS's
-// toUpperCase applies full Unicode mapping; they cannot be reconciled without
-// shipping a case table, and guessing would break the invariant silently.
-function asciiCase(s, up) {
-  // Only a-z (or A-Z) move, and they are single units, so the astral characters and every
-  // other non-ASCII unit pass through untouched.
-  return up ? s.replace(/[a-z]+/g, (m) => m.toUpperCase()) : s.replace(/[A-Z]+/g, (m) => m.toLowerCase());
-}
-
-define({ name: 'UPPER', min: 1, max: 1, fn: (a) => Value.textOwned(asciiCase(a.text(0), true)) });
-define({ name: 'LOWER', min: 1, max: 1, fn: (a) => Value.textOwned(asciiCase(a.text(0), false)) });
+// ASCII only, deliberately (lexer.mjs asciiUpper): JS's toUpperCase applies
+// full Unicode mapping, and the hosts cannot be reconciled without shipping a
+// case table; guessing would break the invariant silently.
+define({ name: 'UPPER', min: 1, max: 1, fn: (a) => Value.textOwned(asciiUpper(a.text(0))) });
+define({ name: 'LOWER', min: 1, max: 1, fn: (a) => Value.textOwned(asciiLower(a.text(0))) });
 
 define({
   name: 'BACKWARDS', min: 1, max: 1,

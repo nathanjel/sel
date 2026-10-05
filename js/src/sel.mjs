@@ -110,7 +110,7 @@ function collect(node, bound, done, reads, depth) {
     }
 
     case 'call': {
-      const name = (node.name || '').toUpperCase();
+      const name = node.name || '';
       // Which arguments run inside the binder, and what they see, is decided
       // once, by bindingForm() over the manifest's forms (spec/builtins.md).
       // No form -- a strict function, or a count the evaluator would refuse --

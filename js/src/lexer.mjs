@@ -387,20 +387,20 @@ class Lexer {
   }
 }
 
-// strtoupper's rule, not toUpperCase's: only a-z move, and every non-ASCII byte
-// is left alone. python/sel/lexer.py keeps ascii_upper here for the same reason,
-// and the SQL layer needs it for case-insensitive names an application supplies.
-//
-// This host's own identifiers are ASCII by construction (isAlpha above), so
-// tokenize's toUpperCase is equivalent there and is left as it is; the callers
-// that need the rule for arbitrary text are the ones that call this.
+// SEL's case rule for names and for UPPER/LOWER: only a-z and A-Z move,
+// every non-ASCII character is left alone (strtoupper's rule, not
+// toUpperCase's, which folds "ß" to "SS" and "ſ" to "S"). The one place this
+// host spells it. A string that is all ASCII -- every identifier, by
+// construction (isAlpha above), and nearly every name an application hands
+// over -- takes the native call, which is exactly that rule there.
+const NON_ASCII = /[^\x00-\x7f]/;
+
 export function asciiUpper(s) {
-  let out = '';
-  for (const ch of s) {
-    const c = ch.codePointAt(0);
-    out += (c >= 0x61 && c <= 0x7a) ? String.fromCharCode(c - 32) : ch;
-  }
-  return out;
+  return NON_ASCII.test(s) ? s.replace(/[a-z]+/g, (m) => m.toUpperCase()) : s.toUpperCase();
+}
+
+export function asciiLower(s) {
+  return NON_ASCII.test(s) ? s.replace(/[A-Z]+/g, (m) => m.toLowerCase()) : s.toLowerCase();
 }
 
 export function tokenize(source) {

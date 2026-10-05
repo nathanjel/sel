@@ -66,16 +66,17 @@ export function anyNode(root, test, target = true) {
 }
 
 // The field names read as `binder["field"]` (`_`, `_1` and `_2` too), first
-// seen first, each once; compared exactly, since SEL's record keys are
-// case-sensitive while names are not. `binder` null counts a read under any
+// seen first, each once. Names compare as the lexer wrote them (canonical
+// upper case, as the evaluator's frames hold them); field keys exactly, since
+// SEL's record keys are case-sensitive. `binder` null counts a read under any
 // name -- a later step binds the row however it likes.
 export function fieldReads(node, binder = '_') {
-  const wanted = binder === null ? null : new Set([binder, '_', '_1', '_2'].map((name) => name.toUpperCase()));
+  const wanted = binder === null ? null : new Set([binder, '_', '_1', '_2']);
   const refs = [];
   const seen = new Set();
   walkNodes(node, (n) => {
     if (n.t === 'index' && n.obj?.t === 'var' && n.idx?.t === 'text'
-        && (wanted === null || wanted.has(n.obj.name.toUpperCase())) && !seen.has(n.idx.v)) {
+        && (wanted === null || wanted.has(n.obj.name)) && !seen.has(n.idx.v)) {
       seen.add(n.idx.v);
       refs.push(n.idx.v);
     }
@@ -86,11 +87,11 @@ export function fieldReads(node, binder = '_') {
 // Whether `node` reads one of `names` as a value -- a field read
 // `name["field"]` reads the field, not the whole of `name`.
 export function readsName(node, names) {
-  const wanted = new Set(names.map((name) => name.toUpperCase()));
+  const wanted = new Set(names);
   let found = false;
   walkNodes(node, (n) => {
     if (found) return false;
-    if (n.t === 'var' && wanted.has(n.name.toUpperCase())) { found = true; return false; }
+    if (n.t === 'var' && wanted.has(n.name)) { found = true; return false; }
     return !(n.t === 'index' && n.obj?.t === 'var' && n.idx?.t === 'text');
   });
   return found;
