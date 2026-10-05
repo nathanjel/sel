@@ -146,9 +146,6 @@ given, is evaluated in place of the written body."
         (make-bool nil)))
   :lazy t :binds t)
 
-;;; Bound by the sorts around their per-element copy: true when the source is fresh.
-(defvar *collect-fresh* nil)
-
 (define-builtin "MAP" 2 3
   (lambda (a ctx)
     (let ((out '())
@@ -398,12 +395,14 @@ order it is handed its elements."
 ;;; SORT and its variants collect the elements into a new list, and §3.4 has the
 ;;; aggregates copy what they collect: the copy is made as the element is
 ;;; collected, so the result never shares structure with the source.
-(defun make-copied-sort-item (item key idx)
-  (make-sort-item (if *collect-fresh* item (value-copy item)) key idx))
+(declaim (inline make-copied-sort-item))
+(defun make-copied-sort-item (item key idx fresh)
+  "FRESH: the source is a value nothing else holds, so its elements need no copy."
+  (make-sort-item (if fresh item (value-copy item)) key idx))
 
 (defun do-sort (a ctx forced-dir)
   (let* ((val (args-val a 0))
-         (*collect-fresh* (node-fresh-p (args-node a 0))))
+         (fresh (node-fresh-p (args-node a 0))))
     ;; A scalar is one element (SPEC 7.3), so its sort key is evaluated -- only
     ;; NULL and an empty list have nothing to sort.
     ;; The direction is always evaluated and checked, even when there is nothing to
@@ -462,12 +461,12 @@ order it is handed its elements."
                      (setf indexed
                            (loop for i from 0 below (length storage)
                                  for item = (svref storage i)
-                                 collect (make-copied-sort-item item item i)))))
+                                 collect (make-copied-sort-item item item i fresh)))))
                   (t
                    (setf indexed
                          (loop for (nil . item) in (aggregate-elements val)
                                for idx from 0
-                               collect (make-copied-sort-item item item idx)))))
+                               collect (make-copied-sort-item item item idx fresh)))))
                 (progn
                   (ctx-push-frame ctx frame)
                   (unwind-protect
@@ -480,7 +479,7 @@ order it is handed its elements."
                                         do (setf (cdr binder-cell) item)
                                            (when needs-k
                                              (setf (cdr k-cell) (format-index-text (1+ i))))
-                                        collect (make-copied-sort-item item (args-eval a body) i)))))
+                                        collect (make-copied-sort-item item (args-eval a body) i fresh)))))
                          ((value-shape val)
                           (let* ((shape (value-shape val))
                                  (storage (value-storage val))
@@ -492,7 +491,7 @@ order it is handed its elements."
                                         do (setf (cdr binder-cell) item)
                                            (when needs-k
                                              (setf (cdr k-cell) (%text k)))
-                                        collect (make-copied-sort-item item (args-eval a body) i)))))
+                                        collect (make-copied-sort-item item (args-eval a body) i fresh)))))
                          (t
                           (setf indexed
                                 (loop for (k . item) in (aggregate-elements val)
@@ -500,7 +499,7 @@ order it is handed its elements."
                                       do (setf (cdr binder-cell) item)
                                          (when needs-k
                                            (setf (cdr k-cell) (%text k)))
-                                      collect (make-copied-sort-item item (args-eval a body) idx)))))
+                                      collect (make-copied-sort-item item (args-eval a body) idx fresh)))))
                     (ctx-pop-frame ctx))))
             (setf indexed
                   (stable-sort indexed
