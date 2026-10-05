@@ -30,6 +30,9 @@
 (define-builtin "LIST" 0 +variadic+
   (lambda (a ctx)
     (declare (ignore ctx))
+    ;; More than MAX_COLLECTION arguments is E_RANGE at the call (spec §6.4),
+    ;; before any is evaluated, as `,` refuses.
+    (check-collection-cap (args-count a) (args-pos a))
     (make-list-value
      (loop for i below (args-count a)
            collect (value-copy-at (args-val a i) 2 (args-pos a))))))
@@ -39,6 +42,8 @@
     (declare (ignore ctx))
     (let* ((n (args-count a))
            (num-fields (ash n -1)))
+      ;; More than MAX_COLLECTION pairs is E_RANGE at the call (spec §6.4).
+      (check-collection-cap num-fields (args-pos a))
       (if (zerop n)
           (make-none)
           (let* ((keys (loop for i from 0 below n by 2 collect (args-text a i)))
