@@ -52,6 +52,24 @@ impl HybridPlan {
         self.sql_statement.as_ref()
     }
 
+    /// A plan of `kind` with nothing planned yet: the planner's paths name
+    /// only what they fill in.
+    fn of_kind(kind: PlanKind, dialect: &str) -> Self {
+        HybridPlan {
+            selected_member: None,
+            dialect: dialect.to_string(),
+            sql_statement: None,
+            sql_prefix_ast: None,
+            continuation_ast: None,
+            continuation_program: None,
+            continuation_source_var: "_INPUT".to_string(),
+            is_hybrid: kind == PlanKind::Hybrid,
+            pure_sql: kind == PlanKind::PureSql,
+            pure_memory: kind == PlanKind::PureMemory,
+            source_tables: Vec::new(),
+        }
+    }
+
     pub fn kind(&self) -> PlanKind {
         if self.pure_sql {
             PlanKind::PureSql
@@ -579,17 +597,10 @@ impl<'a> HelpersContext<'a> {
 
 fn pure_memory_plan(program: &Program, dialect: &str, bindings: &Bindings) -> HybridPlan {
     HybridPlan {
-        selected_member: None,
-        dialect: dialect.to_string(),
-        sql_statement: None,
-        sql_prefix_ast: None,
         continuation_ast: Some(program.ast().clone()),
         continuation_program: Some(program.clone()),
-        continuation_source_var: "_INPUT".to_string(),
-        is_hybrid: false,
-        pure_sql: false,
-        pure_memory: true,
         source_tables: source_tables(program.ast(), bindings),
+        ..HybridPlan::of_kind(PlanKind::PureMemory, dialect)
     }
 }
 
@@ -769,10 +780,6 @@ fn try_latest_member(
     let continuation_prog = Program::new("", continuation.clone());
 
     Some(HybridPlan {
-        dialect: dialect.to_string(),
-        is_hybrid: true,
-        pure_sql: false,
-        pure_memory: false,
         sql_statement: Some(Fragment::new(
             parts,
             SqlKind::Statement,
@@ -784,12 +791,12 @@ fn try_latest_member(
         sql_prefix_ast: Some(prefix),
         continuation_ast: Some(continuation),
         continuation_program: Some(continuation_prog),
-        continuation_source_var: "_INPUT".to_string(),
         source_tables: vec![from_table],
         selected_member: Some(SelectedMember {
             partition_key: partition,
             revision_key: revision.clone(),
         }),
+        ..HybridPlan::of_kind(PlanKind::Hybrid, dialect)
     })
 }
 
@@ -1063,17 +1070,12 @@ fn try_plan_fallthrough(
     let continuation_prog = Program::new("", continuation_ast.clone());
 
     Some(HybridPlan {
-        dialect: dialect.to_string(),
-        is_hybrid: true,
-        pure_sql: false,
-        pure_memory: false,
         sql_statement: Some(sql),
         sql_prefix_ast: Some(rewritten_ast.clone()),
         continuation_ast: Some(continuation_ast),
         continuation_program: Some(continuation_prog),
-        continuation_source_var: "_INPUT".to_string(),
         source_tables: helpers.tables(&rewritten_ast),
-        selected_member: None,
+        ..HybridPlan::of_kind(PlanKind::Hybrid, dialect)
     })
 }
 
@@ -1164,17 +1166,10 @@ pub fn plan_hybrid(
     }
     if let Some(sql) = full_sql {
         return HybridPlan {
-            dialect: dialect.to_string(),
             sql_statement: Some(sql),
             sql_prefix_ast: Some(full_ast.clone()),
-            continuation_ast: None,
-            continuation_program: None,
-            pure_sql: true,
-            is_hybrid: false,
-            pure_memory: false,
-            continuation_source_var: "_INPUT".to_string(),
             source_tables: helpers.tables(&full_ast),
-            selected_member: None,
+            ..HybridPlan::of_kind(PlanKind::PureSql, dialect)
         };
     }
 
@@ -1248,17 +1243,13 @@ pub fn plan_hybrid(
         let continuation_prog = Program::new("", continuation_ast.clone());
 
         return HybridPlan {
-            dialect: dialect.to_string(),
             sql_statement: Some(sql),
             sql_prefix_ast: Some(prefix_ast.clone()),
             continuation_ast: Some(continuation_ast),
             continuation_program: Some(continuation_prog),
             continuation_source_var: feed,
-            is_hybrid: true,
-            pure_sql: false,
-            pure_memory: false,
             source_tables: helpers.tables(&prefix_ast),
-            selected_member: None,
+            ..HybridPlan::of_kind(PlanKind::Hybrid, dialect)
         };
     }
 

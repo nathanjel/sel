@@ -29,11 +29,13 @@ pub struct Binder {
 }
 
 impl Binder {
-    pub fn node(n: SNode) -> Self {
+    /// A binder of `shape` with nothing else set: each constructor names
+    /// only what its shape carries.
+    fn blank(shape: BinderShape) -> Self {
         Self {
             scope: None,
-            shape: BinderShape::Node,
-            node: Some(n),
+            shape,
+            node: None,
             column: None,
             relation: None,
             reason: String::new(),
@@ -42,95 +44,33 @@ impl Binder {
             projections: None,
             model: None,
         }
+    }
+
+    pub fn node(n: SNode) -> Self {
+        Self { node: Some(n), ..Self::blank(BinderShape::Node) }
     }
 
     pub fn column(c: ColumnSpec) -> Self {
-        Self {
-            scope: None,
-            shape: BinderShape::Column,
-            node: None,
-            column: Some(c),
-            relation: None,
-            reason: String::new(),
-            group_binder: String::new(),
-            group_node: None,
-            projections: None,
-            model: None,
-        }
+        Self { column: Some(c), ..Self::blank(BinderShape::Column) }
     }
 
     pub fn row(r: Option<RelationSpec>) -> Self {
-        Self {
-            scope: None,
-            shape: BinderShape::Row,
-            node: None,
-            column: None,
-            relation: r,
-            reason: String::new(),
-            group_binder: String::new(),
-            group_node: None,
-            projections: None,
-            model: None,
-        }
+        Self { relation: r, ..Self::blank(BinderShape::Row) }
     }
 
     pub fn none(reason: impl Into<String>) -> Self {
-        Self {
-            scope: None,
-            shape: BinderShape::None,
-            node: None,
-            column: None,
-            relation: None,
-            reason: reason.into(),
-            group_binder: String::new(),
-            group_node: None,
-            projections: None,
-            model: None,
-        }
+        Self { reason: reason.into(), ..Self::blank(BinderShape::None) }
     }
 
     pub fn key(group_binder: impl Into<String>, group_node: Option<SNode>, r: Option<RelationSpec>) -> Self {
-        Self {
-            scope: None,
-            shape: BinderShape::Key,
-            node: None,
-            column: None,
-            relation: r,
-            reason: String::new(),
-            group_binder: group_binder.into(),
-            group_node,
-            projections: None,
-            model: None,
-        }
+        Self { relation: r, group_binder: group_binder.into(), group_node, ..Self::blank(BinderShape::Key) }
     }
 
     pub fn group(r: Option<RelationSpec>) -> Self {
-        Self {
-            scope: None,
-            shape: BinderShape::Group,
-            node: None,
-            column: None,
-            relation: r,
-            reason: String::new(),
-            group_binder: String::new(),
-            group_node: None,
-            projections: None,
-            model: None,
-        }
+        Self { relation: r, ..Self::blank(BinderShape::Group) }
     }
 
     pub fn projected(r: Option<RelationSpec>, projections: Vec<RelationalProjection>) -> Self {
-        Self {
-            scope: None,
-            shape: BinderShape::Projected,
-            node: None,
-            column: None,
-            relation: r,
-            reason: String::new(),
-            group_binder: String::new(),
-            group_node: None,
-            projections: Some(projections),
-            model: None,
-        }
+        Self { relation: r, projections: Some(projections), ..Self::blank(BinderShape::Projected) }
     }
 }
