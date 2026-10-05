@@ -2321,6 +2321,21 @@ the statement sent (or NIL)."
            (is (string= "1" (sel:as-text (sel:value-get (sel:value-get ctx "A") "k"))) "~a" src)))
     (sel::unregister-function "T_POKE")))
 
+(test sql-hybrid-plans-a-pipeline-as-long-as-the-source
+  ;; 20,000 TAKEs: stage 1 refuses the depth, and the pure-memory plan's
+  ;; source-tables walk must not reach the host's stack limit doing it
+  ;; (tools/check-sql-budgets.sh take-chain-20000).
+  (let* ((src (with-output-to-string (o)
+                (write-string "ORDERS" o)
+                (dotimes (i 20000) (write-string " .> TAKE(1)" o))))
+         (b (list (cons "ORDERS" (sel.sql:binding-relation "orders" "o"))))
+         (plan (handler-case (sel.sql:plan-hybrid (sel:compile-source src) "mariadb" b)
+                 (storage-condition () :exhausted))))
+    (is (not (eq plan :exhausted)) "the planner exhausted the stack")
+    (unless (eq plan :exhausted)
+      (is (sel.sql:hybrid-plan-pure-memory-p plan))
+      (is (equal '("orders") (sel.sql::hybrid-plan-source-tables plan))))))
+
 (test sql-hybrid-pure-memory-runs-on-a-copy
   (let* ((plan (sel.sql:plan-hybrid (sel:compile-source "A = 1; A") "mariadb"))
          (ctx (sel:from-native (list (cons "K" "v")))))

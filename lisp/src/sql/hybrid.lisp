@@ -47,48 +47,60 @@ it. A binder of a binding call (through the manifest's own forms) shadows it in
 the arguments it scopes, and an assignment makes the name a variable of the
 program from the next statement on -- `ORDERS = LIST(1); COUNT(ORDERS)` reads no
 table, and neither does `LIST(1) .> MAP(ORDERS, ORDERS)`."
-  (let ((out '()))
-    (labels ((assign-base (target)
-               (loop while (and target (sel::node-p target) (eq (sel::node-kind target) :index))
-                     do (setf target (sel::node-l target)))
-               (and target (sel::node-p target) (eq (sel::node-kind target) :var)
-                    (sel::node-s target)))
-             (walk (n bound)
-               (when (and n (sel::node-p n))
-                 (case (sel::node-kind n)
-                   (:var
-                    (when (and (not (member (sel::node-s n) bound :test #'equal))
-                               (bindings-has bindings (sel::node-s n)))
-                      (let ((b (bindings-get bindings (sel::node-s n) (sel::node-pos n))))
-                        (when (eq (binding-kind b) :relation)
-                          (let ((table (physical-source b)))
-                            (unless (member table out :test #'equal)
-                              (push table out)))))))
-                   (:seq
-                    (let ((scope bound))
-                      (dolist (item (sel::node-items n))
-                        (walk item scope)
-                        (when (eq (sel::node-kind item) :assign)
-                          (let ((name (assign-base (sel::node-l item))))
-                            (when name (push name scope)))))))
-                   (:assign
-                    ;; The right side first: it runs before the write.
-                    (walk (sel::node-r n) bound)
-                    (let ((target (sel::node-l n)))
-                      (loop while (and target (sel::node-p target) (eq (sel::node-kind target) :index))
-                            do (walk (sel::node-r target) bound)
-                               (setf target (sel::node-l target)))))
-                   (:call
-                    (sel::map-call-args-by-scope (arg scope inner) n bound
-                      (case scope
-                        (:binder nil)
-                        (:inner (walk arg inner))
-                        (t (walk arg bound)))))
-                   (t
-                    (walk (sel::node-l n) bound)
-                    (walk (sel::node-r n) bound)
-                    (dolist (item (sel::node-items n)) (walk item bound)))))))
-      (walk node '()))
+  ;; Iterative: a pipeline as long as the source (20,000 TAKEs, which stage 1
+  ;; refuses and the planner then hands here as a pure-memory plan) is a chain
+  ;; that deep, and a recursive walk reached the host's stack limit. Each work
+  ;; item is (node . bound); a node's children go on the stack in reverse, so
+  ;; they are visited left to right and the first use of a table comes first.
+  (let ((out '())
+        (stack (list (cons node '()))))
+    (flet ((assign-base (target)
+             (loop while (and target (sel::node-p target) (eq (sel::node-kind target) :index))
+                   do (setf target (sel::node-l target)))
+             (and target (sel::node-p target) (eq (sel::node-kind target) :var)
+                  (sel::node-s target))))
+      (loop while stack
+            do (destructuring-bind (n . bound) (pop stack)
+                 (when (and n (sel::node-p n))
+                   (let ((children '()))   ; (node . bound), in visiting order, reversed
+                     (case (sel::node-kind n)
+                       (:var
+                        (when (and (not (member (sel::node-s n) bound :test #'equal))
+                                   (bindings-has bindings (sel::node-s n)))
+                          (let ((b (bindings-get bindings (sel::node-s n) (sel::node-pos n))))
+                            (when (eq (binding-kind b) :relation)
+                              (let ((table (physical-source b)))
+                                (unless (member table out :test #'equal)
+                                  (push table out)))))))
+                       (:seq
+                        ;; An assignment makes its name a variable from the next
+                        ;; statement on.
+                        (let ((scope bound))
+                          (dolist (item (sel::node-items n))
+                            (push (cons item scope) children)
+                            (when (and (sel::node-p item) (eq (sel::node-kind item) :assign))
+                              (let ((name (assign-base (sel::node-l item))))
+                                (when name (push name scope)))))))
+                       (:assign
+                        ;; The right side first: it runs before the write.
+                        (push (cons (sel::node-r n) bound) children)
+                        (let ((target (sel::node-l n)))
+                          (loop while (and target (sel::node-p target) (eq (sel::node-kind target) :index))
+                                do (push (cons (sel::node-r target) bound) children)
+                                   (setf target (sel::node-l target)))))
+                       (:call
+                        (sel::map-call-args-by-scope (arg scope inner) n bound
+                          (case scope
+                            (:binder nil)
+                            (:inner (push (cons arg inner) children))
+                            (t (push (cons arg bound) children)))))
+                       (t
+                        (push (cons (sel::node-l n) bound) children)
+                        (push (cons (sel::node-r n) bound) children)
+                        (dolist (item (sel::node-items n)) (push (cons item bound) children))))
+                     ;; CHILDREN is reversed visiting order: pushing each onto the
+                     ;; stack in that order leaves the first child on top.
+                     (dolist (c children) (push c stack)))))))
     (nreverse out)))
 
 ;;; --- helper assignments ----------------------------------------------------
