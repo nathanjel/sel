@@ -845,18 +845,21 @@ function doLink(args, ctx, leftJoin) {
   let rightSide = null;
   const leftNode = args.node(0);
   const rightNode = args.node(1);
-  // The keys a side contributes to the joined row include the names its row
-  // is bound under: `_["products"]` after LINK(PRODUCTS, ...) is the right
-  // row, not a field of the left ones.
-  const b2Names = count === 5 ? [args.symbol(3), '_2'] : [singleRelationName(rightNode) || '_2', '_2'];
-  const b1Names = count === 5 ? [args.symbol(2), '_1'] : [singleRelationName(leftNode) || '_1', '_1'];
+  // The names each side's row is bound under (spec §7.4), worked out once and
+  // left to right: the five-argument form's binders, else a side given by name,
+  // else `_1`/`_2`. The keys a side contributes to the joined row include them:
+  // `_["products"]` after LINK(PRODUCTS, ...) is the right row, not a field of
+  // the left ones.
+  const b1 = count === 5 ? args.symbol(2) : (singleRelationName(leftNode) || '_1');
+  const b2 = count === 5 ? args.symbol(3) : (singleRelationName(rightNode) || '_2');
+  const b1Names = [b1, '_1'];
+  const b2Names = [b2, '_2'];
+  const predicate = args.node(count === 5 ? 4 : 2);
+  const equi = tryExtractEquiKeys(predicate, b1, b2);
   const stages = prefilter ? prefilter.stages : [];
   const deep = prefilter ? prefilter.deep : false;
   const above = prefilter ? prefilter.above : [];
   const obligations = prefilter ? prefilter.obligations : [];
-  const jb1 = count === 5 ? args.symbol(2) : (singleRelationName(args.node(0)) || '_1');
-  const jb2 = count === 5 ? args.symbol(3) : (singleRelationName(args.node(1)) || '_2');
-  const jequi = tryExtractEquiKeys(args.node(count === 5 ? 4 : 2), jb1, jb2);
   // The upper-cased keys of the joins between a stage's FILTER and this
   // join, per count of them.
   const aboveKeysCache = new Map();
@@ -871,7 +874,7 @@ function doLink(args, ctx, leftJoin) {
   };
   let leftValue;
   let rightValue;
-  if (deep && stages.length && jequi && leftNode && leftNode.t === 'call'
+  if (deep && stages.length && equi && leftNode && leftNode.t === 'call'
       && (leftNode.name === 'LINK' || leftNode.name === 'LINK_LEFT' || leftNode.name === 'FILTER')
       && pureSource(leftNode) && pureSource(rightNode)) {
     try {
@@ -903,7 +906,7 @@ function doLink(args, ctx, leftJoin) {
       // This join computes its left key on every row it receives; a row
       // dropped below never arrives, so the key goes down as an obligation
       // for the join that drops to prove (keysSafe).
-      const ownKey = { key: jequi.left, rowNames: new Set([jb1, jb1.toLowerCase(), '_1', '_']), outer: above.length + 1 };
+      const ownKey = { key: equi.left, rowNames: new Set([b1, b1.toLowerCase(), '_1', '_']), outer: above.length + 1 };
       ctx.joinPrefilter = { stages: handed, deep: true, above: [rightSide, ...above],
         obligations: [ownKey, ...obligations] };
     }
@@ -934,18 +937,6 @@ function doLink(args, ctx, leftJoin) {
   }
   const appliedBelow = below !== null && !below.errored ? below.applied : new Set();
   let dropped = below !== null && below.dropped;
-  let b1 = '_1';
-  let b2 = '_2';
-  let predicate;
-  if (count === 3) {
-    b1 = singleRelationName(args.node(0)) || b1;
-    b2 = singleRelationName(args.node(1)) || b2;
-    predicate = args.node(2);
-  } else {
-    b1 = args.symbol(2);
-    b2 = args.symbol(3);
-    predicate = args.node(4);
-  }
   if (leftValue.isNull()) return Value.list([]);
 
   const firstLeft = firstCollectionItem(leftValue);
@@ -959,7 +950,6 @@ function doLink(args, ctx, leftJoin) {
   let nullRight = leftJoin ? makeNullRecord(sampleRight, b2) : null;
   if (nullRight && nullRight.isNull()) nullRight = null;
   const project = makeJoinProjector(b1, b2, nullRight);
-  const equi = tryExtractEquiKeys(predicate, b1, b2);
   const output = [];
   // A join builds a collection: its rows are capped (SPEC 6.4), at the call.
   const capRows = (n) => checkCollection(n, args.pos, `${args.name} result`);
