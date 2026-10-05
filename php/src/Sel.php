@@ -143,14 +143,7 @@ final class Program
                     return true;
                 }
             }
-            foreach (['args', 'items'] as $key) {
-                foreach ($n[$key] ?? [] as $child) {
-                    if (is_array($child)) $stack[] = $child;
-                }
-            }
-            foreach (['l', 'r', 'x', 'obj', 'idx', 'value', 'target'] as $key) {
-                if (isset($n[$key]) && is_array($n[$key])) $stack[] = $n[$key];
-            }
+            foreach (Ast::children($n) as $child) $stack[] = $child;
         }
         return false;
     }

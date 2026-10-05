@@ -6,6 +6,7 @@ declare(strict_types=1);
 namespace Sel\Builtins;
 
 use Sel\Args;
+use Sel\Ast;
 use Sel\Budget;
 use Sel\BuiltinManifest;
 use Sel\Context;
@@ -1061,11 +1062,8 @@ final class Structure
             return isset($node['idx']) && $node['idx']['t'] === 'text' && Utf8::upper($node['idx']['v']) !== $avoid;
         }
         if ($node['t'] === 'var' && isset($binders[$node['name']])) return false;
-        foreach (['l', 'r', 'x', 'obj', 'idx', 'target', 'value'] as $k) {
-            if (isset($node[$k]) && is_array($node[$k]) && !self::rawSafe($node[$k], $binders, $avoid)) return false;
-        }
-        foreach (['args', 'items'] as $k) {
-            if (isset($node[$k])) foreach ($node[$k] as $child) if (!self::rawSafe($child, $binders, $avoid)) return false;
+        foreach (Ast::children($node) as $child) {
+            if (!self::rawSafe($child, $binders, $avoid)) return false;
         }
         return true;
     }
@@ -1080,12 +1078,7 @@ final class Structure
         }
         $copy = $node;
         unset($copy['mathPlan'], $copy['recordShape']);   // a plan of the original reads the original
-        foreach (['l', 'r', 'x', 'obj', 'idx', 'target', 'value'] as $slot) {
-            if (isset($node[$slot])) $copy[$slot] = self::readSelf($node[$slot], $names, $binder);
-        }
-        if (isset($node['args'])) $copy['args'] = array_map(static fn ($a) => self::readSelf($a, $names, $binder), $node['args']);
-        if (isset($node['items'])) $copy['items'] = array_map(static fn ($a) => self::readSelf($a, $names, $binder), $node['items']);
-        return $copy;
+        return Ast::mapChildren($copy, static fn (array $child): ?array => self::readSelf($child, $names, $binder));
     }
 
     /** @return array<string,true> the upper-cased keys of every row (a shape's keys read once), plus the names the row is bound under. */

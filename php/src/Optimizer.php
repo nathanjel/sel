@@ -47,14 +47,7 @@ final class Optimizer
             $deepest++;
             $next = [];
             foreach ($level as $node) {
-                foreach (['args', 'items'] as $key) {
-                    foreach ($node[$key] ?? [] as $item) {
-                        if (is_array($item)) $next[] = $item;
-                    }
-                }
-                foreach (['l', 'r', 'x', 'obj', 'idx', 'value'] as $key) {
-                    if (isset($node[$key]) && is_array($node[$key])) $next[] = $node[$key];
-                }
+                foreach (Ast::children($node, false) as $child) $next[] = $child;
             }
             $level = $next;
         }
@@ -74,15 +67,9 @@ final class Optimizer
         if ($node === null) return false;
         if ($depth > MAX_DEPTH) return true;
         $next = $depth + 1;
-        foreach (['args', 'items'] as $key) {
-            foreach ($node[$key] ?? [] as $item) {
-                if (is_array($item) && self::exceedsDepth($item, $next)) return true;
-            }
+        foreach (Ast::children($node, false) as $child) {
+            if (self::exceedsDepth($child, $next)) return true;
         }
-        foreach (['l', 'r', 'x', 'obj', 'idx'] as $key) {
-            if (isset($node[$key]) && is_array($node[$key]) && self::exceedsDepth($node[$key], $next)) return true;
-        }
-        if (isset($node['value']) && is_array($node['value']) && self::exceedsDepth($node['value'], $next)) return true;
         return false;
     }
 
@@ -165,6 +152,9 @@ final class Optimizer
         $nextInMath = $isCurrMath;
 
         $copy = self::copyNode($node);
+        // Every child key of Ast, each walked with its own context: a math
+        // operand stays in the math plan (args, l, r, x), a list item or an
+        // index does not, and an assignment's target is walked below.
         if (isset($copy['args'])) {
             $copy['args'] = array_map(
                 static fn (array $item): array => self::optimizeTree($item, $physical, $depth + 1, $options, $nextInMath),
@@ -720,29 +710,16 @@ final class Optimizer
     }
 
     /**
-     * The keys under which a parser node holds children: the two list-valued
-     * ones and the seven single-valued ones. The one place the optimizer's
-     * walks know the node shapes; fieldRefs and readsVar each used to spell
-     * the loops out (SEL-0040).
-     */
-    private const CHILD_LISTS = ['args', 'items'];
-    private const CHILD_NODES = ['l', 'r', 'x', 'obj', 'idx', 'target', 'value'];
-
-    /**
-     * Calls $visit on every direct child of $node, lists first, in the order
-     * the keys are declared above.
+     * Calls $visit on every direct child of $node (Ast::children, the one
+     * statement of the node shapes; fieldRefs and readsVar each used to spell
+     * the loops out, SEL-0040).
      *
      * @param array<string,mixed> $node
      * @param callable(?array):void $visit
      */
     private static function forEachChild(array $node, callable $visit): void
     {
-        foreach (self::CHILD_LISTS as $key) {
-            foreach ($node[$key] ?? [] as $child) $visit($child);
-        }
-        foreach (self::CHILD_NODES as $key) {
-            if (isset($node[$key]) && is_array($node[$key])) $visit($node[$key]);
-        }
+        foreach (Ast::children($node) as $child) $visit($child);
     }
 
     /** @return list<string> */
@@ -912,13 +889,6 @@ final class Optimizer
     {
         $copy = self::copyNode($node);
         if (($copy['t'] ?? null) === 'var' && Utf8::casecmp($copy['name'], $old) === 0) $copy['name'] = $new;
-        foreach (['args', 'items'] as $key) {
-            if (isset($copy[$key])) $copy[$key] = array_map(
-                static fn (array $child): array => self::renameVar($child, $old, $new), $copy[$key]);
-        }
-        foreach (['l', 'r', 'x', 'obj', 'idx', 'target', 'value'] as $key) {
-            if (isset($copy[$key]) && is_array($copy[$key])) $copy[$key] = self::renameVar($copy[$key], $old, $new);
-        }
-        return $copy;
+        return Ast::mapChildren($copy, static fn (array $child): array => self::renameVar($child, $old, $new));
     }
 }

@@ -6,6 +6,7 @@ declare(strict_types=1);
 namespace Sel\Builtins;
 
 use Sel\Args;
+use Sel\Ast;
 use Sel\Budget;
 use Sel\Context;
 use Sel\Dec;
@@ -450,12 +451,7 @@ final class Core
             $t = $n['t'] ?? null;
             if ($t === 'assign') return true;
             if ($t === 'call' && Registry::isHostFunction((string) ($n['name'] ?? ''))) return true;
-            foreach (['args', 'items'] as $key) {
-                foreach ($n[$key] ?? [] as $child) $stack[] = $child;
-            }
-            foreach (['l', 'r', 'x', 'obj', 'idx', 'target', 'value'] as $key) {
-                if (isset($n[$key]) && is_array($n[$key])) $stack[] = $n[$key];
-            }
+            foreach (Ast::children($n) as $child) $stack[] = $child;
         }
         return false;
     }
@@ -467,15 +463,8 @@ final class Core
         if (($node['t'] ?? null) === 'var') {
             return Utf8::casecmp((string) ($node['name'] ?? ''), $name) === 0;
         }
-        foreach (['args', 'items'] as $key) {
-            foreach ($node[$key] ?? [] as $child) {
-                if (self::containsVar($child, $name)) return true;
-            }
-        }
-        foreach (['l', 'r', 'x', 'obj', 'idx', 'target', 'value'] as $key) {
-            if (isset($node[$key]) && is_array($node[$key]) && self::containsVar($node[$key], $name)) {
-                return true;
-            }
+        foreach (Ast::children($node) as $child) {
+            if (self::containsVar($child, $name)) return true;
         }
         return false;
     }

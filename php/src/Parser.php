@@ -252,13 +252,13 @@ final class Parser
         // Every key that holds a node. `pos` holds a token, `spec` a function
         // entry and `v`/`op`/`name` scalars: naming the child keys rather than
         // testing is_array() is what keeps those out of the worklist.
-        foreach (['l', 'r', 'target', 'value', 'obj', 'idx', 'x'] as $k) {
+        foreach (Ast::CHILD_NODES as $k) {
             if (isset($node[$k])) {
                 $pending[] = $node[$k];
                 unset($node[$k]);
             }
         }
-        foreach (['items', 'args'] as $k) {
+        foreach (Ast::CHILD_LISTS as $k) {
             if (isset($node[$k])) {
                 foreach ($node[$k] as $child) {
                     $pending[] = $child;
