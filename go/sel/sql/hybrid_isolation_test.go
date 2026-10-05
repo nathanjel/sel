@@ -1,6 +1,7 @@
 package sql
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/nathanjel/sel/go/sel"
@@ -225,5 +226,55 @@ func TestHybridIsolation_BuiltinAssignsNestedField(t *testing.T) {
 	}
 	if ctx.Get("A").Get("k").AsText(sel.Pos{}) != "1" {
 		t.Fatalf("caller context mutated on assignment: expected '1', got %s", ctx.Get("A").Get("k").AsText(sel.Pos{}))
+	}
+}
+
+// A source that the program reassigns and a later step reads back as a value:
+// hybrid output equals run() output, and the SQL prefix still takes the DROP once.
+// The runner answers the SQL prefix by evaluating SqlPrefixAst in memory, as the
+// database would.
+func TestHybridRereadOfAReassignedSource(t *testing.T) {
+	sel.RegisterFunction("GO_HOSTF_REREAD", 1, 1, func(args *sel.Args) *sel.Value {
+		return sel.NewText("x" + args.Val(0).AsText(sel.Pos{}))
+	})
+	orders := func() *sel.Value {
+		rows := make([]*sel.Value, 6)
+		for i := range rows {
+			rows[i] = sel.NewRecordFromEntries([]sel.Entry{{Key: "id", Val: sel.NewInt(int64(i + 1))}})
+		}
+		ctx := sel.NewNone()
+		ctx.Set("ORDERS", sel.NewList(rows))
+		return ctx
+	}
+	src := `ORDERS = ORDERS .> DROP(2); ORDERS .> TAKE(3) .> MAP(RECORD("n", COUNT(ORDERS), "x", GO_HOSTF_REREAD(_["id"])))`
+	prog := sel.MustCompile(src)
+	want, err := prog.Run(orders())
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan := PlanHybrid(prog, "sqlite", ordersAndCustomers(), Options{})
+	if !plan.IsHybrid || plan.SqlStatement == nil {
+		t.Fatalf("expected a hybrid plan, got %+v", plan)
+	}
+	if got := plan.SqlStatement.AsStatement(ModeInline); !strings.Contains(got, "LIMIT 3 OFFSET 2") {
+		t.Errorf("SQL prefix: %s", got)
+	}
+	t.Logf("SQL %s", plan.SqlStatement.AsStatement(ModeInline))
+	runner := func(q string, params []*sel.Value) (*sel.Value, error) {
+		return sel.NewProgram("", plan.SqlPrefixAst).Run(orders())
+	}
+	caller := orders()
+	before := caller.Dump()
+	got, err := ExecuteHybrid(plan, runner, caller)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Dump() != want.Dump() {
+		t.Fatalf("hybrid %s, run() %s", got.Dump(), want.Dump())
+	}
+	// Neither the helper's assignment nor the injected source variable reaches
+	// the caller.
+	if after := caller.Dump(); after != before {
+		t.Fatalf("caller context changed: %s -> %s", before, after)
 	}
 }

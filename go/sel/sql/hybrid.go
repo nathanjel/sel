@@ -500,13 +500,14 @@ func literalHelpers(leading []*sel.Node) map[string]*sel.Node {
 	return literals
 }
 
-// unwindThroughHelpers reads the pipeline the result is written through. The
-// second result names the helpers whose definitions it unwound into the pipeline:
-// their assignments are spent, and must not be carried in front of the tree as
-// well, or `ORDERS = ORDERS .> DROP(2); ORDERS .> TAKE(3)` applies the DROP twice
-// (once unwound, once when stage 1 inlines the helper at the source's read;
-// PHP-C34).
-func unwindThroughHelpers(result *sel.Node, defs map[string]*sel.Node, literals map[string]*sel.Node) (*sel.Node, []*sel.Node, map[string]bool) {
+// unwindThroughHelpers is the pipeline the planner probes: the result unwound,
+// and where its source is a helper, that helper's definition unwound in turn.
+// The source the loop stops at reads the catalogue's binding when its name is
+// also a helper's (the helper was written `ORDERS = ORDERS .> DROP(2)`): it is
+// marked BindingRead, so wrapping the pipeline in the helpers again neither
+// keeps the helper for that read nor inlines it there (which would apply the
+// DROP twice), while a step that reads ORDERS as a value still gets the helper.
+func unwindThroughHelpers(result *sel.Node, defs map[string]*sel.Node, literals map[string]*sel.Node) (*sel.Node, []*sel.Node) {
 	source, steps := sel.UnwindPipeline(inlineLiterals(result, literals, nil))
 	seen := make(map[string]bool)
 	for source != nil && source.T == sel.NodeVar && defs[source.S] != nil && !seen[source.S] {
@@ -515,7 +516,11 @@ func unwindThroughHelpers(result *sel.Node, defs map[string]*sel.Node, literals 
 		source = innerSrc
 		steps = append(innerSteps, steps...)
 	}
-	return source, steps, seen
+	if source != nil && source.T == sel.NodeVar && defs[source.S] != nil {
+		source = copyAstNode(source)
+		source.BindingRead = true
+	}
+	return source, steps
 }
 
 func readNames(node *sel.Node, out map[string]bool) {
@@ -523,7 +528,11 @@ func readNames(node *sel.Node, out map[string]bool) {
 		return
 	}
 	if node.T == sel.NodeVar {
-		out[node.S] = true
+		// A read of the binding a same-named helper shadows is not a read of
+		// that helper (unwindThroughHelpers).
+		if !node.BindingRead {
+			out[node.S] = true
+		}
 		return
 	}
 	if node.L != nil {
@@ -1083,25 +1092,9 @@ func PlanHybrid(program *sel.Program, dialect string, bindings *Bindings, option
 		return node != nil && node.T == sel.NodeVar && checked.Has(node.S) && checked.Get(node.S, node.Pos).Kind == BindingKindRelation
 	}
 
-	unwoundSource, unwoundSteps, consumed := unwindThroughHelpers(partsResult, defs, literals)
+	unwoundSource, unwoundSteps := unwindThroughHelpers(partsResult, defs, literals)
 	if len(unwoundSteps) == 0 || !isRelation(unwoundSource) {
 		return pureMemoryPlan(program, dialect, checked)
-	}
-	// A spent helper the steps still read cannot be dropped from the tree without
-	// changing what they read; that program stays in memory.
-	for name := range consumed {
-		if readsName(unwoundSteps, name) {
-			return pureMemoryPlan(program, dialect, checked)
-		}
-	}
-	if len(consumed) > 0 {
-		var kept []*sel.Node
-		for _, st := range partsLeading {
-			if !consumed[assignedName(st)] {
-				kept = append(kept, st)
-			}
-		}
-		partsLeading = kept
 	}
 
 	optimized := sel.OptimizeAstLogical(sel.BuildPipeline(unwoundSource, unwoundSteps))

@@ -89,6 +89,12 @@ type Node struct {
 	S       string
 	B       bool
 	Grouped bool
+	// BindingRead marks a NodeVar that reads the SQL catalogue's binding of its
+	// name although a helper assignment of the same name shadows it: the hybrid
+	// planner sets it on the source it reaches by unwinding `ORDERS = ORDERS .>
+	// DROP(2)`, so neither the helper's dependency walk nor the translator's
+	// inlining reads that source as the helper. The evaluator ignores it.
+	BindingRead bool
 
 	L     *Node
 	R     *Node

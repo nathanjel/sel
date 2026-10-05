@@ -115,6 +115,11 @@ func substituteNode(node *sel.Node, defs map[string]*SNode, bound []string, dept
 
 	switch node.T {
 	case sel.NodeVar:
+		if node.BindingRead {
+			leaf := Leaf(node)
+			leaf.VarScope = VarScopeFree
+			return leaf
+		}
 		for _, b := range bound {
 			if b == node.S {
 				leaf := Leaf(node)
