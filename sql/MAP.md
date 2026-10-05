@@ -565,7 +565,8 @@ That a root is declarable is what makes this true:
 Which is the property a host relies on when it ships its map as generated *code*
 rather than as data to be read: the generator emits a sequence of `defineDialect`
 and `define` calls, the runtime executes them at start-up, and no file is
-deployed alongside the application. 217 calls rebuild the whole shipped map —
+deployed alongside the application. One `defineDialect` per document and one
+`define` per entry it states rebuild the whole shipped map —
 the chain preserved, so no dialect repeats what it inherits — and the result is
 indistinguishable from the shipped one, entry for entry.
 
