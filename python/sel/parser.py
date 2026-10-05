@@ -155,6 +155,10 @@ class Node:
     # helper -- stage 1 does not inline the helper into it, and it does not keep
     # the helper alive (sql/hybrid.py, _unwind_through_helpers).
     binding: bool = False
+    # Optimiser metadata, on its own copy of a pipeline step: how deep the step
+    # stands in the tree as written (the outermost step is the call itself), for
+    # the rewrite that would deepen a subtree (FILTER fusion). 0 is unknown.
+    step_depth: int = 0
     # Physical-tree metadata: the function eval_node runs this node with
     # (eval.handler_for), stamped by the optimiser on the nodes its own copy
     # holds (optimizer.bind_handlers). replaced() does not carry it -- a copy
@@ -175,7 +179,7 @@ class Node:
                  self.obj, self.idx, self.target, self.value, self.items, self.args,
                  self.spec, self.grouped, self.dec, self.math_plan, self._cached_slot,
                  self.record_shape, self.keys_unobserved, self._not_constant,
-                 self.const_value, self.adopt_items, self.binding)
+                 self.const_value, self.adopt_items, self.binding, self.step_depth)
         for k, v in changes.items():
             setattr(c, k, v)
         return c

@@ -620,6 +620,15 @@ def logical_steps(source: Node | None, steps: list[Node],
                     next_steps.append(first)
                     i += 1
                     continue
+                # Fused, the second predicate sits one level deeper than it did:
+                # the AND that joins them. A fused pair must spend what the two
+                # stages spent (SPEC 6.4), so a predicate that reaches the cap
+                # that way stays a second FILTER. Its root would stand at the
+                # step's depth + 2 (the step, the AND, the predicate).
+                if second.step_depth and exceeds_depth(right['predicate'], second.step_depth + 2):
+                    next_steps.append(first)
+                    i += 1
+                    continue
                 predicate = (right['predicate'] if right['binder'].upper() == left['binder'].upper()
                              else rename_var(right['predicate'], right['binder'], left['binder']))
                 merged = copy_node(first)
@@ -673,8 +682,13 @@ def optimize_tree(node: Node | None, physical: bool, depth: int = 1,
         source, steps = unwind_pipeline(node)
         optimized_source = optimize_tree(source, physical, depth + 1, options, False)
         optimized_steps = []
-        for step in steps:
+        last = len(steps) - 1
+        for at, step in enumerate(steps):
             copy = copy_node(step)
+            # Where this step stands in the tree as written, for the rules that
+            # would deepen a subtree (FILTER fusion): the outermost step is the
+            # node itself.
+            copy.step_depth = depth + (last - at)
             copy.args = [copy.args[0], *[
                 optimize_tree(item, physical, depth + 1, step_arg_options(step, index, options), False)
                 for index, item in enumerate(copy.args[1:], 1)
