@@ -2,7 +2,8 @@
 ;;;;
 ;;;; Bypasses recursive AST evaluation and value boxing for pure arithmetic
 ;;;; operations by executing a flat sequence of steps over a pre-allocated
-;;;; scratchpad of Dec structures.
+;;;; scratchpad of slots, holding Dec structures and, for the load steps
+;;;; (load-var, load-leaf), the raw VALUEs they read.
 
 (in-package #:sel)
 

@@ -3,8 +3,8 @@
 
 (in-package #:sel)
 
-;;; Runs VISIT per element with the binder and _K in scope. A non-NIL return from
-;;; VISIT stops the walk and becomes the result.
+;;; Whether NODE reads the variable VAR-NAME anywhere (used to skip building _K
+;;; when a body never reads it).
 (defun node-contains-var-p (node var-name)
   (when (and node (node-p node))
     (case (node-kind node)
@@ -15,31 +15,29 @@
       (:call (some (lambda (item) (node-contains-var-p item var-name)) (node-items node)))
       (:seq (some (lambda (item) (node-contains-var-p item var-name)) (node-items node)))
       (:list (some (lambda (item) (node-contains-var-p item var-name)) (node-items node)))
-      (:group (node-contains-var-p (node-l node) var-name))
       (:assign (or (node-contains-var-p (node-l node) var-name)
                    (node-contains-var-p (node-r node) var-name)))
       (t nil))))
 
 ;;; Whether evaluating NODE might write into a value: it holds an assignment or
-;;; calls a host function. A collector copies an element when it collects it
+;;; calls a function the library does not ship (SHIPPED-CALL-P). A collector copies an element when it collects it
 ;;; (SPEC 3.4); while nothing below the body can write, deferring the copy to the
 ;;; end is unobservable, so only a body that might write copies at collection.
 ;;; Iterative: a body can be a flat chain as long as the source.
 (defun node-may-write-p (node)
-  (let ((stack (list node))
-        (hosts (and (boundp '*host-functions*) (symbol-value '*host-functions*))))
+  (let ((stack (list node)))
     (loop while stack
           do (let ((n (pop stack)))
                (when (and n (node-p n))
                  (case (node-kind n)
                    (:assign (return-from node-may-write-p t))
                    (:call
-                    (when (and hosts (node-s n) (gethash (string-upcase (node-s n)) hosts))
+                    (unless (shipped-call-p n)
                       (return-from node-may-write-p t))
                     (dolist (it (node-items n)) (push it stack)))
                    ((:seq :list) (dolist (it (node-items n)) (push it stack)))
                    ((:bin :index) (push (node-l n) stack) (push (node-r n) stack))
-                   ((:un :group) (push (node-l n) stack))
+                   (:un (push (node-l n) stack))
                    (t nil)))))
     nil))
 
@@ -60,8 +58,8 @@ mutation inside one is seen -- only the container is copied."
     c))
 
 (defvar *index-text-cache*
-  (let ((vec (make-array 10001 :initial-element nil)))
-    (loop for i from 1 to 10000
+  (let ((vec (make-array (1+ +index-cache-size+) :initial-element nil)))
+    (loop for i from 1 to +index-cache-size+
           do (setf (aref vec i) (%text (svref *index-string-cache* i))))
     vec))
 
@@ -69,65 +67,78 @@ mutation inside one is seen -- only the container is copied."
 (defun format-index-text (n)
   (declare (optimize (speed 3) (safety 1)))
   (declare (type fixnum n))
-  (if (and (<= 1 n) (<= n 10000))
+  (if (and (<= 1 n) (<= n +index-cache-size+))
       (svref (the simple-vector *index-text-cache*) n)
       (%text (format nil "~d" n))))
 
-;;; Runs VISIT per element with the binder and _K in scope. A non-NIL return from
-;;; VISIT stops the walk and becomes the result.
+;;; The three representations a collection has -- a stored list, a shaped record,
+;;; an alist -- walked by one macro rather than by a three-branch COND in every
+;;; aggregate. Each branch is its own loop, so each runs as fast as the
+;;; hand-written loop it replaced.
+(defmacro do-elements ((item index &optional (key-text (gensym "KEY-TEXT"))
+                                             (key-string (gensym "KEY-STRING")))
+                       value &body body)
+  "Run BODY once per element of VALUE, in order, with ITEM bound to the element
+and INDEX to its 0-based position. KEY-TEXT and KEY-STRING name local functions
+that return the element's key, as a SEL text value and as a string; a key is
+made only when one is called. BODY may RETURN from the walk, whose value is
+then the value of the form."
+  (let ((v (gensym "V")) (storage (gensym "STORAGE")) (k (gensym "K")))
+    (flet ((with-keys (text string)
+             `(flet ((,key-text () ,text)
+                     (,key-string () ,string))
+                (declare (inline ,key-text ,key-string)
+                         (ignorable (function ,key-text) (function ,key-string)))
+                ,@body)))
+      `(let ((,v ,value))
+         (cond
+           ((and (value-is-list ,v) (value-storage ,v))
+            (let ((,storage (value-storage ,v)))
+              (declare (type simple-vector ,storage))
+              (loop for ,index of-type fixnum from 0 below (length ,storage)
+                    for ,item = (svref ,storage ,index)
+                    do ,(with-keys `(format-index-text (1+ ,index))
+                                   `(format-index-string (1+ ,index))))))
+           ((value-shape ,v)
+            (let ((,storage (value-storage ,v)))
+              (declare (type simple-vector ,storage))
+              (loop for ,k in (record-shape-keys (value-shape ,v))
+                    for ,index of-type fixnum from 0
+                    for ,item = (svref ,storage ,index)
+                    do ,(with-keys `(%text ,k) k))))
+           (t
+            (loop for (,k . ,item) in (aggregate-elements ,v)
+                  for ,index of-type fixnum from 0
+                  do ,(with-keys `(%text ,k) k))))))))
+
+(defmacro with-binder-frame ((binder-cell k-cell) ctx binder needs-k &body body)
+  "Run BODY with a frame pushed on CTX that binds BINDER -- its cell is
+BINDER-CELL -- and, when NEEDS-K, `_K` (K-CELL, else NIL). The frame is popped
+however BODY exits."
+  (let ((c (gensym "CTX")))
+    `(let* ((,c ,ctx)
+            (,binder-cell (cons ,binder nil))
+            (,k-cell (when ,needs-k (cons "_K" nil))))
+       (ctx-push-frame ,c (if ,k-cell (list ,binder-cell ,k-cell) (list ,binder-cell)))
+       (unwind-protect (progn ,@body)
+         (ctx-pop-frame ,c)))))
+
 (defun aggregate-walk (a ctx visit &optional (pass-key nil) (body-override nil))
   "Runs VISIT per element with the binder and _K in scope; BODY-OVERRIDE, when
-given, is evaluated in place of the written body."
+given, is evaluated in place of the written body. A non-NIL return from VISIT
+stops the walk and becomes the result."
   (let* ((three (= (args-count a) 3))
          (binder (if three (args-symbol a 1) "_"))
          (body (or body-override (args-node a (if three 2 1))))
          (val (snapshot-source (args-val a 0))))
     (unless (or (value-null-p val)
                 (and (eq (value-kind val) :none) (zerop (value-size val))))
-      (let* ((needs-k (node-contains-var-p body "_K"))
-             (binder-cell (cons binder nil))
-             (k-cell (when needs-k (cons "_K" nil)))
-             (frame (if needs-k (list binder-cell k-cell) (list binder-cell))))
-        (ctx-push-frame ctx frame)
-        (flet ((eval-body () (args-eval a body)))
-          (declare (inline eval-body))
-        (unwind-protect
-             (cond
-               ;; Fast path: list value with storage vector
-               ((and (value-is-list val) (value-storage val))
-                (let ((storage (value-storage val)))
-                  (loop for i from 0 below (length storage)
-                        for item = (svref storage i)
-                        do (setf (cdr binder-cell) item)
-                           (let ((k-val (when needs-k (format-index-text (1+ i))))
-                                 (k-str (when pass-key (format-index-string (1+ i)))))
-                             (when needs-k
-                               (setf (cdr k-cell) k-val))
-                             (let ((res (funcall visit (eval-body) k-str item body)))
-                               (when res (return res)))))))
-               ;; Fast path: shaped record
-               ((value-shape val)
-                (let* ((shape (value-shape val))
-                       (storage (value-storage val))
-                       (keys (record-shape-keys shape)))
-                  (loop for k in keys
-                        for i from 0
-                        for item = (svref storage i)
-                        do (setf (cdr binder-cell) item)
-                           (when needs-k
-                             (setf (cdr k-cell) (%text k)))
-                           (let ((res (funcall visit (eval-body) (when pass-key k) item body)))
-                             (when res (return res))))))
-               ;; General path
-               (t
-                (let ((elements (aggregate-elements val)))
-                  (loop for (key . item) in elements
-                        do (setf (cdr binder-cell) item)
-                           (when needs-k
-                             (setf (cdr k-cell) (%text key)))
-                           (let ((res (funcall visit (eval-body) (when pass-key key) item body)))
-                             (when res (return res)))))))
-          (ctx-pop-frame ctx)))))))
+      (with-binder-frame (binder-cell k-cell) ctx binder (node-contains-var-p body "_K")
+        (do-elements (item i key-text key-string) val
+          (setf (cdr binder-cell) item)
+          (when k-cell (setf (cdr k-cell) (key-text)))
+          (let ((res (funcall visit (args-eval a body) (when pass-key (key-string)) item body)))
+            (when res (return res))))))))
 
 (define-builtin "ALL" 2 3
   (lambda (a ctx)
@@ -146,9 +157,6 @@ given, is evaluated in place of the written body."
                           (when (as-bool r (node-pos body)) (make-bool t))))
         (make-bool nil)))
   :lazy t :binds t)
-
-;;; Bound by the sorts around their per-element copy: true when the source is fresh.
-(defvar *collect-fresh* nil)
 
 (define-builtin "MAP" 2 3
   (lambda (a ctx)
@@ -296,27 +304,6 @@ chain ends in nothing (NULL)."
         ((eq (value-kind v) :bin) 4)
         (t 5)))
 
-(defun compare-values (a b)
-  "Three-way comparison in SPEC 7.3's total order: by kind rank, then within a
-rank -- FALSE before TRUE, numbers by exact value, other text and BIN bytewise.
-Every pair of values compares, and transitively, so a sort cannot depend on the
-order it is handed its elements."
-  (let* ((a (sort-leaf a))
-         (b (sort-leaf b))
-         (ra (sort-rank a))
-         (rb (sort-rank b)))
-    (cond
-      ((< ra rb) -1)
-      ((> ra rb) 1)
-      (t
-       (case ra
-         (1 (let ((av (if (value-scalar a) 1 0))
-                  (bv (if (value-scalar b) 1 0)))
-              (cond ((< av bv) -1) ((> av bv) 1) (t 0))))
-         (2 (dec-cmp (as-dec a) (as-dec b)))
-         ((3 4) (bytes-compare (as-bytes a) (as-bytes b)))
-         (t 0))))))
-
 (defun make-bounded-heap (capacity greater-p)
   (let ((arr (make-array capacity :initial-element nil))
         (size 0))
@@ -358,7 +345,7 @@ order it is handed its elements."
 ;;; order and, within a rank, the value to compare (BOOL as 0/1, a number as its
 ;;; DEC, other text and BIN as octets). COMPARE-VALUES re-derived all of that on
 ;;; every comparison -- re-encoding both texts to UTF-8 and re-parsing both as
-;;; decimals, n log n times (LISP-P4: 50k text keys took 0.9 s and 200 MB).
+;;; decimals, n log n times (50k text keys took 0.9 s and 200 MB).
 ;;; Nothing here can signal: the leaf is a BOOL/TEXT/BIN scalar or nothing.
 (defstruct (sort-key (:constructor %make-sort-key (rank payload)))
   (rank 0 :type fixnum)
@@ -399,275 +386,135 @@ order it is handed its elements."
 ;;; SORT and its variants collect the elements into a new list, and §3.4 has the
 ;;; aggregates copy what they collect: the copy is made as the element is
 ;;; collected, so the result never shares structure with the source.
-(defun make-copied-sort-item (item key idx)
-  (make-sort-item (if *collect-fresh* item (value-copy item)) key idx))
+(declaim (inline make-copied-sort-item))
+(defun make-copied-sort-item (item key idx fresh)
+  "FRESH: the source is a value nothing else holds, so its elements need no copy."
+  (make-sort-item (if fresh item (value-copy item)) key idx))
 
-(defun do-sort (a ctx forced-dir)
+(defun decode-sort-call (a forms forced-dir counted)
+  "(values binder body direction) of a SORT-family call A under FORMS, its
+builtin's manifest forms (CALL-FORM; COUNTED for the TOP family). The binder is
+read as a bare name (E_EXPECT_SYMBOL otherwise), then a direction argument is
+evaluated and checked (E_BAD_ARG at it unless it is ASC or DESC, any case):
+SPEC 7.4 has both checked whatever the list holds. BODY is NIL for a keyless
+sort, and FORCED-DIR is SORT's and SORT_DESC's own direction."
+  (multiple-value-bind (b key k2 d) (call-form forms (args-nodes a) counted)
+    (declare (ignore k2))
+    (let ((binder (if b (args-symbol a b) "_"))
+          (direction (cond (forced-dir)
+                           (d (ascii-upcase (args-text a d)))
+                           (t "ASC"))))
+      (unless (or (string= direction "ASC") (string= direction "DESC"))
+        (fail "E_BAD_ARG" "sort direction must be 'ASC' or 'DESC'" (args-pos-of a d)))
+      (values binder (and key (args-node a key)) direction))))
+
+(defun do-sort (a ctx forced-dir forms)
   (let* ((val (args-val a 0))
-         (*collect-fresh* (node-fresh-p (args-node a 0))))
-    ;; A scalar is one element (SPEC 7.3), so its sort key is evaluated -- only
-    ;; NULL and an empty list have nothing to sort.
-    ;; The direction is always evaluated and checked, even when there is nothing to
-    ;; sort (SPEC 7.4): a bad one is an error whatever the list holds.
-    (let ((empty (or (value-null-p val) (and (zerop (value-size val)) (eq (value-kind val) :none)))))
-        (let* ((count (args-count a))
-               direction
-               binder
-               body)
-          (if (= count 1)
-              (setf direction (or forced-dir "ASC"))
-              (progn
-                (cond
-                  ((= count 2)
-                   (setf binder "_"
-                         body (args-node a 1)
-                         direction (or forced-dir "ASC")))
-                  ((= count 3)
-                   (cond
-                     (forced-dir
-                      (setf binder (args-symbol a 1)
-                            body (args-node a 2)
-                            direction forced-dir))
-                     ((eq (node-kind (args-node a 2)) :text)
-                      (setf binder "_"
-                            body (args-node a 1)
-                            direction (ascii-upcase (args-text a 2))))
-                     ((args-symbol-p a 1)
-                      (setf binder (args-symbol a 1)
-                            body (args-node a 2)
-                            direction "ASC"))
-                     (t
-                      (setf binder "_"
-                            body (args-node a 1)
-                            direction (ascii-upcase (args-text a 2))))))
-                  (t ; 4
-                   (setf binder (args-symbol a 1)
-                         body (args-node a 2)
-                         direction (ascii-upcase (args-text a 3)))))
-                (unless (or (string= direction "ASC") (string= direction "DESC"))
-                  (let ((pos-idx (if (= count 4) 3 2)))
-                    (fail "E_BAD_ARG" "sort direction must be 'ASC' or 'DESC'"
-                          (args-pos-of a pos-idx))))))
-          (when empty (return-from do-sort (make-list-value nil)))
-          (let* ((val (snapshot-source val))
-                 (desc (string= direction "DESC"))
-                 (needs-k (and body (node-contains-var-p body "_K")))
-                 (binder-cell (cons binder nil))
-                 (k-cell (when needs-k (cons "_K" nil)))
-                 (frame (if needs-k (list binder-cell k-cell) (list binder-cell)))
-                 (indexed '()))
-            (if (= count 1)
-                (cond
-                  ((and (value-is-list val) (value-storage val))
-                   (let ((storage (value-storage val)))
-                     (setf indexed
-                           (loop for i from 0 below (length storage)
-                                 for item = (svref storage i)
-                                 collect (make-copied-sort-item item item i)))))
-                  (t
-                   (setf indexed
-                         (loop for (nil . item) in (aggregate-elements val)
-                               for idx from 0
-                               collect (make-copied-sort-item item item idx)))))
-                (progn
-                  (ctx-push-frame ctx frame)
-                  (unwind-protect
-                       (cond
-                         ((and (value-is-list val) (value-storage val))
-                          (let ((storage (value-storage val)))
-                            (setf indexed
-                                  (loop for i from 0 below (length storage)
-                                        for item = (svref storage i)
-                                        do (setf (cdr binder-cell) item)
-                                           (when needs-k
-                                             (setf (cdr k-cell) (format-index-text (1+ i))))
-                                        collect (make-copied-sort-item item (args-eval a body) i)))))
-                         ((value-shape val)
-                          (let* ((shape (value-shape val))
-                                 (storage (value-storage val))
-                                 (keys (record-shape-keys shape)))
-                            (setf indexed
-                                  (loop for k in keys
-                                        for i from 0
-                                        for item = (svref storage i)
-                                        do (setf (cdr binder-cell) item)
-                                           (when needs-k
-                                             (setf (cdr k-cell) (%text k)))
-                                        collect (make-copied-sort-item item (args-eval a body) i)))))
-                         (t
-                          (setf indexed
-                                (loop for (k . item) in (aggregate-elements val)
-                                      for idx from 0
-                                      do (setf (cdr binder-cell) item)
-                                         (when needs-k
-                                           (setf (cdr k-cell) (%text k)))
-                                      collect (make-copied-sort-item item (args-eval a body) idx)))))
-                    (ctx-pop-frame ctx))))
-            (setf indexed
-                  (stable-sort indexed
-                               (lambda (x y)
-                                 (let ((c (compare-sort-keys (sort-item-key x) (sort-item-key y))))
-                                   (when desc (setf c (- c)))
-                                   (< c 0)))))
-            (make-list-value
-             (loop for x in indexed
-                   collect (sort-item-item x))))))))
+         (fresh (node-fresh-p (args-node a 0))))
+    (multiple-value-bind (binder body direction) (decode-sort-call a forms forced-dir nil)
+      ;; A scalar is one element (SPEC 7.3), so its sort key is evaluated -- only
+      ;; NULL and an empty list have nothing to sort; the direction was checked
+      ;; first whatever the list holds (SPEC 7.4).
+      (when (or (value-null-p val) (and (zerop (value-size val)) (eq (value-kind val) :none)))
+        (return-from do-sort (make-list-value nil)))
+      (let ((val (snapshot-source val))
+            (desc (string= direction "DESC"))
+            (indexed '()))
+        (if (null body)
+            (do-elements (item i) val
+              (push (make-copied-sort-item item item i fresh) indexed))
+            (with-binder-frame (binder-cell k-cell) ctx binder (node-contains-var-p body "_K")
+              (do-elements (item i key-text) val
+                (setf (cdr binder-cell) item)
+                (when k-cell (setf (cdr k-cell) (key-text)))
+                (push (make-copied-sort-item item (args-eval a body) i fresh) indexed))))
+        (setf indexed
+              (stable-sort (nreverse indexed)
+                           (lambda (x y)
+                             (let ((c (compare-sort-keys (sort-item-key x) (sort-item-key y))))
+                               (when desc (setf c (- c)))
+                               (< c 0)))))
+        (make-list-value
+         (loop for x in indexed
+               collect (sort-item-item x)))))))
 
-(defun do-top-sort (a ctx forced-dir)
+(defun do-top-sort (a ctx forced-dir forms)
   ;; Spec §7.4: a count of zero still evaluates the list, so the list is
   ;; evaluated (and its errors reported) before N is read, as in every other
   ;; host. The optimiser fuses SORT .> TAKE(0) into this, so the order matters
   ;; there too.
-  (let* ((count (args-count a))
-         (val (args-val a 0))
+  (let* ((val (args-val a 0))
          (fresh (node-fresh-p (args-node a 0)))
-         (limit (args-non-neg-int a (1- count))))
+         (limit (args-non-neg-int a (1- (args-count a)))))
     ;; Direction and count are always evaluated and checked (SPEC 7.4), whatever
     ;; the list holds; only then may an empty list or a zero count end the call.
-    (let ((empty (or (zerop limit) (value-null-p val)
-                     (and (zerop (value-size val)) (eq (value-kind val) :none)))))
-        (let* ((sort-count (1- count))
-               direction
-               binder
-               body)
-          (if (= sort-count 1)
-              (setf direction (or forced-dir "ASC"))
-              (progn
-                (cond
-                  ((= sort-count 2)
-                   (setf binder "_"
-                         body (args-node a 1)
-                         direction (or forced-dir "ASC")))
-                  ((= sort-count 3)
-                   (cond
-                     (forced-dir
-                      (setf binder (args-symbol a 1)
-                            body (args-node a 2)
-                            direction forced-dir))
-                     ((eq (node-kind (args-node a 2)) :text)
-                      (setf binder "_"
-                            body (args-node a 1)
-                            direction (ascii-upcase (args-text a 2))))
-                     ((args-symbol-p a 1)
-                      (setf binder (args-symbol a 1)
-                            body (args-node a 2)
-                            direction "ASC"))
-                     (t
-                      (setf binder "_"
-                            body (args-node a 1)
-                            direction (ascii-upcase (args-text a 2))))))
-                  (t ; 4
-                   (setf binder (args-symbol a 1)
-                         body (args-node a 2)
-                         direction (ascii-upcase (args-text a 3)))))
-                (unless (or (string= direction "ASC") (string= direction "DESC"))
-                  (let ((pos-idx (if (= sort-count 4) 3 2)))
-                    (fail "E_BAD_ARG" "sort direction must be 'ASC' or 'DESC'"
-                          (args-pos-of a pos-idx))))))
-          (when empty (return-from do-top-sort (make-list-value nil)))
-          (let* ((val (snapshot-source val))
-                 (desc (string= direction "DESC"))
-                 (greater-fn (if desc
-                                 (lambda (x y)
-                                   (let ((c (compare-sort-keys (sort-item-key x) (sort-item-key y))))
-                                     (if (zerop c) (> (sort-item-idx x) (sort-item-idx y)) (< c 0))))
-                                 (lambda (x y)
-                                   (let ((c (compare-sort-keys (sort-item-key x) (sort-item-key y))))
-                                     (if (zerop c) (> (sort-item-idx x) (sort-item-idx y)) (> c 0))))))
-                 (needs-k (and body (node-contains-var-p body "_K")))
-                 ;; Collected once its key is computed (SPEC 3.4): a key that might
-                 ;; write copies the element then, so a later key's write cannot
-                 ;; reach it.
-                 (eager (and body (node-may-write-p body)))
-                 (binder-cell (cons binder nil))
-                 (k-cell (when needs-k (cons "_K" nil)))
-                 (frame (if needs-k (list binder-cell k-cell) (list binder-cell))))
-            (multiple-value-bind (push-item get-items)
-                (make-bounded-heap (min limit (max 1 (value-size val))) greater-fn)
-              (if (= sort-count 1)
-                  (cond
-                    ((and (value-is-list val) (value-storage val))
-                     (let ((storage (value-storage val)))
-                       (loop for i from 0 below (length storage)
-                             for item = (svref storage i)
-                             do (funcall push-item (make-sort-item item item i)))))
-                    (t
-                     (loop for (nil . item) in (aggregate-elements val)
-                           for idx from 0
-                           do (funcall push-item (make-sort-item item item idx)))))
-                  (progn
-                    (ctx-push-frame ctx frame)
-                    (unwind-protect
-                         (cond
-                           ((and (value-is-list val) (value-storage val))
-                            (let ((storage (value-storage val)))
-                              (loop for i from 0 below (length storage)
-                                    for item = (svref storage i)
-                                    do (setf (cdr binder-cell) item)
-                                       (when needs-k
-                                         (setf (cdr k-cell) (format-index-text (1+ i))))
-                                       (let ((key (args-eval a body)))
-                                         (funcall push-item (make-sort-item (if eager (value-copy item) item) key i))))))
-                           ((value-shape val)
-                            (let* ((shape (value-shape val))
-                                   (storage (value-storage val))
-                                   (keys (record-shape-keys shape)))
-                              (loop for k in keys
-                                    for i from 0
-                                    for item = (svref storage i)
-                                    do (setf (cdr binder-cell) item)
-                                       (when needs-k
-                                         (setf (cdr k-cell) (%text k)))
-                                       (let ((key (args-eval a body)))
-                                         (funcall push-item (make-sort-item (if eager (value-copy item) item) key i))))))
-                           (t
-                            (loop for (k . item) in (aggregate-elements val)
-                                  for idx from 0
-                                  do (setf (cdr binder-cell) item)
-                                     (when needs-k
-                                       (setf (cdr k-cell) (%text k)))
-                                     (let ((key (args-eval a body)))
-                                       (funcall push-item (make-sort-item (if eager (value-copy item) item) key idx))))))
-                      (ctx-pop-frame ctx))))
-              (let ((items (funcall get-items)))
-                (setf items (stable-sort items
-                                         (lambda (x y)
-                                           (let ((c (compare-sort-keys (sort-item-key x) (sort-item-key y))))
-                                             (if (zerop c)
-                                                 (< (sort-item-idx x) (sort-item-idx y))
-                                                 (progn
-                                                   (when desc (setf c (- c)))
-                                                   (< c 0)))))))
-                ;; The survivors only are copied (§3.4): TOP collects n elements, and
-                ;; copying the rest would be the cost of a full SORT.
-                (make-list-value
-                 (loop for x in items
-                       collect (if (or fresh eager)
-                                   (sort-item-item x)
-                                   (value-copy (sort-item-item x))))))))))))
+    (multiple-value-bind (binder body direction) (decode-sort-call a forms forced-dir t)
+      (when (or (zerop limit) (value-null-p val)
+                (and (zerop (value-size val)) (eq (value-kind val) :none)))
+        (return-from do-top-sort (make-list-value nil)))
+      (let* ((val (snapshot-source val))
+             (desc (string= direction "DESC"))
+             (greater-fn (if desc
+                             (lambda (x y)
+                               (let ((c (compare-sort-keys (sort-item-key x) (sort-item-key y))))
+                                 (if (zerop c) (> (sort-item-idx x) (sort-item-idx y)) (< c 0))))
+                             (lambda (x y)
+                               (let ((c (compare-sort-keys (sort-item-key x) (sort-item-key y))))
+                                 (if (zerop c) (> (sort-item-idx x) (sort-item-idx y)) (> c 0))))))
+             ;; Collected once its key is computed (SPEC 3.4): a key that might
+             ;; write copies the element then, so a later key's write cannot
+             ;; reach it.
+             (eager (and body (node-may-write-p body))))
+        (multiple-value-bind (push-item get-items)
+            (make-bounded-heap (min limit (max 1 (value-size val))) greater-fn)
+          (if (null body)
+              (do-elements (item i) val
+                (funcall push-item (make-sort-item item item i)))
+              (with-binder-frame (binder-cell k-cell) ctx binder (node-contains-var-p body "_K")
+                (do-elements (item i key-text) val
+                  (setf (cdr binder-cell) item)
+                  (when k-cell (setf (cdr k-cell) (key-text)))
+                  (let ((key (args-eval a body)))
+                    (funcall push-item (make-sort-item (if eager (value-copy item) item) key i))))))
+          (let ((items (funcall get-items)))
+            (setf items (stable-sort items
+                                     (lambda (x y)
+                                       (let ((c (compare-sort-keys (sort-item-key x) (sort-item-key y))))
+                                         (if (zerop c)
+                                             (< (sort-item-idx x) (sort-item-idx y))
+                                             (progn
+                                               (when desc (setf c (- c)))
+                                               (< c 0)))))))
+            ;; The survivors only are copied (§3.4): TOP collects n elements, and
+            ;; copying the rest would be the cost of a full SORT.
+            (make-list-value
+             (loop for x in items
+                   collect (if (or fresh eager)
+                               (sort-item-item x)
+                               (value-copy (sort-item-item x)))))))))))
 
 (define-builtin "SORT" 1 3
-  (lambda (a ctx) (do-sort a ctx "ASC"))
+  (lambda (a ctx) (do-sort a ctx "ASC" (load-time-value (binding-forms-named "SORT"))))
   :lazy t :binds t)
 
 (define-builtin "SORT_DESC" 1 3
-  (lambda (a ctx) (do-sort a ctx "DESC"))
+  (lambda (a ctx) (do-sort a ctx "DESC" (load-time-value (binding-forms-named "SORT_DESC"))))
   :lazy t :binds t)
 
 (define-builtin "SORT_BY" 2 4
-  (lambda (a ctx) (do-sort a ctx nil))
+  (lambda (a ctx) (do-sort a ctx nil (load-time-value (binding-forms-named "SORT_BY"))))
   :lazy t :binds t)
 
 (define-builtin "TOP" 2 4
-  (lambda (a ctx) (do-top-sort a ctx "ASC"))
+  (lambda (a ctx) (do-top-sort a ctx "ASC" (load-time-value (binding-forms-named "TOP"))))
   :lazy t :binds t)
 
 (define-builtin "TOP_DESC" 2 4
-  (lambda (a ctx) (do-top-sort a ctx "DESC"))
+  (lambda (a ctx) (do-top-sort a ctx "DESC" (load-time-value (binding-forms-named "TOP_DESC"))))
   :lazy t :binds t)
 
 (define-builtin "TOP_BY" 3 5
-  (lambda (a ctx) (do-top-sort a ctx nil))
+  (lambda (a ctx) (do-top-sort a ctx nil (load-time-value (binding-forms-named "TOP_BY"))))
   :lazy t :binds t)
 
 (defstruct (group-entry (:constructor make-group-entry (key key-str)))
@@ -680,7 +527,7 @@ order it is handed its elements."
   ;; and the text spelt the same are one key, and a decimal cache warmed on one of
   ;; them by arithmetic changes nothing). So it hashes the spelling, never the
   ;; cache: hashing the decimal fields put `X` and `"5"` in different buckets once
-  ;; `X * 1` had been evaluated (LISP-C1).
+  ;; `X * 1` had been evaluated.
   (let ((k (value-kind v)))
     (case k
       (:text (logxor (sxhash k) (sxhash (value-scalar v))))
@@ -691,7 +538,7 @@ order it is handed its elements."
 
 ;; A scalar key is hashed by its scalar alone, but a list or record key -- whose
 ;; kind is NONE, hashed 0 above -- is walked, and the walk must meet the depth
-;; cap as every other one does (spec §6.4; review 2026-09-25 HOST-07).
+;; cap as every other one does (spec §6.4).
 (defun bucket-key-hash (v)
   (if (zerop (value-size v)) (eval-key-hash v) (value-hash v)))
 
@@ -702,111 +549,77 @@ order it is handed its elements."
       (fail "E_NOT_TEXT" "a bucket key must be text or a number, got a list or record" pos))
     (as-text v pos)))
 
-(defun do-bucket (a ctx)
+(defun do-bucket (a ctx forms)
   (let* ((val (snapshot-source (args-val a 0)))
          (src-fresh (node-fresh-p (args-node a 0))))
     ;; A scalar is one element (SPEC 7.3); only NULL and an empty list have none.
-    (if (or (value-null-p val)
-            (and (zerop (value-size val)) (eq (value-kind val) :none)))
-        (make-list-value nil)
-        (let* ((count (args-count a))
-               (binder (if (= count 4) (args-symbol a 1) "_"))
-               (key-node (cond ((= count 2) (args-node a 1))
-                               ((= count 3) (args-node a 1))
-                               (t (args-node a 2))))
-               (agg-node (cond ((= count 2) nil)
-                               ((= count 3) (args-node a 2))
-                               (t (args-node a 3))))
-               (groups-table (make-hash-table :test #'eql))
-               (groups '())
-               (needs-k (node-contains-var-p key-node "_K"))
-               ;; A row is collected when its key is computed and it is grouped
-               ;; (SPEC 3.4): when the key or the projection might write, it is
-               ;; copied then, so neither a later key nor the projection can
-               ;; change a row already grouped.
-               (eager (or (node-may-write-p key-node) (and agg-node (node-may-write-p agg-node))))
-               (binder-cell (cons binder nil))
-               (k-cell (when needs-k (cons "_K" nil)))
-               (frame (if needs-k (list binder-cell k-cell) (list binder-cell))))
-          (ctx-push-frame ctx frame)
-          (unwind-protect
-               (flet ((process-item (source k idx)
-                        (setf (cdr binder-cell) source)
-                        (when needs-k
-                          (setf (cdr k-cell) (if k (%text k) (format-index-text idx))))
-                        (let* ((eval-key (args-eval a key-node))
-                               (item (if eager (value-copy source) source))
-                               ;; A bare bucket's key is an index key (spec §3.3):
-                               ;; the scalar, verbatim, and refused the way indexing
-                               ;; refuses it -- never collapsed onto a string that
-                               ;; stands for every list, record or NULL. The
-                               ;; projected spelling has no map to key and groups
-                               ;; by identity instead.
-                               (key-str (if (null agg-node)
-                                            (bucket-key-text eval-key (node-pos key-node))
-                                            ""))
-                               ;; The bare spelling groups by the index key it has just
-                               ;; been given (spec 3.3, 7.3): two keys with the same
-                               ;; text are one group whatever their structure. The
-                               ;; projected spelling groups by identity.
-                               (h (if (null agg-node) (sxhash key-str) (bucket-key-hash eval-key)))
-                               (bucket (gethash h groups-table))
-                               (found (find-if (lambda (g)
-                                                 (if (null agg-node)
-                                                     (string= (group-entry-key-str g) key-str)
-                                                     (value-eql (group-entry-key g) eval-key)))
-                                               bucket)))
-                          (if found
-                              (push item (group-entry-rows found))
-                              (let* ((new-g (make-group-entry eval-key key-str)))
-                                (setf (group-entry-rows new-g) (list item))
-                                (setf (gethash h groups-table) (cons new-g bucket))
-                                (push new-g groups))))))
-                 (cond
-                   ((and (value-is-list val) (value-storage val))
-                    (let ((storage (value-storage val)))
-                      (loop for i from 0 below (length storage)
-                            for item = (svref storage i)
-                            do (process-item item nil (1+ i)))))
-                   ((value-shape val)
-                    (let* ((shape (value-shape val))
-                           (storage (value-storage val))
-                           (keys (record-shape-keys shape)))
-                      (loop for k in keys
-                            for i from 0
-                            for item = (svref storage i)
-                            do (process-item item k (1+ i)))))
-                   (t
-                    (loop for (k . item) in (aggregate-elements val)
-                          for idx from 1
-                          do (process-item item k idx)))))
-            (ctx-pop-frame ctx))
-          (setf groups (nreverse groups))
-          (dolist (g groups)
-            (setf (group-entry-rows g) (nreverse (group-entry-rows g))))
-          (if (null agg-node)
-              (let ((out (make-none)))
+    (when (or (value-null-p val)
+              (and (zerop (value-size val)) (eq (value-kind val) :none)))
+      (return-from do-bucket (make-list-value nil)))
+    (multiple-value-bind (b key agg) (call-form forms (args-nodes a))
+      (let* ((binder (if b (args-symbol a b) "_"))
+             (key-node (args-node a key))
+             (agg-node (and agg (args-node a agg)))
+             (groups-table (make-hash-table :test #'eql))
+             (groups '())
+             ;; A row is collected when its key is computed and it is grouped
+             ;; (SPEC 3.4): when the key or the projection might write, it is
+             ;; copied then, so neither a later key nor the projection can
+             ;; change a row already grouped.
+             (eager (or (node-may-write-p key-node) (and agg-node (node-may-write-p agg-node)))))
+        (with-binder-frame (binder-cell k-cell) ctx binder (node-contains-var-p key-node "_K")
+          (do-elements (source i key-text) val
+            (setf (cdr binder-cell) source)
+            (when k-cell (setf (cdr k-cell) (key-text)))
+            (let* ((eval-key (args-eval a key-node))
+                   (item (if eager (value-copy source) source))
+                   ;; A bare bucket's key is an index key (spec §3.3): the
+                   ;; scalar, verbatim, and refused the way indexing refuses it
+                   ;; -- never collapsed onto a string that stands for every
+                   ;; list, record or NULL. The projected spelling has no map to
+                   ;; key and groups by identity instead.
+                   (key-str (if (null agg-node)
+                                (bucket-key-text eval-key (node-pos key-node))
+                                ""))
+                   ;; The bare spelling groups by the index key it has just been
+                   ;; given (spec 3.3, 7.3): two keys with the same text are one
+                   ;; group whatever their structure. The projected spelling
+                   ;; groups by identity.
+                   (h (if (null agg-node) (sxhash key-str) (bucket-key-hash eval-key)))
+                   (bucket (gethash h groups-table))
+                   (found (find-if (lambda (g)
+                                     (if (null agg-node)
+                                         (string= (group-entry-key-str g) key-str)
+                                         (value-eql (group-entry-key g) eval-key)))
+                                   bucket)))
+              (if found
+                  (push item (group-entry-rows found))
+                  (let ((new-g (make-group-entry eval-key key-str)))
+                    (setf (group-entry-rows new-g) (list item))
+                    (setf (gethash h groups-table) (cons new-g bucket))
+                    (push new-g groups))))))
+        (setf groups (nreverse groups))
+        (dolist (g groups)
+          (setf (group-entry-rows g) (nreverse (group-entry-rows g))))
+        (if (null agg-node)
+            (let ((out (make-none)))
+              (dolist (g groups)
+                (value-set out (group-entry-key-str g)
+                           (make-list-value (if (or src-fresh eager)
+                                                (group-entry-rows g)
+                                                (mapcar #'value-copy (group-entry-rows g))))))
+              out)
+            (let ((out '()))
+              (with-binder-frame (agg-binder-cell agg-k-cell) ctx binder t
                 (dolist (g groups)
-                  (value-set out (group-entry-key-str g) (make-list-value (if (or src-fresh eager)
-                                                                (group-entry-rows g)
-                                                                (mapcar #'value-copy (group-entry-rows g))))))
-                out)
-              (let ((out '())
-                    (agg-binder-cell (cons binder nil))
-                    (agg-k-cell (cons "_K" nil)))
-                (let ((agg-frame (list agg-binder-cell agg-k-cell)))
-                  (ctx-push-frame ctx agg-frame)
-                  (unwind-protect
-                       (dolist (g groups)
-                         (setf (cdr agg-binder-cell) (make-list-value (group-entry-rows g))
-                               (cdr agg-k-cell) (group-entry-key g))
-                         (let ((res (args-eval a agg-node)))
-                           (push (if (node-fresh-p agg-node) res (value-copy res (node-pos agg-node))) out)))
-                    (ctx-pop-frame ctx)))
-                (make-list-value (nreverse out))))))))
+                  (setf (cdr agg-binder-cell) (make-list-value (group-entry-rows g))
+                        (cdr agg-k-cell) (group-entry-key g))
+                  (let ((res (args-eval a agg-node)))
+                    (push (if (node-fresh-p agg-node) res (value-copy res (node-pos agg-node))) out))))
+              (make-list-value (nreverse out))))))))
 
 (define-builtin "BUCKET" 2 4
-  (lambda (a ctx) (do-bucket a ctx))
+  (lambda (a ctx) (do-bucket a ctx (load-time-value (binding-forms-named "BUCKET"))))
   :lazy t :binds t)
 
 

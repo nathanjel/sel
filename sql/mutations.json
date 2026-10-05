@@ -871,10 +871,10 @@
     },
     {
       "name": "lisp-unicode-digits-are-positions",
-      "was": "CL's DIGIT-CHAR-P accepts every Unicode decimal digit -- (digit-char-p #\\U+0663) is 3 -- and every numeral grammar in this layer is ASCII by specification. Without ASCII-DIGIT-P this host answered column 13 for \"1<U+0663>\" where the other four answer none. The same predicate gates template slots, arity keys, @unify positions and dotted versions.",
-      "file": "lisp/src/sql/errors.lisp",
-      "from": "  (char<= #\\0 c #\\9))",
-      "to": "  (digit-char-p c))"
+      "was": "CL's DIGIT-CHAR-P accepts every Unicode decimal digit -- (digit-char-p #\\U+0663) is 3 -- and every numeral grammar in this layer is ASCII by specification. Without SEL::ASCII-DIGIT-P (one copy, in utf8.lisp, since SEL-R058) this host answered column 13 for \"1<U+0663>\" where the other four answer none. The same predicate gates template slots, arity keys, @unify positions and dotted versions.",
+      "file": "lisp/src/utf8.lisp",
+      "from": "(defun ascii-digit-p (c) (char<= #\\0 c #\\9))",
+      "to": "(defun ascii-digit-p (c) (digit-char-p c))"
     },
     {
       "name": "lisp-dialect-checked-after-the-translator-is-built",

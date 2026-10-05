@@ -92,7 +92,7 @@ gap, however small, and the gap is where \"1 OR 1=1\" lived."
 (defvar *escape-plans* (make-hash-table :test #'eq :weakness :key :synchronized t)
   "ESCAPE-PLAN per textEscape rule list, by the identity of the list the dialect's
 lexical table returns: the table (and so the list) is dropped whenever a dialect is
-registered or reset, which drops the plan with it (LISP-P24).")
+registered or reset, which drops the plan with it.")
 
 (defun escape-plan-for (escape)
   (or (gethash escape *escape-plans*)
@@ -114,7 +114,12 @@ registered or reset, which drops the plan with it (LISP-P24).")
   (let ((quote (lex-text dialect "textQuote"))
         (escape (dialect-lexical dialect "textEscape")))
     (if (not (and escape (listp escape)))
-        (concatenate 'string quote text quote)
+        ;; CHECK-QUOTE-PAIRING (map.lisp) refuses a dialect whose textQuote has
+        ;; no escape rule, so this cannot be reached; if it were, quoting TEXT
+        ;; without escaping it would be an injection, so it refuses.
+        (refuse "E_SQL_UNSUPPORTED"
+                (format nil "dialect ~a has no textEscape, so a text literal cannot be quoted safely"
+                        dialect))
         ;; A single left-to-right pass, never one replace per rule: replacing '
         ;; with '' and then \ with \\ would rewrite the output of the first.
         (let* ((plan (escape-plan-for escape))
@@ -206,6 +211,16 @@ column a\"b from ending the identifier early."
 
 ;;; --- templates ------------------------------------------------------------
 
+(defun refuse-no-numeric-guard (dialect pos)
+  "DIALECT has no numericGuard: an operand not declared NUM cannot be read as a
+number there. Says what the author can act on -- declaring the binding NUM --
+rather than naming the missing key."
+  (refuse "E_SQL_UNSUPPORTED"
+          (format nil "dialect ~a has no way to ask whether a value is a ~
+number, so an operand it has not been told is one cannot be read as one here; ~
+declare the binding NUM if the column really is numeric" dialect)
+          pos))
+
 (defun emit-numeric-operand (dialect f &optional pos)
   "An operand a numeric context will read as a number, made safe to read.
 
@@ -233,11 +248,7 @@ when SEL would not."
         (check-numeric-guard dialect)
         (let ((guard (dialect-lexical dialect "numericGuard")))
           (unless (stringp guard)
-            (refuse "E_SQL_UNSUPPORTED"
-                    (format nil "dialect ~a has no way to ask whether a value is a ~
-number, so an operand it has not been told is one cannot be read as one here; ~
-declare the binding NUM if the column really is numeric" dialect)
-                    pos))
+            (refuse-no-numeric-guard dialect pos))
           (%fragment (emit-fill dialect guard (list f) pos) :num dialect)))))
 
 (defun split-numeric-guard (dialect f &optional pos)
@@ -251,11 +262,7 @@ exactly where EMIT-NUMERIC-OPERAND does."
   (let ((guard (dialect-lexical dialect "numericGuard"))
         (head "CASE WHEN (") (mid ") THEN ") (tail " ELSE NULL END"))
     (unless (stringp guard)
-      (refuse "E_SQL_UNSUPPORTED"
-              (format nil "dialect ~a has no way to ask whether a value is a ~
-number, so an operand it has not been told is one cannot be read as one here; ~
-declare the binding NUM if the column really is numeric" dialect)
-              pos))
+      (refuse-no-numeric-guard dialect pos))
     (let ((m (search mid guard)))
       (unless (and m (eql 0 (search head guard))
                    (eql (- (length guard) (length tail)) (search tail guard :from-end t)))
@@ -301,7 +308,7 @@ is structural and does not normalise numbers."
 (defvar *template-segments* (make-hash-table :test #'eq :weakness :key :synchronized t)
   "The parsed form of each mapping template, keyed by the identity of its string: the
 map's entries and a dialect's lexical values are stable strings, so each is scanned
-once and not at every node it is filled into (LISP-P15).")
+once and not at every node it is filled into.")
 
 (defun template-segments (tpl)
   "TPL as a list of segments, in order: a string (literal text, `{{` and `}}` already
@@ -370,50 +377,52 @@ actual mistake and a depth cap would need a number nobody can justify."
                         (splice (nth i args))))
              (lexical (slot)
                (let* ((colon (position #\: slot))
-             (key (if colon (subseq slot 0 colon) slot))
-             (arg (if colon (subseq slot (1+ colon)) ""))
-             (val (dialect-lexical dialect key)))
-        (unless (stringp val)
-          (refuse "E_SQL_UNSUPPORTED"
-                  (format nil "a template used {~a}, ~
-      which is neither an argument nor a lexical entry of dialect ~a" slot dialect) pos))
-        (if (equal arg "")
-            (push-str val)
-            (progn
-              (when (member key expanding :test #'equal)
-                (refuse "E_SQL_UNSUPPORTED"
-                        (format nil "the ~a lexical entry ~
-      of dialect ~a expands into itself, so filling it would never finish" key dialect)
-                        pos))
-              ;; binaryCast converts a TEXT or NUM
-              ;; operand to bytes. One already BIN needs
-              ;; no conversion, and on PostgreSQL
-              ;; converting it is destructive:
-              ;; text::bytea parses its input as a bytea
-              ;; LITERAL. Every other cast is idempotent
-              ;; and applied unconditionally; this is the
-              ;; one whose input kind decides whether it
-              ;; means anything.
-              ;; {key:*} is {key:n} for every argument, joined
-              ;; with ", " (sql/MAP.md 4.2).
-              (let ((each (if (equal arg "*")
-                              (loop for n below (length args)
-                                    collect (format nil "~d" n))
-                              (list arg))))
-               (loop for one in each
-                     for at from 0
-                     do (when (> at 0) (push-str ", "))
-                        (let ((ca (and (equal key "binaryCast")
-                                       (slot-index one))))
-                          (if (and ca (< ca (length args))
-                                   (eq (fragment-kind (nth ca args)) :bin))
-                              (splice (nth ca args))
-                              (dolist (p (fill-segments
-                                          dialect
-                                          (lexical-expansion val one)
-                                          args pos (cons key expanding)))
-                                (if (stringp p) (push-str p) (push p parts))))))))))))
-    (dolist (seg segments)
+                      (key (if colon (subseq slot 0 colon) slot))
+                      (arg (if colon (subseq slot (1+ colon)) ""))
+                      (val (dialect-lexical dialect key)))
+                 (unless (stringp val)
+                   (refuse "E_SQL_UNSUPPORTED"
+                           (format nil "a template used {~a}, ~
+                                        which is neither an argument nor a lexical entry of dialect ~a"
+                                   slot dialect)
+                           pos))
+                 (if (equal arg "")
+                     (push-str val)
+                     (progn
+                       (when (member key expanding :test #'equal)
+                         (refuse "E_SQL_UNSUPPORTED"
+                                 (format nil "the ~a lexical entry ~
+                                              of dialect ~a expands into itself, so filling it would never finish"
+                                         key dialect)
+                                 pos))
+                       ;; {key:*} is {key:n} for every argument, joined with ", "
+                       ;; (sql/MAP.md 4.2).
+                       (let ((each (if (equal arg "*")
+                                       (loop for n below (length args)
+                                             collect (format nil "~d" n))
+                                       (list arg))))
+                         (loop for one in each
+                               for at from 0
+                               do (when (> at 0) (push-str ", "))
+                                  ;; binaryCast converts a TEXT or NUM operand to
+                                  ;; bytes. One already BIN needs no conversion,
+                                  ;; and on PostgreSQL converting it is
+                                  ;; destructive: text::bytea parses its input as a
+                                  ;; bytea LITERAL. Every other cast is idempotent
+                                  ;; and applied unconditionally; this is the one
+                                  ;; whose input kind decides whether it means
+                                  ;; anything.
+                                  (let ((ca (and (equal key "binaryCast")
+                                                 (slot-index one))))
+                                    (if (and ca (< ca (length args))
+                                             (eq (fragment-kind (nth ca args)) :bin))
+                                        (splice (nth ca args))
+                                        (dolist (p (fill-segments
+                                                    dialect
+                                                    (lexical-expansion val one)
+                                                    args pos (cons key expanding)))
+                                          (if (stringp p) (push-str p) (push p parts))))))))))))
+      (dolist (seg segments)
         (if (stringp seg)
             (push-str seg)
             (ecase (car seg)
@@ -430,7 +439,7 @@ expression asks for argument ~a, which it was not given" k) pos))
 (defvar *lexical-expansions* (make-hash-table :test #'eq :weakness :key :synchronized t)
   "For a lexical template VALUE, the segments of its expansion for each argument
 spelling ONE (an alist): `{key:one}` is VALUE with `{0}` replaced by `{one}`, which
-was rebuilt and re-scanned at every use (LISP-P15).")
+was rebuilt and re-scanned at every use.")
 
 (defun lexical-expansion (val one)
   (let ((cell (assoc one (gethash val *lexical-expansions*) :test #'string=)))

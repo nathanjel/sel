@@ -50,7 +50,7 @@ generator is free to emit their keys in either order."
             (unless (same-entry (dialect-entry name section (car cell))
                                 (dialect-entry twin section (car cell)))
               (push (format nil "~a.~(~a~).~a" name section (car cell)) problems))))))
-;; Rule 10 of sql/MAP.md, at run time. Registering a derived dialect is the
+    ;; Rule 10 of sql/MAP.md, at run time. Registering a derived dialect is the
     ;; documented way to adapt the map to a server -- the first external user of this
     ;; layer did it on their first day -- and numericGuard is the one lexical key where
     ;; a wrong override fails SILENTLY: every other one blows up at template expansion,

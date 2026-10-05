@@ -25,7 +25,7 @@
           (node-keys-unobserved copy) (node-keys-unobserved n)
           ;; The parsed decimal of a numeral travels with the copy: dropping it made
           ;; every optimised literal re-parse its text at run time, which is why an
-          ;; optimised `A > 1` ran slower than the plain tree (LISP-P5).
+          ;; optimised `A > 1` ran slower than the plain tree.
           (node-dec-val copy) (node-dec-val n))
     copy))
 
@@ -51,8 +51,9 @@ text is not a number)."
     copy))
 
 (defun literal-bool (value pos)
+  "A :bool node holding VALUE at POS."
   (let ((res (make-node :bool pos)))
-    (setf (node-b res) value)
+    (setf (node-b res) (and value t))
     res))
 
 (defun fold-node (node)
@@ -64,9 +65,7 @@ text is not a number)."
              (op (node-s node)))
          (cond
            ((and (string= op "NOT") child (eq (node-kind child) :bool))
-            (let ((res (make-node :bool (node-pos node))))
-              (setf (node-b res) (not (node-b child)))
-              res))
+            (literal-bool (not (node-b child)) (node-pos node)))
            ;; Through the decimal core, as the other hosts and the evaluator:
            ;; -0 is 0, not "-0". A numeral the core refuses is left for the
            ;; evaluator, which owns that error.
@@ -95,9 +94,7 @@ text is not a number)."
               ((and l (eq (node-kind l) :bool) (null (node-b l))) (literal-bool nil (node-pos node)))
               ;; Literal bool AND bool
               ((and l r (eq (node-kind l) :bool) (eq (node-kind r) :bool))
-               (let ((res (make-node :bool (node-pos node))))
-                 (setf (node-b res) (and (node-b l) (node-b r)))
-                 res))
+               (literal-bool (and (node-b l) (node-b r)) (node-pos node)))
               (t node)))
 
            ((string= op "OR")
@@ -106,9 +103,7 @@ text is not a number)."
               ((and l (eq (node-kind l) :bool) (node-b l)) (literal-bool t (node-pos node)))
               ;; Literal bool OR bool
               ((and l r (eq (node-kind l) :bool) (eq (node-kind r) :bool))
-               (let ((res (make-node :bool (node-pos node))))
-                 (setf (node-b res) (or (node-b l) (node-b r)))
-                 res))
+               (literal-bool (or (node-b l) (node-b r)) (node-pos node)))
               (t node)))
 
            ;; Numeric arithmetic
@@ -119,13 +114,7 @@ text is not a number)."
                   (let* ((dl (node-dec l pos))
                          (dr (node-dec r pos))
                          (dres (when (and dl dr)
-                                 (cond
-                                   ((string= op "+") (dec-add dl dr pos))
-                                   ((string= op "-") (dec-sub dl dr pos))
-                                   ((string= op "*") (dec-mul dl dr pos))
-                                   ((string= op "/") (dec-div dl dr pos))
-                                   ((string= op "%") (dec-mod dl dr pos))
-                                   (t nil)))))
+                                 (dec-arith (binary-op-code op) dl dr pos))))
                     (if dres
                         (let ((res (make-node :num pos)))
                           (setf (node-s res) (dec-format dres)
@@ -150,9 +139,7 @@ text is not a number)."
                                     ((string= op "<=") (<= cmp 0))
                                     ((string= op ">")  (> cmp 0))
                                     ((string= op ">=") (>= cmp 0)))))
-                          (let ((res (make-node :bool pos)))
-                            (setf (node-b res) b)
-                            res))
+                          (literal-bool b pos))
                         node))
                 (error () node))))
 
@@ -164,13 +151,12 @@ text is not a number)."
                    (b (cond
                         ((string= op "$==") (string= sl sr))
                         ((string= op "$!=") (string/= sl sr))
-                        ((string= op "$<")  (string< sl sr))
-                        ((string= op "$<=") (string<= sl sr))
-                        ((string= op "$>")  (string> sl sr))
-                        ((string= op "$>=") (string>= sl sr)))))
-              (let ((res (make-node :bool (node-pos node))))
-                (setf (node-b res) b)
-                res)))
+                        ;; STRING< and kin answer a mismatch index; a boolean here.
+                        ((string= op "$<")  (and (string< sl sr) t))
+                        ((string= op "$<=") (and (string<= sl sr) t))
+                        ((string= op "$>")  (and (string> sl sr) t))
+                        ((string= op "$>=") (and (string>= sl sr) t)))))
+              (literal-bool b (node-pos node))))
 
            (t node))))
 
@@ -192,7 +178,7 @@ text is not a number)."
 (defun keep-last-step-pos (steps pos)
   "STEPS with the last one carrying POS, the position of the pipeline's original
 outermost step. A parent that rejects the pipeline's value reports the error at
-that node, and a fused or reordered replacement must not move it (GO-C33)."
+that node, and a fused or reordered replacement must not move it."
   (if (and steps (not (eq (node-pos (car (last steps))) pos)))
       (let ((copy (copy-node-shallow (car (last steps)))))
         (setf (node-pos copy) pos)
@@ -219,6 +205,11 @@ that node, and a fused or reordered replacement must not move it (GO-C33)."
     (values curr steps)))
 
 (defun collect-field-refs (node &optional (binder "_"))
+  "The field names NODE reads as BINDER[\"f\"] (or through `_`, `_1`, `_2`),
+for the logical rewrites. Its own walk on purpose: a matched read is not
+entered, names compare exactly, and a list or sequence is not looked into
+(the rewrites ask about one step's body). The hybrid planner's
+COLLECT-FIELD-REFERENCES answers a different question."
   (let ((refs '()))
     (labels ((walk (n)
                (when (and n (node-p n))
@@ -241,12 +232,17 @@ that node, and a fused or reordered replacement must not move it (GO-C33)."
       (walk node))
     refs))
 
+(defun step-binder-and-body (step)
+  "The binder and body of a MAP or FILTER step (input, [binder,] body), as two
+values; the binder is `_` when the step names none."
+  (let ((args (node-items step)))
+    (if (= (length args) 3)
+        (values (node-s (second args)) (third args))
+        (values "_" (second args)))))
+
 (defun map-passthrough-fields (map-step)
   "Returns a list of field names that MAP passes through unchanged from input."
-  (let* ((args (node-items map-step))
-         (count (length args))
-         (binder (if (= count 3) (node-s (second args)) "_"))
-         (body (if (= count 3) (third args) (second args))))
+  (multiple-value-bind (binder body) (step-binder-and-body map-step)
     (when (and (eq (node-kind body) :call)
                (string= (node-s body) "RECORD"))
       (let ((items (node-items body))
@@ -265,10 +261,7 @@ that node, and a fused or reordered replacement must not move it (GO-C33)."
 
 (defun map-has-computed-fields-p (map-step)
   "Returns T if MAP computes any field non-trivially (not just simple pass-through)."
-  (let* ((args (node-items map-step))
-         (count (length args))
-         (binder (if (= count 3) (node-s (second args)) "_"))
-         (body (if (= count 3) (third args) (second args))))
+  (multiple-value-bind (binder body) (step-binder-and-body map-step)
     (if (and (eq (node-kind body) :call)
              (string= (node-s body) "RECORD"))
         (let ((items (node-items body)))
@@ -310,7 +303,8 @@ them (MAP, SELECT_COLS, the sorts)."
 
 (defun step-reads-key-p (step)
   "Whether a step's own arguments (not its input) read _K: the keys a sort
-renumbers, so such a step keeps its place relative to one."
+renumbers, so such a step keeps its place relative to one. READS-VAR-P's
+reading of a read; the hybrid planner's STEP-MENTIONS-KEY-P counts every `_K`."
   (some (lambda (arg) (reads-var-p arg '("_K"))) (rest (node-items step))))
 
 (defun keys-renumbered-by-p (step)
@@ -339,62 +333,45 @@ later step, a list literal or a constructor is known not to be one."
 the evaluator reads (STEP-ARG-FOLDS-P).")
 
 (defun step-arg-folds-p (step index)
-  "The evaluator resolves the three-argument SORT_BY / TOP_BY form by shape
-(spec §7.3): a text literal in the third slot is the direction, otherwise a
-bare name in the second slot is the binder and the third slot is its key. A
-fold that hoists a text literal into that slot -- IF(TRUE, \"DESC\", \"ASC\")
--- would change the form, so the slot is walked without folding."
+  "Whether argument INDEX of a pipeline step may be constant-folded. The
+evaluator picks a binding call's form by the shape of its arguments (spec
+§7.3; the manifest's forms with a WHEN): a text literal in SORT_BY's third
+slot is the direction, otherwise a bare name in the second is the binder. A
+fold that hoists a text literal into such a slot -- IF(TRUE, \"DESC\", \"ASC\")
+-- would change the form, so that slot is walked without folding; any other
+argument folds."
   (let* ((args (node-items step))
-         (sort-count (cond ((string= (node-s step) "SORT_BY") (length args))
-                           ((string= (node-s step) "TOP_BY") (1- (length args)))
-                           (t 0))))
-    (not (and (= sort-count 3) (= index 2)
-              (eq (node-kind (second args)) :var)
-              (not (node-grouped (second args)))))))
-
-(defun filter-body (filter-step)
-  "The binder and predicate of a FILTER step, as two values."
-  (let* ((args (node-items filter-step))
-         (count (length args)))
-    (values (if (= count 3) (node-s (second args)) "_")
-            (if (= count 3) (third args) (second args)))))
+         (forms (binding-forms-named (node-s step))))
+    (or (notany (lambda (f) (let ((when (third f)))
+                              (and when (= (first when) index) (eq (second when) :text)
+                                   (= (length (second f)) (length args)))))
+                forms)
+        (let ((as-text (copy-list args))
+              (literal (make-node :text (node-pos (nth index args)))))
+          (setf (nth index as-text) literal)
+          ;; Safe when the roles stay: the form a text literal there selects
+          ;; reads the arguments the way the current one does.
+          (equal (second (match-binding-form forms args))
+                 (second (match-binding-form forms as-text)))))))
 
 (defun filter-fields (filter-step)
-  (multiple-value-bind (binder pred) (filter-body filter-step)
+  (multiple-value-bind (binder pred) (step-binder-and-body filter-step)
     (collect-field-refs pred binder)))
 
 (defun bare-name-p (node)
   (and node (node-p node) (eq (node-kind node) :var) (not (node-grouped node))))
 
 (defun sort-key (sort-step)
-  "The binder and key of a sort step, as two values; a keyless sort has no
-key. The forms are the evaluator's (spec §7.3)."
-  (let* ((args (node-items sort-step))
-         (count (length args))
-         (sname (node-s sort-step))
-         (binder "_")
-         (key nil))
-    (cond
-      ((member sname '("SORT" "SORT_DESC") :test #'string=)
-       (unless (= count 1)
-         (setf binder (if (and (= count 3) (bare-name-p (second args))) (node-s (second args)) "_")
-               key (if (= count 3) (third args) (second args)))))
-      ((member sname '("TOP" "TOP_DESC") :test #'string=)
-       ;; TOP(source, key, n) has three arguments and TOP(source, binder, key, n)
-       ;; has four; the count below excludes n.
-       (unless (= count 2)
-         (let ((sort-count (1- count)))
-           (setf binder (if (and (= sort-count 3) (bare-name-p (second args))) (node-s (second args)) "_")
-                 key (if (= sort-count 3) (third args) (second args))))))
-      ((member sname '("SORT_BY" "TOP_BY") :test #'string=)
-       (let ((sort-count (if (string= sname "TOP_BY") (1- count) count)))
-         (cond
-           ((or (= sort-count 2)
-                (and (= sort-count 3) (eq (node-kind (third args)) :text)))
-            (setf key (second args)))
-           ((and (> count 2) (bare-name-p (second args)))
-            (setf binder (node-s (second args)) key (third args)))))))
-    (values binder key)))
+  "The binder and key of a sort step (SORT, SORT_DESC, SORT_BY and the TOP
+family), as two values; a keyless sort has no key. Decoded as the evaluator
+decodes them, through the manifest's forms (CALL-FORM)."
+  (let ((args (node-items sort-step))
+        (name (node-s sort-step)))
+    (multiple-value-bind (b key)
+        (call-form (binding-forms-named name) args
+                   (member name '("TOP" "TOP_DESC" "TOP_BY") :test #'string=))
+      (values (if (and b (bare-name-p (nth b args))) (node-s (nth b args)) "_")
+              (and key (nth key args))))))
 
 (defun sort-fields (sort-step)
   (multiple-value-bind (binder key) (sort-key sort-step)
@@ -444,8 +421,7 @@ fold, as in the other hosts (a negative count is the evaluator's error)."
 ;; Whether evaluating NODE for one row can raise -- conservatively: a rewrite
 ;; that moves a FILTER in front of a step, runs a step on fewer rows, or fuses
 ;; two FILTERs changes which rows reach what, so it may only pass over
-;; expressions that cannot raise on any of them (spec §7.3; review 2026-09-25
-;; SEM-07/SEM-08). Literals, _K and the binder itself never raise. On the
+;; expressions that cannot raise on any of them (spec §7.3). Literals, _K and the binder itself never raise. On the
 ;; logical path the rows are a bound relation's, which always carry their typed
 ;; columns, so a field read through the binder cannot raise either, nor a
 ;; comparison, AND/OR/NOT or + - * over such reads; `/` and `%`, calls and
@@ -481,8 +457,7 @@ MAP RECORD(...) gave them -- a read of any other name would raise E_NO_KEY.")
 ;; row: cannot-raise-p is about the expression, this is about its VALUE too. A
 ;; bare binder, a literal number or text, NULL and _K cannot raise as
 ;; expressions, but as predicates each is E_NOT_BOOL -- and a FILTER fused behind
-;; another would raise it before the first FILTER had seen its later rows
-;; (PHP-C11, LISP-C14).
+;; another would raise it before the first FILTER had seen its later rows.
 (defparameter +comparison-ops+
   '("==" "!=" "<" "<=" ">" ">=" "$==" "$!=" "$<" "$<=" "$>" "$>="))
 
@@ -503,22 +478,34 @@ MAP RECORD(...) gave them -- a read of any other name would raise E_NO_KEY.")
 
 (defun map-cannot-raise-p (map-step logical)
   "Every field a MAP computes (or its whole body) cannot raise."
-  (let* ((args (node-items map-step))
-         (count (length args))
-         (binder (if (= count 3) (node-s (second args)) "_"))
-         (body (if (= count 3) (third args) (second args))))
+  (multiple-value-bind (binder body) (step-binder-and-body map-step)
     (if (and (eq (node-kind body) :call) (string= (node-s body) "RECORD"))
         (loop for (k-node v-node) on (node-items body) by #'cddr
               always (and (eq (node-kind k-node) :text) (cannot-raise-p v-node binder logical)))
         (cannot-raise-p body binder logical))))
 
-(defun logical-step-pair (source i s1 s2 s3 &optional logical)
+(defun bounded-depth (root cap)
+  "The depth of the tree at ROOT (ROOT itself is 1), counted level by level and
+no further than one past CAP."
+  (let ((deepest 0) (level (list root)))
+    (loop while (and level (<= deepest cap))
+          do (incf deepest)
+             (let ((next '()))
+               (dolist (n level)
+                 (when (node-p n)
+                   (dolist (it (node-items n)) (push it next))
+                   (when (node-l n) (push (node-l n) next))
+                   (when (node-r n) (push (node-r n) next))))
+               (setf level next)))
+    deepest))
+
+(defun logical-step-pair (source i s1 s2 s3 &optional logical step-depth)
   "The rewrite for the pair (S1 S2) at position I, as two values: the steps
 that replace the pair and how many of the two were consumed -- or NIL when no
 rule fires. S3 is the step after the pair (NIL at the end of the pipeline),
 which only the three FILTER-moving rules look at (KEYS-RENUMBERED-BY-P). The
-rules, and their order, are the other four hosts' single left-to-right sweep
-(review 2026-09-15 finding V: this host ran them as ten ordered passes, and
+rules, and their order, are the other hosts' single left-to-right sweep (this
+host once ran them as ten ordered passes, and
 `MAP .> SORT_BY .> TAKE` reached the translator in a different shape than
 everywhere else)."
   (let ((n1 (node-s s1))
@@ -570,7 +557,7 @@ everywhere else)."
       ((and s2 (string= n1 "MAP") (string= n2 "FILTER") (valid-filter-p s2)
             (let ((f-fields (filter-fields s2)))
               (and f-fields (fields-all-in-p f-fields (map-passthrough-fields s1))))
-            (not (multiple-value-bind (binder pred) (filter-body s2)
+            (not (multiple-value-bind (binder pred) (step-binder-and-body s2)
                    (reads-row-or-key-p pred binder)))
             (keys-renumbered-by-p s3)
             (map-cannot-raise-p s1 logical))
@@ -581,13 +568,13 @@ everywhere else)."
       ((and s2 (sort-step-p s1) (string= n2 "FILTER") (not (step-reads-key-p s2))
             (keys-renumbered-by-p s3)
             (multiple-value-bind (binder key) (sort-key s1) (cannot-raise-p key binder logical))
-            (or logical (multiple-value-bind (binder pred) (filter-body s2) (cannot-raise-p pred binder nil))))
+            (or logical (multiple-value-bind (binder pred) (step-binder-and-body s2) (cannot-raise-p pred binder nil))))
        (values (list s2 s1) 2))
       ;; FILTER pushdown through SELECT_COLS, under the same key guard.
       ((and s2 (string= n1 "SELECT_COLS") (string= n2 "FILTER") (valid-filter-p s2)
             (let ((f-fields (filter-fields s2)))
               (and f-fields (fields-all-in-p f-fields (select-cols-fields s1))))
-            (not (multiple-value-bind (binder pred) (filter-body s2)
+            (not (multiple-value-bind (binder pred) (step-binder-and-body s2)
                    (reads-row-or-key-p pred binder)))
             (keys-renumbered-by-p s3))
        (values (list s2 s1) 2))
@@ -608,15 +595,22 @@ everywhere else)."
       ;; FILTER + FILTER -> FILTER(p1 AND p2) -- only when the second predicate
       ;; cannot raise: fused, it runs on a row before the first has seen the rows
       ;; after it.
+      ;; Fused, the second predicate also sits one level deeper than it did --
+      ;; under the AND -- and a fused pair must spend what the two stages spent
+      ;; (SPEC 6.4): a predicate that would reach the cap that way stays a second
+      ;; FILTER. STEP-DEPTH knows the depth of each step as written.
       ((and s2 (string= n1 "FILTER") (string= n2 "FILTER")
             (valid-filter-p s1) (valid-filter-p s2)
-            (multiple-value-bind (binder pred) (filter-body s2) (predicate-cannot-raise-p pred binder logical)))
+            (multiple-value-bind (binder pred) (step-binder-and-body s2) (predicate-cannot-raise-p pred binder logical))
+            (let ((d (and step-depth (funcall step-depth s2))))
+              (or (null d)
+                  (<= (+ d (bounded-depth (nth-value 1 (step-binder-and-body s2)) +max-depth+) 1)
+                      +max-depth+))))
        (let* ((args1 (node-items s1))
-              (args2 (node-items s2))
-              (b1 (if (= (length args1) 3) (node-s (second args1)) "_"))
-              (pred1 (if (= (length args1) 3) (third args1) (second args1)))
-              (b2 (if (= (length args2) 3) (node-s (second args2)) "_"))
-              (pred2 (if (= (length args2) 3) (third args2) (second args2)))
+              (b1 (nth-value 0 (step-binder-and-body s1)))
+              (pred1 (nth-value 1 (step-binder-and-body s1)))
+              (b2 (nth-value 0 (step-binder-and-body s2)))
+              (pred2 (nth-value 1 (step-binder-and-body s2)))
               (renamed-pred2 (if (string= b1 b2) pred2 (rename-var-in-node pred2 b2 b1)))
               (and-node (make-node :bin (node-pos pred1)))
               (fused (copy-node-shallow s1)))
@@ -636,9 +630,7 @@ everywhere else)."
       ;; list literal or constructor -- never as the first step over a source
       ;; that might be a scalar.
       ((and (string= n1 "FILTER") (valid-filter-p s1)
-            (let ((pred (if (= (length (node-items s1)) 3)
-                            (third (node-items s1))
-                            (second (node-items s1)))))
+            (let ((pred (nth-value 1 (step-binder-and-body s1))))
               (and pred (eq (node-kind pred) :bool) (node-b pred)))
             (or (plusp i) (source-is-list-p source))
             ;; Not as the only step: what is left must still carry the position a
@@ -656,8 +648,7 @@ with literal keys, else :UNKNOWN."
   (let ((shaper (find-if-not #'row-preserving-step-p steps-newest-first)))
     (cond ((null shaper) :relation)
           ((string= (node-s shaper) "MAP")
-           (let* ((args (node-items shaper))
-                  (body (if (= (length args) 3) (third args) (second args))))
+           (let ((body (nth-value 1 (step-binder-and-body shaper))))
              (if (and body (node-p body) (eq (node-kind body) :call) (string= (node-s body) "RECORD")
                       (loop for (k) on (node-items body) by #'cddr
                             always (and k (eq (node-kind k) :text))))
@@ -670,7 +661,7 @@ with literal keys, else :UNKNOWN."
                           "TAKE" "DROP" "DISTINCT" "DEDUPE")
           :test #'string=))
 
-(defun optimize-logical-pipeline-steps (source curr-steps &optional (logical t))
+(defun optimize-logical-pipeline-steps (source curr-steps &optional (logical t) step-depth)
   "Tier 1: Engine-agnostic logical relational rewrites on flat pipeline steps,
 as one left-to-right sweep over the pairs of adjacent steps, repeated to a
 fixed point -- the same sweep, in the same rule order, as the other four
@@ -691,11 +682,12 @@ needs."
                 ;; A typed-column read cannot raise only while the rows are still
                 ;; the bound relation's, or a field a preceding MAP RECORD built:
                 ;; after BUCKET, SELECT_COLS, LINK or a MAP of another shape they
-                ;; are whatever that step built (LISP-C14).
+                ;; are whatever that step built.
                 (let* ((shape (rows-shape new-steps))
                        (*shape-fields* shape))
                   (logical-step-pair source i s1 s2 s3
-                                     (and logical (not (eq shape :unknown)))))
+                                     (and logical (not (eq shape :unknown)))
+                                     step-depth))
               (if consumed
                   (progn
                     (dolist (r replacement) (push r new-steps))
@@ -709,9 +701,9 @@ needs."
     ;; and the last of them stays.
     (or curr-steps (and original-last (list original-last)))))
 
-(defun optimize-inmemory-pipeline-steps (source curr-steps)
+(defun optimize-inmemory-pipeline-steps (source curr-steps &optional step-depth)
   "Tier 2: In-memory physical rewrites, extending Tier 1."
-  (setf curr-steps (optimize-logical-pipeline-steps source curr-steps nil))
+  (setf curr-steps (optimize-logical-pipeline-steps source curr-steps nil step-depth))
   ;; A tree fact the evaluator's join pre-filter needs (SEL-0050): whether
   ;; anything can see the keys a FILTER's result carries. A following step
   ;; that renumbers without reading `_K` hides them (KEYS-RENUMBERED-BY-P, the
@@ -727,13 +719,12 @@ needs."
                       copy)
                     step)))
 
-(defun optimize-children (node physical depth in-math)
+(defun optimize-children (node physical depth)
   "A shallow copy of NODE with every child optimised. NODE itself is never
 written: the tree a Program owns is the caller's, the other four hosts copy on
 the way down, and this one wrote into its input until the cross-language review
 -- so a second RUN saw a tree the first had already rewritten, and the SQL
 planner saw one the evaluator had rewritten for itself."
-  (declare (ignore in-math))
   (let ((copy (copy-node-shallow node))
         (next-in-math (is-math-op-p node)))
     (case (node-kind node)
@@ -785,13 +776,19 @@ copy would only be a second object the translator has to recognise."
                                                          (and *fold-constants* (step-arg-folds-p s index))))
                                                    (optimize-tree item physical (1+ depth) nil)))))
                        copy))))
-         (build-pipeline-ast opt-source
-                             (keep-last-step-pos
-                              (if physical
-                                  (optimize-inmemory-pipeline-steps opt-source opt-steps)
-                                  (optimize-logical-pipeline-steps opt-source opt-steps))
-                              (node-pos node))))))
-    (t (let* ((copy (optimize-children node physical depth in-math))
+         ;; Each step's depth as written: the last step is NODE itself, and
+         ;; every earlier one is one level further down (its source argument).
+         (let* ((n (length opt-steps))
+                (depths (loop for st in opt-steps for i from 0
+                              collect (cons st (+ depth (- n 1 i)))))
+                (step-depth (lambda (st) (cdr (assoc st depths :test #'eq)))))
+           (build-pipeline-ast opt-source
+                               (keep-last-step-pos
+                                (if physical
+                                    (optimize-inmemory-pipeline-steps opt-source opt-steps step-depth)
+                                    (optimize-logical-pipeline-steps opt-source opt-steps t step-depth))
+                                (node-pos node)))))))
+    (t (let* ((copy (optimize-children node physical depth))
               (folded (if *fold-constants* (fold-node copy) copy)))
          (when (and physical (not in-math) (is-math-op-p folded))
            (let ((plan (compile-math-plan folded)))

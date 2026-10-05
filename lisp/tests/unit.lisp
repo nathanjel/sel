@@ -508,7 +508,7 @@ b\"c\\d")))
         (is (= 1 (sel:value-size res)))
         (is (string= "2" (sel:as-text (sel:value-get (sel:value-get res "2") "x"))))))
 
-    ;; The runner contract (finding AK): the statement in :PARAMS mode with
+    ;; The runner contract: the statement in :PARAMS mode with
     ;; BINDINGS in placeholder order -- text literals as `?`, numbers inlined
     ;; -- in every host, so a driver binds what it is handed as it is. This
     ;; host handed the runner inline SQL and its creation-order slot list.
@@ -639,7 +639,7 @@ b\"c\\d")))
          (bindings (list (cons "CUSTOMERS" cust)))
          ;; The FILTER, the sort and the slice come first as written: a host
          ;; function can raise, so none of them may move in front of the MAP
-         ;; that calls it (review 2026-09-25 SEM-07).
+         ;; that calls it.
          (q "CUSTOMERS .> FILTER(_['country'] $== 'DE')
                        .> SORT_BY(_['id'], 'ASC')
                        .> TAKE(3)
@@ -721,7 +721,9 @@ b\"c\\d")))
         ;; DE: disc 25 -> 10 + 50 = 60 (>50: 1 row); disc 10 -> 10 + 20 = 30 (<=50)
         (is (= 2 (sel:value-size res)))
         (is-true (or (string= "US" (sel:as-text (sel:value-get r1 "country")))
-                     (string= "DE" (sel:as-text (sel:value-get r1 "country")))))))))
+                     (string= "DE" (sel:as-text (sel:value-get r1 "country")))))
+        (is (string/= (sel:as-text (sel:value-get r1 "country"))
+                      (sel:as-text (sel:value-get r2 "country"))))))))
 
 (test deep-14-stage-pipeline
   (let* ((cats (sel.sql:binding-relation "categories" "categories"
@@ -826,8 +828,8 @@ b\"c\\d")))
   ;; when a later step renumbers the rows again without reading `_K`: FILTER
   ;; keeps its input's keys and the three renumber (spec §7.3), so at the end
   ;; of a pipeline the swap would change the answer's keys.
-  ;; And only past a step that cannot raise on the rows it drops (review
-  ;; 2026-09-25 SEM-07/SEM-08): a relation's field reads cannot on the logical
+  ;; And only past a step that cannot raise on the rows it drops (spec §7.3):
+  ;; a relation's field reads cannot on the logical
   ;; path, and can in memory (E_NO_KEY), so these pushdowns are the logical
   ;; path's.
   (let* ((prog (sel:compile-source "DATA .> MAP(RECORD('id', _['id'], 'heavy', _['x'] * 2)) .> FILTER(_['id'] > 10) .> MAP(_['heavy'])"))
@@ -914,7 +916,7 @@ b\"c\\d")))
           (is (string= "8000" (sel:as-text (sel:value-get r2 "bonus"))))
           ;; A host function can raise, so the MAP runs on every row as
           ;; written: moving the FILTER or the sort in front of it would skip
-          ;; its errors on the rows they drop (review 2026-09-25 SEM-07/08).
+          ;; its errors on the rows they drop.
           (is (= 5 calc-count)))))
 
   ;; 5. Slicing Fusion: TAKE(10) .> TAKE(5) -> TAKE(5), DROP(10) .> DROP(5) -> DROP(15)
@@ -1095,7 +1097,7 @@ b\"c\\d")))
   ;; 14b. A binder read after the LINK names no side: the binders are scoped
   ;; to the predicate (spec §7.4), so `O['status']` in the FILTER is
   ;; E_UNDEF_VAR as written, and pushing it into ORDERS would turn that error
-  ;; into rows (review 2026-09-15, W2). The pipeline is left as it is.
+  ;; into rows. The pipeline is left as it is.
   (let* ((prog (sel:compile-source "ORDERS .> LINK(PRODUCTS, O, P, O['p_id'] == P['id']) .> FILTER(O['status'] $== 'ACTIVE' AND P['is_active'] == 1)"))
          (opt (sel:optimize-ast-in-memory (sel:program-ast prog))))
     (is (string= "FILTER" (sel::node-s opt)))
@@ -1206,7 +1208,7 @@ identity, and a snapshot is compared by value."
              (handler-case (progn (funcall fn) "no error")
                (sel:sel-error (e)
                  (format nil "~a@~d:~d" (sel:sel-error-code e) (sel:sel-error-line e) (sel:sel-error-col e))))))
-      ;; The helper rows are review 2026-09-15 finding AJ: a helper read in
+      ;; The helper rows: a helper read in
       ;; the continuation is reported at its READ, not at its definition, and
       ;; a helper's definition is evaluated once, before the pipeline, not per
       ;; row. LABEL is a context variable, so a helper can be something no
@@ -1283,8 +1285,8 @@ X .> MAP(COUNT(X) + _[\"id\"]
               ;; sqlite cannot render its NUM guard, so nothing pushes down.
               ;; A later step that renumbers again lets the swap through.
               ("ORDERS .> MAP(r, RECORD(\"id\", r[\"id\"], \"shout\", REPEAT(r[\"name\"], 2))) .> FILTER(s, s[\"id\"] > 1)" :pure-memory)
-              ;; REPEAT can raise, so the FILTER stays behind the MAP (review
-              ;; 2026-09-25 SEM-07); a MAP that cannot raise lets it through.
+              ;; REPEAT can raise, so the FILTER stays behind the MAP (spec §7.3);
+              ;; a MAP that cannot raise lets it through.
               ("ORDERS .> MAP(r, RECORD(\"id\", r[\"id\"], \"shout\", REPEAT(r[\"name\"], 2))) .> FILTER(s, s[\"id\"] > 1) .> TAKE(5)" :pure-memory)
               ("ORDERS .> MAP(r, RECORD(\"id\", r[\"id\"], \"plus\", r[\"amount\"] + 1)) .> FILTER(s, s[\"id\"] > 1) .> TAKE(5)" :pure-sql)
               ("ORDERS .> MAP(RECORD(\"Name\", _[\"name\"], \"shout\", REPEAT(_[\"name\"], 2))) .> TAKE(2)" :pure-memory)
@@ -1495,7 +1497,7 @@ X .> MAP(COUNT(X) + _[\"id\"]
         (is (eq row (sel:value-get aliased "orders")))
         (is (string= "1" (sel:as-text (sel:value-get aliased "id"))))))))
 
-;;; --- the host boundary (spec/SPEC.md §8, review 2026-09-25 HOST-01..10) ----
+;;; --- the host boundary (spec/SPEC.md §8) ---------------------------------------
 
 (defun deep-host-value (levels)
   (let ((v (sel:make-text "x")))
@@ -1563,7 +1565,7 @@ X .> MAP(COUNT(X) + _[\"id\"]
   (is (eq :false (sel:to-native (sel:evaluate "FALSE"))))
   (is (string= "FALSE" (sel:value-dump (sel:from-native :false)))))
 
-;;; --- every public constructor (review 2026-09-28 HOST-13..20) -------------
+;;; --- every public constructor -------------
 
 (test host-boundary-to-native-keys-are-the-hosts
   "Changing a key to-native returned renames nothing: not the value, not a later
@@ -1610,7 +1612,7 @@ run of the program that built it, not a value set with the caller's string."
     (is (string= "t\"1\"" (sel:value-dump (sel:run p (list (cons "A" a) (cons "K" "x"))))))
     (is (string= "t\"2\"" (sel:value-dump (sel:run p (list (cons "A" a) (cons "K" "y"))))))))
 
-;;; --- E_UTF8 in source carries a position (spec/SPEC.md section 2; LISP-C31) ---
+;;; --- E_UTF8 in source carries a position (spec/SPEC.md section 2) ---
 
 (defun utf8-error-position (fn)
   "(code line col offset) of the sel-error FN signals, or :none."
@@ -1679,12 +1681,12 @@ run of the program that built it, not a value set with the caller's string."
     (is (string= "4" (cli "LEN(\"a\\r\\nb\")")))
     (is (starts-with-p "E_SYNTAX at line 2 column 1:" (cli "A = 1 # c\\r+ 2\\r\\nA")))))
 
-;;; --- T02/T03 review batch (2026-09-29) --------------------------------------
+;;; --- host API, regex, decimal and SQL-layer edges --------------------------
 
 (defun scalar-of (source) (sel::value-scalar (sel:evaluate source)))
 
 (test dec-format-ignores-the-embedders-printer-variables
-  ;; LISP-C22: with *print-radix* bound, every number rendered to text came out as
+  ;; With *print-radix* bound, every number rendered to text came out as
   ;; "12345." -- the embedder's setting leaking into a language rule.
   (let ((*print-radix* t) (*print-base* 16) (*read-base* 16))
     (is (string= "12345" (sel::dec-format (sel::dec-parse "12345"))))
@@ -1696,7 +1698,7 @@ run of the program that built it, not a value set with the caller's string."
     (is (string= "256" (sel::value-scalar (sel::make-int 256))))))
 
 (test make-int-cap-guard-uses-integers-only
-  ;; LISP-C45: the bit-length prefilter must agree with the digit cap exactly at
+  ;; The bit-length prefilter must agree with the digit cap exactly at
   ;; the boundary, and must not be a float constant.
   (is (null (nth-value 1 (ignore-errors (sel::make-int (1- (expt 10 1000000)))))))
   (raises "E_RANGE" (sel::make-int (expt 10 1000000)))
@@ -1714,7 +1716,7 @@ run of the program that built it, not a value set with the caller's string."
                    (sel:sel-error (e) (list (sel:sel-error-code e) (sel:sel-error-line e) (sel:sel-error-col e)))))))))
 
 (test record-with-16-fields-does-not-poison-the-shape-cache
-  ;; LISP-C2: adding a key to a 16-field record wrote a cons cell into the shape's
+  ;; Adding a key to a 16-field record wrote a cons cell into the shape's
   ;; shared key map, so a later record built from the same 16 keys claimed the
   ;; added key and reading it failed with an array-index error.
   (let ((keys (loop for i from 1 to 16 collect (format nil "K~d" i))))
@@ -1737,7 +1739,7 @@ run of the program that built it, not a value set with the caller's string."
   (is (string= "9" (scalar-of "X = LIST(RECORD(\"k\",1)); TAKE(X, 1)[(X[1][\"k\"] = 9; 1)][\"k\"]"))))
 
 (test assignment-and-constructors-count-value-depth
-  ;; LISP-C33: target path plus the depth of the stored value is what the cap
+  ;; Target path plus the depth of the stored value is what the cap
   ;; bounds; a constructor is reported at its own node.
   (flet ((chain (n) (format nil "~{~a~}" (make-list n :initial-element "[1]"))))
     (is (string= "7" (scalar-of (format nil "A~a = 1; B~a = A; 7" (chain 150) (chain 49)))))
@@ -1748,7 +1750,7 @@ run of the program that built it, not a value set with the caller's string."
     (raises "E_DEPTH" (sel:evaluate (format nil "A = 1; A~a = 1; (A, 2); 7" (chain 199))))))
 
 (test from-native-refuses-malformed-lists-with-e-bad-arg
-  ;; LISP-C32: never a CL TYPE-ERROR.
+  ;; Never a CL TYPE-ERROR.
   (raises "E_BAD_ARG" (sel:from-native '(("a" . 1) 5)))
   (raises "E_BAD_ARG" (sel:from-native '(("a" . 1) (2 . 3))))
   (raises "E_BAD_ARG" (sel:from-native (list* 1 2 3)))
@@ -1763,7 +1765,7 @@ run of the program that built it, not a value set with the caller's string."
   (is (= 3 (sel:value-size (sel:from-native '(1 2 3))))))
 
 (test register-builtin-is-guarded
-  ;; LISP-C34: register-builtin used to replace any function, COUNT included,
+  ;; Register-builtin used to replace any function, COUNT included,
   ;; for the whole process, and skipped every check register-function makes.
   (flet ((count-still-counts ()
            (is (string= "3" (sel:as-text (sel:evaluate "COUNT(LIST(1,2,3))"))))))
@@ -1785,7 +1787,7 @@ run of the program that built it, not a value set with the caller's string."
     (count-still-counts)))
 
 (test join-state-does-not-outlive-a-caught-error
-  ;; LISP-C44 (unconfirmed as a defect; hardening): the prefilter a FILTER hands a
+  ;; Hardening: the prefilter a FILTER hands a
   ;; join and the report a join hands back live in the context. An error caught
   ;; by `??` between the two must leave neither behind.
   (let* ((ctx-root (sel:evaluate "RECORD('L', LIST(RECORD('k', 1), RECORD('k', 2)), 'R', LIST(RECORD('k', 1)))"))
@@ -1812,7 +1814,7 @@ run of the program that built it, not a value set with the caller's string."
   (raises "E_NO_KEY" (sel:evaluate "5 .> SORT_BY(_['z']) .> TAKE(0)")))
 
 (test math-plan-evaluates-then-coerces
-  ;; LISP-C13 / SPEC 6.2: every operand is evaluated before any is coerced, in
+  ;; SPEC 6.2: every operand is evaluated before any is coerced, in
   ;; the plan as in the tree; the plan is a pure optimisation.
   (flet ((code-at (source)
            (handler-case (progn (sel:evaluate source) nil)
@@ -1855,7 +1857,7 @@ run of the program that built it, not a value set with the caller's string."
     (raises "E_DEPTH" (sel:evaluate (chain 400)))))
 
 (test plain-and-optimised-evaluation-agree
-  ;; T00-B for this host: the same source through the plain parse tree
+  ;; The same source through the plain parse tree
   ;; (program-ast, evaluated as written) and through run (the optimised physical
   ;; tree, math plans included) must give the same value dump, or the same error
   ;; code and position, and leave the same final context -- twice on one program.
@@ -1886,7 +1888,7 @@ run of the program that built it, not a value set with the caller's string."
           (is (equal (outcome (lambda (p c) (declare (ignore p)) (sel::eval-node (sel:program-physical-ast prog) c)) source)
                      (outcome (lambda (p c) (declare (ignore p)) (sel::eval-node (sel:program-physical-ast prog) c)) source))))))))
 
-;;; --- T05 / T06 / T07 (relational edges, regex portability, size caps) ---------
+;;; --- relational edges, regex portability, size caps ---------------------------
 
 (defun code-of (source)
   "The error code and position a program ends in, or its dump when it does not."
@@ -1902,6 +1904,29 @@ run of the program that built it, not a value set with the caller's string."
   (is (string= "3" (sel:as-text (sel:evaluate "R = RECORD(\"a\", 1, \"b\", 2); SUM(R, x, (R[\"b\"] = 10; x))"))))
   (is (string= "1,2" (sel:as-text (sel:evaluate "A = (1, 2); JOIN(MAP(A, (A[2] = 9; _)), \",\")")))))
 
+(defun compare-values (a b)
+  "An oracle for the sort keys (MAKE-SORT-KEY / COMPARE-SORT-KEYS), written the
+direct way: three-way comparison in SPEC 7.3's total order: by kind rank, then within a
+rank -- FALSE before TRUE, numbers by exact value, other text and BIN bytewise.
+Every pair of values compares, and transitively, so a sort cannot depend on the
+order it is handed its elements."
+  (let* ((a (sel::sort-leaf a))
+         (b (sel::sort-leaf b))
+         (ra (sel::sort-rank a))
+         (rb (sel::sort-rank b)))
+    (cond
+      ((< ra rb) -1)
+      ((> ra rb) 1)
+      (t
+       (case ra
+         (1 (let ((av (if (sel::value-scalar a) 1 0))
+                  (bv (if (sel::value-scalar b) 1 0)))
+              (cond ((< av bv) -1) ((> av bv) 1) (t 0))))
+         (2 (sel::dec-cmp (sel:as-dec a) (sel:as-dec b)))
+         ((3 4) (sel::bytes-compare (sel:as-bytes a) (sel:as-bytes b)))
+         (t 0))))))
+
+
 (test total-order-ranks-kinds-then-compares-within-a-rank
   ;; SPEC 7.3: NULL < BOOL < numeric-looking text < other text < BIN, so a mixed
   ;; list sorts the same whatever order it is handed over in.
@@ -1909,9 +1934,9 @@ run of the program that built it, not a value set with the caller's string."
                (sel:as-text (sel:evaluate "JOIN(SORT(LIST(\"10\", \"9\", \"1a\", \"\")), \",\")"))))
   (is (string= "9,10,,1a"
                (sel:as-text (sel:evaluate "JOIN(SORT(LIST(\"1a\", \"\", \"9\", \"10\")), \",\")"))))
-  (is (< (sel::compare-values (sel:make-int 5) (sel::%text "a")) 0))
-  (is (< (sel::compare-values (sel::%text "a") (sel:make-bin (coerce #(0) '(vector (unsigned-byte 8))))) 0))
-  (is (zerop (sel::compare-values (sel::%text "007") (sel:make-int 7)))))
+  (is (< (compare-values (sel:make-int 5) (sel::%text "a")) 0))
+  (is (< (compare-values (sel::%text "a") (sel:make-bin (coerce #(0) '(vector (unsigned-byte 8))))) 0))
+  (is (zerop (compare-values (sel::%text "007") (sel:make-int 7)))))
 
 (test sort-direction-and-top-count-are-checked-on-an-empty-list
   ;; SPEC 7.4: evaluated and rejected whatever the list holds.
@@ -1978,7 +2003,7 @@ run of the program that built it, not a value set with the caller's string."
       (if (string= (sel:sel-error-code e) "E_REGEX_SYNTAX") :reject (error e)))))
 
 (test regex-exponential-ambiguity
-  ;; LISP-C19: cl-ppcre backtracks, so `(a+)+$` on a long non-match ran for minutes.
+  ;; cl-ppcre backtracks, so `(a+)+$` on a long non-match ran for minutes.
   ;; The rule refuses such a pattern when the program compiles.
   (dolist (p '("(a+)+$" "(a|aa)+$" "(a|b|ab)*c" "(.+)+x" "([a-z]+)*$" "(\\w+\\s?)*$"
                "(?:x|xx|xxx)+y" "(a+){2,}$" "(?:a{1,20}){1,20}b" "(?:(?:a*)?c)*d"
@@ -2059,7 +2084,7 @@ run of the program that built it, not a value set with the caller's string."
   (is (equal '("E_NOT_INT" 1 5) (code-of "LTB(LIST(1.5))")))
   (is (equal '("E_RANGE" 1 5) (code-of "LTB(LIST(256.0))"))))
 
-;;; --- the SQL layer's scope, kind, registration and hybrid contracts (T08-T11) -
+;;; --- the SQL layer's scope, kind, registration and hybrid contracts ----------
 
 (defun sql-value (source dialect &optional bindings)
   (sel.sql:as-value (sel.sql:translate (sel:compile-source source) dialect bindings)))
@@ -2245,6 +2270,57 @@ run of the program that built it, not a value set with the caller's string."
     (is (search "OFFSET 2" (sel.sql:as-statement (sel.sql::hybrid-plan-sql-statement plan))))
     (is (not (search "OFFSET 4" (sel.sql:as-statement (sel.sql::hybrid-plan-sql-statement plan)))))))
 
+(defun hybrid-rows (ids)
+  (sel:from-native (mapcar (lambda (i) (list (cons "id" i))) ids)))
+
+(defun run-hybrid-against (src context db)
+  "Plan SRC for sqlite over an ORDERS relation and execute it on CONTEXT, with
+DB (statement -> rows) standing in for the database. Returns the result and
+the statement sent (or NIL)."
+  (let* ((b (list (cons "ORDERS" (sel.sql:binding-relation
+                                  "orders" "o"
+                                  (list (cons "id" (sel.sql:binding-column "id" "o" :num)))))))
+         (plan (sel.sql:plan-hybrid (sel:compile-source src) "sqlite" b))
+         (sent nil))
+    (values (sel.sql:execute-hybrid plan (lambda (sql params) (declare (ignore params))
+                                           (setf sent sql)
+                                           (funcall db sql))
+                                    context)
+            sent)))
+
+(test sql-hybrid-continuation-rereads-a-self-shadowing-helper
+  ;; The helper is unwound into the SQL prefix (OFFSET 2, once), and a
+  ;; continuation step that reads ORDERS as a value sees the helper's value, as
+  ;; run() does: n = 4, not the caller's 6.
+  (sel:register-function "T_HOSTF" 1 1 (lambda (a) (sel:args-val a 0)))
+  (unwind-protect
+       (let ((src "ORDERS = ORDERS .> DROP(2); ORDERS .> TAKE(3) .> MAP(RECORD(\"n\", COUNT(ORDERS), \"x\", T_HOSTF(_[\"id\"])))")
+             (want "-{\"1\"=-{\"n\"=t\"4\", \"x\"=t\"3\"}, \"2\"=-{\"n\"=t\"4\", \"x\"=t\"4\"}, \"3\"=-{\"n\"=t\"4\", \"x\"=t\"5\"}}"))
+         (flet ((ctx () (let ((c (sel:make-none))) (sel:value-set c "ORDERS" (hybrid-rows '(1 2 3 4 5 6))) c)))
+           (multiple-value-bind (result sql)
+               (run-hybrid-against src (ctx)
+                                   (lambda (sql) (if (search "LIMIT 3 OFFSET 2" sql) (hybrid-rows '(3 4 5)) (sel:make-none))))
+             (is (search "LIMIT 3 OFFSET 2" sql) "~a" sql)
+             (is (string= want (sel:value-dump result)))
+             (is (string= want (sel:value-dump (sel:run (sel:compile-source src) (ctx))))))))
+    (sel::unregister-function "T_HOSTF")))
+
+(test sql-hybrid-application-function-cannot-write-the-callers-context
+  ;; An application function that writes into its argument runs on a copy of
+  ;; the caller's context, called directly, under IF, or inside an aggregate,
+  ;; in a pure-memory plan and in a continuation.
+  (sel:register-function "T_POKE" 1 1
+                         (lambda (a) (sel:value-set (sel:args-val a 0) "k" (sel:make-text "9"))
+                           (sel:make-text "p")))
+  (unwind-protect
+       (dolist (src '("T_POKE(A)" "IF(TRUE, T_POKE(A), 0)" "MAP(LIST(1), T_POKE(A))"
+                      "ORDERS .> FILTER(_[\"id\"] > 1) .> MAP(T_POKE(A))"
+                      "ORDERS .> TAKE(1) .> MAP(IF(TRUE, T_POKE(A), 0))"))
+         (let ((ctx (sel:from-native (list (cons "A" (list (cons "k" "1")))))))
+           (run-hybrid-against src ctx (lambda (sql) (declare (ignore sql)) (hybrid-rows '(2 3))))
+           (is (string= "1" (sel:as-text (sel:value-get (sel:value-get ctx "A") "k"))) "~a" src)))
+    (sel::unregister-function "T_POKE")))
+
 (test sql-hybrid-pure-memory-runs-on-a-copy
   (let* ((plan (sel.sql:plan-hybrid (sel:compile-source "A = 1; A") "mariadb"))
          (ctx (sel:from-native (list (cons "K" "v")))))
@@ -2252,8 +2328,21 @@ run of the program that built it, not a value set with the caller's string."
     (sel.sql:execute-hybrid plan (lambda (&rest args) (declare (ignore args)) nil) ctx)
     (is (null (sel:value-get ctx "A")) "the caller's context was written into")))
 
+(test sql-text-literal-without-an-escape-rule-refuses
+  ;; A dialect whose textQuote has no escape rule cannot be registered
+  ;; (check-quote-pairing), so the emitter's fallback is unreachable; were it
+  ;; reached, quoting text unescaped would be an injection, so it refuses.
+  (sb-int:encapsulate 'sel.sql::dialect-lexical 'no-escape
+                      (lambda (f dialect key)
+                        (if (equal key "textEscape") nil (funcall f dialect key))))
+  (unwind-protect
+       (handler-case (progn (sel.sql::emit-text-literal "postgresql" "a' OR '1'='1")
+                            (fail "emitted unescaped text"))
+         (sel.sql:sql-error (e) (is (string= "E_SQL_UNSUPPORTED" (sel.sql:sql-error-code e)))))
+    (sb-int:unencapsulate 'sel.sql::dialect-lexical 'no-escape)))
+
 (test sql-refusal-messages-carry-no-format-continuations
-  ;; LISP-C38: `~<newline>` is FORMAT's line continuation; REFUSE does not call
+  ;; `~<newline>` is FORMAT's line continuation; REFUSE does not call
   ;; FORMAT, so the tilde and the line break used to reach the message.
   (let ((msg (handler-case (sql-value "(1, 2)" "mariadb")
                (sel.sql:sql-error (e) (sel.sql:sql-error-message e)))))
@@ -2261,10 +2350,49 @@ run of the program that built it, not a value set with the caller's string."
     (is (not (find #\~ msg)))
     (is (not (find #\Newline msg)))))
 
-;;; --- T12 (LISP-C12): process-global caches under threads ------------------------
+(test exported-accessors-hand-out-copies
+  ;; What VALUE-KEYS, VALUE-ENTRIES and TO-NATIVE return is the caller's: sorting
+  ;; it, or writing into a key string, changes neither the value, nor the shared
+  ;; record shape, nor the list keys of values built later.
+  (let ((r (sel:evaluate "RECORD(\"b\", 1, \"a\", 2)")))
+    (sort (sel:value-keys r) #'string<)
+    (setf (char (first (sel:value-keys r)) 0) #\z)
+    (is (string= "-{\"b\"=t\"1\", \"a\"=t\"2\"}" (sel:value-dump r)))
+    (is (string= "-{\"b\"=t\"1\", \"a\"=t\"2\"}" (sel:value-dump (sel:evaluate "RECORD(\"b\", 1, \"a\", 2)"))))
+    (let ((entries (sel:value-entries r)))
+      (setf (car (first entries)) "q")
+      (is (equal '("b" "a") (sel:value-keys r)))))
+  (let ((native (sel:to-native (sel:evaluate "LIST(7)"))))
+    (setf (char (car (first native)) 0) #\9)
+    (is (string= "-{\"1\"=t\"7\"}" (sel:value-dump (sel:evaluate "LIST(7)"))))
+    (is (equal '("1") (sel:value-keys (sel:evaluate "LIST(8)"))))))
+
+(test every-raised-code-is-catalogued
+  ;; spec/limits.json's catalogue, rendered as +ERROR-CODES+, is the list of
+  ;; codes a host may raise; every code this host's sources raise with FAIL is in
+  ;; it (tools/check-error-codes.sh holds the five hosts to it from outside).
+  (let* ((root (asdf:system-source-directory :sel-lang))
+         (catalogue (mapcar #'first sel::+error-codes+))
+         (raised '()))
+    (dolist (file (directory (merge-pathnames "src/**/*.lisp" root)))
+      (let ((text (with-open-file (in file :external-format :utf-8)
+                    (let ((s (make-string (file-length in))))
+                      (subseq s 0 (read-sequence s in))))))
+        (loop with start = 0
+              for at = (search "(fail \"E_" text :start2 start)
+              while at
+              do (let* ((from (+ at 7))
+                        (to (position #\" text :start from)))
+                   (pushnew (subseq text from to) raised :test #'string=)
+                   (setf start to)))))
+    (is (< 10 (length raised)))
+    (is (null (set-difference raised catalogue :test #'string=))
+        "raised but not catalogued: ~a" (set-difference raised catalogue :test #'string=))))
+
+;;; --- process-global caches under threads (spec §8.1) ---------------------------
 ;;;
-;;; The record-shape table, the decimal caches and the regex/alias caches are
-;;; process-global. A host embedded in a threaded server compiles and runs from
+;;; The record-shape table, the decimal caches, the regex cache, LINK's alias-plan
+;;; cache and the function registry are process-global. A host embedded in a threaded server compiles and runs from
 ;;; several threads at once; with unsynchronised hash tables that gave SBCL's
 ;;; "Unsafe concurrent operations", corrupt chains, and -- worst -- the wrong
 ;;; record shape (a silently wrong E_NO_KEY). Each worker uses DISTINCT programs
@@ -2348,6 +2476,61 @@ non-NIL results (each worker returns NIL when it saw nothing wrong)."
     (is (null problems) "~{~a~%~}" (subseq problems 0 (min 3 (length problems))))))
 
 
+;;; Spec §8.1: registering a function while other threads compile and run is
+;;; safe. The function table is written under a lock and read through a
+;;; synchronised table, so a compile never misses a builtin while a host
+;;; function is being added.
+#+sb-thread
+(test threads-register-while-compiling
+  (let ((names '()))
+    (unwind-protect
+         (let ((problems
+                 (run-threads
+                  6 (lambda (w)
+                      (if (zerop w)
+                          (dotimes (k 3000)
+                            (let ((name (format nil "T12_REG_~d" k)))
+                              (push name names)
+                              (sel:register-function name 0 0
+                                                     (lambda (a) (declare (ignore a)) (sel:from-native 1)))))
+                          (dotimes (k 3000)
+                            (let ((v (sel:evaluate "LEN(\"abc\") + ABS(-1) + COUNT(LIST(1, 2))")))
+                              (unless (string= (sel:as-text v) "6")
+                                (return (format nil "worker ~d: wrong ~a" w (sel:as-text v)))))))))))
+           (is (null problems) "~{~a~%~}" (subseq problems 0 (min 3 (length problems))))
+           (is (string= "1" (sel:as-text (sel:evaluate "T12_REG_2999()")))))
+      (dolist (name names) (sel::unregister-function name)))))
+
+;;; LINK extends each row with its table name through a process-global cache of
+;;; alias plans. Every iteration below has a fresh row shape, so the threads keep
+;;; inserting into (and clearing) that cache while the others read it; the
+;;; result must stay right, and LINK must still work on one thread afterwards.
+#+sb-thread
+(test threads-link-alias-plans
+  (let ((program (sel:compile-source
+                  "JOIN(MAP(LINK(X, Y, L, R, L[\"id\"] == R[\"id\"]), _[\"L\"][\"v\"] & \":\" & _[\"R\"][\"w\"]), \",\")")))
+    (flet ((context-for (w k)
+             (let ((extra (format nil "x~d_~d" w k)))
+               (sel:from-native
+                (list (cons "X" (loop for i from 1 to 3
+                                      collect (list (cons "id" i) (cons "v" (format nil "v~d" i))
+                                                    (cons extra 0))))
+                      (cons "Y" (loop for i from 3 downto 1
+                                      collect (list (cons "id" i) (cons "w" (format nil "w~d" i))
+                                                    (cons extra 1)))))))))
+      (let ((problems
+              (run-threads
+               8 (lambda (w)
+                   (dotimes (k 600)
+                     (let ((got (sel:as-text (sel:run program (context-for w k)))))
+                       (unless (string= got "v1:w1,v2:w2,v3:w3")
+                         (return (format nil "worker ~d iter ~d: ~a" w k got)))))))))
+        (is (null problems) "~{~a~%~}" (subseq problems 0 (min 3 (length problems)))))
+      (is (string= "v1:w1,v2:w2,v3:w3"
+                   (handler-case (sel:as-text (sel:run program (context-for 99 0)))
+                     (error (e) (format nil "~a" e)))))
+      (is (<= sel::*alias-plan-cache-count* 256)))))
+
 ;;; Gate triage: a value with children and no scalar sorts by scalar context
 ;;; (spec 3.2 / 7.3): a record by its first field, ties in input order.
 (test records-sort-by-their-first-field-and-ties-keep-input-order
@@ -2361,7 +2544,7 @@ non-NIL results (each worker returns NIL when it saw nothing wrong)."
     (is (string= "b,a,c,d" (joined (format nil "~a .> SORT_DESC()" (ties)))))
     (is (string= "b,a,c,d" (joined (format nil "~a .> TOP_DESC(4)" (ties)))))))
 
-;;; --- T12 host API (2026-09-29) ------------------------------------------------
+;;; --- host API ------------------------------------------------------------------
 
 (defun deps-of (source)
   (sel:dependencies (sel:compile-source source)))
@@ -2401,28 +2584,58 @@ non-NIL results (each worker returns NIL when it saw nothing wrong)."
            (sel:sel-error (e) (is (string= "E_BAD_ARG" (sel:sel-error-code e)))))
          (handler-case (sel:evaluate "T12_PEEK()")
            (sel:sel-error (e) (is (string= "E_BAD_ARG" (sel:sel-error-code e))))))
-    (remhash "T12_PEEK" sel::*registry*)
-    (remhash "T12_PEEK" sel::*host-functions*)))
+    (sel::unregister-function "T12_PEEK")))
 
 (test cli-misuse-is-one-plain-diagnostic
-  (dolist (line '("lisp/bin/sel -e"
-                  "lisp/bin/sel --deps -e"
-                  "lisp/bin/sel /no/such/dir/no-such-file.sel"
-                  "lisp/bin/sel --no-such-flag"))
-    (multiple-value-bind (out rc) (run-cli line)
-      (is (member rc '(1 2)) "~a: exit ~a" line rc)
-      (is (starts-with-p "sel: " out) "~a: ~a" line out)
-      (is (not (search "Unhandled" out)) "~a: ~a" line out)
-      (is (not (search "SB-" out)) "~a: ~a" line out))))
+  ;; The CLI contract (docs/usage/repl.md): misuse exits 2, an unreadable file
+  ;; (missing or a directory) exits 1, each with one "sel: " line.
+  (dolist (case '(("lisp/bin/sel -e" 2 "sel: -e needs an expression")
+                  ("lisp/bin/sel --deps -e" 2 "sel: -e needs an expression")
+                  ("lisp/bin/sel --no-such-flag" 2 "sel: unknown option --no-such-flag")
+                  ("lisp/bin/sel -e 1 extra" 2 "sel: unexpected argument extra")
+                  ("lisp/bin/sel /no/such/dir/no-such-file.sel" 1 "sel: cannot read /no/such/dir/no-such-file.sel")
+                  ("lisp/bin/sel lisp/bin" 1 "sel: cannot read lisp/bin")))
+    (destructuring-bind (line want-rc want-out) case
+      (multiple-value-bind (out rc) (run-cli line)
+        (is (eql rc want-rc) "~a: exit ~a" line rc)
+        (is (string= want-out out) "~a: ~a" line out)))))
 
-;;; --- performance round 1 (LISP-P1 .. P10): the fast paths answer what the general ones do
+(test runners-refuse-a-bad-path-and-an-empty-run
+  ;; A runner given a path it cannot read says so in one line and fails; a run
+  ;; that executed no case fails too, instead of reporting "0 passed".
+  (dolist (case '(("lisp/bin/batch /no/such.selc" "cannot read /no/such.selc")
+                  ("lisp/bin/conformance /no/such.selt" "SUITE cannot read /no/such.selt")
+                  ("lisp/bin/sqlt no-case-is-named-like-this" "no case ran: none matched no-case-is-named-like-this")))
+    (destructuring-bind (line want) case
+      (multiple-value-bind (out rc) (run-cli line)
+        (is (eql rc 1) "~a: exit ~a" line rc)
+        (is (search want out) "~a: ~a" line out)
+        (is (not (search "Unhandled" out)) "~a: ~a" line out)))))
+
+(test cli-help-version-and-repl-on-a-pipe
+  (multiple-value-bind (out rc) (run-cli "lisp/bin/sel --help")
+    (is (eql rc 0))
+    (is (starts-with-p "usage: sel" out)))
+  (multiple-value-bind (out rc) (run-cli "lisp/bin/sel --version")
+    (is (eql rc 0))
+    (is (string= (format nil "sel ~a" (asdf:component-version (asdf:find-system "sel-lang"))) out)))
+  (multiple-value-bind (out rc) (run-cli "lisp/bin/sel --deps -e 1")
+    (is (eql rc 0))
+    (is (string= "" out)))
+  ;; no prompt on a pipe; a whitespace-only line is skipped, an NBSP line is not
+  (multiple-value-bind (out rc) (run-cli "printf 'A = 1\\n \\t\\r\\nA + 1\\n\\302\\240\\n' | lisp/bin/sel 2>&1")
+    (is (eql rc 0))
+    (is (string= (format nil "1~%2~%E_SYNTAX at line 1 column 1: unexpected character \"~a\"" (code-char #xa0)) out)
+        "~s" out)))
+
+;;; --- performance round 1: the fast paths answer what the general ones do
 
 (defun perf-mk-alist-rows (n)
   (loop for i below n
         collect (list (cons "id" i) (cons "a" (mod (* i 7919) 11)) (cons "b" (mod i 5)))))
 
-(test perf-p1-interpolation-count-is-linear
-  ;; LISP-P1: 64,000 interpolations in one literal compiled in 71 s (quadratic
+(test perf-interpolation-count-is-linear
+  ;; 64,000 interpolations in one literal compiled in 71 s (quadratic
   ;; `(length acc)`); the bound here is generous, the point is that it finishes.
   (let* ((src (with-output-to-string (o)
                 (write-char #\" o) (dotimes (i 64000) (write-string "{1}" o)) (write-char #\" o)))
@@ -2434,7 +2647,7 @@ non-NIL results (each worker returns NIL when it saw nothing wrong)."
     (raises "E_SYNTAX" (sel:compile-source "\"{# only a comment
 }\""))))
 
-(test perf-p2-big-number-helpers-agree-with-the-builtins
+(test perf-big-number-helpers-agree-with-the-builtins
   (let ((st (sb-ext:seed-random-state 11)))
     (dotimes (i 40)
       (let ((a (random (ash 1 (+ 100 (random 60000 st))) st))
@@ -2451,7 +2664,7 @@ non-NIL results (each worker returns NIL when it saw nothing wrong)."
     (is (= 20 (sel::num-digits (expt 10 19))))
     (is (= 19 (sel::num-digits (1- (expt 10 19)))))))
 
-(test perf-p2-long-numeral-keeps-its-canonical-text
+(test perf-long-numeral-keeps-its-canonical-text
   (let* ((digits (make-string 200 :initial-element #\7))
          (text (concatenate 'string digits ".500"))
          (d (sel::dec-parse text)))
@@ -2476,7 +2689,7 @@ non-NIL results (each worker returns NIL when it saw nothing wrong)."
 (defun dump-of-text (numeral)
   (sel::node-s (sel:program-ast (sel:compile-source numeral))))
 
-(test perf-p2-multiply-refuses-before-it-multiplies
+(test perf-multiply-refuses-before-it-multiplies
   (let* ((big (concatenate 'string (make-string 600000 :initial-element #\9)))
          (t0 (get-internal-real-time)))
     (raises "E_RANGE" (sel:evaluate (format nil "~a * ~a" big big)))
@@ -2488,8 +2701,8 @@ non-NIL results (each worker returns NIL when it saw nothing wrong)."
 (defun dump-of-number (src)
   (sel:as-text (sel:evaluate src)))
 
-(test perf-p3-binary-operators-dispatch-every-spelling
-  ;; LISP-P3: the operator is interned once per node; every spelling still works
+(test perf-binary-operators-dispatch-every-spelling
+  ;; The operator is interned once per node; every spelling still works
   (dolist (case '(("7 + 2" . "9") ("7 - 2" . "5") ("7 * 2" . "14") ("7 / 2" . "3.5") ("7 % 4" . "3")
                   ("\"a\" & \"b\"" . "ab") ("1 == 1" . t) ("1 != 1" . nil) ("1 < 2" . t) ("2 <= 2" . t)
                   ("3 > 2" . t) ("2 >= 3" . nil) ("\"a\" $== \"a\"" . t) ("\"a\" $!= \"a\"" . nil)
@@ -2510,7 +2723,7 @@ non-NIL results (each worker returns NIL when it saw nothing wrong)."
     (is (eq :concat (sel::node-opc (sel::program-physical-ast program))))
     (is (null (sel::node-opc (sel::copy-node-shallow node))))))
 
-(test perf-p5-optimised-literals-keep-their-decimals
+(test perf-optimised-literals-keep-their-decimals
   (let* ((program (sel:compile-source "A > 1 + 2 * 3"))
          (physical (sel::program-physical-ast program))
          (folded (sel::node-r physical)))
@@ -2524,7 +2737,7 @@ non-NIL results (each worker returns NIL when it saw nothing wrong)."
   (is (string= "-3" (sel:as-text (sel:evaluate "-(1 + 2)"))))
   (is (eq t (and (sel::value-scalar (sel:evaluate "1.50 == 1.5")) t))))
 
-(test perf-p6-short-number-fast-paths-match-the-general-ones
+(test perf-short-number-fast-paths-match-the-general-ones
   (dolist (text '("0" "-0" "5" "-5" "12345.67" "-12345.67" "0.5" "-0.5" "0.000" "-0.000" "007" "1." ".5" "-" "" "1.2.3"
                   "1e5" " 1" "1 " "+1" "١٢" "123456789012345678" "1234567890123456789" "12345678901234567890"
                   "00000000000000000001" "9999999999999999999" "-999999999999999999"))
@@ -2542,7 +2755,7 @@ non-NIL results (each worker returns NIL when it saw nothing wrong)."
   (let ((*print-radix* t) (*print-base* 16))
     (is (string= "12345.67" (sel::dec-format (sel::dec-parse "12345.67"))))))
 
-(test perf-p7-bin-hash-covers-every-octet
+(test perf-bin-hash-covers-every-octet
   (let ((a (sel:make-bin (coerce '(1 2 3 4) '(vector (unsigned-byte 8)))))
         (b (sel:make-bin (coerce '(1 2 3 5) '(vector (unsigned-byte 8)))))
         (c (sel:make-bin (coerce '(1 2 3 4) '(vector (unsigned-byte 8))))))
@@ -2555,7 +2768,7 @@ non-NIL results (each worker returns NIL when it saw nothing wrong)."
       (is (string= "3000" (sel:as-text (sel:run (sel:compile-source "COUNT(DEDUPE(B))") ctx))))
       (is (< (- (get-internal-real-time) t0) (* 10 internal-time-units-per-second))))))
 
-(test perf-p4-decorated-sort-keys-order-like-compare-values
+(test perf-decorated-sort-keys-order-like-compare-values
   (let* ((st (sb-ext:seed-random-state 5))
          (vals (list nil t :false "10" "9" "1a" "" " 2" "-0" "0" "007" "1.50" "1.5" "abc" "ABC" "é" "z"
                      (sel:make-bin (coerce '(1 2) '(vector (unsigned-byte 8))))
@@ -2565,11 +2778,11 @@ non-NIL results (each worker returns NIL when it saw nothing wrong)."
       (dotimes (i 400)
         (let* ((a (nth (random (length values) st) values))
                (b (nth (random (length values) st) values))
-               (old (sel::compare-values a b))
+               (old (compare-values a b))
                (new (sel::compare-sort-keys (sel::make-sort-key a) (sel::make-sort-key b))))
           (is (= (signum old) (signum new)) "~a ~a" (sel:value-dump a) (sel:value-dump b)))))))
 
-(test perf-p8-unshaped-rows-join-like-shaped-ones
+(test perf-unshaped-rows-join-like-shaped-ones
   (flet ((unshaped (alists)
            (sel:make-list-value
             (mapcar (lambda (al) (let ((v (sel:make-none)))
@@ -2586,7 +2799,7 @@ non-NIL results (each worker returns NIL when it saw nothing wrong)."
       (is (string= (sel:as-text (sel:run program shaped-ctx)) (sel:as-text (sel:run program unshaped-ctx))))
       (is (string= (sel:as-text (sel:run left-program shaped-ctx)) (sel:as-text (sel:run left-program unshaped-ctx)))))))
 
-(test perf-p9-equality-and-residual-link-matches-the-nested-loop
+(test perf-equality-and-residual-link-matches-the-nested-loop
   (let* ((ctx (sel:from-native (list (cons "L" (perf-mk-alist-rows 60)) (cons "R" (perf-mk-alist-rows 45))))))
     (dolist (src '("COUNT(LINK(L, R, l, r, l[\"a\"] == r[\"a\"] AND l[\"id\"] < r[\"id\"]))"
                    "COUNT(LINK(L, R, l, r, r[\"a\"] == l[\"a\"] AND l[\"b\"] != r[\"b\"] AND TRUE))"
@@ -2619,7 +2832,7 @@ longer the leading equality."
          (start (+ open (length "l, r, "))))
     (concatenate 'string (subseq src 0 start) "TRUE AND " (subseq src start))))
 
-(test perf-p10-hybrid-continuation-does-not-copy-what-it-cannot-write
+(test perf-hybrid-continuation-does-not-copy-what-it-cannot-write
   (let* ((orders (sel.sql:binding-relation "orders" "orders"
                    (list (cons "ID" (sel.sql:binding-column "id" "orders"))
                          (cons "AMOUNT" (sel.sql:binding-column "amount" "orders")))))
@@ -2643,15 +2856,36 @@ longer the leading equality."
     (is (string= "3" (sel:as-text (sel.sql:execute-hybrid writer runner ctx))))
     (is (string= "1" (sel:as-text (sel:value-get (sel:value-get ctx "BIG") "1"))))
     ;; the classification the optimisation rests on
-    (is (not (sel.sql::continuation-may-write-p (sel:compile-source "X .> FILTER(_ > 1)"))))
-    (is (sel.sql::continuation-may-write-p (sel:compile-source "A = 1; A")))))
+    (flet ((effects (src) (multiple-value-list (sel.sql::continuation-effects (sel:compile-source src)))))
+      (is (equal '(nil nil) (effects "X .> FILTER(_ > 1)")))
+      (is (equal '(("A") nil) (effects "A = 1; A")))
+      (is (equal '(("A") nil) (effects "A[B[1]] += 1; A")))
+      (sel:register-function "T_EFFECT_HOST" 1 1 (lambda (a) (sel:args-val a 0)))
+      (unwind-protect (is (equal '(nil t) (effects "MAP(L, T_EFFECT_HOST(_))")))
+        (sel::unregister-function "T_EFFECT_HOST")))))
 
-;;; --- performance round 2 (LISP-P11 .. LISP-P20) --------------------------------
+(test sql-hybrid-copies-only-the-variables-a-continuation-assigns
+  ;; Assigning one variable copies that one; a large variable it never writes
+  ;; is shared, not deep-copied. The caller's tree is untouched either way.
+  (let* ((plan (sel.sql:plan-hybrid (sel:compile-source "Q[\"k\"] = 2; COUNT(BIG) + Q[\"k\"]") "postgresql" nil))
+         (ctx (sel:make-none))
+         (big (sel:from-native (loop for i below 1000 collect i))))
+    (sel:value-set ctx "BIG" big)
+    (sel:value-set ctx "Q" (sel:from-native (list (cons "k" 1))))
+    (is (sel.sql:hybrid-plan-pure-memory-p plan))
+    (let ((root (sel.sql::context-for-continuation (sel.sql::hybrid-plan-continuation-program plan) ctx)))
+      (is (eq big (sel:value-get root "BIG")) "the unwritten variable was copied")
+      (is (not (eq (sel:value-get ctx "Q") (sel:value-get root "Q")))))
+    (is (string= "1002" (sel:as-text (sel.sql:execute-hybrid plan (lambda (&rest r) (declare (ignore r)) nil) ctx))))
+    (is (string= "1" (sel:as-text (sel:value-get (sel:value-get ctx "Q") "k"))))
+    (is (eq big (sel:value-get ctx "BIG")))))
+
+;;; --- performance round 2 --------------------------------
 
 (defun p2-translate (src bindings &optional (dialect "mariadb"))
   (sel.sql:translate (sel:compile-source src) dialect bindings))
 
-(test perf-p11-p12-big-in-list-is-linear-and-renders-consistently
+(test perf-big-in-list-is-linear-and-renders-consistently
   (let* ((n 3000)
          (items (sel:from-native (loop for i below n collect (format nil "s~d" i))))
          (bindings (list (cons "X" (sel.sql:binding-column "x" "t" :text))
@@ -2680,7 +2914,7 @@ longer the leading equality."
                                          (incf i))
                                   (write-char c o)))))))))
 
-(test perf-p12-slot-ids-follow-a-running-count
+(test perf-slot-ids-follow-a-running-count
   ;; a literal's slot id is the count after its push, including after the translator
   ;; takes slots back (a constant text read as a number in arithmetic)
   (let ((f (p2-translate "N + \"1.5\" > 2 AND X $== \"a\" AND X $!= \"b\""
@@ -2690,7 +2924,7 @@ longer the leading equality."
       (is (equal slots (loop for i from 1 to (length slots) collect i)))
       (is (= (length slots) (length (sel.sql:fragment-params f)))))))
 
-(test perf-p14-record-keys-distinct-check
+(test perf-record-keys-distinct-check
   (let ((st (sb-ext:seed-random-state 14)))
     (dolist (n '(0 1 2 5 23 24 25 100 1000))
       (dotimes (round 5)
@@ -2714,7 +2948,7 @@ longer the leading equality."
                (write-string "\"k3\",99)" o))))
     (is (string= "99" (sel:as-text (sel:value-get (sel:run (sel:compile-source src) (sel:make-none)) "k3"))))))
 
-(test perf-p15-dialect-lookups-are-cached-and-invalidated
+(test perf-dialect-lookups-are-cached-and-invalidated
   (unwind-protect
        (progn
          (sel.sql:map-reset)
@@ -2746,14 +2980,14 @@ longer the leading equality."
          (is (member "mariadb" (sel.sql::dialect-chain "t-p15") :test #'equal)))
     (sel.sql:map-reset)))
 
-(test perf-p17-tail-scanner-is-built-on-demand
+(test perf-tail-scanner-is-built-on-demand
   (is (eq t (sel::as-bool (sel:evaluate "RMATCH('ab+c', \"xabbcx\")") nil)))
   ;; RREPLACE asks for the tail scanner and gets the right answer with `^` and empty matches
   (is (string= "-a-b-"  (sel:as-text (sel:evaluate "RREPLACE('b*?', \"-\", \"ab\")"))))
   (is (string= "X-b" (sel:as-text (sel:evaluate "RREPLACE('^a', \"X\", \"a-b\")"))))
   (is (string= "XaXbX" (sel:as-text (sel:evaluate "RREPLACE('c*', \"X\", \"ab\")")))))
 
-(test perf-p18-hex-matches-format
+(test perf-hex-matches-format
   (let ((st (sb-ext:seed-random-state 18)))
     (dolist (n '(0 1 2 15 16 255 1000))
       (let ((bytes (make-array n :element-type '(unsigned-byte 8))))
@@ -2762,7 +2996,7 @@ longer the leading equality."
                                         (loop for b across bytes do (format s "~2,'0x" b))))
                      (sel::bytes-to-hex bytes)))))))
 
-(test perf-p19-canonical-join-keys-match-the-reference
+(test perf-canonical-join-keys-match-the-reference
   (labels ((reference (sc)
              ;; the divide-by-ten loop this replaced
              (let ((d (sel::dec-parse sc)))
@@ -2796,7 +3030,7 @@ longer the leading equality."
       (is (string= "1" (sel:as-text (sel:run p ctx))))
       (is (< (- (get-internal-real-time) t0) (* 10 internal-time-units-per-second))))))
 
-(test perf-p20-list-keys-share-the-canonical-strings
+(test perf-list-keys-share-the-canonical-strings
   (is (eq (sel::format-index-string 7) (sel::format-index-string 7)))
   (is (string= "10001" (sel::format-index-string 10001)))
   (is (equal (sel:value-keys (sel:from-native '(1 2 3))) '("1" "2" "3")))
@@ -2805,7 +3039,7 @@ longer the leading equality."
         (r (sel:from-native (loop for i from 1 to 50 collect (cons (format nil "~d" i) (1- i))))))
     (is (= (sel::value-hash l) (sel::value-hash r)))))
 
-;;; --- performance round 3 (LISP-P21 .. LISP-P27) ---------------------------
+;;; --- performance round 3 ---------------------------
 
 (defun reference-pad (s width fill left)
   "The specification of PADL/PADR, written the slow obvious way."
@@ -2816,7 +3050,7 @@ longer the leading equality."
                      (write-char (char fill (mod i (length fill))) o)))))
         (if left (concatenate 'string pad s) (concatenate 'string s pad)))))
 
-(test perf-p21-pad-and-repeat-match-their-specification
+(test perf-pad-and-repeat-match-their-specification
   (dolist (s '("" "x" "abc" "héllo"))
     (dolist (width '(0 1 2 3 5 8 17))
       (dolist (fill '("-" "ab" "xyz" "é"))
@@ -2831,7 +3065,7 @@ longer the leading equality."
       (is (string= (with-output-to-string (o) (dotimes (i n) (write-string unit o)))
                    (sel::value-scalar (sel:evaluate (format nil "REPEAT(~s, ~d)" unit n))))))))
 
-(test perf-p22-operator-table-matches-a-linear-scan
+(test perf-operator-table-matches-a-linear-scan
   (flet ((scan (chars i to)
            (loop for op in sel::+operators+
                  when (and (<= (+ i (length op)) to)
@@ -2844,7 +3078,7 @@ longer the leading equality."
           (is (equal (scan (sel::lexer-chars lx) i (length src))
                      (sel::match-operator lx i (length src)))))))))
 
-(test perf-p23-evaluate-runs-the-tree-as-written
+(test perf-evaluate-runs-the-tree-as-written
   (dolist (src '("IF(A > 1 AND B < 5, A * 2 + B, ROUND(A / 3, 2))"
                  "A + B * 2 - 1" "SUM((1, 2, 3), X, X * A)" "A ?? 7" "MAX(A, B, 3)"
                  "LIST(A, B) .> SORT_DESC() .> TAKE(1)"))
@@ -2852,7 +3086,7 @@ longer the leading equality."
       (is (string= (sel:value-dump (sel:evaluate src (funcall ctx)))
                    (sel:value-dump (sel:run (sel:compile-source src) (funcall ctx))))))))
 
-(test perf-p24-text-literal-escapes-match-the-rule-walk
+(test perf-text-literal-escapes-match-the-rule-walk
   (flet ((reference (dialect text)
            (let* ((quote (sel.sql::lex-text dialect "textQuote"))
                   (rules (stable-sort (copy-list (sel.sql::dialect-lexical dialect "textEscape"))
@@ -2884,7 +3118,7 @@ longer the leading equality."
                  "t-multi ~s" text)))
       (sel.sql:map-reset))))
 
-(test perf-p25-referenced-assignments-close-over-reads
+(test perf-referenced-assignments-close-over-reads
   (flet ((reference (leading node)
            (let ((needed (sel.sql::read-names node)) (grew t))
              (loop while grew
@@ -2907,7 +3141,7 @@ longer the leading equality."
                    (mapcar #'sel.sql::assigned-name (sel.sql::referenced-assignments leading final)))
             "~a" src)))))
 
-(test perf-p27-bin-copies-share-octets-and-stay-independent
+(test perf-bin-copies-share-octets-and-stay-independent
   (let* ((b (sel::make-bin (make-array 6 :element-type '(unsigned-byte 8) :initial-contents '(1 2 3 4 5 6))))
          (ctx (sel:make-none)))
     (sel::value-set ctx "B" b)
@@ -2920,7 +3154,7 @@ longer the leading equality."
       (setf (aref native 0) 99)
       (is (= 1 (aref (sel::value-scalar b) 0))))))
 
-(test perf-p27-division-fast-path-agrees-with-rational-arithmetic
+(test perf-division-fast-path-agrees-with-rational-arithmetic
   (flet ((reference (a b)
            ;; exact quotient rounded half away from zero at 10 fractional digits,
            ;; reported at its minimal scale when exact within them
@@ -2938,7 +3172,7 @@ longer the leading equality."
                (rb (/ (* (if (sel::dec-neg db) -1 1) (sel::dec-digits db)) (expt 10 (sel::dec-scale db)))))
           (is (= value (reference ra rb)) "~a / ~a" a b))))))
 
-(test perf-p15-template-segments-fill-like-the-original-scan
+(test perf-template-segments-fill-like-the-original-scan
   (flet ((frag (s kind) (sel.sql::%fragment (list s) kind "mariadb" nil nil nil))
          (text (parts) (apply #'concatenate 'string (remove-if-not #'stringp parts))))
     (let ((a (frag "A" :text)) (b (frag "B" :num)) (c (frag "C" :bin)))

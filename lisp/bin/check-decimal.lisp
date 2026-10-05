@@ -26,7 +26,7 @@
     (unless path
       (format *error-output* "usage: check-decimal oracle.txt~%")
       (sb-ext:exit :code 2))
-    (dolist (line (split-lines (read-text-file path)))
+    (dolist (line (split-lines (read-file-or-exit path)))
       (when (plusp (length line))
         (destructuring-bind (op a b want) (split-on #\| line)
           (incf cases)
@@ -53,6 +53,7 @@
               (incf mismatches)
               (when (< (length failures) 20)
                 (push (format nil "~a ~a ~a => ~a, oracle says ~a" a op b got want) failures)))))))
+    (when (zerop cases) (no-cases "no case ran: ~a holds no oracle line" path))
     (format t "lisp: ~d cases, ~d mismatches~%" cases mismatches)
     (dolist (f (reverse failures)) (format t "  ~a~%" f))
     (when (> mismatches (length failures))

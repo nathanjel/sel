@@ -1,5 +1,5 @@
 ;;;; This host's side of tools/check-hybrid-parity-driver.py, the executing
-;;;; hybrid-parity lane (T11): the corpus in sql/oracle/hybrid.json is planned and
+;;;; hybrid-parity lane: the corpus in sql/oracle/hybrid.json is planned and
 ;;;; run HERE, and the harness supplies the one thing this host cannot: a
 ;;;; database. One JSON request per line on stdin, one JSON answer per line on
 ;;;; stdout.
@@ -230,6 +230,18 @@ and :null."
                                           (sel.sql:bindings frag))))
              (list :obj (cons "sql" :null) (cons "params" nil)))))
       (t (list :obj (cons "status" "err") (cons "code" "HOST:unknown-op"))))))
+
+;;; The application functions of sql/oracle/hybrid.json's `application` section
+;;; (spec §8.1), registered once for the whole run: POKE writes TEXT "9" at key
+;;; "k" of the value it receives, in place, and returns it; HOSTF returns its
+;;; argument. Neither has a SQL spelling, so a step that calls one stays in the
+;;; continuation.
+(sel:register-function "POKE" 1 1
+                       (lambda (a)
+                         (let ((v (sel:args-val a 0)))
+                           (sel:value-set v "k" (sel:make-text "9"))
+                           v)))
+(sel:register-function "HOSTF" 1 1 (lambda (a) (sel:args-val a 0)))
 
 (defun main ()
   (loop for line = (read-line *standard-input* nil nil)

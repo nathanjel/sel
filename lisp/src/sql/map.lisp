@@ -31,7 +31,7 @@
 ;; with another arity is not rendered through a template written for the old one.
 (defvar *host-arity* '())
 
-;;; Lookup cache (LISP-P15). A dialect's inheritance chain, its entries and its
+;;; Lookup cache. A dialect's inheritance chain, its entries and its
 ;;; lexical values were re-derived on every call: DIALECT-CHAIN allocated and ran
 ;;; MEMBER string compares, and each entry lookup walked it again through several
 ;;; ASSOCs, for every node of every translation -- about 45% of a 20-node rule's
@@ -202,8 +202,7 @@ USED, everything either side of the rule is registered."
   (unless (member dialect *guard-checked* :test #'equal)
     ;; Remembered only AFTER the checks pass. Remembering first meant the first
     ;; use refused and every later use of the same dialect sailed through the
-    ;; check it had failed, so a wrong guard was emitted on the second call
-    ;; (JS-C24, PHP-C49, PY-C49, CPP-C36, LISP-C42).
+    ;; check it had failed, so a wrong guard was emitted on the second call.
     (let ((guard (dialect-lexical dialect "numericGuard")))
       (when (stringp guard)
         (let* ((isnum (dialect-entry dialect :funcs "ISNUM"))
@@ -370,8 +369,7 @@ needs no special code because a version is only another link in the chain:
 (defun check-quote-pairing (name)
   "sql/MAP.md 3.1, asked of the dialect AFTER inheritance: textQuote, textEscape
 and identQuote are one set, and a registered dialect that changes one without the
-others makes every inline text literal injectable (JS-C25, PHP-C37, PY-C50,
-CPP-C53, LISP-C36)."
+others makes every inline text literal injectable."
   (let* ((where (format nil "SQL dialect ~a" name))
          (quote (dialect-lexical name "textQuote"))
          (ident (dialect-lexical name "identQuote"))

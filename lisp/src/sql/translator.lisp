@@ -7,6 +7,33 @@
 
 (in-package #:sel.sql)
 
+;;; A group's SUM, and the all-or-nothing form a SUM over an UNKNOWN body takes
+;;; (docs/internals/sql-kinds.md 5a), spelled once: TRANSLATE-CALL fills them
+;;; with fragments and GUARDED-SUM-SKELETON rewrites a dialect's skeleton with
+;;; them.
+(defparameter +sum-template+ "COALESCE(SUM({body}), 0)")
+(defparameter +guarded-sum-template+
+  "CASE WHEN COUNT(*) = COUNT(CASE WHEN ({test}) THEN 1 END) THEN COALESCE(SUM({body}), 0) ELSE NULL END")
+
+(defun template-parts (template slots)
+  "TEMPLATE as a part list with each (SLOT . PARTS) of SLOTS spliced in at its
+one occurrence, in template order."
+  (let ((parts '()) (at 0))
+    (loop
+      (let ((next nil) (next-at nil))
+        (dolist (slot slots)
+          (let ((i (search (car slot) template :start2 at)))
+            (when (and i (or (null next-at) (< i next-at)))
+              (setf next slot next-at i))))
+        (unless next
+          (push (subseq template at) parts)
+          (return))
+        (push (subseq template at next-at) parts)
+        (dolist (p (cdr next)) (push p parts))
+        (setf at (+ next-at (length (car next))))))
+    (remove "" (nreverse parts) :test #'equal)))
+
+
 (defstruct (translator (:constructor %translator (dialect bindings strict)))
   (dialect "" :type string)
   (bindings nil)
@@ -184,7 +211,7 @@ emitted VERBATIM -- the one place application-written SQL enters, which is why
 it is a named constructor and not a map key."
   ;; A raw field is an expression against the relation's OWN alias. A derived
   ;; table the relation is wrapped in has no column of that name (:OPAQUE), so a
-  ;; read through it would name something that is not there (JS-C28, CPP-C32).
+  ;; read through it would name something that is not there.
   (when (getf spec :opaque)
     (refuse "E_SQL_SHAPE"
             "this field is a raw expression, and the derived table this statement ~
@@ -342,9 +369,6 @@ order the evaluator promotes them, DROPPED the upcased names both sides had."
 when QUALIFY, and OPTIONAL when an unmatched LINK_LEFT row lacks it."
   spec table qualify optional)
 
-(defun ascii-downcase-name (s)
-  (map 'string (lambda (c) (if (char<= #\A c #\Z) (code-char (+ (char-code c) 32)) c)) s))
-
 (defun alist-put (alist key value)
   "ALIST with KEY set to VALUE: in place of an existing entry, else appended --
 the insertion order a JS Map keeps."
@@ -356,7 +380,7 @@ the insertion order a JS Map keeps."
   "A binder's keys: its name and that name's ASCII lowercase (spec §7.4)."
   (let ((out '()))
     (dolist (name names (nreverse out))
-      (dolist (k (list name (ascii-downcase-name name)))
+      (dolist (k (list name (sel::ascii-downcase name)))
         (pushnew k out :test #'equal)))))
 
 (defun row-with-names (row names)
@@ -539,7 +563,7 @@ row with no match does not have; read it through the right binder" label key)
 appears: the clause, the `_K` projection, a HAVING. A TEXT key is cast and
 collated the way the `$` family compares text, because the evaluator groups by
 the key's exact bytes and a case-insensitive collation would merge groups it
-keeps apart (review 2026-09-15 finding L; MariaDB's default merged 'A' and
+keeps apart (MariaDB's default merged 'A' and
 'a'). The result is marked exact so a comparison over it does not wrap it a
 second time -- MySQL's only_full_group_by accepts a projected or compared key
 only as the identical expression."
@@ -597,14 +621,19 @@ text, but do not pretend SQL arithmetic preserved the evaluator's scale."
                      t nil nil)))
       (collated-key tr f)))
 
+(defun min-of (tr f kind &rest more)
+  "F wrapped in MIN(...), keeping its parameters and caveats; MORE are
+%FRAGMENT's remaining arguments."
+  (apply #'%fragment (append (list "MIN(") (fragment-parts f) (list ")"))
+         kind (translator-dialect tr) (fragment-params f) (fragment-param-kinds f)
+         (fragment-caveats f) more))
+
 (defun group-key (tr src gb &optional projected)
   "GB is a group-by entry (alias binder node pos)."
   (let* ((key (with-row tr src (second gb) (lambda () (walk-node tr (third gb)))))
          (identity (identity-group-key tr (third gb) key)))
     (if (and projected (eq (fragment-kind key) :num))
-        (%fragment (append (list "MIN(") (fragment-parts key) (list ")"))
-                   :num (translator-dialect tr) (fragment-params key)
-                   (fragment-param-kinds key) (fragment-caveats key))
+        (min-of tr key :num)
         identity)))
 
 (defun walk-in-env (tr b node)
@@ -644,16 +673,11 @@ text, but do not pretend SQL arithmetic preserved the evaluator's scale."
               (cond
                 ((eq (fragment-kind key) :num)
                  ;; Identity is textual; arithmetic/order over _K remain numeric.
-                 (let ((out (%fragment (append (list "MIN(") (fragment-parts key) (list ")"))
-                                       :num (translator-dialect tr) (fragment-params key)
-                                       (fragment-param-kinds key) (fragment-caveats key))))
+                 (let ((out (min-of tr key :num)))
                    (setf (fragment-canonical out) (fragment-canonical key))
                    out))
                 ((not (eq collated key))
-                 (let ((out (%fragment (append (list "MIN(") (fragment-parts collated) (list ")"))
-                                       :text (translator-dialect tr)
-                                       (fragment-params collated) (fragment-param-kinds collated)
-                                       (fragment-caveats collated) t nil nil)))
+                 (let ((out (min-of tr collated :text t nil nil)))
                    (setf (fragment-canonical out) (fragment-canonical key))
                    out))
                 (t collated)))))
@@ -794,15 +818,18 @@ passes."
   (let ((cl (eql-class (fragment-kind l)))
         (cr (eql-class (fragment-kind r))))
     (when (and cl cr (not (eq cl cr)))
-      ;; OTHER is computed as if L were always the BOOL side, so a TEXT-vs-BIN
-      ;; mismatch says "compares a BOOL with a TEXT". A defect in the message,
-      ;; kept: codes are contract and messages are not, and rewording it here
-      ;; would make this the only host that did.
-      (let ((other (if (eq (fragment-kind l) :bool) (fragment-kind r) (fragment-kind l))))
+      ;; Both kinds as they are: a BIN and a TEXT reach here too. For the $
+      ;; family SEL reads a BIN and a TEXT as bytes, and a BOOL is not an
+      ;; operand at all (E_NOT_BIN); SQL would cast both sides to characters,
+      ;; which says neither.
+      (let ((what (format nil "~a compares a ~a with a ~a" op
+                          (kind-name (fragment-kind l)) (kind-name (fragment-kind r)))))
         (refuse "E_SQL_SHAPE"
-                (format nil "~a compares a BOOL with a ~a, which SEL answers ~
-FALSE for every value because the kinds differ. SQL has no way to say that: both ~
-sides cast to the same characters" op (kind-name other))
+                (if (char= (char op 0) #\$)
+                    (format nil "~a, which SEL compares as bytes (or refuses, for a BOOL); SQL ~
+has no way to say that: both sides cast to the same characters" what)
+                    (format nil "~a, which SEL answers FALSE for every value because the kinds ~
+differ. SQL has no way to say that: both sides cast to the same characters" what))
                 pos)))))
 
 (defun require-bool (f pos where)
@@ -1098,7 +1125,7 @@ aggregate's identity value instead, and those differ per aggregate."
 
 (defun arithmetic-operand (tr n)
   "An operand that is a constant TEXT holding a number, in an arithmetic position, is
-that number (PHP-C33): SEL computes with it exactly, and MariaDB and MySQL would read
+that number: SEL computes with it exactly, and MariaDB and MySQL would read
 the quoted string as a DOUBLE. It is translated as the numeric literal it stands for.
 The text was translated first (its SQL kind is only known then), so the slots it
 bound are taken back, or `params` mode would report a value bound that no
@@ -1316,7 +1343,7 @@ occasionally what you want."
     (when (and alias (plusp (length alias)))
       (setf from (concatenate 'string from " " (emit-ident d alias))))
     (list (cons "from" (list from))
-          ;; A correlate the application supplied is parenthesised (CPP-C56): it is
+          ;; A correlate the application supplied is parenthesised: it is
           ;; spliced before `AND body`, so `a = o.id OR b = o.id` would bind the
           ;; AND to its second operand alone. The default TRUE stays bare.
           (cons "corr" (list (if corr
@@ -1414,7 +1441,7 @@ and so which downstream guards fire."
   "Which funcs take a regex, and at which 0-based argument. All four name index
 0; the shape exists so a function taking a regex elsewhere is one entry rather
 than a code change."
-  (when (member name '("RMATCH" "RFIND" "RREPLACE" "RGROUPS") :test #'equal) 0))
+  (when (sel::regex-flag-index name) 0))
 
 (defun require-argument-kind (name f pos)
   (when (and (eq (fragment-kind f) :bool)
@@ -1477,7 +1504,7 @@ subset, so there is nothing to translate: ~a" name (sel:sel-error-message e))
             ;; template by argument count gave every three-argument call the
             ;; case-insensitive form.
             (inline-flags "(?s)")
-            (flag-at (if (equal name "RREPLACE") 3 2)))
+            (flag-at (sel::regex-flag-index name)))
         (when (>= flag-at (length args))
           (setf (nth at args) (lit-node :text (concatenate 'string inline-flags source)
                                         nil (snode-pos pat)))
@@ -1517,7 +1544,7 @@ requires for the same reason and refuses here too"
 binder position, given something else, is E_SQL_SHAPE at that expression -- in
 the statement forms and inside a MAP body as much as under an aggregate, and
 BEFORE any argument is rendered, so the refusal is the binder's and not
-whatever the arguments would have said or a `no mapping` for the call (GO-C2)."
+whatever the arguments would have said or a `no mapping` for the call."
   (let* ((name (sel::node-s n))
          (args (sel::node-items n))
          (forms (remove-if-not
@@ -1540,8 +1567,8 @@ whatever the arguments would have said or a `no mapping` for the call (GO-C2)."
     ;; The two aggregates over a bucket's members -- COUNT(g) is COUNT(*) and
     ;; SUM(g, [x,] body) is SUM over the grouped rows -- fire on the :group
     ;; binder alone: over a relation row, COUNT(_) is the row's number of
-    ;; fields in SEL (review 2026-09-15 finding X), and SEL has no per-group
-    ;; MIN or MAX (finding J). The body binds the member row, as the
+    ;; fields in SEL, and SEL has no per-group
+    ;; MIN or MAX. The body binds the member row, as the
     ;; evaluator's walk does: `_` for the two-argument form, the name given
     ;; for the three-argument one.
     (when (translator-statement-plan tr)
@@ -1570,13 +1597,12 @@ whatever the arguments would have said or a `no mapping` for the call (GO-C2)."
                          (not (is-constant body-node (translator-const-names tr))))
                     (multiple-value-bind (test cast)
                         (split-numeric-guard (translator-dialect tr) inner (snode-pos body-node))
-                      (%fragment (append (list "CASE WHEN COUNT(*) = COUNT(CASE WHEN (")
-                                         (fragment-parts test)
-                                         (list ") THEN 1 END) THEN COALESCE(SUM(")
-                                         (fragment-parts cast)
-                                         (list "), 0) ELSE NULL END"))
+                      (%fragment (template-parts +guarded-sum-template+
+                                                 (list (cons "{test}" (fragment-parts test))
+                                                       (cons "{body}" (fragment-parts cast))))
                                  :num (translator-dialect tr)))
-                    (%fragment (append (list "COALESCE(SUM(") (fragment-parts inner) (list "), 0)"))
+                    (%fragment (template-parts +sum-template+
+                                               (list (cons "{body}" (fragment-parts inner))))
                                :num (translator-dialect tr)))))))))
     ;; Each of these short-circuits before the next, and none reaches the funcs
     ;; table: the generator rejects a dialect document that lists one.
@@ -1604,7 +1630,7 @@ value a SQL expression can be" (snode-pos n)))
                        ;; Left to right, and the order is load-bearing: slot
                        ;; numbers are allocated in render order.
                        ;; MIN and MAX compare their arguments as numbers: a numeric text
-                       ;; constant is the number, as in arithmetic (PHP-C33).
+                       ;; constant is the number, as in arithmetic.
                        for f = (if (member name '("MIN" "MAX") :test #'equal)
                                    (arithmetic-operand tr arg)
                                    (walk-node tr arg))
@@ -1764,18 +1790,17 @@ has no scalar rendering" name)
           (values (sel::node-s (second args)) (third args)))
         (values "_" (second args)))))
 
-(defun value-node (tr v spec pos)
+(defun value-node (v spec pos)
   "Synthesise one AST node from one value child. A value binding holds values,
 not AST nodes, so nodes are manufactured -- deliberately cheaper than a fourth
 binder shape, and it inherits the quoting decision from DECLARED-KIND rather
 than restating it."
-  (declare (ignore tr))
   (cond
     ((plusp (sel:value-size v))
      (let ((cl (make-clist pos)))
        (setf (clist-entries cl)
-             (mapcar (lambda (cell) (cons (car cell) (value-node nil (cdr cell) spec pos)))
-                     (sel:value-entries v)))
+             (mapcar (lambda (cell) (cons (car cell) (value-node (cdr cell) spec pos)))
+                     (sel::%value-entries v)))
        cl))
     ((sel:value-bool-p v) (lit-node :bool "" (sel:as-bool v pos) pos))
     ((sel:value-bin-p v)
@@ -1788,15 +1813,15 @@ bind it as a column, or convert it before translating" pos))
      (refuse "E_SQL_BINDING" "a value binding holds a NULL element, which has no SQL literal" pos))
     (t (lit-node (if (eq (getf spec :type) :num) :num :text) (sel:as-text v pos) nil pos))))
 
-(defun value-elements (tr spec pos)
+(defun value-elements (spec pos)
   (let ((v (getf spec :value)))
     (if (zerop (sel:value-size v))
         ;; A NONE with no children is genuinely empty -- what FILTER returns when
         ;; nothing matched. A scalar is a one-element list of itself.
-        (if (sel:value-none-p v) '() (list (cons "1" (binder-node (value-node tr v spec pos)))))
+        (if (sel:value-none-p v) '() (list (cons "1" (binder-node (value-node v spec pos)))))
         (mapcar (lambda (cell)
-                  (cons (car cell) (binder-node (value-node tr (cdr cell) spec pos))))
-                (sel:value-entries v)))))
+                  (cons (car cell) (binder-node (value-node (cdr cell) spec pos))))
+                (sel::%value-entries v)))))
 
 (defun classify (tr src)
   "THE SHAPE CLASSIFIER. Branch order is exactly the other hosts'."
@@ -1880,7 +1905,7 @@ which is a map with one child per field; SQL has no way to iterate or count that
            (:value
             (let ((v (getf spec :value)))
               (return-from classify
-                (%source :static (value-elements tr spec (snode-pos src)) nil '()
+                (%source :static (value-elements spec (snode-pos src)) nil '()
                          ;; A scalar value gets the scalar rule; a list does not,
                          ;; and an empty NONE gets no elements and no scalar rule.
                          (and (zerop (sel:value-size v)) (not (sel:value-none-p v)))))))
@@ -1889,7 +1914,7 @@ which is a map with one child per field; SQL has no way to iterate or count that
     (t nil))
   ;; The four text functions that yield a list, the constructors, and every
   ;; pipeline step -- the optimiser's vocabulary, so a new step is covered by
-  ;; being one (review 2026-09-15 finding X: COUNT(LIST(1, 2, 3)) was 0).
+  ;; being one (COUNT(LIST(1, 2, 3)) was once 0).
   (when (and (eq (snode-kind src) :call)
              (or (member (sel::node-s src) +yields-list+ :test #'equal)
                  (member (sel::node-s src) '("LIST" "RECORD") :test #'equal)
@@ -1910,7 +1935,7 @@ it; SQL has no way to count or index what it produces" (sel::node-s src))
 CONSTANTS for the duration: a value binding named V is a constant only where V
 is not shadowed, and inside `ALL(L, V, V + 1 > 0)` the V is the element, so
 treating it as the binding's value validated (and could refuse) a program SEL
-evaluates differently, and left a column unguarded (JS-C53, PY-C45)."
+evaluates differently, and left a column unguarded."
   (let ((saved-const (translator-const-names tr)))
     (push frame (translator-frames tr))
     (setf (translator-const-names tr)
@@ -1926,7 +1951,7 @@ resolves to the key -- which is what the evaluator does."
   (let ((cell (assoc name frame :test #'equal)))
     (if cell (progn (setf (cdr cell) b) frame) (append frame (list (cons name b))))))
 
-(defun with-element (tr src binder-name elem key n render)
+(defun with-element (tr binder-name elem key n render)
   (let ((frame '()))
     (setf frame (frame-set frame binder-name elem))
     ;; `_K` names a TEXT literal of the element's key, which becomes a parameter
@@ -1939,9 +1964,8 @@ resolves to the key -- which is what the evaluator does."
 (defun with-join-binders (tr plan j render)
   "A LINK's predicate sees `_`/`_1` as its left element and `_2` as its right,
 plus the names the LINK gives them (spec §7.4) and nothing else: a relation's
-name outside those, its alias or its table is not a binder (review 2026-09-28
-SQL-07), and the left element of a later LINK is the joined row so far, not
-the source (SQL-05)."
+name outside those, its alias or its table is not a binder, and the left
+element of a later LINK is the joined row so far, not the source."
   (let* ((step (nth (position j (relational-plan-joins plan)) (third (join-rows plan))))
          (left-row (binder-row (relational-plan-source-relation plan)))
          (right-row (binder-row (join-plan-source-relation j)))
@@ -1986,8 +2010,8 @@ against it; the correlation names the alias, so it cannot be renamed here" alias
           (setf (binder-model row) (second (join-rows plan)))))
       (setf frame (frame-set frame binder-name row))
       ;; The statement binds the name given and nothing else, as the
-      ;; evaluator does -- `MAP(g, _["x"])` leaves `_` undefined (review
-      ;; 2026-09-15 finding J; this host bound `_` unconditionally). After a
+      ;; evaluator does -- `MAP(g, _["x"])` leaves `_` undefined (this host
+      ;; once bound `_` unconditionally). After a
       ;; LINK only the row is in scope (spec §7.4): the binders are scoped to
       ;; its predicate, and the evaluator raises E_UNDEF_VAR for `C["id"]` in
       ;; a later step -- the joined row carries them as keys, not as names.
@@ -2007,7 +2031,7 @@ over the groups before it. The binder is the group -- the list of its members,
 which only COUNT and SUM read (translate-call) -- and _K is the group key, when
 there is one key to be it. This is the one place _K is a group key: before the
 bucket it is a source row's position, after the projection the projected row's,
-and SQL has neither (review 2026-09-15 finding K)."
+and SQL has neither."
   (let* ((plan (translator-statement-plan tr))
          (group-by (and plan (relational-plan-group-by plan)))
          (frame '()))
@@ -2038,7 +2062,7 @@ from \"1\", and SQL has no row position to compare against")))
   "Run RENDER where a FILTER's predicate is written: its own binder names the
 element and the aggregate's does NOT exist yet. A FILTER's binder is scoped to its
 predicate, so it is not visible in the body or in another FILTER, and the
-aggregate's binder is not visible in a predicate (LISP-C7, JS-C26)."
+aggregate's binder is not visible in a predicate."
   (let* ((frames (translator-frames tr))
          (top (first frames))
          (elem (cdr (assoc binder-name top :test #'equal)))
@@ -2090,11 +2114,10 @@ sql-kinds.md 5a): the sum is NULL unless EVERY element passes the numeric test.
 so guarding each element would let a refused element vanish. Returns the template
 with the body slot split into {test} and {body}, and the two fragments."
   (multiple-value-bind (test cast) (split-numeric-guard (translator-dialect tr) body pos)
-    (let ((old "COALESCE(SUM({body}), 0)"))
+    (let ((old +sum-template+))
       (unless (search old tpl)
         (bad "the sum skeleton has no ~a, so it cannot be guarded as a whole" old))
-      (values (replace-all tpl old
-                           "CASE WHEN COUNT(*) = COUNT(CASE WHEN ({test}) THEN 1 END) THEN COALESCE(SUM({body}), 0) ELSE NULL END")
+      (values (replace-all tpl old +guarded-sum-template+)
               test cast))))
 
 (defun relation-aggregate (tr name rel body n)
@@ -2148,7 +2171,7 @@ can only be the thing another aggregate iterates" name)
                                           (lambda () (agg-body tr name body src n nil binder-name)))
                                 n)))
         (let ((parts (loop for cell in (source-elements src)
-                           collect (with-element tr src binder-name (cdr cell) (car cell) n
+                           collect (with-element tr binder-name (cdr cell) (car cell) n
                                                  (lambda () (agg-body tr name body src n t binder-name))))))
           (cond
             ;; Spec §7.3's empty cases.
@@ -2180,7 +2203,7 @@ can only be the thing another aggregate iterates" name)
                                           (lambda () (agg-body tr "SUM" body src n nil "_")))
                                 n)))
         (let ((parts (loop for cell in (source-elements src)
-                           collect (with-element tr src "_" (cdr cell) (car cell) n
+                           collect (with-element tr "_" (cdr cell) (car cell) n
                                                  (lambda () (agg-body tr "SUM" body src n nil "_"))))))
           (return-from translate-count
             (cond ((null parts) (make-literal tr (sel:make-num "0") :num))
@@ -2230,7 +2253,7 @@ expression here knows" (snode-pos n)))
 (defun require-joinable (f pos)
   "JOIN concatenates text and numbers, as `&` does; a BOOL or BIN element or
 separator has no SQL rendering that agrees with SEL's (docs/internals/
-sql-kinds.md 5), and a refusal is the only honest answer (LISP-C24, PY-C19)."
+sql-kinds.md 5), and a refusal is the only honest answer."
   (when (member (fragment-kind f) '(:bool :bin))
     (refuse "E_SQL_SHAPE"
             (format nil "JOIN joins text and numbers, and this is ~a"
@@ -2242,7 +2265,7 @@ sql-kinds.md 5), and a refusal is the only honest answer (LISP-C24, PY-C19)."
   (let ((src (classify tr (first (sel::node-items n))))
         (sep-node (second (sel::node-items n))))
     ;; FILTER yields a list, and only ALL, ANY, SUM and COUNT absorb it (docs
-    ;; 7.5). JOIN used to drop the filter and join the whole list (LISP-C6).
+    ;; 7.5). JOIN used to drop the filter and join the whole list.
     (when (source-filters src)
       (refuse "E_SQL_SHAPE"
               "JOIN over a FILTER is not translated: only ALL, ANY, SUM and COUNT ~
@@ -2279,7 +2302,7 @@ absorb one, and dropping it would join elements SEL leaves out"
         (when parts (push (require-joinable (walk-node tr sep-node) (snode-pos sep-node)) parts))
         (let ((held (cdr cell)))
           (push (require-joinable
-                 (with-element tr src "_" held (car cell) n
+                 (with-element tr "_" held (car cell) n
                                (lambda () (from-binder tr held n)))
                  (snode-pos n))
                 parts)))
@@ -2365,7 +2388,7 @@ projected column as a relation with that one field." (sel::node-s rhs) (length f
                (when (and (eq (binding-kind b) :value)
                           (plusp (sel:value-size (getf spec :value))))
                  (setf elements (mapcar (lambda (c) (binder-payload (cdr c)))
-                                        (value-elements tr spec (snode-pos rhs)))))))))
+                                        (value-elements spec (snode-pos rhs)))))))))
       ;; --- branch B: the scalar fallback
       (when (eq elements :none)
         (let* ((r (walk-node tr rhs))                 ; RIGHT operand rendered FIRST
@@ -2397,7 +2420,7 @@ SQL counterpart" (snode-pos e)))
             ;; A declared `exact` column opts out of the cast and keeps its own
             ;; collation, but a NUMBER item beside it is still cast: bare
             ;; `t = 3` compares numerically on MariaDB and MySQL, where
-            ;; 'x' = 0 and '25/298' = 25 (PY-C20, CPP-C30, LISP-C25).
+            ;; 'x' = 0 and '25/298' = 25.
             (let ((item (if (and is-exact (not (eq (fragment-kind f) :num)))
                             f
                             (emit-text-operand d f))))
@@ -2481,48 +2504,38 @@ SQL counterpart" (snode-pos e)))
                          (format nil "~a on a multi-field relation requires a key expression; use ~a"
                                  sort-name (if is-top "TOP_BY" "SORT_BY"))
                          pos)))))
-           ((= count 2)
-            (setf (relational-plan-order-by plan)
-                  (append (relational-plan-order-by plan)
-                          (list (list "_" (second args) dir pos)))))
-           ((= count 3)
-            (unless (is-binder-name (second args))
-              (refuse "E_SQL_SHAPE" (format nil "the binder of ~a must be a bare name" sort-name) (snode-pos (second args))))
-            (setf (relational-plan-order-by plan)
-                  (append (relational-plan-order-by plan)
-                          (list (list (sel::node-s (second args)) (third args) dir pos)))))
            (t
-            (refuse "E_ARITY" (format nil "~a takes ~a arguments" name (if is-top "2 to 4" "1 to 3")) pos)))))
+            ;; Two or three arguments (the manifest refused any other count):
+            ;; the key, after a binder when there are three.
+            (multiple-value-bind (b key) (sel::call-form (sel::binding-forms-named sort-name) args)
+              (when (and b (not (is-binder-name (nth b args))))
+                (refuse "E_SQL_SHAPE" (format nil "the binder of ~a must be a bare name" sort-name)
+                        (snode-pos (nth b args))))
+              (setf (relational-plan-order-by plan)
+                    (append (relational-plan-order-by plan)
+                            (list (list (if b (sel::node-s (nth b args)) "_") (nth key args) dir pos)))))))))
 
       ((equal sort-name "SORT_BY")
+       ;; The forms are the evaluator's (SEL::CALL-FORM over the manifest): a
+       ;; text literal in the third slot is the direction even after a bare
+       ;; name, a bare name there otherwise is the binder, and any other third
+       ;; argument is a direction SQL cannot compute -- refused, as the four-
+       ;; argument form refuses one.
        (let (binder key dir dir-pos)
-         (cond
-           ((= count 2)
-            (setf binder "_" key (second args) dir "ASC" dir-pos (snode-pos (second args))))
-           ((= count 3)
-            (let ((a1 (second args))
-                  (a2 (third args)))
-              (cond
-                ((and (not (clist-p a2)) (eq (snode-kind a2) :text))
-                 (setf binder "_" key a1 dir (sel::ascii-upcase (sel::node-s a2)) dir-pos (snode-pos a2)))
-                ((is-binder-name a1)
-                 (setf binder (sel::node-s a1) key a2 dir "ASC" dir-pos (snode-pos a2)))
-                (t
-                 ;; Neither form: the third slot is a direction the evaluator
-                 ;; would compute, and SQL cannot -- the four-argument form's
-                 ;; refusal.
-                 (refuse "E_BAD_ARG" "sort direction must be 'ASC' or 'DESC'" (snode-pos a2))))))
-           ((= count 4)
-            (unless (is-binder-name (second args))
-              (refuse "E_SQL_SHAPE" (format nil "the binder of ~a must be a bare name" sort-name) (snode-pos (second args))))
-            (unless (and (not (clist-p (fourth args))) (eq (snode-kind (fourth args)) :text))
-              (refuse "E_BAD_ARG" "sort direction must be 'ASC' or 'DESC'" (snode-pos (fourth args))))
-            (setf binder (sel::node-s (second args))
-                  key (third args)
-                  dir (sel::ascii-upcase (sel::node-s (fourth args)))
-                  dir-pos (snode-pos (fourth args))))
-           (t
-            (refuse "E_ARITY" (format nil "~a takes ~a arguments" name (if is-top "3 to 5" "2 to 4")) pos)))
+         (multiple-value-bind (b k k2 d) (sel::call-form (sel::binding-forms-named "SORT_BY") args)
+           (declare (ignore k2))
+           (when (and b (not (is-binder-name (nth b args))))
+             (refuse "E_SQL_SHAPE" (format nil "the binder of ~a must be a bare name" sort-name)
+                     (snode-pos (nth b args))))
+           (setf binder (if b (sel::node-s (nth b args)) "_")
+                 key (nth k args))
+           (if d
+               (let ((dn (nth d args)))
+                 (unless (and (not (clist-p dn)) (eq (snode-kind dn) :text))
+                   (refuse "E_BAD_ARG" "sort direction must be 'ASC' or 'DESC'" (snode-pos dn)))
+                 (setf dir (sel::ascii-upcase (sel::node-s dn))
+                       dir-pos (snode-pos dn)))
+               (setf dir "ASC" dir-pos (snode-pos key))))
          (unless (member dir '("ASC" "DESC") :test #'equal)
            (refuse "E_BAD_ARG" "sort direction must be 'ASC' or 'DESC'" dir-pos))
          (setf (relational-plan-order-by plan)
@@ -2654,15 +2667,10 @@ dialect's CANON kind -- the map entry's ret, NUM or TEXT."
      :root-name (if (relational-plan-joins plan) nil (relational-plan-root-name plan))
      :bucket (and (relational-plan-bucket plan) :sealed))))
 
-(defvar *translating-dialect* nil
-  "The dialect the translation in progress is for, for the few program-supplied
-names whose acceptability depends on the server (PostgreSQL truncates aliases).")
-
 (defun check-alias-name (name pos)
   "An alias or column that comes from a SEL text literal is held to the rules a
 binding's own names already meet: not empty, no NUL (sql/MAP.md 3.1). A NUL
-reached the statement on every dialect, and `AS \"\"` is refused by the servers
-(PHP-C53, PHP-C54, PY-C43, GO-C37)."
+reached the statement on every dialect, and `AS \"\"` is refused by the servers."
   (when (or (zerop (length name)) (find (code-char 0) name))
     (refuse "E_SQL_UNSUPPORTED"
             (if (zerop (length name))
@@ -2670,11 +2678,12 @@ reached the statement on every dialect, and `AS \"\"` is refused by the servers
                 "a name holding NUL cannot be a column or an alias in SQL")
             pos)))
 
-(defun check-alias-collisions (names-and-nodes)
+(defun check-alias-collisions (tr names-and-nodes)
   "PostgreSQL truncates an identifier to 63 bytes, so two aliases that agree on
 their first 63 bytes and differ after name ONE column there and SEL's two record
-keys would become one."
-  (when (equal *translating-dialect* "postgresql")
+keys would become one. The server's rule, so every dialect whose chain reaches
+postgresql is held to it, a registered child included."
+  (when (member "postgresql" (dialect-chain (translator-dialect tr)) :test #'equal)
     (let ((seen '()))
       (dolist (cell names-and-nodes)
         (let* ((name (car cell))
@@ -2691,7 +2700,7 @@ truncates both to one name"
                         (snode-pos (cdr cell))))
               (push (cons prefix name) seen))))))))
 
-(defun record-fields (node)
+(defun record-fields (tr node)
   "The (name . value) pairs of a RECORD(k, v, ...) call, refusing what the
 evaluator would: an odd count at the call, a name that is not a text literal at
 the name. The planner reads RECORD in three places -- a bucket's projection, a
@@ -2706,10 +2715,11 @@ bucket's key, a MAP's projection -- and each used to walk the pairs itself."
                      (check-alias-name (sel::node-s k-node) (snode-pos k-node))
                   collect (cons (sel::node-s k-node) v-node))))
       (check-alias-collisions
+       tr
        (loop for (k-node nil) on args by #'cddr collect (cons (sel::node-s k-node) k-node)))
       fields)))
 
-(defun bucket-projection (plan binder agg-node)
+(defun bucket-projection (tr plan binder agg-node)
   "The projection of a bucket: the RECORD (or single expression) evaluated once
 per group, with BINDER bound to the group and _K to its key. Shared by the two
 spellings SEL has for it -- BUCKET(src, key, proj) and BUCKET(src, key) .>
@@ -2720,7 +2730,7 @@ can say about a bucket on its own."
       (if (and (not (clist-p agg-node)) (eq (snode-kind agg-node) :call)
                (equal (sel::node-s agg-node) "RECORD"))
           (let ((projs '()))
-            (loop for (alias . v-node) in (record-fields agg-node) do
+            (loop for (alias . v-node) in (record-fields tr agg-node) do
               (let* (;; _K is the key, which was written against the KEY's
                      ;; binder -- the MAP spelling may name the group
                      ;; differently, so the projection keeps the binder the key
@@ -2884,401 +2894,389 @@ can say about a bucket on its own."
               ;; its groups, and is rendered in the bucket's own frame
               ;; (with-group).
               (let ((over-groups (eq (relational-plan-bucket plan) :open)))
-              (when (and (eq (relational-plan-bucket plan) :open)
-                         (not (member sname '("FILTER" "MAP") :test #'equal)))
-                (setf (relational-plan-bucket plan) :sealed))
-              (cond
-                ((equal sname "FILTER")
-                 ;; A FILTER over a bare bucket whose members are spent: SQL
-                 ;; has only the keys left, and SEL's value is still a map of
-                 ;; groups.
-                 (when (eq (relational-plan-bucket plan) :sealed)
-                   (refuse "E_SQL_SHAPE"
-                           "a FILTER over buckets must follow the BUCKET directly: SQL keeps a bucket's members only for the projection that ends the grouping"
-                           pos))
-                 ;; A FILTER after a LIMIT or OFFSET is a WHERE over the rows
-                 ;; that survived them, grouped or not -- SEL applies the TAKE
-                 ;; first, and a HAVING would run before it. Otherwise a FILTER
-                 ;; directly after a grouping is its HAVING, and an ORDER BY in
-                 ;; between changes nothing (HAVING then ORDER BY is
-                 ;; sort-then-filter's rows).
-                 (when (or (relational-plan-limit plan)
-                           (relational-plan-offset plan)
-                           (and (null (relational-plan-group-by plan))
-                                ;; (A sort does NOT force the wrap: the WHERE goes in the
-                                ;; same SELECT, beside the ORDER BY, because a derived table
-                                ;; does not keep an ORDER BY that has no LIMIT beside it and
-                                ;; the rows would come back in no order; a filter commutes
-                                ;; with a stable sort, so the rows and their order are the same.)
-                                (or (relational-plan-projections plan)
-                                    (relational-plan-select-cols plan)
-                                    (relational-plan-distinct plan))))
-                   (setf plan (wrap-plan-as-derived-table tr plan)))
-                 (let (binder pred)
-                   (cond
-                     ((= (length args) 2)
-                      (setf binder "_" pred (second args)))
-                     ((= (length args) 3)
-                      (unless (is-binder-name (second args))
-                        (refuse "E_SQL_SHAPE" "the binder of FILTER must be a bare name" (snode-pos (second args))))
-                      (setf binder (sel::node-s (second args)) pred (third args)))
-                     (t
-                      (refuse "E_ARITY" "FILTER takes 2 or 3 arguments" pos)))
-                   (if (relational-plan-group-by plan)
-                       (setf (relational-plan-having plan)
-                             (append (relational-plan-having plan) (list (list binder pred pos over-groups))))
-                       (setf (relational-plan-filters plan)
-                             (append (relational-plan-filters plan) (list (list binder pred pos)))))))
-
-                ((equal sname "BUCKET")
-                 ;; A bucket over a bare bucket's rows: SQL has only the keys
-                 ;; (open) or has spent the members (sealed); either way SEL's
-                 ;; value is a map of groups and re-grouping it is a different
-                 ;; program.
-                 (when (relational-plan-bucket plan)
-                   (refuse "E_SQL_SHAPE"
-                           "a BUCKET over buckets: SQL keeps a bucket's members only for the projection that ends the grouping"
-                           pos))
-                 ;; Groups appear in order of their first member, and the members
-                 ;; were sorted: a GROUP BY returns its groups in no order at all,
-                 ;; and the ORDER BY beneath it is dropped by the servers. The sort
-                 ;; cannot survive, so the step is refused here, at the call and
-                 ;; before its arguments (the first refusal in source order), and a
-                 ;; hybrid plan keeps the sorted rows in SQL and groups them in
-                 ;; memory.
-                 (when (or (relational-plan-order-by plan) (relational-plan-order-dropped plan))
-                   (refuse "E_SQL_SHAPE"
-                           "a BUCKET over sorted rows would return its groups in no order, where SEL has them in the order of their first member in the sorted list"
-                           pos))
-                 (when (or (relational-plan-group-by plan)
-                           (relational-plan-projections plan)
-                           (relational-plan-select-cols plan)
-                           (relational-plan-limit plan)
-                           (relational-plan-offset plan)
-                           (relational-plan-distinct plan)
-                           (relational-plan-order-by plan))
-                   (setf plan (wrap-plan-as-derived-table tr plan)))
-                 (let (binder key-node agg-node)
-                   (cond
-                     ((= (length args) 2)
-                      (setf binder "_" key-node (second args) agg-node nil))
-                     ((= (length args) 3)
-                      (setf binder "_" key-node (second args) agg-node (third args)))
-                     ((= (length args) 4)
-                      (unless (is-binder-name (second args))
-                        (refuse "E_SQL_SHAPE" (format nil "the binder of ~a must be a bare name" sname) (snode-pos (second args))))
-                      (setf binder (sel::node-s (second args))
-                            key-node (third args)
-                            agg-node (fourth args)))
-                     (t
-                      (refuse "E_ARITY" (format nil "~a takes 2 to 4 arguments" sname) pos)))
-
-                   ;; A bare bucket's key is an index key (spec §7.4): one text
-                   ;; or number. A list or record key is refused by the
-                   ;; evaluator, and the boolean and binary kinds are refused
-                   ;; below, once known.
-                   (when (and (null agg-node) (not (clist-p key-node))
-                              (or (eq (snode-kind key-node) :list)
-                                  (and (eq (snode-kind key-node) :call)
-                                       (member (sel::node-s key-node) '("LIST" "RECORD") :test #'equal))))
+                (when (and (eq (relational-plan-bucket plan) :open)
+                           (not (member sname '("FILTER" "MAP") :test #'equal)))
+                  (setf (relational-plan-bucket plan) :sealed))
+                (cond
+                  ((equal sname "FILTER")
+                   ;; A FILTER over a bare bucket whose members are spent: SQL
+                   ;; has only the keys left, and SEL's value is still a map of
+                   ;; groups.
+                   (when (eq (relational-plan-bucket plan) :sealed)
                      (refuse "E_SQL_SHAPE"
-                             "a bare BUCKET groups by one text or number key, as an index does; BUCKET(src, key, proj) groups by several"
-                             (snode-pos key-node)))
-                   (let ((group-by '()))
+                             "a FILTER over buckets must follow the BUCKET directly: SQL keeps a bucket's members only for the projection that ends the grouping"
+                             pos))
+                   ;; A FILTER after a LIMIT or OFFSET is a WHERE over the rows
+                   ;; that survived them, grouped or not -- SEL applies the TAKE
+                   ;; first, and a HAVING would run before it. Otherwise a FILTER
+                   ;; directly after a grouping is its HAVING, and an ORDER BY in
+                   ;; between changes nothing (HAVING then ORDER BY is
+                   ;; sort-then-filter's rows).
+                   (when (or (relational-plan-limit plan)
+                             (relational-plan-offset plan)
+                             (and (null (relational-plan-group-by plan))
+                                  ;; (A sort does NOT force the wrap: the WHERE goes in the
+                                  ;; same SELECT, beside the ORDER BY, because a derived table
+                                  ;; does not keep an ORDER BY that has no LIMIT beside it and
+                                  ;; the rows would come back in no order; a filter commutes
+                                  ;; with a stable sort, so the rows and their order are the same.)
+                                  (or (relational-plan-projections plan)
+                                      (relational-plan-select-cols plan)
+                                      (relational-plan-distinct plan))))
+                     (setf plan (wrap-plan-as-derived-table tr plan)))
+                   (let (binder pred)
                      (cond
-                       ((or (and (not (clist-p key-node)) (eq (snode-kind key-node) :call) (equal (sel::node-s key-node) "LIST"))
-                            (and (not (clist-p key-node)) (eq (snode-kind key-node) :list)))
-                        (dolist (k-arg (sel::node-items key-node))
-                          (push (list nil binder k-arg (snode-pos k-arg)) group-by)))
-                       ((and (not (clist-p key-node)) (eq (snode-kind key-node) :call) (equal (sel::node-s key-node) "RECORD"))
-                        (loop for (alias . v-node) in (record-fields key-node) do
-                          (push (list alias binder v-node (snode-pos v-node)) group-by)))
-                       (t
-                        (push (list nil binder key-node (snode-pos key-node)) group-by)))
-                     (setf (relational-plan-group-by plan) (nreverse group-by)))
-                   (setf (relational-plan-bucket plan) (if agg-node nil :open))
-                   (setf (relational-plan-bare-key plan) (null agg-node))
-                   (bucket-projection plan binder agg-node)))
+                       ((= (length args) 2)
+                        (setf binder "_" pred (second args)))
+                       (t ; 3: the manifest refused any other count at compile time
+                        (unless (is-binder-name (second args))
+                          (refuse "E_SQL_SHAPE" "the binder of FILTER must be a bare name" (snode-pos (second args))))
+                        (setf binder (sel::node-s (second args)) pred (third args))))
+                     (if (relational-plan-group-by plan)
+                         (setf (relational-plan-having plan)
+                               (append (relational-plan-having plan) (list (list binder pred pos over-groups))))
+                         (setf (relational-plan-filters plan)
+                               (append (relational-plan-filters plan) (list (list binder pred pos)))))))
 
-                ((or (equal sname "LINK") (equal sname "LINK_LEFT"))
-                 ;; The steps before the LINK refuse first, as written: their
-                 ;; keys (a sort's, say) are otherwise checked only when the
-                 ;; statement is rendered, after the LINK's predicate was --
-                 ;; which reported the LINK's refusal where the other four
-                 ;; hosts report the earlier step's (review 2026-09-25 SQL-03,
-                 ;; found by the SQL fuzzer).
-                 (when (or (relational-plan-order-by plan)
-                           (relational-plan-projections plan)
-                           (relational-plan-select-cols plan)
-                           (relational-plan-group-by plan))
-                   ;; A check, its fragment discarded: the slots it created are
-                   ;; discarded with it, or `params` mode binds a value the
-                   ;; statement has no place for (CPP-C57, LISP-C40).
-                   (let ((params (translator-params tr))
-                         (kinds (translator-param-kinds tr))
-                         (count (translator-param-count tr)))
-                     (compile-statement tr plan)
-                     (setf (translator-params tr) params
-                           (translator-param-kinds tr) kinds
-                           (translator-param-count tr) count)))
-                 ;; A join returns its rows in no order, and SEL's are the left
-                 ;; list's: rows sorted with no LIMIT beside the ORDER BY (which a
-                 ;; derived table drops) cannot pass through a JOIN carrying their
-                 ;; sort. After the earlier steps' own refusals, which come first
-                 ;; as written.
-                 (when (or (relational-plan-order-dropped plan)
-                           (and (relational-plan-order-by plan)
-                                (null (relational-plan-limit plan))
-                                (null (relational-plan-offset plan))))
-                   (refuse "E_SQL_SHAPE"
-                           (format nil "a ~a over sorted rows would return them in no order, where SEL has the left list's order" sname)
-                           pos))
-                 (when (or (relational-plan-group-by plan)
-                           (relational-plan-projections plan)
-                           (relational-plan-select-cols plan)
-                           (relational-plan-limit plan)
-                           (relational-plan-offset plan)
-                           (relational-plan-distinct plan))
-                   (setf plan (wrap-plan-as-derived-table tr plan)))
-                 (let* ((is-left (equal sname "LINK_LEFT"))
-                        (step-args args))
-                   (unless (or (= (length step-args) 3) (= (length step-args) 5))
-                     (refuse "E_ARITY" (format nil "~a takes 2 or 4 arguments" sname) pos))
-                   (let ((right-node (second step-args)))
-                     (unless (and (not (clist-p right-node)) (eq (snode-kind right-node) :var))
-                       (refuse "E_SQL_SHAPE" (format nil "~a requires a relation binding as second argument" sname) (snode-pos right-node)))
-                     (let ((right-name (sel::node-s right-node)))
-                       (unless (bindings-has (translator-bindings tr) right-name)
-                         (refuse "E_SQL_UNBOUND" (format nil "relation ~a is not bound" right-name) (snode-pos right-node)))
-                       (let ((right-b (bindings-get (translator-bindings tr) right-name (snode-pos right-node))))
-                         (unless (eq (binding-kind right-b) :relation)
-                           (refuse "E_SQL_SHAPE" (format nil "~a is not a relation binding" right-name) (snode-pos right-node)))
-                         (let* ((right-spec (binding-spec right-b))
-                                left-names right-names pred)
-                           (cond
-                             ((= (length step-args) 3)
-                              ;; The evaluator names a three-argument LINK's
-                              ;; sides after the variable their pipeline starts
-                              ;; from, unless an earlier LINK is in the way
-                              ;; (spec §7.4).
-                              (setf left-names (if (and (null (relational-plan-joins plan))
-                                                        (relational-plan-root-name plan))
-                                                   (list (relational-plan-root-name plan))
-                                                   '())
-                                    right-names (list right-name)
-                                    pred (third step-args)))
-                             ((= (length step-args) 5)
-                              (unless (is-binder-name (third step-args))
-                                (refuse "E_SQL_SHAPE" (format nil "the left binder of ~a must be a bare name" sname) (snode-pos (third step-args))))
-                              (unless (is-binder-name (fourth step-args))
-                                (refuse "E_SQL_SHAPE" (format nil "the right binder of ~a must be a bare name" sname) (snode-pos (fourth step-args))))
-                              (setf left-names (list (sel::node-s (third step-args)))
-                                    right-names (list (sel::node-s (fourth step-args)))
-                                    pred (fifth step-args))))
-                           (let ((j-plan (make-join-plan
-                                          :type (if is-left :left :inner)
-                                          :source-name right-name
-                                          :source-relation right-spec
-                                          :source-table (getf right-spec :from)
-                                          ;; The SQL alias of a table the binding
-                                          ;; leaves unaliased: the five-argument
-                                          ;; form's right binder, `_2` otherwise.
-                                          ;; An alias, not a SEL name.
-                                          :source-alias (or (getf right-spec :alias)
-                                                            (if (= (length step-args) 5)
-                                                                (first right-names)
-                                                                "_2"))
-                                          :left-names left-names
-                                          :right-names right-names
-                                          :on-pred pred
-                                          :pos pos)))
-                             ;; One table alias per occurrence: a relation joined
-                             ;; again under an alias the statement already uses
-                             ;; (a self-join, or a chain back to an aliased
-                             ;; relation) rendered it twice, which the server
-                             ;; rejects (review 2026-09-28 SQL-09). The program
-                             ;; stays in memory.
-                             (let ((open (cons (let ((a (relational-plan-source-alias plan)))
-                                                 (if (null a)
-                                                     (relation-alias (relational-plan-source-relation plan))
-                                                     a))
-                                               (mapcar #'join-plan-source-alias (relational-plan-joins plan))))
-                                   (alias (join-plan-source-alias j-plan)))
-                               (when (some (lambda (a) (and (stringp a) (stringp alias)
-                                                            (string= (sel::ascii-upcase a)
-                                                                     (sel::ascii-upcase alias))))
-                                           open)
-                                 (refuse "E_SQL_SHAPE"
-                                         (format nil "~a would be joined under the table alias ~a, which ~
+                  ((equal sname "BUCKET")
+                   ;; A bucket over a bare bucket's rows: SQL has only the keys
+                   ;; (open) or has spent the members (sealed); either way SEL's
+                   ;; value is a map of groups and re-grouping it is a different
+                   ;; program.
+                   (when (relational-plan-bucket plan)
+                     (refuse "E_SQL_SHAPE"
+                             "a BUCKET over buckets: SQL keeps a bucket's members only for the projection that ends the grouping"
+                             pos))
+                   ;; Groups appear in order of their first member, and the members
+                   ;; were sorted: a GROUP BY returns its groups in no order at all,
+                   ;; and the ORDER BY beneath it is dropped by the servers. The sort
+                   ;; cannot survive, so the step is refused here, at the call and
+                   ;; before its arguments (the first refusal in source order), and a
+                   ;; hybrid plan keeps the sorted rows in SQL and groups them in
+                   ;; memory.
+                   (when (or (relational-plan-order-by plan) (relational-plan-order-dropped plan))
+                     (refuse "E_SQL_SHAPE"
+                             "a BUCKET over sorted rows would return its groups in no order, where SEL has them in the order of their first member in the sorted list"
+                             pos))
+                   (when (or (relational-plan-group-by plan)
+                             (relational-plan-projections plan)
+                             (relational-plan-select-cols plan)
+                             (relational-plan-limit plan)
+                             (relational-plan-offset plan)
+                             (relational-plan-distinct plan)
+                             (relational-plan-order-by plan))
+                     (setf plan (wrap-plan-as-derived-table tr plan)))
+                   (let (binder key-node agg-node)
+                     (cond
+                       ((= (length args) 2)
+                        (setf binder "_" key-node (second args) agg-node nil))
+                       ((= (length args) 3)
+                        (setf binder "_" key-node (second args) agg-node (third args)))
+                       (t ; 4: the manifest refused any other count at compile time
+                        (unless (is-binder-name (second args))
+                          (refuse "E_SQL_SHAPE" (format nil "the binder of ~a must be a bare name" sname) (snode-pos (second args))))
+                        (setf binder (sel::node-s (second args))
+                              key-node (third args)
+                              agg-node (fourth args))))
+
+                     ;; A bare bucket's key is an index key (spec §7.4): one text
+                     ;; or number. A list or record key is refused by the
+                     ;; evaluator, and the boolean and binary kinds are refused
+                     ;; below, once known.
+                     (when (and (null agg-node) (not (clist-p key-node))
+                                (or (eq (snode-kind key-node) :list)
+                                    (and (eq (snode-kind key-node) :call)
+                                         (member (sel::node-s key-node) '("LIST" "RECORD") :test #'equal))))
+                       (refuse "E_SQL_SHAPE"
+                               "a bare BUCKET groups by one text or number key, as an index does; BUCKET(src, key, proj) groups by several"
+                               (snode-pos key-node)))
+                     (let ((group-by '()))
+                       (cond
+                         ((or (and (not (clist-p key-node)) (eq (snode-kind key-node) :call) (equal (sel::node-s key-node) "LIST"))
+                              (and (not (clist-p key-node)) (eq (snode-kind key-node) :list)))
+                          (dolist (k-arg (sel::node-items key-node))
+                            (push (list nil binder k-arg (snode-pos k-arg)) group-by)))
+                         ((and (not (clist-p key-node)) (eq (snode-kind key-node) :call) (equal (sel::node-s key-node) "RECORD"))
+                          (loop for (alias . v-node) in (record-fields tr key-node) do
+                            (push (list alias binder v-node (snode-pos v-node)) group-by)))
+                         (t
+                          (push (list nil binder key-node (snode-pos key-node)) group-by)))
+                       (setf (relational-plan-group-by plan) (nreverse group-by)))
+                     (setf (relational-plan-bucket plan) (if agg-node nil :open))
+                     (setf (relational-plan-bare-key plan) (null agg-node))
+                     (bucket-projection tr plan binder agg-node)))
+
+                  ((or (equal sname "LINK") (equal sname "LINK_LEFT"))
+                   ;; The steps before the LINK refuse first, as written: their
+                   ;; keys (a sort's, say) are otherwise checked only when the
+                   ;; statement is rendered, after the LINK's predicate was --
+                   ;; which reported the LINK's refusal where the other four
+                   ;; hosts report the earlier step's (found by the SQL fuzzer).
+                   (when (or (relational-plan-order-by plan)
+                             (relational-plan-projections plan)
+                             (relational-plan-select-cols plan)
+                             (relational-plan-group-by plan))
+                     ;; A check, its fragment discarded: the slots it created are
+                     ;; discarded with it, or `params` mode binds a value the
+                     ;; statement has no place for.
+                     (let ((params (translator-params tr))
+                           (kinds (translator-param-kinds tr))
+                           (count (translator-param-count tr)))
+                       (compile-statement tr plan)
+                       (setf (translator-params tr) params
+                             (translator-param-kinds tr) kinds
+                             (translator-param-count tr) count)))
+                   ;; A join returns its rows in no order, and SEL's are the left
+                   ;; list's: rows sorted with no LIMIT beside the ORDER BY (which a
+                   ;; derived table drops) cannot pass through a JOIN carrying their
+                   ;; sort. After the earlier steps' own refusals, which come first
+                   ;; as written.
+                   (when (or (relational-plan-order-dropped plan)
+                             (and (relational-plan-order-by plan)
+                                  (null (relational-plan-limit plan))
+                                  (null (relational-plan-offset plan))))
+                     (refuse "E_SQL_SHAPE"
+                             (format nil "a ~a over sorted rows would return them in no order, where SEL has the left list's order" sname)
+                             pos))
+                   (when (or (relational-plan-group-by plan)
+                             (relational-plan-projections plan)
+                             (relational-plan-select-cols plan)
+                             (relational-plan-limit plan)
+                             (relational-plan-offset plan)
+                             (relational-plan-distinct plan))
+                     (setf plan (wrap-plan-as-derived-table tr plan)))
+                   (let* ((is-left (equal sname "LINK_LEFT"))
+                          ;; 3 or 5: the manifest refused any other count.
+                          (step-args args))
+                     (let ((right-node (second step-args)))
+                       (unless (and (not (clist-p right-node)) (eq (snode-kind right-node) :var))
+                         (refuse "E_SQL_SHAPE" (format nil "~a requires a relation binding as second argument" sname) (snode-pos right-node)))
+                       (let ((right-name (sel::node-s right-node)))
+                         (unless (bindings-has (translator-bindings tr) right-name)
+                           (refuse "E_SQL_UNBOUND" (format nil "relation ~a is not bound" right-name) (snode-pos right-node)))
+                         (let ((right-b (bindings-get (translator-bindings tr) right-name (snode-pos right-node))))
+                           (unless (eq (binding-kind right-b) :relation)
+                             (refuse "E_SQL_SHAPE" (format nil "~a is not a relation binding" right-name) (snode-pos right-node)))
+                           (let* ((right-spec (binding-spec right-b))
+                                  left-names right-names pred)
+                             (cond
+                               ((= (length step-args) 3)
+                                ;; The evaluator names a three-argument LINK's
+                                ;; sides after the variable their pipeline starts
+                                ;; from, unless an earlier LINK is in the way
+                                ;; (spec §7.4).
+                                (setf left-names (if (and (null (relational-plan-joins plan))
+                                                          (relational-plan-root-name plan))
+                                                     (list (relational-plan-root-name plan))
+                                                     '())
+                                      right-names (list right-name)
+                                      pred (third step-args)))
+                               ((= (length step-args) 5)
+                                (unless (is-binder-name (third step-args))
+                                  (refuse "E_SQL_SHAPE" (format nil "the left binder of ~a must be a bare name" sname) (snode-pos (third step-args))))
+                                (unless (is-binder-name (fourth step-args))
+                                  (refuse "E_SQL_SHAPE" (format nil "the right binder of ~a must be a bare name" sname) (snode-pos (fourth step-args))))
+                                (setf left-names (list (sel::node-s (third step-args)))
+                                      right-names (list (sel::node-s (fourth step-args)))
+                                      pred (fifth step-args))))
+                             (let ((j-plan (make-join-plan
+                                            :type (if is-left :left :inner)
+                                            :source-name right-name
+                                            :source-relation right-spec
+                                            :source-table (getf right-spec :from)
+                                            ;; The SQL alias of a table the binding
+                                            ;; leaves unaliased: the five-argument
+                                            ;; form's right binder, `_2` otherwise.
+                                            ;; An alias, not a SEL name.
+                                            :source-alias (or (getf right-spec :alias)
+                                                              (if (= (length step-args) 5)
+                                                                  (first right-names)
+                                                                  "_2"))
+                                            :left-names left-names
+                                            :right-names right-names
+                                            :on-pred pred
+                                            :pos pos)))
+                               ;; One table alias per occurrence: a relation joined
+                               ;; again under an alias the statement already uses
+                               ;; (a self-join, or a chain back to an aliased
+                               ;; relation) rendered it twice, which the server
+                               ;; rejects. The program
+                               ;; stays in memory.
+                               (let ((open (cons (let ((a (relational-plan-source-alias plan)))
+                                                   (if (null a)
+                                                       (relation-alias (relational-plan-source-relation plan))
+                                                       a))
+                                                 (mapcar #'join-plan-source-alias (relational-plan-joins plan))))
+                                     (alias (join-plan-source-alias j-plan)))
+                                 (when (some (lambda (a) (and (stringp a) (stringp alias)
+                                                              (string= (sel::ascii-upcase a)
+                                                                       (sel::ascii-upcase alias))))
+                                             open)
+                                   (refuse "E_SQL_SHAPE"
+                                           (format nil "~a would be joined under the table alias ~a, which ~
 this statement already uses; bind the relation a second time under another alias"
-                                                 right-name alias)
-                                         (snode-pos right-node))))
-                             (setf (relational-plan-joins plan)
-                                   (append (relational-plan-joins plan) (list j-plan))))))))))
+                                                   right-name alias)
+                                           (snode-pos right-node))))
+                               (setf (relational-plan-joins plan)
+                                     (append (relational-plan-joins plan) (list j-plan))))))))))
 
-                ((equal sname "SELECT_COLS")
-                 (when (or (relational-plan-projections plan)
-                           (relational-plan-select-cols plan)
-                           (relational-plan-group-by plan)
-                           (relational-plan-limit plan)
-                           (relational-plan-offset plan))
-                   (setf plan (wrap-plan-as-derived-table tr plan)))
-                 (let* ((col-args (rest args))
-                        (items (if (and (= (length col-args) 1) (eq (snode-kind (first col-args)) :list))
-                                   (sel::node-items (first col-args))
-                                   col-args))
-                        (cols '()))
-                   (dolist (item items)
-                     (unless (eq (snode-kind item) :text)
-                       (refuse "E_BAD_ARG" "SELECT_COLS column names must be string literals" (snode-pos item)))
-                     (check-alias-name (sel::node-s item) (snode-pos item))
-                     (let ((rawcell (assoc (sel::ascii-upcase (sel::node-s item))
-                                           (getf (relational-plan-source-relation plan) :fields)
-                                           :test #'equal)))
-                       (when (and rawcell (getf (cdr rawcell) :raw))
-                         (refuse "E_SQL_SHAPE"
-                                 "SELECT_COLS cannot name a raw field: it is an expression, ~
-not a column of the relation, so `SELECT alias.name` would name something that is not there"
-                                 (snode-pos item))))
-                     (let* ((col (sel::node-s item))
-                            (uc (sel::ascii-upcase col))
-                            (found nil)
-                            (match-count 0))
-                       (when (getf (relational-plan-source-relation plan) :fields)
-                         (when (assoc uc (getf (relational-plan-source-relation plan) :fields) :test #'equal)
-                           (setf found t)
-                           (incf match-count)))
-                       (dolist (j (relational-plan-joins plan))
-                         (when (and (getf (join-plan-source-relation j) :fields)
-                                    (assoc uc (getf (join-plan-source-relation j) :fields) :test #'equal))
-                           (setf found t)
-                           (incf match-count)))
-                       (when (> match-count 1)
-                         (refuse "E_SQL_SHAPE" (format nil "column '~a' is ambiguous across joined tables; qualify with table alias" col) (snode-pos item)))
-                       (when (and (getf (relational-plan-source-relation plan) :fields) (not found))
-                         (refuse "E_SQL_SHAPE" (format nil "relation has no field '~a'" col) (snode-pos item)))
-                       (push col cols)))
-                   (setf (relational-plan-select-cols plan) (nreverse cols)
-                         (relational-plan-projections plan) nil)))
-
-                ((equal sname "MAP")
-                 (block map-step
-                 (when (eq (relational-plan-bucket plan) :sealed)
-                   (refuse "E_SQL_SHAPE" "a MAP over buckets must follow the BUCKET, with at most a ~
-FILTER between: SQL keeps a bucket's members only for the projection that ends the grouping" pos))
-                 (let (binder expr)
-                   (cond
-                     ((= (length args) 2)
-                      (setf binder "_" expr (second args)))
-                     ((= (length args) 3)
-                      (unless (is-binder-name (second args))
-                        (refuse "E_SQL_SHAPE" "the binder of MAP must be a bare name" (snode-pos (second args))))
-                      (setf binder (sel::node-s (second args)) expr (third args)))
-                     (t
-                      (refuse "E_ARITY" "MAP takes 2 or 3 arguments" pos)))
-                   ;; BUCKET(src, key) .> MAP(proj) is BUCKET(src, key, proj): the
-                   ;; MAP's body is evaluated once per group, so it is the
-                   ;; bucket's projection.
-                   (when (eq (relational-plan-bucket plan) :open)
-                     (setf (relational-plan-bucket plan) nil)
-                     (bucket-projection plan binder expr)
-                     (return-from map-step))
-                   ;; Whether a MAP must wrap the plan first. An ORDER BY alone
-                   ;; does not: the projection and the sort can share one
-                   ;; statement (ORDER BY may name the input's columns), and a
-                   ;; derived table is where MariaDB DROPS an ORDER BY that has
-                   ;; no LIMIT beside it -- the statement oracle's sorted rows
-                   ;; came back in table order. Everything else above the rows
-                   ;; still wraps, DISTINCT included: SELECT DISTINCT over the
-                   ;; projection is not the distinct rows projected.
+                  ((equal sname "SELECT_COLS")
                    (when (or (relational-plan-projections plan)
                              (relational-plan-select-cols plan)
                              (relational-plan-group-by plan)
-                             (relational-plan-distinct plan)
                              (relational-plan-limit plan)
                              (relational-plan-offset plan))
                      (setf plan (wrap-plan-as-derived-table tr plan)))
-                   (if (and (not (clist-p expr)) (eq (snode-kind expr) :call)
-                            (equal (sel::node-s expr) "RECORD"))
-                       (let ((projs '()))
-                         (loop for (alias . v-node) in (record-fields expr) do
-                           (push (list alias binder v-node) projs))
-                         (setf (relational-plan-projections plan) (nreverse projs)))
-                       (setf (relational-plan-projections plan) (list (list nil binder expr))))
-                   (setf (relational-plan-select-cols plan) nil))))
+                   (let* ((col-args (rest args))
+                          (items (if (and (= (length col-args) 1) (eq (snode-kind (first col-args)) :list))
+                                     (sel::node-items (first col-args))
+                                     col-args))
+                          (cols '()))
+                     (dolist (item items)
+                       (unless (eq (snode-kind item) :text)
+                         (refuse "E_BAD_ARG" "SELECT_COLS column names must be string literals" (snode-pos item)))
+                       (check-alias-name (sel::node-s item) (snode-pos item))
+                       (let ((rawcell (assoc (sel::ascii-upcase (sel::node-s item))
+                                             (getf (relational-plan-source-relation plan) :fields)
+                                             :test #'equal)))
+                         (when (and rawcell (getf (cdr rawcell) :raw))
+                           (refuse "E_SQL_SHAPE"
+                                   "SELECT_COLS cannot name a raw field: it is an expression, ~
+not a column of the relation, so `SELECT alias.name` would name something that is not there"
+                                   (snode-pos item))))
+                       (let* ((col (sel::node-s item))
+                              (uc (sel::ascii-upcase col))
+                              (found nil)
+                              (match-count 0))
+                         (when (getf (relational-plan-source-relation plan) :fields)
+                           (when (assoc uc (getf (relational-plan-source-relation plan) :fields) :test #'equal)
+                             (setf found t)
+                             (incf match-count)))
+                         (dolist (j (relational-plan-joins plan))
+                           (when (and (getf (join-plan-source-relation j) :fields)
+                                      (assoc uc (getf (join-plan-source-relation j) :fields) :test #'equal))
+                             (setf found t)
+                             (incf match-count)))
+                         (when (> match-count 1)
+                           (refuse "E_SQL_SHAPE" (format nil "column '~a' is ambiguous across joined tables; qualify with table alias" col) (snode-pos item)))
+                         (when (and (getf (relational-plan-source-relation plan) :fields) (not found))
+                           (refuse "E_SQL_SHAPE" (format nil "relation has no field '~a'" col) (snode-pos item)))
+                         (push col cols)))
+                     (setf (relational-plan-select-cols plan) (nreverse cols)
+                           (relational-plan-projections plan) nil)))
 
-                ((or (equal sname "DISTINCT") (equal sname "DEDUPE"))
-                 (when (or (relational-plan-limit plan)
-                           (relational-plan-offset plan))
-                   (setf plan (wrap-plan-as-derived-table tr plan)))
-                 ;; Field bindings describe accessible reads, not a closed
-                 ;; schema for r.*. Never deduplicate an untyped whole SQL row.
-                 (unless (or (relational-plan-projections plan)
-                             (relational-plan-select-cols plan))
-                   (refuse "E_SQL_SHAPE" "DISTINCT requires an explicit typed projection" pos))
-                 ;; DISTINCT keeps the FIRST element of each run in sorted order; SQL's `SELECT DISTINCT proj ... ORDER BY <column not in proj>` is refused by PostgreSQL (42P10) and MySQL 8 (3065) and answers with an unspecified representative row on MariaDB. A loud refusal is acceptable and a silent misordering is not, so the step stays in memory (CPP-C60).
-                 (when (relational-plan-order-by plan)
-                   (refuse "E_SQL_SHAPE" "DISTINCT after a sort keeps the first of each run in sorted order, which SELECT DISTINCT ... ORDER BY does not promise; run the DISTINCT in memory" pos))
-                 (setf (relational-plan-distinct plan) t))
+                  ((equal sname "MAP")
+                   (block map-step
+                   (when (eq (relational-plan-bucket plan) :sealed)
+                     (refuse "E_SQL_SHAPE" "a MAP over buckets must follow the BUCKET, with at most a ~
+FILTER between: SQL keeps a bucket's members only for the projection that ends the grouping" pos))
+                   (let (binder expr)
+                     (cond
+                       ((= (length args) 2)
+                        (setf binder "_" expr (second args)))
+                       (t ; 3: the manifest refused any other count at compile time
+                        (unless (is-binder-name (second args))
+                          (refuse "E_SQL_SHAPE" "the binder of MAP must be a bare name" (snode-pos (second args))))
+                        (setf binder (sel::node-s (second args)) expr (third args))))
+                     ;; BUCKET(src, key) .> MAP(proj) is BUCKET(src, key, proj): the
+                     ;; MAP's body is evaluated once per group, so it is the
+                     ;; bucket's projection.
+                     (when (eq (relational-plan-bucket plan) :open)
+                       (setf (relational-plan-bucket plan) nil)
+                       (bucket-projection tr plan binder expr)
+                       (return-from map-step))
+                     ;; Whether a MAP must wrap the plan first. An ORDER BY alone
+                     ;; does not: the projection and the sort can share one
+                     ;; statement (ORDER BY may name the input's columns), and a
+                     ;; derived table is where MariaDB DROPS an ORDER BY that has
+                     ;; no LIMIT beside it -- the statement oracle's sorted rows
+                     ;; came back in table order. Everything else above the rows
+                     ;; still wraps, DISTINCT included: SELECT DISTINCT over the
+                     ;; projection is not the distinct rows projected.
+                     (when (or (relational-plan-projections plan)
+                               (relational-plan-select-cols plan)
+                               (relational-plan-group-by plan)
+                               (relational-plan-distinct plan)
+                               (relational-plan-limit plan)
+                               (relational-plan-offset plan))
+                       (setf plan (wrap-plan-as-derived-table tr plan)))
+                     (if (and (not (clist-p expr)) (eq (snode-kind expr) :call)
+                              (equal (sel::node-s expr) "RECORD"))
+                         (let ((projs '()))
+                           (loop for (alias . v-node) in (record-fields tr expr) do
+                             (push (list alias binder v-node) projs))
+                           (setf (relational-plan-projections plan) (nreverse projs)))
+                         (setf (relational-plan-projections plan) (list (list nil binder expr))))
+                     (setf (relational-plan-select-cols plan) nil))))
 
-                ((equal sname "TAKE")
-                 (unless (= (length args) 2)
-                   (refuse "E_ARITY" "TAKE takes 2 arguments" pos))
-                 (let ((lim (eval-int-param tr (second args) "TAKE")))
-                   (setf (relational-plan-limit plan)
-                         (if (relational-plan-limit plan)
-                             (min (relational-plan-limit plan) lim)
-                             lim))))
+                  ((or (equal sname "DISTINCT") (equal sname "DEDUPE"))
+                   (when (or (relational-plan-limit plan)
+                             (relational-plan-offset plan))
+                     (setf plan (wrap-plan-as-derived-table tr plan)))
+                   ;; Field bindings describe accessible reads, not a closed
+                   ;; schema for r.*. Never deduplicate an untyped whole SQL row.
+                   (unless (or (relational-plan-projections plan)
+                               (relational-plan-select-cols plan))
+                     (refuse "E_SQL_SHAPE" "DISTINCT requires an explicit typed projection" pos))
+                   ;; DISTINCT keeps the FIRST element of each run in sorted order; SQL's `SELECT DISTINCT proj ... ORDER BY <column not in proj>` is refused by PostgreSQL (42P10) and MySQL 8 (3065) and answers with an unspecified representative row on MariaDB. A loud refusal is acceptable and a silent misordering is not, so the step stays in memory.
+                   (when (relational-plan-order-by plan)
+                     (refuse "E_SQL_SHAPE" "DISTINCT after a sort keeps the first of each run in sorted order, which SELECT DISTINCT ... ORDER BY does not promise; run the DISTINCT in memory" pos))
+                   (setf (relational-plan-distinct plan) t))
 
-                ((equal sname "DROP")
-                 (unless (= (length args) 2)
-                   (refuse "E_ARITY" "DROP takes 2 arguments" pos))
-                 (let ((off (eval-int-param tr (second args) "DROP")))
-                   ;; DROP consumes the bounded slice, not the original source.
-                   ;; Offsets merge first and the SUM is clamped to 2^63 - 1 (docs
-                   ;; 11.6): DROP(2^63-1) .> DROP(1) is the offset 2^63-1, never a
-                   ;; wrapped or nested one.
-                   (let ((skipped (if (relational-plan-limit plan)
-                                      (min off (relational-plan-limit plan)) off)))
-                     (when (relational-plan-limit plan)
-                       (decf (relational-plan-limit plan) skipped))
-                     (setf (relational-plan-offset plan)
-                           (min (+ (or (relational-plan-offset plan) 0) skipped)
-                                +max-slice-count+)))))
+                  ((equal sname "TAKE")
+                   (let ((lim (eval-int-param tr (second args) "TAKE")))
+                     (setf (relational-plan-limit plan)
+                           (if (relational-plan-limit plan)
+                               (min (relational-plan-limit plan) lim)
+                               lim))))
 
-                ((member sname '("SORT" "SORT_DESC" "SORT_BY" "TOP" "TOP_DESC" "TOP_BY") :test #'equal)
-                 ;; A sort after a LIMIT or OFFSET sorts the rows that survived
-                 ;; them, grouped or not, so those wrap; a sort over a
-                 ;; projection, SELECT_COLS or DISTINCT wraps so its key can
-                 ;; name what they produced. A sort after a sort does not wrap:
-                 ;; the sorts are stable, so the earlier one is the later one's
-                 ;; tie-breaker, and the later one's keys go FIRST in the ORDER
-                 ;; BY (review 2026-09-15 finding V).
-                 (let ((wraps (or (relational-plan-limit plan)
-                                  (relational-plan-offset plan)
-                                  (and (not (relational-plan-group-by plan))
-                                       (or (relational-plan-projections plan)
-                                           (relational-plan-select-cols plan)
-                                           (relational-plan-distinct plan))))))
-                   ;; Sorts are stable, so an earlier sort is the later one's
-                   ;; tie-break; a derived table with no LIMIT beside its ORDER BY
-                   ;; does not keep it, and its keys may not even be columns the
-                   ;; outer level can name.
-                   (when (or (and wraps (relational-plan-order-by plan)
-                                  (null (relational-plan-limit plan))
-                                  (null (relational-plan-offset plan)))
-                             (relational-plan-order-dropped plan))
-                     (refuse "E_SQL_SHAPE"
-                             "a sort over a projection of sorted rows loses the earlier sort, which is its tie-break: a derived table does not keep an ORDER BY"
-                             pos))
-                   (when wraps
-                     (setf plan (wrap-plan-as-derived-table tr plan))))
-                 (let ((before (length (relational-plan-order-by plan))))
-                   (analyze-sort-step tr step plan)
-                   (setf (relational-plan-order-by plan)
-                         (append (mapcar (lambda (ord) (append (subseq ord 0 4) (list over-groups)))
-                                         (nthcdr before (relational-plan-order-by plan)))
-                                 (subseq (relational-plan-order-by plan) 0 before)))))))))
+                  ((equal sname "DROP")
+                   (let ((off (eval-int-param tr (second args) "DROP")))
+                     ;; DROP consumes the bounded slice, not the original source.
+                     ;; Offsets merge first and the SUM is clamped to 2^63 - 1 (docs
+                     ;; 11.6): DROP(2^63-1) .> DROP(1) is the offset 2^63-1, never a
+                     ;; wrapped or nested one.
+                     (let ((skipped (if (relational-plan-limit plan)
+                                        (min off (relational-plan-limit plan)) off)))
+                       (when (relational-plan-limit plan)
+                         (decf (relational-plan-limit plan) skipped))
+                       (setf (relational-plan-offset plan)
+                             (min (+ (or (relational-plan-offset plan) 0) skipped)
+                                  +max-slice-count+)))))
+
+                  ((member sname '("SORT" "SORT_DESC" "SORT_BY" "TOP" "TOP_DESC" "TOP_BY") :test #'equal)
+                   ;; A sort after a LIMIT or OFFSET sorts the rows that survived
+                   ;; them, grouped or not, so those wrap; a sort over a
+                   ;; projection, SELECT_COLS or DISTINCT wraps so its key can
+                   ;; name what they produced. A sort after a sort does not wrap:
+                   ;; the sorts are stable, so the earlier one is the later one's
+                   ;; tie-breaker, and the later one's keys go FIRST in the ORDER
+                   ;; BY.
+                   (let ((wraps (or (relational-plan-limit plan)
+                                    (relational-plan-offset plan)
+                                    (and (not (relational-plan-group-by plan))
+                                         (or (relational-plan-projections plan)
+                                             (relational-plan-select-cols plan)
+                                             (relational-plan-distinct plan))))))
+                     ;; Sorts are stable, so an earlier sort is the later one's
+                     ;; tie-break; a derived table with no LIMIT beside its ORDER BY
+                     ;; does not keep it, and its keys may not even be columns the
+                     ;; outer level can name.
+                     (when (or (and wraps (relational-plan-order-by plan)
+                                    (null (relational-plan-limit plan))
+                                    (null (relational-plan-offset plan)))
+                               (relational-plan-order-dropped plan))
+                       (refuse "E_SQL_SHAPE"
+                               "a sort over a projection of sorted rows loses the earlier sort, which is its tie-break: a derived table does not keep an ORDER BY"
+                               pos))
+                     (when wraps
+                       (setf plan (wrap-plan-as-derived-table tr plan))))
+                   (let ((before (length (relational-plan-order-by plan))))
+                     (analyze-sort-step tr step plan)
+                     (setf (relational-plan-order-by plan)
+                           (append (mapcar (lambda (ord) (append (subseq ord 0 4) (list over-groups)))
+                                           (nthcdr before (relational-plan-order-by plan)))
+                                   (subseq (relational-plan-order-by plan) 0 before)))))))))
           ;; A derived table with no LIMIT beside its ORDER BY does not keep the order, and
           ;; this statement has no other ORDER BY: the rows would come back in no order,
           ;; where SEL's are the sorted list's. Refused at the last step (sql-translation
@@ -3559,11 +3557,10 @@ is why this is a function taking FN rather than one returning three values."
       (setf (translator-const-names tr) names
             (translator-const-root tr) root)
       ;; Stage 1 and nothing else: the translator renders the tree it is
-      ;; handed, as the other four hosts do (review 2026-09-15 finding C:
-      ;; TRANSLATE-STATEMENT alone once ran the full optimiser). The planner
+      ;; handed, as the other hosts do (TRANSLATE-STATEMENT alone once ran
+      ;; the full optimiser). The planner
       ;; is the one place that optimises before translating.
       (let* ((*subquery-counter* 0)
-             (*translating-dialect* dialect)
              (norm (normalise (sel:program-ast program) names root))
              (plan (analyze-pipeline tr norm)))
         (funcall fn tr norm plan)))))

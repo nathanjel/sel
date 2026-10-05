@@ -38,26 +38,30 @@
 (defconstant +shape-cache-max-keys+ 256)
 (defconstant +shape-cache-max-chars+ 16384)
 
+(defconstant +index-cache-size+ 10000
+  "List positions 1..this have their key string (and, in aggregate.lisp, their
+text value) made once and shared.")
+
 (defvar *index-string-cache*
-  (let ((vec (make-array 10001 :initial-element nil)))
-    (loop for i from 1 to 10000
+  (let ((vec (make-array (1+ +index-cache-size+) :initial-element nil)))
+    (loop for i from 1 to +index-cache-size+
           do (setf (aref vec i) (format nil "~d" i)))
     vec)
   "The canonical key strings \"1\" .. \"10000\" of a list's positions, made once: a
 `(format nil \"~d\" i)` per element was about 133 ns each, charged on every list
-key, hash and flatten (LISP-P20).")
+key, hash and flatten.")
 
 (declaim (inline format-index-string))
 (defun format-index-string (n)
   (declare (optimize (speed 3) (safety 1)))
   (declare (type fixnum n))
-  (if (and (<= 1 n) (<= n 10000))
+  (if (and (<= 1 n) (<= n +index-cache-size+))
       (svref (the simple-vector *index-string-cache*) n)
       (format nil "~d" n)))
 
 (defun keys-distinct-p (keys)
   "True when no two of the strings KEYS are equal. The quadratic REMOVE-DUPLICATES
-this replaces took 7.7 s over 16,000 RECORD keys (LISP-P14); a few keys are
+this replaces took 7.7 s over 16,000 RECORD keys; a few keys are
 compared pairwise, many through a hash table."
   (if (< (length keys) 24)
       (loop for tail on keys never (member (car tail) (cdr tail) :test #'string=))
@@ -108,8 +112,8 @@ compared pairwise, many through a hash table."
               formatted)
             nil))))
 
-(defun %make-value (kind scalar children &optional is-list shape storage dec-val)
-  (%make-value-raw kind scalar children (last children) (length children) nil is-list shape storage dec-val))
+(defun %make-value (kind scalar children &optional is-list)
+  (%make-value-raw kind scalar children (last children) (length children) nil is-list nil nil nil))
 
 (defun %make-shaped-value (shape storage)
   (%make-value-raw :none nil nil nil (record-shape-size shape) nil nil shape storage nil))
@@ -131,7 +135,7 @@ compared pairwise, many through a hash table."
         ;; storage position and is shared by every value of that shape; using
         ;; it here answered %value-cell with an integer, and adding a key to a
         ;; 16-field record wrote its cell into the shared map, so the next record
-        ;; built from those 16 keys inherited a key it never had (LISP-C2).
+        ;; built from those 16 keys inherited a key it never had.
         (when (>= (value-count v) +index-threshold+)
           (%build-index v))))))
 
@@ -154,9 +158,6 @@ compared pairwise, many through a hash table."
   (ensure-shaped-children v)
   (ensure-list-children v)
   (value-children-internal v))
-
-(defun (setf value-children) (val v)
-  (setf (value-children-internal v) val))
 
 (defun %value-with-children (kind scalar entries &optional is-list)
   "Build a value from an ordered list of (key . value) conses, wiring up the
@@ -186,13 +187,12 @@ tail, count and index that keep lookup and append O(1)."
 (defun make-none () (%make-value :none nil nil nil))
 (defun make-null () (%make-value :none nil nil nil))
 
-;;; The host boundary (spec §8; review 2026-09-25 HOST-02..06): a constructor
+;;; The host boundary (spec §8): a constructor
 ;;; checks what it is given and keeps a COPY -- SBCL strings and octet vectors
 ;;; are mutable, and a caller that changed one afterwards changed the value (a
 ;;; mutated key left the record unable to find it under either spelling).
 ;;; A constructor called with something it does not take (spec §8): E_BAD_ARG,
-;;; a SEL-ERROR like every other boundary failure, never a CL TYPE-ERROR
-;;; (review 2026-09-28 HOST-20).
+;;; a SEL-ERROR like every other boundary failure, never a CL TYPE-ERROR.
 (defun bad-arg (control &rest args)
   (fail "E_BAD_ARG" (apply #'format nil control args)))
 
@@ -221,7 +221,7 @@ tail, count and index that keep lookup and append O(1)."
 (defun make-num (d)
   "D is a DEC or a decimal string. A string is canonicalised: 007 becomes 7.
 A DEC is checked like one: well formed, within the digit caps, and canonical --
-a negative zero loses its sign (spec §8; review 2026-09-28 HOST-13, HOST-14)."
+a negative zero loses its sign (spec §8)."
   (typecase d
     (dec (unless (and (>= (dec-digits d) 0) (>= (dec-scale d) 0))
            (bad-arg "not a decimal: the digits and the scale must be non-negative"))
@@ -265,7 +265,7 @@ kept in step with the limit by hand.")
 
 ;;; Fast list value backed by simple-vector.
 ;;; A list keeps no structure of the caller's: a vector is copied as a list is
-;;; by COERCE (spec §8; review 2026-09-28 HOST-16).
+;;; by COERCE (spec §8).
 (defun make-list-value (values)
   (unless (typep values 'sequence) (bad-arg "a list is built from a sequence of values, not ~(~a~)" (type-of values)))
   (let ((vec (if (typep values 'simple-vector)
@@ -296,7 +296,7 @@ kept in step with the limit by hand.")
     ((and (eq (value-kind v) :text) (zerop (value-size v)))
      (let ((s (value-scalar v)))
        (or (zerop (length s))
-           (every (lambda (c) (member c '(#\Space #\Tab #\Return #\Newline))) s))))
+           (every #'ascii-space-p s))))
     (t nil)))
 
 (defun value-text-p (v)
@@ -310,6 +310,14 @@ kept in step with the limit by hand.")
 
 (defun value-size (v)
   (value-count v))
+
+(declaim (inline value-element-vector))
+(defun value-element-vector (v)
+  "The simple-vector holding V's children in order when V keeps them in one --
+a shaped record (in its shape's key order) or a stored list -- else NIL, and
+the children are V's alist. Read only: the vector is V's own storage."
+  (and (or (value-shape v) (value-is-list v))
+       (value-storage v)))
 
 (defun value-has (v key)
   (cond
@@ -337,6 +345,12 @@ kept in step with the limit by hand.")
          (cdr cell))))))
 
 (defun value-keys (v)
+  "V's keys in order, as a fresh list of fresh strings the caller may keep or
+change. (%VALUE-KEYS is the library's zero-copy reading, whose strings are
+shared with V's shape and with every list.)"
+  (mapcar #'copy-seq (%value-keys v)))
+
+(defun %value-keys (v)
   (cond
     ((value-shape v)
      (record-shape-keys (value-shape v)))
@@ -347,26 +361,26 @@ kept in step with the limit by hand.")
      (mapcar #'car (value-children v)))))
 
 (defun value-values (v)
-  (cond
-    ((value-shape v)
-     (let ((storage (value-storage v)))
-       (loop for i from 0 below (length storage)
-             collect (svref storage i))))
-    ((and (value-is-list v) (value-storage v))
-     (let ((storage (value-storage v)))
-       (loop for i from 0 below (length storage)
-             collect (svref storage i))))
-    (t
-     (mapcar #'cdr (value-children v)))))
+  (let ((vec (value-element-vector v)))
+    (if vec
+        (coerce vec 'list)
+        (mapcar #'cdr (value-children v)))))
 
 (defun value-entries (v)
+  "V's children as a fresh alist of (key . child): the conses and key strings
+are the caller's; each child is V's own value, as VALUE-GET returns it."
+  (mapcar (lambda (cell) (cons (copy-seq (car cell)) (cdr cell)))
+          (%value-entries v)))
+
+(defun %value-entries (v)
+  "The zero-copy VALUE-ENTRIES: V's own alist, which the library must not change."
   (ensure-shaped-children v)
   (ensure-list-children v)
   (value-children-internal v))
 
 (defun value-set (v key child)
   "Re-assigning an existing key keeps its original position."
-  ;; A key is text too (spec §8; review 2026-09-25 HOST-05).
+  ;; A key is text too (spec §8).
   (unless (stringp key) (bad-arg "a key must be a string, not ~(~a~)" (type-of key)))
   (when (and (find-if (lambda (c) (> (char-code c) 127)) key) (not (valid-utf8-string-p key)))
     (fail "E_UTF8" "key carries an unpaired surrogate"))
@@ -393,7 +407,7 @@ kept in step with the limit by hand.")
        (if cell
            (setf (cdr cell) child)
            ;; A new key is copied: an SBCL string is mutable, and the caller's
-           ;; would rename the key under the value (review 2026-09-28 HOST-15).
+           ;; would rename the key under the value.
            (let* ((key (copy-seq key))
                   (new (list (cons key child))))
              (if (value-tail v)
@@ -423,14 +437,14 @@ kept in step with the limit by hand.")
                    (fail "E_NULL" "value is NULL" at))
                  (when (zerop (value-size cur))
                    (fail "E_NO_SCALAR" "value has no scalar and no children" at))
-                 (let ((first-val (cond
-                                    ((value-shape cur)
-                                     (svref (value-storage cur) 0))
-                                    ((and (value-is-list cur) (value-storage cur))
-                                     (svref (value-storage cur) 0))
-                                    (t
-                                     (cdr (first (value-children-internal cur)))))))
+                 (let ((first-val (let ((vec (value-element-vector cur)))
+                                    (if vec
+                                        (svref vec 0)
+                                        (cdr (first (value-children-internal cur)))))))
                    (setf cur first-val))
+                 ;; Not reachable from SEL (values are capped at depth 200), but a
+                 ;; host can chain VALUE-SETs deeper than that, so the walk stays
+                 ;; bounded: a 1,500-deep first-child chain is E_DEPTH here.
                  (incf guard)
                  (when (> guard 1000)
                    (fail "E_DEPTH" "scalar context nested too deeply" at)))
@@ -506,7 +520,7 @@ kept in step with the limit by hand.")
           ;; The octets are shared, as a TEXT scalar's string is: nothing in a program
           ;; writes into a built BIN (every builtin fills a fresh vector), and the
           ;; boundary copies on the way in (MAKE-BIN) and out (TO-NATIVE). Copying
-          ;; 500 KB per assignment cost 0.24 ms for nothing (LISP-P27).
+          ;; 500 KB per assignment cost 0.24 ms for nothing.
           (%make-value-raw :bin (value-%scalar v) nil nil 0 nil nil nil nil nil))
          (:bool
           (%make-value-raw :bool (value-%scalar v) nil nil 0 nil nil nil nil nil))
@@ -546,18 +560,12 @@ private to the caller and need only be checked against the cap (§6.4)."
   (declare (type fixnum depth))
   (when (> depth +max-depth+)
     (fail "E_DEPTH" "value nested too deeply" pos))
-  (cond
-    ((value-shape v)
-     (let ((storage (value-storage v)))
-       (loop for child across (the simple-vector storage)
-             do (value-depth-check child (1+ depth) pos))))
-    ((and (value-is-list v) (value-storage v))
-     (let ((storage (value-storage v)))
-       (loop for child across (the simple-vector storage)
-             do (value-depth-check child (1+ depth) pos))))
-    (t
-     (dolist (cell (value-children-internal v))
-       (value-depth-check (cdr cell) (1+ depth) pos)))))
+  (let ((vec (value-element-vector v)))
+    (if vec
+        (loop for child across (the simple-vector vec)
+              do (value-depth-check child (1+ depth) pos))
+        (dolist (cell (value-children-internal v))
+          (value-depth-check (cdr cell) (1+ depth) pos)))))
 
 ;;; --- structural equality (§5.4) --------------------------------------------
 
@@ -609,7 +617,7 @@ same keys in the same order, pairwise EQL."
 (defun value-hash (v &optional (depth 1))
   "Computes a fast structural hash for a SEL value."
   ;; A value nested past the cap cannot be hashed any more than dumped: answering
-  ;; 0 let DEDUPE pass one it could not compare (review 2026-09-25 HOST-07).
+  ;; 0 let DEDUPE pass one it could not compare.
   (when (> depth +max-depth+)
     (fail "E_DEPTH" "value nested too deeply"))
   (let ((h (sxhash (value-kind v))))
@@ -624,7 +632,7 @@ same keys in the same order, pairwise EQL."
        (let ((b (value-scalar v)))
          ;; Every octet goes into the hash. Hashing the length alone put every
          ;; BIN of one size in one bucket, so DEDUPE over N distinct BINs was
-         ;; quadratic (LISP-P7: 8,000 four-byte BINs took 5.8 s). FNV-1a, 32 bit.
+         ;; quadratic (8,000 four-byte BINs took 5.8 s). FNV-1a, 32 bit.
          (when (typep b 'vector)
            (let ((x 2166136261))
              (declare (type (unsigned-byte 32) x))
@@ -735,7 +743,7 @@ exact decimal form, and SEL has no floating point. Pass a string instead."
     (value x)
     ((member t) (make-bool t))
     ;; NIL is NULL (and the empty list), so FALSE needs a spelling of its own
-    ;; (spec §8; review 2026-09-25 HOST-09).
+    ;; (spec §8).
     ((member :false) (make-bool nil))
     (string (make-text x))
     (integer (make-int x))
@@ -780,8 +788,8 @@ value has no children, otherwise an alist, with the scalar under \"_\"."
 (defun to-native-at (v depth)
   (when (> depth +max-depth+)
     (fail "E_DEPTH" "value nested too deeply" nil))
-  ;; What it returns is the host's own: strings and octet vectors are copies
-  ;; (review 2026-09-25 HOST-03), and FALSE is :false, not the NIL that is NULL.
+  ;; What it returns is the host's own: strings and octet vectors are copies,
+  ;; and FALSE is :false, not the NIL that is NULL.
   (let ((scalar (case (value-kind v)
                   ((:text :bin) (copy-seq (value-scalar v)))
                   (:bool (if (value-scalar v) t :false))
@@ -794,7 +802,7 @@ value has no children, otherwise an alist, with the scalar under \"_\"."
                                  (keys (record-shape-keys shape))
                                  (storage (value-storage v)))
                             ;; Copies: the shape's key strings are shared by every
-                            ;; value of that shape (review 2026-09-28 HOST-15).
+                            ;; value of that shape.
                             (loop for k in keys
                                   for i from 0
                                   collect (cons (copy-seq k) (to-native-at (svref storage i) (1+ depth))))))
@@ -802,14 +810,14 @@ value has no children, otherwise an alist, with the scalar under \"_\"."
                           (let ((storage (value-storage v))
                                 (n (length (value-storage v))))
                             (loop for i from 1 to n
-                                  collect (cons (format-index-string i) (to-native-at (svref storage (1- i)) (1+ depth))))))
+                                  collect (cons (copy-seq (format-index-string i)) (to-native-at (svref storage (1- i)) (1+ depth))))))
                          (t
                           (loop for (k . child) in (value-children v)
                                 collect (cons (copy-seq k) (to-native-at child (1+ depth))))))))
           (cond
             ((and (null scalar) (not (eq (value-kind v) :bool))) entries)
             ;; A value's own scalar travels under "_"; with a child of that name
-            ;; too, one of them would be lost (review 2026-09-25 HOST-01).
+            ;; too, one of them would be lost.
             ((assoc "_" entries :test #'string=)
              (fail "E_BAD_ARG" "a value with both a scalar and a child named \"_\" has no native form"))
             (t (cons (cons "_" scalar) entries)))))))

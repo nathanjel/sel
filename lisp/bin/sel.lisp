@@ -1,21 +1,17 @@
-;;;; SEL command line: evaluate an expression, a file, or start a REPL.
+;;;; SEL command line: evaluate an expression, a file, or start a REPL. The
+;;;; interface is the one every host's `sel` has (docs/usage/repl.md):
 ;;;;
 ;;;;   sel -e 'EXPR'          evaluate and print
 ;;;;   sel file.sel           evaluate a file
-;;;;   sel --deps -e 'EXPR'   print the variables the expression reads
-;;;;   sel --functions        list the function table
+;;;;   sel --deps -e 'EXPR'   print the variables the expression reads, one per line
+;;;;   sel --help, -h         usage;  sel --version  the package version
 ;;;;   sel                    REPL, keeping one context across lines
+;;;;   sel --functions        (this host only) list the function table
+;;;;
+;;;; A misused command line exits 2 with "sel: ..." on stderr; a file that cannot
+;;;; be read exits 1 with "sel: cannot read PATH"; a SEL error exits 1.
 
 (in-package #:sel-cli)
-
-(defun show (v)
-  (if (zerop (sel:value-size v))
-      (case (sel:value-kind v)
-        (:text (sel::value-scalar v))
-        (:bool (sel:value-dump v))
-        (:bin (concatenate 'string "bin:" (subseq (sel:value-dump v) 1)))
-        (t (sel:value-dump v)))
-      (sel:value-dump v)))
 
 (defun report (e)
   (format *error-output* "~a at line ~d column ~d: ~a~%"
@@ -84,56 +80,106 @@ not UTF-8 is still openable by SBCL's own (utf-8 with replacement) path handling
   (finish-output *error-output*)
   (sb-ext:exit :code 2 :abort t))
 
+(defun cannot-read (path)
+  "A file that cannot be read -- missing, unreadable, or a directory: status 1."
+  (format *error-output* "sel: cannot read ~a~%" path)
+  (finish-output *error-output*)
+  (sb-ext:exit :code 1 :abort t))
+
+(defparameter +usage+
+  "usage: sel -e EXPR       evaluate EXPR and print the result
+       sel FILE          evaluate the program in FILE
+       sel               read-eval-print loop on standard input
+options:
+       --deps            with -e or FILE: print the variables it reads, one per line
+       --functions       list the function table
+       -h, --help        this text
+       --version         the package version
+")
+
+(defun package-version ()
+  (asdf:component-version (asdf:find-system "sel-lang")))
+
+(defun read-source-file (path)
+  "The octets of PATH, or exit through CANNOT-READ. A directory opens on some
+systems and reads as nothing; it is refused rather than run as an empty program."
+  (let ((probe (ignore-errors (probe-file path))))
+    (when (or (null probe) (null (pathname-name probe)) (uiop:directory-exists-p path))
+      (cannot-read path)))
+  (handler-case (read-file-octets path)
+    (file-error () (cannot-read path))
+    (stream-error () (cannot-read path))))
+
+(defun stdin-tty-p ()
+  (= 1 (sb-unix:unix-isatty 0)))
+
+(defun parse-command-line (args)
+  "(values expr-octets file-path want-deps) from the argument octets, exiting on
+--help, --version, --functions and on misuse."
+  (let ((expr nil) (file nil) (deps nil))
+    (loop while args
+          do (let* ((arg (pop args))
+                    (flag (octets-ascii arg)))
+               (cond
+                 ((member flag '("-h" "--help") :test #'equal)
+                  (write-string +usage+) (finish-output) (sb-ext:exit :code 0))
+                 ((equal flag "--version")
+                  (format t "sel ~a~%" (package-version)) (finish-output) (sb-ext:exit :code 0))
+                 ((equal flag "--functions")
+                  (format t "~{~a~%~}" (sel:function-names)) (finish-output) (sb-ext:exit :code 0))
+                 ((equal flag "--deps") (setf deps t))
+                 ((equal flag "-e")
+                  (when (null args) (usage-error "-e needs an expression"))
+                  ;; After a file (or a first -e) the expression is the
+                  ;; second operand, and is named as the extra argument.
+                  (when (or expr file) (usage-error "unexpected argument ~a" (octets-path (first args))))
+                  (setf expr (pop args)))
+                 ((and flag (> (length flag) 1) (char= (char flag 0) #\-))
+                  (usage-error "unknown option ~a" flag))
+                 ((or expr file)
+                  (usage-error "unexpected argument ~a" (octets-path arg)))
+                 (t (setf file (octets-path arg))))))
+    (values expr file deps)))
+
+(defun repl ()
+  "One context for the whole session, so assignments persist. Read as octets and
+decoded per line, so an invalid byte is E_UTF8 at its position rather than a
+stream-decoding error. The prompt is written only to a terminal; on a pipe the
+output is the results alone. A line of nothing but SEL whitespace (space, TAB,
+CR, LF) is skipped; anything else, an NBSP-only line included, is evaluated."
+  (let ((root (sel:make-none))
+        (prompt (stdin-tty-p))
+        (in (sb-sys:make-fd-stream 0 :input t :element-type '(unsigned-byte 8)
+                                     :buffering :full)))
+    (loop
+      (when prompt (format t "sel> ") (finish-output))
+      (let ((line (read-octet-line in)))
+        (when (null line)
+          (when prompt (format t "~%"))
+          (return))
+        (handler-case
+            (let ((text (source-text line)))
+              (when (plusp (length (trim-ws text)))
+                (format t "~a~%" (render (sel:run (sel:compile-source text) root)))
+                (finish-output)))
+          (sel:sel-error (e) (report e)))))))
+
 (defun main-1 ()
-  (let* ((all (mapcar #'argument-octets (script-args)))
-         (want-deps (find "--deps" all :key #'octets-ascii :test #'equal))
-         (args (remove "--deps" all :key #'octets-ascii :test #'equal)))
-
-    (let ((flag (and (first args) (octets-ascii (first args)))))
-      (when (and (equal flag "-e") (null (second args)))
-        (usage-error "-e needs an expression"))
-      (when (and flag (> (length flag) 1) (char= (char flag 0) #\-)
-                 (not (member flag '("-e" "--functions") :test #'string=)))
-        (usage-error "unknown option ~a" flag)))
-
-    (when (equal (and (first args) (octets-ascii (first args))) "--functions")
-      (format t "~{~a~%~}" (sel:function-names))
-      (sb-ext:exit :code 0))
-
-    (let ((source (cond ((and (equal (and (first args) (octets-ascii (first args))) "-e")
-                              (second args))
-                         (second args))
-                        ((first args)
-                         (handler-case (read-file-octets (octets-path (first args)))
-                           (file-error ()
-                             (usage-error "cannot read ~a" (octets-path (first args))))
-                           (stream-error ()
-                             (usage-error "cannot read ~a" (octets-path (first args))))))
+  (multiple-value-bind (expr file want-deps)
+      (parse-command-line (mapcar #'argument-octets (script-args)))
+    (let ((source (cond (expr expr)
+                        (file (read-source-file file))
                         (t nil))))
       (if source
           (handler-case
               (let ((program (sel:compile-source (source-text source))))
                 (if want-deps
                     (format t "~{~a~%~}" (sel:dependencies program))
-                    (format t "~a~%" (show (sel:run program)))))
-            (sel:sel-error (e) (report e) (sb-ext:exit :code 1)))
-          ;; REPL: one context for the whole session, so assignments persist.
-          ;; Read as octets and decoded per line, so an invalid byte is E_UTF8 at its
-          ;; position rather than a stream-decoding error.
-          (let ((root (sel:make-none))
-                (in (sb-sys:make-fd-stream 0 :input t :element-type '(unsigned-byte 8)
-                                             :buffering :full)))
-            (loop
-              (format t "sel> ")
-              (finish-output)
-              (let ((line (read-octet-line in)))
-                (when (null line) (format t "~%") (return))
-                (handler-case
-                    (let ((text (source-text line)))
-                      (when (plusp (length (trim-ws text)))
-                        (format t "~a~%" (show (sel:run (sel:compile-source text) root)))))
-                  (sel:sel-error (e) (report e))))))))
-    (sb-ext:exit :code 0)))
+                    (format t "~a~%" (render (sel:run program)))))
+            (sel:sel-error (e) (report e) (finish-output) (sb-ext:exit :code 1)))
+          (repl))))
+  (finish-output)
+  (sb-ext:exit :code 0))
 
 (defun main ()
   ;; A reader that goes away (`sel --functions | head`) is not an error of ours.

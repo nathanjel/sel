@@ -12,32 +12,6 @@
 (defpackage #:sel-sqlfuzz (:use #:common-lisp #:sel.sql) (:export #:main))
 (in-package #:sel-sqlfuzz)
 
-(defun read-corpus (text)
-  "Records start at a `### ` line. Split on #\\Newline and nothing else: a
-splitlines-style break would also cut on other separators the corpus contains
-deliberately."
-  ;; STARTED is a separate flag rather than a non-NIL CUR: '() IS NIL, so a
-  ;; freshly-opened record is indistinguishable from "no record yet" and every
-  ;; line would be dropped.
-  (let ((records '()) (cur '()) (started nil))
-    (dolist (line (sel-cli:split-lines text))
-      (if (sel-cli:starts-with "### " line)
-          (progn (when started (push (nreverse cur) records))
-                 (setf cur '() started t))
-          (when started (push line cur))))
-    (when started (push (nreverse cur) records))
-    (mapcar (lambda (lines)
-              (let ((joined (format nil "~{~a~^~%~}" lines)))
-                (if (and (plusp (length joined))
-                         (char= (char joined (1- (length joined))) #\Newline))
-                    (subseq joined 0 (1- (length joined)))
-                    joined)))
-            (nreverse records))))
-
-(defun escape-newlines (s)
-  (with-output-to-string (o)
-    (loop for c across s do (if (char= c #\Newline) (write-string "\\n" o) (write-char c o)))))
-
 ;; The relations the corpus's pipelines read (tools/gen-programs.mjs --sql), the
 ;; same in every host's runner: two tables, a NUM join key, a TEXT field whose
 ;; name both sides share.
@@ -66,32 +40,35 @@ deliberately."
 
 (defun main ()
   (let* ((args (sel-cli:script-args))
-         (path (first args))
+         (path (or (first args)
+                   (progn (format *error-output* "usage: sqlfuzz corpus.selc [dialect] [all|statement]~%")
+                          (sb-ext:exit :code 2))))
          (dialect (or (second args) "mariadb"))
          ;; `statement`: only translate-statement's inline SQL; see js/bin/sqlfuzz.mjs.
          (mode (or (third args) "all"))
-         (corpus (read-corpus (sel-cli:read-text-file path))))
+         (corpus (sel-cli:read-corpus (sel-cli:read-file-or-exit path))))
+    (unless corpus (sel-cli:no-cases "no program ran: ~a holds no `### ` record" path))
     (dolist (src corpus)
       (write-string
-       (escape-newlines
+       (sel-cli:escape-newlines
         (handler-case
-            (let ((program (sel:compile-source src)))
+            (let ((program (sel:compile-source src))
+                  (bindings (fuzz-bindings)))
               ;; Three renderings, because comparing only the inline one once
               ;; let a mutation that bound a numeric literal as a parameter
               ;; walk straight through this lane.
-              (let ((bindings (fuzz-bindings)))
-                (if (string= mode "statement")
-                    (attempt (lambda () (as-statement (translate-statement program dialect bindings))))
-                (format nil "~a || ~a || ~a"
-                        (attempt (lambda () (render (translate program dialect bindings))))
-                        (attempt (lambda () (render (translate-statement program dialect bindings))))
-                        (attempt (lambda ()
-                                   (let* ((plan (plan-hybrid program dialect bindings))
-                                          (kind (cond ((hybrid-plan-pure-sql-p plan) "pure_sql")
-                                                      ((hybrid-plan-pure-memory-p plan) "pure_memory")
-                                                      (t "hybrid")))
-                                          (frag (hybrid-plan-sql-statement plan)))
-                                     (if frag (format nil "~a ~a" kind (as-statement frag :params)) kind))))))))
+              (if (string= mode "statement")
+                  (attempt (lambda () (as-statement (translate-statement program dialect bindings))))
+                  (format nil "~a || ~a || ~a"
+                          (attempt (lambda () (render (translate program dialect bindings))))
+                          (attempt (lambda () (render (translate-statement program dialect bindings))))
+                          (attempt (lambda ()
+                                     (let* ((plan (plan-hybrid program dialect bindings))
+                                            (kind (cond ((hybrid-plan-pure-sql-p plan) "pure_sql")
+                                                        ((hybrid-plan-pure-memory-p plan) "pure_memory")
+                                                        (t "hybrid")))
+                                            (frag (hybrid-plan-sql-statement plan)))
+                                       (if frag (format nil "~a ~a" kind (as-statement frag :params)) kind)))))))
           (sel:sel-error () "-")
           (error (e) (format nil "!HOST ~a" (type-of e))))))
       (terpri))

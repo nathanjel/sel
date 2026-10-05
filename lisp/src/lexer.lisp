@@ -28,12 +28,9 @@
   (value "" :type string)
   (pos nil))
 
-(defun sel-digit-p (c) (char<= #\0 c #\9))
 (defun sel-alpha-p (c)
   (or (char<= #\A c #\Z) (char<= #\a c #\z) (char= c #\_)))
-(defun sel-ident-p (c) (or (sel-alpha-p c) (sel-digit-p c)))
-(defun sel-space-p (c)
-  (or (char= c #\Space) (char= c #\Tab) (char= c #\Return) (char= c #\Newline)))
+(defun sel-ident-p (c) (or (sel-alpha-p c) (ascii-digit-p c)))
 
 (defstruct (lexer (:constructor %make-lexer))
   (chars "" :type string)
@@ -138,22 +135,22 @@
     (loop while (< i to)
           do (let ((c (char chars i)))
                (cond
-                 ((sel-space-p c) (incf i))
+                 ((ascii-space-p c) (incf i))
 
                  ((char= c #\#)
                   (loop while (and (< i to) (char/= (char chars i) #\Newline)) do (incf i)))
 
-                 ((sel-digit-p c)
+                 ((ascii-digit-p c)
                   (let ((j i)
                         (pos (lexer-pos-at lx i)))
-                    (loop while (and (< j to) (sel-digit-p (char chars j))) do (incf j))
+                    (loop while (and (< j to) (ascii-digit-p (char chars j))) do (incf j))
                     ;; Only consume the dot when a digit follows, so `1.` is not
                     ;; a number.
                     (when (and (< (1+ j) to)
                                (char= (char chars j) #\.)
-                               (sel-digit-p (char chars (1+ j))))
+                               (ascii-digit-p (char chars (1+ j))))
                       (incf j)
-                      (loop while (and (< j to) (sel-digit-p (char chars j))) do (incf j)))
+                      (loop while (and (< j to) (ascii-digit-p (char chars j))) do (incf j)))
                     (emit lx :num (lexer-slice lx i j) pos)
                     (setf i j)))
 
@@ -222,12 +219,6 @@
             (push (list :range from to bal) stack))))
     stack))
 
-(defun ascii-upcase (s)
-  (map 'string (lambda (c) (if (char<= #\a c #\z)
-                               (code-char (- (char-code c) 32))
-                               c))
-       s))
-
 (defparameter +operators-by-first-char+
   (let ((table (make-array 128 :initial-element nil)))
     ;; The candidates for each first character, in +OPERATORS+ order: longest
@@ -236,7 +227,7 @@
     (dolist (op (reverse +operators+))
       (push op (svref table (char-code (char op 0)))))
     table)
-  "+OPERATORS+ indexed by the first character of each operator (LISP-P22): testing
+  "+OPERATORS+ indexed by the first character of each operator: testing
 33 strings for every operator token cost more than the rest of lexing it.")
 
 (defun match-operator (lx i to)
@@ -329,7 +320,7 @@
              (let ((cp (parse-integer h :radix 16)))
                (when (or (> cp #x10ffff) (<= #xd800 cp #xdfff))
                  (fail "E_RANGE"
-                       (format nil "code point U+~a is not encodable" (string-upcase h))
+                       (format nil "code point U+~a is not encodable" (ascii-upcase h))
                        pos))
                (values (string (code-char cp)) (1+ j))))))
         (t (fail "E_ESCAPE" (format nil "unknown escape \\~a" e) pos))))))

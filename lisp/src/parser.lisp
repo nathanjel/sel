@@ -1,7 +1,7 @@
 ;;;; Precedence climbing. The sixteen levels of spec/SPEC.md §5 are the table
 ;;;; below rather than sixteen functions, so adding an operator is adding a row.
-;;;; python/sel/parser.py is the reference implementation of this shape and its
-;;;; module docstring is the rationale; docs/contributing.md, "Adding an operator",
+;;;; python/sel/parser.py was the pilot of this shape (no host is the reference:
+;;;; spec/ and conformance/ are) and its module docstring is the rationale; docs/contributing.md, "Adding an operator",
 ;;;; step 5, records what every host had to get right, each item of which
 ;;;; produces a valid parse of the WRONG TREE when it is wrong.
 ;;;;
@@ -13,7 +13,7 @@
 
 
 (defstruct (node (:constructor make-node (kind pos)))
-  ;; :num :text :bool :var :index :seq :list :un :bin :assign :call
+  ;; :num :text :bool :null :var :index :seq :list :un :bin :assign :call
   (kind :num :type keyword)
   (pos nil)
   (s "" :type string)      ; num/text literal, var name, or operator
@@ -36,13 +36,30 @@
   (keys-unobserved nil)
   ;; A :bin node's operator as a keyword, filled on first evaluation (EVAL's
   ;; BINARY-OP-CODE) so the evaluator dispatches with CASE instead of a chain of
-  ;; STRING= on every evaluation (LISP-P3). Never copied: a copy re-derives it.
-  (opc nil))
+  ;; STRING= on every evaluation. Never copied: a copy re-derives it.
+  (opc nil)
+  ;; On a :var node the hybrid planner builds: this read is of the variable's
+  ;; BINDING (the relation, or the rows a SQL prefix returned), even where a
+  ;; leading helper assignment has the same name -- `ORDERS = ORDERS .> DROP(2)`
+  ;; unwound into the pipeline. Stage 1 never inlines a helper into it, and it
+  ;; does not make the planner carry that helper. The evaluator ignores it.
+  (binding-read nil))
 
-;;; The operator families, named once for the PARSER. The precedence table below
-;;; is BUILT from these rather than repeating them, and EVAL-BINARY asks
-;;; +compare-ops+ whether an operator is a numeric comparison -- so the parser and
-;;; the evaluator cannot disagree about what a comparison is.
+(declaim (inline shipped-call-p))
+(defun shipped-call-p (node)
+  "Whether the call NODE names a function the library ships -- the one answer to
+\"may this call do something other than return a value?\" (an application's
+function may write into its argument, or anything else). Read from the spec the
+node was compiled with, so it costs no table lookup."
+  (let ((spec (node-spec node)))
+    (and spec (spec-shipped spec))))
+
+;;; The operator families, named once for the PARSER: the precedence table below
+;;; is BUILT from these rather than repeating them. +compare-ops+ holds both the
+;;; numeric and the `$` text comparisons, all at one binding power. The
+;;; evaluator does not read these lists; it dispatches on the keyword
+;;; BINARY-OP-CODE (eval.lisp) gives each operator, cached per node by
+;;; NODE-OP-CODE.
 (defparameter +assign-ops+ '("=" "+=" "-=" "*=" "/=" "%=" "&="))
 (defparameter +compare-ops+
   '("==" "!=" "<" "<=" ">" ">=" "$==" "$!=" "$<" "$<=" "$>" "$>="))
@@ -145,6 +162,13 @@ operand in ARGS. Every refusal reports the name token."
             (node-record-shape n) (prepare-record-shape n))
       n)))
 
+(defun regex-flag-index (name)
+  "The argument index of a regex builtin's flags -- its pattern is argument 0
+-- or NIL when NAME takes no regex. The one list of them: the compile-time
+pattern check here, the evaluator's builtins and the SQL translator read it."
+  (cond ((member name '("RMATCH" "RFIND" "RGROUPS") :test #'string=) 2)
+        ((string= name "RREPLACE") 3)))
+
 (defun check-literal-regex-pattern (spec args)
   "A regex call whose pattern is a text literal is checked when the program is
 compiled (SPEC 7.8), not when the call happens to run: `IF(FALSE, RMATCH('(?=a)',
@@ -152,15 +176,15 @@ s), 1)` is refused, so a rule's validity never depends on which branch its data
 takes. A literal flags argument is checked with it; any other flags argument is
 left to the run."
   (let ((name (spec-name spec)))
-    (when (member name '("RMATCH" "RFIND" "RREPLACE" "RGROUPS") :test #'string=)
-      (let* ((flag-index (if (string= name "RREPLACE") 3 2))
-             (pattern (first args))
+    (let ((flag-index (regex-flag-index name)))
+     (when flag-index
+      (let* ((pattern (first args))
              (flags (nth flag-index args)))
         (when (and pattern (eq (node-kind pattern) :text))
           (funcall 'regex-literal-check (node-s pattern)
                    (and flags (eq (node-kind flags) :text) (node-s flags))
                    (node-pos pattern)
-                   (if flags (node-pos flags) (node-pos pattern))))))))
+                   (if flags (node-pos flags) (node-pos pattern)))))))))
 
 (defun arity-text (spec)
   (let ((plural (if (= (spec-min spec) 1) "" "s")))
@@ -313,15 +337,14 @@ left to the run."
 ;;; Each is accepted only where its own binding power reaches: NOT at 7 cannot
 ;;; appear inside a comparison operand, which is parsed at 9, so `a == NOT b`
 ;;; falls through to PARSE-PRIMARY -- which sees the bare identifier NOT and
-;;; raises E_RESERVED, the same error the transcribed parser gave, by a different
-;;; route. `-NOT x` is E_RESERVED for the same reason.
+;;; raises E_RESERVED. `-NOT x` is E_RESERVED for the same reason.
 ;;;
 ;;; This is the part that is not textbook. Folding prefix operators into
 ;;; PARSE-PRIMARY, where precedence climbing usually puts them, would make
 ;;; `NOT a == b` parse as `(NOT a) == b` and would break lim.parse-depth and
 ;;; lim.prefix-depth-does-not-shift-parens at the same time.
 ;;;
-;;; Counted, for the reason the two functions this replaced were counted: a
+;;; Counted against the nesting cap (spec §6.4) like every other recursion: a
 ;;; prefix operator recurses through neither PARSE-SEQUENCE nor PARSE-PRIMARY,
 ;;; and uncounted it reached the host's own stack limit instead of E_DEPTH --
 ;;; a segfault in the C++ host from a rule that is just `-` repeated. Entered
@@ -373,6 +396,23 @@ left to the run."
                    (setf node (parse-pipe-step p node)))))
     node))
 
+(defun parse-call-args (p)
+  "The arguments of a call whose `(` has just been consumed, through its `)`: a
+top-level `,` list is the argument list (a parenthesised one is one argument)."
+  (if (p-at-op p ")")
+      (progn (p-next p) '())
+      (let ((inner (parse-sequence p)))
+        (p-expect-op p ")")
+        (if (and (eq (node-kind inner) :list) (not (node-grouped inner)))
+            (node-items inner)
+            (list inner)))))
+
+(defun call-spec (name-tok)
+  "The spec of the function NAME-TOK names, or E_UNKNOWN_FUNC at it."
+  (or (registry-lookup-canonical (token-value name-tok))
+      (fail "E_UNKNOWN_FUNC" (format nil "unknown function ~a" (token-value name-tok))
+            (token-pos name-tok))))
+
 (defun parse-pipe-step (p left)
   (let ((tok (p-peek p)))
     (when (or (not (eq (token-type tok) :ident))
@@ -381,21 +421,11 @@ left to the run."
               (string= (token-value tok) "NULL"))
       (fail "E_SYNTAX" "right-hand side of .> must be a function call or function name"
             (token-pos tok)))
-    (let ((name-tok (p-next p))
-          (args '()))
-      (when (p-at-op p "(")
-        (p-next p)
-        (if (p-at-op p ")")
-            (p-next p)
-            (let ((inner (parse-sequence p)))
-              (p-expect-op p ")")
-              (setf args (if (and (eq (node-kind inner) :list) (not (node-grouped inner)))
-                             (node-items inner)
-                             (list inner))))))
-      (let ((spec (registry-lookup-canonical (token-value name-tok))))
-        (unless spec
-          (fail "E_UNKNOWN_FUNC" (format nil "unknown function ~a" (token-value name-tok))
-                (token-pos name-tok)))
+    (let* ((name-tok (p-next p))
+           (args (when (p-at-op p "(")
+                   (p-next p)
+                   (parse-call-args p))))
+      (let ((spec (call-spec name-tok)))
         (let ((has-placeholder nil)
               (new-args (copy-list args)))
           (when (and (not (spec-binds spec)) (>= (length args) (spec-min spec)))
@@ -421,8 +451,8 @@ left to the run."
                 (n (make-node :num (token-pos tok))))
            ;; A numeral with no leading zero in its integer part is already its own
            ;; canonical text: rendering it again only to get the same characters
-           ;; is what made a million-digit literal cost seconds to compile
-           ;; (LISP-P2). (The token has no sign, so `0` and `0.5` are canonical
+           ;; is what made a million-digit literal cost seconds to compile.
+           ;; (The token has no sign, so `0` and `0.5` are canonical
            ;; and `007` is not.)
            (setf (node-dec-val n) parsed
                  (node-s n) (if (or (char/= (char text 0) #\0)
@@ -484,19 +514,8 @@ left to the run."
 (defun parse-call (p)
   (let ((name-tok (p-next p)))
     (p-expect-op p "(")
-    (let ((args '()))
-      (if (p-at-op p ")")
-          (p-next p)
-          (let ((inner (parse-sequence p)))
-            (p-expect-op p ")")
-            (setf args (if (and (eq (node-kind inner) :list) (not (node-grouped inner)))
-                           (node-items inner)
-                           (list inner)))))
-      (let ((spec (registry-lookup-canonical (token-value name-tok))))
-        (unless spec
-          (fail "E_UNKNOWN_FUNC" (format nil "unknown function ~a" (token-value name-tok))
-                (token-pos name-tok)))
-        (finish-call name-tok spec args)))))
+    (let ((args (parse-call-args p)))
+      (finish-call name-tok (call-spec name-tok) args))))
 
 ;;; The target must be an identifier followed by zero or more index operations.
 (defun check-target (node op-tok)
@@ -518,7 +537,7 @@ left to the run."
 
 ;;; The binding forms of one builtin, by name, in table order. BINDING-FORM runs for
 ;;; every call the dependency walker and the SQL layer visit, and filtered the whole
-;;; table (a STRING= per builtin) each time (LISP-P15). The table is data set once at
+;;; table (a STRING= per builtin) each time. The table is data set once at
 ;;; load; the index is keyed on that list, so a reloaded manifest rebuilds it.
 (defvar *binding-forms-index* nil)   ; (data . hash-table)
 
@@ -528,11 +547,33 @@ left to the run."
     (unless (and cache (eq (car cache) *builtin-form-data*))
       (let ((h (make-hash-table :test 'equal)))
         (dolist (f *builtin-form-data*)
-          (push f (gethash (string-upcase (first f)) h)))
+          (push f (gethash (ascii-upcase (first f)) h)))
         (maphash (lambda (k v) (setf (gethash k h) (nreverse v))) h)
         (setf cache (cons *builtin-form-data* h)
               *binding-forms-index* cache)))
-    (gethash (string-upcase name) (cdr cache))))
+    (gethash (ascii-upcase name) (cdr cache))))
+
+(defun form-when-holds-p (when args)
+  "Whether the argument a manifest form's WHEN names -- (index :name) or (index
+:text) -- is that: a bare, unparenthesised name, or a text literal."
+  (let ((a (elt args (first when))))
+    (and (node-p a)
+         (ecase (second when)
+           (:name (and (eq (node-kind a) :var) (not (node-grouped a))))
+           (:text (eq (node-kind a) :text))))))
+
+(defun match-binding-form (forms args)
+  "The first of FORMS (manifest rows: name, scopes, when, binds) that takes
+ARGS, a list or vector of argument nodes; NIL when none does. The rows' order
+is the precedence: SORT_BY's text-literal-direction form comes
+before its bare-binder form, so `SORT_BY(L, _, \"DESC\")` sorts by `_`, DESC."
+  (let ((count (length args)))
+    (dolist (form forms nil)
+      (let ((scopes (second form))
+            (when (third form)))
+        (when (and (= (length scopes) count)
+                   (or (null when) (form-when-holds-p when args)))
+          (return form))))))
 
 (defun binding-form (name args &optional (spec (registry-lookup name)))
   "Which argument of a binding call runs where (spec/builtins.md, \"Binding
@@ -544,21 +585,67 @@ reads every argument where the call stands. The dependency walker and the SQL
 layer's stage 1 both classify through here, so they cannot disagree."
   (let* ((forms (or (binding-forms-named name)
                     (and spec (spec-binds spec) *generic-binding-forms*)))
-         (count (length args)))
-    (dolist (form forms nil)
-      (destructuring-bind (nm scopes when binds) form
-        (declare (ignore nm))
-        (when (and (= (length scopes) count)
-                   (or (null when)
-                       (let ((a (nth (first when) args)))
-                         (and (node-p a)
-                              (ecase (second when)
-                                (:name (and (eq (node-kind a) :var) (not (node-grouped a))))
-                                (:text (eq (node-kind a) :text)))))))
-          (let ((bound (copy-list binds)))
-            (loop for scope in scopes
-                  for a in args
-                  when (and (eq scope :binder) (node-p a) (eq (node-kind a) :var))
-                    do (push (node-s a) bound))
-            (return (values scopes bound))))))))
+         (form (match-binding-form forms args))
+         (scopes (second form)))
+    (when form
+      (let ((bound (copy-list (fourth form))))
+        (loop for scope in scopes
+              for a in args
+              when (and (eq scope :binder) (node-p a) (eq (node-kind a) :var))
+                do (push (node-s a) bound))
+        (values scopes bound)))))
+
+(defmacro map-call-args-by-scope ((arg scope inner) call bound &body body)
+  "The list of BODY's values, one per argument ARG of the call node CALL, with
+SCOPE that argument's binding scope -- :OUTER, :BINDER or :INNER, by
+BINDING-FORM; every argument of a call that binds nothing is :OUTER -- and
+INNER the names in scope inside the call: BOUND plus those it binds. The one
+\"walk a call's arguments by binding scope\" every static walker shares; each
+says in BODY what it does with a binder, an inner and an outer argument."
+  (let ((scopes (gensym "SCOPES")) (binds (gensym "BINDS")) (rest (gensym "REST")))
+    `(multiple-value-bind (,scopes ,binds)
+         (binding-form (node-s ,call) (node-items ,call) (node-spec ,call))
+       (let ((,inner (append ,binds ,bound))
+             (,rest ,scopes))
+         (declare (ignorable ,inner))
+         (mapcar (lambda (,arg)
+                   (let ((,scope (if ,scopes (pop ,rest) :outer)))
+                     (declare (ignorable ,scope))
+                     ,@body))
+                 (node-items ,call))))))
+
+(defun keep-binding-form (name old-args new-args pos)
+  "NEW-ARGS -- a binding call's arguments after a rewrite that inlined a helper
+into them -- made to select the form OLD-ARGS, the call as written, selects.
+The form is read off the call as written (spec §7.3): in `D = \"DESC\";
+L .> SORT_BY(r, D)` the bare name r is the binder and D the KEY, and inlining
+D would turn the call into SORT_BY(r, \"DESC\"), the direction form with an
+unbound key. Only SORT_BY and TOP_BY have such forms; their binder form is
+pinned by spelling out its direction, ASC, at POS."
+  (let* ((forms (binding-forms-named name))
+         (was (second (match-binding-form forms old-args)))
+         (now (second (match-binding-form forms new-args))))
+    (if (or (null was) (equal was now)
+            (not (member name '("SORT_BY" "TOP_BY") :test #'string=)))
+        new-args
+        (let ((asc (make-node :text pos)))
+          (setf (node-s asc) "ASC")
+          (append (subseq new-args 0 3) (list asc) (nthcdr 3 new-args))))))
+
+(defun call-form (forms args &optional counted)
+  "The roles of a binding call's arguments under the manifest form that takes
+ARGS (MATCH-BINDING-FORM), as four values, each an argument index or NIL: the
+binder (NIL: the binder is `_`), the first and the second argument evaluated
+once per element (:INNER -- a sort's key; a bucket's key and projection), and
+a direction: the first :OUTER argument after the first :INNER one, short of the
+last argument when COUNTED (the TOP family, whose last argument is the count).
+The one decoder of SORT/SORT_BY/TOP/TOP_BY/BUCKET forms the evaluator, the
+optimiser and the translator share."
+  (let ((scopes (second (match-binding-form forms args))))
+    (when scopes
+      (let* ((end (if counted (1- (length scopes)) (length scopes)))
+             (inner1 (position :inner scopes))
+             (inner2 (and inner1 (position :inner scopes :start (1+ inner1))))
+             (dir (and inner1 (position :outer scopes :start (1+ inner1) :end end))))
+        (values (position :binder scopes) inner1 inner2 dir)))))
 

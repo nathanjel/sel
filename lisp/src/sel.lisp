@@ -38,7 +38,9 @@ unknown function, a wrong argument count, a non-portable regex literal."
     (fail "E_BAD_ARG" (format nil "the source of a program is text, not ~a" (type-of source))))
   (%make-program source (parse-source source)))
 
-(defun context-root (context)
+(defun coerce-context (context)
+  "The root value RUN evaluates against: CONTEXT itself when it is a VALUE, its
+FROM-NATIVE conversion when it is CL data, an empty NONE when omitted."
   (cond ((null context) (make-none))
         ((value-p context) context)
         (t (from-native context))))
@@ -47,16 +49,16 @@ unknown function, a wrong argument count, a non-portable regex literal."
   "Evaluate PROGRAM against CONTEXT, whose direct children are the variables.
 CONTEXT may be a value, CL data FROM-NATIVE understands, or omitted. The context
 is mutated in place by any assignment the program performs."
-  (let ((root (context-root context)))
+  (let ((root (coerce-context context)))
     (eval-node (program-physical-ast program) (make-context root))))
 
 (defun evaluate (source &optional context)
   "Compile SOURCE and run it once. A program that runs once never pays back the
 optimiser (about 7 us to build the physical tree of a rule that runs in 2 us), so
 this evaluates the tree as written: the optimiser is a pure optimisation, held to
-that by the plain-versus-optimised probe (LISP-P23)."
+that by the plain-versus-optimised probe."
   (let ((program (compile-source source)))
-    (eval-node (program-ast program) (make-context (context-root context)))))
+    (eval-node (program-ast program) (make-context (coerce-context context)))))
 
 ;;; --- dependencies ----------------------------------------------------------
 
@@ -222,19 +224,9 @@ inputs should re-trigger which rule."
 
 ;;; Every shipped builtin is loaded by now; the manifest must not name one more.
 (assert-builtin-manifest-covered)
-(setf *shipped-builtins* (loop for k being the hash-keys of *registry* collect k))
+(seal-shipped-builtins)
 
 ;;; --- host functions (spec/SPEC.md §8.1) --------------------------------------
-
-;;; Names registered through REGISTER-FUNCTION, which alone may be replaced.
-(defvar *host-functions* (make-hash-table :test #'equal))
-
-(defun host-function-name-p (name)
-  (and (stringp name)
-       (plusp (length name))
-       (let ((c (char name 0))) (or (char<= #\A c #\Z) (char<= #\a c #\z)))
-       (every (lambda (c) (or (char<= #\A c #\Z) (char<= #\a c #\z) (char<= #\0 c #\9) (char= c #\_)))
-              name)))
 
 (defun register-function (name min max fn)
   "Add an application's own strict function, callable from programs compiled
@@ -243,34 +235,35 @@ ARGS-BOOL, ARGS-INT, ARGS-NON-NEG-INT, ARGS-POS-OF) and returns a new VALUE. A
 host function adds to the language and never changes it: a malformed or
 reserved name, a builtin's name or an arity outside 0 <= MIN <= MAX signals a
 plain ERROR, not a SEL-ERROR. Registering a host function's name again replaces
-it."
-  (unless (host-function-name-p name)
+it. Safe beside other threads compiling and running programs."
+  (unless (function-name-p name)
     (error "SEL function name must be ASCII letters, digits and _, starting with a letter: ~s" name))
-  (let ((upper (string-upcase name)))
+  (let ((upper (ascii-upcase name)))
     (when (reservedp upper)
       (error "~a is a reserved word" upper))
-    (when (and (gethash upper *registry*) (not (gethash upper *host-functions*)))
-      (error "~a is a builtin; a host function cannot replace it" upper))
     (unless (and (integerp min) (integerp max) (<= 0 min max))
       (error "SEL function ~a: arity must be whole numbers with 0 <= min <= max" upper))
     (unless (functionp fn)
       (error "SEL function ~a: fn is not a function" upper))
-    (setf (gethash upper *registry*)
-          (make-spec upper min max nil nil nil
-                     (lambda (a ctx)
-                       (declare (ignore ctx))
-                       (let ((result (funcall fn a)))
-                         (unless (value-p result)
-                           (error "SEL function ~a returned ~s, not a VALUE" upper result))
-                         result))))
-    (setf (gethash upper *host-functions*) t)
+    (let ((spec (make-spec upper min max nil nil nil
+                           (lambda (a ctx)
+                             (declare (ignore ctx))
+                             (let ((result (funcall fn a)))
+                               (unless (value-p result)
+                                 (error "SEL function ~a returned ~s, not a VALUE" upper result))
+                               result)))))
+      (sb-thread:with-mutex (*registry-lock*)
+        (when (and (gethash upper *registry*) (not (gethash upper *host-functions*)))
+          (error "~a is a builtin; a host function cannot replace it" upper))
+        (setf (gethash upper *registry*) spec
+              (gethash upper *host-functions*) t)))
     upper))
 
 (defun host-arity (name)
   "The (MIN . MAX) of a host function registered with REGISTER-FUNCTION, or NIL
 when the name is not one. The SQL layer reads it: a host function's SQL spelling
 is checked against, and recorded with, this arity."
-  (let ((key (ascii-upcase name)))
-    (when (gethash key *host-functions*)
-      (let ((spec (gethash key *registry*)))
-        (cons (spec-min spec) (spec-max spec))))))
+  (let* ((key (ascii-upcase name))
+         (spec (and (gethash key *host-functions*) (gethash key *registry*))))
+    (when spec
+      (cons (spec-min spec) (spec-max spec)))))

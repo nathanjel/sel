@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+# Compiles the SEL systems from a clean cache with plain ASDF, the way a user's
+# (asdf:load-system "sel-lang") does, and fails on any full compiler WARNING.
+# See check-load.lisp.
+here="$(cd "$(dirname "$0")" && pwd)"
+
+# Nothing here writes a fasl into the tree (ASDF's go to its own cache), so one
+# under lisp/ is a leftover older than its source -- and a plain
+# (load "lisp/src/eval") would pick it up instead of the source.
+stale="$(find "$(cd "$here/.." && pwd)" -name '*.fasl' 2>/dev/null)"
+if [ -n "$stale" ]; then
+  echo "fasl files under lisp/ (leftovers; remove them with: find lisp -name '*.fasl' -delete):"
+  echo "$stale" | sed 's/^/  /'
+  exit 1
+fi
+
+out="$(mktemp -d)"
+trap 'rm -rf "$out"' EXIT
+SEL_LOAD_OUT="$out" sbcl --dynamic-space-size 4GB --noinform --disable-debugger --non-interactive \
+  --load "$here/check-load.lisp"

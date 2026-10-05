@@ -20432,8 +20432,25 @@ ORDERS .> TAKE(1)"
    :register nil
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" "i" (list (cons "PRICE" (binding-column "price" nil :num))) nil nil)))))
   (list
+   :name "alias.pg-truncated-aliases-collide-in-a-derived-dialect"
+   :at "50-rendering-and-registration.sqlt:352"
+   :dialect "pg-derived"
+   :source "ITEMS .> MAP(RECORD(\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaX1\", _[\"PRICE\"], \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaX2\", _[\"PRICE\"]))"
+   :expect nil
+   :error "E_SQL_UNSUPPORTED 1:102"
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register (lambda ()
+      (define-dialect "pg-derived" (list :extends "postgresql")))
+   :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" "i" (list (cons "PRICE" (binding-column "price" nil :num))) nil nil)))))
+  (list
    :name "lex.text.nul-is-refused-in-every-mode"
-   :at "50-rendering-and-registration.sqlt:357"
+   :at "50-rendering-and-registration.sqlt:377"
    :dialect "mariadb"
    :source "S $== \"a\\u{0}b\""
    :expect nil
@@ -20449,7 +20466,7 @@ ORDERS .> TAKE(1)"
    :bindings (lambda () (list (cons "S" (binding-column "s" "o" :text)))))
   (list
    :name "bind.raw-field.select-cols-refuses"
-   :at "50-rendering-and-registration.sqlt:377"
+   :at "50-rendering-and-registration.sqlt:397"
    :dialect "mariadb"
    :source "ITEMS .> SELECT_COLS(\"TOTAL\")"
    :expect nil
@@ -20465,7 +20482,7 @@ ORDERS .> TAKE(1)"
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" "i" (list (cons "ID" (binding-column "id" nil :num)) (cons "TOTAL" (binding-raw "i.price * i.qty" :num))) nil nil)))))
   (list
    :name "bind.raw-field.across-a-derived-table-refuses"
-   :at "50-rendering-and-registration.sqlt:392"
+   :at "50-rendering-and-registration.sqlt:412"
    :dialect "mariadb"
    :source "ITEMS .> SORT_BY(_[\"ID\"]) .> TAKE(2) .> FILTER(_[\"TOTAL\"] > 5)"
    :expect nil
@@ -20481,7 +20498,7 @@ ORDERS .> TAKE(1)"
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" "i" (list (cons "ID" (binding-column "id" nil :num)) (cons "TOTAL" (binding-raw "i.price * i.qty" :num))) nil nil)))))
   (list
    :name "bind.relation.fields-differing-only-by-case"
-   :at "50-rendering-and-registration.sqlt:411"
+   :at "50-rendering-and-registration.sqlt:431"
    :dialect "mariadb"
    :source "ANY(R, I, I[\"A\"] > 0)"
    :expect nil
@@ -20497,7 +20514,7 @@ ORDERS .> TAKE(1)"
    :bindings (lambda () (list (cons "R" (binding-relation "t" "t" (list (cons "A" (binding-column "x" nil :num)) (cons "a" (binding-column "y" nil :num))) nil nil)))))
   (list
    :name "bind.names-differing-only-by-case"
-   :at "50-rendering-and-registration.sqlt:424"
+   :at "50-rendering-and-registration.sqlt:444"
    :dialect "mariadb"
    :source "X > 1"
    :expect nil
@@ -20513,7 +20530,7 @@ ORDERS .> TAKE(1)"
    :bindings (lambda () (list (cons "x" (binding-column "a" "o" :num)) (cons "X" (binding-column "b" "o" :num)))))
   (list
    :name "agg.correlate.is-parenthesised"
-   :at "50-rendering-and-registration.sqlt:440"
+   :at "50-rendering-and-registration.sqlt:460"
    :dialect "mariadb"
    :source "ANY(ITEMS, I, I[\"QTY\"] > 0)"
    :expect "EXISTS (SELECT 1 FROM `oi` `oi` WHERE (oi.a=o.id OR oi.b=o.id) AND ((`oi`.`qty` > 0)) IS TRUE)"
@@ -20529,7 +20546,7 @@ ORDERS .> TAKE(1)"
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "oi" "oi" (list (cons "QTY" (binding-column "qty" "oi" :num))) nil "oi.a=o.id OR oi.b=o.id")))))
   (list
    :name "register.dialect.correct-pairing-is-accepted"
-   :at "50-rendering-and-registration.sqlt:453"
+   :at "50-rendering-and-registration.sqlt:473"
    :dialect "my-ok"
    :source "\"it's\""
    :expect "'it''s'"
@@ -20546,7 +20563,7 @@ ORDERS .> TAKE(1)"
    :bindings (lambda () (list )))
   (list
    :name "register.dialect.redefinition-with-the-same-parent-replaces"
-   :at "50-rendering-and-registration.sqlt:468"
+   :at "50-rendering-and-registration.sqlt:488"
    :dialect "redef"
    :source "\"A\" $== \"a\""
    :expect "(CAST('A' AS CHAR) COLLATE utf8mb4_0900_bin = CAST('a' AS CHAR) COLLATE utf8mb4_0900_bin)"
@@ -20564,7 +20581,7 @@ ORDERS .> TAKE(1)"
    :bindings (lambda () (list )))
   (list
    :name "register.dialect.redefinition-with-a-different-parent-is-refused"
-   :at "50-rendering-and-registration.sqlt:483"
+   :at "50-rendering-and-registration.sqlt:503"
    :dialect "redef2"
    :source "1 + 1"
    :expect nil

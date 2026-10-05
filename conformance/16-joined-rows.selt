@@ -270,3 +270,74 @@ A=LIST(RECORD("x",1,"y",3)); B=LIST(RECORD("X",2)); A .> LINK(B, TRUE) .> MAP(IN
 --- expect
 tree -{"1"=-{"1"=t"A", "2"=t"a", "3"=t"_1", "4"=t"B", "5"=t"b", "6"=t"_2", "7"=t"y"}}
 ===
+
+% Spec §7.4: a binder holds the element extended with its name keys. The
+% extended element is a value with no scalar of its own (it is NONE), whatever
+% the element's kind; these pin the whole row, not only a scalar read of it.
+
+### name: rel.link.alias.scalar-element-is-a-record-of-its-names
+--- note
+A named scalar element is bound as a value with no scalar of its own whose
+children are the name and its lowercase, each holding the element. The scalar
+is not kept beside them; a scalar read of the binder still reaches it through
+the first field (spec §3.2).
+--- source
+LINK(LIST(5), LIST(7), A, B, TRUE)
+--- expect
+tree -{"1"=-{"A"=-{"A"=t"5", "a"=t"5"}, "a"=-{"A"=t"5", "a"=t"5"}, "_1"=-{"A"=t"5", "a"=t"5"}, "B"=-{"B"=t"7", "b"=t"7"}, "b"=-{"B"=t"7", "b"=t"7"}, "_2"=-{"B"=t"7", "b"=t"7"}}}
+===
+
+### name: rel.link.alias.scalar-element-read-through-the-binder
+--- source
+LINK(LIST(5), LIST(7), A, B, TRUE) .> MAP(_["A"])
+--- expect
+tree -{"1"=-{"A"=t"5", "a"=t"5"}}
+===
+
+### name: rel.link.alias.scalar-with-children-keeps-its-fields-not-its-scalar
+--- note
+An element with a scalar and fields keeps its fields, gains the name keys,
+and loses its own scalar; the name keys hold the element as it was.
+--- source
+X = 5; X["k"] = 1; LINK(LIST(X), LIST(7), A, B, TRUE)
+--- expect
+tree -{"1"=-{"A"=-{"k"=t"1", "A"=t"5"{"k"=t"1"}, "a"=t"5"{"k"=t"1"}}, "a"=-{"k"=t"1", "A"=t"5"{"k"=t"1"}, "a"=t"5"{"k"=t"1"}}, "_1"=-{"k"=t"1", "A"=t"5"{"k"=t"1"}, "a"=t"5"{"k"=t"1"}}, "B"=-{"B"=t"7", "b"=t"7"}, "b"=-{"B"=t"7", "b"=t"7"}, "_2"=-{"B"=t"7", "b"=t"7"}, "k"=t"1"}}
+===
+
+### name: rel.link.alias.list-element-gains-its-names
+--- source
+LINK(LIST(LIST(5, 6)), LIST(7), A, B, TRUE)
+--- expect
+tree -{"1"=-{"A"=-{"1"=t"5", "2"=t"6", "A"=-{"1"=t"5", "2"=t"6"}, "a"=-{"1"=t"5", "2"=t"6"}}, "a"=-{"1"=t"5", "2"=t"6", "A"=-{"1"=t"5", "2"=t"6"}, "a"=-{"1"=t"5", "2"=t"6"}}, "_1"=-{"1"=t"5", "2"=t"6", "A"=-{"1"=t"5", "2"=t"6"}, "a"=-{"1"=t"5", "2"=t"6"}}, "B"=-{"B"=t"7", "b"=t"7"}, "b"=-{"B"=t"7", "b"=t"7"}, "_2"=-{"B"=t"7", "b"=t"7"}, "1"=t"5", "2"=t"6"}}
+===
+
+### name: rel.link.alias.bool-and-bin-elements
+--- source
+LINK(LIST(TRUE), LIST(TO_UTF8("a")), A, B, TRUE)
+--- expect
+tree -{"1"=-{"A"=-{"A"=TRUE, "a"=TRUE}, "a"=-{"A"=TRUE, "a"=TRUE}, "_1"=-{"A"=TRUE, "a"=TRUE}, "B"=-{"B"=b61, "b"=b61}, "b"=-{"B"=b61, "b"=b61}, "_2"=-{"B"=b61, "b"=b61}}}
+===
+
+### name: rel.link.alias.record-element-gains-its-names
+--- source
+LINK(LIST(RECORD("id", 1)), LIST(RECORD("id", 1)), A, B, TRUE)
+--- expect
+tree -{"1"=-{"A"=-{"id"=t"1", "A"=-{"id"=t"1"}, "a"=-{"id"=t"1"}}, "a"=-{"id"=t"1", "A"=-{"id"=t"1"}, "a"=-{"id"=t"1"}}, "_1"=-{"id"=t"1", "A"=-{"id"=t"1"}, "a"=-{"id"=t"1"}}, "B"=-{"id"=t"1", "B"=-{"id"=t"1"}, "b"=-{"id"=t"1"}}, "b"=-{"id"=t"1", "B"=-{"id"=t"1"}, "b"=-{"id"=t"1"}}, "_2"=-{"id"=t"1", "B"=-{"id"=t"1"}, "b"=-{"id"=t"1"}}}}
+===
+
+### name: rel.link.alias.scalar-elements-through-an-equijoin
+--- note
+The same rows when the pairs come from the equijoin's key table rather than
+one pair at a time.
+--- source
+LINK(LIST(5, 6), LIST(6, 5), A, B, A == B)
+--- expect
+tree -{"1"=-{"A"=-{"A"=t"5", "a"=t"5"}, "a"=-{"A"=t"5", "a"=t"5"}, "_1"=-{"A"=t"5", "a"=t"5"}, "B"=-{"B"=t"5", "b"=t"5"}, "b"=-{"B"=t"5", "b"=t"5"}, "_2"=-{"B"=t"5", "b"=t"5"}}, "2"=-{"A"=-{"A"=t"6", "a"=t"6"}, "a"=-{"A"=t"6", "a"=t"6"}, "_1"=-{"A"=t"6", "a"=t"6"}, "B"=-{"B"=t"6", "b"=t"6"}, "b"=-{"B"=t"6", "b"=t"6"}, "_2"=-{"B"=t"6", "b"=t"6"}}}
+===
+
+### name: rel.link.alias.unmatched-left-scalar-element
+--- source
+LINK_LEFT(LIST(5), LIST(), A, B, TRUE)
+--- expect
+tree -{"1"=-{"A"=-{"A"=t"5", "a"=t"5"}, "a"=-{"A"=t"5", "a"=t"5"}, "_1"=-{"A"=t"5", "a"=t"5"}, "B"=-{"B"=-, "b"=-}, "b"=-{"B"=-, "b"=-}, "_2"=-{"B"=-, "b"=-}}}
+===

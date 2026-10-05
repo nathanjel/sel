@@ -124,7 +124,7 @@
       (loop for b across (args-bytes a 0)
             do (setf crc (logxor (aref +crc32-table+ (logand (logxor crc b) 255))
                                  (ash crc -8))))
-      (%text (string-downcase (format nil "~8,'0x" (logxor crc #xffffffff)))))))
+      (%text (ascii-downcase (format nil "~8,'0x" (logxor crc #xffffffff)))))))
 
 (define-builtin "BTL" 1 1
   (lambda (a ctx)

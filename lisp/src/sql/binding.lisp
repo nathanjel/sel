@@ -60,7 +60,7 @@ line that wrote it (or none at all)."
 (defun check-numeric (where v)
   "Every scalar reachable from a NUM-typed value binding."
   (when (plusp (sel:value-size v))
-    (dolist (cell (sel:value-entries v))
+    (dolist (cell (sel::%value-entries v))
       (check-numeric (format nil "~a[~s]" where (car cell)) (cdr cell)))
     (return-from check-numeric))
   (when (sel:value-none-p v) (return-from check-numeric))
@@ -88,7 +88,7 @@ canonical, so pass it as text or drop the leading zeros" where text)))))
 
 (defun check-prefilter (p)
   (when p
-    (let ((c (string-downcase (string p))))
+    (let ((c (sel::ascii-downcase (string p))))
       (cond
         ((or (string= c "separate") (string= c "splitsargable") (string= c "split_sargable") (string= c "t") (string= c "true"))
          "separate")
@@ -100,7 +100,7 @@ canonical, so pass it as text or drop the leading zeros" where text)))))
   "What a COLLATION spelling asks for, as (VALUES EXACT SARGABLE), refusing any
 other spelling. One body for BINDING-COLUMN and BINDING-RAW, as
 _check_collation is in the Python host."
-  (let ((c (string-downcase (string collation))))
+  (let ((c (sel::ascii-downcase (string collation))))
     (cond
       ((or (string= c "binary") (string= c "exact")) (values t nil))
       ((or (string= c "sargable") (string= c "prefilter")) (values nil t))
@@ -121,6 +121,12 @@ EXACT/SARGABLE, then the prefilter."
                                  :guard (not (null guard))))))
     (when pref (setf (getf spec :prefilter) pref))
     spec))
+
+#+sbcl
+;; The constructors' positional-then-keyword lambda lists are their public API
+;; (docs/usage/sql*.md); SBCL's style warning about the mix is muffled for them
+;; alone and restored below.
+(declaim (sb-ext:muffle-conditions sb-kernel:&optional-and-&key-in-lambda-list))
 
 (defun binding-column (column &optional table (type :unknown) &key exact sargable guard collation prefilter split-sargable)
   "One column, optionally qualified by a table, optionally typed.
@@ -218,6 +224,10 @@ subquery back to the outer row."
     (refuse "E_SQL_BINDING" "a relation query cannot be empty"))
   (when alias (check-name "alias" alias))
   (%make-relation query t alias fields scalar correlate (or prefilter (when split-sargable "separate"))))
+
+
+#+sbcl
+(declaim (sb-ext:unmuffle-conditions sb-kernel:&optional-and-&key-in-lambda-list))
 
 (defun binding-with-unique-key (b key)
   "Return a binding with a caller-proven single-column, non-null unique key."

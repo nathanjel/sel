@@ -46,8 +46,7 @@ Scope-aware: a name is a read of a bound relation only where nothing shadows
 it. A binder of a binding call (through the manifest's own forms) shadows it in
 the arguments it scopes, and an assignment makes the name a variable of the
 program from the next statement on -- `ORDERS = LIST(1); COUNT(ORDERS)` reads no
-table, and neither does `LIST(1) .> MAP(ORDERS, ORDERS)` (PHP-C55, PY-C48,
-LISP-C43)."
+table, and neither does `LIST(1) .> MAP(ORDERS, ORDERS)`."
   (let ((out '()))
     (labels ((assign-base (target)
                (loop while (and target (sel::node-p target) (eq (sel::node-kind target) :index))
@@ -80,17 +79,11 @@ LISP-C43)."
                             do (walk (sel::node-r target) bound)
                                (setf target (sel::node-l target)))))
                    (:call
-                    (let ((args (sel::node-items n)))
-                      (multiple-value-bind (scopes binds)
-                          (sel::binding-form (sel::node-s n) args (sel::node-spec n))
-                        (let ((inner (append binds bound)))
-                          (loop for arg in args
-                                for scope in (or scopes (make-list (length args)
-                                                                   :initial-element :outer))
-                                do (case scope
-                                     (:binder nil)
-                                     (:inner (walk arg inner))
-                                     (t (walk arg bound))))))))
+                    (sel::map-call-args-by-scope (arg scope inner) n bound
+                      (case scope
+                        (:binder nil)
+                        (:inner (walk arg inner))
+                        (t (walk arg bound)))))
                    (t
                     (walk (sel::node-l n) bound)
                     (walk (sel::node-r n) bound)
@@ -106,7 +99,7 @@ LISP-C43)."
 ;;; plan, because that half is a program run evaluates and §12.1 promises it
 ;;; reports errors where run would: run evaluates the READ of Y at the use
 ;;; site and reports `+`'s operand there, and it evaluates the definition once,
-;;; before the pipeline, not once per row (review 2026-09-15 finding AJ). So
+;;; before the pipeline, not once per row. So
 ;;; the planner does not inline. It plans the program as written, three ways:
 ;;;
 ;;;   * A helper that IS a literal -- after inlining earlier such helpers and
@@ -191,21 +184,18 @@ same-named helper inside its body. Copies on the way down, never writes."
       (:call
        ;; The binding form decides which argument is a binder NAME (never
        ;; inlined: it is not a read), which run inside the binder, and what they
-       ;; bind -- for every arity, the four-argument SORT_BY and BUCKET included
-       ;; (PY-C24, LISP-C28).
-       (let ((args (sel::node-items node)))
-         (multiple-value-bind (scopes binds)
-             (sel::binding-form (sel::node-s node) args (sel::node-spec node))
-           (let ((inner (append binds bound))
-                 (c (sel::copy-node node)))
-             (setf (sel::node-items c)
-                   (loop for arg in args
-                         for scope in (or scopes (make-list (length args) :initial-element :outer))
-                         collect (case scope
-                                   (:binder arg)
-                                   (:inner (inline-child arg inner))
-                                   (t (inline-child arg bound)))))
-             c))))
+       ;; bind -- for every arity, the four-argument SORT_BY and BUCKET included.
+       (let ((c (sel::copy-node node)))
+         (setf (sel::node-items c)
+               (sel::keep-binding-form
+                (sel::node-s node) (sel::node-items node)
+                (sel::map-call-args-by-scope (arg scope inner) node bound
+                  (case scope
+                    (:binder arg)
+                    (:inner (inline-child arg inner))
+                    (t (inline-child arg bound))))
+                (sel::node-pos node)))
+         c))
       (t node))))
 
 (defun literal-helpers (leading)
@@ -245,7 +235,8 @@ only keep an assignment the tree does not need, never drop one it does."
                (when (and n (sel::node-p n))
                  (if (eq (sel::node-kind n) :var)
                      (let ((name (sel::node-s n)))
-                       (unless (gethash name seen)
+                       ;; A read of the binding is not a read of a same-named helper.
+                       (unless (or (sel::node-binding-read n) (gethash name seen))
                          (setf (gethash name seen) t)
                          (push name out)))
                      (walk-node-children n #'walk)))))
@@ -258,7 +249,7 @@ it reads, and those THEY read, transitively.
 
 A worklist over names: each statement's right side is read once, and a name is
 expanded once, where the fixpoint loop this replaced re-read every statement's
-right side on every pass and tested membership in a list (LISP-P25)."
+right side on every pass and tested membership in a list."
   (let ((needed (make-hash-table :test #'equal))
         (by-name (make-hash-table :test #'equal))
         (queue '()))
@@ -323,6 +314,14 @@ relation. That split is not made; the join stays in memory, over the relation."
                            (rest (sel::node-items st))))
                    (subseq steps k))))))
 
+(defun binding-read-var (name pos)
+  "A :var node reading NAME's binding (see NODE-BINDING-READ): the root of a
+continuation, which reads the rows the SQL prefix returned under that name."
+  (let ((v (sel::make-node :var pos)))
+    (setf (sel::node-s v) name
+          (sel::node-binding-read v) t)
+    v))
+
 (defun plan-hybrid (program dialect &optional bindings options)
   "Analyzes PROGRAM and splits it into a maximal SQL pushdown prefix and an in-memory continuation.
 Returns a HYBRID-PLAN struct. OPTIONS is a plist; :strict reaches the translator."
@@ -349,8 +348,8 @@ Returns a HYBRID-PLAN struct. OPTIONS is a plist; :strict reaches the translator
       (multiple-value-bind (leading result) (statements (sel:program-ast program))
         (let ((literals (literal-helpers leading))
               (defs (definitions leading))
-              ;; The assignments a wrapped tree may carry in front of it. Starts as
-              ;; all of them; see below for the one the unwinding consumes.
+              ;; The assignments a wrapped tree may carry in front of it: those
+              ;; it reads (WITH-HELPERS), never for a binding read.
               (wrap-leading leading))
           (flet ((relation-p (node)
                    (and node (sel::node-p node) (eq (sel::node-kind node) :var)
@@ -364,17 +363,13 @@ Returns a HYBRID-PLAN struct. OPTIONS is a plist; :strict reaches the translator
                  (tables (wrapped) (source-tables (normalise wrapped names root) bs)))
             (multiple-value-bind (unwound-source unwound-steps)
                 (unwind-through-helpers result defs literals)
-              ;; A helper that shadows its own source -- `ORDERS = ORDERS .>
-              ;; DROP(2); ORDERS .> TAKE(3)` -- has been unwound INTO the pipeline:
-              ;; its steps are already in `unwound-steps`, and the source that is
-              ;; left is the binding of that name. Carrying the assignment in front
-              ;; of the pipeline as well makes stage 1 inline it a second time
-              ;; under the source read, and the DROP runs twice (PHP-C34).
-              (when (and (relation-p unwound-source)
-                         (assoc (sel::node-s unwound-source) defs :test #'equal))
-                (setf wrap-leading
-                      (remove-if (lambda (st) (equal (assigned-name st) (sel::node-s unwound-source)))
-                                 leading)))
+              ;; A pipeline of more than MAX_DEPTH steps, counted as written
+              ;; through its helpers and before the optimiser, is a pure-memory
+              ;; plan in every host: rendered whole it is deeper than the cap,
+              ;; and probing every shorter prefix costs time quadratic in the
+              ;; chain to push down a step or two.
+              (when (> (length unwound-steps) sel::+max-depth+)
+                (return-from plan-hybrid (pure-memory-plan program dialect bs)))
               ;; No steps, or a source that is not a bound relation: nothing to push.
               (unless (and unwound-steps (relation-p unwound-source))
                 (return-from plan-hybrid (pure-memory-plan program dialect bs)))
@@ -383,6 +378,17 @@ Returns a HYBRID-PLAN struct. OPTIONS is a plist; :strict reaches the translator
                    (sel:optimize-ast-logical (sel::build-pipeline-ast unwound-source unwound-steps)))
                 (unless (and steps (relation-p source-node))
                   (return-from plan-hybrid (pure-memory-plan program dialect bs)))
+                ;; A helper that shadows its own source -- `ORDERS = ORDERS .>
+                ;; DROP(2); ORDERS .> TAKE(3)` -- has been unwound INTO the
+                ;; pipeline: its steps are already in STEPS, and the source left is
+                ;; the binding of that name. Mark that read, so the helper is not
+                ;; inlined under it a second time (the DROP would run twice), while
+                ;; a step that reads ORDERS as a value -- `COUNT(ORDERS)` in the
+                ;; continuation -- still carries the helper and sees what run()
+                ;; sees.
+                (when (assoc (sel::node-s source-node) defs :test #'equal)
+                  (setf source-node (binding-read-var (sel::node-s source-node)
+                                                      (sel::node-pos source-node))))
                 (let ((n-steps (length steps))
                       (input-var "_INPUT"))
                   ;; 1. The whole pipeline, unless its rows would be a bucket's keys or
@@ -429,15 +435,13 @@ Returns a HYBRID-PLAN struct. OPTIONS is a plist; :strict reaches the translator
                                ;; pipeline starts from (spec 7.4), so a continuation
                                ;; that contains one reads the prefix's rows under the
                                ;; SOURCE's own name -- `_INPUT` would rename ORDERS in
-                               ;; the joined row and `_["ORDERS"]` would be E_NO_KEY
-                               ;; (PHP-C9, PY-C23, LISP-C29, GO-C22). Only where no
+                               ;; the joined row and `_["ORDERS"]` would be E_NO_KEY.
+                               ;; Only where no
                                ;; remaining step reads that name as something else.
                                (link-p (needs-left-name-p (subseq steps 0 k) rem-steps))
                                (root-name (sel::node-s source-node))
                                (cont-var (if link-p root-name input-var))
-                               (cont-root (let ((v (sel::make-node :var (sel::node-pos (first rem-steps)))))
-                                            (setf (sel::node-s v) cont-var)
-                                            v))
+                               (cont-root (binding-read-var cont-var (sel::node-pos (first rem-steps))))
                                (cont-ast (wrap (sel::build-pipeline-ast cont-root rem-steps)))
                                (cont-prog (sel::%make-program "" cont-ast)))
                           (return-from plan-hybrid
@@ -460,8 +464,11 @@ rebinds the name is counted too, which can only refuse a split, never allow one)
              (walk-node-children node (lambda (c) (when (reads-key-p c) (setf found t))))
              found))))
 
-(defun step-reads-key-p (step)
-  "Whether a pipeline step's own arguments read `_K` (item 0 is its input)."
+(defun step-mentions-key-p (step)
+  "Whether a pipeline step's own arguments mention `_K` at all (its first
+argument is its input, and is not looked at). Broader than the optimiser's
+SEL::STEP-READS-KEY-P on purpose: a split it wrongly refuses costs a pushdown,
+one it wrongly allows changes an answer."
   (some #'reads-key-p (rest (sel::node-items step))))
 
 (defun key-safe-boundary-p (prefix-steps cont-steps)
@@ -474,21 +481,19 @@ keys, which is invisible only if the continuation renumbers before anything
 reads a key or shows one: scanning it in order, a step that reads `_K` makes the
 boundary unsafe, and the first step that is not a FILTER renumbers (and is safe
 once its own arguments have been checked). A continuation of FILTERs alone
-returns the kept rows under their keys, which is exactly what would be lost
-(JS-C22, PHP-C8, PY-C22, CPP-C33, LISP-C8, LISP-C27)."
+returns the kept rows under their keys, which is exactly what would be lost."
   (let ((tail (car (last prefix-steps))))
     (if (not (and tail (equal (sel::node-s tail) "FILTER")))
         t
         (dolist (step cont-steps nil)
-          (when (step-reads-key-p step) (return nil))
+          (when (step-mentions-key-p step) (return nil))
           (unless (equal (sel::node-s step) "FILTER") (return t))))))
 
 (defun can-raise-p (node)
   "Whether evaluating NODE in memory might raise. Only a literal and a plain read of a
 projected field are proven not to (the statement carries the field as a column, so
 the key is there): anything else may hit a digit cap, a missing key or an ABORT, and a row-cutting
-step must not hide a row whose evaluation would have (JS-C23, PY-C47, CPP-C34,
-LISP-C30, PHP-C36)."
+step must not hide a row whose evaluation would have."
   (not (or (literal-kind-p node) (field-read-p node))))
 
 (defun latest-field-name (n)
@@ -550,27 +555,50 @@ LISP-C30, PHP-C36)."
                    (prefix (funcall wrap (sel::build-pipeline-ast source (or input-steps (list dummy)))))
                    (sql (try-translate-statement (sel::%make-program "" prefix) dialect (binding-map-sorted bindings) options)))
               (unless sql (return-from candidate nil))
-              (let ((input "_sel_input") (groups "_sel_latest"))
-                (loop while (equal (sel::ascii-upcase input) (sel::ascii-upcase (getf rel :from))) do (setf input (concatenate 'string input "_")))
-                (loop while (or (equal (sel::ascii-upcase groups) (sel::ascii-upcase (getf rel :from))) (equal groups input)) do (setf groups (concatenate 'string groups "_")))
-                (let* ((qi (emit-ident dialect input)) (qg (emit-ident dialect groups))
-                       (qr (emit-ident dialect revision)) (qmax (emit-ident dialect "_sel_revision"))
-                       (qfirst (emit-ident dialect "_sel_first"))
-                       (partition-sql (as-value
-                                       (emit-text-operand dialect (%fragment (list (emit-ident dialect partition)) (getf pf :type) dialect))))
-                       (parts (append (list (format nil "WITH ~a AS (" qi)) (fragment-parts sql)
-                                      (list (format nil "), ~a AS (SELECT MAX(~a) AS ~a, MIN(~a) AS ~a FROM ~a GROUP BY ~a) SELECT ~a.* FROM ~a JOIN ~a ON ~a.~a = ~a.~a ORDER BY ~a.~a ASC"
-                                                    qg qr qmax qr qfirst qi partition-sql qi qi qg qi qr qg qmax qg qfirst))))
-                       (cont-root (sel::make-node :var (sel::node-pos bucket)))
-                       (cont nil))
-                  (setf (sel::node-s cont-root) "_INPUT"
-                        cont (funcall wrap (sel::build-pipeline-ast cont-root (subseq steps at))))
-                  (make-hybrid-plan :dialect dialect :sql-statement
-                    (%fragment parts :statement dialect (fragment-params sql) (fragment-param-kinds sql) (fragment-caveats sql))
-                    :sql-prefix-ast prefix :continuation-ast cont :continuation-program (sel::%make-program "" cont)
-                    :source-tables (list (getf rel :from))
-                    :selected-member (list :partition-key partition :revision-key revision))))))))
+              (let* ((from (getf rel :from))
+                     (input (unclashing-name "_sel_input" (list from)))
+                     (groups (unclashing-name "_sel_latest" (list from input)))
+                     (parts (latest-member-statement-parts
+                             dialect sql input groups revision
+                             (as-value (emit-text-operand
+                                        dialect (%fragment (list (emit-ident dialect partition))
+                                                           (getf pf :type) dialect)))))
+                     (cont (funcall wrap (sel::build-pipeline-ast
+                                          (binding-read-var "_INPUT" (sel::node-pos bucket))
+                                          (subseq steps at)))))
+                (make-hybrid-plan
+                 :dialect dialect
+                 :sql-statement (%fragment parts :statement dialect (fragment-params sql)
+                                           (fragment-param-kinds sql) (fragment-caveats sql))
+                 :sql-prefix-ast prefix
+                 :continuation-ast cont
+                 :continuation-program (sel::%make-program "" cont)
+                 :source-tables (list from)
+                 :selected-member (list :partition-key partition :revision-key revision)))))))
     (sql-error () nil)))
+
+(defun unclashing-name (base taken)
+  "BASE, with underscores appended until it is none of TAKEN (the first ASCII
+case-insensitively, as a table name compares, the rest exactly)."
+  (let ((name base))
+    (loop while (or (equal (sel::ascii-upcase name) (sel::ascii-upcase (first taken)))
+                    (member name (rest taken) :test #'equal))
+          do (setf name (concatenate 'string name "_")))
+    name))
+
+(defun latest-member-statement-parts (dialect sql input groups revision partition-sql)
+  "The latest-member statement around the prefix SQL: the prefix as CTE INPUT,
+each partition's highest REVISION (and its first position) as CTE GROUPS, and
+the input rows joined back to them, in first-seen partition order."
+  (let ((qi (emit-ident dialect input)) (qg (emit-ident dialect groups))
+        (qr (emit-ident dialect revision)) (qmax (emit-ident dialect "_sel_revision"))
+        (qfirst (emit-ident dialect "_sel_first")))
+    (append (list (format nil "WITH ~a AS (" qi))
+            (fragment-parts sql)
+            (list (format nil "), ~a AS (SELECT MAX(~a) AS ~a, MIN(~a) AS ~a FROM ~a GROUP BY ~a) ~
+                               SELECT ~a.* FROM ~a JOIN ~a ON ~a.~a = ~a.~a ORDER BY ~a.~a ASC"
+                          qg qr qmax qr qfirst qi partition-sql
+                          qi qi qg qi qr qg qmax qg qfirst)))))
 
 (defun bucket-rows-are-keys-p (steps)
   "Whether the SQL rows for STEPS are a bucket's KEYS rather than the value SEL
@@ -598,7 +626,7 @@ promoted fields beside them (spec §7.4); SQL carries the promoted fields
 alone. A MAP, a SELECT_COLS or a projected BUCKET after the LINK makes the
 rows exact again -- what they compute is over the promoted fields, or is
 refused -- so a prefix whose LINK nothing has projected is not a split point
-and not a full pushdown (finding Y, lanes): its continuation would read
+and not a full pushdown: its continuation would read
 `_[\"C\"]` where the database sent nothing."
   (let ((joined nil))
     (dolist (step steps joined)
@@ -620,7 +648,7 @@ the planner's to refuse -- the translator's bytes for them are pinned and the
 program is still fine in memory:
 
   * a BUCKET after a sort: GROUP BY answers its groups in the server's order, not
-    in the order the sorted rows first showed them (JS-C59, PHP-C35, LISP-C26);
+    in the order the sorted rows first showed them;
   * a LINK or LINK_LEFT after a sort (a TOP* included: the LIMIT beside the ORDER BY
     decides which rows survive, not the order a join returns them in): the joined rows
     come out in the server's order, where SEL's are the left's order then the right's;
@@ -661,8 +689,8 @@ SEL would have produced for it, whatever the translator says about it."
   "Whether NAME binds the row: BINDER, or one of the implicit names. A null
 BINDER means any name does -- a downstream step binds the row however it likes."
   (or (null binder)
-      (string-equal name binder) (string-equal name "_")
-      (string-equal name "_1") (string-equal name "_2")))
+      (sel::ascii-equal name binder) (sel::ascii-equal name "_")
+      (sel::ascii-equal name "_1") (sel::ascii-equal name "_2")))
 
 (defun field-read-p (n)
   "Whether N is BINDER['field']: an index whose object is a var and whose key is text."
@@ -674,7 +702,9 @@ BINDER means any name does -- a downstream step binds the row however it likes."
 (defun collect-field-references (node &optional (binder "_"))
   "Collects all field names accessed via BINDER['field'] in NODE, first seen
 first and compared exactly: SEL's record keys are case-sensitive, so name and
-Name are two fields. A null BINDER counts a read under any name."
+Name are two fields. A null BINDER counts a read under any name. Every child
+is walked, a matched read's included -- the MAP fall-through needs every
+column a custom pair may touch -- unlike the optimiser's COLLECT-FIELD-REFS."
   (let ((refs '()))
     (labels ((walk (n)
                (when (and n (sel::node-p n))
@@ -684,8 +714,10 @@ Name are two fields. A null BINDER counts a read under any name."
       (walk node))
     (nreverse refs)))
 
+;; The calls the translator renders itself rather than through the dialect's
+;; function map; every other call needs a map entry to reach SQL.
 (defparameter +sql-special-calls+
-  '("IF" "COND" "COALESCE" "COUNT" "SUM" "AVG" "MIN" "MAX" "RECORD" "LIST"))
+  '("IF" "COND" "COALESCE" "COUNT" "SUM" "MIN" "MAX" "RECORD" "LIST"))
 
 (defun contains-unsupported-sql-p (node dialect &optional defs seen)
   "Returns T if NODE contains any function call not supported by DIALECT.
@@ -694,7 +726,7 @@ unsupported as its definition, since the translator will inline it. SEEN is the
 list of helper names already looked through on this path."
   (labels ((walk (n seen)
              (when (and n (sel::node-p n))
-               (when (eq (sel::node-kind n) :var)
+               (when (and (eq (sel::node-kind n) :var) (not (sel::node-binding-read n)))
                  (let ((cell (and defs (assoc (sel::node-s n) defs :test #'equal))))
                    (when (and cell (not (member (sel::node-s n) seen :test #'equal)))
                      (return-from walk (walk (cdr cell) (cons (sel::node-s n) seen))))))
@@ -737,7 +769,7 @@ key, as in GET(_, \"name\") or COUNT(_) -- which no projected column can stand i
   "Whether a pushable pair is the plain field read BINDER[key] of its own key,
 so that a dependency of the same name may share its column."
   (and (field-read-p value-node)
-       (string-equal (sel::node-s (sel::node-l value-node)) binder)
+       (sel::ascii-equal (sel::node-s (sel::node-l value-node)) binder)
        (string= (sel::node-s (sel::node-r value-node)) (sel::node-s key-node))))
 
 (defun make-field-read (binder field pos)
@@ -887,10 +919,9 @@ may read; WRAP puts a tree behind the assignments it depends on."
                                 (second p))
                             cont-items))
                     (let* ((cont-rec (sel::copy-node rec-node))
-                           (cont-root (sel::make-node :var (sel::node-pos map-step)))
+                           (cont-root (binding-read-var input-var (sel::node-pos map-step)))
                            (cont-map (sel::copy-node map-step)))
                       (setf (sel::node-items cont-rec) (nreverse cont-items))
-                      (setf (sel::node-s cont-root) input-var)
                       (setf (sel::node-items cont-map)
                             (if explicit
                                 (list cont-root (second args) cont-rec)
@@ -909,48 +940,80 @@ may read; WRAP puts a tree behind the assignments it depends on."
                          :pure-sql-p nil
                          :pure-memory-p nil)))))))))))))
 
-;;; The caller's context is never written to (JS-C60, PY-C51, CPP-C54), and was kept
-;;; safe by deep-copying all of it on every call: with a 300,000-element list in
-;;; the context a trivial plan cost about 127 ms (LISP-P10). A continuation with no
-;;; assignment in it cannot write through an alias, so it needs no copy; one that
-;;; calls something other than a shipped built-in (a host function could do
-;;; anything) gets the full copy, as before.
-(defun continuation-may-write-p (program)
-  (labels ((walk (n)
-             (and n (sel::node-p n)
-                  (or (eq (sel::node-kind n) :assign)
-                      (and (eq (sel::node-kind n) :call)
-                           (not (member (sel::node-s n) sel::*shipped-builtins* :test #'string=)))
-                      (walk (sel::node-l n))
-                      (walk (sel::node-r n))
-                      (some #'walk (sel::node-items n))))))
-    (walk (sel::program-ast program))))
+;;; The caller's context is never written to. Deep-copying all of it on every
+;;; call cost about 127 ms for a trivial plan over a 300,000-element list, so the
+;;; continuation's effects decide what is copied, as in the JS and Python hosts:
+;;;   * a call to anything but a shipped builtin -- an application function may
+;;;     write into any value it is handed -- copies the whole context;
+;;;   * otherwise only the variables the continuation assigns into (the root
+;;;     name of each assignment target) are copied, into a new root that shares
+;;;     every other variable: an assignment is the only write, and it lands
+;;;     under its target's root name;
+;;;   * a continuation that does neither runs on the caller's value itself.
+(defun continuation-effects (program)
+  "(values assigned-roots calls-application-p) for PROGRAM's tree: the names at
+the root of every assignment target, and whether it calls any function the
+library does not ship. Iterative: a continuation can be a long flat chain."
+  (let ((roots '()) (app nil)
+        (stack (list (sel:program-ast program))))
+    (loop while stack
+          do (let ((n (pop stack)))
+               (when (and n (sel::node-p n))
+                 (case (sel::node-kind n)
+                   (:assign
+                    (let ((target (sel::node-l n)))
+                      (loop while (and target (sel::node-p target)
+                                       (eq (sel::node-kind target) :index))
+                            do (push (sel::node-r target) stack)
+                               (setf target (sel::node-l target)))
+                      (when (and target (sel::node-p target) (eq (sel::node-kind target) :var))
+                        (pushnew (sel::node-s target) roots :test #'string=)))
+                    (push (sel::node-r n) stack))
+                   (t
+                    (when (and (eq (sel::node-kind n) :call) (not (sel::shipped-call-p n)))
+                      (setf app t))
+                    (push (sel::node-l n) stack)
+                    (push (sel::node-r n) stack)
+                    (dolist (it (sel::node-items n)) (push it stack)))))))
+    (values roots app)))
+
+(defun continuation-root (program context &optional (effects (multiple-value-list
+                                                                (continuation-effects program))))
+  "A root the continuation may own: a full copy of CONTEXT when it calls an
+application function, else a new root sharing CONTEXT's variables but holding
+copies of the ones it assigns into. A context that is not a plain record of
+variables (a list, or one with a scalar) is copied whole. EFFECTS is
+CONTINUATION-EFFECTS' answer as a list, when the caller has it."
+  (destructuring-bind (roots app) effects
+    (if (or app
+            (not (eq (sel:value-kind context) :none))
+            (sel::value-is-list context))
+        (sel:value-copy context)
+        (let ((root (sel:make-none)))
+          (dolist (k (sel::%value-keys context) root)
+            (let ((child (sel:value-get context k)))
+              (sel:value-set root k (if (member k roots :test #'string=)
+                                        (sel::value-copy-at child 2 nil)
+                                        child))))))))
 
 (defun context-for-continuation (program context)
   "A value the continuation may run on without the caller's tree ever being
-written: the context itself when PROGRAM cannot write; else a full copy."
-  (let ((value (if (sel:value-p context) context (sel:from-native context))))
-    (if (and (sel:value-p context) (continuation-may-write-p program))
-        (sel:value-copy value)
-        value)))
-
-(defun root-with-variable (context name value)
-  "A new root holding CONTEXT's variables (the same child values, not copies) and
-NAME bound to VALUE, so the caller's root is not given a variable it never had."
-  (let ((root (sel:make-none)))
-    (dolist (k (sel::value-keys context))
-      (sel:value-set root k (sel::value-get context k)))
-    (sel:value-set root name value)
-    root))
+written: the context itself when PROGRAM cannot write, else CONTINUATION-ROOT."
+  (if (not (sel:value-p context))
+      (sel:from-native context)
+      (let ((effects (multiple-value-list (continuation-effects program))))
+        (if (some #'identity effects)
+            (continuation-root program context effects)
+            context))))
 
 (defun execute-hybrid (plan db-runner &optional context)
   "Execute a HYBRID-PLAN using DB-RUNNER for SQL execution and SEL:RUN for in-memory continuation.
 DB-RUNNER is a function (lambda (sql-string params) ...) that returns a SEL:VALUE
 (e.g. list of rows). It is handed the statement in :PARAMS mode -- text
 literals as `?` placeholders, numbers inlined -- and BINDINGS, the bound values
-in placeholder order, which is what the other four hosts hand their runners
-(review finding AK: this host handed inline SQL and the creation-order slot
-list, which a driver could not bind as it was)."
+in placeholder order, which is what the other hosts hand their runners (inline
+SQL and the creation-order slot list, which this host once handed, could not
+be bound by a driver as they were)."
   (cond
     ((hybrid-plan-pure-sql-p plan)
      (let ((frag (hybrid-plan-sql-statement plan)))
@@ -958,7 +1021,7 @@ list, which a driver could not bind as it was)."
     ((hybrid-plan-pure-memory-p plan)
      ;; On a COPY of the caller's context, like the hybrid branch below: the
      ;; program may assign, and running it on the caller's value would write
-     ;; into the caller's tree (JS-C60, PY-C51, CPP-C54). The continuation still
+     ;; into the caller's tree. The continuation still
      ;; reads the caller's variables through the copy.
      (let ((program (hybrid-plan-continuation-program plan)))
        (sel:run program
@@ -976,12 +1039,9 @@ list, which a driver could not bind as it was)."
        ;; copy, never to the caller's value.
        (let* ((rows (if (sel:value-p db-rows) db-rows (sel:from-native db-rows)))
               (cont-context
-                (cond ((null context)
-                       (let ((root (sel:make-none))) (sel:value-set root input-var rows) root))
-                      ((continuation-may-write-p cont-prog)
-                       (let ((root (context-for-continuation cont-prog context)))
-                         (sel:value-set root input-var rows)
-                         root))
-                      (t (root-with-variable (if (sel:value-p context) context (sel:from-native context))
-                                             input-var rows)))))
+                (let ((root (cond ((null context) (sel:make-none))
+                                  ((sel:value-p context) (continuation-root cont-prog context))
+                                  (t (sel:from-native context)))))
+                  (sel:value-set root input-var rows)
+                  root)))
          (sel:run cont-prog cont-context))))))

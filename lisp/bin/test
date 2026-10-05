@@ -1,7 +1,11 @@
 #!/usr/bin/env bash
 # The Common Lisp unit tests. The conformance suite is what proves the
 # implementation correct; these cover the layers underneath it.
+#
+# First, check-load compiles the systems from a clean cache with plain ASDF and
+# fails on a full compiler WARNING, which Quicklisp (used below) would muffle.
 here="$(cd "$(dirname "$0")" && pwd)"
+"$here/check-load" || exit 1
 exec sbcl --dynamic-space-size 4GB --noinform --disable-debugger --non-interactive \
   --load "$here/boot.lisp" \
   --eval '(let ((*standard-output* (make-broadcast-stream))) (funcall (find-symbol "QUICKLOAD" "QL") :sel-lang/tests))' \

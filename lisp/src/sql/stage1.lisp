@@ -169,7 +169,7 @@ operand, and the two would drift."
 (defun numeric-text-constant (n root)
   "The canonical spelling of a constant that is TEXT holding a number, or NIL when it
 is anything else (or SEL refuses it: the operand's own translation reports that).
-PHP-C33: in arithmetic SEL computes with such a text exactly, and MariaDB and MySQL
+In arithmetic SEL computes with such a text exactly, and MariaDB and MySQL
 would convert the quoted string to DOUBLE (`'0.1' + '0.2' = 0.3` is false there), so
 the translator spells it as the exact numeric literal it stands for."
   (handler-case
@@ -194,7 +194,7 @@ one this was entered at -- because that is the character the author has to
 change."
   ;; SEL's E_DEPTH is not a judgement that the expression is invalid -- SEL
   ;; evaluates deep-but-legal programs fine -- it is the NESTING of what would be
-  ;; translated, which is what E_SQL_DEPTH says (JS-C54 d).
+  ;; translated, which is what E_SQL_DEPTH says.
   (when (equal (sel:sel-error-code e) "E_DEPTH")
     (refuse "E_SQL_DEPTH"
             (format nil "this expression nests deeper than SEL will evaluate (~a), so ~
@@ -218,7 +218,7 @@ nothing to translate; a database would answer something rather than fail"
 ;;; The definitions a program's leading statements make. A plain alist (name . value)
 ;;; is also accepted wherever DEFS is read -- a binder rename passes one -- but the
 ;;; statements' own set is this struct: the alist was searched by ASSOC and extended
-;;; by APPEND per statement, O(n^2) over n statements (LISP-P16).
+;;; by APPEND per statement, O(n^2) over n statements.
 (defstruct (defs (:constructor make-defs ()))
   (table (make-hash-table :test 'equal))
   (items '()))                          ; the cells, newest first; only ever iterated as a set
@@ -257,7 +257,7 @@ would collapse them, or turn a legal program into a duplicate-key refusal."
 name read is a value at that moment). Only a clist is mutable -- every other node
 is immutable once stage 1 has it -- so only a clist is cloned, deeply, since its
 entries can hold clists too. Sharing one made `R[1] = 5; X = R; R[2] = 6;
-COUNT(X)` see two elements where SEL sees one (GO-C4)."
+COUNT(X)` see two elements where SEL sees one."
   (if (clist-p v)
       (let ((out (make-clist (clist-pos v))))
         (setf (clist-entries out)
@@ -294,7 +294,8 @@ accepts was decided by the host."
      ;; BOUND before DEFS: an aggregate binder SHADOWS a same-named helper.
      ;; `B = 7; ALL((1,2), B, B > 0)` translates to (1 > 0) AND (2 > 0) -- the
      ;; helper is never inlined into the body.
-     (if (member (sel::node-s node) bound :test #'equal)
+     (if (or (sel::node-binding-read node)
+             (member (sel::node-s node) bound :test #'equal))
          node
          (let ((cell (defs-get (sel::node-s node) defs)))
            (if cell (snapshot-def (cdr cell)) node))))
@@ -327,18 +328,17 @@ SQL expression cannot do" (snode-pos node)))
      ;; DEPENDENCIES. A binder argument is a NAME, not a read of one, and stays
      ;; as written -- unless a definition about to be inlined under it reads a
      ;; name the binder would capture, in which case the binder is renamed first.
-     (let ((args (sel::node-items (setf node (hygienic-call node defs bound depth)))))
-       (multiple-value-bind (scopes binds)
-           (sel::binding-form (sel::node-s node) args (sel::node-spec node))
-         (let ((inner (append bound binds)))
-           (replace-items
-            node
-            (loop for arg in args
-                  for scope in (or scopes (make-list (length args) :initial-element :outer))
-                  collect (case scope
-                            (:binder arg)
-                            (:inner (substitute-node arg defs inner depth))
-                            (t (substitute-node arg defs bound depth)))))))))
+     (setf node (hygienic-call node defs depth))
+     (replace-items
+      node
+      (sel::keep-binding-form
+       (sel::node-s node) (sel::node-items node)
+       (sel::map-call-args-by-scope (arg scope inner) node bound
+         (case scope
+           (:binder arg)
+           (:inner (substitute-node arg defs inner depth))
+           (t (substitute-node arg defs bound depth))))
+       (snode-pos node))))
     (t node)))
 
 (defvar *metrics* nil
@@ -366,13 +366,8 @@ NAME is not a node the walk visits and is not counted (it is not a read)."
               ((:bin :index) (add (sel::node-l n)) (add (sel::node-r n)))
               (:list (dolist (i (sel::node-items n)) (add i)))
               (:call
-               (let ((args (sel::node-items n)))
-                 (multiple-value-bind (scopes binds)
-                     (sel::binding-form (sel::node-s n) args (sel::node-spec n))
-                   (declare (ignore binds))
-                   (loop for arg in args
-                         for scope in (or scopes (make-list (length args) :initial-element :outer))
-                         do (unless (eq scope :binder) (add arg))))))
+               (sel::map-call-args-by-scope (arg scope inner) n '()
+                 (unless (eq scope :binder) (add arg))))
               (t nil)))))
        (let ((m (cons size (1+ depth))))
          (when *metrics* (setf (gethash n *metrics*) m))
@@ -409,17 +404,11 @@ there is nothing to translate; the evaluator answers E_DEPTH for it" sel::+max-d
                  (:list (dolist (i (sel::node-items n)) (walk i bound)))
                  (:clist (dolist (c (clist-entries n)) (walk (cdr c) bound)))
                  (:call
-                  (let ((args (sel::node-items n)))
-                    (multiple-value-bind (scopes binds)
-                        (sel::binding-form (sel::node-s n) args (sel::node-spec n))
-                      (let ((inner (append bound binds)))
-                        (loop for arg in args
-                              for scope in (or scopes (make-list (length args)
-                                                                 :initial-element :outer))
-                              do (case scope
-                                   (:binder nil)
-                                   (:inner (walk arg inner))
-                                   (t (walk arg bound))))))))
+                  (sel::map-call-args-by-scope (arg scope inner) n bound
+                    (case scope
+                      (:binder nil)
+                      (:inner (walk arg inner))
+                      (t (walk arg bound)))))
                  (t nil))))
       (walk node bound))
     out))
@@ -430,11 +419,11 @@ there is nothing to translate; the evaluator answers E_DEPTH for it" sel::+max-d
   "A name no program can write: it contains a character the lexer never yields."
   (format nil "~a~c~d" name (code-char 1) (incf *fresh-binder-counter*)))
 
-(defun hygienic-call (node defs bound depth)
+(defun hygienic-call (node defs depth)
   "Rename the explicit binder of a binding call when it would CAPTURE a name free
 in a definition about to be inlined into its scope. `X = A; ALL(L, A, X > 0)` must
 read the column A in the body, and inlining X as the bare name A would make it
-read the binder instead (JS-C26, CPP-C23). Returns NODE, or a copy with the binder
+read the binder instead. Returns NODE, or a copy with the binder
 argument and the free reads of it in the inner arguments renamed."
   (let ((args (sel::node-items node)))
     (multiple-value-bind (scopes binds)
