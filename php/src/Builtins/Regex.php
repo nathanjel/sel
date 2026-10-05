@@ -288,7 +288,7 @@ final class Regex
             if (isset(self::EXPAND_OUTSIDE[$e])) {
                 $neg = $e === 'D' || $e === 'W' || $e === 'S';
                 return ['k' => 'cls', 'src' => self::EXPAND_OUTSIDE[$e], 'esc' => true,
-                    'ranges' => self::CLASS_RANGES[strtolower($e)], 'neg' => $neg];
+                    'ranges' => self::CLASS_RANGES[Utf8::lower($e)], 'neg' => $neg];
             }
             if (in_array($e, self::CONTROL_ESCAPES, true)) {
                 return ['k' => 'lit', 'src' => $c . $e, 'ranges' => [[self::CONTROL_CP[$e], self::CONTROL_CP[$e]]]];
