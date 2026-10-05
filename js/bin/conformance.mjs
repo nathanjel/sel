@@ -20,7 +20,7 @@ const SUITE = resolve(HERE, '../../conformance');
 
 // --- .selt parsing ----------------------------------------------------------
 
-export // SEL's four whitespace characters and nothing else. `String.prototype.trim()`
+// SEL's four whitespace characters and nothing else. `String.prototype.trim()`
 // strips ECMA-262's WhiteSpace set, which includes U+FEFF and every Unicode Zs
 // -- so a case whose source began with a byte-order mark had it silently
 // deleted HERE, and this host alone answered TRUE where the other four raised
@@ -30,7 +30,10 @@ function trimWs(t) {
   return t.replace(/^[ \t\r\n]+/, '').replace(/[ \t\r\n]+$/, '');
 }
 
-function parseSelt(text, file) {
+// The parsing, checking and running below are exported for
+// tools/check-js-examples.mjs, which runs the reference fragments' own
+// cases.selt through them after injecting the fragment.
+export function parseSelt(text, file) {
   const cases = [];
   let cur = null;
   let section = null;
@@ -104,7 +107,7 @@ function describe(value) {
   }
 }
 
-function check(expect, value, error, at) {
+export function check(expect, value, error, at) {
   const space = expect.indexOf(' ');
   const form = space < 0 ? expect : expect.slice(0, space);
   const rest = space < 0 ? '' : expect.slice(space + 1).trim();
@@ -148,7 +151,7 @@ function check(expect, value, error, at) {
 
 // --- running ----------------------------------------------------------------
 
-function runCase(c) {
+export function runCase(c) {
   const root = Value.none();
   if (c.setup) {
     try {

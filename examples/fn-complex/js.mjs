@@ -12,7 +12,7 @@ define({
     const body = args.node(three ? 2 : 1);
 
     const list = args.val(0);
-    const items = list.size > 0 ? list.entries()
+    const items = list.size() > 0 ? list.entries()
       : list.kind === NONE ? [] : [['1', list]];
 
     for (const [key, item] of items) {
