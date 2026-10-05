@@ -30,15 +30,14 @@ def node_contains_var(node, name):
     source can make as deep as it is long (a flat chain of 5,000 `+` inside an
     aggregate), and a recursive walk of it ran into the interpreter's frame limit
     before the evaluator's own depth cap could report E_DEPTH."""
-    upper = name.upper()
-    stack = [node]
+    stack = [node]                       # names compare as the lexer wrote them
     while stack:
         n = stack.pop()
         if n is None:
             continue
         t = n.t
         if t == 'var':
-            if n.name.upper() == upper:
+            if n.name == name:
                 return True
         elif t == 'index':
             stack.append(n.obj)

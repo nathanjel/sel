@@ -165,7 +165,7 @@ per-element expressions) contributes to `defs` only where every path assigns it.
         return defs | {target.name}
 
     if t == 'call':
-        name = (node.name or '').upper()
+        name = node.name or ''              # a call's name is the canonical one
         if name == 'IF' and len(node.args) == 3:
             defs = _collect(node.args[0], bound, defs, reads, d1)
             a = _collect(node.args[1], bound, defs, reads, d1)

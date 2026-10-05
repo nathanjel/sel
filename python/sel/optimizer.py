@@ -169,16 +169,17 @@ def field_refs(node: Node | None, binder: str | None = '_') -> list[str]:
 
 def reads_var(node: Node | None, names: tuple[str, ...]) -> bool:
     """Whether ``node`` reads one of ``names`` as a variable -- other than as
-    ``name["field"]``, which is a field read. Case-insensitively, like the
-    evaluator's frames."""
-    wanted = {name.upper() for name in names}
+    ``name["field"]``, which is a field read. Names are compared as they are:
+    the lexer has already upper-cased every identifier (spec §2), and the
+    binders and `_` names asked about are those identifiers."""
+    wanted = set(names)
     found = False
 
     def visit(item: Node | None) -> None:
         nonlocal found
         if item is None or found:
             return
-        if item.t == 'var' and item.name.upper() in wanted:
+        if item.t == 'var' and item.name in wanted:
             found = True
             return
         if (item.t == 'index' and item.obj is not None and item.obj.t == 'var'
@@ -272,7 +273,7 @@ def map_passthroughs(step: Node) -> list[str]:
     for i in range(0, len(body.args) - 1, 2):
         key, value = body.args[i], body.args[i + 1]
         if (key.t == 'text' and value.t == 'index' and value.obj.t == 'var'
-                and value.obj.name.upper() == details['binder'].upper()
+                and value.obj.name == details['binder']
                 and value.idx.t == 'text' and value.idx.v == key.v):
             fields.append(key.v)
     return fields
@@ -298,11 +299,10 @@ def cannot_raise(node, binder: str, logical: bool) -> bool:
     if t in ('num', 'text', 'bool', 'null'):
         return True
     if t == 'var':
-        name = node.name.upper()
-        return name == '_K' or name == binder.upper()
+        return node.name == '_K' or node.name == binder
     if t == 'index':
         return (logical and node.obj is not None and node.obj.t == 'var'
-                and node.obj.name.upper() == binder.upper()
+                and node.obj.name == binder
                 and node.idx is not None and node.idx.t == 'text')
     if t == 'bin':
         return (logical and node.op in _SAFE_LOGICAL_OPS
@@ -409,7 +409,7 @@ def rename_var(node: Node | None, old_name: str, new_name: str) -> Node | None:
     if node is None:
         return None
     copy = copy_node(node)
-    if copy.t == 'var' and copy.name.upper() == old_name.upper():
+    if copy.t == 'var' and copy.name == old_name:
         copy.name = new_name
     copy.args = [rename_var(item, old_name, new_name) for item in copy.args]
     copy.items = [rename_var(item, old_name, new_name) for item in copy.items]
@@ -567,7 +567,7 @@ def logical_steps(source: Node | None, steps: list[Node],
                     next_steps.append(first)
                     i += 1
                     continue
-                predicate = (right['predicate'] if right['binder'].upper() == left['binder'].upper()
+                predicate = (right['predicate'] if right['binder'] == left['binder']
                              else rename_var(right['predicate'], right['binder'], left['binder']))
                 merged = copy_node(first)
                 combined = Node('bin', left['predicate'].pos, op='AND',

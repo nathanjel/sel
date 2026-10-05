@@ -344,12 +344,12 @@ def _reads_whole_row(node: Node | None, binder: str) -> bool:
     """Whether ``node`` reads the row itself -- the binder outside an index
     with a text key, as in ``GET(_, "name")`` or ``COUNT(_)`` -- which no
     projected column can stand in for."""
-    wanted = {binder.upper(), '_', '_1', '_2'}
+    wanted = {binder, '_', '_1', '_2'}      # canonical (lexer) names
 
     def visit(item: Node | None) -> bool:
         if item is None:
             return False
-        if item.t == 'var' and item.name.upper() in wanted:
+        if item.t == 'var' and item.name in wanted:
             return True
         if (item.t == 'index' and item.obj is not None and item.obj.t == 'var'
                 and item.idx is not None and item.idx.t == 'text'):
@@ -369,7 +369,7 @@ def _is_own_field_read(pair: tuple[Node, Node], binder: str) -> bool:
     key, value = pair
     return (value.t == 'index' and value.obj is not None and value.obj.t == 'var'
             and value.idx is not None and value.idx.t == 'text'
-            and value.obj.name.upper() == binder.upper()
+            and value.obj.name == binder
             and str(value.idx.v) == str(key.v))
 
 

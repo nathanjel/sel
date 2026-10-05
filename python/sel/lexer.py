@@ -426,8 +426,19 @@ class Lexer:
         fail('E_UNTERMINATED', 'unterminated raw text literal', pos)
 
 
+# SEL's case rule for names and options: ASCII letters only, never the host's
+# Unicode mapping ("ß".upper() is "SS"; "İ".lower() is two code points). On an
+# all-ASCII string the str methods are that rule exactly, and in C.
 def ascii_upper(s: str) -> str:
+    if s.isascii():
+        return s.upper()
     return ''.join(chr(ord(c) - 32) if 'a' <= c <= 'z' else c for c in s)
+
+
+def ascii_lower(s: str) -> str:
+    if s.isascii():
+        return s.lower()
+    return ''.join(chr(ord(c) + 32) if 'A' <= c <= 'Z' else c for c in s)
 
 
 def tokenize(source: str) -> list[Token]:

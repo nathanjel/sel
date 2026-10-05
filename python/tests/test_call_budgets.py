@@ -30,8 +30,10 @@ CONTEXTS = {'rows': {'L': [{'a': 'x' if i % 3 == 0 else 'y', 'b': i} for i in ra
 # 5365 -> 5364 when TOP_BY's form came from registry.sort_form (one memoised
 # lookup where two Args.node calls were), then 5364 -> 5363 when the
 # aggregates' "may this body write?" walk became parser.may_write (the old
-# copy ran a function-level import on every call).
-BUDGETS = {'pixel': 2252, 'rows': 5363}
+# copy ran a function-level import on every call), then 5363 -> 5358 when
+# lexer.ascii_upper took str.upper() for an all-ASCII string instead of a
+# generator over its characters (the sort direction "DESC" is folded once).
+BUDGETS = {'pixel': 2252, 'rows': 5358}
 
 
 def python_calls(label):
