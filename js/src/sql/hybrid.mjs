@@ -750,50 +750,76 @@ function latestFieldName(n) {
   return n?.t === 'index' && n.obj.t === 'var' && n.obj.name === '_' && n.idx.t === 'text' ? n.idx.v : null;
 }
 
+// The "latest member per group" plan (docs/internals/sql-translation.md §12.1):
+// `[FILTER...] [SORT_BY(_["rev"])] .> BUCKET(_["part"]) .> MAP(RECORD(k1,
+// _K, k2, TOP_BY(_, _["rev"], "DESC", 1)))` over a relation with a unique
+// revision key keeps, per partition, the row with the highest revision -- in
+// SQL, through a MAX join -- and leaves the grouping itself to the
+// continuation. Null when the program is not that shape.
 function tryLatestMember(source, steps, dialect, catalog, opts, helpers) {
   if (!['mariadb', 'mysql', 'postgresql', 'sqlite'].includes(dialect)) return null;
-  const rel = catalog.get(source.name, source.pos), revision = rel.unique_key;
-  const at = steps.findIndex((s) => s.name === 'BUCKET');
-  if (!revision || at < 0 || typeof rel.from !== 'string' || rel.correlate) return null;
-  const ba = steps[at].args, partition = [2, 3].includes(ba.length) ? latestFieldName(ba[1]) : null;
-  let body = ba.length === 3 ? ba[2] : null;
-  const m = steps[at + 1];
-  if (!body && m?.name === 'MAP' && m.args.length === 2) body = m.args[1];
-  const pf = rel.fields[asciiUpper(partition ?? '')] ?? {}, rf = rel.fields[asciiUpper(revision)] ?? {};
-  if (partition === null || body?.t !== 'call' || body.name !== 'RECORD' || body.args.length !== 4
-      || !['NUM', 'TEXT'].includes(pf.type) || rf.type !== 'NUM' || pf.column !== partition
-      || rf.column !== revision || pf.raw || rf.raw || rf.guard) return null;
-  const ra = body.args, values = [ra[1], ra[3]];
-  if (ra[0].t !== 'text' || ra[2].t !== 'text' || ra[0].v === ra[2].v) return null;
+  const relation = catalog.get(source.name, source.pos);
+  const revision = relation.unique_key;
+  const bucketAt = steps.findIndex((s) => s.name === 'BUCKET');
+  if (!revision || bucketAt < 0 || typeof relation.from !== 'string' || relation.correlate) return null;
+
+  // BUCKET(_["part"]) with its projection inline, or in the MAP that follows.
+  const bucketArgs = steps[bucketAt].args;
+  const partition = [2, 3].includes(bucketArgs.length) ? latestFieldName(bucketArgs[1]) : null;
+  let projection = bucketArgs.length === 3 ? bucketArgs[2] : null;
+  const next = steps[bucketAt + 1];
+  if (!projection && next?.name === 'MAP' && next.args.length === 2) projection = next.args[1];
+  const partitionField = relation.fields[asciiUpper(partition ?? '')] ?? {};
+  const revisionField = relation.fields[asciiUpper(revision)] ?? {};
+  if (partition === null || projection?.t !== 'call' || projection.name !== 'RECORD'
+      || projection.args.length !== 4
+      || !['NUM', 'TEXT'].includes(partitionField.type) || revisionField.type !== 'NUM'
+      || partitionField.column !== partition || revisionField.column !== revision
+      || partitionField.raw || revisionField.raw || revisionField.guard) return null;
+
+  // RECORD(k1, v1, k2, v2): one value is _K, the other TOP_BY(_, _["rev"], "DESC", 1).
+  const recordArgs = projection.args;
+  const values = [recordArgs[1], recordArgs[3]];
+  if (recordArgs[0].t !== 'text' || recordArgs[2].t !== 'text' || recordArgs[0].v === recordArgs[2].v) return null;
   const top = values.find((n) => n.t === 'call' && n.name === 'TOP_BY');
   if (!top || !values.some((n) => n.t === 'var' && n.name === '_K')) return null;
-  const ta = top.args;
-  if (ta.length !== 4 || ta[0].t !== 'var' || ta[0].name !== '_' || latestFieldName(ta[1]) !== revision
-      || ta[2].t !== 'text' || ta[2].v !== 'DESC' || ta[3].t !== 'num' || ta[3].v !== '1') return null;
-  for (const s of steps.slice(0, at)) {
+  const topArgs = top.args;
+  if (topArgs.length !== 4 || topArgs[0].t !== 'var' || topArgs[0].name !== '_'
+      || latestFieldName(topArgs[1]) !== revision
+      || topArgs[2].t !== 'text' || topArgs[2].v !== 'DESC'
+      || topArgs[3].t !== 'num' || topArgs[3].v !== '1') return null;
+
+  // Before the BUCKET: FILTERs, and sorts by the revision ascending.
+  for (const s of steps.slice(0, bucketAt)) {
     if (s.name === 'FILTER') continue;
     if (s.name !== 'SORT_BY' || ![2, 3].includes(s.args.length) || latestFieldName(s.args[1]) !== revision
         || (s.args.length === 3 && (s.args[2].t !== 'text' || s.args[2].v !== 'ASC'))) return null;
   }
-  const dummy = { t: 'call', name: 'FILTER', pos: source.pos, args: [source, { t: 'bool', v: true, pos: source.pos }] };
-  const prefix = helpers.wrap(buildPipeline(source, at ? steps.slice(0, at) : [dummy]));
+  const passAll = { t: 'call', name: 'FILTER', pos: source.pos, args: [source, { t: 'bool', v: true, pos: source.pos }] };
+  const prefix = helpers.wrap(buildPipeline(source, bucketAt ? steps.slice(0, bucketAt) : [passAll]));
   const sql = tryStatement(prefix, dialect, catalog, opts);
   if (!sql) return null;
   try {
     const emit = new Emit(dialect);
-    let input = '_sel_input', groups = '_sel_latest';
-    while (asciiUpper(input) === asciiUpper(rel.from)) input += '_';
-    while ([asciiUpper(rel.from), asciiUpper(input)].includes(asciiUpper(groups))) groups += '_';
-    const [qi, qg, qr, qmax, qfirst] = [input, groups, revision, '_sel_revision', '_sel_first'].map((s) => emit.ident(s));
-    let key = emit.textOperand(new Fragment([emit.ident(partition)], pf.type, dialect)).asValue();
-    const parts = [`WITH ${qi} AS (`, ...sql.parts,
-      `), ${qg} AS (SELECT MAX(${qr}) AS ${qmax}, MIN(${qr}) AS ${qfirst} FROM ${qi} GROUP BY ${key}) `
-      + `SELECT ${qi}.* FROM ${qi} JOIN ${qg} ON ${qi}.${qr} = ${qg}.${qmax} ORDER BY ${qg}.${qfirst} ASC`];
-    const continuation = helpers.wrap(buildPipeline({ t: 'var', name: '_INPUT', pos: steps[at].pos }, steps.slice(at)));
+    // CTE names that cannot collide with the table, nor with each other.
+    let inputName = '_sel_input';
+    let groupsName = '_sel_latest';
+    while (asciiUpper(inputName) === asciiUpper(relation.from)) inputName += '_';
+    while ([asciiUpper(relation.from), asciiUpper(inputName)].includes(asciiUpper(groupsName))) groupsName += '_';
+    const input = emit.ident(inputName);
+    const groups = emit.ident(groupsName);
+    const rev = emit.ident(revision);
+    const maxRev = emit.ident('_sel_revision');
+    const firstRev = emit.ident('_sel_first');
+    const key = emit.textOperand(new Fragment([emit.ident(partition)], partitionField.type, dialect)).asValue();
+    const parts = [`WITH ${input} AS (`, ...sql.parts,
+      `), ${groups} AS (SELECT MAX(${rev}) AS ${maxRev}, MIN(${rev}) AS ${firstRev} FROM ${input} GROUP BY ${key}) `
+      + `SELECT ${input}.* FROM ${input} JOIN ${groups} ON ${input}.${rev} = ${groups}.${maxRev} ORDER BY ${groups}.${firstRev} ASC`];
+    const continuation = helpers.wrap(buildPipeline({ t: 'var', name: '_INPUT', pos: steps[bucketAt].pos }, steps.slice(bucketAt)));
     return new HybridPlan({ dialect,
       sqlStatement: new Fragment(parts, 'STATEMENT', dialect, sql.params, sql.paramKinds, sql.caveats),
       sqlPrefixAst: prefix, continuationAst: continuation, continuationProgram: new Program('', continuation),
-      sourceTables: [rel.from], selectedMember: { partition_key: partition, revision_key: revision } });
+      sourceTables: [relation.from], selectedMember: { partition_key: partition, revision_key: revision } });
   } catch (e) {
     if (e instanceof SqlError) return null;
     throw e;
