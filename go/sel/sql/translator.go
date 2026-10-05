@@ -1037,10 +1037,11 @@ func (t *translator) coerceScaleLimits(operands []*sNode) {
 	}
 }
 
-var (
-	byteComparisonsSet = map[string]bool{"$==": true, "$!=": true, "$<": true, "$<=": true, "$>": true, "$>=": true, "EQL": true, "IN": true}
-	arithmeticOpsSet   = map[string]bool{"+": true, "-": true, "*": true, "/": true, "%": true}
-)
+// isByteComparison reports the operators SEL reads as bytes: the text
+// comparisons and the deep comparisons (EQL, IN).
+func isByteComparison(op string) bool {
+	return vocab.IsTextComparison(op) || vocab.IsDeepComparison(op)
+}
 
 func (t *translator) variantFor(op string, args []*Fragment) *string {
 	if vocab.IsNumericComparison(op) {
@@ -1239,7 +1240,7 @@ func (t *translator) binary(n *sNode) *Fragment {
 	}
 
 	var l, r *Fragment
-	if arithmeticOpsSet[op] {
+	if vocab.IsArithmetic(op) {
 		l = t.arithmeticOperand(n.L())
 		r = t.arithmeticOperand(n.R())
 	} else {
@@ -1247,11 +1248,11 @@ func (t *translator) binary(n *sNode) *Fragment {
 		r = t.node(n.R())
 	}
 
-	if op == "AND" || op == "OR" || op == "XOR" {
+	if vocab.IsLogic(op) {
 		l = t.requireBool(l, n.L().Pos, op)
 		r = t.requireBool(r, n.R().Pos, op)
 	}
-	if arithmeticOpsSet[op] || vocab.IsNumericComparison(op) {
+	if vocab.IsArithmetic(op) || vocab.IsNumericComparison(op) {
 		t.requireNotBool(l, n.L().Pos, op)
 		t.requireNotBool(r, n.R().Pos, op)
 		t.requireNumericConstant(n.L())
@@ -1270,7 +1271,7 @@ func (t *translator) binary(n *sNode) *Fragment {
 		t.coerceScaleLimits([]*sNode{n.L(), n.R()})
 	}
 
-	if byteComparisonsSet[op] {
+	if isByteComparison(op) {
 		requireComparableKinds(l, r, op, n.Pos)
 		lExact := l.ExactCollation
 		rExact := r.ExactCollation
@@ -1671,18 +1672,15 @@ func (t *translator) caseWhen(cond, then, els *Fragment, pos Pos) *Fragment {
 	return NewFragment(t.fillNamed(t.skeleton("case", pos), slots, pos), resKind, t.dialect, nil, nil, nil)
 }
 
-var (
-	binArgumentOkSet  = map[string]bool{"BLEN": true, "CRC32": true, "ENCODE_BASE64": true, "FROM_UTF8": true, "ISNUM": true, "TO_HEX": true, "TO_UTF8": true}
-	boolArgumentOkSet = map[string]bool{"ISNUM": true}
-)
-
+// requireArgumentKind refuses a BOOL or BIN argument unless the manifest's
+// sql.boolArg / sql.binArg says the builtin takes one (spec/builtins.json).
 func (t *translator) requireArgumentKind(name string, f *Fragment, pos Pos) {
-	if f.Kind == KindBool && !boolArgumentOkSet[name] {
+	if f.Kind == KindBool && !manifest.SQLArgTypes[name].Bool {
 		refuse("E_SQL_SHAPE",
 			fmt.Sprintf("%s does not take a BOOL argument; SEL raises here rather than reading a boolean as text or as 1", name),
 			pos)
 	}
-	if f.Kind == KindBin && !binArgumentOkSet[name] {
+	if f.Kind == KindBin && !manifest.SQLArgTypes[name].Bin {
 		refuse("E_SQL_SHAPE",
 			fmt.Sprintf("%s reads its argument as text, and this is BIN; SEL raises here rather than reinterpreting bytes as characters", name),
 			pos)
@@ -1690,9 +1688,8 @@ func (t *translator) requireArgumentKind(name string, f *Fragment, pos Pos) {
 }
 
 func regexAt(name string) *int {
-	if _, ok := vocab.RegexFlagsAt(name); ok {
-		zero := 0 // the pattern
-		return &zero
+	if at, ok := vocab.RegexPatternAt(name); ok {
+		return &at
 	}
 	return nil
 }
@@ -1760,22 +1757,20 @@ func (t *translator) rewriteRegex(n *sNode) *sNode {
 	return rewritten(n.Origin, args)
 }
 
+// isNumericArgument reports an argument the SQL layer types as a number: the
+// manifest's sql.numericArgs (spec/builtins.json).
 func isNumericArgument(name string, i int) bool {
-	if name == "MIN" || name == "MAX" {
+	a, ok := manifest.SQLArgTypes[name]
+	if !ok {
+		return false
+	}
+	if a.NumericAll {
 		return true
 	}
-	if i == 0 {
-		return name == "ABS" || name == "SIGN" || name == "CEIL" ||
-			name == "FLOOR" || name == "TRUNC" || name == "ROUND" ||
-			name == "POWER" || name == "CHAR" || name == "CANON"
-	}
-	if i == 1 {
-		return name == "ROUND" || name == "POWER" || name == "LEFT" ||
-			name == "RIGHT" || name == "SUBSTR" || name == "REPEAT" ||
-			name == "PADL" || name == "PADR"
-	}
-	if i == 2 {
-		return name == "SUBSTR" || name == "FIND"
+	for _, at := range a.Numeric {
+		if at == i {
+			return true
+		}
 	}
 	return false
 }
@@ -1846,7 +1841,7 @@ func (t *translator) call(n *sNode) *Fragment {
 		// MIN and MAX compare their arguments as numbers: a numeric text constant is
 		// the number, as in arithmetic.
 		var f *Fragment
-		if name == "MIN" || name == "MAX" {
+		if manifest.SQLArgTypes[name].NumericAll {
 			f = t.arithmeticOperand(arg)
 		} else {
 			f = t.node(arg)
@@ -2011,8 +2006,6 @@ func aggShape(n *sNode) (string, *sNode) {
 	return "_", args[1]
 }
 
-var yieldsListSet = map[string]bool{"BTL": true, "INDEXES": true, "RGROUPS": true, "SPLIT": true}
-
 func (t *translator) classify(src *sNode) source {
 	var out source
 	if src.T == sNodeCall {
@@ -2103,7 +2096,7 @@ func (t *translator) classify(src *sNode) source {
 			return out
 		}
 	}
-	if src.T == sNodeCall && (yieldsListSet[src.Str] || src.Str == "LIST" || src.Str == "RECORD" || isPipelineOp(src.Str)) {
+	if src.T == sNodeCall && manifest.YieldsList[src.Str] {
 		refuse("E_SQL_SHAPE",
 			fmt.Sprintf("%s yields a list, and the scalar rule does not apply to it; SQL has no way to count or index what it produces", src.Str),
 			src.Pos)

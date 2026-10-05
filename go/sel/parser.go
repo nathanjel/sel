@@ -7,78 +7,51 @@ import (
 	"strings"
 
 	"github.com/nathanjel/sel/go/internal/decimal"
+	"github.com/nathanjel/sel/go/internal/lexicon"
 	"github.com/nathanjel/sel/go/internal/vocab"
 )
 
-// Binding power levels (spec/SPEC.md §5). Higher binds tighter.
-const (
-	bpSeq      = 1 // ;
-	bpList     = 2 // ,
-	bpAssign   = 3 // = += -= *= /= %= &= (right associative)
-	bpOr       = 4
-	bpXor      = 5
-	bpAnd      = 6
-	bpNot      = 7 // prefix
-	bpCompare  = 8 // non-associative
-	bpCoalesce = 9 // ?? ??? (right associative)
-	bpBOr      = 10
-	bpBXor     = 11
-	bpBAnd     = 12
-	bpConcat   = 13 // &
-	bpAdd      = 14 // + -
-	bpMul      = 15 // * / %
-	bpNeg      = 16 // prefix
-)
+// The binding powers and the infix table are the lexicon's (spec/lexicon.json,
+// rendered into internal/lexicon; spec/SPEC.md §5): higher binds tighter.
+// `;` and `,` build N-ary nodes in parseSequence and parseList, so they are not
+// rows of the climbing table; every other infix operator is.
+const bpAssign = lexicon.BPAssign
 
 type infixEntry struct {
 	bp    int
 	assoc byte // 'L', 'R', 'N'
 }
 
-var infixOps = map[string]infixEntry{
-	"??":  {bpCoalesce, 'R'},
-	"???": {bpCoalesce, 'R'},
-	"&":   {bpConcat, 'L'},
-	"+":   {bpAdd, 'L'},
-	"-":   {bpAdd, 'L'},
-	"*":   {bpMul, 'L'},
-	"/":   {bpMul, 'L'},
-	"%":   {bpMul, 'L'},
-	"=":   {bpAssign, 'R'},
-	"+=":  {bpAssign, 'R'},
-	"-=":  {bpAssign, 'R'},
-	"*=":  {bpAssign, 'R'},
-	"/=":  {bpAssign, 'R'},
-	"%=":  {bpAssign, 'R'},
-	"&=":  {bpAssign, 'R'},
-	"==":  {bpCompare, 'N'},
-	"!=":  {bpCompare, 'N'},
-	"<":   {bpCompare, 'N'},
-	"<=":  {bpCompare, 'N'},
-	">":   {bpCompare, 'N'},
-	">=":  {bpCompare, 'N'},
-	"$==": {bpCompare, 'N'},
-	"$!=": {bpCompare, 'N'},
-	"$<":  {bpCompare, 'N'},
-	"$<=": {bpCompare, 'N'},
-	"$>":  {bpCompare, 'N'},
-	"$>=": {bpCompare, 'N'},
-}
+var infixOps, infixWords, assignOps = func() (ops, words map[string]infixEntry, assign map[string]struct{}) {
+	ops, words, assign = map[string]infixEntry{}, map[string]infixEntry{}, map[string]struct{}{}
+	for _, op := range lexicon.Ops {
+		if op.Fixity != lexicon.Infix || op.Family == lexicon.FamilyList || op.Family == lexicon.FamilySequence {
+			continue
+		}
+		e := infixEntry{op.BP, op.Assoc}
+		if op.Word {
+			words[op.Token] = e
+		} else {
+			ops[op.Token] = e
+		}
+		if op.Family == lexicon.FamilyAssign {
+			assign[op.Token] = struct{}{}
+		}
+	}
+	return ops, words, assign
+}()
 
-var infixWords = map[string]infixEntry{
-	"OR":   {bpOr, 'L'},
-	"XOR":  {bpXor, 'L'},
-	"AND":  {bpAnd, 'L'},
-	"BOR":  {bpBOr, 'L'},
-	"BXOR": {bpBXor, 'L'},
-	"BAND": {bpBAnd, 'L'},
-	"EQL":  {bpCompare, 'N'},
-	"IN":   {bpCompare, 'N'},
-}
-
-var assignOps = map[string]struct{}{
-	"=": {}, "+=": {}, "-=": {}, "*=": {}, "/=": {}, "%=": {}, "&=": {},
-}
+// The prefix operators (NOT and unary minus), each with the name its node
+// records.
+var prefixOps = func() map[string]*lexicon.Op {
+	m := map[string]*lexicon.Op{}
+	for i := range lexicon.Ops {
+		if op := &lexicon.Ops[i]; op.Fixity == lexicon.Prefix {
+			m[op.Token] = op
+		}
+	}
+	return m
+}()
 
 func prepareRecordShape(name string, args []*Node) *RecordShape {
 	if name != "RECORD" || len(args) == 0 || len(args)%2 != 0 {
@@ -286,26 +259,19 @@ func (p *parser) parseTerm(minBp int) *Node {
 func (p *parser) parsePrefix(minBp int) *Node {
 	t := p.peek()
 
-	if t.Type == tokenIdent && t.Value == "NOT" && minBp <= bpNot {
-		p.next()
-		p.enter(t.Pos)
-		x := p.parseTerm(bpNot)
-		p.leave()
-		n := NewNode(NodeUn, t.Pos)
-		n.S = "NOT"
-		n.L = x
-		return n
-	}
-
-	if t.Type == tokenOp && t.Value == "-" && minBp <= bpNeg {
-		p.next()
-		p.enter(t.Pos)
-		x := p.parseTerm(bpNeg)
-		p.leave()
-		n := NewNode(NodeUn, t.Pos)
-		n.S = "NEG"
-		n.L = x
-		return n
+	// Each is accepted only where its own binding power reaches (NOT binds
+	// looser than a comparison operand), and counted only when consumed.
+	if t.Type == tokenIdent || t.Type == tokenOp {
+		if op := prefixOps[t.Value]; op != nil && op.Word == (t.Type == tokenIdent) && minBp <= op.BP {
+			p.next()
+			p.enter(t.Pos)
+			x := p.parseTerm(op.BP)
+			p.leave()
+			n := NewNode(NodeUn, t.Pos)
+			n.S = op.Name
+			n.L = x
+			return n
+		}
 	}
 
 	return p.parsePostfix()
@@ -473,23 +439,23 @@ func finishCall(nameTok token, spec *Spec, args []*Node) *Node {
 	// A literal pattern is checked when the program is compiled, not when the
 	// call runs, so a bad one in a branch that never executes is still refused
 	// (SPEC §7.8). A computed pattern is checked when it is used.
-	switch spec.Name {
-	case "RMATCH", "RFIND", "RGROUPS", "RREPLACE":
-		if len(args) > 0 && args[0].T == NodeText {
+	if patAt, ok := vocab.RegexPatternAt(spec.Name); ok {
+		if len(args) > patAt && args[patAt].T == NodeText {
 			// The ambiguity analysis folds case under `i`, so a literal flag is
 			// part of what is checked. A non-ASCII pattern under `i` is E_BAD_ARG
 			// when the call runs (compileRegex), not a syntax question here.
 			flagAt, _ := vocab.RegexFlagsAt(spec.Name)
+			pat := args[patAt]
 			ic := len(args) > flagAt && args[flagAt].T == NodeText && strings.Contains(args[flagAt].S, "i")
 			if ic {
-				for _, r := range args[0].S {
+				for _, r := range pat.S {
 					if r > 0x7F {
 						ic = false
 						break
 					}
 				}
 			}
-			parseRegexIC(args[0].S, ic, args[0].Pos)
+			parseRegexIC(pat.S, ic, pat.Pos)
 		}
 	}
 	n := NewNode(NodeCall, nameTok.Pos)

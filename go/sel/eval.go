@@ -6,8 +6,10 @@ import (
 	"bytes"
 	"fmt"
 	"math/big"
+	"strings"
 
 	"github.com/nathanjel/sel/go/internal/decimal"
+	"github.com/nathanjel/sel/go/internal/lexicon"
 	"github.com/nathanjel/sel/go/internal/mathops"
 )
 
@@ -476,8 +478,61 @@ func bitwise(op string, a, b []byte, pos Pos) *Value {
 	return newBinOwned(out)
 }
 
-var compoundOps = map[string]string{
-	"+=": "+", "-=": "-", "*=": "*", "/=": "/", "%=": "%", "&=": "&",
+// compoundOps is the binary operator each compound assignment applies, from the
+// lexicon ("+=" applies "+").
+var compoundOps = func() map[string]string {
+	m := map[string]string{}
+	for _, op := range lexicon.Ops {
+		if op.Compound != "" {
+			m[op.Token] = op.Compound
+		}
+	}
+	return m
+}()
+
+// The evaluator dispatches on the operator's spelling (evalBinary's switch, which
+// is the hot path and stays one), so nothing but this check ties that switch to
+// the lexicon: every binary operator the lexicon names must reach a branch of its
+// own -- never the "unknown operator" default -- and every compound assignment
+// must apply an operator evalAssign can apply. Probed once at load with numeric
+// operands; an operand-kind error is a branch that was reached.
+func init() {
+	ctx := newContext(nil)
+	one := NewNode(NodeNum, Pos{})
+	one.S = "1"
+	for _, op := range lexicon.Ops {
+		// evalUnary knows NOT and takes every other prefix node for NEG.
+		if op.Fixity == lexicon.Prefix && op.Name != "NOT" && op.Name != "NEG" {
+			panic("evaluator: the lexicon's prefix operator " + op.Token + " (" + op.Name + ") has no implementation")
+		}
+		if op.Fixity != lexicon.Infix || op.Node != "bin" {
+			continue
+		}
+		n := NewNode(NodeBin, Pos{})
+		n.S, n.L, n.R = op.Token, one, one
+		func() {
+			defer func() {
+				r := recover()
+				if r == nil {
+					return
+				}
+				se, ok := r.(*SelError)
+				if !ok {
+					panic(r)
+				}
+				if se.Code == "E_SYNTAX" && strings.HasPrefix(se.Message, "unknown") {
+					panic("evaluator: the lexicon's operator " + op.Token + " has no implementation (" + se.Message + ")")
+				}
+			}()
+			evalBinary(n, ctx)
+		}()
+		if op.Compound != "" && op.Compound != "&" {
+			d := decimal.Parse("1", Pos{}, fail)
+			if arith(op.Compound, d, d, Pos{}) == nil {
+				panic("evaluator: the compound assignment " + op.Token + " applies " + op.Compound + ", which arith does not implement")
+			}
+		}
+	}
 }
 
 func evalAssign(node *Node, ctx *Context) *Value {

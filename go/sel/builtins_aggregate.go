@@ -11,6 +11,7 @@ import (
 
 	"github.com/nathanjel/sel/go/internal/decimal"
 	"github.com/nathanjel/sel/go/internal/utf8"
+	"github.com/nathanjel/sel/go/internal/vocab"
 )
 
 func nodeContainsVar(node *Node, name string) bool {
@@ -883,7 +884,7 @@ func exprDependsOnlyOn(node *Node, allowed map[string]bool) bool {
 }
 
 func extractJoinEqui(node *Node, b1, b2 string) *joinEqui {
-	if node == nil || node.T != NodeBin || (node.S != "==" && node.S != "$==") {
+	if node == nil || node.T != NodeBin || !vocab.IsEquality(node.S) {
 		return nil
 	}
 	// One name for both sides: the right binder shadows the left (spec §7.4), so

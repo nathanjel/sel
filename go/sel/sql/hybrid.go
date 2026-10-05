@@ -8,6 +8,7 @@ import (
 	"github.com/nathanjel/sel/go/internal/limits"
 	"github.com/nathanjel/sel/go/internal/manifest"
 	"github.com/nathanjel/sel/go/internal/utf8"
+	"github.com/nathanjel/sel/go/internal/vocab"
 	"github.com/nathanjel/sel/go/sel"
 )
 
@@ -236,10 +237,10 @@ func needsLeftName(prefix, remaining []*sel.Node) bool {
 func sortedRowsJoined(steps []*sel.Node, count int) bool {
 	sorted := false
 	for _, step := range steps[:count] {
-		switch step.S {
-		case "SORT", "SORT_DESC", "SORT_BY", "TOP", "TOP_DESC", "TOP_BY":
+		switch name := step.S; {
+		case vocab.IsSortStep(name):
 			sorted = true
-		case "LINK", "LINK_LEFT":
+		case name == "LINK" || name == "LINK_LEFT":
 			if sorted {
 				return true
 			}
@@ -260,17 +261,17 @@ func sortedRowsJoined(steps []*sel.Node, count int) bool {
 func orderIsLost(steps []*sel.Node, count int) bool {
 	sorted, projected := false, false
 	for i := 0; i < count && i < len(steps); i++ {
-		switch steps[i].S {
-		case "SORT", "SORT_DESC", "SORT_BY", "TOP", "TOP_DESC", "TOP_BY":
+		switch name := steps[i].S; {
+		case vocab.IsSortStep(name):
 			if sorted && projected {
 				return true
 			}
 			sorted, projected = true, false
-		case "MAP", "SELECT_COLS":
+		case name == "MAP" || name == "SELECT_COLS":
 			if sorted {
 				projected = true
 			}
-		case "BUCKET", "LINK", "LINK_LEFT":
+		case name == "BUCKET" || name == "LINK" || name == "LINK_LEFT":
 			if sorted {
 				return true
 			}
