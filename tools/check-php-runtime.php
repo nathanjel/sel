@@ -359,6 +359,11 @@ $expect('Dec test hooks refuse a value that would break arithmetic, and restore'
     Dec::testHooks($was);
     return Dec::testHooks() === $before && (new ReflectionProperty(Dec::class, 'mulCarryEvery'))->isPrivate();
 });
+$expect('Dec::fitsInt is exact at the native boundary', fn() =>
+    Dec::fitsInt('0') && Dec::fitsInt((string) PHP_INT_MAX) && !Dec::fitsInt('9223372036854775808')
+    && Dec::fitsInt('999999999999999999') && !Dec::fitsInt('10000000000000000000')
+    && Dec::toInt(Dec::parse('9223372036854775808')) === PHP_INT_MAX
+    && Dec::toInt(Dec::parse('-9223372036854775807')) === -PHP_INT_MAX);
 $expect('the default carry interval keeps a slot under PHP_INT_MAX', fn() =>
     is_int(Dec::testHooks()['mulCarryEvery'] * (10 ** 7 - 1) ** 2 + 10 ** 7) && Dec::testHooks()['mulCarryEvery'] > 0);
 // The GMP-vs-plain results agree on random operands.

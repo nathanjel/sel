@@ -835,14 +835,24 @@ final class Dec
         return self::parseMantissa($d['neg'], $d['digits']);
     }
 
+    /** PHP_INT_MAX's digits, for the lexical comparison in fitsInt(). */
+    private const INT_MAX_DIGITS = PHP_INT_MAX . '';
+
+    /**
+     * Does a canonical digit string (no sign, no leading zeros) fit a native
+     * int? Compared by length, then lexically -- never with PHP's numeric
+     * string comparison, which goes through a float past 2^53.
+     */
+    public static function fitsInt(string $digits): bool
+    {
+        $length = strlen($digits);
+        return $length < strlen(self::INT_MAX_DIGITS)
+            || ($length === strlen(self::INT_MAX_DIGITS) && strcmp($digits, self::INT_MAX_DIGITS) <= 0);
+    }
+
     private static function parseMantissa(bool $neg, string $digits): ?int
     {
-        $max = (string) PHP_INT_MAX;
-        $length = strlen($digits);
-        $maxLength = strlen($max);
-        if ($length > $maxLength
-            || ($length === $maxLength && strcmp($digits, $max) > 0)) {
-            // Compare lexically, never via PHP's numeric-string float coercion.
+        if (!self::fitsInt($digits)) {
             return $neg && $digits === substr((string) PHP_INT_MIN, 1)
                 ? PHP_INT_MIN : null;
         }
@@ -1147,8 +1157,7 @@ final class Dec
         // Saturating: a value past the machine integer is PHP_INT_MAX (or its
         // negation), never the 0 that (int) gives a string PHP reads as INF.
         $digits = $t['digits'];
-        $over = strlen($digits) > 19 || (strlen($digits) === 19 && strcmp($digits, '9223372036854775807') > 0);
-        $v = $over ? PHP_INT_MAX : (int) $digits;
+        $v = self::fitsInt($digits) ? (int) $digits : PHP_INT_MAX;
         return $t['neg'] ? -$v : $v;
     }
 

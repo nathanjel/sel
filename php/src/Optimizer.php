@@ -323,9 +323,7 @@ final class Optimizer
         if ($node === null || ($node['t'] ?? null) !== 'num') return null;
         $d = Dec::parse((string) $node['v'], $node['pos'] ?? null);
         if ($d === null || $d['scale'] !== 0 || $d['neg']) return null;
-        if (strlen($d['digits']) > strlen((string) PHP_INT_MAX)
-            || (strlen($d['digits']) === strlen((string) PHP_INT_MAX)
-                && $d['digits'] > (string) PHP_INT_MAX)) return null;
+        if (!Dec::fitsInt($d['digits'])) return null;
         return (int) $d['digits'];
     }
 
