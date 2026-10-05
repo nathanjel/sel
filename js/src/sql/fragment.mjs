@@ -42,6 +42,9 @@ export class Fragment {
     // per-value scale (PostgreSQL), TEXT where it cannot (the MySQL family,
     // SQLite, ansi) -- and text is what SQL sorts by its bytes.
     this.canonical = false;
+    // For a SUM body over rows: the test a row's value must pass to be summed
+    // (Translator.sumBody), rendered beside the cast; null otherwise.
+    this.sumTest = null;
   }
 
   // Usable in a select list, GROUP BY, ORDER BY or HAVING. Any kind but LIST,

@@ -39,6 +39,8 @@ const INTERNAL = {
   },
   // The translator's own composition state; exactCollation is declared.
   Fragment: { instance: ['sargable', 'guard', 'prefilter', 'separatePrefilter', 'sumTest'] },
+  // The translator's memo of the joined row model.
+  RelationalPlan: { instance: ['joinRowsCache'] },
   // Helpers the translator calls through the same module.
   map: { members: ['checkNumericGuard', 'hostSpellingArity', 'requireTarget', 'versionAtLeast'] },
 };

@@ -38,6 +38,9 @@ export class Binder {
     // Without it an element `A` was captured by an inner binder that happened to
     // be called A.
     this.scope = scope;
+    // For a ROW over joined rows (a pipeline after a LINK, or a side of a LINK's
+    // predicate): the row model its fields resolve against, or null.
+    this.model = null;
   }
 
   static node(node, scope = null) { return new Binder(NODE, node, null, scope); }

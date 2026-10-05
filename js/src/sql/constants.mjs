@@ -246,10 +246,14 @@ function constantCall(n, bound) {
 // (a 'cval' node, which the evaluator returns as is). The error a failing evaluation
 // raises, and its position, are the innermost node's, exactly as before: a failing
 // descendant was refused when it was validated, before any ancestor is asked.
+// The values, per translation context: a side table rather than a field
+// written onto the evaluator's Context, which does not declare one.
+const CONST_VALUES = new WeakMap();
+
 function evalConstant(n, ctx) {
   const c = ctx ?? new Context();
-  let vals = c.constVals;
-  if (vals === undefined) { vals = new WeakMap(); c.constVals = vals; }
+  let vals = CONST_VALUES.get(c);
+  if (vals === undefined) { vals = new WeakMap(); CONST_VALUES.set(c, vals); }
   const hit = vals.get(n);
   if (hit !== undefined) return hit;
   const v = evalNode(frozenChildren(n, vals), c);

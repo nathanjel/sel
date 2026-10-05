@@ -130,6 +130,10 @@ function assertParsedArity(step) {
   }
 }
 
+// The element a frame was pushed for and its key binder, for filterScope:
+// frames are Maps of binders, and this travels beside them, not inside.
+const ELEMENT_SCOPES = new WeakMap();
+
 export class Translator {
   constructor(dialect, bindings, options = null) {
     this.dialect = dialect;
@@ -1751,7 +1755,7 @@ export class Translator {
     ]);
     // What a FILTER predicate binds is the predicate's own: aggBody renders each
     // one in a frame of its own, from this (see filterScope).
-    frame.elemScope = { target: elem, key: keyBinder };
+    ELEMENT_SCOPES.set(frame, { target: elem, key: keyBinder });
     this.frames.push(frame);
     try {
       return render();
@@ -1766,7 +1770,7 @@ export class Translator {
   // it (spec §7.3; SEL raises E_UNDEF_VAR there, this raises E_SQL_UNBOUND).
   filterScope(f, render) {
     const top = this.frames[this.frames.length - 1];
-    const es = top === undefined ? undefined : top.elemScope;
+    const es = top === undefined ? undefined : ELEMENT_SCOPES.get(top);
     if (es === undefined) return render();
     const saved = this.frames;
     this.frames = saved.slice(0, -1);
@@ -1820,7 +1824,7 @@ export class Translator {
         + 'and unkeyed unless the schema says otherwise, and guessing which column '
         + 'is the key is not something this layer does')],
     ]);
-    frame.elemScope = { target: row, key: frame.get('_K') };
+    ELEMENT_SCOPES.set(frame, { target: row, key: frame.get('_K') });
     // After a LINK only the row is in scope (spec §7.4): the binders are scoped
     // to its predicate, and the evaluator raises E_UNDEF_VAR for `C["id"]` in
     // a later step -- the joined row carries them as keys, not as names. This

@@ -32,14 +32,23 @@ export class CList {
   }
 }
 
+// The helper definitions stage 1 has recorded, by name, and the state that
+// travels with them. A Map: the names come from the program, and `{}` answers
+// for every Object.prototype name, so `constructor = 1; constructor` would
+// inline a function.
+class Definitions extends Map {
+  constructor(constNames) {
+    super();
+    this.constNames = constNames;   // the value bindings, which are constants
+    this.sizes = new Map();         // expandedSize's memo, shared by every definition
+    this.freshCounter = 0;          // suffixes that keep a renamed binder apart
+  }
+}
+
 export function run(ast, constNames = null, ctx = null) {
   const stmts = ast.t === 'seq' ? [...ast.items] : [ast];
   const result = stmts.pop();
-  // A Map: the names come from the program, and `{}` answers for every
-  // Object.prototype name, so `constructor = 1; constructor` would inline a
-  // function.
-  const defs = new Map();
-  defs.constNames = constNames ?? new Map();
+  const defs = new Definitions(constNames ?? new Map());
 
   // Counting starts where the evaluator's count would stand: the `;` sequence
   // costs a level and each assignment it inlines one more (spec §6.4), so
@@ -87,7 +96,7 @@ function record(s, defs, constNames, ctx, depth = 0) {
   // below walks the tree. Its expanded size is known cheaply, node by node, and a
   // definition already past the translator's budget is refused here rather than
   // after that walk (E_SQL_SIZE; docs/internals/sql-translation.md §7.4).
-  expandedSize(value, defs.sizes ??= new Map(), s.pos);
+  expandedSize(value, defs.sizes, s.pos);
 
   // Validated here, and only here, because after this the subtree may be gone: a
   // definition nothing reads is dropped, so `A = 1 / 0; TRUE` translated to
@@ -228,7 +237,7 @@ function substitute(node, defs, bound, depth = 0) {
         // is left as written.
         if (!defs.constNames.has(arg.name)
             && ![...defs.values()].some((def) => mentions(def, arg.name))) return arg;
-        const apart = `${arg.name}\u0001${defs.freshCounter = (defs.freshCounter ?? 0) + 1}`;
+        const apart = `${arg.name}\u0001${++defs.freshCounter}`;
         fresh.set(arg.name, apart);
         return { ...arg, name: apart };
       });
