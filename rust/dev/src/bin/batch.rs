@@ -1,67 +1,9 @@
 // Runs a corpus of SEL programs and prints one canonical line each.
 // Matches tools/run-batch.mjs and cpp/bin/batch.cpp.
 
-use std::fs::File;
-use std::io::{self, BufRead, BufReader, Write};
-use sel_lang::{compile, Kind, Pos, Value};
-
-fn read_corpus(reader: impl BufRead) -> Vec<String> {
-    let mut records: Vec<Vec<String>> = Vec::new();
-    let mut cur: Vec<String> = Vec::new();
-    let mut started = false;
-
-    for line in reader.lines() {
-        let line = match line {
-            Ok(l) => l,
-            Err(_) => break,
-        };
-        if line.starts_with("### ") {
-            if started {
-                records.push(std::mem::take(&mut cur));
-            }
-            started = true;
-            continue;
-        }
-        if started {
-            cur.push(line);
-        }
-    }
-    if started {
-        records.push(cur);
-    }
-
-    let mut out = Vec::with_capacity(records.len());
-    for lines in records {
-        let mut joined = lines.join("\n");
-        if joined.ends_with('\n') {
-            joined.pop();
-        }
-        out.push(joined);
-    }
-    out
-}
-
-fn render(v: &Value) -> String {
-    if v.size() == 0 {
-        if v.kind() == Kind::Text {
-            return v.scalar();
-        }
-        if v.kind() == Kind::Bool {
-            return if v.as_bool(Pos::default()).unwrap_or(false) {
-                "TRUE".to_string()
-            } else {
-                "FALSE".to_string()
-            };
-        }
-        if v.kind() == Kind::Bin {
-            let d = v.dump().unwrap_or_default();
-            if !d.is_empty() {
-                return format!("bin:{}", &d[1..]);
-            }
-        }
-    }
-    v.dump().unwrap_or_default()
-}
+use sel_lang::compile;
+use sel_lang_dev::{read_corpus, read_text, render};
+use std::io::{self, Write};
 
 fn main() {
     let mut show = false;
@@ -79,15 +21,19 @@ fn main() {
         std::process::exit(2);
     }
 
-    let file = match File::open(&path) {
-        Ok(f) => f,
+    let text = match read_text(&path) {
+        Ok(t) => t,
         Err(e) => {
-            eprintln!("cannot read {}: {}", path, e);
+            eprintln!("{}", e);
             std::process::exit(2);
         }
     };
 
-    let corpus = read_corpus(BufReader::new(file));
+    let corpus = read_corpus(&text);
+    if corpus.is_empty() {
+        eprintln!("{}: no records (a record starts at a line beginning `### `)", path);
+        std::process::exit(1);
+    }
     let mut lines = Vec::with_capacity(corpus.len());
 
     for src in &corpus {

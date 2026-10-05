@@ -1,10 +1,11 @@
 // The SEL->SQL conformance suite for the Rust host.
 //
-// Run from the repository root:
+// The cases are compiled in (sqlt/case_data.rs, rendered from sql/cases/ by
+// tools/gen-sql-cases.mjs), so it runs from anywhere; rust/build.sh builds it:
 //
-//     cargo run --release --bin sqlt                 every case
-//     cargo run --release --bin sqlt bind. agg.      only cases whose name contains one of these
-//     cargo run --release --bin sqlt -- --names      what this host loaded, and stop
+//     rust/build/sqlt                 every case
+//     rust/build/sqlt bind. agg.      only cases whose name contains one of these
+//     rust/build/sqlt --names         what this host loaded, and stop
 
 use std::collections::HashSet;
 use sel_lang::compile;
@@ -655,6 +656,11 @@ fn main() {
         passed, mirrored, compile_refused, failures.len(), suite_errors
     );
 
+    if passed + failures.len() + suite_errors == 0 {
+        // A filter that matched nothing ran nothing, which is not a pass.
+        eprintln!("no cases were run: no case name contains {}", args.join(" or "));
+        std::process::exit(1);
+    }
     if !failures.is_empty() || suite_errors > 0 {
         std::process::exit(1);
     }

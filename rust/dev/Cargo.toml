@@ -35,6 +35,10 @@ postgres = { version = "0.19.14", optional = true }
 mysql = { version = "28.0.3", default-features = false, features = ["minimal-rust"], optional = true }
 rusqlite = { version = "0.40.2", optional = true }
 
+# What the binaries share: the corpus and case-file readers, the CLI rendering.
+[lib]
+path = "src/lib.rs"
+
 [[bin]]
 name = "regex_verdict"
 path = "src/bin/regex_verdict.rs"
