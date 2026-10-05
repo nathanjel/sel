@@ -221,7 +221,7 @@ step "C++ package, as installed" sel_slot ./tools/check-cpp-package.sh
 case " $IMPLS " in *" rust "*) step "Rust package, as published" sel_slot ./tools/check-rust-package.sh ;; esac
 case " $IMPLS " in *" go "*) step "Go module, as published" sel_slot ./tools/check-go-module.sh ;; esac
 step "host API parity" ./tools/check-api.sh
-step "CLI source bytes" ./tools/check-cli-source.sh
+step "CLI source bytes and contract" ./tools/check-cli-source.sh
 # Every batch runner reads a corpus as bytes and removes exactly one newline per
 # record: CR and CRLF fixtures, and final records with and without a blank line.
 step "corpus bytes, every batch runner" ./tools/check-corpus-bytes.sh

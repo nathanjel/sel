@@ -234,11 +234,11 @@ impl_e2e() {
   esac
 }
 
-# The host API surface: same probes, each through its own binding. See
-# tools/check-api.sh.
-# `--deps` on one source file, for tools/stress.sh. Every CLI prints one name per
-# line and they already agree byte for byte, so this needs no normalising layer
-# the way impl_batch does -- it is here so the roster lives in one file.
+# `--deps` on one source file, for tools/stress.sh. The CLI contract
+# (docs/usage/repl.md) is one name per line, sorted, and NOTHING for an empty
+# list -- not an empty line; tools/check-cli-source.sh pins it in every host, so
+# this needs no normalising layer the way impl_batch does. It is here so the
+# roster lives in one file.
 impl_deps() {
   local impl="$1"; shift
   case "$impl" in
@@ -296,6 +296,8 @@ impl_sqlapi() {
   esac
 }
 
+# The host API surface: same probes, each through its own binding. See
+# tools/check-api.sh.
 impl_api() {
   local impl="$1"; shift
   case "$impl" in
