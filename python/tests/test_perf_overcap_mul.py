@@ -1,4 +1,4 @@
-"""PY-P23: mul refuses an over-cap product from the operand bit lengths, before multiplying.
+"""mul refuses an over-cap product from the operand bit lengths, before multiplying.
 It must refuse exactly what guard() refuses, with the same code, message and position,
 and multiply everything else. The cap is shrunk (monkeypatched) so the boundary is
 cheap to reach; the real cap is exercised once with million-digit operands."""

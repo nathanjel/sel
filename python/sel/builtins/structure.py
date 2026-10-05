@@ -26,7 +26,7 @@ def first_collection_item(value):
     if value.is_list and value.storage is not None and value.storage:
         return value.storage[0]
     # The first element only: building every entry of a dict-mode record to read the
-    # first one is what `elements()` did (PY-P26). iter_values yields the same first
+    # first one is what `elements()` did. iter_values yields the same first
     # item, and nothing at all exactly where elements() was empty.
     for item in iter_values(value):
         return item
@@ -153,7 +153,7 @@ def _dedupe(args, ctx):
     # A value with no children is identified by its kind and text alone (EQL compares
     # nothing else of it, and a number is its canonical text), so a plain set decides
     # it with the interpreter's own hash and equality instead of a structural hash and
-    # an eql() per element (PY-P26). Values with children take the structural path;
+    # an eql() per element. Values with children take the structural path;
     # the two domains cannot be EQL to each other (different sizes).
     scalars = set()
     for _, item in elements(value):
@@ -246,7 +246,7 @@ def single_relation_name(node):
 
 class _JoinBad:
     """A key the comparison rejects: the pair it meets must raise, as the
-    comparison would (review 2026-09-25 SEM-06)."""
+    comparison would."""
     __slots__ = ('value',)
 
     def __init__(self, value):
@@ -1318,7 +1318,7 @@ def _link(args, ctx, left_join):
         try:
             # The right side's table alias depends only on the right row, so it is
             # made once (on the first left row, so an empty left side still does no
-            # work), not once per PAIR -- it was 21% of a 500x500 join (PY-P14).
+            # work), not once per PAIR -- it was 21% of a 500x500 join.
             rights = None if needs_right_alias else right_items
             b1_lower, b2_lower = b1.lower(), b2.lower()
             eval_predicate = args.eval_node

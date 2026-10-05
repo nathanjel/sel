@@ -1,6 +1,6 @@
 """The exponential-ambiguity rule (SPEC 7.8, python/sel/builtins/_regex_ambiguity.py)
 held to the reference validator (tools/regex-ambiguity-ref.py): the same lists, the
-same verdicts, and the failure it exists for (PY-C3): a pattern `re` would take
+same verdicts, and the failure it exists for: a pattern `re` would take
 exponential time on is refused, at compile time when it is a literal."""
 import importlib.util
 import os

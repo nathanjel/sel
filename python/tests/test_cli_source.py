@@ -1,5 +1,5 @@
 """SPEC 2: invalid source is E_UTF8 at the first invalid unit, counted in code
-points; a host reads source as bytes, unchanged (PY-C17, PY-C27)."""
+points; a host reads source as bytes, unchanged."""
 import os
 import subprocess
 import sys

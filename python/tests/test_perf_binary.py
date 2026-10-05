@@ -1,4 +1,4 @@
-"""PY-P12: the binary codecs check their input here and compute with the stdlib.
+"""The binary codecs check their input here and compute with the stdlib.
 The hand-written originals are kept below as the reference; the two must accept
 exactly the same inputs and produce the same bytes/text."""
 import random

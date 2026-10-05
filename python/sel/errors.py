@@ -7,7 +7,7 @@ from typing import NoReturn
 
 class Pos:
     """A source position. 1-based line and column, counted in code points.
-    Immutable by convention (a frozen slots dataclass until PY-P5: one is built
+    Immutable by convention (it was a frozen slots dataclass; one is built
     per token, so its construction cost showed in the lexer)."""
 
     __slots__ = ('line', 'col', 'offset')

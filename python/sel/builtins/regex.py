@@ -547,7 +547,7 @@ _FOLD = {0x212A: 'k', 0x017F: 's'}
 
 def _fold_subject(subject: str) -> str:
     # Nothing to fold in an ASCII subject (the two code points are above it), so it is
-    # returned as it is instead of being copied through translate() (PY-P30).
+    # returned as it is instead of being copied through translate().
     if subject.isascii():
         return subject
     return subject.translate(_FOLD)
@@ -582,7 +582,7 @@ def _flags(flags, pos):
 
 
 def _compile(pattern, flags, pos, pat_pos):
-    # No flags is the common call: skip the flag scan altogether (PY-P30).
+    # No flags is the common call: skip the flag scan altogether.
     ignore_case = _flags(flags, pos) if flags else False
 
     if ignore_case and not pattern.isascii():
@@ -671,7 +671,7 @@ def _rgroups(a, ctx):
 def _parse_replacement(repl):
     """The replacement, parsed ONCE per call: a tuple of literal strings and
     group numbers. SEL understands $0-$9 and $$ only; $&, $` and backslash
-    references stay literal (PY-P13: it was re-scanned character by character for
+    references stay literal (it was re-scanned character by character for
     every match)."""
     parts = []
     lit = []

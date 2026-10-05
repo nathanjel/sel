@@ -75,7 +75,7 @@ AGG_FOLD = {'ALL': 'AND', 'ANY': 'OR', 'SUM': '+'}
 # to 0 and FALSE instead.
 # The four text functions that yield a list (measured), the constructors,
 # and every pipeline step -- the optimiser's vocabulary, so a new step is
-# covered by being one (review 2026-09-15 finding X: COUNT(LIST(1, 2, 3))
+# covered by being one (COUNT(LIST(1, 2, 3))
 # was 0).
 YIELDS_LIST = ('BTL', 'INDEXES', 'RGROUPS', 'SPLIT', 'LIST', 'RECORD',
                *OPTIMIZER_PIPELINE_OPS)
@@ -185,8 +185,7 @@ class Translator:
         self.const_names, self.const_ctx = _constants.scope(self.bindings)
         # Stage 1 and nothing else: the translator renders the tree it is
         # handed. Two hosts ran the logical optimiser here and three did not,
-        # so the same program rendered different SQL per host (review
-        # 2026-09-15 finding C). The planner is the one place that optimises
+        # so the same program rendered different SQL per host. The planner is the one place that optimises
         # before translating, and it does so in every host.
         norm = _normalise.run(ast, self.const_names, self.const_ctx)
         return norm, self.analyze_pipeline(norm)
@@ -657,7 +656,7 @@ class Translator:
 
     def _arithmetic_operand(self, n: Node) -> Fragment:
         """An operand that is a constant TEXT holding a number, in an arithmetic position,
-        is that number (PHP-C33): SEL computes with it exactly, and MariaDB and MySQL
+        is that number: SEL computes with it exactly, and MariaDB and MySQL
         would read the quoted string as a DOUBLE. It is translated as the numeric
         literal it stands for. The text was translated first (its SQL kind is only known
         then), so the slots it bound are taken back, or `params` mode would report a
@@ -933,7 +932,7 @@ class Translator:
         name = n.name
 
         # A binder position holding something that is not a bare name is refused
-        # where it stands, whatever else the call is (GO-C2): the evaluator
+        # where it stands, whatever else the call is: the evaluator
         # answers E_EXPECT_SYMBOL, and this layer must never go on to a different
         # code -- or a crash -- for the arguments around it.
         if n.spec is not None and n.spec.binds:
@@ -948,8 +947,8 @@ class Translator:
         # The two aggregates over a bucket's members -- COUNT(g) is COUNT(*)
         # and SUM(g, [x,] body) is SUM over the grouped rows -- fire on the
         # GROUP binder alone: over a relation row, COUNT(_) is the row's
-        # number of fields in SEL (review 2026-09-15 finding X), and SEL has
-        # no per-group MIN or MAX (finding J). The body binds the member row,
+        # number of fields in SEL, and SEL has
+        # no per-group MIN or MAX. The body binds the member row,
         # as the evaluator's walk does: `_` for the two-argument form, the
         # name given for the three-argument one.
         if self.statement_plan is not None:
@@ -966,7 +965,7 @@ class Translator:
                                            lambda: self._node(body_node))
                     # The same rules as a relation's SUM body: a declared TEXT or
                     # BOOL field is refused, an undeclared one is read all or
-                    # nothing (PHP-C27).
+                    # nothing.
                     if _constants.is_constant(body_node, self._consts()):
                         self._require_numeric_constant(body_node)
                     else:
@@ -1000,7 +999,7 @@ class Translator:
         args = []
         for i, arg in enumerate(n.args):
             # MIN and MAX compare their arguments as numbers: a numeric text constant is
-            # the number, as in arithmetic (PHP-C33).
+            # the number, as in arithmetic.
             f = self._arithmetic_operand(arg) if name in ('MIN', 'MAX') else self._node(arg)
             if f.kind == 'LIST':
                 refuse('E_SQL_SHAPE',
@@ -1299,8 +1298,8 @@ class Translator:
         it appears: the clause, the ``_K`` projection, a HAVING. A TEXT key is
         cast and collated the way the ``$`` family compares text, because the
         evaluator groups by the key's exact bytes and a case-insensitive
-        collation would merge groups it keeps apart (review 2026-09-15
-        finding L; MariaDB's default merged 'A' and 'a'). The result is marked
+        collation would merge groups it keeps apart (MariaDB's default merged
+        'A' and 'a'). The result is marked
         exact so a comparison over it does not wrap it a second time --
         MySQL's only_full_group_by accepts a projected or compared key only as
         the identical expression."""
@@ -1839,8 +1838,7 @@ class Translator:
         # ``C["id"]`` in a later step -- the joined row carries them as keys,
         # not as names. This frame used to bind ``_1``, ``_2``, the relations'
         # names and the right binder for every later step, so
-        # ``FILTER(C["id"] > 1)`` translated where ``run()`` fails (review
-        # 2026-09-15 finding W2).
+        # ``FILTER(C["id"] > 1)`` translated where ``run()`` fails.
         self.frames.append(frame)
         try:
             return render()
@@ -1854,8 +1852,7 @@ class Translator:
         its members, which only COUNT and SUM read (_call) -- and ``_K`` is the
         group key, when there is one key to be it. This is the one place ``_K``
         is a group key: before the bucket it is a source row's position, after
-        the projection the projected row's, and SQL has neither (review
-        2026-09-15 finding K).
+        the projection the projected row's, and SQL has neither.
         """
         group_by = self.statement_plan.group_by if self.statement_plan is not None else None
         if group_by is not None and len(group_by) == 1:
@@ -1891,8 +1888,8 @@ class Translator:
         """A LINK's predicate sees ``_``/``_1`` as its left element and ``_2``
         as its right, plus the names the LINK gives them (spec §7.4) and nothing
         else: a relation's name outside those, its alias or its table is not a
-        binder (review 2026-09-28 SQL-07), and the left element of a later LINK
-        is the joined row so far, not the source (SQL-05)."""
+        binder, and the left element of a later LINK
+        is the joined row so far, not the source."""
         step = self._join_rows(plan)['steps'][next(
             i for i, item in enumerate(plan.joins) if item is join)]
         left = Binder.row(plan.source_relation)
@@ -2424,8 +2421,7 @@ class Translator:
         projected, so a read of either over the derived table is refused
         where ``run()`` raises. ``SELECT o.*`` was the row before: the left
         table's columns, which a continuation read where SEL has no key, and
-        which made a derived table over a join name columns it did not have
-        (finding Y, lanes).
+        which made a derived table over a join name columns it did not have.
         """
         # A field an unmatched LINK_LEFT row lacks is not a column of the row.
         return [{'name': name, 'spec': f['spec'], 'table': f['table']}
@@ -2766,7 +2762,7 @@ class Translator:
                     candidate.limit is not None or candidate.offset is not None)
                 if plan.projections is None and plan.select_cols is None:
                     refuse('E_SQL_SHAPE', 'DISTINCT requires an explicit typed projection', step.pos)
-                # DISTINCT keeps the FIRST element of each run in sorted order; SQL's `SELECT DISTINCT proj ... ORDER BY <column not in proj>` is refused by PostgreSQL (42P10) and MySQL 8 (3065) and answers with an unspecified representative row on MariaDB. A loud refusal is acceptable and a silent misordering is not, so the step stays in memory (CPP-C60).
+                # DISTINCT keeps the FIRST element of each run in sorted order; SQL's `SELECT DISTINCT proj ... ORDER BY <column not in proj>` is refused by PostgreSQL (42P10) and MySQL 8 (3065) and answers with an unspecified representative row on MariaDB. A loud refusal is acceptable and a silent misordering is not, so the step stays in memory.
                 if plan.order_by:
                     refuse('E_SQL_SHAPE', 'DISTINCT after a sort keeps the first of each run in sorted order, which SELECT DISTINCT ... ORDER BY does not promise; run the DISTINCT in memory', step.pos)
                 plan.distinct = True
@@ -2790,8 +2786,7 @@ class Translator:
                 # or a DISTINCT wraps so its key can name what they produced. A
                 # sort after a sort does not wrap: the sorts are stable, so the
                 # earlier one is the later one's tie-breaker, and the later
-                # one's keys go FIRST in the ORDER BY (review 2026-09-15
-                # finding V).
+                # one's keys go FIRST in the ORDER BY.
                 def _wraps(candidate):
                     return (candidate.limit is not None or candidate.offset is not None
                             or (candidate.group_by is None and bool(
@@ -2818,9 +2813,8 @@ class Translator:
                 # (a sort's, a bucket's) are otherwise checked only when the
                 # statement is rendered, after this LINK and the steps after it
                 # were analysed, which reported a later step's refusal where
-                # run() raises at the earlier one. Lisp has done this since
-                # review 2026-09-25 SQL-03; the widened SQL fuzzer found the
-                # other hosts did not (review 2026-09-28 SQL-10).
+                # run() raises at the earlier one. Lisp did this first; the
+                # widened SQL fuzzer found the other hosts did not.
                 if (plan.order_by or plan.projections is not None
                         or plan.select_cols is not None or plan.group_by is not None):
                     # Rendered to be refused early, and discarded: the values it
@@ -2873,8 +2867,7 @@ class Translator:
                 # One table alias per occurrence: a relation joined a second
                 # time under an alias the statement already uses (a self-join,
                 # or chaining back to an aliased relation) would render the
-                # alias twice, which the server rejects (review 2026-09-28
-                # SQL-09). The program stays in memory.
+                # alias twice, which the server rejects. The program stays in memory.
                 open_aliases = [plan.source_alias or _relation_alias(plan.source_relation),
                                 *(j.source_alias for j in plan.joins)]
                 if any(ascii_upper(str(alias)) == ascii_upper(str(join.source_alias))

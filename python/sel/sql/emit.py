@@ -31,7 +31,7 @@ def _segments(tpl: str) -> tuple:
     already unescaped, and the raw text of every ``{...}`` slot. A template is scanned
     once per distinct string, not once per fill: the same few dozen templates are
     filled for every node of every translation, and the character-by-character scan
-    was a third of a translation's time (PY-P28). Independent of the dialect and of
+    was a third of a translation's time. Independent of the dialect and of
     the arguments, so the cache is shared; bounded, and a miss just rescans."""
     segs = _SEGMENTS.get(tpl)
     if segs is not None:
@@ -166,7 +166,7 @@ def _numeric_literal(dialect: str, v: Value, pos: Pos | None) -> str:
     return '(' + n + ')' if n.startswith('-') else n
 
 
-# One escaper per escape table, built on first use (PY-P20: the literal was walked
+# One escaper per escape table, built on first use (the literal was walked
 # one character at a time in Python, 0.44 s per megabyte). Keyed by the dialect
 # and by the identity of its escape dict, which is kept in the entry so that a
 # re-registered dialect (a new dict) never reuses a stale escaper.

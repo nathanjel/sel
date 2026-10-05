@@ -1,4 +1,4 @@
-"""Item 2: how many Python-level calls two fixed programs make, warm, on the
+"""How many Python-level calls two fixed programs make, warm, on the
 interpreter the gate runs. A deterministic contract for the evaluator's cost:
 lower these when it gets cheaper; never raise them. C calls are not counted --
 each costs a fraction of a Python call, and a dispatch table trades Python

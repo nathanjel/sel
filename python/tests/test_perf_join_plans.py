@@ -1,4 +1,4 @@
-"""PY-P2: compiled join plans are cached by their generated source, and the shape
+"""Compiled join plans are cached by their generated source, and the shape
 cache evicts a quarter instead of everything. Results must not change."""
 import sel
 from sel import value as V

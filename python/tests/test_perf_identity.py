@@ -1,4 +1,4 @@
-"""PY-P26: DISTINCT/DEDUPE/BUCKET identify a childless value by (kind, text) with a plain
+"""DISTINCT/DEDUPE/BUCKET identify a childless value by (kind, text) with a plain
 dict/set, and first_collection_item reads one element instead of building them all.
 Both must agree with the EQL-based definition (spec 5.4) on every input."""
 import random

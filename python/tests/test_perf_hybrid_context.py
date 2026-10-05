@@ -1,5 +1,5 @@
-"""PY-P16: execute_hybrid no longer deep-copies the caller's whole context. The
-caller's context must still never be written to (PY-C51), for every way a
+"""execute_hybrid no longer deep-copies the caller's whole context. The
+caller's context must still never be written to, for every way a
 continuation can write: a new name, a nested write through an index, a compound
 assignment, an assignment inside an aggregate body."""
 import pytest

@@ -1,4 +1,4 @@
-"""Item 2, P1: a Context counts the names its pushed frames bind, so a name no
+"""A Context counts the names its pushed frames bind, so a name no
 frame binds is read from the root without walking them. lookup and is_bound
 must answer exactly as a walk of the frames does; no frame may change its names
 while it is pushed (the count would go stale); and a body that raises leaves

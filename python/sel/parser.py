@@ -142,12 +142,12 @@ class Node:
     # Physical-tree metadata: for an `IN` whose right operand is a list of literals,
     # the optimiser's ConstantList (the list's Value, built once, and a set of the
     # texts when every element is text or a number) so the test does not rebuild
-    # and clone the list for every row (PY-P8). Private to the node: only `IN`
+    # and clone the list for every row. Private to the node: only `IN`
     # reads it, and it is never returned or stored where a program could reach it.
     const_value: Any = None
     # Physical-tree metadata on a FILTER step: the step after it only reads the
     # kept elements and copies whatever it collects (optimizer.adopts_elements),
-    # so FILTER hands them on as they are instead of cloning each one (PY-REG-1).
+    # so FILTER hands them on as they are instead of cloning each one.
     adopt_items: bool = False
     # SQL planner metadata, on the planner's own copy of a `var`: this read is
     # the catalogue's BINDING, reached by unwinding through a helper of the same
@@ -159,7 +159,7 @@ class Node:
     # (eval.handler_for), stamped by the optimiser on the nodes its own copy
     # holds (optimizer.bind_handlers). replaced() does not carry it -- a copy
     # may be turned into another kind of node -- so a copy takes eval_node's
-    # generic path; and it is no part of what the node is (item 2, P3).
+    # generic path; and it is no part of what the node is.
     ev: Any = field(default=None, compare=False, repr=False)
 
     def replaced(self, **changes) -> 'Node':

@@ -237,8 +237,7 @@ def _join_rows_lack_binders(steps: list[Node]) -> bool:
     promoted fields alone. A MAP, a SELECT_COLS or a projected BUCKET after
     the LINK makes the rows exact again -- what they compute is over the
     promoted fields, or is refused -- so a prefix whose LINK nothing has
-    projected is not a split point and not a full pushdown (finding Y,
-    lanes): its continuation would read ``_["C"]`` where the database sent
+    projected is not a split point and not a full pushdown: its continuation would read ``_["C"]`` where the database sent
     nothing.
     """
     joined = False
@@ -314,7 +313,7 @@ def _contains_unsupported_sql(node: Node | None, dialect: str,
     # An operator the dialect withdrew (BAND/BOR/BXOR carry a reason string in
     # the `ops` table: SQL's & | ^ are integer operators) is as unsupported as a
     # withdrawn function. Calls were classified against `funcs` only, so a MAP
-    # with such a pair lost the fall-through and moved every column (PY-P21).
+    # with such a pair lost the fall-through and moved every column.
     if node.t in ('bin', 'un') and isinstance(
             sqlmap.entry(dialect, 'ops', node.op), str):
         return True
@@ -588,7 +587,7 @@ def _try_plan_fallthrough(source: Node, steps: list[Node], dialect: str,
 # plan, because that half is a program run() evaluates and §12.1 promises it
 # reports errors where run() would: run() evaluates the READ of Y at the use
 # site and reports ``+``'s operand there, and it evaluates the definition once,
-# before the pipeline, not once per row (review 2026-09-15 finding AJ). So
+# before the pipeline, not once per row. So
 # the planner does not inline. It plans the program as written, three ways:
 #
 #   * A helper that IS a literal -- after inlining earlier such helpers and
@@ -824,7 +823,7 @@ def _keep_left_name(remaining: list[Node], prefix: list[Node], source: Node) -> 
     is `_INPUT`, so a bare three-argument LINK would carry it under that: a read
     of `_["ORDERS"]` would be E_NO_KEY where run() answers. The first LINK of the
     continuation -- wherever it falls, not only when it comes first -- is rewritten
-    to the five-argument form that names both sides (PHP-C9, PY-C23, LISP-C29)."""
+    to the five-argument form that names both sides."""
     if source is None or source.t != 'var' or not _needs_left_name(remaining, prefix):
         return remaining
     at = next(i for i, step in enumerate(remaining) if _is_link(step))
@@ -1078,9 +1077,9 @@ def continuation_effects(ast: Node | None) -> ContinuationEffects:
 
 
 def _private_root(plan: HybridPlan, context: Value | dict[str, Any] | None) -> Value:
-    """The context the continuation runs on: the caller's is never written to
-    (PY-C51), but it used to be deep-copied whole -- a 100,000-row context cost
-    over a second per call for a program that wrote nothing to it (PY-P16).
+    """The context the continuation runs on: the caller's is never written to,
+    but it used to be deep-copied whole -- a 100,000-row context cost
+    over a second per call for a program that wrote nothing to it.
     A continuation containing any application-defined call receives a full private
     context copy. Builtin-only continuations retain their existing assignment-based
     copy optimization."""

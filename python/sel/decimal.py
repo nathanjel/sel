@@ -295,10 +295,10 @@ def is_integer(d: Dec) -> bool:
     if d.scale > _GAP:
         # 10**scale divides digits only if 2**scale does, i.e. the digits have at
         # least `scale` trailing zero bits. Decides most values without building
-        # a power of ten as large as the scale (PY-P22).
+        # a power of ten as large as the scale.
         if ((d.digits & -d.digits).bit_length() - 1) < d.scale:
             return False
-    return divmod(d.digits, _pow10(d.scale))[1] == 0      # divmod, not %: PY-P19
+    return divmod(d.digits, _pow10(d.scale))[1] == 0      # divmod, not %: see mod()
 
 
 def to_safe_int(d: Dec) -> int:
@@ -339,7 +339,7 @@ def sub(a: Dec, b: Dec, pos: Pos | None = None) -> Dec:
 
 def mul(a: Dec, b: Dec, pos: Pos | None = None) -> Dec:
     scale = a.scale + b.scale
-    # Refuse before multiplying when the operand sizes already settle it (PY-P23):
+    # Refuse before multiplying when the operand sizes already settle it:
     # a product of an m-bit and an n-bit integer has at least m+n-1 bits, so its
     # digit count is bounded below by the same estimate _cmp_by_magnitude uses, and
     # multiplying two million-digit numbers to learn they are too wide took seconds.
@@ -394,7 +394,7 @@ def cmp(a: Dec, b: Dec) -> int:
         if gap > _GAP or gap < -_GAP:
             # Far apart in scale: the magnitudes usually differ by far more than the
             # imprecision of a bit-length estimate, which decides without building
-            # 10**gap (PY-P22). Inconclusive (within about one power) falls through
+            # 10**gap. Inconclusive (within about one power) falls through
             # to the exact alignment below.
             c = _cmp_by_magnitude(A, a.scale, B, b.scale)
             if c:
@@ -438,8 +438,8 @@ def mod(a: Dec, b: Dec, pos: Pos | None = None) -> Dec:
         fail('E_DIV_ZERO', 'modulo by zero', pos)
     A, B, s = _aligned(a, b)
     # divmod, not %: since CPython 3.12 `divmod` and `//` take a sub-quadratic
-    # path for huge ints and `%` does not -- about 9x slower on a million digits
-    # (PY-P19). The remainder is the same.
+    # path for huge ints and `%` does not -- about 9x slower on a million digits.
+    # The remainder is the same.
     return make(a.neg, divmod(A, B)[1], s)
 
 

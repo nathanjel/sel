@@ -1,4 +1,4 @@
-"""PY-P19: mod / is_integer use divmod; the remainder is the same as `%` for every
+"""mod / is_integer use divmod; the remainder is the same as `%` for every
 sign and scale combination, and huge operands still work."""
 import random
 

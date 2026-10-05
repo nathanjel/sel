@@ -1,4 +1,4 @@
-"""PY-P10: the lexer's set/regex scanning must tokenise exactly as the original
+"""The lexer's set/regex scanning must tokenise exactly as the original
 per-character loops did -- tokens, positions and errors -- checked against the
 pre-change lexer kept as a fixture."""
 import importlib.util

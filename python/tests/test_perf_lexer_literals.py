@@ -1,4 +1,4 @@
-"""PY-P31: literal bodies are scanned a run at a time. Checked against the frozen earlier lexer
+"""Literal bodies are scanned a run at a time. Checked against the frozen earlier lexer
 (fixtures/lexer_per_character.py, which reads them a character at a time) on sources made
 mostly of literals: tokens, positions and errors must be identical."""
 import importlib.util

@@ -94,7 +94,7 @@ def _unique_record_shape(keys: list[str] | tuple[str, ...]) -> RecordShape | Non
 def _bad_arg(message: str):
     """A constructor called with something it does not take (spec §8):
     E_BAD_ARG, a SelError like every other boundary failure, never Python's
-    own TypeError or IndexError (review 2026-09-28 HOST-20)."""
+    own TypeError or IndexError."""
     fail('E_BAD_ARG', message, None)
 
 
@@ -114,8 +114,7 @@ def _check_value(v: Any) -> Any:
 
 def _pair_up(keys: Any, values: Any) -> tuple[list[str], list[Any]]:
     """Keys and values side by side, checked and copied: the counts match,
-    every key is text and every value a Value (spec §8; review 2026-09-28
-    HOST-12, HOST-16, HOST-17)."""
+    every key is text and every value a Value (spec §8)."""
     if isinstance(keys, RecordShape):
         keys = keys.keys
     if not isinstance(keys, (list, tuple)) or not isinstance(values, (list, tuple)):
@@ -142,7 +141,7 @@ def _check_list_keys(keys: Any, count: int) -> list[str]:
 def _check_decimal(d: Any) -> Any:
     """The Dec Value.num takes besides a string: well formed, within the digit
     caps, and canonical -- a negative zero loses its sign, as "-0" does through
-    parse (spec §8; review 2026-09-28 HOST-13, HOST-14)."""
+    parse (spec §8)."""
     if (not isinstance(d, D.Dec) or type(d.digits) is not int or d.digits < 0
             or type(d.scale) is not int or d.scale < 0):
         _bad_arg('not a decimal: expected a Dec with a non-negative int digits and scale')
@@ -312,7 +311,7 @@ class Value:
         if self.kind == TEXT and self.size() == 0:
             # A number is never blank: its text starts with a digit or a sign. Asking
             # `.scalar` for one that has only its decimal built formats the whole
-            # number first -- 0.9 s for a million-digit one (PY-P24).
+            # number first -- 0.9 s for a million-digit one.
             if self._scalar is None and self._dec_val is not None:
                 return False
             return len(self.scalar) == 0 or all(ch in ' \t\r\n' for ch in self.scalar)
@@ -359,8 +358,8 @@ class Value:
             # is a sequence of bytes.
             _bad_arg(f'bytes must be bytes or a list of ints, not {type(b).__name__}')
         for x in b:
-            # bool is an int subclass, so bytes([True]) is b'\x01' (review
-            # 2026-09-28 HOST-19); JS and Lisp refuse a boolean byte.
+            # bool is an int subclass, so bytes([True]) is b'\x01'; JS and
+            # Lisp refuse a boolean byte, and so does this.
             if type(x) is not int or not 0 <= x <= 255:
                 fail('E_RANGE', f'byte {x!r} is not a whole number from 0 to 255', None)
         return Value(BIN, bytes(b))
@@ -473,7 +472,7 @@ class Value:
         if type(n) is not int:
             _bad_arg(f'not a whole number: {n!r}')
         # A native integer obeys the digit cap like the same digits in source
-        # (spec §8, §6.4; review 2026-09-25 HOST-06). A bit-length test first,
+        # (spec §8, §6.4). A bit-length test first,
         # so an ordinary int never meets the million-digit comparison.
         if n.bit_length() > _INT_CAP_BITS and abs(n) >= _int_cap():
             fail('E_RANGE', f'number has more than {D.MAX_INT_DIGITS} integer digits', None)
@@ -484,8 +483,8 @@ class Value:
     @staticmethod
     def list(values: list[Value], keys: list[str] | None = None) -> Value:  # noqa: A003
         """A list keyed "1".."n", or by `keys` (distinct, one per value), as
-        FILTER keeps them. Checked and copied (spec §8; review 2026-09-28
-        HOST-16): changing the caller's lists afterwards never changes it.
+        FILTER keeps them. Checked and copied (spec §8):
+        changing the caller's lists afterwards never changes it.
         """
         if not isinstance(values, (list, tuple)):
             _bad_arg('a list is built from a list of Values')
@@ -555,7 +554,7 @@ class Value:
         # Re-assigning an existing key keeps its original position — dict does
         # this, as long as the key is not deleted first.
         if not key.isascii():
-            validate_text(key, None)   # a key is text too (spec §8; review 2026-09-25 HOST-05)
+            validate_text(key, None)   # a key is text too (spec §8)
         if self.shape is not None:
             index = self.shape.key_map.get(key)
             if index is not None:
@@ -700,8 +699,7 @@ class Value:
         if depth > MAX_DEPTH:
             fail('E_DEPTH', 'value nested too deeply', pos)
         # A leaf is copied too: it can gain children later (`B[1]["k"] = v`),
-        # and a shared one would give them to the original as well (§5.7;
-        # review 2026-09-25 SEL-12).
+        # and a shared one would give them to the original as well (§5.7).
         out = Value(self.kind, self._scalar, self.is_list)
         out._dec_val = self._dec_val
         if self.shape is not None:
@@ -861,7 +859,7 @@ class Value:
         if scalar is None:
             return obj
         # A value's own scalar travels under "_"; with a child of that name too,
-        # one of them would be lost (spec §8; review 2026-09-25 HOST-01).
+        # one of them would be lost (spec §8).
         if '_' in obj:
             fail('E_BAD_ARG', 'a value with both a scalar and a child named "_" has no native form', None)
         return {'_': scalar, **obj}
@@ -898,8 +896,8 @@ _INDEX_HASHES: list[int] = []
 
 def _index_hashes(n: int) -> list[int]:
     """hash(str(1)) .. hash(str(min(n, limit))): a dense list's keys are its positions,
-    and hashing a fresh str per element per list dominated DEDUPE/EQL-bucket paths
-    (PY-P24). Grown by replacing the table, never by appending to it, so a reader in
+    and hashing a fresh str per element per list dominated DEDUPE/EQL-bucket paths.
+    Grown by replacing the table, never by appending to it, so a reader in
     another thread only ever sees a complete table."""
     global _INDEX_HASHES
     table = _INDEX_HASHES

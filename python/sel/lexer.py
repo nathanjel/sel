@@ -68,7 +68,7 @@ _T_RANGE, _T_PART, _T_CLOSE, _T_END = 0, 1, 2, 3
 
 class Token:
     """A token. A plain slots class: one is built per lexeme, and the dataclass
-    __init__ was measurable (PY-P5)."""
+    __init__ was measurable."""
     __slots__ = ('type', 'value', 'pos')
 
     def __init__(self, type: str, value: str, pos: Pos) -> None:      # noqa: A002
@@ -273,7 +273,7 @@ class Lexer:
                     continue
                 out.append(Token('text', ''.join(buf), pos))
                 return i + 1
-            # The whole run up to the next quote in one slice (PY-P31), not a
+            # The whole run up to the next quote in one slice, not a
             # character at a time: c is not a quote, so the run is never empty.
             j = _RAW_RUN.match(self.chars, i, to).end()
             buf.append(self.chars[i:j])
@@ -311,7 +311,7 @@ class Lexer:
                 i = close + 1
                 continue
 
-            # A run of ordinary characters in one slice (PY-P31); c is not special,
+            # A run of ordinary characters in one slice; c is not special,
             # so the run is never empty.
             j = _QUOTED_RUN.match(self.chars, i, to).end()
             buf.append(self.chars[i:j])

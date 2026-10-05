@@ -1,4 +1,4 @@
-"""PY-P13: RREPLACE parses the replacement once and inlines the match loop. It must
+"""RREPLACE parses the replacement once and inlines the match loop. It must
 give exactly what the per-match `_expand` and the generator loop gave: same text,
 same errors (E_BAD_ARG for a group past the pattern's, only when a match occurs),
 same zero-width advancement, same length cap."""

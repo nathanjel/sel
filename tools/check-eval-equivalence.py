@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Plain AST versus optimised execution over the conformance corpus (T04 / T00-B):
+"""Plain AST versus optimised execution over the conformance corpus:
 the Python twin of tools/check-eval-equivalence.mjs — see that file for the rule.
 
     PYTHONPATH=$PWD/python python3 tools/check-eval-equivalence.py [file.selt ...]
@@ -8,8 +8,8 @@ Every `.selt` source (with its setup), is run
 on fresh contexts as `eval_node(program.ast)` (plain) and as `program.run()`
 (optimiser and math plans), twice each on one Program; value dump, error code and
 position, and the final context dump must agree. Exit status is non-zero on any
-difference. Not in tools/check.sh until the divergences listed in
-docs/interim/2026-09-29/worklist/tests/04-evaluation.md are fixed.
+difference. Not in tools/check.sh (its JS and PHP twins are); it passes over the
+whole suite.
 """
 import os
 import re

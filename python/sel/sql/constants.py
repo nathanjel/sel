@@ -338,7 +338,7 @@ def refuse_as_sel(e: SelError, n: Node) -> None:
     if e.code == 'E_DEPTH':
         # SEL evaluates this fine as far as it is asked to; what is refused is the
         # nesting of the expression being translated, which is E_SQL_DEPTH's whole
-        # meaning (sql/errors.md), not an invalid expression (JS-C54 d).
+        # meaning (sql/errors.md), not an invalid expression.
         refuse('E_SQL_DEPTH',
                'this expression nests deeper than SEL will evaluate, so there is '
                'nothing to translate; the evaluator answers E_DEPTH for it', pos)

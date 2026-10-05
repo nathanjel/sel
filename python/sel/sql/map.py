@@ -365,8 +365,7 @@ def check_numeric_guard(dialect: str) -> None:
             + ', which its funcs.ISNUM tests; they ask the same question, and a '
             'guard that asks a different one answers for rows SEL refuses')
     # Only a guard that passed is remembered: memoising before the check made the
-    # first translation refuse and every later one emit what the check had refused
-    # (JS-C24, PHP-C49, PY-C49).
+    # first translation refuse and every later one emit what the check had refused.
     _guard_checked.add(dialect)
 
 

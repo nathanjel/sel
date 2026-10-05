@@ -94,7 +94,7 @@ define('SPLIT', 2, 2, fn=_split)
 
 def _trim(s: str, left: bool, right: bool) -> str:
     # The explicit four-character set, never the no-argument strip(): that one
-    # strips every Unicode space, which SEL must not (PY-P11: a per-character
+    # strips every Unicode space, which SEL must not (a per-character
     # loop took 195 ms per MB of padding, strip with the set takes 8 ms).
     if left and right:
         return s.strip(_SPACE)
@@ -122,7 +122,7 @@ def _ascii_case(s: str, up: bool) -> str:
     # Pure ASCII text: str.upper()/lower() is byte-identical to the ASCII rule,
     # because no ASCII character has a multi-character or non-ASCII mapping.
     # Anything else goes through a fixed 26-entry translate table, so the full
-    # Unicode mapping is still never applied (PY-P11).
+    # Unicode mapping is still never applied.
     if s.isascii():
         return s.upper() if up else s.lower()
     return s.translate(_UP_TABLE if up else _LOW_TABLE)

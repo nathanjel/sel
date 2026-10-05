@@ -180,7 +180,7 @@ def test_regular_values_share_shape_and_use_flat_storage():
     assert [item.as_text() for item in first.storage] == ['1', 'a']
     items = [Value.text('a'), Value.text('b')]
     # The builtins' constructor takes its fresh list as the storage; the
-    # public one copies (spec §8, review 2026-09-28 HOST-16).
+    # public one copies (spec §8).
     assert Value._list_owned(items).storage is items
     assert Value.list(items).storage is not items
 
@@ -414,7 +414,7 @@ def test_a_plan_continuation_reports_errors_where_run_does(source, kind, want):
     literal in the continuation carries the position the in-memory half will
     report. sql/cases/25-hybrid-plans.sqlt pins the SQL side of these; only
     executing the plan can see the position the memory side reports. The
-    helper rows are review finding AJ: the planner plans the program as
+    helper rows: the planner plans the program as
     written, so a helper read in the continuation fails at the read's
     position, as run() reports it, and its definition is evaluated once before
     the steps rather than once per row; LABEL is a context variable, so a
@@ -553,8 +553,8 @@ def test_optimizer_physical_join_pushdown_keeps_record():
     # A binder or relation name read directly after the LINK -- `O["x"]`,
     # `ORDERS["x"]`, `_2["x"]` -- is not a side: the binders are scoped to the
     # predicate (spec §7.4), so as written it is E_UNDEF_VAR or E_NO_KEY, and
-    # pushing it into the side it names would turn that error into rows
-    # (review 2026-09-15, W2). Only `_["O"]["x"]` names a side.
+    # pushing it into the side it names would turn that error into rows.
+    # Only `_["O"]["x"]` names a side.
     for predicate in ('O["status"] $== "ACTIVE"', 'ORDERS["status"] $== "ACTIVE"',
                       '_1["status"] $== "ACTIVE"', 'C["country"] $== "DE"',
                       'CUSTOMERS["country"] $== "DE"', '_2["country"] $== "DE"'):
@@ -698,7 +698,7 @@ def test_bucket_plans_answer_what_the_evaluator_answers_on_sqlite():
         ('ORDERS .> BUCKET(_["customer_id"]) .> MAP(RECORD("cid", _K, "n", COUNT(_))) .> MAP(RECORD("c", _["cid"], "big", _["n"] > 1))', 'hybrid'),
         ('ORDERS .> FILTER(_["amount"] > 6) .> BUCKET(_["customer_id"]) .> MAP(RECORD("cid", _K, "n", COUNT(_)))', 'pure_sql'),
         ('ORDERS .> BUCKET(_["customer_id"]) .> TAKE(1) .> MAP(RECORD("cid", _K, "n", COUNT(_)))', 'pure_memory'),
-        # Review 2026-09-15 findings I, AI and P: a bare bucket at the end of
+        # A bare bucket at the end of
         # the pipeline, a bucket over a bucket, and the MAP fall-through over
         # an aliased or computed pair, a whole-row read, a colliding
         # dependency, a downstream read of a dependency, a downstream BUCKET.
@@ -722,8 +722,8 @@ def test_bucket_plans_answer_what_the_evaluator_answers_on_sqlite():
         # render its NUM guard, so nothing pushes down. A later step that
         # renumbers again lets the swap through.
         ('ORDERS .> MAP(r, RECORD("id", r["id"], "shout", REPEAT(r["name"], 2))) .> FILTER(s, s["id"] > 1)', 'pure_memory'),
-        # REPEAT can raise, so the FILTER stays behind the MAP (review
-        # 2026-09-25 SEM-07); a MAP that cannot raise lets it through.
+        # REPEAT can raise, so the FILTER stays behind the MAP (spec §7.3);
+        # a MAP that cannot raise lets it through.
         ('ORDERS .> MAP(r, RECORD("id", r["id"], "shout", REPEAT(r["name"], 2))) .> FILTER(s, s["id"] > 1) .> TAKE(5)', 'pure_memory'),
         ('ORDERS .> MAP(r, RECORD("id", r["id"], "plus", r["amount"] + 1)) .> FILTER(s, s["id"] > 1) .> TAKE(5)', 'pure_sql'),
         ('ORDERS .> MAP(RECORD("Name", _["name"], "shout", REPEAT(_["name"], 2))) .> TAKE(2)', 'pure_memory'),
@@ -803,7 +803,7 @@ def test_bucket_plans_answer_what_the_evaluator_answers_on_sqlite():
 
 
 def test_runner_contract_hands_params_statement_and_bindings_in_order():
-    """The runner contract (finding AK): the statement in `params` mode with
+    """The runner contract: the statement in `params` mode with
     `bindings()` in placeholder order -- text literals as `?`, numbers inlined
     -- in every host, so a driver binds what it is handed as it is. Lisp
     handed the runner inline SQL and its creation-order slot list.

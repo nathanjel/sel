@@ -1,5 +1,4 @@
-"""T12 (docs/interim/2026-09-29/worklist/tests/12-integration.md), Python's own
-lane: the process-level guarantees a host application relies on -- errors that
+"""Python's own integration lane: the process-level guarantees a host application relies on -- errors that
 survive pickling and copying (multiprocessing, caching), the cyclic collector
 handed back across overlapping threads and failures, import leaving the
 application's interpreter settings alone, and two logical clients in one
@@ -26,7 +25,7 @@ def error_of(source, run=False):
     return info.value
 
 
-# PY-C16 -------------------------------------------------------------------
+# --- errors survive pickling and copying -------------------------------------
 
 @pytest.mark.parametrize('roundtrip', [
     lambda e: pickle.loads(pickle.dumps(e)),
@@ -70,7 +69,7 @@ def test_the_collector_is_enabled_in_a_pool_worker_after_runs():
         assert all(pool.map(gc_state_after_run, range(4)))
 
 
-# PY-C2 --------------------------------------------------------------------
+# --- the collector pause under overlapping threads ----------------------------
 
 def test_collector_survives_overlapping_runs_that_fail():
     """Threads that raise part way through a run and threads that finish normally,
@@ -110,7 +109,7 @@ def test_collector_left_off_by_the_application_stays_off_across_threads():
         gc.enable()
 
 
-# PY-C25 -------------------------------------------------------------------
+# --- import leaves the interpreter's settings alone ---------------------------
 
 def test_import_leaves_the_deployers_int_max_str_digits_alone():
     code = 'import sys, sel; print(sys.get_int_max_str_digits())'

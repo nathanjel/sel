@@ -1,4 +1,4 @@
-"""Evaluation order and optimiser transparency (T04): the optimised tree must be
+"""Evaluation order and optimiser transparency: the optimised tree must be
 indistinguishable from the plain one -- same value, same error, same position --
 and a program stays usable after it raised."""
 import pytest

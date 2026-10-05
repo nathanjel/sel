@@ -1,7 +1,7 @@
-"""The SQL layer's T08-T11 contract, held by the Python host (docs/internals/
+"""The SQL layer's contracts, held by the Python host (docs/internals/
 sql-translation.md, sql/MAP.md, docs/internals/sql-kinds.md).
 
-Each test names the finding it closes. The shared `.sqlt` cases pin exact bytes;
+Each test names the rule it holds. The shared `.sqlt` cases pin exact bytes;
 these hold the properties a byte diff cannot: what is refused, what is remembered
 across calls, and what must not raise a foreign exception.
 """
@@ -26,7 +26,7 @@ def refused(src, code, bindings=None, dialect='mariadb'):
     return info.value
 
 
-# --- T09: kinds -----------------------------------------------------------
+# --- Kinds -----------------------------------------------------------
 
 @pytest.mark.parametrize('src', [
     'IF(TRUE, F, TRUE) AND TRUE',
@@ -35,7 +35,6 @@ def refused(src, code, bindings=None, dialect='mariadb'):
     'NOT IF(TRUE, F, TRUE)',
 ])
 def test_a_conditional_cannot_launder_an_undeclared_column_into_a_bool(src):
-    # JS-C27, PHP-C28, CPP-C29, LISP-C24, GO-C15
     refused(src, 'E_SQL_SHAPE', {'F': UNK('f')})
 
 
@@ -54,7 +53,6 @@ def test_a_conditional_over_an_undeclared_branch_is_refused_on_sqlite():
     'JOIN((T, F), ",")', 'JOIN((F, T), "-")', 'JOIN((T, T), F)', 'JOIN((X, T), ",")',
 ])
 def test_join_refuses_bool_and_bin_elements_and_separators(src):
-    # PY-C19, PHP-C31
     refused(src, 'E_SQL_SHAPE', {'T': TEXT('t'), 'F': Binding.column('f', 't', 'BOOL'),
                                  'X': Binding.column('x', 't', 'BIN')})
 
@@ -73,7 +71,6 @@ REL = {'O': Binding.relation('orders', 'o', {
 
 @pytest.mark.parametrize('field', ['STATUS', 'FLAG'])
 def test_a_grouped_sum_over_a_declared_text_or_bool_field_is_refused(field):
-    # PHP-C27
     with pytest.raises(SqlError) as info:
         Sql.translate_statement(compile(f'O .> BUCKET(_["CAT"], RECORD("s", SUM(_, _["{field}"])))'),
                                 'mariadb', REL)
@@ -101,14 +98,12 @@ def test_a_columns_unroll_uses_the_plain_operand_guard():
 
 @pytest.mark.parametrize('src', ['F IN S', 'TRUE IN S', 'X IN S'])
 def test_in_relation_refuses_a_bool_or_bin_needle(src):
-    # PY-C21
     b = {'S': Binding.relation('sk', 's', {'SKU': TEXT('sku', 's')}, 'SKU'),
          'F': Binding.column('f', 't', 'BOOL'), 'X': Binding.column('x', 't', 'BIN')}
     refused(src, 'E_SQL_SHAPE', b)
 
 
 def test_a_numeric_item_beside_an_exact_column_is_cast():
-    # PY-C20
     b = {'T': Binding.column('t', 't', 'TEXT', exact=True)}
     sql = tr('T IN ("a", 3)', b).as_value()
     assert "= CAST(3 AS CHAR) COLLATE" in sql and "(`t`.`t` = 'a')" in sql
@@ -120,7 +115,6 @@ def test_a_numeric_item_beside_an_exact_column_is_cast():
     ('99999999999999999999999', 'LIMIT 9223372036854775807'),
 ])
 def test_take_counts_are_exact_clamped_and_accept_a_scale(count, want):
-    # JS-C56, JS-C55, PHP-C50, CPP-C59, PY-C41
     b = {'ITEMS': Binding.relation('items', 'i', {})}
     sql = Sql.translate_statement(compile(f'ITEMS .> TAKE({count})'), 'mariadb', b).as_statement()
     assert sql.endswith(want)
@@ -160,7 +154,7 @@ def max_depth(sql):
     return m
 
 
-# --- T08: scope, slots, size ----------------------------------------------
+# --- Scope, slots, size ----------------------------------------------
 
 def test_an_element_reads_the_scope_the_list_was_written_in():
     # ANY((0,0), ALL((_K, 5), I, I > 1)): the inner list's `_K` is the OUTER key
@@ -215,7 +209,7 @@ def test_a_non_name_binder_is_e_sql_shape_at_the_binder():
     assert (info.value.code, info.value.col) == ('E_SQL_SHAPE', 27)
 
 
-# --- T10: bindings, registration, rendering -------------------------------
+# --- Bindings, registration, rendering -------------------------------
 
 @pytest.mark.parametrize('t', ['LIST', 'STATEMENT'])
 def test_list_and_statement_are_not_column_types(t):
@@ -277,7 +271,7 @@ def test_a_supplied_correlate_is_parenthesised():
 
 
 def test_params_mode_binds_no_value_it_does_not_emit():
-    # CPP-C57, LISP-C40: a fragment rendered only to be refused early
+    # A fragment rendered only to be refused early
     b = {'R': Binding.relation('r', 'r', {'A': NUM('a', 'r'), 'N': TEXT('n', 'r')}),
          'S': Binding.relation('s', 's', {'A': NUM('a', 's'), 'M': TEXT('m', 's')})}
     src = ('R .> FILTER(_["N"] $== "zz") .> SORT_BY(_["N"]) .> TAKE(3) '
@@ -350,7 +344,7 @@ def test_re_registering_under_the_same_parent_replaces_and_under_another_is_refu
 
 
 def test_a_numeric_guard_that_does_not_carry_the_pattern_is_refused_on_every_use(clean_map):
-    # JS-C24, PHP-C49, PY-C49, CPP-C36, LISP-C42: memoised before it was checked
+    # Memoised before it was checked
     define('t-pgbad', 'postgresql',
            numericGuard="CASE WHEN ({textCast:0} ~ '^.*$') THEN CAST({0} AS NUMERIC) ELSE NULL END")
     b = {'NAME': TEXT('name', 'o')}
@@ -359,7 +353,7 @@ def test_a_numeric_guard_that_does_not_carry_the_pattern_is_refused_on_every_use
             tr('NAME + 1', b, 't-pgbad')
 
 
-# --- T11: the planner -------------------------------------------------------
+# --- The planner -------------------------------------------------------
 
 ORD = {'ORDERS': Binding.relation('orders', 'o', {
     'ID': NUM('id', 'o'), 'NAME': TEXT('name', 'o'), 'CUSTOMER_ID': NUM('customer_id', 'o')})}
@@ -440,7 +434,7 @@ def test_a_pure_memory_plan_never_mutates_the_callers_context():
     assert 'A' not in [k for k, _ in ctx.entries()]
 
 
-# --- PY-C1 site f: the SQL layer under a deep program -----------------------
+# --- The SQL layer under a deep program -----------------------
 
 @pytest.mark.parametrize('n', [197, 198, 300])
 def test_a_deep_helper_chain_is_a_refusal_not_a_recursion_error(n):
@@ -518,7 +512,7 @@ def test_postgresql_sums_the_guarded_cast_and_mariadb_the_bare_one():
 
 
 def test_sqlite_min_and_max_read_every_operand_as_a_number():
-    # GO-C17: sqlite's max() orders by storage class, an integer below any text
+    # SQLite's max() orders by storage class, an integer below any text
     assert tr('MAX(1, 2)', dialect='sqlite').as_value() == "max(CAST('1' AS NUMERIC), CAST('2' AS NUMERIC))"
     assert tr('MIN(N, 60) > 70', {'N': NUM('n')}, 'sqlite').as_value().count('CAST(') >= 2
     assert tr('MIN("1")', dialect='sqlite').as_value() == "min('1')"       # nothing to compare with

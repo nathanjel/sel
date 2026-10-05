@@ -1,4 +1,4 @@
-"""T12 host fixes: the flow-sensitive dependencies() rule (SPEC 8), compile() of
+"""Host API contracts: the flow-sensitive dependencies() rule (SPEC 8), compile() of
 non-source input, and a registered host function reading an argument the call
 does not have (SPEC 8.1). Each case is also a shared probe in tools/api-pins.txt."""
 import copy

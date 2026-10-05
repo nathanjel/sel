@@ -1,4 +1,4 @@
-"""PY-P1: sorts and selections derive each key once (sel/builtins/aggregate.sort_key).
+"""Sorts and selections derive each key once (sel/builtins/aggregate.sort_key).
 
 The precomputed native-comparable key must order exactly as the pairwise
 comparator (compare_values, SPEC 7.3) does -- including ties, which keep input

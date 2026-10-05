@@ -1,4 +1,4 @@
-"""PY-P30: the i flag's per-call work (ASCII pattern test, subject folding) and the no-flag
+"""The i flag's per-call work (ASCII pattern test, subject folding) and the no-flag
 path. Results and errors must be what the character loop and unconditional translate gave."""
 import pytest
 

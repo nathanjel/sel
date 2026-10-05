@@ -51,7 +51,7 @@ class Context:
         # How many pushed frames bind each name. A frame's names are fixed while
         # it is pushed (a binder changes its value, never its name), so a name
         # missing here is in no frame: lookup goes straight to the root and
-        # is_bound is one test (item 2, P1).
+        # is_bound is one test.
         self.bound: dict[str, int] = {}
         self.depth = 0
         # A FILTER whose source is a LINK hands the join its conjuncts here,
@@ -252,8 +252,7 @@ def _eval_planned(node: Node, ctx: Context) -> Value:
     until it has run _PLAN_HOT times, then as one Python function built from
     its steps (_compile_math_plan) -- unless it has more than _PLAN_MAX_STEPS.
     Compiling costs about as much as a few hundred interpreted runs, so a plan
-    that runs once (a one-shot evaluate, a conformance case) never pays it
-    (item 2, P2).
+    that runs once (a one-shot evaluate, a conformance case) never pays it.
     """
     plan = node.math_plan
     run = plan.run
@@ -441,7 +440,7 @@ def _eval_num(node: Node, ctx: Context) -> Value:
 
 def _eval_text(node: Node, ctx: Context) -> Value:
     # An ASCII literal needs no validation (and Value.text's isinstance + validate
-    # call cost as much as building the Value, per evaluation -- PY-P29); anything
+    # call cost as much as building the Value, per evaluation); anything
     # else, including a hand-built node carrying something that is not a str, takes
     # the validating constructor as before.
     v = node.v
@@ -476,7 +475,7 @@ def _eval_index(node: Node, ctx: Context) -> Value:
 
     # The slot cache is keyed on the record's shape alone, so it may only
     # answer for a literal key: a computed key can differ at every read
-    # (and must be evaluated, errors included). Review 2026-09-25 SEM-01.
+    # (and must be evaluated, errors included).
     literal = node.idx.t == 'text'
     if literal:
         cached = node._cached_slot
@@ -778,7 +777,7 @@ def _bitwise(op: str, a: bytes, b: bytes, pos: Pos) -> Value:
     n = len(a)
     if n >= _BITWISE_INT_MIN:
         # Two integers and one machine-word operation each, instead of a generator
-        # step per byte: the same bytes, at memory speed (PY-P29). Small operands
+        # step per byte: the same bytes, at memory speed. Small operands
         # keep the byte loop, which is cheaper than building the integers.
         x = int.from_bytes(a, 'big')
         y = int.from_bytes(b, 'big')

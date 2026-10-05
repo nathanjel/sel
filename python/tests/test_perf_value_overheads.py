@@ -1,4 +1,4 @@
-"""PY-P24: the small value-level overheads. is_vacuous must not format a number, the dense
+"""The small value-level overheads. is_vacuous must not format a number, the dense
 list index hashes come from a table that never changes what is hashed, and a refused
 size argument must not build the message from a million-digit integer."""
 import pytest

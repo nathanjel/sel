@@ -1,4 +1,4 @@
-"""PY-P9: a folded numeric literal carries its decoded Dec, so evaluation does not
+"""A folded numeric literal carries its decoded Dec, so evaluation does not
 re-parse it, and folding over an already decoded operand gives the same text."""
 import sel
 from sel import decimal as D

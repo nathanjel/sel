@@ -271,7 +271,7 @@ def keys_renumbered_by(step: Node | None) -> bool:
 # The steps that only READ the elements they are handed and copy whatever they
 # keep (SPEC 3.4: MAP copies what it collects). A FILTER in front of one need not
 # copy its kept elements: they are read once and MAP's own copy is the copy the
-# contract asks for (PY-REG-1). Only a pipeline step can follow a FILTER this way;
+# contract asks for. Only a pipeline step can follow a FILTER this way;
 # SUM, ALL and ANY take their source as an argument and never reach this test, and
 # BUCKET, SELECT_COLS and the sorts hand the elements on or build from them, so
 # they are not here.
@@ -347,7 +347,7 @@ def map_passthroughs(step: Node) -> list[str]:
 # Whether evaluating NODE for one row can raise -- conservatively: a rewrite that
 # moves a FILTER in front of a step, runs a step on fewer rows, or fuses two
 # FILTERs changes which rows reach what, so it may only pass over expressions
-# that cannot raise on any of them (spec §7.3; review 2026-09-25 SEM-07/SEM-08).
+# that cannot raise on any of them (spec §7.3).
 # Literals, _K and the binder itself never raise. On the logical path the rows
 # are a bound relation's, which always carry their typed columns, so a field
 # read through the binder cannot raise either, nor a comparison, AND/OR/NOT or
@@ -386,7 +386,7 @@ def predicate_cannot_raise(node, binder: str, logical: bool) -> bool:
     """`cannot_raise` for a FILTER predicate, which must also come out BOOL: a
     bare variable, `_K`, a number, a text or NULL never raises when read but is
     E_NOT_BOOL as a predicate, so a fusion that moved it before an earlier
-    predicate's later rows changed which error came first (PHP-C11)."""
+    predicate's later rows changed which error came first."""
     if node is None:
         return True
     if node.t == 'bool':
@@ -838,7 +838,7 @@ def _children(n: Node) -> tuple:
 
 def bind_handlers(physical: Node, ast: Node) -> None:
     """Stamps every node the physical tree owns with the function eval_node runs
-    it with (eval.handler_for; item 2, P3). A node it shares with the caller's
+    it with (eval.handler_for). A node it shares with the caller's
     AST -- an assignment's target, a pipeline step's placeholder -- is never
     written, and neither is anything below it: it takes the generic path."""
     from .eval import handler_for

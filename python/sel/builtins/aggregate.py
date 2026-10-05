@@ -10,7 +10,7 @@ from ..errors import SelError, fail
 from ..parser import Node
 from ..registry import define
 from ..value import NONE, Value, elements, iter_elements, structural_hash
-# The direction and field names fold ASCII-only (review 2026-09-25 SEM-05):
+# The direction and field names fold ASCII-only:
 # str.upper() took "deſc" for DESC.
 from ..lexer import ascii_upper
 
@@ -60,7 +60,7 @@ def node_contains_var(node, name):
     """Whether NODE reads the variable `name`. Iterative: a body is a tree the
     source can make as deep as it is long (a flat chain of 5,000 `+` inside an
     aggregate), and a recursive walk of it ran into the interpreter's frame limit
-    before the evaluator's own depth cap could report E_DEPTH (PY-C1, site e)."""
+    before the evaluator's own depth cap could report E_DEPTH."""
     upper = name.upper()
     stack = [node]
     while stack:
@@ -404,7 +404,7 @@ def _filter(args, ctx):
 
 def _sum(args, ctx):
     # The running total is a signed integer at the widest scale seen so far, not a
-    # Dec per addition (PY-P25): the result's scale is the largest operand scale, as
+    # Dec per addition: the result's scale is the largest operand scale, as
     # it always was, and one Dec is built at the end. The digit cap is still checked
     # where an addition could first cross it -- the step's own result, at the body's
     # position -- through the same guard(), gated by the same cheap bit-length test.
@@ -598,7 +598,7 @@ def do_sort(args, ctx, forced_dir):
         if not ents:
             return Value._list_owned([])
 
-        # One frame for the whole pass, like walk() (PY-P25): a fresh dict per element
+        # One frame for the whole pass, like walk(): a fresh dict per element
         # is what the allocation profile showed, and `_K` is a validated Value.text per
         # element that a key body which never mentions it does not need.
         frame = {binder: None}
@@ -685,7 +685,7 @@ def do_top(args, ctx, forced_dir):
     eager = body is not None and _may_write(body)
     items = []
     keys = []
-    # One frame for the whole pass, like walk() and do_sort (PY-P25): a frame
+    # One frame for the whole pass, like walk() and do_sort: a frame
     # pushed per element was a dict and two frame updates per element.
     frame = None
     if binder is not None:
@@ -708,7 +708,7 @@ def do_top(args, ctx, forced_dir):
     try:
         if value.is_list and value.storage is not None:
             # A packed list may carry the keys a FILTER kept (list_keys); _K is
-            # those, not the positions (review 2026-09-25 SEM-02).
+            # those, not the positions.
             lkeys = value.list_keys
             for i, item in enumerate(value.storage):
                 consume(lkeys[i] if lkeys is not None else str(i + 1), item)
@@ -803,7 +803,7 @@ def do_bucket(args, ctx):
         key_str = ''
         if group_key.size() == 0:
             # A key with no children is its kind and text (see _dedupe): one dict probe
-            # in place of a structural hash and an eql() per row (PY-P26).
+            # in place of a structural hash and an eql() per row.
             ident = (group_key.kind, group_key.scalar)
             group = scalar_table.get(ident)
             if group is None:

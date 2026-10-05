@@ -116,7 +116,7 @@ say('program.run.reads.context', evaluate('TOTAL > 10.00', ctx).dump())
 evaluate('SEEN = TOTAL * 2', ctx)
 say('program.run.mutates.context', ctx.get('SEEN').as_text())
 
-# A BOOL a host hands in is an ordinary value (see tools/api.mjs, PHP-C1).
+# A BOOL a host hands in is an ordinary value (see tools/api.mjs).
 _a = Value.none(); _a.set('FLAG', Value.bool(True))
 _b = Value.none(); _b.set('FLAG', Value.bool(True))
 sel_compile('FLAG["k"] = 1; 0').run(_a)
@@ -148,7 +148,7 @@ try:
 except SelError as e:
     say('error.host.hugenum', e.code)
 
-# Every public constructor holds the same rules (spec §8, review 2026-09-28):
+# Every public constructor holds the same rules (spec §8):
 # the decimal form within the caps and canonical, keys checked, a malformed
 # call E_BAD_ARG -- each host through its own spelling of the constructor.
 from sel import decimal as _D   # noqa: E402
@@ -262,7 +262,7 @@ early = sel_compile('HOST_V()')
 register_function('HOST_V', 0, 0, lambda a: Value.text('new'))
 say('host.fn.replace', f"{early.run().as_text()} {evaluate('HOST_V()').as_text()}")
 
-# --- T12: dependencies() is FLOW-SENSITIVE (spec/SPEC.md §8): a variable is a
+# --- dependencies() is FLOW-SENSITIVE (spec/SPEC.md §8): a variable is a
 # dependency when some read of it can happen before the program has definitely
 # assigned it, in evaluation order. Assignments under a condition, a short
 # circuit, `??` or an aggregate body are not definite; `op=` and `A[k] op= x`
@@ -292,7 +292,7 @@ say('program.deps.index-key-read-before-a-later-key-assigns', deps('A[K][(K = 1)
 say('program.deps.top-arg-is-not-a-binder-in-the-three-argument-form', deps('L = LIST(1,2); TOP(L, A, (A = 1; 1))'))
 say('program.deps.bucket-key-phase-assignment-is-not-definite-for-the-projection', deps('L = LIST(1,2); BUCKET(L, G, (A = G; A), COUNT(G) + A)'))
 
-# --- T12: a Program is reusable: after a caught error it runs again, and two
+# --- A Program is reusable: after a caught error it runs again, and two
 # contexts are independent whatever the interleaving.
 _divide = sel_compile('A / B')
 _bad = Value.none(); sel_compile('A = 1; B = 0; 0').run(_bad)
@@ -313,7 +313,7 @@ _c = Value.none(); sel_compile('X = 10; 0').run(_c)
 say('program.reuse.two-contexts', ' '.join(v.as_text() for v in (_bump.run(_a), _bump.run(_c), _bump.run(_a), _bump.run(_c))))
 
 
-# --- T12: input the API cannot take is E_BAD_ARG, never a host exception or a
+# --- Input the API cannot take is E_BAD_ARG, never a host exception or a
 # different SEL error (spec/SPEC.md §8). Statically typed hosts cannot be handed
 # a non-string source or a value of no native form, so they print n/a and the
 # reason; tools/check-api.sh leaves an n/a line out of the diff for that host.
@@ -342,7 +342,7 @@ register_function('HOST_OOB', 1, 2, lambda a: Value.text(a.text(1) if a.count() 
 say('host.fn.arg.out-of-range', code(lambda: evaluate('HOST_OOB("x")')))
 
 
-# --- T12 (CPP-C15): a host-supplied value nested past the cap, handed to RECORD beside a
+# --- A host-supplied value nested past the cap, handed to RECORD beside a
 # key that is not text. Arguments are evaluated first and coerced after (spec/SPEC.md §6.2),
 # so the key's E_NOT_TEXT wins; copying the over-deep value (E_DEPTH) happens only once the
 # arguments are known good. C++ built the pair in one expression and let the copy run first.

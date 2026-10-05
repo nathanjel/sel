@@ -1,4 +1,4 @@
-"""PY-P29: a text literal skips the validating constructor when it is ASCII, and BAND/BOR/BXOR
+"""A text literal skips the validating constructor when it is ASCII, and BAND/BOR/BXOR
 use integer arithmetic above a size threshold. Answers, errors and positions are unchanged."""
 import os
 import random

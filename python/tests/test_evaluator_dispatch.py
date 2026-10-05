@@ -1,4 +1,4 @@
-"""Item 2, P3: eval_node takes a node's evaluator from a table by type (_EVAL)
+"""eval_node takes a node's evaluator from a table by type (_EVAL)
 and, on the optimiser's own copy of the tree, from the node itself (Node.ev,
 optimizer.bind_handlers). The caller's AST is never written."""
 import runpy

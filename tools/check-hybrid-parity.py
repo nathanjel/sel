@@ -3,7 +3,7 @@
 real SQLite (sqlite3): the plan's prefix statement is EXECUTED and the answer of
 execute_hybrid must be what run() answers, under the contract in that file's note.
 tools/check-hybrid-parity.mjs is the JS twin, php/bin/sqlo `hybrid` the PHP one on
-all four servers (T11).
+all four servers.
 
     PYTHONPATH=$PWD/python python3 tools/check-hybrid-parity.py [--verbose]
 """
