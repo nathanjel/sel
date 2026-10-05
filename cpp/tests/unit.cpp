@@ -21,6 +21,17 @@
 
 #include "harness.hpp"
 
+// Wall-time assertions hold the -O2 build to a complexity class; a sanitizer
+// build (make asan, make tsan) runs several times slower and on a loaded
+// machine, so there they are skipped and only the answers are checked.
+#if defined(__SANITIZE_ADDRESS__) || defined(__SANITIZE_THREAD__)
+#define SEL_UNIT_SANITIZED 1
+#elif defined(__has_feature)
+#if __has_feature(address_sanitizer) || __has_feature(thread_sanitizer)
+#define SEL_UNIT_SANITIZED 1
+#endif
+#endif
+
 using namespace sel;
 
 namespace {
@@ -885,7 +896,7 @@ void test_round3_fast_paths() {
   selt::eq(run("REPLACE(\"aa\", \"b\", \"aaa\")"), std::string("t\"ba\""), "REPLACE leftmost first");
   selt::eq(run("JOIN(SPLIT(\"a😀b😀😀c\", \"😀\"), \"|\")"), std::string("t\"a|b||c\""), "SPLIT on a 4-byte separator");
   selt::eq(run("COUNT(SPLIT(\"\", \",\"))"), std::string("t\"1\""), "SPLIT of nothing is one empty piece");
-#if !defined(__SANITIZE_ADDRESS__)
+#if !defined(SEL_UNIT_SANITIZED)
   {
     // The pattern that took 6.7 s at n = 400,000 with std::string::find (two-way search).
     const auto t0 = std::chrono::steady_clock::now();
@@ -1860,7 +1871,12 @@ void test_tree_walkers_are_not_recursive() {
   const auto t0 = std::chrono::steady_clock::now();
   const auto prog = compile(rec);
   const double secs = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
+#if !defined(SEL_UNIT_SANITIZED)
   selt::ok(secs < 2.0, "compiling a 40,000-key RECORD takes well under 2 s (took " + std::to_string(secs) + ")");
+#else
+  (void)secs;
+#endif
+  selt::ok(prog.ast() != nullptr, "a 40,000-key RECORD compiles");
   selt::eq(compile("RECORD(\"a\",1,\"a\",2)[\"a\"]").run().as_text(), std::string("2"), "a duplicate literal key still last-wins");
 }
 

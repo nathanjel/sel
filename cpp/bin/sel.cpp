@@ -94,7 +94,8 @@ int main(int argc, char** argv) {
       return 0;
     } else if (a == "-e") {
       if (i + 1 >= argl.size()) return usage_error("-e needs an expression");
-      if (have_source) return usage_error("unexpected argument -e");
+      // A second program: the expression is the extra operand (docs/usage/repl.md).
+      if (have_source) return usage_error("unexpected argument " + argl[i + 1]);
       source = argl[++i];
       have_source = true;
     } else if (a.size() > 1 && a[0] == '-') {
