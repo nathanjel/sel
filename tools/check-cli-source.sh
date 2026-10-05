@@ -136,6 +136,7 @@ table() {
   row "unknown-option-after-e"        ''            2    ''                'sel: unknown option --no-such-flag' -- -e 1 --no-such-flag
   row "extra-argument-after-e"        ''            2    ''                'sel: unexpected argument extra' -- -e 1 extra
   row "extra-argument-after-file"     ''            2    ''                'sel: unexpected argument extra' -- "$WORK/ok.sel" extra
+  row "e-after-a-file"                ''            2    ''                'sel: unexpected argument 1+1' -- "$WORK/ok.sel" -e 1+1
   row "missing-file"                  ''            1    ''                "sel: cannot read $MISSING_PATH" -- "$MISSING_PATH"
   row "directory"                     ''            1    ''                "sel: cannot read $WORK/a-directory" -- "$WORK/a-directory"
   row "deps-missing-file"             ''            1    ''                "sel: cannot read $MISSING_PATH" -- --deps "$MISSING_PATH"

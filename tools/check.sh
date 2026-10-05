@@ -192,6 +192,11 @@ if [ "${SEL_SKIP_SANITIZERS:-0}" != 1 ]; then
   case " $IMPLS " in *" cpp "*) step "C++ sanitizers (ASan, UBSan)" sel_slot make -j4 -C cpp asan ;; esac
 fi
 case " $IMPLS " in *" js "*) step "JS metadata" sel_slot node tools/metadata/js.mjs ;; esac
+# The JS lane's own checks of what it ships: the reference fragments through
+# define() plus the host examples, and the .d.ts typings against the module.
+# Guarded on the file so the gate runs on a tree that does not have them yet.
+case " $IMPLS " in *" js "*) [ ! -f tools/check-js-examples.mjs ] || step "JS examples and reference fragments" sel_slot node tools/check-js-examples.mjs ;; esac
+case " $IMPLS " in *" js "*) [ ! -f tools/check-js-dts.mjs ] || step "JS typings (sel.d.ts, sql.d.ts)" sel_slot node tools/check-js-dts.mjs ;; esac
 case " $IMPLS " in *" php "*) step "PHP metadata" sel_slot sel_php tools/metadata/php.php ;; esac
 case " $IMPLS " in *" python "*) step "Python metadata" sel_slot python3 tools/metadata/python.py ;; esac
 case " $IMPLS " in *" lisp "*) step "Lisp metadata" sel_slot sbcl --script tools/metadata/lisp.lisp ;; esac

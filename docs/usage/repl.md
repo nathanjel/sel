@@ -403,7 +403,7 @@ position.
 | a file that cannot be read — missing, unreadable, or a directory | 1 | `sel: cannot read PATH…` |
 | `-e` with no expression after it | 2 | `sel: -e needs an expression` |
 | an option the CLI does not have | 2 | `sel: unknown option OPT` |
-| a second operand (`sel -e 1 extra`, `sel a.sel b.sel`) | 2 | `sel: unexpected argument ARG` |
+| a second operand (`sel -e 1 extra`, `sel a.sel b.sel`; in `sel a.sel -e X` the file is the operand and `X` the extra one) | 2 | `sel: unexpected argument ARG` |
 
 Every refusal is that one line, never a stack trace, and writes nothing to
 standard output. Only the code and position of an evaluation error are
