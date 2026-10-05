@@ -92,7 +92,9 @@ function extract_blocks(string $file): array
                 continue;
             }
             $info = trim(substr($t, 3));
-            if (str_starts_with($info, 'sel-case')) {
+            // `sel-case NAME`: the word, then whitespace -- a `sel-cases` fence is
+            // some other language's block, not a case with the name "s".
+            if (preg_match('/^sel-case(?:\s|$)/', $info) === 1) {
                 $name = trim(substr($info, 8));
                 if ($name === '') {
                     throw new RuntimeException(

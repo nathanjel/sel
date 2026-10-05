@@ -48,7 +48,7 @@ $dialect = $argv[2] ?? 'mariadb';
 // `statement`: only translateStatement's inline SQL; see js/bin/sqlfuzz.mjs.
 $mode = $argv[3] ?? 'all';
 if ($path === null) {
-    fwrite(STDERR, "usage: sqlfuzz corpus.selc [dialect]\n");
+    fwrite(STDERR, "usage: sqlfuzz corpus.selc [dialect] [all|statement]\n");
     exit(2);
 }
 
