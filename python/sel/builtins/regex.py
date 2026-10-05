@@ -52,7 +52,7 @@ from .._budget import check_text
 from .._stack import recursion_budget
 from .._limits import MAX_DEPTH, MAX_REGEX_GROUPS, MAX_REGEX_PATTERN, MAX_TEXT_LEN
 from ..errors import fail
-from ..registry import REGEX_FLAG_AT, define
+from ..registry import REGEX_FLAG_AT, REGEX_PATTERN_AT, define
 from ..value import Value
 from . import _regex_ambiguity as _amb
 
@@ -619,14 +619,15 @@ def check_literal(name, args):
     taken as no flags and left to the run-time E_BAD_ARG -- it never stops the
     pattern being checked, so a bad pattern beside a bad flag is the pattern's
     error, at compile time, on every host."""
-    if not args or args[0].t != 'text':
+    pat_i = REGEX_PATTERN_AT[name]
+    if len(args) <= pat_i or args[pat_i].t != 'text':
         return
     flag_i = REGEX_FLAG_AT[name]
     ignore_case = False
     if len(args) > flag_i:
         f = args[flag_i]
         ignore_case = f.t == 'text' and 'i' in f.v
-    validate(args[0].v, args[0].pos, ignore_case)
+    validate(args[pat_i].v, args[pat_i].pos, ignore_case)
 
 
 def _args_for(args, pat_i, subj_i, flag_i):

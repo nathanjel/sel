@@ -14,6 +14,7 @@ from . import decimal as D
 from ._budget import check_collection, check_text
 from .errors import MAX_DEPTH, Pos, SelError, fail
 from .math_plan import MathPlan, OpCode
+from . import opinfo
 from .parser import Node
 from .utf8 import bytes_compare
 from .value import BOOL, NONE, TEXT, Value
@@ -600,9 +601,9 @@ def _eval_binary(node: Node, ctx: Context) -> Value:
     if op == '&':
         return _concat(l, r, lp, rp, node.pos)
 
-    if op in ('$<', '$<=', '$>', '$>='):
+    if op in _TEXT_ORDER:
         a = l.as_bytes(lp); b = r.as_bytes(rp)
-        return Value.bool(compare_result(op[1:], bytes_compare(a, b), node.pos))
+        return Value.bool(compare_result(_NUMERIC_TWIN[op], bytes_compare(a, b), node.pos))
 
     if op == 'EQL':
         return Value.bool(l.eql(r, node.pos))
@@ -618,7 +619,7 @@ def _eval_binary(node: Node, ctx: Context) -> Value:
         a = l.as_bool(lp); b = r.as_bool(rp)
         return Value.bool(a != b)
 
-    if op in ('BAND', 'BOR', 'BXOR'):
+    if op in _BITWISE:
         a = l.as_bytes(lp); b = r.as_bytes(rp)
         return _bitwise(op, a, b, node.pos)
 
@@ -675,8 +676,14 @@ def _eval_text_equal(node: Node, ctx: Context) -> Value:
 
 _BINARY = {
     'AND': _eval_and, 'OR': _eval_or, '$==': _eval_text_equal, '$!=': _eval_text_equal,
-    **{op: _eval_compare for op in ('==', '!=', '<', '<=', '>', '>=')},
+    **{op: _eval_compare for op in opinfo.NUMERIC_COMPARE},
 }
+
+# The `$` comparisons that order (the two that test equality have _eval_text_equal),
+# each with its numeric twin for compare_result: `$<=` -> `<=`.
+_TEXT_ORDER = opinfo.TEXT_COMPARE - _BINARY.keys()
+_NUMERIC_TWIN = opinfo.NUMERIC_TWIN
+_BITWISE = opinfo.BITWISE_OPS
 
 
 def compare_result(op: str, c: int, pos: Pos | None) -> bool:
@@ -755,9 +762,33 @@ def _bitwise(op: str, a: bytes, b: bytes, pos: Pos) -> Value:
 # The five arithmetic operators and the decimal core's function for each: the
 # evaluator, compound assignment and the optimiser's constant fold read this.
 ARITH = {'+': D.add, '-': D.sub, '*': D.mul, '/': D.div, '%': D.mod}
-COMPARE_OPS = frozenset(('==', '!=', '<', '<=', '>', '>='))
+COMPARE_OPS = opinfo.NUMERIC_COMPARE
 
-_COMPOUND = {'+=': '+', '-=': '-', '*=': '*', '/=': '/', '%=': '%', '&=': '&'}
+# `+=` applies `+`, and so on (spec/lexicon.json `compound`).
+_COMPOUND = opinfo.COMPOUND
+
+
+def _check_dispatch() -> None:
+    """The evaluator's own dispatch, held to the lexicon at import: every
+    binary operator has a branch in _eval_binary, every arithmetic one a
+    decimal function, every numeric comparison an answer in compare_result, and
+    every compound assignment an operator it can apply. An operator added to
+    spec/lexicon.json and forgotten here fails to import rather than raising
+    E_SYNTAX `unknown operator` at run time."""
+    handled = (_BINARY.keys() | ARITH.keys() | _TEXT_ORDER | _BITWISE
+               | {'??', '???', '&', 'EQL', 'IN', 'XOR'})
+    missing = sorted(opinfo.BINARY_OPS - handled)
+    if missing or ARITH.keys() != opinfo.ARITH_OPS:
+        raise RuntimeError(f'eval.py has no branch for {missing or sorted(opinfo.ARITH_OPS ^ ARITH.keys())} '
+                           '(spec/lexicon.json)')
+    for op in opinfo.NUMERIC_COMPARE:
+        compare_result(op, 0, None)
+    bad = sorted(o for o, b in _COMPOUND.items() if b != '&' and b not in ARITH)
+    if bad:
+        raise RuntimeError(f'eval.py cannot apply compound assignment {bad} (spec/lexicon.json)')
+
+
+_check_dispatch()
 
 
 def _eval_assign(node: Node, ctx: Context) -> Value:

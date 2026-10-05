@@ -25,7 +25,7 @@ from .._limits import MAX_SQL_NODES
 from .._stack import recursion_budget as _recursion_budget
 from ..lexer import ascii_upper
 from ..parser import Node
-from ..registry import REGEX_FLAG_AT, sort_form
+from ..registry import REGEX_FLAG_AT, REGEX_PATTERN_AT, sort_form
 from ..value import Value, quote_dump
 from . import constants as _constants
 from . import map as _map
@@ -37,10 +37,25 @@ from .errors import refuse
 from .fragment import Fragment
 from .relational_plan import JoinPlan, RelationalPlan
 from ..optimizer import PIPELINE_OPS as OPTIMIZER_PIPELINE_OPS
+from .. import opinfo as _ops
+from .._builtin_manifest import PIPELINE_STEPS, SQL_ARGS, YIELDS_LIST as _MANIFEST_YIELDS_LIST
 
 # The optimiser's list, not a second copy: one vocabulary of pipeline operators
 # per host, or the planner and the translator drift apart.
 PIPELINE_OPS = OPTIMIZER_PIPELINE_OPS
+
+# The steps that sort (spec/builtins.json `pipeline.sorts`).
+_SORT_STEPS = frozenset(name for name, (_keeps, sorts) in PIPELINE_STEPS.items() if sorts)
+
+# Every step analyze_pipeline has a branch for. Its chain has no `else`: a step
+# with no branch would be skipped, and the statement would answer without it, so
+# a pipeline step added to the manifest and forgotten there fails here, at
+# import, instead.
+_PLANNED_STEPS = _SORT_STEPS | {'FILTER', 'BUCKET', 'SELECT_COLS', 'MAP', 'DISTINCT', 'DEDUPE',
+                                'TAKE', 'DROP', 'LINK', 'LINK_LEFT'}
+if _PLANNED_STEPS != PIPELINE_OPS:
+    raise RuntimeError('the SQL statement planner has no branch for pipeline step(s) '
+                       f'{sorted(PIPELINE_OPS - _PLANNED_STEPS)} (spec/builtins.json)')
 
 # SEL list keys are the canonical decimals "1", "2", … -- so "01" is not a key
 # and neither is "1\n", and the evaluator answers E_NO_KEY for both. This layer
@@ -69,47 +84,27 @@ AGG_SKELETON = {'ALL': 'all', 'ANY': 'any', 'SUM': 'sum', 'JOIN': 'join'}
 AGG_FOLD = {'ALL': 'AND', 'ANY': 'OR', 'SUM': '+'}
 
 # The functions whose result has children, so the scalar rule does not apply to
-# them. Measured rather than written: every non-lazy name in registry.names()
-# was called and the results with size() > 0 kept. Every one is already refused
-# by the dialect documents; the point of the list is that source() used to reach
-# its scalar fallback without ever consulting the map, so COUNT and HAS folded
-# to 0 and FALSE instead.
-# The four text functions that yield a list (measured), the constructors,
-# and every pipeline step -- the optimiser's vocabulary, so a new step is
-# covered by being one (COUNT(LIST(1, 2, 3))
-# was 0).
-YIELDS_LIST = ('BTL', 'INDEXES', 'RGROUPS', 'SPLIT', 'LIST', 'RECORD',
-               *OPTIMIZER_PIPELINE_OPS)
+# them: the text functions that yield a list (measured: every non-lazy name in
+# registry.names() was called and the results with size() > 0 kept), the
+# constructors, and every pipeline step -- spec/builtins.json `yieldsList`,
+# which every pipeline step carries. Every one is already refused by the dialect
+# documents; the point of the list is that source() used to reach its scalar
+# fallback without ever consulting the map, so COUNT and HAS folded to 0 and
+# FALSE instead (COUNT(LIST(1, 2, 3)) was 0).
+YIELDS_LIST = _MANIFEST_YIELDS_LIST
 
-# The functions that read their argument as bytes, and the one that takes a
-# BOOL. Both lists were measured rather than written: every name in
-# registry.names() was called with TO_UTF8("a") and with TRUE, and these are the
-# ones SEL did not answer E_NOT_* for. Writing them by hand would be the second
-# copy of SEL's argument rules that §11.4 exists to avoid -- this is a cached
-# measurement, and sql/oracle/ re-measures it.
-BIN_ARGUMENT_OK = ('BLEN', 'CRC32', 'ENCODE_BASE64', 'FROM_UTF8', 'ISNUM',
-                   'TO_HEX', 'TO_UTF8')
-BOOL_ARGUMENT_OK = ('ISNUM',)
+# The functions that read their argument as bytes, the one that takes a BOOL,
+# and the arguments each function reads as a number: spec/builtins.json `sql`.
+# Measured rather than written: every name in registry.names() was called with
+# TO_UTF8("a") and with TRUE, and these are the ones SEL did not answer E_NOT_*
+# for. A second copy of SEL's argument rules here is what §11.4 exists to
+# avoid -- this is a cached measurement, and sql/oracle/ re-measures it.
+BIN_ARGUMENT_OK = frozenset(name for name, (_n, binary, _b) in SQL_ARGS.items() if binary)
+BOOL_ARGUMENT_OK = frozenset(name for name, (_n, _bin, boolean) in SQL_ARGS.items() if boolean)
 
 NUMERIC_ARGUMENT_AT: dict[str, tuple[int, ...] | bool] = {
-    'ABS': (0,),
-    'SIGN': (0,),
-    'CEIL': (0,),
-    'FLOOR': (0,),
-    'TRUNC': (0,),
-    'ROUND': (0, 1),
-    'POWER': (0, 1),
-    'MIN': True,
-    'MAX': True,
-    'LEFT': (1,),
-    'RIGHT': (1,),
-    'SUBSTR': (1, 2),
-    'FIND': (2,),
-    'REPEAT': (1,),
-    'PADL': (1,),
-    'PADR': (1,),
-    'CHAR': (0,),
-    'CANON': (0,),
+    name: True if numeric == 'all' else numeric
+    for name, (numeric, _bin, _bool) in SQL_ARGS.items() if numeric is not None
 }
 
 
@@ -127,9 +122,14 @@ def _is_numeric_argument(name: str, i: int) -> bool:
 # because bytes are not text.
 EQL_CLASS = {'NUM': 'text', 'TEXT': 'text', 'BOOL': 'bool', 'BIN': 'bin'}
 
-_NUMERIC_OPS = ('==', '!=', '<', '<=', '>', '>=')
-_TEXTUAL_OPS = ('$==', '$!=', '$<', '$<=', '$>', '$>=', 'EQL')
-_BYTE_COMPARISONS = ('$==', '$!=', '$<', '$<=', '$>', '$>=', 'EQL', 'IN')
+# The operator families of spec/lexicon.json. _TEXTUAL_OPS is the family whose
+# map variant is `text`: the `$` comparisons and EQL (IN has its own path);
+# _BYTE_COMPARISONS the ones whose operands are compared as bytes.
+_NUMERIC_OPS = _ops.NUMERIC_COMPARE
+_TEXTUAL_OPS = _ops.TEXT_COMPARE | {'EQL'}
+_BYTE_COMPARISONS = _ops.TEXT_COMPARE | _ops.DEEP_COMPARE
+_ARITH_OPS = _ops.ARITH_OPS
+_LOGIC_OPS = _ops.LOGIC_OPS
 INT64_MAX = 9223372036854775807
 # The key of a frame's own element, under a name no SEL program can spell.
 ELEM = '\0elem'
@@ -697,11 +697,11 @@ class Translator:
         if op == 'IN':
             return self._in_operator(n)
 
-        arith = op in ('+', '-', '*', '/', '%')
+        arith = op in _ARITH_OPS
         l = self._arithmetic_operand(n.l) if arith else self._node(n.l)
         r = self._arithmetic_operand(n.r) if arith else self._node(n.r)
 
-        if op in ('AND', 'OR', 'XOR'):
+        if op in _LOGIC_OPS:
             l = self._require_bool(l, n.l.pos, op)
             r = self._require_bool(r, n.r.pos, op)
         # SEL reads both operands of an arithmetic or numeric-comparison operator
@@ -709,7 +709,7 @@ class Translator:
         # evaluator, not FALSE. MariaDB and SQLite coerce a boolean to 1 or 0 and
         # answer anyway -- a wrong answer with no error attached -- and PostgreSQL
         # says `cannot cast type boolean to numeric` and fails the query.
-        if op in ('+', '-', '*', '/', '%') or op in _NUMERIC_OPS:
+        if arith or op in _NUMERIC_OPS:
             self._require_not_bool(l, n.l.pos, op)
             self._require_not_bool(r, n.r.pos, op)
             # And an operand whose value is written down has to BE a number.
@@ -724,7 +724,7 @@ class Translator:
             r = self._guard_numeric(r, n.r)
         # The `$` family and `&`, not EQL and IN: those two are structural and
         # `TRUE EQL TRUE` is TRUE, while `"x" $== TRUE` is E_NOT_BIN.
-        if op == '&' or (op[0] == '$' and op != '$'):
+        if op == '&' or op in _ops.TEXT_COMPARE:
             self._require_not_bool_operand(l, n.l.pos, op)
             self._require_not_bool_operand(r, n.r.pos, op)
         variant = self._variant_for(op, [l, r])
@@ -1143,7 +1143,7 @@ class Translator:
         """
         if n.name not in REGEX_FLAG_AT:
             return n
-        at = 0
+        at = REGEX_PATTERN_AT[n.name]
         pat = n.args[at] if n.args else None
         if pat is None or pat.t != 'text':
             refuse('E_SQL_UNSUPPORTED',
@@ -2767,7 +2767,7 @@ class Translator:
                     plan.limit -= skipped
                 plan.offset = min((plan.offset or 0) + skipped, INT64_MAX)
 
-            elif name in ('SORT', 'SORT_DESC', 'SORT_BY', 'TOP', 'TOP_DESC', 'TOP_BY'):
+            elif name in _SORT_STEPS:
                 # A sort after a LIMIT or OFFSET sorts the rows that survived
                 # them, grouped or not, so those wrap; a sort over a projection
                 # or a DISTINCT wraps so its key can name what they produced. A

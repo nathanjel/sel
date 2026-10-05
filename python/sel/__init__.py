@@ -23,6 +23,7 @@ from .eval import Context as _Context, eval_node
 from .parser import Node, parse
 from .registry import names as _names, binding_form as _binding_form
 from .registry import register_function
+from .opinfo import SHORT_CIRCUIT as _SHORT_CIRCUIT
 from ._gc import bulk_allocation as _bulk_allocation
 from ._stack import recursion_budget as _recursion_budget
 from .value import BIN, BOOL, NONE, TEXT, Value
@@ -224,7 +225,7 @@ per-element expressions) contributes to `defs` only where every path assigns it.
 
     if t == 'bin':
         defs = _collect(node.l, bound, defs, reads, d1)
-        if node.op in ('AND', 'OR', '??', '???'):
+        if node.op in _SHORT_CIRCUIT:
             _collect(node.r, bound, defs, reads, d1)
             return defs
         return _collect(node.r, bound, defs, reads, d1)

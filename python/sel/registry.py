@@ -8,7 +8,7 @@ import re
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
-from ._builtin_manifest import BUILTIN_MANIFEST, BINDING_FORMS, INF  # noqa: F401 - INF is re-exported
+from ._builtin_manifest import BUILTIN_MANIFEST, BINDING_FORMS, INF, REGEX_CALLS  # noqa: F401 - INF is re-exported
 from .lexer import ascii_upper
 
 
@@ -16,10 +16,12 @@ from .lexer import ascii_upper
 # fullmatch, because `$` also matches before a trailing newline.
 _HOST_NAME = re.compile(r'[A-Za-z][A-Za-z0-9_]*', re.ASCII)
 
-# The regex builtins (spec §7.8) and the argument each takes its flags in: the
-# parser checks their literal patterns, the SQL translator rewrites them, and
-# both find the flags here. The pattern is argument 0 in all four.
-REGEX_FLAG_AT = {'RMATCH': 2, 'RFIND': 2, 'RGROUPS': 2, 'RREPLACE': 3}
+# The regex builtins (spec §7.8) and the arguments each takes its pattern and
+# its flags in, from the manifest (spec/builtins.json `regex`): the parser checks
+# their literal patterns, the SQL translator rewrites them, and both find the
+# positions here.
+REGEX_PATTERN_AT = {name: pattern for name, (pattern, _flags) in REGEX_CALLS.items()}
+REGEX_FLAG_AT = {name: flags for name, (_pattern, flags) in REGEX_CALLS.items()}
 
 
 @dataclass(slots=True)

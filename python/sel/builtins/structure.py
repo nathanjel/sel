@@ -8,6 +8,7 @@ from ..errors import SelError
 from ..lexer import ascii_lower, ascii_upper
 from ..registry import INF, define, is_host_function
 from .aggregate import _SCALAR_FRESH_CALLS
+from ..opinfo import COALESCE_OPS
 from ..parser import Node
 from ..value import NONE, TEXT, Value, elements, iter_values, structural_hash, _record_shape
 
@@ -44,7 +45,6 @@ def _list(args, ctx):
 define('LIST', 0, INF, fn=_list)
 
 
-_COALESCE_OPS = ('??', '???')
 
 
 def _record(args, ctx):
@@ -67,7 +67,7 @@ def _record(args, ctx):
         v = args.val(i)
         n = nodes[i]
         t = n.t
-        if t == 'un' or (t == 'bin' and n.op not in _COALESCE_OPS) or (
+        if t == 'un' or (t == 'bin' and n.op not in COALESCE_OPS) or (
                 t == 'call' and n.name in _SCALAR_FRESH_CALLS):
             vals.append(v)
         else:

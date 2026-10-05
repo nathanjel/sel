@@ -17,13 +17,13 @@ from .math_plan import compile_math_plan, is_math_op
 from .parser import Node, children, may_write
 from .registry import lookup, sort_form
 from .utf8 import encode_utf8
+from . import opinfo
+from ._builtin_manifest import PIPELINE_STEPS
 
 
-PIPELINE_OPS = frozenset({
-    'FILTER', 'BUCKET', 'SELECT_COLS', 'MAP', 'DISTINCT', 'DEDUPE',
-    'TAKE', 'DROP', 'SORT', 'SORT_DESC', 'SORT_BY', 'TOP', 'TOP_DESC', 'TOP_BY',
-    'LINK', 'LINK_LEFT',
-})
+# The pipeline vocabulary (spec/builtins.json `pipeline`): the one list of
+# pipeline operators in this host; the SQL translator and planner read it here.
+PIPELINE_OPS = frozenset(PIPELINE_STEPS)
 
 
 def copy_node(node: Node | None) -> Node | None:
@@ -288,8 +288,11 @@ def map_passthroughs(step: Node) -> list[str]:
 # read through the binder cannot raise either, nor a comparison, AND/OR/NOT or
 # + - * over such reads; `/` and `%`, calls and anything else may. The
 # in-memory path has no schema.
-_SAFE_LOGICAL_OPS = frozenset(('==', '!=', '<', '<=', '>', '>=', '$==', '$!=', '$<', '$<=', '$>', '$>=',
-                               'AND', 'OR', '+', '-', '*'))
+# Policy, from the lexicon's families: the two relational families, the
+# short-circuit logic (AND, OR -- not XOR), and the arithmetic minus the two
+# that divide.
+_BOOL_OPS = opinfo.RELATIONAL | (opinfo.LOGIC_OPS & opinfo.SHORT_CIRCUIT)
+_SAFE_LOGICAL_OPS = _BOOL_OPS | (opinfo.ARITH_OPS - {'/', '%'})
 
 
 def cannot_raise(node, binder: str, logical: bool) -> bool:
@@ -310,10 +313,6 @@ def cannot_raise(node, binder: str, logical: bool) -> bool:
     if t == 'un':
         return logical and node.op == 'NOT' and cannot_raise(node.x, binder, logical)
     return False
-
-
-_BOOL_OPS = frozenset(('==', '!=', '<', '<=', '>', '>=', '$==', '$!=', '$<', '$<=', '$>', '$>=',
-                       'AND', 'OR'))
 
 
 def predicate_cannot_raise(node, binder: str, logical: bool) -> bool:

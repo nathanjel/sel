@@ -16,20 +16,15 @@ from __future__ import annotations
 from bisect import bisect_right
 import re
 
+from . import _lexicon
 from .errors import Pos, fail
 from .utf8 import check_source
 
-OPERATORS = [
-    '???', '??',
-    '$==', '$!=', '$<=', '$>=',
-    '$<', '$>', '==', '!=', '<=', '>=', '+=', '-=', '*=', '/=', '%=', '&=',
-    '.>',
-    '+', '-', '*', '/', '%', '&', '=', '<', '>', '(', ')', '[', ']', ',', ';',
-]
+# Every symbol token, longest first, and the reserved words: spec/lexicon.json,
+# rendered into _lexicon.py (tools/gen-lexicon.mjs). Not a list of this host's.
+OPERATORS = list(_lexicon.SYMBOLS)
 
-RESERVED = frozenset([
-    'TRUE', 'FALSE', 'NULL', 'AND', 'OR', 'NOT', 'XOR', 'EQL', 'IN', 'BAND', 'BOR', 'BXOR',
-])
+RESERVED = frozenset(_lexicon.RESERVED)
 
 _SIMPLE_ESCAPES = {
     '\\': '\\', '"': '"', 'n': '\n', 't': '\t', 'r': '\r', '{': '{', '}': '}',

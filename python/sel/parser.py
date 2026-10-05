@@ -56,50 +56,33 @@ from .errors import MAX_DEPTH, Pos, fail
 from .lexer import RESERVED, Token, tokenize
 from .registry import INF, REGEX_FLAG_AT, Spec, is_host_function, lookup
 
-ASSIGN_OPS = frozenset(['=', '+=', '-=', '*=', '/=', '%=', '&='])
-COMPARE_OPS = frozenset(['==', '!=', '<', '<=', '>', '>=',
-                         '$==', '$!=', '$<', '$<=', '$>', '$>='])
-COMPARE_WORDS = frozenset(['EQL', 'IN'])
+from .opinfo import ASSIGN_OPS, BP_ASSIGN, BP_NEG, BP_NOT, INFIX, OPS, PREFIX
 
-# spec/SPEC.md §5, as a table. Higher binds tighter. The gaps are the levels
-# that are not infix: 16 is postfix/primary, 15 is unary minus, 7 is NOT.
-# BP_SEQ and BP_LIST are read by nothing: `;` and `,` are parsed by their own
-# functions (parse_sequence, parse_list), not by the climbing loop. Kept so the
-# table is the whole of §5.
-BP_SEQ = 1        # ;
-BP_LIST = 2       # ,
-BP_ASSIGN = 3     # = += -= *= /= %= &=   (right associative)
-BP_OR = 4
-BP_XOR = 5
-BP_AND = 6
-BP_NOT = 7        # prefix
-BP_COMPARE = 8    # non-associative
-BP_COALESCE = 9   # ?? ??? (right associative)
-BP_BOR = 10
-BP_BXOR = 11
-BP_BAND = 12
-BP_CONCAT = 13    # &
-BP_ADD = 14       # + -
-BP_MUL = 15       # * / %
-BP_NEG = 16       # prefix
-
+# spec/SPEC.md §5, as a table: spec/lexicon.json's binding powers (higher binds
+# tighter) and associativity, rendered into _lexicon.py. `;` and `,` are not
+# rows: they build N-ary nodes and are parsed by their own functions
+# (parse_sequence, parse_list), not by the climbing loop. NOT and unary minus
+# are prefix operators (parse_prefix), at BP_NOT and BP_NEG.
+#
 # Infix operator -> (binding power, associativity). 'L' left, 'R' right,
 # 'N' non-associative. Word operators are lexed as identifiers, so they are
 # looked up separately; the binding powers are the same table.
 INFIX_OPS: dict[str, tuple[int, str]] = {
-    '??': (BP_COALESCE, 'R'),
-    '???': (BP_COALESCE, 'R'),
-    '&': (BP_CONCAT, 'L'),
-    '+': (BP_ADD, 'L'), '-': (BP_ADD, 'L'),
-    '*': (BP_MUL, 'L'), '/': (BP_MUL, 'L'), '%': (BP_MUL, 'L'),
-    **{op: (BP_ASSIGN, 'R') for op in ASSIGN_OPS},
-    **{op: (BP_COMPARE, 'N') for op in COMPARE_OPS},
+    o.token: (o.bp, o.assoc) for o in INFIX.values()
+    if not o.word and o.node in ('bin', 'assign')
 }
 INFIX_WORDS: dict[str, tuple[int, str]] = {
-    'OR': (BP_OR, 'L'), 'XOR': (BP_XOR, 'L'), 'AND': (BP_AND, 'L'),
-    'BOR': (BP_BOR, 'L'), 'BXOR': (BP_BXOR, 'L'), 'BAND': (BP_BAND, 'L'),
-    **{w: (BP_COMPARE, 'N') for w in COMPARE_WORDS},
+    o.token: (o.bp, o.assoc) for o in INFIX.values()
+    if o.word and o.node in ('bin', 'assign')
 }
+
+# The prefix and postfix operators are parsed by hand (parse_prefix,
+# parse_postfix), so the lexicon is held to what those functions handle: a
+# prefix or postfix operator added there and not here fails at import.
+if ({(o.token, o.word, o.name, o.bp) for o in PREFIX.values()}
+        != {('NOT', True, 'NOT', BP_NOT), ('-', False, 'NEG', BP_NEG)}
+        or {o.token for o in OPS if o.fixity == 'postfix'} != {'[', '.>'}):
+    raise RuntimeError('parser.py does not parse the prefix/postfix operators of spec/lexicon.json')
 
 
 def _prepare_record_shape(name, args):

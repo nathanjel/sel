@@ -8,6 +8,7 @@ from .. import decimal as D
 from .._budget import check_text
 from ..errors import SelError, fail
 from ..parser import Node, may_write
+from ..opinfo import COALESCE_OPS, RELATIONAL, TEXT_COMPARE
 from ..registry import define, sort_form
 from ..value import NONE, Value, elements, iter_elements, structural_hash
 # The direction and field names fold ASCII-only:
@@ -115,7 +116,7 @@ def _is_fresh(node) -> bool:
     if t == 'un':
         return True
     if t == 'bin':
-        return node.op not in ('??', '???')
+        return node.op not in COALESCE_OPS
     if t == 'call':
         return node.name in _FRESH_CALLS
     return False
@@ -149,8 +150,6 @@ def _map(args, ctx):
     return Value._list_owned(out)
 
 
-_TEXT_COMPARE = ('$==', '$!=', '$<', '$<=', '$>', '$>=')
-_NUM_COMPARE = ('==', '!=', '<', '<=', '>', '>=')
 
 
 def _leading_field_conjuncts(body, binder):
@@ -223,8 +222,8 @@ def _leading_field_conjuncts(body, binder):
             return True
         ok = reads_only_fields(c) and bool(fields)
         total = None
-        if c.t == 'bin' and (c.op in _TEXT_COMPARE or c.op in _NUM_COMPARE):
-            kind = 'TEXT' if c.op in _TEXT_COMPARE else 'NUM'
+        if c.t == 'bin' and c.op in RELATIONAL:
+            kind = 'TEXT' if c.op in TEXT_COMPARE else 'NUM'
             reqs = []
             for operand in (c.l, c.r):
                 lit = literal_kind(operand)

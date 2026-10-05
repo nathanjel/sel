@@ -25,6 +25,7 @@ from typing import Any, Callable
 
 from .. import Program, Value
 from .. import registry as _registry
+from .._builtin_manifest import PIPELINE_STEPS
 from ..errors import MAX_DEPTH
 from .._stack import recursion_budget as _recursion_budget
 from ..lexer import ascii_upper
@@ -249,7 +250,8 @@ def _join_rows_lack_binders(steps: list[Node]) -> bool:
     return joined
 
 
-SORT_STEPS = frozenset({'SORT', 'SORT_DESC', 'SORT_BY', 'TOP', 'TOP_DESC', 'TOP_BY'})
+# The steps that sort (spec/builtins.json `pipeline.sorts`).
+SORT_STEPS = frozenset(name for name, (_keeps, sorts) in PIPELINE_STEPS.items() if sorts)
 
 
 def _first_order_hazard(steps: list[Node]) -> int | None:
