@@ -12,5 +12,8 @@ import './regex.mjs';
 import './null.mjs';
 
 import { assertManifestCovered } from '../registry.mjs';
+import { checkOperatorDispatch } from '../eval.mjs';
 
 assertManifestCovered();
+// The evaluator's operator dispatch, against spec/lexicon.json.
+checkOperatorDispatch();

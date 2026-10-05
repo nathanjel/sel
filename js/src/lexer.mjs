@@ -10,18 +10,14 @@
 
 import { fail } from './errors.mjs';
 import { toCodePoints, fromCodePoints, SOURCE } from './utf8.mjs';
+import { SYMBOLS, RESERVED as RESERVED_WORDS } from './_lexicon.mjs';
 
-export const OPERATORS = [
-  '???', '??',
-  '$==', '$!=', '$<=', '$>=',
-  '$<', '$>', '==', '!=', '<=', '>=', '+=', '-=', '*=', '/=', '%=', '&=',
-  '.>',
-  '+', '-', '*', '/', '%', '&', '=', '<', '>', '(', ')', '[', ']', ',', ';',
-];
+// Every symbol token, longest first, and the reserved words: spec/lexicon.json,
+// rendered into _lexicon.mjs (tools/gen-lexicon.mjs) -- not a list of this
+// host's own.
+export const OPERATORS = SYMBOLS;
 
-export const RESERVED = new Set([
-  'TRUE', 'FALSE', 'NULL', 'AND', 'OR', 'NOT', 'XOR', 'EQL', 'IN', 'BAND', 'BOR', 'BXOR',
-]);
+export const RESERVED = new Set(RESERVED_WORDS);
 
 const SIMPLE_ESCAPES = {
   '\\': '\\', '"': '"', 'n': '\n', 't': '\t', 'r': '\r', '{': '{', '}': '}',
@@ -39,7 +35,7 @@ function mk(type, value, pos) {
 }
 
 // Operators by first character, each list in OPERATORS order (longest first), so the
-// scan at a position looks at the two or three candidates that can match, not at all 35.
+// scan at a position looks at the two or three candidates that can match, not at all of them.
 const OPS_BY_FIRST = new Map();
 for (const op of OPERATORS) {
   const k = op[0];

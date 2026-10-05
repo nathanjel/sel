@@ -5,6 +5,7 @@ import { anyNode, callsApplication, mayWrite } from '../ast.mjs';
 import { SelError, MAX_DEPTH } from '../errors.mjs';
 import { asciiUpper, asciiLower } from '../lexer.mjs';
 import { checkCollection } from '../budget.mjs';
+import { NUM_COMPARE_OPS, TEXT_COMPARE_OPS, RELATIONS, opInfo } from '../ops.mjs';
 
 // Names compare ASCII-case-insensitively (spec §2, §7.4): only a-z move
 // (lexer.mjs asciiUpper; toUpperCase folds "ß" to "SS" and "ſ" to "S", which
@@ -183,8 +184,14 @@ function exprDependsOnlyOn(root, allowed) {
   return true;
 }
 
+// The equality operators a hash join can key on: `==` (numeric) and `$==`
+// (bytes) -- the `eq` relation of the two comparison families (spec/lexicon.json).
+const EQ = RELATIONS.indexOf('eq');
+const EQUI_OPS = new Map([...NUM_COMPARE_OPS, ...TEXT_COMPARE_OPS]
+  .filter((op) => opInfo(op).relation === EQ).map((op) => [op, NUM_COMPARE_OPS.has(op)]));
+
 function tryExtractEquiKeys(node, b1, b2) {
-  if (!node || node.t !== 'bin' || (node.op !== '==' && node.op !== '$==')) return null;
+  if (!node || node.t !== 'bin' || !EQUI_OPS.has(node.op)) return null;
   // Two binders of one name: the right one shadows the left (SPEC 7.4), so a
   // read of that name is the right element on BOTH sides of the comparison and
   // there is no left key to extract. The general path evaluates it as written.
@@ -192,10 +199,10 @@ function tryExtractEquiKeys(node, b1, b2) {
   const leftNames = new Set([b1, asciiLower(b1), '_1', '_'].map((x) => upperName(x)));
   const rightNames = new Set([b2, asciiLower(b2), '_2'].map((x) => upperName(x)));
   if (exprDependsOnlyOn(node.l, leftNames) && exprDependsOnlyOn(node.r, rightNames)) {
-    return { left: node.l, right: node.r, numeric: node.op === '==', swapped: false };
+    return { left: node.l, right: node.r, numeric: EQUI_OPS.get(node.op), swapped: false };
   }
   if (exprDependsOnlyOn(node.r, leftNames) && exprDependsOnlyOn(node.l, rightNames)) {
-    return { left: node.r, right: node.l, numeric: node.op === '==', swapped: true };
+    return { left: node.r, right: node.l, numeric: EQUI_OPS.get(node.op), swapped: true };
   }
   return null;
 }

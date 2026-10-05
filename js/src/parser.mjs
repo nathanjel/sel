@@ -24,60 +24,25 @@ import { fail, MAX_DEPTH } from './errors.mjs';
 import * as D from './decimal.mjs';
 import { tokenize, RESERVED } from './lexer.mjs';
 import { lookup } from './registry.mjs';
+import { BP, ASSIGN_OPS, INFIX_SYMBOLS, INFIX_WORDS as LEXICON_INFIX_WORDS, PREFIX } from './ops.mjs';
 
 
-const ASSIGN_OPS = new Set(['=', '+=', '-=', '*=', '/=', '%=', '&=']);
-const COMPARE_OPS = new Set([
-  '==', '!=', '<', '<=', '>', '>=', '$==', '$!=', '$<', '$<=', '$>', '$>=',
-]);
-const COMPARE_WORDS = new Set(['EQL', 'IN']);
-
-// spec/SPEC.md §5, as a table. Higher binds tighter. The gaps are the levels
-// that are not infix: 16 is postfix/primary, 15 is unary minus, 7 is NOT.
-const BP_SEQ = 1;       // ;
-const BP_LIST = 2;      // ,
-const BP_ASSIGN = 3;    // = += -= *= /= %= &=   (right associative)
-const BP_OR = 4;
-const BP_XOR = 5;
-const BP_AND = 6;
-const BP_NOT = 7;       // prefix
-const BP_COMPARE = 8;   // non-associative
-const BP_COALESCE = 9;  // ?? ??? (right associative)
-const BP_BOR = 10;
-const BP_BXOR = 11;
-const BP_BAND = 12;
-const BP_CONCAT = 13;   // &
-const BP_ADD = 14;      // + -
-const BP_MUL = 15;      // * / %
-const BP_NEG = 16;      // prefix
-
-// BP_SEQ and BP_LIST are deliberately unused: `;` and `,` build N-ary nodes, so
-// they stay hand-written loops in parseSequence/parseList rather than table
-// rows. They are declared anyway so the ladder above reads as spec/SPEC.md §5
-// does, with no silent gap at the loose end.
+// spec/SPEC.md §5, as a table -- spec/lexicon.json's, rendered into
+// _lexicon.mjs and read through ops.mjs. Higher binds tighter: 17 is
+// postfix/primary, 16 unary minus, 7 NOT. `;` (1) and `,` (2) build N-ary nodes,
+// so they stay hand-written loops in parseSequence/parseList rather than table
+// rows, and the climbing loop never sees them.
+const BP_ASSIGN = BP.ASSIGN;    // = += -= *= /= %= &=   (right associative)
 
 // Operator -> [binding power, associativity]. 'L' left, 'R' right, 'N'
 // non-associative. Word operators lex as identifiers and symbol operators as
-// `op` tokens, so they are two tables sharing one set of binding powers.
-//
-// Map rather than a plain object because the key is token text: a bare `{}`
-// would answer for every name on Object.prototype, and the parser would then
-// have to assume no token can ever be spelled like one. Map has no such chain,
-// and `.get` transcribes Python's `dict.get` directly.
-const INFIX_OPS = new Map([
-  ['??', [BP_COALESCE, 'R']],
-  ['???', [BP_COALESCE, 'R']],
-  ['&', [BP_CONCAT, 'L']],
-  ['+', [BP_ADD, 'L']], ['-', [BP_ADD, 'L']],
-  ['*', [BP_MUL, 'L']], ['/', [BP_MUL, 'L']], ['%', [BP_MUL, 'L']],
-  ...[...ASSIGN_OPS].map((op) => [op, [BP_ASSIGN, 'R']]),
-  ...[...COMPARE_OPS].map((op) => [op, [BP_COMPARE, 'N']]),
-]);
-const INFIX_WORDS = new Map([
-  ['OR', [BP_OR, 'L']], ['XOR', [BP_XOR, 'L']], ['AND', [BP_AND, 'L']],
-  ['BOR', [BP_BOR, 'L']], ['BXOR', [BP_BXOR, 'L']], ['BAND', [BP_BAND, 'L']],
-  ...[...COMPARE_WORDS].map((w) => [w, [BP_COMPARE, 'N']]),
-]);
+// `op` tokens, so they are two tables sharing one set of binding powers; both
+// hold the binary and assignment operators of the lexicon (ops.mjs keeps them
+// as Maps, so a token spelled like a name on Object.prototype cannot answer).
+const climbing = (table) => new Map([...table].filter(([, o]) => o.node === 'bin' || o.node === 'assign')
+  .map(([token, o]) => [token, [o.bp, o.assoc]]));
+const INFIX_OPS = climbing(INFIX_SYMBOLS);
+const INFIX_WORDS = climbing(LEXICON_INFIX_WORDS);
 
 class Parser {
   constructor(tokens) {
@@ -244,21 +209,13 @@ class Parser {
   parsePrefix(minBp) {
     const t = this.peek();
 
-    if (t.type === 'ident' && t.value === 'NOT' && minBp <= BP_NOT) {
+    // NOT (a word) and unary minus (a symbol): the lexicon's prefix operators.
+    const p = t.type === 'ident' || t.type === 'op' ? PREFIX.get(t.value) : undefined;
+    if (p !== undefined && p.word === (t.type === 'ident') && minBp <= p.bp) {
       this.next();
       this.enter(t);
       try {
-        return { t: 'un', op: 'NOT', x: this.parseTerm(BP_NOT), pos: t };
-      } finally {
-        this.leave();
-      }
-    }
-
-    if (t.type === 'op' && t.value === '-' && minBp <= BP_NEG) {
-      this.next();
-      this.enter(t);
-      try {
-        return { t: 'un', op: 'NEG', x: this.parseTerm(BP_NEG), pos: t };
+        return { t: 'un', op: p.name, x: this.parseTerm(p.bp), pos: t };
       } finally {
         this.leave();
       }

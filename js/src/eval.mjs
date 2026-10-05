@@ -9,6 +9,7 @@ import { Value, NONE, TEXT, BOOL } from './value.mjs';
 import { bytesCompare, compareText, encodeUtf8 } from './utf8.mjs';
 import { cpLength, checkText, checkCollection, MAX_TEXT_LEN, checkSizedInt, MAX_SCALE, MAX_POWER } from './budget.mjs';
 import { OpCode } from './math_plan.mjs';
+import { ARITH_OPS, NUM_COMPARE_OPS, TEXT_COMPARE_OPS, COMPOUND, BINARY_OPS, PREFIX, opInfo, RELATIONS } from './ops.mjs';
 
 // Exported so the SQL translator can say "as deep as the evaluator counts"
 // rather than repeating 200, the same way python/sel/sql does.
@@ -405,7 +406,9 @@ function evalBinary(node, ctx) {
   fail('E_SYNTAX', `unknown operator ${op}`, node.pos);
 }
 
-const NUMERIC_BINARY = new Set(['+', '-', '*', '/', '%', '==', '!=', '<', '<=', '>', '>=']);
+// The operators whose operands are numbers: the arithmetic and numeric
+// comparison families of the lexicon.
+const NUMERIC_BINARY = new Set([...ARITH_OPS, ...NUM_COMPARE_OPS]);
 
 // Each arithmetic operator's decimal operation: compound assignment and the
 // optimiser's constant folding dispatch through it. (evalBinary and the math
@@ -470,8 +473,6 @@ function bitwise(op, a, b, pos) {
 
 // --- assignment -------------------------------------------------------------
 
-const COMPOUND = { '+=': '+', '-=': '-', '*=': '*', '/=': '/', '%=': '%', '&=': '&' };
-
 function evalAssign(node, ctx) {
   const path = resolveTarget(node.target, ctx);
   const key = path[path.length - 1];
@@ -497,7 +498,7 @@ function evalAssign(node, ctx) {
       fail('E_UNDEF_VAR', `${node.op} needs an existing target`, node.target.pos);
     }
     const rhs = evalNode(node.value, ctx);
-    const binOp = COMPOUND[node.op];
+    const binOp = COMPOUND.get(node.op);
     const tp = node.target.pos, vp = node.value.pos;
     if (binOp === '&') {
       value = concat(current, rhs, tp, vp, node.pos);
@@ -568,4 +569,37 @@ function resolveTarget(target, ctx) {
   const last = chain[chain.length - 1];
   path.push(evalNode(last, ctx).asText(last.pos));
   return path;
+}
+
+// --- the dispatch, checked against the lexicon ------------------------------
+
+// evalBinary, evalUnary, compareResult and the compound assignment dispatch on
+// the operator natively (a switch is the hot path). What they must cover is the
+// lexicon's (spec/lexicon.json), so this runs once at load (sel.mjs) and refuses
+// to start when an operator the lexicon defines has no branch: every binary
+// operator is evaluated over two number literals and must not end in
+// evalBinary's or compareResult's "unknown operator"; every comparison relation
+// is one compareResult answers; every compound assignment applies `&` or an
+// ARITHMETIC operation; every prefix operator is NOT or NEG.
+export function checkOperatorDispatch() {
+  const pos = { line: 1, col: 1, offset: 0 };
+  const one = { t: 'num', v: '1', pos };
+  const missing = [];
+  for (const op of BINARY_OPS) {
+    try {
+      evalNode({ t: 'bin', op, l: one, r: one, pos }, new Context());
+    } catch (e) {
+      if (e.code === 'E_SYNTAX') missing.push(op);
+    }
+  }
+  for (const op of [...NUM_COMPARE_OPS, ...TEXT_COMPARE_OPS]) {
+    const rel = opInfo(op).relation;
+    const plain = op.startsWith('$') ? op.slice(1) : op;
+    if (!NUM_COMPARE_OPS.has(plain) || opInfo(plain).relation !== rel) missing.push(`${op} (relation ${RELATIONS[rel]})`);
+  }
+  for (const [op, bin] of COMPOUND) if (bin !== '&' && !Object.hasOwn(ARITHMETIC, bin)) missing.push(op);
+  for (const p of PREFIX.values()) if (p.name !== 'NOT' && p.name !== 'NEG') missing.push(p.token);
+  if (missing.length) {
+    throw new Error(`SEL evaluator has no dispatch for lexicon operator(s) ${missing.join(', ')} (spec/lexicon.json)`);
+  }
 }

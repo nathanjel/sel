@@ -24,7 +24,9 @@ import { Emit, appendSql } from './emit.mjs';
 import { refuse } from './errors.mjs';
 import { Fragment } from './fragment.mjs';
 import { JoinPlan, RelationalPlan } from './relational-plan.mjs';
-import { PIPELINE_OPS as OPTIMIZER_PIPELINE_OPS, unwindPipeline } from '../optimizer.mjs';
+import { unwindPipeline } from '../optimizer.mjs';
+import { ARITH_OPS, NUM_COMPARE_OPS, TEXT_COMPARE_OPS, DEEP_COMPARE_OPS, LOGIC_OPS } from '../ops.mjs';
+import { PIPELINE_STEPS, REGEX_CALLS, SQL_ARGS, YIELDS_LIST } from '../_builtin_manifest.mjs';
 
 // SEL list keys are the canonical decimals "1", "2", … — so "01" is not a key and
 // neither is "1\n", and the evaluator answers E_NO_KEY for both. This layer used
@@ -52,55 +54,21 @@ const FOLD_LEFT = 256;
 
 // Lowered by stage 2; none of them is a `funcs` entry. See sql/MAP.md §4.
 const AGGREGATES = ['ALL', 'ANY', 'MAP', 'FILTER', 'SUM', 'JOIN'];
-// The optimiser's list, not a second copy: one vocabulary of pipeline operators
-// per host, or the planner and the translator drift apart.
-const PIPELINE_OPS = OPTIMIZER_PIPELINE_OPS;
-
 const AGG_RETURNS = { ALL: 'BOOL', ANY: 'BOOL', SUM: 'NUM', JOIN: 'TEXT',
   MAP: 'LIST', FILTER: 'LIST' };
 const AGG_SKELETON = { ALL: 'all', ANY: 'any', SUM: 'sum', JOIN: 'join' };
 const AGG_FOLD = { ALL: 'AND', ANY: 'OR', SUM: '+' };
 
 // The functions whose result has children, so the scalar rule does not apply to
-// them: the four text functions that yield a list (measured: every non-lazy
-// name in the registry was called and the results with size() > 0 kept), the
-// constructors, and every pipeline step -- the optimiser's vocabulary, so a
-// new step is covered by being one. Every one is already refused by the
-// dialect documents; the point of the list is that source() used to reach
-// its scalar fallback without ever consulting the map, so COUNT and HAS
-// folded to 0 and FALSE instead (COUNT(LIST(1, 2, 3)) was 0).
-const YIELDS_LIST = ['BTL', 'INDEXES', 'RGROUPS', 'SPLIT', 'LIST', 'RECORD',
-  ...OPTIMIZER_PIPELINE_OPS];
-
-// The functions that read their argument as bytes, and the one that takes a
-// BOOL. Both lists were measured rather than written: every name in the registry
-// was called with TO_UTF8("a") and with TRUE, and these are the ones SEL did not
-// answer E_NOT_* for. Writing them by hand would be the second copy of SEL's
-// argument rules that §11.4 exists to avoid — this is a cached measurement, and
-// sql/oracle/ re-measures it.
-const BIN_ARGUMENT_OK = ['BLEN', 'CRC32', 'ENCODE_BASE64', 'FROM_UTF8', 'ISNUM',
-  'TO_HEX', 'TO_UTF8'];
-const BOOL_ARGUMENT_OK = ['ISNUM'];
-const NUMERIC_ARGUMENT_AT = {
-  ABS: [0],
-  SIGN: [0],
-  CEIL: [0],
-  FLOOR: [0],
-  TRUNC: [0],
-  ROUND: [0, 1],
-  POWER: [0, 1],
-  MIN: true,
-  MAX: true,
-  LEFT: [1],
-  RIGHT: [1],
-  SUBSTR: [1, 2],
-  FIND: [2],
-  REPEAT: [1],
-  PADL: [1],
-  PADR: [1],
-  CHAR: [0],
-  CANON: [0],
-};
+// them (the four text functions that yield a list, the constructors and every
+// pipeline step), the functions that take a BIN or a BOOL argument, and the
+// arguments that must be numbers: spec/builtins.json's "Classification"
+// (YIELDS_LIST and SQL_ARGS, rendered into _builtin_manifest.mjs), measured
+// against SEL rather than written -- sql/oracle/ re-measures them. Every
+// yields-list function is already refused by the dialect documents; the point
+// is that source() used to reach its scalar fallback without consulting the
+// map, so COUNT and HAS folded to 0 and FALSE (COUNT(LIST(1, 2, 3)) was 0).
+const sqlArgs = (name) => (Object.hasOwn(SQL_ARGS, name) ? SQL_ARGS[name] : null);
 
 // The runtime kind classes EQL and IN compare, which are not the static kinds. A
 // SEL number IS a text value (spec §4), so `1 EQL "1"` is TRUE and NUM and TEXT
@@ -109,10 +77,45 @@ const NUMERIC_ARGUMENT_AT = {
 // bytes are not text.
 const EQL_CLASS = { NUM: 'text', TEXT: 'text', BOOL: 'bool', BIN: 'bin' };
 
-const NUMERIC_OPS = ['==', '!=', '<', '<=', '>', '>='];
-const TEXTUAL_OPS = ['$==', '$!=', '$<', '$<=', '$>', '$>=', 'EQL'];
-const BYTE_COMPARISONS = ['$==', '$!=', '$<', '$<=', '$>', '$>=', 'EQL', 'IN'];
-const REGEX_AT = { RMATCH: 0, RFIND: 0, RREPLACE: 0, RGROUPS: 0 };
+// The operator families (spec/lexicon.json, through ops.mjs). The numeric
+// comparisons select the num/coerce variant; the text comparisons and EQL the
+// text variant; the text comparisons, EQL and IN compare their operands' runtime
+// kind classes.
+const NUMERIC_OPS = NUM_COMPARE_OPS;
+const TEXTUAL_OPS = new Set([...TEXT_COMPARE_OPS, 'EQL']);
+const BYTE_COMPARISONS = new Set([...TEXT_COMPARE_OPS, ...DEEP_COMPARE_OPS]);
+
+// One handler per pipeline step. Checked against the manifest's pipeline steps
+// at load: a step the manifest adds and this table lacks would otherwise be
+// skipped silently, leaving the plan as the step before it left it.
+const STEP_HANDLERS = Object.freeze({
+  FILTER: (t, plan, step, overGroups) => t.stepFilter(plan, step, overGroups),
+  BUCKET: (t, plan, step) => t.stepBucket(plan, step),
+  SELECT_COLS: (t, plan, step) => t.stepSelectCols(plan, step),
+  MAP: (t, plan, step) => t.stepMap(plan, step),
+  DISTINCT: (t, plan, step) => t.stepDistinct(plan, step),
+  DEDUPE: (t, plan, step) => t.stepDistinct(plan, step),
+  TAKE: (t, plan, step) => t.stepTake(plan, step),
+  DROP: (t, plan, step) => t.stepDrop(plan, step),
+  SORT: (t, plan, step, overGroups) => t.stepSort(plan, step, overGroups),
+  SORT_DESC: (t, plan, step, overGroups) => t.stepSort(plan, step, overGroups),
+  SORT_BY: (t, plan, step, overGroups) => t.stepSort(plan, step, overGroups),
+  TOP: (t, plan, step, overGroups) => t.stepSort(plan, step, overGroups),
+  TOP_DESC: (t, plan, step, overGroups) => t.stepSort(plan, step, overGroups),
+  TOP_BY: (t, plan, step, overGroups) => t.stepSort(plan, step, overGroups),
+  LINK: (t, plan, step) => t.stepLink(plan, step),
+  LINK_LEFT: (t, plan, step) => t.stepLink(plan, step),
+});
+{
+  const steps = Object.keys(PIPELINE_STEPS);
+  const handled = Object.keys(STEP_HANDLERS);
+  const missing = steps.filter((n) => !handled.includes(n));
+  const extra = handled.filter((n) => !steps.includes(n));
+  if (missing.length || extra.length) {
+    throw new Error(`SEL SQL translator's pipeline steps disagree with spec/builtins.json: `
+      + `no handler for ${missing.join(', ') || '-'}; not a step: ${extra.join(', ') || '-'}`);
+  }
+}
 
 function litNode(t, v, pos) {
   return { t, v, pos };
@@ -768,11 +771,11 @@ export class Translator {
 
     if (op === 'IN') return this.inOperator(n);
 
-    const arith = ['+', '-', '*', '/', '%'].includes(op);
+    const arith = ARITH_OPS.has(op);
     let l = arith ? this.arithmeticOperand(n.l) : this.node(n.l);
     let r = arith ? this.arithmeticOperand(n.r) : this.node(n.r);
 
-    if (op === 'AND' || op === 'OR' || op === 'XOR') {
+    if (LOGIC_OPS.has(op)) {
       l = this.requireBool(l, n.l.pos, op);
       r = this.requireBool(r, n.r.pos, op);
     }
@@ -781,7 +784,7 @@ export class Translator {
     // not FALSE. MariaDB and SQLite coerce a boolean to 1 or 0 and answer anyway —
     // a wrong answer with no error attached — and PostgreSQL says `cannot cast
     // type boolean to numeric` and fails the query.
-    if (['+', '-', '*', '/', '%'].includes(op) || NUMERIC_OPS.includes(op)) {
+    if (arith || NUMERIC_OPS.has(op)) {
       this.requireNotBool(l, n.l.pos, op);
       this.requireNotBool(r, n.r.pos, op);
       // And an operand whose value is written down has to BE a number. After the
@@ -796,7 +799,7 @@ export class Translator {
     }
     // The `$` family and `&`, not EQL and IN: those two are structural and
     // `TRUE EQL TRUE` is TRUE, while `"x" $== TRUE` is E_NOT_BIN.
-    if (op === '&' || (op[0] === '$' && op !== '$')) {
+    if (op === '&' || TEXT_COMPARE_OPS.has(op)) {
       this.requireNotBoolOperand(l, n.l.pos, op);
       this.requireNotBoolOperand(r, n.r.pos, op);
     }
@@ -804,7 +807,7 @@ export class Translator {
     if (variant === 'coerce') {
       this.coerceScaleLimits([[l, n.l], [r, n.r]]);
     }
-    if (BYTE_COMPARISONS.includes(op)) {
+    if (BYTE_COMPARISONS.has(op)) {
       requireComparableKinds(l, r, op, n.pos);
       // See Emit.textOperand for why the operands are transformed here rather
       // than by the template. Selected by operator, NOT by the variant being
@@ -1076,8 +1079,8 @@ export class Translator {
           `argument to ${name} is a list, and a SQL expression is a scalar`, arg.pos);
       }
       this.requireArgumentKind(name, f, arg.pos);
-      const at = NUMERIC_ARGUMENT_AT[name];
-      if (at === true || (Array.isArray(at) && at.includes(i))) {
+      const at = sqlArgs(name)?.numeric;
+      if (at === 'all' || (Array.isArray(at) && at.includes(i))) {
         this.requireNumericConstant(arg);
         f = this.guardNumeric(f, arg);
       }
@@ -1216,12 +1219,12 @@ export class Translator {
   // it: `BLOB + 1` has no value to hand the evaluator, and only the declared kind
   // says anything.
   requireArgumentKind(name, f, pos) {
-    if (f.kind === 'BOOL' && !BOOL_ARGUMENT_OK.includes(name)) {
+    if (f.kind === 'BOOL' && !sqlArgs(name)?.bool) {
       refuse('E_SQL_SHAPE',
         `${name} does not take a BOOL argument; SEL raises here rather than reading `
         + 'a boolean as text or as 1', pos);
     }
-    if (f.kind === 'BIN' && !BIN_ARGUMENT_OK.includes(name)) {
+    if (f.kind === 'BIN' && !sqlArgs(name)?.bin) {
       refuse('E_SQL_SHAPE',
         `${name} reads its argument as text, and this is BIN; SEL raises here rather `
         + 'than reinterpreting bytes as characters', pos);
@@ -1241,8 +1244,8 @@ export class Translator {
   // Both the pattern and the flags must be literals: a pattern read from a column
   // cannot be rewritten, and the flag selects the template.
   rewriteRegex(n) {
-    if (!Object.hasOwn(REGEX_AT, n.name)) return n;
-    const at = REGEX_AT[n.name];
+    if (!Object.hasOwn(REGEX_CALLS, n.name)) return n;
+    const { pattern: at, flags: flagAt } = REGEX_CALLS[n.name];
     const pat = at < n.args.length ? n.args[at] : null;
     if (pat === null || pat.t !== 'text') {
       refuse('E_SQL_UNSUPPORTED',
@@ -1280,7 +1283,6 @@ export class Translator {
     // bound as a parameter nothing emitted.
     let inline = '(?s)';
 
-    const flagAt = n.name === 'RREPLACE' ? 3 : 2;
     const args = [...n.args];
     if (flagAt >= args.length) {
       args[at] = litNode('text', inline + source, args[at].pos);
@@ -1630,7 +1632,7 @@ export class Translator {
     // what made it hard to see. The refusal string in the dialect document says
     // "yields a list, and a SQL expression is a scalar"; this is the path that
     // never asked it.
-    if (src.t === 'call' && YIELDS_LIST.includes(src.name)) {
+    if (src.t === 'call' && YIELDS_LIST.has(src.name)) {
       refuse('E_SQL_SHAPE',
         `${src.name} yields a list, and the scalar rule does not apply to it; SQL has `
         + 'no way to count or index what it produces', src.pos);
@@ -2139,10 +2141,10 @@ export class Translator {
   // Not in the data — sql/MAP.md §4.3 fixes three selectors and every host
   // implements them identically.
   variantFor(op, args) {
-    if (NUMERIC_OPS.includes(op)) {
+    if (NUMERIC_OPS.has(op)) {
       return args[0].kind === 'NUM' && args[1].kind === 'NUM' ? 'num' : 'coerce';
     }
-    if (TEXTUAL_OPS.includes(op)) return 'text';
+    if (TEXTUAL_OPS.has(op)) return 'text';
     if (op === '&') return args[0].kind === 'BIN' || args[1].kind === 'BIN' ? 'bin' : 'text';
     return null;
   }
@@ -2614,24 +2616,7 @@ export class Translator {
       const overGroups = plan.bucket === 'open';
       if (plan.bucket === 'open' && name !== 'FILTER' && name !== 'MAP') plan.bucket = 'sealed';
 
-      switch (name) {
-        case 'FILTER': plan = this.stepFilter(plan, step, overGroups); break;
-        case 'BUCKET': plan = this.stepBucket(plan, step); break;
-        case 'SELECT_COLS': plan = this.stepSelectCols(plan, step); break;
-        case 'MAP': plan = this.stepMap(plan, step); break;
-        case 'DISTINCT':
-        case 'DEDUPE': plan = this.stepDistinct(plan, step); break;
-        case 'TAKE': plan = this.stepTake(plan, step); break;
-        case 'DROP': plan = this.stepDrop(plan, step); break;
-        case 'SORT':
-        case 'SORT_DESC':
-        case 'SORT_BY':
-        case 'TOP':
-        case 'TOP_DESC':
-        case 'TOP_BY': plan = this.stepSort(plan, step, overGroups); break;
-        case 'LINK':
-        case 'LINK_LEFT': plan = this.stepLink(plan, step); break;
-      }
+      plan = STEP_HANDLERS[name](this, plan, step, overGroups);
     }
 
     // A derived table with no LIMIT beside its ORDER BY does not keep the order, and

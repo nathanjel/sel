@@ -7,6 +7,7 @@ import { RecordShape, Value, NONE, TEXT, BIN, BOOL } from './value.mjs';
 import { SelError, fail } from './errors.mjs';
 import { names, register, registerFunction, bindingForm } from './registry.mjs';
 import { optimizeAstLogical, optimizeAstInMemory } from './optimizer.mjs';
+import { SHORT_CIRCUIT_OPS } from './ops.mjs';
 
 export class Program {
   constructor(source, ast) {
@@ -157,7 +158,8 @@ function collect(node, bound, done, reads, depth) {
     case 'bin': {
       const op = node.op;
       walk(node.l);
-      if (op === 'AND' || op === 'OR' || op === '??' || op === '???') {
+      // The right side of AND, OR, ?? and ??? may never run (spec/lexicon.json).
+      if (SHORT_CIRCUIT_OPS.has(op)) {
         walk(node.r, bound, new Set(done));
       } else {
         walk(node.r);
