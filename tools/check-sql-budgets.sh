@@ -83,7 +83,7 @@ for corpus in "$WORK"/*.selc; do
   name="$(basename "$corpus" .selc)"
   for impl in $(available_impls); do
     case "$impl" in js-bundle|js-bundle-min|python-wheel) continue ;; esac
-    out="$( ( ulimit -v 6291456 2>/dev/null; timeout "$CEILING" bash -c ". tools/impls.sh; impl_sqlfuzz $impl '$corpus' mariadb" ) 2>&1 | head -c 4000)"
+    out="$( ( ulimit -v 6291456 2>/dev/null; timeout -s KILL "$CEILING" bash -c ". tools/impls.sh; impl_sqlfuzz $impl '$corpus' mariadb" ) 2>&1 | head -c 4000)"
     rc=$?
     # PIPESTATUS is lost through the subshell; a timeout or a signal shows as no output.
     if [ -z "$out" ]; then
@@ -105,7 +105,7 @@ for corpus in "$WORK"/*.size; do
   for impl in $(available_impls); do
     case "$impl" in js-bundle|js-bundle-min|python-wheel) continue ;; esac
     out="$WORK/$name.$impl.out"
-    ( ulimit -v 6291456 2>/dev/null; timeout $((CEILING * 4)) bash -c ". tools/impls.sh; impl_sqlfuzz $impl '$corpus' mariadb" ) > "$out" 2>&1
+    ( ulimit -v 6291456 2>/dev/null; timeout -s KILL $((CEILING * 4)) bash -c ". tools/impls.sh; impl_sqlfuzz $impl '$corpus' mariadb" ) > "$out" 2>&1
     if [ ! -s "$out" ]; then
       printf 'FAIL %-32s %-8s no answer within %ss (timeout, signal or memory)\n' "$name" "$impl" "$((CEILING * 4))"
       failures=$((failures + 1)); continue
