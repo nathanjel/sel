@@ -673,6 +673,27 @@ impl Value {
         inner.entries().iter().map(|e| e.key.clone()).collect()
     }
 
+    /// Whether `pred` holds for every child, in order, stopping at the first
+    /// that fails -- `values()` without copying the handles out first. The
+    /// children are read while this value is borrowed, so `pred` must not
+    /// write to it (reading children, or writing them, is fine).
+    pub(crate) fn all_children(&self, mut pred: impl FnMut(&Value) -> bool) -> bool {
+        let inner = self.0.borrow();
+        match inner.storage {
+            Some(ref storage) => storage.iter().all(&mut pred),
+            None => inner.entries().iter().all(|e| pred(&e.val)),
+        }
+    }
+
+    /// The first child, if any, without copying the rest.
+    pub(crate) fn first_child(&self) -> Option<Value> {
+        let inner = self.0.borrow();
+        match inner.storage {
+            Some(ref storage) => storage.first().cloned(),
+            None => inner.entries().first().map(|e| e.val.clone()),
+        }
+    }
+
     pub fn values(&self) -> Vec<Value> {
         let inner = self.0.borrow();
         if let Some(ref storage) = inner.storage {

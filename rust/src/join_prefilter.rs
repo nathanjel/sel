@@ -260,20 +260,15 @@ pub fn join_row_keys(val: &Value, bound: &[String]) -> HashMap<String, bool> {
     }
     // Rows of a dense list mostly share one record shape: read its keys once.
     let mut shapes: HashSet<usize> = HashSet::new();
-    let outer = val.0.borrow();
-    let rows: Vec<Value> = match outer.storage {
-        Some(ref st) => st.clone(),
-        None => outer.entries().iter().map(|e| e.val.clone()).collect(),
-    };
-    drop(outer);
-    for item in &rows {
+    // Read in place: copying the row handles out first cost a vector of them
+    // per join side.
+    val.all_children(|item| {
         let inner = item.0.borrow();
         if let Some(ref shape) = inner.shape {
-            if !shapes.insert(std::sync::Arc::as_ptr(shape) as usize) {
-                continue;
-            }
-            for k in shape.keys.iter() {
-                keys.insert(k.to_ascii_uppercase(), true);
+            if shapes.insert(std::sync::Arc::as_ptr(shape) as usize) {
+                for k in shape.keys.iter() {
+                    keys.insert(k.to_ascii_uppercase(), true);
+                }
             }
         } else {
             drop(inner);
@@ -281,7 +276,8 @@ pub fn join_row_keys(val: &Value, bound: &[String]) -> HashMap<String, bool> {
                 keys.insert(k.to_ascii_uppercase(), true);
             }
         }
-    }
+        true
+    });
     keys
 }
 
@@ -300,9 +296,8 @@ pub fn new_join_side_facts(
         names.insert(b.to_ascii_lowercase(), true);
     }
     let mut first = HashMap::new();
-    let vals = val.values();
-    if !vals.is_empty() {
-        for k in vals[0].keys() {
+    if let Some(row) = val.first_child() {
+        for k in row.keys() {
             first.insert(k.to_ascii_uppercase(), true);
         }
     }
@@ -329,22 +324,10 @@ pub fn join_side_total(side: &JoinSideFacts, name: &str, numeric: bool) -> bool 
     if let Some(&v) = side.facts.borrow().get(&id) {
         return v;
     }
-    let mut ok = true;
-    for row in side.val.values() {
-        let v = row.get(name);
-        match v {
-            Some(ref val) if val.kind() == Kind::Text => {
-                if numeric && !val.looks_numeric() {
-                    ok = false;
-                    break;
-                }
-            }
-            _ => {
-                ok = false;
-                break;
-            }
-        }
-    }
+    let ok = side.val.all_children(|row| match row.get(name) {
+        Some(ref val) if val.kind() == Kind::Text => !numeric || val.looks_numeric(),
+        _ => false,
+    });
     side.facts.borrow_mut().insert(id, ok);
     ok
 }
@@ -354,14 +337,7 @@ pub fn join_side_present(side: &JoinSideFacts, name: &str) -> bool {
     if let Some(&v) = side.facts.borrow().get(&id) {
         return v;
     }
-    let vals = side.val.values();
-    let mut ok = !vals.is_empty();
-    for row in &vals {
-        if !row.has(name) {
-            ok = false;
-            break;
-        }
-    }
+    let ok = side.val.size() > 0 && side.val.all_children(|row| row.has(name));
     side.facts.borrow_mut().insert(id, ok);
     ok
 }
@@ -375,22 +351,13 @@ pub fn join_side_any(side: &JoinSideFacts, name: &str) -> bool {
     if let Some(&v) = side.facts.borrow().get(&id) {
         return v;
     }
-    let mut ok = true;
-    for row in side.val.values() {
-        match row.get(name) {
-            Some(ref v) if !v.is_null() => {
-                let inner = v.0.borrow();
-                if inner.kind == Kind::None && !inner.is_list && inner.size() > 0 {
-                    ok = false;
-                    break;
-                }
-            }
-            _ => {
-                ok = false;
-                break;
-            }
+    let ok = side.val.all_children(|row| match row.get(name) {
+        Some(ref v) if !v.is_null() => {
+            let inner = v.0.borrow();
+            !(inner.kind == Kind::None && !inner.is_list && inner.size() > 0)
         }
-    }
+        _ => false,
+    });
     side.facts.borrow_mut().insert(id, ok);
     ok
 }
@@ -445,16 +412,9 @@ pub fn join_keys_safe(
                         }
                         continue;
                     }
-                    let mut all_present = true;
-                    for item in left.val.values() {
-                        match item.get(member) {
-                            Some(ref inner) if inner.get(field).is_some() => {}
-                            _ => {
-                                all_present = false;
-                                break;
-                            }
-                        }
-                    }
+                    let all_present = left.val.all_children(|item| {
+                        matches!(item.get(member), Some(ref inner) if inner.get(field).is_some())
+                    });
                     if !all_present {
                         return false;
                     }
