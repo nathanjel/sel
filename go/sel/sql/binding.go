@@ -96,13 +96,19 @@ func checkNumeric(where string, v *sel.Value) {
 		return
 	}
 	if v.Kind() != sel.KindText || !v.LooksNumeric() {
-		shown := v.AsText(Pos{})
-		if v.Kind() == sel.KindBool {
+		// Only TEXT has a text to show: a BOOL or a BIN asked for as text would
+		// raise the value's own E_NOT_TEXT instead of this refusal.
+		var shown string
+		switch v.Kind() {
+		case sel.KindBool:
+			shown = "FALSE"
 			if v.AsBool(Pos{}) {
 				shown = "TRUE"
-			} else {
-				shown = "FALSE"
 			}
+		case sel.KindBin:
+			shown = "bin:" + v.Dump()[1:]
+		default:
+			shown = v.AsText(Pos{})
 		}
 		refuse("E_SQL_BINDING", fmt.Sprintf("%s declares type NUM, which asks for it to be emitted unquoted, but %q is not a number", where, shown), Pos{})
 	}
