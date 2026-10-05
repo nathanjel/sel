@@ -25,7 +25,9 @@ CONTEXTS = {'rows': {'L': [{'a': 'x' if i % 3 == 0 else 'y', 'b': i} for i in ra
 # rows went 5360 -> 5365 with the collector depth fix (fd24024): a fresh value a
 # collector keeps without copying is depth-checked, one call per collected row
 # (MAP over TAKE(5)). That is the price of a correctness fix, not a regression.
-BUDGETS = {'pixel': 2253, 'rows': 5365}
+# pixel went 2253 -> 2252 when Value.entries() became a zip instead of a
+# generator (one frame resumption per call, and the program asks once).
+BUDGETS = {'pixel': 2252, 'rows': 5365}
 
 
 def python_calls(label):

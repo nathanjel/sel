@@ -11,7 +11,7 @@ from __future__ import annotations
 from typing import Any
 
 from ..errors import Pos
-from ..eval import MAX_DEPTH
+from ..errors import MAX_DEPTH
 from .._limits import MAX_SQL_NODES
 from ..parser import Node
 from .. import registry as _registry

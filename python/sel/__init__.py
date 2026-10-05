@@ -18,7 +18,8 @@ from typing import Any
 
 from . import builtins as _builtins   # noqa: F401  registers the function table
 from .errors import Pos, SelError, fail
-from .eval import MAX_DEPTH, Context as _Context, eval_node
+from .errors import MAX_DEPTH
+from .eval import Context as _Context, eval_node
 from .parser import Node, parse
 from .registry import names as _names, binding_form as _binding_form
 from .registry import register_function

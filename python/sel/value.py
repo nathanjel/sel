@@ -158,31 +158,6 @@ def _list_index(key: str, length: int) -> int:
     return index if 0 <= index < length else -1
 
 
-def iter_entries(value: Any):
-    """Iterate ordered children without materialising an entry list.
-
-    The list-returning ``entries()`` API remains for callers that need a stable
-    snapshot.  Evaluator hot paths use this iterator so packed list/shape
-    storage does not become a stream of temporary ``(key, value)`` tuples.
-    """
-    if value.shape is not None:
-        for index, key in enumerate(value.shape.keys):
-            yield key, value.storage[index]
-        return
-    if value.is_list and value.storage is not None:
-        if value.list_keys is not None:
-            for index, item in enumerate(value.storage):
-                yield value.list_keys[index], item
-            return
-        for index, item in enumerate(value.storage):
-            yield str(index + 1), item
-        return
-    if value.children:
-        for key, item in value.children.items():
-            yield key, item
-        return
-
-
 def iter_values(value: Any):
     """Iterate collection values directly, omitting synthetic keys."""
     if value.storage is not None:
@@ -383,11 +358,9 @@ class Value:
         v.storage = values if isinstance(values, list) else list(values)
         return v
 
-    @staticmethod
-    def record(keys: list[str], values: list[Value]) -> Value:
-        """A record from keys and values side by side, checked and copied (spec
-        §8); a repeated key keeps its first position and takes its last value."""
-        return Value._record_owned(*_pair_up(keys, values))
+    # The other hosts' name for the same constructor (docs/usage/README.md lists
+    # both): a record from keys and values side by side, checked and copied.
+    record = shaped
 
     @staticmethod
     def _record_owned(keys: list[str], values: list[Value]) -> Value:
@@ -548,7 +521,16 @@ class Value:
         return list(iter_values(self))
 
     def entries(self) -> builtins.list[tuple[str, Value]]:
-        return list(iter_entries(self))
+        # Built by zip, in C: the ordered children without a generator frame
+        # resumed per child. iter_elements is the lazy form (plus the scalar
+        # rule) for the aggregates.
+        if self.shape is not None:
+            return list(zip(self.shape.keys, self.storage))
+        if self.is_list and self.storage is not None:
+            if self.list_keys is not None:
+                return list(zip(self.list_keys, self.storage))
+            return [(str(i), item) for i, item in enumerate(self.storage, 1)]
+        return list(self.children.items()) if self.children else []
 
     def set(self, key: str, value: Value) -> Value:
         # Re-assigning an existing key keeps its original position — dict does

@@ -12,6 +12,8 @@ lone surrogates, which Python permits in a `str` and UTF-8 has no encoding for.
 
 from __future__ import annotations
 
+from typing import NoReturn
+
 from .errors import Pos, fail
 
 
@@ -37,14 +39,21 @@ def to_code_points(s: str, pos: Pos | None = None) -> list[int]:
         s.encode('utf-8')
         return [ord(ch) for ch in s]
     except UnicodeEncodeError:
-        out = []
-        for ch in s:
-            c = ord(ch)
-            if 0xD800 <= c <= 0xDFFF:
-                which = 'high' if c <= 0xDBFF else 'low'
-                fail('E_UTF8', f'unpaired {which} surrogate', pos)
-            out.append(c)
-        return out
+        _fail_at_surrogate(s, _first_surrogate(s), pos)
+
+
+def _first_surrogate(s: str) -> int:
+    """The index of the first lone surrogate in `s` (a Python str may hold
+    one; it has no UTF-8 encoding), or -1."""
+    for i, ch in enumerate(s):
+        if 0xD800 <= ord(ch) <= 0xDFFF:
+            return i
+    return -1
+
+
+def _fail_at_surrogate(s: str, i: int, pos: Pos | None) -> NoReturn:
+    which = 'high' if ord(s[i]) <= 0xDBFF else 'low'
+    fail('E_UTF8', f'unpaired {which} surrogate', pos)
 
 
 def _pos_after(prefix: str) -> Pos:
@@ -60,11 +69,9 @@ def check_source(source: str) -> None:
     is that count -- needs no decoding to find where it is."""
     if source.isascii():
         return
-    for i, ch in enumerate(source):
-        c = ord(ch)
-        if 0xD800 <= c <= 0xDFFF:
-            which = 'high' if c <= 0xDBFF else 'low'
-            fail('E_UTF8', f'unpaired {which} surrogate', _pos_after(source[:i]))
+    i = _first_surrogate(source)
+    if i >= 0:
+        _fail_at_surrogate(source, i, _pos_after(source[:i]))
 
 
 def decode_source(data: bytes) -> str:

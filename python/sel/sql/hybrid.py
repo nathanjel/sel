@@ -26,10 +26,10 @@ from typing import Any, Callable
 from .. import Program, Value
 from .. import registry as _registry
 from .._builtin_manifest import BUILTIN_MANIFEST
-from ..eval import MAX_DEPTH
+from ..errors import MAX_DEPTH
 from .._stack import recursion_budget as _recursion_budget
 from ..lexer import ascii_upper
-from ..optimizer import build_pipeline, copy_node, unwind_pipeline
+from ..optimizer import LITERAL_TYPES, build_pipeline, copy_node, unwind_pipeline
 from ..parser import Node
 from ..optimizer import optimize_ast_logical
 from . import map as sqlmap
@@ -606,8 +606,6 @@ def _try_plan_fallthrough(source: Node, steps: list[Node], dialect: str,
 #     continuation evaluates them once, before its steps, as run() does. An
 #     assignment nothing after the split reads is dropped, as stage 1 drops
 #     it for translate() -- the one departure, and the same one.
-
-LITERAL_TYPES = frozenset({'num', 'text', 'bool', 'null'})
 
 
 def _statements(ast: Node) -> tuple[list[Node], Node]:

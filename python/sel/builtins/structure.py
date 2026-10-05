@@ -4,7 +4,7 @@ equi-join and nested-loop paths, and the run-time pre-filter that applies a
 FILTER's conjuncts inside a join (spec §7.4)."""
 
 from .._budget import check_collection
-from ..errors import SelError, fail
+from ..errors import SelError
 from ..lexer import ascii_upper
 from ..registry import INF, define
 from .aggregate import _SCALAR_FRESH_CALLS

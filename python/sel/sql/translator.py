@@ -19,12 +19,13 @@ from .. import registry as _registry
 from .. import utf8
 from ..builtins import regex as _regex
 from .. import decimal as _decimal
-from ..errors import Pos, SelError
-from ..eval import Context, MAX_DEPTH, eval_node
+from ..errors import MAX_DEPTH, Pos, SelError
+from ..eval import Context, eval_node
 from .._limits import MAX_SQL_NODES
 from .._stack import recursion_budget as _recursion_budget
 from ..lexer import ascii_upper
 from ..parser import Node
+from ..registry import REGEX_FLAG_AT
 from ..value import Value, quote_dump
 from . import constants as _constants
 from . import map as _map
@@ -133,7 +134,6 @@ INT64_MAX = 9223372036854775807
 # The key of a frame's own element, under a name no SEL program can spell.
 ELEM = '\0elem'
 BALANCED_FOLD = 256
-_REGEX_CALLS = frozenset(('RMATCH', 'RFIND', 'RREPLACE', 'RGROUPS'))   # pattern is argument 0
 
 
 def _lit_node(t: str, v: Any, pos: Pos) -> Node:
@@ -1141,7 +1141,7 @@ class Translator:
         Both the pattern and the flags must be literals: a pattern read from a
         column cannot be rewritten, and the flag selects the template.
         """
-        if n.name not in _REGEX_CALLS:
+        if n.name not in REGEX_FLAG_AT:
             return n
         at = 0
         pat = n.args[at] if n.args else None
@@ -1178,7 +1178,7 @@ class Translator:
         # the flag bound as a parameter nothing emitted.
         inline = '(?s)'
 
-        flag_at = 3 if n.name == 'RREPLACE' else 2
+        flag_at = REGEX_FLAG_AT[n.name]
         args = list(n.args)
         if flag_at >= len(args):
             args[at] = _lit_node('text', inline + source, args[at].pos)

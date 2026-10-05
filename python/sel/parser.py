@@ -54,7 +54,7 @@ from typing import Any
 from . import decimal as D
 from .errors import MAX_DEPTH, Pos, fail
 from .lexer import RESERVED, Token, tokenize
-from .registry import Spec, lookup
+from .registry import INF, REGEX_FLAG_AT, Spec, lookup
 
 ASSIGN_OPS = frozenset(['=', '+=', '-=', '*=', '/=', '%=', '&='])
 COMPARE_OPS = frozenset(['==', '!=', '<', '<=', '>', '>=',
@@ -494,9 +494,6 @@ class Parser:
         return _finish_call(name_tok, spec, args)
 
 
-_REGEX_FUNCTIONS = frozenset(['RMATCH', 'RFIND', 'RGROUPS', 'RREPLACE'])
-
-
 def _finish_call(name_tok: Token, spec: Spec, args: list[Node]) -> Node:
     """The compile-time arity rule (spec 6.2, SEL-0002) and the call node, in
     one place for both call forms; the pipeline form has already placed its
@@ -508,7 +505,7 @@ def _finish_call(name_tok: Token, spec: Spec, args: list[Node]) -> Node:
         problem = spec.arity_error(count)
         if problem:
             fail('E_ARITY', problem, name_tok.pos)
-    if spec.name in _REGEX_FUNCTIONS:
+    if spec.name in REGEX_FLAG_AT:
         # A literal pattern is checked now (SPEC 7.8), even where it never runs.
         from .builtins.regex import check_literal
         check_literal(spec.name, args)
@@ -517,7 +514,7 @@ def _finish_call(name_tok: Token, spec: Spec, args: list[Node]) -> Node:
 
 
 def arity_text(spec: Spec) -> str:
-    if spec.max == float('inf'):
+    if spec.max == INF:
         return f'at least {spec.min} argument{"" if spec.min == 1 else "s"}'
     if spec.min == spec.max:
         return f'{spec.min} argument{"" if spec.min == 1 else "s"}'

@@ -25,7 +25,8 @@ translation time. See docs/internals/sql-translation.md §11.4.
 from __future__ import annotations
 
 from ..errors import Pos, SelError
-from ..eval import Context, MAX_DEPTH, eval_node
+from ..errors import MAX_DEPTH
+from ..eval import Context, eval_node
 from ..parser import Node
 from ..value import Value
 from .errors import refuse

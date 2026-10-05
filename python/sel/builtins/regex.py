@@ -52,7 +52,7 @@ from .._budget import check_text
 from .._stack import recursion_budget
 from .._limits import MAX_DEPTH, MAX_REGEX_GROUPS, MAX_REGEX_PATTERN, MAX_TEXT_LEN
 from ..errors import fail
-from ..registry import define
+from ..registry import REGEX_FLAG_AT, define
 from ..value import Value
 from . import _regex_ambiguity as _amb
 
@@ -621,7 +621,7 @@ def check_literal(name, args):
     error, at compile time, on every host."""
     if not args or args[0].t != 'text':
         return
-    flag_i = 3 if name == 'RREPLACE' else 2
+    flag_i = REGEX_FLAG_AT[name]
     ignore_case = False
     if len(args) > flag_i:
         f = args[flag_i]
@@ -638,10 +638,16 @@ def _args_for(args, pat_i, subj_i, flag_i):
     """
     pattern = args.text(pat_i)
     subject = args.text(subj_i)
-    flags = args.text(flag_i) if args.count() > flag_i else ''
-    flag_pos = args.pos_of(flag_i) if args.count() > flag_i else args.pos
-    rx, ignore_case = _compile(pattern, flags, flag_pos, args.pos_of(pat_i))
+    rx, ignore_case = _compile_with_flags(args, pattern, pat_i, flag_i)
     return rx, subject, _fold_subject(subject) if ignore_case else subject
+
+
+def _compile_with_flags(args, pattern, pat_i, flag_i):
+    """The compiled pattern and whether it ignores case, reading the optional
+    flags argument at `flag_i` (an absent one is no flags, reported at the call)."""
+    if args.count() > flag_i:
+        return _compile(pattern, args.text(flag_i), args.pos_of(flag_i), args.pos_of(pat_i))
+    return _compile(pattern, '', args.pos, args.pos_of(pat_i))
 
 
 def _rmatch(a, ctx):
@@ -709,9 +715,7 @@ def _rreplace(a, ctx):
     pattern = a.text(0)
     repl = a.text(1)
     subject = a.text(2)
-    flags = a.text(3) if a.count() > 3 else ''
-    flag_pos = a.pos_of(3) if a.count() > 3 else a.pos
-    rx, ignore_case = _compile(pattern, flags, flag_pos, a.pos_of(0))
+    rx, ignore_case = _compile_with_flags(a, pattern, 0, 3)
     haystack = _fold_subject(subject) if ignore_case else subject
 
     parts = _parse_replacement(repl)

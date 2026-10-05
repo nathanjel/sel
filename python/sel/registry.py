@@ -8,14 +8,18 @@ import re
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
-from ._builtin_manifest import BUILTIN_MANIFEST, BINDING_FORMS
+from ._builtin_manifest import BUILTIN_MANIFEST, BINDING_FORMS, INF  # noqa: F401 - INF is re-exported
 from .lexer import ascii_upper
 
-INF = float('inf')
 
 # spec/SPEC.md §8.1: an identifier that starts with a letter. Checked with
 # fullmatch, because `$` also matches before a trailing newline.
 _HOST_NAME = re.compile(r'[A-Za-z][A-Za-z0-9_]*', re.ASCII)
+
+# The regex builtins (spec §7.8) and the argument each takes its flags in: the
+# parser checks their literal patterns, the SQL translator rewrites them, and
+# both find the flags here. The pattern is argument 0 in all four.
+REGEX_FLAG_AT = {'RMATCH': 2, 'RFIND': 2, 'RGROUPS': 2, 'RREPLACE': 3}
 
 
 @dataclass(slots=True)
