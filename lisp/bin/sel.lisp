@@ -130,7 +130,9 @@ systems and reads as nothing; it is refused rather than run as an empty program.
                  ((equal flag "--deps") (setf deps t))
                  ((equal flag "-e")
                   (when (null args) (usage-error "-e needs an expression"))
-                  (when (or expr file) (usage-error "unexpected argument -e"))
+                  ;; After a file (or a first -e) the expression is the
+                  ;; second operand, and is named as the extra argument.
+                  (when (or expr file) (usage-error "unexpected argument ~a" (octets-path (first args))))
                   (setf expr (pop args)))
                  ((and flag (> (length flag) 1) (char= (char flag 0) #\-))
                   (usage-error "unknown option ~a" flag))
