@@ -27,6 +27,7 @@ renderings), which follow their sources.
     python3 tools/check-roster.py            # the whole tree
     python3 tools/check-roster.py FILE...    # only these files
 """
+import bisect
 import re
 import subprocess
 import sys
@@ -35,6 +36,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 
 COUNT = r'(?:two|three|four|five|six)'
+LEADER = re.compile(r'^\s*(?:(?://+|#+|;+|\*+|%+|--|/\*+|"""|>)\s*)?')
 ROSTER_NOUNS = (r'(?:hosts?|implementations?|languages|parsers|lexers|readers|renderings|cores|'
                 r'runners|evaluators|optimi[sz]ers|planners|translators|ports|hosts\'|host APIs)')
 COUNTED = [
@@ -123,12 +125,24 @@ def paragraphs(lines):
 def check(path, text):
     problems = []
     lines = text.split('\n')
-    for n, line in enumerate(lines, 1):
-        for rx in COUNTED:
-            m = rx.search(line)
-            if m:
-                problems.append(f'{path}:{n}: counted roster "{m.group(0)}" -- say "every host" / "the other hosts"')
-                break
+    # A phrase may wrap, so the lines are matched as one text: each line's
+    # leading indentation and comment marker becomes a single space.
+    text, starts = [], []
+    pos = 0
+    for line in lines:
+        body = re.sub(r'[ \t]+', ' ', LEADER.sub('', line)).rstrip()
+        starts.append(pos)
+        text.append(body)
+        pos += len(body) + 1
+    joined = ' '.join(text)
+    spans = []
+    for rx in COUNTED:
+        for m in rx.finditer(joined):
+            if any(a < m.end() and m.start() < b for a, b in spans):
+                continue   # one phrase, one report
+            spans.append((m.start(), m.end()))
+            n = bisect.bisect_right(starts, m.start())
+            problems.append(f'{path}:{n}: counted roster "{m.group(0)}" -- say "every host" / "the other hosts"')
     if path.endswith('.md') or path in MANIFESTS:
         blocks = paragraphs(lines) if path.endswith('.md') else [(1, lines)]
         for n, block in blocks:
