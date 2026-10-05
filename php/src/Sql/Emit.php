@@ -203,16 +203,26 @@ final class Emit
         if ($f->kind === 'NUM' && !$f->guard) {
             return $f;
         }
+        $guard = $this->numericGuard('an operand it has not been told is one cannot be read as one here', $pos);
+        return new Fragment($this->fill($guard, [$f], $pos), 'NUM', $this->dialect);
+    }
+
+    /**
+     * The dialect's numericGuard template, checked, or a refusal saying what
+     * could not be done without one (`$without`).
+     *
+     * @param array{line:int,col:int,offset:int}|null $pos
+     */
+    private function numericGuard(string $without, ?array $pos): string
+    {
         Map::checkNumericGuard($this->dialect);
         $guard = $this->lex('numericGuard');
         if (!is_string($guard)) {
             refuse('E_SQL_UNSUPPORTED',
-                "dialect {$this->dialect} has no way to ask whether a value is a "
-                . 'number, so an operand it has not been told is one cannot be read '
-                . 'as one here; declare the binding NUM if the column really is '
-                . 'numeric', $pos);
+                "dialect {$this->dialect} has no way to ask whether a value is a number, so "
+                . "{$without}; declare the binding NUM if the column really is numeric", $pos);
         }
-        return new Fragment($this->fill($guard, [$f], $pos), 'NUM', $this->dialect);
+        return $guard;
     }
 
     /**
@@ -231,15 +241,7 @@ final class Emit
      */
     public function numericGuardParts(Fragment $f, ?array $pos = null): array
     {
-        Map::checkNumericGuard($this->dialect);
-        $guard = $this->lex('numericGuard');
-        if (!is_string($guard)) {
-            refuse('E_SQL_UNSUPPORTED',
-                "dialect {$this->dialect} has no way to ask whether a value is a "
-                . 'number, so a sum over an operand it has not been told is one '
-                . 'cannot be guarded here; declare the binding NUM if the column '
-                . 'really is numeric', $pos);
-        }
+        $guard = $this->numericGuard('a sum over an operand it has not been told is one cannot be guarded here', $pos);
         if (preg_match('/\ACASE WHEN (.*?) THEN (.*) ELSE NULL END\z/s', $guard, $m) !== 1) {
             refuse('E_SQL_UNSUPPORTED',
                 "the numericGuard of dialect {$this->dialect} is not CASE WHEN … THEN … ELSE "
@@ -305,6 +307,31 @@ final class Emit
     // --- templates ----------------------------------------------------------
 
     /**
+     * Append one part to a part list: a parameter slot as it is, text merged
+     * into a text part before it, and empty text not at all. The one spelling of
+     * it for every builder of part lists (fill, Translator::fillNamed and
+     * joinParts).
+     *
+     * @param list<string|int> $parts
+     */
+    public static function appendPart(array &$parts, string|int $part): void
+    {
+        if (is_int($part)) {
+            $parts[] = $part;
+            return;
+        }
+        if ($part === '') {
+            return;
+        }
+        $last = count($parts) - 1;
+        if ($last >= 0 && is_string($parts[$last])) {
+            $parts[$last] .= $part;
+        } else {
+            $parts[] = $part;
+        }
+    }
+
+    /**
      * Fill a template with already-rendered arguments, producing a part list.
      *
      * Splicing part lists rather than strings is the whole point: an argument
@@ -344,23 +371,11 @@ final class Emit
     {
         $parts = [];
         $push = static function (string $s) use (&$parts): void {
-            if ($s === '') {
-                return;
-            }
-            $n = count($parts);
-            if ($n > 0 && is_string($parts[$n - 1])) {
-                $parts[$n - 1] .= $s;
-            } else {
-                $parts[] = $s;
-            }
+            self::appendPart($parts, $s);
         };
-        $splice = function (Fragment $f) use (&$parts, $push): void {
+        $splice = static function (Fragment $f) use (&$parts): void {
             foreach ($f->parts as $p) {
-                if (is_string($p)) {
-                    $push($p);
-                } else {
-                    $parts[] = $p;          // absolute already; see the note above
-                }
+                self::appendPart($parts, $p);   // a slot is absolute already; see the note above
             }
         };
         $join = function (array $subset) use ($splice, $push): void {

@@ -317,12 +317,7 @@ final class Translator
         $out = [];
         foreach ($pieces as $piece) {
             foreach (is_array($piece) ? $piece : [$piece] as $p) {
-                $last = count($out) - 1;
-                if (is_string($p) && $last >= 0 && is_string($out[$last])) {
-                    $out[$last] .= $p;
-                } else {
-                    $out[] = $p;
-                }
+                Emit::appendPart($out, $p);
             }
         }
         return $out;
@@ -533,12 +528,9 @@ final class Translator
     /** @param array<string,mixed> $idx */
     private function constantIndex(array $idx): string
     {
-        return match ($idx['t']) {
-            'num', 'text' => (string) $idx['v'],
-            default => refuse('E_SQL_SHAPE',
-                'an index must be a constant here: the column it names has to be '
-                . 'known before the query runs', $idx['pos']),
-        };
+        return Normalise::constantKey($idx) ?? refuse('E_SQL_SHAPE',
+            'an index must be a constant here: the column it names has to be '
+            . 'known before the query runs', $idx['pos']);
     }
 
     /**
@@ -922,9 +914,7 @@ final class Translator
                     if ($inner->kind === 'UNKNOWN') {
                         [$test, $cast] = $this->emit->numericGuardParts($inner, $bodyNode['pos']);
                         $this->scaleLimited($bodyNode['pos'], 'this operand is read as a number');
-                        $parts = self::joinParts(['CASE WHEN COUNT(*) = COUNT(CASE WHEN ', $test,
-                            ' THEN 1 END) THEN COALESCE(SUM(', $this->sumCast($test, $cast),
-                            '), 0) ELSE NULL END']);
+                        $parts = $this->allOrNothingSum($test, $cast);
                     } else {
                         $parts = self::joinParts(['COALESCE(SUM(', $inner->parts, '), 0)']);
                     }
@@ -2527,6 +2517,21 @@ final class Translator
     }
 
     /**
+     * `COALESCE(SUM(body), 0)` for a body of unknown kind, all or nothing: NULL
+     * unless every element passes the numeric test. The one spelling, for a
+     * bucket's members and for a relation's rows.
+     *
+     * @param list<string|int> $test
+     * @param list<string|int> $cast
+     * @return list<string|int>
+     */
+    private function allOrNothingSum(array $test, array $cast): array
+    {
+        return self::joinParts(['CASE WHEN COUNT(*) = COUNT(CASE WHEN ', $test,
+            ' THEN 1 END) THEN COALESCE(SUM(', $this->sumCast($test, $cast), '), 0) ELSE NULL END']);
+    }
+
+    /**
      * SUM over a relation whose body is of unknown kind: NULL unless EVERY element
      * passes the numeric test (docs/internals/sql-kinds.md 5a). The skeleton's
      * `COALESCE(SUM({body}), 0)` is replaced by the guarded whole; COUNT(*) counts
@@ -2547,12 +2552,9 @@ final class Translator
                 "the sum skeleton of dialect {$this->dialect} is not built on {$needle}, so "
                 . 'it cannot be guarded as a whole', $n['pos']);
         }
-        $tpl = str_replace($needle,
-            'CASE WHEN COUNT(*) = COUNT(CASE WHEN {bodyTest} THEN 1 END) THEN '
-            . 'COALESCE(SUM({bodyCast}), 0) ELSE NULL END', $tpl);
+        $tpl = str_replace($needle, '{guardedSum}', $tpl);
         $slots = self::slots($this->relationSlots($rel), [
-            'bodyTest' => [new Fragment($test, 'UNKNOWN', $this->dialect)],
-            'bodyCast' => [new Fragment($this->sumCast($test, $cast), 'UNKNOWN', $this->dialect)],
+            'guardedSum' => [new Fragment($this->allOrNothingSum($test, $cast), 'UNKNOWN', $this->dialect)],
         ]);
         return new Fragment($this->fillNamed($tpl, $slots, $n['pos']), 'NUM', $this->dialect);
     }
@@ -3319,15 +3321,7 @@ final class Translator
     {
         $parts = [];
         $push = static function (string $s) use (&$parts): void {
-            if ($s === '') {
-                return;
-            }
-            $n = count($parts);
-            if ($n > 0 && is_string($parts[$n - 1])) {
-                $parts[$n - 1] .= $s;
-            } else {
-                $parts[] = $s;
-            }
+            Emit::appendPart($parts, $s);
         };
 
         $i = 0;
@@ -3356,11 +3350,7 @@ final class Translator
                     continue;
                 }
                 foreach ($item->parts as $p) {
-                    if (is_string($p)) {
-                        $push($p);
-                    } else {
-                        $parts[] = $p;
-                    }
+                    Emit::appendPart($parts, $p);
                 }
             }
         }

@@ -183,7 +183,7 @@ final class Normalise
     }
 
     /** The literal key an index expression names, or null when it is not one. */
-    private static function constantKey(array $idx): ?string
+    public static function constantKey(array $idx): ?string
     {
         return match ($idx['t']) {
             'num' => (string) $idx['v'],

@@ -339,9 +339,8 @@ final class Hybrid
         $body = count($ba) === 3 ? $ba[2] : null;
         $m = $steps[$at + 1] ?? null;
         if ($body === null && ($m['name'] ?? null) === 'MAP' && count($m['args']) === 2) $body = $m['args'][1];
-        $upper = static fn (string $s): string => strtr($s, 'abcdefghijklmnopqrstuvwxyz', 'ABCDEFGHIJKLMNOPQRSTUVWXYZ');
-        $pf = $rel['fields'][$upper($partition ?? '')] ?? [];
-        $rf = $rel['fields'][$upper($revision)] ?? [];
+        $pf = $rel['fields'][Utf8::upper($partition ?? '')] ?? [];
+        $rf = $rel['fields'][Utf8::upper($revision)] ?? [];
         if ($partition === null || ($body['t'] ?? null) !== 'call' || $body['name'] !== 'RECORD' || count($body['args']) !== 4
             || !in_array($pf['type'] ?? null, ['NUM', 'TEXT'], true) || ($rf['type'] ?? null) !== 'NUM'
             || ($pf['column'] ?? null) !== $partition || ($rf['column'] ?? null) !== $revision
@@ -369,8 +368,8 @@ final class Hybrid
         try {
             $emit = new Emit($dialect);
             $input = '_sel_input'; $groups = '_sel_latest';
-            while ($upper($input) === $upper($rel['from'])) $input .= '_';
-            while (in_array($upper($groups), [$upper($rel['from']), $upper($input)], true)) $groups .= '_';
+            while (Utf8::upper($input) === Utf8::upper($rel['from'])) $input .= '_';
+            while (in_array(Utf8::upper($groups), [Utf8::upper($rel['from']), Utf8::upper($input)], true)) $groups .= '_';
             [$qi, $qg, $qr, $qmax, $qfirst] = array_map(fn ($s) => $emit->ident($s), [$input, $groups, $revision, '_sel_revision', '_sel_first']);
             $key = $emit->textOperand(new Fragment([$emit->ident($partition)], $pf['type'], $dialect))->asValue();
             $parts = ["WITH {$qi} AS (", ...$sql->parts,

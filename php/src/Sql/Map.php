@@ -141,7 +141,7 @@ final class Map
         // by guessing and Python's int() raised a ValueError out of the first
         // translation that had a `since`. Refused here, at the line that wrote
         // it, so nothing downstream has to guess.
-        if (!is_string($version) || preg_match('/\A[0-9]+(\.[0-9]+)*\z/', $version) !== 1) {
+        if (!self::isDottedNumeric($version)) {
             throw new \LogicException("SQL dialect {$name} has version "
                 . var_export($version, true) . ', which is not dotted-numeric; '
                 . 'strip any suffix a server reports (11.8.8-MariaDB is 11.8.8)');
@@ -184,7 +184,6 @@ final class Map
             throw $e;
         }
         unset(self::$guardChecked[$name]);
-        self::flushMemo();
     }
 
     /**
@@ -743,12 +742,7 @@ final class Map
                         . ' — a typo would survive as literal text in every query');
                 }
             }
-            if (isset($entry['caveat'])
-                && !in_array($entry['caveat'], $rules['caveats'], true)) {
-                throw new \LogicException("{$where} declares the caveat "
-                    . var_export($entry['caveat'], true) . ', which is not on the '
-                    . 'closed list in sql/MAP.md §4.6');
-            }
+            self::checkCaveat($entry, $where);
             return;
         }
 
@@ -763,15 +757,8 @@ final class Map
                 . '; use one of ' . implode(', ', $rules['retKinds'])
                 . ', @concat or @unify:<n>[,<n>...]');
         }
-        if (isset($entry['caveat']) && !in_array($entry['caveat'], $rules['caveats'], true)) {
-            throw new \LogicException("{$where} declares the caveat "
-                . var_export($entry['caveat'], true) . ', which is not on the closed '
-                . 'list in sql/MAP.md §4.6; a caveat an application cannot branch on '
-                . 'is prose');
-        }
-        if (isset($entry['since'])
-            && (!is_string($entry['since'])
-                || preg_match('/\A[0-9]+(\.[0-9]+)*\z/', $entry['since']) !== 1)) {
+        self::checkCaveat($entry, $where);
+        if (isset($entry['since']) && !self::isDottedNumeric($entry['since'])) {
             throw new \LogicException("{$where} has a since that is not dotted-numeric");
         }
         if (isset($entry['arity'])) {
@@ -859,8 +846,6 @@ final class Map
             if (!is_string($a)) {
                 throw new \LogicException("{$where} has args that are not a list of kinds");
             }
-        }
-        foreach ($args as $a) {
             if (!in_array($a, MapData::RULES['argKinds'], true)) {
                 throw new \LogicException("{$where} declares the argument kind "
                     . var_export($a, true) . '; use one of '
@@ -878,6 +863,28 @@ final class Map
         if (!in_array($section, self::SECTIONS, true)) {
             throw new \LogicException(
                 "unknown map section {$section}; use " . implode(', ', self::SECTIONS));
+        }
+    }
+
+    /** Whether `$v` is a dotted-numeric version (sql/MAP.md §4.5): `11.8`, never `11.8-MariaDB`. */
+    private static function isDottedNumeric($v): bool
+    {
+        return is_string($v) && preg_match('/\A[0-9]+(\.[0-9]+)*\z/', $v) === 1;
+    }
+
+    /**
+     * An entry's caveat, when it has one, must be on the closed list in
+     * sql/MAP.md §4.6: a caveat an application cannot branch on is prose.
+     *
+     * @param array<string,mixed> $entry
+     */
+    private static function checkCaveat(array $entry, string $where): void
+    {
+        if (isset($entry['caveat']) && !in_array($entry['caveat'], MapData::RULES['caveats'], true)) {
+            throw new \LogicException("{$where} declares the caveat "
+                . var_export($entry['caveat'], true) . ', which is not on the closed '
+                . 'list in sql/MAP.md §4.6; a caveat an application cannot branch on '
+                . 'is prose');
         }
     }
 

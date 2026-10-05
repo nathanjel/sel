@@ -32,7 +32,7 @@ final class Binding
     public function withUniqueKey($key): self
     {
         self::checkName('unique key', $key);
-        $upper = strtr($key, 'abcdefghijklmnopqrstuvwxyz', 'ABCDEFGHIJKLMNOPQRSTUVWXYZ');
+        $upper = Utf8::upper($key);
         if ($this->spec['kind'] !== 'relation' || !array_key_exists($upper, $this->spec['fields'])) {
             throw new SqlError('E_SQL_BINDING', 'a unique key must name a declared relation field');
         }
@@ -359,7 +359,7 @@ final class Binding
         // What a column or value can hold: LIST and STATEMENT are what a whole
         // fragment can be, and a binding declared as one made the kind of a column
         // answer STATEMENT.
-        $allowed = ['NUM', 'TEXT', 'BOOL', 'BIN', 'UNKNOWN'];
+        $allowed = array_values(array_diff(Fragment::KINDS, ['LIST', 'STATEMENT']));
         if (!is_string($type) || !in_array($type, $allowed, true)) {
             throw new SqlError('E_SQL_BINDING',
                 'a binding has type ' . (is_string($type) ? $type : get_debug_type($type))
