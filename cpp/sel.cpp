@@ -6244,14 +6244,14 @@ Value do_link(Args& a, Context& ctx, bool left_join) {
     std::string name = single_relation_name(n);
     return name.empty() ? std::string(fallback) : name;
   };
-  const std::vector<std::string> b1_names = count == 5
-      ? std::vector<std::string>{a.symbol(2), "_1"} : std::vector<std::string>{bound_name(left_node, "_1"), "_1"};
-  const std::vector<std::string> b2_names = count == 5
-      ? std::vector<std::string>{a.symbol(3), "_2"} : std::vector<std::string>{bound_name(right_node, "_2"), "_2"};
-  const std::vector<JoinObligation> no_obligations;
-  const std::vector<JoinObligation>& obligations = prefilter ? prefilter->obligations : no_obligations;
+  // The two sides' binder names, decided once: the explicit binders of the
+  // five-argument form, or each side's relation name (else _1/_2).
   const std::string jb1 = count == 5 ? a.symbol(2) : bound_name(left_node, "_1");
   const std::string jb2 = count == 5 ? a.symbol(3) : bound_name(right_node, "_2");
+  const std::vector<std::string> b1_names{jb1, "_1"};
+  const std::vector<std::string> b2_names{jb2, "_2"};
+  const std::vector<JoinObligation> no_obligations;
+  const std::vector<JoinObligation>& obligations = prefilter ? prefilter->obligations : no_obligations;
   const std::optional<JoinEqui> jequi = extract_join_equi(a.node(count == 5 ? 4 : 2), jb1, jb2);
   std::shared_ptr<JoinSideFacts> right_side;
   const auto owned_by_left = [&](const std::unordered_set<std::string>& fields, const JoinStage& stage) {
@@ -6331,20 +6331,9 @@ Value do_link(Args& a, Context& ctx, bool left_join) {
     ctx.join_prefilter_report.reset();
     below.reset();
   }
-  std::string b1 = "_1";
-  std::string b2 = "_2";
-  NodePtr predicate;
-  if (count == 3) {
-    b1 = single_relation_name(a.node(0));
-    if (b1.empty()) b1 = "_1";
-    b2 = single_relation_name(a.node(1));
-    if (b2.empty()) b2 = "_2";
-    predicate = a.node_ptr(2);
-  } else {
-    b1 = a.symbol(2);
-    b2 = a.symbol(3);
-    predicate = a.node_ptr(4);
-  }
+  const std::string& b1 = jb1;
+  const std::string& b2 = jb2;
+  const NodePtr predicate = a.node_ptr(count == 3 ? 2 : 4);
   if (left_value.is_null()) return Value::list({});
 
   const Value* first_left = first_collection_item(left_value);
@@ -10455,6 +10444,21 @@ std::shared_ptr<const MathPlan> opt_compile_math_plan(const NodePtr& root) {
   const auto set_src2 = [](MathStep& st, const EmitResult& r) {
     st.src2 = r.slot; st.raw2 = r.raw; st.src2_pos = r.raw_pos;
   };
+  // One computing step: a fresh slot, its operands (one or two), its position,
+  // pushed onto the plan; the result is that slot, a number.
+  const auto push_step = [&](MathOp op, const EmitResult& a, const EmitResult* b, Pos pos,
+                             std::optional<Pos> aux = std::nullopt) -> EmitResult {
+    const uint32_t dst = alloc_slot();
+    MathStep step;
+    step.op = op;
+    step.dst = dst;
+    set_src1(step, a);
+    if (b) set_src2(step, *b);
+    step.pos = pos;
+    if (aux) step.aux_pos = *aux;
+    plan->steps.push_back(std::move(step));
+    return EmitResult{dst, false, {}, false, {}};
+  };
 
   const auto emit = [&](auto& self, const NodePtr& node, int depth) -> std::optional<EmitResult> {
     if (!node || depth > MAX_DEPTH || slot_count > MAX_PLAN_SLOTS) return std::nullopt;
@@ -10501,14 +10505,7 @@ std::shared_ptr<const MathPlan> opt_compile_math_plan(const NodePtr& root) {
       // tree coerces it, so a later operand's error cannot get in front.
       const auto propagate = [&](const EmitResult& kept) -> EmitResult {
         if (!kept.raw) return kept;
-        const uint32_t dst = alloc_slot();
-        MathStep step;
-        step.op = MathOp::Coerce;
-        step.dst = dst;
-        set_src1(step, kept);
-        step.pos = node->pos;
-        plan->steps.push_back(std::move(step));
-        return EmitResult{dst, false, {}, false, {}};
+        return push_step(MathOp::Coerce, kept, nullptr, node->pos);
       };
 
       // Copy propagation: x + 0, 0 + x, x - 0, x * 1, 1 * x (an integer 0 or 1,
@@ -10530,31 +10527,14 @@ std::shared_ptr<const MathPlan> opt_compile_math_plan(const NodePtr& root) {
         return propagate(*res_r);
       }
 
-      const uint32_t dst = alloc_slot();
-      const MathOp op_code = math_op_native(math_op_for(*node)->name);
-
-      MathStep step;
-      step.op = op_code;
-      step.dst = dst;
-      set_src1(step, *res_l);
-      set_src2(step, *res_r);
-      step.pos = node->pos;
-      plan->steps.push_back(std::move(step));
-      return EmitResult{dst, false, {}, false, {}};
+      return push_step(math_op_native(math_op_for(*node)->name), *res_l, &*res_r, node->pos);
     }
 
     if (node->t == NT::Un && is_math_op(*node)) {
       if (!node->l) return std::nullopt;
       const auto res_x = self(self, node->l, depth + 1);
       if (!res_x) return std::nullopt;
-      const uint32_t dst = alloc_slot();
-      MathStep step;
-      step.op = math_op_native(math_op_for(*node)->name);
-      step.dst = dst;
-      set_src1(step, *res_x);
-      step.pos = node->pos;
-      plan->steps.push_back(std::move(step));
-      return EmitResult{dst, false, {}, false, {}};
+      return push_step(math_op_native(math_op_for(*node)->name), *res_x, nullptr, node->pos);
     }
 
     // Math builtins: operand count, fold and error positions from the manifest
@@ -10567,14 +10547,7 @@ std::shared_ptr<const MathPlan> opt_compile_math_plan(const NodePtr& root) {
         if (args.size() != 1) return std::nullopt;
         const auto res_arg = self(self, args[0], depth + 1);
         if (!res_arg) return std::nullopt;
-        const uint32_t dst = alloc_slot();
-        MathStep step;
-        step.op = op_code;
-        step.dst = dst;
-        set_src1(step, *res_arg);
-        step.pos = node->pos;
-        plan->steps.push_back(std::move(step));
-        return EmitResult{dst, false, {}, false, {}};
+        return push_step(op_code, *res_arg, nullptr, node->pos);
       }
       if (entry->arity == 2) {
         if (args.size() != 2) return std::nullopt;
@@ -10582,16 +10555,9 @@ std::shared_ptr<const MathPlan> opt_compile_math_plan(const NodePtr& root) {
         if (!res0) return std::nullopt;
         const auto res1 = self(self, args[1], depth + 1);
         if (!res1) return std::nullopt;
-        const uint32_t dst = alloc_slot();
-        MathStep step;
-        step.op = op_code;
-        step.dst = dst;
-        set_src1(step, *res0);
-        set_src2(step, *res1);
-        step.pos = node->pos;
-        if (entry->aux >= 0) step.aux_pos = args[static_cast<std::size_t>(entry->aux)]->pos;
-        plan->steps.push_back(std::move(step));
-        return EmitResult{dst, false, {}, false, {}};
+        const std::optional<Pos> aux =
+            entry->aux >= 0 ? std::optional<Pos>(args[static_cast<std::size_t>(entry->aux)]->pos) : std::nullopt;
+        return push_step(op_code, *res0, &*res1, node->pos, aux);
       }
       // fold: one or more operands, combined pairwise left to right. Every
       // argument is evaluated before the first is coerced (a strict function
@@ -10608,25 +10574,10 @@ std::shared_ptr<const MathPlan> opt_compile_math_plan(const NodePtr& root) {
       if (operands.size() == 1) {
         // MAX(x) is x, coerced.
         if (!curr.raw) return curr;
-        const uint32_t dst = alloc_slot();
-        MathStep step;
-        step.op = MathOp::Coerce;
-        step.dst = dst;
-        set_src1(step, curr);
-        step.pos = node->pos;
-        plan->steps.push_back(std::move(step));
-        return EmitResult{dst, false, {}, false, {}};
+        return push_step(MathOp::Coerce, curr, nullptr, node->pos);
       }
       for (std::size_t k = 1; k < operands.size(); k++) {
-        const uint32_t dst = alloc_slot();
-        MathStep step;
-        step.op = op_code;
-        step.dst = dst;
-        set_src1(step, curr);
-        set_src2(step, operands[k]);
-        step.pos = node->pos;
-        plan->steps.push_back(std::move(step));
-        curr = EmitResult{dst, false, {}, false, {}};
+        curr = push_step(op_code, curr, &operands[k], node->pos);
       }
       return curr;
     }
