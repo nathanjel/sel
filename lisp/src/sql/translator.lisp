@@ -7,13 +7,11 @@
 
 (in-package #:sel.sql)
 
-;;; A group's SUM, and the all-or-nothing form a SUM over an UNKNOWN body takes
-;;; (docs/internals/sql-kinds.md 5a), spelled once: TRANSLATE-CALL fills them
-;;; with fragments and GUARDED-SUM-SKELETON rewrites a dialect's skeleton with
-;;; them.
+;;; A group's SUM, spelled once: TRANSLATE-CALL fills it with a fragment and
+;;; GUARDED-SUM-SKELETON finds it in a dialect's sum skeleton. The all-or-nothing
+;;; form a SUM over an UNKNOWN body takes (docs/internals/sql-kinds.md 5a) is the
+;;; dialect's guardedSum skeleton (sql/MAP.md §5.1).
 (defparameter +sum-template+ "COALESCE(SUM({body}), 0)")
-(defparameter +guarded-sum-template+
-  "CASE WHEN COUNT(*) = COUNT(CASE WHEN ({test}) THEN 1 END) THEN COALESCE(SUM({body}), 0) ELSE NULL END")
 
 (defun template-parts (template slots)
   "TEMPLATE as a part list with each (SLOT . PARTS) of SLOTS spliced in at its
@@ -1593,9 +1591,10 @@ whatever the arguments would have said or a `no mapping` for the call."
                          (not (is-constant body-node (translator-const-names tr))))
                     (multiple-value-bind (test cast)
                         (split-numeric-guard (translator-dialect tr) inner (snode-pos body-node))
-                      (%fragment (template-parts +guarded-sum-template+
-                                                 (list (cons "{test}" (fragment-parts test))
-                                                       (cons "{body}" (fragment-parts cast))))
+                      (%fragment (fill-named tr (skeleton tr "guardedSum" (snode-pos n))
+                                             (list (cons "test" (list test))
+                                                   (cons "body" (list cast)))
+                                             (snode-pos n))
                                  :num (translator-dialect tr)))
                     (%fragment (template-parts +sum-template+
                                                (list (cons "{body}" (fragment-parts inner))))
@@ -2108,12 +2107,13 @@ aggregate's binder is not visible in a predicate."
 sql-kinds.md 5a): the sum is NULL unless EVERY element passes the numeric test.
 `SUM` skips NULL and the layer's COALESCE(SUM(..), 0) turns nothing-left into 0,
 so guarding each element would let a refused element vanish. Returns the template
-with the body slot split into {test} and {body}, and the two fragments."
+with the body slot replaced by the dialect's guardedSum skeleton, whose slots are
+{test} and {body}, and the two fragments."
   (multiple-value-bind (test cast) (split-numeric-guard (translator-dialect tr) body pos)
     (let ((old +sum-template+))
       (unless (search old tpl)
         (bad "the sum skeleton has no ~a, so it cannot be guarded as a whole" old))
-      (values (replace-all tpl old +guarded-sum-template+)
+      (values (replace-all tpl old (skeleton tr "guardedSum" pos))
               test cast))))
 
 (defun relation-aggregate (tr name rel body n)
@@ -2469,7 +2469,8 @@ SQL counterpart" (snode-pos e)))
         (setf (relational-plan-limit plan)
               (if (relational-plan-limit plan)
                   (min (relational-plan-limit plan) lim)
-                  lim))))
+                  lim)
+              (relational-plan-limit-pos plan) pos)))
     (cond
       ((member sort-name '("SORT" "SORT_DESC") :test #'equal)
        (let ((dir (if (equal sort-name "SORT") "ASC" "DESC")))
@@ -2675,24 +2676,28 @@ reached the statement on every dialect, and `AS \"\"` is refused by the servers.
             pos)))
 
 (defun check-alias-collisions (tr names-and-nodes)
-  "PostgreSQL truncates an identifier to 63 bytes, so two aliases that agree on
-their first 63 bytes and differ after name ONE column there and SEL's two record
-keys would become one. The server's rule, so every dialect whose chain reaches
-postgresql is held to it, a registered child included."
-  (when (member "postgresql" (dialect-chain (translator-dialect tr)) :test #'equal)
-    (let ((seen '()))
-      (dolist (cell names-and-nodes)
-        (let* ((name (car cell))
-               (octets (sb-ext:string-to-octets name :external-format :utf-8)))
-          (when (> (length octets) 63)
-            (let* ((prefix (subseq octets 0 63))
+  "A server that cuts an identifier to lexical.identifierBytes (PostgreSQL: 63)
+keeps the whole characters that fit, so two aliases that agree on what it keeps
+name ONE column there and SEL's two record keys would become one (sql/MAP.md
+§3.1). A lexical key, so a registered child of postgresql inherits it."
+  (let ((limit (dialect-identifier-bytes (translator-dialect tr))))
+    (when limit
+      (let ((seen '()))
+        (dolist (cell names-and-nodes)
+          (let* ((name (car cell))
+                 (octets (sb-ext:string-to-octets name :external-format :utf-8))
+                 (end (min limit (length octets))))
+            (loop while (and (< 0 end (length octets))
+                             (= (logand (aref octets end) #xC0) #x80))
+                  do (decf end))
+            (let* ((prefix (subseq octets 0 end))
                    (hit (find-if (lambda (o) (and (equalp (car o) prefix)
                                                   (not (equal (cdr o) name))))
                                  seen)))
               (when hit
                 (refuse "E_SQL_UNSUPPORTED"
-                        "two aliases share their first 63 bytes, and PostgreSQL ~
-truncates both to one name"
+                        (format nil "two aliases share their first ~d bytes, and dialect ~a ~
+truncates both to one name" limit (translator-dialect tr))
                         (snode-pos (cdr cell))))
               (push (cons prefix name) seen))))))))
 
@@ -3229,7 +3234,8 @@ FILTER between: SQL keeps a bucket's members only for the projection that ends t
                      (setf (relational-plan-limit plan)
                            (if (relational-plan-limit plan)
                                (min (relational-plan-limit plan) lim)
-                               lim))))
+                               lim)
+                           (relational-plan-limit-pos plan) pos)))
 
                   ((equal sname "DROP")
                    (let ((off (eval-int-param tr (second args) "DROP")))
@@ -3243,7 +3249,8 @@ FILTER between: SQL keeps a bucket's members only for the projection that ends t
                          (decf (relational-plan-limit plan) skipped))
                        (setf (relational-plan-offset plan)
                              (min (+ (or (relational-plan-offset plan) 0) skipped)
-                                  +max-slice-count+)))))
+                                  +max-slice-count+)
+                             (relational-plan-limit-pos plan) pos))))
 
                   ((member sname '("SORT" "SORT_DESC" "SORT_BY" "TOP" "TOP_DESC" "TOP_BY") :test #'equal)
                    ;; A sort after a LIMIT or OFFSET sorts the rows that survived
@@ -3512,25 +3519,22 @@ field is on both sides, and the binders are nested records")
                          (push p parts))
                        (push (format nil " ~a" dir) parts))))
 
-          ;; 7. LIMIT / OFFSET clause
+          ;; 7. LIMIT / OFFSET clause: the dialect's limit, limitOffset and
+          ;; offsetOnly skeletons (sql/MAP.md §5.1); a refusal blames the last
+          ;; TAKE, TOP or DROP that shaped the clause.
           (let ((limit (relational-plan-limit plan))
-                (offset (relational-plan-offset plan)))
-            (cond
-              ((and limit offset)
-               (push (format nil " LIMIT ~D OFFSET ~D" limit offset) parts))
-              (limit
-               (push (format nil " LIMIT ~D" limit) parts))
-              (offset
-               (let ((chain (dialect-chain (translator-dialect tr))))
-                 (cond
-                   ((or (member "mariadb" chain :test #'equal)
-                        (member "mysql" chain :test #'equal)
-                        (member "mysql-family" chain :test #'equal))
-                    (push (format nil " LIMIT 18446744073709551615 OFFSET ~D" offset) parts))
-                   ((member "sqlite" chain :test #'equal)
-                    (push (format nil " LIMIT -1 OFFSET ~D" offset) parts))
-                   (t
-                    (push (format nil " OFFSET ~D" offset) parts)))))))
+                (offset (relational-plan-offset plan))
+                (at (relational-plan-limit-pos plan)))
+            (when (or limit offset)
+              (push (format nil " ~{~a~}"
+                            (fill-named tr (skeleton tr (cond ((null limit) "offsetOnly")
+                                                              ((null offset) "limit")
+                                                              (t "limitOffset"))
+                                                     at)
+                                        (append (and limit (list (list "limit" (format nil "~D" limit))))
+                                                (and offset (list (list "offset" (format nil "~D" offset)))))
+                                        at))
+                    parts)))
 
           (%fragment (nreverse parts)
                      :statement

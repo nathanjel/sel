@@ -2294,7 +2294,9 @@ a wrapped or refused one. And it never touches the MariaDB/MySQL sentinel
 `LIMIT 18446744073709551615` the translator itself emits in front of an
 `OFFSET` with no `TAKE` (`sql/cases/28-slice-overflow.sqlt`): that is not a
 user count, it is MariaDB's spelling of "no limit", and it is 2^64 − 1 by
-construction.
+construction. Every one of these spellings is map data — the `limit`,
+`limitOffset` and `offsetOnly` skeletons (`sql/MAP.md` §5.1) — so a dialect
+registered on `mariadb` or `sqlite` spells an `OFFSET` alone as its parent does.
 
 ---
 
@@ -2418,6 +2420,9 @@ Without an explicit source sort, SQL relations have no implicit order guarantee.
 Composite partitions, computed keys, TOP 0 or TOP N greater than 1, other input
 sorts, raw/correlated relations, additional member aggregates, and absent unique
 key metadata retain fallback. `sql/cases/36-latest-member.sqlt` and `37-latest-member-fallback.sqlt` pin both sides.
+The statement is the dialect's `latestMember` skeleton (`sql/MAP.md` §5.2): every
+dialect that does not refuse it takes the strategy, a registered child of a target
+included, and one that refuses it keeps the grouping in memory.
 
 The ordinary prefix planner promises:
 

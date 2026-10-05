@@ -141,6 +141,15 @@ list is shared, so a caller must not modify it."
     (unless rec (bad "SQL dialect ~a does not exist" name))
     (getf rec :version)))
 
+(defun dialect-identifier-bytes (name)
+  "lexical.identifierBytes as a count, or NIL where the dialect keeps every
+identifier whole: one to nine ASCII digits are the count, anything else (absent,
+withdrawn, malformed) is no limit, in every host (sql/MAP.md §3)."
+  (let ((v (dialect-lexical name "identifierBytes")))
+    (when (and (stringp v) (<= 1 (length v) 9)
+               (every (lambda (c) (char<= #\0 c #\9)) v))
+      (parse-integer v))))
+
 (defun dialect-lexical (name key)
   "A lexical value, or NIL when nothing in the chain supplies one.
 

@@ -1809,7 +1809,7 @@ func (t *translator) call(n *sNode) *Fragment {
 				t.requireNumericConstant(bodyNode)
 				t.requireNum(inner, bodyNode.Pos, "SUM")
 				if inner.Kind == KindUnknown {
-					return t.allOrNothingSum(inner, bodyNode.Pos)
+					return t.allOrNothingSum(inner, bodyNode.Pos, n.Pos)
 				}
 				// The body's parts are spliced, slots and all: joining their SQL
 				// text dropped every literal in it.
@@ -2313,34 +2313,26 @@ func (t *translator) numericTestAndCast(body *Fragment, pos Pos) (*Fragment, *Fr
 		refuse("E_SQL_UNSUPPORTED", fmt.Sprintf("dialect %s has no numeric cast", t.dialect), pos)
 	}
 	cast := NewFragment(t.emit.Fill(tpl, []*Fragment{body}, pos, nil), KindNum, t.dialect, body.Params, body.ParamKinds, body.Caveats)
-	// PostgreSQL evaluates the cast for every row before the enclosing CASE
-	// chooses, and casting 'x' to NUMERIC is an error there (22P02), not a NULL:
-	// so the SUM adds up the guarded cast, and the outer test discards it as
-	// before (sql-kinds.md 5a).
-	for _, d := range Chain(t.dialect) {
-		if d == "postgresql" {
-			cast = t.emit.NumericOperand(body, pos)
-			break
-		}
-	}
 	return test, cast
 }
 
-// allOrNothingSum is the SUM of a body nobody vouched for (sql-kinds.md §5a):
+// allOrNothingSum is the SUM of a body nobody vouched for (sql-kinds.md §5a),
+// the dialect's guardedSum skeleton (sql/MAP.md §5.1):
 //
 //	CASE WHEN COUNT(*) = COUNT(CASE WHEN <test> THEN 1 END)
 //	     THEN COALESCE(SUM(<cast>), 0) ELSE NULL END
 //
 // SUM skips NULL, and COALESCE turns an empty sum into 0, so guarding each element
 // would make a refused element vanish; one that fails the test, or is NULL, makes
-// the whole value NULL, where SEL raises. Refused where the dialect cannot test.
-func (t *translator) allOrNothingSum(body *Fragment, pos Pos) *Fragment {
+// the whole value NULL, where SEL raises. Refused where the dialect cannot test
+// (at pos, the body), or does not spell the skeleton (at sumPos, the SUM). The
+// skeleton says whether the cast inside SUM needs a guard of its own.
+func (t *translator) allOrNothingSum(body *Fragment, pos, sumPos Pos) *Fragment {
 	test, cast := t.numericTestAndCast(body, pos)
-	parts := []Part{{Sql: "CASE WHEN COUNT(*) = COUNT(CASE WHEN "}}
-	parts = append(parts, test.Parts...)
-	parts = append(parts, Part{Sql: " THEN 1 END) THEN COALESCE(SUM("})
-	parts = append(parts, cast.Parts...)
-	parts = append(parts, Part{Sql: "), 0) ELSE NULL END"})
+	parts := t.fillNamed(t.skeleton("guardedSum", sumPos), slotMap{
+		pair[string, []slot]{Key: "test", Val: []slot{fragmentSlot(test)}},
+		pair[string, []slot]{Key: "body", Val: []slot{fragmentSlot(cast)}},
+	}, sumPos)
 	var params []*sel.Value
 	var kinds []SqlKind
 	params = append(params, test.Params...)
@@ -2352,7 +2344,7 @@ func (t *translator) allOrNothingSum(body *Fragment, pos Pos) *Fragment {
 
 func (t *translator) relationAggregate(name string, rel relationSpec, body *Fragment, n *sNode) *Fragment {
 	if name == "SUM" && body.Kind == KindUnknown {
-		whole := t.allOrNothingSum(body, n.Pos)
+		whole := t.allOrNothingSum(body, n.Pos, n.Pos)
 		skel := t.skeleton("sum", n.Pos)
 		const plain = "COALESCE(SUM({body}), 0)"
 		if !strings.Contains(skel, plain) {

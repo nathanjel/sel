@@ -5,14 +5,14 @@ use crate::program::Program;
 use crate::sql::binding::{Binding, ColumnSpec, FieldEntry};
 use crate::sql::constants::{identity_loss_before_grouping, is_binder_name, NeededFields};
 use crate::sql::errors::{refuse, SqlError};
-use crate::sql::map::{chain, entry, EntryKind};
+use crate::sql::map::{entry, EntryKind};
 use crate::sql::node::{SNode, SNodeType};
 use crate::sql::relational_plan::{
     BucketState, JoinType, RelationalFilter, RelationalGroup, RelationalJoin, RelationalOrder,
     RelationalPlan, RelationalProjection, SortDirection,
 };
 use crate::sql::row_model::{build_join_rows, relation_alias};
-use crate::sql::translator::{Source, SourceFilter, SourceShape, Translator};
+use crate::sql::translator::{Slot, SlotMap, Source, SourceFilter, SourceShape, Translator};
 use crate::sql::types::{Fragment, Part, SqlKind};
 use crate::utf8::Pos;
 
@@ -66,20 +66,22 @@ pub fn record_fields(node: &SNode, dialect: &str) -> Result<Vec<(String, SNode)>
         return refuse("E_ARITY", "RECORD takes an even number of arguments", node.pos);
     }
     let mut fields = Vec::with_capacity(args.len() / 2);
-    let postgres = chain(dialect).iter().any(|d| d == "postgresql");
+    // A server that cuts an identifier to lexical.identifierBytes (PostgreSQL: 63)
+    // keeps the whole characters that fit (sql/MAP.md §3.1).
+    let limit = crate::sql::map::identifier_bytes(dialect);
     let mut prefixes = std::collections::HashMap::new();
     for i in (0..args.len()).step_by(2) {
         if args[i].t != SNodeType::Text {
             return refuse("E_BAD_ARG", "RECORD field names must be string literals", args[i].pos);
         }
         check_program_identifier(&args[i])?;
-        if postgres {
+        if let Some(limit) = limit {
             let key = args[i].str.as_bytes();
-            let mut end = key.len().min(63);
+            let mut end = key.len().min(limit);
             while !args[i].str.is_char_boundary(end) { end -= 1; }
             let prefix = key[..end].to_vec();
-            if prefixes.insert(prefix, key.len() > 63).is_some_and(|was_long| was_long || key.len() > 63) {
-                return refuse("E_SQL_UNSUPPORTED", "record aliases collide after PostgreSQL identifier truncation", args[i].pos);
+            if prefixes.insert(prefix, args[i].str.as_str()).is_some_and(|earlier| earlier != args[i].str) {
+                return refuse("E_SQL_UNSUPPORTED", format!("record aliases collide after dialect {}'s {}-byte identifier truncation", dialect, limit), args[i].pos);
             }
         }
         fields.push((args[i].str.clone(), args[i + 1].clone()));
@@ -424,6 +426,7 @@ impl Translator {
             if plan.limit.is_none() || lim < plan.limit.unwrap() {
                 plan.limit = Some(lim);
             }
+            plan.limit_pos = step.pos;
         }
 
         if name == "SORT" || name == "SORT_DESC" || name == "TOP" || name == "TOP_DESC" {
@@ -968,6 +971,7 @@ impl Translator {
                     if plan.limit.is_none() || lim < plan.limit.unwrap() {
                         plan.limit = Some(lim);
                     }
+                    plan.limit_pos = step.pos;
                 }
                 "DROP" => {
                     if args.len() != 2 {
@@ -985,6 +989,7 @@ impl Translator {
                         *limit -= skipped;
                     }
                     plan.offset = Some(curr_off.saturating_add(skipped));
+                    plan.limit_pos = step.pos;
                 }
                 "SORT" | "SORT_DESC" | "SORT_BY" | "TOP" | "TOP_DESC" | "TOP_BY" => {
                     let need_derived = plan.limit.is_some()
@@ -1531,24 +1536,30 @@ impl Translator {
             }
         }
 
-        // 7. LIMIT / OFFSET clause
-        if let (Some(limit), Some(offset)) = (plan.limit, plan.offset) {
-            parts.push(Part::Sql(format!(" LIMIT {} OFFSET {}", limit, offset)));
-        } else if let Some(limit) = plan.limit {
-            parts.push(Part::Sql(format!(" LIMIT {}", limit)));
-        } else if let Some(offset) = plan.offset {
-            let ch = chain(&self.dialect);
-            let has_target = |target: &str| ch.iter().any(|c| c == target);
-            if has_target("mariadb") || has_target("mysql") || has_target("mysql-family") {
-                parts.push(Part::Sql(format!(
-                    " LIMIT 18446744073709551615 OFFSET {}",
-                    offset
-                )));
-            } else if has_target("sqlite") {
-                parts.push(Part::Sql(format!(" LIMIT -1 OFFSET {}", offset)));
-            } else {
-                parts.push(Part::Sql(format!(" OFFSET {}", offset)));
+        // 7. LIMIT / OFFSET clause: the dialect's limit, limitOffset and
+        // offsetOnly skeletons (sql/MAP.md §5.1); a refusal blames the last
+        // TAKE, TOP or DROP that shaped the clause.
+        if plan.limit.is_some() || plan.offset.is_some() {
+            let key = match (plan.limit, plan.offset) {
+                (None, _) => "offsetOnly",
+                (_, None) => "limit",
+                _ => "limitOffset",
+            };
+            let mut counts: SlotMap = Vec::new();
+            if let Some(limit) = plan.limit {
+                counts.push(("limit".into(), vec![Slot::Str(limit.to_string())]));
             }
+            if let Some(offset) = plan.offset {
+                counts.push(("offset".into(), vec![Slot::Str(offset.to_string())]));
+            }
+            let tpl = self.skeleton(key, plan.limit_pos)?;
+            let mut clause = String::from(" ");
+            for part in self.fill_named(&tpl, &counts, plan.limit_pos)? {
+                if let Part::Sql(s) = part {
+                    clause.push_str(&s);
+                }
+            }
+            parts.push(Part::Sql(clause));
         }
 
         Ok(Fragment::new(

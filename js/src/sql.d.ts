@@ -175,6 +175,8 @@ export class RelationalPlan {
   /** Set on a derived table built over sorted rows with no LIMIT. */
   orderDropped: boolean;
   offset: bigint | null;
+  /** The last TAKE, TOP or DROP that set limit or offset (sql/MAP.md §5.1). */
+  limitPos: Pos | null;
 
   constructor();
 }

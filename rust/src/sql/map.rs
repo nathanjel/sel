@@ -503,6 +503,18 @@ pub fn lexical(dialect: &str, key: &str) -> Option<serde_json::Value> {
     None
 }
 
+/// `lexical.identifierBytes` as a count, or `None` where the dialect keeps every
+/// identifier whole: one to nine ASCII digits are the count, anything else
+/// (absent, withdrawn, malformed) is no limit, in every host (sql/MAP.md §3).
+pub(crate) fn identifier_bytes(dialect: &str) -> Option<usize> {
+    let v = lexical(dialect, "identifierBytes")?;
+    let s = v.as_str()?;
+    if s.is_empty() || s.len() > 9 || !s.bytes().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
+    Some(s.bytes().fold(0, |n, b| n * 10 + usize::from(b - b'0')))
+}
+
 pub fn entry(dialect: &str, section: &str, key: &str) -> Option<EntryRecord> {
     check_section(section);
     let ch = chain(dialect);

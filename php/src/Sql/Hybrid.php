@@ -328,7 +328,9 @@ final class Hybrid
 
     private static function tryLatestMember(array $source, array $steps, string $dialect, Bindings $catalog, array $opts, array $helpers): ?HybridPlan
     {
-        if (!in_array($dialect, ['mariadb', 'mysql', 'postgresql', 'sqlite'], true)) return null;
+        // The statement is the dialect's latestMember skeleton (sql/MAP.md §5.2); a
+        // dialect that refuses it keeps the grouping in memory.
+        if (!is_array(Map::entry($dialect, 'skel', 'latestMember'))) return null;
         $rel = $catalog->get($source['name'], $source['pos']);
         $revision = $rel['unique_key'] ?? null;
         $at = null;
@@ -372,12 +374,13 @@ final class Hybrid
             while (in_array(Utf8::upper($groups), [Utf8::upper($rel['from']), Utf8::upper($input)], true)) $groups .= '_';
             [$qi, $qg, $qr, $qmax, $qfirst] = array_map(fn ($s) => $emit->ident($s), [$input, $groups, $revision, '_sel_revision', '_sel_first']);
             $key = $emit->textOperand(new Fragment([$emit->ident($partition)], $pf['type'], $dialect))->asValue();
-            $parts = ["WITH {$qi} AS (", ...$sql->parts,
-                "), {$qg} AS (SELECT MAX({$qr}) AS {$qmax}, MIN({$qr}) AS {$qfirst} FROM {$qi} GROUP BY {$key}) "
-                . "SELECT {$qi}.* FROM {$qi} JOIN {$qg} ON {$qi}.{$qr} = {$qg}.{$qmax} ORDER BY {$qg}.{$qfirst} ASC"];
+            $statement = (new Translator($dialect, $catalog, $opts))->wrapStatement('latestMember', [
+                'input' => [$qi], 'prefix' => [$sql], 'groups' => [$qg], 'rev' => [$qr],
+                'maxRev' => [$qmax], 'firstRev' => [$qfirst], 'key' => [$key],
+            ], $sql, $source['pos']);
             $continuation = $helpers['wrap'](Optimizer::buildPipeline(['t' => 'var', 'name' => '_INPUT', 'pos' => $steps[$at]['pos']], array_slice($steps, $at)));
             return new HybridPlan(['dialect' => $dialect,
-                'sqlStatement' => new Fragment($parts, 'STATEMENT', $dialect, $sql->params, $sql->paramKinds, $sql->caveats),
+                'sqlStatement' => $statement,
                 'sqlPrefixAst' => $prefix, 'continuationAst' => $continuation, 'continuationProgram' => new Program('', $continuation),
                 'sourceTables' => [$rel['from']], 'selectedMember' => ['partition_key' => $partition, 'revision_key' => $revision]]);
         } catch (SqlError $e) { return null; }

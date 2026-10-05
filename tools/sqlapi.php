@@ -144,4 +144,13 @@ foreach ([1, 2, 3] as $k) {
 Map::reset();
 say('guard.reuse.after-reset', $refuses(fn () => Sql::translate(Sel::compile('N + 1'), 'probe-badguard', $named)));
 
+// A builder registered on `skel` has no template to fill: the LIMIT it would
+// spell is refused, so the TAKE stays in memory (sql/MAP.md §5).
+Map::defineBuilder('mariadb', 'skel', 'limit',
+    static fn (Emit $emit, array $args, $at): Fragment => new Fragment(['LIMIT 1'], 'TEXT', $emit->dialect()));
+$plan = Sql::planHybrid(Sel::compile('ORDERS .> TAKE(2)'), 'mariadb', $bindings);
+say('skel.builder.plan', $plan->pureSql ? 'pure_sql' : ($plan->pureMemory ? 'pure_memory' : 'hybrid'));
+say('skel.builder.statement', $plan->sqlStatement ? $plan->sqlStatement->asStatement() : '-');
+Map::reset();
+
 echo implode("\n", $out), "\n";

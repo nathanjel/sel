@@ -413,3 +413,21 @@ pure_memory
 --- tables
 r
 ===
+
+### name: plan.latest-member.fallback.refused-by-the-dialect
+--- note
+A dialect that refuses the latestMember skeleton -- a server with no WITH -- loses only the strategy: the grouping stays in memory and nothing is raised.
+--- dialect
+old-mysql
+--- register
+[{"dialect": "old-mysql", "extends": "mysql", "version": "5.7"},
+ {"define": ["old-mysql", "skel", "latestMember", "MySQL before 8.0 has no WITH"]}]
+--- bindings
+{"R":{"kind":"relation","from":"r","uniqueKey":"id","fields":{"ID":{"kind":"column","column":"id","type":"NUM"},"FK":{"kind":"column","column":"fk","type":"TEXT"}}}}
+--- source
+R .> BUCKET(_["fk"]) .> MAP(RECORD("entity", _K, "latest", TOP_BY(_, _["id"], "DESC", 1)))
+--- plan
+pure_memory
+--- tables
+r
+===

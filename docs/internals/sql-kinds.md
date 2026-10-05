@@ -283,7 +283,10 @@ NULL. PostgreSQL evaluates `<cast of B>` for *every* row before the enclosing
 NULL, so on PostgreSQL the `SUM` adds up the guarded cast — `SUM(CASE WHEN (<test of
 B>) THEN <cast of B> ELSE NULL END)` — and the outer test discards the sum exactly as
 before (`warrant.sum.unknown-body-is-guarded-as-a-whole.postgresql`, measured on
-PostgreSQL 17 by the rows oracle). A `columns` unroll needs no such form: it is a chain of `+`, NULL
+PostgreSQL 17 by the rows oracle). The form is the dialect's `guardedSum` skeleton
+(`sql/MAP.md` §5.1): `ansi` guards the inner cast, because the standard raises on
+such a cast as PostgreSQL does, and `mysql-family`, whose cast answers 0 with a
+warning, leaves it bare — so a registered dialect inherits its parent's form. A `columns` unroll needs no such form: it is a chain of `+`, NULL
 propagates through it, and `warrant.sum.unknown-column-in-a-columns-unroll-is-guarded`
 pins the plain operand guard. **Open:** a `SUM` body that is *compound* (`_["QTY"] * 1`)
 gets the operand guard inside the `SUM` and has the skip-NULL hole; the old

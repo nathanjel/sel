@@ -77,6 +77,9 @@ type relationalPlan struct {
 	OrderBy      []relationalOrder
 	Limit        *int64
 	Offset       *int64
+	// LimitPos is the last TAKE, TOP or DROP that set Limit or Offset: where a
+	// dialect that cannot spell the clause refuses it (sql/MAP.md §5.1).
+	LimitPos Pos
 }
 
 func newRelationalPlan() *relationalPlan {

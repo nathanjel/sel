@@ -189,6 +189,11 @@ constexpr Entry d0_ansi_skel[] = {
     {.key = "inRelation", .kind = EntryKind::Template, .one = "(({needle} IN (SELECT {body} FROM {from} WHERE {corr})) IS TRUE)"},
     {.key = "prefilter", .kind = EntryKind::Template, .one = "EXISTS (SELECT 1 FROM {from} WHERE {corr} AND {body})"},
     {.key = "join", .kind = EntryKind::Refusal, .reason = {.present = true, .text = "LISTAGG is SQL:2016 and is spelled differently by every server that has it"}},
+    {.key = "guardedSum", .kind = EntryKind::Template, .one = "CASE WHEN COUNT(*) = COUNT(CASE WHEN {test} THEN 1 END) THEN COALESCE(SUM(CASE WHEN {test} THEN {body} ELSE NULL END), 0) ELSE NULL END"},
+    {.key = "limit", .kind = EntryKind::Template, .one = "FETCH FIRST {limit} ROWS ONLY"},
+    {.key = "limitOffset", .kind = EntryKind::Template, .one = "OFFSET {offset} ROWS FETCH FIRST {limit} ROWS ONLY"},
+    {.key = "offsetOnly", .kind = EntryKind::Template, .one = "OFFSET {offset} ROWS"},
+    {.key = "latestMember", .kind = EntryKind::Template, .one = "WITH {input} AS ({prefix}), {groups} AS (SELECT MAX({rev}) AS {maxRev}, MIN({rev}) AS {firstRev} FROM {input} GROUP BY {key}) SELECT {input}.* FROM {input} JOIN {groups} ON {input}.{rev} = {groups}.{maxRev} ORDER BY {groups}.{firstRev} ASC"},
 };
 
 // --- mariadb -----------------------------------------------------------------
@@ -379,6 +384,11 @@ constexpr Entry d1_mariadb_skel[] = {
     {.key = "inRelation", .kind = EntryKind::Template, .one = "(({needle} IN (SELECT {body} FROM {from} WHERE {corr})) IS TRUE)"},
     {.key = "prefilter", .kind = EntryKind::Template, .one = "EXISTS (SELECT 1 FROM {from} WHERE {corr} AND {body})"},
     {.key = "join", .kind = EntryKind::Refusal, .reason = {.present = true, .text = "GROUP_CONCAT does not specify an order without an ORDER BY, and a relation binding has no key to order by; SEL's JOIN concatenates in insertion order"}},
+    {.key = "guardedSum", .kind = EntryKind::Template, .one = "CASE WHEN COUNT(*) = COUNT(CASE WHEN {test} THEN 1 END) THEN COALESCE(SUM({body}), 0) ELSE NULL END"},
+    {.key = "limit", .kind = EntryKind::Template, .one = "LIMIT {limit}"},
+    {.key = "limitOffset", .kind = EntryKind::Template, .one = "LIMIT {limit} OFFSET {offset}"},
+    {.key = "offsetOnly", .kind = EntryKind::Template, .one = "LIMIT 18446744073709551615 OFFSET {offset}"},
+    {.key = "latestMember", .kind = EntryKind::Template, .one = "WITH {input} AS ({prefix}), {groups} AS (SELECT MAX({rev}) AS {maxRev}, MIN({rev}) AS {firstRev} FROM {input} GROUP BY {key}) SELECT {input}.* FROM {input} JOIN {groups} ON {input}.{rev} = {groups}.{maxRev} ORDER BY {groups}.{firstRev} ASC"},
 };
 
 // --- mysql -------------------------------------------------------------------
@@ -569,6 +579,11 @@ constexpr Entry d2_mysql_skel[] = {
     {.key = "inRelation", .kind = EntryKind::Template, .one = "(({needle} IN (SELECT {body} FROM {from} WHERE {corr})) IS TRUE)"},
     {.key = "prefilter", .kind = EntryKind::Template, .one = "EXISTS (SELECT 1 FROM {from} WHERE {corr} AND {body})"},
     {.key = "join", .kind = EntryKind::Refusal, .reason = {.present = true, .text = "GROUP_CONCAT does not specify an order without an ORDER BY, and a relation binding has no key to order by; SEL's JOIN concatenates in insertion order"}},
+    {.key = "guardedSum", .kind = EntryKind::Template, .one = "CASE WHEN COUNT(*) = COUNT(CASE WHEN {test} THEN 1 END) THEN COALESCE(SUM({body}), 0) ELSE NULL END"},
+    {.key = "limit", .kind = EntryKind::Template, .one = "LIMIT {limit}"},
+    {.key = "limitOffset", .kind = EntryKind::Template, .one = "LIMIT {limit} OFFSET {offset}"},
+    {.key = "offsetOnly", .kind = EntryKind::Template, .one = "LIMIT 18446744073709551615 OFFSET {offset}"},
+    {.key = "latestMember", .kind = EntryKind::Template, .one = "WITH {input} AS ({prefix}), {groups} AS (SELECT MAX({rev}) AS {maxRev}, MIN({rev}) AS {firstRev} FROM {input} GROUP BY {key}) SELECT {input}.* FROM {input} JOIN {groups} ON {input}.{rev} = {groups}.{maxRev} ORDER BY {groups}.{firstRev} ASC"},
 };
 
 // --- mysql-family ------------------------------------------------------------
@@ -759,6 +774,11 @@ constexpr Entry d3_mysql_family_skel[] = {
     {.key = "inRelation", .kind = EntryKind::Template, .one = "(({needle} IN (SELECT {body} FROM {from} WHERE {corr})) IS TRUE)"},
     {.key = "prefilter", .kind = EntryKind::Template, .one = "EXISTS (SELECT 1 FROM {from} WHERE {corr} AND {body})"},
     {.key = "join", .kind = EntryKind::Refusal, .reason = {.present = true, .text = "GROUP_CONCAT does not specify an order without an ORDER BY, and a relation binding has no key to order by; SEL's JOIN concatenates in insertion order"}},
+    {.key = "guardedSum", .kind = EntryKind::Template, .one = "CASE WHEN COUNT(*) = COUNT(CASE WHEN {test} THEN 1 END) THEN COALESCE(SUM({body}), 0) ELSE NULL END"},
+    {.key = "limit", .kind = EntryKind::Template, .one = "LIMIT {limit}"},
+    {.key = "limitOffset", .kind = EntryKind::Template, .one = "LIMIT {limit} OFFSET {offset}"},
+    {.key = "offsetOnly", .kind = EntryKind::Template, .one = "LIMIT 18446744073709551615 OFFSET {offset}"},
+    {.key = "latestMember", .kind = EntryKind::Template, .one = "WITH {input} AS ({prefix}), {groups} AS (SELECT MAX({rev}) AS {maxRev}, MIN({rev}) AS {firstRev} FROM {input} GROUP BY {key}) SELECT {input}.* FROM {input} JOIN {groups} ON {input}.{rev} = {groups}.{maxRev} ORDER BY {groups}.{firstRev} ASC"},
 };
 
 // --- postgresql --------------------------------------------------------------
@@ -784,6 +804,7 @@ constexpr Lexical d4_postgresql_lexical[] = {
     {.key = "textCast", .kind = LexKind::Text, .text = "CAST({0} AS TEXT)"},
     {.key = "sargablePrefilter", .kind = LexKind::Text, .text = "false"},
     {.key = "numericGuard", .kind = LexKind::Text, .text = "CASE WHEN ({textCast:0} ~ '^-?[0-9]+(\\.[0-9]+)?$') THEN CAST({0} AS NUMERIC) ELSE NULL END"},
+    {.key = "identifierBytes", .kind = LexKind::Text, .text = "63"},
 };
 constexpr Keyed d4_postgresql_ops8[] = {
     {.key = "text", .value = {.present = true, .text = "({textCast:0} || {textCast:1})"}},
@@ -935,6 +956,11 @@ constexpr Entry d4_postgresql_skel[] = {
     {.key = "inRelation", .kind = EntryKind::Template, .one = "(({needle} IN (SELECT {body} FROM {from} WHERE {corr})) IS TRUE)"},
     {.key = "prefilter", .kind = EntryKind::Template, .one = "EXISTS (SELECT 1 FROM {from} WHERE {corr} AND {body})"},
     {.key = "join", .kind = EntryKind::Refusal, .reason = {.present = true, .text = "LISTAGG is SQL:2016 and is spelled differently by every server that has it"}},
+    {.key = "guardedSum", .kind = EntryKind::Template, .one = "CASE WHEN COUNT(*) = COUNT(CASE WHEN {test} THEN 1 END) THEN COALESCE(SUM(CASE WHEN {test} THEN {body} ELSE NULL END), 0) ELSE NULL END"},
+    {.key = "limit", .kind = EntryKind::Template, .one = "LIMIT {limit}"},
+    {.key = "limitOffset", .kind = EntryKind::Template, .one = "LIMIT {limit} OFFSET {offset}"},
+    {.key = "offsetOnly", .kind = EntryKind::Template, .one = "OFFSET {offset}"},
+    {.key = "latestMember", .kind = EntryKind::Template, .one = "WITH {input} AS ({prefix}), {groups} AS (SELECT MAX({rev}) AS {maxRev}, MIN({rev}) AS {firstRev} FROM {input} GROUP BY {key}) SELECT {input}.* FROM {input} JOIN {groups} ON {input}.{rev} = {groups}.{maxRev} ORDER BY {groups}.{firstRev} ASC"},
 };
 
 // --- sqlite ------------------------------------------------------------------
@@ -1118,6 +1144,11 @@ constexpr Entry d5_sqlite_skel[] = {
     {.key = "inRelation", .kind = EntryKind::Template, .one = "(({needle} IN (SELECT {body} FROM {from} WHERE {corr})) IS TRUE)"},
     {.key = "prefilter", .kind = EntryKind::Template, .one = "EXISTS (SELECT 1 FROM {from} WHERE {corr} AND {body})"},
     {.key = "join", .kind = EntryKind::Refusal, .reason = {.present = true, .text = "LISTAGG is SQL:2016 and is spelled differently by every server that has it"}},
+    {.key = "guardedSum", .kind = EntryKind::Template, .one = "CASE WHEN COUNT(*) = COUNT(CASE WHEN {test} THEN 1 END) THEN COALESCE(SUM(CASE WHEN {test} THEN {body} ELSE NULL END), 0) ELSE NULL END"},
+    {.key = "limit", .kind = EntryKind::Template, .one = "LIMIT {limit}"},
+    {.key = "limitOffset", .kind = EntryKind::Template, .one = "LIMIT {limit} OFFSET {offset}"},
+    {.key = "offsetOnly", .kind = EntryKind::Template, .one = "LIMIT -1 OFFSET {offset}"},
+    {.key = "latestMember", .kind = EntryKind::Template, .one = "WITH {input} AS ({prefix}), {groups} AS (SELECT MAX({rev}) AS {maxRev}, MIN({rev}) AS {firstRev} FROM {input} GROUP BY {key}) SELECT {input}.* FROM {input} JOIN {groups} ON {input}.{rev} = {groups}.{maxRev} ORDER BY {groups}.{firstRev} ASC"},
 };
 
 // --- the map ----------------------------------------------------------------
@@ -1327,6 +1358,11 @@ constexpr std::string_view slots5[] = {"from", "corr"};
 constexpr std::string_view slots6[] = {"from", "corr", "body"};
 constexpr std::string_view slots7[] = {"from", "corr", "body", "sep"};
 constexpr std::string_view slots8[] = {"needle", "from", "corr", "body"};
+constexpr std::string_view slots9[] = {"test", "body"};
+constexpr std::string_view slots10[] = {"limit"};
+constexpr std::string_view slots11[] = {"limit", "offset"};
+constexpr std::string_view slots12[] = {"offset"};
+constexpr std::string_view slots13[] = {"input", "prefix", "groups", "rev", "maxRev", "firstRev", "key"};
 constexpr Names SKEL_SLOTS[] = {
     {.key = "case", .names = slots0},
     {.key = "caseBranch", .names = slots1},
@@ -1337,6 +1373,11 @@ constexpr Names SKEL_SLOTS[] = {
     {.key = "prefilter", .names = slots6},
     {.key = "join", .names = slots7},
     {.key = "inRelation", .names = slots8},
+    {.key = "guardedSum", .names = slots9},
+    {.key = "limit", .names = slots10},
+    {.key = "limitOffset", .names = slots11},
+    {.key = "offsetOnly", .names = slots12},
+    {.key = "latestMember", .names = slots13},
 };
 constexpr LexType LEX_TYPES[] = {
     {.key = "identQuote", .escapes = false},
@@ -1358,6 +1399,7 @@ constexpr LexType LEX_TYPES[] = {
     {.key = "numericGuard", .escapes = false},
     {.key = "sargablePrefilter", .escapes = false},
     {.key = "numericCastScale", .escapes = false},
+    {.key = "identifierBytes", .escapes = false},
 };
 
 constexpr Rules RULES = {

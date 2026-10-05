@@ -63,29 +63,26 @@ func (t *translator) checkAlias(name string, pos Pos) {
 }
 
 // recordFields is the fields of a RECORD call, with each key held to checkAlias,
-// and on PostgreSQL to its 63-byte identifier limit: the server truncates a
-// longer alias, so two keys sharing their first 63 bytes would name one column
-// and SEL's two record keys would become one.
+// and where the dialect declares lexical.identifierBytes (PostgreSQL: 63) to that
+// limit: the server keeps the whole characters that fit and drops the rest, so
+// two keys that agree on what it keeps would name one column and SEL's two record
+// keys would become one (sql/MAP.md §3.1).
 func (t *translator) recordFields(node *sNode) []pair[string, *sNode] {
 	fields := recordFields(node)
-	pg := false
-	for _, d := range Chain(t.dialect) {
-		if d == "postgresql" {
-			pg = true
-		}
-	}
+	limit, cuts := identifierBytes(t.dialect)
 	seen := make(map[string]string)
 	for i, f := range fields {
 		pos := node.Kids[2*i].Pos
 		t.checkAlias(f.Key, pos)
-		if pg {
-			short := f.Key
-			if len(short) > 63 {
-				short = short[:63]
+		if cuts {
+			end := min(limit, len(f.Key))
+			for end > 0 && end < len(f.Key) && f.Key[end]&0xC0 == 0x80 {
+				end--
 			}
+			short := f.Key[:end]
 			if prev, dup := seen[short]; dup && prev != f.Key {
 				refuse("E_SQL_UNSUPPORTED",
-					fmt.Sprintf("the RECORD key %q collides with an earlier key after PostgreSQL truncates identifiers to 63 bytes", f.Key), pos)
+					fmt.Sprintf("the RECORD key %q collides with an earlier key after dialect %s truncates identifiers to %d bytes", f.Key, t.dialect, limit), pos)
 			}
 			seen[short] = f.Key
 		}
@@ -641,6 +638,7 @@ func (t *translator) AnalyzePipeline(ast *sNode) *relationalPlan {
 			} else if lim < *plan.Limit {
 				plan.Limit = &lim
 			}
+			plan.LimitPos = step.Pos
 
 		case "DROP":
 			t.requireOrderSurvives(plan, "DROP", step.Pos)
@@ -665,6 +663,7 @@ func (t *translator) AnalyzePipeline(ast *sNode) *relationalPlan {
 				newOff = currOff + skipped
 			}
 			plan.Offset = &newOff
+			plan.LimitPos = step.Pos
 
 		case "SORT", "SORT_DESC", "SORT_BY", "TOP", "TOP_DESC", "TOP_BY":
 			// Sorts are stable, so an earlier sort is the later one's tie-break; a derived
@@ -868,6 +867,7 @@ func (t *translator) analyzeSortStep(step *sNode, plan *relationalPlan) {
 		} else if lim < *plan.Limit {
 			plan.Limit = &lim
 		}
+		plan.LimitPos = step.Pos
 	}
 
 	if name == "SORT" || name == "SORT_DESC" || name == "TOP" || name == "TOP_DESC" {
@@ -1273,23 +1273,27 @@ func (t *translator) CompileStatement(plan *relationalPlan) *Fragment {
 		}
 	}
 
-	// 7. LIMIT / OFFSET clause
-	if plan.Limit != nil && plan.Offset != nil {
-		addSql(fmt.Sprintf(" LIMIT %d OFFSET %d", *plan.Limit, *plan.Offset))
-	} else if plan.Limit != nil {
-		addSql(fmt.Sprintf(" LIMIT %d", *plan.Limit))
-	} else if plan.Offset != nil {
-		ch := Chain(t.dialect)
-		hasTarget := func(target string) bool {
-			return containsString(ch, target)
+	// 7. LIMIT / OFFSET clause: the dialect's limit, limitOffset and offsetOnly
+	// skeletons (sql/MAP.md §5.1); a refusal blames the last TAKE, TOP or DROP.
+	if plan.Limit != nil || plan.Offset != nil {
+		key, counts := "limitOffset", slotMap{}
+		if plan.Limit == nil {
+			key = "offsetOnly"
+		} else if plan.Offset == nil {
+			key = "limit"
 		}
-		if hasTarget("mariadb") || hasTarget("mysql") || hasTarget("mysql-family") {
-			addSql(fmt.Sprintf(" LIMIT 18446744073709551615 OFFSET %d", *plan.Offset))
-		} else if hasTarget("sqlite") {
-			addSql(fmt.Sprintf(" LIMIT -1 OFFSET %d", *plan.Offset))
-		} else {
-			addSql(fmt.Sprintf(" OFFSET %d", *plan.Offset))
+		if plan.Limit != nil {
+			counts = append(counts, pair[string, []slot]{Key: "limit", Val: []slot{stringSlot(strconv.FormatInt(*plan.Limit, 10))}})
 		}
+		if plan.Offset != nil {
+			counts = append(counts, pair[string, []slot]{Key: "offset", Val: []slot{stringSlot(strconv.FormatInt(*plan.Offset, 10))}})
+		}
+		var clause strings.Builder
+		clause.WriteString(" ")
+		for _, p := range t.fillNamed(t.skeleton(key, plan.LimitPos), counts, plan.LimitPos) {
+			clause.WriteString(p.Sql)
+		}
+		addSql(clause.String())
 	}
 
 	out := NewFragment(parts, KindStatement, t.dialect, t.params, t.paramKinds, t.caveats)

@@ -626,7 +626,9 @@ func latestFieldName(n *sel.Node) *string {
 }
 
 func tryLatestMember(source *sel.Node, steps []*sel.Node, dialect string, catalog *Bindings, opts Options, helpers helpersContext) *HybridPlan {
-	if dialect != "mariadb" && dialect != "mysql" && dialect != "postgresql" && dialect != "sqlite" {
+	// The statement is the dialect's latestMember skeleton (sql/MAP.md §5.2); a
+	// dialect that refuses it keeps the grouping in memory.
+	if rec, ok := Entry(dialect, "skel", "latestMember").(*EntryRecord); !ok || rec == nil || rec.Kind != EntryKindTemplate {
 		return nil
 	}
 	if !catalog.Has(source.S) {
@@ -750,9 +752,29 @@ func tryLatestMember(source *sel.Node, steps []*sel.Node, dialect string, catalo
 	keyFrag := emit.TextOperand(NewFragment([]Part{{false, emit.Ident(*partition), 0}}, pf.Type, dialect, nil, nil, nil))
 	keyStr := keyFrag.AsValue(ModeInline)
 
-	parts := []Part{{false, "WITH " + qi + " AS (", 0}}
-	parts = append(parts, sql.Parts...)
-	parts = append(parts, Part{false, "), " + qg + " AS (SELECT MAX(" + qr + ") AS " + qmax + ", MIN(" + qr + ") AS " + qfirst + " FROM " + qi + " GROUP BY " + keyStr + ") SELECT " + qi + ".* FROM " + qi + " JOIN " + qg + " ON " + qi + "." + qr + " = " + qg + "." + qmax + " ORDER BY " + qg + "." + qfirst + " ASC", 0})
+	// The translator's own skeleton lookup: a refusal, or a caveat under strict,
+	// leaves the grouping in memory, and the caveat otherwise joins the statement's.
+	tr := newTranslator(dialect, catalog, opts)
+	var parts []Part
+	if refusal, _ := catch(func() {
+		parts = tr.fillNamed(tr.skeleton("latestMember", source.Pos), slotMap{
+			{Key: "input", Val: []slot{stringSlot(qi)}},
+			{Key: "prefix", Val: []slot{fragmentSlot(sql)}},
+			{Key: "groups", Val: []slot{stringSlot(qg)}},
+			{Key: "rev", Val: []slot{stringSlot(qr)}},
+			{Key: "maxRev", Val: []slot{stringSlot(qmax)}},
+			{Key: "firstRev", Val: []slot{stringSlot(qfirst)}},
+			{Key: "key", Val: []slot{stringSlot(keyStr)}},
+		}, source.Pos)
+	}); refusal != nil {
+		return nil
+	}
+	caveats := append([]string(nil), sql.Caveats...)
+	for _, c := range tr.caveats {
+		if !containsString(caveats, c) {
+			caveats = append(caveats, c)
+		}
+	}
 
 	remaining := steps[at:]
 	continuation := helpers.wrap(sel.BuildPipeline(varNode("_INPUT", steps[at].Pos), remaining))
@@ -761,7 +783,7 @@ func tryLatestMember(source *sel.Node, steps []*sel.Node, dialect string, catalo
 	return &HybridPlan{
 		Dialect:               dialect,
 		IsHybrid:              true,
-		SqlStatement:          NewFragment(parts, KindStatement, dialect, sql.Params, sql.ParamKinds, sql.Caveats),
+		SqlStatement:          NewFragment(parts, KindStatement, dialect, sql.Params, sql.ParamKinds, caveats),
 		SqlPrefixAst:          prefix,
 		ContinuationAst:       continuation,
 		ContinuationProgram:   continuationProg,

@@ -148,5 +148,15 @@ for k in (1, 2, 3):
 sqlmap.reset()
 say('guard.reuse.after-reset', refuses(lambda: Sql.translate(sel.compile('N + 1'), 'probe-badguard', NAMED)))
 
+# A builder registered on `skel` has no template to fill: the LIMIT it would
+# spell is refused, so the TAKE stays in memory (sql/MAP.md §5). Python raised a
+# KeyError out of the planner.
+sqlmap.define_builder('mariadb', 'skel', 'limit',
+                      lambda emit, args, _at: Fragment(['LIMIT 1'], 'TEXT', emit.dialect()))
+plan = Sql.plan_hybrid(sel.compile('ORDERS .> TAKE(2)'), 'mariadb', BINDINGS)
+say('skel.builder.plan', 'pure_sql' if plan.pure_sql else 'pure_memory' if plan.pure_memory else 'hybrid')
+say('skel.builder.statement', plan.sql_statement.as_statement() if plan.sql_statement is not None else '-')
+sqlmap.reset()
+
 sys.stdout.reconfigure(encoding='utf-8', newline='\n')
 sys.stdout.write('\n'.join(out) + '\n')

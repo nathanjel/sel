@@ -321,7 +321,22 @@ export const DIALECTS = {
       "prefilter": {
         "tpl": "EXISTS (SELECT 1 FROM {from} WHERE {corr} AND {body})"
       },
-      "join": "LISTAGG is SQL:2016 and is spelled differently by every server that has it"
+      "join": "LISTAGG is SQL:2016 and is spelled differently by every server that has it",
+      "guardedSum": {
+        "tpl": "CASE WHEN COUNT(*) = COUNT(CASE WHEN {test} THEN 1 END) THEN COALESCE(SUM(CASE WHEN {test} THEN {body} ELSE NULL END), 0) ELSE NULL END"
+      },
+      "limit": {
+        "tpl": "FETCH FIRST {limit} ROWS ONLY"
+      },
+      "limitOffset": {
+        "tpl": "OFFSET {offset} ROWS FETCH FIRST {limit} ROWS ONLY"
+      },
+      "offsetOnly": {
+        "tpl": "OFFSET {offset} ROWS"
+      },
+      "latestMember": {
+        "tpl": "WITH {input} AS ({prefix}), {groups} AS (SELECT MAX({rev}) AS {maxRev}, MIN({rev}) AS {firstRev} FROM {input} GROUP BY {key}) SELECT {input}.* FROM {input} JOIN {groups} ON {input}.{rev} = {groups}.{maxRev} ORDER BY {groups}.{firstRev} ASC"
+      }
     }
   },
   "mariadb": {
@@ -735,7 +750,22 @@ export const DIALECTS = {
       "prefilter": {
         "tpl": "EXISTS (SELECT 1 FROM {from} WHERE {corr} AND {body})"
       },
-      "join": "GROUP_CONCAT does not specify an order without an ORDER BY, and a relation binding has no key to order by; SEL's JOIN concatenates in insertion order"
+      "join": "GROUP_CONCAT does not specify an order without an ORDER BY, and a relation binding has no key to order by; SEL's JOIN concatenates in insertion order",
+      "guardedSum": {
+        "tpl": "CASE WHEN COUNT(*) = COUNT(CASE WHEN {test} THEN 1 END) THEN COALESCE(SUM({body}), 0) ELSE NULL END"
+      },
+      "limit": {
+        "tpl": "LIMIT {limit}"
+      },
+      "limitOffset": {
+        "tpl": "LIMIT {limit} OFFSET {offset}"
+      },
+      "offsetOnly": {
+        "tpl": "LIMIT 18446744073709551615 OFFSET {offset}"
+      },
+      "latestMember": {
+        "tpl": "WITH {input} AS ({prefix}), {groups} AS (SELECT MAX({rev}) AS {maxRev}, MIN({rev}) AS {firstRev} FROM {input} GROUP BY {key}) SELECT {input}.* FROM {input} JOIN {groups} ON {input}.{rev} = {groups}.{maxRev} ORDER BY {groups}.{firstRev} ASC"
+      }
     }
   },
   "mysql": {
@@ -1148,7 +1178,22 @@ export const DIALECTS = {
       "prefilter": {
         "tpl": "EXISTS (SELECT 1 FROM {from} WHERE {corr} AND {body})"
       },
-      "join": "GROUP_CONCAT does not specify an order without an ORDER BY, and a relation binding has no key to order by; SEL's JOIN concatenates in insertion order"
+      "join": "GROUP_CONCAT does not specify an order without an ORDER BY, and a relation binding has no key to order by; SEL's JOIN concatenates in insertion order",
+      "guardedSum": {
+        "tpl": "CASE WHEN COUNT(*) = COUNT(CASE WHEN {test} THEN 1 END) THEN COALESCE(SUM({body}), 0) ELSE NULL END"
+      },
+      "limit": {
+        "tpl": "LIMIT {limit}"
+      },
+      "limitOffset": {
+        "tpl": "LIMIT {limit} OFFSET {offset}"
+      },
+      "offsetOnly": {
+        "tpl": "LIMIT 18446744073709551615 OFFSET {offset}"
+      },
+      "latestMember": {
+        "tpl": "WITH {input} AS ({prefix}), {groups} AS (SELECT MAX({rev}) AS {maxRev}, MIN({rev}) AS {firstRev} FROM {input} GROUP BY {key}) SELECT {input}.* FROM {input} JOIN {groups} ON {input}.{rev} = {groups}.{maxRev} ORDER BY {groups}.{firstRev} ASC"
+      }
     }
   },
   "mysql-family": {
@@ -1561,7 +1606,22 @@ export const DIALECTS = {
       "prefilter": {
         "tpl": "EXISTS (SELECT 1 FROM {from} WHERE {corr} AND {body})"
       },
-      "join": "GROUP_CONCAT does not specify an order without an ORDER BY, and a relation binding has no key to order by; SEL's JOIN concatenates in insertion order"
+      "join": "GROUP_CONCAT does not specify an order without an ORDER BY, and a relation binding has no key to order by; SEL's JOIN concatenates in insertion order",
+      "guardedSum": {
+        "tpl": "CASE WHEN COUNT(*) = COUNT(CASE WHEN {test} THEN 1 END) THEN COALESCE(SUM({body}), 0) ELSE NULL END"
+      },
+      "limit": {
+        "tpl": "LIMIT {limit}"
+      },
+      "limitOffset": {
+        "tpl": "LIMIT {limit} OFFSET {offset}"
+      },
+      "offsetOnly": {
+        "tpl": "LIMIT 18446744073709551615 OFFSET {offset}"
+      },
+      "latestMember": {
+        "tpl": "WITH {input} AS ({prefix}), {groups} AS (SELECT MAX({rev}) AS {maxRev}, MIN({rev}) AS {firstRev} FROM {input} GROUP BY {key}) SELECT {input}.* FROM {input} JOIN {groups} ON {input}.{rev} = {groups}.{maxRev} ORDER BY {groups}.{firstRev} ASC"
+      }
     }
   },
   "postgresql": {
@@ -1589,7 +1649,8 @@ export const DIALECTS = {
       "placeholder": "?",
       "textCast": "CAST({0} AS TEXT)",
       "sargablePrefilter": "false",
-      "numericGuard": "CASE WHEN ({textCast:0} ~ '^-?[0-9]+(\\.[0-9]+)?$') THEN CAST({0} AS NUMERIC) ELSE NULL END"
+      "numericGuard": "CASE WHEN ({textCast:0} ~ '^-?[0-9]+(\\.[0-9]+)?$') THEN CAST({0} AS NUMERIC) ELSE NULL END",
+      "identifierBytes": "63"
     },
     "ops": {
       "+": {
@@ -1967,7 +2028,22 @@ export const DIALECTS = {
       "prefilter": {
         "tpl": "EXISTS (SELECT 1 FROM {from} WHERE {corr} AND {body})"
       },
-      "join": "LISTAGG is SQL:2016 and is spelled differently by every server that has it"
+      "join": "LISTAGG is SQL:2016 and is spelled differently by every server that has it",
+      "guardedSum": {
+        "tpl": "CASE WHEN COUNT(*) = COUNT(CASE WHEN {test} THEN 1 END) THEN COALESCE(SUM(CASE WHEN {test} THEN {body} ELSE NULL END), 0) ELSE NULL END"
+      },
+      "limit": {
+        "tpl": "LIMIT {limit}"
+      },
+      "limitOffset": {
+        "tpl": "LIMIT {limit} OFFSET {offset}"
+      },
+      "offsetOnly": {
+        "tpl": "OFFSET {offset}"
+      },
+      "latestMember": {
+        "tpl": "WITH {input} AS ({prefix}), {groups} AS (SELECT MAX({rev}) AS {maxRev}, MIN({rev}) AS {firstRev} FROM {input} GROUP BY {key}) SELECT {input}.* FROM {input} JOIN {groups} ON {input}.{rev} = {groups}.{maxRev} ORDER BY {groups}.{firstRev} ASC"
+      }
     }
   },
   "sqlite": {
@@ -2353,7 +2429,22 @@ export const DIALECTS = {
       "prefilter": {
         "tpl": "EXISTS (SELECT 1 FROM {from} WHERE {corr} AND {body})"
       },
-      "join": "LISTAGG is SQL:2016 and is spelled differently by every server that has it"
+      "join": "LISTAGG is SQL:2016 and is spelled differently by every server that has it",
+      "guardedSum": {
+        "tpl": "CASE WHEN COUNT(*) = COUNT(CASE WHEN {test} THEN 1 END) THEN COALESCE(SUM(CASE WHEN {test} THEN {body} ELSE NULL END), 0) ELSE NULL END"
+      },
+      "limit": {
+        "tpl": "LIMIT {limit}"
+      },
+      "limitOffset": {
+        "tpl": "LIMIT {limit} OFFSET {offset}"
+      },
+      "offsetOnly": {
+        "tpl": "LIMIT -1 OFFSET {offset}"
+      },
+      "latestMember": {
+        "tpl": "WITH {input} AS ({prefix}), {groups} AS (SELECT MAX({rev}) AS {maxRev}, MIN({rev}) AS {firstRev} FROM {input} GROUP BY {key}) SELECT {input}.* FROM {input} JOIN {groups} ON {input}.{rev} = {groups}.{maxRev} ORDER BY {groups}.{firstRev} ASC"
+      }
     }
   }
 };
@@ -2892,6 +2983,29 @@ export const RULES = {
       "from",
       "corr",
       "body"
+    ],
+    "guardedSum": [
+      "test",
+      "body"
+    ],
+    "limit": [
+      "limit"
+    ],
+    "limitOffset": [
+      "limit",
+      "offset"
+    ],
+    "offsetOnly": [
+      "offset"
+    ],
+    "latestMember": [
+      "input",
+      "prefix",
+      "groups",
+      "rev",
+      "maxRev",
+      "firstRev",
+      "key"
     ]
   },
   "lexicalTypes": {
@@ -2913,7 +3027,8 @@ export const RULES = {
     "placeholder": "string",
     "numericGuard": "string",
     "sargablePrefilter": "string",
-    "numericCastScale": "string"
+    "numericCastScale": "string",
+    "identifierBytes": "string"
   },
   "templateKeys": [
     "identQuote",

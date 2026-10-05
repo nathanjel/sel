@@ -128,4 +128,15 @@ for (const k of [1, 2, 3]) {
 sqlmap.reset();
 say('guard.reuse.after-reset', refuses(() => Sql.translate(compile('N + 1'), 'probe-badguard', NAMED)));
 
+// A builder registered on `skel` has no template to fill: the LIMIT it would
+// spell is refused, so the TAKE stays in memory (sql/MAP.md §5). JS spelled
+// `undefined` into the statement and PHP nothing at all.
+sqlmap.defineBuilder('mariadb', 'skel', 'limit', (emit) => new Fragment(['LIMIT 1'], 'TEXT', emit.dialect()));
+{
+  const plan = Sql.planHybrid(compile('ORDERS .> TAKE(2)'), 'mariadb', bindings);
+  say('skel.builder.plan', plan.pureSql ? 'pure_sql' : plan.pureMemory ? 'pure_memory' : 'hybrid');
+  say('skel.builder.statement', plan.sqlStatement ? plan.sqlStatement.asStatement() : '-');
+}
+sqlmap.reset();
+
 process.stdout.write(out.join('\n') + '\n');

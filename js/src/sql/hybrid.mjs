@@ -665,9 +665,11 @@ function latestFieldName(n) {
 // _K, k2, TOP_BY(_, _["rev"], "DESC", 1)))` over a relation with a unique
 // revision key keeps, per partition, the row with the highest revision -- in
 // SQL, through a MAX join -- and leaves the grouping itself to the
-// continuation. Null when the program is not that shape.
+// continuation. Null when the program is not that shape, or when the dialect
+// refuses the latestMember skeleton the statement is spelled by (sql/MAP.md §5.2).
 function tryLatestMember(source, steps, dialect, catalog, opts, helpers) {
-  if (!['mariadb', 'mysql', 'postgresql', 'sqlite'].includes(dialect)) return null;
+  const skeleton = sqlmap.entry(dialect, 'skel', 'latestMember');
+  if (skeleton === null || typeof skeleton !== 'object') return null;
   const relation = catalog.get(source.name, source.pos);
   const revision = relation.unique_key;
   const bucketAt = steps.findIndex((s) => s.name === 'BUCKET');
@@ -722,12 +724,17 @@ function tryLatestMember(source, steps, dialect, catalog, opts, helpers) {
     const maxRev = emit.ident('_sel_revision');
     const firstRev = emit.ident('_sel_first');
     const key = emit.textOperand(new Fragment([emit.ident(partition)], partitionField.type, dialect)).asValue();
-    const parts = [`WITH ${input} AS (`, ...sql.parts,
-      `), ${groups} AS (SELECT MAX(${rev}) AS ${maxRev}, MIN(${rev}) AS ${firstRev} FROM ${input} GROUP BY ${key}) `
-      + `SELECT ${input}.* FROM ${input} JOIN ${groups} ON ${input}.${rev} = ${groups}.${maxRev} ORDER BY ${groups}.${firstRev} ASC`];
+    // The translator's own skeleton lookup: a refusal, or a caveat under
+    // strict, is a SqlError, and the caveat otherwise joins the statement's.
+    const translator = new Translator(dialect, catalog, opts ?? {});
+    const parts = translator.fillNamed(translator.skeleton('latestMember', source.pos), {
+      input: [input], prefix: [sql], groups: [groups], rev: [rev],
+      maxRev: [maxRev], firstRev: [firstRev], key: [key],
+    }, source.pos);
+    const caveats = [...new Set([...sql.caveats, ...translator.caveats])];
     const continuation = helpers.wrap(buildPipeline({ t: 'var', name: '_INPUT', pos: steps[bucketAt].pos }, steps.slice(bucketAt)));
     return new HybridPlan({ dialect,
-      sqlStatement: new Fragment(parts, 'STATEMENT', dialect, sql.params, sql.paramKinds, sql.caveats),
+      sqlStatement: new Fragment(parts, 'STATEMENT', dialect, sql.params, sql.paramKinds, caveats),
       sqlPrefixAst: prefix, continuationAst: continuation, continuationProgram: new Program('', continuation),
       sourceTables: [relation.from], selectedMember: { partition_key: partition, revision_key: revision } });
   } catch (e) {

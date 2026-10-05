@@ -447,6 +447,25 @@ func lexicalLocked(dialect, key string) interface{} {
 	return nil
 }
 
+// identifierBytes is lexical.identifierBytes as a count, and false where the
+// dialect keeps every identifier whole: one to nine ASCII digits are the count,
+// anything else (absent, withdrawn, malformed) is no limit, in every host
+// (sql/MAP.md §3).
+func identifierBytes(dialect string) (int, bool) {
+	v, ok := Lexical(dialect, "identifierBytes").(string)
+	if !ok || len(v) < 1 || len(v) > 9 {
+		return 0, false
+	}
+	n := 0
+	for i := 0; i < len(v); i++ {
+		if v[i] < '0' || v[i] > '9' {
+			return 0, false
+		}
+		n = n*10 + int(v[i]-'0')
+	}
+	return n, true
+}
+
 func Entry(dialect, section, key string) interface{} {
 	checkSection(section)
 

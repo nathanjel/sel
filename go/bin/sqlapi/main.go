@@ -246,5 +246,25 @@ func main() {
 		sql.MustTranslate(sel.MustCompile("N + 1"), "probe-badguard", named, sql.Options{})
 	}))
 
+	// A builder registered on `skel` has no template to fill: the LIMIT it would
+	// spell is refused, so the TAKE stays in memory (sql/MAP.md §5).
+	sql.DefineBuilder("mariadb", "skel", "limit", func(emit *sql.Emit, args []*sql.Fragment, pos sel.Pos) *sql.Fragment {
+		return sql.NewFragment([]sql.Part{{Sql: "LIMIT 1"}}, sql.KindText, emit.Dialect(), nil, nil, nil)
+	})
+	plan := sql.PlanHybrid(sel.MustCompile("ORDERS .> TAKE(2)"), "mariadb", bindings, sql.Options{})
+	kind := "hybrid"
+	if plan.PureSql {
+		kind = "pure_sql"
+	} else if plan.PureMemory {
+		kind = "pure_memory"
+	}
+	say("skel.builder.plan", kind)
+	stmt := "-"
+	if plan.SqlStatement != nil {
+		stmt = plan.SqlStatement.AsStatement(sql.ModeInline)
+	}
+	say("skel.builder.statement", stmt)
+	sql.Reset()
+
 	os.Stdout.WriteString(probes.Text())
 }
