@@ -16,7 +16,7 @@ pub enum BinderShape {
 
 #[derive(Clone, Debug)]
 pub struct Binder {
-    pub scope: Option<std::sync::Arc<Vec<Vec<(String, Binder)>>>>,
+    pub scope: Option<std::rc::Rc<Vec<Vec<(String, Binder)>>>>,
     pub shape: BinderShape,
     pub node: Option<SNode>,
     pub column: Option<ColumnSpec>,

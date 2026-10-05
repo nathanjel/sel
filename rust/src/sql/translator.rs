@@ -17,7 +17,7 @@ use crate::sql::map::{
     chain, entry, host_spelling_arity, require_target, version, version_at_least, EntryKind,
     EntryRecord, TemplateValue,
 };
-use crate::sql::node::{CListEntry, SNode, SNodeType};
+use crate::sql::node::{SNode, SNodeType};
 use crate::sql::normalise::normalise;
 use crate::sql::relational_plan::{
     RelationalGroup, RelationalJoin, RelationalPlan, RelationalProjection,
@@ -664,7 +664,7 @@ impl Translator {
 
     fn scoped_node(&self, node: SNode) -> Binder {
         let mut binder = Binder::node(node);
-        binder.scope = Some(std::sync::Arc::new(self.frames.clone()));
+        binder.scope = Some(std::rc::Rc::new(self.frames.clone()));
         binder
     }
 
@@ -2690,10 +2690,7 @@ impl Translator {
         if v.size() > 0 {
             let mut entries = Vec::new();
             for e in v.entries() {
-                entries.push(CListEntry {
-                    key: e.key.clone(),
-                    val: Box::new(self.value_node(&e.val, b, pos)?),
-                });
+                entries.push((e.key.clone(), self.value_node(&e.val, b, pos)?));
             }
             return Ok(SNode::clist(pos, entries));
         }

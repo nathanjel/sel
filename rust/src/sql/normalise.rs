@@ -277,8 +277,8 @@ fn record_stmt(
             s.pos,
         );
     }
-    for entry in &clist.entries {
-        if entry.key == key {
+    for existing in &clist.keys {
+        if *existing == key {
             return refuse(
                 "E_SQL_ASSIGN",
                 format!("{}[{}] is assigned more than once", name, key),
