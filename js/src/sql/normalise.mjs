@@ -6,6 +6,7 @@
 // expression it held, and anything that cannot be is refused with a position.
 
 import { MAX_DEPTH } from '../eval.mjs';
+import { MAX_SQL_NODES } from '../_limits.mjs';
 import { bindingForm } from '../registry.mjs';
 import { childNodes as children } from '../ast.mjs';
 import * as constants from './constants.mjs';
@@ -56,7 +57,41 @@ export function run(ast, constNames = null, ctx = null) {
   // before either guard looks, which is why they must be charged up front.
   const base = ast.t === 'seq' ? 1 : 0;
   for (const s of stmts) record(s, defs, constNames ?? new Map(), ctx, base + 1);
-  return substitute(result, defs, [], base);
+  const out = substitute(result, defs, [], base);
+  // What is READ is charged (§7.4): the result, with every helper it reads
+  // expanded. The translator's walk counts it exactly, at dispatch; but the
+  // planner and the constant tests walk it first, as the tree it renders, and a
+  // doubling chain is exponential to them. So a result past a multiple of the
+  // budget is refused here, with the same code -- a program the walk would answer
+  // or refuse by its own precise count never gets this far.
+  if (expandedSize(out, new Map()) > EARLY_SIZE) {
+    refuse('E_SQL_SIZE',
+      `this program expands to more than ${MAX_SQL_NODES} nodes once every read of a `
+      + 'helper is counted, and the translation stops there');
+  }
+  return out;
+}
+
+const EARLY_SIZE = 2 * MAX_SQL_NODES;
+
+// The size of `root` counted as a tree, from a memo keyed by node identity, so a
+// subtree shared n times is measured once. Iterative, saturating at EARLY_SIZE + 1.
+function expandedSize(root, memo) {
+  const stack = [[root, false]];
+  while (stack.length > 0) {
+    const [node, done] = stack.pop();
+    if (!node || memo.has(node)) continue;
+    const kids = children(node);
+    if (!done) {
+      stack.push([node, true]);
+      for (const k of kids) if (k && !memo.has(k)) stack.push([k, false]);
+      continue;
+    }
+    let size = 1;
+    for (const k of kids) if (k) size = Math.min(size + (memo.get(k) ?? 1), EARLY_SIZE + 1);
+    memo.set(node, size);
+  }
+  return memo.get(root) ?? 1;
 }
 
 // Fold one leading statement into `defs`, or refuse it. `depth` is where the
