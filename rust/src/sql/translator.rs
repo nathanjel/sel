@@ -1291,7 +1291,7 @@ impl Translator {
     }
 
     pub fn case_when(
-        &self,
+        &mut self,
         cond: &Fragment,
         then: &Fragment,
         els: &Fragment,
@@ -1301,8 +1301,9 @@ impl Translator {
             ("cond".to_string(), vec![Slot::Frag(cond.clone())]),
             ("then".to_string(), vec![Slot::Frag(then.clone())]),
         ];
-        let mut t_mut = Translator::new(&self.dialect, None, Options { strict: self.strict });
-        let branch_tpl = t_mut.skeleton("caseBranch", pos)?;
+        // The skeletons through this translator, so a caveat a dialect attaches
+        // to `case`/`caseBranch` is recorded on the translation.
+        let branch_tpl = self.skeleton("caseBranch", pos)?;
         let branch = Fragment::new(
             self.fill_named(&branch_tpl, &branch_slots, pos)?,
             SqlKind::Unknown,
@@ -1312,7 +1313,7 @@ impl Translator {
             Vec::new(),
         );
 
-        let case_tpl = t_mut.skeleton("case", pos)?;
+        let case_tpl = self.skeleton("case", pos)?;
         let slots = vec![
             ("branches".to_string(), vec![Slot::Frag(branch)]),
             ("else".to_string(), vec![Slot::Frag(els.clone())]),
