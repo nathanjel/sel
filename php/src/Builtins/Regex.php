@@ -718,9 +718,8 @@ final class Regex
     {
         $id = count(self::$defs);
         $name = "sel{$id}_";
-        $bits = (int) floor(log($n, 2));
-        while ((1 << ($bits + 1)) <= $n) $bits++;
-        while ((1 << $bits) > $n) $bits--;
+        $bits = 0;                                   // floor(log2(n)), n >= 1
+        while ((2 << $bits) <= $n) $bits++;
         $defs = "(?P<{$name}0>{$bodySrc})";
         for ($j = 1; $j <= $bits; $j++) {
             $prev = $j - 1;
