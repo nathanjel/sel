@@ -591,4 +591,18 @@ check(Binding::raw('x', 'NUM', false, false, false, null, null, true)->spec['pre
 check(Binding::column('c', null, 'NUM', false, false, false, 'binary')->spec['exact'] === true,
     'a collation string still folds into the flags');
 
+// --- Composer's autoload.files: the SQL layer is loaded on first use, not up front ------
+// What `composer require` gives an application: every file composer.json lists, in a
+// fresh process. Evaluating must not load the translator; naming a Sel\Sql class must.
+$composer = json_decode((string) file_get_contents(__DIR__ . '/../composer.json'), true);
+$requires = implode('', array_map(
+    static fn (string $f): string => 'require ' . var_export(realpath(__DIR__ . '/../' . $f), true) . ';',
+    $composer['autoload']['files']));
+$probe = $requires . ' echo \Sel\Sel::evaluate("1 + 1")->asText(), " ",'
+    . ' var_export(class_exists("Sel\\\\Sql\\\\Translator", false), true), " ",'
+    . ' \Sel\Sql\Sql::translate(\Sel\Sel::compile("X > 1"), "sqlite",'
+    . ' ["X" => \Sel\Sql\Binding::column("x", null, "NUM")])->asCondition();';
+$out = shell_exec(escapeshellarg(PHP_BINARY) . ' -r ' . escapeshellarg($probe) . ' 2>&1');
+check(trim((string) $out) === '2 false (CAST("x" AS NUMERIC) > CAST(\'1\' AS NUMERIC))', "composer's autoload.files load the SQL layer lazily: got " . trim((string) $out));
+
 echo "PHP optimizer checks: {$checks} passed\n";
