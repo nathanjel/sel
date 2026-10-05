@@ -23,6 +23,8 @@ except ImportError:
 
 from sel import SelError, Value, compile as sel_compile   # noqa: E402
 
+from _harness import read_text                             # noqa: E402
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 SUITE = os.path.abspath(os.path.join(HERE, '..', '..', 'conformance'))
 
@@ -167,7 +169,7 @@ def describe(value):
 def check(expect, value, error, at):
     space = expect.find(' ')
     form = expect if space < 0 else expect[:space]
-    rest = '' if space < 0 else expect[space + 1:].strip()
+    rest = '' if space < 0 else _trim_ws(expect[space + 1:])
 
     if form == 'error':
         if error is None:
@@ -252,9 +254,7 @@ def main():
 
     for path in files:
         short = os.path.relpath(path, SUITE) if path.startswith(SUITE) else path
-        with open(path, encoding='utf-8') as fh:
-            text = fh.read()
-        for c in parse_selt(text, short):
+        for c in parse_selt(read_text(path), short):
             if c['name'] in seen:
                 suite_errors.append(
                     f'{c["at"]}: duplicate case name {c["name"]} (also {seen[c["name"]]})')

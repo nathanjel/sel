@@ -25,6 +25,8 @@ import sel                                                          # noqa: E402
 from sel.errors import SelError                                     # noqa: E402
 from sel.sql import Binding, Sql, SqlError                          # noqa: E402
 
+from _harness import read_corpus, read_text                         # noqa: E402
+
 # The relations the corpus's pipelines read (tools/gen-programs.mjs --sql), the
 # same in every host's runner: two tables, a NUM join key, a TEXT field whose
 # name both sides share.
@@ -61,32 +63,12 @@ def plan_line(program, dialect: str) -> str:
     return f'{kind} {plan.sql_statement.as_statement("params")}' if plan.sql_statement else kind
 
 
-def read_corpus(text: str) -> list[str]:
-    records: list[list[str]] = []
-    cur: list[str] | None = None
-    # .split('\n') and remove exactly one trailing newline: splitlines() would
-    # also break on \v, \f and U+2028, which the corpus contains deliberately.
-    for line in text.split('\n'):
-        if line.startswith('### '):
-            cur = []
-            records.append(cur)
-            continue
-        if cur is not None:
-            cur.append(line)
-    out = []
-    for lines in records:
-        joined = '\n'.join(lines)
-        out.append(joined[:-1] if joined.endswith('\n') else joined)
-    return out
-
-
 def main(argv: list[str]) -> int:
     path = argv[1]
     dialect = argv[2] if len(argv) > 2 else 'mariadb'
     # `statement`: only translate_statement's inline SQL; see js/bin/sqlfuzz.mjs.
     mode = argv[3] if len(argv) > 3 else 'all'
-    with open(path, encoding='utf-8') as fh:
-        corpus = read_corpus(fh.read())
+    corpus = read_corpus(read_text(path))
 
     lines = []
     for src in corpus:

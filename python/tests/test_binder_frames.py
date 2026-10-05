@@ -6,6 +6,7 @@ nothing bound."""
 import random
 import re
 import runpy
+import sys
 from pathlib import Path
 
 import pytest
@@ -15,6 +16,17 @@ from sel.eval import Context, eval_node
 from sel.registry import lookup
 
 ROOT = Path(__file__).resolve().parents[2]
+
+
+def load_conformance_runner():
+    # The runner imports its sibling `_harness` by bare name, as a script does;
+    # its read_text (bytes, no newline translation) is in the returned globals.
+    bin_dir = str(ROOT / 'python/bin')
+    if bin_dir not in sys.path:
+        sys.path.append(bin_dir)
+    return runpy.run_path(str(ROOT / 'python/bin/conformance.py'))
+
+
 NAMES = ('_', '_K', 'X', 'Y', 'R')
 CONTEXT = {'L': [3, 1, 2], 'R': [{'k': 1}, {'k': 2}], 'S': [{'k': 2}]}
 # Every builtin that pushes a frame, in the forms that bind.
@@ -91,9 +103,9 @@ def test_no_frame_changes_its_names_while_pushed(monkeypatch):
     for src in BINDING:
         evaluate(src, CONTEXT)
     # And every conformance case that can push one (run_case reports, never raises).
-    conformance = runpy.run_path(str(ROOT / 'python/bin/conformance.py'))
+    conformance = load_conformance_runner()
     for path in sorted((ROOT / 'conformance').glob('*.selt')):
-        for case in conformance['parse_selt'](path.read_text(encoding='utf-8'), path.name):
+        for case in conformance['parse_selt'](conformance['read_text'](str(path)), path.name):
             if BINDS.search(case['source']) or (case['setup'] and BINDS.search(case['setup'])):
                 conformance['run_case'](case)
     assert not pushed and not changed, changed[:5]

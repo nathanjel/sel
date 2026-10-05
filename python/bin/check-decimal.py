@@ -24,12 +24,13 @@ except ImportError:
 from sel import decimal as D          # noqa: E402
 from sel.errors import SelError       # noqa: E402
 
+from _harness import read_text        # noqa: E402
+
 
 def main() -> int:
-    with open(sys.argv[1], encoding='utf-8') as fh:
-        # .split('\n'), never .splitlines(): the latter also splits on \v, \f,
-        # \x1c-\x1e, U+0085, U+2028 and U+2029, none of which end a record here.
-        lines = [ln for ln in fh.read().split('\n') if ln != '']
+    # .split('\n'), never .splitlines(): the latter also splits on \v, \f,
+    # \x1c-\x1e, U+0085, U+2028 and U+2029, none of which end a record here.
+    lines = [ln for ln in read_text(sys.argv[1]).split('\n') if ln != '']
 
     failures = []
     # Counted separately from the displayed list: capping both would report "20

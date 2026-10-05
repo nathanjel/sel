@@ -21,34 +21,7 @@ except ImportError:
 
 from sel import SelError, Value, compile as sel_compile   # noqa: E402
 
-
-def read_corpus(text):
-    """A line beginning `### ` starts a record; everything after it is source
-    until the next marker.
-
-    tools/README.md makes one sentence of this normative: *the record is the
-    joined lines with exactly one trailing newline removed*. Three of the four
-    earlier readers got it wrong at least once and produced phantom
-    disagreements that looked like interpreter bugs.
-
-    Two Python-specific ways to get it wrong, both avoided here: .splitlines()
-    would also break records on \\v, \\f, \\x1c-\\x1e, U+0085, U+2028 and U+2029,
-    and .rstrip('\\n') would strip *all* trailing newlines rather than one.
-    """
-    records = []
-    cur = None
-    for line in text.split('\n'):
-        if line.startswith('### '):
-            cur = []
-            records.append(cur)
-            continue
-        if cur is not None:
-            cur.append(line)
-    out = []
-    for lines in records:
-        joined = '\n'.join(lines)
-        out.append(joined[:-1] if joined.endswith('\n') else joined)
-    return out
+from _harness import read_corpus, read_text                # noqa: E402
 
 
 def render(v):
@@ -70,8 +43,7 @@ def main():
     show = '--show' in args
     path = [a for a in args if a != '--show'][0]
 
-    with open(path, encoding='utf-8') as fh:
-        text = fh.read()
+    text = read_text(path)
 
     lines = []
     for src in read_corpus(text):
