@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/nathanjel/sel/go/internal/manifest"
 	"github.com/nathanjel/sel/go/internal/utf8"
 	"github.com/nathanjel/sel/go/internal/vocab"
 	"github.com/nathanjel/sel/go/sel"
@@ -927,40 +928,26 @@ func (t *translator) analyzeSortStep(step *sNode, plan *relationalPlan) {
 		return
 	}
 
-	// SORT_BY or TOP_BY
+	// SORT_BY or TOP_BY: which argument is which is the manifest's
+	// (spec/builtins.json), a text literal last being the direction whatever the
+	// slot before it holds.
+	roles, _ := manifest.Sort(utf8.AsciiUpper(name), len(args), sNodeShape(args))
 	binder := "_"
-	var key *sNode
+	key := args[roles.Key]
 	dir := "ASC"
 	dirPos := step.Pos
-
-	if count == 2 {
-		binder = "_"
-		key = args[1]
-		dir = "ASC"
-	} else if count == 3 {
-		if args[2].T == sNodeText {
-			binder = "_"
-			key = args[1]
-			dir = utf8.AsciiUpper(args[2].Str)
-			dirPos = args[2].Pos
-		} else if isBinderName(args[1]) {
-			binder = args[1].Str
-			key = args[2]
-			dir = "ASC"
-		} else {
-			refuse("E_BAD_ARG", "sort direction must be 'ASC' or 'DESC'", args[2].Pos)
+	if roles.Binder >= 0 {
+		if !isBinderName(args[roles.Binder]) {
+			refuse("E_SQL_SHAPE", fmt.Sprintf("the binder of %s must be a bare name", name), args[roles.Binder].Pos)
 		}
-	} else { // 4: the parser enforced SORT_BY's arity
-		if !isBinderName(args[1]) {
-			refuse("E_SQL_SHAPE", "the binder of SORT_BY must be a bare name", args[1].Pos)
+		binder = args[roles.Binder].Str
+	}
+	if roles.Dir >= 0 {
+		d := args[roles.Dir]
+		if d.T != sNodeText {
+			refuse("E_BAD_ARG", "sort direction must be 'ASC' or 'DESC'", d.Pos)
 		}
-		binder = args[1].Str
-		key = args[2]
-		if args[3].T != sNodeText {
-			refuse("E_BAD_ARG", "sort direction must be 'ASC' or 'DESC'", args[3].Pos)
-		}
-		dir = utf8.AsciiUpper(args[3].Str)
-		dirPos = args[3].Pos
+		dir, dirPos = utf8.AsciiUpper(d.Str), d.Pos
 	}
 
 	if dir != "ASC" && dir != "DESC" {

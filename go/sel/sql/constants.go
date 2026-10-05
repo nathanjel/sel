@@ -116,6 +116,12 @@ func scope(bindings *Bindings) (map[string]bool, *sel.Value) {
 	return names, root
 }
 
+// sNodeShape is a call's argument nodes as manifest.MatchForm reads them.
+type sNodeShape []*sNode
+
+func (s sNodeShape) IsName(i int) bool { return isBinderName(s[i]) }
+func (s sNodeShape) IsText(i int) bool { return s[i].T == sNodeText }
+
 func isBinderName(node *sNode) bool {
 	return node != nil && node.T == sNodeVar && !node.Grouped
 }

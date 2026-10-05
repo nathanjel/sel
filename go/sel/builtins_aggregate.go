@@ -258,37 +258,23 @@ func doSort(args *Args, ctx *Context, forcedDir string) *Value {
 
 	// The form, the binder and the direction are arguments like any other: they
 	// are evaluated and checked whether or not the list has anything in it
-	// (spec §7.4), so an empty list cannot hide a bad direction.
+	// (spec §7.4), so an empty list cannot hide a bad direction. Which argument
+	// is which is the manifest's (spec/builtins.json): a text literal last is the
+	// direction, whatever the slot before it holds.
 	binder := "_"
 	var body *Node
-	if count == 2 {
-		body = args.Node(1)
-	} else if count == 3 {
-		if forcedDir != "" {
-			binder = args.Symbol(1)
-			body = args.Node(2)
-		} else if args.Node(2).T == NodeText {
-			body = args.Node(1)
-			direction = utf8.AsciiUpper(args.Text(2))
-		} else if args.IsSymbol(1) {
-			binder = args.Symbol(1)
-			body = args.Node(2)
-			direction = "ASC"
-		} else {
-			body = args.Node(1)
-			direction = utf8.AsciiUpper(args.Text(2))
-		}
-	} else if count == 4 {
-		binder = args.Symbol(1)
-		body = args.Node(2)
-		direction = utf8.AsciiUpper(args.Text(3))
+	roles := sortRoles(args.name, args.nodes)
+	if roles.Binder >= 0 {
+		binder = args.Symbol(roles.Binder)
 	}
-	if count > 1 && direction != "ASC" && direction != "DESC" {
-		posIdx := 2
-		if count == 4 {
-			posIdx = 3
+	if roles.Key >= 0 {
+		body = args.Node(roles.Key)
+	}
+	if roles.Dir >= 0 {
+		direction = utf8.AsciiUpper(args.Text(roles.Dir))
+		if direction != "ASC" && direction != "DESC" {
+			fail("E_BAD_ARG", "sort direction must be 'ASC' or 'DESC'", args.PosOf(roles.Dir))
 		}
-		fail("E_BAD_ARG", "sort direction must be 'ASC' or 'DESC'", args.PosOf(posIdx))
 	}
 
 	if val.IsNull() {
@@ -401,44 +387,27 @@ func doTop(args *Args, ctx *Context, forcedDir string) *Value {
 	val := args.Val(0)
 	limit := int(args.NonNegInt(args.Count() - 1))
 
-	sortCount := args.Count() - 1
 	binder := "_"
 	var body *Node
 	direction := forcedDir
 	if direction == "" {
 		direction = "ASC"
 	}
-
-	if sortCount == 1 {
+	roles := sortRoles(args.name, args.nodes) // as doSort; the count is last
+	if roles.Key < 0 {
 		binder = ""
-	} else if sortCount == 2 {
-		body = args.Node(1)
-	} else if sortCount == 3 {
-		if forcedDir != "" {
-			binder = args.Symbol(1)
-			body = args.Node(2)
-		} else if args.Node(2).T == NodeText {
-			body = args.Node(1)
-			direction = utf8.AsciiUpper(args.Text(2))
-		} else if args.IsSymbol(1) {
-			binder = args.Symbol(1)
-			body = args.Node(2)
-		} else {
-			body = args.Node(1)
-			direction = utf8.AsciiUpper(args.Text(2))
-		}
-	} else { // 4: the manifest bounds TOP to 2-4 arguments and TOP_BY to 3-5
-		binder = args.Symbol(1)
-		body = args.Node(2)
-		direction = utf8.AsciiUpper(args.Text(3))
 	}
-
-	if direction != "ASC" && direction != "DESC" {
-		dirIdx := 2
-		if sortCount == 4 {
-			dirIdx = 3
+	if roles.Binder >= 0 {
+		binder = args.Symbol(roles.Binder)
+	}
+	if roles.Key >= 0 {
+		body = args.Node(roles.Key)
+	}
+	if roles.Dir >= 0 {
+		direction = utf8.AsciiUpper(args.Text(roles.Dir))
+		if direction != "ASC" && direction != "DESC" {
+			fail("E_BAD_ARG", "sort direction must be 'ASC' or 'DESC'", args.PosOf(roles.Dir))
 		}
-		fail("E_BAD_ARG", "sort direction must be 'ASC' or 'DESC'", args.PosOf(dirIdx))
 	}
 
 	// TOP is TAKE(SORT(...), n): the direction is checked and the keys evaluated

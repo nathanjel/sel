@@ -377,40 +377,17 @@ type optSortInfo struct {
 func bareName(n *Node) bool { return n.T == NodeVar && !n.Grouped }
 
 func getOptSortInfo(step *Node) optSortInfo {
-	args := step.Items
-	count := len(args)
 	info := optSortInfo{binder: "_", valid: true}
-	if step.S == "SORT" || step.S == "SORT_DESC" || step.S == "TOP" || step.S == "TOP_DESC" {
-		sortCount := count // SORT: source[, binder], key; TOP: the same and a count
-		if step.S == "TOP" || step.S == "TOP_DESC" {
-			sortCount = count - 1
-		}
-		switch sortCount {
-		case 1:
-		case 2:
-			info.key = args[1]
-		default:
-			info.binder, info.key, info.valid = args[1].S, args[2], bareName(args[1])
-		}
-	} else if step.S == "SORT_BY" || step.S == "TOP_BY" {
-		sortCount := count // source, [binder,] key[, direction]; TOP_BY adds a count
-		if step.S == "TOP_BY" {
-			sortCount = count - 1
-		}
-		switch {
-		case sortCount == 2:
-			info.key = args[1]
-		case sortCount == 3 && args[2].T == NodeText:
-			// A text literal last is the direction, whatever args[1] looks like.
-			info.key = args[1]
-		case sortCount == 3 && bareName(args[1]):
-			info.binder, info.key = args[1].S, args[2]
-		case sortCount == 3:
-			info.key, info.valid = args[1], false // key and a computed direction
-		default:
-			info.binder, info.key = args[1].S, args[2]
-			info.valid = bareName(args[1]) && args[3].T == NodeText
-		}
+	roles := sortRoles(step.S, step.Items)
+	if roles.Binder >= 0 {
+		info.binder = step.Items[roles.Binder].S
+		info.valid = bareName(step.Items[roles.Binder])
+	}
+	if roles.Key >= 0 {
+		info.key = step.Items[roles.Key]
+	}
+	if roles.Dir >= 0 && step.Items[roles.Dir].T != NodeText {
+		info.valid = false
 	}
 	return info
 }

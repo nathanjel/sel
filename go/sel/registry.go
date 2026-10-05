@@ -105,11 +105,24 @@ type BindingFormResult struct {
 	Binds  []string
 }
 
+// nodeShape is a call's argument nodes as manifest.MatchForm reads them.
+type nodeShape []*Node
+
+func (s nodeShape) IsName(i int) bool { return s[i].T == NodeVar && !s[i].Grouped }
+func (s nodeShape) IsText(i int) bool { return s[i].T == NodeText }
+
+// sortRoles is which argument of a sort-family call is the binder, the key, the
+// direction and the count, from the manifest's forms (-1 where there is none).
+func sortRoles(name string, nodes []*Node) manifest.SortRoles {
+	r, _ := manifest.Sort(utf8.AsciiUpper(name), len(nodes), nodeShape(nodes))
+	return r
+}
+
 // BindingForm decodes the binding form of a call from the builtin manifest.
 // For the SQL layer and the tools; see "The syntax tree" in the package documentation.
 func BindingForm(name string, args []*Node, spec *Spec) *BindingFormResult {
 	key := utf8.AsciiUpper(name)
-	forms, ok := manifest.BindingForms[key]
+	_, ok := manifest.BindingForms[key]
 	if !ok {
 		if spec == nil {
 			spec = lookup(key)
@@ -133,22 +146,7 @@ func BindingForm(name string, args []*Node, spec *Spec) *BindingFormResult {
 		return nil
 	}
 
-	for _, f := range forms {
-		if f.Count != len(args) {
-			continue
-		}
-		if f.WhenArg >= 0 {
-			a := args[f.WhenArg]
-			var matches bool
-			if f.WhenKind == manifest.WhenName {
-				matches = a.T == NodeVar && !a.Grouped
-			} else if f.WhenKind == manifest.WhenText {
-				matches = a.T == NodeText
-			}
-			if !matches {
-				continue
-			}
-		}
+	if f := manifest.MatchForm(key, len(args), nodeShape(args)); f != nil {
 		bound := make([]string, len(f.Binds))
 		copy(bound, f.Binds)
 		for i, sc := range f.Scopes {
