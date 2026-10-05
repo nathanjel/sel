@@ -6284,148 +6284,114 @@ bool join_totality(const std::vector<std::pair<std::string, bool>>& reqs, JoinSi
   return true;
 }
 
-// A binder frame's every entry named NAME set to VALUE.
-inline void link_set_frame(std::vector<std::pair<std::string, Value>>& frame, const std::string& name,
-                           const Value& value) {
-  for (auto& entry : frame) {
-    if (entry.first == name) entry.second = value;
-  }
-}
-
-// NAME, and its lower-case spelling when that differs, into a binder frame.
-inline void link_frame_names(std::vector<std::pair<std::string, Value>>& frame, const std::string& name,
-                             const Value& value) {
-  frame.emplace_back(name, value);
-  const std::string lower = ascii_lower(name);
-  if (lower != name) frame.emplace_back(lower, value);
-}
-
-// One LINK or LINK_LEFT call, split by phase: the deep pass that hands the
-// conjuncts still askable of the rows below to the join below (descend), the
-// pre-filter planner (plan_prefilter), the hash join over an equi predicate
-// and the nested loop for any other. The phases share the call's state
-// through this struct; the per-row work stays in lambdas local to each join
-// loop, so the row path is the one the single function had.
-class LinkCall {
- public:
-  LinkCall(Args& a, Context& ctx, bool left_join)
-      // Taken before anything else is evaluated, so a LINK nested in this one's
-      // sources cannot pick it up by accident; it is handed down on purpose below.
-      : args_(a), ctx_(ctx), left_join_(left_join), prefilter_(std::move(ctx.join_prefilter)), count_(a.count()) {
-    ctx.join_prefilter.reset();
-    if (count_ != 3 && count_ != 5) unreachable_arity(a.name());
-    deep_ = prefilter_ && prefilter_->deep;
-    // The two sides' binder names, decided once: the explicit binders of the
-    // five-argument form, or each side's relation name (else _1/_2).
-    b1_ = count_ == 5 ? a.symbol(2) : bound_name(a.node(0), "_1");
-    b2_ = count_ == 5 ? a.symbol(3) : bound_name(a.node(1), "_2");
-    b1_names_ = {b1_, "_1"};
-    b2_names_ = {b2_, "_2"};
-  }
-  LinkCall(const LinkCall&) = delete;
-  LinkCall& operator=(const LinkCall&) = delete;
-
-  Value run();
-
- private:
-  // What plan_prefilter decides for the hash join: the conjuncts to ask of
-  // each left row (prefix) and of each right row (right_prefix), the binders
-  // they read the row under, and what to report to the FILTER above.
-  struct Prefilter {
-    std::vector<NodePtr> prefix;
-    std::vector<NodePtr> right_prefix;
-    // How many left conjuncts come before the first right one: with a right
-    // row kept on an error, a later left conjunct may not drop a left row --
-    // the joined row would have raised in the right conjunct first.
-    std::optional<std::size_t> left_before_right;
-    std::vector<std::string> binders;
-    JoinReport report;
+Value do_link(Args& a, Context& ctx, bool left_join) {
+  // Taken before anything else is evaluated, so a LINK nested in this one's
+  // sources cannot pick it up by accident; it is handed down on purpose below.
+  std::optional<JoinPrefilter> prefilter = std::move(ctx.join_prefilter);
+  ctx.join_prefilter.reset();
+  const int count = a.count();
+  if (count != 3 && count != 5) unreachable_arity(a.name());
+  const Node& left_node = a.node(0);
+  const Node& right_node = a.node(1);
+  const std::vector<JoinStage> no_stages;
+  const std::vector<std::shared_ptr<JoinSideFacts>> no_sides;
+  const std::vector<JoinStage>& stages = prefilter ? prefilter->stages : no_stages;
+  const bool deep = prefilter && prefilter->deep;
+  const std::vector<std::shared_ptr<JoinSideFacts>>& above = prefilter ? prefilter->above : no_sides;
+  // The upper-cased keys of the joins between a stage's FILTER and this join,
+  // per count of them.
+  std::map<std::size_t, std::unordered_set<std::string>> above_keys_cache;
+  const auto above_keys = [&](const JoinStage& stage) -> const std::unordered_set<std::string>& {
+    auto it = above_keys_cache.find(stage.above);
+    if (it == above_keys_cache.end()) {
+      std::unordered_set<std::string> keys;
+      for (std::size_t i = 0; i < stage.above && i < above.size(); ++i) {
+        keys.insert(above[i]->keys.begin(), above[i]->keys.end());
+      }
+      it = above_keys_cache.emplace(stage.above, std::move(keys)).first;
+    }
+    return it->second;
   };
-
+  const auto above_of = [&](const JoinStage& stage) {
+    return std::vector<std::shared_ptr<JoinSideFacts>>(
+        above.begin(), above.begin() + static_cast<std::ptrdiff_t>(std::min(stage.above, above.size())));
+  };
   // The keys a side contributes to the joined row include the names its row
   // is bound under: `_["products"]` after LINK(PRODUCTS, ...) is the right
   // row, not a field of the left ones.
-  static std::string bound_name(const Node& n, const char* fallback) {
+  const auto bound_name = [](const Node& n, const char* fallback) {
     std::string name = single_relation_name(n);
     return name.empty() ? std::string(fallback) : name;
-  }
-  const std::vector<JoinStage>& stages() const {
-    static const std::vector<JoinStage> none;
-    return prefilter_ ? prefilter_->stages : none;
-  }
-  const std::vector<std::shared_ptr<JoinSideFacts>>& above() const {
-    static const std::vector<std::shared_ptr<JoinSideFacts>> none;
-    return prefilter_ ? prefilter_->above : none;
-  }
-  const std::vector<JoinObligation>& obligations() const {
-    static const std::vector<JoinObligation> none;
-    return prefilter_ ? prefilter_->obligations : none;
-  }
-  // The upper-cased keys of the joins between a stage's FILTER and this join,
-  // per count of them.
-  const std::unordered_set<std::string>& above_keys(const JoinStage& stage) {
-    auto it = above_keys_cache_.find(stage.above);
-    if (it == above_keys_cache_.end()) {
-      std::unordered_set<std::string> keys;
-      for (std::size_t i = 0; i < stage.above && i < above().size(); ++i) {
-        keys.insert(above()[i]->keys.begin(), above()[i]->keys.end());
-      }
-      it = above_keys_cache_.emplace(stage.above, std::move(keys)).first;
-    }
-    return it->second;
-  }
-  std::vector<std::shared_ptr<JoinSideFacts>> above_of(const JoinStage& stage) const {
-    return std::vector<std::shared_ptr<JoinSideFacts>>(
-        above().begin(), above().begin() + static_cast<std::ptrdiff_t>(std::min(stage.above, above().size())));
-  }
-  // A joined row carries a left element's field exactly as the element does
-  // whenever no right element has the name (§7.4, pair by pair) -- and no row
-  // depends on another, so a drop below changes nothing above but the rows it
-  // drops.
-  bool owned_by_left(const std::unordered_set<std::string>& fields, const JoinStage& stage) {
+  };
+  // The two sides' binder names, decided once: the explicit binders of the
+  // five-argument form, or each side's relation name (else _1/_2).
+  const std::string jb1 = count == 5 ? a.symbol(2) : bound_name(left_node, "_1");
+  const std::string jb2 = count == 5 ? a.symbol(3) : bound_name(right_node, "_2");
+  const std::vector<std::string> b1_names{jb1, "_1"};
+  const std::vector<std::string> b2_names{jb2, "_2"};
+  const std::vector<JoinObligation> no_obligations;
+  const std::vector<JoinObligation>& obligations = prefilter ? prefilter->obligations : no_obligations;
+  const std::optional<JoinEqui> jequi = extract_join_equi(a.node(count == 5 ? 4 : 2), jb1, jb2);
+  std::shared_ptr<JoinSideFacts> right_side;
+  const auto owned_by_left = [&](const std::unordered_set<std::string>& fields, const JoinStage& stage) {
     const auto& upper = above_keys(stage);
     for (const std::string& f : fields) {
-      if (right_side_->keys.count(f) || upper.count(f)) return false;
+      if (right_side->keys.count(f) || upper.count(f)) return false;
     }
     return true;
-  }
-
-  void descend(const JoinEqui& jequi);
-  Prefilter plan_prefilter(const Value& left_value, const Value& right_value, const std::optional<JoinReport>& below);
-  Value hash_join(const Value& left_value, const Value& right_value, const JoinEqui& equi, JoinProjector& projector,
-                  const std::optional<JoinReport>& below);
-  Value nested_loop_join(const Value& left_value, const Value& right_value, const Node& predicate,
-                         JoinProjector& projector);
-
-  Args& args_;
-  Context& ctx_;
-  const bool left_join_;
-  std::optional<JoinPrefilter> prefilter_;
-  const int count_;
-  bool deep_ = false;
-  std::string b1_;
-  std::string b2_;
-  std::vector<std::string> b1_names_;
-  std::vector<std::string> b2_names_;
-  // The right side's facts, once the deep pass or the planner has needed them.
-  std::shared_ptr<JoinSideFacts> right_side_;
-  std::map<std::size_t, std::unordered_set<std::string>> above_keys_cache_;
-};
-
-Value LinkCall::run() {
-  Args& a = args_;
-  Context& ctx = ctx_;
-  const Node& left_node = a.node(0);
-  const Node& right_node = a.node(1);
-  const std::optional<JoinEqui> jequi = extract_join_equi(a.node(count_ == 5 ? 4 : 2), b1_, b2_);
+  };
+  const auto nothing_right = [](const std::unordered_set<std::string>&, const JoinStage&) { return false; };
   // With conjuncts to pre-apply and a left source that is itself a join, the
   // right source is evaluated first -- unobservable when both sources are
   // pure -- so the conjuncts still askable of the rows below travel down to
   // the join below, and from there to the base rows.
-  if (deep_ && !stages().empty() && jequi && left_node.t == NT::Call &&
+  if (deep && !stages.empty() && jequi && left_node.t == NT::Call &&
       (left_node.s == "LINK" || left_node.s == "LINK_LEFT" || left_node.s == "FILTER") &&
       join_pure_source(&left_node) && join_pure_source(&right_node)) {
-    descend(*jequi);
+    // The right source is evaluated first only as an optimisation; a program is what it is
+    // as written, where the LEFT source runs first (SPEC 7.4, 6.2). So if the right one
+    // raises, the left one (pure: no effects, but errors are observable) is evaluated as
+    // written and ITS error wins; only when it evaluates cleanly does the right source's
+    // own error stand. eval_node restored the depth while the exception unwound.
+    const Value* right_first_ptr = nullptr;
+    try {
+      right_first_ptr = &a.val(1);
+    } catch (const SelError&) {
+      ctx.join_prefilter.reset();
+      ctx.join_prefilter_report.reset();
+      (void)a.eval(a.node(0));
+      ctx.join_prefilter.reset();
+      ctx.join_prefilter_report.reset();
+      throw;
+    }
+    const Value& right_first = *right_first_ptr;
+    right_side = join_side_facts(right_first, join_row_keys(right_first, b2_names), left_join, b2_names);
+    const auto total_below = [&](const std::vector<std::pair<std::string, bool>>& reqs, const JoinStage& stage) {
+      return join_totality(reqs, nullptr, *right_side, above_of(stage));
+    };
+    auto walked = join_stage_walk(stages, owned_by_left, total_below, nothing_right);
+    std::vector<JoinStage> handed = join_truncate_stages(stages, walked.second);
+    // Below this join, every stage has one more join above it: this one.
+    for (JoinStage& stage : handed) ++stage.above;
+    if (!handed.empty()) {
+      std::vector<std::shared_ptr<JoinSideFacts>> sides{right_side};
+      sides.insert(sides.end(), above.begin(), above.end());
+      // This join computes its left key on every row it receives; a row
+      // dropped below never arrives, so the key goes down as an obligation
+      // for the join that drops to prove (join_keys_safe).
+      std::vector<JoinObligation> obs;
+      const std::string lower_b1 = ascii_lower(jb1);
+      obs.push_back(JoinObligation{jequi->left.get(), {jb1, lower_b1, "_1", "_"}, above.size() + 1});
+      obs.insert(obs.end(), obligations.begin(), obligations.end());
+      ctx.join_prefilter = JoinPrefilter{std::move(handed), true, std::move(sides), std::move(obs)};
+    }
+    try {
+      (void)a.val(0);
+    } catch (...) {
+      ctx.join_prefilter.reset();
+      throw;
+    }
+    ctx.join_prefilter.reset();
   }
   Value left_value = a.val(0);
   const Value right_value = a.val(1);
@@ -6444,367 +6410,316 @@ Value LinkCall::run() {
     ctx.join_prefilter_report.reset();
     below.reset();
   }
-  const NodePtr predicate = a.node_ptr(count_ == 3 ? 2 : 4);
+  const std::string& b1 = jb1;
+  const std::string& b2 = jb2;
+  const NodePtr predicate = a.node_ptr(count == 3 ? 2 : 4);
   if (left_value.is_null()) return Value::list({});
 
   const Value* first_left = first_collection_item(left_value);
   const Value* first_right = first_collection_item(right_value);
   const bool have_left = first_left != nullptr;
   const bool have_right = first_right != nullptr;
-  if (!have_left || (!have_right && !left_join_)) return Value::list({});
+  if (!have_left || (!have_right && !left_join)) return Value::list({});
 
-  const Value sample_right = have_right ? ensure_row_table_alias(*first_right, b2_) : Value::none();
+  const Value sample_right = have_right ? ensure_row_table_alias(*first_right, b2) : Value::none();
   // Every row is built from its own pair (spec §7.4): nothing is decided from
   // a first element except the shape of LINK_LEFT's null record.
-  const Value null_right = left_join_ ? make_null_record(sample_right, b2_) : Value::none();
+  const Value null_right = left_join ? make_null_record(sample_right, b2) : Value::none();
   JoinProjector projector;
-  projector.b1 = b1_;
-  projector.b2 = b2_;
+  projector.b1 = b1;
+  projector.b2 = b2;
   projector.null_right = null_right;
-  projector.has_null_right = left_join_ && !null_right.is_null();
-  const std::optional<JoinEqui> equi = have_right ? extract_join_equi(*predicate, b1_, b2_) : std::nullopt;
-  if (equi) return hash_join(left_value, right_value, *equi, projector, below);
-  return nested_loop_join(left_value, right_value, *predicate, projector);
-}
-
-// The deep pass: the right source first, the conjuncts no side of this join
-// can answer handed down to the join below, then the left source (which is
-// that join) with them.
-void LinkCall::descend(const JoinEqui& jequi) {
-  Args& a = args_;
-  Context& ctx = ctx_;
-  // The right source is evaluated first only as an optimisation; a program is what it is
-  // as written, where the LEFT source runs first (SPEC 7.4, 6.2). So if the right one
-  // raises, the left one (pure: no effects, but errors are observable) is evaluated as
-  // written and ITS error wins; only when it evaluates cleanly does the right source's
-  // own error stand. eval_node restored the depth while the exception unwound.
-  const Value* right_first_ptr = nullptr;
-  try {
-    right_first_ptr = &a.val(1);
-  } catch (const SelError&) {
-    ctx.join_prefilter.reset();
-    ctx.join_prefilter_report.reset();
-    (void)a.eval(a.node(0));
-    ctx.join_prefilter.reset();
-    ctx.join_prefilter_report.reset();
-    throw;
-  }
-  const Value& right_first = *right_first_ptr;
-  right_side_ = join_side_facts(right_first, join_row_keys(right_first, b2_names_), left_join_, b2_names_);
-  const auto owned = [this](const std::unordered_set<std::string>& fields, const JoinStage& stage) {
-    return owned_by_left(fields, stage);
-  };
-  const auto total_below = [this](const std::vector<std::pair<std::string, bool>>& reqs, const JoinStage& stage) {
-    return join_totality(reqs, nullptr, *right_side_, above_of(stage));
-  };
-  const auto nothing_right = [](const std::unordered_set<std::string>&, const JoinStage&) { return false; };
-  auto walked = join_stage_walk(stages(), owned, total_below, nothing_right);
-  std::vector<JoinStage> handed = join_truncate_stages(stages(), walked.second);
-  // Below this join, every stage has one more join above it: this one.
-  for (JoinStage& stage : handed) ++stage.above;
-  if (!handed.empty()) {
-    std::vector<std::shared_ptr<JoinSideFacts>> sides{right_side_};
-    sides.insert(sides.end(), above().begin(), above().end());
-    // This join computes its left key on every row it receives; a row
-    // dropped below never arrives, so the key goes down as an obligation
-    // for the join that drops to prove (join_keys_safe).
-    std::vector<JoinObligation> obs;
-    const std::string lower_b1 = ascii_lower(b1_);
-    obs.push_back(JoinObligation{jequi.left.get(), {b1_, lower_b1, "_1", "_"}, above().size() + 1});
-    obs.insert(obs.end(), obligations().begin(), obligations().end());
-    ctx.join_prefilter = JoinPrefilter{std::move(handed), true, std::move(sides), std::move(obs)};
-  }
-  try {
-    (void)a.val(0);
-  } catch (...) {
-    ctx.join_prefilter.reset();
-    throw;
-  }
-  ctx.join_prefilter.reset();
-}
-
-// The pre-filter, decided from the rows themselves (join_stage_walk). On a
-// left row a conjunct evaluates FALSE the row is dropped -- the joined rows
-// it would have produced would all have been dropped by the same conjunct;
-// likewise a right row, whose joined rows are then not built. On an error
-// the row is KEPT: the full predicate runs over the joined rows afterwards
-// and raises there, in row order.
-LinkCall::Prefilter LinkCall::plan_prefilter(const Value& left_value, const Value& right_value,
-                                             const std::optional<JoinReport>& below) {
-  Prefilter plan;
-  plan.report.dropped = below && below->dropped;
-  if (!prefilter_) return plan;
-  // A read through this join's right binder is the right element in every
-  // joined row -- the binder is bound last (spec §7.4) -- unless the left
-  // binder has the same name, or a join above rebinds it.
-  const auto right_names = [this](const JoinStage& stage) {
-    std::unordered_set<std::string> names{ascii_upper(b2_)};
-    if (stage.above == 0) names.insert("_2");
-    return names;
-  };
-  const bool right_ok = !left_join_ && ascii_upper(b1_) != ascii_upper(b2_);
-  const auto right_here = [&](const std::unordered_set<std::string>& fields, const JoinStage& stage) {
-    if (!right_ok) return false;
-    const auto names = right_names(stage);
-    const auto& upper = above_keys(stage);
-    for (const std::string& f : fields) {
-      if (!names.count(f) || upper.count(f)) return false;
-    }
-    return true;
-  };
-  if (!right_side_) right_side_ = join_side_facts(right_value, join_row_keys(right_value, b2_names_), left_join_, b2_names_);
-  for (const JoinStage& stage : stages()) plan.binders.push_back(stage.binder);
-  auto left_side = join_side_facts(left_value, join_row_keys(left_value, b1_names_), false, b1_names_);
-  const auto total_here = [&](const std::vector<std::pair<std::string, bool>>& reqs, const JoinStage& stage) {
-    return join_totality(reqs, left_side.get(), *right_side_, above_of(stage));
-  };
-  const auto owned_here = [this](const std::unordered_set<std::string>& fields, const JoinStage& stage) {
-    return owned_by_left(fields, stage);
-  };
-  // A handed-down join key that could raise on a dropped row, and
-  // nothing is dropped.
-  const bool safe = obligations().empty() || join_keys_safe(obligations(), *left_side, *right_side_, above());
-  const std::unordered_set<std::string> self_names{ascii_upper(b1_), "_1"};
-  std::vector<JoinApplied> walk_applied;
-  if (safe) walk_applied = join_stage_walk(stages(), owned_here, total_here, right_here).first;
-  for (const JoinApplied& applied : walk_applied) {
-    const JoinConjunct* c = applied.conjunct;
-    plan.report.applied.insert(c->node);
-    if (below && !below->errored && below->applied.count(c->node)) continue;
-    if (applied.right) {
-      if (!plan.left_before_right) plan.left_before_right = plan.prefix.size();
-      plan.right_prefix.push_back(join_read_self(std::make_shared<Node>(*c->node), right_names(*applied.stage), c->binder));
-      continue;
-    }
-    NodePtr node(std::shared_ptr<const Node>{}, c->node);   // non-owning: the tree outlives the run
-    for (const std::string& f : c->fields) {
-      if (self_names.count(f) && !left_side->first.count(f)) {
-        node = join_read_self(std::make_shared<Node>(*c->node), self_names, c->binder);
-        break;
-      }
-    }
-    plan.prefix.push_back(std::move(node));
-  }
-  return plan;
-}
-
-Value LinkCall::hash_join(const Value& left_value, const Value& right_value, const JoinEqui& equi,
-                          JoinProjector& projector, const std::optional<JoinReport>& below) {
-  Args& a = args_;
-  Context& ctx = ctx_;
-  const bool left_join = left_join_;
-  const std::string& b1 = b1_;
-  const std::string& b2 = b2_;
+  projector.has_null_right = left_join && !null_right.is_null();
+  const std::optional<JoinEqui> equi = have_right ? extract_join_equi(*predicate, b1, b2)
+                                                   : std::nullopt;
   std::vector<Value> output;
-  std::unordered_map<FastJoinKey, std::vector<Value>, FastJoinKeyHash> buckets;
-  buckets.reserve(collection_size(right_value));
-  JoinRightFacts right_facts;
-  {
+
+  const auto set_frame = [](std::vector<std::pair<std::string, Value>>& frame,
+                            const std::string& name, const Value& value) {
+    for (auto& entry : frame) {
+      if (entry.first == name) entry.second = value;
+    }
+  };
+  const auto add_frame_names = [](std::vector<std::pair<std::string, Value>>& frame,
+                                  const std::string& name, const Value& value) {
+    frame.emplace_back(name, value);
+    const std::string lower = ascii_lower(name);
+    if (lower != name) frame.emplace_back(lower, value);
+  };
+
+  if (equi && have_right) {
+    std::unordered_map<FastJoinKey, std::vector<Value>, FastJoinKeyHash> buckets;
+    buckets.reserve(collection_size(right_value));
+    JoinRightFacts right_facts;
     std::vector<std::pair<std::string, Value>> frame;
-    link_frame_names(frame, b2, Value::none());
+    add_frame_names(frame, b2, Value::none());
     frame.emplace_back("_2", Value::none());
     FrameScope key_scope(ctx, std::move(frame));
     // The right rows are read in order here, where they are close together,
     // rather than scattered pair by pair in the projector.
     JoinFlatTest flat_test{b1, b2};
     bool right_flat = true;
-    for_each_snapshot_value(take_snapshot(right_value, false), [&](const Value& item) {
-      const Value row = ensure_row_table_alias(item, b2);
-      link_set_frame(ctx.frames.back(), b2, row);
-      link_set_frame(ctx.frames.back(), "_2", row);
-      const Value key_value = a.eval(*equi.right);
-      const auto join_key = make_fast_join_key(key_value, equi.numeric);
-      note_right_join_key(right_facts, join_key, key_value);
-      if (join_key && join_key->type != FastJoinKey::Type::Bad) buckets[*join_key].push_back(row);
-      if (right_flat && !flat_test(row)) right_flat = false;
-    });
+    {
+      for_each_snapshot_value(take_snapshot(right_value, false), [&](const Value& item) {
+        const Value row = ensure_row_table_alias(item, b2);
+        set_frame(ctx.frames.back(), b2, row);
+        set_frame(ctx.frames.back(), "_2", row);
+        const Value key_value = a.eval(*equi->right);
+        const auto join_key = make_fast_join_key(key_value, equi->numeric);
+        note_right_join_key(right_facts, join_key, key_value);
+        if (join_key && join_key->type != FastJoinKey::Type::Bad) buckets[*join_key].push_back(row);
+        if (right_flat && !flat_test(row)) right_flat = false;
+      });
+    }
+    key_scope.pop();
     projector.right_flat = right_flat;
-  }
 
-  Prefilter plan = plan_prefilter(left_value, right_value, below);
-  std::vector<NodePtr>& prefix = plan.prefix;
-  const std::vector<NodePtr>& right_prefix = plan.right_prefix;
-  const std::vector<std::string>& binders = plan.binders;
-  JoinReport& report = plan.report;
-  // 0: keep the row; 1: drop it; 2: keep it, a conjunct raised on it.
-  const auto verdict = [&](const std::vector<NodePtr>& conjuncts, const Value& row) {
-    for (const std::string& binder : binders) link_set_frame(ctx.frames.back(), binder, row);
-    for (const NodePtr& conjunct : conjuncts) {
-      bool keep;
-      try {
-        keep = a.eval(*conjunct).as_bool(conjunct->pos);
-      } catch (const SelError&) {
-        report.errored = true;
-        return 2;
-      }
-      if (!keep) return 1;
-    }
-    return 0;
-  };
-  // The right rows the right conjuncts reject, once each, after every right
-  // key was computed. They stay in their buckets: a left row still counts
-  // them towards the numbering, and one kept on an error joins them.
-  std::unordered_set<const void*> rejected;
-  const bool rejecting = !right_prefix.empty();
-  if (rejecting) {
-    std::vector<std::pair<std::string, Value>> right_frame;
-    for (const std::string& binder : binders) right_frame.emplace_back(binder, Value::none());
-    const bool before = report.errored;
-    report.errored = false;
-    FrameScope right_scope(ctx, std::move(right_frame));
-    for (const auto& [key, bucket] : buckets) {
-      for (const Value& right : bucket) {
-        if (verdict(right_prefix, right) == 1) rejected.insert(Internals::identity(right));
-      }
-    }
-    right_scope.pop();
-    if (report.errored) prefix.resize(*plan.left_before_right);
-    report.errored = report.errored || before;
-  }
-  // A FILTER keeps its input's keys, so the rows dropped here still count
-  // towards the numbering of the rows kept (the matches say how many joined
-  // rows a dropped row stood for), unless nothing observes it (deep). When
-  // the join key is a literal field of the row, a row that HAS it may be
-  // rejected before its key is computed.
-  const bool numbered = (!prefix.empty() || rejecting) && !deep_;
-  std::vector<Value::Entry> keyed;
-  bool dropped = false;
-  std::size_t position = 1;
-  std::string fast_field;
-  const Node& el = *equi.left;
-  if (!prefix.empty() && deep_ && el.t == NT::Index && el.l && el.l->t == NT::Var && el.r &&
-      el.r->t == NT::Text) {
-    const std::string owner = ascii_upper(el.l->s);
-    if (owner == ascii_upper(b1) || owner == "_1" || owner == "_") fast_field = el.r->s;
-  }
-
-  // The binders the conjuncts read come first: a frame is searched in
-  // order, once per read, every row.
-  std::vector<std::pair<std::string, Value>> frame;
-  for (const std::string& binder : binders) {
-    bool present = false;
-    for (const auto& entry : frame) present = present || entry.first == binder;
-    if (!present) frame.emplace_back(binder, Value::none());
-  }
-  const auto add_once = [&frame](const std::string& name) {
-    for (const auto& entry : frame) if (entry.first == name) return;
-    frame.emplace_back(name, Value::none());
-  };
-  {
-    std::vector<std::pair<std::string, Value>> names;
-    link_frame_names(names, b1, Value::none());
-    for (const auto& entry : names) add_once(entry.first);
-  }
-  add_once("_1");
-  add_once("_");
-  FrameScope left_scope(ctx, std::move(frame));
-  for_each_snapshot_value(take_snapshot(left_value, false), [&](const Value& item) {
-    const Value row = ensure_row_table_alias(item, b1);
-    int asked = -1;
-    if (!fast_field.empty() && row.get(fast_field) != nullptr) {
-      asked = verdict(prefix, row);
-      if (asked == 1) {
-        // Dropped before its key was computed -- but the key is this very
-        // field, and a rejected one still raises in the join as written.
-        const Value field_value = *row.get(fast_field);
-        check_join_pair(equi, make_fast_join_key(field_value, equi.numeric), field_value, right_facts);
-        dropped = true;
-        return;
-      }
-    }
-    link_set_frame(ctx.frames.back(), b1, row);
-    link_set_frame(ctx.frames.back(), "_1", row);
-    link_set_frame(ctx.frames.back(), "_", row);
-    const Value key_value = a.eval(*equi.left);
-    const auto join_key = make_fast_join_key(key_value, equi.numeric);
-    check_join_pair(equi, join_key, key_value, right_facts);
-    auto it = join_key ? buckets.find(*join_key) : buckets.end();
-    if (asked < 0) asked = prefix.empty() ? 0 : verdict(prefix, row);
-    if (asked == 1) {
-      dropped = true;
-      if (numbered) position += it != buckets.end() ? it->second.size() : (left_join ? 1 : 0);
-      return;
-    }
-    const auto emit = [&](Value joined) {
-      // The rows a join builds are capped as they appear (spec §6.4).
-      cap_collection(static_cast<u128>(numbered ? keyed.size() : output.size()) + 1,
-                     a.pos());
-      if (numbered) keyed.emplace_back(std::to_string(position), std::move(joined));
-      else output.push_back(std::move(joined));
-      ++position;
+    // The pre-filter, decided from the rows themselves (join_stage_walk). On
+    // a left row a conjunct evaluates FALSE the row is dropped -- the joined
+    // rows it would have produced would all have been dropped by the same
+    // conjunct; likewise a right row, whose joined rows are then not built.
+    // On an error the row is KEPT: the full predicate runs over the joined
+    // rows afterwards and raises there, in row order.
+    std::vector<NodePtr> prefix;
+    std::vector<NodePtr> right_prefix;
+    // How many left conjuncts come before the first right one: with a right
+    // row kept on an error, a later left conjunct may not drop a left row --
+    // the joined row would have raised in the right conjunct first.
+    std::optional<std::size_t> left_before_right;
+    std::vector<std::string> binders;
+    JoinReport report;
+    report.dropped = below && below->dropped;
+    // A read through this join's right binder is the right element in every
+    // joined row -- the binder is bound last (spec §7.4) -- unless the left
+    // binder has the same name, or a join above rebinds it.
+    const auto right_names = [&](const JoinStage& stage) {
+      std::unordered_set<std::string> names{ascii_upper(b2)};
+      if (stage.above == 0) names.insert("_2");
+      return names;
     };
-    if (it != buckets.end()) {
-      // A left row kept on an error meets every right row: its joined
-      // rows raise in the FILTER, in order, where they would have.
-      const bool skip = rejecting && asked == 0;
-      for (const Value& right : it->second) {
-        if (skip && rejected.count(Internals::identity(right))) {
-          dropped = true;
-          ++position;
+    const bool right_ok = !left_join && ascii_upper(b1) != ascii_upper(b2);
+    const auto right_here = [&](const std::unordered_set<std::string>& fields, const JoinStage& stage) {
+      if (!right_ok) return false;
+      const auto names = right_names(stage);
+      const auto& upper = above_keys(stage);
+      for (const std::string& f : fields) {
+        if (!names.count(f) || upper.count(f)) return false;
+      }
+      return true;
+    };
+    if (prefilter) {
+      if (!right_side) right_side = join_side_facts(right_value, join_row_keys(right_value, b2_names), left_join, b2_names);
+      for (const JoinStage& stage : stages) binders.push_back(stage.binder);
+      auto left_side = join_side_facts(left_value, join_row_keys(left_value, b1_names), false, b1_names);
+      const auto total_here = [&](const std::vector<std::pair<std::string, bool>>& reqs, const JoinStage& stage) {
+        return join_totality(reqs, left_side.get(), *right_side, above_of(stage));
+      };
+      // A joined row carries a left element's field exactly as the element
+      // does whenever no right element has the name (§7.4, pair by pair) --
+      // and no row depends on another, so a drop below changes nothing above
+      // but the rows it drops.
+      const auto owned_here = [&](const std::unordered_set<std::string>& fields, const JoinStage& stage) {
+        const auto& upper = above_keys(stage);
+        for (const std::string& f : fields) {
+          if (right_side->keys.count(f) || upper.count(f)) return false;
+        }
+        return true;
+      };
+      // A handed-down join key that could raise on a dropped row, and
+      // nothing is dropped.
+      const bool safe = obligations.empty() || join_keys_safe(obligations, *left_side, *right_side, above);
+      const std::unordered_set<std::string> self_names{ascii_upper(b1), "_1"};
+      std::vector<JoinApplied> walk_applied;
+      if (safe) walk_applied = join_stage_walk(stages, owned_here, total_here, right_here).first;
+      for (const JoinApplied& applied : walk_applied) {
+        const JoinConjunct* c = applied.conjunct;
+        report.applied.insert(c->node);
+        if (below && !below->errored && below->applied.count(c->node)) continue;
+        if (applied.right) {
+          if (!left_before_right) left_before_right = prefix.size();
+          right_prefix.push_back(join_read_self(std::make_shared<Node>(*c->node), right_names(*applied.stage), c->binder));
           continue;
         }
-        emit(projector(row, &right));
+        NodePtr node(std::shared_ptr<const Node>{}, c->node);   // non-owning: the tree outlives the run
+        for (const std::string& f : c->fields) {
+          if (self_names.count(f) && !left_side->first.count(f)) {
+            node = join_read_self(std::make_shared<Node>(*c->node), self_names, c->binder);
+            break;
+          }
+        }
+        prefix.push_back(std::move(node));
       }
-    } else if (left_join) {
-      emit(projector(row, nullptr));
     }
-  });
-  left_scope.pop();
-  report.dropped = report.dropped || dropped;
-  if (prefilter_) ctx.join_prefilter_report = std::move(report);
-  if (numbered) {
-    if (dropped && !keyed.empty()) return Internals::with_children(Kind::None, std::move(keyed), true);
-    for (auto& entry : keyed) output.push_back(std::move(entry.second));
+    // 0: keep the row; 1: drop it; 2: keep it, a conjunct raised on it.
+    const auto verdict = [&](const std::vector<NodePtr>& conjuncts, const Value& row) {
+      for (const std::string& binder : binders) set_frame(ctx.frames.back(), binder, row);
+      for (const NodePtr& conjunct : conjuncts) {
+        bool keep;
+        try {
+          keep = a.eval(*conjunct).as_bool(conjunct->pos);
+        } catch (const SelError&) {
+          report.errored = true;
+          return 2;
+        }
+        if (!keep) return 1;
+      }
+      return 0;
+    };
+    // The right rows the right conjuncts reject, once each, after every right
+    // key was computed. They stay in their buckets: a left row still counts
+    // them towards the numbering, and one kept on an error joins them.
+    std::unordered_set<const void*> rejected;
+    const bool rejecting = !right_prefix.empty();
+    if (rejecting) {
+      std::vector<std::pair<std::string, Value>> right_frame;
+      for (const std::string& binder : binders) right_frame.emplace_back(binder, Value::none());
+      const bool before = report.errored;
+      report.errored = false;
+      FrameScope right_scope(ctx, std::move(right_frame));
+      for (const auto& [key, bucket] : buckets) {
+        for (const Value& right : bucket) {
+          if (verdict(right_prefix, right) == 1) rejected.insert(Internals::identity(right));
+        }
+      }
+      right_scope.pop();
+      if (report.errored) prefix.resize(*left_before_right);
+      report.errored = report.errored || before;
+    }
+    // A FILTER keeps its input's keys, so the rows dropped here still count
+    // towards the numbering of the rows kept (the matches say how many joined
+    // rows a dropped row stood for), unless nothing observes it (deep). When
+    // the join key is a literal field of the row, a row that HAS it may be
+    // rejected before its key is computed.
+    const bool numbered = (!prefix.empty() || rejecting) && !deep;
+    std::vector<Value::Entry> keyed;
+    bool dropped = false;
+    std::size_t position = 1;
+    std::string fast_field;
+    const Node& el = *equi->left;
+    if (!prefix.empty() && deep && el.t == NT::Index && el.l && el.l->t == NT::Var && el.r &&
+        el.r->t == NT::Text) {
+      const std::string owner = ascii_upper(el.l->s);
+      if (owner == ascii_upper(b1) || owner == "_1" || owner == "_") fast_field = el.r->s;
+    }
+
+    // The binders the conjuncts read come first: a frame is searched in
+    // order, once per read, every row.
+    frame.clear();
+    for (const std::string& binder : binders) {
+      bool present = false;
+      for (const auto& entry : frame) present = present || entry.first == binder;
+      if (!present) frame.emplace_back(binder, Value::none());
+    }
+    const auto add_once = [&frame](const std::string& name) {
+      for (const auto& entry : frame) if (entry.first == name) return;
+      frame.emplace_back(name, Value::none());
+    };
+    {
+      std::vector<std::pair<std::string, Value>> names;
+      add_frame_names(names, b1, Value::none());
+      for (const auto& entry : names) add_once(entry.first);
+    }
+    add_once("_1");
+    add_once("_");
+    FrameScope left_scope(ctx, std::move(frame));
+    {
+      for_each_snapshot_value(take_snapshot(left_value, false), [&](const Value& item) {
+        const Value row = ensure_row_table_alias(item, b1);
+        int asked = -1;
+        if (!fast_field.empty() && row.get(fast_field) != nullptr) {
+          asked = verdict(prefix, row);
+          if (asked == 1) {
+            // Dropped before its key was computed -- but the key is this very
+            // field, and a rejected one still raises in the join as written.
+            const Value field_value = *row.get(fast_field);
+            check_join_pair(*equi, make_fast_join_key(field_value, equi->numeric), field_value, right_facts);
+            dropped = true;
+            return;
+          }
+        }
+        set_frame(ctx.frames.back(), b1, row);
+        set_frame(ctx.frames.back(), "_1", row);
+        set_frame(ctx.frames.back(), "_", row);
+        const Value key_value = a.eval(*equi->left);
+        const auto join_key = make_fast_join_key(key_value, equi->numeric);
+        check_join_pair(*equi, join_key, key_value, right_facts);
+        auto it = join_key ? buckets.find(*join_key) : buckets.end();
+        if (asked < 0) asked = prefix.empty() ? 0 : verdict(prefix, row);
+        if (asked == 1) {
+          dropped = true;
+          if (numbered) position += it != buckets.end() ? it->second.size() : (left_join ? 1 : 0);
+          return;
+        }
+        const auto emit = [&](Value joined) {
+          // The rows a join builds are capped as they appear (spec §6.4).
+          cap_collection(static_cast<u128>(numbered ? keyed.size() : output.size()) + 1,
+                         a.pos());
+          if (numbered) keyed.emplace_back(std::to_string(position), std::move(joined));
+          else output.push_back(std::move(joined));
+          ++position;
+        };
+        if (it != buckets.end()) {
+          // A left row kept on an error meets every right row: its joined
+          // rows raise in the FILTER, in order, where they would have.
+          const bool skip = rejecting && asked == 0;
+          for (const Value& right : it->second) {
+            if (skip && rejected.count(Internals::identity(right))) {
+              dropped = true;
+              ++position;
+              continue;
+            }
+            emit(projector(row, &right));
+          }
+        } else if (left_join) {
+          emit(projector(row, nullptr));
+        }
+      });
+    }
+    left_scope.pop();
+    report.dropped = report.dropped || dropped;
+    if (prefilter) ctx.join_prefilter_report = std::move(report);
+    if (numbered) {
+      if (dropped && !keyed.empty()) return Internals::with_children(Kind::None, std::move(keyed), true);
+      for (auto& entry : keyed) output.push_back(std::move(entry.second));
+    }
+  } else {
+    std::vector<std::pair<std::string, Value>> frame;
+    add_frame_names(frame, b1, Value::none());
+    frame.emplace_back("_1", Value::none());
+    frame.emplace_back("_", Value::none());
+    add_frame_names(frame, b2, Value::none());
+    frame.emplace_back("_2", Value::none());
+    FrameScope scope(ctx, std::move(frame));
+    {
+      // Each side is listed ONCE (spec §7.3): the right side is walked again for every
+      // left row, and a predicate that grows it must not give later left rows more rows.
+      const Snapshot general_left = take_snapshot(left_value, false);
+      const Snapshot general_right = take_snapshot(right_value, false);
+      for_each_snapshot_value(general_left, [&](const Value& item) {
+        const Value left = ensure_row_table_alias(item, b1);
+        set_frame(ctx.frames.back(), b1, left);
+        set_frame(ctx.frames.back(), "_1", left);
+        set_frame(ctx.frames.back(), "_", left);
+        bool matched = false;
+        for_each_snapshot_value(general_right, [&](const Value& right_item) {
+          const Value right = ensure_row_table_alias(right_item, b2);
+          set_frame(ctx.frames.back(), b2, right);
+          set_frame(ctx.frames.back(), "_2", right);
+          if (a.eval(*predicate).as_bool(predicate->pos)) {
+            matched = true;
+            cap_collection(static_cast<u128>(output.size()) + 1, a.pos());
+            output.push_back(projector(left, &right));
+          }
+        });
+        if (left_join && !matched) {
+          cap_collection(static_cast<u128>(output.size()) + 1, a.pos());
+          output.push_back(projector(left, nullptr));
+        }
+      });
+    }
+    scope.pop();
   }
   return Value::list(std::move(output));
-}
-
-Value LinkCall::nested_loop_join(const Value& left_value, const Value& right_value, const Node& predicate,
-                                 JoinProjector& projector) {
-  Args& a = args_;
-  Context& ctx = ctx_;
-  const bool left_join = left_join_;
-  const std::string& b1 = b1_;
-  const std::string& b2 = b2_;
-  std::vector<Value> output;
-  std::vector<std::pair<std::string, Value>> frame;
-  link_frame_names(frame, b1, Value::none());
-  frame.emplace_back("_1", Value::none());
-  frame.emplace_back("_", Value::none());
-  link_frame_names(frame, b2, Value::none());
-  frame.emplace_back("_2", Value::none());
-  FrameScope scope(ctx, std::move(frame));
-  // Each side is listed ONCE (spec §7.3): the right side is walked again for every
-  // left row, and a predicate that grows it must not give later left rows more rows.
-  const Snapshot general_left = take_snapshot(left_value, false);
-  const Snapshot general_right = take_snapshot(right_value, false);
-  for_each_snapshot_value(general_left, [&](const Value& item) {
-    const Value left = ensure_row_table_alias(item, b1);
-    link_set_frame(ctx.frames.back(), b1, left);
-    link_set_frame(ctx.frames.back(), "_1", left);
-    link_set_frame(ctx.frames.back(), "_", left);
-    bool matched = false;
-    for_each_snapshot_value(general_right, [&](const Value& right_item) {
-      const Value right = ensure_row_table_alias(right_item, b2);
-      link_set_frame(ctx.frames.back(), b2, right);
-      link_set_frame(ctx.frames.back(), "_2", right);
-      if (a.eval(predicate).as_bool(predicate.pos)) {
-        matched = true;
-        cap_collection(static_cast<u128>(output.size()) + 1, a.pos());
-        output.push_back(projector(left, &right));
-      }
-    });
-    if (left_join && !matched) {
-      cap_collection(static_cast<u128>(output.size()) + 1, a.pos());
-      output.push_back(projector(left, nullptr));
-    }
-  });
-  scope.pop();
-  return Value::list(std::move(output));
-}
-
-Value do_link(Args& a, Context& ctx, bool left_join) {
-  return LinkCall(a, ctx, left_join).run();
 }
 
 Value shape_record(const Value& record) {
@@ -7165,124 +7080,6 @@ struct SortEntry {
 SortForm sort_form_of(const Args& a) {
   if (const auto form = sort_form(a.name(), a.nodes())) return *form;
   unreachable_arity(a.name());
-}
-
-// FILTER's source, evaluated. Over a join, the conjuncts are offered to the
-// LINK, which tests what it can on the rows it joins (SEL-0052, SEL-0054):
-// this FILTER's first -- it runs before the FILTER that handed the rest down
-// -- then the handed ones. Deep drops, below the join directly under this
-// FILTER, change its keys, so they are allowed only where nothing observes
-// them (`keys_unobserved`, stamped by the physical optimiser). OWN_NODES are
-// this FILTER's conjuncts offered; the join's report is returned, and passed
-// up when this FILTER was itself handed conjuncts.
-std::optional<JoinReport> filter_source(Args& a, Context& ctx, const Node& written,
-                                        std::vector<const Node*>& own_nodes, bool& over_join) {
-  std::optional<JoinPrefilter> handed = std::move(ctx.join_prefilter);
-  ctx.join_prefilter.reset();
-  const Node& src = a.node(0);
-  if (src.t == NT::Call && (src.s == "LINK" || src.s == "LINK_LEFT")) {
-    over_join = true;
-    const bool three = a.count() == 3;
-    const std::string binder = three ? a.symbol(1) : std::string("_");
-    std::vector<JoinConjunct> own = leading_field_conjuncts(written, binder);
-    for (const JoinConjunct& c : own) own_nodes.push_back(c.node);
-    // A first conjunct that is neither a field test nor total
-    // ends every walk before it starts: hand nothing, gather
-    // nothing.
-    const bool blocked = !own.empty() && !own.front().field_only && !own.front().has_total;
-    JoinPrefilter pre;
-    if (!blocked) pre.stages.push_back(JoinStage{binder, std::move(own), 0});
-    if (handed && !blocked) {
-      for (JoinStage& stage : handed->stages) pre.stages.push_back(std::move(stage));
-      pre.above = handed->above;
-      pre.obligations = handed->obligations;
-    }
-    pre.deep = handed ? true : written.keys_unobserved;
-    if (!pre.stages.empty()) ctx.join_prefilter = std::move(pre);
-  }
-  try {
-    (void)a.val(0);
-  } catch (...) {
-    ctx.join_prefilter.reset();
-    throw;
-  }
-  ctx.join_prefilter.reset();
-  // The join's report -- which conjuncts every row that came up
-  // has passed, whether a row was kept on an error, and whether
-  // any row was dropped -- goes up as it is.
-  std::optional<JoinReport> report = std::move(ctx.join_prefilter_report);
-  ctx.join_prefilter_report.reset();
-  if (report && handed) ctx.join_prefilter_report = report;
-  return report;
-}
-
-// The conjuncts of OWN_NODES the join below did not apply, AND-ed in order,
-// non-owning; null when it applied none of them (the body as written stands),
-// and ALL_APPLIED when it applied every one.
-NodePtr filter_rest_body(const std::vector<const Node*>& own_nodes, const JoinReport& report, bool& all_applied) {
-  std::vector<const Node*> rest;
-  for (const Node* n : own_nodes) if (!report.applied.count(n)) rest.push_back(n);
-  if (rest.size() == own_nodes.size()) return nullptr;
-  if (rest.empty()) {
-    all_applied = true;
-    return nullptr;
-  }
-  NodePtr body(std::shared_ptr<const Node>{}, rest.front());   // non-owning
-  for (std::size_t i = 1; i < rest.size(); ++i) {
-    auto node = std::make_shared<Node>();
-    node->t = NT::Bin;
-    node->pos = body->pos;
-    node->s = "AND";
-    node->l = body;
-    node->r = NodePtr(std::shared_ptr<const Node>{}, rest[i]);
-    body = std::move(node);
-  }
-  return body;
-}
-
-Value do_filter(Args& a, Context& ctx) {
-  const Node& written = a.node(a.count() - 1);
-  std::vector<const Node*> own_nodes;
-  bool over_join = false;
-  const std::optional<JoinReport> report = filter_source(a, ctx, written, own_nodes, over_join);
-  const Value& coll = a.val(0);
-  // The conjuncts of this FILTER the join below applied held on
-  // every row it built, unless it kept a row on an error: then
-  // they are TRUE there, raise nowhere, and only the rest is
-  // evaluated, in the source's order (with none left, the
-  // join's list is the FILTER's result as it is).
-  NodePtr override_body;
-  if (over_join && report && !report->errored) {
-    bool all_applied = false;
-    override_body = filter_rest_body(own_nodes, *report, all_applied);
-    if (all_applied) return coll;
-  }
-  // What is kept, with where it stood. A source that is a packed list has
-  // the keys 1..n, so while the kept ones are exactly 1, 2, 3, ... -- nothing
-  // dropped yet, or only from the end -- the result is the packed list of
-  // them and no key is ever spelled; the first gap turns it into the keyed
-  // list it always was (keys are kept: FILTER leaves "2","3", not "1","2").
-  const bool packed_source = coll.is_list() && coll.size() != 0 && !coll.storage().empty();
-  std::vector<Value> kept;
-  std::vector<std::size_t> at;
-  bool sequential = packed_source;
-  walk(a, ctx, [&](const Value& r, std::size_t idx, const Value& item,
-                   const Node& body) -> std::optional<Value> {
-    if (!r.as_bool(body.pos)) return std::nullopt;
-    if (sequential && idx != kept.size()) sequential = false;
-    kept.push_back(written.borrow_rows ? keep_or_alias(coll, idx, item, 1)
-                                       : keep_element(coll, idx, item, 1));  // collected: copied (§3.4), unless nothing could tell
-    at.push_back(idx);
-    return std::nullopt;
-  }, override_body.get());
-  if (kept.empty()) return Value::list({});
-  if (sequential) return Value::list(std::move(kept));
-  std::vector<Value::Entry> entries;
-  entries.reserve(kept.size());
-  for (std::size_t n = 0; n < kept.size(); ++n) {
-    entries.emplace_back(collection_key(coll, at[n]), std::move(kept[n]));
-  }
-  return Internals::with_children(Kind::None, std::move(entries), true);
 }
 
 Value do_sort(Args& a, Context& ctx, std::optional<std::string> forced_dir) {
@@ -7660,7 +7457,102 @@ void register_aggregates() {
   // The one aggregate that preserves keys — a filtered list should still be
   // addressable the way the original was.
   define(Spec{"FILTER", 2, 3, true, true, nullptr, [](Args& a, Context& ctx) -> Value {
-                return do_filter(a, ctx);
+                const Node& written = a.node(a.count() - 1);
+                // Over a join, the conjuncts are offered to the LINK, which
+                // tests what it can on the rows it joins (SEL-0052,
+                // SEL-0054): this FILTER's first -- it runs before the FILTER
+                // that handed the rest down -- then the handed ones. Deep
+                // drops, below the join directly under this FILTER, change
+                // its keys, so they are allowed only where nothing observes
+                // them (`keys_unobserved`, stamped by the physical optimiser).
+                std::optional<JoinPrefilter> handed = std::move(ctx.join_prefilter);
+                ctx.join_prefilter.reset();
+                const Node& src = a.node(0);
+                std::vector<const Node*> own_nodes;
+                bool over_join = false;
+                if (src.t == NT::Call && (src.s == "LINK" || src.s == "LINK_LEFT")) {
+                  over_join = true;
+                  const bool three = a.count() == 3;
+                  const std::string binder = three ? a.symbol(1) : std::string("_");
+                  std::vector<JoinConjunct> own = leading_field_conjuncts(written, binder);
+                  for (const JoinConjunct& c : own) own_nodes.push_back(c.node);
+                  // A first conjunct that is neither a field test nor total
+                  // ends every walk before it starts: hand nothing, gather
+                  // nothing.
+                  const bool blocked = !own.empty() && !own.front().field_only && !own.front().has_total;
+                  JoinPrefilter pre;
+                  if (!blocked) pre.stages.push_back(JoinStage{binder, std::move(own), 0});
+                  if (handed && !blocked) {
+                    for (JoinStage& stage : handed->stages) pre.stages.push_back(std::move(stage));
+                    pre.above = handed->above;
+                    pre.obligations = handed->obligations;
+                  }
+                  pre.deep = handed ? true : written.keys_unobserved;
+                  if (!pre.stages.empty()) ctx.join_prefilter = std::move(pre);
+                }
+                try {
+                  (void)a.val(0);
+                } catch (...) {
+                  ctx.join_prefilter.reset();
+                  throw;
+                }
+                ctx.join_prefilter.reset();
+                // The join's report -- which conjuncts every row that came up
+                // has passed, whether a row was kept on an error, and whether
+                // any row was dropped -- goes up as it is.
+                std::optional<JoinReport> report = std::move(ctx.join_prefilter_report);
+                ctx.join_prefilter_report.reset();
+                if (report && handed) ctx.join_prefilter_report = report;
+                const Value& coll = a.val(0);
+                // The conjuncts of this FILTER the join below applied held on
+                // every row it built, unless it kept a row on an error: then
+                // they are TRUE there, raise nowhere, and only the rest is
+                // evaluated, in the source's order (with none left, the
+                // join's list is the FILTER's result as it is).
+                NodePtr override_body;
+                if (over_join && report && !report->errored) {
+                  std::vector<const Node*> rest;
+                  for (const Node* n : own_nodes) if (!report->applied.count(n)) rest.push_back(n);
+                  if (rest.size() < own_nodes.size()) {
+                    if (rest.empty()) return coll;
+                    override_body = NodePtr(std::shared_ptr<const Node>{}, rest.front());   // non-owning
+                    for (std::size_t i = 1; i < rest.size(); ++i) {
+                      auto node = std::make_shared<Node>();
+                      node->t = NT::Bin;
+                      node->pos = override_body->pos;
+                      node->s = "AND";
+                      node->l = override_body;
+                      node->r = NodePtr(std::shared_ptr<const Node>{}, rest[i]);
+                      override_body = std::move(node);
+                    }
+                  }
+                }
+                // What is kept, with where it stood. A source that is a packed list has
+                // the keys 1..n, so while the kept ones are exactly 1, 2, 3, ... -- nothing
+                // dropped yet, or only from the end -- the result is the packed list of
+                // them and no key is ever spelled; the first gap turns it into the keyed
+                // list it always was (keys are kept: FILTER leaves "2","3", not "1","2").
+                const bool packed_source = coll.is_list() && coll.size() != 0 && !coll.storage().empty();
+                std::vector<Value> kept;
+                std::vector<std::size_t> at;
+                bool sequential = packed_source;
+                walk(a, ctx, [&](const Value& r, std::size_t idx, const Value& item,
+                                 const Node& body) -> std::optional<Value> {
+                  if (!r.as_bool(body.pos)) return std::nullopt;
+                  if (sequential && idx != kept.size()) sequential = false;
+                  kept.push_back(written.borrow_rows ? keep_or_alias(coll, idx, item, 1)
+                                                     : keep_element(coll, idx, item, 1));  // collected: copied (§3.4), unless nothing could tell
+                  at.push_back(idx);
+                  return std::nullopt;
+                }, override_body.get());
+                if (kept.empty()) return Value::list({});
+                if (sequential) return Value::list(std::move(kept));
+                std::vector<Value::Entry> entries;
+                entries.reserve(kept.size());
+                for (std::size_t n = 0; n < kept.size(); ++n) {
+                  entries.emplace_back(collection_key(coll, at[n]), std::move(kept[n]));
+                }
+                return Internals::with_children(Kind::None, std::move(entries), true);
               }});
 
   define(Spec{"SUM", 2, 3, true, true, nullptr, [](Args& a, Context& ctx) -> Value {
@@ -10342,191 +10234,6 @@ int opt_bounded_depth(const NodePtr& root, int cap) {
 // of the step it was copied from.
 using OptStepDepths = std::unordered_map<const Node*, int>;
 
-// The pair of steps at the optimiser's cursor and what the rules may consult:
-// the step after the pair (whether it renumbers keys), whether the pass is
-// logical, the declared fields of the row there, and the steps' depths.
-struct OptPair {
-  const NodePtr& first;
-  const NodePtr& second;
-  const NodePtr* third;
-  bool logical;
-  const OptFields& fields;
-  OptStepDepths* step_depths;
-};
-// A rule's answer: the steps that replace the pair, or nothing when it does
-// not apply.
-using OptRewrite = std::optional<std::vector<NodePtr>>;
-
-bool opt_is_sort(const Node& step) {
-  return step.s == "SORT" || step.s == "SORT_DESC" || step.s == "SORT_BY";
-}
-
-// TAKE(a) .> TAKE(b) is TAKE(min(a, b)) for literal counts.
-OptRewrite opt_merge_takes(const OptPair& p) {
-  if (p.second->s != "TAKE" || p.first->s != "TAKE" || p.first->items.size() != 2 || p.second->items.size() != 2) {
-    return std::nullopt;
-  }
-  const auto left = opt_numeric_literal(p.first->items[1]);
-  const auto right = opt_numeric_literal(p.second->items[1]);
-  if (!left || !right) return std::nullopt;
-  auto merged = copy_node(p.first);
-  merged->pos = p.second->pos;   // the merged step is the result of the later one
-  merged->items = {p.first->items[0], opt_num(std::to_string(std::min(*left, *right)), p.second->items[1]->pos)};
-  return std::vector<NodePtr>{std::move(merged)};
-}
-
-// DROP(a) .> DROP(b) is DROP(a + b) for literal counts whose sum fits.
-OptRewrite opt_merge_drops(const OptPair& p) {
-  if (p.second->s != "DROP" || p.first->s != "DROP" || p.first->items.size() != 2 || p.second->items.size() != 2) {
-    return std::nullopt;
-  }
-  const auto left = opt_numeric_literal(p.first->items[1]);
-  const auto right = opt_numeric_literal(p.second->items[1]);
-  if (!left || !right || *left > std::numeric_limits<long long>::max() - *right) return std::nullopt;
-  auto merged = copy_node(p.first);
-  merged->pos = p.second->pos;
-  merged->items = {p.first->items[0], opt_num(std::to_string(*left + *right), p.second->items[1]->pos)};
-  return std::vector<NodePtr>{std::move(merged)};
-}
-
-// A sort and a TAKE are one TOP. Fused only for a numeric literal count of at
-// least 1 (spec §6.2): the fused step evaluates its count before the key, so a
-// count that can raise -- or a TAKE(0), which still evaluates the keys unfused
-// -- would change which error is reported.
-OptRewrite opt_fuse_sort_take(const OptPair& p) {
-  if (p.second->s != "TAKE" || p.second->items.size() != 2 || !opt_is_sort(*p.first) ||
-      opt_numeric_literal(p.second->items[1]).value_or(0) < 1) {
-    return std::nullopt;
-  }
-  const std::string top_name = p.first->s == "SORT" ? "TOP" : p.first->s == "SORT_DESC" ? "TOP_DESC" : "TOP_BY";
-  auto fused = copy_node(p.first);
-  fused->pos = p.second->pos;
-  fused->s = top_name;
-  fused->spec = registry_lookup(top_name);
-  fused->items.push_back(p.second->items[1]);
-  return std::vector<NodePtr>{std::move(fused)};
-}
-
-// Whether every name in REFS is one of ALLOWED.
-bool opt_all_among(const std::vector<std::string>& refs, const std::vector<std::string>& allowed) {
-  return std::all_of(refs.begin(), refs.end(), [&](const std::string& f) {
-    return std::find(allowed.begin(), allowed.end(), f) != allowed.end();
-  });
-}
-
-// A FILTER that reads only fields a MAP passes through runs before the MAP.
-OptRewrite opt_filter_before_map(const OptPair& p) {
-  if (p.first->s != "MAP" || p.second->s != "FILTER") return std::nullopt;
-  const auto passes = opt_map_passthroughs(*p.first);
-  const OptFilterInfo info = opt_filter_info(*p.second);
-  const auto refs = info.predicate ? opt_field_refs(*info.predicate, info.binder) : std::vector<std::string>{};
-  if (info.valid && !refs.empty() && opt_all_among(refs, passes) && !opt_reads_row_or_key(*info.predicate, info.binder) &&
-      opt_keys_renumbered_by(p.third) && opt_map_cannot_raise(*p.first, p.logical, &p.fields)) {
-    return std::vector<NodePtr>{p.second, p.first};
-  }
-  return std::nullopt;
-}
-
-// A FILTER that does not read the key runs before a sort that cannot raise.
-OptRewrite opt_filter_before_sort(const OptPair& p) {
-  if (!opt_is_sort(*p.first) || p.second->s != "FILTER" || opt_step_reads_key(*p.second) ||
-      !opt_keys_renumbered_by(p.third)) {
-    return std::nullopt;
-  }
-  const OptSortInfo sort = opt_sort_info(*p.first);
-  if (!opt_cannot_raise(sort.key, sort.binder, p.logical, &p.fields)) return std::nullopt;
-  if (!p.logical) {
-    const OptFilterInfo filter = opt_filter_info(*p.second);
-    if (!opt_predicate_cannot_raise(filter.predicate, filter.binder, false, nullptr)) return std::nullopt;
-  }
-  return std::vector<NodePtr>{p.second, p.first};
-}
-
-// A FILTER that reads only selected fields runs before the SELECT_COLS.
-OptRewrite opt_filter_before_select_cols(const OptPair& p) {
-  if (p.first->s != "SELECT_COLS" || p.second->s != "FILTER") return std::nullopt;
-  const OptFilterInfo info = opt_filter_info(*p.second);
-  const auto refs = info.predicate ? opt_field_refs(*info.predicate, info.binder) : std::vector<std::string>{};
-  const auto selected = opt_select_fields(*p.first);
-  if (info.valid && !refs.empty() && opt_all_among(refs, selected) && !opt_reads_row_or_key(*info.predicate, info.binder) &&
-      opt_keys_renumbered_by(p.third)) {
-    return std::vector<NodePtr>{p.second, p.first};
-  }
-  return std::nullopt;
-}
-
-// A sort runs before a MAP that computes fields when its key reads only
-// fields the MAP passes through: only such a key is the same value before
-// the MAP. A keyless sort compares the MAP's outputs, and a key that reads
-// the whole row or `_K` reads what the MAP changes.
-OptRewrite opt_sort_before_map(const OptPair& p) {
-  if (p.first->s != "MAP" || pipeline_step(p.second->s) == nullptr || !pipeline_step(p.second->s)->sorts ||
-      !opt_map_has_computed(*p.first)) {
-    return std::nullopt;
-  }
-  const OptSortInfo sort = opt_sort_info(*p.second);
-  const auto refs = sort.key ? opt_field_refs(*sort.key, sort.binder) : std::vector<std::string>{};
-  const auto passes = opt_map_passthroughs(*p.first);
-  if (sort.key && !refs.empty() && opt_all_among(refs, passes) && !opt_reads_row_or_key(*sort.key, sort.binder) &&
-      opt_map_cannot_raise(*p.first, p.logical, &p.fields) && opt_cannot_raise(sort.key, sort.binder, p.logical, &p.fields)) {
-    return std::vector<NodePtr>{p.second, p.first};
-  }
-  return std::nullopt;
-}
-
-// Two FILTERs are one, their predicates AND-ed.
-OptRewrite opt_fuse_filters(const OptPair& p) {
-  if (p.first->s != "FILTER" || p.second->s != "FILTER") return std::nullopt;
-  const OptFilterInfo left = opt_filter_info(*p.first);
-  const OptFilterInfo right = opt_filter_info(*p.second);
-  // Fused, the second predicate runs on a row before the first has seen
-  // the rows after it: only one that cannot raise may be fused. Judged
-  // without the declared fields (the historical assumption for a read).
-  if (!left.valid || !right.valid || !opt_predicate_cannot_raise(right.predicate, right.binder, p.logical, nullptr)) {
-    return std::nullopt;
-  }
-  // Fused, the second predicate sits one level deeper than it did: under
-  // the AND that joins them. A fused pair must spend what the two stages
-  // spent (spec §6.4), so a predicate that would reach the cap that way
-  // stays a second FILTER (plan.pure-sql.fusion-stops-at-the-depth-cap).
-  if (p.step_depths) {
-    const auto at = p.step_depths->find(p.second.get());
-    if (at != p.step_depths->end() && at->second + opt_bounded_depth(right.predicate, MAX_DEPTH) + 1 > MAX_DEPTH) {
-      return std::nullopt;
-    }
-  }
-  const NodePtr right_pred = ascii_upper(left.binder) == ascii_upper(right.binder)
-      ? right.predicate : opt_rename_var(right.predicate, right.binder, left.binder);
-  const NodePtr predicate = opt_combine_and({left.predicate, right_pred}, left.predicate->pos);
-  auto merged = copy_node(p.first);
-  merged->pos = p.second->pos;
-  merged->items = left.explicit_binder
-      ? std::vector<NodePtr>{p.first->items[0], p.first->items[1], predicate}
-      : std::vector<NodePtr>{p.first->items[0], predicate};
-  if (p.step_depths) {
-    const auto at = p.step_depths->find(p.first.get());
-    if (at != p.step_depths->end()) (*p.step_depths)[merged.get()] = at->second;
-  }
-  return std::vector<NodePtr>{std::move(merged)};
-}
-
-// DISTINCT .> DISTINCT (either spelling) is the first one. No rule drops a
-// sort followed by another sort: the sorts are stable, so the first is the
-// second's tie-breaker (rel.sort.then-sort-keeps-the-tie-order), and a rule
-// that removed it changed the value.
-OptRewrite opt_merge_distincts(const OptPair& p) {
-  const auto distinct = [](const Node& step) { return step.s == "DISTINCT" || step.s == "DEDUPE"; };
-  if (!distinct(*p.first) || !distinct(*p.second)) return std::nullopt;
-  return std::vector<NodePtr>{p.first};
-}
-
-// The pair rules, tried in this order at each position.
-constexpr OptRewrite (*OPT_PAIR_RULES[])(const OptPair&) = {
-    opt_merge_takes,        opt_merge_drops,          opt_fuse_sort_take,
-    opt_filter_before_map,  opt_filter_before_sort,   opt_filter_before_select_cols,
-    opt_sort_before_map,    opt_fuse_filters,         opt_merge_distincts,
-};
-
 std::vector<NodePtr> opt_logical_steps(const NodePtr& source, std::vector<NodePtr> current, bool logical,
                                        const std::set<std::string>* declared,
                                        OptStepDepths* step_depths = nullptr) {
@@ -10536,6 +10243,8 @@ std::vector<NodePtr> opt_logical_steps(const NodePtr& source, std::vector<NodePt
     std::vector<NodePtr> next;
     for (std::size_t i = 0; i < current.size();) {
       const NodePtr& first = current[i];
+      const NodePtr* second = i + 1 < current.size() ? &current[i + 1] : nullptr;
+      const NodePtr* third = i + 2 < current.size() ? &current[i + 2] : nullptr;
       // The row is the source's while every step before this one keeps its rows
       // as they are (the manifest's keepsRows).
       OptFields fields{declared, true};
@@ -10546,22 +10255,160 @@ std::vector<NodePtr> opt_logical_steps(const NodePtr& source, std::vector<NodePt
           break;
         }
       }
-      if (i + 1 < current.size()) {
-        const OptPair pair{first, current[i + 1], i + 2 < current.size() ? &current[i + 2] : nullptr,
-                           logical, fields, step_depths};
-        OptRewrite rewritten;
-        for (const auto rule : OPT_PAIR_RULES) {
-          if ((rewritten = rule(pair))) break;
-        }
-        if (rewritten) {
-          for (NodePtr& step : *rewritten) next.push_back(std::move(step));
+      if (second && (*second)->s == "TAKE" && first->s == "TAKE" && first->items.size() == 2 &&
+          (*second)->items.size() == 2) {
+        const auto left = opt_numeric_literal(first->items[1]);
+        const auto right = opt_numeric_literal((*second)->items[1]);
+        if (left && right) {
+          auto merged = copy_node(first);
+          merged->pos = (*second)->pos;   // the merged step is the result of the later one
+          merged->items = {first->items[0], opt_num(std::to_string(std::min(*left, *right)), (*second)->items[1]->pos)};
+          next.push_back(std::move(merged));
           i += 2;
           changed = true;
           continue;
         }
       }
-      // A FILTER(TRUE) is dropped, except as the first step over a source
-      // not known to be a list.
+      if (second && (*second)->s == "DROP" && first->s == "DROP" && first->items.size() == 2 &&
+          (*second)->items.size() == 2) {
+        const auto left = opt_numeric_literal(first->items[1]);
+        const auto right = opt_numeric_literal((*second)->items[1]);
+        if (left && right && *left <= std::numeric_limits<long long>::max() - *right) {
+          auto merged = copy_node(first);
+          merged->pos = (*second)->pos;
+          merged->items = {first->items[0], opt_num(std::to_string(*left + *right), (*second)->items[1]->pos)};
+          next.push_back(std::move(merged));
+          i += 2;
+          changed = true;
+          continue;
+        }
+      }
+      // Fused only for a numeric literal count of at least 1 (spec §6.2): the
+      // fused step evaluates its count before the key, so a count that can
+      // raise -- or a TAKE(0), which still evaluates the keys unfused -- would
+      // change which error is reported.
+      if (second && (*second)->s == "TAKE" && (*second)->items.size() == 2 &&
+          (first->s == "SORT" || first->s == "SORT_DESC" || first->s == "SORT_BY") &&
+          opt_numeric_literal((*second)->items[1]).value_or(0) >= 1) {
+        const std::string top_name = first->s == "SORT" ? "TOP" : first->s == "SORT_DESC" ? "TOP_DESC" : "TOP_BY";
+        auto fused = copy_node(first);
+        fused->pos = (*second)->pos;
+        fused->s = top_name;
+        fused->spec = registry_lookup(top_name);
+        fused->items.push_back((*second)->items[1]);
+        next.push_back(std::move(fused));
+        i += 2;
+        changed = true;
+        continue;
+      }
+      if (second && first->s == "MAP" && (*second)->s == "FILTER") {
+        const auto passes = opt_map_passthroughs(*first);
+        const OptFilterInfo info = opt_filter_info(**second);
+        const auto refs = info.predicate ? opt_field_refs(*info.predicate, info.binder) : std::vector<std::string>{};
+        if (info.valid && !refs.empty() && std::all_of(refs.begin(), refs.end(), [&](const std::string& f) {
+              return std::find(passes.begin(), passes.end(), f) != passes.end();
+            }) && !opt_reads_row_or_key(*info.predicate, info.binder) &&
+            opt_keys_renumbered_by(third) && opt_map_cannot_raise(*first, logical, &fields)) {
+          next.push_back(*second);
+          next.push_back(first);
+          i += 2;
+          changed = true;
+          continue;
+        }
+      }
+      if (second && (first->s == "SORT" || first->s == "SORT_DESC" || first->s == "SORT_BY") &&
+          (*second)->s == "FILTER" && !opt_step_reads_key(**second) &&
+          opt_keys_renumbered_by(third) &&
+          opt_cannot_raise(opt_sort_info(*first).key, opt_sort_info(*first).binder, logical, &fields) &&
+          (logical || opt_predicate_cannot_raise(opt_filter_info(**second).predicate, opt_filter_info(**second).binder, false, nullptr))) {
+        next.push_back(*second);
+        next.push_back(first);
+        i += 2;
+        changed = true;
+        continue;
+      }
+      if (second && first->s == "SELECT_COLS" && (*second)->s == "FILTER") {
+        const OptFilterInfo info = opt_filter_info(**second);
+        const auto refs = info.predicate ? opt_field_refs(*info.predicate, info.binder) : std::vector<std::string>{};
+        const auto selected = opt_select_fields(*first);
+        if (info.valid && !refs.empty() && std::all_of(refs.begin(), refs.end(), [&](const std::string& f) {
+              return std::find(selected.begin(), selected.end(), f) != selected.end();
+            }) && !opt_reads_row_or_key(*info.predicate, info.binder) &&
+            opt_keys_renumbered_by(third)) {
+          next.push_back(*second);
+          next.push_back(first);
+          i += 2;
+          changed = true;
+          continue;
+        }
+      }
+      if (second && first->s == "MAP" && pipeline_step((*second)->s) != nullptr &&
+          pipeline_step((*second)->s)->sorts && opt_map_has_computed(*first)) {
+        // Only a key over pass-through fields is the same value before the
+        // MAP: a keyless sort compares the MAP's outputs, and a key that
+        // reads the whole row or `_K` reads what the MAP changes.
+        const OptSortInfo sort = opt_sort_info(**second);
+        const auto refs = sort.key ? opt_field_refs(*sort.key, sort.binder) : std::vector<std::string>{};
+        const auto passes = opt_map_passthroughs(*first);
+        if (sort.key && !refs.empty() && std::all_of(refs.begin(), refs.end(), [&](const std::string& f) {
+              return std::find(passes.begin(), passes.end(), f) != passes.end();
+            }) && !opt_reads_row_or_key(*sort.key, sort.binder) && opt_map_cannot_raise(*first, logical, &fields) &&
+            opt_cannot_raise(sort.key, sort.binder, logical, &fields)) {
+          next.push_back(*second);
+          next.push_back(first);
+          i += 2;
+          changed = true;
+          continue;
+        }
+      }
+      if (second && first->s == "FILTER" && (*second)->s == "FILTER") {
+        const OptFilterInfo left = opt_filter_info(*first);
+        const OptFilterInfo right = opt_filter_info(**second);
+        // Fused, the second predicate runs on a row before the first has seen
+        // the rows after it: only one that cannot raise may be fused. Judged
+        // without the declared fields (the historical assumption for a read).
+        bool can_fuse = left.valid && right.valid &&
+                        opt_predicate_cannot_raise(right.predicate, right.binder, logical, nullptr);
+        // Fused, the second predicate sits one level deeper than it did: under
+        // the AND that joins them. A fused pair must spend what the two stages
+        // spent (spec §6.4), so a predicate that would reach the cap that way
+        // stays a second FILTER (plan.pure-sql.fusion-stops-at-the-depth-cap).
+        if (can_fuse && step_depths) {
+          const auto at = step_depths->find(second->get());
+          if (at != step_depths->end() &&
+              at->second + opt_bounded_depth(right.predicate, MAX_DEPTH) + 1 > MAX_DEPTH) {
+            can_fuse = false;
+          }
+        }
+        if (can_fuse) {
+          const NodePtr right_pred = ascii_upper(left.binder) == ascii_upper(right.binder)
+              ? right.predicate : opt_rename_var(right.predicate, right.binder, left.binder);
+          const NodePtr predicate = opt_combine_and({left.predicate, right_pred}, left.predicate->pos);
+          auto merged = copy_node(first);
+          merged->pos = (*second)->pos;
+          merged->items = left.explicit_binder
+              ? std::vector<NodePtr>{first->items[0], first->items[1], predicate}
+              : std::vector<NodePtr>{first->items[0], predicate};
+          if (step_depths) {
+            const auto at = step_depths->find(first.get());
+            if (at != step_depths->end()) (*step_depths)[merged.get()] = at->second;
+          }
+          next.push_back(std::move(merged));
+          i += 2;
+          changed = true;
+          continue;
+        }
+      }
+      // No rule drops a sort followed by another sort: the sorts are stable,
+      // so the first is the second's tie-breaker (rel.sort.then-sort-keeps-
+      // the-tie-order), and a rule that removed it changed the value.
+      if (second && (first->s == "DISTINCT" || first->s == "DEDUPE") &&
+          ((*second)->s == "DISTINCT" || (*second)->s == "DEDUPE")) {
+        next.push_back(first);
+        i += 2;
+        changed = true;
+        continue;
+      }
       const OptFilterInfo filter = first->s == "FILTER" ? opt_filter_info(*first) : OptFilterInfo{};
       if (filter.valid && filter.predicate && filter.predicate->t == NT::Bool && filter.predicate->b &&
           (!next.empty() || i > 0 || opt_source_is_list(source))) {
