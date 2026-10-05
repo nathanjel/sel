@@ -7806,7 +7806,8 @@ fn c1176_bind() -> HashMap<String, Binding> {
 
 fn c1177_bind() -> HashMap<String, Binding> {
     let mut m = HashMap::new();
-        m.insert("ORDERS".to_string(), bind_relation("orders", "o", vec![FieldEntry { name: "ID".to_string(), binding: bind_col("id", "o", SqlKind::Num, false, false, false, "") }], "", "", ""));
+        m.insert("F".to_string(), bind_col("f", "", SqlKind::Unknown, false, false, false, ""));
+        m.insert("P".to_string(), bind_col("p", "", SqlKind::Bool, false, false, false, ""));
     m
 }
 
@@ -7861,7 +7862,7 @@ fn c1184_bind() -> HashMap<String, Binding> {
 
 fn c1185_bind() -> HashMap<String, Binding> {
     let mut m = HashMap::new();
-        m.insert("F".to_string(), bind_col("f", "", SqlKind::Unknown, false, false, false, ""));
+        m.insert("F".to_string(), bind_col("f", "", SqlKind::Bool, false, false, false, ""));
         m.insert("P".to_string(), bind_col("p", "", SqlKind::Bool, false, false, false, ""));
     m
 }
@@ -7875,8 +7876,9 @@ fn c1186_bind() -> HashMap<String, Binding> {
 
 fn c1187_bind() -> HashMap<String, Binding> {
     let mut m = HashMap::new();
-        m.insert("F".to_string(), bind_col("f", "", SqlKind::Bool, false, false, false, ""));
+        m.insert("U".to_string(), bind_col("u", "", SqlKind::Unknown, false, false, false, ""));
         m.insert("P".to_string(), bind_col("p", "", SqlKind::Bool, false, false, false, ""));
+        m.insert("N".to_string(), bind_col("n", "", SqlKind::Num, false, false, false, ""));
     m
 }
 
@@ -7986,9 +7988,12 @@ fn c1200_bind() -> HashMap<String, Binding> {
 
 fn c1201_bind() -> HashMap<String, Binding> {
     let mut m = HashMap::new();
-        m.insert("U".to_string(), bind_col("u", "", SqlKind::Unknown, false, false, false, ""));
-        m.insert("P".to_string(), bind_col("p", "", SqlKind::Bool, false, false, false, ""));
-        m.insert("N".to_string(), bind_col("n", "", SqlKind::Num, false, false, false, ""));
+        m.insert("T".to_string(), bind_col("t", "", SqlKind::Text, false, false, false, ""));
+        m.insert("T2".to_string(), bind_col("t2", "", SqlKind::Text, false, false, false, ""));
+        m.insert("F".to_string(), bind_col("f", "", SqlKind::Bool, false, false, false, ""));
+        m.insert("X".to_string(), bind_col("x", "", SqlKind::Bin, false, false, false, ""));
+        m.insert("V".to_string(), bind_columns(vec![bind_col("a", "", SqlKind::Text, false, false, false, ""), bind_col("b", "", SqlKind::Bool, false, false, false, "")]));
+        m.insert("W".to_string(), bind_columns(vec![bind_col("a", "", SqlKind::Text, false, false, false, ""), bind_col("b", "", SqlKind::Bin, false, false, false, "")]));
     m
 }
 
@@ -8093,12 +8098,7 @@ fn c1210_bind() -> HashMap<String, Binding> {
 
 fn c1211_bind() -> HashMap<String, Binding> {
     let mut m = HashMap::new();
-        m.insert("T".to_string(), bind_col("t", "", SqlKind::Text, false, false, false, ""));
-        m.insert("T2".to_string(), bind_col("t2", "", SqlKind::Text, false, false, false, ""));
-        m.insert("F".to_string(), bind_col("f", "", SqlKind::Bool, false, false, false, ""));
-        m.insert("X".to_string(), bind_col("x", "", SqlKind::Bin, false, false, false, ""));
-        m.insert("V".to_string(), bind_columns(vec![bind_col("a", "", SqlKind::Text, false, false, false, ""), bind_col("b", "", SqlKind::Bool, false, false, false, "")]));
-        m.insert("W".to_string(), bind_columns(vec![bind_col("a", "", SqlKind::Text, false, false, false, ""), bind_col("b", "", SqlKind::Bin, false, false, false, "")]));
+        m.insert("O".to_string(), bind_relation("orders", "o", vec![FieldEntry { name: "CAT".to_string(), binding: bind_col("cat", "o", SqlKind::Text, false, false, false, "") }, FieldEntry { name: "STATUS".to_string(), binding: bind_col("status", "o", SqlKind::Text, false, false, false, "") }, FieldEntry { name: "FLAG".to_string(), binding: bind_col("flag", "o", SqlKind::Bool, false, false, false, "") }], "", "", ""));
     m
 }
 
@@ -8116,13 +8116,16 @@ fn c1213_bind() -> HashMap<String, Binding> {
 
 fn c1214_bind() -> HashMap<String, Binding> {
     let mut m = HashMap::new();
-        m.insert("O".to_string(), bind_relation("orders", "o", vec![FieldEntry { name: "CAT".to_string(), binding: bind_col("cat", "o", SqlKind::Text, false, false, false, "") }, FieldEntry { name: "STATUS".to_string(), binding: bind_col("status", "o", SqlKind::Text, false, false, false, "") }, FieldEntry { name: "FLAG".to_string(), binding: bind_col("flag", "o", SqlKind::Bool, false, false, false, "") }], "", "", ""));
+        m.insert("O".to_string(), bind_relation("orders", "o", vec![FieldEntry { name: "CAT".to_string(), binding: bind_col("cat", "o", SqlKind::Text, false, false, false, "") }, FieldEntry { name: "AMT".to_string(), binding: bind_col("amt", "o", SqlKind::Num, false, false, false, "") }], "", "", ""));
     m
 }
 
 fn c1215_bind() -> HashMap<String, Binding> {
     let mut m = HashMap::new();
-        m.insert("O".to_string(), bind_relation("orders", "o", vec![FieldEntry { name: "CAT".to_string(), binding: bind_col("cat", "o", SqlKind::Text, false, false, false, "") }, FieldEntry { name: "AMT".to_string(), binding: bind_col("amt", "o", SqlKind::Num, false, false, false, "") }], "", "", ""));
+        m.insert("S".to_string(), bind_relation("sk", "s", vec![FieldEntry { name: "SKU".to_string(), binding: bind_col("sku", "s", SqlKind::Text, false, false, false, "") }], "SKU", "", ""));
+        m.insert("F".to_string(), bind_col("f", "", SqlKind::Bool, false, false, false, ""));
+        m.insert("X".to_string(), bind_col("x", "", SqlKind::Bin, false, false, false, ""));
+        m.insert("N".to_string(), bind_col("n", "", SqlKind::Num, false, false, false, ""));
     m
 }
 
@@ -8146,10 +8149,8 @@ fn c1217_bind() -> HashMap<String, Binding> {
 
 fn c1218_bind() -> HashMap<String, Binding> {
     let mut m = HashMap::new();
-        m.insert("S".to_string(), bind_relation("sk", "s", vec![FieldEntry { name: "SKU".to_string(), binding: bind_col("sku", "s", SqlKind::Text, false, false, false, "") }], "SKU", "", ""));
-        m.insert("F".to_string(), bind_col("f", "", SqlKind::Bool, false, false, false, ""));
-        m.insert("X".to_string(), bind_col("x", "", SqlKind::Bin, false, false, false, ""));
-        m.insert("N".to_string(), bind_col("n", "", SqlKind::Num, false, false, false, ""));
+        m.insert("T".to_string(), bind_col("t", "", SqlKind::Text, true, false, false, ""));
+        m.insert("S".to_string(), bind_col("s", "", SqlKind::Text, true, false, false, ""));
     m
 }
 
@@ -8162,8 +8163,7 @@ fn c1219_bind() -> HashMap<String, Binding> {
 
 fn c1220_bind() -> HashMap<String, Binding> {
     let mut m = HashMap::new();
-        m.insert("T".to_string(), bind_col("t", "", SqlKind::Text, true, false, false, ""));
-        m.insert("S".to_string(), bind_col("s", "", SqlKind::Text, true, false, false, ""));
+        m.insert("ITEMS".to_string(), bind_relation("items", "", vec![], "", "", ""));
     m
 }
 
@@ -8337,7 +8337,7 @@ fn c1248_bind() -> HashMap<String, Binding> {
 
 fn c1249_bind() -> HashMap<String, Binding> {
     let mut m = HashMap::new();
-        m.insert("ITEMS".to_string(), bind_relation("items", "", vec![], "", "", ""));
+        m.insert("O".to_string(), bind_relation("orders", "o", vec![FieldEntry { name: "CAT".to_string(), binding: bind_col("cat", "o", SqlKind::Text, false, false, false, "") }, FieldEntry { name: "MISC".to_string(), binding: bind_col("misc", "o", SqlKind::Unknown, false, false, false, "") }], "", "", ""));
     m
 }
 
@@ -8349,7 +8349,8 @@ fn c1250_bind() -> HashMap<String, Binding> {
 
 fn c1251_bind() -> HashMap<String, Binding> {
     let mut m = HashMap::new();
-        m.insert("O".to_string(), bind_relation("orders", "o", vec![FieldEntry { name: "CAT".to_string(), binding: bind_col("cat", "o", SqlKind::Text, false, false, false, "") }, FieldEntry { name: "MISC".to_string(), binding: bind_col("misc", "o", SqlKind::Unknown, false, false, false, "") }], "", "", ""));
+        m.insert("N".to_string(), bind_col("n", "k", SqlKind::Num, false, false, false, ""));
+        m.insert("T".to_string(), bind_col("t", "k", SqlKind::Text, true, false, false, ""));
     m
 }
 
@@ -8426,13 +8427,12 @@ fn c1261_bind() -> HashMap<String, Binding> {
 fn c1262_bind() -> HashMap<String, Binding> {
     let mut m = HashMap::new();
         m.insert("N".to_string(), bind_col("n", "k", SqlKind::Num, false, false, false, ""));
-        m.insert("T".to_string(), bind_col("t", "k", SqlKind::Text, true, false, false, ""));
     m
 }
 
 fn c1263_bind() -> HashMap<String, Binding> {
     let mut m = HashMap::new();
-        m.insert("N".to_string(), bind_col("n", "k", SqlKind::Num, false, false, false, ""));
+        m.insert("ITEMS".to_string(), bind_relation("items", "", vec![FieldEntry { name: "ID".to_string(), binding: bind_col("id", "items", SqlKind::Num, false, false, false, "") }], "", "", ""));
     m
 }
 
@@ -8450,28 +8450,32 @@ fn c1265_bind() -> HashMap<String, Binding> {
 
 fn c1266_bind() -> HashMap<String, Binding> {
     let mut m = HashMap::new();
-        m.insert("ITEMS".to_string(), bind_relation("items", "", vec![FieldEntry { name: "ID".to_string(), binding: bind_col("id", "items", SqlKind::Num, false, false, false, "") }], "", "", ""));
-    m
-}
-
-fn c1267_bind() -> HashMap<String, Binding> {
-    let mut m = HashMap::new();
         m.insert("NAME".to_string(), bind_col("name", "o", SqlKind::Text, false, false, false, ""));
     m
 }
 
-fn c1267_reg() {
+fn c1266_reg() {
     sel_lang::sql::define_dialect("pgbad", &serde_json::from_str::<serde_json::Value>("{\"extends\":\"postgresql\",\"version\":\"16\",\"lexical\":{\"numericGuard\":\"CASE WHEN ({textCast:0} ~ '^.*$') THEN CAST({0} AS NUMERIC) ELSE NULL END\"}}").unwrap());
 }
 
-fn c1268_bind() -> HashMap<String, Binding> {
+fn c1267_bind() -> HashMap<String, Binding> {
     let mut m = HashMap::new();
         m.insert("X".to_string(), bind_col("x", "o", SqlKind::Unknown, false, false, false, ""));
     m
 }
 
-fn c1268_reg() {
+fn c1267_reg() {
     sel_lang::sql::define_dialect("mdbad", &serde_json::from_str::<serde_json::Value>("{\"extends\":\"mariadb\",\"version\":\"10.5\",\"lexical\":{\"numericGuard\":\"CASE WHEN ({0} REGEXP 'x') THEN CAST({0} AS DECIMAL(65,10)) ELSE NULL END\"}}").unwrap());
+}
+
+fn c1268_bind() -> HashMap<String, Binding> {
+    let mut m = HashMap::new();
+        m.insert("NAME".to_string(), bind_col("name", "o", SqlKind::Text, false, false, false, ""));
+    m
+}
+
+fn c1268_reg() {
+    sel_lang::sql::define_dialect("pgok", &serde_json::from_str::<serde_json::Value>("{\"extends\":\"postgresql\",\"version\":\"16\"}").unwrap());
 }
 
 fn c1269_bind() -> HashMap<String, Binding> {
@@ -8481,27 +8485,27 @@ fn c1269_bind() -> HashMap<String, Binding> {
 }
 
 fn c1269_reg() {
-    sel_lang::sql::define_dialect("pgok", &serde_json::from_str::<serde_json::Value>("{\"extends\":\"postgresql\",\"version\":\"16\"}").unwrap());
+    sel_lang::sql::define("mariadb", "funcs", "UPPER", &serde_json::from_str::<serde_json::Value>("{\"tpl\":\"F({0}, 'é ż ć 𝄞')\",\"ret\":\"TEXT\"}").unwrap());
 }
 
 fn c1270_bind() -> HashMap<String, Binding> {
+    let mut m = HashMap::new();
+
+    m
+}
+
+fn c1270_reg() {
+    sel_lang::sql::define("sqlite", "funcs", "UPPER", &serde_json::from_str::<serde_json::Value>("{\"tpl\":\"MY_CRC('zażółć', {0})\",\"ret\":\"TEXT\"}").unwrap());
+}
+
+fn c1271_bind() -> HashMap<String, Binding> {
     let mut m = HashMap::new();
         m.insert("NAME".to_string(), bind_col("name", "o", SqlKind::Text, false, false, false, ""));
     m
 }
 
-fn c1270_reg() {
-    sel_lang::sql::define("mariadb", "funcs", "UPPER", &serde_json::from_str::<serde_json::Value>("{\"tpl\":\"F({0}, 'é ż ć 𝄞')\",\"ret\":\"TEXT\"}").unwrap());
-}
-
-fn c1271_bind() -> HashMap<String, Binding> {
-    let mut m = HashMap::new();
-
-    m
-}
-
 fn c1271_reg() {
-    sel_lang::sql::define("sqlite", "funcs", "UPPER", &serde_json::from_str::<serde_json::Value>("{\"tpl\":\"MY_CRC('zażółć', {0})\",\"ret\":\"TEXT\"}").unwrap());
+    sel_lang::sql::define("mariadb", "funcs", "UPPER", &serde_json::from_str::<serde_json::Value>("{\"tpl\":\"F({0}, {1:})\",\"ret\":\"TEXT\"}").unwrap());
 }
 
 fn c1272_bind() -> HashMap<String, Binding> {
@@ -8511,18 +8515,15 @@ fn c1272_bind() -> HashMap<String, Binding> {
 }
 
 fn c1272_reg() {
-    sel_lang::sql::define("mariadb", "funcs", "UPPER", &serde_json::from_str::<serde_json::Value>("{\"tpl\":\"F({0}, {1:})\",\"ret\":\"TEXT\"}").unwrap());
+    sel_lang::sql::define_dialect("mdempty", &serde_json::from_str::<serde_json::Value>("{\"extends\":\"mariadb\",\"version\":\"10.5\",\"lexical\":{\"textCollate\":\"\"}}").unwrap());
+    sel_lang::sql::define("mdempty", "funcs", "UPPER", &serde_json::from_str::<serde_json::Value>("{\"tpl\":\"F({0}{textCollate})\",\"ret\":\"TEXT\"}").unwrap());
 }
 
 fn c1273_bind() -> HashMap<String, Binding> {
     let mut m = HashMap::new();
-        m.insert("NAME".to_string(), bind_col("name", "o", SqlKind::Text, false, false, false, ""));
+        m.insert("R".to_string(), bind_relation("r", "r", vec![FieldEntry { name: "A".to_string(), binding: bind_col("a", "", SqlKind::Num, false, false, false, "") }, FieldEntry { name: "N".to_string(), binding: bind_col("n", "", SqlKind::Text, false, false, false, "") }], "", "", ""));
+        m.insert("S".to_string(), bind_relation("s", "s", vec![FieldEntry { name: "A".to_string(), binding: bind_col("a", "", SqlKind::Num, false, false, false, "") }, FieldEntry { name: "M".to_string(), binding: bind_col("m", "", SqlKind::Text, false, false, false, "") }], "", "", ""));
     m
-}
-
-fn c1273_reg() {
-    sel_lang::sql::define_dialect("mdempty", &serde_json::from_str::<serde_json::Value>("{\"extends\":\"mariadb\",\"version\":\"10.5\",\"lexical\":{\"textCollate\":\"\"}}").unwrap());
-    sel_lang::sql::define("mdempty", "funcs", "UPPER", &serde_json::from_str::<serde_json::Value>("{\"tpl\":\"F({0}{textCollate})\",\"ret\":\"TEXT\"}").unwrap());
 }
 
 fn c1274_bind() -> HashMap<String, Binding> {
@@ -8534,38 +8535,41 @@ fn c1274_bind() -> HashMap<String, Binding> {
 
 fn c1275_bind() -> HashMap<String, Binding> {
     let mut m = HashMap::new();
-        m.insert("R".to_string(), bind_relation("r", "r", vec![FieldEntry { name: "A".to_string(), binding: bind_col("a", "", SqlKind::Num, false, false, false, "") }, FieldEntry { name: "N".to_string(), binding: bind_col("n", "", SqlKind::Text, false, false, false, "") }], "", "", ""));
-        m.insert("S".to_string(), bind_relation("s", "s", vec![FieldEntry { name: "A".to_string(), binding: bind_col("a", "", SqlKind::Num, false, false, false, "") }, FieldEntry { name: "M".to_string(), binding: bind_col("m", "", SqlKind::Text, false, false, false, "") }], "", "", ""));
-    m
-}
-
-fn c1276_bind() -> HashMap<String, Binding> {
-    let mut m = HashMap::new();
         m.insert("ITEMS".to_string(), bind_relation("items", "i", vec![FieldEntry { name: "PRICE".to_string(), binding: bind_col("price", "", SqlKind::Num, false, false, false, "") }, FieldEntry { name: "QTY".to_string(), binding: bind_col("qty", "", SqlKind::Num, false, false, false, "") }, FieldEntry { name: "NAME".to_string(), binding: bind_col("name", "", SqlKind::Text, false, false, false, "") }, FieldEntry { name: "SKU".to_string(), binding: bind_col("sku", "", SqlKind::Text, false, false, false, "") }], "", "", ""));
         m.insert("TAGS".to_string(), bind_relation("tags", "t", vec![FieldEntry { name: "TAG".to_string(), binding: bind_col("tag", "", SqlKind::Text, false, false, false, "") }, FieldEntry { name: "W".to_string(), binding: bind_col("w", "", SqlKind::Num, false, false, false, "") }], "", "", ""));
     m
 }
 
-fn c1277_bind() -> HashMap<String, Binding> {
+fn c1276_bind() -> HashMap<String, Binding> {
     let mut m = HashMap::new();
         m.insert("C".to_string(), bind_col("c", "o", SqlKind::Statement, false, false, false, ""));
     m
 }
 
-fn c1278_bind() -> HashMap<String, Binding> {
+fn c1277_bind() -> HashMap<String, Binding> {
     let mut m = HashMap::new();
         m.insert("C".to_string(), bind_col("c", "o", SqlKind::List, false, false, false, ""));
     m
 }
 
-fn c1279_bind() -> HashMap<String, Binding> {
+fn c1278_bind() -> HashMap<String, Binding> {
     let mut m = HashMap::new();
         m.insert("S".to_string(), bind_col("s", "o", SqlKind::Text, false, false, false, ""));
     m
 }
 
-fn c1279_reg() {
+fn c1278_reg() {
     sel_lang::sql::define_dialect("my-nobs", &serde_json::from_str::<serde_json::Value>("{\"extends\":\"mariadb\",\"version\":\"10.5\",\"lexical\":{\"textEscape\":{\"\\\\\":\"\\\\\\\\\"}}}").unwrap());
+}
+
+fn c1279_bind() -> HashMap<String, Binding> {
+    let mut m = HashMap::new();
+
+    m
+}
+
+fn c1279_reg() {
+    sel_lang::sql::define_dialect("sqlite-noesc", &serde_json::from_str::<serde_json::Value>("{\"extends\":\"sqlite\",\"version\":\"3.48\",\"lexical\":{\"textEscape\":{}}}").unwrap());
 }
 
 fn c1280_bind() -> HashMap<String, Binding> {
@@ -8575,7 +8579,7 @@ fn c1280_bind() -> HashMap<String, Binding> {
 }
 
 fn c1280_reg() {
-    sel_lang::sql::define_dialect("sqlite-noesc", &serde_json::from_str::<serde_json::Value>("{\"extends\":\"sqlite\",\"version\":\"3.48\",\"lexical\":{\"textEscape\":{}}}").unwrap());
+    sel_lang::sql::define_dialect("my-badbs", &serde_json::from_str::<serde_json::Value>("{\"extends\":\"mariadb\",\"version\":\"10.5\",\"lexical\":{\"textEscape\":{\"'\":\"\\\\'\"}}}").unwrap());
 }
 
 fn c1281_bind() -> HashMap<String, Binding> {
@@ -8585,17 +8589,13 @@ fn c1281_bind() -> HashMap<String, Binding> {
 }
 
 fn c1281_reg() {
-    sel_lang::sql::define_dialect("my-badbs", &serde_json::from_str::<serde_json::Value>("{\"extends\":\"mariadb\",\"version\":\"10.5\",\"lexical\":{\"textEscape\":{\"'\":\"\\\\'\"}}}").unwrap());
+    sel_lang::sql::define_dialect("dq", &serde_json::from_str::<serde_json::Value>("{\"extends\":\"ansi\",\"version\":\"1\",\"lexical\":{\"textQuote\":\"\\\"\"}}").unwrap());
 }
 
 fn c1282_bind() -> HashMap<String, Binding> {
     let mut m = HashMap::new();
-
+        m.insert("ITEMS".to_string(), bind_relation("items", "i", vec![FieldEntry { name: "PRICE".to_string(), binding: bind_col("price", "", SqlKind::Num, false, false, false, "") }], "", "", ""));
     m
-}
-
-fn c1282_reg() {
-    sel_lang::sql::define_dialect("dq", &serde_json::from_str::<serde_json::Value>("{\"extends\":\"ansi\",\"version\":\"1\",\"lexical\":{\"textQuote\":\"\\\"\"}}").unwrap());
 }
 
 fn c1283_bind() -> HashMap<String, Binding> {
@@ -8606,13 +8606,13 @@ fn c1283_bind() -> HashMap<String, Binding> {
 
 fn c1284_bind() -> HashMap<String, Binding> {
     let mut m = HashMap::new();
-        m.insert("ITEMS".to_string(), bind_relation("items", "i", vec![FieldEntry { name: "PRICE".to_string(), binding: bind_col("price", "", SqlKind::Num, false, false, false, "") }], "", "", ""));
+        m.insert("ITEMS".to_string(), bind_relation("items", "i", vec![], "", "", ""));
     m
 }
 
 fn c1285_bind() -> HashMap<String, Binding> {
     let mut m = HashMap::new();
-        m.insert("ITEMS".to_string(), bind_relation("items", "i", vec![], "", "", ""));
+        m.insert("ITEMS".to_string(), bind_relation("items", "i", vec![FieldEntry { name: "PRICE".to_string(), binding: bind_col("price", "", SqlKind::Num, false, false, false, "") }], "", "", ""));
     m
 }
 
@@ -8622,19 +8622,19 @@ fn c1286_bind() -> HashMap<String, Binding> {
     m
 }
 
-fn c1287_bind() -> HashMap<String, Binding> {
-    let mut m = HashMap::new();
-        m.insert("ITEMS".to_string(), bind_relation("items", "i", vec![FieldEntry { name: "PRICE".to_string(), binding: bind_col("price", "", SqlKind::Num, false, false, false, "") }], "", "", ""));
-    m
+fn c1286_reg() {
+    sel_lang::sql::define_dialect("pg-derived", &serde_json::from_str::<serde_json::Value>("{\"extends\":\"postgresql\"}").unwrap());
 }
 
-fn c1287_reg() {
-    sel_lang::sql::define_dialect("pg-derived", &serde_json::from_str::<serde_json::Value>("{\"extends\":\"postgresql\"}").unwrap());
+fn c1287_bind() -> HashMap<String, Binding> {
+    let mut m = HashMap::new();
+        m.insert("S".to_string(), bind_col("s", "o", SqlKind::Text, false, false, false, ""));
+    m
 }
 
 fn c1288_bind() -> HashMap<String, Binding> {
     let mut m = HashMap::new();
-        m.insert("S".to_string(), bind_col("s", "o", SqlKind::Text, false, false, false, ""));
+        m.insert("ITEMS".to_string(), bind_relation("items", "i", vec![FieldEntry { name: "ID".to_string(), binding: bind_col("id", "", SqlKind::Num, false, false, false, "") }, FieldEntry { name: "TOTAL".to_string(), binding: bind_raw("i.price * i.qty", SqlKind::Num, false, false, false, "") }], "", "", ""));
     m
 }
 
@@ -8646,27 +8646,31 @@ fn c1289_bind() -> HashMap<String, Binding> {
 
 fn c1290_bind() -> HashMap<String, Binding> {
     let mut m = HashMap::new();
-        m.insert("ITEMS".to_string(), bind_relation("items", "i", vec![FieldEntry { name: "ID".to_string(), binding: bind_col("id", "", SqlKind::Num, false, false, false, "") }, FieldEntry { name: "TOTAL".to_string(), binding: bind_raw("i.price * i.qty", SqlKind::Num, false, false, false, "") }], "", "", ""));
-    m
-}
-
-fn c1291_bind() -> HashMap<String, Binding> {
-    let mut m = HashMap::new();
         m.insert("R".to_string(), bind_relation("t", "t", vec![FieldEntry { name: "A".to_string(), binding: bind_col("x", "", SqlKind::Num, false, false, false, "") }, FieldEntry { name: "a".to_string(), binding: bind_col("y", "", SqlKind::Num, false, false, false, "") }], "", "", ""));
     m
 }
 
-fn c1292_bind() -> HashMap<String, Binding> {
+fn c1291_bind() -> HashMap<String, Binding> {
     let mut m = HashMap::new();
         m.insert("x".to_string(), bind_col("a", "o", SqlKind::Num, false, false, false, ""));
         m.insert("X".to_string(), bind_col("b", "o", SqlKind::Num, false, false, false, ""));
     m
 }
 
-fn c1293_bind() -> HashMap<String, Binding> {
+fn c1292_bind() -> HashMap<String, Binding> {
     let mut m = HashMap::new();
         m.insert("ITEMS".to_string(), bind_relation("oi", "oi", vec![FieldEntry { name: "QTY".to_string(), binding: bind_col("qty", "oi", SqlKind::Num, false, false, false, "") }], "", "oi.a=o.id OR oi.b=o.id", ""));
     m
+}
+
+fn c1293_bind() -> HashMap<String, Binding> {
+    let mut m = HashMap::new();
+
+    m
+}
+
+fn c1293_reg() {
+    sel_lang::sql::define_dialect("my-ok", &serde_json::from_str::<serde_json::Value>("{\"extends\":\"mariadb\",\"version\":\"10.5\",\"lexical\":{\"textEscape\":{\"\\\\\":\"\\\\\\\\\",\"'\":\"''\"}}}").unwrap());
 }
 
 fn c1294_bind() -> HashMap<String, Binding> {
@@ -8676,7 +8680,8 @@ fn c1294_bind() -> HashMap<String, Binding> {
 }
 
 fn c1294_reg() {
-    sel_lang::sql::define_dialect("my-ok", &serde_json::from_str::<serde_json::Value>("{\"extends\":\"mariadb\",\"version\":\"10.5\",\"lexical\":{\"textEscape\":{\"\\\\\":\"\\\\\\\\\",\"'\":\"''\"}}}").unwrap());
+    sel_lang::sql::define_dialect("redef", &serde_json::from_str::<serde_json::Value>("{\"extends\":\"mariadb\",\"version\":\"10.5\",\"lexical\":{\"textCollate\":\" COLLATE utf8mb4_bin\"}}").unwrap());
+    sel_lang::sql::define_dialect("redef", &serde_json::from_str::<serde_json::Value>("{\"extends\":\"mariadb\",\"version\":\"10.5\",\"lexical\":{\"textCollate\":\" COLLATE utf8mb4_0900_bin\"}}").unwrap());
 }
 
 fn c1295_bind() -> HashMap<String, Binding> {
@@ -8686,19 +8691,15 @@ fn c1295_bind() -> HashMap<String, Binding> {
 }
 
 fn c1295_reg() {
-    sel_lang::sql::define_dialect("redef", &serde_json::from_str::<serde_json::Value>("{\"extends\":\"mariadb\",\"version\":\"10.5\",\"lexical\":{\"textCollate\":\" COLLATE utf8mb4_bin\"}}").unwrap());
-    sel_lang::sql::define_dialect("redef", &serde_json::from_str::<serde_json::Value>("{\"extends\":\"mariadb\",\"version\":\"10.5\",\"lexical\":{\"textCollate\":\" COLLATE utf8mb4_0900_bin\"}}").unwrap());
+    sel_lang::sql::define_dialect("redef2", &serde_json::from_str::<serde_json::Value>("{\"extends\":\"mariadb\",\"version\":\"10.5\"}").unwrap());
+    sel_lang::sql::define_dialect("redef2", &serde_json::from_str::<serde_json::Value>("{\"extends\":\"postgresql\",\"version\":\"16\"}").unwrap());
 }
 
 fn c1296_bind() -> HashMap<String, Binding> {
     let mut m = HashMap::new();
-
+        m.insert("ORDERS".to_string(), bind_relation("orders", "o", vec![FieldEntry { name: "ID".to_string(), binding: bind_col("id", "o", SqlKind::Num, false, false, false, "") }, FieldEntry { name: "CUSTOMER_ID".to_string(), binding: bind_col("customer_id", "o", SqlKind::Num, false, false, false, "") }, FieldEntry { name: "AMOUNT".to_string(), binding: bind_col("amount", "o", SqlKind::Num, false, false, false, "") }, FieldEntry { name: "NAME".to_string(), binding: bind_col("name", "o", SqlKind::Text, false, false, false, "") }], "", "", ""));
+        m.insert("CUSTOMERS".to_string(), bind_relation("customers", "c", vec![FieldEntry { name: "ID".to_string(), binding: bind_col("id", "c", SqlKind::Num, false, false, false, "") }, FieldEntry { name: "NAME".to_string(), binding: bind_col("name", "c", SqlKind::Text, false, false, false, "") }], "", "", ""));
     m
-}
-
-fn c1296_reg() {
-    sel_lang::sql::define_dialect("redef2", &serde_json::from_str::<serde_json::Value>("{\"extends\":\"mariadb\",\"version\":\"10.5\"}").unwrap());
-    sel_lang::sql::define_dialect("redef2", &serde_json::from_str::<serde_json::Value>("{\"extends\":\"postgresql\",\"version\":\"16\"}").unwrap());
 }
 
 fn c1297_bind() -> HashMap<String, Binding> {
@@ -8794,8 +8795,7 @@ fn c1309_bind() -> HashMap<String, Binding> {
 
 fn c1310_bind() -> HashMap<String, Binding> {
     let mut m = HashMap::new();
-        m.insert("ORDERS".to_string(), bind_relation("orders", "o", vec![FieldEntry { name: "ID".to_string(), binding: bind_col("id", "o", SqlKind::Num, false, false, false, "") }, FieldEntry { name: "CUSTOMER_ID".to_string(), binding: bind_col("customer_id", "o", SqlKind::Num, false, false, false, "") }, FieldEntry { name: "AMOUNT".to_string(), binding: bind_col("amount", "o", SqlKind::Num, false, false, false, "") }, FieldEntry { name: "NAME".to_string(), binding: bind_col("name", "o", SqlKind::Text, false, false, false, "") }], "", "", ""));
-        m.insert("CUSTOMERS".to_string(), bind_relation("customers", "c", vec![FieldEntry { name: "ID".to_string(), binding: bind_col("id", "c", SqlKind::Num, false, false, false, "") }, FieldEntry { name: "NAME".to_string(), binding: bind_col("name", "c", SqlKind::Text, false, false, false, "") }], "", "", ""));
+        m.insert("ORDERS".to_string(), bind_relation("orders", "o", vec![FieldEntry { name: "ID".to_string(), binding: bind_col("id", "o", SqlKind::Num, false, false, false, "") }, FieldEntry { name: "NAME".to_string(), binding: bind_col("name", "o", SqlKind::Text, false, false, false, "") }], "", "", ""));
     m
 }
 
@@ -8825,7 +8825,8 @@ fn c1314_bind() -> HashMap<String, Binding> {
 
 fn c1315_bind() -> HashMap<String, Binding> {
     let mut m = HashMap::new();
-        m.insert("ORDERS".to_string(), bind_relation("orders", "o", vec![FieldEntry { name: "ID".to_string(), binding: bind_col("id", "o", SqlKind::Num, false, false, false, "") }, FieldEntry { name: "NAME".to_string(), binding: bind_col("name", "o", SqlKind::Text, false, false, false, "") }], "", "", ""));
+        m.insert("ORDERS".to_string(), bind_relation("orders", "o", vec![FieldEntry { name: "ID".to_string(), binding: bind_col("id", "o", SqlKind::Num, false, false, false, "") }, FieldEntry { name: "CUSTOMER_ID".to_string(), binding: bind_col("customer_id", "o", SqlKind::Num, false, false, false, "") }, FieldEntry { name: "AMOUNT".to_string(), binding: bind_col("amount", "o", SqlKind::Num, false, false, false, "") }, FieldEntry { name: "NAME".to_string(), binding: bind_col("name", "o", SqlKind::Text, false, false, false, "") }], "", "", ""));
+        m.insert("CUSTOMERS".to_string(), bind_relation("customers", "c", vec![FieldEntry { name: "ID".to_string(), binding: bind_col("id", "c", SqlKind::Num, false, false, false, "") }, FieldEntry { name: "CNAME".to_string(), binding: bind_col("cname", "c", SqlKind::Text, false, false, false, "") }], "", "", ""));
     m
 }
 
@@ -8852,16 +8853,19 @@ fn c1318_bind() -> HashMap<String, Binding> {
 
 fn c1319_bind() -> HashMap<String, Binding> {
     let mut m = HashMap::new();
-        m.insert("ORDERS".to_string(), bind_relation("orders", "o", vec![FieldEntry { name: "ID".to_string(), binding: bind_col("id", "o", SqlKind::Num, false, false, false, "") }, FieldEntry { name: "CUSTOMER_ID".to_string(), binding: bind_col("customer_id", "o", SqlKind::Num, false, false, false, "") }, FieldEntry { name: "AMOUNT".to_string(), binding: bind_col("amount", "o", SqlKind::Num, false, false, false, "") }, FieldEntry { name: "NAME".to_string(), binding: bind_col("name", "o", SqlKind::Text, false, false, false, "") }], "", "", ""));
-        m.insert("CUSTOMERS".to_string(), bind_relation("customers", "c", vec![FieldEntry { name: "ID".to_string(), binding: bind_col("id", "c", SqlKind::Num, false, false, false, "") }, FieldEntry { name: "CNAME".to_string(), binding: bind_col("cname", "c", SqlKind::Text, false, false, false, "") }], "", "", ""));
+        m.insert("V1".to_string(), bind_value(value_tree(vec![TreeItem { key: Some("1".to_string()), val: Value::text_owned("a".to_string()) }, TreeItem { key: Some("2".to_string()), val: Value::none() }]), None));
+        m.insert("XT".to_string(), bind_col("xt", "", SqlKind::Text, false, false, false, ""));
     m
 }
 
 fn c1320_bind() -> HashMap<String, Binding> {
     let mut m = HashMap::new();
-        m.insert("V1".to_string(), bind_value(value_tree(vec![TreeItem { key: Some("1".to_string()), val: Value::text_owned("a".to_string()) }, TreeItem { key: Some("2".to_string()), val: Value::none() }]), None));
-        m.insert("XT".to_string(), bind_col("xt", "", SqlKind::Text, false, false, false, ""));
+
     m
+}
+
+fn c1320_reg() {
+    sel_lang::sql::define_dialect("my-nl", &serde_json::from_str::<serde_json::Value>("{\"extends\":\"mariadb\",\"version\":\"10.5\",\"lexical\":{\"textEscape\":{\"'\":\"''\",\"\\n\":\"\\\\n\"}}}").unwrap());
 }
 
 fn c1321_bind() -> HashMap<String, Binding> {
@@ -8871,28 +8875,24 @@ fn c1321_bind() -> HashMap<String, Binding> {
 }
 
 fn c1321_reg() {
-    sel_lang::sql::define_dialect("my-nl", &serde_json::from_str::<serde_json::Value>("{\"extends\":\"mariadb\",\"version\":\"10.5\",\"lexical\":{\"textEscape\":{\"'\":\"''\",\"\\n\":\"\\\\n\"}}}").unwrap());
-}
-
-fn c1322_bind() -> HashMap<String, Binding> {
-    let mut m = HashMap::new();
-
-    m
-}
-
-fn c1322_reg() {
     sel_lang::sql::define_dialect("ansi-x", &serde_json::from_str::<serde_json::Value>("{\"extends\":\"ansi\",\"version\":\"2016\",\"lexical\":{\"textEscape\":{\"'\":\"x'\",\"x\":\"xx\"}}}").unwrap());
 }
 
-fn c1323_bind() -> HashMap<String, Binding> {
+fn c1322_bind() -> HashMap<String, Binding> {
     let mut m = HashMap::new();
         m.insert("XS".to_string(), bind_col("xs", "", SqlKind::Statement, false, false, false, ""));
     m
 }
 
-fn c1324_bind() -> HashMap<String, Binding> {
+fn c1323_bind() -> HashMap<String, Binding> {
     let mut m = HashMap::new();
         m.insert("XN".to_string(), bind_col("xn", "", SqlKind::Num, false, false, false, ""));
+    m
+}
+
+fn c1324_bind() -> HashMap<String, Binding> {
+    let mut m = HashMap::new();
+
     m
 }
 
@@ -8904,7 +8904,7 @@ fn c1325_bind() -> HashMap<String, Binding> {
 
 fn c1326_bind() -> HashMap<String, Binding> {
     let mut m = HashMap::new();
-
+        m.insert("XN".to_string(), bind_col("xn", "", SqlKind::Num, false, false, false, ""));
     m
 }
 
@@ -8916,32 +8916,32 @@ fn c1327_bind() -> HashMap<String, Binding> {
 
 fn c1328_bind() -> HashMap<String, Binding> {
     let mut m = HashMap::new();
-        m.insert("XN".to_string(), bind_col("xn", "", SqlKind::Num, false, false, false, ""));
+        m.insert("XB".to_string(), bind_col("xb", "", SqlKind::Bool, false, false, false, ""));
+        m.insert("TS".to_string(), bind_relation("ts", "ts", vec![FieldEntry { name: "V".to_string(), binding: bind_col("v", "ts", SqlKind::Text, false, false, false, "") }], "V", "", ""));
     m
 }
 
 fn c1329_bind() -> HashMap<String, Binding> {
     let mut m = HashMap::new();
         m.insert("XB".to_string(), bind_col("xb", "", SqlKind::Bool, false, false, false, ""));
-        m.insert("TS".to_string(), bind_relation("ts", "ts", vec![FieldEntry { name: "V".to_string(), binding: bind_col("v", "ts", SqlKind::Text, false, false, false, "") }], "V", "", ""));
     m
 }
 
 fn c1330_bind() -> HashMap<String, Binding> {
     let mut m = HashMap::new();
-        m.insert("XB".to_string(), bind_col("xb", "", SqlKind::Bool, false, false, false, ""));
+        m.insert("T".to_string(), bind_relation("t", "t", vec![FieldEntry { name: "N".to_string(), binding: bind_col("n", "t", SqlKind::Num, false, false, false, "") }, FieldEntry { name: "S".to_string(), binding: bind_col("s", "t", SqlKind::Text, false, false, false, "") }], "", "", ""));
     m
 }
 
 fn c1331_bind() -> HashMap<String, Binding> {
     let mut m = HashMap::new();
-        m.insert("T".to_string(), bind_relation("t", "t", vec![FieldEntry { name: "N".to_string(), binding: bind_col("n", "t", SqlKind::Num, false, false, false, "") }, FieldEntry { name: "S".to_string(), binding: bind_col("s", "t", SqlKind::Text, false, false, false, "") }], "", "", ""));
+        m.insert("XC".to_string(), bind_col("xc", "", SqlKind::Text, false, false, false, "bogus"));
     m
 }
 
 fn c1332_bind() -> HashMap<String, Binding> {
     let mut m = HashMap::new();
-        m.insert("XC".to_string(), bind_col("xc", "", SqlKind::Text, false, false, false, "bogus"));
+        m.insert("ORDERS".to_string(), bind_relation("orders", "o", vec![FieldEntry { name: "ID".to_string(), binding: bind_col("id", "o", SqlKind::Num, false, false, false, "") }, FieldEntry { name: "AMOUNT".to_string(), binding: bind_col("amount", "o", SqlKind::Num, false, false, false, "") }], "", "", ""));
     m
 }
 
@@ -8953,26 +8953,27 @@ fn c1333_bind() -> HashMap<String, Binding> {
 
 fn c1334_bind() -> HashMap<String, Binding> {
     let mut m = HashMap::new();
-        m.insert("ORDERS".to_string(), bind_relation("orders", "o", vec![FieldEntry { name: "ID".to_string(), binding: bind_col("id", "o", SqlKind::Num, false, false, false, "") }, FieldEntry { name: "AMOUNT".to_string(), binding: bind_col("amount", "o", SqlKind::Num, false, false, false, "") }], "", "", ""));
-    m
-}
-
-fn c1335_bind() -> HashMap<String, Binding> {
-    let mut m = HashMap::new();
         m.insert("A".to_string(), bind_relation("a", "o", vec![FieldEntry { name: "X".to_string(), binding: bind_col("x", "o", SqlKind::Num, false, false, false, "") }], "", "", ""));
         m.insert("B".to_string(), bind_relation("b", "O", vec![FieldEntry { name: "X".to_string(), binding: bind_col("x", "O", SqlKind::Num, false, false, false, "") }], "", "", ""));
     m
 }
 
-fn c1336_bind() -> HashMap<String, Binding> {
+fn c1335_bind() -> HashMap<String, Binding> {
     let mut m = HashMap::new();
         m.insert("XN".to_string(), bind_col("xn", "", SqlKind::Num, false, false, false, ""));
+    m
+}
+
+fn c1336_bind() -> HashMap<String, Binding> {
+    let mut m = HashMap::new();
+        m.insert("ORDERS".to_string(), bind_relation("orders", "o", vec![FieldEntry { name: "ID".to_string(), binding: bind_col("id", "o", SqlKind::Num, false, false, false, "") }, FieldEntry { name: "CUSTOMER_ID".to_string(), binding: bind_col("customer_id", "o", SqlKind::Num, false, false, false, "") }, FieldEntry { name: "AMOUNT".to_string(), binding: bind_col("amount", "o", SqlKind::Num, false, false, false, "") }, FieldEntry { name: "NAME".to_string(), binding: bind_col("name", "o", SqlKind::Text, false, false, false, "") }], "", "", ""));
     m
 }
 
 fn c1337_bind() -> HashMap<String, Binding> {
     let mut m = HashMap::new();
         m.insert("ORDERS".to_string(), bind_relation("orders", "o", vec![FieldEntry { name: "ID".to_string(), binding: bind_col("id", "o", SqlKind::Num, false, false, false, "") }, FieldEntry { name: "CUSTOMER_ID".to_string(), binding: bind_col("customer_id", "o", SqlKind::Num, false, false, false, "") }, FieldEntry { name: "AMOUNT".to_string(), binding: bind_col("amount", "o", SqlKind::Num, false, false, false, "") }, FieldEntry { name: "NAME".to_string(), binding: bind_col("name", "o", SqlKind::Text, false, false, false, "") }], "", "", ""));
+        m.insert("CUSTOMERS".to_string(), bind_relation("customers", "c", vec![FieldEntry { name: "ID".to_string(), binding: bind_col("id", "c", SqlKind::Num, false, false, false, "") }, FieldEntry { name: "CNAME".to_string(), binding: bind_col("cname", "c", SqlKind::Text, false, false, false, "") }], "", "", ""));
     m
 }
 
@@ -9000,7 +9001,6 @@ fn c1340_bind() -> HashMap<String, Binding> {
 fn c1341_bind() -> HashMap<String, Binding> {
     let mut m = HashMap::new();
         m.insert("ORDERS".to_string(), bind_relation("orders", "o", vec![FieldEntry { name: "ID".to_string(), binding: bind_col("id", "o", SqlKind::Num, false, false, false, "") }, FieldEntry { name: "CUSTOMER_ID".to_string(), binding: bind_col("customer_id", "o", SqlKind::Num, false, false, false, "") }, FieldEntry { name: "AMOUNT".to_string(), binding: bind_col("amount", "o", SqlKind::Num, false, false, false, "") }, FieldEntry { name: "NAME".to_string(), binding: bind_col("name", "o", SqlKind::Text, false, false, false, "") }], "", "", ""));
-        m.insert("CUSTOMERS".to_string(), bind_relation("customers", "c", vec![FieldEntry { name: "ID".to_string(), binding: bind_col("id", "c", SqlKind::Num, false, false, false, "") }, FieldEntry { name: "CNAME".to_string(), binding: bind_col("cname", "c", SqlKind::Text, false, false, false, "") }], "", "", ""));
     m
 }
 
@@ -9012,7 +9012,7 @@ fn c1342_bind() -> HashMap<String, Binding> {
 
 fn c1343_bind() -> HashMap<String, Binding> {
     let mut m = HashMap::new();
-        m.insert("ORDERS".to_string(), bind_relation("orders", "o", vec![FieldEntry { name: "ID".to_string(), binding: bind_col("id", "o", SqlKind::Num, false, false, false, "") }, FieldEntry { name: "CUSTOMER_ID".to_string(), binding: bind_col("customer_id", "o", SqlKind::Num, false, false, false, "") }, FieldEntry { name: "AMOUNT".to_string(), binding: bind_col("amount", "o", SqlKind::Num, false, false, false, "") }, FieldEntry { name: "NAME".to_string(), binding: bind_col("name", "o", SqlKind::Text, false, false, false, "") }], "", "", ""));
+        m.insert("ORDERS".to_string(), bind_relation("orders", "o", vec![FieldEntry { name: "ID".to_string(), binding: bind_col("id", "o", SqlKind::Num, false, false, false, "") }], "", "", ""));
     m
 }
 
@@ -31769,25 +31769,6 @@ pub const SQL_CASES: &[SqlCase] = &[
         bindings_fn: Some(c1176_bind),
     },
     SqlCase {
-        name: "plan.pure-memory.tables-read-in-an-assignment-target-index",
-        at: "48-scope-and-slots.sqlt:933",
-        dialect: "mariadb",
-        source: "A = LIST(0); A[COUNT(ORDERS) - COUNT(ORDERS)] = 1; A",
-        expect: None,
-        error: None,
-        throws: None,
-        params: None,
-        as_mode: None,
-        mode: None,
-        strict: false,
-        plan: Some("pure_memory"),
-        has_tables: true,
-        tables: &["orders"],
-        unrepresentable: None,
-        register_fn: None,
-        bindings_fn: Some(c1177_bind),
-    },
-    SqlCase {
         name: "warrant.bool.if-cannot-launder-an-undeclared-column",
         at: "49-kind-guarantees.sqlt:13",
         dialect: "mariadb",
@@ -31804,7 +31785,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1178_bind),
+        bindings_fn: Some(c1177_bind),
     },
     SqlCase {
         name: "warrant.bool.if-cannot-launder-with-a-bool-condition",
@@ -31823,7 +31804,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1179_bind),
+        bindings_fn: Some(c1178_bind),
     },
     SqlCase {
         name: "warrant.bool.coalesce-cannot-launder-an-undeclared-column",
@@ -31842,7 +31823,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1180_bind),
+        bindings_fn: Some(c1179_bind),
     },
     SqlCase {
         name: "warrant.bool.vacuous-coalesce-cannot-launder-an-undeclared-column",
@@ -31861,7 +31842,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1181_bind),
+        bindings_fn: Some(c1180_bind),
     },
     SqlCase {
         name: "warrant.bool.cond-cannot-launder-an-undeclared-column",
@@ -31880,7 +31861,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1182_bind),
+        bindings_fn: Some(c1181_bind),
     },
     SqlCase {
         name: "warrant.bool.not-over-a-laundered-conditional",
@@ -31899,7 +31880,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1183_bind),
+        bindings_fn: Some(c1182_bind),
     },
     SqlCase {
         name: "warrant.bool.if-cannot-launder-on-postgresql",
@@ -31918,7 +31899,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1184_bind),
+        bindings_fn: Some(c1183_bind),
     },
     SqlCase {
         name: "warrant.bool.coalesce-cannot-launder-on-sqlite",
@@ -31937,7 +31918,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1185_bind),
+        bindings_fn: Some(c1184_bind),
     },
     SqlCase {
         name: "warrant.bool.if-over-a-declared-bool-is-not-refused",
@@ -31956,7 +31937,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1186_bind),
+        bindings_fn: Some(c1185_bind),
     },
     SqlCase {
         name: "warrant.bool.coalesce-over-a-declared-bool-is-not-refused",
@@ -31975,7 +31956,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1187_bind),
+        bindings_fn: Some(c1186_bind),
     },
     SqlCase {
         name: "warrant.numeric.coalesce-over-an-undeclared-column-is-guarded",
@@ -31994,7 +31975,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1188_bind),
+        bindings_fn: Some(c1187_bind),
     },
     SqlCase {
         name: "warrant.numeric.if-branch-unknown-is-guarded",
@@ -32013,7 +31994,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1189_bind),
+        bindings_fn: Some(c1188_bind),
     },
     SqlCase {
         name: "warrant.numeric.coalesce-function-over-an-undeclared-column-is-guarded",
@@ -32032,7 +32013,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1190_bind),
+        bindings_fn: Some(c1189_bind),
     },
     SqlCase {
         name: "warrant.numeric.abs-over-a-laundered-conditional",
@@ -32051,7 +32032,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1191_bind),
+        bindings_fn: Some(c1190_bind),
     },
     SqlCase {
         name: "warrant.numeric.min-over-a-laundered-conditional",
@@ -32070,7 +32051,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1192_bind),
+        bindings_fn: Some(c1191_bind),
     },
     SqlCase {
         name: "warrant.numeric.length-over-a-laundered-conditional",
@@ -32089,7 +32070,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1193_bind),
+        bindings_fn: Some(c1192_bind),
     },
     SqlCase {
         name: "warrant.numeric.an-undeclared-branch-on-the-right-is-guarded",
@@ -32108,7 +32089,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1194_bind),
+        bindings_fn: Some(c1193_bind),
     },
     SqlCase {
         name: "warrant.numeric.cond-branch-unknown-is-guarded",
@@ -32127,7 +32108,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1195_bind),
+        bindings_fn: Some(c1194_bind),
     },
     SqlCase {
         name: "warrant.numeric.sqlite-refuses-a-laundered-coalesce",
@@ -32146,7 +32127,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1196_bind),
+        bindings_fn: Some(c1195_bind),
     },
     SqlCase {
         name: "warrant.numeric.sqlite-refuses-a-laundered-if-branch",
@@ -32165,7 +32146,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1197_bind),
+        bindings_fn: Some(c1196_bind),
     },
     SqlCase {
         name: "warrant.numeric.sqlite-refuses-a-laundered-abs",
@@ -32184,7 +32165,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1198_bind),
+        bindings_fn: Some(c1197_bind),
     },
     SqlCase {
         name: "warrant.numeric.sqlite-refuses-a-laundered-vacuous-coalesce",
@@ -32203,7 +32184,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1199_bind),
+        bindings_fn: Some(c1198_bind),
     },
     SqlCase {
         name: "warrant.numeric.declared-num-through-coalesce-is-not-guarded",
@@ -32222,7 +32203,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1200_bind),
+        bindings_fn: Some(c1199_bind),
     },
     SqlCase {
         name: "warrant.numeric.declared-num-through-if-is-not-guarded",
@@ -32241,7 +32222,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1201_bind),
+        bindings_fn: Some(c1200_bind),
     },
     SqlCase {
         name: "agg.join.bool-element-is-refused",
@@ -32260,7 +32241,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1202_bind),
+        bindings_fn: Some(c1201_bind),
     },
     SqlCase {
         name: "agg.join.bool-first-element-is-refused",
@@ -32279,7 +32260,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1203_bind),
+        bindings_fn: Some(c1202_bind),
     },
     SqlCase {
         name: "agg.join.bool-separator-is-refused",
@@ -32298,7 +32279,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1204_bind),
+        bindings_fn: Some(c1203_bind),
     },
     SqlCase {
         name: "agg.join.bin-element-is-refused",
@@ -32317,7 +32298,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1205_bind),
+        bindings_fn: Some(c1204_bind),
     },
     SqlCase {
         name: "agg.join.bin-separator-is-refused",
@@ -32336,7 +32317,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1206_bind),
+        bindings_fn: Some(c1205_bind),
     },
     SqlCase {
         name: "agg.join.columns-binding-with-a-bool-is-refused",
@@ -32355,7 +32336,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1207_bind),
+        bindings_fn: Some(c1206_bind),
     },
     SqlCase {
         name: "agg.join.columns-binding-with-a-bin-is-refused",
@@ -32374,7 +32355,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1208_bind),
+        bindings_fn: Some(c1207_bind),
     },
     SqlCase {
         name: "agg.join.bool-element-is-refused-on-postgresql",
@@ -32393,7 +32374,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1209_bind),
+        bindings_fn: Some(c1208_bind),
     },
     SqlCase {
         name: "agg.join.bool-element-is-refused-on-sqlite",
@@ -32412,7 +32393,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1210_bind),
+        bindings_fn: Some(c1209_bind),
     },
     SqlCase {
         name: "agg.join.text-elements-still-translate",
@@ -32431,7 +32412,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1211_bind),
+        bindings_fn: Some(c1210_bind),
     },
     SqlCase {
         name: "agg.bucket-sum.a-declared-text-field-is-refused",
@@ -32450,7 +32431,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1212_bind),
+        bindings_fn: Some(c1211_bind),
     },
     SqlCase {
         name: "agg.bucket-sum.a-declared-bool-field-is-refused",
@@ -32469,7 +32450,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1213_bind),
+        bindings_fn: Some(c1212_bind),
     },
     SqlCase {
         name: "agg.bucket-sum.a-constant-text-body-is-refused",
@@ -32488,7 +32469,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1214_bind),
+        bindings_fn: Some(c1213_bind),
     },
     SqlCase {
         name: "agg.bucket-sum.a-non-name-binder-is-refused",
@@ -32507,7 +32488,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1215_bind),
+        bindings_fn: Some(c1214_bind),
     },
     SqlCase {
         name: "agg.in-relation.bool-column-needle-is-refused",
@@ -32526,7 +32507,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1216_bind),
+        bindings_fn: Some(c1215_bind),
     },
     SqlCase {
         name: "agg.in-relation.bool-literal-needle-is-refused",
@@ -32545,7 +32526,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1217_bind),
+        bindings_fn: Some(c1216_bind),
     },
     SqlCase {
         name: "agg.in-relation.bin-column-needle-is-refused",
@@ -32564,7 +32545,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1218_bind),
+        bindings_fn: Some(c1217_bind),
     },
     SqlCase {
         name: "bind.in.exact.numeric-literal-item-is-cast",
@@ -32583,7 +32564,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1219_bind),
+        bindings_fn: Some(c1218_bind),
     },
     SqlCase {
         name: "bind.in.exact.numeric-literal-items-only",
@@ -32602,7 +32583,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1220_bind),
+        bindings_fn: Some(c1219_bind),
     },
     SqlCase {
         name: "stmt.take.whole-number-with-scale.mariadb",
@@ -32621,7 +32602,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1221_bind),
+        bindings_fn: Some(c1220_bind),
     },
     SqlCase {
         name: "stmt.take.zero-with-scale.mariadb",
@@ -32640,7 +32621,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1222_bind),
+        bindings_fn: Some(c1221_bind),
     },
     SqlCase {
         name: "stmt.take.count-past-2^53.mariadb",
@@ -32659,7 +32640,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1223_bind),
+        bindings_fn: Some(c1222_bind),
     },
     SqlCase {
         name: "stmt.take.int64-max.mariadb",
@@ -32678,7 +32659,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1224_bind),
+        bindings_fn: Some(c1223_bind),
     },
     SqlCase {
         name: "stmt.take.whole-number-with-scale.postgresql",
@@ -32697,7 +32678,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1225_bind),
+        bindings_fn: Some(c1224_bind),
     },
     SqlCase {
         name: "stmt.take.zero-with-scale.postgresql",
@@ -32716,7 +32697,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1226_bind),
+        bindings_fn: Some(c1225_bind),
     },
     SqlCase {
         name: "stmt.take.count-past-2^53.postgresql",
@@ -32735,7 +32716,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1227_bind),
+        bindings_fn: Some(c1226_bind),
     },
     SqlCase {
         name: "stmt.take.int64-max.postgresql",
@@ -32754,7 +32735,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1228_bind),
+        bindings_fn: Some(c1227_bind),
     },
     SqlCase {
         name: "stmt.take.whole-number-with-scale.sqlite",
@@ -32773,7 +32754,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1229_bind),
+        bindings_fn: Some(c1228_bind),
     },
     SqlCase {
         name: "stmt.take.zero-with-scale.sqlite",
@@ -32792,7 +32773,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1230_bind),
+        bindings_fn: Some(c1229_bind),
     },
     SqlCase {
         name: "stmt.take.count-past-2^53.sqlite",
@@ -32811,7 +32792,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1231_bind),
+        bindings_fn: Some(c1230_bind),
     },
     SqlCase {
         name: "stmt.take.int64-max.sqlite",
@@ -32830,7 +32811,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1232_bind),
+        bindings_fn: Some(c1231_bind),
     },
     SqlCase {
         name: "stmt.drop.whole-number-with-scale.mariadb",
@@ -32849,7 +32830,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1233_bind),
+        bindings_fn: Some(c1232_bind),
     },
     SqlCase {
         name: "stmt.drop.count-past-2^53.mariadb",
@@ -32868,7 +32849,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1234_bind),
+        bindings_fn: Some(c1233_bind),
     },
     SqlCase {
         name: "stmt.drop.count-past-2^53.postgresql",
@@ -32887,7 +32868,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1235_bind),
+        bindings_fn: Some(c1234_bind),
     },
     SqlCase {
         name: "stmt.drop.count-past-2^53.sqlite",
@@ -32906,7 +32887,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1236_bind),
+        bindings_fn: Some(c1235_bind),
     },
     SqlCase {
         name: "stmt.take.count-past-int64-is-clamped.mariadb",
@@ -32925,7 +32906,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1237_bind),
+        bindings_fn: Some(c1236_bind),
     },
     SqlCase {
         name: "stmt.take.count-2^63-is-clamped.mariadb",
@@ -32944,7 +32925,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1238_bind),
+        bindings_fn: Some(c1237_bind),
     },
     SqlCase {
         name: "stmt.take.count-past-int64-is-clamped.postgresql",
@@ -32963,7 +32944,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1239_bind),
+        bindings_fn: Some(c1238_bind),
     },
     SqlCase {
         name: "stmt.take.count-2^63-is-clamped.postgresql",
@@ -32982,7 +32963,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1240_bind),
+        bindings_fn: Some(c1239_bind),
     },
     SqlCase {
         name: "stmt.take.count-past-int64-is-clamped.sqlite",
@@ -33001,7 +32982,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1241_bind),
+        bindings_fn: Some(c1240_bind),
     },
     SqlCase {
         name: "stmt.take.count-2^63-is-clamped.sqlite",
@@ -33020,7 +33001,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1242_bind),
+        bindings_fn: Some(c1241_bind),
     },
     SqlCase {
         name: "stmt.take.count-uint64-max-is-clamped.mariadb",
@@ -33039,7 +33020,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1243_bind),
+        bindings_fn: Some(c1242_bind),
     },
     SqlCase {
         name: "stmt.drop.count-past-int64-is-clamped.mariadb",
@@ -33058,7 +33039,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1244_bind),
+        bindings_fn: Some(c1243_bind),
     },
     SqlCase {
         name: "stmt.drop.count-past-int64-is-clamped.postgresql",
@@ -33077,7 +33058,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1245_bind),
+        bindings_fn: Some(c1244_bind),
     },
     SqlCase {
         name: "stmt.drop.count-past-int64-is-clamped.sqlite",
@@ -33096,7 +33077,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1246_bind),
+        bindings_fn: Some(c1245_bind),
     },
     SqlCase {
         name: "stmt.drop.merged-offset-past-int64-is-clamped.mariadb",
@@ -33115,7 +33096,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1247_bind),
+        bindings_fn: Some(c1246_bind),
     },
     SqlCase {
         name: "stmt.drop.merged-offset-below-int64-is-exact.mariadb",
@@ -33134,7 +33115,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1248_bind),
+        bindings_fn: Some(c1247_bind),
     },
     SqlCase {
         name: "stmt.take.then-take-past-int64-keeps-the-smaller.mariadb",
@@ -33153,7 +33134,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1249_bind),
+        bindings_fn: Some(c1248_bind),
     },
     SqlCase {
         name: "agg.bucket-sum.an-undeclared-field-is-guarded-as-a-whole",
@@ -33172,7 +33153,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1250_bind),
+        bindings_fn: Some(c1249_bind),
     },
     SqlCase {
         name: "agg.bucket-sum.an-undeclared-field-sqlite-refuses",
@@ -33191,7 +33172,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1251_bind),
+        bindings_fn: Some(c1250_bind),
     },
     SqlCase {
         name: "agg.fold.any.at-256-is-a-left-fold",
@@ -33210,7 +33191,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1252_bind),
+        bindings_fn: Some(c1251_bind),
     },
     SqlCase {
         name: "agg.fold.all.at-256-is-a-left-fold",
@@ -33229,7 +33210,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1253_bind),
+        bindings_fn: Some(c1252_bind),
     },
     SqlCase {
         name: "agg.fold.sum.at-256-is-a-left-fold",
@@ -33248,7 +33229,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1254_bind),
+        bindings_fn: Some(c1253_bind),
     },
     SqlCase {
         name: "agg.fold.in-list.at-256-is-a-left-fold",
@@ -33267,7 +33248,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1255_bind),
+        bindings_fn: Some(c1254_bind),
     },
     SqlCase {
         name: "agg.fold.any.at-257-is-balanced",
@@ -33286,7 +33267,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1256_bind),
+        bindings_fn: Some(c1255_bind),
     },
     SqlCase {
         name: "agg.fold.all.at-257-is-balanced",
@@ -33305,7 +33286,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1257_bind),
+        bindings_fn: Some(c1256_bind),
     },
     SqlCase {
         name: "agg.fold.sum.at-257-is-balanced",
@@ -33324,7 +33305,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1258_bind),
+        bindings_fn: Some(c1257_bind),
     },
     SqlCase {
         name: "agg.fold.in-list.at-257-is-balanced",
@@ -33343,7 +33324,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1259_bind),
+        bindings_fn: Some(c1258_bind),
     },
     SqlCase {
         name: "agg.fold.join.at-255-pieces-is-a-left-fold",
@@ -33362,7 +33343,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1260_bind),
+        bindings_fn: Some(c1259_bind),
     },
     SqlCase {
         name: "agg.fold.join.at-257-pieces-is-balanced",
@@ -33381,7 +33362,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1261_bind),
+        bindings_fn: Some(c1260_bind),
     },
     SqlCase {
         name: "agg.fold.any.at-600-splits-again",
@@ -33400,7 +33381,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1262_bind),
+        bindings_fn: Some(c1261_bind),
     },
     SqlCase {
         name: "agg.fold.any.at-257-on-sqlite",
@@ -33419,7 +33400,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1263_bind),
+        bindings_fn: Some(c1262_bind),
     },
     SqlCase {
         name: "stmt.take.negative-fraction.mariadb",
@@ -33438,7 +33419,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1264_bind),
+        bindings_fn: Some(c1263_bind),
     },
     SqlCase {
         name: "stmt.drop.negative-fraction.mariadb",
@@ -33457,7 +33438,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1265_bind),
+        bindings_fn: Some(c1264_bind),
     },
     SqlCase {
         name: "stmt.top-by.negative-fraction.mariadb",
@@ -33476,7 +33457,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1266_bind),
+        bindings_fn: Some(c1265_bind),
     },
     SqlCase {
         name: "register.guard.refused-on-every-use-lacking-the-pattern",
@@ -33494,8 +33475,8 @@ pub const SQL_CASES: &[SqlCase] = &[
         has_tables: false,
         tables: &[],
         unrepresentable: None,
-        register_fn: Some(c1267_reg),
-        bindings_fn: Some(c1267_bind),
+        register_fn: Some(c1266_reg),
+        bindings_fn: Some(c1266_bind),
     },
     SqlCase {
         name: "register.guard.refused-on-every-use-wrong-pattern",
@@ -33513,8 +33494,8 @@ pub const SQL_CASES: &[SqlCase] = &[
         has_tables: false,
         tables: &[],
         unrepresentable: None,
-        register_fn: Some(c1268_reg),
-        bindings_fn: Some(c1268_bind),
+        register_fn: Some(c1267_reg),
+        bindings_fn: Some(c1267_bind),
     },
     SqlCase {
         name: "register.guard.a-sound-guard-is-accepted-every-time",
@@ -33532,8 +33513,8 @@ pub const SQL_CASES: &[SqlCase] = &[
         has_tables: false,
         tables: &[],
         unrepresentable: None,
-        register_fn: Some(c1269_reg),
-        bindings_fn: Some(c1269_bind),
+        register_fn: Some(c1268_reg),
+        bindings_fn: Some(c1268_bind),
     },
     SqlCase {
         name: "register.template.non-ascii-bytes-are-kept",
@@ -33551,8 +33532,8 @@ pub const SQL_CASES: &[SqlCase] = &[
         has_tables: false,
         tables: &[],
         unrepresentable: None,
-        register_fn: Some(c1270_reg),
-        bindings_fn: Some(c1270_bind),
+        register_fn: Some(c1269_reg),
+        bindings_fn: Some(c1269_bind),
     },
     SqlCase {
         name: "register.template.non-ascii-bytes-are-kept-in-a-literal-template",
@@ -33570,8 +33551,8 @@ pub const SQL_CASES: &[SqlCase] = &[
         has_tables: false,
         tables: &[],
         unrepresentable: None,
-        register_fn: Some(c1271_reg),
-        bindings_fn: Some(c1271_bind),
+        register_fn: Some(c1270_reg),
+        bindings_fn: Some(c1270_bind),
     },
     SqlCase {
         name: "register.template.empty-tail-list-emits-nothing",
@@ -33589,8 +33570,8 @@ pub const SQL_CASES: &[SqlCase] = &[
         has_tables: false,
         tables: &[],
         unrepresentable: None,
-        register_fn: Some(c1272_reg),
-        bindings_fn: Some(c1272_bind),
+        register_fn: Some(c1271_reg),
+        bindings_fn: Some(c1271_bind),
     },
     SqlCase {
         name: "register.template.empty-lexical-value-emits-nothing",
@@ -33608,8 +33589,8 @@ pub const SQL_CASES: &[SqlCase] = &[
         has_tables: false,
         tables: &[],
         unrepresentable: None,
-        register_fn: Some(c1273_reg),
-        bindings_fn: Some(c1273_bind),
+        register_fn: Some(c1272_reg),
+        bindings_fn: Some(c1272_bind),
     },
     SqlCase {
         name: "mode.params.order-follows-the-statement-not-the-source",
@@ -33628,7 +33609,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1274_bind),
+        bindings_fn: Some(c1273_bind),
     },
     SqlCase {
         name: "mode.params.no-orphan-slot-through-sort-take-link",
@@ -33647,7 +33628,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1275_bind),
+        bindings_fn: Some(c1274_bind),
     },
     SqlCase {
         name: "stmt.derived.wrapped-columns-keep-a-fixed-order",
@@ -33666,7 +33647,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1276_bind),
+        bindings_fn: Some(c1275_bind),
     },
     SqlCase {
         name: "bind.column.statement-is-not-a-column-type",
@@ -33685,7 +33666,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1277_bind),
+        bindings_fn: Some(c1276_bind),
     },
     SqlCase {
         name: "bind.column.list-is-not-a-column-type",
@@ -33704,7 +33685,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1278_bind),
+        bindings_fn: Some(c1277_bind),
     },
     SqlCase {
         name: "register.dialect.text-escape-must-escape-the-quote",
@@ -33722,8 +33703,8 @@ pub const SQL_CASES: &[SqlCase] = &[
         has_tables: false,
         tables: &[],
         unrepresentable: None,
-        register_fn: Some(c1279_reg),
-        bindings_fn: Some(c1279_bind),
+        register_fn: Some(c1278_reg),
+        bindings_fn: Some(c1278_bind),
     },
     SqlCase {
         name: "register.dialect.empty-text-escape-is-refused",
@@ -33741,8 +33722,8 @@ pub const SQL_CASES: &[SqlCase] = &[
         has_tables: false,
         tables: &[],
         unrepresentable: None,
-        register_fn: Some(c1280_reg),
-        bindings_fn: Some(c1280_bind),
+        register_fn: Some(c1279_reg),
+        bindings_fn: Some(c1279_bind),
     },
     SqlCase {
         name: "register.dialect.escape-character-must-escape-itself",
@@ -33760,8 +33741,8 @@ pub const SQL_CASES: &[SqlCase] = &[
         has_tables: false,
         tables: &[],
         unrepresentable: None,
-        register_fn: Some(c1281_reg),
-        bindings_fn: Some(c1281_bind),
+        register_fn: Some(c1280_reg),
+        bindings_fn: Some(c1280_bind),
     },
     SqlCase {
         name: "register.dialect.text-quote-must-differ-from-identifier-quote",
@@ -33779,8 +33760,8 @@ pub const SQL_CASES: &[SqlCase] = &[
         has_tables: false,
         tables: &[],
         unrepresentable: None,
-        register_fn: Some(c1282_reg),
-        bindings_fn: Some(c1282_bind),
+        register_fn: Some(c1281_reg),
+        bindings_fn: Some(c1281_bind),
     },
     SqlCase {
         name: "alias.record-key-with-nul",
@@ -33799,7 +33780,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1283_bind),
+        bindings_fn: Some(c1282_bind),
     },
     SqlCase {
         name: "alias.record-key-empty",
@@ -33818,7 +33799,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1284_bind),
+        bindings_fn: Some(c1283_bind),
     },
     SqlCase {
         name: "alias.select-cols-name-with-nul",
@@ -33837,7 +33818,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1285_bind),
+        bindings_fn: Some(c1284_bind),
     },
     SqlCase {
         name: "alias.pg-truncated-aliases-collide",
@@ -33856,7 +33837,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1286_bind),
+        bindings_fn: Some(c1285_bind),
     },
     SqlCase {
         name: "alias.pg-truncated-aliases-collide-in-a-derived-dialect",
@@ -33874,8 +33855,8 @@ pub const SQL_CASES: &[SqlCase] = &[
         has_tables: false,
         tables: &[],
         unrepresentable: None,
-        register_fn: Some(c1287_reg),
-        bindings_fn: Some(c1287_bind),
+        register_fn: Some(c1286_reg),
+        bindings_fn: Some(c1286_bind),
     },
     SqlCase {
         name: "lex.text.nul-is-refused-in-every-mode",
@@ -33894,7 +33875,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1288_bind),
+        bindings_fn: Some(c1287_bind),
     },
     SqlCase {
         name: "bind.raw-field.select-cols-refuses",
@@ -33913,7 +33894,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1289_bind),
+        bindings_fn: Some(c1288_bind),
     },
     SqlCase {
         name: "bind.raw-field.across-a-derived-table-refuses",
@@ -33932,7 +33913,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1290_bind),
+        bindings_fn: Some(c1289_bind),
     },
     SqlCase {
         name: "bind.relation.fields-differing-only-by-case",
@@ -33951,7 +33932,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1291_bind),
+        bindings_fn: Some(c1290_bind),
     },
     SqlCase {
         name: "bind.names-differing-only-by-case",
@@ -33970,7 +33951,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1292_bind),
+        bindings_fn: Some(c1291_bind),
     },
     SqlCase {
         name: "agg.correlate.is-parenthesised",
@@ -33989,7 +33970,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1293_bind),
+        bindings_fn: Some(c1292_bind),
     },
     SqlCase {
         name: "register.dialect.correct-pairing-is-accepted",
@@ -34007,8 +33988,8 @@ pub const SQL_CASES: &[SqlCase] = &[
         has_tables: false,
         tables: &[],
         unrepresentable: None,
-        register_fn: Some(c1294_reg),
-        bindings_fn: Some(c1294_bind),
+        register_fn: Some(c1293_reg),
+        bindings_fn: Some(c1293_bind),
     },
     SqlCase {
         name: "register.dialect.redefinition-with-the-same-parent-replaces",
@@ -34026,8 +34007,8 @@ pub const SQL_CASES: &[SqlCase] = &[
         has_tables: false,
         tables: &[],
         unrepresentable: None,
-        register_fn: Some(c1295_reg),
-        bindings_fn: Some(c1295_bind),
+        register_fn: Some(c1294_reg),
+        bindings_fn: Some(c1294_bind),
     },
     SqlCase {
         name: "register.dialect.redefinition-with-a-different-parent-is-refused",
@@ -34045,8 +34026,8 @@ pub const SQL_CASES: &[SqlCase] = &[
         has_tables: false,
         tables: &[],
         unrepresentable: None,
-        register_fn: Some(c1296_reg),
-        bindings_fn: Some(c1296_bind),
+        register_fn: Some(c1295_reg),
+        bindings_fn: Some(c1295_bind),
     },
     SqlCase {
         name: "plan.keys.filter-then-key-reader-is-not-a-split-point",
@@ -34065,7 +34046,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &["orders"],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1297_bind),
+        bindings_fn: Some(c1296_bind),
     },
     SqlCase {
         name: "plan.keys.filter-then-unsupported-filter-is-pure-memory",
@@ -34084,7 +34065,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &["orders"],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1298_bind),
+        bindings_fn: Some(c1297_bind),
     },
     SqlCase {
         name: "plan.keys.split-after-a-sort-may-end-in-a-filter",
@@ -34103,7 +34084,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &["orders"],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1299_bind),
+        bindings_fn: Some(c1298_bind),
     },
     SqlCase {
         name: "plan.keys.split-after-a-filter-then-a-sort-is-safe",
@@ -34122,7 +34103,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &["orders"],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1300_bind),
+        bindings_fn: Some(c1299_bind),
     },
     SqlCase {
         name: "plan.errors.take-behind-a-map-that-can-raise-stays-local",
@@ -34141,7 +34122,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &["orders"],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1301_bind),
+        bindings_fn: Some(c1300_bind),
     },
     SqlCase {
         name: "plan.errors.drop-behind-a-map-that-can-raise-stays-local",
@@ -34160,7 +34141,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &["orders"],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1302_bind),
+        bindings_fn: Some(c1301_bind),
     },
     SqlCase {
         name: "plan.errors.sort-and-take-behind-a-map-that-can-raise-stay-local",
@@ -34179,7 +34160,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &["orders"],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1303_bind),
+        bindings_fn: Some(c1302_bind),
     },
     SqlCase {
         name: "plan.errors.take-before-the-map-is-pushed",
@@ -34198,7 +34179,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &["orders"],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1304_bind),
+        bindings_fn: Some(c1303_bind),
     },
     SqlCase {
         name: "plan.binders.split-before-a-link-keeps-the-prefix-to-the-link",
@@ -34217,7 +34198,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &["orders"],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1305_bind),
+        bindings_fn: Some(c1304_bind),
     },
     SqlCase {
         name: "plan.binders.literal-helper-named-like-an-explicit-sort-binder",
@@ -34236,7 +34217,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &["orders"],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1306_bind),
+        bindings_fn: Some(c1305_bind),
     },
     SqlCase {
         name: "plan.tables.a-binder-named-like-a-relation-reads-nothing",
@@ -34255,7 +34236,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1307_bind),
+        bindings_fn: Some(c1306_bind),
     },
     SqlCase {
         name: "plan.tables.a-map-binder-named-like-a-relation",
@@ -34274,7 +34255,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1308_bind),
+        bindings_fn: Some(c1307_bind),
     },
     SqlCase {
         name: "plan.tables.an-assignment-target-named-like-a-relation",
@@ -34293,7 +34274,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1309_bind),
+        bindings_fn: Some(c1308_bind),
     },
     SqlCase {
         name: "plan.tables.a-filter-binder-named-like-another-relation",
@@ -34312,7 +34293,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &["orders"],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1310_bind),
+        bindings_fn: Some(c1309_bind),
     },
     SqlCase {
         name: "stmt.order.the-order-rule-comes-before-a-bad-key",
@@ -34331,7 +34312,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1311_bind),
+        bindings_fn: Some(c1310_bind),
     },
     SqlCase {
         name: "stmt.order.the-order-rule-comes-before-a-bare-row-key",
@@ -34350,7 +34331,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1312_bind),
+        bindings_fn: Some(c1311_bind),
     },
     SqlCase {
         name: "stmt.order.bucket-after-a-sort-is-refused-at-the-step",
@@ -34369,7 +34350,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1313_bind),
+        bindings_fn: Some(c1312_bind),
     },
     SqlCase {
         name: "stmt.order.bucket-after-two-sorts-is-refused-at-the-step",
@@ -34388,7 +34369,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1314_bind),
+        bindings_fn: Some(c1313_bind),
     },
     SqlCase {
         name: "stmt.order.distinct-after-a-sort-is-refused-at-the-step",
@@ -34407,7 +34388,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1315_bind),
+        bindings_fn: Some(c1314_bind),
     },
     SqlCase {
         name: "review.order.sort-over-a-projection-of-sorted-rows-is-refused",
@@ -34426,7 +34407,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1316_bind),
+        bindings_fn: Some(c1315_bind),
     },
     SqlCase {
         name: "review.order.link-over-sorted-rows-is-refused",
@@ -34445,7 +34426,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1317_bind),
+        bindings_fn: Some(c1316_bind),
     },
     SqlCase {
         name: "plan.hybrid.link-over-sorted-rows-joins-in-memory",
@@ -34464,7 +34445,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &["orders"],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1318_bind),
+        bindings_fn: Some(c1317_bind),
     },
     SqlCase {
         name: "plan.pure-memory.self-join-is-not-split",
@@ -34483,7 +34464,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &["orders"],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1319_bind),
+        bindings_fn: Some(c1318_bind),
     },
     SqlCase {
         name: "bind.value.null-element-is-refused",
@@ -34502,7 +34483,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1320_bind),
+        bindings_fn: Some(c1319_bind),
     },
     SqlCase {
         name: "register.dialect.backslash-escape-must-double-the-backslash",
@@ -34520,8 +34501,8 @@ pub const SQL_CASES: &[SqlCase] = &[
         has_tables: false,
         tables: &[],
         unrepresentable: None,
-        register_fn: Some(c1321_reg),
-        bindings_fn: Some(c1321_bind),
+        register_fn: Some(c1320_reg),
+        bindings_fn: Some(c1320_bind),
     },
     SqlCase {
         name: "register.dialect.quote-escape-is-doubling-or-backslash",
@@ -34539,8 +34520,8 @@ pub const SQL_CASES: &[SqlCase] = &[
         has_tables: false,
         tables: &[],
         unrepresentable: None,
-        register_fn: Some(c1322_reg),
-        bindings_fn: Some(c1322_bind),
+        register_fn: Some(c1321_reg),
+        bindings_fn: Some(c1321_bind),
     },
     SqlCase {
         name: "bind.type.statement-is-not-declarable",
@@ -34559,7 +34540,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1323_bind),
+        bindings_fn: Some(c1322_bind),
     },
     SqlCase {
         name: "norm.size.definition-past-the-budget-is-refused-where-it-is-read",
@@ -34578,7 +34559,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1324_bind),
+        bindings_fn: Some(c1323_bind),
     },
     SqlCase {
         name: "norm.size.unread-definition-past-the-budget-is-free",
@@ -34597,7 +34578,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1325_bind),
+        bindings_fn: Some(c1324_bind),
     },
     SqlCase {
         name: "norm.size.unread-definition-past-the-budget-is-still-validated",
@@ -34616,7 +34597,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1326_bind),
+        bindings_fn: Some(c1325_bind),
     },
     SqlCase {
         name: "norm.depth.definition-past-four-times-the-depth-is-refused-at-the-assignment",
@@ -34635,7 +34616,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1327_bind),
+        bindings_fn: Some(c1326_bind),
     },
     SqlCase {
         name: "norm.size.result-past-the-budget-is-refused-where-the-walk-stops",
@@ -34654,7 +34635,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1328_bind),
+        bindings_fn: Some(c1327_bind),
     },
     SqlCase {
         name: "refuse.in-relation.boolean-needle-at-the-needle",
@@ -34673,7 +34654,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1329_bind),
+        bindings_fn: Some(c1328_bind),
     },
     SqlCase {
         name: "refuse.binder.checked-at-the-call-not-in-stage-1",
@@ -34692,7 +34673,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1330_bind),
+        bindings_fn: Some(c1329_bind),
     },
     SqlCase {
         name: "plan.pure-memory.key-read-after-a-filter-is-not-split",
@@ -34711,7 +34692,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &["t"],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1331_bind),
+        bindings_fn: Some(c1330_bind),
     },
     SqlCase {
         name: "bind.prefilter.unknown-spelling-is-refused",
@@ -34730,7 +34711,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1332_bind),
+        bindings_fn: Some(c1331_bind),
     },
     SqlCase {
         name: "order.filter-after-sort-keeps-the-order",
@@ -34749,7 +34730,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &["orders"],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1333_bind),
+        bindings_fn: Some(c1332_bind),
     },
     SqlCase {
         name: "order.projection-then-filter-of-sorted-rows-is-refused",
@@ -34768,7 +34749,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1334_bind),
+        bindings_fn: Some(c1333_bind),
     },
     SqlCase {
         name: "bind.alias.case-colliding-relation-aliases-are-refused",
@@ -34787,7 +34768,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1335_bind),
+        bindings_fn: Some(c1334_bind),
     },
     SqlCase {
         name: "assign.empty-text-key-is-a-constant-index",
@@ -34806,7 +34787,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1336_bind),
+        bindings_fn: Some(c1335_bind),
     },
     SqlCase {
         name: "plan.order.sort-over-a-projection-of-sorted-rows-stays-in-memory",
@@ -34825,7 +34806,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &["orders"],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1337_bind),
+        bindings_fn: Some(c1336_bind),
     },
     SqlCase {
         name: "plan.order.limit-then-link-stays-in-memory",
@@ -34844,7 +34825,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &["orders"],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1338_bind),
+        bindings_fn: Some(c1337_bind),
     },
     SqlCase {
         name: "plan.order.link-left-over-sorted-rows-stays-in-memory",
@@ -34863,7 +34844,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &["orders"],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1339_bind),
+        bindings_fn: Some(c1338_bind),
     },
     SqlCase {
         name: "plan.order.projection-then-link-over-sorted-rows-stays-in-memory",
@@ -34882,7 +34863,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &["orders"],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1340_bind),
+        bindings_fn: Some(c1339_bind),
     },
     SqlCase {
         name: "plan.order.sort-filter-then-link-stays-in-memory",
@@ -34901,7 +34882,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &["orders"],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1341_bind),
+        bindings_fn: Some(c1340_bind),
     },
     SqlCase {
         name: "plan.keys.filter-filter-then-a-renumbering-step-splits-after-the-first",
@@ -34920,13 +34901,32 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &["orders"],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1342_bind),
+        bindings_fn: Some(c1341_bind),
     },
     SqlCase {
         name: "plan.keys.filter-filter-then-a-key-read-stays-in-memory",
         at: "52-audit-cases.sqlt:441",
         dialect: "mariadb",
         source: "ORDERS .> FILTER(_[\"amount\"] == 2) .> FILTER(_[\"nope\"][\"x\"] $== \"b\") .> SORT_BY(_K)",
+        expect: None,
+        error: None,
+        throws: None,
+        params: None,
+        as_mode: None,
+        mode: None,
+        strict: false,
+        plan: Some("pure_memory"),
+        has_tables: true,
+        tables: &["orders"],
+        unrepresentable: None,
+        register_fn: None,
+        bindings_fn: Some(c1342_bind),
+    },
+    SqlCase {
+        name: "plan.pure-memory.tables-read-in-an-assignment-target-index",
+        at: "52-audit-cases.sqlt:456",
+        dialect: "mariadb",
+        source: "A = LIST(0); A[COUNT(ORDERS) - COUNT(ORDERS)] = 1; A",
         expect: None,
         error: None,
         throws: None,
