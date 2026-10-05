@@ -2801,7 +2801,7 @@ impl Translator {
             return refuse(
                 "E_SQL_UNSUPPORTED",
                 format!(
-                    "{} accepts only the i flag here, and SEL accepts only i at all; {:?} is not it",
+                    "{} translates only the flags \"\" and \"i\"; {:?} is not one of them",
                     n.str, text
                 ),
                 flags.pos,

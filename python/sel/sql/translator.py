@@ -1196,14 +1196,14 @@ class Translator:
         # and RMATCH(p, s, "zzz") compiled happily where SEL raises E_BAD_ARG. An
         # empty flag string is dropped so the two-argument template applies.
         text = str(flags.v)
-        # Spelled as the two strings that pass rather than as a case fold:
-        # PHP's strtolower is ASCII-only and str.lower() is not ("İ".lower() is
-        # two code points), and `strtolower($t) !== 'i'` admits exactly "i" and
-        # "I". Naming them is byte-exact and needs no ascii_lower.
-        if text not in ('', 'i', 'I'):
+        # Exactly "" and "i", spelled as strings rather than as a case fold: the
+        # evaluator refuses "I" with E_BAD_ARG (conformance
+        # re.flag.uppercase-i-is-not-i), and with a column subject the constant
+        # validation never sees the call, so this test is the only one that can.
+        if text not in ('', 'i'):
             refuse('E_SQL_UNSUPPORTED',
-                   f'{n.name} accepts only the i flag here, and SEL accepts only i '
-                   'at all; ' + quote_dump(text) + ' is not it', flags.pos)
+                   f'{n.name} translates only the flags "" and "i"; '
+                   + quote_dump(text) + ' is not one of them', flags.pos)
         if text != '':
             # The evaluator refuses i on a pattern with non-ASCII literals,
             # because case folding above ASCII is the one thing PCRE and

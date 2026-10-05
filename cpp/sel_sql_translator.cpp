@@ -2190,14 +2190,14 @@ SNodePtr Translator::rewrite_regex(const SNodePtr& n) {
   // RMATCH(p, s, "") matched case-insensitively where SEL does not, and
   // RMATCH(p, s, "zzz") compiled happily where SEL raises E_BAD_ARG.
   //
-  // Spelled as the two strings that pass rather than as a case fold: an
-  // ASCII-only lower would admit exactly these two anyway, and naming them is
-  // byte-exact and needs no helper.
+  // Exactly "" and "i": the evaluator refuses "I" with E_BAD_ARG (conformance
+  // re.flag.uppercase-i-is-not-i), and with a column subject the constant
+  // validation never sees the call, so this test is the only one that can.
   const std::string& text = flags->s();
-  if (text != "" && text != "i" && text != "I") {
+  if (text != "" && text != "i") {
     refuse("E_SQL_UNSUPPORTED",
-           n->s() + " accepts only the i flag here, and SEL accepts only i at "
-                    "all; \"" + text + "\" is not it",
+           n->s() + " translates only the flags \"\" and \"i\"; \"" + text +
+               "\" is not one of them",
            flags->pos());
   }
   if (!text.empty()) {

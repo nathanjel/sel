@@ -1579,10 +1579,14 @@ final class Translator
         // E_BAD_ARG. An empty flag string is dropped so the two-argument
         // template applies.
         $text = (string) $flags['v'];
-        if ($text !== '' && Utf8::lower($text) !== 'i') {
+        // Exactly "" and "i": the evaluator refuses "I" with E_BAD_ARG
+        // (conformance re.flag.uppercase-i-is-not-i), and with a column subject
+        // the constant validation never sees the call, so this test is the only
+        // one that can.
+        if ($text !== '' && $text !== 'i') {
             refuse('E_SQL_UNSUPPORTED',
-                "{$n['name']} accepts only the i flag here, and SEL accepts only i "
-                . 'at all; ' . Value::quoteDump($text) . ' is not it',
+                "{$n['name']} translates only the flags \"\" and \"i\"; "
+                . Value::quoteDump($text) . ' is not one of them',
                 $flags['pos']);
         }
         if ($text !== '') {

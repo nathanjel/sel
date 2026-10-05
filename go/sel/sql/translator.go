@@ -1740,9 +1740,12 @@ func (t *translator) rewriteRegex(n *sNode) *sNode {
 			flags.Pos)
 	}
 	text := flags.Str
-	if text != "" && text != "i" && text != "I" {
+	// Exactly "" and "i": the evaluator refuses "I" with E_BAD_ARG (conformance
+	// re.flag.uppercase-i-is-not-i), and with a column subject the constant
+	// validation never sees the call, so this test is the only one that can.
+	if text != "" && text != "i" {
 		refuse("E_SQL_UNSUPPORTED",
-			fmt.Sprintf("%s accepts only the i flag here, and SEL accepts only i at all; %q is not it", n.Str, text),
+			fmt.Sprintf("%s translates only the flags \"\" and \"i\"; %q is not one of them", n.Str, text),
 			flags.Pos)
 	}
 	if text != "" {

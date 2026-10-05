@@ -1678,7 +1678,12 @@ the arity. Three arguments in, two used, no complaint anywhere.
 
 The flag is mappable — `(?si)` works on 11.8 — so the fix is an arity-keyed
 template whose three-argument form emits `(?si)`, plus the rule that the flag
-must be a **literal**, for the same reason the pattern must be (below).
+must be a **literal**, for the same reason the pattern must be (below). The
+literal's content picks the template, and only two contents translate: `""`
+(the two-argument form) and `"i"`. Anything else is `E_SQL_UNSUPPORTED` at the
+flags — `"zzz"`, and `"I"`, which SEL raises `E_BAD_ARG` for and which six hosts
+once translated case-insensitively because the test was a case fold
+(`review.regex.uppercase-i-is-not-the-i-flag`).
 
 And the generator gains the check that would have caught it: **a single-string
 `tpl` on an entry whose effective arity spans more than one count is an error.**

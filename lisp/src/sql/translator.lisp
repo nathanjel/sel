@@ -1517,13 +1517,14 @@ selects the mapping, so they have to be known before the query runs" name)
                     (snode-pos flags)))
           ;; The flag string's CONTENT chooses the template. Choosing by argument
           ;; count instead meant every three-argument call got the
-          ;; case-insensitive form. Spelled as the two strings that pass rather
-          ;; than as a case fold: naming them is byte-exact.
+          ;; case-insensitive form. Exactly "" and "i": the evaluator refuses
+          ;; "I" with E_BAD_ARG (conformance re.flag.uppercase-i-is-not-i), and
+          ;; with a column subject the constant validation never sees the call.
           (let ((text (sel::node-s flags)))
-            (unless (member text '("" "i" "I") :test #'equal)
+            (unless (member text '("" "i") :test #'equal)
               (refuse "E_SQL_UNSUPPORTED"
-                      (format nil "~a accepts only the i flag here, and SEL ~
-accepts only i at all; ~s is not it" name text)
+                      (format nil "~a translates only the flags \"\" and \"i\"; ~
+~s is not one of them" name text)
                       (snode-pos flags)))
             (when (plusp (length text))
               ;; The evaluator refuses i on a pattern with non-ASCII literals,

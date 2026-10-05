@@ -121,6 +121,22 @@ RMATCH("abc", C, "zzz")
 --- error
 E_SQL_UNSUPPORTED
 ===
+### name: review.regex.uppercase-i-is-not-the-i-flag
+--- note
+Translated to the case-insensitive template in six hosts, while every evaluator raises
+E_BAD_ARG for "I" (conformance re.flag.uppercase-i-is-not-i). With a column subject the
+constant validation never sees the call, so the flag test itself must refuse it: the
+translators accept exactly "" and "i", and refuse anything else at the flags argument, as
+they refuse "zzz".
+--- dialect
+mariadb
+--- bindings
+{"C": {"kind": "column", "column": "c", "type": "TEXT"}}
+--- source
+RMATCH("abc", C, "I")
+--- error
+E_SQL_UNSUPPORTED 1:18
+===
 ### name: review.regex.i-flag-needs-an-ascii-pattern
 --- note
 Case folding above ASCII is the one thing PCRE and ECMAScript cannot be made to

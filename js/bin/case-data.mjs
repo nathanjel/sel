@@ -4220,8 +4220,25 @@ export const SQL_CASES = [
     bindings: () => ({ "C": Binding.column("c", null, "TEXT") }),
   },
   {
-    "name": "review.regex.i-flag-needs-an-ascii-pattern",
+    "name": "review.regex.uppercase-i-is-not-the-i-flag",
     "at": "13-review.sqlt:124",
+    "dialect": "mariadb",
+    "source": "RMATCH(\"abc\", C, \"I\")",
+    "expect": null,
+    "error": "E_SQL_UNSUPPORTED 1:18",
+    "throws": null,
+    "params": null,
+    "as": null,
+    "mode": null,
+    "register": null,
+    "options": null,
+    "plan": null,
+    "tables": null,
+    bindings: () => ({ "C": Binding.column("c", null, "TEXT") }),
+  },
+  {
+    "name": "review.regex.i-flag-needs-an-ascii-pattern",
+    "at": "13-review.sqlt:140",
     "dialect": "mariadb",
     "source": "RMATCH(\"zażółć\", C, \"i\")",
     "expect": null,
@@ -4238,7 +4255,7 @@ export const SQL_CASES = [
   },
   {
     "name": "review.register.a-skeleton-is-reachable",
-    "at": "13-review.sqlt:138",
+    "at": "13-review.sqlt:154",
     "dialect": "mariadb",
     "source": "JOIN(R, \",\")",
     "expect": "(SELECT GROUP_CONCAT(`r`.`s` ORDER BY `r`.`s` SEPARATOR ',') FROM `t` `r` WHERE TRUE)",
@@ -4255,7 +4272,7 @@ export const SQL_CASES = [
   },
   {
     "name": "review.bindings.raw-from-without-an-alias",
-    "at": "13-review.sqlt:155",
+    "at": "13-review.sqlt:171",
     "dialect": "mariadb",
     "source": "1 + 1",
     "expect": "(1 + 1)",
@@ -4272,7 +4289,7 @@ export const SQL_CASES = [
   },
   {
     "name": "review.bindings.raw-from-alias-collision-still-caught",
-    "at": "13-review.sqlt:168",
+    "at": "13-review.sqlt:184",
     "dialect": "mariadb",
     "source": "1 + 1",
     "expect": null,
@@ -4289,7 +4306,7 @@ export const SQL_CASES = [
   },
   {
     "name": "review.in.value-binding-holding-a-list",
-    "at": "13-review.sqlt:178",
+    "at": "13-review.sqlt:194",
     "dialect": "mariadb",
     "source": "S IN ALLOWED",
     "expect": "((CAST(`s` AS CHAR) COLLATE utf8mb4_nopad_bin = CAST('open' AS CHAR) COLLATE utf8mb4_nopad_bin) OR (CAST(`s` AS CHAR) COLLATE utf8mb4_nopad_bin = CAST('held' AS CHAR) COLLATE utf8mb4_nopad_bin))",
@@ -4306,7 +4323,7 @@ export const SQL_CASES = [
   },
   {
     "name": "review.params.reordering-template-binds-in-output-order",
-    "at": "13-review.sqlt:191",
+    "at": "13-review.sqlt:207",
     "dialect": "mariadb",
     "source": "FIND(\"a\", \"banana\")",
     "expect": "INSTR(?, ?)",
@@ -4323,7 +4340,7 @@ export const SQL_CASES = [
   },
   {
     "name": "kinds.branches-must-agree",
-    "at": "13-review.sqlt:207",
+    "at": "13-review.sqlt:223",
     "dialect": "mariadb",
     "source": "IF(TRUE, TRUE, \"A-1\")",
     "expect": null,
@@ -4340,7 +4357,7 @@ export const SQL_CASES = [
   },
   {
     "name": "kinds.unknown-still-unifies-with-anything",
-    "at": "13-review.sqlt:220",
+    "at": "13-review.sqlt:236",
     "dialect": "mariadb",
     "source": "IF(TRUE, C, \"x\")",
     "expect": "CASE WHEN TRUE THEN `c` ELSE 'x' END",
@@ -4357,7 +4374,7 @@ export const SQL_CASES = [
   },
   {
     "name": "kinds.bool-is-not-byte-comparable-with-a-number",
-    "at": "13-review.sqlt:234",
+    "at": "13-review.sqlt:250",
     "dialect": "mariadb",
     "source": "0 IN FALSE",
     "expect": null,
@@ -4374,7 +4391,7 @@ export const SQL_CASES = [
   },
   {
     "name": "kinds.two-bools-compare-fine",
-    "at": "13-review.sqlt:246",
+    "at": "13-review.sqlt:262",
     "dialect": "mariadb",
     "source": "TRUE EQL FALSE",
     "expect": "(CAST(TRUE AS CHAR) COLLATE utf8mb4_nopad_bin = CAST(FALSE AS CHAR) COLLATE utf8mb4_nopad_bin)",
@@ -4391,7 +4408,7 @@ export const SQL_CASES = [
   },
   {
     "name": "kinds.an-unknown-operand-is-the-accepted-limit",
-    "at": "13-review.sqlt:257",
+    "at": "13-review.sqlt:273",
     "dialect": "mariadb",
     "source": "C EQL TRUE",
     "expect": "(CAST(`c` AS CHAR) COLLATE utf8mb4_nopad_bin = CAST(TRUE AS CHAR) COLLATE utf8mb4_nopad_bin)",
@@ -4408,7 +4425,7 @@ export const SQL_CASES = [
   },
   {
     "name": "kinds.bool-is-not-byte-comparable-directly",
-    "at": "13-review.sqlt:270",
+    "at": "13-review.sqlt:286",
     "dialect": "mariadb",
     "source": "0 EQL FALSE",
     "expect": null,
@@ -4425,7 +4442,7 @@ export const SQL_CASES = [
   },
   {
     "name": "kinds.bool-is-not-byte-comparable-with-text",
-    "at": "13-review.sqlt:282",
+    "at": "13-review.sqlt:298",
     "dialect": "mariadb",
     "source": "\"x\" $== TRUE",
     "expect": null,
@@ -4442,7 +4459,7 @@ export const SQL_CASES = [
   },
   {
     "name": "kinds.a-bool-is-not-a-number",
-    "at": "13-review.sqlt:290",
+    "at": "13-review.sqlt:306",
     "dialect": "mariadb",
     "source": "0 != FALSE",
     "expect": null,
@@ -4459,7 +4476,7 @@ export const SQL_CASES = [
   },
   {
     "name": "kinds.a-bool-is-not-an-addend",
-    "at": "13-review.sqlt:304",
+    "at": "13-review.sqlt:320",
     "dialect": "mariadb",
     "source": "1 + TRUE",
     "expect": null,
@@ -4476,7 +4493,7 @@ export const SQL_CASES = [
   },
   {
     "name": "kinds.a-bool-cannot-be-negated",
-    "at": "13-review.sqlt:312",
+    "at": "13-review.sqlt:328",
     "dialect": "mariadb",
     "source": "-(TRUE)",
     "expect": null,
@@ -4493,7 +4510,7 @@ export const SQL_CASES = [
   },
   {
     "name": "kinds.an-unknown-column-still-adds",
-    "at": "13-review.sqlt:322",
+    "at": "13-review.sqlt:338",
     "dialect": "mariadb",
     "source": "C + 1",
     "expect": "(CASE WHEN (`c` REGEXP '\\\\A-?[0-9]+(\\\\.[0-9]+)?\\\\z') THEN CAST(`c` AS DECIMAL(65,10)) ELSE NULL END + 1)",
@@ -4510,7 +4527,7 @@ export const SQL_CASES = [
   },
   {
     "name": "kinds.bin-is-not-text-comparable-under-eql",
-    "at": "13-review.sqlt:335",
+    "at": "13-review.sqlt:351",
     "dialect": "mariadb",
     "source": "TO_UTF8(\"a\") EQL \"a\"",
     "expect": null,
@@ -4527,7 +4544,7 @@ export const SQL_CASES = [
   },
   {
     "name": "kinds.bin-is-not-text-comparable-under-in",
-    "at": "13-review.sqlt:349",
+    "at": "13-review.sqlt:365",
     "dialect": "mariadb",
     "source": "\"a\" IN TO_UTF8(\"a\")",
     "expect": null,
@@ -4544,7 +4561,7 @@ export const SQL_CASES = [
   },
   {
     "name": "kinds.two-bins-compare-as-bytes",
-    "at": "13-review.sqlt:357",
+    "at": "13-review.sqlt:373",
     "dialect": "mariadb",
     "source": "TO_UTF8(\"a\") EQL TO_UTF8(\"a\")",
     "expect": "(CAST('a' AS BINARY) = CAST('a' AS BINARY))",
@@ -4561,7 +4578,7 @@ export const SQL_CASES = [
   },
   {
     "name": "kinds.a-number-is-a-text-value",
-    "at": "13-review.sqlt:372",
+    "at": "13-review.sqlt:388",
     "dialect": "mariadb",
     "source": "1 EQL \"1\"",
     "expect": "(CAST(1 AS CHAR) COLLATE utf8mb4_nopad_bin = CAST('1' AS CHAR) COLLATE utf8mb4_nopad_bin)",
@@ -4578,7 +4595,7 @@ export const SQL_CASES = [
   },
   {
     "name": "kinds.a-bin-is-not-an-addend",
-    "at": "13-review.sqlt:384",
+    "at": "13-review.sqlt:400",
     "dialect": "mariadb",
     "source": "B + 1",
     "expect": null,
@@ -4595,7 +4612,7 @@ export const SQL_CASES = [
   },
   {
     "name": "kinds.a-bin-cannot-be-negated",
-    "at": "13-review.sqlt:398",
+    "at": "13-review.sqlt:414",
     "dialect": "mariadb",
     "source": "-B",
     "expect": null,
@@ -4612,7 +4629,7 @@ export const SQL_CASES = [
   },
   {
     "name": "kinds.a-bool-is-not-concatenable",
-    "at": "13-review.sqlt:408",
+    "at": "13-review.sqlt:424",
     "dialect": "mariadb",
     "source": "F & N",
     "expect": null,
@@ -4629,7 +4646,7 @@ export const SQL_CASES = [
   },
   {
     "name": "kinds.a-bin-is-concatenable",
-    "at": "13-review.sqlt:422",
+    "at": "13-review.sqlt:438",
     "dialect": "mariadb",
     "source": "B & N",
     "expect": "CONCAT(`b`, `n`)",
@@ -4646,7 +4663,7 @@ export const SQL_CASES = [
   },
   {
     "name": "kinds.a-bool-is-not-a-function-argument",
-    "at": "13-review.sqlt:435",
+    "at": "13-review.sqlt:451",
     "dialect": "mariadb",
     "source": "UPPER(F)",
     "expect": null,
@@ -4663,7 +4680,7 @@ export const SQL_CASES = [
   },
   {
     "name": "kinds.a-bin-is-not-a-text-function-argument",
-    "at": "13-review.sqlt:450",
+    "at": "13-review.sqlt:466",
     "dialect": "mariadb",
     "source": "LEN(B)",
     "expect": null,
@@ -4680,7 +4697,7 @@ export const SQL_CASES = [
   },
   {
     "name": "kinds.a-bin-is-a-byte-function-argument",
-    "at": "13-review.sqlt:463",
+    "at": "13-review.sqlt:479",
     "dialect": "mariadb",
     "source": "BLEN(B)",
     "expect": "LENGTH(`b`)",
@@ -4697,7 +4714,7 @@ export const SQL_CASES = [
   },
   {
     "name": "kinds.isnum-takes-anything",
-    "at": "13-review.sqlt:478",
+    "at": "13-review.sqlt:494",
     "dialect": "mariadb",
     "source": "ISNUM(F)",
     "expect": "(`f` REGEXP '\\\\A-?[0-9]+(\\\\.[0-9]+)?\\\\z')",
@@ -4714,7 +4731,7 @@ export const SQL_CASES = [
   },
   {
     "name": "kinds.an-unknown-argument-is-still-the-accepted-limit",
-    "at": "13-review.sqlt:491",
+    "at": "13-review.sqlt:507",
     "dialect": "mariadb",
     "source": "UPPER(U)",
     "expect": "UPPER(`u`)",
@@ -4731,7 +4748,7 @@ export const SQL_CASES = [
   },
   {
     "name": "kinds.bin-against-text-in-a-byte-comparison",
-    "at": "13-review.sqlt:501",
+    "at": "13-review.sqlt:517",
     "dialect": "postgresql",
     "source": "TO_UTF8(\"a\") $== \"a\"",
     "expect": null,
@@ -4748,7 +4765,7 @@ export const SQL_CASES = [
   },
   {
     "name": "kinds.bin-against-bin-in-a-byte-comparison",
-    "at": "13-review.sqlt:516",
+    "at": "13-review.sqlt:532",
     "dialect": "postgresql",
     "source": "TO_UTF8(\"a\") $== TO_UTF8(\"a\")",
     "expect": "(convert_to(CAST('a' AS TEXT), 'UTF8') = convert_to(CAST('a' AS TEXT), 'UTF8'))",
@@ -4765,7 +4782,7 @@ export const SQL_CASES = [
   },
   {
     "name": "review.slot.dollar-pattern-in-an-identifier",
-    "at": "13-review.sqlt:524",
+    "at": "13-review.sqlt:540",
     "dialect": "postgresql",
     "source": "COL == 1",
     "expect": "(CASE WHEN (CAST(\"active$' -- oops\" AS TEXT) ~ '^-?[0-9]+(\\.[0-9]+)?$') THEN CAST(\"active$' -- oops\" AS NUMERIC) ELSE NULL END = 1)",
@@ -4782,7 +4799,7 @@ export const SQL_CASES = [
   },
   {
     "name": "review.slot.repeated-in-a-skeleton",
-    "at": "13-review.sqlt:549",
+    "at": "13-review.sqlt:565",
     "dialect": "mariadb",
     "source": "COL == 1",
     "expect": "(CASE WHEN (`c` REGEXP '\\\\A-?[0-9]+(\\\\.[0-9]+)?\\\\z') THEN CAST(`c` AS DECIMAL(65,10)) ELSE NULL END = 1)",
@@ -4799,7 +4816,7 @@ export const SQL_CASES = [
   },
   {
     "name": "review.slot.repeated-in-a-numeric-wrap",
-    "at": "13-review.sqlt:569",
+    "at": "13-review.sqlt:585",
     "dialect": "wrapped",
     "source": "1",
     "expect": "(1 || '' || 1)",
@@ -4816,7 +4833,7 @@ export const SQL_CASES = [
   },
   {
     "name": "review.lexical.expands-into-itself",
-    "at": "13-review.sqlt:582",
+    "at": "13-review.sqlt:598",
     "dialect": "selfref",
     "source": "A $== \"x\"",
     "expect": null,
@@ -4833,7 +4850,7 @@ export const SQL_CASES = [
   },
   {
     "name": "review.unify.refusal-carries-a-position",
-    "at": "13-review.sqlt:603",
+    "at": "13-review.sqlt:619",
     "dialect": "mariadb",
     "source": "IF(TRUE, TRUE, \"A-1\")",
     "expect": null,
@@ -4850,7 +4867,7 @@ export const SQL_CASES = [
   },
   {
     "name": "review.lexical.empty-quote-is-refused",
-    "at": "13-review.sqlt:616",
+    "at": "13-review.sqlt:632",
     "dialect": "mariadb",
     "source": "1",
     "expect": null,
@@ -4867,7 +4884,7 @@ export const SQL_CASES = [
   },
   {
     "name": "review.binder.parenthesised-is-refused",
-    "at": "13-review.sqlt:632",
+    "at": "13-review.sqlt:648",
     "dialect": "mariadb",
     "source": "ALL(V, (C), C > 0)",
     "expect": null,
@@ -4884,7 +4901,7 @@ export const SQL_CASES = [
   },
   {
     "name": "review.binder.bare-name-still-works",
-    "at": "13-review.sqlt:654",
+    "at": "13-review.sqlt:670",
     "dialect": "mariadb",
     "source": "ALL(V, C, C > 0)",
     "expect": "((`x`.`a` > 0) AND (`x`.`b` > 0))",
@@ -4901,7 +4918,7 @@ export const SQL_CASES = [
   },
   {
     "name": "review.relation.field-name-folds-ascii-only",
-    "at": "13-review.sqlt:669",
+    "at": "13-review.sqlt:685",
     "dialect": "mariadb",
     "source": "ANY(R, X, X[\"straße\"] $== \"a\")",
     "expect": "EXISTS (SELECT 1 FROM `t` `r` WHERE TRUE AND ((CAST(`s` AS CHAR) COLLATE utf8mb4_nopad_bin = CAST('a' AS CHAR) COLLATE utf8mb4_nopad_bin)) IS TRUE)",
@@ -4918,7 +4935,7 @@ export const SQL_CASES = [
   },
   {
     "name": "register.dialect.root-has-no-parent",
-    "at": "13-review.sqlt:691",
+    "at": "13-review.sqlt:707",
     "dialect": "scratch",
     "source": "1 + 2",
     "expect": "(1 + 2)",
@@ -4935,7 +4952,7 @@ export const SQL_CASES = [
   },
   {
     "name": "register.dialect.extends-must-be-stated",
-    "at": "13-review.sqlt:714",
+    "at": "13-review.sqlt:730",
     "dialect": "mariadb",
     "source": "1",
     "expect": null,
@@ -4952,7 +4969,7 @@ export const SQL_CASES = [
   },
   {
     "name": "register.dialect.entries-are-not-declared-here",
-    "at": "13-review.sqlt:726",
+    "at": "13-review.sqlt:742",
     "dialect": "mariadb",
     "source": "1",
     "expect": null,

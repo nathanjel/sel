@@ -1299,15 +1299,13 @@ export class Translator {
     // RMATCH(p, s, "zzz") compiled happily where SEL raises E_BAD_ARG. An empty
     // flag string is dropped so the two-argument template applies.
     const text = String(flags.v);
-    // Spelled as literal strings rather than a case fold: JS's toLowerCase is
-    // not ASCII-only ("İ".toLowerCase() is two code points). NB this admits "I"
-    // as well as "i", and the evaluator refuses "I" with E_BAD_ARG (conformance
-    // re.flag.uppercase-i-is-not-i): a column-subject call with "I" translates
-    // where SEL raises. That is a known disagreement, not a decision.
-    if (text !== '' && text !== 'i' && text !== 'I') {
+    // Exactly "" and "i": the evaluator refuses "I" with E_BAD_ARG (conformance
+    // re.flag.uppercase-i-is-not-i), and with a column subject the constant
+    // validation never sees the call, so this test is the only one that can.
+    if (text !== '' && text !== 'i') {
       refuse('E_SQL_UNSUPPORTED',
-        `${n.name} accepts only the i flag here, and SEL accepts only i at all; `
-        + `${quoteDump(text)} is not it`, flags.pos);
+        `${n.name} translates only the flags "" and "i"; ${quoteDump(text)} is not one of them`,
+        flags.pos);
     }
     if (text !== '') {
       // The evaluator refuses i on a pattern with non-ASCII literals, because case
