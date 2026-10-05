@@ -13,9 +13,6 @@ export class JoinPlan {
     this.onPred = null;
     this.pos = null;
   }
-
-  get kind() { return this.type; }
-  set kind(value) { this.type = value; }
 }
 
 export class RelationalPlan {

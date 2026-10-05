@@ -62,10 +62,6 @@ export class HybridPlan {
   get is_hybrid() { return this.isHybrid; }
   get pure_sql() { return this.pureSql; }
   get pure_memory() { return this.pureMemory; }
-  get pureSqlExecution() { return this.pureSql; }
-  get pureMemoryExecution() { return this.pureMemory; }
-  get pureSqlP() { return this.pureSql; }
-  get pureMemoryP() { return this.pureMemory; }
   get source_tables() { return this.sourceTables; }
   get selected_member() { return this.selectedMember; }
 }

@@ -1,5 +1,7 @@
 // TypeScript definitions for SEL (Simple Expression Language)
 // Public host interface. See spec/SPEC.md §8.
+// tools/check-js-dts.mjs holds these to js/src/sel.mjs: every name, member
+// and parameter list below exists, and everything public is here.
 
 export type ValueKind = 'NONE' | 'TEXT' | 'BIN' | 'BOOL';
 
@@ -41,10 +43,9 @@ export class RecordShape {
 export class Value {
   kind: ValueKind;
   scalar: any;
-  children: Map<string, Value> | null;
   isList: boolean;
-  shape: RecordShape | null;
-  storage: Value[] | null;
+  // A value's children are read through size()/keys()/get()/entries(): how a
+  // record or list stores them is internal and changes between releases.
 
   constructor(kind: ValueKind, scalar: any, isList?: boolean);
 
