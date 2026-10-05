@@ -11,7 +11,7 @@ from typing import Any
 
 from . import decimal as D
 from .errors import MAX_DEPTH, SelError
-from .eval import bytes_compare
+from .eval import ARITH, COMPARE_OPS, bytes_compare, compare_result
 from .lexer import ascii_upper
 from .math_plan import compile_math_plan, is_math_op
 from .parser import Node, children, may_write
@@ -120,59 +120,22 @@ def fold(node: Node | None) -> Node | None:
                 return literal_bool(True, node.pos)
             if node.l.t == 'bool' and node.r.t == 'bool':
                 return literal_bool(node.l.v or node.r.v, node.pos)
-        if (node.l.t == 'num' and node.r.t == 'num'
-                and node.op in ('+', '-', '*', '/', '%')):
+        if node.l.t == 'num' and node.r.t == 'num' and node.op in ARITH:
             try:
-                left = literal_dec(node.l)
-                right = literal_dec(node.r)
-                if node.op == '+':
-                    result = D.add(left, right, node.pos)
-                elif node.op == '-':
-                    result = D.sub(left, right, node.pos)
-                elif node.op == '*':
-                    result = D.mul(left, right, node.pos)
-                elif node.op == '/':
-                    result = D.div(left, right, node.pos)
-                else:
-                    result = D.mod(left, right, node.pos)
+                result = ARITH[node.op](literal_dec(node.l), literal_dec(node.r), node.pos)
                 return literal_num(D.format(result), node.pos, result)
             except SelError:
                 return node
-        if (node.l.t == 'num' and node.r.t == 'num'
-                and node.op in ('==', '!=', '<', '<=', '>', '>=')):
+        if node.l.t == 'num' and node.r.t == 'num' and node.op in COMPARE_OPS:
             try:
                 c = D.cmp(literal_dec(node.l), literal_dec(node.r))
-                if node.op == '==':
-                    value = c == 0
-                elif node.op == '!=':
-                    value = c != 0
-                elif node.op == '<':
-                    value = c < 0
-                elif node.op == '<=':
-                    value = c <= 0
-                elif node.op == '>':
-                    value = c > 0
-                else:
-                    value = c >= 0
-                return literal_bool(value, node.pos)
+                return literal_bool(compare_result(node.op, c, node.pos), node.pos)
             except SelError:
                 return node
         if (node.l.t == 'text' and node.r.t == 'text'
                 and node.op in ('$==', '$!=', '$<', '$<=', '$>', '$>=')):
             c = text_compare(node.l.v, node.r.v)
-            if node.op == '$==':
-                value = c == 0
-            elif node.op == '$!=':
-                value = c != 0
-            elif node.op == '$<':
-                value = c < 0
-            elif node.op == '$<=':
-                value = c <= 0
-            elif node.op == '$>':
-                value = c > 0
-            else:
-                value = c >= 0
-            return literal_bool(value, node.pos)
+            return literal_bool(compare_result(node.op[1:], c, node.pos), node.pos)
         return node
     if (node.t == 'call' and node.name == 'IF' and len(node.args) == 3
             and node.args[0].t == 'bool'):

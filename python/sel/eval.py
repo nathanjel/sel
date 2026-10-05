@@ -559,15 +559,6 @@ def _eval_unary(node: Node, ctx: Context) -> Value:
 def _eval_binary(node: Node, ctx: Context) -> Value:
     op = node.op
 
-    # Short-circuit before either side is touched (§5.5, §5.6).
-    if op == 'AND' or op == 'OR':
-        left = eval_node(node.l, ctx).as_bool(node.l.pos)
-        if op == 'AND' and not left:
-            return Value.bool(False)
-        if op == 'OR' and left:
-            return Value.bool(True)
-        return Value.bool(eval_node(node.r, ctx).as_bool(node.r.pos))
-
     # ?? falls back on NULL, ??? on any vacuous value; both on a missing key
     # or name.
     if op == '??' or op == '???':
@@ -581,6 +572,14 @@ def _eval_binary(node: Node, ctx: Context) -> Value:
             return eval_node(node.r, ctx)
         return l
 
+    # The operators with an evaluator of their own -- AND, OR, the six numeric
+    # comparisons, $== and $!= -- are run by it here too: one copy of each. (The
+    # optimiser's physical copy calls them directly; this generic path serves
+    # the nodes it shares with the caller's tree.)
+    special = _BINARY.get(op)
+    if special is not None:
+        return special(node, ctx)
+
     l = eval_node(node.l, ctx)
     const = node.const_value
     r = const.value if const is not None else eval_node(node.r, ctx)
@@ -593,56 +592,17 @@ def _eval_binary(node: Node, ctx: Context) -> Value:
     # order is unspecified there. Python evaluates arguments left to right, so
     # this is not strictly required here — it is written this way so the file
     # can be read against the other four without a footnote.
-    if op == '+':
+    arith = ARITH.get(op)
+    if arith is not None:
         a = l.as_decimal(lp); b = r.as_decimal(rp)
-        return Value._num_owned(D.add(a, b, node.pos))
-    if op == '-':
-        a = l.as_decimal(lp); b = r.as_decimal(rp)
-        return Value._num_owned(D.sub(a, b, node.pos))
-    if op == '*':
-        a = l.as_decimal(lp); b = r.as_decimal(rp)
-        return Value._num_owned(D.mul(a, b, node.pos))
-    if op == '/':
-        a = l.as_decimal(lp); b = r.as_decimal(rp)
-        return Value._num_owned(D.div(a, b, node.pos))
-    if op == '%':
-        a = l.as_decimal(lp); b = r.as_decimal(rp)
-        return Value._num_owned(D.mod(a, b, node.pos))
+        return Value._num_owned(arith(a, b, node.pos))
 
     if op == '&':
         return _concat(l, r, lp, rp, node.pos)
 
-    if op in ('==', '!=', '<', '<=', '>', '>='):
-        a = l.as_decimal(lp); b = r.as_decimal(rp)
-        if a.scale == b.scale:
-            left = -a.digits if a.neg else a.digits
-            right = -b.digits if b.neg else b.digits
-            if op == '==':
-                return Value.bool(left == right)
-            if op == '!=':
-                return Value.bool(left != right)
-            if op == '<':
-                return Value.bool(left < right)
-            if op == '<=':
-                return Value.bool(left <= right)
-            if op == '>':
-                return Value.bool(left > right)
-            return Value.bool(left >= right)
-        return Value.bool(_compare_result(op, D.cmp(a, b), node.pos))
-
-    if op == '$==':
-        if l.kind == TEXT and r.kind == TEXT and not l.children and not r.children:
-            return Value.bool(l.scalar == r.scalar)
-        a = l.as_bytes(lp); b = r.as_bytes(rp)
-        return Value.bool(a == b)
-    if op == '$!=':
-        if l.kind == TEXT and r.kind == TEXT and not l.children and not r.children:
-            return Value.bool(l.scalar != r.scalar)
-        a = l.as_bytes(lp); b = r.as_bytes(rp)
-        return Value.bool(a != b)
     if op in ('$<', '$<=', '$>', '$>='):
         a = l.as_bytes(lp); b = r.as_bytes(rp)
-        return Value.bool(_compare_result(op[1:], bytes_compare(a, b), node.pos))
+        return Value.bool(compare_result(op[1:], bytes_compare(a, b), node.pos))
 
     if op == 'EQL':
         return Value.bool(l.eql(r, node.pos))
@@ -698,7 +658,7 @@ def _eval_compare(node: Node, ctx: Context) -> Value:
         if op == '>=':
             return Value.bool(left >= right)
         return Value.bool(left <= right)
-    return Value.bool(_compare_result(op, D.cmp(a, b), node.pos))
+    return Value.bool(compare_result(op, D.cmp(a, b), node.pos))
 
 
 def _eval_text_equal(node: Node, ctx: Context) -> Value:
@@ -719,7 +679,7 @@ _BINARY = {
 }
 
 
-def _compare_result(op: str, c: int, pos: Pos) -> bool:
+def compare_result(op: str, c: int, pos: Pos | None) -> bool:
     """The six comparisons, and nothing else.
 
     The last branch was `return c >= 0`, which answered for every operator it
@@ -792,6 +752,11 @@ def _bitwise(op: str, a: bytes, b: bytes, pos: Pos) -> Value:
 
 # --- assignment -------------------------------------------------------------
 
+# The five arithmetic operators and the decimal core's function for each: the
+# evaluator, compound assignment and the optimiser's constant fold read this.
+ARITH = {'+': D.add, '-': D.sub, '*': D.mul, '/': D.div, '%': D.mod}
+COMPARE_OPS = frozenset(('==', '!=', '<', '<=', '>', '>='))
+
 _COMPOUND = {'+=': '+', '-=': '-', '*=': '*', '/=': '/', '%=': '%', '&=': '&'}
 
 
@@ -816,17 +781,7 @@ def _eval_assign(node: Node, ctx: Context) -> Value:
         else:
             a = current.as_decimal(tp)
             b = rhs.as_decimal(vp)
-            if bin_op == '+':
-                res = D.add(a, b, node.pos)
-            elif bin_op == '-':
-                res = D.sub(a, b, node.pos)
-            elif bin_op == '*':
-                res = D.mul(a, b, node.pos)
-            elif bin_op == '/':
-                res = D.div(a, b, node.pos)
-            else:
-                res = D.mod(a, b, node.pos)
-            value = Value._num_owned(res)
+            value = Value._num_owned(ARITH[bin_op](a, b, node.pos))
 
     # Re-derived after the right-hand side ran, which may have replaced or
     # removed any level along the path.
