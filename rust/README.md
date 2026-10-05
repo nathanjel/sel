@@ -94,5 +94,5 @@ stable `code` (`E_NOT_NUM`, `E_ABORT`, …) and the `pos` of the node that faile
 ## Licence
 
 MIT. This crate is the Rust host of [SEL](https://github.com/nathanjel/sel); the
-repository holds the other six, the specification, the conformance suite and
+repository holds the other hosts, the specification, the conformance suite and
 the tests that keep them in agreement.

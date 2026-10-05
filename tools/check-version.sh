@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 # Every manifest must declare the same version.
 #
-# There are nine of them now — seven manifests (rust/Cargo.toml the latest),
-# python/sel/__init__.py's
-# __version__ (not a manifest, but published in the wheel metadata and just as
-# wrong if it drifted), and the top heading of CHANGELOG.md, so that a release
+# They are the seven manifests (rust/Cargo.toml the latest), the version
+# constants the hosts report at run time -- python/sel/__init__.py's
+# __version__ (published in the wheel metadata), PHP's Sel::VERSION and Go's
+# version.Version (both what `sel --version` prints) -- and the top heading of
+# CHANGELOG.md, so that a release
 # whose notes were never written fails here rather than at the tag. Nothing but
 # this script relates them. composer.json is deliberately absent: Packagist
 # infers the version from the git tag, and the check below fails if a version
@@ -32,13 +33,15 @@ extract() {
     lisp/sel-lang.asd) sed -n 's/.*:version[[:space:]]*"\([^"]*\)".*/\1/p' lisp/sel-lang.asd | head -1 ;;
     rust/Cargo.toml)   sed -n 's/^version[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' rust/Cargo.toml | head -1 ;;
     python/sel/__init__.py) sed -n "s/^__version__[[:space:]]*=[[:space:]]*'\([^']*\)'.*/\1/p" python/sel/__init__.py | head -1 ;;
+    php/src/Sel.php)   sed -n "s/.*public const VERSION[[:space:]]*=[[:space:]]*'\([^']*\)'.*/\1/p" php/src/Sel.php | head -1 ;;
+    go/internal/version/version.go) sed -n 's/^const Version[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' go/internal/version/version.go | head -1 ;;
     CHANGELOG.md)      sed -n 's/^## \([0-9][0-9.]*\) .*/\1/p' CHANGELOG.md | head -1 ;;
   esac
 }
 
 FILES="package.json pyproject.toml cpp/conanfile.py cpp/vcpkg.json
        cpp/CMakeLists.txt lisp/sel-lang.asd rust/Cargo.toml python/sel/__init__.py
-       CHANGELOG.md"
+       php/src/Sel.php go/internal/version/version.go CHANGELOG.md"
 
 want="${1:-}"
 tags="${2:-}"
@@ -133,6 +136,45 @@ if [ "$tags" = "--tags" ] && [ -n "$want" ]; then
   else
     printf '  %-24s %s\n' "tags v$want, go/v$want" "${main_tag:0:12}"
   fi
+fi
+
+# One description, every registry. npm, Packagist, PyPI, crates.io, Conan,
+# vcpkg and Quicklisp each show the package's description on its page, and the
+# copies were hand-edited apart until five of them named five languages and one
+# named seven. package.json's is the one; the others must equal it (vcpkg's is
+# the first line of its description list, Conan's the concatenated string).
+if ! python3 - <<'PY'
+import ast, json, re, sys
+def toml_description(path):
+    for line in open(path, encoding='utf-8'):
+        m = re.match(r'description\s*=\s*"(.*)"\s*$', line)
+        if m:
+            return m.group(1)
+want = json.load(open('package.json', encoding='utf-8'))['description']
+got = {
+    'composer.json': json.load(open('composer.json', encoding='utf-8')).get('description'),
+    'pyproject.toml': toml_description('pyproject.toml'),
+    'rust/Cargo.toml': toml_description('rust/Cargo.toml'),
+    'cpp/vcpkg.json': (json.load(open('cpp/vcpkg.json', encoding='utf-8')).get('description') or [None])[0],
+}
+conan = ast.parse(open('cpp/conanfile.py', encoding='utf-8').read())
+got['cpp/conanfile.py'] = next((n.value.value for n in ast.walk(conan) if isinstance(n, ast.Assign)
+                                and any(getattr(t, 'id', None) == 'description' for t in n.targets)
+                                and isinstance(n.value, ast.Constant)), None)
+asd = open('lisp/sel-lang.asd', encoding='utf-8').read()
+m = re.search(r'\(defsystem "sel-lang".*?:description "((?:[^"\\]|\\.)*)"', asd, re.S)
+got['lisp/sel-lang.asd'] = m.group(1) if m else None
+bad = 0
+for path, value in got.items():
+    if value != want:
+        print(f'  {path:24} description differs from package.json\'s:\n    {value!r}', file=sys.stderr)
+        bad = 1
+if not bad:
+    print(f'  {"descriptions":24} {len(got) + 1} manifests, one text')
+sys.exit(bad)
+PY
+then
+  status=1
 fi
 
 if [ "$status" -eq 0 ]; then
