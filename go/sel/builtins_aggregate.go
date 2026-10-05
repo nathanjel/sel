@@ -3,7 +3,6 @@
 package sel
 
 import (
-	"fmt"
 	"math/big"
 	"slices"
 	"strconv"
@@ -428,12 +427,10 @@ func doTop(args *Args, ctx *Context, forcedDir string) *Value {
 			body = args.Node(1)
 			direction = utf8.AsciiUpper(args.Text(2))
 		}
-	} else if sortCount == 4 {
+	} else { // 4: the manifest bounds TOP to 2-4 arguments and TOP_BY to 3-5
 		binder = args.Symbol(1)
 		body = args.Node(2)
 		direction = utf8.AsciiUpper(args.Text(3))
-	} else {
-		fail("E_ARITY", fmt.Sprintf("%s has an invalid sort form", args.Name()), args.Pos())
 	}
 
 	if direction != "ASC" && direction != "DESC" {
@@ -1160,10 +1157,7 @@ func doLink(args *Args, ctx *Context, leftJoin bool) *Value {
 	prefilter := ctx.joinPrefilter
 	ctx.joinPrefilter = nil
 
-	count := args.Count()
-	if count != 3 && count != 5 {
-		fail("E_ARITY", fmt.Sprintf("%s takes 3 or 5 arguments, got %d", args.Name(), count), args.Pos())
-	}
+	count := args.Count() // 3 or 5: arity_LINK runs at compile time
 
 	leftNode := args.Node(0)
 	rightNode := args.Node(1)

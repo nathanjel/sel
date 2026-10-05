@@ -44,10 +44,7 @@ func joinedRowFields(plan *relationalPlan) []joinedRowField {
 }
 
 func recordFields(node *sNode) []pair[string, *sNode] {
-	args := node.Kids
-	if len(args)%2 != 0 {
-		refuse("E_ARITY", "RECORD takes an even number of arguments", node.Pos)
-	}
+	args := node.Kids // an even count: RECORD's arity rule runs at compile time
 	var fields []pair[string, *sNode]
 	for i := 0; i < len(args); i += 2 {
 		if args[i].T != sNodeText {
@@ -424,14 +421,12 @@ func (t *translator) AnalyzePipeline(ast *sNode) *relationalPlan {
 			if len(args) == 2 {
 				binder = "_"
 				pred = args[1]
-			} else if len(args) == 3 {
+			} else { // 3: the parser enforced FILTER's arity
 				if !isBinderName(args[1]) {
 					refuse("E_SQL_SHAPE", "the binder of FILTER must be a bare name", args[1].Pos)
 				}
 				binder = args[1].Str
 				pred = args[2]
-			} else {
-				refuse("E_ARITY", "FILTER takes 2 or 3 arguments", step.Pos)
 			}
 
 			if plan.GroupBy != nil {
@@ -469,15 +464,13 @@ func (t *translator) AnalyzePipeline(ast *sNode) *relationalPlan {
 				binder = "_"
 				keyNode = args[1]
 				aggNode = args[2]
-			} else if len(args) == 4 {
+			} else { // 4: the parser enforced BUCKET's arity
 				if !isBinderName(args[1]) {
 					refuse("E_SQL_SHAPE", "the binder of BUCKET must be a bare name", args[1].Pos)
 				}
 				binder = args[1].Str
 				keyNode = args[2]
 				aggNode = args[3]
-			} else {
-				refuse("E_ARITY", "BUCKET takes 2 to 4 arguments", step.Pos)
 			}
 
 			severalKeys := (keyNode.T == sNodeCall && (keyNode.Str == "LIST" || keyNode.Str == "RECORD")) ||
@@ -594,14 +587,12 @@ func (t *translator) AnalyzePipeline(ast *sNode) *relationalPlan {
 			if len(args) == 2 {
 				binder = "_"
 				expr = args[1]
-			} else if len(args) == 3 {
+			} else { // 3: the parser enforced MAP's arity
 				if !isBinderName(args[1]) {
 					refuse("E_SQL_SHAPE", "the binder of MAP must be a bare name", args[1].Pos)
 				}
 				binder = args[1].Str
 				expr = args[2]
-			} else {
-				refuse("E_ARITY", "MAP takes 2 or 3 arguments", step.Pos)
 			}
 
 			if plan.Bucket == bucketOpen {
@@ -648,9 +639,6 @@ func (t *translator) AnalyzePipeline(ast *sNode) *relationalPlan {
 			plan.Distinct = true
 
 		case "TAKE":
-			if len(args) != 2 {
-				refuse("E_ARITY", "TAKE takes 2 arguments", step.Pos)
-			}
 			t.requireOrderSurvives(plan, "TAKE", step.Pos)
 			lim := t.evalIntParam(args[1], "TAKE")
 			if plan.Limit == nil {
@@ -660,9 +648,6 @@ func (t *translator) AnalyzePipeline(ast *sNode) *relationalPlan {
 			}
 
 		case "DROP":
-			if len(args) != 2 {
-				refuse("E_ARITY", "DROP takes 2 arguments", step.Pos)
-			}
 			t.requireOrderSurvives(plan, "DROP", step.Pos)
 			off := t.evalIntParam(args[1], "DROP")
 			skipped := off
@@ -734,9 +719,6 @@ func (t *translator) AnalyzePipeline(ast *sNode) *relationalPlan {
 				plan.OrderLostByJoin = true
 			}
 
-			if len(args) != 3 && len(args) != 5 {
-				refuse("E_ARITY", fmt.Sprintf("%s takes 3 or 5 arguments", name), step.Pos)
-			}
 			rightNode := args[1]
 			if rightNode.T != sNodeVar || !t.bindings.Has(rightNode.Str) {
 				refuse("E_SQL_SHAPE", fmt.Sprintf("%s requires a bound relation as its right side", name), rightNode.Pos)
@@ -879,9 +861,6 @@ func (t *translator) analyzeSortStep(step *sNode, plan *relationalPlan) {
 	name := step.Str
 	args := step.Kids
 	top := name == "TOP" || name == "TOP_DESC" || name == "TOP_BY"
-	if top && len(args) == 0 {
-		refuse("E_ARITY", fmt.Sprintf("%s has an invalid sort form", name), step.Pos)
-	}
 	count := len(args)
 	if top {
 		count = len(args) - 1
@@ -940,7 +919,7 @@ func (t *translator) analyzeSortStep(step *sNode, plan *relationalPlan) {
 				Dir:    dir,
 				Pos:    step.Pos,
 			})
-		} else if count == 3 {
+		} else { // 3: the parser enforced the arity
 			if !isBinderName(args[1]) {
 				refuse("E_SQL_SHAPE", fmt.Sprintf("the binder of %s must be a bare name", name), args[1].Pos)
 			}
@@ -950,8 +929,6 @@ func (t *translator) analyzeSortStep(step *sNode, plan *relationalPlan) {
 				Dir:    dir,
 				Pos:    step.Pos,
 			})
-		} else {
-			refuse("E_ARITY", fmt.Sprintf("%s takes 1 to 3 arguments", name), step.Pos)
 		}
 		return
 	}
@@ -979,7 +956,7 @@ func (t *translator) analyzeSortStep(step *sNode, plan *relationalPlan) {
 		} else {
 			refuse("E_BAD_ARG", "sort direction must be 'ASC' or 'DESC'", args[2].Pos)
 		}
-	} else if count == 4 {
+	} else { // 4: the parser enforced SORT_BY's arity
 		if !isBinderName(args[1]) {
 			refuse("E_SQL_SHAPE", "the binder of SORT_BY must be a bare name", args[1].Pos)
 		}
@@ -990,8 +967,6 @@ func (t *translator) analyzeSortStep(step *sNode, plan *relationalPlan) {
 		}
 		dir = utf8.AsciiUpper(args[3].Str)
 		dirPos = args[3].Pos
-	} else {
-		refuse("E_ARITY", "SORT_BY takes 2 to 4 arguments", step.Pos)
 	}
 
 	if dir != "ASC" && dir != "DESC" {

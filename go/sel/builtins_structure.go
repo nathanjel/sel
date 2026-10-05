@@ -2,9 +2,7 @@
 
 package sel
 
-import (
-	"reflect"
-)
+import ()
 
 func init() {
 	Define(&Spec{
@@ -82,10 +80,6 @@ func init() {
 				keys[i/2] = args.Text(i)
 				// SPEC §3.4: RECORD copies its values, like `,`.
 				values[i/2] = args.Val(i+1).CloneAt(2, args.Pos())
-			}
-			shape := args.RecordShape()
-			if shape != nil && reflect.DeepEqual(shape.keys, keys) {
-				return newShapedRecord(shape, values)
 			}
 			if uShape := uniqueRecordShape(keys); uShape != nil {
 				return newShapedRecord(uShape, values)
