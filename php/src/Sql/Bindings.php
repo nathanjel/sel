@@ -7,6 +7,7 @@ declare(strict_types=1);
 
 namespace Sel\Sql;
 
+use Sel\Utf8;
 
 final class Bindings
 {
@@ -35,7 +36,7 @@ final class Bindings
                     . '; build one with Binding::column(), ::columns(), ::relation(), '
                     . '::relationQuery(), ::raw() or ::value()');
             }
-            $key = \Sel\Utf8::upper((string) $name);
+            $key = Utf8::upper((string) $name);
             if (isset($this->map[$key])) {
                 throw new SqlError('E_SQL_BINDING',
                     "two bindings differ only by case ({$name}); SEL reads them as one name");
@@ -46,7 +47,7 @@ final class Bindings
 
     public function has(string $name): bool
     {
-        return isset($this->map[\Sel\Utf8::upper($name)]);
+        return isset($this->map[Utf8::upper($name)]);
     }
 
     /**
@@ -55,7 +56,7 @@ final class Bindings
      */
     public function get(string $name, ?array $pos = null): array
     {
-        $key = \Sel\Utf8::upper($name);
+        $key = Utf8::upper($name);
         if (!isset($this->map[$key])) {
             $known = array_keys($this->map);
             sort($known);
@@ -101,7 +102,7 @@ final class Bindings
             }
             // ASCII case-insensitively: SQLite (and, by platform, the MySQL family) reads `o`
             // and `O` as one alias, so two relations under them collide on the server.
-            $aliasKey = \Sel\Utf8::upper($alias);
+            $aliasKey = Utf8::upper($alias);
             if (isset($seen[$aliasKey])) {
                 refuse('E_SQL_BINDING',
                     "relations {$seen[$aliasKey]} and {$name} share the alias {$alias}; "

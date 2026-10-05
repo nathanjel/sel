@@ -10,6 +10,10 @@ declare(strict_types=1);
 
 namespace Sel\Sql;
 
+use Sel\Context;
+use Sel\Limits;
+use Sel\Registry;
+
 final class Normalise
 {
     /**
@@ -32,10 +36,10 @@ final class Normalise
     {
         // Saturating: a chain of a hundred doublings must not overflow the counter.
         self::$size = min(self::$size + $nodes, 1 << 40);
-        if (self::$refusing && self::$size > \Sel\Limits::MAX_SQL_NODES) {
+        if (self::$refusing && self::$size > Limits::MAX_SQL_NODES) {
             refuse('E_SQL_SIZE',
                 'the expression this rule would translate to has more than '
-                . \Sel\Limits::MAX_SQL_NODES . ' nodes once its helpers are expanded, '
+                . Limits::MAX_SQL_NODES . ' nodes once its helpers are expanded, '
                 . 'though SEL evaluates it in linear time; it is evaluated the ordinary way');
         }
     }
@@ -46,7 +50,7 @@ final class Normalise
      * @return array<string,mixed>
      */
     public static function run(array $ast, array $constNames = [],
-                               ?\Sel\Context $ctx = null): array
+                               ?Context $ctx = null): array
     {
         $stmts = $ast['t'] === 'seq' ? $ast['items'] : [$ast];
         $result = array_pop($stmts);
@@ -80,7 +84,7 @@ final class Normalise
      * @param array<string,bool> $constNames
      */
     private static function record(array $s, array &$defs, array $constNames,
-                                   ?\Sel\Context $ctx, int $depth): void
+                                   ?Context $ctx, int $depth): void
     {
         if ($s['t'] !== 'assign') {
             refuse('E_SQL_ASSIGN',
@@ -131,7 +135,7 @@ final class Normalise
         // constant subtree is checked wherever it appears; these were the two
         // places it did not appear by the time anything looked.
         $isConstant = Constants::isConstant($value, $constNames);
-        if ($valueSize <= \Sel\Limits::MAX_SQL_NODES && $isConstant) {
+        if ($valueSize <= Limits::MAX_SQL_NODES && $isConstant) {
             Constants::validate($value, $ctx);
         }
 
@@ -208,10 +212,10 @@ final class Normalise
         // deepest expression this layer accepts was decided by the host: PHP
         // recursed as far as it liked and Python died of its own stack at around
         // 510 terms, which is an implementation accident rather than a decision.
-        if (++$depth > \Sel\MAX_DEPTH) {
+        if (++$depth > Limits::MAX_DEPTH) {
             refuse('E_SQL_DEPTH',
                 'this expression nests deeper than SEL will evaluate ('
-                . \Sel\MAX_DEPTH . '), so there is nothing to translate; '
+                . Limits::MAX_DEPTH . '), so there is nothing to translate; '
                 . 'the evaluator answers E_DEPTH for it', $node['pos']);
         }
         self::charge(1);
@@ -244,13 +248,11 @@ final class Normalise
                 refuse('E_SQL_ASSIGN',
                     'an assignment here would have to happen while the query runs, '
                     . 'and a SQL expression cannot assign', $node['pos']);
-                // no break — refuse() never returns
 
             case 'seq':
                 refuse('E_SQL_ASSIGN',
                     'a sequence here would evaluate and discard a value, which a '
                     . 'SQL expression cannot do', $node['pos']);
-                // no break
 
             case 'un':
                 $node['x'] = self::substitute($node['x'], $defs, $bound, $depth);
@@ -281,7 +283,7 @@ final class Normalise
                 // what they see, is the manifest's decision
                 // (Registry::bindingForm), shared with dependencies(). A binder
                 // argument is a name, not a read of one, and stays as written.
-                $form = \Sel\Registry::bindingForm($node['name'], $node['args']);
+                $form = Registry::bindingForm($node['name'], $node['args']);
                 $inner = $form === null ? $bound : array_merge($bound, $form['binds']);
                 foreach ($node['args'] as $i => $arg) {
                     $scope = $form === null ? 'outer' : $form['scopes'][$i];

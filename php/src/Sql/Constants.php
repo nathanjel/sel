@@ -30,7 +30,9 @@ namespace Sel\Sql;
 
 use Sel\Context;
 use Sel\Evaluator;
+use Sel\Limits;
 use Sel\SelError;
+use Sel\Utf8;
 use Sel\Value;
 
 final class Constants
@@ -178,7 +180,7 @@ final class Constants
             if (is_array($needed) && ($name === 'LINK' || $name === 'LINK_LEFT') && $args[1]['t'] === 'var') {
                 $right = count($args) === 5 ? $args[3]['name'] : $args[1]['name'];
                 $needed = array_values(array_filter($needed,
-                    static fn ($k): bool => \Sel\Utf8::upper((string) $k) !== $right));
+                    static fn ($k): bool => Utf8::upper((string) $k) !== $right));
             }
             $node = $args[0];
         }
@@ -441,7 +443,7 @@ final class Constants
         if ($e->code === 'E_DEPTH') {
             refuse('E_SQL_DEPTH',
                 'this expression nests deeper than SEL will evaluate ('
-                . \Sel\MAX_DEPTH . '), so there is nothing to translate; '
+                . Limits::MAX_DEPTH . '), so there is nothing to translate; '
                 . 'the evaluator answers E_DEPTH for it',
                 $e->line > 0
                     ? ['line' => $e->line, 'col' => $e->col, 'offset' => $e->offset]

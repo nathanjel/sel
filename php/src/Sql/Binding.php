@@ -22,6 +22,8 @@ declare(strict_types=1);
 
 namespace Sel\Sql;
 
+use Sel\Dec;
+use Sel\Utf8;
 use Sel\Value;
 
 final class Binding
@@ -267,7 +269,7 @@ final class Binding
             // strtoupper, which is ASCII-only in PHP and so matches
             // sel.registry's ascii_upper on the Python side. str.upper()
             // there would fold "ß" to "SS" and change the key's length.
-            $upper = \Sel\Utf8::upper((string) $name);
+            $upper = Utf8::upper((string) $name);
             // SEL names are upper-cased, so two fields that differ only by ASCII case
             // are one name; silently keeping the last is a guess (sql/MAP.md 3.1).
             if (array_key_exists($upper, $out)) {
@@ -278,7 +280,7 @@ final class Binding
             $out[$upper] = $b->spec;
         }
         if ($scalar !== null) {
-            $key = \Sel\Utf8::upper($scalar);
+            $key = Utf8::upper($scalar);
             if (!isset($out[$key])) {
                 throw new SqlError('E_SQL_BINDING',
                     "a relation binding names {$scalar} as its scalar, which is not "
@@ -391,7 +393,7 @@ final class Binding
         // where the application supplied the string and the evaluator was handed
         // that same string. `"007"` translated to 7 while SEL kept "007".
         $text = $v->asText();
-        if (\Sel\Dec::format(\Sel\Dec::parse($text)) !== $text) {
+        if (Dec::format(Dec::parse($text)) !== $text) {
             throw new SqlError('E_SQL_BINDING',
                 "{$where} declares type NUM and is " . Value::quoteDump($text)
                 . ', which is not how SEL writes that number; a NUM binding is '
@@ -409,7 +411,7 @@ final class Binding
             throw new SqlError('E_SQL_BINDING',
                 'collation must be a string, and this is ' . get_debug_type($c));
         }
-        $lower = \Sel\Utf8::lower($c);
+        $lower = Utf8::lower($c);
         if ($lower === 'binary' || $lower === 'exact') {
             return [true, false];
         }
@@ -436,7 +438,7 @@ final class Binding
                 'a binding prefilter must be a string or boolean, and this is '
                 . get_debug_type($p));
         }
-        $lower = \Sel\Utf8::lower($p);
+        $lower = Utf8::lower($p);
         if ($lower === 'separate' || $lower === 'splitsargable' || $lower === 'split_sargable') {
             return 'separate';
         }

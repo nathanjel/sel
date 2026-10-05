@@ -16,8 +16,13 @@ declare(strict_types=1);
 
 namespace Sel\Sql;
 
+use Sel\BuiltinManifest;
+use Sel\Limits;
 use Sel\Optimizer;
 use Sel\Program;
+use Sel\Registry;
+use Sel\SlotCache;
+use Sel\Utf8;
 use Sel\Value;
 
 final class HybridPlan
@@ -147,7 +152,7 @@ final class Hybrid
         // prefix costs a walk in proportion: more than MAX_DEPTH steps is a
         // pure-memory plan (the cut-off every host states the same way,
         // plan.pure-memory.pipeline-longer-than-the-depth-cap).
-        if (count($unwound['steps']) > \Sel\Limits::MAX_DEPTH) {
+        if (count($unwound['steps']) > Limits::MAX_DEPTH) {
             return self::pureMemoryPlan($program, $dialect, $catalog);
         }
         $optimized = Optimizer::optimize(
@@ -444,7 +449,7 @@ final class Hybrid
                 return;
             }
             if ($t === 'call') {
-                $form = \Sel\Registry::bindingForm($node['name'], $node['args']);
+                $form = Registry::bindingForm($node['name'], $node['args']);
                 $inner = $form === null ? $bound : array_merge($bound, $form['binds'], ['_K']);
                 foreach ($node['args'] as $i => $arg) {
                     $scope = $form === null ? 'outer' : $form['scopes'][$i];
@@ -577,7 +582,7 @@ final class Hybrid
         }
         if (($node['t'] ?? null) === 'call') {
             if (!isset(self::SQL_SPECIAL_CALLS[$node['name']])) {
-                $entry = Map::entry($dialect, 'funcs', \Sel\Utf8::upper($node['name']));
+                $entry = Map::entry($dialect, 'funcs', Utf8::upper($node['name']));
                 if ($entry === Map::MISSING || $entry === null || is_string($entry)) return true;
             }
             foreach ($node['args'] ?? [] as $item) {
@@ -603,14 +608,14 @@ final class Hybrid
     // (`SORT_BY(s, s["name"])`).
     private static function fieldReferences(?array $node, ?string $binder = '_'): array
     {
-        $wanted = $binder === null ? null : array_map([\Sel\Utf8::class, 'upper'], [$binder, '_', '_1', '_2']);
+        $wanted = $binder === null ? null : array_map([Utf8::class, 'upper'], [$binder, '_', '_1', '_2']);
         $out = [];
         $seen = [];
         $visit = function (?array $item) use (&$visit, &$out, &$seen, $wanted): void {
             if ($item === null) return;
             if (($item['t'] ?? null) === 'index' && ($item['obj']['t'] ?? null) === 'var'
                 && ($item['idx']['t'] ?? null) === 'text'
-                && ($wanted === null || in_array(\Sel\Utf8::upper($item['obj']['name']), $wanted, true))) {
+                && ($wanted === null || in_array(Utf8::upper($item['obj']['name']), $wanted, true))) {
                 $key = (string) $item['idx']['v'];
                 if (!isset($seen[$key])) {
                     $seen[$key] = true;
@@ -682,10 +687,10 @@ final class Hybrid
      */
     private static function readsWholeRow(?array $node, string $binder): bool
     {
-        $wanted = array_map([\Sel\Utf8::class, 'upper'], [$binder, '_', '_1', '_2']);
+        $wanted = array_map([Utf8::class, 'upper'], [$binder, '_', '_1', '_2']);
         $visit = function (?array $item) use (&$visit, $wanted): bool {
             if ($item === null) return false;
-            if (($item['t'] ?? null) === 'var' && in_array(\Sel\Utf8::upper($item['name']), $wanted, true)) return true;
+            if (($item['t'] ?? null) === 'var' && in_array(Utf8::upper($item['name']), $wanted, true)) return true;
             if (($item['t'] ?? null) === 'index' && ($item['obj']['t'] ?? null) === 'var'
                 && ($item['idx']['t'] ?? null) === 'text') {
                 // A field read; the object is not a whole-row read.
@@ -711,7 +716,7 @@ final class Hybrid
         $value = $pair['value'];
         return ($value['t'] ?? null) === 'index' && ($value['obj']['t'] ?? null) === 'var'
             && ($value['idx']['t'] ?? null) === 'text'
-            && \Sel\Utf8::upper($value['obj']['name']) === \Sel\Utf8::upper($binder)
+            && Utf8::upper($value['obj']['name']) === Utf8::upper($binder)
             && (string) $value['idx']['v'] === (string) $pair['key']['v'];
     }
 
@@ -814,18 +819,18 @@ final class Hybrid
             if (self::isOwnFieldRead($pair, $details['binder'])) $own[] = (string) $pair['key']['v'];
         }
         // "Case" here is ASCII case, as everywhere in SEL -- strtoupper is.
-        $projectedFolded = array_map([\Sel\Utf8::class, 'upper'], $projected);
+        $projectedFolded = array_map([Utf8::class, 'upper'], $projected);
         $dependencies = [];
         $dependenciesFolded = [];
         foreach ($custom as $pair) foreach (self::fieldReferences($pair['value'], $details['binder']) as $field) {
             if (in_array($field, $projected, true)) {
                 if (!in_array($field, $own, true)) return null;
-            } elseif (in_array(\Sel\Utf8::upper($field), $projectedFolded, true)) {
+            } elseif (in_array(Utf8::upper($field), $projectedFolded, true)) {
                 return null;
             } elseif (!in_array($field, $dependencies, true)) {
                 // Two dependencies must not differ only by case either.
-                if (in_array(\Sel\Utf8::upper($field), $dependenciesFolded, true)) return null;
-                $dependenciesFolded[] = \Sel\Utf8::upper($field);
+                if (in_array(Utf8::upper($field), $dependenciesFolded, true)) return null;
+                $dependenciesFolded[] = Utf8::upper($field);
                 $dependencies[] = $field;
             }
         }
@@ -838,7 +843,7 @@ final class Hybrid
             $key = ['t' => 'text', 'v' => $field, 'pos' => $steps[$mapIndex]['pos']];
             $obj = ['t' => 'var', 'name' => $details['binder'], 'pos' => $steps[$mapIndex]['pos']];
             $rewrittenArgs[] = $key;
-            $rewrittenArgs[] = ['t' => 'index', 'obj' => $obj, 'idx' => $key, 'pos' => $steps[$mapIndex]['pos'], 'slotCache' => new \Sel\SlotCache()];
+            $rewrittenArgs[] = ['t' => 'index', 'obj' => $obj, 'idx' => $key, 'pos' => $steps[$mapIndex]['pos'], 'slotCache' => new SlotCache()];
         }
         $record = $details['body'];
         $record['args'] = $rewrittenArgs;
@@ -861,7 +866,7 @@ final class Hybrid
             $continuationArgs[] = $pair['key'];
             if (isset($pushableAt[$i])) {
                 $obj = ['t' => 'var', 'name' => $details['binder'], 'pos' => $pair['value']['pos']];
-                $continuationArgs[] = ['t' => 'index', 'obj' => $obj, 'idx' => $pair['key'], 'pos' => $pair['value']['pos'], 'slotCache' => new \Sel\SlotCache()];
+                $continuationArgs[] = ['t' => 'index', 'obj' => $obj, 'idx' => $pair['key'], 'pos' => $pair['value']['pos'], 'slotCache' => new SlotCache()];
             } else {
                 $continuationArgs[] = $pair['value'];
             }
@@ -1008,7 +1013,7 @@ final class Hybrid
             // five-argument forms, so a literal helper spelled like an explicit binder
             // (`N = 5; ... SORT_BY(N, N["id"], "DESC")`) was inlined into the binder
             // slot and downgraded a pure SQL pipeline to memory.
-            $form = \Sel\Registry::bindingForm($node['name'], $node['args']);
+            $form = Registry::bindingForm($node['name'], $node['args']);
             $inner = $form === null ? $bound : array_merge($bound, $form['binds'], ['_K']);
             $args = [];
             foreach ($node['args'] as $i => $arg) {
@@ -1143,7 +1148,7 @@ final class Hybrid
     /** The largest tree (in arrays walked) writableRoots keeps as a cache key. */
     private const KEPT_TREE_NODES = 4096;
 
-    /** @var \WeakMap<\Sel\Program, array{0:array<string,mixed>,1:list<string>|false}>|null */
+    /** @var \WeakMap<Program, array{0:array<string,mixed>,1:list<string>|false}>|null */
     private static ?\WeakMap $writableRoots = null;
 
     /**
@@ -1157,7 +1162,7 @@ final class Hybrid
      * runs on a copy of the whole context, as one whose assignment root cannot be
      * read off the tree does.
      */
-    private static function rootFor(?\Sel\Program $program, Value $context): Value
+    private static function rootFor(?Program $program, Value $context): Value
     {
         $names = $program === null ? null : self::writableRoots($program);
         return $names === null ? $context->copy() : $context->copyWritable($names);
@@ -1176,7 +1181,7 @@ final class Hybrid
      *
      * @return list<string>|null
      */
-    private static function writableRoots(\Sel\Program $program): ?array
+    private static function writableRoots(Program $program): ?array
     {
         self::$writableRoots ??= new \WeakMap();
         $known = self::$writableRoots[$program] ?? null;
@@ -1199,7 +1204,7 @@ final class Hybrid
                 } else {
                     $ok = false;
                 }
-            } elseif ($t === 'call' && !isset(\Sel\BuiltinManifest::BUILTINS[$n['name'] ?? ''])) {
+            } elseif ($t === 'call' && !isset(BuiltinManifest::BUILTINS[$n['name'] ?? ''])) {
                 $ok = false;
             }
             foreach ($n as $k => $child) {

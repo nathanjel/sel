@@ -9,6 +9,7 @@ declare(strict_types=1);
 namespace Sel\Sql;
 
 use Sel\Registry;
+use Sel\Utf8;
 
 final class Map
 {
@@ -266,7 +267,7 @@ final class Map
         // the translator looks up verbatim — upper-casing those stored a
         // registered skeleton under a key nothing ever reads, which made the
         // documented escape hatch silently dead.
-        $stored = $section === 'funcs' ? \Sel\Utf8::upper($key) : $key;
+        $stored = $section === 'funcs' ? Utf8::upper($key) : $key;
         self::$overlay[$dialect][$section][$stored] = $entry;
         $arity = $section === 'funcs' ? Registry::hostArity($stored) : null;
         if ($arity !== null) {
@@ -687,7 +688,7 @@ final class Map
         // `funcs` keys are SEL function names and case-insensitive; ops and skel
         // keys are looked up verbatim, which is why define() upper-cases only the
         // first. Registering `and` or `Case` used to be silently dead.
-        if ($section === 'funcs' && !isset($rules['funcArity'][\Sel\Utf8::upper($key)])
+        if ($section === 'funcs' && !isset($rules['funcArity'][Utf8::upper($key)])
             && Registry::hostArity($key) === null) {
             throw new \LogicException("{$key} is neither a SEL function this layer maps nor a "
                 . 'registered host function. A host function is registered '
@@ -815,7 +816,7 @@ final class Map
             // range, and the list is refused for the reason it is actually wrong.
             [$min, $max] = $section === 'ops'
                 ? $rules['opArity'][$key]
-                : ($host ?? $rules['funcArity'][\Sel\Utf8::upper($key)]);
+                : ($host ?? $rules['funcArity'][Utf8::upper($key)]);
             if (isset($entry['arity'])) {
                 $min = max($min, $entry['arity'][0]);
                 $max = $max === null ? $entry['arity'][1]

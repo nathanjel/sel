@@ -6,6 +6,7 @@ declare(strict_types=1);
 
 namespace Sel\Sql;
 
+use Sel\Dec;
 use Sel\Value;
 
 final class Emit
@@ -105,13 +106,13 @@ final class Emit
     private static function numericLiteral(string $dialect, Value $v): string
     {
         $text = $v->asText();
-        $d = \Sel\Dec::parse($text);
+        $d = Dec::parse($text);
         if ($d === null) {
             refuse('E_SQL_BINDING',
                 'a value bound as NUM must be a number, and '
                 . Value::quoteDump($text) . ' is not');
         }
-        $n = \Sel\Dec::format($d);
+        $n = Dec::format($d);
 
         // How the dialect spells a number is the dialect's business, and one of
         // them has to spell it as text. SQLite has no exact decimal: 2.50 is a

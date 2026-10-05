@@ -16,7 +16,16 @@ declare(strict_types=1);
 
 namespace Sel\Sql;
 
+use Sel\BuiltinManifest;
+use Sel\Builtins\Regex;
+use Sel\Context;
+use Sel\Dec;
+use Sel\Evaluator;
+use Sel\Limits;
+use Sel\Optimizer;
 use Sel\Registry;
+use Sel\SelError;
+use Sel\Utf8;
 use Sel\Value;
 
 final class Translator
@@ -27,7 +36,7 @@ final class Translator
      * The optimiser's list, not a second copy: one vocabulary of pipeline
      * operators per host, or the planner and the translator drift apart.
      */
-    private const PIPELINE_OPS = \Sel\Optimizer::PIPELINE_OPS;
+    private const PIPELINE_OPS = Optimizer::PIPELINE_OPS;
 
     private string $dialect;
     private Emit $emit;
@@ -50,7 +59,7 @@ final class Translator
     private array $caveats = [];
     /** @var array<string,bool> value-binding names that count as constant leaves; see Constants::scope */
     private array $constNames = [];
-    private ?\Sel\Context $constCtx = null;
+    private ?Context $constCtx = null;
     /** Walk depth, counted exactly as Evaluator counts evaluation nesting. */
     private int $depth = 0;
     private ?RelationalPlan $statementPlan = null;
@@ -120,7 +129,7 @@ final class Translator
      */
     private static function unambiguousBinderForm(string $name, int $count): ?array
     {
-        $forms = \Sel\BuiltinManifest::FORMS[\Sel\Utf8::upper($name)] ?? null;
+        $forms = BuiltinManifest::FORMS[Utf8::upper($name)] ?? null;
         if ($forms === null) {
             return null;
         }
@@ -280,11 +289,11 @@ final class Translator
             return $this->hiding(0, fn (): Fragment => $this->node($n));
         }
         $this->chargeNodes(1);
-        if (++$this->depth > \Sel\MAX_DEPTH) {
+        if (++$this->depth > Limits::MAX_DEPTH) {
             $this->depth--;
             refuse('E_SQL_DEPTH',
                 'this expression nests deeper than SEL will evaluate ('
-                . \Sel\MAX_DEPTH . '), so there is nothing to translate; '
+                . Limits::MAX_DEPTH . '), so there is nothing to translate; '
                 . 'the evaluator answers E_DEPTH for it', $n['pos']);
         }
         try {
@@ -556,8 +565,8 @@ final class Translator
             return $f;
         }
         try {
-            $v = \Sel\Evaluator::evalNode($n, $this->constCtx ?? new \Sel\Context());
-        } catch (\Sel\SelError) {
+            $v = Evaluator::evalNode($n, $this->constCtx ?? new Context());
+        } catch (SelError) {
             return $f;           // refused by the constant check, with SEL's own code
         }
         if (!$v->isText() || !$v->looksNumeric()) {
@@ -565,7 +574,7 @@ final class Translator
         }
         $this->params = array_slice($this->params, 0, $mark);
         $this->paramKinds = array_slice($this->paramKinds, 0, $mark);
-        return $this->node(['t' => 'num', 'v' => \Sel\Dec::format($v->asDecimal($n['pos'])), 'pos' => $n['pos']]);
+        return $this->node(['t' => 'num', 'v' => Dec::format($v->asDecimal($n['pos'])), 'pos' => $n['pos']]);
     }
 
     /** @param array<string,mixed> $n */
@@ -713,7 +722,7 @@ final class Translator
             && $this->bindings->has($rhs['name'])) {
             $b = $this->bindings->get($rhs['name'], $rhs['pos']);
             if ($b['kind'] === 'relation') {
-                $scalar = isset($b['scalar']) ? \Sel\Utf8::upper((string) $b['scalar']) : null;
+                $scalar = isset($b['scalar']) ? Utf8::upper((string) $b['scalar']) : null;
                 if ($scalar === null || !isset($b['fields'][$scalar])) {
                     refuse('E_SQL_SHAPE',
                         "IN over {$rhs['name']} needs the binding to name a \"scalar\" "
@@ -1170,8 +1179,8 @@ final class Translator
         $plan = $this->statementPlan;
         if ($plan !== null) {
             if ($relation === $plan->sourceRelation
-                && ($name === null || in_array(\Sel\Utf8::upper($name), array_map(
-                    static fn ($item): string => \Sel\Utf8::upper((string) $item),
+                && ($name === null || in_array(Utf8::upper($name), array_map(
+                    static fn ($item): string => Utf8::upper((string) $item),
                     array_filter([$plan->sourceName, $plan->sourceAlias, ...array_merge([], ...array_map(
                         static fn ($join) => $join->leftNames, $plan->joins))], static fn ($item): bool => $item !== null)
                 ), true))) {
@@ -1181,8 +1190,8 @@ final class Translator
                 $names = [$join->sourceName, $join->sourceAlias, ...$join->rightNames, '_' . ($index + 2)];
                 $names = array_filter($names, static fn ($item): bool => $item !== null);
                 if ($relation === $join->sourceRelation
-                    && ($name === null || in_array(\Sel\Utf8::upper($name), array_map(
-                        static fn ($item): string => \Sel\Utf8::upper((string) $item), $names), true))) {
+                    && ($name === null || in_array(Utf8::upper($name), array_map(
+                        static fn ($item): string => Utf8::upper((string) $item), $names), true))) {
                     return $join->sourceAlias ?? self::relationAlias($relation);
                 }
             }
@@ -1250,7 +1259,7 @@ final class Translator
     /** @return array{spec:array<string,mixed>,table:string,qualify:bool,optional:bool}|null */
     private function rowFieldSpec(RowModel $row, string $key): ?array
     {
-        $u = \Sel\Utf8::upper($key);
+        $u = Utf8::upper($key);
         if ($row->side) {
             $spec = $row->relation['fields'][$u] ?? null;
             return $spec === null ? null
@@ -1279,7 +1288,7 @@ final class Translator
         }
         $f = $this->rowFieldSpec($row, $key);
         if ($f === null) {
-            if (!$row->side && isset($row->dropped[\Sel\Utf8::upper($key)])) {
+            if (!$row->side && isset($row->dropped[Utf8::upper($key)])) {
                 refuse('E_SQL_SHAPE', "field \"{$key}\" is ambiguous across joined relations", $n['pos']);
             }
             $known = array_map('strval', array_keys($row->side ? ($row->relation['fields'] ?? []) : $row->promoted));
@@ -1338,7 +1347,7 @@ final class Translator
                     continue;
                 }
                 foreach ($names as $name) {
-                    if (array_key_exists(\Sel\Utf8::upper($name), $el->relation['fields'] ?? [])) {
+                    if (array_key_exists(Utf8::upper($name), $el->relation['fields'] ?? [])) {
                         refuse('E_SQL_SHAPE', "{$name} names a LINK side that has a field of that name too, "
                             . 'which SEL binds instead of the row; rename the binder', $join->pos);
                     }
@@ -1354,8 +1363,8 @@ final class Translator
             foreach (['_2', ...$rightNames] as $k) {
                 $row->nested[$k] = $right;
             }
-            $leftKeys = array_fill_keys(array_map([\Sel\Utf8::class, 'upper'], self::rowKeys($leftEl)), true);
-            $rightKeys = array_fill_keys(array_map([\Sel\Utf8::class, 'upper'], self::rowKeys($right)), true);
+            $leftKeys = array_fill_keys(array_map([Utf8::class, 'upper'], self::rowKeys($leftEl)), true);
+            $rightKeys = array_fill_keys(array_map([Utf8::class, 'upper'], self::rowKeys($right)), true);
             foreach (self::scalarFields($leftEl) as [$u, $f]) {
                 if (isset($rightKeys[$u])) {
                     $row->dropped[$u] = true;
@@ -1401,7 +1410,7 @@ final class Translator
     {
         $out = [];
         foreach ($names as $name) {
-            foreach ([$name, \Sel\Utf8::lower($name)] as $k) {
+            foreach ([$name, Utf8::lower($name)] as $k) {
                 if (!in_array($k, $out, true)) {
                     $out[] = $k;
                 }
@@ -1552,8 +1561,8 @@ final class Translator
         // cannot be pushed down returns null rather than throwing. Found by the
         // fuzz lane, as a fatal error in the middle of a run.
         try {
-            $source = \Sel\Builtins\Regex::portableSource((string) $pat['v'], $pat['pos']);
-        } catch (\Sel\SelError $e) {
+            $source = Regex::portableSource((string) $pat['v'], $pat['pos']);
+        } catch (SelError $e) {
             refuse('E_SQL_UNSUPPORTED',
                 "{$n['name']}'s pattern is not in SEL's portable subset, so there is "
                 . "nothing to translate: {$e->getMessage()}", $pat['pos']);
@@ -1587,10 +1596,10 @@ final class Translator
         // E_BAD_ARG. An empty flag string is dropped so the two-argument
         // template applies.
         $text = (string) $flags['v'];
-        if ($text !== '' && \Sel\Utf8::lower($text) !== 'i') {
+        if ($text !== '' && Utf8::lower($text) !== 'i') {
             refuse('E_SQL_UNSUPPORTED',
                 "{$n['name']} accepts only the i flag here, and SEL accepts only i "
-                . 'at all; ' . \Sel\Value::quoteDump($text) . ' is not it',
+                . 'at all; ' . Value::quoteDump($text) . ' is not it',
                 $flags['pos']);
         }
         if ($text !== '') {
@@ -1598,7 +1607,7 @@ final class Translator
             // because case folding above ASCII is the one thing PCRE and
             // ECMAScript cannot be made to agree on. A translation that accepted
             // it would disagree with the host that refused it.
-            foreach (\Sel\Utf8::codePoints($source) as $cp) {
+            foreach (Utf8::codePoints($source) as $cp) {
                 if ($cp > 0x7f) {
                     refuse('E_SQL_UNSUPPORTED',
                         'the i flag needs an ASCII-only pattern, which SEL requires '
@@ -1675,10 +1684,10 @@ final class Translator
     private function chargeNodes(int $n): void
     {
         $this->nodes += $n;
-        if ($this->nodes > \Sel\Limits::MAX_SQL_NODES) {
+        if ($this->nodes > Limits::MAX_SQL_NODES) {
             refuse('E_SQL_SIZE',
                 'the expression this rule translates to has more than '
-                . \Sel\Limits::MAX_SQL_NODES . ' nodes; SEL evaluates it in linear '
+                . Limits::MAX_SQL_NODES . ' nodes; SEL evaluates it in linear '
                 . 'time, so it is evaluated the ordinary way');
         }
     }
@@ -1894,12 +1903,10 @@ final class Translator
                     "{$n['name']} is the list of a bucket's members, which is not a value "
                     . 'SQL has; count it (COUNT), sum over it (SUM), or name the group key (_K)',
                     $n['pos']);
-                // no break: refuse throws
             case Binder::PROJECTED:
                 refuse('E_SQL_SHAPE',
                     "{$n['name']} is the record the projection built, which is a map in SEL "
                     . 'and not one value; name the field you mean', $n['pos']);
-                // no break: refuse throws
             case Binder::ROW:
                 $rel = $b->payload;
                 if ($b->model !== null && !$b->model->side) {
@@ -1920,7 +1927,7 @@ final class Translator
                         . count($rel['fields']) . ' fields, which is a map in SEL and '
                         . 'not one value; name the field you mean', $n['pos']);
                 }
-                $scalar = isset($rel['scalar']) ? \Sel\Utf8::upper((string) $rel['scalar']) : null;
+                $scalar = isset($rel['scalar']) ? Utf8::upper((string) $rel['scalar']) : null;
                 if ($scalar === null || !isset($rel['fields'][$scalar])) {
                     refuse('E_SQL_SHAPE',
                         "{$n['name']} names a row, and the relation does not say which "
@@ -1971,7 +1978,7 @@ final class Translator
             }
             if ($proj === null) {
                 foreach ($projections as $candidate) {
-                    if ($candidate['alias'] !== null && \Sel\Utf8::upper($candidate['alias']) === \Sel\Utf8::upper($key)) {
+                    if ($candidate['alias'] !== null && Utf8::upper($candidate['alias']) === Utf8::upper($key)) {
                         $proj = $candidate;
                         break;
                     }
@@ -2005,7 +2012,7 @@ final class Translator
             if ($b->model !== null) {
                 return $this->rowField($b->model, ['t' => 'var', 'name' => $name], $key, $n);
             }
-            $field = \Sel\Utf8::upper($key);
+            $field = Utf8::upper($key);
             if (!isset($b->payload['fields'][$field])) {
                 $known = array_keys($b->payload['fields']);
                 sort($known);
@@ -2671,7 +2678,7 @@ final class Translator
         }
         if ($src['shape'] === 'relation') {
             $rel = $src['relation'];
-            $scalar = isset($rel['scalar']) ? \Sel\Utf8::upper((string) $rel['scalar']) : null;
+            $scalar = isset($rel['scalar']) ? Utf8::upper((string) $rel['scalar']) : null;
             if ($scalar === null || !isset($rel['fields'][$scalar])) {
                 refuse('E_SQL_SHAPE',
                     'JOIN over a relation needs the binding to name a "scalar" field',
@@ -3479,7 +3486,7 @@ final class Translator
         $relations = [$plan->sourceRelation];
         foreach ($plan->joins as $join) $relations[] = $join->sourceRelation;
         foreach ($relations as $rel) {
-            $field = $rel['fields'][\Sel\Utf8::upper($name)] ?? null;
+            $field = $rel['fields'][Utf8::upper($name)] ?? null;
             if ($field !== null) $matches[] = $field;
         }
         return count($matches) === 1 && !($matches[0]['guard'] ?? false) && !isset($matches[0]['raw'])
@@ -3514,17 +3521,17 @@ final class Translator
         foreach ($this->outputFieldNames($plan) as $name) {
             $sourceField = null;
             if ($plan->projections === null && $plan->selectCols === null) {
-                $sourceField = $plan->sourceRelation['fields'][\Sel\Utf8::upper($name)] ?? null;
+                $sourceField = $plan->sourceRelation['fields'][Utf8::upper($name)] ?? null;
                 if ($sourceField === null) {
                     foreach ($plan->joins as $join) {
-                        $sourceField = $join->sourceRelation['fields'][\Sel\Utf8::upper($name)] ?? null;
+                        $sourceField = $join->sourceRelation['fields'][Utf8::upper($name)] ?? null;
                         if ($sourceField !== null) {
                             break;
                         }
                     }
                 }
             }
-            $fields[\Sel\Utf8::upper($name)] = [
+            $fields[Utf8::upper($name)] = [
                 'kind' => 'column',
                 'column' => $sourceField['column'] ?? $name,
                 'table' => $alias,
@@ -3534,12 +3541,12 @@ final class Translator
                 // The derived table selects `alias.*`, and a raw expression is not a
                 // column of that table: reading it across the wrap is refused
                 // (sql/MAP.md 3.1), where it used to name a column that is not there.
-                $fields[\Sel\Utf8::upper($name)]['lostRaw'] = true;
+                $fields[Utf8::upper($name)]['lostRaw'] = true;
             }
             $canonKind = $this->outputCanonKind($plan, $name);
             if ($canonKind !== null) {
-                $fields[\Sel\Utf8::upper($name)]['type'] = $canonKind;
-                $fields[\Sel\Utf8::upper($name)]['canonical'] = true;
+                $fields[Utf8::upper($name)]['type'] = $canonKind;
+                $fields[Utf8::upper($name)]['canonical'] = true;
             }
         }
         $derived = new RelationalPlan();
@@ -3900,7 +3907,7 @@ final class Translator
                         }
                         $col = $item['v'];
                         $this->checkAliasName($col, $item['pos']);
-                        $uc = \Sel\Utf8::upper($col);
+                        $uc = Utf8::upper($col);
                         if (isset($plan->sourceRelation['fields'][$uc]['raw'])) {
                             refuse('E_SQL_SHAPE', "field '{$col}' is a raw expression; SELECT_COLS "
                                 . 'would have to name it as a column, and it has none', $item['pos']);
@@ -4131,7 +4138,7 @@ final class Translator
                         $open[] = $j->sourceAlias;
                     }
                     foreach ($open as $alias) {
-                        if (\Sel\Utf8::upper((string) $alias) === \Sel\Utf8::upper((string) $join->sourceAlias)) {
+                        if (Utf8::upper((string) $alias) === Utf8::upper((string) $join->sourceAlias)) {
                             refuse('E_SQL_SHAPE', "{$rightNode['name']} would be joined under the table alias "
                                 . "{$join->sourceAlias}, which this statement already uses; bind the relation "
                                 . 'a second time under another alias', $rightNode['pos']);
@@ -4161,8 +4168,8 @@ final class Translator
     private function evalIntParam(array $n, string $op): int
     {
         try {
-            $val = \Sel\Evaluator::evalNode($n, $this->constCtx ?? new \Sel\Context());
-        } catch (\Sel\SelError $e) {
+            $val = Evaluator::evalNode($n, $this->constCtx ?? new Context());
+        } catch (SelError $e) {
             Constants::refuseAsSel($e, $n);
         }
         if (!$val->looksNumeric() || $val->isNull()) {
@@ -4172,16 +4179,16 @@ final class Translator
         // As SEL checks a count (SPEC 7.4): a real fraction is E_NOT_INT whatever its
         // sign (`TAKE(-1.5)`), then a negative whole number is E_RANGE. A whole number
         // written with a scale (`2.0`, `0.0`) is a count.
-        if (!\Sel\Dec::isInteger($d)) {
+        if (!Dec::isInteger($d)) {
             refuse('E_NOT_INT', "{$op} count must be an integer", $n['pos']);
         }
-        if (\Sel\Dec::sign($d) < 0) {
+        if (Dec::sign($d) < 0) {
             refuse('E_RANGE', "{$op} count cannot be negative", $n['pos']);
         }
         // Past the largest count every server takes, the count is that count: a table
         // with 2^63 rows does not exist, so the answer is unchanged (docs 11.6).
         // Dec::toInt saturates at PHP_INT_MAX.
-        return \Sel\Dec::toInt($d);
+        return Dec::toInt($d);
     }
 
     /**
@@ -4262,7 +4269,7 @@ final class Translator
             if ($args[2]['t'] === 'text') {
                 $binder = '_';
                 $key = $args[1];
-                $dir = \Sel\Utf8::upper($args[2]['v']);
+                $dir = Utf8::upper($args[2]['v']);
             } elseif (Constants::isBinderName($args[1])) {
                 $binder = $args[1]['name'];
                 $key = $args[2];
@@ -4282,7 +4289,7 @@ final class Translator
             if ($args[3]['t'] !== 'text') {
                 refuse('E_BAD_ARG', "sort direction must be 'ASC' or 'DESC'", $args[3]['pos']);
             }
-            $dir = \Sel\Utf8::upper($args[3]['v']);
+            $dir = Utf8::upper($args[3]['v']);
         } else {
             refuse('E_ARITY', 'SORT_BY takes 2 to 4 arguments', $step['pos']);
         }
@@ -4360,7 +4367,7 @@ final class Translator
                         $parts[] = ', ';
                     }
                     $first = false;
-                    $uc = \Sel\Utf8::upper($col);
+                    $uc = Utf8::upper($col);
                     $fSpec = $plan->sourceRelation['fields'][$uc] ?? null;
                     $owner = $plan->sourceRelation;
                     if ($fSpec === null) {

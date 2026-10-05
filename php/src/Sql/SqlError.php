@@ -37,9 +37,8 @@ final class SqlError extends \Exception
  * rule spec/errors.md sets for the evaluator.
  *
  * @param array{line:int,col:int,offset:int}|null $pos
- * @return never
  */
-function refuse(string $code, string $message, ?array $pos = null): void
+function refuse(string $code, string $message, ?array $pos = null): never
 {
     throw new SqlError($code, $message, $pos);
 }
