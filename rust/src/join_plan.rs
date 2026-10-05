@@ -79,9 +79,7 @@ impl JoinFlatTest {
         }
         let storage = inner.storage.as_ref().unwrap();
         for &i in &self.slots {
-            let item = &storage[i];
-            let item_inner = item.0.borrow();
-            if item_inner.kind == Kind::None && !item_inner.is_list {
+            if !is_scalar_field(&storage[i]) {
                 return false;
             }
         }
@@ -89,6 +87,8 @@ impl JoinFlatTest {
     }
 }
 
+/// A non-empty record: a side of an inner join, nested in the row an outer
+/// join builds over it.
 pub fn is_left_nested(v: &Value) -> bool {
     let inner = v.0.borrow();
     inner.kind == Kind::None && !inner.is_list && inner.size() > 0
@@ -106,19 +106,71 @@ pub fn binder_keys(name: &str, positional: &str) -> Vec<String> {
     keys
 }
 
-const JOIN_SCALAR: usize = 0;
-const JOIN_NULL: usize = 1;
-const JOIN_NESTED: usize = 2;
-
-fn join_category(v: &Value) -> usize {
+/// Whether a field holds a scalar or a list: anything but a record (or the
+/// none value, which a missing right side is).
+pub fn is_scalar_field(v: &Value) -> bool {
     let inner = v.0.borrow();
-    if inner.kind != Kind::None || inner.is_list {
-        return JOIN_SCALAR;
+    inner.kind != Kind::None || inner.is_list
+}
+
+/// The joined row's layout (spec §7.4), from the two sides' keys and what
+/// each field holds: the left side's nested records (a join under a join),
+/// the binder names of both sides (`b1`/`_1`, `b2`/`_2`), the left side's
+/// other fields that the right side does not also have, and -- for a matched
+/// row -- the right side's scalar fields the left side does not have. A key
+/// already placed keeps its first place. `make_joined_row` (unshaped rows)
+/// and `compile_join_plan` (shaped rows, compiled once per shape pair) both
+/// lay a row out by it.
+fn joined_layout<K: AsRef<str>>(
+    left_keys: &[K],
+    left_nested: impl Fn(usize) -> bool,
+    right_keys: &[K],
+    right_scalar: impl Fn(usize) -> bool,
+    b1: &str,
+    b2: &str,
+    matched: bool,
+) -> (Vec<String>, Vec<JoinPlanSlot>) {
+    let mut keys: Vec<String> = Vec::new();
+    let mut slots: Vec<JoinPlanSlot> = Vec::new();
+    let mut slot_map: HashMap<String, usize> = HashMap::new();
+    let mut place = |key: String, slot: JoinPlanSlot, replace: bool, keys: &mut Vec<String>, slots: &mut Vec<JoinPlanSlot>| {
+        if let Some(&idx) = slot_map.get(&key) {
+            if replace {
+                slots[idx] = slot;
+            }
+        } else {
+            slot_map.insert(key.clone(), keys.len());
+            keys.push(key);
+            slots.push(slot);
+        }
+    };
+
+    for (i, k) in left_keys.iter().enumerate() {
+        if left_nested(i) {
+            place(k.as_ref().to_string(), JoinPlanSlot { op: JoinPlanOp::LeftNested, slot: i }, false, &mut keys, &mut slots);
+        }
     }
-    if inner.size() > 0 {
-        return JOIN_NESTED;
+    for name in binder_keys(b1, "_1") {
+        place(name, JoinPlanSlot { op: JoinPlanOp::Left, slot: 0 }, true, &mut keys, &mut slots);
     }
-    JOIN_NULL
+    for name in binder_keys(b2, "_2") {
+        place(name, JoinPlanSlot { op: JoinPlanOp::Right, slot: 0 }, true, &mut keys, &mut slots);
+    }
+    let right_names: HashSet<String> = right_keys.iter().map(|k| k.as_ref().to_ascii_uppercase()).collect();
+    for (i, k) in left_keys.iter().enumerate() {
+        if !left_nested(i) && !right_names.contains(&k.as_ref().to_ascii_uppercase()) {
+            place(k.as_ref().to_string(), JoinPlanSlot { op: JoinPlanOp::LeftSlot, slot: i }, false, &mut keys, &mut slots);
+        }
+    }
+    if matched {
+        let left_names: HashSet<String> = left_keys.iter().map(|k| k.as_ref().to_ascii_uppercase()).collect();
+        for (j, k) in right_keys.iter().enumerate() {
+            if right_scalar(j) && !left_names.contains(&k.as_ref().to_ascii_uppercase()) {
+                place(k.as_ref().to_string(), JoinPlanSlot { op: JoinPlanOp::RightSlot, slot: j }, false, &mut keys, &mut slots);
+            }
+        }
+    }
+    (keys, slots)
 }
 
 pub fn make_joined_row(
@@ -128,77 +180,38 @@ pub fn make_joined_row(
     b2: &str,
     null_right: Option<&Value>,
 ) -> Value {
-    let mut entries = Vec::new();
-    let mut slot: HashMap<String, usize> = HashMap::new();
-
-    let left_entries = left.entries();
-    for e in &left_entries {
-        if join_category(&e.val) == JOIN_NESTED
-            && !slot.contains_key(&e.key) {
-                slot.insert(e.key.clone(), entries.len());
-                entries.push(Entry { key: e.key.clone(), val: e.val.clone() });
-            }
-    }
-
-    for name in binder_keys(b1, "_1") {
-        if let Some(&idx) = slot.get(&name) {
-            entries[idx] = Entry { key: name, val: left.clone() };
-        } else {
-            slot.insert(name.clone(), entries.len());
-            entries.push(Entry { key: name, val: left.clone() });
-        }
-    }
-
     let default_none = Value::none();
-    let rside = if let Some(r) = right {
-        r
-    } else if let Some(nr) = null_right {
-        nr
-    } else {
-        &default_none
-    };
-
-    for name in binder_keys(b2, "_2") {
-        if let Some(&idx) = slot.get(&name) {
-            entries[idx] = Entry { key: name, val: rside.clone() };
-        } else {
-            slot.insert(name.clone(), entries.len());
-            entries.push(Entry { key: name, val: rside.clone() });
-        }
-    }
-
+    let rside = right.or(null_right).unwrap_or(&default_none);
+    let left_entries = left.entries();
     let right_entries = if rside.size() > 0 && !rside.is_list() {
         rside.entries()
     } else {
         Vec::new()
     };
-    let mut right_names = HashSet::new();
-    for e in &right_entries {
-        right_names.insert(e.key.to_ascii_uppercase());
-    }
-
-    for e in &left_entries {
-        if join_category(&e.val) != JOIN_NESTED && !right_names.contains(&e.key.to_ascii_uppercase())
-            && !slot.contains_key(&e.key) {
-                slot.insert(e.key.clone(), entries.len());
-                entries.push(Entry { key: e.key.clone(), val: e.val.clone() });
-            }
-    }
-
-    if right.is_some() {
-        let mut left_names = HashSet::new();
-        for e in &left_entries {
-            left_names.insert(e.key.to_ascii_uppercase());
-        }
-        for e in &right_entries {
-            if join_category(&e.val) == JOIN_SCALAR && !left_names.contains(&e.key.to_ascii_uppercase())
-                && !slot.contains_key(&e.key) {
-                    slot.insert(e.key.clone(), entries.len());
-                    entries.push(Entry { key: e.key.clone(), val: e.val.clone() });
-                }
-        }
-    }
-
+    let left_keys: Vec<&str> = left_entries.iter().map(|e| e.key.as_str()).collect();
+    let right_keys: Vec<&str> = right_entries.iter().map(|e| e.key.as_str()).collect();
+    let (keys, slots) = joined_layout(
+        &left_keys,
+        |i| is_left_nested(&left_entries[i].val),
+        &right_keys,
+        |j| is_scalar_field(&right_entries[j].val),
+        b1,
+        b2,
+        right.is_some(),
+    );
+    let entries = keys
+        .into_iter()
+        .zip(slots)
+        .map(|(key, s)| {
+            let val = match s.op {
+                JoinPlanOp::LeftSlot | JoinPlanOp::LeftNested => left_entries[s.slot].val.clone(),
+                JoinPlanOp::RightSlot => right_entries[s.slot].val.clone(),
+                JoinPlanOp::Left => left.clone(),
+                JoinPlanOp::Right => rside.clone(),
+            };
+            Entry { key, val }
+        })
+        .collect();
     Value::record_from_entries(entries)
 }
 
@@ -318,95 +331,19 @@ pub fn compile_join_plan(
     let left_shape = left_inner.shape.as_ref()?.clone();
     let rside_shape = rside_inner.shape.as_ref()?.clone();
 
-    let mut keys = Vec::new();
-    let mut slots = Vec::new();
-    let mut slot_map = HashMap::new();
-
-    let l_keys = &left_shape.keys;
+    let l_keys: &[String] = &left_shape.keys;
     let l_storage = left_inner.storage.as_ref().unwrap();
-
-    for (i, k) in l_keys.iter().enumerate() {
-        if is_left_nested(&l_storage[i])
-            && !slot_map.contains_key(k) {
-                slot_map.insert(k.clone(), keys.len());
-                keys.push(k.clone());
-                slots.push(JoinPlanSlot {
-                    op: JoinPlanOp::LeftNested,
-                    slot: i,
-                });
-            }
-    }
-
-    for name in binder_keys(b1, "_1") {
-        if let Some(&idx) = slot_map.get(&name) {
-            slots[idx] = JoinPlanSlot {
-                op: JoinPlanOp::Left,
-                slot: 0,
-            };
-        } else {
-            slot_map.insert(name.clone(), keys.len());
-            keys.push(name);
-            slots.push(JoinPlanSlot {
-                op: JoinPlanOp::Left,
-                slot: 0,
-            });
-        }
-    }
-
-    for name in binder_keys(b2, "_2") {
-        if let Some(&idx) = slot_map.get(&name) {
-            slots[idx] = JoinPlanSlot {
-                op: JoinPlanOp::Right,
-                slot: 0,
-            };
-        } else {
-            slot_map.insert(name.clone(), keys.len());
-            keys.push(name);
-            slots.push(JoinPlanSlot {
-                op: JoinPlanOp::Right,
-                slot: 0,
-            });
-        }
-    }
-
-    let r_keys = &rside_shape.keys;
-    let mut right_names = HashSet::new();
-    for k in r_keys.iter() {
-        right_names.insert(k.to_ascii_uppercase());
-    }
-
-    for (i, k) in l_keys.iter().enumerate() {
-        if !is_left_nested(&l_storage[i]) && !right_names.contains(&k.to_ascii_uppercase())
-            && !slot_map.contains_key(k) {
-                slot_map.insert(k.clone(), keys.len());
-                keys.push(k.clone());
-                slots.push(JoinPlanSlot {
-                    op: JoinPlanOp::LeftSlot,
-                    slot: i,
-                });
-            }
-    }
-
-    if matched {
-        let mut left_names = HashSet::new();
-        for k in l_keys.iter() {
-            left_names.insert(k.to_ascii_uppercase());
-        }
-        let r_storage = rside_inner.storage.as_ref().unwrap();
-        for (j, k) in r_keys.iter().enumerate() {
-            let item_inner = r_storage[j].0.borrow();
-            if (item_inner.kind != Kind::None || item_inner.is_list)
-                && !left_names.contains(&k.to_ascii_uppercase())
-                && !slot_map.contains_key(k) {
-                    slot_map.insert(k.clone(), keys.len());
-                    keys.push(k.clone());
-                    slots.push(JoinPlanSlot {
-                        op: JoinPlanOp::RightSlot,
-                        slot: j,
-                    });
-                }
-        }
-    }
+    let r_keys: &[String] = &rside_shape.keys;
+    let r_storage: &[Value] = rside_inner.storage.as_deref().unwrap_or(&[]);
+    let (keys, slots) = joined_layout(
+        l_keys,
+        |i| is_left_nested(&l_storage[i]),
+        r_keys,
+        |j| is_scalar_field(&r_storage[j]),
+        b1,
+        b2,
+        matched,
+    );
 
     let result_shape = intern_record_shape(&keys);
 
@@ -439,12 +376,10 @@ pub fn compile_join_plan(
         for k in binder_keys(b2, "_2") {
             binder_names.insert(k);
         }
-        let r_storage = rside_inner.storage.as_ref().unwrap();
         for (j, k) in r_keys.iter().enumerate() {
-            let item_inner = r_storage[j].0.borrow();
             if !left_names.contains(&k.to_ascii_uppercase())
                 && !binder_names.contains(k)
-                && (item_inner.kind == Kind::None && !item_inner.is_list)
+                && !is_scalar_field(&r_storage[j])
             {
                 rkept.push(j);
             }
@@ -482,8 +417,7 @@ pub fn build_join_plan(
 
     if check_right {
         for &rk in &plan.rkept {
-            let item_inner = rs[rk].0.borrow();
-            if item_inner.kind != Kind::None || item_inner.is_list {
+            if is_scalar_field(&rs[rk]) {
                 return None;
             }
         }
@@ -508,11 +442,8 @@ pub fn build_join_plan(
             }
             JoinPlanOp::RightSlot => {
                 let v = &rs[s.slot];
-                if check_right {
-                    let item_inner = v.0.borrow();
-                    if item_inner.kind == Kind::None && !item_inner.is_list {
-                        return None;
-                    }
+                if check_right && !is_scalar_field(v) {
+                    return None;
                 }
                 storage.push(v.clone());
             }
