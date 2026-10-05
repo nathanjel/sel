@@ -177,6 +177,10 @@ final class RecordShape
     }
 }
 
+/**
+ * @phpstan-import-type Decimal from \Sel\Dec
+ * @phpstan-import-type EagerDecimal from \Sel\Dec
+ */
 final class Value
 {
     public const NONE = 'NONE';
@@ -197,7 +201,7 @@ final class Value
     public ?array $listKeys = null;
     /** @var array<string,int>|null */
     private ?array $listKeyMap = null;
-    /** @var array{neg:bool,digits:string,scale:int}|null */
+    /** @var Decimal|null */
     public ?array $decVal = null;
 
     /** @param string|bool|null $scalar */
@@ -352,13 +356,12 @@ final class Value
         return new self(self::BOOL, $b);
     }
 
-    /** @param array{neg:bool,digits:string,scale:int}|string $d */
     /**
      * A string is canonicalised and validated: "007" becomes "7", and anything
      * that is not a number is E_NOT_NUM here rather than a TEXT value that fails
      * later somewhere else. Internal callers pass a decimal record, not a string.
      *
-     * @param array{neg:bool,digits:string,scale:int}|string $d
+     * @param Decimal|string $d
      */
     public static function num($d): self
     {
@@ -386,7 +389,7 @@ final class Value
      * skipped: a quarter of each numeric result went to it (PHP-P12). Never call
      * this with a decimal that came from outside the library.
      *
-     * @param array{neg:bool,digits:string,scale:int} $d
+     * @param Decimal $d
      */
     public static function numTrusted(array $d): self
     {
@@ -932,7 +935,7 @@ final class Value
 
     /**
      * @param array{line:int,col:int,offset:int}|null $pos
-     * @return array{neg:bool,digits:string,scale:int}
+     * @return EagerDecimal
      */
     public function asDecimal(?array $pos = null): array
     {
@@ -962,7 +965,7 @@ final class Value
      * yet written (item 1). Everything it is handed to is Dec's.
      *
      * @param array{line:int,col:int,offset:int}|null $pos
-     * @return array{neg:bool,digits:?string,scale:int}
+     * @return Decimal
      */
     public function asDecimalLazy(?array $pos = null): array
     {

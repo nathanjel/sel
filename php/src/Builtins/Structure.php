@@ -15,6 +15,9 @@ use Sel\Value;
 
 use function Sel\fail;
 
+/**
+ * @phpstan-import-type EagerDecimal from \Sel\Dec
+ */
 final class Structure
 {
     public static function register(): void
@@ -184,7 +187,7 @@ final class Structure
      * fit a native int are the int (the text shortcut in canonicalJoinKey
      * agrees), anything else the canonical decimal text.
      *
-     * @param array{neg:bool,digits:string,scale:int} $dec
+     * @param EagerDecimal $dec
      */
     private static function canonicalDecimalKey(array $dec): int|string
     {

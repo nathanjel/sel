@@ -21,6 +21,16 @@ namespace Sel;
 
 require_once __DIR__ . '/Limits.php';   // the caps below are defined from it
 
+/**
+ * A decimal in either form (see the file comment): `digits` is null on a lazy
+ * one, whose magnitude is `gmp`; the `native*` fields cache a checked native
+ * conversion.
+ * @phpstan-type Decimal array{neg:bool, digits:?string, scale:int, gmp?:\GMP, native?:?int, nativeDigits?:?string, nativeNeg?:bool}
+ *
+ * Today's array: the digits written (what a host is handed, and what eager()
+ * returns).
+ * @phpstan-type EagerDecimal array{neg:bool, digits:string, scale:int, native?:?int, nativeDigits?:?string, nativeNeg?:bool}
+ */
 final class Dec
 {
     public const DIV_SCALE = Limits::DIV_SCALE;   // spec/limits.json
@@ -182,13 +192,22 @@ final class Dec
                 'native' => null, 'nativeDigits' => null, 'nativeNeg' => $neg, 'gmp' => $mag];
     }
 
-    /** The digits of $d, written from its GMP magnitude when it is lazy (item 1). */
+    /**
+     * The digits of $d, written from its GMP magnitude when it is lazy.
+     *
+     * @param Decimal $d
+     */
     public static function digits(array $d): string
     {
         return $d['digits'] ?? self::gmpStr($d['gmp']);
     }
 
-    /** $d with its digits written out: today's array, never lazy (item 1). */
+    /**
+     * $d with its digits written out: today's array, never lazy.
+     *
+     * @param Decimal $d
+     * @return EagerDecimal
+     */
     public static function eager(array $d): array
     {
         if ($d['digits'] !== null) {
@@ -862,7 +881,7 @@ final class Dec
         return [$left, $right, $scale];
     }
 
-    /** @return array{neg:bool,digits:string,scale:int}|null */
+    /** @return EagerDecimal|null */
     private static function fromIntFast(int $value, int $scale): ?array
     {
         $neg = $value < 0;
@@ -872,7 +891,7 @@ final class Dec
 
     // --- construction -------------------------------------------------------
 
-    /** @return array{neg:bool,digits:string,scale:int} */
+    /** @return EagerDecimal */
     private static function make(bool $neg, string $digits, int $scale, ?int $native = null): array
     {
         $neg = $digits === '0' ? false : $neg;
@@ -888,9 +907,9 @@ final class Dec
      * the enormous value is never allocated: without that, nesting POWER three
      * deep exhausted PHP's memory before any check could run.
      *
-     * @param array{neg:bool,digits:string,scale:int} $d
+     * @param Decimal $d
      * @param array{line:int,col:int,offset:int}|null $pos
-     * @return array{neg:bool,digits:string,scale:int}
+     * @return Decimal
      */
     private static function guard(array $d, ?array $pos): array
     {
@@ -917,7 +936,7 @@ final class Dec
      * as they do through parse(); anything that is not a decimal is E_BAD_ARG.
      *
      * @param mixed $d
-     * @return array{neg:bool,digits:string,scale:int}
+     * @return Decimal
      */
     public static function checked($d): array
     {
@@ -944,7 +963,7 @@ final class Dec
         return self::guard(self::make($d['neg'], $digits, $d['scale']), null);
     }
 
-    /** @return array{neg:bool,digits:string,scale:int} */
+    /** @return EagerDecimal */
     public static function zero(): array
     {
         return self::make(false, '0', 0);
@@ -959,7 +978,7 @@ final class Dec
      * must not raise — ISNUM's probe — catch it and answer no.
      *
      * @param array{line:int,col:int,offset:int}|null $pos
-     * @return array{neg:bool,digits:string,scale:int}|null
+     * @return EagerDecimal|null
      */
     public static function parse(string $text, ?array $pos = null): ?array
     {
@@ -1022,7 +1041,7 @@ final class Dec
         );
     }
 
-    /** @param array{neg:bool,digits:string,scale:int} $d */
+    /** @param Decimal $d */
     public static function format(array $d): string
     {
         $sign = $d['neg'] ? '-' : '';
@@ -1037,21 +1056,21 @@ final class Dec
         return $sign . substr($padded, 0, $cut) . '.' . substr($padded, $cut);
     }
 
-    /** @return array{neg:bool,digits:string,scale:int} */
+    /** @return EagerDecimal */
     public static function fromInt(int $n): array
     {
         return self::fromIntFast($n, 0);
     }
 
-    /** @param array{neg:bool,digits:string,scale:int} $d */
+    /** @param Decimal $d */
     public static function isZero(array $d): bool
     {
         return $d['digits'] === '0';
     }
 
     /**
-     * @param array{neg:bool,digits:string,scale:int} $d
-     * @return array{neg:bool,digits:string,scale:int}
+     * @param Decimal $d
+     * @return Decimal
      */
     public static function negate(array $d): array
     {
@@ -1066,8 +1085,8 @@ final class Dec
      * The value with the fraction's trailing zeros removed (§7.6 CANON): 1.50 is
      * 1.5, 2.000 is 2, 100 stays 100, and zero is 0 with no scale and no sign.
      *
-     * @param array{neg:bool,digits:string,scale:int} $d
-     * @return array{neg:bool,digits:string,scale:int}
+     * @param Decimal $d
+     * @return Decimal
      */
     public static function trimScale(array $d): array
     {
@@ -1088,8 +1107,8 @@ final class Dec
     }
 
     /**
-     * @param array{neg:bool,digits:string,scale:int} $d
-     * @return array{neg:bool,digits:string,scale:int}
+     * @param Decimal $d
+     * @return Decimal
      */
     public static function abs(array $d): array
     {
@@ -1100,13 +1119,13 @@ final class Dec
         return self::make(false, $d['digits'], $d['scale']);
     }
 
-    /** @param array{neg:bool,digits:string,scale:int} $d */
+    /** @param Decimal $d */
     public static function sign(array $d): int
     {
         return self::isZero($d) ? 0 : ($d['neg'] ? -1 : 1);
     }
 
-    /** @param array{neg:bool,digits:string,scale:int} $d */
+    /** @param Decimal $d */
     public static function isInteger(array $d): bool
     {
         $d = self::eager($d);
@@ -1120,7 +1139,7 @@ final class Dec
         return strspn(substr($d['digits'], $len - $d['scale']), '0') === $d['scale'];
     }
 
-    /** @param array{neg:bool,digits:string,scale:int} $d */
+    /** @param Decimal $d */
     public static function toInt(array $d): int
     {
         $d = self::eager($d);
@@ -1136,8 +1155,8 @@ final class Dec
     // --- arithmetic ---------------------------------------------------------
 
     /**
-     * @param array{neg:bool,digits:string,scale:int} $a
-     * @param array{neg:bool,digits:string,scale:int} $b
+     * @param Decimal $a
+     * @param Decimal $b
      * @return array{0:string,1:string,2:int}
      */
     private static function aligned(array $a, array $b): array
@@ -1151,9 +1170,9 @@ final class Dec
     }
 
     /**
-     * @param array{neg:bool,digits:string,scale:int} $a
-     * @param array{neg:bool,digits:string,scale:int} $b
-     * @return array{neg:bool,digits:string,scale:int}
+     * @param Decimal $a
+     * @param Decimal $b
+     * @return Decimal
      */
     public static function add(array $a, array $b, ?array $pos = null): array
     {
@@ -1219,8 +1238,8 @@ final class Dec
      * descriptor per element. Start with `['m' => 0, 's' => 0]`; finish with
      * sumResult().
      *
-     * @param array{m?:int,s?:int,d?:array{neg:bool,digits:string,scale:int}} $acc
-     * @param array{neg:bool,digits:string,scale:int} $d
+     * @param array{m?:int,s?:int,d?:Decimal} $acc
+     * @param Decimal $d
      * @param array{line:int,col:int,offset:int}|null $pos
      */
     public static function sumAccumulate(array &$acc, array $d, ?array $pos = null): void
@@ -1260,8 +1279,8 @@ final class Dec
     }
 
     /**
-     * @param array{m?:int,s?:int,d?:array{neg:bool,digits:string,scale:int}} $acc
-     * @return array{neg:bool,digits:string,scale:int}
+     * @param array{m?:int,s?:int,d?:Decimal} $acc
+     * @return Decimal
      */
     public static function sumResult(array $acc): array
     {
@@ -1269,9 +1288,9 @@ final class Dec
     }
 
     /**
-     * @param array{neg:bool,digits:string,scale:int} $a
-     * @param array{neg:bool,digits:string,scale:int} $b
-     * @return array{neg:bool,digits:string,scale:int}
+     * @param Decimal $a
+     * @param Decimal $b
+     * @return Decimal
      */
     public static function sub(array $a, array $b, ?array $pos = null): array
     {
@@ -1279,9 +1298,9 @@ final class Dec
     }
 
     /**
-     * @param array{neg:bool,digits:string,scale:int} $a
-     * @param array{neg:bool,digits:string,scale:int} $b
-     * @return array{neg:bool,digits:string,scale:int}
+     * @param Decimal $a
+     * @param Decimal $b
+     * @return Decimal
      */
     public static function mul(array $a, array $b, ?array $pos = null): array
     {
@@ -1311,8 +1330,8 @@ final class Dec
     }
 
     /**
-     * @param array{neg:bool,digits:string,scale:int} $a
-     * @param array{neg:bool,digits:string,scale:int} $b
+     * @param Decimal $a
+     * @param Decimal $b
      */
     public static function cmp(array $a, array $b): int
     {
@@ -1369,7 +1388,7 @@ final class Dec
      * path. Null means "not applicable". The result is identical, cache keys
      * included, to the general path's (tested against it).
      *
-     * @return array{neg:bool,digits:string,scale:int}|null
+     * @return Decimal|null
      */
     private static function fastDiv(array $a, array $b): ?array
     {
@@ -1418,10 +1437,10 @@ final class Dec
      * then reported at its minimal scale); otherwise rounded half away from zero
      * to exactly DIV_SCALE digits. So 4/2 is "2" and 1/3 is "0.3333333333".
      *
-     * @param array{neg:bool,digits:string,scale:int} $a
-     * @param array{neg:bool,digits:string,scale:int} $b
+     * @param Decimal $a
+     * @param Decimal $b
      * @param array{line:int,col:int,offset:int}|null $pos
-     * @return array{neg:bool,digits:string,scale:int}
+     * @return Decimal
      */
     public static function div(array $a, array $b, ?array $pos = null): array
     {
@@ -1459,10 +1478,10 @@ final class Dec
     /**
      * Remainder of truncated division: takes the sign of the dividend.
      *
-     * @param array{neg:bool,digits:string,scale:int} $a
-     * @param array{neg:bool,digits:string,scale:int} $b
+     * @param Decimal $a
+     * @param Decimal $b
      * @param array{line:int,col:int,offset:int}|null $pos
-     * @return array{neg:bool,digits:string,scale:int}
+     * @return Decimal
      */
     public static function mod(array $a, array $b, ?array $pos = null): array
     {
@@ -1479,8 +1498,8 @@ final class Dec
     // --- rounding -----------------------------------------------------------
 
     /**
-     * @param array{neg:bool,digits:string,scale:int} $d
-     * @return array{neg:bool,digits:string,scale:int}
+     * @param Decimal $d
+     * @return Decimal
      */
     public static function round(array $d, int $n, ?array $pos = null): array
     {
@@ -1496,8 +1515,8 @@ final class Dec
     }
 
     /**
-     * @param array{neg:bool,digits:string,scale:int} $d
-     * @return array{neg:bool,digits:string,scale:int}
+     * @param Decimal $d
+     * @return Decimal
      */
     public static function trunc(array $d): array
     {
@@ -1510,8 +1529,8 @@ final class Dec
     }
 
     /**
-     * @param array{neg:bool,digits:string,scale:int} $d
-     * @return array{neg:bool,digits:string,scale:int}
+     * @param Decimal $d
+     * @return Decimal
      */
     public static function floor(array $d, ?array $pos = null): array
     {
@@ -1527,8 +1546,8 @@ final class Dec
     }
 
     /**
-     * @param array{neg:bool,digits:string,scale:int} $d
-     * @return array{neg:bool,digits:string,scale:int}
+     * @param Decimal $d
+     * @return Decimal
      */
     public static function ceil(array $d, ?array $pos = null): array
     {
@@ -1544,8 +1563,8 @@ final class Dec
      * n must be a non-negative integer; the result scale is scale(x) * n, which
      * falls out of repeated multiplication.
      *
-     * @param array{neg:bool,digits:string,scale:int} $a
-     * @return array{neg:bool,digits:string,scale:int}
+     * @param Decimal $a
+     * @return Decimal
      */
     public static function power(array $a, int $n, ?array $pos = null): array
     {

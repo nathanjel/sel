@@ -8,6 +8,9 @@ declare(strict_types=1);
 
 namespace Sel;
 
+/**
+ * @phpstan-import-type Decimal from Dec
+ */
 final class Evaluator
 {
     /**
@@ -55,7 +58,7 @@ final class Evaluator
      *
      * @param array<string,mixed>|Value $slot
      * @param array<string,mixed>|null $pos
-     * @return array{neg:bool,digits:string,scale:int}
+     * @return Decimal
      */
     private static function operand(array|Value $slot, ?array $pos): array
     {
