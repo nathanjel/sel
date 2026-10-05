@@ -3,7 +3,8 @@
 
 import * as D from '../decimal.mjs';
 import { Value, NONE, structuralHash, scalarKey, elements } from '../value.mjs';
-import { define, isHostFunction, callRoles } from '../registry.mjs';
+import { define, callRoles } from '../registry.mjs';
+import { mayWrite, mentionsKey } from '../ast.mjs';
 import { bytesCompare, compareText, ANY_SURROGATE } from '../utf8.mjs';
 import { fail, SelError } from '../errors.mjs';
 import { cpLength, checkText, MAX_TEXT_LEN } from '../budget.mjs';
@@ -40,57 +41,6 @@ function sortArgs(args, forcedDir, directionSlots) {
   return { binder, body, dir };
 }
 
-// Whether `node` mentions the variable `name`. Iterative, with an explicit
-// stack: spec 6.4 says a walk of a tree needs its own bound, since `1+1+1+...`
-// builds a tree as deep as it is long, and a recursion here ran out of the
-// host's stack on a body of about ten thousand terms before the evaluator --
-// which runs next, and counts -- could report E_DEPTH.
-function nodeContainsVar(node, name) {
-  const want = name.toUpperCase();
-  const stack = [node];
-  while (stack.length > 0) {
-    const n = stack.pop();
-    if (!n) continue;
-    switch (n.t) {
-      case 'var': if (n.name.toUpperCase() === want) return true; break;
-      case 'index': stack.push(n.obj, n.idx); break;
-      case 'call': for (const item of n.args) stack.push(item); break;
-      case 'bin': stack.push(n.l, n.r); break;
-      case 'un': stack.push(n.x); break;
-      case 'assign': stack.push(n.target, n.value); break;
-      case 'seq': case 'list': for (const item of n.items) stack.push(item); break;
-      default: break;
-    }
-  }
-  return false;
-}
-
-// Whether evaluating `node` might write into a value: it holds an assignment or
-// calls a host function. A collector copies an element when it collects it
-// (spec §3.4); while nothing below the body can write, deferring that copy to
-// the end is unobservable, so only a body that might write pays for copying at
-// the moment of collection.
-function mayWrite(node) {
-  const stack = [node];
-  while (stack.length > 0) {
-    const n = stack.pop();
-    if (!n) continue;
-    switch (n.t) {
-      case 'assign': return true;
-      case 'index': stack.push(n.obj, n.idx); break;
-      case 'call':
-        if (isHostFunction(n.name)) return true;
-        for (const item of n.args) stack.push(item);
-        break;
-      case 'bin': stack.push(n.l, n.r); break;
-      case 'un': stack.push(n.x); break;
-      case 'seq': case 'list': for (const item of n.items) stack.push(item); break;
-      default: break;
-    }
-  }
-  return false;
-}
-
 // Runs `visit` per element with the binder and _K in scope. Returning a value
 // from `visit` stops the walk and becomes the result. `bodyOverride`, when
 // given, is evaluated per element instead of the written body.
@@ -99,7 +49,7 @@ function walk(args, ctx, visit, bodyOverride = null) {
   const body = bodyOverride ?? written;
   const collection = args.val(0);
   const frame = new Map([[binder, null]]);
-  const needsK = nodeContainsVar(body, '_K');
+  const needsK = mentionsKey(body);
   if (needsK) frame.set('_K', null);
   ctx.pushFrame(frame);
   try {
@@ -222,7 +172,7 @@ export function leadingFieldConjuncts(body, binder) {
   const literalKind = (n) => (n && n.t === 'num' ? 'NUM' : n && n.t === 'text' ? 'TEXT' : null);
   return conjuncts.map((c) => {
     const fields = new Set();
-    // Iterative, like nodeContainsVar: a conjunct is as deep as its source is long.
+    // Iterative, like ast.mjs's walks: a conjunct is as deep as its source is long.
     const readsOnlyFields = (root) => {
       const stack = [root];
       while (stack.length > 0) {
@@ -422,7 +372,7 @@ function doSort(args, ctx, forcedDir) {
   if (body === null) {
     indexed = entries.map(([, item]) => ({ item, info: keyInfo(item) }));
   } else {
-    const needsK = nodeContainsVar(body, '_K');
+    const needsK = mentionsKey(body);
     const eager = mayWrite(body);
     indexed = entries.map(([k, item]) => {
       const frame = new Map([[binder, item]]);
@@ -494,7 +444,7 @@ function doTop(args, ctx, forcedDir) {
       index = worst;
     }
   };
-  const needsK = body !== null && nodeContainsVar(body, '_K');
+  const needsK = body !== null && mentionsKey(body);
   // Collected once its key is computed (spec §3.4); a key that might write copies
   // the element as it is admitted, so a later key's write cannot reach it.
   const eager = body !== null && mayWrite(body);
@@ -592,7 +542,7 @@ function doBucket(args, ctx) {
   const keyNode = args.node(roles.body);
   const aggregateNode = roles.extra < 0 ? null : args.node(roles.extra);
 
-  const needsK = nodeContainsVar(keyNode, '_K');
+  const needsK = mentionsKey(keyNode);
   const frame = new Map([[binder, null]]);
   if (needsK) frame.set('_K', null);
   // A row is collected when its key is computed and it is grouped (spec §3.4):

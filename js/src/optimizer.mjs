@@ -4,6 +4,7 @@
 
 import * as D from './decimal.mjs';
 import { lookup, argRoles, textSelectsForm } from './registry.mjs';
+import { childNodes, fieldReads, readsName, mapChildren, mentionsKey } from './ast.mjs';
 import { MAX_DEPTH } from './errors.mjs';
 import { compileMathPlan, isMathOp } from './math_plan.mjs';
 
@@ -124,49 +125,9 @@ function fold(node) {
   return node;
 }
 
+// The fields `node` reads through the binder (or `_`, `_1`, `_2`).
 function fieldRefs(node, binder = '_') {
-  const result = [];
-  const visit = (item) => {
-    if (!item) return;
-    if (item.t === 'index' && item.obj.t === 'var' && item.idx.t === 'text'
-        && [binder, '_', '_1', '_2'].some((name) => name.toUpperCase() === item.obj.name.toUpperCase())) {
-      result.push(item.idx.v);
-    }
-    if (item.args) item.args.forEach(visit);
-    if (item.items) item.items.forEach(visit);
-    if (item.l) visit(item.l);
-    if (item.r) visit(item.r);
-    if (item.x) visit(item.x);
-    if (item.target) visit(item.target);
-    if (item.value) visit(item.value);
-    if (item.t === 'index') { visit(item.obj); visit(item.idx); }
-  };
-  visit(node);
-  return [...new Set(result)];
-}
-
-// Whether `node` reads one of `names` as a variable -- other than as
-// `name["field"]`, which is a field read. Case-insensitively, like the
-// evaluator's frames.
-function readsVar(node, names) {
-  const wanted = new Set(names.map((name) => name.toUpperCase()));
-  let found = false;
-  const visit = (item) => {
-    if (!item || found) return;
-    if (item.t === 'var' && wanted.has(item.name.toUpperCase())) { found = true; return; }
-    if (item.t === 'index' && item.obj.t === 'var' && item.idx.t === 'text') return;
-    if (item.args) item.args.forEach(visit);
-    if (item.items) item.items.forEach(visit);
-    visit(item.l);
-    visit(item.r);
-    visit(item.x);
-    visit(item.obj);
-    visit(item.idx);
-    visit(item.target);
-    visit(item.value);
-  };
-  visit(node);
-  return found;
+  return fieldReads(node, binder);
 }
 
 // Whether a body reads the element as a whole (its binder, or any of the
@@ -175,13 +136,14 @@ function readsVar(node, names) {
 // cannot move across a step that changes the rows' shape (MAP, SELECT_COLS)
 // or renumbers them (MAP, SELECT_COLS, the sorts).
 function readsRowOrKey(node, binder = '_') {
-  return readsVar(node, [binder, '_', '_1', '_2', '_K']);
+  return readsName(node, [binder, '_', '_1', '_2', '_K']);
 }
 
-// Whether a step's own arguments (not its input) read `_K`: the keys a sort
-// renumbers, so such a step keeps its place relative to one.
-function stepReadsKey(step) {
-  return step.args.slice(1).some((arg) => readsVar(arg, ['_K']));
+// Whether a step's own arguments (not its input) mention `_K` (a field read
+// `_K["x"]` included): the keys a sort renumbers, so such a step keeps its
+// place relative to one. The planner asks the same question (keysObservable).
+export function stepReadsKey(step) {
+  return step.args.slice(1).some(mentionsKey);
 }
 
 // Whether the step after a FILTER hides where the FILTER ran. FILTER keeps its
@@ -304,9 +266,7 @@ function boundedDepth(root, cap) {
     const next = [];
     for (const node of level) {
       if (!node || typeof node !== 'object') continue;
-      if (node.args) next.push(...node.args);
-      if (node.items) next.push(...node.items);
-      for (const key of ['l', 'r', 'x', 'obj', 'idx', 'value']) if (node[key]) next.push(node[key]);
+      next.push(...childNodes(node, false));   // the evaluator's count: no target
     }
     level = next;
   }
@@ -358,18 +318,8 @@ function numericLiteral(node) {
 
 function renameVar(node, oldName, newName) {
   if (!node) return node;
-  const copy = copyNode(node);
-  if (copy.t === 'var' && copy.name.toUpperCase() === oldName.toUpperCase()) copy.name = newName;
-  if (copy.args) copy.args = copy.args.map((item) => renameVar(item, oldName, newName));
-  if (copy.items) copy.items = copy.items.map((item) => renameVar(item, oldName, newName));
-  if (copy.l) copy.l = renameVar(copy.l, oldName, newName);
-  if (copy.r) copy.r = renameVar(copy.r, oldName, newName);
-  if (copy.x) copy.x = renameVar(copy.x, oldName, newName);
-  if (copy.obj) copy.obj = renameVar(copy.obj, oldName, newName);
-  if (copy.idx) copy.idx = renameVar(copy.idx, oldName, newName);
-  if (copy.target) copy.target = renameVar(copy.target, oldName, newName);
-  if (copy.value) copy.value = renameVar(copy.value, oldName, newName);
-  return copy;
+  if (node.t === 'var' && node.name.toUpperCase() === oldName.toUpperCase()) return { ...node, name: newName };
+  return mapChildren(node, (child) => renameVar(child, oldName, newName));
 }
 
 function logicalSteps(source, steps, options = {}) {
@@ -617,13 +567,7 @@ function optimizeTree(node, physical, depth = 1, options = {}, inMath = false) {
 function exceedsDepth(node, depth) {
   if (!node || typeof node !== 'object') return false;
   if (depth > MAX_DEPTH) return true;
-  const next = depth + 1;
-  if (node.args) for (const item of node.args) if (exceedsDepth(item, next)) return true;
-  if (node.items) for (const item of node.items) if (exceedsDepth(item, next)) return true;
-  for (const key of ['l', 'r', 'x', 'obj', 'idx']) {
-    if (node[key] && exceedsDepth(node[key], next)) return true;
-  }
-  if (node.value && exceedsDepth(node.value, next)) return true;
+  for (const child of childNodes(node, false)) if (exceedsDepth(child, depth + 1)) return true;
   return false;
 }
 

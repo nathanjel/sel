@@ -8,6 +8,7 @@
 import { MAX_DEPTH } from '../eval.mjs';
 import { MAX_SQL_NODES } from '../_limits.mjs';
 import { bindingForm } from '../registry.mjs';
+import { childNodes as children } from '../ast.mjs';
 import * as constants from './constants.mjs';
 import { refuse } from './errors.mjs';
 
@@ -363,16 +364,4 @@ function expandedSize(root, memo, pos) {
     memo.set(node, [size, height]);
   }
   return memo.get(root)?.[0] ?? 1;
-}
-
-function children(node) {
-  switch (node.t) {
-    case 'un': return [node.x];
-    case 'bin': return [node.l, node.r];
-    case 'index': return [node.obj, node.idx];
-    case 'list': return node.items;
-    case 'clist': return node.entries.map(([, v]) => v);
-    case 'call': return node.args;
-    default: return [];
-  }
 }

@@ -26,7 +26,7 @@ import { MAX_DEPTH } from '../eval.mjs';
 import { optimizeAstLogical, unwindPipeline, buildPipeline, LITERAL_TYPES, mapDetails } from '../optimizer.mjs';
 import { asciiUpper } from '../lexer.mjs';
 import { bindingForm } from '../registry.mjs';
-import { BUILTIN_MANIFEST } from '../_builtin_manifest.mjs';
+import { childNodes, walkNodes, fieldReads, readsName, mentionsKey, callsApplication } from '../ast.mjs';
 import * as sqlmap from './map.mjs';
 import * as constants from './constants.mjs';
 import * as normalise from './normalise.mjs';
@@ -253,16 +253,7 @@ function containsUnsupportedSql(node, dialect, defs = null, seen = new Set()) {
     }
     return node.args.some((item) => containsUnsupportedSql(item, dialect, defs, seen));
   }
-  const inner = (item) => containsUnsupportedSql(item, dialect, defs, seen);
-  if (node.args && node.args.some(inner)) return true;
-  if (node.items && node.items.some(inner)) return true;
-  if (node.l && inner(node.l)) return true;
-  if (node.r && inner(node.r)) return true;
-  if (node.x && inner(node.x)) return true;
-  if (node.obj && inner(node.obj)) return true;
-  if (node.idx && inner(node.idx)) return true;
-  if (node.target && inner(node.target)) return true;
-  return Boolean(node.value && inner(node.value));
+  return childNodes(node).some((item) => containsUnsupportedSql(item, dialect, defs, seen));
 }
 
 // The field names read as `binder["field"]` in `node`, first seen first and
@@ -270,31 +261,7 @@ function containsUnsupportedSql(node, dialect, defs = null, seen = new Set()) {
 // `Name` are two fields. `binder` null means a read under ANY name counts --
 // a downstream step binds the row however it likes (`SORT_BY(s, s["name"])`).
 function collectFieldReferences(node, binder = '_') {
-  const wanted = binder === null ? null : new Set([binder, '_', '_1', '_2'].map((name) => name.toUpperCase()));
-  const refs = [];
-  const seen = new Set();
-  const visit = (item) => {
-    if (!item) return;
-    if (item.t === 'index' && item.obj?.t === 'var' && item.idx?.t === 'text'
-        && (wanted === null || wanted.has(item.obj.name.toUpperCase()))) {
-      const key = String(item.idx.v);
-      if (!seen.has(key)) {
-        seen.add(key);
-        refs.push(key);
-      }
-    }
-    if (item.args) item.args.forEach(visit);
-    if (item.items) item.items.forEach(visit);
-    visit(item.l);
-    visit(item.r);
-    visit(item.x);
-    visit(item.obj);
-    visit(item.idx);
-    visit(item.target);
-    visit(item.value);
-  };
-  visit(node);
-  return refs;
+  return fieldReads(node, binder);
 }
 
 // FILTER retains ordinal keys that SQL rows plus the local MAP cannot restore.
@@ -316,18 +283,10 @@ const KEY_RETAINING = new Set(['FILTER']);
 // the dependency columns SQL carries where SEL compares the custom values.
 const FALLTHROUGH_DOWNSTREAM = new Set(['SORT_BY', 'TOP_BY', 'TAKE', 'DROP']);
 
+// Whether a step's own arguments mention `_K` (optimizer's stepReadsKey: one
+// question, one answer).
 function argsReadKey(step) {
-  let found = false;
-  const visit = (n) => {
-    if (found || !n) return;
-    if (n.t === 'var') { if (n.name === '_K') found = true; return; }
-    if (n.args) n.args.forEach(visit);
-    if (n.items) n.items.forEach(visit);
-    if (n.entries) n.entries.forEach(([, v]) => visit(v));
-    for (const c of [n.l, n.r, n.x, n.obj, n.idx]) visit(c);
-  };
-  step.args.slice(1).forEach(visit);
-  return found;
+  return step.args.slice(1).some(mentionsKey);
 }
 
 function keysObservable(prefixSteps, continuationSteps) {
@@ -345,28 +304,7 @@ function keysObservable(prefixSteps, continuationSteps) {
 // text key, as in `GET(_, "name")` or `COUNT(_)` -- which no projected column
 // can stand in for.
 function readsWholeRow(node, binder) {
-  const wanted = new Set([binder, '_', '_1', '_2'].map((name) => name.toUpperCase()));
-  let found = false;
-  const visit = (item) => {
-    if (!item || found) return;
-    if (item.t === 'var' && wanted.has(item.name.toUpperCase())) { found = true; return; }
-    if (item.t === 'index' && item.obj?.t === 'var' && item.idx?.t === 'text') {
-      // A field read; the object is not a whole-row read.
-      visit(item.idx);
-      return;
-    }
-    if (item.args) item.args.forEach(visit);
-    if (item.items) item.items.forEach(visit);
-    visit(item.l);
-    visit(item.r);
-    visit(item.x);
-    visit(item.obj);
-    visit(item.idx);
-    visit(item.target);
-    visit(item.value);
-  };
-  visit(node);
-  return found;
+  return readsName(node, [binder, '_', '_1', '_2']);
 }
 
 // Whether a pushable pair is the plain field read `binder[key]` of its own key,
@@ -638,18 +576,11 @@ function unwindThroughHelpers(result, defs, literals) {
 // The names a tree reads, binders included: an over-approximation that can
 // only keep an assignment the tree does not need, never drop one it does.
 function readNames(node, out = new Set()) {
-  if (!node) return out;
-  if (node.t === 'var') {
+  walkNodes(node, (n) => {
     // A read of the BINDING, reached by unwinding through a helper of the same
     // name (`ORDERS = ORDERS .> DROP(2)`), is not a read of that helper.
-    if (!node.binding) out.add(node.name);
-    return out;
-  }
-  if (node.args) node.args.forEach((item) => readNames(item, out));
-  if (node.items) node.items.forEach((item) => readNames(item, out));
-  for (const child of [node.l, node.r, node.x, node.obj, node.idx, node.target, node.value]) {
-    readNames(child, out);
-  }
+    if (n.t === 'var' && !n.binding) out.add(n.name);
+  });
   return out;
 }
 
@@ -703,12 +634,7 @@ function tooDeepToPlan(ast) {
     const [node, depth] = stack.pop();
     if (!node) continue;
     if (depth > limit) return true;
-    for (const c of [node.l, node.r, node.x, node.obj, node.idx, node.target, node.value]) {
-      if (c) stack.push([c, depth + 1]);
-    }
-    for (const list of [node.args, node.items]) {
-      if (list) for (const c of list) stack.push([c, depth + 1]);
-    }
+    for (const c of childNodes(node)) if (c) stack.push([c, depth + 1]);
   }
   return false;
 }
@@ -718,28 +644,15 @@ function tooDeepToPlan(ast) {
 function flatSourceTables(ast, catalog) {
   const out = [];
   const seen = new Set();
-  const stack = [ast];
-  const pending = [];
-  while (stack.length > 0) {
-    const node = stack.pop();
-    if (!node) continue;
-    if (node.t === 'var') {
-      if (catalog.has(node.name)) {
-        const b = catalog.get(node.name, node.pos);
-        if (b.kind === 'relation') {
-          const table = physicalSource(b);
-          if (!seen.has(table)) { seen.add(table); out.push(table); }
-        }
+  walkNodes(ast, (node) => {
+    if (node.t === 'var' && catalog.has(node.name)) {
+      const b = catalog.get(node.name, node.pos);
+      if (b.kind === 'relation') {
+        const table = physicalSource(b);
+        if (!seen.has(table)) { seen.add(table); out.push(table); }
       }
-      continue;
     }
-    pending.length = 0;
-    for (const list of [node.items, node.args]) if (list) pending.push(...list);
-    for (const c of [node.l, node.r, node.x, node.obj, node.idx, node.target, node.value]) {
-      if (c) pending.push(c);
-    }
-    for (let i = pending.length - 1; i >= 0; i--) stack.push(pending[i]);
-  }
+  });
   return out;
 }
 
@@ -951,30 +864,15 @@ function continuationEffects(ast) {
   if (cached) return cached;
   const names = new Set();
   let callsApp = false;
-  const stack = [ast];
-  while (stack.length > 0) {
-    const n = stack.pop();
-    if (!n || typeof n !== 'object') continue;
+  walkNodes(ast, (n) => {
     if (n.t === 'assign') {
       let target = n.target;
-      while (target && target.t === 'index') {
-        if (target.idx) stack.push(target.idx);
-        target = target.obj;
-      }
+      while (target && target.t === 'index') target = target.obj;
       if (target && target.t === 'var') names.add(target.name);
-      if (n.value) stack.push(n.value);
-      continue;
+    } else if (callsApplication(n)) {
+      callsApp = true;
     }
-    if (n.t === 'call') {
-      const upper = (n.name || '').toUpperCase();
-      if (!Object.prototype.hasOwnProperty.call(BUILTIN_MANIFEST, upper)) {
-        callsApp = true;
-      }
-    }
-    if (n.args) for (const item of n.args) stack.push(item);
-    if (n.items) for (const item of n.items) stack.push(item);
-    for (const key of ['l', 'r', 'x', 'obj', 'idx', 'value']) if (n[key]) stack.push(n[key]);
-  }
+  });
   cached = { assignedRoots: names, callsApplicationFunction: callsApp };
   EFFECTS.set(ast, cached);
   return cached;

@@ -1,6 +1,7 @@
 import { Value, RecordShape, NONE, TEXT, structuralHash, scalarKey, recordShape, elements } from '../value.mjs';
 import * as D from '../decimal.mjs';
-import { define, hostArity } from '../registry.mjs';
+import { define } from '../registry.mjs';
+import { anyNode, callsApplication, mayWrite } from '../ast.mjs';
 import { BUILTIN_MANIFEST } from '../_builtin_manifest.mjs';
 import { SelError, fail, MAX_DEPTH } from '../errors.mjs';
 import { asciiUpper } from '../lexer.mjs';
@@ -270,30 +271,6 @@ function checkJoinPair(equi, key, value, rightFacts) {
 // bound bare (spec §7.4).
 function isPositionalBinder(name) {
   return name === '_1' || name === '_2';
-}
-
-// True when evaluating `node` cannot change any value: no assignment anywhere in it and
-// no call to a host function (which is handed values and may do what it likes). An
-// iterative walk: a predicate is a tree as deep as its source is long.
-function isPureNode(node) {
-  const stack = [node];
-  while (stack.length > 0) {
-    const n = stack.pop();
-    if (!n) continue;
-    switch (n.t) {
-      case 'assign': return false;
-      case 'call':
-        if (hostArity(n.name) !== null) return false;
-        for (const item of n.args) stack.push(item);
-        break;
-      case 'index': stack.push(n.obj, n.idx); break;
-      case 'bin': stack.push(n.l, n.r); break;
-      case 'un': stack.push(n.x); break;
-      case 'seq': case 'list': for (const item of n.items) stack.push(item); break;
-      default: break;
-    }
-  }
-  return true;
 }
 
 // Keyed by the row shape and held weakly: a plan lives as long as its shape does, so the
@@ -610,24 +587,15 @@ function flatRow(row, binderNames) {
 // order -- the right source of a join before the left -- which is what lets a
 // FILTER's conjuncts travel down a chain of joins.
 function pureSource(root) {
-  const stack = [root];
-  while (stack.length > 0) {
-    const node = stack.pop();
-    if (!node) continue;
+  return !anyNode(root, (node) => {
     switch (node.t) {
-      case 'var': case 'num': case 'text': case 'bool': break;
-      case 'index': stack.push(node.obj, node.idx); break;
-      case 'bin': stack.push(node.l, node.r); break;
-      case 'un': stack.push(node.x); break;
-      case 'list': for (const item of node.items) stack.push(item); break;
-      case 'call':
-        if (!Object.prototype.hasOwnProperty.call(BUILTIN_MANIFEST, node.name) || node.name === 'ABORT') return false;
-        for (const item of node.args) stack.push(item);
-        break;
-      default: return false;
+      case 'var': case 'num': case 'text': case 'bool':
+      case 'index': case 'bin': case 'un': case 'list':
+        return false;
+      case 'call': return callsApplication(node) || node.name === 'ABORT';
+      default: return true;              // an assignment, a sequence, anything else
     }
-  }
-  return true;
+  });
 }
 
 // The conjuncts a join may test before it joins, in stage order, and where
@@ -1197,7 +1165,7 @@ function doLink(args, ctx, leftJoin) {
     // same right rows for every left row, so they are aliased once, at the first left
     // row, not once per pair. Anything else re-aliases per pair as before: a
     // predicate's writes are visible to the pairs still to come.
-    const stable = isPureNode(predicate);
+    const stable = !mayWrite(predicate);
     let aliasedRights = null;
     try {
       each(leftValue, (leftItem) => {
