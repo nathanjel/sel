@@ -174,14 +174,14 @@ impl Fragment {
             return refuse("E_SQL_SHAPE", "this expression yields a list, and a SQL expression is a scalar", Pos::default());
         }
         if self.kind == SqlKind::Statement {
-            return refuse("E_SQL_SHAPE", "this expression yields a statement, and a SQL expression is a scalar; use asStatement()", Pos::default());
+            return refuse("E_SQL_SHAPE", "this expression yields a statement, and a SQL expression is a scalar; use as_statement()", Pos::default());
         }
         self.join_mode(mode)
     }
 
     pub fn as_statement(&self, mode: Mode) -> Result<String, SqlError> {
         if self.kind != SqlKind::Statement {
-            return refuse("E_SQL_SHAPE", format!("expected STATEMENT fragment, got {}; use asValue() or asCondition()", self.kind), Pos::default());
+            return refuse("E_SQL_SHAPE", format!("expected STATEMENT fragment, got {}; use as_value() or as_condition()", self.kind), Pos::default());
         }
         self.join_mode(mode)
     }

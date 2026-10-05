@@ -711,7 +711,7 @@ impl Translator {
                         );
                     }
                     // Groups appear in order of their first member, and the members were
-                    // sorted: a GROUP BY returns its groups in no order (JS-C59).
+                    // sorted: a GROUP BY returns its groups in no order.
                     if !plan.order_by.is_empty() || plan.order_dropped {
                         return refuse(
                             "E_SQL_SHAPE",
@@ -947,7 +947,7 @@ impl Translator {
                     // DISTINCT keeps the FIRST element of each run in sorted order; SQL's
                     // `SELECT DISTINCT proj ... ORDER BY <column not in proj>` is refused by
                     // PostgreSQL and MySQL 8 and answers an unspecified representative row on
-                    // MariaDB, so the step stays in memory (CPP-C60).
+                    // MariaDB, so the step stays in memory.
                     if !plan.order_by.is_empty() {
                         return refuse(
                             "E_SQL_SHAPE",

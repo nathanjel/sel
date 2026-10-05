@@ -110,7 +110,7 @@ fn check_column_type(typ: SqlKind) {
 }
 
 // A collation spelling folded into the exact/sargable flags; an unknown one is
-// refused, as the other hosts' bindings do (GO-C19).
+// refused, as the other hosts' bindings do.
 fn check_collation(c: &str) -> (bool, bool) {
     if c.is_empty() {
         return (false, false);

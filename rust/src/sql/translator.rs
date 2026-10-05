@@ -1333,8 +1333,7 @@ impl Translator {
     }
 
     // A binder position holds a name (the manifest's 'binder' scope). Anything else
-    // is refused here, at that expression, whatever the call is later refused for
-    // (GO-C2).
+    // is refused here, at that expression, whatever the call is later refused for.
     fn require_named_binders(&self, n: &SNode) -> Result<(), SqlError> {
         let shapes: Vec<Node> = n
             .kids
@@ -2709,7 +2708,7 @@ impl Translator {
         }
         if v.is_none() {
             // A NULL element: SEL's as_text would raise E_NULL. It is a binding
-            // problem, and a refusal (JS-C54b).
+            // problem, and a refusal.
             return refuse(
                 "E_SQL_BINDING",
                 "a value binding holds a NULL element, which has no SQL literal",

@@ -11,14 +11,9 @@
 //! Only whole strings are ever stored: text is never cut at the inline limit,
 //! so an inline string is always valid UTF-8.
 //!
-//! # Migration from enum representation
-//!
-//! `SelStr` previously exposed `Inline` and `Shared` enum variants. To prevent
-//! construction of invalid UTF-8 and protect representation invariants, the
-//! internal representation is now private.
-//! - To construct a `SelStr`, use [`SelStr::new`], [`SelStr::from`], or [`SelStr::EMPTY`].
-//! - To inspect whether storage is inline, use [`SelStr::is_inline`].
-//! - To read the string slice, use [`SelStr::as_str`] or the [`Deref`] / [`AsRef`] implementations.
+//! Build one with [`SelStr::new`], [`SelStr::from`] or [`SelStr::EMPTY`]; read it
+//! with [`SelStr::as_str`] or through `Deref`/`AsRef<str>`;
+//! [`SelStr::is_inline`] says how it is stored.
 
 use std::borrow::Borrow;
 use std::cmp::Ordering;

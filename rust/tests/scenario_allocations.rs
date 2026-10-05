@@ -1,9 +1,8 @@
 #![cfg(feature = "sql")]
 //! Scenario 1 (tools/scale-test) on the 1x dataset: the answer, and how many
 //! heap allocations one run makes. Allocation counts are deterministic, so
-//! this is the regression net for the value-representation work in
-//! docs/interim/2026-09-29/rust-performance-plan.md: lower the budgets as the
-//! phases land, never raise them.
+//! this is the regression net for the value representation: lower the budgets
+//! when a change earns it, never raise them.
 use sel_lang::{compile, Entry, Value};
 use serde_json::Value as Json;
 use std::alloc::{GlobalAlloc, Layout, System};

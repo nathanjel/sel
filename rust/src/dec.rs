@@ -22,8 +22,8 @@ pub const POW10_128: [i128; 39] = {
 };
 
 /// A large mantissa is shared: cloning a `Dec` -- reading a number out of a
-/// value, copying it, negating it -- costs a reference count, not a copy
-/// (item 1). Nothing changes a mantissa once it is built, so sharing is never
+/// value, copying it, negating it -- costs a reference count, not a copy.
+/// Nothing changes a mantissa once it is built, so sharing is never
 /// observable; anything that ever needs to would go through `Arc::make_mut`.
 #[doc(hidden)]
 #[derive(Clone, Debug, PartialEq, Eq)]

@@ -141,7 +141,7 @@ pub fn fn_decode_base64(args: &mut Args) -> Result<Value, SelError> {
     Ok(Value::bin_owned(out))
 }
 
-// CRC32 table
+// CRC-32 (IEEE 802.3, reflected), bit by bit: no table.
 fn crc32_ieee(data: &[u8]) -> u32 {
     let mut crc: u32 = 0xFFFF_FFFF;
     for &b in data {

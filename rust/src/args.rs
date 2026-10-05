@@ -9,9 +9,9 @@ use crate::utf8::{Pos, SelError};
 use crate::value::Value;
 
 // Argument values are cached in a Vec as each is first evaluated. (An inline
-// cache for up to six arguments was tried -- rust-performance-plan.md, phase 1:
-// 2.4% fewer allocations but no measurable time, and a larger `Args` on the
-// evaluator's recursive path -- so it was not kept.)
+// cache for up to six arguments was tried: 2.4% fewer allocations but no
+// measurable time, and a larger `Args` on the evaluator's recursive path -- so
+// it was not kept.)
 pub struct Args<'a> {
     pub nodes: &'a [Node],
     pub record_shape: Option<Arc<RecordShape>>,

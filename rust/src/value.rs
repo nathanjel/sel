@@ -175,7 +175,7 @@ pub struct ValueInner {
 /// two u64 halves. An i128 field would make every cell 16-byte aligned and
 /// `Option<Dec>` 48 bytes; this is 32, and the cell 8-byte aligned. A large
 /// mantissa is the `Dec`'s own shared one: unpacking and copying a cell share
-/// it rather than copy it (item 1).
+/// it rather than copy it.
 #[derive(Clone, Debug)]
 pub struct CellDec {
     lo: u64,

@@ -294,8 +294,8 @@ fn record_stmt(
     Ok(())
 }
 
-// A literal index names a constant key -- including "" (GO-C40): an empty
-// text literal is a key like any other.
+// A literal index names a constant key -- including "": an empty text
+// literal is a key like any other.
 fn constant_key(idx: &Node) -> Option<String> {
     if idx.t == NodeType::Num || idx.t == NodeType::Text {
         Some(idx.s.clone())

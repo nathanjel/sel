@@ -448,7 +448,7 @@ fn mul_nat(a: &[u64], b: &[u64]) -> Vec<u64> {
     }
     // A square costs about half a product: MUL of a value by an equal one
     // (zr * zr, reading the same variable twice) takes that road. Both reads
-    // share one mantissa (item 1), so the pointer decides before the words.
+    // share one mantissa, so the pointer decides before the words.
     if a.len() == b.len() && (std::ptr::eq(a.as_ptr(), b.as_ptr()) || a == b) {
         return sqr_nat(a);
     }

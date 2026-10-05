@@ -170,7 +170,7 @@ fn join_rows_lack_binders(steps: &[Node], count: usize) -> bool {
 // earlier sort's order among its ties, which is gone once a projection hid
 // the earlier key. A LIMIT beside the earlier ORDER BY decides which rows
 // survive, not any of this. A prefix that ends before that step is exact
-// (docs/internals/sql-translation.md 12.1, "Order"; PHP-C35).
+// (docs/internals/sql-translation.md 12.1, "Order").
 fn order_is_lost(steps: &[Node], count: usize) -> bool {
     const ORDER_SORTS: [&str; 6] = ["SORT", "SORT_DESC", "SORT_BY", "TOP", "TOP_DESC", "TOP_BY"];
     let mut sorted = false;
@@ -1198,8 +1198,8 @@ pub fn plan_hybrid(
         let remaining = &steps[count..];
         // A 3-argument LINK names the two sides of the row it builds after the
         // variables it joined: the left side is the pipeline's own source
-        // variable, wherever in the continuation the LINK falls (spec 7.4;
-        // PHP-C9, GO-C22). The rows are fed to the continuation under that name,
+        // variable, wherever in the continuation the LINK falls (spec 7.4).
+        // The rows are fed to the continuation under that name,
         // or the joined row would carry the left side under `_INPUT`. A step that
         // also READS that name (a self-join) would find the truncated rows where
         // run() finds the whole relation: that split is not made. A LINK in the
@@ -1299,7 +1299,7 @@ where
         .ok_or_else(|| SelError::new("E_BAD_ARG", "hybrid plan has no continuation program", Pos::default()))?;
     let cont_ctx = match context {
         // is_none() is true of every list and record (their kind is None): the test
-        // for "no context" is is_null(), or the caller's whole context is dropped (GO-C5).
+        // for "no context" is is_null(), or the caller's whole context is dropped.
         Some(c) if !c.is_null() => c.deep_copy(1, Pos::default())?,
         _ => Value::record_from_entries(Vec::new()),
     };
