@@ -54,7 +54,7 @@ from typing import Any
 from . import decimal as D
 from .errors import MAX_DEPTH, Pos, fail
 from .lexer import RESERVED, Token, tokenize
-from .registry import INF, REGEX_FLAG_AT, Spec, lookup
+from .registry import INF, REGEX_FLAG_AT, Spec, is_host_function, lookup
 
 ASSIGN_OPS = frozenset(['=', '+=', '-=', '*=', '/=', '%=', '&='])
 COMPARE_OPS = frozenset(['==', '!=', '<', '<=', '>', '>=',
@@ -183,6 +183,45 @@ class Node:
         for k, v in changes.items():
             setattr(c, k, v)
         return c
+
+
+def children(n: Node) -> tuple:
+    """Every child slot of a node, in one place: a walker that means "all of
+    the tree" iterates this, so a field added to Node is added here once. The
+    walkers that skip a slot on purpose -- an assignment's target is a path, not
+    a read; a binder argument is a name -- say so where they walk."""
+    return (*n.args, *n.items, n.l, n.r, n.x, n.obj, n.idx, n.target, n.value)
+
+
+def may_write(node: Node | None) -> bool:
+    """Whether evaluating NODE might write into a value it reaches: it holds an
+    assignment, or calls an application's own function (registry.is_host_function),
+    which may do anything to a value it is handed. Iterative: a body is as deep as
+    the source is long. An assignment is answered at the node, so its target and
+    value are not walked."""
+    stack = [node]
+    while stack:
+        n = stack.pop()
+        if n is None:
+            continue
+        t = n.t
+        if t == 'assign':
+            return True
+        if t == 'call':
+            if is_host_function(n.name or ''):
+                return True
+            stack.extend(n.args)
+        elif t == 'index':
+            stack.append(n.obj)
+            stack.append(n.idx)
+        elif t == 'bin':
+            stack.append(n.l)
+            stack.append(n.r)
+        elif t == 'un':
+            stack.append(n.x)
+        elif t in ('seq', 'list'):
+            stack.extend(n.items)
+    return False
 
 
 class Parser:

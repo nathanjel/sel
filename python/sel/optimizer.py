@@ -14,8 +14,8 @@ from .errors import MAX_DEPTH, SelError
 from .eval import bytes_compare
 from .lexer import ascii_upper
 from .math_plan import compile_math_plan, is_math_op
-from .parser import Node
-from .registry import is_host_function, lookup, sort_form
+from .parser import Node, children, may_write
+from .registry import lookup, sort_form
 from .utf8 import encode_utf8
 
 
@@ -181,7 +181,13 @@ def fold(node: Node | None) -> Node | None:
     return node
 
 
-def field_refs(node: Node | None, binder: str = '_') -> list[str]:
+def field_refs(node: Node | None, binder: str | None = '_') -> list[str]:
+    """The field names read as ``binder["field"]`` (or through ``_``, ``_1``,
+    ``_2``) in NODE, first seen first, compared exactly: SEL's record keys are
+    case-sensitive. ``binder`` None counts a read under ANY name -- a later step
+    binds the row however it likes (``SORT_BY(s, s["name"])``). The optimiser's
+    rewrites and the hybrid planner both ask this."""
+    wanted = None if binder is None else {ascii_upper(binder), '_', '_1', '_2'}
     result: list[str] = []
 
     def visit(item: Node | None) -> None:
@@ -189,21 +195,10 @@ def field_refs(node: Node | None, binder: str = '_') -> list[str]:
             return
         if (item.t == 'index' and item.obj is not None and item.obj.t == 'var'
                 and item.idx is not None and item.idx.t == 'text'
-                and any(ascii_upper(name) == ascii_upper(item.obj.name)
-                        for name in (binder, '_', '_1', '_2'))):
-            result.append(item.idx.v)
-        for child in item.args:
+                and (wanted is None or ascii_upper(item.obj.name) in wanted)):
+            result.append(str(item.idx.v))
+        for child in children(item):
             visit(child)
-        for child in item.items:
-            visit(child)
-        visit(item.l)
-        visit(item.r)
-        visit(item.x)
-        visit(item.target)
-        visit(item.value)
-        if item.t == 'index':
-            visit(item.obj)
-            visit(item.idx)
 
     visit(node)
     return list(dict.fromkeys(result))
@@ -279,32 +274,8 @@ _READ_ONLY_CONSUMERS = ('MAP',)
 
 
 def body_only_reads(node: Node | None) -> bool:
-    """Whether evaluating NODE can change nothing it reaches: no assignment, and
-    no call to an application's own function (which may do anything to a value
-    it is handed). Iterative: a body is as deep as the source is long."""
-    stack = [node]
-    while stack:
-        n = stack.pop()
-        if n is None:
-            continue
-        t = n.t
-        if t == 'assign':
-            return False
-        if t == 'call':
-            if is_host_function(n.name or ''):
-                return False
-            stack.extend(n.args)
-        elif t == 'index':
-            stack.append(n.obj)
-            stack.append(n.idx)
-        elif t == 'bin':
-            stack.append(n.l)
-            stack.append(n.r)
-        elif t == 'un':
-            stack.append(n.x)
-        elif t in ('seq', 'list'):
-            stack.extend(n.items)
-    return True
+    """Whether evaluating NODE can change nothing it reaches (parser.may_write)."""
+    return not may_write(node)
 
 
 def adopts_elements(step: Node | None) -> bool:
@@ -424,26 +395,28 @@ def filter_details(step: Node) -> dict[str, Any]:
 
 
 def sort_details(step: Node) -> dict[str, Any]:
-    """The binder and key a sort step orders by, for the rewrites that move it,
-    decoded by registry.sort_form. A key it cannot vouch for is None, which no
-    rewrite moves: a computed direction (the three-argument SORT_BY / TOP_BY
-    form whose direction is neither a text literal nor after a binder), and a
-    SORT_BY / TOP_BY binder slot holding something other than a bare name (the
-    evaluator raises E_EXPECT_SYMBOL there). A keyless SORT or TOP has neither."""
+    """The binder and key a sort step orders by, decoded by registry.sort_form,
+    for the rewrites that move a step across it. `valid` says whether any rule
+    may: the binder slot (if the form has one) holds a bare name -- anything
+    else the evaluator refuses (E_EXPECT_SYMBOL) -- and the direction (if the
+    form has one) is a text literal. A computed direction is evaluated with the
+    sort, and its key still runs per element, so a FILTER moved in front of it
+    could hide the key's error (opt.filter-does-not-hide-sort-key-error-under-
+    computed-direction). A keyless SORT or TOP has neither binder nor key."""
     args = step.args
     binder_at, key_at, dir_at = sort_form(step.name, args)
     if key_at is None:
-        return {'binder': None, 'key': None}
+        return {'binder': None, 'key': None, 'valid': True}
+    binder, valid = '_', True
     if binder_at is not None:
         b = args[binder_at]
         if b.t == 'var' and not b.grouped:
-            return {'binder': b.name, 'key': args[key_at]}
-        if step.name in ('SORT_BY', 'TOP_BY'):
-            return {'binder': '_', 'key': None}
-        return {'binder': '_', 'key': args[key_at]}
+            binder = b.name
+        else:
+            valid = False
     if dir_at is not None and args[dir_at].t != 'text':
-        return {'binder': '_', 'key': None}
-    return {'binder': '_', 'key': args[key_at]}
+        valid = False
+    return {'binder': binder, 'key': args[key_at], 'valid': valid}
 
 
 def select_fields(step: Node) -> list[str]:
@@ -578,6 +551,7 @@ def logical_steps(source: Node | None, steps: list[Node],
             if (second is not None and first.name in ('SORT', 'SORT_DESC', 'SORT_BY')
                     and second.name == 'FILTER' and not step_reads_key(second)
                     and keys_renumbered_by(current[i + 2] if i + 2 < len(current) else None)
+                    and sort_details(first)['valid']
                     and cannot_raise(sort_details(first)['key'], sort_details(first)['binder'] or '_', logical)
                     and (logical or predicate_cannot_raise(filter_details(second)['predicate'],
                                                            filter_details(second)['binder'], False))):
@@ -603,7 +577,8 @@ def logical_steps(source: Node | None, steps: list[Node],
                 # reads the whole row or `_K` reads what the MAP changes.
                 details = sort_details(second)
                 refs = field_refs(details['key'], details['binder'] or '_') if details['key'] else []
-                if (details['key'] and refs and all(field in map_passthroughs(first) for field in refs)
+                if (details['valid'] and details['key'] and refs
+                        and all(field in map_passthroughs(first) for field in refs)
                         and not reads_row_or_key(details['key'], details['binder'] or '_')
                         and map_cannot_raise(first, logical)
                         and cannot_raise(details['key'], details['binder'] or '_', logical)):
@@ -842,8 +817,7 @@ def optimize_ast_in_memory(ast: Node) -> Node:
     return physical
 
 
-def _children(n: Node) -> tuple:
-    return (*n.args, *n.items, n.l, n.r, n.x, n.obj, n.idx, n.target, n.value)
+_children = children
 
 
 def bind_handlers(physical: Node, ast: Node) -> None:

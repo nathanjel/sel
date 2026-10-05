@@ -6,7 +6,7 @@ FILTER's conjuncts inside a join (spec §7.4)."""
 from .._budget import check_collection
 from ..errors import SelError
 from ..lexer import ascii_upper
-from ..registry import INF, define
+from ..registry import INF, define, is_host_function
 from .aggregate import _SCALAR_FRESH_CALLS
 from ..parser import Node
 from ..value import NONE, TEXT, Value, elements, iter_values, structural_hash, _record_shape
@@ -701,9 +701,10 @@ def _pure_source(node):
     if t == 'list':
         return all(_pure_source(item) for item in node.items)
     if t == 'call':
-        spec = node.spec
-        module = getattr(getattr(spec, 'fn', None), '__module__', '') or ''
-        if not module.startswith('sel.builtins') or spec.name == 'ABORT':
+        # By name, as every other "is this the application's?" test asks: the
+        # module a builtin's function lives in is not the package's name once
+        # the package is vendored under another one.
+        if is_host_function(node.name or '') or node.name == 'ABORT':
             return False
         return all(_pure_source(arg) for arg in node.args)
     return False

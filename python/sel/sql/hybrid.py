@@ -25,11 +25,11 @@ from typing import Any, Callable
 
 from .. import Program, Value
 from .. import registry as _registry
-from .._builtin_manifest import BUILTIN_MANIFEST
 from ..errors import MAX_DEPTH
 from .._stack import recursion_budget as _recursion_budget
 from ..lexer import ascii_upper
-from ..optimizer import LITERAL_TYPES, build_pipeline, copy_node, unwind_pipeline
+from ..optimizer import LITERAL_TYPES, build_pipeline, copy_node, field_refs, unwind_pipeline
+from ..registry import is_host_function
 from ..parser import Node
 from ..optimizer import optimize_ast_logical
 from . import map as sqlmap
@@ -326,36 +326,7 @@ def _contains_unsupported_sql(node: Node | None, dialect: str,
                                         node.target, node.value))
 
 
-def _field_references(node: Node | None, binder: str | None = '_') -> list[str]:
-    """The field names read as ``binder["field"]`` in ``node``, first seen
-    first and compared exactly: SEL's record keys are case-sensitive, so
-    ``name`` and ``Name`` are two fields. ``binder`` None means a read under
-    ANY name counts -- a downstream step binds the row however it likes
-    (``SORT_BY(s, s["name"])``)."""
-    wanted = None if binder is None else {ascii_upper(binder), '_', '_1', '_2'}
-    out: list[str] = []
-    seen: set[str] = set()
-
-    def visit(item: Node | None) -> None:
-        if item is None:
-            return
-        if (item.t == 'index' and item.obj is not None and item.obj.t == 'var'
-                and item.idx is not None and item.idx.t == 'text'
-                and (wanted is None or ascii_upper(item.obj.name) in wanted)):
-            key = str(item.idx.v)
-            if key not in seen:
-                seen.add(key)
-                out.append(key)
-        for child in item.args:
-            visit(child)
-        for child in item.items:
-            visit(child)
-        for child in (item.l, item.r, item.x, item.obj, item.idx,
-                      item.target, item.value):
-            visit(child)
-
-    visit(node)
-    return out
+_field_references = field_refs        # optimizer.field_refs; binder None: any name
 
 
 # The steps the MAP fall-through may push past the MAP. Each keeps the rows as
@@ -1066,7 +1037,7 @@ def continuation_effects(ast: Node | None) -> ContinuationEffects:
                 stack.append(node.value)
             continue
         if node.t == 'call':
-            if ascii_upper(node.name or '') not in BUILTIN_MANIFEST:
+            if is_host_function(node.name or ''):
                 calls_app = True
         stack.extend(node.args)
         stack.extend(node.items)

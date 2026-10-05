@@ -7,7 +7,7 @@ import heapq
 from .. import decimal as D
 from .._budget import check_text
 from ..errors import SelError, fail
-from ..parser import Node
+from ..parser import Node, may_write
 from ..registry import define, sort_form
 from ..value import NONE, Value, elements, iter_elements, structural_hash
 # The direction and field names fold ASCII-only:
@@ -23,37 +23,6 @@ def shape(args):
         return args.symbol(1), args.node(2)
     return '_', args.node(1)
 
-
-
-def _may_write(node) -> bool:
-    """Whether evaluating NODE might write into a value: it holds an assignment
-    or calls a host function. A collector copies an element when it collects it
-    (spec §3.4); while nothing below the body can write, deferring the copy to the
-    end is unobservable, so only a body that might write copies at collection."""
-    from ..registry import is_host_function
-    stack = [node]
-    while stack:
-        n = stack.pop()
-        if n is None:
-            continue
-        t = n.t
-        if t == 'assign':
-            return True
-        if t == 'index':
-            stack.append(n.obj)
-            stack.append(n.idx)
-        elif t == 'call':
-            if is_host_function(n.name or ''):
-                return True
-            stack.extend(n.args)
-        elif t == 'bin':
-            stack.append(n.l)
-            stack.append(n.r)
-        elif t == 'un':
-            stack.append(n.x)
-        elif t in ('seq', 'list'):
-            stack.extend(n.items)
-    return False
 
 
 def node_contains_var(node, name):
@@ -585,7 +554,7 @@ def do_sort(args, ctx, forced_dir):
         indexed = []
         # Collected once its key is computed (spec §3.4): a key that might write
         # copies the element then, so a later key's write cannot reach it.
-        eager = _may_write(body)
+        eager = may_write(body)
         ctx.push_frame(frame)
         try:
             for k, item in ents:
@@ -639,7 +608,7 @@ def do_top(args, ctx, forced_dir):
     # key is evaluated in order, before anything is selected.
     needs_k = body is not None and node_contains_var(body, '_K')
     # Collected once its key is computed (spec §3.4); see do_sort.
-    eager = body is not None and _may_write(body)
+    eager = body is not None and may_write(body)
     items = []
     keys = []
     # One frame for the whole pass, like walk() and do_sort: a frame
@@ -732,7 +701,7 @@ def do_bucket(args, ctx):
     # A row is collected when its key is computed and it is grouped (spec §3.4):
     # when the key or the projection might write, it is copied then, so neither a
     # later key nor the projection can change a row already grouped.
-    eager = _may_write(key_node) or (agg_node is not None and _may_write(agg_node))
+    eager = may_write(key_node) or (agg_node is not None and may_write(agg_node))
     row_levels = 3 if agg_node is None else 2
 
     def process(key, source, index):
