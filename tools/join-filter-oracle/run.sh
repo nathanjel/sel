@@ -15,8 +15,7 @@ cd "$(dirname "$0")/../.."
 . tools/impls.sh
 COUNT="${1:-3000}"; SEED="${2:-52001}"; MODE="${3:-mixed}"
 WORK="$(mktemp -d)"; trap 'rm -rf "$WORK"' EXIT
-# Two passes: joins then filters (the lane's first question), and -- since
-# review 2026-09-25 TEST-09 -- pipelines without joins, where the optimiser moved
+# Two passes: joins then filters (the lane's first question), and pipelines without joins, where the optimiser moved
 # FILTERs, MAPs and sorts past steps that raise. Each pass compares every host
 # with itself (as written vs every step bound to a variable) before the hosts
 # with each other.

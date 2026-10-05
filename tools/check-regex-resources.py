@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Bounded child-process probes for regex resource behaviour (T06).
+"""Bounded child-process probes for regex resource behaviour.
 
 The conformance suite must never hang or die, so anything that can is run here:
 every case is one CLI invocation per host, in its own process, with a wall-time

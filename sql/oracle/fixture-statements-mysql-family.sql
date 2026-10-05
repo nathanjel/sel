@@ -2,7 +2,7 @@
 -- categories that differ only by case -- 'A', 'a', 'B', 'b' -- because the
 -- question this fixture exists to ask is whether a grouped or sorted TEXT key
 -- is compared by its bytes: the servers' default collations are
--- case-insensitive, and SEL's evaluator is not (review 2026-09-15 finding L).
+-- case-insensitive, and SEL's evaluator is not.
 -- F2 adds empty strings, spaces, trailing spaces and non-ASCII text. These
 -- VARCHAR values must remain distinct; a binary PAD SPACE collation is not
 -- sufficient. Text identity is not excused by a caveat for these bindings.

@@ -45,7 +45,7 @@ done
 # Agreement alone passes a defect every host shares -- the canonical flag was
 # dropped by every host's top-level translate at once, and parity was green.
 # These lines are the contract's values, pinned (SEL-0058). The render.* and
-# guard.reuse.* lines are T10's: an unknown render mode is refused even when the
+# guard.reuse.* lines: an unknown render mode is refused even when the
 # fragment has no slot to bind, and a dialect whose numericGuard was refused is
 # refused again on every later use, and after a reset.
 for want in 'fragment.canon.postgresql.kind = NUM' 'fragment.canon.postgresql.canonical = true' \

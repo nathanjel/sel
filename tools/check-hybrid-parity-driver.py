@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 """The hybrid-parity corpus (sql/oracle/hybrid.json) for a host with no database of
-its own (T11): the host runs the planner and the evaluator, this script runs the
+its own: the host runs the planner and the evaluator, this script runs the
 SQL on a real SQLite, and the answers are held to the contract in the corpus note
 (docs/internals/sql-translation.md 12.1). The Python and JS hosts have their own
 in-process twins (tools/check-hybrid-parity.py, .mjs) and PHP has `sqlo hybrid`;
 this is the same check through a DRIVER -- a child process that speaks JSON lines
-(see lisp/bin/hybrid-driver.lisp for the protocol) -- so that C++, Lisp and Go
-can be held to it with one small program each.
+(see lisp/bin/hybrid-driver.lisp for the protocol). Lisp is the host held to it
+this way; Go has its own driver protocol and script (tools/check-hybrid-parity-
+go.py), and C++ and Rust have no hybrid driver yet.
 
     python3 tools/check-hybrid-parity-driver.py NAME DRIVER [ARGS...] [--verbose]
 """

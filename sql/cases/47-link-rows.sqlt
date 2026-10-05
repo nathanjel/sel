@@ -1,7 +1,7 @@
 % LINK rows in the SQL lane, second part: chains of joins, the names a row is
 % qualified by, and what an unmatched LINK_LEFT row lacks. Every expectation is
 % what run() does on sample rows: a value means SQL, an E_NO_KEY a refusal at
-% its position (spec §7.4 "Joined rows"; review 2026-09-28 SQL-05..08).
+% its position (spec §7.4 "Joined rows").
 
 ### name: link.chain.shared-name-through-a-later-left-binder
 --- note
@@ -624,7 +624,7 @@ SELECT "_2"."v" AS "n" FROM "plain" INNER JOIN "plain" "_2" ON (CAST("plain"."id
 Review 2026-09-28 SQL-10, from the widened SQL fuzzer. The first TOP_BY
 reads a field CUSTOMERS lacks, which run() reaches first; JS, PHP, Python
 and C++ reported the derived table over the join instead, which Lisp had
-stopped doing in review 2026-09-25 SQL-03.
+already stopped doing.
 --- dialect
 sqlite
 --- bindings

@@ -290,7 +290,7 @@ Q = 1; COUNT(LINK(LIST(RECORD("a", 1)), LIST(RECORD("b", 1)), X, Y, X["a"] == Q)
 num 1
 ===
 
-% --- review 2026-09-25: _K over the keys FILTER kept, keys that only look
+% --- _K over the keys FILTER kept, keys that only look
 % numeric, the direction text, and TOP_BY's three-slot form.
 
 ### name: agg.top-by.k-sees-the-keys-filter-kept

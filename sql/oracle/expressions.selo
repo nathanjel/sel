@@ -789,7 +789,7 @@ POWER("2", "3")
 
 % --- hostile text literals: quotes, backslashes, comment markers ---------------
 %
-% T10 (2026-09-29 review): every dialect renders a text literal by its own
+% Every dialect renders a text literal by its own
 % `textQuote` and `textEscape`, and getting the pairing wrong is an injection, not
 % a formatting nit (sql/MAP.md section 3). The .sqlt cases assert the bytes the
 % shipped dialects emit; only a server can say the literal still parses back to
@@ -801,8 +801,7 @@ POWER("2", "3")
 % tools/oracle-db.sh -- mariadb:11.8, mysql:8.4 (default sql_mode, so `\` is an
 % escape), postgres:17 (standard_conforming_strings on, the default since 9.1),
 % SQLite 3.51.2 -- all four agree. `standard_conforming_strings = off` and
-% `NO_BACKSLASH_ESCAPES` are configurations sql/MAP.md does not model; see the
-% open question in the T10 report.
+% `NO_BACKSLASH_ESCAPES` are configurations sql/MAP.md does not model.
 
 ### entry: mixed:hostile-text-literals
 LEN("it's")
@@ -821,14 +820,14 @@ TO_HEX(TO_UTF8("100% _sure_"))
 "\\'" $!= "'"
 "x' OR '1'='1" $== "x' OR '1'='1"
 
-% --- T09: exact decimal arithmetic through text literals and wide literals ------
+% --- exact decimal arithmetic through text literals and wide literals ------
 %
 % A text literal in an arithmetic position is a SEL number (spec 4), and MariaDB
 % and MySQL evaluate a bare quoted string in arithmetic as DOUBLE, so "0.1" + "0.2"
-% is not 0.3 there unless the translator casts it (PHP-C33). A decimal literal
-% wider than DECIMAL(65) is a DOUBLE on the MySQL family too (PHP-C52), and
+% is not 0.3 there unless the translator casts it. A decimal literal
+% wider than DECIMAL(65) is a DOUBLE on the MySQL family too, and
 % SQLite compares storage classes, not numbers, in its multi-argument MIN/MAX
-% (GO-C17). SEL's answers are exact in all three.
+%. SEL's answers are exact in all three.
 
 ### entry: mixed:text-literal-arithmetic-is-exact
 "0.1" + "0.2" == 0.3

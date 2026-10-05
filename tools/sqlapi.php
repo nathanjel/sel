@@ -114,7 +114,7 @@ Map::reset();
 say('host.spell.after-reset', $attempt(fn () => Sql::translate(Sel::compile('HSLUG(T)'), 'postgresql', $host)));
 say('host.spell.after-reset.local', Sel::evaluate('HSLUG("A")')->asText());
 
-// --- rendering and registration state (T10) ------------------------------------
+// --- rendering and registration state ------------------------------------
 // The questions a snapshot of ONE translation cannot ask: what an unknown render
 // mode does when there is nothing to bind, and whether a refused dialect stays
 // refused. `refuses` collapses the host's own error classes, which differ, to the

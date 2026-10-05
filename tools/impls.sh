@@ -353,7 +353,7 @@ impl_decimal() {
     # The oracle is a whitebox check on js/src/decimal.mjs, which the bundle
     # inlines verbatim. Running it twice would test the same code.
     js-bundle|js-bundle-min) echo "$impl: decimal core is js/src/decimal.mjs, covered above" ;;
-    # Three ways (item 1): as configured, on the pure-PHP paths, and with lazy
+    # Three ways: as configured, on the pure-PHP paths, and with lazy
     # digits on and operands an earlier operation produced.
     php)  sel_php tools/check-decimal.php "$@" \
             && SEL_PHP_FORCE_GMP=0 sel_php tools/check-decimal.php "$@" \
@@ -515,7 +515,7 @@ impl_unit() {
     # result: this lane holds checks no other host has (the executed-plan
     # comparison against SQLite, the planner contract, the physical-tree
     # cache), and it used to print a skip and succeed when python3 had no
-    # pytest -- ALL GREEN without them (review 2026-09-15, critic). Put a
+    # pytest -- ALL GREEN without them. Put a
     # venv with pytest first on PATH, or opt out with SEL_SKIP_PYTHON_UNIT=1.
     python)
       python3 -c 'import pytest' 2>/dev/null || {

@@ -98,8 +98,8 @@ for tag, a, b in [
     binary('-', tag, a, b, 'Exact subtraction at scale max(sa, sb); zero never carries a minus sign.')
 
 # --- multiplication -------------------------------------------------------------------
-mul_note = ('Exact multiplication at scale sa + sb. CPP-C20: the C++ core rounded both operands to 18 '
-            'fractional digits when both had scale over 18. CPP-C41: the INT128_MIN mantissa.')
+mul_note = ('Exact multiplication at scale sa + sb. The C++ core once rounded both operands to 18 '
+            'fractional digits when both had scale over 18, and mishandled the INT128_MIN mantissa.')
 for tag, a, b in [
     ('scale-19-squared', '0.1234567890123456789', '0.1234567890123456789'),
     ('scale-19-negative', '-0.1234567890123456789', '0.1234567890123456789'),
@@ -127,8 +127,8 @@ for tag, a, b in [
 
 # --- division: the divisor spellings, remainders past 2^126, scale gaps -----------------
 div_note = ('Long division to DIV_SCALE = 10 (spec 4.3): exact at minimal scale when it terminates, else '
-            'rounded half away from zero at exactly 10. CPP-C21 (remainder past 2^126 overflowed a signed '
-            '__int128), CPP-C24 (a divisor whose digit string is "1").')
+            'rounded half away from zero at exactly 10. Found wrong at a remainder past 2^126 (it overflowed '
+            'a signed __int128) and at a divisor whose digit string is "1".')
 for tag, a, b in [
     ('by-one-beyond-int128', S(10**42), '1'),
     ('by-one-negative-beyond-int128', '-' + S(10**42), '1'),
@@ -173,7 +173,7 @@ for tag, a, b in [
 
 # --- modulo: sign of the dividend, scale max(sa, sb) -----------------------------------
 mod_note = ('Remainder of truncated division, sign of the dividend, scale max(sa, sb); a zero result is never '
-            '"-0". CPP-C24: `-1e42 % 1` printed -0 in C++.')
+            '"-0". `-1e42 % 1` once printed -0 in C++.')
 for tag, a, b in [
     ('by-one-negative-beyond-int128', '-' + S(10**42), '1'),
     ('by-one-beyond-int128', S(10**42), '1'),
@@ -200,7 +200,7 @@ for tag, a, b in [
     binary('%', tag, a, b, mod_note)
 
 # --- rounding ---------------------------------------------------------------------------
-rnd_note = 'ROUND is half away from zero and returns scale exactly n (spec 4.4, 7.6). CPP-C21: remainder past 2^126.'
+rnd_note = 'ROUND is half away from zero and returns scale exactly n (spec 4.4, 7.6). Remainder past 2^126.'
 for tag, a, n in [
     ('nines-38-to-0', '0.' + N38, 0),
     ('point-nine-38-to-0', '0.90000000000000000000000000000000000000', 0),
@@ -246,7 +246,7 @@ for tag, a in [
              f'{fn}({a})', num(fn.lower(), a, '0'))
 
 # --- POWER --------------------------------------------------------------------------------
-pow_note = 'POWER is exact repeated multiplication; the result scale is scale(x) * n (spec 7.6). CPP-C20.'
+pow_note = 'POWER is exact repeated multiplication; the result scale is scale(x) * n (spec 7.6).'
 for tag, a, n in [
     ('1.05-to-30', '1.05', 30), ('half-to-100', '0.5', 100), ('point-one-to-20', '0.1', 20),
     ('point-one-to-19', '0.1', 19), ('scale-19-to-3', '0.1234567890123456789', 3),
@@ -277,8 +277,8 @@ for tag, a, op, b, want in [
     emit(f'dec.cmp.{tag}', 'Numeric comparison aligns scales and is exact at any width; `$==` is text.',
          src, f'bool {want}', setup=f'A = {a}; B = {b}' if op != '$==' else f'A = "{a}"; B = "{b}"')
 
-# --- CPP-C41: the INT128_MIN product, reached through variables ------------------------------
-c41 = 'The product -2^63 * 2^64 is exactly -2^127, the C++ int128 minimum; negating or taking abs of that mantissa was UB (CPP-C41). Variables keep the literals from folding.'
+# --- the INT128_MIN product, reached through variables ------------------------------
+c41 = 'The product -2^63 * 2^64 is exactly -2^127, the C++ int128 minimum; negating or taking abs of that mantissa was UB. Variables keep the literals from folding.'
 setup41 = 'A = -9223372036854775808; B = 18446744073709551616; C = A * B'
 emit('dec.int128-min.abs-positive', c41, 'ABS(C) > 0', 'bool TRUE', setup=setup41)
 emit('dec.int128-min.abs-value', c41, 'ABS(C)', 'num 170141183460469231731687303715884105728', setup=setup41)
@@ -291,11 +291,11 @@ emit('dec.int128-min.minus-one', c41, 'C - 1', 'num -170141183460469231731687303
 emit('dec.int128-min.divided', c41, 'C / 2', 'num -85070591730234615865843651857942052864', setup=setup41)
 emit('dec.int128-min.round', c41, 'ROUND(C, 2)', num('round', '-170141183460469231731687303715884105728', '2'), setup=setup41)
 
-# --- carry across MAX_INT_DIGITS (GO-C12) --------------------------------------------------------
+# --- carry across MAX_INT_DIGITS --------------------------------------------------------
 cap = ('CEIL/FLOOR of a number at the integer-digit cap can carry into a 1,000,001st digit; that is E_RANGE '
        'at the call, as ROUND already is (spec 6.4). Position 1:1 is the call, the innermost failing node. '
        'Observed when written: JS, PHP, Python and Lisp raise E_RANGE but report 0:0 (no position); C++ and Go '
-       'raise nothing and return a 1,000,001-digit value (GO-C12).')
+       'raise nothing and return a 1,000,001-digit value.')
 emit('dec.ceil.carry-past-the-digit-cap', cap, 'CEIL(REPEAT("9", 1000000) & ".5")', 'error E_RANGE at 1:1')
 emit('dec.floor.carry-past-the-digit-cap', cap, 'FLOOR("-" & REPEAT("9", 1000000) & ".5")', 'error E_RANGE at 1:1')
 emit('dec.round.carry-past-the-digit-cap', cap, 'ROUND(REPEAT("9", 1000000) & ".5", 0)', 'error E_RANGE at 1:1')
@@ -453,7 +453,7 @@ for tag, px, py, n in [('inside', 20, 12, 8), ('escaping', 31, 3, 7)]:
 
 
 # --- writer ------------------------------------------------------------------------------------
-HEADER = """% Exact decimal arithmetic at the magnitudes the cores were found wrong at (T02).
+HEADER = """% Exact decimal arithmetic at the magnitudes the cores were found wrong at.
 %
 % GENERATED by tools/gen-decimal-cases.py -- do not edit by hand:
 %     python3 tools/gen-decimal-cases.py            # rewrite this file
@@ -468,7 +468,7 @@ HEADER = """% Exact decimal arithmetic at the magnitudes the cores were found wr
 
 
 HEADER32 = """% Numbers around the math plans: what reused storage must never change, and multi-operation chains on
-% big operands (item 1, 2026-10-01).
+% big operands.
 %
 % GENERATED by tools/gen-decimal-cases.py -- do not edit by hand:
 %     python3 tools/gen-decimal-cases.py            # rewrite this file

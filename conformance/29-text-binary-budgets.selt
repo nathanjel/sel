@@ -1,4 +1,4 @@
-% Text, binary and output budgets (family T07). Every expectation is derived from the SPEC:
+% Text, binary and output budgets. Every expectation is derived from the SPEC:
 % §6.4 for the caps (text 16 777 216 code points / bytes, collection 1 000 000 children, E_RANGE at
 % the node that builds the value, measured from lengths before allocation), §7.5-§7.7 and §7.9 for
 % the builtins. Cases are small: giant operands are built with REPEAT/SPLIT/doubling, never written out.
@@ -231,7 +231,7 @@ num 16777216
 
 ### name: budget.text.doubling-past-cap
 --- note
-The twenty-fifth doubling of a 256-byte-ish program is 33 554 432: E_RANGE at that statement's `&`, in milliseconds. It exhausted the heap of every host in its own way (JS-C41, GO-C14, PHP-C6).
+The twenty-fifth doubling of a 256-byte-ish program is 33 554 432: E_RANGE at that statement's `&`, in milliseconds. It exhausted the heap of every host in its own way.
 --- source
 S = "a"; S = S & S; S = S & S; S = S & S; S = S & S; S = S & S; S = S & S; S = S & S; S = S & S; S = S & S; S = S & S; S = S & S; S = S & S; S = S & S; S = S & S; S = S & S; S = S & S; S = S & S; S = S & S; S = S & S; S = S & S; S = S & S; S = S & S; S = S & S; S = S & S; S = S & S; LEN(S)
 --- expect
@@ -276,7 +276,7 @@ error E_RANGE at 1:1
 
 ### name: budget.text.join-fan-out-huge
 --- note
-A hundred separators of ten million is a billion code points, refused from the lengths without building any of it (GO-C11).
+A hundred separators of ten million is a billion code points, refused from the lengths without building any of it.
 --- source
 JOIN(SPLIT(REPEAT("a,", 100) & "a", ","), REPEAT("b", 10000000))
 --- expect
@@ -438,7 +438,7 @@ num 524288
 
 ### name: budget.collection.doubling-past-cap
 --- note
-The nineteenth is 1 048 576 children: E_RANGE at the `,` list node (its first operand), where a 256-byte program used to exhaust 500 MB of heap (JS-C41, GO-C14, PHP-C6).
+The nineteenth is 1 048 576 children: E_RANGE at the `,` list node (its first operand), where a 256-byte program used to exhaust 500 MB of heap.
 --- source
 A = (1, 2); A = (A, A); A = (A, A); A = (A, A); A = (A, A); A = (A, A); A = (A, A); A = (A, A); A = (A, A); A = (A, A); A = (A, A); A = (A, A); A = (A, A); A = (A, A); A = (A, A); A = (A, A); A = (A, A); A = (A, A); A = (A, A); A = (A, A); COUNT(A)
 --- expect

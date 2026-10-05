@@ -157,7 +157,7 @@ for impl in $IMPLS; do
 done
 
 # Two independent checks, not a `case`: a case takes its first matching arm,
-# and with js on the roster the PHP check never ran (review 2026-09-15).
+# and with js on the roster the PHP check never ran.
 case " $IMPLS " in *" js "*) step "JS optimizer" sel_slot node tools/check-js-optimizer.mjs ;; esac
 case " $IMPLS " in *" php "*) step "PHP optimizer" sel_slot sel_php tools/check-php-optimizer.php ;; esac
 case " $IMPLS " in *" js "*) step "JS SQL unit" sel_slot node tools/check-js-sql.mjs ;; esac

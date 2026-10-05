@@ -288,7 +288,7 @@ E_SQL_SHAPE
 ===
 ### name: warrant.sum.unknown-body-is-guarded-as-a-whole
 --- note
-An UNKNOWN aggregate body is a numeric position (docs/internals/sql-kinds.md 5a) and is guarded ALL OR NOTHING: the SUM is NULL unless every element passes the numeric test. A per-element guard is not enough. SUM skips NULL and the layer's COALESCE(SUM(..), 0) turns "nothing left" into 0, so a row holding 'x' and '9' would sum to 9, and a row holding only 'n/a' to 0, where SEL raises E_NOT_NUM for both -- a definite answer for a row SEL refuses. COUNT(*) counts every element; the inner COUNT counts those that pass (a NULL element does not: SEL raises E_NO_SCALAR for a NONE). Names the operand twice, like every guard (warrant.raw.the-guard-evaluates-it-twice). (GO-C16, PHP-C27)
+An UNKNOWN aggregate body is a numeric position (docs/internals/sql-kinds.md 5a) and is guarded ALL OR NOTHING: the SUM is NULL unless every element passes the numeric test. A per-element guard is not enough. SUM skips NULL and the layer's COALESCE(SUM(..), 0) turns "nothing left" into 0, so a row holding 'x' and '9' would sum to 9, and a row holding only 'n/a' to 0, where SEL raises E_NOT_NUM for both -- a definite answer for a row SEL refuses. COUNT(*) counts every element; the inner COUNT counts those that pass (a NULL element does not: SEL raises E_NO_SCALAR for a NONE). Names the operand twice, like every guard (warrant.raw.the-guard-evaluates-it-twice).
 --- dialect
 mariadb
 --- bindings
@@ -312,7 +312,7 @@ SUM(ITEMS, _["QTY"])
 ===
 ### name: warrant.sum.unknown-body-sqlite-refuses
 --- note
-SQLite has no numeric test (warrant.numeric.sqlite-cannot-ask-and-refuses), so an UNKNOWN body is refused; declaring the field NUM translates it again. Measured on SQLite: SUM of 'abc' is 0.0, a definite answer where SEL raises. (GO-C16)
+SQLite has no numeric test (warrant.numeric.sqlite-cannot-ask-and-refuses), so an UNKNOWN body is refused; declaring the field NUM translates it again. Measured on SQLite: SUM of 'abc' is 0.0, a definite answer where SEL raises.
 --- dialect
 sqlite
 --- bindings
@@ -336,7 +336,7 @@ SUM(ITEMS, _["QTY"])
 ===
 ### name: warrant.sum.unknown-column-in-a-columns-unroll-is-guarded
 --- note
-A `columns` unroll is a chain of plain operands, and NULL propagates through `+`, so a per-operand guard IS sound here: one refused column makes the sum NULL. (GO-C16: was `(`u` + `n`)`.)
+A `columns` unroll is a chain of plain operands, and NULL propagates through `+`, so a per-operand guard IS sound here: one refused column makes the sum NULL. (One host emitted `(`u` + `n`)`.)
 --- dialect
 mariadb
 --- bindings
@@ -348,7 +348,7 @@ SUM(COLS, _)
 ===
 ### name: warrant.sum.unknown-column-in-a-columns-unroll-sqlite-refuses
 --- note
-(GO-C16: SQLite answered 1 for u='abc', n=1, where SEL raises.)
+(Unguarded, SQLite answered 1 for u='abc', n=1, where SEL raises.)
 --- dialect
 sqlite
 --- bindings

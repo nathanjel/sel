@@ -17,7 +17,7 @@ SCALARS = [('t', '1'), ('t', '2'), ('t', '5'), ('t', 'P'), ('t', 'Q'), NULL, ('b
            ('list', [('t', '1'), ('t', '2')]), ('rec', [('x', ('t', '1'))])]
 WEIGHTS = [5, 5, 3, 5, 3, 3, 2, 1, 2]
 FIELDS = ['name', 'Name', 'tier', 'amt', 'status', 'sku', 'id', 'Tier']
-# Names that differ only outside ASCII (review 2026-09-25 TEST-08): distinct
+# Names that differ only outside ASCII: distinct
 # names for promotion, which compares ASCII-case-insensitively.
 UNICODE_FIELDS = [['ß', 'SS'], ['é', 'É'], ['ſ', 's'], ['ı', 'I']]
 # Names a relation binds under, in both cases: a field may shadow a binder key
@@ -56,7 +56,7 @@ def key_reader(path):
     return read
 
 
-# Join keys beyond integers and NULL (review 2026-09-25 TEST-08): keys the
+# Join keys beyond integers and NULL: keys the
 # comparison matches across kinds, and keys it rejects. The model predicts the
 # error as well as the rows.
 KEYS_EQ = [('t', '1'), ('t', '2'), ('t', '3'), ('t', '1.0'), ('t', 'bad'), ('bool', True)]
@@ -151,7 +151,7 @@ with open(out_corpus, 'w') as c, open(out_expect, 'w') as e:
         e.write(x + '\n')
 
 # Every targeted category must occur in every corpus, or the run proves nothing
-# about it (review 2026-09-25 TEST-08).
+# about it.
 sys.stderr.write('join-rows-oracle: ' + ' '.join(f'{k}={v}' for k, v in counts.items()) + '\n')
 missing = [k for k, v in counts.items() if v == 0]
 if missing and count >= 200:

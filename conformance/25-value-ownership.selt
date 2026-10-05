@@ -1,5 +1,5 @@
 % Value ownership: what is copied, what is aliased, and what a warm cache must
-% never remember (spec/SPEC.md §3.4, §5.8, §5.9, §6.4; review 2026-09-29, family T03).
+% never remember (spec/SPEC.md §3.4, §5.8, §5.9, §6.4).
 %
 % Every expectation is derived from the spec, not from what a host printed. The
 % rule, in one line: assignment copies, `,` copies what it collects, the §7.3
@@ -13,13 +13,13 @@
 %
 % Cases that a spec decision has not yet settled (does LIST/RECORD copy its
 % arguments; do TAKE/DROP/DISTINCT/TOP/LINK copy their elements) are deliberately
-% absent -- see the family's open questions in docs/interim/2026-09-29/worklist.
+% absent until the spec settles them.
 
 ### name: alias.comma-copies-a-child
 --- note
 A child contributed by `,` is copied (§3.4, §5.9): the mutation made by the second
 operand must not show through the first. PHP once kept the child, and answered 99
-where every other host answered 1 (PHP-C2).
+where every other host answered 1.
 --- source
 A = RECORD("a", RECORD("b",1)); (A, A["a"]["b"] = 99)[1]["b"]
 --- expect
@@ -61,7 +61,7 @@ num 1
 `MAP(X, _)` collects X's element into its result, and §3.4 has the aggregates copy what
 they collect: the element mutated through X while the result is still pending is
 not the element the result holds. The hosts disagreed (contributing.md's claim
-that the copy cannot be observed is false, GO-C27, CPP-C42, LISP-C35).
+that the copy cannot be observed is false).
 --- source
 X = LIST(RECORD("k",1)); MAP(X, _)[(X[1]["k"] = 9; 1)]["k"]
 --- expect
@@ -73,7 +73,7 @@ num 1
 `FILTER(X, TRUE)` collects X's element into its result, and §3.4 has the aggregates copy what
 they collect: the element mutated through X while the result is still pending is
 not the element the result holds. The hosts disagreed (contributing.md's claim
-that the copy cannot be observed is false, GO-C27, CPP-C42, LISP-C35).
+that the copy cannot be observed is false).
 --- source
 X = LIST(RECORD("k",1)); FILTER(X, TRUE)[(X[1]["k"] = 9; 1)]["k"]
 --- expect
@@ -85,7 +85,7 @@ num 1
 `SORT(X)` collects X's element into its result, and §3.4 has the aggregates copy what
 they collect: the element mutated through X while the result is still pending is
 not the element the result holds. The hosts disagreed (contributing.md's claim
-that the copy cannot be observed is false, GO-C27, CPP-C42, LISP-C35).
+that the copy cannot be observed is false).
 --- source
 X = LIST(RECORD("k",1)); SORT(X)[(X[1]["k"] = 9; 1)]["k"]
 --- expect
@@ -97,7 +97,7 @@ num 1
 `SORT(X, 1)` collects X's element into its result, and §3.4 has the aggregates copy what
 they collect: the element mutated through X while the result is still pending is
 not the element the result holds. The hosts disagreed (contributing.md's claim
-that the copy cannot be observed is false, GO-C27, CPP-C42, LISP-C35).
+that the copy cannot be observed is false).
 --- source
 X = LIST(RECORD("k",1)); SORT(X, 1)[(X[1]["k"] = 9; 1)]["k"]
 --- expect
@@ -109,7 +109,7 @@ num 1
 `SORT_DESC(X, 1)` collects X's element into its result, and §3.4 has the aggregates copy what
 they collect: the element mutated through X while the result is still pending is
 not the element the result holds. The hosts disagreed (contributing.md's claim
-that the copy cannot be observed is false, GO-C27, CPP-C42, LISP-C35).
+that the copy cannot be observed is false).
 --- source
 X = LIST(RECORD("k",1)); SORT_DESC(X, 1)[(X[1]["k"] = 9; 1)]["k"]
 --- expect
@@ -121,7 +121,7 @@ num 1
 `SORT_BY(X, 1)` collects X's element into its result, and §3.4 has the aggregates copy what
 they collect: the element mutated through X while the result is still pending is
 not the element the result holds. The hosts disagreed (contributing.md's claim
-that the copy cannot be observed is false, GO-C27, CPP-C42, LISP-C35).
+that the copy cannot be observed is false).
 --- source
 X = LIST(RECORD("k",1)); SORT_BY(X, 1)[(X[1]["k"] = 9; 1)]["k"]
 --- expect
@@ -172,7 +172,7 @@ num 1
 --- note
 A list a function returns is a new container: replacing A's first child while
 `TAKE(A,2)` is still pending must not change what the result holds. Go's TAKE and DROP
-returned a slice of A's backing array and showed the 9 (GO-C7).
+returned a slice of A's backing array and showed the 9.
 --- source
 A = LIST(1,2,3); TAKE(A,2)[(A[1] = 9; "1")]
 --- expect
@@ -183,7 +183,7 @@ num 1
 --- note
 A list a function returns is a new container: replacing A's first child while
 `DROP(A,0)` is still pending must not change what the result holds. Go's TAKE and DROP
-returned a slice of A's backing array and showed the 9 (GO-C7).
+returned a slice of A's backing array and showed the 9.
 --- source
 A = LIST(1,2,3); DROP(A,0)[(A[1] = 9; "1")]
 --- expect
@@ -194,7 +194,7 @@ num 1
 --- note
 A list a function returns is a new container: replacing A's first child while
 `DISTINCT(A)` is still pending must not change what the result holds. Go's TAKE and DROP
-returned a slice of A's backing array and showed the 9 (GO-C7).
+returned a slice of A's backing array and showed the 9.
 --- source
 A = LIST(1,2,3); DISTINCT(A)[(A[1] = 9; "1")]
 --- expect
@@ -205,7 +205,7 @@ num 1
 --- note
 A list a function returns is a new container: replacing A's first child while
 `FILTER(A, TRUE)` is still pending must not change what the result holds. Go's TAKE and DROP
-returned a slice of A's backing array and showed the 9 (GO-C7).
+returned a slice of A's backing array and showed the 9.
 --- source
 A = LIST(1,2,3); FILTER(A, TRUE)[(A[1] = 9; "1")]
 --- expect
@@ -216,7 +216,7 @@ num 1
 --- note
 A list a function returns is a new container: replacing A's first child while
 `MAP(A, _)` is still pending must not change what the result holds. Go's TAKE and DROP
-returned a slice of A's backing array and showed the 9 (GO-C7).
+returned a slice of A's backing array and showed the 9.
 --- source
 A = LIST(1,2,3); MAP(A, _)[(A[1] = 9; "1")]
 --- expect
@@ -227,7 +227,7 @@ num 1
 --- note
 A list a function returns is a new container: replacing A's first child while
 `SORT(A)` is still pending must not change what the result holds. Go's TAKE and DROP
-returned a slice of A's backing array and showed the 9 (GO-C7).
+returned a slice of A's backing array and showed the 9.
 --- source
 A = LIST(1,2,3); SORT(A)[(A[1] = 9; "1")]
 --- expect
@@ -238,7 +238,7 @@ num 1
 --- note
 A list a function returns is a new container: replacing A's first child while
 `SORT_BY(A, _)` is still pending must not change what the result holds. Go's TAKE and DROP
-returned a slice of A's backing array and showed the 9 (GO-C7).
+returned a slice of A's backing array and showed the 9.
 --- source
 A = LIST(1,2,3); SORT_BY(A, _)[(A[1] = 9; "1")]
 --- expect
@@ -249,7 +249,7 @@ num 1
 --- note
 A list a function returns is a new container: replacing A's first child while
 `TOP(A, 2)` is still pending must not change what the result holds. Go's TAKE and DROP
-returned a slice of A's backing array and showed the 9 (GO-C7).
+returned a slice of A's backing array and showed the 9.
 --- source
 A = LIST(1,2,3); TOP(A, 2)[(A[1] = 9; "1")]
 --- expect
@@ -260,7 +260,7 @@ num 1
 --- note
 A list a function returns is a new container: replacing A's first child while
 `BUCKET(A, 1)["1"]` is still pending must not change what the result holds. Go's TAKE and DROP
-returned a slice of A's backing array and showed the 9 (GO-C7).
+returned a slice of A's backing array and showed the 9.
 --- source
 A = LIST(1,2,3); BUCKET(A, 1)["1"][(A[1] = 9; "1")]
 --- expect
@@ -269,7 +269,7 @@ num 1
 
 ### name: struct.take.detached-from-source
 --- note
-GO-C7's own repro: TAKE's result is dumped after the source was assigned to.
+The reproducer: TAKE's result is dumped after the source was assigned to.
 --- source
 A = LIST(1,2,3); LIST(TAKE(A,2), A[1] = 9)
 --- expect
@@ -401,7 +401,7 @@ num 1
 --- note
 A 14-field record gains a key; a record built afterwards from the same 14 keys
 has exactly those keys and not the added one. Lisp's shape table was corrupted
-from 16 fields (LISP-C2). Cases run in one process, so a shape poisoned here is
+from 16 fields. Cases run in one process, so a shape poisoned here is
 seen by the cases below.
 --- source
 R = RECORD("K1", 1, "K2", 2, "K3", 3, "K4", 4, "K5", 5, "K6", 6, "K7", 7, "K8", 8, "K9", 9, "K10", 10, "K11", 11, "K12", 12, "K13", 13, "K14", 14); R["Z"] = 5; S = RECORD("K1", 1, "K2", 2, "K3", 3, "K4", 4, "K5", 5, "K6", 6, "K7", 7, "K8", 8, "K9", 9, "K10", 10, "K11", 11, "K12", 12, "K13", 13, "K14", 14); HAS(S, "Z")
@@ -433,7 +433,7 @@ error E_NO_KEY at 1:310
 --- note
 A 15-field record gains a key; a record built afterwards from the same 15 keys
 has exactly those keys and not the added one. Lisp's shape table was corrupted
-from 16 fields (LISP-C2). Cases run in one process, so a shape poisoned here is
+from 16 fields. Cases run in one process, so a shape poisoned here is
 seen by the cases below.
 --- source
 R = RECORD("K1", 1, "K2", 2, "K3", 3, "K4", 4, "K5", 5, "K6", 6, "K7", 7, "K8", 8, "K9", 9, "K10", 10, "K11", 11, "K12", 12, "K13", 13, "K14", 14, "K15", 15); R["Z"] = 5; S = RECORD("K1", 1, "K2", 2, "K3", 3, "K4", 4, "K5", 5, "K6", 6, "K7", 7, "K8", 8, "K9", 9, "K10", 10, "K11", 11, "K12", 12, "K13", 13, "K14", 14, "K15", 15); HAS(S, "Z")
@@ -465,7 +465,7 @@ error E_NO_KEY at 1:332
 --- note
 A 16-field record gains a key; a record built afterwards from the same 16 keys
 has exactly those keys and not the added one. Lisp's shape table was corrupted
-from 16 fields (LISP-C2). Cases run in one process, so a shape poisoned here is
+from 16 fields. Cases run in one process, so a shape poisoned here is
 seen by the cases below.
 --- source
 R = RECORD("K1", 1, "K2", 2, "K3", 3, "K4", 4, "K5", 5, "K6", 6, "K7", 7, "K8", 8, "K9", 9, "K10", 10, "K11", 11, "K12", 12, "K13", 13, "K14", 14, "K15", 15, "K16", 16); R["Z"] = 5; S = RECORD("K1", 1, "K2", 2, "K3", 3, "K4", 4, "K5", 5, "K6", 6, "K7", 7, "K8", 8, "K9", 9, "K10", 10, "K11", 11, "K12", 12, "K13", 13, "K14", 14, "K15", 15, "K16", 16); HAS(S, "Z")
@@ -497,7 +497,7 @@ error E_NO_KEY at 1:354
 --- note
 A 17-field record gains a key; a record built afterwards from the same 17 keys
 has exactly those keys and not the added one. Lisp's shape table was corrupted
-from 16 fields (LISP-C2). Cases run in one process, so a shape poisoned here is
+from 16 fields. Cases run in one process, so a shape poisoned here is
 seen by the cases below.
 --- source
 R = RECORD("K1", 1, "K2", 2, "K3", 3, "K4", 4, "K5", 5, "K6", 6, "K7", 7, "K8", 8, "K9", 9, "K10", 10, "K11", 11, "K12", 12, "K13", 13, "K14", 14, "K15", 15, "K16", 16, "K17", 17); R["Z"] = 5; S = RECORD("K1", 1, "K2", 2, "K3", 3, "K4", 4, "K5", 5, "K6", 6, "K7", 7, "K8", 8, "K9", 9, "K10", 10, "K11", 11, "K12", 12, "K13", 13, "K14", 14, "K15", 15, "K16", 16, "K17", 17); HAS(S, "Z")
@@ -529,7 +529,7 @@ error E_NO_KEY at 1:376
 --- note
 A 20-field record gains a key; a record built afterwards from the same 20 keys
 has exactly those keys and not the added one. Lisp's shape table was corrupted
-from 16 fields (LISP-C2). Cases run in one process, so a shape poisoned here is
+from 16 fields. Cases run in one process, so a shape poisoned here is
 seen by the cases below.
 --- source
 R = RECORD("K1", 1, "K2", 2, "K3", 3, "K4", 4, "K5", 5, "K6", 6, "K7", 7, "K8", 8, "K9", 9, "K10", 10, "K11", 11, "K12", 12, "K13", 13, "K14", 14, "K15", 15, "K16", 16, "K17", 17, "K18", 18, "K19", 19, "K20", 20); R["Z"] = 5; S = RECORD("K1", 1, "K2", 2, "K3", 3, "K4", 4, "K5", 5, "K6", 6, "K7", 7, "K8", 8, "K9", 9, "K10", 10, "K11", 11, "K12", 12, "K13", 13, "K14", 14, "K15", 15, "K16", 16, "K17", 17, "K18", 18, "K19", 19, "K20", 20); HAS(S, "Z")
@@ -584,8 +584,8 @@ text "1|01||3"
 target. The check has to count the path to the target PLUS the depth of what is
 stored there: A is 151 levels (150 brackets over a leaf), and storing it 50 levels
 down makes 201. Every host counted only the path and let the value be built --
-the error then surfaced, unpositioned (0:0), the first time something walked it
-(PY-C30, LISP-C33). The column is the outermost bracket of B's target.
+the error then surfaced, unpositioned (0:0), the first time something walked it.
+The column is the outermost bracket of B's target.
 --- source
 A[1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1] = 1; B[1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1] = A; 7
 --- expect

@@ -7,11 +7,10 @@
 #                                that is not the pin, fails. A reason is mandatory.
 #
 # Agreement between hosts is not enough (all of them can share a bug); a pin is what the
-# spec says. The T12 family (docs/interim/2026-09-29/worklist/tests/12-integration.md)
-# added the flow-sensitive dependencies() contract (spec/SPEC.md §8), Program reuse,
-# non-source / non-native input as E_BAD_ARG, and the host-function argument reader.
-# The dependencies() contract is PROPOSED in the T12 report (flow-sensitive: a variable is a
-# dependency when a read can happen before it is definitely assigned); the pins encode it.
+# spec says. The integration pins cover the flow-sensitive dependencies() contract
+# (spec/SPEC.md §8: a variable is a dependency when a read can happen before it is
+# definitely assigned), Program reuse, non-source / non-native input as E_BAD_ARG,
+# and the host-function argument reader.
 
 pin program.deps.read-before-assign = A
 pin program.deps.compound-assign-reads = X

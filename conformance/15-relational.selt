@@ -1091,7 +1091,7 @@ A = LIST(RECORD("id", 1, "b", 1, "x", 1)); B = LIST(RECORD("bid", 1)); C = LIST(
 error E_NO_KEY at 1:169
 ===
 
-% --- review 2026-09-25 SEM-06: an equijoin matches pairs "as the comparison
+% --- an equijoin matches pairs "as the comparison
 % would compare them" (spec §7.4). Every host's hash path keyed only TEXT (and
 % numbers under ==), swallowed a failed numeric conversion, and so matched
 % nothing where the comparison matches or raises. Each case has an IF-wrapped
@@ -1191,7 +1191,7 @@ A=LIST(RECORD("k",TRUE)); B=LIST(RECORD("k",TRUE)); COUNT(LINK(A, B, _1["k"] $==
 error E_NOT_BIN at 1:72
 ===
 
-% --- review 2026-09-25 SEM-07 / SEM-08: a rewrite must not change which error a
+% --- a rewrite must not change which error a
 % program raises. The optimiser moved a FILTER in front of a SORT or a MAP when
 % a later step renumbered the rows, moved a computed MAP behind a TOP_BY, and
 % fused two FILTERs into one AND — in every host — so the rows the first step
@@ -1289,7 +1289,7 @@ SPEC 7.4: in the three-argument form a relation given by name binds, inside
 `pred`, that name and its ASCII lowercase to the element. The manifest's binding
 forms list only `_`, `_1`, `_2` and `_K` -- the names come from the arguments --
 so an evaluator that resolved names at compile time from the forms would read
-the relation itself here (item 2, P1).
+the relation itself here.
 --- source
 X = LIST(RECORD("k", 1), RECORD("k", 2)); Y = LIST(RECORD("id", 2)); LIST(COUNT(X .> LINK(Y, x["k"] == y["id"])), COUNT(X .> LINK(Y, X["k"] == Y["id"])))
 --- expect

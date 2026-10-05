@@ -513,8 +513,8 @@ handles it. JS needs no delimiter at all, so it is easy to forget.
 
 **Never read a PHP decimal's `digits` directly.** A big number the evaluator
 computes may be lazy: `digits` is null and its magnitude is a GMP in `gmp`, its
-digits written only when text is asked for (with ext-gmp; item 1 made Mandelbrot
-2.4x faster that way). Hand decimals to `Dec`; read digits with `Dec::digits()` or
+digits written only when text is asked for (with ext-gmp; that made Mandelbrot
+2.4x faster). Hand decimals to `Dec`; read digits with `Dec::digits()` or
 `Dec::format()`, or take today's array with `Dec::eager()`. `Value::asDecimal()`
 and `Args::dec()` always return today's array; the evaluator's
 `Value::asDecimalLazy()` does not.
@@ -541,10 +541,9 @@ elements. That the aggregate copy is *observable* is easy to miss, because a
 binder cannot be assigned (`E_BAD_ASSIGN`) — but the aggregated *source variable*
 can, from inside the body or from a sibling expression: `X = LIST(RECORD("k",1));
 MAP(X, _)[(X[1]["k"] = 9; 1)]["k"]` is `1` when MAP copied and `9` when it
-aliased, and hosts split on exactly that until review 2026-09-29. Copy sites are
+aliased, and hosts once split on exactly that. Copy sites are
 covered by `conformance/25-value-ownership.selt`, and that file is where a new one
-gets its case. This is also why `LAZY_RECORD` had to go (review 2026-09-15
-finding R): a record whose fields were evaluated on first read made a copy
+gets its case. This is also why `LAZY_RECORD` had to go: a record whose fields were evaluated on first read made a copy
 observable, and the hosts split on it. There are no lazy values. If you add a built-in that stores one value inside
 another, it belongs on that list, and if you add a copy anywhere else you have
 invented a divergence.

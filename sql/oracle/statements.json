@@ -9,7 +9,7 @@
     "rows.json asks about WHERE clauses; this asks about the statement compiler:",
     "GROUP BY, HAVING, ORDER BY, LIMIT, derived tables. It exists because the",
     "sql/cases strings were byte-identical in every host while MariaDB merged",
-    "'A' and 'a' into one group (review 2026-09-15 finding L): only a server",
+    "'A' and 'a' into one group: only a server",
     "can say whether GROUP BY means what BUCKET means.",
     "",
     "Numbers are compared as numbers (COUNT comes back as an int here and a",

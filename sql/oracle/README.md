@@ -333,7 +333,7 @@ for byte. A dialect that cannot express a statement names the refusal, as
 `rows.json` asks about `WHERE` clauses; this asks about the statement compiler:
 `GROUP BY`, `HAVING`, `ORDER BY`, `LIMIT`, derived tables. It exists because the
 `sql/cases` strings were byte-identical in every host while MariaDB merged `'A'`
-and `'a'` into one group where `BUCKET` keeps two (review 2026-09-15 finding L):
+and `'a'` into one group where `BUCKET` keeps two:
 only a server can say whether `GROUP BY` means what `BUCKET` means. Its first
 run also found that MariaDB drops an `ORDER BY` inside a derived table without a
 `LIMIT`, and that neither MySQL nor MariaDB will resolve a `HAVING` against a

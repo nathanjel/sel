@@ -1,4 +1,4 @@
-# The hybrid planner, held to `run()`: what a split may hide (T11).
+# The hybrid planner, held to `run()`: what a split may hide.
 #
 # 25-hybrid-plans.sqlt pins how the planner CLASSIFIES and what the prefix says.
 # These pin the four things a classification must not lose, each found by
@@ -23,7 +23,7 @@
 
 ### name: plan.keys.filter-then-key-reader-is-not-a-split-point
 --- note
-The MAP's second pair reads `_K` and has no SQL spelling, so the MAP would be split; the rows the continuation would see are the SQL rowset (1, 2, ...), where run() has the FILTER's keys (3, 4, ...). The boundary after the FILTER is not key-safe, and nothing before it can be pushed either, so the plan is pure memory. JS-C22, PY-C22, CPP-C33, PHP-C8, LISP-C8, LISP-C27.
+The MAP's second pair reads `_K` and has no SQL spelling, so the MAP would be split; the rows the continuation would see are the SQL rowset (1, 2, ...), where run() has the FILTER's keys (3, 4, ...). The boundary after the FILTER is not key-safe, and nothing before it can be pushed either, so the plan is pure memory.
 --- dialect
 mariadb
 --- bindings
@@ -38,7 +38,7 @@ orders
 
 ### name: plan.keys.filter-then-unsupported-filter-is-pure-memory
 --- note
-The result of this pipeline IS the rows the second FILTER keeps, under their original keys: split after the first FILTER and they would come back renumbered. Two FILTERs fuse before planning, and a fused FILTER with an unrenderable conjunct stays whole. JS-C22, CPP-C33, PY-C22, PHP-C8.
+The result of this pipeline IS the rows the second FILTER keeps, under their original keys: split after the first FILTER and they would come back renumbered. Two FILTERs fuse before planning, and a fused FILTER with an unrenderable conjunct stays whole.
 --- dialect
 mariadb
 --- bindings
@@ -87,7 +87,7 @@ SELECT `o`.* FROM `orders` `o` WHERE (`o`.`id` > 2) ORDER BY `o`.`id` ASC
 
 ### name: plan.errors.take-behind-a-map-that-can-raise-stays-local
 --- note
-The MAP's local half raises on row 5 and run() evaluates it on every row before TAKE cuts the list to two. The statement therefore carries the pushable projection and the sort but NOT the LIMIT; the TAKE runs in memory after the MAP. (The old expectation, plan.hybrid.fallthrough-keeps-downstream-steps, pushed the LIMIT and lost the error.) JS-C23, PY-C47, CPP-C34, LISP-C30, PHP-C36.
+The MAP's local half raises on row 5 and run() evaluates it on every row before TAKE cuts the list to two. The statement therefore carries the pushable projection and the sort but NOT the LIMIT; the TAKE runs in memory after the MAP. (The old expectation, plan.hybrid.fallthrough-keeps-downstream-steps, pushed the LIMIT and lost the error.)
 --- dialect
 mariadb
 --- bindings
@@ -155,7 +155,7 @@ SELECT `_sub1`.`id` AS `i`, `_sub1`.`id` AS `id` FROM (SELECT `o`.* FROM `orders
 
 ### name: plan.binders.split-before-a-link-keeps-the-prefix-to-the-link
 --- note
-The predicate has no SQL spelling, so the LINK stays in memory behind the sorted, limited rows. (The joined row's left side must still be named ORDERS, not `_INPUT`: an executing check, sql/oracle/hybrid.json `binder.split-before-a-link-keeps-the-left-name`; the plan itself is this.) PHP-C9, PY-C23, LISP-C29, GO-C22.
+The predicate has no SQL spelling, so the LINK stays in memory behind the sorted, limited rows. (The joined row's left side must still be named ORDERS, not `_INPUT`: an executing check, sql/oracle/hybrid.json `binder.split-before-a-link-keeps-the-left-name`; the plan itself is this.)
 --- dialect
 mariadb
 --- bindings
@@ -172,7 +172,7 @@ SELECT `o`.* FROM `orders` `o` ORDER BY `o`.`id` ASC LIMIT 4
 
 ### name: plan.binders.literal-helper-named-like-an-explicit-sort-binder
 --- note
-N is a literal helper AND the sort's binder. Inlining the literal into the binder slot made the planner hand the translator `SORT_BY(5, 5["id"], "DESC")` and downgrade a pure SQL pipeline to memory. PY-C24, LISP-C28.
+N is a literal helper AND the sort's binder. Inlining the literal into the binder slot made the planner hand the translator `SORT_BY(5, 5["id"], "DESC")` and downgrade a pure SQL pipeline to memory.
 --- dialect
 mariadb
 --- bindings
@@ -189,7 +189,7 @@ SELECT `o`.* FROM `orders` `o` WHERE (`o`.`id` > 1) ORDER BY `o`.`id` DESC LIMIT
 
 ### name: plan.tables.a-binder-named-like-a-relation-reads-nothing
 --- note
-`ORDERS` here names the element of the MAP, not the bound relation: nothing reads a table, so `source_tables` is empty. PHP-C55, LISP-C43.
+`ORDERS` here names the element of the MAP, not the bound relation: nothing reads a table, so `source_tables` is empty.
 --- dialect
 mariadb
 --- bindings
@@ -219,7 +219,7 @@ pure_memory
 
 ### name: plan.tables.an-assignment-target-named-like-a-relation
 --- note
-`ORDERS = LIST(1)` makes ORDERS a variable of the program for the rest of it, so COUNT(ORDERS) reads no table. PHP-C55.
+`ORDERS = LIST(1)` makes ORDERS a variable of the program for the rest of it, so COUNT(ORDERS) reads no table.
 --- dialect
 mariadb
 --- bindings
@@ -234,7 +234,7 @@ pure_memory
 
 ### name: plan.tables.a-filter-binder-named-like-another-relation
 --- note
-CUSTOMERS is the FILTER's binder over ORDERS: only `orders` is read. PY-C48.
+CUSTOMERS is the FILTER's binder over ORDERS: only `orders` is read.
 --- dialect
 mariadb
 --- bindings
@@ -317,7 +317,7 @@ E_SQL_SHAPE 1:69
 
 ### name: stmt.order.distinct-after-a-sort-is-refused-at-the-step
 --- note
-DISTINCT keeps the first of each run in sorted order; SELECT DISTINCT ... ORDER BY does not promise that (PostgreSQL and MySQL 8 refuse the ORDER BY column outside the projection, MariaDB answers an unspecified row), so the statement is refused with E_SQL_SHAPE at the DISTINCT step and the hybrid plan runs it in memory (CPP-C60; gate fuzz: only C++ had it).
+DISTINCT keeps the first of each run in sorted order; SELECT DISTINCT ... ORDER BY does not promise that (PostgreSQL and MySQL 8 refuse the ORDER BY column outside the projection, MariaDB answers an unspecified row), so the statement is refused with E_SQL_SHAPE at the DISTINCT step and the hybrid plan runs it in memory (found by the gate's fuzz lane in one host).
 --- dialect
 mariadb
 --- bindings

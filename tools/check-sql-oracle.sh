@@ -25,8 +25,8 @@ status=0
 ran=0
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
-# Every translator's statements for the cross-host oracle (sql/oracle/cross.selc,
-# review 2026-09-25 TEST-04): the PHP runner executes them all against the same
+# Every translator's statements for the cross-host oracle (sql/oracle/cross.selc):
+# the PHP runner executes them all against the same
 # server, so a defect every host shares -- or four of five -- is caught too.
 export SEL_ORACLE_CROSS_DIR="$WORK/cross"
 mkdir -p "$SEL_ORACLE_CROSS_DIR"

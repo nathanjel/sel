@@ -7,7 +7,7 @@ context it asks Go for run()'s answer, asks it to PLAN, executes the plan's
 prefix statement itself on a real SQLite (sqlite3), and hands the rows back for
 execute_hybrid's continuation. The comparison is tools/check-hybrid-parity.py's:
 the value, the error, the caller's context and, for a pure_sql plan, the rows in
-order and not their keys. (T11)
+order and not their keys.
 
     python3 tools/check-hybrid-parity-go.py [--verbose]     # after: make -C go
 """

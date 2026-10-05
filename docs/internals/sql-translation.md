@@ -1264,8 +1264,7 @@ is `E_SQL_SHAPE` at the `FILTER`. It must not translate as a `JOIN` of the
 unfiltered list.
 
 **The size budget: `E_SQL_SIZE`.** Helper reuse is inlined as a tree, so a
-program of *n* short statements can render 2^*n* nodes (`A1 = A0 + A0; ...`;
-JS-C8, PHP-C32, PY-C6, CPP-C17, LISP-C23, GO-C20), and nested aggregates over
+program of *n* short statements can render 2^*n* nodes (`A1 = A0 + A0; ...`), and nested aggregates over
 static lists multiply the same way, while SEL evaluates the same program in
 linear time. The translator therefore counts, and refuses past
 `MAX_SQL_NODES` (250 000, `spec/limits.json`) with `E_SQL_SIZE` (`sql/errors.md`).
@@ -2466,7 +2465,7 @@ The ordinary prefix planner promises:
   `CASE`, `FILTER(TRUE)` is `WHERE TRUE`, two sorts are two sort keys. Two
   hosts used to run the pipeline rewrites inside the translator and one
   folded constants there, so the same program rendered differently per host
-  through a public entry point (review 2026-09-15 finding C); the `.sqlt`
+  through a public entry point; the `.sqlt`
   runners now put every `--- as statement` case through both entry points
   and require the same text or the same refusal.
 - **A later sort's keys come first.** SEL's sorts are stable, so `SORT_BY(a)
@@ -2534,8 +2533,8 @@ The ordinary prefix planner promises:
   because the key is constant within its group, and which MariaDB and MySQL
   accept where they reject the bare column) — because the evaluator groups
   by the key's exact bytes and MariaDB's default collation merged `'A'` and
-  `'a'` into one group; a TEXT `ORDER BY` key likewise (review 2026-09-15
-  finding L, witnessed by `sql/oracle/statements.json` on live servers).
+  `'a'` into one group; a TEXT `ORDER BY` key likewise (witnessed by
+  `sql/oracle/statements.json` on live servers).
   **The bucket body's scope is the evaluator's** (findings J, K): inside the
   projection, and in a `FILTER` or sort written directly after the bare
   `BUCKET`, the binder is the group — the list of its members — and only
@@ -2573,7 +2572,7 @@ The ordinary prefix planner promises:
   or reorders the rows behind it: a `FILTER`, a `TAKE`, a `DROP`, a sort or a
   `TOP_BY` written after the `MAP` stays in the continuation, because `run()`
   evaluates the local pairs on EVERY row first and a pair that raises on a row
-  the LIMIT or WHERE would have dropped must still raise (T11, below:
+  the LIMIT or WHERE would have dropped must still raise (below:
   *errors are not hidden*). Steps written BEFORE the `MAP` are the prefix
   as usual. A step that changes the row shape (`MAP`, `SELECT_COLS`, `LINK`,
   `BUCKET`), a whole-row comparison (`DEDUPE`, `DISTINCT`, the keyless sorts),
@@ -2583,10 +2582,11 @@ The ordinary prefix planner promises:
   move the split before the `MAP` instead. The continuation passes a projected
   pair through *by key* — `"cid", _["customer_id"]` comes back as `cid` and is
   read as `cid`, `_["amount"] + 1` is not added twice.
-- **A plan is held to `run()` on four counts** (T11; `sql/cases/51-hybrid-parity.sqlt`
+- **A plan is held to `run()` on four counts** (`sql/cases/51-hybrid-parity.sqlt`
   pins the plans, `sql/oracle/hybrid.json` executes them on SQLite, MariaDB,
   MySQL and PostgreSQL through `php/bin/sqlo hybrid`, and
-  `tools/check-hybrid-parity.{mjs,py}` do the same for the JS and Python hosts):
+  `tools/check-hybrid-parity.{mjs,py}`, `-driver.py` and `-go.py` do the same for the JS,
+  Python, Lisp and Go hosts):
   - **Row keys.** SEL's FILTER keeps its input's keys and every other step
     renumbers from `"1"` (spec §7.3); the database answers a *rowset* numbered
     `1..n`. So a boundary directly after a `FILTER` hands the continuation
@@ -2741,7 +2741,7 @@ The ordinary prefix planner promises:
   call the evaluator resolves by shape: the third slot of a three-argument
   `SORT_BY` or `TOP_BY` whose second is a bare name is the binder form's key,
   and `IF(TRUE, "DESC", "ASC")` there stays an `IF` rather than becoming the
-  direction (review 2026-09-15 findings A, E, C2; `plan.sort.*`,
+  direction (`plan.sort.*`,
   `plan.map.*` and `plan.pure-sql.constant-true-filter` in the fixtures).
 - **The continuation reports errors where `run` would.** The planner folds
   one tree and cuts it in two, so what the memory half carries is what the

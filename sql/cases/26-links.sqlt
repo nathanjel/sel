@@ -1,6 +1,6 @@
 % LINK and LINK_LEFT in the SQL lane: the joined row, the binders' scope, and
 % what a join lets the planner push down. Spec §7.4 "Joined rows" and "How a
-% LINK evaluates"; review 2026-09-15 findings W2 (d1, d2) and Y (lanes).
+% LINK evaluates".
 
 ### name: link.row.is-the-promoted-fields
 --- note
@@ -39,7 +39,7 @@ SELECT `o`.`customer_id`, `o`.`amount` FROM `orders` `o` INNER JOIN `customers` 
 --- note
 `name` is on both sides, so the joined row has no `name`: `run()` raises
 E_NO_KEY at the read, and the translator refuses at the same place. C++
-resolved it to the left side's column (review 2026-09-15 finding W2, d1).
+once resolved it to the left side's column.
 --- dialect
 mariadb
 --- bindings
@@ -485,7 +485,7 @@ E_SQL_SHAPE 1:67
 --- note
 A qualified read of a field the named relation does not have is E_SQL_BINDING.
 Lisp rendered it as a column the table lacks; the SQL fuzzer's link-binder
-family found it (review 2026-09-25 TEST-05/TEST-11).
+family found it.
 --- dialect
 sqlite
 --- bindings
@@ -503,7 +503,7 @@ E_SQL_BINDING 1:67
 --- note
 The sort reads a field SELECT_COLS dropped, and the LINK's key reads another:
 the earlier step's refusal is the one reported. Lisp checked the sort's key only
-when rendering, after the LINK's predicate (review 2026-09-25 SQL-03).
+when rendering, after the LINK's predicate.
 --- dialect
 sqlite
 --- bindings

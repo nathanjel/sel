@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generates sql/cases/48-scope-and-slots.sqlt (T08).
+"""Generates sql/cases/48-scope-and-slots.sqlt.
 
 Every expectation in it is DERIVED, never copied from the translator under test:
 
@@ -56,12 +56,12 @@ def case(name, note, bindings, program, control=None, **extra):
     CASES.append(dict(name=name, note=note, bindings=bindings, program=program,
                       control=control, **extra))
 
-# ---- lexical capture in nested aggregates (JS-C7, PY-C18, PHP-C29) -------------
+# ---- lexical capture in nested aggregates -------------
 case('agg.scope.outer-key-in-inner-list',
      "A static list's elements are evaluated in the scope the list is written in: "
      "`_K` inside the inner list is the OUTER element's key, \"1\" then \"2\", and "
      "the outer aggregate unrolls twice. The translation used the inner key in "
-     "both halves and was constantly FALSE where SEL says TRUE (JS-C7, PY-C18). "
+     "both halves and was constantly FALSE where SEL says TRUE. "
      "Expected: the outer unroll written out by hand.",
      {}, 'ANY((0,0), ALL((_K, 5), I, I > 1))',
      'ALL(("1", 5), I, I > 1) OR ALL(("2", 5), I, I > 1)')
@@ -69,14 +69,14 @@ case('agg.scope.element-named-like-inner-binder',
      "The inner binder A shadows the column A INSIDE the inner body only. The "
      "outer element `A` is the column, and the body reads the outer binder I, so "
      "the inner body is the outer element compared with 0, twice. Expected: the "
-     "program with the inner binder renamed (JS-C7).",
+     "program with the inner binder renamed.",
      A, 'ALL((A, 1), I, ALL((5, 6), A, I > 0))',
      'ALL((A, 1), I, ALL((5, 6), B, I > 0))')
 case('agg.scope.default-binder-nested-static',
      "Both aggregates use the default binder `_`. The inner list's `_` is the "
      "OUTER element; the inner body's `_` is the inner one. It used to be refused "
      "as E_SQL_DEPTH ('the evaluator answers E_DEPTH'), which is false: SEL "
-     "evaluates it (JS-C7, PHP-C29). Expected: distinct binder names.",
+     "evaluates it. Expected: distinct binder names.",
      A, 'ANY((A, 2), ALL((_, 5), _ > 0))',
      'ANY((A, 2), P, ALL((P, 5), Q, Q > 0))')
 case('agg.scope.default-binder-nested-columns',
@@ -88,7 +88,7 @@ case('agg.scope.one-name-for-list-element-and-binder',
      VCOLS, 'ANY(V, X, ALL((X, 5), X, X > 0))',
      'ANY(V, P, ALL((P, 5), Q, Q > 0))')
 case('agg.scope.outer-key-in-named-binder-body',
-     "PHP-C29: `_K` in an inner static list under a NAMED outer binder is still "
+     "`_K` in an inner static list under a NAMED outer binder is still "
      "the outer element's key.",
      {}, 'ANY(("a","b"), o, ANY((_K, "zz"), c, c $== "2"))',
      'ANY(("1","zz"), c, c $== "2") OR ANY(("2","zz"), c, c $== "2")')
@@ -104,57 +104,57 @@ case('agg.scope.outer-key-in-join-source',
      'JOIN(("1","x"), "-") $== "2-x" OR JOIN(("2","x"), "-") $== "2-x"')
 case('agg.scope.binder-named-like-a-column-in-its-own-list',
      "`X` in the list is the COLUMN (the binder is not in scope until the body); "
-     "in the body it is the element. Refused as E_SQL_DEPTH before (PHP-C29).",
+     "in the body it is the element. Refused as E_SQL_DEPTH before.",
      X, 'ANY((X, 2), X, X > 1)', 'ANY((X, 2), Z, Z > 1)')
 
-# ---- FILTER binders (PHP-C30, LISP-C7) -----------------------------------------
+# ---- FILTER binders -----------------------------------------
 case('agg.filter.binder-does-not-leak-into-body',
      "The FILTER's binder is local to its predicate. The aggregate body's free "
-     "`X` is the column, not the FILTER element (PHP-C30: `x` was rendered as the "
+     "`X` is the column, not the FILTER element (`x` was once rendered as the "
      "element and the column never appeared).",
      X, 'ALL(FILTER((1,2,3), x, x > 1), y, y < X)',
      'ALL(FILTER((1,2,3), w, w > 1), y, y < X)')
 case('agg.filter.binder-does-not-leak-into-body-columns',
-     "LISP-C7: the same over a `columns` binding, with the body reading a column.",
+     "The same over a `columns` binding, with the body reading a column.",
      merge(VCOLS, X), 'ANY(FILTER(V, x, x > 1), q, q > X)',
      'ANY(FILTER(V, w, w > 1), q, q > X)')
 case('agg.filter.binder-is-undefined-in-body',
      "SEL raises E_UNDEF_VAR for `a` in the body (the FILTER's binder is not in "
      "scope there); the translator raises E_SQL_UNBOUND at the same node, not "
-     "a translation (LISP-C7).",
+     "a translation.",
      VCOLS, 'ANY(FILTER(V, a, a > 1), q, a < 9)', None,
      error='E_SQL_UNBOUND @a < 9')
 case('agg.filter.later-binder-is-undefined-in-earlier-predicate',
-     "PHP-C30: `y` is the aggregate's binder, not yet in scope in the FILTER's "
+     "`y` is the aggregate's binder, not yet in scope in the FILTER's "
      "predicate.",
      {}, 'ALL(FILTER((1,2,3), x, y > 0), y, y < 9)', None,
      error='E_SQL_UNBOUND @y > 0')
 case('agg.filter.outer-filter-binder-is-undefined-in-inner-predicate',
-     "LISP-C7: nested FILTERs; `b` belongs to the outer FILTER.",
+     "Nested FILTERs; `b` belongs to the outer FILTER.",
      VCOLS, 'ANY(FILTER(FILTER(V, a, b > 1), b, a < 9), q, q > 0)', None,
      error='E_SQL_UNBOUND @b > 1')
 
-# ---- helper definitions are not captured by binders (JS-C26, CPP-C23) ----------
+# ---- helper definitions are not captured by binders ----------
 case('norm.inline.def-not-captured-by-binder',
      "`X2 = A` is written where `A` is the column; the later binder named A must "
-     "not capture it when X2 is inlined (JS-C26). Expected: the binder renamed.",
+     "not capture it when X2 is inlined. Expected: the binder renamed.",
      A, 'X2 = A; ALL((5,6), A, X2 > 0)', 'X2 = A; ALL((5,6), B, X2 > 0)')
 case('norm.inline.def-not-captured-by-binder-arithmetic',
-     "CPP-C23: `X = Y + 1; ALL((1,2,3), Y, Y > X)` compared 1 with 1+1 -- a constant "
+     "`X = Y + 1; ALL((1,2,3), Y, Y > X)` compared 1 with 1+1 -- a constant "
      "FALSE -- where the column was meant.",
      Y, 'X = Y + 1; ALL((1,2,3), Y, Y > X)', 'X = Y + 1; ALL((1,2,3), Z, Z > X)')
 case('norm.inline.binder-in-own-list-element',
      "`ANY((B + 1, 2), B, B > 0)`: the `B` in the list is the column. It recursed "
-     "until E_SQL_DEPTH before (CPP-C23, PY-C18).",
+     "until E_SQL_DEPTH before.",
      B, 'ANY((B + 1, 2), B, B > 0)', 'ANY((B + 1, 2), C, C > 0)')
 
-# ---- a binder that reuses the name of a `value` binding (JS-C53, PY-C45) --------
+# ---- a binder that reuses the name of a `value` binding --------
 VAL5 = {'V': {'kind': 'value', 'value': '5', 'type': 'NUM'}}
 VALABC = {'V': {'kind': 'value', 'value': 'abc'}}
 ACOL = {'A': {'kind': 'column', 'table': 't', 'column': 'a'}}
 case('const.binder-shadows-value-binding',
      "A binder named V is the element, not the scalar binding V. It was treated "
-     "as the constant and the column was left unguarded (JS-C53).",
+     "as the constant and the column was left unguarded.",
      merge(VAL5, ACOL), 'ALL((A, A), V, V + 1 > 0)', 'ALL((A, A), W, W + 1 > 0)')
 case('const.binder-shadows-value-binding-that-would-fail',
      "With V = \"abc\" the binding would make `V + 1` E_SQL_INVALID; the binder "
@@ -163,14 +163,14 @@ case('const.binder-shadows-value-binding-that-would-fail',
 QTYREL = {'R': {'kind': 'relation', 'from': 'r', 'alias': 'r', 'fields': {
     'QTY': {'kind': 'column', 'table': 'r', 'column': 'qty', 'type': 'NUM'}}}}
 case('const.binder-shadows-value-binding-over-relation',
-     "PY-C45: `ANY(R, P, P[\"QTY\"] > 0)` with a value binding P.",
+     "`ANY(R, P, P[\"QTY\"] > 0)` with a value binding P.",
      merge(QTYREL, {'P': {'kind': 'value', 'value': 'abc'}}),
      'ANY(R, P, P["QTY"] > 0)', 'ANY(R, Q, Q["QTY"] > 0)')
 
-# ---- assignment: indexed lists are copies, not aliases (GO-C4) ------------------
+# ---- assignment: indexed lists are copies, not aliases ------------------
 case('assign.indexed.copy-is-not-alias',
      "`X = R` copies (spec 3.4): the later write to R is not in X. COUNT(X) is 1 "
-     "in SEL; the translators saw 2 (GO-C4).",
+     "in SEL; the translators saw 2.",
      {}, 'R[1] = 5; X = R; R[2] = 6; COUNT(X)', 'R[1] = 5; X = R; COUNT(X)')
 case('assign.indexed.copy-is-not-alias-source-unchanged',
      "And a write through the copy does not reach the source.",
@@ -180,19 +180,19 @@ case('assign.indexed.copy-is-not-alias-columns',
      merge(A, B), 'R[1] = A; X = R; R[2] = B; SUM(X, _ + 1)',
      'R[1] = A; X = R; SUM(X, _ + 1)')
 
-# ---- a relation name rebound by a helper (PHP-C34) ------------------------------
+# ---- a relation name rebound by a helper ------------------------------
 case('plan.helper.rebinds-relation-once',
      "`ORDERS = ORDERS .> DROP(2)` reads the ORDERS binding once; the later "
      "`ORDERS .> TAKE(3)` reads the helper. The pipeline is DROP 2 then TAKE 3 "
-     "(OFFSET 2 LIMIT 3), not DROP applied twice (PHP-C34).",
+     "(OFFSET 2 LIMIT 3), not DROP applied twice.",
      ORDERS, 'ORDERS = ORDERS .> DROP(2); ORDERS .> TAKE(3)',
      'ORDERS .> DROP(2) .> TAKE(3)', plan=True)
 
-# ---- what a static FILTER may feed (LISP-C6) ------------------------------------
+# ---- what a static FILTER may feed ------------------------------------
 case('agg.join.filtered-source-is-refused',
      "FILTER yields a list; only ALL, ANY, SUM and COUNT absorb it (docs/internals/"
      "sql-translation.md 7.5), so JOIN over one is E_SQL_SHAPE at the FILTER. Every "
-     "host dropped the FILTER and joined the whole list (LISP-C6).",
+     "host dropped the FILTER and joined the whole list.",
      {}, 'JOIN(FILTER(("a","b","c"), _ $== "a"), ",")', None,
      error='E_SQL_SHAPE @FILTER(')
 case('agg.join.filtered-source-is-refused-constant-false',
@@ -204,13 +204,13 @@ case('agg.filter.absorbed-into-any-control',
      {}, 'ANY(FILTER(("a","b"), _ $== "a"), _ $== "a")',
      'ANY(("a","b"), _ $== "a" AND _ $== "a")')
 
-# ---- non-name binder argument (GO-C2) -------------------------------------------
+# ---- non-name binder argument -------------------------------------------
 case('shape.binder.non-name-binder-is-refused',
      "A binder position holding an index expression is refused (E_SQL_SHAPE at "
-     "the index), never a nil dereference (GO-C2).",
+     "the index), never a nil dereference.",
      A, 'BUCKET("x", A[1], "y", 1)', None, error='E_SQL_SHAPE @[1]')
 
-# ---- deep helper chains and deep pipelines (JS-C54, CPP-C10, CPP-C17) -----------
+# ---- deep helper chains and deep pipelines -----------
 COLN = {'N': col('n')}
 def chain(n, base='N'):
     return ''.join('X%d = %s; ' % (i, base if i == 0 else 'X%d + 1' % (i - 1))
@@ -218,14 +218,14 @@ def chain(n, base='N'):
 case('limit.inline-chain-past-the-depth-limit-over-a-column',
      "250 chained helpers over a column inline to an expression 250 deep: past "
      "the evaluator's own MAX_DEPTH (errors.md, E_SQL_DEPTH), so a refusal with "
-     "that code -- never a host stack overflow (CPP-C10: SIGSEGV at 60000; "
-     "JS-C54: RangeError at 20000).",
+     "that code -- never a host stack overflow (hosts once died: SIGSEGV at 60000, "
+     "RangeError at 20000).",
      COLN, chain(250), None, error='E_SQL_DEPTH')
 case('limit.inline-chain-past-the-depth-limit-over-a-constant',
      "The same over a constant. It was E_SQL_INVALID ('SEL rejects this "
      "expression (E_DEPTH)'), which blames SEL for evaluating something SEL "
      "evaluates fine; the refusal is about the translated expression's nesting, "
-     "the E_SQL_DEPTH the errors registry describes (JS-C54 d).",
+     "the E_SQL_DEPTH the errors registry describes.",
      {}, chain(250, '1'), None, error='E_SQL_DEPTH')
 case('limit.inline-chain-just-under-the-depth-limit',
      "A chain that stays inside the limit still translates (control).",
@@ -234,14 +234,14 @@ case('limit.inline-chain-just-under-the-depth-limit',
 RAW = []   # (name, note, bindings, source, plan, tables, expect)
 RAW.append(('plan.pure-memory.pipeline-past-the-depth-limit',
             "250 pipe steps: stage 1 refuses a program past the depth limit, so the plan is "
-            "pure_memory and never an exception (JS-C54 c: RangeError at 20000).",
+            "pure_memory and never an exception (a host once raised RangeError at 20000).",
             ORDERS, 'ORDERS' + ' .> TAKE(1)' * 250, 'pure_memory', 'orders', None))
 RAW.append(('plan.pure-sql.pipeline-under-the-depth-limit',
             "150 pipe steps still push down (control).",
             ORDERS, 'ORDERS' + ' .> TAKE(1)' * 150, 'pure_sql', 'orders',
             'SELECT `o`.* FROM `orders` `o` LIMIT 1'))
 
-# ---- non-name binder in the statement forms (GO-C2) -----------------------------
+# ---- non-name binder in the statement forms -----------------------------
 STMT_BINDER = [
     ('shape.binder.non-name-binder-in-map-statement',
      'ITEMS .> MAP(BUCKET("x", _["DEPT"], "x", _["QTY"]))', '["DEPT"]'),
@@ -269,7 +269,7 @@ def nested(n):
 case('limit.size.doubling-helper-over-a-column',
      "19 statements: `X18 > 0` is 2^19+1 = 524 289 nodes once every read of a helper is "
      "expanded, over twice MAX_SQL_NODES. Refused with E_SQL_SIZE, quickly: the walk stops "
-     "at the first node over the limit (JS-C8, PHP-C32, PY-C6, CPP-C17, LISP-C23, GO-C20).",
+     "at the first node over the limit.",
      COLN, doubling(18, 'N'), None, error='E_SQL_SIZE')
 case('limit.size.doubling-helper-over-a-constant',
      "The same over a literal. The count is taken before constant folding hands a subtree "
@@ -286,7 +286,7 @@ case('limit.size.small-nested-is-accepted',
      "Control: the nested shape at n = 4 (63 nodes) translates.",
      A, nested(4), nested(4))
 
-# ---- BUCKET SUM bodies with literals (PHP-C7, PY-C5, GO-C3) ---------------------
+# ---- BUCKET SUM bodies with literals ---------------------
 # The expected statement is the known-good `SUM(_["QTY"])` statement with the
 # body swapped for the rendering the SAME body has as a WHERE clause on the same
 # relation (a body is one expression; where it stands does not change how it is
@@ -317,7 +317,7 @@ def locate(program, marker):
     return '1:%d' % (i + 1)
 
 def emit():
-    lines = ['# Scope, literal slots and expansion (T08, worklist 2026-09-29).',
+    lines = ['# Scope, literal slots and expansion.',
              '#',
              '# GENERATED by tools/gen-sql-scope-cases.py -- do not edit. Every expected',
              '# string is derived, not observed: a scoping case equals the translation of its',
@@ -371,7 +371,7 @@ def emit():
             lines += block(c['name'], c['note'], 'mariadb', c['bindings'], c['program'],
                            error=('%s %s' % (code, locate(c['program'], marker))) if marker else code)
     for name, src, mk in STMT_BINDER:
-        lines += block(name, 'GO-C2: a binder position holding something that is not a name is '
+        lines += block(name, 'A binder position holding something that is not a name is '
                        'E_SQL_SHAPE at that expression, in the statement forms too, never a crash '
                        'or a different code.', 'mariadb', ITEMS, src,
                        error='E_SQL_SHAPE %s' % locate(src, mk), as_='statement')
@@ -395,7 +395,7 @@ def emit():
             pr = render(dict(src=FILTER_SQL % body, bindings=ITEMS, as_='params-of-statement'))
             params = pr
         lines += block('bucket.sum.' + name,
-                       'PHP-C7, PY-C5, GO-C3: the body of SUM inside a BUCKET projection keeps its '
+                       'The body of SUM inside a BUCKET projection keeps its '
                        'literals. Derived from the WHERE-clause rendering of the same body.',
                        'mariadb', ITEMS, BUCKET_SQL % body, expect=want, mode=None if mode == 'inline' else mode,
                        as_='statement', params=params)

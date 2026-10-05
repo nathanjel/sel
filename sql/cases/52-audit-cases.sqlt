@@ -1,6 +1,6 @@
 ### name: review.order.sort-over-a-projection-of-sorted-rows-is-refused
 --- note
-JS-C59 family (orderDropped): a derived table with no LIMIT beside its ORDER BY does not keep
+The orderDropped family: a derived table with no LIMIT beside its ORDER BY does not keep
 the order, and the earlier sort is the later one's tie-break. Refused at the second sort;
 Emitting `SELECT _sub1.* FROM (... ORDER BY amount) _sub1 ORDER BY name` would lose the tie-break.
 --- dialect
@@ -54,7 +54,7 @@ SELECT `o`.* FROM `orders` `o` ORDER BY `o`.`amount` ASC
 
 ### name: plan.pure-memory.self-join-is-not-split
 --- note
-PHP-C9 / GO-C22: a continuation that starts at a LINK is fed under the source variable's own
+A continuation that starts at a LINK is fed under the source variable's own
 name, so a LINK that reads that name again (a self-join) would find the truncated rows where
 run() finds the whole relation. The split is not made.
 --- dialect
@@ -72,7 +72,7 @@ orders
 
 ### name: bind.value.null-element-is-refused
 --- note
-JS-C54b: a NULL element of a value binding has no SQL literal; it is a binding problem and a
+A NULL element of a value binding has no SQL literal; it is a binding problem and a
 refusal at the read. Rendering it as the empty string '' would be a wrong value.
 --- dialect
 mariadb
@@ -186,7 +186,7 @@ E_SQL_SHAPE 1:1
 
 ### name: refuse.binder.checked-at-the-call-not-in-stage-1
 --- note
-GO-C2: a binder position that is not a bare name is refused when the call is translated, so
+A binder position that is not a bare name is refused when the call is translated, so
 a refusal the call meets first (MAP as JOIN's source) wins. Refusing the binder earlier, in stage 1, would hide it.
 --- dialect
 mariadb
@@ -217,7 +217,7 @@ t
 
 ### name: bind.prefilter.unknown-spelling-is-refused
 --- note
-GO-C19: an unknown prefilter spelling is refused when the binding is made. Storing it would defer the error to a later use.
+An unknown prefilter spelling is refused when the binding is made. Storing it would defer the error to a later use.
 --- dialect
 mariadb
 --- bindings
@@ -270,7 +270,7 @@ E_SQL_SHAPE 1:68
 --- note
 SQLite reads the aliases `o` and `O` as one alias (`ambiguous column name: o.x`), and the MySQL family
 does on some platforms, so two relations under aliases that differ only by ASCII case collide on the
-server exactly as two under the same alias do (PHP-C57). Refused with the same E_SQL_BINDING.
+server exactly as two under the same alias do. Refused with the same E_SQL_BINDING.
 --- dialect
 mariadb
 --- bindings
@@ -284,7 +284,7 @@ E_SQL_BINDING
 
 ### name: assign.empty-text-key-is-a-constant-index
 --- note
-GO-C40: `""` is a text literal like any other, so an index written `R[""]` is a constant key; Go
+`""` is a text literal like any other, so an index written `R[""]` is a constant key; Go
 treated it as "not constant" and refused the program at the assignment target with E_SQL_ASSIGN,
 where JS refuses later with E_SQL_SHAPE. Both refuse, but the code is a contract: the target is a
 legal constant index, and the refusal that follows is the one for reading a key of a value that has

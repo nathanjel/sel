@@ -19572,7 +19572,7 @@ export const SQL_CASES = [
   },
   {
     "name": "warrant.bool.if-cannot-launder-an-undeclared-column",
-    "at": "49-kind-guarantees.sqlt:14",
+    "at": "49-kind-guarantees.sqlt:13",
     "dialect": "mariadb",
     "source": "IF(TRUE, F, TRUE) AND TRUE",
     "expect": null,
@@ -19589,7 +19589,7 @@ export const SQL_CASES = [
   },
   {
     "name": "warrant.bool.if-cannot-launder-with-a-bool-condition",
-    "at": "49-kind-guarantees.sqlt:27",
+    "at": "49-kind-guarantees.sqlt:26",
     "dialect": "mariadb",
     "source": "IF(P, F, TRUE) AND TRUE",
     "expect": null,
@@ -19606,7 +19606,7 @@ export const SQL_CASES = [
   },
   {
     "name": "warrant.bool.coalesce-cannot-launder-an-undeclared-column",
-    "at": "49-kind-guarantees.sqlt:40",
+    "at": "49-kind-guarantees.sqlt:39",
     "dialect": "mariadb",
     "source": "(F ?? TRUE) AND TRUE",
     "expect": null,
@@ -19623,7 +19623,7 @@ export const SQL_CASES = [
   },
   {
     "name": "warrant.bool.vacuous-coalesce-cannot-launder-an-undeclared-column",
-    "at": "49-kind-guarantees.sqlt:53",
+    "at": "49-kind-guarantees.sqlt:52",
     "dialect": "mariadb",
     "source": "(F ??? TRUE) AND TRUE",
     "expect": null,
@@ -19640,7 +19640,7 @@ export const SQL_CASES = [
   },
   {
     "name": "warrant.bool.cond-cannot-launder-an-undeclared-column",
-    "at": "49-kind-guarantees.sqlt:66",
+    "at": "49-kind-guarantees.sqlt:65",
     "dialect": "mariadb",
     "source": "COND(P, F, TRUE) AND TRUE",
     "expect": null,
@@ -19657,7 +19657,7 @@ export const SQL_CASES = [
   },
   {
     "name": "warrant.bool.not-over-a-laundered-conditional",
-    "at": "49-kind-guarantees.sqlt:79",
+    "at": "49-kind-guarantees.sqlt:78",
     "dialect": "mariadb",
     "source": "NOT IF(TRUE, F, TRUE)",
     "expect": null,
@@ -19674,7 +19674,7 @@ export const SQL_CASES = [
   },
   {
     "name": "warrant.bool.if-cannot-launder-on-postgresql",
-    "at": "49-kind-guarantees.sqlt:92",
+    "at": "49-kind-guarantees.sqlt:91",
     "dialect": "postgresql",
     "source": "IF(TRUE, F, TRUE) AND TRUE",
     "expect": null,
@@ -19691,7 +19691,7 @@ export const SQL_CASES = [
   },
   {
     "name": "warrant.bool.coalesce-cannot-launder-on-sqlite",
-    "at": "49-kind-guarantees.sqlt:105",
+    "at": "49-kind-guarantees.sqlt:104",
     "dialect": "sqlite",
     "source": "(F ?? TRUE) AND TRUE",
     "expect": null,
@@ -19708,7 +19708,7 @@ export const SQL_CASES = [
   },
   {
     "name": "warrant.bool.if-over-a-declared-bool-is-not-refused",
-    "at": "49-kind-guarantees.sqlt:118",
+    "at": "49-kind-guarantees.sqlt:117",
     "dialect": "mariadb",
     "source": "IF(TRUE, F, TRUE) AND TRUE",
     "expect": "(CASE WHEN TRUE THEN `f` ELSE TRUE END AND TRUE)",
@@ -19725,7 +19725,7 @@ export const SQL_CASES = [
   },
   {
     "name": "warrant.bool.coalesce-over-a-declared-bool-is-not-refused",
-    "at": "49-kind-guarantees.sqlt:131",
+    "at": "49-kind-guarantees.sqlt:130",
     "dialect": "mariadb",
     "source": "(F ?? TRUE) AND TRUE",
     "expect": "(COALESCE(`f`, TRUE) AND TRUE)",
@@ -19742,7 +19742,7 @@ export const SQL_CASES = [
   },
   {
     "name": "warrant.numeric.coalesce-over-an-undeclared-column-is-guarded",
-    "at": "49-kind-guarantees.sqlt:144",
+    "at": "49-kind-guarantees.sqlt:143",
     "dialect": "mariadb",
     "source": "(U ?? 1) + 1 > 0",
     "expect": "((CASE WHEN (COALESCE(`u`, 1) REGEXP '\\\\A-?[0-9]+(\\\\.[0-9]+)?\\\\z') THEN CAST(COALESCE(`u`, 1) AS DECIMAL(65,10)) ELSE NULL END + 1) > 0)",
@@ -19759,7 +19759,7 @@ export const SQL_CASES = [
   },
   {
     "name": "warrant.numeric.if-branch-unknown-is-guarded",
-    "at": "49-kind-guarantees.sqlt:157",
+    "at": "49-kind-guarantees.sqlt:156",
     "dialect": "mariadb",
     "source": "IF(P, U, 1) + 1 == 2",
     "expect": "((CASE WHEN (CASE WHEN `p` THEN `u` ELSE 1 END REGEXP '\\\\A-?[0-9]+(\\\\.[0-9]+)?\\\\z') THEN CAST(CASE WHEN `p` THEN `u` ELSE 1 END AS DECIMAL(65,10)) ELSE NULL END + 1) = 2)",
@@ -19776,7 +19776,7 @@ export const SQL_CASES = [
   },
   {
     "name": "warrant.numeric.coalesce-function-over-an-undeclared-column-is-guarded",
-    "at": "49-kind-guarantees.sqlt:170",
+    "at": "49-kind-guarantees.sqlt:169",
     "dialect": "mariadb",
     "source": "COALESCE(U, 0) > 5",
     "expect": "(CASE WHEN (COALESCE(`u`, 0) REGEXP '\\\\A-?[0-9]+(\\\\.[0-9]+)?\\\\z') THEN CAST(COALESCE(`u`, 0) AS DECIMAL(65,10)) ELSE NULL END > 5)",
@@ -19793,7 +19793,7 @@ export const SQL_CASES = [
   },
   {
     "name": "warrant.numeric.abs-over-a-laundered-conditional",
-    "at": "49-kind-guarantees.sqlt:183",
+    "at": "49-kind-guarantees.sqlt:182",
     "dialect": "mariadb",
     "source": "ABS(U ?? 1)",
     "expect": "ABS(CASE WHEN (COALESCE(`u`, 1) REGEXP '\\\\A-?[0-9]+(\\\\.[0-9]+)?\\\\z') THEN CAST(COALESCE(`u`, 1) AS DECIMAL(65,10)) ELSE NULL END)",
@@ -19810,7 +19810,7 @@ export const SQL_CASES = [
   },
   {
     "name": "warrant.numeric.min-over-a-laundered-conditional",
-    "at": "49-kind-guarantees.sqlt:196",
+    "at": "49-kind-guarantees.sqlt:195",
     "dialect": "mariadb",
     "source": "MIN(U ?? 1, 2)",
     "expect": "LEAST(CASE WHEN (COALESCE(`u`, 1) REGEXP '\\\\A-?[0-9]+(\\\\.[0-9]+)?\\\\z') THEN CAST(COALESCE(`u`, 1) AS DECIMAL(65,10)) ELSE NULL END, 2)",
@@ -19827,7 +19827,7 @@ export const SQL_CASES = [
   },
   {
     "name": "warrant.numeric.length-over-a-laundered-conditional",
-    "at": "49-kind-guarantees.sqlt:209",
+    "at": "49-kind-guarantees.sqlt:208",
     "dialect": "mariadb",
     "source": "LEFT(\"abc\", U ?? 1)",
     "expect": "LEFT('abc', CASE WHEN (COALESCE(`u`, 1) REGEXP '\\\\A-?[0-9]+(\\\\.[0-9]+)?\\\\z') THEN CAST(COALESCE(`u`, 1) AS DECIMAL(65,10)) ELSE NULL END)",
@@ -19844,7 +19844,7 @@ export const SQL_CASES = [
   },
   {
     "name": "warrant.numeric.an-undeclared-branch-on-the-right-is-guarded",
-    "at": "49-kind-guarantees.sqlt:222",
+    "at": "49-kind-guarantees.sqlt:221",
     "dialect": "mariadb",
     "source": "N < IF(TRUE, U, -1)",
     "expect": "(`n` < CASE WHEN (CASE WHEN TRUE THEN `u` ELSE (-1) END REGEXP '\\\\A-?[0-9]+(\\\\.[0-9]+)?\\\\z') THEN CAST(CASE WHEN TRUE THEN `u` ELSE (-1) END AS DECIMAL(65,10)) ELSE NULL END)",
@@ -19861,7 +19861,7 @@ export const SQL_CASES = [
   },
   {
     "name": "warrant.numeric.cond-branch-unknown-is-guarded",
-    "at": "49-kind-guarantees.sqlt:235",
+    "at": "49-kind-guarantees.sqlt:234",
     "dialect": "mariadb",
     "source": "COND(P, U, 1) + 1 == 2",
     "expect": "((CASE WHEN (CASE WHEN `p` THEN `u` ELSE 1 END REGEXP '\\\\A-?[0-9]+(\\\\.[0-9]+)?\\\\z') THEN CAST(CASE WHEN `p` THEN `u` ELSE 1 END AS DECIMAL(65,10)) ELSE NULL END + 1) = 2)",
@@ -19878,7 +19878,7 @@ export const SQL_CASES = [
   },
   {
     "name": "warrant.numeric.sqlite-refuses-a-laundered-coalesce",
-    "at": "49-kind-guarantees.sqlt:248",
+    "at": "49-kind-guarantees.sqlt:247",
     "dialect": "sqlite",
     "source": "(U ?? 1) + 1 > 0",
     "expect": null,
@@ -19895,7 +19895,7 @@ export const SQL_CASES = [
   },
   {
     "name": "warrant.numeric.sqlite-refuses-a-laundered-if-branch",
-    "at": "49-kind-guarantees.sqlt:261",
+    "at": "49-kind-guarantees.sqlt:260",
     "dialect": "sqlite",
     "source": "IF(P, U, 1) + 1 == 2",
     "expect": null,
@@ -19912,7 +19912,7 @@ export const SQL_CASES = [
   },
   {
     "name": "warrant.numeric.sqlite-refuses-a-laundered-abs",
-    "at": "49-kind-guarantees.sqlt:274",
+    "at": "49-kind-guarantees.sqlt:273",
     "dialect": "sqlite",
     "source": "ABS(U ?? 1)",
     "expect": null,
@@ -19929,7 +19929,7 @@ export const SQL_CASES = [
   },
   {
     "name": "warrant.numeric.sqlite-refuses-a-laundered-vacuous-coalesce",
-    "at": "49-kind-guarantees.sqlt:287",
+    "at": "49-kind-guarantees.sqlt:286",
     "dialect": "sqlite",
     "source": "(U ??? 1) + 1 > 0",
     "expect": null,
@@ -19946,7 +19946,7 @@ export const SQL_CASES = [
   },
   {
     "name": "warrant.numeric.declared-num-through-coalesce-is-not-guarded",
-    "at": "49-kind-guarantees.sqlt:300",
+    "at": "49-kind-guarantees.sqlt:299",
     "dialect": "mariadb",
     "source": "(N ?? 1) + 1 > 0",
     "expect": "((COALESCE(`n`, 1) + 1) > 0)",
@@ -19963,7 +19963,7 @@ export const SQL_CASES = [
   },
   {
     "name": "warrant.numeric.declared-num-through-if-is-not-guarded",
-    "at": "49-kind-guarantees.sqlt:313",
+    "at": "49-kind-guarantees.sqlt:312",
     "dialect": "mariadb",
     "source": "IF(P, N, 1) + 1 == 2",
     "expect": "((CASE WHEN `p` THEN `n` ELSE 1 END + 1) = 2)",
@@ -19980,7 +19980,7 @@ export const SQL_CASES = [
   },
   {
     "name": "agg.join.bool-element-is-refused",
-    "at": "49-kind-guarantees.sqlt:326",
+    "at": "49-kind-guarantees.sqlt:325",
     "dialect": "mariadb",
     "source": "JOIN((T, F), \",\")",
     "expect": null,
@@ -19997,7 +19997,7 @@ export const SQL_CASES = [
   },
   {
     "name": "agg.join.bool-first-element-is-refused",
-    "at": "49-kind-guarantees.sqlt:339",
+    "at": "49-kind-guarantees.sqlt:338",
     "dialect": "mariadb",
     "source": "JOIN((F, \"a\"), \"-\")",
     "expect": null,
@@ -20014,7 +20014,7 @@ export const SQL_CASES = [
   },
   {
     "name": "agg.join.bool-separator-is-refused",
-    "at": "49-kind-guarantees.sqlt:352",
+    "at": "49-kind-guarantees.sqlt:351",
     "dialect": "mariadb",
     "source": "JOIN((T, T2), F)",
     "expect": null,
@@ -20031,7 +20031,7 @@ export const SQL_CASES = [
   },
   {
     "name": "agg.join.bin-element-is-refused",
-    "at": "49-kind-guarantees.sqlt:365",
+    "at": "49-kind-guarantees.sqlt:364",
     "dialect": "mariadb",
     "source": "JOIN((X, T), \",\")",
     "expect": null,
@@ -20048,7 +20048,7 @@ export const SQL_CASES = [
   },
   {
     "name": "agg.join.bin-separator-is-refused",
-    "at": "49-kind-guarantees.sqlt:378",
+    "at": "49-kind-guarantees.sqlt:377",
     "dialect": "mariadb",
     "source": "JOIN((T, T2), X)",
     "expect": null,
@@ -20065,7 +20065,7 @@ export const SQL_CASES = [
   },
   {
     "name": "agg.join.columns-binding-with-a-bool-is-refused",
-    "at": "49-kind-guarantees.sqlt:391",
+    "at": "49-kind-guarantees.sqlt:390",
     "dialect": "mariadb",
     "source": "JOIN(V, \",\")",
     "expect": null,
@@ -20082,7 +20082,7 @@ export const SQL_CASES = [
   },
   {
     "name": "agg.join.columns-binding-with-a-bin-is-refused",
-    "at": "49-kind-guarantees.sqlt:404",
+    "at": "49-kind-guarantees.sqlt:403",
     "dialect": "mariadb",
     "source": "JOIN(W, \",\")",
     "expect": null,
@@ -20099,7 +20099,7 @@ export const SQL_CASES = [
   },
   {
     "name": "agg.join.bool-element-is-refused-on-postgresql",
-    "at": "49-kind-guarantees.sqlt:417",
+    "at": "49-kind-guarantees.sqlt:416",
     "dialect": "postgresql",
     "source": "JOIN((T, F), \",\")",
     "expect": null,
@@ -20116,7 +20116,7 @@ export const SQL_CASES = [
   },
   {
     "name": "agg.join.bool-element-is-refused-on-sqlite",
-    "at": "49-kind-guarantees.sqlt:430",
+    "at": "49-kind-guarantees.sqlt:429",
     "dialect": "sqlite",
     "source": "JOIN((T, F), \",\")",
     "expect": null,
@@ -20133,7 +20133,7 @@ export const SQL_CASES = [
   },
   {
     "name": "agg.join.text-elements-still-translate",
-    "at": "49-kind-guarantees.sqlt:443",
+    "at": "49-kind-guarantees.sqlt:442",
     "dialect": "mariadb",
     "source": "JOIN((T, \"a\"), \"-\")",
     "expect": "CONCAT(CONCAT(`t`, '-'), 'a')",
@@ -20150,7 +20150,7 @@ export const SQL_CASES = [
   },
   {
     "name": "agg.bucket-sum.a-declared-text-field-is-refused",
-    "at": "49-kind-guarantees.sqlt:456",
+    "at": "49-kind-guarantees.sqlt:455",
     "dialect": "mariadb",
     "source": "O .> BUCKET(_[\"CAT\"], RECORD(\"s\", SUM(_, _[\"STATUS\"])))",
     "expect": null,
@@ -20167,7 +20167,7 @@ export const SQL_CASES = [
   },
   {
     "name": "agg.bucket-sum.a-declared-bool-field-is-refused",
-    "at": "49-kind-guarantees.sqlt:471",
+    "at": "49-kind-guarantees.sqlt:470",
     "dialect": "mariadb",
     "source": "O .> BUCKET(_[\"CAT\"], RECORD(\"s\", SUM(_, _[\"FLAG\"])))",
     "expect": null,
@@ -20184,7 +20184,7 @@ export const SQL_CASES = [
   },
   {
     "name": "agg.bucket-sum.a-constant-text-body-is-refused",
-    "at": "49-kind-guarantees.sqlt:486",
+    "at": "49-kind-guarantees.sqlt:485",
     "dialect": "mariadb",
     "source": "O .> BUCKET(_[\"CAT\"], RECORD(\"s\", SUM(_, \"x\")))",
     "expect": null,
@@ -20201,7 +20201,7 @@ export const SQL_CASES = [
   },
   {
     "name": "agg.in-relation.bool-column-needle-is-refused",
-    "at": "49-kind-guarantees.sqlt:501",
+    "at": "49-kind-guarantees.sqlt:500",
     "dialect": "mariadb",
     "source": "F IN S",
     "expect": null,
@@ -20218,7 +20218,7 @@ export const SQL_CASES = [
   },
   {
     "name": "agg.in-relation.bool-literal-needle-is-refused",
-    "at": "49-kind-guarantees.sqlt:514",
+    "at": "49-kind-guarantees.sqlt:513",
     "dialect": "mariadb",
     "source": "TRUE IN S",
     "expect": null,
@@ -20235,7 +20235,7 @@ export const SQL_CASES = [
   },
   {
     "name": "agg.in-relation.bin-column-needle-is-refused",
-    "at": "49-kind-guarantees.sqlt:527",
+    "at": "49-kind-guarantees.sqlt:526",
     "dialect": "mariadb",
     "source": "X IN S",
     "expect": null,
@@ -20252,7 +20252,7 @@ export const SQL_CASES = [
   },
   {
     "name": "bind.in.exact.numeric-literal-item-is-cast",
-    "at": "49-kind-guarantees.sqlt:540",
+    "at": "49-kind-guarantees.sqlt:539",
     "dialect": "mariadb",
     "source": "T IN (\"a\", 3)",
     "expect": "((`t` = 'a') OR (`t` = CAST(3 AS CHAR) COLLATE utf8mb4_nopad_bin))",
@@ -20269,7 +20269,7 @@ export const SQL_CASES = [
   },
   {
     "name": "bind.in.exact.numeric-literal-items-only",
-    "at": "49-kind-guarantees.sqlt:553",
+    "at": "49-kind-guarantees.sqlt:552",
     "dialect": "mariadb",
     "source": "S IN (1, 2)",
     "expect": "((`s` = CAST(1 AS CHAR) COLLATE utf8mb4_nopad_bin) OR (`s` = CAST(2 AS CHAR) COLLATE utf8mb4_nopad_bin))",
@@ -20286,7 +20286,7 @@ export const SQL_CASES = [
   },
   {
     "name": "stmt.take.whole-number-with-scale.mariadb",
-    "at": "49-kind-guarantees.sqlt:566",
+    "at": "49-kind-guarantees.sqlt:565",
     "dialect": "mariadb",
     "source": "ITEMS .> TAKE(2.0)",
     "expect": "SELECT * FROM `items` LIMIT 2",
@@ -20303,7 +20303,7 @@ export const SQL_CASES = [
   },
   {
     "name": "stmt.take.zero-with-scale.mariadb",
-    "at": "49-kind-guarantees.sqlt:581",
+    "at": "49-kind-guarantees.sqlt:580",
     "dialect": "mariadb",
     "source": "ITEMS .> TAKE(0.0)",
     "expect": "SELECT * FROM `items` LIMIT 0",
@@ -20320,7 +20320,7 @@ export const SQL_CASES = [
   },
   {
     "name": "stmt.take.count-past-2^53.mariadb",
-    "at": "49-kind-guarantees.sqlt:596",
+    "at": "49-kind-guarantees.sqlt:595",
     "dialect": "mariadb",
     "source": "ITEMS .> TAKE(9007199254740993)",
     "expect": "SELECT * FROM `items` LIMIT 9007199254740993",
@@ -20337,7 +20337,7 @@ export const SQL_CASES = [
   },
   {
     "name": "stmt.take.int64-max.mariadb",
-    "at": "49-kind-guarantees.sqlt:611",
+    "at": "49-kind-guarantees.sqlt:610",
     "dialect": "mariadb",
     "source": "ITEMS .> TAKE(9223372036854775807)",
     "expect": "SELECT * FROM `items` LIMIT 9223372036854775807",
@@ -20354,7 +20354,7 @@ export const SQL_CASES = [
   },
   {
     "name": "stmt.take.whole-number-with-scale.postgresql",
-    "at": "49-kind-guarantees.sqlt:626",
+    "at": "49-kind-guarantees.sqlt:625",
     "dialect": "postgresql",
     "source": "ITEMS .> TAKE(2.0)",
     "expect": "SELECT * FROM \"items\" LIMIT 2",
@@ -20371,7 +20371,7 @@ export const SQL_CASES = [
   },
   {
     "name": "stmt.take.zero-with-scale.postgresql",
-    "at": "49-kind-guarantees.sqlt:641",
+    "at": "49-kind-guarantees.sqlt:640",
     "dialect": "postgresql",
     "source": "ITEMS .> TAKE(0.0)",
     "expect": "SELECT * FROM \"items\" LIMIT 0",
@@ -20388,7 +20388,7 @@ export const SQL_CASES = [
   },
   {
     "name": "stmt.take.count-past-2^53.postgresql",
-    "at": "49-kind-guarantees.sqlt:656",
+    "at": "49-kind-guarantees.sqlt:655",
     "dialect": "postgresql",
     "source": "ITEMS .> TAKE(9007199254740993)",
     "expect": "SELECT * FROM \"items\" LIMIT 9007199254740993",
@@ -20405,7 +20405,7 @@ export const SQL_CASES = [
   },
   {
     "name": "stmt.take.int64-max.postgresql",
-    "at": "49-kind-guarantees.sqlt:671",
+    "at": "49-kind-guarantees.sqlt:670",
     "dialect": "postgresql",
     "source": "ITEMS .> TAKE(9223372036854775807)",
     "expect": "SELECT * FROM \"items\" LIMIT 9223372036854775807",
@@ -20422,7 +20422,7 @@ export const SQL_CASES = [
   },
   {
     "name": "stmt.take.whole-number-with-scale.sqlite",
-    "at": "49-kind-guarantees.sqlt:686",
+    "at": "49-kind-guarantees.sqlt:685",
     "dialect": "sqlite",
     "source": "ITEMS .> TAKE(2.0)",
     "expect": "SELECT * FROM \"items\" LIMIT 2",
@@ -20439,7 +20439,7 @@ export const SQL_CASES = [
   },
   {
     "name": "stmt.take.zero-with-scale.sqlite",
-    "at": "49-kind-guarantees.sqlt:701",
+    "at": "49-kind-guarantees.sqlt:700",
     "dialect": "sqlite",
     "source": "ITEMS .> TAKE(0.0)",
     "expect": "SELECT * FROM \"items\" LIMIT 0",
@@ -20456,7 +20456,7 @@ export const SQL_CASES = [
   },
   {
     "name": "stmt.take.count-past-2^53.sqlite",
-    "at": "49-kind-guarantees.sqlt:716",
+    "at": "49-kind-guarantees.sqlt:715",
     "dialect": "sqlite",
     "source": "ITEMS .> TAKE(9007199254740993)",
     "expect": "SELECT * FROM \"items\" LIMIT 9007199254740993",
@@ -20473,7 +20473,7 @@ export const SQL_CASES = [
   },
   {
     "name": "stmt.take.int64-max.sqlite",
-    "at": "49-kind-guarantees.sqlt:731",
+    "at": "49-kind-guarantees.sqlt:730",
     "dialect": "sqlite",
     "source": "ITEMS .> TAKE(9223372036854775807)",
     "expect": "SELECT * FROM \"items\" LIMIT 9223372036854775807",
@@ -20490,7 +20490,7 @@ export const SQL_CASES = [
   },
   {
     "name": "stmt.drop.whole-number-with-scale.mariadb",
-    "at": "49-kind-guarantees.sqlt:746",
+    "at": "49-kind-guarantees.sqlt:745",
     "dialect": "mariadb",
     "source": "ITEMS .> DROP(2.0)",
     "expect": "SELECT * FROM `items` LIMIT 18446744073709551615 OFFSET 2",
@@ -20507,7 +20507,7 @@ export const SQL_CASES = [
   },
   {
     "name": "stmt.drop.count-past-2^53.mariadb",
-    "at": "49-kind-guarantees.sqlt:761",
+    "at": "49-kind-guarantees.sqlt:760",
     "dialect": "mariadb",
     "source": "ITEMS .> DROP(9007199254740993)",
     "expect": "SELECT * FROM `items` LIMIT 18446744073709551615 OFFSET 9007199254740993",
@@ -20524,7 +20524,7 @@ export const SQL_CASES = [
   },
   {
     "name": "stmt.drop.count-past-2^53.postgresql",
-    "at": "49-kind-guarantees.sqlt:776",
+    "at": "49-kind-guarantees.sqlt:775",
     "dialect": "postgresql",
     "source": "ITEMS .> DROP(9007199254740993)",
     "expect": "SELECT * FROM \"items\" OFFSET 9007199254740993",
@@ -20541,7 +20541,7 @@ export const SQL_CASES = [
   },
   {
     "name": "stmt.drop.count-past-2^53.sqlite",
-    "at": "49-kind-guarantees.sqlt:791",
+    "at": "49-kind-guarantees.sqlt:790",
     "dialect": "sqlite",
     "source": "ITEMS .> DROP(9007199254740993)",
     "expect": "SELECT * FROM \"items\" LIMIT -1 OFFSET 9007199254740993",
@@ -20558,7 +20558,7 @@ export const SQL_CASES = [
   },
   {
     "name": "stmt.take.count-past-int64-is-clamped.mariadb",
-    "at": "49-kind-guarantees.sqlt:806",
+    "at": "49-kind-guarantees.sqlt:805",
     "dialect": "mariadb",
     "source": "ITEMS .> TAKE(99999999999999999999999)",
     "expect": "SELECT * FROM `items` LIMIT 9223372036854775807",
@@ -20575,7 +20575,7 @@ export const SQL_CASES = [
   },
   {
     "name": "stmt.take.count-2^63-is-clamped.mariadb",
-    "at": "49-kind-guarantees.sqlt:821",
+    "at": "49-kind-guarantees.sqlt:820",
     "dialect": "mariadb",
     "source": "ITEMS .> TAKE(9223372036854775808)",
     "expect": "SELECT * FROM `items` LIMIT 9223372036854775807",
@@ -20592,7 +20592,7 @@ export const SQL_CASES = [
   },
   {
     "name": "stmt.take.count-past-int64-is-clamped.postgresql",
-    "at": "49-kind-guarantees.sqlt:836",
+    "at": "49-kind-guarantees.sqlt:835",
     "dialect": "postgresql",
     "source": "ITEMS .> TAKE(99999999999999999999999)",
     "expect": "SELECT * FROM \"items\" LIMIT 9223372036854775807",
@@ -20609,7 +20609,7 @@ export const SQL_CASES = [
   },
   {
     "name": "stmt.take.count-2^63-is-clamped.postgresql",
-    "at": "49-kind-guarantees.sqlt:851",
+    "at": "49-kind-guarantees.sqlt:850",
     "dialect": "postgresql",
     "source": "ITEMS .> TAKE(9223372036854775808)",
     "expect": "SELECT * FROM \"items\" LIMIT 9223372036854775807",
@@ -20626,7 +20626,7 @@ export const SQL_CASES = [
   },
   {
     "name": "stmt.take.count-past-int64-is-clamped.sqlite",
-    "at": "49-kind-guarantees.sqlt:866",
+    "at": "49-kind-guarantees.sqlt:865",
     "dialect": "sqlite",
     "source": "ITEMS .> TAKE(99999999999999999999999)",
     "expect": "SELECT * FROM \"items\" LIMIT 9223372036854775807",
@@ -20643,7 +20643,7 @@ export const SQL_CASES = [
   },
   {
     "name": "stmt.take.count-2^63-is-clamped.sqlite",
-    "at": "49-kind-guarantees.sqlt:881",
+    "at": "49-kind-guarantees.sqlt:880",
     "dialect": "sqlite",
     "source": "ITEMS .> TAKE(9223372036854775808)",
     "expect": "SELECT * FROM \"items\" LIMIT 9223372036854775807",
@@ -20660,7 +20660,7 @@ export const SQL_CASES = [
   },
   {
     "name": "stmt.take.count-uint64-max-is-clamped.mariadb",
-    "at": "49-kind-guarantees.sqlt:896",
+    "at": "49-kind-guarantees.sqlt:895",
     "dialect": "mariadb",
     "source": "ITEMS .> TAKE(18446744073709551615)",
     "expect": "SELECT * FROM `items` LIMIT 9223372036854775807",
@@ -20677,7 +20677,7 @@ export const SQL_CASES = [
   },
   {
     "name": "stmt.drop.count-past-int64-is-clamped.mariadb",
-    "at": "49-kind-guarantees.sqlt:911",
+    "at": "49-kind-guarantees.sqlt:910",
     "dialect": "mariadb",
     "source": "ITEMS .> DROP(18446744073709551616)",
     "expect": "SELECT * FROM `items` LIMIT 18446744073709551615 OFFSET 9223372036854775807",
@@ -20694,7 +20694,7 @@ export const SQL_CASES = [
   },
   {
     "name": "stmt.drop.count-past-int64-is-clamped.postgresql",
-    "at": "49-kind-guarantees.sqlt:926",
+    "at": "49-kind-guarantees.sqlt:925",
     "dialect": "postgresql",
     "source": "ITEMS .> DROP(18446744073709551616)",
     "expect": "SELECT * FROM \"items\" OFFSET 9223372036854775807",
@@ -20711,7 +20711,7 @@ export const SQL_CASES = [
   },
   {
     "name": "stmt.drop.count-past-int64-is-clamped.sqlite",
-    "at": "49-kind-guarantees.sqlt:939",
+    "at": "49-kind-guarantees.sqlt:938",
     "dialect": "sqlite",
     "source": "ITEMS .> DROP(18446744073709551616)",
     "expect": "SELECT * FROM \"items\" LIMIT -1 OFFSET 9223372036854775807",
@@ -20728,7 +20728,7 @@ export const SQL_CASES = [
   },
   {
     "name": "stmt.drop.merged-offset-past-int64-is-clamped.mariadb",
-    "at": "49-kind-guarantees.sqlt:952",
+    "at": "49-kind-guarantees.sqlt:951",
     "dialect": "mariadb",
     "source": "ITEMS .> DROP(9223372036854775807) .> DROP(1)",
     "expect": "SELECT * FROM `items` LIMIT 18446744073709551615 OFFSET 9223372036854775807",
@@ -20745,7 +20745,7 @@ export const SQL_CASES = [
   },
   {
     "name": "stmt.drop.merged-offset-below-int64-is-exact.mariadb",
-    "at": "49-kind-guarantees.sqlt:967",
+    "at": "49-kind-guarantees.sqlt:966",
     "dialect": "mariadb",
     "source": "ITEMS .> DROP(9223372036854775806) .> DROP(1)",
     "expect": "SELECT * FROM `items` LIMIT 18446744073709551615 OFFSET 9223372036854775807",
@@ -20762,7 +20762,7 @@ export const SQL_CASES = [
   },
   {
     "name": "stmt.take.then-take-past-int64-keeps-the-smaller.mariadb",
-    "at": "49-kind-guarantees.sqlt:982",
+    "at": "49-kind-guarantees.sqlt:981",
     "dialect": "mariadb",
     "source": "ITEMS .> TAKE(5) .> TAKE(9223372036854775808)",
     "expect": "SELECT * FROM `items` LIMIT 5",
@@ -20779,7 +20779,7 @@ export const SQL_CASES = [
   },
   {
     "name": "agg.bucket-sum.an-undeclared-field-is-guarded-as-a-whole",
-    "at": "49-kind-guarantees.sqlt:997",
+    "at": "49-kind-guarantees.sqlt:996",
     "dialect": "mariadb",
     "source": "O .> BUCKET(_[\"CAT\"], RECORD(\"s\", SUM(_, _[\"MISC\"])))",
     "expect": "SELECT CASE WHEN COUNT(*) = COUNT(CASE WHEN (`o`.`misc` REGEXP '\\\\A-?[0-9]+(\\\\.[0-9]+)?\\\\z') THEN 1 END) THEN COALESCE(SUM(CAST(`o`.`misc` AS DECIMAL(65,10))), 0) ELSE NULL END AS `s` FROM `orders` `o` GROUP BY CAST(`o`.`cat` AS CHAR) COLLATE utf8mb4_nopad_bin",
@@ -20796,7 +20796,7 @@ export const SQL_CASES = [
   },
   {
     "name": "agg.bucket-sum.an-undeclared-field-sqlite-refuses",
-    "at": "49-kind-guarantees.sqlt:1012",
+    "at": "49-kind-guarantees.sqlt:1011",
     "dialect": "sqlite",
     "source": "O .> BUCKET(_[\"CAT\"], RECORD(\"s\", SUM(_, _[\"MISC\"])))",
     "expect": null,
@@ -20813,7 +20813,7 @@ export const SQL_CASES = [
   },
   {
     "name": "agg.fold.any.at-256-is-a-left-fold",
-    "at": "49-kind-guarantees.sqlt:1025",
+    "at": "49-kind-guarantees.sqlt:1024",
     "dialect": "mariadb",
     "source": "ANY((N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N), _ > 0)",
     "expect": "((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((`k`.`n` > 0) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0))",
@@ -20830,7 +20830,7 @@ export const SQL_CASES = [
   },
   {
     "name": "agg.fold.all.at-256-is-a-left-fold",
-    "at": "49-kind-guarantees.sqlt:1038",
+    "at": "49-kind-guarantees.sqlt:1037",
     "dialect": "mariadb",
     "source": "ALL((N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N), _ > 0)",
     "expect": "((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((`k`.`n` > 0) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0))",
@@ -20847,7 +20847,7 @@ export const SQL_CASES = [
   },
   {
     "name": "agg.fold.sum.at-256-is-a-left-fold",
-    "at": "49-kind-guarantees.sqlt:1049",
+    "at": "49-kind-guarantees.sqlt:1048",
     "dialect": "mariadb",
     "source": "SUM((N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N), _)",
     "expect": "(((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((`k`.`n` + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`)",
@@ -20864,7 +20864,7 @@ export const SQL_CASES = [
   },
   {
     "name": "agg.fold.in-list.at-256-is-a-left-fold",
-    "at": "49-kind-guarantees.sqlt:1060",
+    "at": "49-kind-guarantees.sqlt:1059",
     "dialect": "mariadb",
     "source": "T IN (\"v0\", \"v1\", \"v2\", \"v3\", \"v4\", \"v5\", \"v6\", \"v7\", \"v8\", \"v9\", \"v10\", \"v11\", \"v12\", \"v13\", \"v14\", \"v15\", \"v16\", \"v17\", \"v18\", \"v19\", \"v20\", \"v21\", \"v22\", \"v23\", \"v24\", \"v25\", \"v26\", \"v27\", \"v28\", \"v29\", \"v30\", \"v31\", \"v32\", \"v33\", \"v34\", \"v35\", \"v36\", \"v37\", \"v38\", \"v39\", \"v40\", \"v41\", \"v42\", \"v43\", \"v44\", \"v45\", \"v46\", \"v47\", \"v48\", \"v49\", \"v50\", \"v51\", \"v52\", \"v53\", \"v54\", \"v55\", \"v56\", \"v57\", \"v58\", \"v59\", \"v60\", \"v61\", \"v62\", \"v63\", \"v64\", \"v65\", \"v66\", \"v67\", \"v68\", \"v69\", \"v70\", \"v71\", \"v72\", \"v73\", \"v74\", \"v75\", \"v76\", \"v77\", \"v78\", \"v79\", \"v80\", \"v81\", \"v82\", \"v83\", \"v84\", \"v85\", \"v86\", \"v87\", \"v88\", \"v89\", \"v90\", \"v91\", \"v92\", \"v93\", \"v94\", \"v95\", \"v96\", \"v97\", \"v98\", \"v99\", \"v100\", \"v101\", \"v102\", \"v103\", \"v104\", \"v105\", \"v106\", \"v107\", \"v108\", \"v109\", \"v110\", \"v111\", \"v112\", \"v113\", \"v114\", \"v115\", \"v116\", \"v117\", \"v118\", \"v119\", \"v120\", \"v121\", \"v122\", \"v123\", \"v124\", \"v125\", \"v126\", \"v127\", \"v128\", \"v129\", \"v130\", \"v131\", \"v132\", \"v133\", \"v134\", \"v135\", \"v136\", \"v137\", \"v138\", \"v139\", \"v140\", \"v141\", \"v142\", \"v143\", \"v144\", \"v145\", \"v146\", \"v147\", \"v148\", \"v149\", \"v150\", \"v151\", \"v152\", \"v153\", \"v154\", \"v155\", \"v156\", \"v157\", \"v158\", \"v159\", \"v160\", \"v161\", \"v162\", \"v163\", \"v164\", \"v165\", \"v166\", \"v167\", \"v168\", \"v169\", \"v170\", \"v171\", \"v172\", \"v173\", \"v174\", \"v175\", \"v176\", \"v177\", \"v178\", \"v179\", \"v180\", \"v181\", \"v182\", \"v183\", \"v184\", \"v185\", \"v186\", \"v187\", \"v188\", \"v189\", \"v190\", \"v191\", \"v192\", \"v193\", \"v194\", \"v195\", \"v196\", \"v197\", \"v198\", \"v199\", \"v200\", \"v201\", \"v202\", \"v203\", \"v204\", \"v205\", \"v206\", \"v207\", \"v208\", \"v209\", \"v210\", \"v211\", \"v212\", \"v213\", \"v214\", \"v215\", \"v216\", \"v217\", \"v218\", \"v219\", \"v220\", \"v221\", \"v222\", \"v223\", \"v224\", \"v225\", \"v226\", \"v227\", \"v228\", \"v229\", \"v230\", \"v231\", \"v232\", \"v233\", \"v234\", \"v235\", \"v236\", \"v237\", \"v238\", \"v239\", \"v240\", \"v241\", \"v242\", \"v243\", \"v244\", \"v245\", \"v246\", \"v247\", \"v248\", \"v249\", \"v250\", \"v251\", \"v252\", \"v253\", \"v254\", \"v255\")",
     "expect": "((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((`k`.`t` = 'v0') OR (`k`.`t` = 'v1')) OR (`k`.`t` = 'v2')) OR (`k`.`t` = 'v3')) OR (`k`.`t` = 'v4')) OR (`k`.`t` = 'v5')) OR (`k`.`t` = 'v6')) OR (`k`.`t` = 'v7')) OR (`k`.`t` = 'v8')) OR (`k`.`t` = 'v9')) OR (`k`.`t` = 'v10')) OR (`k`.`t` = 'v11')) OR (`k`.`t` = 'v12')) OR (`k`.`t` = 'v13')) OR (`k`.`t` = 'v14')) OR (`k`.`t` = 'v15')) OR (`k`.`t` = 'v16')) OR (`k`.`t` = 'v17')) OR (`k`.`t` = 'v18')) OR (`k`.`t` = 'v19')) OR (`k`.`t` = 'v20')) OR (`k`.`t` = 'v21')) OR (`k`.`t` = 'v22')) OR (`k`.`t` = 'v23')) OR (`k`.`t` = 'v24')) OR (`k`.`t` = 'v25')) OR (`k`.`t` = 'v26')) OR (`k`.`t` = 'v27')) OR (`k`.`t` = 'v28')) OR (`k`.`t` = 'v29')) OR (`k`.`t` = 'v30')) OR (`k`.`t` = 'v31')) OR (`k`.`t` = 'v32')) OR (`k`.`t` = 'v33')) OR (`k`.`t` = 'v34')) OR (`k`.`t` = 'v35')) OR (`k`.`t` = 'v36')) OR (`k`.`t` = 'v37')) OR (`k`.`t` = 'v38')) OR (`k`.`t` = 'v39')) OR (`k`.`t` = 'v40')) OR (`k`.`t` = 'v41')) OR (`k`.`t` = 'v42')) OR (`k`.`t` = 'v43')) OR (`k`.`t` = 'v44')) OR (`k`.`t` = 'v45')) OR (`k`.`t` = 'v46')) OR (`k`.`t` = 'v47')) OR (`k`.`t` = 'v48')) OR (`k`.`t` = 'v49')) OR (`k`.`t` = 'v50')) OR (`k`.`t` = 'v51')) OR (`k`.`t` = 'v52')) OR (`k`.`t` = 'v53')) OR (`k`.`t` = 'v54')) OR (`k`.`t` = 'v55')) OR (`k`.`t` = 'v56')) OR (`k`.`t` = 'v57')) OR (`k`.`t` = 'v58')) OR (`k`.`t` = 'v59')) OR (`k`.`t` = 'v60')) OR (`k`.`t` = 'v61')) OR (`k`.`t` = 'v62')) OR (`k`.`t` = 'v63')) OR (`k`.`t` = 'v64')) OR (`k`.`t` = 'v65')) OR (`k`.`t` = 'v66')) OR (`k`.`t` = 'v67')) OR (`k`.`t` = 'v68')) OR (`k`.`t` = 'v69')) OR (`k`.`t` = 'v70')) OR (`k`.`t` = 'v71')) OR (`k`.`t` = 'v72')) OR (`k`.`t` = 'v73')) OR (`k`.`t` = 'v74')) OR (`k`.`t` = 'v75')) OR (`k`.`t` = 'v76')) OR (`k`.`t` = 'v77')) OR (`k`.`t` = 'v78')) OR (`k`.`t` = 'v79')) OR (`k`.`t` = 'v80')) OR (`k`.`t` = 'v81')) OR (`k`.`t` = 'v82')) OR (`k`.`t` = 'v83')) OR (`k`.`t` = 'v84')) OR (`k`.`t` = 'v85')) OR (`k`.`t` = 'v86')) OR (`k`.`t` = 'v87')) OR (`k`.`t` = 'v88')) OR (`k`.`t` = 'v89')) OR (`k`.`t` = 'v90')) OR (`k`.`t` = 'v91')) OR (`k`.`t` = 'v92')) OR (`k`.`t` = 'v93')) OR (`k`.`t` = 'v94')) OR (`k`.`t` = 'v95')) OR (`k`.`t` = 'v96')) OR (`k`.`t` = 'v97')) OR (`k`.`t` = 'v98')) OR (`k`.`t` = 'v99')) OR (`k`.`t` = 'v100')) OR (`k`.`t` = 'v101')) OR (`k`.`t` = 'v102')) OR (`k`.`t` = 'v103')) OR (`k`.`t` = 'v104')) OR (`k`.`t` = 'v105')) OR (`k`.`t` = 'v106')) OR (`k`.`t` = 'v107')) OR (`k`.`t` = 'v108')) OR (`k`.`t` = 'v109')) OR (`k`.`t` = 'v110')) OR (`k`.`t` = 'v111')) OR (`k`.`t` = 'v112')) OR (`k`.`t` = 'v113')) OR (`k`.`t` = 'v114')) OR (`k`.`t` = 'v115')) OR (`k`.`t` = 'v116')) OR (`k`.`t` = 'v117')) OR (`k`.`t` = 'v118')) OR (`k`.`t` = 'v119')) OR (`k`.`t` = 'v120')) OR (`k`.`t` = 'v121')) OR (`k`.`t` = 'v122')) OR (`k`.`t` = 'v123')) OR (`k`.`t` = 'v124')) OR (`k`.`t` = 'v125')) OR (`k`.`t` = 'v126')) OR (`k`.`t` = 'v127')) OR (`k`.`t` = 'v128')) OR (`k`.`t` = 'v129')) OR (`k`.`t` = 'v130')) OR (`k`.`t` = 'v131')) OR (`k`.`t` = 'v132')) OR (`k`.`t` = 'v133')) OR (`k`.`t` = 'v134')) OR (`k`.`t` = 'v135')) OR (`k`.`t` = 'v136')) OR (`k`.`t` = 'v137')) OR (`k`.`t` = 'v138')) OR (`k`.`t` = 'v139')) OR (`k`.`t` = 'v140')) OR (`k`.`t` = 'v141')) OR (`k`.`t` = 'v142')) OR (`k`.`t` = 'v143')) OR (`k`.`t` = 'v144')) OR (`k`.`t` = 'v145')) OR (`k`.`t` = 'v146')) OR (`k`.`t` = 'v147')) OR (`k`.`t` = 'v148')) OR (`k`.`t` = 'v149')) OR (`k`.`t` = 'v150')) OR (`k`.`t` = 'v151')) OR (`k`.`t` = 'v152')) OR (`k`.`t` = 'v153')) OR (`k`.`t` = 'v154')) OR (`k`.`t` = 'v155')) OR (`k`.`t` = 'v156')) OR (`k`.`t` = 'v157')) OR (`k`.`t` = 'v158')) OR (`k`.`t` = 'v159')) OR (`k`.`t` = 'v160')) OR (`k`.`t` = 'v161')) OR (`k`.`t` = 'v162')) OR (`k`.`t` = 'v163')) OR (`k`.`t` = 'v164')) OR (`k`.`t` = 'v165')) OR (`k`.`t` = 'v166')) OR (`k`.`t` = 'v167')) OR (`k`.`t` = 'v168')) OR (`k`.`t` = 'v169')) OR (`k`.`t` = 'v170')) OR (`k`.`t` = 'v171')) OR (`k`.`t` = 'v172')) OR (`k`.`t` = 'v173')) OR (`k`.`t` = 'v174')) OR (`k`.`t` = 'v175')) OR (`k`.`t` = 'v176')) OR (`k`.`t` = 'v177')) OR (`k`.`t` = 'v178')) OR (`k`.`t` = 'v179')) OR (`k`.`t` = 'v180')) OR (`k`.`t` = 'v181')) OR (`k`.`t` = 'v182')) OR (`k`.`t` = 'v183')) OR (`k`.`t` = 'v184')) OR (`k`.`t` = 'v185')) OR (`k`.`t` = 'v186')) OR (`k`.`t` = 'v187')) OR (`k`.`t` = 'v188')) OR (`k`.`t` = 'v189')) OR (`k`.`t` = 'v190')) OR (`k`.`t` = 'v191')) OR (`k`.`t` = 'v192')) OR (`k`.`t` = 'v193')) OR (`k`.`t` = 'v194')) OR (`k`.`t` = 'v195')) OR (`k`.`t` = 'v196')) OR (`k`.`t` = 'v197')) OR (`k`.`t` = 'v198')) OR (`k`.`t` = 'v199')) OR (`k`.`t` = 'v200')) OR (`k`.`t` = 'v201')) OR (`k`.`t` = 'v202')) OR (`k`.`t` = 'v203')) OR (`k`.`t` = 'v204')) OR (`k`.`t` = 'v205')) OR (`k`.`t` = 'v206')) OR (`k`.`t` = 'v207')) OR (`k`.`t` = 'v208')) OR (`k`.`t` = 'v209')) OR (`k`.`t` = 'v210')) OR (`k`.`t` = 'v211')) OR (`k`.`t` = 'v212')) OR (`k`.`t` = 'v213')) OR (`k`.`t` = 'v214')) OR (`k`.`t` = 'v215')) OR (`k`.`t` = 'v216')) OR (`k`.`t` = 'v217')) OR (`k`.`t` = 'v218')) OR (`k`.`t` = 'v219')) OR (`k`.`t` = 'v220')) OR (`k`.`t` = 'v221')) OR (`k`.`t` = 'v222')) OR (`k`.`t` = 'v223')) OR (`k`.`t` = 'v224')) OR (`k`.`t` = 'v225')) OR (`k`.`t` = 'v226')) OR (`k`.`t` = 'v227')) OR (`k`.`t` = 'v228')) OR (`k`.`t` = 'v229')) OR (`k`.`t` = 'v230')) OR (`k`.`t` = 'v231')) OR (`k`.`t` = 'v232')) OR (`k`.`t` = 'v233')) OR (`k`.`t` = 'v234')) OR (`k`.`t` = 'v235')) OR (`k`.`t` = 'v236')) OR (`k`.`t` = 'v237')) OR (`k`.`t` = 'v238')) OR (`k`.`t` = 'v239')) OR (`k`.`t` = 'v240')) OR (`k`.`t` = 'v241')) OR (`k`.`t` = 'v242')) OR (`k`.`t` = 'v243')) OR (`k`.`t` = 'v244')) OR (`k`.`t` = 'v245')) OR (`k`.`t` = 'v246')) OR (`k`.`t` = 'v247')) OR (`k`.`t` = 'v248')) OR (`k`.`t` = 'v249')) OR (`k`.`t` = 'v250')) OR (`k`.`t` = 'v251')) OR (`k`.`t` = 'v252')) OR (`k`.`t` = 'v253')) OR (`k`.`t` = 'v254')) OR (`k`.`t` = 'v255'))",
@@ -20881,7 +20881,7 @@ export const SQL_CASES = [
   },
   {
     "name": "agg.fold.any.at-257-is-balanced",
-    "at": "49-kind-guarantees.sqlt:1071",
+    "at": "49-kind-guarantees.sqlt:1070",
     "dialect": "mariadb",
     "source": "ANY((N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N), _ > 0)",
     "expect": "((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((`k`.`n` > 0) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR ((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((`k`.`n` > 0) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)))",
@@ -20898,7 +20898,7 @@ export const SQL_CASES = [
   },
   {
     "name": "agg.fold.all.at-257-is-balanced",
-    "at": "49-kind-guarantees.sqlt:1084",
+    "at": "49-kind-guarantees.sqlt:1083",
     "dialect": "mariadb",
     "source": "ALL((N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N), _ > 0)",
     "expect": "((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((`k`.`n` > 0) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND ((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((`k`.`n` > 0) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)))",
@@ -20915,7 +20915,7 @@ export const SQL_CASES = [
   },
   {
     "name": "agg.fold.sum.at-257-is-balanced",
-    "at": "49-kind-guarantees.sqlt:1095",
+    "at": "49-kind-guarantees.sqlt:1094",
     "dialect": "mariadb",
     "source": "SUM((N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N), _)",
     "expect": "(((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((`k`.`n` + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + (((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((`k`.`n` + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`))",
@@ -20932,7 +20932,7 @@ export const SQL_CASES = [
   },
   {
     "name": "agg.fold.in-list.at-257-is-balanced",
-    "at": "49-kind-guarantees.sqlt:1106",
+    "at": "49-kind-guarantees.sqlt:1105",
     "dialect": "mariadb",
     "source": "T IN (\"v0\", \"v1\", \"v2\", \"v3\", \"v4\", \"v5\", \"v6\", \"v7\", \"v8\", \"v9\", \"v10\", \"v11\", \"v12\", \"v13\", \"v14\", \"v15\", \"v16\", \"v17\", \"v18\", \"v19\", \"v20\", \"v21\", \"v22\", \"v23\", \"v24\", \"v25\", \"v26\", \"v27\", \"v28\", \"v29\", \"v30\", \"v31\", \"v32\", \"v33\", \"v34\", \"v35\", \"v36\", \"v37\", \"v38\", \"v39\", \"v40\", \"v41\", \"v42\", \"v43\", \"v44\", \"v45\", \"v46\", \"v47\", \"v48\", \"v49\", \"v50\", \"v51\", \"v52\", \"v53\", \"v54\", \"v55\", \"v56\", \"v57\", \"v58\", \"v59\", \"v60\", \"v61\", \"v62\", \"v63\", \"v64\", \"v65\", \"v66\", \"v67\", \"v68\", \"v69\", \"v70\", \"v71\", \"v72\", \"v73\", \"v74\", \"v75\", \"v76\", \"v77\", \"v78\", \"v79\", \"v80\", \"v81\", \"v82\", \"v83\", \"v84\", \"v85\", \"v86\", \"v87\", \"v88\", \"v89\", \"v90\", \"v91\", \"v92\", \"v93\", \"v94\", \"v95\", \"v96\", \"v97\", \"v98\", \"v99\", \"v100\", \"v101\", \"v102\", \"v103\", \"v104\", \"v105\", \"v106\", \"v107\", \"v108\", \"v109\", \"v110\", \"v111\", \"v112\", \"v113\", \"v114\", \"v115\", \"v116\", \"v117\", \"v118\", \"v119\", \"v120\", \"v121\", \"v122\", \"v123\", \"v124\", \"v125\", \"v126\", \"v127\", \"v128\", \"v129\", \"v130\", \"v131\", \"v132\", \"v133\", \"v134\", \"v135\", \"v136\", \"v137\", \"v138\", \"v139\", \"v140\", \"v141\", \"v142\", \"v143\", \"v144\", \"v145\", \"v146\", \"v147\", \"v148\", \"v149\", \"v150\", \"v151\", \"v152\", \"v153\", \"v154\", \"v155\", \"v156\", \"v157\", \"v158\", \"v159\", \"v160\", \"v161\", \"v162\", \"v163\", \"v164\", \"v165\", \"v166\", \"v167\", \"v168\", \"v169\", \"v170\", \"v171\", \"v172\", \"v173\", \"v174\", \"v175\", \"v176\", \"v177\", \"v178\", \"v179\", \"v180\", \"v181\", \"v182\", \"v183\", \"v184\", \"v185\", \"v186\", \"v187\", \"v188\", \"v189\", \"v190\", \"v191\", \"v192\", \"v193\", \"v194\", \"v195\", \"v196\", \"v197\", \"v198\", \"v199\", \"v200\", \"v201\", \"v202\", \"v203\", \"v204\", \"v205\", \"v206\", \"v207\", \"v208\", \"v209\", \"v210\", \"v211\", \"v212\", \"v213\", \"v214\", \"v215\", \"v216\", \"v217\", \"v218\", \"v219\", \"v220\", \"v221\", \"v222\", \"v223\", \"v224\", \"v225\", \"v226\", \"v227\", \"v228\", \"v229\", \"v230\", \"v231\", \"v232\", \"v233\", \"v234\", \"v235\", \"v236\", \"v237\", \"v238\", \"v239\", \"v240\", \"v241\", \"v242\", \"v243\", \"v244\", \"v245\", \"v246\", \"v247\", \"v248\", \"v249\", \"v250\", \"v251\", \"v252\", \"v253\", \"v254\", \"v255\", \"v256\")",
     "expect": "((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((`k`.`t` = 'v0') OR (`k`.`t` = 'v1')) OR (`k`.`t` = 'v2')) OR (`k`.`t` = 'v3')) OR (`k`.`t` = 'v4')) OR (`k`.`t` = 'v5')) OR (`k`.`t` = 'v6')) OR (`k`.`t` = 'v7')) OR (`k`.`t` = 'v8')) OR (`k`.`t` = 'v9')) OR (`k`.`t` = 'v10')) OR (`k`.`t` = 'v11')) OR (`k`.`t` = 'v12')) OR (`k`.`t` = 'v13')) OR (`k`.`t` = 'v14')) OR (`k`.`t` = 'v15')) OR (`k`.`t` = 'v16')) OR (`k`.`t` = 'v17')) OR (`k`.`t` = 'v18')) OR (`k`.`t` = 'v19')) OR (`k`.`t` = 'v20')) OR (`k`.`t` = 'v21')) OR (`k`.`t` = 'v22')) OR (`k`.`t` = 'v23')) OR (`k`.`t` = 'v24')) OR (`k`.`t` = 'v25')) OR (`k`.`t` = 'v26')) OR (`k`.`t` = 'v27')) OR (`k`.`t` = 'v28')) OR (`k`.`t` = 'v29')) OR (`k`.`t` = 'v30')) OR (`k`.`t` = 'v31')) OR (`k`.`t` = 'v32')) OR (`k`.`t` = 'v33')) OR (`k`.`t` = 'v34')) OR (`k`.`t` = 'v35')) OR (`k`.`t` = 'v36')) OR (`k`.`t` = 'v37')) OR (`k`.`t` = 'v38')) OR (`k`.`t` = 'v39')) OR (`k`.`t` = 'v40')) OR (`k`.`t` = 'v41')) OR (`k`.`t` = 'v42')) OR (`k`.`t` = 'v43')) OR (`k`.`t` = 'v44')) OR (`k`.`t` = 'v45')) OR (`k`.`t` = 'v46')) OR (`k`.`t` = 'v47')) OR (`k`.`t` = 'v48')) OR (`k`.`t` = 'v49')) OR (`k`.`t` = 'v50')) OR (`k`.`t` = 'v51')) OR (`k`.`t` = 'v52')) OR (`k`.`t` = 'v53')) OR (`k`.`t` = 'v54')) OR (`k`.`t` = 'v55')) OR (`k`.`t` = 'v56')) OR (`k`.`t` = 'v57')) OR (`k`.`t` = 'v58')) OR (`k`.`t` = 'v59')) OR (`k`.`t` = 'v60')) OR (`k`.`t` = 'v61')) OR (`k`.`t` = 'v62')) OR (`k`.`t` = 'v63')) OR (`k`.`t` = 'v64')) OR (`k`.`t` = 'v65')) OR (`k`.`t` = 'v66')) OR (`k`.`t` = 'v67')) OR (`k`.`t` = 'v68')) OR (`k`.`t` = 'v69')) OR (`k`.`t` = 'v70')) OR (`k`.`t` = 'v71')) OR (`k`.`t` = 'v72')) OR (`k`.`t` = 'v73')) OR (`k`.`t` = 'v74')) OR (`k`.`t` = 'v75')) OR (`k`.`t` = 'v76')) OR (`k`.`t` = 'v77')) OR (`k`.`t` = 'v78')) OR (`k`.`t` = 'v79')) OR (`k`.`t` = 'v80')) OR (`k`.`t` = 'v81')) OR (`k`.`t` = 'v82')) OR (`k`.`t` = 'v83')) OR (`k`.`t` = 'v84')) OR (`k`.`t` = 'v85')) OR (`k`.`t` = 'v86')) OR (`k`.`t` = 'v87')) OR (`k`.`t` = 'v88')) OR (`k`.`t` = 'v89')) OR (`k`.`t` = 'v90')) OR (`k`.`t` = 'v91')) OR (`k`.`t` = 'v92')) OR (`k`.`t` = 'v93')) OR (`k`.`t` = 'v94')) OR (`k`.`t` = 'v95')) OR (`k`.`t` = 'v96')) OR (`k`.`t` = 'v97')) OR (`k`.`t` = 'v98')) OR (`k`.`t` = 'v99')) OR (`k`.`t` = 'v100')) OR (`k`.`t` = 'v101')) OR (`k`.`t` = 'v102')) OR (`k`.`t` = 'v103')) OR (`k`.`t` = 'v104')) OR (`k`.`t` = 'v105')) OR (`k`.`t` = 'v106')) OR (`k`.`t` = 'v107')) OR (`k`.`t` = 'v108')) OR (`k`.`t` = 'v109')) OR (`k`.`t` = 'v110')) OR (`k`.`t` = 'v111')) OR (`k`.`t` = 'v112')) OR (`k`.`t` = 'v113')) OR (`k`.`t` = 'v114')) OR (`k`.`t` = 'v115')) OR (`k`.`t` = 'v116')) OR (`k`.`t` = 'v117')) OR (`k`.`t` = 'v118')) OR (`k`.`t` = 'v119')) OR (`k`.`t` = 'v120')) OR (`k`.`t` = 'v121')) OR (`k`.`t` = 'v122')) OR (`k`.`t` = 'v123')) OR (`k`.`t` = 'v124')) OR (`k`.`t` = 'v125')) OR (`k`.`t` = 'v126')) OR (`k`.`t` = 'v127')) OR (`k`.`t` = 'v128')) OR ((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((`k`.`t` = 'v129') OR (`k`.`t` = 'v130')) OR (`k`.`t` = 'v131')) OR (`k`.`t` = 'v132')) OR (`k`.`t` = 'v133')) OR (`k`.`t` = 'v134')) OR (`k`.`t` = 'v135')) OR (`k`.`t` = 'v136')) OR (`k`.`t` = 'v137')) OR (`k`.`t` = 'v138')) OR (`k`.`t` = 'v139')) OR (`k`.`t` = 'v140')) OR (`k`.`t` = 'v141')) OR (`k`.`t` = 'v142')) OR (`k`.`t` = 'v143')) OR (`k`.`t` = 'v144')) OR (`k`.`t` = 'v145')) OR (`k`.`t` = 'v146')) OR (`k`.`t` = 'v147')) OR (`k`.`t` = 'v148')) OR (`k`.`t` = 'v149')) OR (`k`.`t` = 'v150')) OR (`k`.`t` = 'v151')) OR (`k`.`t` = 'v152')) OR (`k`.`t` = 'v153')) OR (`k`.`t` = 'v154')) OR (`k`.`t` = 'v155')) OR (`k`.`t` = 'v156')) OR (`k`.`t` = 'v157')) OR (`k`.`t` = 'v158')) OR (`k`.`t` = 'v159')) OR (`k`.`t` = 'v160')) OR (`k`.`t` = 'v161')) OR (`k`.`t` = 'v162')) OR (`k`.`t` = 'v163')) OR (`k`.`t` = 'v164')) OR (`k`.`t` = 'v165')) OR (`k`.`t` = 'v166')) OR (`k`.`t` = 'v167')) OR (`k`.`t` = 'v168')) OR (`k`.`t` = 'v169')) OR (`k`.`t` = 'v170')) OR (`k`.`t` = 'v171')) OR (`k`.`t` = 'v172')) OR (`k`.`t` = 'v173')) OR (`k`.`t` = 'v174')) OR (`k`.`t` = 'v175')) OR (`k`.`t` = 'v176')) OR (`k`.`t` = 'v177')) OR (`k`.`t` = 'v178')) OR (`k`.`t` = 'v179')) OR (`k`.`t` = 'v180')) OR (`k`.`t` = 'v181')) OR (`k`.`t` = 'v182')) OR (`k`.`t` = 'v183')) OR (`k`.`t` = 'v184')) OR (`k`.`t` = 'v185')) OR (`k`.`t` = 'v186')) OR (`k`.`t` = 'v187')) OR (`k`.`t` = 'v188')) OR (`k`.`t` = 'v189')) OR (`k`.`t` = 'v190')) OR (`k`.`t` = 'v191')) OR (`k`.`t` = 'v192')) OR (`k`.`t` = 'v193')) OR (`k`.`t` = 'v194')) OR (`k`.`t` = 'v195')) OR (`k`.`t` = 'v196')) OR (`k`.`t` = 'v197')) OR (`k`.`t` = 'v198')) OR (`k`.`t` = 'v199')) OR (`k`.`t` = 'v200')) OR (`k`.`t` = 'v201')) OR (`k`.`t` = 'v202')) OR (`k`.`t` = 'v203')) OR (`k`.`t` = 'v204')) OR (`k`.`t` = 'v205')) OR (`k`.`t` = 'v206')) OR (`k`.`t` = 'v207')) OR (`k`.`t` = 'v208')) OR (`k`.`t` = 'v209')) OR (`k`.`t` = 'v210')) OR (`k`.`t` = 'v211')) OR (`k`.`t` = 'v212')) OR (`k`.`t` = 'v213')) OR (`k`.`t` = 'v214')) OR (`k`.`t` = 'v215')) OR (`k`.`t` = 'v216')) OR (`k`.`t` = 'v217')) OR (`k`.`t` = 'v218')) OR (`k`.`t` = 'v219')) OR (`k`.`t` = 'v220')) OR (`k`.`t` = 'v221')) OR (`k`.`t` = 'v222')) OR (`k`.`t` = 'v223')) OR (`k`.`t` = 'v224')) OR (`k`.`t` = 'v225')) OR (`k`.`t` = 'v226')) OR (`k`.`t` = 'v227')) OR (`k`.`t` = 'v228')) OR (`k`.`t` = 'v229')) OR (`k`.`t` = 'v230')) OR (`k`.`t` = 'v231')) OR (`k`.`t` = 'v232')) OR (`k`.`t` = 'v233')) OR (`k`.`t` = 'v234')) OR (`k`.`t` = 'v235')) OR (`k`.`t` = 'v236')) OR (`k`.`t` = 'v237')) OR (`k`.`t` = 'v238')) OR (`k`.`t` = 'v239')) OR (`k`.`t` = 'v240')) OR (`k`.`t` = 'v241')) OR (`k`.`t` = 'v242')) OR (`k`.`t` = 'v243')) OR (`k`.`t` = 'v244')) OR (`k`.`t` = 'v245')) OR (`k`.`t` = 'v246')) OR (`k`.`t` = 'v247')) OR (`k`.`t` = 'v248')) OR (`k`.`t` = 'v249')) OR (`k`.`t` = 'v250')) OR (`k`.`t` = 'v251')) OR (`k`.`t` = 'v252')) OR (`k`.`t` = 'v253')) OR (`k`.`t` = 'v254')) OR (`k`.`t` = 'v255')) OR (`k`.`t` = 'v256')))",
@@ -20949,7 +20949,7 @@ export const SQL_CASES = [
   },
   {
     "name": "agg.fold.join.at-255-pieces-is-a-left-fold",
-    "at": "49-kind-guarantees.sqlt:1117",
+    "at": "49-kind-guarantees.sqlt:1116",
     "dialect": "mariadb",
     "source": "JOIN((T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T), \"-\")",
     "expect": "CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(`k`.`t`, '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`)",
@@ -20966,7 +20966,7 @@ export const SQL_CASES = [
   },
   {
     "name": "agg.fold.join.at-257-pieces-is-balanced",
-    "at": "49-kind-guarantees.sqlt:1130",
+    "at": "49-kind-guarantees.sqlt:1129",
     "dialect": "mariadb",
     "source": "JOIN((T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T), \"-\")",
     "expect": "CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(`k`.`t`, '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT('-', `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`))",
@@ -20983,7 +20983,7 @@ export const SQL_CASES = [
   },
   {
     "name": "agg.fold.any.at-600-splits-again",
-    "at": "49-kind-guarantees.sqlt:1143",
+    "at": "49-kind-guarantees.sqlt:1142",
     "dialect": "mariadb",
     "source": "ANY((N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N), _ > 0)",
     "expect": "((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((`k`.`n` > 0) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR ((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((`k`.`n` > 0) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0))) OR (((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((`k`.`n` > 0) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR ((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((`k`.`n` > 0) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0))))",
@@ -21000,7 +21000,7 @@ export const SQL_CASES = [
   },
   {
     "name": "agg.fold.any.at-257-on-sqlite",
-    "at": "49-kind-guarantees.sqlt:1156",
+    "at": "49-kind-guarantees.sqlt:1155",
     "dialect": "sqlite",
     "source": "ANY((N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N), _ > 0)",
     "expect": "((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC)) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR ((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC)) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))))",

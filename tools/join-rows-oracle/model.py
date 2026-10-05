@@ -50,7 +50,7 @@ def source(v):
 def ascii_upper(s):
     """Names compare ASCII-case-insensitively (spec §7.4): only a-z move.
     Python's str.upper() would fold "ß" to "SS" -- the defect this model once
-    shared with two hosts (review 2026-09-25 SEM-04)."""
+    shared with two hosts."""
     return ''.join(chr(ord(c) - 32) if 'a' <= c <= 'z' else c for c in s)
 
 

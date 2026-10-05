@@ -10,7 +10,7 @@ segment starts so an error compares as (segment, offset).
 import random, sys
 count, seed, out_corpus, out_src = int(sys.argv[1]), int(sys.argv[2]), sys.argv[3], sys.argv[4]
 UNIFORM = len(sys.argv) > 5 and sys.argv[5] == 'uniform'
-# `pipeline`: no joins -- sorts, maps, filters and slices (review 2026-09-25 TEST-09).
+# `pipeline`: no joins -- sorts, maps, filters and slices.
 PIPELINE = len(sys.argv) > 5 and sys.argv[5] == 'pipeline'
 R = random.Random(seed)
 

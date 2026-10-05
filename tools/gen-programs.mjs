@@ -163,7 +163,7 @@ function step(d) {
     case 12: {
       // The left read varies over a field only the source has, the shared
       // ones, and one only the right has, so a second LINK reads its joined
-      // row the way run() does (review 2026-09-28 SQL-05, TEST-13).
+      // row the way run() does.
       const l = pick(['customer_id', 'customer_id', 'id', 'name', 'amount']);
       return `${pick(['LINK', 'LINK_LEFT'])}(${JOIN_RIGHT}, ${chance(0.5) ? `O, C, O["${l}"] == C["id"]` : `_1["${l}"] == _2["id"]`})`;
     }
@@ -302,7 +302,7 @@ function sizedCall(d) {
   }
 }
 
-// Targeted families (review 2026-09-25 TEST-05/TEST-10). Random combinations of
+// Targeted families. Random combinations of
 // ASCII fields and short pipelines were too unlikely ever to produce these
 // shapes, and each one hid a defect in one host or more: a computed index read
 // again by one node (SEM-01), _K over the keys a FILTER kept (SEM-02), field

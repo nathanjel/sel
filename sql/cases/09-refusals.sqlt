@@ -193,8 +193,8 @@ the row has -- a binder a LINK put there (spec §7.4) -- and the shape the row
 does not have otherwise: a position, a stray name, a field. Every such shape
 is E_SQL_SHAPE where run() raises E_NO_KEY: at the inner index for a key the
 row lacks, at the outer one for a field indexed further. It was the outer index
-for all of them until review 2026-09-28 SQL-07, which also stopped a relation's
-name, table or alias counting as a key (SEL-0043, review 2026-09-15).
+for all of them once, when a relation's
+name, table or alias also counted as a key (SEL-0043).
 --- dialect
 mariadb
 --- bindings
