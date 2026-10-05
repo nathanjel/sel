@@ -558,4 +558,37 @@ $ctx = $fresh();
 $res = Sql::executeHybrid(Sql::planHybrid(Sel::compile('A["k"] = "99"; A'), 'sqlite'), static fn () => [], $ctx);
 check($res->get('k')->asText() === '99' && $aOf($ctx) === '1', 'an assignment into a nested field leaves the caller\'s context alone');
 
+// --- Binding::column() and raw() refuse what JS and Python refuse ---------------------
+// The flags are checked in the body, with E_SQL_BINDING, not coerced by a typed
+// signature (`'yes'` was exact = true) or thrown as a TypeError a strict caller's
+// tryTranslate does not catch; `splitSargable` is the ninth argument, as in JS and
+// Python, where PHP dropped it.
+$refusal = static function (callable $make): ?string {
+    try {
+        $make();
+        return null;
+    } catch (\Sel\Sql\SqlError $e) {
+        return $e->code;
+    } catch (\Throwable $e) {
+        return get_class($e);
+    }
+};
+foreach ([
+    'column exact "yes"' => static fn () => Binding::column('c', null, 'NUM', 'yes'),
+    'column sargable 1' => static fn () => Binding::column('c', null, 'NUM', false, 1),
+    'column guard null' => static fn () => Binding::column('c', null, 'NUM', false, false, null),
+    'column collation 5' => static fn () => Binding::column('c', null, 'NUM', false, false, false, 5),
+    'column splitSargable "y"' => static fn () => Binding::column('c', null, 'NUM', false, false, false, null, null, 'y'),
+    'raw exact 1' => static fn () => Binding::raw('x', 'NUM', 1),
+    'raw collation []' => static fn () => Binding::raw('x', 'NUM', false, false, false, []),
+] as $why => $make) {
+    check($refusal($make) === 'E_SQL_BINDING', "Binding refuses {$why} with E_SQL_BINDING");
+}
+check(Binding::column('c', null, 'NUM', false, false, false, null, null, true)->spec['prefilter'] === 'separate',
+    'column() takes splitSargable');
+check(Binding::raw('x', 'NUM', false, false, false, null, null, true)->spec['prefilter'] === 'separate',
+    'raw() takes splitSargable');
+check(Binding::column('c', null, 'NUM', false, false, false, 'binary')->spec['exact'] === true,
+    'a collation string still folds into the flags');
+
 echo "PHP optimizer checks: {$checks} passed\n";

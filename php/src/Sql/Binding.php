@@ -65,9 +65,10 @@ final class Binding
      * numeric function argument, and a bare aggregate body.
      */
     public static function column($column, $table = null,
-                                  $type = 'UNKNOWN', bool $exact = false,
-                                  bool $sargable = false, bool $guard = false,
-                                  ?string $collation = null, $prefilter = null): self
+                                  $type = 'UNKNOWN', $exact = false,
+                                  $sargable = false, $guard = false,
+                                  $collation = null, $prefilter = null,
+                                  $splitSargable = false): self
     {
         self::checkName('column', $column);
         if ($table !== null) {
@@ -75,7 +76,7 @@ final class Binding
         }
         self::checkType($type);
         return new self(['kind' => 'column', 'column' => $column, 'table' => $table, 'type' => $type]
-            + self::columnFlags($exact, $sargable, $guard, $collation, $prefilter));
+            + self::columnFlags('a column binding', $exact, $sargable, $guard, $collation, $prefilter, $splitSargable));
     }
 
     /**
@@ -86,9 +87,10 @@ final class Binding
      * layer's -- which is exactly why it is a named constructor and not a key
      * somebody can leave in a map by accident.
      */
-    public static function raw($sql, $type = 'UNKNOWN', bool $exact = false,
-                               bool $sargable = false, bool $guard = false,
-                               ?string $collation = null, $prefilter = null): self
+    public static function raw($sql, $type = 'UNKNOWN', $exact = false,
+                               $sargable = false, $guard = false,
+                               $collation = null, $prefilter = null,
+                               $splitSargable = false): self
     {
         self::checkString('a raw column binding', $sql);
         if ($sql === '') {
@@ -96,22 +98,33 @@ final class Binding
         }
         self::checkType($type);
         return new self(['kind' => 'column', 'raw' => $sql, 'type' => $type]
-            + self::columnFlags($exact, $sargable, $guard, $collation, $prefilter));
+            + self::columnFlags('a raw column binding', $exact, $sargable, $guard, $collation, $prefilter, $splitSargable));
     }
 
     /**
-     * The flags column() and raw() share: a collation spelling folded into
-     * exact/sargable, then the prefilter.
+     * The flags column() and raw() share: the three flags checked, a collation
+     * spelling folded into exact/sargable, then the prefilter (`splitSargable`
+     * is the boolean spelling of prefilter 'separate'). Untyped parameters checked
+     * here, as everything else in this file is (see checkString): a typed `bool`
+     * coerced 'yes' to true for a loose caller and threw a TypeError, which
+     * tryTranslate does not catch, at a strict one. `$label` names the binding.
      *
      * @return array<string,mixed>
      */
-    private static function columnFlags(bool $exact, bool $sargable, bool $guard,
-                                        ?string $collation, $prefilter): array
+    private static function columnFlags(string $label, $exact, $sargable, $guard,
+                                        $collation, $prefilter, $splitSargable): array
     {
+        self::checkBool("{$label}'s exact flag", $exact);
+        self::checkBool("{$label}'s sargable flag", $sargable);
+        self::checkBool("{$label}'s guard flag", $guard);
+        self::checkBool("{$label}'s splitSargable flag", $splitSargable);
         if ($collation !== null) {
             [$cExact, $cSargable] = self::checkCollation($collation);
             $exact = $exact || $cExact;
             $sargable = $sargable || $cSargable;
+        }
+        if ($splitSargable && $prefilter === null) {
+            $prefilter = 'separate';
         }
         $pref = self::checkPrefilter($prefilter);
         $flags = ['exact' => $exact, 'sargable' => $sargable, 'guard' => $guard];
@@ -319,6 +332,15 @@ final class Binding
     }
 
     /** @param mixed $v */
+    private static function checkBool(string $what, $v): void
+    {
+        if (!is_bool($v)) {
+            throw new SqlError('E_SQL_BINDING',
+                "{$what} must be a boolean, and this is " . get_debug_type($v));
+        }
+    }
+
+    /** @param mixed $v */
     private static function checkName(string $what, $v): void
     {
         self::checkString("a binding's {$what}", $v);
@@ -381,8 +403,12 @@ final class Binding
     /**
      * @return array{0: bool, 1: bool}
      */
-    private static function checkCollation(string $c): array
+    private static function checkCollation($c): array
     {
+        if (!is_string($c)) {
+            throw new SqlError('E_SQL_BINDING',
+                'collation must be a string, and this is ' . get_debug_type($c));
+        }
         $lower = \Sel\Utf8::lower($c);
         if ($lower === 'binary' || $lower === 'exact') {
             return [true, false];
