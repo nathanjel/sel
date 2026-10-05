@@ -698,10 +698,9 @@ def _literal_helpers(leading: list[Node], options: dict[str, Any]) -> dict[str, 
 
 def _unwind_through_helpers(result: Node, defs: dict[str, Node],
                             literals: dict[str, Node]
-                            ) -> tuple[Node | None, list[Node], set[str]]:
+                            ) -> tuple[Node | None, list[Node]]:
     """The pipeline the planner probes: the result unwound, and where its
-    source is a helper, that helper's definition unwound in turn. The third
-    value is the helpers unwound through: their steps are IN the pipeline now."""
+    source is a helper, that helper's definition unwound in turn."""
     source, steps = unwind_pipeline(_inline_literals(result, literals))
     seen: set[str] = set()
     while (source is not None and source.t == 'var' and source.name in defs
@@ -711,7 +710,14 @@ def _unwind_through_helpers(result: Node, defs: dict[str, Node],
             _inline_literals(defs[source.name], literals))
         source = inner_source
         steps = [*inner_steps, *steps]
-    return source, steps, seen
+    # The source the loop stopped at reads the catalogue's binding when its name
+    # is also a helper's (the helper was written `ORDERS = ORDERS .> DROP(2)`):
+    # mark it, on a copy, so wrapping the pipeline in the helpers again neither
+    # inlines the helper into the very read that was its own definition (DROP
+    # applied twice) nor counts that read as one of the helper's.
+    if source is not None and source.t == 'var' and source.name in defs:
+        source = source.replaced(binding=True)
+    return source, steps
 
 
 def _read_names(node: Node | None, out: set[str] | None = None) -> set[str]:
@@ -723,7 +729,10 @@ def _read_names(node: Node | None, out: set[str] | None = None) -> set[str]:
     if node is None:
         return out
     if node.t == 'var':
-        out.add(node.name)
+        # A read of the BINDING, reached by unwinding through a helper of the
+        # same name, is not a read of that helper.
+        if not node.binding:
+            out.add(node.name)
         return out
     for item in node.args:
         _read_names(item, out)
@@ -933,7 +942,7 @@ def _plan_hybrid(program: Program, dialect: str,
         return (node is not None and node.t == 'var' and catalog.has(node.name)
                 and catalog.get(node.name, node.pos)['kind'] == 'relation')
 
-    unwound_source, unwound_steps, unwound = _unwind_through_helpers(result, defs, literals)
+    unwound_source, unwound_steps = _unwind_through_helpers(result, defs, literals)
     if not unwound_steps or not is_relation(unwound_source):
         return _pure_memory_plan(program, dialect, catalog)
     # A pipeline this long, unwound through its helpers, is a tree deeper than the
@@ -947,22 +956,16 @@ def _plan_hybrid(program: Program, dialect: str,
     if not steps or not is_relation(source):
         return _pure_memory_plan(program, dialect, catalog)
 
-    # A helper the pipeline was unwound through has its steps IN the pipeline,
-    # so carrying its assignment in front of it as well applies them twice --
-    # `ORDERS = ORDERS .> DROP(2); ORDERS .> TAKE(3)` skipped four rows -- unless
-    # some step also reads it as a value, in which case it stays (PHP-C34).
-    read_by_steps: set[str] = set()
-    for step in steps:
-        # args[0] is the step's input -- the pipeline so far -- not something the
-        # step reads as a value.
-        for arg in step.args[1:]:
-            _read_names(arg, read_by_steps)
-    kept_leading = [s for s in leading
-                    if _assigned_name(s) not in unwound
-                    or _assigned_name(s) in read_by_steps]
+    # A helper the pipeline was unwound through has its steps IN the pipeline;
+    # it travels in front of a part only when that part reads its name as a value
+    # (`_with_helpers` keeps exactly the assignments a tree reads). The source a
+    # self-named helper was unwound to is marked as a read of the binding, so it
+    # neither keeps the helper nor has it inlined again -- `ORDERS = ORDERS .>
+    # DROP(2); ORDERS .> TAKE(3)` is OFFSET 2, and a step that also counts ORDERS
+    # still gets the helper (plan.helper.rebinds-relation-once).
     helpers = _Helpers(
         defs,
-        lambda node: _with_helpers(kept_leading, node),
+        lambda node: _with_helpers(leading, node),
         # The physical sources of a wrapped tree are read off what the
         # translator renders: stage 1's tree, where an assignment a binder
         # shadows is gone.

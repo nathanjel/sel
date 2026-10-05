@@ -217,7 +217,7 @@ def _substitute(node: Any, defs: dict[str, Any], bound: list[str],
                'for it', node.pos)
     t = node.t
     if t == 'var':
-        if node.name in bound:
+        if node.binding or node.name in bound:
             return node
         d = defs.get(node.name)
         if d is None:

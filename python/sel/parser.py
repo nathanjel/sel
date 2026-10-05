@@ -146,6 +146,12 @@ class Node:
     # kept elements and copies whatever it collects (optimizer.adopts_elements),
     # so FILTER hands them on as they are instead of cloning each one (PY-REG-1).
     adopt_items: bool = False
+    # SQL planner metadata, on the planner's own copy of a `var`: this read is
+    # the catalogue's BINDING, reached by unwinding through a helper of the same
+    # name (`ORDERS = ORDERS .> DROP(2); ORDERS .> ...`), not a read of that
+    # helper -- stage 1 does not inline the helper into it, and it does not keep
+    # the helper alive (sql/hybrid.py, _unwind_through_helpers).
+    binding: bool = False
     # Physical-tree metadata: the function eval_node runs this node with
     # (eval.handler_for), stamped by the optimiser on the nodes its own copy
     # holds (optimizer.bind_handlers). replaced() does not carry it -- a copy
@@ -166,7 +172,7 @@ class Node:
                  self.obj, self.idx, self.target, self.value, self.items, self.args,
                  self.spec, self.grouped, self.dec, self.math_plan, self._cached_slot,
                  self.record_shape, self.keys_unobserved, self._not_constant,
-                 self.const_value, self.adopt_items)
+                 self.const_value, self.adopt_items, self.binding)
         for k, v in changes.items():
             setattr(c, k, v)
         return c
