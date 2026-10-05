@@ -53,17 +53,73 @@ final class Dec
     }
 
     /**
-     * Test hook (item 1): base-10 conversions between digit strings and GMP so
-     * far, both ways. A test resets it and reads how many a computation cost.
+     * Base-10 conversions between digit strings and GMP so far, both ways. A
+     * test resets it and reads how many a computation cost (testHooks()).
      */
-    public static int $conversions = 0;
+    private static int $conversions = 0;
 
     /**
-     * Item 1: when true (and ext-gmp is there), a result too big for a native int
-     * keeps its magnitude as GMP and writes its digits only when text is asked
-     * for. Public so a test can hold both forms to the same answers.
+     * When true (and ext-gmp is there), a result too big for a native int keeps
+     * its magnitude as GMP and writes its digits only when text is asked for.
+     * A test turns it off to hold both forms to the same answers (testHooks()).
      */
-    public static bool $lazyDigits = true;
+    private static bool $lazyDigits = true;
+
+    /**
+     * The test hooks, behind one validated door: a test (tools/check-php-runtime.php,
+     * tools/check-decimal.php, tools/perf) sets some of them and gets every hook's
+     * previous value back, which it hands to testHooks() again to restore them.
+     * None of them changes an answer; each picks which of two exact paths
+     * computes it, or counts work. There is no reason to call this outside a test.
+     *
+     *   gmp            ?bool  false: the pure-PHP digit-string paths even with
+     *                         ext-gmp; true: GMP if loaded; null: ask the runtime
+     *   lazyDigits     bool   see $lazyDigits
+     *   fastPaths      bool   see $fastPaths
+     *   mulCarryEvery  int    1 .. 92233, see $mulCarryEvery
+     *   karatsubaFrom  int    >= 1, see $karatsubaFrom
+     *   conversions    int    >= 0, the GMP conversion counter (read it from
+     *                         the returned array)
+     *
+     * @internal
+     * @param array<string, bool|int|null> $set
+     * @return array{gmp:?bool, lazyDigits:bool, fastPaths:bool, mulCarryEvery:int, karatsubaFrom:int, conversions:int}
+     */
+    public static function testHooks(array $set = []): array
+    {
+        $was = [
+            'gmp' => self::$hasGmp,
+            'lazyDigits' => self::$lazyDigits,
+            'fastPaths' => self::$fastPaths,
+            'mulCarryEvery' => self::$mulCarryEvery,
+            'karatsubaFrom' => self::$karatsubaFrom,
+            'conversions' => self::$conversions,
+        ];
+        foreach ($set as $name => $value) {
+            $ok = match ($name) {
+                'gmp' => $value === null || is_bool($value),
+                'lazyDigits', 'fastPaths' => is_bool($value),
+                'mulCarryEvery' => is_int($value) && $value >= 1 && $value <= intdiv(PHP_INT_MAX, 10 ** 14),
+                'karatsubaFrom' => is_int($value) && $value >= 1,
+                'conversions' => is_int($value) && $value >= 0,
+                default => throw new \InvalidArgumentException("no Dec test hook named {$name}"),
+            };
+            if (!$ok) {
+                throw new \InvalidArgumentException("Dec test hook {$name} cannot be " . var_export($value, true));
+            }
+        }
+        foreach ($set as $name => $value) {
+            match ($name) {
+                'gmp' => self::$hasGmp = $value === null ? null : ($value && extension_loaded('gmp')),
+                'lazyDigits' => self::$lazyDigits = $value,
+                'fastPaths' => self::$fastPaths = $value,
+                'mulCarryEvery' => self::$mulCarryEvery = $value,
+                'karatsubaFrom' => self::$karatsubaFrom = $value,
+                'conversions' => self::$conversions = $value,
+            };
+        }
+        return $was;
+    }
 
     /** @var array<int, \GMP> */
     private static array $pow10Gmp = [];
@@ -172,32 +228,22 @@ final class Dec
     }
 
     /**
-     * Test hook: false makes every operation take the pure-PHP digit-string
-     * paths on a machine that has ext-gmp; null goes back to asking the runtime.
-     * There is no reason to call it outside a test.
-     */
-    public static function forceGmp(?bool $on): void
-    {
-        self::$hasGmp = $on === null ? null : ($on && extension_loaded('gmp'));
-    }
-
-    /**
      * How many rows of the limb product may add into the accumulators before
      * they are carried. A row adds at most (10^7 - 1)^2 < 10^14 to a slot, and
      * PHP turns an integer overflow into a float, so a slot must never see more
      * than PHP_INT_MAX / 10^14 = 92,233 of them: past that the result was a
-     * float and the next intdiv() an uncaught TypeError (PHP-C17). Public so a
-     * test can lower it to force the carry every row.
+     * float and the next intdiv() an uncaught TypeError. A test lowers it to
+     * force the carry every row (testHooks()).
      */
-    public static int $mulCarryEvery = 50000;
+    private static int $mulCarryEvery = 50000;
 
     /**
-     * Test hook: false makes parse() and div() take their general
-     * digit-string paths on operands the native fast paths would handle, so a
-     * test can hold the two to identical results (PHP-P13, P15). A native-integer mod() was tried and dropped: 5-8% over the
-     * general path, below what earns a second code path.
+     * False makes parse() and div() take their general digit-string paths on
+     * operands the native fast paths would handle, so a test can hold the two
+     * to identical results (testHooks()). A native-integer mod() was tried and
+     * dropped: 5-8% over the general path, below what earns a second code path.
      */
-    public static bool $fastPaths = true;
+    private static bool $fastPaths = true;
 
     private static function hasGmp(): bool
     {
@@ -373,8 +419,8 @@ final class Dec
         return self::fromLimbs(self::mulLimbs(self::toLimbs($a), self::toLimbs($b)));
     }
 
-    /** Operand sizes (in limbs) below which schoolbook beats Karatsuba's bookkeeping. */
-    public static int $karatsubaFrom = 40;
+    /** Operand sizes (in limbs) below which schoolbook beats Karatsuba's bookkeeping (testHooks()). */
+    private static int $karatsubaFrom = 40;
 
     /**
      * Product of two limb arrays (base 10^7, least significant first, no leading

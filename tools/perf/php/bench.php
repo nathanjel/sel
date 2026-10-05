@@ -27,7 +27,7 @@ foreach (array_slice($argv, 1) as $a) {
     elseif ($a === '--json') $opts['json'] = true;
     else $filters[] = $a;
 }
-Dec::forceGmp($opts['gmp'] === 'on' ? null : false);
+Dec::testHooks(['gmp' => $opts['gmp'] === 'on' ? null : false]);
 mt_srand(20260930);
 
 function lcheck(mixed $v): string

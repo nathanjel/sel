@@ -17,12 +17,12 @@ use Sel\SelError;
 // lazy digits, its GMP form).
 $mode = 'php';
 if (getenv('SEL_PHP_FORCE_GMP') === '0') {
-    Dec::forceGmp(false);
+    Dec::testHooks(['gmp' => false]);
     $mode = 'php (pure PHP)';
 }
 $lazyOperands = getenv('SEL_PHP_LAZY_OPERANDS') === '1';
 if ($lazyOperands) {
-    Dec::$lazyDigits = true;
+    Dec::testHooks(['lazyDigits' => true]);
     $mode = 'php (lazy operands)';
 }
 

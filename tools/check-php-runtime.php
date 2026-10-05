@@ -317,7 +317,7 @@ $expect('Dec::checked does not trust a forged native cache', function () {
 foreach ([true, false] as $gmp) {
     $label = $gmp ? 'with ext-gmp' : 'without ext-gmp';
     $expect("digit strings are base 10, $label", function () use ($gmp) {
-        Dec::forceGmp($gmp);
+        Dec::testHooks(['gmp' => $gmp]);
         try {
             $octal = ['neg' => false, 'digits' => '010', 'scale' => 0];   // un-normalised: never octal
             $hex = ['neg' => false, 'digits' => '0', 'scale' => 0];
@@ -325,14 +325,14 @@ foreach ([true, false] as $gmp) {
                 && Dec::format(Dec::mul($octal, ['neg' => false, 'digits' => '010', 'scale' => 0])) === '100'
                 && Dec::format(Dec::div(['neg' => false, 'digits' => '0100', 'scale' => 0], Dec::parse('4'))) === '25'
                 && Dec::format(Dec::sub($hex, Dec::parse('1'))) === '-1';
-        } finally { Dec::forceGmp(null); }
+        } finally { Dec::testHooks(['gmp' => null]); }
     });
     $expect("limb product carries before an accumulator can overflow, $label", function () use ($gmp) {
-        $was = Dec::$mulCarryEvery;
+        $was = Dec::testHooks()['mulCarryEvery'];
         try {
             foreach ([1, 2, 7] as $every) {
-                Dec::$mulCarryEvery = $every;
-                Dec::forceGmp($gmp);
+                Dec::testHooks(['mulCarryEvery' => $every]);
+                Dec::testHooks(['gmp' => $gmp]);
                 $a = str_repeat('9', 2100); $b = str_repeat('9', 2113);
                 $got = Dec::format(Dec::mul(Dec::parse($a), Dec::parse($b)));
                 // (10^m - 1)(10^n - 1) = 10^(m+n) - 10^m - 10^n + 1, worked by hand:
@@ -341,20 +341,29 @@ foreach ([true, false] as $gmp) {
                 if ($got !== $want) return "every=$every";
             }
             return true;
-        } finally { Dec::$mulCarryEvery = $was; Dec::forceGmp(null); }
+        } finally { Dec::testHooks(['mulCarryEvery' => $was]); Dec::testHooks(['gmp' => null]); }
     });
 }
+$expect('Dec test hooks refuse a value that would break arithmetic, and restore', function () {
+    $before = Dec::testHooks();
+    foreach ([['mulCarryEvery' => 0], ['mulCarryEvery' => 92234], ['karatsubaFrom' => 0], ['fastPaths' => 1], ['nosuch' => true]] as $bad) {
+        try { Dec::testHooks($bad); return 'accepted ' . json_encode($bad); } catch (\InvalidArgumentException) {}
+    }
+    $was = Dec::testHooks(['mulCarryEvery' => 3]);
+    Dec::testHooks($was);
+    return Dec::testHooks() === $before && (new ReflectionProperty(Dec::class, 'mulCarryEvery'))->isPrivate();
+});
 $expect('the default carry interval keeps a slot under PHP_INT_MAX', fn() =>
-    is_int(Dec::$mulCarryEvery * (10 ** 7 - 1) ** 2 + 10 ** 7) && Dec::$mulCarryEvery > 0);
+    is_int(Dec::testHooks()['mulCarryEvery'] * (10 ** 7 - 1) ** 2 + 10 ** 7) && Dec::testHooks()['mulCarryEvery'] > 0);
 // The GMP-vs-plain results agree on random operands.
 $expect('ext-gmp and pure-PHP multiplication agree', function () {
     mt_srand(29);
     for ($k = 0; $k < 40; $k++) {
         $a = (string) mt_rand(1, 9) . implode('', array_map(fn() => (string) mt_rand(0, 9), range(1, mt_rand(1, 400))));
         $b = (string) mt_rand(1, 9) . implode('', array_map(fn() => (string) mt_rand(0, 9), range(1, mt_rand(1, 400))));
-        Dec::forceGmp(true);  $x = Dec::format(Dec::mul(Dec::parse($a), Dec::parse($b)));
-        Dec::forceGmp(false); $y = Dec::format(Dec::mul(Dec::parse($a), Dec::parse($b)));
-        Dec::forceGmp(null);
+        Dec::testHooks(['gmp' => true]);  $x = Dec::format(Dec::mul(Dec::parse($a), Dec::parse($b)));
+        Dec::testHooks(['gmp' => false]); $y = Dec::format(Dec::mul(Dec::parse($a), Dec::parse($b)));
+        Dec::testHooks(['gmp' => null]);
         if ($x !== $y) return "$a * $b";
     }
     return true;
@@ -757,21 +766,21 @@ $expect('P4/P5: limb division and Karatsuba multiplication agree with GMP (force
     mt_srand(5);
     $limbs = [0, 1, 2, 9999999, 9999998, 5000000, 4999999, 5000001, 1234567, 7654321];
     $num = static function (int $n) use ($limbs): string { $s = ''; for ($i = 0; $i < $n; $i++) { $v = $limbs[mt_rand(0, 9)]; if ($i === 0 && $v === 0) $v = 1; $s .= $i === 0 ? (string) $v : sprintf('%07d', $v); } return $s; };
-    $from = Dec::$karatsubaFrom;
+    $from = Dec::testHooks()['karatsubaFrom'];
     try {
         foreach ([2, 3, 40] as $k) {
-            Dec::$karatsubaFrom = $k;
+            Dec::testHooks(['karatsubaFrom' => $k]);
             for ($t = 0; $t < 400; $t++) {
                 $nb = mt_rand(2, 14); $na = mt_rand($nb, $nb + 14);
                 $a = $num($na); $b = $num($nb);
                 foreach (['div', 'mod', 'mul'] as $op) {
-                    Dec::forceGmp(null); $g = Dec::format(Dec::$op(Dec::parse($a), Dec::parse($b)));
-                    Dec::forceGmp(false); $p = Dec::format(Dec::$op(Dec::parse($a), Dec::parse($b)));
+                    Dec::testHooks(['gmp' => null]); $g = Dec::format(Dec::$op(Dec::parse($a), Dec::parse($b)));
+                    Dec::testHooks(['gmp' => false]); $p = Dec::format(Dec::$op(Dec::parse($a), Dec::parse($b)));
                     if ($g !== $p) return false;
                 }
             }
         }
-    } finally { Dec::$karatsubaFrom = $from; Dec::forceGmp(null); }
+    } finally { Dec::testHooks(['karatsubaFrom' => $from]); Dec::testHooks(['gmp' => null]); }
     return true;
 });
 $expect('P6: LINK with an outside variable in the key uses the hash path and answers as the nested loop does', function () {
@@ -830,9 +839,9 @@ $expect('P13/P15: parse, div and mod on native mantissas give the arrays of the 
     $texts = $edge;
     for ($i = 0; $i < 6000; $i++) $texts[] = $num();
     $same = static function (callable $f) {
-        Dec::$fastPaths = true;  $a = $f();
-        Dec::$fastPaths = false; $b = $f();
-        Dec::$fastPaths = true;
+        Dec::testHooks(['fastPaths' => true]);  $a = $f();
+        Dec::testHooks(['fastPaths' => false]); $b = $f();
+        Dec::testHooks(['fastPaths' => true]);
         return $a === $b;
     };
     foreach ($texts as $t) {
@@ -849,7 +858,7 @@ $expect('P13/P15: parse, div and mod on native mantissas give the arrays of the 
             if (!$same($run)) return false;
         }
     }
-    Dec::$fastPaths = true;
+    Dec::testHooks(['fastPaths' => true]);
     return true;
 });
 $expect('P14: cmp on digit strings agrees with GMP, equal widths differing in the last digit included', function () {
@@ -1056,16 +1065,16 @@ $expect('P30: a cached `i` pattern is not re-scanned, and a non-ASCII pattern st
 
 // --- Item 1 (2026-10-01): lazy digits -----------------------------------------
 // A big result may keep its magnitude as GMP and write its digits only when text
-// is asked for (Dec::$lazyDigits). Whatever it keeps, these must hold: every
+// is asked for (the lazyDigits test hook, Dec::testHooks()). Whatever it keeps, these must hold: every
 // operation answers as the pure-PHP digit-string path does, the host sees
 // today's arrays, the digit cap and its errors are where they were, and a chain
 // of big products does not convert digits in between (the conversion counter).
 $item1Modes = extension_loaded('gmp') ? [[true, true], [true, false], [false, false]] : [[false, false]];
 $item1With = static function (bool $gmp, bool $lazy, callable $f) {
-    $wasLazy = Dec::$lazyDigits;
-    Dec::forceGmp($gmp);
-    Dec::$lazyDigits = $lazy;
-    try { return $f(); } finally { Dec::forceGmp(null); Dec::$lazyDigits = $wasLazy; }
+    $wasLazy = Dec::testHooks()['lazyDigits'];
+    Dec::testHooks(['gmp' => $gmp]);
+    Dec::testHooks(['lazyDigits' => $lazy]);
+    try { return $f(); } finally { Dec::testHooks(['gmp' => null]); Dec::testHooks(['lazyDigits' => $wasLazy]); }
 };
 $item1Num = static function (int $w, int $sc, bool $neg): string {
     $t = (string) mt_rand(1, 9);
@@ -1159,7 +1168,7 @@ $expect('item 1 T3: the integer-digit cap holds for every form, at the same plac
                 try { Dec::add($atCap, $ulp, $pos); return "past the cap by add, scale $sc"; }
                 catch (SelError $e) { if ($e->code !== 'E_RANGE' || $e->line !== $pos['line'] || $e->col !== $pos['col']) return "add error {$e->code}"; }
             }
-            if (!Dec::$lazyDigits) return true;   // the products below are GMP-sized: lazy mode only
+            if (!Dec::testHooks()['lazyDigits']) return true;   // the products below are GMP-sized: lazy mode only
             $half = Dec::parse('1' . str_repeat('0', intdiv($L, 2)));
             $ok = Dec::mul($half, Dec::parse(str_repeat('9', intdiv($L, 2))), $pos);   // 10^L - 10^(L/2): L digits
             if (strlen(Dec::format($ok)) !== $L) return 'a product at the cap';
@@ -1191,11 +1200,11 @@ $expect('item 1 T4: comparisons across scale gaps agree in every form', function
 });
 $expect('item 1 T5: a chain of big products converts no digits in between', function () use ($run, $item1With) {
     if (!extension_loaded('gmp')) return true;
-    return $item1With(true, Dec::$lazyDigits, function () use ($run) {
+    return $item1With(true, Dec::testHooks()['lazyDigits'], function () use ($run) {
         $count = function (int $k) use ($run): int {
-            Dec::$conversions = 0;
+            Dec::testHooks(['conversions' => 0]);
             $run('X = A * A; Y = X; ' . str_repeat('Y = Y * X; ', $k) . 'Y > 1', ['A' => '123456789012345678901234567890']);
-            return Dec::$conversions;
+            return Dec::testHooks()['conversions'];
         };
         $growth = $count(41) - $count(1);
         // Three conversions a product before item 1 (two operands in, one result out).
