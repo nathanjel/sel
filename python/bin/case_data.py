@@ -21400,8 +21400,25 @@ SQL_CASES = [
         "bindings": lambda: {"ITEMS": Binding.relation("items", "i", {"PRICE": Binding.column("price", None, "NUM")}, None, None)},
     },
     {
+        "name": "alias.pg-truncated-aliases-collide-in-a-derived-dialect",
+        "at": "50-rendering-and-registration.sqlt:352",
+        "dialect": "pg-derived",
+        "source": "ITEMS .> MAP(RECORD(\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaX1\", _[\"PRICE\"], \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaX2\", _[\"PRICE\"]))",
+        "expect": None,
+        "error": "E_SQL_UNSUPPORTED 1:102",
+        "throws": None,
+        "params": None,
+        "as": "statement",
+        "mode": None,
+        "register": [{"dialect": "pg-derived", "extends": "postgresql"}],
+        "options": None,
+        "plan": None,
+        "tables": None,
+        "bindings": lambda: {"ITEMS": Binding.relation("items", "i", {"PRICE": Binding.column("price", None, "NUM")}, None, None)},
+    },
+    {
         "name": "lex.text.nul-is-refused-in-every-mode",
-        "at": "50-rendering-and-registration.sqlt:357",
+        "at": "50-rendering-and-registration.sqlt:377",
         "dialect": "mariadb",
         "source": "S $== \"a\\u{0}b\"",
         "expect": None,
@@ -21418,7 +21435,7 @@ SQL_CASES = [
     },
     {
         "name": "bind.raw-field.select-cols-refuses",
-        "at": "50-rendering-and-registration.sqlt:377",
+        "at": "50-rendering-and-registration.sqlt:397",
         "dialect": "mariadb",
         "source": "ITEMS .> SELECT_COLS(\"TOTAL\")",
         "expect": None,
@@ -21435,7 +21452,7 @@ SQL_CASES = [
     },
     {
         "name": "bind.raw-field.across-a-derived-table-refuses",
-        "at": "50-rendering-and-registration.sqlt:392",
+        "at": "50-rendering-and-registration.sqlt:412",
         "dialect": "mariadb",
         "source": "ITEMS .> SORT_BY(_[\"ID\"]) .> TAKE(2) .> FILTER(_[\"TOTAL\"] > 5)",
         "expect": None,
@@ -21452,7 +21469,7 @@ SQL_CASES = [
     },
     {
         "name": "bind.relation.fields-differing-only-by-case",
-        "at": "50-rendering-and-registration.sqlt:411",
+        "at": "50-rendering-and-registration.sqlt:431",
         "dialect": "mariadb",
         "source": "ANY(R, I, I[\"A\"] > 0)",
         "expect": None,
@@ -21469,7 +21486,7 @@ SQL_CASES = [
     },
     {
         "name": "bind.names-differing-only-by-case",
-        "at": "50-rendering-and-registration.sqlt:424",
+        "at": "50-rendering-and-registration.sqlt:444",
         "dialect": "mariadb",
         "source": "X > 1",
         "expect": None,
@@ -21486,7 +21503,7 @@ SQL_CASES = [
     },
     {
         "name": "agg.correlate.is-parenthesised",
-        "at": "50-rendering-and-registration.sqlt:440",
+        "at": "50-rendering-and-registration.sqlt:460",
         "dialect": "mariadb",
         "source": "ANY(ITEMS, I, I[\"QTY\"] > 0)",
         "expect": "EXISTS (SELECT 1 FROM `oi` `oi` WHERE (oi.a=o.id OR oi.b=o.id) AND ((`oi`.`qty` > 0)) IS TRUE)",
@@ -21503,7 +21520,7 @@ SQL_CASES = [
     },
     {
         "name": "register.dialect.correct-pairing-is-accepted",
-        "at": "50-rendering-and-registration.sqlt:453",
+        "at": "50-rendering-and-registration.sqlt:473",
         "dialect": "my-ok",
         "source": "\"it's\"",
         "expect": "'it''s'",
@@ -21520,7 +21537,7 @@ SQL_CASES = [
     },
     {
         "name": "register.dialect.redefinition-with-the-same-parent-replaces",
-        "at": "50-rendering-and-registration.sqlt:468",
+        "at": "50-rendering-and-registration.sqlt:488",
         "dialect": "redef",
         "source": "\"A\" $== \"a\"",
         "expect": "(CAST('A' AS CHAR) COLLATE utf8mb4_0900_bin = CAST('a' AS CHAR) COLLATE utf8mb4_0900_bin)",
@@ -21537,7 +21554,7 @@ SQL_CASES = [
     },
     {
         "name": "register.dialect.redefinition-with-a-different-parent-is-refused",
-        "at": "50-rendering-and-registration.sqlt:483",
+        "at": "50-rendering-and-registration.sqlt:503",
         "dialect": "redef2",
         "source": "1 + 1",
         "expect": None,

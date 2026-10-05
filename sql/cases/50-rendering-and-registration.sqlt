@@ -349,6 +349,26 @@ ITEMS .> MAP(RECORD("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 E_SQL_UNSUPPORTED 1:102
 ===
 
+### name: alias.pg-truncated-aliases-collide-in-a-derived-dialect
+--- note
+The 63-byte rule belongs to the server, so it follows the dialect chain: a
+registered dialect that extends postgresql truncates the same way and refuses the
+same pair. The Lisp host keyed the check on the dialect's name and emitted both
+aliases for the child.
+--- dialect
+pg-derived
+--- register
+[{"dialect": "pg-derived", "extends": "postgresql"}]
+--- bindings
+{"ITEMS": {"kind": "relation", "from": "items", "alias": "i", "fields": {"PRICE": {"column": "price", "type": "NUM"}}}}
+--- as
+statement
+--- source
+ITEMS .> MAP(RECORD("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaX1", _["PRICE"], "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaX2", _["PRICE"]))
+--- error
+E_SQL_UNSUPPORTED 1:102
+===
+
 % Rule R3 (NUL in a text literal). A TEXT value containing U+0000 is refused by
 % the SQL layer in every mode: PostgreSQL cannot store it, a C-string client API
 % truncates the statement at it, and no dialect has a portable spelling. The

@@ -2654,10 +2654,6 @@ dialect's CANON kind -- the map entry's ret, NUM or TEXT."
      :root-name (if (relational-plan-joins plan) nil (relational-plan-root-name plan))
      :bucket (and (relational-plan-bucket plan) :sealed))))
 
-(defvar *translating-dialect* nil
-  "The dialect the translation in progress is for, for the few program-supplied
-names whose acceptability depends on the server (PostgreSQL truncates aliases).")
-
 (defun check-alias-name (name pos)
   "An alias or column that comes from a SEL text literal is held to the rules a
 binding's own names already meet: not empty, no NUL (sql/MAP.md 3.1). A NUL
@@ -2670,11 +2666,12 @@ reached the statement on every dialect, and `AS \"\"` is refused by the servers
                 "a name holding NUL cannot be a column or an alias in SQL")
             pos)))
 
-(defun check-alias-collisions (names-and-nodes)
+(defun check-alias-collisions (tr names-and-nodes)
   "PostgreSQL truncates an identifier to 63 bytes, so two aliases that agree on
 their first 63 bytes and differ after name ONE column there and SEL's two record
-keys would become one."
-  (when (equal *translating-dialect* "postgresql")
+keys would become one. The server's rule, so every dialect whose chain reaches
+postgresql is held to it, a registered child included."
+  (when (member "postgresql" (dialect-chain (translator-dialect tr)) :test #'equal)
     (let ((seen '()))
       (dolist (cell names-and-nodes)
         (let* ((name (car cell))
@@ -2691,7 +2688,7 @@ truncates both to one name"
                         (snode-pos (cdr cell))))
               (push (cons prefix name) seen))))))))
 
-(defun record-fields (node)
+(defun record-fields (tr node)
   "The (name . value) pairs of a RECORD(k, v, ...) call, refusing what the
 evaluator would: an odd count at the call, a name that is not a text literal at
 the name. The planner reads RECORD in three places -- a bucket's projection, a
@@ -2706,10 +2703,11 @@ bucket's key, a MAP's projection -- and each used to walk the pairs itself."
                      (check-alias-name (sel::node-s k-node) (snode-pos k-node))
                   collect (cons (sel::node-s k-node) v-node))))
       (check-alias-collisions
+       tr
        (loop for (k-node nil) on args by #'cddr collect (cons (sel::node-s k-node) k-node)))
       fields)))
 
-(defun bucket-projection (plan binder agg-node)
+(defun bucket-projection (tr plan binder agg-node)
   "The projection of a bucket: the RECORD (or single expression) evaluated once
 per group, with BINDER bound to the group and _K to its key. Shared by the two
 spellings SEL has for it -- BUCKET(src, key, proj) and BUCKET(src, key) .>
@@ -2720,7 +2718,7 @@ can say about a bucket on its own."
       (if (and (not (clist-p agg-node)) (eq (snode-kind agg-node) :call)
                (equal (sel::node-s agg-node) "RECORD"))
           (let ((projs '()))
-            (loop for (alias . v-node) in (record-fields agg-node) do
+            (loop for (alias . v-node) in (record-fields tr agg-node) do
               (let* (;; _K is the key, which was written against the KEY's
                      ;; binder -- the MAP spelling may name the group
                      ;; differently, so the projection keeps the binder the key
@@ -2991,14 +2989,14 @@ can say about a bucket on its own."
                         (dolist (k-arg (sel::node-items key-node))
                           (push (list nil binder k-arg (snode-pos k-arg)) group-by)))
                        ((and (not (clist-p key-node)) (eq (snode-kind key-node) :call) (equal (sel::node-s key-node) "RECORD"))
-                        (loop for (alias . v-node) in (record-fields key-node) do
+                        (loop for (alias . v-node) in (record-fields tr key-node) do
                           (push (list alias binder v-node (snode-pos v-node)) group-by)))
                        (t
                         (push (list nil binder key-node (snode-pos key-node)) group-by)))
                      (setf (relational-plan-group-by plan) (nreverse group-by)))
                    (setf (relational-plan-bucket plan) (if agg-node nil :open))
                    (setf (relational-plan-bare-key plan) (null agg-node))
-                   (bucket-projection plan binder agg-node)))
+                   (bucket-projection tr plan binder agg-node)))
 
                 ((or (equal sname "LINK") (equal sname "LINK_LEFT"))
                  ;; The steps before the LINK refuse first, as written: their
@@ -3181,7 +3179,7 @@ FILTER between: SQL keeps a bucket's members only for the projection that ends t
                    ;; bucket's projection.
                    (when (eq (relational-plan-bucket plan) :open)
                      (setf (relational-plan-bucket plan) nil)
-                     (bucket-projection plan binder expr)
+                     (bucket-projection tr plan binder expr)
                      (return-from map-step))
                    ;; Whether a MAP must wrap the plan first. An ORDER BY alone
                    ;; does not: the projection and the sort can share one
@@ -3201,7 +3199,7 @@ FILTER between: SQL keeps a bucket's members only for the projection that ends t
                    (if (and (not (clist-p expr)) (eq (snode-kind expr) :call)
                             (equal (sel::node-s expr) "RECORD"))
                        (let ((projs '()))
-                         (loop for (alias . v-node) in (record-fields expr) do
+                         (loop for (alias . v-node) in (record-fields tr expr) do
                            (push (list alias binder v-node) projs))
                          (setf (relational-plan-projections plan) (nreverse projs)))
                        (setf (relational-plan-projections plan) (list (list nil binder expr))))
@@ -3563,7 +3561,6 @@ is why this is a function taking FN rather than one returning three values."
       ;; TRANSLATE-STATEMENT alone once ran the full optimiser). The planner
       ;; is the one place that optimises before translating.
       (let* ((*subquery-counter* 0)
-             (*translating-dialect* dialect)
              (norm (normalise (sel:program-ast program) names root))
              (plan (analyze-pipeline tr norm)))
         (funcall fn tr norm plan)))))
