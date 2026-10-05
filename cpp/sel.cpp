@@ -202,6 +202,51 @@ std::string encode_utf8(std::span<const char32_t> cps) {
   return out;
 }
 
+// A text quoted in a message (spec/errors.md, "Message conventions"): a JSON
+// string literal -- the quote, the backslash and the C0 controls escaped,
+// every other code point as itself. Only ASCII bytes are ever escaped, so
+// this works on the UTF-8 bytes without decoding them.
+std::string quote_text(std::string_view text) {
+  static const char* hex = "0123456789abcdef";
+  std::string out = "\"";
+  for (const char ch : text) {
+    const auto b = static_cast<unsigned char>(ch);
+    switch (b) {
+      case '"': out += "\\\""; break;
+      case '\\': out += "\\\\"; break;
+      case '\n': out += "\\n"; break;
+      case '\r': out += "\\r"; break;
+      case '\t': out += "\\t"; break;
+      case '\b': out += "\\b"; break;
+      case '\f': out += "\\f"; break;
+      default:
+        if (b < 0x20) {
+          out += "\\u00";
+          out.push_back(hex[b >> 4]);
+          out.push_back(hex[b & 15]);
+        } else {
+          out.push_back(ch);
+        }
+    }
+  }
+  out.push_back('"');
+  return out;
+}
+
+// The lexer's unexpected character: quoted, and named by code point when it
+// is not printable ASCII, so that a no-break space or a BOM is visible.
+std::string describe_char(char32_t c) {
+  std::string s;
+  encode_cp(s, c);
+  std::string out = quote_text(s);
+  if (c < 0x21 || c > 0x7e) {
+    char buf[16];
+    std::snprintf(buf, sizeof buf, " (U+%04X)", static_cast<unsigned>(c));
+    out += buf;
+  }
+  return out;
+}
+
 bool is_valid_utf8(std::string_view bytes) {
   try {
     decode_utf8(bytes);
@@ -2471,7 +2516,7 @@ Value Value::boolean(bool b) { return Internals::raw(Kind::Bool, "", b); }
 Value Value::num(const std::string& decimal) {
   Dec d;
   if (!sel::dec_parse(decimal, d)) {
-    throw SelError("E_NOT_NUM", "not a number: " + decimal, Pos{});
+    throw SelError("E_NOT_NUM", "not a number: " + quote_text(decimal), Pos{});
   }
   return make_num(std::move(d));
 }
@@ -3357,7 +3402,7 @@ class Lexer {
         continue;
       }
 
-      fail("E_SYNTAX", "unexpected character \"" + slice(i, i + 1) + "\"", pos);
+      fail("E_SYNTAX", "unexpected character " + describe_char(chars_[i]), pos);
     }
   }
 
@@ -4528,7 +4573,7 @@ const Dec& as_dec_ref(const Value& v, Pos pos) {
            pos);
     }
     Dec d;
-    if (!dec_parse(src.scalar(), d, pos)) fail("E_NOT_NUM", "not a number: \"" + src.scalar() + "\"", pos);
+    if (!dec_parse(src.scalar(), d, pos)) fail("E_NOT_NUM", "not a number: " + quote_text(src.scalar()), pos);
     Internals::set_dec(src, std::move(d));
   }
   return Internals::dec_ref(src);
@@ -8110,10 +8155,20 @@ bool is_syntax_char(char32_t e) {
   return chars.find(e) != std::u32string::npos;
 }
 
+// The detail every host spells alike (spec/errors.md, "Message conventions"):
+// `at` is a code point offset into the pattern, and a pattern longer than 80
+// code points is quoted as its first 77 and "...".
 [[noreturn]] void bad_regex(const std::string& message, const std::string& pattern, std::size_t at,
                             Pos pos) {
+  std::size_t cps = 0, cut = pattern.size();
+  for (std::size_t b = 0; b < pattern.size(); ++b) {
+    if ((static_cast<unsigned char>(pattern[b]) & 0xc0) == 0x80) continue;
+    if (cps == 77) cut = b;
+    ++cps;
+  }
+  const std::string shown = cps > 80 ? pattern.substr(0, cut) + "..." : pattern;
   fail("E_REGEX_SYNTAX",
-       message + " (at offset " + std::to_string(at) + " of /" + pattern + "/)", pos);
+       message + " (at offset " + std::to_string(at) + " of /" + shown + "/)", pos);
 }
 
 [[noreturn]] void reject_escape(char32_t e, const std::string& pattern, std::size_t at, Pos pos) {
@@ -8293,6 +8348,7 @@ struct RxNode {
   bool capture = false;    // Group
   long long lo = 1;        // Repeat
   long long hi = 1;        // Repeat; -1 = unbounded
+  std::size_t at = 0;      // Repeat: the quantifier's code point offset, for messages
   std::vector<int> kids;
   RxRanges set;            // Atom: the code points it reads (folded under `i`)
   bool nullable = true;    // the measures below are filled in by RxParser::measure
@@ -8562,6 +8618,7 @@ class RxParser {
     const int rep = make(RxNode::K::Repeat);
     tree_.nodes[rep].lo = lo;
     tree_.nodes[rep].hi = hi;
+    tree_.nodes[rep].at = at_q;
     tree_.nodes[rep].kids = {atom};
     measure(rep);
     return rep;
@@ -8577,10 +8634,11 @@ class RxParser {
         bad_regex("more than " + std::to_string(MAX_REGEX_GROUPS) + " groups", pattern_, i_, pos_);
       }
       bool capture = true;
+      const std::size_t open = i_;
       i_++;
       if (at(U'?')) { capture = false; i_ += 2; }   // `(?:`, the only `(?` the pass above lets by
       const int inner = alternation(depth + 1);
-      if (!at(U')')) bad_regex("unterminated group", pattern_, i_, pos_);
+      if (!at(U')')) bad_regex("unterminated group", pattern_, open, pos_);
       i_++;
       const int g = make(RxNode::K::Group);
       tree_.nodes[g].capture = capture;
@@ -8599,11 +8657,12 @@ class RxParser {
         const long long lo = class_member(&rs);
         if (lo < 0) continue;   // a class escape: a set, never a range end
         if (at(U'-') && i_ + 1 < p_.size() && p_[i_ + 1] != U']') {
+          const std::size_t dash = i_;
           i_++;
           const long long hi = class_member(&rs);
           // A range that runs backwards is a compile-time refusal whatever the
           // flags (SPEC 7.8), as it is in every other host.
-          if (hi >= 0 && hi < lo) bad_regex("a class range runs backwards", pattern_, i_ - 1, pos_);
+          if (hi >= 0 && hi < lo) bad_regex("a class range runs backwards", pattern_, dash, pos_);
           rs.emplace_back(static_cast<char32_t>(lo), static_cast<char32_t>(hi < 0 ? lo : hi));
         } else {
           rs.emplace_back(static_cast<char32_t>(lo), static_cast<char32_t>(lo));
@@ -8670,10 +8729,10 @@ void check_loops(const RxTree& t, const std::string& pattern, Pos pos) {
     if (x.k == RxNode::K::Repeat && (x.hi == -1 || x.hi > 1)) {
       // RxParser::measure stored it on every node as the tree was built.
       if (t.nodes[static_cast<std::size_t>(x.kids[0])].nullable) {
-        bad_regex("a loop whose body can match the empty string is not portable", pattern, 0, pos);
+        bad_regex("a loop whose body can match the empty string is not portable", pattern, x.at, pos);
       }
       if (rx_optional_capture(t, x.kids[0], false)) {
-        bad_regex("a capture inside a loop must take part in every iteration", pattern, 0, pos);
+        bad_regex("a capture inside a loop must take part in every iteration", pattern, x.at, pos);
       }
     }
     for (const int k : x.kids) work.push_back(k);
@@ -9005,7 +9064,8 @@ std::string validate_pattern(const std::string& pattern, Pos pos, bool ignore_ca
   const CodePoints p = decode_utf8(pattern, pos);
   const std::size_t n = p.size();
   if (n > static_cast<std::size_t>(MAX_REGEX_PATTERN)) {
-    bad_regex("pattern longer than " + std::to_string(MAX_REGEX_PATTERN) + " code points", "", 0, pos);
+    bad_regex("pattern longer than " + std::to_string(MAX_REGEX_PATTERN) + " code points", pattern, 0,
+              pos);
   }
   std::string out;
   std::size_t i = 0;
@@ -9152,12 +9212,12 @@ std::shared_ptr<const Regex> compile_regex(const std::string& pattern, const std
     encode_cp(s, ch);
     if (f == U'm' || f == U's' || f == U'M' || f == U'S') {
       fail("E_BAD_ARG",
-           "flag \"" + s +
-               "\" is not offered — SEL always matches . against any character and anchors ^ $ to "
+           "flag " + quote_text(s) +
+               " is not offered — SEL always matches . against any character and anchors ^ $ to "
                "the whole subject",
            flag_pos);
     }
-    fail("E_BAD_ARG", "unknown regex flag \"" + s + "\"", flag_pos);
+    fail("E_BAD_ARG", "unknown regex flag " + quote_text(s), flag_pos);
   }
 
   if (ignore_case) {
