@@ -2,9 +2,15 @@
 
     sel -e 'EXPR'          evaluate and print
     sel file.sel           evaluate a file
-    sel --deps -e 'EXPR'   print the variables the expression reads
+    sel --deps -e 'EXPR'   print the variables the expression reads, one per line
     sel --functions        list the function table
+    sel --help | --version
     sel                    REPL, keeping one context across lines
+
+The contract every host's CLI follows is in docs/usage/repl.md: usage errors
+exit 2 with `sel: ...` on stderr, an unreadable file exits 1 with `sel: cannot
+read <path>`, an evaluation error exits 1, and the REPL writes its prompt only
+to a terminal.
 
 Also reachable as `python -m sel`, which is the spelling to prefer when the
 `sel` console script collides with another package's — the JS package installs
@@ -15,7 +21,7 @@ from __future__ import annotations
 
 import sys
 
-from . import SelError, Value, compile as sel_compile, function_names
+from . import SelError, Value, __version__, compile as sel_compile, function_names
 from .utf8 import decode_source
 
 
@@ -34,45 +40,86 @@ def _report(e: SelError) -> None:
     sys.stderr.write(f'{e.code} at line {e.line} column {e.col}: {e.message}\n')
 
 
-def _read_line(prompt: str) -> str:
+USAGE = """\
+usage: sel [--deps] -e EXPR     evaluate EXPR and print the result
+       sel [--deps] FILE        evaluate the program in FILE
+       sel                      read one program per line from stdin (REPL)
+       sel --functions          list the function table
+       sel --help | --version
+
+  --deps   print the variables the program reads, one per line, instead of
+           running it
+"""
+
+
+def _usage_error(message: str) -> int:
+    sys.stderr.write(f'sel: {message}\n')
+    return 2
+
+
+def _is_blank(line: str) -> bool:
+    """SEL's whitespace and nothing else (space, TAB, CR, LF): ``str.strip()``
+    would also skip a line of NBSP, VT or U+3000, which the lexer refuses."""
+    return not line.strip(' \t\r\n')
+
+
+def _read_line(tty: bool) -> str:
     """One REPL line, read as bytes and decoded strictly (SPEC 2). A terminal gets
-    `input()`'s line editing, and its text has already been decoded by the
-    interpreter, so only a lone surrogate can be left for the lexer to reject."""
-    if sys.stdin.isatty():
-        return input(prompt)
-    sys.stdout.write(prompt)
-    sys.stdout.flush()
+    `input()`'s line editing and the prompt, and its text has already been
+    decoded by the interpreter, so only a lone surrogate can be left for the
+    lexer to reject. A pipe gets no prompt: nothing but results and errors."""
+    if tty:
+        return input('sel> ')
     raw = sys.stdin.buffer.readline()
     if not raw:
         raise EOFError
-    return decode_source(raw.rstrip(b'\n'))
+    return decode_source(raw[:-1] if raw.endswith(b'\n') else raw)
 
 
 def main(argv: list[str] | None = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
-    want_deps = '--deps' in argv
-    args = [a for a in argv if a != '--deps']
-
-    if args and args[0] == '--functions':
-        print('\n'.join(function_names()))
-        return 0
-
+    want_deps = False
     source = None
-    if args and args[0] == '-e':
-        if len(args) < 2:
-            sys.stderr.write('sel: -e needs an expression\n')
-            return 2
-        source = args[1]
-    elif args:
+    path = None
+    i = 0
+    while i < len(argv):
+        arg = argv[i]
+        i += 1
+        if arg in ('-h', '--help'):
+            sys.stdout.write(USAGE)
+            return 0
+        if arg == '--version':
+            print(f'sel {__version__}')
+            return 0
+        if arg == '--functions':
+            print('\n'.join(function_names()))
+            return 0
+        if arg == '--deps':
+            want_deps = True
+        elif arg == '-e':
+            if i >= len(argv):
+                return _usage_error('-e needs an expression')
+            if source is not None or path is not None:
+                return _usage_error(f'unexpected argument {argv[i]}')
+            source = argv[i]
+            i += 1
+        elif len(arg) > 1 and arg.startswith('-'):
+            return _usage_error(f'unknown option {arg}')
+        elif source is not None or path is not None:
+            return _usage_error(f'unexpected argument {arg}')
+        else:
+            path = arg
+
+    if path is not None:
         # Bytes, decoded by the project's strict codec: the native text layer
         # would translate CRLF and CR to LF (changing the program) and raise a
         # UnicodeDecodeError instead of E_UTF8 (SPEC 2).
         try:
-            with open(args[0], 'rb') as fh:
+            with open(path, 'rb') as fh:
                 data = fh.read()
         except OSError as e:
-            sys.stderr.write(f'sel: {e}\n')
-            return 2
+            sys.stderr.write(f'sel: cannot read {path}: {e.strerror or e}\n')
+            return 1
         try:
             source = decode_source(data)
         except SelError as e:
@@ -83,7 +130,9 @@ def main(argv: list[str] | None = None) -> int:
         try:
             program = sel_compile(source)
             if want_deps:
-                print('\n'.join(program.dependencies()))
+                # One name per line; an empty list prints nothing at all.
+                for name in program.dependencies():
+                    print(name)
             else:
                 print(show(program.run(Value.none())))
         except SelError as e:
@@ -92,17 +141,19 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     # REPL: one context for the whole session, so assignments persist.
+    tty = sys.stdin.isatty()
     root = Value.none()
     while True:
         try:
-            line = _read_line('sel> ')
+            line = _read_line(tty)
         except (EOFError, KeyboardInterrupt):
-            print()
+            if tty:
+                print()
             return 0
         except SelError as e:
             _report(e)
             continue
-        if not line.strip():
+        if _is_blank(line):
             continue
         try:
             print(show(sel_compile(line).run(root)))
