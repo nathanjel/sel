@@ -73,7 +73,7 @@ fn index_node(obj: Node, idx: Node, pos: Pos) -> Node {
 fn sql_special_calls(name: &str) -> bool {
     matches!(
         name,
-        "IF" | "COND" | "COALESCE" | "COUNT" | "SUM" | "AVG" | "MIN" | "MAX" | "RECORD" | "LIST"
+        "IF" | "COND" | "COALESCE" | "COUNT" | "SUM" | "MIN" | "MAX" | "RECORD" | "LIST"
     )
 }
 
