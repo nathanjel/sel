@@ -232,6 +232,11 @@ step "worked examples, every host" ./tools/check-examples.sh
 # The Go builtin fragments the reference examples quote, compiled into go/sel
 # and run against their cases.
 case " $IMPLS " in *" go "*) step "Go builtin fragments" sel_slot ./tools/check-go-fragments.sh ;; esac
+# The same for the hosts whose fragments drop into a copy of the sources with no
+# compiler: JS, Python, PHP and Lisp (C++ and Rust: see the script's header).
+step "reference builtin fragments" ./tools/check-ref-fragments.sh
+# The six top-level host programs that ship in the packages run to exit 0.
+step "top-level host examples" ./tools/check-host-examples.sh
 step "documentation quotes" sel_slot ./tools/check-snippets.py
 # The site's build without its output: every page in docs/nav.json renders, and
 # every relative link and #anchor in the Markdown resolves -- on GitHub as much

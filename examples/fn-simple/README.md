@@ -50,6 +50,9 @@ in `lisp/sel-lang.asd`, to `php/src/bootstrap.php`, to the imports in
 `rust/src/builtins/mod.rs`. Go needs nothing: every file of package `sel` is
 compiled, and its `init()` runs before the first program is parsed.
 
-The Go fragments are the one set that is compiled and run outside its host:
-`tools/check-go-fragments.sh` wraps each in an `init()` inside a copy of
-`go/sel`, builds the conformance runner with it and runs `cases.selt`.
+The fragments are run outside their host, against `cases.selt`:
+`tools/check-go-fragments.sh` wraps each Go one in an `init()` inside a copy of
+`go/sel` and builds the conformance runner with it, and
+`tools/check-ref-fragments.sh` adds the JS, Python, PHP and Lisp ones to a copy
+of their builtin table. The C++ and Rust fragments compile only inside the
+library itself and are not run by a lane.

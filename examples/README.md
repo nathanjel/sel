@@ -55,7 +55,11 @@ drivers are listed in [`go.usage.mod`](go.usage.mod), not `go.mod`, so the
 others build offline; the lane builds them in the image with
 `go build -modfile=go.usage.mod -tags usage,libsqlite3`. The `fn-*` fragments
 are compiled into a copy of `go/sel` and run against their cases by
-`tools/check-go-fragments.sh`.
+`tools/check-go-fragments.sh`; the JS, Python, PHP and Lisp ones are added to a
+copy of their host's builtin table and run against the same cases by
+`tools/check-ref-fragments.sh`. The six top-level programs
+(`host-*.{mjs,php,py}`, `integration-*`) are run to a clean exit by
+`tools/check-host-examples.sh`.
 
 Run every example from the repository root, whatever its language: those that
 read a file (`scripting/fulfil.sel`, `lib/tickets-*.sel`, the `.sel` pipelines)
