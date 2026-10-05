@@ -39,7 +39,7 @@ def run(name, keys, diagnostic=False):
             misses += signature not in cache
             size = len(cache)
         if power:
-            result = D._pow10(key)
+            result = D.pow10(key)
             if diagnostic:
                 assert result == 10 ** key
                 assert len(cache) <= 64 and sum(cache) <= 1048576

@@ -6,7 +6,7 @@ from pathlib import Path
 sys.path.insert(0,str(Path.cwd()/'python'))
 from sel import compile,Value
 from sel import decimal as D
-original=D._pow10
+original=D.pow10
 counts=collections.Counter();misses=collections.Counter();clears=0
 limit=getattr(D,'_POW10_LIMIT',getattr(D,'_FAST_SCALE',18))
 def probe(n):
@@ -17,7 +17,7 @@ def probe(n):
  value=original(n)
  if len(D._POW10)<before: clears+=1
  return value
-D._pow10=probe
+D.pow10=probe
 p=compile(Path('examples/mandelbrot.sel').read_text())
 for _ in range(3):p.run(Value.none())
 Path(sys.argv[1]).write_text(json.dumps(dict(calls=dict(counts),misses=dict(misses),clears=clears,retained_entries=len(D._POW10)),indent=2)+'\n')

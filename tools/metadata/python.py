@@ -42,12 +42,12 @@ if len(sys.argv) > 1 and sys.argv[1] == 'bench':
         samples.append((time.perf_counter() - start) * 1e6 / 20000)
     power_samples = {}
     for exponent in (100, 10000):
-        D._pow10(exponent)
+        D.pow10(exponent)
         times = []
         for _ in range(5):
             tick = time.perf_counter()
             for i in range(1000):
-                D._pow10(exponent)
+                D.pow10(exponent)
             times.append((time.perf_counter() - tick) * 1e6 / 1000)
         power_samples[exponent] = times
     tracemalloc.start()
@@ -61,7 +61,7 @@ if len(sys.argv) > 1 and sys.argv[1] == 'bench':
     both = tracemalloc.get_traced_memory()[0] - start
     before_powers = tracemalloc.get_traced_memory()[0]
     for n in range(10000, 12000):
-        D._pow10(n)
+        D.pow10(n)
     gc.collect()
     powers = tracemalloc.get_traced_memory()[0] - before_powers
     print(json.dumps(dict(runtime=sys.version, steady_us=samples,
@@ -88,11 +88,11 @@ else:
     from sel.builtins.structure import _ALIAS_PLANS
     assert len(_ALIAS_PLANS) <= 256
     for n in range(65, 300):
-        assert D._pow10(n) == 10 ** n
-    assert D._pow10(10000) == 10 ** 10000
+        assert D.pow10(n) == 10 ** n
+    assert D.pow10(10000) == 10 ** 10000
     for n in range(100000, 400000, 20000):
-        assert D._pow10(n) == 10 ** n
-    assert D._pow10(1000001) == 10 ** 1000001
+        assert D.pow10(n) == 10 ** n
+    assert D.pow10(1000001) == 10 ** 1000001
     assert len(D._POW10) <= 64 and max(D._POW10) <= 1000000
     assert sum(D._POW10) <= 1048576
     print('Python metadata checks passed')
