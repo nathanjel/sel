@@ -771,7 +771,12 @@ export function planHybrid(program, dialect, bindings = null, options = null) {
   const isRelation = (node) => node && node.t === 'var' && catalog.has(node.name)
     && catalog.get(node.name, node.pos).kind === 'relation';
   const unwound = unwindThroughHelpers(result, defs, literals);
-  if (!unwound.steps.length || !isRelation(unwound.source)) {
+  // A pipeline of more than MAX_DEPTH steps, counted as written (through its
+  // helpers, before the logical optimiser drops any), is a pure-memory plan
+  // in every host (docs/internals/sql-translation.md §12.1): rendered whole it
+  // is deeper than the cap, and probing every shorter prefix costs time
+  // quadratic in the chain to push down a step or two.
+  if (!unwound.steps.length || unwound.steps.length > MAX_DEPTH || !isRelation(unwound.source)) {
     return pureMemoryPlan(program, dialect, catalog);
   }
   const optimized = optimizeAstLogical(buildPipeline(unwound.source, unwound.steps), opts);
