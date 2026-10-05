@@ -68,3 +68,44 @@ fn malformed_hybrid_plans_fail_before_query_and_preserve_sql_errors() {
     ));
     assert_eq!(execute(&plan).code, "E_BAD_ARG");
 }
+
+/// Plans `source` on another thread and says whether the plan is hybrid,
+/// failing if planning takes longer than a linear walk ever could: the
+/// planner's call-argument and helper walks were exponential in nesting
+/// (2^depth visits), so a 40-deep chain never ended.
+fn plan_within(source: String, bindings: fn() -> Bindings) -> bool {
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let program = compile(&source).unwrap();
+        let plan = plan_hybrid(&program, "postgresql", Some(&bindings()), Options::default());
+        let _ = tx.send(plan.is_hybrid);
+    });
+    rx.recv_timeout(std::time::Duration::from_secs(20))
+        .expect("hybrid planning must be linear in call and helper nesting")
+}
+
+#[test]
+fn fallthrough_planning_is_linear_in_call_and_helper_nesting() {
+    sel_lang::register_function("HYBRID_NEST_HOST", 1, 1, |args| Ok(args.val(0)?)).unwrap();
+    fn bindings() -> Bindings { Bindings::new(Some(HashMap::from([("ITEMS".into(), Binding::relation(
+        "items", "i", vec![
+            FieldEntry::new("X", Binding::column("x", "i", SqlKind::Num, false, false, false, "", "", false)),
+            FieldEntry::new("Y", Binding::column("y", "i", SqlKind::Num, false, false, false, "", "", false)),
+        ],
+        "", "", "", false,
+    ))]))) }
+    // Calls nested 40 deep in the pushable member, beside a host call.
+    let depth = 40;
+    let nested = format!("{}_[\"x\"]{}", "ABS(".repeat(depth), ")".repeat(depth));
+    let source = format!("ITEMS .> MAP(RECORD(\"a\", {nested}, \"b\", HYBRID_NEST_HOST(_[\"y\"])))");
+    assert!(plan_within(source, bindings));
+    // A helper read twice by the next one: its verdict is remembered. (The
+    // chain stays under the SQL node budget, which refuses a longer one at
+    // its definition, before this walk.)
+    let mut helpers = String::from("H0 = ABS(2); ");
+    for i in 1..=8 {
+        helpers.push_str(&format!("H{i} = ABS(H{p}) + ABS(H{p}); ", p = i - 1));
+    }
+    let source = format!("{helpers}ITEMS .> MAP(RECORD(\"a\", _[\"x\"] + H8, \"b\", HYBRID_NEST_HOST(_[\"y\"])))");
+    assert!(plan_within(source, bindings));
+}

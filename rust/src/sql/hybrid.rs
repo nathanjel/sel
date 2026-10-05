@@ -77,18 +77,27 @@ fn sql_special_calls(name: &str) -> bool {
     )
 }
 
+/// Whether `node` needs something the dialect cannot express. A call's
+/// arguments are walked once, by the call branch; a helper's verdict is
+/// remembered in `memo`, so `H1 = H0 + H0` does not walk `H0` twice per
+/// level. Both walks were otherwise exponential in nesting.
 fn contains_unsupported_sql(
     node: &Node,
     dialect: &str,
     defs: &HashMap<String, Node>,
     seen: &mut HashSet<String>,
+    memo: &mut HashMap<String, bool>,
 ) -> bool {
     if node.t == NodeType::Var {
         if let Some(def) = defs.get(&node.s) {
             if !seen.contains(&node.s) {
+                if let Some(&verdict) = memo.get(&node.s) {
+                    return verdict;
+                }
                 seen.insert(node.s.clone());
-                let res = contains_unsupported_sql(def, dialect, defs, seen);
+                let res = contains_unsupported_sql(def, dialect, defs, seen, memo);
                 seen.remove(&node.s);
+                memo.insert(node.s.clone(), res);
                 return res;
             }
         }
@@ -106,28 +115,21 @@ fn contains_unsupported_sql(
                 }
             }
         }
-        for item in &node.items {
-            if contains_unsupported_sql(item, dialect, defs, seen) {
-                return true;
-            }
-        }
+        // A call's operands are its items and nothing else: walking on into
+        // the generic walk below would visit them again at every level.
+        return node.items.iter().any(|item| contains_unsupported_sql(item, dialect, defs, seen, memo));
     }
     if let Some(ref l) = node.l {
-        if contains_unsupported_sql(l, dialect, defs, seen) {
+        if contains_unsupported_sql(l, dialect, defs, seen, memo) {
             return true;
         }
     }
     if let Some(ref r) = node.r {
-        if contains_unsupported_sql(r, dialect, defs, seen) {
+        if contains_unsupported_sql(r, dialect, defs, seen, memo) {
             return true;
         }
     }
-    for item in &node.items {
-        if contains_unsupported_sql(item, dialect, defs, seen) {
-            return true;
-        }
-    }
-    false
+    node.items.iter().any(|item| contains_unsupported_sql(item, dialect, defs, seen, memo))
 }
 
 fn bucket_rows_are_keys(steps: &[Node], count: usize) -> bool {
@@ -909,9 +911,10 @@ fn try_plan_fallthrough(
 
     let mut pushable = Vec::new();
     let mut custom = Vec::new();
+    let mut memo = HashMap::new();
     for pair in &details.pairs {
         let mut seen = HashSet::new();
-        if contains_unsupported_sql(pair.1, dialect, helpers.defs, &mut seen) {
+        if contains_unsupported_sql(pair.1, dialect, helpers.defs, &mut seen, &mut memo) {
             custom.push(*pair);
         } else {
             pushable.push(*pair);
