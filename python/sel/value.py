@@ -4,6 +4,8 @@ there is deliberately no second representation of state. See spec/SPEC.md §3.
 
 from __future__ import annotations
 
+import builtins
+
 import re
 from itertools import islice
 from typing import Any, Iterator
@@ -491,7 +493,7 @@ class Value:
         return Value._list_owned(values, None if keys is None else _check_list_keys(keys, len(values)))
 
     @staticmethod
-    def _list_owned(values: list[Value], keys: list[str] | None = None) -> Value:
+    def _list_owned(values: builtins.list[Value], keys: builtins.list[str] | None = None) -> Value:
         """The builtins' form: a list they just built, taken as it is."""
         v = Value(NONE, None, is_list=True)
         v.storage = values if isinstance(values, list) else list(values)
@@ -500,7 +502,7 @@ class Value:
 
     # --- children -------------------------------------------------------------
 
-    def size(self) -> int:
+    def size(self) -> builtins.int:
         """A method, not a property, so it reads the same as $v->size(),
         v.size() and (sel:value-size v) in the other four hosts.
         tools/check-api.sh keeps it that way.
@@ -509,7 +511,7 @@ class Value:
             return len(self.storage)
         return len(self.children) if self.children else 0
 
-    def has(self, key: str) -> bool:
+    def has(self, key: str) -> builtins.bool:
         if self.shape is not None:
             return key in self.shape.key_map
         if self.is_list and self.storage is not None:
@@ -534,7 +536,7 @@ class Value:
             return None if index < 0 else self.storage[index]
         return self.children.get(key) if self.children else None
 
-    def keys(self) -> list[str]:
+    def keys(self) -> builtins.list[str]:
         if self.shape is not None:
             return list(self.shape.keys)
         if self.is_list and self.storage is not None:
@@ -543,10 +545,10 @@ class Value:
             return [str(i + 1) for i in range(len(self.storage))]
         return list(self.children.keys()) if self.children else []
 
-    def values(self) -> list[Value]:
+    def values(self) -> builtins.list[Value]:
         return list(iter_values(self))
 
-    def entries(self) -> list[tuple[str, Value]]:
+    def entries(self) -> builtins.list[tuple[str, Value]]:
         return list(iter_entries(self))
 
     def set(self, key: str, value: Value) -> Value:
@@ -624,7 +626,7 @@ class Value:
             return encode_utf8(v.scalar, pos)
         fail('E_NOT_BIN', 'expected binary or text, got boolean', pos)
 
-    def as_bool(self, pos: Pos | None = None) -> bool:
+    def as_bool(self, pos: Pos | None = None) -> builtins.bool:
         v = self.scalar_source(pos)
         if v.kind == BOOL:
             return v.scalar
@@ -642,7 +644,7 @@ class Value:
         v._dec_val = d
         return d
 
-    def looks_numeric(self) -> bool:
+    def looks_numeric(self) -> builtins.bool:
         """Non-throwing probe for ISNUM."""
         if self.kind == NONE and self.size() == 0:
             return False
@@ -666,7 +668,7 @@ class Value:
 
     # --- copying --------------------------------------------------------------
 
-    def clone(self, pos: Pos | None = None, depth: int = 1) -> Value:
+    def clone(self, pos: Pos | None = None, depth: builtins.int = 1) -> Value:
         """Assignment copies by value: two variables never share structure (§5.7).
 
 A value's nesting is the third thing spec/SPEC.md §6.4 caps, after the
@@ -694,7 +696,7 @@ as as_text().
             return out
         return self._clone_at(depth, pos)
 
-    def _clone_at(self, depth: int, pos: Pos | None) -> Value:
+    def _clone_at(self, depth: builtins.int, pos: Pos | None) -> Value:
         if depth > MAX_DEPTH:
             fail('E_DEPTH', 'value nested too deeply', pos)
         # A leaf is copied too: it can gain children later (`B[1]["k"] = v`),
@@ -714,7 +716,7 @@ as as_text().
                             for k, v in self.children.items()}
         return out
 
-    def check_depth(self, depth: int = 1, pos: Pos | None = None) -> None:
+    def check_depth(self, depth: builtins.int = 1, pos: Pos | None = None) -> None:
         """Refuses, exactly as clone() would, a value nested past the cap -- but
         copies nothing. FILTER uses it when it hands a kept element on as it is:
         the copy it skips is also the place a too-deep element is reported, and
@@ -742,10 +744,10 @@ as as_text().
 
     # --- structural equality (§5.4) -------------------------------------------
 
-    def eql(self, other: Value, pos: Pos | None = None) -> bool:
+    def eql(self, other: Value, pos: Pos | None = None) -> builtins.bool:
         return self._eql_at(other, 1, pos)
 
-    def _eql_at(self, other: Value, depth: int, pos: Pos | None) -> bool:
+    def _eql_at(self, other: Value, depth: builtins.int, pos: Pos | None) -> builtins.bool:
         if depth > MAX_DEPTH:
             fail('E_DEPTH', 'value nested too deeply', pos)
         if self.kind != other.kind:
@@ -786,7 +788,7 @@ as as_text().
     def dump(self) -> str:
         return self._dump_at(1)
 
-    def _dump_at(self, depth: int) -> str:
+    def _dump_at(self, depth: builtins.int) -> str:
         if depth > MAX_DEPTH:
             fail('E_DEPTH', 'value nested too deeply', None)
         if self.kind == NONE:
@@ -809,7 +811,7 @@ as as_text().
         return Value._from_native_at(x, 1)
 
     @staticmethod
-    def _from_native_at(x: Any, depth: int) -> Value:
+    def _from_native_at(x: Any, depth: builtins.int) -> Value:
         if depth > MAX_DEPTH:
             fail('E_DEPTH', 'value nested too deeply', None)
         if x is None:
@@ -846,7 +848,7 @@ as as_text().
     def to_native(self) -> Any:
         return self._to_native_at(1)
 
-    def _to_native_at(self, depth: int) -> Any:
+    def _to_native_at(self, depth: builtins.int) -> Any:
         if depth > MAX_DEPTH:
             fail('E_DEPTH', 'value nested too deeply', None)
         if self.kind == TEXT or self.kind == BIN or self.kind == BOOL:
@@ -872,10 +874,10 @@ as as_text().
     def __iter__(self) -> Iterator[str]:
         return iter(self.keys())
 
-    def __len__(self) -> int:
+    def __len__(self) -> builtins.int:
         return self.size()
 
-    def __contains__(self, key: str) -> bool:
+    def __contains__(self, key: str) -> builtins.bool:
         return self.has(key)
 
     def __getitem__(self, key: str) -> Value:

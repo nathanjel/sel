@@ -6,6 +6,8 @@ failed, carrying that node's position, and no layer rewrites it.
 
 from __future__ import annotations
 
+import builtins
+
 from typing import Any, NoReturn
 
 from . import decimal as D
@@ -195,25 +197,35 @@ class Args:
                  self.pos_of(i))
         return D.to_safe_int(d)
 
-    def non_neg_int(self, i: int) -> int:
+    def non_neg_int(self, i: builtins.int) -> builtins.int:
         n = self.int(i)
         if n < 0:
             fail('E_RANGE', f'{self.name} argument {i + 1} must not be negative',
                  self.pos_of(i))
         return n
 
-    def symbol(self, i: int) -> str:
+    def symbol(self, i: builtins.int) -> str:
         """Requires the argument to be a bare identifier in the source — the AST
         shape check that gives aggregates their three-argument binder form.
         """
-        n = self.nodes[i]
+        if i < 0:
+            self._oob(i)
+        try:
+            n = self.nodes[i]
+        except IndexError:
+            self._oob(i)
         if n.t != 'var' or n.grouped:
             fail('E_EXPECT_SYMBOL', f'{self.name} argument {i + 1} must be a plain name',
                  n.pos)
         return n.name
 
-    def is_symbol(self, i: int) -> bool:
-        n = self.nodes[i]
+    def is_symbol(self, i: builtins.int) -> builtins.bool:
+        if i < 0:
+            self._oob(i)
+        try:
+            n = self.nodes[i]
+        except IndexError:
+            self._oob(i)
         return n.t == 'var' and not n.grouped
 
 
