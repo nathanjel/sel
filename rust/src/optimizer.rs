@@ -6,27 +6,17 @@ use crate::limits::MAX_DEPTH;
 use crate::math_plan::{compile_math_plan, is_math_op};
 use crate::utf8::Pos;
 
-const PIPELINE_OPS: &[&str] = &[
-    "FILTER",
-    "BUCKET",
-    "SELECT_COLS",
-    "MAP",
-    "DISTINCT",
-    "DEDUPE",
-    "TAKE",
-    "DROP",
-    "SORT",
-    "SORT_DESC",
-    "SORT_BY",
-    "TOP",
-    "TOP_DESC",
-    "TOP_BY",
-    "LINK",
-    "LINK_LEFT",
-];
-
+/// The pipeline vocabulary: the steps `.>` chains, whose first argument is the
+/// rows the step before produced. The one list in this host is the manifest's
+/// `pipeline` (spec/builtins.json); the optimiser, the evaluator's pipeline
+/// loop, the statement planner and the translator all ask here.
 pub fn is_pipeline_op(name: &str) -> bool {
-    PIPELINE_OPS.contains(&name)
+    crate::manifest::builtins::pipeline_step(name).is_some()
+}
+
+/// A step that sorts (SORT, SORT_DESC, SORT_BY and the TOPs).
+pub(crate) fn is_sort_step(name: &str) -> bool {
+    crate::manifest::builtins::pipeline_step(name).is_some_and(|p| p.sorts)
 }
 
 pub fn unwind_pipeline(root: &Node) -> (&Node, Vec<&Node>) {
@@ -718,8 +708,7 @@ fn opt_logical_steps(source: &Node, mut current: Vec<Node>, logical: bool) -> Ve
             // MAP + SORT...
             if let Some(s2) = second {
                 if first.s == "MAP"
-                    && (s2.s == "TOP" || s2.s == "TOP_DESC" || s2.s == "TOP_BY"
-                        || s2.s == "SORT" || s2.s == "SORT_DESC" || s2.s == "SORT_BY")
+                    && is_sort_step(&s2.s)
                     && opt_map_has_computed(first)
                 {
                     let sort = get_opt_sort_info(s2);
@@ -828,6 +817,8 @@ fn opt_logical_steps(source: &Node, mut current: Vec<Node>, logical: bool) -> Ve
 
 // This proof concerns mutation, not errors. FILTER still completes and checks
 // every selected row's copy depth before MAP starts, preserving error order.
+// The call allow-list is this proof's own (builtins known to build or read
+// without aliasing their arguments), not a manifest class.
 fn read_only_expression(node: &Node) -> bool {
     if node.t == NodeType::Assign { return false; }
     if node.t == NodeType::Call && !matches!(node.s.as_str(),

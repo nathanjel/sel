@@ -1021,10 +1021,11 @@ fn prepare_record_shape(name: &str, args: &[Node]) -> Option<Arc<RecordShape>> {
 #[inline(never)]
 fn finish_call(name_tok: Token, spec: &FunctionSpec, args: Vec<Node>) -> PResult {
     spec.check_arity(args.len(), name_tok.pos)?;
-    if matches!(spec.name(), "RMATCH" | "RFIND" | "RGROUPS" | "RREPLACE") {
-        if let Some(pattern) = args.first().filter(|a| a.t == NodeType::Text) {
-            let flag_at = if spec.name() == "RREPLACE" { 3 } else { 2 };
-            let ignore_case = pattern.s.is_ascii() && args.get(flag_at)
+    // Where a regex builtin takes its pattern and flags: the manifest's
+    // `regex` (spec/builtins.json).
+    if let Some(rx) = crate::manifest::builtins::regex_call(spec.name()) {
+        if let Some(pattern) = args.get(rx.pattern).filter(|a| a.t == NodeType::Text) {
+            let ignore_case = pattern.s.is_ascii() && args.get(rx.flags)
                 .is_some_and(|a| a.t == NodeType::Text && a.s.contains('i'));
             crate::regex::validate_pattern_with_case(&pattern.s, pattern.pos, ignore_case)?;
         }

@@ -1,6 +1,7 @@
 use std::collections::HashSet;
 
 use crate::ast::{Node, NodeType};
+use crate::optimizer::is_pipeline_op;
 use crate::program::Program;
 use crate::sql::binding::{Binding, ColumnSpec, FieldEntry};
 use crate::sql::constants::{identity_loss_before_grouping, is_binder_name, NeededFields};
@@ -15,28 +16,6 @@ use crate::sql::row_model::{build_join_rows, relation_alias};
 use crate::sql::translator::{Source, SourceFilter, SourceShape, Translator};
 use crate::sql::types::{Fragment, Part, SqlKind};
 use crate::utf8::Pos;
-
-pub fn is_pipeline_op(name: &str) -> bool {
-    matches!(
-        name,
-        "FILTER"
-            | "BUCKET"
-            | "SELECT_COLS"
-            | "MAP"
-            | "DISTINCT"
-            | "DEDUPE"
-            | "TAKE"
-            | "DROP"
-            | "SORT"
-            | "SORT_DESC"
-            | "SORT_BY"
-            | "TOP"
-            | "TOP_DESC"
-            | "TOP_BY"
-            | "LINK"
-            | "LINK_LEFT"
-    )
-}
 
 #[derive(Clone, Debug)]
 pub struct JoinedRowField {
@@ -1147,7 +1126,17 @@ impl Translator {
 
                     plan.joins.push(join);
                 }
-                _ => {}
+                // Every manifest pipeline step has an arm above (the steps
+                // come from is_pipeline_op, and tests/pipeline_vocabulary.rs
+                // plans one of each): a step added to the manifest without
+                // one is refused here rather than silently dropped.
+                _ => {
+                    return refuse(
+                        "E_SQL_UNSUPPORTED",
+                        format!("{} is a pipeline step the statement planner does not handle", name),
+                        step.pos,
+                    );
+                }
             }
         }
 

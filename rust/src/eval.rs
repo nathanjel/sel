@@ -554,18 +554,13 @@ fn call_spec(node: &Node) -> Result<Arc<Spec>, SelError> {
         })
 }
 
-// Eager calls always evaluate their first argument first. For lazy calls,
-// only these native implementations guarantee that order; a host callback
-// with the same AST name need not do so.
-fn source_first_call(node: &Node, spec: &Spec) -> bool {
+// The native implementation of each pipeline step (the manifest's `pipeline`).
+// A step without one here never runs as a pipeline stage -- correct, but slow
+// and stack-hungry -- so tests::every_pipeline_step_has_a_native_stage holds
+// this table to the manifest.
+fn pipeline_native(name: &str) -> Option<BuiltinFn> {
     use crate::builtins::structure::*;
-    if node.items.is_empty() {
-        return false;
-    }
-    if !spec.lazy {
-        return true;
-    }
-    let expected: BuiltinFn = match node.s.as_str() {
+    Some(match name {
         "MAP" => fn_map,
         "FILTER" => fn_filter,
         "BUCKET" => fn_bucket,
@@ -582,7 +577,22 @@ fn source_first_call(node: &Node, spec: &Spec) -> bool {
         "TOP_BY" => fn_top_by,
         "LINK" => fn_link,
         "LINK_LEFT" => fn_link_left,
-        _ => return false,
+        _ => return None,
+    })
+}
+
+// Eager calls always evaluate their first argument first. For lazy calls,
+// only these native implementations guarantee that order; a host callback
+// with the same AST name need not do so.
+fn source_first_call(node: &Node, spec: &Spec) -> bool {
+    if node.items.is_empty() {
+        return false;
+    }
+    if !spec.lazy {
+        return true;
+    }
+    let Some(expected) = pipeline_native(&node.s) else {
+        return false;
     };
     if !matches!(&spec.func, SpecFn::Native(f) if std::ptr::fn_addr_eq(*f, expected)) {
         return false;
@@ -701,3 +711,27 @@ fn invoke_call(
     args.ctx.frames.truncate(frame_depth);
     res
 }
+
+#[cfg(test)]
+mod pipeline_vocabulary_tests {
+    use super::pipeline_native;
+    use crate::builtins::{lookup_spec, SpecFn};
+    use crate::manifest::builtins::PIPELINE_STEPS;
+
+    // Every manifest pipeline step has its native stage, and that stage is the
+    // function the registry installed under the name; nothing else claims one.
+    #[test]
+    fn every_pipeline_step_has_a_native_stage() {
+        for (name, _) in PIPELINE_STEPS {
+            let f = pipeline_native(name).unwrap_or_else(|| panic!("{name} has no native pipeline stage"));
+            let spec = lookup_spec(name).expect("registered");
+            assert!(matches!(&spec.func, SpecFn::Native(g) if std::ptr::fn_addr_eq(*g, f)), "{name}");
+        }
+        for name in crate::builtins::function_names() {
+            if pipeline_native(&name).is_some() {
+                assert!(crate::optimizer::is_pipeline_op(&name), "{name} is not a manifest step");
+            }
+        }
+    }
+}
+
