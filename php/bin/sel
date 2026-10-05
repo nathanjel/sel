@@ -81,7 +81,8 @@ for ($i = 0, $n = count($args); $i < $n; $i++) {
     }
     if ($arg === '-e') {
         if ($i + 1 >= $n) usage('-e needs an expression');
-        if ($expr !== null || $file !== null) usage('unexpected argument -e');
+        // A second program: the expression is the extra operand (docs/usage/repl.md).
+        if ($expr !== null || $file !== null) usage("unexpected argument {$args[$i + 1]}");
         $expr = $args[++$i];
         continue;
     }
