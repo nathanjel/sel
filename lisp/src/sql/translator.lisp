@@ -2915,12 +2915,10 @@ can say about a bucket on its own."
                      (cond
                        ((= (length args) 2)
                         (setf binder "_" pred (second args)))
-                       ((= (length args) 3)
+                       (t ; 3: the manifest refused any other count at compile time
                         (unless (is-binder-name (second args))
                           (refuse "E_SQL_SHAPE" "the binder of FILTER must be a bare name" (snode-pos (second args))))
-                        (setf binder (sel::node-s (second args)) pred (third args)))
-                       (t
-                        (refuse "E_ARITY" "FILTER takes 2 or 3 arguments" pos)))
+                        (setf binder (sel::node-s (second args)) pred (third args))))
                      (if (relational-plan-group-by plan)
                          (setf (relational-plan-having plan)
                                (append (relational-plan-having plan) (list (list binder pred pos over-groups))))
@@ -2961,14 +2959,12 @@ can say about a bucket on its own."
                         (setf binder "_" key-node (second args) agg-node nil))
                        ((= (length args) 3)
                         (setf binder "_" key-node (second args) agg-node (third args)))
-                       ((= (length args) 4)
+                       (t ; 4: the manifest refused any other count at compile time
                         (unless (is-binder-name (second args))
                           (refuse "E_SQL_SHAPE" (format nil "the binder of ~a must be a bare name" sname) (snode-pos (second args))))
                         (setf binder (sel::node-s (second args))
                               key-node (third args)
-                              agg-node (fourth args)))
-                       (t
-                        (refuse "E_ARITY" (format nil "~a takes 2 to 4 arguments" sname) pos)))
+                              agg-node (fourth args))))
 
                      ;; A bare bucket's key is an index key (spec §7.4): one text
                      ;; or number. A list or record key is refused by the
@@ -3038,9 +3034,8 @@ can say about a bucket on its own."
                              (relational-plan-distinct plan))
                      (setf plan (wrap-plan-as-derived-table tr plan)))
                    (let* ((is-left (equal sname "LINK_LEFT"))
+                          ;; 3 or 5: the manifest refused any other count.
                           (step-args args))
-                     (unless (or (= (length step-args) 3) (= (length step-args) 5))
-                       (refuse "E_ARITY" (format nil "~a takes 2 or 4 arguments" sname) pos))
                      (let ((right-node (second step-args)))
                        (unless (and (not (clist-p right-node)) (eq (snode-kind right-node) :var))
                          (refuse "E_SQL_SHAPE" (format nil "~a requires a relation binding as second argument" sname) (snode-pos right-node)))
@@ -3167,12 +3162,10 @@ FILTER between: SQL keeps a bucket's members only for the projection that ends t
                      (cond
                        ((= (length args) 2)
                         (setf binder "_" expr (second args)))
-                       ((= (length args) 3)
+                       (t ; 3: the manifest refused any other count at compile time
                         (unless (is-binder-name (second args))
                           (refuse "E_SQL_SHAPE" "the binder of MAP must be a bare name" (snode-pos (second args))))
-                        (setf binder (sel::node-s (second args)) expr (third args)))
-                       (t
-                        (refuse "E_ARITY" "MAP takes 2 or 3 arguments" pos)))
+                        (setf binder (sel::node-s (second args)) expr (third args))))
                      ;; BUCKET(src, key) .> MAP(proj) is BUCKET(src, key, proj): the
                      ;; MAP's body is evaluated once per group, so it is the
                      ;; bucket's projection.
@@ -3219,8 +3212,6 @@ FILTER between: SQL keeps a bucket's members only for the projection that ends t
                    (setf (relational-plan-distinct plan) t))
 
                   ((equal sname "TAKE")
-                   (unless (= (length args) 2)
-                     (refuse "E_ARITY" "TAKE takes 2 arguments" pos))
                    (let ((lim (eval-int-param tr (second args) "TAKE")))
                      (setf (relational-plan-limit plan)
                            (if (relational-plan-limit plan)
@@ -3228,8 +3219,6 @@ FILTER between: SQL keeps a bucket's members only for the projection that ends t
                                lim))))
 
                   ((equal sname "DROP")
-                   (unless (= (length args) 2)
-                     (refuse "E_ARITY" "DROP takes 2 arguments" pos))
                    (let ((off (eval-int-param tr (second args) "DROP")))
                      ;; DROP consumes the bounded slice, not the original source.
                      ;; Offsets merge first and the SUM is clamped to 2^63 - 1 (docs

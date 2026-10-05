@@ -334,7 +334,8 @@
          (loop for i from 0 below (args-count a) do (args-val a i)))
        (funcall (spec-fn (node-spec node)) a ctx)))
 
-    (t (fail "E_SYNTAX" "cannot evaluate node" (node-pos node)))))
+    ;; The parser makes no other kind: a host error, never a SEL one.
+    (t (error "SEL internal error: no evaluation for node kind ~s" (node-kind node)))))
 
 ;;; §5.9 — a value with children and no scalar contributes its children's values;
 ;;; anything else contributes itself. Keys are always renumbered from 1.
@@ -492,7 +493,8 @@ evaluator asks it once per node and dispatches with CASE (LISP-P3)."
                    (b (as-dec r rp)))
               (make-bool (compare-code-result code (dec-cmp a b)))))
 
-           (t (fail "E_SYNTAX" (format nil "unknown operator ~a" op) (node-pos node)))))))))
+           ;; BINARY-OP-CODE knows every operator the parser accepts.
+           (t (error "SEL internal error: no evaluation for operator ~a" op))))))))
 
 ;;; --- assignment ------------------------------------------------------------
 

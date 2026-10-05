@@ -1904,6 +1904,29 @@ run of the program that built it, not a value set with the caller's string."
   (is (string= "3" (sel:as-text (sel:evaluate "R = RECORD(\"a\", 1, \"b\", 2); SUM(R, x, (R[\"b\"] = 10; x))"))))
   (is (string= "1,2" (sel:as-text (sel:evaluate "A = (1, 2); JOIN(MAP(A, (A[2] = 9; _)), \",\")")))))
 
+(defun compare-values (a b)
+  "An oracle for the sort keys (MAKE-SORT-KEY / COMPARE-SORT-KEYS), written the
+direct way: three-way comparison in SPEC 7.3's total order: by kind rank, then within a
+rank -- FALSE before TRUE, numbers by exact value, other text and BIN bytewise.
+Every pair of values compares, and transitively, so a sort cannot depend on the
+order it is handed its elements."
+  (let* ((a (sel::sort-leaf a))
+         (b (sel::sort-leaf b))
+         (ra (sel::sort-rank a))
+         (rb (sel::sort-rank b)))
+    (cond
+      ((< ra rb) -1)
+      ((> ra rb) 1)
+      (t
+       (case ra
+         (1 (let ((av (if (sel::value-scalar a) 1 0))
+                  (bv (if (sel::value-scalar b) 1 0)))
+              (cond ((< av bv) -1) ((> av bv) 1) (t 0))))
+         (2 (sel::dec-cmp (sel:as-dec a) (sel:as-dec b)))
+         ((3 4) (sel::bytes-compare (sel:as-bytes a) (sel:as-bytes b)))
+         (t 0))))))
+
+
 (test total-order-ranks-kinds-then-compares-within-a-rank
   ;; SPEC 7.3: NULL < BOOL < numeric-looking text < other text < BIN, so a mixed
   ;; list sorts the same whatever order it is handed over in.
@@ -1911,9 +1934,9 @@ run of the program that built it, not a value set with the caller's string."
                (sel:as-text (sel:evaluate "JOIN(SORT(LIST(\"10\", \"9\", \"1a\", \"\")), \",\")"))))
   (is (string= "9,10,,1a"
                (sel:as-text (sel:evaluate "JOIN(SORT(LIST(\"1a\", \"\", \"9\", \"10\")), \",\")"))))
-  (is (< (sel::compare-values (sel:make-int 5) (sel::%text "a")) 0))
-  (is (< (sel::compare-values (sel::%text "a") (sel:make-bin (coerce #(0) '(vector (unsigned-byte 8))))) 0))
-  (is (zerop (sel::compare-values (sel::%text "007") (sel:make-int 7)))))
+  (is (< (compare-values (sel:make-int 5) (sel::%text "a")) 0))
+  (is (< (compare-values (sel::%text "a") (sel:make-bin (coerce #(0) '(vector (unsigned-byte 8))))) 0))
+  (is (zerop (compare-values (sel::%text "007") (sel:make-int 7)))))
 
 (test sort-direction-and-top-count-are-checked-on-an-empty-list
   ;; SPEC 7.4: evaluated and rejected whatever the list holds.
@@ -2304,6 +2327,19 @@ the statement sent (or NIL)."
     (is (sel.sql:hybrid-plan-pure-memory-p plan))
     (sel.sql:execute-hybrid plan (lambda (&rest args) (declare (ignore args)) nil) ctx)
     (is (null (sel:value-get ctx "A")) "the caller's context was written into")))
+
+(test sql-text-literal-without-an-escape-rule-refuses
+  ;; A dialect whose textQuote has no escape rule cannot be registered
+  ;; (check-quote-pairing), so the emitter's fallback is unreachable; were it
+  ;; reached, quoting text unescaped would be an injection, so it refuses.
+  (sb-int:encapsulate 'sel.sql::dialect-lexical 'no-escape
+                      (lambda (f dialect key)
+                        (if (equal key "textEscape") nil (funcall f dialect key))))
+  (unwind-protect
+       (handler-case (progn (sel.sql::emit-text-literal "postgresql" "a' OR '1'='1")
+                            (fail "emitted unescaped text"))
+         (sel.sql:sql-error (e) (is (string= "E_SQL_UNSUPPORTED" (sel.sql:sql-error-code e)))))
+    (sb-int:unencapsulate 'sel.sql::dialect-lexical 'no-escape)))
 
 (test sql-refusal-messages-carry-no-format-continuations
   ;; LISP-C38: `~<newline>` is FORMAT's line continuation; REFUSE does not call
@@ -2742,7 +2778,7 @@ non-NIL results (each worker returns NIL when it saw nothing wrong)."
       (dotimes (i 400)
         (let* ((a (nth (random (length values) st) values))
                (b (nth (random (length values) st) values))
-               (old (sel::compare-values a b))
+               (old (compare-values a b))
                (new (sel::compare-sort-keys (sel::make-sort-key a) (sel::make-sort-key b))))
           (is (= (signum old) (signum new)) "~a ~a" (sel:value-dump a) (sel:value-dump b)))))))
 

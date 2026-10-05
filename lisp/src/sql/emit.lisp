@@ -114,7 +114,12 @@ registered or reset, which drops the plan with it (LISP-P24).")
   (let ((quote (lex-text dialect "textQuote"))
         (escape (dialect-lexical dialect "textEscape")))
     (if (not (and escape (listp escape)))
-        (concatenate 'string quote text quote)
+        ;; CHECK-QUOTE-PAIRING (map.lisp) refuses a dialect whose textQuote has
+        ;; no escape rule, so this cannot be reached; if it were, quoting TEXT
+        ;; without escaping it would be an injection, so it refuses.
+        (refuse "E_SQL_UNSUPPORTED"
+                (format nil "dialect ~a has no textEscape, so a text literal cannot be quoted safely"
+                        dialect))
         ;; A single left-to-right pass, never one replace per rule: replacing '
         ;; with '' and then \ with \\ would rewrite the output of the first.
         (let* ((plan (escape-plan-for escape))

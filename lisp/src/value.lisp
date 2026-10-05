@@ -155,9 +155,6 @@ compared pairwise, many through a hash table."
   (ensure-list-children v)
   (value-children-internal v))
 
-(defun (setf value-children) (val v)
-  (setf (value-children-internal v) val))
-
 (defun %value-with-children (kind scalar entries &optional is-list)
   "Build a value from an ordered list of (key . value) conses, wiring up the
 tail, count and index that keep lookup and append O(1)."
@@ -452,6 +449,9 @@ are the caller's; each child is V's own value, as VALUE-GET returns it."
                                     (t
                                      (cdr (first (value-children-internal cur)))))))
                    (setf cur first-val))
+                 ;; Not reachable from SEL (values are capped at depth 200), but a
+                 ;; host can chain VALUE-SETs deeper than that, so the walk stays
+                 ;; bounded: a 1,500-deep first-child chain is E_DEPTH here.
                  (incf guard)
                  (when (> guard 1000)
                    (fail "E_DEPTH" "scalar context nested too deeply" at)))

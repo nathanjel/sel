@@ -15,7 +15,6 @@
       (:call (some (lambda (item) (node-contains-var-p item var-name)) (node-items node)))
       (:seq (some (lambda (item) (node-contains-var-p item var-name)) (node-items node)))
       (:list (some (lambda (item) (node-contains-var-p item var-name)) (node-items node)))
-      (:group (node-contains-var-p (node-l node) var-name))
       (:assign (or (node-contains-var-p (node-l node) var-name)
                    (node-contains-var-p (node-r node) var-name)))
       (t nil))))
@@ -38,7 +37,7 @@
                     (dolist (it (node-items n)) (push it stack)))
                    ((:seq :list) (dolist (it (node-items n)) (push it stack)))
                    ((:bin :index) (push (node-l n) stack) (push (node-r n) stack))
-                   ((:un :group) (push (node-l n) stack))
+                   (:un (push (node-l n) stack))
                    (t nil)))))
     nil))
 
@@ -291,27 +290,6 @@ chain ends in nothing (NULL)."
         ((eq (value-kind v) :text) 3)
         ((eq (value-kind v) :bin) 4)
         (t 5)))
-
-(defun compare-values (a b)
-  "Three-way comparison in SPEC 7.3's total order: by kind rank, then within a
-rank -- FALSE before TRUE, numbers by exact value, other text and BIN bytewise.
-Every pair of values compares, and transitively, so a sort cannot depend on the
-order it is handed its elements."
-  (let* ((a (sort-leaf a))
-         (b (sort-leaf b))
-         (ra (sort-rank a))
-         (rb (sort-rank b)))
-    (cond
-      ((< ra rb) -1)
-      ((> ra rb) 1)
-      (t
-       (case ra
-         (1 (let ((av (if (value-scalar a) 1 0))
-                  (bv (if (value-scalar b) 1 0)))
-              (cond ((< av bv) -1) ((> av bv) 1) (t 0))))
-         (2 (dec-cmp (as-dec a) (as-dec b)))
-         ((3 4) (bytes-compare (as-bytes a) (as-bytes b)))
-         (t 0))))))
 
 (defun make-bounded-heap (capacity greater-p)
   (let ((arr (make-array capacity :initial-element nil))

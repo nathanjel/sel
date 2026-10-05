@@ -188,8 +188,6 @@ only an alist record walks its entries."
                     (walk (node-r n)))
                    (:un
                     (walk (node-l n)))
-                   (:group
-                    (walk (node-l n)))
                    ;; A `,` list, a `;` sequence and an assignment read whatever
                    ;; their parts read -- an assignment's target included, which it
                    ;; reads as a variable: skipping them let an operand over BOTH
@@ -1207,13 +1205,10 @@ carry is promoted from neither, spec §7.4)."
            (when name0 (setf b1 name0))
            (when name1 (setf b2 name1))))
        (setf pred-node (args-node a 2)))
-      ((= count 5)
+      (t ; 5: the manifest's (3 5) refused any other count at compile time
        (setf b1 (args-symbol a 2)
              b2 (args-symbol a 3)
-             pred-node (args-node a 4)))
-      (t
-       (fail "E_ARITY" (format nil "~a takes 3 or 5 arguments, got ~d" (args-name a) count)
-             (args-pos-of a 0))))
+             pred-node (args-node a 4))))
     ;; Spec §7.4 "How a LINK evaluates": with no right elements PRED is never
     ;; evaluated. A LINK over an empty side is the empty list; a LINK_LEFT
     ;; with left rows but no right rows emits each unmatched row below
