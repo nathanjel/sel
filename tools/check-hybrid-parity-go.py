@@ -7,7 +7,8 @@ context it asks Go for run()'s answer, asks it to PLAN, executes the plan's
 prefix statement itself on a real SQLite (sqlite3), and hands the rows back for
 execute_hybrid's continuation. The comparison is tools/check-hybrid-parity.py's:
 the value, the error, the caller's context and, for a pure_sql plan, the rows in
-order and not their keys. (T11)
+order and not their keys. The `application` programs (POKE, HOSTF) run too, once
+each, with their expected value checked against run().
 
     python3 tools/check-hybrid-parity-go.py [--verbose]     # after: make -C go
 """
@@ -68,8 +69,13 @@ def fmt(o):
 bad = []
 ok = skipped = 0
 kinds = {'pure_sql': 0, 'hybrid': 0, 'pure_memory': 0}
-for c in spec['programs']:
-    for cs in spec['contexts']:
+# The `application` programs call POKE and HOSTF (registered by the driver) and
+# run once, over the relations and the section's own vars.
+work = [(c, cs) for c in spec['programs'] for cs in spec['contexts']]
+app = spec.get('application', {})
+work += [(c, {'name': 'application', 'vars': app.get('vars', {})}) for c in app.get('programs', [])]
+for c, cs in work:
+    if True:
         if any(v not in cs['vars'] for v in c.get('requires', [])):
             skipped += 1
             continue
@@ -87,6 +93,8 @@ for c in spec['programs']:
                 got = [r.get(f, '<absent>') if isinstance(r, dict) else '<absent>' for r in direct['rows']]
                 if got != want:
                     guard = f'run() column {f} is {got}, the corpus says {want}'
+            if 'value' in exp and dict(zip(direct['keys'], direct['rows'])) != exp['value']:
+                guard = f"run() is {dict(zip(direct['keys'], direct['rows']))}, the corpus says {exp['value']}"
             if 'keys' in exp and direct['keys'] != exp['keys']:
                 guard = f"run() keys are {direct['keys']}, the corpus says {exp['keys']}"
         if guard:
