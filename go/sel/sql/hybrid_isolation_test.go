@@ -278,3 +278,34 @@ func TestHybridRereadOfAReassignedSource(t *testing.T) {
 		t.Fatalf("caller context changed: %s -> %s", before, after)
 	}
 }
+
+// A builtin-only continuation that assigns copies the roots it assigns and
+// shares the rest: a large variable it only reads costs nothing, and the caller
+// still sees none of the writes.
+func TestHybridIsolation_AssignedRootsOnlyAreCopied(t *testing.T) {
+	big := make([]*sel.Value, 100000)
+	for i := range big {
+		big[i] = sel.NewRecordFromEntries([]sel.Entry{{Key: "id", Val: sel.NewInt(int64(i))}})
+	}
+	caller := sel.NewNone()
+	caller.Set("BIG", sel.NewList(big))
+	caller.Set("R", sel.NewRecordFromEntries([]sel.Entry{{Key: "k", Val: sel.NewText("1")}}))
+	caller.Set("N", sel.NewText("5"))
+	before := caller.Get("R").Dump() + caller.Get("N").Dump()
+
+	plan := PlanHybrid(sel.MustCompile(`R["k"] = "9"; N += 1; COUNT(BIG) & R["k"] & N`), "sqlite", NewBindings(nil), Options{})
+	got, err := ExecuteHybrid(plan, nil, caller)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.AsText(sel.Pos{}) != "10000096" {
+		t.Fatalf("got %s", got.AsText(sel.Pos{}))
+	}
+	if after := caller.Get("R").Dump() + caller.Get("N").Dump(); after != before {
+		t.Fatalf("caller changed: %s -> %s", before, after)
+	}
+	allocs := testing.AllocsPerRun(5, func() { privateContext(plan, caller) })
+	if allocs > 50 {
+		t.Fatalf("privateContext allocated %.0f times for three roots: the untouched list was copied", allocs)
+	}
+}

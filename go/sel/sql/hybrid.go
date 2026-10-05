@@ -1281,11 +1281,13 @@ func continuationEffectsOf(ast *sel.Node) continuationEffects {
 }
 
 // privateContext is the context a continuation runs in: the caller's variables,
-// copied only as far as the program can change them. A continuation containing
-// any application-defined call receives a full private context copy. Builtin-only
-// continuations retain their existing assignment-based copy optimization:
-// a continuation that never assigns gets a new root holding the caller's own
-// children; one that assigns gets a deep copy.
+// copied only as far as the program can change them, so the caller's context is
+// never written. A continuation that calls an application-defined function gets
+// a full private copy: the function may change any value it is handed. One that
+// calls builtins only gets a new root holding the caller's own children, each
+// root it assigns (A = …, A["k"] = …) deep-copied and every other one shared --
+// a builtin never changes its arguments, and assignment copies -- so a large
+// variable the continuation only reads is not copied.
 func privateContext(plan *HybridPlan, context *sel.Value) *sel.Value {
 	if context == nil || context.IsNull() {
 		return sel.NewRecordFromEntries(nil)
@@ -1296,10 +1298,14 @@ func privateContext(plan *HybridPlan, context *sel.Value) *sel.Value {
 	}
 	if ast != nil {
 		effects := continuationEffectsOf(ast)
-		if !effects.callsApplicationFunction && len(effects.assignedRoots) == 0 {
+		if !effects.callsApplicationFunction {
 			root := sel.NewNone()
 			for _, e := range context.Entries() {
-				root.Set(e.Key, e.Val)
+				val := e.Val
+				if effects.assignedRoots[e.Key] {
+					val = val.CloneAt(2, sel.Pos{})
+				}
+				root.Set(e.Key, val)
 			}
 			return root
 		}
