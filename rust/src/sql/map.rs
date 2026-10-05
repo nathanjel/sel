@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::sync::{Arc, OnceLock, RwLock};
+use std::sync::{Arc, LazyLock, OnceLock, RwLock};
 use regex::Regex;
 
 use crate::builtins::host_arity;
@@ -100,8 +100,14 @@ pub struct RulesData {
     pub template_keys: Vec<String>,
 }
 
-static SHIPPED_DIALECTS: OnceLock<HashMap<String, DialectRecord>> = OnceLock::new();
-static SHIPPED_RULES: OnceLock<RulesData> = OnceLock::new();
+/// The shipped map and its rules, parsed once (both from the one pair of
+/// JSON blobs, so one initialiser).
+static SHIPPED: OnceLock<(HashMap<String, DialectRecord>, RulesData)> = OnceLock::new();
+
+static DOTTED_VERSION: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^[0-9]+(\.[0-9]+)*$").unwrap());
+static TEMPLATE_SLOT: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\{([^}]*)\}").unwrap());
+static UNIFY_RET: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^@unify:[0-9]+(,[0-9]+)*$").unwrap());
+static ARITY_TEMPLATE_KEY: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^(0|[1-9][0-9]{0,2})$").unwrap());
 
 static EXTRA: OnceLock<RwLock<HashMap<String, DialectRecord>>> = OnceLock::new();
 static OVERLAY: OnceLock<RwLock<HashMap<String, HashMap<String, HashMap<String, EntryRecord>>>>> = OnceLock::new();
@@ -234,14 +240,7 @@ fn init_shipped() -> (HashMap<String, DialectRecord>, RulesData) {
 }
 
 fn ensure_init() -> (&'static HashMap<String, DialectRecord>, &'static RulesData) {
-    let d = SHIPPED_DIALECTS.get_or_init(|| {
-        let (dialects, _) = init_shipped();
-        dialects
-    });
-    let r = SHIPPED_RULES.get_or_init(|| {
-        let (_, rules) = init_shipped();
-        rules
-    });
+    let (d, r) = SHIPPED.get_or_init(init_shipped);
     (d, r)
 }
 
@@ -623,9 +622,7 @@ pub fn define_dialect(name: &str, spec: &serde_json::Value) {
             }
         }
     };
-
-    let dotted_re = Regex::new(r"^[0-9]+(\.[0-9]+)*$").unwrap();
-    if !dotted_re.is_match(&version) {
+    if !DOTTED_VERSION.is_match(&version) {
         panic!(
             "SQL dialect {} has version {:?}, which is not dotted-numeric; strip any suffix a server reports (11.8.8-MariaDB is 11.8.8)",
             name, version
@@ -988,8 +985,7 @@ fn check_entry(section: &str, key: &str, e: &serde_json::Value) {
             Some(slots) => slots,
             None => panic!("unknown skel: {}", key),
         };
-        let slot_re = Regex::new(r"\{([^}]*)\}").unwrap();
-        for cap in slot_re.captures_iter(tpl_val) {
+        for cap in TEMPLATE_SLOT.captures_iter(tpl_val) {
             let slot_name = &cap[1];
             if !allowed.iter().any(|a| a == slot_name) {
                 panic!(
@@ -1019,9 +1015,7 @@ fn check_entry(section: &str, key: &str, e: &serde_json::Value) {
         Some(s) => s,
         None => panic!("{} has ret null; use one of {}, @concat or @unify:<n>[,<n>...]", where_str, rules.ret_kinds.join(", ")),
     };
-
-    let unify_re = Regex::new(r"^@unify:[0-9]+(,[0-9]+)*$").unwrap();
-    if !rules.ret_kinds.iter().any(|r| r == ret_val) && ret_val != "@concat" && !unify_re.is_match(ret_val) {
+    if !rules.ret_kinds.iter().any(|r| r == ret_val) && ret_val != "@concat" && !UNIFY_RET.is_match(ret_val) {
         panic!("{} has ret {:?}; use one of {}, @concat or @unify:<n>[,<n>...]", where_str, ret_val, rules.ret_kinds.join(", "));
     }
 
@@ -1033,10 +1027,8 @@ fn check_entry(section: &str, key: &str, e: &serde_json::Value) {
             );
         }
     }
-
-    let dotted_re = Regex::new(r"^[0-9]+(\.[0-9]+)*$").unwrap();
     if let Some(since) = m.get("since").and_then(|v| v.as_str()) {
-        if !dotted_re.is_match(since) {
+        if !DOTTED_VERSION.is_match(since) {
             panic!("{} has a since that is not dotted-numeric", where_str);
         }
     }
@@ -1120,13 +1112,11 @@ fn check_entry(section: &str, key: &str, e: &serde_json::Value) {
                     hi = Some(ea[1]);
                 }
             }
-
-            let tpl_key_re = Regex::new(r"^(0|[1-9][0-9]{0,2})$").unwrap();
             for n in tpl_map.keys() {
                 if n == "*" {
                     continue;
                 }
-                if !tpl_key_re.is_match(n) {
+                if !ARITY_TEMPLATE_KEY.is_match(n) {
                     panic!("{} keys a template by {:?}; an arity-keyed template uses a count or *", where_str, n);
                 }
                 let c: usize = n.parse().unwrap();

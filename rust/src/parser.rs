@@ -330,23 +330,10 @@ impl Lexer {
     }
 
     fn match_operator(&self, i: usize, to: usize) -> Option<&'static str> {
-        for &op in OPERATORS {
-            let op_chars: Vec<char> = op.chars().collect();
-            if i + op_chars.len() > to {
-                continue;
-            }
-            let mut matches = true;
-            for (k, &rc) in op_chars.iter().enumerate() {
-                if self.chars[i + k] != rc {
-                    matches = false;
-                    break;
-                }
-            }
-            if matches {
-                return Some(op);
-            }
-        }
-        None
+        // Every operator is ASCII, so its bytes are its characters.
+        OPERATORS.iter().copied().find(|op| {
+            i + op.len() <= to && op.bytes().enumerate().all(|(k, b)| self.chars[i + k] == b as char)
+        })
     }
 
     fn lex_raw(&self, start: usize, to: usize, out: &mut Vec<Token>) -> Result<usize, SelError> {
