@@ -967,90 +967,132 @@ def _row_keys(value, bound=()):
     return keys.keys | {ascii_upper(b) for b in bound}
 
 
-def _link(args, ctx, left_join):
-    # Taken before anything else is evaluated, so a LINK nested in this one's
-    # sources cannot pick it up by accident (aggregate.py, _filter); it is
-    # handed down on purpose below.
-    prefilter = ctx.join_prefilter
-    ctx.join_prefilter = None
-    count = args.count()             # 3 or 5: the manifest's arity, checked at compile time
-    # With conjuncts to pre-apply and a left source that is itself a join, the
-    # right source is evaluated first -- unobservable when both sources are
-    # pure -- so that the conjuncts still valid above this join's right rows
-    # can travel down to the join below, and from there to the base rows,
-    # where dropping a row saves every join above it. This is what the old
-    # physical pushdown achieved by reading the context's first row at plan
-    # time; done here it reads every row, at run time, and the tree stays the
-    # same for any data (SEL-0049).
-    right_side = None
-    left_node, right_node = args.node(0), args.node(1)
-    stages, deep, above, obligations = prefilter if prefilter is not None else ([], False, [], [])
-    if count == 3:
-        jb1 = single_relation_name(left_node) or '_1'
-        jb2 = single_relation_name(right_node) or '_2'
-        jpred = args.node(2)
-    else:
-        jb1, jb2, jpred = args.symbol(2), args.symbol(3), args.node(4)
-    jequi = try_extract_equi_keys(jpred, jb1, jb2)
-    # The keys a side contributes to the joined row include the names its
-    # row is bound under: `_["products"]` after LINK(PRODUCTS, ...) is the
-    # right row, not a field of the left ones.
-    b2_names = (jb2, '_2')
-    b1_names = (jb1, '_1')
-    # The upper-cased keys of the joins between a stage's FILTER and this
-    # join, per count of them.
-    above_keys_cache = {}
-    def above_keys(stage):
+class _LinkCall:
+    """One LINK call's state, carried from phase to phase: what the call was
+    given, its two sources, and what the pre-filter decided. Built once per
+    call, never per row; the per-row loops read what they need from it into
+    locals before they start."""
+    __slots__ = ('args', 'ctx', 'left_join', 'prefilter', 'b1', 'b2', 'b1_names', 'b2_names', 'equi',
+                 'stages', 'deep', 'above', 'obligations', 'above_keys_cache', 'left_value', 'right_value',
+                 'right_side', 'applied_below', 'dropped', 'prefix', 'right_prefix', 'left_before_right',
+                 'binders', 'applied_ids', 'errored')
+
+    def __init__(self, args, ctx, left_join, prefilter, b1, b2, equi):
+        self.args = args
+        self.ctx = ctx
+        self.left_join = left_join
+        self.prefilter = prefilter
+        # The names each side's row is bound under (spec §7.4). The keys a
+        # side contributes to the joined row include them: `_["products"]`
+        # after LINK(PRODUCTS, ...) is the right row, not a field of the left
+        # ones.
+        self.b1 = b1
+        self.b2 = b2
+        self.b1_names = (b1, '_1')
+        self.b2_names = (b2, '_2')
+        self.equi = equi
+        self.stages, self.deep, self.above, self.obligations = (
+            prefilter if prefilter is not None else ([], False, [], []))
+        self.above_keys_cache = {}
+        self.left_value = None
+        self.right_value = None
+        # The right side's facts: known before the left source runs when
+        # conjuncts were handed down, else gathered while the right keys are.
+        self.right_side = None
+        # What the join below reported: the conjuncts (by identity) every row
+        # that came up has passed, and whether it dropped any row.
+        self.applied_below = None
+        self.dropped = False
+        # What _settle_prefix decided: the conjuncts asked of each left row
+        # and of each right row, how many left ones precede the first right
+        # one, the binders the conjuncts read the row through, and which
+        # conjuncts this join applies (reported to the join above).
+        self.prefix = []
+        self.right_prefix = []
+        self.left_before_right = -1
+        self.binders = []
+        self.applied_ids = set()
+        # A conjunct raised on some row (which was kept).
+        self.errored = False
+
+    def above_keys(self, stage):
+        """The upper-cased keys of the joins between a stage's FILTER and
+        this join, per count of them."""
         n = stage[2]
-        keys = above_keys_cache.get(n)
+        keys = self.above_keys_cache.get(n)
         if keys is None:
-            keys = above_keys_cache[n] = set().union(*(side.keys for side in above[:n])) if n else set()
+            keys = self.above_keys_cache[n] = set().union(*(side.keys for side in self.above[:n])) if n else set()
         return keys
-    if (deep and stages and jequi is not None and left_node is not None and left_node.t == 'call'
+
+    def right_names(self, stage):
+        """A read through this join's right binder is the right element in
+        every joined row -- the binder is bound last (spec §7.4) -- unless a
+        join above rebinds it."""
+        return {ascii_upper(self.b2), '_2'} if stage[2] == 0 else {ascii_upper(self.b2)}
+
+
+def _link_sources(call, left_node, right_node):
+    """Phase 1: the two sources. With conjuncts to pre-apply and a left
+    source that is itself a join, the right source is evaluated first --
+    unobservable when both sources are pure -- so that the conjuncts still
+    valid above this join's right rows can travel down to the join below, and
+    from there to the base rows, where dropping a row saves every join above
+    it. This is what the old physical pushdown achieved by reading the
+    context's first row at plan time; done here it reads every row, at run
+    time, and the tree stays the same for any data."""
+    args, ctx, equi, stages, above = call.args, call.ctx, call.equi, call.stages, call.above
+    if not (call.deep and stages and equi is not None and left_node is not None and left_node.t == 'call'
             and left_node.name in ('LINK', 'LINK_LEFT', 'FILTER')
             and _pure_source(left_node) and _pure_source(right_node)):
-        try:
-            right_value = args.val(1)
-        except SelError:
-            # The right source went first for the prefilter's sake, which is only
-            # unobservable while neither source raises (SPEC 7.4: as written, the
-            # left source runs first). The left source is pure too: run it now with
-            # nothing handed down. If it raises, ITS error is the one as written;
-            # if it does not, the right source's error stands.
-            args.val(0)
-            raise
-        right_side = _SideFacts(right_value, _row_keys(right_value, b2_names), left_join, b2_names)
-        # What the rows below may still be asked, with the left rows unknown:
-        # a field no right side (here or above) carries is theirs; a conjunct
-        # on a right side's field is deferred only when total on that side
-        # alone. The join below repeats the walk with its own sides at hand,
-        # and this one again once its left rows are known (below), so a
-        # deferral a lower relation's field would shadow is caught where the
-        # rows are, before anything after it is applied there.
-        def owned_below(fields, stage):
-            return not (fields & right_side.keys) and not (fields & above_keys(stage))
-        def total_below(reqs, stage):
-            return _totality(reqs, None, right_side, above[:stage[2]])
-        _, stop = _stage_walk(stages, owned_below, total_below)
-        # Below this join, every stage has one more join above it: this one.
-        handed = [(b, c, n + 1) for b, c, n in _truncate_stages(stages, stop)]
-        if handed:
-            # This join computes its left key on every row it receives; a row
-            # dropped below never arrives, so the key is handed down as an
-            # obligation for the join that drops to prove (_keys_safe).
-            own_key = (jequi[0], {jb1, ascii_lower(jb1), '_1', '_'}, len(above) + 1)
-            ctx.join_prefilter = (handed, True, [right_side, *above], [own_key, *obligations])
-        try:
-            left_value = args.val(0)
-        finally:
-            ctx.join_prefilter = None
-    else:
-        left_value = args.val(0)
-        right_value = args.val(1)
-    # The join below, if it applied some of these conjuncts, says which ones
-    # (by identity) every row that came up has passed; those are skipped here
-    # unless a row was kept on an error below, since such a row must reach
-    # the FILTER untouched and cannot be told apart from the others.
+        call.left_value = args.val(0)
+        call.right_value = args.val(1)
+        return
+    try:
+        call.right_value = args.val(1)
+    except SelError:
+        # The right source went first for the prefilter's sake, which is only
+        # unobservable while neither source raises (SPEC 7.4: as written, the
+        # left source runs first). The left source is pure too: run it now with
+        # nothing handed down. If it raises, ITS error is the one as written;
+        # if it does not, the right source's error stands.
+        args.val(0)
+        raise
+    right_side = call.right_side = _SideFacts(call.right_value, _row_keys(call.right_value, call.b2_names),
+                                              call.left_join, call.b2_names)
+    # What the rows below may still be asked, with the left rows unknown: a
+    # field no right side (here or above) carries is theirs; a conjunct on a
+    # right side's field is deferred only when total on that side alone. The
+    # join below repeats the walk with its own sides at hand, and this one
+    # again once its left rows are known (_settle_prefix), so a deferral a
+    # lower relation's field would shadow is caught where the rows are,
+    # before anything after it is applied there.
+    def owned_below(fields, stage):
+        return not (fields & right_side.keys) and not (fields & call.above_keys(stage))
+    def total_below(reqs, stage):
+        return _totality(reqs, None, right_side, above[:stage[2]])
+    _, stop = _stage_walk(stages, owned_below, total_below)
+    # Below this join, every stage has one more join above it: this one.
+    handed = [(b, c, n + 1) for b, c, n in _truncate_stages(stages, stop)]
+    if handed:
+        # This join computes its left key on every row it receives; a row
+        # dropped below never arrives, so the key is handed down as an
+        # obligation for the join that drops to prove (_keys_safe).
+        b1 = call.b1
+        own_key = (equi[0], {b1, ascii_lower(b1), '_1', '_'}, len(above) + 1)
+        ctx.join_prefilter = (handed, True, [right_side, *above], [own_key, *call.obligations])
+    try:
+        call.left_value = args.val(0)
+    finally:
+        ctx.join_prefilter = None
+
+
+def _link_report_below(call):
+    """Phase 2: what the join below reported. If it applied some of these
+    conjuncts, it says which ones (by identity) every row that came up has
+    passed; those are skipped here unless a row was kept on an error below,
+    since such a row must reach the FILTER untouched and cannot be told apart
+    from the others."""
+    ctx = call.ctx
     below = ctx.join_prefilter_report
     ctx.join_prefilter_report = None
     # Drops below that left this join no left rows: as written it may have
@@ -1058,13 +1100,303 @@ def _link(args, ctx, left_join):
     # cannot be) before it finds that no row survives. Only the rows as
     # written can say, so the left side -- pure, or nothing was handed down --
     # is evaluated again without them, and this join runs as written.
-    if below is not None and below[2] and first_collection_item(left_value) is None:
-        left_value = args.eval_node(args.node(0))
+    if below is not None and below[2] and first_collection_item(call.left_value) is None:
+        call.left_value = call.args.eval_node(call.args.node(0))
         ctx.join_prefilter_report = None
         below = None
-    applied_below = below[0] if (below is not None and not below[1]) else set()
-    dropped = [below is not None and below[2]]
-    b1, b2, predicate = jb1, jb2, jpred      # the binders and predicate, read above
+    call.applied_below = below[0] if (below is not None and not below[1]) else set()
+    call.dropped = below is not None and below[2]
+
+
+def _settle_prefix(call):
+    """Phase 3: the pre-filter, decided at run time from the rows themselves,
+    with both sides at hand. A leading conjunct reading `_["F"]` may be
+    applied to a left row before the join only when F is a key of NO right row
+    (over every row, not a sample), so that the joined row's F is the left
+    row's F; a conjunct with any field the right side has ends the usable
+    prefix, since AND short-circuits left to right and a later conjunct may
+    not run before an earlier one -- unless it is total over this join's rows.
+    On a left row it evaluates FALSE the row is dropped -- the joined rows it
+    would have produced (or its null-extended row, for LINK_LEFT) would all
+    have been dropped by the same conjunct. On an error the row is KEPT: the
+    full predicate runs over the joined rows afterwards and raises there, in
+    row order, or does not raise at all for a left row that joins nothing. A
+    read through the left binder's own name (`_["orders"]["year"]` on ORDERS
+    rows) is the row itself, spec §7.4."""
+    b1, b2, above, right_side, prefix = call.b1, call.b2, call.above, call.right_side, call.prefix
+    b1_names = call.b1_names
+    left_side = _SideFacts(call.left_value, _row_keys(call.left_value, b1_names), False, b1_names)
+    if call.obligations and not _keys_safe(call.obligations, left_side, right_side, above,
+                                           {n for b in b1_names if not is_positional_binder(b)
+                                            for n in (b, ascii_lower(b))}):
+        return
+    def owned_here(fields, stage):
+        # A joined row carries a left element's field exactly as the element
+        # does whenever no right element has the name (§7.4, pair by pair) --
+        # and no row depends on another, so a drop below changes nothing
+        # above but the rows it drops.
+        return not (fields & right_side.keys) and not (fields & call.above_keys(stage))
+    def total_here(reqs, stage):
+        return _totality(reqs, left_side, right_side, above[:stage[2]])
+    # A read through the right binder is the right row unless the left binder
+    # has the same name; LINK_LEFT's null-extended rows are not right rows.
+    right_here = None
+    if not call.left_join and ascii_upper(b1) != ascii_upper(b2):
+        def right_here(fields, stage):
+            return fields <= call.right_names(stage) and not (fields & call.above_keys(stage))
+    self_names = {ascii_upper(b1), '_1'}
+    applied_ids, applied_below = call.applied_ids, call.applied_below
+    applied, _stop = _stage_walk(call.stages, owned_here, total_here, right_here)
+    for conjunct, fields, binder, stage, right in applied:
+        applied_ids.add(id(conjunct))
+        if id(conjunct) in applied_below:
+            continue
+        if right:
+            if call.left_before_right < 0:
+                call.left_before_right = len(prefix)
+            call.right_prefix.append(_read_self(conjunct, call.right_names(stage), binder))
+            continue
+        if fields & self_names and not (fields & left_side.first):
+            conjunct = _read_self(conjunct, self_names, binder)
+        prefix.append(conjunct)
+
+
+def _link_verdict(call, conjuncts, row, frame):
+    """One row through the pre-filter's CONJUNCTS, the row named in FRAME by
+    every stage's binder. 0: keep the row; 1: drop it; 2: keep it, a conjunct
+    raised on it."""
+    for binder in call.binders:
+        frame[binder] = row
+    args = call.args
+    for conjunct in conjuncts:
+        try:
+            keep = args.eval_node(conjunct).as_bool(conjunct.pos)
+        except SelError:
+            call.errored = True
+            return 2
+        if not keep:
+            return 1
+    return 0
+
+
+def _bucket_right_rows(call, right_items, needs_right_alias):
+    """Equi-join, phase 4a: every right row's key, into buckets in row order.
+    Also gathers the right side's keys for the pre-filter when they were not
+    known before the sources ran."""
+    args, ctx, b2 = call.args, call.ctx, call.b2
+    right_expr, numeric = call.equi[1], call.equi[2]
+    buckets = {}
+    facts = {'live': False, 'live_bad': None, 'bad': None}
+    gather = _KeySet() if (call.prefilter is not None and call.right_side is None) else None
+    b2_lower = ascii_lower(b2)
+    frame_right = {b2: None, b2_lower: None, '_2': None}
+    ctx.push_frame(frame_right)
+    try:
+        for item in right_items:
+            row = ensure_row_table_alias(item, b2) if needs_right_alias else item
+            frame_right[b2] = row
+            frame_right[b2_lower] = row
+            frame_right['_2'] = row
+            _bucket_join_key(buckets, facts, canonical_join_key(args.eval_node(right_expr), numeric), row)
+            if gather is not None:
+                gather.add(row)
+    finally:
+        ctx.pop_frame()
+    if gather is not None:
+        call.right_side = _SideFacts(call.right_value, gather.keys | {ascii_upper(b) for b in call.b2_names},
+                                     call.left_join, call.b2_names)
+    return buckets, facts
+
+
+def _reject_right_rows(call, buckets):
+    """Equi-join, phase 4b: the right rows the right conjuncts reject, once
+    each, after every right key was computed. They stay in their buckets: a
+    left row still counts them towards the numbering, and one kept on an
+    error joins them."""
+    rejected = set()
+    frame = {binder: None for binder in call.binders}
+    right_prefix = call.right_prefix
+    before = call.errored
+    call.errored = False
+    call.ctx.push_frame(frame)
+    try:
+        for bucket in buckets.values():
+            for right in bucket:
+                if _link_verdict(call, right_prefix, right, frame) == 1:
+                    rejected.add(id(right))
+    finally:
+        call.ctx.pop_frame()
+    # With a right row kept on an error, a later left conjunct may not drop a
+    # left row: the joined row would have raised in the right conjunct first.
+    if call.errored:
+        del call.prefix[call.left_before_right:]
+    call.errored = call.errored or before
+    return rejected
+
+
+def _probe_left_rows(call, left_items, needs_left_alias, buckets, facts, rejected, project, project_many):
+    """Equi-join, phase 4c: every left row's key, looked up in the buckets,
+    and the joined rows built in order.
+
+    A FILTER keeps its input's keys, so the rows dropped here still count
+    towards the numbering of the rows kept: the join key is computed first,
+    as it is for every row (and raises where it would have), the matches say
+    how many joined rows the dropped row stood for, and the kept rows are
+    emitted under the positions they would have had."""
+    args, ctx, b1, equi, prefix, left_join = call.args, call.ctx, call.b1, call.equi, call.prefix, call.left_join
+    left_expr, numeric = equi[0], equi[2]
+    output = []
+    numbered = bool(prefix or rejected is not None) and not call.deep
+    keys = [] if numbered else None
+    position = 1
+    dropped = call.dropped
+    # The join key is computed for every left row before the pre-filter is
+    # asked, so that a key that raises still raises. When the key is a
+    # literal field of the row -- `_1["customer_id"]` -- the read can only
+    # raise for a row that lacks the field (the evaluator's E_NO_KEY; the
+    # canonical key never raises), so a row that HAS it may be rejected first
+    # and its key never computed: that is most of what a pushed filter used to
+    # save. Only where nothing observes the numbering.
+    fast_field = None
+    if (prefix and call.deep and left_expr.t == 'index' and left_expr.obj is not None
+            and left_expr.obj.t == 'var' and left_expr.idx is not None
+            and left_expr.idx.t == 'text'
+            and ascii_upper(left_expr.obj.name) in (ascii_upper(b1), '_1', '_')):
+        fast_field = left_expr.idx.v
+    b1_lower = ascii_lower(b1)
+    frame_left = {b1: None, b1_lower: None, '_1': None, '_': None}
+    for binder in call.binders:
+        frame_left.setdefault(binder, None)
+    ctx.push_frame(frame_left)
+    try:
+        for item in left_items:
+            row = ensure_row_table_alias(item, b1) if needs_left_alias else item
+            asked = -1
+            if fast_field is not None and row.get(fast_field) is not None:
+                asked = _link_verdict(call, prefix, row, frame_left)
+                if asked == 1:
+                    # Dropped before its key was computed -- but the key is
+                    # this very field, and a rejected one still raises.
+                    _check_join_pair(equi, canonical_join_key(row.get(fast_field), numeric), facts)
+                    dropped = True
+                    continue
+            frame_left[b1] = row
+            frame_left[b1_lower] = row
+            frame_left['_1'] = row
+            frame_left['_'] = row
+            key = canonical_join_key(args.eval_node(left_expr), numeric)
+            _check_join_pair(equi, key, facts)
+            matches = buckets.get(key) if key is not None and not isinstance(key, _JoinBad) else None
+            if asked < 0:
+                asked = _link_verdict(call, prefix, row, frame_left) if prefix else 0
+            if asked == 1:
+                dropped = True
+                if numbered:
+                    position += len(matches) if matches else (1 if left_join else 0)
+                continue
+            if matches:
+                # A left row kept on an error meets every right row: its
+                # joined rows raise in the FILTER, in order, where they would
+                # have.
+                skip = rejected if (rejected is not None and asked == 0) else None
+                if skip is None:
+                    check_collection(len(output) + len(matches), args.pos)
+                    project_many(row, matches, output)
+                    if keys is not None:
+                        keys.extend([str(p) for p in range(position, position + len(matches))])
+                    position += len(matches)
+                else:
+                    for right in matches:
+                        if id(right) in skip:
+                            dropped = True
+                            position += 1
+                            continue
+                        check_collection(len(output) + 1, args.pos)
+                        output.append(project(row, right))
+                        if keys is not None:
+                            keys.append(str(position))
+                        position += 1
+            elif left_join:
+                check_collection(len(output) + 1, args.pos)
+                output.append(project(row, None))
+                if keys is not None:
+                    keys.append(str(position))
+                position += 1
+    finally:
+        ctx.pop_frame()
+    if call.prefilter is not None:
+        ctx.join_prefilter_report = (call.applied_ids, call.errored, dropped)
+    if keys is not None and len(keys) != position - 1:
+        return Value._list_owned(output, keys)
+    return Value._list_owned(output)
+
+
+def _nested_loop_join(call, predicate, left_items, right_items, needs_left_alias, needs_right_alias, project):
+    """The general join: the predicate over every pair, in order. No
+    pre-filter here: the numbering of the kept rows would need the count of
+    matches of every dropped row, which is the predicate scan the pre-filter
+    exists to avoid."""
+    args, b1, b2, left_join = call.args, call.b1, call.b2, call.left_join
+    output = []
+    b1_lower, b2_lower = ascii_lower(b1), ascii_lower(b2)
+    frame = {b1: None, b1_lower: None, '_1': None, '_': None,
+             b2: None, b2_lower: None, '_2': None}
+    call.ctx.push_frame(frame)
+    try:
+        # The right side's table alias depends only on the right row, so it is
+        # made once (on the first left row, so an empty left side still does no
+        # work), not once per PAIR -- it was 21% of a 500x500 join.
+        rights = None if needs_right_alias else right_items
+        eval_predicate = args.eval_node
+        for left_item in left_items:
+            left = ensure_row_table_alias(left_item, b1) if needs_left_alias else left_item
+            frame[b1] = left
+            frame[b1_lower] = left
+            frame['_1'] = left
+            frame['_'] = left
+            matched = False
+            if rights is None:
+                rights = [ensure_row_table_alias(r, b2) for r in right_items]
+
+            for right in rights:
+                frame[b2] = right
+                frame[b2_lower] = right
+                frame['_2'] = right
+                if eval_predicate(predicate).as_bool(predicate.pos):
+                    matched = True
+                    check_collection(len(output) + 1, args.pos)
+                    output.append(project(left, right))
+
+            if left_join and not matched:
+                check_collection(len(output) + 1, args.pos)
+                output.append(project(left, None))
+    finally:
+        call.ctx.pop_frame()
+    return Value._list_owned(output)
+
+
+def _link(args, ctx, left_join):
+    # Taken before anything else is evaluated, so a LINK nested in this one's
+    # sources cannot pick it up by accident (aggregate.py, _filter); it is
+    # handed down on purpose in _link_sources.
+    prefilter = ctx.join_prefilter
+    ctx.join_prefilter = None
+    count = args.count()             # 3 or 5: the manifest's arity, checked at compile time
+    left_node, right_node = args.node(0), args.node(1)
+    # The names each side's row is bound under (spec §7.4), worked out once
+    # and left to right: the five-argument form's binders, else a side given
+    # by name, else `_1`/`_2`.
+    if count == 3:
+        b1 = single_relation_name(left_node) or '_1'
+        b2 = single_relation_name(right_node) or '_2'
+        predicate = args.node(2)
+    else:
+        b1, b2, predicate = args.symbol(2), args.symbol(3), args.node(4)
+    equi = try_extract_equi_keys(predicate, b1, b2)
+    call = _LinkCall(args, ctx, left_join, prefilter, b1, b2, equi)
+    _link_sources(call, left_node, right_node)
+    _link_report_below(call)
+    left_value, right_value = call.left_value, call.right_value
     if left_value.is_null():
         return Value._list_owned([])
 
@@ -1089,259 +1421,16 @@ def _link(args, ctx, left_join):
     if null_right is not None and null_right.is_null():
         null_right = None
     project, project_many = make_join_projector(b1, b2, null_right)
-    equi = jequi
-    output = []
+    if equi is None or sample_right is None:
+        return _nested_loop_join(call, predicate, left_items, right_items, needs_left_alias, needs_right_alias,
+                                 project)
 
-    # The pre-filter, decided at run time from the rows themselves. A leading
-    # conjunct reading `_["F"]` may be applied to a left row before the join
-    # only when F is a key of NO right row (over every row, not a sample), so
-    # that the joined row's F is the left row's F; a conjunct with any field
-    # the right side has ends the usable prefix, since AND short-circuits left
-    # to right and a later conjunct may not run before an earlier one. On a
-    # left row it evaluates FALSE the row is dropped -- the joined rows it
-    # would have produced (or its null-extended row, for LINK_LEFT) would all
-    # have been dropped by the same conjunct. On an error the row is KEPT: the
-    # full predicate runs over the joined rows afterwards and raises there, in
-    # row order, or does not raise at all for a left row that joins nothing.
-    gather = _KeySet() if (prefilter is not None and right_side is None) else None
-    prefix = []
-    right_prefix = []
-    # How many left conjuncts come before the first right one: with a right
-    # row kept on an error, a later left conjunct may not drop a left row --
-    # the joined row would have raised in the right conjunct first.
-    left_before_right = [-1]
+    buckets, facts = _bucket_right_rows(call, right_items, needs_right_alias)
     if prefilter is not None:
-        binders = [stage[0] for stage in stages]
-        applied_ids = set()
-        errored = [False]
-        self_names = {ascii_upper(b1), '_1'}
-        # A read through this join's right binder is the right element in
-        # every joined row -- the binder is bound last (spec §7.4) -- unless
-        # the left binder has the same name, or a join above rebinds it.
-        def right_names(stage):
-            return {ascii_upper(b2), '_2'} if stage[2] == 0 else {ascii_upper(b2)}
-        right_here = None
-        if not left_join and ascii_upper(b1) != ascii_upper(b2):
-            def right_here(fields, stage):
-                return fields <= right_names(stage) and not (fields & above_keys(stage))
-        def settle_prefix():
-            # With both sides at hand: a field no right side carries is the
-            # left rows' (a read through the left binder's own name,
-            # `_["orders"]["year"]` on ORDERS rows, is the row itself, spec
-            # §7.4); a right side's field may be passed over only when the
-            # conjunct is total over this join's rows.
-            left_side = _SideFacts(left_value, _row_keys(left_value, b1_names), False, b1_names)
-            if obligations and not _keys_safe(obligations, left_side, right_side, above,
-                                              {n for b in b1_names if not is_positional_binder(b)
-                                               for n in (b, ascii_lower(b))}):
-                return
-            def owned_here(fields, stage):
-                # A joined row carries a left element's field exactly as the
-                # element does whenever no right element has the name (§7.4,
-                # pair by pair) -- and no row depends on another, so a drop
-                # below changes nothing above but the rows it drops.
-                return not (fields & right_side.keys) and not (fields & above_keys(stage))
-            def total_here(reqs, stage):
-                return _totality(reqs, left_side, right_side, above[:stage[2]])
-            applied, _stop = _stage_walk(stages, owned_here, total_here, right_here)
-            for conjunct, fields, binder, stage, right in applied:
-                applied_ids.add(id(conjunct))
-                if id(conjunct) in applied_below:
-                    continue
-                if right:
-                    if left_before_right[0] < 0:
-                        left_before_right[0] = len(prefix)
-                    right_prefix.append(_read_self(conjunct, right_names(stage), binder))
-                    continue
-                if fields & self_names and not (fields & left_side.first):
-                    conjunct = _read_self(conjunct, self_names, binder)
-                prefix.append(conjunct)
-        def verdict(conjuncts, row, frame):
-            """0: keep the row; 1: drop it; 2: keep it, a conjunct raised on it.
-            The frame names the row by every stage's binder."""
-            for binder in binders:
-                frame[binder] = row
-            for conjunct in conjuncts:
-                try:
-                    keep = args.eval_node(conjunct).as_bool(conjunct.pos)
-                except SelError:
-                    errored[0] = True
-                    return 2
-                if not keep:
-                    return 1
-            return 0
-
-    if equi is not None and sample_right is not None:
-        left_expr, right_expr, numeric, _swapped = equi
-        buckets = {}
-        facts = {'live': False, 'live_bad': None, 'bad': None}
-        b2_lower = ascii_lower(b2)
-        frame_right = {b2: None, b2_lower: None, '_2': None}
-        ctx.push_frame(frame_right)
-        try:
-            for item in right_items:
-                row = ensure_row_table_alias(item, b2) if needs_right_alias else item
-                frame_right[b2] = row
-                frame_right[b2_lower] = row
-                frame_right['_2'] = row
-                _bucket_join_key(buckets, facts, canonical_join_key(args.eval_node(right_expr), numeric), row)
-                if gather is not None:
-                    gather.add(row)
-        finally:
-            ctx.pop_frame()
-        if prefilter is not None:
-            if gather is not None:
-                right_side = _SideFacts(right_value, gather.keys | {ascii_upper(b) for b in b2_names}, left_join,
-                                        b2_names)
-            settle_prefix()
-        # The right rows the right conjuncts reject, once each, after every
-        # right key was computed. They stay in their buckets: a left row still
-        # counts them towards the numbering, and one kept on an error joins
-        # them.
-        rejected = None
-        if right_prefix:
-            rejected = set()
-            frame = {binder: None for binder in binders}
-            before = errored[0]
-            errored[0] = False
-            ctx.push_frame(frame)
-            try:
-                for bucket in buckets.values():
-                    for right in bucket:
-                        if verdict(right_prefix, right, frame) == 1:
-                            rejected.add(id(right))
-            finally:
-                ctx.pop_frame()
-            if errored[0]:
-                del prefix[left_before_right[0]:]
-            errored[0] = errored[0] or before
-
-        # A FILTER keeps its input's keys, so the rows dropped here still count
-        # towards the numbering of the rows kept: the join key is computed
-        # first, as it is for every row (and raises where it would have), the
-        # matches say how many joined rows the dropped row stood for, and the
-        # kept rows are emitted under the positions they would have had.
-        numbered = bool(prefix or rejected is not None) and not deep
-        keys = [] if numbered else None
-        position = 1
-        # The join key is computed for every left row before the pre-filter
-        # is asked, so that a key that raises still raises. When the key is a
-        # literal field of the row -- `_1["customer_id"]` -- the read can only
-        # raise for a row that lacks the field (the evaluator's E_NO_KEY; the
-        # canonical key never raises), so a row that HAS it may be rejected
-        # first and its key never computed: that is most of what a pushed
-        # filter used to save. Only where nothing observes the numbering.
-        fast_field = None
-        if (prefix and deep and left_expr.t == 'index' and left_expr.obj is not None
-                and left_expr.obj.t == 'var' and left_expr.idx is not None
-                and left_expr.idx.t == 'text'
-                and ascii_upper(left_expr.obj.name) in (ascii_upper(b1), '_1', '_')):
-            fast_field = left_expr.idx.v
-        b1_lower = ascii_lower(b1)
-        frame_left = {b1: None, b1_lower: None, '_1': None, '_': None}
-        if prefilter is not None:
-            for binder in binders:
-                frame_left.setdefault(binder, None)
-        ctx.push_frame(frame_left)
-        try:
-            for item in left_items:
-                row = ensure_row_table_alias(item, b1) if needs_left_alias else item
-                asked = -1
-                if fast_field is not None and row.get(fast_field) is not None:
-                    asked = verdict(prefix, row, frame_left)
-                    if asked == 1:
-                        # Dropped before its key was computed -- but the key is
-                        # this very field, and a rejected one still raises.
-                        _check_join_pair(equi, canonical_join_key(row.get(fast_field), numeric), facts)
-                        dropped[0] = True
-                        continue
-                frame_left[b1] = row
-                frame_left[b1_lower] = row
-                frame_left['_1'] = row
-                frame_left['_'] = row
-                key = canonical_join_key(args.eval_node(left_expr), numeric)
-                _check_join_pair(equi, key, facts)
-                matches = buckets.get(key) if key is not None and not isinstance(key, _JoinBad) else None
-                if asked < 0:
-                    asked = verdict(prefix, row, frame_left) if prefix else 0
-                if asked == 1:
-                    dropped[0] = True
-                    if numbered:
-                        position += len(matches) if matches else (1 if left_join else 0)
-                    continue
-                if matches:
-                    # A left row kept on an error meets every right row: its
-                    # joined rows raise in the FILTER, in order, where they
-                    # would have.
-                    skip = rejected if (rejected is not None and asked == 0) else None
-                    if skip is None:
-                        check_collection(len(output) + len(matches), args.pos)
-                        project_many(row, matches, output)
-                        if keys is not None:
-                            keys.extend([str(p) for p in range(position, position + len(matches))])
-                        position += len(matches)
-                    else:
-                        for right in matches:
-                            if id(right) in skip:
-                                dropped[0] = True
-                                position += 1
-                                continue
-                            check_collection(len(output) + 1, args.pos)
-                            output.append(project(row, right))
-                            if keys is not None:
-                                keys.append(str(position))
-                            position += 1
-                elif left_join:
-                    check_collection(len(output) + 1, args.pos)
-                    output.append(project(row, None))
-                    if keys is not None:
-                        keys.append(str(position))
-                    position += 1
-        finally:
-            ctx.pop_frame()
-        if prefilter is not None:
-            ctx.join_prefilter_report = (applied_ids, errored[0], dropped[0])
-        if keys is not None and len(keys) != position - 1:
-            return Value._list_owned(output, keys)
-    else:
-        # No pre-filter on the general join: the numbering of the kept rows
-        # would need the count of matches of every dropped row, which is the
-        # predicate scan the pre-filter exists to avoid.
-        b1_lower, b2_lower = ascii_lower(b1), ascii_lower(b2)
-        frame = {b1: None, b1_lower: None, '_1': None, '_': None,
-                 b2: None, b2_lower: None, '_2': None}
-        ctx.push_frame(frame)
-        try:
-            # The right side's table alias depends only on the right row, so it is
-            # made once (on the first left row, so an empty left side still does no
-            # work), not once per PAIR -- it was 21% of a 500x500 join.
-            rights = None if needs_right_alias else right_items
-            eval_predicate = args.eval_node
-            for left_item in left_items:
-                left = ensure_row_table_alias(left_item, b1) if needs_left_alias else left_item
-                frame[b1] = left
-                frame[b1_lower] = left
-                frame['_1'] = left
-                frame['_'] = left
-                matched = False
-                if rights is None:
-                    rights = [ensure_row_table_alias(r, b2) for r in right_items]
-
-                for right in rights:
-                    frame[b2] = right
-                    frame[b2_lower] = right
-                    frame['_2'] = right
-                    if eval_predicate(predicate).as_bool(predicate.pos):
-                        matched = True
-                        check_collection(len(output) + 1, args.pos)
-                        output.append(project(left, right))
-
-                if left_join and not matched:
-                    check_collection(len(output) + 1, args.pos)
-                    output.append(project(left, None))
-        finally:
-            ctx.pop_frame()
-    return Value._list_owned(output)
+        call.binders = [stage[0] for stage in call.stages]
+        _settle_prefix(call)
+    rejected = _reject_right_rows(call, buckets) if call.right_prefix else None
+    return _probe_left_rows(call, left_items, needs_left_alias, buckets, facts, rejected, project, project_many)
 
 
 define('LINK', 3, 5, lazy=True, binds=True,
