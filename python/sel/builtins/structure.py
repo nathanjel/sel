@@ -277,7 +277,7 @@ def canonical_join_key(value, numeric):
                 if text.isascii() and (text.isdigit() or (text.startswith('-') and text[1:].isdigit())):
                     try:
                         return int(text)
-                    except Exception:
+                    except ValueError:      # over the interpreter's int digit limit
                         pass
             try:
                 d = value.as_decimal()

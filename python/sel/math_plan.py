@@ -5,7 +5,7 @@ from enum import IntEnum
 from typing import Any
 
 from . import decimal as D
-from .errors import MAX_DEPTH, Pos
+from .errors import MAX_DEPTH, Pos, SelError
 from .parser import Node
 from ._math_ops import MATH_OPERATORS as _OPERATORS, MATH_PREFIX as _PREFIX, \
     MATH_BUILTINS as _BUILTINS, MATH_OPS as _OPS
@@ -124,7 +124,7 @@ def compile_math_plan(root: Node) -> MathPlan | None:
             if dec is None:
                 try:
                     dec = D.parse(node.v, node.pos)
-                except Exception:
+                except SelError:
                     return None
             slot = alloc_slot()
             steps.append(Step(op=OpCode.LOAD_CONST, dst=slot, const_val=dec, pos=node.pos))

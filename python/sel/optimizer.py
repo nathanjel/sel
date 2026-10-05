@@ -10,7 +10,7 @@ from __future__ import annotations
 from typing import Any
 
 from . import decimal as D
-from .errors import MAX_DEPTH
+from .errors import MAX_DEPTH, SelError
 from .eval import bytes_compare
 from .lexer import ascii_upper
 from .math_plan import compile_math_plan, is_math_op
@@ -106,7 +106,7 @@ def fold(node: Node | None) -> Node | None:
             try:
                 negated = D.negate(literal_dec(node.x))
                 return literal_num(D.format(negated), node.pos, negated)
-            except Exception:
+            except SelError:
                 return node
         return node
     if node.t == 'bin' and node.l is not None and node.r is not None:
@@ -136,7 +136,7 @@ def fold(node: Node | None) -> Node | None:
                 else:
                     result = D.mod(left, right, node.pos)
                 return literal_num(D.format(result), node.pos, result)
-            except Exception:
+            except SelError:
                 return node
         if (node.l.t == 'num' and node.r.t == 'num'
                 and node.op in ('==', '!=', '<', '<=', '>', '>=')):
@@ -155,7 +155,7 @@ def fold(node: Node | None) -> Node | None:
                 else:
                     value = c >= 0
                 return literal_bool(value, node.pos)
-            except Exception:
+            except SelError:
                 return node
         if (node.l.t == 'text' and node.r.t == 'text'
                 and node.op in ('$==', '$!=', '$<', '$<=', '$>', '$>=')):
@@ -469,7 +469,7 @@ def numeric_literal(node: Node | None) -> int | None:
             return None
         result = D.to_safe_int(value)
         return result if result >= 0 else None
-    except Exception:
+    except SelError:
         return None
 
 
@@ -776,7 +776,6 @@ def _build_constant(node: Node) -> Any:
     evaluation would have produced; None (so the row path runs as before) should
     it refuse."""
     from .eval import Context, eval_node
-    from .errors import SelError
     from .value import Value
     try:
         value = eval_node(node, Context(Value.from_native({})))
