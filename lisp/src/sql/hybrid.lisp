@@ -1032,10 +1032,9 @@ be bound by a driver as they were)."
             (db-rows (funcall db-runner (as-statement frag :params) (bindings frag)))
             (cont-prog (hybrid-plan-continuation-program plan))
             (input-var (hybrid-plan-continuation-source-var plan)))
-       ;; A COPY of the caller's context, as the other four hosts make: the
+       ;; A COPY of the caller's context, as the other hosts make: the
        ;; continuation may assign, and an indexed assignment into an aliased
-       ;; child would otherwise write into the caller's tree (review
-       ;; 2026-09-15, low). The rows the database returned are added to the
+       ;; child would otherwise write into the caller's tree. The rows the database returned are added to the
        ;; copy, never to the caller's value.
        (let* ((rows (if (sel:value-p db-rows) db-rows (sel:from-native db-rows)))
               (cont-context

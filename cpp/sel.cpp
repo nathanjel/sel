@@ -1599,8 +1599,8 @@ int dec_sign(const Dec& d) {
 // mantissas brought to the larger scale in __int128, or false when the scale
 // gap is past the power table or the multiply overflows. The caller falls
 // through to the binary path on false exactly as each did with its own copy;
-// signed bounds are __builtin_mul_overflow's. Two callers, one rule (WL-001
-// SEL-0018); it is not a small-integer abstraction for the other hosts.
+// signed bounds are __builtin_mul_overflow's. Two callers, one rule
+// (SEL-0018); it is not a small-integer abstraction for the other hosts.
 inline bool align_small(const Dec& a, const Dec& b, __int128_t& sa, __int128_t& sb,
                         long long& target_scale) {
   target_scale = std::max(static_cast<long long>(a.scale), static_cast<long long>(b.scale));

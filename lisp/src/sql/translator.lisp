@@ -1438,7 +1438,7 @@ and so which downstream guards fire."
 (defparameter +yields-list+ '("BTL" "INDEXES" "RGROUPS" "SPLIT"))
 
 (defun regex-at (name)
-  "Which funcs take a regex, and at which 0-based argument. All four name index
+  "Which funcs take a regex, and at which 0-based argument. Each names index
 0; the shape exists so a function taking a regex elsewhere is one entry rather
 than a code change."
   (when (sel::regex-flag-index name) 0))
@@ -1782,7 +1782,7 @@ has no scalar rendering" name)
           ;; BOTH halves of IS-BINDER-NAME matter: (C) parses as a var carrying
           ;; the parser's GROUPED flag, and the evaluator refuses it with
           ;; E_EXPECT_SYMBOL; testing only the kind accepted a binder the
-          ;; language rejects, in all three hosts.
+          ;; language rejects, in every host that did it.
           (unless (is-binder-name (second args))
             (refuse "E_SQL_SHAPE"
                     (format nil "the binder of ~a must be a bare name" (sel::node-s n))
@@ -2017,8 +2017,7 @@ against it; the correlation names the alias, so it cannot be renamed here" alias
       ;; a later step -- the joined row carries them as keys, not as names.
       ;; This frame used to bind `_`, `_1`, `_2`, the relations' names and
       ;; aliases and both binders for every later step of a joined statement,
-      ;; so `FILTER(C["id"] > 1)` translated where `run()` fails (review
-      ;; 2026-09-15 finding W2).
+      ;; so `FILTER(C["id"] > 1)` translated where `run()` fails.
       (setf frame (frame-set frame "_K"
                              (binder-none "a row of a relation has no key: SQL rows ~
 are unordered and unkeyed unless the schema says otherwise, and guessing which ~
@@ -3010,7 +3009,7 @@ can say about a bucket on its own."
                    ;; The steps before the LINK refuse first, as written: their
                    ;; keys (a sort's, say) are otherwise checked only when the
                    ;; statement is rendered, after the LINK's predicate was --
-                   ;; which reported the LINK's refusal where the other four
+                   ;; which reported the LINK's refusal where the other
                    ;; hosts report the earlier step's (found by the SQL fuzzer).
                    (when (or (relational-plan-order-by plan)
                              (relational-plan-projections plan)

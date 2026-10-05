@@ -25,9 +25,9 @@ func TestRegisterFunctionRefusesNilFunction(t *testing.T) {
 	RegisterFunction("T12_NIL_FN", 0, 1, nil)
 }
 
-// Every name in the generated manifest is defined by some module. (The
-// worklist asks for this to hold at load, as JS's assertManifestCovered does; this
-// is the check the test lane can make today.)
+// Every name in the generated manifest is defined by some module. (JS holds
+// this at load, with assertManifestCovered; this is the check the test lane can
+// make today.)
 func TestEveryManifestBuiltinIsDefined(t *testing.T) {
 	for name := range manifest.Builtins {
 		if lookup(name) == nil {

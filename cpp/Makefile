@@ -284,7 +284,7 @@ $(BUILD)/sql-race-tsan: tests/sql_race.cpp
 $(BUILD)/regex-race-tsan: tests/regex_race.cpp
 $(BUILD)/registry-race-tsan: tests/registry_race.cpp
 
-# All four; any report or wrong answer fails the target.
+# Every probe; any report or wrong answer fails the target.
 .PHONY: tsan tsan-registry tsan-regex tsan-sql tsan-program
 tsan: $(addprefix $(BUILD)/,$(addsuffix -tsan,$(TSAN_PROBES)))
 	$(BUILD)/program-race-tsan

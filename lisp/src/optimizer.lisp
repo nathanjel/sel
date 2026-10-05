@@ -664,7 +664,7 @@ with literal keys, else :UNKNOWN."
 (defun optimize-logical-pipeline-steps (source curr-steps &optional (logical t) step-depth)
   "Tier 1: Engine-agnostic logical relational rewrites on flat pipeline steps,
 as one left-to-right sweep over the pairs of adjacent steps, repeated to a
-fixed point -- the same sweep, in the same rule order, as the other four
+fixed point -- the same sweep, in the same rule order, as the other
 hosts. SOURCE is what the first step reads, which only the FILTER(TRUE) rule
 needs."
   (let ((changed t)
@@ -721,7 +721,7 @@ needs."
 
 (defun optimize-children (node physical depth)
   "A shallow copy of NODE with every child optimised. NODE itself is never
-written: the tree a Program owns is the caller's, the other four hosts copy on
+written: the tree a Program owns is the caller's, the other hosts copy on
 the way down, and this one wrote into its input until the cross-language review
 -- so a second RUN saw a tree the first had already rewritten, and the SQL
 planner saw one the evaluator had rewritten for itself."

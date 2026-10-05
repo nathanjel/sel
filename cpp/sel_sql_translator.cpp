@@ -2083,7 +2083,7 @@ constexpr std::string_view BOOL_ARGUMENT_OK[] = {"ISNUM"};
 constexpr std::string_view AGGREGATES[] = {"ALL", "ANY", "MAP",
                                            "FILTER", "SUM", "JOIN"};
 
-// Which funcs take a regex, and at which 0-based argument. All four name index
+// Which funcs take a regex, and at which 0-based argument. Each names index
 // 0; the shape exists so a function taking a regex elsewhere is one entry
 // rather than a code change.
 std::optional<int> regex_at(std::string_view name) {
@@ -2504,7 +2504,7 @@ AggShape agg_shape(const SNode& n) {
     // BOTH halves of is_binder_name matter. `(C)` parses as a var carrying the
     // parser's grouped flag, and the evaluator refuses it with
     // E_EXPECT_SYMBOL; testing only the kind accepted a binder the language
-    // rejects, in all three hosts.
+    // rejects, in every host that did it.
     if (!is_binder_name(*args[1])) {
       refuse("E_SQL_SHAPE", "the binder of " + n.s() + " must be a bare name",
              args[1]->pos());

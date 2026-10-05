@@ -201,9 +201,8 @@ int main() {
     }
   }
 
-  // An executed plan answers what run() answers. Review 2026-09-15 findings
-  // I, AI and P: plans that pushed a bare bucket to the end, re-grouped a
-  // bucket, or re-applied a MAP's RECORD over rows the SQL had already
+  // An executed plan answers what run() answers. Plans that pushed a bare
+  // bucket to the end, re-grouped a bucket, or re-applied a MAP's RECORD over rows the SQL had already
   // projected, all answered something else than run(). The database is stood
   // in for by SEL itself: the SQL prefix's own AST evaluated over the same
   // rows is what the SQL would return, which is the planner's premise.
@@ -255,7 +254,7 @@ int main() {
       {"ORDERS .> BUCKET(_[\"customer_id\"], RECORD(\"cid\", _K, \"n\", COUNT(_))) .> DROP(1) .> FILTER(_[\"n\"] > 1)", "hybrid"},
       {"ORDERS .> BUCKET(RECORD(\"c\", _[\"customer_id\"]), RECORD(\"n\", COUNT(_)))", "pure_sql"},
       {"ORDERS .> BUCKET(RECORD(\"c\", _[\"customer_id\"])) .> MAP(RECORD(\"n\", COUNT(_)))", "pure_memory"},
-      // Finding AJ again, on the value side: a folded helper as a TAKE count
+      // The same again, on the value side: a folded helper as a TAKE count
       // and as a REPEAT count, a helper as the pipeline's source, and a
       // non-literal helper carried in front of both halves.
       {"N = 1 + 1; X = ORDERS .> TAKE(N) .> MAP(RECORD(\"id\", _[\"id\"], \"shout\", REPEAT(_[\"name\"], 2))); X .> FILTER(_[\"id\"] > 1) .> TAKE(5)", "hybrid"},

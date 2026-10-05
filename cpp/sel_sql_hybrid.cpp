@@ -3,7 +3,7 @@
 // The contract every host's planner meets is in docs/internals/sql-translation.md §12.1
 // and is pinned by sql/cases/25-hybrid-plans.sqlt. Three parts of it were wrong
 // here: the planner unwound the RAW tree, so `X = ORDERS; X .> TAKE(1)` -- a
-// seq, not a pipeline -- was classified as pure memory where the three hosts
+// seq, not a pipeline -- was classified as pure memory where the hosts
 // that ran stage 1 first pushed it down; it then planned stage 1's tree, in
 // which every helper is inlined the way translate() wants it, so a
 // continuation reported an error at a helper's definition where run() reports

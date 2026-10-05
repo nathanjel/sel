@@ -278,7 +278,7 @@ kept in step with the limit by hand.")
 ;;; --- children --------------------------------------------------------------
 
 ;;; Kind predicates. The recommended way to branch on kind in every host,
-;;; because it is the one spelling that reads the same in all four: the kind
+;;; because it is the one spelling that reads the same in every host: the kind
 ;;; *values* are a keyword here, a string in JS, a class constant in PHP and an
 ;;; enum in C++, so only a predicate can be documented uniformly. These test the
 ;;; value's own kind and do not apply scalar context.
