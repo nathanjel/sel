@@ -92,19 +92,19 @@ def test_a_literal_pattern_that_hangs_re_is_refused_when_the_program_compiles():
 
 
 def test_a_computed_pattern_is_refused_when_it_runs_not_after_running_for_minutes():
-    t = time.time()
+    t = time.process_time()
     with pytest.raises(SelError) as info:
         sel.evaluate('P = "^(a+)" & "+$"; RMATCH(P, REPEAT("a", 40) & "!")')
     assert info.value.code == 'E_REGEX_SYNTAX'
-    assert time.time() - t < 2
+    assert time.process_time() - t < 2
 
 
 def test_the_pre_fix_failure_is_gone_for_the_review_repros():
     for pat in ('^(a+)+$', '(a|aa)+$', '(a|b|ab)*c'):
-        t = time.time()
+        t = time.process_time()
         with pytest.raises(SelError):
             sel.evaluate('RMATCH(\'%s\', REPEAT("a", 40) & "!")' % pat)
-        assert time.time() - t < 2
+        assert time.process_time() - t < 2
 
 
 def ref_verdict(pattern, ic=False):
@@ -132,20 +132,20 @@ def test_depth_200_of_groups_analyses_under_the_default_recursion_limit():
 
 
 def test_hostile_budget_overruns_are_refused_quickly():
-    t = time.time()
+    t = time.process_time()
     for pattern in ('a?' * 8 + 'b', '(a|a)' * 9 + 'x', '(?:a{1,20}){1,20}b'):
         assert verdict(pattern) is False
         assert ref_verdict(pattern) is False
     assert verdict('(a|a)' * 2000) is False                      # also the group-count cap
-    assert time.time() - t < 5
+    assert time.process_time() - t < 5
 
 
 def test_big_but_legitimate_patterns_are_fast():
-    t = time.time()
+    t = time.process_time()
     assert verdict('a{65535}') is True
     assert verdict('^[a-z]{1,65535}$') is True
     assert verdict('(?:a|b|c|d|e)*') is True
-    assert time.time() - t < 5
+    assert time.process_time() - t < 5
 
 
 def test_a_large_alternation_in_a_loop_hits_the_edge_cap_like_the_reference():

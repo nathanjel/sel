@@ -1,8 +1,6 @@
 """PY-P24: the small value-level overheads. is_vacuous must not format a number, the dense
 list index hashes come from a table that never changes what is hashed, and a refused
 size argument must not build the message from a million-digit integer."""
-import time
-
 import pytest
 
 import sel
@@ -14,10 +12,8 @@ from sel import value as V
 def test_is_vacuous_of_a_number_never_formats_it():
     big = Value.num(D.make(False, 10 ** 999_998, 0))
     assert big._scalar is None and big._dec_val is not None       # only the decimal is built
-    t = time.process_time()
     assert big.is_vacuous() is False
-    assert time.process_time() - t < 0.2                           # formatting it took ~0.9 s
-    assert big._scalar is None                                     # and it is still unformatted
+    assert big._scalar is None                     # never formatted (that took ~0.9 s)
 
 
 @pytest.mark.parametrize('make,want', [

@@ -1,5 +1,8 @@
-# A frozen copy of python/sel/lexer.py as of 223885e, before PY-P10, kept as the reference the
-# scanner rewrite is tested against (tests/test_perf_lexer.py). Do not edit.
+# A frozen copy of python/sel/lexer.py as of commit 223885e, before its set and regex
+# scanning replaced the per-character loops: the oracle that rewrite is tested against
+# (tests/test_perf_lexer.py, tests/test_perf_lexer_literals.py). Do not edit. The
+# docstrings and comments below are that version's; they describe it, not the current
+# lexer.
 """Tokeniser. See spec/grammar.md.
 
 Python `str` is already a sequence of code points, so unlike the JS and PHP

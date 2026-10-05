@@ -1,5 +1,5 @@
 """PY-P31: literal bodies are scanned a run at a time. Checked against the frozen earlier lexer
-(fixtures/lexer_before_py_p10.py, which reads them a character at a time) on sources made
+(fixtures/lexer_per_character.py, which reads them a character at a time) on sources made
 mostly of literals: tokens, positions and errors must be identical."""
 import importlib.util
 import os
@@ -10,8 +10,8 @@ import pytest
 from sel import lexer as new
 from sel.errors import SelError
 
-OLD_PATH = os.path.join(os.path.dirname(__file__), 'fixtures', 'lexer_before_py_p10.py')
-spec = importlib.util.spec_from_file_location('sel_lexer_before_py_p10_lit', OLD_PATH)
+OLD_PATH = os.path.join(os.path.dirname(__file__), 'fixtures', 'lexer_per_character.py')
+spec = importlib.util.spec_from_file_location('sel_lexer_per_character_lit', OLD_PATH)
 old = importlib.util.module_from_spec(spec)
 sys.modules[spec.name] = old
 spec.loader.exec_module(old)

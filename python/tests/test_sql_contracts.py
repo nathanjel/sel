@@ -474,10 +474,10 @@ def test_a_doubling_helper_dag_is_refused_before_anything_walks_it():
     import time
     lines = ['X0 = 1'] + [f'X{i} = X{i - 1} + X{i - 1}' for i in range(1, 30)]
     src = '; '.join(lines) + '; X29 > 0'
-    t0 = time.time()
+    t0 = time.process_time()
     refused(src, 'E_SQL_SIZE')
     assert kind(plan('; '.join(lines) + '; ORDERS .> FILTER(_["id"] > X29)')) == 'pure_memory'
-    assert time.time() - t0 < 30
+    assert time.process_time() - t0 < 30
 
 
 def test_a_20000_step_pipeline_is_a_refusal_and_a_pure_memory_plan():
@@ -491,9 +491,9 @@ def test_a_helper_chain_of_thousands_plans_in_linear_time():
     n = 6000
     src = ''.join(f'X{i} = {"COUNT(ORDERS)" if i == 0 else f"X{i - 1} + 1"}; ' for i in range(n))
     src += f'ORDERS .> FILTER(_["id"] > X{n - 1})'
-    t0 = time.time()
+    t0 = time.process_time()
     p = plan(src)
-    assert p is not None and time.time() - t0 < 20     # 8000 helpers took 86s when it was quadratic
+    assert p is not None and time.process_time() - t0 < 20     # 8000 helpers took 86s when it was quadratic
 
 
 def test_source_tables_are_read_off_a_deep_tree_without_recursion():

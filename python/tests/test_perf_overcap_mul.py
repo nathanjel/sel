@@ -3,7 +3,6 @@ It must refuse exactly what guard() refuses, with the same code, message and pos
 and multiply everything else. The cap is shrunk (monkeypatched) so the boundary is
 cheap to reach; the real cap is exercised once with million-digit operands."""
 import random
-import time
 
 import pytest
 
@@ -59,13 +58,21 @@ def test_a_zero_operand_is_never_refused_however_large_the_other(monkeypatch):
     assert D.mul(huge, D.make(False, 0, 2)).digits == 0
 
 
+class _NoMultiply(int):
+    """A mantissa that fails the test if anything multiplies it."""
+
+    def __mul__(self, other):
+        raise AssertionError('multiplied a mantissa the cap had already settled')
+
+    __rmul__ = __mul__
+
+
 def test_the_real_cap_refuses_a_million_digit_square_without_multiplying():
-    big = D.make(False, 10 ** 999_999, 0)
-    t = time.process_time()
+    # Deterministic rather than timed: the multiplication alone took over a second.
+    big = D.make(False, _NoMultiply(10 ** 999_999), 0)
     with pytest.raises(SelError) as info:
         D.mul(big, big)
     assert info.value.code == 'E_RANGE'
-    assert time.process_time() - t < 0.5           # the multiplication alone took over a second
 
 
 def test_a_legal_near_cap_product_is_still_computed():
