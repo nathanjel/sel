@@ -101,6 +101,11 @@ final class HybridPlan
 
 final class Hybrid
 {
+    /** Calls the translator renders itself rather than through the map's `funcs`. */
+    private const SQL_SPECIAL_CALLS = ['IF' => true, 'COND' => true, 'COALESCE' => true, 'COUNT' => true,
+                                       'SUM' => true, 'MIN' => true, 'MAX' => true,
+                                       'RECORD' => true, 'LIST' => true];
+
     /**
      * Build the maximal SQL prefix. A null SQL fragment is an ordinary
      * non-pushdown result; translator bugs and non-SQL exceptions still escape.
@@ -571,10 +576,7 @@ final class Hybrid
                 $seen + [$node['name'] => true]);
         }
         if (($node['t'] ?? null) === 'call') {
-            $special = ['IF' => true, 'COND' => true, 'COALESCE' => true, 'COUNT' => true,
-                        'SUM' => true, 'AVG' => true, 'MIN' => true, 'MAX' => true,
-                        'RECORD' => true, 'LIST' => true];
-            if (!isset($special[$node['name']])) {
+            if (!isset(self::SQL_SPECIAL_CALLS[$node['name']])) {
                 $entry = Map::entry($dialect, 'funcs', \Sel\Utf8::upper($node['name']));
                 if ($entry === Map::MISSING || $entry === null || is_string($entry)) return true;
             }
