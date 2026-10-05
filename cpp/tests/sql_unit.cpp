@@ -577,11 +577,18 @@ int main() {
           return sel::Program("", plan.sql_prefix_ast).run(c);
         };
       };
+      // The shapes of sql/oracle/hybrid.json's `application` programs.
       for (const char* source : {"POKE(A)", "IF(TRUE, POKE(A), 0)", "MAP(LIST(1), POKE(A))",
+                                 "X = POKE(A); X[\"nope\"]",
+                                 "ORDERS .> SORT_BY(_[\"ID\"]) .> TAKE(2) .> MAP(RECORD(\"i\", _[\"ID\"], \"k\", POKE(A)[\"k\"]))",
                                  "ORDERS .> FILTER(_[\"ID\"] > 1) .> MAP(RECORD(\"p\", POKE(A), \"r\", REPEAT(\"x\", 2)))"}) {
         const auto plan = Sql::plan_hybrid(sel::compile(source), "sqlite", rb);
         sel::Value context = fresh();
-        (void)Sql::execute_hybrid(plan, in_memory(plan), context);
+        try {
+          (void)Sql::execute_hybrid(plan, in_memory(plan), context);
+        } catch (const sel::SelError&) {
+          // write-then-error: the error is run()'s; the caller's A is what is checked
+        }
         check(std::string("a host function cannot write the caller's context: ") + source,
               context.get("A")->get("k")->scalar(), "1");
       }

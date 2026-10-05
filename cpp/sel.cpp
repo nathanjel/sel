@@ -10187,8 +10187,34 @@ bool opt_map_cannot_raise(const Node& step, bool logical, const OptFields* field
   return opt_cannot_raise(info.body, info.binder, logical, fields);
 }
 
+// How deep an expression goes, its root counted as 1, and never more than `cap`
+// + 1 (the walk stops there), so it is bounded whatever the source's length.
+int opt_bounded_depth(const NodePtr& root, int cap) {
+  int deepest = 0;
+  std::vector<const Node*> level{root.get()};
+  while (!level.empty() && deepest <= cap) {
+    ++deepest;
+    std::vector<const Node*> next;
+    for (const Node* n : level) {
+      if (!n) continue;
+      if (n->l) next.push_back(n->l.get());
+      if (n->r) next.push_back(n->r.get());
+      for (const NodePtr& c : n->items) next.push_back(c.get());
+    }
+    level = std::move(next);
+  }
+  return deepest;
+}
+
+// Where each step of a pipeline stands in the tree as written (the outermost
+// step is the pipeline node's own depth), for the one rule that deepens a
+// subtree: FILTER fusion. Keyed by the step node; a fused step keeps the depth
+// of the step it was copied from.
+using OptStepDepths = std::unordered_map<const Node*, int>;
+
 std::vector<NodePtr> opt_logical_steps(const NodePtr& source, std::vector<NodePtr> current, bool logical,
-                                       const std::set<std::string>* declared) {
+                                       const std::set<std::string>* declared,
+                                       OptStepDepths* step_depths = nullptr) {
   bool changed = true;
   while (changed) {
     changed = false;
@@ -10322,8 +10348,19 @@ std::vector<NodePtr> opt_logical_steps(const NodePtr& source, std::vector<NodePt
         // Fused, the second predicate runs on a row before the first has seen
         // the rows after it: only one that cannot raise may be fused. Judged
         // without the declared fields (the historical assumption for a read).
-        const bool can_fuse = left.valid && right.valid &&
-                              opt_predicate_cannot_raise(right.predicate, right.binder, logical, nullptr);
+        bool can_fuse = left.valid && right.valid &&
+                        opt_predicate_cannot_raise(right.predicate, right.binder, logical, nullptr);
+        // Fused, the second predicate sits one level deeper than it did: under
+        // the AND that joins them. A fused pair must spend what the two stages
+        // spent (spec §6.4), so a predicate that would reach the cap that way
+        // stays a second FILTER (plan.pure-sql.fusion-stops-at-the-depth-cap).
+        if (can_fuse && step_depths) {
+          const auto at = step_depths->find(second->get());
+          if (at != step_depths->end() &&
+              at->second + opt_bounded_depth(right.predicate, MAX_DEPTH) + 1 > MAX_DEPTH) {
+            can_fuse = false;
+          }
+        }
         if (can_fuse) {
           const NodePtr right_pred = ascii_upper(left.binder) == ascii_upper(right.binder)
               ? right.predicate : opt_rename_var(right.predicate, right.binder, left.binder);
@@ -10333,6 +10370,10 @@ std::vector<NodePtr> opt_logical_steps(const NodePtr& source, std::vector<NodePt
           merged->items = left.explicit_binder
               ? std::vector<NodePtr>{first->items[0], first->items[1], predicate}
               : std::vector<NodePtr>{first->items[0], predicate};
+          if (step_depths) {
+            const auto at = step_depths->find(first.get());
+            if (at != step_depths->end()) (*step_depths)[merged.get()] = at->second;
+          }
           next.push_back(std::move(merged));
           i += 2;
           changed = true;
@@ -10685,8 +10726,11 @@ NodePtr opt_tree(const NodePtr& node, bool physical, const std::set<std::string>
     NodePtr optimized_source = opt_tree(source, physical, declared, depth + 1, fold, false);
     std::vector<NodePtr> optimized_steps;
     optimized_steps.reserve(steps.size());
-    for (const NodePtr& step : steps) {
+    OptStepDepths step_depths;
+    for (std::size_t index = 0; index < steps.size(); ++index) {
+      const NodePtr& step = steps[index];
       auto copy = opt_copy(step);
+      step_depths[copy.get()] = depth + static_cast<int>(steps.size() - 1 - index);
       copy->items.clear();
       copy->items.push_back(step->items[0]);
       for (std::size_t i = 1; i < step->items.size(); i++) {
@@ -10696,7 +10740,7 @@ NodePtr opt_tree(const NodePtr& node, bool physical, const std::set<std::string>
       optimized_steps.push_back(std::move(copy));
     }
     std::vector<NodePtr> final_steps =
-        opt_logical_steps(optimized_source, std::move(optimized_steps), !physical, declared);
+        opt_logical_steps(optimized_source, std::move(optimized_steps), !physical, declared, &step_depths);
     if (physical) final_steps = opt_inmemory_steps(optimized_source, std::move(final_steps));
     // Whatever the rewrites did, the pipeline's value is still the value of the
     // node that was written outermost, and a consumer that objects to it (NOT,
