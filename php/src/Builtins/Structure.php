@@ -22,41 +22,7 @@ final class Structure
 {
     public static function register(): void
     {
-        Registry::define(['name' => 'DEDUPE', 'min' => 1, 'max' => 1,
-            'fn' => static function (Args $a): Value {
-                $value = $a->val(0);
-                if ($value->isNull()) {
-                    return Value::list([]);
-                }
-                $buckets = [];
-                $out = [];
-                $value->forEachElement(static function (string $key, Value $item) use (&$buckets, &$out): void {
-                    $hash = $item->structuralHash();
-                    // One item per hash is stored as the item itself and becomes a
-                    // list only when a second, unequal one collides (PHP-P25).
-                    $slot = $buckets[$hash] ?? null;
-                    if ($slot === null) {
-                        $buckets[$hash] = $item;
-                        $out[] = $item;
-                        return;
-                    }
-                    if ($slot instanceof Value) {
-                        if (!$item->eql($slot)) {
-                            $buckets[$hash] = [$slot, $item];
-                            $out[] = $item;
-                        }
-                        return;
-                    }
-                    foreach ($slot as $existing) {
-                        if ($item->eql($existing)) {
-                            return;
-                        }
-                    }
-                    $buckets[$hash][] = $item;
-                    $out[] = $item;
-                });
-                return Value::list($out);
-            }]);
+        Registry::define(['name' => 'DEDUPE', 'min' => 1, 'max' => 1, 'fn' => self::distinct(...)]);
 
         Registry::define(['name' => 'TOP', 'min' => 2, 'max' => 4, 'lazy' => true, 'binds' => true,
             'fn' => static fn (Args $a, Context $ctx): Value => self::doTop($a, $ctx, 'ASC')]);
@@ -74,6 +40,47 @@ final class Structure
             'fn' => static fn (Args $a, Context $ctx): Value => self::doLink($a, $ctx, false)]);
         Registry::define(['name' => 'LINK_LEFT', 'min' => 3, 'max' => 5, 'lazy' => true, 'binds' => true,
             'fn' => static fn (Args $a, Context $ctx): Value => self::doLink($a, $ctx, true)]);
+    }
+
+    /**
+     * DISTINCT and DEDUPE, one function under two names: the elements in order,
+     * each kept the first time an equal one (`eql`, structural) is seen; NULL is
+     * an empty list. The source's own elements, not copies (spec §3.4).
+     */
+    public static function distinct(Args $a): Value
+    {
+        $value = $a->val(0);
+        if ($value->isNull()) {
+            return Value::list([]);
+        }
+        $buckets = [];
+        $out = [];
+        $value->forEachElement(static function (string $key, Value $item) use (&$buckets, &$out): void {
+            $hash = $item->structuralHash();
+            // One item per hash is stored as the item itself and becomes a
+            // list only when a second, unequal one collides.
+            $slot = $buckets[$hash] ?? null;
+            if ($slot === null) {
+                $buckets[$hash] = $item;
+                $out[] = $item;
+                return;
+            }
+            if ($slot instanceof Value) {
+                if (!$item->eql($slot)) {
+                    $buckets[$hash] = [$slot, $item];
+                    $out[] = $item;
+                }
+                return;
+            }
+            foreach ($slot as $existing) {
+                if ($item->eql($existing)) {
+                    return;
+                }
+            }
+            $buckets[$hash][] = $item;
+            $out[] = $item;
+        });
+        return Value::list($out);
     }
 
     private static function firstCollectionItem(Value $value): ?Value
