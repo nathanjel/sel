@@ -43,7 +43,7 @@ final class Map
     private static array $guardChecked = [];
 
     /**
-     * Per-dialect answers that only registration can change (PHP-P24): the
+     * Per-dialect answers that only registration can change: the
      * inheritance chain, each resolved lexical value, and the `textEscape` map in
      * the form strtr() takes. Translation asks for them several times per node.
      * Flushed by flushMemo(), which defineDialect() and reset() call at every
@@ -77,6 +77,9 @@ final class Map
 
     // --- registration -------------------------------------------------------
 
+    /** Every key defineDialect() accepts. sql/MAP.md §3 is the normative list. */
+    public const DIALECT_KEYS = ['extends', 'version', 'target', 'lexical'];
+
     /**
      * Declare a dialect. The usual reason is an older or newer server than the
      * shipped map assumes, which needs no special code because a version is
@@ -86,9 +89,6 @@ final class Map
      *
      * @param array{extends?:string, version?:string, target?:bool, lexical?:array<string,mixed>} $spec
      */
-    /** Every key defineDialect() accepts. sql/MAP.md §3 is the normative list. */
-    public const DIALECT_KEYS = ['extends', 'version', 'target', 'lexical'];
-
     public static function defineDialect(string $name, array $spec): void
     {
         // A name means one dialect. A shipped one cannot be registered again; one an
@@ -421,7 +421,7 @@ final class Map
     /**
      * `textEscape` as strtr() wants it: every key a string, every value a string.
      * strtr() with an array already tries the longest key first, so no sorting is
-     * needed (PHP-P24). Null when the dialect declares no escape map.
+     * needed. Null when the dialect declares no escape map.
      *
      * @return ?array<string,string>
      */
@@ -471,7 +471,7 @@ final class Map
         }
         // Marked checked only once every check below has passed: set first, the first
         // translation threw and every later one silently used the mismatching guard
-        // (PHP-C49).
+        //.
         $guard = self::lexical($dialect, 'numericGuard');
         if (!is_string($guard)) {
             self::$guardChecked[$dialect] = true;

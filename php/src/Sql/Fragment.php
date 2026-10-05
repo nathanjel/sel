@@ -122,12 +122,9 @@ final class Fragment
         if ($this->kind === 'BOOL') {
             return $this->join($mode);
         }
-        // UNKNOWN was wrapped in isTrue here rather than trusted, which folds
-        // NULL to false but not a number: `1 IS TRUE` is TRUE on MariaDB, and
-        // SEL raises E_NOT_BOOL for a number in a condition. Wrapping cannot
-        // fix that, so an undeclared column is no longer a condition; declare
-        // the binding BOOL. isTrue stays in the map -- the aggregate skeletons
-        // use it on a body that is already known to be BOOL.
+        // An undeclared column is not a condition (see above): declare the
+        // binding BOOL. isTrue stays in the map for the aggregate skeletons,
+        // whose bodies are already known to be BOOL.
         refuse('E_SQL_SHAPE',
             "a condition must be BOOL, and this expression is {$this->kind}; "
             . 'SQL has no truthiness and neither does SEL');
@@ -211,7 +208,7 @@ final class Fragment
     {
         // The mode is checked before the parts are walked: a fragment with no slot
         // never reached the `match` below, so `asValue('bogus')` was accepted on it
-        // and refused on the same rule with a parameter (PHP-C57).
+        // and refused on the same rule with a parameter.
         if (!in_array($mode, ['inline', 'params', 'debug'], true)) {
             throw new \InvalidArgumentException(
                 "unknown render mode {$mode}; use inline, params or debug");

@@ -48,7 +48,7 @@ check($dead['t'] === 'bool' && $dead['v'] === false, 'short-circuit literal fold
 $branch = Optimizer::optimize(Sel::compile('IF(TRUE, 2 + 3, 1 / 0)')->ast, true);
 check($branch['t'] === 'num' && $branch['v'] === '5', 'literal IF folding');
 
-// The physical tree never moves a FILTER across a LINK (spec §7.4; SEL-0054):
+// The physical tree never moves a FILTER across a LINK (spec §7.4):
 // a FILTER moved onto a side renumbered the joined rows, skipped the join
 // keys of the rows it dropped, and read relation names under explicit
 // binders. The join tests conjuncts itself, at run time, where it can prove
@@ -154,7 +154,7 @@ check($unfoldedVar['t'] === 'call' && $unfoldedVar['name'] === 'IF',
 // later step renumbers the rows again without reading `_K`: FILTER keeps its
 // input's keys and the three renumber (spec §7.3), so at the end of a
 // pipeline the swap would change the answer's keys. And only past a step that
-// cannot raise on the rows it drops (review 2026-09-25 SEM-07/SEM-08): on the
+// cannot raise on the rows it drops: on the
 // logical path a relation's field reads cannot, in memory they can (E_NO_KEY),
 // so these pushdowns are the logical path's.
 $mapFilterPush = optimized_steps(
@@ -357,7 +357,7 @@ foreach ([
     ['C = COUNT(ORDERS) + LABEL; ORDERS .> TAKE(2) .> MAP(_["id"] + C)', 'hybrid', 'E_NOT_NUM@1:21'],
     ['X = ORDERS .> TAKE(2); X .> MAP(COUNT(X) + _["id"] + "x")', 'hybrid', 'E_NOT_NUM@1:54'],
     ['Y = ABORT("x"); ORDERS .> TAKE(2) .> MAP(Y)', 'pure_memory', 'E_ABORT@1:11'],
-    // SEL-0047: a continuation on line 3 reports its error on line 3.
+    // A continuation on line 3 reports its error on line 3.
     ["X = ORDERS .> TAKE(2);\nX .> MAP(COUNT(X) + _[\"id\"]\n   + \"x\")", 'hybrid', 'E_NOT_NUM@3:6'],
 ] as [$source, $kind, $want]) {
     $program = Sel::compile($source);
@@ -402,8 +402,8 @@ foreach ([
   // guard, so nothing pushes down. A later step that renumbers again lets the
   // swap through.
   ['ORDERS .> MAP(r, RECORD("id", r["id"], "shout", REPEAT(r["name"], 2))) .> FILTER(s, s["id"] > 1)', 'pure_memory'],
-  // REPEAT can raise, so the FILTER stays behind the MAP (review 2026-09-25
-  // SEM-07) and nothing pushes down; a MAP that cannot raise lets it through.
+  // REPEAT can raise, so the FILTER stays behind the MAP and nothing pushes
+  // down; a MAP that cannot raise lets it through.
   ['ORDERS .> MAP(r, RECORD("id", r["id"], "shout", REPEAT(r["name"], 2))) .> FILTER(s, s["id"] > 1) .> TAKE(5)', 'pure_memory'],
   ['ORDERS .> MAP(r, RECORD("id", r["id"], "plus", r["amount"] + 1)) .> FILTER(s, s["id"] > 1) .> TAKE(5)', 'pure_sql'],
   ['ORDERS .> MAP(RECORD("Name", _["name"], "shout", REPEAT(_["name"], 2))) .> TAKE(2)', 'pure_memory'],
@@ -455,7 +455,7 @@ foreach ([
     check($seen['params'] === 't"hay-",t"needle"', "runner contract: bindings in placeholder order, got {$seen['params']}");
 }
 
-// --- T04: an optimisation is invisible (SPEC 6.2) --------------------------
+// --- an optimisation is invisible (SPEC 6.2) -------------------------------
 /** @return array{0:string,1:?int,2:?int} outcome of running SOURCE (plain tree vs optimised) */
 function outcome(string $source, bool $plain): array
 {
@@ -488,7 +488,7 @@ check(step_names(optimized_steps('LIST(3,1,2) .> SORT() .> TAKE(1.5)')) === ['SO
 // A bare variable or literal is not a predicate that cannot raise.
 check(step_names(optimized_steps('LIST(1,2) .> FILTER(_ > 0) .> FILTER(_)')) === ['FILTER', 'FILTER'], 'FILTER + FILTER(_) is not fused');
 check(step_names(optimized_steps('LIST(1,2) .> FILTER(_ > 0) .> FILTER(TRUE)')) === ['FILTER'], 'a TRUE predicate still disappears');
-// PHP-C14: the pipeline unwind is linear in the number of stages.
+// The pipeline unwind is linear in the number of stages.
 $t0 = microtime(true);
 $long = Sel::compile('LIST(1,2)' . str_repeat(' .> SORT', 150) . ' .> COUNT()');
 Optimizer::unwindPipeline($long->ast);

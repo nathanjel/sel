@@ -61,10 +61,8 @@ final class Binding
      * whether a value is a boolean; in an arithmetic or comparison operand it
      * is wrapped so a value SEL would refuse becomes NULL, at the cost of the
      * column's index. Declaring NUM is what buys the plain comparison back, and
-     * it is the only thing that does.
-     *
-     * Bare in exactly two places, both recorded in docs/internals/sql-kinds.md §4: a
-     * numeric function argument, and a bare aggregate body.
+     * it is the only thing that does. docs/internals/sql-kinds.md §4 records
+     * every position and what an UNKNOWN operand costs there.
      */
     public static function column($column, $table = null,
                                   $type = 'UNKNOWN', $exact = false,
@@ -266,9 +264,8 @@ final class Binding
                 throw new SqlError('E_SQL_BINDING',
                     "the field {$name} of a relation binding must be a column binding");
             }
-            // strtoupper, which is ASCII-only in PHP and so matches
-            // sel.registry's ascii_upper on the Python side. str.upper()
-            // there would fold "ß" to "SS" and change the key's length.
+            // ASCII-only upper-casing (Utf8::upper), as SEL's names are: a
+            // Unicode upper() would fold "ß" to "SS" and change the key's length.
             $upper = Utf8::upper((string) $name);
             // SEL names are upper-cased, so two fields that differ only by ASCII case
             // are one name; silently keeping the last is a guess (sql/MAP.md 3.1).
@@ -305,16 +302,6 @@ final class Binding
     }
 
     /**
-     * An identifier the application supplied has to survive being quoted.
-     *
-     * Emit::ident doubles the quote character and passes everything else
-     * through, which is right for every character but two. A NUL terminates the
-     * C string libpq and sqlite3 are handed, so `a\0b` is malformed SQL on all
-     * four servers rather than a column nobody has. An empty name quotes to `""`,
-     * which PostgreSQL rejects and the other three accept -- a divergence with
-     * no upside.
-     */
-    /**
      * Declared types are not enough, and this is the reason the checks are in
      * the body rather than in the signature.
      *
@@ -342,7 +329,18 @@ final class Binding
         }
     }
 
-    /** @param mixed $v */
+    /**
+     * An identifier the application supplied has to survive being quoted.
+     *
+     * Emit::ident doubles the quote character and passes everything else
+     * through, which is right for every character but two. A NUL terminates the
+     * C string libpq and sqlite3 are handed, so `a\0b` is malformed SQL on all
+     * four servers rather than a column nobody has. An empty name quotes to `""`,
+     * which PostgreSQL rejects and the other three accept -- a divergence with
+     * no upside.
+     *
+     * @param mixed $v
+     */
     private static function checkName(string $what, $v): void
     {
         self::checkString("a binding's {$what}", $v);

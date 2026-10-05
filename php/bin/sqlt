@@ -271,7 +271,7 @@ function run_plan_case(array $c): ?string
         $m = error_expectation($c);
         // The code alone: a plan refusal blames the bindings or the dialect,
         // not a node of the rule, so it carries no position, and the
-        // generator refuses a case that writes one (SEL-0046).
+        // generator refuses a case that writes one.
         if ($error->code !== $m[1]) {
             return "expected {$m[1]}, got {$error->code} ({$error->getMessage()})";
         }
@@ -384,8 +384,7 @@ function run_case(array $c): ?string
     // SQL, or the same refusal at the same place, or the same kind of startup
     // error. A translator that keeps state between calls -- a dialect marked as
     // checked before it was checked, a parameter list that grows -- passes one
-    // translation and fails here (T10: JS-C24, PHP-C49, PY-C49, CPP-C36,
-    // LISP-C42, GO-C18).
+    // translation and fails here.
     if ($program !== null && $bindings !== null) {
         $describe = static fn (?string $s, ?SqlError $e, ?\Throwable $t): string => $t !== null
             ? get_class($t) . " ({$t->getMessage()})"
@@ -441,7 +440,7 @@ function run_case(array $c): ?string
     // the public full-delegation entry point, which must say exactly what
     // translate() says -- the same text, or the same refusal at the same
     // column. Two hosts ran the logical optimiser in that lane and three did
-    // not, and only a twin check can see it (review 2026-09-15 finding C).
+    // not, and only a twin check can see it.
     if ($as === 'statement' && $program !== null) {
         $twinSql = null;
         $twinError = null;

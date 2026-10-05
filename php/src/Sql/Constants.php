@@ -64,7 +64,7 @@ final class Constants
 
     /**
      * Whether the node is an IF or COND whose every result is a text literal -- or,
-     * in turn, such a conditional (SEL-0057). SQL's CASE returns the literal it
+     * in turn, such a conditional. SQL's CASE returns the literal it
      * chose byte for byte, so its identity is SEL's; a number it can re-spell
      * (MariaDB types `CASE ... THEN 1 ELSE 1.0` as DECIMAL(2,1)), and a column or a
      * computation is not a literal at all. A two-argument IF's otherwise is "" (§7.2),

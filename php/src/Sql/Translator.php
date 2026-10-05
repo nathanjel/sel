@@ -8,9 +8,6 @@
 // that PHP's array-valued AST cannot cheaply provide. Whole-expression refusal
 // is unaffected: nothing becomes characters until Fragment::asValue() is
 // called, so a kind failure still escapes with no partial output.
-//
-// Aggregates are stage 2 and land in M3. Until then this refuses them, which is
-// the same refusal path any untranslatable construct takes.
 
 declare(strict_types=1);
 
@@ -256,8 +253,8 @@ final class Translator
      *
      * The dead branch is not currently a wrong answer: MariaDB and PostgreSQL
      * were both asked, and both short-circuit `AND` and `CASE` rather than
-     * evaluating the arm they do not take. It is refused because §11.2's first
-     * row records that SQL does not promise that, and because a rule that
+     * evaluating the arm they do not take. It is refused because the first
+     * row of §11's table (no short-circuit) records that SQL does not promise that, and because a rule that
      * refuses one of two identical divisions is not a rule.
      *
      * The cost is one evaluation per constant compound node rather than one per
@@ -546,7 +543,7 @@ final class Translator
 
     /**
      * An operand that is a constant TEXT holding a number, in an arithmetic position, is
-     * that number (PHP-C33): SEL computes with it exactly, and MariaDB and MySQL would
+     * that number: SEL computes with it exactly, and MariaDB and MySQL would
      * read the quoted string as a DOUBLE. It is translated as the numeric literal it
      * stands for. The text was translated first (its SQL kind is only known then), so
      * the slots it bound are taken back, or `params` mode would report a value bound
@@ -743,7 +740,7 @@ final class Translator
                 // The needle and the column must be comparable kinds, as x IN (list)
                 // requires: a BOOL or BIN needle against a TEXT column would match rows
                 // whose text happens to be '1', 'true' or the same bytes, where SEL
-                // answers FALSE because the kinds differ (PY-C21).
+                // answers FALSE because the kinds differ.
                 // The skeleton first: a dialect that withdrew it answers with that, not
                 // with whatever the needle happens to be wrong about.
                 $skeleton = $this->skeleton('inRelation', $n['pos']);
@@ -901,7 +898,7 @@ final class Translator
         // The two aggregates over a bucket's members -- COUNT(g) is COUNT(*)
         // and SUM(g, [x,] body) is SUM over the grouped rows -- fire on the
         // GROUP binder alone: over a relation row, COUNT(_) is the row's number
-        // of fields in SEL (review 2026-09-15 finding X), and SEL has no
+        // of fields in SEL, and SEL has no
         // per-group MIN or MAX (finding J). The body binds the member row, as
         // the evaluator's walk does: `_` for the two-argument form, the name
         // given for the three-argument one.
@@ -921,7 +918,7 @@ final class Translator
                     $this->requireNumericConstant($bodyNode);
                     $inner = $this->requireNum($inner, $bodyNode['pos'], 'SUM');
                     // The body's own parts are spliced -- never joined into a string,
-                    // which replaced every literal in it by its slot number (PHP-C7).
+                    // which replaced every literal in it by its slot number.
                     if ($inner->kind === 'UNKNOWN') {
                         [$test, $cast] = $this->emit->numericGuardParts($inner, $bodyNode['pos']);
                         $this->scaleLimited($bodyNode['pos'], 'this operand is read as a number');
@@ -1071,7 +1068,6 @@ final class Translator
      * joined with ', ' -- the template supplies the brackets.
      *
      * @param array<string,mixed> $arg
-     * @param array<string,mixed> $call
      */
     private function hostListArgument(string $name, array $arg): Fragment
     {
@@ -1109,20 +1105,6 @@ final class Translator
     }
 
     /**
-     * The functions that read their argument as bytes, and the one that takes a
-     * BOOL.
-     *
-     * Both lists were measured rather than written: every name in
-     * `Registry::names()` was called with `TO_UTF8("a")` and with `TRUE`, and
-     * these are the ones SEL did not answer E_NOT_* for. Writing them by hand
-     * would be the second copy of SEL's argument rules that §11.4 exists to
-     * avoid — this is a cached measurement, and `sql/oracle/` re-measures it.
-     *
-     * COUNT, HAS and INDEXES also accept both and are absent because none of
-     * them reaches this path: the first two are folded before dispatch and the
-     * third is refused. BTL is absent for the same reason — it yields a list.
-     */
-    /**
      * The functions whose result has children, so the scalar rule does not
      * apply to them.
      *
@@ -1138,7 +1120,7 @@ final class Translator
     /**
      * The four text functions above, the constructors, and every pipeline
      * step -- the optimiser's vocabulary, so a new step is covered by being
-     * one (review 2026-09-15 finding X: COUNT(LIST(1, 2, 3)) was 0).
+     * one (COUNT(LIST(1, 2, 3)) was 0).
      */
     private static function yieldsList(string $name): bool
     {
@@ -1455,6 +1437,20 @@ final class Translator
         return $out;
     }
 
+    /**
+     * The functions that read their argument as bytes, and the one that takes a
+     * BOOL.
+     *
+     * Both lists were measured rather than written: every name in
+     * `Registry::names()` was called with `TO_UTF8("a")` and with `TRUE`, and
+     * these are the ones SEL did not answer E_NOT_* for. Writing them by hand
+     * would be the second copy of SEL's argument rules that §11.4 exists to
+     * avoid — this is a cached measurement, and `sql/oracle/` re-measures it.
+     *
+     * COUNT, HAS and INDEXES also accept both and are absent because none of
+     * them reaches this path: the first two are folded before dispatch and the
+     * third is refused. BTL is absent for the same reason — it yields a list.
+     */
     private const BIN_ARGUMENT_OK = ['BLEN' => 0, 'CRC32' => 0, 'ENCODE_BASE64' => 0,
                                      'FROM_UTF8' => 0, 'ISNUM' => 0, 'TO_HEX' => 0,
                                      'TO_UTF8' => 0];
@@ -1716,7 +1712,7 @@ final class Translator
 
     /**
      * The value-binding names that are still constants where the walk is: a binder
-     * of the same name is the element, not the binding (JS-C53).
+     * of the same name is the element, not the binding.
      *
      * @return array<string,bool>
      */
@@ -1770,18 +1766,18 @@ final class Translator
         return null;
     }
 
-    /** @param array<string,mixed> $n */
     /**
      * A group key, rendered as the GROUP BY expression itself -- wherever it
      * appears: the clause, the `_K` projection, a HAVING. A TEXT key is cast and
      * collated the way the `$` family compares text, because the evaluator
      * groups by the key's exact bytes and a case-insensitive collation would
-     * merge groups it keeps apart (review 2026-09-15 finding L; MariaDB's
+     * merge groups it keeps apart (MariaDB's
      * default merged 'A' and 'a'). The result is marked exact so a comparison
      * over it does not wrap it a second time -- MySQL's only_full_group_by
      * accepts a projected or compared key only as the identical expression.
      *
-     * @param array<string,mixed> $src @param array<string,mixed> $group
+     * @param array<string,mixed> $src
+     * @param array<string,mixed> $group
      */
     private function groupKey(array $src, array $group, bool $projected = false): Fragment
     {
@@ -1817,10 +1813,10 @@ final class Translator
      * A sort key, as SEL's sort compares it. SEL sorts numbers as numbers and
      * other text by its bytes -- and number-shaped TEXT as a number, which
      * SQL's ORDER BY cannot: it sorts a text key by its bytes throughout, so
-     * "10" comes before "9" (SEL-0060). A NUM key sorts as SEL sorts it. A
+     * "10" comes before "9". A NUM key sorts as SEL sorts it. A
      * canonical number the dialect can only carry as text is always a number
      * to SEL, so sorting it in SQL is simply wrong: refused, and the planner
-     * sorts in memory (SEL-0058). Any other TEXT or UNKNOWN key is sorted
+     * sorts in memory. Any other TEXT or UNKNOWN key is sorted
      * anyway, declared text-order, and refused under strict.
      *
      * @param array{line:int,col:int,offset:int} $pos
@@ -2078,7 +2074,6 @@ final class Translator
      * FILTER(FILTER(L, p1), p2) conjoins both predicates over L.
      *
      * @param array<string,mixed> $src
-     * @param array<string,mixed> $call
      * @return array<string,mixed>
      */
     private function source(array $src): array
@@ -2370,7 +2365,6 @@ final class Translator
      * Every absorbed FILTER's binder is bound to the same element, which is what
      * makes absorption three lines rather than a substitution pass — see §7.5.
      *
-     * @param array<string,mixed> $src
      * @param array<string,mixed> $n
      */
     private function withElement(string $binderName, Binder $elem,
@@ -2442,7 +2436,7 @@ final class Translator
         // `C["id"]` in a later step -- the joined row carries them as keys, not
         // as names. This frame used to bind `_1`, `_2`, the relations' names
         // and the right binder for every later step, so `FILTER(C["id"] > 1)`
-        // translated where `run()` fails (review 2026-09-15 finding W2).
+        // translated where `run()` fails.
         $this->frames[] = $frame;
         $this->scopeStack[] = [$row, $kBinder];
         try {
@@ -2457,7 +2451,7 @@ final class Translator
      * A LINK's predicate sees `_`/`_1` as its left element and `_2` as its
      * right, plus the names the LINK gives them (spec §7.4) and nothing else:
      * a relation's name outside those, its alias or its table is not a binder
-     * (review 2026-09-28 SQL-07), and the left element of a later LINK is the
+     *, and the left element of a later LINK is the
      * joined row so far, not the source (SQL-05).
      *
      * @param callable():Fragment $render
@@ -2520,7 +2514,8 @@ final class Translator
      * turns the whole sum into NULL. The MySQL family casts a non-number to 0 with a
      * warning, which the outer test already discards.
      *
-     * @param list<string|int> $test @param list<string|int> $cast
+     * @param list<string|int> $test
+     * @param list<string|int> $cast
      * @return list<string|int>
      */
     private function sumCast(array $test, array $cast): array
@@ -3089,7 +3084,7 @@ final class Translator
         if ($guarded !== $f) {
             // The guard reads the text as the dialect's numericCast type, and
             // where that type fixes a scale the data's digits past it are gone
-            // before anything else sees them (SEL-0059).
+            // before anything else sees them.
             $this->scaleLimited($n['pos'], 'this operand is read as a number');
         }
         return $guarded;
@@ -3234,19 +3229,10 @@ final class Translator
      * SUM's counterpart to requireBool. A declared TEXT body is refused here --
      * SUM adds its body up and text is not a number.
      *
-     * UNKNOWN passes, and passes UNGUARDED, which is the one place in the layer
-     * where that is still true and not yet defensible. It used to be justified
-     * the way requireBool's UNKNOWN was, "the database is the one that knows",
-     * and requireBool stopped believing that. The difference is only that
-     * nothing has been built here yet: a bare aggregate body reaches neither
-     * binary() nor unary(), so guardNumeric never sees it, and
-     * `SUM(ITEMS, _["QTY"])` over an undeclared field emits SUM(`qty`) while
-     * SEL raises E_NOT_NUM for a non-numeric element.
-     *
-     * That is the "bare aggregate body" row of docs/internals/sql-kinds.md §4, recorded
-     * there with the function arguments it belongs with. `_["QTY"] * 1` is the
-     * workaround: it is value-preserving in SEL and puts the operand through
-     * binary(), where the guard does see it.
+     * UNKNOWN passes here, and is guarded by the caller: an aggregate body goes
+     * through aggBody()'s guardNumeric, and a SUM over a relation through
+     * guardedRelationSum(), so a non-numeric element is NULL in SQL (and the
+     * whole SUM NULL) where SEL raises E_NOT_NUM -- docs/internals/sql-kinds.md §4.
      *
      * @param array{line:int,col:int,offset:int} $pos
      */
@@ -3882,7 +3868,7 @@ final class Translator
                     // The same rule as a MAP's: an ORDER BY alone does not wrap
                     // (a derived table is where MariaDB drops an ORDER BY with
                     // no LIMIT beside it), everything else above the rows does
-                    // (SEL-0048).
+                    //.
                     $plan = $this->ensureDerived($plan, $this->planNeedsWrapBeforeMap($plan));
                     $colArgs = array_slice($args, 1);
                     if (count($colArgs) === 1 && $colArgs[0]['t'] === 'list') {
@@ -3976,7 +3962,7 @@ final class Translator
                     // DISTINCT proj ... ORDER BY <column not in proj>` is refused by PostgreSQL
                     // (42P10) and MySQL 8 (3065) and answers with an unspecified representative row on
                     // MariaDB. A loud refusal is acceptable and a silent misordering is not, so the
-                    // step stays in memory (CPP-C60).
+                    // step stays in memory.
                     if ($plan->orderBy !== []) {
                         refuse('E_SQL_SHAPE', 'DISTINCT after a sort keeps the first of each run in sorted order, '
                             . 'which SELECT DISTINCT ... ORDER BY does not promise; run the DISTINCT in memory', $step['pos']);
@@ -4013,7 +3999,7 @@ final class Translator
                     // they produced. A sort after a sort does not wrap: the
                     // sorts are stable, so the earlier one is the later one's
                     // tie-breaker, and the later one's keys go FIRST in the
-                    // ORDER BY (review 2026-09-15 finding V).
+                    // ORDER BY.
                     $wraps = $plan->limit !== null || $plan->offset !== null
                         || ($plan->groupBy === null
                             && ($plan->projections !== null || $plan->selectCols !== null
@@ -4044,14 +4030,13 @@ final class Translator
                     // when the statement is rendered, after this LINK and the
                     // steps after it were analysed, which reported a later
                     // step's refusal where run() raises at the earlier one.
-                    // Lisp has done this since review 2026-09-25 SQL-03; the
-                    // widened SQL fuzzer found the other hosts did not (review
-                    // 2026-09-28 SQL-10). The result is discarded.
+                    // The SQL fuzzer found hosts that did not; every host does
+                    // now. The result is discarded.
                     if ($plan->orderBy !== [] || $plan->projections !== null
                         || $plan->selectCols !== null || $plan->groupBy !== null) {
                         // Rendered to be refused, then thrown away: the parameters it
                         // bound go with it, or `params` holds values for slots the
-                        // statement never mentions (CPP-C57, LISP-C40).
+                        // statement never mentions.
                         $keepParams = $this->params;
                         $keepKinds = $this->paramKinds;
                         $keepCaveats = $this->caveats;
@@ -4111,7 +4096,7 @@ final class Translator
                     // second time under an alias the statement already uses
                     // (a self-join, or chaining back to an aliased relation)
                     // rendered the alias twice, which the server rejects
-                    // (review 2026-09-28 SQL-09). The program stays in memory.
+                    //. The program stays in memory.
                     $open = [$plan->sourceAlias ?? self::relationAlias($plan->sourceRelation)];
                     foreach ($plan->joins as $j) {
                         $open[] = $j->sourceAlias;

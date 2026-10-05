@@ -313,7 +313,7 @@ final class Normalise
      * Parenthesising changes nothing: the `grouped` flag decides whether a call
      * sees one argument or several, not whether `,` flattens.
      *
-     * What `clist` protects is not this. It is that rule 5 in the class comment
+     * What `clist` protects is not this. It is that indexed assignment
      * builds nesting out of `R[1] = …; R[2] = …`, and a `list` node would have
      * been renumbered flat by the time an aggregate iterated it. A `clist`
      * reaches an aggregate through a bare variable reference, never through a

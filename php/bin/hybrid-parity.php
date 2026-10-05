@@ -1,5 +1,5 @@
 <?php
-// The hybrid-parity lane (T11, sql/oracle/hybrid.json) for the PHP host, shared by
+// The hybrid-parity lane (sql/oracle/hybrid.json) for the PHP host, shared by
 // php/bin/sqlo (`hybrid`, on each server a DSN names) and tools/check-php-optimizer.php
 // (on an in-memory SQLite, so the gate runs it without a server).
 
@@ -48,7 +48,7 @@ function plain_number(string $text): string
 }
 
 /**
- * The hybrid-parity lane (T11, sql/oracle/hybrid.json): a program is planned,
+ * The hybrid-parity lane (sql/oracle/hybrid.json): a program is planned,
  * its SQL prefix is run on the server through executeHybrid's runner, and the
  * result must be what SEL answers for the whole program over the same rows.
  * See the note in hybrid.json for the contract this holds a plan to: the value

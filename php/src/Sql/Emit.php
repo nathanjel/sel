@@ -324,23 +324,21 @@ final class Emit
      * has already done that for the shipped map; this is for entries an
      * application registers at run time, which never pass through it.
      *
+     * `$expanding` is the set of lexical keys this call is already inside. A
+     * lexical value may reference another lexical key, and nothing stopped one
+     * from referencing itself: a dialect registering
+     * ['textCast' => 'X({textCast:0})'] recursed until the host died -- a
+     * RecursionError on Python, a RangeError on JS, a host crash through the
+     * public API either way, which is the failure every other guard in this
+     * layer exists to prevent. The cycle is refused rather than a depth capped,
+     * because the cycle is the actual mistake and a depth cap would need a
+     * number nobody can justify; with cycles refused the chain is bounded by the
+     * number of lexical keys a dialect has.
+     *
      * @param list<Fragment> $args
+     * @param array<string,bool> $expanding
      * @return list<string|int>
      */
-    // `$expanding` is the set of lexical keys this call is already inside. A
-    // lexical value may reference another lexical key, and nothing stopped one
-    // from referencing itself: a dialect registering
-    // ['textCast' => 'X({textCast:0})'] recursed until the host died -- a
-    // RecursionError on Python, a RangeError on JS, a host crash through the
-    // public API either way, which is the failure every other guard in this
-    // layer exists to prevent.
-    //
-    // The cycle is refused rather than a depth capped, because the cycle is the
-    // actual mistake and a depth cap would need a number nobody can justify.
-    // With cycles refused the chain is bounded by the number of lexical keys,
-    // which is fifteen.
-    //
-    // @param array<string,bool> $expanding
     public function fill(string $tpl, array $args, ?array $pos = null,
                          array $expanding = []): array
     {
@@ -390,7 +388,7 @@ final class Emit
                 continue;
             }
             if ($tpl[$i] !== '{') {
-                // Copy the whole run of ordinary characters at once (PHP-P23):
+                // Copy the whole run of ordinary characters at once:
                 // a template is mostly literal SQL, and pushing it one character
                 // at a time through the closure cost 6x the run copy. A lone `}`
                 // is a run of length zero and is pushed as itself.
@@ -443,13 +441,6 @@ final class Emit
                 $push($val);
                 continue;
             }
-            // binaryCast converts a TEXT or NUM operand to bytes. An operand
-            // that is already BIN needs no conversion, and on PostgreSQL
-            // converting it is destructive: text::bytea parses its input as a
-            // bytea *literal*, where \\ is one backslash and \x41 is a byte, so
-            // the round trip changes the bytes or fails the query. Every other
-            // cast is idempotent and applied unconditionally, as before; this is
-            // the one whose input kind decides whether it means anything.
             if (isset($expanding[$key])) {
                 refuse('E_SQL_UNSUPPORTED',
                     "the {$key} lexical entry of dialect {$this->dialect} expands "
@@ -461,6 +452,13 @@ final class Emit
                 if ($at > 0) {
                     $push(', ');
                 }
+                // binaryCast converts a TEXT or NUM operand to bytes. An operand
+                // that is already BIN needs no conversion, and on PostgreSQL
+                // converting it is destructive: text::bytea parses its input as a
+                // bytea *literal*, where \\ is one backslash and \x41 is a byte, so
+                // the round trip changes the bytes or fails the query. Every other
+                // cast is idempotent and applied unconditionally, as before; this is
+                // the one whose input kind decides whether it means anything.
                 $castArg = $key === 'binaryCast' ? self::slotIndex($one) : null;
                 if ($castArg !== null && ($args[$castArg] ?? null) instanceof Fragment
                         && $args[$castArg]->kind === 'BIN') {

@@ -5,12 +5,12 @@
 //
 // The difference matters because a map entry is a claim about semantics and the
 // case suite only ever checks syntax. `CHAR({0} USING utf8mb4)` is the right
-// string and the wrong meaning; a case asserting it passes forever. See
-// docs/SQL-TESTING.md §3.
+// string and the wrong meaning; a case asserting it passes forever.
 //
-//     php/bin/sqlo [expressions|rows|coverage|all] [--dialect=mariadb] [--verbose]
+//     php/bin/sqlo [expressions|rows|statements|hybrid|cross|coverage|all|fuzz]
+//                  [--dialect=mariadb] [--verbose] [--corpus=FILE]
 //
-// `coverage` asks a different question from the other two: not "does this agree
+// `coverage` asks a different question from the others: not "does this agree
 // with a server" but "did anything ask?". It needs no database and runs anyway,
 // which matters — an entry nobody ever exercised is exactly the state a machine
 // with no database would otherwise leave unexamined.
@@ -106,7 +106,7 @@ function parse_selo(string $text, string $file): array
         // dialect must refuse rather than translate. Before the translator
         // asked SEL about constant arguments this line could not have been
         // written: LEFT("abc", -1) translated cleanly into all four dialects
-        // and they answered '', '', 'ab' and 'abc'. See docs/SQL-TESTING.md §8.
+        // and they answered '', '', 'ab' and 'abc'.
         $rejects = null;
         if (str_starts_with($line, '!')) {
             if (preg_match('/^!(E_[A-Z_]+)\s+(\S.*)$/', $line, $m) !== 1) {
@@ -125,6 +125,17 @@ function parse_selo(string $text, string $file): array
 // --- comparison -------------------------------------------------------------
 
 /**
+ * The kind a fragment's answer is compared in. A canonical number (CANON,
+ * spec §7.6) promised its spelling, not only its value: compared as a decimal,
+ * a PostgreSQL CANON that answered 1.50 would pass as 1.5, and the spelling is
+ * the whole of what CANON is for.
+ */
+function comparison_kind(Fragment $frag): string
+{
+    return $frag->canonical ? 'TEXT' : $frag->kind;
+}
+
+/**
  * Compare what SEL answered with what the server answered, in the fragment's own
  * kind.
  *
@@ -136,17 +147,6 @@ function parse_selo(string $text, string $file): array
  *
  * Returns null when they agree, else a description of how they differ.
  */
-/**
- * The kind a fragment's answer is compared in. A canonical number (CANON,
- * spec §7.6) promised its spelling, not only its value: compared as a decimal,
- * a PostgreSQL CANON that answered 1.50 would pass as 1.5, and the spelling is
- * the whole of what CANON is for.
- */
-function comparison_kind(Fragment $frag): string
-{
-    return $frag->canonical ? 'TEXT' : $frag->kind;
-}
-
 function compare(Value $sel, $db, string $kind): ?string
 {
     if ($db === null) {
@@ -202,18 +202,6 @@ function compare(Value $sel, $db, string $kind): ?string
 // --- expressions ------------------------------------------------------------
 
 /**
- * Every expression, twice: once with literals inlined and once through native
- * prepared statements.
- *
- * Both renderings, because they fail differently. In `inline` mode a literal is
- * quoted at the position it belongs to, so a fragment whose parameter pool is in
- * the wrong order still emits the right string — an ordering defect is invisible.
- * Only `params` mode can show it, and only with emulation off: PDO's default
- * inlines client-side, and an emulated run passes whatever the binding order is.
- * That is not hypothetical, it is how 23 green comparisons hid the defect that
- * Fragment::bindings() now exists to prevent.
- */
-/**
  * Every caveat this dialect declares must have been seen doing its job.
  *
  * The oracle's rule is that an inexact translation is allowed to differ. The
@@ -267,6 +255,18 @@ function caveat_symmetry(string $dialect, array $witnessed): array
     return $out;
 }
 
+/**
+ * Every expression, twice: once with literals inlined and once through native
+ * prepared statements.
+ *
+ * Both renderings, because they fail differently. In `inline` mode a literal is
+ * quoted at the position it belongs to, so a fragment whose parameter pool is in
+ * the wrong order still emits the right string — an ordering defect is invisible.
+ * Only `params` mode can show it, and only with emulation off: PDO's default
+ * inlines client-side, and an emulated run passes whatever the binding order is.
+ * That is not hypothetical, it is how 23 green comparisons hid the defect that
+ * Fragment::bindings() now exists to prevent.
+ */
 function run_expressions(PDO $pdo, string $dialect, bool $verbose, string $label = ''): array
 {
     $cases = parse_selo((string) file_get_contents(ORACLE . '/expressions.selo'),
@@ -538,9 +538,9 @@ function run_rows(PDO $pdo, string $dialect, bool $verbose, string $label = ''):
         // asked, and saying so is the whole point of refusal. But it has to be
         // an outcome the corpus NAMED. Counting refusals silently made this
         // whole oracle unfailable: a translator that refused every rule scored
-        // "0 agree, 0 differ, 13 refused" and returned green, which is
-        // the retired SQL-TESTING analysis (git history)'s Class G in the one lane meant to be
-        // beyond it. `refuse` is per dialect because refusal is: the same rule
+        // "0 agree, 0 differ, 13 refused" and returned green: an unfailable check
+        // in the one lane meant to be beyond that. `refuse` is per dialect
+        // because refusal is: the same rule
         // translates on mariadb and cannot on sqlite, and that difference is
         // the thing worth asserting.
         $mustRefuse = $rule['refuse'][$dialect] ?? null;
@@ -676,7 +676,7 @@ function run_rows(PDO $pdo, string $dialect, bool $verbose, string $label = ''):
  *
  * This lane exists because the .sqlt strings cannot see a collation: every host
  * emitted the same GROUP BY `cat`, and MariaDB merged 'A' and 'a' into one group
- * where BUCKET keeps two (review 2026-09-15 finding L).
+ * where BUCKET keeps two.
  */
 function run_statements(PDO $pdo, string $dialect, bool $verbose, string $label = ''): array
 {
@@ -824,7 +824,7 @@ function run_statements(PDO $pdo, string $dialect, bool $verbose, string $label 
 }
 
 /**
- * Every host's translator against the same server (review 2026-09-25 TEST-03/04).
+ * Every host's translator against the same server.
  *
  * The statement oracle above runs PHP's translator only, so a defect every
  * translator shares — or one four of five share — passed it: a LINK's left

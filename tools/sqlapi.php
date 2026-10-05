@@ -9,7 +9,7 @@
 // and continuation presence, the continuation's dependencies, its source
 // variable, the physical source tables and the selected member. The probe NAMES
 // are the contract and the VALUES are compared; each host spells its accessors
-// its own way (SEL-0044).
+// its own way.
 declare(strict_types=1);
 require_once __DIR__ . '/../php/src/Sql/bootstrap.php';
 
@@ -54,7 +54,7 @@ $probe('sql', 'ORDERS .> FILTER(_["AMOUNT"] > 10) .> MAP(RECORD("id", _["ID"], "
 $probe('hybrid', 'ORDERS .> SORT_BY(_["AMOUNT"]) .> FILTER(_K > 1)');
 $probe('memory', 'A += 1; ORDERS .> TAKE(1)');
 // The canonical flag is public: an application (and php/bin/sqlo) reads it to
-// know the fragment promised a spelling, not only a value (SEL-0058).
+// know the fragment promised a spelling, not only a value.
 $fragmentProbe = function (string $label, string $dialect, string $source) use ($bindings, $b): void {
     $f = Sql::translate(Sel::compile($source), $dialect, $bindings);
     say("fragment.$label.kind", $f->kind);
@@ -114,7 +114,7 @@ Map::reset();
 say('host.spell.after-reset', $attempt(fn () => Sql::translate(Sel::compile('HSLUG(T)'), 'postgresql', $host)));
 say('host.spell.after-reset.local', Sel::evaluate('HSLUG("A")')->asText());
 
-// --- rendering and registration state (T10) ------------------------------------
+// --- rendering and registration state ------------------------------------
 // The questions a snapshot of ONE translation cannot ask: what an unknown render
 // mode does when there is nothing to bind, and whether a refused dialect stays
 // refused. `refuses` collapses the host's own error classes, which differ, to the

@@ -230,16 +230,6 @@ final class Hybrid
     }
 
     /**
-     * The continuation's pipeline over the rows the database returned. Its source is
-     * `_INPUT`, which is not the name SEL gives a joined row's left side: a LINK
-     * names it after the pipeline's source variable (SPEC 7.4), so when a LINK is in
-     * the continuation the rows are first assigned to the relation's own name.
-     *
-     * @param array<string,mixed> $source
-     * @param list<array<string,mixed>> $remaining
-     * @return array<string,mixed>
-     */
-    /**
      * Whether the continuation holds a 3-argument LINK whose joined row would name its
      * left side `_INPUT`: no LINK before it in the prefix (which has already named its
      * sides), and a LINK with three arguments (five name both sides). Spec 7.4; the
@@ -292,6 +282,16 @@ final class Hybrid
         return false;
     }
 
+    /**
+     * The continuation's pipeline over the rows the database returned. Its source is
+     * `_INPUT`, which is not the name SEL gives a joined row's left side: a LINK
+     * names it after the pipeline's source variable (SPEC 7.4), so when a LINK is in
+     * the continuation the rows are first assigned to the relation's own name.
+     *
+     * @param array<string,mixed> $source
+     * @param list<array<string,mixed>> $remaining
+     * @return array<string,mixed>
+     */
     private static function continuationPipeline(array $source, array $remaining, bool $nameLeft): array
     {
         $input = ['t' => 'var', 'name' => '_INPUT', 'pos' => $remaining[0]['pos']];
@@ -319,7 +319,7 @@ final class Hybrid
         ]);
     }
 
-    /** @param array<string,mixed> $ast @param array<string,mixed> $options */
+    /** @param array<string,mixed>|null $n */
     private static function latestFieldName(?array $n): ?string
     {
         return ($n['t'] ?? null) === 'index' && $n['obj']['t'] === 'var' && $n['obj']['name'] === '_'
@@ -542,7 +542,7 @@ final class Hybrid
      * then the right's, and a later sort keeps the earlier sort's order among its
      * ties, which is gone once a projection hid the earlier key. A prefix that ends
      * before that step is exact; one that includes it answers in another order
-     * (docs/internals/sql-translation.md 12.1, "Order"; PHP-C35).
+     * (docs/internals/sql-translation.md 12.1, "Order").
      *
      * @param list<array<string,mixed>> $steps
      */
@@ -569,7 +569,8 @@ final class Hybrid
      * `$defs` are the helper definitions: a read of one is as unsupported as
      * its definition, since the translator will inline it.
      *
-     * @param array<string,array<string,mixed>>|null $defs @param array<string,bool> $seen
+     * @param array<string,array<string,mixed>>|null $defs
+     * @param array<string,bool> $seen
      */
     private static function containsUnsupportedSql(?array $node, string $dialect,
                                                    ?array $defs = null, array $seen = []): bool
@@ -666,7 +667,8 @@ final class Hybrid
      * reads `_K` before a renumbering step comes, and one does come (or the result
      * would BE the retained-key rows).
      *
-     * @param list<array<string,mixed>> $prefix @param list<array<string,mixed>> $remaining
+     * @param list<array<string,mixed>> $prefix
+     * @param list<array<string,mixed>> $remaining
      */
     private static function splitShowsKeys(array $prefix, array $remaining): bool
     {
@@ -818,7 +820,7 @@ final class Hybrid
         foreach ($pushable as $pair) {
             if (self::isOwnFieldRead($pair, $details['binder'])) $own[] = (string) $pair['key']['v'];
         }
-        // "Case" here is ASCII case, as everywhere in SEL -- strtoupper is.
+        // "Case" here is ASCII case, as everywhere in SEL -- Utf8::upper is.
         $projectedFolded = array_map([Utf8::class, 'upper'], $projected);
         $dependencies = [];
         $dependenciesFolded = [];
@@ -897,7 +899,7 @@ final class Hybrid
     // and §12.1 promises it reports errors where run() would: run() evaluates
     // the READ of Y at the use site and reports `+`'s operand there, and it
     // evaluates the definition once, before the pipeline, not once per row
-    // (review 2026-09-15 finding AJ). So the planner does not inline. It plans
+    //. So the planner does not inline. It plans
     // the program as written, three ways:
     //
     //   * A helper that IS a literal -- after inlining earlier such helpers
@@ -970,7 +972,8 @@ final class Hybrid
      * this copies on the way down and never writes into the caller's tree.
      *
      * @param array<string,mixed>|null $node
-     * @param array<string,array<string,mixed>> $literals @param list<string> $bound
+     * @param array<string,array<string,mixed>> $literals
+     * @param list<string> $bound
      */
     private static function inlineLiterals(?array $node, array $literals, array $bound = []): ?array
     {
@@ -1035,7 +1038,8 @@ final class Hybrid
      * literal helpers are inlined into it and it is folded, when what is left
      * is a leaf.
      *
-     * @param list<array<string,mixed>> $leading @param array<string,mixed> $options
+     * @param list<array<string,mixed>> $leading
+     * @param array<string,mixed> $options
      * @return array<string,array<string,mixed>>
      */
     private static function literalHelpers(array $leading, array $options): array
@@ -1054,7 +1058,8 @@ final class Hybrid
      * source is a helper, that helper's definition unwound in turn.
      *
      * @param array<string,mixed> $result
-     * @param array<string,array<string,mixed>> $defs @param array<string,array<string,mixed>> $literals
+     * @param array<string,array<string,mixed>> $defs
+     * @param array<string,array<string,mixed>> $literals
      * @return array{source:array<string,mixed>,steps:list<array<string,mixed>>}
      */
     private static function unwindThroughHelpers(array $result, array $defs, array $literals): array
@@ -1087,7 +1092,8 @@ final class Hybrid
      * can only keep an assignment the tree does not need, never drop one it
      * does.
      *
-     * @param array<string,mixed>|null $node @param array<string,bool> $out
+     * @param array<string,mixed>|null $node
+     * @param array<string,bool> $out
      * @return array<string,bool>
      */
     private static function readNames(?array $node, array $out = []): array
@@ -1110,7 +1116,8 @@ final class Hybrid
      * The leading assignments `$node` depends on, in program order: those
      * whose name it reads, and those THEY read, transitively.
      *
-     * @param list<array<string,mixed>> $leading @param array<string,mixed> $node
+     * @param list<array<string,mixed>> $leading
+     * @param array<string,mixed> $node
      * @return list<array<string,mixed>>
      */
     private static function referencedAssignments(array $leading, array $node): array
@@ -1135,7 +1142,8 @@ final class Hybrid
      * -- a seq the translator's stage 1 inlines and the evaluator runs in
      * order -- or `$node` itself when it depends on none.
      *
-     * @param list<array<string,mixed>> $leading @param array<string,mixed> $node
+     * @param list<array<string,mixed>> $leading
+     * @param array<string,mixed> $node
      * @return array<string,mixed>
      */
     private static function withHelpers(array $leading, array $node): array
