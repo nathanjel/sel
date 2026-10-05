@@ -368,7 +368,7 @@ func (t *translator) columnRef(c columnSpec) *Fragment {
 		Parts:             []Part{{Sql: sqlStr}},
 		Kind:              c.Type,
 		Dialect:           t.dialect,
-		Exact:             c.Exact,
+		ExactCollation:    c.Exact,
 		Sargable:          c.Sargable,
 		Guard:             c.Guard,
 		SeparatePrefilter: c.Prefilter == "separate",
@@ -471,7 +471,7 @@ func (t *translator) identityGroupKey(n *sNode, f *Fragment) *Fragment {
 		numeric := NewFragment(f.Parts, KindNum, t.dialect, f.Params, f.ParamKinds, f.Caveats)
 		w := t.emit.TextOperand(numeric)
 		out := NewFragment(w.Parts, KindText, t.dialect, w.Params, w.ParamKinds, w.Caveats)
-		out.Exact = true
+		out.ExactCollation = true
 		return out
 	}
 	return t.collatedKey(f)
@@ -498,12 +498,12 @@ func (t *translator) orderKey(f *Fragment, pos Pos) *Fragment {
 }
 
 func (t *translator) collatedKey(f *Fragment) *Fragment {
-	if f.Kind != KindText || f.Exact {
+	if f.Kind != KindText || f.ExactCollation {
 		return f
 	}
 	wrapped := t.emit.TextOperand(f)
 	out := NewFragment(wrapped.Parts, KindText, t.dialect, wrapped.Params, wrapped.ParamKinds, wrapped.Caveats)
-	out.Exact = true
+	out.ExactCollation = true
 	return out
 }
 
@@ -627,7 +627,7 @@ func (t *translator) fromBinder(b *binder, n *sNode) *Fragment {
 			}()
 			key = t.node(b.Node)
 		}()
-		wrapped := key.Kind == KindNum || (key.Kind == KindText && !key.Exact)
+		wrapped := key.Kind == KindNum || (key.Kind == KindText && !key.ExactCollation)
 		collated := t.identityGroupKey(b.Node, key)
 		if key.Kind == KindNum {
 			parts := []Part{{Sql: "MIN("}}
@@ -642,7 +642,7 @@ func (t *translator) fromBinder(b *binder, n *sNode) *Fragment {
 			parts = append(parts, collated.Parts...)
 			parts = append(parts, Part{Sql: ")"})
 			out := NewFragment(parts, KindText, t.dialect, collated.Params, collated.ParamKinds, collated.Caveats)
-			out.Exact = true
+			out.ExactCollation = true
 			out.Canonical = key.Canonical
 			return out
 		}
@@ -1272,8 +1272,8 @@ func (t *translator) binary(n *sNode) *Fragment {
 
 	if byteComparisonsSet[op] {
 		requireComparableKinds(l, r, op, n.Pos)
-		lExact := l.Exact
-		rExact := r.Exact
+		lExact := l.ExactCollation
+		rExact := r.ExactCollation
 		lLit := n.L() != nil && n.L().T == sNodeText
 		rLit := n.R() != nil && n.R().T == sNodeText
 		spfVal := t.emit.Lex("sargablePrefilter")
@@ -1592,7 +1592,7 @@ func (t *translator) inOperator(n *sNode) *Fragment {
 	textVar := "text"
 	for _, e := range elements {
 		raw := t.node(n.L())
-		isExact := raw.Exact
+		isExact := raw.ExactCollation
 		needle := raw
 		if !isExact {
 			needle = t.emit.TextOperand(raw)

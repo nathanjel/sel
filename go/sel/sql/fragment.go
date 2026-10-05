@@ -17,7 +17,8 @@ type Part struct {
 // is known about it.
 //
 // "Exact" means two different things here, kept apart by their names. The
-// Exact FIELD is about text: the fragment's TEXT already compares byte for byte
+// ExactCollation field (Exact before 0.11, renamed with JS's exactCollation) is
+// about text: the fragment's TEXT already compares byte for byte
 // (an exact column, a binary collation), so a comparison needs no COLLATE or
 // cast around it. It is what a builder (DefineBuilder) reads off the fragments
 // it is given; a translation's result does not carry it. IsExact, the METHOD,
@@ -33,9 +34,9 @@ type Fragment struct {
 	// Caveats names every inexact map entry the translation used; empty when
 	// IsExact.
 	Caveats []string
-	// Exact: the fragment's text compares bytes exactly (see the type's
+	// ExactCollation: the fragment's text compares bytes exactly (see the type's
 	// documentation); not IsExact.
-	Exact             bool
+	ExactCollation    bool
 	Sargable          bool
 	Guard             bool
 	Prefilter         *Fragment
@@ -55,8 +56,8 @@ func NewFragment(parts []Part, kind SqlKind, dialect string, params []*sel.Value
 }
 
 // IsExact reports a translation with no caveats: SQL that means exactly what
-// SEL means, whatever the server. It is not the Exact field, which is about text
-// comparison only.
+// SEL means, whatever the server. It is not the ExactCollation field, which is
+// about text comparison only.
 func (f *Fragment) IsExact() bool {
 	return len(f.Caveats) == 0
 }

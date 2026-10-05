@@ -42,7 +42,7 @@ func TestFragmentExactAndIsExactAreDifferentProperties(t *testing.T) {
 	DefineDialect("exactness-probe", map[string]interface{}{"extends": "mariadb"})
 	var argExact []bool
 	DefineBuilder("exactness-probe", "funcs", "LEN", func(emit *Emit, args []*Fragment, _ Pos) *Fragment {
-		argExact = append(argExact, args[0].Exact)
+		argExact = append(argExact, args[0].ExactCollation)
 		return NewFragment(args[0].Parts, KindNum, emit.Dialect(), nil, nil, nil)
 	})
 	b := NewBindings(map[string]*Binding{

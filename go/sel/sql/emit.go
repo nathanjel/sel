@@ -197,7 +197,7 @@ func (e *Emit) NumericOperand(f *Fragment, pos Pos) *Fragment {
 	}
 	parts := e.Fill(guard, []*Fragment{f}, pos, nil)
 	res := NewFragment(parts, KindNum, e.dialect, f.Params, f.ParamKinds, f.Caveats)
-	res.Exact = f.Exact
+	res.ExactCollation = f.ExactCollation
 	res.Sargable = f.Sargable
 	res.Guard = f.Guard
 	res.Prefilter = f.Prefilter
@@ -207,7 +207,7 @@ func (e *Emit) NumericOperand(f *Fragment, pos Pos) *Fragment {
 }
 
 func (e *Emit) TextOperand(f *Fragment) *Fragment {
-	if f.Exact {
+	if f.ExactCollation {
 		return f
 	}
 	castVal := e.Lex("textCast")
@@ -226,7 +226,7 @@ func (e *Emit) TextOperand(f *Fragment) *Fragment {
 	}
 
 	res := NewFragment(parts, KindText, e.dialect, f.Params, f.ParamKinds, f.Caveats)
-	res.Exact = f.Exact
+	res.ExactCollation = f.ExactCollation
 	res.Sargable = f.Sargable
 	res.Guard = f.Guard
 	res.Prefilter = f.Prefilter
