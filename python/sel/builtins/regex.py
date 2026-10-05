@@ -629,24 +629,6 @@ def check_literal(name, args):
     validate(args[0].v, args[0].pos, ignore_case)
 
 
-def _matches(rx, subject):
-    """Mirrors the loop the other hosts run rather than using finditer, so
-    zero-width advancement is identical everywhere.
-    """
-    pos = 0
-    n = len(subject)
-    while pos <= n:
-        m = rx.search(subject, pos)
-        if m is None:
-            return
-        yield m
-        if m.end() == m.start():
-            # Advance a whole code point so a zero-width match cannot loop.
-            pos = m.end() + 1
-        else:
-            pos = m.end()
-
-
 def _args_for(args, pat_i, subj_i, flag_i):
     """Returns (compiled, original subject, subject to match against).
 

@@ -124,14 +124,16 @@ def test_total_order_of_every_kind():
 
 
 def test_sort_is_transitive_on_mixed_text():
+    # On the key production sorts with: "10" < "1a" and "1a" < "9" by bytes, but
+    # "9" < "10" as numbers, under the old pairwise rules.
     from sel.value import Value
-    from sel.builtins.aggregate import compare_values
-    vals = [Value.text(x) for x in ('10', '9', '1a', '007', '', ' 2', '1e3', '-0', '0')]
-    for a in vals:
-        for b in vals:
-            for c in vals:
-                if compare_values(a, b) <= 0 and compare_values(b, c) <= 0:
-                    assert compare_values(a, c) <= 0
+    from sel.builtins.aggregate import sort_key
+    keys = [sort_key(Value.text(x)) for x in ('10', '9', '1a', '007', '', ' 2', '1e3', '-0', '0')]
+    for a in keys:
+        for b in keys:
+            for c in keys:
+                if a <= b and b <= c:
+                    assert a <= c
 
 
 def test_select_cols_keeps_a_repeated_column_once():

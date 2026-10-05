@@ -11,7 +11,7 @@ from sel import decimal as D
 
 
 def reference_sum(decs, pos=None):
-    total = D.ZERO
+    total = D.make(False, 0, 0)
     for d in decs:
         total = D.add(total, d, pos)
     return total

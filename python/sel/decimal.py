@@ -208,8 +208,6 @@ def guard(d: Dec, pos: Pos | None) -> Dec:
     return d
 
 
-ZERO = make(False, 0, 0)
-
 _NUM_RE = re.compile(r'^-?[0-9]+(\.[0-9]+)?$')
 # NOTE ON .fullmatch(): Python's `$` matches at the end of the string *and*
 # immediately before a single trailing newline, exactly like PCRE's and unlike

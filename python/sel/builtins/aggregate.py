@@ -8,7 +8,6 @@ from functools import cmp_to_key
 from .. import decimal as D
 from .._budget import check_text
 from ..errors import SelError, fail
-from ..eval import bytes_compare
 from ..parser import Node
 from ..registry import define
 from ..value import NONE, Value, elements, iter_elements, structural_hash
@@ -482,29 +481,6 @@ def _sort_rank(v) -> int:
     return 5
 
 
-def compare_values(a: Value, b: Value) -> int:
-    """One total order (SPEC 7.3): by kind rank first, then within the rank --
-    BOOL FALSE before TRUE, numbers by exact decimal value (so `"007"` ties with
-    `"7"`), other text and BIN by their bytes. It is transitive, which the old
-    pairwise rules were not: "10" < "1a" and "1a" < "9" by bytes, but "9" < "10"
-    as numbers, and no sort of that list was well defined."""
-    a = _sort_leaf(a)
-    b = _sort_leaf(b)
-    ra = _sort_rank(a)
-    rb = _sort_rank(b)
-    if ra != rb:
-        return (ra > rb) - (ra < rb)
-    if ra == 2:
-        return D.cmp(a.as_decimal(), b.as_decimal())
-    if ra == 1:
-        av = 1 if a.scalar else 0
-        bv = 1 if b.scalar else 0
-        return (av > bv) - (av < bv)
-    if ra == 3 or ra == 4:
-        return bytes_compare(a.as_bytes(), b.as_bytes())
-    return 0
-
-
 class _DecKey:
     """A decimal with a fraction as a sort key: `mant / 10**scale`, ordered exactly
     by cross-multiplication. A scale-0 number is keyed by its plain int instead, and
@@ -557,10 +533,13 @@ class _DecKey:
 
 def sort_key(v: Value):
     """The key of SPEC 7.3's total order, derived ONCE per element: a tuple
-    `(rank, payload)` whose native Python ordering is the order compare_values
-    defines, so a sort or a selection can use the interpreter's own comparison
-    instead of re-deriving both operands' kind, decimal and bytes at every step.
-    Equal keys are ties (the caller keeps input order)."""
+    `(rank, payload)` whose native Python ordering is that order -- by kind rank
+    first, then within the rank BOOL FALSE before TRUE, numbers by exact decimal
+    value (so `"007"` ties with `"7"`), other text and BIN by their bytes -- so a
+    sort or a selection uses the interpreter's own comparison instead of
+    re-deriving both operands' kind, decimal and bytes at every step. Equal keys
+    are ties (the caller keeps input order). tests/test_perf_sort.py holds it to
+    a pairwise comparator written from the spec."""
     leaf = _sort_leaf(v)
     rank = _sort_rank(leaf)
     if rank == 2:
