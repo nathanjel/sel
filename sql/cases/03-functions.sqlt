@@ -106,14 +106,6 @@ MIN(1)
 --- expect
 1
 ===
-### name: func.num.min-of-several
---- dialect
-mariadb
---- source
-MIN(3, 1, 2)
---- expect
-LEAST(3, 1, 2)
-===
 ### name: func.number.min-is-a-scalar-not-an-aggregate
 --- dialect
 mariadb

@@ -577,6 +577,9 @@ is TRUE and a bare `=` between two text columns would say FALSE. A TEXT column
 holding numerals is a legitimate schema and must keep translating; refusing on
 the declared kind would break it. Pinned as op.compare.coerce-variant-when-a-
 side-is-not, and pinned again here so this check cannot grow into that one.
+The same program as op.compare.coerce-variant-when-a-side-is-not in
+02-operators.sqlt, deliberately: there it pins the operator rule, here that the
+constant folder leaves it alone.
 --- dialect
 mariadb
 --- bindings

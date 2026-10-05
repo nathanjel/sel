@@ -566,7 +566,7 @@ export const SQL_CASES = [
   },
   {
     "name": "op.compare.coerce-variant-for-unknown-columns",
-    "at": "02-operators.sqlt:117",
+    "at": "02-operators.sqlt:120",
     "dialect": "mariadb",
     "source": "A >= 10",
     "expect": "(CASE WHEN (`a` REGEXP '\\\\A-?[0-9]+(\\\\.[0-9]+)?\\\\z') THEN CAST(`a` AS DECIMAL(65,10)) ELSE NULL END >= 10)",
@@ -583,7 +583,7 @@ export const SQL_CASES = [
   },
   {
     "name": "op.compare.text-family-forces-a-binary-collation",
-    "at": "02-operators.sqlt:127",
+    "at": "02-operators.sqlt:130",
     "dialect": "mariadb",
     "source": "\"A\" $== \"a\"",
     "expect": "(CAST('A' AS CHAR) COLLATE utf8mb4_nopad_bin = CAST('a' AS CHAR) COLLATE utf8mb4_nopad_bin)",
@@ -600,7 +600,7 @@ export const SQL_CASES = [
   },
   {
     "name": "op.compare.text-family-ordering",
-    "at": "02-operators.sqlt:138",
+    "at": "02-operators.sqlt:141",
     "dialect": "mariadb",
     "source": "\"a\" $< \"b\"",
     "expect": "(CAST('a' AS CHAR) COLLATE utf8mb4_nopad_bin < CAST('b' AS CHAR) COLLATE utf8mb4_nopad_bin)",
@@ -617,7 +617,7 @@ export const SQL_CASES = [
   },
   {
     "name": "op.eql.scalars-are-a-text-compare",
-    "at": "02-operators.sqlt:146",
+    "at": "02-operators.sqlt:149",
     "dialect": "mariadb",
     "source": "\"a\" EQL \"a\"",
     "expect": "(CAST('a' AS CHAR) COLLATE utf8mb4_nopad_bin = CAST('a' AS CHAR) COLLATE utf8mb4_nopad_bin)",
@@ -634,7 +634,7 @@ export const SQL_CASES = [
   },
   {
     "name": "op.in.literal-list",
-    "at": "02-operators.sqlt:154",
+    "at": "02-operators.sqlt:157",
     "dialect": "mariadb",
     "source": "S IN (\"open\", \"held\")",
     "expect": "((CAST(`state` AS CHAR) COLLATE utf8mb4_nopad_bin = CAST('open' AS CHAR) COLLATE utf8mb4_nopad_bin) OR (CAST(`state` AS CHAR) COLLATE utf8mb4_nopad_bin = CAST('held' AS CHAR) COLLATE utf8mb4_nopad_bin))",
@@ -651,7 +651,7 @@ export const SQL_CASES = [
   },
   {
     "name": "op.in.scalar-right-hand-side",
-    "at": "02-operators.sqlt:170",
+    "at": "02-operators.sqlt:173",
     "dialect": "mariadb",
     "source": "\"a\" IN \"a\"",
     "expect": "(CAST('a' AS CHAR) COLLATE utf8mb4_nopad_bin = CAST('a' AS CHAR) COLLATE utf8mb4_nopad_bin)",
@@ -668,7 +668,7 @@ export const SQL_CASES = [
   },
   {
     "name": "op.bitwise.refused-with-a-reason",
-    "at": "02-operators.sqlt:180",
+    "at": "02-operators.sqlt:183",
     "dialect": "mariadb",
     "source": "TO_UTF8(\"a\") BAND TO_UTF8(\"b\")",
     "expect": null,
@@ -871,7 +871,7 @@ export const SQL_CASES = [
     bindings: () => ({  }),
   },
   {
-    "name": "func.num.min-of-several",
+    "name": "func.number.min-is-a-scalar-not-an-aggregate",
     "at": "03-functions.sqlt:109",
     "dialect": "mariadb",
     "source": "MIN(3, 1, 2)",
@@ -888,25 +888,8 @@ export const SQL_CASES = [
     bindings: () => ({  }),
   },
   {
-    "name": "func.number.min-is-a-scalar-not-an-aggregate",
-    "at": "03-functions.sqlt:117",
-    "dialect": "mariadb",
-    "source": "MIN(3, 1, 2)",
-    "expect": "LEAST(3, 1, 2)",
-    "error": null,
-    "throws": null,
-    "params": null,
-    "as": null,
-    "mode": null,
-    "register": null,
-    "options": null,
-    "plan": null,
-    "tables": null,
-    bindings: () => ({  }),
-  },
-  {
     "name": "func.number.min-is-variadic",
-    "at": "03-functions.sqlt:125",
+    "at": "03-functions.sqlt:117",
     "dialect": "mariadb",
     "source": "MIN(5, 4, 3, 2, 1)",
     "expect": "LEAST(5, 4, 3, 2, 1)",
@@ -923,7 +906,7 @@ export const SQL_CASES = [
   },
   {
     "name": "func.number.round",
-    "at": "03-functions.sqlt:133",
+    "at": "03-functions.sqlt:125",
     "dialect": "mariadb",
     "source": "ROUND(2.5, 0)",
     "expect": "ROUND(2.5, 0)",
@@ -940,7 +923,7 @@ export const SQL_CASES = [
   },
   {
     "name": "func.number.isnum-is-a-regex",
-    "at": "03-functions.sqlt:141",
+    "at": "03-functions.sqlt:133",
     "dialect": "mariadb",
     "source": "ISNUM(\"-12.50\")",
     "expect": "('-12.50' REGEXP '\\\\A-?[0-9]+(\\\\.[0-9]+)?\\\\z')",
@@ -957,7 +940,7 @@ export const SQL_CASES = [
   },
   {
     "name": "func.binary.to-hex-is-lower-cased",
-    "at": "03-functions.sqlt:155",
+    "at": "03-functions.sqlt:147",
     "dialect": "mariadb",
     "source": "TO_HEX(TO_UTF8(\"a\"))",
     "expect": "LOWER(HEX(CAST('a' AS BINARY)))",
@@ -974,7 +957,7 @@ export const SQL_CASES = [
   },
   {
     "name": "func.binary.base64-strips-the-wrapping",
-    "at": "03-functions.sqlt:165",
+    "at": "03-functions.sqlt:157",
     "dialect": "mariadb",
     "source": "ENCODE_BASE64(TO_UTF8(\"a\"))",
     "expect": "REPLACE(REPLACE(TO_BASE64(CAST('a' AS BINARY)), CHAR(10), ''), CHAR(13), '')",
@@ -991,7 +974,7 @@ export const SQL_CASES = [
   },
   {
     "name": "func.binary.crc32-is-padded-hex",
-    "at": "03-functions.sqlt:180",
+    "at": "03-functions.sqlt:172",
     "dialect": "mariadb",
     "source": "CRC32(\"hello\")",
     "expect": "LPAD(LOWER(HEX(CRC32(CAST('hello' AS BINARY)))), 8, '0')",
@@ -1008,7 +991,7 @@ export const SQL_CASES = [
   },
   {
     "name": "func.regex.rmatch-forces-collation-and-dotall",
-    "at": "03-functions.sqlt:188",
+    "at": "03-functions.sqlt:180",
     "dialect": "mariadb",
     "source": "RMATCH('^a.c$', \"abc\")",
     "expect": "('abc' COLLATE utf8mb4_nopad_bin REGEXP '(?s)^a.c$')",
@@ -1025,7 +1008,7 @@ export const SQL_CASES = [
   },
   {
     "name": "func.regex.rfind",
-    "at": "03-functions.sqlt:199",
+    "at": "03-functions.sqlt:191",
     "dialect": "mariadb",
     "source": "RFIND('ó', \"zażółć\")",
     "expect": "REGEXP_INSTR('zażółć' COLLATE utf8mb4_nopad_bin, '(?s)ó')",
@@ -1042,7 +1025,7 @@ export const SQL_CASES = [
   },
   {
     "name": "func.refused.code-is-not-a-code-point",
-    "at": "03-functions.sqlt:207",
+    "at": "03-functions.sqlt:199",
     "dialect": "mariadb",
     "source": "CODE(\"a\")",
     "expect": null,
@@ -1059,7 +1042,7 @@ export const SQL_CASES = [
   },
   {
     "name": "func.refused.char-is-the-inverse",
-    "at": "03-functions.sqlt:218",
+    "at": "03-functions.sqlt:210",
     "dialect": "mariadb",
     "source": "CHAR(233)",
     "expect": null,
@@ -1076,7 +1059,7 @@ export const SQL_CASES = [
   },
   {
     "name": "func.refused.rreplace-replacement-syntax-differs",
-    "at": "03-functions.sqlt:226",
+    "at": "03-functions.sqlt:218",
     "dialect": "mariadb",
     "source": "RREPLACE('a', \"b\", \"banana\")",
     "expect": null,
@@ -1093,7 +1076,7 @@ export const SQL_CASES = [
   },
   {
     "name": "func.refused.split-yields-a-list",
-    "at": "03-functions.sqlt:234",
+    "at": "03-functions.sqlt:226",
     "dialect": "mariadb",
     "source": "SPLIT(\"a,b\", \",\")",
     "expect": null,
@@ -1110,7 +1093,7 @@ export const SQL_CASES = [
   },
   {
     "name": "func.bin.reads-its-argument-as-bytes",
-    "at": "03-functions.sqlt:241",
+    "at": "03-functions.sqlt:233",
     "dialect": "mariadb",
     "source": "TO_HEX(1)",
     "expect": "LOWER(HEX(CAST(1 AS BINARY)))",
@@ -1127,7 +1110,7 @@ export const SQL_CASES = [
   },
   {
     "name": "func.bin.length-of-a-number",
-    "at": "03-functions.sqlt:257",
+    "at": "03-functions.sqlt:249",
     "dialect": "mariadb",
     "source": "BLEN(2.50)",
     "expect": "LENGTH(CAST(2.50 AS BINARY))",
@@ -1144,7 +1127,7 @@ export const SQL_CASES = [
   },
   {
     "name": "func.regex.unportable-pattern-is-refused-not-thrown",
-    "at": "03-functions.sqlt:265",
+    "at": "03-functions.sqlt:257",
     "dialect": "mariadb",
     "source": "RMATCH(IF(TRUE, '\\p{L}', 'x'), \"x\")",
     "expect": null,
@@ -1161,7 +1144,7 @@ export const SQL_CASES = [
   },
   {
     "name": "func.text.ltrim-strips-sel-s-four-characters",
-    "at": "03-functions.sqlt:280",
+    "at": "03-functions.sqlt:272",
     "dialect": "mariadb",
     "source": "LTRIM(\" a\")",
     "expect": "REGEXP_REPLACE(' a', '^[ \\\\t\\\\r\\\\n]+', '')",
@@ -1178,7 +1161,7 @@ export const SQL_CASES = [
   },
   {
     "name": "func.text.rtrim-strips-sel-s-four-characters",
-    "at": "03-functions.sqlt:294",
+    "at": "03-functions.sqlt:286",
     "dialect": "mariadb",
     "source": "RTRIM(\"a \")",
     "expect": "REGEXP_REPLACE('a ', '[ \\\\t\\\\r\\\\n]+$', '')",
@@ -1195,7 +1178,7 @@ export const SQL_CASES = [
   },
   {
     "name": "func.bin.from-hex",
-    "at": "03-functions.sqlt:302",
+    "at": "03-functions.sqlt:294",
     "dialect": "mariadb",
     "source": "FROM_HEX(\"4869\")",
     "expect": "UNHEX('4869')",
@@ -2605,25 +2588,8 @@ export const SQL_CASES = [
     bindings: () => ({ "X": Binding.value(Value.text("007"), "NUM") }),
   },
   {
-    "name": "bind.value.canonical-num-still-emits-bare",
-    "at": "10-bindings.sqlt:134",
-    "dialect": "mariadb",
-    "source": "X + 1",
-    "expect": "(2.50 + 1)",
-    "error": null,
-    "throws": null,
-    "params": null,
-    "as": null,
-    "mode": null,
-    "register": null,
-    "options": null,
-    "plan": null,
-    "tables": null,
-    bindings: () => ({ "X": Binding.value(Value.text("2.50"), "NUM") }),
-  },
-  {
     "name": "bind.value.negative-zero-is-not-canonical",
-    "at": "10-bindings.sqlt:147",
+    "at": "10-bindings.sqlt:134",
     "dialect": "mariadb",
     "source": "X + 1",
     "expect": null,
@@ -2640,7 +2606,7 @@ export const SQL_CASES = [
   },
   {
     "name": "bind.value.untyped-non-canonical-is-fine",
-    "at": "10-bindings.sqlt:157",
+    "at": "10-bindings.sqlt:144",
     "dialect": "mariadb",
     "source": "X & \"\"",
     "expect": "CONCAT('007', '')",
@@ -2657,7 +2623,7 @@ export const SQL_CASES = [
   },
   {
     "name": "bind.value.empty-is-not-a-scalar",
-    "at": "10-bindings.sqlt:170",
+    "at": "10-bindings.sqlt:157",
     "dialect": "mariadb",
     "source": "X $== \"a\"",
     "expect": null,
@@ -2674,7 +2640,7 @@ export const SQL_CASES = [
   },
   {
     "name": "bind.value.empty-is-still-an-aggregate-source",
-    "at": "10-bindings.sqlt:185",
+    "at": "10-bindings.sqlt:172",
     "dialect": "mariadb",
     "source": "ALL(X, _ > 0)",
     "expect": "TRUE",
@@ -2691,7 +2657,7 @@ export const SQL_CASES = [
   },
   {
     "name": "bind.column.nul-in-a-name-is-refused",
-    "at": "10-bindings.sqlt:195",
+    "at": "10-bindings.sqlt:182",
     "dialect": "mariadb",
     "source": "X",
     "expect": null,
@@ -2708,7 +2674,7 @@ export const SQL_CASES = [
   },
   {
     "name": "bind.column.array-column-is-refused",
-    "at": "10-bindings.sqlt:212",
+    "at": "10-bindings.sqlt:199",
     "dialect": "mariadb",
     "source": "X",
     "expect": null,
@@ -2725,7 +2691,7 @@ export const SQL_CASES = [
   },
   {
     "name": "bind.column.array-table-is-refused",
-    "at": "10-bindings.sqlt:227",
+    "at": "10-bindings.sqlt:214",
     "dialect": "mariadb",
     "source": "X",
     "expect": null,
@@ -2742,7 +2708,7 @@ export const SQL_CASES = [
   },
   {
     "name": "bind.relation.array-alias-is-refused",
-    "at": "10-bindings.sqlt:241",
+    "at": "10-bindings.sqlt:228",
     "dialect": "mariadb",
     "source": "ALL(R, I, I[\"Q\"] > 0)",
     "expect": null,
@@ -2759,7 +2725,7 @@ export const SQL_CASES = [
   },
   {
     "name": "bind.value.num-keeps-its-scale",
-    "at": "10-bindings.sqlt:251",
+    "at": "10-bindings.sqlt:238",
     "dialect": "mariadb",
     "source": "X + 1",
     "expect": "(2.50 + 1)",
@@ -2776,7 +2742,7 @@ export const SQL_CASES = [
   },
   {
     "name": "bind.relation.correlate-must-be-raw-string",
-    "at": "10-bindings.sqlt:264",
+    "at": "10-bindings.sqlt:252",
     "dialect": "mariadb",
     "source": "COUNT(R)",
     "expect": null,
@@ -2793,7 +2759,7 @@ export const SQL_CASES = [
   },
   {
     "name": "bind.relation.from-array-must-be-raw-string",
-    "at": "10-bindings.sqlt:279",
+    "at": "10-bindings.sqlt:267",
     "dialect": "mariadb",
     "source": "COUNT(R)",
     "expect": null,
@@ -3608,25 +3574,8 @@ export const SQL_CASES = [
     bindings: () => ({ "E": Binding.value(valueTree([]), null) }),
   },
   {
-    "name": "agg.has.static-is-decided-at-translation-time",
-    "at": "12-aggregates.sqlt:339",
-    "dialect": "mariadb",
-    "source": "HAS((1, 2), \"2\")",
-    "expect": "TRUE",
-    "error": null,
-    "throws": null,
-    "params": null,
-    "as": null,
-    "mode": null,
-    "register": null,
-    "options": null,
-    "plan": null,
-    "tables": null,
-    bindings: () => ({  }),
-  },
-  {
     "name": "agg.has.relation-is-refused",
-    "at": "12-aggregates.sqlt:347",
+    "at": "12-aggregates.sqlt:339",
     "dialect": "mariadb",
     "source": "HAS(ITEMS, \"price\")",
     "expect": null,
@@ -3643,7 +3592,7 @@ export const SQL_CASES = [
   },
   {
     "name": "agg.has.relation-field-name-is-refused-too",
-    "at": "12-aggregates.sqlt:368",
+    "at": "12-aggregates.sqlt:360",
     "dialect": "mariadb",
     "source": "HAS(ITEMS, \"QTY\")",
     "expect": null,
@@ -3660,7 +3609,7 @@ export const SQL_CASES = [
   },
   {
     "name": "agg.has.a-list-still-answers",
-    "at": "12-aggregates.sqlt:378",
+    "at": "12-aggregates.sqlt:370",
     "dialect": "mariadb",
     "source": "HAS((1, 2), \"2\")",
     "expect": "TRUE",
@@ -3677,7 +3626,7 @@ export const SQL_CASES = [
   },
   {
     "name": "agg.refuse.k-on-a-relation",
-    "at": "12-aggregates.sqlt:389",
+    "at": "12-aggregates.sqlt:381",
     "dialect": "mariadb",
     "source": "ALL(ITEMS, _K $!= \"\")",
     "expect": null,
@@ -3694,7 +3643,7 @@ export const SQL_CASES = [
   },
   {
     "name": "agg.refuse.relation-indexed-by-position",
-    "at": "12-aggregates.sqlt:402",
+    "at": "12-aggregates.sqlt:394",
     "dialect": "mariadb",
     "source": "ITEMS[1]",
     "expect": null,
@@ -3711,7 +3660,7 @@ export const SQL_CASES = [
   },
   {
     "name": "agg.refuse.bare-row-without-a-scalar",
-    "at": "12-aggregates.sqlt:412",
+    "at": "12-aggregates.sqlt:404",
     "dialect": "mariadb",
     "source": "ALL(ITEMS, I, I > 0)",
     "expect": null,
@@ -3728,7 +3677,7 @@ export const SQL_CASES = [
   },
   {
     "name": "agg.refuse.non-bool-body",
-    "at": "12-aggregates.sqlt:422",
+    "at": "12-aggregates.sqlt:414",
     "dialect": "mariadb",
     "source": "ALL((1, 2), _ + 1)",
     "expect": null,
@@ -3745,7 +3694,7 @@ export const SQL_CASES = [
   },
   {
     "name": "agg.refuse.non-num-body-for-sum",
-    "at": "12-aggregates.sqlt:430",
+    "at": "12-aggregates.sqlt:422",
     "dialect": "mariadb",
     "source": "SUM((1, 2), _ > 0)",
     "expect": null,
@@ -3762,7 +3711,7 @@ export const SQL_CASES = [
   },
   {
     "name": "agg.refuse.map-in-a-value-position",
-    "at": "12-aggregates.sqlt:438",
+    "at": "12-aggregates.sqlt:430",
     "dialect": "mariadb",
     "source": "MAP((1, 2), _ * 2)",
     "expect": null,
@@ -3779,7 +3728,7 @@ export const SQL_CASES = [
   },
   {
     "name": "agg.refuse.join-over-a-relation",
-    "at": "12-aggregates.sqlt:446",
+    "at": "12-aggregates.sqlt:438",
     "dialect": "mariadb",
     "source": "JOIN(ITEMS, \", \")",
     "expect": null,
@@ -3796,7 +3745,7 @@ export const SQL_CASES = [
   },
   {
     "name": "agg.refuse.binder-must-be-a-name",
-    "at": "12-aggregates.sqlt:459",
+    "at": "12-aggregates.sqlt:451",
     "dialect": "mariadb",
     "source": "ALL((1, 2), 5, _ > 0)",
     "expect": null,
@@ -3813,7 +3762,7 @@ export const SQL_CASES = [
   },
   {
     "name": "agg.contract.over-credit-limit",
-    "at": "12-aggregates.sqlt:466",
+    "at": "12-aggregates.sqlt:458",
     "dialect": "mariadb",
     "source": "SUM(ITEMS, _[\"QTY\"] * _[\"PRICE\"]) > CREDIT_LIMIT",
     "expect": "((SELECT COALESCE(SUM((`oi`.`qty` * `oi`.`price`)), 0) FROM `order_items` `oi` WHERE (`oi`.`order_id` = `o`.`id`)) > `o`.`credit_limit`)",
@@ -3830,7 +3779,7 @@ export const SQL_CASES = [
   },
   {
     "name": "agg.contract.all-skus-well-formed",
-    "at": "12-aggregates.sqlt:479",
+    "at": "12-aggregates.sqlt:471",
     "dialect": "mariadb",
     "source": "ALL(ITEMS, RMATCH('^[A-Z]{2}-\\d{4}$', _[\"SKU\"]))",
     "expect": "NOT EXISTS (SELECT 1 FROM `order_items` `oi` WHERE (`oi`.`order_id` = `o`.`id`) AND ((`oi`.`sku` COLLATE utf8mb4_nopad_bin REGEXP '(?s)^[A-Z]{2}-[0-9]{4}$')) IS NOT TRUE)",
@@ -3847,7 +3796,7 @@ export const SQL_CASES = [
   },
   {
     "name": "agg.filter.absorbed-into-count-bare",
-    "at": "12-aggregates.sqlt:493",
+    "at": "12-aggregates.sqlt:485",
     "dialect": "mariadb",
     "source": "COUNT(FILTER(ITEMS, I, I[\"qty\"] <= 0))",
     "expect": "(SELECT COALESCE(SUM(CASE WHEN (`oi`.`qty` <= 0) THEN 1 ELSE 0 END), 0) FROM `order_items` `oi` WHERE (`oi`.`order_id` = `o`.`id`))",
@@ -3864,7 +3813,7 @@ export const SQL_CASES = [
   },
   {
     "name": "agg.relation.bare-binder-over-a-multi-field-row",
-    "at": "12-aggregates.sqlt:506",
+    "at": "12-aggregates.sqlt:498",
     "dialect": "mariadb",
     "source": "ANY(ITEMS, _ $== \"AB-1000\")",
     "expect": null,
@@ -3881,7 +3830,7 @@ export const SQL_CASES = [
   },
   {
     "name": "agg.relation.bare-binder-over-a-one-field-row",
-    "at": "12-aggregates.sqlt:523",
+    "at": "12-aggregates.sqlt:515",
     "dialect": "mariadb",
     "source": "ANY(SKUS, _ $== \"AB-1000\")",
     "expect": "EXISTS (SELECT 1 FROM `order_items` `s2` WHERE TRUE AND ((CAST(`s2`.`sku` AS CHAR) COLLATE utf8mb4_nopad_bin = CAST('AB-1000' AS CHAR) COLLATE utf8mb4_nopad_bin)) IS TRUE)",
@@ -3898,7 +3847,7 @@ export const SQL_CASES = [
   },
   {
     "name": "agg.relation.row-is-not-a-scalar-source",
-    "at": "12-aggregates.sqlt:536",
+    "at": "12-aggregates.sqlt:528",
     "dialect": "mariadb",
     "source": "ANY(ITEMS, I, COUNT(I) == 2)",
     "expect": null,
@@ -3915,7 +3864,7 @@ export const SQL_CASES = [
   },
   {
     "name": "agg.relation.nested-in-itself",
-    "at": "12-aggregates.sqlt:550",
+    "at": "12-aggregates.sqlt:542",
     "dialect": "mariadb",
     "source": "ANY(ITEMS, I, ANY(ITEMS, J, J[\"QTY\"] > I[\"QTY\"]))",
     "expect": null,
@@ -3932,7 +3881,7 @@ export const SQL_CASES = [
   },
   {
     "name": "agg.relation.two-relations-nest-fine",
-    "at": "12-aggregates.sqlt:567",
+    "at": "12-aggregates.sqlt:559",
     "dialect": "mariadb",
     "source": "ANY(ITEMS, I, ANY(SKUS, S, S $== I[\"SKU\"]))",
     "expect": "EXISTS (SELECT 1 FROM `order_items` `oi` WHERE TRUE AND (EXISTS (SELECT 1 FROM `skus` `s2` WHERE TRUE AND ((CAST(`s2`.`sku` AS CHAR) COLLATE utf8mb4_nopad_bin = CAST(`oi`.`sku` AS CHAR) COLLATE utf8mb4_nopad_bin)) IS TRUE)) IS TRUE)",
@@ -3949,7 +3898,7 @@ export const SQL_CASES = [
   },
   {
     "name": "agg.count.list-yielding-call-is-not-a-scalar",
-    "at": "12-aggregates.sqlt:579",
+    "at": "12-aggregates.sqlt:571",
     "dialect": "mariadb",
     "source": "COUNT(SPLIT(\"a,b\", \",\"))",
     "expect": null,
@@ -3966,7 +3915,7 @@ export const SQL_CASES = [
   },
   {
     "name": "agg.has.list-yielding-call-is-not-a-scalar",
-    "at": "12-aggregates.sqlt:592",
+    "at": "12-aggregates.sqlt:584",
     "dialect": "sqlite",
     "source": "HAS(SPLIT(\"a,b\", \",\"), 1)",
     "expect": null,
@@ -3983,7 +3932,7 @@ export const SQL_CASES = [
   },
   {
     "name": "agg.relation.in-folds-null-to-false",
-    "at": "12-aggregates.sqlt:600",
+    "at": "12-aggregates.sqlt:592",
     "dialect": "mariadb",
     "source": "NOT(\"flag\" IN NOTES)",
     "expect": "(NOT ((CAST('flag' AS CHAR) COLLATE utf8mb4_nopad_bin IN (SELECT CAST(`nt`.`note` AS CHAR) COLLATE utf8mb4_nopad_bin FROM `order_items` `nt` WHERE TRUE)) IS TRUE))",
@@ -4000,7 +3949,7 @@ export const SQL_CASES = [
   },
   {
     "name": "agg.count.structure-yielding-call-is-not-a-scalar",
-    "at": "12-aggregates.sqlt:617",
+    "at": "12-aggregates.sqlt:609",
     "dialect": "mariadb",
     "source": "COUNT(LIST(1, 2, 3))",
     "expect": null,
@@ -4017,7 +3966,7 @@ export const SQL_CASES = [
   },
   {
     "name": "agg.count.record-is-not-a-scalar",
-    "at": "12-aggregates.sqlt:632",
+    "at": "12-aggregates.sqlt:624",
     "dialect": "mariadb",
     "source": "COUNT(RECORD(\"a\", 1, \"b\", 2))",
     "expect": null,
@@ -4034,7 +3983,7 @@ export const SQL_CASES = [
   },
   {
     "name": "agg.count.bucket-is-not-a-scalar",
-    "at": "12-aggregates.sqlt:640",
+    "at": "12-aggregates.sqlt:632",
     "dialect": "mariadb",
     "source": "COUNT(BUCKET((1, 2), _))",
     "expect": null,
@@ -4051,7 +4000,7 @@ export const SQL_CASES = [
   },
   {
     "name": "agg.count.take-is-not-a-scalar",
-    "at": "12-aggregates.sqlt:648",
+    "at": "12-aggregates.sqlt:640",
     "dialect": "mariadb",
     "source": "COUNT(TAKE((1, 2, 3), 2))",
     "expect": null,
@@ -4068,7 +4017,7 @@ export const SQL_CASES = [
   },
   {
     "name": "agg.has.structure-yielding-call-is-not-a-scalar",
-    "at": "12-aggregates.sqlt:656",
+    "at": "12-aggregates.sqlt:648",
     "dialect": "sqlite",
     "source": "HAS(DISTINCT((1, 1, 2)), 1)",
     "expect": null,
@@ -4085,7 +4034,7 @@ export const SQL_CASES = [
   },
   {
     "name": "agg.count.scalar-call-must-translate",
-    "at": "12-aggregates.sqlt:664",
+    "at": "12-aggregates.sqlt:656",
     "dialect": "mariadb",
     "source": "COUNT(IF(TRUE, LIST(1, 2), 3))",
     "expect": null,
@@ -6516,7 +6465,7 @@ export const SQL_CASES = [
   },
   {
     "name": "const.numeric.a-numeric-text-literal-is-fine",
-    "at": "16-constants.sqlt:589",
+    "at": "16-constants.sqlt:592",
     "dialect": "mariadb",
     "source": "T == \"5\"",
     "expect": "(CAST(`t` AS DECIMAL(65,10)) = CAST('5' AS DECIMAL(65,10)))",
@@ -6533,7 +6482,7 @@ export const SQL_CASES = [
   },
   {
     "name": "const.residual.argument-constraint-beside-a-column",
-    "at": "16-constants.sqlt:602",
+    "at": "16-constants.sqlt:605",
     "dialect": "mariadb",
     "source": "LEFT(T, -1)",
     "expect": "LEFT(`t`, (-1))",
@@ -6550,7 +6499,7 @@ export const SQL_CASES = [
   },
   {
     "name": "const.arith.numeric-text-is-the-number.add.mariadb",
-    "at": "16-constants.sqlt:630",
+    "at": "16-constants.sqlt:633",
     "dialect": "mariadb",
     "source": "\"0.1\" + \"0.2\" == 0.3",
     "expect": "((0.1 + 0.2) = 0.3)",
@@ -6567,7 +6516,7 @@ export const SQL_CASES = [
   },
   {
     "name": "const.arith.numeric-text-is-the-number.max.mariadb",
-    "at": "16-constants.sqlt:639",
+    "at": "16-constants.sqlt:642",
     "dialect": "mariadb",
     "source": "MAX(\"10\", \"9\") == 10",
     "expect": "(GREATEST(10, 9) = 10)",
@@ -6584,7 +6533,7 @@ export const SQL_CASES = [
   },
   {
     "name": "const.arith.numeric-text-is-the-number.folded-call.mariadb",
-    "at": "16-constants.sqlt:648",
+    "at": "16-constants.sqlt:651",
     "dialect": "mariadb",
     "source": "LTRIM(\"41\") + 1",
     "expect": "(41 + 1)",
@@ -6601,7 +6550,7 @@ export const SQL_CASES = [
   },
   {
     "name": "const.arith.numeric-text-is-the-number.unary.mariadb",
-    "at": "16-constants.sqlt:657",
+    "at": "16-constants.sqlt:660",
     "dialect": "mariadb",
     "source": "-\"5\" + 1",
     "expect": "((-5) + 1)",
@@ -6618,7 +6567,7 @@ export const SQL_CASES = [
   },
   {
     "name": "const.arith.numeric-text-is-the-number.scale-kept.mariadb",
-    "at": "16-constants.sqlt:666",
+    "at": "16-constants.sqlt:669",
     "dialect": "mariadb",
     "source": "\"1.10\" + 2 > 3",
     "expect": "((1.10 + 2) > 3)",
@@ -6635,7 +6584,7 @@ export const SQL_CASES = [
   },
   {
     "name": "const.arith.numeric-text-is-the-number.add.postgresql",
-    "at": "16-constants.sqlt:675",
+    "at": "16-constants.sqlt:678",
     "dialect": "postgresql",
     "source": "\"0.1\" + \"0.2\" == 0.3",
     "expect": "((CAST(0.1 AS NUMERIC) + CAST(0.2 AS NUMERIC)) = 0.3)",
@@ -6652,7 +6601,7 @@ export const SQL_CASES = [
   },
   {
     "name": "const.arith.numeric-text-is-the-number.max.postgresql",
-    "at": "16-constants.sqlt:684",
+    "at": "16-constants.sqlt:687",
     "dialect": "postgresql",
     "source": "MAX(\"10\", \"9\") == 10",
     "expect": "(greatest(10, 9) = 10)",
@@ -6669,7 +6618,7 @@ export const SQL_CASES = [
   },
   {
     "name": "const.arith.numeric-text-is-the-number.folded-call.postgresql",
-    "at": "16-constants.sqlt:693",
+    "at": "16-constants.sqlt:696",
     "dialect": "postgresql",
     "source": "LTRIM(\"41\") + 1",
     "expect": "(CAST(41 AS NUMERIC) + CAST(1 AS NUMERIC))",
@@ -6686,7 +6635,7 @@ export const SQL_CASES = [
   },
   {
     "name": "const.arith.numeric-text-is-the-number.unary.postgresql",
-    "at": "16-constants.sqlt:702",
+    "at": "16-constants.sqlt:705",
     "dialect": "postgresql",
     "source": "-\"5\" + 1",
     "expect": "(CAST((-CAST(5 AS NUMERIC)) AS NUMERIC) + CAST(1 AS NUMERIC))",
@@ -6703,7 +6652,7 @@ export const SQL_CASES = [
   },
   {
     "name": "const.arith.numeric-text-is-the-number.scale-kept.postgresql",
-    "at": "16-constants.sqlt:711",
+    "at": "16-constants.sqlt:714",
     "dialect": "postgresql",
     "source": "\"1.10\" + 2 > 3",
     "expect": "((CAST(1.10 AS NUMERIC) + CAST(2 AS NUMERIC)) > 3)",
@@ -6720,7 +6669,7 @@ export const SQL_CASES = [
   },
   {
     "name": "const.arith.numeric-text-is-the-number.add.sqlite",
-    "at": "16-constants.sqlt:720",
+    "at": "16-constants.sqlt:723",
     "dialect": "sqlite",
     "source": "\"0.1\" + \"0.2\" == 0.3",
     "expect": "(CAST(('0.1' + '0.2') AS NUMERIC) = CAST('0.3' AS NUMERIC))",
@@ -6737,7 +6686,7 @@ export const SQL_CASES = [
   },
   {
     "name": "const.arith.numeric-text-is-the-number.max.sqlite",
-    "at": "16-constants.sqlt:729",
+    "at": "16-constants.sqlt:732",
     "dialect": "sqlite",
     "source": "MAX(\"10\", \"9\") == 10",
     "expect": "(CAST(max(CAST('10' AS NUMERIC), CAST('9' AS NUMERIC)) AS NUMERIC) = CAST('10' AS NUMERIC))",
@@ -6754,7 +6703,7 @@ export const SQL_CASES = [
   },
   {
     "name": "const.arith.numeric-text-is-the-number.folded-call.sqlite",
-    "at": "16-constants.sqlt:738",
+    "at": "16-constants.sqlt:741",
     "dialect": "sqlite",
     "source": "LTRIM(\"41\") + 1",
     "expect": "('41' + '1')",
@@ -6771,7 +6720,7 @@ export const SQL_CASES = [
   },
   {
     "name": "const.arith.numeric-text-is-the-number.unary.sqlite",
-    "at": "16-constants.sqlt:747",
+    "at": "16-constants.sqlt:750",
     "dialect": "sqlite",
     "source": "-\"5\" + 1",
     "expect": "((-'5') + '1')",
@@ -6788,7 +6737,7 @@ export const SQL_CASES = [
   },
   {
     "name": "const.arith.numeric-text-is-the-number.scale-kept.sqlite",
-    "at": "16-constants.sqlt:756",
+    "at": "16-constants.sqlt:759",
     "dialect": "sqlite",
     "source": "\"1.10\" + 2 > 3",
     "expect": "(CAST(('1.10' + '2') AS NUMERIC) > CAST('3' AS NUMERIC))",

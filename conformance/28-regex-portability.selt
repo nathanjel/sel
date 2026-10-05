@@ -352,6 +352,8 @@ bool TRUE
 ### name: re.repeat.300-times-300
 --- note
 GO-C1: 90,000 characters through nested counted repeats.
+The same program as re.ambiguity.accept.24 in the generated 28b-regex-ambiguity.selt,
+deliberately: there it is a validator verdict, here a portability question.
 --- source
 RMATCH('^(a{300}){300}$', REPEAT("a", 90000))
 --- expect
@@ -361,6 +363,8 @@ bool TRUE
 ### name: re.repeat.at-the-cap-with-a-matching-subject
 --- note
 re.quantifier.bound-at-the-cap only proves FALSE; a matching subject is what shows the cap is honoured rather than silently turned into `never matches`.
+The same program as re.ambiguity.accept.39 in the generated 28b-regex-ambiguity.selt,
+deliberately: there it is a validator verdict, here a portability question.
 --- source
 RMATCH('^a{65535}$', REPEAT("a", 65535))
 --- expect
@@ -908,6 +912,8 @@ bool TRUE
 ### name: re.limits.repeat-product-is-not-a-program-size
 --- note
 `a{n}` bounds are capped individually at 65 535 and a pattern's length at 65 535 code points; the product of nested counts is not a limit the language states. It must not be a host failure: it is a value or ... FALSE here, because the subject is one `a`.
+The same program as re.ambiguity.accept.25 in the generated 28b-regex-ambiguity.selt,
+deliberately: there it is a validator verdict, here a portability question.
 --- source
 RMATCH('(?:a{60000}){60000}', "a")
 --- expect
@@ -966,6 +972,8 @@ bool TRUE
 ### name: re.accept.nested-loop-with-a-nonnullable-body
 --- note
 CONTROL for the nullable-body rule: nesting loops is fine when every body must consume.
+The same program as re.ambiguity.accept.32 in the generated 28b-regex-ambiguity.selt,
+deliberately: there it is a validator verdict, here a portability question.
 --- source
 RMATCH('^(?:a+b)+$', "aabab")
 --- expect

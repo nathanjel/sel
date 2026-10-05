@@ -76,6 +76,27 @@ exists: `python/sel/decimal.py` deliberately does **not** use the `decimal`
 module, so the oracle remains a genuinely independent opinion for that host
 rather than a comparison of the standard library with itself.
 
+## Measurement harnesses (manual, never gated)
+
+Timings are not pass/fail, so nothing below runs in `tools/check.sh`; each
+writes its results into its own ignored `results/` directory or to stdout.
+
+| Harness | What it measures |
+|---|---|
+| `tools/scale-test/` (`benchmark_all.py`, `run_benchmarks.py`) | the S1–S6 scale scenarios in every host; `run_benchmarks.py --plans-only` IS gated, as "scale plans vs reference" |
+| `tools/commit-benchmark/` | Mandelbrot and application timers per host, for A/B between commits |
+| `tools/python-runtime/`, `tools/benchmark-python-runtime.py` | Python arithmetic and metadata micro-measurements |
+| `tools/php-runtime/`, `tools/lisp-runtime/` | the PHP scalar-access and Lisp runtime comparisons |
+| `tools/adversarial/` | the SQL-layer adversarial audit's scripts; `regressions.sh` re-asserts its findings |
+| `tools/stress.sh` | programs of several hundred thousand nodes through every host |
+
+**Historical, unmaintained:** `tools/perf/` (the per-item A/B scripts of closed
+performance worklists), `tools/benchmark-{cpp-value.cpp,js-decimal-guard.mjs,
+lisp-traversal.lisp,php-runtime.php}`, `tools/js-runtime/`, `tools/code-scan/`
+and `tools/cpp-collection/`. Nothing runs or references them; they are kept only
+as worked examples of an A/B measurement and are not updated when an API they
+call changes. Their results and decisions are in git history.
+
 ---
 
 ## What an implementation must provide
