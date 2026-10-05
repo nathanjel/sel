@@ -3959,6 +3959,19 @@ void Translator::analyze_sort_step(const SNodePtr& step, RelationalPlan& plan) {
   plan.order_by.push_back({binder, key, dir, step->pos()});
 }
 
+namespace {
+
+// Literal SQL text onto a statement's parts.
+void append_sql(std::vector<Fragment::Part>& parts, std::string sql) {
+  if (sql.empty()) return;
+  Fragment::Part p;
+  p.is_slot = false;
+  p.sql = std::move(sql);
+  parts.push_back(std::move(p));
+}
+
+}  // namespace
+
 Fragment Translator::compile_statement(const RelationalPlan& plan) {
   // Do not turn RECORD writes into duplicate SQL columns or discard evaluation.
   const auto check_aliases = [](const auto& entries) {
@@ -3979,16 +3992,7 @@ Fragment Translator::compile_statement(const RelationalPlan& plan) {
   } reset_plan{&statement_plan_, previous_plan};
 
   std::vector<Fragment::Part> parts;
-  auto add_sql = [&](std::string sql) {
-    if (!sql.empty()) {
-      Fragment::Part p;
-      p.is_slot = false;
-      p.sql = std::move(sql);
-      parts.push_back(std::move(p));
-    }
-  };
-
-  add_sql(plan.distinct ? "SELECT DISTINCT " : "SELECT ");
+  append_sql(parts, plan.distinct ? "SELECT DISTINCT " : "SELECT ");
 
   Source src;
   src.shape = Source::Shape::Relation;
@@ -3997,11 +4001,26 @@ Fragment Translator::compile_statement(const RelationalPlan& plan) {
     src.filters.push_back({f.binder, f.node});
   }
 
-  // 1. SELECT list (Projections)
+  statement_select(plan, src, parts);
+  statement_from(plan, parts);
+  statement_where(plan, src, parts);
+  statement_grouping(plan, src, parts);
+  statement_order_and_slice(plan, src, parts);
+
+  Fragment out(parts, SqlKind::Statement, dialect_);
+  out.params_ = params_;
+  out.param_kinds_ = param_kinds_;
+  out.caveats_ = caveats_;
+  return out;
+}
+
+// --- compile_statement's clauses, in the order SQL writes them.
+
+void Translator::statement_select(const RelationalPlan& plan, const Source& src, std::vector<Fragment::Part>& parts) {
   if (plan.projections) {
     bool first = true;
     for (const auto& proj : *plan.projections) {
-      if (!first) add_sql(", ");
+      if (!first) append_sql(parts, ", ");
       first = false;
       Fragment p_frag = proj.group_key
           ? group_key(src, *proj.group_key, true)
@@ -4016,13 +4035,13 @@ Fragment Translator::compile_statement(const RelationalPlan& plan) {
         parts.push_back(p);
       }
       if (proj.alias) {
-        add_sql(" AS " + emit_.ident(*proj.alias));
+        append_sql(parts, " AS " + emit_.ident(*proj.alias));
       }
     }
   } else if (plan.select_cols) {
     bool first = true;
     for (const auto& col : *plan.select_cols) {
-      if (!first) add_sql(", ");
+      if (!first) append_sql(parts, ", ");
       first = false;
       const RelationSpec* owner = &plan.source_relation;
       const ColumnSpec* f_spec = plan.source_relation.field(ascii_upper(col));
@@ -4048,8 +4067,8 @@ Fragment Translator::compile_statement(const RelationalPlan& plan) {
       if (plan.distinct && f_spec && (f_spec->type == SqlKind::Text || f_spec->type == SqlKind::Num)) {
         const Fragment frag = emit_.text_operand(Fragment({{false, sql, 0}}, f_spec->type, dialect_));
         parts.insert(parts.end(), frag.parts().begin(), frag.parts().end());
-        add_sql(" AS " + emit_.ident(column));
-      } else add_sql(sql);
+        append_sql(parts, " AS " + emit_.ident(column));
+      } else append_sql(parts, sql);
     }
   } else if (!plan.joins.empty()) {
     // A joined row is its promoted fields (spec §7.4); see joined_row_fields.
@@ -4063,35 +4082,36 @@ Fragment Translator::compile_statement(const RelationalPlan& plan) {
     }
     bool first = true;
     for (const JoinedRowField& f : fields) {
-      if (!first) add_sql(", ");
+      if (!first) append_sql(parts, ", ");
       first = false;
       const std::string column = f.spec.column.empty() ? f.name : f.spec.column;
-      add_sql(emit_.column(f.table, column));
+      append_sql(parts, emit_.column(f.table, column));
     }
   } else {
     if (plan.source_alias && !plan.source_alias->empty()) {
-      add_sql(emit_.ident(*plan.source_alias) + ".*");
+      append_sql(parts, emit_.ident(*plan.source_alias) + ".*");
     } else {
-      add_sql("*");
+      append_sql(parts, "*");
     }
   }
+}
 
-  // 2. FROM clause
-  add_sql(" FROM ");
+void Translator::statement_from(const RelationalPlan& plan, std::vector<Fragment::Part>& parts) {
+  append_sql(parts, " FROM ");
   if (plan.source_subquery) {
     const Fragment subquery = compile_statement(*plan.source_subquery);
-    add_sql("(");
+    append_sql(parts, "(");
     for (const Fragment::Part& p : subquery.parts()) parts.push_back(p);
-    add_sql(")");
+    append_sql(parts, ")");
     if (plan.source_alias && !plan.source_alias->empty()) {
-      add_sql(" " + emit_.ident(*plan.source_alias));
+      append_sql(parts, " " + emit_.ident(*plan.source_alias));
     }
   } else {
     std::string from = plan.source_from_raw ? plan.source_table : emit_.ident(plan.source_table);
     if (plan.source_alias && !plan.source_alias->empty()) {
       from += " " + emit_.ident(*plan.source_alias);
     }
-    add_sql(from);
+    append_sql(parts, from);
   }
 
   // Joins are emitted before WHERE so a predicate that references both sides
@@ -4099,19 +4119,20 @@ Fragment Translator::compile_statement(const RelationalPlan& plan) {
   // alias.  This is also what keeps a left join's unmatched rows from being
   // accidentally filtered by an ON condition moved into WHERE.
   for (const RelationalJoin& join : plan.joins) {
-    add_sql(join.type == "LEFT" ? " LEFT JOIN " : " INNER JOIN ");
+    append_sql(parts, join.type == "LEFT" ? " LEFT JOIN " : " INNER JOIN ");
     std::string right = join.source_from_raw ? join.source_table : emit_.ident(join.source_table);
     if (join.source_alias && !join.source_alias->empty()) {
       right += " " + emit_.ident(*join.source_alias);
     }
-    add_sql(right + " ON ");
+    append_sql(parts, right + " ON ");
     const Fragment on = with_join_binders(plan, join, [&]() {
       return require_bool(node(join.on_pred), join.pos, "LINK");
     });
     for (const Fragment::Part& p : on.parts()) parts.push_back(p);
   }
+}
 
-  // 3. WHERE clause
+void Translator::statement_where(const RelationalPlan& plan, const Source& src, std::vector<Fragment::Part>& parts) {
   std::vector<std::vector<Fragment::Part>> cond_parts;
   if (plan.correlate && !plan.correlate->empty()) {
     Fragment::Part cp;
@@ -4133,21 +4154,23 @@ Fragment Translator::compile_statement(const RelationalPlan& plan) {
   in_where_ = false;
 
   if (!cond_parts.empty()) {
-    add_sql(" WHERE ");
+    append_sql(parts, " WHERE ");
     for (std::size_t i = 0; i < cond_parts.size(); ++i) {
-      if (i > 0) add_sql(" AND ");
+      if (i > 0) append_sql(parts, " AND ");
       for (const auto& p : cond_parts[i]) {
         parts.push_back(p);
       }
     }
   }
+}
 
-  // 4. GROUP BY clause
+void Translator::statement_grouping(const RelationalPlan& plan, const Source& src, std::vector<Fragment::Part>& parts) {
+  // GROUP BY
   if (plan.group_by && !plan.group_by->empty()) {
-    add_sql(" GROUP BY ");
+    append_sql(parts, " GROUP BY ");
     bool first = true;
     for (const auto& gb : *plan.group_by) {
-      if (!first) add_sql(", ");
+      if (!first) append_sql(parts, ", ");
       first = false;
       Fragment g_frag = group_key(src, gb);
       if (plan.bare_key && (g_frag.kind() == SqlKind::Bool || g_frag.kind() == SqlKind::Bin)) {
@@ -4162,9 +4185,9 @@ Fragment Translator::compile_statement(const RelationalPlan& plan) {
     }
   }
 
-  // 5. HAVING clause
+  // HAVING
   if (!plan.having.empty()) {
-    add_sql(" HAVING ");
+    append_sql(parts, " HAVING ");
     std::vector<std::vector<Fragment::Part>> h_cond_parts;
     for (const auto& hav : plan.having) {
       const auto render = [&]() { return require_bool(node(hav.node), hav.pos, "FILTER"); };
@@ -4173,19 +4196,21 @@ Fragment Translator::compile_statement(const RelationalPlan& plan) {
       h_cond_parts.push_back(h_frag.parts());
     }
     for (std::size_t i = 0; i < h_cond_parts.size(); ++i) {
-      if (i > 0) add_sql(" AND ");
+      if (i > 0) append_sql(parts, " AND ");
       for (const auto& p : h_cond_parts[i]) {
         parts.push_back(p);
       }
     }
   }
+}
 
-  // 6. ORDER BY clause
+void Translator::statement_order_and_slice(const RelationalPlan& plan, const Source& src, std::vector<Fragment::Part>& parts) {
+  // ORDER BY
   if (!plan.order_by.empty()) {
-    add_sql(" ORDER BY ");
+    append_sql(parts, " ORDER BY ");
     bool first = true;
     for (const auto& ord : plan.order_by) {
-      if (!first) add_sql(", ");
+      if (!first) append_sql(parts, ", ");
       first = false;
       // A TEXT sort key is collated like a group key: SEL sorts text by its
       // bytes, and a server's default collation would not. order_key says what
@@ -4198,11 +4223,11 @@ Fragment Translator::compile_statement(const RelationalPlan& plan) {
       for (const auto& p : o_frag.parts()) {
         parts.push_back(p);
       }
-      add_sql(" " + ord.dir);
+      append_sql(parts, " " + ord.dir);
     }
   }
 
-  // 7. LIMIT / OFFSET clause: the dialect's limit, limitOffset and offsetOnly
+  // LIMIT / OFFSET: the dialect's limit, limitOffset and offsetOnly
   // skeletons (sql/MAP.md §5.1); a refusal blames the last TAKE, TOP or DROP.
   if (plan.limit || plan.offset) {
     const char* key = !plan.limit ? "offsetOnly" : !plan.offset ? "limit" : "limitOffset";
@@ -4213,14 +4238,8 @@ Fragment Translator::compile_statement(const RelationalPlan& plan) {
     for (const auto& pt : fill_named(skeleton(key, plan.limit_pos), counts, plan.limit_pos)) {
       clause += pt.sql;
     }
-    add_sql(std::move(clause));
+    append_sql(parts, std::move(clause));
   }
-
-  Fragment out(parts, SqlKind::Statement, dialect_);
-  out.params_ = params_;
-  out.param_kinds_ = param_kinds_;
-  out.caveats_ = caveats_;
-  return out;
 }
 
 

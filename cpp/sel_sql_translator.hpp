@@ -392,6 +392,13 @@ class Translator {
 
   Source classify(const SNodePtr& src);
   Source classify_impl(const SNodePtr& src);
+  // compile_statement's clauses, each appended to PARTS in SQL's order.
+  void statement_select(const RelationalPlan& plan, const Source& src, std::vector<Fragment::Part>& parts);
+  void statement_from(const RelationalPlan& plan, std::vector<Fragment::Part>& parts);
+  void statement_where(const RelationalPlan& plan, const Source& src, std::vector<Fragment::Part>& parts);
+  void statement_grouping(const RelationalPlan& plan, const Source& src, std::vector<Fragment::Part>& parts);
+  void statement_order_and_slice(const RelationalPlan& plan, const Source& src,
+                                 std::vector<Fragment::Part>& parts);
   Fragment aggregate(const SNode& n);
   Fragment agg_body(const std::string& name, const SNodePtr& body,
                     const Source& src, const SNode& n);
