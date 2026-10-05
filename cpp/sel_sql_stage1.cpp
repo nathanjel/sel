@@ -322,9 +322,14 @@ bool is_binder_name(const Node& n) { return is_binder_name_impl(n.t, n.grouped);
 // computation is not a literal at all. A two-argument IF's otherwise is "" (§7.2),
 // a text literal too.
 namespace {
+// The static walks below stop with their conservative answer at this depth.
+// They recurse over a tree whose depth the parser and stage 1 already capped at
+// MAX_DEPTH, and stop short of it to leave headroom for the caller's frames.
+constexpr int STATIC_WALK_DEPTH = MAX_DEPTH - 20;
+
 bool text_literal_results(const SNodePtr& n, int depth = 0) {
   using T = SNode::T;
-  if (!n || depth >= 180 || n->t() != T::Call || (n->s() != "IF" && n->s() != "COND")) return false;
+  if (!n || depth >= STATIC_WALK_DEPTH || n->t() != T::Call || (n->s() != "IF" && n->s() != "COND")) return false;
   const auto& args = n->kids();
   std::vector<SNodePtr> results;
   if (n->s() == "IF") {
@@ -341,7 +346,7 @@ bool text_literal_results(const SNodePtr& n, int depth = 0) {
 }
 
 bool identity_projection(const SNodePtr& n, int depth = 0) {
-  if (!n || depth >= 180) return false;
+  if (!n || depth >= STATIC_WALK_DEPTH) return false;
   using T = SNode::T;
   if (n->t() == T::Var || n->t() == T::Num || n->t() == T::Text || n->t() == T::Bool || n->t() == T::Null) return true;
   const auto& args = n->kids();
@@ -367,7 +372,7 @@ struct IdentityInputs { bool whole = false; std::set<std::string> fields; };
 namespace {
 IdentityInputs identity_inputs(const SNodePtr& n, int depth = 0) {
   using T = SNode::T;
-  if (!n || depth >= 180) return {true, {}};
+  if (!n || depth >= STATIC_WALK_DEPTH) return {true, {}};
   if (n->t() == T::Num || n->t() == T::Text || n->t() == T::Bool || n->t() == T::Null) return {};
   if (n->t() == T::Var) return {n->s() != "_K", {}};
   const auto& a = n->kids();

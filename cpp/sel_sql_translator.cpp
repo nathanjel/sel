@@ -3,11 +3,18 @@
 #include "sel_sql_translator.hpp"
 
 #include <algorithm>
+#include <cstdint>
+#include <limits>
 #include <stdexcept>
 #include <variant>
 
 namespace sel::sql {
 namespace {
+
+// The largest row count or offset (§11.6): counts clamp to it rather than wrap.
+constexpr std::int64_t COUNT_MAX = std::numeric_limits<std::int64_t>::max();
+// Above this many operands a fold is balanced rather than left-deep (§7.1).
+constexpr std::size_t LEFT_FOLD_MAX_OPERANDS = 256;
 
 // A step whose argument count the parser's arity rule (spec §6.2, from the
 // manifest) refuses. Stage 1 and the planner rebuild calls with the counts they
@@ -1536,7 +1543,7 @@ Fragment Translator::fold_pairwise(const std::string& op,
   const std::function<Fragment(std::size_t, std::size_t)> fold =
       [&](std::size_t lo, std::size_t hi) -> Fragment {
     const std::size_t n = hi - lo;
-    if (n <= 256) {
+    if (n <= LEFT_FOLD_MAX_OPERANDS) {
       Fragment acc = parts[lo];
       for (std::size_t i = lo + 1; i < hi; ++i) acc = combine(acc, parts[i]);
       return acc;
@@ -3648,8 +3655,7 @@ std::optional<RelationalPlan> Translator::analyze_pipeline(const SNodePtr& ast) 
       const int64_t skipped = plan.limit ? std::min(off, *plan.limit) : off;
       if (plan.limit) *plan.limit -= skipped;
       const int64_t have = plan.offset.value_or(0);
-      constexpr int64_t kMax = 9223372036854775807LL;
-      plan.offset = have > kMax - skipped ? kMax : have + skipped;
+      plan.offset = have > COUNT_MAX - skipped ? COUNT_MAX : have + skipped;
     } else if (name == "SORT" || name == "SORT_DESC" || name == "SORT_BY" ||
                name == "TOP" || name == "TOP_DESC" || name == "TOP_BY") {
       // A sort after a LIMIT or OFFSET sorts the rows that survived them,
@@ -3828,11 +3834,10 @@ int64_t Translator::eval_int_param(const SNodePtr& n, const std::string& op) {
   if (negative && whole != "0") {
     refuse("E_RANGE", op + " count cannot be negative", n->pos());
   }
-  constexpr std::int64_t kMax = 9223372036854775807LL;
-  if (whole.size() > 19) return kMax;
+  if (whole.size() > 19) return COUNT_MAX;
   const unsigned long long magnitude = std::stoull(whole);
-  return magnitude > static_cast<unsigned long long>(kMax) ? kMax
-                                                          : static_cast<std::int64_t>(magnitude);
+  return magnitude > static_cast<unsigned long long>(COUNT_MAX) ? COUNT_MAX
+                                                               : static_cast<std::int64_t>(magnitude);
 }
 
 void Translator::analyze_sort_step(const SNodePtr& step, RelationalPlan& plan) {

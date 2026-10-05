@@ -261,9 +261,9 @@ constexpr long long MAX_REGEX_GROUPS = sel_limits::MAX_REGEX_GROUPS;
 // first table. These are not the same as the value caps above: they bound what
 // a call may ask for, not how big the answer may be, and an argument cap alone
 // left POWER's base free to step over MAX_POWER by nesting.
-constexpr long long MAX_SCALE = 1000000;
-constexpr long long MAX_POWER = 100000;
-constexpr long long MAX_QUANTIFIER = 65535;   // PCRE2's own hard limit
+constexpr long long MAX_SCALE = sel_limits::MAX_ROUND_SCALE;
+constexpr long long MAX_POWER = sel_limits::MAX_POWER_EXPONENT;
+constexpr long long MAX_QUANTIFIER = sel_limits::MAX_REGEX_QUANTIFIER;   // PCRE2's own hard limit
 
 }  // namespace (anonymous)
 
@@ -1923,8 +1923,11 @@ Dec dec_power(const Dec& a, long long n, Pos pos = {}) {
   return result;
 }
 
-// Truncates towards zero and converts. Used where a built-in needs a count or a
-// length; the caller has already checked the range it cares about.
+// Truncates towards zero and converts, saturating at the long long range. Used
+// where a built-in needs a count or a length; the caller has already checked the
+// range it cares about.
+constexpr long long LLONG_MAX_ = std::numeric_limits<long long>::max();
+constexpr long long LLONG_MIN_ = std::numeric_limits<long long>::min();
 long long dec_to_int(const Dec& d) {
   if (d.small) {
     __int128_t m = d.mantissa;
@@ -1932,19 +1935,36 @@ long long dec_to_int(const Dec& d) {
       if (d.scale <= 38) m /= POW10_128[d.scale];
       else m = 0;
     }
-    if (m > 9223372036854775807LL) return 9223372036854775807LL;
-    if (m < -9223372036854775807LL - 1) return -9223372036854775807LL - 1;
+    if (m > LLONG_MAX_) return LLONG_MAX_;
+    if (m < LLONG_MIN_) return LLONG_MIN_;
     return static_cast<long long>(m);
   }
   const Dec t = dec_trunc(d);
   if (t.small) return dec_to_int(t);
   const std::vector<std::uint64_t>& words = dec_get_words(t);
   if (words.empty()) return 0;
-  if (words.size() > 1 || words[0] > static_cast<std::uint64_t>(9223372036854775807LL)) {
-    return t.neg ? -9223372036854775807LL - 1 : 9223372036854775807LL;
+  if (words.size() > 1 || words[0] > static_cast<std::uint64_t>(LLONG_MAX_)) {
+    return t.neg ? LLONG_MIN_ : LLONG_MAX_;
   }
   const long long v = static_cast<long long>(words[0]);
   return t.neg ? -v : v;
+}
+
+// The size argument of ROUND (the scale) and POWER (the exponent), checked once
+// for both lanes -- the builtin and the math plan -- with the builtins' wording:
+// a whole number (E_NOT_INT), not negative, and at most the §6.4 cap (E_RANGE),
+// all reported at the argument.
+long long checked_size_arg(const Dec& d, const char* fn, const char* what, long long cap, Pos pos) {
+  if (!dec_is_integer(d)) fail("E_NOT_INT", std::string(fn) + " argument 2 must be a whole number", pos);
+  const long long n = dec_to_int(d);
+  if (n < 0) fail("E_RANGE", std::string(fn) + " argument 2 must not be negative", pos);
+  if (n > cap) {
+    fail("E_RANGE",
+         std::string(fn) + " " + what + " " + std::to_string(n) + " exceeds the maximum of " +
+             std::to_string(cap),
+         pos);
+  }
+  return n;
 }
 
 // ============================================================================
@@ -2750,7 +2770,7 @@ const Value& Value::scalar_source(Pos pos) const {
       throw SelError("E_NO_SCALAR", "value has no scalar and no children", pos);
     }
     v = first;
-    if (++guard > 1000) throw SelError("E_DEPTH", "scalar context nested too deeply", pos);
+    if (++guard > sel_limits::MAX_DEPTH) throw SelError("E_DEPTH", "scalar context nested too deeply", pos);
   }
   return *v;
 }
@@ -5097,20 +5117,14 @@ Value eval_math_plan(const MathPlan& plan, Context& ctx) {
         // is reported before the second's (spec §6.2, §7.1).
         const Dec& x = operand(step.src1, step.raw1, step.src1_pos);
         const Dec& d2 = operand(step.src2, step.raw2, step.src2_pos);
-        if (!dec_is_integer(d2)) fail("E_NOT_INT", "ROUND argument 2 must be a whole number", step.aux_pos);
-        const long long n = dec_to_int(d2);
-        if (n < 0) fail("E_RANGE", "ROUND argument 2 must not be negative", step.aux_pos);
-        if (n > MAX_SCALE) fail("E_RANGE", "ROUND scale " + std::to_string(n) + " exceeds the maximum of " + std::to_string(MAX_SCALE), step.aux_pos);
+        const long long n = checked_size_arg(d2, "ROUND", "scale", MAX_SCALE, step.aux_pos);
         slot(step.dst) = dec_round(x, n, step.pos);
         break;
       }
       case MathOp::Power: {
         const Dec& x = operand(step.src1, step.raw1, step.src1_pos);
         const Dec& d2 = operand(step.src2, step.raw2, step.src2_pos);
-        if (!dec_is_integer(d2)) fail("E_NOT_INT", "POWER argument 2 must be a whole number", step.aux_pos);
-        const long long n = dec_to_int(d2);
-        if (n < 0) fail("E_RANGE", "POWER argument 2 must not be negative", step.aux_pos);
-        if (n > MAX_POWER) fail("E_RANGE", "POWER exponent " + std::to_string(n) + " exceeds the maximum of " + std::to_string(MAX_POWER), step.aux_pos);
+        const long long n = checked_size_arg(d2, "POWER", "exponent", MAX_POWER, step.aux_pos);
         slot(step.dst) = dec_power(x, n, step.pos);
         break;
       }
@@ -7837,24 +7851,12 @@ void register_numbers() {
                 // the strict lane is left to right (spec §6.2), and the planned
                 // spelling of the same call already was.
                 const Dec x = a.dec(0);
-                const long long n = a.non_neg_int(1);
-                if (n > MAX_SCALE) {
-                  fail("E_RANGE",
-                       "ROUND scale " + std::to_string(n) + " exceeds the maximum of " +
-                           std::to_string(MAX_SCALE),
-                       a.pos_of(1));
-                }
+                const long long n = checked_size_arg(a.dec(1), "ROUND", "scale", MAX_SCALE, a.pos_of(1));
                 return make_num(dec_round(x, n, a.pos()));
               }});
   define(Spec{"POWER", 2, 2, false, false, nullptr, [](Args& a, Context&) -> Value {
                 const Dec x = a.dec(0);
-                const long long n = a.non_neg_int(1);
-                if (n > MAX_POWER) {
-                  fail("E_RANGE",
-                       "POWER exponent " + std::to_string(n) + " exceeds the maximum of " +
-                           std::to_string(MAX_POWER),
-                       a.pos_of(1));
-                }
+                const long long n = checked_size_arg(a.dec(1), "POWER", "exponent", MAX_POWER, a.pos_of(1));
                 return make_num(dec_power(x, n, a.pos()));
               }});
 
@@ -8686,11 +8688,12 @@ void check_loops(const RxTree& t, const std::string& pattern, Pos pos) {
 // port of: every count, cap and verdict is the same, and every walk here is a
 // loop over explicit work lists or a recursion no deeper than the tree.
 constexpr int RX_UNROLL = 8;
-constexpr long long RX_P_MAX = 1LL << 17;   // positions
-constexpr long long RX_E_MAX = 1LL << 18;   // follow edges
-constexpr long long RX_D_MAX = 1LL << 21;   // sum over edges of the ranges at the target
-constexpr long long RX_Q_MAX = 1LL << 20;   // pair-graph work
-constexpr long long RX_AMB_MAX = 16;
+// The closed-form caps and the budget of spec §7.8, from spec/limits.json.
+constexpr long long RX_P_MAX = sel_limits::REGEX_ANALYSIS_POSITIONS;   // positions
+constexpr long long RX_E_MAX = sel_limits::REGEX_ANALYSIS_EDGES;       // follow edges
+constexpr long long RX_D_MAX = sel_limits::REGEX_ANALYSIS_RANGES;      // sum over edges of the ranges at the target
+constexpr long long RX_Q_MAX = sel_limits::REGEX_ANALYSIS_PAIR_WORK;   // pair-graph work
+constexpr long long RX_AMB_MAX = sel_limits::REGEX_AMBIGUITY_BUDGET;
 
 int rx_ceil_log2(long long k) {   // k >= 2
   int c = 0;
@@ -9087,6 +9090,9 @@ namespace {
 using Regex = srell::u32regex;
 
 constexpr std::size_t REGEX_CACHE_MAX = 256;   // spec §7.8: bounded pattern cache
+// RREPLACE takes its replacement apart into pieces only for a subject at least
+// this long (bytes); see the builtin.
+constexpr std::size_t RREPLACE_SPLIT_MIN_SUBJECT = 256;
 
 // The compiled-pattern cache. A named object rather than function statics so a
 // unit test can look at how many entries it holds.
@@ -9334,7 +9340,7 @@ void register_regex() {
                 // million short strings was 8% slower for it).
                 struct Piece { std::u32string lit; int group; };   // group < 0: a literal
                 std::vector<Piece> pieces;
-                const bool split_replacement = subject.size() >= 256;
+                const bool split_replacement = subject.size() >= RREPLACE_SPLIT_MIN_SUBJECT;
                 if (split_replacement) {
                   const CodePoints rc = decode_utf8(repl, a.pos_of(1));
                   std::u32string lit;
