@@ -3160,10 +3160,6 @@ Fragment Translator::join_aggregate(const SNode& n) {
 
 // --- relational pipeline statement compiler ---------------------------------
 
-// The optimizer's list (sel_ast.hpp), not a second copy: one vocabulary of
-// pipeline operators per host, or the planner and the translator drift apart.
-bool pipeline_op_name(std::string_view name) { return sel::is_pipeline_op(name); }
-
 // Whether a MAP must wrap the plan first. An ORDER BY alone does not: the
 // projection and the sort can share one statement (ORDER BY may name the
 // input's columns), and a derived table is where MariaDB DROPS an ORDER BY
@@ -3368,7 +3364,7 @@ std::optional<RelationalPlan> Translator::analyze_pipeline(const SNodePtr& ast) 
   std::vector<SNodePtr> steps;
   SNodePtr curr = ast;
 
-  while (curr && curr->t() == SNode::T::Call && pipeline_op_name(curr->s()) && !curr->kids().empty()) {
+  while (curr && curr->t() == SNode::T::Call && sel::is_pipeline_op(curr->s()) && !curr->kids().empty()) {
     steps.push_back(curr);
     curr = curr->kids()[0];
   }

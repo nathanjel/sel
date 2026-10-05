@@ -1113,6 +1113,69 @@ void test_public_value_api() {
   selt::ok(Value::boolean(true).dec_val() == nullptr, "dec_val: a bool holds no decimal");
   const Value n = Value::num("2.50");
   selt::ok(n.dec_val() && n.dec_val()->scale == 2 && !n.dec_val()->neg, "dec_val: a number's decimal");
+
+  // as_decimal() coerces as the operators do; dec_digits() reads any form.
+  const Dec parsed = Value::text("2.50").as_decimal();
+  selt::eq(dec_digits(parsed), std::string("250"), "as_decimal parses a text");
+  selt::eq(static_cast<int>(parsed.scale), 2, "as_decimal keeps the scale");
+  selt::eq(dec_digits(Value::num("-0.00").as_decimal()), std::string("0"), "dec_digits of zero");
+  selt::eq(dec_digits(evaluate("POWER(10, 40) + 1").as_decimal()),
+           std::string("10000000000000000000000000000000000000001"), "dec_digits of a computed big number");
+  selt::eq(dec_digits(Value::integer(-42).as_decimal()), std::string("42"), "dec_digits is the magnitude");
+  selt::raises("E_NOT_NUM", [] { Value::boolean(true).as_decimal(); }, "as_decimal refuses a bool");
+  selt::raises("E_NOT_NUM", [] { Value::text("abc").as_decimal(Pos{1, 2, 1}); }, "as_decimal refuses a non-number");
+  selt::ok(Value::num(Value::text("7.5").as_decimal()).eql(Value::num("7.5")), "as_decimal round-trips through num");
+
+  // A moved-from value answers kind() and is_*() as NONE and can be assigned again.
+  Value from = Value::text("moved");
+  Value to = std::move(from);
+  selt::ok(from.kind() == Kind::None && from.is_none() && !from.is_text() && !from.is_list(),
+           "a moved-from value reports NONE");
+  Value copied = from;
+  selt::ok(copied.is_none(), "a moved-from value can be copied");
+  from = Value::text("again");
+  selt::eq(from.as_text(), std::string("again"), "a moved-from value can be assigned again");
+  selt::eq(to.as_text(), std::string("moved"), "the moved-to value holds the value");
+}
+
+// evaluate() skips the optimiser for a rule with no binding call (one run
+// cannot repay building the physical tree); it must still answer exactly what
+// compile().run() answers -- value, error code and position -- which is what
+// rests on "the optimiser is held to the evaluator".
+void test_evaluate_matches_run() {
+  selt::section("evaluate() vs compile().run()");
+  const char* sources[] = {
+      "1 + 2 * 3", "(1 + 2) * 3 - 4 / 8", "10 % 3 + -2", "2 * 0 + X",
+      "IF(1 < 2, \"a\", 1 / 0)", "IF(TRUE, 1, 2) + 1", "NOT (1 == 1)", "NOT 1",
+      "1 + TRUE", "\"a\" & 1 + 2", "-(-(-1))", "1 / 0", "1 + (2 * (3 / 0))",
+      "COND(FALSE, 1, 1 + 1 == 2, \"x\", 3)", "COALESCE(NULL, 1 + 1)", "LEN(\"abc\" & \"d\")",
+      "X = 2; X * X + 1", "X = 1; X += 2; X * 3", "A = LIST(1, 2); A[1] + A[2]",
+      "A = RECORD(\"k\", 1); A[\"k\"] * 2 + A[\"z\"]", "UPPER(1 + 1)", "ROUND(10 / 3, 2) * 3",
+      "POWER(2, 10) - 1", "(1, 2, 3)[2] * 2", "TRUE AND 1", "FALSE OR NULL ?? TRUE",
+      "1 $< 2", "\"b\" $> \"a\" AND 2 > 1", "0 * (1 / 0)", "X + 0", "X * 1 - 0",
+      "SUM(LIST(1, 2, 3), _ * 2)", "MAP((1, 2), _ + 1)[2]", "FILTER((1, 2, 3), _ > 1 / 0)",
+      "SORT_BY((3, 1, 2), _, \"DESC\")[1]", "ALL((1, 2), _ > 0) AND ANY((1, 2), _ > 1)",
+  };
+  for (const char* src : sources) {
+    const auto outcome = [](const auto& fn) -> std::string {
+      try {
+        return fn().dump();
+      } catch (const SelError& e) {
+        return e.code() + "@" + std::to_string(e.line()) + ":" + std::to_string(e.col());
+      }
+    };
+    const std::string via_evaluate = outcome([&] {
+      Value ctx = Value::none();
+      ctx.set("X", Value::num("5"));
+      return evaluate(src, ctx);
+    });
+    const std::string via_run = outcome([&] {
+      Value ctx = Value::none();
+      ctx.set("X", Value::num("5"));
+      return compile(src).run(ctx);
+    });
+    selt::eq(via_evaluate, via_run, std::string("evaluate agrees with run: ") + src);
+  }
 }
 
 void test_host_api() {
@@ -1215,6 +1278,16 @@ void test_dependencies_flow_and_host_boundary() {
   selt::raises("E_BAD_ARG", [] { compile("T12_OPT_TEXT(1)").run(); }, "text() reads are checked too");
   selt::raises("E_BAD_ARG", [] { compile("T12_OPT_POS(1)").run(); }, "and pos_of");
   selt::eq(dump_of("T12_OPT(1, 2)"), std::string("t\"2\""), "an argument the call has is read normally");
+  // The bytes() and decimal() readers (docs/contributing.md, "The Args API").
+  register_function("HOST_BYTES_LEN", 1, 1, [](HostArgs& a) {
+    return Value::integer(static_cast<long long>(a.bytes(0).size()));
+  });
+  register_function("HOST_SCALE", 1, 1, [](HostArgs& a) { return Value::integer(a.decimal(0).scale); });
+  selt::eq(dump_of("HOST_BYTES_LEN(FROM_HEX(\"00ff41\"))"), std::string("t\"3\""), "bytes() reads a BIN");
+  selt::eq(dump_of("HOST_BYTES_LEN(\"\u{e9}\")"), std::string("t\"2\""), "bytes() reads a TEXT's UTF-8");
+  selt::eq(dump_of("HOST_SCALE(\"2.500\")"), std::string("t\"3\""), "decimal() parses a number");
+  selt::raises("E_NOT_NUM", [] { compile("HOST_SCALE(TRUE)").run(); }, "decimal() refuses a bool");
+  selt::raises("E_NOT_BIN", [] { compile("HOST_BYTES_LEN(TRUE)").run(); }, "bytes() refuses a bool");
   try {
     compile("1 + T12_OPT(1)").run();
     selt::ok(false, "expected E_BAD_ARG");
@@ -2356,6 +2429,7 @@ int main() {
   test_value();
   test_public_value_api();
   test_host_api();
+  test_evaluate_matches_run();
   test_evaluation_order();
   test_relational_optimizations();
   test_structural_hash_identity();

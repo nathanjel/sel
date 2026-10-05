@@ -4542,6 +4542,14 @@ const Dec& as_dec_ref(const Value& v, Pos pos) {
   return Internals::dec_ref(src);
 }
 
+}  // namespace
+
+Dec Value::as_decimal(Pos pos) const { return as_dec_ref(*this, pos); }
+
+std::string dec_digits(const Dec& d) { return dec_get_digits(d); }
+
+namespace {
+
 Value apply_binary(const Node& node, unsigned char opc, const Value& l, const Value& r);
 
 Value apply_unary(const Node& node, const Value& v) {
@@ -9840,10 +9848,15 @@ constexpr std::string_view OPT_PIPELINE_OPS[] = {
     "TAKE", "DROP", "SORT", "SORT_DESC", "SORT_BY", "TOP", "TOP_DESC", "TOP_BY",
     "LINK", "LINK_LEFT"};
 
-bool opt_pipeline_op(std::string_view name) {
+}  // namespace
+
+// The pipeline vocabulary (sel_ast.hpp), shared with the SQL planner.
+bool is_pipeline_op(std::string_view name) {
   return std::find(std::begin(OPT_PIPELINE_OPS), std::end(OPT_PIPELINE_OPS), name) !=
          std::end(OPT_PIPELINE_OPS);
 }
+
+namespace {
 
 std::shared_ptr<Node> opt_copy(const NodePtr& node) {
   if (!node) return nullptr;
@@ -9893,10 +9906,12 @@ NodePtr opt_hoist_literal(const NodePtr& child, Pos pos) {
   return copy;
 }
 
-std::pair<NodePtr, std::vector<NodePtr>> opt_unwind(const NodePtr& root) {
+}  // namespace
+
+std::pair<NodePtr, std::vector<NodePtr>> unwind_pipeline(const NodePtr& root) {
   std::vector<NodePtr> steps;
   NodePtr current = root;
-  while (current && current->t == NT::Call && opt_pipeline_op(current->s) &&
+  while (current && current->t == NT::Call && is_pipeline_op(current->s) &&
          !current->items.empty()) {
     steps.push_back(current);
     current = current->items.front();
@@ -9905,8 +9920,7 @@ std::pair<NodePtr, std::vector<NodePtr>> opt_unwind(const NodePtr& root) {
   return {current, steps};
 }
 
-NodePtr opt_build_pipeline(NodePtr source, const std::vector<NodePtr>& steps,
-                           const Pos* last_pos = nullptr) {
+NodePtr build_pipeline(NodePtr source, const std::vector<NodePtr>& steps, const Pos* last_pos) {
   NodePtr current = std::move(source);
   for (std::size_t k = 0; k < steps.size(); k++) {
     const NodePtr& step = steps[k];
@@ -9920,9 +9934,7 @@ NodePtr opt_build_pipeline(NodePtr source, const std::vector<NodePtr>& steps,
   return current;
 }
 
-int opt_text_compare(std::string_view a, std::string_view b) {
-  return bytes_compare(a, b);
-}
+namespace {
 
 NodePtr opt_fold(const NodePtr& node) {
   if (!node) return node;
@@ -9984,7 +9996,7 @@ NodePtr opt_fold(const NodePtr& node) {
     if (left->t == NT::Text && right->t == NT::Text &&
         (node->s == "$==" || node->s == "$!=" || node->s == "$<" || node->s == "$<=" ||
          node->s == "$>" || node->s == "$>=")) {
-      const int c = opt_text_compare(left->s, right->s);
+      const int c = bytes_compare(left->s, right->s);
       const bool result = node->s == "$==" ? c == 0 : node->s == "$!=" ? c != 0
           : node->s == "$<" ? c < 0 : node->s == "$<=" ? c <= 0
           : node->s == "$>" ? c > 0 : c >= 0;
@@ -10244,10 +10256,14 @@ NodePtr opt_rename_var(const NodePtr& node, const std::string& old_name, const s
 // hoisted above a SORT_BY whose key it is) hides the error `run()` reports
 // (CPP-C35). Unset -- the physical optimizer, or a caller with no relation --
 // keeps the historical assumption (a read of the binder is taken as safe).
-thread_local const std::set<std::string>* tl_opt_declared = nullptr;
-thread_local bool tl_opt_shape_known = false;
+// Passed down explicitly, as a null pointer when there is nothing to say.
+struct OptFields {
+  const std::set<std::string>* declared = nullptr;   // upper-cased field names
+  bool shape_known = false;   // the row is still the source's at this step
+};
 
-bool opt_cannot_raise(const NodePtr& node, const std::string& binder, bool logical) {
+bool opt_cannot_raise(const NodePtr& node, const std::string& binder, bool logical,
+                      const OptFields* fields) {
   static const std::set<std::string> safe_ops{"==", "!=", "<", "<=", ">", ">=", "$==", "$!=", "$<", "$<=",
                                               "$>", "$>=", "AND", "OR", "+", "-", "*"};
   if (!node) return true;
@@ -10266,13 +10282,13 @@ bool opt_cannot_raise(const NodePtr& node, const std::string& binder, bool logic
       // a declared field of a row whose shape is still the source's. Without them
       // (a caller that only asked for the logical rewrite) the historical
       // assumption stands.
-      return tl_opt_declared == nullptr ||
-             (tl_opt_shape_known && tl_opt_declared->count(upper_name(node->r->s)) > 0);
+      return !fields || !fields->declared ||
+             (fields->shape_known && fields->declared->count(upper_name(node->r->s)) > 0);
     case NT::Bin:
-      return logical && safe_ops.count(node->s) > 0 && opt_cannot_raise(node->l, binder, logical) &&
-             opt_cannot_raise(node->r, binder, logical);
+      return logical && safe_ops.count(node->s) > 0 && opt_cannot_raise(node->l, binder, logical, fields) &&
+             opt_cannot_raise(node->r, binder, logical, fields);
     case NT::Un:
-      return logical && node->s == "NOT" && opt_cannot_raise(node->l, binder, logical);
+      return logical && node->s == "NOT" && opt_cannot_raise(node->l, binder, logical, fields);
     default:
       return false;
   }
@@ -10283,7 +10299,8 @@ bool opt_cannot_raise(const NodePtr& node, const std::string& binder, bool logic
 // E_NOT_BOOL on its first row -- `_`, `_K`, a number, text or NULL all pass
 // opt_cannot_raise and all raise there. Only a boolean literal, a comparison
 // (logical path) or AND/OR/NOT over such, is safe to move or to fuse.
-bool opt_predicate_cannot_raise(const NodePtr& node, const std::string& binder, bool logical) {
+bool opt_predicate_cannot_raise(const NodePtr& node, const std::string& binder, bool logical,
+                                const OptFields* fields) {
   static const std::set<std::string> compare_ops{"==", "!=", "<", "<=", ">", ">=", "$==", "$!=", "$<", "$<=",
                                                  "$>", "$>="};
   if (!node) return false;
@@ -10291,32 +10308,33 @@ bool opt_predicate_cannot_raise(const NodePtr& node, const std::string& binder, 
     case NT::Bool: return true;
     case NT::Bin:
       if (node->s == "AND" || node->s == "OR") {
-        return opt_predicate_cannot_raise(node->l, binder, logical) &&
-               opt_predicate_cannot_raise(node->r, binder, logical);
+        return opt_predicate_cannot_raise(node->l, binder, logical, fields) &&
+               opt_predicate_cannot_raise(node->r, binder, logical, fields);
       }
-      return logical && compare_ops.count(node->s) > 0 && opt_cannot_raise(node->l, binder, logical) &&
-             opt_cannot_raise(node->r, binder, logical);
+      return logical && compare_ops.count(node->s) > 0 && opt_cannot_raise(node->l, binder, logical, fields) &&
+             opt_cannot_raise(node->r, binder, logical, fields);
     case NT::Un:
-      return node->s == "NOT" && opt_predicate_cannot_raise(node->l, binder, logical);
+      return node->s == "NOT" && opt_predicate_cannot_raise(node->l, binder, logical, fields);
     default:
       return false;
   }
 }
 
 // Every field a MAP computes (or its whole body) cannot raise.
-bool opt_map_cannot_raise(const Node& step, bool logical) {
+bool opt_map_cannot_raise(const Node& step, bool logical, const OptFields* fields) {
   const OptMapInfo info = opt_map_info(step);
   if (info.body && info.body->t == NT::Call && info.body->s == "RECORD") {
     for (std::size_t i = 0; i < info.body->items.size(); i++) {
       const NodePtr& arg = info.body->items[i];
-      if (i % 2 == 0 ? arg->t != NT::Text : !opt_cannot_raise(arg, info.binder, logical)) return false;
+      if (i % 2 == 0 ? arg->t != NT::Text : !opt_cannot_raise(arg, info.binder, logical, fields)) return false;
     }
     return true;
   }
-  return opt_cannot_raise(info.body, info.binder, logical);
+  return opt_cannot_raise(info.body, info.binder, logical, fields);
 }
 
-std::vector<NodePtr> opt_logical_steps(const NodePtr& source, std::vector<NodePtr> current, bool logical) {
+std::vector<NodePtr> opt_logical_steps(const NodePtr& source, std::vector<NodePtr> current, bool logical,
+                                       const std::set<std::string>* declared) {
   bool changed = true;
   while (changed) {
     changed = false;
@@ -10326,13 +10344,13 @@ std::vector<NodePtr> opt_logical_steps(const NodePtr& source, std::vector<NodePt
       const NodePtr* second = i + 1 < current.size() ? &current[i + 1] : nullptr;
       const NodePtr* third = i + 2 < current.size() ? &current[i + 2] : nullptr;
       // The row is the source's while every step before this one keeps its shape.
-      tl_opt_shape_known = true;
+      OptFields fields{declared, true};
       for (std::size_t k = 0; k < i; ++k) {
         const std::string& name = current[k]->s;
         if (name != "FILTER" && name != "SORT" && name != "SORT_DESC" && name != "SORT_BY" &&
             name != "TOP" && name != "TOP_DESC" && name != "TOP_BY" && name != "TAKE" &&
             name != "DROP" && name != "DISTINCT" && name != "DEDUPE") {
-          tl_opt_shape_known = false;
+          fields.shape_known = false;
           break;
         }
       }
@@ -10389,7 +10407,7 @@ std::vector<NodePtr> opt_logical_steps(const NodePtr& source, std::vector<NodePt
         if (info.valid && !refs.empty() && std::all_of(refs.begin(), refs.end(), [&](const std::string& f) {
               return std::find(passes.begin(), passes.end(), f) != passes.end();
             }) && !opt_reads_row_or_key(*info.predicate, info.binder) &&
-            opt_keys_renumbered_by(third) && opt_map_cannot_raise(*first, logical)) {
+            opt_keys_renumbered_by(third) && opt_map_cannot_raise(*first, logical, &fields)) {
           next.push_back(*second);
           next.push_back(first);
           i += 2;
@@ -10400,8 +10418,8 @@ std::vector<NodePtr> opt_logical_steps(const NodePtr& source, std::vector<NodePt
       if (second && (first->s == "SORT" || first->s == "SORT_DESC" || first->s == "SORT_BY") &&
           (*second)->s == "FILTER" && !opt_step_reads_key(**second) &&
           opt_keys_renumbered_by(third) &&
-          opt_cannot_raise(opt_sort_info(*first).key, opt_sort_info(*first).binder, logical) &&
-          (logical || opt_predicate_cannot_raise(opt_filter_info(**second).predicate, opt_filter_info(**second).binder, false))) {
+          opt_cannot_raise(opt_sort_info(*first).key, opt_sort_info(*first).binder, logical, &fields) &&
+          (logical || opt_predicate_cannot_raise(opt_filter_info(**second).predicate, opt_filter_info(**second).binder, false, nullptr))) {
         next.push_back(*second);
         next.push_back(first);
         i += 2;
@@ -10435,8 +10453,8 @@ std::vector<NodePtr> opt_logical_steps(const NodePtr& source, std::vector<NodePt
         const auto passes = opt_map_passthroughs(*first);
         if (sort.key && !refs.empty() && std::all_of(refs.begin(), refs.end(), [&](const std::string& f) {
               return std::find(passes.begin(), passes.end(), f) != passes.end();
-            }) && !opt_reads_row_or_key(*sort.key, sort.binder) && opt_map_cannot_raise(*first, logical) &&
-            opt_cannot_raise(sort.key, sort.binder, logical)) {
+            }) && !opt_reads_row_or_key(*sort.key, sort.binder) && opt_map_cannot_raise(*first, logical, &fields) &&
+            opt_cannot_raise(sort.key, sort.binder, logical, &fields)) {
           next.push_back(*second);
           next.push_back(first);
           i += 2;
@@ -10448,11 +10466,10 @@ std::vector<NodePtr> opt_logical_steps(const NodePtr& source, std::vector<NodePt
         const OptFilterInfo left = opt_filter_info(*first);
         const OptFilterInfo right = opt_filter_info(**second);
         // Fused, the second predicate runs on a row before the first has seen
-        // the rows after it: only one that cannot raise may be fused.
-        const auto* saved_declared = tl_opt_declared;
-        tl_opt_declared = nullptr;
-        const bool can_fuse = left.valid && right.valid && opt_predicate_cannot_raise(right.predicate, right.binder, logical);
-        tl_opt_declared = saved_declared;
+        // the rows after it: only one that cannot raise may be fused. Judged
+        // without the declared fields (the historical assumption for a read).
+        const bool can_fuse = left.valid && right.valid &&
+                              opt_predicate_cannot_raise(right.predicate, right.binder, logical, nullptr);
         if (can_fuse) {
           const NodePtr right_pred = upper_name(left.binder) == upper_name(right.binder)
               ? right.predicate : opt_rename_var(right.predicate, right.binder, left.binder);
@@ -10494,7 +10511,7 @@ std::vector<NodePtr> opt_logical_steps(const NodePtr& source, std::vector<NodePt
 }
 
 std::vector<NodePtr> opt_inmemory_steps(const NodePtr& source, std::vector<NodePtr> steps) {
-  steps = opt_logical_steps(source, std::move(steps), false);
+  steps = opt_logical_steps(source, std::move(steps), false, nullptr);
   // A tree fact the evaluator's join pre-filter needs (SEL-0050): whether
   // anything can see the keys a FILTER's result carries. A following step
   // that renumbers without reading `_K` hides them (opt_keys_renumbered_by,
@@ -10801,15 +10818,17 @@ std::shared_ptr<const MathPlan> opt_compile_math_plan(const NodePtr& root) {
 
 // `fold` is the other hosts' foldConstants option: off for the one slot
 // whose shape the evaluator reads (opt_step_arg_folds).
-NodePtr opt_tree(const NodePtr& node, bool physical, int depth, bool fold = true, bool in_math = false) {
+// `declared` is the SQL planner's field list (OptFields), null elsewhere.
+NodePtr opt_tree(const NodePtr& node, bool physical, const std::set<std::string>* declared, int depth,
+                 bool fold = true, bool in_math = false) {
   if (!node) return node;
   // The evaluator/SQL normaliser owns the public depth error and its source
   // position. opt_root never descends into a tree that reaches the cap; this
   // guard keeps the walk bounded should a rewrite ever deepen one.
   if (depth > MAX_DEPTH) return node;
-  if (node->t == NT::Call && opt_pipeline_op(node->s) && !node->items.empty()) {
-    auto [source, steps] = opt_unwind(node);
-    NodePtr optimized_source = opt_tree(source, physical, depth + 1, fold, false);
+  if (node->t == NT::Call && is_pipeline_op(node->s) && !node->items.empty()) {
+    auto [source, steps] = unwind_pipeline(node);
+    NodePtr optimized_source = opt_tree(source, physical, declared, depth + 1, fold, false);
     std::vector<NodePtr> optimized_steps;
     optimized_steps.reserve(steps.size());
     for (const NodePtr& step : steps) {
@@ -10817,12 +10836,13 @@ NodePtr opt_tree(const NodePtr& node, bool physical, int depth, bool fold = true
       copy->items.clear();
       copy->items.push_back(step->items[0]);
       for (std::size_t i = 1; i < step->items.size(); i++) {
-        copy->items.push_back(opt_tree(step->items[i], physical, depth + 1,
+        copy->items.push_back(opt_tree(step->items[i], physical, declared, depth + 1,
                                        fold && opt_step_arg_folds(*step, i), false));
       }
       optimized_steps.push_back(std::move(copy));
     }
-    std::vector<NodePtr> final_steps = opt_logical_steps(optimized_source, std::move(optimized_steps), !physical);
+    std::vector<NodePtr> final_steps =
+        opt_logical_steps(optimized_source, std::move(optimized_steps), !physical, declared);
     if (physical) final_steps = opt_inmemory_steps(optimized_source, std::move(final_steps));
     // Whatever the rewrites did, the pipeline's value is still the value of the
     // node that was written outermost, and a consumer that objects to it (NOT,
@@ -10835,7 +10855,7 @@ NodePtr opt_tree(const NodePtr& node, bool physical, int depth, bool fold = true
       carrier->items.push_back(std::move(optimized_source));
       return carrier;
     }
-    return opt_build_pipeline(std::move(optimized_source), final_steps, &node->pos);
+    return build_pipeline(std::move(optimized_source), final_steps, &node->pos);
   }
 
   const bool is_curr_math = is_math_op(*node);
@@ -10847,9 +10867,9 @@ NodePtr opt_tree(const NodePtr& node, bool physical, int depth, bool fold = true
   // there, so it is left as written here too, as the other four hosts leave
   // it; only the value is optimised (review 2026-09-15, low: C++ alone
   // rewrote targets, harmlessly today).
-  if (copy->l && copy->t != NT::Assign) copy->l = opt_tree(copy->l, physical, depth + 1, fold, next_in_math);
-  if (copy->r) copy->r = opt_tree(copy->r, physical, depth + 1, fold, next_in_math);
-  for (NodePtr& child : copy->items) child = opt_tree(child, physical, depth + 1, fold, next_in_math);
+  if (copy->l && copy->t != NT::Assign) copy->l = opt_tree(copy->l, physical, declared, depth + 1, fold, next_in_math);
+  if (copy->r) copy->r = opt_tree(copy->r, physical, declared, depth + 1, fold, next_in_math);
+  for (NodePtr& child : copy->items) child = opt_tree(child, physical, declared, depth + 1, fold, next_in_math);
   NodePtr folded = fold ? opt_fold(copy) : copy;
   if (physical && !in_math && is_math_op(*folded)) {
     auto plan = opt_compile_math_plan(folded);
@@ -10884,14 +10904,21 @@ bool opt_exceeds_depth(const Node& node, int depth) {
 // additions (each of them foldable), and a rewrite that lifts a child would
 // move it; not rewriting loses nothing, because such a tree either raises or
 // keeps its deep part on a branch that is never evaluated.
-NodePtr opt_root(const NodePtr& ast, bool physical) {
+NodePtr opt_root(const NodePtr& ast, bool physical, const std::set<std::string>* declared = nullptr) {
   if (ast && opt_exceeds_depth(*ast, 1)) return ast;
-  return opt_tree(ast, physical, 1);
+  return opt_tree(ast, physical, declared, 1);
 }
 
 }  // namespace
 
-#include "sel_optimizer.cpp"
+// The optimiser's entry points (sel_ast.hpp): the logical rewrite the SQL
+// planner asks for, with or without its relation's declared fields, and the
+// in-memory rewrite Program::physical_ast() builds the tree run() evaluates.
+NodePtr optimize_ast_logical(const NodePtr& ast) { return opt_root(ast, false); }
+NodePtr optimize_ast_logical(const NodePtr& ast, const std::set<std::string>& declared_fields) {
+  return opt_root(ast, false, &declared_fields);
+}
+NodePtr optimize_ast_in_memory(const NodePtr& ast) { return opt_root(ast, true); }
 
 // ============================================================================
 // --- host API. See spec/SPEC.md §8.
@@ -10917,7 +10944,7 @@ Program::Program(std::string source, std::shared_ptr<const Node> ast)
       physical_(std::make_shared<Physical>()) {}
 
 std::shared_ptr<const Node> Program::physical_ast() const {
-  std::call_once(physical_->once, [this] { physical_->tree = optimize_ast(ast_); });
+  std::call_once(physical_->once, [this] { physical_->tree = optimize_ast_in_memory(ast_); });
   return physical_->tree;
 }
 
@@ -11010,7 +11037,9 @@ static void host_arg_in_range(const Args& args, int i) {
 
 const Value& HostArgs::val(int i) { host_arg_in_range(args_, i); return args_.val(i); }
 const std::string& HostArgs::text(int i) { host_arg_in_range(args_, i); return args_.text(i); }
+const std::string& HostArgs::bytes(int i) { host_arg_in_range(args_, i); return args_.bytes(i); }
 bool HostArgs::boolean(int i) { host_arg_in_range(args_, i); return args_.boolean(i); }
+Dec HostArgs::decimal(int i) { host_arg_in_range(args_, i); return args_.dec(i); }
 long long HostArgs::integer(int i) { host_arg_in_range(args_, i); return args_.integer(i); }
 long long HostArgs::non_neg_int(int i) { host_arg_in_range(args_, i); return args_.non_neg_int(i); }
 Pos HostArgs::pos_of(int i) const {

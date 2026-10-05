@@ -109,10 +109,10 @@ const Spec* lookup_builtin(const std::string& name);
 NodePtr optimize_ast_logical(const NodePtr& ast);
 // The planner's spelling: `declared_fields` are the (upper-cased) field names the
 // pipeline's source relation declares, which is what lets a field read count as
-// unable to raise (see tl_opt_declared in sel.cpp).
+// unable to raise (see OptFields in sel.cpp).
 NodePtr optimize_ast_logical(const NodePtr& ast, const std::set<std::string>& declared_fields);
+// The rewrite run() evaluates (Program::physical_ast).
 NodePtr optimize_ast_in_memory(const NodePtr& ast);
-NodePtr optimize_ast(const NodePtr& ast);
 
 // The relational pipeline vocabulary, owned by the optimizer and shared with
 // the SQL planner so there is one list of pipeline operators in this host and
@@ -122,10 +122,12 @@ NodePtr optimize_ast(const NodePtr& ast);
 // unwind_pipeline() peels `X .> A(...) .> B(...)` into the source X and the
 // steps [A, B], outermost last; build_pipeline() is its inverse over a possibly
 // different source or step list, copying each step so the input tree is never
-// touched.
+// touched. `last_pos`, when given, is stamped on the outermost step: the
+// optimiser keeps a rewritten pipeline reporting the position written.
 bool is_pipeline_op(std::string_view name);
 std::pair<NodePtr, std::vector<NodePtr>> unwind_pipeline(const NodePtr& root);
-NodePtr build_pipeline(NodePtr source, const std::vector<NodePtr>& steps);
+NodePtr build_pipeline(NodePtr source, const std::vector<NodePtr>& steps,
+                       const Pos* last_pos = nullptr);
 
 // Validates and rewrites a regex in one pass, returning source that means the
 // same thing to every engine. Throws SelError for a pattern outside the

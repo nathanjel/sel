@@ -9,7 +9,7 @@
 // replacing) a host function may happen while other threads compile and run programs;
 // a program compiled before the call keeps the function it was compiled against
 // (spec/SPEC.md §8.1), so a running program is never handed a half-replaced entry.
-// Sharing one Program between threads is not promised and is not done here.
+// Sharing one Program between threads is tests/program_race.cpp's subject, not this one's.
 //
 //   make -C cpp tsan-registry
 //

@@ -1,9 +1,14 @@
 // SEL — Simple Expression Language, C++23 implementation.
 //
-// Drop `sel.hpp`, `sel_ast.hpp`, `sel.cpp` and `third_party/srell/` into a
-// project and compile sel.cpp. There is nothing else to fetch and nothing to
-// build first. You include this file; `sel_ast.hpp` is internal and only has to
-// sit beside `sel.cpp`.
+// Drop `sel.hpp`, `sel_ast.hpp`, the three generated headers `sel_limits.hpp`,
+// `sel_math_ops.hpp` and `sel_builtin_manifest.hpp`, `sel.cpp` and
+// `third_party/srell/` into a project and compile sel.cpp. There is nothing else
+// to fetch and nothing to build first. You include this file; the others are
+// internal and only have to sit beside `sel.cpp`.
+//
+// GCC or Clang (or another compiler with their extensions): the decimal core
+// uses `__int128`, `__builtin_*` overflow checks and GNU inline assembly. MSVC
+// is not supported.
 //
 //     #include "sel.hpp"
 //
@@ -13,6 +18,27 @@
 //
 // The language is specified in spec/SPEC.md, which is normative: where this
 // implementation and that document disagree, this implementation is wrong.
+//
+// Threads. What may be shared, and what may not:
+//
+//   * A `Program` is immutable once compile() returns, and may be run on several
+//     threads at once -- its first run included, which builds the optimised tree
+//     exactly once -- PROVIDED every run gets a context of its own.
+//   * A `Value` is not thread-safe, not even for reading: it is a handle whose
+//     reference count is a plain integer, and reading a value takes and drops
+//     references. A context, and every value reachable from it, belongs to one
+//     thread at a time. Two threads running even a read-only rule over ONE
+//     context is a data race; give each its own (build it on that thread, or
+//     clone() it there from a value no other thread is touching).
+//   * register_function() may be called while other threads compile and run
+//     programs (spec/SPEC.md §8.1); a program keeps the function it was
+//     compiled against. A host function runs on the thread running the program
+//     and is handed that thread's values.
+//   * The SQL layer states its own rule at the top of sel_sql.hpp: translation
+//     may run on several threads once the dialects it uses are registered.
+//
+// cpp/tests/program_race.cpp holds the first point under the thread sanitizer
+// (`make -C cpp tsan`).
 
 #ifndef SEL_HPP
 #define SEL_HPP
@@ -101,38 +127,26 @@ struct RecordShape {
   explicit RecordShape(std::vector<std::string> names);
 };
 
-// One value, used by the interpreter and by host code alike — there is
-// deliberately no second representation of state. See spec/SPEC.md §3.
-//
-// A value may have a scalar, children, both, or neither. TEXT holds validated
-// UTF-8 bytes and BIN holds arbitrary bytes: the same C++ type, told apart by
-// the kind, which makes as_bytes() on TEXT free.
-//
-// **`Value` is a handle.** Copying one is cheap and the copies refer to the
-// same underlying value, exactly as a `Value` object does in the JS, PHP,
-// Python and Lisp hosts. `clone()` is the deep copy. This is not a performance
-// decision: spec/SPEC.md §3.4 says evaluating an expression yields a value
-// rather than a snapshot of one, so that `A[A["k"] = "k"]` finds the key its
-// own index expression just created, and a type with deep-copy assignment
-// cannot express that. Assignment is the only operation in the language that
-// copies (§5.7), and the interpreter spells that with clone() at the five
-// places the other four hosts spell it.
-//
-//     Value a = ctx.get("A");     // a and A are the same value
-//     a.set("k", ...);            // visible through ctx
-//     Value b = a.clone();        // b is independent
-//
-// If you are embedding SEL and were relying on `Value b = a;` to isolate `b`,
-// that is the one thing this type changed in 0.3.0: write `a.clone()`.
-#if defined(__SIZEOF_INT128__)
-using dec_mantissa_t = __int128_t;
-#else
-using dec_mantissa_t = std::int64_t;
+// The small-mantissa form is 128 bits wide, and sel.cpp relies on it throughout
+// (the decimal core's fast paths assume 127 bits of magnitude). There is no
+// narrower fallback: a compiler without __int128 cannot build SEL.
+#if !defined(__SIZEOF_INT128__)
+#error "SEL needs a compiler with __int128 (GCC or Clang); MSVC is not supported"
 #endif
+using dec_mantissa_t = __int128_t;
 
-// (neg ? -1 : 1) * magnitude / 10^scale. The magnitude is the small mantissa
-// when `small`; otherwise the digit string or the binary words (little-endian
-// 64-bit, no zero high word), each a cache of the other made on demand.
+// A decimal: (neg ? -1 : 1) * magnitude / 10^scale.
+//
+// To BUILD one for Value::num(const Dec&), set `neg` and `scale` and give the
+// magnitude in ONE of three forms: `small` with `mantissa` (signed, its sign
+// agreeing with `neg`), or `digits` (ASCII digits), or `words` (binary,
+// little-endian 64-bit). Value::num checks and canonicalises whichever it gets.
+//
+// To READ one, do not read the fields: a decimal the evaluator computed keeps
+// whichever form the arithmetic produced -- `digits` is empty for every small
+// value and for a computed big one, whose magnitude is in `words` -- and the
+// other forms are caches filled on demand. dec_digits() gives the magnitude's
+// digits whatever the form, and Value::as_text() the canonical number.
 struct Dec {
   bool neg = false;
   mutable std::string digits;
@@ -142,6 +156,38 @@ struct Dec {
   mutable std::vector<std::uint64_t> words;
 };
 
+// The magnitude of `d` as ASCII digits, without sign or decimal point ("150"
+// for 1.50), whichever form it is held in. "0" for zero.
+std::string dec_digits(const Dec& d);
+
+// One value, used by the interpreter and by host code alike — there is
+// deliberately no second representation of state. See spec/SPEC.md §3.
+//
+// A value may have a scalar, children, both, or neither. TEXT holds validated
+// UTF-8 bytes and BIN holds arbitrary bytes: the same C++ type, told apart by
+// the kind, which makes as_bytes() on TEXT free.
+//
+// **`Value` is a handle.** Copying one is cheap and the copies refer to the
+// same underlying value, exactly as a `Value` object does in every other host.
+// `clone()` is the deep copy. This is not a performance decision: spec/SPEC.md
+// §3.4 says evaluating an expression yields a value rather than a snapshot of
+// one, so that `A[A["k"] = "k"]` finds the key its own index expression just
+// created, and a type with deep-copy assignment cannot express that. The
+// language copies only where §3.4's table says (`=`, `,`, LIST, RECORD and the
+// aggregates), and the interpreter spells each of those with clone().
+//
+//     Value a = ctx.get("A");     // a and A are the same value
+//     a.set("k", ...);            // visible through ctx
+//     Value b = a.clone();        // b is independent
+//
+// If you are embedding SEL and were relying on `Value b = a;` to isolate `b`,
+// that is the one thing this type changed in 0.3.0: write `a.clone()`.
+//
+// A moved-from Value holds nothing. It may be destroyed, assigned to (after
+// which it is an ordinary value again), copied, or asked kind() and the is_*()
+// predicates, which answer as for NONE. Any other member on it is undefined
+// behaviour, as for a moved-from object generally: the accessors do not test
+// for it, because they are what the evaluator calls per field and per row.
 class Value {
  public:
   using Entry = std::pair<std::string, Value>;
@@ -247,6 +293,12 @@ class Value {
   // legal alone can be one level too deep where it is going. E_DEPTH is
   // reported at `pos`, the node that would build the too-deep value.
   Value clone_below(int levels, Pos pos = {}) const;
+
+  // The value as a number, in scalar context: what the operators read, so a
+  // TEXT "2.50" is parsed (and the parse kept), and anything that is not a
+  // number is E_NOT_NUM at `pos`. The equivalent of the other hosts'
+  // asDecimal(); read its digits with dec_digits().
+  Dec as_decimal(Pos pos = {}) const;
 
   // The parsed decimal this value already holds, or null when it holds none
   // (a TEXT nobody has read as a number yet, a BOOL, a list). A read of a cache:
@@ -417,6 +469,10 @@ class Program {
 // wrong argument count, a non-portable regex literal.
 Program compile(const std::string& source);
 
+// compile(source).run(context) in one call, for a rule that runs once. It
+// answers exactly what that answers (tests/unit.cpp holds the two side by side);
+// a rule with no aggregate or other binding call runs the parsed tree without
+// building the optimised one, which a single run cannot repay.
 Value evaluate(const std::string& source, Value& context);
 Value evaluate(const std::string& source);
 
@@ -437,7 +493,9 @@ class HostArgs {
   int count() const;
   const Value& val(int i);
   const std::string& text(int i);
+  const std::string& bytes(int i);   // TEXT or BIN, as bytes
   bool boolean(int i);
+  Dec decimal(int i);                // a number, as Value::as_decimal reads it
   long long integer(int i);
   long long non_neg_int(int i);
   Pos pos_of(int i) const;
