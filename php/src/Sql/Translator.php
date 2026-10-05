@@ -4160,31 +4160,19 @@ final class Translator
             refuse('E_NOT_NUM', "{$op} count must be a number", $n['pos']);
         }
         $d = $val->asDecimal($n['pos']);
-        if (\Sel\Dec::cmp($d, \Sel\Dec::zero()) < 0) {
+        // As SEL checks a count (SPEC 7.4): a real fraction is E_NOT_INT whatever its
+        // sign (`TAKE(-1.5)`), then a negative whole number is E_RANGE. A whole number
+        // written with a scale (`2.0`, `0.0`) is a count.
+        if (!\Sel\Dec::isInteger($d)) {
+            refuse('E_NOT_INT', "{$op} count must be an integer", $n['pos']);
+        }
+        if (\Sel\Dec::sign($d) < 0) {
             refuse('E_RANGE', "{$op} count cannot be negative", $n['pos']);
         }
-        // A whole number written with a scale (`2.0`, `0.0`) is a count: SEL accepts
-        // it, so the translator must not claim otherwise. Only a real fraction is
-        // E_NOT_INT (SPEC 7.4).
-        $digits = (string) $d['digits'];
-        $scale = (int) $d['scale'];
-        if ($scale > 0) {
-            $digits = str_pad($digits, $scale + 1, '0', STR_PAD_LEFT);
-            if (rtrim(substr($digits, -$scale), '0') !== '') {
-                refuse('E_NOT_INT', "{$op} count must be an integer", $n['pos']);
-            }
-            $digits = substr($digits, 0, -$scale);
-        }
-        $digits = ltrim($digits, '0');
         // Past the largest count every server takes, the count is that count: a table
         // with 2^63 rows does not exist, so the answer is unchanged (docs 11.6).
-        if ($digits === '') {
-            return 0;
-        }
-        if (strlen($digits) > 19 || (strlen($digits) === 19 && strcmp($digits, '9223372036854775807') > 0)) {
-            return PHP_INT_MAX;
-        }
-        return (int) $digits;
+        // Dec::toInt saturates at PHP_INT_MAX.
+        return \Sel\Dec::toInt($d);
     }
 
     /**
