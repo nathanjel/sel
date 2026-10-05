@@ -35,6 +35,7 @@ import { SqlError } from './errors.mjs';
 import { Translator } from './translator.mjs';
 import { Emit } from './emit.mjs';
 import { Fragment } from './fragment.mjs';
+import { PIPELINE_STEPS } from '../_builtin_manifest.mjs';
 
 export class HybridPlan {
   constructor({ dialect = null, sqlStatement = null, sqlPrefixAst = null, continuationAst = null,
@@ -210,7 +211,8 @@ function joinRowsLackBinders(steps) {
 // decides which rows survive, not any of this. A prefix that ends before that step
 // is exact; one that includes it answers in another order
 // (docs/internals/sql-translation.md 12.1, "Order").
-const ORDER_SORTS = new Set(['SORT', 'SORT_DESC', 'SORT_BY', 'TOP', 'TOP_DESC', 'TOP_BY']);
+// The sort steps: spec/builtins.json's pipeline steps that sort.
+const ORDER_SORTS = new Set(Object.keys(PIPELINE_STEPS).filter((name) => PIPELINE_STEPS[name].sorts));
 function orderIsLost(steps) {
   let sorted = false;
   let projected = false;
