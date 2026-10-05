@@ -144,7 +144,7 @@ final class RecordShape
             if (self::$instrumentation) self::$stats['alias_hits']++;
             return $cached;
         }
-        $lower = \Sel\Utf8::lower($tableName);
+        $lower = Utf8::lower($tableName);
         $addLower = $lower !== $tableName && !isset($this->keyMap[$lower]);
         $keys = $this->keys;
         $keys[] = $tableName;
@@ -168,8 +168,8 @@ final class RecordShape
 }
 
 /**
- * @phpstan-import-type Decimal from \Sel\Dec
- * @phpstan-import-type EagerDecimal from \Sel\Dec
+ * @phpstan-import-type Decimal from Dec
+ * @phpstan-import-type EagerDecimal from Dec
  */
 final class Value
 {
@@ -942,7 +942,7 @@ final class Value
     {
         $v = $this->scalarSource($pos);
         if ($v->kind !== self::TEXT) {
-            fail('E_NOT_NUM', 'expected a number, got ' . \Sel\Utf8::lower($v->kind), $pos);
+            fail('E_NOT_NUM', 'expected a number, got ' . Utf8::lower($v->kind), $pos);
         }
         if ($v->decVal !== null) {
             // The host sees today's array: a lazy value writes its digits out,

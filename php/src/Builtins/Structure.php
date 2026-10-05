@@ -6,17 +6,21 @@ declare(strict_types=1);
 namespace Sel\Builtins;
 
 use Sel\Args;
+use Sel\Budget;
 use Sel\BuiltinManifest;
-use Sel\SelError;
 use Sel\Context;
+use Sel\Dec;
+use Sel\Limits;
 use Sel\RecordShape;
 use Sel\Registry;
+use Sel\SelError;
+use Sel\Utf8;
 use Sel\Value;
 
 use function Sel\fail;
 
 /**
- * @phpstan-import-type EagerDecimal from \Sel\Dec
+ * @phpstan-import-type EagerDecimal from Dec
  */
 final class Structure
 {
@@ -137,7 +141,7 @@ final class Structure
     /** @param array<string,bool> $allowed @param array<string,bool>|null $forbidden */
     private static function varAllowed(string $name, array $allowed, ?array $forbidden): bool
     {
-        $upper = \Sel\Utf8::upper($name);
+        $upper = Utf8::upper($name);
         if (isset($allowed[$upper])) return true;
         if ($forbidden === null || isset($forbidden[$upper])) return false;
         return !str_starts_with($name, '_');
@@ -158,8 +162,8 @@ final class Structure
         if ($node === null || $node['t'] !== 'bin' || !in_array($node['op'], ['==', '$=='], true)) {
             return null;
         }
-        $leftNames = array_fill_keys(array_map([\Sel\Utf8::class, 'upper'], self::binderNames($b1, '_1')), true);
-        $rightNames = array_fill_keys(array_map([\Sel\Utf8::class, 'upper'], self::binderNames($b2, '_2')), true);
+        $leftNames = array_fill_keys(array_map([Utf8::class, 'upper'], self::binderNames($b1, '_1')), true);
+        $rightNames = array_fill_keys(array_map([Utf8::class, 'upper'], self::binderNames($b2, '_2')), true);
         // Binders spelled alike: the right one shadows the left (spec §7.4), so a
         // comparison reading that name reads ONE element per pair. Splitting it
         // into a left key and a right key would give each side its own element
@@ -244,7 +248,7 @@ final class Structure
                 return ['bad' => $value];
             }
             if ($v->decVal !== null) {
-                return self::canonicalDecimalKey(\Sel\Dec::eager($v->decVal));
+                return self::canonicalDecimalKey(Dec::eager($v->decVal));
             }
             $scalar = $v->getScalar();
             if (is_string($scalar)) {
@@ -259,14 +263,14 @@ final class Structure
                             // Past the digit cap the comparison itself raises
                             // E_RANGE (spec §6.4), so the key is a rejected one
                             // and the caller raises it at the operand.
-                            if ($len - 1 > \Sel\Limits::MAX_INT_DIGITS) return ['bad' => $value];
+                            if ($len - 1 > Limits::MAX_INT_DIGITS) return ['bad' => $value];
                             return $scalar;
                         }
                     } elseif (ctype_digit($scalar) && ($len === 1 || $first !== '0')) {
                         if ($len < 19) {
                             return (int) $scalar;
                         }
-                        if ($len > \Sel\Limits::MAX_INT_DIGITS) return ['bad' => $value];
+                        if ($len > Limits::MAX_INT_DIGITS) return ['bad' => $value];
                         return $scalar;
                     }
                 }
@@ -346,12 +350,12 @@ final class Structure
      */
     private static function compileEquiKeyExtractor(array $expr, array $allowedBinders, bool $numeric, ?Value $sample): ?callable
     {
-        $allowed = array_fill_keys(array_map([\Sel\Utf8::class, 'upper'], $allowedBinders), true);
+        $allowed = array_fill_keys(array_map([Utf8::class, 'upper'], $allowedBinders), true);
 
         // Case 1: _['field'] or _2['field'] or BINDER['field']
         if (($expr['t'] ?? null) === 'index'
             && ($expr['obj']['t'] ?? null) === 'var'
-            && isset($allowed[\Sel\Utf8::upper((string) $expr['obj']['name'])])
+            && isset($allowed[Utf8::upper((string) $expr['obj']['name'])])
             && ($expr['idx']['t'] ?? null) === 'text') {
             $keyName = (string) $expr['idx']['v'];
             $pos = $expr['pos'];
@@ -377,7 +381,7 @@ final class Structure
         if (($expr['t'] ?? null) === 'index'
             && ($expr['obj']['t'] ?? null) === 'index'
             && ($expr['obj']['obj']['t'] ?? null) === 'var'
-            && isset($allowed[\Sel\Utf8::upper((string) $expr['obj']['obj']['name'])])
+            && isset($allowed[Utf8::upper((string) $expr['obj']['obj']['name'])])
             && ($expr['obj']['idx']['t'] ?? null) === 'text'
             && ($expr['idx']['t'] ?? null) === 'text') {
             $tableName = (string) $expr['obj']['idx']['v'];
@@ -427,7 +431,7 @@ final class Structure
         }
 
         // Case 3: Var reference, e.g. _
-        if (($expr['t'] ?? null) === 'var' && isset($allowed[\Sel\Utf8::upper((string) $expr['name'])])) {
+        if (($expr['t'] ?? null) === 'var' && isset($allowed[Utf8::upper((string) $expr['name'])])) {
             return static fn (Value $row): int|string|array|null => self::canonicalJoinKey($row, $numeric);
         }
 
@@ -468,7 +472,7 @@ final class Structure
     private static function ensureRowTableAlias(Value $row, string $tableName): Value
     {
         if ($tableName === '' || self::isPositionalBinder($tableName) || $row->has($tableName)) return $row;
-        $lower = \Sel\Utf8::lower($tableName);
+        $lower = Utf8::lower($tableName);
         if ($row->shape !== null) {
             // The shape owns the interned aliased shape. Assigning the old
             // packed storage to a local and appending lets PHP's COW make one
@@ -512,7 +516,7 @@ final class Structure
             }
         }
         if ($sample === null && $tableName !== '' && !self::isPositionalBinder($tableName)) {
-            foreach ([$tableName, \Sel\Utf8::lower($tableName)] as $name) {
+            foreach ([$tableName, Utf8::lower($tableName)] as $name) {
                 if (isset($seen[$name])) continue;
                 $keys[] = $name;
                 $values[] = Value::none();
@@ -556,7 +560,7 @@ final class Structure
      */
     private static function binderNames(string $binder, string $positional): array
     {
-        $names = [$binder, \Sel\Utf8::lower($binder), $positional];
+        $names = [$binder, Utf8::lower($binder), $positional];
         if ($positional === '_1') $names[] = '_';
         return $names;
     }
@@ -571,7 +575,7 @@ final class Structure
     private static function binderKeys(string $name, string $positional): array
     {
         $keys = [$name];
-        $lower = \Sel\Utf8::lower($name);
+        $lower = Utf8::lower($name);
         if ($lower !== $name) $keys[] = $lower;
         if ($name !== $positional) $keys[] = $positional;
         return $keys;
@@ -613,17 +617,17 @@ final class Structure
         $rightKeys = ($rside->size() > 0 && !$rside->isList) ? array_map('strval', $rside->keys()) : [];
         $rightValues = $rightKeys === [] ? [] : $rside->values();
         $rightNames = [];
-        foreach ($rightKeys as $key) $rightNames[\Sel\Utf8::upper($key)] = true;
+        foreach ($rightKeys as $key) $rightNames[Utf8::upper($key)] = true;
         foreach ($leftKeys as $i => $key) {
-            if (self::category($leftValues[$i]) !== self::NESTED && !isset($rightNames[\Sel\Utf8::upper($key)])) {
+            if (self::category($leftValues[$i]) !== self::NESTED && !isset($rightNames[Utf8::upper($key)])) {
                 $put($key, $leftValues[$i]);
             }
         }
         if ($right !== null) {
             $leftNames = [];
-            foreach ($leftKeys as $key) $leftNames[\Sel\Utf8::upper($key)] = true;
+            foreach ($leftKeys as $key) $leftNames[Utf8::upper($key)] = true;
             foreach ($rightKeys as $i => $key) {
-                if (self::category($rightValues[$i]) === self::SCALAR && !isset($leftNames[\Sel\Utf8::upper($key)])) {
+                if (self::category($rightValues[$i]) === self::SCALAR && !isset($leftNames[Utf8::upper($key)])) {
                     $put($key, $rightValues[$i]);
                 }
             }
@@ -663,16 +667,16 @@ final class Structure
         foreach (self::binderKeys($b2, '_2') as $name) $bind($name, 3);
         $rkeys = $rside->shape !== null ? array_map('strval', $rside->shape->keys) : [];
         $rightNames = [];
-        foreach ($rkeys as $key) $rightNames[\Sel\Utf8::upper($key)] = true;
+        foreach ($rkeys as $key) $rightNames[Utf8::upper($key)] = true;
         foreach ($lkeys as $i => $key) {
-            if ($lcat[$i] !== self::NESTED && !isset($rightNames[\Sel\Utf8::upper($key)])) $put($key, 0, $i);
+            if ($lcat[$i] !== self::NESTED && !isset($rightNames[Utf8::upper($key)])) $put($key, 0, $i);
         }
         if ($matched) {
             $rcat = array_map([self::class, 'category'], $rside->storage);
             $leftNames = [];
-            foreach ($lkeys as $key) $leftNames[\Sel\Utf8::upper($key)] = true;
+            foreach ($lkeys as $key) $leftNames[Utf8::upper($key)] = true;
             foreach ($rkeys as $i => $key) {
-                if ($rcat[$i] === self::SCALAR && !isset($leftNames[\Sel\Utf8::upper($key)])) $put($key, 1, $i);
+                if ($rcat[$i] === self::SCALAR && !isset($leftNames[Utf8::upper($key)])) $put($key, 1, $i);
             }
         }
         return ['shape' => RecordShape::intern($keys), 'ops' => $ops, 'slots' => $slots];
@@ -810,6 +814,7 @@ final class Structure
         if (count(self::$joinFactories) >= self::JOIN_FACTORY_CAP) {
             self::$joinFactories = [];
         }
+        // eval()'d code runs in the global namespace: these names stay fully qualified.
         $factory = eval('return static function (\Sel\RecordShape $shape, \Sel\RecordShape $rshape): array { ' . $code . ' };');
         self::$joinFactories[$cacheKey] = $factory;
         return $factory($shape, $rshape);
@@ -859,13 +864,13 @@ final class Structure
             $plan = self::rowPlan($left, $rside, $matched, $b1, $b2);
             $plan['lnested'] = array_map([self::class, 'leftNested'], $left->storage);
             $leftNames = [];
-            foreach ($left->shape->keys as $k) $leftNames[\Sel\Utf8::upper((string) $k)] = true;
+            foreach ($left->shape->keys as $k) $leftNames[Utf8::upper((string) $k)] = true;
             $binderNames = array_flip([...self::binderKeys($b1, '_1'), ...self::binderKeys($b2, '_2')]);
             $kept = [];
             if ($matched) {
                 foreach ($rside->shape->keys as $i => $k) {
                     $k = (string) $k;
-                    if (!isset($leftNames[\Sel\Utf8::upper($k)]) && !isset($binderNames[$k])
+                    if (!isset($leftNames[Utf8::upper($k)]) && !isset($binderNames[$k])
                             && $rside->storage[$i]->kind === Value::NONE && !$rside->storage[$i]->isList) {
                         $kept[] = $i;
                     }
@@ -950,7 +955,7 @@ final class Structure
             $readsOnlyFields = static function (?array $n) use (&$readsOnlyFields, &$fields, $bareRead): bool {
                 if ($n === null) return true;
                 if ($n['t'] === 'index') {
-                    if ($bareRead($n)) { $fields[\Sel\Utf8::upper($n['idx']['v'])] = true; return true; }
+                    if ($bareRead($n)) { $fields[Utf8::upper($n['idx']['v'])] = true; return true; }
                     if (isset($n['obj']) && $n['obj']['t'] === 'index') return $readsOnlyFields($n['obj']) && $readsOnlyFields($n['idx'] ?? null);
                     return false;
                 }
@@ -1055,7 +1060,7 @@ final class Structure
     {
         if ($node === null) return true;
         if ($node['t'] === 'index' && isset($node['obj']) && $node['obj']['t'] === 'var' && isset($binders[$node['obj']['name']])) {
-            return isset($node['idx']) && $node['idx']['t'] === 'text' && \Sel\Utf8::upper($node['idx']['v']) !== $avoid;
+            return isset($node['idx']) && $node['idx']['t'] === 'text' && Utf8::upper($node['idx']['v']) !== $avoid;
         }
         if ($node['t'] === 'var' && isset($binders[$node['name']])) return false;
         foreach (['l', 'r', 'x', 'obj', 'idx', 'target', 'value'] as $k) {
@@ -1071,7 +1076,7 @@ final class Structure
     {
         if ($node === null) return null;
         if ($node['t'] === 'index' && isset($node['obj']) && $node['obj']['t'] === 'var' && $node['obj']['name'] === $binder
-                && isset($node['idx']) && $node['idx']['t'] === 'text' && isset($names[\Sel\Utf8::upper($node['idx']['v'])])) {
+                && isset($node['idx']) && $node['idx']['t'] === 'text' && isset($names[Utf8::upper($node['idx']['v'])])) {
             return ['t' => 'var', 'name' => $binder, 'pos' => $node['pos']];
         }
         $copy = $node;
@@ -1088,16 +1093,16 @@ final class Structure
     private static function rowKeys(Value $value, array $bound = []): array
     {
         $keys = [];
-        foreach ($bound as $b) $keys[\Sel\Utf8::upper($b)] = true;
+        foreach ($bound as $b) $keys[Utf8::upper($b)] = true;
         $shapes = [];
         self::forEachRow($value, static function (Value $row) use (&$keys, &$shapes): void {
             if ($row->shape !== null) {
                 $id = spl_object_id($row->shape);
                 if (isset($shapes[$id])) return;
                 $shapes[$id] = true;
-                foreach ($row->shape->keys as $k) $keys[\Sel\Utf8::upper($k)] = true;
+                foreach ($row->shape->keys as $k) $keys[Utf8::upper($k)] = true;
             } else {
-                foreach ($row->keys() as $k) $keys[\Sel\Utf8::upper($k)] = true;
+                foreach ($row->keys() as $k) $keys[Utf8::upper($k)] = true;
             }
         });
         return $keys;
@@ -1194,7 +1199,7 @@ final class Structure
     private static function totality(array $reqs, ?JoinSideFacts $left, JoinSideFacts $right, array $above): bool
     {
         foreach ($reqs as [$name, $kind]) {
-            $key = \Sel\Utf8::upper($name);
+            $key = Utf8::upper($name);
             $owners = [];
             foreach ([$left, $right, ...$above] as $side) {
                 if ($side !== null && isset($side->keys[$key])) $owners[] = $side;
@@ -1250,7 +1255,7 @@ final class Structure
                 && self::pureSource($leftNode) && self::pureSource($rightNode)) {
             try {
                 $rightValue = $a->val(1);
-            } catch (\Sel\SelError $e) {
+            } catch (SelError $e) {
                 // The right source went first for the prefilter's sake, which is only
                 // unobservable while neither source raises (SPEC 7.4: as written, the
                 // left source runs first). The left source is pure too: run it now with
@@ -1342,7 +1347,7 @@ final class Structure
                     });
                 }
             } else {
-                $b2Lower = \Sel\Utf8::lower($b2);
+                $b2Lower = Utf8::lower($b2);
                 $hasLower2 = $b2Lower !== $b2;
                 $frameRight = [$b2 => Value::none(), '_2' => Value::none()];
                 if ($hasLower2) $frameRight[$b2Lower] = Value::none();
@@ -1381,7 +1386,7 @@ final class Structure
             // unless the left binder has the same name, or a join above
             // rebinds it.
             $rightNames = static fn (array $stage): array => $stage[2] === 0
-                ? [\Sel\Utf8::upper($b2) => true, '_2' => true] : [\Sel\Utf8::upper($b2) => true];
+                ? [Utf8::upper($b2) => true, '_2' => true] : [Utf8::upper($b2) => true];
             if ($prefilter !== null) {
                 if ($rightSide === null) {
                     $rightSide = new JoinSideFacts($rightValue, self::rowKeys($rightValue, $b2Names), $leftJoin, $b2Names);
@@ -1402,7 +1407,7 @@ final class Structure
                     return true;
                 };
                 $totalHere = static fn (array $reqs, array $stage): bool => self::totality($reqs, $leftSide, $rightSide, array_slice($above, 0, $stage[2]));
-                $rightHere = (!$leftJoin && \Sel\Utf8::upper($b1) !== \Sel\Utf8::upper($b2))
+                $rightHere = (!$leftJoin && Utf8::upper($b1) !== Utf8::upper($b2))
                     ? static function (array $fields, array $stage) use ($rightNames, $aboveKeys): bool {
                         $names = $rightNames($stage);
                         $upper = $aboveKeys($stage);
@@ -1410,7 +1415,7 @@ final class Structure
                         return true;
                     }
                     : null;
-                $selfNames = [\Sel\Utf8::upper($b1) => true, '_1' => true];
+                $selfNames = [Utf8::upper($b1) => true, '_1' => true];
                 [$applied, ] = $safe ? self::stageWalk($stages, $ownedHere, $totalHere, $rightHere) : [[], null];
                 foreach ($applied as [$c, $stage, $right]) {
                     $key = self::conjunctId($c['node']);
@@ -1482,10 +1487,10 @@ final class Structure
                 $el = $equi['left'];
                 if ($prefix !== [] && $deep && $el['t'] === 'index' && isset($el['obj']) && $el['obj']['t'] === 'var'
                         && isset($el['idx']) && $el['idx']['t'] === 'text'
-                        && in_array(\Sel\Utf8::upper($el['obj']['name']), [\Sel\Utf8::upper($b1), '_1', '_'], true)) {
+                        && in_array(Utf8::upper($el['obj']['name']), [Utf8::upper($b1), '_1', '_'], true)) {
                     $fastField = $el['idx']['v'];
                 }
-                $b1Lower = \Sel\Utf8::lower($b1);
+                $b1Lower = Utf8::lower($b1);
                 $hasLower1 = $b1Lower !== $b1;
                 $frameLeft = [$b1 => Value::none(), '_1' => Value::none(), '_' => Value::none()];
                 if ($hasLower1) $frameLeft[$b1Lower] = Value::none();
@@ -1494,11 +1499,11 @@ final class Structure
                 // other than its relation's name is asked of the element as
                 // it arrives, before it is extended: a row it drops is never
                 // extended.
-                $raw = $prefix !== [] && ($fastField === null || \Sel\Utf8::upper($fastField) !== \Sel\Utf8::upper($b1));
+                $raw = $prefix !== [] && ($fastField === null || Utf8::upper($fastField) !== Utf8::upper($b1));
                 if ($raw) {
                     $binderSet = array_fill_keys($binders, true);
                     foreach ($prefix as $conjunct) {
-                        if (!self::rawSafe($conjunct, $binderSet, \Sel\Utf8::upper($b1))) { $raw = false; break; }
+                        if (!self::rawSafe($conjunct, $binderSet, Utf8::upper($b1))) { $raw = false; break; }
                     }
                 }
                 // The rows in order, walked in place: this loop runs once per
@@ -1625,7 +1630,7 @@ final class Structure
                     });
                 }
             } else {
-                $b1Lower = \Sel\Utf8::lower($b1);
+                $b1Lower = Utf8::lower($b1);
                 $hasLower1 = $b1Lower !== $b1;
                 $frameLeft = [$b1 => Value::none(), '_1' => Value::none(), '_' => Value::none()];
                 if ($hasLower1) $frameLeft[$b1Lower] = Value::none();
@@ -1667,8 +1672,8 @@ final class Structure
                 // the predicate cannot write (pureSource): the alias is a wrapper over the
                 // same elements, so a pair that re-made it was only re-proving it. A
                 // predicate with an assignment keeps a fresh alias per pair, as before.
-                $b1l = \Sel\Utf8::lower($b1);
-                $b2l = \Sel\Utf8::lower($b2);
+                $b1l = Utf8::lower($b1);
+                $b2l = Utf8::lower($b2);
                 $shareAliases = self::pureSource($predicate);
                 $aliased = [];
                 self::forEachRow($leftValue, function (Value $leftItem) use (&$output, $b1, $b2, $b1l, $b2l, $rightItems, &$aliased, $shareAliases, $aliasLeft, $aliasRight, $a, $predicate, $leftJoin, $project, $ctx): void {
@@ -1715,18 +1720,18 @@ final class Structure
                 $body = $a->node(2);
             } elseif ($a->node(2)['t'] === 'text') {
                 $body = $a->node(1);
-                $dir = \Sel\Utf8::upper($a->text(2));
+                $dir = Utf8::upper($a->text(2));
             } elseif ($a->isSymbol(1)) {
                 $binder = $a->symbol(1);
                 $body = $a->node(2);
             } else {
                 $body = $a->node(1);
-                $dir = \Sel\Utf8::upper($a->text(2));
+                $dir = Utf8::upper($a->text(2));
             }
         } elseif ($sortCount === 4) {
             $binder = $a->symbol(1);
             $body = $a->node(2);
-            $dir = \Sel\Utf8::upper($a->text(3));
+            $dir = Utf8::upper($a->text(3));
         } else {
             fail('E_ARITY', "{$a->name} has an invalid sort form", $a->pos);
         }
@@ -1971,8 +1976,8 @@ final class JoinProjector
     private function tick(int $rows): void
     {
         $this->emitted += $rows;
-        if ($this->emitted > \Sel\Limits::MAX_COLLECTION) {
-            \Sel\Budget::checkCollection($this->emitted, $this->limitPos, 'the LINK result');
+        if ($this->emitted > Limits::MAX_COLLECTION) {
+            Budget::checkCollection($this->emitted, $this->limitPos, 'the LINK result');
         }
     }
 
@@ -2013,11 +2018,11 @@ final class JoinSideFacts
         foreach ($bound as $b) {
             if ($b === '_1' || $b === '_2' || $b === '_') continue;
             $this->names[$b] = true;
-            $this->names[\Sel\Utf8::lower($b)] = true;
+            $this->names[Utf8::lower($b)] = true;
         }
         $this->first = [];
         $firstRow = Structure::firstCollectionItem($value);
-        if ($firstRow !== null) foreach ($firstRow->keys() as $k) $this->first[\Sel\Utf8::upper($k)] = true;
+        if ($firstRow !== null) foreach ($firstRow->keys() as $k) $this->first[Utf8::upper($k)] = true;
     }
 
     /** The field NAME is a key of every row, whatever its value. */
@@ -2030,7 +2035,7 @@ final class JoinSideFacts
 
     public function total(string $name, string $kind): bool
     {
-        if (!isset($this->first[\Sel\Utf8::upper($name)]) || $this->nullable) return false;
+        if (!isset($this->first[Utf8::upper($name)]) || $this->nullable) return false;
         $id = $kind . ':' . $name;
         if (!array_key_exists($id, $this->facts)) {
             $this->facts[$id] = Structure::rowFactOf($this->value, $name, $kind);

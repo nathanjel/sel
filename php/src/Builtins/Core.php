@@ -9,7 +9,10 @@ use Sel\Args;
 use Sel\Budget;
 use Sel\Context;
 use Sel\Dec;
+use Sel\Limits;
 use Sel\Registry;
+use Sel\SelError;
+use Sel\Utf8;
 use Sel\Value;
 
 use function Sel\fail;
@@ -69,7 +72,7 @@ final class Core
         Registry::define(['name' => 'LIST', 'min' => 0, 'max' => PHP_INT_MAX,
             'fn' => static function (Args $a): Value {
                 $n = $a->count();
-                if ($n > \Sel\Limits::MAX_COLLECTION) Budget::checkCollection($n, $a->pos, 'the list');
+                if ($n > Limits::MAX_COLLECTION) Budget::checkCollection($n, $a->pos, 'the list');
                 $out = [];
                 for ($i = 0; $i < $n; $i++) {
                     $out[] = $a->val($i)->copyBelow(1, $a->pos);
@@ -81,7 +84,7 @@ final class Core
             'fn' => static function (Args $a): Value {
                 $n = $a->count();
                 if ($n === 0) return Value::none();
-                if ($n >> 1 > \Sel\Limits::MAX_COLLECTION) Budget::checkCollection($n >> 1, $a->pos, 'the record');
+                if ($n >> 1 > Limits::MAX_COLLECTION) Budget::checkCollection($n >> 1, $a->pos, 'the record');
                 if ($a->recordShape !== null) {
                     $values = [];
                     for ($i = 1; $i < $n; $i += 2) {
@@ -247,7 +250,7 @@ final class Core
         if ($v->kind !== Value::NONE) return $v;
         try {
             return $v->scalarSource(null);
-        } catch (\Sel\SelError $e) {
+        } catch (SelError $e) {
             return null;
         }
     }
@@ -288,7 +291,7 @@ final class Core
                 } elseif ($a->node(2)['t'] === 'text') {
                     $binder = '_';
                     $body = $a->node(1);
-                    $dir = \Sel\Utf8::upper($a->text(2));
+                    $dir = Utf8::upper($a->text(2));
                 } elseif ($a->isSymbol(1)) {
                     $binder = $a->symbol(1);
                     $body = $a->node(2);
@@ -296,12 +299,12 @@ final class Core
                 } else {
                     $binder = '_';
                     $body = $a->node(1);
-                    $dir = \Sel\Utf8::upper($a->text(2));
+                    $dir = Utf8::upper($a->text(2));
                 }
             } else {
                 $binder = $a->symbol(1);
                 $body = $a->node(2);
-                $dir = \Sel\Utf8::upper($a->text(3));
+                $dir = Utf8::upper($a->text(3));
             }
 
             if ($dir !== 'ASC' && $dir !== 'DESC') {
@@ -468,7 +471,7 @@ final class Core
     {
         if ($node === null) return false;
         if (($node['t'] ?? null) === 'var') {
-            return \Sel\Utf8::casecmp((string) ($node['name'] ?? ''), $name) === 0;
+            return Utf8::casecmp((string) ($node['name'] ?? ''), $name) === 0;
         }
         foreach (['args', 'items'] as $key) {
             foreach ($node[$key] ?? [] as $child) {
@@ -625,9 +628,9 @@ final class Core
                 // The result's size is known before it is built: refuse it at the
                 // call (spec §6.4). The byte length bounds the code point length.
                 $bytes += strlen($sep) * max(0, count($parts) - 1);
-                if ($bytes > \Sel\Limits::MAX_TEXT_LEN) {
-                    $cps = \Sel\Utf8::length($sep) * max(0, count($parts) - 1);
-                    foreach ($parts as $part) $cps += \Sel\Utf8::length($part);
+                if ($bytes > Limits::MAX_TEXT_LEN) {
+                    $cps = Utf8::length($sep) * max(0, count($parts) - 1);
+                    foreach ($parts as $part) $cps += Utf8::length($part);
                     Budget::checkText($cps, $a->pos, 'the JOIN result');
                 }
                 return Value::text(implode($sep, $parts));

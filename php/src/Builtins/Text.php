@@ -9,6 +9,7 @@ namespace Sel\Builtins;
 
 use Sel\Args;
 use Sel\Budget;
+use Sel\Limits;
 use Sel\Registry;
 use Sel\Utf8;
 use Sel\Value;
@@ -91,7 +92,7 @@ final class Text
                 $count = substr_count($hay, $needle);
                 if ($count > 0) {
                     $bytes = strlen($hay) + $count * (strlen($repl) - strlen($needle));
-                    if ($bytes > \Sel\Limits::MAX_TEXT_LEN) {
+                    if ($bytes > Limits::MAX_TEXT_LEN) {
                         $cps = Utf8::length($hay) + $count * (Utf8::length($repl) - Utf8::length($needle));
                         Budget::checkText($cps, $a->pos, 'the REPLACE result');
                     }
@@ -146,7 +147,7 @@ final class Text
                 if ($s === '' || $n === 0) return Value::text('');
                 // Divided before it is multiplied: n * cps could overflow a native int.
                 $cps = Utf8::length($s);
-                Budget::checkText($n > intdiv(\Sel\Limits::MAX_TEXT_LEN, $cps) ? PHP_INT_MAX : $n * $cps, $a->pos, 'the REPEAT result');
+                Budget::checkText($n > intdiv(Limits::MAX_TEXT_LEN, $cps) ? PHP_INT_MAX : $n * $cps, $a->pos, 'the REPEAT result');
                 return Value::textTrusted(str_repeat($s, $n));
             }]);
 

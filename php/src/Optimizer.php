@@ -284,7 +284,7 @@ final class Optimizer
             // fold cannot fail, since the result is shorter than the cap unless the
             // source itself was enormous, and then the node is left for the evaluator.
             if ($op === '&' && ($left['t'] ?? null) === 'text' && ($right['t'] ?? null) === 'text'
-                && strlen((string) $left['v']) + strlen((string) $right['v']) <= \Sel\Limits::MAX_TEXT_LEN) {
+                && strlen((string) $left['v']) + strlen((string) $right['v']) <= Limits::MAX_TEXT_LEN) {
                 return ['t' => 'text', 'v' => (string) $left['v'] . (string) $right['v'], 'pos' => $node['pos']];
             }
             if (($left['t'] ?? null) === 'text' && ($right['t'] ?? null) === 'text'
@@ -488,7 +488,7 @@ final class Optimizer
                     // Fused, the second predicate runs on a row before the first
                     // has seen the rows after it: only one that cannot raise.
                     if ($left['valid'] && $right['valid'] && self::predicateCannotRaise($right['predicate'], $right['binder'], $logical)) {
-                        $predicate = \Sel\Utf8::casecmp($right['binder'], $left['binder']) === 0
+                        $predicate = Utf8::casecmp($right['binder'], $left['binder']) === 0
                             ? $right['predicate']
                             : self::renameVar($right['predicate'], $right['binder'], $left['binder']);
                         $merged = self::copyNode($first);
@@ -566,11 +566,11 @@ final class Optimizer
             case 'num': case 'text': case 'bool': case 'null':
                 return true;
             case 'var':
-                $name = \Sel\Utf8::upper((string) $node['name']);
-                return $name === '_K' || $name === \Sel\Utf8::upper($binder);
+                $name = Utf8::upper((string) $node['name']);
+                return $name === '_K' || $name === Utf8::upper($binder);
             case 'index':
                 return $logical && ($node['obj']['t'] ?? null) === 'var'
-                    && \Sel\Utf8::casecmp((string) $node['obj']['name'], $binder) === 0
+                    && Utf8::casecmp((string) $node['obj']['name'], $binder) === 0
                     && ($node['idx']['t'] ?? null) === 'text';
             case 'bin':
                 return $logical && in_array($node['op'], self::SAFE_LOGICAL_OPS, true)
@@ -614,7 +614,7 @@ final class Optimizer
         $body = $details['body'] ?? null;
         if (($body['t'] ?? null) === 'call' && $body['name'] === 'RECORD') {
             // Past MAX_COLLECTION pairs the record itself raises E_RANGE.
-            if (count($body['args']) >> 1 > \Sel\Limits::MAX_COLLECTION) return false;
+            if (count($body['args']) >> 1 > Limits::MAX_COLLECTION) return false;
             foreach ($body['args'] as $i => $arg) {
                 if ($i % 2 === 0 ? ($arg['t'] ?? null) !== 'text' : !self::cannotRaise($arg, $details['binder'], $logical)) return false;
             }
@@ -658,7 +658,7 @@ final class Optimizer
             $value = $body['args'][$i + 1];
             if (($key['t'] ?? null) === 'text' && ($value['t'] ?? null) === 'index'
                 && ($value['obj']['t'] ?? null) === 'var'
-                && \Sel\Utf8::casecmp($value['obj']['name'], $details['binder']) === 0
+                && Utf8::casecmp($value['obj']['name'], $details['binder']) === 0
                 && ($value['idx']['t'] ?? null) === 'text'
                 && $value['idx']['v'] === $key['v']) {
                 $fields[] = $key['v'];
@@ -710,7 +710,7 @@ final class Optimizer
             if ($item === null) return;
             if (($item['t'] ?? null) === 'index' && ($item['obj']['t'] ?? null) === 'var'
                 && ($item['idx']['t'] ?? null) === 'text'
-                && in_array(\Sel\Utf8::upper($item['obj']['name']), array_map([\Sel\Utf8::class, 'upper'], [$binder, '_', '_1', '_2']), true)) {
+                && in_array(Utf8::upper($item['obj']['name']), array_map([Utf8::class, 'upper'], [$binder, '_', '_1', '_2']), true)) {
                 $result[] = (string) $item['idx']['v'];
             }
             self::forEachChild($item, $visit);
@@ -729,11 +729,11 @@ final class Optimizer
      */
     private static function readsVar(?array $node, array $names): bool
     {
-        $wanted = array_map([\Sel\Utf8::class, 'upper'], $names);
+        $wanted = array_map([Utf8::class, 'upper'], $names);
         $found = false;
         $visit = function (?array $item) use (&$visit, &$found, $wanted): void {
             if ($item === null || $found) return;
-            if (($item['t'] ?? null) === 'var' && in_array(\Sel\Utf8::upper($item['name']), $wanted, true)) {
+            if (($item['t'] ?? null) === 'var' && in_array(Utf8::upper($item['name']), $wanted, true)) {
                 $found = true;
                 return;
             }
@@ -854,7 +854,7 @@ final class Optimizer
     private static function renameVar(array $node, string $old, string $new): array
     {
         $copy = self::copyNode($node);
-        if (($copy['t'] ?? null) === 'var' && \Sel\Utf8::casecmp($copy['name'], $old) === 0) $copy['name'] = $new;
+        if (($copy['t'] ?? null) === 'var' && Utf8::casecmp($copy['name'], $old) === 0) $copy['name'] = $new;
         foreach (['args', 'items'] as $key) {
             if (isset($copy[$key])) $copy[$key] = array_map(
                 static fn (array $child): array => self::renameVar($child, $old, $new), $copy[$key]);

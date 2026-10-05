@@ -14,6 +14,7 @@ namespace Sel\Builtins;
 
 use Sel\Args;
 use Sel\Budget;
+use Sel\Limits;
 use Sel\Registry;
 use Sel\Utf8;
 use Sel\Value;
@@ -128,8 +129,8 @@ final class Regex
     private static function parse(array $p, string $pattern, ?array $pos): array
     {
         $n = count($p);
-        if ($n > \Sel\Limits::MAX_REGEX_PATTERN) {
-            self::bad('the pattern is longer than ' . \Sel\Limits::MAX_REGEX_PATTERN . ' code points', $pattern, 0, $pos);
+        if ($n > Limits::MAX_REGEX_PATTERN) {
+            self::bad('the pattern is longer than ' . Limits::MAX_REGEX_PATTERN . ' code points', $pattern, 0, $pos);
         }
         $st = ['p' => $p, 'n' => $n, 'i' => 0, 'groups' => 0, 'pattern' => $pattern, 'pos' => $pos];
         $tree = self::parseAlt($st, 0);
@@ -322,11 +323,11 @@ final class Regex
                     self::bad("{$kind} is not portable — only (?: ) is", $pattern, $i, $pos);
                 }
             }
-            if ($depth + 1 > \Sel\Limits::MAX_DEPTH) {
-                self::bad('groups nest deeper than ' . \Sel\Limits::MAX_DEPTH, $pattern, $i, $pos);
+            if ($depth + 1 > Limits::MAX_DEPTH) {
+                self::bad('groups nest deeper than ' . Limits::MAX_DEPTH, $pattern, $i, $pos);
             }
-            if (++$st['groups'] > \Sel\Limits::MAX_REGEX_GROUPS) {
-                self::bad('more than ' . \Sel\Limits::MAX_REGEX_GROUPS . ' groups', $pattern, $i, $pos);
+            if (++$st['groups'] > Limits::MAX_REGEX_GROUPS) {
+                self::bad('more than ' . Limits::MAX_REGEX_GROUPS . ' groups', $pattern, $i, $pos);
             }
             $st['i'] = $after;
             $inner = self::parseAlt($st, $depth + 1);
@@ -1102,7 +1103,7 @@ final class Regex
 
                 $out = '';
                 $built = 0;     // code points of the result so far
-                $ascii = \Sel\Utf8::isAscii($subject) && \Sel\Utf8::isAscii($repl);
+                $ascii = Utf8::isAscii($subject) && Utf8::isAscii($repl);
                 $last = 0;      // bytes of the subject already copied or replaced
                 $at = 0;        // where the next search starts
                 $len = strlen($subject);
@@ -1137,8 +1138,8 @@ final class Regex
                     // would run past the cap (spec §6.4) is refused at the call
                     // with at most one cap's worth built, not after the fact.
                     $out .= $piece;
-                    $built += $ascii ? strlen($piece) : \Sel\Utf8::length($piece);
-                    if ($built > \Sel\Limits::MAX_TEXT_LEN) Budget::checkText($built, $a->pos, 'the RREPLACE result');
+                    $built += $ascii ? strlen($piece) : Utf8::length($piece);
+                    if ($built > Limits::MAX_TEXT_LEN) Budget::checkText($built, $a->pos, 'the RREPLACE result');
                     $last = $start + strlen($matched);
                     if ($matched === '') {
                         // Resume one code point on; the code point is copied
@@ -1151,7 +1152,7 @@ final class Regex
                     }
                 }
                 $tail = substr($subject, $last);
-                $built += $ascii ? strlen($tail) : \Sel\Utf8::length($tail);
+                $built += $ascii ? strlen($tail) : Utf8::length($tail);
                 Budget::checkText($built, $a->pos, 'the RREPLACE result');
                 return Value::text($out . $tail);
             }]);

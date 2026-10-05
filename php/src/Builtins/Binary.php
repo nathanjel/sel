@@ -5,6 +5,7 @@ namespace Sel\Builtins;
 
 use Sel\Args;
 use Sel\Budget;
+use Sel\Dec;
 use Sel\Registry;
 use Sel\Utf8;
 use Sel\Value;
@@ -159,11 +160,11 @@ final class Binary
                 $out = '';
                 foreach ($items as $i => $item) {
                     $d = $item->asDecimal($a->posOf(0));
-                    if (!\Sel\Dec::isInteger($d)) {
+                    if (!Dec::isInteger($d)) {
                         $k = $i + 1;
                         fail('E_NOT_INT', "LTB element {$k} is not a whole number", $a->posOf(0));
                     }
-                    $n = \Sel\Dec::toInt($d);
+                    $n = Dec::toInt($d);
                     if ($n < 0 || $n > 255) {
                         $k = $i + 1;
                         fail('E_RANGE', "LTB element {$k} is not a byte value", $a->posOf(0));

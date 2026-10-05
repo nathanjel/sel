@@ -225,7 +225,7 @@ final class Lexer
                 while ($j < $to && self::isIdent($this->chars[$j])) {
                     $j++;
                 }
-                $out[] = ['type' => 'ident', 'value' => \Sel\Utf8::upper($this->slice($i, $j))] + $pos;
+                $out[] = ['type' => 'ident', 'value' => Utf8::upper($this->slice($i, $j))] + $pos;
                 $i = $j;
                 continue;
             }
@@ -446,7 +446,7 @@ final class Lexer
             }
             $cp = (int) hexdec($hex);
             if ($cp > 0x10ffff || ($cp >= 0xd800 && $cp <= 0xdfff)) {
-                fail('E_RANGE', 'code point U+' . \Sel\Utf8::upper($hex) . ' is not encodable', $pos);
+                fail('E_RANGE', 'code point U+' . Utf8::upper($hex) . ' is not encodable', $pos);
             }
             return [Utf8::chr($cp), $j + 1];
         }
