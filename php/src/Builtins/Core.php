@@ -587,7 +587,7 @@ final class Core
                     if ($r->asBool($body['pos'])) {
                         $storage[] = $item->copyBelow(1, $pos);
                         // The key as written, not (int) of it: "1x", "01" and
-                        // " 1" all cast to 1 (review 2026-09-25 SEM-09).
+                        // " 1" all cast to 1.
                         $inPlace = is_int($key) ? $key === $expectedIndex : $key === (string) $expectedIndex;
                         if (!$needsCustomKeys && !$inPlace) {
                             $needsCustomKeys = true;
@@ -607,7 +607,7 @@ final class Core
 
         Registry::define(['name' => 'SUM', 'min' => 2, 'max' => 3, 'lazy' => true, 'binds' => true,
             'fn' => static function (Args $a, Context $ctx): Value {
-                // A native running total while every step fits (PHP-P27); the answer
+                // A native running total while every step fits; the answer
                 // is the one a chain of Dec::add calls gives.
                 $total = ['m' => 0, 's' => 0];
                 self::walk($a, $ctx, static function (Value $r, $k, $i, array $body) use (&$total): ?Value {

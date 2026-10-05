@@ -9,9 +9,8 @@
 //
 //   php -d memory_limit=-1 tools/check-eval-equivalence.php [file.selt ...]
 //
-// Exit status is non-zero on any difference. Not in tools/check.sh until the
-// divergences in docs/interim/2026-09-29/worklist/tests/04-evaluation.md are
-// fixed.
+// Exit status is non-zero on any difference. tools/check.sh runs it as
+// "PHP plain vs optimised".
 
 declare(strict_types=1);
 

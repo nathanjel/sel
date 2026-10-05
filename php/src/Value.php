@@ -278,7 +278,7 @@ final class Value
      * parser literal (the lexer validated the source and every escape it decodes
      * is a scalar value), a number's digits, a cut of a valid text at character
      * boundaries, the concatenation of two valid texts. Skips the PCRE validity
-     * pass Value::text makes (~280 ns, ~40% of evaluating a literal, PHP-P11).
+     * pass Value::text makes (~280 ns, ~40% of evaluating a literal).
      * Anything from outside — host input, bytes decoded from BIN — must still
      * go through Value::text.
      */
@@ -331,8 +331,7 @@ final class Value
     }
 
     /**
-     * Every text entering is valid UTF-8, keys included (spec §8; review
-     * 2026-09-25 HOST-05). PCRE's strict UTF-8 check is the fast path; only a
+     * Every text entering is valid UTF-8, keys included (spec §8). PCRE's strict UTF-8 check is the fast path; only a
      * string it rejects meets the hand-written codec, which raises E_UTF8.
      */
     private static function checkText(string $s): void
@@ -400,7 +399,7 @@ final class Value
         }
         // The scalar is derived from the parsed decimal, not kept as typed:
         // "007" is 7 and "-0" is 0 (spec §4, §8), and a caller that spelled it
-        // otherwise still gets one canonical text (PHP-C10, a 0.9.2 regression).
+        // otherwise still gets one canonical text (a 0.9.2 regression).
         $v = new self(self::TEXT, null);
         $v->decVal = $parsed;
         return $v;
@@ -409,8 +408,8 @@ final class Value
     /**
      * The number for a decimal an operation of this library just built. Dec's own
      * arithmetic has already canonicalised it and enforced the digit caps, so the
-     * well-formedness pass `num()` runs on host input (HOST-13/14, PHP-C40) is
-     * skipped: a quarter of each numeric result went to it (PHP-P12). Never call
+     * well-formedness pass `num()` runs on host input is
+     * skipped: a quarter of each numeric result went to it. Never call
      * this with a decimal that came from outside the library.
      *
      * @param Decimal $d
@@ -454,7 +453,7 @@ final class Value
         }
         if ($keys !== null) {
             // A list's keys pair up with its values and are distinct text
-            // (spec §8; review 2026-09-28 HOST-12, HOST-17, HOST-18).
+            // (spec §8).
             if (count($keys) !== count($values)) {
                 fail('E_BAD_ARG', count($keys) . ' key(s) and ' . count($values) . ' value(s) do not pair up', null);
             }
@@ -952,7 +951,7 @@ final class Value
         }
         if ($v->decVal !== null) {
             // The host sees today's array: a lazy value writes its digits out,
-            // once (item 1).
+            // once.
             if ($v->decVal['digits'] === null) {
                 $v->decVal = Dec::eager($v->decVal);
             }
@@ -969,7 +968,7 @@ final class Value
     /**
      * asDecimal() for the evaluator: a value's decimal as it is kept, which a
      * computed big number may keep lazily -- its magnitude as GMP, its digits not
-     * yet written (item 1). Everything it is handed to is Dec's.
+     * yet written. Everything it is handed to is Dec's.
      *
      * @param array{line:int,col:int,offset:int}|null $pos
      * @return Decimal
@@ -996,7 +995,7 @@ final class Value
             // Dec::parse answers null for text that is not a number, so a probe
             // never needs asDecimal()'s fail(): building a SelError (trace and a
             // json_encode'd message) and catching it made every non-numeric text
-            // key cost ~7x a parsed one (PHP-P3).
+            // key cost ~7x a parsed one.
             // A well-formed numeral too big to hold raises E_RANGE out of parse.
             // The probe answers no rather than raising, so ISNUM is true exactly
             // when the value can be used as a number — before the cap it said
@@ -1050,7 +1049,7 @@ final class Value
 
     /**
      * A copy of a record made to be written through by a program that assigns
-     * only to the top-level names in `$writable` (PHP-P22): those children are
+     * only to the top-level names in `$writable`: those children are
      * deep-copied, every other top-level child is shared with the original. The
      * program cannot reach a shared child through an assignment, so the original is
      * never written to, and the copy costs the size of what is written rather than
@@ -1103,7 +1102,7 @@ final class Value
             // Values and the keys are this list's own, already validated (text,
             // distinct, paired), so list()'s instanceof pass, per-key preg and
             // duplicate table would only re-prove it on every assignment, `,` and
-            // aggregate collect of a keyed list (PHP-P16). The key map is rebuilt
+            // aggregate collect of a keyed list. The key map is rebuilt
             // lazily, as for any fresh list.
             $v = new self(self::NONE, null, true);
             $v->storage = $values;
@@ -1131,8 +1130,8 @@ final class Value
 
     public function structuralHash(): string
     {
-        // A value with no children is keyed by its own kind, length and scalar
-        // (PHP-P25): no HashContext, and injective, which is all a bucket key has
+        // A value with no children is keyed by its own kind, length and scalar:
+        // no HashContext, and injective, which is all a bucket key has
         // to be -- every bucket confirms with eql(). It cannot equal the digest of
         // a container, which is sixteen hex digits and has no ':'.
         if ($this->size() === 0) {
@@ -1428,7 +1427,7 @@ final class Value
             return $out;
         }
         // Any other keys -- the ones a FILTER kept, say -- travel as written, so
-        // the round trip keeps them (spec §8; review 2026-09-25 HOST-08). The one
+        // the round trip keeps them (spec §8). The one
         // shape PHP cannot keep is a record keyed "0" .. "n-1", which is a list
         // to PHP (the named exception).
         $out = [];
@@ -1440,7 +1439,7 @@ final class Value
         }
         if ($scalar !== null) {
             // A value's own scalar travels under "_"; with a child of that name
-            // too, one of them would be lost (review 2026-09-25 HOST-01).
+            // too, one of them would be lost.
             if ($this->has('_')) {
                 fail('E_BAD_ARG', 'a value with both a scalar and a child named "_" has no native form', null);
             }

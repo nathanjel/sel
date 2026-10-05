@@ -29,7 +29,7 @@ function errorOf(string $source): SelError {
     throw new RuntimeException("no error for $source");
 }
 
-// The Python host's SelError could not be pickled and killed a process pool (PY-C16); PHP's
+// The Python host's SelError could not be pickled and killed a process pool; PHP's
 // equivalent is serialize(): an error that goes through a queue or a session or a cache must
 // come back with its code and position, not with uninitialised properties.
 $expect('a SelError survives serialize/unserialize', function () {
@@ -95,7 +95,7 @@ $expect('programs run cleanly after a series of failures', function () {
     return true;
 });
 
-// Locale (PHP-C43): strtoupper() and friends follow LC_CTYPE before PHP 8.2. UPPER/LOWER
+// Locale: strtoupper() and friends follow LC_CTYPE before PHP 8.2. UPPER/LOWER
 // and function-name lookup are ASCII-only by decision; a process locale must not change them.
 $expect('UPPER, LOWER and function names ignore the process locale', function () {
     $saved = setlocale(LC_ALL, '0');

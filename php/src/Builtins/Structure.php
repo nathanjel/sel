@@ -109,8 +109,8 @@ final class Structure
      * `$forbidden` is the other side's binder names. When it is given, a variable
      * that is neither allowed nor forbidden is a constant of the join — a name
      * from the enclosing scope, whose value cannot change while the join runs,
-     * because an assignment in the key is refused below — and may appear in a key
-     * (PHP-P6): `A["id"] + K == B["id"]` hashes instead of falling to the nested
+     * because an assignment in the key is refused below — and may appear in a key:
+     * `A["id"] + K == B["id"]` hashes instead of falling to the nested
      * loop, which was ~1000x slower at 600 rows. Names starting with `_` (`_`,
      * `_1`, `_2`, `_K`) are the language's own and stay refused. With `$forbidden`
      * null only binder names qualify, which is what an assignment target needs.
@@ -298,8 +298,7 @@ final class Structure
      * Record a right key: bucket a good one, and remember what the left keys
      * must be checked against -- whether any key is live (not NULL), the first
      * live key if it was rejected, and the first rejected one (spec §7.4:
-     * pairs match "as the comparison would compare them"; review 2026-09-25
-     * SEM-06).
+     * pairs match "as the comparison would compare them").
      *
      * @param array<int|string, list<Value>> $buckets
      * @param array{live:bool, liveBad:?Value, bad:?Value} $facts
@@ -701,7 +700,7 @@ final class Structure
     ): array {
         // The generated code is a function of (ops, slots, rkept, lnested) alone —
         // the shapes are bound at call time — so the compiled factory is cached
-        // across LINK invocations (PHP-P20): an eval() costs ~60 us and this ran
+        // across LINK invocations: an eval() costs ~60 us and this ran
         // for every invocation and shape pair. Bounded, and dropped wholesale when
         // full, like RecordShape's own cache; the key holds integers only, and so
         // does the code (no injection surface).
@@ -1666,7 +1665,7 @@ final class Structure
                 $rightValue->forEachElement(static function (string $k, Value $item) use (&$rightItems): void {
                     $rightItems[] = $item;
                 });
-                // Hoisted out of the loops (PHP-P21): the lower-cased binder names, and
+                // Hoisted out of the loops: the lower-cased binder names, and
                 // the aliased right rows. A right row is aliased once, on first use, when
                 // the predicate cannot write (pureSource): the alias is a wrapper over the
                 // same elements, so a pair that re-made it was only re-proving it. A
@@ -1773,7 +1772,7 @@ final class Structure
         };
         $index = 0;
         $frame = $binder === null ? null : [$binder => Value::none(), '_K' => Value::none()];
-        // `_K` is bound for every row only when the body can read it (PHP-P26), as
+        // `_K` is bound for every row only when the body can read it, as
         // BUCKET does; and when the limit reaches the row count there is nothing to
         // select, so the rows are collected and sorted once with the same comparator
         // (ties still break by position) instead of going through the heap.

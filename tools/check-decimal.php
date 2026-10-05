@@ -11,7 +11,7 @@ require_once __DIR__ . '/../php/src/Dec.php';
 use Sel\Dec;
 use Sel\SelError;
 
-// Item 1 modes: SEL_PHP_FORCE_GMP=0 takes the pure-PHP paths on a machine that has
+// Modes: SEL_PHP_FORCE_GMP=0 takes the pure-PHP paths on a machine that has
 // ext-gmp; SEL_PHP_LAZY_OPERANDS=1 turns lazy digits on and hands every operation
 // operands an earlier operation produced (adding zero keeps the value and, with
 // lazy digits, its GMP form).

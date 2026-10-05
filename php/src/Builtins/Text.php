@@ -178,7 +178,7 @@ final class Text
     /**
      * Valid UTF-8 reversed by code point. With mbstring, through UTF-32: strrev of
      * the little-endian text is the big-endian text of the reversed code points
-     * (~25x faster than patching reversed multi-byte sequences with preg, PHP-P1).
+     * (~25x faster than patching reversed multi-byte sequences with preg).
      * Without it, the reversed bytes of each character are put back in order by
      * three fixed-length passes (their lead-byte classes are disjoint from each
      * other and from the continuation bytes, so no pass mis-matches what another

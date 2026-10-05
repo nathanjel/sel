@@ -532,7 +532,7 @@ final class Evaluator
         $n = $target;
         while ($n['t'] === 'index') {
             // Appended and reversed once: array_unshift moves every element, so a
-            // 40,000-bracket target cost ten seconds (PHP-C14).
+            // 40,000-bracket target cost ten seconds.
             $chain[] = $n['idx'];
             $n = $n['obj'];
         }

@@ -852,7 +852,7 @@ final class Regex
         $ignoreCase = self::ignoreCase($flags, $pos);
         // A cached `i` pattern has already passed the ASCII check (only ASCII
         // patterns are ever compiled with the flag on), so the scan is for the
-        // first use only (PHP-P30).
+        // first use only.
         if ($ignoreCase && !isset(self::$cache['i ' . $pattern])) {
             foreach (Utf8::codePoints($pattern) as $cp) {
                 if ($cp > 0x7f) {
@@ -1163,7 +1163,7 @@ final class Regex
     /**
      * The replacement text cut once into literal strings and group numbers
      * ($0-$9), so a replacement with a thousand matches is not re-scanned a
-     * thousand times (PHP-P18). `$$` is a literal dollar and any other `$` stays one.
+     * thousand times. `$$` is a literal dollar and any other `$` stays one.
      * A replacement with no `$` at all is a single literal.
      *
      * @return list<string|int>

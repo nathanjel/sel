@@ -9,7 +9,7 @@
 // Additional native/nativeDigits/nativeNeg fields cache checked conversion;
 // callers may still supply the original three-field descriptors.
 //
-// With ext-gmp, a result too big for a native int is lazy (item 1, 2026-10-01):
+// With ext-gmp, a result too big for a native int is lazy:
 // 'digits' is null and 'gmp' holds the magnitude, and the digits are written only
 // when text is asked for -- format(), digits(), eager(). Every function here takes
 // either form. Value::asDecimal() and Args::dec() hand a host today's array, and
@@ -47,7 +47,7 @@ final class Dec
      * A digit string as a GMP number, in base 10. `gmp_add("010", ...)` on a
      * bare string detects the base from the prefix, so "010" is octal 8 and "0x1"
      * is hex: harmless for the canonical digits every SEL number carries, wrong
-     * for the un-normalised descriptor a host can hand in (PHP-C41).
+     * for the un-normalised descriptor a host can hand in.
      */
     private static function gmpInt(string $digits): \GMP
     {
@@ -141,7 +141,7 @@ final class Dec
         return self::$lazyDigits && self::hasGmp();
     }
 
-    /** 10^k as GMP, cached up to about four million digits in all (item 1). */
+    /** 10^k as GMP, cached up to about four million digits in all. */
     private static function pow10Gmp(int $k): \GMP
     {
         if (isset(self::$pow10Gmp[$k])) {
@@ -158,7 +158,7 @@ final class Dec
 
     /**
      * $d's magnitude as GMP: a lazy value's own, a native one without a digit
-     * string, anything else parsed (item 1).
+     * string, anything else parsed.
      */
     private static function gmpOf(array $d): \GMP
     {
@@ -174,8 +174,8 @@ final class Dec
 
     /**
      * A result from a GMP magnitude: today's array when it fits a native int (so
-     * the arrays PHP-P13/P15 hold identical still are), else the lazy form --
-     * digits null, the magnitude kept as GMP until text is asked for (item 1). A
+     * the arrays the fast-path tests hold identical still are), else the lazy form --
+     * digits null, the magnitude kept as GMP until text is asked for. A
      * lazy value is never zero and never fits a native int.
      */
     private static function fromGmp(bool $neg, \GMP $mag, int $scale): array
@@ -231,8 +231,8 @@ final class Dec
     /**
      * Whether a positive GMP magnitude has more than MAX_INT_DIGITS + $scale
      * digits, that is reaches 10^L. Its bit length decides, by gmp_scan1, unless
-     * it lies within a few bits of 10^L; only then is 10^L built and compared
-     * (item 1). 3.321928 < log2(10) < 3.321929.
+     * it lies within a few bits of 10^L; only then is 10^L built and compared.
+     * 3.321928 < log2(10) < 3.321929.
      */
     private static function exceedsIntDigits(\GMP $g, int $scale): bool
     {
@@ -443,8 +443,8 @@ final class Dec
 
     /**
      * Product of two limb arrays (base 10^7, least significant first, no leading
-     * zero limb): schoolbook below $karatsubaFrom limbs, Karatsuba above it
-     * (PHP-P5). Quadratic schoolbook made squaring a 100,000-digit number take
+     * zero limb): schoolbook below $karatsubaFrom limbs, Karatsuba above it.
+     * Quadratic schoolbook made squaring a 100,000-digit number take
      * 13 s without ext-gmp; three half-size products instead of four make it
      * ~n^1.58. Exact integer arithmetic only.
      *
@@ -700,7 +700,7 @@ final class Dec
     }
 
     /**
-     * Knuth's algorithm D over base-10^7 limbs (PHP-P4): quotient and remainder
+     * Knuth's algorithm D over base-10^7 limbs: quotient and remainder
      * of two non-negative digit strings, `$b` longer than 9 digits so it has at
      * least two limbs, `$a` > `$b`. Integer arithmetic only — every product is
      * below 10^14, well inside a native int — and O(la * lb / 49) limb steps
@@ -941,9 +941,8 @@ final class Dec
 
     /**
      * A decimal handed in by host code (Value::num with an array): well
-     * formed, canonical and within the digit caps (spec §8; review 2026-09-28
-     * HOST-13, HOST-14). Leading zeros go and a negative zero loses its sign,
-     * as they do through parse(); anything that is not a decimal is E_BAD_ARG.
+     * formed, canonical and within the digit caps (spec §8). Leading
+     * zeros go and a negative zero loses its sign, as they do through parse(); anything that is not a decimal is E_BAD_ARG.
      *
      * @param mixed $d
      * @return Decimal
@@ -963,7 +962,7 @@ final class Dec
         $digits = ltrim($d['digits'], '0');
         if ($digits === '') $digits = '0';
         // A native cache the caller supplied is trusted only when it still
-        // describes these very fields (PHP-C40): edit `neg` or `digits` after
+        // describes these very fields: edit `neg` or `digits` after
         // parse() and the cache is stale, and the fast paths would read it.
         if ($digits === $d['digits'] && ($digits !== '0' || !$d['neg']) && array_key_exists('native', $d)
             && ($d['nativeDigits'] ?? null) === $d['digits'] && ($d['nativeNeg'] ?? null) === $d['neg']
@@ -1005,7 +1004,7 @@ final class Dec
             // six-key array built directly. Eighteen digits can trip neither
             // digit cap and always fit the native mantissa, so guard() and
             // parseMantissa() are skipped; the arrays are identical, key order
-            // included, to the general path below (PHP-P15; tested against it).
+            // included, to the general path below (tested against it).
             $i = ($text[0] ?? '') === '-' ? 1 : 0;
             $n = strspn($text, '0123456789', $i);
             if ($n === 0) {
@@ -1214,7 +1213,7 @@ final class Dec
             : self::make($b['neg'], self::subAbs($B, $A), $s);
     }
 
-    /** add() in GMP, with the same scale, sign and guard rules (item 1). */
+    /** add() in GMP, with the same scale, sign and guard rules. */
     private static function addGmp(array $a, array $b, ?array $pos): array
     {
         $s = max($a['scale'], $b['scale']);
@@ -1239,7 +1238,7 @@ final class Dec
     }
 
     /**
-     * One step of a running total (SUM, PHP-P27). The total stays a native integer
+     * One step of a running total (SUM). The total stays a native integer
      * mantissa and a scale while every step fits, and becomes a decimal descriptor
      * once one does not (overflow, a scale gap too wide for a native factor, or a
      * mantissa that is not native) -- from there every step is Dec::add. The answer
@@ -1388,7 +1387,7 @@ final class Dec
     }
 
     /**
-     * Division on native mantissas (PHP-P13): the same quotient the digit-string
+     * Division on native mantissas: the same quotient the digit-string
      * path below computes — scaled to DIV_SCALE digits, exact results cut to their
      * minimal scale, inexact ones rounded half away from zero — done in machine
      * integers when every intermediate provably fits. The guards keep the scaled

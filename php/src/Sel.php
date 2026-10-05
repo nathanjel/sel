@@ -83,7 +83,7 @@ final class Program
     }
 
     /**
-     * `run()` for a program that will not run again (PHP-P29). Building the
+     * `run()` for a program that will not run again. Building the
      * physical tree costs about as much as evaluating a small rule twice, and
      * pays for itself only when a body is evaluated per element (an aggregate) or
      * a pipeline can be fused. A program with neither is evaluated as written --

@@ -74,7 +74,7 @@ final class Binary
                 if ($len % 4 !== 0) {
                     fail('E_BAD_ARG', 'DECODE_BASE64 needs a length that is a multiple of 4', $pos);
                 }
-                // The strict shape by strspn, then PHP's own decoder (PHP-P19): the
+                // The strict shape by strspn, then PHP's own decoder: the
                 // standard alphabet, at most two `=` and only at the end, and — like
                 // the loop below — non-canonical trailing bits accepted. (A regex with
                 // a quantified group runs out of PCRE's JIT stack past ~300 KB.) Anything

@@ -80,7 +80,7 @@ foreach ([['1.00','1.00'],['1.50','1.5'],['-0.0','0'],['0','-0'],['7','007'],['0
     }
 }
 
-// --- the host boundary (spec/SPEC.md §8, review 2026-09-25) ------------------
+// --- the host boundary (spec/SPEC.md §8) -------------------------------------
 // Collected, so one run reports every broken contract.
 $boundary = [];
 $expect = function (string $name, callable $fn) use (&$boundary): void {
@@ -92,10 +92,10 @@ $code = function (callable $fn): string {
     try { $fn(); return 'no error'; } catch (SelError $e) { return $e->code; }
 };
 $run = fn(string $src, array $ctx = []) => \Sel\Sel::compile($src)->run($ctx);
-// HOST-01: a scalar with a child named "_" has no native form.
+// A scalar with a child named "_" has no native form.
 $expect('toNative refuses a scalar with a child named _', fn() =>
     $code(fn() => $run('A = "s"; A["_"] = "c"; A')->toNative()) === 'E_BAD_ARG');
-// HOST-05: every text entering is checked, keys included.
+// Every text entering is checked, keys included.
 $expect('Value::text rejects malformed UTF-8', fn() => $code(fn() => Value::text("\xFF")) === 'E_UTF8');
 $expect('fromNative rejects malformed UTF-8', fn() => $code(fn() => Value::fromNative("\xFF")) === 'E_UTF8');
 $expect('fromNative rejects a malformed key', fn() => $code(fn() => Value::fromNative(["\xFF" => 'x'])) === 'E_UTF8');
@@ -113,7 +113,7 @@ $expect('Value raises on a property name other than scalar, read or written', fu
     return $v->scalar === 'x' && !isset($v->scaler);
 });
 $expect('a supplementary character is text', fn() => Value::text("\u{1F600}")->dump() === "t\"\u{1F600}\"");
-// HOST-08 / HOST-09: toNative and fromNative are inverses, except the one
+// toNative and fromNative are inverses, except the one
 // spec/SPEC.md §8 names: a record keyed "0" … "n-1" is a PHP list.
 foreach (['FILTER(LIST(1,2,3), _ > 1)', 'RECORD("5","a","9","b")', 'FALSE', 'RECORD("a", FALSE)', 'LIST(TRUE, NULL)',
           'RECORD("1x","a","1y","b")'] as $src) {
@@ -123,24 +123,24 @@ foreach (['FILTER(LIST(1,2,3), _ > 1)', 'RECORD("5","a","9","b")', 'FALSE', 'REC
 }
 $expect('a record keyed 0, 1 comes back as a list keyed 1, 2 (the named exception)', fn() =>
     Value::fromNative($run('RECORD("0","a","1","b")')->toNative())->dump() === '-{"1"=t"a", "2"=t"b"}');
-// SEM-09: fromEntries keeps keys that only look numeric.
+// fromEntries keeps keys that only look numeric.
 $expect('fromEntries keeps "1x", "2" as keys of a list', fn() =>
     Value::fromEntries([['1x', Value::text('a')], ['2', Value::text('b')]], true)->dump() === '-{"1x"=t"a", "2"=t"b"}');
 $expect('fromEntries keeps "01" as the first key', fn() =>
     Value::fromEntries([['01', Value::text('a')]], true)->dump() === '-{"01"=t"a"}');
-// HOST-07 control: an over-deep host value cannot be hashed any more than dumped.
+// Control: an over-deep host value cannot be hashed any more than dumped.
 $deepValue = function (int $levels): Value { $v = Value::text('x'); for ($i = 0; $i < $levels; $i++) $v = Value::list([$v]); return Value::list([$v]); };
 foreach (['COUNT(DEDUPE(A))', 'COUNT(DISTINCT(A))', 'COUNT(BUCKET(A, _, COUNT(_)))'] as $src) {
     $expect("$src over a value nested past the cap", fn() => $code(fn() => $run($src, ['A' => $deepValue(250)])) === 'E_DEPTH');
 }
-// HOST-10 control: a compiled program keeps nothing from one run to the next.
+// Control: a compiled program keeps nothing from one run to the next.
 $expect('a compiled program reads the key of each run', function () {
     $p = \Sel\Sel::compile('A[K]'); $A = Value::fromNative(['x' => '1', 'y' => '2']);
     return $p->run(['A' => $A, 'K' => 'x'])->dump() . $p->run(['A' => $A, 'K' => 'y'])->dump() === 't"1"t"2"';
 });
-// --- every public constructor (spec/SPEC.md §8, review 2026-09-28 HOST-12..20) --
+// --- every public constructor (spec/SPEC.md §8) --------------------------------
 $one = Value::text('1'); $two = Value::text('2');
-// HOST-12: keys given side by side are checked like any other text.
+// Keys given side by side are checked like any other text.
 foreach ([
     'shaped' => fn() => Value::shaped(["a\xff"], [$one]),
     'record' => fn() => Value::record(["a\xff"], [$one]),
@@ -151,7 +151,7 @@ foreach ([
 ] as $what => $f) {
     $expect("$what rejects an invalid UTF-8 key", fn() => $code($f) === 'E_UTF8');
 }
-// HOST-13 / HOST-14: the decimal form is a number within the caps, canonical.
+// The decimal form is a number within the caps, canonical.
 $expect('num of a decimal with 1,000,001 fractional digits is E_RANGE', fn() =>
     $code(fn() => Value::num(['neg' => false, 'digits' => '1', 'scale' => 1000001])) === 'E_RANGE');
 $expect('num of a decimal with 1,000,001 integer digits is E_RANGE', fn() =>
@@ -162,7 +162,7 @@ foreach ([['neg' => false, 'digits' => 'x', 'scale' => 0], ['neg' => false, 'dig
           ['neg' => false, 'digits' => '', 'scale' => 0], ['digits' => '1', 'scale' => 0], 5] as $bad) {
     $expect('num of the malformed decimal ' . json_encode($bad) . ' is E_BAD_ARG', fn() => $code(fn() => Value::num($bad)) === 'E_BAD_ARG');
 }
-// HOST-17: keys and values pair up.
+// Keys and values pair up.
 foreach ([
     'shaped' => fn() => Value::shaped(['a'], [$one, $two]),
     'record' => fn() => Value::record(['a', 'b'], [$one]),
@@ -171,12 +171,12 @@ foreach ([
 ] as $what => $f) {
     $expect("$what with counts that differ is E_BAD_ARG", fn() => $code($f) === 'E_BAD_ARG');
 }
-// HOST-18: a repeated key is RECORD's last write in its first position; a list's is refused.
+// A repeated key is RECORD's last write in its first position; a list's is refused.
 $expect('shaped keeps a repeated key once', fn() =>
     Value::shaped(['a', 'b', 'a'], [$one, $two, $two])->dump() === '-{"a"=t"2", "b"=t"2"}');
 $expect('a list with a repeated key is E_BAD_ARG', fn() => $code(fn() => Value::list([$one, $two], ['5', '5'])) === 'E_BAD_ARG');
 $expect('a shape with a repeated key is E_BAD_ARG', fn() => $code(fn() => \Sel\RecordShape::intern(['a', 'a'])) === 'E_BAD_ARG');
-// HOST-20: a malformed call is E_BAD_ARG, never the host's own exception.
+// A malformed call is E_BAD_ARG, never the host's own exception.
 foreach ([
     'fromNative(1.5)' => fn() => Value::fromNative(1.5),
     'fromNative(an object)' => fn() => Value::fromNative(new \stdClass()),
@@ -207,7 +207,7 @@ foreach ([
     $expect("E_UTF8 in source: $what", fn() => $utf8At($src) === $want);
 }
 $expect('valid multibyte source is not E_UTF8', fn() => $utf8At("\"\xc5\x82\"") === null);
-// PHP-C43: case folding must not ask the locale (PHP < 8.2 does; composer.json allows 8.1).
+// Case folding must not ask the locale (PHP < 8.2 does; composer.json allows 8.1).
 $expect('ASCII case helpers ignore the locale', function () {
     $before = setlocale(LC_CTYPE, '0');
     $set = false;
@@ -226,8 +226,8 @@ $expect('ASCII case helpers ignore the locale', function () {
     }
 });
 
-// --- T02/T03 (review 2026-09-29): decimal caches, GMP, constructors, ownership -------
-// PHP-C1: BOOL values are not shared between programs.
+// --- decimal caches, GMP, constructors, ownership ------------------------------------
+// BOOL values are not shared between programs.
 $expect('Value::bool returns a fresh value each time', function () {
     $t = Value::bool(true);
     $t->set('k', Value::text('poison'));
@@ -239,7 +239,7 @@ $expect('a program that writes into TRUE does not change the next program', func
     $b = $run('COUNT(TRUE)');
     return $b->scalar === '0' && $a->size() === 1;
 });
-// PHP-C2 and the §3.4 table: collectors copy; a new container is always returned.
+// The §3.4 table: collectors copy; a new container is always returned.
 $expect('`,` copies what it collects', fn() =>
     $run('X = LIST(RECORD("k",1)); (X, 2)[(X[1]["k"] = 9; 1)]["k"]')->scalar === '1');
 $expect('LIST and RECORD copy their arguments', fn() =>
@@ -270,10 +270,10 @@ $expect('a constructor reports the depth at the node that built it', function ()
     try { $run("A = 7; A{$deep} = 1; LIST(A); 7"); } catch (SelError $e) { return $e->code === 'E_DEPTH' && $e->line === 1 && $e->col > 1; }
     return 'no error';
 });
-// PHP-C10: a numeral is canonicalised on the way in.
+// A numeral is canonicalised on the way in.
 $expect('Value::num(string) canonicalises', fn() =>
     Value::num('007')->scalar === '7' && Value::num('-0')->scalar === '0' && Value::num('1.50')->scalar === '1.50');
-// PHP-C39: a malformed constructor call is E_BAD_ARG, never the host's exception.
+// A malformed constructor call is E_BAD_ARG, never the host's exception.
 $expect('malformed constructor calls are E_BAD_ARG', function () use ($code) {
     $v = Value::text('v');
     foreach ([
@@ -301,7 +301,7 @@ $expect('malformed constructor calls are E_BAD_ARG', function () use ($code) {
     return Value::bin([65, 66])->scalar === 'AB' && Value::int(-3)->scalar === '-3'
         && Value::fromEntries([[5, $v]])->has('5');
 });
-// PHP-C40: a native cache that no longer describes its descriptor is not trusted.
+// A native cache that no longer describes its descriptor is not trusted.
 $expect('Dec::cmp ignores a stale cache after the sign is edited', function () {
     $d = Dec::parse('5');
     $d['neg'] = true;
@@ -319,7 +319,7 @@ $expect('Dec::checked does not trust a forged native cache', function () {
         && Dec::format(Dec::add($edited, Dec::parse('1'))) === '-4'
         && Dec::format(Dec::add(Dec::checked(Dec::parse('5')), Dec::parse('1'))) === '6';
 });
-// PHP-C41 and PHP-C17, on both arithmetic paths where the extension exists.
+// On both arithmetic paths where the extension exists.
 foreach ([true, false] as $gmp) {
     $label = $gmp ? 'with ext-gmp' : 'without ext-gmp';
     $expect("digit strings are base 10, $label", function () use ($gmp) {
@@ -379,7 +379,7 @@ $expect('ext-gmp and pure-PHP multiplication agree', function () {
     }
     return true;
 });
-// GO-C12 for every host: CEIL/FLOOR carrying past the digit cap fail AT THE CALL.
+// For every host: CEIL/FLOOR carrying past the digit cap fail AT THE CALL.
 $expect('CEIL and FLOOR past the digit cap are E_RANGE at 1:1', function () use ($run) {
     foreach (['CEIL(REPEAT("9", 1000000) & ".5")', 'FLOOR("-" & REPEAT("9", 1000000) & ".5")'] as $src) {
         try { $run($src); return 'no error'; }
@@ -387,7 +387,7 @@ $expect('CEIL and FLOOR past the digit cap are E_RANGE at 1:1', function () use 
     }
     return true;
 });
-// PHP-C14: an assignment target's bracket chain was collected with array_unshift
+// An assignment target's bracket chain was collected with array_unshift
 // (every element moves on every step), so 40,000 brackets cost seconds. The
 // answer must stay the same -- E_DEPTH at the target -- and the time linear.
 $expect('a 40,000-bracket assignment target is E_DEPTH in linear time', function () use ($run) {
@@ -397,7 +397,7 @@ $expect('a 40,000-bracket assignment target is E_DEPTH in linear time', function
     $dt = microtime(true) - $t0;
     return $dt < 4.0 ? true : sprintf('took %.1fs', $dt);
 });
-// PHP-C15: a syntax error raised while a very long flat chain is held in a local
+// A syntax error raised while a very long flat chain is held in a local
 // used to free the chain recursively on unwind, and the process died with SIGSEGV
 // before the error could be reported. Run in a child process so a crash is a
 // failed check rather than the end of this one; the raised memory limit is the
@@ -432,7 +432,7 @@ $val = function (string $src, array $ctx = []) use ($run): string {
 };
 $dump = fn(string $src, array $ctx = []): string => $run($src, $ctx)->dump();
 
-// PHP-C10: an aggregate visits a SNAPSHOT (spec §7.3). A body that adds a key to
+// An aggregate visits a SNAPSHOT (spec §7.3). A body that adds a key to
 // the record being walked used to read the storage the new key had replaced.
 $expect('SORT_BY over a record whose body adds a key does not crash', fn() =>
     $val('R = RECORD("a", 2, "b", 1); COUNT(SORT_BY(R, (R["c"] = 9; _)))') === '2');
@@ -440,14 +440,14 @@ $expect('MAP visits the elements it started with (add-key)', fn() =>
     $val('R = RECORD("a", 1, "b", 2); COUNT(MAP(R, (R["z"] = 0; _)))') === '2');
 $expect('SUM over a shaped record does not see an overwrite of a later field', fn() =>
     $val('R = RECORD("a", 1, "b", 2); SUM(R, x, (R["b"] = 99; x))') === '3');
-// PHP-C24: `_K` of an element whose record key is the empty string is "".
+// `_K` of an element whose record key is the empty string is "".
 $expect('_K is the empty key, not a counter', fn() =>
     $val('COUNT(FILTER(RECORD("", 5, "x", 6), _K $== ""))') === '1');
-// PHP-C25/C46: a scalar source is a one-element list; two-argument BUCKET groups by key TEXT.
+// A scalar source is a one-element list; two-argument BUCKET groups by key TEXT.
 $expect('BUCKET of a scalar is one group', fn() => $val('COUNT(BUCKET("abc", _))') === '1');
 $expect('bare BUCKET keeps every row of a text key that carries children',
     fn() => $val('A = "x"; A["k"] = 1; COUNT(BUCKET(LIST(A, "x", A), _)["x"])') === '3');
-// PHP-C22: one total order, ranked before compared.
+// One total order, ranked before compared.
 $expect('numeric text sorts before other text, by value', fn() =>
     $val('LIST("10", "1a", "9", "b") .> SORT() .> JOIN(",")') === '9,10,1a,b');
 $expect('descending keeps ties in input order', fn() =>
@@ -464,7 +464,7 @@ $expect('compareValues is antisymmetric across ranks', function () {
 $expect('a bad direction on a NULL source is refused', fn() => $code(fn() => $run('SORT_BY(NULL, _, "UP")')) === 'E_BAD_ARG');
 $expect('a bad direction on an empty list is refused', fn() => $code(fn() => $run('SORT_BY(LIST(), _ + 0, "X")')) === 'E_BAD_ARG');
 $expect('TOP_BY checks its direction before the count returns empty', fn() => $code(fn() => $run('TOP_BY(LIST(1), _, "UP", 0)')) === 'E_BAD_ARG');
-// Join: the digit cap is enforced in the equi-join fast path (PY-C12 / CPP-C22).
+// Join: the digit cap is enforced in the equi-join fast path.
 $expect('an equi-join key over the digit cap is E_RANGE', fn() =>
     $code(fn() => $run('BIG = PADL("9", 1000005, "9"); LINK(LIST(RECORD("a", "1")), LIST(RECORD("b", BIG)), _1["a"] == _2["b"]) .> COUNT()')) === 'E_RANGE');
 // Same-named binders: the right shadows the left, and the fast path must not split the comparison.
@@ -500,7 +500,7 @@ $expect('only the flag i is a flag, compared exactly', fn() =>
 $expect('a literal pattern is refused when the program compiles, in a dead branch too', fn() =>
     $code(fn() => \Sel\Sel::compile('IF(FALSE, RMATCH("(?=a)", "a"), 1)')) === 'E_REGEX_SYNTAX'
     && $val('IF(FALSE, RMATCH("(?=" & "a)", "a"), 1)') === '1');
-// PHP-C3: PCRE resource failures are never "no match".
+// PCRE resource failures are never "no match".
 $expect('a 100,000-character subject through an alternation loop matches', fn() =>
     $val('RMATCH("^(?:a|b)*$", REPEAT("a", 100000))') === 'true'
     && $val('RFIND("(?:a|b)*c", REPEAT("a", 100000) & "c")') === '1'
@@ -525,7 +525,7 @@ $expect('the pattern cache is bounded', function () use ($val) {
     $cache = (new ReflectionProperty(\Sel\Builtins\Regex::class, 'cache'))->getValue();
     return count($cache) <= 256 ? true : count($cache);
 });
-// P3: RREPLACE's scan is spec §7.8's, not preg_match_all's.
+// RREPLACE's scan is spec §7.8's, not preg_match_all's.
 $expect('RREPLACE resumes one code point after an empty match', fn() =>
     $val('RREPLACE("b*?", "-", "abb")') === '-a-b-b-'
     && $val('RREPLACE("a*", "-", "baac")') === '-b--c-'
@@ -571,7 +571,7 @@ $expect('LINK past the row cap is E_RANGE', fn() =>
 $expect('LTB: empty list, integral scaled bytes, fractional and out of range', fn() =>
     $val('BLEN(LTB(LIST()))') === '0' && $val('TO_HEX(LTB(LIST(65, 1.0)))') === '4101'
     && $code(fn() => $run('LTB(LIST(1.5))')) === 'E_NOT_INT' && $code(fn() => $run('LTB(LIST(256.0))')) === 'E_RANGE');
-// --- P5: exponential ambiguity (spec §7.8), against the reference verdicts -----
+// --- exponential ambiguity (spec §7.8), against the reference verdicts ---------
 $verdict = static function (string $pattern, bool $ic = false): string {
     try {
         \Sel\Builtins\Regex::validate($pattern, null, $ic);
@@ -730,13 +730,13 @@ $expect('reading an argument a host function was not given is E_BAD_ARG', functi
     }
     return true;
 });
-// --- performance wave (PHP-P1..P11): each rewritten hot path against a plain reference ----------------------------
+// --- hot paths: each rewritten one against a plain reference --------------------------------------------------------
 $cpList = static function (string $s): array {
     $o = []; $i = 0; $n = strlen($s);
     while ($i < $n) { $b = ord($s[$i]); $l = $b < 0x80 ? 1 : ($b < 0xe0 ? 2 : ($b < 0xf0 ? 3 : 4)); $o[] = substr($s, $i, $l); $i += $l; }
     return $o;
 };
-$expect('P1: Utf8::length / retreat / BACKWARDS / RIGHT / LEN agree with a code-point walk on random valid UTF-8', function () use ($cpList) {
+$expect('Utf8::length / retreat / BACKWARDS / RIGHT / LEN agree with a code-point walk on random valid UTF-8', function () use ($cpList) {
     mt_srand(7);
     $pool = ['a', 'Z', ' ', 'é', 'ß', '漢', '😀', "\u{10FFFF}", "\u{7FF}", "\u{800}", "\u{FFFF}", "\u{10000}", "\0"];
     for ($t = 0; $t < 4000; $t++) {
@@ -751,7 +751,7 @@ $expect('P1: Utf8::length / retreat / BACKWARDS / RIGHT / LEN agree with a code-
     }
     return true;
 });
-$expect('P1: the preg fallback of BACKWARDS (no mbstring) agrees with the UTF-32 path', function () use ($cpList) {
+$expect('the preg fallback of BACKWARDS (no mbstring) agrees with the UTF-32 path', function () use ($cpList) {
     $m = new ReflectionMethod(\Sel\Builtins\Text::class, 'reverseCodePoints');
     $m->setAccessible(true);
     $fallback = static fn (string $s): string => preg_replace(
@@ -763,7 +763,7 @@ $expect('P1: the preg fallback of BACKWARDS (no mbstring) agrees with the UTF-32
     }
     return true;
 });
-$expect('P3: sort keys give the same order as compareValues, and looksNumeric of non-numeric text builds no error', function () {
+$expect('sort keys give the same order as compareValues, and looksNumeric of non-numeric text builds no error', function () {
     $vals = [Value::null(), Value::bool(true), Value::bool(false), Value::text('10'), Value::text('9'), Value::text('1a'), Value::text(''),
         Value::text(' 2'), Value::text('-0'), Value::text('1e3'), Value::text('007'), Value::bin("\x01"), Value::text('abc'), Value::text('1.50'), Value::text('1.5')];
     foreach ($vals as $x) foreach ($vals as $y) {
@@ -773,7 +773,7 @@ $expect('P3: sort keys give the same order as compareValues, and looksNumeric of
     $v = Value::text('not a number');
     return $v->looksNumeric() === false && Value::text('12')->looksNumeric() === true && Value::text('1' . str_repeat('0', 1000001))->looksNumeric() === false;
 });
-$expect('P4/P5: limb division and Karatsuba multiplication agree with GMP (forced off/on), add-back cases included', function () {
+$expect('limb division and Karatsuba multiplication agree with GMP (forced off/on), add-back cases included', function () {
     mt_srand(5);
     $limbs = [0, 1, 2, 9999999, 9999998, 5000000, 4999999, 5000001, 1234567, 7654321];
     $num = static function (int $n) use ($limbs): string { $s = ''; for ($i = 0; $i < $n; $i++) { $v = $limbs[mt_rand(0, 9)]; if ($i === 0 && $v === 0) $v = 1; $s .= $i === 0 ? (string) $v : sprintf('%07d', $v); } return $s; };
@@ -794,7 +794,7 @@ $expect('P4/P5: limb division and Karatsuba multiplication agree with GMP (force
     } finally { Dec::testHooks(['karatsubaFrom' => $from]); Dec::testHooks(['gmp' => null]); }
     return true;
 });
-$expect('P6: LINK with an outside variable in the key uses the hash path and answers as the nested loop does', function () {
+$expect('LINK with an outside variable in the key uses the hash path and answers as the nested loop does', function () {
     $rows = static fn (int $n, int $d): array => array_map(static fn ($i) => ['id' => $i + $d], range(0, $n - 1));
     $ctx = ['L' => $rows(40, 0), 'R' => $rows(40, 1), 'K' => 1];
     $fast = \Sel\Sel::evaluate('COUNT(LINK(L, R, A, B, A["id"] + K == B["id"]))', $ctx)->asText();
@@ -809,18 +809,18 @@ $expect('P6: LINK with an outside variable in the key uses the hash path and ans
     catch (SelError $e) { if ($e->code !== 'E_UNDEF_VAR') return false; }
     return $assigned === $assignedSlow && $empty === '0';
 });
-$expect('P11: textTrusted is internal; host input still goes through the UTF-8 check', function () {
+$expect('textTrusted is internal; host input still goes through the UTF-8 check', function () {
     try { Value::text("a\xffb"); return false; } catch (SelError $e) { if ($e->code !== 'E_UTF8') return false; }
     return Value::textTrusted('abc')->asText() === 'abc'
         && \Sel\Sel::evaluate('UPPER(SUBSTR("héllo", 2, 3)) & LEFT("😀x", 1)')->asText() === "éLL😀";
 });
-$expect('P9: the lexer rejects invalid UTF-8 at the same position as before the PCRE fast path', function () {
+$expect('the lexer rejects invalid UTF-8 at the same position as before the PCRE fast path', function () {
     try { \Sel\Lexer::tokenizeSource("1 +\n \"a\xffb\""); return false; }
     catch (SelError $e) { return $e->code === 'E_UTF8' && $e->line === 2 && $e->col === 4 && $e->offset === 7; }
 });
 
-// ---- performance wave, round 2 (PHP-P12 .. P21): each optimisation is held to the path it replaced ----------------
-$expect('P12: numTrusted is what num() builds from a library result; num() still refuses a forged decimal', function () {
+// ---- hot paths, continued: each optimisation is held to the path it replaced ----------------------------------------
+$expect('numTrusted is what num() builds from a library result; num() still refuses a forged decimal', function () {
     $d = Dec::add(Dec::parse('12.50'), Dec::parse('0.25'));
     if (Value::numTrusted($d)->dump() !== Value::num($d)->dump()) return false;
     foreach ([['neg' => 'x', 'digits' => '5', 'scale' => 0], ['neg' => false, 'digits' => '5x', 'scale' => 0],
@@ -830,7 +830,7 @@ $expect('P12: numTrusted is what num() builds from a library result; num() still
     return \Sel\Sel::evaluate('ABS(-3) + MAX(1, 2.50) * 2')->asText() === '8.00'
         && \Sel\Sel::evaluate('SUM((1, 2.5, 3), X, X)')->asText() === '6.5';
 });
-$expect('P13/P15: parse, div and mod on native mantissas give the arrays of the digit-string paths', function () {
+$expect('parse, div and mod on native mantissas give the arrays of the digit-string paths', function () {
     mt_srand(20260930);
     $num = static function (): string {
         $w = mt_rand(1, 19);
@@ -872,7 +872,7 @@ $expect('P13/P15: parse, div and mod on native mantissas give the arrays of the 
     Dec::testHooks(['fastPaths' => true]);
     return true;
 });
-$expect('P14: cmp on digit strings agrees with GMP, equal widths differing in the last digit included', function () {
+$expect('cmp on digit strings agrees with GMP, equal widths differing in the last digit included', function () {
     if (!extension_loaded('gmp')) return true;
     mt_srand(14);
     for ($i = 0; $i < 4000; $i++) {
@@ -886,12 +886,12 @@ $expect('P14: cmp on digit strings agrees with GMP, equal widths differing in th
     }
     return true;
 });
-$expect('P16: a keyed list copies keys and elements, independently of the original', function () {
+$expect('a keyed list copies keys and elements, independently of the original', function () {
     $ctx = ['L' => [5, 6, 7, 8]];
     $src = 'A = FILTER(L, X, X > 5); B = A; B["99"] = 1; C = A; C["2"] = 0; COUNT(A) & "/" & COUNT(B) & "/" & COUNT(C) & "/" & A["2"] & "/" & A["3"] & "/" & C["2"]';
     return \Sel\Sel::evaluate($src, $ctx)->asText() === '3/4/3/6/7/0';
 });
-$expect('P18: RREPLACE parses its replacement once and expands $0-$9, $$ and a lone $ per match', function () {
+$expect('RREPLACE parses its replacement once and expands $0-$9, $$ and a lone $ per match', function () {
     $e = static fn (string $src) => \Sel\Sel::evaluate($src)->asText();
     if ($e('RREPLACE("(a)(b)", "<$2$1$$|$0|$x|$>", "abab")') !== '<ba$|ab|$x|$>' . '<ba$|ab|$x|$>') return false;
     if ($e('RREPLACE("é", "e$0", "aéb")') !== 'aeéb') return false;
@@ -901,7 +901,7 @@ $expect('P18: RREPLACE parses its replacement once and expands $0-$9, $$ and a l
     // no match: the bad group reference is never reached
     return $e('RREPLACE("(a)", "$2", "zzz")') === 'zzz';
 });
-$expect('P19: CRC32 and base64 are the written-out algorithms\' answers; invalid base64 is still refused', function () {
+$expect('CRC32 and base64 are the written-out algorithms\' answers; invalid base64 is still refused', function () {
     mt_srand(19);
     for ($i = 0; $i < 300; $i++) {
         $b = random_bytes(mt_rand(0, 300));
@@ -919,7 +919,7 @@ $expect('P19: CRC32 and base64 are the written-out algorithms\' answers; invalid
     $big = base64_encode(str_repeat('abcdefghij', 60000));
     return \Sel\Sel::evaluate('BLEN(DECODE_BASE64(S))', ['S' => $big])->asText() === '600000';
 });
-$expect('P20: the compiled LINK projector is cached across calls and stays correct over many shape pairs', function () {
+$expect('the compiled LINK projector is cached across calls and stays correct over many shape pairs', function () {
     $run = static fn (array $l, array $r): string => \Sel\Sel::evaluate('COUNT(LINK(L, R, A, B, A["id"] == B["id"]))', ['L' => $l, 'R' => $r])->asText();
     for ($round = 0; $round < 3; $round++) {
         if ($run([['id' => 1, 'v' => 'a'], ['id' => 2, 'v' => 'b']], [['id' => 2, 'w' => 'c']]) !== '1') return false;
@@ -933,7 +933,7 @@ $expect('P20: the compiled LINK projector is cached across calls and stays corre
     }
     return true;
 });
-$expect('P21: nested-loop LINK shares the aliased right rows only when the predicate cannot write', function () {
+$expect('nested-loop LINK shares the aliased right rows only when the predicate cannot write', function () {
     $ctx = ['L' => array_map(static fn ($i) => ['id' => $i], range(1, 12)), 'R' => array_map(static fn ($i) => ['id' => $i], range(1, 9))];
     $pure = \Sel\Sel::evaluate('COUNT(LINK(L, R, A, B, A["id"] + B["id"] == 10))', $ctx)->asText();
     $same = \Sel\Sel::evaluate('COUNT(LINK(L, R, A, B, A["id"] + B["id"] == 10 AND TRUE))', $ctx)->asText();
@@ -944,8 +944,8 @@ $expect('P21: nested-loop LINK shares the aliased right rows only when the predi
     return $write === '9/108' && $leftJoin === '12';
 });
 
-// ---- round 3: PHP-P22 .. P30 -----------------------------------------------------------------------------------------
-$expect('P22: a hybrid continuation runs on a root that owns only what it assigns; the caller is never written to', function () {
+// ---- hot paths, continued -------------------------------------------------------------------------------------------
+$expect('a hybrid continuation runs on a root that owns only what it assigns; the caller is never written to', function () {
     $b = ['ORDERS' => \Sel\Sql\Binding::relation('orders', 'o', ['ID' => \Sel\Sql\Binding::column('id', 'o', 'NUM')])];
     $rows = static fn () => [['ID' => 1], ['ID' => 2], ['ID' => 3]];
     $plan = \Sel\Sql\Sql::planHybrid(\Sel\Sel::compile('X = COUNT(T); ORDERS .> TAKE(3) .> MAP(_["ID"] + X)'), 'postgresql', $b);
@@ -969,7 +969,7 @@ $expect('P22: a hybrid continuation runs on a root that owns only what it assign
     $outm = \Sel\Sql\Sql::executeHybrid($mem, $rows, $ctx);
     return $mem->pureMemory && $outm->asText() === '4' && $ctx->dump() === $before;
 });
-$expect('P24: the dialect chain and lexical memos follow registration and reset', function () {
+$expect('the dialect chain and lexical memos follow registration and reset', function () {
     \Sel\Sql\Map::reset();
     $base = \Sel\Sql\Map::lexical('mariadb', 'textCollate');
     \Sel\Sql\Map::defineDialect('p24-x', ['extends' => 'mariadb', 'lexical' => ['textCollate' => 'COLLATE one']]);
@@ -980,12 +980,12 @@ $expect('P24: the dialect chain and lexical memos follow registration and reset'
     \Sel\Sql\Map::reset();
     return !\Sel\Sql\Map::exists('p24-x') && \Sel\Sql\Map::chain('p24-x') === [] && \Sel\Sql\Map::lexical('mariadb', 'textCollate') === $base;
 });
-$expect('P24: text literals escape the same after the escape map is memoised', function () {
+$expect('text literals escape the same after the escape map is memoised', function () {
     $m = \Sel\Sql\Emit::textLiteral('mariadb', "a'b\\c\n");
     $pg = \Sel\Sql\Emit::textLiteral('postgresql', "a'b\\c");
     return $m === \Sel\Sql\Emit::textLiteral('mariadb', "a'b\\c\n") && $pg === "'a''b\\c'" && str_starts_with($m, "'") && str_ends_with($m, "'");
 });
-$expect('P25: DEDUPE and DISTINCT keep the first of equal items, for leaves and containers alike', function () {
+$expect('DEDUPE and DISTINCT keep the first of equal items, for leaves and containers alike', function () {
     mt_srand(25);
     $pool = ['a', 'b', '1', '1.0', 1, '2.5', true, false, [], [1], [1, 2], ['k' => 1], ['k' => '1'], ['x' => [1]], '', ' '];
     $pool = array_values($pool);
@@ -1013,7 +1013,7 @@ $expect('P25: DEDUPE and DISTINCT keep the first of equal items, for leaves and 
         && Value::list([Value::text('a')])->structuralHash() !== Value::text('a')->structuralHash()
         && !str_contains(Value::list([Value::text('a')])->structuralHash(), ':');
 });
-$expect('P26: TOP equals SORT then TAKE, with and without `_K`, both below and above the row count', function () {
+$expect('TOP equals SORT then TAKE, with and without `_K`, both below and above the row count', function () {
     mt_srand(26);
     $rows = []; for ($i = 0; $i < 60; $i++) $rows[] = ['v' => mt_rand(0, 9), 'w' => 'w' . $i];
     foreach ([1, 5, 59, 60, 61, 1000] as $n) {
@@ -1030,7 +1030,7 @@ $expect('P26: TOP equals SORT then TAKE, with and without `_K`, both below and a
     }
     return true;
 });
-$expect('P27: the native running total gives exactly the answer of a chain of Dec::add', function () {
+$expect('the native running total gives exactly the answer of a chain of Dec::add', function () {
     mt_srand(27);
     $gen = static function (): string {
         $k = mt_rand(0, 6);
@@ -1053,7 +1053,7 @@ $expect('P27: the native running total gives exactly the answer of a chain of De
     }
     return true;
 });
-$expect('P29: Sel::evaluate of a program with no per-element work equals run(); literal concatenation folds', function () {
+$expect('Sel::evaluate of a program with no per-element work equals run(); literal concatenation folds', function () {
     $srcs = ['X * 2 + 1 > 10 AND S $== "a"', '"abc" & "def"', '"a" & "b" & S', 'IF(X > 1, "p" & "q", "r")', 'LEN("é" & "漢")', 'X / 0'];
     foreach ($srcs as $src) {
         $ctx = ['X' => 6, 'S' => 'a'];
@@ -1065,7 +1065,7 @@ $expect('P29: Sel::evaluate of a program with no per-element work equals run(); 
     $kept = \Sel\Optimizer::optimize(\Sel\Sel::compile('"abc" & S')->ast, true);
     return $folded['t'] === 'text' && $folded['v'] === 'abcdef' && $kept['t'] === 'bin';
 });
-$expect('P30: a cached `i` pattern is not re-scanned, and a non-ASCII pattern still refuses the flag every time', function () {
+$expect('a cached `i` pattern is not re-scanned, and a non-ASCII pattern still refuses the flag every time', function () {
     for ($i = 0; $i < 3; $i++) {
         if (\Sel\Sel::evaluate('RMATCH(P, "ABC", "i")', ['P' => 'abc'])->dump() !== Value::bool(true)->dump()) return false;
         try { \Sel\Sel::evaluate('RMATCH(P, "x", "i")', ['P' => 'é']); return false; }
@@ -1074,7 +1074,7 @@ $expect('P30: a cached `i` pattern is not re-scanned, and a non-ASCII pattern st
     return true;
 });
 
-// --- Item 1 (2026-10-01): lazy digits -----------------------------------------
+// --- lazy digits ---------------------------------------------------------------
 // A big result may keep its magnitude as GMP and write its digits only when text
 // is asked for (the lazyDigits test hook, Dec::testHooks()). Whatever it keeps, these must hold: every
 // operation answers as the pure-PHP digit-string path does, the host sees
@@ -1102,7 +1102,7 @@ $item1Canon = static fn ($x) => is_array($x) ? [$x['neg'], Dec::format($x), $x['
 $item1Try = static function (callable $f) {
     try { return $f(); } catch (SelError $e) { return $e->code; }
 };
-$expect('item 1 T1: every operation agrees with lazy digits on and off, with and without GMP', function () use ($item1Modes, $item1With, $item1Num, $item1Canon, $item1Try) {
+$expect('lazy digits T1: every operation agrees with lazy digits on and off, with and without GMP', function () use ($item1Modes, $item1With, $item1Num, $item1Canon, $item1Try) {
     mt_srand(20261001);
     $texts = ['0', '0.000', '7', '-7', '9223372036854775807', '-9223372036854775808', '9223372036854775808',
               '18446744073709551616', '0.5', '-2.50'];
@@ -1146,7 +1146,7 @@ $expect('item 1 T1: every operation agrees with lazy digits on and off, with and
     }
     return true;
 });
-$expect('item 1 T2: a host sees today\'s arrays, and its edits take effect', function () use ($item1Modes, $item1With) {
+$expect('lazy digits T2: a host sees today\'s arrays, and its edits take effect', function () use ($item1Modes, $item1With) {
     foreach ($item1Modes as [$gmp, $lazy]) {
         $r = $item1With($gmp, $lazy, function () {
             $a = str_repeat('7', 40);
@@ -1166,7 +1166,7 @@ $expect('item 1 T2: a host sees today\'s arrays, and its edits take effect', fun
     }
     return true;
 });
-$expect('item 1 T3: the integer-digit cap holds for every form, at the same place', function () use ($item1Modes, $item1With, $pos) {
+$expect('lazy digits T3: the integer-digit cap holds for every form, at the same place', function () use ($item1Modes, $item1With, $pos) {
     $L = Dec::MAX_INT_DIGITS;
     $nines = str_repeat('9', $L);
     foreach ($item1Modes as [$gmp, $lazy]) {
@@ -1191,7 +1191,7 @@ $expect('item 1 T3: the integer-digit cap holds for every form, at the same plac
     }
     return true;
 });
-$expect('item 1 T4: comparisons across scale gaps agree in every form', function () use ($item1Modes, $item1With, $item1Num) {
+$expect('lazy digits T4: comparisons across scale gaps agree in every form', function () use ($item1Modes, $item1With, $item1Num) {
     mt_srand(4);
     for ($i = 0; $i < 300; $i++) {
         $gap = [0, 1, 18, 19, 5000][mt_rand(0, 4)];
@@ -1209,7 +1209,7 @@ $expect('item 1 T4: comparisons across scale gaps agree in every form', function
     }
     return true;
 });
-$expect('item 1 T5: a chain of big products converts no digits in between', function () use ($run, $item1With) {
+$expect('lazy digits T5: a chain of big products converts no digits in between', function () use ($run, $item1With) {
     if (!extension_loaded('gmp')) return true;
     return $item1With(true, Dec::testHooks()['lazyDigits'], function () use ($run) {
         $count = function (int $k) use ($run): int {
@@ -1218,7 +1218,7 @@ $expect('item 1 T5: a chain of big products converts no digits in between', func
             return Dec::testHooks()['conversions'];
         };
         $growth = $count(41) - $count(1);
-        // Three conversions a product before item 1 (two operands in, one result out).
+        // Three conversions a product before lazy digits (two operands in, one result out).
         return $growth <= 0 ? true : "$growth conversions for 40 more products";
     });
 });

@@ -290,7 +290,7 @@ final class Parser
         $node = $this->parseSequence();
         if (!$this->atEof()) {
             // The whole tree is abandoned: a flat chain of a few hundred thousand
-            // operators, then a stray `)`, freed recursively on unwind (PHP-C15).
+            // operators, then a stray `)`, freed recursively on unwind.
             self::dismantle($node);
             $t = $this->peek();
             fail('E_SYNTAX', 'unexpected ' . self::describe($t), $t);

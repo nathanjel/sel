@@ -592,8 +592,8 @@ final class Optimizer
      * Whether evaluating NODE for one row can raise -- conservatively: a rewrite
      * that moves a FILTER in front of a step, runs a step on fewer rows, or fuses
      * two FILTERs changes which rows reach what, so it may only pass over
-     * expressions that cannot raise on any of them (spec §7.3; review 2026-09-25
-     * SEM-07/SEM-08). Literals, _K and the binder itself never raise. On the
+     * expressions that cannot raise on any of them (spec §7.3).
+     * Literals, _K and the binder itself never raise. On the
      * logical path the rows are a bound relation's, which always carry their
      * typed columns, so a field read through the binder cannot raise either, nor
      * a comparison, AND/OR/NOT or + - * over such reads; `/` and `%`, calls and
@@ -631,7 +631,7 @@ final class Optimizer
      * which cannot raise as an expression, raises E_NOT_BOOL as a predicate: a
      * fusion (or a swap) that treated a bare variable as harmless ran the second
      * predicate before the first had seen the rows after it and reported the
-     * wrong error (PHP-C11). Only a BOOL literal is known to pass; the rest
+     * wrong error. Only a BOOL literal is known to pass; the rest
      * defers to cannotRaise, whose logical-path forms are all boolean.
      *
      * @param array<string,mixed>|null $node
@@ -885,7 +885,7 @@ final class Optimizer
             } elseif (($args[1]['t'] ?? null) === 'var' && !($args[1]['grouped'] ?? false)) {
                 // The binder form, three slots or four (with a direction): the
                 // other hosts read both, and PHP's missing four-slot branch made
-                // its rewrites differ (review 2026-09-25 HYG-05).
+                // its rewrites differ.
                 $binder = $args[1]['name'];
                 $key = $args[2];
             }

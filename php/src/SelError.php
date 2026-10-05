@@ -40,7 +40,8 @@ final class SelError extends \Exception
 
     /**
      * An error that goes through a queue, a session or a cache must come back with its
-     * code and position (PY-C16's PHP equivalent): Exception's own serialisation does
+     * code and position (the Python host's SelError once could not be pickled):
+     * Exception's own serialisation does
      * not round-trip this class, whose `code` is a string and whose `line` is a
      * source line, not the file line Exception uses it for.
      *

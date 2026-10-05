@@ -147,7 +147,7 @@ final class Utf8
      */
     public static function chars(string $s): array
     {
-        // ASCII: one byte per code point, split in C (PHP-P1/P9). The empty
+        // ASCII: one byte per code point, split in C. The empty
         // guard is for PHP < 8.2, where str_split('') is [''].
         if (self::isAscii($s)) {
             return $s === '' ? [] : str_split($s);
@@ -182,7 +182,7 @@ final class Utf8
         // Every code point has exactly one byte that is not a continuation byte.
         // count_chars() tallies all 256 byte values in one C pass (~1 ms/MB, no
         // allocation beyond a 256-entry table): preg_match_all over a megabyte
-        // chunk built a match array per chunk and was ~150x slower (PHP-P1).
+        // chunk built a match array per chunk and was ~150x slower.
         $continuation = 0;
         foreach (count_chars($s, 1) as $byte => $times) {
             if ($byte >= 0x80 && $byte <= 0xbf) $continuation += $times;

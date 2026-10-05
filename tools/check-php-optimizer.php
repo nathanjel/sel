@@ -154,7 +154,7 @@ check($unfoldedVar['t'] === 'call' && $unfoldedVar['name'] === 'IF',
 // later step renumbers the rows again without reading `_K`: FILTER keeps its
 // input's keys and the three renumber (spec §7.3), so at the end of a
 // pipeline the swap would change the answer's keys. And only past a step that
-// cannot raise on the rows it drops (review 2026-09-25 SEM-07/SEM-08): on the
+// cannot raise on the rows it drops: on the
 // logical path a relation's field reads cannot, in memory they can (E_NO_KEY),
 // so these pushdowns are the logical path's.
 $mapFilterPush = optimized_steps(
@@ -402,8 +402,8 @@ foreach ([
   // guard, so nothing pushes down. A later step that renumbers again lets the
   // swap through.
   ['ORDERS .> MAP(r, RECORD("id", r["id"], "shout", REPEAT(r["name"], 2))) .> FILTER(s, s["id"] > 1)', 'pure_memory'],
-  // REPEAT can raise, so the FILTER stays behind the MAP (review 2026-09-25
-  // SEM-07) and nothing pushes down; a MAP that cannot raise lets it through.
+  // REPEAT can raise, so the FILTER stays behind the MAP (spec §7.3)
+  // and nothing pushes down; a MAP that cannot raise lets it through.
   ['ORDERS .> MAP(r, RECORD("id", r["id"], "shout", REPEAT(r["name"], 2))) .> FILTER(s, s["id"] > 1) .> TAKE(5)', 'pure_memory'],
   ['ORDERS .> MAP(r, RECORD("id", r["id"], "plus", r["amount"] + 1)) .> FILTER(s, s["id"] > 1) .> TAKE(5)', 'pure_sql'],
   ['ORDERS .> MAP(RECORD("Name", _["name"], "shout", REPEAT(_["name"], 2))) .> TAKE(2)', 'pure_memory'],
@@ -488,7 +488,7 @@ check(step_names(optimized_steps('LIST(3,1,2) .> SORT() .> TAKE(1.5)')) === ['SO
 // A bare variable or literal is not a predicate that cannot raise.
 check(step_names(optimized_steps('LIST(1,2) .> FILTER(_ > 0) .> FILTER(_)')) === ['FILTER', 'FILTER'], 'FILTER + FILTER(_) is not fused');
 check(step_names(optimized_steps('LIST(1,2) .> FILTER(_ > 0) .> FILTER(TRUE)')) === ['FILTER'], 'a TRUE predicate still disappears');
-// PHP-C14: the pipeline unwind is linear in the number of stages.
+// The pipeline unwind is linear in the number of stages.
 $t0 = microtime(true);
 $long = Sel::compile('LIST(1,2)' . str_repeat(' .> SORT', 150) . ' .> COUNT()');
 Optimizer::unwindPipeline($long->ast);
