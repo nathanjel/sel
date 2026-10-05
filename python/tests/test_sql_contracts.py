@@ -364,7 +364,7 @@ def plan(src, bindings=None):
 
 
 def kind(p):
-    return 'pure_sql' if p.pure_sql else 'pure_memory' if p.pure_memory else 'hybrid'
+    return p.kind
 
 
 def test_no_split_after_a_filter_when_the_continuation_reads_keys():

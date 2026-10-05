@@ -98,7 +98,7 @@ for (const [c, ctxSpec] of work) {
 
     let plan;
     try { plan = Sql.planHybrid(program, 'sqlite', bindings); } catch (e) { bad.push([name, '', `planHybrid raised ${e.constructor.name}: ${e.message}`]); continue; }
-    const kind = plan.pureSql ? 'pure_sql' : plan.pureMemory ? 'pure_memory' : 'hybrid';
+    const kind = plan.kind;
     kinds[kind]++;
     const statement = plan.sqlStatement ? plan.sqlStatement.asStatement() : '-';
 

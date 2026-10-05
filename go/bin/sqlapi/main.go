@@ -55,13 +55,7 @@ func main() {
 	probe := func(label, source string) {
 		program := sel.MustCompile(source)
 		plan := sql.PlanHybrid(program, "mariadb", bindings, sql.Options{})
-		kind := "hybrid"
-		if plan.PureSql {
-			kind = "pure_sql"
-		} else if plan.PureMemory {
-			kind = "pure_memory"
-		}
-		say("plan."+label+".kind", kind)
+		say("plan."+label+".kind", plan.Kind())
 		d := plan.Dialect
 		if d == "" {
 			d = "-"
@@ -98,6 +92,10 @@ func main() {
 	probe("sql", "ORDERS .> FILTER(_[\"AMOUNT\"] > 10) .> MAP(RECORD(\"id\", _[\"ID\"], \"amount\", _[\"AMOUNT\"]))")
 	probe("hybrid", "ORDERS .> SORT_BY(_[\"AMOUNT\"]) .> FILTER(_K > 1)")
 	probe("memory", "A += 1; ORDERS .> TAKE(1)")
+	// A three-argument LINK in the continuation: the source variable is the
+	// relation's own name, and a rebound source still is (sqlt plan cases).
+	probe("link", "ORDERS .> SORT_BY(_[\"AMOUNT\"]) .> LINK(CUSTOMERS, _1[\"CUSTOMER_ID\"] == _2[\"ID\"])")
+	probe("rebind", "ORDERS = ORDERS .> DROP(2); ORDERS .> SORT_BY(_[\"AMOUNT\"]) .> LINK(CUSTOMERS, _1[\"CUSTOMER_ID\"] == _2[\"ID\"])")
 
 	fragmentProbe := func(label, dialect, source string) {
 		f := sql.MustTranslate(sel.MustCompile(source), dialect, bindings, sql.Options{})

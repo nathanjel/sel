@@ -432,7 +432,7 @@ def test_a_plan_continuation_reports_errors_where_run_does(source, kind, want):
 
     program = sel_compile(source)
     plan = Sql.plan_hybrid(program, 'postgresql', _orders())
-    got = 'pure_sql' if plan.pure_sql else 'pure_memory' if plan.pure_memory else 'hybrid'
+    got = plan.kind
     assert got == kind
     context = {'ORDERS': rows, 'LABEL': 'x'}
     assert failure(lambda: program.run(context)) == want
@@ -796,7 +796,7 @@ def test_bucket_plans_answer_what_the_evaluator_answers_on_sqlite():
         program = sel_compile(source)
         want = outcome(lambda: program.run({'ORDERS': rows}))
         plan = Sql.plan_hybrid(program, 'sqlite', bindings)
-        got_kind = 'pure_sql' if plan.pure_sql else 'pure_memory' if plan.pure_memory else 'hybrid'
+        got_kind = plan.kind
         assert got_kind == expected, (source, got_kind)
         got = outcome(lambda: Sql.execute_hybrid(plan, runner, {'ORDERS': rows}))
         assert got == want, (source, got, want)

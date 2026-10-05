@@ -273,7 +273,7 @@ function hybrid_case(array $case, string $name, array $vars, string $dialect, ar
         $tally['bad'][] = [$name, '', 'planHybrid raised ' . get_class($e) . ': ' . $e->getMessage()];
         return;
     }
-    $kind = $plan->pureSql ? 'pure_sql' : ($plan->pureMemory ? 'pure_memory' : 'hybrid');
+    $kind = $plan->kind();
     $tally['kinds'][$kind]++;
     $statement = $plan->sqlStatement?->asStatement() ?? '-';
 

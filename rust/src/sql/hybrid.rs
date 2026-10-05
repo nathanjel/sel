@@ -47,6 +47,17 @@ pub enum PlanKind {
     PureMemory,
 }
 
+impl PlanKind {
+    /// The classification in the words `sql/cases` uses.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            PlanKind::PureSql => "pure_sql",
+            PlanKind::Hybrid => "hybrid",
+            PlanKind::PureMemory => "pure_memory",
+        }
+    }
+}
+
 impl HybridPlan {
     pub fn sql_query(&self) -> Option<&Fragment> {
         self.sql_statement.as_ref()
@@ -1238,8 +1249,13 @@ pub fn plan_hybrid(
             }
         }
         let feed = if needs_rebind { source.s.clone() } else { "_INPUT".to_string() };
-        let continuation_ast =
-            helpers.wrap(&build_pipeline(&var_node(&feed, remaining[0].pos), remaining));
+        // Fed under the source's name, the rows ARE that variable: a read of the
+        // binding, so wrapping the continuation in the helpers does not re-run a
+        // helper of the same name over them (`ORDERS = ORDERS .> DROP(2)` dropped
+        // twice; hybrid.json helper.reassigned-source-feeds-a-three-argument-link).
+        let mut input = var_node(&feed, remaining[0].pos);
+        input.sql_binding = needs_rebind;
+        let continuation_ast = helpers.wrap(&build_pipeline(&input, remaining));
         let continuation_prog = Program::new("", continuation_ast.clone());
 
         return HybridPlan {

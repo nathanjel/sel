@@ -53,7 +53,7 @@ def runner():
 def test_a_reread_rebinding_helper_answers_as_run(runner, src, kind):
     program = sel.compile(src)
     plan = hybrid.plan_hybrid(program, 'sqlite', BINDINGS)
-    assert ('pure_sql' if plan.pure_sql else 'pure_memory' if plan.pure_memory else 'hybrid') == kind
+    assert plan.kind == kind
     assert 'LIMIT 3 OFFSET 2' in plan.sql_statement.as_statement()
     def orders():
         return sel.Value.from_native({'ORDERS': [{'id': str(i)} for i in range(1, 7)]})
@@ -84,7 +84,7 @@ def test_the_marked_read_is_the_planners_copy():
 ])
 def test_an_application_function_never_writes_the_callers_context(runner, body, shape, kind):
     plan = hybrid.plan_hybrid(sel.compile(shape.format(body)), 'sqlite', BINDINGS)
-    assert ('pure_sql' if plan.pure_sql else 'pure_memory' if plan.pure_memory else 'hybrid') == kind
+    assert plan.kind == kind
     ctx = sel.Value.from_native({'A': {'k': '1'}, 'ORDERS': [{'id': '1'}]})
     hybrid.execute_hybrid(plan, runner, ctx)
     assert ctx.dump() == '-{"A"=-{"k"=t"1"}, "ORDERS"=-{"1"=-{"id"=t"1"}}}'

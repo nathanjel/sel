@@ -86,14 +86,7 @@ fn main() {
         let program = compile(source).unwrap_or_else(|e| std::panic::panic_any(e));
         let plan: HybridPlan = plan_hybrid(&program, "mariadb", Some(&bindings), Options::default());
 
-        let kind = if plan.pure_sql {
-            "pure_sql"
-        } else if plan.pure_memory {
-            "pure_memory"
-        } else {
-            "hybrid"
-        };
-        say(counter, out, &format!("plan.{}.kind", label), kind);
+        say(counter, out, &format!("plan.{}.kind", label), plan.kind().as_str());
 
         let dialect = if plan.dialect.is_empty() { "-" } else { &plan.dialect };
         say(counter, out, &format!("plan.{}.dialect", label), dialect);
@@ -132,6 +125,10 @@ fn main() {
     probe("sql", "ORDERS .> FILTER(_[\"AMOUNT\"] > 10) .> MAP(RECORD(\"id\", _[\"ID\"], \"amount\", _[\"AMOUNT\"]))", &mut counter, &mut out);
     probe("hybrid", "ORDERS .> SORT_BY(_[\"AMOUNT\"]) .> FILTER(_K > 1)", &mut counter, &mut out);
     probe("memory", "A += 1; ORDERS .> TAKE(1)", &mut counter, &mut out);
+    // A three-argument LINK in the continuation: the source variable is the
+    // relation's own name, and a rebound source still is (sqlt plan cases).
+    probe("link", "ORDERS .> SORT_BY(_[\"AMOUNT\"]) .> LINK(CUSTOMERS, _1[\"CUSTOMER_ID\"] == _2[\"ID\"])", &mut counter, &mut out);
+    probe("rebind", "ORDERS = ORDERS .> DROP(2); ORDERS .> SORT_BY(_[\"AMOUNT\"]) .> LINK(CUSTOMERS, _1[\"CUSTOMER_ID\"] == _2[\"ID\"])", &mut counter, &mut out);
 
     // --- fragment probes ---
     let fragment_probe = |label: &str, dialect: &str, source: &str, counter: &mut usize, out: &mut Vec<String>| {

@@ -37,7 +37,7 @@ try {
   const p = compile(spec.src);
   if (as === 'plan') {
     const pl = Sql.planHybrid(p, dialect, bind, {});
-    const c = pl.pureSql ? 'pure_sql' : pl.pureMemory ? 'pure_memory' : 'hybrid';
+    const c = pl.kind;
     out = `PLAN ${c} | ${JSON.stringify(pl.sourceTables)} | ${pl.sqlStatement ? pl.sqlStatement.asStatement(mode) : ''}`;
   } else if (as === 'params-of-statement') {
     const f = Sql.translateStatement(p, dialect, bind, {});

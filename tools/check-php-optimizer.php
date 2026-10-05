@@ -362,7 +362,7 @@ foreach ([
 ] as [$source, $kind, $want]) {
     $program = Sel::compile($source);
     $plan = Sql::planHybrid($program, 'postgresql', $orders);
-    $got = $plan->pureSql ? 'pure_sql' : ($plan->pureMemory ? 'pure_memory' : 'hybrid');
+    $got = $plan->kind();
     check($got === $kind, "{$source}: expected a {$kind} plan, got {$got}");
     $inMemory = $failure(static fn () => $program->run(['ORDERS' => $rows, 'LABEL' => 'x']));
     $executed = $failure(static fn () => Sql::executeHybrid($plan, $runner, ['ORDERS' => $rows, 'LABEL' => 'x']));
@@ -419,7 +419,7 @@ foreach ([
 ] as [$source, $kind]) {
     $program = Sel::compile($source);
     $plan = Sql::planHybrid($program, 'sqlite', $fullOrders);
-    $got = $plan->pureSql ? 'pure_sql' : ($plan->pureMemory ? 'pure_memory' : 'hybrid');
+    $got = $plan->kind();
     check($got === $kind, "{$source}: expected a {$kind} plan, got {$got}");
     $prefixInMemory = static fn (string $sql, array $params) => (new Program('', $plan->sqlPrefixAst))->run(['ORDERS' => $orderRows]);
     $outcome = static function (callable $fn): string {

@@ -63,7 +63,7 @@ foreach (PIPELINES as $i => [$title, $file]) {
     $plan = Sql::planHybrid($program, 'sqlite', $schema);
     $rows = Sql::executeHybrid($plan, runner($conn), $plan->pureMemory ? $tables : null);
     // EXAMPLE-END run
-    $kind = $plan->pureSql ? 'pure_sql' : ($plan->pureMemory ? 'pure_memory' : 'hybrid');
+    $kind = $plan->kind();
     echo $i + 1, ". $title\n";
     echo '   plan        ', $kind, "\n";
     echo '   reads       ', implode(', ', $plan->sourceTables), "\n";

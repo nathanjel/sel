@@ -108,6 +108,7 @@
    #:hybrid-plan-pure-sql-p
    #:hybrid-plan-pure-memory-p
    #:hybrid-plan-hybrid-p
+   #:hybrid-plan-kind
    #:hybrid-plan-source-tables
    #:hybrid-plan-selected-member
    #:plan-hybrid

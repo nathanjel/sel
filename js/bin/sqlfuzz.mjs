@@ -100,7 +100,7 @@ for (const src of corpus) {
     attempt(() => render(Sql.translateStatement(program, dialect, bindings))),
     attempt(() => {
       const plan = Sql.planHybrid(program, dialect, bindings);
-      const kind = plan.pureSql ? 'pure_sql' : plan.pureMemory ? 'pure_memory' : 'hybrid';
+      const kind = plan.kind;
       return plan.sqlStatement ? `${kind} ${plan.sqlStatement.asStatement('params')}` : kind;
     }),
   ].join(' || '));

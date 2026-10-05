@@ -50,7 +50,7 @@ for (const [i, [title, file]] of PIPELINES.entries()) {
   const plan = planHybrid(program, 'sqlite', SCHEMA);
   const rows = executeHybrid(plan, await runner(conn, plan), plan.pureMemory ? tables : null);
   // EXAMPLE-END run
-  const kind = plan.pureSql ? 'pure_sql' : plan.pureMemory ? 'pure_memory' : 'hybrid';
+  const kind = plan.kind;
   console.log(`${i + 1}. ${title}`);
   console.log('   plan       ', kind);
   console.log('   reads      ', plan.sourceTables.join(', '));

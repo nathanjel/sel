@@ -226,9 +226,7 @@ function snapshot_ast(array $ast): string
 
 function classify_plan(\Sel\Sql\HybridPlan $plan): string
 {
-    if ($plan->pureSql) return 'pure_sql';
-    if ($plan->pureMemory) return 'pure_memory';
-    return 'hybrid';
+    return $plan->kind();
 }
 
 /**
@@ -668,4 +666,10 @@ foreach ($parity as $p) {
 echo "\n{$passed} passed ({$mirrored} also checked against a mirrored dialect, "
     . count(MIRRORS) . ' leaf pair compared entry by entry), '
     . count($failures) . ' failed, ' . "{$suiteErrors} suite errors\n";
+// A filter that matched nothing tested nothing: say so, and do not pass
+// (tools/README.md, runner contract).
+if ($passed + count($failures) + $suiteErrors === 0) {
+    echo $filters !== [] ? 'no case matches ' . implode(' ', $filters) . "\n" : "no case was run\n";
+    exit(1);
+}
 exit($failures === [] && $suiteErrors === 0 ? 0 : 1);

@@ -101,7 +101,7 @@ foreach (readCorpus((string) file_get_contents($path)) as $src) {
         $attempt(static fn () => $render(Sql::translateStatement($program, $dialect, $bindings))),
         $attempt(static function () use ($program, $dialect, $bindings): string {
             $plan = Sql::planHybrid($program, $dialect, $bindings);
-            $kind = $plan->pureSql ? 'pure_sql' : ($plan->pureMemory ? 'pure_memory' : 'hybrid');
+            $kind = $plan->kind();
             return $plan->sqlStatement ? "$kind " . $plan->sqlStatement->asStatement('params') : $kind;
         }),
     ]);

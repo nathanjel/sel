@@ -76,10 +76,6 @@ class HybridPlan:
         return self.sql_statement
 
     @property
-    def sqlQuery(self):  # noqa: N802 - cross-host compatibility alias
-        return self.sql_statement
-
-    @property
     def sql_prefix_ast(self):
         return self._sql_prefix_ast
 
@@ -96,28 +92,14 @@ class HybridPlan:
         return self._continuation_source_var
 
     @property
+    def kind(self) -> str:
+        """The classification in the words sql/cases uses: 'pure_sql', 'hybrid' or
+        'pure_memory' -- the one place it is derived from the two flags."""
+        return 'pure_sql' if self.pure_sql else 'pure_memory' if self.pure_memory else 'hybrid'
+
+    @property
     def is_hybrid(self) -> bool:
-        return not self.pure_sql and not self.pure_memory
-
-    @property
-    def isHybrid(self) -> bool:  # noqa: N802 - cross-host compatibility alias
-        return self.is_hybrid
-
-    @property
-    def pureSql(self) -> bool:  # noqa: N802 - cross-host compatibility alias
-        return self.pure_sql
-
-    @property
-    def pureMemory(self) -> bool:  # noqa: N802 - cross-host compatibility alias
-        return self.pure_memory
-
-    @property
-    def pure_sql_execution(self) -> bool:
-        return self.pure_sql
-
-    @property
-    def pure_memory_execution(self) -> bool:
-        return self.pure_memory
+        return self.kind == 'hybrid'
 
     @property
     def source_tables(self):
@@ -785,30 +767,6 @@ def _needs_left_name(remaining: list[Node], prefix: list[Node]) -> bool:
             and any(_is_link(step) and len(step.args) == 3 for step in remaining))
 
 
-def _keep_left_name(remaining: list[Node], prefix: list[Node], source: Node) -> list[Node]:
-    """A LINK left in memory behind a SQL prefix still names its left side as the
-    program wrote it. SEL's joined row holds the left side under the name of the
-    variable the pipeline started from (spec §7.4), and the continuation's input
-    is `_INPUT`, so a bare three-argument LINK would carry it under that: a read
-    of `_["ORDERS"]` would be E_NO_KEY where run() answers. The first LINK of the
-    continuation -- wherever it falls, not only when it comes first -- is rewritten
-    to the five-argument form that names both sides."""
-    if source is None or source.t != 'var' or not _needs_left_name(remaining, prefix):
-        return remaining
-    at = next(i for i, step in enumerate(remaining) if _is_link(step))
-    first = remaining[at]
-    if len(first.args) != 3:
-        return remaining
-    right = first.args[1]
-    if right.t != 'var':
-        return remaining
-    rewritten = copy_node(first)
-    rewritten.args = [first.args[0], right,
-                      Node('var', first.pos, name=source.name),
-                      Node('var', first.pos, name=right.name), first.args[2]]
-    return [*remaining[:at], rewritten, *remaining[at + 1:]]
-
-
 def _try_latest_member(source, steps, dialect, catalog, opts, helpers):
     """A schema-proven unique TOP 1, not an arbitrary bare-bucket split."""
     if dialect not in ('mariadb', 'mysql', 'postgresql', 'sqlite'):
@@ -996,13 +954,26 @@ def _plan_hybrid(program: Program, dialect: str,
                 or any(source.name in _read_names(arg)
                        for step in steps[count:] for arg in step.args[1:])):
             continue
-        remaining = _keep_left_name(steps[count:], steps[:count], source)
-        input_node = Node('var', remaining[0].pos, name='_INPUT')
+        remaining = steps[count:]
+        # A LINK left in memory behind a SQL prefix names the joined row's left
+        # side after the variable the pipeline started from (spec 7.4), so the
+        # rows are fed to the continuation under that name -- the plan's
+        # continuation_source_var, the shape every host gives it. Fed under that
+        # name, the rows ARE the variable: a read of the binding, so wrapping in
+        # the helpers does not re-run a helper of the same name over them
+        # (hybrid.json helper.reassigned-source-feeds-a-three-argument-link).
+        if _needs_left_name(remaining, steps[:count]):
+            feed = source.name
+            input_node = Node('var', remaining[0].pos, name=feed, binding=True)
+        else:
+            feed = '_INPUT'
+            input_node = Node('var', remaining[0].pos, name=feed)
         continuation_ast = helpers.wrap(build_pipeline(input_node, remaining))
         return HybridPlan(dialect=dialect, sql_statement=sql,
                           sql_prefix_ast=prefix_ast,
                           continuation_ast=continuation_ast,
                           continuation_program=Program('', continuation_ast),
+                          continuation_source_var=feed,
                           source_tables=helpers.tables(prefix_ast))
 
     return _pure_memory_plan(program, dialect, catalog)
@@ -1104,7 +1075,3 @@ def _execute_hybrid(plan: HybridPlan, db_runner: Callable[[str, list[Value]], An
              rows if isinstance(rows, Value) else Value.from_native(rows))
     return plan.continuation_program.run(root)
 
-
-# Public aliases matching the other host APIs.
-planHybrid = plan_hybrid
-executeHybrid = execute_hybrid

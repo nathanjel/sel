@@ -105,7 +105,8 @@ final class Sql
      * @param callable(string,list<Value>,Fragment):mixed $dbRunner
      * @param Value|array<mixed>|null $context
      */
-    public static function executeHybrid(HybridPlan $plan, callable $dbRunner, $context = null): mixed
+    public static function executeHybrid(HybridPlan $plan, callable $dbRunner,
+                                         Value|array|null $context = null): mixed
     {
         return Hybrid::execute($plan, $dbRunner, $context);
     }

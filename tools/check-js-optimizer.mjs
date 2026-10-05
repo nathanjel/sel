@@ -278,7 +278,7 @@ for (const [source, kind, want] of [
 ]) {
   const program = compile(source);
   const plan = Sql.planHybrid(program, 'postgresql', orders);
-  const got = plan.pureSql ? 'pure_sql' : plan.pureMemory ? 'pure_memory' : 'hybrid';
+  const got = plan.kind;
   check(got === kind, `${source}: expected a ${kind} plan, got ${got}`);
   const inMemory = failure(() => program.run({ ORDERS: rows, LABEL: 'x' }));
   const executed = failure(() => Sql.executeHybrid(plan, runner, { ORDERS: rows, LABEL: 'x' }));
@@ -334,7 +334,7 @@ for (const [source, kind] of [
 ]) {
   const program = compile(source);
   const plan = Sql.planHybrid(program, 'sqlite', fullOrders);
-  const got = plan.pureSql ? 'pure_sql' : plan.pureMemory ? 'pure_memory' : 'hybrid';
+  const got = plan.kind;
   check(got === kind, `${source}: expected a ${kind} plan, got ${got}`);
   const prefixInMemory = () => new Program('', plan.sqlPrefixAst).run({ ORDERS: orderRows });
   const outcome = (fn) => { try { return fn().dump(); } catch (e) { return `${e.code}@${e.line}:${e.col}`; } };

@@ -129,7 +129,7 @@ for c, cs in work:
     except Exception as e:                                    # noqa: BLE001
         bad.append((name, '', f'plan_hybrid raised {type(e).__name__}: {e}'))
         continue
-    kind = 'pure_sql' if plan.pure_sql else 'pure_memory' if plan.pure_memory else 'hybrid'
+    kind = plan.kind
     kinds[kind] += 1
     statement = plan.sql_statement.as_statement() if plan.sql_statement else '-'
     caller = Value.from_native(fresh())

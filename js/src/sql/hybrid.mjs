@@ -52,13 +52,16 @@ export class HybridPlan {
     this.selectedMember = selectedMember;
   }
 
+  // The classification in the words sql/cases uses: 'pure_sql', 'hybrid' or
+  // 'pure_memory' -- the one place it is derived from the two flags.
+  get kind() { return this.pureSql ? 'pure_sql' : this.pureMemory ? 'pure_memory' : 'hybrid'; }
   get sql_query() { return this.sqlStatement; }
   get sqlQuery() { return this.sqlStatement; }
   get sql_prefix_ast() { return this.sqlPrefixAst; }
   get continuation_ast() { return this.continuationAst; }
   get continuation_program() { return this.continuationProgram; }
   get continuation_source_var() { return this.continuationSourceVar; }
-  get isHybrid() { return !this.pureSql && !this.pureMemory; }
+  get isHybrid() { return this.kind === 'hybrid'; }
   get is_hybrid() { return this.isHybrid; }
   get pure_sql() { return this.pureSql; }
   get pure_memory() { return this.pureMemory; }
@@ -840,7 +843,13 @@ export function planHybrid(program, dialect, bindings = null, options = null) {
       continue;
     }
     const feed = needsRebind ? source.name : inputVar;
-    const input = { t: 'var', name: feed, pos: remaining[0].pos };
+    // Fed under the source's name, the rows ARE that variable: a read of the
+    // binding, so wrapping the continuation in the helpers does not re-run a
+    // helper of the same name over them (`ORDERS = ORDERS .> DROP(2)` dropped
+    // twice; hybrid.json helper.reassigned-source-feeds-a-three-argument-link).
+    const input = needsRebind
+      ? { t: 'var', name: feed, pos: remaining[0].pos, binding: true }
+      : { t: 'var', name: feed, pos: remaining[0].pos };
     const continuationAst = helpers.wrap(buildPipeline(input, remaining));
     return new HybridPlan({
       dialect,
