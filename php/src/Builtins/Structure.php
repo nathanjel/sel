@@ -197,8 +197,10 @@ final class Structure
             $digits = substr($digits, 0, -1);
             $scale--;
         }
+        // A zero's digits strip to nothing while some scale is left (`0.00`
+        // is digits "0", scale 2): every zero, signed or scaled, is key 0.
+        if ($digits === '' || $digits === '0') return 0;
         if ($scale === 0) {
-            if ($digits === '0' || $digits === '') return 0;
             $len = strlen($digits);
             if ($len < 19) {
                 $int = (int) $digits;
