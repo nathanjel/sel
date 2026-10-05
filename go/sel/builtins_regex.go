@@ -66,7 +66,7 @@ var (
 	regexOrder []regexKey
 )
 
-func compileRegex(pattern, flags string, flagPos, patPos Pos) (*compiledRegex, bool) {
+func compileRegex(pattern, flags string, flagPos, patPos Pos) *compiledRegex {
 	ignoreCase := false
 	for _, ch := range flags {
 		// Only a lowercase i is a flag: not I, not U+0130 or U+0131, not the
@@ -94,7 +94,7 @@ func compileRegex(pattern, flags string, flagPos, patPos Pos) (*compiledRegex, b
 	c, ok := regexCache[key]
 	regexMu.RUnlock()
 	if ok {
-		return c, ignoreCase
+		return c
 	}
 
 	tree := parseRegexIC(pattern, ignoreCase, patPos)
@@ -139,7 +139,7 @@ func compileRegex(pattern, flags string, flagPos, patPos Pos) (*compiledRegex, b
 	}
 	regexMu.Unlock()
 
-	return cr, ignoreCase
+	return cr
 }
 
 // matchSpans walks the subject left to right (§7.8) over BYTE offsets of the
@@ -200,7 +200,7 @@ func regexArgs(args *Args, patIdx, subjIdx, flagIdx int) (*compiledRegex, string
 		flags = args.Text(flagIdx)
 		flagPos = args.PosOf(flagIdx)
 	}
-	cr, _ := compileRegex(pat, flags, flagPos, args.PosOf(patIdx))
+	cr := compileRegex(pat, flags, flagPos, args.PosOf(patIdx))
 	return cr, subj
 }
 
@@ -312,7 +312,7 @@ func init() {
 				flags = args.Text(3)
 				flagPos = args.PosOf(3)
 			}
-			cr, _ := compileRegex(pat, flags, flagPos, args.PosOf(0))
+			cr := compileRegex(pat, flags, flagPos, args.PosOf(0))
 
 			numGroups := cr.numGroups()
 

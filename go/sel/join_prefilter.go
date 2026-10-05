@@ -448,6 +448,10 @@ func joinTotality(reqs []joinTotalReq, left, right *joinSideFacts, above []*join
 	return true
 }
 
+// neverOnTheRight is joinStageWalk's rightHere for a walk that hands nothing to
+// the right side.
+func neverOnTheRight(map[string]bool, joinStage) bool { return false }
+
 func joinStageWalk(
 	stages []joinStage,
 	ownedHere func(fields map[string]bool, stage joinStage) bool,

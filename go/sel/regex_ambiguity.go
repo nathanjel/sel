@@ -172,9 +172,8 @@ type reAmb struct {
 	e, d int
 	amb  int
 
-	pattern string
-	pos     Pos
-	ic      bool
+	pos Pos
+	ic  bool
 }
 
 func (a *reAmb) refuse(why string) {
@@ -400,8 +399,8 @@ func sccs(succ [][]int) (comp []int, cyc []bool) {
 }
 
 // checkAmbiguity applies §7.8's exponential-ambiguity rule to a parsed pattern.
-func checkAmbiguity(tree *reNode, ignoreCase bool, pattern string, pos Pos) {
-	a := &reAmb{cls: [][]rng{nil}, succ: [][]int{nil}, tag: map[[2]int]bool{}, pattern: pattern, pos: pos, ic: ignoreCase}
+func checkAmbiguity(tree *reNode, ignoreCase bool, pos Pos) {
+	a := &reAmb{cls: [][]rng{nil}, succ: [][]int{nil}, tag: map[[2]int]bool{}, pos: pos, ic: ignoreCase}
 	_, first, _ := a.walk(tree, false)
 	a.succ[0] = append([]int(nil), first...)
 	succ, cls := a.succ, a.cls

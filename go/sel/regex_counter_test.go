@@ -98,7 +98,7 @@ func tryParse(pat string, ic bool) (tree *reNode, ok bool) {
 // their capture numbers, and answer through every regex built-in.
 func TestCounterRegexTakesNestedCounts(t *testing.T) {
 	big := "((?:(?:ab){1000}){1000}){2}"
-	cr, _ := compileRegex("^x"+big+"(y)$", "", Pos{}, Pos{})
+	cr := compileRegex("^x"+big+"(y)$", "", Pos{}, Pos{})
 	if cr.ctr == nil {
 		t.Fatal("the nested pattern compiled on RE2; the test no longer reaches the counter matcher")
 	}

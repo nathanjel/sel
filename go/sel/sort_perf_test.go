@@ -1,9 +1,44 @@
 package sel
 
 import (
+	"bytes"
 	"fmt"
 	"testing"
+
+	"github.com/nathanjel/sel/go/internal/decimal"
 )
+
+// compareValues is the total order every sort, TOP and bucket key uses, written
+// out directly: the oracle cmpSortKey is held to. Values
+// of one rank compare within it (numbers by exact decimal value, text and BIN
+// bytewise, FALSE before TRUE); values of different ranks compare by rank.
+// Equal values tie, and the caller keeps input order for a tie.
+func compareValues(a, b *Value) int {
+	a, b = sortLeaf(a), sortLeaf(b)
+	ra, rb := sortRank(a), sortRank(b)
+	if ra != rb {
+		if ra < rb {
+			return -1
+		}
+		return 1
+	}
+	switch ra {
+	case 1:
+		av, bv := 0, 0
+		if a.boolVal {
+			av = 1
+		}
+		if b.boolVal {
+			bv = 1
+		}
+		return av - bv
+	case 2:
+		return decimal.Cmp(a.AsDecimal(Pos{}), b.AsDecimal(Pos{}))
+	case 3, 4:
+		return bytes.Compare(a.AsBytes(Pos{}), b.AsBytes(Pos{}))
+	}
+	return 0
+}
 
 func sgn(x int) int {
 	switch {

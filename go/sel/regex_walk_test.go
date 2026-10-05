@@ -36,7 +36,7 @@ func TestRegexBuiltinsMatchTheRuneReference(t *testing.T) {
 						bad = true
 					}
 				}()
-				cr, _ = compileRegex(pat, flags, Pos{}, Pos{})
+				cr = compileRegex(pat, flags, Pos{}, Pos{})
 			}()
 			if bad {
 				continue

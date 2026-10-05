@@ -12,7 +12,7 @@ import (
 func TestOperationsNeverWriteTheirOperands(t *testing.T) {
 	rng := rand.New(rand.NewSource(20261001))
 	fail := func(code, msg string, pos Pos) { t.Fatalf("%s: %s", code, msg) }
-	singletons := append([]*big.Int{zeroBig, oneBig, twoBig, tenBig, Zero.Digits}, pow10List[:]...)
+	singletons := append([]*big.Int{zeroBig, oneBig, twoBig, tenBig}, pow10List[:]...)
 	before := make([]string, len(singletons))
 	for i, s := range singletons {
 		before[i] = s.String()

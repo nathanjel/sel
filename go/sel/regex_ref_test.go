@@ -193,9 +193,9 @@ func refRReplace(cr *compiledRegex, repl, subj string, ic bool) string {
 func BenchmarkP5Reference(b *testing.B) {
 	for _, reps := range []int{62500, 125000, 250000} {
 		sub := strings.Repeat("123-45,", reps)
-		cr, _ := compileRegex(`.`, "", Pos{}, Pos{})
-		cf, _ := compileRegex(`5,$`, "", Pos{}, Pos{})
-		cg, _ := compileRegex(`(\d+)-(\d+)`, "", Pos{}, Pos{})
+		cr := compileRegex(`.`, "", Pos{}, Pos{})
+		cf := compileRegex(`5,$`, "", Pos{}, Pos{})
+		cg := compileRegex(`(\d+)-(\d+)`, "", Pos{}, Pos{})
 		b.Run(fmt.Sprintf("rmatch_dot/chars=%d", len(sub)), func(b *testing.B) {
 			b.ReportAllocs()
 			for i := 0; i < b.N; i++ {
@@ -224,7 +224,7 @@ func BenchmarkP5Reference(b *testing.B) {
 		{"short_rgroups", `(\d+)-(\d+)`, func(cr *compiledRegex) { refRGroups(cr, "123-45", false) }},
 		{"short_rreplace", `-`, func(cr *compiledRegex) { refRReplace(cr, "+", "123-45", false) }},
 	} {
-		cr, _ := compileRegex(c.pat, "", Pos{}, Pos{})
+		cr := compileRegex(c.pat, "", Pos{}, Pos{})
 		b.Run(c.name, func(b *testing.B) {
 			b.ReportAllocs()
 			for i := 0; i < b.N; i++ {

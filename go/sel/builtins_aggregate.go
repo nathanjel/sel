@@ -3,7 +3,6 @@
 package sel
 
 import (
-	"bytes"
 	"fmt"
 	"math/big"
 	"slices"
@@ -124,42 +123,13 @@ func sortRank(v *Value) int {
 	return 5
 }
 
-// compareValues is the total order every sort, TOP and bucket key uses. Values
-// of one rank compare within it (numbers by exact decimal value, text and BIN
-// bytewise, FALSE before TRUE); values of different ranks compare by rank.
-// Equal values tie, and the caller keeps input order for a tie.
-func compareValues(a, b *Value) int {
-	a, b = sortLeaf(a), sortLeaf(b)
-	ra, rb := sortRank(a), sortRank(b)
-	if ra != rb {
-		if ra < rb {
-			return -1
-		}
-		return 1
-	}
-	switch ra {
-	case 1:
-		av, bv := 0, 0
-		if a.boolVal {
-			av = 1
-		}
-		if b.boolVal {
-			bv = 1
-		}
-		return av - bv
-	case 2:
-		return decimal.Cmp(a.AsDecimal(Pos{}), b.AsDecimal(Pos{}))
-	case 3, 4:
-		return bytes.Compare(a.AsBytes(Pos{}), b.AsBytes(Pos{}))
-	}
-	return 0
-}
-
-// sortKey is a sort key classified ONCE (GO-P2): the rank of the total order and
-// the payload its comparison needs. compareValues re-derived all of this on every
-// comparison of a sort (sortLeaf, LooksNumeric, a decimal or bytes fetch), which is
-// n log n classifications of n keys. cmpSortKey orders exactly as compareValues
-// does (a test holds the two together over mixed-kind lists).
+// sortKey is a sort key classified ONCE: the rank of the total order every sort,
+// TOP and bucket key uses, and the payload its comparison needs. Values of one
+// rank compare within it (numbers by exact decimal value, text and BIN bytewise,
+// FALSE before TRUE); values of different ranks compare by rank; equal values
+// tie, and the caller keeps input order for a tie. Classifying per comparison
+// would be n log n classifications of n keys; sort_perf_test.go holds cmpSortKey
+// to compareValues, the order written out directly, over mixed-kind lists.
 type sortKey struct {
 	rank  int8
 	b     bool         // rank 1
@@ -610,7 +580,7 @@ func doBucket(args *Args, ctx *Context) *Value {
 	}
 
 	ctx.PushFrame(frame)
-	for idx, e := range ents {
+	for _, e := range ents {
 		frame[binder] = e.Val
 		if needsK {
 			frame["_K"] = NewText(e.Key)
@@ -653,7 +623,6 @@ func doBucket(args *Args, ctx *Context) *Value {
 			table[h] = append(table[h], g)
 			groups = append(groups, g)
 		}
-		_ = idx
 	}
 	ctx.PopFrame()
 
@@ -1271,10 +1240,6 @@ func doLink(args *Args, ctx *Context, leftJoin bool) *Value {
 		}
 		return true
 	}
-	nothingRight := func(fields map[string]bool, stage joinStage) bool {
-		return false
-	}
-
 	isJoinOrFilter := func(n *Node) bool {
 		return n != nil && n.T == NodeCall && (n.S == "LINK" || n.S == "LINK_LEFT" || n.S == "FILTER")
 	}
@@ -1305,7 +1270,7 @@ func doLink(args *Args, ctx *Context, leftJoin bool) *Value {
 		totalBelow := func(reqs []joinTotalReq, stage joinStage) bool {
 			return joinTotality(reqs, nil, rightSide, aboveOf(stage))
 		}
-		_, stop := joinStageWalk(stages, ownedByLeft, totalBelow, nothingRight)
+		_, stop := joinStageWalk(stages, ownedByLeft, totalBelow, neverOnTheRight)
 		handed := joinTruncateStages(stages, stop)
 		for i := range handed {
 			handed[i].Above++

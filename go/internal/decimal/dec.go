@@ -36,7 +36,6 @@ var (
 	oneBig    = big.NewInt(1)
 	twoBig    = big.NewInt(2)
 	tenBig    = big.NewInt(10)
-	Zero      = Make(false, zeroBig, 0)
 	pow10List [19]*big.Int
 	pow10U64  [19]uint64
 )

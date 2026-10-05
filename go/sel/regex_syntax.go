@@ -135,7 +135,7 @@ func parseRegexIC(pattern string, ignoreCase bool, pos Pos) *reNode {
 	}
 	analyse(n)
 	checkLoops(n, pos)
-	checkAmbiguity(n, ignoreCase, pattern, pos)
+	checkAmbiguity(n, ignoreCase, pos)
 	return n
 }
 
