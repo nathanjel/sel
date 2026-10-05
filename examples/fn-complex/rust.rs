@@ -1,6 +1,7 @@
 // Goes in rust/src/builtins/structure.rs beside ALL and ANY, and its define()
 // line in registry() in rust/src/builtins/mod.rs. Not a runnable file: this is a
 // fragment that compiles only in place. See README.md beside it.
+// tools/check-rust-fragments.sh puts it there and runs cases.selt.
 // EXAMPLE-BEGIN
 pub fn fn_first(args: &mut Args) -> Result<Value, SelError> {
     let three = args.count() == 3;

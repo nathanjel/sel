@@ -71,7 +71,11 @@ fn register_native(m: &mut HashMap<String, Arc<Spec>>, name: &'static str, f: Bu
 /// name spec/builtins.json lists must agree with it (the manifest owns core's
 /// shape; register_native() just reads it), and any other name -- a builtin of
 /// the application's own -- passes through as declared here.
-#[allow(dead_code)] // core registers through register_native(); this is for builtins beyond it
+// Core registers through register_native(); define() is for a builtin beyond
+// the manifest, added in registry() below. The stock build has none outside the
+// unit tests -- the reference fragments in examples/fn-*/rust.rs are the uses,
+// and tools/check-rust-fragments.sh compiles them in place -- hence the allow.
+#[allow(dead_code)]
 fn define(
     m: &mut HashMap<String, Arc<Spec>>,
     name: &'static str,
