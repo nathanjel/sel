@@ -8217,10 +8217,7 @@ func c1188Bind() map[string]*sql.Binding {
 
 func c1189Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"S": bindRelation("sk", "s", []sql.FieldEntry{sql.FieldEntry{Name: "SKU", Binding: bindCol("sku", "s", sql.KindText, false, false, false, "")}}, "SKU", "", ""),
-		"F": bindCol("f", "", sql.KindBool, false, false, false, ""),
-		"X": bindCol("x", "", sql.KindBin, false, false, false, ""),
-		"N": bindCol("n", "", sql.KindNum, false, false, false, ""),
+		"O": bindRelation("orders", "o", []sql.FieldEntry{sql.FieldEntry{Name: "CAT", Binding: bindCol("cat", "o", sql.KindText, false, false, false, "")}, sql.FieldEntry{Name: "AMT", Binding: bindCol("amt", "o", sql.KindNum, false, false, false, "")}}, "", "", ""),
 	}
 }
 
@@ -8244,8 +8241,10 @@ func c1191Bind() map[string]*sql.Binding {
 
 func c1192Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"T": bindCol("t", "", sql.KindText, true, false, false, ""),
-		"S": bindCol("s", "", sql.KindText, true, false, false, ""),
+		"S": bindRelation("sk", "s", []sql.FieldEntry{sql.FieldEntry{Name: "SKU", Binding: bindCol("sku", "s", sql.KindText, false, false, false, "")}}, "SKU", "", ""),
+		"F": bindCol("f", "", sql.KindBool, false, false, false, ""),
+		"X": bindCol("x", "", sql.KindBin, false, false, false, ""),
+		"N": bindCol("n", "", sql.KindNum, false, false, false, ""),
 	}
 }
 
@@ -8258,7 +8257,8 @@ func c1193Bind() map[string]*sql.Binding {
 
 func c1194Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"ITEMS": bindRelation("items", "", []sql.FieldEntry{}, "", "", ""),
+		"T": bindCol("t", "", sql.KindText, true, false, false, ""),
+		"S": bindCol("s", "", sql.KindText, true, false, false, ""),
 	}
 }
 
@@ -8432,7 +8432,7 @@ func c1222Bind() map[string]*sql.Binding {
 
 func c1223Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"O": bindRelation("orders", "o", []sql.FieldEntry{sql.FieldEntry{Name: "CAT", Binding: bindCol("cat", "o", sql.KindText, false, false, false, "")}, sql.FieldEntry{Name: "MISC", Binding: bindCol("misc", "o", sql.KindUnknown, false, false, false, "")}}, "", "", ""),
+		"ITEMS": bindRelation("items", "", []sql.FieldEntry{}, "", "", ""),
 	}
 }
 
@@ -8444,8 +8444,7 @@ func c1224Bind() map[string]*sql.Binding {
 
 func c1225Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"N": bindCol("n", "k", sql.KindNum, false, false, false, ""),
-		"T": bindCol("t", "k", sql.KindText, true, false, false, ""),
+		"O": bindRelation("orders", "o", []sql.FieldEntry{sql.FieldEntry{Name: "CAT", Binding: bindCol("cat", "o", sql.KindText, false, false, false, "")}, sql.FieldEntry{Name: "MISC", Binding: bindCol("misc", "o", sql.KindUnknown, false, false, false, "")}}, "", "", ""),
 	}
 }
 
@@ -8522,16 +8521,23 @@ func c1235Bind() map[string]*sql.Binding {
 func c1236Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
 		"N": bindCol("n", "k", sql.KindNum, false, false, false, ""),
+		"T": bindCol("t", "k", sql.KindText, true, false, false, ""),
 	}
 }
 
 func c1237Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
+		"N": bindCol("n", "k", sql.KindNum, false, false, false, ""),
+	}
+}
+
+func c1238Bind() map[string]*sql.Binding {
+	return map[string]*sql.Binding{
 		"NAME": bindCol("name", "o", sql.KindText, false, false, false, ""),
 	}
 }
 
-func c1237Reg() {
+func c1238Reg() {
 	sql.DefineDialect("pgbad", map[string]interface{}{
 			"extends": "postgresql",
 			"version": "16",
@@ -8539,30 +8545,17 @@ func c1237Reg() {
 		})
 }
 
-func c1238Bind() map[string]*sql.Binding {
+func c1239Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
 		"X": bindCol("x", "o", sql.KindUnknown, false, false, false, ""),
 	}
 }
 
-func c1238Reg() {
+func c1239Reg() {
 	sql.DefineDialect("mdbad", map[string]interface{}{
 			"extends": "mariadb",
 			"version": "10.5",
 			"lexical": map[string]interface{}{"numericGuard": "CASE WHEN ({0} REGEXP 'x') THEN CAST({0} AS DECIMAL(65,10)) ELSE NULL END"},
-		})
-}
-
-func c1239Bind() map[string]*sql.Binding {
-	return map[string]*sql.Binding{
-		"NAME": bindCol("name", "o", sql.KindText, false, false, false, ""),
-	}
-}
-
-func c1239Reg() {
-	sql.DefineDialect("pgok", map[string]interface{}{
-			"extends": "postgresql",
-			"version": "16",
 		})
 }
 
@@ -8573,34 +8566,34 @@ func c1240Bind() map[string]*sql.Binding {
 }
 
 func c1240Reg() {
+	sql.DefineDialect("pgok", map[string]interface{}{
+			"extends": "postgresql",
+			"version": "16",
+		})
+}
+
+func c1241Bind() map[string]*sql.Binding {
+	return map[string]*sql.Binding{
+		"NAME": bindCol("name", "o", sql.KindText, false, false, false, ""),
+	}
+}
+
+func c1241Reg() {
 	sql.Define("mariadb", "funcs", "UPPER", map[string]interface{}{
 			"tpl": "F({0}, 'é ż ć 𝄞')",
 			"ret": "TEXT",
 		})
 }
 
-func c1241Bind() map[string]*sql.Binding {
-	return map[string]*sql.Binding{
-
-	}
-}
-
-func c1241Reg() {
-	sql.Define("sqlite", "funcs", "UPPER", map[string]interface{}{
-			"tpl": "MY_CRC('zażółć', {0})",
-			"ret": "TEXT",
-		})
-}
-
 func c1242Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"NAME": bindCol("name", "o", sql.KindText, false, false, false, ""),
+
 	}
 }
 
 func c1242Reg() {
-	sql.Define("mariadb", "funcs", "UPPER", map[string]interface{}{
-			"tpl": "F({0}, {1:})",
+	sql.Define("sqlite", "funcs", "UPPER", map[string]interface{}{
+			"tpl": "MY_CRC('zażółć', {0})",
 			"ret": "TEXT",
 		})
 }
@@ -8612,6 +8605,19 @@ func c1243Bind() map[string]*sql.Binding {
 }
 
 func c1243Reg() {
+	sql.Define("mariadb", "funcs", "UPPER", map[string]interface{}{
+			"tpl": "F({0}, {1:})",
+			"ret": "TEXT",
+		})
+}
+
+func c1244Bind() map[string]*sql.Binding {
+	return map[string]*sql.Binding{
+		"NAME": bindCol("name", "o", sql.KindText, false, false, false, ""),
+	}
+}
+
+func c1244Reg() {
 	sql.DefineDialect("mdempty", map[string]interface{}{
 			"extends": "mariadb",
 			"version": "10.5",
@@ -8623,13 +8629,6 @@ func c1243Reg() {
 		})
 }
 
-func c1244Bind() map[string]*sql.Binding {
-	return map[string]*sql.Binding{
-		"R": bindRelation("r", "r", []sql.FieldEntry{sql.FieldEntry{Name: "A", Binding: bindCol("a", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "N", Binding: bindCol("n", "", sql.KindText, false, false, false, "")}}, "", "", ""),
-		"S": bindRelation("s", "s", []sql.FieldEntry{sql.FieldEntry{Name: "A", Binding: bindCol("a", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "M", Binding: bindCol("m", "", sql.KindText, false, false, false, "")}}, "", "", ""),
-	}
-}
-
 func c1245Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
 		"R": bindRelation("r", "r", []sql.FieldEntry{sql.FieldEntry{Name: "A", Binding: bindCol("a", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "N", Binding: bindCol("n", "", sql.KindText, false, false, false, "")}}, "", "", ""),
@@ -8639,42 +8638,35 @@ func c1245Bind() map[string]*sql.Binding {
 
 func c1246Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
+		"R": bindRelation("r", "r", []sql.FieldEntry{sql.FieldEntry{Name: "A", Binding: bindCol("a", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "N", Binding: bindCol("n", "", sql.KindText, false, false, false, "")}}, "", "", ""),
+		"S": bindRelation("s", "s", []sql.FieldEntry{sql.FieldEntry{Name: "A", Binding: bindCol("a", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "M", Binding: bindCol("m", "", sql.KindText, false, false, false, "")}}, "", "", ""),
+	}
+}
+
+func c1247Bind() map[string]*sql.Binding {
+	return map[string]*sql.Binding{
 		"ITEMS": bindRelation("items", "i", []sql.FieldEntry{sql.FieldEntry{Name: "PRICE", Binding: bindCol("price", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "QTY", Binding: bindCol("qty", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "NAME", Binding: bindCol("name", "", sql.KindText, false, false, false, "")}, sql.FieldEntry{Name: "SKU", Binding: bindCol("sku", "", sql.KindText, false, false, false, "")}}, "", "", ""),
 		"TAGS": bindRelation("tags", "t", []sql.FieldEntry{sql.FieldEntry{Name: "TAG", Binding: bindCol("tag", "", sql.KindText, false, false, false, "")}, sql.FieldEntry{Name: "W", Binding: bindCol("w", "", sql.KindNum, false, false, false, "")}}, "", "", ""),
 	}
 }
 
-func c1248Bind() map[string]*sql.Binding {
+func c1249Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
 		"C": bindCol("c", "o", sql.KindList, false, false, false, ""),
 	}
 }
 
-func c1249Bind() map[string]*sql.Binding {
+func c1250Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
 		"S": bindCol("s", "o", sql.KindText, false, false, false, ""),
 	}
 }
 
-func c1249Reg() {
+func c1250Reg() {
 	sql.DefineDialect("my-nobs", map[string]interface{}{
 			"extends": "mariadb",
 			"version": "10.5",
 			"lexical": map[string]interface{}{"textEscape": map[string]interface{}{"\\": "\\\\"}},
-		})
-}
-
-func c1250Bind() map[string]*sql.Binding {
-	return map[string]*sql.Binding{
-
-	}
-}
-
-func c1250Reg() {
-	sql.DefineDialect("sqlite-noesc", map[string]interface{}{
-			"extends": "sqlite",
-			"version": "3.48",
-			"lexical": map[string]interface{}{"textEscape": map[string]interface{}{}},
 		})
 }
 
@@ -8685,10 +8677,10 @@ func c1251Bind() map[string]*sql.Binding {
 }
 
 func c1251Reg() {
-	sql.DefineDialect("my-badbs", map[string]interface{}{
-			"extends": "mariadb",
-			"version": "10.5",
-			"lexical": map[string]interface{}{"textEscape": map[string]interface{}{"'": "\\'"}},
+	sql.DefineDialect("sqlite-noesc", map[string]interface{}{
+			"extends": "sqlite",
+			"version": "3.48",
+			"lexical": map[string]interface{}{"textEscape": map[string]interface{}{}},
 		})
 }
 
@@ -8699,17 +8691,25 @@ func c1252Bind() map[string]*sql.Binding {
 }
 
 func c1252Reg() {
-	sql.DefineDialect("dq", map[string]interface{}{
-			"extends": "ansi",
-			"version": "1",
-			"lexical": map[string]interface{}{"textQuote": "\""},
+	sql.DefineDialect("my-badbs", map[string]interface{}{
+			"extends": "mariadb",
+			"version": "10.5",
+			"lexical": map[string]interface{}{"textEscape": map[string]interface{}{"'": "\\'"}},
 		})
 }
 
 func c1253Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"ITEMS": bindRelation("items", "i", []sql.FieldEntry{sql.FieldEntry{Name: "PRICE", Binding: bindCol("price", "", sql.KindNum, false, false, false, "")}}, "", "", ""),
+
 	}
+}
+
+func c1253Reg() {
+	sql.DefineDialect("dq", map[string]interface{}{
+			"extends": "ansi",
+			"version": "1",
+			"lexical": map[string]interface{}{"textQuote": "\""},
+		})
 }
 
 func c1254Bind() map[string]*sql.Binding {
@@ -8720,25 +8720,25 @@ func c1254Bind() map[string]*sql.Binding {
 
 func c1255Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"ITEMS": bindRelation("items", "i", []sql.FieldEntry{}, "", "", ""),
+		"ITEMS": bindRelation("items", "i", []sql.FieldEntry{sql.FieldEntry{Name: "PRICE", Binding: bindCol("price", "", sql.KindNum, false, false, false, "")}}, "", "", ""),
 	}
 }
 
 func c1256Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"ITEMS": bindRelation("items", "i", []sql.FieldEntry{sql.FieldEntry{Name: "PRICE", Binding: bindCol("price", "", sql.KindNum, false, false, false, "")}}, "", "", ""),
+		"ITEMS": bindRelation("items", "i", []sql.FieldEntry{}, "", "", ""),
 	}
 }
 
 func c1257Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"S": bindCol("s", "o", sql.KindText, false, false, false, ""),
+		"ITEMS": bindRelation("items", "i", []sql.FieldEntry{sql.FieldEntry{Name: "PRICE", Binding: bindCol("price", "", sql.KindNum, false, false, false, "")}}, "", "", ""),
 	}
 }
 
 func c1258Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"ITEMS": bindRelation("items", "i", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "TOTAL", Binding: bindRaw("i.price * i.qty", sql.KindNum, false, false, false, "")}}, "", "", ""),
+		"S": bindCol("s", "o", sql.KindText, false, false, false, ""),
 	}
 }
 
@@ -8750,35 +8750,27 @@ func c1259Bind() map[string]*sql.Binding {
 
 func c1260Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"R": bindRelation("t", "t", []sql.FieldEntry{sql.FieldEntry{Name: "A", Binding: bindCol("x", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "a", Binding: bindCol("y", "", sql.KindNum, false, false, false, "")}}, "", "", ""),
+		"ITEMS": bindRelation("items", "i", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "TOTAL", Binding: bindRaw("i.price * i.qty", sql.KindNum, false, false, false, "")}}, "", "", ""),
 	}
 }
 
 func c1261Bind() map[string]*sql.Binding {
+	return map[string]*sql.Binding{
+		"R": bindRelation("t", "t", []sql.FieldEntry{sql.FieldEntry{Name: "A", Binding: bindCol("x", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "a", Binding: bindCol("y", "", sql.KindNum, false, false, false, "")}}, "", "", ""),
+	}
+}
+
+func c1262Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
 		"x": bindCol("a", "o", sql.KindNum, false, false, false, ""),
 		"X": bindCol("b", "o", sql.KindNum, false, false, false, ""),
 	}
 }
 
-func c1262Bind() map[string]*sql.Binding {
+func c1263Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
 		"ITEMS": bindRelation("oi", "oi", []sql.FieldEntry{sql.FieldEntry{Name: "QTY", Binding: bindCol("qty", "oi", sql.KindNum, false, false, false, "")}}, "", "oi.a=o.id OR oi.b=o.id", ""),
 	}
-}
-
-func c1263Bind() map[string]*sql.Binding {
-	return map[string]*sql.Binding{
-
-	}
-}
-
-func c1263Reg() {
-	sql.DefineDialect("my-ok", map[string]interface{}{
-			"extends": "mariadb",
-			"version": "10.5",
-			"lexical": map[string]interface{}{"textEscape": map[string]interface{}{"\\": "\\\\", "'": "''"}},
-		})
 }
 
 func c1264Bind() map[string]*sql.Binding {
@@ -8788,6 +8780,20 @@ func c1264Bind() map[string]*sql.Binding {
 }
 
 func c1264Reg() {
+	sql.DefineDialect("my-ok", map[string]interface{}{
+			"extends": "mariadb",
+			"version": "10.5",
+			"lexical": map[string]interface{}{"textEscape": map[string]interface{}{"\\": "\\\\", "'": "''"}},
+		})
+}
+
+func c1265Bind() map[string]*sql.Binding {
+	return map[string]*sql.Binding{
+
+	}
+}
+
+func c1265Reg() {
 	sql.DefineDialect("redef", map[string]interface{}{
 			"extends": "mariadb",
 			"version": "10.5",
@@ -8800,13 +8806,13 @@ func c1264Reg() {
 		})
 }
 
-func c1265Bind() map[string]*sql.Binding {
+func c1266Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
 
 	}
 }
 
-func c1265Reg() {
+func c1266Reg() {
 	sql.DefineDialect("redef2", map[string]interface{}{
 			"extends": "mariadb",
 			"version": "10.5",
@@ -8815,13 +8821,6 @@ func c1265Reg() {
 			"extends": "postgresql",
 			"version": "16",
 		})
-}
-
-func c1266Bind() map[string]*sql.Binding {
-	return map[string]*sql.Binding{
-		"ORDERS": bindRelation("orders", "o", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "CUSTOMER_ID", Binding: bindCol("customer_id", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "AMOUNT", Binding: bindCol("amount", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "NAME", Binding: bindCol("name", "o", sql.KindText, false, false, false, "")}}, "", "", ""),
-		"CUSTOMERS": bindRelation("customers", "c", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "c", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "NAME", Binding: bindCol("name", "c", sql.KindText, false, false, false, "")}}, "", "", ""),
-	}
 }
 
 func c1267Bind() map[string]*sql.Binding {
@@ -8917,7 +8916,8 @@ func c1279Bind() map[string]*sql.Binding {
 
 func c1280Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"ORDERS": bindRelation("orders", "o", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "NAME", Binding: bindCol("name", "o", sql.KindText, false, false, false, "")}}, "", "", ""),
+		"ORDERS": bindRelation("orders", "o", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "CUSTOMER_ID", Binding: bindCol("customer_id", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "AMOUNT", Binding: bindCol("amount", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "NAME", Binding: bindCol("name", "o", sql.KindText, false, false, false, "")}}, "", "", ""),
+		"CUSTOMERS": bindRelation("customers", "c", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "c", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "NAME", Binding: bindCol("name", "c", sql.KindText, false, false, false, "")}}, "", "", ""),
 	}
 }
 
@@ -8947,8 +8947,7 @@ func c1284Bind() map[string]*sql.Binding {
 
 func c1285Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"ORDERS": bindRelation("orders", "o", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "CUSTOMER_ID", Binding: bindCol("customer_id", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "AMOUNT", Binding: bindCol("amount", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "NAME", Binding: bindCol("name", "o", sql.KindText, false, false, false, "")}}, "", "", ""),
-		"CUSTOMERS": bindRelation("customers", "c", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "c", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "CNAME", Binding: bindCol("cname", "c", sql.KindText, false, false, false, "")}}, "", "", ""),
+		"ORDERS": bindRelation("orders", "o", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "NAME", Binding: bindCol("name", "o", sql.KindText, false, false, false, "")}}, "", "", ""),
 	}
 }
 
@@ -8975,23 +8974,16 @@ func c1288Bind() map[string]*sql.Binding {
 
 func c1289Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"V1": bindValue(valueTree([]treeItem{{key: strPtr("1"), val: sel.NewText("a")}, {key: strPtr("2"), val: sel.NewNone()}}), nil),
-		"XT": bindCol("xt", "", sql.KindText, false, false, false, ""),
+		"ORDERS": bindRelation("orders", "o", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "CUSTOMER_ID", Binding: bindCol("customer_id", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "AMOUNT", Binding: bindCol("amount", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "NAME", Binding: bindCol("name", "o", sql.KindText, false, false, false, "")}}, "", "", ""),
+		"CUSTOMERS": bindRelation("customers", "c", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "c", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "CNAME", Binding: bindCol("cname", "c", sql.KindText, false, false, false, "")}}, "", "", ""),
 	}
 }
 
 func c1290Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-
+		"V1": bindValue(valueTree([]treeItem{{key: strPtr("1"), val: sel.NewText("a")}, {key: strPtr("2"), val: sel.NewNone()}}), nil),
+		"XT": bindCol("xt", "", sql.KindText, false, false, false, ""),
 	}
-}
-
-func c1290Reg() {
-	sql.DefineDialect("my-nl", map[string]interface{}{
-			"extends": "mariadb",
-			"version": "10.5",
-			"lexical": map[string]interface{}{"textEscape": map[string]interface{}{"'": "''", "\n": "\\n"}},
-		})
 }
 
 func c1291Bind() map[string]*sql.Binding {
@@ -9001,17 +8993,25 @@ func c1291Bind() map[string]*sql.Binding {
 }
 
 func c1291Reg() {
+	sql.DefineDialect("my-nl", map[string]interface{}{
+			"extends": "mariadb",
+			"version": "10.5",
+			"lexical": map[string]interface{}{"textEscape": map[string]interface{}{"'": "''", "\n": "\\n"}},
+		})
+}
+
+func c1292Bind() map[string]*sql.Binding {
+	return map[string]*sql.Binding{
+
+	}
+}
+
+func c1292Reg() {
 	sql.DefineDialect("ansi-x", map[string]interface{}{
 			"extends": "ansi",
 			"version": "2016",
 			"lexical": map[string]interface{}{"textEscape": map[string]interface{}{"'": "x'", "x": "xx"}},
 		})
-}
-
-func c1293Bind() map[string]*sql.Binding {
-	return map[string]*sql.Binding{
-		"XN": bindCol("xn", "", sql.KindNum, false, false, false, ""),
-	}
 }
 
 func c1294Bind() map[string]*sql.Binding {
@@ -9028,32 +9028,32 @@ func c1295Bind() map[string]*sql.Binding {
 
 func c1296Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"XB": bindCol("xb", "", sql.KindBool, false, false, false, ""),
-		"TS": bindRelation("ts", "ts", []sql.FieldEntry{sql.FieldEntry{Name: "V", Binding: bindCol("v", "ts", sql.KindText, false, false, false, "")}}, "V", "", ""),
+		"XN": bindCol("xn", "", sql.KindNum, false, false, false, ""),
 	}
 }
 
 func c1297Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
 		"XB": bindCol("xb", "", sql.KindBool, false, false, false, ""),
+		"TS": bindRelation("ts", "ts", []sql.FieldEntry{sql.FieldEntry{Name: "V", Binding: bindCol("v", "ts", sql.KindText, false, false, false, "")}}, "V", "", ""),
 	}
 }
 
 func c1298Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"T": bindRelation("t", "t", []sql.FieldEntry{sql.FieldEntry{Name: "N", Binding: bindCol("n", "t", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "S", Binding: bindCol("s", "t", sql.KindText, false, false, false, "")}}, "", "", ""),
+		"XB": bindCol("xb", "", sql.KindBool, false, false, false, ""),
 	}
 }
 
 func c1299Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"XC": bindCol("xc", "", sql.KindText, false, false, false, "bogus"),
+		"T": bindRelation("t", "t", []sql.FieldEntry{sql.FieldEntry{Name: "N", Binding: bindCol("n", "t", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "S", Binding: bindCol("s", "t", sql.KindText, false, false, false, "")}}, "", "", ""),
 	}
 }
 
 func c1300Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"ORDERS": bindRelation("orders", "o", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "AMOUNT", Binding: bindCol("amount", "o", sql.KindNum, false, false, false, "")}}, "", "", ""),
+		"XC": bindCol("xc", "", sql.KindText, false, false, false, "bogus"),
 	}
 }
 
@@ -9065,27 +9065,26 @@ func c1301Bind() map[string]*sql.Binding {
 
 func c1302Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"A": bindRelation("a", "o", []sql.FieldEntry{sql.FieldEntry{Name: "X", Binding: bindCol("x", "o", sql.KindNum, false, false, false, "")}}, "", "", ""),
-		"B": bindRelation("b", "O", []sql.FieldEntry{sql.FieldEntry{Name: "X", Binding: bindCol("x", "O", sql.KindNum, false, false, false, "")}}, "", "", ""),
+		"ORDERS": bindRelation("orders", "o", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "AMOUNT", Binding: bindCol("amount", "o", sql.KindNum, false, false, false, "")}}, "", "", ""),
 	}
 }
 
 func c1303Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"XN": bindCol("xn", "", sql.KindNum, false, false, false, ""),
+		"A": bindRelation("a", "o", []sql.FieldEntry{sql.FieldEntry{Name: "X", Binding: bindCol("x", "o", sql.KindNum, false, false, false, "")}}, "", "", ""),
+		"B": bindRelation("b", "O", []sql.FieldEntry{sql.FieldEntry{Name: "X", Binding: bindCol("x", "O", sql.KindNum, false, false, false, "")}}, "", "", ""),
 	}
 }
 
 func c1304Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"ORDERS": bindRelation("orders", "o", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "CUSTOMER_ID", Binding: bindCol("customer_id", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "AMOUNT", Binding: bindCol("amount", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "NAME", Binding: bindCol("name", "o", sql.KindText, false, false, false, "")}}, "", "", ""),
+		"XN": bindCol("xn", "", sql.KindNum, false, false, false, ""),
 	}
 }
 
 func c1305Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
 		"ORDERS": bindRelation("orders", "o", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "CUSTOMER_ID", Binding: bindCol("customer_id", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "AMOUNT", Binding: bindCol("amount", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "NAME", Binding: bindCol("name", "o", sql.KindText, false, false, false, "")}}, "", "", ""),
-		"CUSTOMERS": bindRelation("customers", "c", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "c", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "CNAME", Binding: bindCol("cname", "c", sql.KindText, false, false, false, "")}}, "", "", ""),
 	}
 }
 
@@ -9113,10 +9112,17 @@ func c1308Bind() map[string]*sql.Binding {
 func c1309Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
 		"ORDERS": bindRelation("orders", "o", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "CUSTOMER_ID", Binding: bindCol("customer_id", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "AMOUNT", Binding: bindCol("amount", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "NAME", Binding: bindCol("name", "o", sql.KindText, false, false, false, "")}}, "", "", ""),
+		"CUSTOMERS": bindRelation("customers", "c", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "c", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "CNAME", Binding: bindCol("cname", "c", sql.KindText, false, false, false, "")}}, "", "", ""),
 	}
 }
 
 func c1310Bind() map[string]*sql.Binding {
+	return map[string]*sql.Binding{
+		"ORDERS": bindRelation("orders", "o", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "CUSTOMER_ID", Binding: bindCol("customer_id", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "AMOUNT", Binding: bindCol("amount", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "NAME", Binding: bindCol("name", "o", sql.KindText, false, false, false, "")}}, "", "", ""),
+	}
+}
+
+func c1311Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
 		"ORDERS": bindRelation("orders", "o", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "CUSTOMER_ID", Binding: bindCol("customer_id", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "AMOUNT", Binding: bindCol("amount", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "NAME", Binding: bindCol("name", "o", sql.KindText, false, false, false, "")}}, "", "", ""),
 	}
@@ -29356,8 +29362,25 @@ var sqlCases = []SqlCase{
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
 	 BindingsFn: c1188Bind},
-	{Name: "agg.in-relation.bool-column-needle-is-refused",
+	{Name: "agg.bucket-sum.a-non-name-binder-is-refused",
 	 At: "49-kind-guarantees.sqlt:501",
+	 Dialect: "mariadb",
+	 Source: "O .> BUCKET(_[\"CAT\"], RECORD(\"s\", SUM(_, 1, _[\"AMT\"])))",
+	 Expect: nil,
+	 Error: strPtr("E_SQL_SHAPE"),
+	 Throws: nil,
+	 Params: nil,
+	 As: strPtr("statement"),
+	 Mode: nil,
+	 Strict: false,
+	 Plan: nil,
+	 HasTables: false,
+	 Tables: nil,
+	 Unrepresentable: nil,
+	 RegisterFn: nil,
+	 BindingsFn: c1189Bind},
+	{Name: "agg.in-relation.bool-column-needle-is-refused",
+	 At: "49-kind-guarantees.sqlt:516",
 	 Dialect: "mariadb",
 	 Source: "F IN S",
 	 Expect: nil,
@@ -29372,9 +29395,9 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1189Bind},
+	 BindingsFn: c1190Bind},
 	{Name: "agg.in-relation.bool-literal-needle-is-refused",
-	 At: "49-kind-guarantees.sqlt:514",
+	 At: "49-kind-guarantees.sqlt:529",
 	 Dialect: "mariadb",
 	 Source: "TRUE IN S",
 	 Expect: nil,
@@ -29389,9 +29412,9 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1190Bind},
+	 BindingsFn: c1191Bind},
 	{Name: "agg.in-relation.bin-column-needle-is-refused",
-	 At: "49-kind-guarantees.sqlt:527",
+	 At: "49-kind-guarantees.sqlt:542",
 	 Dialect: "mariadb",
 	 Source: "X IN S",
 	 Expect: nil,
@@ -29406,9 +29429,9 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1191Bind},
+	 BindingsFn: c1192Bind},
 	{Name: "bind.in.exact.numeric-literal-item-is-cast",
-	 At: "49-kind-guarantees.sqlt:540",
+	 At: "49-kind-guarantees.sqlt:555",
 	 Dialect: "mariadb",
 	 Source: "T IN (\"a\", 3)",
 	 Expect: strPtr("((`t` = 'a') OR (`t` = CAST(3 AS CHAR) COLLATE utf8mb4_nopad_bin))"),
@@ -29423,9 +29446,9 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1192Bind},
+	 BindingsFn: c1193Bind},
 	{Name: "bind.in.exact.numeric-literal-items-only",
-	 At: "49-kind-guarantees.sqlt:553",
+	 At: "49-kind-guarantees.sqlt:568",
 	 Dialect: "mariadb",
 	 Source: "S IN (1, 2)",
 	 Expect: strPtr("((`s` = CAST(1 AS CHAR) COLLATE utf8mb4_nopad_bin) OR (`s` = CAST(2 AS CHAR) COLLATE utf8mb4_nopad_bin))"),
@@ -29440,9 +29463,9 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1193Bind},
+	 BindingsFn: c1194Bind},
 	{Name: "stmt.take.whole-number-with-scale.mariadb",
-	 At: "49-kind-guarantees.sqlt:566",
+	 At: "49-kind-guarantees.sqlt:581",
 	 Dialect: "mariadb",
 	 Source: "ITEMS .> TAKE(2.0)",
 	 Expect: strPtr("SELECT * FROM `items` LIMIT 2"),
@@ -29457,9 +29480,9 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1194Bind},
+	 BindingsFn: c1195Bind},
 	{Name: "stmt.take.zero-with-scale.mariadb",
-	 At: "49-kind-guarantees.sqlt:581",
+	 At: "49-kind-guarantees.sqlt:596",
 	 Dialect: "mariadb",
 	 Source: "ITEMS .> TAKE(0.0)",
 	 Expect: strPtr("SELECT * FROM `items` LIMIT 0"),
@@ -29474,9 +29497,9 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1195Bind},
+	 BindingsFn: c1196Bind},
 	{Name: "stmt.take.count-past-2^53.mariadb",
-	 At: "49-kind-guarantees.sqlt:596",
+	 At: "49-kind-guarantees.sqlt:611",
 	 Dialect: "mariadb",
 	 Source: "ITEMS .> TAKE(9007199254740993)",
 	 Expect: strPtr("SELECT * FROM `items` LIMIT 9007199254740993"),
@@ -29491,9 +29514,9 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1196Bind},
+	 BindingsFn: c1197Bind},
 	{Name: "stmt.take.int64-max.mariadb",
-	 At: "49-kind-guarantees.sqlt:611",
+	 At: "49-kind-guarantees.sqlt:626",
 	 Dialect: "mariadb",
 	 Source: "ITEMS .> TAKE(9223372036854775807)",
 	 Expect: strPtr("SELECT * FROM `items` LIMIT 9223372036854775807"),
@@ -29508,29 +29531,12 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1197Bind},
+	 BindingsFn: c1198Bind},
 	{Name: "stmt.take.whole-number-with-scale.postgresql",
-	 At: "49-kind-guarantees.sqlt:626",
+	 At: "49-kind-guarantees.sqlt:641",
 	 Dialect: "postgresql",
 	 Source: "ITEMS .> TAKE(2.0)",
 	 Expect: strPtr("SELECT * FROM \"items\" LIMIT 2"),
-	 Error: nil,
-	 Throws: nil,
-	 Params: nil,
-	 As: strPtr("statement"),
-	 Mode: nil,
-	 Strict: false,
-	 Plan: nil,
-	 HasTables: false,
-	 Tables: nil,
-	 Unrepresentable: nil,
-	 RegisterFn: nil,
-	 BindingsFn: c1198Bind},
-	{Name: "stmt.take.zero-with-scale.postgresql",
-	 At: "49-kind-guarantees.sqlt:641",
-	 Dialect: "postgresql",
-	 Source: "ITEMS .> TAKE(0.0)",
-	 Expect: strPtr("SELECT * FROM \"items\" LIMIT 0"),
 	 Error: nil,
 	 Throws: nil,
 	 Params: nil,
@@ -29543,8 +29549,25 @@ var sqlCases = []SqlCase{
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
 	 BindingsFn: c1199Bind},
-	{Name: "stmt.take.count-past-2^53.postgresql",
+	{Name: "stmt.take.zero-with-scale.postgresql",
 	 At: "49-kind-guarantees.sqlt:656",
+	 Dialect: "postgresql",
+	 Source: "ITEMS .> TAKE(0.0)",
+	 Expect: strPtr("SELECT * FROM \"items\" LIMIT 0"),
+	 Error: nil,
+	 Throws: nil,
+	 Params: nil,
+	 As: strPtr("statement"),
+	 Mode: nil,
+	 Strict: false,
+	 Plan: nil,
+	 HasTables: false,
+	 Tables: nil,
+	 Unrepresentable: nil,
+	 RegisterFn: nil,
+	 BindingsFn: c1200Bind},
+	{Name: "stmt.take.count-past-2^53.postgresql",
+	 At: "49-kind-guarantees.sqlt:671",
 	 Dialect: "postgresql",
 	 Source: "ITEMS .> TAKE(9007199254740993)",
 	 Expect: strPtr("SELECT * FROM \"items\" LIMIT 9007199254740993"),
@@ -29559,9 +29582,9 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1200Bind},
+	 BindingsFn: c1201Bind},
 	{Name: "stmt.take.int64-max.postgresql",
-	 At: "49-kind-guarantees.sqlt:671",
+	 At: "49-kind-guarantees.sqlt:686",
 	 Dialect: "postgresql",
 	 Source: "ITEMS .> TAKE(9223372036854775807)",
 	 Expect: strPtr("SELECT * FROM \"items\" LIMIT 9223372036854775807"),
@@ -29576,9 +29599,9 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1201Bind},
+	 BindingsFn: c1202Bind},
 	{Name: "stmt.take.whole-number-with-scale.sqlite",
-	 At: "49-kind-guarantees.sqlt:686",
+	 At: "49-kind-guarantees.sqlt:701",
 	 Dialect: "sqlite",
 	 Source: "ITEMS .> TAKE(2.0)",
 	 Expect: strPtr("SELECT * FROM \"items\" LIMIT 2"),
@@ -29593,9 +29616,9 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1202Bind},
+	 BindingsFn: c1203Bind},
 	{Name: "stmt.take.zero-with-scale.sqlite",
-	 At: "49-kind-guarantees.sqlt:701",
+	 At: "49-kind-guarantees.sqlt:716",
 	 Dialect: "sqlite",
 	 Source: "ITEMS .> TAKE(0.0)",
 	 Expect: strPtr("SELECT * FROM \"items\" LIMIT 0"),
@@ -29610,9 +29633,9 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1203Bind},
+	 BindingsFn: c1204Bind},
 	{Name: "stmt.take.count-past-2^53.sqlite",
-	 At: "49-kind-guarantees.sqlt:716",
+	 At: "49-kind-guarantees.sqlt:731",
 	 Dialect: "sqlite",
 	 Source: "ITEMS .> TAKE(9007199254740993)",
 	 Expect: strPtr("SELECT * FROM \"items\" LIMIT 9007199254740993"),
@@ -29627,9 +29650,9 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1204Bind},
+	 BindingsFn: c1205Bind},
 	{Name: "stmt.take.int64-max.sqlite",
-	 At: "49-kind-guarantees.sqlt:731",
+	 At: "49-kind-guarantees.sqlt:746",
 	 Dialect: "sqlite",
 	 Source: "ITEMS .> TAKE(9223372036854775807)",
 	 Expect: strPtr("SELECT * FROM \"items\" LIMIT 9223372036854775807"),
@@ -29644,9 +29667,9 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1205Bind},
+	 BindingsFn: c1206Bind},
 	{Name: "stmt.drop.whole-number-with-scale.mariadb",
-	 At: "49-kind-guarantees.sqlt:746",
+	 At: "49-kind-guarantees.sqlt:761",
 	 Dialect: "mariadb",
 	 Source: "ITEMS .> DROP(2.0)",
 	 Expect: strPtr("SELECT * FROM `items` LIMIT 18446744073709551615 OFFSET 2"),
@@ -29661,9 +29684,9 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1206Bind},
+	 BindingsFn: c1207Bind},
 	{Name: "stmt.drop.count-past-2^53.mariadb",
-	 At: "49-kind-guarantees.sqlt:761",
+	 At: "49-kind-guarantees.sqlt:776",
 	 Dialect: "mariadb",
 	 Source: "ITEMS .> DROP(9007199254740993)",
 	 Expect: strPtr("SELECT * FROM `items` LIMIT 18446744073709551615 OFFSET 9007199254740993"),
@@ -29678,9 +29701,9 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1207Bind},
+	 BindingsFn: c1208Bind},
 	{Name: "stmt.drop.count-past-2^53.postgresql",
-	 At: "49-kind-guarantees.sqlt:776",
+	 At: "49-kind-guarantees.sqlt:791",
 	 Dialect: "postgresql",
 	 Source: "ITEMS .> DROP(9007199254740993)",
 	 Expect: strPtr("SELECT * FROM \"items\" OFFSET 9007199254740993"),
@@ -29695,9 +29718,9 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1208Bind},
+	 BindingsFn: c1209Bind},
 	{Name: "stmt.drop.count-past-2^53.sqlite",
-	 At: "49-kind-guarantees.sqlt:791",
+	 At: "49-kind-guarantees.sqlt:806",
 	 Dialect: "sqlite",
 	 Source: "ITEMS .> DROP(9007199254740993)",
 	 Expect: strPtr("SELECT * FROM \"items\" LIMIT -1 OFFSET 9007199254740993"),
@@ -29712,28 +29735,11 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1209Bind},
-	{Name: "stmt.take.count-past-int64-is-clamped.mariadb",
-	 At: "49-kind-guarantees.sqlt:806",
-	 Dialect: "mariadb",
-	 Source: "ITEMS .> TAKE(99999999999999999999999)",
-	 Expect: strPtr("SELECT * FROM `items` LIMIT 9223372036854775807"),
-	 Error: nil,
-	 Throws: nil,
-	 Params: nil,
-	 As: strPtr("statement"),
-	 Mode: nil,
-	 Strict: false,
-	 Plan: nil,
-	 HasTables: false,
-	 Tables: nil,
-	 Unrepresentable: nil,
-	 RegisterFn: nil,
 	 BindingsFn: c1210Bind},
-	{Name: "stmt.take.count-2^63-is-clamped.mariadb",
+	{Name: "stmt.take.count-past-int64-is-clamped.mariadb",
 	 At: "49-kind-guarantees.sqlt:821",
 	 Dialect: "mariadb",
-	 Source: "ITEMS .> TAKE(9223372036854775808)",
+	 Source: "ITEMS .> TAKE(99999999999999999999999)",
 	 Expect: strPtr("SELECT * FROM `items` LIMIT 9223372036854775807"),
 	 Error: nil,
 	 Throws: nil,
@@ -29747,11 +29753,11 @@ var sqlCases = []SqlCase{
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
 	 BindingsFn: c1211Bind},
-	{Name: "stmt.take.count-past-int64-is-clamped.postgresql",
+	{Name: "stmt.take.count-2^63-is-clamped.mariadb",
 	 At: "49-kind-guarantees.sqlt:836",
-	 Dialect: "postgresql",
-	 Source: "ITEMS .> TAKE(99999999999999999999999)",
-	 Expect: strPtr("SELECT * FROM \"items\" LIMIT 9223372036854775807"),
+	 Dialect: "mariadb",
+	 Source: "ITEMS .> TAKE(9223372036854775808)",
+	 Expect: strPtr("SELECT * FROM `items` LIMIT 9223372036854775807"),
 	 Error: nil,
 	 Throws: nil,
 	 Params: nil,
@@ -29764,10 +29770,10 @@ var sqlCases = []SqlCase{
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
 	 BindingsFn: c1212Bind},
-	{Name: "stmt.take.count-2^63-is-clamped.postgresql",
+	{Name: "stmt.take.count-past-int64-is-clamped.postgresql",
 	 At: "49-kind-guarantees.sqlt:851",
 	 Dialect: "postgresql",
-	 Source: "ITEMS .> TAKE(9223372036854775808)",
+	 Source: "ITEMS .> TAKE(99999999999999999999999)",
 	 Expect: strPtr("SELECT * FROM \"items\" LIMIT 9223372036854775807"),
 	 Error: nil,
 	 Throws: nil,
@@ -29781,8 +29787,25 @@ var sqlCases = []SqlCase{
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
 	 BindingsFn: c1213Bind},
-	{Name: "stmt.take.count-past-int64-is-clamped.sqlite",
+	{Name: "stmt.take.count-2^63-is-clamped.postgresql",
 	 At: "49-kind-guarantees.sqlt:866",
+	 Dialect: "postgresql",
+	 Source: "ITEMS .> TAKE(9223372036854775808)",
+	 Expect: strPtr("SELECT * FROM \"items\" LIMIT 9223372036854775807"),
+	 Error: nil,
+	 Throws: nil,
+	 Params: nil,
+	 As: strPtr("statement"),
+	 Mode: nil,
+	 Strict: false,
+	 Plan: nil,
+	 HasTables: false,
+	 Tables: nil,
+	 Unrepresentable: nil,
+	 RegisterFn: nil,
+	 BindingsFn: c1214Bind},
+	{Name: "stmt.take.count-past-int64-is-clamped.sqlite",
+	 At: "49-kind-guarantees.sqlt:881",
 	 Dialect: "sqlite",
 	 Source: "ITEMS .> TAKE(99999999999999999999999)",
 	 Expect: strPtr("SELECT * FROM \"items\" LIMIT 9223372036854775807"),
@@ -29797,9 +29820,9 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1214Bind},
+	 BindingsFn: c1215Bind},
 	{Name: "stmt.take.count-2^63-is-clamped.sqlite",
-	 At: "49-kind-guarantees.sqlt:881",
+	 At: "49-kind-guarantees.sqlt:896",
 	 Dialect: "sqlite",
 	 Source: "ITEMS .> TAKE(9223372036854775808)",
 	 Expect: strPtr("SELECT * FROM \"items\" LIMIT 9223372036854775807"),
@@ -29814,9 +29837,9 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1215Bind},
+	 BindingsFn: c1216Bind},
 	{Name: "stmt.take.count-uint64-max-is-clamped.mariadb",
-	 At: "49-kind-guarantees.sqlt:896",
+	 At: "49-kind-guarantees.sqlt:911",
 	 Dialect: "mariadb",
 	 Source: "ITEMS .> TAKE(18446744073709551615)",
 	 Expect: strPtr("SELECT * FROM `items` LIMIT 9223372036854775807"),
@@ -29831,9 +29854,9 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1216Bind},
+	 BindingsFn: c1217Bind},
 	{Name: "stmt.drop.count-past-int64-is-clamped.mariadb",
-	 At: "49-kind-guarantees.sqlt:911",
+	 At: "49-kind-guarantees.sqlt:926",
 	 Dialect: "mariadb",
 	 Source: "ITEMS .> DROP(18446744073709551616)",
 	 Expect: strPtr("SELECT * FROM `items` LIMIT 18446744073709551615 OFFSET 9223372036854775807"),
@@ -29848,9 +29871,9 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1217Bind},
+	 BindingsFn: c1218Bind},
 	{Name: "stmt.drop.count-past-int64-is-clamped.postgresql",
-	 At: "49-kind-guarantees.sqlt:926",
+	 At: "49-kind-guarantees.sqlt:941",
 	 Dialect: "postgresql",
 	 Source: "ITEMS .> DROP(18446744073709551616)",
 	 Expect: strPtr("SELECT * FROM \"items\" OFFSET 9223372036854775807"),
@@ -29865,9 +29888,9 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1218Bind},
+	 BindingsFn: c1219Bind},
 	{Name: "stmt.drop.count-past-int64-is-clamped.sqlite",
-	 At: "49-kind-guarantees.sqlt:939",
+	 At: "49-kind-guarantees.sqlt:954",
 	 Dialect: "sqlite",
 	 Source: "ITEMS .> DROP(18446744073709551616)",
 	 Expect: strPtr("SELECT * FROM \"items\" LIMIT -1 OFFSET 9223372036854775807"),
@@ -29882,9 +29905,9 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1219Bind},
+	 BindingsFn: c1220Bind},
 	{Name: "stmt.drop.merged-offset-past-int64-is-clamped.mariadb",
-	 At: "49-kind-guarantees.sqlt:952",
+	 At: "49-kind-guarantees.sqlt:967",
 	 Dialect: "mariadb",
 	 Source: "ITEMS .> DROP(9223372036854775807) .> DROP(1)",
 	 Expect: strPtr("SELECT * FROM `items` LIMIT 18446744073709551615 OFFSET 9223372036854775807"),
@@ -29899,9 +29922,9 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1220Bind},
+	 BindingsFn: c1221Bind},
 	{Name: "stmt.drop.merged-offset-below-int64-is-exact.mariadb",
-	 At: "49-kind-guarantees.sqlt:967",
+	 At: "49-kind-guarantees.sqlt:982",
 	 Dialect: "mariadb",
 	 Source: "ITEMS .> DROP(9223372036854775806) .> DROP(1)",
 	 Expect: strPtr("SELECT * FROM `items` LIMIT 18446744073709551615 OFFSET 9223372036854775807"),
@@ -29916,9 +29939,9 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1221Bind},
+	 BindingsFn: c1222Bind},
 	{Name: "stmt.take.then-take-past-int64-keeps-the-smaller.mariadb",
-	 At: "49-kind-guarantees.sqlt:982",
+	 At: "49-kind-guarantees.sqlt:997",
 	 Dialect: "mariadb",
 	 Source: "ITEMS .> TAKE(5) .> TAKE(9223372036854775808)",
 	 Expect: strPtr("SELECT * FROM `items` LIMIT 5"),
@@ -29933,9 +29956,9 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1222Bind},
+	 BindingsFn: c1223Bind},
 	{Name: "agg.bucket-sum.an-undeclared-field-is-guarded-as-a-whole",
-	 At: "49-kind-guarantees.sqlt:997",
+	 At: "49-kind-guarantees.sqlt:1012",
 	 Dialect: "mariadb",
 	 Source: "O .> BUCKET(_[\"CAT\"], RECORD(\"s\", SUM(_, _[\"MISC\"])))",
 	 Expect: strPtr("SELECT CASE WHEN COUNT(*) = COUNT(CASE WHEN (`o`.`misc` REGEXP '\\\\A-?[0-9]+(\\\\.[0-9]+)?\\\\z') THEN 1 END) THEN COALESCE(SUM(CAST(`o`.`misc` AS DECIMAL(65,10))), 0) ELSE NULL END AS `s` FROM `orders` `o` GROUP BY CAST(`o`.`cat` AS CHAR) COLLATE utf8mb4_nopad_bin"),
@@ -29950,9 +29973,9 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1223Bind},
+	 BindingsFn: c1224Bind},
 	{Name: "agg.bucket-sum.an-undeclared-field-sqlite-refuses",
-	 At: "49-kind-guarantees.sqlt:1012",
+	 At: "49-kind-guarantees.sqlt:1027",
 	 Dialect: "sqlite",
 	 Source: "O .> BUCKET(_[\"CAT\"], RECORD(\"s\", SUM(_, _[\"MISC\"])))",
 	 Expect: nil,
@@ -29967,9 +29990,9 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1224Bind},
+	 BindingsFn: c1225Bind},
 	{Name: "agg.fold.any.at-256-is-a-left-fold",
-	 At: "49-kind-guarantees.sqlt:1025",
+	 At: "49-kind-guarantees.sqlt:1040",
 	 Dialect: "mariadb",
 	 Source: "ANY((N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N), _ > 0)",
 	 Expect: strPtr("((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((`k`.`n` > 0) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0))"),
@@ -29984,9 +30007,9 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1225Bind},
+	 BindingsFn: c1226Bind},
 	{Name: "agg.fold.all.at-256-is-a-left-fold",
-	 At: "49-kind-guarantees.sqlt:1038",
+	 At: "49-kind-guarantees.sqlt:1053",
 	 Dialect: "mariadb",
 	 Source: "ALL((N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N), _ > 0)",
 	 Expect: strPtr("((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((`k`.`n` > 0) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0))"),
@@ -30001,9 +30024,9 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1226Bind},
+	 BindingsFn: c1227Bind},
 	{Name: "agg.fold.sum.at-256-is-a-left-fold",
-	 At: "49-kind-guarantees.sqlt:1049",
+	 At: "49-kind-guarantees.sqlt:1064",
 	 Dialect: "mariadb",
 	 Source: "SUM((N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N), _)",
 	 Expect: strPtr("(((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((`k`.`n` + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`)"),
@@ -30018,9 +30041,9 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1227Bind},
+	 BindingsFn: c1228Bind},
 	{Name: "agg.fold.in-list.at-256-is-a-left-fold",
-	 At: "49-kind-guarantees.sqlt:1060",
+	 At: "49-kind-guarantees.sqlt:1075",
 	 Dialect: "mariadb",
 	 Source: "T IN (\"v0\", \"v1\", \"v2\", \"v3\", \"v4\", \"v5\", \"v6\", \"v7\", \"v8\", \"v9\", \"v10\", \"v11\", \"v12\", \"v13\", \"v14\", \"v15\", \"v16\", \"v17\", \"v18\", \"v19\", \"v20\", \"v21\", \"v22\", \"v23\", \"v24\", \"v25\", \"v26\", \"v27\", \"v28\", \"v29\", \"v30\", \"v31\", \"v32\", \"v33\", \"v34\", \"v35\", \"v36\", \"v37\", \"v38\", \"v39\", \"v40\", \"v41\", \"v42\", \"v43\", \"v44\", \"v45\", \"v46\", \"v47\", \"v48\", \"v49\", \"v50\", \"v51\", \"v52\", \"v53\", \"v54\", \"v55\", \"v56\", \"v57\", \"v58\", \"v59\", \"v60\", \"v61\", \"v62\", \"v63\", \"v64\", \"v65\", \"v66\", \"v67\", \"v68\", \"v69\", \"v70\", \"v71\", \"v72\", \"v73\", \"v74\", \"v75\", \"v76\", \"v77\", \"v78\", \"v79\", \"v80\", \"v81\", \"v82\", \"v83\", \"v84\", \"v85\", \"v86\", \"v87\", \"v88\", \"v89\", \"v90\", \"v91\", \"v92\", \"v93\", \"v94\", \"v95\", \"v96\", \"v97\", \"v98\", \"v99\", \"v100\", \"v101\", \"v102\", \"v103\", \"v104\", \"v105\", \"v106\", \"v107\", \"v108\", \"v109\", \"v110\", \"v111\", \"v112\", \"v113\", \"v114\", \"v115\", \"v116\", \"v117\", \"v118\", \"v119\", \"v120\", \"v121\", \"v122\", \"v123\", \"v124\", \"v125\", \"v126\", \"v127\", \"v128\", \"v129\", \"v130\", \"v131\", \"v132\", \"v133\", \"v134\", \"v135\", \"v136\", \"v137\", \"v138\", \"v139\", \"v140\", \"v141\", \"v142\", \"v143\", \"v144\", \"v145\", \"v146\", \"v147\", \"v148\", \"v149\", \"v150\", \"v151\", \"v152\", \"v153\", \"v154\", \"v155\", \"v156\", \"v157\", \"v158\", \"v159\", \"v160\", \"v161\", \"v162\", \"v163\", \"v164\", \"v165\", \"v166\", \"v167\", \"v168\", \"v169\", \"v170\", \"v171\", \"v172\", \"v173\", \"v174\", \"v175\", \"v176\", \"v177\", \"v178\", \"v179\", \"v180\", \"v181\", \"v182\", \"v183\", \"v184\", \"v185\", \"v186\", \"v187\", \"v188\", \"v189\", \"v190\", \"v191\", \"v192\", \"v193\", \"v194\", \"v195\", \"v196\", \"v197\", \"v198\", \"v199\", \"v200\", \"v201\", \"v202\", \"v203\", \"v204\", \"v205\", \"v206\", \"v207\", \"v208\", \"v209\", \"v210\", \"v211\", \"v212\", \"v213\", \"v214\", \"v215\", \"v216\", \"v217\", \"v218\", \"v219\", \"v220\", \"v221\", \"v222\", \"v223\", \"v224\", \"v225\", \"v226\", \"v227\", \"v228\", \"v229\", \"v230\", \"v231\", \"v232\", \"v233\", \"v234\", \"v235\", \"v236\", \"v237\", \"v238\", \"v239\", \"v240\", \"v241\", \"v242\", \"v243\", \"v244\", \"v245\", \"v246\", \"v247\", \"v248\", \"v249\", \"v250\", \"v251\", \"v252\", \"v253\", \"v254\", \"v255\")",
 	 Expect: strPtr("((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((`k`.`t` = 'v0') OR (`k`.`t` = 'v1')) OR (`k`.`t` = 'v2')) OR (`k`.`t` = 'v3')) OR (`k`.`t` = 'v4')) OR (`k`.`t` = 'v5')) OR (`k`.`t` = 'v6')) OR (`k`.`t` = 'v7')) OR (`k`.`t` = 'v8')) OR (`k`.`t` = 'v9')) OR (`k`.`t` = 'v10')) OR (`k`.`t` = 'v11')) OR (`k`.`t` = 'v12')) OR (`k`.`t` = 'v13')) OR (`k`.`t` = 'v14')) OR (`k`.`t` = 'v15')) OR (`k`.`t` = 'v16')) OR (`k`.`t` = 'v17')) OR (`k`.`t` = 'v18')) OR (`k`.`t` = 'v19')) OR (`k`.`t` = 'v20')) OR (`k`.`t` = 'v21')) OR (`k`.`t` = 'v22')) OR (`k`.`t` = 'v23')) OR (`k`.`t` = 'v24')) OR (`k`.`t` = 'v25')) OR (`k`.`t` = 'v26')) OR (`k`.`t` = 'v27')) OR (`k`.`t` = 'v28')) OR (`k`.`t` = 'v29')) OR (`k`.`t` = 'v30')) OR (`k`.`t` = 'v31')) OR (`k`.`t` = 'v32')) OR (`k`.`t` = 'v33')) OR (`k`.`t` = 'v34')) OR (`k`.`t` = 'v35')) OR (`k`.`t` = 'v36')) OR (`k`.`t` = 'v37')) OR (`k`.`t` = 'v38')) OR (`k`.`t` = 'v39')) OR (`k`.`t` = 'v40')) OR (`k`.`t` = 'v41')) OR (`k`.`t` = 'v42')) OR (`k`.`t` = 'v43')) OR (`k`.`t` = 'v44')) OR (`k`.`t` = 'v45')) OR (`k`.`t` = 'v46')) OR (`k`.`t` = 'v47')) OR (`k`.`t` = 'v48')) OR (`k`.`t` = 'v49')) OR (`k`.`t` = 'v50')) OR (`k`.`t` = 'v51')) OR (`k`.`t` = 'v52')) OR (`k`.`t` = 'v53')) OR (`k`.`t` = 'v54')) OR (`k`.`t` = 'v55')) OR (`k`.`t` = 'v56')) OR (`k`.`t` = 'v57')) OR (`k`.`t` = 'v58')) OR (`k`.`t` = 'v59')) OR (`k`.`t` = 'v60')) OR (`k`.`t` = 'v61')) OR (`k`.`t` = 'v62')) OR (`k`.`t` = 'v63')) OR (`k`.`t` = 'v64')) OR (`k`.`t` = 'v65')) OR (`k`.`t` = 'v66')) OR (`k`.`t` = 'v67')) OR (`k`.`t` = 'v68')) OR (`k`.`t` = 'v69')) OR (`k`.`t` = 'v70')) OR (`k`.`t` = 'v71')) OR (`k`.`t` = 'v72')) OR (`k`.`t` = 'v73')) OR (`k`.`t` = 'v74')) OR (`k`.`t` = 'v75')) OR (`k`.`t` = 'v76')) OR (`k`.`t` = 'v77')) OR (`k`.`t` = 'v78')) OR (`k`.`t` = 'v79')) OR (`k`.`t` = 'v80')) OR (`k`.`t` = 'v81')) OR (`k`.`t` = 'v82')) OR (`k`.`t` = 'v83')) OR (`k`.`t` = 'v84')) OR (`k`.`t` = 'v85')) OR (`k`.`t` = 'v86')) OR (`k`.`t` = 'v87')) OR (`k`.`t` = 'v88')) OR (`k`.`t` = 'v89')) OR (`k`.`t` = 'v90')) OR (`k`.`t` = 'v91')) OR (`k`.`t` = 'v92')) OR (`k`.`t` = 'v93')) OR (`k`.`t` = 'v94')) OR (`k`.`t` = 'v95')) OR (`k`.`t` = 'v96')) OR (`k`.`t` = 'v97')) OR (`k`.`t` = 'v98')) OR (`k`.`t` = 'v99')) OR (`k`.`t` = 'v100')) OR (`k`.`t` = 'v101')) OR (`k`.`t` = 'v102')) OR (`k`.`t` = 'v103')) OR (`k`.`t` = 'v104')) OR (`k`.`t` = 'v105')) OR (`k`.`t` = 'v106')) OR (`k`.`t` = 'v107')) OR (`k`.`t` = 'v108')) OR (`k`.`t` = 'v109')) OR (`k`.`t` = 'v110')) OR (`k`.`t` = 'v111')) OR (`k`.`t` = 'v112')) OR (`k`.`t` = 'v113')) OR (`k`.`t` = 'v114')) OR (`k`.`t` = 'v115')) OR (`k`.`t` = 'v116')) OR (`k`.`t` = 'v117')) OR (`k`.`t` = 'v118')) OR (`k`.`t` = 'v119')) OR (`k`.`t` = 'v120')) OR (`k`.`t` = 'v121')) OR (`k`.`t` = 'v122')) OR (`k`.`t` = 'v123')) OR (`k`.`t` = 'v124')) OR (`k`.`t` = 'v125')) OR (`k`.`t` = 'v126')) OR (`k`.`t` = 'v127')) OR (`k`.`t` = 'v128')) OR (`k`.`t` = 'v129')) OR (`k`.`t` = 'v130')) OR (`k`.`t` = 'v131')) OR (`k`.`t` = 'v132')) OR (`k`.`t` = 'v133')) OR (`k`.`t` = 'v134')) OR (`k`.`t` = 'v135')) OR (`k`.`t` = 'v136')) OR (`k`.`t` = 'v137')) OR (`k`.`t` = 'v138')) OR (`k`.`t` = 'v139')) OR (`k`.`t` = 'v140')) OR (`k`.`t` = 'v141')) OR (`k`.`t` = 'v142')) OR (`k`.`t` = 'v143')) OR (`k`.`t` = 'v144')) OR (`k`.`t` = 'v145')) OR (`k`.`t` = 'v146')) OR (`k`.`t` = 'v147')) OR (`k`.`t` = 'v148')) OR (`k`.`t` = 'v149')) OR (`k`.`t` = 'v150')) OR (`k`.`t` = 'v151')) OR (`k`.`t` = 'v152')) OR (`k`.`t` = 'v153')) OR (`k`.`t` = 'v154')) OR (`k`.`t` = 'v155')) OR (`k`.`t` = 'v156')) OR (`k`.`t` = 'v157')) OR (`k`.`t` = 'v158')) OR (`k`.`t` = 'v159')) OR (`k`.`t` = 'v160')) OR (`k`.`t` = 'v161')) OR (`k`.`t` = 'v162')) OR (`k`.`t` = 'v163')) OR (`k`.`t` = 'v164')) OR (`k`.`t` = 'v165')) OR (`k`.`t` = 'v166')) OR (`k`.`t` = 'v167')) OR (`k`.`t` = 'v168')) OR (`k`.`t` = 'v169')) OR (`k`.`t` = 'v170')) OR (`k`.`t` = 'v171')) OR (`k`.`t` = 'v172')) OR (`k`.`t` = 'v173')) OR (`k`.`t` = 'v174')) OR (`k`.`t` = 'v175')) OR (`k`.`t` = 'v176')) OR (`k`.`t` = 'v177')) OR (`k`.`t` = 'v178')) OR (`k`.`t` = 'v179')) OR (`k`.`t` = 'v180')) OR (`k`.`t` = 'v181')) OR (`k`.`t` = 'v182')) OR (`k`.`t` = 'v183')) OR (`k`.`t` = 'v184')) OR (`k`.`t` = 'v185')) OR (`k`.`t` = 'v186')) OR (`k`.`t` = 'v187')) OR (`k`.`t` = 'v188')) OR (`k`.`t` = 'v189')) OR (`k`.`t` = 'v190')) OR (`k`.`t` = 'v191')) OR (`k`.`t` = 'v192')) OR (`k`.`t` = 'v193')) OR (`k`.`t` = 'v194')) OR (`k`.`t` = 'v195')) OR (`k`.`t` = 'v196')) OR (`k`.`t` = 'v197')) OR (`k`.`t` = 'v198')) OR (`k`.`t` = 'v199')) OR (`k`.`t` = 'v200')) OR (`k`.`t` = 'v201')) OR (`k`.`t` = 'v202')) OR (`k`.`t` = 'v203')) OR (`k`.`t` = 'v204')) OR (`k`.`t` = 'v205')) OR (`k`.`t` = 'v206')) OR (`k`.`t` = 'v207')) OR (`k`.`t` = 'v208')) OR (`k`.`t` = 'v209')) OR (`k`.`t` = 'v210')) OR (`k`.`t` = 'v211')) OR (`k`.`t` = 'v212')) OR (`k`.`t` = 'v213')) OR (`k`.`t` = 'v214')) OR (`k`.`t` = 'v215')) OR (`k`.`t` = 'v216')) OR (`k`.`t` = 'v217')) OR (`k`.`t` = 'v218')) OR (`k`.`t` = 'v219')) OR (`k`.`t` = 'v220')) OR (`k`.`t` = 'v221')) OR (`k`.`t` = 'v222')) OR (`k`.`t` = 'v223')) OR (`k`.`t` = 'v224')) OR (`k`.`t` = 'v225')) OR (`k`.`t` = 'v226')) OR (`k`.`t` = 'v227')) OR (`k`.`t` = 'v228')) OR (`k`.`t` = 'v229')) OR (`k`.`t` = 'v230')) OR (`k`.`t` = 'v231')) OR (`k`.`t` = 'v232')) OR (`k`.`t` = 'v233')) OR (`k`.`t` = 'v234')) OR (`k`.`t` = 'v235')) OR (`k`.`t` = 'v236')) OR (`k`.`t` = 'v237')) OR (`k`.`t` = 'v238')) OR (`k`.`t` = 'v239')) OR (`k`.`t` = 'v240')) OR (`k`.`t` = 'v241')) OR (`k`.`t` = 'v242')) OR (`k`.`t` = 'v243')) OR (`k`.`t` = 'v244')) OR (`k`.`t` = 'v245')) OR (`k`.`t` = 'v246')) OR (`k`.`t` = 'v247')) OR (`k`.`t` = 'v248')) OR (`k`.`t` = 'v249')) OR (`k`.`t` = 'v250')) OR (`k`.`t` = 'v251')) OR (`k`.`t` = 'v252')) OR (`k`.`t` = 'v253')) OR (`k`.`t` = 'v254')) OR (`k`.`t` = 'v255'))"),
@@ -30035,9 +30058,9 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1228Bind},
+	 BindingsFn: c1229Bind},
 	{Name: "agg.fold.any.at-257-is-balanced",
-	 At: "49-kind-guarantees.sqlt:1071",
+	 At: "49-kind-guarantees.sqlt:1086",
 	 Dialect: "mariadb",
 	 Source: "ANY((N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N), _ > 0)",
 	 Expect: strPtr("((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((`k`.`n` > 0) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR ((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((`k`.`n` > 0) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)))"),
@@ -30052,9 +30075,9 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1229Bind},
+	 BindingsFn: c1230Bind},
 	{Name: "agg.fold.all.at-257-is-balanced",
-	 At: "49-kind-guarantees.sqlt:1084",
+	 At: "49-kind-guarantees.sqlt:1099",
 	 Dialect: "mariadb",
 	 Source: "ALL((N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N), _ > 0)",
 	 Expect: strPtr("((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((`k`.`n` > 0) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND ((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((`k`.`n` > 0) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)))"),
@@ -30069,9 +30092,9 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1230Bind},
+	 BindingsFn: c1231Bind},
 	{Name: "agg.fold.sum.at-257-is-balanced",
-	 At: "49-kind-guarantees.sqlt:1095",
+	 At: "49-kind-guarantees.sqlt:1110",
 	 Dialect: "mariadb",
 	 Source: "SUM((N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N), _)",
 	 Expect: strPtr("(((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((`k`.`n` + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + (((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((`k`.`n` + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`))"),
@@ -30086,9 +30109,9 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1231Bind},
+	 BindingsFn: c1232Bind},
 	{Name: "agg.fold.in-list.at-257-is-balanced",
-	 At: "49-kind-guarantees.sqlt:1106",
+	 At: "49-kind-guarantees.sqlt:1121",
 	 Dialect: "mariadb",
 	 Source: "T IN (\"v0\", \"v1\", \"v2\", \"v3\", \"v4\", \"v5\", \"v6\", \"v7\", \"v8\", \"v9\", \"v10\", \"v11\", \"v12\", \"v13\", \"v14\", \"v15\", \"v16\", \"v17\", \"v18\", \"v19\", \"v20\", \"v21\", \"v22\", \"v23\", \"v24\", \"v25\", \"v26\", \"v27\", \"v28\", \"v29\", \"v30\", \"v31\", \"v32\", \"v33\", \"v34\", \"v35\", \"v36\", \"v37\", \"v38\", \"v39\", \"v40\", \"v41\", \"v42\", \"v43\", \"v44\", \"v45\", \"v46\", \"v47\", \"v48\", \"v49\", \"v50\", \"v51\", \"v52\", \"v53\", \"v54\", \"v55\", \"v56\", \"v57\", \"v58\", \"v59\", \"v60\", \"v61\", \"v62\", \"v63\", \"v64\", \"v65\", \"v66\", \"v67\", \"v68\", \"v69\", \"v70\", \"v71\", \"v72\", \"v73\", \"v74\", \"v75\", \"v76\", \"v77\", \"v78\", \"v79\", \"v80\", \"v81\", \"v82\", \"v83\", \"v84\", \"v85\", \"v86\", \"v87\", \"v88\", \"v89\", \"v90\", \"v91\", \"v92\", \"v93\", \"v94\", \"v95\", \"v96\", \"v97\", \"v98\", \"v99\", \"v100\", \"v101\", \"v102\", \"v103\", \"v104\", \"v105\", \"v106\", \"v107\", \"v108\", \"v109\", \"v110\", \"v111\", \"v112\", \"v113\", \"v114\", \"v115\", \"v116\", \"v117\", \"v118\", \"v119\", \"v120\", \"v121\", \"v122\", \"v123\", \"v124\", \"v125\", \"v126\", \"v127\", \"v128\", \"v129\", \"v130\", \"v131\", \"v132\", \"v133\", \"v134\", \"v135\", \"v136\", \"v137\", \"v138\", \"v139\", \"v140\", \"v141\", \"v142\", \"v143\", \"v144\", \"v145\", \"v146\", \"v147\", \"v148\", \"v149\", \"v150\", \"v151\", \"v152\", \"v153\", \"v154\", \"v155\", \"v156\", \"v157\", \"v158\", \"v159\", \"v160\", \"v161\", \"v162\", \"v163\", \"v164\", \"v165\", \"v166\", \"v167\", \"v168\", \"v169\", \"v170\", \"v171\", \"v172\", \"v173\", \"v174\", \"v175\", \"v176\", \"v177\", \"v178\", \"v179\", \"v180\", \"v181\", \"v182\", \"v183\", \"v184\", \"v185\", \"v186\", \"v187\", \"v188\", \"v189\", \"v190\", \"v191\", \"v192\", \"v193\", \"v194\", \"v195\", \"v196\", \"v197\", \"v198\", \"v199\", \"v200\", \"v201\", \"v202\", \"v203\", \"v204\", \"v205\", \"v206\", \"v207\", \"v208\", \"v209\", \"v210\", \"v211\", \"v212\", \"v213\", \"v214\", \"v215\", \"v216\", \"v217\", \"v218\", \"v219\", \"v220\", \"v221\", \"v222\", \"v223\", \"v224\", \"v225\", \"v226\", \"v227\", \"v228\", \"v229\", \"v230\", \"v231\", \"v232\", \"v233\", \"v234\", \"v235\", \"v236\", \"v237\", \"v238\", \"v239\", \"v240\", \"v241\", \"v242\", \"v243\", \"v244\", \"v245\", \"v246\", \"v247\", \"v248\", \"v249\", \"v250\", \"v251\", \"v252\", \"v253\", \"v254\", \"v255\", \"v256\")",
 	 Expect: strPtr("((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((`k`.`t` = 'v0') OR (`k`.`t` = 'v1')) OR (`k`.`t` = 'v2')) OR (`k`.`t` = 'v3')) OR (`k`.`t` = 'v4')) OR (`k`.`t` = 'v5')) OR (`k`.`t` = 'v6')) OR (`k`.`t` = 'v7')) OR (`k`.`t` = 'v8')) OR (`k`.`t` = 'v9')) OR (`k`.`t` = 'v10')) OR (`k`.`t` = 'v11')) OR (`k`.`t` = 'v12')) OR (`k`.`t` = 'v13')) OR (`k`.`t` = 'v14')) OR (`k`.`t` = 'v15')) OR (`k`.`t` = 'v16')) OR (`k`.`t` = 'v17')) OR (`k`.`t` = 'v18')) OR (`k`.`t` = 'v19')) OR (`k`.`t` = 'v20')) OR (`k`.`t` = 'v21')) OR (`k`.`t` = 'v22')) OR (`k`.`t` = 'v23')) OR (`k`.`t` = 'v24')) OR (`k`.`t` = 'v25')) OR (`k`.`t` = 'v26')) OR (`k`.`t` = 'v27')) OR (`k`.`t` = 'v28')) OR (`k`.`t` = 'v29')) OR (`k`.`t` = 'v30')) OR (`k`.`t` = 'v31')) OR (`k`.`t` = 'v32')) OR (`k`.`t` = 'v33')) OR (`k`.`t` = 'v34')) OR (`k`.`t` = 'v35')) OR (`k`.`t` = 'v36')) OR (`k`.`t` = 'v37')) OR (`k`.`t` = 'v38')) OR (`k`.`t` = 'v39')) OR (`k`.`t` = 'v40')) OR (`k`.`t` = 'v41')) OR (`k`.`t` = 'v42')) OR (`k`.`t` = 'v43')) OR (`k`.`t` = 'v44')) OR (`k`.`t` = 'v45')) OR (`k`.`t` = 'v46')) OR (`k`.`t` = 'v47')) OR (`k`.`t` = 'v48')) OR (`k`.`t` = 'v49')) OR (`k`.`t` = 'v50')) OR (`k`.`t` = 'v51')) OR (`k`.`t` = 'v52')) OR (`k`.`t` = 'v53')) OR (`k`.`t` = 'v54')) OR (`k`.`t` = 'v55')) OR (`k`.`t` = 'v56')) OR (`k`.`t` = 'v57')) OR (`k`.`t` = 'v58')) OR (`k`.`t` = 'v59')) OR (`k`.`t` = 'v60')) OR (`k`.`t` = 'v61')) OR (`k`.`t` = 'v62')) OR (`k`.`t` = 'v63')) OR (`k`.`t` = 'v64')) OR (`k`.`t` = 'v65')) OR (`k`.`t` = 'v66')) OR (`k`.`t` = 'v67')) OR (`k`.`t` = 'v68')) OR (`k`.`t` = 'v69')) OR (`k`.`t` = 'v70')) OR (`k`.`t` = 'v71')) OR (`k`.`t` = 'v72')) OR (`k`.`t` = 'v73')) OR (`k`.`t` = 'v74')) OR (`k`.`t` = 'v75')) OR (`k`.`t` = 'v76')) OR (`k`.`t` = 'v77')) OR (`k`.`t` = 'v78')) OR (`k`.`t` = 'v79')) OR (`k`.`t` = 'v80')) OR (`k`.`t` = 'v81')) OR (`k`.`t` = 'v82')) OR (`k`.`t` = 'v83')) OR (`k`.`t` = 'v84')) OR (`k`.`t` = 'v85')) OR (`k`.`t` = 'v86')) OR (`k`.`t` = 'v87')) OR (`k`.`t` = 'v88')) OR (`k`.`t` = 'v89')) OR (`k`.`t` = 'v90')) OR (`k`.`t` = 'v91')) OR (`k`.`t` = 'v92')) OR (`k`.`t` = 'v93')) OR (`k`.`t` = 'v94')) OR (`k`.`t` = 'v95')) OR (`k`.`t` = 'v96')) OR (`k`.`t` = 'v97')) OR (`k`.`t` = 'v98')) OR (`k`.`t` = 'v99')) OR (`k`.`t` = 'v100')) OR (`k`.`t` = 'v101')) OR (`k`.`t` = 'v102')) OR (`k`.`t` = 'v103')) OR (`k`.`t` = 'v104')) OR (`k`.`t` = 'v105')) OR (`k`.`t` = 'v106')) OR (`k`.`t` = 'v107')) OR (`k`.`t` = 'v108')) OR (`k`.`t` = 'v109')) OR (`k`.`t` = 'v110')) OR (`k`.`t` = 'v111')) OR (`k`.`t` = 'v112')) OR (`k`.`t` = 'v113')) OR (`k`.`t` = 'v114')) OR (`k`.`t` = 'v115')) OR (`k`.`t` = 'v116')) OR (`k`.`t` = 'v117')) OR (`k`.`t` = 'v118')) OR (`k`.`t` = 'v119')) OR (`k`.`t` = 'v120')) OR (`k`.`t` = 'v121')) OR (`k`.`t` = 'v122')) OR (`k`.`t` = 'v123')) OR (`k`.`t` = 'v124')) OR (`k`.`t` = 'v125')) OR (`k`.`t` = 'v126')) OR (`k`.`t` = 'v127')) OR (`k`.`t` = 'v128')) OR ((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((`k`.`t` = 'v129') OR (`k`.`t` = 'v130')) OR (`k`.`t` = 'v131')) OR (`k`.`t` = 'v132')) OR (`k`.`t` = 'v133')) OR (`k`.`t` = 'v134')) OR (`k`.`t` = 'v135')) OR (`k`.`t` = 'v136')) OR (`k`.`t` = 'v137')) OR (`k`.`t` = 'v138')) OR (`k`.`t` = 'v139')) OR (`k`.`t` = 'v140')) OR (`k`.`t` = 'v141')) OR (`k`.`t` = 'v142')) OR (`k`.`t` = 'v143')) OR (`k`.`t` = 'v144')) OR (`k`.`t` = 'v145')) OR (`k`.`t` = 'v146')) OR (`k`.`t` = 'v147')) OR (`k`.`t` = 'v148')) OR (`k`.`t` = 'v149')) OR (`k`.`t` = 'v150')) OR (`k`.`t` = 'v151')) OR (`k`.`t` = 'v152')) OR (`k`.`t` = 'v153')) OR (`k`.`t` = 'v154')) OR (`k`.`t` = 'v155')) OR (`k`.`t` = 'v156')) OR (`k`.`t` = 'v157')) OR (`k`.`t` = 'v158')) OR (`k`.`t` = 'v159')) OR (`k`.`t` = 'v160')) OR (`k`.`t` = 'v161')) OR (`k`.`t` = 'v162')) OR (`k`.`t` = 'v163')) OR (`k`.`t` = 'v164')) OR (`k`.`t` = 'v165')) OR (`k`.`t` = 'v166')) OR (`k`.`t` = 'v167')) OR (`k`.`t` = 'v168')) OR (`k`.`t` = 'v169')) OR (`k`.`t` = 'v170')) OR (`k`.`t` = 'v171')) OR (`k`.`t` = 'v172')) OR (`k`.`t` = 'v173')) OR (`k`.`t` = 'v174')) OR (`k`.`t` = 'v175')) OR (`k`.`t` = 'v176')) OR (`k`.`t` = 'v177')) OR (`k`.`t` = 'v178')) OR (`k`.`t` = 'v179')) OR (`k`.`t` = 'v180')) OR (`k`.`t` = 'v181')) OR (`k`.`t` = 'v182')) OR (`k`.`t` = 'v183')) OR (`k`.`t` = 'v184')) OR (`k`.`t` = 'v185')) OR (`k`.`t` = 'v186')) OR (`k`.`t` = 'v187')) OR (`k`.`t` = 'v188')) OR (`k`.`t` = 'v189')) OR (`k`.`t` = 'v190')) OR (`k`.`t` = 'v191')) OR (`k`.`t` = 'v192')) OR (`k`.`t` = 'v193')) OR (`k`.`t` = 'v194')) OR (`k`.`t` = 'v195')) OR (`k`.`t` = 'v196')) OR (`k`.`t` = 'v197')) OR (`k`.`t` = 'v198')) OR (`k`.`t` = 'v199')) OR (`k`.`t` = 'v200')) OR (`k`.`t` = 'v201')) OR (`k`.`t` = 'v202')) OR (`k`.`t` = 'v203')) OR (`k`.`t` = 'v204')) OR (`k`.`t` = 'v205')) OR (`k`.`t` = 'v206')) OR (`k`.`t` = 'v207')) OR (`k`.`t` = 'v208')) OR (`k`.`t` = 'v209')) OR (`k`.`t` = 'v210')) OR (`k`.`t` = 'v211')) OR (`k`.`t` = 'v212')) OR (`k`.`t` = 'v213')) OR (`k`.`t` = 'v214')) OR (`k`.`t` = 'v215')) OR (`k`.`t` = 'v216')) OR (`k`.`t` = 'v217')) OR (`k`.`t` = 'v218')) OR (`k`.`t` = 'v219')) OR (`k`.`t` = 'v220')) OR (`k`.`t` = 'v221')) OR (`k`.`t` = 'v222')) OR (`k`.`t` = 'v223')) OR (`k`.`t` = 'v224')) OR (`k`.`t` = 'v225')) OR (`k`.`t` = 'v226')) OR (`k`.`t` = 'v227')) OR (`k`.`t` = 'v228')) OR (`k`.`t` = 'v229')) OR (`k`.`t` = 'v230')) OR (`k`.`t` = 'v231')) OR (`k`.`t` = 'v232')) OR (`k`.`t` = 'v233')) OR (`k`.`t` = 'v234')) OR (`k`.`t` = 'v235')) OR (`k`.`t` = 'v236')) OR (`k`.`t` = 'v237')) OR (`k`.`t` = 'v238')) OR (`k`.`t` = 'v239')) OR (`k`.`t` = 'v240')) OR (`k`.`t` = 'v241')) OR (`k`.`t` = 'v242')) OR (`k`.`t` = 'v243')) OR (`k`.`t` = 'v244')) OR (`k`.`t` = 'v245')) OR (`k`.`t` = 'v246')) OR (`k`.`t` = 'v247')) OR (`k`.`t` = 'v248')) OR (`k`.`t` = 'v249')) OR (`k`.`t` = 'v250')) OR (`k`.`t` = 'v251')) OR (`k`.`t` = 'v252')) OR (`k`.`t` = 'v253')) OR (`k`.`t` = 'v254')) OR (`k`.`t` = 'v255')) OR (`k`.`t` = 'v256')))"),
@@ -30103,9 +30126,9 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1232Bind},
+	 BindingsFn: c1233Bind},
 	{Name: "agg.fold.join.at-255-pieces-is-a-left-fold",
-	 At: "49-kind-guarantees.sqlt:1117",
+	 At: "49-kind-guarantees.sqlt:1132",
 	 Dialect: "mariadb",
 	 Source: "JOIN((T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T), \"-\")",
 	 Expect: strPtr("CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(`k`.`t`, '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`)"),
@@ -30120,9 +30143,9 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1233Bind},
+	 BindingsFn: c1234Bind},
 	{Name: "agg.fold.join.at-257-pieces-is-balanced",
-	 At: "49-kind-guarantees.sqlt:1130",
+	 At: "49-kind-guarantees.sqlt:1145",
 	 Dialect: "mariadb",
 	 Source: "JOIN((T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T), \"-\")",
 	 Expect: strPtr("CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(`k`.`t`, '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT('-', `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`))"),
@@ -30137,9 +30160,9 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1234Bind},
+	 BindingsFn: c1235Bind},
 	{Name: "agg.fold.any.at-600-splits-again",
-	 At: "49-kind-guarantees.sqlt:1143",
+	 At: "49-kind-guarantees.sqlt:1158",
 	 Dialect: "mariadb",
 	 Source: "ANY((N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N), _ > 0)",
 	 Expect: strPtr("((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((`k`.`n` > 0) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR ((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((`k`.`n` > 0) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0))) OR (((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((`k`.`n` > 0) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR ((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((`k`.`n` > 0) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0))))"),
@@ -30154,9 +30177,9 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1235Bind},
+	 BindingsFn: c1236Bind},
 	{Name: "agg.fold.any.at-257-on-sqlite",
-	 At: "49-kind-guarantees.sqlt:1156",
+	 At: "49-kind-guarantees.sqlt:1171",
 	 Dialect: "sqlite",
 	 Source: "ANY((N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N), _ > 0)",
 	 Expect: strPtr("((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC)) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR ((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC)) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))))"),
@@ -30171,7 +30194,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1236Bind},
+	 BindingsFn: c1237Bind},
 	{Name: "register.guard.refused-on-every-use-lacking-the-pattern",
 	 At: "50-rendering-and-registration.sqlt:9",
 	 Dialect: "pgbad",
@@ -30187,8 +30210,8 @@ var sqlCases = []SqlCase{
 	 HasTables: false,
 	 Tables: nil,
 	 Unrepresentable: nil,
-	 RegisterFn: c1237Reg,
-	 BindingsFn: c1237Bind},
+	 RegisterFn: c1238Reg,
+	 BindingsFn: c1238Bind},
 	{Name: "register.guard.refused-on-every-use-wrong-pattern",
 	 At: "50-rendering-and-registration.sqlt:30",
 	 Dialect: "mdbad",
@@ -30204,8 +30227,8 @@ var sqlCases = []SqlCase{
 	 HasTables: false,
 	 Tables: nil,
 	 Unrepresentable: nil,
-	 RegisterFn: c1238Reg,
-	 BindingsFn: c1238Bind},
+	 RegisterFn: c1239Reg,
+	 BindingsFn: c1239Bind},
 	{Name: "register.guard.a-sound-guard-is-accepted-every-time",
 	 At: "50-rendering-and-registration.sqlt:46",
 	 Dialect: "pgok",
@@ -30221,8 +30244,8 @@ var sqlCases = []SqlCase{
 	 HasTables: false,
 	 Tables: nil,
 	 Unrepresentable: nil,
-	 RegisterFn: c1239Reg,
-	 BindingsFn: c1239Bind},
+	 RegisterFn: c1240Reg,
+	 BindingsFn: c1240Bind},
 	{Name: "register.template.non-ascii-bytes-are-kept",
 	 At: "50-rendering-and-registration.sqlt:62",
 	 Dialect: "mariadb",
@@ -30238,8 +30261,8 @@ var sqlCases = []SqlCase{
 	 HasTables: false,
 	 Tables: nil,
 	 Unrepresentable: nil,
-	 RegisterFn: c1240Reg,
-	 BindingsFn: c1240Bind},
+	 RegisterFn: c1241Reg,
+	 BindingsFn: c1241Bind},
 	{Name: "register.template.non-ascii-bytes-are-kept-in-a-literal-template",
 	 At: "50-rendering-and-registration.sqlt:79",
 	 Dialect: "sqlite",
@@ -30255,8 +30278,8 @@ var sqlCases = []SqlCase{
 	 HasTables: false,
 	 Tables: nil,
 	 Unrepresentable: nil,
-	 RegisterFn: c1241Reg,
-	 BindingsFn: c1241Bind},
+	 RegisterFn: c1242Reg,
+	 BindingsFn: c1242Bind},
 	{Name: "register.template.empty-tail-list-emits-nothing",
 	 At: "50-rendering-and-registration.sqlt:93",
 	 Dialect: "mariadb",
@@ -30272,8 +30295,8 @@ var sqlCases = []SqlCase{
 	 HasTables: false,
 	 Tables: nil,
 	 Unrepresentable: nil,
-	 RegisterFn: c1242Reg,
-	 BindingsFn: c1242Bind},
+	 RegisterFn: c1243Reg,
+	 BindingsFn: c1243Bind},
 	{Name: "register.template.empty-lexical-value-emits-nothing",
 	 At: "50-rendering-and-registration.sqlt:110",
 	 Dialect: "mdempty",
@@ -30289,8 +30312,8 @@ var sqlCases = []SqlCase{
 	 HasTables: false,
 	 Tables: nil,
 	 Unrepresentable: nil,
-	 RegisterFn: c1243Reg,
-	 BindingsFn: c1243Bind},
+	 RegisterFn: c1244Reg,
+	 BindingsFn: c1244Bind},
 	{Name: "mode.params.order-follows-the-statement-not-the-source",
 	 At: "50-rendering-and-registration.sqlt:128",
 	 Dialect: "mariadb",
@@ -30307,7 +30330,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1244Bind},
+	 BindingsFn: c1245Bind},
 	{Name: "mode.params.no-orphan-slot-through-sort-take-link",
 	 At: "50-rendering-and-registration.sqlt:152",
 	 Dialect: "mariadb",
@@ -30324,7 +30347,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1245Bind},
+	 BindingsFn: c1246Bind},
 	{Name: "stmt.derived.wrapped-columns-keep-a-fixed-order",
 	 At: "50-rendering-and-registration.sqlt:176",
 	 Dialect: "mariadb",
@@ -30341,7 +30364,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1246Bind},
+	 BindingsFn: c1247Bind},
 	{Name: "bind.column.statement-is-not-a-column-type",
 	 At: "50-rendering-and-registration.sqlt:196",
 	 Dialect: "mariadb",
@@ -30375,7 +30398,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1248Bind},
+	 BindingsFn: c1249Bind},
 	{Name: "register.dialect.text-escape-must-escape-the-quote",
 	 At: "50-rendering-and-registration.sqlt:222",
 	 Dialect: "my-nobs",
@@ -30391,8 +30414,8 @@ var sqlCases = []SqlCase{
 	 HasTables: false,
 	 Tables: nil,
 	 Unrepresentable: nil,
-	 RegisterFn: c1249Reg,
-	 BindingsFn: c1249Bind},
+	 RegisterFn: c1250Reg,
+	 BindingsFn: c1250Bind},
 	{Name: "register.dialect.empty-text-escape-is-refused",
 	 At: "50-rendering-and-registration.sqlt:239",
 	 Dialect: "sqlite-noesc",
@@ -30408,8 +30431,8 @@ var sqlCases = []SqlCase{
 	 HasTables: false,
 	 Tables: nil,
 	 Unrepresentable: nil,
-	 RegisterFn: c1250Reg,
-	 BindingsFn: c1250Bind},
+	 RegisterFn: c1251Reg,
+	 BindingsFn: c1251Bind},
 	{Name: "register.dialect.escape-character-must-escape-itself",
 	 At: "50-rendering-and-registration.sqlt:253",
 	 Dialect: "my-badbs",
@@ -30425,8 +30448,8 @@ var sqlCases = []SqlCase{
 	 HasTables: false,
 	 Tables: nil,
 	 Unrepresentable: nil,
-	 RegisterFn: c1251Reg,
-	 BindingsFn: c1251Bind},
+	 RegisterFn: c1252Reg,
+	 BindingsFn: c1252Bind},
 	{Name: "register.dialect.text-quote-must-differ-from-identifier-quote",
 	 At: "50-rendering-and-registration.sqlt:269",
 	 Dialect: "dq",
@@ -30442,8 +30465,8 @@ var sqlCases = []SqlCase{
 	 HasTables: false,
 	 Tables: nil,
 	 Unrepresentable: nil,
-	 RegisterFn: c1252Reg,
-	 BindingsFn: c1252Bind},
+	 RegisterFn: c1253Reg,
+	 BindingsFn: c1253Bind},
 	{Name: "alias.record-key-with-nul",
 	 At: "50-rendering-and-registration.sqlt:291",
 	 Dialect: "postgresql",
@@ -30460,7 +30483,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1253Bind},
+	 BindingsFn: c1254Bind},
 	{Name: "alias.record-key-empty",
 	 At: "50-rendering-and-registration.sqlt:306",
 	 Dialect: "postgresql",
@@ -30477,7 +30500,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1254Bind},
+	 BindingsFn: c1255Bind},
 	{Name: "alias.select-cols-name-with-nul",
 	 At: "50-rendering-and-registration.sqlt:321",
 	 Dialect: "postgresql",
@@ -30494,7 +30517,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1255Bind},
+	 BindingsFn: c1256Bind},
 	{Name: "alias.pg-truncated-aliases-collide",
 	 At: "50-rendering-and-registration.sqlt:336",
 	 Dialect: "postgresql",
@@ -30511,7 +30534,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1256Bind},
+	 BindingsFn: c1257Bind},
 	{Name: "lex.text.nul-is-refused-in-every-mode",
 	 At: "50-rendering-and-registration.sqlt:357",
 	 Dialect: "mariadb",
@@ -30528,7 +30551,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1257Bind},
+	 BindingsFn: c1258Bind},
 	{Name: "bind.raw-field.select-cols-refuses",
 	 At: "50-rendering-and-registration.sqlt:377",
 	 Dialect: "mariadb",
@@ -30545,7 +30568,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1258Bind},
+	 BindingsFn: c1259Bind},
 	{Name: "bind.raw-field.across-a-derived-table-refuses",
 	 At: "50-rendering-and-registration.sqlt:392",
 	 Dialect: "mariadb",
@@ -30562,7 +30585,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1259Bind},
+	 BindingsFn: c1260Bind},
 	{Name: "bind.relation.fields-differing-only-by-case",
 	 At: "50-rendering-and-registration.sqlt:411",
 	 Dialect: "mariadb",
@@ -30579,7 +30602,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1260Bind},
+	 BindingsFn: c1261Bind},
 	{Name: "bind.names-differing-only-by-case",
 	 At: "50-rendering-and-registration.sqlt:424",
 	 Dialect: "mariadb",
@@ -30596,7 +30619,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1261Bind},
+	 BindingsFn: c1262Bind},
 	{Name: "agg.correlate.is-parenthesised",
 	 At: "50-rendering-and-registration.sqlt:440",
 	 Dialect: "mariadb",
@@ -30613,7 +30636,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1262Bind},
+	 BindingsFn: c1263Bind},
 	{Name: "register.dialect.correct-pairing-is-accepted",
 	 At: "50-rendering-and-registration.sqlt:453",
 	 Dialect: "my-ok",
@@ -30629,8 +30652,8 @@ var sqlCases = []SqlCase{
 	 HasTables: false,
 	 Tables: nil,
 	 Unrepresentable: nil,
-	 RegisterFn: c1263Reg,
-	 BindingsFn: c1263Bind},
+	 RegisterFn: c1264Reg,
+	 BindingsFn: c1264Bind},
 	{Name: "register.dialect.redefinition-with-the-same-parent-replaces",
 	 At: "50-rendering-and-registration.sqlt:468",
 	 Dialect: "redef",
@@ -30646,8 +30669,8 @@ var sqlCases = []SqlCase{
 	 HasTables: false,
 	 Tables: nil,
 	 Unrepresentable: nil,
-	 RegisterFn: c1264Reg,
-	 BindingsFn: c1264Bind},
+	 RegisterFn: c1265Reg,
+	 BindingsFn: c1265Bind},
 	{Name: "register.dialect.redefinition-with-a-different-parent-is-refused",
 	 At: "50-rendering-and-registration.sqlt:483",
 	 Dialect: "redef2",
@@ -30663,8 +30686,8 @@ var sqlCases = []SqlCase{
 	 HasTables: false,
 	 Tables: nil,
 	 Unrepresentable: nil,
-	 RegisterFn: c1265Reg,
-	 BindingsFn: c1265Bind},
+	 RegisterFn: c1266Reg,
+	 BindingsFn: c1266Bind},
 	{Name: "plan.keys.filter-then-key-reader-is-not-a-split-point",
 	 At: "51-hybrid-parity.sqlt:24",
 	 Dialect: "mariadb",
@@ -30681,7 +30704,7 @@ var sqlCases = []SqlCase{
 	 Tables: []string{"orders"},
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1266Bind},
+	 BindingsFn: c1267Bind},
 	{Name: "plan.keys.filter-then-unsupported-filter-is-pure-memory",
 	 At: "51-hybrid-parity.sqlt:39",
 	 Dialect: "mariadb",
@@ -30698,7 +30721,7 @@ var sqlCases = []SqlCase{
 	 Tables: []string{"orders"},
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1267Bind},
+	 BindingsFn: c1268Bind},
 	{Name: "plan.keys.split-after-a-sort-may-end-in-a-filter",
 	 At: "51-hybrid-parity.sqlt:54",
 	 Dialect: "mariadb",
@@ -30715,7 +30738,7 @@ var sqlCases = []SqlCase{
 	 Tables: []string{"orders"},
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1268Bind},
+	 BindingsFn: c1269Bind},
 	{Name: "plan.keys.split-after-a-filter-then-a-sort-is-safe",
 	 At: "51-hybrid-parity.sqlt:71",
 	 Dialect: "mariadb",
@@ -30732,7 +30755,7 @@ var sqlCases = []SqlCase{
 	 Tables: []string{"orders"},
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1269Bind},
+	 BindingsFn: c1270Bind},
 	{Name: "plan.errors.take-behind-a-map-that-can-raise-stays-local",
 	 At: "51-hybrid-parity.sqlt:88",
 	 Dialect: "mariadb",
@@ -30749,7 +30772,7 @@ var sqlCases = []SqlCase{
 	 Tables: []string{"orders"},
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1270Bind},
+	 BindingsFn: c1271Bind},
 	{Name: "plan.errors.drop-behind-a-map-that-can-raise-stays-local",
 	 At: "51-hybrid-parity.sqlt:105",
 	 Dialect: "mariadb",
@@ -30766,7 +30789,7 @@ var sqlCases = []SqlCase{
 	 Tables: []string{"orders"},
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1271Bind},
+	 BindingsFn: c1272Bind},
 	{Name: "plan.errors.sort-and-take-behind-a-map-that-can-raise-stay-local",
 	 At: "51-hybrid-parity.sqlt:122",
 	 Dialect: "mariadb",
@@ -30783,7 +30806,7 @@ var sqlCases = []SqlCase{
 	 Tables: []string{"orders"},
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1272Bind},
+	 BindingsFn: c1273Bind},
 	{Name: "plan.errors.take-before-the-map-is-pushed",
 	 At: "51-hybrid-parity.sqlt:139",
 	 Dialect: "mariadb",
@@ -30800,7 +30823,7 @@ var sqlCases = []SqlCase{
 	 Tables: []string{"orders"},
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1273Bind},
+	 BindingsFn: c1274Bind},
 	{Name: "plan.binders.split-before-a-link-keeps-the-prefix-to-the-link",
 	 At: "51-hybrid-parity.sqlt:156",
 	 Dialect: "mariadb",
@@ -30817,7 +30840,7 @@ var sqlCases = []SqlCase{
 	 Tables: []string{"orders"},
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1274Bind},
+	 BindingsFn: c1275Bind},
 	{Name: "plan.binders.literal-helper-named-like-an-explicit-sort-binder",
 	 At: "51-hybrid-parity.sqlt:173",
 	 Dialect: "mariadb",
@@ -30834,7 +30857,7 @@ var sqlCases = []SqlCase{
 	 Tables: []string{"orders"},
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1275Bind},
+	 BindingsFn: c1276Bind},
 	{Name: "plan.tables.a-binder-named-like-a-relation-reads-nothing",
 	 At: "51-hybrid-parity.sqlt:190",
 	 Dialect: "mariadb",
@@ -30851,7 +30874,7 @@ var sqlCases = []SqlCase{
 	 Tables: []string{},
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1276Bind},
+	 BindingsFn: c1277Bind},
 	{Name: "plan.tables.a-map-binder-named-like-a-relation",
 	 At: "51-hybrid-parity.sqlt:205",
 	 Dialect: "mariadb",
@@ -30868,7 +30891,7 @@ var sqlCases = []SqlCase{
 	 Tables: []string{},
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1277Bind},
+	 BindingsFn: c1278Bind},
 	{Name: "plan.tables.an-assignment-target-named-like-a-relation",
 	 At: "51-hybrid-parity.sqlt:220",
 	 Dialect: "mariadb",
@@ -30885,7 +30908,7 @@ var sqlCases = []SqlCase{
 	 Tables: []string{},
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1278Bind},
+	 BindingsFn: c1279Bind},
 	{Name: "plan.tables.a-filter-binder-named-like-another-relation",
 	 At: "51-hybrid-parity.sqlt:235",
 	 Dialect: "mariadb",
@@ -30902,7 +30925,7 @@ var sqlCases = []SqlCase{
 	 Tables: []string{"orders"},
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1279Bind},
+	 BindingsFn: c1280Bind},
 	{Name: "stmt.order.the-order-rule-comes-before-a-bad-key",
 	 At: "51-hybrid-parity.sqlt:258",
 	 Dialect: "mariadb",
@@ -30919,7 +30942,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1280Bind},
+	 BindingsFn: c1281Bind},
 	{Name: "stmt.order.the-order-rule-comes-before-a-bare-row-key",
 	 At: "51-hybrid-parity.sqlt:273",
 	 Dialect: "mariadb",
@@ -30936,7 +30959,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1281Bind},
+	 BindingsFn: c1282Bind},
 	{Name: "stmt.order.bucket-after-a-sort-is-refused-at-the-step",
 	 At: "51-hybrid-parity.sqlt:288",
 	 Dialect: "mariadb",
@@ -30953,7 +30976,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1282Bind},
+	 BindingsFn: c1283Bind},
 	{Name: "stmt.order.bucket-after-two-sorts-is-refused-at-the-step",
 	 At: "51-hybrid-parity.sqlt:303",
 	 Dialect: "mariadb",
@@ -30970,7 +30993,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1283Bind},
+	 BindingsFn: c1284Bind},
 	{Name: "stmt.order.distinct-after-a-sort-is-refused-at-the-step",
 	 At: "51-hybrid-parity.sqlt:318",
 	 Dialect: "mariadb",
@@ -30987,7 +31010,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1284Bind},
+	 BindingsFn: c1285Bind},
 	{Name: "review.order.sort-over-a-projection-of-sorted-rows-is-refused",
 	 At: "52-audit-cases.sqlt:1",
 	 Dialect: "mariadb",
@@ -31004,7 +31027,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1285Bind},
+	 BindingsFn: c1286Bind},
 	{Name: "review.order.link-over-sorted-rows-is-refused",
 	 At: "52-audit-cases.sqlt:19",
 	 Dialect: "mariadb",
@@ -31021,7 +31044,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1286Bind},
+	 BindingsFn: c1287Bind},
 	{Name: "plan.hybrid.link-over-sorted-rows-joins-in-memory",
 	 At: "52-audit-cases.sqlt:36",
 	 Dialect: "mariadb",
@@ -31038,7 +31061,7 @@ var sqlCases = []SqlCase{
 	 Tables: []string{"orders"},
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1287Bind},
+	 BindingsFn: c1288Bind},
 	{Name: "plan.pure-memory.self-join-is-not-split",
 	 At: "52-audit-cases.sqlt:55",
 	 Dialect: "mariadb",
@@ -31055,7 +31078,7 @@ var sqlCases = []SqlCase{
 	 Tables: []string{"orders"},
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1288Bind},
+	 BindingsFn: c1289Bind},
 	{Name: "bind.value.null-element-is-refused",
 	 At: "52-audit-cases.sqlt:73",
 	 Dialect: "mariadb",
@@ -31072,7 +31095,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1289Bind},
+	 BindingsFn: c1290Bind},
 	{Name: "register.dialect.backslash-escape-must-double-the-backslash",
 	 At: "52-audit-cases.sqlt:87",
 	 Dialect: "my-nl",
@@ -31088,8 +31111,8 @@ var sqlCases = []SqlCase{
 	 HasTables: false,
 	 Tables: nil,
 	 Unrepresentable: nil,
-	 RegisterFn: c1290Reg,
-	 BindingsFn: c1290Bind},
+	 RegisterFn: c1291Reg,
+	 BindingsFn: c1291Bind},
 	{Name: "register.dialect.quote-escape-is-doubling-or-backslash",
 	 At: "52-audit-cases.sqlt:102",
 	 Dialect: "ansi-x",
@@ -31105,8 +31128,8 @@ var sqlCases = []SqlCase{
 	 HasTables: false,
 	 Tables: nil,
 	 Unrepresentable: nil,
-	 RegisterFn: c1291Reg,
-	 BindingsFn: c1291Bind},
+	 RegisterFn: c1292Reg,
+	 BindingsFn: c1292Bind},
 	{Name: "bind.type.statement-is-not-declarable",
 	 At: "52-audit-cases.sqlt:116",
 	 Dialect: "mariadb",
@@ -31140,7 +31163,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1293Bind},
+	 BindingsFn: c1294Bind},
 	{Name: "norm.depth.definition-past-four-times-the-depth-is-refused-at-the-assignment",
 	 At: "52-audit-cases.sqlt:144",
 	 Dialect: "mariadb",
@@ -31157,7 +31180,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1294Bind},
+	 BindingsFn: c1295Bind},
 	{Name: "norm.size.result-past-the-budget-is-refused-where-the-walk-stops",
 	 At: "52-audit-cases.sqlt:159",
 	 Dialect: "mariadb",
@@ -31174,7 +31197,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1295Bind},
+	 BindingsFn: c1296Bind},
 	{Name: "refuse.in-relation.boolean-needle-at-the-needle",
 	 At: "52-audit-cases.sqlt:173",
 	 Dialect: "mariadb",
@@ -31191,7 +31214,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1296Bind},
+	 BindingsFn: c1297Bind},
 	{Name: "refuse.binder.checked-at-the-call-not-in-stage-1",
 	 At: "52-audit-cases.sqlt:187",
 	 Dialect: "mariadb",
@@ -31208,7 +31231,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1297Bind},
+	 BindingsFn: c1298Bind},
 	{Name: "plan.pure-memory.key-read-after-a-filter-is-not-split",
 	 At: "52-audit-cases.sqlt:201",
 	 Dialect: "mariadb",
@@ -31225,7 +31248,7 @@ var sqlCases = []SqlCase{
 	 Tables: []string{"t"},
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1298Bind},
+	 BindingsFn: c1299Bind},
 	{Name: "bind.prefilter.unknown-spelling-is-refused",
 	 At: "52-audit-cases.sqlt:218",
 	 Dialect: "mariadb",
@@ -31242,7 +31265,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1299Bind},
+	 BindingsFn: c1300Bind},
 	{Name: "order.filter-after-sort-keeps-the-order",
 	 At: "52-audit-cases.sqlt:231",
 	 Dialect: "mariadb",
@@ -31259,7 +31282,7 @@ var sqlCases = []SqlCase{
 	 Tables: []string{"orders"},
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1300Bind},
+	 BindingsFn: c1301Bind},
 	{Name: "order.projection-then-filter-of-sorted-rows-is-refused",
 	 At: "52-audit-cases.sqlt:252",
 	 Dialect: "mariadb",
@@ -31276,7 +31299,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1301Bind},
+	 BindingsFn: c1302Bind},
 	{Name: "bind.alias.case-colliding-relation-aliases-are-refused",
 	 At: "52-audit-cases.sqlt:269",
 	 Dialect: "mariadb",
@@ -31293,7 +31316,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1302Bind},
+	 BindingsFn: c1303Bind},
 	{Name: "assign.empty-text-key-is-a-constant-index",
 	 At: "52-audit-cases.sqlt:285",
 	 Dialect: "mariadb",
@@ -31310,7 +31333,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1303Bind},
+	 BindingsFn: c1304Bind},
 	{Name: "plan.order.sort-over-a-projection-of-sorted-rows-stays-in-memory",
 	 At: "52-audit-cases.sqlt:302",
 	 Dialect: "mariadb",
@@ -31327,7 +31350,7 @@ var sqlCases = []SqlCase{
 	 Tables: []string{"orders"},
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1304Bind},
+	 BindingsFn: c1305Bind},
 	{Name: "plan.order.limit-then-link-stays-in-memory",
 	 At: "52-audit-cases.sqlt:319",
 	 Dialect: "mariadb",
@@ -31344,7 +31367,7 @@ var sqlCases = []SqlCase{
 	 Tables: []string{"orders"},
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1305Bind},
+	 BindingsFn: c1306Bind},
 	{Name: "plan.order.link-left-over-sorted-rows-stays-in-memory",
 	 At: "52-audit-cases.sqlt:337",
 	 Dialect: "mariadb",
@@ -31361,7 +31384,7 @@ var sqlCases = []SqlCase{
 	 Tables: []string{"orders"},
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1306Bind},
+	 BindingsFn: c1307Bind},
 	{Name: "plan.order.projection-then-link-over-sorted-rows-stays-in-memory",
 	 At: "52-audit-cases.sqlt:355",
 	 Dialect: "mariadb",
@@ -31378,7 +31401,7 @@ var sqlCases = []SqlCase{
 	 Tables: []string{"orders"},
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1307Bind},
+	 BindingsFn: c1308Bind},
 	{Name: "plan.order.sort-filter-then-link-stays-in-memory",
 	 At: "52-audit-cases.sqlt:373",
 	 Dialect: "mariadb",
@@ -31395,7 +31418,7 @@ var sqlCases = []SqlCase{
 	 Tables: []string{"orders"},
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1308Bind},
+	 BindingsFn: c1309Bind},
 	{Name: "plan.keys.filter-filter-then-a-renumbering-step-splits-after-the-first",
 	 At: "52-audit-cases.sqlt:392",
 	 Dialect: "mariadb",
@@ -31412,7 +31435,7 @@ var sqlCases = []SqlCase{
 	 Tables: []string{"orders"},
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1309Bind},
+	 BindingsFn: c1310Bind},
 	{Name: "plan.keys.filter-filter-then-a-key-read-stays-in-memory",
 	 At: "52-audit-cases.sqlt:409",
 	 Dialect: "mariadb",
@@ -31429,5 +31452,5 @@ var sqlCases = []SqlCase{
 	 Tables: []string{"orders"},
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1310Bind},
+	 BindingsFn: c1311Bind},
 }

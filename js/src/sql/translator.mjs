@@ -1024,14 +1024,14 @@ export class Translator {
           return new Fragment(['COUNT(*)'], 'NUM', this.dialect);
         }
         if (name === 'SUM' && n.args.length >= 2) {
-          const hasCustomBinder = n.args.length === 3 && constants.isBinderName(n.args[1]);
-          const bodyNode = hasCustomBinder ? n.args[2] : n.args[1];
+          // A binder slot that is not a bare name is refused, as everywhere:
+          // SEL raises E_EXPECT_SYMBOL for it.
+          const [binderName, bodyNode] = aggShape(n);
           const src = { relation: group.payload, filters: [], pos: n.pos };
           // The body keeps its parameter slots: its parts are strings AND slot
           // numbers, and joining them as text wrote a slot number where the
           // literal was (`SUM(x * 2)` became `SUM(x * 1)`).
-          let inner = this.withRow(src, hasCustomBinder ? n.args[1].name : '_',
-            () => this.node(bodyNode));
+          let inner = this.withRow(src, binderName, () => this.node(bodyNode));
           this.requireNumericConstant(bodyNode);
           inner = this.requireNum(inner, bodyNode.pos, 'SUM');
           inner = this.sumBody(inner, bodyNode, true);

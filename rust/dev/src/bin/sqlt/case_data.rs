@@ -7930,10 +7930,7 @@ fn c1188_bind() -> HashMap<String, Binding> {
 
 fn c1189_bind() -> HashMap<String, Binding> {
     let mut m = HashMap::new();
-        m.insert("S".to_string(), bind_relation("sk", "s", vec![FieldEntry { name: "SKU".to_string(), binding: bind_col("sku", "s", SqlKind::Text, false, false, false, "") }], "SKU", "", ""));
-        m.insert("F".to_string(), bind_col("f", "", SqlKind::Bool, false, false, false, ""));
-        m.insert("X".to_string(), bind_col("x", "", SqlKind::Bin, false, false, false, ""));
-        m.insert("N".to_string(), bind_col("n", "", SqlKind::Num, false, false, false, ""));
+        m.insert("O".to_string(), bind_relation("orders", "o", vec![FieldEntry { name: "CAT".to_string(), binding: bind_col("cat", "o", SqlKind::Text, false, false, false, "") }, FieldEntry { name: "AMT".to_string(), binding: bind_col("amt", "o", SqlKind::Num, false, false, false, "") }], "", "", ""));
     m
 }
 
@@ -7957,8 +7954,10 @@ fn c1191_bind() -> HashMap<String, Binding> {
 
 fn c1192_bind() -> HashMap<String, Binding> {
     let mut m = HashMap::new();
-        m.insert("T".to_string(), bind_col("t", "", SqlKind::Text, true, false, false, ""));
-        m.insert("S".to_string(), bind_col("s", "", SqlKind::Text, true, false, false, ""));
+        m.insert("S".to_string(), bind_relation("sk", "s", vec![FieldEntry { name: "SKU".to_string(), binding: bind_col("sku", "s", SqlKind::Text, false, false, false, "") }], "SKU", "", ""));
+        m.insert("F".to_string(), bind_col("f", "", SqlKind::Bool, false, false, false, ""));
+        m.insert("X".to_string(), bind_col("x", "", SqlKind::Bin, false, false, false, ""));
+        m.insert("N".to_string(), bind_col("n", "", SqlKind::Num, false, false, false, ""));
     m
 }
 
@@ -7971,7 +7970,8 @@ fn c1193_bind() -> HashMap<String, Binding> {
 
 fn c1194_bind() -> HashMap<String, Binding> {
     let mut m = HashMap::new();
-        m.insert("ITEMS".to_string(), bind_relation("items", "", vec![], "", "", ""));
+        m.insert("T".to_string(), bind_col("t", "", SqlKind::Text, true, false, false, ""));
+        m.insert("S".to_string(), bind_col("s", "", SqlKind::Text, true, false, false, ""));
     m
 }
 
@@ -8145,7 +8145,7 @@ fn c1222_bind() -> HashMap<String, Binding> {
 
 fn c1223_bind() -> HashMap<String, Binding> {
     let mut m = HashMap::new();
-        m.insert("O".to_string(), bind_relation("orders", "o", vec![FieldEntry { name: "CAT".to_string(), binding: bind_col("cat", "o", SqlKind::Text, false, false, false, "") }, FieldEntry { name: "MISC".to_string(), binding: bind_col("misc", "o", SqlKind::Unknown, false, false, false, "") }], "", "", ""));
+        m.insert("ITEMS".to_string(), bind_relation("items", "", vec![], "", "", ""));
     m
 }
 
@@ -8157,8 +8157,7 @@ fn c1224_bind() -> HashMap<String, Binding> {
 
 fn c1225_bind() -> HashMap<String, Binding> {
     let mut m = HashMap::new();
-        m.insert("N".to_string(), bind_col("n", "k", SqlKind::Num, false, false, false, ""));
-        m.insert("T".to_string(), bind_col("t", "k", SqlKind::Text, true, false, false, ""));
+        m.insert("O".to_string(), bind_relation("orders", "o", vec![FieldEntry { name: "CAT".to_string(), binding: bind_col("cat", "o", SqlKind::Text, false, false, false, "") }, FieldEntry { name: "MISC".to_string(), binding: bind_col("misc", "o", SqlKind::Unknown, false, false, false, "") }], "", "", ""));
     m
 }
 
@@ -8235,37 +8234,34 @@ fn c1235_bind() -> HashMap<String, Binding> {
 fn c1236_bind() -> HashMap<String, Binding> {
     let mut m = HashMap::new();
         m.insert("N".to_string(), bind_col("n", "k", SqlKind::Num, false, false, false, ""));
+        m.insert("T".to_string(), bind_col("t", "k", SqlKind::Text, true, false, false, ""));
     m
 }
 
 fn c1237_bind() -> HashMap<String, Binding> {
     let mut m = HashMap::new();
+        m.insert("N".to_string(), bind_col("n", "k", SqlKind::Num, false, false, false, ""));
+    m
+}
+
+fn c1238_bind() -> HashMap<String, Binding> {
+    let mut m = HashMap::new();
         m.insert("NAME".to_string(), bind_col("name", "o", SqlKind::Text, false, false, false, ""));
     m
 }
 
-fn c1237_reg() {
+fn c1238_reg() {
     sel_lang::sql::define_dialect("pgbad", &serde_json::from_str::<serde_json::Value>("{\"extends\":\"postgresql\",\"version\":\"16\",\"lexical\":{\"numericGuard\":\"CASE WHEN ({textCast:0} ~ '^.*$') THEN CAST({0} AS NUMERIC) ELSE NULL END\"}}").unwrap());
 }
 
-fn c1238_bind() -> HashMap<String, Binding> {
+fn c1239_bind() -> HashMap<String, Binding> {
     let mut m = HashMap::new();
         m.insert("X".to_string(), bind_col("x", "o", SqlKind::Unknown, false, false, false, ""));
     m
 }
 
-fn c1238_reg() {
-    sel_lang::sql::define_dialect("mdbad", &serde_json::from_str::<serde_json::Value>("{\"extends\":\"mariadb\",\"version\":\"10.5\",\"lexical\":{\"numericGuard\":\"CASE WHEN ({0} REGEXP 'x') THEN CAST({0} AS DECIMAL(65,10)) ELSE NULL END\"}}").unwrap());
-}
-
-fn c1239_bind() -> HashMap<String, Binding> {
-    let mut m = HashMap::new();
-        m.insert("NAME".to_string(), bind_col("name", "o", SqlKind::Text, false, false, false, ""));
-    m
-}
-
 fn c1239_reg() {
-    sel_lang::sql::define_dialect("pgok", &serde_json::from_str::<serde_json::Value>("{\"extends\":\"postgresql\",\"version\":\"16\"}").unwrap());
+    sel_lang::sql::define_dialect("mdbad", &serde_json::from_str::<serde_json::Value>("{\"extends\":\"mariadb\",\"version\":\"10.5\",\"lexical\":{\"numericGuard\":\"CASE WHEN ({0} REGEXP 'x') THEN CAST({0} AS DECIMAL(65,10)) ELSE NULL END\"}}").unwrap());
 }
 
 fn c1240_bind() -> HashMap<String, Binding> {
@@ -8275,27 +8271,27 @@ fn c1240_bind() -> HashMap<String, Binding> {
 }
 
 fn c1240_reg() {
-    sel_lang::sql::define("mariadb", "funcs", "UPPER", &serde_json::from_str::<serde_json::Value>("{\"tpl\":\"F({0}, 'é ż ć 𝄞')\",\"ret\":\"TEXT\"}").unwrap());
+    sel_lang::sql::define_dialect("pgok", &serde_json::from_str::<serde_json::Value>("{\"extends\":\"postgresql\",\"version\":\"16\"}").unwrap());
 }
 
 fn c1241_bind() -> HashMap<String, Binding> {
-    let mut m = HashMap::new();
-
-    m
-}
-
-fn c1241_reg() {
-    sel_lang::sql::define("sqlite", "funcs", "UPPER", &serde_json::from_str::<serde_json::Value>("{\"tpl\":\"MY_CRC('zażółć', {0})\",\"ret\":\"TEXT\"}").unwrap());
-}
-
-fn c1242_bind() -> HashMap<String, Binding> {
     let mut m = HashMap::new();
         m.insert("NAME".to_string(), bind_col("name", "o", SqlKind::Text, false, false, false, ""));
     m
 }
 
+fn c1241_reg() {
+    sel_lang::sql::define("mariadb", "funcs", "UPPER", &serde_json::from_str::<serde_json::Value>("{\"tpl\":\"F({0}, 'é ż ć 𝄞')\",\"ret\":\"TEXT\"}").unwrap());
+}
+
+fn c1242_bind() -> HashMap<String, Binding> {
+    let mut m = HashMap::new();
+
+    m
+}
+
 fn c1242_reg() {
-    sel_lang::sql::define("mariadb", "funcs", "UPPER", &serde_json::from_str::<serde_json::Value>("{\"tpl\":\"F({0}, {1:})\",\"ret\":\"TEXT\"}").unwrap());
+    sel_lang::sql::define("sqlite", "funcs", "UPPER", &serde_json::from_str::<serde_json::Value>("{\"tpl\":\"MY_CRC('zażółć', {0})\",\"ret\":\"TEXT\"}").unwrap());
 }
 
 fn c1243_bind() -> HashMap<String, Binding> {
@@ -8305,15 +8301,18 @@ fn c1243_bind() -> HashMap<String, Binding> {
 }
 
 fn c1243_reg() {
-    sel_lang::sql::define_dialect("mdempty", &serde_json::from_str::<serde_json::Value>("{\"extends\":\"mariadb\",\"version\":\"10.5\",\"lexical\":{\"textCollate\":\"\"}}").unwrap());
-    sel_lang::sql::define("mdempty", "funcs", "UPPER", &serde_json::from_str::<serde_json::Value>("{\"tpl\":\"F({0}{textCollate})\",\"ret\":\"TEXT\"}").unwrap());
+    sel_lang::sql::define("mariadb", "funcs", "UPPER", &serde_json::from_str::<serde_json::Value>("{\"tpl\":\"F({0}, {1:})\",\"ret\":\"TEXT\"}").unwrap());
 }
 
 fn c1244_bind() -> HashMap<String, Binding> {
     let mut m = HashMap::new();
-        m.insert("R".to_string(), bind_relation("r", "r", vec![FieldEntry { name: "A".to_string(), binding: bind_col("a", "", SqlKind::Num, false, false, false, "") }, FieldEntry { name: "N".to_string(), binding: bind_col("n", "", SqlKind::Text, false, false, false, "") }], "", "", ""));
-        m.insert("S".to_string(), bind_relation("s", "s", vec![FieldEntry { name: "A".to_string(), binding: bind_col("a", "", SqlKind::Num, false, false, false, "") }, FieldEntry { name: "M".to_string(), binding: bind_col("m", "", SqlKind::Text, false, false, false, "") }], "", "", ""));
+        m.insert("NAME".to_string(), bind_col("name", "o", SqlKind::Text, false, false, false, ""));
     m
+}
+
+fn c1244_reg() {
+    sel_lang::sql::define_dialect("mdempty", &serde_json::from_str::<serde_json::Value>("{\"extends\":\"mariadb\",\"version\":\"10.5\",\"lexical\":{\"textCollate\":\"\"}}").unwrap());
+    sel_lang::sql::define("mdempty", "funcs", "UPPER", &serde_json::from_str::<serde_json::Value>("{\"tpl\":\"F({0}{textCollate})\",\"ret\":\"TEXT\"}").unwrap());
 }
 
 fn c1245_bind() -> HashMap<String, Binding> {
@@ -8325,41 +8324,38 @@ fn c1245_bind() -> HashMap<String, Binding> {
 
 fn c1246_bind() -> HashMap<String, Binding> {
     let mut m = HashMap::new();
-        m.insert("ITEMS".to_string(), bind_relation("items", "i", vec![FieldEntry { name: "PRICE".to_string(), binding: bind_col("price", "", SqlKind::Num, false, false, false, "") }, FieldEntry { name: "QTY".to_string(), binding: bind_col("qty", "", SqlKind::Num, false, false, false, "") }, FieldEntry { name: "NAME".to_string(), binding: bind_col("name", "", SqlKind::Text, false, false, false, "") }, FieldEntry { name: "SKU".to_string(), binding: bind_col("sku", "", SqlKind::Text, false, false, false, "") }], "", "", ""));
-        m.insert("TAGS".to_string(), bind_relation("tags", "t", vec![FieldEntry { name: "TAG".to_string(), binding: bind_col("tag", "", SqlKind::Text, false, false, false, "") }, FieldEntry { name: "W".to_string(), binding: bind_col("w", "", SqlKind::Num, false, false, false, "") }], "", "", ""));
+        m.insert("R".to_string(), bind_relation("r", "r", vec![FieldEntry { name: "A".to_string(), binding: bind_col("a", "", SqlKind::Num, false, false, false, "") }, FieldEntry { name: "N".to_string(), binding: bind_col("n", "", SqlKind::Text, false, false, false, "") }], "", "", ""));
+        m.insert("S".to_string(), bind_relation("s", "s", vec![FieldEntry { name: "A".to_string(), binding: bind_col("a", "", SqlKind::Num, false, false, false, "") }, FieldEntry { name: "M".to_string(), binding: bind_col("m", "", SqlKind::Text, false, false, false, "") }], "", "", ""));
     m
 }
 
 fn c1247_bind() -> HashMap<String, Binding> {
     let mut m = HashMap::new();
-        m.insert("C".to_string(), bind_col("c", "o", SqlKind::Statement, false, false, false, ""));
+        m.insert("ITEMS".to_string(), bind_relation("items", "i", vec![FieldEntry { name: "PRICE".to_string(), binding: bind_col("price", "", SqlKind::Num, false, false, false, "") }, FieldEntry { name: "QTY".to_string(), binding: bind_col("qty", "", SqlKind::Num, false, false, false, "") }, FieldEntry { name: "NAME".to_string(), binding: bind_col("name", "", SqlKind::Text, false, false, false, "") }, FieldEntry { name: "SKU".to_string(), binding: bind_col("sku", "", SqlKind::Text, false, false, false, "") }], "", "", ""));
+        m.insert("TAGS".to_string(), bind_relation("tags", "t", vec![FieldEntry { name: "TAG".to_string(), binding: bind_col("tag", "", SqlKind::Text, false, false, false, "") }, FieldEntry { name: "W".to_string(), binding: bind_col("w", "", SqlKind::Num, false, false, false, "") }], "", "", ""));
     m
 }
 
 fn c1248_bind() -> HashMap<String, Binding> {
     let mut m = HashMap::new();
-        m.insert("C".to_string(), bind_col("c", "o", SqlKind::List, false, false, false, ""));
+        m.insert("C".to_string(), bind_col("c", "o", SqlKind::Statement, false, false, false, ""));
     m
 }
 
 fn c1249_bind() -> HashMap<String, Binding> {
     let mut m = HashMap::new();
-        m.insert("S".to_string(), bind_col("s", "o", SqlKind::Text, false, false, false, ""));
+        m.insert("C".to_string(), bind_col("c", "o", SqlKind::List, false, false, false, ""));
     m
-}
-
-fn c1249_reg() {
-    sel_lang::sql::define_dialect("my-nobs", &serde_json::from_str::<serde_json::Value>("{\"extends\":\"mariadb\",\"version\":\"10.5\",\"lexical\":{\"textEscape\":{\"\\\\\":\"\\\\\\\\\"}}}").unwrap());
 }
 
 fn c1250_bind() -> HashMap<String, Binding> {
     let mut m = HashMap::new();
-
+        m.insert("S".to_string(), bind_col("s", "o", SqlKind::Text, false, false, false, ""));
     m
 }
 
 fn c1250_reg() {
-    sel_lang::sql::define_dialect("sqlite-noesc", &serde_json::from_str::<serde_json::Value>("{\"extends\":\"sqlite\",\"version\":\"3.48\",\"lexical\":{\"textEscape\":{}}}").unwrap());
+    sel_lang::sql::define_dialect("my-nobs", &serde_json::from_str::<serde_json::Value>("{\"extends\":\"mariadb\",\"version\":\"10.5\",\"lexical\":{\"textEscape\":{\"\\\\\":\"\\\\\\\\\"}}}").unwrap());
 }
 
 fn c1251_bind() -> HashMap<String, Binding> {
@@ -8369,7 +8365,7 @@ fn c1251_bind() -> HashMap<String, Binding> {
 }
 
 fn c1251_reg() {
-    sel_lang::sql::define_dialect("my-badbs", &serde_json::from_str::<serde_json::Value>("{\"extends\":\"mariadb\",\"version\":\"10.5\",\"lexical\":{\"textEscape\":{\"'\":\"\\\\'\"}}}").unwrap());
+    sel_lang::sql::define_dialect("sqlite-noesc", &serde_json::from_str::<serde_json::Value>("{\"extends\":\"sqlite\",\"version\":\"3.48\",\"lexical\":{\"textEscape\":{}}}").unwrap());
 }
 
 fn c1252_bind() -> HashMap<String, Binding> {
@@ -8379,13 +8375,17 @@ fn c1252_bind() -> HashMap<String, Binding> {
 }
 
 fn c1252_reg() {
-    sel_lang::sql::define_dialect("dq", &serde_json::from_str::<serde_json::Value>("{\"extends\":\"ansi\",\"version\":\"1\",\"lexical\":{\"textQuote\":\"\\\"\"}}").unwrap());
+    sel_lang::sql::define_dialect("my-badbs", &serde_json::from_str::<serde_json::Value>("{\"extends\":\"mariadb\",\"version\":\"10.5\",\"lexical\":{\"textEscape\":{\"'\":\"\\\\'\"}}}").unwrap());
 }
 
 fn c1253_bind() -> HashMap<String, Binding> {
     let mut m = HashMap::new();
-        m.insert("ITEMS".to_string(), bind_relation("items", "i", vec![FieldEntry { name: "PRICE".to_string(), binding: bind_col("price", "", SqlKind::Num, false, false, false, "") }], "", "", ""));
+
     m
+}
+
+fn c1253_reg() {
+    sel_lang::sql::define_dialect("dq", &serde_json::from_str::<serde_json::Value>("{\"extends\":\"ansi\",\"version\":\"1\",\"lexical\":{\"textQuote\":\"\\\"\"}}").unwrap());
 }
 
 fn c1254_bind() -> HashMap<String, Binding> {
@@ -8396,25 +8396,25 @@ fn c1254_bind() -> HashMap<String, Binding> {
 
 fn c1255_bind() -> HashMap<String, Binding> {
     let mut m = HashMap::new();
-        m.insert("ITEMS".to_string(), bind_relation("items", "i", vec![], "", "", ""));
+        m.insert("ITEMS".to_string(), bind_relation("items", "i", vec![FieldEntry { name: "PRICE".to_string(), binding: bind_col("price", "", SqlKind::Num, false, false, false, "") }], "", "", ""));
     m
 }
 
 fn c1256_bind() -> HashMap<String, Binding> {
     let mut m = HashMap::new();
-        m.insert("ITEMS".to_string(), bind_relation("items", "i", vec![FieldEntry { name: "PRICE".to_string(), binding: bind_col("price", "", SqlKind::Num, false, false, false, "") }], "", "", ""));
+        m.insert("ITEMS".to_string(), bind_relation("items", "i", vec![], "", "", ""));
     m
 }
 
 fn c1257_bind() -> HashMap<String, Binding> {
     let mut m = HashMap::new();
-        m.insert("S".to_string(), bind_col("s", "o", SqlKind::Text, false, false, false, ""));
+        m.insert("ITEMS".to_string(), bind_relation("items", "i", vec![FieldEntry { name: "PRICE".to_string(), binding: bind_col("price", "", SqlKind::Num, false, false, false, "") }], "", "", ""));
     m
 }
 
 fn c1258_bind() -> HashMap<String, Binding> {
     let mut m = HashMap::new();
-        m.insert("ITEMS".to_string(), bind_relation("items", "i", vec![FieldEntry { name: "ID".to_string(), binding: bind_col("id", "", SqlKind::Num, false, false, false, "") }, FieldEntry { name: "TOTAL".to_string(), binding: bind_raw("i.price * i.qty", SqlKind::Num, false, false, false, "") }], "", "", ""));
+        m.insert("S".to_string(), bind_col("s", "o", SqlKind::Text, false, false, false, ""));
     m
 }
 
@@ -8426,31 +8426,27 @@ fn c1259_bind() -> HashMap<String, Binding> {
 
 fn c1260_bind() -> HashMap<String, Binding> {
     let mut m = HashMap::new();
-        m.insert("R".to_string(), bind_relation("t", "t", vec![FieldEntry { name: "A".to_string(), binding: bind_col("x", "", SqlKind::Num, false, false, false, "") }, FieldEntry { name: "a".to_string(), binding: bind_col("y", "", SqlKind::Num, false, false, false, "") }], "", "", ""));
+        m.insert("ITEMS".to_string(), bind_relation("items", "i", vec![FieldEntry { name: "ID".to_string(), binding: bind_col("id", "", SqlKind::Num, false, false, false, "") }, FieldEntry { name: "TOTAL".to_string(), binding: bind_raw("i.price * i.qty", SqlKind::Num, false, false, false, "") }], "", "", ""));
     m
 }
 
 fn c1261_bind() -> HashMap<String, Binding> {
+    let mut m = HashMap::new();
+        m.insert("R".to_string(), bind_relation("t", "t", vec![FieldEntry { name: "A".to_string(), binding: bind_col("x", "", SqlKind::Num, false, false, false, "") }, FieldEntry { name: "a".to_string(), binding: bind_col("y", "", SqlKind::Num, false, false, false, "") }], "", "", ""));
+    m
+}
+
+fn c1262_bind() -> HashMap<String, Binding> {
     let mut m = HashMap::new();
         m.insert("x".to_string(), bind_col("a", "o", SqlKind::Num, false, false, false, ""));
         m.insert("X".to_string(), bind_col("b", "o", SqlKind::Num, false, false, false, ""));
     m
 }
 
-fn c1262_bind() -> HashMap<String, Binding> {
+fn c1263_bind() -> HashMap<String, Binding> {
     let mut m = HashMap::new();
         m.insert("ITEMS".to_string(), bind_relation("oi", "oi", vec![FieldEntry { name: "QTY".to_string(), binding: bind_col("qty", "oi", SqlKind::Num, false, false, false, "") }], "", "oi.a=o.id OR oi.b=o.id", ""));
     m
-}
-
-fn c1263_bind() -> HashMap<String, Binding> {
-    let mut m = HashMap::new();
-
-    m
-}
-
-fn c1263_reg() {
-    sel_lang::sql::define_dialect("my-ok", &serde_json::from_str::<serde_json::Value>("{\"extends\":\"mariadb\",\"version\":\"10.5\",\"lexical\":{\"textEscape\":{\"\\\\\":\"\\\\\\\\\",\"'\":\"''\"}}}").unwrap());
 }
 
 fn c1264_bind() -> HashMap<String, Binding> {
@@ -8460,8 +8456,7 @@ fn c1264_bind() -> HashMap<String, Binding> {
 }
 
 fn c1264_reg() {
-    sel_lang::sql::define_dialect("redef", &serde_json::from_str::<serde_json::Value>("{\"extends\":\"mariadb\",\"version\":\"10.5\",\"lexical\":{\"textCollate\":\" COLLATE utf8mb4_bin\"}}").unwrap());
-    sel_lang::sql::define_dialect("redef", &serde_json::from_str::<serde_json::Value>("{\"extends\":\"mariadb\",\"version\":\"10.5\",\"lexical\":{\"textCollate\":\" COLLATE utf8mb4_0900_bin\"}}").unwrap());
+    sel_lang::sql::define_dialect("my-ok", &serde_json::from_str::<serde_json::Value>("{\"extends\":\"mariadb\",\"version\":\"10.5\",\"lexical\":{\"textEscape\":{\"\\\\\":\"\\\\\\\\\",\"'\":\"''\"}}}").unwrap());
 }
 
 fn c1265_bind() -> HashMap<String, Binding> {
@@ -8471,15 +8466,19 @@ fn c1265_bind() -> HashMap<String, Binding> {
 }
 
 fn c1265_reg() {
-    sel_lang::sql::define_dialect("redef2", &serde_json::from_str::<serde_json::Value>("{\"extends\":\"mariadb\",\"version\":\"10.5\"}").unwrap());
-    sel_lang::sql::define_dialect("redef2", &serde_json::from_str::<serde_json::Value>("{\"extends\":\"postgresql\",\"version\":\"16\"}").unwrap());
+    sel_lang::sql::define_dialect("redef", &serde_json::from_str::<serde_json::Value>("{\"extends\":\"mariadb\",\"version\":\"10.5\",\"lexical\":{\"textCollate\":\" COLLATE utf8mb4_bin\"}}").unwrap());
+    sel_lang::sql::define_dialect("redef", &serde_json::from_str::<serde_json::Value>("{\"extends\":\"mariadb\",\"version\":\"10.5\",\"lexical\":{\"textCollate\":\" COLLATE utf8mb4_0900_bin\"}}").unwrap());
 }
 
 fn c1266_bind() -> HashMap<String, Binding> {
     let mut m = HashMap::new();
-        m.insert("ORDERS".to_string(), bind_relation("orders", "o", vec![FieldEntry { name: "ID".to_string(), binding: bind_col("id", "o", SqlKind::Num, false, false, false, "") }, FieldEntry { name: "CUSTOMER_ID".to_string(), binding: bind_col("customer_id", "o", SqlKind::Num, false, false, false, "") }, FieldEntry { name: "AMOUNT".to_string(), binding: bind_col("amount", "o", SqlKind::Num, false, false, false, "") }, FieldEntry { name: "NAME".to_string(), binding: bind_col("name", "o", SqlKind::Text, false, false, false, "") }], "", "", ""));
-        m.insert("CUSTOMERS".to_string(), bind_relation("customers", "c", vec![FieldEntry { name: "ID".to_string(), binding: bind_col("id", "c", SqlKind::Num, false, false, false, "") }, FieldEntry { name: "NAME".to_string(), binding: bind_col("name", "c", SqlKind::Text, false, false, false, "") }], "", "", ""));
+
     m
+}
+
+fn c1266_reg() {
+    sel_lang::sql::define_dialect("redef2", &serde_json::from_str::<serde_json::Value>("{\"extends\":\"mariadb\",\"version\":\"10.5\"}").unwrap());
+    sel_lang::sql::define_dialect("redef2", &serde_json::from_str::<serde_json::Value>("{\"extends\":\"postgresql\",\"version\":\"16\"}").unwrap());
 }
 
 fn c1267_bind() -> HashMap<String, Binding> {
@@ -8575,7 +8574,8 @@ fn c1279_bind() -> HashMap<String, Binding> {
 
 fn c1280_bind() -> HashMap<String, Binding> {
     let mut m = HashMap::new();
-        m.insert("ORDERS".to_string(), bind_relation("orders", "o", vec![FieldEntry { name: "ID".to_string(), binding: bind_col("id", "o", SqlKind::Num, false, false, false, "") }, FieldEntry { name: "NAME".to_string(), binding: bind_col("name", "o", SqlKind::Text, false, false, false, "") }], "", "", ""));
+        m.insert("ORDERS".to_string(), bind_relation("orders", "o", vec![FieldEntry { name: "ID".to_string(), binding: bind_col("id", "o", SqlKind::Num, false, false, false, "") }, FieldEntry { name: "CUSTOMER_ID".to_string(), binding: bind_col("customer_id", "o", SqlKind::Num, false, false, false, "") }, FieldEntry { name: "AMOUNT".to_string(), binding: bind_col("amount", "o", SqlKind::Num, false, false, false, "") }, FieldEntry { name: "NAME".to_string(), binding: bind_col("name", "o", SqlKind::Text, false, false, false, "") }], "", "", ""));
+        m.insert("CUSTOMERS".to_string(), bind_relation("customers", "c", vec![FieldEntry { name: "ID".to_string(), binding: bind_col("id", "c", SqlKind::Num, false, false, false, "") }, FieldEntry { name: "NAME".to_string(), binding: bind_col("name", "c", SqlKind::Text, false, false, false, "") }], "", "", ""));
     m
 }
 
@@ -8605,8 +8605,7 @@ fn c1284_bind() -> HashMap<String, Binding> {
 
 fn c1285_bind() -> HashMap<String, Binding> {
     let mut m = HashMap::new();
-        m.insert("ORDERS".to_string(), bind_relation("orders", "o", vec![FieldEntry { name: "ID".to_string(), binding: bind_col("id", "o", SqlKind::Num, false, false, false, "") }, FieldEntry { name: "CUSTOMER_ID".to_string(), binding: bind_col("customer_id", "o", SqlKind::Num, false, false, false, "") }, FieldEntry { name: "AMOUNT".to_string(), binding: bind_col("amount", "o", SqlKind::Num, false, false, false, "") }, FieldEntry { name: "NAME".to_string(), binding: bind_col("name", "o", SqlKind::Text, false, false, false, "") }], "", "", ""));
-        m.insert("CUSTOMERS".to_string(), bind_relation("customers", "c", vec![FieldEntry { name: "ID".to_string(), binding: bind_col("id", "c", SqlKind::Num, false, false, false, "") }, FieldEntry { name: "CNAME".to_string(), binding: bind_col("cname", "c", SqlKind::Text, false, false, false, "") }], "", "", ""));
+        m.insert("ORDERS".to_string(), bind_relation("orders", "o", vec![FieldEntry { name: "ID".to_string(), binding: bind_col("id", "o", SqlKind::Num, false, false, false, "") }, FieldEntry { name: "NAME".to_string(), binding: bind_col("name", "o", SqlKind::Text, false, false, false, "") }], "", "", ""));
     m
 }
 
@@ -8633,19 +8632,16 @@ fn c1288_bind() -> HashMap<String, Binding> {
 
 fn c1289_bind() -> HashMap<String, Binding> {
     let mut m = HashMap::new();
-        m.insert("V1".to_string(), bind_value(value_tree(vec![TreeItem { key: Some("1".to_string()), val: Value::text_owned("a".to_string()) }, TreeItem { key: Some("2".to_string()), val: Value::none() }]), None));
-        m.insert("XT".to_string(), bind_col("xt", "", SqlKind::Text, false, false, false, ""));
+        m.insert("ORDERS".to_string(), bind_relation("orders", "o", vec![FieldEntry { name: "ID".to_string(), binding: bind_col("id", "o", SqlKind::Num, false, false, false, "") }, FieldEntry { name: "CUSTOMER_ID".to_string(), binding: bind_col("customer_id", "o", SqlKind::Num, false, false, false, "") }, FieldEntry { name: "AMOUNT".to_string(), binding: bind_col("amount", "o", SqlKind::Num, false, false, false, "") }, FieldEntry { name: "NAME".to_string(), binding: bind_col("name", "o", SqlKind::Text, false, false, false, "") }], "", "", ""));
+        m.insert("CUSTOMERS".to_string(), bind_relation("customers", "c", vec![FieldEntry { name: "ID".to_string(), binding: bind_col("id", "c", SqlKind::Num, false, false, false, "") }, FieldEntry { name: "CNAME".to_string(), binding: bind_col("cname", "c", SqlKind::Text, false, false, false, "") }], "", "", ""));
     m
 }
 
 fn c1290_bind() -> HashMap<String, Binding> {
     let mut m = HashMap::new();
-
+        m.insert("V1".to_string(), bind_value(value_tree(vec![TreeItem { key: Some("1".to_string()), val: Value::text_owned("a".to_string()) }, TreeItem { key: Some("2".to_string()), val: Value::none() }]), None));
+        m.insert("XT".to_string(), bind_col("xt", "", SqlKind::Text, false, false, false, ""));
     m
-}
-
-fn c1290_reg() {
-    sel_lang::sql::define_dialect("my-nl", &serde_json::from_str::<serde_json::Value>("{\"extends\":\"mariadb\",\"version\":\"10.5\",\"lexical\":{\"textEscape\":{\"'\":\"''\",\"\\n\":\"\\\\n\"}}}").unwrap());
 }
 
 fn c1291_bind() -> HashMap<String, Binding> {
@@ -8655,18 +8651,22 @@ fn c1291_bind() -> HashMap<String, Binding> {
 }
 
 fn c1291_reg() {
-    sel_lang::sql::define_dialect("ansi-x", &serde_json::from_str::<serde_json::Value>("{\"extends\":\"ansi\",\"version\":\"2016\",\"lexical\":{\"textEscape\":{\"'\":\"x'\",\"x\":\"xx\"}}}").unwrap());
+    sel_lang::sql::define_dialect("my-nl", &serde_json::from_str::<serde_json::Value>("{\"extends\":\"mariadb\",\"version\":\"10.5\",\"lexical\":{\"textEscape\":{\"'\":\"''\",\"\\n\":\"\\\\n\"}}}").unwrap());
 }
 
 fn c1292_bind() -> HashMap<String, Binding> {
     let mut m = HashMap::new();
-        m.insert("XS".to_string(), bind_col("xs", "", SqlKind::Statement, false, false, false, ""));
+
     m
+}
+
+fn c1292_reg() {
+    sel_lang::sql::define_dialect("ansi-x", &serde_json::from_str::<serde_json::Value>("{\"extends\":\"ansi\",\"version\":\"2016\",\"lexical\":{\"textEscape\":{\"'\":\"x'\",\"x\":\"xx\"}}}").unwrap());
 }
 
 fn c1293_bind() -> HashMap<String, Binding> {
     let mut m = HashMap::new();
-        m.insert("XN".to_string(), bind_col("xn", "", SqlKind::Num, false, false, false, ""));
+        m.insert("XS".to_string(), bind_col("xs", "", SqlKind::Statement, false, false, false, ""));
     m
 }
 
@@ -8684,32 +8684,32 @@ fn c1295_bind() -> HashMap<String, Binding> {
 
 fn c1296_bind() -> HashMap<String, Binding> {
     let mut m = HashMap::new();
-        m.insert("XB".to_string(), bind_col("xb", "", SqlKind::Bool, false, false, false, ""));
-        m.insert("TS".to_string(), bind_relation("ts", "ts", vec![FieldEntry { name: "V".to_string(), binding: bind_col("v", "ts", SqlKind::Text, false, false, false, "") }], "V", "", ""));
+        m.insert("XN".to_string(), bind_col("xn", "", SqlKind::Num, false, false, false, ""));
     m
 }
 
 fn c1297_bind() -> HashMap<String, Binding> {
     let mut m = HashMap::new();
         m.insert("XB".to_string(), bind_col("xb", "", SqlKind::Bool, false, false, false, ""));
+        m.insert("TS".to_string(), bind_relation("ts", "ts", vec![FieldEntry { name: "V".to_string(), binding: bind_col("v", "ts", SqlKind::Text, false, false, false, "") }], "V", "", ""));
     m
 }
 
 fn c1298_bind() -> HashMap<String, Binding> {
     let mut m = HashMap::new();
-        m.insert("T".to_string(), bind_relation("t", "t", vec![FieldEntry { name: "N".to_string(), binding: bind_col("n", "t", SqlKind::Num, false, false, false, "") }, FieldEntry { name: "S".to_string(), binding: bind_col("s", "t", SqlKind::Text, false, false, false, "") }], "", "", ""));
+        m.insert("XB".to_string(), bind_col("xb", "", SqlKind::Bool, false, false, false, ""));
     m
 }
 
 fn c1299_bind() -> HashMap<String, Binding> {
     let mut m = HashMap::new();
-        m.insert("XC".to_string(), bind_col("xc", "", SqlKind::Text, false, false, false, "bogus"));
+        m.insert("T".to_string(), bind_relation("t", "t", vec![FieldEntry { name: "N".to_string(), binding: bind_col("n", "t", SqlKind::Num, false, false, false, "") }, FieldEntry { name: "S".to_string(), binding: bind_col("s", "t", SqlKind::Text, false, false, false, "") }], "", "", ""));
     m
 }
 
 fn c1300_bind() -> HashMap<String, Binding> {
     let mut m = HashMap::new();
-        m.insert("ORDERS".to_string(), bind_relation("orders", "o", vec![FieldEntry { name: "ID".to_string(), binding: bind_col("id", "o", SqlKind::Num, false, false, false, "") }, FieldEntry { name: "AMOUNT".to_string(), binding: bind_col("amount", "o", SqlKind::Num, false, false, false, "") }], "", "", ""));
+        m.insert("XC".to_string(), bind_col("xc", "", SqlKind::Text, false, false, false, "bogus"));
     m
 }
 
@@ -8721,27 +8721,26 @@ fn c1301_bind() -> HashMap<String, Binding> {
 
 fn c1302_bind() -> HashMap<String, Binding> {
     let mut m = HashMap::new();
-        m.insert("A".to_string(), bind_relation("a", "o", vec![FieldEntry { name: "X".to_string(), binding: bind_col("x", "o", SqlKind::Num, false, false, false, "") }], "", "", ""));
-        m.insert("B".to_string(), bind_relation("b", "O", vec![FieldEntry { name: "X".to_string(), binding: bind_col("x", "O", SqlKind::Num, false, false, false, "") }], "", "", ""));
+        m.insert("ORDERS".to_string(), bind_relation("orders", "o", vec![FieldEntry { name: "ID".to_string(), binding: bind_col("id", "o", SqlKind::Num, false, false, false, "") }, FieldEntry { name: "AMOUNT".to_string(), binding: bind_col("amount", "o", SqlKind::Num, false, false, false, "") }], "", "", ""));
     m
 }
 
 fn c1303_bind() -> HashMap<String, Binding> {
     let mut m = HashMap::new();
-        m.insert("XN".to_string(), bind_col("xn", "", SqlKind::Num, false, false, false, ""));
+        m.insert("A".to_string(), bind_relation("a", "o", vec![FieldEntry { name: "X".to_string(), binding: bind_col("x", "o", SqlKind::Num, false, false, false, "") }], "", "", ""));
+        m.insert("B".to_string(), bind_relation("b", "O", vec![FieldEntry { name: "X".to_string(), binding: bind_col("x", "O", SqlKind::Num, false, false, false, "") }], "", "", ""));
     m
 }
 
 fn c1304_bind() -> HashMap<String, Binding> {
     let mut m = HashMap::new();
-        m.insert("ORDERS".to_string(), bind_relation("orders", "o", vec![FieldEntry { name: "ID".to_string(), binding: bind_col("id", "o", SqlKind::Num, false, false, false, "") }, FieldEntry { name: "CUSTOMER_ID".to_string(), binding: bind_col("customer_id", "o", SqlKind::Num, false, false, false, "") }, FieldEntry { name: "AMOUNT".to_string(), binding: bind_col("amount", "o", SqlKind::Num, false, false, false, "") }, FieldEntry { name: "NAME".to_string(), binding: bind_col("name", "o", SqlKind::Text, false, false, false, "") }], "", "", ""));
+        m.insert("XN".to_string(), bind_col("xn", "", SqlKind::Num, false, false, false, ""));
     m
 }
 
 fn c1305_bind() -> HashMap<String, Binding> {
     let mut m = HashMap::new();
         m.insert("ORDERS".to_string(), bind_relation("orders", "o", vec![FieldEntry { name: "ID".to_string(), binding: bind_col("id", "o", SqlKind::Num, false, false, false, "") }, FieldEntry { name: "CUSTOMER_ID".to_string(), binding: bind_col("customer_id", "o", SqlKind::Num, false, false, false, "") }, FieldEntry { name: "AMOUNT".to_string(), binding: bind_col("amount", "o", SqlKind::Num, false, false, false, "") }, FieldEntry { name: "NAME".to_string(), binding: bind_col("name", "o", SqlKind::Text, false, false, false, "") }], "", "", ""));
-        m.insert("CUSTOMERS".to_string(), bind_relation("customers", "c", vec![FieldEntry { name: "ID".to_string(), binding: bind_col("id", "c", SqlKind::Num, false, false, false, "") }, FieldEntry { name: "CNAME".to_string(), binding: bind_col("cname", "c", SqlKind::Text, false, false, false, "") }], "", "", ""));
     m
 }
 
@@ -8769,10 +8768,17 @@ fn c1308_bind() -> HashMap<String, Binding> {
 fn c1309_bind() -> HashMap<String, Binding> {
     let mut m = HashMap::new();
         m.insert("ORDERS".to_string(), bind_relation("orders", "o", vec![FieldEntry { name: "ID".to_string(), binding: bind_col("id", "o", SqlKind::Num, false, false, false, "") }, FieldEntry { name: "CUSTOMER_ID".to_string(), binding: bind_col("customer_id", "o", SqlKind::Num, false, false, false, "") }, FieldEntry { name: "AMOUNT".to_string(), binding: bind_col("amount", "o", SqlKind::Num, false, false, false, "") }, FieldEntry { name: "NAME".to_string(), binding: bind_col("name", "o", SqlKind::Text, false, false, false, "") }], "", "", ""));
+        m.insert("CUSTOMERS".to_string(), bind_relation("customers", "c", vec![FieldEntry { name: "ID".to_string(), binding: bind_col("id", "c", SqlKind::Num, false, false, false, "") }, FieldEntry { name: "CNAME".to_string(), binding: bind_col("cname", "c", SqlKind::Text, false, false, false, "") }], "", "", ""));
     m
 }
 
 fn c1310_bind() -> HashMap<String, Binding> {
+    let mut m = HashMap::new();
+        m.insert("ORDERS".to_string(), bind_relation("orders", "o", vec![FieldEntry { name: "ID".to_string(), binding: bind_col("id", "o", SqlKind::Num, false, false, false, "") }, FieldEntry { name: "CUSTOMER_ID".to_string(), binding: bind_col("customer_id", "o", SqlKind::Num, false, false, false, "") }, FieldEntry { name: "AMOUNT".to_string(), binding: bind_col("amount", "o", SqlKind::Num, false, false, false, "") }, FieldEntry { name: "NAME".to_string(), binding: bind_col("name", "o", SqlKind::Text, false, false, false, "") }], "", "", ""));
+    m
+}
+
+fn c1311_bind() -> HashMap<String, Binding> {
     let mut m = HashMap::new();
         m.insert("ORDERS".to_string(), bind_relation("orders", "o", vec![FieldEntry { name: "ID".to_string(), binding: bind_col("id", "o", SqlKind::Num, false, false, false, "") }, FieldEntry { name: "CUSTOMER_ID".to_string(), binding: bind_col("customer_id", "o", SqlKind::Num, false, false, false, "") }, FieldEntry { name: "AMOUNT".to_string(), binding: bind_col("amount", "o", SqlKind::Num, false, false, false, "") }, FieldEntry { name: "NAME".to_string(), binding: bind_col("name", "o", SqlKind::Text, false, false, false, "") }], "", "", ""));
     m
@@ -31391,15 +31397,15 @@ pub const SQL_CASES: &[SqlCase] = &[
         bindings_fn: Some(c1188_bind),
     },
     SqlCase {
-        name: "agg.in-relation.bool-column-needle-is-refused",
+        name: "agg.bucket-sum.a-non-name-binder-is-refused",
         at: "49-kind-guarantees.sqlt:501",
         dialect: "mariadb",
-        source: "F IN S",
+        source: "O .> BUCKET(_[\"CAT\"], RECORD(\"s\", SUM(_, 1, _[\"AMT\"])))",
         expect: None,
         error: Some("E_SQL_SHAPE"),
         throws: None,
         params: None,
-        as_mode: None,
+        as_mode: Some("statement"),
         mode: None,
         strict: false,
         plan: None,
@@ -31410,10 +31416,10 @@ pub const SQL_CASES: &[SqlCase] = &[
         bindings_fn: Some(c1189_bind),
     },
     SqlCase {
-        name: "agg.in-relation.bool-literal-needle-is-refused",
-        at: "49-kind-guarantees.sqlt:514",
+        name: "agg.in-relation.bool-column-needle-is-refused",
+        at: "49-kind-guarantees.sqlt:516",
         dialect: "mariadb",
-        source: "TRUE IN S",
+        source: "F IN S",
         expect: None,
         error: Some("E_SQL_SHAPE"),
         throws: None,
@@ -31429,10 +31435,10 @@ pub const SQL_CASES: &[SqlCase] = &[
         bindings_fn: Some(c1190_bind),
     },
     SqlCase {
-        name: "agg.in-relation.bin-column-needle-is-refused",
-        at: "49-kind-guarantees.sqlt:527",
+        name: "agg.in-relation.bool-literal-needle-is-refused",
+        at: "49-kind-guarantees.sqlt:529",
         dialect: "mariadb",
-        source: "X IN S",
+        source: "TRUE IN S",
         expect: None,
         error: Some("E_SQL_SHAPE"),
         throws: None,
@@ -31448,8 +31454,27 @@ pub const SQL_CASES: &[SqlCase] = &[
         bindings_fn: Some(c1191_bind),
     },
     SqlCase {
+        name: "agg.in-relation.bin-column-needle-is-refused",
+        at: "49-kind-guarantees.sqlt:542",
+        dialect: "mariadb",
+        source: "X IN S",
+        expect: None,
+        error: Some("E_SQL_SHAPE"),
+        throws: None,
+        params: None,
+        as_mode: None,
+        mode: None,
+        strict: false,
+        plan: None,
+        has_tables: false,
+        tables: &[],
+        unrepresentable: None,
+        register_fn: None,
+        bindings_fn: Some(c1192_bind),
+    },
+    SqlCase {
         name: "bind.in.exact.numeric-literal-item-is-cast",
-        at: "49-kind-guarantees.sqlt:540",
+        at: "49-kind-guarantees.sqlt:555",
         dialect: "mariadb",
         source: "T IN (\"a\", 3)",
         expect: Some("((`t` = 'a') OR (`t` = CAST(3 AS CHAR) COLLATE utf8mb4_nopad_bin))"),
@@ -31464,11 +31489,11 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1192_bind),
+        bindings_fn: Some(c1193_bind),
     },
     SqlCase {
         name: "bind.in.exact.numeric-literal-items-only",
-        at: "49-kind-guarantees.sqlt:553",
+        at: "49-kind-guarantees.sqlt:568",
         dialect: "mariadb",
         source: "S IN (1, 2)",
         expect: Some("((`s` = CAST(1 AS CHAR) COLLATE utf8mb4_nopad_bin) OR (`s` = CAST(2 AS CHAR) COLLATE utf8mb4_nopad_bin))"),
@@ -31483,11 +31508,11 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1193_bind),
+        bindings_fn: Some(c1194_bind),
     },
     SqlCase {
         name: "stmt.take.whole-number-with-scale.mariadb",
-        at: "49-kind-guarantees.sqlt:566",
+        at: "49-kind-guarantees.sqlt:581",
         dialect: "mariadb",
         source: "ITEMS .> TAKE(2.0)",
         expect: Some("SELECT * FROM `items` LIMIT 2"),
@@ -31502,11 +31527,11 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1194_bind),
+        bindings_fn: Some(c1195_bind),
     },
     SqlCase {
         name: "stmt.take.zero-with-scale.mariadb",
-        at: "49-kind-guarantees.sqlt:581",
+        at: "49-kind-guarantees.sqlt:596",
         dialect: "mariadb",
         source: "ITEMS .> TAKE(0.0)",
         expect: Some("SELECT * FROM `items` LIMIT 0"),
@@ -31521,11 +31546,11 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1195_bind),
+        bindings_fn: Some(c1196_bind),
     },
     SqlCase {
         name: "stmt.take.count-past-2^53.mariadb",
-        at: "49-kind-guarantees.sqlt:596",
+        at: "49-kind-guarantees.sqlt:611",
         dialect: "mariadb",
         source: "ITEMS .> TAKE(9007199254740993)",
         expect: Some("SELECT * FROM `items` LIMIT 9007199254740993"),
@@ -31540,33 +31565,14 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1196_bind),
-    },
-    SqlCase {
-        name: "stmt.take.int64-max.mariadb",
-        at: "49-kind-guarantees.sqlt:611",
-        dialect: "mariadb",
-        source: "ITEMS .> TAKE(9223372036854775807)",
-        expect: Some("SELECT * FROM `items` LIMIT 9223372036854775807"),
-        error: None,
-        throws: None,
-        params: None,
-        as_mode: Some("statement"),
-        mode: None,
-        strict: false,
-        plan: None,
-        has_tables: false,
-        tables: &[],
-        unrepresentable: None,
-        register_fn: None,
         bindings_fn: Some(c1197_bind),
     },
     SqlCase {
-        name: "stmt.take.whole-number-with-scale.postgresql",
+        name: "stmt.take.int64-max.mariadb",
         at: "49-kind-guarantees.sqlt:626",
-        dialect: "postgresql",
-        source: "ITEMS .> TAKE(2.0)",
-        expect: Some("SELECT * FROM \"items\" LIMIT 2"),
+        dialect: "mariadb",
+        source: "ITEMS .> TAKE(9223372036854775807)",
+        expect: Some("SELECT * FROM `items` LIMIT 9223372036854775807"),
         error: None,
         throws: None,
         params: None,
@@ -31581,11 +31587,11 @@ pub const SQL_CASES: &[SqlCase] = &[
         bindings_fn: Some(c1198_bind),
     },
     SqlCase {
-        name: "stmt.take.zero-with-scale.postgresql",
+        name: "stmt.take.whole-number-with-scale.postgresql",
         at: "49-kind-guarantees.sqlt:641",
         dialect: "postgresql",
-        source: "ITEMS .> TAKE(0.0)",
-        expect: Some("SELECT * FROM \"items\" LIMIT 0"),
+        source: "ITEMS .> TAKE(2.0)",
+        expect: Some("SELECT * FROM \"items\" LIMIT 2"),
         error: None,
         throws: None,
         params: None,
@@ -31600,11 +31606,11 @@ pub const SQL_CASES: &[SqlCase] = &[
         bindings_fn: Some(c1199_bind),
     },
     SqlCase {
-        name: "stmt.take.count-past-2^53.postgresql",
+        name: "stmt.take.zero-with-scale.postgresql",
         at: "49-kind-guarantees.sqlt:656",
         dialect: "postgresql",
-        source: "ITEMS .> TAKE(9007199254740993)",
-        expect: Some("SELECT * FROM \"items\" LIMIT 9007199254740993"),
+        source: "ITEMS .> TAKE(0.0)",
+        expect: Some("SELECT * FROM \"items\" LIMIT 0"),
         error: None,
         throws: None,
         params: None,
@@ -31619,11 +31625,11 @@ pub const SQL_CASES: &[SqlCase] = &[
         bindings_fn: Some(c1200_bind),
     },
     SqlCase {
-        name: "stmt.take.int64-max.postgresql",
+        name: "stmt.take.count-past-2^53.postgresql",
         at: "49-kind-guarantees.sqlt:671",
         dialect: "postgresql",
-        source: "ITEMS .> TAKE(9223372036854775807)",
-        expect: Some("SELECT * FROM \"items\" LIMIT 9223372036854775807"),
+        source: "ITEMS .> TAKE(9007199254740993)",
+        expect: Some("SELECT * FROM \"items\" LIMIT 9007199254740993"),
         error: None,
         throws: None,
         params: None,
@@ -31638,11 +31644,11 @@ pub const SQL_CASES: &[SqlCase] = &[
         bindings_fn: Some(c1201_bind),
     },
     SqlCase {
-        name: "stmt.take.whole-number-with-scale.sqlite",
+        name: "stmt.take.int64-max.postgresql",
         at: "49-kind-guarantees.sqlt:686",
-        dialect: "sqlite",
-        source: "ITEMS .> TAKE(2.0)",
-        expect: Some("SELECT * FROM \"items\" LIMIT 2"),
+        dialect: "postgresql",
+        source: "ITEMS .> TAKE(9223372036854775807)",
+        expect: Some("SELECT * FROM \"items\" LIMIT 9223372036854775807"),
         error: None,
         throws: None,
         params: None,
@@ -31657,11 +31663,11 @@ pub const SQL_CASES: &[SqlCase] = &[
         bindings_fn: Some(c1202_bind),
     },
     SqlCase {
-        name: "stmt.take.zero-with-scale.sqlite",
+        name: "stmt.take.whole-number-with-scale.sqlite",
         at: "49-kind-guarantees.sqlt:701",
         dialect: "sqlite",
-        source: "ITEMS .> TAKE(0.0)",
-        expect: Some("SELECT * FROM \"items\" LIMIT 0"),
+        source: "ITEMS .> TAKE(2.0)",
+        expect: Some("SELECT * FROM \"items\" LIMIT 2"),
         error: None,
         throws: None,
         params: None,
@@ -31676,11 +31682,11 @@ pub const SQL_CASES: &[SqlCase] = &[
         bindings_fn: Some(c1203_bind),
     },
     SqlCase {
-        name: "stmt.take.count-past-2^53.sqlite",
+        name: "stmt.take.zero-with-scale.sqlite",
         at: "49-kind-guarantees.sqlt:716",
         dialect: "sqlite",
-        source: "ITEMS .> TAKE(9007199254740993)",
-        expect: Some("SELECT * FROM \"items\" LIMIT 9007199254740993"),
+        source: "ITEMS .> TAKE(0.0)",
+        expect: Some("SELECT * FROM \"items\" LIMIT 0"),
         error: None,
         throws: None,
         params: None,
@@ -31695,11 +31701,11 @@ pub const SQL_CASES: &[SqlCase] = &[
         bindings_fn: Some(c1204_bind),
     },
     SqlCase {
-        name: "stmt.take.int64-max.sqlite",
+        name: "stmt.take.count-past-2^53.sqlite",
         at: "49-kind-guarantees.sqlt:731",
         dialect: "sqlite",
-        source: "ITEMS .> TAKE(9223372036854775807)",
-        expect: Some("SELECT * FROM \"items\" LIMIT 9223372036854775807"),
+        source: "ITEMS .> TAKE(9007199254740993)",
+        expect: Some("SELECT * FROM \"items\" LIMIT 9007199254740993"),
         error: None,
         throws: None,
         params: None,
@@ -31714,11 +31720,11 @@ pub const SQL_CASES: &[SqlCase] = &[
         bindings_fn: Some(c1205_bind),
     },
     SqlCase {
-        name: "stmt.drop.whole-number-with-scale.mariadb",
+        name: "stmt.take.int64-max.sqlite",
         at: "49-kind-guarantees.sqlt:746",
-        dialect: "mariadb",
-        source: "ITEMS .> DROP(2.0)",
-        expect: Some("SELECT * FROM `items` LIMIT 18446744073709551615 OFFSET 2"),
+        dialect: "sqlite",
+        source: "ITEMS .> TAKE(9223372036854775807)",
+        expect: Some("SELECT * FROM \"items\" LIMIT 9223372036854775807"),
         error: None,
         throws: None,
         params: None,
@@ -31733,11 +31739,11 @@ pub const SQL_CASES: &[SqlCase] = &[
         bindings_fn: Some(c1206_bind),
     },
     SqlCase {
-        name: "stmt.drop.count-past-2^53.mariadb",
+        name: "stmt.drop.whole-number-with-scale.mariadb",
         at: "49-kind-guarantees.sqlt:761",
         dialect: "mariadb",
-        source: "ITEMS .> DROP(9007199254740993)",
-        expect: Some("SELECT * FROM `items` LIMIT 18446744073709551615 OFFSET 9007199254740993"),
+        source: "ITEMS .> DROP(2.0)",
+        expect: Some("SELECT * FROM `items` LIMIT 18446744073709551615 OFFSET 2"),
         error: None,
         throws: None,
         params: None,
@@ -31752,11 +31758,11 @@ pub const SQL_CASES: &[SqlCase] = &[
         bindings_fn: Some(c1207_bind),
     },
     SqlCase {
-        name: "stmt.drop.count-past-2^53.postgresql",
+        name: "stmt.drop.count-past-2^53.mariadb",
         at: "49-kind-guarantees.sqlt:776",
-        dialect: "postgresql",
+        dialect: "mariadb",
         source: "ITEMS .> DROP(9007199254740993)",
-        expect: Some("SELECT * FROM \"items\" OFFSET 9007199254740993"),
+        expect: Some("SELECT * FROM `items` LIMIT 18446744073709551615 OFFSET 9007199254740993"),
         error: None,
         throws: None,
         params: None,
@@ -31771,11 +31777,11 @@ pub const SQL_CASES: &[SqlCase] = &[
         bindings_fn: Some(c1208_bind),
     },
     SqlCase {
-        name: "stmt.drop.count-past-2^53.sqlite",
+        name: "stmt.drop.count-past-2^53.postgresql",
         at: "49-kind-guarantees.sqlt:791",
-        dialect: "sqlite",
+        dialect: "postgresql",
         source: "ITEMS .> DROP(9007199254740993)",
-        expect: Some("SELECT * FROM \"items\" LIMIT -1 OFFSET 9007199254740993"),
+        expect: Some("SELECT * FROM \"items\" OFFSET 9007199254740993"),
         error: None,
         throws: None,
         params: None,
@@ -31790,11 +31796,11 @@ pub const SQL_CASES: &[SqlCase] = &[
         bindings_fn: Some(c1209_bind),
     },
     SqlCase {
-        name: "stmt.take.count-past-int64-is-clamped.mariadb",
+        name: "stmt.drop.count-past-2^53.sqlite",
         at: "49-kind-guarantees.sqlt:806",
-        dialect: "mariadb",
-        source: "ITEMS .> TAKE(99999999999999999999999)",
-        expect: Some("SELECT * FROM `items` LIMIT 9223372036854775807"),
+        dialect: "sqlite",
+        source: "ITEMS .> DROP(9007199254740993)",
+        expect: Some("SELECT * FROM \"items\" LIMIT -1 OFFSET 9007199254740993"),
         error: None,
         throws: None,
         params: None,
@@ -31809,10 +31815,10 @@ pub const SQL_CASES: &[SqlCase] = &[
         bindings_fn: Some(c1210_bind),
     },
     SqlCase {
-        name: "stmt.take.count-2^63-is-clamped.mariadb",
+        name: "stmt.take.count-past-int64-is-clamped.mariadb",
         at: "49-kind-guarantees.sqlt:821",
         dialect: "mariadb",
-        source: "ITEMS .> TAKE(9223372036854775808)",
+        source: "ITEMS .> TAKE(99999999999999999999999)",
         expect: Some("SELECT * FROM `items` LIMIT 9223372036854775807"),
         error: None,
         throws: None,
@@ -31828,11 +31834,11 @@ pub const SQL_CASES: &[SqlCase] = &[
         bindings_fn: Some(c1211_bind),
     },
     SqlCase {
-        name: "stmt.take.count-past-int64-is-clamped.postgresql",
+        name: "stmt.take.count-2^63-is-clamped.mariadb",
         at: "49-kind-guarantees.sqlt:836",
-        dialect: "postgresql",
-        source: "ITEMS .> TAKE(99999999999999999999999)",
-        expect: Some("SELECT * FROM \"items\" LIMIT 9223372036854775807"),
+        dialect: "mariadb",
+        source: "ITEMS .> TAKE(9223372036854775808)",
+        expect: Some("SELECT * FROM `items` LIMIT 9223372036854775807"),
         error: None,
         throws: None,
         params: None,
@@ -31847,10 +31853,10 @@ pub const SQL_CASES: &[SqlCase] = &[
         bindings_fn: Some(c1212_bind),
     },
     SqlCase {
-        name: "stmt.take.count-2^63-is-clamped.postgresql",
+        name: "stmt.take.count-past-int64-is-clamped.postgresql",
         at: "49-kind-guarantees.sqlt:851",
         dialect: "postgresql",
-        source: "ITEMS .> TAKE(9223372036854775808)",
+        source: "ITEMS .> TAKE(99999999999999999999999)",
         expect: Some("SELECT * FROM \"items\" LIMIT 9223372036854775807"),
         error: None,
         throws: None,
@@ -31866,10 +31872,10 @@ pub const SQL_CASES: &[SqlCase] = &[
         bindings_fn: Some(c1213_bind),
     },
     SqlCase {
-        name: "stmt.take.count-past-int64-is-clamped.sqlite",
+        name: "stmt.take.count-2^63-is-clamped.postgresql",
         at: "49-kind-guarantees.sqlt:866",
-        dialect: "sqlite",
-        source: "ITEMS .> TAKE(99999999999999999999999)",
+        dialect: "postgresql",
+        source: "ITEMS .> TAKE(9223372036854775808)",
         expect: Some("SELECT * FROM \"items\" LIMIT 9223372036854775807"),
         error: None,
         throws: None,
@@ -31885,10 +31891,10 @@ pub const SQL_CASES: &[SqlCase] = &[
         bindings_fn: Some(c1214_bind),
     },
     SqlCase {
-        name: "stmt.take.count-2^63-is-clamped.sqlite",
+        name: "stmt.take.count-past-int64-is-clamped.sqlite",
         at: "49-kind-guarantees.sqlt:881",
         dialect: "sqlite",
-        source: "ITEMS .> TAKE(9223372036854775808)",
+        source: "ITEMS .> TAKE(99999999999999999999999)",
         expect: Some("SELECT * FROM \"items\" LIMIT 9223372036854775807"),
         error: None,
         throws: None,
@@ -31904,11 +31910,11 @@ pub const SQL_CASES: &[SqlCase] = &[
         bindings_fn: Some(c1215_bind),
     },
     SqlCase {
-        name: "stmt.take.count-uint64-max-is-clamped.mariadb",
+        name: "stmt.take.count-2^63-is-clamped.sqlite",
         at: "49-kind-guarantees.sqlt:896",
-        dialect: "mariadb",
-        source: "ITEMS .> TAKE(18446744073709551615)",
-        expect: Some("SELECT * FROM `items` LIMIT 9223372036854775807"),
+        dialect: "sqlite",
+        source: "ITEMS .> TAKE(9223372036854775808)",
+        expect: Some("SELECT * FROM \"items\" LIMIT 9223372036854775807"),
         error: None,
         throws: None,
         params: None,
@@ -31923,11 +31929,11 @@ pub const SQL_CASES: &[SqlCase] = &[
         bindings_fn: Some(c1216_bind),
     },
     SqlCase {
-        name: "stmt.drop.count-past-int64-is-clamped.mariadb",
+        name: "stmt.take.count-uint64-max-is-clamped.mariadb",
         at: "49-kind-guarantees.sqlt:911",
         dialect: "mariadb",
-        source: "ITEMS .> DROP(18446744073709551616)",
-        expect: Some("SELECT * FROM `items` LIMIT 18446744073709551615 OFFSET 9223372036854775807"),
+        source: "ITEMS .> TAKE(18446744073709551615)",
+        expect: Some("SELECT * FROM `items` LIMIT 9223372036854775807"),
         error: None,
         throws: None,
         params: None,
@@ -31942,11 +31948,11 @@ pub const SQL_CASES: &[SqlCase] = &[
         bindings_fn: Some(c1217_bind),
     },
     SqlCase {
-        name: "stmt.drop.count-past-int64-is-clamped.postgresql",
+        name: "stmt.drop.count-past-int64-is-clamped.mariadb",
         at: "49-kind-guarantees.sqlt:926",
-        dialect: "postgresql",
+        dialect: "mariadb",
         source: "ITEMS .> DROP(18446744073709551616)",
-        expect: Some("SELECT * FROM \"items\" OFFSET 9223372036854775807"),
+        expect: Some("SELECT * FROM `items` LIMIT 18446744073709551615 OFFSET 9223372036854775807"),
         error: None,
         throws: None,
         params: None,
@@ -31961,11 +31967,11 @@ pub const SQL_CASES: &[SqlCase] = &[
         bindings_fn: Some(c1218_bind),
     },
     SqlCase {
-        name: "stmt.drop.count-past-int64-is-clamped.sqlite",
-        at: "49-kind-guarantees.sqlt:939",
-        dialect: "sqlite",
+        name: "stmt.drop.count-past-int64-is-clamped.postgresql",
+        at: "49-kind-guarantees.sqlt:941",
+        dialect: "postgresql",
         source: "ITEMS .> DROP(18446744073709551616)",
-        expect: Some("SELECT * FROM \"items\" LIMIT -1 OFFSET 9223372036854775807"),
+        expect: Some("SELECT * FROM \"items\" OFFSET 9223372036854775807"),
         error: None,
         throws: None,
         params: None,
@@ -31980,11 +31986,11 @@ pub const SQL_CASES: &[SqlCase] = &[
         bindings_fn: Some(c1219_bind),
     },
     SqlCase {
-        name: "stmt.drop.merged-offset-past-int64-is-clamped.mariadb",
-        at: "49-kind-guarantees.sqlt:952",
-        dialect: "mariadb",
-        source: "ITEMS .> DROP(9223372036854775807) .> DROP(1)",
-        expect: Some("SELECT * FROM `items` LIMIT 18446744073709551615 OFFSET 9223372036854775807"),
+        name: "stmt.drop.count-past-int64-is-clamped.sqlite",
+        at: "49-kind-guarantees.sqlt:954",
+        dialect: "sqlite",
+        source: "ITEMS .> DROP(18446744073709551616)",
+        expect: Some("SELECT * FROM \"items\" LIMIT -1 OFFSET 9223372036854775807"),
         error: None,
         throws: None,
         params: None,
@@ -31999,10 +32005,10 @@ pub const SQL_CASES: &[SqlCase] = &[
         bindings_fn: Some(c1220_bind),
     },
     SqlCase {
-        name: "stmt.drop.merged-offset-below-int64-is-exact.mariadb",
+        name: "stmt.drop.merged-offset-past-int64-is-clamped.mariadb",
         at: "49-kind-guarantees.sqlt:967",
         dialect: "mariadb",
-        source: "ITEMS .> DROP(9223372036854775806) .> DROP(1)",
+        source: "ITEMS .> DROP(9223372036854775807) .> DROP(1)",
         expect: Some("SELECT * FROM `items` LIMIT 18446744073709551615 OFFSET 9223372036854775807"),
         error: None,
         throws: None,
@@ -32018,11 +32024,11 @@ pub const SQL_CASES: &[SqlCase] = &[
         bindings_fn: Some(c1221_bind),
     },
     SqlCase {
-        name: "stmt.take.then-take-past-int64-keeps-the-smaller.mariadb",
+        name: "stmt.drop.merged-offset-below-int64-is-exact.mariadb",
         at: "49-kind-guarantees.sqlt:982",
         dialect: "mariadb",
-        source: "ITEMS .> TAKE(5) .> TAKE(9223372036854775808)",
-        expect: Some("SELECT * FROM `items` LIMIT 5"),
+        source: "ITEMS .> DROP(9223372036854775806) .> DROP(1)",
+        expect: Some("SELECT * FROM `items` LIMIT 18446744073709551615 OFFSET 9223372036854775807"),
         error: None,
         throws: None,
         params: None,
@@ -32037,11 +32043,11 @@ pub const SQL_CASES: &[SqlCase] = &[
         bindings_fn: Some(c1222_bind),
     },
     SqlCase {
-        name: "agg.bucket-sum.an-undeclared-field-is-guarded-as-a-whole",
+        name: "stmt.take.then-take-past-int64-keeps-the-smaller.mariadb",
         at: "49-kind-guarantees.sqlt:997",
         dialect: "mariadb",
-        source: "O .> BUCKET(_[\"CAT\"], RECORD(\"s\", SUM(_, _[\"MISC\"])))",
-        expect: Some("SELECT CASE WHEN COUNT(*) = COUNT(CASE WHEN (`o`.`misc` REGEXP '\\\\A-?[0-9]+(\\\\.[0-9]+)?\\\\z') THEN 1 END) THEN COALESCE(SUM(CAST(`o`.`misc` AS DECIMAL(65,10))), 0) ELSE NULL END AS `s` FROM `orders` `o` GROUP BY CAST(`o`.`cat` AS CHAR) COLLATE utf8mb4_nopad_bin"),
+        source: "ITEMS .> TAKE(5) .> TAKE(9223372036854775808)",
+        expect: Some("SELECT * FROM `items` LIMIT 5"),
         error: None,
         throws: None,
         params: None,
@@ -32056,8 +32062,27 @@ pub const SQL_CASES: &[SqlCase] = &[
         bindings_fn: Some(c1223_bind),
     },
     SqlCase {
-        name: "agg.bucket-sum.an-undeclared-field-sqlite-refuses",
+        name: "agg.bucket-sum.an-undeclared-field-is-guarded-as-a-whole",
         at: "49-kind-guarantees.sqlt:1012",
+        dialect: "mariadb",
+        source: "O .> BUCKET(_[\"CAT\"], RECORD(\"s\", SUM(_, _[\"MISC\"])))",
+        expect: Some("SELECT CASE WHEN COUNT(*) = COUNT(CASE WHEN (`o`.`misc` REGEXP '\\\\A-?[0-9]+(\\\\.[0-9]+)?\\\\z') THEN 1 END) THEN COALESCE(SUM(CAST(`o`.`misc` AS DECIMAL(65,10))), 0) ELSE NULL END AS `s` FROM `orders` `o` GROUP BY CAST(`o`.`cat` AS CHAR) COLLATE utf8mb4_nopad_bin"),
+        error: None,
+        throws: None,
+        params: None,
+        as_mode: Some("statement"),
+        mode: None,
+        strict: false,
+        plan: None,
+        has_tables: false,
+        tables: &[],
+        unrepresentable: None,
+        register_fn: None,
+        bindings_fn: Some(c1224_bind),
+    },
+    SqlCase {
+        name: "agg.bucket-sum.an-undeclared-field-sqlite-refuses",
+        at: "49-kind-guarantees.sqlt:1027",
         dialect: "sqlite",
         source: "O .> BUCKET(_[\"CAT\"], RECORD(\"s\", SUM(_, _[\"MISC\"])))",
         expect: None,
@@ -32072,11 +32097,11 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1224_bind),
+        bindings_fn: Some(c1225_bind),
     },
     SqlCase {
         name: "agg.fold.any.at-256-is-a-left-fold",
-        at: "49-kind-guarantees.sqlt:1025",
+        at: "49-kind-guarantees.sqlt:1040",
         dialect: "mariadb",
         source: "ANY((N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N), _ > 0)",
         expect: Some("((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((`k`.`n` > 0) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0))"),
@@ -32091,11 +32116,11 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1225_bind),
+        bindings_fn: Some(c1226_bind),
     },
     SqlCase {
         name: "agg.fold.all.at-256-is-a-left-fold",
-        at: "49-kind-guarantees.sqlt:1038",
+        at: "49-kind-guarantees.sqlt:1053",
         dialect: "mariadb",
         source: "ALL((N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N), _ > 0)",
         expect: Some("((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((`k`.`n` > 0) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0))"),
@@ -32110,11 +32135,11 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1226_bind),
+        bindings_fn: Some(c1227_bind),
     },
     SqlCase {
         name: "agg.fold.sum.at-256-is-a-left-fold",
-        at: "49-kind-guarantees.sqlt:1049",
+        at: "49-kind-guarantees.sqlt:1064",
         dialect: "mariadb",
         source: "SUM((N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N), _)",
         expect: Some("(((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((`k`.`n` + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`)"),
@@ -32129,11 +32154,11 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1227_bind),
+        bindings_fn: Some(c1228_bind),
     },
     SqlCase {
         name: "agg.fold.in-list.at-256-is-a-left-fold",
-        at: "49-kind-guarantees.sqlt:1060",
+        at: "49-kind-guarantees.sqlt:1075",
         dialect: "mariadb",
         source: "T IN (\"v0\", \"v1\", \"v2\", \"v3\", \"v4\", \"v5\", \"v6\", \"v7\", \"v8\", \"v9\", \"v10\", \"v11\", \"v12\", \"v13\", \"v14\", \"v15\", \"v16\", \"v17\", \"v18\", \"v19\", \"v20\", \"v21\", \"v22\", \"v23\", \"v24\", \"v25\", \"v26\", \"v27\", \"v28\", \"v29\", \"v30\", \"v31\", \"v32\", \"v33\", \"v34\", \"v35\", \"v36\", \"v37\", \"v38\", \"v39\", \"v40\", \"v41\", \"v42\", \"v43\", \"v44\", \"v45\", \"v46\", \"v47\", \"v48\", \"v49\", \"v50\", \"v51\", \"v52\", \"v53\", \"v54\", \"v55\", \"v56\", \"v57\", \"v58\", \"v59\", \"v60\", \"v61\", \"v62\", \"v63\", \"v64\", \"v65\", \"v66\", \"v67\", \"v68\", \"v69\", \"v70\", \"v71\", \"v72\", \"v73\", \"v74\", \"v75\", \"v76\", \"v77\", \"v78\", \"v79\", \"v80\", \"v81\", \"v82\", \"v83\", \"v84\", \"v85\", \"v86\", \"v87\", \"v88\", \"v89\", \"v90\", \"v91\", \"v92\", \"v93\", \"v94\", \"v95\", \"v96\", \"v97\", \"v98\", \"v99\", \"v100\", \"v101\", \"v102\", \"v103\", \"v104\", \"v105\", \"v106\", \"v107\", \"v108\", \"v109\", \"v110\", \"v111\", \"v112\", \"v113\", \"v114\", \"v115\", \"v116\", \"v117\", \"v118\", \"v119\", \"v120\", \"v121\", \"v122\", \"v123\", \"v124\", \"v125\", \"v126\", \"v127\", \"v128\", \"v129\", \"v130\", \"v131\", \"v132\", \"v133\", \"v134\", \"v135\", \"v136\", \"v137\", \"v138\", \"v139\", \"v140\", \"v141\", \"v142\", \"v143\", \"v144\", \"v145\", \"v146\", \"v147\", \"v148\", \"v149\", \"v150\", \"v151\", \"v152\", \"v153\", \"v154\", \"v155\", \"v156\", \"v157\", \"v158\", \"v159\", \"v160\", \"v161\", \"v162\", \"v163\", \"v164\", \"v165\", \"v166\", \"v167\", \"v168\", \"v169\", \"v170\", \"v171\", \"v172\", \"v173\", \"v174\", \"v175\", \"v176\", \"v177\", \"v178\", \"v179\", \"v180\", \"v181\", \"v182\", \"v183\", \"v184\", \"v185\", \"v186\", \"v187\", \"v188\", \"v189\", \"v190\", \"v191\", \"v192\", \"v193\", \"v194\", \"v195\", \"v196\", \"v197\", \"v198\", \"v199\", \"v200\", \"v201\", \"v202\", \"v203\", \"v204\", \"v205\", \"v206\", \"v207\", \"v208\", \"v209\", \"v210\", \"v211\", \"v212\", \"v213\", \"v214\", \"v215\", \"v216\", \"v217\", \"v218\", \"v219\", \"v220\", \"v221\", \"v222\", \"v223\", \"v224\", \"v225\", \"v226\", \"v227\", \"v228\", \"v229\", \"v230\", \"v231\", \"v232\", \"v233\", \"v234\", \"v235\", \"v236\", \"v237\", \"v238\", \"v239\", \"v240\", \"v241\", \"v242\", \"v243\", \"v244\", \"v245\", \"v246\", \"v247\", \"v248\", \"v249\", \"v250\", \"v251\", \"v252\", \"v253\", \"v254\", \"v255\")",
         expect: Some("((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((`k`.`t` = 'v0') OR (`k`.`t` = 'v1')) OR (`k`.`t` = 'v2')) OR (`k`.`t` = 'v3')) OR (`k`.`t` = 'v4')) OR (`k`.`t` = 'v5')) OR (`k`.`t` = 'v6')) OR (`k`.`t` = 'v7')) OR (`k`.`t` = 'v8')) OR (`k`.`t` = 'v9')) OR (`k`.`t` = 'v10')) OR (`k`.`t` = 'v11')) OR (`k`.`t` = 'v12')) OR (`k`.`t` = 'v13')) OR (`k`.`t` = 'v14')) OR (`k`.`t` = 'v15')) OR (`k`.`t` = 'v16')) OR (`k`.`t` = 'v17')) OR (`k`.`t` = 'v18')) OR (`k`.`t` = 'v19')) OR (`k`.`t` = 'v20')) OR (`k`.`t` = 'v21')) OR (`k`.`t` = 'v22')) OR (`k`.`t` = 'v23')) OR (`k`.`t` = 'v24')) OR (`k`.`t` = 'v25')) OR (`k`.`t` = 'v26')) OR (`k`.`t` = 'v27')) OR (`k`.`t` = 'v28')) OR (`k`.`t` = 'v29')) OR (`k`.`t` = 'v30')) OR (`k`.`t` = 'v31')) OR (`k`.`t` = 'v32')) OR (`k`.`t` = 'v33')) OR (`k`.`t` = 'v34')) OR (`k`.`t` = 'v35')) OR (`k`.`t` = 'v36')) OR (`k`.`t` = 'v37')) OR (`k`.`t` = 'v38')) OR (`k`.`t` = 'v39')) OR (`k`.`t` = 'v40')) OR (`k`.`t` = 'v41')) OR (`k`.`t` = 'v42')) OR (`k`.`t` = 'v43')) OR (`k`.`t` = 'v44')) OR (`k`.`t` = 'v45')) OR (`k`.`t` = 'v46')) OR (`k`.`t` = 'v47')) OR (`k`.`t` = 'v48')) OR (`k`.`t` = 'v49')) OR (`k`.`t` = 'v50')) OR (`k`.`t` = 'v51')) OR (`k`.`t` = 'v52')) OR (`k`.`t` = 'v53')) OR (`k`.`t` = 'v54')) OR (`k`.`t` = 'v55')) OR (`k`.`t` = 'v56')) OR (`k`.`t` = 'v57')) OR (`k`.`t` = 'v58')) OR (`k`.`t` = 'v59')) OR (`k`.`t` = 'v60')) OR (`k`.`t` = 'v61')) OR (`k`.`t` = 'v62')) OR (`k`.`t` = 'v63')) OR (`k`.`t` = 'v64')) OR (`k`.`t` = 'v65')) OR (`k`.`t` = 'v66')) OR (`k`.`t` = 'v67')) OR (`k`.`t` = 'v68')) OR (`k`.`t` = 'v69')) OR (`k`.`t` = 'v70')) OR (`k`.`t` = 'v71')) OR (`k`.`t` = 'v72')) OR (`k`.`t` = 'v73')) OR (`k`.`t` = 'v74')) OR (`k`.`t` = 'v75')) OR (`k`.`t` = 'v76')) OR (`k`.`t` = 'v77')) OR (`k`.`t` = 'v78')) OR (`k`.`t` = 'v79')) OR (`k`.`t` = 'v80')) OR (`k`.`t` = 'v81')) OR (`k`.`t` = 'v82')) OR (`k`.`t` = 'v83')) OR (`k`.`t` = 'v84')) OR (`k`.`t` = 'v85')) OR (`k`.`t` = 'v86')) OR (`k`.`t` = 'v87')) OR (`k`.`t` = 'v88')) OR (`k`.`t` = 'v89')) OR (`k`.`t` = 'v90')) OR (`k`.`t` = 'v91')) OR (`k`.`t` = 'v92')) OR (`k`.`t` = 'v93')) OR (`k`.`t` = 'v94')) OR (`k`.`t` = 'v95')) OR (`k`.`t` = 'v96')) OR (`k`.`t` = 'v97')) OR (`k`.`t` = 'v98')) OR (`k`.`t` = 'v99')) OR (`k`.`t` = 'v100')) OR (`k`.`t` = 'v101')) OR (`k`.`t` = 'v102')) OR (`k`.`t` = 'v103')) OR (`k`.`t` = 'v104')) OR (`k`.`t` = 'v105')) OR (`k`.`t` = 'v106')) OR (`k`.`t` = 'v107')) OR (`k`.`t` = 'v108')) OR (`k`.`t` = 'v109')) OR (`k`.`t` = 'v110')) OR (`k`.`t` = 'v111')) OR (`k`.`t` = 'v112')) OR (`k`.`t` = 'v113')) OR (`k`.`t` = 'v114')) OR (`k`.`t` = 'v115')) OR (`k`.`t` = 'v116')) OR (`k`.`t` = 'v117')) OR (`k`.`t` = 'v118')) OR (`k`.`t` = 'v119')) OR (`k`.`t` = 'v120')) OR (`k`.`t` = 'v121')) OR (`k`.`t` = 'v122')) OR (`k`.`t` = 'v123')) OR (`k`.`t` = 'v124')) OR (`k`.`t` = 'v125')) OR (`k`.`t` = 'v126')) OR (`k`.`t` = 'v127')) OR (`k`.`t` = 'v128')) OR (`k`.`t` = 'v129')) OR (`k`.`t` = 'v130')) OR (`k`.`t` = 'v131')) OR (`k`.`t` = 'v132')) OR (`k`.`t` = 'v133')) OR (`k`.`t` = 'v134')) OR (`k`.`t` = 'v135')) OR (`k`.`t` = 'v136')) OR (`k`.`t` = 'v137')) OR (`k`.`t` = 'v138')) OR (`k`.`t` = 'v139')) OR (`k`.`t` = 'v140')) OR (`k`.`t` = 'v141')) OR (`k`.`t` = 'v142')) OR (`k`.`t` = 'v143')) OR (`k`.`t` = 'v144')) OR (`k`.`t` = 'v145')) OR (`k`.`t` = 'v146')) OR (`k`.`t` = 'v147')) OR (`k`.`t` = 'v148')) OR (`k`.`t` = 'v149')) OR (`k`.`t` = 'v150')) OR (`k`.`t` = 'v151')) OR (`k`.`t` = 'v152')) OR (`k`.`t` = 'v153')) OR (`k`.`t` = 'v154')) OR (`k`.`t` = 'v155')) OR (`k`.`t` = 'v156')) OR (`k`.`t` = 'v157')) OR (`k`.`t` = 'v158')) OR (`k`.`t` = 'v159')) OR (`k`.`t` = 'v160')) OR (`k`.`t` = 'v161')) OR (`k`.`t` = 'v162')) OR (`k`.`t` = 'v163')) OR (`k`.`t` = 'v164')) OR (`k`.`t` = 'v165')) OR (`k`.`t` = 'v166')) OR (`k`.`t` = 'v167')) OR (`k`.`t` = 'v168')) OR (`k`.`t` = 'v169')) OR (`k`.`t` = 'v170')) OR (`k`.`t` = 'v171')) OR (`k`.`t` = 'v172')) OR (`k`.`t` = 'v173')) OR (`k`.`t` = 'v174')) OR (`k`.`t` = 'v175')) OR (`k`.`t` = 'v176')) OR (`k`.`t` = 'v177')) OR (`k`.`t` = 'v178')) OR (`k`.`t` = 'v179')) OR (`k`.`t` = 'v180')) OR (`k`.`t` = 'v181')) OR (`k`.`t` = 'v182')) OR (`k`.`t` = 'v183')) OR (`k`.`t` = 'v184')) OR (`k`.`t` = 'v185')) OR (`k`.`t` = 'v186')) OR (`k`.`t` = 'v187')) OR (`k`.`t` = 'v188')) OR (`k`.`t` = 'v189')) OR (`k`.`t` = 'v190')) OR (`k`.`t` = 'v191')) OR (`k`.`t` = 'v192')) OR (`k`.`t` = 'v193')) OR (`k`.`t` = 'v194')) OR (`k`.`t` = 'v195')) OR (`k`.`t` = 'v196')) OR (`k`.`t` = 'v197')) OR (`k`.`t` = 'v198')) OR (`k`.`t` = 'v199')) OR (`k`.`t` = 'v200')) OR (`k`.`t` = 'v201')) OR (`k`.`t` = 'v202')) OR (`k`.`t` = 'v203')) OR (`k`.`t` = 'v204')) OR (`k`.`t` = 'v205')) OR (`k`.`t` = 'v206')) OR (`k`.`t` = 'v207')) OR (`k`.`t` = 'v208')) OR (`k`.`t` = 'v209')) OR (`k`.`t` = 'v210')) OR (`k`.`t` = 'v211')) OR (`k`.`t` = 'v212')) OR (`k`.`t` = 'v213')) OR (`k`.`t` = 'v214')) OR (`k`.`t` = 'v215')) OR (`k`.`t` = 'v216')) OR (`k`.`t` = 'v217')) OR (`k`.`t` = 'v218')) OR (`k`.`t` = 'v219')) OR (`k`.`t` = 'v220')) OR (`k`.`t` = 'v221')) OR (`k`.`t` = 'v222')) OR (`k`.`t` = 'v223')) OR (`k`.`t` = 'v224')) OR (`k`.`t` = 'v225')) OR (`k`.`t` = 'v226')) OR (`k`.`t` = 'v227')) OR (`k`.`t` = 'v228')) OR (`k`.`t` = 'v229')) OR (`k`.`t` = 'v230')) OR (`k`.`t` = 'v231')) OR (`k`.`t` = 'v232')) OR (`k`.`t` = 'v233')) OR (`k`.`t` = 'v234')) OR (`k`.`t` = 'v235')) OR (`k`.`t` = 'v236')) OR (`k`.`t` = 'v237')) OR (`k`.`t` = 'v238')) OR (`k`.`t` = 'v239')) OR (`k`.`t` = 'v240')) OR (`k`.`t` = 'v241')) OR (`k`.`t` = 'v242')) OR (`k`.`t` = 'v243')) OR (`k`.`t` = 'v244')) OR (`k`.`t` = 'v245')) OR (`k`.`t` = 'v246')) OR (`k`.`t` = 'v247')) OR (`k`.`t` = 'v248')) OR (`k`.`t` = 'v249')) OR (`k`.`t` = 'v250')) OR (`k`.`t` = 'v251')) OR (`k`.`t` = 'v252')) OR (`k`.`t` = 'v253')) OR (`k`.`t` = 'v254')) OR (`k`.`t` = 'v255'))"),
@@ -32148,11 +32173,11 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1228_bind),
+        bindings_fn: Some(c1229_bind),
     },
     SqlCase {
         name: "agg.fold.any.at-257-is-balanced",
-        at: "49-kind-guarantees.sqlt:1071",
+        at: "49-kind-guarantees.sqlt:1086",
         dialect: "mariadb",
         source: "ANY((N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N), _ > 0)",
         expect: Some("((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((`k`.`n` > 0) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR ((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((`k`.`n` > 0) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)))"),
@@ -32167,11 +32192,11 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1229_bind),
+        bindings_fn: Some(c1230_bind),
     },
     SqlCase {
         name: "agg.fold.all.at-257-is-balanced",
-        at: "49-kind-guarantees.sqlt:1084",
+        at: "49-kind-guarantees.sqlt:1099",
         dialect: "mariadb",
         source: "ALL((N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N), _ > 0)",
         expect: Some("((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((`k`.`n` > 0) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND ((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((`k`.`n` > 0) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)))"),
@@ -32186,11 +32211,11 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1230_bind),
+        bindings_fn: Some(c1231_bind),
     },
     SqlCase {
         name: "agg.fold.sum.at-257-is-balanced",
-        at: "49-kind-guarantees.sqlt:1095",
+        at: "49-kind-guarantees.sqlt:1110",
         dialect: "mariadb",
         source: "SUM((N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N), _)",
         expect: Some("(((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((`k`.`n` + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + (((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((`k`.`n` + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`))"),
@@ -32205,11 +32230,11 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1231_bind),
+        bindings_fn: Some(c1232_bind),
     },
     SqlCase {
         name: "agg.fold.in-list.at-257-is-balanced",
-        at: "49-kind-guarantees.sqlt:1106",
+        at: "49-kind-guarantees.sqlt:1121",
         dialect: "mariadb",
         source: "T IN (\"v0\", \"v1\", \"v2\", \"v3\", \"v4\", \"v5\", \"v6\", \"v7\", \"v8\", \"v9\", \"v10\", \"v11\", \"v12\", \"v13\", \"v14\", \"v15\", \"v16\", \"v17\", \"v18\", \"v19\", \"v20\", \"v21\", \"v22\", \"v23\", \"v24\", \"v25\", \"v26\", \"v27\", \"v28\", \"v29\", \"v30\", \"v31\", \"v32\", \"v33\", \"v34\", \"v35\", \"v36\", \"v37\", \"v38\", \"v39\", \"v40\", \"v41\", \"v42\", \"v43\", \"v44\", \"v45\", \"v46\", \"v47\", \"v48\", \"v49\", \"v50\", \"v51\", \"v52\", \"v53\", \"v54\", \"v55\", \"v56\", \"v57\", \"v58\", \"v59\", \"v60\", \"v61\", \"v62\", \"v63\", \"v64\", \"v65\", \"v66\", \"v67\", \"v68\", \"v69\", \"v70\", \"v71\", \"v72\", \"v73\", \"v74\", \"v75\", \"v76\", \"v77\", \"v78\", \"v79\", \"v80\", \"v81\", \"v82\", \"v83\", \"v84\", \"v85\", \"v86\", \"v87\", \"v88\", \"v89\", \"v90\", \"v91\", \"v92\", \"v93\", \"v94\", \"v95\", \"v96\", \"v97\", \"v98\", \"v99\", \"v100\", \"v101\", \"v102\", \"v103\", \"v104\", \"v105\", \"v106\", \"v107\", \"v108\", \"v109\", \"v110\", \"v111\", \"v112\", \"v113\", \"v114\", \"v115\", \"v116\", \"v117\", \"v118\", \"v119\", \"v120\", \"v121\", \"v122\", \"v123\", \"v124\", \"v125\", \"v126\", \"v127\", \"v128\", \"v129\", \"v130\", \"v131\", \"v132\", \"v133\", \"v134\", \"v135\", \"v136\", \"v137\", \"v138\", \"v139\", \"v140\", \"v141\", \"v142\", \"v143\", \"v144\", \"v145\", \"v146\", \"v147\", \"v148\", \"v149\", \"v150\", \"v151\", \"v152\", \"v153\", \"v154\", \"v155\", \"v156\", \"v157\", \"v158\", \"v159\", \"v160\", \"v161\", \"v162\", \"v163\", \"v164\", \"v165\", \"v166\", \"v167\", \"v168\", \"v169\", \"v170\", \"v171\", \"v172\", \"v173\", \"v174\", \"v175\", \"v176\", \"v177\", \"v178\", \"v179\", \"v180\", \"v181\", \"v182\", \"v183\", \"v184\", \"v185\", \"v186\", \"v187\", \"v188\", \"v189\", \"v190\", \"v191\", \"v192\", \"v193\", \"v194\", \"v195\", \"v196\", \"v197\", \"v198\", \"v199\", \"v200\", \"v201\", \"v202\", \"v203\", \"v204\", \"v205\", \"v206\", \"v207\", \"v208\", \"v209\", \"v210\", \"v211\", \"v212\", \"v213\", \"v214\", \"v215\", \"v216\", \"v217\", \"v218\", \"v219\", \"v220\", \"v221\", \"v222\", \"v223\", \"v224\", \"v225\", \"v226\", \"v227\", \"v228\", \"v229\", \"v230\", \"v231\", \"v232\", \"v233\", \"v234\", \"v235\", \"v236\", \"v237\", \"v238\", \"v239\", \"v240\", \"v241\", \"v242\", \"v243\", \"v244\", \"v245\", \"v246\", \"v247\", \"v248\", \"v249\", \"v250\", \"v251\", \"v252\", \"v253\", \"v254\", \"v255\", \"v256\")",
         expect: Some("((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((`k`.`t` = 'v0') OR (`k`.`t` = 'v1')) OR (`k`.`t` = 'v2')) OR (`k`.`t` = 'v3')) OR (`k`.`t` = 'v4')) OR (`k`.`t` = 'v5')) OR (`k`.`t` = 'v6')) OR (`k`.`t` = 'v7')) OR (`k`.`t` = 'v8')) OR (`k`.`t` = 'v9')) OR (`k`.`t` = 'v10')) OR (`k`.`t` = 'v11')) OR (`k`.`t` = 'v12')) OR (`k`.`t` = 'v13')) OR (`k`.`t` = 'v14')) OR (`k`.`t` = 'v15')) OR (`k`.`t` = 'v16')) OR (`k`.`t` = 'v17')) OR (`k`.`t` = 'v18')) OR (`k`.`t` = 'v19')) OR (`k`.`t` = 'v20')) OR (`k`.`t` = 'v21')) OR (`k`.`t` = 'v22')) OR (`k`.`t` = 'v23')) OR (`k`.`t` = 'v24')) OR (`k`.`t` = 'v25')) OR (`k`.`t` = 'v26')) OR (`k`.`t` = 'v27')) OR (`k`.`t` = 'v28')) OR (`k`.`t` = 'v29')) OR (`k`.`t` = 'v30')) OR (`k`.`t` = 'v31')) OR (`k`.`t` = 'v32')) OR (`k`.`t` = 'v33')) OR (`k`.`t` = 'v34')) OR (`k`.`t` = 'v35')) OR (`k`.`t` = 'v36')) OR (`k`.`t` = 'v37')) OR (`k`.`t` = 'v38')) OR (`k`.`t` = 'v39')) OR (`k`.`t` = 'v40')) OR (`k`.`t` = 'v41')) OR (`k`.`t` = 'v42')) OR (`k`.`t` = 'v43')) OR (`k`.`t` = 'v44')) OR (`k`.`t` = 'v45')) OR (`k`.`t` = 'v46')) OR (`k`.`t` = 'v47')) OR (`k`.`t` = 'v48')) OR (`k`.`t` = 'v49')) OR (`k`.`t` = 'v50')) OR (`k`.`t` = 'v51')) OR (`k`.`t` = 'v52')) OR (`k`.`t` = 'v53')) OR (`k`.`t` = 'v54')) OR (`k`.`t` = 'v55')) OR (`k`.`t` = 'v56')) OR (`k`.`t` = 'v57')) OR (`k`.`t` = 'v58')) OR (`k`.`t` = 'v59')) OR (`k`.`t` = 'v60')) OR (`k`.`t` = 'v61')) OR (`k`.`t` = 'v62')) OR (`k`.`t` = 'v63')) OR (`k`.`t` = 'v64')) OR (`k`.`t` = 'v65')) OR (`k`.`t` = 'v66')) OR (`k`.`t` = 'v67')) OR (`k`.`t` = 'v68')) OR (`k`.`t` = 'v69')) OR (`k`.`t` = 'v70')) OR (`k`.`t` = 'v71')) OR (`k`.`t` = 'v72')) OR (`k`.`t` = 'v73')) OR (`k`.`t` = 'v74')) OR (`k`.`t` = 'v75')) OR (`k`.`t` = 'v76')) OR (`k`.`t` = 'v77')) OR (`k`.`t` = 'v78')) OR (`k`.`t` = 'v79')) OR (`k`.`t` = 'v80')) OR (`k`.`t` = 'v81')) OR (`k`.`t` = 'v82')) OR (`k`.`t` = 'v83')) OR (`k`.`t` = 'v84')) OR (`k`.`t` = 'v85')) OR (`k`.`t` = 'v86')) OR (`k`.`t` = 'v87')) OR (`k`.`t` = 'v88')) OR (`k`.`t` = 'v89')) OR (`k`.`t` = 'v90')) OR (`k`.`t` = 'v91')) OR (`k`.`t` = 'v92')) OR (`k`.`t` = 'v93')) OR (`k`.`t` = 'v94')) OR (`k`.`t` = 'v95')) OR (`k`.`t` = 'v96')) OR (`k`.`t` = 'v97')) OR (`k`.`t` = 'v98')) OR (`k`.`t` = 'v99')) OR (`k`.`t` = 'v100')) OR (`k`.`t` = 'v101')) OR (`k`.`t` = 'v102')) OR (`k`.`t` = 'v103')) OR (`k`.`t` = 'v104')) OR (`k`.`t` = 'v105')) OR (`k`.`t` = 'v106')) OR (`k`.`t` = 'v107')) OR (`k`.`t` = 'v108')) OR (`k`.`t` = 'v109')) OR (`k`.`t` = 'v110')) OR (`k`.`t` = 'v111')) OR (`k`.`t` = 'v112')) OR (`k`.`t` = 'v113')) OR (`k`.`t` = 'v114')) OR (`k`.`t` = 'v115')) OR (`k`.`t` = 'v116')) OR (`k`.`t` = 'v117')) OR (`k`.`t` = 'v118')) OR (`k`.`t` = 'v119')) OR (`k`.`t` = 'v120')) OR (`k`.`t` = 'v121')) OR (`k`.`t` = 'v122')) OR (`k`.`t` = 'v123')) OR (`k`.`t` = 'v124')) OR (`k`.`t` = 'v125')) OR (`k`.`t` = 'v126')) OR (`k`.`t` = 'v127')) OR (`k`.`t` = 'v128')) OR ((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((`k`.`t` = 'v129') OR (`k`.`t` = 'v130')) OR (`k`.`t` = 'v131')) OR (`k`.`t` = 'v132')) OR (`k`.`t` = 'v133')) OR (`k`.`t` = 'v134')) OR (`k`.`t` = 'v135')) OR (`k`.`t` = 'v136')) OR (`k`.`t` = 'v137')) OR (`k`.`t` = 'v138')) OR (`k`.`t` = 'v139')) OR (`k`.`t` = 'v140')) OR (`k`.`t` = 'v141')) OR (`k`.`t` = 'v142')) OR (`k`.`t` = 'v143')) OR (`k`.`t` = 'v144')) OR (`k`.`t` = 'v145')) OR (`k`.`t` = 'v146')) OR (`k`.`t` = 'v147')) OR (`k`.`t` = 'v148')) OR (`k`.`t` = 'v149')) OR (`k`.`t` = 'v150')) OR (`k`.`t` = 'v151')) OR (`k`.`t` = 'v152')) OR (`k`.`t` = 'v153')) OR (`k`.`t` = 'v154')) OR (`k`.`t` = 'v155')) OR (`k`.`t` = 'v156')) OR (`k`.`t` = 'v157')) OR (`k`.`t` = 'v158')) OR (`k`.`t` = 'v159')) OR (`k`.`t` = 'v160')) OR (`k`.`t` = 'v161')) OR (`k`.`t` = 'v162')) OR (`k`.`t` = 'v163')) OR (`k`.`t` = 'v164')) OR (`k`.`t` = 'v165')) OR (`k`.`t` = 'v166')) OR (`k`.`t` = 'v167')) OR (`k`.`t` = 'v168')) OR (`k`.`t` = 'v169')) OR (`k`.`t` = 'v170')) OR (`k`.`t` = 'v171')) OR (`k`.`t` = 'v172')) OR (`k`.`t` = 'v173')) OR (`k`.`t` = 'v174')) OR (`k`.`t` = 'v175')) OR (`k`.`t` = 'v176')) OR (`k`.`t` = 'v177')) OR (`k`.`t` = 'v178')) OR (`k`.`t` = 'v179')) OR (`k`.`t` = 'v180')) OR (`k`.`t` = 'v181')) OR (`k`.`t` = 'v182')) OR (`k`.`t` = 'v183')) OR (`k`.`t` = 'v184')) OR (`k`.`t` = 'v185')) OR (`k`.`t` = 'v186')) OR (`k`.`t` = 'v187')) OR (`k`.`t` = 'v188')) OR (`k`.`t` = 'v189')) OR (`k`.`t` = 'v190')) OR (`k`.`t` = 'v191')) OR (`k`.`t` = 'v192')) OR (`k`.`t` = 'v193')) OR (`k`.`t` = 'v194')) OR (`k`.`t` = 'v195')) OR (`k`.`t` = 'v196')) OR (`k`.`t` = 'v197')) OR (`k`.`t` = 'v198')) OR (`k`.`t` = 'v199')) OR (`k`.`t` = 'v200')) OR (`k`.`t` = 'v201')) OR (`k`.`t` = 'v202')) OR (`k`.`t` = 'v203')) OR (`k`.`t` = 'v204')) OR (`k`.`t` = 'v205')) OR (`k`.`t` = 'v206')) OR (`k`.`t` = 'v207')) OR (`k`.`t` = 'v208')) OR (`k`.`t` = 'v209')) OR (`k`.`t` = 'v210')) OR (`k`.`t` = 'v211')) OR (`k`.`t` = 'v212')) OR (`k`.`t` = 'v213')) OR (`k`.`t` = 'v214')) OR (`k`.`t` = 'v215')) OR (`k`.`t` = 'v216')) OR (`k`.`t` = 'v217')) OR (`k`.`t` = 'v218')) OR (`k`.`t` = 'v219')) OR (`k`.`t` = 'v220')) OR (`k`.`t` = 'v221')) OR (`k`.`t` = 'v222')) OR (`k`.`t` = 'v223')) OR (`k`.`t` = 'v224')) OR (`k`.`t` = 'v225')) OR (`k`.`t` = 'v226')) OR (`k`.`t` = 'v227')) OR (`k`.`t` = 'v228')) OR (`k`.`t` = 'v229')) OR (`k`.`t` = 'v230')) OR (`k`.`t` = 'v231')) OR (`k`.`t` = 'v232')) OR (`k`.`t` = 'v233')) OR (`k`.`t` = 'v234')) OR (`k`.`t` = 'v235')) OR (`k`.`t` = 'v236')) OR (`k`.`t` = 'v237')) OR (`k`.`t` = 'v238')) OR (`k`.`t` = 'v239')) OR (`k`.`t` = 'v240')) OR (`k`.`t` = 'v241')) OR (`k`.`t` = 'v242')) OR (`k`.`t` = 'v243')) OR (`k`.`t` = 'v244')) OR (`k`.`t` = 'v245')) OR (`k`.`t` = 'v246')) OR (`k`.`t` = 'v247')) OR (`k`.`t` = 'v248')) OR (`k`.`t` = 'v249')) OR (`k`.`t` = 'v250')) OR (`k`.`t` = 'v251')) OR (`k`.`t` = 'v252')) OR (`k`.`t` = 'v253')) OR (`k`.`t` = 'v254')) OR (`k`.`t` = 'v255')) OR (`k`.`t` = 'v256')))"),
@@ -32224,11 +32249,11 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1232_bind),
+        bindings_fn: Some(c1233_bind),
     },
     SqlCase {
         name: "agg.fold.join.at-255-pieces-is-a-left-fold",
-        at: "49-kind-guarantees.sqlt:1117",
+        at: "49-kind-guarantees.sqlt:1132",
         dialect: "mariadb",
         source: "JOIN((T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T), \"-\")",
         expect: Some("CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(`k`.`t`, '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`)"),
@@ -32243,11 +32268,11 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1233_bind),
+        bindings_fn: Some(c1234_bind),
     },
     SqlCase {
         name: "agg.fold.join.at-257-pieces-is-balanced",
-        at: "49-kind-guarantees.sqlt:1130",
+        at: "49-kind-guarantees.sqlt:1145",
         dialect: "mariadb",
         source: "JOIN((T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T), \"-\")",
         expect: Some("CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(`k`.`t`, '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT('-', `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`))"),
@@ -32262,11 +32287,11 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1234_bind),
+        bindings_fn: Some(c1235_bind),
     },
     SqlCase {
         name: "agg.fold.any.at-600-splits-again",
-        at: "49-kind-guarantees.sqlt:1143",
+        at: "49-kind-guarantees.sqlt:1158",
         dialect: "mariadb",
         source: "ANY((N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N), _ > 0)",
         expect: Some("((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((`k`.`n` > 0) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR ((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((`k`.`n` > 0) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0))) OR (((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((`k`.`n` > 0) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR ((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((`k`.`n` > 0) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0))))"),
@@ -32281,11 +32306,11 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1235_bind),
+        bindings_fn: Some(c1236_bind),
     },
     SqlCase {
         name: "agg.fold.any.at-257-on-sqlite",
-        at: "49-kind-guarantees.sqlt:1156",
+        at: "49-kind-guarantees.sqlt:1171",
         dialect: "sqlite",
         source: "ANY((N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N), _ > 0)",
         expect: Some("((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC)) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR ((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC)) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))))"),
@@ -32300,7 +32325,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1236_bind),
+        bindings_fn: Some(c1237_bind),
     },
     SqlCase {
         name: "register.guard.refused-on-every-use-lacking-the-pattern",
@@ -32318,8 +32343,8 @@ pub const SQL_CASES: &[SqlCase] = &[
         has_tables: false,
         tables: &[],
         unrepresentable: None,
-        register_fn: Some(c1237_reg),
-        bindings_fn: Some(c1237_bind),
+        register_fn: Some(c1238_reg),
+        bindings_fn: Some(c1238_bind),
     },
     SqlCase {
         name: "register.guard.refused-on-every-use-wrong-pattern",
@@ -32337,8 +32362,8 @@ pub const SQL_CASES: &[SqlCase] = &[
         has_tables: false,
         tables: &[],
         unrepresentable: None,
-        register_fn: Some(c1238_reg),
-        bindings_fn: Some(c1238_bind),
+        register_fn: Some(c1239_reg),
+        bindings_fn: Some(c1239_bind),
     },
     SqlCase {
         name: "register.guard.a-sound-guard-is-accepted-every-time",
@@ -32356,8 +32381,8 @@ pub const SQL_CASES: &[SqlCase] = &[
         has_tables: false,
         tables: &[],
         unrepresentable: None,
-        register_fn: Some(c1239_reg),
-        bindings_fn: Some(c1239_bind),
+        register_fn: Some(c1240_reg),
+        bindings_fn: Some(c1240_bind),
     },
     SqlCase {
         name: "register.template.non-ascii-bytes-are-kept",
@@ -32375,8 +32400,8 @@ pub const SQL_CASES: &[SqlCase] = &[
         has_tables: false,
         tables: &[],
         unrepresentable: None,
-        register_fn: Some(c1240_reg),
-        bindings_fn: Some(c1240_bind),
+        register_fn: Some(c1241_reg),
+        bindings_fn: Some(c1241_bind),
     },
     SqlCase {
         name: "register.template.non-ascii-bytes-are-kept-in-a-literal-template",
@@ -32394,8 +32419,8 @@ pub const SQL_CASES: &[SqlCase] = &[
         has_tables: false,
         tables: &[],
         unrepresentable: None,
-        register_fn: Some(c1241_reg),
-        bindings_fn: Some(c1241_bind),
+        register_fn: Some(c1242_reg),
+        bindings_fn: Some(c1242_bind),
     },
     SqlCase {
         name: "register.template.empty-tail-list-emits-nothing",
@@ -32413,8 +32438,8 @@ pub const SQL_CASES: &[SqlCase] = &[
         has_tables: false,
         tables: &[],
         unrepresentable: None,
-        register_fn: Some(c1242_reg),
-        bindings_fn: Some(c1242_bind),
+        register_fn: Some(c1243_reg),
+        bindings_fn: Some(c1243_bind),
     },
     SqlCase {
         name: "register.template.empty-lexical-value-emits-nothing",
@@ -32432,8 +32457,8 @@ pub const SQL_CASES: &[SqlCase] = &[
         has_tables: false,
         tables: &[],
         unrepresentable: None,
-        register_fn: Some(c1243_reg),
-        bindings_fn: Some(c1243_bind),
+        register_fn: Some(c1244_reg),
+        bindings_fn: Some(c1244_bind),
     },
     SqlCase {
         name: "mode.params.order-follows-the-statement-not-the-source",
@@ -32452,7 +32477,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1244_bind),
+        bindings_fn: Some(c1245_bind),
     },
     SqlCase {
         name: "mode.params.no-orphan-slot-through-sort-take-link",
@@ -32471,7 +32496,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1245_bind),
+        bindings_fn: Some(c1246_bind),
     },
     SqlCase {
         name: "stmt.derived.wrapped-columns-keep-a-fixed-order",
@@ -32490,7 +32515,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1246_bind),
+        bindings_fn: Some(c1247_bind),
     },
     SqlCase {
         name: "bind.column.statement-is-not-a-column-type",
@@ -32509,7 +32534,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1247_bind),
+        bindings_fn: Some(c1248_bind),
     },
     SqlCase {
         name: "bind.column.list-is-not-a-column-type",
@@ -32528,7 +32553,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1248_bind),
+        bindings_fn: Some(c1249_bind),
     },
     SqlCase {
         name: "register.dialect.text-escape-must-escape-the-quote",
@@ -32546,8 +32571,8 @@ pub const SQL_CASES: &[SqlCase] = &[
         has_tables: false,
         tables: &[],
         unrepresentable: None,
-        register_fn: Some(c1249_reg),
-        bindings_fn: Some(c1249_bind),
+        register_fn: Some(c1250_reg),
+        bindings_fn: Some(c1250_bind),
     },
     SqlCase {
         name: "register.dialect.empty-text-escape-is-refused",
@@ -32565,8 +32590,8 @@ pub const SQL_CASES: &[SqlCase] = &[
         has_tables: false,
         tables: &[],
         unrepresentable: None,
-        register_fn: Some(c1250_reg),
-        bindings_fn: Some(c1250_bind),
+        register_fn: Some(c1251_reg),
+        bindings_fn: Some(c1251_bind),
     },
     SqlCase {
         name: "register.dialect.escape-character-must-escape-itself",
@@ -32584,8 +32609,8 @@ pub const SQL_CASES: &[SqlCase] = &[
         has_tables: false,
         tables: &[],
         unrepresentable: None,
-        register_fn: Some(c1251_reg),
-        bindings_fn: Some(c1251_bind),
+        register_fn: Some(c1252_reg),
+        bindings_fn: Some(c1252_bind),
     },
     SqlCase {
         name: "register.dialect.text-quote-must-differ-from-identifier-quote",
@@ -32603,8 +32628,8 @@ pub const SQL_CASES: &[SqlCase] = &[
         has_tables: false,
         tables: &[],
         unrepresentable: None,
-        register_fn: Some(c1252_reg),
-        bindings_fn: Some(c1252_bind),
+        register_fn: Some(c1253_reg),
+        bindings_fn: Some(c1253_bind),
     },
     SqlCase {
         name: "alias.record-key-with-nul",
@@ -32623,7 +32648,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1253_bind),
+        bindings_fn: Some(c1254_bind),
     },
     SqlCase {
         name: "alias.record-key-empty",
@@ -32642,7 +32667,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1254_bind),
+        bindings_fn: Some(c1255_bind),
     },
     SqlCase {
         name: "alias.select-cols-name-with-nul",
@@ -32661,7 +32686,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1255_bind),
+        bindings_fn: Some(c1256_bind),
     },
     SqlCase {
         name: "alias.pg-truncated-aliases-collide",
@@ -32680,7 +32705,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1256_bind),
+        bindings_fn: Some(c1257_bind),
     },
     SqlCase {
         name: "lex.text.nul-is-refused-in-every-mode",
@@ -32699,7 +32724,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1257_bind),
+        bindings_fn: Some(c1258_bind),
     },
     SqlCase {
         name: "bind.raw-field.select-cols-refuses",
@@ -32718,7 +32743,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1258_bind),
+        bindings_fn: Some(c1259_bind),
     },
     SqlCase {
         name: "bind.raw-field.across-a-derived-table-refuses",
@@ -32737,7 +32762,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1259_bind),
+        bindings_fn: Some(c1260_bind),
     },
     SqlCase {
         name: "bind.relation.fields-differing-only-by-case",
@@ -32756,7 +32781,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1260_bind),
+        bindings_fn: Some(c1261_bind),
     },
     SqlCase {
         name: "bind.names-differing-only-by-case",
@@ -32775,7 +32800,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1261_bind),
+        bindings_fn: Some(c1262_bind),
     },
     SqlCase {
         name: "agg.correlate.is-parenthesised",
@@ -32794,7 +32819,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1262_bind),
+        bindings_fn: Some(c1263_bind),
     },
     SqlCase {
         name: "register.dialect.correct-pairing-is-accepted",
@@ -32812,8 +32837,8 @@ pub const SQL_CASES: &[SqlCase] = &[
         has_tables: false,
         tables: &[],
         unrepresentable: None,
-        register_fn: Some(c1263_reg),
-        bindings_fn: Some(c1263_bind),
+        register_fn: Some(c1264_reg),
+        bindings_fn: Some(c1264_bind),
     },
     SqlCase {
         name: "register.dialect.redefinition-with-the-same-parent-replaces",
@@ -32831,8 +32856,8 @@ pub const SQL_CASES: &[SqlCase] = &[
         has_tables: false,
         tables: &[],
         unrepresentable: None,
-        register_fn: Some(c1264_reg),
-        bindings_fn: Some(c1264_bind),
+        register_fn: Some(c1265_reg),
+        bindings_fn: Some(c1265_bind),
     },
     SqlCase {
         name: "register.dialect.redefinition-with-a-different-parent-is-refused",
@@ -32850,8 +32875,8 @@ pub const SQL_CASES: &[SqlCase] = &[
         has_tables: false,
         tables: &[],
         unrepresentable: None,
-        register_fn: Some(c1265_reg),
-        bindings_fn: Some(c1265_bind),
+        register_fn: Some(c1266_reg),
+        bindings_fn: Some(c1266_bind),
     },
     SqlCase {
         name: "plan.keys.filter-then-key-reader-is-not-a-split-point",
@@ -32870,7 +32895,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &["orders"],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1266_bind),
+        bindings_fn: Some(c1267_bind),
     },
     SqlCase {
         name: "plan.keys.filter-then-unsupported-filter-is-pure-memory",
@@ -32889,7 +32914,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &["orders"],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1267_bind),
+        bindings_fn: Some(c1268_bind),
     },
     SqlCase {
         name: "plan.keys.split-after-a-sort-may-end-in-a-filter",
@@ -32908,7 +32933,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &["orders"],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1268_bind),
+        bindings_fn: Some(c1269_bind),
     },
     SqlCase {
         name: "plan.keys.split-after-a-filter-then-a-sort-is-safe",
@@ -32927,7 +32952,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &["orders"],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1269_bind),
+        bindings_fn: Some(c1270_bind),
     },
     SqlCase {
         name: "plan.errors.take-behind-a-map-that-can-raise-stays-local",
@@ -32946,7 +32971,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &["orders"],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1270_bind),
+        bindings_fn: Some(c1271_bind),
     },
     SqlCase {
         name: "plan.errors.drop-behind-a-map-that-can-raise-stays-local",
@@ -32965,7 +32990,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &["orders"],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1271_bind),
+        bindings_fn: Some(c1272_bind),
     },
     SqlCase {
         name: "plan.errors.sort-and-take-behind-a-map-that-can-raise-stay-local",
@@ -32984,7 +33009,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &["orders"],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1272_bind),
+        bindings_fn: Some(c1273_bind),
     },
     SqlCase {
         name: "plan.errors.take-before-the-map-is-pushed",
@@ -33003,7 +33028,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &["orders"],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1273_bind),
+        bindings_fn: Some(c1274_bind),
     },
     SqlCase {
         name: "plan.binders.split-before-a-link-keeps-the-prefix-to-the-link",
@@ -33022,7 +33047,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &["orders"],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1274_bind),
+        bindings_fn: Some(c1275_bind),
     },
     SqlCase {
         name: "plan.binders.literal-helper-named-like-an-explicit-sort-binder",
@@ -33041,7 +33066,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &["orders"],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1275_bind),
+        bindings_fn: Some(c1276_bind),
     },
     SqlCase {
         name: "plan.tables.a-binder-named-like-a-relation-reads-nothing",
@@ -33060,7 +33085,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1276_bind),
+        bindings_fn: Some(c1277_bind),
     },
     SqlCase {
         name: "plan.tables.a-map-binder-named-like-a-relation",
@@ -33079,7 +33104,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1277_bind),
+        bindings_fn: Some(c1278_bind),
     },
     SqlCase {
         name: "plan.tables.an-assignment-target-named-like-a-relation",
@@ -33098,7 +33123,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1278_bind),
+        bindings_fn: Some(c1279_bind),
     },
     SqlCase {
         name: "plan.tables.a-filter-binder-named-like-another-relation",
@@ -33117,7 +33142,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &["orders"],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1279_bind),
+        bindings_fn: Some(c1280_bind),
     },
     SqlCase {
         name: "stmt.order.the-order-rule-comes-before-a-bad-key",
@@ -33136,7 +33161,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1280_bind),
+        bindings_fn: Some(c1281_bind),
     },
     SqlCase {
         name: "stmt.order.the-order-rule-comes-before-a-bare-row-key",
@@ -33155,7 +33180,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1281_bind),
+        bindings_fn: Some(c1282_bind),
     },
     SqlCase {
         name: "stmt.order.bucket-after-a-sort-is-refused-at-the-step",
@@ -33174,7 +33199,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1282_bind),
+        bindings_fn: Some(c1283_bind),
     },
     SqlCase {
         name: "stmt.order.bucket-after-two-sorts-is-refused-at-the-step",
@@ -33193,7 +33218,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1283_bind),
+        bindings_fn: Some(c1284_bind),
     },
     SqlCase {
         name: "stmt.order.distinct-after-a-sort-is-refused-at-the-step",
@@ -33212,7 +33237,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1284_bind),
+        bindings_fn: Some(c1285_bind),
     },
     SqlCase {
         name: "review.order.sort-over-a-projection-of-sorted-rows-is-refused",
@@ -33231,7 +33256,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1285_bind),
+        bindings_fn: Some(c1286_bind),
     },
     SqlCase {
         name: "review.order.link-over-sorted-rows-is-refused",
@@ -33250,7 +33275,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1286_bind),
+        bindings_fn: Some(c1287_bind),
     },
     SqlCase {
         name: "plan.hybrid.link-over-sorted-rows-joins-in-memory",
@@ -33269,7 +33294,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &["orders"],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1287_bind),
+        bindings_fn: Some(c1288_bind),
     },
     SqlCase {
         name: "plan.pure-memory.self-join-is-not-split",
@@ -33288,7 +33313,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &["orders"],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1288_bind),
+        bindings_fn: Some(c1289_bind),
     },
     SqlCase {
         name: "bind.value.null-element-is-refused",
@@ -33307,7 +33332,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1289_bind),
+        bindings_fn: Some(c1290_bind),
     },
     SqlCase {
         name: "register.dialect.backslash-escape-must-double-the-backslash",
@@ -33325,8 +33350,8 @@ pub const SQL_CASES: &[SqlCase] = &[
         has_tables: false,
         tables: &[],
         unrepresentable: None,
-        register_fn: Some(c1290_reg),
-        bindings_fn: Some(c1290_bind),
+        register_fn: Some(c1291_reg),
+        bindings_fn: Some(c1291_bind),
     },
     SqlCase {
         name: "register.dialect.quote-escape-is-doubling-or-backslash",
@@ -33344,8 +33369,8 @@ pub const SQL_CASES: &[SqlCase] = &[
         has_tables: false,
         tables: &[],
         unrepresentable: None,
-        register_fn: Some(c1291_reg),
-        bindings_fn: Some(c1291_bind),
+        register_fn: Some(c1292_reg),
+        bindings_fn: Some(c1292_bind),
     },
     SqlCase {
         name: "bind.type.statement-is-not-declarable",
@@ -33364,7 +33389,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1292_bind),
+        bindings_fn: Some(c1293_bind),
     },
     SqlCase {
         name: "norm.size.definition-past-the-budget-is-refused-at-the-assignment",
@@ -33383,7 +33408,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1293_bind),
+        bindings_fn: Some(c1294_bind),
     },
     SqlCase {
         name: "norm.depth.definition-past-four-times-the-depth-is-refused-at-the-assignment",
@@ -33402,7 +33427,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1294_bind),
+        bindings_fn: Some(c1295_bind),
     },
     SqlCase {
         name: "norm.size.result-past-the-budget-is-refused-where-the-walk-stops",
@@ -33421,7 +33446,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1295_bind),
+        bindings_fn: Some(c1296_bind),
     },
     SqlCase {
         name: "refuse.in-relation.boolean-needle-at-the-needle",
@@ -33440,7 +33465,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1296_bind),
+        bindings_fn: Some(c1297_bind),
     },
     SqlCase {
         name: "refuse.binder.checked-at-the-call-not-in-stage-1",
@@ -33459,7 +33484,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1297_bind),
+        bindings_fn: Some(c1298_bind),
     },
     SqlCase {
         name: "plan.pure-memory.key-read-after-a-filter-is-not-split",
@@ -33478,7 +33503,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &["t"],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1298_bind),
+        bindings_fn: Some(c1299_bind),
     },
     SqlCase {
         name: "bind.prefilter.unknown-spelling-is-refused",
@@ -33497,7 +33522,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1299_bind),
+        bindings_fn: Some(c1300_bind),
     },
     SqlCase {
         name: "order.filter-after-sort-keeps-the-order",
@@ -33516,7 +33541,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &["orders"],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1300_bind),
+        bindings_fn: Some(c1301_bind),
     },
     SqlCase {
         name: "order.projection-then-filter-of-sorted-rows-is-refused",
@@ -33535,7 +33560,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1301_bind),
+        bindings_fn: Some(c1302_bind),
     },
     SqlCase {
         name: "bind.alias.case-colliding-relation-aliases-are-refused",
@@ -33554,7 +33579,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1302_bind),
+        bindings_fn: Some(c1303_bind),
     },
     SqlCase {
         name: "assign.empty-text-key-is-a-constant-index",
@@ -33573,7 +33598,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &[],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1303_bind),
+        bindings_fn: Some(c1304_bind),
     },
     SqlCase {
         name: "plan.order.sort-over-a-projection-of-sorted-rows-stays-in-memory",
@@ -33592,7 +33617,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &["orders"],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1304_bind),
+        bindings_fn: Some(c1305_bind),
     },
     SqlCase {
         name: "plan.order.limit-then-link-stays-in-memory",
@@ -33611,7 +33636,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &["orders"],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1305_bind),
+        bindings_fn: Some(c1306_bind),
     },
     SqlCase {
         name: "plan.order.link-left-over-sorted-rows-stays-in-memory",
@@ -33630,7 +33655,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &["orders"],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1306_bind),
+        bindings_fn: Some(c1307_bind),
     },
     SqlCase {
         name: "plan.order.projection-then-link-over-sorted-rows-stays-in-memory",
@@ -33649,7 +33674,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &["orders"],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1307_bind),
+        bindings_fn: Some(c1308_bind),
     },
     SqlCase {
         name: "plan.order.sort-filter-then-link-stays-in-memory",
@@ -33668,7 +33693,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &["orders"],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1308_bind),
+        bindings_fn: Some(c1309_bind),
     },
     SqlCase {
         name: "plan.keys.filter-filter-then-a-renumbering-step-splits-after-the-first",
@@ -33687,7 +33712,7 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &["orders"],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1309_bind),
+        bindings_fn: Some(c1310_bind),
     },
     SqlCase {
         name: "plan.keys.filter-filter-then-a-key-read-stays-in-memory",
@@ -33706,6 +33731,6 @@ pub const SQL_CASES: &[SqlCase] = &[
         tables: &["orders"],
         unrepresentable: None,
         register_fn: None,
-        bindings_fn: Some(c1310_bind),
+        bindings_fn: Some(c1311_bind),
     },
 ];

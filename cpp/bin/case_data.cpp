@@ -7826,10 +7826,7 @@ static std::vector<std::pair<std::string, Binding>> c1188_bind() {
 
 static std::vector<std::pair<std::string, Binding>> c1189_bind() {
   return {
-      {"S", Binding::relation("sk", "s", {{"SKU", Binding::column("sku", "s", SqlKind::Text)}}, "SKU", std::nullopt)},
-      {"F", Binding::column("f", std::nullopt, SqlKind::Bool)},
-      {"X", Binding::column("x", std::nullopt, SqlKind::Bin)},
-      {"N", Binding::column("n", std::nullopt, SqlKind::Num)},
+      {"O", Binding::relation("orders", "o", {{"CAT", Binding::column("cat", "o", SqlKind::Text)}, {"AMT", Binding::column("amt", "o", SqlKind::Num)}}, std::nullopt, std::nullopt)},
   };
 }
 
@@ -7853,8 +7850,10 @@ static std::vector<std::pair<std::string, Binding>> c1191_bind() {
 
 static std::vector<std::pair<std::string, Binding>> c1192_bind() {
   return {
-      {"T", Binding::column("t", std::nullopt, SqlKind::Text, true, false, false, std::nullopt)},
-      {"S", Binding::column("s", std::nullopt, SqlKind::Text, true, false, false, std::nullopt)},
+      {"S", Binding::relation("sk", "s", {{"SKU", Binding::column("sku", "s", SqlKind::Text)}}, "SKU", std::nullopt)},
+      {"F", Binding::column("f", std::nullopt, SqlKind::Bool)},
+      {"X", Binding::column("x", std::nullopt, SqlKind::Bin)},
+      {"N", Binding::column("n", std::nullopt, SqlKind::Num)},
   };
 }
 
@@ -7867,7 +7866,8 @@ static std::vector<std::pair<std::string, Binding>> c1193_bind() {
 
 static std::vector<std::pair<std::string, Binding>> c1194_bind() {
   return {
-      {"ITEMS", Binding::relation("items", std::nullopt, {}, std::nullopt, std::nullopt)},
+      {"T", Binding::column("t", std::nullopt, SqlKind::Text, true, false, false, std::nullopt)},
+      {"S", Binding::column("s", std::nullopt, SqlKind::Text, true, false, false, std::nullopt)},
   };
 }
 
@@ -8041,7 +8041,7 @@ static std::vector<std::pair<std::string, Binding>> c1222_bind() {
 
 static std::vector<std::pair<std::string, Binding>> c1223_bind() {
   return {
-      {"O", Binding::relation("orders", "o", {{"CAT", Binding::column("cat", "o", SqlKind::Text)}, {"MISC", Binding::column("misc", "o", SqlKind::Unknown)}}, std::nullopt, std::nullopt)},
+      {"ITEMS", Binding::relation("items", std::nullopt, {}, std::nullopt, std::nullopt)},
   };
 }
 
@@ -8053,8 +8053,7 @@ static std::vector<std::pair<std::string, Binding>> c1224_bind() {
 
 static std::vector<std::pair<std::string, Binding>> c1225_bind() {
   return {
-      {"N", Binding::column("n", "k", SqlKind::Num)},
-      {"T", Binding::column("t", "k", SqlKind::Text, true, false, false, std::nullopt)},
+      {"O", Binding::relation("orders", "o", {{"CAT", Binding::column("cat", "o", SqlKind::Text)}, {"MISC", Binding::column("misc", "o", SqlKind::Unknown)}}, std::nullopt, std::nullopt)},
   };
 }
 
@@ -8131,37 +8130,34 @@ static std::vector<std::pair<std::string, Binding>> c1235_bind() {
 static std::vector<std::pair<std::string, Binding>> c1236_bind() {
   return {
       {"N", Binding::column("n", "k", SqlKind::Num)},
+      {"T", Binding::column("t", "k", SqlKind::Text, true, false, false, std::nullopt)},
   };
 }
 
 static std::vector<std::pair<std::string, Binding>> c1237_bind() {
   return {
+      {"N", Binding::column("n", "k", SqlKind::Num)},
+  };
+}
+
+static std::vector<std::pair<std::string, Binding>> c1238_bind() {
+  return {
       {"NAME", Binding::column("name", "o", SqlKind::Text)},
   };
 }
 
-static void c1237_reg() {
+static void c1238_reg() {
       Map::define_dialect("pgbad", DialectSpec::extending("postgresql").version("16").lexical("numericGuard", "CASE WHEN ({textCast:0} ~ '^.*$') THEN CAST({0} AS NUMERIC) ELSE NULL END"));
 }
 
-static std::vector<std::pair<std::string, Binding>> c1238_bind() {
+static std::vector<std::pair<std::string, Binding>> c1239_bind() {
   return {
       {"X", Binding::column("x", "o", SqlKind::Unknown)},
   };
 }
 
-static void c1238_reg() {
-      Map::define_dialect("mdbad", DialectSpec::extending("mariadb").version("10.5").lexical("numericGuard", "CASE WHEN ({0} REGEXP 'x') THEN CAST({0} AS DECIMAL(65,10)) ELSE NULL END"));
-}
-
-static std::vector<std::pair<std::string, Binding>> c1239_bind() {
-  return {
-      {"NAME", Binding::column("name", "o", SqlKind::Text)},
-  };
-}
-
 static void c1239_reg() {
-      Map::define_dialect("pgok", DialectSpec::extending("postgresql").version("16"));
+      Map::define_dialect("mdbad", DialectSpec::extending("mariadb").version("10.5").lexical("numericGuard", "CASE WHEN ({0} REGEXP 'x') THEN CAST({0} AS DECIMAL(65,10)) ELSE NULL END"));
 }
 
 static std::vector<std::pair<std::string, Binding>> c1240_bind() {
@@ -8171,27 +8167,27 @@ static std::vector<std::pair<std::string, Binding>> c1240_bind() {
 }
 
 static void c1240_reg() {
-      Map::define("mariadb", Section::Funcs, "UPPER", EntrySpec::tpl("F({0}, '\303\251 \305\274 \304\207 \360\235\204\236')", "TEXT"));
+      Map::define_dialect("pgok", DialectSpec::extending("postgresql").version("16"));
 }
 
 static std::vector<std::pair<std::string, Binding>> c1241_bind() {
-  return {
-
-  };
-}
-
-static void c1241_reg() {
-      Map::define("sqlite", Section::Funcs, "UPPER", EntrySpec::tpl("MY_CRC('za\305\274\303\263\305\202\304\207', {0})", "TEXT"));
-}
-
-static std::vector<std::pair<std::string, Binding>> c1242_bind() {
   return {
       {"NAME", Binding::column("name", "o", SqlKind::Text)},
   };
 }
 
+static void c1241_reg() {
+      Map::define("mariadb", Section::Funcs, "UPPER", EntrySpec::tpl("F({0}, '\303\251 \305\274 \304\207 \360\235\204\236')", "TEXT"));
+}
+
+static std::vector<std::pair<std::string, Binding>> c1242_bind() {
+  return {
+
+  };
+}
+
 static void c1242_reg() {
-      Map::define("mariadb", Section::Funcs, "UPPER", EntrySpec::tpl("F({0}, {1:})", "TEXT"));
+      Map::define("sqlite", Section::Funcs, "UPPER", EntrySpec::tpl("MY_CRC('za\305\274\303\263\305\202\304\207', {0})", "TEXT"));
 }
 
 static std::vector<std::pair<std::string, Binding>> c1243_bind() {
@@ -8201,15 +8197,18 @@ static std::vector<std::pair<std::string, Binding>> c1243_bind() {
 }
 
 static void c1243_reg() {
-      Map::define_dialect("mdempty", DialectSpec::extending("mariadb").version("10.5").lexical("textCollate", ""));
-      Map::define("mdempty", Section::Funcs, "UPPER", EntrySpec::tpl("F({0}{textCollate})", "TEXT"));
+      Map::define("mariadb", Section::Funcs, "UPPER", EntrySpec::tpl("F({0}, {1:})", "TEXT"));
 }
 
 static std::vector<std::pair<std::string, Binding>> c1244_bind() {
   return {
-      {"R", Binding::relation("r", "r", {{"A", Binding::column("a", std::nullopt, SqlKind::Num)}, {"N", Binding::column("n", std::nullopt, SqlKind::Text)}}, std::nullopt, std::nullopt)},
-      {"S", Binding::relation("s", "s", {{"A", Binding::column("a", std::nullopt, SqlKind::Num)}, {"M", Binding::column("m", std::nullopt, SqlKind::Text)}}, std::nullopt, std::nullopt)},
+      {"NAME", Binding::column("name", "o", SqlKind::Text)},
   };
+}
+
+static void c1244_reg() {
+      Map::define_dialect("mdempty", DialectSpec::extending("mariadb").version("10.5").lexical("textCollate", ""));
+      Map::define("mdempty", Section::Funcs, "UPPER", EntrySpec::tpl("F({0}{textCollate})", "TEXT"));
 }
 
 static std::vector<std::pair<std::string, Binding>> c1245_bind() {
@@ -8221,35 +8220,32 @@ static std::vector<std::pair<std::string, Binding>> c1245_bind() {
 
 static std::vector<std::pair<std::string, Binding>> c1246_bind() {
   return {
+      {"R", Binding::relation("r", "r", {{"A", Binding::column("a", std::nullopt, SqlKind::Num)}, {"N", Binding::column("n", std::nullopt, SqlKind::Text)}}, std::nullopt, std::nullopt)},
+      {"S", Binding::relation("s", "s", {{"A", Binding::column("a", std::nullopt, SqlKind::Num)}, {"M", Binding::column("m", std::nullopt, SqlKind::Text)}}, std::nullopt, std::nullopt)},
+  };
+}
+
+static std::vector<std::pair<std::string, Binding>> c1247_bind() {
+  return {
       {"ITEMS", Binding::relation("items", "i", {{"PRICE", Binding::column("price", std::nullopt, SqlKind::Num)}, {"QTY", Binding::column("qty", std::nullopt, SqlKind::Num)}, {"NAME", Binding::column("name", std::nullopt, SqlKind::Text)}, {"SKU", Binding::column("sku", std::nullopt, SqlKind::Text)}}, std::nullopt, std::nullopt)},
       {"TAGS", Binding::relation("tags", "t", {{"TAG", Binding::column("tag", std::nullopt, SqlKind::Text)}, {"W", Binding::column("w", std::nullopt, SqlKind::Num)}}, std::nullopt, std::nullopt)},
   };
 }
 
-static std::vector<std::pair<std::string, Binding>> c1248_bind() {
+static std::vector<std::pair<std::string, Binding>> c1249_bind() {
   return {
       {"C", Binding::column("c", "o", SqlKind::List)},
   };
 }
 
-static std::vector<std::pair<std::string, Binding>> c1249_bind() {
+static std::vector<std::pair<std::string, Binding>> c1250_bind() {
   return {
       {"S", Binding::column("s", "o", SqlKind::Text)},
   };
 }
 
-static void c1249_reg() {
-      Map::define_dialect("my-nobs", DialectSpec::extending("mariadb").version("10.5").lexical_escapes("textEscape", {{"\\", "\\\\"}}));
-}
-
-static std::vector<std::pair<std::string, Binding>> c1250_bind() {
-  return {
-
-  };
-}
-
 static void c1250_reg() {
-      Map::define_dialect("sqlite-noesc", DialectSpec::extending("sqlite").version("3.48").lexical_escapes("textEscape", {}));
+      Map::define_dialect("my-nobs", DialectSpec::extending("mariadb").version("10.5").lexical_escapes("textEscape", {{"\\", "\\\\"}}));
 }
 
 static std::vector<std::pair<std::string, Binding>> c1251_bind() {
@@ -8259,7 +8255,7 @@ static std::vector<std::pair<std::string, Binding>> c1251_bind() {
 }
 
 static void c1251_reg() {
-      Map::define_dialect("my-badbs", DialectSpec::extending("mariadb").version("10.5").lexical_escapes("textEscape", {{"'", "\\'"}}));
+      Map::define_dialect("sqlite-noesc", DialectSpec::extending("sqlite").version("3.48").lexical_escapes("textEscape", {}));
 }
 
 static std::vector<std::pair<std::string, Binding>> c1252_bind() {
@@ -8269,13 +8265,17 @@ static std::vector<std::pair<std::string, Binding>> c1252_bind() {
 }
 
 static void c1252_reg() {
-      Map::define_dialect("dq", DialectSpec::extending("ansi").version("1").lexical("textQuote", "\""));
+      Map::define_dialect("my-badbs", DialectSpec::extending("mariadb").version("10.5").lexical_escapes("textEscape", {{"'", "\\'"}}));
 }
 
 static std::vector<std::pair<std::string, Binding>> c1253_bind() {
   return {
-      {"ITEMS", Binding::relation("items", "i", {{"PRICE", Binding::column("price", std::nullopt, SqlKind::Num)}}, std::nullopt, std::nullopt)},
+
   };
+}
+
+static void c1253_reg() {
+      Map::define_dialect("dq", DialectSpec::extending("ansi").version("1").lexical("textQuote", "\""));
 }
 
 static std::vector<std::pair<std::string, Binding>> c1254_bind() {
@@ -8286,25 +8286,25 @@ static std::vector<std::pair<std::string, Binding>> c1254_bind() {
 
 static std::vector<std::pair<std::string, Binding>> c1255_bind() {
   return {
-      {"ITEMS", Binding::relation("items", "i", {}, std::nullopt, std::nullopt)},
+      {"ITEMS", Binding::relation("items", "i", {{"PRICE", Binding::column("price", std::nullopt, SqlKind::Num)}}, std::nullopt, std::nullopt)},
   };
 }
 
 static std::vector<std::pair<std::string, Binding>> c1256_bind() {
   return {
-      {"ITEMS", Binding::relation("items", "i", {{"PRICE", Binding::column("price", std::nullopt, SqlKind::Num)}}, std::nullopt, std::nullopt)},
+      {"ITEMS", Binding::relation("items", "i", {}, std::nullopt, std::nullopt)},
   };
 }
 
 static std::vector<std::pair<std::string, Binding>> c1257_bind() {
   return {
-      {"S", Binding::column("s", "o", SqlKind::Text)},
+      {"ITEMS", Binding::relation("items", "i", {{"PRICE", Binding::column("price", std::nullopt, SqlKind::Num)}}, std::nullopt, std::nullopt)},
   };
 }
 
 static std::vector<std::pair<std::string, Binding>> c1258_bind() {
   return {
-      {"ITEMS", Binding::relation("items", "i", {{"ID", Binding::column("id", std::nullopt, SqlKind::Num)}, {"TOTAL", Binding::raw("i.price * i.qty", SqlKind::Num)}}, std::nullopt, std::nullopt)},
+      {"S", Binding::column("s", "o", SqlKind::Text)},
   };
 }
 
@@ -8316,31 +8316,27 @@ static std::vector<std::pair<std::string, Binding>> c1259_bind() {
 
 static std::vector<std::pair<std::string, Binding>> c1260_bind() {
   return {
-      {"R", Binding::relation("t", "t", {{"A", Binding::column("x", std::nullopt, SqlKind::Num)}, {"a", Binding::column("y", std::nullopt, SqlKind::Num)}}, std::nullopt, std::nullopt)},
+      {"ITEMS", Binding::relation("items", "i", {{"ID", Binding::column("id", std::nullopt, SqlKind::Num)}, {"TOTAL", Binding::raw("i.price * i.qty", SqlKind::Num)}}, std::nullopt, std::nullopt)},
   };
 }
 
 static std::vector<std::pair<std::string, Binding>> c1261_bind() {
+  return {
+      {"R", Binding::relation("t", "t", {{"A", Binding::column("x", std::nullopt, SqlKind::Num)}, {"a", Binding::column("y", std::nullopt, SqlKind::Num)}}, std::nullopt, std::nullopt)},
+  };
+}
+
+static std::vector<std::pair<std::string, Binding>> c1262_bind() {
   return {
       {"x", Binding::column("a", "o", SqlKind::Num)},
       {"X", Binding::column("b", "o", SqlKind::Num)},
   };
 }
 
-static std::vector<std::pair<std::string, Binding>> c1262_bind() {
+static std::vector<std::pair<std::string, Binding>> c1263_bind() {
   return {
       {"ITEMS", Binding::relation("oi", "oi", {{"QTY", Binding::column("qty", "oi", SqlKind::Num)}}, std::nullopt, "oi.a=o.id OR oi.b=o.id")},
   };
-}
-
-static std::vector<std::pair<std::string, Binding>> c1263_bind() {
-  return {
-
-  };
-}
-
-static void c1263_reg() {
-      Map::define_dialect("my-ok", DialectSpec::extending("mariadb").version("10.5").lexical_escapes("textEscape", {{"\\", "\\\\"}, {"'", "''"}}));
 }
 
 static std::vector<std::pair<std::string, Binding>> c1264_bind() {
@@ -8350,8 +8346,7 @@ static std::vector<std::pair<std::string, Binding>> c1264_bind() {
 }
 
 static void c1264_reg() {
-      Map::define_dialect("redef", DialectSpec::extending("mariadb").version("10.5").lexical("textCollate", " COLLATE utf8mb4_bin"));
-      Map::define_dialect("redef", DialectSpec::extending("mariadb").version("10.5").lexical("textCollate", " COLLATE utf8mb4_0900_bin"));
+      Map::define_dialect("my-ok", DialectSpec::extending("mariadb").version("10.5").lexical_escapes("textEscape", {{"\\", "\\\\"}, {"'", "''"}}));
 }
 
 static std::vector<std::pair<std::string, Binding>> c1265_bind() {
@@ -8361,15 +8356,19 @@ static std::vector<std::pair<std::string, Binding>> c1265_bind() {
 }
 
 static void c1265_reg() {
-      Map::define_dialect("redef2", DialectSpec::extending("mariadb").version("10.5"));
-      Map::define_dialect("redef2", DialectSpec::extending("postgresql").version("16"));
+      Map::define_dialect("redef", DialectSpec::extending("mariadb").version("10.5").lexical("textCollate", " COLLATE utf8mb4_bin"));
+      Map::define_dialect("redef", DialectSpec::extending("mariadb").version("10.5").lexical("textCollate", " COLLATE utf8mb4_0900_bin"));
 }
 
 static std::vector<std::pair<std::string, Binding>> c1266_bind() {
   return {
-      {"ORDERS", Binding::relation("orders", "o", {{"ID", Binding::column("id", "o", SqlKind::Num)}, {"CUSTOMER_ID", Binding::column("customer_id", "o", SqlKind::Num)}, {"AMOUNT", Binding::column("amount", "o", SqlKind::Num)}, {"NAME", Binding::column("name", "o", SqlKind::Text)}}, std::nullopt, std::nullopt)},
-      {"CUSTOMERS", Binding::relation("customers", "c", {{"ID", Binding::column("id", "c", SqlKind::Num)}, {"NAME", Binding::column("name", "c", SqlKind::Text)}}, std::nullopt, std::nullopt)},
+
   };
+}
+
+static void c1266_reg() {
+      Map::define_dialect("redef2", DialectSpec::extending("mariadb").version("10.5"));
+      Map::define_dialect("redef2", DialectSpec::extending("postgresql").version("16"));
 }
 
 static std::vector<std::pair<std::string, Binding>> c1267_bind() {
@@ -8465,7 +8464,8 @@ static std::vector<std::pair<std::string, Binding>> c1279_bind() {
 
 static std::vector<std::pair<std::string, Binding>> c1280_bind() {
   return {
-      {"ORDERS", Binding::relation("orders", "o", {{"ID", Binding::column("id", "o", SqlKind::Num)}, {"NAME", Binding::column("name", "o", SqlKind::Text)}}, std::nullopt, std::nullopt)},
+      {"ORDERS", Binding::relation("orders", "o", {{"ID", Binding::column("id", "o", SqlKind::Num)}, {"CUSTOMER_ID", Binding::column("customer_id", "o", SqlKind::Num)}, {"AMOUNT", Binding::column("amount", "o", SqlKind::Num)}, {"NAME", Binding::column("name", "o", SqlKind::Text)}}, std::nullopt, std::nullopt)},
+      {"CUSTOMERS", Binding::relation("customers", "c", {{"ID", Binding::column("id", "c", SqlKind::Num)}, {"NAME", Binding::column("name", "c", SqlKind::Text)}}, std::nullopt, std::nullopt)},
   };
 }
 
@@ -8495,8 +8495,7 @@ static std::vector<std::pair<std::string, Binding>> c1284_bind() {
 
 static std::vector<std::pair<std::string, Binding>> c1285_bind() {
   return {
-      {"ORDERS", Binding::relation("orders", "o", {{"ID", Binding::column("id", "o", SqlKind::Num)}, {"CUSTOMER_ID", Binding::column("customer_id", "o", SqlKind::Num)}, {"AMOUNT", Binding::column("amount", "o", SqlKind::Num)}, {"NAME", Binding::column("name", "o", SqlKind::Text)}}, std::nullopt, std::nullopt)},
-      {"CUSTOMERS", Binding::relation("customers", "c", {{"ID", Binding::column("id", "c", SqlKind::Num)}, {"CNAME", Binding::column("cname", "c", SqlKind::Text)}}, std::nullopt, std::nullopt)},
+      {"ORDERS", Binding::relation("orders", "o", {{"ID", Binding::column("id", "o", SqlKind::Num)}, {"NAME", Binding::column("name", "o", SqlKind::Text)}}, std::nullopt, std::nullopt)},
   };
 }
 
@@ -8523,19 +8522,16 @@ static std::vector<std::pair<std::string, Binding>> c1288_bind() {
 
 static std::vector<std::pair<std::string, Binding>> c1289_bind() {
   return {
-      {"V1", Binding::value(value_tree({{"1", Value::text("a")}, {"2", Value::none()}}), std::nullopt)},
-      {"XT", Binding::column("xt", std::nullopt, SqlKind::Text)},
+      {"ORDERS", Binding::relation("orders", "o", {{"ID", Binding::column("id", "o", SqlKind::Num)}, {"CUSTOMER_ID", Binding::column("customer_id", "o", SqlKind::Num)}, {"AMOUNT", Binding::column("amount", "o", SqlKind::Num)}, {"NAME", Binding::column("name", "o", SqlKind::Text)}}, std::nullopt, std::nullopt)},
+      {"CUSTOMERS", Binding::relation("customers", "c", {{"ID", Binding::column("id", "c", SqlKind::Num)}, {"CNAME", Binding::column("cname", "c", SqlKind::Text)}}, std::nullopt, std::nullopt)},
   };
 }
 
 static std::vector<std::pair<std::string, Binding>> c1290_bind() {
   return {
-
+      {"V1", Binding::value(value_tree({{"1", Value::text("a")}, {"2", Value::none()}}), std::nullopt)},
+      {"XT", Binding::column("xt", std::nullopt, SqlKind::Text)},
   };
-}
-
-static void c1290_reg() {
-      Map::define_dialect("my-nl", DialectSpec::extending("mariadb").version("10.5").lexical_escapes("textEscape", {{"'", "''"}, {"\012", "\\n"}}));
 }
 
 static std::vector<std::pair<std::string, Binding>> c1291_bind() {
@@ -8545,13 +8541,17 @@ static std::vector<std::pair<std::string, Binding>> c1291_bind() {
 }
 
 static void c1291_reg() {
-      Map::define_dialect("ansi-x", DialectSpec::extending("ansi").version("2016").lexical_escapes("textEscape", {{"'", "x'"}, {"x", "xx"}}));
+      Map::define_dialect("my-nl", DialectSpec::extending("mariadb").version("10.5").lexical_escapes("textEscape", {{"'", "''"}, {"\012", "\\n"}}));
 }
 
-static std::vector<std::pair<std::string, Binding>> c1293_bind() {
+static std::vector<std::pair<std::string, Binding>> c1292_bind() {
   return {
-      {"XN", Binding::column("xn", std::nullopt, SqlKind::Num)},
+
   };
+}
+
+static void c1292_reg() {
+      Map::define_dialect("ansi-x", DialectSpec::extending("ansi").version("2016").lexical_escapes("textEscape", {{"'", "x'"}, {"x", "xx"}}));
 }
 
 static std::vector<std::pair<std::string, Binding>> c1294_bind() {
@@ -8568,32 +8568,32 @@ static std::vector<std::pair<std::string, Binding>> c1295_bind() {
 
 static std::vector<std::pair<std::string, Binding>> c1296_bind() {
   return {
-      {"XB", Binding::column("xb", std::nullopt, SqlKind::Bool)},
-      {"TS", Binding::relation("ts", "ts", {{"V", Binding::column("v", "ts", SqlKind::Text)}}, "V", std::nullopt)},
+      {"XN", Binding::column("xn", std::nullopt, SqlKind::Num)},
   };
 }
 
 static std::vector<std::pair<std::string, Binding>> c1297_bind() {
   return {
       {"XB", Binding::column("xb", std::nullopt, SqlKind::Bool)},
+      {"TS", Binding::relation("ts", "ts", {{"V", Binding::column("v", "ts", SqlKind::Text)}}, "V", std::nullopt)},
   };
 }
 
 static std::vector<std::pair<std::string, Binding>> c1298_bind() {
   return {
-      {"T", Binding::relation("t", "t", {{"N", Binding::column("n", "t", SqlKind::Num)}, {"S", Binding::column("s", "t", SqlKind::Text)}}, std::nullopt, std::nullopt)},
+      {"XB", Binding::column("xb", std::nullopt, SqlKind::Bool)},
   };
 }
 
 static std::vector<std::pair<std::string, Binding>> c1299_bind() {
   return {
-      {"XC", Binding::column("xc", std::nullopt, SqlKind::Text, false, false, false, "bogus")},
+      {"T", Binding::relation("t", "t", {{"N", Binding::column("n", "t", SqlKind::Num)}, {"S", Binding::column("s", "t", SqlKind::Text)}}, std::nullopt, std::nullopt)},
   };
 }
 
 static std::vector<std::pair<std::string, Binding>> c1300_bind() {
   return {
-      {"ORDERS", Binding::relation("orders", "o", {{"ID", Binding::column("id", "o", SqlKind::Num)}, {"AMOUNT", Binding::column("amount", "o", SqlKind::Num)}}, std::nullopt, std::nullopt)},
+      {"XC", Binding::column("xc", std::nullopt, SqlKind::Text, false, false, false, "bogus")},
   };
 }
 
@@ -8605,27 +8605,26 @@ static std::vector<std::pair<std::string, Binding>> c1301_bind() {
 
 static std::vector<std::pair<std::string, Binding>> c1302_bind() {
   return {
-      {"A", Binding::relation("a", "o", {{"X", Binding::column("x", "o", SqlKind::Num)}}, std::nullopt, std::nullopt)},
-      {"B", Binding::relation("b", "O", {{"X", Binding::column("x", "O", SqlKind::Num)}}, std::nullopt, std::nullopt)},
+      {"ORDERS", Binding::relation("orders", "o", {{"ID", Binding::column("id", "o", SqlKind::Num)}, {"AMOUNT", Binding::column("amount", "o", SqlKind::Num)}}, std::nullopt, std::nullopt)},
   };
 }
 
 static std::vector<std::pair<std::string, Binding>> c1303_bind() {
   return {
-      {"XN", Binding::column("xn", std::nullopt, SqlKind::Num)},
+      {"A", Binding::relation("a", "o", {{"X", Binding::column("x", "o", SqlKind::Num)}}, std::nullopt, std::nullopt)},
+      {"B", Binding::relation("b", "O", {{"X", Binding::column("x", "O", SqlKind::Num)}}, std::nullopt, std::nullopt)},
   };
 }
 
 static std::vector<std::pair<std::string, Binding>> c1304_bind() {
   return {
-      {"ORDERS", Binding::relation("orders", "o", {{"ID", Binding::column("id", "o", SqlKind::Num)}, {"CUSTOMER_ID", Binding::column("customer_id", "o", SqlKind::Num)}, {"AMOUNT", Binding::column("amount", "o", SqlKind::Num)}, {"NAME", Binding::column("name", "o", SqlKind::Text)}}, std::nullopt, std::nullopt)},
+      {"XN", Binding::column("xn", std::nullopt, SqlKind::Num)},
   };
 }
 
 static std::vector<std::pair<std::string, Binding>> c1305_bind() {
   return {
       {"ORDERS", Binding::relation("orders", "o", {{"ID", Binding::column("id", "o", SqlKind::Num)}, {"CUSTOMER_ID", Binding::column("customer_id", "o", SqlKind::Num)}, {"AMOUNT", Binding::column("amount", "o", SqlKind::Num)}, {"NAME", Binding::column("name", "o", SqlKind::Text)}}, std::nullopt, std::nullopt)},
-      {"CUSTOMERS", Binding::relation("customers", "c", {{"ID", Binding::column("id", "c", SqlKind::Num)}, {"CNAME", Binding::column("cname", "c", SqlKind::Text)}}, std::nullopt, std::nullopt)},
   };
 }
 
@@ -8653,10 +8652,17 @@ static std::vector<std::pair<std::string, Binding>> c1308_bind() {
 static std::vector<std::pair<std::string, Binding>> c1309_bind() {
   return {
       {"ORDERS", Binding::relation("orders", "o", {{"ID", Binding::column("id", "o", SqlKind::Num)}, {"CUSTOMER_ID", Binding::column("customer_id", "o", SqlKind::Num)}, {"AMOUNT", Binding::column("amount", "o", SqlKind::Num)}, {"NAME", Binding::column("name", "o", SqlKind::Text)}}, std::nullopt, std::nullopt)},
+      {"CUSTOMERS", Binding::relation("customers", "c", {{"ID", Binding::column("id", "c", SqlKind::Num)}, {"CNAME", Binding::column("cname", "c", SqlKind::Text)}}, std::nullopt, std::nullopt)},
   };
 }
 
 static std::vector<std::pair<std::string, Binding>> c1310_bind() {
+  return {
+      {"ORDERS", Binding::relation("orders", "o", {{"ID", Binding::column("id", "o", SqlKind::Num)}, {"CUSTOMER_ID", Binding::column("customer_id", "o", SqlKind::Num)}, {"AMOUNT", Binding::column("amount", "o", SqlKind::Num)}, {"NAME", Binding::column("name", "o", SqlKind::Text)}}, std::nullopt, std::nullopt)},
+  };
+}
+
+static std::vector<std::pair<std::string, Binding>> c1311_bind() {
   return {
       {"ORDERS", Binding::relation("orders", "o", {{"ID", Binding::column("id", "o", SqlKind::Num)}, {"CUSTOMER_ID", Binding::column("customer_id", "o", SqlKind::Num)}, {"AMOUNT", Binding::column("amount", "o", SqlKind::Num)}, {"NAME", Binding::column("name", "o", SqlKind::Text)}}, std::nullopt, std::nullopt)},
   };
@@ -28876,8 +28882,25 @@ static const SqlCase CASES[] = {
      .unrepresentable = nullptr,
      .register_fn = nullptr,
      .bindings_fn = c1188_bind},
-    {.name = "agg.in-relation.bool-column-needle-is-refused",
+    {.name = "agg.bucket-sum.a-non-name-binder-is-refused",
      .at = "49-kind-guarantees.sqlt:501",
+     .dialect = "mariadb",
+     .source = "O .> BUCKET(_[\"CAT\"], RECORD(\"s\", SUM(_, 1, _[\"AMT\"])))",
+     .expect = nullptr,
+     .error = "E_SQL_SHAPE",
+     .throws = nullptr,
+     .params = nullptr,
+     .as_ = "statement",
+     .mode = nullptr,
+     .strict = false,
+     .plan = nullptr,
+     .has_tables = false,
+     .tables = {},
+     .unrepresentable = nullptr,
+     .register_fn = nullptr,
+     .bindings_fn = c1189_bind},
+    {.name = "agg.in-relation.bool-column-needle-is-refused",
+     .at = "49-kind-guarantees.sqlt:516",
      .dialect = "mariadb",
      .source = "F IN S",
      .expect = nullptr,
@@ -28892,9 +28915,9 @@ static const SqlCase CASES[] = {
      .tables = {},
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c1189_bind},
+     .bindings_fn = c1190_bind},
     {.name = "agg.in-relation.bool-literal-needle-is-refused",
-     .at = "49-kind-guarantees.sqlt:514",
+     .at = "49-kind-guarantees.sqlt:529",
      .dialect = "mariadb",
      .source = "TRUE IN S",
      .expect = nullptr,
@@ -28909,9 +28932,9 @@ static const SqlCase CASES[] = {
      .tables = {},
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c1190_bind},
+     .bindings_fn = c1191_bind},
     {.name = "agg.in-relation.bin-column-needle-is-refused",
-     .at = "49-kind-guarantees.sqlt:527",
+     .at = "49-kind-guarantees.sqlt:542",
      .dialect = "mariadb",
      .source = "X IN S",
      .expect = nullptr,
@@ -28926,9 +28949,9 @@ static const SqlCase CASES[] = {
      .tables = {},
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c1191_bind},
+     .bindings_fn = c1192_bind},
     {.name = "bind.in.exact.numeric-literal-item-is-cast",
-     .at = "49-kind-guarantees.sqlt:540",
+     .at = "49-kind-guarantees.sqlt:555",
      .dialect = "mariadb",
      .source = "T IN (\"a\", 3)",
      .expect = "((`t` = 'a') OR (`t` = CAST(3 AS CHAR) COLLATE utf8mb4_nopad_bin))",
@@ -28943,9 +28966,9 @@ static const SqlCase CASES[] = {
      .tables = {},
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c1192_bind},
+     .bindings_fn = c1193_bind},
     {.name = "bind.in.exact.numeric-literal-items-only",
-     .at = "49-kind-guarantees.sqlt:553",
+     .at = "49-kind-guarantees.sqlt:568",
      .dialect = "mariadb",
      .source = "S IN (1, 2)",
      .expect = "((`s` = CAST(1 AS CHAR) COLLATE utf8mb4_nopad_bin) OR (`s` = CAST(2 AS CHAR) COLLATE utf8mb4_nopad_bin))",
@@ -28960,9 +28983,9 @@ static const SqlCase CASES[] = {
      .tables = {},
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c1193_bind},
+     .bindings_fn = c1194_bind},
     {.name = "stmt.take.whole-number-with-scale.mariadb",
-     .at = "49-kind-guarantees.sqlt:566",
+     .at = "49-kind-guarantees.sqlt:581",
      .dialect = "mariadb",
      .source = "ITEMS .> TAKE(2.0)",
      .expect = "SELECT * FROM `items` LIMIT 2",
@@ -28977,9 +29000,9 @@ static const SqlCase CASES[] = {
      .tables = {},
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c1194_bind},
+     .bindings_fn = c1195_bind},
     {.name = "stmt.take.zero-with-scale.mariadb",
-     .at = "49-kind-guarantees.sqlt:581",
+     .at = "49-kind-guarantees.sqlt:596",
      .dialect = "mariadb",
      .source = "ITEMS .> TAKE(0.0)",
      .expect = "SELECT * FROM `items` LIMIT 0",
@@ -28994,9 +29017,9 @@ static const SqlCase CASES[] = {
      .tables = {},
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c1195_bind},
+     .bindings_fn = c1196_bind},
     {.name = "stmt.take.count-past-2^53.mariadb",
-     .at = "49-kind-guarantees.sqlt:596",
+     .at = "49-kind-guarantees.sqlt:611",
      .dialect = "mariadb",
      .source = "ITEMS .> TAKE(9007199254740993)",
      .expect = "SELECT * FROM `items` LIMIT 9007199254740993",
@@ -29011,9 +29034,9 @@ static const SqlCase CASES[] = {
      .tables = {},
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c1196_bind},
+     .bindings_fn = c1197_bind},
     {.name = "stmt.take.int64-max.mariadb",
-     .at = "49-kind-guarantees.sqlt:611",
+     .at = "49-kind-guarantees.sqlt:626",
      .dialect = "mariadb",
      .source = "ITEMS .> TAKE(9223372036854775807)",
      .expect = "SELECT * FROM `items` LIMIT 9223372036854775807",
@@ -29028,29 +29051,12 @@ static const SqlCase CASES[] = {
      .tables = {},
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c1197_bind},
+     .bindings_fn = c1198_bind},
     {.name = "stmt.take.whole-number-with-scale.postgresql",
-     .at = "49-kind-guarantees.sqlt:626",
+     .at = "49-kind-guarantees.sqlt:641",
      .dialect = "postgresql",
      .source = "ITEMS .> TAKE(2.0)",
      .expect = "SELECT * FROM \"items\" LIMIT 2",
-     .error = nullptr,
-     .throws = nullptr,
-     .params = nullptr,
-     .as_ = "statement",
-     .mode = nullptr,
-     .strict = false,
-     .plan = nullptr,
-     .has_tables = false,
-     .tables = {},
-     .unrepresentable = nullptr,
-     .register_fn = nullptr,
-     .bindings_fn = c1198_bind},
-    {.name = "stmt.take.zero-with-scale.postgresql",
-     .at = "49-kind-guarantees.sqlt:641",
-     .dialect = "postgresql",
-     .source = "ITEMS .> TAKE(0.0)",
-     .expect = "SELECT * FROM \"items\" LIMIT 0",
      .error = nullptr,
      .throws = nullptr,
      .params = nullptr,
@@ -29063,8 +29069,25 @@ static const SqlCase CASES[] = {
      .unrepresentable = nullptr,
      .register_fn = nullptr,
      .bindings_fn = c1199_bind},
-    {.name = "stmt.take.count-past-2^53.postgresql",
+    {.name = "stmt.take.zero-with-scale.postgresql",
      .at = "49-kind-guarantees.sqlt:656",
+     .dialect = "postgresql",
+     .source = "ITEMS .> TAKE(0.0)",
+     .expect = "SELECT * FROM \"items\" LIMIT 0",
+     .error = nullptr,
+     .throws = nullptr,
+     .params = nullptr,
+     .as_ = "statement",
+     .mode = nullptr,
+     .strict = false,
+     .plan = nullptr,
+     .has_tables = false,
+     .tables = {},
+     .unrepresentable = nullptr,
+     .register_fn = nullptr,
+     .bindings_fn = c1200_bind},
+    {.name = "stmt.take.count-past-2^53.postgresql",
+     .at = "49-kind-guarantees.sqlt:671",
      .dialect = "postgresql",
      .source = "ITEMS .> TAKE(9007199254740993)",
      .expect = "SELECT * FROM \"items\" LIMIT 9007199254740993",
@@ -29079,9 +29102,9 @@ static const SqlCase CASES[] = {
      .tables = {},
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c1200_bind},
+     .bindings_fn = c1201_bind},
     {.name = "stmt.take.int64-max.postgresql",
-     .at = "49-kind-guarantees.sqlt:671",
+     .at = "49-kind-guarantees.sqlt:686",
      .dialect = "postgresql",
      .source = "ITEMS .> TAKE(9223372036854775807)",
      .expect = "SELECT * FROM \"items\" LIMIT 9223372036854775807",
@@ -29096,9 +29119,9 @@ static const SqlCase CASES[] = {
      .tables = {},
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c1201_bind},
+     .bindings_fn = c1202_bind},
     {.name = "stmt.take.whole-number-with-scale.sqlite",
-     .at = "49-kind-guarantees.sqlt:686",
+     .at = "49-kind-guarantees.sqlt:701",
      .dialect = "sqlite",
      .source = "ITEMS .> TAKE(2.0)",
      .expect = "SELECT * FROM \"items\" LIMIT 2",
@@ -29113,9 +29136,9 @@ static const SqlCase CASES[] = {
      .tables = {},
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c1202_bind},
+     .bindings_fn = c1203_bind},
     {.name = "stmt.take.zero-with-scale.sqlite",
-     .at = "49-kind-guarantees.sqlt:701",
+     .at = "49-kind-guarantees.sqlt:716",
      .dialect = "sqlite",
      .source = "ITEMS .> TAKE(0.0)",
      .expect = "SELECT * FROM \"items\" LIMIT 0",
@@ -29130,9 +29153,9 @@ static const SqlCase CASES[] = {
      .tables = {},
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c1203_bind},
+     .bindings_fn = c1204_bind},
     {.name = "stmt.take.count-past-2^53.sqlite",
-     .at = "49-kind-guarantees.sqlt:716",
+     .at = "49-kind-guarantees.sqlt:731",
      .dialect = "sqlite",
      .source = "ITEMS .> TAKE(9007199254740993)",
      .expect = "SELECT * FROM \"items\" LIMIT 9007199254740993",
@@ -29147,9 +29170,9 @@ static const SqlCase CASES[] = {
      .tables = {},
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c1204_bind},
+     .bindings_fn = c1205_bind},
     {.name = "stmt.take.int64-max.sqlite",
-     .at = "49-kind-guarantees.sqlt:731",
+     .at = "49-kind-guarantees.sqlt:746",
      .dialect = "sqlite",
      .source = "ITEMS .> TAKE(9223372036854775807)",
      .expect = "SELECT * FROM \"items\" LIMIT 9223372036854775807",
@@ -29164,9 +29187,9 @@ static const SqlCase CASES[] = {
      .tables = {},
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c1205_bind},
+     .bindings_fn = c1206_bind},
     {.name = "stmt.drop.whole-number-with-scale.mariadb",
-     .at = "49-kind-guarantees.sqlt:746",
+     .at = "49-kind-guarantees.sqlt:761",
      .dialect = "mariadb",
      .source = "ITEMS .> DROP(2.0)",
      .expect = "SELECT * FROM `items` LIMIT 18446744073709551615 OFFSET 2",
@@ -29181,9 +29204,9 @@ static const SqlCase CASES[] = {
      .tables = {},
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c1206_bind},
+     .bindings_fn = c1207_bind},
     {.name = "stmt.drop.count-past-2^53.mariadb",
-     .at = "49-kind-guarantees.sqlt:761",
+     .at = "49-kind-guarantees.sqlt:776",
      .dialect = "mariadb",
      .source = "ITEMS .> DROP(9007199254740993)",
      .expect = "SELECT * FROM `items` LIMIT 18446744073709551615 OFFSET 9007199254740993",
@@ -29198,9 +29221,9 @@ static const SqlCase CASES[] = {
      .tables = {},
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c1207_bind},
+     .bindings_fn = c1208_bind},
     {.name = "stmt.drop.count-past-2^53.postgresql",
-     .at = "49-kind-guarantees.sqlt:776",
+     .at = "49-kind-guarantees.sqlt:791",
      .dialect = "postgresql",
      .source = "ITEMS .> DROP(9007199254740993)",
      .expect = "SELECT * FROM \"items\" OFFSET 9007199254740993",
@@ -29215,9 +29238,9 @@ static const SqlCase CASES[] = {
      .tables = {},
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c1208_bind},
+     .bindings_fn = c1209_bind},
     {.name = "stmt.drop.count-past-2^53.sqlite",
-     .at = "49-kind-guarantees.sqlt:791",
+     .at = "49-kind-guarantees.sqlt:806",
      .dialect = "sqlite",
      .source = "ITEMS .> DROP(9007199254740993)",
      .expect = "SELECT * FROM \"items\" LIMIT -1 OFFSET 9007199254740993",
@@ -29232,28 +29255,11 @@ static const SqlCase CASES[] = {
      .tables = {},
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c1209_bind},
-    {.name = "stmt.take.count-past-int64-is-clamped.mariadb",
-     .at = "49-kind-guarantees.sqlt:806",
-     .dialect = "mariadb",
-     .source = "ITEMS .> TAKE(99999999999999999999999)",
-     .expect = "SELECT * FROM `items` LIMIT 9223372036854775807",
-     .error = nullptr,
-     .throws = nullptr,
-     .params = nullptr,
-     .as_ = "statement",
-     .mode = nullptr,
-     .strict = false,
-     .plan = nullptr,
-     .has_tables = false,
-     .tables = {},
-     .unrepresentable = nullptr,
-     .register_fn = nullptr,
      .bindings_fn = c1210_bind},
-    {.name = "stmt.take.count-2^63-is-clamped.mariadb",
+    {.name = "stmt.take.count-past-int64-is-clamped.mariadb",
      .at = "49-kind-guarantees.sqlt:821",
      .dialect = "mariadb",
-     .source = "ITEMS .> TAKE(9223372036854775808)",
+     .source = "ITEMS .> TAKE(99999999999999999999999)",
      .expect = "SELECT * FROM `items` LIMIT 9223372036854775807",
      .error = nullptr,
      .throws = nullptr,
@@ -29267,11 +29273,11 @@ static const SqlCase CASES[] = {
      .unrepresentable = nullptr,
      .register_fn = nullptr,
      .bindings_fn = c1211_bind},
-    {.name = "stmt.take.count-past-int64-is-clamped.postgresql",
+    {.name = "stmt.take.count-2^63-is-clamped.mariadb",
      .at = "49-kind-guarantees.sqlt:836",
-     .dialect = "postgresql",
-     .source = "ITEMS .> TAKE(99999999999999999999999)",
-     .expect = "SELECT * FROM \"items\" LIMIT 9223372036854775807",
+     .dialect = "mariadb",
+     .source = "ITEMS .> TAKE(9223372036854775808)",
+     .expect = "SELECT * FROM `items` LIMIT 9223372036854775807",
      .error = nullptr,
      .throws = nullptr,
      .params = nullptr,
@@ -29284,10 +29290,10 @@ static const SqlCase CASES[] = {
      .unrepresentable = nullptr,
      .register_fn = nullptr,
      .bindings_fn = c1212_bind},
-    {.name = "stmt.take.count-2^63-is-clamped.postgresql",
+    {.name = "stmt.take.count-past-int64-is-clamped.postgresql",
      .at = "49-kind-guarantees.sqlt:851",
      .dialect = "postgresql",
-     .source = "ITEMS .> TAKE(9223372036854775808)",
+     .source = "ITEMS .> TAKE(99999999999999999999999)",
      .expect = "SELECT * FROM \"items\" LIMIT 9223372036854775807",
      .error = nullptr,
      .throws = nullptr,
@@ -29301,8 +29307,25 @@ static const SqlCase CASES[] = {
      .unrepresentable = nullptr,
      .register_fn = nullptr,
      .bindings_fn = c1213_bind},
-    {.name = "stmt.take.count-past-int64-is-clamped.sqlite",
+    {.name = "stmt.take.count-2^63-is-clamped.postgresql",
      .at = "49-kind-guarantees.sqlt:866",
+     .dialect = "postgresql",
+     .source = "ITEMS .> TAKE(9223372036854775808)",
+     .expect = "SELECT * FROM \"items\" LIMIT 9223372036854775807",
+     .error = nullptr,
+     .throws = nullptr,
+     .params = nullptr,
+     .as_ = "statement",
+     .mode = nullptr,
+     .strict = false,
+     .plan = nullptr,
+     .has_tables = false,
+     .tables = {},
+     .unrepresentable = nullptr,
+     .register_fn = nullptr,
+     .bindings_fn = c1214_bind},
+    {.name = "stmt.take.count-past-int64-is-clamped.sqlite",
+     .at = "49-kind-guarantees.sqlt:881",
      .dialect = "sqlite",
      .source = "ITEMS .> TAKE(99999999999999999999999)",
      .expect = "SELECT * FROM \"items\" LIMIT 9223372036854775807",
@@ -29317,9 +29340,9 @@ static const SqlCase CASES[] = {
      .tables = {},
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c1214_bind},
+     .bindings_fn = c1215_bind},
     {.name = "stmt.take.count-2^63-is-clamped.sqlite",
-     .at = "49-kind-guarantees.sqlt:881",
+     .at = "49-kind-guarantees.sqlt:896",
      .dialect = "sqlite",
      .source = "ITEMS .> TAKE(9223372036854775808)",
      .expect = "SELECT * FROM \"items\" LIMIT 9223372036854775807",
@@ -29334,9 +29357,9 @@ static const SqlCase CASES[] = {
      .tables = {},
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c1215_bind},
+     .bindings_fn = c1216_bind},
     {.name = "stmt.take.count-uint64-max-is-clamped.mariadb",
-     .at = "49-kind-guarantees.sqlt:896",
+     .at = "49-kind-guarantees.sqlt:911",
      .dialect = "mariadb",
      .source = "ITEMS .> TAKE(18446744073709551615)",
      .expect = "SELECT * FROM `items` LIMIT 9223372036854775807",
@@ -29351,9 +29374,9 @@ static const SqlCase CASES[] = {
      .tables = {},
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c1216_bind},
+     .bindings_fn = c1217_bind},
     {.name = "stmt.drop.count-past-int64-is-clamped.mariadb",
-     .at = "49-kind-guarantees.sqlt:911",
+     .at = "49-kind-guarantees.sqlt:926",
      .dialect = "mariadb",
      .source = "ITEMS .> DROP(18446744073709551616)",
      .expect = "SELECT * FROM `items` LIMIT 18446744073709551615 OFFSET 9223372036854775807",
@@ -29368,9 +29391,9 @@ static const SqlCase CASES[] = {
      .tables = {},
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c1217_bind},
+     .bindings_fn = c1218_bind},
     {.name = "stmt.drop.count-past-int64-is-clamped.postgresql",
-     .at = "49-kind-guarantees.sqlt:926",
+     .at = "49-kind-guarantees.sqlt:941",
      .dialect = "postgresql",
      .source = "ITEMS .> DROP(18446744073709551616)",
      .expect = "SELECT * FROM \"items\" OFFSET 9223372036854775807",
@@ -29385,9 +29408,9 @@ static const SqlCase CASES[] = {
      .tables = {},
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c1218_bind},
+     .bindings_fn = c1219_bind},
     {.name = "stmt.drop.count-past-int64-is-clamped.sqlite",
-     .at = "49-kind-guarantees.sqlt:939",
+     .at = "49-kind-guarantees.sqlt:954",
      .dialect = "sqlite",
      .source = "ITEMS .> DROP(18446744073709551616)",
      .expect = "SELECT * FROM \"items\" LIMIT -1 OFFSET 9223372036854775807",
@@ -29402,9 +29425,9 @@ static const SqlCase CASES[] = {
      .tables = {},
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c1219_bind},
+     .bindings_fn = c1220_bind},
     {.name = "stmt.drop.merged-offset-past-int64-is-clamped.mariadb",
-     .at = "49-kind-guarantees.sqlt:952",
+     .at = "49-kind-guarantees.sqlt:967",
      .dialect = "mariadb",
      .source = "ITEMS .> DROP(9223372036854775807) .> DROP(1)",
      .expect = "SELECT * FROM `items` LIMIT 18446744073709551615 OFFSET 9223372036854775807",
@@ -29419,9 +29442,9 @@ static const SqlCase CASES[] = {
      .tables = {},
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c1220_bind},
+     .bindings_fn = c1221_bind},
     {.name = "stmt.drop.merged-offset-below-int64-is-exact.mariadb",
-     .at = "49-kind-guarantees.sqlt:967",
+     .at = "49-kind-guarantees.sqlt:982",
      .dialect = "mariadb",
      .source = "ITEMS .> DROP(9223372036854775806) .> DROP(1)",
      .expect = "SELECT * FROM `items` LIMIT 18446744073709551615 OFFSET 9223372036854775807",
@@ -29436,9 +29459,9 @@ static const SqlCase CASES[] = {
      .tables = {},
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c1221_bind},
+     .bindings_fn = c1222_bind},
     {.name = "stmt.take.then-take-past-int64-keeps-the-smaller.mariadb",
-     .at = "49-kind-guarantees.sqlt:982",
+     .at = "49-kind-guarantees.sqlt:997",
      .dialect = "mariadb",
      .source = "ITEMS .> TAKE(5) .> TAKE(9223372036854775808)",
      .expect = "SELECT * FROM `items` LIMIT 5",
@@ -29453,9 +29476,9 @@ static const SqlCase CASES[] = {
      .tables = {},
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c1222_bind},
+     .bindings_fn = c1223_bind},
     {.name = "agg.bucket-sum.an-undeclared-field-is-guarded-as-a-whole",
-     .at = "49-kind-guarantees.sqlt:997",
+     .at = "49-kind-guarantees.sqlt:1012",
      .dialect = "mariadb",
      .source = "O .> BUCKET(_[\"CAT\"], RECORD(\"s\", SUM(_, _[\"MISC\"])))",
      .expect = "SELECT CASE WHEN COUNT(*) = COUNT(CASE WHEN (`o`.`misc` REGEXP '\\\\A-?[0-9]+(\\\\.[0-9]+)?\\\\z') THEN 1 END) THEN COALESCE(SUM(CAST(`o`.`misc` AS DECIMAL(65,10))), 0) ELSE NULL END AS `s` FROM `orders` `o` GROUP BY CAST(`o`.`cat` AS CHAR) COLLATE utf8mb4_nopad_bin",
@@ -29470,9 +29493,9 @@ static const SqlCase CASES[] = {
      .tables = {},
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c1223_bind},
+     .bindings_fn = c1224_bind},
     {.name = "agg.bucket-sum.an-undeclared-field-sqlite-refuses",
-     .at = "49-kind-guarantees.sqlt:1012",
+     .at = "49-kind-guarantees.sqlt:1027",
      .dialect = "sqlite",
      .source = "O .> BUCKET(_[\"CAT\"], RECORD(\"s\", SUM(_, _[\"MISC\"])))",
      .expect = nullptr,
@@ -29487,9 +29510,9 @@ static const SqlCase CASES[] = {
      .tables = {},
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c1224_bind},
+     .bindings_fn = c1225_bind},
     {.name = "agg.fold.any.at-256-is-a-left-fold",
-     .at = "49-kind-guarantees.sqlt:1025",
+     .at = "49-kind-guarantees.sqlt:1040",
      .dialect = "mariadb",
      .source = "ANY((N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N), _ > 0)",
      .expect = "((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((`k`.`n` > 0) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0))",
@@ -29504,9 +29527,9 @@ static const SqlCase CASES[] = {
      .tables = {},
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c1225_bind},
+     .bindings_fn = c1226_bind},
     {.name = "agg.fold.all.at-256-is-a-left-fold",
-     .at = "49-kind-guarantees.sqlt:1038",
+     .at = "49-kind-guarantees.sqlt:1053",
      .dialect = "mariadb",
      .source = "ALL((N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N), _ > 0)",
      .expect = "((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((`k`.`n` > 0) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0))",
@@ -29521,9 +29544,9 @@ static const SqlCase CASES[] = {
      .tables = {},
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c1226_bind},
+     .bindings_fn = c1227_bind},
     {.name = "agg.fold.sum.at-256-is-a-left-fold",
-     .at = "49-kind-guarantees.sqlt:1049",
+     .at = "49-kind-guarantees.sqlt:1064",
      .dialect = "mariadb",
      .source = "SUM((N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N), _)",
      .expect = "(((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((`k`.`n` + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`)",
@@ -29538,9 +29561,9 @@ static const SqlCase CASES[] = {
      .tables = {},
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c1227_bind},
+     .bindings_fn = c1228_bind},
     {.name = "agg.fold.in-list.at-256-is-a-left-fold",
-     .at = "49-kind-guarantees.sqlt:1060",
+     .at = "49-kind-guarantees.sqlt:1075",
      .dialect = "mariadb",
      .source = "T IN (\"v0\", \"v1\", \"v2\", \"v3\", \"v4\", \"v5\", \"v6\", \"v7\", \"v8\", \"v9\", \"v10\", \"v11\", \"v12\", \"v13\", \"v14\", \"v15\", \"v16\", \"v17\", \"v18\", \"v19\", \"v20\", \"v21\", \"v22\", \"v23\", \"v24\", \"v25\", \"v26\", \"v27\", \"v28\", \"v29\", \"v30\", \"v31\", \"v32\", \"v33\", \"v34\", \"v35\", \"v36\", \"v37\", \"v38\", \"v39\", \"v40\", \"v41\", \"v42\", \"v43\", \"v44\", \"v45\", \"v46\", \"v47\", \"v48\", \"v49\", \"v50\", \"v51\", \"v52\", \"v53\", \"v54\", \"v55\", \"v56\", \"v57\", \"v58\", \"v59\", \"v60\", \"v61\", \"v62\", \"v63\", \"v64\", \"v65\", \"v66\", \"v67\", \"v68\", \"v69\", \"v70\", \"v71\", \"v72\", \"v73\", \"v74\", \"v75\", \"v76\", \"v77\", \"v78\", \"v79\", \"v80\", \"v81\", \"v82\", \"v83\", \"v84\", \"v85\", \"v86\", \"v87\", \"v88\", \"v89\", \"v90\", \"v91\", \"v92\", \"v93\", \"v94\", \"v95\", \"v96\", \"v97\", \"v98\", \"v99\", \"v100\", \"v101\", \"v102\", \"v103\", \"v104\", \"v105\", \"v106\", \"v107\", \"v108\", \"v109\", \"v110\", \"v111\", \"v112\", \"v113\", \"v114\", \"v115\", \"v116\", \"v117\", \"v118\", \"v119\", \"v120\", \"v121\", \"v122\", \"v123\", \"v124\", \"v125\", \"v126\", \"v127\", \"v128\", \"v129\", \"v130\", \"v131\", \"v132\", \"v133\", \"v134\", \"v135\", \"v136\", \"v137\", \"v138\", \"v139\", \"v140\", \"v141\", \"v142\", \"v143\", \"v144\", \"v145\", \"v146\", \"v147\", \"v148\", \"v149\", \"v150\", \"v151\", \"v152\", \"v153\", \"v154\", \"v155\", \"v156\", \"v157\", \"v158\", \"v159\", \"v160\", \"v161\", \"v162\", \"v163\", \"v164\", \"v165\", \"v166\", \"v167\", \"v168\", \"v169\", \"v170\", \"v171\", \"v172\", \"v173\", \"v174\", \"v175\", \"v176\", \"v177\", \"v178\", \"v179\", \"v180\", \"v181\", \"v182\", \"v183\", \"v184\", \"v185\", \"v186\", \"v187\", \"v188\", \"v189\", \"v190\", \"v191\", \"v192\", \"v193\", \"v194\", \"v195\", \"v196\", \"v197\", \"v198\", \"v199\", \"v200\", \"v201\", \"v202\", \"v203\", \"v204\", \"v205\", \"v206\", \"v207\", \"v208\", \"v209\", \"v210\", \"v211\", \"v212\", \"v213\", \"v214\", \"v215\", \"v216\", \"v217\", \"v218\", \"v219\", \"v220\", \"v221\", \"v222\", \"v223\", \"v224\", \"v225\", \"v226\", \"v227\", \"v228\", \"v229\", \"v230\", \"v231\", \"v232\", \"v233\", \"v234\", \"v235\", \"v236\", \"v237\", \"v238\", \"v239\", \"v240\", \"v241\", \"v242\", \"v243\", \"v244\", \"v245\", \"v246\", \"v247\", \"v248\", \"v249\", \"v250\", \"v251\", \"v252\", \"v253\", \"v254\", \"v255\")",
      .expect = "((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((`k`.`t` = 'v0') OR (`k`.`t` = 'v1')) OR (`k`.`t` = 'v2')) OR (`k`.`t` = 'v3')) OR (`k`.`t` = 'v4')) OR (`k`.`t` = 'v5')) OR (`k`.`t` = 'v6')) OR (`k`.`t` = 'v7')) OR (`k`.`t` = 'v8')) OR (`k`.`t` = 'v9')) OR (`k`.`t` = 'v10')) OR (`k`.`t` = 'v11')) OR (`k`.`t` = 'v12')) OR (`k`.`t` = 'v13')) OR (`k`.`t` = 'v14')) OR (`k`.`t` = 'v15')) OR (`k`.`t` = 'v16')) OR (`k`.`t` = 'v17')) OR (`k`.`t` = 'v18')) OR (`k`.`t` = 'v19')) OR (`k`.`t` = 'v20')) OR (`k`.`t` = 'v21')) OR (`k`.`t` = 'v22')) OR (`k`.`t` = 'v23')) OR (`k`.`t` = 'v24')) OR (`k`.`t` = 'v25')) OR (`k`.`t` = 'v26')) OR (`k`.`t` = 'v27')) OR (`k`.`t` = 'v28')) OR (`k`.`t` = 'v29')) OR (`k`.`t` = 'v30')) OR (`k`.`t` = 'v31')) OR (`k`.`t` = 'v32')) OR (`k`.`t` = 'v33')) OR (`k`.`t` = 'v34')) OR (`k`.`t` = 'v35')) OR (`k`.`t` = 'v36')) OR (`k`.`t` = 'v37')) OR (`k`.`t` = 'v38')) OR (`k`.`t` = 'v39')) OR (`k`.`t` = 'v40')) OR (`k`.`t` = 'v41')) OR (`k`.`t` = 'v42')) OR (`k`.`t` = 'v43')) OR (`k`.`t` = 'v44')) OR (`k`.`t` = 'v45')) OR (`k`.`t` = 'v46')) OR (`k`.`t` = 'v47')) OR (`k`.`t` = 'v48')) OR (`k`.`t` = 'v49')) OR (`k`.`t` = 'v50')) OR (`k`.`t` = 'v51')) OR (`k`.`t` = 'v52')) OR (`k`.`t` = 'v53')) OR (`k`.`t` = 'v54')) OR (`k`.`t` = 'v55')) OR (`k`.`t` = 'v56')) OR (`k`.`t` = 'v57')) OR (`k`.`t` = 'v58')) OR (`k`.`t` = 'v59')) OR (`k`.`t` = 'v60')) OR (`k`.`t` = 'v61')) OR (`k`.`t` = 'v62')) OR (`k`.`t` = 'v63')) OR (`k`.`t` = 'v64')) OR (`k`.`t` = 'v65')) OR (`k`.`t` = 'v66')) OR (`k`.`t` = 'v67')) OR (`k`.`t` = 'v68')) OR (`k`.`t` = 'v69')) OR (`k`.`t` = 'v70')) OR (`k`.`t` = 'v71')) OR (`k`.`t` = 'v72')) OR (`k`.`t` = 'v73')) OR (`k`.`t` = 'v74')) OR (`k`.`t` = 'v75')) OR (`k`.`t` = 'v76')) OR (`k`.`t` = 'v77')) OR (`k`.`t` = 'v78')) OR (`k`.`t` = 'v79')) OR (`k`.`t` = 'v80')) OR (`k`.`t` = 'v81')) OR (`k`.`t` = 'v82')) OR (`k`.`t` = 'v83')) OR (`k`.`t` = 'v84')) OR (`k`.`t` = 'v85')) OR (`k`.`t` = 'v86')) OR (`k`.`t` = 'v87')) OR (`k`.`t` = 'v88')) OR (`k`.`t` = 'v89')) OR (`k`.`t` = 'v90')) OR (`k`.`t` = 'v91')) OR (`k`.`t` = 'v92')) OR (`k`.`t` = 'v93')) OR (`k`.`t` = 'v94')) OR (`k`.`t` = 'v95')) OR (`k`.`t` = 'v96')) OR (`k`.`t` = 'v97')) OR (`k`.`t` = 'v98')) OR (`k`.`t` = 'v99')) OR (`k`.`t` = 'v100')) OR (`k`.`t` = 'v101')) OR (`k`.`t` = 'v102')) OR (`k`.`t` = 'v103')) OR (`k`.`t` = 'v104')) OR (`k`.`t` = 'v105')) OR (`k`.`t` = 'v106')) OR (`k`.`t` = 'v107')) OR (`k`.`t` = 'v108')) OR (`k`.`t` = 'v109')) OR (`k`.`t` = 'v110')) OR (`k`.`t` = 'v111')) OR (`k`.`t` = 'v112')) OR (`k`.`t` = 'v113')) OR (`k`.`t` = 'v114')) OR (`k`.`t` = 'v115')) OR (`k`.`t` = 'v116')) OR (`k`.`t` = 'v117')) OR (`k`.`t` = 'v118')) OR (`k`.`t` = 'v119')) OR (`k`.`t` = 'v120')) OR (`k`.`t` = 'v121')) OR (`k`.`t` = 'v122')) OR (`k`.`t` = 'v123')) OR (`k`.`t` = 'v124')) OR (`k`.`t` = 'v125')) OR (`k`.`t` = 'v126')) OR (`k`.`t` = 'v127')) OR (`k`.`t` = 'v128')) OR (`k`.`t` = 'v129')) OR (`k`.`t` = 'v130')) OR (`k`.`t` = 'v131')) OR (`k`.`t` = 'v132')) OR (`k`.`t` = 'v133')) OR (`k`.`t` = 'v134')) OR (`k`.`t` = 'v135')) OR (`k`.`t` = 'v136')) OR (`k`.`t` = 'v137')) OR (`k`.`t` = 'v138')) OR (`k`.`t` = 'v139')) OR (`k`.`t` = 'v140')) OR (`k`.`t` = 'v141')) OR (`k`.`t` = 'v142')) OR (`k`.`t` = 'v143')) OR (`k`.`t` = 'v144')) OR (`k`.`t` = 'v145')) OR (`k`.`t` = 'v146')) OR (`k`.`t` = 'v147')) OR (`k`.`t` = 'v148')) OR (`k`.`t` = 'v149')) OR (`k`.`t` = 'v150')) OR (`k`.`t` = 'v151')) OR (`k`.`t` = 'v152')) OR (`k`.`t` = 'v153')) OR (`k`.`t` = 'v154')) OR (`k`.`t` = 'v155')) OR (`k`.`t` = 'v156')) OR (`k`.`t` = 'v157')) OR (`k`.`t` = 'v158')) OR (`k`.`t` = 'v159')) OR (`k`.`t` = 'v160')) OR (`k`.`t` = 'v161')) OR (`k`.`t` = 'v162')) OR (`k`.`t` = 'v163')) OR (`k`.`t` = 'v164')) OR (`k`.`t` = 'v165')) OR (`k`.`t` = 'v166')) OR (`k`.`t` = 'v167')) OR (`k`.`t` = 'v168')) OR (`k`.`t` = 'v169')) OR (`k`.`t` = 'v170')) OR (`k`.`t` = 'v171')) OR (`k`.`t` = 'v172')) OR (`k`.`t` = 'v173')) OR (`k`.`t` = 'v174')) OR (`k`.`t` = 'v175')) OR (`k`.`t` = 'v176')) OR (`k`.`t` = 'v177')) OR (`k`.`t` = 'v178')) OR (`k`.`t` = 'v179')) OR (`k`.`t` = 'v180')) OR (`k`.`t` = 'v181')) OR (`k`.`t` = 'v182')) OR (`k`.`t` = 'v183')) OR (`k`.`t` = 'v184')) OR (`k`.`t` = 'v185')) OR (`k`.`t` = 'v186')) OR (`k`.`t` = 'v187')) OR (`k`.`t` = 'v188')) OR (`k`.`t` = 'v189')) OR (`k`.`t` = 'v190')) OR (`k`.`t` = 'v191')) OR (`k`.`t` = 'v192')) OR (`k`.`t` = 'v193')) OR (`k`.`t` = 'v194')) OR (`k`.`t` = 'v195')) OR (`k`.`t` = 'v196')) OR (`k`.`t` = 'v197')) OR (`k`.`t` = 'v198')) OR (`k`.`t` = 'v199')) OR (`k`.`t` = 'v200')) OR (`k`.`t` = 'v201')) OR (`k`.`t` = 'v202')) OR (`k`.`t` = 'v203')) OR (`k`.`t` = 'v204')) OR (`k`.`t` = 'v205')) OR (`k`.`t` = 'v206')) OR (`k`.`t` = 'v207')) OR (`k`.`t` = 'v208')) OR (`k`.`t` = 'v209')) OR (`k`.`t` = 'v210')) OR (`k`.`t` = 'v211')) OR (`k`.`t` = 'v212')) OR (`k`.`t` = 'v213')) OR (`k`.`t` = 'v214')) OR (`k`.`t` = 'v215')) OR (`k`.`t` = 'v216')) OR (`k`.`t` = 'v217')) OR (`k`.`t` = 'v218')) OR (`k`.`t` = 'v219')) OR (`k`.`t` = 'v220')) OR (`k`.`t` = 'v221')) OR (`k`.`t` = 'v222')) OR (`k`.`t` = 'v223')) OR (`k`.`t` = 'v224')) OR (`k`.`t` = 'v225')) OR (`k`.`t` = 'v226')) OR (`k`.`t` = 'v227')) OR (`k`.`t` = 'v228')) OR (`k`.`t` = 'v229')) OR (`k`.`t` = 'v230')) OR (`k`.`t` = 'v231')) OR (`k`.`t` = 'v232')) OR (`k`.`t` = 'v233')) OR (`k`.`t` = 'v234')) OR (`k`.`t` = 'v235')) OR (`k`.`t` = 'v236')) OR (`k`.`t` = 'v237')) OR (`k`.`t` = 'v238')) OR (`k`.`t` = 'v239')) OR (`k`.`t` = 'v240')) OR (`k`.`t` = 'v241')) OR (`k`.`t` = 'v242')) OR (`k`.`t` = 'v243')) OR (`k`.`t` = 'v244')) OR (`k`.`t` = 'v245')) OR (`k`.`t` = 'v246')) OR (`k`.`t` = 'v247')) OR (`k`.`t` = 'v248')) OR (`k`.`t` = 'v249')) OR (`k`.`t` = 'v250')) OR (`k`.`t` = 'v251')) OR (`k`.`t` = 'v252')) OR (`k`.`t` = 'v253')) OR (`k`.`t` = 'v254')) OR (`k`.`t` = 'v255'))",
@@ -29555,9 +29578,9 @@ static const SqlCase CASES[] = {
      .tables = {},
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c1228_bind},
+     .bindings_fn = c1229_bind},
     {.name = "agg.fold.any.at-257-is-balanced",
-     .at = "49-kind-guarantees.sqlt:1071",
+     .at = "49-kind-guarantees.sqlt:1086",
      .dialect = "mariadb",
      .source = "ANY((N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N), _ > 0)",
      .expect = "((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((`k`.`n` > 0) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR ((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((`k`.`n` > 0) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)))",
@@ -29572,9 +29595,9 @@ static const SqlCase CASES[] = {
      .tables = {},
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c1229_bind},
+     .bindings_fn = c1230_bind},
     {.name = "agg.fold.all.at-257-is-balanced",
-     .at = "49-kind-guarantees.sqlt:1084",
+     .at = "49-kind-guarantees.sqlt:1099",
      .dialect = "mariadb",
      .source = "ALL((N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N), _ > 0)",
      .expect = "((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((`k`.`n` > 0) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND ((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((`k`.`n` > 0) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)) AND (`k`.`n` > 0)))",
@@ -29589,9 +29612,9 @@ static const SqlCase CASES[] = {
      .tables = {},
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c1230_bind},
+     .bindings_fn = c1231_bind},
     {.name = "agg.fold.sum.at-257-is-balanced",
-     .at = "49-kind-guarantees.sqlt:1095",
+     .at = "49-kind-guarantees.sqlt:1110",
      .dialect = "mariadb",
      .source = "SUM((N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N), _)",
      .expect = "(((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((`k`.`n` + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + (((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((`k`.`n` + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`) + `k`.`n`))",
@@ -29606,9 +29629,9 @@ static const SqlCase CASES[] = {
      .tables = {},
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c1231_bind},
+     .bindings_fn = c1232_bind},
     {.name = "agg.fold.in-list.at-257-is-balanced",
-     .at = "49-kind-guarantees.sqlt:1106",
+     .at = "49-kind-guarantees.sqlt:1121",
      .dialect = "mariadb",
      .source = "T IN (\"v0\", \"v1\", \"v2\", \"v3\", \"v4\", \"v5\", \"v6\", \"v7\", \"v8\", \"v9\", \"v10\", \"v11\", \"v12\", \"v13\", \"v14\", \"v15\", \"v16\", \"v17\", \"v18\", \"v19\", \"v20\", \"v21\", \"v22\", \"v23\", \"v24\", \"v25\", \"v26\", \"v27\", \"v28\", \"v29\", \"v30\", \"v31\", \"v32\", \"v33\", \"v34\", \"v35\", \"v36\", \"v37\", \"v38\", \"v39\", \"v40\", \"v41\", \"v42\", \"v43\", \"v44\", \"v45\", \"v46\", \"v47\", \"v48\", \"v49\", \"v50\", \"v51\", \"v52\", \"v53\", \"v54\", \"v55\", \"v56\", \"v57\", \"v58\", \"v59\", \"v60\", \"v61\", \"v62\", \"v63\", \"v64\", \"v65\", \"v66\", \"v67\", \"v68\", \"v69\", \"v70\", \"v71\", \"v72\", \"v73\", \"v74\", \"v75\", \"v76\", \"v77\", \"v78\", \"v79\", \"v80\", \"v81\", \"v82\", \"v83\", \"v84\", \"v85\", \"v86\", \"v87\", \"v88\", \"v89\", \"v90\", \"v91\", \"v92\", \"v93\", \"v94\", \"v95\", \"v96\", \"v97\", \"v98\", \"v99\", \"v100\", \"v101\", \"v102\", \"v103\", \"v104\", \"v105\", \"v106\", \"v107\", \"v108\", \"v109\", \"v110\", \"v111\", \"v112\", \"v113\", \"v114\", \"v115\", \"v116\", \"v117\", \"v118\", \"v119\", \"v120\", \"v121\", \"v122\", \"v123\", \"v124\", \"v125\", \"v126\", \"v127\", \"v128\", \"v129\", \"v130\", \"v131\", \"v132\", \"v133\", \"v134\", \"v135\", \"v136\", \"v137\", \"v138\", \"v139\", \"v140\", \"v141\", \"v142\", \"v143\", \"v144\", \"v145\", \"v146\", \"v147\", \"v148\", \"v149\", \"v150\", \"v151\", \"v152\", \"v153\", \"v154\", \"v155\", \"v156\", \"v157\", \"v158\", \"v159\", \"v160\", \"v161\", \"v162\", \"v163\", \"v164\", \"v165\", \"v166\", \"v167\", \"v168\", \"v169\", \"v170\", \"v171\", \"v172\", \"v173\", \"v174\", \"v175\", \"v176\", \"v177\", \"v178\", \"v179\", \"v180\", \"v181\", \"v182\", \"v183\", \"v184\", \"v185\", \"v186\", \"v187\", \"v188\", \"v189\", \"v190\", \"v191\", \"v192\", \"v193\", \"v194\", \"v195\", \"v196\", \"v197\", \"v198\", \"v199\", \"v200\", \"v201\", \"v202\", \"v203\", \"v204\", \"v205\", \"v206\", \"v207\", \"v208\", \"v209\", \"v210\", \"v211\", \"v212\", \"v213\", \"v214\", \"v215\", \"v216\", \"v217\", \"v218\", \"v219\", \"v220\", \"v221\", \"v222\", \"v223\", \"v224\", \"v225\", \"v226\", \"v227\", \"v228\", \"v229\", \"v230\", \"v231\", \"v232\", \"v233\", \"v234\", \"v235\", \"v236\", \"v237\", \"v238\", \"v239\", \"v240\", \"v241\", \"v242\", \"v243\", \"v244\", \"v245\", \"v246\", \"v247\", \"v248\", \"v249\", \"v250\", \"v251\", \"v252\", \"v253\", \"v254\", \"v255\", \"v256\")",
      .expect = "((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((`k`.`t` = 'v0') OR (`k`.`t` = 'v1')) OR (`k`.`t` = 'v2')) OR (`k`.`t` = 'v3')) OR (`k`.`t` = 'v4')) OR (`k`.`t` = 'v5')) OR (`k`.`t` = 'v6')) OR (`k`.`t` = 'v7')) OR (`k`.`t` = 'v8')) OR (`k`.`t` = 'v9')) OR (`k`.`t` = 'v10')) OR (`k`.`t` = 'v11')) OR (`k`.`t` = 'v12')) OR (`k`.`t` = 'v13')) OR (`k`.`t` = 'v14')) OR (`k`.`t` = 'v15')) OR (`k`.`t` = 'v16')) OR (`k`.`t` = 'v17')) OR (`k`.`t` = 'v18')) OR (`k`.`t` = 'v19')) OR (`k`.`t` = 'v20')) OR (`k`.`t` = 'v21')) OR (`k`.`t` = 'v22')) OR (`k`.`t` = 'v23')) OR (`k`.`t` = 'v24')) OR (`k`.`t` = 'v25')) OR (`k`.`t` = 'v26')) OR (`k`.`t` = 'v27')) OR (`k`.`t` = 'v28')) OR (`k`.`t` = 'v29')) OR (`k`.`t` = 'v30')) OR (`k`.`t` = 'v31')) OR (`k`.`t` = 'v32')) OR (`k`.`t` = 'v33')) OR (`k`.`t` = 'v34')) OR (`k`.`t` = 'v35')) OR (`k`.`t` = 'v36')) OR (`k`.`t` = 'v37')) OR (`k`.`t` = 'v38')) OR (`k`.`t` = 'v39')) OR (`k`.`t` = 'v40')) OR (`k`.`t` = 'v41')) OR (`k`.`t` = 'v42')) OR (`k`.`t` = 'v43')) OR (`k`.`t` = 'v44')) OR (`k`.`t` = 'v45')) OR (`k`.`t` = 'v46')) OR (`k`.`t` = 'v47')) OR (`k`.`t` = 'v48')) OR (`k`.`t` = 'v49')) OR (`k`.`t` = 'v50')) OR (`k`.`t` = 'v51')) OR (`k`.`t` = 'v52')) OR (`k`.`t` = 'v53')) OR (`k`.`t` = 'v54')) OR (`k`.`t` = 'v55')) OR (`k`.`t` = 'v56')) OR (`k`.`t` = 'v57')) OR (`k`.`t` = 'v58')) OR (`k`.`t` = 'v59')) OR (`k`.`t` = 'v60')) OR (`k`.`t` = 'v61')) OR (`k`.`t` = 'v62')) OR (`k`.`t` = 'v63')) OR (`k`.`t` = 'v64')) OR (`k`.`t` = 'v65')) OR (`k`.`t` = 'v66')) OR (`k`.`t` = 'v67')) OR (`k`.`t` = 'v68')) OR (`k`.`t` = 'v69')) OR (`k`.`t` = 'v70')) OR (`k`.`t` = 'v71')) OR (`k`.`t` = 'v72')) OR (`k`.`t` = 'v73')) OR (`k`.`t` = 'v74')) OR (`k`.`t` = 'v75')) OR (`k`.`t` = 'v76')) OR (`k`.`t` = 'v77')) OR (`k`.`t` = 'v78')) OR (`k`.`t` = 'v79')) OR (`k`.`t` = 'v80')) OR (`k`.`t` = 'v81')) OR (`k`.`t` = 'v82')) OR (`k`.`t` = 'v83')) OR (`k`.`t` = 'v84')) OR (`k`.`t` = 'v85')) OR (`k`.`t` = 'v86')) OR (`k`.`t` = 'v87')) OR (`k`.`t` = 'v88')) OR (`k`.`t` = 'v89')) OR (`k`.`t` = 'v90')) OR (`k`.`t` = 'v91')) OR (`k`.`t` = 'v92')) OR (`k`.`t` = 'v93')) OR (`k`.`t` = 'v94')) OR (`k`.`t` = 'v95')) OR (`k`.`t` = 'v96')) OR (`k`.`t` = 'v97')) OR (`k`.`t` = 'v98')) OR (`k`.`t` = 'v99')) OR (`k`.`t` = 'v100')) OR (`k`.`t` = 'v101')) OR (`k`.`t` = 'v102')) OR (`k`.`t` = 'v103')) OR (`k`.`t` = 'v104')) OR (`k`.`t` = 'v105')) OR (`k`.`t` = 'v106')) OR (`k`.`t` = 'v107')) OR (`k`.`t` = 'v108')) OR (`k`.`t` = 'v109')) OR (`k`.`t` = 'v110')) OR (`k`.`t` = 'v111')) OR (`k`.`t` = 'v112')) OR (`k`.`t` = 'v113')) OR (`k`.`t` = 'v114')) OR (`k`.`t` = 'v115')) OR (`k`.`t` = 'v116')) OR (`k`.`t` = 'v117')) OR (`k`.`t` = 'v118')) OR (`k`.`t` = 'v119')) OR (`k`.`t` = 'v120')) OR (`k`.`t` = 'v121')) OR (`k`.`t` = 'v122')) OR (`k`.`t` = 'v123')) OR (`k`.`t` = 'v124')) OR (`k`.`t` = 'v125')) OR (`k`.`t` = 'v126')) OR (`k`.`t` = 'v127')) OR (`k`.`t` = 'v128')) OR ((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((`k`.`t` = 'v129') OR (`k`.`t` = 'v130')) OR (`k`.`t` = 'v131')) OR (`k`.`t` = 'v132')) OR (`k`.`t` = 'v133')) OR (`k`.`t` = 'v134')) OR (`k`.`t` = 'v135')) OR (`k`.`t` = 'v136')) OR (`k`.`t` = 'v137')) OR (`k`.`t` = 'v138')) OR (`k`.`t` = 'v139')) OR (`k`.`t` = 'v140')) OR (`k`.`t` = 'v141')) OR (`k`.`t` = 'v142')) OR (`k`.`t` = 'v143')) OR (`k`.`t` = 'v144')) OR (`k`.`t` = 'v145')) OR (`k`.`t` = 'v146')) OR (`k`.`t` = 'v147')) OR (`k`.`t` = 'v148')) OR (`k`.`t` = 'v149')) OR (`k`.`t` = 'v150')) OR (`k`.`t` = 'v151')) OR (`k`.`t` = 'v152')) OR (`k`.`t` = 'v153')) OR (`k`.`t` = 'v154')) OR (`k`.`t` = 'v155')) OR (`k`.`t` = 'v156')) OR (`k`.`t` = 'v157')) OR (`k`.`t` = 'v158')) OR (`k`.`t` = 'v159')) OR (`k`.`t` = 'v160')) OR (`k`.`t` = 'v161')) OR (`k`.`t` = 'v162')) OR (`k`.`t` = 'v163')) OR (`k`.`t` = 'v164')) OR (`k`.`t` = 'v165')) OR (`k`.`t` = 'v166')) OR (`k`.`t` = 'v167')) OR (`k`.`t` = 'v168')) OR (`k`.`t` = 'v169')) OR (`k`.`t` = 'v170')) OR (`k`.`t` = 'v171')) OR (`k`.`t` = 'v172')) OR (`k`.`t` = 'v173')) OR (`k`.`t` = 'v174')) OR (`k`.`t` = 'v175')) OR (`k`.`t` = 'v176')) OR (`k`.`t` = 'v177')) OR (`k`.`t` = 'v178')) OR (`k`.`t` = 'v179')) OR (`k`.`t` = 'v180')) OR (`k`.`t` = 'v181')) OR (`k`.`t` = 'v182')) OR (`k`.`t` = 'v183')) OR (`k`.`t` = 'v184')) OR (`k`.`t` = 'v185')) OR (`k`.`t` = 'v186')) OR (`k`.`t` = 'v187')) OR (`k`.`t` = 'v188')) OR (`k`.`t` = 'v189')) OR (`k`.`t` = 'v190')) OR (`k`.`t` = 'v191')) OR (`k`.`t` = 'v192')) OR (`k`.`t` = 'v193')) OR (`k`.`t` = 'v194')) OR (`k`.`t` = 'v195')) OR (`k`.`t` = 'v196')) OR (`k`.`t` = 'v197')) OR (`k`.`t` = 'v198')) OR (`k`.`t` = 'v199')) OR (`k`.`t` = 'v200')) OR (`k`.`t` = 'v201')) OR (`k`.`t` = 'v202')) OR (`k`.`t` = 'v203')) OR (`k`.`t` = 'v204')) OR (`k`.`t` = 'v205')) OR (`k`.`t` = 'v206')) OR (`k`.`t` = 'v207')) OR (`k`.`t` = 'v208')) OR (`k`.`t` = 'v209')) OR (`k`.`t` = 'v210')) OR (`k`.`t` = 'v211')) OR (`k`.`t` = 'v212')) OR (`k`.`t` = 'v213')) OR (`k`.`t` = 'v214')) OR (`k`.`t` = 'v215')) OR (`k`.`t` = 'v216')) OR (`k`.`t` = 'v217')) OR (`k`.`t` = 'v218')) OR (`k`.`t` = 'v219')) OR (`k`.`t` = 'v220')) OR (`k`.`t` = 'v221')) OR (`k`.`t` = 'v222')) OR (`k`.`t` = 'v223')) OR (`k`.`t` = 'v224')) OR (`k`.`t` = 'v225')) OR (`k`.`t` = 'v226')) OR (`k`.`t` = 'v227')) OR (`k`.`t` = 'v228')) OR (`k`.`t` = 'v229')) OR (`k`.`t` = 'v230')) OR (`k`.`t` = 'v231')) OR (`k`.`t` = 'v232')) OR (`k`.`t` = 'v233')) OR (`k`.`t` = 'v234')) OR (`k`.`t` = 'v235')) OR (`k`.`t` = 'v236')) OR (`k`.`t` = 'v237')) OR (`k`.`t` = 'v238')) OR (`k`.`t` = 'v239')) OR (`k`.`t` = 'v240')) OR (`k`.`t` = 'v241')) OR (`k`.`t` = 'v242')) OR (`k`.`t` = 'v243')) OR (`k`.`t` = 'v244')) OR (`k`.`t` = 'v245')) OR (`k`.`t` = 'v246')) OR (`k`.`t` = 'v247')) OR (`k`.`t` = 'v248')) OR (`k`.`t` = 'v249')) OR (`k`.`t` = 'v250')) OR (`k`.`t` = 'v251')) OR (`k`.`t` = 'v252')) OR (`k`.`t` = 'v253')) OR (`k`.`t` = 'v254')) OR (`k`.`t` = 'v255')) OR (`k`.`t` = 'v256')))",
@@ -29623,9 +29646,9 @@ static const SqlCase CASES[] = {
      .tables = {},
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c1232_bind},
+     .bindings_fn = c1233_bind},
     {.name = "agg.fold.join.at-255-pieces-is-a-left-fold",
-     .at = "49-kind-guarantees.sqlt:1117",
+     .at = "49-kind-guarantees.sqlt:1132",
      .dialect = "mariadb",
      .source = "JOIN((T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T), \"-\")",
      .expect = "CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(`k`.`t`, '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`)",
@@ -29640,9 +29663,9 @@ static const SqlCase CASES[] = {
      .tables = {},
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c1233_bind},
+     .bindings_fn = c1234_bind},
     {.name = "agg.fold.join.at-257-pieces-is-balanced",
-     .at = "49-kind-guarantees.sqlt:1130",
+     .at = "49-kind-guarantees.sqlt:1145",
      .dialect = "mariadb",
      .source = "JOIN((T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T), \"-\")",
      .expect = "CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(`k`.`t`, '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT(CONCAT('-', `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`), '-'), `k`.`t`))",
@@ -29657,9 +29680,9 @@ static const SqlCase CASES[] = {
      .tables = {},
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c1234_bind},
+     .bindings_fn = c1235_bind},
     {.name = "agg.fold.any.at-600-splits-again",
-     .at = "49-kind-guarantees.sqlt:1143",
+     .at = "49-kind-guarantees.sqlt:1158",
      .dialect = "mariadb",
      .source = "ANY((N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N), _ > 0)",
      .expect = "((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((`k`.`n` > 0) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR ((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((`k`.`n` > 0) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0))) OR (((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((`k`.`n` > 0) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR ((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((`k`.`n` > 0) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0)) OR (`k`.`n` > 0))))",
@@ -29674,9 +29697,9 @@ static const SqlCase CASES[] = {
      .tables = {},
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c1235_bind},
+     .bindings_fn = c1236_bind},
     {.name = "agg.fold.any.at-257-on-sqlite",
-     .at = "49-kind-guarantees.sqlt:1156",
+     .at = "49-kind-guarantees.sqlt:1171",
      .dialect = "sqlite",
      .source = "ANY((N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N), _ > 0)",
      .expect = "((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC)) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR ((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC)) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))) OR (CAST(\"k\".\"n\" AS NUMERIC) > CAST('0' AS NUMERIC))))",
@@ -29691,7 +29714,7 @@ static const SqlCase CASES[] = {
      .tables = {},
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c1236_bind},
+     .bindings_fn = c1237_bind},
     {.name = "register.guard.refused-on-every-use-lacking-the-pattern",
      .at = "50-rendering-and-registration.sqlt:9",
      .dialect = "pgbad",
@@ -29707,8 +29730,8 @@ static const SqlCase CASES[] = {
      .has_tables = false,
      .tables = {},
      .unrepresentable = nullptr,
-     .register_fn = c1237_reg,
-     .bindings_fn = c1237_bind},
+     .register_fn = c1238_reg,
+     .bindings_fn = c1238_bind},
     {.name = "register.guard.refused-on-every-use-wrong-pattern",
      .at = "50-rendering-and-registration.sqlt:30",
      .dialect = "mdbad",
@@ -29724,8 +29747,8 @@ static const SqlCase CASES[] = {
      .has_tables = false,
      .tables = {},
      .unrepresentable = nullptr,
-     .register_fn = c1238_reg,
-     .bindings_fn = c1238_bind},
+     .register_fn = c1239_reg,
+     .bindings_fn = c1239_bind},
     {.name = "register.guard.a-sound-guard-is-accepted-every-time",
      .at = "50-rendering-and-registration.sqlt:46",
      .dialect = "pgok",
@@ -29741,8 +29764,8 @@ static const SqlCase CASES[] = {
      .has_tables = false,
      .tables = {},
      .unrepresentable = nullptr,
-     .register_fn = c1239_reg,
-     .bindings_fn = c1239_bind},
+     .register_fn = c1240_reg,
+     .bindings_fn = c1240_bind},
     {.name = "register.template.non-ascii-bytes-are-kept",
      .at = "50-rendering-and-registration.sqlt:62",
      .dialect = "mariadb",
@@ -29758,8 +29781,8 @@ static const SqlCase CASES[] = {
      .has_tables = false,
      .tables = {},
      .unrepresentable = nullptr,
-     .register_fn = c1240_reg,
-     .bindings_fn = c1240_bind},
+     .register_fn = c1241_reg,
+     .bindings_fn = c1241_bind},
     {.name = "register.template.non-ascii-bytes-are-kept-in-a-literal-template",
      .at = "50-rendering-and-registration.sqlt:79",
      .dialect = "sqlite",
@@ -29775,8 +29798,8 @@ static const SqlCase CASES[] = {
      .has_tables = false,
      .tables = {},
      .unrepresentable = nullptr,
-     .register_fn = c1241_reg,
-     .bindings_fn = c1241_bind},
+     .register_fn = c1242_reg,
+     .bindings_fn = c1242_bind},
     {.name = "register.template.empty-tail-list-emits-nothing",
      .at = "50-rendering-and-registration.sqlt:93",
      .dialect = "mariadb",
@@ -29792,8 +29815,8 @@ static const SqlCase CASES[] = {
      .has_tables = false,
      .tables = {},
      .unrepresentable = nullptr,
-     .register_fn = c1242_reg,
-     .bindings_fn = c1242_bind},
+     .register_fn = c1243_reg,
+     .bindings_fn = c1243_bind},
     {.name = "register.template.empty-lexical-value-emits-nothing",
      .at = "50-rendering-and-registration.sqlt:110",
      .dialect = "mdempty",
@@ -29809,8 +29832,8 @@ static const SqlCase CASES[] = {
      .has_tables = false,
      .tables = {},
      .unrepresentable = nullptr,
-     .register_fn = c1243_reg,
-     .bindings_fn = c1243_bind},
+     .register_fn = c1244_reg,
+     .bindings_fn = c1244_bind},
     {.name = "mode.params.order-follows-the-statement-not-the-source",
      .at = "50-rendering-and-registration.sqlt:128",
      .dialect = "mariadb",
@@ -29827,7 +29850,7 @@ static const SqlCase CASES[] = {
      .tables = {},
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c1244_bind},
+     .bindings_fn = c1245_bind},
     {.name = "mode.params.no-orphan-slot-through-sort-take-link",
      .at = "50-rendering-and-registration.sqlt:152",
      .dialect = "mariadb",
@@ -29844,7 +29867,7 @@ static const SqlCase CASES[] = {
      .tables = {},
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c1245_bind},
+     .bindings_fn = c1246_bind},
     {.name = "stmt.derived.wrapped-columns-keep-a-fixed-order",
      .at = "50-rendering-and-registration.sqlt:176",
      .dialect = "mariadb",
@@ -29861,7 +29884,7 @@ static const SqlCase CASES[] = {
      .tables = {},
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c1246_bind},
+     .bindings_fn = c1247_bind},
     {.name = "bind.column.statement-is-not-a-column-type",
      .at = "50-rendering-and-registration.sqlt:196",
      .dialect = "mariadb",
@@ -29895,7 +29918,7 @@ static const SqlCase CASES[] = {
      .tables = {},
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c1248_bind},
+     .bindings_fn = c1249_bind},
     {.name = "register.dialect.text-escape-must-escape-the-quote",
      .at = "50-rendering-and-registration.sqlt:222",
      .dialect = "my-nobs",
@@ -29911,8 +29934,8 @@ static const SqlCase CASES[] = {
      .has_tables = false,
      .tables = {},
      .unrepresentable = nullptr,
-     .register_fn = c1249_reg,
-     .bindings_fn = c1249_bind},
+     .register_fn = c1250_reg,
+     .bindings_fn = c1250_bind},
     {.name = "register.dialect.empty-text-escape-is-refused",
      .at = "50-rendering-and-registration.sqlt:239",
      .dialect = "sqlite-noesc",
@@ -29928,8 +29951,8 @@ static const SqlCase CASES[] = {
      .has_tables = false,
      .tables = {},
      .unrepresentable = nullptr,
-     .register_fn = c1250_reg,
-     .bindings_fn = c1250_bind},
+     .register_fn = c1251_reg,
+     .bindings_fn = c1251_bind},
     {.name = "register.dialect.escape-character-must-escape-itself",
      .at = "50-rendering-and-registration.sqlt:253",
      .dialect = "my-badbs",
@@ -29945,8 +29968,8 @@ static const SqlCase CASES[] = {
      .has_tables = false,
      .tables = {},
      .unrepresentable = nullptr,
-     .register_fn = c1251_reg,
-     .bindings_fn = c1251_bind},
+     .register_fn = c1252_reg,
+     .bindings_fn = c1252_bind},
     {.name = "register.dialect.text-quote-must-differ-from-identifier-quote",
      .at = "50-rendering-and-registration.sqlt:269",
      .dialect = "dq",
@@ -29962,8 +29985,8 @@ static const SqlCase CASES[] = {
      .has_tables = false,
      .tables = {},
      .unrepresentable = nullptr,
-     .register_fn = c1252_reg,
-     .bindings_fn = c1252_bind},
+     .register_fn = c1253_reg,
+     .bindings_fn = c1253_bind},
     {.name = "alias.record-key-with-nul",
      .at = "50-rendering-and-registration.sqlt:291",
      .dialect = "postgresql",
@@ -29980,7 +30003,7 @@ static const SqlCase CASES[] = {
      .tables = {},
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c1253_bind},
+     .bindings_fn = c1254_bind},
     {.name = "alias.record-key-empty",
      .at = "50-rendering-and-registration.sqlt:306",
      .dialect = "postgresql",
@@ -29997,7 +30020,7 @@ static const SqlCase CASES[] = {
      .tables = {},
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c1254_bind},
+     .bindings_fn = c1255_bind},
     {.name = "alias.select-cols-name-with-nul",
      .at = "50-rendering-and-registration.sqlt:321",
      .dialect = "postgresql",
@@ -30014,7 +30037,7 @@ static const SqlCase CASES[] = {
      .tables = {},
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c1255_bind},
+     .bindings_fn = c1256_bind},
     {.name = "alias.pg-truncated-aliases-collide",
      .at = "50-rendering-and-registration.sqlt:336",
      .dialect = "postgresql",
@@ -30031,7 +30054,7 @@ static const SqlCase CASES[] = {
      .tables = {},
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c1256_bind},
+     .bindings_fn = c1257_bind},
     {.name = "lex.text.nul-is-refused-in-every-mode",
      .at = "50-rendering-and-registration.sqlt:357",
      .dialect = "mariadb",
@@ -30048,7 +30071,7 @@ static const SqlCase CASES[] = {
      .tables = {},
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c1257_bind},
+     .bindings_fn = c1258_bind},
     {.name = "bind.raw-field.select-cols-refuses",
      .at = "50-rendering-and-registration.sqlt:377",
      .dialect = "mariadb",
@@ -30065,7 +30088,7 @@ static const SqlCase CASES[] = {
      .tables = {},
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c1258_bind},
+     .bindings_fn = c1259_bind},
     {.name = "bind.raw-field.across-a-derived-table-refuses",
      .at = "50-rendering-and-registration.sqlt:392",
      .dialect = "mariadb",
@@ -30082,7 +30105,7 @@ static const SqlCase CASES[] = {
      .tables = {},
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c1259_bind},
+     .bindings_fn = c1260_bind},
     {.name = "bind.relation.fields-differing-only-by-case",
      .at = "50-rendering-and-registration.sqlt:411",
      .dialect = "mariadb",
@@ -30099,7 +30122,7 @@ static const SqlCase CASES[] = {
      .tables = {},
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c1260_bind},
+     .bindings_fn = c1261_bind},
     {.name = "bind.names-differing-only-by-case",
      .at = "50-rendering-and-registration.sqlt:424",
      .dialect = "mariadb",
@@ -30116,7 +30139,7 @@ static const SqlCase CASES[] = {
      .tables = {},
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c1261_bind},
+     .bindings_fn = c1262_bind},
     {.name = "agg.correlate.is-parenthesised",
      .at = "50-rendering-and-registration.sqlt:440",
      .dialect = "mariadb",
@@ -30133,7 +30156,7 @@ static const SqlCase CASES[] = {
      .tables = {},
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c1262_bind},
+     .bindings_fn = c1263_bind},
     {.name = "register.dialect.correct-pairing-is-accepted",
      .at = "50-rendering-and-registration.sqlt:453",
      .dialect = "my-ok",
@@ -30149,8 +30172,8 @@ static const SqlCase CASES[] = {
      .has_tables = false,
      .tables = {},
      .unrepresentable = nullptr,
-     .register_fn = c1263_reg,
-     .bindings_fn = c1263_bind},
+     .register_fn = c1264_reg,
+     .bindings_fn = c1264_bind},
     {.name = "register.dialect.redefinition-with-the-same-parent-replaces",
      .at = "50-rendering-and-registration.sqlt:468",
      .dialect = "redef",
@@ -30166,8 +30189,8 @@ static const SqlCase CASES[] = {
      .has_tables = false,
      .tables = {},
      .unrepresentable = nullptr,
-     .register_fn = c1264_reg,
-     .bindings_fn = c1264_bind},
+     .register_fn = c1265_reg,
+     .bindings_fn = c1265_bind},
     {.name = "register.dialect.redefinition-with-a-different-parent-is-refused",
      .at = "50-rendering-and-registration.sqlt:483",
      .dialect = "redef2",
@@ -30183,8 +30206,8 @@ static const SqlCase CASES[] = {
      .has_tables = false,
      .tables = {},
      .unrepresentable = nullptr,
-     .register_fn = c1265_reg,
-     .bindings_fn = c1265_bind},
+     .register_fn = c1266_reg,
+     .bindings_fn = c1266_bind},
     {.name = "plan.keys.filter-then-key-reader-is-not-a-split-point",
      .at = "51-hybrid-parity.sqlt:24",
      .dialect = "mariadb",
@@ -30201,7 +30224,7 @@ static const SqlCase CASES[] = {
      .tables = {"orders"},
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c1266_bind},
+     .bindings_fn = c1267_bind},
     {.name = "plan.keys.filter-then-unsupported-filter-is-pure-memory",
      .at = "51-hybrid-parity.sqlt:39",
      .dialect = "mariadb",
@@ -30218,7 +30241,7 @@ static const SqlCase CASES[] = {
      .tables = {"orders"},
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c1267_bind},
+     .bindings_fn = c1268_bind},
     {.name = "plan.keys.split-after-a-sort-may-end-in-a-filter",
      .at = "51-hybrid-parity.sqlt:54",
      .dialect = "mariadb",
@@ -30235,7 +30258,7 @@ static const SqlCase CASES[] = {
      .tables = {"orders"},
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c1268_bind},
+     .bindings_fn = c1269_bind},
     {.name = "plan.keys.split-after-a-filter-then-a-sort-is-safe",
      .at = "51-hybrid-parity.sqlt:71",
      .dialect = "mariadb",
@@ -30252,7 +30275,7 @@ static const SqlCase CASES[] = {
      .tables = {"orders"},
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c1269_bind},
+     .bindings_fn = c1270_bind},
     {.name = "plan.errors.take-behind-a-map-that-can-raise-stays-local",
      .at = "51-hybrid-parity.sqlt:88",
      .dialect = "mariadb",
@@ -30269,7 +30292,7 @@ static const SqlCase CASES[] = {
      .tables = {"orders"},
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c1270_bind},
+     .bindings_fn = c1271_bind},
     {.name = "plan.errors.drop-behind-a-map-that-can-raise-stays-local",
      .at = "51-hybrid-parity.sqlt:105",
      .dialect = "mariadb",
@@ -30286,7 +30309,7 @@ static const SqlCase CASES[] = {
      .tables = {"orders"},
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c1271_bind},
+     .bindings_fn = c1272_bind},
     {.name = "plan.errors.sort-and-take-behind-a-map-that-can-raise-stay-local",
      .at = "51-hybrid-parity.sqlt:122",
      .dialect = "mariadb",
@@ -30303,7 +30326,7 @@ static const SqlCase CASES[] = {
      .tables = {"orders"},
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c1272_bind},
+     .bindings_fn = c1273_bind},
     {.name = "plan.errors.take-before-the-map-is-pushed",
      .at = "51-hybrid-parity.sqlt:139",
      .dialect = "mariadb",
@@ -30320,7 +30343,7 @@ static const SqlCase CASES[] = {
      .tables = {"orders"},
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c1273_bind},
+     .bindings_fn = c1274_bind},
     {.name = "plan.binders.split-before-a-link-keeps-the-prefix-to-the-link",
      .at = "51-hybrid-parity.sqlt:156",
      .dialect = "mariadb",
@@ -30337,7 +30360,7 @@ static const SqlCase CASES[] = {
      .tables = {"orders"},
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c1274_bind},
+     .bindings_fn = c1275_bind},
     {.name = "plan.binders.literal-helper-named-like-an-explicit-sort-binder",
      .at = "51-hybrid-parity.sqlt:173",
      .dialect = "mariadb",
@@ -30354,7 +30377,7 @@ static const SqlCase CASES[] = {
      .tables = {"orders"},
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c1275_bind},
+     .bindings_fn = c1276_bind},
     {.name = "plan.tables.a-binder-named-like-a-relation-reads-nothing",
      .at = "51-hybrid-parity.sqlt:190",
      .dialect = "mariadb",
@@ -30371,7 +30394,7 @@ static const SqlCase CASES[] = {
      .tables = {},
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c1276_bind},
+     .bindings_fn = c1277_bind},
     {.name = "plan.tables.a-map-binder-named-like-a-relation",
      .at = "51-hybrid-parity.sqlt:205",
      .dialect = "mariadb",
@@ -30388,7 +30411,7 @@ static const SqlCase CASES[] = {
      .tables = {},
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c1277_bind},
+     .bindings_fn = c1278_bind},
     {.name = "plan.tables.an-assignment-target-named-like-a-relation",
      .at = "51-hybrid-parity.sqlt:220",
      .dialect = "mariadb",
@@ -30405,7 +30428,7 @@ static const SqlCase CASES[] = {
      .tables = {},
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c1278_bind},
+     .bindings_fn = c1279_bind},
     {.name = "plan.tables.a-filter-binder-named-like-another-relation",
      .at = "51-hybrid-parity.sqlt:235",
      .dialect = "mariadb",
@@ -30422,7 +30445,7 @@ static const SqlCase CASES[] = {
      .tables = {"orders"},
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c1279_bind},
+     .bindings_fn = c1280_bind},
     {.name = "stmt.order.the-order-rule-comes-before-a-bad-key",
      .at = "51-hybrid-parity.sqlt:258",
      .dialect = "mariadb",
@@ -30439,7 +30462,7 @@ static const SqlCase CASES[] = {
      .tables = {},
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c1280_bind},
+     .bindings_fn = c1281_bind},
     {.name = "stmt.order.the-order-rule-comes-before-a-bare-row-key",
      .at = "51-hybrid-parity.sqlt:273",
      .dialect = "mariadb",
@@ -30456,7 +30479,7 @@ static const SqlCase CASES[] = {
      .tables = {},
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c1281_bind},
+     .bindings_fn = c1282_bind},
     {.name = "stmt.order.bucket-after-a-sort-is-refused-at-the-step",
      .at = "51-hybrid-parity.sqlt:288",
      .dialect = "mariadb",
@@ -30473,7 +30496,7 @@ static const SqlCase CASES[] = {
      .tables = {},
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c1282_bind},
+     .bindings_fn = c1283_bind},
     {.name = "stmt.order.bucket-after-two-sorts-is-refused-at-the-step",
      .at = "51-hybrid-parity.sqlt:303",
      .dialect = "mariadb",
@@ -30490,7 +30513,7 @@ static const SqlCase CASES[] = {
      .tables = {},
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c1283_bind},
+     .bindings_fn = c1284_bind},
     {.name = "stmt.order.distinct-after-a-sort-is-refused-at-the-step",
      .at = "51-hybrid-parity.sqlt:318",
      .dialect = "mariadb",
@@ -30507,7 +30530,7 @@ static const SqlCase CASES[] = {
      .tables = {},
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c1284_bind},
+     .bindings_fn = c1285_bind},
     {.name = "review.order.sort-over-a-projection-of-sorted-rows-is-refused",
      .at = "52-audit-cases.sqlt:1",
      .dialect = "mariadb",
@@ -30524,7 +30547,7 @@ static const SqlCase CASES[] = {
      .tables = {},
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c1285_bind},
+     .bindings_fn = c1286_bind},
     {.name = "review.order.link-over-sorted-rows-is-refused",
      .at = "52-audit-cases.sqlt:19",
      .dialect = "mariadb",
@@ -30541,7 +30564,7 @@ static const SqlCase CASES[] = {
      .tables = {},
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c1286_bind},
+     .bindings_fn = c1287_bind},
     {.name = "plan.hybrid.link-over-sorted-rows-joins-in-memory",
      .at = "52-audit-cases.sqlt:36",
      .dialect = "mariadb",
@@ -30558,7 +30581,7 @@ static const SqlCase CASES[] = {
      .tables = {"orders"},
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c1287_bind},
+     .bindings_fn = c1288_bind},
     {.name = "plan.pure-memory.self-join-is-not-split",
      .at = "52-audit-cases.sqlt:55",
      .dialect = "mariadb",
@@ -30575,7 +30598,7 @@ static const SqlCase CASES[] = {
      .tables = {"orders"},
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c1288_bind},
+     .bindings_fn = c1289_bind},
     {.name = "bind.value.null-element-is-refused",
      .at = "52-audit-cases.sqlt:73",
      .dialect = "mariadb",
@@ -30592,7 +30615,7 @@ static const SqlCase CASES[] = {
      .tables = {},
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c1289_bind},
+     .bindings_fn = c1290_bind},
     {.name = "register.dialect.backslash-escape-must-double-the-backslash",
      .at = "52-audit-cases.sqlt:87",
      .dialect = "my-nl",
@@ -30608,8 +30631,8 @@ static const SqlCase CASES[] = {
      .has_tables = false,
      .tables = {},
      .unrepresentable = nullptr,
-     .register_fn = c1290_reg,
-     .bindings_fn = c1290_bind},
+     .register_fn = c1291_reg,
+     .bindings_fn = c1291_bind},
     {.name = "register.dialect.quote-escape-is-doubling-or-backslash",
      .at = "52-audit-cases.sqlt:102",
      .dialect = "ansi-x",
@@ -30625,8 +30648,8 @@ static const SqlCase CASES[] = {
      .has_tables = false,
      .tables = {},
      .unrepresentable = nullptr,
-     .register_fn = c1291_reg,
-     .bindings_fn = c1291_bind},
+     .register_fn = c1292_reg,
+     .bindings_fn = c1292_bind},
     {.name = "bind.type.statement-is-not-declarable",
      .at = "52-audit-cases.sqlt:116",
      .dialect = "mariadb",
@@ -30660,7 +30683,7 @@ static const SqlCase CASES[] = {
      .tables = {},
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c1293_bind},
+     .bindings_fn = c1294_bind},
     {.name = "norm.depth.definition-past-four-times-the-depth-is-refused-at-the-assignment",
      .at = "52-audit-cases.sqlt:144",
      .dialect = "mariadb",
@@ -30677,7 +30700,7 @@ static const SqlCase CASES[] = {
      .tables = {},
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c1294_bind},
+     .bindings_fn = c1295_bind},
     {.name = "norm.size.result-past-the-budget-is-refused-where-the-walk-stops",
      .at = "52-audit-cases.sqlt:159",
      .dialect = "mariadb",
@@ -30694,7 +30717,7 @@ static const SqlCase CASES[] = {
      .tables = {},
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c1295_bind},
+     .bindings_fn = c1296_bind},
     {.name = "refuse.in-relation.boolean-needle-at-the-needle",
      .at = "52-audit-cases.sqlt:173",
      .dialect = "mariadb",
@@ -30711,7 +30734,7 @@ static const SqlCase CASES[] = {
      .tables = {},
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c1296_bind},
+     .bindings_fn = c1297_bind},
     {.name = "refuse.binder.checked-at-the-call-not-in-stage-1",
      .at = "52-audit-cases.sqlt:187",
      .dialect = "mariadb",
@@ -30728,7 +30751,7 @@ static const SqlCase CASES[] = {
      .tables = {},
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c1297_bind},
+     .bindings_fn = c1298_bind},
     {.name = "plan.pure-memory.key-read-after-a-filter-is-not-split",
      .at = "52-audit-cases.sqlt:201",
      .dialect = "mariadb",
@@ -30745,7 +30768,7 @@ static const SqlCase CASES[] = {
      .tables = {"t"},
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c1298_bind},
+     .bindings_fn = c1299_bind},
     {.name = "bind.prefilter.unknown-spelling-is-refused",
      .at = "52-audit-cases.sqlt:218",
      .dialect = "mariadb",
@@ -30762,7 +30785,7 @@ static const SqlCase CASES[] = {
      .tables = {},
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c1299_bind},
+     .bindings_fn = c1300_bind},
     {.name = "order.filter-after-sort-keeps-the-order",
      .at = "52-audit-cases.sqlt:231",
      .dialect = "mariadb",
@@ -30779,7 +30802,7 @@ static const SqlCase CASES[] = {
      .tables = {"orders"},
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c1300_bind},
+     .bindings_fn = c1301_bind},
     {.name = "order.projection-then-filter-of-sorted-rows-is-refused",
      .at = "52-audit-cases.sqlt:252",
      .dialect = "mariadb",
@@ -30796,7 +30819,7 @@ static const SqlCase CASES[] = {
      .tables = {},
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c1301_bind},
+     .bindings_fn = c1302_bind},
     {.name = "bind.alias.case-colliding-relation-aliases-are-refused",
      .at = "52-audit-cases.sqlt:269",
      .dialect = "mariadb",
@@ -30813,7 +30836,7 @@ static const SqlCase CASES[] = {
      .tables = {},
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c1302_bind},
+     .bindings_fn = c1303_bind},
     {.name = "assign.empty-text-key-is-a-constant-index",
      .at = "52-audit-cases.sqlt:285",
      .dialect = "mariadb",
@@ -30830,7 +30853,7 @@ static const SqlCase CASES[] = {
      .tables = {},
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c1303_bind},
+     .bindings_fn = c1304_bind},
     {.name = "plan.order.sort-over-a-projection-of-sorted-rows-stays-in-memory",
      .at = "52-audit-cases.sqlt:302",
      .dialect = "mariadb",
@@ -30847,7 +30870,7 @@ static const SqlCase CASES[] = {
      .tables = {"orders"},
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c1304_bind},
+     .bindings_fn = c1305_bind},
     {.name = "plan.order.limit-then-link-stays-in-memory",
      .at = "52-audit-cases.sqlt:319",
      .dialect = "mariadb",
@@ -30864,7 +30887,7 @@ static const SqlCase CASES[] = {
      .tables = {"orders"},
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c1305_bind},
+     .bindings_fn = c1306_bind},
     {.name = "plan.order.link-left-over-sorted-rows-stays-in-memory",
      .at = "52-audit-cases.sqlt:337",
      .dialect = "mariadb",
@@ -30881,7 +30904,7 @@ static const SqlCase CASES[] = {
      .tables = {"orders"},
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c1306_bind},
+     .bindings_fn = c1307_bind},
     {.name = "plan.order.projection-then-link-over-sorted-rows-stays-in-memory",
      .at = "52-audit-cases.sqlt:355",
      .dialect = "mariadb",
@@ -30898,7 +30921,7 @@ static const SqlCase CASES[] = {
      .tables = {"orders"},
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c1307_bind},
+     .bindings_fn = c1308_bind},
     {.name = "plan.order.sort-filter-then-link-stays-in-memory",
      .at = "52-audit-cases.sqlt:373",
      .dialect = "mariadb",
@@ -30915,7 +30938,7 @@ static const SqlCase CASES[] = {
      .tables = {"orders"},
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c1308_bind},
+     .bindings_fn = c1309_bind},
     {.name = "plan.keys.filter-filter-then-a-renumbering-step-splits-after-the-first",
      .at = "52-audit-cases.sqlt:392",
      .dialect = "mariadb",
@@ -30932,7 +30955,7 @@ static const SqlCase CASES[] = {
      .tables = {"orders"},
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c1309_bind},
+     .bindings_fn = c1310_bind},
     {.name = "plan.keys.filter-filter-then-a-key-read-stays-in-memory",
      .at = "52-audit-cases.sqlt:409",
      .dialect = "mariadb",
@@ -30949,7 +30972,7 @@ static const SqlCase CASES[] = {
      .tables = {"orders"},
      .unrepresentable = nullptr,
      .register_fn = nullptr,
-     .bindings_fn = c1310_bind},
+     .bindings_fn = c1311_bind},
 };
 
 std::span<const SqlCase> sql_cases() { return CASES; }
