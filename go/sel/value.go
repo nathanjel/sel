@@ -906,33 +906,15 @@ func (v *Value) structuralHashAt(depth int) uint64 {
 	return h
 }
 
+// Elements is spec §7.3's view of a value as a collection: its children in
+// order (a snapshot, as Entries), a scalar with none as a list of itself, and
+// a childless NONE as nothing.
 func (v *Value) Elements() []Entry {
-	if v.shape != nil {
-		out := make([]Entry, len(v.shape.keys))
-		for i, k := range v.shape.keys {
-			out[i] = Entry{Key: k, Val: v.storage[i]}
+	if v.Size() == 0 && v.shape == nil {
+		if v.kind != KindNone {
+			return []Entry{{Key: "1", Val: v}}
 		}
-		return out
+		return nil
 	}
-	if v.isList && v.storage != nil {
-		if v.listKeys == nil {
-			return denseEntries(v.storage)
-		}
-		out := make([]Entry, len(v.storage))
-		for i, item := range v.storage {
-			out[i] = Entry{Key: v.listKeys[i], Val: item}
-		}
-		return out
-	}
-	if len(v.entries) > 0 {
-		// A snapshot, like the two shaped forms above: a body that assigns
-		// into the record it is iterating must not change what is visited.
-		out := make([]Entry, len(v.entries))
-		copy(out, v.entries)
-		return out
-	}
-	if v.kind != KindNone {
-		return []Entry{{Key: "1", Val: v}}
-	}
-	return nil
+	return v.Entries()
 }

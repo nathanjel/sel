@@ -76,10 +76,6 @@ func (t *joinFlatTest) isFlat(row *Value) bool {
 	return true
 }
 
-func isLeftNested(v *Value) bool {
-	return v.kind == KindNone && !v.isList && len(v.storage) > 0
-}
-
 type joinProjector struct {
 	b1        string
 	b2        string
@@ -129,7 +125,7 @@ func compileJoinPlan(left, rside *Value, b1, b2 string, matched bool) *joinPlan 
 
 	lKeys := left.shape.keys
 	for i, k := range lKeys {
-		if isLeftNested(left.storage[i]) {
+		if isNestedRecord(left.storage[i]) {
 			put(k, opLeftNested, i)
 		}
 	}
@@ -149,7 +145,7 @@ func compileJoinPlan(left, rside *Value, b1, b2 string, matched bool) *joinPlan 
 	}
 
 	for i, k := range lKeys {
-		if !isLeftNested(left.storage[i]) && !rightNames[utf8.AsciiUpper(k)] {
+		if !isNestedRecord(left.storage[i]) && !rightNames[utf8.AsciiUpper(k)] {
 			put(k, opLeftSlot, i)
 		}
 	}
@@ -181,7 +177,7 @@ func compileJoinPlan(left, rside *Value, b1, b2 string, matched bool) *joinPlan 
 	}
 	for i := range ls {
 		if !copied[i] {
-			plan.lrest = append(plan.lrest, joinRestCheck{slot: i, nested: isLeftNested(ls[i])})
+			plan.lrest = append(plan.lrest, joinRestCheck{slot: i, nested: isNestedRecord(ls[i])})
 		}
 	}
 
@@ -214,7 +210,7 @@ func buildJoinPlan(plan *joinPlan, left, rside *Value, checkLeft, checkRight boo
 
 	if checkLeft {
 		for _, lr := range plan.lrest {
-			if isLeftNested(ls[lr.slot]) != lr.nested {
+			if isNestedRecord(ls[lr.slot]) != lr.nested {
 				return nil, false
 			}
 		}
@@ -233,13 +229,13 @@ func buildJoinPlan(plan *joinPlan, left, rside *Value, checkLeft, checkRight boo
 		switch s.op {
 		case opLeftSlot:
 			v := ls[s.slot]
-			if checkLeft && isLeftNested(v) {
+			if checkLeft && isNestedRecord(v) {
 				return nil, false
 			}
 			storage[i] = v
 		case opLeftNested:
 			v := ls[s.slot]
-			if checkLeft && !isLeftNested(v) {
+			if checkLeft && !isNestedRecord(v) {
 				return nil, false
 			}
 			storage[i] = v

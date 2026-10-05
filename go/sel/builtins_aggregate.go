@@ -1204,15 +1204,8 @@ func doLink(args *Args, ctx *Context, leftJoin bool) *Value {
 		return name
 	}
 
-	var b1Names, b2Names []string
-	if count == 5 {
-		b1Names = []string{args.Symbol(2), "_1"}
-		b2Names = []string{args.Symbol(3), "_2"}
-	} else {
-		b1Names = []string{boundName(leftNode, "_1"), "_1"}
-		b2Names = []string{boundName(rightNode, "_2"), "_2"}
-	}
-
+	// The row binders: named in the five-argument form, else the sources'
+	// relation names, else _1 and _2.
 	jb1 := boundName(leftNode, "_1")
 	jb2 := boundName(rightNode, "_2")
 	predNode := args.Node(2)
@@ -1221,6 +1214,8 @@ func doLink(args *Args, ctx *Context, leftJoin bool) *Value {
 		jb2 = args.Symbol(3)
 		predNode = args.Node(4)
 	}
+	b1Names := []string{jb1, "_1"}
+	b2Names := []string{jb2, "_2"}
 
 	jequi := extractJoinEqui(predNode, jb1, jb2)
 	var rightSide *joinSideFacts
@@ -1304,24 +1299,7 @@ func doLink(args *Args, ctx *Context, leftJoin bool) *Value {
 		below = nil
 	}
 
-	b1 := "_1"
-	b2 := "_2"
-	var predicate *Node
-	if count == 3 {
-		b1 = singleRelationName(args.Node(0))
-		if b1 == "" {
-			b1 = "_1"
-		}
-		b2 = singleRelationName(args.Node(1))
-		if b2 == "" {
-			b2 = "_2"
-		}
-		predicate = args.Node(2)
-	} else {
-		b1 = args.Symbol(2)
-		b2 = args.Symbol(3)
-		predicate = args.Node(4)
-	}
+	b1, b2, predicate := jb1, jb2, predNode
 
 	if leftVal.IsNull() {
 		return newListOwned(nil)
@@ -1427,20 +1405,11 @@ func doLink(args *Args, ctx *Context, leftJoin bool) *Value {
 			totalHere := func(reqs []joinTotalReq, stage joinStage) bool {
 				return joinTotality(reqs, leftSide, rightSide, aboveOf(stage))
 			}
-			ownedHere := func(fields map[string]bool, stage joinStage) bool {
-				upper := aboveKeys(stage)
-				for f := range fields {
-					if rightSide.Keys[f] || upper[f] {
-						return false
-					}
-				}
-				return true
-			}
 			safe := len(obligations) == 0 || joinKeysSafe(obligations, leftSide, rightSide, above)
 			selfNames := map[string]bool{utf8.AsciiUpper(b1): true, "_1": true}
 			var walkApplied []joinApplied
 			if safe {
-				walkApplied, _ = joinStageWalk(stages, ownedHere, totalHere, rightHere)
+				walkApplied, _ = joinStageWalk(stages, ownedByLeft, totalHere, rightHere)
 			}
 			for _, applied := range walkApplied {
 				c := applied.Conjunct
