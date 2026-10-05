@@ -3378,6 +3378,24 @@ void Translator::bucket_projection(RelationalPlan& plan, const std::string& bind
   plan.select_cols = std::nullopt;
 }
 
+namespace {
+
+// The element binder of a FILTER, MAP or BUCKET step and the index of the
+// argument after it: `_` and 1 in the short form, the bare name written
+// first and 2 in the full form -- the one with FULL arguments, source
+// included. Any other count is the parser's to refuse.
+std::pair<std::string, std::size_t> step_binder(const std::vector<SNodePtr>& args, std::size_t shortest,
+                                                std::size_t full, const std::string& op) {
+  if (args.size() < shortest || args.size() > full) unreachable_arity(op);
+  if (args.size() < full) return {"_", 1};
+  if (!is_binder_name(*args[1])) {
+    refuse("E_SQL_SHAPE", "the binder of " + op + " must be a bare name", args[1]->pos());
+  }
+  return {args[1]->s(), 2};
+}
+
+}  // namespace
+
 std::optional<RelationalPlan> Translator::analyze_pipeline(const SNodePtr& ast) {
   if (identity_loss_before_grouping(ast)) {
     refuse("E_SQL_SHAPE", "grouping depends on a computed projection without identity preservation", ast->pos());
@@ -3417,7 +3435,6 @@ std::optional<RelationalPlan> Translator::analyze_pipeline(const SNodePtr& ast) 
 
   for (const auto& step : steps) {
     const std::string& name = step->s();
-    const auto& args = step->kids();
 
     // A FILTER after an open bucket is a HAVING and a MAP is the bucket's
     // projection; anything else spends the members. See RelationalPlan.
@@ -3429,387 +3446,21 @@ std::optional<RelationalPlan> Translator::analyze_pipeline(const SNodePtr& ast) 
     }
 
     if (name == "FILTER") {
-      // A FILTER over a bare bucket whose members are spent: SQL has only the
-      // keys left, and SEL's value is still a map of groups.
-      if (plan.bucket == RelationalPlan::Bucket::Sealed) {
-        refuse("E_SQL_SHAPE",
-               "a FILTER over buckets must follow the BUCKET directly: SQL keeps a "
-               "bucket's members only for the projection that ends the grouping",
-               step->pos());
-      }
-      // A FILTER after a LIMIT or OFFSET is a WHERE over the rows that
-      // survived them, grouped or not -- SEL applies the TAKE first, and a
-      // HAVING would run before it. Otherwise a FILTER directly after a
-      // grouping is its HAVING, and an ORDER BY in between changes nothing
-      // (HAVING then ORDER BY is sort-then-filter's rows).
-      const bool need_derived =
-          plan.limit.has_value() || plan.offset.has_value() ||
-          (!plan.group_by.has_value() &&
-           (plan.projections.has_value() || plan.select_cols.has_value() ||
-            plan.distinct));
-      // (A sort does NOT force the wrap: the WHERE goes in the same SELECT, beside the
-      // ORDER BY, because a derived table does not keep an ORDER BY that has no LIMIT
-      // beside it and the rows would come back in no order; a filter commutes with a
-      // stable sort, so the rows and their order are the same.)
-      plan = ensure_derived(std::move(plan), need_derived);
-      std::string binder;
-      SNodePtr pred;
-      if (args.size() == 2) {
-        binder = "_";
-        pred = args[1];
-      } else if (args.size() == 3) {
-        if (!is_binder_name(*args[1])) {
-          refuse("E_SQL_SHAPE", "the binder of FILTER must be a bare name", args[1]->pos());
-        }
-        binder = args[1]->s();
-        pred = args[2];
-      } else {
-        unreachable_arity("FILTER");
-      }
-      if (plan.group_by.has_value()) {
-        plan.having.push_back({binder, pred, step->pos(), over_groups});
-      } else {
-        plan.filters.push_back({binder, pred, step->pos()});
-      }
+      plan_filter_step(plan, step, over_groups);
     } else if (name == "BUCKET") {
-      // A bucket over a bare bucket's rows: SQL has only the keys (open) or
-      // has spent the members (sealed); either way SEL's value is a map of
-      // groups and re-grouping it is a different program.
-      if (plan.bucket != RelationalPlan::Bucket::None) {
-        refuse("E_SQL_SHAPE",
-               "a BUCKET over buckets: SQL keeps a bucket's members only for the "
-               "projection that ends the grouping",
-               step->pos());
-      }
-      // Groups appear in order of their first member, and the members were sorted:
-      // a GROUP BY returns its groups in no order at all, and the ORDER BY beneath
-      // it is dropped by the servers. The sort cannot survive, so the step is
-      // refused here, at the call and before its arguments (the first refusal in
-      // source order), and a hybrid plan keeps the sorted rows in SQL and groups
-      // them in memory.
-      if (!plan.order_by.empty() || plan.order_dropped) {
-        refuse("E_SQL_SHAPE",
-               "a BUCKET over sorted rows would return its groups in no order, where SEL "
-               "has them in the order of their first member in the sorted list",
-               step->pos());
-      }
-      const bool need_derived = plan_has_rows_above(plan);
-      plan = ensure_derived(std::move(plan), need_derived);
-      std::string binder;
-      SNodePtr key_node;
-      SNodePtr agg_node = nullptr;
-      if (args.size() == 2) {
-        binder = "_";
-        key_node = args[1];
-      } else if (args.size() == 3) {
-        binder = "_";
-        key_node = args[1];
-        agg_node = args[2];
-      } else if (args.size() == 4) {
-        if (!is_binder_name(*args[1])) {
-          refuse("E_SQL_SHAPE", "the binder of BUCKET must be a bare name", args[1]->pos());
-        }
-        binder = args[1]->s();
-        key_node = args[2];
-        agg_node = args[3];
-      } else {
-        unreachable_arity("BUCKET");
-      }
-
-      // A bare bucket's key is an index key (spec §7.4): one text or number.
-      // A list or record key is refused by the evaluator, and the boolean and
-      // binary kinds are refused below, once known.
-      const bool several_keys =
-          (key_node->t() == SNode::T::Call && (key_node->s() == "LIST" || key_node->s() == "RECORD")) ||
-          key_node->t() == SNode::T::List;
-      if (!agg_node && several_keys) {
-        refuse("E_SQL_SHAPE",
-               "a bare BUCKET groups by one text or number key, as an index does; "
-               "BUCKET(src, key, proj) groups by several",
-               key_node->pos());
-      }
-      std::vector<RelationalGroup> group_by;
-      if ((key_node->t() == SNode::T::Call && key_node->s() == "LIST") || key_node->t() == SNode::T::List) {
-        for (const auto& k_arg : key_node->kids()) {
-          group_by.push_back({std::nullopt, binder, k_arg, k_arg->pos()});
-        }
-      } else if (key_node->t() == SNode::T::Call && key_node->s() == "RECORD") {
-        for (const auto& [alias, value] : record_fields(key_node, dialect_)) {
-          group_by.push_back({alias, binder, value, value->pos()});
-        }
-      } else {
-        group_by.push_back({std::nullopt, binder, key_node, key_node->pos()});
-      }
-      plan.group_by = std::move(group_by);
-      plan.bucket = agg_node ? RelationalPlan::Bucket::None : RelationalPlan::Bucket::Open;
-      plan.bare_key = !agg_node;
-      bucket_projection(plan, binder, agg_node);
+      plan_bucket_step(plan, step);
     } else if (name == "SELECT_COLS") {
-      // The same rule as a MAP's: an ORDER BY alone does not wrap (a derived
-      // table is where MariaDB drops an ORDER BY with no LIMIT beside it),
-      // everything else above the rows does (SEL-0048).
-      const bool need_derived = plan_needs_wrap_before_map(plan);
-      plan = ensure_derived(std::move(plan), need_derived);
-      std::vector<SNodePtr> items;
-      if (args.size() == 2 && args[1]->t() == SNode::T::List) {
-        items = args[1]->kids();
-      } else {
-        for (std::size_t i = 1; i < args.size(); ++i) {
-          items.push_back(args[i]);
-        }
-      }
-      std::vector<std::string> cols;
-      for (const auto& item : items) {
-        if (item->t() != SNode::T::Text) {
-          refuse("E_SQL_SHAPE",
-                 "SELECT_COLS column names must be text literals here: a statement "
-                 "cannot compute a column name",
-                 item->pos());
-        }
-        const std::string& col = item->s();
-        check_program_name(col, item->pos());
-        const std::string uc = ascii_upper(col);
-        int matches = plan.source_relation.field(uc) ? 1 : 0;
-        for (const RelationalJoin& join : plan.joins) {
-          if (join.source_relation.field(uc)) ++matches;
-        }
-        if (matches > 1) {
-          refuse("E_SQL_SHAPE",
-                 "column '" + col +
-                     "' is ambiguous across joined tables; qualify with a table alias",
-                 item->pos());
-        }
-        if (!plan.source_relation.fields.empty() && matches == 0) {
-          std::string declared;
-          for (std::size_t i = 0; i < plan.source_relation.fields.size(); ++i) {
-            if (i > 0) declared += ", ";
-            declared += plan.source_relation.fields[i].first;
-          }
-          refuse("E_SQL_SHAPE",
-                 "relation " + plan.source_name + " has no field '" + col +
-                     "'; the relation declares " + declared,
-                 item->pos());
-        }
-        // A raw field is an expression against the relation's own alias, so it
-        // has no column to select by name.
-        if (const ColumnSpec* raw_field = plan.source_relation.field(uc)) {
-          if (raw_field->is_raw) {
-            refuse("E_SQL_SHAPE",
-                   "the field '" + col + "' is a raw SQL expression, and "
-                   "SELECT_COLS names columns; select it through a MAP",
-                   item->pos());
-          }
-        }
-        cols.push_back(col);
-      }
-      plan.select_cols = std::move(cols);
-      plan.projections = std::nullopt;
+      plan_select_cols_step(plan, step);
     } else if (name == "MAP") {
-      if (plan.bucket == RelationalPlan::Bucket::Sealed) {
-        refuse("E_SQL_SHAPE",
-               "a MAP over buckets must follow the BUCKET, with at most a FILTER "
-               "between: SQL keeps a bucket's members only for the projection that "
-               "ends the grouping",
-               step->pos());
-      }
-      std::string binder;
-      SNodePtr expr;
-      if (args.size() == 2) {
-        binder = "_";
-        expr = args[1];
-      } else if (args.size() == 3) {
-        if (!is_binder_name(*args[1])) {
-          refuse("E_SQL_SHAPE", "the binder of MAP must be a bare name", args[1]->pos());
-        }
-        binder = args[1]->s();
-        expr = args[2];
-      } else {
-        unreachable_arity("MAP");
-      }
-      // BUCKET(src, key) .> MAP(proj) is BUCKET(src, key, proj): the MAP's body
-      // is evaluated once per group, so it is the bucket's projection.
-      if (plan.bucket == RelationalPlan::Bucket::Open) {
-        plan.bucket = RelationalPlan::Bucket::None;
-        bucket_projection(plan, binder, expr);
-        continue;
-      }
-      const bool need_derived = plan_needs_wrap_before_map(plan);
-      plan = ensure_derived(std::move(plan), need_derived);
-
-      if (expr->t() == SNode::T::Call && expr->s() == "RECORD") {
-        std::vector<RelationalProjection> projections;
-        for (const auto& [alias, value] : record_fields(expr, dialect_)) {
-          projections.push_back({alias, binder, value, {}});
-        }
-        plan.projections = std::move(projections);
-      } else {
-        std::vector<RelationalProjection> projections;
-        projections.push_back({std::nullopt, binder, expr, {}});
-        plan.projections = std::move(projections);
-      }
-      plan.select_cols = std::nullopt;
+      plan_map_step(plan, step);
     } else if (name == "DISTINCT" || name == "DEDUPE") {
-      const bool need_derived = plan.limit.has_value() || plan.offset.has_value();
-      plan = ensure_derived(std::move(plan), need_derived);
-      if (!plan.projections && !plan.select_cols) {
-        refuse("E_SQL_SHAPE", "DISTINCT requires an explicit typed projection", step->pos());
-      }
-      // DISTINCT keeps the FIRST element of each run in sorted order; SQL's
-      // `SELECT DISTINCT proj ... ORDER BY <column not in proj>` is refused by
-      // PostgreSQL (42P10) and MySQL 8 (3065) and answers with an unspecified
-      // representative row on MariaDB. A loud refusal is acceptable and a silent
-      // misordering is not, so the step stays in memory.
-      if (!plan.order_by.empty()) {
-        refuse("E_SQL_SHAPE",
-               "DISTINCT after a sort keeps the first of each run in sorted order, "
-               "which SELECT DISTINCT ... ORDER BY does not promise; run the DISTINCT "
-               "in memory",
-               step->pos());
-      }
-      plan.distinct = true;
-    } else if (name == "TAKE") {
-      if (args.size() != 2) {
-        unreachable_arity("TAKE");
-      }
-      int64_t lim = eval_int_param(args[1], "TAKE");
-      plan.limit = !plan.limit.has_value() ? lim : std::min(*plan.limit, lim);
-      plan.limit_pos = step->pos();
-    } else if (name == "DROP") {
-      if (args.size() != 2) {
-        unreachable_arity("DROP");
-      }
-      int64_t off = eval_int_param(args[1], "DROP");
-      // Slices merge first, and the sum is clamped like a single count (§11.6):
-      // DROP(2^63-1) .> DROP(1) is the offset 2^63-1, not a wrapped or wrapped-
-      // in-a-subquery one.
-      const int64_t skipped = plan.limit ? std::min(off, *plan.limit) : off;
-      if (plan.limit) *plan.limit -= skipped;
-      const int64_t have = plan.offset.value_or(0);
-      plan.offset = have > COUNT_MAX - skipped ? COUNT_MAX : have + skipped;
-      plan.limit_pos = step->pos();
+      plan_distinct_step(plan, step);
+    } else if (name == "TAKE" || name == "DROP") {
+      plan_slice_step(plan, step);
     } else if (sel::pipeline_step(name)->sorts) {   // the manifest's sort steps
-      // A sort after a LIMIT or OFFSET sorts the rows that survived them,
-      // grouped or not, so those wrap; a sort over a projection or a DISTINCT
-      // wraps so its key can name what they produced. A sort after a sort
-      // does not wrap: the sorts are stable, so the earlier one is the later
-      // one's tie-breaker, and the later one's keys go FIRST in the ORDER BY.
-      const bool need_derived =
-          plan.limit.has_value() || plan.offset.has_value() ||
-          (!plan.group_by.has_value() &&
-           (plan.projections.has_value() || plan.select_cols.has_value() || plan.distinct));
-      // Sorts are stable, so an earlier sort is the later one's tie-break; a derived
-      // table with no LIMIT beside its ORDER BY does not keep it, and its keys may
-      // not even be columns the outer level can name.
-      if ((need_derived && !plan.order_by.empty() && !plan.limit.has_value() &&
-           !plan.offset.has_value()) ||
-          plan.order_dropped) {
-        refuse("E_SQL_SHAPE",
-               "a sort over a projection of sorted rows loses the earlier sort, which is "
-               "its tie-break: a derived table does not keep an ORDER BY",
-               step->pos());
-      }
-      plan = ensure_derived(std::move(plan), need_derived);
-      const std::size_t before = plan.order_by.size();
-      analyze_sort_step(step, plan);
-      std::vector<RelationalOrder> added(plan.order_by.begin() + static_cast<std::ptrdiff_t>(before),
-                                         plan.order_by.end());
-      for (auto& entry : added) entry.over_groups = over_groups;
-      plan.order_by.erase(plan.order_by.begin() + static_cast<std::ptrdiff_t>(before), plan.order_by.end());
-      added.insert(added.end(), plan.order_by.begin(), plan.order_by.end());
-      plan.order_by = std::move(added);
+      plan_sort_step(plan, step, over_groups);
     } else if (name == "LINK" || name == "LINK_LEFT") {
-      // The steps before the LINK refuse first, as written: their keys (a
-      // sort's, a bucket's) are otherwise checked only when the statement is
-      // rendered, after this LINK and the steps after it were analysed, which
-      // reported a later step's refusal where run() raises at the earlier
-      // one. The SQL fuzzer found hosts that did not.
-      // The fragment is discarded: its parameters are never placed, and the
-      // statement renders these steps again anyway.
-      if (!plan.order_by.empty() || plan.projections || plan.select_cols || plan.group_by) {
-        // Its parameters (and caveats) are put back: the statement renders these
-        // steps again, and a slot the discarded pass created is a value bound
-        // for a placeholder the statement has no place for.
-        const std::size_t slots = params_.size();
-        const std::size_t kinds = param_kinds_.size();
-        const std::vector<std::string> caveats = caveats_;
-        (void)compile_statement(plan);
-        params_.resize(slots);
-        param_kinds_.resize(kinds);
-        caveats_ = caveats;
-      }
-      // A join returns its rows in no order, and SEL's are the left list's: rows
-      // sorted with no LIMIT beside the ORDER BY (which a derived table drops)
-      // cannot pass through a JOIN carrying their sort. After the earlier steps'
-      // own refusals, which come first as written.
-      if (plan.order_dropped ||
-          (!plan.order_by.empty() && !plan.limit.has_value() && !plan.offset.has_value())) {
-        refuse("E_SQL_SHAPE",
-               "a " + name + " over sorted rows would return them in no order, where SEL has "
-               "the left list's order",
-               step->pos());
-      }
-      const bool need_derived = plan_has_rows_above(plan);
-      plan = ensure_derived(std::move(plan), need_derived);
-      if (args.size() != 3 && args.size() != 5) {
-        unreachable_arity(name);
-      }
-      const SNodePtr& right_node = args[1];
-      if (right_node->t() != SNode::T::Var || !bindings_.has(right_node->s())) {
-        refuse("E_SQL_SHAPE", name + " requires a bound relation as its right side",
-               right_node->pos());
-      }
-      const Binding& right_binding = bindings_.get(right_node->s(), right_node->pos());
-      if (right_binding.kind() != Binding::Kind::Relation) {
-        refuse("E_SQL_SHAPE", right_node->s() + " is not bound as a relation",
-               right_node->pos());
-      }
-      RelationalJoin join;
-      join.type = name == "LINK_LEFT" ? "LEFT" : "INNER";
-      join.source_name = right_node->s();
-      join.source_relation = right_binding.as_relation();
-      join.source_from_raw = join.source_relation.from_is_raw;
-      join.source_table = join.source_relation.from;
-      join.source_alias = join.source_relation.alias;
-      if (args.size() == 5) {
-        if (!is_binder_name(*args[2]) || !is_binder_name(*args[3])) {
-          refuse("E_SQL_SHAPE", "join binders must be bare names", args[2]->pos());
-        }
-        join.left_names = {args[2]->s()};
-        join.right_names = {args[3]->s()};
-        join.on_pred = args[4];
-      } else {
-        // The evaluator names a three-argument LINK's sides after the
-        // variable their pipeline starts from, unless an earlier LINK is in
-        // the way (spec §7.4).
-        if (plan.joins.empty() && plan.root_name) join.left_names = {*plan.root_name};
-        join.right_names = {right_node->s()};
-        join.on_pred = args[2];
-      }
-      // The SQL alias of a table the binding leaves unaliased: the
-      // five-argument form's right binder, `_2` otherwise. An alias, not a
-      // SEL name.
-      if (!join.source_alias) join.source_alias = args.size() == 5 ? join.right_names[0] : "_2";
-      // One table alias per occurrence: a relation joined a second time under
-      // an alias the statement already uses (a self-join, or a chain back to
-      // an aliased relation) rendered it twice, which the server rejects
-      // The program stays in memory.
-      {
-        std::vector<std::string> open{plan.source_alias.value_or(relation_alias(plan.source_relation))};
-        for (const RelationalJoin& j : plan.joins) {
-          if (j.source_alias) open.push_back(*j.source_alias);
-        }
-        const std::string mine = ascii_upper(*join.source_alias);
-        if (std::any_of(open.begin(), open.end(),
-                        [&](const std::string& a) { return ascii_upper(a) == mine; })) {
-          refuse("E_SQL_SHAPE",
-                 right_node->s() + " would be joined under the table alias " + *join.source_alias +
-                     ", which this statement already uses; bind the relation a second time "
-                     "under another alias",
-                 right_node->pos());
-        }
-      }
-      join.pos = step->pos();
-      plan.joins.push_back(std::move(join));
+      plan_link_step(plan, step);
     } else {
       // Every manifest pipeline step (spec/builtins.json) needs a branch above;
       // one without would otherwise be dropped from the statement silently.
@@ -3828,6 +3479,367 @@ std::optional<RelationalPlan> Translator::analyze_pipeline(const SNodePtr& ast) 
            steps.back()->pos());
   }
   return plan;
+}
+
+// --- one handler per pipeline step. Each takes the plan as the steps before
+// it left it, wraps it in a derived table when the step cannot be expressed
+// at its level, and adds the step; a step SQL cannot spell is refused here,
+// at the step, in source order.
+
+void Translator::plan_filter_step(RelationalPlan& plan, const SNodePtr& step, bool over_groups) {
+  // A FILTER over a bare bucket whose members are spent: SQL has only the
+  // keys left, and SEL's value is still a map of groups.
+  if (plan.bucket == RelationalPlan::Bucket::Sealed) {
+    refuse("E_SQL_SHAPE",
+           "a FILTER over buckets must follow the BUCKET directly: SQL keeps a "
+           "bucket's members only for the projection that ends the grouping",
+           step->pos());
+  }
+  // A FILTER after a LIMIT or OFFSET is a WHERE over the rows that
+  // survived them, grouped or not -- SEL applies the TAKE first, and a
+  // HAVING would run before it. Otherwise a FILTER directly after a
+  // grouping is its HAVING, and an ORDER BY in between changes nothing
+  // (HAVING then ORDER BY is sort-then-filter's rows).
+  const bool need_derived =
+      plan.limit.has_value() || plan.offset.has_value() ||
+      (!plan.group_by.has_value() &&
+       (plan.projections.has_value() || plan.select_cols.has_value() ||
+        plan.distinct));
+  // (A sort does NOT force the wrap: the WHERE goes in the same SELECT, beside the
+  // ORDER BY, because a derived table does not keep an ORDER BY that has no LIMIT
+  // beside it and the rows would come back in no order; a filter commutes with a
+  // stable sort, so the rows and their order are the same.)
+  plan = ensure_derived(std::move(plan), need_derived);
+  const auto& args = step->kids();
+  const auto [binder, at] = step_binder(args, 2, 3, "FILTER");
+  const SNodePtr& pred = args[at];
+  if (plan.group_by.has_value()) {
+    plan.having.push_back({binder, pred, step->pos(), over_groups});
+  } else {
+    plan.filters.push_back({binder, pred, step->pos()});
+  }
+}
+
+void Translator::plan_bucket_step(RelationalPlan& plan, const SNodePtr& step) {
+  // A bucket over a bare bucket's rows: SQL has only the keys (open) or
+  // has spent the members (sealed); either way SEL's value is a map of
+  // groups and re-grouping it is a different program.
+  if (plan.bucket != RelationalPlan::Bucket::None) {
+    refuse("E_SQL_SHAPE",
+           "a BUCKET over buckets: SQL keeps a bucket's members only for the "
+           "projection that ends the grouping",
+           step->pos());
+  }
+  // Groups appear in order of their first member, and the members were sorted:
+  // a GROUP BY returns its groups in no order at all, and the ORDER BY beneath
+  // it is dropped by the servers. The sort cannot survive, so the step is
+  // refused here, at the call and before its arguments (the first refusal in
+  // source order), and a hybrid plan keeps the sorted rows in SQL and groups
+  // them in memory.
+  if (!plan.order_by.empty() || plan.order_dropped) {
+    refuse("E_SQL_SHAPE",
+           "a BUCKET over sorted rows would return its groups in no order, where SEL "
+           "has them in the order of their first member in the sorted list",
+           step->pos());
+  }
+  const bool need_derived = plan_has_rows_above(plan);
+  plan = ensure_derived(std::move(plan), need_derived);
+  // BUCKET(src, key), BUCKET(src, key, proj), BUCKET(src, b, key, proj).
+  const auto& args = step->kids();
+  const auto [binder, at] = step_binder(args, 2, 4, "BUCKET");
+  const SNodePtr& key_node = args[at];
+  const SNodePtr agg_node = at + 1 < args.size() ? args[at + 1] : nullptr;
+
+  // A bare bucket's key is an index key (spec §7.4): one text or number.
+  // A list or record key is refused by the evaluator, and the boolean and
+  // binary kinds are refused below, once known.
+  const bool list_key =
+      (key_node->t() == SNode::T::Call && key_node->s() == "LIST") || key_node->t() == SNode::T::List;
+  const bool record_key = key_node->t() == SNode::T::Call && key_node->s() == "RECORD";
+  if (!agg_node && (list_key || record_key)) {
+    refuse("E_SQL_SHAPE",
+           "a bare BUCKET groups by one text or number key, as an index does; "
+           "BUCKET(src, key, proj) groups by several",
+           key_node->pos());
+  }
+  std::vector<RelationalGroup> group_by;
+  if (list_key) {
+    for (const auto& k_arg : key_node->kids()) {
+      group_by.push_back({std::nullopt, binder, k_arg, k_arg->pos()});
+    }
+  } else if (record_key) {
+    for (const auto& [alias, value] : record_fields(key_node, dialect_)) {
+      group_by.push_back({alias, binder, value, value->pos()});
+    }
+  } else {
+    group_by.push_back({std::nullopt, binder, key_node, key_node->pos()});
+  }
+  plan.group_by = std::move(group_by);
+  plan.bucket = agg_node ? RelationalPlan::Bucket::None : RelationalPlan::Bucket::Open;
+  plan.bare_key = !agg_node;
+  bucket_projection(plan, binder, agg_node);
+}
+
+void Translator::plan_select_cols_step(RelationalPlan& plan, const SNodePtr& step) {
+  // The same rule as a MAP's: an ORDER BY alone does not wrap (a derived
+  // table is where MariaDB drops an ORDER BY with no LIMIT beside it),
+  // everything else above the rows does (SEL-0048).
+  const bool need_derived = plan_needs_wrap_before_map(plan);
+  plan = ensure_derived(std::move(plan), need_derived);
+  const auto& args = step->kids();
+  std::vector<SNodePtr> items;
+  if (args.size() == 2 && args[1]->t() == SNode::T::List) {
+    items = args[1]->kids();
+  } else {
+    items.assign(args.begin() + 1, args.end());
+  }
+  std::vector<std::string> cols;
+  for (const auto& item : items) {
+    if (item->t() != SNode::T::Text) {
+      refuse("E_SQL_SHAPE",
+             "SELECT_COLS column names must be text literals here: a statement "
+             "cannot compute a column name",
+             item->pos());
+    }
+    const std::string& col = item->s();
+    check_program_name(col, item->pos());
+    const std::string uc = ascii_upper(col);
+    int matches = plan.source_relation.field(uc) ? 1 : 0;
+    for (const RelationalJoin& join : plan.joins) {
+      if (join.source_relation.field(uc)) ++matches;
+    }
+    if (matches > 1) {
+      refuse("E_SQL_SHAPE",
+             "column '" + col +
+                 "' is ambiguous across joined tables; qualify with a table alias",
+             item->pos());
+    }
+    if (!plan.source_relation.fields.empty() && matches == 0) {
+      std::string declared;
+      for (std::size_t i = 0; i < plan.source_relation.fields.size(); ++i) {
+        if (i > 0) declared += ", ";
+        declared += plan.source_relation.fields[i].first;
+      }
+      refuse("E_SQL_SHAPE",
+             "relation " + plan.source_name + " has no field '" + col +
+                 "'; the relation declares " + declared,
+             item->pos());
+    }
+    // A raw field is an expression against the relation's own alias, so it
+    // has no column to select by name.
+    if (const ColumnSpec* raw_field = plan.source_relation.field(uc)) {
+      if (raw_field->is_raw) {
+        refuse("E_SQL_SHAPE",
+               "the field '" + col + "' is a raw SQL expression, and "
+               "SELECT_COLS names columns; select it through a MAP",
+               item->pos());
+      }
+    }
+    cols.push_back(col);
+  }
+  plan.select_cols = std::move(cols);
+  plan.projections = std::nullopt;
+}
+
+void Translator::plan_map_step(RelationalPlan& plan, const SNodePtr& step) {
+  if (plan.bucket == RelationalPlan::Bucket::Sealed) {
+    refuse("E_SQL_SHAPE",
+           "a MAP over buckets must follow the BUCKET, with at most a FILTER "
+           "between: SQL keeps a bucket's members only for the projection that "
+           "ends the grouping",
+           step->pos());
+  }
+  const auto& args = step->kids();
+  const auto [binder, at] = step_binder(args, 2, 3, "MAP");
+  const SNodePtr& expr = args[at];
+  // BUCKET(src, key) .> MAP(proj) is BUCKET(src, key, proj): the MAP's body
+  // is evaluated once per group, so it is the bucket's projection.
+  if (plan.bucket == RelationalPlan::Bucket::Open) {
+    plan.bucket = RelationalPlan::Bucket::None;
+    bucket_projection(plan, binder, expr);
+    return;
+  }
+  const bool need_derived = plan_needs_wrap_before_map(plan);
+  plan = ensure_derived(std::move(plan), need_derived);
+
+  std::vector<RelationalProjection> projections;
+  if (expr->t() == SNode::T::Call && expr->s() == "RECORD") {
+    for (const auto& [alias, value] : record_fields(expr, dialect_)) {
+      projections.push_back({alias, binder, value, {}});
+    }
+  } else {
+    projections.push_back({std::nullopt, binder, expr, {}});
+  }
+  plan.projections = std::move(projections);
+  plan.select_cols = std::nullopt;
+}
+
+void Translator::plan_distinct_step(RelationalPlan& plan, const SNodePtr& step) {
+  const bool need_derived = plan.limit.has_value() || plan.offset.has_value();
+  plan = ensure_derived(std::move(plan), need_derived);
+  if (!plan.projections && !plan.select_cols) {
+    refuse("E_SQL_SHAPE", "DISTINCT requires an explicit typed projection", step->pos());
+  }
+  // DISTINCT keeps the FIRST element of each run in sorted order; SQL's
+  // `SELECT DISTINCT proj ... ORDER BY <column not in proj>` is refused by
+  // PostgreSQL (42P10) and MySQL 8 (3065) and answers with an unspecified
+  // representative row on MariaDB. A loud refusal is acceptable and a silent
+  // misordering is not, so the step stays in memory.
+  if (!plan.order_by.empty()) {
+    refuse("E_SQL_SHAPE",
+           "DISTINCT after a sort keeps the first of each run in sorted order, "
+           "which SELECT DISTINCT ... ORDER BY does not promise; run the DISTINCT "
+           "in memory",
+           step->pos());
+  }
+  plan.distinct = true;
+}
+
+// TAKE and DROP: slices merge into one LIMIT/OFFSET pair.
+void Translator::plan_slice_step(RelationalPlan& plan, const SNodePtr& step) {
+  const std::string& name = step->s();
+  const auto& args = step->kids();
+  if (args.size() != 2) unreachable_arity(name);
+  const std::int64_t count = eval_int_param(args[1], name);
+  if (name == "TAKE") {
+    plan.limit = !plan.limit.has_value() ? count : std::min(*plan.limit, count);
+  } else {
+    // Slices merge first, and the sum is clamped like a single count (§11.6):
+    // DROP(2^63-1) .> DROP(1) is the offset 2^63-1, not a wrapped or wrapped-
+    // in-a-subquery one.
+    const std::int64_t skipped = plan.limit ? std::min(count, *plan.limit) : count;
+    if (plan.limit) *plan.limit -= skipped;
+    const std::int64_t have = plan.offset.value_or(0);
+    plan.offset = have > COUNT_MAX - skipped ? COUNT_MAX : have + skipped;
+  }
+  plan.limit_pos = step->pos();
+}
+
+void Translator::plan_sort_step(RelationalPlan& plan, const SNodePtr& step, bool over_groups) {
+  // A sort after a LIMIT or OFFSET sorts the rows that survived them,
+  // grouped or not, so those wrap; a sort over a projection or a DISTINCT
+  // wraps so its key can name what they produced. A sort after a sort
+  // does not wrap: the sorts are stable, so the earlier one is the later
+  // one's tie-breaker, and the later one's keys go FIRST in the ORDER BY.
+  const bool need_derived =
+      plan.limit.has_value() || plan.offset.has_value() ||
+      (!plan.group_by.has_value() &&
+       (plan.projections.has_value() || plan.select_cols.has_value() || plan.distinct));
+  // Sorts are stable, so an earlier sort is the later one's tie-break; a derived
+  // table with no LIMIT beside its ORDER BY does not keep it, and its keys may
+  // not even be columns the outer level can name.
+  if ((need_derived && !plan.order_by.empty() && !plan.limit.has_value() &&
+       !plan.offset.has_value()) ||
+      plan.order_dropped) {
+    refuse("E_SQL_SHAPE",
+           "a sort over a projection of sorted rows loses the earlier sort, which is "
+           "its tie-break: a derived table does not keep an ORDER BY",
+           step->pos());
+  }
+  plan = ensure_derived(std::move(plan), need_derived);
+  const std::size_t before = plan.order_by.size();
+  analyze_sort_step(step, plan);
+  std::vector<RelationalOrder> added(plan.order_by.begin() + static_cast<std::ptrdiff_t>(before),
+                                     plan.order_by.end());
+  for (auto& entry : added) entry.over_groups = over_groups;
+  plan.order_by.erase(plan.order_by.begin() + static_cast<std::ptrdiff_t>(before), plan.order_by.end());
+  added.insert(added.end(), plan.order_by.begin(), plan.order_by.end());
+  plan.order_by = std::move(added);
+}
+
+void Translator::plan_link_step(RelationalPlan& plan, const SNodePtr& step) {
+  const std::string& name = step->s();
+  const auto& args = step->kids();
+  // The steps before the LINK refuse first, as written: their keys (a
+  // sort's, a bucket's) are otherwise checked only when the statement is
+  // rendered, after this LINK and the steps after it were analysed, which
+  // reported a later step's refusal where run() raises at the earlier
+  // one. The SQL fuzzer found hosts that did not.
+  // The fragment is discarded: its parameters are never placed, and the
+  // statement renders these steps again anyway.
+  if (!plan.order_by.empty() || plan.projections || plan.select_cols || plan.group_by) {
+    // Its parameters (and caveats) are put back: the statement renders these
+    // steps again, and a slot the discarded pass created is a value bound
+    // for a placeholder the statement has no place for.
+    const std::size_t slots = params_.size();
+    const std::size_t kinds = param_kinds_.size();
+    const std::vector<std::string> caveats = caveats_;
+    (void)compile_statement(plan);
+    params_.resize(slots);
+    param_kinds_.resize(kinds);
+    caveats_ = caveats;
+  }
+  // A join returns its rows in no order, and SEL's are the left list's: rows
+  // sorted with no LIMIT beside the ORDER BY (which a derived table drops)
+  // cannot pass through a JOIN carrying their sort. After the earlier steps'
+  // own refusals, which come first as written.
+  if (plan.order_dropped ||
+      (!plan.order_by.empty() && !plan.limit.has_value() && !plan.offset.has_value())) {
+    refuse("E_SQL_SHAPE",
+           "a " + name + " over sorted rows would return them in no order, where SEL has "
+           "the left list's order",
+           step->pos());
+  }
+  const bool need_derived = plan_has_rows_above(plan);
+  plan = ensure_derived(std::move(plan), need_derived);
+  if (args.size() != 3 && args.size() != 5) {
+    unreachable_arity(name);
+  }
+  const SNodePtr& right_node = args[1];
+  if (right_node->t() != SNode::T::Var || !bindings_.has(right_node->s())) {
+    refuse("E_SQL_SHAPE", name + " requires a bound relation as its right side",
+           right_node->pos());
+  }
+  const Binding& right_binding = bindings_.get(right_node->s(), right_node->pos());
+  if (right_binding.kind() != Binding::Kind::Relation) {
+    refuse("E_SQL_SHAPE", right_node->s() + " is not bound as a relation",
+           right_node->pos());
+  }
+  RelationalJoin join;
+  join.type = name == "LINK_LEFT" ? "LEFT" : "INNER";
+  join.source_name = right_node->s();
+  join.source_relation = right_binding.as_relation();
+  join.source_from_raw = join.source_relation.from_is_raw;
+  join.source_table = join.source_relation.from;
+  join.source_alias = join.source_relation.alias;
+  if (args.size() == 5) {
+    if (!is_binder_name(*args[2]) || !is_binder_name(*args[3])) {
+      refuse("E_SQL_SHAPE", "join binders must be bare names", args[2]->pos());
+    }
+    join.left_names = {args[2]->s()};
+    join.right_names = {args[3]->s()};
+    join.on_pred = args[4];
+  } else {
+    // The evaluator names a three-argument LINK's sides after the
+    // variable their pipeline starts from, unless an earlier LINK is in
+    // the way (spec §7.4).
+    if (plan.joins.empty() && plan.root_name) join.left_names = {*plan.root_name};
+    join.right_names = {right_node->s()};
+    join.on_pred = args[2];
+  }
+  // The SQL alias of a table the binding leaves unaliased: the
+  // five-argument form's right binder, `_2` otherwise. An alias, not a
+  // SEL name.
+  if (!join.source_alias) join.source_alias = args.size() == 5 ? join.right_names[0] : "_2";
+  // One table alias per occurrence: a relation joined a second time under
+  // an alias the statement already uses (a self-join, or a chain back to
+  // an aliased relation) rendered it twice, which the server rejects
+  // The program stays in memory.
+  std::vector<std::string> open{plan.source_alias.value_or(relation_alias(plan.source_relation))};
+  for (const RelationalJoin& j : plan.joins) {
+    if (j.source_alias) open.push_back(*j.source_alias);
+  }
+  const std::string mine = ascii_upper(*join.source_alias);
+  if (std::any_of(open.begin(), open.end(),
+                  [&](const std::string& a) { return ascii_upper(a) == mine; })) {
+    refuse("E_SQL_SHAPE",
+           right_node->s() + " would be joined under the table alias " + *join.source_alias +
+               ", which this statement already uses; bind the relation a second time "
+               "under another alias",
+           right_node->pos());
+  }
+  join.pos = step->pos();
+  plan.joins.push_back(std::move(join));
 }
 
 int64_t Translator::eval_int_param(const SNodePtr& n, const std::string& op) {
@@ -3947,6 +3959,19 @@ void Translator::analyze_sort_step(const SNodePtr& step, RelationalPlan& plan) {
   plan.order_by.push_back({binder, key, dir, step->pos()});
 }
 
+namespace {
+
+// Literal SQL text onto a statement's parts.
+void append_sql(std::vector<Fragment::Part>& parts, std::string sql) {
+  if (sql.empty()) return;
+  Fragment::Part p;
+  p.is_slot = false;
+  p.sql = std::move(sql);
+  parts.push_back(std::move(p));
+}
+
+}  // namespace
+
 Fragment Translator::compile_statement(const RelationalPlan& plan) {
   // Do not turn RECORD writes into duplicate SQL columns or discard evaluation.
   const auto check_aliases = [](const auto& entries) {
@@ -3967,16 +3992,7 @@ Fragment Translator::compile_statement(const RelationalPlan& plan) {
   } reset_plan{&statement_plan_, previous_plan};
 
   std::vector<Fragment::Part> parts;
-  auto add_sql = [&](std::string sql) {
-    if (!sql.empty()) {
-      Fragment::Part p;
-      p.is_slot = false;
-      p.sql = std::move(sql);
-      parts.push_back(std::move(p));
-    }
-  };
-
-  add_sql(plan.distinct ? "SELECT DISTINCT " : "SELECT ");
+  append_sql(parts, plan.distinct ? "SELECT DISTINCT " : "SELECT ");
 
   Source src;
   src.shape = Source::Shape::Relation;
@@ -3985,11 +4001,26 @@ Fragment Translator::compile_statement(const RelationalPlan& plan) {
     src.filters.push_back({f.binder, f.node});
   }
 
-  // 1. SELECT list (Projections)
+  statement_select(plan, src, parts);
+  statement_from(plan, parts);
+  statement_where(plan, src, parts);
+  statement_grouping(plan, src, parts);
+  statement_order_and_slice(plan, src, parts);
+
+  Fragment out(parts, SqlKind::Statement, dialect_);
+  out.params_ = params_;
+  out.param_kinds_ = param_kinds_;
+  out.caveats_ = caveats_;
+  return out;
+}
+
+// --- compile_statement's clauses, in the order SQL writes them.
+
+void Translator::statement_select(const RelationalPlan& plan, const Source& src, std::vector<Fragment::Part>& parts) {
   if (plan.projections) {
     bool first = true;
     for (const auto& proj : *plan.projections) {
-      if (!first) add_sql(", ");
+      if (!first) append_sql(parts, ", ");
       first = false;
       Fragment p_frag = proj.group_key
           ? group_key(src, *proj.group_key, true)
@@ -4004,13 +4035,13 @@ Fragment Translator::compile_statement(const RelationalPlan& plan) {
         parts.push_back(p);
       }
       if (proj.alias) {
-        add_sql(" AS " + emit_.ident(*proj.alias));
+        append_sql(parts, " AS " + emit_.ident(*proj.alias));
       }
     }
   } else if (plan.select_cols) {
     bool first = true;
     for (const auto& col : *plan.select_cols) {
-      if (!first) add_sql(", ");
+      if (!first) append_sql(parts, ", ");
       first = false;
       const RelationSpec* owner = &plan.source_relation;
       const ColumnSpec* f_spec = plan.source_relation.field(ascii_upper(col));
@@ -4036,8 +4067,8 @@ Fragment Translator::compile_statement(const RelationalPlan& plan) {
       if (plan.distinct && f_spec && (f_spec->type == SqlKind::Text || f_spec->type == SqlKind::Num)) {
         const Fragment frag = emit_.text_operand(Fragment({{false, sql, 0}}, f_spec->type, dialect_));
         parts.insert(parts.end(), frag.parts().begin(), frag.parts().end());
-        add_sql(" AS " + emit_.ident(column));
-      } else add_sql(sql);
+        append_sql(parts, " AS " + emit_.ident(column));
+      } else append_sql(parts, sql);
     }
   } else if (!plan.joins.empty()) {
     // A joined row is its promoted fields (spec §7.4); see joined_row_fields.
@@ -4051,35 +4082,36 @@ Fragment Translator::compile_statement(const RelationalPlan& plan) {
     }
     bool first = true;
     for (const JoinedRowField& f : fields) {
-      if (!first) add_sql(", ");
+      if (!first) append_sql(parts, ", ");
       first = false;
       const std::string column = f.spec.column.empty() ? f.name : f.spec.column;
-      add_sql(emit_.column(f.table, column));
+      append_sql(parts, emit_.column(f.table, column));
     }
   } else {
     if (plan.source_alias && !plan.source_alias->empty()) {
-      add_sql(emit_.ident(*plan.source_alias) + ".*");
+      append_sql(parts, emit_.ident(*plan.source_alias) + ".*");
     } else {
-      add_sql("*");
+      append_sql(parts, "*");
     }
   }
+}
 
-  // 2. FROM clause
-  add_sql(" FROM ");
+void Translator::statement_from(const RelationalPlan& plan, std::vector<Fragment::Part>& parts) {
+  append_sql(parts, " FROM ");
   if (plan.source_subquery) {
     const Fragment subquery = compile_statement(*plan.source_subquery);
-    add_sql("(");
+    append_sql(parts, "(");
     for (const Fragment::Part& p : subquery.parts()) parts.push_back(p);
-    add_sql(")");
+    append_sql(parts, ")");
     if (plan.source_alias && !plan.source_alias->empty()) {
-      add_sql(" " + emit_.ident(*plan.source_alias));
+      append_sql(parts, " " + emit_.ident(*plan.source_alias));
     }
   } else {
     std::string from = plan.source_from_raw ? plan.source_table : emit_.ident(plan.source_table);
     if (plan.source_alias && !plan.source_alias->empty()) {
       from += " " + emit_.ident(*plan.source_alias);
     }
-    add_sql(from);
+    append_sql(parts, from);
   }
 
   // Joins are emitted before WHERE so a predicate that references both sides
@@ -4087,19 +4119,20 @@ Fragment Translator::compile_statement(const RelationalPlan& plan) {
   // alias.  This is also what keeps a left join's unmatched rows from being
   // accidentally filtered by an ON condition moved into WHERE.
   for (const RelationalJoin& join : plan.joins) {
-    add_sql(join.type == "LEFT" ? " LEFT JOIN " : " INNER JOIN ");
+    append_sql(parts, join.type == "LEFT" ? " LEFT JOIN " : " INNER JOIN ");
     std::string right = join.source_from_raw ? join.source_table : emit_.ident(join.source_table);
     if (join.source_alias && !join.source_alias->empty()) {
       right += " " + emit_.ident(*join.source_alias);
     }
-    add_sql(right + " ON ");
+    append_sql(parts, right + " ON ");
     const Fragment on = with_join_binders(plan, join, [&]() {
       return require_bool(node(join.on_pred), join.pos, "LINK");
     });
     for (const Fragment::Part& p : on.parts()) parts.push_back(p);
   }
+}
 
-  // 3. WHERE clause
+void Translator::statement_where(const RelationalPlan& plan, const Source& src, std::vector<Fragment::Part>& parts) {
   std::vector<std::vector<Fragment::Part>> cond_parts;
   if (plan.correlate && !plan.correlate->empty()) {
     Fragment::Part cp;
@@ -4121,21 +4154,23 @@ Fragment Translator::compile_statement(const RelationalPlan& plan) {
   in_where_ = false;
 
   if (!cond_parts.empty()) {
-    add_sql(" WHERE ");
+    append_sql(parts, " WHERE ");
     for (std::size_t i = 0; i < cond_parts.size(); ++i) {
-      if (i > 0) add_sql(" AND ");
+      if (i > 0) append_sql(parts, " AND ");
       for (const auto& p : cond_parts[i]) {
         parts.push_back(p);
       }
     }
   }
+}
 
-  // 4. GROUP BY clause
+void Translator::statement_grouping(const RelationalPlan& plan, const Source& src, std::vector<Fragment::Part>& parts) {
+  // GROUP BY
   if (plan.group_by && !plan.group_by->empty()) {
-    add_sql(" GROUP BY ");
+    append_sql(parts, " GROUP BY ");
     bool first = true;
     for (const auto& gb : *plan.group_by) {
-      if (!first) add_sql(", ");
+      if (!first) append_sql(parts, ", ");
       first = false;
       Fragment g_frag = group_key(src, gb);
       if (plan.bare_key && (g_frag.kind() == SqlKind::Bool || g_frag.kind() == SqlKind::Bin)) {
@@ -4150,9 +4185,9 @@ Fragment Translator::compile_statement(const RelationalPlan& plan) {
     }
   }
 
-  // 5. HAVING clause
+  // HAVING
   if (!plan.having.empty()) {
-    add_sql(" HAVING ");
+    append_sql(parts, " HAVING ");
     std::vector<std::vector<Fragment::Part>> h_cond_parts;
     for (const auto& hav : plan.having) {
       const auto render = [&]() { return require_bool(node(hav.node), hav.pos, "FILTER"); };
@@ -4161,19 +4196,21 @@ Fragment Translator::compile_statement(const RelationalPlan& plan) {
       h_cond_parts.push_back(h_frag.parts());
     }
     for (std::size_t i = 0; i < h_cond_parts.size(); ++i) {
-      if (i > 0) add_sql(" AND ");
+      if (i > 0) append_sql(parts, " AND ");
       for (const auto& p : h_cond_parts[i]) {
         parts.push_back(p);
       }
     }
   }
+}
 
-  // 6. ORDER BY clause
+void Translator::statement_order_and_slice(const RelationalPlan& plan, const Source& src, std::vector<Fragment::Part>& parts) {
+  // ORDER BY
   if (!plan.order_by.empty()) {
-    add_sql(" ORDER BY ");
+    append_sql(parts, " ORDER BY ");
     bool first = true;
     for (const auto& ord : plan.order_by) {
-      if (!first) add_sql(", ");
+      if (!first) append_sql(parts, ", ");
       first = false;
       // A TEXT sort key is collated like a group key: SEL sorts text by its
       // bytes, and a server's default collation would not. order_key says what
@@ -4186,11 +4223,11 @@ Fragment Translator::compile_statement(const RelationalPlan& plan) {
       for (const auto& p : o_frag.parts()) {
         parts.push_back(p);
       }
-      add_sql(" " + ord.dir);
+      append_sql(parts, " " + ord.dir);
     }
   }
 
-  // 7. LIMIT / OFFSET clause: the dialect's limit, limitOffset and offsetOnly
+  // LIMIT / OFFSET: the dialect's limit, limitOffset and offsetOnly
   // skeletons (sql/MAP.md §5.1); a refusal blames the last TAKE, TOP or DROP.
   if (plan.limit || plan.offset) {
     const char* key = !plan.limit ? "offsetOnly" : !plan.offset ? "limit" : "limitOffset";
@@ -4201,14 +4238,8 @@ Fragment Translator::compile_statement(const RelationalPlan& plan) {
     for (const auto& pt : fill_named(skeleton(key, plan.limit_pos), counts, plan.limit_pos)) {
       clause += pt.sql;
     }
-    add_sql(std::move(clause));
+    append_sql(parts, std::move(clause));
   }
-
-  Fragment out(parts, SqlKind::Statement, dialect_);
-  out.params_ = params_;
-  out.param_kinds_ = param_kinds_;
-  out.caveats_ = caveats_;
-  return out;
 }
 
 

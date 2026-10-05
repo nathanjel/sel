@@ -272,6 +272,15 @@ class Translator {
   Begun begin(const NodePtr& ast);
 
   std::optional<RelationalPlan> analyze_pipeline(const SNodePtr& ast);
+  // analyze_pipeline's step handlers, one per pipeline step.
+  void plan_filter_step(RelationalPlan& plan, const SNodePtr& step, bool over_groups);
+  void plan_bucket_step(RelationalPlan& plan, const SNodePtr& step);
+  void plan_select_cols_step(RelationalPlan& plan, const SNodePtr& step);
+  void plan_map_step(RelationalPlan& plan, const SNodePtr& step);
+  void plan_distinct_step(RelationalPlan& plan, const SNodePtr& step);
+  void plan_slice_step(RelationalPlan& plan, const SNodePtr& step);
+  void plan_sort_step(RelationalPlan& plan, const SNodePtr& step, bool over_groups);
+  void plan_link_step(RelationalPlan& plan, const SNodePtr& step);
   Fragment compile_statement(const RelationalPlan& plan);
   std::int64_t eval_int_param(const SNodePtr& n, const std::string& op);
   void analyze_sort_step(const SNodePtr& step, RelationalPlan& plan);
@@ -383,6 +392,13 @@ class Translator {
 
   Source classify(const SNodePtr& src);
   Source classify_impl(const SNodePtr& src);
+  // compile_statement's clauses, each appended to PARTS in SQL's order.
+  void statement_select(const RelationalPlan& plan, const Source& src, std::vector<Fragment::Part>& parts);
+  void statement_from(const RelationalPlan& plan, std::vector<Fragment::Part>& parts);
+  void statement_where(const RelationalPlan& plan, const Source& src, std::vector<Fragment::Part>& parts);
+  void statement_grouping(const RelationalPlan& plan, const Source& src, std::vector<Fragment::Part>& parts);
+  void statement_order_and_slice(const RelationalPlan& plan, const Source& src,
+                                 std::vector<Fragment::Part>& parts);
   Fragment aggregate(const SNode& n);
   Fragment agg_body(const std::string& name, const SNodePtr& body,
                     const Source& src, const SNode& n);

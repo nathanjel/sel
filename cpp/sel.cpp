@@ -1640,11 +1640,11 @@ int dec_sign(const Dec& d) {
 
 // --- arithmetic
 
-// The checked native fast path shared by addition and comparison: both small
-// mantissas brought to the larger scale in __int128, or false when the scale
-// gap is past the power table or the multiply overflows. The caller falls
-// through to the binary path on false exactly as each did with its own copy;
-// signed bounds are __builtin_mul_overflow's. Two callers, one rule
+// The checked native fast path shared by addition, comparison and modulo:
+// both small mantissas brought to the larger scale in __int128, or false when
+// the scale gap is past the power table or the multiply overflows. The caller
+// falls through to the binary path on false exactly as each did with its own
+// copy; signed bounds are __builtin_mul_overflow's. Three callers, one rule
 // (SEL-0018); it is not a small-integer abstraction for the other hosts.
 inline bool align_small(const Dec& a, const Dec& b, __int128_t& sa, __int128_t& sb,
                         long long& target_scale) {
@@ -1823,24 +1823,13 @@ Dec dec_div(const Dec& a, const Dec& b, Pos pos = {}) {
 // Remainder of truncated division: takes the sign of the dividend.
 Dec dec_mod(const Dec& a, const Dec& b, Pos pos = {}) {
   if (dec_is_zero(b)) fail("E_DIV_ZERO", "modulo by zero", pos);
+  // Both at the larger scale, natively when they fit: `%` on the signed
+  // mantissas truncates, so the remainder already has the dividend's sign
+  // (no mantissa is -2^127, dec_from_mantissa).
   if (a.small && b.small) {
-    const long long target_scale = std::max(a.scale, b.scale);
-    if (target_scale <= 38 && (target_scale - a.scale) <= 38 && (target_scale - b.scale) <= 38) {
-      __int128_t sa = a.mantissa < 0 ? -a.mantissa : a.mantissa;
-      __int128_t sb = b.mantissa < 0 ? -b.mantissa : b.mantissa;
-      bool ov = false;
-      if (target_scale > a.scale) {
-        if (__builtin_mul_overflow(sa, POW10_128[target_scale - a.scale], &sa)) ov = true;
-      }
-      if (target_scale > b.scale) {
-        if (__builtin_mul_overflow(sb, POW10_128[target_scale - b.scale], &sb)) ov = true;
-      }
-      if (!ov && sb != 0) {
-        __int128_t r = sa % sb;
-        __int128_t signed_r = a.neg ? -r : r;
-        return dec_from_mantissa(signed_r, target_scale);
-      }
-    }
+    __int128_t sa, sb;
+    long long target_scale;
+    if (align_small(a, b, sa, sb, target_scale)) return dec_from_mantissa(sa % sb, target_scale);
   }
   const long long s = std::max(static_cast<long long>(a.scale), static_cast<long long>(b.scale));
   std::vector<std::uint64_t> keep_a, keep_b;
@@ -9180,9 +9169,6 @@ namespace {
 using Regex = srell::u32regex;
 
 constexpr std::size_t REGEX_CACHE_MAX = 256;   // spec §7.8: bounded pattern cache
-// RREPLACE takes its replacement apart into pieces only for a subject at least
-// this long (bytes); see the builtin.
-constexpr std::size_t RREPLACE_SPLIT_MIN_SUBJECT = 256;
 
 // The compiled-pattern cache. A named object rather than function statics so a
 // unit test can look at how many entries it holds.
@@ -9334,37 +9320,69 @@ RegexCall regex_args(Args& a, int pat_index, int subj_index, int flag_index) {
   return RegexCall{compile_regex(pattern, flags, flag_pos, a.pos_of(pat_index)), std::move(subject)};
 }
 
-// SEL replacement syntax is $0–$9 and $$ for a literal $; every other character
-// is literal. Spliced by hand rather than handed to the engine, whose own
+// RREPLACE's replacement, taken apart once (spec §7.8): runs of literal code
+// points and the group numbers $0-$9. "$$" is a dollar and any other "$" is
+// literal. Spliced by hand rather than handed to the engine, whose own
 // replacement syntax differs between hosts.
-std::string expand_replacement(const std::string& repl, const srell::u32smatch& m, Pos pos) {
-  std::string out;
-  for (std::size_t i = 0; i < repl.size(); i++) {
-    if (repl[i] != '$') {
-      out += repl[i];
-      continue;
-    }
-    const char next = i + 1 < repl.size() ? repl[i + 1] : '\0';
-    if (next == '$') { out += '$'; i++; continue; }
-    if (next >= '0' && next <= '9') {
-      const std::size_t g = static_cast<std::size_t>(next - '0');
-      if (g >= m.size()) {
-        fail("E_BAD_ARG",
-             "replacement refers to $" + std::to_string(g) + " but the pattern has " +
-                 std::to_string(m.size() - 1) + " groups",
-             pos);
+struct ReplacementPiece {
+  std::size_t begin;   // a literal: the unescaped text's [begin, begin + len)
+  std::size_t len;
+  int group;           // a group, or -1 for a literal
+};
+
+// REPL's pieces; REPL is unescaped in place (each "$$" becomes one dollar and
+// each "$n" is cut out), so the literal pieces index the text left in it and a
+// dollar does not split a run.
+std::vector<ReplacementPiece> split_replacement(CodePoints& repl) {
+  std::vector<ReplacementPiece> pieces;
+  pieces.reserve(4);
+  const std::size_t n = repl.size();
+  std::size_t w = 0;     // the unescaped text so far; never ahead of k
+  std::size_t run = 0;   // where its literal run not yet taken starts
+  for (std::size_t k = 0; k < n; ++k) {
+    const char32_t c = repl[k];
+    if (c == U'$' && k + 1 < n) {
+      const char32_t next = repl[k + 1];
+      if (next == U'$') {
+        repl[w++] = U'$';
+        ++k;
+        continue;
       }
-      // A capture that did not participate yields "".
-      if (m[g].matched) {
-        const std::u32string s = m[g].str();
-        out += encode_utf8(std::span<const char32_t>(s.data(), s.size()));
+      if (next >= U'0' && next <= U'9') {
+        if (w > run) pieces.push_back({run, w - run, -1});
+        pieces.push_back({0, 0, static_cast<int>(next - U'0')});
+        ++k;
+        run = w;
+        continue;
       }
-      i++;
-      continue;
     }
-    out += '$';
+    repl[w++] = c;
   }
-  return out;
+  if (w > run) pieces.push_back({run, w - run, -1});
+  repl.resize(w);
+  return pieces;
+}
+
+// One match's replacement onto OUT; a group that did not take part is "".
+// Whether a group exists is only known when a match comes up, and a
+// replacement that is never reached must not be refused, so that check is
+// made here, per match.
+void append_replacement(std::u32string& out, const CodePoints& repl, const std::vector<ReplacementPiece>& pieces,
+                        const srell::u32smatch& m, Pos pos) {
+  for (const ReplacementPiece& piece : pieces) {
+    if (piece.group < 0) {
+      out.append(repl.data() + piece.begin, piece.len);
+      continue;
+    }
+    const std::size_t g = static_cast<std::size_t>(piece.group);
+    if (g >= m.size()) {
+      fail("E_BAD_ARG",
+           "replacement refers to $" + std::to_string(g) + " but the pattern has " +
+               std::to_string(m.size() - 1) + " groups",
+           pos);
+    }
+    if (m[g].matched) out.append(m[g].first, m[g].second);
+  }
 }
 
 void register_regex() {
@@ -9418,36 +9436,12 @@ void register_regex() {
                 // Each search starts at `s` but treats everything before it as
                 // context (match_prev_avail), so `^` still means the start of the
                 // whole subject and not of the rest of it.
-                // The replacement is taken apart once: literal runs as code points and
-                // $0-$9 as group numbers (spec §7.8: "$$" is a dollar, any other "$" is
-                // literal). Whether a group exists is only known when a match comes up,
-                // and a replacement that is never reached must not be refused, so that
-                // check stays with the match.
-                //
-                // Only for a subject long enough to have many matches: taking the
-                // replacement apart costs a few allocations, which a short subject
-                // with its one match never gets back (an element-wise RREPLACE over a
-                // million short strings was 8% slower for it).
-                struct Piece { std::u32string lit; int group; };   // group < 0: a literal
-                std::vector<Piece> pieces;
-                const bool split_replacement = subject.size() >= RREPLACE_SPLIT_MIN_SUBJECT;
-                if (split_replacement) {
-                  const CodePoints rc = decode_utf8(repl, a.pos_of(1));
-                  std::u32string lit;
-                  for (std::size_t k = 0; k < rc.size(); ++k) {
-                    if (rc[k] != U'$') { lit.push_back(rc[k]); continue; }
-                    const char32_t next = k + 1 < rc.size() ? rc[k + 1] : U'\0';
-                    if (next == U'$') { lit.push_back(U'$'); ++k; continue; }
-                    if (next >= U'0' && next <= U'9') {
-                      if (!lit.empty()) { pieces.push_back({std::move(lit), -1}); lit.clear(); }
-                      pieces.push_back({std::u32string(), static_cast<int>(next - U'0')});
-                      ++k;
-                      continue;
-                    }
-                    lit.push_back(U'$');
-                  }
-                  if (!lit.empty()) pieces.push_back({std::move(lit), -1});
-                }
+                // The replacement is taken apart at the first match, once: a subject
+                // with no match pays nothing for it.
+                CodePoints replacement;
+                std::vector<ReplacementPiece> pieces;
+                bool split = false;
+                const Pos repl_pos = a.pos_of(1);
                 std::u32string out;
                 std::size_t last = 0;
                 std::size_t s = 0;
@@ -9465,26 +9459,12 @@ void register_regex() {
                   const std::size_t at = s + static_cast<std::size_t>(m.position(0));
                   const std::size_t len = static_cast<std::size_t>(m.length(0));
                   out.append(subject, last, at - last);
-                  if (!split_replacement) {
-                    const std::string piece = expand_replacement(repl, m, a.pos_of(1));
-                    const CodePoints pc = decode_utf8(piece, a.pos_of(1));
-                    out.append(pc.begin(), pc.end());
+                  if (!split) {
+                    replacement = decode_utf8(repl, repl_pos);
+                    pieces = split_replacement(replacement);
+                    split = true;
                   }
-                  for (const Piece& piece : pieces) {
-                    if (piece.group < 0) {
-                      out += piece.lit;
-                      continue;
-                    }
-                    const std::size_t g = static_cast<std::size_t>(piece.group);
-                    if (g >= m.size()) {
-                      fail("E_BAD_ARG",
-                           "replacement refers to $" + std::to_string(g) + " but the pattern has " +
-                               std::to_string(m.size() - 1) + " groups",
-                           a.pos_of(1));
-                    }
-                    // A capture that did not participate yields "".
-                    if (m[g].matched) out.append(m[g].first, m[g].second);
-                  }
+                  append_replacement(out, replacement, pieces, m, repl_pos);
                   cap_text(out.size(), a.pos());   // spec §6.4: stop growing at the cap
                   if (len == 0) {
                     if (at >= n) { last = at; break; }
