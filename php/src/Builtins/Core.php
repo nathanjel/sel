@@ -68,6 +68,7 @@ final class Core
         Registry::define(['name' => 'LIST', 'min' => 0, 'max' => PHP_INT_MAX,
             'fn' => static function (Args $a): Value {
                 $n = $a->count();
+                if ($n > \Sel\Limits::MAX_COLLECTION) \Sel\Utf8::checkCount($n, $a->pos, 'the list');
                 $out = [];
                 for ($i = 0; $i < $n; $i++) {
                     $out[] = $a->val($i)->copyBelow(1, $a->pos);
@@ -79,6 +80,7 @@ final class Core
             'fn' => static function (Args $a): Value {
                 $n = $a->count();
                 if ($n === 0) return Value::none();
+                if ($n >> 1 > \Sel\Limits::MAX_COLLECTION) \Sel\Utf8::checkCount($n >> 1, $a->pos, 'the record');
                 if ($a->recordShape !== null) {
                     $values = [];
                     for ($i = 1; $i < $n; $i += 2) {

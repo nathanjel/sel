@@ -615,6 +615,8 @@ final class Optimizer
         $details = self::mapDetails($step);
         $body = $details['body'] ?? null;
         if (($body['t'] ?? null) === 'call' && $body['name'] === 'RECORD') {
+            // Past MAX_COLLECTION pairs the record itself raises E_RANGE.
+            if (count($body['args']) >> 1 > \Sel\Limits::MAX_COLLECTION) return false;
             foreach ($body['args'] as $i => $arg) {
                 if ($i % 2 === 0 ? ($arg['t'] ?? null) !== 'text' : !self::cannotRaise($arg, $details['binder'], $logical)) return false;
             }
