@@ -89,10 +89,16 @@ $(BUILD)/metadata: ../tools/metadata/cpp.cpp sel.hpp $(BUILD)/sel.o | $(BUILD)
 $(BUILD)/sel.o: sel.cpp sel_optimizer.cpp sel.hpp sel_ast.hpp sel_builtin_manifest.hpp sel_math_ops.hpp sel_limits.hpp | $(BUILD)
 	$(CXX) $(CXXFLAGS) -c -o $@ sel.cpp
 
-$(addprefix $(BUILD)/,$(LINKED) $(INTERNAL)): $(BUILD)/%: bin/%.cpp sel.hpp sel_ast.hpp $(BUILD)/sel.o | $(BUILD)
+$(addprefix $(BUILD)/,$(LINKED) $(INTERNAL)): $(BUILD)/%: bin/%.cpp bin/read_file.hpp sel.hpp sel_ast.hpp $(BUILD)/sel.o | $(BUILD)
 	$(CXX) $(CXXFLAGS) -o $@ $< $(BUILD)/sel.o
 
-$(addprefix $(BUILD)/,$(WHITEBOX)): $(BUILD)/%: bin/%.cpp sel.cpp sel.hpp sel_ast.hpp | $(BUILD)
+# `sel --version` prints the package version, read from the one place this
+# directory states it (CMakeLists.txt's project() line, which
+# tools/check-version.sh holds to the other manifests).
+SEL_VERSION := $(shell grep -m1 -o 'sel-lang VERSION [0-9.]*' CMakeLists.txt | cut -d' ' -f3)
+$(BUILD)/sel: private CXXFLAGS += -DSEL_VERSION='"$(SEL_VERSION)"'
+
+$(addprefix $(BUILD)/,$(WHITEBOX)): $(BUILD)/%: bin/%.cpp bin/read_file.hpp sel.cpp sel.hpp sel_ast.hpp | $(BUILD)
 	$(CXX) $(CXXFLAGS) -o $@ $<
 
 $(addprefix $(BUILD)/example-,$(EXAMPLES)): $(BUILD)/example-%: ../examples/%/cpp.cpp sel.hpp $(BUILD)/sel.o | $(BUILD)
@@ -121,7 +127,7 @@ $(addprefix $(BUILD)/example-,$(DB_EXAMPLES)): $(BUILD)/example-%: ../examples/%
 $(SQL_OBJS): $(BUILD)/%.o: %.cpp $(SQL_HDRS) sel.hpp | $(BUILD)
 	$(CXX) $(CXXFLAGS) -c -o $@ $<
 
-$(addprefix $(BUILD)/,sqlmap sqlfuzz sqlapi): $(BUILD)/%: bin/%.cpp $(SQL_HDRS) sel.hpp $(SQL_OBJS) $(BUILD)/sel.o | $(BUILD)
+$(addprefix $(BUILD)/,sqlmap sqlfuzz sqlapi): $(BUILD)/%: bin/%.cpp bin/read_file.hpp $(SQL_HDRS) sel.hpp $(SQL_OBJS) $(BUILD)/sel.o | $(BUILD)
 	$(CXX) $(CXXFLAGS) -o $@ $< $(SQL_OBJS) $(BUILD)/sel.o
 
 # The SQL suite, plus the case table tools/gen-sql-cases.mjs writes. That table

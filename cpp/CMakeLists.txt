@@ -126,6 +126,8 @@ if(SEL_BUILD_TOOLS)
     add_executable(sel-${tool} bin/${tool}.cpp)
     target_link_libraries(sel-${tool} PRIVATE sel-lang)
   endforeach()
+  # `sel --version` prints the package version; the CLI keeps no copy of it.
+  target_compile_definitions(sel-sel PRIVATE SEL_VERSION="${PROJECT_VERSION}")
 
   # These include sel.cpp directly to reach the internals, so they must not also
   # link the library.

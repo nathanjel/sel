@@ -5,6 +5,7 @@
 //   cpp/build/batch [--show] corpus.selc
 
 #include "../sel.hpp"
+#include "read_file.hpp"
 
 #include <fstream>
 #include <iostream>
@@ -13,41 +14,6 @@
 #include <vector>
 
 namespace {
-
-// A line beginning `### ` starts a record; everything after it is source until
-// the next marker.
-std::vector<std::string> read_corpus(std::istream& in) {
-  // Deliberately the same construction as tools/run-batch.mjs: collect a
-  // record's lines, join them with a single newline BETWEEN them, then drop one
-  // trailing newline. Appending a newline after every line instead produces one
-  // separator too many, and a spare trailing newline moves the position SEL
-  // reports for an end-of-input error — a phantom disagreement that looks like
-  // an interpreter bug. See tools/README.md, which is normative for this.
-  std::vector<std::vector<std::string>> records;
-  std::string line;
-  bool started = false;
-  while (std::getline(in, line)) {
-    if (line.rfind("### ", 0) == 0) {
-      records.emplace_back();
-      started = true;
-      continue;
-    }
-    if (started) records.back().push_back(line);
-  }
-
-  std::vector<std::string> out;
-  out.reserve(records.size());
-  for (const auto& lines : records) {
-    std::string joined;
-    for (std::size_t i = 0; i < lines.size(); i++) {
-      if (i) joined += "\n";
-      joined += lines[i];
-    }
-    if (!joined.empty() && joined.back() == '\n') joined.pop_back();
-    out.push_back(std::move(joined));
-  }
-  return out;
-}
 
 // The rendering bin/sel uses, so a documentation example can be pasted into the
 // CLI and produce exactly what the documentation claims.
@@ -70,14 +36,21 @@ int main(int argc, char** argv) {
     if (a == "--show") show = true;
     else path = a;
   }
-  std::ifstream in(path);
-  if (!in) {
+  // Raw bytes, split by selbin::corpus_records: exactly one trailing newline
+  // removed per record, a CR kept as program text (tools/README.md).
+  std::string text;
+  if (!selbin::read_bytes(path, text)) {
     std::cerr << "cannot read " << path << "\n";
     return 2;
   }
+  const std::vector<std::string> corpus = selbin::corpus_records(text);
+  if (corpus.empty()) {
+    std::cerr << "batch: no programs in " << path << "\n";
+    return 1;
+  }
 
   std::vector<std::string> lines;
-  for (const std::string& src : read_corpus(in)) {
+  for (const std::string& src : corpus) {
     try {
       const sel::Value v = sel::compile(src).run();
       lines.push_back(show ? render(v) : v.dump());

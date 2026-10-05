@@ -495,5 +495,10 @@ int main(int argc, char** argv) {
               "%d refused by the type system), %d failed, %d suite errors\n",
               passed, mirrored, compile_refused,
               static_cast<int>(failures.size()), suite_errors);
+  // A filter that matched nothing is a mistyped name, not a pass.
+  if (passed == 0 && failures.empty() && suite_errors == 0) {
+    std::printf("no case matched\n");
+    return 1;
+  }
   return failures.empty() && suite_errors == 0 ? 0 : 1;
 }

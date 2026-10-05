@@ -10,6 +10,7 @@
 
 #include "../sel.hpp"
 #include "../sel_ast.hpp"
+#include "read_file.hpp"
 
 #include <fstream>
 #include <iostream>
@@ -54,15 +55,13 @@ int main(int argc, char** argv) {
     std::cerr << "usage: ast FILE\n";
     return 2;
   }
-  std::ifstream in(argv[1]);
-  if (!in) {
+  std::string source;
+  if (!selbin::read_bytes(argv[1], source)) {
     std::cerr << "cannot read " << argv[1] << "\n";
     return 2;
   }
-  std::ostringstream buf;
-  buf << in.rdbuf();
   try {
-    walk(sel::compile(buf.str()).ast().get(), 0);
+    walk(sel::compile(source).ast().get(), 0);
   } catch (const sel::SelError& e) {
     std::cerr << e.str() << "\n";
     return 1;

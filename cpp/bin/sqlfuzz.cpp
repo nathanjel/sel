@@ -15,40 +15,9 @@
 
 #include "../sel.hpp"
 #include "../sel_sql.hpp"
+#include "read_file.hpp"
 
 namespace {
-
-std::vector<std::string> read_corpus(const std::string& text) {
-  std::vector<std::vector<std::string>> records;
-  bool started = false;
-  // Split on '\n' and nothing else: a splitlines-style break would also cut on
-  // \v, \f and U+2028, which the corpus contains deliberately.
-  std::size_t i = 0;
-  while (i <= text.size()) {
-    const std::size_t nl = text.find('\n', i);
-    const std::string line =
-        text.substr(i, nl == std::string::npos ? std::string::npos : nl - i);
-    if (line.rfind("### ", 0) == 0) {
-      records.emplace_back();
-      started = true;
-    } else if (started) {
-      records.back().push_back(line);
-    }
-    if (nl == std::string::npos) break;
-    i = nl + 1;
-  }
-  std::vector<std::string> out;
-  for (const auto& lines : records) {
-    std::string joined;
-    for (std::size_t k = 0; k < lines.size(); ++k) {
-      if (k) joined += "\n";
-      joined += lines[k];
-    }
-    if (!joined.empty() && joined.back() == '\n') joined.pop_back();
-    out.push_back(std::move(joined));
-  }
-  return out;
-}
 
 std::string escape_newlines(const std::string& s) {
   std::string out;
@@ -109,10 +78,16 @@ int main(int argc, char** argv) {
   const std::string dialect = argc > 2 ? argv[2] : "mariadb";
   // `statement`: only translate_statement's inline SQL; see js/bin/sqlfuzz.mjs.
   const std::string mode = argc > 3 ? argv[3] : "all";
-  std::ifstream in(argv[1], std::ios::binary);
-  std::ostringstream buf;
-  buf << in.rdbuf();
-  const std::vector<std::string> corpus = read_corpus(buf.str());
+  std::string text;
+  if (!selbin::read_bytes(argv[1], text)) {
+    std::fprintf(stderr, "cannot read %s\n", argv[1]);
+    return 2;
+  }
+  const std::vector<std::string> corpus = selbin::corpus_records(text);
+  if (corpus.empty()) {
+    std::fprintf(stderr, "sqlfuzz: no programs in %s\n", argv[1]);
+    return 1;
+  }
 
   std::string out;
   for (const std::string& src : corpus) {
