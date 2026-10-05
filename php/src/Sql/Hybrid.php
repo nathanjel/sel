@@ -1014,8 +1014,11 @@ final class Hybrid
             // a literal helper spelled like an explicit binder
             // (`N = 5; ... SORT_BY(N, N["id"], "DESC")`) was inlined into the binder
             // slot and downgraded a pure SQL pipeline to memory.
-            $node['args'] = Normalise::scopedArgs($node, $bound,
-                static fn (array $arg, array $sees): array => self::inlineLiterals($arg, $literals, $sees));
+            foreach (Normalise::argScopes($node, $bound) as $i => $sees) {
+                if ($sees !== null) {
+                    $node['args'][$i] = self::inlineLiterals($node['args'][$i], $literals, $sees);
+                }
+            }
             return $node;
         }
         return $node;

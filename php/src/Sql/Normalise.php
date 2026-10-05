@@ -193,31 +193,30 @@ final class Normalise
     }
 
     /**
-     * A call's arguments, each passed through `$visit` with the names bound
-     * where it runs. Which arguments a binding call runs inside the binder, and
-     * what they see (its binders and `_K`), is the manifest's decision
-     * (Registry::bindingForm), shared with dependencies(). A binder argument is a
-     * name, not a read of one, and stays as written. The one scoping rule for
-     * every walk that substitutes by name: this stage and the hybrid planner's
-     * literal helpers.
+     * What each argument of a call sees: the names bound where it runs, or null
+     * for a binder argument, which is a name and not a read of one and stays as
+     * written. Which arguments a binding call runs inside the binder, and what
+     * they see (its binders and `_K`), is the manifest's decision
+     * (Registry::bindingForm), shared with dependencies(). The one scoping rule
+     * for every walk that substitutes by name: this stage and the hybrid
+     * planner's literal helpers.
      *
      * @param array<string,mixed> $node a call
      * @param list<string> $bound the names bound around the call
-     * @param callable(array<string,mixed>, list<string>): array<string,mixed> $visit
-     * @return list<array<string,mixed>>
+     * @return list<list<string>|null>
      */
-    public static function scopedArgs(array $node, array $bound, callable $visit): array
+    public static function argScopes(array $node, array $bound): array
     {
         $form = Registry::bindingForm($node['name'], $node['args']);
-        $inner = $form === null ? $bound : array_merge($bound, $form['binds']);
-        $args = $node['args'];
-        foreach ($args as $i => $arg) {
-            $scope = $form === null ? 'outer' : $form['scopes'][$i];
-            if ($scope !== 'binder') {
-                $args[$i] = $visit($arg, $scope === 'inner' ? $inner : $bound);
-            }
+        if ($form === null) {
+            return array_fill(0, count($node['args']), $bound);
         }
-        return $args;
+        $inner = array_merge($bound, $form['binds']);
+        $out = [];
+        foreach ($form['scopes'] as $scope) {
+            $out[] = $scope === 'binder' ? null : ($scope === 'inner' ? $inner : $bound);
+        }
+        return $out;
     }
 
     /**
@@ -307,8 +306,11 @@ final class Normalise
                 return $node;
 
             case 'call':
-                $node['args'] = self::scopedArgs($node, $bound,
-                    static fn (array $arg, array $sees): array => self::substitute($arg, $defs, $sees, $depth));
+                foreach (self::argScopes($node, $bound) as $i => $sees) {
+                    if ($sees !== null) {
+                        $node['args'][$i] = self::substitute($node['args'][$i], $defs, $sees, $depth);
+                    }
+                }
                 return $node;
 
             default:

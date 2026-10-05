@@ -3320,21 +3320,18 @@ final class Translator
     private function fillNamed(string $tpl, array $slots, array $pos): array
     {
         $parts = [];
-        $push = static function (string $s) use (&$parts): void {
-            Emit::appendPart($parts, $s);
-        };
 
         $i = 0;
         $len = strlen($tpl);
         while ($i < $len) {
             if ($tpl[$i] !== '{') {
-                $push($tpl[$i]);
+                Emit::appendPart($parts, $tpl[$i]);
                 $i++;
                 continue;
             }
             $end = strpos($tpl, '}', $i);
             if ($end === false) {
-                $push(substr($tpl, $i));
+                Emit::appendPart($parts, substr($tpl, $i));
                 break;
             }
             $name = substr($tpl, $i + 1, $end - $i - 1);
@@ -3346,7 +3343,7 @@ final class Translator
             }
             foreach ($slots[$name] as $item) {
                 if (is_string($item)) {
-                    $push($item);
+                    Emit::appendPart($parts, $item);
                     continue;
                 }
                 foreach ($item->parts as $p) {

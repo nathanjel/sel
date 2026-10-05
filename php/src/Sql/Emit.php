@@ -370,19 +370,16 @@ final class Emit
                          array $expanding = []): array
     {
         $parts = [];
-        $push = static function (string $s) use (&$parts): void {
-            self::appendPart($parts, $s);
-        };
         $splice = static function (Fragment $f) use (&$parts): void {
             foreach ($f->parts as $p) {
                 self::appendPart($parts, $p);   // a slot is absolute already; see the note above
             }
         };
-        $join = function (array $subset) use ($splice, $push): void {
+        $join = function (array $subset) use ($splice, &$parts): void {
             $first = true;
             foreach ($subset as $f) {
                 if (!$first) {
-                    $push(', ');
+                    self::appendPart($parts, ', ');
                 }
                 $first = false;
                 $splice($f);
@@ -393,12 +390,12 @@ final class Emit
         $len = strlen($tpl);
         while ($i < $len) {
             if ($tpl[$i] === '{' && ($tpl[$i + 1] ?? '') === '{') {
-                $push('{');
+                self::appendPart($parts, '{');
                 $i += 2;
                 continue;
             }
             if ($tpl[$i] === '}' && ($tpl[$i + 1] ?? '') === '}') {
-                $push('}');
+                self::appendPart($parts, '}');
                 $i += 2;
                 continue;
             }
@@ -409,17 +406,17 @@ final class Emit
                 // is a run of length zero and is pushed as itself.
                 $run = strcspn($tpl, '{}', $i);
                 if ($run === 0) {
-                    $push($tpl[$i]);
+                    self::appendPart($parts, $tpl[$i]);
                     $i++;
                 } else {
-                    $push(substr($tpl, $i, $run));
+                    self::appendPart($parts, substr($tpl, $i, $run));
                     $i += $run;
                 }
                 continue;
             }
             $end = strpos($tpl, '}', $i);
             if ($end === false) {
-                $push(substr($tpl, $i));
+                self::appendPart($parts, substr($tpl, $i));
                 break;
             }
             $slot = substr($tpl, $i + 1, $end - $i - 1);
@@ -453,7 +450,7 @@ final class Emit
                     . "lexical entry of dialect {$this->dialect}", $pos);
             }
             if ($arg === null || $arg === '') {
-                $push($val);
+                self::appendPart($parts, $val);
                 continue;
             }
             if (isset($expanding[$key])) {
@@ -465,7 +462,7 @@ final class Emit
             $each = $arg === '*' ? array_map('strval', array_keys($args)) : [$arg];
             foreach ($each as $at => $one) {
                 if ($at > 0) {
-                    $push(', ');
+                    self::appendPart($parts, ', ');
                 }
                 // binaryCast converts a TEXT or NUM operand to bytes. An operand
                 // that is already BIN needs no conversion, and on PostgreSQL
@@ -486,7 +483,7 @@ final class Emit
                     $pos, $deeper);
                 foreach ($sub as $p) {
                     if (is_string($p)) {
-                        $push($p);
+                        self::appendPart($parts, $p);
                     } else {
                         $parts[] = $p;
                     }
