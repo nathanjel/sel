@@ -55,13 +55,16 @@ final class Regex
     private static bool $lowerAll = false;
 
     /** @param array<string,mixed>|null $pos */
-    private static function bad(string $message, string $pattern, int $at, ?array $pos): void
+    private static function bad(string $message, string $pattern, int $at, ?array $pos): never
     {
         fail('E_REGEX_SYNTAX', "{$message} (at offset {$at} of /" . self::excerpt($pattern) . "/)", $pos);
     }
 
-    /** The message quotes the pattern; a 65 000-character one is not quoted whole. */
-    /** At most 80 code points of the pattern, cut between code points so the message stays UTF-8. */
+    /**
+     * The message quotes the pattern, but a 65 000-character one is not quoted
+     * whole: at most 80 code points, cut between code points so the message
+     * stays UTF-8.
+     */
     private static function excerpt(string $pattern): string
     {
         if (strlen($pattern) <= 80 || Utf8::length($pattern) <= 80) return $pattern;
@@ -69,7 +72,7 @@ final class Regex
     }
 
     /** @param array<string,mixed>|null $pos */
-    private static function rejectEscape(string $e, string $pattern, int $at, ?array $pos): void
+    private static function rejectEscape(string $e, string $pattern, int $at, ?array $pos): never
     {
         if ($e === 'b' || $e === 'B') {
             self::bad(
@@ -510,7 +513,6 @@ final class Regex
         $m = count($atoms);
         for ($k = 0; $k < $m; $k++) {
             $a = $atoms[$k];
-            $isRange = $k + 2 < $m + 0 && ($atoms[$k + 1]['dash'] ?? false);
             // `a-b` needs a third atom after the dash; `a-` at the end is literal.
             $isRange = ($k + 2 < $m) && $atoms[$k + 1]['dash'];
             if ($a['esc']) {

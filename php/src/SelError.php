@@ -74,9 +74,8 @@ final class SelError extends \Exception
  * Raise at the innermost point of failure. Nothing wraps this on the way out.
  *
  * @param array{line:int,col:int,offset:int}|null $pos
- * @return never
  */
-function fail(string $code, string $message, ?array $pos = null): void
+function fail(string $code, string $message, ?array $pos = null): never
 {
     throw new SelError($code, $message, $pos);
 }
