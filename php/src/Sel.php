@@ -139,7 +139,7 @@ final class Program
             if (($n['t'] ?? null) === 'call') {
                 $name = (string) ($n['name'] ?? '');
                 $spec = Registry::lookup($name);
-                if ($spec === null || ($spec['binds'] ?? false) || in_array($name, Optimizer::PIPELINE_OPS, true)) {
+                if ($spec === null || ($spec['binds'] ?? false) || isset(BuiltinManifest::PIPELINE_STEPS[$name])) {
                     return true;
                 }
             }
@@ -270,7 +270,7 @@ final class Program
 
             case 'bin':
                 self::collect($node['l'], $bound, $reads, $defined, $d);
-                if (in_array($node['op'], ['AND', 'OR', '??', '???'], true)) {
+                if (isset(Ops::$shortCircuit[$node['op']])) {
                     $rhs = $defined;   // may not run: its assignments are not definite
                     self::collect($node['r'], $bound, $reads, $rhs, $d);
                 } else {

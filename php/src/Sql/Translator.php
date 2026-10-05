@@ -19,7 +19,7 @@ use Sel\Context;
 use Sel\Dec;
 use Sel\Evaluator;
 use Sel\Limits;
-use Sel\Optimizer;
+use Sel\Ops;
 use Sel\Registry;
 use Sel\SelError;
 use Sel\Utf8;
@@ -29,11 +29,6 @@ final class Translator
 {
     /** Lowered by stage 2; none of them is a `funcs` entry. See sql/MAP.md §4. */
     private const AGGREGATES = ['ALL', 'ANY', 'MAP', 'FILTER', 'SUM', 'JOIN'];
-    /**
-     * The optimiser's list, not a second copy: one vocabulary of pipeline
-     * operators per host, or the planner and the translator drift apart.
-     */
-    private const PIPELINE_OPS = Optimizer::PIPELINE_OPS;
 
     private string $dialect;
     private Emit $emit;
@@ -592,11 +587,11 @@ final class Translator
             return $this->inOperator($n);
         }
 
-        $arith = in_array($op, ['+', '-', '*', '/', '%'], true);
+        $arith = isset(Ops::$family['arith'][$op]);
         $l = $arith ? $this->arithmeticOperand($n['l']) : $this->node($n['l']);
         $r = $arith ? $this->arithmeticOperand($n['r']) : $this->node($n['r']);
 
-        if (in_array($op, ['AND', 'OR', 'XOR'], true)) {
+        if (isset(Ops::$family['logic'][$op])) {
             $l = $this->requireBool($l, $n['l']['pos'], $op);
             $r = $this->requireBool($r, $n['r']['pos'], $op);
         }
@@ -607,8 +602,7 @@ final class Translator
         // and PostgreSQL says `cannot cast type boolean to numeric` and fails
         // the query. Refusing is the only outcome that matches SEL, and it took
         // a strongly-typed server to make the gap visible.
-        if (in_array($op, ['+', '-', '*', '/', '%',
-                           '==', '!=', '<', '<=', '>', '>='], true)) {
+        if ($arith || isset(Ops::$family['compare'][$op])) {
             $this->requireNotBool($l, $n['l']['pos'], $op);
             $this->requireNotBool($r, $n['r']['pos'], $op);
             // And an operand whose value is written down has to BE a number.
@@ -1096,27 +1090,16 @@ final class Translator
 
     /**
      * The functions whose result has children, so the scalar rule does not
-     * apply to them.
-     *
-     * Measured the same way as the two sets below: every non-lazy name in
-     * `Registry::names()` was called and the results with `size() > 0` kept.
-     * Every one of them is already refused by the dialect documents; the point
-     * of the list is that `source()` used to reach its scalar fallback without
-     * ever consulting the map, so COUNT and HAS folded to 0 and FALSE instead.
-     */
-    private const YIELDS_LIST = ['BTL' => 0, 'INDEXES' => 0, 'RGROUPS' => 0,
-                                 'SPLIT' => 0];
-
-    /**
-     * The four text functions above, the constructors, and every pipeline
-     * step -- the optimiser's vocabulary, so a new step is covered by being
-     * one (COUNT(LIST(1, 2, 3)) was 0).
+     * apply to them: the manifest's yieldsList (spec/builtins.json) -- the
+     * text functions that yield a list, the constructors, and every pipeline
+     * step, so a new step is covered by being one (COUNT(LIST(1, 2, 3)) was
+     * 0). Every one of them is already refused by the dialect documents; the
+     * point is that `source()` used to reach its scalar fallback without ever
+     * consulting the map, so COUNT and HAS folded to 0 and FALSE instead.
      */
     private static function yieldsList(string $name): bool
     {
-        return isset(self::YIELDS_LIST[$name])
-            || in_array($name, ['LIST', 'RECORD'], true)
-            || in_array($name, self::PIPELINE_OPS, true);
+        return isset(BuiltinManifest::YIELDS_LIST[$name]);
     }
 
     /**
@@ -1428,48 +1411,23 @@ final class Translator
     }
 
     /**
-     * The functions that read their argument as bytes, and the one that takes a
-     * BOOL.
+     * How a function's arguments are typed: the manifest's `sql` facts
+     * (spec/builtins.json, BuiltinManifest::SQL_ARGS = [numeric, bin, bool]) --
+     * the numeric argument positions, the functions that read their argument
+     * as bytes, and the one that takes a BOOL.
      *
-     * Both lists were measured rather than written: every name in
+     * The BIN and BOOL sets were measured rather than written: every name in
      * `Registry::names()` was called with `TO_UTF8("a")` and with `TRUE`, and
-     * these are the ones SEL did not answer E_NOT_* for. Writing them by hand
-     * would be the second copy of SEL's argument rules that §11.4 exists to
-     * avoid — this is a cached measurement, and `sql/oracle/` re-measures it.
-     *
-     * COUNT, HAS and INDEXES also accept both and are absent because none of
-     * them reaches this path: the first two are folded before dispatch and the
-     * third is refused. BTL is absent for the same reason — it yields a list.
+     * these are the ones SEL did not answer E_NOT_* for -- a cached
+     * measurement, and `sql/oracle/` re-measures it. COUNT, HAS and INDEXES
+     * also accept both and are absent because none of them reaches this path:
+     * the first two are folded before dispatch and the third is refused. BTL
+     * is absent for the same reason -- it yields a list.
      */
-    private const BIN_ARGUMENT_OK = ['BLEN' => 0, 'CRC32' => 0, 'ENCODE_BASE64' => 0,
-                                     'FROM_UTF8' => 0, 'ISNUM' => 0, 'TO_HEX' => 0,
-                                     'TO_UTF8' => 0];
-    private const BOOL_ARGUMENT_OK = ['ISNUM' => 0];
-    private const NUMERIC_ARGUMENT_AT = [
-        'ABS' => [0],
-        'SIGN' => [0],
-        'CEIL' => [0],
-        'FLOOR' => [0],
-        'TRUNC' => [0],
-        'ROUND' => [0, 1],
-        'POWER' => [0, 1],
-        'MIN' => true,
-        'MAX' => true,
-        'LEFT' => [1],
-        'RIGHT' => [1],
-        'SUBSTR' => [1, 2],
-        'FIND' => [2],
-        'REPEAT' => [1],
-        'PADL' => [1],
-        'PADR' => [1],
-        'CHAR' => [0],
-        'CANON' => [0],
-    ];
-
     private static function isNumericArgument(string $name, int $i): bool
     {
-        $at = self::NUMERIC_ARGUMENT_AT[$name] ?? null;
-        if ($at === true) {
+        $at = BuiltinManifest::SQL_ARGS[$name][0] ?? null;
+        if ($at === 'all') {
             return true;
         }
         return is_array($at) && in_array($i, $at, true);
@@ -1493,12 +1451,12 @@ final class Translator
      */
     private function requireArgumentKind(string $name, Fragment $f, array $pos): void
     {
-        if ($f->kind === 'BOOL' && !isset(self::BOOL_ARGUMENT_OK[$name])) {
+        if ($f->kind === 'BOOL' && !(BuiltinManifest::SQL_ARGS[$name][2] ?? false)) {
             refuse('E_SQL_SHAPE',
                 "{$name} does not take a BOOL argument; SEL raises here rather "
                 . 'than reading a boolean as text or as 1', $pos);
         }
-        if ($f->kind === 'BIN' && !isset(self::BIN_ARGUMENT_OK[$name])) {
+        if ($f->kind === 'BIN' && !(BuiltinManifest::SQL_ARGS[$name][1] ?? false)) {
             refuse('E_SQL_SHAPE',
                 "{$name} reads its argument as text, and this is BIN; SEL raises "
                 . 'here rather than reinterpreting bytes as characters', $pos);
@@ -1523,11 +1481,11 @@ final class Translator
      */
     private function rewriteRegex(array $n): array
     {
-        static $regex = ['RMATCH' => 0, 'RFIND' => 0, 'RREPLACE' => 0, 'RGROUPS' => 0];
-        if (!isset($regex[$n['name']])) {
+        $call = BuiltinManifest::REGEX_CALLS[$n['name']] ?? null;
+        if ($call === null) {
             return $n;
         }
-        $at = $regex[$n['name']];
+        [$at, $flagAt] = $call;
         $pat = $n['args'][$at] ?? null;
         if ($pat === null || $pat['t'] !== 'text') {
             refuse('E_SQL_UNSUPPORTED',
@@ -1559,7 +1517,6 @@ final class Translator
         // form, and left the flag bound as a parameter nothing emitted.
         $inline = '(?s)';
 
-        $flagAt = $n['name'] === 'RREPLACE' ? 3 : 2;
         if (!isset($n['args'][$flagAt])) {
             $n['args'][$at]['v'] = $inline . $source;
             return $n;
@@ -2936,9 +2893,7 @@ final class Translator
     /** The operators specified as byte comparisons: spec §5.3 and §5.4. */
     private static function isByteComparison(string $op): bool
     {
-        static $ops = ['$==' => 0, '$!=' => 0, '$<' => 0, '$<=' => 0,
-                       '$>' => 0, '$>=' => 0, 'EQL' => 0, 'IN' => 0];
-        return isset($ops[$op]);
+        return isset(Ops::$family['text-compare'][$op]) || isset(Ops::$family['deep-compare'][$op]);
     }
 
     /**
@@ -2949,13 +2904,11 @@ final class Translator
      */
     private function variantFor(string $op, array $args): ?string
     {
-        static $numeric = ['==', '!=', '<', '<=', '>', '>='];
-        static $textual = ['$==', '$!=', '$<', '$<=', '$>', '$>=', 'EQL'];
-
-        if (in_array($op, $numeric, true)) {
+        if (isset(Ops::$family['compare'][$op])) {
             return $args[0]->kind === 'NUM' && $args[1]->kind === 'NUM' ? 'num' : 'coerce';
         }
-        if (in_array($op, $textual, true)) {
+        // The `$` family and EQL; IN is lowered by inOperator and never asks.
+        if (isset(Ops::$family['text-compare'][$op]) || $op === 'EQL') {
             return 'text';
         }
         if ($op === '&') {
@@ -3674,7 +3627,7 @@ final class Translator
         }
         $steps = [];
         $curr = $n;
-        while ($curr['t'] === 'call' && in_array($curr['name'], self::PIPELINE_OPS, true)) {
+        while ($curr['t'] === 'call' && isset(BuiltinManifest::PIPELINE_STEPS[$curr['name']])) {
             $steps[] = $curr;
             $curr = $curr['args'][0];
         }

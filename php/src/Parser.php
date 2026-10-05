@@ -34,89 +34,60 @@ final class Parser
     }
 
 
-    private const ASSIGN_OPS = ['=', '+=', '-=', '*=', '/=', '%=', '&='];
-    private const COMPARE_OPS = [
-        '==', '!=', '<', '<=', '>', '>=', '$==', '$!=', '$<', '$<=', '$>', '$>=',
-    ];
-    private const COMPARE_WORDS = ['EQL', 'IN'];
+    // spec/SPEC.md §5, as binding powers from the lexicon (spec/lexicon.json).
+    // Higher binds tighter. `;` and `,` build N-ary nodes, so they stay
+    // hand-written loops in parseSequence/parseList; the prefix operators are
+    // accepted in parsePrefix at their own levels.
+    private const BP_ASSIGN = Lexicon::BP['ASSIGN'];
+    private const BP_NOT = Lexicon::BP['NOT'];
+    private const BP_NEG = Lexicon::BP['NEG'];
 
-    // spec/SPEC.md §5, as a table. Higher binds tighter. The gaps are the levels
-    // that are not infix: 16 is postfix/primary, 15 is unary minus, 7 is NOT.
-    private const BP_SEQ = 1;       // ;
-    private const BP_LIST = 2;      // ,
-    private const BP_ASSIGN = 3;    // = += -= *= /= %= &=   (right associative)
-    private const BP_OR = 4;
-    private const BP_XOR = 5;
-    private const BP_AND = 6;
-    private const BP_NOT = 7;       // prefix
-    private const BP_COMPARE = 8;   // non-associative
-    private const BP_COALESCE = 9;  // ?? ??? (right associative)
-    private const BP_BOR = 10;
-    private const BP_BXOR = 11;
-    private const BP_BAND = 12;
-    private const BP_CONCAT = 13;   // &
-    private const BP_ADD = 14;      // + -
-    private const BP_MUL = 15;      // * / %
-    private const BP_NEG = 16;      // prefix
-
-    // BP_SEQ and BP_LIST are deliberately unused: `;` and `,` build N-ary nodes,
-    // so they stay hand-written loops in parseSequence/parseList rather than
-    // table rows. They are declared anyway so the ladder above reads as
-    // spec/SPEC.md §5 does, with no silent gap at the loose end.
-
-    /** @var array<string, array{int, string}>|null */
+    /** @var array<string, array{int, string, bool}>|null */
     private static ?array $infixOps = null;
 
-    /** @var array<string, array{int, string}>|null */
+    /** @var array<string, array{int, string, bool}>|null */
     private static ?array $infixWords = null;
 
     /**
-     * Symbol operator -> [binding power, associativity]. Built once from the
-     * lists above rather than written out a second time: PHP has no loop in a
-     * constant expression, and the assignment and comparison operators are
-     * already named there — two copies would be two places to forget one.
-     *
-     * @return array<string, array{int, string}>
+     * Symbol operator -> [binding power, associativity, is an assignment], and
+     * the same for word operators. Built once from the lexicon: word operators
+     * lex as identifiers and symbol operators as `op` tokens, so they are two
+     * tables sharing one set of binding powers. `;` and `,` are not in them
+     * (see above).
      */
+    private static function buildInfix(): void
+    {
+        $ops = [];
+        $words = [];
+        foreach (Ops::$infix as $token => $op) {
+            if ($op['node'] === 'list' || $op['node'] === 'seq') {
+                continue;
+            }
+            $entry = [$op['bp'], $op['assoc'], $op['node'] === 'assign'];
+            if ($op['word']) {
+                $words[$token] = $entry;
+            } else {
+                $ops[$token] = $entry;
+            }
+        }
+        self::$infixOps = $ops;
+        self::$infixWords = $words;
+    }
+
+    /** @return array<string, array{int, string, bool}> */
     private static function infixOps(): array
     {
         if (self::$infixOps === null) {
-            $t = [
-                '??' => [self::BP_COALESCE, 'R'],
-                '???' => [self::BP_COALESCE, 'R'],
-                '&' => [self::BP_CONCAT, 'L'],
-                '+' => [self::BP_ADD, 'L'], '-' => [self::BP_ADD, 'L'],
-                '*' => [self::BP_MUL, 'L'], '/' => [self::BP_MUL, 'L'], '%' => [self::BP_MUL, 'L'],
-            ];
-            foreach (self::ASSIGN_OPS as $op) {
-                $t[$op] = [self::BP_ASSIGN, 'R'];
-            }
-            foreach (self::COMPARE_OPS as $op) {
-                $t[$op] = [self::BP_COMPARE, 'N'];
-            }
-            self::$infixOps = $t;
+            self::buildInfix();
         }
         return self::$infixOps;
     }
 
-    /**
-     * Word operator -> [binding power, associativity]. Word operators lex as
-     * identifiers and symbol operators as `op` tokens, so they are two tables
-     * sharing one set of binding powers, built the same way from the same lists.
-     *
-     * @return array<string, array{int, string}>
-     */
+    /** @return array<string, array{int, string, bool}> */
     private static function infixWords(): array
     {
         if (self::$infixWords === null) {
-            $t = [
-                'OR' => [self::BP_OR, 'L'], 'XOR' => [self::BP_XOR, 'L'], 'AND' => [self::BP_AND, 'L'],
-                'BOR' => [self::BP_BOR, 'L'], 'BXOR' => [self::BP_BXOR, 'L'], 'BAND' => [self::BP_BAND, 'L'],
-            ];
-            foreach (self::COMPARE_WORDS as $w) {
-                $t[$w] = [self::BP_COMPARE, 'N'];
-            }
-            self::$infixWords = $t;
+            self::buildInfix();
         }
         return self::$infixWords;
     }
@@ -128,7 +99,7 @@ final class Parser
      * separate list anywhere would put that claim back in doubt.
      *
      * @param array<string,mixed> $t
-     * @return array{int, string}|null
+     * @return array{int, string, bool}|null
      */
     private static function infixEntry(array $t): ?array
     {
@@ -393,14 +364,14 @@ final class Parser
             if ($entry === null) {
                 return $left;
             }
-            [$bp, $assoc] = $entry;
+            [$bp, $assoc, $assign] = $entry;
             if ($bp < $minBp) {
                 return $left;
             }
 
             $this->next();
 
-            if (in_array($t['value'], self::ASSIGN_OPS, true)) {
+            if ($assign) {
                 // Assignment. The target is validated against the AST shape, not
                 // against a value, which is what makes `(A) = 1` a compile error.
                 // Parsing the right side at $bp rather than $bp + 1 is what makes
@@ -708,9 +679,6 @@ final class Parser
         }
     }
 
-    /** The calls that take a regex pattern first, and the index of their flags argument. */
-    private const REGEX_CALLS = ['RMATCH' => 2, 'RFIND' => 2, 'RGROUPS' => 2, 'RREPLACE' => 3];
-
     /**
      * The compile-time arity rule (spec §6.2) and the call node, in one place
      * for both call forms; the pipeline form has already placed its left
@@ -735,15 +703,18 @@ final class Parser
         }
         // A literal regex pattern is validated NOW (spec §7.8), so a bad one in a
         // branch that never runs is still refused when the program compiles.
-        if (isset(self::REGEX_CALLS[$spec['name']]) && ($args[0]['t'] ?? null) === 'text') {
-            $flagIndex = self::REGEX_CALLS[$spec['name']];
+        // Where a regex call takes its pattern and its flags: the manifest's
+        // `regex` facts (spec/builtins.json).
+        $regex = BuiltinManifest::REGEX_CALLS[$spec['name']] ?? null;
+        if ($regex !== null && ($args[$regex[0]]['t'] ?? null) === 'text') {
+            [$patIndex, $flagIndex] = $regex;
             $flags = null;
             if ($count <= $flagIndex) {
                 $flags = '';
             } elseif (($args[$flagIndex]['t'] ?? null) === 'text') {
                 $flags = (string) $args[$flagIndex]['v'];
             }
-            \Sel\Builtins\Regex::checkLiteral((string) $args[0]['v'], $flags, $args[0]['pos']);
+            \Sel\Builtins\Regex::checkLiteral((string) $args[$patIndex]['v'], $flags, $args[$patIndex]['pos']);
         }
         return ['t' => 'call', 'name' => $spec['name'], 'spec' => $spec, 'args' => $args,
             'pos' => $nameTok, 'recordShape' => self::prepareRecordShape($spec['name'], $args)];
@@ -797,4 +768,23 @@ final class Parser
     {
         return (new self(Lexer::tokenizeSource($source)))->parseProgram();
     }
+
+    /**
+     * parsePrefix accepts `NOT` and `-` by name and builds the nodes the rest
+     * of the host keys on (`NOT`, `NEG`): they must be the lexicon's prefix
+     * operators, at the levels BP_NOT and BP_NEG name.
+     */
+    public static function checkVocabulary(): void
+    {
+        $want = ['NOT' => ['NOT', self::BP_NOT], '-' => ['NEG', self::BP_NEG]];
+        $have = [];
+        foreach (Ops::$prefix as $token => $op) {
+            $have[$token] = [$op['name'], $op['bp']];
+        }
+        if ($have != $want) {
+            throw new \LogicException('Parser::parsePrefix disagrees with spec/lexicon.json about the prefix operators');
+        }
+    }
 }
+
+Parser::checkVocabulary();

@@ -13,9 +13,15 @@ namespace Sel;
  */
 final class Evaluator
 {
-    /** A compound assignment's operator, by its spelling. */
-    private const COMPOUND = [
-        '+=' => '+', '-=' => '-', '*=' => '*', '/=' => '/', '%=' => '%', '&=' => '&',
+    /**
+     * The binary operators evalBinary dispatches, checked against the lexicon
+     * when this file loads (Ops::requireHandles): an operator added there and
+     * not here stops the library loading.
+     */
+    private const BINARY_OPS = [
+        'AND', 'OR', '??', '???', '+', '-', '*', '/', '%', '&',
+        '==', '!=', '<', '<=', '>', '>=', '$==', '$!=', '$<', '$<=', '$>', '$>=',
+        'EQL', 'IN', 'XOR', 'BAND', 'BOR', 'BXOR',
     ];
 
     /** @param array<string,mixed> $node */
@@ -470,7 +476,7 @@ final class Evaluator
                 fail('E_UNDEF_VAR', "{$node['op']} needs an existing target", $node['target']['pos']);
             }
             $rhs = self::evalNode($node['value'], $ctx);
-            $binOp = self::COMPOUND[$node['op']];
+            $binOp = Ops::$compound[$node['op']];
             $tp = $node['target']['pos'];
             $vp = $node['value']['pos'];
             if ($binOp === '&') {
@@ -572,4 +578,21 @@ final class Evaluator
         $path[] = self::evalNode($lastNode, $ctx)->asText($lastNode['pos']);
         return $path;
     }
+
+    /**
+     * The evaluator's dispatches against the lexicon: evalBinary handles every
+     * binary operator, and a compound assignment applies `&` or an arithmetic
+     * operator, the two cases evalAssign implements.
+     */
+    public static function checkVocabulary(): void
+    {
+        Ops::requireHandles('Evaluator::evalBinary', self::BINARY_OPS);
+        foreach (Ops::$compound as $assign => $op) {
+            if ($op !== '&' && !Ops::inFamily($op, 'arith')) {
+                throw new \LogicException("Evaluator::evalAssign cannot apply {$assign}");
+            }
+        }
+    }
 }
+
+Evaluator::checkVocabulary();
