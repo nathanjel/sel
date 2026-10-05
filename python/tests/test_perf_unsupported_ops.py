@@ -1,4 +1,4 @@
-"""PY-P21: a withdrawn operator (BAND/BOR/BXOR) in the custom half of a MAP keeps the MAP
+"""A withdrawn operator (BAND/BOR/BXOR) in the custom half of a MAP keeps the MAP
 fall-through: the SQL prefix projects the columns it can carry, and the continuation still
 answers what run() answers."""
 import sqlite3

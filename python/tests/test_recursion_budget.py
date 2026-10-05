@@ -2,7 +2,7 @@
 whatever the interpreter's own limit is, and the limit is handed back as found.
 
 Each program here is one another host answers with a value or E_DEPTH; a
-RecursionError escaping instead is the bug (PY-C1)."""
+RecursionError escaping instead is the bug."""
 import sys
 import threading
 

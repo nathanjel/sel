@@ -19,7 +19,7 @@ def check_sized_int(d: D.Dec, name: str, arg_num: int, limit: int, what: str, po
         fail('E_RANGE', f'{name} argument {arg_num} must not be negative', pos)
     if n > limit:
         # The number itself only when it is short: str() of a million-digit argument is
-        # work the refusal does not need (PY-P24), and the message is not contract.
+        # work the refusal does not need, and the message is not contract.
         shown = str(n) if n.bit_length() <= 128 else f'of {n.bit_length()} bits'
         fail('E_RANGE', f'{what} {shown} exceeds the maximum of {limit}', pos)
     return n

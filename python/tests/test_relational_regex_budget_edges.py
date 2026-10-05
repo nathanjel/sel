@@ -1,5 +1,4 @@
-"""T05 (relational edges), T06 (regex portability) and T07 (size budgets) at the
-host level: each test states a rule of SPEC 6.4 / 7.3 / 7.4 / 7.8 and is the
+"""Relational edges, regex portability and size budgets at the host level: each test states a rule of SPEC 6.4 / 7.3 / 7.4 / 7.8 and is the
 Python twin of a conformance case (27-relational-edges, 28-regex-portability,
 29-text-binary-budgets), plus the host-only parts the .selt cannot say -- warnings,
 the bounded cache, an engine failing, raw exceptions."""
@@ -22,7 +21,7 @@ def code(src):
     return info.value
 
 
-# --- T07: size budgets ---------------------------------------------------------
+# --- Size budgets ---------------------------------------------------------
 
 @pytest.mark.parametrize('src', [
     f'REPEAT("a", {MAX_TEXT_LEN + 1})',
@@ -91,7 +90,7 @@ def test_ltb_of_an_empty_list_is_an_empty_bin():
     assert code('LTB(LIST(256.0))').code == 'E_RANGE'
 
 
-# --- T05: relational edges -----------------------------------------------------
+# --- Relational edges -----------------------------------------------------
 
 def test_an_aggregate_visits_a_snapshot():
     # Appending during the walk does not extend it; overwriting a later element
@@ -124,14 +123,16 @@ def test_total_order_of_every_kind():
 
 
 def test_sort_is_transitive_on_mixed_text():
+    # On the key production sorts with: "10" < "1a" and "1a" < "9" by bytes, but
+    # "9" < "10" as numbers, under the old pairwise rules.
     from sel.value import Value
-    from sel.builtins.aggregate import compare_values
-    vals = [Value.text(x) for x in ('10', '9', '1a', '007', '', ' 2', '1e3', '-0', '0')]
-    for a in vals:
-        for b in vals:
-            for c in vals:
-                if compare_values(a, b) <= 0 and compare_values(b, c) <= 0:
-                    assert compare_values(a, c) <= 0
+    from sel.builtins.aggregate import sort_key
+    keys = [sort_key(Value.text(x)) for x in ('10', '9', '1a', '007', '', ' 2', '1e3', '-0', '0')]
+    for a in keys:
+        for b in keys:
+            for c in keys:
+                if a <= b and b <= c:
+                    assert a <= c
 
 
 def test_select_cols_keeps_a_repeated_column_once():
@@ -145,7 +146,7 @@ def test_same_named_join_binders_the_right_shadows_the_left():
         assert sel.compile(f'COUNT(LINK(P, Q, x, x, {pred}))').run(ctx).scalar == '4'
 
 
-# --- T06: regex ----------------------------------------------------------------
+# --- Regex ----------------------------------------------------------------
 
 @pytest.mark.parametrize('pattern', [
     '^*', '$+', '^{2}', 'a$?', '(*FAIL)', '(?:^)*a', '(a*)*', '(?:a?)+', '(|a)+', '(a*?)+',

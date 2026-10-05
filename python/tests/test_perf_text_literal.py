@@ -1,4 +1,4 @@
-"""PY-P20: SQL text literals are escaped by a translate table (single-character
+"""SQL text literals are escaped by a translate table (single-character
 rules) or one alternation regex (multi-character rules) instead of a Python loop.
 Both must equal the loop they replaced, for the shipped dialects and for escape
 tables with overlapping / multi-character keys."""

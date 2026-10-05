@@ -18,7 +18,8 @@ from typing import Any
 
 from . import builtins as _builtins   # noqa: F401  registers the function table
 from .errors import Pos, SelError, fail
-from .eval import MAX_DEPTH, Context as _Context, eval_node
+from .errors import MAX_DEPTH
+from .eval import Context as _Context, eval_node
 from .parser import Node, parse
 from .registry import names as _names, binding_form as _binding_form
 from .registry import register_function
@@ -49,6 +50,15 @@ class Program:
         # so) -- and a caller who builds a Program from an AST of their own is
         # held to the same rule. Reassigning `ast` is fine and drops the cache
         # below; writing into its nodes is not.
+        #
+        # Two memo fields are the exception, and neither changes what the tree
+        # means: an index node's `_cached_slot` (the evaluator's record-slot
+        # hint, used only while the record's shape is the one it was taken from,
+        # so a hint left by another run is checked, never trusted) and a node's
+        # `_not_constant` (SQL stage 1's verdict, one-way and never stale).
+        # Each is one whole-attribute store of a value any writer would compute
+        # alike, so runs of one Program on several threads can race on them
+        # only to write the same answer or a hint the reader re-checks.
         self.ast = ast
         # The physical tree run() evaluates: `ast` after the in-memory
         # optimiser, built on the first run and kept, because the rewrite and
@@ -155,7 +165,7 @@ per-element expressions) contributes to `defs` only where every path assigns it.
         return defs | {target.name}
 
     if t == 'call':
-        name = (node.name or '').upper()
+        name = node.name or ''              # a call's name is the canonical one
         if name == 'IF' and len(node.args) == 3:
             defs = _collect(node.args[0], bound, defs, reads, d1)
             a = _collect(node.args[1], bound, defs, reads, d1)

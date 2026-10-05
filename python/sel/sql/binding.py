@@ -28,7 +28,7 @@ from __future__ import annotations
 from typing import Any
 
 from .. import decimal as D
-from ..lexer import ascii_upper
+from ..lexer import ascii_lower, ascii_upper
 from ..value import Value, quote_dump
 from .errors import SqlError
 from .fragment import KINDS as FRAGMENT_KINDS
@@ -325,7 +325,7 @@ def _check_collation(c: Any) -> tuple[bool, bool]:
     if not isinstance(c, str):
         raise SqlError('E_SQL_BINDING',
                        f"collation must be a string, and this is {type_name(c)}")
-    c_lower = c.lower()
+    c_lower = ascii_lower(c)              # ASCII only, as every host folds an option
     if c_lower in ('binary', 'exact'):
         return True, False
     if c_lower in ('sargable', 'prefilter'):
@@ -344,7 +344,7 @@ def _check_prefilter(p: Any) -> str | None:
     if not isinstance(p, str):
         raise SqlError('E_SQL_BINDING',
                        f"a binding prefilter must be a string or boolean, and this is {type_name(p)}")
-    p_lower = p.lower()
+    p_lower = ascii_lower(p)
     if p_lower in ('separate', 'splitsargable', 'split_sargable'):
         return 'separate'
     if p_lower == 'inline':

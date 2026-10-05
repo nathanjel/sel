@@ -19,19 +19,20 @@ from .. import registry as _registry
 from .. import utf8
 from ..builtins import regex as _regex
 from .. import decimal as _decimal
-from ..errors import Pos, SelError
-from ..eval import Context, MAX_DEPTH, eval_node
+from ..errors import MAX_DEPTH, Pos, SelError
+from ..eval import Context, eval_node
 from .._limits import MAX_SQL_NODES
 from .._stack import recursion_budget as _recursion_budget
 from ..lexer import ascii_upper
 from ..parser import Node
+from ..registry import REGEX_FLAG_AT, sort_form
 from ..value import Value, quote_dump
 from . import constants as _constants
 from . import map as _map
 from . import normalise as _normalise
 from .binder import Binder
 from .bindings import Bindings
-from .emit import Emit
+from .emit import Emit, push_text, splice_parts
 from .errors import refuse
 from .fragment import Fragment
 from .relational_plan import JoinPlan, RelationalPlan
@@ -75,7 +76,7 @@ AGG_FOLD = {'ALL': 'AND', 'ANY': 'OR', 'SUM': '+'}
 # to 0 and FALSE instead.
 # The four text functions that yield a list (measured), the constructors,
 # and every pipeline step -- the optimiser's vocabulary, so a new step is
-# covered by being one (review 2026-09-15 finding X: COUNT(LIST(1, 2, 3))
+# covered by being one (COUNT(LIST(1, 2, 3))
 # was 0).
 YIELDS_LIST = ('BTL', 'INDEXES', 'RGROUPS', 'SPLIT', 'LIST', 'RECORD',
                *OPTIMIZER_PIPELINE_OPS)
@@ -133,7 +134,6 @@ INT64_MAX = 9223372036854775807
 # The key of a frame's own element, under a name no SEL program can spell.
 ELEM = '\0elem'
 BALANCED_FOLD = 256
-_REGEX_AT = {'RMATCH': 0, 'RFIND': 0, 'RREPLACE': 0, 'RGROUPS': 0}
 
 
 def _lit_node(t: str, v: Any, pos: Pos) -> Node:
@@ -185,8 +185,7 @@ class Translator:
         self.const_names, self.const_ctx = _constants.scope(self.bindings)
         # Stage 1 and nothing else: the translator renders the tree it is
         # handed. Two hosts ran the logical optimiser here and three did not,
-        # so the same program rendered different SQL per host (review
-        # 2026-09-15 finding C). The planner is the one place that optimises
+        # so the same program rendered different SQL per host. The planner is the one place that optimises
         # before translating, and it does so in every host.
         norm = _normalise.run(ast, self.const_names, self.const_ctx)
         return norm, self.analyze_pipeline(norm)
@@ -225,8 +224,7 @@ class Translator:
         literal at the name. The planner reads RECORD in three places -- a
         bucket's projection, a bucket's key, a MAP's projection -- and each
         used to walk the pairs itself."""
-        if len(node.args) % 2:
-            refuse('E_ARITY', 'RECORD takes an even number of arguments', node.pos)
+        # An even count: the parser refused anything else (E_ARITY at compile time).
         fields: list[tuple[str, Node]] = []
         seen: dict[bytes, str] = {}
         for i in range(0, len(node.args), 2):
@@ -658,7 +656,7 @@ class Translator:
 
     def _arithmetic_operand(self, n: Node) -> Fragment:
         """An operand that is a constant TEXT holding a number, in an arithmetic position,
-        is that number (PHP-C33): SEL computes with it exactly, and MariaDB and MySQL
+        is that number: SEL computes with it exactly, and MariaDB and MySQL
         would read the quoted string as a DOUBLE. It is translated as the numeric
         literal it stands for. The text was translated first (its SQL kind is only known
         then), so the slots it bound are taken back, or `params` mode would report a
@@ -746,14 +744,14 @@ class Translator:
             # MariaDB and MySQL whenever either side was not valid UTF-8, where
             # SEL answers FALSE. The corpus had exactly one BIN value, 7ac3a9,
             # which is valid UTF-8 and could not show it.
-            l_exact = getattr(l, 'exact', False)
-            r_exact = getattr(r, 'exact', False)
+            l_exact = l.exact
+            r_exact = r.exact
             l_lit = (n.l.t == 'text')
             r_lit = (n.r.t == 'text')
             if (l_exact and (r_exact or r_lit)) or (r_exact and l_lit):
                 pass
-            elif op == '$==' and ((getattr(l, 'sargable', False) and r_lit)
-                                  or (getattr(r, 'sargable', False) and l_lit)):
+            elif op == '$==' and ((l.sargable and r_lit)
+                                  or (r.sargable and l_lit)):
                 # A sargable column against a literal, either way round: the
                 # coarse comparison the index can serve, AND the exact one.
                 if self.emit.lex('sargablePrefilter') == 'true':
@@ -763,23 +761,23 @@ class Translator:
                                            n.pos, variant)
                     res = self._apply('ops', 'AND', [coarse, residual], n.pos)
                     res.prefilter = coarse
-                    res.separate_prefilter = bool(getattr(l, 'separate_prefilter', False)
-                                                  or getattr(r, 'separate_prefilter', False))
+                    res.separate_prefilter = bool(l.separate_prefilter
+                                                  or r.separate_prefilter)
                     return res
             elif l.kind != 'BIN' or r.kind != 'BIN':
                 l = self.emit.text_operand(l)
                 r = self.emit.text_operand(r)
         res = self._apply('ops', op, [l, r], n.pos, variant)
         if op == 'AND':
-            l_pref = getattr(l, 'prefilter', None)
-            r_pref = getattr(r, 'prefilter', None)
+            l_pref = l.prefilter
+            r_pref = r.prefilter
             if l_pref is not None and r_pref is not None:
                 res.prefilter = self._apply('ops', 'AND', [l_pref, r_pref], n.pos)
             elif l_pref is not None:
                 res.prefilter = self._apply('ops', 'AND', [l_pref, r], n.pos)
             elif r_pref is not None:
                 res.prefilter = self._apply('ops', 'AND', [l, r_pref], n.pos)
-            if getattr(l, 'separate_prefilter', False) or getattr(r, 'separate_prefilter', False):
+            if l.separate_prefilter or r.separate_prefilter:
                 res.separate_prefilter = True
         return res
 
@@ -890,7 +888,7 @@ class Translator:
             # spliced N times: splicing one Fragment twice puts the same slot
             # number in the output twice while `params` holds one entry.
             raw = self._node(n.l)
-            is_exact = getattr(raw, 'exact', False)
+            is_exact = raw.exact
             needle = raw if is_exact else self.emit.text_operand(raw)
             f = self._node(e)
             if f.kind == 'LIST':
@@ -934,7 +932,7 @@ class Translator:
         name = n.name
 
         # A binder position holding something that is not a bare name is refused
-        # where it stands, whatever else the call is (GO-C2): the evaluator
+        # where it stands, whatever else the call is: the evaluator
         # answers E_EXPECT_SYMBOL, and this layer must never go on to a different
         # code -- or a crash -- for the arguments around it.
         if n.spec is not None and n.spec.binds:
@@ -949,8 +947,8 @@ class Translator:
         # The two aggregates over a bucket's members -- COUNT(g) is COUNT(*)
         # and SUM(g, [x,] body) is SUM over the grouped rows -- fire on the
         # GROUP binder alone: over a relation row, COUNT(_) is the row's
-        # number of fields in SEL (review 2026-09-15 finding X), and SEL has
-        # no per-group MIN or MAX (finding J). The body binds the member row,
+        # number of fields in SEL, and SEL has
+        # no per-group MIN or MAX. The body binds the member row,
         # as the evaluator's walk does: `_` for the two-argument form, the
         # name given for the three-argument one.
         if self.statement_plan is not None:
@@ -967,7 +965,7 @@ class Translator:
                                            lambda: self._node(body_node))
                     # The same rules as a relation's SUM body: a declared TEXT or
                     # BOOL field is refused, an undeclared one is read all or
-                    # nothing (PHP-C27).
+                    # nothing.
                     if _constants.is_constant(body_node, self._consts()):
                         self._require_numeric_constant(body_node)
                     else:
@@ -1001,7 +999,7 @@ class Translator:
         args = []
         for i, arg in enumerate(n.args):
             # MIN and MAX compare their arguments as numbers: a numeric text constant is
-            # the number, as in arithmetic (PHP-C33).
+            # the number, as in arithmetic.
             f = self._arithmetic_operand(arg) if name in ('MIN', 'MAX') else self._node(arg)
             if f.kind == 'LIST':
                 refuse('E_SQL_SHAPE',
@@ -1029,7 +1027,7 @@ class Translator:
         """
         name = n.name
         entry = _map.entry(self.dialect, 'funcs', name)
-        if entry is _map.MISSING or entry == _map.MISSING or entry is None:
+        if _map.absent(entry):
             refuse('E_SQL_UNSUPPORTED',
                    f'{name} is a host function with no SQL spelling in dialect '
                    f'{self.dialect}; register one with the map, or evaluate it here', n.pos)
@@ -1143,10 +1141,10 @@ class Translator:
         Both the pattern and the flags must be literals: a pattern read from a
         column cannot be rewritten, and the flag selects the template.
         """
-        if n.name not in _REGEX_AT:
+        if n.name not in REGEX_FLAG_AT:
             return n
-        at = _REGEX_AT[n.name]
-        pat = n.args[at] if at < len(n.args) else None
+        at = 0
+        pat = n.args[at] if n.args else None
         if pat is None or pat.t != 'text':
             refuse('E_SQL_UNSUPPORTED',
                    f'{n.name} needs a literal pattern here: SEL rewrites \\d, \\w and '
@@ -1180,11 +1178,11 @@ class Translator:
         # the flag bound as a parameter nothing emitted.
         inline = '(?s)'
 
-        flag_at = 3 if n.name == 'RREPLACE' else 2
+        flag_at = REGEX_FLAG_AT[n.name]
         args = list(n.args)
         if flag_at >= len(args):
             args[at] = _lit_node('text', inline + source, args[at].pos)
-            return _replace(n, args=args)
+            return n.replaced(args=args)
         flags = args[flag_at]
         if flags.t != 'text':
             refuse('E_SQL_UNSUPPORTED',
@@ -1220,7 +1218,7 @@ class Translator:
             inline = '(?si)'
         args[at] = _lit_node('text', inline + source, args[at].pos)
         del args[flag_at]                    # folded into the pattern
-        return _replace(n, args=args)
+        return n.replaced(args=args)
 
     def _conditional(self, n: Node) -> Fragment:
         """IF and COND are the same construct: condition/result pairs and a
@@ -1300,8 +1298,8 @@ class Translator:
         it appears: the clause, the ``_K`` projection, a HAVING. A TEXT key is
         cast and collated the way the ``$`` family compares text, because the
         evaluator groups by the key's exact bytes and a case-insensitive
-        collation would merge groups it keeps apart (review 2026-09-15
-        finding L; MariaDB's default merged 'A' and 'a'). The result is marked
+        collation would merge groups it keeps apart (MariaDB's default merged
+        'A' and 'a'). The result is marked
         exact so a comparison over it does not wrap it a second time --
         MySQL's only_full_group_by accepts a projected or compared key only as
         the identical expression."""
@@ -1840,8 +1838,7 @@ class Translator:
         # ``C["id"]`` in a later step -- the joined row carries them as keys,
         # not as names. This frame used to bind ``_1``, ``_2``, the relations'
         # names and the right binder for every later step, so
-        # ``FILTER(C["id"] > 1)`` translated where ``run()`` fails (review
-        # 2026-09-15 finding W2).
+        # ``FILTER(C["id"] > 1)`` translated where ``run()`` fails.
         self.frames.append(frame)
         try:
             return render()
@@ -1855,8 +1852,7 @@ class Translator:
         its members, which only COUNT and SUM read (_call) -- and ``_K`` is the
         group key, when there is one key to be it. This is the one place ``_K``
         is a group key: before the bucket it is a source row's position, after
-        the projection the projected row's, and SQL has neither (review
-        2026-09-15 finding K).
+        the projection the projected row's, and SQL has neither.
         """
         group_by = self.statement_plan.group_by if self.statement_plan is not None else None
         if group_by is not None and len(group_by) == 1:
@@ -1892,8 +1888,8 @@ class Translator:
         """A LINK's predicate sees ``_``/``_1`` as its left element and ``_2``
         as its right, plus the names the LINK gives them (spec §7.4) and nothing
         else: a relation's name outside those, its alias or its table is not a
-        binder (review 2026-09-28 SQL-07), and the left element of a later LINK
-        is the joined row so far, not the source (SQL-05)."""
+        binder, and the left element of a later LINK
+        is the joined row so far, not the source."""
         step = self._join_rows(plan)['steps'][next(
             i for i, item in enumerate(plan.joins) if item is join)]
         left = Binder.row(plan.source_relation)
@@ -1914,8 +1910,8 @@ class Translator:
     def _relation_aggregate(self, name: str, rel: dict[str, Any],
                             body: Fragment, n: Node) -> Fragment:
         is_separate = (rel.get('prefilter') == 'separate'
-                       or (rel.get('prefilter') is None and getattr(body, 'separate_prefilter', False)))
-        if name == 'ANY' and getattr(body, 'prefilter', None) is not None and is_separate:
+                       or (rel.get('prefilter') is None and body.separate_prefilter))
+        if name == 'ANY' and body.prefilter is not None and is_separate:
             pre = Fragment(
                 self._fill_named(self._skeleton('prefilter', n.pos),
                                  _slots(self._relation_slots(rel), {'body': [body.prefilter]}), n.pos),
@@ -1926,7 +1922,7 @@ class Translator:
                 AGG_RETURNS[name], self.dialect)
             return self._apply('ops', 'AND', [pre, main], n.pos)
         skel = self._skeleton(AGG_SKELETON[name], n.pos)
-        if getattr(body, 'whole_sum', False):
+        if body.whole_sum:
             # The body already is the whole `... COALESCE(SUM(x), 0) ...`
             # expression, so it replaces that in the skeleton.
             marker = 'COALESCE(SUM({body}), 0)'
@@ -2098,7 +2094,7 @@ class Translator:
         entry = _map.entry(self.dialect, section, key)
         what = f'the {key} operator' if section == 'ops' else key
 
-        if entry is _map.MISSING or entry == _map.MISSING or entry is None:
+        if _map.absent(entry):
             refuse('E_SQL_UNSUPPORTED',
                    f'{what} has no mapping in dialect {self.dialect}', pos)
         if isinstance(entry, str):
@@ -2317,7 +2313,7 @@ class Translator:
 
     def _skeleton(self, name: str, pos: Pos) -> str:
         s = _map.entry(self.dialect, 'skel', name)
-        if s is _map.MISSING or s == _map.MISSING or s is None:
+        if _map.absent(s):
             refuse('E_SQL_UNSUPPORTED',
                    f'dialect {self.dialect} has no {name} skeleton', pos)
         if isinstance(s, str):
@@ -2339,25 +2335,16 @@ class Translator:
     def _fill_named(self, tpl: str, slots: dict[str, list[Any]], pos: Pos) -> list[Any]:
         """Fill a skeleton, whose placeholders are named rather than numbered."""
         parts: list[Any] = []
-
-        def push(s: str) -> None:
-            if s == '':
-                return
-            if parts and isinstance(parts[-1], str):
-                parts[-1] += s
-            else:
-                parts.append(s)
-
         i = 0
         n_tpl = len(tpl)
         while i < n_tpl:
             if tpl[i] != '{':
-                push(tpl[i])
+                push_text(parts, tpl[i])
                 i += 1
                 continue
             end = tpl.find('}', i)
             if end == -1:
-                push(tpl[i:])
+                push_text(parts, tpl[i:])
                 break
             name = tpl[i + 1:end]
             i = end + 1
@@ -2367,13 +2354,9 @@ class Translator:
                        'is not one of its slots', pos)
             for item in slots[name]:
                 if isinstance(item, str):
-                    push(item)
-                    continue
-                for p in item.parts:
-                    if isinstance(p, str):
-                        push(p)
-                    else:
-                        parts.append(p)
+                    push_text(parts, item)
+                else:
+                    splice_parts(parts, item)
         return parts
 
     # --- Relational Pipeline Statement Compilation --------------------------
@@ -2425,8 +2408,7 @@ class Translator:
         projected, so a read of either over the derived table is refused
         where ``run()`` raises. ``SELECT o.*`` was the row before: the left
         table's columns, which a continuation read where SEL has no key, and
-        which made a derived table over a join name columns it did not have
-        (finding Y, lanes).
+        which made a derived table over a join name columns it did not have.
         """
         # A field an unmatched LINK_LEFT row lacks is not a column of the row.
         return [{'name': name, 'spec': f['spec'], 'table': f['table']}
@@ -2627,14 +2609,13 @@ class Translator:
                 # ORDER BY, because a derived table does not keep an ORDER BY that has no LIMIT
                 # beside it and the rows would come back in no order; a filter commutes with a
                 # stable sort, so the rows and their order are the same.)
+                # Arity is the parser's (E_ARITY at compile time): 2 or 3 here.
                 if len(args) == 2:
                     binder, predicate = '_', args[1]
-                elif len(args) == 3:
+                else:
                     if not _constants.is_binder_name(args[1]):
                         refuse('E_SQL_SHAPE', 'the binder of FILTER must be a bare name', args[1].pos)
                     binder, predicate = args[1].name, args[2]
-                else:
-                    refuse('E_ARITY', 'FILTER takes 2 or 3 arguments', step.pos)
                 if plan.group_by is not None:
                     plan.having.append({'binder': binder, 'node': predicate, 'pos': step.pos,
                                         'over_groups': over_groups})
@@ -2664,12 +2645,10 @@ class Translator:
                     binder, key_node, aggregate_node = '_', args[1], None
                 elif len(args) == 3:
                     binder, key_node, aggregate_node = '_', args[1], args[2]
-                elif len(args) == 4:
+                else:                    # 4 (the parser refused any other count)
                     if not _constants.is_binder_name(args[1]):
                         refuse('E_SQL_SHAPE', 'the binder of BUCKET must be a bare name', args[1].pos)
                     binder, key_node, aggregate_node = args[1].name, args[2], args[3]
-                else:
-                    refuse('E_ARITY', 'BUCKET takes 2 to 4 arguments', step.pos)
 
                 # A bare bucket's key is an index key (spec §7.4): one text or
                 # number. A list or record key is refused by the evaluator, and
@@ -2746,12 +2725,10 @@ class Translator:
                            'the projection that ends the grouping', step.pos)
                 if len(args) == 2:
                     binder, expr = '_', args[1]
-                elif len(args) == 3:
+                else:                    # 3 (the parser refused any other count)
                     if not _constants.is_binder_name(args[1]):
                         refuse('E_SQL_SHAPE', 'the binder of MAP must be a bare name', args[1].pos)
                     binder, expr = args[1].name, args[2]
-                else:
-                    refuse('E_ARITY', 'MAP takes 2 or 3 arguments', step.pos)
                 # BUCKET(src, key) .> MAP(proj) is BUCKET(src, key, proj): the
                 # MAP's body is evaluated once per group, so it is the bucket's
                 # projection.
@@ -2772,20 +2749,16 @@ class Translator:
                     candidate.limit is not None or candidate.offset is not None)
                 if plan.projections is None and plan.select_cols is None:
                     refuse('E_SQL_SHAPE', 'DISTINCT requires an explicit typed projection', step.pos)
-                # DISTINCT keeps the FIRST element of each run in sorted order; SQL's `SELECT DISTINCT proj ... ORDER BY <column not in proj>` is refused by PostgreSQL (42P10) and MySQL 8 (3065) and answers with an unspecified representative row on MariaDB. A loud refusal is acceptable and a silent misordering is not, so the step stays in memory (CPP-C60).
+                # DISTINCT keeps the FIRST element of each run in sorted order; SQL's `SELECT DISTINCT proj ... ORDER BY <column not in proj>` is refused by PostgreSQL (42P10) and MySQL 8 (3065) and answers with an unspecified representative row on MariaDB. A loud refusal is acceptable and a silent misordering is not, so the step stays in memory.
                 if plan.order_by:
                     refuse('E_SQL_SHAPE', 'DISTINCT after a sort keeps the first of each run in sorted order, which SELECT DISTINCT ... ORDER BY does not promise; run the DISTINCT in memory', step.pos)
                 plan.distinct = True
 
             elif name == 'TAKE':
-                if len(args) != 2:
-                    refuse('E_ARITY', 'TAKE takes 2 arguments', step.pos)
                 limit = self._eval_int_param(args[1], 'TAKE')
                 plan.limit = limit if plan.limit is None else min(plan.limit, limit)
 
             elif name == 'DROP':
-                if len(args) != 2:
-                    refuse('E_ARITY', 'DROP takes 2 arguments', step.pos)
                 offset = self._eval_int_param(args[1], 'DROP')
                 # Consume the bounded slice. Avoid sums beyond the exact
                 # integer range shared by hosts by retaining a SQL boundary.
@@ -2800,8 +2773,7 @@ class Translator:
                 # or a DISTINCT wraps so its key can name what they produced. A
                 # sort after a sort does not wrap: the sorts are stable, so the
                 # earlier one is the later one's tie-breaker, and the later
-                # one's keys go FIRST in the ORDER BY (review 2026-09-15
-                # finding V).
+                # one's keys go FIRST in the ORDER BY.
                 def _wraps(candidate):
                     return (candidate.limit is not None or candidate.offset is not None
                             or (candidate.group_by is None and bool(
@@ -2828,9 +2800,8 @@ class Translator:
                 # (a sort's, a bucket's) are otherwise checked only when the
                 # statement is rendered, after this LINK and the steps after it
                 # were analysed, which reported a later step's refusal where
-                # run() raises at the earlier one. Lisp has done this since
-                # review 2026-09-25 SQL-03; the widened SQL fuzzer found the
-                # other hosts did not (review 2026-09-28 SQL-10).
+                # run() raises at the earlier one. Lisp did this first; the
+                # widened SQL fuzzer found the other hosts did not.
                 if (plan.order_by or plan.projections is not None
                         or plan.select_cols is not None or plan.group_by is not None):
                     # Rendered to be refused early, and discarded: the values it
@@ -2848,9 +2819,7 @@ class Translator:
                     refuse('E_SQL_SHAPE', f'a {name} over sorted rows would return them in no order, '
                            "where SEL has the left list's order", step.pos)
                 plan = self._ensure_derived(plan, self._plan_has_rows_above)
-                if len(args) not in (3, 5):
-                    refuse('E_ARITY', f'{name} takes 3 or 5 arguments', step.pos)
-                right_node = args[1]
+                right_node = args[1]             # 3 or 5 arguments: the parser's arity
                 if right_node.t != 'var' or not self.bindings.has(right_node.name):
                     refuse('E_SQL_SHAPE', f'{name} requires a bound relation as its right side', right_node.pos)
                 right_relation = self.bindings.get(right_node.name, right_node.pos)
@@ -2885,8 +2854,7 @@ class Translator:
                 # One table alias per occurrence: a relation joined a second
                 # time under an alias the statement already uses (a self-join,
                 # or chaining back to an aliased relation) would render the
-                # alias twice, which the server rejects (review 2026-09-28
-                # SQL-09). The program stays in memory.
+                # alias twice, which the server rejects. The program stays in memory.
                 open_aliases = [plan.source_alias or _relation_alias(plan.source_relation),
                                 *(j.source_alias for j in plan.joins)]
                 if any(ascii_upper(str(alias)) == ascii_upper(str(join.source_alias))
@@ -2911,63 +2879,41 @@ class Translator:
 
     def _analyze_sort_step_extended(self, step: Node, plan: RelationalPlan) -> None:
         name, args = step.name, step.args
-        is_top = name in ('TOP', 'TOP_DESC', 'TOP_BY')
-        count = len(args) - 1 if is_top else len(args)
-        if is_top:
+        if name in ('TOP', 'TOP_DESC', 'TOP_BY'):
             limit = self._eval_int_param(args[-1], name)
             plan.limit = limit if plan.limit is None else min(plan.limit, limit)
 
-        if name in ('SORT', 'SORT_DESC', 'TOP', 'TOP_DESC'):
+        # The form, decoded as the evaluator decodes it (registry.sort_form): a
+        # text-literal direction wins over a bare name in the binder slot.
+        binder_at, key_at, dir_at = sort_form(name, args)
+        if key_at is None:                   # SORT(list), TOP(list, n): the scalar
+            scalar = plan.source_relation.get('scalar')
+            fields = plan.source_relation.get('fields') or {}
+            field_name = scalar or (next(iter(fields)) if len(fields) == 1 else None)
+            if field_name is None:
+                refuse('E_SQL_SHAPE',
+                       'SORT on a multi-field relation requires a key expression; use SORT_BY', step.pos)
+            key = Node('index', step.pos, obj=Node('var', step.pos, name='_'),
+                       idx=Node('text', step.pos, v=field_name))
+            plan.order_by.append({'binder': '_', 'node': key,
+                                  'dir': 'DESC' if name in ('SORT_DESC', 'TOP_DESC') else 'ASC',
+                                  'pos': step.pos})
+            return
+        binder = '_'
+        if binder_at is not None:
+            if not _constants.is_binder_name(args[binder_at]):
+                label = 'SORT_BY' if name in ('SORT_BY', 'TOP_BY') else 'SORT'
+                refuse('E_SQL_SHAPE', f'the binder of {label} must be a bare name', args[binder_at].pos)
+            binder = args[binder_at].name
+        if dir_at is None:
             direction = 'DESC' if name in ('SORT_DESC', 'TOP_DESC') else 'ASC'
-            if count == 1:
-                scalar = plan.source_relation.get('scalar')
-                fields = plan.source_relation.get('fields') or {}
-                field_name = scalar or (next(iter(fields)) if len(fields) == 1 else None)
-                if field_name is None:
-                    refuse('E_SQL_SHAPE',
-                           'SORT on a multi-field relation requires a key expression; use SORT_BY', step.pos)
-                key = Node('index', step.pos, obj=Node('var', step.pos, name='_'),
-                           idx=Node('text', step.pos, v=field_name))
-                plan.order_by.append({'binder': '_', 'node': key,
-                                      'dir': direction, 'pos': step.pos})
-                return
-            if count == 2:
-                plan.order_by.append({'binder': '_', 'node': args[1],
-                                      'dir': direction, 'pos': step.pos})
-                return
-            if count == 3:
-                if not _constants.is_binder_name(args[1]):
-                    refuse('E_SQL_SHAPE', 'the binder of SORT must be a bare name', args[1].pos)
-                plan.order_by.append({'binder': args[1].name, 'node': args[2],
-                                      'dir': direction, 'pos': step.pos})
-                return
-            refuse('E_ARITY', f'{name} takes 1 to 3 arguments', step.pos)
-
-        if count == 2:
-            binder, key, direction = '_', args[1], 'ASC'
-        elif count == 3:
-            if args[2].t == 'text':
-                binder, key, direction = '_', args[1], ascii_upper(args[2].v)
-            elif _constants.is_binder_name(args[1]):
-                binder, key, direction = args[1].name, args[2], 'ASC'
-            else:
-                # Neither form: the third slot is a direction the evaluator
-                # would compute, and SQL cannot -- the four-argument form's
-                # refusal.
-                refuse('E_BAD_ARG', "sort direction must be 'ASC' or 'DESC'", args[2].pos)
-        elif count == 4:
-            if not _constants.is_binder_name(args[1]):
-                refuse('E_SQL_SHAPE', 'the binder of SORT_BY must be a bare name', args[1].pos)
-            binder, key = args[1].name, args[2]
-            if args[3].t != 'text':
-                refuse('E_BAD_ARG', "sort direction must be 'ASC' or 'DESC'", args[3].pos)
-            direction = ascii_upper(args[3].v)
         else:
-            refuse('E_ARITY', 'SORT_BY takes 2 to 4 arguments', step.pos)
-        if direction not in ('ASC', 'DESC'):
-            refuse('E_BAD_ARG', "sort direction must be 'ASC' or 'DESC'",
-                   args[3].pos if count == 4 else args[2].pos)
-        plan.order_by.append({'binder': binder, 'node': key,
+            # A direction the evaluator would compute is one SQL cannot.
+            d = args[dir_at]
+            direction = ascii_upper(d.v) if d.t == 'text' else None
+            if direction not in ('ASC', 'DESC'):
+                refuse('E_BAD_ARG', "sort direction must be 'ASC' or 'DESC'", d.pos)
+        plan.order_by.append({'binder': binder, 'node': args[key_at],
                               'dir': direction, 'pos': step.pos})
 
     def compile_statement(self, plan: RelationalPlan) -> Fragment:
@@ -3163,10 +3109,6 @@ class Translator:
 
 # --- module-level helpers ----------------------------------------------------
 
-def _replace(n: Node, **kw) -> Node:
-    return n.replaced(**kw)
-
-
 def _static_source(elements: dict[str, Binder], scalar_rule: bool = False) -> dict[str, Any]:
     return {'shape': 'static', 'elements': elements, 'filters': [],
             'scalarRule': scalar_rule}
@@ -3274,9 +3216,16 @@ def _require_comparable_kinds(l: Fragment, r: Fragment, op: str, pos: Pos) -> No
     cr = EQL_CLASS.get(r.kind)
     if cl is None or cr is None or cl == cr:
         return
-    other = r.kind if l.kind == 'BOOL' else l.kind
+    if op[0] == '$':
+        # Only BIN against TEXT or NUM gets here: a BOOL operand of the `$`
+        # family is refused before (E_NOT_BIN, as SEL raises it).
+        refuse('E_SQL_SHAPE',
+               f'{op} compares a {l.kind} with a {r.kind}, which SEL does byte for byte, '
+               'reading the text as its UTF-8 bytes. The SQL templates would cast the '
+               'BIN side to characters instead, so the database could answer '
+               'differently', pos)
     refuse('E_SQL_SHAPE',
-           f'{op} compares a BOOL with a {other}, which SEL answers FALSE for every '
+           f'{op} compares a {l.kind} with a {r.kind}, which SEL answers FALSE for every '
            'value because the kinds differ. SQL has no way to say that: both sides '
            'cast to the same characters', pos)
 

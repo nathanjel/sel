@@ -1,4 +1,4 @@
-"""PY-P8: `x IN <literal list>` is built once and, for text/number lists, answered
+"""`x IN <literal list>` is built once and, for text/number lists, answered
 by a set lookup. It must answer exactly as the per-row walk does (EQL: numbers are
 not normalised, kinds must match, NULL IN list looks for a NULL)."""
 import pytest

@@ -1,4 +1,4 @@
-"""PY-P1: sorts and selections derive each key once (sel/builtins/aggregate.sort_key).
+"""Sorts and selections derive each key once (sel/builtins/aggregate.sort_key).
 
 The precomputed native-comparable key must order exactly as the pairwise
 comparator (compare_values, SPEC 7.3) does -- including ties, which keep input
@@ -10,7 +10,30 @@ from functools import cmp_to_key
 import pytest
 import sel
 from sel import Value
-from sel.builtins.aggregate import compare_values, sort_key, _DecKey
+from sel import decimal as D
+from sel.builtins.aggregate import _sort_leaf, _sort_rank, sort_key, _DecKey
+from sel.utf8 import bytes_compare
+
+
+def compare_values(a, b):
+    """SPEC 7.3's total order as a pairwise comparator, the reference sort_key
+    is held to: by kind rank first, then within the rank BOOL FALSE before TRUE,
+    numbers by exact decimal value, other text and BIN by their bytes."""
+    a = _sort_leaf(a)
+    b = _sort_leaf(b)
+    ra = _sort_rank(a)
+    rb = _sort_rank(b)
+    if ra != rb:
+        return (ra > rb) - (ra < rb)
+    if ra == 2:
+        return D.cmp(a.as_decimal(), b.as_decimal())
+    if ra == 1:
+        av = 1 if a.scalar else 0
+        bv = 1 if b.scalar else 0
+        return (av > bv) - (av < bv)
+    if ra == 3 or ra == 4:
+        return bytes_compare(a.as_bytes(), b.as_bytes())
+    return 0
 
 
 def pool(r):

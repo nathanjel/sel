@@ -31,7 +31,7 @@ def _segments(tpl: str) -> tuple:
     already unescaped, and the raw text of every ``{...}`` slot. A template is scanned
     once per distinct string, not once per fill: the same few dozen templates are
     filled for every node of every translation, and the character-by-character scan
-    was a third of a translation's time (PY-P28). Independent of the dialect and of
+    was a third of a translation's time. Independent of the dialect and of
     the arguments, so the cache is shared; bounded, and a miss just rescans."""
     segs = _SEGMENTS.get(tpl)
     if segs is not None:
@@ -166,7 +166,7 @@ def _numeric_literal(dialect: str, v: Value, pos: Pos | None) -> str:
     return '(' + n + ')' if n.startswith('-') else n
 
 
-# One escaper per escape table, built on first use (PY-P20: the literal was walked
+# One escaper per escape table, built on first use (the literal was walked
 # one character at a time in Python, 0.44 s per megabyte). Keyed by the dialect
 # and by the identity of its escape dict, which is kept in the entry so that a
 # re-registered dialect (a new dict) never reuses a stale escaper.
@@ -212,6 +212,26 @@ def placeholder(dialect: str, n: int) -> str:
     return tpl.replace('{n}', str(n)) if '{n}' in tpl else tpl
 
 
+
+def push_text(parts: list, s: str) -> None:
+    """Append SQL text to a part list, merged into a trailing text part."""
+    if s == '':
+        return
+    if parts and isinstance(parts[-1], str):
+        parts[-1] += s
+    else:
+        parts.append(s)
+
+
+def splice_parts(parts: list, f) -> None:
+    """Append a fragment's parts: its text merged, its parameter slots copied
+    verbatim -- slot numbers are absolute (Emit.fill), never renumbered."""
+    for p in f.parts:
+        if isinstance(p, str):
+            push_text(parts, p)
+        else:
+            parts.append(p)
+
 class Emit:
     """The dialect-bound half: identifiers, templates, and the byte-comparison
     operand. The literal functions above are free because Fragment needs them
@@ -249,7 +269,7 @@ class Emit:
         refuses rather than emitting something that answers when SEL would not.
         """
         from .fragment import Fragment
-        if f.kind == 'NUM' and not getattr(f, 'guard', False):
+        if f.kind == 'NUM' and not f.guard:
             return f
         _map.check_numeric_guard(self._dialect)
         guard = self.lex('numericGuard')
@@ -277,7 +297,7 @@ class Emit:
         and only one of those is a two-operand template.
         """
         from .fragment import Fragment
-        if getattr(f, 'exact', False):
+        if f.exact:
             return f
         cast = self.lex('textCast')
         collate = str(self.lex('textCollate') or '')
@@ -341,38 +361,23 @@ class Emit:
 
         The cycle is refused rather than a depth capped, because the cycle is the
         actual mistake and a depth cap would need a number nobody can justify.
-        With cycles refused the chain is bounded by the number of lexical keys,
-        which is fifteen.
+        With cycles refused the chain is bounded by the number of lexical keys
+        (``RULES['lexicalTypes']``).
         """
         from .fragment import Fragment
         parts: list = []
-
-        def push(s: str) -> None:
-            if s == '':
-                return
-            if parts and isinstance(parts[-1], str):
-                parts[-1] += s
-            else:
-                parts.append(s)
-
-        def splice(f) -> None:
-            for p in f.parts:
-                if isinstance(p, str):
-                    push(p)
-                else:
-                    parts.append(p)      # absolute already; see the note above
 
         def join(subset) -> None:
             first = True
             for f in subset:
                 if not first:
-                    push(', ')
+                    push_text(parts, ', ')
                 first = False
-                splice(f)
+                splice_parts(parts, f)
 
         for is_slot, text in _segments(tpl):
             if not is_slot:
-                push(text)
+                push_text(parts, text)
                 continue
             slot = text
 
@@ -390,7 +395,7 @@ class Emit:
                     refuse('E_SQL_UNSUPPORTED',
                            f'the mapping for this expression asks for argument {k}, '
                            'which it was not given', pos)
-                splice(args[k])
+                splice_parts(parts, args[k])
                 continue
             # A lexical reference, from a runtime-registered template.
             key, arg = slot.split(':', 1) if ':' in slot else (slot, None)
@@ -400,7 +405,7 @@ class Emit:
                        f'a template used {{{slot}}}, which is neither an argument nor '
                        f'a lexical entry of dialect {self._dialect}', pos)
             if arg is None or arg == '':
-                push(val)
+                push_text(parts, val)
                 continue
             # binaryCast converts a TEXT or NUM operand to bytes. An operand that
             # is already BIN needs no conversion, and on PostgreSQL converting it
@@ -417,18 +422,18 @@ class Emit:
             each = [str(n) for n in range(len(args))] if arg == '*' else [arg]
             for at, one in enumerate(each):
                 if at > 0:
-                    push(', ')
+                    push_text(parts, ', ')
                 cast_arg = _slot_index(one) if key == 'binaryCast' else None
                 if (cast_arg is not None and cast_arg < len(args)
                         and isinstance(args[cast_arg], Fragment)
                         and args[cast_arg].kind == 'BIN'):
-                    splice(args[cast_arg])
+                    splice_parts(parts, args[cast_arg])
                     continue
                 deeper = set(expanding or ())
                 deeper.add(key)
                 for p in self.fill(val.replace('{0}', '{' + one + '}'), args, pos, deeper):
                     if isinstance(p, str):
-                        push(p)
+                        push_text(parts, p)
                     else:
                         parts.append(p)
         return parts

@@ -54,7 +54,7 @@ from typing import Any
 from . import decimal as D
 from .errors import MAX_DEPTH, Pos, fail
 from .lexer import RESERVED, Token, tokenize
-from .registry import Spec, lookup
+from .registry import INF, REGEX_FLAG_AT, Spec, is_host_function, lookup
 
 ASSIGN_OPS = frozenset(['=', '+=', '-=', '*=', '/=', '%=', '&='])
 COMPARE_OPS = frozenset(['==', '!=', '<', '<=', '>', '>=',
@@ -63,6 +63,9 @@ COMPARE_WORDS = frozenset(['EQL', 'IN'])
 
 # spec/SPEC.md §5, as a table. Higher binds tighter. The gaps are the levels
 # that are not infix: 16 is postfix/primary, 15 is unary minus, 7 is NOT.
+# BP_SEQ and BP_LIST are read by nothing: `;` and `,` are parsed by their own
+# functions (parse_sequence, parse_list), not by the climbing loop. Kept so the
+# table is the whole of §5.
 BP_SEQ = 1        # ;
 BP_LIST = 2       # ,
 BP_ASSIGN = 3     # = += -= *= /= %= &=   (right associative)
@@ -139,18 +142,28 @@ class Node:
     # Physical-tree metadata: for an `IN` whose right operand is a list of literals,
     # the optimiser's ConstantList (the list's Value, built once, and a set of the
     # texts when every element is text or a number) so the test does not rebuild
-    # and clone the list for every row (PY-P8). Private to the node: only `IN`
+    # and clone the list for every row. Private to the node: only `IN`
     # reads it, and it is never returned or stored where a program could reach it.
     const_value: Any = None
     # Physical-tree metadata on a FILTER step: the step after it only reads the
     # kept elements and copies whatever it collects (optimizer.adopts_elements),
-    # so FILTER hands them on as they are instead of cloning each one (PY-REG-1).
+    # so FILTER hands them on as they are instead of cloning each one.
     adopt_items: bool = False
+    # SQL planner metadata, on the planner's own copy of a `var`: this read is
+    # the catalogue's BINDING, reached by unwinding through a helper of the same
+    # name (`ORDERS = ORDERS .> DROP(2); ORDERS .> ...`), not a read of that
+    # helper -- stage 1 does not inline the helper into it, and it does not keep
+    # the helper alive (sql/hybrid.py, _unwind_through_helpers).
+    binding: bool = False
+    # Optimiser metadata, on its own copy of a pipeline step: how deep the step
+    # stands in the tree as written (the outermost step is the call itself), for
+    # the rewrite that would deepen a subtree (FILTER fusion). 0 is unknown.
+    step_depth: int = 0
     # Physical-tree metadata: the function eval_node runs this node with
     # (eval.handler_for), stamped by the optimiser on the nodes its own copy
     # holds (optimizer.bind_handlers). replaced() does not carry it -- a copy
     # may be turned into another kind of node -- so a copy takes eval_node's
-    # generic path; and it is no part of what the node is (item 2, P3).
+    # generic path; and it is no part of what the node is.
     ev: Any = field(default=None, compare=False, repr=False)
 
     def replaced(self, **changes) -> 'Node':
@@ -166,10 +179,49 @@ class Node:
                  self.obj, self.idx, self.target, self.value, self.items, self.args,
                  self.spec, self.grouped, self.dec, self.math_plan, self._cached_slot,
                  self.record_shape, self.keys_unobserved, self._not_constant,
-                 self.const_value, self.adopt_items)
+                 self.const_value, self.adopt_items, self.binding, self.step_depth)
         for k, v in changes.items():
             setattr(c, k, v)
         return c
+
+
+def children(n: Node) -> tuple:
+    """Every child slot of a node, in one place: a walker that means "all of
+    the tree" iterates this, so a field added to Node is added here once. The
+    walkers that skip a slot on purpose -- an assignment's target is a path, not
+    a read; a binder argument is a name -- say so where they walk."""
+    return (*n.args, *n.items, n.l, n.r, n.x, n.obj, n.idx, n.target, n.value)
+
+
+def may_write(node: Node | None) -> bool:
+    """Whether evaluating NODE might write into a value it reaches: it holds an
+    assignment, or calls an application's own function (registry.is_host_function),
+    which may do anything to a value it is handed. Iterative: a body is as deep as
+    the source is long. An assignment is answered at the node, so its target and
+    value are not walked."""
+    stack = [node]
+    while stack:
+        n = stack.pop()
+        if n is None:
+            continue
+        t = n.t
+        if t == 'assign':
+            return True
+        if t == 'call':
+            if is_host_function(n.name or ''):
+                return True
+            stack.extend(n.args)
+        elif t == 'index':
+            stack.append(n.obj)
+            stack.append(n.idx)
+        elif t == 'bin':
+            stack.append(n.l)
+            stack.append(n.r)
+        elif t == 'un':
+            stack.append(n.x)
+        elif t in ('seq', 'list'):
+            stack.extend(n.items)
+    return False
 
 
 class Parser:
@@ -485,9 +537,6 @@ class Parser:
         return _finish_call(name_tok, spec, args)
 
 
-_REGEX_FUNCTIONS = frozenset(['RMATCH', 'RFIND', 'RGROUPS', 'RREPLACE'])
-
-
 def _finish_call(name_tok: Token, spec: Spec, args: list[Node]) -> Node:
     """The compile-time arity rule (spec 6.2, SEL-0002) and the call node, in
     one place for both call forms; the pipeline form has already placed its
@@ -499,7 +548,7 @@ def _finish_call(name_tok: Token, spec: Spec, args: list[Node]) -> Node:
         problem = spec.arity_error(count)
         if problem:
             fail('E_ARITY', problem, name_tok.pos)
-    if spec.name in _REGEX_FUNCTIONS:
+    if spec.name in REGEX_FLAG_AT:
         # A literal pattern is checked now (SPEC 7.8), even where it never runs.
         from .builtins.regex import check_literal
         check_literal(spec.name, args)
@@ -508,7 +557,7 @@ def _finish_call(name_tok: Token, spec: Spec, args: list[Node]) -> Node:
 
 
 def arity_text(spec: Spec) -> str:
-    if spec.max == float('inf'):
+    if spec.max == INF:
         return f'at least {spec.min} argument{"" if spec.min == 1 else "s"}'
     if spec.min == spec.max:
         return f'{spec.min} argument{"" if spec.min == 1 else "s"}'

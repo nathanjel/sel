@@ -11,17 +11,10 @@ import os
 import re
 import sys
 
-# Prefer an *installed* sel over the source tree, so the python-wheel
-# implementation in tools/impls.sh actually exercises the built package rather
-# than silently re-testing python/sel through a path insert. Falls back to the
-# source tree when nothing is installed, which is how the plain `python`
-# implementation and a bare checkout run.
-try:
-    import sel as _sel_probe                                    # noqa: F401
-except ImportError:
-    sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
+from _harness import none_ran, read_text  # first: it makes `sel` importable
 
 from sel import SelError, Value, compile as sel_compile   # noqa: E402
+
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 SUITE = os.path.abspath(os.path.join(HERE, '..', '..', 'conformance'))
@@ -167,7 +160,7 @@ def describe(value):
 def check(expect, value, error, at):
     space = expect.find(' ')
     form = expect if space < 0 else expect[:space]
-    rest = '' if space < 0 else expect[space + 1:].strip()
+    rest = '' if space < 0 else _trim_ws(expect[space + 1:])
 
     if form == 'error':
         if error is None:
@@ -239,22 +232,21 @@ def run_case(c):
 
 def main():
     args = sys.argv[1:]
+    # (as given, absolute): a path that cannot be read is reported as written.
     if args:
-        files = [os.path.abspath(f) for f in args]
+        files = [(f, os.path.abspath(f)) for f in args]
     else:
-        files = sorted(os.path.join(SUITE, f)
-                       for f in os.listdir(SUITE) if f.endswith('.selt'))
+        files = [(p, p) for p in sorted(os.path.join(SUITE, f)
+                                        for f in os.listdir(SUITE) if f.endswith('.selt'))]
 
     npass = 0
     failures = []
     suite_errors = []
     seen = {}
 
-    for path in files:
+    for given, path in files:
         short = os.path.relpath(path, SUITE) if path.startswith(SUITE) else path
-        with open(path, encoding='utf-8') as fh:
-            text = fh.read()
-        for c in parse_selt(text, short):
+        for c in parse_selt(read_text(given), short):
             if c['name'] in seen:
                 suite_errors.append(
                     f'{c["at"]}: duplicate case name {c["name"]} (also {seen[c["name"]]})')
@@ -281,6 +273,8 @@ def main():
         print(f'SUITE {e}')
 
     print(f'\n{npass} passed, {len(failures)} failed, {len(suite_errors)} suite errors')
+    if not (npass or failures or suite_errors):
+        return none_ran('no cases ran')
     return 1 if (failures or suite_errors) else 0
 
 

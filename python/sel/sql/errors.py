@@ -28,6 +28,16 @@ class SqlError(Exception):
     def __str__(self) -> str:
         return f'{self.code} at {self.line}:{self.col}: {self.message}'
 
+    def __reduce__(self):
+        # As SelError's: Exception's default reduce replays `args` (the message
+        # alone) into the three-argument constructor, so pickle, copy, deepcopy
+        # and a ProcessPoolExecutor carrying the error all failed.
+        return (_rebuild, (self.code, self.message, self.line, self.col, self.offset))
+
+
+def _rebuild(code: str, message: str, line: int, col: int, offset: int) -> SqlError:
+    return SqlError(code, message, Pos(line, col, offset))
+
 
 def refuse(code: str, message: str, pos: Pos | None = None) -> NoReturn:
     """Raise at the point of failure. Nothing wraps this on the way out, the same

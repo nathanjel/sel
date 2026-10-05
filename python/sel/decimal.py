@@ -28,7 +28,6 @@ str() is the conversion being guarded.
 from __future__ import annotations
 
 import re
-import sys
 
 from .errors import Pos, fail
 
@@ -168,6 +167,12 @@ def _pow10(k: int) -> int:
     return v
 
 
+# 10**DIV_SCALE, computed once: div multiplies every dividend by it. Through
+# _pow10 rather than an index into the small table, which would silently assume
+# the generated DIV_SCALE stays within _POW10_LIMIT.
+_DIV_FACTOR = _pow10(DIV_SCALE)
+
+
 def _num_digits(n: int) -> int:
     """Digit count of a non-negative int, without str().
 
@@ -201,8 +206,6 @@ def guard(d: Dec, pos: Pos | None) -> Dec:
         fail('E_RANGE', f'number has more than {MAX_INT_DIGITS} integer digits', pos)
     return d
 
-
-ZERO = make(False, 0, 0)
 
 _NUM_RE = re.compile(r'^-?[0-9]+(\.[0-9]+)?$')
 # NOTE ON .fullmatch(): Python's `$` matches at the end of the string *and*
@@ -292,10 +295,10 @@ def is_integer(d: Dec) -> bool:
     if d.scale > _GAP:
         # 10**scale divides digits only if 2**scale does, i.e. the digits have at
         # least `scale` trailing zero bits. Decides most values without building
-        # a power of ten as large as the scale (PY-P22).
+        # a power of ten as large as the scale.
         if ((d.digits & -d.digits).bit_length() - 1) < d.scale:
             return False
-    return divmod(d.digits, _pow10(d.scale))[1] == 0      # divmod, not %: PY-P19
+    return divmod(d.digits, _pow10(d.scale))[1] == 0      # divmod, not %: see mod()
 
 
 def to_safe_int(d: Dec) -> int:
@@ -336,7 +339,7 @@ def sub(a: Dec, b: Dec, pos: Pos | None = None) -> Dec:
 
 def mul(a: Dec, b: Dec, pos: Pos | None = None) -> Dec:
     scale = a.scale + b.scale
-    # Refuse before multiplying when the operand sizes already settle it (PY-P23):
+    # Refuse before multiplying when the operand sizes already settle it:
     # a product of an m-bit and an n-bit integer has at least m+n-1 bits, so its
     # digit count is bounded below by the same estimate _cmp_by_magnitude uses, and
     # multiplying two million-digit numbers to learn they are too wide took seconds.
@@ -391,7 +394,7 @@ def cmp(a: Dec, b: Dec) -> int:
         if gap > _GAP or gap < -_GAP:
             # Far apart in scale: the magnitudes usually differ by far more than the
             # imprecision of a bit-length estimate, which decides without building
-            # 10**gap (PY-P22). Inconclusive (within about one power) falls through
+            # 10**gap. Inconclusive (within about one power) falls through
             # to the exact alignment below.
             c = _cmp_by_magnitude(A, a.scale, B, b.scale)
             if c:
@@ -415,7 +418,7 @@ def div(a: Dec, b: Dec, pos: Pos | None = None) -> Dec:
         N *= _pow10(b.scale - a.scale)
     elif a.scale > b.scale:
         D *= _pow10(a.scale - b.scale)
-    q, r = divmod(N * _POW10_SMALL[DIV_SCALE], D)
+    q, r = divmod(N * _DIV_FACTOR, D)
     neg = a.neg != b.neg
 
     if r == 0:
@@ -435,8 +438,8 @@ def mod(a: Dec, b: Dec, pos: Pos | None = None) -> Dec:
         fail('E_DIV_ZERO', 'modulo by zero', pos)
     A, B, s = _aligned(a, b)
     # divmod, not %: since CPython 3.12 `divmod` and `//` take a sub-quadratic
-    # path for huge ints and `%` does not -- about 9x slower on a million digits
-    # (PY-P19). The remainder is the same.
+    # path for huge ints and `%` does not -- about 9x slower on a million digits.
+    # The remainder is the same.
     return make(a.neg, divmod(A, B)[1], s)
 
 

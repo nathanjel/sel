@@ -24,9 +24,10 @@ translation time. See docs/internals/sql-translation.md §11.4.
 
 from __future__ import annotations
 
-from ..errors import Pos, SelError
-from ..eval import Context, MAX_DEPTH, eval_node
+from ..errors import MAX_DEPTH, Pos, SelError
+from ..eval import Context, eval_node
 from ..parser import Node
+from ..registry import binding_form
 from ..value import Value
 from .errors import refuse
 
@@ -244,30 +245,32 @@ def _is_constant(n: Node, bound: dict[str, bool] | None = None, depth: int = 0) 
 
 
 def _constant_call(n: Node, bound: dict[str, bool], depth: int = 0) -> bool:
-    """The binding form is the only reason this is not three lines.
-
-    ``MAP(list, X, X + 1)`` names its binder in argument 1 and uses it in
-    argument 2; the two-argument form binds ``_`` implicitly. Neither name is a
-    free variable, so neither disqualifies the call -- but the *source* still has
-    to be constant, or the body has nothing to iterate.
+    """A binding call is constant when every argument is, each read where it
+    runs: an 'outer' argument (the source, a direction, a TOP count, LINK's
+    right source) where the call stands, an 'inner' one (the body) with the
+    form's names bound, and a 'binder' is a name, never read. The forms are the
+    manifest's (registry.binding_form), the classifier the dependency walker and
+    stage 1 use, so this cannot read LINK's right source as a binder or
+    TOP_BY's key as one.
     """
     args = n.args
     if not (n.spec is not None and n.spec.binds):
         return all(is_constant(a, bound, depth) for a in args)
-
-    if not is_constant(args[0], bound, depth):
-        return False
+    form = binding_form(n.name, args, n.spec)
+    if form is None:
+        return False                     # no form takes this count: refused elsewhere
+    scopes, binds = form
     inner = dict(bound)
-    body = 1
-    if len(args) >= 3:
-        # Malformed; not constant, and _agg_shape refuses it for real.
-        if not is_binder_name(args[1]):
+    for name in binds:
+        inner[name] = True
+    for arg, scope in zip(args, scopes):
+        if scope == 'binder':
+            if not is_binder_name(arg):
+                return False             # malformed; _agg_shape refuses it for real
+            continue
+        if not is_constant(arg, inner if scope == 'inner' else bound, depth):
             return False
-        inner[args[1].name] = True
-        body = 2
-    else:
-        inner['_'] = True
-    return all(is_constant(args[i], inner, depth) for i in range(body, len(args)))
+    return True
 
 
 def validate(n: Node, ctx: Context | None = None) -> None:
@@ -338,7 +341,7 @@ def refuse_as_sel(e: SelError, n: Node) -> None:
     if e.code == 'E_DEPTH':
         # SEL evaluates this fine as far as it is asked to; what is refused is the
         # nesting of the expression being translated, which is E_SQL_DEPTH's whole
-        # meaning (sql/errors.md), not an invalid expression (JS-C54 d).
+        # meaning (sql/errors.md), not an invalid expression.
         refuse('E_SQL_DEPTH',
                'this expression nests deeper than SEL will evaluate, so there is '
                'nothing to translate; the evaluator answers E_DEPTH for it', pos)

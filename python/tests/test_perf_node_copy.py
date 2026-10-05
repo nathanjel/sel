@@ -1,4 +1,4 @@
-"""PY-P4: Node.replaced is dataclasses.replace without the introspection cost, and
+"""Node.replaced is dataclasses.replace without the introspection cost, and
 must carry every declared field."""
 import dataclasses
 import sel

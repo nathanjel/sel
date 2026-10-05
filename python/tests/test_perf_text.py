@@ -1,4 +1,4 @@
-"""PY-P11: UPPER/LOWER and the TRIM family use str methods and a translate table;
+"""UPPER/LOWER and the TRIM family use str methods and a translate table;
 they must give exactly what the per-character loops did (kept here as the
 reference), including for text where Python's own case mapping would differ."""
 import random

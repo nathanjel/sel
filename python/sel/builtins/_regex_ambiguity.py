@@ -104,10 +104,10 @@ def max_cover(classes):
 
 
 class N:
-    __slots__ = ('k', 'a', 'lo', 'hi', 'cap', 'nullable', 'minlen', 'maxlen')
+    __slots__ = ('k', 'a', 'lo', 'hi', 'nullable', 'minlen', 'maxlen')
 
-    def __init__(self, k, a=None, lo=0, hi=0, cap=False):
-        self.k, self.a, self.lo, self.hi, self.cap = k, a, lo, hi, cap
+    def __init__(self, k, a=None, lo=0, hi=0):
+        self.k, self.a, self.lo, self.hi = k, a, lo, hi
         if k == 'EPS':
             self.nullable, self.minlen, self.maxlen = True, 0, 0
         elif k == 'LET':
@@ -278,7 +278,7 @@ def scc(succ):
 
 def analyse(tree):
     a = Analysis()
-    nl, f, l = a.walk(tree, False)
+    _, f, l = a.walk(tree, False)
     a.succ[0] = list(f)
     succ, cls = a.succ, a.cls
     comp, cyc = scc(succ)

@@ -1,7 +1,7 @@
 """Binary built-ins.
 
 The codecs take their INPUT CHECKING from this file and their ARITHMETIC from the
-stdlib (PY-P12). `base64.b64decode` is lenient in ways the spec is not — it ignores
+stdlib. `base64.b64decode` is lenient in ways the spec is not — it ignores
 characters outside the alphabet unless validate=True, and even then accepts some
 padding the other hosts reject — so the accepted set is decided here, once, by an
 explicit ASCII pattern (and padding rule), and only a string that passed it is

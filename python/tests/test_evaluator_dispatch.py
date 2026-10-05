@@ -1,7 +1,8 @@
-"""Item 2, P3: eval_node takes a node's evaluator from a table by type (_EVAL)
+"""eval_node takes a node's evaluator from a table by type (_EVAL)
 and, on the optimiser's own copy of the tree, from the node itself (Node.ev,
 optimizer.bind_handlers). The caller's AST is never written."""
 import runpy
+import sys
 from pathlib import Path
 
 import pytest
@@ -12,6 +13,15 @@ from sel.eval import _EVAL, Context, eval_node
 from sel.parser import Node
 
 ROOT = Path(__file__).resolve().parents[2]
+
+
+def load_conformance_runner():
+    # The runner imports its sibling `_harness` by bare name, as a script does;
+    # its read_text (bytes, no newline translation) is in the returned globals.
+    bin_dir = str(ROOT / 'python/bin')
+    if bin_dir not in sys.path:
+        sys.path.append(bin_dir)
+    return runpy.run_path(str(ROOT / 'python/bin/conformance.py'))
 
 
 def nodes(root):
@@ -25,10 +35,10 @@ def nodes(root):
 
 
 def test_every_node_type_the_parser_makes_has_an_evaluator():
-    conformance = runpy.run_path(str(ROOT / 'python/bin/conformance.py'))
+    conformance = load_conformance_runner()
     seen = set()
     for path in sorted((ROOT / 'conformance').glob('*.selt')):
-        for case in conformance['parse_selt'](path.read_text(encoding='utf-8'), path.name):
+        for case in conformance['parse_selt'](conformance['read_text'](str(path)), path.name):
             for source in (case['setup'], case['source']):
                 try:
                     seen |= {n.t for n in nodes(compile(source).ast)} if source else set()

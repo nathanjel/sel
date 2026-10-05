@@ -40,7 +40,7 @@ def test_math_plan_matches_ast(source):
         assert result(tree, root) == expected
 
 
-# Item 2: the plan against the plain tree on awkward operands -- identity rules
+# The plan against the plain tree on awkward operands -- identity rules
 # (COERCE), a leaf, folds, and names like the ones generated plan code uses.
 AWKWARD = ['A + 0', '0 + A', 'A * 1', 'A - 0 + B', 'MIN(A)', 'MAX(A, B, C)', 'ROUND(A, B)',
            'POWER(B, C)', 'SIGN(A) * C', '-(A + B) * C', 'COUNT(C) * B', 'S0 * K23 + CTX']
@@ -70,7 +70,7 @@ def test_math_plan_matches_ast_on_awkward_operands():
             assert outcome(lambda: eval_node(tree, Context(root))) == want, (source, data)
 
 
-# Item 2, P2: a hot plan runs as one generated function; it answers as the
+# A hot plan runs as one generated function; it answers as the
 # interpreter does, compiles on its _PLAN_HOT-th run, and only up to _PLAN_MAX_STEPS.
 def test_a_compiled_math_plan_answers_as_the_interpreted_one():
     for source in AWKWARD + ['A + B', 'A - B', 'A * B', 'A / B', 'A % B', '-A', 'ABS(A)', 'CEIL(A)',

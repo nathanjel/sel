@@ -1,31 +1,16 @@
+"""The structural builtins: COUNT, INDEXES, HAS, LIST, RECORD, TAKE, DROP,
+SELECT_COLS, DISTINCT and DEDUPE, and the relational LINK and LINK_LEFT -- their
+equi-join and nested-loop paths, and the run-time pre-filter that applies a
+FILTER's conjuncts inside a join (spec §7.4)."""
 
 from .._budget import check_collection
-from ..errors import SelError, fail
-from ..lexer import ascii_upper
-
-
-def _upper_name(s):
-    """Names compare ASCII-case-insensitively (spec §2, §7.4): only a-z move.
-    str.upper() folds "ß" to "SS" and "ſ" to "S", which made distinct field
-    names collide in joined rows (review 2026-09-25 SEM-04). The builtin is
-    kept for the all-ASCII names that are nearly every name."""
-    return s.upper() if s.isascii() else ascii_upper(s)
-from ..registry import INF, define
+from ..errors import SelError
+from ..lexer import ascii_lower, ascii_upper
+from ..registry import INF, define, is_host_function
 from .aggregate import _SCALAR_FRESH_CALLS
 from ..parser import Node
-from ..value import NONE, TEXT, Value, elements, iter_elements, iter_values, structural_hash, _record_shape
+from ..value import NONE, TEXT, Value, elements, iter_values, structural_hash, _record_shape
 
-
-def iter_collection_items(value):
-    """Yield collection values without building ``(key, value)`` tuples.
-
-    ``elements`` is the public/key-preserving helper.  LINK's nested-loop and
-    hash-join paths only need the values, so using it there would allocate a
-    complete entry list for every probe (and again for every nested-loop left
-    row).  This mirrors Lisp's FOR-EACH-COLLECTION-ITEM and keeps the common
-    shaped/list path on the flat storage directly.
-    """
-    yield from iter_values(value)
 
 
 def first_collection_item(value):
@@ -34,7 +19,7 @@ def first_collection_item(value):
     if value.is_list and value.storage is not None and value.storage:
         return value.storage[0]
     # The first element only: building every entry of a dict-mode record to read the
-    # first one is what `elements()` did (PY-P26). iter_values yields the same first
+    # first one is what `elements()` did. iter_values yields the same first
     # item, and nothing at all exactly where elements() was empty.
     for item in iter_values(value):
         return item
@@ -161,7 +146,7 @@ def _dedupe(args, ctx):
     # A value with no children is identified by its kind and text alone (EQL compares
     # nothing else of it, and a number is its canonical text), so a plain set decides
     # it with the interpreter's own hash and equality instead of a structural hash and
-    # an eql() per element (PY-P26). Values with children take the structural path;
+    # an eql() per element. Values with children take the structural path;
     # the two domains cannot be EQL to each other (different sizes).
     scalars = set()
     for _, item in elements(value):
@@ -205,7 +190,7 @@ def expr_depends_only_on(node, allowed):
             continue
         t = n.t
         if t == 'var':
-            if _upper_name(n.name) not in allowed:
+            if ascii_upper(n.name) not in allowed:
                 return False
         elif t == 'index':
             stack.append(n.obj)
@@ -231,10 +216,11 @@ def try_extract_equi_keys(node, b1, b2):
     # The right binder shadows the left when both are spelled alike (SPEC 7.4):
     # every occurrence names the right element, so neither operand is "the left
     # side" and no key can be extracted -- the general path decides.
-    if _upper_name(b1) == _upper_name(b2):
+    if ascii_upper(b1) == ascii_upper(b2):
         return None
-    left_names = {_upper_name(b1), _upper_name(b1.lower()), '_1', '_'}
-    right_names = {_upper_name(b2), _upper_name(b2.lower()), '_2'}
+    # A binder's lower-case alias upper-cases back to the binder itself.
+    left_names = {ascii_upper(b1), '_1', '_'}
+    right_names = {ascii_upper(b2), '_2'}
     if expr_depends_only_on(node.l, left_names) and expr_depends_only_on(node.r, right_names):
         return node.l, node.r, node.op == '==', False
     if expr_depends_only_on(node.r, left_names) and expr_depends_only_on(node.l, right_names):
@@ -254,7 +240,7 @@ def single_relation_name(node):
 
 class _JoinBad:
     """A key the comparison rejects: the pair it meets must raise, as the
-    comparison would (review 2026-09-25 SEM-06)."""
+    comparison would."""
     __slots__ = ('value',)
 
     def __init__(self, value):
@@ -277,7 +263,7 @@ def canonical_join_key(value, numeric):
                 if text.isascii() and (text.isdigit() or (text.startswith('-') and text[1:].isdigit())):
                     try:
                         return int(text)
-                    except Exception:
+                    except ValueError:      # over the interpreter's int digit limit
                         pass
             try:
                 d = value.as_decimal()
@@ -354,12 +340,12 @@ def is_positional_binder(name):
 def ensure_row_table_alias(row, table_name):
     if not table_name or is_positional_binder(table_name) or row.has(table_name):
         return row
-    lower = table_name.lower()
     if row.shape is not None:
         old_shape = row.shape
         cache_key = (old_shape, table_name)
         cached = _ALIAS_PLANS.get(cache_key)
         if cached is None:
+            lower = ascii_lower(table_name)
             add_lower = lower != table_name and lower not in old_shape.key_map
             keys = tuple(list(old_shape.keys) + [table_name] + ([lower] if add_lower else []))
             target_shape = _record_shape(keys)
@@ -373,6 +359,7 @@ def ensure_row_table_alias(row, table_name):
         return Value._from_shape(target_shape, storage)
     entries = row.entries()
     entries.append((table_name, row))
+    lower = ascii_lower(table_name)
     if lower != table_name and not row.has(lower):
         entries.append((lower, row))
     return Value._from_entries_owned(entries)
@@ -390,7 +377,7 @@ def make_null_record(sample, table_name):
             entries.append((key, Value.none()))
             seen.add(key)
     if sample is None and table_name and not is_positional_binder(table_name):
-        for name in (table_name, table_name.lower()):
+        for name in (table_name, ascii_lower(table_name)):
             if name not in seen:
                 entries.append((name, Value.none()))
                 seen.add(name)
@@ -447,21 +434,21 @@ def make_joined_row(left, right, b1, b2, null_right):
     for name in _binder_keys(b2, '_2'):
         bind(name, rside)
     right_entries = rside.entries() if rside.size() > 0 and not rside.is_list else []
-    right_names = {_upper_name(key) for key, _ in right_entries}
+    right_names = {ascii_upper(key) for key, _ in right_entries}
     for key, value in left_entries:
-        if _category(value) != _NESTED and _upper_name(key) not in right_names:
+        if _category(value) != _NESTED and ascii_upper(key) not in right_names:
             put(key, value)
     if right is not None:
-        left_names = {_upper_name(key) for key, _ in left_entries}
+        left_names = {ascii_upper(key) for key, _ in left_entries}
         for key, value in right_entries:
-            if _category(value) == _SCALAR and _upper_name(key) not in left_names:
+            if _category(value) == _SCALAR and ascii_upper(key) not in left_names:
                 put(key, value)
     return Value._from_entries_owned(entries)
 
 
 def _binder_keys(name, positional):
     keys = [name]
-    lower = name.lower()
+    lower = ascii_lower(name)
     if lower != name:
         keys.append(lower)
     if name != positional:
@@ -502,15 +489,15 @@ def _row_plan(left, rside, matched, b1, b2):
     for name in _binder_keys(b2, '_2'):
         bind(name, ('RS',))
     rkeys = rside.shape.keys if rside.shape is not None else ()
-    right_names = {_upper_name(k) for k in rkeys}
+    right_names = {ascii_upper(k) for k in rkeys}
     for i, key in enumerate(lkeys):
-        if lcat[i] != _NESTED and _upper_name(key) not in right_names:
+        if lcat[i] != _NESTED and ascii_upper(key) not in right_names:
             put(key, ('L', i))
     if matched:
         rcat = [_category(v) for v in rside.storage]
-        left_names = {_upper_name(k) for k in lkeys}
+        left_names = {ascii_upper(k) for k in lkeys}
         for i, key in enumerate(rkeys):
-            if rcat[i] == _SCALAR and _upper_name(key) not in left_names:
+            if rcat[i] == _SCALAR and ascii_upper(key) not in left_names:
                 put(key, ('R', i))
     return _record_shape(tuple(keys)), ops
 
@@ -554,11 +541,11 @@ def _compile_plan(plan, left, rside, matched, b1, b2):
     rscalar = [(f'r_s[{i}].kind', f'(r_s[{i}].kind != "NONE" or r_s[{i}].is_list)') for i in sorted(promoted)]
     rnull = []
     if matched:
-        left_names = {_upper_name(k) for k in left.shape.keys}
+        left_names = {ascii_upper(k) for k in left.shape.keys}
         binder_names = set(_binder_keys(b1, '_1')) | set(_binder_keys(b2, '_2'))
         for i, k in enumerate(rside.shape.keys):
             v = rside.storage[i]
-            if (i not in promoted and _upper_name(k) not in left_names and k not in binder_names
+            if (i not in promoted and ascii_upper(k) not in left_names and k not in binder_names
                     and v.kind == NONE and not v.is_list):
                 rnull.append(f'(r_s[{i}].kind == "NONE" and not r_s[{i}].is_list)')
     lguard = ' and '.join(_scalars(lscalar) + lrecord) or 'True'
@@ -709,9 +696,10 @@ def _pure_source(node):
     if t == 'list':
         return all(_pure_source(item) for item in node.items)
     if t == 'call':
-        spec = node.spec
-        module = getattr(getattr(spec, 'fn', None), '__module__', '') or ''
-        if not module.startswith('sel.builtins') or spec.name == 'ABORT':
+        # By name, as every other "is this the application's?" test asks: the
+        # module a builtin's function lives in is not the package's name once
+        # the package is vendored under another one.
+        if is_host_function(node.name or '') or node.name == 'ABORT':
             return False
         return all(_pure_source(arg) for arg in node.args)
     return False
@@ -776,7 +764,7 @@ def _read_self(node, names, binder):
     if node is None:
         return None
     if (node.t == 'index' and node.obj is not None and node.obj.t == 'var' and node.obj.name == binder
-            and node.idx is not None and node.idx.t == 'text' and _upper_name(node.idx.v) in names):
+            and node.idx is not None and node.idx.t == 'text' and ascii_upper(node.idx.v) in names):
         return Node('var', node.pos, name=binder)
     copy = Node(node.t, node.pos)
     for slot in Node.__slots__:
@@ -797,14 +785,14 @@ def _read_self(node, names, binder):
 
 def _first_keys(value):
     first = first_collection_item(value)
-    return {_upper_name(k) for k in first.keys()} if first is not None else set()
+    return {ascii_upper(k) for k in first.keys()} if first is not None else set()
 
 
 def _row_fact(value, name, kind):
     """Whether every row of VALUE carries the field NAME (as written) as text
     (a number is text), or, for kind NUM, as a number; for kind ANY, as any
     non-null scalar (what a promoted join key needs)."""
-    for row in iter_collection_items(value):
+    for row in iter_values(value):
         v = row.get(name)
         if kind == 'ANY':
             if v is None or v.is_null() or is_nested_record(v):
@@ -836,7 +824,7 @@ class _SideFacts:
         # The member names the side's row is bound under in a joined row --
         # the binder and its lower-case alias, never a positional `_1`/`_2`,
         # which later joins rebind.
-        self.names = {n for b in names if not is_positional_binder(b) for n in (b, b.lower())}
+        self.names = {n for b in names if not is_positional_binder(b) for n in (b, ascii_lower(b))}
         self._facts = {}
 
     def present(self, name):
@@ -852,7 +840,7 @@ class _SideFacts:
             if first is not None and all(row.shape is first for row in storage):
                 fact = name in first.key_map
             else:
-                rows = list(iter_collection_items(self.value))
+                rows = list(iter_values(self.value))
                 fact = bool(rows) and all(row.get(name) is not None for row in rows)
             self._facts[(name, 'PRESENT')] = fact
         return fact
@@ -861,7 +849,7 @@ class _SideFacts:
         # The field is on this side's first row (a cheap refusal: a field on
         # every row is on the first), on every row, with the kind the operator
         # takes.
-        if _upper_name(name) not in self.first or self.nullable:
+        if ascii_upper(name) not in self.first or self.nullable:
             return False
         fact = self._facts.get((name, kind))
         if fact is None:
@@ -907,7 +895,7 @@ def _keys_safe(obligations, left, right, above, left_names):
                 continue
             # A member carried inside the left rows (a relation joined below
             # them): read it on every left row.
-            for row in iter_collection_items(left.value):
+            for row in iter_values(left.value):
                 inner = row.get(member)
                 if inner is None or inner.get(field) is None:
                     return False
@@ -927,7 +915,7 @@ def _totality(reqs, left, right, above):
     row with the kind. A field two sides carry is promoted from neither (spec
     §7.4) and the read would raise; a field of no side would too."""
     for name, kind in reqs:
-        key = _upper_name(name)
+        key = ascii_upper(name)
         owners = [side for side in [left, right, *above] if side is not None and key in side.keys]
         if len(owners) != 1 or not owners[0].total(name, kind):
             return False
@@ -952,9 +940,9 @@ class _KeySet:
             if id(shape) in self.shapes:
                 return
             self.shapes.add(id(shape))
-            self.keys.update(_upper_name(k) for k in shape.keys)
+            self.keys.update(ascii_upper(k) for k in shape.keys)
         else:
-            self.keys.update(_upper_name(k) for k in row.keys())
+            self.keys.update(ascii_upper(k) for k in row.keys())
 
 
 def _row_keys(value, bound=()):
@@ -967,11 +955,11 @@ def _row_keys(value, bound=()):
     if storage:
         first = storage[0].shape
         if first is not None and all(row.shape is first for row in storage):
-            return {_upper_name(k) for k in first.keys} | {_upper_name(b) for b in bound}
+            return {ascii_upper(k) for k in first.keys} | {ascii_upper(b) for b in bound}
     keys = _KeySet()
-    for row in iter_collection_items(value):
+    for row in iter_values(value):
         keys.add(row)
-    return keys.keys | {_upper_name(b) for b in bound}
+    return keys.keys | {ascii_upper(b) for b in bound}
 
 
 def _link(args, ctx, left_join):
@@ -980,9 +968,7 @@ def _link(args, ctx, left_join):
     # handed down on purpose below.
     prefilter = ctx.join_prefilter
     ctx.join_prefilter = None
-    count = args.count()
-    if count not in (3, 5):
-        fail('E_ARITY', f'{args.name} takes 3 or 5 arguments, got {count}', args.pos)
+    count = args.count()             # 3 or 5: the manifest's arity, checked at compile time
     # With conjuncts to pre-apply and a left source that is itself a join, the
     # right source is evaluated first -- unobservable when both sources are
     # pure -- so that the conjuncts still valid above this join's right rows
@@ -1004,8 +990,8 @@ def _link(args, ctx, left_join):
     # The keys a side contributes to the joined row include the names its
     # row is bound under: `_["products"]` after LINK(PRODUCTS, ...) is the
     # right row, not a field of the left ones.
-    b2_names = (args.symbol(3), '_2') if count == 5 else (single_relation_name(right_node) or '_2', '_2')
-    b1_names = (args.symbol(2), '_1') if count == 5 else (single_relation_name(left_node) or '_1', '_1')
+    b2_names = (jb2, '_2')
+    b1_names = (jb1, '_1')
     # The upper-cased keys of the joins between a stage's FILTER and this
     # join, per count of them.
     above_keys_cache = {}
@@ -1040,14 +1026,14 @@ def _link(args, ctx, left_join):
             return not (fields & right_side.keys) and not (fields & above_keys(stage))
         def total_below(reqs, stage):
             return _totality(reqs, None, right_side, above[:stage[2]])
-        _applied, stop = _stage_walk(stages, owned_below, total_below)
+        _, stop = _stage_walk(stages, owned_below, total_below)
         # Below this join, every stage has one more join above it: this one.
         handed = [(b, c, n + 1) for b, c, n in _truncate_stages(stages, stop)]
         if handed:
             # This join computes its left key on every row it receives; a row
             # dropped below never arrives, so the key is handed down as an
             # obligation for the join that drops to prove (_keys_safe).
-            own_key = (jequi[0], {jb1, jb1.lower(), '_1', '_'}, len(above) + 1)
+            own_key = (jequi[0], {jb1, ascii_lower(jb1), '_1', '_'}, len(above) + 1)
             ctx.join_prefilter = (handed, True, [right_side, *above], [own_key, *obligations])
         try:
             left_value = args.val(0)
@@ -1073,23 +1059,15 @@ def _link(args, ctx, left_join):
         below = None
     applied_below = below[0] if (below is not None and not below[1]) else set()
     dropped = [below is not None and below[2]]
-    b1, b2 = '_1', '_2'
-    if count == 3:
-        b1 = single_relation_name(args.node(0)) or b1
-        b2 = single_relation_name(args.node(1)) or b2
-        predicate = args.node(2)
-    else:
-        b1 = args.symbol(2)
-        b2 = args.symbol(3)
-        predicate = args.node(4)
+    b1, b2, predicate = jb1, jb2, jpred      # the binders and predicate, read above
     if left_value.is_null():
         return Value._list_owned([])
 
     # Each side is listed ONCE, here (SPEC 7.3 snapshot): the right side is walked
     # again for every left row, and a predicate that grows or replaces a side must
     # neither extend the walk nor change the rows later left rows see.
-    left_items = list(iter_collection_items(left_value))
-    right_items = list(iter_collection_items(right_value))
+    left_items = list(iter_values(left_value))
+    right_items = list(iter_values(right_value))
     first_left = first_collection_item(left_value)
     first_right = first_collection_item(right_value)
     if first_left is None or first_right is None:
@@ -1106,7 +1084,7 @@ def _link(args, ctx, left_join):
     if null_right is not None and null_right.is_null():
         null_right = None
     project, project_many = make_join_projector(b1, b2, null_right)
-    equi = try_extract_equi_keys(predicate, b1, b2)
+    equi = jequi
     output = []
 
     # The pre-filter, decided at run time from the rows themselves. A leading
@@ -1131,14 +1109,14 @@ def _link(args, ctx, left_join):
         binders = [stage[0] for stage in stages]
         applied_ids = set()
         errored = [False]
-        self_names = {_upper_name(b1), '_1'}
+        self_names = {ascii_upper(b1), '_1'}
         # A read through this join's right binder is the right element in
         # every joined row -- the binder is bound last (spec §7.4) -- unless
         # the left binder has the same name, or a join above rebinds it.
         def right_names(stage):
-            return {_upper_name(b2), '_2'} if stage[2] == 0 else {_upper_name(b2)}
+            return {ascii_upper(b2), '_2'} if stage[2] == 0 else {ascii_upper(b2)}
         right_here = None
-        if not left_join and _upper_name(b1) != _upper_name(b2):
+        if not left_join and ascii_upper(b1) != ascii_upper(b2):
             def right_here(fields, stage):
                 return fields <= right_names(stage) and not (fields & above_keys(stage))
         def settle_prefix():
@@ -1150,7 +1128,7 @@ def _link(args, ctx, left_join):
             left_side = _SideFacts(left_value, _row_keys(left_value, b1_names), False, b1_names)
             if obligations and not _keys_safe(obligations, left_side, right_side, above,
                                               {n for b in b1_names if not is_positional_binder(b)
-                                               for n in (b, b.lower())}):
+                                               for n in (b, ascii_lower(b))}):
                 return
             def owned_here(fields, stage):
                 # A joined row carries a left element's field exactly as the
@@ -1192,13 +1170,14 @@ def _link(args, ctx, left_join):
         left_expr, right_expr, numeric, _swapped = equi
         buckets = {}
         facts = {'live': False, 'live_bad': None, 'bad': None}
-        frame_right = {b2: None, b2.lower(): None, '_2': None}
+        b2_lower = ascii_lower(b2)
+        frame_right = {b2: None, b2_lower: None, '_2': None}
         ctx.push_frame(frame_right)
         try:
             for item in right_items:
                 row = ensure_row_table_alias(item, b2) if needs_right_alias else item
                 frame_right[b2] = row
-                frame_right[b2.lower()] = row
+                frame_right[b2_lower] = row
                 frame_right['_2'] = row
                 _bucket_join_key(buckets, facts, canonical_join_key(args.eval_node(right_expr), numeric), row)
                 if gather is not None:
@@ -1207,7 +1186,7 @@ def _link(args, ctx, left_join):
             ctx.pop_frame()
         if prefilter is not None:
             if gather is not None:
-                right_side = _SideFacts(right_value, gather.keys | {_upper_name(b) for b in b2_names}, left_join,
+                right_side = _SideFacts(right_value, gather.keys | {ascii_upper(b) for b in b2_names}, left_join,
                                         b2_names)
             settle_prefix()
         # The right rows the right conjuncts reject, once each, after every
@@ -1251,9 +1230,10 @@ def _link(args, ctx, left_join):
         if (prefix and deep and left_expr.t == 'index' and left_expr.obj is not None
                 and left_expr.obj.t == 'var' and left_expr.idx is not None
                 and left_expr.idx.t == 'text'
-                and _upper_name(left_expr.obj.name) in (_upper_name(b1), '_1', '_')):
+                and ascii_upper(left_expr.obj.name) in (ascii_upper(b1), '_1', '_')):
             fast_field = left_expr.idx.v
-        frame_left = {b1: None, b1.lower(): None, '_1': None, '_': None}
+        b1_lower = ascii_lower(b1)
+        frame_left = {b1: None, b1_lower: None, '_1': None, '_': None}
         if prefilter is not None:
             for binder in binders:
                 frame_left.setdefault(binder, None)
@@ -1271,7 +1251,7 @@ def _link(args, ctx, left_join):
                         dropped[0] = True
                         continue
                 frame_left[b1] = row
-                frame_left[b1.lower()] = row
+                frame_left[b1_lower] = row
                 frame_left['_1'] = row
                 frame_left['_'] = row
                 key = canonical_join_key(args.eval_node(left_expr), numeric)
@@ -1322,15 +1302,15 @@ def _link(args, ctx, left_join):
         # No pre-filter on the general join: the numbering of the kept rows
         # would need the count of matches of every dropped row, which is the
         # predicate scan the pre-filter exists to avoid.
-        frame = {b1: None, b1.lower(): None, '_1': None, '_': None,
-                 b2: None, b2.lower(): None, '_2': None}
+        b1_lower, b2_lower = ascii_lower(b1), ascii_lower(b2)
+        frame = {b1: None, b1_lower: None, '_1': None, '_': None,
+                 b2: None, b2_lower: None, '_2': None}
         ctx.push_frame(frame)
         try:
             # The right side's table alias depends only on the right row, so it is
             # made once (on the first left row, so an empty left side still does no
-            # work), not once per PAIR -- it was 21% of a 500x500 join (PY-P14).
+            # work), not once per PAIR -- it was 21% of a 500x500 join.
             rights = None if needs_right_alias else right_items
-            b1_lower, b2_lower = b1.lower(), b2.lower()
             eval_predicate = args.eval_node
             for left_item in left_items:
                 left = ensure_row_table_alias(left_item, b1) if needs_left_alias else left_item
@@ -1338,7 +1318,7 @@ def _link(args, ctx, left_join):
                 frame[b1_lower] = left
                 frame['_1'] = left
                 frame['_'] = left
-                matched = [False]
+                matched = False
                 if rights is None:
                     rights = [ensure_row_table_alias(r, b2) for r in right_items]
 
@@ -1347,11 +1327,11 @@ def _link(args, ctx, left_join):
                     frame[b2_lower] = right
                     frame['_2'] = right
                     if eval_predicate(predicate).as_bool(predicate.pos):
-                        matched[0] = True
+                        matched = True
                         check_collection(len(output) + 1, args.pos)
                         output.append(project(left, right))
 
-                if left_join and not matched[0]:
+                if left_join and not matched:
                     check_collection(len(output) + 1, args.pos)
                     output.append(project(left, None))
         finally:

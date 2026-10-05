@@ -5,7 +5,7 @@ from enum import IntEnum
 from typing import Any
 
 from . import decimal as D
-from .errors import MAX_DEPTH, Pos
+from .errors import MAX_DEPTH, Pos, SelError
 from .parser import Node
 from ._math_ops import MATH_OPERATORS as _OPERATORS, MATH_PREFIX as _PREFIX, \
     MATH_BUILTINS as _BUILTINS, MATH_OPS as _OPS
@@ -124,7 +124,7 @@ def compile_math_plan(root: Node) -> MathPlan | None:
             if dec is None:
                 try:
                     dec = D.parse(node.v, node.pos)
-                except Exception:
+                except SelError:
                     return None
             slot = alloc_slot()
             steps.append(Step(op=OpCode.LOAD_CONST, dst=slot, const_val=dec, pos=node.pos))
@@ -147,7 +147,7 @@ def compile_math_plan(root: Node) -> MathPlan | None:
 
             op = node.op
 
-            def keep(slot: int, const: Any, operand: Node) -> tuple[int, Any]:
+            def keep(slot: int, const: Any) -> tuple[int, Any]:
                 # The identity operation is dropped, but not the coercion it
                 # would have done: `x + 0` with a text `x` is still E_NOT_NUM,
                 # at this point in the order and not when something later
@@ -162,27 +162,27 @@ def compile_math_plan(root: Node) -> MathPlan | None:
             if op == '+' and const_r is not None and D.is_zero(const_r) and const_r.scale == 0:
                 if node.r.t == 'num' and steps and steps[-1].dst == slot_r:
                     steps.pop()
-                return keep(slot_l, const_l, node.l)
+                return keep(slot_l, const_l)
 
             # Rule 2: 0 + x (scale == 0) -> slot_r
             if op == '+' and const_l is not None and D.is_zero(const_l) and const_l.scale == 0:
-                return keep(slot_r, const_r, node.r)
+                return keep(slot_r, const_r)
 
             # Rule 3: x - 0 (scale == 0) -> slot_l
             if op == '-' and const_r is not None and D.is_zero(const_r) and const_r.scale == 0:
                 if node.r.t == 'num' and steps and steps[-1].dst == slot_r:
                     steps.pop()
-                return keep(slot_l, const_l, node.l)
+                return keep(slot_l, const_l)
 
             # Rule 4: x * 1 (scale == 0) -> slot_l
             if op == '*' and const_r is not None and not const_r.neg and const_r.digits == 1 and const_r.scale == 0:
                 if node.r.t == 'num' and steps and steps[-1].dst == slot_r:
                     steps.pop()
-                return keep(slot_l, const_l, node.l)
+                return keep(slot_l, const_l)
 
             # Rule 5: 1 * x (scale == 0) -> slot_r
             if op == '*' and const_l is not None and not const_l.neg and const_l.digits == 1 and const_l.scale == 0:
-                return keep(slot_r, const_r, node.r)
+                return keep(slot_r, const_r)
 
             dst = alloc_slot()
             op_code = _NATIVE[_OPERATORS[op]]

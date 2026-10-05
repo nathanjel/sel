@@ -1055,7 +1055,7 @@
       "name": "python-warrant-the-guard-is-never-applied",
       "was": "The guard is never applied: numericOperand hands every operand straight back, so a text or undeclared column is read as a number by the server exactly as before. Replaces an earlier mutation that inverted the NUM early return instead -- that one was pathological rather than merely wrong. numericGuard names {0} twice, so it DOUBLES its operand; the early return is what stops a guard wrapping its own output, and without it a nested expression grew the emitted SQL by 2x per term. Measured at exactly x2.00: 20 terms is 104MB, and the corpus has a 200-term depth case. A mutation must fail, not exhaust the machine.",
       "file": "python/sel/sql/emit.py",
-      "from": "        if f.kind == 'NUM' and not getattr(f, 'guard', False):",
+      "from": "        if f.kind == 'NUM' and not f.guard:",
       "to": "        if f.kind != 'LIST':"
     },
     {

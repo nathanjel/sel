@@ -1,4 +1,4 @@
-"""PY-P25: SUM accumulates a signed integer at the widest scale instead of a Dec per addition,
+"""SUM accumulates a signed integer at the widest scale instead of a Dec per addition,
 and SORT_BY evaluates its keys in one frame. Both must give exactly what the per-element
 versions gave: same value, same scale, same error at the same position."""
 import random
@@ -11,7 +11,7 @@ from sel import decimal as D
 
 
 def reference_sum(decs, pos=None):
-    total = D.ZERO
+    total = D.make(False, 0, 0)
     for d in decs:
         total = D.add(total, d, pos)
     return total

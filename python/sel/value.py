@@ -4,6 +4,8 @@ there is deliberately no second representation of state. See spec/SPEC.md §3.
 
 from __future__ import annotations
 
+import builtins
+
 import re
 from itertools import islice
 from typing import Any, Iterator
@@ -92,7 +94,7 @@ def _unique_record_shape(keys: list[str] | tuple[str, ...]) -> RecordShape | Non
 def _bad_arg(message: str):
     """A constructor called with something it does not take (spec §8):
     E_BAD_ARG, a SelError like every other boundary failure, never Python's
-    own TypeError or IndexError (review 2026-09-28 HOST-20)."""
+    own TypeError or IndexError."""
     fail('E_BAD_ARG', message, None)
 
 
@@ -112,8 +114,7 @@ def _check_value(v: Any) -> Any:
 
 def _pair_up(keys: Any, values: Any) -> tuple[list[str], list[Any]]:
     """Keys and values side by side, checked and copied: the counts match,
-    every key is text and every value a Value (spec §8; review 2026-09-28
-    HOST-12, HOST-16, HOST-17)."""
+    every key is text and every value a Value (spec §8)."""
     if isinstance(keys, RecordShape):
         keys = keys.keys
     if not isinstance(keys, (list, tuple)) or not isinstance(values, (list, tuple)):
@@ -140,7 +141,7 @@ def _check_list_keys(keys: Any, count: int) -> list[str]:
 def _check_decimal(d: Any) -> Any:
     """The Dec Value.num takes besides a string: well formed, within the digit
     caps, and canonical -- a negative zero loses its sign, as "-0" does through
-    parse (spec §8; review 2026-09-28 HOST-13, HOST-14)."""
+    parse (spec §8)."""
     if (not isinstance(d, D.Dec) or type(d.digits) is not int or d.digits < 0
             or type(d.scale) is not int or d.scale < 0):
         _bad_arg('not a decimal: expected a Dec with a non-negative int digits and scale')
@@ -155,31 +156,6 @@ def _list_index(key: str, length: int) -> int:
         return -1           # string can exceed the interpreter's own limit
     index = int(key) - 1
     return index if 0 <= index < length else -1
-
-
-def iter_entries(value: Any):
-    """Iterate ordered children without materialising an entry list.
-
-    The list-returning ``entries()`` API remains for callers that need a stable
-    snapshot.  Evaluator hot paths use this iterator so packed list/shape
-    storage does not become a stream of temporary ``(key, value)`` tuples.
-    """
-    if value.shape is not None:
-        for index, key in enumerate(value.shape.keys):
-            yield key, value.storage[index]
-        return
-    if value.is_list and value.storage is not None:
-        if value.list_keys is not None:
-            for index, item in enumerate(value.storage):
-                yield value.list_keys[index], item
-            return
-        for index, item in enumerate(value.storage):
-            yield str(index + 1), item
-        return
-    if value.children:
-        for key, item in value.children.items():
-            yield key, item
-        return
 
 
 def iter_values(value: Any):
@@ -310,7 +286,7 @@ class Value:
         if self.kind == TEXT and self.size() == 0:
             # A number is never blank: its text starts with a digit or a sign. Asking
             # `.scalar` for one that has only its decimal built formats the whole
-            # number first -- 0.9 s for a million-digit one (PY-P24).
+            # number first -- 0.9 s for a million-digit one.
             if self._scalar is None and self._dec_val is not None:
                 return False
             return len(self.scalar) == 0 or all(ch in ' \t\r\n' for ch in self.scalar)
@@ -357,8 +333,8 @@ class Value:
             # is a sequence of bytes.
             _bad_arg(f'bytes must be bytes or a list of ints, not {type(b).__name__}')
         for x in b:
-            # bool is an int subclass, so bytes([True]) is b'\x01' (review
-            # 2026-09-28 HOST-19); JS and Lisp refuse a boolean byte.
+            # bool is an int subclass, so bytes([True]) is b'\x01'; JS and
+            # Lisp refuse a boolean byte, and so does this.
             if type(x) is not int or not 0 <= x <= 255:
                 fail('E_RANGE', f'byte {x!r} is not a whole number from 0 to 255', None)
         return Value(BIN, bytes(b))
@@ -382,11 +358,9 @@ class Value:
         v.storage = values if isinstance(values, list) else list(values)
         return v
 
-    @staticmethod
-    def record(keys: list[str], values: list[Value]) -> Value:
-        """A record from keys and values side by side, checked and copied (spec
-        §8); a repeated key keeps its first position and takes its last value."""
-        return Value._record_owned(*_pair_up(keys, values))
+    # The other hosts' name for the same constructor (docs/usage/README.md lists
+    # both): a record from keys and values side by side, checked and copied.
+    record = shaped
 
     @staticmethod
     def _record_owned(keys: list[str], values: list[Value]) -> Value:
@@ -471,7 +445,7 @@ class Value:
         if type(n) is not int:
             _bad_arg(f'not a whole number: {n!r}')
         # A native integer obeys the digit cap like the same digits in source
-        # (spec §8, §6.4; review 2026-09-25 HOST-06). A bit-length test first,
+        # (spec §8, §6.4). A bit-length test first,
         # so an ordinary int never meets the million-digit comparison.
         if n.bit_length() > _INT_CAP_BITS and abs(n) >= _int_cap():
             fail('E_RANGE', f'number has more than {D.MAX_INT_DIGITS} integer digits', None)
@@ -482,8 +456,8 @@ class Value:
     @staticmethod
     def list(values: list[Value], keys: list[str] | None = None) -> Value:  # noqa: A003
         """A list keyed "1".."n", or by `keys` (distinct, one per value), as
-        FILTER keeps them. Checked and copied (spec §8; review 2026-09-28
-        HOST-16): changing the caller's lists afterwards never changes it.
+        FILTER keeps them. Checked and copied (spec §8):
+        changing the caller's lists afterwards never changes it.
         """
         if not isinstance(values, (list, tuple)):
             _bad_arg('a list is built from a list of Values')
@@ -491,7 +465,7 @@ class Value:
         return Value._list_owned(values, None if keys is None else _check_list_keys(keys, len(values)))
 
     @staticmethod
-    def _list_owned(values: list[Value], keys: list[str] | None = None) -> Value:
+    def _list_owned(values: builtins.list[Value], keys: builtins.list[str] | None = None) -> Value:
         """The builtins' form: a list they just built, taken as it is."""
         v = Value(NONE, None, is_list=True)
         v.storage = values if isinstance(values, list) else list(values)
@@ -500,7 +474,7 @@ class Value:
 
     # --- children -------------------------------------------------------------
 
-    def size(self) -> int:
+    def size(self) -> builtins.int:
         """A method, not a property, so it reads the same as $v->size(),
         v.size() and (sel:value-size v) in the other four hosts.
         tools/check-api.sh keeps it that way.
@@ -509,7 +483,7 @@ class Value:
             return len(self.storage)
         return len(self.children) if self.children else 0
 
-    def has(self, key: str) -> bool:
+    def has(self, key: str) -> builtins.bool:
         if self.shape is not None:
             return key in self.shape.key_map
         if self.is_list and self.storage is not None:
@@ -534,7 +508,7 @@ class Value:
             return None if index < 0 else self.storage[index]
         return self.children.get(key) if self.children else None
 
-    def keys(self) -> list[str]:
+    def keys(self) -> builtins.list[str]:
         if self.shape is not None:
             return list(self.shape.keys)
         if self.is_list and self.storage is not None:
@@ -543,17 +517,26 @@ class Value:
             return [str(i + 1) for i in range(len(self.storage))]
         return list(self.children.keys()) if self.children else []
 
-    def values(self) -> list[Value]:
+    def values(self) -> builtins.list[Value]:
         return list(iter_values(self))
 
-    def entries(self) -> list[tuple[str, Value]]:
-        return list(iter_entries(self))
+    def entries(self) -> builtins.list[tuple[str, Value]]:
+        # Built by zip, in C: the ordered children without a generator frame
+        # resumed per child. iter_elements is the lazy form (plus the scalar
+        # rule) for the aggregates.
+        if self.shape is not None:
+            return list(zip(self.shape.keys, self.storage))
+        if self.is_list and self.storage is not None:
+            if self.list_keys is not None:
+                return list(zip(self.list_keys, self.storage))
+            return [(str(i), item) for i, item in enumerate(self.storage, 1)]
+        return list(self.children.items()) if self.children else []
 
     def set(self, key: str, value: Value) -> Value:
         # Re-assigning an existing key keeps its original position — dict does
         # this, as long as the key is not deleted first.
         if not key.isascii():
-            validate_text(key, None)   # a key is text too (spec §8; review 2026-09-25 HOST-05)
+            validate_text(key, None)   # a key is text too (spec §8)
         if self.shape is not None:
             index = self.shape.key_map.get(key)
             if index is not None:
@@ -624,7 +607,7 @@ class Value:
             return encode_utf8(v.scalar, pos)
         fail('E_NOT_BIN', 'expected binary or text, got boolean', pos)
 
-    def as_bool(self, pos: Pos | None = None) -> bool:
+    def as_bool(self, pos: Pos | None = None) -> builtins.bool:
         v = self.scalar_source(pos)
         if v.kind == BOOL:
             return v.scalar
@@ -642,7 +625,7 @@ class Value:
         v._dec_val = d
         return d
 
-    def looks_numeric(self) -> bool:
+    def looks_numeric(self) -> builtins.bool:
         """Non-throwing probe for ISNUM."""
         if self.kind == NONE and self.size() == 0:
             return False
@@ -666,23 +649,23 @@ class Value:
 
     # --- copying --------------------------------------------------------------
 
-    def clone(self, pos: Pos | None = None, depth: int = 1) -> Value:
+    def clone(self, pos: Pos | None = None, depth: builtins.int = 1) -> Value:
         """Assignment copies by value: two variables never share structure (§5.7).
 
-A value's nesting is the third thing spec/SPEC.md §6.4 caps, after the
-parser's and the evaluator's, and it was the last one left uncounted. clone,
-eql, dump and the two native conversions each recurse once per level, so a
-value nested deeply enough reached the host's own stack: RecursionError here
-at about a thousand levels, an uncaught RangeError on JS at about four, a
-segfault on C++ at about sixty. Three hosts answered where two died, on the
-same program.
+        A value's nesting is the third thing spec/SPEC.md §6.4 caps, after the
+        parser's and the evaluator's, and it was the last one left uncounted. clone,
+        eql, dump and the two native conversions each recurse once per level, so a
+        value nested deeply enough reached the host's own stack: RecursionError here
+        at about a thousand levels, an uncaught RangeError on JS at about four, a
+        segfault on C++ at about sixty. Three hosts answered where two died, on the
+        same program.
 
-The depth rides as a parameter, as it does in dependencies(): nothing has to be
-released on the way out, so no guard object is needed and all five hosts spell
-it the same way. A value of exactly MAX_DEPTH levels is fine; the level past it
-is refused. `pos` is reported when the caller has one -- the evaluator knows
-which node asked -- and is None for a call from host code, the same convention
-as as_text().
+        The depth rides as a parameter, as it does in dependencies(): nothing has to be
+        released on the way out, so no guard object is needed and all five hosts spell
+        it the same way. A value of exactly MAX_DEPTH levels is fine; the level past it
+        is refused. `pos` is reported when the caller has one -- the evaluator knows
+        which node asked -- and is None for a call from host code, the same convention
+        as as_text().
         """
         # A leaf is most of what is copied (a record's fields): it needs no
         # recursion, so it is copied here without the second call.
@@ -694,12 +677,11 @@ as as_text().
             return out
         return self._clone_at(depth, pos)
 
-    def _clone_at(self, depth: int, pos: Pos | None) -> Value:
+    def _clone_at(self, depth: builtins.int, pos: Pos | None) -> Value:
         if depth > MAX_DEPTH:
             fail('E_DEPTH', 'value nested too deeply', pos)
         # A leaf is copied too: it can gain children later (`B[1]["k"] = v`),
-        # and a shared one would give them to the original as well (§5.7;
-        # review 2026-09-25 SEL-12).
+        # and a shared one would give them to the original as well (§5.7).
         out = Value(self.kind, self._scalar, self.is_list)
         out._dec_val = self._dec_val
         if self.shape is not None:
@@ -714,7 +696,7 @@ as as_text().
                             for k, v in self.children.items()}
         return out
 
-    def check_depth(self, depth: int = 1, pos: Pos | None = None) -> None:
+    def check_depth(self, depth: builtins.int = 1, pos: Pos | None = None) -> None:
         """Refuses, exactly as clone() would, a value nested past the cap -- but
         copies nothing. FILTER uses it when it hands a kept element on as it is:
         the copy it skips is also the place a too-deep element is reported, and
@@ -742,10 +724,10 @@ as as_text().
 
     # --- structural equality (§5.4) -------------------------------------------
 
-    def eql(self, other: Value, pos: Pos | None = None) -> bool:
+    def eql(self, other: Value, pos: Pos | None = None) -> builtins.bool:
         return self._eql_at(other, 1, pos)
 
-    def _eql_at(self, other: Value, depth: int, pos: Pos | None) -> bool:
+    def _eql_at(self, other: Value, depth: builtins.int, pos: Pos | None) -> builtins.bool:
         if depth > MAX_DEPTH:
             fail('E_DEPTH', 'value nested too deeply', pos)
         if self.kind != other.kind:
@@ -786,7 +768,7 @@ as as_text().
     def dump(self) -> str:
         return self._dump_at(1)
 
-    def _dump_at(self, depth: int) -> str:
+    def _dump_at(self, depth: builtins.int) -> str:
         if depth > MAX_DEPTH:
             fail('E_DEPTH', 'value nested too deeply', None)
         if self.kind == NONE:
@@ -809,7 +791,7 @@ as as_text().
         return Value._from_native_at(x, 1)
 
     @staticmethod
-    def _from_native_at(x: Any, depth: int) -> Value:
+    def _from_native_at(x: Any, depth: builtins.int) -> Value:
         if depth > MAX_DEPTH:
             fail('E_DEPTH', 'value nested too deeply', None)
         if x is None:
@@ -846,7 +828,7 @@ as as_text().
     def to_native(self) -> Any:
         return self._to_native_at(1)
 
-    def _to_native_at(self, depth: int) -> Any:
+    def _to_native_at(self, depth: builtins.int) -> Any:
         if depth > MAX_DEPTH:
             fail('E_DEPTH', 'value nested too deeply', None)
         if self.kind == TEXT or self.kind == BIN or self.kind == BOOL:
@@ -859,7 +841,7 @@ as as_text().
         if scalar is None:
             return obj
         # A value's own scalar travels under "_"; with a child of that name too,
-        # one of them would be lost (spec §8; review 2026-09-25 HOST-01).
+        # one of them would be lost (spec §8).
         if '_' in obj:
             fail('E_BAD_ARG', 'a value with both a scalar and a child named "_" has no native form', None)
         return {'_': scalar, **obj}
@@ -872,10 +854,10 @@ as as_text().
     def __iter__(self) -> Iterator[str]:
         return iter(self.keys())
 
-    def __len__(self) -> int:
+    def __len__(self) -> builtins.int:
         return self.size()
 
-    def __contains__(self, key: str) -> bool:
+    def __contains__(self, key: str) -> builtins.bool:
         return self.has(key)
 
     def __getitem__(self, key: str) -> Value:
@@ -896,8 +878,8 @@ _INDEX_HASHES: list[int] = []
 
 def _index_hashes(n: int) -> list[int]:
     """hash(str(1)) .. hash(str(min(n, limit))): a dense list's keys are its positions,
-    and hashing a fresh str per element per list dominated DEDUPE/EQL-bucket paths
-    (PY-P24). Grown by replacing the table, never by appending to it, so a reader in
+    and hashing a fresh str per element per list dominated DEDUPE/EQL-bucket paths.
+    Grown by replacing the table, never by appending to it, so a reader in
     another thread only ever sees a complete table."""
     global _INDEX_HASHES
     table = _INDEX_HASHES

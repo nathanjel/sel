@@ -1,7 +1,7 @@
 """SQL-prefix planning with an in-memory SEL continuation.
 
-The planner follows the Lisp reference implementation: normalize and logically
-optimize a relational pipeline, try the complete pipeline first, then try a
+The planner does what every host's does, in the same order: normalize and
+logically optimize a relational pipeline, try the complete pipeline first, then try a
 safe mixed MAP fall-through, and finally choose the longest translatable prefix.
 
 The contract every host's planner meets is in docs/internals/sql-translation.md §12.1
@@ -25,11 +25,11 @@ from typing import Any, Callable
 
 from .. import Program, Value
 from .. import registry as _registry
-from .._builtin_manifest import BUILTIN_MANIFEST
-from ..eval import MAX_DEPTH
+from ..errors import MAX_DEPTH
 from .._stack import recursion_budget as _recursion_budget
 from ..lexer import ascii_upper
-from ..optimizer import build_pipeline, copy_node, unwind_pipeline
+from ..optimizer import LITERAL_TYPES, build_pipeline, copy_node, field_refs, unwind_pipeline
+from ..registry import is_host_function
 from ..parser import Node
 from ..optimizer import optimize_ast_logical
 from . import map as sqlmap
@@ -40,6 +40,9 @@ from .errors import SqlError
 from .translator import Translator
 from .emit import Emit
 from .fragment import Fragment
+
+
+_NO_AST = object()
 
 
 class HybridPlan:
@@ -63,6 +66,10 @@ class HybridPlan:
         self.pure_memory = bool(pure_memory)
         self._source_tables = list(source_tables or [])
         self.selected_member = selected_member
+        # execute_hybrid's memo of continuation_effects(), keyed on the AST it
+        # was computed for (a caller may hand the plan a different program).
+        self._cached_ast: Any = _NO_AST
+        self._cached_effects: ContinuationEffects | None = None
 
     @property
     def sql_query(self):
@@ -230,8 +237,7 @@ def _join_rows_lack_binders(steps: list[Node]) -> bool:
     promoted fields alone. A MAP, a SELECT_COLS or a projected BUCKET after
     the LINK makes the rows exact again -- what they compute is over the
     promoted fields, or is refused -- so a prefix whose LINK nothing has
-    projected is not a split point and not a full pushdown (finding Y,
-    lanes): its continuation would read ``_["C"]`` where the database sent
+    projected is not a split point and not a full pushdown: its continuation would read ``_["C"]`` where the database sent
     nothing.
     """
     joined = False
@@ -278,7 +284,7 @@ def _rows_are_not_the_value(steps: list[Node]) -> bool:
 
 
 SQL_SPECIAL_CALLS = frozenset({
-    'IF', 'COND', 'COALESCE', 'COUNT', 'SUM', 'AVG', 'MIN', 'MAX', 'RECORD', 'LIST',
+    'IF', 'COND', 'COALESCE', 'COUNT', 'SUM', 'MIN', 'MAX', 'RECORD', 'LIST',
 })
 
 
@@ -296,7 +302,7 @@ def _contains_unsupported_sql(node: Node | None, dialect: str,
     if node.t == 'call':
         if node.name not in SQL_SPECIAL_CALLS:
             entry = sqlmap.entry(dialect, 'funcs', ascii_upper(node.name))
-            if entry == sqlmap.MISSING or entry is None or isinstance(entry, str):
+            if sqlmap.absent(entry) or isinstance(entry, str):
                 return True
         return any(_contains_unsupported_sql(item, dialect, defs, seen)
                    for item in node.args)
@@ -307,7 +313,7 @@ def _contains_unsupported_sql(node: Node | None, dialect: str,
     # An operator the dialect withdrew (BAND/BOR/BXOR carry a reason string in
     # the `ops` table: SQL's & | ^ are integer operators) is as unsupported as a
     # withdrawn function. Calls were classified against `funcs` only, so a MAP
-    # with such a pair lost the fall-through and moved every column (PY-P21).
+    # with such a pair lost the fall-through and moved every column.
     if node.t in ('bin', 'un') and isinstance(
             sqlmap.entry(dialect, 'ops', node.op), str):
         return True
@@ -320,36 +326,7 @@ def _contains_unsupported_sql(node: Node | None, dialect: str,
                                         node.target, node.value))
 
 
-def _field_references(node: Node | None, binder: str | None = '_') -> list[str]:
-    """The field names read as ``binder["field"]`` in ``node``, first seen
-    first and compared exactly: SEL's record keys are case-sensitive, so
-    ``name`` and ``Name`` are two fields. ``binder`` None means a read under
-    ANY name counts -- a downstream step binds the row however it likes
-    (``SORT_BY(s, s["name"])``)."""
-    wanted = None if binder is None else {ascii_upper(binder), '_', '_1', '_2'}
-    out: list[str] = []
-    seen: set[str] = set()
-
-    def visit(item: Node | None) -> None:
-        if item is None:
-            return
-        if (item.t == 'index' and item.obj is not None and item.obj.t == 'var'
-                and item.idx is not None and item.idx.t == 'text'
-                and (wanted is None or ascii_upper(item.obj.name) in wanted)):
-            key = str(item.idx.v)
-            if key not in seen:
-                seen.add(key)
-                out.append(key)
-        for child in item.args:
-            visit(child)
-        for child in item.items:
-            visit(child)
-        for child in (item.l, item.r, item.x, item.obj, item.idx,
-                      item.target, item.value):
-            visit(child)
-
-    visit(node)
-    return out
+_field_references = field_refs        # optimizer.field_refs; binder None: any name
 
 
 # The steps the MAP fall-through may push past the MAP. Each keeps the rows as
@@ -367,12 +344,12 @@ def _reads_whole_row(node: Node | None, binder: str) -> bool:
     """Whether ``node`` reads the row itself -- the binder outside an index
     with a text key, as in ``GET(_, "name")`` or ``COUNT(_)`` -- which no
     projected column can stand in for."""
-    wanted = {binder.upper(), '_', '_1', '_2'}
+    wanted = {binder, '_', '_1', '_2'}      # canonical (lexer) names
 
     def visit(item: Node | None) -> bool:
         if item is None:
             return False
-        if item.t == 'var' and item.name.upper() in wanted:
+        if item.t == 'var' and item.name in wanted:
             return True
         if (item.t == 'index' and item.obj is not None and item.obj.t == 'var'
                 and item.idx is not None and item.idx.t == 'text'):
@@ -392,7 +369,7 @@ def _is_own_field_read(pair: tuple[Node, Node], binder: str) -> bool:
     key, value = pair
     return (value.t == 'index' and value.obj is not None and value.obj.t == 'var'
             and value.idx is not None and value.idx.t == 'text'
-            and value.obj.name.upper() == binder.upper()
+            and value.obj.name == binder
             and str(value.idx.v) == str(key.v))
 
 
@@ -581,7 +558,7 @@ def _try_plan_fallthrough(source: Node, steps: list[Node], dialect: str,
 # plan, because that half is a program run() evaluates and §12.1 promises it
 # reports errors where run() would: run() evaluates the READ of Y at the use
 # site and reports ``+``'s operand there, and it evaluates the definition once,
-# before the pipeline, not once per row (review 2026-09-15 finding AJ). So
+# before the pipeline, not once per row. So
 # the planner does not inline. It plans the program as written, three ways:
 #
 #   * A helper that IS a literal -- after inlining earlier such helpers and
@@ -600,8 +577,6 @@ def _try_plan_fallthrough(source: Node, steps: list[Node], dialect: str,
 #     continuation evaluates them once, before its steps, as run() does. An
 #     assignment nothing after the split reads is dropped, as stage 1 drops
 #     it for translate() -- the one departure, and the same one.
-
-LITERAL_TYPES = frozenset({'num', 'text', 'bool', 'null'})
 
 
 def _statements(ast: Node) -> tuple[list[Node], Node]:
@@ -698,10 +673,9 @@ def _literal_helpers(leading: list[Node], options: dict[str, Any]) -> dict[str, 
 
 def _unwind_through_helpers(result: Node, defs: dict[str, Node],
                             literals: dict[str, Node]
-                            ) -> tuple[Node | None, list[Node], set[str]]:
+                            ) -> tuple[Node | None, list[Node]]:
     """The pipeline the planner probes: the result unwound, and where its
-    source is a helper, that helper's definition unwound in turn. The third
-    value is the helpers unwound through: their steps are IN the pipeline now."""
+    source is a helper, that helper's definition unwound in turn."""
     source, steps = unwind_pipeline(_inline_literals(result, literals))
     seen: set[str] = set()
     while (source is not None and source.t == 'var' and source.name in defs
@@ -711,7 +685,14 @@ def _unwind_through_helpers(result: Node, defs: dict[str, Node],
             _inline_literals(defs[source.name], literals))
         source = inner_source
         steps = [*inner_steps, *steps]
-    return source, steps, seen
+    # The source the loop stopped at reads the catalogue's binding when its name
+    # is also a helper's (the helper was written `ORDERS = ORDERS .> DROP(2)`):
+    # mark it, on a copy, so wrapping the pipeline in the helpers again neither
+    # inlines the helper into the very read that was its own definition (DROP
+    # applied twice) nor counts that read as one of the helper's.
+    if source is not None and source.t == 'var' and source.name in defs:
+        source = source.replaced(binding=True)
+    return source, steps
 
 
 def _read_names(node: Node | None, out: set[str] | None = None) -> set[str]:
@@ -723,7 +704,10 @@ def _read_names(node: Node | None, out: set[str] | None = None) -> set[str]:
     if node is None:
         return out
     if node.t == 'var':
-        out.add(node.name)
+        # A read of the BINDING, reached by unwinding through a helper of the
+        # same name, is not a read of that helper.
+        if not node.binding:
+            out.add(node.name)
         return out
     for item in node.args:
         _read_names(item, out)
@@ -808,7 +792,7 @@ def _keep_left_name(remaining: list[Node], prefix: list[Node], source: Node) -> 
     is `_INPUT`, so a bare three-argument LINK would carry it under that: a read
     of `_["ORDERS"]` would be E_NO_KEY where run() answers. The first LINK of the
     continuation -- wherever it falls, not only when it comes first -- is rewritten
-    to the five-argument form that names both sides (PHP-C9, PY-C23, LISP-C29)."""
+    to the five-argument form that names both sides."""
     if source is None or source.t != 'var' or not _needs_left_name(remaining, prefix):
         return remaining
     at = next(i for i, step in enumerate(remaining) if _is_link(step))
@@ -933,7 +917,7 @@ def _plan_hybrid(program: Program, dialect: str,
         return (node is not None and node.t == 'var' and catalog.has(node.name)
                 and catalog.get(node.name, node.pos)['kind'] == 'relation')
 
-    unwound_source, unwound_steps, unwound = _unwind_through_helpers(result, defs, literals)
+    unwound_source, unwound_steps = _unwind_through_helpers(result, defs, literals)
     if not unwound_steps or not is_relation(unwound_source):
         return _pure_memory_plan(program, dialect, catalog)
     # A pipeline this long, unwound through its helpers, is a tree deeper than the
@@ -947,22 +931,16 @@ def _plan_hybrid(program: Program, dialect: str,
     if not steps or not is_relation(source):
         return _pure_memory_plan(program, dialect, catalog)
 
-    # A helper the pipeline was unwound through has its steps IN the pipeline,
-    # so carrying its assignment in front of it as well applies them twice --
-    # `ORDERS = ORDERS .> DROP(2); ORDERS .> TAKE(3)` skipped four rows -- unless
-    # some step also reads it as a value, in which case it stays (PHP-C34).
-    read_by_steps: set[str] = set()
-    for step in steps:
-        # args[0] is the step's input -- the pipeline so far -- not something the
-        # step reads as a value.
-        for arg in step.args[1:]:
-            _read_names(arg, read_by_steps)
-    kept_leading = [s for s in leading
-                    if _assigned_name(s) not in unwound
-                    or _assigned_name(s) in read_by_steps]
+    # A helper the pipeline was unwound through has its steps IN the pipeline;
+    # it travels in front of a part only when that part reads its name as a value
+    # (`_with_helpers` keeps exactly the assignments a tree reads). The source a
+    # self-named helper was unwound to is marked as a read of the binding, so it
+    # neither keeps the helper nor has it inlined again -- `ORDERS = ORDERS .>
+    # DROP(2); ORDERS .> TAKE(3)` is OFFSET 2, and a step that also counts ORDERS
+    # still gets the helper (plan.helper.rebinds-relation-once).
     helpers = _Helpers(
         defs,
-        lambda node: _with_helpers(kept_leading, node),
+        lambda node: _with_helpers(leading, node),
         # The physical sources of a wrapped tree are read off what the
         # translator renders: stage 1's tree, where an assignment a binder
         # shadows is gone.
@@ -1059,7 +1037,7 @@ def continuation_effects(ast: Node | None) -> ContinuationEffects:
                 stack.append(node.value)
             continue
         if node.t == 'call':
-            if ascii_upper(node.name or '') not in BUILTIN_MANIFEST:
+            if is_host_function(node.name or ''):
                 calls_app = True
         stack.extend(node.args)
         stack.extend(node.items)
@@ -1068,9 +1046,9 @@ def continuation_effects(ast: Node | None) -> ContinuationEffects:
 
 
 def _private_root(plan: HybridPlan, context: Value | dict[str, Any] | None) -> Value:
-    """The context the continuation runs on: the caller's is never written to
-    (PY-C51), but it used to be deep-copied whole -- a 100,000-row context cost
-    over a second per call for a program that wrote nothing to it (PY-P16).
+    """The context the continuation runs on: the caller's is never written to,
+    but it used to be deep-copied whole -- a 100,000-row context cost
+    over a second per call for a program that wrote nothing to it.
     A continuation containing any application-defined call receives a full private
     context copy. Builtin-only continuations retain their existing assignment-based
     copy optimization."""
@@ -1080,12 +1058,11 @@ def _private_root(plan: HybridPlan, context: Value | dict[str, Any] | None) -> V
         return context.clone()             # not a plain record of variables
 
     ast = plan.continuation_program.ast if plan.continuation_program else None
-    if getattr(plan, '_cached_ast', None) is not ast:
+    effects = plan._cached_effects
+    if plan._cached_ast is not ast or effects is None:
         effects = continuation_effects(ast)
         plan._cached_ast = ast
         plan._cached_effects = effects
-    else:
-        effects = plan._cached_effects
 
     if effects.calls_application_function:
         return context.clone()

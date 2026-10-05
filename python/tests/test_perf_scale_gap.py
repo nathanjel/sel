@@ -1,4 +1,4 @@
-"""PY-P22: cmp/is_integer across a wide scale gap decide from bit lengths before building
+"""cmp/is_integer across a wide scale gap decide from bit lengths before building
 10**gap; they must agree with the exact alignment on every input, especially near the
 power-of-ten boundaries where the bit-length estimate is inconclusive."""
 import random

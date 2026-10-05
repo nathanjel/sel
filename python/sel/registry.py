@@ -8,14 +8,18 @@ import re
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
-from ._builtin_manifest import BUILTIN_MANIFEST, BINDING_FORMS
+from ._builtin_manifest import BUILTIN_MANIFEST, BINDING_FORMS, INF  # noqa: F401 - INF is re-exported
 from .lexer import ascii_upper
 
-INF = float('inf')
 
 # spec/SPEC.md §8.1: an identifier that starts with a letter. Checked with
 # fullmatch, because `$` also matches before a trailing newline.
 _HOST_NAME = re.compile(r'[A-Za-z][A-Za-z0-9_]*', re.ASCII)
+
+# The regex builtins (spec §7.8) and the argument each takes its flags in: the
+# parser checks their literal patterns, the SQL translator rewrites them, and
+# both find the flags here. The pattern is argument 0 in all four.
+REGEX_FLAG_AT = {'RMATCH': 2, 'RFIND': 2, 'RGROUPS': 2, 'RREPLACE': 3}
 
 
 @dataclass(slots=True)
@@ -121,6 +125,46 @@ def binding_form(name: str, args, spec=None):
                 bound.append(args[i].name)
         return scopes, bound
     return None
+
+
+# The sort builtins, by whether the last argument is a count (the TOP family).
+_SORTS = {'SORT': False, 'SORT_DESC': False, 'SORT_BY': False,
+          'TOP': True, 'TOP_DESC': True, 'TOP_BY': True}
+_SORT_FORMS: dict[tuple, tuple] = {}
+
+
+def sort_form(name: str, args) -> tuple:
+    """(binder, key, direction): the argument index of each in a SORT, SORT_DESC,
+    SORT_BY, TOP, TOP_DESC or TOP_BY call, or None where the form has none --
+    no key (SORT(list), TOP(list, n)), no binder, or no direction argument (a
+    forced or default one). Read off the manifest's binding forms through
+    binding_form, so the evaluator, the optimiser and the translator decode
+    the forms one way; the TOP family's count, always last, is none of the
+    three. A form's choice depends only on the count and on two shapes --
+    whether argument 2 is a text literal, whether argument 1 is a bare name
+    (spec §7.3: a text-literal direction wins over a bare name) -- so the
+    answer is memoised on those."""
+    n = len(args)
+    k = (name, n, n > 2 and args[2].t == 'text',
+         n > 1 and args[1].t == 'var' and not args[1].grouped)
+    form = _SORT_FORMS.get(k)
+    if form is None:
+        form = _SORT_FORMS[k] = _decode_sort_form(name, args)
+    return form
+
+
+def _decode_sort_form(name: str, args) -> tuple:
+    found = binding_form(name, args)
+    if found is None:                    # a count no form takes: the parser refused it
+        raise ValueError(f'{name} has no form for {len(args)} arguments')
+    scopes = found[0]
+    if _SORTS[name]:
+        scopes = scopes[:-1]
+    binder = scopes.index('binder') if 'binder' in scopes else None
+    key = scopes.index('inner') if 'inner' in scopes else None
+    direction = next((i for i in range(key + 1, len(scopes)) if scopes[i] == 'outer'), None) \
+        if key is not None else None
+    return binder, key, direction
 
 
 def assert_manifest_covered() -> None:

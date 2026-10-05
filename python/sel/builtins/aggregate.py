@@ -3,16 +3,14 @@ once per element, which is the same move IF makes, repeated.
 """
 
 import heapq
-from functools import cmp_to_key
 
 from .. import decimal as D
 from .._budget import check_text
 from ..errors import SelError, fail
-from ..eval import bytes_compare
-from ..parser import Node
-from ..registry import define
+from ..parser import Node, may_write
+from ..registry import define, sort_form
 from ..value import NONE, Value, elements, iter_elements, structural_hash
-# The direction and field names fold ASCII-only (review 2026-09-25 SEM-05):
+# The direction and field names fold ASCII-only:
 # str.upper() took "deſc" for DESC.
 from ..lexer import ascii_upper
 
@@ -27,51 +25,19 @@ def shape(args):
 
 
 
-def _may_write(node) -> bool:
-    """Whether evaluating NODE might write into a value: it holds an assignment
-    or calls a host function. A collector copies an element when it collects it
-    (spec §3.4); while nothing below the body can write, deferring the copy to the
-    end is unobservable, so only a body that might write copies at collection."""
-    from ..registry import is_host_function
-    stack = [node]
-    while stack:
-        n = stack.pop()
-        if n is None:
-            continue
-        t = n.t
-        if t == 'assign':
-            return True
-        if t == 'index':
-            stack.append(n.obj)
-            stack.append(n.idx)
-        elif t == 'call':
-            if is_host_function(n.name or ''):
-                return True
-            stack.extend(n.args)
-        elif t == 'bin':
-            stack.append(n.l)
-            stack.append(n.r)
-        elif t == 'un':
-            stack.append(n.x)
-        elif t in ('seq', 'list'):
-            stack.extend(n.items)
-    return False
-
-
 def node_contains_var(node, name):
     """Whether NODE reads the variable `name`. Iterative: a body is a tree the
     source can make as deep as it is long (a flat chain of 5,000 `+` inside an
     aggregate), and a recursive walk of it ran into the interpreter's frame limit
-    before the evaluator's own depth cap could report E_DEPTH (PY-C1, site e)."""
-    upper = name.upper()
-    stack = [node]
+    before the evaluator's own depth cap could report E_DEPTH."""
+    stack = [node]                       # names compare as the lexer wrote them
     while stack:
         n = stack.pop()
         if n is None:
             continue
         t = n.t
         if t == 'var':
-            if n.name.upper() == upper:
+            if n.name == name:
                 return True
         elif t == 'index':
             stack.append(n.obj)
@@ -320,7 +286,7 @@ def _filter(args, ctx):
             stages = []
         elif handed is not None:
             stages.extend(handed[0])
-        deep = bool(getattr(body, 'keys_unobserved', False)) if handed is None else True
+        deep = body.keys_unobserved if handed is None else True
         if stages:
             ctx.join_prefilter = (stages, deep,
                                   handed[2] if handed is not None else [],
@@ -406,7 +372,7 @@ def _filter(args, ctx):
 
 def _sum(args, ctx):
     # The running total is a signed integer at the widest scale seen so far, not a
-    # Dec per addition (PY-P25): the result's scale is the largest operand scale, as
+    # Dec per addition: the result's scale is the largest operand scale, as
     # it always was, and one Dec is built at the end. The digit cap is still checked
     # where an addition could first cross it -- the step's own result, at the body's
     # position -- through the same guard(), gated by the same cheap bit-length test.
@@ -482,29 +448,6 @@ def _sort_rank(v) -> int:
     return 5
 
 
-def compare_values(a: Value, b: Value) -> int:
-    """One total order (SPEC 7.3): by kind rank first, then within the rank --
-    BOOL FALSE before TRUE, numbers by exact decimal value (so `"007"` ties with
-    `"7"`), other text and BIN by their bytes. It is transitive, which the old
-    pairwise rules were not: "10" < "1a" and "1a" < "9" by bytes, but "9" < "10"
-    as numbers, and no sort of that list was well defined."""
-    a = _sort_leaf(a)
-    b = _sort_leaf(b)
-    ra = _sort_rank(a)
-    rb = _sort_rank(b)
-    if ra != rb:
-        return (ra > rb) - (ra < rb)
-    if ra == 2:
-        return D.cmp(a.as_decimal(), b.as_decimal())
-    if ra == 1:
-        av = 1 if a.scalar else 0
-        bv = 1 if b.scalar else 0
-        return (av > bv) - (av < bv)
-    if ra == 3 or ra == 4:
-        return bytes_compare(a.as_bytes(), b.as_bytes())
-    return 0
-
-
 class _DecKey:
     """A decimal with a fraction as a sort key: `mant / 10**scale`, ordered exactly
     by cross-multiplication. A scale-0 number is keyed by its plain int instead, and
@@ -557,10 +500,13 @@ class _DecKey:
 
 def sort_key(v: Value):
     """The key of SPEC 7.3's total order, derived ONCE per element: a tuple
-    `(rank, payload)` whose native Python ordering is the order compare_values
-    defines, so a sort or a selection can use the interpreter's own comparison
-    instead of re-deriving both operands' kind, decimal and bytes at every step.
-    Equal keys are ties (the caller keeps input order)."""
+    `(rank, payload)` whose native Python ordering is that order -- by kind rank
+    first, then within the rank BOOL FALSE before TRUE, numbers by exact decimal
+    value (so `"007"` ties with `"7"`), other text and BIN by their bytes -- so a
+    sort or a selection uses the interpreter's own comparison instead of
+    re-deriving both operands' kind, decimal and bytes at every step. Equal keys
+    are ties (the caller keeps input order). tests/test_perf_sort.py holds it to
+    a pairwise comparator written from the spec."""
     leaf = _sort_leaf(v)
     rank = _sort_rank(leaf)
     if rank == 2:
@@ -578,49 +524,26 @@ def do_sort(args, ctx, forced_dir):
     val = args.val(0)
     ents = [] if val.is_null() else elements(val)
 
-    count = args.count()
-    if count == 1:
+    binder_at, key_at, dir_at = sort_form(args.name, args.nodes)
+    if key_at is None:
         if not ents:
             return Value._list_owned([])
         direction = forced_dir or 'ASC'
-        indexed = [{'item': item, 'key': item, 'idx': idx} for idx, (_, item) in enumerate(ents)]
+        indexed = [{'item': item, 'key': item} for _, item in ents]
     else:
-        if count == 2:
-            binder = '_'
-            body = args.node(1)
-            direction = forced_dir or 'ASC'
-        elif count == 3:
-            if forced_dir is not None:
-                binder = args.symbol(1)
-                body = args.node(2)
-                direction = forced_dir
-            elif args.node(2).t == 'text':
-                binder = '_'
-                body = args.node(1)
-                direction = ascii_upper(args.text(2))
-            elif args.is_symbol(1):
-                binder = args.symbol(1)
-                body = args.node(2)
-                direction = 'ASC'
-            else:
-                binder = '_'
-                body = args.node(1)
-                direction = ascii_upper(args.text(2))
-        else:  # 4
-            binder = args.symbol(1)
-            body = args.node(2)
-            direction = ascii_upper(args.text(3))
+        binder = args.symbol(binder_at) if binder_at is not None else '_'
+        body = args.node(key_at)
+        direction = ascii_upper(args.text(dir_at)) if dir_at is not None else forced_dir or 'ASC'
 
         if direction not in ('ASC', 'DESC'):
-            pos_idx = 3 if count == 4 else 2
-            fail('E_BAD_ARG', "sort direction must be 'ASC' or 'DESC'", args.pos_of(pos_idx))
+            fail('E_BAD_ARG', "sort direction must be 'ASC' or 'DESC'", args.pos_of(dir_at))
         # The direction is an argument like any other (SPEC 7.4): it was checked
         # above whether or not there is anything to sort, an empty list and NULL
         # included, so a rule's validity does not depend on its data.
         if not ents:
             return Value._list_owned([])
 
-        # One frame for the whole pass, like walk() (PY-P25): a fresh dict per element
+        # One frame for the whole pass, like walk(): a fresh dict per element
         # is what the allocation profile showed, and `_K` is a validated Value.text per
         # element that a key body which never mentions it does not need.
         frame = {binder: None}
@@ -630,16 +553,16 @@ def do_sort(args, ctx, forced_dir):
         indexed = []
         # Collected once its key is computed (spec §3.4): a key that might write
         # copies the element then, so a later key's write cannot reach it.
-        eager = _may_write(body)
+        eager = may_write(body)
         ctx.push_frame(frame)
         try:
-            for idx, (k, item) in enumerate(ents):
+            for k, item in ents:
                 frame[binder] = item
                 if with_k:
                     frame['_K'] = Value.text(k)
                 key_value = args.eval_node(body)
                 indexed.append({'item': item.clone(args.pos, 2) if eager else item,
-                                'key': key_value, 'idx': idx, 'owned': eager})
+                                'key': key_value, 'owned': eager})
         finally:
             ctx.pop_frame()
 
@@ -661,38 +584,16 @@ def do_top(args, ctx, forced_dir):
     value = args.val(0)
     limit = args.non_neg_int(args.count() - 1)
 
-    sort_count = args.count() - 1
-    binder = '_'
-    body = None
-    direction = forced_dir or 'ASC'
-    if sort_count == 1:
+    binder_at, key_at, dir_at = sort_form(args.name, args.nodes)
+    if key_at is None:
         binder = None
-    elif sort_count == 2:
-        body = args.node(1)
-    elif sort_count == 3:
-        if forced_dir is not None:
-            binder = args.symbol(1)
-            body = args.node(2)
-        elif args.node(2).t == 'text':
-            body = args.node(1)
-            direction = ascii_upper(args.text(2))
-        elif args.is_symbol(1):
-            binder = args.symbol(1)
-            body = args.node(2)
-        else:
-            body = args.node(1)
-            direction = ascii_upper(args.text(2))
-    elif sort_count == 4:
-        binder = args.symbol(1)
-        body = args.node(2)
-        direction = ascii_upper(args.text(3))
+        body = None
     else:
-        fail('E_ARITY', f'{args.name} has an invalid sort form', args.pos)
-
+        binder = args.symbol(binder_at) if binder_at is not None else '_'
+        body = args.node(key_at)
+    direction = ascii_upper(args.text(dir_at)) if dir_at is not None else forced_dir or 'ASC'
     if direction not in ('ASC', 'DESC'):
-        direction_index = 3 if sort_count == 4 else 2
-        fail('E_BAD_ARG', "sort direction must be 'ASC' or 'DESC'",
-             args.pos_of(direction_index))
+        fail('E_BAD_ARG', "sort direction must be 'ASC' or 'DESC'", args.pos_of(dir_at))
     # Count and direction were evaluated and checked above whatever the list holds
     # (SPEC 7.4); only now may an empty result be returned.
     if limit == 0 or (value.kind == NONE and value.size() == 0):
@@ -706,10 +607,10 @@ def do_top(args, ctx, forced_dir):
     # key is evaluated in order, before anything is selected.
     needs_k = body is not None and node_contains_var(body, '_K')
     # Collected once its key is computed (spec §3.4); see do_sort.
-    eager = body is not None and _may_write(body)
+    eager = body is not None and may_write(body)
     items = []
     keys = []
-    # One frame for the whole pass, like walk() and do_sort (PY-P25): a frame
+    # One frame for the whole pass, like walk() and do_sort: a frame
     # pushed per element was a dict and two frame updates per element.
     frame = None
     if binder is not None:
@@ -732,7 +633,7 @@ def do_top(args, ctx, forced_dir):
     try:
         if value.is_list and value.storage is not None:
             # A packed list may carry the keys a FILTER kept (list_keys); _K is
-            # those, not the positions (review 2026-09-25 SEM-02).
+            # those, not the positions.
             lkeys = value.list_keys
             for i, item in enumerate(value.storage):
                 consume(lkeys[i] if lkeys is not None else str(i + 1), item)
@@ -799,7 +700,7 @@ def do_bucket(args, ctx):
     # A row is collected when its key is computed and it is grouped (spec §3.4):
     # when the key or the projection might write, it is copied then, so neither a
     # later key nor the projection can change a row already grouped.
-    eager = _may_write(key_node) or (agg_node is not None and _may_write(agg_node))
+    eager = may_write(key_node) or (agg_node is not None and may_write(agg_node))
     row_levels = 3 if agg_node is None else 2
 
     def process(key, source, index):
@@ -827,7 +728,7 @@ def do_bucket(args, ctx):
         key_str = ''
         if group_key.size() == 0:
             # A key with no children is its kind and text (see _dedupe): one dict probe
-            # in place of a structural hash and an eql() per row (PY-P26).
+            # in place of a structural hash and an eql() per row.
             ident = (group_key.kind, group_key.scalar)
             group = scalar_table.get(ident)
             if group is None:

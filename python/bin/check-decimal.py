@@ -8,28 +8,22 @@ stdlib `decimal` module and sel.decimal shares no code with it — see the modul
 docstring in sel/decimal.py for why that separation is load-bearing.
 """
 
-import os
 import sys
 
-# Prefer an *installed* sel over the source tree, so the python-wheel
-# implementation in tools/impls.sh actually exercises the built package rather
-# than silently re-testing python/sel through a path insert. Falls back to the
-# source tree when nothing is installed, which is how the plain `python`
-# implementation and a bare checkout run.
-try:
-    import sel as _sel_probe                                    # noqa: F401
-except ImportError:
-    sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
+from _harness import none_ran, read_text, usage  # first: it makes `sel` importable
 
 from sel import decimal as D          # noqa: E402
 from sel.errors import SelError       # noqa: E402
 
 
 def main() -> int:
-    with open(sys.argv[1], encoding='utf-8') as fh:
-        # .split('\n'), never .splitlines(): the latter also splits on \v, \f,
-        # \x1c-\x1e, U+0085, U+2028 and U+2029, none of which end a record here.
-        lines = [ln for ln in fh.read().split('\n') if ln != '']
+    # .split('\n'), never .splitlines(): the latter also splits on \v, \f,
+    # \x1c-\x1e, U+0085, U+2028 and U+2029, none of which end a record here.
+    if len(sys.argv) != 2:
+        usage('check-decimal.py oracle.txt')
+    lines = [ln for ln in read_text(sys.argv[1]).split('\n') if ln != '']
+    if not lines:
+        return none_ran(f'no cases ran: {sys.argv[1]} is empty')
 
     failures = []
     # Counted separately from the displayed list: capping both would report "20

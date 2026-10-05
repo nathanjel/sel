@@ -1,4 +1,4 @@
-"""PY-P14: the nested-loop LINK makes each right row's table alias once, not once
+"""The nested-loop LINK makes each right row's table alias once, not once
 per pair. The joined rows must be exactly what the per-pair version made."""
 import random
 

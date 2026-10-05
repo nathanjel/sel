@@ -1,4 +1,4 @@
-"""T12 host fixes: the flow-sensitive dependencies() rule (SPEC 8), compile() of
+"""Host API contracts: the flow-sensitive dependencies() rule (SPEC 8), compile() of
 non-source input, and a registered host function reading an argument the call
 does not have (SPEC 8.1). Each case is also a shared probe in tools/api-pins.txt."""
 import copy
@@ -51,19 +51,23 @@ def test_compile_of_non_source_is_e_bad_arg(bad):
     assert info.value.code == 'E_BAD_ARG'
 
 
-def test_a_host_function_reading_a_missing_argument_is_e_bad_arg():
+@pytest.mark.parametrize('read', [
+    lambda a, i: a.text(i), lambda a, i: a.val(i), lambda a, i: a.node(i),
+    lambda a, i: a.pos_of(i), lambda a, i: a.symbol(i), lambda a, i: a.is_symbol(i),
+])
+@pytest.mark.parametrize('index', [3, -1])
+def test_a_host_function_reading_a_missing_argument_is_e_bad_arg(read, index):
+    # Every accessor, the binder-shape ones included: an IndexError (or Python's
+    # negative indexing answering) would be the host leaking through SPEC 8.1.
     registry_name = 'T12_OOB'
-    sel.register_function(registry_name, 1, 1, lambda a: sel.Value.text(a.text(3)))
+    sel.register_function(registry_name, 1, 1, lambda a: (read(a, index), sel.Value.text('x'))[1])
     try:
         with pytest.raises(SelError) as info:
-            sel.evaluate('T12_OOB("x")')
-        assert info.value.code == 'E_BAD_ARG'
-        sel.register_function(registry_name, 1, 1, lambda a: sel.Value.text(a.text(-1)))
-        with pytest.raises(SelError) as info:
-            sel.evaluate('T12_OOB("x")')
+            sel.evaluate('T12_OOB(X)', {'X': '1'})
         assert info.value.code == 'E_BAD_ARG'
     finally:
         registry._table.pop(registry_name, None)
+        registry._host.discard(registry_name)
 
 
 def test_sel_error_round_trips_with_its_position():
@@ -73,5 +77,16 @@ def test_sel_error_round_trips_with_its_position():
     except SelError as e:
         err = e
     for clone in (pickle.loads(pickle.dumps(err)), copy.copy(err), copy.deepcopy(err)):
+        assert (clone.code, clone.line, clone.col, clone.offset) == (err.code, err.line, err.col, err.offset)
+        assert str(clone) == str(err)
+
+
+def test_sql_error_round_trips_with_its_position():
+    from sel.sql import Sql, SqlError
+    with pytest.raises(SqlError) as info:
+        Sql.translate(sel.compile('1 +\n A'), 'mariadb', {})
+    err = info.value
+    for clone in (pickle.loads(pickle.dumps(err)), copy.copy(err), copy.deepcopy(err)):
+        assert type(clone) is SqlError
         assert (clone.code, clone.line, clone.col, clone.offset) == (err.code, err.line, err.col, err.offset)
         assert str(clone) == str(err)

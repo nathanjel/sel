@@ -11,7 +11,9 @@ from sel import SelError                      # noqa: E402
 from sel.builtins import regex                # noqa: E402
 
 ic = len(sys.argv) > 1 and sys.argv[1] == 'i'
-for line in sys.stdin.read().split('\n')[:-1]:
+# Bytes, not the text layer: universal newlines would turn a CR inside a pattern
+# into a line break.
+for line in sys.stdin.buffer.read().decode('utf-8').split('\n')[:-1]:
     try:
         regex.validate(line, None, ic)
         print('A')

@@ -1,5 +1,5 @@
 """SPEC 2: invalid source is E_UTF8 at the first invalid unit, counted in code
-points; a host reads source as bytes, unchanged (PY-C17, PY-C27)."""
+points; a host reads source as bytes, unchanged."""
 import os
 import subprocess
 import sys
@@ -99,3 +99,63 @@ def test_cli_repl_reads_bytes_and_survives_an_invalid_line():
     assert rc == 0
     assert '3' in out and '2' in out
     assert errs.startswith('E_UTF8 at line 1 column 3')
+
+
+# --- the CLI contract every host follows (docs/usage/repl.md) ----------------
+
+@pytest.mark.parametrize('args, message', [
+    (['-e'], 'sel: -e needs an expression'),
+    (['--deps', '-e'], 'sel: -e needs an expression'),
+    (['--nope'], 'sel: unknown option --nope'),
+    (['-x', '-e', '1'], 'sel: unknown option -x'),
+    (['-e', '1', 'extra'], 'sel: unexpected argument extra'),
+    (['a.sel', 'b.sel'], 'sel: unexpected argument b.sel'),
+    (['a.sel', '-e', '1'], 'sel: unexpected argument 1'),
+])
+def test_cli_usage_errors_exit_2_with_a_sel_prefix(args, message):
+    rc, out, errs = cli(*args)
+    assert (rc, out) == (2, '')
+    assert errs.startswith(message)
+
+
+@pytest.mark.parametrize('flag', ['--help', '-h'])
+def test_cli_help_is_usage_on_stdout(flag):
+    rc, out, errs = cli(flag)
+    assert (rc, errs) == (0, '')
+    assert out.startswith('usage: sel')
+
+
+def test_cli_version():
+    assert cli('--version') == (0, f'sel {sel.__version__}\n', '')
+
+
+@pytest.mark.parametrize('kind', ['missing', 'directory'])
+def test_cli_an_unreadable_file_exits_1(tmp_path, kind):
+    path = str(tmp_path / 'nope.sel') if kind == 'missing' else str(tmp_path)
+    rc, out, errs = cli(path)
+    assert (rc, out) == (1, '')
+    assert errs.startswith(f'sel: cannot read {path}')
+    assert 'Traceback' not in errs
+
+
+def test_cli_an_evaluation_error_exits_1():
+    assert cli('-e', '1 +') == (1, '', 'E_SYNTAX at line 1 column 4: unexpected end of input\n')
+
+
+def test_cli_an_empty_dependency_list_prints_nothing():
+    assert cli('--deps', '-e', '1') == (0, '', '')
+    assert cli('-e', 'B + A', '--deps') == (0, 'A\nB\n', '')
+
+
+def test_cli_dash_e_takes_the_next_argument_whatever_it_looks_like():
+    assert cli('-e', '-1') == (0, '-1\n', '')
+
+
+def test_cli_repl_on_a_pipe_writes_no_prompt():
+    assert cli(stdin=b'A = 1\nA + 1\n') == (0, '1\n2\n', '')
+
+
+def test_cli_repl_skips_only_sel_whitespace_lines():
+    rc, out, errs = cli(stdin=b' \t\r\n\n1 + 1\n\xc2\xa0\n\x0b\n2\n')
+    assert (rc, out) == (0, '2\n2\n')
+    assert errs.count('E_SYNTAX at line 1 column 1') == 2

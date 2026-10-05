@@ -1,4 +1,4 @@
-"""PY-P10: the lexer's set/regex scanning must tokenise exactly as the original
+"""The lexer's set/regex scanning must tokenise exactly as the original
 per-character loops did -- tokens, positions and errors -- checked against the
 pre-change lexer kept as a fixture."""
 import importlib.util
@@ -11,11 +11,11 @@ from sel import lexer as new
 from sel.errors import SelError
 
 HERE = os.path.dirname(__file__)
-OLD_PATH = os.path.join(HERE, 'fixtures', 'lexer_before_py_p10.py')
+OLD_PATH = os.path.join(HERE, 'fixtures', 'lexer_per_character.py')
 
 
 def load_old():
-    spec = importlib.util.spec_from_file_location('sel_lexer_before_py_p10', OLD_PATH)
+    spec = importlib.util.spec_from_file_location('sel_lexer_per_character', OLD_PATH)
     mod = importlib.util.module_from_spec(spec)
     sys.modules[spec.name] = mod        # @dataclass resolves its module by name
     spec.loader.exec_module(mod)

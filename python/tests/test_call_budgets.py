@@ -1,4 +1,4 @@
-"""Item 2: how many Python-level calls two fixed programs make, warm, on the
+"""How many Python-level calls two fixed programs make, warm, on the
 interpreter the gate runs. A deterministic contract for the evaluator's cost:
 lower these when it gets cheaper; never raise them. C calls are not counted --
 each costs a fraction of a Python call, and a dispatch table trades Python
@@ -25,7 +25,15 @@ CONTEXTS = {'rows': {'L': [{'a': 'x' if i % 3 == 0 else 'y', 'b': i} for i in ra
 # rows went 5360 -> 5365 with the collector depth fix (fd24024): a fresh value a
 # collector keeps without copying is depth-checked, one call per collected row
 # (MAP over TAKE(5)). That is the price of a correctness fix, not a regression.
-BUDGETS = {'pixel': 2253, 'rows': 5365}
+# pixel went 2253 -> 2252 when Value.entries() became a zip instead of a
+# generator (one frame resumption per call, and the program asks once); rows
+# 5365 -> 5364 when TOP_BY's form came from registry.sort_form (one memoised
+# lookup where two Args.node calls were), then 5364 -> 5363 when the
+# aggregates' "may this body write?" walk became parser.may_write (the old
+# copy ran a function-level import on every call), then 5363 -> 5358 when
+# lexer.ascii_upper took str.upper() for an all-ASCII string instead of a
+# generator over its characters (the sort direction "DESC" is folded once).
+BUDGETS = {'pixel': 2252, 'rows': 5358}
 
 
 def python_calls(label):

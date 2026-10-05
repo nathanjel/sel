@@ -1,4 +1,4 @@
-"""PY-REG-1: recovering the 0.9.2 scale-test time without changing an answer.
+"""Recovering the 0.9.2 scale-test time without changing an answer.
 
 Three changes, each checked against the plain (unoptimised) tree and against
 what it must not do: FILTER hands its kept elements to a step that only reads

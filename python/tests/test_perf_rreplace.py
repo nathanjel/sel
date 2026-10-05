@@ -1,4 +1,4 @@
-"""PY-P13: RREPLACE parses the replacement once and inlines the match loop. It must
+"""RREPLACE parses the replacement once and inlines the match loop. It must
 give exactly what the per-match `_expand` and the generator loop gave: same text,
 same errors (E_BAD_ARG for a group past the pattern's, only when a match occurs),
 same zero-width advancement, same length cap."""
@@ -36,11 +36,24 @@ def ref_expand(repl, m, rx, original):
     return ''.join(out)
 
 
+def matches(rx, subject):
+    """The match loop every host runs, rather than finditer, so zero-width
+    advancement is the same everywhere: after an empty match, a whole code point."""
+    pos = 0
+    n = len(subject)
+    while pos <= n:
+        m = rx.search(subject, pos)
+        if m is None:
+            return
+        yield m
+        pos = m.end() + 1 if m.end() == m.start() else m.end()
+
+
 def ref_rreplace(pattern, repl, subject):
     rx, ic = R._compile(pattern, '', None, None)
     hay = R._fold_subject(subject) if ic else subject
     out, last = [], 0
-    for m in R._matches(rx, hay):
+    for m in matches(rx, hay):
         out.append(subject[last:m.start()])
         out.append(ref_expand(repl, m, rx, subject))
         last = m.end()

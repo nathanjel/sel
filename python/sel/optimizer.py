@@ -10,12 +10,12 @@ from __future__ import annotations
 from typing import Any
 
 from . import decimal as D
-from .errors import MAX_DEPTH
-from .eval import bytes_compare
+from .errors import MAX_DEPTH, SelError
+from .eval import ARITH, COMPARE_OPS, bytes_compare, compare_result
 from .lexer import ascii_upper
 from .math_plan import compile_math_plan, is_math_op
-from .parser import Node
-from .registry import is_host_function, lookup
+from .parser import Node, children, may_write
+from .registry import lookup, sort_form
 from .utf8 import encode_utf8
 
 
@@ -106,7 +106,7 @@ def fold(node: Node | None) -> Node | None:
             try:
                 negated = D.negate(literal_dec(node.x))
                 return literal_num(D.format(negated), node.pos, negated)
-            except Exception:
+            except SelError:
                 return node
         return node
     if node.t == 'bin' and node.l is not None and node.r is not None:
@@ -120,59 +120,22 @@ def fold(node: Node | None) -> Node | None:
                 return literal_bool(True, node.pos)
             if node.l.t == 'bool' and node.r.t == 'bool':
                 return literal_bool(node.l.v or node.r.v, node.pos)
-        if (node.l.t == 'num' and node.r.t == 'num'
-                and node.op in ('+', '-', '*', '/', '%')):
+        if node.l.t == 'num' and node.r.t == 'num' and node.op in ARITH:
             try:
-                left = literal_dec(node.l)
-                right = literal_dec(node.r)
-                if node.op == '+':
-                    result = D.add(left, right, node.pos)
-                elif node.op == '-':
-                    result = D.sub(left, right, node.pos)
-                elif node.op == '*':
-                    result = D.mul(left, right, node.pos)
-                elif node.op == '/':
-                    result = D.div(left, right, node.pos)
-                else:
-                    result = D.mod(left, right, node.pos)
+                result = ARITH[node.op](literal_dec(node.l), literal_dec(node.r), node.pos)
                 return literal_num(D.format(result), node.pos, result)
-            except Exception:
+            except SelError:
                 return node
-        if (node.l.t == 'num' and node.r.t == 'num'
-                and node.op in ('==', '!=', '<', '<=', '>', '>=')):
+        if node.l.t == 'num' and node.r.t == 'num' and node.op in COMPARE_OPS:
             try:
                 c = D.cmp(literal_dec(node.l), literal_dec(node.r))
-                if node.op == '==':
-                    value = c == 0
-                elif node.op == '!=':
-                    value = c != 0
-                elif node.op == '<':
-                    value = c < 0
-                elif node.op == '<=':
-                    value = c <= 0
-                elif node.op == '>':
-                    value = c > 0
-                else:
-                    value = c >= 0
-                return literal_bool(value, node.pos)
-            except Exception:
+                return literal_bool(compare_result(node.op, c, node.pos), node.pos)
+            except SelError:
                 return node
         if (node.l.t == 'text' and node.r.t == 'text'
                 and node.op in ('$==', '$!=', '$<', '$<=', '$>', '$>=')):
             c = text_compare(node.l.v, node.r.v)
-            if node.op == '$==':
-                value = c == 0
-            elif node.op == '$!=':
-                value = c != 0
-            elif node.op == '$<':
-                value = c < 0
-            elif node.op == '$<=':
-                value = c <= 0
-            elif node.op == '$>':
-                value = c > 0
-            else:
-                value = c >= 0
-            return literal_bool(value, node.pos)
+            return literal_bool(compare_result(node.op[1:], c, node.pos), node.pos)
         return node
     if (node.t == 'call' and node.name == 'IF' and len(node.args) == 3
             and node.args[0].t == 'bool'):
@@ -181,7 +144,13 @@ def fold(node: Node | None) -> Node | None:
     return node
 
 
-def field_refs(node: Node | None, binder: str = '_') -> list[str]:
+def field_refs(node: Node | None, binder: str | None = '_') -> list[str]:
+    """The field names read as ``binder["field"]`` (or through ``_``, ``_1``,
+    ``_2``) in NODE, first seen first, compared exactly: SEL's record keys are
+    case-sensitive. ``binder`` None counts a read under ANY name -- a later step
+    binds the row however it likes (``SORT_BY(s, s["name"])``). The optimiser's
+    rewrites and the hybrid planner both ask this."""
+    wanted = None if binder is None else {ascii_upper(binder), '_', '_1', '_2'}
     result: list[str] = []
 
     def visit(item: Node | None) -> None:
@@ -189,21 +158,10 @@ def field_refs(node: Node | None, binder: str = '_') -> list[str]:
             return
         if (item.t == 'index' and item.obj is not None and item.obj.t == 'var'
                 and item.idx is not None and item.idx.t == 'text'
-                and any(ascii_upper(name) == ascii_upper(item.obj.name)
-                        for name in (binder, '_', '_1', '_2'))):
-            result.append(item.idx.v)
-        for child in item.args:
+                and (wanted is None or ascii_upper(item.obj.name) in wanted)):
+            result.append(str(item.idx.v))
+        for child in children(item):
             visit(child)
-        for child in item.items:
-            visit(child)
-        visit(item.l)
-        visit(item.r)
-        visit(item.x)
-        visit(item.target)
-        visit(item.value)
-        if item.t == 'index':
-            visit(item.obj)
-            visit(item.idx)
 
     visit(node)
     return list(dict.fromkeys(result))
@@ -211,16 +169,17 @@ def field_refs(node: Node | None, binder: str = '_') -> list[str]:
 
 def reads_var(node: Node | None, names: tuple[str, ...]) -> bool:
     """Whether ``node`` reads one of ``names`` as a variable -- other than as
-    ``name["field"]``, which is a field read. Case-insensitively, like the
-    evaluator's frames."""
-    wanted = {name.upper() for name in names}
+    ``name["field"]``, which is a field read. Names are compared as they are:
+    the lexer has already upper-cased every identifier (spec §2), and the
+    binders and `_` names asked about are those identifiers."""
+    wanted = set(names)
     found = False
 
     def visit(item: Node | None) -> None:
         nonlocal found
         if item is None or found:
             return
-        if item.t == 'var' and item.name.upper() in wanted:
+        if item.t == 'var' and item.name in wanted:
             found = True
             return
         if (item.t == 'index' and item.obj is not None and item.obj.t == 'var'
@@ -271,7 +230,7 @@ def keys_renumbered_by(step: Node | None) -> bool:
 # The steps that only READ the elements they are handed and copy whatever they
 # keep (SPEC 3.4: MAP copies what it collects). A FILTER in front of one need not
 # copy its kept elements: they are read once and MAP's own copy is the copy the
-# contract asks for (PY-REG-1). Only a pipeline step can follow a FILTER this way;
+# contract asks for. Only a pipeline step can follow a FILTER this way;
 # SUM, ALL and ANY take their source as an argument and never reach this test, and
 # BUCKET, SELECT_COLS and the sorts hand the elements on or build from them, so
 # they are not here.
@@ -279,32 +238,8 @@ _READ_ONLY_CONSUMERS = ('MAP',)
 
 
 def body_only_reads(node: Node | None) -> bool:
-    """Whether evaluating NODE can change nothing it reaches: no assignment, and
-    no call to an application's own function (which may do anything to a value
-    it is handed). Iterative: a body is as deep as the source is long."""
-    stack = [node]
-    while stack:
-        n = stack.pop()
-        if n is None:
-            continue
-        t = n.t
-        if t == 'assign':
-            return False
-        if t == 'call':
-            if is_host_function(n.name or ''):
-                return False
-            stack.extend(n.args)
-        elif t == 'index':
-            stack.append(n.obj)
-            stack.append(n.idx)
-        elif t == 'bin':
-            stack.append(n.l)
-            stack.append(n.r)
-        elif t == 'un':
-            stack.append(n.x)
-        elif t in ('seq', 'list'):
-            stack.extend(n.items)
-    return True
+    """Whether evaluating NODE can change nothing it reaches (parser.may_write)."""
+    return not may_write(node)
 
 
 def adopts_elements(step: Node | None) -> bool:
@@ -338,7 +273,7 @@ def map_passthroughs(step: Node) -> list[str]:
     for i in range(0, len(body.args) - 1, 2):
         key, value = body.args[i], body.args[i + 1]
         if (key.t == 'text' and value.t == 'index' and value.obj.t == 'var'
-                and value.obj.name.upper() == details['binder'].upper()
+                and value.obj.name == details['binder']
                 and value.idx.t == 'text' and value.idx.v == key.v):
             fields.append(key.v)
     return fields
@@ -347,7 +282,7 @@ def map_passthroughs(step: Node) -> list[str]:
 # Whether evaluating NODE for one row can raise -- conservatively: a rewrite that
 # moves a FILTER in front of a step, runs a step on fewer rows, or fuses two
 # FILTERs changes which rows reach what, so it may only pass over expressions
-# that cannot raise on any of them (spec §7.3; review 2026-09-25 SEM-07/SEM-08).
+# that cannot raise on any of them (spec §7.3).
 # Literals, _K and the binder itself never raise. On the logical path the rows
 # are a bound relation's, which always carry their typed columns, so a field
 # read through the binder cannot raise either, nor a comparison, AND/OR/NOT or
@@ -364,11 +299,10 @@ def cannot_raise(node, binder: str, logical: bool) -> bool:
     if t in ('num', 'text', 'bool', 'null'):
         return True
     if t == 'var':
-        name = node.name.upper()
-        return name == '_K' or name == binder.upper()
+        return node.name == '_K' or node.name == binder
     if t == 'index':
         return (logical and node.obj is not None and node.obj.t == 'var'
-                and node.obj.name.upper() == binder.upper()
+                and node.obj.name == binder
                 and node.idx is not None and node.idx.t == 'text')
     if t == 'bin':
         return (logical and node.op in _SAFE_LOGICAL_OPS
@@ -386,7 +320,7 @@ def predicate_cannot_raise(node, binder: str, logical: bool) -> bool:
     """`cannot_raise` for a FILTER predicate, which must also come out BOOL: a
     bare variable, `_K`, a number, a text or NULL never raises when read but is
     E_NOT_BOOL as a predicate, so a fusion that moved it before an earlier
-    predicate's later rows changed which error came first (PHP-C11)."""
+    predicate's later rows changed which error came first."""
     if node is None:
         return True
     if node.t == 'bool':
@@ -424,30 +358,28 @@ def filter_details(step: Node) -> dict[str, Any]:
 
 
 def sort_details(step: Node) -> dict[str, Any]:
+    """The binder and key a sort step orders by, decoded by registry.sort_form,
+    for the rewrites that move a step across it. `valid` says whether any rule
+    may: the binder slot (if the form has one) holds a bare name -- anything
+    else the evaluator refuses (E_EXPECT_SYMBOL) -- and the direction (if the
+    form has one) is a text literal. A computed direction is evaluated with the
+    sort, and its key still runs per element, so a FILTER moved in front of it
+    could hide the key's error (opt.filter-does-not-hide-sort-key-error-under-
+    computed-direction). A keyless SORT or TOP has neither binder nor key."""
     args = step.args
-    count = len(args)
-    binder, key = '_', None
-    if step.name in ('SORT', 'SORT_DESC'):
-        if count == 1:
-            return {'binder': None, 'key': None}
-        binder = args[1].name if count == 3 and args[1].t == 'var' and not args[1].grouped else '_'
-        key = args[2] if count == 3 else args[1]
-    elif step.name in ('TOP', 'TOP_DESC'):
-        if count == 2:
-            return {'binder': None, 'key': None}
-        sort_count = count - 1
-        # TOP(source, key, n) has three arguments and
-        # TOP(source, binder, key, n) has four.  `sort_count` excludes the
-        # final n, so the explicit-binder form is 3, not 4.
-        binder = args[1].name if sort_count == 3 and args[1].t == 'var' and not args[1].grouped else '_'
-        key = args[2] if sort_count == 3 else args[1]
-    elif step.name in ('SORT_BY', 'TOP_BY'):
-        sort_count = count - 1 if step.name == 'TOP_BY' else count
-        if sort_count == 2 or (sort_count == 3 and args[2].t == 'text'):
-            key = args[1]
-        elif args[1].t == 'var' and not args[1].grouped:
-            binder, key = args[1].name, args[2]
-    return {'binder': binder, 'key': key}
+    binder_at, key_at, dir_at = sort_form(step.name, args)
+    if key_at is None:
+        return {'binder': None, 'key': None, 'valid': True}
+    binder, valid = '_', True
+    if binder_at is not None:
+        b = args[binder_at]
+        if b.t == 'var' and not b.grouped:
+            binder = b.name
+        else:
+            valid = False
+    if dir_at is not None and args[dir_at].t != 'text':
+        valid = False
+    return {'binder': binder, 'key': args[key_at], 'valid': valid}
 
 
 def select_fields(step: Node) -> list[str]:
@@ -469,7 +401,7 @@ def numeric_literal(node: Node | None) -> int | None:
             return None
         result = D.to_safe_int(value)
         return result if result >= 0 else None
-    except Exception:
+    except SelError:
         return None
 
 
@@ -477,7 +409,7 @@ def rename_var(node: Node | None, old_name: str, new_name: str) -> Node | None:
     if node is None:
         return None
     copy = copy_node(node)
-    if copy.t == 'var' and copy.name.upper() == old_name.upper():
+    if copy.t == 'var' and copy.name == old_name:
         copy.name = new_name
     copy.args = [rename_var(item, old_name, new_name) for item in copy.args]
     copy.items = [rename_var(item, old_name, new_name) for item in copy.items]
@@ -582,6 +514,7 @@ def logical_steps(source: Node | None, steps: list[Node],
             if (second is not None and first.name in ('SORT', 'SORT_DESC', 'SORT_BY')
                     and second.name == 'FILTER' and not step_reads_key(second)
                     and keys_renumbered_by(current[i + 2] if i + 2 < len(current) else None)
+                    and sort_details(first)['valid']
                     and cannot_raise(sort_details(first)['key'], sort_details(first)['binder'] or '_', logical)
                     and (logical or predicate_cannot_raise(filter_details(second)['predicate'],
                                                            filter_details(second)['binder'], False))):
@@ -607,7 +540,8 @@ def logical_steps(source: Node | None, steps: list[Node],
                 # reads the whole row or `_K` reads what the MAP changes.
                 details = sort_details(second)
                 refs = field_refs(details['key'], details['binder'] or '_') if details['key'] else []
-                if (details['key'] and refs and all(field in map_passthroughs(first) for field in refs)
+                if (details['valid'] and details['key'] and refs
+                        and all(field in map_passthroughs(first) for field in refs)
                         and not reads_row_or_key(details['key'], details['binder'] or '_')
                         and map_cannot_raise(first, logical)
                         and cannot_raise(details['key'], details['binder'] or '_', logical)):
@@ -624,7 +558,16 @@ def logical_steps(source: Node | None, steps: list[Node],
                     next_steps.append(first)
                     i += 1
                     continue
-                predicate = (right['predicate'] if right['binder'].upper() == left['binder'].upper()
+                # Fused, the second predicate sits one level deeper than it did:
+                # the AND that joins them. A fused pair must spend what the two
+                # stages spent (SPEC 6.4), so a predicate that reaches the cap
+                # that way stays a second FILTER. Its root would stand at the
+                # step's depth + 2 (the step, the AND, the predicate).
+                if second.step_depth and exceeds_depth(right['predicate'], second.step_depth + 2):
+                    next_steps.append(first)
+                    i += 1
+                    continue
+                predicate = (right['predicate'] if right['binder'] == left['binder']
                              else rename_var(right['predicate'], right['binder'], left['binder']))
                 merged = copy_node(first)
                 combined = Node('bin', left['predicate'].pos, op='AND',
@@ -677,8 +620,13 @@ def optimize_tree(node: Node | None, physical: bool, depth: int = 1,
         source, steps = unwind_pipeline(node)
         optimized_source = optimize_tree(source, physical, depth + 1, options, False)
         optimized_steps = []
-        for step in steps:
+        last = len(steps) - 1
+        for at, step in enumerate(steps):
             copy = copy_node(step)
+            # Where this step stands in the tree as written, for the rules that
+            # would deepen a subtree (FILTER fusion): the outermost step is the
+            # node itself.
+            copy.step_depth = depth + (last - at)
             copy.args = [copy.args[0], *[
                 optimize_tree(item, physical, depth + 1, step_arg_options(step, index, options), False)
                 for index, item in enumerate(copy.args[1:], 1)
@@ -776,7 +724,6 @@ def _build_constant(node: Node) -> Any:
     evaluation would have produced; None (so the row path runs as before) should
     it refuse."""
     from .eval import Context, eval_node
-    from .errors import SelError
     from .value import Value
     try:
         value = eval_node(node, Context(Value.from_native({})))
@@ -833,13 +780,12 @@ def optimize_ast_in_memory(ast: Node) -> Node:
     return physical
 
 
-def _children(n: Node) -> tuple:
-    return (*n.args, *n.items, n.l, n.r, n.x, n.obj, n.idx, n.target, n.value)
+_children = children
 
 
 def bind_handlers(physical: Node, ast: Node) -> None:
     """Stamps every node the physical tree owns with the function eval_node runs
-    it with (eval.handler_for; item 2, P3). A node it shares with the caller's
+    it with (eval.handler_for). A node it shares with the caller's
     AST -- an assignment's target, a pipeline step's placeholder -- is never
     written, and neither is anything below it: it takes the generic path."""
     from .eval import handler_for

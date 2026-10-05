@@ -52,7 +52,7 @@ from .._budget import check_text
 from .._stack import recursion_budget
 from .._limits import MAX_DEPTH, MAX_REGEX_GROUPS, MAX_REGEX_PATTERN, MAX_TEXT_LEN
 from ..errors import fail
-from ..registry import define
+from ..registry import REGEX_FLAG_AT, define
 from ..value import Value
 from . import _regex_ambiguity as _amb
 
@@ -547,7 +547,7 @@ _FOLD = {0x212A: 'k', 0x017F: 's'}
 
 def _fold_subject(subject: str) -> str:
     # Nothing to fold in an ASCII subject (the two code points are above it), so it is
-    # returned as it is instead of being copied through translate() (PY-P30).
+    # returned as it is instead of being copied through translate().
     if subject.isascii():
         return subject
     return subject.translate(_FOLD)
@@ -582,7 +582,7 @@ def _flags(flags, pos):
 
 
 def _compile(pattern, flags, pos, pat_pos):
-    # No flags is the common call: skip the flag scan altogether (PY-P30).
+    # No flags is the common call: skip the flag scan altogether.
     ignore_case = _flags(flags, pos) if flags else False
 
     if ignore_case and not pattern.isascii():
@@ -621,30 +621,12 @@ def check_literal(name, args):
     error, at compile time, on every host."""
     if not args or args[0].t != 'text':
         return
-    flag_i = 3 if name == 'RREPLACE' else 2
+    flag_i = REGEX_FLAG_AT[name]
     ignore_case = False
     if len(args) > flag_i:
         f = args[flag_i]
         ignore_case = f.t == 'text' and 'i' in f.v
     validate(args[0].v, args[0].pos, ignore_case)
-
-
-def _matches(rx, subject):
-    """Mirrors the loop the other hosts run rather than using finditer, so
-    zero-width advancement is identical everywhere.
-    """
-    pos = 0
-    n = len(subject)
-    while pos <= n:
-        m = rx.search(subject, pos)
-        if m is None:
-            return
-        yield m
-        if m.end() == m.start():
-            # Advance a whole code point so a zero-width match cannot loop.
-            pos = m.end() + 1
-        else:
-            pos = m.end()
 
 
 def _args_for(args, pat_i, subj_i, flag_i):
@@ -656,10 +638,16 @@ def _args_for(args, pat_i, subj_i, flag_i):
     """
     pattern = args.text(pat_i)
     subject = args.text(subj_i)
-    flags = args.text(flag_i) if args.count() > flag_i else ''
-    flag_pos = args.pos_of(flag_i) if args.count() > flag_i else args.pos
-    rx, ignore_case = _compile(pattern, flags, flag_pos, args.pos_of(pat_i))
+    rx, ignore_case = _compile_with_flags(args, pattern, pat_i, flag_i)
     return rx, subject, _fold_subject(subject) if ignore_case else subject
+
+
+def _compile_with_flags(args, pattern, pat_i, flag_i):
+    """The compiled pattern and whether it ignores case, reading the optional
+    flags argument at `flag_i` (an absent one is no flags, reported at the call)."""
+    if args.count() > flag_i:
+        return _compile(pattern, args.text(flag_i), args.pos_of(flag_i), args.pos_of(pat_i))
+    return _compile(pattern, '', args.pos, args.pos_of(pat_i))
 
 
 def _rmatch(a, ctx):
@@ -689,7 +677,7 @@ def _rgroups(a, ctx):
 def _parse_replacement(repl):
     """The replacement, parsed ONCE per call: a tuple of literal strings and
     group numbers. SEL understands $0-$9 and $$ only; $&, $` and backslash
-    references stay literal (PY-P13: it was re-scanned character by character for
+    references stay literal (it was re-scanned character by character for
     every match)."""
     parts = []
     lit = []
@@ -727,9 +715,7 @@ def _rreplace(a, ctx):
     pattern = a.text(0)
     repl = a.text(1)
     subject = a.text(2)
-    flags = a.text(3) if a.count() > 3 else ''
-    flag_pos = a.pos_of(3) if a.count() > 3 else a.pos
-    rx, ignore_case = _compile(pattern, flags, flag_pos, a.pos_of(0))
+    rx, ignore_case = _compile_with_flags(a, pattern, 0, 3)
     haystack = _fold_subject(subject) if ignore_case else subject
 
     parts = _parse_replacement(repl)

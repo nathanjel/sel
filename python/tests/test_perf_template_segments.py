@@ -1,4 +1,4 @@
-"""PY-P28: Emit.fill scans a template once per distinct string (the segment cache). The part
+"""Emit.fill scans a template once per distinct string (the segment cache). The part
 list it produces must be exactly what the character-by-character scan produced, for every
 template shape including unbalanced and doubled braces."""
 import random

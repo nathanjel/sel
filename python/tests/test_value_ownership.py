@@ -1,8 +1,7 @@
-"""Value ownership and the decimal boundaries (T02/T03): what an aggregate or a
+"""Value ownership and the decimal boundaries: what an aggregate or a
 constructor collects is a copy, a value past the cap is refused where it is
-built, and the numeric core does not depend on process-global settings.
-
-PY-C25, PY-C28, PY-C30, PY-C32, GO-C12 (CEIL/FLOOR position), SPEC 3.4."""
+built, and the numeric core does not depend on process-global settings
+(SPEC 3.4; conformance/25-value-ownership.selt)."""
 import subprocess
 import sys
 
@@ -115,7 +114,7 @@ def test_ceil_and_floor_carry_past_the_digit_cap_is_positioned(src):
     assert (e.code, e.line, e.col) == ('E_RANGE', 1, 1)
 
 
-# --- the numeric core does not depend on the int<->str limit (PY-C25) ----------
+# --- the numeric core does not depend on the int<->str limit ----------
 
 def test_import_does_not_override_the_deployers_limit():
     r = subprocess.run(
