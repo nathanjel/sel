@@ -42,6 +42,9 @@ from .emit import Emit
 from .fragment import Fragment
 
 
+_NO_AST = object()
+
+
 class HybridPlan:
     """The SQL fragment and optional in-memory continuation for one pipeline."""
 
@@ -63,6 +66,10 @@ class HybridPlan:
         self.pure_memory = bool(pure_memory)
         self._source_tables = list(source_tables or [])
         self.selected_member = selected_member
+        # execute_hybrid's memo of continuation_effects(), keyed on the AST it
+        # was computed for (a caller may hand the plan a different program).
+        self._cached_ast: Any = _NO_AST
+        self._cached_effects: ContinuationEffects | None = None
 
     @property
     def sql_query(self):
@@ -1083,12 +1090,11 @@ def _private_root(plan: HybridPlan, context: Value | dict[str, Any] | None) -> V
         return context.clone()             # not a plain record of variables
 
     ast = plan.continuation_program.ast if plan.continuation_program else None
-    if getattr(plan, '_cached_ast', None) is not ast:
+    effects = plan._cached_effects
+    if plan._cached_ast is not ast or effects is None:
         effects = continuation_effects(ast)
         plan._cached_ast = ast
         plan._cached_effects = effects
-    else:
-        effects = plan._cached_effects
 
     if effects.calls_application_function:
         return context.clone()

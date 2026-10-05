@@ -1,19 +1,23 @@
+"""The structural builtins: COUNT, INDEXES, HAS, LIST, RECORD, TAKE, DROP,
+SELECT_COLS, DISTINCT and DEDUPE, and the relational LINK and LINK_LEFT -- their
+equi-join and nested-loop paths, and the run-time pre-filter that applies a
+FILTER's conjuncts inside a join (spec §7.4)."""
 
 from .._budget import check_collection
 from ..errors import SelError, fail
 from ..lexer import ascii_upper
+from ..registry import INF, define
+from .aggregate import _SCALAR_FRESH_CALLS
+from ..parser import Node
+from ..value import NONE, TEXT, Value, elements, iter_elements, iter_values, structural_hash, _record_shape
 
 
 def _upper_name(s):
     """Names compare ASCII-case-insensitively (spec §2, §7.4): only a-z move.
     str.upper() folds "ß" to "SS" and "ſ" to "S", which made distinct field
-    names collide in joined rows (review 2026-09-25 SEM-04). The builtin is
-    kept for the all-ASCII names that are nearly every name."""
+    names collide in joined rows. The builtin is kept for the all-ASCII names
+    that are nearly every name."""
     return s.upper() if s.isascii() else ascii_upper(s)
-from ..registry import INF, define
-from .aggregate import _SCALAR_FRESH_CALLS
-from ..parser import Node
-from ..value import NONE, TEXT, Value, elements, iter_elements, iter_values, structural_hash, _record_shape
 
 
 def iter_collection_items(value):
@@ -1338,7 +1342,7 @@ def _link(args, ctx, left_join):
                 frame[b1_lower] = left
                 frame['_1'] = left
                 frame['_'] = left
-                matched = [False]
+                matched = False
                 if rights is None:
                     rights = [ensure_row_table_alias(r, b2) for r in right_items]
 
@@ -1347,11 +1351,11 @@ def _link(args, ctx, left_join):
                     frame[b2_lower] = right
                     frame['_2'] = right
                     if eval_predicate(predicate).as_bool(predicate.pos):
-                        matched[0] = True
+                        matched = True
                         check_collection(len(output) + 1, args.pos)
                         output.append(project(left, right))
 
-                if left_join and not matched[0]:
+                if left_join and not matched:
                     check_collection(len(output) + 1, args.pos)
                     output.append(project(left, None))
         finally:

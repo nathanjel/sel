@@ -671,20 +671,20 @@ class Value:
     def clone(self, pos: Pos | None = None, depth: builtins.int = 1) -> Value:
         """Assignment copies by value: two variables never share structure (§5.7).
 
-A value's nesting is the third thing spec/SPEC.md §6.4 caps, after the
-parser's and the evaluator's, and it was the last one left uncounted. clone,
-eql, dump and the two native conversions each recurse once per level, so a
-value nested deeply enough reached the host's own stack: RecursionError here
-at about a thousand levels, an uncaught RangeError on JS at about four, a
-segfault on C++ at about sixty. Three hosts answered where two died, on the
-same program.
+        A value's nesting is the third thing spec/SPEC.md §6.4 caps, after the
+        parser's and the evaluator's, and it was the last one left uncounted. clone,
+        eql, dump and the two native conversions each recurse once per level, so a
+        value nested deeply enough reached the host's own stack: RecursionError here
+        at about a thousand levels, an uncaught RangeError on JS at about four, a
+        segfault on C++ at about sixty. Three hosts answered where two died, on the
+        same program.
 
-The depth rides as a parameter, as it does in dependencies(): nothing has to be
-released on the way out, so no guard object is needed and all five hosts spell
-it the same way. A value of exactly MAX_DEPTH levels is fine; the level past it
-is refused. `pos` is reported when the caller has one -- the evaluator knows
-which node asked -- and is None for a call from host code, the same convention
-as as_text().
+        The depth rides as a parameter, as it does in dependencies(): nothing has to be
+        released on the way out, so no guard object is needed and all five hosts spell
+        it the same way. A value of exactly MAX_DEPTH levels is fine; the level past it
+        is refused. `pos` is reported when the caller has one -- the evaluator knows
+        which node asked -- and is None for a call from host code, the same convention
+        as as_text().
         """
         # A leaf is most of what is copied (a record's fields): it needs no
         # recursion, so it is copied here without the second call.

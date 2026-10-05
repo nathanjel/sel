@@ -746,14 +746,14 @@ class Translator:
             # MariaDB and MySQL whenever either side was not valid UTF-8, where
             # SEL answers FALSE. The corpus had exactly one BIN value, 7ac3a9,
             # which is valid UTF-8 and could not show it.
-            l_exact = getattr(l, 'exact', False)
-            r_exact = getattr(r, 'exact', False)
+            l_exact = l.exact
+            r_exact = r.exact
             l_lit = (n.l.t == 'text')
             r_lit = (n.r.t == 'text')
             if (l_exact and (r_exact or r_lit)) or (r_exact and l_lit):
                 pass
-            elif op == '$==' and ((getattr(l, 'sargable', False) and r_lit)
-                                  or (getattr(r, 'sargable', False) and l_lit)):
+            elif op == '$==' and ((l.sargable and r_lit)
+                                  or (r.sargable and l_lit)):
                 # A sargable column against a literal, either way round: the
                 # coarse comparison the index can serve, AND the exact one.
                 if self.emit.lex('sargablePrefilter') == 'true':
@@ -763,23 +763,23 @@ class Translator:
                                            n.pos, variant)
                     res = self._apply('ops', 'AND', [coarse, residual], n.pos)
                     res.prefilter = coarse
-                    res.separate_prefilter = bool(getattr(l, 'separate_prefilter', False)
-                                                  or getattr(r, 'separate_prefilter', False))
+                    res.separate_prefilter = bool(l.separate_prefilter
+                                                  or r.separate_prefilter)
                     return res
             elif l.kind != 'BIN' or r.kind != 'BIN':
                 l = self.emit.text_operand(l)
                 r = self.emit.text_operand(r)
         res = self._apply('ops', op, [l, r], n.pos, variant)
         if op == 'AND':
-            l_pref = getattr(l, 'prefilter', None)
-            r_pref = getattr(r, 'prefilter', None)
+            l_pref = l.prefilter
+            r_pref = r.prefilter
             if l_pref is not None and r_pref is not None:
                 res.prefilter = self._apply('ops', 'AND', [l_pref, r_pref], n.pos)
             elif l_pref is not None:
                 res.prefilter = self._apply('ops', 'AND', [l_pref, r], n.pos)
             elif r_pref is not None:
                 res.prefilter = self._apply('ops', 'AND', [l, r_pref], n.pos)
-            if getattr(l, 'separate_prefilter', False) or getattr(r, 'separate_prefilter', False):
+            if l.separate_prefilter or r.separate_prefilter:
                 res.separate_prefilter = True
         return res
 
@@ -890,7 +890,7 @@ class Translator:
             # spliced N times: splicing one Fragment twice puts the same slot
             # number in the output twice while `params` holds one entry.
             raw = self._node(n.l)
-            is_exact = getattr(raw, 'exact', False)
+            is_exact = raw.exact
             needle = raw if is_exact else self.emit.text_operand(raw)
             f = self._node(e)
             if f.kind == 'LIST':
@@ -1914,8 +1914,8 @@ class Translator:
     def _relation_aggregate(self, name: str, rel: dict[str, Any],
                             body: Fragment, n: Node) -> Fragment:
         is_separate = (rel.get('prefilter') == 'separate'
-                       or (rel.get('prefilter') is None and getattr(body, 'separate_prefilter', False)))
-        if name == 'ANY' and getattr(body, 'prefilter', None) is not None and is_separate:
+                       or (rel.get('prefilter') is None and body.separate_prefilter))
+        if name == 'ANY' and body.prefilter is not None and is_separate:
             pre = Fragment(
                 self._fill_named(self._skeleton('prefilter', n.pos),
                                  _slots(self._relation_slots(rel), {'body': [body.prefilter]}), n.pos),
@@ -1926,7 +1926,7 @@ class Translator:
                 AGG_RETURNS[name], self.dialect)
             return self._apply('ops', 'AND', [pre, main], n.pos)
         skel = self._skeleton(AGG_SKELETON[name], n.pos)
-        if getattr(body, 'whole_sum', False):
+        if body.whole_sum:
             # The body already is the whole `... COALESCE(SUM(x), 0) ...`
             # expression, so it replaces that in the skeleton.
             marker = 'COALESCE(SUM({body}), 0)'

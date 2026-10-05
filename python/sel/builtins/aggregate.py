@@ -320,7 +320,7 @@ def _filter(args, ctx):
             stages = []
         elif handed is not None:
             stages.extend(handed[0])
-        deep = bool(getattr(body, 'keys_unobserved', False)) if handed is None else True
+        deep = body.keys_unobserved if handed is None else True
         if stages:
             ctx.join_prefilter = (stages, deep,
                                   handed[2] if handed is not None else [],

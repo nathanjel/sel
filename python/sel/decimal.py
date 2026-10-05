@@ -168,6 +168,12 @@ def _pow10(k: int) -> int:
     return v
 
 
+# 10**DIV_SCALE, computed once: div multiplies every dividend by it. Through
+# _pow10 rather than an index into the small table, which would silently assume
+# the generated DIV_SCALE stays within _POW10_LIMIT.
+_DIV_FACTOR = _pow10(DIV_SCALE)
+
+
 def _num_digits(n: int) -> int:
     """Digit count of a non-negative int, without str().
 
@@ -415,7 +421,7 @@ def div(a: Dec, b: Dec, pos: Pos | None = None) -> Dec:
         N *= _pow10(b.scale - a.scale)
     elif a.scale > b.scale:
         D *= _pow10(a.scale - b.scale)
-    q, r = divmod(N * _POW10_SMALL[DIV_SCALE], D)
+    q, r = divmod(N * _DIV_FACTOR, D)
     neg = a.neg != b.neg
 
     if r == 0:
