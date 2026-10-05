@@ -134,15 +134,6 @@ final class Hybrid
             && $catalog->has($node['name'])
             && ($catalog->get($node['name'], $node['pos'])['kind'] ?? null) === 'relation';
         $unwound = self::unwindThroughHelpers($result, $defs, $literals);
-        // A helper unwound through whose name is also the pipeline's source
-        // (`ORDERS = ORDERS .> DROP(2); ORDERS .> TAKE(3)`): its definition is now in
-        // the steps, and keeping the assignment in front of the tree as well applies
-        // it twice, since the tree still reads the name.
-        if (($unwound['source']['t'] ?? null) === 'var' && ($unwound['consumed'][$unwound['source']['name']] ?? false)) {
-            $sourceName = $unwound['source']['name'];
-            $leading = array_values(array_filter($leading,
-                static fn (array $st): bool => ($st['target']['t'] ?? null) !== 'var' || $st['target']['name'] !== $sourceName));
-        }
         if ($unwound['steps'] === [] || !$isRelation($unwound['source'])) {
             return self::pureMemoryPlan($program, $dialect, $catalog);
         }
@@ -1049,7 +1040,7 @@ final class Hybrid
      *
      * @param array<string,mixed> $result
      * @param array<string,array<string,mixed>> $defs @param array<string,array<string,mixed>> $literals
-     * @return array{source:array<string,mixed>,steps:list<array<string,mixed>>,consumed:array<string,bool>}
+     * @return array{source:array<string,mixed>,steps:list<array<string,mixed>>}
      */
     private static function unwindThroughHelpers(array $result, array $defs, array $literals): array
     {
@@ -1057,15 +1048,23 @@ final class Hybrid
         $source = $unwound['source'];
         $steps = $unwound['steps'];
         $seen = [];
-        $consumed = [];
         while (($source['t'] ?? null) === 'var' && isset($defs[$source['name']]) && !isset($seen[$source['name']])) {
-            $consumed[$source['name']] = true;
             $seen[$source['name']] = true;
             $inner = Optimizer::unwindPipeline(self::inlineLiterals($defs[$source['name']], $literals));
             $source = $inner['source'];
             $steps = array_merge($inner['steps'], $steps);
         }
-        return ['source' => $source, 'steps' => $steps, 'consumed' => $consumed];
+        // The source the loop stopped at reads the catalogue's binding when its name
+        // is also a helper's (`ORDERS = ORDERS .> DROP(2); ORDERS .> TAKE(3)`): it is
+        // marked, so that wrapping the pipeline in its helpers again does not put the
+        // helper in front of the very read that was its own definition (DROP applied
+        // twice). A step that reads the name as a value is not marked, and still
+        // brings the helper along: in the continuation `COUNT(ORDERS)` is the helper's
+        // count, as in run() (plan.helper.rebinds-relation-read-by-continuation).
+        if (($source['t'] ?? null) === 'var' && isset($defs[$source['name']])) {
+            $source['binding'] = true;
+        }
+        return ['source' => $source, 'steps' => $steps];
     }
 
     /**
@@ -1080,7 +1079,9 @@ final class Hybrid
     {
         if ($node === null) return $out;
         if (($node['t'] ?? null) === 'var') {
-            $out[$node['name']] = true;
+            // A read of the BINDING, reached by unwinding through a helper of the
+            // same name (unwindThroughHelpers), is not a read of that helper.
+            if (!($node['binding'] ?? false)) $out[$node['name']] = true;
             return $out;
         }
         foreach (['args', 'items'] as $key) foreach ($node[$key] ?? [] as $item) $out = self::readNames($item, $out);
@@ -1129,17 +1130,22 @@ final class Hybrid
             : ['t' => 'seq', 'items' => array_merge($kept, [$node]), 'pos' => $kept[0]['pos']];
     }
 
-    /** @var \WeakMap<\Sel\Program, list<string>|false>|null */
+    /** The largest tree (in arrays walked) writableRoots keeps as a cache key. */
+    private const KEPT_TREE_NODES = 4096;
+
+    /** @var \WeakMap<\Sel\Program, array{0:array<string,mixed>,1:list<string>|false}>|null */
     private static ?\WeakMap $writableRoots = null;
 
     /**
-     * The root a continuation runs on (PHP-P22): the caller's context is never
-     * written to, but copying all of it cost 5.5 us a row on every execution
-     * although a continuation usually assigns to a name or two. Only the top-level
-     * names the program assigns to are deep-copied; the rest are shared, and a
-     * program with no assignment to a name cannot write through a shared child.
-     * An assignment whose root cannot be read off the tree falls back to the
-     * whole-context copy.
+     * The root a continuation runs on: the caller's context is never written to
+     * (docs/internals/sql-translation.md §12.1), but copying all of it cost 5.5 us
+     * a row on every execution although a continuation usually assigns to a name
+     * or two. Only the top-level names the program assigns to are deep-copied;
+     * the rest are shared, and a program with no assignment to a name cannot
+     * write through a shared child -- unless it calls an application function
+     * (spec §8.1), which may write into the value it is handed, so such a program
+     * runs on a copy of the whole context, as one whose assignment root cannot be
+     * read off the tree does.
      */
     private static function rootFor(?\Sel\Program $program, Value $context): Value
     {
@@ -1147,20 +1153,35 @@ final class Hybrid
         return $names === null ? $context->copy() : $context->copyWritable($names);
     }
 
-    /** @return list<string>|null the top-level names a program assigns to, null when unsure */
+    /**
+     * The top-level names a program assigns to, or null when the whole context
+     * must be copied: an assignment whose root is not a name, or a call of any
+     * function outside the builtin manifest. The answer is kept per Program and
+     * per tree: a caller may replace the whole $ast (Program::$ast), and the
+     * identity check below is what notices. Only a small tree is kept as the
+     * key: the cache's share of $ast would make Program::__destruct dismantle a
+     * copy and leave the original to PHP's recursive free, which a tree as deep
+     * as a long source does not survive. A larger tree is walked on every call,
+     * which costs what one evaluation of it costs at least.
+     *
+     * @return list<string>|null
+     */
     private static function writableRoots(\Sel\Program $program): ?array
     {
         self::$writableRoots ??= new \WeakMap();
-        if (isset(self::$writableRoots[$program])) {
-            $known = self::$writableRoots[$program];
-            return $known === false ? null : $known;      // false: the tree was not readable, copy it whole
+        $known = self::$writableRoots[$program] ?? null;
+        if ($known !== null && $known[0] === $program->ast) {
+            return $known[1] === false ? null : $known[1];
         }
         $names = [];
         $stack = [$program->ast];
         $ok = true;
+        $visited = 0;
         while ($stack !== [] && $ok) {
             $n = array_pop($stack);
-            if (($n['t'] ?? null) === 'assign') {
+            $visited++;
+            $t = $n['t'] ?? null;
+            if ($t === 'assign') {
                 $target = $n['target'] ?? null;
                 while (is_array($target) && ($target['t'] ?? null) === 'index') $target = $target['obj'] ?? null;
                 if (is_array($target) && ($target['t'] ?? null) === 'var' && is_string($target['name'] ?? null)) {
@@ -1168,13 +1189,17 @@ final class Hybrid
                 } else {
                     $ok = false;
                 }
+            } elseif ($t === 'call' && !isset(\Sel\BuiltinManifest::BUILTINS[$n['name'] ?? ''])) {
+                $ok = false;
             }
             foreach ($n as $k => $child) {
-                if ($k !== 'pos' && is_array($child)) $stack[] = $child;
+                if ($k !== 'pos' && $k !== 'spec' && is_array($child)) $stack[] = $child;
             }
         }
         $result = $ok ? array_keys($names) : null;
-        self::$writableRoots[$program] = $result ?? false;
+        if ($visited <= self::KEPT_TREE_NODES) {
+            self::$writableRoots[$program] = [$program->ast, $result ?? false];
+        }
         return $result;
     }
 

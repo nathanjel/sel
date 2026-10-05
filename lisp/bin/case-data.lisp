@@ -11864,6 +11864,22 @@ ORDERS .> TAKE(1)"
    :register nil
    :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num))) nil nil)))))
   (list
+   :name "plan.helper.rebinds-relation-read-by-continuation"
+   :at "25-hybrid-plans.sqlt:1854"
+   :dialect "mariadb"
+   :source "ORDERS = ORDERS .> DROP(2); ORDERS .> TAKE(3) .> MAP(RECORD(\"n\", COUNT(ORDERS), \"s\", COUNT(SPLIT(_[\"name\"], \"a\"))))"
+   :expect "SELECT `o`.* FROM `orders` `o` LIMIT 3 OFFSET 2"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan "hybrid"
+   :tables (list "orders")
+   :register nil
+   :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num)) (cons "NAME" (binding-column "name" "o" :text))) nil nil)))))
+  (list
    :name "link.row.is-the-promoted-fields"
    :at "26-links.sqlt:5"
    :dialect "mariadb"

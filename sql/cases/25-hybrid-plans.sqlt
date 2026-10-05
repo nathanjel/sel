@@ -1851,3 +1851,19 @@ pure_memory
 --- tables
 orders
 ===
+### name: plan.helper.rebinds-relation-read-by-continuation
+--- note
+The helper rebinds the relation's own name and a continuation step reads that name as a value. The prefix still reads the BINDING once -- DROP 2 then TAKE 3, LIMIT 3 OFFSET 2 (plan.helper.rebinds-relation-once) -- and the continuation keeps the helper so COUNT(ORDERS) counts its rows; sql/oracle/hybrid.json helper.reassigned-source-read-by-a-continuation-step executes it. A planner that kept the helper in front of the prefix too applied DROP twice (OFFSET 4).
+--- dialect
+mariadb
+--- bindings
+{"ORDERS": {"kind": "relation", "from": "orders", "alias": "o", "fields": {"ID": {"table": "o", "column": "id", "type": "NUM"}, "NAME": {"table": "o", "column": "name", "type": "TEXT"}}}}
+--- source
+ORDERS = ORDERS .> DROP(2); ORDERS .> TAKE(3) .> MAP(RECORD("n", COUNT(ORDERS), "s", COUNT(SPLIT(_["name"], "a"))))
+--- plan
+hybrid
+--- tables
+orders
+--- expect
+SELECT `o`.* FROM `orders` `o` LIMIT 3 OFFSET 2
+===

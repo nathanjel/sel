@@ -494,4 +494,68 @@ $long = Sel::compile('LIST(1,2)' . str_repeat(' .> SORT', 150) . ' .> COUNT()');
 Optimizer::unwindPipeline($long->ast);
 check(microtime(true) - $t0 < 2.0, 'unwindPipeline is linear');
 
+// --- hybrid execution never writes the caller's context ------------------------------
+// The shared corpus (sql/oracle/hybrid.json, `programs` and `application`) on an
+// in-memory SQLite, so the gate holds PHP to it without a server; php/bin/sqlo
+// `hybrid` runs the same corpus on every server a DSN names.
+require_once __DIR__ . '/../php/bin/hybrid-parity.php';
+if (!extension_loaded('pdo_sqlite')) {
+    fwrite(STDERR, "FAIL the hybrid-parity corpus needs pdo_sqlite\n");
+    exit(1);
+}
+$parity = run_hybrid(new PDO('sqlite::memory:', null, null, [
+    PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+    PDO::ATTR_EMULATE_PREPARES => false,
+]), 'sqlite', false, 'sqlite (in memory) ');
+check($parity['failed'] === 0, 'the hybrid-parity corpus holds on SQLite');
+
+// What the corpus cannot say, ported from tools/check-js-sql.mjs: an application
+// function that writes its argument and then throws, one defined through the
+// lower-level Registry::define, one plan executed twice, and a Program whose whole
+// tree is replaced after its first execution.
+$aOf = static fn (\Sel\Value $ctx): string => $ctx->get('A')->get('k')->asText();
+$fresh = static fn (): \Sel\Value => \Sel\Value::fromNative(['A' => ['k' => '1']]);
+\Sel\Registry::registerFunction('PHP_POKE_ERR', 1, 1, static function ($args): \Sel\Value {
+    $args->val(0)->set('k', \Sel\Value::fromNative('99'));
+    throw new \RuntimeException('callback error');
+});
+$ctx = $fresh();
+$threw = false;
+try {
+    Sql::executeHybrid(Sql::planHybrid(Sel::compile('PHP_POKE_ERR(A)'), 'sqlite'), static fn () => [], $ctx);
+} catch (\RuntimeException) {
+    $threw = true;
+}
+check($threw && $aOf($ctx) === '1', 'an application function that writes and throws leaves the caller\'s context alone');
+
+\Sel\Registry::define(['name' => 'PHP_POKE_LOW', 'min' => 1, 'max' => 1,
+    'fn' => static function ($args): \Sel\Value {
+        $v = $args->val(0);
+        $v->set('k', \Sel\Value::fromNative('888'));
+        return $v;
+    }]);
+$ctx = $fresh();
+$res = Sql::executeHybrid(Sql::planHybrid(Sel::compile('PHP_POKE_LOW(A)'), 'sqlite'), static fn () => [], $ctx);
+check($res->get('k')->asText() === '888' && $aOf($ctx) === '1', 'a function from Registry::define is an application function too');
+
+hybrid_register_application_functions();
+$plan = Sql::planHybrid(Sel::compile('POKE(A)'), 'sqlite');
+$ctx1 = $fresh();
+$ctx2 = $fresh();
+Sql::executeHybrid($plan, static fn () => [], $ctx1);
+Sql::executeHybrid($plan, static fn () => [], $ctx2);
+check($aOf($ctx1) === '1' && $aOf($ctx2) === '1', 'one plan executed twice leaves both contexts alone');
+
+$program = Sel::compile('A');
+$plan = Sql::planHybrid($program, 'sqlite');
+$ctx = $fresh();
+check(Sql::executeHybrid($plan, static fn () => [], $ctx)->get('k')->asText() === '1', 'a read-only continuation answers');
+$program->ast = Sel::compile('POKE(A)')->ast;
+$res = Sql::executeHybrid($plan, static fn () => [], $ctx);
+check($res->get('k')->asText() === '9' && $aOf($ctx) === '1', 'a replaced tree is walked again: its application call copies the context');
+
+$ctx = $fresh();
+$res = Sql::executeHybrid(Sql::planHybrid(Sel::compile('A["k"] = "99"; A'), 'sqlite'), static fn () => [], $ctx);
+check($res->get('k')->asText() === '99' && $aOf($ctx) === '1', 'an assignment into a nested field leaves the caller\'s context alone');
+
 echo "PHP optimizer checks: {$checks} passed\n";

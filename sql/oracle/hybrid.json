@@ -656,8 +656,144 @@
      ]
     }
    }
+  },
+  {
+   "name": "helper.reassigned-source-read-by-a-continuation-step",
+   "sel": "ORDERS = ORDERS .> SORT_BY(_[\"id\"]) .> DROP(2); ORDERS .> TAKE(3) .> MAP(RECORD(\"n\", COUNT(ORDERS), \"i\", _[\"id\"], \"s\", COUNT(SPLIT(_[\"name\"], \"a\"))))",
+   "note": "The helper rebinds the relation's own name, so the pipeline reads the BINDING once (DROP 2 then TAKE 3: LIMIT 3 OFFSET 2, sql/cases plan.helper.rebinds-relation-once), and a continuation step that reads ORDERS as a value reads the HELPER: six rows, not the eight of the relation. The continuation must keep the helper's assignment (the JS planner marks the unwound source as a read of the binding, so the read in the step still sees the helper); dropping it answered n=8, and keeping it for the prefix as well applied DROP twice (OFFSET 4, a row short). SPLIT has no SQL spelling, which is what keeps the MAP in memory.",
+   "expect": {
+    "fields": {
+     "n": [
+      "6",
+      "6",
+      "6"
+     ],
+     "i": [
+      "3",
+      "4",
+      "5"
+     ]
+    }
+   }
   }
  ],
+ "application": {
+  "note": [
+   "Programs that call APPLICATION functions (spec 8.1), each run once over the relations above plus",
+   "`vars`, and held to the same contract as `programs`. Every runner registers the two functions",
+   "below before compiling them:",
+   "  POKE(x)  -- one argument; writes TEXT \"9\" at key \"k\" of the value it RECEIVES, in place, with the",
+   "             host's own mutator (PHP $v->set, JS v.set, Python v.set, ...), and returns that value.",
+   "             A host whose API hands a function no way to write its argument returns a modified copy,",
+   "             and the isolation cases then hold trivially.",
+   "  HOSTF(x) -- one argument; returns it. An application function with no SQL spelling, so the step",
+   "             that calls it stays in the continuation.",
+   "The planner cannot see what an application function does, so a continuation that calls one runs",
+   "on a COPY of the caller's whole context (the JS, Python and Go planners): copying only the names",
+   "the program assigns lets POKE write through a shared child into the caller's `A`, whichever way",
+   "the call is reached -- directly, inside IF, inside MAP. `expect.value` is the whole answer, as",
+   "the runners normalise it (every scalar TEXT, TRUE/FALSE, NULL)."
+  ],
+  "functions": {
+   "POKE": {
+    "arity": [
+     1,
+     1
+    ],
+    "does": "writes TEXT \"9\" at key \"k\" of its argument in place and returns the argument"
+   },
+   "HOSTF": {
+    "arity": [
+     1,
+     1
+    ],
+    "does": "returns its argument"
+   }
+  },
+  "vars": {
+   "A": {
+    "k": "1"
+   }
+  },
+  "programs": [
+   {
+    "name": "application.direct-call-writes-its-argument",
+    "sel": "POKE(A)",
+    "note": "A pure_memory plan: the whole program is the continuation, and the caller's A stays {\"k\": \"1\"}.",
+    "expect": {
+     "value": {
+      "k": "9"
+     }
+    }
+   },
+   {
+    "name": "application.call-inside-if",
+    "sel": "IF(TRUE, POKE(A), 0)",
+    "note": "The call is an argument of a lazy builtin, not the program's root.",
+    "expect": {
+     "value": {
+      "k": "9"
+     }
+    }
+   },
+   {
+    "name": "application.call-inside-map",
+    "sel": "MAP(LIST(1), POKE(A))",
+    "note": "The call is in a MAP body, evaluated once per element.",
+    "expect": {
+     "fields": {
+      "k": [
+       "9"
+      ]
+     }
+    }
+   },
+   {
+    "name": "application.write-then-error",
+    "sel": "X = POKE(A); X[\"nope\"]",
+    "note": "The function writes and the program then raises: the error is run()'s, and the caller's A is still untouched.",
+    "expect": {
+     "error": "E_NO_KEY"
+    }
+   },
+   {
+    "name": "application.call-in-a-hybrid-continuation",
+    "sel": "ORDERS .> SORT_BY(_[\"id\"]) .> TAKE(2) .> MAP(RECORD(\"i\", _[\"id\"], \"k\", POKE(A)[\"k\"]))",
+    "note": "A hybrid plan (ORDER BY id LIMIT 2 in SQL, the MAP in memory): the continuation calls POKE once per row, and the caller's context is not the one it writes.",
+    "expect": {
+     "fields": {
+      "i": [
+       "1",
+       "2"
+      ],
+      "k": [
+       "9",
+       "9"
+      ]
+     }
+    }
+   },
+   {
+    "name": "application.reassigned-source-read-by-a-continuation-step",
+    "sel": "ORDERS = ORDERS .> SORT_BY(_[\"id\"]) .> DROP(2); ORDERS .> TAKE(3) .> MAP(RECORD(\"n\", COUNT(ORDERS), \"x\", HOSTF(_[\"id\"])))",
+    "note": "programs' helper.reassigned-source-read-by-a-continuation-step, with an application function keeping the MAP in memory: LIMIT 3 OFFSET 2 in SQL, and COUNT(ORDERS) reads the helper (6), not the relation (8).",
+    "expect": {
+     "fields": {
+      "n": [
+       "6",
+       "6",
+       "6"
+      ],
+      "x": [
+       "3",
+       "4",
+       "5"
+      ]
+     }
+    }
+   }
+  ]
+ },
  "bounded": [
   {
    "name": "planning.nested-calls-are-linear",
