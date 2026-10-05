@@ -79,3 +79,14 @@ def test_sel_error_round_trips_with_its_position():
     for clone in (pickle.loads(pickle.dumps(err)), copy.copy(err), copy.deepcopy(err)):
         assert (clone.code, clone.line, clone.col, clone.offset) == (err.code, err.line, err.col, err.offset)
         assert str(clone) == str(err)
+
+
+def test_sql_error_round_trips_with_its_position():
+    from sel.sql import Sql, SqlError
+    with pytest.raises(SqlError) as info:
+        Sql.translate(sel.compile('1 +\n A'), 'mariadb', {})
+    err = info.value
+    for clone in (pickle.loads(pickle.dumps(err)), copy.copy(err), copy.deepcopy(err)):
+        assert type(clone) is SqlError
+        assert (clone.code, clone.line, clone.col, clone.offset) == (err.code, err.line, err.col, err.offset)
+        assert str(clone) == str(err)
