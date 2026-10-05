@@ -705,20 +705,25 @@ function renderGo(entries) {
   lines.push('}', '', ...classificationComment('//'),
     'type PipelineStep struct {', '\tKeepsRows bool', '\tSorts     bool', '}', '',
     'var PipelineSteps = map[string]PipelineStep{');
-  for (const e of entries) if (e.pipeline) lines.push(`\t"${e.name}": {KeepsRows: ${e.pipeline.keepsRows}, Sorts: ${e.pipeline.sorts}},`);
+  // Each map pads its own keys as gofmt does (see Builtins above).
+  const goKey = (subset) => { const w = Math.max(...subset.map((e) => e.name.length)) + 3; return (e) => `"${e.name}":`.padEnd(w); };
+  const piped = entries.filter((e) => e.pipeline), pipeKey = goKey(piped);
+  for (const e of piped) lines.push(`\t${pipeKey(e)} {KeepsRows: ${e.pipeline.keepsRows}, Sorts: ${e.pipeline.sorts}},`);
   lines.push('}', '', 'type RegexCall struct {', '\tPattern int', '\tFlags   int', '}', '', 'var RegexCalls = map[string]RegexCall{');
-  for (const e of entries) if (e.regex) lines.push(`\t"${e.name}": {Pattern: ${e.regex.pattern}, Flags: ${e.regex.flags}},`);
+  const regexed = entries.filter((e) => e.regex), regexKey = goKey(regexed);
+  for (const e of regexed) lines.push(`\t${regexKey(e)} {Pattern: ${e.regex.pattern}, Flags: ${e.regex.flags}},`);
   lines.push('}', '',
     '// SQLArgs: NumericAll when every argument is a number, else the Numeric indexes.',
     'type SQLArgs struct {', '\tNumericAll bool', '\tNumeric    []int', '\tBin        bool', '\tBool       bool', '}', '',
     'var SQLArgTypes = map[string]SQLArgs{');
-  for (const e of entries) {
-    if (!e.sql) continue;
+  const typed = entries.filter((e) => e.sql), sqlKey = goKey(typed);
+  for (const e of typed) {
     const list = Array.isArray(e.sql.numeric) ? `[]int{${e.sql.numeric.join(', ')}}` : 'nil';
-    lines.push(`\t"${e.name}": {NumericAll: ${e.sql.numeric === 'all'}, Numeric: ${list}, Bin: ${e.sql.bin}, Bool: ${e.sql.bool}},`);
+    lines.push(`\t${sqlKey(e)} {NumericAll: ${e.sql.numeric === 'all'}, Numeric: ${list}, Bin: ${e.sql.bin}, Bool: ${e.sql.bool}},`);
   }
   lines.push('}', '', 'var YieldsList = map[string]bool{');
-  for (const e of entries) if (e.yieldsList) lines.push(`\t"${e.name}": true,`);
+  const lists = entries.filter((e) => e.yieldsList), listKey = goKey(lists);
+  for (const e of lists) lines.push(`\t${listKey(e)} true,`);
   lines.push('}', '');
   return lines.join('\n');
 }
