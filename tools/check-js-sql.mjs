@@ -327,5 +327,35 @@ const R = { ORDERS: Binding.relation('orders', 'o', { ID: Binding.column('id', '
   check('ast replace: ctx unchanged after replacement', ctx.get('A').get('k').asText() === '1');
 }
 
+// A source the program reassigns and a continuation step then reads as a value
+// (sql/cases/48-scope-and-slots.sqlt pins only the form no step reads): the SQL
+// takes the DROP as its OFFSET, and COUNT(ORDERS) in the continuation is the
+// reassigned helper (4 rows), not the whole relation. The prefix runs on a real
+// SQLite, and run() over the same rows is the answer.
+{
+  const { DatabaseSync } = await import('node:sqlite');
+  const db = new DatabaseSync(':memory:');
+  db.exec('CREATE TABLE orders (id INTEGER); INSERT INTO orders VALUES (1),(2),(3),(4),(5),(6);');
+  registerFunction('JS_REREAD_HOSTF', 1, 1, (args) => args.val(0));
+  const src = 'ORDERS = ORDERS .> DROP(2); '
+    + 'ORDERS .> TAKE(3) .> MAP(RECORD("n", COUNT(ORDERS), "x", JS_REREAD_HOSTF(_["ID"])))';
+  const plan = sql.planHybrid(compile(src), 'sqlite', R);
+  const stmt = plan.sqlStatement ? plan.sqlStatement.asStatement('inline') : '';
+  check('reread source: the SQL prefix is LIMIT 3 OFFSET 2', /LIMIT 3 OFFSET 2$/.test(stmt), stmt);
+  const runner = (q, bound) => db.prepare(q).all(...bound.map((v) => v.toNative()))
+    .map((r) => Object.fromEntries(Object.entries(r).map(([k, v]) => [k.toUpperCase(), String(v)])));
+  const rows = () => Value.fromNative({ ORDERS: db.prepare('SELECT id FROM orders').all().map((r) => ({ ID: String(r.id) })) });
+  const ctx = rows();
+  const before = ctx.dump();
+  const hybrid = outcome(() => sql.executeHybrid(plan, runner, ctx));
+  const direct = outcome(() => compile(src).run(rows()));
+  check('reread source: hybrid equals run()', hybrid.value !== undefined && direct.value !== undefined
+    && hybrid.value.dump() === direct.value.dump(),
+    `${hybrid.value?.dump() ?? hybrid.error} vs ${direct.value?.dump() ?? direct.error}`);
+  check('reread source: n is 4 in three rows', direct.value?.dump()
+    === '-{"1"=-{"n"=t"4", "x"=t"3"}, "2"=-{"n"=t"4", "x"=t"4"}, "3"=-{"n"=t"4", "x"=t"5"}}', direct.value?.dump());
+  check('reread source: the caller\'s context is not written', ctx.dump() === before);
+}
+
 console.log(count === 0 ? 'no checks' : `js sql: ${count - failures}/${count} checks pass`);
 process.exit(failures === 0 ? 0 : 1);
