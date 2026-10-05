@@ -134,7 +134,7 @@ int main() {
   evaluate("SEEN = TOTAL * 2", ctx);
   say("program.run.mutates.context", ctx.get("SEEN")->as_text());
 
-  // A BOOL a host hands in is an ordinary value (see tools/api.mjs, PHP-C1).
+  // A BOOL a host hands in is an ordinary value (see tools/api.mjs).
   {
     Value a = Value::none(); a.set("FLAG", Value::boolean(true));
     Value bb = Value::none(); bb.set("FLAG", Value::boolean(true));
@@ -173,7 +173,7 @@ int main() {
     say("error.host.hugenum", e.code());
   }
 
-  // Every public constructor holds the same rules (spec §8, review 2026-09-28):
+  // Every public constructor holds the same rules (spec §8):
   // the decimal form within the caps and canonical, keys checked, a malformed
   // call E_BAD_ARG -- each host through its own spelling of the constructor.
   {
@@ -300,7 +300,7 @@ int main() {
     say("host.fn.replace", early.run().as_text() + " " + evaluate("HOST_V()").as_text());
   }
 
-  // --- T12: dependencies() is FLOW-SENSITIVE (spec/SPEC.md §8): a variable is a
+  // --- dependencies() is FLOW-SENSITIVE (spec/SPEC.md §8): a variable is a
   // dependency when some read of it can happen before the program has definitely
   // assigned it, in evaluation order. Assignments under a condition, a short
   // circuit, `??` or an aggregate body are not definite; `op=` and `A[k] op= x`
@@ -330,7 +330,7 @@ int main() {
   say("program.deps.top-arg-is-not-a-binder-in-the-three-argument-form", deps("L = LIST(1,2); TOP(L, A, (A = 1; 1))"));
   say("program.deps.bucket-key-phase-assignment-is-not-definite-for-the-projection", deps("L = LIST(1,2); BUCKET(L, G, (A = G; A), COUNT(G) + A)"));
 
-  // --- T12: a Program is reusable: after a caught error it runs again, and two
+  // --- a Program is reusable: after a caught error it runs again, and two
   // contexts are independent whatever the interleaving.
   {
     const Program divide = compile("A / B");
@@ -361,7 +361,7 @@ int main() {
     say("program.reuse.two-contexts", r1 + " " + r2 + " " + r3 + " " + r4);
   }
 
-  // --- T12: input the API cannot take is E_BAD_ARG, never a host exception or a
+  // --- input the API cannot take is E_BAD_ARG, never a host exception or a
   // different SEL error (spec/SPEC.md §8). This host is statically typed: source
   // is a std::string and there is no native conversion, so the first three cannot
   // be posed; they print n/a with the reason, and tools/check-api.sh leaves an
@@ -381,7 +381,7 @@ int main() {
     say("host.fn.refuse.not-callable", r);
   }
   // Reading an argument the call does not have is undefined behaviour in this host
-  // today (CPP-C13) and can take the process down. Ask in a child process, so a crash
+  // today and can take the process down. Ask in a child process, so a crash
   // is reported as this one probe's answer ("host:signal N") and the rest of the report
   // still prints.
   register_function("HOST_OOB", 1, 2, [](HostArgs& a) { return Value::text(a.text(a.count() > 1 ? 1 : 5)); });
@@ -417,7 +417,7 @@ int main() {
     say("host.fn.arg.out-of-range", r);
   }
 
-  // --- T12 (CPP-C15): a host-supplied value nested past the cap, handed to RECORD beside a
+  // --- a host-supplied value nested past the cap, handed to RECORD beside a
   // key that is not text. Arguments are evaluated first and coerced after (spec/SPEC.md §6.2),
   // so the key's E_NOT_TEXT wins; copying the over-deep value (E_DEPTH) happens only once the
   // arguments are known good. C++ built the pair in one expression and let the copy run first.

@@ -53,7 +53,7 @@ namespace sel {
 
 // SEL folds case ASCII-only (spec §2; UPPER/LOWER are ASCII by decision), and
 // std::toupper/tolower follow the C locale -- an embedding application that
-// calls setlocale() would change which bytes move (review 2026-09-25 SEM-05).
+// calls setlocale() would change which bytes move.
 inline char ascii_up(char c) { return (c >= 'a' && c <= 'z') ? static_cast<char>(c - 32) : c; }
 inline char ascii_down(char c) { return (c >= 'A' && c <= 'Z') ? static_cast<char>(c + 32) : c; }
 namespace {
@@ -64,6 +64,13 @@ namespace {
 
 [[noreturn]] void fail(const char* code, const std::string& message, Pos pos = {}) {
   throw SelError(code, message, pos);
+}
+
+// An argument count the parser's arity rule (spec §6.2, from the manifest) has
+// already refused: only a tree compile() did not build can reach one, which is a
+// bug in whatever built it, not an E_ARITY to report at run time.
+[[noreturn]] void unreachable_arity(const std::string& name) {
+  throw std::logic_error(name + ": an argument count compile() refuses reached the evaluator");
 }
 
 // spec/SPEC.md §6.4's three caps live in sel.hpp now: the SEL->SQL translator is
@@ -231,14 +238,15 @@ int bytes_compare(std::string_view a, std::string_view b) {
 // ============================================================================
 // --- decimal
 //
-// Exact decimal arithmetic on digit strings. See spec/SPEC.md §4. Ported line
-// for line from js/src/decimal.mjs and php/src/Dec.php; the three must stay
-// recognisably the same code, because tools/check-decimal.sh is the only thing
-// standing between a subtle rounding difference and a wrong invoice.
+// Exact decimal arithmetic. See spec/SPEC.md §4. A small magnitude is a 128-bit
+// mantissa; a larger one is binary words (the engine below, transcribed from
+// rust/src/large_dec.rs), with its digit string made only when text is asked
+// for. tools/check-decimal.sh holds the core to Python's decimal module, which
+// is what stands between a subtle rounding difference and a wrong invoice.
 //
-// A decimal is { neg, digits, scale }, meaning (neg ? -1 : 1) * digits / 10^scale.
-// `digits` is the unscaled integer with no leading zeros ("0" for zero). Zero is
-// never negative. Scale is part of the value: 2.50 is "250" at scale 2.
+// A decimal (struct Dec, sel.hpp) means (neg ? -1 : 1) * magnitude / 10^scale,
+// the magnitude having no leading zeros. Zero is never negative. Scale is part
+// of the value: 2.50 is 250 at scale 2.
 // ============================================================================
 
 constexpr long long DIV_SCALE = sel_limits::DIV_SCALE;   // spec/limits.json
@@ -1231,7 +1239,7 @@ std::string to_decimal(Span a) {
 // returns how many. A 128-bit `% 10` is a library call, so the magnitude is cut
 // into 19-digit chunks by 128-bit division (one call per chunk) and each chunk
 // is finished in 64-bit arithmetic -- almost every mantissa fits in 64 bits and
-// never pays for the first step at all (CPP-P6).
+// never pays for the first step at all.
 inline int u128_digits_rev(__uint128_t m, char* buf) {
   int n = 0;
   if (m == 0) {
@@ -1256,7 +1264,7 @@ inline void trim_trailing_zeros(T& m, long long& scale) {
   if (m >= std::numeric_limits<int64_t>::min() && m <= std::numeric_limits<int64_t>::max()) {
     int64_t v = static_cast<int64_t>(m);
     while (scale > 0 && v != 0 && v % 10 == 0) { v /= 10; --scale; }
-    if (v == 0) scale = scale > 0 ? 0 : scale;   // callers reset a zero's scale themselves
+    if (v == 0) scale = scale > 0 ? 0 : scale;   // a zero keeps no fraction digits
     m = static_cast<T>(v);
     return;
   }
@@ -2195,7 +2203,7 @@ namespace {
 // What a collecting operation keeps (spec §3.4: `=`, `,`, LIST, RECORD and the
 // aggregates copy what they collect). A value that is a fresh temporary all the
 // way down -- nothing else holds any part of it -- is already an independent
-// copy, so it is kept as it is instead of being copied again (CPP-P7). Anything
+// copy, so it is kept as it is instead of being copied again. Anything
 // shared with a variable, another collection or the caller is still cloned, and
 // so is a tree deeper than the cap, which is how E_DEPTH is still raised.
 Value adopt_or_clone(Value&& v, int levels, Pos pos) {
@@ -2239,8 +2247,8 @@ bool writes_nothing(const Node& root) {
 // nothing it collected can reach its result uncopied. Then an element and its
 // copy cannot be told apart, and the element itself is kept -- after the depth
 // check the copy would have made, so a too-deep element is still E_DEPTH, at the
-// same moment and position (CPP-REG-1: BUCKET copying every joined row was most
-// of scale-test scenario 1's time).
+// same moment and position (BUCKET copying every joined row was most of
+// scale-test scenario 1's time).
 Value keep_or_alias(const Value& coll, std::size_t index, const Value& item, std::uint32_t extra) {
   if (Internals::exclusively_held(coll, index, item, extra)) return item;
   Internals::check_clone_depth(item, 1, Pos{});
@@ -2301,8 +2309,8 @@ bool Value::is_list() const {
 // at about sixty. Three hosts answered where two died, on the same program.
 //
 // The depth rides as a parameter, as it does in dependencies(): there is nothing
-// to release on the way out, so no guard object is needed and all five hosts
-// spell it the same way. A value of exactly MAX_DEPTH levels is fine; the level
+// to release on the way out, so no guard object is needed and every host
+// spells it the same way. A value of exactly MAX_DEPTH levels is fine; the level
 // past it is refused.
 //
 // `pos` is the caller's, reported when there is one: the evaluator knows which
@@ -2388,7 +2396,7 @@ void Value::destroy(Impl* p) {
   }
 }
 
-// A Dec from host code (spec §8; review 2026-09-28 HOST-13, HOST-14): any of its
+// A Dec from host code (spec §8): any of its
 // three forms -- the small mantissa, the digit string, the binary words -- must
 // be a decimal, and the value is rebuilt canonical (leading zeros go, a negative
 // zero loses its sign) and within the digit caps. Any words are a magnitude, so
@@ -2478,8 +2486,8 @@ Value Value::list(std::vector<Value> values) {
 }
 
 Value Value::record(std::vector<std::string> keys, std::vector<Value> values) {
-  // Keys and values pair up, and every key is text (spec §8; review
-  // 2026-09-28 HOST-12, HOST-17): a record from host code is checked here
+  // Keys and values pair up, and every key is text (spec §8): a record from
+  // host code is checked here
   // rather than failing later, in a dump or an INDEXES, far from the input.
   if (keys.size() != values.size()) {
     throw SelError("E_BAD_ARG", std::to_string(keys.size()) + " key(s) and " + std::to_string(values.size()) +
@@ -2517,7 +2525,7 @@ Value Value::record(std::vector<std::string> keys, std::vector<Value> values) {
 }
 
 // A shape from host code is checked like a key list: text, each key once, one
-// slot per key (spec §8; review 2026-09-28 HOST-12, HOST-17, HOST-18). The
+// slot per key (spec §8). The
 // interpreter's own shapes go through Internals::shaped.
 Value Value::shaped(std::shared_ptr<const RecordShape> shape, std::vector<Value> storage) {
   if (!shape) throw SelError("E_BAD_ARG", "a shaped value needs a shape", Pos{});
@@ -2676,7 +2684,7 @@ std::vector<std::string> Value::keys() const {
 
 // Re-assigning an existing key keeps its original position — order is normative.
 Value& Value::set(std::string key, Value value) {
-  // A key is text too (spec §8; review 2026-09-25 HOST-05): ASCII keys, nearly
+  // A key is text too (spec §8): ASCII keys, nearly
   // all of them, pass without the full check.
   for (const unsigned char c : key) {
     if (c >= 0x80) {
@@ -3014,7 +3022,7 @@ std::map<std::string, Spec>& table() {
 // sel_builtin_manifest.hpp. A name the manifest knows is held to it:
 // min/max/lazy/binds must agree, and the extra arity rule (COND's odd count,
 // LINK's three-or-five) comes from the manifest rather than from the caller —
-// one body for all five hosts. A name it does not know is a host's own
+// one body for every host. A name it does not know is a host's own
 // function (examples/fn-*) and passes.
 const sel_builtin_manifest::Entry* manifest_entry(const std::string& name) {
   using sel_builtin_manifest::ENTRIES;
@@ -3387,7 +3395,7 @@ class Lexer {
   }
 
   // The operators that start with each ASCII byte, longest first (the order of operators()):
-  // one table lookup instead of a scan over all 31 per token (CPP-P25).
+  // one table lookup instead of a scan over all 31 per token.
   static const std::vector<const std::string*>& operators_starting_with(char32_t c) {
     static const std::array<std::vector<const std::string*>, 128> by_first = [] {
       std::array<std::vector<const std::string*>, 128> table;
@@ -3649,7 +3657,7 @@ const std::set<std::string>& compare_words() {
 }
 
 // A binary operator as a number, resolved once per node (Node::opc) instead of by
-// a chain of string comparisons on every evaluation (CPP-P5). The comparison codes
+// a chain of string comparisons on every evaluation. The comparison codes
 // are contiguous and in the order compare_result() names them, so the kind of a
 // comparison is `code - BO_NUM_EQ` / `code - BO_TXT_EQ`.
 enum BinOp : unsigned char {
@@ -4180,14 +4188,6 @@ NodePtr parse(const std::string& source) {
 
 }  // namespace
 
-// Context, Args and eval_node are at sel:: scope rather than in the anonymous
-// namespace above, and not by preference: Spec's `fn` is a
-// `Value (*)(Args&, Context&)`, Node holds a `const Spec*`, and Node lives in
-// sel_ast.hpp so that a second translation unit can walk the tree. A type in an
-// anonymous namespace cannot be named across translation units, so naming Spec
-// in a header names these two as well. eval_node comes with them because its
-// declaration sits between them and has to be on the same side as its
-// definition.
 // The join pre-filter's hand-off (SEL-0049, SEL-0050, SEL-0052). A FILTER
 // whose source is a LINK hands the join its conjuncts; the join pre-applies to
 // its left rows those whose fields no right side carries. Plain data here, so
@@ -4237,6 +4237,14 @@ struct JoinReport {
   bool dropped = false;
 };
 
+// Context, Args and eval_node are at sel:: scope rather than in the anonymous
+// namespace above, and not by preference: Spec's `fn` is a
+// `Value (*)(Args&, Context&)`, Node holds a `const Spec*`, and Node lives in
+// sel_ast.hpp so that a second translation unit can walk the tree. A type in an
+// anonymous namespace cannot be named across translation units, so naming Spec
+// in a header names these two as well. eval_node comes with them because its
+// declaration sits between them and has to be on the same side as its
+// definition.
 struct Context {
   Value* root;
   // Aggregate binders. The only scoping SEL has: one name for the duration of
@@ -4251,7 +4259,7 @@ struct Context {
   // The frames of the math plans running now, one after another. A plan's slots
   // are addressed by index, never by pointer or reference held across a step
   // that can evaluate: a load may run a whole nested plan, which grows both
-  // vectors (CPP-C3). The raw vector holds what the plan's loads produced until
+  // vectors. The raw vector holds what the plan's loads produced until
   // an arithmetic step coerces it.
   std::vector<Dec> math_scratchpad;
   std::vector<std::optional<Value>> math_raw;
@@ -4287,7 +4295,7 @@ class Args {
  public:
   Args(const Node& node, Context& ctx)
       : nodes_(node.items), record_shape_(node.record_shape), name_(node.s), pos_(node.pos), ctx_(ctx) {
-    // Up to kInline arguments live in the object; only a wider call allocates (CPP-P24).
+    // Up to kInline arguments live in the object; only a wider call allocates.
     const std::size_t n = node.items.size();
     if (n <= kInline) {
       vals_ = inline_;
@@ -4391,10 +4399,9 @@ class Args {
 
 namespace {
 
-// Code points in a UTF-8 string that is already known to be valid.
 // Byte-level substring search, linear in the haystack for any needle (glibc's memmem
 // switches to the two-way algorithm for long needles; std::string::find is O(n*m) on
-// aaaa..ab style inputs: a 200 KB needle in 400 KB took 1.6-6.7 s -- CPP-P22).
+// aaaa..ab style inputs: a 200 KB needle in 400 KB took 1.6-6.7 s).
 // UTF-8 is self-synchronising, so a byte match of a valid needle is a code-point match.
 inline std::size_t byte_find(const std::string& hay, const std::string& needle, std::size_t from) {
   if (from > hay.size()) return std::string::npos;
@@ -4409,6 +4416,7 @@ inline std::size_t byte_find(const std::string& hay, const std::string& needle, 
 #endif
 }
 
+// Code points in a UTF-8 string that is already known to be valid.
 std::size_t cp_count(const std::string& s) {
   std::size_t n = 0;
   for (const unsigned char c : s) {
@@ -4491,8 +4499,8 @@ Value eval_list(const Node& node, Context& ctx) {
                    node.pos);
     if (v.kind() == Kind::None && v.size() > 0) {
       // Cloned, not aliased: `,` copies what it collects (§5.9), so the list it
-      // builds does not share structure with the values that fed it. Two of the
-      // five places anything in this file clones — js/src/eval.mjs:163,165.
+      // builds does not share structure with the values that fed it
+      // (conformance/25-value-ownership.selt).
       for (const auto& child : v.entries()) out.push_back(child.second.clone_below(1, node.pos));
     } else {
       out.push_back(adopt_or_clone(std::move(v), 1, node.pos));
@@ -4691,7 +4699,7 @@ Value eval_binary(const Node& node, Context& ctx) {
     // A left operand that is a small tree of operators over names and literal-key
     // indexes (`(_["k"] & "x") ?? 0`, `A["a"] + 1 ??? 0`) is evaluated by probe_eval,
     // which reports a miss instead of throwing it: the exception cost about 10 us a
-    // row (CPP-P4 leftover). Anything it does not understand is evaluated by
+    // row. Anything it does not understand is evaluated by
     // eval_node inside it, so the try below still catches what that throws.
     const int probed = probe_size(*node.l, 13);
     const bool probe = probed <= 12 && ctx.depth + probed + 1 <= MAX_DEPTH;
@@ -4790,8 +4798,8 @@ Value* walk_create(Context& ctx, const std::vector<std::string>& path, std::size
 // index expression can read the level an earlier one just created.
 //
 // The walk keeps only the path built so far and re-derives from the root after
-// every evaluation. That is **not** a C++ workaround — every host does it, and
-// js/src/eval.mjs and python/sel/eval.py say so in the same words. It is
+// every evaluation. That is **not** a C++ workaround — every host does it
+// (docs/contributing.md, "The traps"). It is
 // spec/SPEC.md §5.7: the store lands at the path in the tree as it exists once
 // the right-hand side has run, so holding the container found during the walk
 // would silently discard the assignment whenever that container has since been
@@ -4897,8 +4905,8 @@ Value eval_assign(const Node& node, Context& ctx) {
     // `=` copies by value (§5.7), and the assignment *evaluates to* that copy —
     // so cloning late would return something that still aliases the right-hand
     // side, and `A[1] = A` would answer with the A the store had just mutated
-    // instead of the value that was assigned. js/src/eval.mjs:262 clones in
-    // exactly this position, for exactly this reason.
+    // instead of the value that was assigned. Every host clones in exactly
+    // this position, for exactly this reason (conformance/25-value-ownership.selt).
     //
     // The depth cap counts the path to the target as well as the value (§6.4):
     // `path.size() - 1` levels of index sit above where it lands, and the error is
@@ -5010,7 +5018,7 @@ Value eval_dispatch(const Node& node, Context& ctx) {
 
 // Gives the frame's scratchpad slots back on every exit, a throw included: a
 // caught error (`??` swallows E_UNDEF_VAR and E_NO_KEY) used to leave the top
-// advanced, so each one permanently consumed a plan's worth of slots (CPP-C19).
+// advanced, so each one permanently consumed a plan's worth of slots.
 struct MathFrame {
   Context& ctx;
   const MathPlan& plan;
@@ -5807,7 +5815,7 @@ std::optional<JoinEqui> extract_join_equi(const Node& node, const std::string& b
 
 struct FastJoinKey {
   // Bad: a value the comparison rejects -- never bucketed; the pair it meets
-  // raises (review 2026-09-25 SEM-06).
+  // raises.
   enum class Type : uint8_t { Empty, Int64, SmallDec, BigDec, Text, Bad };
   Type type = Type::Empty;
   bool neg = false;
@@ -6252,9 +6260,7 @@ Value do_link(Args& a, Context& ctx, bool left_join) {
   std::optional<JoinPrefilter> prefilter = std::move(ctx.join_prefilter);
   ctx.join_prefilter.reset();
   const int count = a.count();
-  if (count != 3 && count != 5) {
-    fail("E_ARITY", a.name() + " takes 3 or 5 arguments, got " + std::to_string(count), a.pos());
-  }
+  if (count != 3 && count != 5) unreachable_arity(a.name());
   const Node& left_node = a.node(0);
   const Node& right_node = a.node(1);
   const std::vector<JoinStage> no_stages;
@@ -6760,7 +6766,7 @@ void register_structure() {
                 cap_collection(static_cast<u128>(n / 2), a.pos());
                 // Literal, distinct keys (prepare_record_shape): the keys are the shape's own,
                 // a literal key cannot fail to be text, so the values go straight into the
-                // shaped storage -- no intermediate record (CPP-P21). Same evaluation order:
+                // shaped storage -- no intermediate record. Same evaluation order:
                 // the arguments were evaluated before this call, left to right.
                 // The shape is checked against the key NODES as they are now: the planners
                 // rewrite argument lists and a stale shape must not name the wrong keys.
@@ -6782,7 +6788,7 @@ void register_structure() {
                 for (int i = 0; i < n; i += 2) {
                   // The key is coerced into a local first: argument evaluation order is
                   // unspecified, and the copy below can raise E_DEPTH for an over-deep
-                  // host value, which must not beat the key's own E_NOT_TEXT (CPP-C15).
+                  // host value, which must not beat the key's own E_NOT_TEXT.
                   const std::string key = a.text(i);
                   rec.set(key, adopt_or_clone(a.take_val(i + 1), 1, a.pos()));
                 }
@@ -6849,12 +6855,11 @@ void register_structure() {
 
   // DISTINCT and DEDUPE are one operation (spec §7.3), so one body: DISTINCT
   // compared every pair, which was O(n^2) and never walked a lone value --
-  // one nested past the cap answered where DEDUPE raised E_DEPTH (review
-  // 2026-09-25 HOST-07).
+  // one nested past the cap answered where DEDUPE raised E_DEPTH.
   const auto dedupe = [](Args& a, Context&) -> Value {
                 const Value& val = a.val(0);
                 if (val.is_null()) return Value::list({});
-                // Open addressing over indices into `out` (CPP-P23): a chained
+                // Open addressing over indices into `out`: a chained
                 // unordered_map<hash, vector<Value>> paid two allocations per distinct
                 // value. Slots hold an index into `out`; the parallel `hashes` vector
                 // keeps the full hash so a probe compares 64 bits before any eql().
@@ -7222,7 +7227,7 @@ Value do_top(Args& a, Context& ctx, std::optional<std::string> forced_dir) {
     body = &a.node(2);
     direction = upper_name(a.text(3));
   } else {
-    fail("E_ARITY", a.name() + " has an invalid sort form", a.pos());
+    unreachable_arity(a.name());
   }
   if (direction != "ASC" && direction != "DESC") {
     const int direction_index = sort_count == 4 ? 3 : 2;
@@ -7690,7 +7695,7 @@ void register_aggregates() {
 // that is not 10xxxxxx, and a byte-level match of a valid needle in a valid
 // haystack always begins and ends on code point boundaries. So lengths, slices,
 // searches and ASCII case maps can all run on the bytes -- identical results,
-// without decoding the whole string into a vector<char32_t> first (CPP-P9).
+// without decoding the whole string into a vector<char32_t> first.
 
 // Byte offset reached by moving `k` code points forward from byte `pos`; the end
 // of the string if there are fewer.
@@ -7739,7 +7744,7 @@ std::string trim_text(const std::string& s, bool left, bool right) {
 }
 
 Value pad(Args& a, bool left) {
-  // Byte-level (CPP-P22): the old version widened every code point to 4 bytes twice
+  // Byte-level: the old version widened every code point to 4 bytes twice
   // (padding, then the result) and re-encoded; at the 16M-code-point cap that was
   // ~128 MB of scratch for a 16 MB answer.
   const std::string& text = a.text(0);
@@ -8110,7 +8115,7 @@ void register_binary() {
                   const int lo = hex_value(s[i * 2 + 1]);
                   if (hi < 0 || lo < 0) {
                     // The position, not the text: slicing bytes put half a UTF-8
-                    // sequence into the message (CPP-C52), and the input is data.
+                    // sequence into the message, and the input is data.
                     fail("E_BAD_ARG", "FROM_HEX: byte " + std::to_string(i * 2 + 1) + " is not a hex digit pair",
                          a.pos_of(0));
                   }
@@ -9170,7 +9175,7 @@ class RxAnalysis {
 
 // Validates and rewrites in one pass, returning source that means the same thing
 // to every engine. Every host runs this, so every host compiles the same
-// pattern -- and the SEL→SQL translator is a fifth caller from another
+// pattern -- and the SEL→SQL translator is a caller from another
 // translation unit, which is why it is declared in sel_ast.hpp and defined at
 // namespace scope rather than in the anonymous namespace above.
 std::string validate_pattern(const std::string& pattern, Pos pos, bool ignore_case) {
@@ -9665,7 +9670,7 @@ void register_builtins() {
 //
 // The depth rides as a parameter rather than as a member with an RAII guard,
 // because there is nothing to release on the way out -- which is also what lets
-// the five hosts spell this identically. It is capped at the same MAX_DEPTH the
+// every host spells this identically. It is capped at the same MAX_DEPTH the
 // evaluator uses and trips at the same node, so a program whose dependencies
 // cannot be computed is exactly a program that could not have been evaluated.
 //
@@ -10006,8 +10011,8 @@ NodePtr opt_fold(const NodePtr& node) {
   }
   // items are the arguments themselves: the condition is items[0]. This arm
   // once tested for four items and never fired, which is how C++ came to
-  // report the IF's position while the four hosts that folded reported the
-  // branch literal's.
+  // report the IF's position while the hosts that folded reported the branch
+  // literal's.
   if (node->t == NT::Call && node->s == "IF" && node->items.size() == 3 &&
       node->items[0]->t == NT::Bool) {
     const NodePtr& branch = node->items[node->items[0]->b ? 1 : 2];
@@ -10242,8 +10247,8 @@ NodePtr opt_rename_var(const NodePtr& node, const std::string& old_name, const s
 // Whether evaluating NODE for one row can raise -- conservatively: a rewrite
 // that moves a FILTER in front of a step, runs a step on fewer rows, or fuses
 // two FILTERs changes which rows reach what, so it may only pass over
-// expressions that cannot raise on any of them (spec §7.3; review 2026-09-25
-// SEM-07/SEM-08). Literals, _K and the binder itself never raise. On the
+// expressions that cannot raise on any of them (spec §7.3). Literals, _K and
+// the binder itself never raise. On the
 // logical path the rows are a bound relation's, which always carry their typed
 // columns, so a field read through the binder cannot raise either, nor a
 // comparison, AND/OR/NOT or + - * over such reads; `/` and `%`, calls and
@@ -10254,7 +10259,7 @@ NodePtr opt_rename_var(const NodePtr& node, const std::string& old_name, const s
 // for a declared field of an unchanged row; for anything else it can raise
 // E_NO_KEY, and a rewrite that stops it being evaluated for some rows (a FILTER
 // hoisted above a SORT_BY whose key it is) hides the error `run()` reports
-// (CPP-C35). Unset -- the physical optimizer, or a caller with no relation --
+// Unset -- the physical optimizer, or a caller with no relation --
 // keeps the historical assumption (a read of the binder is taken as safe).
 // Passed down explicitly, as a null pointer when there is nothing to say.
 struct OptFields {
@@ -10864,9 +10869,8 @@ NodePtr opt_tree(const NodePtr& node, bool physical, const std::set<std::string>
   auto copy = opt_copy(node);
   // An assignment's target is walked iteratively by the evaluator (spec 6.4:
   // a chain of index brackets, not a nesting) and is never charged or folded
-  // there, so it is left as written here too, as the other four hosts leave
-  // it; only the value is optimised (review 2026-09-15, low: C++ alone
-  // rewrote targets, harmlessly today).
+  // there, so it is left as written here too, as the other hosts leave it;
+  // only the value is optimised.
   if (copy->l && copy->t != NT::Assign) copy->l = opt_tree(copy->l, physical, declared, depth + 1, fold, next_in_math);
   if (copy->r) copy->r = opt_tree(copy->r, physical, declared, depth + 1, fold, next_in_math);
   for (NodePtr& child : copy->items) child = opt_tree(child, physical, declared, depth + 1, fold, next_in_math);
@@ -11025,7 +11029,7 @@ int HostArgs::count() const { return args_.count(); }
 // An argument the call does not have is E_BAD_ARG at the call (spec §8.1), never
 // a read past the end of the argument vector: a function registered with
 // min < max that reads an optional argument without testing count() used to get
-// a heap-buffer-overflow (CPP-C13).
+// a heap-buffer-overflow.
 static void host_arg_in_range(const Args& args, int i) {
   if (i < 0 || i >= args.count()) {
     fail("E_BAD_ARG",

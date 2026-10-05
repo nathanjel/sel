@@ -1,5 +1,5 @@
 // Concurrent regex use against a cache that is being evicted, for the thread
-// sanitizer (CPP-P16 / a race found while measuring it).
+// sanitizer (a race found while measuring the cache's cost).
 //
 // The compiled-pattern cache is bounded (spec §7.8). Four threads cycling 300
 // patterns through its 256 slots evict entries that other threads are still

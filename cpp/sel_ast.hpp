@@ -10,7 +10,7 @@
 // rewriter and the numeric coercion. The other hosts reach theirs as an
 // internal module function or a public Value method, and neither belongs in
 // the public header here, where they would give C++ an API surface the other
-// four do not have.
+// hosts do not have.
 //
 // The three names below that are not the tree itself — Spec, and the forward
 // declarations of Args and Context — are here because Node holds a `const Spec*`
@@ -71,7 +71,7 @@ struct Node {
   // On a FILTER body: the FILTER may keep its elements uncopied (keep_or_alias).
   // Stamped by the physical optimiser when this body and the next pipeline step's
   // (a MAP or a FILTER) write nothing, so no kept element can change before the
-  // next step has copied what it keeps (CPP-REG-1, the Rust host's borrowed_filter).
+  // next step has copied what it keeps (the Rust host's borrowed_filter).
   bool borrow_rows = false;
   // On a Var, set by the hybrid planner only: this read is of the catalogue's
   // binding, not of a same-named helper. `ORDERS = ORDERS .> DROP(2); ORDERS .> ...`
@@ -134,7 +134,7 @@ NodePtr build_pipeline(NodePtr source, const std::vector<NodePtr>& steps,
 // portable subset of spec/SPEC.md §7.8.
 //
 // Every host runs this, so every host compiles the same pattern -- and the
-// SEL→SQL translator is the fifth caller: it puts a pattern through the
+// SEL→SQL translator is another caller: it puts a pattern through the
 // language's own rewriter before emitting it, so a translated `\d` means what
 // SEL means by it rather than what the server's engine happens to. MariaDB 11.8
 // answers 1 for '٣' REGEXP '^\d$' where SEL answers FALSE. A second copy in the
@@ -146,10 +146,8 @@ std::string validate_pattern(const std::string& pattern, Pos pos, bool ignore_ca
 // number: E_NOT_NUM for a non-TEXT scalar or a text that is not a numeral,
 // E_RANGE for a well-formed numeral too big to hold.
 //
-// The other four hosts spell this `Value::asDecimal(pos)` and it is public
-// there. Here the result cannot be: the decimal type lives in sel.cpp and does
-// not leave it. So what crosses is the CHECK rather than the number — which is
-// all the one caller outside the evaluator wants. The SEL→SQL translator asks
+// Value::as_decimal(pos) is the public read that returns the number; this is
+// the CHECK alone, which is all the one caller outside the evaluator wants. The SEL→SQL translator asks
 // whether a constant sitting in a numeric operand position is a number at all,
 // and the answer has to be the language's own: a second numeral grammar in the
 // SQL layer would be a second thing to keep in step, and it would drift

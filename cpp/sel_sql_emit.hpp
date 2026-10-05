@@ -129,7 +129,7 @@ class Emit {
   // what every other guard in this layer exists to prevent. The cycle is
   // refused rather than a depth capped, because the cycle is the actual mistake
   // and a depth cap would need a number nobody can justify. With cycles refused
-  // the chain is bounded by the number of lexical keys, which is fifteen.
+  // the chain is bounded by the number of lexical keys the map defines.
   std::vector<Fragment::Part> fill(std::string_view tpl,
                                    std::span<const Fragment> args, Pos pos = {},
                                    const std::set<std::string>& expanding = {}) const;

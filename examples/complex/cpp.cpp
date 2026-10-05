@@ -115,9 +115,9 @@ int main() {
   std::cout << "5. text and regex\n";
   // UPPER and LOWER touch A-Z and nothing else, by specification -- so the ż and
   // ę below come back unchanged. That is not a shortcoming, it is the only way
-  // five hosts can agree. Measured on a sharp s: JS's toUpperCase and Python's
+  // the hosts can agree. Measured on a sharp s: JS's toUpperCase and Python's
   // str.upper both answer SS, PHP's strtoupper answers ß, and C's toupper cannot
-  // see it at all. SEL answers ß on all five, because it never asks the host.
+  // see it at all. SEL answers ß on every host, because it never asks the host.
   std::cout << "   upper        => " << ask("UPPER(CUSTOMER)") << "\n";
   std::cout << "   initials     => "
             << ask("JOIN(MAP(SPLIT(CUSTOMER, \" \"), LEFT(_, 1)), \".\")") << "\n";

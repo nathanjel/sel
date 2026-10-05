@@ -97,8 +97,8 @@ int main() {
   std::cout << "   keys   => " << join(v.keys(), ",") << "\n";
   std::cout << "   [2]    => " << v.get("2")->as_text() << "\n";
   std::cout << "   scalar => " << v.as_text() << "\n";   // scalar context: first child
-  // A host bool prints differently in all five languages (true/1/True/T), and
-  // this file's output has to be byte-identical to its four siblings, so say it
+  // A host bool prints differently in each host language (true/1/True/T), and
+  // this file's output has to be byte-identical to its siblings', so say it
   // in SEL's own spelling rather than the host's.
   std::cout << "   bool   => " << (sel::evaluate("1 < 2").as_bool() ? "TRUE" : "FALSE") << "\n";
 

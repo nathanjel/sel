@@ -216,7 +216,7 @@ void record(const NodePtr& s, Defs& defs, const std::set<std::string>& const_nam
   // earlier constant statements have already assigned into: the evaluator
   // reads a helper's value, it does not re-expand its definition. Asking it of
   // the inlined tree (`validate(*value)`) re-walked a shared helper once per
-  // path to it, which is exponential for `A1 = A0 + A0; ...` (CPP-C17).
+  // path to it, which is exponential for `A1 = A0 + A0; ...`.
   if (is_constant(*value, const_names, memo)) {
     try {
       Program("", s).run(scratch);

@@ -176,7 +176,7 @@ struct Registry {
   // afterwards.
   std::set<std::string, std::less<>> guard_checked;
   // Translation threads reach guard_checked on the first numeric-guard use of a
-  // dialect (CPP-C12: a data race under TSan); registration is a start-up
+  // dialect (a data race under TSan); registration is a start-up
   // activity, but it clears the set, so it takes the lock too.
   std::mutex guard_mutex;
 
@@ -740,7 +740,7 @@ void Map::check_numeric_guard(const std::string& dialect) {
   // Recorded only AFTER every check has passed (below): a dialect memoised
   // before it was validated was refused once and then silently accepted, and
   // the SQL the check had rejected went out on every later translation
-  // (CPP-C36). A refusal repeats, every use.
+  // A refusal repeats, every use.
 
   const Lexical* guard = lexical(dialect, "numericGuard");
   if (!guard || guard->kind != LexKind::Text) return;

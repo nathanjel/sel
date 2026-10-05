@@ -323,13 +323,6 @@ std::vector<Fragment::Part> Emit::fill(std::string_view tpl,
                  " expands into itself, so filling it would never finish",
              pos);
     }
-    // binaryCast converts a TEXT or NUM operand to bytes. An operand that is
-    // already BIN needs no conversion, and on PostgreSQL converting it is
-    // destructive: text::bytea parses its input as a bytea LITERAL, where \ is
-    // one backslash and \x41 is a byte, so the round trip changes the bytes or
-    // fails the query. Every other cast is idempotent and applied
-    // unconditionally; this is the one whose input kind decides whether it means
-    // anything.
     // {key:*} is {key:n} for every argument, joined with ', ' (sql/MAP.md 4.2).
     std::vector<std::string> each;
     if (arg == "*") {
@@ -340,6 +333,13 @@ std::vector<Fragment::Part> Emit::fill(std::string_view tpl,
     for (std::size_t at = 0; at < each.size(); ++at) {
       if (at > 0) push(", ");
       const std::string& one = each[at];
+      // binaryCast converts a TEXT or NUM operand to bytes. An operand that is
+      // already BIN needs no conversion, and on PostgreSQL converting it is
+      // destructive: text::bytea parses its input as a bytea LITERAL, where \ is
+      // one backslash and \x41 is a byte, so the round trip changes the bytes or
+      // fails the query. Every other cast is idempotent and applied
+      // unconditionally; this is the one whose input kind decides whether it means
+      // anything.
       if (key == "binaryCast") {
         if (std::optional<int> ca = slot_index(one)) {
           const auto idx = static_cast<std::size_t>(*ca);

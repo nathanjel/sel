@@ -76,7 +76,7 @@ class SNode {
   // helper's right-hand side, an indexed assignment's value), so when it is
   // inlined at a use site inside an aggregate its free names mean what they
   // meant where it was written, never a binder that happens to share the name
-  // (CPP-C23, sql-translation.md §7.4 rule 3). Shallow: the children are shared.
+  // (sql-translation.md §7.4 rule 3). Shallow: the children are shared.
   static SNodePtr closed(const SNodePtr& n);
   // An immutable snapshot of a clist as it stands: the keys and the (already
   // closed) values, sharing the values.

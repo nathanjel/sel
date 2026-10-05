@@ -1,4 +1,4 @@
-// Concurrent registration and compilation, for the thread sanitizer (T12, CPP-C11).
+// Concurrent registration and compilation, for the thread sanitizer.
 //
 // `register_function` writes the host-function table while `compile()` and `run()`
 // read it. Go guards its table with an RWMutex and Lisp with a lock; here the table

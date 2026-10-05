@@ -60,9 +60,9 @@ ContinuationEffects continuation_effects(const Node& root) {
   return out;
 }
 
-// A context the program may write to without the caller seeing it (CPP-C54): the
+// A context the program may write to without the caller seeing it: the
 // caller's context is never written, whatever the plan. Built without deep-copying
-// what the program cannot change (CPP-P24): entries it does not assign to are
+// what the program cannot change: entries it does not assign to are
 // shared with the caller's context, entries it assigns to are cloned. Two cases
 // keep the whole-value clone: a context that is not a plain variable map (a
 // scalar, a list), and a continuation that calls an application function, which
@@ -143,7 +143,7 @@ bool bucket_rows_are_keys(const std::vector<NodePtr>& steps, std::size_t count) 
 // promoted fields alone. A MAP, a SELECT_COLS or a projected BUCKET after the
 // LINK makes the rows exact again -- what they compute is over the promoted
 // fields, or is refused -- so a prefix whose LINK nothing has projected is
-// not a split point and not a full pushdown (finding Y, lanes): its
+// not a split point and not a full pushdown: its
 // continuation would read `_["C"]` where the database sent nothing.
 bool join_rows_lack_binders(const std::vector<NodePtr>& steps, std::size_t count) {
   bool joined = false;
@@ -164,7 +164,7 @@ bool join_rows_lack_binders(const std::vector<NodePtr>& steps, std::size_t count
 // gone once a projection hid the earlier key. A LIMIT beside the earlier ORDER BY
 // decides which rows survive, not any of this. A prefix that ends before that step
 // is exact; one that includes it answers in another order
-// (docs/internals/sql-translation.md 12.1, "Order"; PHP-C35).
+// (docs/internals/sql-translation.md 12.1, "Order").
 bool order_is_lost(const std::vector<NodePtr>& steps, std::size_t count) {
   bool sorted = false;
   bool projected = false;
@@ -345,7 +345,7 @@ std::shared_ptr<Node> var_node(std::string name, Pos pos) {
 // aggregate binds (`MAP(L, ORDERS, ORDERS + 1)`), the name in a binder position,
 // an assignment's target, and a read of a name the program has assigned all
 // mean something other than the relation of that name, and reporting the table
-// made a caller lock or fetch one the statement never reads (PHP-C55).
+// made a caller lock or fetch one the statement never reads.
 void collect_tables(const NodePtr& node, const Bindings& bindings,
                     std::vector<std::string>& out, std::set<std::string>& seen,
                     const std::set<std::string>& hidden = {}) {
@@ -422,7 +422,7 @@ std::vector<std::string> source_tables(const NodePtr& ast, const Bindings& bindi
 // plan, because that half is a program run() evaluates and §12.1 promises it
 // reports errors where run() would: run() evaluates the READ of Y at the use
 // site and reports `+`'s operand there, and it evaluates the definition once,
-// before the pipeline, not once per row (review 2026-09-15 finding AJ). So
+// before the pipeline, not once per row. So
 // the planner does not inline. It plans the program as written, three ways:
 //
 //   * A helper that IS a literal -- after inlining earlier such helpers and
@@ -564,7 +564,7 @@ Definitions literal_helpers(const std::vector<NodePtr>& leading) {
 // read of the binding (Node::binding_read), so wrapping a tree in its helpers again
 // does not inline the helper into the very read that was its own definition (DROP
 // twice), while a later step that reads ORDERS as a value still gets the helper
-// and sees the reassigned rows, as run() does (hybrid.reread-reassigned-source).
+// and sees the reassigned rows, as run() does (tests/sql_unit.cpp holds both).
 std::pair<NodePtr, std::vector<NodePtr>> unwind_through_helpers(
     const NodePtr& result, const Definitions& defs, const Definitions& literals) {
   auto [source, steps] = unwind_pipeline(inline_literals(result, literals));
@@ -973,7 +973,7 @@ HybridPlan Sql::plan_hybrid(const Program& program, const std::string& dialect,
   // planner's answers. Its TREE is not what is planned, though: see "helper
   // assignments" above -- and a tree stage 1 can only express with a clist
   // (`R[1] = 5; ORDERS .> ... .> MAP(_["id"] + R[1])`) is no longer read as
-  // a refusal of the whole program: the other four hosts push the prefix
+  // a refusal of the whole program: the other hosts push the prefix
   // before the MAP down, and the translator refuses the keyed list only where
   // it is rendered (plan.helper.indexed-helper-is-carried-as-written).
   ConstScope scope;
@@ -1115,7 +1115,7 @@ Value Sql::execute_hybrid(const HybridPlan& plan, const DbRunner& db_runner,
     }
     // Never the caller's own context: a helper assignment in the program
     // (`Y = 5; ...`) must not appear in it because nothing was pushed down while
-    // it does not when something was (CPP-C54).
+    // it does not when something was.
     Value copy = isolated_context(context, *plan.continuation_program->ast());
     return plan.continuation_program->run(copy);
   }

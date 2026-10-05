@@ -61,8 +61,9 @@ namespace sel {
 
 // --- errors -----------------------------------------------------------------
 
-// A source position, 1-based in code points. The default is "no position", used
-// for failures raised from host code rather than from a node.
+// A source position, counted in code points: `line` and `col` are 1-based,
+// `offset` (from the start of the source) is 0-based. The default, all zero, is
+// "no position", used for failures raised from host code rather than from a node.
 struct Pos {
   int line = 0;
   int col = 0;
@@ -223,9 +224,9 @@ class Value {
   Kind kind() const;
 
   // Kind predicates. The recommended way to branch on kind in every host,
-  // because it is the one spelling that reads the same in all four: the kind
-  // *values* are an enum here, a string in JS, a class constant in PHP and a
-  // keyword in Lisp, so only a predicate can be documented uniformly. These
+  // because it is the one spelling that reads the same in all of them: the
+  // kind *values* are an enum here, a string in JS, a class constant in PHP and
+  // a keyword in Lisp, so only a predicate can be documented uniformly. These
   // test the value's own kind and do not apply scalar context.
   bool is_none() const;
   bool is_null() const;
@@ -447,7 +448,7 @@ class Program {
   // SEL→SQL translator is a separate translation unit and the tree is its input;
   // every other host exposes the same thing (`program.ast` in Python and JS,
   // `$program->ast` in PHP, `program-ast` in Lisp). Immutable: it is a pointer
-  // to const all the way down, which is the same contract the other four hold
+  // to const all the way down, which is the same contract the other hosts hold
   // by convention.
   std::shared_ptr<const Node> ast() const { return ast_; }
 

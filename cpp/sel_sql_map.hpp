@@ -342,9 +342,9 @@ class DialectSpec {
 
 // --- the map -----------------------------------------------------------------
 
-// Static methods over one process-wide map, which is what the other four hosts
+// Static methods over one process-wide map, which is what the other hosts
 // have: `Map::define` in PHP, a module-level `define` in Python and JS, all
-// writing state the translator reads. A per-instance map would be a fifth
+// writing state the translator reads. A per-instance map would be another
 // answer to a question the language has already answered.
 //
 // **Lifetimes.** entry(), lexical() and chain() hand back pointers and views
