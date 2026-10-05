@@ -373,7 +373,11 @@ std::vector<std::pair<std::string, SNodePtr>> record_fields(const SNodePtr& node
   std::vector<std::pair<std::string, SNodePtr>> fields;
   for (std::size_t i = 0; i < args.size(); i += 2) {
     if (args[i]->t() != SNode::T::Text) {
-      refuse("E_BAD_ARG", "RECORD field names must be string literals", args[i]->pos());
+      // SEL computes such a key; a statement cannot alias one.
+      refuse("E_SQL_SHAPE",
+             "RECORD field names must be text literals here: a statement cannot "
+             "compute a column alias",
+             args[i]->pos());
     }
     check_program_name(args[i]->s(), args[i]->pos());
     fields.emplace_back(args[i]->s(), args[i + 1]);
@@ -1610,8 +1614,8 @@ Fragment Translator::unary(const SNode& n) {
   return apply(Section::Ops, n.s(), one, n.pos());
 }
 
-Fragment Translator::binary(const SNode& n) {
-  const std::string op = n.s();
+Fragment Translator::binary(const SNode& n, const std::string* as) {
+  const std::string op = as ? *as : n.s();
   if (op == "IN") return in_operator(n);
 
   // Strictly left then right: parameter slots are numbered in this order.
@@ -2009,13 +2013,14 @@ Fragment Translator::in_operator(const SNode& n) {
     }
   }
 
-  // --- branch B: the scalar fallback
+  // --- branch B: a scalar, spec §5.4's second case, where `x IN y` IS
+  // `x EQL y`. So it is translated AS EQL, through the same code, rather than by
+  // a transcription of EQL's rule that can drift from it: the copy that stood
+  // here cast an exact column's text operand that EQL leaves plain
+  // (op.in.one-value.* in sql/cases/53-in-is-eql.sqlt).
   if (!elements) {
-    const Fragment r = node(n.r());   // RIGHT operand rendered FIRST
-    const Fragment l = node(n.l());
-    require_comparable_kinds(l, r, "IN", n.pos());
-    const Fragment args[] = {emit_.text_operand(l), emit_.text_operand(r)};
-    return apply(Section::Ops, "IN", args, n.pos(), "scalar");
+    static const std::string eql = "EQL";
+    return binary(n, &eql);
   }
 
   // --- branch C: an empty list
@@ -2234,14 +2239,14 @@ SNodePtr Translator::rewrite_regex(const SNodePtr& n) {
   // RMATCH(p, s, "") matched case-insensitively where SEL does not, and
   // RMATCH(p, s, "zzz") compiled happily where SEL raises E_BAD_ARG.
   //
-  // Spelled as the two strings that pass rather than as a case fold: an
-  // ASCII-only lower would admit exactly these two anyway, and naming them is
-  // byte-exact and needs no helper.
+  // Exactly "" and "i": the evaluator refuses "I" with E_BAD_ARG (conformance
+  // re.flag.uppercase-i-is-not-i), and with a column subject the constant
+  // validation never sees the call, so this test is the only one that can.
   const std::string& text = flags->s();
-  if (text != "" && text != "i" && text != "I") {
+  if (text != "" && text != "i") {
     refuse("E_SQL_UNSUPPORTED",
-           n->s() + " accepts only the i flag here, and SEL accepts only i at "
-                    "all; \"" + text + "\" is not it",
+           n->s() + " translates only the flags \"\" and \"i\"; \"" + text +
+               "\" is not one of them",
            flags->pos());
   }
   if (!text.empty()) {
@@ -3556,7 +3561,10 @@ std::optional<RelationalPlan> Translator::analyze_pipeline(const SNodePtr& ast) 
       std::vector<std::string> cols;
       for (const auto& item : items) {
         if (item->t() != SNode::T::Text) {
-          refuse("E_BAD_ARG", "SELECT_COLS column names must be string literals", item->pos());
+          refuse("E_SQL_SHAPE",
+                 "SELECT_COLS column names must be text literals here: a statement "
+                 "cannot compute a column name",
+                 item->pos());
         }
         const std::string& col = item->s();
         check_program_name(col, item->pos());
@@ -3833,9 +3841,10 @@ int64_t Translator::eval_int_param(const SNodePtr& n, const std::string& op) {
   } catch (const SelError& e) {
     refuse_as_sel(e, *n);
   }
-  if (!val.looks_numeric() || val.is_null()) {
-    refuse("E_NOT_NUM", op + " count must be a number", n->pos());
-  }
+  // SEL's own codes at the count (sql/errors.md): E_NULL for a NULL, E_NOT_NUM
+  // for anything else that is not a number.
+  if (val.is_null()) refuse("E_NULL", op + " count must not be NULL", n->pos());
+  if (!val.looks_numeric()) refuse("E_NOT_NUM", op + " count must be a number", n->pos());
   try {
     require_number(val, n->pos());
   } catch (const SelError& e) {
@@ -3921,10 +3930,12 @@ void Translator::analyze_sort_step(const SNodePtr& step, RelationalPlan& plan) {
   const SNodePtr& key = args[static_cast<std::size_t>(form->key)];
   Pos dir_pos = step->pos();
   if (form->dir >= 0) {
-    // A direction the evaluator would compute is one SQL cannot.
+    // A direction the evaluator would compute is one SQL cannot (E_SQL_SHAPE);
+    // a literal that is neither ASC nor DESC is SEL's own E_BAD_ARG, below.
     const SNodePtr& d = args[static_cast<std::size_t>(form->dir)];
     if (d->t() != SNode::T::Text) {
-      refuse("E_BAD_ARG", "sort direction must be 'ASC' or 'DESC'", d->pos());
+      refuse("E_SQL_SHAPE", "a sort direction must be a text literal here: SQL cannot compute one",
+             d->pos());
     }
     dir = ascii_upper(d->s());
     dir_pos = d->pos();

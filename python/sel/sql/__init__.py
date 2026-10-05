@@ -90,10 +90,6 @@ class Sql:
         """Execute a pure SQL, pure memory, or split plan."""
         return execute_hybrid(plan, db_runner, context)
 
-    # Cross-host spelling aliases.
-    planHybrid = plan_hybrid
-    executeHybrid = execute_hybrid
-
     @staticmethod
     def dialects() -> list[str]:
         """Every dialect that may be named in a translate() call."""

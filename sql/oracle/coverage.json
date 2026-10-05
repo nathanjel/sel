@@ -35,6 +35,7 @@
     "target's because ansi refuses most of what it declares."
   ],
   "exclude": {
+    "ops.IN": "no translation applies it: a list IN is lowered to a chain of EQL and a childless right operand is translated as EQL (spec 5.4; sql/MAP.md 4.3); the IN expressions in expressions.selo reach ops.EQL",
     "skel.prefilter": "internal relation prefilter skeleton; its correlated slots are only emitted when a caller opts into split prefiltering, and no closed oracle rule exercises that host-supplied shape",
     "skel.limit": "a statement clause: the coverage trace translates expressions and rows.json rules, which never compile a statement. statements.json executes TAKE, DROP and both on every pinned server, and tools/check-sql-limits.php the clamped counts; sql/cases pins each dialect's spelling and a registered child's",
     "skel.limitOffset": "a statement clause, as skel.limit: executed by statements.json (the bounded slices), never reached by an expression",

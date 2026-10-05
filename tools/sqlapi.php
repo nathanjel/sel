@@ -40,7 +40,7 @@ $bindings = [
 ];
 $probe = function (string $label, string $source) use ($bindings, $b): void {
     $plan = Sql::planHybrid(Sel::compile($source), 'mariadb', $bindings);
-    say("plan.$label.kind", $plan->pureSql ? 'pure_sql' : ($plan->pureMemory ? 'pure_memory' : 'hybrid'));
+    say("plan.$label.kind", $plan->kind());
     say("plan.$label.dialect", $plan->dialect ?? '-');
     say("plan.$label.statement", $plan->sqlStatement !== null ? $plan->sqlStatement->asStatement() : '-');
     say("plan.$label.prefix.present", $b($plan->sqlPrefixAst !== null));
@@ -53,6 +53,10 @@ $probe = function (string $label, string $source) use ($bindings, $b): void {
 $probe('sql', 'ORDERS .> FILTER(_["AMOUNT"] > 10) .> MAP(RECORD("id", _["ID"], "amount", _["AMOUNT"]))');
 $probe('hybrid', 'ORDERS .> SORT_BY(_["AMOUNT"]) .> FILTER(_K > 1)');
 $probe('memory', 'A += 1; ORDERS .> TAKE(1)');
+// A three-argument LINK in the continuation: the source variable is the
+// relation's own name, and a rebound source still is (sqlt plan cases).
+$probe('link', 'ORDERS .> SORT_BY(_["AMOUNT"]) .> LINK(CUSTOMERS, _1["CUSTOMER_ID"] == _2["ID"])');
+$probe('rebind', 'ORDERS = ORDERS .> DROP(2); ORDERS .> SORT_BY(_["AMOUNT"]) .> LINK(CUSTOMERS, _1["CUSTOMER_ID"] == _2["ID"])');
 // The canonical flag is public: an application (and php/bin/sqlo) reads it to
 // know the fragment promised a spelling, not only a value.
 $fragmentProbe = function (string $label, string $dialect, string $source) use ($bindings, $b): void {

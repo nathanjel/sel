@@ -193,6 +193,8 @@ export class HybridPlan {
   sourceTables: string[];
   /** The grouped-latest strategy's keys, or null (docs/internals/sql-translation.md §12.1). */
   selectedMember: { partition_key: string; revision_key: string } | null;
+  /** The classification: one of the three words sql/cases uses. */
+  readonly kind: 'pure_sql' | 'hybrid' | 'pure_memory';
   readonly isHybrid: boolean;
   readonly is_hybrid: boolean;
   readonly sql_query: Fragment | null;

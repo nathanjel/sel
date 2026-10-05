@@ -484,7 +484,7 @@ named by the operator family and implemented identically in every host.
 | `==` `!=` `<` `<=` `>` `>=` | `num`, `coerce` | `num` when both operands infer NUM, else `coerce` |
 | `$==` `$!=` `$<` `$<=` `$>` `$>=`, `EQL` | `text` | always `text` |
 | `&` | `text`, `bin` | `bin` when either operand infers BIN, else `text` |
-| `IN` | `list`, `scalar` | `list` when the right operand is a list, else `scalar` |
+| `IN` | `list`, `scalar` | `list` when the right operand is a list, else `scalar` — but see below: no host applies either today |
 
 ```jsonc
 "==": { "variants": { "num":    "({0} = {1})",
@@ -499,6 +499,15 @@ named by the operator family and implemented identically in every host.
 
 `IN`'s `list` variant sees a flattened argument vector — the left operand at `0`
 and each element of the right from `1` — which is what `{1:}` joins.
+
+Neither `IN` variant is applied by the translators, and the entry is kept only so
+that a map naming it stays valid. A list on the right is lowered to a chain of
+`EQL` comparisons (`notes.IN` in `sql/dialects/ansi.json` says why), and a childless right
+operand is translated **as `EQL`**, through `EQL`'s own code, because spec §5.4
+defines `x IN y` for a childless `y` to be `x EQL y`. A separate `scalar`
+transcription of `EQL`'s operand rule drifted from it once — it cast the text
+literal beside a column declared `exact`, which `EQL` leaves plain — and
+`sql/cases/53-in-is-eql.sqlt` pins the two spellings to the same bytes.
 
 A missing variant is a refusal for that shape alone: a dialect that provides
 `num` but not `coerce` accepts `1 == 2` and refuses `A == B` on untyped columns.
@@ -529,7 +538,10 @@ exercises it against a real server. It is documented here as the answer for olde
 servers rather than as something in use: `mysql.json` notes that a MySQL 5.7 leaf
 would need most of the regex family gated or refused, and writing that leaf is
 what would first make `since` live data. Treat the example below as a shape, not
-as a citation.
+as a citation. The cases `register.since.*` and
+`register.dialect.a-newer-version-passes-the-same-gate` (`sql/cases/11-registration.sqlt`)
+hold every host to the gate through runtime registration: a refusal below the
+version, acceptance at it and above it, and a dotted-numeric comparison.
 
 Below that version, `E_SQL_DIALECT`. Comparison is dotted-numeric and nothing
 cleverer. The version compared is always the **target's**, never a base's, so a

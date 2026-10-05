@@ -382,8 +382,8 @@ final class Binding
         if (!$v->isText() || !$v->looksNumeric()) {
             throw new SqlError('E_SQL_BINDING',
                 "{$where} declares type NUM, which asks for it to be emitted "
-                . 'unquoted, but ' . Value::quoteDump($v->isBool()
-                    ? ($v->asBool() ? 'TRUE' : 'FALSE') : $v->asText()) . ' is not a number');
+                . 'unquoted, but ' . ($v->isBin() ? 'binary data' : Value::quoteDump($v->isBool()
+                    ? ($v->asBool() ? 'TRUE' : 'FALSE') : $v->asText())) . ' is not a number');
         }
         // looksNumeric is broader than canonical, and Emit::numericLiteral emits
         // Dec::format's output rather than the caller's characters -- correct for

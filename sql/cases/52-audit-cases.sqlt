@@ -127,10 +127,12 @@ XS > 1
 E_SQL_BINDING
 ===
 
-### name: norm.size.definition-past-the-budget-is-refused-at-the-assignment
+### name: norm.size.definition-past-the-budget-is-refused-where-it-is-read
 --- note
-expandedSize: a definition whose expanded tree passes the node budget is refused at that
-assignment (docs/internals/sql-translation.md §7.4). The code is pinned and the position is not: sql/errors.md gives E_SQL_SIZE no position, and the hosts blame different nodes for E_SQL_DEPTH.
+A definition whose expanded tree passes the node budget is refused where it is READ: the result
+`X24 > 0` expands it (docs/internals/sql-translation.md §7.4). Defining it is free -- see
+norm.size.unread-definition-past-the-budget-is-free. The code is pinned and the position is not:
+sql/errors.md gives E_SQL_SIZE no position.
 --- dialect
 mariadb
 --- bindings
@@ -139,6 +141,35 @@ mariadb
 X0 = XN; X1 = X0 + X0; X2 = X1 + X1; X3 = X2 + X2; X4 = X3 + X3; X5 = X4 + X4; X6 = X5 + X5; X7 = X6 + X6; X8 = X7 + X7; X9 = X8 + X8; X10 = X9 + X9; X11 = X10 + X10; X12 = X11 + X11; X13 = X12 + X12; X14 = X13 + X13; X15 = X14 + X14; X16 = X15 + X15; X17 = X16 + X16; X18 = X17 + X17; X19 = X18 + X18; X20 = X19 + X19; X21 = X20 + X20; X22 = X21 + X21; X23 = X22 + X22; X24 = X23 + X23; X24 > 0
 --- error
 E_SQL_SIZE
+===
+
+### name: norm.size.unread-definition-past-the-budget-is-free
+--- note
+A definition's expansion is charged against MAX_SQL_NODES only where it is read; one nothing reads
+is dropped, and costs nothing (docs/internals/sql-translation.md §7.4). A24 expands to 2^25 - 1
+nodes. It is still VALIDATED -- every constant definition is, whatever its size (§11.4) -- and SEL
+accepts it. Was E_SQL_SIZE at the assignment in four hosts. Validation reads each helper's value
+rather than re-expanding it, so this is linear: a host that walks the expansion takes minutes here.
+--- dialect
+mariadb
+--- source
+A0 = 1; A1 = A0 + A0; A2 = A1 + A1; A3 = A2 + A2; A4 = A3 + A3; A5 = A4 + A4; A6 = A5 + A5; A7 = A6 + A6; A8 = A7 + A7; A9 = A8 + A8; A10 = A9 + A9; A11 = A10 + A10; A12 = A11 + A11; A13 = A12 + A12; A14 = A13 + A13; A15 = A14 + A14; A16 = A15 + A15; A17 = A16 + A16; A18 = A17 + A17; A19 = A18 + A18; A20 = A19 + A19; A21 = A20 + A20; A22 = A21 + A21; A23 = A22 + A22; A24 = A23 + A23; 1
+--- expect
+1
+===
+
+### name: norm.size.unread-definition-past-the-budget-is-still-validated
+--- note
+The same shape, whose evaluation SEL refuses: A19 is 33 * 2^19 characters, past the text limit, so
+SEL raises E_RANGE at A19's `&` -- and the translation refuses with E_SQL_INVALID at SEL's own
+position (§11.4). Was translated to `1` by PHP and Go, which skipped validating a definition over
+the budget, and E_SQL_SIZE in four other hosts.
+--- dialect
+mariadb
+--- source
+A0 = REPEAT("x", 33); A1 = A0 & A0; A2 = A1 & A1; A3 = A2 & A2; A4 = A3 & A3; A5 = A4 & A4; A6 = A5 & A5; A7 = A6 & A6; A8 = A7 & A7; A9 = A8 & A8; A10 = A9 & A9; A11 = A10 & A10; A12 = A11 & A11; A13 = A12 & A12; A14 = A13 & A13; A15 = A14 & A14; A16 = A15 & A15; A17 = A16 & A16; A18 = A17 & A17; A19 = A18 & A18; 1
+--- error
+E_SQL_INVALID 1:310
 ===
 
 ### name: norm.depth.definition-past-four-times-the-depth-is-refused-at-the-assignment
@@ -159,7 +190,8 @@ E_SQL_DEPTH
 ### name: norm.size.result-past-the-budget-is-refused-where-the-walk-stops
 --- note
 The result expression is charged as the translator walks it (§7.4) and refused once the count
-passes the budget (E_SQL_SIZE). Code only: sql/errors.md gives the code no position.
+passes the budget (E_SQL_SIZE). It carries no position (sql/errors.md: it blames the whole rule, not
+a node of it); JS, Go and Rust used to report the node where their walk stopped.
 --- dialect
 mariadb
 --- bindings
@@ -167,7 +199,7 @@ mariadb
 --- source
 X0 = XN; X1 = X0 + X0; X2 = X1 + X1; X3 = X2 + X2; X4 = X3 + X3; X5 = X4 + X4; X6 = X5 + X5; X7 = X6 + X6; X8 = X7 + X7; X9 = X8 + X8; X10 = X9 + X9; X11 = X10 + X10; X12 = X11 + X11; X13 = X12 + X12; X14 = X13 + X13; X15 = X14 + X14; X16 = X15 + X15; X16 + X16 > 0
 --- error
-E_SQL_SIZE
+E_SQL_SIZE 0:0
 ===
 
 ### name: refuse.in-relation.boolean-needle-at-the-needle

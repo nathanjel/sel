@@ -16,6 +16,7 @@ declare(strict_types=1);
 
 namespace Sel\Sql;
 
+use Sel\Ast;
 use Sel\BuiltinManifest;
 use Sel\Limits;
 use Sel\Optimizer;
@@ -40,28 +41,11 @@ final class HybridPlan
     /** @var list<string> */
     public array $sourceTables;
     public ?array $selectedMember;
-    public ?array $selected_member;
-
-    // Snake-case aliases mirror the cross-host planner contract. They are
-    // values, rather than magic accessors, so a caller can serialize a plan
-    // without knowing which host produced it.
-    public ?Fragment $sql_query;
-    /** @var array<string,mixed>|null */
-    public ?array $sql_prefix_ast;
-    /** @var array<string,mixed>|null */
-    public ?array $continuation_ast;
-    public ?Program $continuation_program;
-    public string $continuation_source_var;
-    public bool $pure_sql;
-    public bool $pure_memory;
-    public bool $is_hybrid;
-    /** @var list<string> */
-    public array $source_tables;
 
     /** @param array<string,mixed> $spec */
     public function __construct(array $spec = [])
     {
-        $this->selectedMember = $this->selected_member = $spec['selectedMember'] ?? null;
+        $this->selectedMember = $spec['selectedMember'] ?? null;
         $this->dialect = $spec['dialect'] ?? null;
         $this->sqlStatement = $spec['sqlStatement'] ?? null;
         $this->sqlPrefixAst = $spec['sqlPrefixAst'] ?? null;
@@ -71,36 +55,20 @@ final class HybridPlan
         $this->pureSql = (bool) ($spec['pureSql'] ?? false);
         $this->pureMemory = (bool) ($spec['pureMemory'] ?? false);
         $this->sourceTables = array_values($spec['sourceTables'] ?? []);
-        $this->sql_query = $this->sqlStatement;
-        $this->sql_prefix_ast = $this->sqlPrefixAst;
-        $this->continuation_ast = $this->continuationAst;
-        $this->continuation_program = $this->continuationProgram;
-        $this->continuation_source_var = $this->continuationSourceVar;
-        $this->pure_sql = $this->pureSql;
-        $this->pure_memory = $this->pureMemory;
-        $this->is_hybrid = !$this->pureSql && !$this->pureMemory;
-        $this->source_tables = $this->sourceTables;
+    }
+
+    /**
+     * The classification, in the words `sql/cases` uses: 'pure_sql', 'hybrid' or
+     * 'pure_memory' -- the one place it is derived from the two flags.
+     */
+    public function kind(): string
+    {
+        return $this->pureSql ? 'pure_sql' : ($this->pureMemory ? 'pure_memory' : 'hybrid');
     }
 
     public function isHybrid(): bool
     {
-        return !$this->pureSql && !$this->pureMemory;
-    }
-
-    public function is_hybrid(): bool
-    {
-        return $this->isHybrid();
-    }
-
-    public function sql_query(): ?Fragment
-    {
-        return $this->sqlStatement;
-    }
-
-    /** @return list<string> */
-    public function source_tables(): array
-    {
-        return $this->sourceTables;
+        return $this->kind() === 'hybrid';
     }
 }
 
@@ -214,14 +182,15 @@ final class Hybrid
                     || self::stepsReadName($remaining, (string) $source['name']))) continue;
             $sql = self::tryStatement($prefixAst, $dialect, $catalog, $options);
             if ($sql === null) continue;
-            $continuationAst = $helpers['wrap'](self::continuationPipeline(
-                $source, $remaining, self::needsLeftName($prefixSteps, $remaining)));
+            $feed = self::needsLeftName($prefixSteps, $remaining) ? (string) $source['name'] : '_INPUT';
+            $continuationAst = $helpers['wrap'](self::continuationPipeline($feed, $remaining));
             return new HybridPlan([
                 'dialect' => $dialect,
                 'sqlStatement' => $sql,
                 'sqlPrefixAst' => $prefixAst,
                 'continuationAst' => $continuationAst,
                 'continuationProgram' => new Program('', $continuationAst),
+                'continuationSourceVar' => $feed,
                 'sourceTables' => $helpers['tables']($prefixAst),
             ]);
         }
@@ -271,36 +240,30 @@ final class Hybrid
     {
         if ($node === null) return false;
         if (($node['t'] ?? '') === 'var') return ($node['name'] ?? '') === $name;
-        foreach (['args', 'items'] as $key) {
-            foreach ($node[$key] ?? [] as $item) {
-                if (is_array($item) && self::nodeReadsName($item, $name)) return true;
-            }
-        }
-        foreach (['l', 'r', 'x', 'obj', 'idx', 'target', 'value'] as $key) {
-            if (isset($node[$key]) && is_array($node[$key]) && self::nodeReadsName($node[$key], $name)) return true;
+        foreach (Ast::children($node) as $child) {
+            if (self::nodeReadsName($child, $name)) return true;
         }
         return false;
     }
 
     /**
-     * The continuation's pipeline over the rows the database returned. Its source is
-     * `_INPUT`, which is not the name SEL gives a joined row's left side: a LINK
-     * names it after the pipeline's source variable (SPEC 7.4), so when a LINK is in
-     * the continuation the rows are first assigned to the relation's own name.
+     * The continuation's pipeline over the rows the database returned, read from
+     * $feed: `_INPUT`, or -- when a 3-argument LINK in the continuation names the
+     * joined row's left side after the pipeline's source variable (SPEC 7.4) -- the
+     * relation's own name, which the plan reports as its continuationSourceVar (the
+     * shape every host gives it). Fed under that name, the rows ARE that variable: a
+     * read of the binding, so wrapping the continuation in the helpers does not re-run
+     * a helper of the same name over them (`ORDERS = ORDERS .> DROP(2)` dropped twice;
+     * hybrid.json helper.reassigned-source-feeds-a-three-argument-link).
      *
-     * @param array<string,mixed> $source
      * @param list<array<string,mixed>> $remaining
      * @return array<string,mixed>
      */
-    private static function continuationPipeline(array $source, array $remaining, bool $nameLeft): array
+    private static function continuationPipeline(string $feed, array $remaining): array
     {
-        $input = ['t' => 'var', 'name' => '_INPUT', 'pos' => $remaining[0]['pos']];
-        if (!$nameLeft) return Optimizer::buildPipeline($input, $remaining);
-        $named = ['t' => 'var', 'name' => $source['name'], 'pos' => $remaining[0]['pos']];
-        return ['t' => 'seq', 'pos' => $remaining[0]['pos'], 'items' => [
-            ['t' => 'assign', 'op' => '=', 'target' => $named, 'value' => $input, 'pos' => $remaining[0]['pos']],
-            Optimizer::buildPipeline($named, $remaining),
-        ]];
+        $input = ['t' => 'var', 'name' => $feed, 'pos' => $remaining[0]['pos']];
+        if ($feed !== '_INPUT') $input['binding'] = true;
+        return Optimizer::buildPipeline($input, $remaining);
     }
 
     /**
@@ -460,10 +423,7 @@ final class Hybrid
                 }
                 return;
             }
-            foreach (['args', 'items'] as $key) foreach ($node[$key] ?? [] as $item) $visit($item, $bound);
-            foreach (['l', 'r', 'x', 'obj', 'idx', 'target', 'value'] as $key) {
-                if (isset($node[$key]) && is_array($node[$key])) $visit($node[$key], $bound);
-            }
+            foreach (Ast::children($node) as $child) $visit($child, $bound);
         };
         $visit($ast, []);
         return $out;
@@ -593,12 +553,8 @@ final class Hybrid
             }
             return false;
         }
-        foreach (['args', 'items'] as $key) foreach ($node[$key] ?? [] as $item) {
-            if (self::containsUnsupportedSql($item, $dialect, $defs, $seen)) return true;
-        }
-        foreach (['l', 'r', 'x', 'obj', 'idx', 'target', 'value'] as $key) {
-            if (isset($node[$key]) && is_array($node[$key])
-                && self::containsUnsupportedSql($node[$key], $dialect, $defs, $seen)) return true;
+        foreach (Ast::children($node) as $child) {
+            if (self::containsUnsupportedSql($child, $dialect, $defs, $seen)) return true;
         }
         return false;
     }
@@ -625,10 +581,7 @@ final class Hybrid
                     $out[] = $key;
                 }
             }
-            foreach (['args', 'items'] as $key) foreach ($item[$key] ?? [] as $child) $visit($child);
-            foreach (['l', 'r', 'x', 'obj', 'idx', 'target', 'value'] as $key) {
-                if (isset($item[$key]) && is_array($item[$key])) $visit($item[$key]);
-            }
+            foreach (Ast::children($item) as $child) $visit($child);
         };
         $visit($node);
         return $out;
@@ -655,10 +608,7 @@ final class Hybrid
     {
         if ($node === null) return false;
         if (($node['t'] ?? null) === 'var' && $node['name'] === '_K') return true;
-        foreach (['args', 'items'] as $key) foreach ($node[$key] ?? [] as $item) if (self::readsKey($item)) return true;
-        foreach (['l', 'r', 'x', 'obj', 'idx', 'target', 'value'] as $key) {
-            if (isset($node[$key]) && is_array($node[$key]) && self::readsKey($node[$key])) return true;
-        }
+        foreach (Ast::children($node) as $child) if (self::readsKey($child)) return true;
         return false;
     }
 
@@ -700,10 +650,7 @@ final class Hybrid
                 // A field read; the object is not a whole-row read.
                 return $visit($item['idx']);
             }
-            foreach (['args', 'items'] as $key) foreach ($item[$key] ?? [] as $child) if ($visit($child)) return true;
-            foreach (['l', 'r', 'x', 'obj', 'idx', 'target', 'value'] as $key) {
-                if (isset($item[$key]) && is_array($item[$key]) && $visit($item[$key])) return true;
-            }
+            foreach (Ast::children($item) as $child) if ($visit($child)) return true;
             return false;
         };
         return $visit($node);
@@ -1099,10 +1046,7 @@ final class Hybrid
             if (!($node['binding'] ?? false)) $out[$node['name']] = true;
             return $out;
         }
-        foreach (['args', 'items'] as $key) foreach ($node[$key] ?? [] as $item) $out = self::readNames($item, $out);
-        foreach (['l', 'r', 'x', 'obj', 'idx', 'target', 'value'] as $key) {
-            if (isset($node[$key]) && is_array($node[$key])) $out = self::readNames($node[$key], $out);
-        }
+        foreach (Ast::children($node) as $child) $out = self::readNames($child, $out);
         return $out;
     }
 
@@ -1227,7 +1171,8 @@ final class Hybrid
      * @param callable(string,list<Value>,Fragment):mixed $dbRunner
      * @param Value|array<mixed>|null $context
      */
-    public static function execute(HybridPlan $plan, callable $dbRunner, $context = null): mixed
+    public static function execute(HybridPlan $plan, callable $dbRunner,
+                                   Value|array|null $context = null): mixed
     {
         if ($plan->pureMemory) {
             if ($plan->continuationProgram === null) {
@@ -1246,14 +1191,14 @@ final class Hybrid
         $fragment = $plan->sqlStatement;
         $rows = $dbRunner($fragment->asStatement('params'), $fragment->bindings(), $fragment);
         if ($plan->pureSql) return $rows;
+        if ($plan->continuationProgram === null) {
+            throw new \LogicException('a hybrid plan has no continuation program');
+        }
         $root = $context instanceof Value
             ? self::rootFor($plan->continuationProgram, $context)
             : Value::fromNative($context ?? []);
         $root->set($plan->continuationSourceVar,
             $rows instanceof Value ? $rows : Value::fromNative($rows));
-        if ($plan->continuationProgram === null) {
-            throw new \LogicException('a hybrid plan has no continuation program');
-        }
         return $plan->continuationProgram->run($root);
     }
 }

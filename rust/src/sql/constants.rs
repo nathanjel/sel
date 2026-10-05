@@ -335,6 +335,40 @@ fn constant_call(n: &SNode, bound: Option<&HashSet<String>>) -> bool {
         return true;
     }
 
+    // Which argument is which is the manifest's form, read off the call as
+    // written (an inlined text literal is not a written one), as stage 1 and the
+    // dependency walk read it: an outer argument is constant in `bound`, an inner
+    // one with the form's names (binders, _, _K) bound too, and a binder slot is
+    // a name, never a read -- so LINK's right source is read where the call
+    // stands (const.binding-form.*). A host's own binding function has no
+    // manifest form and keeps the generic shape below.
+    use crate::manifest::builtins::{Scope, WhenKind, BINDING_FORMS};
+    let upper = n.str.to_ascii_uppercase();
+    if let Some((_, forms)) = BINDING_FORMS.iter().find(|(k, _)| *k == upper) {
+        let form = forms.iter().find(|f| {
+            f.count == args.len()
+                && match (f.when_arg, f.when_kind) {
+                    (Some(i), WhenKind::Name) => is_binder_name(args.get(i)),
+                    (Some(i), WhenKind::Text) => args.get(i).is_some_and(|a| a.is_written_text()),
+                    _ => true,
+                }
+        });
+        let Some(form) = form else { return false };
+        let mut inner = bound.cloned().unwrap_or_default();
+        inner.extend(form.binds.iter().map(|s| s.to_string()));
+        for (a, scope) in args.iter().zip(form.scopes) {
+            if *scope == Scope::Binder && is_binder_name(Some(a)) {
+                inner.insert(a.str.clone());
+            }
+        }
+        return args.iter().zip(form.scopes).all(|(a, scope)| match scope {
+            // Malformed; not constant, and the aggregate refuses it for real.
+            Scope::Binder => is_binder_name(Some(a)),
+            Scope::Inner => is_constant(Some(a), Some(&inner)),
+            Scope::Outer => is_constant(Some(a), bound),
+        });
+    }
+
     if args.is_empty() || !is_constant(args.first(), bound) {
         return false;
     }

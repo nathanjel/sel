@@ -155,7 +155,10 @@ NOT (1 > 2)
 "" & ""
 2.50 & "!"
 
-### entry: ops.IN
+% IN never reaches its own map entry: a list on the right is lowered to a chain of EQL,
+% and a childless right operand is translated AS EQL (spec 5.4; sql/MAP.md 4.3), so
+% these exercise IN's semantics through EQL's entry. coverage.json excludes ops.IN.
+### entry: ops.EQL
 3 IN (1, 2, 3)
 9 IN (1, 2, 3)
 "OPEN" IN ("open", "held")

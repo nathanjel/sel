@@ -24,14 +24,25 @@ func normalise(ast *sel.Node, constNames map[string]bool, root *sel.Value) *sNod
 		base = 1
 	}
 
+	// The names a statement may read as constants: the value bindings, then each
+	// whole definition recorded as constant. Constant statements run in scratch,
+	// a copy of the value bindings, as SEL runs them.
+	constant := make(map[string]bool, len(constNames))
+	for k, v := range constNames {
+		constant[k] = v
+	}
+	scratch := sel.NewNull()
+	if root != nil {
+		scratch = root.Clone()
+	}
 	for _, s := range stmts {
-		recordStmt(s, defs, constNames, root, base+1)
+		recordStmt(s, defs, constant, scratch, base+1)
 	}
 
 	return substituteNode(result, defs, nil, base)
 }
 
-func recordStmt(s *sel.Node, defs map[string]*sNode, constNames map[string]bool, root *sel.Value, depth int) {
+func recordStmt(s *sel.Node, defs map[string]*sNode, constant map[string]bool, scratch *sel.Value, depth int) {
 	if s.T != sel.NodeAssign {
 		refuse("E_SQL_ASSIGN",
 			"only assignments may come before the result expression; this computes a value nothing reads, which SQL has nowhere to put", s.Pos)
@@ -60,11 +71,29 @@ func recordStmt(s *sel.Node, defs map[string]*sNode, constNames map[string]bool,
 
 	value := substituteNode(s.R, defs, nil, depth)
 
-	// A helper over the node budget is not walked here: IsConstant and SEL's
-	// evaluator both cost what its expansion does. Reading it is what refuses
-	// (E_SQL_SIZE, in the translator's walk); defining it is free.
-	if value.Size() <= limits.MAX_SQL_NODES && isConstant(value, constNames) {
-		validate(value, root)
+	// Validated here, and only here, because after this the subtree may be gone:
+	// a definition nothing reads is dropped, so `A = 1 / 0; TRUE` would translate
+	// to TRUE where SEL raises E_DIV_ZERO. Every constant definition, whatever its
+	// expanded size: its size is charged only where it is read (E_SQL_SIZE, in the
+	// translator's walk; docs/internals/sql-translation.md §7.4), but SEL's verdict
+	// on it is the program's (§11.4). So the statement is asked AS WRITTEN, run in
+	// scratch, where every earlier constant definition already holds its value:
+	// SEL reads a helper, it does not re-expand it, so this is linear where the
+	// inlined tree is exponential in a doubling chain
+	// (norm.size.unread-definition-past-the-budget-*).
+	written := substituteNode(s.R, nil, nil, depth)
+	isConst := isConstant(written, constant)
+	if isConst {
+		if _, err := sel.NewProgram("", s).RunAsWritten(scratch); err != nil {
+			refuseAsSel(err, written)
+		}
+		// The inlined tree has the same verdict: the walk need not ask again.
+		value.valid = true
+	}
+	if len(keys) == 0 && isConst {
+		constant[name] = true
+	} else {
+		delete(constant, name)
 	}
 
 	if len(keys) == 0 {

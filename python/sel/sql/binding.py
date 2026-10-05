@@ -295,10 +295,15 @@ def _check_numeric(where: str, v: Value) -> None:
     if v.is_none():
         return
     if not v.is_text() or not v.looks_numeric():
-        shown = ('TRUE' if v.as_bool() else 'FALSE') if v.is_bool() else v.as_text()
+        # Named, not read as text: a BIN's bytes are not text, and reading them
+        # as text raised SEL's E_NOT_TEXT here instead of this binding error.
+        if v.is_bin():
+            shown = 'binary data'
+        else:
+            shown = quote_dump(('TRUE' if v.as_bool() else 'FALSE') if v.is_bool() else v.as_text())
         raise SqlError('E_SQL_BINDING',
                        f'{where} declares type NUM, which asks for it to be emitted '
-                       'unquoted, but ' + quote_dump(shown) + ' is not a number')
+                       'unquoted, but ' + shown + ' is not a number')
     # looks_numeric is broader than canonical, and emit._numeric_literal emits
     # decimal.format's output rather than the caller's characters -- correct for
     # the AST path, where the lexer has already canonicalised, and wrong here,

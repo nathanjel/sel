@@ -29,6 +29,13 @@
   (source-tables '() :type list)
   (selected-member nil)) ; plist :partition-key/:revision-key; full source rows
 
+(defun hybrid-plan-kind (plan)
+  "The classification in the words sql/cases uses: \"pure_sql\", \"hybrid\" or
+\"pure_memory\" -- the one place it is derived from the two flags."
+  (cond ((hybrid-plan-pure-sql-p plan) "pure_sql")
+        ((hybrid-plan-pure-memory-p plan) "pure_memory")
+        (t "hybrid")))
+
 (defun hybrid-plan-hybrid-p (plan)
   "Neither pure: a SQL prefix and an in-memory continuation."
   (not (or (hybrid-plan-pure-sql-p plan) (hybrid-plan-pure-memory-p plan))))

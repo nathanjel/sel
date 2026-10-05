@@ -1294,6 +1294,22 @@ after rendering has not implemented a budget, it has implemented a slower way to
 run out of memory. Planning (`planHybrid`) uses the same walk, so a program over
 the limit is not pushed down whole and is never an exception.
 
+*Where it is counted.* **Where a helper is read, never where it is defined.** A
+definition costs nothing until the result expression (or a definition the result
+reads) reads it, and then it costs its whole expansion at every read. One nothing
+reads is dropped by stage 1 and is free whatever its size, so
+`A0 = 1; A1 = A0 + A0; ...; A24 = A23 + A23; 1` translates to `1`
+(`norm.size.unread-definition-past-the-budget-is-free`). It is still *validated*:
+every constant definition is asked of SEL, whatever its size (§11.4), so the same
+chain whose evaluation SEL refuses is `E_SQL_INVALID` at SEL's position
+(`norm.size.unread-definition-past-the-budget-is-still-validated`). Validation
+asks the statement **as written**, run in a scratch context in which each earlier
+constant definition already holds its value — SEL reads a helper, it does not
+re-expand it — so it costs what evaluating the program costs, never what the
+expansion would. A host must not walk a definition's expansion before something
+reads it: the walks stage 1 does make (a constant test, a height check) are
+memoised per shared node or read the definition's recorded verdict.
+
 Worked sizes (a column base `N`, `X0 = N; X1 = X0 + X0; ...`, result `Xk > 0`):
 the result costs 2^(k+1) + 1, so `k = 16` (131 073) translates and `k = 18`
 (524 289) is `E_SQL_SIZE`. The nested form `ALL((A,A), V1, ALL((V1,V1), V2, ...
@@ -1678,7 +1694,12 @@ the arity. Three arguments in, two used, no complaint anywhere.
 
 The flag is mappable — `(?si)` works on 11.8 — so the fix is an arity-keyed
 template whose three-argument form emits `(?si)`, plus the rule that the flag
-must be a **literal**, for the same reason the pattern must be (below).
+must be a **literal**, for the same reason the pattern must be (below). The
+literal's content picks the template, and only two contents translate: `""`
+(the two-argument form) and `"i"`. Anything else is `E_SQL_UNSUPPORTED` at the
+flags — `"zzz"`, and `"I"`, which SEL raises `E_BAD_ARG` for and which six hosts
+once translated case-insensitively because the test was a case fold
+(`review.regex.uppercase-i-is-not-the-i-flag`).
 
 And the generator gains the check that would have caught it: **a single-string
 `tpl` on an entry whose effective arity spans more than one count is an error.**
@@ -1923,13 +1944,19 @@ translated is not a wrong program.
 | Code | Means |
 |---|---|
 | `E_SQL_UNSUPPORTED` | no mapping for this operator or function in this dialect (or a `caveat` under `strict`) |
-| `E_SQL_DIALECT` | the dialect itself is wrong: no such name, or a base like `ansi` that no server runs. Also mapped-but-too-old, when an entry's `since` is above the dialect's declared version — no entry declares one today |
+| `E_SQL_DIALECT` | the dialect itself is wrong: no such name, or a base like `ansi` that no server runs. Also mapped-but-too-old, when an entry's `since` is above the dialect's declared version — no shipped entry declares one today; `register.since.*` exercises it through registration |
 | `E_SQL_UNBOUND` | a variable with no binding |
 | `E_SQL_BINDING` | a malformed binding, an unknown field, an alias collision |
 | `E_SQL_ASSIGN` | an assignment or sequence stage 1 refuses |
 | `E_SQL_SHAPE` | a list where a scalar is required, `_K` on a relation, a non-BOOL condition, an aggregate over something untranslatable |
 | `E_SQL_INVALID` | every argument is a literal and SEL rejects the expression — see §11.4 |
 | `E_SQL_DEPTH` | the expression nests deeper than SEL will evaluate, at the evaluator's own `MAX_DEPTH` — see §11.4 |
+| `E_SQL_SIZE` | the expression would render more than `MAX_SQL_NODES` nodes once every read of a helper and every unrolled element is counted — see §7.4. It blames the whole rule, not a node of it, so it carries no position (0:0) |
+
+A code from `spec/errors.md` appears only where SEL itself raises that code at
+that position for that program — a statement count SEL rejects, a sort direction
+literal that is neither `ASC` nor `DESC` — and `sql/errors.md` lists exactly those
+places. Refusing a program SEL evaluates is always an `E_SQL_*` code.
 
 Two entry points, because both callers are real:
 
@@ -2054,7 +2081,10 @@ notices the difference.
 it compares kind, scalar bytes and children. SQL's `IN` is a value comparison
 under a collation. For scalar operands under `textCollate` the two agree, and
 that is the only case the translator accepts: `IN` where either side has
-children is `E_SQL_SHAPE`.
+children is `E_SQL_SHAPE`. A childless right operand is not a one-item list —
+`("ab")` is parentheses — and spec §5.4 makes `x IN y` then `x EQL y`, so the
+translator translates it as `EQL`, with `EQL`'s code, and not with a copy of its
+rule (`sql/cases/53-in-is-eql.sqlt`).
 
 ### 11.3 Where numbers stop being exact
 
@@ -2152,7 +2182,9 @@ Four properties of the check, each of which is a decision:
   translator has the `Value` in hand — so `V / 0` is refused when `V` is bound
   to `1`, and the name is lifted into a `Context` the evaluator is handed.
   Stage 1's assignments inherit it, and are checked in `Normalise::record`
-  *before* `substitute` — which matters most for a definition nothing reads.
+  — every constant one, whatever its expanded size, by running the statement as
+  written over the values earlier constant statements produced (§7.4) — which
+  matters most for a definition nothing reads.
   Stage 1 drops those, so `A = 1 / 0; TRUE` translated to `TRUE` and all four
   servers answered `TRUE` where SEL raises at the assignment. After substitution
   the subtree is gone and there is nothing left to check. `column`, `columns`
@@ -2274,8 +2306,9 @@ a host's float or machine integer: `TAKE(9007199254740993)` is
 `LIMIT 9007199254740993` on every host. A count SEL accepts is one the
 translator accepts, so a whole number written with a scale (`2.0`, `0.0`, `-0`)
 is that number — SEL's `TAKE((1,2,3), 2.0)` is the first two — and only a
-fractional or negative count is refused, with SEL's own code at the count's
-position (`E_NOT_INT`, `E_RANGE`; `sql/errors.md`).
+fractional, negative, non-numeric or NULL count is refused, with SEL's own code
+at the count's position (`E_NOT_INT`, `E_RANGE`, `E_NOT_NUM`, `E_NULL`;
+`sql/errors.md`).
 
 The targets accept different ranges: PostgreSQL and SQLite stop at
 9223372036854775807 (2^63 − 1) for both `LIMIT` and `OFFSET`; MariaDB and MySQL
@@ -2390,8 +2423,8 @@ spelling (`sourceTables` / `source_tables` / `hybrid-plan-source-tables`):
 | `sql_prefix_ast` | the translated prefix tree, or the logical input prefix for a selected-member strategy; none for pure memory |
 | `continuation_ast` | the tree the continuation runs; the original AST for `pure_memory`, none for `pure_sql` |
 | `continuation_program` | that tree as a `Program`; the original program for `pure_memory` |
-| `continuation_source_var` | the name the prefix's rows are bound to, `_INPUT` |
-| `pure_sql`, `pure_memory` | the classification; `is_hybrid` is neither |
+| `continuation_source_var` | the name the prefix's rows are bound to: `_INPUT`, or the relation's own name when the continuation holds a 3-argument `LINK` (see "Names" below) |
+| `pure_sql`, `pure_memory` | the classification; `is_hybrid` is neither, and every host's `kind` accessor answers one of the three words |
 | `selected_member` | optional grouped-latest strategy metadata: `partition_key` and `revision_key`; otherwise none |
 | `source_tables` | the **physical** sources the plan reads |
 
@@ -2670,7 +2703,13 @@ The ordinary prefix planner promises:
     own name (`ORDERS`, `orders`), never `_INPUT`, wherever in the continuation
     the 3-argument `LINK` falls — not only when it is the first step (a `LINK`
     that already has one in the prefix, or that names its sides itself with five
-    arguments, needs no help). A step of that continuation that also *reads* the
+    arguments, needs no help). Every host does it the same way: the rows are fed
+    to the continuation under that name, which is the plan's
+    `continuation_source_var`, and the continuation's source is a read of the
+    *binding*, so a helper of the same name (`ORDERS = ORDERS .> DROP(2)`) is not
+    run again over rows the database already cut (`tools/check-sqlapi.sh` pins the
+    name; `hybrid.json` `helper.reassigned-source-feeds-a-three-argument-link` the
+    value). A step of that continuation that also *reads* the
     source's name (a self-join over the cut rows, `ORDERS .> TAKE(4) .> LINK(ORDERS,
     …)`) would find the truncated rows where `run()` finds the whole relation, so
     that split is not made and the join stays in memory; a literal helper that shares

@@ -172,7 +172,8 @@ impl Translator {
             return refuse(
                 "E_SQL_SIZE",
                 format!("this program expands to more than {} nodes once every helper read and every unrolled element is counted, and the translation stops there", MAX_SQL_NODES),
-                n.pos,
+                // No position: it blames the whole rule (sql/errors.md).
+                Pos::default(),
             );
         }
         self.depth += 1;
@@ -1012,10 +1013,15 @@ impl Translator {
     }
 
     fn binary(&mut self, n: &SNode) -> Result<Fragment, SqlError> {
-        let op = &n.str;
-        if op == "IN" {
+        if n.str == "IN" {
             return self.in_operator(n);
         }
+        self.binary_as(n, &n.str)
+    }
+
+    // Translates `n` as the operator `op`: the node's own, except where a
+    // spelling the spec defines as another operator borrows its translation.
+    fn binary_as(&mut self, n: &SNode, op: &str) -> Result<Fragment, SqlError> {
 
         let mut l = if is_arithmetic_op(op) {
             self.arithmetic_operand(n.l().unwrap())?
@@ -1194,13 +1200,13 @@ impl Translator {
             }
         }
 
+        // A scalar: spec §5.4's second case, where `x IN y` IS `x EQL y`. So it
+        // is translated AS EQL, through the same code, rather than by a
+        // transcription of EQL's rule that can drift from it: the copy that
+        // stood here cast an exact column's text operand that EQL leaves plain
+        // (op.in.one-value.* in sql/cases/53-in-is-eql.sqlt).
         if !has_elements {
-            let r = self.node(n.r().unwrap())?;
-            let l = self.node(n.l().unwrap())?;
-            require_comparable_kinds(&l, &r, "IN", n.pos)?;
-            let l_text = self.emit.text_operand(&l)?;
-            let r_text = self.emit.text_operand(&r)?;
-            return self.apply("ops", "IN", &[&l_text, &r_text], n.pos, Some("scalar"));
+            return self.binary_as(n, "EQL");
         }
 
         if elements.is_empty() {
@@ -2557,7 +2563,7 @@ impl Translator {
             return refuse(
                 "E_SQL_SIZE",
                 format!("this program expands to more than {} nodes once every helper read and every unrolled element is counted, and the translation stops there", MAX_SQL_NODES),
-                pos,
+                Pos::default(),
             );
         }
         self.fold_parts(op, parts, pos)
@@ -2803,7 +2809,7 @@ impl Translator {
             return refuse(
                 "E_SQL_UNSUPPORTED",
                 format!(
-                    "{} accepts only the i flag here, and SEL accepts only i at all; {:?} is not it",
+                    "{} translates only the flags \"\" and \"i\"; {:?} is not one of them",
                     n.str, text
                 ),
                 flags.pos,

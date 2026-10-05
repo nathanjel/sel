@@ -675,6 +675,27 @@
      ]
     }
    }
+  },
+  {
+   "name": "helper.reassigned-source-feeds-a-three-argument-link",
+   "sel": "ORDERS = ORDERS .> SORT_BY(_[\"id\"]) .> DROP(2); ORDERS .> TAKE(4) .> LINK(CUSTOMERS, _1[\"customer_id\"] == _2[\"id\"] AND COUNT(SPLIT(_1[\"name\"], \"a\")) > 0) .> MAP(RECORD(\"o\", _[\"ORDERS\"][\"id\"], \"c\", _[\"CUSTOMERS\"][\"name\"]))",
+   "note": "The helper rebinds the relation's own name and the continuation holds a 3-argument LINK, so the database's rows (DROP 2 then TAKE 4: LIMIT 4 OFFSET 2) are fed to the continuation under ORDERS, the name the joined row's left side takes (spec 7.4). That name is a read of the BINDING, not of the helper: a continuation that re-ran the helper over the fed rows applied the DROP twice and answered orders 5..8.",
+   "expect": {
+    "fields": {
+     "o": [
+      "3",
+      "4",
+      "5",
+      "6"
+     ],
+     "c": [
+      "bob",
+      "bob",
+      "cy",
+      "cy"
+     ]
+    }
+   }
   }
  ],
  "application": {

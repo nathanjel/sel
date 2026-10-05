@@ -31,10 +31,7 @@
 
 (defun probe (label source)
   (let ((plan (plan-hybrid (sel:compile-source source) "mariadb" (probe-bindings))))
-    (say (format nil "plan.~a.kind" label)
-         (cond ((hybrid-plan-pure-sql-p plan) "pure_sql")
-               ((hybrid-plan-pure-memory-p plan) "pure_memory")
-               (t "hybrid")))
+    (say (format nil "plan.~a.kind" label) (hybrid-plan-kind plan))
     (say (format nil "plan.~a.dialect" label) (or (hybrid-plan-dialect plan) "-"))
     (say (format nil "plan.~a.statement" label)
          (if (hybrid-plan-sql-statement plan) (as-statement (hybrid-plan-sql-statement plan)) "-"))
@@ -165,6 +162,10 @@ spell is refused, so the TAKE stays in memory (sql/MAP.md §5)."
   (probe "sql" "ORDERS .> FILTER(_[\"AMOUNT\"] > 10) .> MAP(RECORD(\"id\", _[\"ID\"], \"amount\", _[\"AMOUNT\"]))")
   (probe "hybrid" "ORDERS .> SORT_BY(_[\"AMOUNT\"]) .> FILTER(_K > 1)")
   (probe "memory" "A += 1; ORDERS .> TAKE(1)")
+  ;; A three-argument LINK in the continuation: the source variable is the
+  ;; relation's own name, and a rebound source still is (sqlt plan cases).
+  (probe "link" "ORDERS .> SORT_BY(_[\"AMOUNT\"]) .> LINK(CUSTOMERS, _1[\"CUSTOMER_ID\"] == _2[\"ID\"])")
+  (probe "rebind" "ORDERS = ORDERS .> DROP(2); ORDERS .> SORT_BY(_[\"AMOUNT\"]) .> LINK(CUSTOMERS, _1[\"CUSTOMER_ID\"] == _2[\"ID\"])")
   (fragment-probe "canon.postgresql" "postgresql" "CANON(1.50)")
   (fragment-probe "canon.mariadb" "mariadb" "CANON(1.50)")
   (fragment-probe "canon.sqlite" "sqlite" "CANON(1.50)")

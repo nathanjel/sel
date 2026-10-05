@@ -109,7 +109,7 @@ int main(int argc, char** argv) {
              + " || " + attempt([&] { return render(sel::sql::Sql::translate_statement(program, dialect, bindings)); })
              + " || " + attempt([&] {
                  const auto plan = sel::sql::Sql::plan_hybrid(program, dialect, bindings);
-                 const std::string kind = plan.pure_sql ? "pure_sql" : plan.pure_memory ? "pure_memory" : "hybrid";
+                 const std::string kind = plan.kind();
                  return plan.sql_statement ? kind + " " + plan.sql_statement->as_statement(sel::sql::Mode::Params) : kind;
                });
       } catch (const sel::sql::SqlError& e) {

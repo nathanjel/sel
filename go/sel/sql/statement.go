@@ -83,7 +83,8 @@ func recordFields(node *sNode) []pair[string, *sNode] {
 	var fields []pair[string, *sNode]
 	for i := 0; i < len(args); i += 2 {
 		if args[i].T != sNodeText {
-			refuse("E_BAD_ARG", "RECORD field names must be string literals", args[i].Pos)
+			// SEL computes such a key; a statement cannot alias one.
+			refuse("E_SQL_SHAPE", "RECORD field names must be text literals here: a statement cannot compute a column alias", args[i].Pos)
 		}
 		fields = append(fields, pair[string, *sNode]{Key: args[i].Str, Val: args[i+1]})
 	}
@@ -566,7 +567,7 @@ func (t *translator) AnalyzePipeline(ast *sNode) *relationalPlan {
 			var cols []string
 			for _, item := range items {
 				if item.T != sNodeText {
-					refuse("E_BAD_ARG", "SELECT_COLS column names must be string literals", item.Pos)
+					refuse("E_SQL_SHAPE", "SELECT_COLS column names must be text literals here: a statement cannot compute a column name", item.Pos)
 				}
 				col := item.Str
 				t.checkAlias(col, item.Pos)
@@ -853,7 +854,12 @@ func (t *translator) evalIntParam(n *sNode, op string) int64 {
 	if err != nil {
 		refuseAsSel(err, n)
 	}
-	if !val.LooksNumeric() || val.IsNull() {
+	// SEL's own codes at the count (sql/errors.md): E_NULL for a NULL, E_NOT_NUM
+	// for anything else that is not a number.
+	if val.IsNull() {
+		refuse("E_NULL", fmt.Sprintf("%s count must not be NULL", op), n.Pos)
+	}
+	if !val.LooksNumeric() {
 		refuse("E_NOT_NUM", fmt.Sprintf("%s count must be a number", op), n.Pos)
 	}
 	text := val.AsText(n.Pos)
@@ -991,8 +997,10 @@ func (t *translator) analyzeSortStep(step *sNode, plan *relationalPlan) {
 	}
 	if roles.Dir >= 0 {
 		d := args[roles.Dir]
+		// A direction the evaluator would compute is one SQL cannot (E_SQL_SHAPE);
+		// a literal that is neither ASC nor DESC is SEL's own E_BAD_ARG, below.
 		if d.T != sNodeText {
-			refuse("E_BAD_ARG", "sort direction must be 'ASC' or 'DESC'", d.Pos)
+			refuse("E_SQL_SHAPE", "a sort direction must be a text literal here: SQL cannot compute one", d.Pos)
 		}
 		dir, dirPos = utf8.AsciiUpper(d.Str), d.Pos
 	}

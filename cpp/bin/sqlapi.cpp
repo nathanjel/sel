@@ -56,7 +56,7 @@ int main() {
   auto probe = [&](const std::string& label, const std::string& source) {
     sel::Program program = sel::compile(source);
     sel::sql::HybridPlan plan = sel::sql::Sql::plan_hybrid(program, "mariadb", bindings, sel::sql::Options{});
-    say("plan." + label + ".kind", plan.pure_sql ? "pure_sql" : plan.pure_memory ? "pure_memory" : "hybrid");
+    say("plan." + label + ".kind", plan.kind());
     say("plan." + label + ".dialect", plan.dialect.empty() ? "-" : plan.dialect);
     say("plan." + label + ".statement", plan.sql_statement ? plan.sql_statement->as_statement() : "-");
     say("plan." + label + ".prefix.present", b(plan.sql_prefix_ast != nullptr));
@@ -70,6 +70,10 @@ int main() {
   probe("sql", "ORDERS .> FILTER(_[\"AMOUNT\"] > 10) .> MAP(RECORD(\"id\", _[\"ID\"], \"amount\", _[\"AMOUNT\"]))");
   probe("hybrid", "ORDERS .> SORT_BY(_[\"AMOUNT\"]) .> FILTER(_K > 1)");
   probe("memory", "A += 1; ORDERS .> TAKE(1)");
+  // A three-argument LINK in the continuation: the source variable is the
+  // relation's own name, and a rebound source still is (sqlt plan cases).
+  probe("link", "ORDERS .> SORT_BY(_[\"AMOUNT\"]) .> LINK(CUSTOMERS, _1[\"CUSTOMER_ID\"] == _2[\"ID\"])");
+  probe("rebind", "ORDERS = ORDERS .> DROP(2); ORDERS .> SORT_BY(_[\"AMOUNT\"]) .> LINK(CUSTOMERS, _1[\"CUSTOMER_ID\"] == _2[\"ID\"])");
   // The canonical flag is public: an application (and the SQL oracle) reads it
   // to know the fragment promised a spelling, not only a value (SEL-0058).
   auto fragment_probe = [&](const std::string& label, const std::string& dialect,

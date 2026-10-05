@@ -282,6 +282,32 @@ bool constant_call(const SNode& n, const std::set<std::string>& bound, ConstMemo
     }
     return true;
   }
+  // Which argument is which is the manifest's form (binding_form, sel_ast.hpp),
+  // read off the call as written, as stage 1 and the dependency walk read it:
+  // an outer argument is constant in `bound`, an inner one with the form's names
+  // (binders, _, _K) bound too, and a binder slot is a name, never a read -- so
+  // LINK's right source is read where the call stands (const.binding-form.*).
+  const NodePtr& o = n.origin();
+  if (o && o->t == NT::Call && o->items.size() == args.size()) {
+    const auto form = binding_form(o->s, o->items, n.spec());
+    if (!form) return false;   // no form takes this count: refused elsewhere
+    std::set<std::string> inner = bound;
+    inner.insert(form->binds.begin(), form->binds.end());
+    for (std::size_t i = 0; i < args.size(); ++i) {
+      switch (form->scopes[i]) {
+        case sel_builtin_manifest::Scope::Binder:
+          // Malformed; not constant, and the aggregate refuses it for real.
+          if (!is_binder_name(*args[i])) return false;
+          break;
+        case sel_builtin_manifest::Scope::Inner:
+          if (!is_constant(*args[i], inner, memo)) return false;
+          break;
+        default:
+          if (!is_constant(*args[i], bound, memo)) return false;
+      }
+    }
+    return true;
+  }
   if (args.empty() || !is_constant(*args[0], bound, memo)) return false;
   std::set<std::string> inner = bound;
   std::size_t body = 1;

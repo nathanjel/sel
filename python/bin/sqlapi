@@ -41,7 +41,7 @@ BINDINGS = {
 
 def probe(label, source):
     plan = Sql.plan_hybrid(sel.compile(source), 'mariadb', BINDINGS)
-    say(f'plan.{label}.kind', 'pure_sql' if plan.pure_sql else 'pure_memory' if plan.pure_memory else 'hybrid')
+    say(f'plan.{label}.kind', plan.kind)
     say(f'plan.{label}.dialect', plan.dialect or '-')
     say(f'plan.{label}.statement', plan.sql_statement.as_statement() if plan.sql_statement is not None else '-')
     say(f'plan.{label}.prefix.present', b(plan.sql_prefix_ast is not None))
@@ -63,6 +63,10 @@ def fragment_probe(label, dialect, source):
 probe('sql', 'ORDERS .> FILTER(_["AMOUNT"] > 10) .> MAP(RECORD("id", _["ID"], "amount", _["AMOUNT"]))')
 probe('hybrid', 'ORDERS .> SORT_BY(_["AMOUNT"]) .> FILTER(_K > 1)')
 probe('memory', 'A += 1; ORDERS .> TAKE(1)')
+# A three-argument LINK in the continuation: the source variable is the
+# relation's own name, and a rebound source still is (sqlt plan cases).
+probe('link', 'ORDERS .> SORT_BY(_["AMOUNT"]) .> LINK(CUSTOMERS, _1["CUSTOMER_ID"] == _2["ID"])')
+probe('rebind', 'ORDERS = ORDERS .> DROP(2); ORDERS .> SORT_BY(_["AMOUNT"]) .> LINK(CUSTOMERS, _1["CUSTOMER_ID"] == _2["ID"])')
 # The canonical flag is public: an application (and the SQL oracle) reads it
 # to know the fragment promised a spelling, not only a value (SEL-0058).
 fragment_probe('canon.postgresql', 'postgresql', 'CANON(1.50)')

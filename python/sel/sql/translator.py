@@ -240,7 +240,9 @@ class Translator:
         for i in range(0, len(node.args), 2):
             key = node.args[i]
             if key.t != 'text':
-                refuse('E_BAD_ARG', 'RECORD field names must be string literals', key.pos)
+                # SEL computes such a key; a statement cannot alias one.
+                refuse('E_SQL_SHAPE', 'RECORD field names must be text literals here: a '
+                       'statement cannot compute a column alias', key.pos)
             self._check_alias(key.v, key.pos, seen)
             fields.append((key.v, node.args[i + 1]))
         return fields
@@ -707,8 +709,11 @@ class Translator:
             x = self._guard_numeric(x, n.x)
         return self._apply('ops', n.op, [x], n.pos)
 
-    def _binary(self, n: Node) -> Fragment:
-        op = n.op
+    def _binary(self, n: Node, op: str | None = None) -> Fragment:
+        # `op` is the operator translated: the node's own, except where a
+        # spelling the spec defines as another operator borrows its translation.
+        if op is None:
+            op = n.op
 
         if op == 'IN':
             return self._in_operator(n)
@@ -875,13 +880,13 @@ class Translator:
                 elements = [binder.payload
                             for binder in self._value_elements(b, rhs.pos).values()]
 
+        # A scalar: spec §5.4's second case, where `x IN y` IS `x EQL y`. So it
+        # is translated AS EQL, through the same code, rather than by a
+        # transcription of EQL's rule that can drift from it: the copy that stood
+        # here cast an exact column's text operand that EQL leaves plain
+        # (op.in.one-value.* in sql/cases/53-in-is-eql.sqlt).
         if elements is None:
-            r = self._node(rhs)              # a scalar; spec §5.4's second case
-            l = self._node(n.l)
-            _require_comparable_kinds(l, r, 'IN', n.pos)
-            return self._apply('ops', 'IN',
-                               [self.emit.text_operand(l), self.emit.text_operand(r)],
-                               n.pos, 'scalar')
+            return self._binary(n, 'EQL')
 
         # A literal list becomes a chain of byte comparisons rather than SQL's
         # IN. Casting each element inside a variadic template is not expressible,
@@ -1212,14 +1217,14 @@ class Translator:
         # and RMATCH(p, s, "zzz") compiled happily where SEL raises E_BAD_ARG. An
         # empty flag string is dropped so the two-argument template applies.
         text = str(flags.v)
-        # Spelled as the two strings that pass rather than as a case fold:
-        # PHP's strtolower is ASCII-only and str.lower() is not ("İ".lower() is
-        # two code points), and `strtolower($t) !== 'i'` admits exactly "i" and
-        # "I". Naming them is byte-exact and needs no ascii_lower.
-        if text not in ('', 'i', 'I'):
+        # Exactly "" and "i", spelled as strings rather than as a case fold: the
+        # evaluator refuses "I" with E_BAD_ARG (conformance
+        # re.flag.uppercase-i-is-not-i), and with a column subject the constant
+        # validation never sees the call, so this test is the only one that can.
+        if text not in ('', 'i'):
             refuse('E_SQL_UNSUPPORTED',
-                   f'{n.name} accepts only the i flag here, and SEL accepts only i '
-                   'at all; ' + quote_dump(text) + ' is not it', flags.pos)
+                   f'{n.name} translates only the flags "" and "i"; '
+                   + quote_dump(text) + ' is not one of them', flags.pos)
         if text != '':
             # The evaluator refuses i on a pattern with non-ASCII literals,
             # because case folding above ASCII is the one thing PCRE and
@@ -2510,7 +2515,11 @@ class Translator:
             val = eval_node(n, self.const_ctx or Context())
         except SelError as e:
             _constants.refuse_as_sel(e, n)
-        if not val.looks_numeric() or val.is_null():
+        # SEL's own codes at the count (sql/errors.md): E_NULL for a NULL,
+        # E_NOT_NUM for anything else that is not a number.
+        if val.is_null():
+            refuse('E_NULL', f'{op} count must not be NULL', n.pos)
+        if not val.looks_numeric():
             refuse('E_NOT_NUM', f'{op} count must be a number', n.pos)
         d = val.as_decimal(n.pos)
         # A count written with a scale is a whole number when its fractional
@@ -2705,7 +2714,8 @@ class Translator:
                 seen_names: dict[bytes, str] = {}
                 for item in items:
                     if item.t != 'text':
-                        refuse('E_BAD_ARG', 'SELECT_COLS column names must be string literals', item.pos)
+                        refuse('E_SQL_SHAPE', 'SELECT_COLS column names must be text literals '
+                               'here: a statement cannot compute a column name', item.pos)
                     column = item.v
                     self._check_alias(column, item.pos, seen_names)
                     field_name = ascii_upper(column)
@@ -2927,9 +2937,14 @@ class Translator:
         if dir_at is None:
             direction = 'DESC' if name in ('SORT_DESC', 'TOP_DESC') else 'ASC'
         else:
-            # A direction the evaluator would compute is one SQL cannot.
+            # A direction the evaluator would compute is one SQL cannot
+            # (E_SQL_SHAPE); a literal that is neither ASC nor DESC is SEL's own
+            # E_BAD_ARG.
             d = args[dir_at]
-            direction = ascii_upper(d.v) if d.t == 'text' else None
+            if d.t != 'text':
+                refuse('E_SQL_SHAPE', 'a sort direction must be a text literal here: SQL '
+                       'cannot compute one', d.pos)
+            direction = ascii_upper(d.v)
             if direction not in ('ASC', 'DESC'):
                 refuse('E_BAD_ARG', "sort direction must be 'ASC' or 'DESC'", d.pos)
         plan.order_by.append({'binder': binder, 'node': args[key_at],

@@ -74,10 +74,34 @@ planner forwards. It is optional except in Rust and Go, where it is required and
 holds `strict` alone (`Options::default()`, `sql.Options{}`). The planner is the only entry point that optimises;
 `translate` and `translate_statement` render the program as written.
 
-A plan exposes `pure_sql`, `pure_memory` and `is_hybrid` (each host spells them
-its way), the `sql_statement` fragment, the `continuation_program` that runs in
-memory over `_INPUT`, and `source_tables` — the physical tables the SQL side
+A plan exposes its classification as one of three words — `pure_sql`, `hybrid`,
+`pure_memory` — through a `kind` accessor (Python and JS `plan.kind`, PHP
+`$plan->kind()`, C++ `plan.kind()`, Common Lisp `(hybrid-plan-kind plan)`, Rust
+`plan.kind().as_str()`, Go `plan.Kind()`), as well as the flags `pure_sql`,
+`pure_memory` and `is_hybrid` (each host spells them its way); the
+`sql_statement` fragment; the `continuation_program` that runs in memory over the
+rows the statement returned, and `continuation_source_var`, the variable those
+rows are bound to — `_INPUT`, or, when the continuation holds a three-argument
+`LINK`, the relation's own name (`ORDERS`), because the joined row names its left
+side after it (spec §7.4); and `source_tables` — the physical tables the SQL side
 reads.
+
+`execute_hybrid` runs the statement through a runner the application supplies,
+which returns the rows (native rows or a SEL value; in Rust, Go, C++ and Common
+Lisp a SEL value):
+
+| Host | Runner |
+|---|---|
+| Python | `runner(sql, params)` |
+| JavaScript | `runner(sql, params)`, called synchronously |
+| PHP | `runner($sql, $params, $fragment)` — the third argument is the statement's `Fragment`, for a runner that wants more than the text; a two-parameter callable may ignore it |
+| C++ | `Value(const std::string& sql, const std::vector<Value>& params)` |
+| Common Lisp | `(lambda (sql params) ...)` |
+| Rust | `FnMut(&str, &[Value]) -> Result<Value, SelError>` |
+| Go | `sql.DbRunner`: `func(query string, params []*sel.Value) (*sel.Value, error)` |
+
+`sql` is the statement in `params` mode and `params` its bound values, in
+placeholder order. The caller's context is never written.
 
 ## Fragments
 

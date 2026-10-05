@@ -166,8 +166,8 @@
       "name": "define-upper-cases-everything",
       "was": "Code review. Skeleton names are camel-case, so upper-casing every key made runtime skel registration silently dead.",
       "file": "php/src/Sql/Map.php",
-      "from": "$section === 'funcs' ? \\Sel\\Utf8::upper($key) : $key",
-      "to": "\\Sel\\Utf8::upper($key)"
+      "from": "$stored = $section === 'funcs' ? Utf8::upper($key) : $key;",
+      "to": "$stored = Utf8::upper($key);"
     },
     {
       "name": "negative-literal-unparenthesised",
@@ -208,7 +208,7 @@
       "name": "bool-compared-to-a-number-in-a-list",
       "was": "The same guard on the IN path. inOperator and binary() lower different operators, and the mutation runner found only one of the two was pinned.",
       "file": "php/src/Sql/Translator.php",
-      "from": "            self::requireComparableKinds($l, $r, 'IN', $n['pos']);\n",
+      "from": "            self::requireComparableKinds($raw, $f, 'IN', $e['pos']);\n",
       "to": ""
     },
     {
@@ -446,8 +446,8 @@
       "name": "assignment-value-not-validated",
       "was": "Stage 1 recording a definition without validating it. A definition nothing reads is dropped, so `A = 1 / 0; TRUE` translated to TRUE and every server answered TRUE where SEL raises. Killed by the const.assign.* cases.",
       "file": "php/src/Sql/Normalise.php",
-      "from": "        if ($valueSize <= \\Sel\\Limits::MAX_SQL_NODES && $isConstant) {\n            Constants::validate($value, $ctx);\n        }",
-      "to": "        // if ($valueSize <= \\Sel\\Limits::MAX_SQL_NODES && $isConstant) {}"
+      "from": "        if ($isConstant) {\n            try {\n                Evaluator::evalNode($s, $this->scratch);",
+      "to": "        if (false) {\n            try {\n                Evaluator::evalNode($s, $this->scratch);"
     },
     {
       "name": "eql-compares-bool-ness-only",
@@ -600,8 +600,8 @@
       "name": "depth-guard-is-off-by-one",
       "was": "The boundary itself, which is the only part of a limit worth testing. `>=` refuses at 200, which the evaluator accepts -- a translation refusing a rule SEL answers is the mirror of the defect the guard exists for, and quieter, because a false refusal just looks like the layer being conservative.",
       "file": "php/src/Sql/Translator.php",
-      "from": "        if (++$this->depth > \\Sel\\MAX_DEPTH) {",
-      "to": "        if (++$this->depth >= \\Sel\\MAX_DEPTH) {"
+      "from": "        if (++$this->depth > Limits::MAX_DEPTH) {",
+      "to": "        if (++$this->depth >= Limits::MAX_DEPTH) {"
     },
     {
       "name": "stage-one-is-unbounded",
@@ -641,8 +641,8 @@
     {
       "name": "lisp-stage-one-wrappers-cost-nothing",
       "file": "lisp/src/sql/stage1.lisp",
-      "from": "         (base (if (eq (sel::node-kind ast) :seq) 1 0)))\n",
-      "to": "         (base 0))\n",
+      "from": "         (base (if (eq (sel::node-kind ast) :seq) 1 0))\n",
+      "to": "         (base 0)\n",
       "was": "Stage 1 counts from zero, so the `;` sequence and the assignment it inlines cost nothing and `X = <199 terms>; X` translates while the evaluator answers E_DEPTH -- the shape the database-backed fuzz lane reported five times per dialect (SEL-0034). One mutation per host: the start depth is a line each host owns, and the four .sqlt depth cases behind an assignment and a sequence are what catch it."
     },
     {
@@ -794,7 +794,7 @@
     },
     {
       "name": "cpp-list-key-accepts-leading-zero",
-      "was": "SEL list keys are the canonical decimals, so \"01\" is not a key and the evaluator answers E_NO_KEY. Accepting a leading zero made this layer answer element 1 for it, in every host; the C++ port has its own copy of the rule and so its own way to lose it.",
+      "was": "SEL list keys are the canonical decimals, so \"01\" is not a key and the evaluator answers E_NO_KEY. Accepting a leading zero made this layer answer element 1 for it, in every host; the C++ port has its own copy of the rule and so its own way to lose it. The rule now lives in sel_ast.hpp, shared by the C++ evaluator and translator.",
       "file": "cpp/sel_ast.hpp",
       "from": "if (k.empty() || k.size() > 9 || k[0] < '1' || k[0] > '9') return std::nullopt;",
       "to": "if (k.empty() || k.size() > 9 || k[0] < '0' || k[0] > '9') return std::nullopt;"
@@ -1181,8 +1181,8 @@
       "name": "php-guard-registration-is-not-checked",
       "was": "sql/MAP.md rule 10 unenforced at run time again: an application's own dialect may declare a numericGuard that disagrees with its ISNUM, which emits SQL that answers for rows SEL refuses. Only sqlreplay's registration probe sees this -- no .sqlt case can, because every shipped dialect passes the rule.",
       "file": "php/src/Sql/Emit.php",
-      "from": "        if ($f->kind === 'NUM' && !$f->guard) {\n            return $f;\n        }\n        Map::checkNumericGuard($this->dialect);",
-      "to": "        if ($f->kind === 'NUM' && !$f->guard) {\n            return $f;\n        }\n        // Map::checkNumericGuard($this->dialect);"
+      "from": "    {\n        Map::checkNumericGuard($this->dialect);\n        $guard = $this->lex('numericGuard');",
+      "to": "    {\n        // Map::checkNumericGuard($this->dialect);\n        $guard = $this->lex('numericGuard');"
     },
     {
       "name": "js-guard-registration-is-not-checked",
@@ -1307,7 +1307,7 @@
       "name": "js-latest-member-top-two-is-top-one",
       "was": "F6: preselecting one member for TOP N>1 loses rows; latest-member fallback cases must kill this mutation.",
       "file": "js/src/sql/hybrid.mjs",
-      "from": "ta[3].v !== '1'",
+      "from": "topArgs[3].v !== '1'",
       "to": "false"
     },
     {

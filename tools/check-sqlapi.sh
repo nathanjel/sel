@@ -43,7 +43,9 @@ grep -q 'CHECK FAILED' "$WORK/compare.txt" && cat "$WORK/compare.txt"
 # These lines are the contract's values, pinned (SEL-0058). The render.* and
 # guard.reuse.* lines: an unknown render mode is refused even when the
 # fragment has no slot to bind, and a dialect whose numericGuard was refused is
-# refused again on every later use, and after a reset.
+# refused again on every later use, and after a reset. The plan.link/rebind
+# lines: a continuation holding a 3-argument LINK is fed the rows under the
+# relation's own name, and reports that name as its source variable.
 for want in 'fragment.canon.postgresql.kind = NUM' 'fragment.canon.postgresql.canonical = true' \
             'fragment.canon.mariadb.kind = TEXT' 'fragment.canon.mariadb.canonical = true' \
             'fragment.canon.sqlite.canonical = true' 'fragment.canon.sqlite.caveats = decimal-float' \
@@ -54,7 +56,9 @@ for want in 'fragment.canon.postgresql.kind = NUM' 'fragment.canon.postgresql.ca
             'render.mode.bogus.with-slot = refused' \
             'render.mode.bogus.literal-number = refused' \
             'guard.reuse.1 = refused' 'guard.reuse.2 = refused' 'guard.reuse.3 = refused' \
-            'guard.reuse.after-reset = refused'; do
+            'guard.reuse.after-reset = refused' \
+            'plan.link.kind = hybrid' 'plan.link.source.var = ORDERS' \
+            'plan.rebind.kind = hybrid' 'plan.rebind.source.var = ORDERS'; do
   if ! sed 's/^[0-9]* //' "$WORK/$REF.txt" | grep -qxF "$want"; then
     echo "SQL API: $REF does not report \`$want\`"
     status=1

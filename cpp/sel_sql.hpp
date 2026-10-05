@@ -467,6 +467,12 @@ struct HybridPlan {
   bool pure_sql = false;
   bool pure_memory = false;
   std::vector<std::string> source_tables;
+
+  // The classification in the words sql/cases uses: "pure_sql", "hybrid" or
+  // "pure_memory" -- the one place it is derived from the flags.
+  const char* kind() const {
+    return pure_sql ? "pure_sql" : pure_memory ? "pure_memory" : "hybrid";
+  }
 };
 
 }  // namespace sel::sql

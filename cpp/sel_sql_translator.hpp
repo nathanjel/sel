@@ -298,7 +298,9 @@ class Translator {
   Fragment index(const SNode& n);
   std::string constant_index(const SNode& idx);
   Fragment unary(const SNode& n);
-  Fragment binary(const SNode& n);
+  // `op` is the operator translated: the node's own, except where a spelling
+  // the spec defines as another operator borrows its translation.
+  Fragment binary(const SNode& n, const std::string* op = nullptr);
   Fragment in_operator(const SNode& n);
   Fragment call(const SNodePtr& n);
 

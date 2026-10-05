@@ -302,6 +302,16 @@ def validate(n: Node, ctx: Context | None = None) -> None:
         refuse_as_sel(e, n)
 
 
+def validate_statement(s: Node, scratch: Context) -> None:
+    """Run one constant assignment as SEL runs it, into ``scratch``, and refuse
+    the translation if SEL refuses it -- at SEL's own position, which is the
+    statement's: stage 1 asks a definition as written (normalise._record)."""
+    try:
+        eval_node(s, scratch)
+    except SelError as e:
+        refuse_as_sel(e, s.value)
+
+
 def require_numeric(n: Node, ctx: Context | None = None) -> None:
     """The same question asked of one *operand* rather than a whole expression.
 

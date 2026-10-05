@@ -39,14 +39,26 @@ second reporting channel, no `explain()` API.
 | `E_SQL_SIZE` | the expression the translator would render has more than `MAX_SQL_NODES` (250 000, from `spec/limits.json`) nodes, an inlined helper or an unrolled element counted once per occurrence (docs/internals/sql-translation.md §7.4). The check runs as the nodes are dispatched and stops at the first node over the limit, so the work done is bounded by the limit and not by the size the program would have expanded to. It carries no position: it blames the whole rule, not a node of it, like a plan refusal. A rule past it is not wrong; it is evaluated the ordinary way |
 | `E_SQL_SHAPE` | a list where a scalar is required; `_K` inside a relation body; a non-BOOL where a condition is required; an aggregate over something that is neither a list, a `columns` binding nor a `relation` binding; `asCondition()` on a non-BOOL fragment. Also every place a **row of a multi-field relation** is treated as one value, because it is a map in SEL: a bare `_`, `IN`, `COUNT`, `HAS`, indexing by position, and iterating it. `HAS` over a relation is refused outright — a relation's keys are positions, and the answer needs the row count Also a `raw` field named by `SELECT_COLS` or read across a derived table (`sql/MAP.md` §3.1). Also a step that would lose a sort's order — a `BUCKET`, `LINK` or `DISTINCT`/`DEDUPE` over sorted rows, or a sort over a projection of sorted rows — refused at that step's own call, before its arguments are looked at (`docs/internals/sql-translation.md` §12.1, "Order"). |
 
-**Statement counts raise SEL's own codes.** A `TAKE` or `DROP` count that SEL
-rejects is refused with SEL's code at the count's position and not with an
-`E_SQL_*` code: `E_NOT_INT` for a fractional count (`TAKE(1.5)`), `E_RANGE` for a
-negative one (`TAKE(-1)`). A count SEL accepts is never refused: a whole number
-with a scale (`2.0`) translates, and a count past 9223372036854775807 is clamped
-to it (docs/internals/sql-translation.md §11.6). `E_NOT_INT` and `E_RANGE` are
-therefore members of this layer's vocabulary for that one place, and nowhere
-else.
+**SEL's own codes, where SEL raises them.** The layer raises a code from
+`spec/errors.md` only where SEL itself raises that code, at that position, for that
+program — it is then SEL's verdict, reported as SEL would report it. Every other
+refusal, including every refusal of a program SEL evaluates, is an `E_SQL_*` code
+(`E_SQL_SHAPE` for a construct SQL cannot spell, such as a computed `RECORD` key or
+`SELECT_COLS` name, or a computed sort direction). There are exactly these places:
+
+| Code | Where |
+|---|---|
+| `E_NOT_INT` | a `TAKE`/`DROP`/`TOP` count with a fractional part (`TAKE(1.5)`) |
+| `E_RANGE` | a negative count (`TAKE(-1)`) |
+| `E_NOT_NUM` | a count that is not a number (`TAKE("x")`, `TAKE(TRUE)`) |
+| `E_NULL` | a `NULL` count (`TAKE(NULL)`) |
+| `E_BAD_ARG` | a sort direction written as a text literal that is neither `ASC` nor `DESC`, in any case (`SORT_BY(_["q"], "UP")`) |
+
+Each at the offending argument's position, as SEL reports it. A count SEL accepts
+is never refused: a whole number with a scale (`2.0`) translates, and a count past
+9223372036854775807 is clamped to it (docs/internals/sql-translation.md §11.6).
+`E_SQL_INVALID` is the general form of the same idea for a constant expression: it
+carries SEL's code in its message and SEL's position (§11.4).
 
 ---
 

@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/nathanjel/sel/go/internal/limits"
+	"github.com/nathanjel/sel/go/internal/manifest"
 	"github.com/nathanjel/sel/go/internal/utf8"
 	"github.com/nathanjel/sel/go/sel"
 )
@@ -418,6 +419,55 @@ func constantCall(n *sNode, bound map[string]bool) bool {
 		for _, a := range args {
 			if !isConstant(a, bound) {
 				return false
+			}
+		}
+		return true
+	}
+
+	// Which argument is which is the manifest's form, as for stage 1 and the
+	// dependency walk: an outer argument is constant in bound, an inner one with
+	// the form's names (binders, _, _K) bound too, and a binder slot is a name,
+	// never a read -- so LINK's right source is read where the call stands
+	// (const.binding-form.*). Read off the call as written, as the evaluator
+	// reads it. A host's own binding function has no manifest form and keeps
+	// the generic shape below.
+	var shape manifest.ArgShape = sNodeShape(args)
+	if o := n.Origin; o != nil && o.T == sel.NodeCall && len(o.Items) == len(args) {
+		shape = writtenShape(o.Items)
+	}
+	if _, ok := manifest.BindingForms[utf8.AsciiUpper(n.Str)]; ok {
+		form := manifest.MatchForm(utf8.AsciiUpper(n.Str), len(args), shape)
+		if form == nil {
+			return false // no form takes this count: refused elsewhere
+		}
+		inner := make(map[string]bool, len(bound)+len(form.Binds)+2)
+		for k, v := range bound {
+			inner[k] = v
+		}
+		for _, name := range form.Binds {
+			inner[name] = true
+			inner[binderConstant+name] = true
+		}
+		for i, a := range args {
+			if form.Scopes[i] == manifest.ScopeBinder && isBinderName(a) {
+				inner[a.Str] = true
+				inner[binderConstant+a.Str] = true
+			}
+		}
+		for i, a := range args {
+			switch form.Scopes[i] {
+			case manifest.ScopeBinder:
+				if !isBinderName(a) {
+					return false // malformed; the aggregate refuses it for real
+				}
+			case manifest.ScopeInner:
+				if !isConstant(a, inner) {
+					return false
+				}
+			default:
+				if !isConstant(a, bound) {
+					return false
+				}
 			}
 		}
 		return true

@@ -31,6 +31,19 @@ type HybridPlan struct {
 	SourceTables          []string        `json:"source_tables"`
 }
 
+// Kind is the classification in the words sql/cases uses: "pure_sql",
+// "hybrid" or "pure_memory" -- the one place it is derived from the flags.
+func (p *HybridPlan) Kind() string {
+	switch {
+	case p.PureSql:
+		return "pure_sql"
+	case p.PureMemory:
+		return "pure_memory"
+	default:
+		return "hybrid"
+	}
+}
+
 type DbRunner func(query string, params []*sel.Value) (*sel.Value, error)
 
 func varNode(name string, pos Pos) *sel.Node {
@@ -1191,21 +1204,20 @@ func PlanHybrid(program *sel.Program, dialect string, bindings *Bindings, option
 		}
 
 		remaining := steps[count:]
-		continuationAst := helpers.wrap(sel.BuildPipeline(varNode("_INPUT", remaining[0].Pos), remaining))
+		// A joined row names its left side after the relation it came from
+		// (ORDERS, orders), never after `_INPUT` (spec §7.4): the rows are fed to
+		// the continuation under that name, which it reads from nothing else
+		// (checked above), and the plan reports it as the source variable. Fed
+		// under that name, the rows ARE the variable: a read of the binding, so
+		// wrapping in the helpers does not re-run a helper of the same name over
+		// them (hybrid.json helper.reassigned-source-feeds-a-three-argument-link).
+		feed := "_INPUT"
 		if needsRebind {
-			// A joined row names its left side after the relation it came from
-			// (ORDERS, orders), never after `_INPUT` (spec §7.4): the
-			// rows are bound to that name for the continuation, which reads it
-			// from nothing else (checked above).
-			bind := sel.NewNode(sel.NodeAssign, remaining[0].Pos)
-			bind.S = "="
-			bind.L = varNode(source.S, remaining[0].Pos)
-			bind.R = varNode("_INPUT", remaining[0].Pos)
-			pipe := sel.BuildPipeline(varNode(source.S, remaining[0].Pos), remaining)
-			seq := sel.NewNode(sel.NodeSeq, remaining[0].Pos)
-			seq.Items = []*sel.Node{bind, pipe}
-			continuationAst = helpers.wrap(seq)
+			feed = source.S
 		}
+		input := varNode(feed, remaining[0].Pos)
+		input.BindingRead = needsRebind
+		continuationAst := helpers.wrap(sel.BuildPipeline(input, remaining))
 		continuationProg := sel.NewProgram("", continuationAst)
 
 		return &HybridPlan{
@@ -1214,7 +1226,7 @@ func PlanHybrid(program *sel.Program, dialect string, bindings *Bindings, option
 			SqlPrefixAst:          prefixAst,
 			ContinuationAst:       continuationAst,
 			ContinuationProgram:   continuationProg,
-			ContinuationSourceVar: "_INPUT",
+			ContinuationSourceVar: feed,
 			IsHybrid:              true,
 			SourceTables:          helpers.tables(prefixAst),
 		}

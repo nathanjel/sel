@@ -247,21 +247,19 @@ export class Translator {
     seen.set(cut, name);
   }
 
-  // The [name, value] pairs of a RECORD(k, v, …) call, refusing what the
-  // evaluator would: an odd count at the call, a name that is not a text
-  // literal at the name. The planner reads RECORD in three places -- a
-  // bucket's projection, a bucket's key, a MAP's projection -- and each used
-  // to walk the pairs itself.
+  // The [name, value] pairs of a RECORD(k, v, …) call (compile has refused an
+  // odd count), refusing a name that is not a text literal at the name: SEL
+  // computes such a key, a statement cannot alias one, so it is E_SQL_SHAPE.
+  // The planner reads RECORD in three places -- a bucket's projection, a
+  // bucket's key, a MAP's projection -- and each used to walk the pairs itself.
   static recordFields(node, translator = null) {
-    if (node.args.length % 2 !== 0) {
-      refuse('E_ARITY', 'RECORD takes an even number of arguments', node.pos);
-    }
     const fields = [];
     const truncated = new Map();
     for (let i = 0; i < node.args.length; i += 2) {
       const key = node.args[i];
       if (key.t !== 'text') {
-        refuse('E_BAD_ARG', 'RECORD field names must be string literals', key.pos);
+        refuse('E_SQL_SHAPE', 'RECORD field names must be text literals here: a statement '
+          + 'cannot compute a column alias', key.pos);
       }
       Translator.checkAliasName(key.v, key.pos);
       if (translator !== null) translator.checkTruncation(truncated, key.v, key.pos);
@@ -282,7 +280,7 @@ export class Translator {
       refuse('E_SQL_SIZE',
         `this program expands to more than ${MAX_SQL_NODES} nodes once every helper `
         + 'read and every unrolled element is counted, and the translation stops '
-        + 'there', pos);
+        + 'there');   // no position: it blames the whole rule (sql/errors.md)
     }
   }
 
@@ -768,8 +766,9 @@ export class Translator {
     return this.apply('ops', n.op, [x], n.pos);
   }
 
-  binary(n) {
-    const op = n.op;
+  // `op` is the operator translated, which is the node's own except where a
+  // spelling the spec defines as another operator borrows its translation.
+  binary(n, op = n.op) {
 
     if (op === 'IN') return this.inOperator(n);
 
@@ -941,13 +940,12 @@ export class Translator {
       }
     }
 
-    if (elements === null) {
-      const r = this.node(rhs);              // a scalar; spec §5.4's second case
-      const l = this.node(n.l);
-      requireComparableKinds(l, r, 'IN', n.pos);
-      return this.apply('ops', 'IN',
-        [this.emit.textOperand(l), this.emit.textOperand(r)], n.pos, 'scalar');
-    }
+    // A scalar: spec §5.4's second case, where `x IN y` IS `x EQL y`. So it is
+    // translated AS EQL, through the same code, rather than by a transcription
+    // of EQL's rule that can drift from it: the copy that stood here cast an
+    // exact column's text operand that EQL leaves plain
+    // (op.in.one-value.* in sql/cases/53-in-is-eql.sqlt).
+    if (elements === null) return this.binary(n, 'EQL');
 
     // A literal list becomes a chain of byte comparisons rather than SQL's IN.
     // Casting each element inside a variadic template is not expressible, and
@@ -1303,15 +1301,13 @@ export class Translator {
     // RMATCH(p, s, "zzz") compiled happily where SEL raises E_BAD_ARG. An empty
     // flag string is dropped so the two-argument template applies.
     const text = String(flags.v);
-    // Spelled as literal strings rather than a case fold: JS's toLowerCase is
-    // not ASCII-only ("İ".toLowerCase() is two code points). NB this admits "I"
-    // as well as "i", and the evaluator refuses "I" with E_BAD_ARG (conformance
-    // re.flag.uppercase-i-is-not-i): a column-subject call with "I" translates
-    // where SEL raises. That is a known disagreement, not a decision.
-    if (text !== '' && text !== 'i' && text !== 'I') {
+    // Exactly "" and "i": the evaluator refuses "I" with E_BAD_ARG (conformance
+    // re.flag.uppercase-i-is-not-i), and with a column subject the constant
+    // validation never sees the call, so this test is the only one that can.
+    if (text !== '' && text !== 'i') {
       refuse('E_SQL_UNSUPPORTED',
-        `${n.name} accepts only the i flag here, and SEL accepts only i at all; `
-        + `${quoteDump(text)} is not it`, flags.pos);
+        `${n.name} translates only the flags "" and "i"; ${quoteDump(text)} is not one of them`,
+        flags.pos);
     }
     if (text !== '') {
       // The evaluator refuses i on a pattern with non-ASCII literals, because case
@@ -2637,9 +2633,10 @@ export class Translator {
       }
       throw e;
     }
-    if (!val.looksNumeric() || val.isNull()) {
-      refuse('E_NOT_NUM', `${op} count must be a number`, n.pos);
-    }
+    // SEL's own codes at the count (sql/errors.md): E_NULL for a NULL, E_NOT_NUM
+    // for anything else that is not a number.
+    if (val.isNull()) refuse('E_NULL', `${op} count must not be NULL`, n.pos);
+    if (!val.looksNumeric()) refuse('E_NOT_NUM', `${op} count must be a number`, n.pos);
     // A whole number written with a scale (`2.0`) is a whole number, as SEL reads it
     // (spec §7.4); only a fractional part is E_NOT_INT. And `-0` is zero.
     const d = val.asDecimal(n.pos);
@@ -2769,7 +2766,8 @@ export class Translator {
     const cols = [];
     for (const item of items) {
       if (item.t !== 'text') {
-        refuse('E_BAD_ARG', 'SELECT_COLS column names must be string literals', item.pos);
+        refuse('E_SQL_SHAPE', 'SELECT_COLS column names must be text literals here: a '
+          + 'statement cannot compute a column name', item.pos);
       }
       const col = item.v;
       Translator.checkAliasName(col, item.pos);
@@ -3007,7 +3005,12 @@ export class Translator {
       // A direction SQL cannot compute: the evaluator would, so it is refused
       // unless it is a literal.
       const slot = args[roles.after[0]];
-      if (slot.t !== 'text') refuse('E_BAD_ARG', "sort direction must be 'ASC' or 'DESC'", slot.pos);
+      // SEL computes a direction; SQL cannot, so anything but a text literal is
+      // E_SQL_SHAPE. A literal that is neither ASC nor DESC is SEL's own E_BAD_ARG.
+      if (slot.t !== 'text') {
+        refuse('E_SQL_SHAPE', 'a sort direction must be a text literal here: SQL cannot '
+          + 'compute one', slot.pos);
+      }
       dir = asciiUpper(slot.v);
       if (dir !== 'ASC' && dir !== 'DESC') {
         refuse('E_BAD_ARG', "sort direction must be 'ASC' or 'DESC'", slot.pos);

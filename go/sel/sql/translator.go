@@ -228,7 +228,7 @@ func (t *translator) node(n *sNode) *Fragment {
 	if t.nodes > limits.MAX_SQL_NODES {
 		refuse("E_SQL_SIZE",
 			fmt.Sprintf("this rule expands to more than %d nodes once its helpers are inlined and its lists unrolled; SEL evaluates it in a fraction of that, but the SQL would be the size of what it expands to", limits.MAX_SQL_NODES),
-			n.Pos)
+			Pos{}) // no position: it blames the whole rule (sql/errors.md)
 	}
 	t.depth++
 	if t.depth > limits.MAX_DEPTH {
@@ -1238,10 +1238,15 @@ func (t *translator) unary(n *sNode) *Fragment {
 }
 
 func (t *translator) binary(n *sNode) *Fragment {
-	op := n.Str
-	if op == "IN" {
+	if n.Str == "IN" {
 		return t.inOperator(n)
 	}
+	return t.binaryAs(n, n.Str)
+}
+
+// binaryAs translates n as the operator op: the node's own, except where a
+// spelling the spec defines as another operator borrows its translation.
+func (t *translator) binaryAs(n *sNode, op string) *Fragment {
 
 	var l, r *Fragment
 	if vocab.IsArithmetic(op) {
@@ -1580,13 +1585,13 @@ func (t *translator) inOperator(n *sNode) *Fragment {
 		}
 	}
 
+	// A scalar: spec §5.4's second case, where `x IN y` IS `x EQL y`. So it is
+	// translated AS EQL, through the same code, rather than by a transcription
+	// of EQL's rule that can drift from it: the copy that stood here cast an
+	// exact column's text operand that EQL leaves plain
+	// (op.in.one-value.* in sql/cases/53-in-is-eql.sqlt).
 	if !hasElements {
-		r := t.node(n.R())
-		l := t.node(n.L())
-		requireComparableKinds(l, r, "IN", n.Pos)
-		args := []*Fragment{t.emit.TextOperand(l), t.emit.TextOperand(r)}
-		scalarVar := "scalar"
-		return t.apply("ops", "IN", args, n.Pos, &scalarVar)
+		return t.binaryAs(n, "EQL")
 	}
 
 	if len(elements) == 0 {
@@ -1741,9 +1746,12 @@ func (t *translator) rewriteRegex(n *sNode) *sNode {
 			flags.Pos)
 	}
 	text := flags.Str
-	if text != "" && text != "i" && text != "I" {
+	// Exactly "" and "i": the evaluator refuses "I" with E_BAD_ARG (conformance
+	// re.flag.uppercase-i-is-not-i), and with a column subject the constant
+	// validation never sees the call, so this test is the only one that can.
+	if text != "" && text != "i" {
 		refuse("E_SQL_UNSUPPORTED",
-			fmt.Sprintf("%s accepts only the i flag here, and SEL accepts only i at all; %q is not it", n.Str, text),
+			fmt.Sprintf("%s translates only the flags \"\" and \"i\"; %q is not one of them", n.Str, text),
 			flags.Pos)
 	}
 	if text != "" {

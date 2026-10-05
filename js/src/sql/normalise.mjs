@@ -40,7 +40,7 @@ class Definitions extends Map {
   constructor(constNames) {
     super();
     this.constNames = constNames;   // the value bindings, which are constants
-    this.sizes = new Map();         // expandedSize's memo, shared by every definition
+    this.heights = new Map();       // expandedHeight's memo, shared by every definition
     this.freshCounter = 0;          // suffixes that keep a renamed binder apart
   }
 }
@@ -57,7 +57,41 @@ export function run(ast, constNames = null, ctx = null) {
   // before either guard looks, which is why they must be charged up front.
   const base = ast.t === 'seq' ? 1 : 0;
   for (const s of stmts) record(s, defs, constNames ?? new Map(), ctx, base + 1);
-  return substitute(result, defs, [], base);
+  const out = substitute(result, defs, [], base);
+  // What is READ is charged (§7.4): the result, with every helper it reads
+  // expanded. The translator's walk counts it exactly, at dispatch; but the
+  // planner and the constant tests walk it first, as the tree it renders, and a
+  // doubling chain is exponential to them. So a result past a multiple of the
+  // budget is refused here, with the same code -- a program the walk would answer
+  // or refuse by its own precise count never gets this far.
+  if (expandedSize(out, new Map()) > EARLY_SIZE) {
+    refuse('E_SQL_SIZE',
+      `this program expands to more than ${MAX_SQL_NODES} nodes once every read of a `
+      + 'helper is counted, and the translation stops there');
+  }
+  return out;
+}
+
+const EARLY_SIZE = 2 * MAX_SQL_NODES;
+
+// The size of `root` counted as a tree, from a memo keyed by node identity, so a
+// subtree shared n times is measured once. Iterative, saturating at EARLY_SIZE + 1.
+function expandedSize(root, memo) {
+  const stack = [[root, false]];
+  while (stack.length > 0) {
+    const [node, done] = stack.pop();
+    if (!node || memo.has(node)) continue;
+    const kids = children(node);
+    if (!done) {
+      stack.push([node, true]);
+      for (const k of kids) if (k && !memo.has(k)) stack.push([k, false]);
+      continue;
+    }
+    let size = 1;
+    for (const k of kids) if (k) size = Math.min(size + (memo.get(k) ?? 1), EARLY_SIZE + 1);
+    memo.set(node, size);
+  }
+  return memo.get(root) ?? 1;
 }
 
 // Fold one leading statement into `defs`, or refuse it. `depth` is where the
@@ -92,11 +126,13 @@ function record(s, defs, constNames, ctx, depth = 0) {
 
   const value = substitute(s.value, defs, [], depth);
   // A helper's text is shared where it is read, so `X1 = X0 + X0; X2 = X1 + X1;
-  // ...` is small as a graph and exponential as a tree, and the constant test just
-  // below walks the tree. Its expanded size is known cheaply, node by node, and a
-  // definition already past the translator's budget is refused here rather than
-  // after that walk (E_SQL_SIZE; docs/internals/sql-translation.md §7.4).
-  expandedSize(value, defs.sizes, s.pos);
+  // ...` is small as a graph and exponential as a tree. Its SIZE is charged only
+  // where it is read -- the translator's walk counts it (E_SQL_SIZE;
+  // docs/internals/sql-translation.md §7.4), and a definition nothing reads is
+  // dropped and free -- so nothing here may walk the tree: the constant test and
+  // the validation below are memoised by node, which is linear in the graph. Its
+  // HEIGHT is checked here, because recursive walks would meet it first.
+  expandedHeight(value, defs.heights, s.pos);
 
   // Validated here, and only here, because after this the subtree may be gone: a
   // definition nothing reads is dropped, so `A = 1 / 0; TRUE` translated to
@@ -174,7 +210,12 @@ function substitute(node, defs, bound, depth = 0) {
     // what it holds NOW, so a later `R[2] = 6` must not reach a `X = R` written
     // before it, nor a write through X reach R. The entries' values are
     // immutable nodes, so copying the list of entries is a copy.
-    return def.t === 'clist' ? new CList(def.pos, def.entries.map(([k, v]) => [k, v])) : def;
+    if (def.t === 'clist') return new CList(def.pos, def.entries.map(([k, v]) => [k, v]));
+    // A text literal read from a helper was not WRITTEN here: marked, so a form
+    // decided by a text literal in a slot (SORT_BY's direction, registry
+    // matchForm) is still the call's as written (spec §7.3;
+    // stmt.order-by.helper-in-the-key-slot-is-a-key-not-a-direction).
+    return def.t === 'text' ? { ...def, inlined: true } : def;
   }
 
   if (t === 'num' || t === 'text' || t === 'bool') return node;
@@ -334,13 +375,13 @@ function mentions(root, name) {
   return false;
 }
 
-// The size of `node` counted as a tree, and its height, from a memo keyed by node
-// identity, so a subtree shared n times is measured once. Iterative. Refuses past
-// the size budget (E_SQL_SIZE) and past four times the evaluator's depth (E_SQL_DEPTH):
-// the translation refuses anything over MAX_DEPTH itself, precisely, when it walks
-// the tree -- but stage 1 and the constant test walk it first, recursively, and a
-// tree tens of thousands deep would find the host's stack before that walk.
-function expandedSize(root, memo, pos) {
+// The height of `node` counted as a tree, from a memo keyed by node identity, so a
+// subtree shared n times is measured once. Iterative. Refuses past four times the
+// evaluator's depth (E_SQL_DEPTH): the translation refuses anything over MAX_DEPTH
+// itself, precisely, when it walks the tree -- but stage 1 and the constant test
+// walk it first, recursively, and a tree tens of thousands deep would find the
+// host's stack before that walk.
+function expandedHeight(root, memo, pos) {
   const stack = [[root, false]];
   while (stack.length > 0) {
     const [node, done] = stack.pop();
@@ -351,13 +392,11 @@ function expandedSize(root, memo, pos) {
       for (const k of kids) if (k && !memo.has(k)) stack.push([k, false]);
       continue;
     }
-    let size = 1;
     let height = 0;
     for (const k of kids) {
       if (!k) continue;
-      const m = memo.get(k) ?? [1, 1];
-      size += m[0];
-      if (m[1] > height) height = m[1];
+      const m = memo.get(k) ?? 1;
+      if (m > height) height = m;
     }
     height += 1;
     if (height > 4 * MAX_DEPTH) {
@@ -365,12 +404,6 @@ function expandedSize(root, memo, pos) {
         `this expression nests deeper than SEL will evaluate (${MAX_DEPTH}), so there `
         + 'is nothing to translate; the evaluator answers E_DEPTH for it', pos);
     }
-    if (size > MAX_SQL_NODES) {
-      refuse('E_SQL_SIZE',
-        `this definition expands to more than ${MAX_SQL_NODES} nodes once every read of `
-        + 'a helper is counted', pos);
-    }
-    memo.set(node, [size, height]);
+    memo.set(node, height);
   }
-  return memo.get(root)?.[0] ?? 1;
 }
