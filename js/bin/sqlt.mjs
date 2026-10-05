@@ -421,6 +421,11 @@ function main(argv) {
 
   process.stdout.write(`\n${passed} passed (${mirrored} also checked against a `
     + `mirrored dialect), ${failures.length} failed, ${suiteErrors} suite errors\n`);
+  // A filter that matched nothing tested nothing: say so, and do not pass.
+  if (passed + failures.length + suiteErrors === 0) {
+    process.stdout.write(filters.length ? `no case matches ${filters.join(' ')}\n` : 'no case was run\n');
+    return 1;
+  }
   return failures.length === 0 && suiteErrors === 0 ? 0 : 1;
 }
 

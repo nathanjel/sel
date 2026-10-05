@@ -6,9 +6,10 @@
 // reader, not by SEL's lexer — the suite must not validate the lexer with the
 // lexer.
 
-import { readFileSync, readdirSync } from 'node:fs';
+import { readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join, resolve } from 'node:path';
+import { readTextOrExit } from './read-input.mjs';
 // SEL_JS_ENTRY aims this runner at a different build of the implementation —
 // tools/impls.sh sets it to dist/sel.mjs so the bundle is held to the same
 // suite as the source. Dynamic import because the specifier is not a constant.
@@ -182,7 +183,8 @@ function main() {
 
   for (const file of files) {
     const short = file.startsWith(SUITE) ? file.slice(SUITE.length + 1) : file;
-    for (const c of parseSelt(readFileSync(file, 'utf8'), short)) {
+    const given = args.length ? args[files.indexOf(file)] : file;
+    for (const c of parseSelt(readTextOrExit(file, given), short)) {
       if (seen.has(c.name)) {
         suiteErrors.push(`${c.at}: duplicate case name ${c.name} (also ${seen.get(c.name)})`);
         continue;
@@ -209,6 +211,11 @@ function main() {
   for (const e of suiteErrors) console.log(`SUITE ${e}`);
 
   console.log(`\n${pass} passed, ${failures.length} failed, ${suiteErrors.length} suite errors`);
+  // A run that tested nothing (an empty file, a file of headers) is not a pass.
+  if (pass + failures.length === 0) {
+    console.log('no case was run');
+    process.exit(1);
+  }
   process.exit(failures.length || suiteErrors.length ? 1 : 0);
 }
 

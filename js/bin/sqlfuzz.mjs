@@ -14,9 +14,9 @@
 // The corpus format and the one-line-per-program protocol are specified in
 // tools/README.md, and this reader is the same five lines as the others.
 
-import { readFileSync } from 'node:fs';
 import { compile, SelError } from '../src/sel.mjs';
 import { Binding, Sql, SqlError } from '../src/sql/index.mjs';
+import { readTextOrExit } from './read-input.mjs';
 
 // The relations the corpus's pipelines read (tools/gen-programs.mjs --sql), the
 // same in every host's runner: two tables, a NUM join key, a TEXT field whose
@@ -49,6 +49,10 @@ const attempt = (fn) => {
 // so every host's translator -- not only PHP's -- is asked whether its SQL
 // means what SEL means.
 const [path, dialect = 'mariadb', mode = 'all'] = process.argv.slice(2);
+if (path === undefined) {
+  process.stderr.write('usage: sqlfuzz.mjs CORPUS [dialect] [statement]\n');
+  process.exit(2);
+}
 
 function readCorpus(text) {
   const records = [];
@@ -60,8 +64,15 @@ function readCorpus(text) {
   return records.map((lines) => lines.join('\n').replace(/\n$/, ''));
 }
 
+// Exactly one trailing newline comes off each record (the corpus rule in
+// CLAUDE.md); a CR anywhere is program text.
+const corpus = readCorpus(readTextOrExit(path));
+if (corpus.length === 0) {
+  process.stderr.write(`no programs in ${path}\n`);
+  process.exit(1);
+}
 const lines = [];
-for (const src of readCorpus(readFileSync(path, 'utf8'))) {
+for (const src of corpus) {
   let program;
   try {
     program = compile(src);
