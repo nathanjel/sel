@@ -15,7 +15,7 @@ from .eval import bytes_compare
 from .lexer import ascii_upper
 from .math_plan import compile_math_plan, is_math_op
 from .parser import Node
-from .registry import is_host_function, lookup
+from .registry import is_host_function, lookup, sort_form
 from .utf8 import encode_utf8
 
 
@@ -424,30 +424,26 @@ def filter_details(step: Node) -> dict[str, Any]:
 
 
 def sort_details(step: Node) -> dict[str, Any]:
+    """The binder and key a sort step orders by, for the rewrites that move it,
+    decoded by registry.sort_form. A key it cannot vouch for is None, which no
+    rewrite moves: a computed direction (the three-argument SORT_BY / TOP_BY
+    form whose direction is neither a text literal nor after a binder), and a
+    SORT_BY / TOP_BY binder slot holding something other than a bare name (the
+    evaluator raises E_EXPECT_SYMBOL there). A keyless SORT or TOP has neither."""
     args = step.args
-    count = len(args)
-    binder, key = '_', None
-    if step.name in ('SORT', 'SORT_DESC'):
-        if count == 1:
-            return {'binder': None, 'key': None}
-        binder = args[1].name if count == 3 and args[1].t == 'var' and not args[1].grouped else '_'
-        key = args[2] if count == 3 else args[1]
-    elif step.name in ('TOP', 'TOP_DESC'):
-        if count == 2:
-            return {'binder': None, 'key': None}
-        sort_count = count - 1
-        # TOP(source, key, n) has three arguments and
-        # TOP(source, binder, key, n) has four.  `sort_count` excludes the
-        # final n, so the explicit-binder form is 3, not 4.
-        binder = args[1].name if sort_count == 3 and args[1].t == 'var' and not args[1].grouped else '_'
-        key = args[2] if sort_count == 3 else args[1]
-    elif step.name in ('SORT_BY', 'TOP_BY'):
-        sort_count = count - 1 if step.name == 'TOP_BY' else count
-        if sort_count == 2 or (sort_count == 3 and args[2].t == 'text'):
-            key = args[1]
-        elif args[1].t == 'var' and not args[1].grouped:
-            binder, key = args[1].name, args[2]
-    return {'binder': binder, 'key': key}
+    binder_at, key_at, dir_at = sort_form(step.name, args)
+    if key_at is None:
+        return {'binder': None, 'key': None}
+    if binder_at is not None:
+        b = args[binder_at]
+        if b.t == 'var' and not b.grouped:
+            return {'binder': b.name, 'key': args[key_at]}
+        if step.name in ('SORT_BY', 'TOP_BY'):
+            return {'binder': '_', 'key': None}
+        return {'binder': '_', 'key': args[key_at]}
+    if dir_at is not None and args[dir_at].t != 'text':
+        return {'binder': '_', 'key': None}
+    return {'binder': '_', 'key': args[key_at]}
 
 
 def select_fields(step: Node) -> list[str]:

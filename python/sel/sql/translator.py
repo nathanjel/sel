@@ -25,7 +25,7 @@ from .._limits import MAX_SQL_NODES
 from .._stack import recursion_budget as _recursion_budget
 from ..lexer import ascii_upper
 from ..parser import Node
-from ..registry import REGEX_FLAG_AT
+from ..registry import REGEX_FLAG_AT, sort_form
 from ..value import Value, quote_dump
 from . import constants as _constants
 from . import map as _map
@@ -2879,60 +2879,41 @@ class Translator:
 
     def _analyze_sort_step_extended(self, step: Node, plan: RelationalPlan) -> None:
         name, args = step.name, step.args
-        is_top = name in ('TOP', 'TOP_DESC', 'TOP_BY')
-        count = len(args) - 1 if is_top else len(args)
-        if is_top:
+        if name in ('TOP', 'TOP_DESC', 'TOP_BY'):
             limit = self._eval_int_param(args[-1], name)
             plan.limit = limit if plan.limit is None else min(plan.limit, limit)
 
-        if name in ('SORT', 'SORT_DESC', 'TOP', 'TOP_DESC'):
-            direction = 'DESC' if name in ('SORT_DESC', 'TOP_DESC') else 'ASC'
-            if count == 1:
-                scalar = plan.source_relation.get('scalar')
-                fields = plan.source_relation.get('fields') or {}
-                field_name = scalar or (next(iter(fields)) if len(fields) == 1 else None)
-                if field_name is None:
-                    refuse('E_SQL_SHAPE',
-                           'SORT on a multi-field relation requires a key expression; use SORT_BY', step.pos)
-                key = Node('index', step.pos, obj=Node('var', step.pos, name='_'),
-                           idx=Node('text', step.pos, v=field_name))
-                plan.order_by.append({'binder': '_', 'node': key,
-                                      'dir': direction, 'pos': step.pos})
-                return
-            if count == 2:
-                plan.order_by.append({'binder': '_', 'node': args[1],
-                                      'dir': direction, 'pos': step.pos})
-                return
-            # 3, the last count the parser lets through.
-            if not _constants.is_binder_name(args[1]):
-                refuse('E_SQL_SHAPE', 'the binder of SORT must be a bare name', args[1].pos)
-            plan.order_by.append({'binder': args[1].name, 'node': args[2],
-                                  'dir': direction, 'pos': step.pos})
+        # The form, decoded as the evaluator decodes it (registry.sort_form): a
+        # text-literal direction wins over a bare name in the binder slot.
+        binder_at, key_at, dir_at = sort_form(name, args)
+        if key_at is None:                   # SORT(list), TOP(list, n): the scalar
+            scalar = plan.source_relation.get('scalar')
+            fields = plan.source_relation.get('fields') or {}
+            field_name = scalar or (next(iter(fields)) if len(fields) == 1 else None)
+            if field_name is None:
+                refuse('E_SQL_SHAPE',
+                       'SORT on a multi-field relation requires a key expression; use SORT_BY', step.pos)
+            key = Node('index', step.pos, obj=Node('var', step.pos, name='_'),
+                       idx=Node('text', step.pos, v=field_name))
+            plan.order_by.append({'binder': '_', 'node': key,
+                                  'dir': 'DESC' if name in ('SORT_DESC', 'TOP_DESC') else 'ASC',
+                                  'pos': step.pos})
             return
-
-        if count == 2:
-            binder, key, direction = '_', args[1], 'ASC'
-        elif count == 3:
-            if args[2].t == 'text':
-                binder, key, direction = '_', args[1], ascii_upper(args[2].v)
-            elif _constants.is_binder_name(args[1]):
-                binder, key, direction = args[1].name, args[2], 'ASC'
-            else:
-                # Neither form: the third slot is a direction the evaluator
-                # would compute, and SQL cannot -- the four-argument form's
-                # refusal.
-                refuse('E_BAD_ARG', "sort direction must be 'ASC' or 'DESC'", args[2].pos)
-        else:                            # 4 (the parser refused any other count)
-            if not _constants.is_binder_name(args[1]):
-                refuse('E_SQL_SHAPE', 'the binder of SORT_BY must be a bare name', args[1].pos)
-            binder, key = args[1].name, args[2]
-            if args[3].t != 'text':
-                refuse('E_BAD_ARG', "sort direction must be 'ASC' or 'DESC'", args[3].pos)
-            direction = ascii_upper(args[3].v)
-        if direction not in ('ASC', 'DESC'):
-            refuse('E_BAD_ARG', "sort direction must be 'ASC' or 'DESC'",
-                   args[3].pos if count == 4 else args[2].pos)
-        plan.order_by.append({'binder': binder, 'node': key,
+        binder = '_'
+        if binder_at is not None:
+            if not _constants.is_binder_name(args[binder_at]):
+                label = 'SORT_BY' if name in ('SORT_BY', 'TOP_BY') else 'SORT'
+                refuse('E_SQL_SHAPE', f'the binder of {label} must be a bare name', args[binder_at].pos)
+            binder = args[binder_at].name
+        if dir_at is None:
+            direction = 'DESC' if name in ('SORT_DESC', 'TOP_DESC') else 'ASC'
+        else:
+            # A direction the evaluator would compute is one SQL cannot.
+            d = args[dir_at]
+            direction = ascii_upper(d.v) if d.t == 'text' else None
+            if direction not in ('ASC', 'DESC'):
+                refuse('E_BAD_ARG', "sort direction must be 'ASC' or 'DESC'", d.pos)
+        plan.order_by.append({'binder': binder, 'node': args[key_at],
                               'dir': direction, 'pos': step.pos})
 
     def compile_statement(self, plan: RelationalPlan) -> Fragment:

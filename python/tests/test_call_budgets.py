@@ -26,8 +26,10 @@ CONTEXTS = {'rows': {'L': [{'a': 'x' if i % 3 == 0 else 'y', 'b': i} for i in ra
 # collector keeps without copying is depth-checked, one call per collected row
 # (MAP over TAKE(5)). That is the price of a correctness fix, not a regression.
 # pixel went 2253 -> 2252 when Value.entries() became a zip instead of a
-# generator (one frame resumption per call, and the program asks once).
-BUDGETS = {'pixel': 2252, 'rows': 5365}
+# generator (one frame resumption per call, and the program asks once); rows
+# 5365 -> 5364 when TOP_BY's form came from registry.sort_form (one memoised
+# lookup where two Args.node calls were).
+BUDGETS = {'pixel': 2252, 'rows': 5364}
 
 
 def python_calls(label):

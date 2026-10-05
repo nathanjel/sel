@@ -8,7 +8,7 @@ from .. import decimal as D
 from .._budget import check_text
 from ..errors import SelError, fail
 from ..parser import Node
-from ..registry import define
+from ..registry import define, sort_form
 from ..value import NONE, Value, elements, iter_elements, structural_hash
 # The direction and field names fold ASCII-only:
 # str.upper() took "deſc" for DESC.
@@ -556,42 +556,19 @@ def do_sort(args, ctx, forced_dir):
     val = args.val(0)
     ents = [] if val.is_null() else elements(val)
 
-    count = args.count()
-    if count == 1:
+    binder_at, key_at, dir_at = sort_form(args.name, args.nodes)
+    if key_at is None:
         if not ents:
             return Value._list_owned([])
         direction = forced_dir or 'ASC'
         indexed = [{'item': item, 'key': item} for _, item in ents]
     else:
-        if count == 2:
-            binder = '_'
-            body = args.node(1)
-            direction = forced_dir or 'ASC'
-        elif count == 3:
-            if forced_dir is not None:
-                binder = args.symbol(1)
-                body = args.node(2)
-                direction = forced_dir
-            elif args.node(2).t == 'text':
-                binder = '_'
-                body = args.node(1)
-                direction = ascii_upper(args.text(2))
-            elif args.is_symbol(1):
-                binder = args.symbol(1)
-                body = args.node(2)
-                direction = 'ASC'
-            else:
-                binder = '_'
-                body = args.node(1)
-                direction = ascii_upper(args.text(2))
-        else:  # 4
-            binder = args.symbol(1)
-            body = args.node(2)
-            direction = ascii_upper(args.text(3))
+        binder = args.symbol(binder_at) if binder_at is not None else '_'
+        body = args.node(key_at)
+        direction = ascii_upper(args.text(dir_at)) if dir_at is not None else forced_dir or 'ASC'
 
         if direction not in ('ASC', 'DESC'):
-            pos_idx = 3 if count == 4 else 2
-            fail('E_BAD_ARG', "sort direction must be 'ASC' or 'DESC'", args.pos_of(pos_idx))
+            fail('E_BAD_ARG', "sort direction must be 'ASC' or 'DESC'", args.pos_of(dir_at))
         # The direction is an argument like any other (SPEC 7.4): it was checked
         # above whether or not there is anything to sort, an empty list and NULL
         # included, so a rule's validity does not depend on its data.
@@ -639,36 +616,16 @@ def do_top(args, ctx, forced_dir):
     value = args.val(0)
     limit = args.non_neg_int(args.count() - 1)
 
-    sort_count = args.count() - 1
-    binder = '_'
-    body = None
-    direction = forced_dir or 'ASC'
-    if sort_count == 1:
+    binder_at, key_at, dir_at = sort_form(args.name, args.nodes)
+    if key_at is None:
         binder = None
-    elif sort_count == 2:
-        body = args.node(1)
-    elif sort_count == 3:
-        if forced_dir is not None:
-            binder = args.symbol(1)
-            body = args.node(2)
-        elif args.node(2).t == 'text':
-            body = args.node(1)
-            direction = ascii_upper(args.text(2))
-        elif args.is_symbol(1):
-            binder = args.symbol(1)
-            body = args.node(2)
-        else:
-            body = args.node(1)
-            direction = ascii_upper(args.text(2))
-    else:                            # 4: TOP_BY's arity (2..5) leaves nothing else
-        binder = args.symbol(1)
-        body = args.node(2)
-        direction = ascii_upper(args.text(3))
-
+        body = None
+    else:
+        binder = args.symbol(binder_at) if binder_at is not None else '_'
+        body = args.node(key_at)
+    direction = ascii_upper(args.text(dir_at)) if dir_at is not None else forced_dir or 'ASC'
     if direction not in ('ASC', 'DESC'):
-        direction_index = 3 if sort_count == 4 else 2
-        fail('E_BAD_ARG', "sort direction must be 'ASC' or 'DESC'",
-             args.pos_of(direction_index))
+        fail('E_BAD_ARG', "sort direction must be 'ASC' or 'DESC'", args.pos_of(dir_at))
     # Count and direction were evaluated and checked above whatever the list holds
     # (SPEC 7.4); only now may an empty result be returned.
     if limit == 0 or (value.kind == NONE and value.size() == 0):
