@@ -2,8 +2,7 @@ import { Value, RecordShape, NONE, TEXT, structuralHash, scalarKey, recordShape,
 import * as D from '../decimal.mjs';
 import { define } from '../registry.mjs';
 import { anyNode, callsApplication, mayWrite } from '../ast.mjs';
-import { BUILTIN_MANIFEST } from '../_builtin_manifest.mjs';
-import { SelError, fail, MAX_DEPTH } from '../errors.mjs';
+import { SelError, MAX_DEPTH } from '../errors.mjs';
 import { asciiUpper } from '../lexer.mjs';
 import { checkCollection } from '../budget.mjs';
 
