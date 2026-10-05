@@ -10,19 +10,12 @@
 // SqlError is the class an application catches.
 
 #include "sel_sql.hpp"
+#include "sel_ast.hpp"
 
 #include <algorithm>
 
 namespace sel::sql {
 namespace {
-
-std::string ascii_upper(std::string_view s) {
-  std::string out(s);
-  for (char& c : out) {
-    if (c >= 'a' && c <= 'z') c = static_cast<char>(c - 'a' + 'A');
-  }
-  return out;
-}
 
 // A column holds a NUM, TEXT, BOOL, BIN or UNKNOWN value. LIST and STATEMENT are
 // what a whole fragment can be; a column declared as one made Fragment::kind
@@ -97,9 +90,8 @@ void check_numeric(const std::string& where, const sel::Value& v) {
 
 std::optional<std::string> check_prefilter(const std::optional<std::string>& p) {
   if (!p) return std::nullopt;
-  std::string lower;
-  lower.reserve(p->size());
-  for (char c : *p) lower.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(c))));
+  // An option word an application wrote: ASCII case, never the C locale's.
+  const std::string lower = ascii_lower(*p);
   if (lower == "separate" || lower == "splitsargable" || lower == "split_sargable" || lower == "true") {
     return "separate";
   }

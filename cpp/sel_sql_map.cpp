@@ -24,16 +24,6 @@ namespace {
   throw std::runtime_error(message);
 }
 
-// ASCII only, matching sel::registry and PHP's strtoupper. Locale-aware
-// upper-casing would fold non-ASCII differently on different hosts, and a
-// function name is ASCII by the lexer's rules anyway.
-std::string ascii_upper(std::string_view s) {
-  std::string out(s);
-  for (char& c : out) {
-    if (c >= 'a' && c <= 'z') c = static_cast<char>(c - 'a' + 'A');
-  }
-  return out;
-}
 
 std::string join(std::span<const std::string_view> xs) {
   std::string out;

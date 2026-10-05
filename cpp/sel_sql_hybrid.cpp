@@ -79,13 +79,6 @@ Value isolated_context(const Value& context, const Node& ast) {
   return out;
 }
 
-std::string upper_ascii(std::string value) {
-  for (char& ch : value) {
-    if (ch >= 'a' && ch <= 'z') ch = static_cast<char>(ch - 'a' + 'A');
-  }
-  return value;
-}
-
 std::shared_ptr<Node> copy_node(const NodePtr& node) {
   if (!node) return nullptr;
   auto copy = std::make_shared<Node>(*node);
@@ -222,7 +215,7 @@ bool contains_unsupported_sql(const NodePtr& node, const std::string& dialect,
                                    std::end(SQL_SPECIAL_CALLS), node->s) !=
                          std::end(SQL_SPECIAL_CALLS);
     if (!special) {
-      const Entry* entry = Map::entry(dialect, Section::Funcs, upper_ascii(node->s));
+      const Entry* entry = Map::entry(dialect, Section::Funcs, ascii_upper(node->s));
       if (!entry || entry->kind == EntryKind::Refusal) return true;
     }
   }
@@ -246,8 +239,8 @@ void collect_field_references(const NodePtr& node, const std::string& binder,
   if (!node) return;
   if (node->t == NT::Index && node->l && node->l->t == NT::Var &&
       node->r && node->r->t == NT::Text) {
-    const std::string object = upper_ascii(node->l->s);
-    if (binder.empty() || object == upper_ascii(binder) || object == "_" ||
+    const std::string object = ascii_upper(node->l->s);
+    if (binder.empty() || object == ascii_upper(binder) || object == "_" ||
         object == "_1" || object == "_2") {
       const std::string key = node->r->s;
       if (std::find(out.begin(), out.end(), key) == out.end()) out.push_back(key);
@@ -276,8 +269,8 @@ bool fallthrough_downstream(const std::string& name) {
 bool reads_whole_row(const NodePtr& node, const std::string& binder) {
   if (!node) return false;
   if (node->t == NT::Var) {
-    const std::string name = upper_ascii(node->s);
-    return name == upper_ascii(binder) || name == "_" || name == "_1" || name == "_2";
+    const std::string name = ascii_upper(node->s);
+    return name == ascii_upper(binder) || name == "_" || name == "_1" || name == "_2";
   }
   if (node->t == NT::Index && node->l && node->l->t == NT::Var && node->r &&
       node->r->t == NT::Text) {
@@ -296,7 +289,7 @@ bool reads_whole_row(const NodePtr& node, const std::string& binder) {
 bool is_own_field_read(const std::pair<NodePtr, NodePtr>& pair, const std::string& binder) {
   const NodePtr& value = pair.second;
   return value && value->t == NT::Index && value->l && value->l->t == NT::Var && value->r &&
-         value->r->t == NT::Text && upper_ascii(value->l->s) == upper_ascii(binder) &&
+         value->r->t == NT::Text && ascii_upper(value->l->s) == ascii_upper(binder) &&
          value->r->s == pair.first->s;
 }
 
@@ -742,7 +735,7 @@ std::optional<HybridPlan> try_plan_fallthrough(
   };
   const auto has_name_folded = [](const std::vector<std::string>& names, const std::string& name) {
     return std::any_of(names.begin(), names.end(), [&](const std::string& value) {
-      return upper_ascii(value) == upper_ascii(name);
+      return ascii_upper(value) == ascii_upper(name);
     });
   };
   std::vector<std::string> projected;
@@ -903,8 +896,8 @@ std::optional<HybridPlan> try_latest_member(const NodePtr& source, const std::ve
       steps[at + 1]->items.size() == 2) {
     body = steps[at + 1]->items[1];
   }
-  const auto* pf = rel.field(upper_ascii(partition.value_or("")));
-  const auto* rf = rel.field(upper_ascii(revision));
+  const auto* pf = rel.field(ascii_upper(partition.value_or("")));
+  const auto* rf = rel.field(ascii_upper(revision));
   if (!partition || !body || body->t != NT::Call || body->s != "RECORD" ||
       body->items.size() != 4 || !pf || !rf ||
       (pf->type != SqlKind::Num && pf->type != SqlKind::Text) || rf->type != SqlKind::Num ||
@@ -959,8 +952,8 @@ std::optional<HybridPlan> try_latest_member(const NodePtr& source, const std::ve
     Emit emit(dialect);
     std::string input = "_sel_input";
     std::string groups = "_sel_latest";
-    while (upper_ascii(input) == upper_ascii(rel.from)) input += "_";
-    while (upper_ascii(groups) == upper_ascii(rel.from) || upper_ascii(groups) == upper_ascii(input)) {
+    while (ascii_upper(input) == ascii_upper(rel.from)) input += "_";
+    while (ascii_upper(groups) == ascii_upper(rel.from) || ascii_upper(groups) == ascii_upper(input)) {
       groups += "_";
     }
     const auto qi = emit.ident(input);

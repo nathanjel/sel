@@ -17,15 +17,6 @@ namespace {
   throw std::logic_error("SEL->SQL: " + name + ": an argument count compile() refuses reached the translator");
 }
 
-// ASCII only, matching PHP's strtoupper. A Unicode upper-caser would fold "ß"
-// to "SS" and change a key's length.
-std::string ascii_upper(std::string_view s) {
-  std::string out(s);
-  for (char& c : out) {
-    if (c >= 'a' && c <= 'z') c = static_cast<char>(c - 'a' + 'A');
-  }
-  return out;
-}
 void frame_set(std::vector<std::pair<std::string, Binder>>& frame,
                const std::string& name, Binder b);
 std::string relation_alias(const RelationSpec& rel);
@@ -88,11 +79,7 @@ bool contains(const std::vector<std::string>& xs, const std::string& x) {
 std::vector<std::string> binder_keys(const std::vector<std::string>& names) {
   std::vector<std::string> out;
   for (const std::string& name : names) {
-    std::string lower = name;
-    for (char& c : lower) {
-      if (c >= 'A' && c <= 'Z') c = static_cast<char>(c - 'A' + 'a');
-    }
-    for (const std::string& k : {name, lower}) {
+    for (const std::string& k : {name, ascii_lower(name)}) {
       if (!contains(out, k)) out.push_back(k);
     }
   }
@@ -3867,92 +3854,61 @@ void Translator::analyze_sort_step(const SNodePtr& step, RelationalPlan& plan) {
   if (top && args.empty()) {
     unreachable_arity(name);
   }
-  const auto count = top ? args.size() - 1 : args.size();
 
   if (top) {
     const int64_t limit = eval_int_param(args.back(), name);
     plan.limit = !plan.limit.has_value() ? limit : std::min(*plan.limit, limit);
   }
 
-  if (name == "SORT" || name == "SORT_DESC" || name == "TOP" || name == "TOP_DESC") {
-    std::string dir = (name == "SORT" || name == "TOP") ? "ASC" : "DESC";
-    if (count == 1) {
-      if (plan.source_relation.scalar) {
-        const std::string& scalar_col = *plan.source_relation.scalar;
-        auto shape = std::make_shared<Node>();
-        shape->t = NT::Index;
-        shape->pos = step->pos();
-        SNodePtr var_n = SNode::leaf(lit_node(NT::Var, "_", false, step->pos()));
-        SNodePtr idx_n = SNode::leaf(lit_node(NT::Text, scalar_col, false, step->pos()));
-        SNodePtr index_node = SNode::rewritten(shape, {var_n, idx_n});
-        plan.order_by.push_back({"_", index_node, dir, step->pos()});
-        return;
-      }
-      if (plan.source_relation.fields.size() == 1) {
-        const std::string& field_name = plan.source_relation.fields[0].first;
-        auto shape = std::make_shared<Node>();
-        shape->t = NT::Index;
-        shape->pos = step->pos();
-        SNodePtr var_n = SNode::leaf(lit_node(NT::Var, "_", false, step->pos()));
-        SNodePtr idx_n = SNode::leaf(lit_node(NT::Text, field_name, false, step->pos()));
-        SNodePtr index_node = SNode::rewritten(shape, {var_n, idx_n});
-        plan.order_by.push_back({"_", index_node, dir, step->pos()});
-        return;
-      }
-      refuse("E_SQL_SHAPE", "SORT on a multi-field relation requires a key expression; use SORT_BY", step->pos());
-    } else if (count == 2) {
-      plan.order_by.push_back({"_", args[1], dir, step->pos()});
-    } else if (count == 3) {
-      if (!is_binder_name(*args[1])) {
-        refuse("E_SQL_SHAPE", "the binder of " + name + " must be a bare name", args[1]->pos());
-      }
-      plan.order_by.push_back({args[1]->s(), args[2], dir, step->pos()});
-    } else {
-      unreachable_arity(name);
+  // The form is the evaluator's (sort_form): read off the call as written, not
+  // off stage 1's rewrite of it, where a helper inlined into the key slot could
+  // look like a direction -- `D = "DESC"; SORT_BY(L, X, D)` binds X and sorts
+  // by D's value, it does not sort by X descending.
+  const auto form = step->origin() ? sort_form(name, step->origin()->items) : std::nullopt;
+  if (!form || step->origin()->items.size() != args.size()) unreachable_arity(name);
+  std::string dir = name == "SORT_DESC" || name == "TOP_DESC" ? "DESC" : "ASC";
+
+  if (form->key < 0) {
+    // SORT(L) / TOP(L, n): the element is its own key, which for a relation is
+    // its one column.
+    const auto field_key = [&](const std::string& field) {
+      auto shape = std::make_shared<Node>();
+      shape->t = NT::Index;
+      shape->pos = step->pos();
+      SNodePtr var_n = SNode::leaf(lit_node(NT::Var, "_", false, step->pos()));
+      SNodePtr idx_n = SNode::leaf(lit_node(NT::Text, field, false, step->pos()));
+      return SNode::rewritten(shape, {var_n, idx_n});
+    };
+    if (plan.source_relation.scalar) {
+      plan.order_by.push_back({"_", field_key(*plan.source_relation.scalar), dir, step->pos()});
+      return;
     }
-    return;
+    if (plan.source_relation.fields.size() == 1) {
+      plan.order_by.push_back({"_", field_key(plan.source_relation.fields[0].first), dir, step->pos()});
+      return;
+    }
+    refuse("E_SQL_SHAPE", "SORT on a multi-field relation requires a key expression; use SORT_BY", step->pos());
   }
 
-  // SORT_BY
   std::string binder = "_";
-  SNodePtr key;
-  std::string dir = "ASC";
-  Pos dir_pos = step->pos();
-
-  if (count == 2) {
-    binder = "_";
-    key = args[1];
-    dir = "ASC";
-  } else if (count == 3) {
-    if (args[2]->t() == SNode::T::Text) {
-      binder = "_";
-      key = args[1];
-      dir = ascii_upper(args[2]->s());
-      dir_pos = args[2]->pos();
-    } else if (is_binder_name(*args[1])) {
-      binder = args[1]->s();
-      key = args[2];
-      dir = "ASC";
-    } else {
-      // Neither form: the third slot is a direction the evaluator would
-      // compute, and SQL cannot -- the four-argument form's refusal.
-      refuse("E_BAD_ARG", "sort direction must be 'ASC' or 'DESC'", args[2]->pos());
+  if (form->binder >= 0) {
+    const SNodePtr& b = args[static_cast<std::size_t>(form->binder)];
+    if (!is_binder_name(*b)) {
+      refuse("E_SQL_SHAPE", "the binder of " + name + " must be a bare name", b->pos());
     }
-  } else if (count == 4) {
-    if (!is_binder_name(*args[1])) {
-      refuse("E_SQL_SHAPE", "the binder of SORT_BY must be a bare name", args[1]->pos());
-    }
-    binder = args[1]->s();
-    key = args[2];
-    if (args[3]->t() != SNode::T::Text) {
-      refuse("E_BAD_ARG", "sort direction must be 'ASC' or 'DESC'", args[3]->pos());
-    }
-    dir = ascii_upper(args[3]->s());
-    dir_pos = args[3]->pos();
-  } else {
-    unreachable_arity("SORT_BY");
+    binder = b->s();
   }
-
+  const SNodePtr& key = args[static_cast<std::size_t>(form->key)];
+  Pos dir_pos = step->pos();
+  if (form->dir >= 0) {
+    // A direction the evaluator would compute is one SQL cannot.
+    const SNodePtr& d = args[static_cast<std::size_t>(form->dir)];
+    if (d->t() != SNode::T::Text) {
+      refuse("E_BAD_ARG", "sort direction must be 'ASC' or 'DESC'", d->pos());
+    }
+    dir = ascii_upper(d->s());
+    dir_pos = d->pos();
+  }
   if (dir != "ASC" && dir != "DESC") {
     refuse("E_BAD_ARG", "sort direction must be 'ASC' or 'DESC'", dir_pos);
   }

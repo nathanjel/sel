@@ -25,6 +25,7 @@
 
 #include <cstring>
 #include <memory>
+#include <string_view>
 #include <optional>
 #include <set>
 #include <string>
@@ -101,6 +102,26 @@ struct Node {
 };
 
 using NodePtr = std::shared_ptr<const Node>;
+
+// ASCII case, for SEL names, option words and keywords, and for UPPER/LOWER
+// (ASCII by decision): A-Z and a-z and nothing else, whatever the locale.
+// std::toupper/tolower follow the C locale -- an application that calls
+// setlocale() would change which bytes move -- and a Unicode case mapping would
+// change a key's length ("ß" is "SS"), so nothing in this host uses either.
+// One set, for the evaluator and the SQL layer alike. Bytes of a multi-byte
+// UTF-8 sequence are all >= 0x80 and are never touched.
+constexpr char ascii_up(char c) { return c >= 'a' && c <= 'z' ? static_cast<char>(c - 'a' + 'A') : c; }
+constexpr char ascii_down(char c) { return c >= 'A' && c <= 'Z' ? static_cast<char>(c - 'A' + 'a') : c; }
+inline std::string ascii_upper(std::string_view s) {
+  std::string out(s);
+  for (char& c : out) c = ascii_up(c);
+  return out;
+}
+inline std::string ascii_lower(std::string_view s) {
+  std::string out(s);
+  for (char& c : out) c = ascii_down(c);
+  return out;
+}
 
 // Internal services shared by the evaluator and the SQL translation unit.
 // They are declared here rather than in sel.hpp so consumers still only need
@@ -257,6 +278,53 @@ inline std::optional<BindingForm> binding_form(const std::string& name, const st
         out.binds.push_back(args[static_cast<std::size_t>(i)]->s);
       }
     }
+    return out;
+  }
+  return std::nullopt;
+}
+
+// The argument form of a SORT/TOP-family call (SORT, SORT_DESC, SORT_BY, TOP,
+// TOP_DESC, TOP_BY), decided from the manifest's forms as binding_form decides
+// them, and decided ONCE for every reader: the evaluator, the optimiser and the
+// SQL translator all ask here which argument is the binder, the key and the
+// direction. The forms are tried in the manifest's order, which is what makes
+// a text literal in the third slot a direction before a bare name in the
+// second is a binder (`text-direction-wins-over-bare-name`). The key is the
+// form's Inner argument; the direction is the Outer argument after it (a TOP's
+// last argument is its count, never a direction). -1 for a slot the form does
+// not have: no binder means `_` is bound, no key means the element is its own
+// key, no direction means the call's own (SORT_DESC/TOP_DESC) or ASC. Empty
+// when no form takes this count. No allocation: the evaluator asks per call.
+struct SortForm {
+  int binder = -1;
+  int key = -1;
+  int dir = -1;
+};
+
+inline std::optional<SortForm> sort_form(std::string_view name, const std::vector<NodePtr>& args) {
+  using namespace sel_builtin_manifest;
+  const bool top = name.starts_with("TOP");
+  const int last = static_cast<int>(args.size()) - (top ? 1 : 0);
+  bool seen = false;
+  for (int i = 0; i < FORM_COUNT; i++) {
+    const Form& f = FORMS[i];
+    if (name != f.name) {
+      if (seen) break;
+      continue;
+    }
+    seen = true;
+    if (static_cast<std::size_t>(f.count) != args.size()) continue;
+    if (f.when_arg >= 0) {
+      const Node& a = *args[static_cast<std::size_t>(f.when_arg)];
+      const bool ok = f.when_kind == 1 ? (a.t == NT::Var && !a.grouped) : a.t == NT::Text;
+      if (!ok) continue;
+    }
+    SortForm out;
+    for (int k = 0; k < f.count; k++) {
+      if (f.scopes[k] == Scope::Binder) out.binder = k;
+      if (f.scopes[k] == Scope::Inner) out.key = k;
+    }
+    if (out.key >= 0 && out.key + 1 < last) out.dir = out.key + 1;
     return out;
   }
   return std::nullopt;

@@ -419,10 +419,7 @@ bool identity_loss_before_grouping(const SNodePtr& root, bool needed) {
     if (n->s() == "DISTINCT" || n->s() == "DEDUPE") needs = {true, {}};
     if (!needs.whole && (n->s() == "LINK" || n->s() == "LINK_LEFT") && args[1]->t() == SNode::T::Var) {
       const auto& right = args[args.size() == 5 ? 3 : 1]->s();
-      std::erase_if(needs.fields, [&](std::string k) {
-        for (char& c : k) if (c >= 'a' && c <= 'z') c = static_cast<char>(c - 'a' + 'A');
-        return k == right;
-      });
+      std::erase_if(needs.fields, [&](const std::string& k) { return ascii_upper(k) == right; });
     }
     n = args[0];
   }
