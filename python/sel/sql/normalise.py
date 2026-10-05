@@ -284,6 +284,17 @@ def _substitute(node: Any, defs: dict[str, Any], bound: list[str],
                 args.append(arg)
             else:
                 args.append(_substitute(arg, defs, inner if scope == 'inner' else bound, depth))
+        # The form was decided by the call as written (spec §7.3): a helper that
+        # inlines a text literal into the slot whose text-ness picks the form
+        # (`D = "DESC"; SORT_BY(r, D)` -- r is the binder, D the key) must not
+        # turn it into the other form. Such an argument keeps its own scope, as
+        # a `scoped` node, which is not a text literal to a form test.
+        if scopes is not None:
+            again = _registry.binding_form(node.name, args, node.spec)
+            if again is None or again[0] != scopes:
+                args = [Node('scoped', a.pos, x=a)
+                        if a.t == 'text' and written.t != 'text' else a
+                        for a, written in zip(args, node.args)]
         return node.replaced(args=args)
 
     return node
