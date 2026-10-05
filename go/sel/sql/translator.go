@@ -1789,13 +1789,9 @@ func (t *translator) call(n *sNode) *Fragment {
 				return NewFragment([]Part{{Sql: "COUNT(*)"}}, KindNum, t.dialect, nil, nil, nil)
 			}
 			if name == "SUM" && len(n.Kids) >= 2 {
-				hasCustomBinder := len(n.Kids) == 3 && isBinderName(n.Kids[1])
-				bodyNode := n.Kids[1]
-				binderName := "_"
-				if hasCustomBinder {
-					bodyNode = n.Kids[2]
-					binderName = n.Kids[1].Str
-				}
+				// SUM(group, binder, body): a binder slot that is not a bare name
+				// is E_EXPECT_SYMBOL in SEL, so it is refused, not summed as the body.
+				binderName, bodyNode := aggShape(n)
 				src := source{
 					Shape:    sourceShapeRelation,
 					Relation: group.Relation,
