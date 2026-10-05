@@ -996,6 +996,7 @@ impl LargeDec {
             trailing_decimal_zeros(&self.words, cap)
         }
     }
+    #[cfg(test)]
     pub fn last_digit(&self) -> u32 {
         rem_1(&self.words, 10) as u32
     }
@@ -1004,11 +1005,6 @@ impl LargeDec {
     }
     pub fn mul_pow10(&self, exponent: usize) -> Self {
         Self { words: mul_pow10_nat(&self.words, exponent) }
-    }
-    pub fn mul_pow10_assign(&mut self, exponent: usize) {
-        if exponent != 0 && !self.is_zero() {
-            self.words = mul_pow10_nat(&self.words, exponent);
-        }
     }
     pub fn div_pow10(&self, exponent: usize) -> (Self, Self) {
         let (q, r) = divmod_pow10(&self.words, exponent);
@@ -1041,6 +1037,7 @@ impl LargeDec {
     pub fn mul(&self, rhs: &Self) -> Self {
         Self { words: mul_nat(&self.words, &rhs.words) }
     }
+    #[cfg(test)]
     pub fn div_small_assign(&mut self, divisor: u32) -> u32 {
         assert_ne!(divisor, 0);
         let r = div_1(&mut self.words, divisor as u64);

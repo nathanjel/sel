@@ -6,7 +6,7 @@
 //   sel --functions        list the function table
 //   sel                    REPL, keeping one context across lines
 
-use sel_lang::{compile, decode_utf8_source, function_names, Context, Kind, Pos, SelError, Value};
+use sel_lang::{compile, Context, decode_utf8_source, function_names, Kind, Pos, SelError, Value};
 use std::io::{self, BufRead, Write};
 
 fn show(v: &Value) -> String {

@@ -67,21 +67,21 @@ pub struct Source {
 }
 
 pub struct Translator {
-    pub dialect: String,
-    pub emit: Emit,
-    pub bindings: Bindings,
-    pub strict: bool,
-    pub params: Vec<Value>,
-    pub param_kinds: Vec<SqlKind>,
-    pub caveats: Vec<String>,
-    pub frames: Vec<Vec<(String, Binder)>>,
-    pub const_names: HashMap<String, bool>,
-    pub const_root: Value,
-    pub depth: usize,
-    pub dispatched_nodes: usize,
-    pub statement_plan: Option<RelationalPlan>,
-    pub in_where: bool,
-    pub subquery_counter: usize,
+    pub(crate) dialect: String,
+    pub(crate) emit: Emit,
+    pub(crate) bindings: Bindings,
+    pub(crate) strict: bool,
+    pub(crate) params: Vec<Value>,
+    pub(crate) param_kinds: Vec<SqlKind>,
+    pub(crate) caveats: Vec<String>,
+    pub(crate) frames: Vec<Vec<(String, Binder)>>,
+    pub(crate) const_names: HashMap<String, bool>,
+    pub(crate) const_root: Value,
+    pub(crate) depth: usize,
+    pub(crate) dispatched_nodes: usize,
+    pub(crate) statement_plan: Option<RelationalPlan>,
+    pub(crate) in_where: bool,
+    pub(crate) subquery_counter: usize,
 }
 
 impl Translator {

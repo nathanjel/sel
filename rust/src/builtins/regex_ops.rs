@@ -58,7 +58,7 @@ pub fn fn_rgroups(args: &mut Args) -> Result<Value, SelError> {
             items.push(Value::text_owned(String::new()));
         }
     }
-    Ok(Value::list_owned(items))
+    Ok(Value::list(items))
 }
 
 pub fn fn_rreplace(args: &mut Args) -> Result<Value, SelError> {

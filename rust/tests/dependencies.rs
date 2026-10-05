@@ -44,7 +44,8 @@ fn dependencies_follow_definite_assignment_and_lazy_control_flow() {
 
 #[test]
 fn dependency_depth_failure_matches_logical_evaluation() {
-    use sel_lang::{eval_node, Context, Pos, Value};
+    use sel_lang::eval::eval_node;
+    use sel_lang::{Context, Pos, Value};
     let source = format!("{}A", "A + ".repeat(220));
     let program = compile(&source).unwrap();
     let root = Value::none();
@@ -57,7 +58,8 @@ fn dependency_depth_failure_matches_logical_evaluation() {
 
 #[test]
 fn dependency_assignment_path_depth_matches_runtime() {
-    use sel_lang::{eval_node, Context, Value};
+    use sel_lang::eval::eval_node;
+    use sel_lang::{Context, Value};
     let program = compile(&format!("A{} = 2", "[1]".repeat(200))).unwrap();
     let execution_error = eval_node(program.ast(), &mut Context::new(Value::none())).unwrap_err();
     let analysis_error = program.dependencies().unwrap_err();

@@ -5,7 +5,8 @@
 use sel_lang::context::Context;
 use sel_lang::eval::eval_node;
 use sel_lang::join_prefilter::{leading_field_conjuncts, JoinPrefilter, JoinReport, JoinStage};
-use sel_lang::{compile, evaluate, Node, NodeType, Pos, SelError, Value};
+use sel_lang::ast::{Node, NodeType};
+use sel_lang::{compile, evaluate, Pos, SelError, Value};
 
 const DATA: &str = r#"ORDERS = LIST(
   RECORD("id", 1, "cid", 1, "status", "B", "amount", "x"),

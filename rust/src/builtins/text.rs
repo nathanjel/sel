@@ -175,7 +175,7 @@ pub fn fn_split(args: &mut Args) -> Result<Value, SelError> {
         i += pos + sep.len();
     }
     parts.push(Value::text_owned(hay[i..].to_string()));
-    Ok(Value::list_owned(parts))
+    Ok(Value::list(parts))
 }
 
 pub fn fn_trim(args: &mut Args) -> Result<Value, SelError> {

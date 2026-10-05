@@ -72,13 +72,17 @@ impl RelationSpec {
 }
 
 #[derive(Clone, Debug)]
+/// Where a SEL name lives in the database: a column, a list of columns, a
+/// relation, or a value known before the query runs. Built only by the
+/// constructors below, which validate what they are given; the fields are the
+/// crate's, so no binding can skip that.
 pub struct Binding {
-    pub kind: BindingKind,
-    pub column: Option<ColumnSpec>,
-    pub columns: Option<Vec<ColumnSpec>>,
-    pub relation: Option<RelationSpec>,
-    pub val: Option<Value>,
-    pub value_type: Option<SqlKind>,
+    pub(crate) kind: BindingKind,
+    pub(crate) column: Option<ColumnSpec>,
+    pub(crate) columns: Option<Vec<ColumnSpec>>,
+    pub(crate) relation: Option<RelationSpec>,
+    pub(crate) val: Option<Value>,
+    pub(crate) value_type: Option<SqlKind>,
 }
 
 fn check_name(what: &str, v: &str) {
@@ -458,7 +462,7 @@ fn make_relation(
 
 #[derive(Clone, Debug, Default)]
 pub struct Bindings {
-    pub map: HashMap<String, Binding>,
+    pub(crate) map: HashMap<String, Binding>,
 }
 
 impl Bindings {

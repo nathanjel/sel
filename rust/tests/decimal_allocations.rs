@@ -60,7 +60,7 @@ fn small_parsing_and_arithmetic_do_not_allocate() {
     TRACKING.with(|flag| flag.set(false));
     assert_eq!(ALLOCATIONS.with(Cell::get), 0);
     assert_eq!(ordering, std::cmp::Ordering::Greater);
-    assert_eq!(large_small.repr, DecRepr::Small(i128::MAX));
+    assert_eq!(*large_small.repr(), DecRepr::Small(i128::MAX));
     let expected = [
         "12348.67",
         "12342.67",
@@ -75,7 +75,7 @@ fn small_parsing_and_arithmetic_do_not_allocate() {
         "3",
     ];
     for (result, expected) in results.iter().zip(expected) {
-        assert!(matches!(result.repr, DecRepr::Small(_)));
+        assert!(matches!(result.repr(), DecRepr::Small(_)));
         assert_eq!(dec_format(result), expected);
     }
 }
@@ -85,8 +85,7 @@ fn oversized_products_are_refused_before_allocating_operand_sized_storage() {
     use sel_lang::limits::{MAX_FRAC_DIGITS, MAX_INT_DIGITS};
     let pos = Pos::new(7, 9, 23);
     let integer = dec_parse(&"9".repeat(MAX_INT_DIGITS), pos).unwrap();
-    let mut fraction = integer.clone();
-    fraction.scale = MAX_FRAC_DIGITS as u32;
+    let fraction = Dec::from_raw_parts(false, MAX_FRAC_DIGITS as u32, integer.repr().clone());
     MAX_ALLOCATION.with(|n| n.set(0));
     TRACKING.with(|flag| flag.set(true));
     let integer_error = dec_mul(&integer, &integer, pos).unwrap_err();
@@ -154,7 +153,7 @@ fn large_copies_negations_and_differences_share_mantissas() {
     // Past i128, one scale, so no alignment and no power cache.
     let a = dec_parse("1234567890123456789012345678901234567890123456789.25", pos).unwrap();
     let b = dec_parse("987654321098765432109876543210987654321098765432.75", pos).unwrap();
-    assert!(matches!(a.repr, DecRepr::Large(_)) && matches!(b.repr, DecRepr::Large(_)));
+    assert!(matches!(a.repr(), DecRepr::Large(_)) && matches!(b.repr(), DecRepr::Large(_)));
     fn counted<T>(f: impl FnOnce() -> T) -> (usize, T) {
         ALLOCATIONS.with(|n| n.set(0));
         TRACKING.with(|flag| flag.set(true));

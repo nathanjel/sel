@@ -150,7 +150,7 @@ fn a_large_number_reads_without_copying() {
     // A computed number: its decimal is the cell's own.
     let computed = large(ZR);
     let (n, d) = count(|| computed.as_decimal(pos).unwrap());
-    assert!(matches!(d.repr, sel_lang::dec::DecRepr::Large(_)));
+    assert!(matches!(d.repr(), sel_lang::dec::DecRepr::Large(_)));
     assert_eq!(n, 0, "reading a computed large number");
     // A parsed number: the first read parses and keeps the decimal; later
     // reads are the computed case.

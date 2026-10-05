@@ -103,3 +103,28 @@ fn retained_program_cache_checks_shapes_and_reads_current_values() {
         "10"
     );
 }
+
+// The supported way to share a rule between threads (README.md, "Sharing"):
+// one compiled program, cloned per thread and moved there; each thread builds
+// its own context and hands back text, never a Value.
+#[test]
+fn a_cloned_program_runs_on_other_threads() {
+    let program = compile(r#"TOTAL = SUM(ITEMS, _["qty"]); TOTAL * K"#).unwrap();
+    let handles: Vec<_> = (1..=4)
+        .map(|k| {
+            let mut mine = program.clone();
+            std::thread::spawn(move || {
+                let at = Pos::default();
+                let ctx = Value::none();
+                let items = (1..=3).map(|q| {
+                    Value::record_from_entries(vec![Entry { key: "qty".into(), val: Value::text_owned(q.to_string()) }])
+                });
+                ctx.set("ITEMS", Value::list(items.collect()), at).unwrap();
+                ctx.set("K", Value::text_owned(k.to_string()), at).unwrap();
+                mine.run(Some(ctx)).unwrap().as_text(at).unwrap().to_string()
+            })
+        })
+        .collect();
+    let answers: Vec<String> = handles.into_iter().map(|h| h.join().unwrap()).collect();
+    assert_eq!(answers, ["6", "12", "18", "24"]);
+}

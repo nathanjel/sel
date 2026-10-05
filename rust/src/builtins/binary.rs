@@ -163,7 +163,7 @@ pub fn fn_btl(args: &mut Args) -> Result<Value, SelError> {
     let b = args.bytes(0)?;
     cap_collection(b.len() as u128, args.pos())?;
     let items = b.into_iter().map(|byte| Value::int(byte as i64)).collect();
-    Ok(Value::list_owned(items))
+    Ok(Value::list(items))
 }
 
 pub fn fn_ltb(args: &mut Args) -> Result<Value, SelError> {

@@ -1,4 +1,6 @@
-use sel_lang::{eval_node, Context, Dec, Node, NodeType, Pos, Value};
+use sel_lang::ast::{Node, NodeType};
+use sel_lang::eval::eval_node;
+use sel_lang::{Context, Dec, Pos, Value};
 
 fn number() -> Node {
     let mut n = Node::new(NodeType::Num, Pos::new(1, 1, 0));

@@ -60,10 +60,20 @@ stable `code` (`E_NOT_NUM`, `E_ABORT`, …) and the `pos` of the node that faile
 
 ## Notes for Rust
 
-- A `Program` is neither `Send` nor `Sync`, and `run` takes `&mut self`: compile
-  one per thread (it is cheap), or keep it in a `thread_local!`. A host function
-  (`register_function`) must be `Send + Sync + 'static`, so it cannot capture a
-  compiled program or a `Value`.
+- Sharing across threads: a `Program` is `Send` but not `Sync`, and `run` takes
+  `&mut self`. Move a compiled program to the thread that runs it, or give each
+  thread its own -- `program.clone()` before spawning, or compile one per thread
+  (it is cheap), or keep one in a `thread_local!`. A `Value` (and so a context,
+  a result, a `Context`) is neither `Send` nor `Sync`: it lives and dies on the
+  thread that made it, so hand other threads its text (`dump()`, `as_text()`)
+  instead. A host function (`register_function`) must be `Send + Sync +
+  'static`, so it cannot capture a compiled program or a `Value`; registering
+  while other threads compile and run is safe. The crate holds itself to all of
+  this with compile-time probes.
+- The API is what [docs.rs](https://docs.rs/sel-lang) shows: the crate root,
+  `sql`, `limits` and `text::SelStr`. The other modules are public only so the
+  repository's own tests and harness can reach them, are hidden from the
+  documentation, and may change in any release.
 - The SQL layer's configuration calls — `sql::define`, `define_dialect`,
   `define_builder`, the `Binding` constructors and `plan_hybrid` — panic with a
   `SqlError` on a bad argument rather than return one. `sql::define` takes a

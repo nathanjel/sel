@@ -51,7 +51,7 @@ pub fn fn_count(args: &mut Args) -> Result<Value, SelError> {
 pub fn fn_indexes(args: &mut Args) -> Result<Value, SelError> {
     let keys = args.val(0)?.keys();
     let items = keys.into_iter().map(Value::text_owned).collect();
-    Ok(Value::list_owned(items))
+    Ok(Value::list(items))
 }
 
 pub fn fn_has(args: &mut Args) -> Result<Value, SelError> {
@@ -67,7 +67,7 @@ pub fn fn_list(args: &mut Args) -> Result<Value, SelError> {
     for i in 0..count {
         items.push(args.val(i)?.deep_copy(2, args.pos())?);
     }
-    Ok(Value::list_owned(items))
+    Ok(Value::list(items))
 }
 
 pub fn fn_record(args: &mut Args) -> Result<Value, SelError> {
@@ -116,7 +116,7 @@ pub fn fn_take(args: &mut Args) -> Result<Value, SelError> {
     let val = args.val(0)?;
     let count = args.non_neg_int(1)? as usize;
     if count == 0 || val.is_null() {
-        return Ok(Value::list_owned(Vec::new()));
+        return Ok(Value::list(Vec::new()));
     }
     let is_dense_list = {
         let inner = val.0.borrow();
@@ -126,19 +126,19 @@ pub fn fn_take(args: &mut Args) -> Result<Value, SelError> {
         let inner = val.0.borrow();
         let storage = inner.storage.as_ref().unwrap();
         let take_n = count.min(storage.len());
-        return Ok(Value::list_owned(storage[..take_n].to_vec()));
+        return Ok(Value::list(storage[..take_n].to_vec()));
     }
     let ents = val.elems();
     let take_n = count.min(ents.len());
     let items = ents.vals[..take_n].to_vec();
-    Ok(Value::list_owned(items))
+    Ok(Value::list(items))
 }
 
 pub fn fn_drop(args: &mut Args) -> Result<Value, SelError> {
     let val = args.val(0)?;
     let count = args.non_neg_int(1)? as usize;
     if val.is_null() {
-        return Ok(Value::list_owned(Vec::new()));
+        return Ok(Value::list(Vec::new()));
     }
     let is_dense_list = {
         let inner = val.0.borrow();
@@ -148,22 +148,22 @@ pub fn fn_drop(args: &mut Args) -> Result<Value, SelError> {
         let inner = val.0.borrow();
         let storage = inner.storage.as_ref().unwrap();
         if count >= storage.len() {
-            return Ok(Value::list_owned(Vec::new()));
+            return Ok(Value::list(Vec::new()));
         }
-        return Ok(Value::list_owned(storage[count..].to_vec()));
+        return Ok(Value::list(storage[count..].to_vec()));
     }
     let ents = val.elems();
     if count >= ents.len() {
-        return Ok(Value::list_owned(Vec::new()));
+        return Ok(Value::list(Vec::new()));
     }
     let items = ents.vals[count..].to_vec();
-    Ok(Value::list_owned(items))
+    Ok(Value::list(items))
 }
 
 pub fn fn_select_cols(args: &mut Args) -> Result<Value, SelError> {
     let val = args.val(0)?;
     if val.is_null() {
-        return Ok(Value::list_owned(Vec::new()));
+        return Ok(Value::list(Vec::new()));
     }
     let num_cols = args.count() - 1;
     let mut columns = Vec::with_capacity(num_cols);
@@ -185,13 +185,13 @@ pub fn fn_select_cols(args: &mut Args) -> Result<Value, SelError> {
         }
         rows.push(Value::record_from_entries(row_entries));
     }
-    Ok(Value::list_owned(rows))
+    Ok(Value::list(rows))
 }
 
 pub fn fn_dedupe(args: &mut Args) -> Result<Value, SelError> {
     let val = args.val(0)?;
     if val.is_null() {
-        return Ok(Value::list_owned(Vec::new()));
+        return Ok(Value::list(Vec::new()));
     }
     let ents = val.elems();
     let mut buckets: HashMap<u64, Vec<Value>> = HashMap::new();
@@ -212,7 +212,7 @@ pub fn fn_dedupe(args: &mut Args) -> Result<Value, SelError> {
             out.push(item);
         }
     }
-    Ok(Value::list_owned(out))
+    Ok(Value::list(out))
 }
 
 pub fn fn_distinct(args: &mut Args) -> Result<Value, SelError> {
@@ -240,7 +240,7 @@ pub fn fn_map(args: &mut Args) -> Result<Value, SelError> {
 
     let val = args.val(0)?;
     if val.is_null() {
-        return Ok(Value::list_owned(Vec::new()));
+        return Ok(Value::list(Vec::new()));
     }
 
     let ents = val.elems();
@@ -283,7 +283,7 @@ pub fn fn_map(args: &mut Args) -> Result<Value, SelError> {
     }
     args.ctx.pop_frame();
 
-    Ok(Value::list_owned(out))
+    Ok(Value::list(out))
 }
 
 // What a FILTER knows before its source runs. Its source is read in
@@ -406,7 +406,7 @@ fn filter_rows(args: &mut Args, plan: Box<FilterPlan>, source: Result<Value, Sel
     let needs_k = node_contains_var(body_node, "_K");
 
     if val.is_null() {
-        return Ok(Value::list_owned(Vec::new()));
+        return Ok(Value::list(Vec::new()));
     }
 
     let ents = val.elems();
@@ -453,7 +453,7 @@ fn filter_rows(args: &mut Args, plan: Box<FilterPlan>, source: Result<Value, Sel
     // the source was numbered so; positions stay numbers, not text.
     let all_kept = kept.len() == ents.len();
     if all_kept && (0..ents.len()).all(|i| ents.keyed_by_position(i)) {
-        return Ok(Value::list_owned(storage));
+        return Ok(Value::list(storage));
     }
     let positions: Option<Vec<u32>> = kept.iter().map(|&i| ents.index_key(i)).collect();
     let keys = match positions {
@@ -775,11 +775,11 @@ fn do_sort(args: &mut Args, forced_dir: Option<&str>) -> Result<Value, SelError>
     }
 
     if val.is_null() {
-        return Ok(Value::list_owned(Vec::new()));
+        return Ok(Value::list(Vec::new()));
     }
     let ents = val.elems();
     if ents.is_empty() {
-        return Ok(Value::list_owned(Vec::new()));
+        return Ok(Value::list(Vec::new()));
     }
 
     let mut indexed = Vec::with_capacity(ents.len());
@@ -831,7 +831,7 @@ fn do_sort(args: &mut Args, forced_dir: Option<&str>) -> Result<Value, SelError>
     });
 
     let out = indexed.into_iter().map(|x| x.item).collect();
-    Ok(Value::list_owned(out))
+    Ok(Value::list(out))
 }
 
 pub fn fn_sort(args: &mut Args) -> Result<Value, SelError> {
@@ -1023,12 +1023,12 @@ fn do_top(args: &mut Args, forced_dir: Option<&str>) -> Result<Value, SelError> 
     }
 
     if limit == 0 || val.is_null() {
-        return Ok(Value::list_owned(Vec::new()));
+        return Ok(Value::list(Vec::new()));
     }
 
     let ents = val.elems();
     if ents.is_empty() {
-        return Ok(Value::list_owned(Vec::new()));
+        return Ok(Value::list(Vec::new()));
     }
 
     let eager = body_opt.as_ref().is_some_and(top_key_may_write);
@@ -1127,7 +1127,7 @@ fn do_top(args: &mut Args, forced_dir: Option<&str>) -> Result<Value, SelError> 
         }
         out
     };
-    Ok(Value::list_owned(out))
+    Ok(Value::list(out))
 }
 
 
@@ -1173,11 +1173,11 @@ fn may_write(node: &Node) -> bool {
 pub fn fn_bucket(args: &mut Args) -> Result<Value, SelError> {
     let val = args.val(0)?;
     if val.is_null() {
-        return Ok(Value::list_owned(Vec::new()));
+        return Ok(Value::list(Vec::new()));
     }
     let ents = val.elems();
     if ents.is_empty() {
-        return Ok(Value::list_owned(Vec::new()));
+        return Ok(Value::list(Vec::new()));
     }
 
     let count = args.count();
@@ -1300,7 +1300,7 @@ pub fn fn_bucket(args: &mut Args) -> Result<Value, SelError> {
                 }
                 rows_copy
             };
-            out.set(&g.key_str, Value::list_owned(rows), Pos::default())?;
+            out.set(&g.key_str, Value::list(rows), Pos::default())?;
         }
         return Ok(out);
     }
@@ -1314,14 +1314,14 @@ pub fn fn_bucket(args: &mut Args) -> Result<Value, SelError> {
 
     for g in groups {
         if let Some(f) = args.ctx.frames.last_mut() {
-            f.set(&binder, Value::list_owned(g.rows));
+            f.set(&binder, Value::list(g.rows));
             f.set("_K", g.key);
         }
         out.push(args.eval_node(&agg_node)?.deep_copy(2, args.pos())?);
     }
     args.ctx.pop_frame();
 
-    Ok(Value::list_owned(out))
+    Ok(Value::list(out))
 }
 
 fn single_relation_name(node: &Node) -> String {
@@ -1840,14 +1840,14 @@ fn link_body<'a>(
     }
 
     if left_val.is_null() {
-        return Ok(Value::list_owned(Vec::new()));
+        return Ok(Value::list(Vec::new()));
     }
 
     let left_ents = left_val.elems().vals;
     let right_ents = right_val.elems().vals;
 
     if left_ents.is_empty() || (right_ents.is_empty() && !left_join) {
-        return Ok(Value::list_owned(Vec::new()));
+        return Ok(Value::list(Vec::new()));
     }
 
     let mut left_alias = RowAlias::new(&b1);
@@ -2161,7 +2161,7 @@ fn link_body<'a>(
             if numbered && dropped && !output.is_empty() {
                 return Ok(Value::list_with_list_keys(output, ListKeys::Index(positions.into())));
             }
-            return Ok(Value::list_owned(output));
+            return Ok(Value::list(output));
         }
     }
 
@@ -2223,7 +2223,7 @@ fn link_body<'a>(
     }
     args.ctx.pop_frame();
 
-    Ok(Value::list_owned(output))
+    Ok(Value::list(output))
 }
 
 pub fn fn_link(args: &mut Args) -> Result<Value, SelError> {

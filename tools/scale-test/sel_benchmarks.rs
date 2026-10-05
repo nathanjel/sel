@@ -227,7 +227,7 @@ struct RepresentationCounts {
 }
 
 fn count_representation(value: &Value, counts: &mut RepresentationCounts) {
-    let inner = value.0.borrow();
+    let inner = value.inner();
     if inner.is_list {
         counts.lists += 1;
     } else if inner.shape.is_some() {

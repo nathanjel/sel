@@ -653,18 +653,6 @@ impl Parser {
         Ok(*node)
     }
 
-    pub fn parse_sequence(&mut self) -> Result<Node, SelError> {
-        self.sequence().map(|n| *n)
-    }
-
-    pub fn parse_list(&mut self) -> Result<Node, SelError> {
-        self.list().map(|n| *n)
-    }
-
-    pub fn parse_term(&mut self, min_bp: u8) -> Result<Node, SelError> {
-        self.term(min_bp).map(|n| *n)
-    }
-
     // The recursive descent below passes nodes boxed. A `Node` is over 200
     // bytes, and every level of nesting runs through several of these frames:
     // moving nodes by value made the parser need ~1 MiB of stack in release

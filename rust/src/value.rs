@@ -152,7 +152,7 @@ impl Elems {
 }
 
 #[derive(Clone, Debug)]
-pub struct Value(pub Rc<RefCell<ValueInner>>);
+pub struct Value(pub(crate) Rc<RefCell<ValueInner>>);
 
 // One value. Scalars and shaped records -- nearly every value a program
 // handles -- use only the inline fields; what few values need (BIN bytes, an
@@ -309,6 +309,13 @@ pub(crate) fn parse_text_decimal(text: &str, pos: Pos) -> Result<Dec, SelError> 
 }
 
 impl Value {
+    /// A read-only view of the value's cell, for this repository's tests and
+    /// benchmarks (which count representations); not part of the API.
+    #[doc(hidden)]
+    pub fn inner(&self) -> std::cell::Ref<'_, ValueInner> {
+        self.0.borrow()
+    }
+
     pub fn none() -> Self {
         Self(Rc::new(RefCell::new(ValueInner {
             kind: Kind::None,
@@ -438,10 +445,6 @@ impl Value {
             is_list: true,
             ext: None,
         })))
-    }
-
-    pub fn list_owned(items: Vec<Value>) -> Self {
-        Self::list(items)
     }
 
     pub fn list_with_keys(items: Vec<Value>, keys: Vec<String>) -> Self {

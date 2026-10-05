@@ -1,5 +1,6 @@
 // Exact decimal arithmetic (Spec §4).
 
+#[doc(hidden)]
 pub use crate::large_dec::LargeDec;
 use crate::limits::{DIV_SCALE, MAX_FRAC_DIGITS, MAX_INT_DIGITS};
 use crate::utf8::{Pos, SelError};
@@ -24,17 +25,23 @@ pub const POW10_128: [i128; 39] = {
 /// value, copying it, negating it -- costs a reference count, not a copy
 /// (item 1). Nothing changes a mantissa once it is built, so sharing is never
 /// observable; anything that ever needs to would go through `Arc::make_mut`.
+#[doc(hidden)]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum DecRepr {
     Small(i128),
     Large(Arc<LargeDec>),
 }
 
+/// An exact decimal: a sign, a mantissa and the count of its fraction digits
+/// (SPEC §4). Built by `dec_parse`, `from_i64`, `from_small` or arithmetic;
+/// the fields are the crate's, so no value can disagree with its own
+/// invariants (a zero is never negative; the mantissa is held small when it
+/// fits an i128).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Dec {
-    pub neg: bool,
-    pub scale: u32,
-    pub repr: DecRepr,
+    pub(crate) neg: bool,
+    pub(crate) scale: u32,
+    pub(crate) repr: DecRepr,
 }
 
 // A compiled program carries Decs (literals, plan constants) and may be moved
@@ -112,6 +119,30 @@ impl Dec {
             scale,
             repr: DecRepr::Large(Arc::new(digits)),
         }
+    }
+
+    /// True for a number below zero (a zero never is).
+    pub fn is_negative(&self) -> bool {
+        self.neg
+    }
+
+    /// The count of fraction digits as written or computed: `1.50` has 2.
+    pub fn scale(&self) -> u32 {
+        self.scale
+    }
+
+    /// The mantissa's representation (tests and benchmarks).
+    #[doc(hidden)]
+    pub fn repr(&self) -> &DecRepr {
+        &self.repr
+    }
+
+    /// A Dec from its parts as given, with none of the normalisation the
+    /// constructors apply: for tests that hand the API a value it must
+    /// defend against.
+    #[doc(hidden)]
+    pub fn from_raw_parts(neg: bool, scale: u32, repr: DecRepr) -> Self {
+        Self { neg, scale, repr }
     }
 
     pub fn is_zero(&self) -> bool {
@@ -194,10 +225,6 @@ impl Dec {
             DecRepr::Large(b) => b.is_multiple_of_pow10(self.scale as usize),
         }
     }
-}
-
-pub fn big_pow10(k: usize) -> LargeDec {
-    LargeDec::pow10(k)
 }
 
 /// The magnitude, borrowed when it is already large.
@@ -503,7 +530,7 @@ fn add_signed(a: &Dec, b: &Dec, b_neg: bool, pos: Pos) -> Result<Dec, SelError> 
 pub fn dec_mul(a: &Dec, b: &Dec, pos: Pos) -> Result<Dec, SelError> {
     let neg = a.neg != b.neg;
     // Check scale before multiplication, including zero products. Use a
-    // wider sum so even manually constructed public Dec values cannot wrap.
+    // wider sum so even a scale from_small accepted unchecked cannot wrap.
     let scale = a.scale as u64 + b.scale as u64;
     if scale > MAX_FRAC_DIGITS as u64 {
         return Err(SelError::new(

@@ -141,7 +141,7 @@ fn eval_list(node: &Node, ctx: &mut Context) -> Result<Value, SelError> {
             values.push(v.deep_copy(2, node.pos)?);
         }
     }
-    Ok(Value::list_owned(values))
+    Ok(Value::list(values))
 }
 
 #[inline(never)]

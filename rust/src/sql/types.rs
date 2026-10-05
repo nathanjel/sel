@@ -193,10 +193,6 @@ impl Fragment {
         refuse("E_SQL_SHAPE", format!("a condition must be BOOL, and this expression is {}; SQL has no truthiness and neither does SEL", self.kind), Pos::default())
     }
 
-    pub fn join(&self, mode: Mode) -> String {
-        self.join_mode(mode).unwrap_or_else(|e| panic!("{}", e))
-    }
-
     pub fn join_mode(&self, mode: Mode) -> Result<String, SqlError> {
         crate::sql::emit::join_fragment(self, mode)
     }

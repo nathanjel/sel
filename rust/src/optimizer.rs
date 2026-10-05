@@ -969,6 +969,3 @@ pub fn optimize_ast_logical(ast: &Node) -> Node {
     opt_tree(ast, false, 1, true, false)
 }
 
-pub fn optimize_ast_in_memory(ast: &Node) -> Node {
-    opt_tree(ast, true, 1, true, false)
-}
