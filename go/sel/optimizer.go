@@ -364,46 +364,52 @@ func optMapHasComputed(step *Node) bool {
 	return len(optMapPassthroughs(step))*2 != len(info.body.Items)
 }
 
+// optSortInfo is a sort step's binder and key. valid is false for a form the
+// rewrites must leave where it is: a binder slot that is not a bare name (the
+// step raises E_EXPECT_SYMBOL) or a direction that is not a text literal (it is
+// computed, and may raise, per call).
 type optSortInfo struct {
 	binder string
 	key    *Node
+	valid  bool
 }
+
+func bareName(n *Node) bool { return n.T == NodeVar && !n.Grouped }
 
 func getOptSortInfo(step *Node) optSortInfo {
 	args := step.Items
 	count := len(args)
-	info := optSortInfo{binder: "_"}
-	if step.S == "SORT" || step.S == "SORT_DESC" {
-		if count == 1 {
-			return info
+	info := optSortInfo{binder: "_", valid: true}
+	if step.S == "SORT" || step.S == "SORT_DESC" || step.S == "TOP" || step.S == "TOP_DESC" {
+		sortCount := count // SORT: source[, binder], key; TOP: the same and a count
+		if step.S == "TOP" || step.S == "TOP_DESC" {
+			sortCount = count - 1
 		}
-		if count == 3 && args[1].T == NodeVar && !args[1].Grouped {
-			info.binder = args[1].S
-			info.key = args[2]
-		} else {
+		switch sortCount {
+		case 1:
+		case 2:
 			info.key = args[1]
-		}
-	} else if step.S == "TOP" || step.S == "TOP_DESC" {
-		if count == 2 {
-			return info
-		}
-		sortCount := count - 1
-		if sortCount == 3 && args[1].T == NodeVar && !args[1].Grouped {
-			info.binder = args[1].S
-			info.key = args[2]
-		} else {
-			info.key = args[1]
+		default:
+			info.binder, info.key, info.valid = args[1].S, args[2], bareName(args[1])
 		}
 	} else if step.S == "SORT_BY" || step.S == "TOP_BY" {
-		sortCount := count
+		sortCount := count // source, [binder,] key[, direction]; TOP_BY adds a count
 		if step.S == "TOP_BY" {
 			sortCount = count - 1
 		}
-		if sortCount == 2 || (sortCount == 3 && args[2].T == NodeText) {
+		switch {
+		case sortCount == 2:
 			info.key = args[1]
-		} else if count > 2 && args[1].T == NodeVar && !args[1].Grouped {
-			info.binder = args[1].S
-			info.key = args[2]
+		case sortCount == 3 && args[2].T == NodeText:
+			// A text literal last is the direction, whatever args[1] looks like.
+			info.key = args[1]
+		case sortCount == 3 && bareName(args[1]):
+			info.binder, info.key = args[1].S, args[2]
+		case sortCount == 3:
+			info.key, info.valid = args[1], false // key and a computed direction
+		default:
+			info.binder, info.key = args[1].S, args[2]
+			info.valid = bareName(args[1]) && args[3].T == NodeText
 		}
 	}
 	return info
@@ -646,6 +652,7 @@ func optLogicalSteps(source *Node, current []*Node, logical bool) []*Node {
 			// SORT... + FILTER
 			if second != nil && (first.S == "SORT" || first.S == "SORT_DESC" || first.S == "SORT_BY") &&
 				second.S == "FILTER" && !optStepReadsKey(second) && optKeysRenumberedBy(third) &&
+				getOptSortInfo(first).valid &&
 				optCannotRaise(getOptSortInfo(first).key, getOptSortInfo(first).binder, logical) &&
 				(logical || optCannotRaise(getOptFilterInfo(second).predicate, getOptFilterInfo(second).binder, false)) {
 				next = append(next, second, first)
@@ -686,6 +693,9 @@ func optLogicalSteps(source *Node, current []*Node, logical bool) []*Node {
 				optMapHasComputed(first) {
 				sort := getOptSortInfo(second)
 				refs := optFieldRefs(sort.key, sort.binder)
+				if !sort.valid {
+					refs = nil // leaves allInPass false: the sort stays after the MAP
+				}
 				passes := optMapPassthroughs(first)
 				passSet := make(map[string]bool)
 				for _, p := range passes {
