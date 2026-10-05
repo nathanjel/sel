@@ -371,6 +371,13 @@ Returns a HYBRID-PLAN struct. OPTIONS is a plist; :strict reaches the translator
                  (tables (wrapped) (source-tables (normalise wrapped names root) bs)))
             (multiple-value-bind (unwound-source unwound-steps)
                 (unwind-through-helpers result defs literals)
+              ;; A pipeline of more than MAX_DEPTH steps, counted as written
+              ;; through its helpers and before the optimiser, is a pure-memory
+              ;; plan in every host: rendered whole it is deeper than the cap,
+              ;; and probing every shorter prefix costs time quadratic in the
+              ;; chain to push down a step or two.
+              (when (> (length unwound-steps) sel::+max-depth+)
+                (return-from plan-hybrid (pure-memory-plan program dialect bs)))
               ;; No steps, or a source that is not a bound relation: nothing to push.
               (unless (and unwound-steps (relation-p unwound-source))
                 (return-from plan-hybrid (pure-memory-plan program dialect bs)))
