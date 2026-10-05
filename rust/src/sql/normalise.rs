@@ -333,7 +333,9 @@ fn substitute_node(
                 // it is made.
                 let meas = st.sizes.get(&node.s).copied().unwrap_or(Meas::LEAF);
                 st.charge(meas.size, node.pos)?;
-                return Ok((def.clone(), Meas { fail: None, ..meas }));
+                let mut copy = def.clone();
+                copy.inlined = true;
+                return Ok((copy, Meas { fail: None, ..meas }));
             }
             Ok((SNode::leaf(node), Meas::LEAF))
         }

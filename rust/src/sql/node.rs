@@ -92,6 +92,10 @@ pub struct SNode {
     pub kids: Vec<SNode>,
     /// A CList's keys, one per kid, in order.
     pub keys: Vec<String>,
+    /// Stage 1 put this here in place of a helper's name: it was not written
+    /// at this position. A form decided "off the call as written" (a sort's
+    /// text-literal direction) must not take an inlined literal for one.
+    pub inlined: bool,
 }
 
 impl SNode {
@@ -111,6 +115,7 @@ impl SNode {
             spec,
             kids: Vec::new(),
             keys: Vec::new(),
+            inlined: false,
         }
     }
 
@@ -130,6 +135,7 @@ impl SNode {
             spec,
             kids,
             keys: Vec::new(),
+            inlined: false,
         }
     }
 
@@ -144,6 +150,7 @@ impl SNode {
             spec: None,
             kids: Vec::new(),
             keys: Vec::new(),
+            inlined: false,
         }
     }
 
@@ -162,6 +169,11 @@ impl SNode {
 
     pub fn l(&self) -> Option<&SNode> {
         self.kids.first()
+    }
+
+    /// A text literal as written at this position (not a helper inlined here).
+    pub fn is_written_text(&self) -> bool {
+        self.t == SNodeType::Text && !self.inlined
     }
 
     pub fn r(&self) -> Option<&SNode> {

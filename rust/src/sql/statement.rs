@@ -526,7 +526,10 @@ impl Translator {
             key = &args[1];
             dir = "ASC";
         } else if count == 3 {
-            if args[2].t == SNodeType::Text {
+            // Decided off the call as written: a helper inlined into the third
+            // slot is that slot's name, so the second is the binder and the
+            // helper the key (stmt.order-by.helper-in-the-key-slot-...).
+            if args[2].is_written_text() {
                 binder = "_";
                 key = &args[1];
                 if args[2].str.eq_ignore_ascii_case("ASC") {
@@ -557,7 +560,7 @@ impl Translator {
             }
             binder = &args[1].str;
             key = &args[2];
-            if args[3].t != SNodeType::Text {
+            if !args[3].is_written_text() {
                 return refuse(
                     "E_BAD_ARG",
                     "sort direction must be 'ASC' or 'DESC'",
