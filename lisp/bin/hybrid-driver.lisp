@@ -231,6 +231,18 @@ and :null."
              (list :obj (cons "sql" :null) (cons "params" nil)))))
       (t (list :obj (cons "status" "err") (cons "code" "HOST:unknown-op"))))))
 
+;;; The application functions of sql/oracle/hybrid.json's `application` section
+;;; (spec §8.1), registered once for the whole run: POKE writes TEXT "9" at key
+;;; "k" of the value it receives, in place, and returns it; HOSTF returns its
+;;; argument. Neither has a SQL spelling, so a step that calls one stays in the
+;;; continuation.
+(sel:register-function "POKE" 1 1
+                       (lambda (a)
+                         (let ((v (sel:args-val a 0)))
+                           (sel:value-set v "k" (sel:make-text "9"))
+                           v)))
+(sel:register-function "HOSTF" 1 1 (lambda (a) (sel:args-val a 0)))
+
 (defun main ()
   (loop for line = (read-line *standard-input* nil nil)
         while line
