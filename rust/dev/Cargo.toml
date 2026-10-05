@@ -40,11 +40,11 @@ rusqlite = { version = "0.40.2", optional = true }
 path = "src/lib.rs"
 
 [[bin]]
-name = "regex_verdict"
+name = "regex-verdict"
 path = "src/bin/regex_verdict.rs"
 
 [[bin]]
-name = "scale_bench"
+name = "scale-bench"
 path = "src/bin/scale_bench.rs"
 
 [[bin]]
@@ -56,11 +56,11 @@ name = "sqlt"
 path = "src/bin/sqlt.rs"
 
 [[bin]]
-name = "map_replay"
+name = "sqlreplay"
 path = "src/bin/map_replay.rs"
 
 [[bin]]
-name = "check_decimal"
+name = "check-decimal"
 path = "src/bin/check_decimal.rs"
 
 [[bin]]
@@ -84,7 +84,7 @@ name = "sqlfuzz"
 path = "src/bin/sqlfuzz.rs"
 
 [[bin]]
-name = "hybrid_driver"
+name = "hybrid-driver"
 path = "src/bin/hybrid_driver.rs"
 
 # The worked examples: one program per category under ../examples/, written in

@@ -64,6 +64,9 @@ fn usage_errors_exit_2_with_a_sel_message() {
     assert_eq!((code, out.as_str(), err.as_str()), (Some(2), "", "sel: unknown option --frobnicate\n"));
     let (code, out, err) = sel(&["-e", "1", "extra"], b"");
     assert_eq!((code, out.as_str(), err.as_str()), (Some(2), "", "sel: unexpected argument extra\n"));
+    // A second source names what it would have been: here the expression.
+    let (code, _, err) = sel(&["-e", "1", "-e", "1+1"], b"");
+    assert_eq!((code, err.as_str()), (Some(2), "sel: unexpected argument 1+1\n"));
 }
 
 #[test]

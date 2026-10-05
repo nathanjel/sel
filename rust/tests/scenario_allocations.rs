@@ -50,7 +50,7 @@ fn repo() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..")
 }
 
-// The fixture loads exactly as rust/src/bin/scale_bench.rs loads it: numbers as
+// The fixture loads exactly as rust/dev/src/bin/scale_bench.rs (the scale-bench binary) loads it: numbers as
 // text, and read straight from the parser, not through serde_json::Value, which
 // sorts object keys -- a SEL record keeps the order the file gives.
 struct Fixture(Value);

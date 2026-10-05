@@ -43,7 +43,7 @@ def expected_rows(data):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--dataset', default='tools/scale-test/dataset-10x.json')
-    parser.add_argument('--binary', default='rust/target/release/scale_bench')
+    parser.add_argument('--binary', default='rust/target/release/scale-bench')
     parser.add_argument('--runs', type=int, default=5)
     parser.add_argument('--warmups', type=int, default=1)
     parser.add_argument('--output')

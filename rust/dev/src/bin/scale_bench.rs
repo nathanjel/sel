@@ -40,7 +40,7 @@ impl<'de> serde::Deserialize<'de> for Fixture {
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<_> = std::env::args().skip(1).collect();
-    if args.len() != 4 { return Err("usage: scale_bench DATASET REFERENCE RUNS WARMUPS".into()); }
+    if args.len() != 4 { return Err("usage: scale-bench DATASET REFERENCE RUNS WARMUPS".into()); }
     let runs: usize = args[2].parse()?;
     let warmups: usize = args[3].parse()?;
     if runs == 0 { return Err("RUNS must be positive".into()); }

@@ -350,16 +350,15 @@ fn main() {
     let mut files = Vec::new();
 
     if !args.is_empty() {
+        // Named files only (contract C3): a missing path or a directory is
+        // `cannot read <path>`, never an empty run. With no arguments the
+        // runner reads the whole conformance/ directory.
         for arg in &args {
-            let p = Path::new(arg);
-            if p.is_dir() {
-                add_path(p, &mut files);
-            } else if let Err(e) = fs::metadata(p) {
-                eprintln!("cannot read {}: {}", arg, e);
+            if let Err(e) = read_text(arg) {
+                eprintln!("{}", e);
                 std::process::exit(1);
-            } else {
-                files.push(p.to_path_buf());
             }
+            files.push(PathBuf::from(arg));
         }
     } else {
         let mut root = PathBuf::from("conformance");

@@ -84,7 +84,7 @@ fn main() {
             }
             Some("-e") => match args.next() {
                 None => usage_error("-e needs an expression"),
-                Some(_) if source_given => usage_error("unexpected argument -e"),
+                Some(e) if source_given => usage_error(format!("unexpected argument {}", e.to_string_lossy())),
                 Some(e) => expr = Some(e),
             },
             _ if arg.as_encoded_bytes().len() > 1 && arg.as_encoded_bytes()[0] == b'-' => {
