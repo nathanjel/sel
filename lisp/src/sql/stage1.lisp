@@ -196,14 +196,10 @@ change."
   ;; evaluates deep-but-legal programs fine -- it is the NESTING of what would be
   ;; translated, which is what E_SQL_DEPTH says.
   (when (equal (sel:sel-error-code e) "E_DEPTH")
-    (refuse "E_SQL_DEPTH"
-            (format nil "this expression nests deeper than SEL will evaluate (~a), so ~
-there is nothing to translate; the evaluator answers E_DEPTH for it"
-                    sel::+max-depth+)
-            (if (plusp (sel:sel-error-line e))
-                (sel::make-pos (sel:sel-error-line e) (sel:sel-error-col e)
-                               (sel:sel-error-offset e))
-                (snode-pos n))))
+    (refuse-sql-depth (if (plusp (sel:sel-error-line e))
+                          (sel::make-pos (sel:sel-error-line e) (sel:sel-error-col e)
+                                         (sel:sel-error-offset e))
+                          (snode-pos n))))
   (refuse "E_SQL_INVALID"
           (format nil "SEL rejects this expression (~a: ~a), so there is ~
 nothing to translate; a database would answer something rather than fail"
@@ -284,11 +280,7 @@ translator's guard can reach it. Without this the deepest expression the layer
 accepts was decided by the host."
   (incf depth)
   (when (> depth sel::+max-depth+)
-    (refuse "E_SQL_DEPTH"
-            (format nil "this expression nests deeper than SEL will evaluate ~
-(~a), so there is nothing to translate; the evaluator answers E_DEPTH for it"
-                    sel::+max-depth+)
-            (snode-pos node)))
+    (refuse-sql-depth (snode-pos node)))
   (case (snode-kind node)
     (:var
      ;; BOUND before DEFS: an aggregate binder SHADOWS a same-named helper.
@@ -387,10 +379,7 @@ boundary is still the evaluator's, decided where it always was."
 helpers are inlined; SEL evaluates it without the expansion, but a database cannot be ~
 asked to parse it" sel::+limit-max-sql-nodes+)))
     (when (> (cdr m) (* 2 sel::+max-depth+))
-      (refuse "E_SQL_DEPTH"
-              (format nil "this expression nests deeper than SEL will evaluate (~a), so ~
-there is nothing to translate; the evaluator answers E_DEPTH for it" sel::+max-depth+)
-              (snode-pos n)))))
+      (refuse-sql-depth (snode-pos n)))))
 
 (defun free-names (node bound)
   "The names NODE reads that no binder inside it (nor BOUND) defines."

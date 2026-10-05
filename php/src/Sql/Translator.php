@@ -844,6 +844,9 @@ final class Translator
         return $this->foldBalanced($op, $parts, $pos);
     }
 
+    /** The most operands folded as one flat left chain (docs/internals/sql-translation.md 7.1). */
+    private const FOLD_FLAT_MAX = 256;
+
     /**
      * The whole specification of the tree (docs/internals/sql-translation.md 7.1):
      * one operand is itself; 2 to 256 are a plain left fold, byte for byte what a
@@ -857,7 +860,7 @@ final class Translator
     private function foldBalanced(string $op, array $parts, array $pos): Fragment
     {
         $n = count($parts);
-        if ($n > 256) {
+        if ($n > self::FOLD_FLAT_MAX) {
             $m = intdiv($n + 1, 2);
             $left = $this->foldBalanced($op, array_slice($parts, 0, $m), $pos);
             $right = $this->foldBalanced($op, array_slice($parts, $m), $pos);

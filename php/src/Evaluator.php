@@ -8,6 +8,8 @@ declare(strict_types=1);
 
 namespace Sel;
 
+use Sel\Builtins\Number;
+
 /**
  * @phpstan-import-type Decimal from Dec
  */
@@ -115,31 +117,13 @@ final class Evaluator
                 case MathOpCode::ROUND:
                     $d1 = self::operand($scratchpad[$step['src1']], $step['p1']);
                     $d2 = self::operand($scratchpad[$step['src2']], $step['p2']);
-                    if (!Dec::isInteger($d2)) {
-                        fail('E_NOT_INT', 'ROUND argument 2 must be a whole number', $step['auxPos']);
-                    }
-                    $n = Dec::toInt($d2);
-                    if ($n < 0) {
-                        fail('E_RANGE', 'ROUND argument 2 must not be negative', $step['auxPos']);
-                    }
-                    if ($n > 1000000) {
-                        fail('E_RANGE', "ROUND scale {$n} exceeds the maximum of 1000000", $step['auxPos']);
-                    }
+                    $n = Number::sizedArg($d2, 'ROUND', 2, Limits::MAX_ROUND_SCALE, 'ROUND scale', $step['auxPos']);
                     $scratchpad[$step['dst']] = Dec::round($d1, $n, $step['pos']);
                     break;
                 case MathOpCode::POWER:
                     $d1 = self::operand($scratchpad[$step['src1']], $step['p1']);
                     $d2 = self::operand($scratchpad[$step['src2']], $step['p2']);
-                    if (!Dec::isInteger($d2)) {
-                        fail('E_NOT_INT', 'POWER argument 2 must be a whole number', $step['auxPos']);
-                    }
-                    $n = Dec::toInt($d2);
-                    if ($n < 0) {
-                        fail('E_RANGE', 'POWER argument 2 must not be negative', $step['auxPos']);
-                    }
-                    if ($n > 100000) {
-                        fail('E_RANGE', "POWER exponent {$n} exceeds the maximum of 100000", $step['auxPos']);
-                    }
+                    $n = Number::sizedArg($d2, 'POWER', 2, Limits::MAX_POWER_EXPONENT, 'POWER exponent', $step['auxPos']);
                     $scratchpad[$step['dst']] = Dec::power($d1, $n, $step['pos']);
                     break;
                 case MathOpCode::MIN:

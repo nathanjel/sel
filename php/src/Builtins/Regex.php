@@ -25,7 +25,7 @@ use function Sel\fail;
 
 final class Regex
 {
-    private const MAX_QUANTIFIER = 65535;   // PCRE2's own hard limit
+    private const MAX_QUANTIFIER = Limits::MAX_REGEX_QUANTIFIER;   // §6.4; PCRE2's own hard limit
 
     /**
      * \d, \w and \s are rewritten into explicit ASCII classes rather than passed

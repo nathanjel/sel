@@ -898,7 +898,10 @@ final class Value
             $v = $v->storage !== null
                 ? $v->storage[0]
                 : $v->children[array_key_first($v->children)];
-            if (++$guard > 1000) {
+            // Values are capped at MAX_DEPTH wherever the language builds them;
+            // only a host-built chain can get here, and it fails where clone,
+            // equality and dump would.
+            if (++$guard > Limits::MAX_DEPTH) {
                 fail('E_DEPTH', 'scalar context nested too deeply', $pos);
             }
         }

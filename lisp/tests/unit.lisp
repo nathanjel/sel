@@ -1703,8 +1703,11 @@ run of the program that built it, not a value set with the caller's string."
   (is (null (nth-value 1 (ignore-errors (sel::make-int (1- (expt 10 1000000)))))))
   (raises "E_RANGE" (sel::make-int (expt 10 1000000)))
   (raises "E_RANGE" (sel::make-int (- (expt 10 1000000))))
-  (is (integerp (sel::int-guard-bits)))
-  (is (<= (expt 2 (sel::int-guard-bits)) (expt 10 999999))))
+  ;; +MAX-INT-BITS+ is derived from MAX_INT_DIGITS with integer arithmetic:
+  ;; the smallest B with 2^B >= 10^MAX_INT_DIGITS.
+  (is (integerp sel::+max-int-bits+))
+  (is (< (expt 2 (1- sel::+max-int-bits+)) (expt 10 sel::+max-int-digits+)))
+  (is (>= (expt 2 sel::+max-int-bits+) (expt 10 sel::+max-int-digits+))))
 
 (test ceil-and-floor-carry-past-the-digit-cap-is-positioned
   ;; A maximum-size 999...9.5 carries into one digit too many; the error is at

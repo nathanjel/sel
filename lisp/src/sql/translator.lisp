@@ -152,11 +152,7 @@ expansion, but a database cannot be asked to parse it"
   (incf (translator-depth tr))
   (when (> (translator-depth tr) sel::+max-depth+)
     (decf (translator-depth tr))
-    (refuse "E_SQL_DEPTH"
-            (format nil "this expression nests deeper than SEL will evaluate ~
-(~a), so there is nothing to translate; the evaluator answers E_DEPTH for it"
-                    sel::+max-depth+)
-            (snode-pos n)))
+    (refuse-sql-depth (snode-pos n)))
   (unwind-protect
        (let ((compound (member (snode-kind n) '(:bin :un :call))))
          (if (not (and compound (is-constant n (translator-const-names tr))))
@@ -2758,6 +2754,11 @@ can say about a bucket on its own."
         (setf (relational-plan-projections plan) (nreverse projs))))
   (setf (relational-plan-select-cols plan) nil))
 
+;;; The static walks below stop with their conservative answer at this depth.
+;;; They recurse over a tree already capped at MAX_DEPTH and stop short of it to
+;;; leave headroom for the caller's frames.
+(defconstant +walk-depth+ (- sel::+max-depth+ 20))
+
 ;;; Whether the node is an IF or COND whose every result is a text literal -- or,
 ;;; in turn, such a conditional (SEL-0057). SQL's CASE returns the literal it
 ;;; chose byte for byte, so its identity is SEL's; a number it can re-spell
@@ -2765,7 +2766,7 @@ can say about a bucket on its own."
 ;;; computation is not a literal at all. A two-argument IF's otherwise is "" (§7.2),
 ;;; a text literal too.
 (defun text-literal-results-p (n &optional (depth 0))
-  (when (and n (not (clist-p n)) (< depth 180) (eq (snode-kind n) :call)
+  (when (and n (not (clist-p n)) (< depth +walk-depth+) (eq (snode-kind n) :call)
              (member (sel::node-s n) '("IF" "COND") :test #'equal))
     (let* ((args (sel::node-items n))
            (results (if (equal (sel::node-s n) "IF")
@@ -2784,7 +2785,7 @@ can say about a bucket on its own."
 (defun identity-preserving-projection-p (n &optional (depth 0))
   ;; A proof whitelist, not a numeric-kind guess. COUNT/LEN/BLEN yield
   ;; canonical integers; arithmetic can change scale on the SQL side.
-  (and n (not (clist-p n)) (< depth 180)
+  (and n (not (clist-p n)) (< depth +walk-depth+)
        (or (member (snode-kind n) '(:var :num :text :bool :null))
            (and (eq (snode-kind n) :index)
                 (identity-preserving-projection-p (sel::node-l n) (1+ depth))
@@ -2805,7 +2806,7 @@ can say about a bucket on its own."
 (defun identity-input-fields (n &optional (depth 0))
   ;; T means the whole row, NIL no input identity, a list named row fields.
   (cond
-    ((or (null n) (clist-p n) (>= depth 180)) t)
+    ((or (null n) (clist-p n) (>= depth +walk-depth+)) t)
     ((member (snode-kind n) '(:num :text :bool :null)) nil)
     ((eq (snode-kind n) :var) (not (equal (sel::node-s n) "_K")))
     ((eq (snode-kind n) :index)

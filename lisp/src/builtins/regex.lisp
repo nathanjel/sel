@@ -25,9 +25,8 @@
 
 ;;; spec/SPEC.md §6.4. PCRE2 and SRELL reject a huge repeat count outright while
 ;;; JS and cl-ppcre merely never match it, so the subset checker settles it.
-(defconstant +max-quantifier+ 65535)   ; PCRE2's own hard limit
+(defconstant +max-quantifier+ +limit-max-regex-quantifier+)   ; PCRE2's own hard limit
 (defconstant +regex-max-groups+ +limit-max-regex-groups+)
-(defconstant +regex-max-depth+ +limit-max-depth+)
 
 ;;; \d, \w and \s are rewritten into explicit ASCII classes rather than passed
 ;;; through, because PHP's `u` modifier turns on PCRE2's UCP and ECMAScript's
@@ -365,7 +364,7 @@ capture some iteration need not set."
              (incf (rxp-groups r))
              (when (> (rxp-groups r) +regex-max-groups+)
                (bad-regex "too many groups" p start pos))
-             (when (>= depth +regex-max-depth+)
+             (when (>= depth +max-depth+)
                (bad-regex "groups nested too deeply" p start pos))
              (let ((cap nil))
                (if (and (< (+ start 2) n) (char= (char p (1+ start)) #\?))
@@ -441,11 +440,12 @@ capture some iteration need not set."
 ;;; is the SETS -- `i` folding included -- and the counted-repeat handling.
 
 (defconstant +ax-unroll+ 8)
-(defconstant +ax-p-max+ (ash 1 17))      ; positions
-(defconstant +ax-e-max+ (ash 1 18))      ; follow edges
-(defconstant +ax-d-max+ (ash 1 21))      ; sum over edges of the ranges at the target
-(defconstant +ax-q-max+ (ash 1 20))      ; pair-graph work
-(defconstant +ax-amb-max+ 16)
+;;; The §7.8 caps, from spec/limits.json.
+(defconstant +ax-p-max+ +limit-regex-analysis-positions+)   ; positions
+(defconstant +ax-e-max+ +limit-regex-analysis-edges+)       ; follow edges
+(defconstant +ax-d-max+ +limit-regex-analysis-ranges+)      ; sum over edges of the ranges at the target
+(defconstant +ax-q-max+ +limit-regex-analysis-pair-work+)   ; pair-graph work
+(defconstant +ax-amb-max+ +limit-regex-ambiguity-budget+)
 (defconstant +ax-sat+ (ash 1 40))
 (defconstant +ax-max-cp+ #x10ffff)
 

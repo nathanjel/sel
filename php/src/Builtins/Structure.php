@@ -737,20 +737,23 @@ final class Structure
         }
         $elementsStr = implode(', ', $elements);
 
+        // Value::NONE as a literal of the generated code, so the eval'd checks
+        // compare against the constant's value without naming a string of their own.
+        $none = var_export(Value::NONE, true);
         $lchecks = [];
         foreach ($ops as $i => $op) {
             $slot = $slots[$i];
             if ($op === 0) {
-                $lchecks[] = "if (\$ls[{$slot}]->kind === 'NONE' && !\$ls[{$slot}]->isList && \$ls[{$slot}]->size() > 0) return false;";
+                $lchecks[] = "if (\$ls[{$slot}]->kind === {$none} && !\$ls[{$slot}]->isList && \$ls[{$slot}]->size() > 0) return false;";
             } elseif ($op === 4) {
-                $lchecks[] = "if (\$ls[{$slot}]->kind !== 'NONE' || \$ls[{$slot}]->isList || \$ls[{$slot}]->size() === 0) return false;";
+                $lchecks[] = "if (\$ls[{$slot}]->kind !== {$none} || \$ls[{$slot}]->isList || \$ls[{$slot}]->size() === 0) return false;";
             }
         }
         foreach ($lrest as $slot => $nested) {
             if ($nested) {
-                $lchecks[] = "if (\$ls[{$slot}]->kind !== 'NONE' || \$ls[{$slot}]->isList || \$ls[{$slot}]->size() === 0) return false;";
+                $lchecks[] = "if (\$ls[{$slot}]->kind !== {$none} || \$ls[{$slot}]->isList || \$ls[{$slot}]->size() === 0) return false;";
             } else {
-                $lchecks[] = "if (\$ls[{$slot}]->kind === 'NONE' && !\$ls[{$slot}]->isList && \$ls[{$slot}]->size() > 0) return false;";
+                $lchecks[] = "if (\$ls[{$slot}]->kind === {$none} && !\$ls[{$slot}]->isList && \$ls[{$slot}]->size() > 0) return false;";
             }
         }
         $lchecksStr = $lchecks === [] ? '' : implode("\n            ", $lchecks);
@@ -761,13 +764,13 @@ final class Structure
         foreach ($ops as $i => $op) {
             if ($op === 1) {
                 $slot = $slots[$i];
-                $rchecks[] = "if (\$rs[{$slot}]->kind === 'NONE' && !\$rs[{$slot}]->isList) return null;";
-                $rguards[] = "(\$rs[{$slot}]->kind !== 'NONE' || \$rs[{$slot}]->isList)";
+                $rchecks[] = "if (\$rs[{$slot}]->kind === {$none} && !\$rs[{$slot}]->isList) return null;";
+                $rguards[] = "(\$rs[{$slot}]->kind !== {$none} || \$rs[{$slot}]->isList)";
             }
         }
         foreach ($rkept as $rk) {
-            $rchecks[] = "if (\$rs[{$rk}]->kind !== 'NONE' || \$rs[{$rk}]->isList) return null;";
-            $rguards[] = "(\$rs[{$rk}]->kind === 'NONE' && !\$rs[{$rk}]->isList)";
+            $rchecks[] = "if (\$rs[{$rk}]->kind !== {$none} || \$rs[{$rk}]->isList) return null;";
+            $rguards[] = "(\$rs[{$rk}]->kind === {$none} && !\$rs[{$rk}]->isList)";
         }
         $rchecksStr = $rchecks === [] ? '' : implode("\n        ", $rchecks);
         $rguardCond = $rguards === [] ? 'true' : implode(' && ', $rguards);
