@@ -10342,6 +10342,191 @@ int opt_bounded_depth(const NodePtr& root, int cap) {
 // of the step it was copied from.
 using OptStepDepths = std::unordered_map<const Node*, int>;
 
+// The pair of steps at the optimiser's cursor and what the rules may consult:
+// the step after the pair (whether it renumbers keys), whether the pass is
+// logical, the declared fields of the row there, and the steps' depths.
+struct OptPair {
+  const NodePtr& first;
+  const NodePtr& second;
+  const NodePtr* third;
+  bool logical;
+  const OptFields& fields;
+  OptStepDepths* step_depths;
+};
+// A rule's answer: the steps that replace the pair, or nothing when it does
+// not apply.
+using OptRewrite = std::optional<std::vector<NodePtr>>;
+
+bool opt_is_sort(const Node& step) {
+  return step.s == "SORT" || step.s == "SORT_DESC" || step.s == "SORT_BY";
+}
+
+// TAKE(a) .> TAKE(b) is TAKE(min(a, b)) for literal counts.
+OptRewrite opt_merge_takes(const OptPair& p) {
+  if (p.second->s != "TAKE" || p.first->s != "TAKE" || p.first->items.size() != 2 || p.second->items.size() != 2) {
+    return std::nullopt;
+  }
+  const auto left = opt_numeric_literal(p.first->items[1]);
+  const auto right = opt_numeric_literal(p.second->items[1]);
+  if (!left || !right) return std::nullopt;
+  auto merged = copy_node(p.first);
+  merged->pos = p.second->pos;   // the merged step is the result of the later one
+  merged->items = {p.first->items[0], opt_num(std::to_string(std::min(*left, *right)), p.second->items[1]->pos)};
+  return std::vector<NodePtr>{std::move(merged)};
+}
+
+// DROP(a) .> DROP(b) is DROP(a + b) for literal counts whose sum fits.
+OptRewrite opt_merge_drops(const OptPair& p) {
+  if (p.second->s != "DROP" || p.first->s != "DROP" || p.first->items.size() != 2 || p.second->items.size() != 2) {
+    return std::nullopt;
+  }
+  const auto left = opt_numeric_literal(p.first->items[1]);
+  const auto right = opt_numeric_literal(p.second->items[1]);
+  if (!left || !right || *left > std::numeric_limits<long long>::max() - *right) return std::nullopt;
+  auto merged = copy_node(p.first);
+  merged->pos = p.second->pos;
+  merged->items = {p.first->items[0], opt_num(std::to_string(*left + *right), p.second->items[1]->pos)};
+  return std::vector<NodePtr>{std::move(merged)};
+}
+
+// A sort and a TAKE are one TOP. Fused only for a numeric literal count of at
+// least 1 (spec §6.2): the fused step evaluates its count before the key, so a
+// count that can raise -- or a TAKE(0), which still evaluates the keys unfused
+// -- would change which error is reported.
+OptRewrite opt_fuse_sort_take(const OptPair& p) {
+  if (p.second->s != "TAKE" || p.second->items.size() != 2 || !opt_is_sort(*p.first) ||
+      opt_numeric_literal(p.second->items[1]).value_or(0) < 1) {
+    return std::nullopt;
+  }
+  const std::string top_name = p.first->s == "SORT" ? "TOP" : p.first->s == "SORT_DESC" ? "TOP_DESC" : "TOP_BY";
+  auto fused = copy_node(p.first);
+  fused->pos = p.second->pos;
+  fused->s = top_name;
+  fused->spec = registry_lookup(top_name);
+  fused->items.push_back(p.second->items[1]);
+  return std::vector<NodePtr>{std::move(fused)};
+}
+
+// Whether every name in REFS is one of ALLOWED.
+bool opt_all_among(const std::vector<std::string>& refs, const std::vector<std::string>& allowed) {
+  return std::all_of(refs.begin(), refs.end(), [&](const std::string& f) {
+    return std::find(allowed.begin(), allowed.end(), f) != allowed.end();
+  });
+}
+
+// A FILTER that reads only fields a MAP passes through runs before the MAP.
+OptRewrite opt_filter_before_map(const OptPair& p) {
+  if (p.first->s != "MAP" || p.second->s != "FILTER") return std::nullopt;
+  const auto passes = opt_map_passthroughs(*p.first);
+  const OptFilterInfo info = opt_filter_info(*p.second);
+  const auto refs = info.predicate ? opt_field_refs(*info.predicate, info.binder) : std::vector<std::string>{};
+  if (info.valid && !refs.empty() && opt_all_among(refs, passes) && !opt_reads_row_or_key(*info.predicate, info.binder) &&
+      opt_keys_renumbered_by(p.third) && opt_map_cannot_raise(*p.first, p.logical, &p.fields)) {
+    return std::vector<NodePtr>{p.second, p.first};
+  }
+  return std::nullopt;
+}
+
+// A FILTER that does not read the key runs before a sort that cannot raise.
+OptRewrite opt_filter_before_sort(const OptPair& p) {
+  if (!opt_is_sort(*p.first) || p.second->s != "FILTER" || opt_step_reads_key(*p.second) ||
+      !opt_keys_renumbered_by(p.third)) {
+    return std::nullopt;
+  }
+  const OptSortInfo sort = opt_sort_info(*p.first);
+  if (!opt_cannot_raise(sort.key, sort.binder, p.logical, &p.fields)) return std::nullopt;
+  if (!p.logical) {
+    const OptFilterInfo filter = opt_filter_info(*p.second);
+    if (!opt_predicate_cannot_raise(filter.predicate, filter.binder, false, nullptr)) return std::nullopt;
+  }
+  return std::vector<NodePtr>{p.second, p.first};
+}
+
+// A FILTER that reads only selected fields runs before the SELECT_COLS.
+OptRewrite opt_filter_before_select_cols(const OptPair& p) {
+  if (p.first->s != "SELECT_COLS" || p.second->s != "FILTER") return std::nullopt;
+  const OptFilterInfo info = opt_filter_info(*p.second);
+  const auto refs = info.predicate ? opt_field_refs(*info.predicate, info.binder) : std::vector<std::string>{};
+  const auto selected = opt_select_fields(*p.first);
+  if (info.valid && !refs.empty() && opt_all_among(refs, selected) && !opt_reads_row_or_key(*info.predicate, info.binder) &&
+      opt_keys_renumbered_by(p.third)) {
+    return std::vector<NodePtr>{p.second, p.first};
+  }
+  return std::nullopt;
+}
+
+// A sort runs before a MAP that computes fields when its key reads only
+// fields the MAP passes through: only such a key is the same value before
+// the MAP. A keyless sort compares the MAP's outputs, and a key that reads
+// the whole row or `_K` reads what the MAP changes.
+OptRewrite opt_sort_before_map(const OptPair& p) {
+  if (p.first->s != "MAP" || pipeline_step(p.second->s) == nullptr || !pipeline_step(p.second->s)->sorts ||
+      !opt_map_has_computed(*p.first)) {
+    return std::nullopt;
+  }
+  const OptSortInfo sort = opt_sort_info(*p.second);
+  const auto refs = sort.key ? opt_field_refs(*sort.key, sort.binder) : std::vector<std::string>{};
+  const auto passes = opt_map_passthroughs(*p.first);
+  if (sort.key && !refs.empty() && opt_all_among(refs, passes) && !opt_reads_row_or_key(*sort.key, sort.binder) &&
+      opt_map_cannot_raise(*p.first, p.logical, &p.fields) && opt_cannot_raise(sort.key, sort.binder, p.logical, &p.fields)) {
+    return std::vector<NodePtr>{p.second, p.first};
+  }
+  return std::nullopt;
+}
+
+// Two FILTERs are one, their predicates AND-ed.
+OptRewrite opt_fuse_filters(const OptPair& p) {
+  if (p.first->s != "FILTER" || p.second->s != "FILTER") return std::nullopt;
+  const OptFilterInfo left = opt_filter_info(*p.first);
+  const OptFilterInfo right = opt_filter_info(*p.second);
+  // Fused, the second predicate runs on a row before the first has seen
+  // the rows after it: only one that cannot raise may be fused. Judged
+  // without the declared fields (the historical assumption for a read).
+  if (!left.valid || !right.valid || !opt_predicate_cannot_raise(right.predicate, right.binder, p.logical, nullptr)) {
+    return std::nullopt;
+  }
+  // Fused, the second predicate sits one level deeper than it did: under
+  // the AND that joins them. A fused pair must spend what the two stages
+  // spent (spec §6.4), so a predicate that would reach the cap that way
+  // stays a second FILTER (plan.pure-sql.fusion-stops-at-the-depth-cap).
+  if (p.step_depths) {
+    const auto at = p.step_depths->find(p.second.get());
+    if (at != p.step_depths->end() && at->second + opt_bounded_depth(right.predicate, MAX_DEPTH) + 1 > MAX_DEPTH) {
+      return std::nullopt;
+    }
+  }
+  const NodePtr right_pred = ascii_upper(left.binder) == ascii_upper(right.binder)
+      ? right.predicate : opt_rename_var(right.predicate, right.binder, left.binder);
+  const NodePtr predicate = opt_combine_and({left.predicate, right_pred}, left.predicate->pos);
+  auto merged = copy_node(p.first);
+  merged->pos = p.second->pos;
+  merged->items = left.explicit_binder
+      ? std::vector<NodePtr>{p.first->items[0], p.first->items[1], predicate}
+      : std::vector<NodePtr>{p.first->items[0], predicate};
+  if (p.step_depths) {
+    const auto at = p.step_depths->find(p.first.get());
+    if (at != p.step_depths->end()) (*p.step_depths)[merged.get()] = at->second;
+  }
+  return std::vector<NodePtr>{std::move(merged)};
+}
+
+// DISTINCT .> DISTINCT (either spelling) is the first one. No rule drops a
+// sort followed by another sort: the sorts are stable, so the first is the
+// second's tie-breaker (rel.sort.then-sort-keeps-the-tie-order), and a rule
+// that removed it changed the value.
+OptRewrite opt_merge_distincts(const OptPair& p) {
+  const auto distinct = [](const Node& step) { return step.s == "DISTINCT" || step.s == "DEDUPE"; };
+  if (!distinct(*p.first) || !distinct(*p.second)) return std::nullopt;
+  return std::vector<NodePtr>{p.first};
+}
+
+// The pair rules, tried in this order at each position.
+constexpr OptRewrite (*OPT_PAIR_RULES[])(const OptPair&) = {
+    opt_merge_takes,        opt_merge_drops,          opt_fuse_sort_take,
+    opt_filter_before_map,  opt_filter_before_sort,   opt_filter_before_select_cols,
+    opt_sort_before_map,    opt_fuse_filters,         opt_merge_distincts,
+};
+
 std::vector<NodePtr> opt_logical_steps(const NodePtr& source, std::vector<NodePtr> current, bool logical,
                                        const std::set<std::string>* declared,
                                        OptStepDepths* step_depths = nullptr) {
@@ -10351,8 +10536,6 @@ std::vector<NodePtr> opt_logical_steps(const NodePtr& source, std::vector<NodePt
     std::vector<NodePtr> next;
     for (std::size_t i = 0; i < current.size();) {
       const NodePtr& first = current[i];
-      const NodePtr* second = i + 1 < current.size() ? &current[i + 1] : nullptr;
-      const NodePtr* third = i + 2 < current.size() ? &current[i + 2] : nullptr;
       // The row is the source's while every step before this one keeps its rows
       // as they are (the manifest's keepsRows).
       OptFields fields{declared, true};
@@ -10363,160 +10546,22 @@ std::vector<NodePtr> opt_logical_steps(const NodePtr& source, std::vector<NodePt
           break;
         }
       }
-      if (second && (*second)->s == "TAKE" && first->s == "TAKE" && first->items.size() == 2 &&
-          (*second)->items.size() == 2) {
-        const auto left = opt_numeric_literal(first->items[1]);
-        const auto right = opt_numeric_literal((*second)->items[1]);
-        if (left && right) {
-          auto merged = copy_node(first);
-          merged->pos = (*second)->pos;   // the merged step is the result of the later one
-          merged->items = {first->items[0], opt_num(std::to_string(std::min(*left, *right)), (*second)->items[1]->pos)};
-          next.push_back(std::move(merged));
+      if (i + 1 < current.size()) {
+        const OptPair pair{first, current[i + 1], i + 2 < current.size() ? &current[i + 2] : nullptr,
+                           logical, fields, step_depths};
+        OptRewrite rewritten;
+        for (const auto rule : OPT_PAIR_RULES) {
+          if ((rewritten = rule(pair))) break;
+        }
+        if (rewritten) {
+          for (NodePtr& step : *rewritten) next.push_back(std::move(step));
           i += 2;
           changed = true;
           continue;
         }
       }
-      if (second && (*second)->s == "DROP" && first->s == "DROP" && first->items.size() == 2 &&
-          (*second)->items.size() == 2) {
-        const auto left = opt_numeric_literal(first->items[1]);
-        const auto right = opt_numeric_literal((*second)->items[1]);
-        if (left && right && *left <= std::numeric_limits<long long>::max() - *right) {
-          auto merged = copy_node(first);
-          merged->pos = (*second)->pos;
-          merged->items = {first->items[0], opt_num(std::to_string(*left + *right), (*second)->items[1]->pos)};
-          next.push_back(std::move(merged));
-          i += 2;
-          changed = true;
-          continue;
-        }
-      }
-      // Fused only for a numeric literal count of at least 1 (spec §6.2): the
-      // fused step evaluates its count before the key, so a count that can
-      // raise -- or a TAKE(0), which still evaluates the keys unfused -- would
-      // change which error is reported.
-      if (second && (*second)->s == "TAKE" && (*second)->items.size() == 2 &&
-          (first->s == "SORT" || first->s == "SORT_DESC" || first->s == "SORT_BY") &&
-          opt_numeric_literal((*second)->items[1]).value_or(0) >= 1) {
-        const std::string top_name = first->s == "SORT" ? "TOP" : first->s == "SORT_DESC" ? "TOP_DESC" : "TOP_BY";
-        auto fused = copy_node(first);
-        fused->pos = (*second)->pos;
-        fused->s = top_name;
-        fused->spec = registry_lookup(top_name);
-        fused->items.push_back((*second)->items[1]);
-        next.push_back(std::move(fused));
-        i += 2;
-        changed = true;
-        continue;
-      }
-      if (second && first->s == "MAP" && (*second)->s == "FILTER") {
-        const auto passes = opt_map_passthroughs(*first);
-        const OptFilterInfo info = opt_filter_info(**second);
-        const auto refs = info.predicate ? opt_field_refs(*info.predicate, info.binder) : std::vector<std::string>{};
-        if (info.valid && !refs.empty() && std::all_of(refs.begin(), refs.end(), [&](const std::string& f) {
-              return std::find(passes.begin(), passes.end(), f) != passes.end();
-            }) && !opt_reads_row_or_key(*info.predicate, info.binder) &&
-            opt_keys_renumbered_by(third) && opt_map_cannot_raise(*first, logical, &fields)) {
-          next.push_back(*second);
-          next.push_back(first);
-          i += 2;
-          changed = true;
-          continue;
-        }
-      }
-      if (second && (first->s == "SORT" || first->s == "SORT_DESC" || first->s == "SORT_BY") &&
-          (*second)->s == "FILTER" && !opt_step_reads_key(**second) &&
-          opt_keys_renumbered_by(third) &&
-          opt_cannot_raise(opt_sort_info(*first).key, opt_sort_info(*first).binder, logical, &fields) &&
-          (logical || opt_predicate_cannot_raise(opt_filter_info(**second).predicate, opt_filter_info(**second).binder, false, nullptr))) {
-        next.push_back(*second);
-        next.push_back(first);
-        i += 2;
-        changed = true;
-        continue;
-      }
-      if (second && first->s == "SELECT_COLS" && (*second)->s == "FILTER") {
-        const OptFilterInfo info = opt_filter_info(**second);
-        const auto refs = info.predicate ? opt_field_refs(*info.predicate, info.binder) : std::vector<std::string>{};
-        const auto selected = opt_select_fields(*first);
-        if (info.valid && !refs.empty() && std::all_of(refs.begin(), refs.end(), [&](const std::string& f) {
-              return std::find(selected.begin(), selected.end(), f) != selected.end();
-            }) && !opt_reads_row_or_key(*info.predicate, info.binder) &&
-            opt_keys_renumbered_by(third)) {
-          next.push_back(*second);
-          next.push_back(first);
-          i += 2;
-          changed = true;
-          continue;
-        }
-      }
-      if (second && first->s == "MAP" && pipeline_step((*second)->s) != nullptr &&
-          pipeline_step((*second)->s)->sorts && opt_map_has_computed(*first)) {
-        // Only a key over pass-through fields is the same value before the
-        // MAP: a keyless sort compares the MAP's outputs, and a key that
-        // reads the whole row or `_K` reads what the MAP changes.
-        const OptSortInfo sort = opt_sort_info(**second);
-        const auto refs = sort.key ? opt_field_refs(*sort.key, sort.binder) : std::vector<std::string>{};
-        const auto passes = opt_map_passthroughs(*first);
-        if (sort.key && !refs.empty() && std::all_of(refs.begin(), refs.end(), [&](const std::string& f) {
-              return std::find(passes.begin(), passes.end(), f) != passes.end();
-            }) && !opt_reads_row_or_key(*sort.key, sort.binder) && opt_map_cannot_raise(*first, logical, &fields) &&
-            opt_cannot_raise(sort.key, sort.binder, logical, &fields)) {
-          next.push_back(*second);
-          next.push_back(first);
-          i += 2;
-          changed = true;
-          continue;
-        }
-      }
-      if (second && first->s == "FILTER" && (*second)->s == "FILTER") {
-        const OptFilterInfo left = opt_filter_info(*first);
-        const OptFilterInfo right = opt_filter_info(**second);
-        // Fused, the second predicate runs on a row before the first has seen
-        // the rows after it: only one that cannot raise may be fused. Judged
-        // without the declared fields (the historical assumption for a read).
-        bool can_fuse = left.valid && right.valid &&
-                        opt_predicate_cannot_raise(right.predicate, right.binder, logical, nullptr);
-        // Fused, the second predicate sits one level deeper than it did: under
-        // the AND that joins them. A fused pair must spend what the two stages
-        // spent (spec §6.4), so a predicate that would reach the cap that way
-        // stays a second FILTER (plan.pure-sql.fusion-stops-at-the-depth-cap).
-        if (can_fuse && step_depths) {
-          const auto at = step_depths->find(second->get());
-          if (at != step_depths->end() &&
-              at->second + opt_bounded_depth(right.predicate, MAX_DEPTH) + 1 > MAX_DEPTH) {
-            can_fuse = false;
-          }
-        }
-        if (can_fuse) {
-          const NodePtr right_pred = ascii_upper(left.binder) == ascii_upper(right.binder)
-              ? right.predicate : opt_rename_var(right.predicate, right.binder, left.binder);
-          const NodePtr predicate = opt_combine_and({left.predicate, right_pred}, left.predicate->pos);
-          auto merged = copy_node(first);
-          merged->pos = (*second)->pos;
-          merged->items = left.explicit_binder
-              ? std::vector<NodePtr>{first->items[0], first->items[1], predicate}
-              : std::vector<NodePtr>{first->items[0], predicate};
-          if (step_depths) {
-            const auto at = step_depths->find(first.get());
-            if (at != step_depths->end()) (*step_depths)[merged.get()] = at->second;
-          }
-          next.push_back(std::move(merged));
-          i += 2;
-          changed = true;
-          continue;
-        }
-      }
-      // No rule drops a sort followed by another sort: the sorts are stable,
-      // so the first is the second's tie-breaker (rel.sort.then-sort-keeps-
-      // the-tie-order), and a rule that removed it changed the value.
-      if (second && (first->s == "DISTINCT" || first->s == "DEDUPE") &&
-          ((*second)->s == "DISTINCT" || (*second)->s == "DEDUPE")) {
-        next.push_back(first);
-        i += 2;
-        changed = true;
-        continue;
-      }
+      // A FILTER(TRUE) is dropped, except as the first step over a source
+      // not known to be a list.
       const OptFilterInfo filter = first->s == "FILTER" ? opt_filter_info(*first) : OptFilterInfo{};
       if (filter.valid && filter.predicate && filter.predicate->t == NT::Bool && filter.predicate->b &&
           (!next.empty() || i > 0 || opt_source_is_list(source))) {
