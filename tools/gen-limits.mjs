@@ -41,19 +41,39 @@ function fail(msg) {
 // accepted only if its sentence is found.
 const SPEC_STATEMENTS = {
   MAX_DEPTH: (v) => [`at least ${v})`],
-  MAX_INT_DIGITS: (v) => [`| integer digits of a number | ${String(v).replace(/\B(?=(\d{3})+(?!\d))/g, ' ')} |`],
-  MAX_FRAC_DIGITS: (v) => [`| fractional digits of a number | ${String(v).replace(/\B(?=(\d{3})+(?!\d))/g, ' ')} |`],
-  MAX_TEXT_LEN: (v) => [`| a TEXT value's code points, a BIN value's bytes | ${String(v).replace(/\B(?=(\d{3})+(?!\d))/g, ' ')} |`],
-  MAX_COLLECTION: (v) => [`| the children of a collection an operation builds | ${String(v).replace(/\B(?=(\d{3})+(?!\d))/g, ' ')} |`],
-  MAX_REGEX_PATTERN: (v) => [`| a regex pattern's code points | ${String(v).replace(/\B(?=(\d{3})+(?!\d))/g, ' ')} |`],
-  MAX_REGEX_GROUPS: (v) => [`| the groups in a regex pattern | ${String(v).replace(/\B(?=(\d{3})+(?!\d))/g, ' ')} |`],
-  MAX_SQL_NODES: (v) => [`| the nodes of a translated SQL expression | ${String(v).replace(/\B(?=(\d{3})+(?!\d))/g, ' ')} |`],
+  MAX_INT_DIGITS: (v) => [`| integer digits of a number | ${spaced(v)} |`],
+  MAX_FRAC_DIGITS: (v) => [`| fractional digits of a number | ${spaced(v)} |`],
+  MAX_TEXT_LEN: (v) => [`| a TEXT value's code points, a BIN value's bytes | ${spaced(v)} |`],
+  MAX_COLLECTION: (v) => [`| the children of a collection an operation builds | ${spaced(v)} |`],
+  MAX_REGEX_PATTERN: (v) => [`| a regex pattern's code points | ${spaced(v)} |`],
+  MAX_REGEX_GROUPS: (v) => [`| the groups in a regex pattern | ${spaced(v)} |`],
+  MAX_SQL_NODES: (v) => [`| the nodes of a translated SQL expression | ${spaced(v)} |`],
   DIV_SCALE: (v) => ['`DIV_SCALE` is **' + v + '**'],
+  MAX_ROUND_SCALE: (v) => [`| \`ROUND(x, n)\` scale | ${spaced(v)} |`],
+  MAX_POWER_EXPONENT: (v) => [`| \`POWER(x, n)\` exponent | ${spaced(v)} |`],
+  MAX_REGEX_QUANTIFIER: (v) => [`| a regex quantifier bound, as in \`a{n}\` or \`a{n,m}\` | ${spaced(v)} |`],
+  // §7.8's ambiguity rule states its budget in words and its caps as powers of
+  // two; the spec text is matched with its line breaks folded to spaces.
+  REGEX_AMBIGUITY_BUDGET: (v) => [`More than ${v} is refused.`],
+  REGEX_ANALYSIS_POSITIONS: (v) => [`More than ${pow2(v)} positions`],
+  REGEX_ANALYSIS_EDGES: (v) => [`more than ${pow2(v)} follow edges`],
+  REGEX_ANALYSIS_RANGES: (v) => [`a sum over edges of the number of ranges at the target above ${pow2(v)}`],
+  REGEX_ANALYSIS_PAIR_WORK: (v) => [`more than ${pow2(v)} units of pair-graph work`],
 };
+function spaced(v) {
+  return String(v).replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+}
+// 2^k for a power of two; anything else cannot match the spec's 2^k spelling.
+function pow2(v) {
+  const k = Math.log2(v);
+  return Number.isInteger(k) ? `2^${k}` : String(v);
+}
 
 function load() {
   const doc = JSON.parse(readFileSync(resolve(ROOT, SOURCE), 'utf8'));
-  const spec = readFileSync(resolve(ROOT, 'spec/SPEC.md'), 'utf8');
+  // Line breaks (and the indentation of a wrapped list item) are folded to one
+  // space, so a statement may wrap; table rows and sentences already use one.
+  const spec = readFileSync(resolve(ROOT, 'spec/SPEC.md'), 'utf8').replace(/[ \t]*\n[ \t]*/g, ' ');
   const errors = readFileSync(resolve(ROOT, 'spec/errors.md'), 'utf8');
 
   const limits = [];
@@ -142,15 +162,21 @@ function renderLisp({ limits, codes }) {
     ...codes.map((c) => `    ("${c.code}" :${c.phase})`),
     '))', ''].join('\n');
 }
+// Go: gofmt's layout, written out (the bytes must not depend on whether gofmt is
+// on PATH): the const block's names, values and comments in aligned columns, the
+// map's values aligned after the keys, and a doc comment that names its subject.
 function renderGo({ limits, codes }) {
+  const nameW = Math.max(...limits.map((l) => l.name.length));
+  const valueW = Math.max(...limits.map((l) => String(l.value).length));
+  const keyW = Math.max(...codes.map((c) => c.code.length + 3));
   return [`// ${HEADER}`, '',
     'package limits', '',
     'const (',
-    ...limits.map((l) => `\t${l.name} = ${l.value} // ${l.spec}: ${l.meaning}`),
+    ...limits.map((l) => `\t${l.name.padEnd(nameW)} = ${String(l.value).padEnd(valueW)} // ${l.spec}: ${l.meaning}`),
     ')', '',
-    '// The language\'s error codes and the phase that raises each: "compile", "run" or "both".',
+    '// ErrorCodes holds the language\'s error codes and the phase that raises each: "compile", "run" or "both".',
     'var ErrorCodes = map[string]string{',
-    ...codes.map((c) => `\t"${c.code}": "${c.phase}",`),
+    ...codes.map((c) => `\t${`"${c.code}":`.padEnd(keyW)} "${c.phase}",`),
     '}', ''].join('\n');
 }
 function renderRust({ limits, codes }) {
