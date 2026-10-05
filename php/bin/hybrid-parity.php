@@ -6,6 +6,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/../src/Sql/bootstrap.php';
+require_once __DIR__ . '/harness.php';
 require_once __DIR__ . '/json-bindings.php';
 
 use Sel\Dec;
@@ -15,6 +16,8 @@ use Sel\SelError;
 use Sel\Sql\Sql;
 use Sel\Sql\SqlError;
 use Sel\Value;
+
+use function SelBin\exec_fixture;
 
 /**
  * A server's number in a form Dec::parse accepts.
@@ -132,15 +135,7 @@ function run_hybrid(PDO $pdo, string $dialect, bool $verbose, string $label = ''
         echo "{$label}hybrid: no fixture for {$dialect}, skipped\n";
         return ['failed' => 0];
     }
-    $sql = preg_replace('/^\s*--.*$/m', '', (string) file_get_contents($oracle . '/' . $fixture)) ?? '';
-    $n = 0;
-    foreach (explode(';', $sql) as $stmt) {
-        if (trim($stmt) !== '') {
-            $pdo->exec($stmt);
-            $n++;
-        }
-    }
-    if ($n === 0) {
+    if (exec_fixture($pdo, $oracle . '/' . $fixture) === 0) {
         throw new RuntimeException("{$fixture} contained no statements");
     }
     $bindings = bindings_from_json($spec['bindings'], $label);

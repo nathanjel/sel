@@ -29,21 +29,10 @@ const internals = await import('../js/src/eval.mjs');
 const { Context, evalNode } = internals;
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const trim = (t) => t.replace(/^[ \t\r\n]+/, '').replace(/[ \t\r\n]+$/, '');
-
-function cases(file) {
-  const out = [];
-  let cur = null;
-  let sec = null;
-  for (const line of readFileSync(file, 'utf8').split('\n')) {
-    if (line.startsWith('### ')) { cur = { name: /name:\s*(\S+)/.exec(line)[1], setup: null, source: [] }; out.push(cur); sec = null; continue; }
-    if (line === '===') { cur = null; sec = null; continue; }
-    if (line.startsWith('--- ')) { sec = trim(line.slice(4)); if (sec === 'setup') cur.setup = []; continue; }
-    if (cur && sec === 'source') cur.source.push(line);
-    if (cur && sec === 'setup') cur.setup.push(line);
-  }
-  return out.map((c) => ({ name: c.name, setup: c.setup && trim(c.setup.join('\n')), source: trim(c.source.join('\n')) }));
-}
+// The conformance runner's own reader, so this lane and the suite cannot read
+// a case differently.
+const { parseSelt } = await import('../js/bin/conformance.mjs');
+const cases = (file) => parseSelt(readFileSync(file, 'utf8'), file);
 
 function observe(mode, program, root) {
   const ctx = new Context(root);

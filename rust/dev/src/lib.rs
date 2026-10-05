@@ -3,7 +3,6 @@
 //!
 //! Never published; the binaries in `src/bin` link it beside `sel-lang`.
 
-use sel_lang::{Kind, Pos, Value};
 use std::path::Path;
 
 /// A runner's input file, read as bytes and decoded as UTF-8 with no newline
@@ -20,7 +19,7 @@ pub fn read_text(path: impl AsRef<Path>) -> Result<String, String> {
 /// everything up to the next such line is its source, with exactly one
 /// trailing `\n` removed -- never a `\r`, never a second `\n`. Text before the
 /// first marker belongs to no record. The same five lines as
-/// `tools/run-batch.mjs`.
+/// `readCorpus` in `js/bin/read-input.mjs`.
 pub fn read_corpus(text: &str) -> Vec<String> {
     let mut records: Vec<Vec<&str>> = Vec::new();
     for line in text.split('\n') {
@@ -49,26 +48,11 @@ pub fn trim_section(s: &str) -> &str {
     s.trim_matches(|c: char| matches!(c, ' ' | '\t' | '\r' | '\n'))
 }
 
-/// The `sel` CLI's rendering of a result: a scalar text bare, a boolean as
-/// TRUE/FALSE, BIN as `bin:<hex>`, anything else as its dump.
-pub fn render(v: &Value) -> String {
-    if v.size() == 0 {
-        match v.kind() {
-            Kind::Text => return v.scalar(),
-            Kind::Bool => {
-                return if v.as_bool(Pos::default()).unwrap_or(false) { "TRUE" } else { "FALSE" }.to_string();
-            }
-            Kind::Bin => {
-                let d = v.dump().unwrap_or_default();
-                if let Some(hex) = d.strip_prefix('b') {
-                    return format!("bin:{}", hex);
-                }
-            }
-            _ => {}
-        }
-    }
-    v.dump().unwrap_or_default()
-}
+/// The `sel` CLI's rendering of a result: the CLI's own module, compiled here
+/// too, so `batch --show` and `sel` cannot render a value differently.
+#[path = "../../src/bin/show.rs"]
+mod show;
+pub use show::show as render;
 
 /// An API probe's report line: `NN name = value`, numbered in order (the
 /// format tools/check-api.sh and tools/check-sqlapi.sh diff across hosts).

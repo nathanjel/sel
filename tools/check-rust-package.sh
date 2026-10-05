@@ -64,8 +64,17 @@ for need in src/lib.rs src/bin/sel.rs README.md LICENSE; do
   printf '%s\n' "$files" | grep -qx "$need" || fail "the crate lacks $need"
 done
 cmp -s rust/LICENSE LICENSE || fail "rust/LICENSE is not the repository's LICENSE"
-printf '%s\n' "$files" | grep -q '^src/bin/' && [ "$(printf '%s\n' "$files" | grep -c '^src/bin/')" -eq 1 ] \
-  || fail "the crate should have exactly one binary, src/bin/sel.rs"
+# One binary, `sel`: every other file under src/bin/ must be a module of it
+# (`mod <name>;` in sel.rs -- show.rs, the rendering the harness crate shares),
+# never a second program; autobins = false keeps cargo from building one anyway.
+for f in $(printf '%s\n' "$files" | grep '^src/bin/' | grep -vx 'src/bin/sel.rs'); do
+  m="$(basename "$f" .rs)"
+  case "$f" in
+    src/bin/*/*) fail "the crate carries $f: src/bin/ holds sel.rs and its modules only" ;;
+    *) grep -Eq "^mod $m;" rust/src/bin/sel.rs \
+         || fail "the crate carries $f, which is not a module of src/bin/sel.rs (one binary only)" ;;
+  esac
+done
 
 mkdir -p "$WORK/crate"
 tar -xzf "$crate" -C "$WORK/crate"

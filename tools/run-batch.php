@@ -9,10 +9,16 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/../php/src/bootstrap.php';
+// The corpus reader and the rendering bin/sel uses (--show): one copy each,
+// shared with php/bin/sel and php/bin/sqlfuzz.
+require_once __DIR__ . '/../php/bin/harness.php';
 
 use Sel\Sel;
 use Sel\SelError;
 use Sel\Value;
+
+use function SelBin\read_corpus;
+use function SelBin\show as render;
 
 // The runner contract (tools/README.md): a path that cannot be read, or a
 // corpus with no program in it, is a one-line refusal and a non-zero exit --
@@ -35,57 +41,6 @@ $path = $paths[0];
 $text = is_file($path) && is_readable($path) ? @file_get_contents($path) : false;
 if ($text === false) {
     refuse(2, "cannot read {$path}");
-}
-
-/**
- * A line beginning `### ` starts a record; everything after it is source until
- * the next marker.
- *
- * @return list<string>
- */
-function read_corpus(string $text): array
-{
-    $records = [];
-    $cur = null;
-    foreach (explode("\n", $text) as $line) {
-        if (str_starts_with($line, '### ')) {
-            $records[] = [];
-            $cur = count($records) - 1;
-            continue;
-        }
-        if ($cur !== null) {
-            $records[$cur][] = $line;
-        }
-    }
-    // Strip ONE trailing newline, the one the file's final newline contributed.
-    // Not preg_replace('/\n$/'): PCRE's `$` also matches before a final newline
-    // and the replace is global, so a record ending in two newlines loses both,
-    // while the JS reader loses one. The source text differs, and end-of-input
-    // error positions differ with it.
-    return array_map(
-        static fn (array $lines) => (function (string $s): string {
-            return str_ends_with($s, "\n") ? substr($s, 0, -1) : $s;
-        })(implode("\n", $lines)),
-        $records,
-    );
-}
-
-// The rendering bin/sel uses, so a documentation example can be pasted into the
-// CLI and produce exactly what the documentation claims.
-function render(Value $v): string
-{
-    if ($v->size() === 0) {
-        if ($v->kind === 'TEXT') {
-            return $v->scalar;
-        }
-        if ($v->kind === 'BOOL') {
-            return $v->scalar ? 'TRUE' : 'FALSE';
-        }
-        if ($v->kind === 'BIN') {
-            return 'bin:' . substr($v->dump(), 1);
-        }
-    }
-    return $v->dump();
 }
 
 $programs = read_corpus($text);

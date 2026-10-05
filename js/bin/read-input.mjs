@@ -27,3 +27,18 @@ export function readTextOrExit(path, shown = path) {
     process.exit(1);
   }
 }
+
+// The records of a batch corpus (tools/README.md, "The corpus format"): a line
+// beginning `### ` starts a record and everything up to the next such line is
+// its source, with EXACTLY ONE trailing LF removed -- never a CR, never a second
+// LF. Text before the first marker belongs to no record. Shared by
+// tools/run-batch.mjs and bin/sqlfuzz.mjs.
+export function readCorpus(text) {
+  const records = [];
+  let cur = null;
+  for (const line of text.split('\n')) {
+    if (line.startsWith('### ')) { cur = []; records.push(cur); continue; }
+    if (cur) cur.push(line);
+  }
+  return records.map((lines) => lines.join('\n').replace(/\n$/, ''));
+}

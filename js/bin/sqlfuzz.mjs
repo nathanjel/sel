@@ -16,7 +16,7 @@
 
 import { compile, SelError } from '../src/sel.mjs';
 import { Binding, Sql, SqlError } from '../src/sql/index.mjs';
-import { readTextOrExit } from './read-input.mjs';
+import { readCorpus, readTextOrExit } from './read-input.mjs';
 
 // The relations the corpus's pipelines read (tools/gen-programs.mjs --sql), the
 // same in every host's runner: two tables, a NUM join key, a TEXT field whose
@@ -52,16 +52,6 @@ const [path, dialect = 'mariadb', mode = 'all'] = process.argv.slice(2);
 if (path === undefined) {
   process.stderr.write('usage: sqlfuzz.mjs CORPUS [dialect] [statement]\n');
   process.exit(2);
-}
-
-function readCorpus(text) {
-  const records = [];
-  let cur = null;
-  for (const line of text.split('\n')) {
-    if (line.startsWith('### ')) { cur = []; records.push(cur); continue; }
-    if (cur) cur.push(line);
-  }
-  return records.map((lines) => lines.join('\n').replace(/\n$/, ''));
 }
 
 // Exactly one trailing newline comes off each record (the corpus rule in

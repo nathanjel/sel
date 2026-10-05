@@ -18,6 +18,7 @@ declare(strict_types=1);
 ini_set('memory_limit', '-1');
 
 require_once __DIR__ . '/../php/src/bootstrap.php';
+require_once __DIR__ . '/../php/bin/harness.php';
 
 use Sel\Context;
 use Sel\Evaluator;
@@ -25,39 +26,13 @@ use Sel\Sel;
 use Sel\SelError;
 use Sel\Value;
 
-const WS = " \t\r\n";
+use function SelBin\parse_selt;
 
-/** @return list<array{0:string,1:?string,2:string}> */
+/** @return list<array{0:string,1:?string,2:string}> the conformance runner's own reader */
 function cases(string $file): array
 {
-    $out = [];
-    $cur = -1;
-    $sec = null;
-    foreach (explode("\n", (string) file_get_contents($file)) as $line) {
-        if (str_starts_with($line, '### ')) {
-            preg_match('/name:\s*(\S+)/', $line, $m);
-            $out[] = ['name' => $m[1], 'setup' => null, 'source' => []];
-            $cur = count($out) - 1;
-            $sec = null;
-        } elseif ($line === '===') {
-            $cur = -1;
-            $sec = null;
-        } elseif (str_starts_with($line, '--- ')) {
-            $sec = trim(substr($line, 4), WS);
-            if ($sec === 'setup' && $cur >= 0) {
-                $out[$cur]['setup'] = [];
-            }
-        } elseif ($cur >= 0 && $sec === 'source') {
-            $out[$cur]['source'][] = $line;
-        } elseif ($cur >= 0 && $sec === 'setup') {
-            $out[$cur]['setup'][] = $line;
-        }
-    }
-    return array_map(static fn (array $c): array => [
-        $c['name'],
-        $c['setup'] === null ? null : trim(implode("\n", $c['setup']), WS),
-        trim(implode("\n", $c['source']), WS),
-    ], $out);
+    return array_map(static fn (array $c): array => [$c['name'], $c['setup'], $c['source']],
+        parse_selt((string) file_get_contents($file), $file));
 }
 
 /** @return array{0:string,1:int} */

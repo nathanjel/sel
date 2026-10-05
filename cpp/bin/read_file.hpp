@@ -43,7 +43,7 @@ inline bool read_bytes(const std::string& path, std::string& out) {
 // `### ` starts a record, and the record is the lines after it joined with one
 // LF between them, with EXACTLY ONE trailing LF then removed. Lines are split on
 // LF and nothing else -- not CR, not \v, \f or U+2028, which corpora carry on
-// purpose. The same five steps as tools/run-batch.mjs's readCorpus.
+// purpose. The same five steps as js/bin/read-input.mjs's readCorpus.
 inline std::vector<std::string> corpus_records(std::string_view text) {
   std::vector<std::vector<std::string_view>> records;
   std::size_t i = 0;

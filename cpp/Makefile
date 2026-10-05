@@ -112,7 +112,7 @@ CORE_DEPS := sel.cpp sel.hpp sel_ast.hpp sel_limits.hpp sel_builtin_manifest.hpp
 $(BUILD)/sel.o: $(CORE_DEPS) | $(BUILD)
 	$(CXX) $(CXXFLAGS) $(DEPFLAGS) -c -o $@ sel.cpp
 
-$(addprefix $(BUILD)/,$(LINKED) $(INTERNAL)): $(BUILD)/%: bin/%.cpp bin/read_file.hpp sel.hpp sel_ast.hpp $(BUILD)/sel.o | $(BUILD)
+$(addprefix $(BUILD)/,$(LINKED) $(INTERNAL)): $(BUILD)/%: bin/%.cpp bin/read_file.hpp bin/show.hpp sel.hpp sel_ast.hpp $(BUILD)/sel.o | $(BUILD)
 	$(CXX) $(CXXFLAGS) $(DEPFLAGS) -o $@ $< $(BUILD)/sel.o
 
 # `sel --version` prints the package version, read from the one place this

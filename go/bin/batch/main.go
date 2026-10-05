@@ -12,24 +12,6 @@ import (
 	"github.com/nathanjel/sel/go/sel"
 )
 
-func render(v *sel.Value) string {
-	if v.Size() == 0 {
-		if v.Kind() == sel.KindText {
-			return v.Scalar()
-		}
-		if v.Kind() == sel.KindBool {
-			if v.AsBool(sel.Pos{}) {
-				return "TRUE"
-			}
-			return "FALSE"
-		}
-		if v.Kind() == sel.KindBin {
-			return "bin:" + v.Dump()[1:]
-		}
-	}
-	return v.Dump()
-}
-
 func main() {
 	show := false
 	path := ""
@@ -89,7 +71,7 @@ func main() {
 				return
 			}
 			if show {
-				lines[i] = render(val)
+				lines[i] = harness.Show(val)
 			} else {
 				lines[i] = val.Dump()
 			}
