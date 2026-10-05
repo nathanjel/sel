@@ -794,15 +794,18 @@ passes."
   (let ((cl (eql-class (fragment-kind l)))
         (cr (eql-class (fragment-kind r))))
     (when (and cl cr (not (eq cl cr)))
-      ;; OTHER is computed as if L were always the BOOL side, so a TEXT-vs-BIN
-      ;; mismatch says "compares a BOOL with a TEXT". A defect in the message,
-      ;; kept: codes are contract and messages are not, and rewording it here
-      ;; would make this the only host that did.
-      (let ((other (if (eq (fragment-kind l) :bool) (fragment-kind r) (fragment-kind l))))
+      ;; Both kinds as they are: a BIN and a TEXT reach here too. For the $
+      ;; family SEL reads a BIN and a TEXT as bytes, and a BOOL is not an
+      ;; operand at all (E_NOT_BIN); SQL would cast both sides to characters,
+      ;; which says neither.
+      (let ((what (format nil "~a compares a ~a with a ~a" op
+                          (kind-name (fragment-kind l)) (kind-name (fragment-kind r)))))
         (refuse "E_SQL_SHAPE"
-                (format nil "~a compares a BOOL with a ~a, which SEL answers ~
-FALSE for every value because the kinds differ. SQL has no way to say that: both ~
-sides cast to the same characters" op (kind-name other))
+                (if (char= (char op 0) #\$)
+                    (format nil "~a, which SEL compares as bytes (or refuses, for a BOOL); SQL ~
+has no way to say that: both sides cast to the same characters" what)
+                    (format nil "~a, which SEL answers FALSE for every value because the kinds ~
+differ. SQL has no way to say that: both sides cast to the same characters" what))
                 pos)))))
 
 (defun require-bool (f pos where)
