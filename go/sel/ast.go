@@ -6,6 +6,8 @@ import (
 	"github.com/nathanjel/sel/go/internal/decimal"
 )
 
+// NodeType is the kind of a syntax tree node.
+// For the SQL layer and the tools; see "The syntax tree" in the package documentation.
 type NodeType string
 
 const (
@@ -23,7 +25,7 @@ const (
 	NodeCall   NodeType = "call"
 )
 
-type SlotCache struct {
+type slotCache struct {
 	Shape *RecordShape
 	Slot  int
 	// Misses counts how many times this site replaced its entry because the row had
@@ -37,7 +39,7 @@ type SlotCache struct {
 const slotCacheMissLimit = 8
 
 // storeSlot records shape→slot at a site, unless the site has proved polymorphic.
-func storeSlot(holder *atomic.Pointer[SlotCache], shape *RecordShape, slot int) {
+func storeSlot(holder *atomic.Pointer[slotCache], shape *RecordShape, slot int) {
 	var misses int32
 	if old := holder.Load(); old != nil {
 		if old.Misses >= slotCacheMissLimit {
@@ -45,9 +47,12 @@ func storeSlot(holder *atomic.Pointer[SlotCache], shape *RecordShape, slot int) 
 		}
 		misses = old.Misses + 1
 	}
-	holder.Store(&SlotCache{Shape: shape, Slot: slot, Misses: misses})
+	holder.Store(&slotCache{Shape: shape, Slot: slot, Misses: misses})
 }
 
+// Spec describes a builtin for Define: its name, its argument counts, and Fn. A
+// lazy builtin receives the argument nodes unevaluated (Args.Node,
+// Args.EvalNode); Binds says it binds names in its arguments.
 type Spec struct {
 	Name       string
 	Min        int
@@ -58,7 +63,7 @@ type Spec struct {
 	Fn         func(args *Args, ctx *Context) *Value
 }
 
-type MathStep struct {
+type mathStep struct {
 	Op   string
 	Dst  uint16
 	Src1 uint16
@@ -73,8 +78,8 @@ type MathStep struct {
 	LeafNode *Node
 }
 
-type MathPlan struct {
-	Steps          []MathStep
+type mathPlan struct {
+	Steps          []mathStep
 	OutputSlot     uint16
 	ScratchpadSize uint16
 	// UsesRegs: the plan has an ADD, SUB or MUL, so an evaluation takes a
@@ -83,6 +88,8 @@ type MathPlan struct {
 	NumRegs  uint16
 }
 
+// Node is a node of a compiled program's syntax tree.
+// For the SQL layer and the tools; see "The syntax tree" in the package documentation.
 type Node struct {
 	T       NodeType
 	Pos     Pos
@@ -100,22 +107,24 @@ type Node struct {
 	R     *Node
 	Items []*Node
 
-	Dec   *decimal.Dec
-	Shape *RecordShape
+	dec   *decimal.Dec
+	shape *RecordShape
 	Spec  *Spec
 	// The holder is shared safely when optimizers copy a node. Each load must
 	// use one immutable snapshot for both the shape check and slot lookup.
-	SlotCache *atomic.Pointer[SlotCache]
+	slotCache *atomic.Pointer[slotCache]
 
-	MathPlan *MathPlan
+	mathPlan *mathPlan
 
-	KeysUnobserved bool
+	keysUnobserved bool
 }
 
+// NewNode makes a node of type t.
+// For the SQL layer and the tools; see "The syntax tree" in the package documentation.
 func NewNode(t NodeType, pos Pos) *Node {
 	n := &Node{T: t, Pos: pos}
 	if t == NodeIndex {
-		n.SlotCache = new(atomic.Pointer[SlotCache])
+		n.slotCache = new(atomic.Pointer[slotCache])
 	}
 	return n
 }

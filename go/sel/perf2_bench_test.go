@@ -116,7 +116,7 @@ func BenchmarkP19RegexCall(b *testing.B) {
 		for i := range items {
 			items[i] = NewText(fmt.Sprintf("%03d-%02d", s.next()%1000, s.next()%100))
 		}
-		return ctxWith("L", NewListOwned(items))
+		return ctxWith("L", newListOwned(items))
 	}
 	b.Run("rmatch_map", func(b *testing.B) {
 		benchCase(b, perfCase{"r", `COUNT(FILTER(L, RMATCH('^\d{3}-\d{2}$', _)))`, ctx})

@@ -18,7 +18,7 @@ func TestRegisterFunctionRefusesNilFunction(t *testing.T) {
 		if recover() == nil {
 			t.Error("RegisterFunction accepted a nil function")
 		}
-		if Lookup("T12_NIL_FN") != nil {
+		if lookup("T12_NIL_FN") != nil {
 			t.Error("a refused registration left an entry in the function table")
 		}
 	}()
@@ -30,7 +30,7 @@ func TestRegisterFunctionRefusesNilFunction(t *testing.T) {
 // is the check the test lane can make today.)
 func TestEveryManifestBuiltinIsDefined(t *testing.T) {
 	for name := range manifest.Builtins {
-		if Lookup(name) == nil {
+		if lookup(name) == nil {
 			t.Errorf("spec/builtins.json names %s but no module defines it", name)
 		}
 	}

@@ -289,12 +289,12 @@ func init() {
 			items := make([]*Value, len(m)/2)
 			for i := range items {
 				if m[2*i] < 0 {
-					items[i] = NewTextOwned("")
+					items[i] = newTextOwned("")
 				} else {
-					items[i] = NewTextOwned(subj[m[2*i]:m[2*i+1]])
+					items[i] = newTextOwned(subj[m[2*i]:m[2*i+1]])
 				}
 			}
-			return NewListOwned(items)
+			return newListOwned(items)
 		},
 	})
 
@@ -334,13 +334,13 @@ func init() {
 				return true
 			})
 			if !matched {
-				return NewTextOwned(subj)
+				return newTextOwned(subj)
 			}
 			tail := subj[last:]
 			built += runeLen(tail)
 			checkTextLen(built, "RREPLACE's result", args.Pos())
 			out.WriteString(tail)
-			return NewTextOwned(out.String())
+			return newTextOwned(out.String())
 		},
 	})
 }

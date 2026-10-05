@@ -20,6 +20,8 @@ type Program struct {
 	physicalAst atomic.Pointer[Node]
 }
 
+// NewProgram wraps a syntax tree as a program.
+// For the SQL layer and the tools; see "The syntax tree" in the package documentation.
 func NewProgram(source string, ast *Node) *Program {
 	return &Program{
 		source: source,
@@ -37,7 +39,7 @@ func Compile(source string) (prog *Program, err error) {
 			panic(r)
 		}
 	}()
-	ast := Parse(source)
+	ast := parse(source)
 	return NewProgram(source, ast), nil
 }
 
@@ -53,15 +55,19 @@ func (p *Program) Source() string {
 	return p.source
 }
 
+// AST is the program's syntax tree as parsed.
+// For the SQL layer and the tools; see "The syntax tree" in the package documentation.
 func (p *Program) AST() *Node {
 	return p.ast
 }
 
+// PhysicalAST is the tree Run evaluates: the parsed tree after the in-memory optimizations.
+// For the SQL layer and the tools; see "The syntax tree" in the package documentation.
 func (p *Program) PhysicalAST() *Node {
 	if t := p.physicalAst.Load(); t != nil {
 		return t
 	}
-	t := OptimizeAST(p.ast)
+	t := OptimizeAstInMemory(p.ast)
 	p.physicalAst.CompareAndSwap(nil, t)
 	return p.physicalAst.Load()
 }
@@ -92,11 +98,11 @@ func (p *Program) runTree(target *Node, ctx *Value) (result *Value, err error) {
 			panic(r)
 		}
 	}()
-	c := NewContext(ctx)
+	c := newContext(ctx)
 	if target == nil {
 		target = p.PhysicalAST()
 	}
-	return EvalNode(target, c), nil
+	return evalNode(target, c), nil
 }
 
 // Dependencies returns the variables the program reads before it has definitely
@@ -153,7 +159,7 @@ func collectDependencies(node *Node, bound map[string]bool, reads map[string]boo
 	if node == nil {
 		return def
 	}
-	if depth > MAX_DEPTH {
+	if depth > maxDepth {
 		fail("E_DEPTH", "expression nested too deeply", node.Pos)
 	}
 
@@ -322,10 +328,10 @@ func plansPay(root *Node) bool {
 			continue
 		}
 		if n.T == NodeCall {
-			if IsPipelineOp(n.S) {
+			if isPipelineOp(n.S) {
 				return true
 			}
-			if spec := Lookup(n.S); spec != nil && spec.Binds {
+			if spec := lookup(n.S); spec != nil && spec.Binds {
 				return true
 			}
 		}
@@ -343,6 +349,8 @@ func MustEval(source string, ctx *Value) *Value {
 	return v
 }
 
+// FunctionNames lists every function a program can call, the builtins and
+// those registered with RegisterFunction, sorted.
 func FunctionNames() []string {
 	registryMu.RLock()
 	defer registryMu.RUnlock()

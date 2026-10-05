@@ -4,17 +4,22 @@ package main
 
 import (
 	"fmt"
+	"math/big"
 	"os"
 	"strings"
 
-	"github.com/nathanjel/sel/go/internal/decimal"
-	"github.com/nathanjel/sel/go/internal/limits"
-	"github.com/nathanjel/sel/go/internal/utf8"
 	"github.com/nathanjel/sel/go/sel"
 )
 
 var out []string
 var counter int
+
+// numFromStr is the other hosts' Value.num("1.50"): Go has no number-from-text
+// constructor (a number is its text), so the text is read as a number and the
+// decimal form built from it, through the public API alone.
+func numFromStr(s string) *sel.Value {
+	return sel.NewDecimal(sel.NewText(s).Decimal(sel.Pos{}))
+}
 
 func say(name, value string) {
 	counter++
@@ -64,20 +69,20 @@ func main() {
 	say("kind.const.bin", "BIN")
 	say("kind.const.bool", "BOOL")
 	say("kind.static.bool", "BOOL")
-	say("kind.of.text", eval("\"x\"").Kind.String())
-	say("kind.of.bool", eval("TRUE").Kind.String())
-	say("kind.of.none", eval("(1,2)").Kind.String())
-	say("pred.isText", b(eval("\"x\"").Kind == sel.KindText))
-	say("pred.isBool", b(eval("TRUE").Kind == sel.KindBool))
-	say("pred.isNone", b(eval("(1,2)").Kind == sel.KindNone))
-	say("pred.isBin", b(eval("TO_UTF8(\"x\")").Kind == sel.KindBin))
-	say("pred.isText.on.bool", b(eval("TRUE").Kind == sel.KindText))
+	say("kind.of.text", eval("\"x\"").Kind().String())
+	say("kind.of.bool", eval("TRUE").Kind().String())
+	say("kind.of.none", eval("(1,2)").Kind().String())
+	say("pred.isText", b(eval("\"x\"").Kind() == sel.KindText))
+	say("pred.isBool", b(eval("TRUE").Kind() == sel.KindBool))
+	say("pred.isNone", b(eval("(1,2)").Kind() == sel.KindNone))
+	say("pred.isBin", b(eval("TO_UTF8(\"x\")").Kind() == sel.KindBin))
+	say("pred.isText.on.bool", b(eval("TRUE").Kind() == sel.KindText))
 
 	// --- constructors
 	say("ctor.text", sel.NewText("hi").Dump())
 	say("ctor.bool", sel.NewBool(true).Dump())
 	say("ctor.none", sel.NewNone().Dump())
-	say("ctor.num.canonicalises", sel.NewNum(decimal.Parse("007", utf8.Pos{}, func(c, m string, p utf8.Pos) {})).Dump())
+	say("ctor.num.canonicalises", numFromStr("007").Dump())
 	say("ctor.int", sel.NewInt(-3).Dump())
 	say("ctor.list", sel.NewList([]*sel.Value{sel.NewText("a"), sel.NewText("b")}).Dump())
 
@@ -121,7 +126,7 @@ func main() {
 	say("program.deps.forms.link.named-binders", strings.Join(sel.MustCompile("LINK(A, B, X, Y, X[\"a\"] == Y[\"b\"] AND Z)").Dependencies(), " "))
 
 	ctx := sel.NewNone()
-	ctx.Set("TOTAL", sel.NewNum(decimal.Parse("59.97", utf8.Pos{}, func(c, m string, p utf8.Pos) {})))
+	ctx.Set("TOTAL", numFromStr("59.97"))
 	say("program.run.reads.context", eval("TOTAL > 10.00", ctx).Dump())
 	eval("SEEN = TOTAL * 2", ctx)
 	say("program.run.mutates.context", ctx.Get("SEEN").AsText(sel.Pos{}))
@@ -163,18 +168,6 @@ func main() {
 		sel.MustCompile("NOPE(1)")
 	}()
 
-	numFromStr := func(s string) *sel.Value {
-		var se *sel.SelError
-		d := decimal.Parse(s, utf8.Pos{}, func(code, msg string, pos utf8.Pos) {
-			se = &sel.SelError{Code: code, Message: msg, Pos: pos}
-			panic(se)
-		})
-		if d == nil {
-			panic(&sel.SelError{Code: "E_NOT_NUM", Message: "not a number: " + s})
-		}
-		return sel.NewNum(d)
-	}
-
 	func() {
 		defer func() {
 			if r := recover(); r != nil {
@@ -204,22 +197,11 @@ func main() {
 			dig   string
 			scale int32
 		}
+		// The decimal form through the public constructor, as the other hosts'
+		// Value.num({neg, digits, scale}).
 		numFromDec := func(spec decSpec) *sel.Value {
-			if spec.scale < 0 {
-				panic(&sel.SelError{Code: "E_BAD_ARG", Message: "the scale is negative"})
-			}
-			if spec.scale > limits.MAX_FRAC_DIGITS {
-				panic(&sel.SelError{Code: "E_RANGE", Message: "fractional digits exceed limit"})
-			}
-			d := decimal.Parse(spec.dig, utf8.Pos{}, func(c, m string, p utf8.Pos) {
-				panic(&sel.SelError{Code: c, Message: m})
-			})
-			d.Scale = spec.scale
-			d.Neg = spec.neg
-			if spec.dig == "0" {
-				d.Neg = false
-			}
-			return sel.NewNum(d)
+			digits, _ := new(big.Int).SetString(spec.dig, 10)
+			return sel.NewDecimal(sel.Decimal{Neg: spec.neg, Digits: digits, Scale: int(spec.scale)})
 		}
 
 		probes := []struct {

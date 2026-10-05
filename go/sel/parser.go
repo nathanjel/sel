@@ -11,22 +11,22 @@ import (
 
 // Binding power levels (spec/SPEC.md §5). Higher binds tighter.
 const (
-	BPSeq      = 1  // ;
-	BPList     = 2  // ,
-	BPAssign   = 3  // = += -= *= /= %= &= (right associative)
-	BPOr       = 4
-	BPXor      = 5
-	BPAnd      = 6
-	BPNot      = 7  // prefix
-	BPCompare  = 8  // non-associative
-	BPCoalesce = 9  // ?? ??? (right associative)
-	BPBOr      = 10
-	BPBXor     = 11
-	BPBAnd     = 12
-	BPConcat   = 13 // &
-	BPAdd      = 14 // + -
-	BPMul      = 15 // * / %
-	BPNeg      = 16 // prefix
+	bpSeq      = 1  // ;
+	bpList     = 2  // ,
+	bpAssign   = 3  // = += -= *= /= %= &= (right associative)
+	bpOr       = 4
+	bpXor      = 5
+	bpAnd      = 6
+	bpNot      = 7  // prefix
+	bpCompare  = 8  // non-associative
+	bpCoalesce = 9  // ?? ??? (right associative)
+	bpBOr      = 10
+	bpBXor     = 11
+	bpBAnd     = 12
+	bpConcat   = 13 // &
+	bpAdd      = 14 // + -
+	bpMul      = 15 // * / %
+	bpNeg      = 16 // prefix
 )
 
 type infixEntry struct {
@@ -35,44 +35,44 @@ type infixEntry struct {
 }
 
 var infixOps = map[string]infixEntry{
-	"??":  {BPCoalesce, 'R'},
-	"???": {BPCoalesce, 'R'},
-	"&":   {BPConcat, 'L'},
-	"+":   {BPAdd, 'L'},
-	"-":   {BPAdd, 'L'},
-	"*":   {BPMul, 'L'},
-	"/":   {BPMul, 'L'},
-	"%":   {BPMul, 'L'},
-	"=":   {BPAssign, 'R'},
-	"+=":  {BPAssign, 'R'},
-	"-=":  {BPAssign, 'R'},
-	"*=":  {BPAssign, 'R'},
-	"/=":  {BPAssign, 'R'},
-	"%=":  {BPAssign, 'R'},
-	"&=":  {BPAssign, 'R'},
-	"==":  {BPCompare, 'N'},
-	"!=":  {BPCompare, 'N'},
-	"<":   {BPCompare, 'N'},
-	"<=":  {BPCompare, 'N'},
-	">":   {BPCompare, 'N'},
-	">=":  {BPCompare, 'N'},
-	"$==": {BPCompare, 'N'},
-	"$!=": {BPCompare, 'N'},
-	"$<":  {BPCompare, 'N'},
-	"$<=": {BPCompare, 'N'},
-	"$>":  {BPCompare, 'N'},
-	"$>=": {BPCompare, 'N'},
+	"??":  {bpCoalesce, 'R'},
+	"???": {bpCoalesce, 'R'},
+	"&":   {bpConcat, 'L'},
+	"+":   {bpAdd, 'L'},
+	"-":   {bpAdd, 'L'},
+	"*":   {bpMul, 'L'},
+	"/":   {bpMul, 'L'},
+	"%":   {bpMul, 'L'},
+	"=":   {bpAssign, 'R'},
+	"+=":  {bpAssign, 'R'},
+	"-=":  {bpAssign, 'R'},
+	"*=":  {bpAssign, 'R'},
+	"/=":  {bpAssign, 'R'},
+	"%=":  {bpAssign, 'R'},
+	"&=":  {bpAssign, 'R'},
+	"==":  {bpCompare, 'N'},
+	"!=":  {bpCompare, 'N'},
+	"<":   {bpCompare, 'N'},
+	"<=":  {bpCompare, 'N'},
+	">":   {bpCompare, 'N'},
+	">=":  {bpCompare, 'N'},
+	"$==": {bpCompare, 'N'},
+	"$!=": {bpCompare, 'N'},
+	"$<":  {bpCompare, 'N'},
+	"$<=": {bpCompare, 'N'},
+	"$>":  {bpCompare, 'N'},
+	"$>=": {bpCompare, 'N'},
 }
 
 var infixWords = map[string]infixEntry{
-	"OR":   {BPOr, 'L'},
-	"XOR":  {BPXor, 'L'},
-	"AND":  {BPAnd, 'L'},
-	"BOR":  {BPBOr, 'L'},
-	"BXOR": {BPBXor, 'L'},
-	"BAND": {BPBAnd, 'L'},
-	"EQL":  {BPCompare, 'N'},
-	"IN":   {BPCompare, 'N'},
+	"OR":   {bpOr, 'L'},
+	"XOR":  {bpXor, 'L'},
+	"AND":  {bpAnd, 'L'},
+	"BOR":  {bpBOr, 'L'},
+	"BXOR": {bpBXor, 'L'},
+	"BAND": {bpBAnd, 'L'},
+	"EQL":  {bpCompare, 'N'},
+	"IN":   {bpCompare, 'N'},
 }
 
 var assignOps = map[string]struct{}{
@@ -90,30 +90,30 @@ func prepareRecordShape(name string, args []*Node) *RecordShape {
 		}
 		keys = append(keys, args[i].S)
 	}
-	return UniqueRecordShape(keys)
+	return uniqueRecordShape(keys)
 }
 
-type Parser struct {
-	toks  []Token
+type parser struct {
+	toks  []token
 	i     int
 	depth int
 }
 
-func NewParser(tokens []Token) *Parser {
-	return &Parser{
+func newParser(tokens []token) *parser {
+	return &parser{
 		toks:  tokens,
 		i:     0,
 		depth: 0,
 	}
 }
 
-func (p *Parser) infixEntry(t Token) (int, byte, bool) {
-	if t.Type == TokenOp {
+func (p *parser) infixEntry(t token) (int, byte, bool) {
+	if t.Type == tokenOp {
 		if e, ok := infixOps[t.Value]; ok {
 			return e.bp, e.assoc, true
 		}
 	}
-	if t.Type == TokenIdent {
+	if t.Type == tokenIdent {
 		if e, ok := infixWords[t.Value]; ok {
 			return e.bp, e.assoc, true
 		}
@@ -121,22 +121,22 @@ func (p *Parser) infixEntry(t Token) (int, byte, bool) {
 	return 0, 0, false
 }
 
-func (p *Parser) peek() Token {
+func (p *parser) peek() token {
 	if p.i < len(p.toks) {
 		return p.toks[p.i]
 	}
-	return Token{Type: TokenEOF}
+	return token{Type: tokenEOF}
 }
 
-func (p *Parser) peekAhead(offset int) Token {
+func (p *parser) peekAhead(offset int) token {
 	idx := p.i + offset
 	if idx < len(p.toks) {
 		return p.toks[idx]
 	}
-	return Token{Type: TokenEOF}
+	return token{Type: tokenEOF}
 }
 
-func (p *Parser) next() Token {
+func (p *parser) next() token {
 	t := p.peek()
 	if p.i < len(p.toks) {
 		p.i++
@@ -144,16 +144,16 @@ func (p *Parser) next() Token {
 	return t
 }
 
-func (p *Parser) atOp(v string) bool {
+func (p *parser) atOp(v string) bool {
 	t := p.peek()
-	return t.Type == TokenOp && t.Value == v
+	return t.Type == tokenOp && t.Value == v
 }
 
-func (p *Parser) atEOF() bool {
-	return p.peek().Type == TokenEOF
+func (p *parser) atEOF() bool {
+	return p.peek().Type == tokenEOF
 }
 
-func (p *Parser) expectOp(v string) Token {
+func (p *parser) expectOp(v string) token {
 	if !p.atOp(v) {
 		t := p.peek()
 		fail("E_SYNTAX", fmt.Sprintf("expected %q, got %s", v, describe(t)), t.Pos)
@@ -161,18 +161,18 @@ func (p *Parser) expectOp(v string) Token {
 	return p.next()
 }
 
-func (p *Parser) enter(pos Pos) {
+func (p *parser) enter(pos Pos) {
 	p.depth++
-	if p.depth > MAX_DEPTH {
+	if p.depth > maxDepth {
 		fail("E_DEPTH", "expression nested too deeply", pos)
 	}
 }
 
-func (p *Parser) leave() {
+func (p *parser) leave() {
 	p.depth--
 }
 
-func (p *Parser) ParseProgram() *Node {
+func (p *parser) ParseProgram() *Node {
 	node := p.parseSequence()
 	if !p.atEOF() {
 		t := p.peek()
@@ -181,7 +181,7 @@ func (p *Parser) ParseProgram() *Node {
 	return node
 }
 
-func (p *Parser) parseSequence() *Node {
+func (p *parser) parseSequence() *Node {
 	start := p.peek()
 	p.enter(start.Pos)
 	defer p.leave()
@@ -202,11 +202,11 @@ func (p *Parser) parseSequence() *Node {
 	return n
 }
 
-func (p *Parser) parseList() *Node {
-	items := []*Node{p.parseTerm(BPAssign)}
+func (p *parser) parseList() *Node {
+	items := []*Node{p.parseTerm(bpAssign)}
 	for p.atOp(",") {
 		p.next()
-		items = append(items, p.parseTerm(BPAssign))
+		items = append(items, p.parseTerm(bpAssign))
 	}
 	if len(items) == 1 {
 		return items[0]
@@ -216,7 +216,7 @@ func (p *Parser) parseList() *Node {
 	return n
 }
 
-func (p *Parser) parseTerm(minBp int) *Node {
+func (p *parser) parseTerm(minBp int) *Node {
 	left := p.parsePrefix(minBp)
 
 	for {
@@ -282,13 +282,13 @@ func (p *Parser) parseTerm(minBp int) *Node {
 	}
 }
 
-func (p *Parser) parsePrefix(minBp int) *Node {
+func (p *parser) parsePrefix(minBp int) *Node {
 	t := p.peek()
 
-	if t.Type == TokenIdent && t.Value == "NOT" && minBp <= BPNot {
+	if t.Type == tokenIdent && t.Value == "NOT" && minBp <= bpNot {
 		p.next()
 		p.enter(t.Pos)
-		x := p.parseTerm(BPNot)
+		x := p.parseTerm(bpNot)
 		p.leave()
 		n := NewNode(NodeUn, t.Pos)
 		n.S = "NOT"
@@ -296,10 +296,10 @@ func (p *Parser) parsePrefix(minBp int) *Node {
 		return n
 	}
 
-	if t.Type == TokenOp && t.Value == "-" && minBp <= BPNeg {
+	if t.Type == tokenOp && t.Value == "-" && minBp <= bpNeg {
 		p.next()
 		p.enter(t.Pos)
-		x := p.parseTerm(BPNeg)
+		x := p.parseTerm(bpNeg)
 		p.leave()
 		n := NewNode(NodeUn, t.Pos)
 		n.S = "NEG"
@@ -310,7 +310,7 @@ func (p *Parser) parsePrefix(minBp int) *Node {
 	return p.parsePostfix()
 }
 
-func (p *Parser) parsePostfix() *Node {
+func (p *parser) parsePostfix() *Node {
 	node := p.parsePrimary()
 	for p.atOp("[") || p.atOp(".>") {
 		if p.atOp("[") {
@@ -331,9 +331,9 @@ func (p *Parser) parsePostfix() *Node {
 	return node
 }
 
-func (p *Parser) parsePipeStep(left *Node) *Node {
+func (p *parser) parsePipeStep(left *Node) *Node {
 	t := p.peek()
-	if t.Type != TokenIdent || t.Value == "TRUE" || t.Value == "FALSE" || t.Value == "NULL" {
+	if t.Type != tokenIdent || t.Value == "TRUE" || t.Value == "FALSE" || t.Value == "NULL" {
 		fail("E_SYNTAX", "right-hand side of .> must be a function call or function name", t.Pos)
 	}
 	nameTok := p.next()
@@ -353,7 +353,7 @@ func (p *Parser) parsePipeStep(left *Node) *Node {
 		}
 	}
 
-	spec := Lookup(nameTok.Value)
+	spec := lookup(nameTok.Value)
 	if spec == nil {
 		fail("E_UNKNOWN_FUNC", fmt.Sprintf("unknown function %s", nameTok.Value), nameTok.Pos)
 	}
@@ -375,28 +375,28 @@ func (p *Parser) parsePipeStep(left *Node) *Node {
 	return finishCall(nameTok, spec, args)
 }
 
-func (p *Parser) parsePrimary() *Node {
+func (p *parser) parsePrimary() *Node {
 	t := p.peek()
 	p.enter(t.Pos)
 	defer p.leave()
 
-	if t.Type == TokenNum {
+	if t.Type == tokenNum {
 		p.next()
 		parsed := decimal.Parse(t.Value, t.Pos, fail)
 		n := NewNode(NodeNum, t.Pos)
 		n.S = decimal.Format(parsed)
-		n.Dec = parsed
+		n.dec = parsed
 		return n
 	}
 
-	if t.Type == TokenText {
+	if t.Type == tokenText {
 		p.next()
 		n := NewNode(NodeText, t.Pos)
 		n.S = t.Value
 		return n
 	}
 
-	if t.Type == TokenIdent {
+	if t.Type == tokenIdent {
 		if t.Value == "TRUE" || t.Value == "FALSE" {
 			p.next()
 			n := NewNode(NodeBool, t.Pos)
@@ -408,7 +408,7 @@ func (p *Parser) parsePrimary() *Node {
 			return NewNode(NodeNull, t.Pos)
 		}
 		after := p.peekAhead(1)
-		if after.Type == TokenOp && after.Value == "(" {
+		if after.Type == tokenOp && after.Value == "(" {
 			return p.parseCall()
 		}
 		if _, isRes := reserved[t.Value]; isRes {
@@ -420,7 +420,7 @@ func (p *Parser) parsePrimary() *Node {
 		return n
 	}
 
-	if t.Type == TokenOp && t.Value == "(" {
+	if t.Type == tokenOp && t.Value == "(" {
 		p.next()
 		if p.atOp(")") {
 			fail("E_SYNTAX", "empty parentheses", t.Pos)
@@ -435,7 +435,7 @@ func (p *Parser) parsePrimary() *Node {
 	return nil
 }
 
-func (p *Parser) parseCall() *Node {
+func (p *parser) parseCall() *Node {
 	nameTok := p.next()
 	p.expectOp("(")
 	var args []*Node
@@ -451,14 +451,14 @@ func (p *Parser) parseCall() *Node {
 		}
 	}
 
-	spec := Lookup(nameTok.Value)
+	spec := lookup(nameTok.Value)
 	if spec == nil {
 		fail("E_UNKNOWN_FUNC", fmt.Sprintf("unknown function %s", nameTok.Value), nameTok.Pos)
 	}
 	return finishCall(nameTok, spec, args)
 }
 
-func finishCall(nameTok Token, spec *Spec, args []*Node) *Node {
+func finishCall(nameTok token, spec *Spec, args []*Node) *Node {
 	count := len(args)
 	if count < spec.Min || (spec.Max >= 0 && count > spec.Max) {
 		fail("E_ARITY", fmt.Sprintf("%s takes %s, got %d", spec.Name, arityText(spec), count), nameTok.Pos)
@@ -498,7 +498,7 @@ func finishCall(nameTok Token, spec *Spec, args []*Node) *Node {
 	n.S = spec.Name
 	n.Spec = spec
 	n.Items = args
-	n.Shape = prepareRecordShape(spec.Name, args)
+	n.shape = prepareRecordShape(spec.Name, args)
 	return n
 }
 
@@ -518,20 +518,20 @@ func arityText(spec *Spec) string {
 	return fmt.Sprintf("%d to %d arguments", spec.Min, spec.Max)
 }
 
-func describe(t Token) string {
-	if t.Type == TokenEOF {
+func describe(t token) string {
+	if t.Type == tokenEOF {
 		return "end of input"
 	}
-	if t.Type == TokenText {
+	if t.Type == tokenText {
 		return "a text literal"
 	}
-	if t.Type == TokenNum {
+	if t.Type == tokenNum {
 		return fmt.Sprintf("number %s", t.Value)
 	}
 	return fmt.Sprintf("%q", t.Value)
 }
 
-func checkTarget(node *Node, opTok Token) {
+func checkTarget(node *Node, opTok token) {
 	n := node
 	for n.T == NodeIndex {
 		n = n.L
@@ -541,6 +541,6 @@ func checkTarget(node *Node, opTok Token) {
 	}
 }
 
-func Parse(source string) *Node {
-	return NewParser(Tokenize(source)).ParseProgram()
+func parse(source string) *Node {
+	return newParser(tokenize(source)).ParseProgram()
 }

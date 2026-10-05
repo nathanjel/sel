@@ -89,7 +89,7 @@ func aggregateWalk(args *Args, ctx *Context, visit visitFunc, bodyOverride *Node
 // NULL key is common and a panic per comparison would be slow.
 func sortLeaf(v *Value) *Value {
 	guard := 0
-	for v.Kind == KindNone {
+	for v.kind == KindNone {
 		if v.IsNull() || v.Size() == 0 {
 			return nil
 		}
@@ -110,7 +110,7 @@ func sortRank(v *Value) int {
 	if v == nil || v.IsNull() {
 		return 0
 	}
-	switch v.Kind {
+	switch v.kind {
 	case KindBool:
 		return 1
 	case KindBin:
@@ -323,11 +323,11 @@ func doSort(args *Args, ctx *Context, forcedDir string) *Value {
 	}
 
 	if val.IsNull() {
-		return NewListOwned(nil)
+		return newListOwned(nil)
 	}
 	ents := val.Elements()
 	if len(ents) == 0 {
-		return NewListOwned(nil)
+		return newListOwned(nil)
 	}
 
 	var indexed []sortItem
@@ -375,7 +375,7 @@ func doSort(args *Args, ctx *Context, forcedDir string) *Value {
 			out[i] = keyed[i].item.CloneAt(2, args.Pos())
 		}
 	}
-	return NewListOwned(out)
+	return newListOwned(out)
 }
 
 // topSelectFactor: below limit*factor < n the bounded selection beats sorting
@@ -477,11 +477,11 @@ func doTop(args *Args, ctx *Context, forcedDir string) *Value {
 	// TOP is TAKE(SORT(...), n): the direction is checked and the keys evaluated
 	// whatever n is, and only an empty or NULL source has nothing to sort.
 	if val.IsNull() {
-		return NewListOwned(nil)
+		return newListOwned(nil)
 	}
 	ents := val.Elements()
 	if len(ents) == 0 {
-		return NewListOwned(nil)
+		return newListOwned(nil)
 	}
 	needsK := body != nil && nodeContainsVar(body, "_K")
 	frame := map[string]*Value{}
@@ -544,11 +544,11 @@ func doTop(args *Args, ctx *Context, forcedDir string) *Value {
 			out[i] = best[i].item.CloneAt(2, args.Pos())
 		}
 	}
-	return NewListOwned(out)
+	return newListOwned(out)
 }
 
 func bucketKeyText(key *Value, pos Pos) string {
-	if key.Kind == KindNone {
+	if key.kind == KindNone {
 		if key.IsNull() {
 			fail("E_NULL", "value is NULL", pos)
 		}
@@ -566,13 +566,13 @@ type bucketGroup struct {
 func doBucket(args *Args, ctx *Context) *Value {
 	val := args.Val(0)
 	if val.IsNull() {
-		return NewListOwned(nil)
+		return newListOwned(nil)
 	}
 	// A scalar is a one-element list (spec §7.3), so emptiness is asked of the
 	// elements and not of the children.
 	ents := val.Elements()
 	if len(ents) == 0 {
-		return NewListOwned(nil)
+		return newListOwned(nil)
 	}
 
 	count := args.Count()
@@ -669,7 +669,7 @@ func doBucket(args *Args, ctx *Context) *Value {
 					rowsCopy[i] = r.CloneAt(3, args.Pos())
 				}
 			}
-			out.Set(g.keyStr, NewListOwned(rowsCopy))
+			out.Set(g.keyStr, newListOwned(rowsCopy))
 		}
 		return out
 	}
@@ -680,11 +680,11 @@ func doBucket(args *Args, ctx *Context) *Value {
 	defer ctx.PopFrame()
 
 	for i, g := range groups {
-		aggFrame[binder] = NewListOwned(g.rows)
+		aggFrame[binder] = newListOwned(g.rows)
 		aggFrame["_K"] = g.key
 		out[i] = args.EvalNode(aggNode).CloneAt(2, args.Pos())
 	}
-	return NewListOwned(out)
+	return newListOwned(out)
 }
 
 func isPositionalBinder(name string) bool {
@@ -734,15 +734,15 @@ func planRowTableAlias(oldShape *RecordShape, tableName string) aliasPlan {
 		return p
 	}
 	lower := strings.ToLower(tableName)
-	_, lowerTaken := oldShape.KeyMap[lower]
+	_, lowerTaken := oldShape.keyMap[lower]
 	addLower := lower != tableName && !lowerTaken
-	keys := make([]string, len(oldShape.Keys)+1, len(oldShape.Keys)+2)
-	copy(keys, oldShape.Keys)
-	keys[len(oldShape.Keys)] = tableName
+	keys := make([]string, len(oldShape.keys)+1, len(oldShape.keys)+2)
+	copy(keys, oldShape.keys)
+	keys[len(oldShape.keys)] = tableName
 	if addLower {
 		keys = append(keys, lower)
 	}
-	p = aliasPlan{target: UniqueRecordShape(keys), addLower: addLower}
+	p = aliasPlan{target: uniqueRecordShape(keys), addLower: addLower}
 	aliasMu.Lock()
 	if len(aliasMemo) >= aliasMemoEntries {
 		aliasMemo = make(map[aliasKey]aliasPlan)
@@ -760,14 +760,14 @@ func ensureRowTableAlias(row *Value, tableName string) *Value {
 	if row.shape != nil {
 		oldShape := row.shape
 		if plan := planRowTableAlias(oldShape, tableName); plan.target != nil {
-			n := len(oldShape.Keys)
-			storage := make([]*Value, plan.target.Size)
+			n := len(oldShape.keys)
+			storage := make([]*Value, plan.target.size)
 			copy(storage, row.storage)
 			storage[n] = row
 			if plan.addLower {
 				storage[n+1] = row
 			}
-			return NewShapedRecord(plan.target, storage)
+			return newShapedRecord(plan.target, storage)
 		}
 	}
 	entries := make([]Entry, len(row.Entries()))
@@ -776,7 +776,7 @@ func ensureRowTableAlias(row *Value, tableName string) *Value {
 	if lower != tableName && !row.Has(lower) {
 		entries = append(entries, Entry{Key: lower, Val: row})
 	}
-	return NewRecordFromEntries(entries)
+	return newRecordFromEntries(entries)
 }
 
 func makeNullRecord(sample *Value, tableName string) *Value {
@@ -785,7 +785,7 @@ func makeNullRecord(sample *Value, tableName string) *Value {
 		for _, k := range sample.Keys() {
 			entries = append(entries, Entry{Key: k, Val: NewNull()})
 		}
-		return NewRecordFromEntries(entries)
+		return newRecordFromEntries(entries)
 	}
 	var entries []Entry
 	if tableName != "" && !isPositionalBinder(tableName) {
@@ -795,7 +795,7 @@ func makeNullRecord(sample *Value, tableName string) *Value {
 			entries = append(entries, Entry{Key: lower, Val: NewNull()})
 		}
 	}
-	return NewRecordFromEntries(entries)
+	return newRecordFromEntries(entries)
 }
 
 const (
@@ -805,7 +805,7 @@ const (
 )
 
 func joinCategory(v *Value) int {
-	if v.Kind != KindNone || v.isList {
+	if v.kind != KindNone || v.isList {
 		return joinScalar
 	}
 	if v.Size() > 0 {
@@ -904,7 +904,7 @@ func makeJoinedRow(left, right *Value, b1, b2 string, nullRight *Value) *Value {
 		}
 	}
 
-	return NewRecordFromEntries(entries)
+	return newRecordFromEntries(entries)
 }
 
 type joinEqui struct {
@@ -1152,13 +1152,13 @@ func nodeIsPure(n *Node) bool {
 // plainJoinKey evaluates a key expression and returns its canonical key, or ok =
 // false if the expression raises or the key is NULL, unparseable or nested.
 func plainJoinKey(args *Args, expr *Node, ctx *Context, numeric bool) (k joinKey, ok bool) {
-	d := ctx.Depth
+	d := ctx.depth
 	defer func() {
 		if r := recover(); r != nil {
 			if !isSelPanic(r) {
 				panic(r)
 			}
-			ctx.Depth = d
+			ctx.depth = d
 			ok = false
 		}
 	}()
@@ -1174,13 +1174,13 @@ func plainJoinKey(args *Args, expr *Node, ctx *Context, numeric bool) (k joinKey
 }
 
 func evalBoolSafely(args *Args, conjunct *Node, ctx *Context) (keep bool, errOccurred bool) {
-	d := ctx.Depth
+	d := ctx.depth
 	defer func() {
 		if r := recover(); r != nil {
 			if !isSelPanic(r) {
 				panic(r)
 			}
-			ctx.Depth = d
+			ctx.depth = d
 			errOccurred = true
 		}
 	}()
@@ -1188,8 +1188,8 @@ func evalBoolSafely(args *Args, conjunct *Node, ctx *Context) (keep bool, errOcc
 }
 
 func doLink(args *Args, ctx *Context, leftJoin bool) *Value {
-	prefilter := ctx.JoinPrefilter
-	ctx.JoinPrefilter = nil
+	prefilter := ctx.joinPrefilter
+	ctx.joinPrefilter = nil
 
 	count := args.Count()
 	if count != 3 && count != 5 {
@@ -1199,9 +1199,9 @@ func doLink(args *Args, ctx *Context, leftJoin bool) *Value {
 	leftNode := args.Node(0)
 	rightNode := args.Node(1)
 
-	var stages []JoinStage
-	var above []*JoinSideFacts
-	var obligations []JoinObligation
+	var stages []joinStage
+	var above []*joinSideFacts
+	var obligations []joinObligation
 	deep := false
 	if prefilter != nil {
 		stages = prefilter.Stages
@@ -1211,7 +1211,7 @@ func doLink(args *Args, ctx *Context, leftJoin bool) *Value {
 	}
 
 	aboveKeysCache := make(map[int]map[string]bool)
-	aboveKeys := func(stage JoinStage) map[string]bool {
+	aboveKeys := func(stage joinStage) map[string]bool {
 		if k, ok := aboveKeysCache[stage.Above]; ok {
 			return k
 		}
@@ -1225,7 +1225,7 @@ func doLink(args *Args, ctx *Context, leftJoin bool) *Value {
 		return k
 	}
 
-	aboveOf := func(stage JoinStage) []*JoinSideFacts {
+	aboveOf := func(stage joinStage) []*joinSideFacts {
 		n := stage.Above
 		if n > len(above) {
 			n = len(above)
@@ -1260,9 +1260,9 @@ func doLink(args *Args, ctx *Context, leftJoin bool) *Value {
 	}
 
 	jequi := extractJoinEqui(predNode, jb1, jb2)
-	var rightSide *JoinSideFacts
+	var rightSide *joinSideFacts
 
-	ownedByLeft := func(fields map[string]bool, stage JoinStage) bool {
+	ownedByLeft := func(fields map[string]bool, stage joinStage) bool {
 		upper := aboveKeys(stage)
 		for f := range fields {
 			if rightSide.Keys[f] || upper[f] {
@@ -1271,7 +1271,7 @@ func doLink(args *Args, ctx *Context, leftJoin bool) *Value {
 		}
 		return true
 	}
-	nothingRight := func(fields map[string]bool, stage JoinStage) bool {
+	nothingRight := func(fields map[string]bool, stage joinStage) bool {
 		return false
 	}
 
@@ -1282,7 +1282,7 @@ func doLink(args *Args, ctx *Context, leftJoin bool) *Value {
 	if deep && len(stages) > 0 && jequi != nil && isJoinOrFilter(leftNode) && joinPureSource(leftNode) && joinPureSource(rightNode) {
 		var rightFirst *Value
 		func() {
-			depth := ctx.Depth
+			depth := ctx.depth
 			defer func() {
 				if r := recover(); r != nil {
 					if !isSelPanic(r) {
@@ -1294,7 +1294,7 @@ func doLink(args *Args, ctx *Context, leftJoin bool) *Value {
 					// too: run it now with nothing handed down. If it raises, ITS
 					// error is the one as written; if it does not, the right
 					// source's error stands.
-					ctx.Depth = depth
+					ctx.depth = depth
 					args.Val(0)
 					panic(r)
 				}
@@ -1302,7 +1302,7 @@ func doLink(args *Args, ctx *Context, leftJoin bool) *Value {
 			rightFirst = args.Val(1)
 		}()
 		rightSide = newJoinSideFacts(rightFirst, joinRowKeys(rightFirst, b2Names), leftJoin, b2Names)
-		totalBelow := func(reqs []JoinTotalReq, stage JoinStage) bool {
+		totalBelow := func(reqs []joinTotalReq, stage joinStage) bool {
 			return joinTotality(reqs, nil, rightSide, aboveOf(stage))
 		}
 		_, stop := joinStageWalk(stages, ownedByLeft, totalBelow, nothingRight)
@@ -1311,16 +1311,16 @@ func doLink(args *Args, ctx *Context, leftJoin bool) *Value {
 			handed[i].Above++
 		}
 		if len(handed) > 0 {
-			sides := append([]*JoinSideFacts{rightSide}, above...)
+			sides := append([]*joinSideFacts{rightSide}, above...)
 			lowerB1 := strings.ToLower(jb1)
 			rowNames := map[string]bool{jb1: true, lowerB1: true, "_1": true, "_": true}
-			ownKey := JoinObligation{
+			ownKey := joinObligation{
 				Key:      jequi.leftExpr,
 				RowNames: rowNames,
 				Outer:    len(above) + 1,
 			}
-			obs := append([]JoinObligation{ownKey}, obligations...)
-			ctx.JoinPrefilter = &JoinPrefilter{
+			obs := append([]joinObligation{ownKey}, obligations...)
+			ctx.joinPrefilter = &joinPrefilter{
 				Stages:      handed,
 				Deep:        true,
 				Above:       sides,
@@ -1329,7 +1329,7 @@ func doLink(args *Args, ctx *Context, leftJoin bool) *Value {
 		}
 		func() {
 			defer func() {
-				ctx.JoinPrefilter = nil
+				ctx.joinPrefilter = nil
 			}()
 			args.Val(0)
 		}()
@@ -1337,8 +1337,8 @@ func doLink(args *Args, ctx *Context, leftJoin bool) *Value {
 
 	leftVal := args.Val(0)
 	rightVal := args.Val(1)
-	below := ctx.JoinPrefilterReport
-	ctx.JoinPrefilterReport = nil
+	below := ctx.joinPrefilterReport
+	ctx.joinPrefilterReport = nil
 
 	if below != nil && below.Dropped && (leftVal.IsNull() || len(leftVal.Elements()) == 0) {
 		leftVal = args.EvalNode(leftNode)
@@ -1365,14 +1365,14 @@ func doLink(args *Args, ctx *Context, leftJoin bool) *Value {
 	}
 
 	if leftVal.IsNull() {
-		return NewListOwned(nil)
+		return newListOwned(nil)
 	}
 
 	leftEnts := leftVal.Elements()
 	rightEnts := rightVal.Elements()
 
 	if len(leftEnts) == 0 || (len(rightEnts) == 0 && !leftJoin) {
-		return NewListOwned(nil)
+		return newListOwned(nil)
 	}
 
 	var sampleRight *Value
@@ -1430,12 +1430,12 @@ func doLink(args *Args, ctx *Context, leftJoin bool) *Value {
 		var rightPrefix []*Node
 		leftBeforeRight := -1
 		var binders []string
-		report := &JoinReport{
+		report := &joinReport{
 			Applied: make(map[*Node]bool),
 			Dropped: below != nil && below.Dropped,
 		}
 
-		rightNames := func(stage JoinStage) map[string]bool {
+		rightNames := func(stage joinStage) map[string]bool {
 			names := map[string]bool{utf8.AsciiUpper(b2): true}
 			if stage.Above == 0 {
 				names["_2"] = true
@@ -1443,7 +1443,7 @@ func doLink(args *Args, ctx *Context, leftJoin bool) *Value {
 			return names
 		}
 		rightOk := !leftJoin && utf8.AsciiUpper(b1) != utf8.AsciiUpper(b2)
-		rightHere := func(fields map[string]bool, stage JoinStage) bool {
+		rightHere := func(fields map[string]bool, stage joinStage) bool {
 			if !rightOk {
 				return false
 			}
@@ -1465,10 +1465,10 @@ func doLink(args *Args, ctx *Context, leftJoin bool) *Value {
 				binders = append(binders, stage.Binder)
 			}
 			leftSide := newJoinSideFacts(leftVal, joinRowKeys(leftVal, b1Names), false, b1Names)
-			totalHere := func(reqs []JoinTotalReq, stage JoinStage) bool {
+			totalHere := func(reqs []joinTotalReq, stage joinStage) bool {
 				return joinTotality(reqs, leftSide, rightSide, aboveOf(stage))
 			}
-			ownedHere := func(fields map[string]bool, stage JoinStage) bool {
+			ownedHere := func(fields map[string]bool, stage joinStage) bool {
 				upper := aboveKeys(stage)
 				for f := range fields {
 					if rightSide.Keys[f] || upper[f] {
@@ -1479,7 +1479,7 @@ func doLink(args *Args, ctx *Context, leftJoin bool) *Value {
 			}
 			safe := len(obligations) == 0 || joinKeysSafe(obligations, leftSide, rightSide, above)
 			selfNames := map[string]bool{utf8.AsciiUpper(b1): true, "_1": true}
-			var walkApplied []JoinApplied
+			var walkApplied []joinApplied
 			if safe {
 				walkApplied, _ = joinStageWalk(stages, ownedHere, totalHere, rightHere)
 			}
@@ -1670,7 +1670,7 @@ func doLink(args *Args, ctx *Context, leftJoin bool) *Value {
 
 		report.Dropped = report.Dropped || dropped
 		if prefilter != nil {
-			ctx.JoinPrefilterReport = report
+			ctx.joinPrefilterReport = report
 		}
 
 		if numbered {
@@ -1689,14 +1689,14 @@ func doLink(args *Args, ctx *Context, leftJoin bool) *Value {
 				}
 			}
 		}
-		return NewListOwned(output)
+		return newListOwned(output)
 	}
 
-	report := &JoinReport{
+	report := &joinReport{
 		Dropped: below != nil && below.Dropped,
 	}
 	if prefilter != nil {
-		ctx.JoinPrefilterReport = report
+		ctx.joinPrefilterReport = report
 	}
 
 	var output []*Value
@@ -1794,7 +1794,7 @@ func doLink(args *Args, ctx *Context, leftJoin bool) *Value {
 					output = append(output, projector.project(left, nil))
 				}
 			}
-			return NewListOwned(output)
+			return newListOwned(output)
 		}
 		// Not usable: the nested loop below answers, errors and all. Leave the
 		// binders as they were (the loop sets every one it reads).
@@ -1844,7 +1844,7 @@ func doLink(args *Args, ctx *Context, leftJoin bool) *Value {
 		}
 	}
 
-	return NewListOwned(output)
+	return newListOwned(output)
 }
 
 func init() {
@@ -1902,7 +1902,7 @@ func init() {
 				out = append(out, r.CloneAt(2, args.Pos()))
 				return nil
 			}, nil)
-			return NewListOwned(out)
+			return newListOwned(out)
 		},
 	})
 
@@ -1914,12 +1914,12 @@ func init() {
 		Binds: true,
 		Fn: func(args *Args, ctx *Context) *Value {
 			written := args.Node(args.Count() - 1)
-			handed := ctx.JoinPrefilter
-			ctx.JoinPrefilter = nil
+			handed := ctx.joinPrefilter
+			ctx.joinPrefilter = nil
 			// The parent reads or copies what this FILTER keeps (nocopy.go): the kept
 			// rows stay aliased, checked for depth as the copy would have been.
-			noCopy := ctx.NoCopy != nil && ctx.NoCopy == args.call
-			ctx.NoCopy = nil
+			noCopy := ctx.noCopy != nil && ctx.noCopy == args.call
+			ctx.noCopy = nil
 
 			src := args.Node(0)
 			var ownNodes []*Node
@@ -1936,9 +1936,9 @@ func init() {
 					ownNodes = append(ownNodes, c.Node)
 				}
 				blocked := len(own) > 0 && !own[0].FieldOnly && !own[0].HasTotal
-				var pre JoinPrefilter
+				var pre joinPrefilter
 				if !blocked {
-					pre.Stages = append(pre.Stages, JoinStage{Binder: binder, Conjuncts: own, Above: 0})
+					pre.Stages = append(pre.Stages, joinStage{Binder: binder, Conjuncts: own, Above: 0})
 				}
 				if handed != nil && !blocked {
 					pre.Stages = append(pre.Stages, handed.Stages...)
@@ -1948,25 +1948,25 @@ func init() {
 				if handed != nil {
 					pre.Deep = true
 				} else {
-					pre.Deep = written.KeysUnobserved
+					pre.Deep = written.keysUnobserved
 				}
 				if len(pre.Stages) > 0 {
-					ctx.JoinPrefilter = &pre
+					ctx.joinPrefilter = &pre
 				}
 			}
 
 			var inVal *Value
 			func() {
 				defer func() {
-					ctx.JoinPrefilter = nil
+					ctx.joinPrefilter = nil
 				}()
 				inVal = args.Val(0)
 			}()
 
-			report := ctx.JoinPrefilterReport
-			ctx.JoinPrefilterReport = nil
+			report := ctx.joinPrefilterReport
+			ctx.joinPrefilterReport = nil
 			if report != nil && handed != nil {
-				ctx.JoinPrefilterReport = report
+				ctx.joinPrefilterReport = report
 			}
 
 			var overrideBody *Node
@@ -2040,7 +2040,7 @@ func init() {
 			if needsCustomKeys {
 				return NewListWithKeys(storage, keys)
 			}
-			return NewListOwned(storage)
+			return newListOwned(storage)
 		},
 	})
 
@@ -2085,7 +2085,7 @@ func init() {
 				}
 				checkTextLen(exact, "JOIN's result", args.Pos())
 			}
-			return NewTextOwned(strings.Join(parts, sep))
+			return newTextOwned(strings.Join(parts, sep))
 		},
 	})
 

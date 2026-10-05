@@ -6,39 +6,39 @@ import (
 	"github.com/nathanjel/sel/go/internal/utf8"
 )
 
-type RowField struct {
-	Spec     ColumnSpec
+type rowField struct {
+	Spec     columnSpec
 	Table    string
 	Qualify  bool
 	Optional bool
 }
 
-type RowModel struct {
+type rowModel struct {
 	Side      bool
-	Relation  *RelationSpec
+	Relation  *relationSpec
 	Table     string
 	Qualify   bool
 	Names     []string
-	Nested    []Pair[string, *RowModel]
+	Nested    []pair[string, *rowModel]
 	SelfNames []string
-	Promoted  []Pair[string, RowField]
+	Promoted  []pair[string, rowField]
 	Dropped   map[string]bool
 }
 
-type Pair[K comparable, V any] struct {
+type pair[K comparable, V any] struct {
 	Key K
 	Val V
 }
 
-func (rm *RowModel) Copy() *RowModel {
+func (rm *rowModel) Copy() *rowModel {
 	if rm == nil {
 		return nil
 	}
 	cp := *rm
 	cp.Names = append([]string(nil), rm.Names...)
-	cp.Nested = append([]Pair[string, *RowModel](nil), rm.Nested...)
+	cp.Nested = append([]pair[string, *rowModel](nil), rm.Nested...)
 	cp.SelfNames = append([]string(nil), rm.SelfNames...)
-	cp.Promoted = append([]Pair[string, RowField](nil), rm.Promoted...)
+	cp.Promoted = append([]pair[string, rowField](nil), rm.Promoted...)
 	if rm.Dropped != nil {
 		cp.Dropped = make(map[string]bool)
 		for k, v := range rm.Dropped {
@@ -48,24 +48,24 @@ func (rm *RowModel) Copy() *RowModel {
 	return &cp
 }
 
-type JoinRowsStep struct {
-	Left  *RowModel
-	Right *RowModel
+type joinRowsStep struct {
+	Left  *rowModel
+	Right *rowModel
 }
 
-type JoinRows struct {
-	Row   *RowModel
-	Steps []JoinRowsStep
+type joinRows struct {
+	Row   *rowModel
+	Steps []joinRowsStep
 }
 
-func orderedSet[V any](list *[]Pair[string, V], k string, v V) {
+func orderedSet[V any](list *[]pair[string, V], k string, v V) {
 	for i := range *list {
 		if (*list)[i].Key == k {
 			(*list)[i].Val = v
 			return
 		}
 	}
-	*list = append(*list, Pair[string, V]{Key: k, Val: v})
+	*list = append(*list, pair[string, V]{Key: k, Val: v})
 }
 
 func binderKeys(names []string) []string {
@@ -81,7 +81,7 @@ func binderKeys(names []string) []string {
 	return out
 }
 
-func nestedOf(row *RowModel, key string) *RowModel {
+func nestedOf(row *rowModel, key string) *rowModel {
 	if row == nil {
 		return nil
 	}
@@ -102,32 +102,32 @@ func nestedOf(row *RowModel, key string) *RowModel {
 	return nil
 }
 
-func rowFieldSpec(row *RowModel, key string) (RowField, bool) {
+func rowFieldSpec(row *rowModel, key string) (rowField, bool) {
 	u := utf8.AsciiUpper(key)
 	if row.Side {
 		if row.Relation != nil {
 			spec := row.Relation.Field(u)
 			if spec != nil {
-				return RowField{Spec: *spec, Table: row.Table, Qualify: row.Qualify, Optional: false}, true
+				return rowField{Spec: *spec, Table: row.Table, Qualify: row.Qualify, Optional: false}, true
 			}
 		}
-		return RowField{}, false
+		return rowField{}, false
 	}
 	for _, kv := range row.Promoted {
 		if kv.Key == u {
 			return kv.Val, true
 		}
 	}
-	return RowField{}, false
+	return rowField{}, false
 }
 
-func withNames(row *RowModel, names []string) *RowModel {
+func withNames(row *rowModel, names []string) *rowModel {
 	out := row.Copy()
 	if row.Side {
 		out.Names = names
 	} else {
 		for _, k := range names {
-			var filtered []Pair[string, *RowModel]
+			var filtered []pair[string, *rowModel]
 			for _, kv := range out.Nested {
 				if kv.Key != k {
 					filtered = append(filtered, kv)
@@ -142,7 +142,7 @@ func withNames(row *RowModel, names []string) *RowModel {
 	return out
 }
 
-func rowKeys(row *RowModel) []string {
+func rowKeys(row *rowModel) []string {
 	var out []string
 	if row.Side {
 		if row.Relation != nil {
@@ -163,26 +163,26 @@ func rowKeys(row *RowModel) []string {
 	return out
 }
 
-func scalarFields(row *RowModel) []Pair[string, RowField] {
+func scalarFields(row *rowModel) []pair[string, rowField] {
 	if !row.Side {
 		return row.Promoted
 	}
-	var out []Pair[string, RowField]
+	var out []pair[string, rowField]
 	if row.Relation != nil {
 		if len(row.Relation.FieldOrder) > 0 {
 			for _, u := range row.Relation.FieldOrder {
 				if spec, ok := row.Relation.Fields[u]; ok {
-					out = append(out, Pair[string, RowField]{
+					out = append(out, pair[string, rowField]{
 						Key: u,
-						Val: RowField{Spec: spec, Table: row.Table, Qualify: row.Qualify, Optional: false},
+						Val: rowField{Spec: spec, Table: row.Table, Qualify: row.Qualify, Optional: false},
 					})
 				}
 			}
 		} else {
 			for u, spec := range row.Relation.Fields {
-				out = append(out, Pair[string, RowField]{
+				out = append(out, pair[string, rowField]{
 					Key: u,
-					Val: RowField{Spec: spec, Table: row.Table, Qualify: row.Qualify, Optional: false},
+					Val: rowField{Spec: spec, Table: row.Table, Qualify: row.Qualify, Optional: false},
 				})
 			}
 		}
@@ -190,7 +190,7 @@ func scalarFields(row *RowModel) []Pair[string, RowField] {
 	return out
 }
 
-func relationAlias(rel *RelationSpec) string {
+func relationAlias(rel *relationSpec) string {
 	if rel == nil {
 		return ""
 	}
@@ -203,14 +203,14 @@ func relationAlias(rel *RelationSpec) string {
 	return rel.From.Table
 }
 
-func BuildJoinRows(plan *RelationalPlan) JoinRows {
+func buildJoinRows(plan *relationalPlan) joinRows {
 	qualify := len(plan.Joins) > 0 || plan.SourceSubquery != nil
-	side := func(rel *RelationSpec, alias string, names []string) *RowModel {
+	side := func(rel *relationSpec, alias string, names []string) *rowModel {
 		t := alias
 		if t == "" {
 			t = relationAlias(rel)
 		}
-		return &RowModel{
+		return &rowModel{
 			Side:     true,
 			Relation: rel,
 			Table:    t,
@@ -219,25 +219,25 @@ func BuildJoinRows(plan *RelationalPlan) JoinRows {
 		}
 	}
 
-	var result JoinRows
-	var srcRel *RelationSpec
+	var result joinRows
+	var srcRel *relationSpec
 	if plan.SourceRelation != nil {
-		srcRel = &plan.SourceRelation.Relation
+		srcRel = &plan.SourceRelation.relation
 	}
 	left := side(srcRel, plan.SourceAlias, nil)
 
 	for _, join := range plan.Joins {
 		leftNames := binderKeys(join.LeftNames)
 		rightNames := binderKeys(join.RightNames)
-		var joinRel *RelationSpec
+		var joinRel *relationSpec
 		if join.SourceRelation != nil {
-			joinRel = &join.SourceRelation.Relation
+			joinRel = &join.SourceRelation.relation
 		}
 		right := side(joinRel, join.SourceAlias, rightNames)
 		leftEl := withNames(left, leftNames)
 
 		for _, check := range []struct {
-			el    *RowModel
+			el    *rowModel
 			names []string
 		}{
 			{leftEl, join.LeftNames},
@@ -248,14 +248,14 @@ func BuildJoinRows(plan *RelationalPlan) JoinRows {
 			}
 			for _, name := range check.names {
 				if check.el.Relation.Field(utf8.AsciiUpper(name)) != nil {
-					Refuse("E_SQL_SHAPE",
+					refuse("E_SQL_SHAPE",
 						name+" names a LINK side that has a field of that name too, which SEL binds instead of the row; rename the binder",
 						join.Pos)
 				}
 			}
 		}
 
-		row := &RowModel{
+		row := &rowModel{
 			Side:    false,
 			Dropped: make(map[string]bool),
 		}
@@ -302,7 +302,7 @@ func BuildJoinRows(plan *RelationalPlan) JoinRows {
 			}
 		}
 
-		result.Steps = append(result.Steps, JoinRowsStep{Left: leftEl, Right: right})
+		result.Steps = append(result.Steps, joinRowsStep{Left: leftEl, Right: right})
 		left = row
 	}
 

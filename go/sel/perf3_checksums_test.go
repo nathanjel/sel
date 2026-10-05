@@ -60,7 +60,7 @@ func eachOutcome(src string, ctx *Value) string {
 
 func TestPerf3WorkloadChecksums(t *testing.T) {
 	ctxO := func() *Value {
-		return ctxWith("O", intList(40, 4), "LN", NewListOwned([]*Value{
+		return ctxWith("O", intList(40, 4), "LN", newListOwned([]*Value{
 			rec("q", 1, "p", 2), rec("q", 3, "p", 4), rec("q", 5, "p", 6), rec("q", 7, "p", 8)}))
 	}
 	dups := func() *Value {
@@ -69,7 +69,7 @@ func TestPerf3WorkloadChecksums(t *testing.T) {
 		for i := range items {
 			items[i] = rec("a", int(sd.next()%7), "k", int(sd.next()%5))
 		}
-		return ctxWith("L", NewListOwned(items), "NUMS", intList(3000, 3))
+		return ctxWith("L", newListOwned(items), "NUMS", intList(3000, 3))
 	}
 	txt := func() *Value {
 		return ctxWith("T", NewText("aBcé😀z,Q,é,,😀"), "B", NewBin([]byte{0, 1, 2, 250, 251, 252, 253, 254, 255, 65, 66}))
@@ -163,7 +163,7 @@ func TestStructuralHashIsRepresentationIndependent(t *testing.T) {
 	if shaped.StructuralHash() != built.StructuralHash() {
 		t.Error("a shaped record and the same record built key by key hash differently")
 	}
-	dense := NewListOwned([]*Value{NewInt(7), NewInt(8), NewInt(9)})
+	dense := newListOwned([]*Value{NewInt(7), NewInt(8), NewInt(9)})
 	keyed := NewListWithKeys([]*Value{NewInt(7), NewInt(8), NewInt(9)}, []string{"1", "2", "3"})
 	if dense.StructuralHash() != keyed.StructuralHash() {
 		t.Error("a dense list and the same list with explicit keys 1..3 hash differently")
@@ -183,7 +183,7 @@ func TestStructuralHashIsRepresentationIndependent(t *testing.T) {
 	for i := range bigKeys {
 		bigKeys[i] = fmt.Sprint(i + 1)
 	}
-	if NewListOwned(big).StructuralHash() != NewListWithKeys(big, bigKeys).StructuralHash() {
+	if newListOwned(big).StructuralHash() != NewListWithKeys(big, bigKeys).StructuralHash() {
 		t.Error("a dense list past 99 elements hashes differently from its explicit keys")
 	}
 	if rec("a", 1, "b", 2).StructuralHash() == rec("b", 1, "a", 2).StructuralHash() {
@@ -264,7 +264,7 @@ func TestSlotCacheStopsStoringWhenPolymorphic(t *testing.T) {
 	}
 	prog := MustCompile(`SUM(L, _["a"])`)
 	for round := 0; round < 3; round++ {
-		v, err := prog.Run(ctxWith("L", NewListOwned(rows)))
+		v, err := prog.Run(ctxWith("L", newListOwned(rows)))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -277,7 +277,7 @@ func TestSlotCacheStopsStoringWhenPolymorphic(t *testing.T) {
 		if n == nil {
 			return nil
 		}
-		if n.SlotCache != nil {
+		if n.slotCache != nil {
 			return n
 		}
 		for _, c := range []*Node{n.L, n.R} {
@@ -296,7 +296,7 @@ func TestSlotCacheStopsStoringWhenPolymorphic(t *testing.T) {
 	if site == nil {
 		t.Skip("no slot-cache site found in the physical tree")
 	}
-	if c := site.SlotCache.Load(); c == nil || c.Misses > slotCacheMissLimit {
+	if c := site.slotCache.Load(); c == nil || c.Misses > slotCacheMissLimit {
 		t.Errorf("site cache = %+v, want at most %d recorded misses", c, slotCacheMissLimit)
 	}
 }

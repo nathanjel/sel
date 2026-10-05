@@ -65,17 +65,17 @@ func (f *Fragment) Bindings() []*sel.Value {
 
 func (f *Fragment) AsValue(mode Mode) string {
 	if f.Kind == KindList {
-		Refuse("E_SQL_SHAPE", "this expression yields a list, and a SQL expression is a scalar", Pos{})
+		refuse("E_SQL_SHAPE", "this expression yields a list, and a SQL expression is a scalar", Pos{})
 	}
 	if f.Kind == KindStatement {
-		Refuse("E_SQL_SHAPE", "this expression yields a statement, and a SQL expression is a scalar; use asStatement()", Pos{})
+		refuse("E_SQL_SHAPE", "this expression yields a statement, and a SQL expression is a scalar; use asStatement()", Pos{})
 	}
 	return f.Join(mode)
 }
 
 func (f *Fragment) AsStatement(mode Mode) string {
 	if f.Kind != KindStatement {
-		Refuse("E_SQL_SHAPE", fmt.Sprintf("expected STATEMENT fragment, got %s; use asValue() or asCondition()", f.Kind), Pos{})
+		refuse("E_SQL_SHAPE", fmt.Sprintf("expected STATEMENT fragment, got %s; use asValue() or asCondition()", f.Kind), Pos{})
 	}
 	return f.Join(mode)
 }
@@ -84,7 +84,7 @@ func (f *Fragment) AsCondition(mode Mode) string {
 	if f.Kind == KindBool {
 		return f.Join(mode)
 	}
-	Refuse("E_SQL_SHAPE", fmt.Sprintf("a condition must be BOOL, and this expression is %s; SQL has no truthiness and neither does SEL", f.Kind), Pos{})
+	refuse("E_SQL_SHAPE", fmt.Sprintf("a condition must be BOOL, and this expression is %s; SQL has no truthiness and neither does SEL", f.Kind), Pos{})
 	return ""
 }
 
@@ -110,16 +110,16 @@ func (f *Fragment) Join(mode Mode) string {
 		}
 
 		if mode != ModeInline && f.IsInline(p.Slot) {
-			sb.WriteString(FormatLiteral(f.Dialect, val, kind, Pos{}))
+			sb.WriteString(formatLiteral(f.Dialect, val, kind, Pos{}))
 			continue
 		}
 
 		nth++
 		switch mode {
 		case ModeInline:
-			sb.WriteString(FormatLiteral(f.Dialect, val, kind, Pos{}))
+			sb.WriteString(formatLiteral(f.Dialect, val, kind, Pos{}))
 		case ModeParams:
-			sb.WriteString(Placeholder(f.Dialect, nth))
+			sb.WriteString(placeholder(f.Dialect, nth))
 		case ModeDebug:
 			sb.WriteString(fmt.Sprintf("~%d~", nth))
 		default:

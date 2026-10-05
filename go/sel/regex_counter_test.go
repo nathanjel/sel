@@ -110,7 +110,7 @@ func TestCounterRegexTakesNestedCounts(t *testing.T) {
 		if err != nil {
 			return "error " + err.Error()
 		}
-		if v.Kind == KindBool {
+		if v.kind == KindBool {
 			return fmt.Sprint(v.AsBool(Pos{}))
 		}
 		return v.AsText(Pos{})

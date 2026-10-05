@@ -124,7 +124,7 @@ func TestPlainAndOptimisedEvaluationAgree(t *testing.T) {
 		if !ok {
 			continue
 		}
-		plain := outcome(func() *Value { return EvalNode(prog.AST(), NewContext(root1)) })
+		plain := outcome(func() *Value { return evalNode(prog.AST(), newContext(root1)) })
 		// The final context is part of the observable result.
 		plainCtx := outcome(func() *Value { return root1 })
 		for round := 1; round <= 2; round++ {
@@ -289,12 +289,12 @@ func TestOptRenameVarDropsTheStaleMathPlan(t *testing.T) {
 	n.L = NewNode(NodeVar, Pos{Line: 1, Col: 1})
 	n.L.S = "A"
 	n.R = NewNode(NodeNum, Pos{Line: 1, Col: 5})
-	n.MathPlan = &MathPlan{Steps: []MathStep{{Op: "LOAD_VAR", Name: "A"}}}
+	n.mathPlan = &mathPlan{Steps: []mathStep{{Op: "LOAD_VAR", Name: "A"}}}
 	cp := optRenameVar(n, "A", "B")
-	if cp.MathPlan != nil {
+	if cp.mathPlan != nil {
 		t.Error("the renamed copy still carries a plan that loads the old binder")
 	}
-	if n.MathPlan == nil {
+	if n.mathPlan == nil {
 		t.Error("the original lost its plan")
 	}
 }
@@ -322,20 +322,20 @@ func TestBrokenOptimizerDoesNotPoisonLaterRuns(t *testing.T) {
 }
 
 func TestJoinPrefilterStateDoesNotOutliveAPanic(t *testing.T) {
-	ctx := NewContext(NewNone())
-	ctx.JoinPrefilterReport = &JoinReport{}
+	ctx := newContext(NewNone())
+	ctx.joinPrefilterReport = &joinReport{}
 	// Completed evaluation hands the state on (a LINK sets it for its parent).
-	EvalNode(NewNode(NodeNull, Pos{Line: 1, Col: 1}), ctx)
-	if ctx.JoinPrefilterReport == nil {
+	evalNode(NewNode(NodeNull, Pos{Line: 1, Col: 1}), ctx)
+	if ctx.joinPrefilterReport == nil {
 		t.Fatal("a normal return cleared the join report")
 	}
 	missing := NewNode(NodeVar, Pos{Line: 1, Col: 1})
 	missing.S = "NOPE"
 	func() {
 		defer func() { _ = recover() }()
-		EvalNode(missing, ctx)
+		evalNode(missing, ctx)
 	}()
-	if ctx.JoinPrefilterReport != nil || ctx.JoinPrefilter != nil {
+	if ctx.joinPrefilterReport != nil || ctx.joinPrefilter != nil {
 		t.Error("a caught failure left join prefilter state behind for the next LINK")
 	}
 }

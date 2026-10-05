@@ -1,114 +1,61 @@
 package sql
 
-type BinderShape int
+type binderShape int
 
 const (
-	BinderShapeNode BinderShape = iota
-	BinderShapeColumn
-	BinderShapeRow
-	BinderShapeNone
-	BinderShapeKey
-	BinderShapeGroup
-	BinderShapeProjected
+	binderShapeNode binderShape = iota
+	binderShapeColumn
+	binderShapeRow
+	binderShapeNone
+	binderShapeKey
+	binderShapeGroup
+	binderShapeProjected
 )
 
-type Binder struct {
-	Shape       BinderShape
-	Node        *SNode
-	Column      ColumnSpec
-	Relation    *RelationSpec
+type binder struct {
+	Shape       binderShape
+	Node        *sNode
+	Column      columnSpec
+	Relation    *relationSpec
 	Reason      string
 	GroupBinder string
-	GroupNode   *SNode
-	Projections []RelationalProjection
-	Model       *RowModel
+	Projections []relationalProjection
+	Model       *rowModel
 	// Scoped says Node was written in the scope that had Scope frames open, and
 	// is read there: an element of a static list belongs to the aggregate the
-	// list is written in, not to the one that iterates it (GO-C? JS-C7).
+	// list is written in, not to the one that iterates it.
 	Scoped bool
 	Scope  int
 }
 
-func NewBinderNode(n *SNode) *Binder {
-	return &Binder{
-		Shape: BinderShapeNode,
-		Node:  n,
-	}
+func binderNode(n *sNode) binder {
+	return binder{Shape: binderShapeNode, Node: n}
 }
 
-func NewBinderColumn(c ColumnSpec) *Binder {
-	return &Binder{
-		Shape:  BinderShapeColumn,
-		Column: c,
-	}
+func binderNodeAt(n *sNode, scope int) binder {
+	return binder{Shape: binderShapeNode, Node: n, Scoped: true, Scope: scope}
 }
 
-func NewBinderRow(r *RelationSpec) *Binder {
-	return &Binder{
-		Shape:    BinderShapeRow,
-		Relation: r,
-	}
+func binderColumn(c columnSpec) binder {
+	return binder{Shape: binderShapeColumn, Column: c}
 }
 
-func NewBinderNone(reason string) *Binder {
-	return &Binder{
-		Shape:  BinderShapeNone,
-		Reason: reason,
-	}
+func binderRow(r *relationSpec) binder {
+	return binder{Shape: binderShapeRow, Relation: r}
 }
 
-func NewBinderKey(groupBinder string, groupNode *SNode, r *RelationSpec) *Binder {
-	return &Binder{
-		Shape:       BinderShapeKey,
-		GroupBinder: groupBinder,
-		GroupNode:   groupNode,
-		Relation:    r,
-	}
+func binderNone(reason string) binder {
+	return binder{Shape: binderShapeNone, Reason: reason}
 }
 
-func NewBinderGroup(r *RelationSpec) *Binder {
-	return &Binder{
-		Shape:    BinderShapeGroup,
-		Relation: r,
-	}
+func binderKey(groupBinder string, groupNode *sNode, r *relationSpec) binder {
+	return binder{Shape: binderShapeKey, GroupBinder: groupBinder, Node: groupNode, Relation: r}
 }
 
-func NewBinderProjected(r *RelationSpec, projections []RelationalProjection) *Binder {
-	return &Binder{
-		Shape:       BinderShapeProjected,
-		Relation:    r,
-		Projections: projections,
-	}
+func binderGroup(r *relationSpec) binder {
+	return binder{Shape: binderShapeGroup, Relation: r}
 }
 
-func BinderNode(n *SNode) Binder {
-	return Binder{Shape: BinderShapeNode, Node: n}
-}
-
-func BinderNodeAt(n *SNode, scope int) Binder {
-	return Binder{Shape: BinderShapeNode, Node: n, Scoped: true, Scope: scope}
-}
-
-func BinderColumn(c ColumnSpec) Binder {
-	return Binder{Shape: BinderShapeColumn, Column: c}
-}
-
-func BinderRow(r *RelationSpec) Binder {
-	return Binder{Shape: BinderShapeRow, Relation: r}
-}
-
-func BinderNone(reason string) Binder {
-	return Binder{Shape: BinderShapeNone, Reason: reason}
-}
-
-func BinderKey(groupBinder string, groupNode *SNode, r *RelationSpec) Binder {
-	return Binder{Shape: BinderShapeKey, GroupBinder: groupBinder, Node: groupNode, Relation: r}
-}
-
-func BinderGroup(r *RelationSpec) Binder {
-	return Binder{Shape: BinderShapeGroup, Relation: r}
-}
-
-func BinderProjected(r *RelationSpec, projections []RelationalProjection) Binder {
-	return Binder{Shape: BinderShapeProjected, Relation: r, Projections: projections}
+func binderProjected(r *relationSpec, projections []relationalProjection) binder {
+	return binder{Shape: binderShapeProjected, Relation: r, Projections: projections}
 }

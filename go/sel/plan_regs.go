@@ -91,7 +91,7 @@ func isArith(op string) bool { return op == "ADD" || op == "SUB" || op == "MUL" 
 // has run. ADD and SUB write over a register they consume (math/big allows the
 // alias); MUL takes another, as math/big would allocate around a product that
 // aliases an operand. A plan in which some slot is read twice gets no registers.
-func assignRegisters(plan *MathPlan) {
+func assignRegisters(plan *mathPlan) {
 	n := int(plan.ScratchpadSize)
 	reads := make([]int, n)
 	readByArith := make([]bool, n)

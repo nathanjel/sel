@@ -61,7 +61,7 @@ func (t *joinFlatTest) isFlat(row *Value) bool {
 	if row.shape != t.lastShape {
 		t.lastShape = row.shape
 		t.slots = t.slots[:0]
-		for i, k := range row.shape.Keys {
+		for i, k := range row.shape.keys {
 			if !t.binderNames[k] {
 				t.slots = append(t.slots, i)
 			}
@@ -69,7 +69,7 @@ func (t *joinFlatTest) isFlat(row *Value) bool {
 	}
 	st := row.storage
 	for _, i := range t.slots {
-		if st[i].Kind == KindNone && !st[i].isList {
+		if st[i].kind == KindNone && !st[i].isList {
 			return false
 		}
 	}
@@ -77,7 +77,7 @@ func (t *joinFlatTest) isFlat(row *Value) bool {
 }
 
 func isLeftNested(v *Value) bool {
-	return v.Kind == KindNone && !v.isList && len(v.storage) > 0
+	return v.kind == KindNone && !v.isList && len(v.storage) > 0
 }
 
 type joinProjector struct {
@@ -130,7 +130,7 @@ func compileJoinPlan(left, rside *Value, b1, b2 string, matched bool) *joinPlan 
 		}
 	}
 
-	lKeys := left.shape.Keys
+	lKeys := left.shape.keys
 	for i, k := range lKeys {
 		if isLeftNested(left.storage[i]) {
 			put(k, opLeftNested, i)
@@ -145,7 +145,7 @@ func compileJoinPlan(left, rside *Value, b1, b2 string, matched bool) *joinPlan 
 		bind(name, opRight)
 	}
 
-	rKeys := rside.shape.Keys
+	rKeys := rside.shape.keys
 	rightNames := make(map[string]bool, len(rKeys))
 	for _, k := range rKeys {
 		rightNames[utf8.AsciiUpper(k)] = true
@@ -163,13 +163,13 @@ func compileJoinPlan(left, rside *Value, b1, b2 string, matched bool) *joinPlan 
 			leftNames[utf8.AsciiUpper(k)] = true
 		}
 		for j, k := range rKeys {
-			if (rside.storage[j].Kind != KindNone || rside.storage[j].isList) && !leftNames[utf8.AsciiUpper(k)] {
+			if (rside.storage[j].kind != KindNone || rside.storage[j].isList) && !leftNames[utf8.AsciiUpper(k)] {
 				put(k, opRightSlot, j)
 			}
 		}
 	}
 
-	resultShape := InternRecordShape(keys)
+	resultShape := internRecordShape(keys)
 	plan := &joinPlan{
 		shape: resultShape,
 		slots: slots,
@@ -202,7 +202,7 @@ func compileJoinPlan(left, rside *Value, b1, b2 string, matched bool) *joinPlan 
 		}
 		rs := rside.storage
 		for j, k := range rKeys {
-			if !leftNames[utf8.AsciiUpper(k)] && !binderNames[k] && (rs[j].Kind == KindNone && !rs[j].isList) {
+			if !leftNames[utf8.AsciiUpper(k)] && !binderNames[k] && (rs[j].kind == KindNone && !rs[j].isList) {
 				plan.rkept = append(plan.rkept, j)
 			}
 		}
@@ -225,7 +225,7 @@ func buildJoinPlan(plan *joinPlan, left, rside *Value, checkLeft, checkRight boo
 
 	if checkRight {
 		for _, rk := range plan.rkept {
-			if rs[rk].Kind != KindNone || rs[rk].isList {
+			if rs[rk].kind != KindNone || rs[rk].isList {
 				return nil, false
 			}
 		}
@@ -248,7 +248,7 @@ func buildJoinPlan(plan *joinPlan, left, rside *Value, checkLeft, checkRight boo
 			storage[i] = v
 		case opRightSlot:
 			v := rs[s.slot]
-			if checkRight && (v.Kind == KindNone && !v.isList) {
+			if checkRight && (v.kind == KindNone && !v.isList) {
 				return nil, false
 			}
 			storage[i] = v
@@ -258,7 +258,7 @@ func buildJoinPlan(plan *joinPlan, left, rside *Value, checkLeft, checkRight boo
 			storage[i] = rside
 		}
 	}
-	return NewShapedRecord(plan.shape, storage), true
+	return newShapedRecord(plan.shape, storage), true
 }
 
 func (p *joinProjector) project(left, right *Value) *Value {

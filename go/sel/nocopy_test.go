@@ -26,9 +26,9 @@ func bothWays(t *testing.T, src string, ctx func() *Value) string {
 func nestedRows(depth int) *Value {
 	v := NewInt(1)
 	for i := 1; i < depth; i++ {
-		v = NewListOwned([]*Value{v})
+		v = newListOwned([]*Value{v})
 	}
-	return NewListOwned([]*Value{v})
+	return newListOwned([]*Value{v})
 }
 
 func TestNoCopyGivesTheSameAnswerWithAndWithout(t *testing.T) {

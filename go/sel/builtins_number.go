@@ -12,7 +12,7 @@ func init() {
 		Min:  1,
 		Max:  1,
 		Fn: func(args *Args, ctx *Context) *Value {
-			return NewNum(decimal.Abs(args.Dec(0)))
+			return NewNum(decimal.Abs(args.dec(0)))
 		},
 	})
 
@@ -21,7 +21,7 @@ func init() {
 		Min:  1,
 		Max:  1,
 		Fn: func(args *Args, ctx *Context) *Value {
-			return NewInt(int64(decimal.Sign(args.Dec(0))))
+			return NewInt(int64(decimal.Sign(args.dec(0))))
 		},
 	})
 
@@ -30,7 +30,7 @@ func init() {
 		Min:  1,
 		Max:  1,
 		Fn: func(args *Args, ctx *Context) *Value {
-			return NewNum(decimal.Ceil(args.Dec(0), args.Pos(), fail))
+			return NewNum(decimal.Ceil(args.dec(0), args.Pos(), fail))
 		},
 	})
 
@@ -39,7 +39,7 @@ func init() {
 		Min:  1,
 		Max:  1,
 		Fn: func(args *Args, ctx *Context) *Value {
-			return NewNum(decimal.Floor(args.Dec(0), args.Pos(), fail))
+			return NewNum(decimal.Floor(args.dec(0), args.Pos(), fail))
 		},
 	})
 
@@ -48,7 +48,7 @@ func init() {
 		Min:  1,
 		Max:  1,
 		Fn: func(args *Args, ctx *Context) *Value {
-			return NewNum(decimal.Trunc(args.Dec(0)))
+			return NewNum(decimal.Trunc(args.dec(0)))
 		},
 	})
 
@@ -57,7 +57,7 @@ func init() {
 		Min:  1,
 		Max:  1,
 		Fn: func(args *Args, ctx *Context) *Value {
-			return NewNum(decimal.TrimScale(args.Dec(0)))
+			return NewNum(decimal.TrimScale(args.dec(0)))
 		},
 	})
 
@@ -68,8 +68,8 @@ func init() {
 		Fn: func(args *Args, ctx *Context) *Value {
 			// Argument 1 is coerced before argument 2 (SPEC §6.2: strictly left
 			// to right once every argument has been evaluated).
-			x := args.Dec(0)
-			scale := CheckSizedInt(args.Dec(1), "ROUND", 2, MaxScale, "ROUND scale", args.PosOf(1))
+			x := args.dec(0)
+			scale := checkSizedInt(args.dec(1), "ROUND", 2, maxScale, "ROUND scale", args.PosOf(1))
 			return NewNum(decimal.Round(x, scale, args.Pos(), fail))
 		},
 	})
@@ -79,8 +79,8 @@ func init() {
 		Min:  2,
 		Max:  2,
 		Fn: func(args *Args, ctx *Context) *Value {
-			x := args.Dec(0)
-			exp := CheckSizedInt(args.Dec(1), "POWER", 2, MaxPower, "POWER exponent", args.PosOf(1))
+			x := args.dec(0)
+			exp := checkSizedInt(args.dec(1), "POWER", 2, maxPower, "POWER exponent", args.PosOf(1))
 			return NewNum(decimal.Power(x, exp, args.Pos(), fail))
 		},
 	})
@@ -90,9 +90,9 @@ func init() {
 		Min:  1,
 		Max:  -1,
 		Fn: func(args *Args, ctx *Context) *Value {
-			best := args.Dec(0)
+			best := args.dec(0)
 			for i := 1; i < args.Count(); i++ {
-				d := args.Dec(i)
+				d := args.dec(i)
 				if decimal.Cmp(d, best) < 0 {
 					best = d
 				}
@@ -106,9 +106,9 @@ func init() {
 		Min:  1,
 		Max:  -1,
 		Fn: func(args *Args, ctx *Context) *Value {
-			best := args.Dec(0)
+			best := args.dec(0)
 			for i := 1; i < args.Count(); i++ {
-				d := args.Dec(i)
+				d := args.dec(i)
 				if decimal.Cmp(d, best) > 0 {
 					best = d
 				}

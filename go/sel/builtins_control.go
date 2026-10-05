@@ -19,7 +19,7 @@ func init() {
 			if args.Count() == 3 {
 				return args.Val(2)
 			}
-			return NewTextOwned("")
+			return newTextOwned("")
 		},
 	})
 

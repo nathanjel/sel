@@ -13,9 +13,9 @@ import (
 	"github.com/nathanjel/sel/go/sel"
 )
 
-var SECTIONS = []string{"ops", "funcs", "skel"}
+var sections = []string{"ops", "funcs", "skel"}
 
-const MISSING = "\x00missing"
+const missingEntry = "\x00missing"
 
 type BuilderFn func(emit *Emit, args []*Fragment, pos Pos) *Fragment
 
@@ -41,7 +41,7 @@ type EntryRecord struct {
 	Builder  BuilderFn
 }
 
-type DialectRecord struct {
+type dialectRecord struct {
 	Name    string
 	Extends *string
 	Version string
@@ -52,7 +52,7 @@ type DialectRecord struct {
 	Skel    map[string]*EntryRecord
 }
 
-type RulesData struct {
+type rulesData struct {
 	OpArity      map[string][2]int
 	FuncArity    map[string][2]*int
 	SkelSlots    map[string][]string
@@ -66,11 +66,11 @@ type RulesData struct {
 
 var (
 	initOnce        sync.Once
-	shippedDialects map[string]*DialectRecord
-	shippedRules    RulesData
+	shippedDialects map[string]*dialectRecord
+	shippedRules    rulesData
 
 	mapMu        sync.Mutex
-	extra        = make(map[string]*DialectRecord)
+	extra        = make(map[string]*dialectRecord)
 	overlay      = make(map[string]map[string]map[string]*EntryRecord)
 	guardChecked = make(map[string]bool)
 	hostArities  = make(map[string]map[string][2]int)
@@ -88,7 +88,7 @@ func initShipped() {
 		Skel    map[string]interface{} `json:"skel"`
 	}
 
-	if err := json.Unmarshal([]byte(ShippedDialectsJSON), &rawDialects); err != nil {
+	if err := json.Unmarshal([]byte(shippedDialectsJSON), &rawDialects); err != nil {
 		panic("failed to parse ShippedDialectsJSON: " + err.Error())
 	}
 
@@ -103,7 +103,7 @@ func initShipped() {
 		LexicalTypes map[string]string      `json:"lexicalTypes"`
 		TemplateKeys []string               `json:"templateKeys"`
 	}
-	if err := json.Unmarshal([]byte(ShippedRulesJSON), &rawRules); err != nil {
+	if err := json.Unmarshal([]byte(shippedRulesJSON), &rawRules); err != nil {
 		panic("failed to parse ShippedRulesJSON: " + err.Error())
 	}
 
@@ -129,9 +129,9 @@ func initShipped() {
 	shippedRules.LexicalTypes = rawRules.LexicalTypes
 	shippedRules.TemplateKeys = rawRules.TemplateKeys
 
-	shippedDialects = make(map[string]*DialectRecord)
+	shippedDialects = make(map[string]*dialectRecord)
 	for name, d := range rawDialects {
-		rec := &DialectRecord{
+		rec := &dialectRecord{
 			Name:    d.Dialect,
 			Extends: d.Extends,
 			Version: d.Version,
@@ -252,7 +252,7 @@ func Reset() {
 	mapMu.Lock()
 	defer mapMu.Unlock()
 	ensureInit()
-	extra = make(map[string]*DialectRecord)
+	extra = make(map[string]*dialectRecord)
 	chainMemo = make(map[string][]string)
 	escaperMemo = make(map[string]*escaper)
 	overlay = make(map[string]map[string]map[string]*EntryRecord)
@@ -267,7 +267,7 @@ func Exists(dialect string) bool {
 	return extra[dialect] != nil || shippedDialects[dialect] != nil
 }
 
-func getRecord(dialect string) *DialectRecord {
+func getRecord(dialect string) *dialectRecord {
 	if r, ok := extra[dialect]; ok {
 		return r
 	}
@@ -326,7 +326,10 @@ func ShippedSectionKeys(dialect, section string) []string {
 	return out
 }
 
-func Targets() []string {
+// Dialects returns the sorted names of the dialects a translation can target:
+// the shipped ones and those an application defined, without the bases
+// (ansi, mysql-family) that only exist to be inherited from.
+func Dialects() []string {
 	mapMu.Lock()
 	defer mapMu.Unlock()
 	ensureInit()
@@ -349,15 +352,15 @@ func Targets() []string {
 	return out
 }
 
-func RequireTarget(dialect string, pos Pos) {
+func requireTarget(dialect string, pos Pos) {
 	if !Exists(dialect) {
-		Refuse("E_SQL_DIALECT", fmt.Sprintf("there is no SQL dialect %s; known targets are %s", dialect, strings.Join(Targets(), ", ")), pos)
+		refuse("E_SQL_DIALECT", fmt.Sprintf("there is no SQL dialect %s; known targets are %s", dialect, strings.Join(Dialects(), ", ")), pos)
 	}
 	mapMu.Lock()
 	rec := getRecord(dialect)
 	mapMu.Unlock()
 	if !rec.Target {
-		Refuse("E_SQL_DIALECT", fmt.Sprintf("%s is a base other dialects inherit from, not a server anyone runs; translate to one of %s", dialect, strings.Join(Targets(), ", ")), pos)
+		refuse("E_SQL_DIALECT", fmt.Sprintf("%s is a base other dialects inherit from, not a server anyone runs; translate to one of %s", dialect, strings.Join(Dialects(), ", ")), pos)
 	}
 }
 
@@ -480,20 +483,13 @@ func Entry(dialect, section, key string) interface{} {
 		}
 	}
 
-	return MISSING
+	return missingEntry
 }
 
 var dottedRe = regexp.MustCompile(`^[0-9]+(\.[0-9]+)*$`)
 var tplKeyRe = regexp.MustCompile(`^(0|[1-9][0-9]{0,2})$`)
 var unifyRe = regexp.MustCompile(`^@unify:[0-9]+(,[0-9]+)*$`)
 var slotInTplRe = regexp.MustCompile(`\{([^}]*)\}`)
-
-type DialectSpec struct {
-	Extends *string                `json:"extends"`
-	Version *string                `json:"version"`
-	Target  *bool                  `json:"target"`
-	Lexical map[string]interface{} `json:"lexical"`
-}
 
 // DefineDialect registers a dialect. Registration errors are panics, the
 // host's startup-error class, never a SqlError: TryTranslate must not swallow
@@ -573,7 +569,7 @@ func checkQuoting(name string) {
 	}
 }
 
-func defineDialectLocked(name string, spec map[string]interface{}) (*DialectRecord, bool) {
+func defineDialectLocked(name string, spec map[string]interface{}) (*dialectRecord, bool) {
 	mapMu.Lock()
 	defer mapMu.Unlock()
 	ensureInit()
@@ -677,7 +673,7 @@ func defineDialectLocked(name string, spec map[string]interface{}) (*DialectReco
 	}
 	chainMemo = make(map[string][]string)
 	escaperMemo = make(map[string]*escaper)
-	extra[name] = &DialectRecord{
+	extra[name] = &dialectRecord{
 		Name:    name,
 		Extends: ext,
 		Version: version,
@@ -739,7 +735,7 @@ func DefineBuilder(dialect, section, key string, fn BuilderFn) {
 	Define(dialect, section, key, map[string]interface{}{"builder": fn})
 }
 
-func HostSpellingArity(dialect, key string) *[2]int {
+func hostSpellingArity(dialect, key string) *[2]int {
 	ch := Chain(dialect)
 	mapMu.Lock()
 	defer mapMu.Unlock()
@@ -772,7 +768,7 @@ func quotedRuns(tpl string) []string {
 	return out
 }
 
-func CheckNumericGuard(dialect string) {
+func checkNumericGuard(dialect string) {
 	mapMu.Lock()
 	if guardChecked[dialect] {
 		mapMu.Unlock()
@@ -1184,8 +1180,8 @@ func checkArgs(key string, argsVal interface{}, host *[2]int, where string) {
 }
 
 func checkSection(section string) {
-	if !containsString(SECTIONS, section) {
-		panic(fmt.Sprintf("unknown map section %s; use %s", section, strings.Join(SECTIONS, ", ")))
+	if !containsString(sections, section) {
+		panic(fmt.Sprintf("unknown map section %s; use %s", section, strings.Join(sections, ", ")))
 	}
 }
 
@@ -1218,7 +1214,7 @@ func typeName(v interface{}) string {
 	}
 }
 
-func VersionAtLeast(have, want string) bool {
+func versionAtLeast(have, want string) bool {
 	parse := func(s string) []int {
 		parts := strings.Split(s, ".")
 		out := make([]int, len(parts))

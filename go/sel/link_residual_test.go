@@ -31,7 +31,7 @@ func linkCtxFrom(left, right []string) func() *Value {
 			items[i] = v
 			_ = tag
 		}
-		return NewListOwned(items)
+		return newListOwned(items)
 	}
 	return func() *Value { return ctxWith("L", mk(left, "l"), "R", mk(right, "r")) }
 }

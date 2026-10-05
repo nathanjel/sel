@@ -45,7 +45,7 @@ func joinRows(n, keys int, seed uint64) *Value {
 	for i := range items {
 		items[i] = rec("a", int(s.next()%uint64(keys)), "c", i, "k", int(s.next()%1000))
 	}
-	return NewListOwned(items)
+	return newListOwned(items)
 }
 
 func intList(n int, seed uint64) *Value {
@@ -54,7 +54,7 @@ func intList(n int, seed uint64) *Value {
 	for i := range items {
 		items[i] = NewInt(int64(s.next() % 1000000))
 	}
-	return NewListOwned(items)
+	return newListOwned(items)
 }
 
 // textRows: rows {s: non-numeric text, n: int}.
@@ -64,7 +64,7 @@ func textRows(n int, seed uint64) *Value {
 	for i := range items {
 		items[i] = rec("s", fmt.Sprintf("k%07d", s.next()%10000000), "n", int(s.next()%1000))
 	}
-	return NewListOwned(items)
+	return newListOwned(items)
 }
 
 func ctxWith(kv ...interface{}) *Value {
@@ -213,7 +213,7 @@ func BenchmarkP6Tokenize(b *testing.B) {
 			b.ReportAllocs()
 			b.SetBytes(int64(len(src)))
 			for i := 0; i < b.N; i++ {
-				Tokenize(src)
+				tokenize(src)
 			}
 		})
 	}

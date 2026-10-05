@@ -1,43 +1,43 @@
 package sql
 
-type BucketState int
+type bucketState int
 
 const (
-	BucketNone BucketState = iota
-	BucketOpen
-	BucketSealed
+	bucketNone bucketState = iota
+	bucketOpen
+	bucketSealed
 )
 
-type RelationalProjection struct {
+type relationalProjection struct {
 	Alias    *string
 	Binder   string
-	Node     *SNode
-	GroupKey *RelationalGroup
+	Node     *sNode
+	GroupKey *relationalGroup
 }
 
-type RelationalFilter struct {
+type relationalFilter struct {
 	Binder     string
-	Node       *SNode
+	Node       *sNode
 	Pos        Pos
 	OverGroups bool
 }
 
-type RelationalOrder struct {
+type relationalOrder struct {
 	Binder     string
-	Node       *SNode
+	Node       *sNode
 	Dir        string
 	Pos        Pos
 	OverGroups bool
 }
 
-type RelationalGroup struct {
+type relationalGroup struct {
 	Alias  *string
 	Binder string
-	Node   *SNode
+	Node   *sNode
 	Pos    Pos
 }
 
-type RelationalJoin struct {
+type relationalJoin struct {
 	Type           string // "INNER" or "LEFT"
 	SourceName     string
 	SourceRelation *Binding
@@ -46,19 +46,19 @@ type RelationalJoin struct {
 	SourceAlias    string
 	LeftNames      []string
 	RightNames     []string
-	OnPred         *SNode
+	OnPred         *sNode
 	Pos            Pos
 }
 
-type RelationalPlan struct {
+type relationalPlan struct {
 	SourceName     string
 	RootName       *string
 	SourceRelation *Binding
 	SourceFromRaw  bool
 	SourceTable    string
 	SourceAlias    string
-	SourceSubquery *RelationalPlan
-	Joins          []RelationalJoin
+	SourceSubquery *relationalPlan
+	Joins          []relationalJoin
 	Correlate      string
 	// OrderLostByJoin: a sort under a join is not the order of the joined rows.
 	OrderLostByJoin bool
@@ -68,19 +68,19 @@ type RelationalPlan struct {
 	OrderDropped bool
 	Distinct        bool
 	SelectCols      []string
-	Projections     []RelationalProjection
-	Filters         []RelationalFilter
-	GroupBy         []RelationalGroup
-	Bucket          BucketState
+	Projections     []relationalProjection
+	Filters         []relationalFilter
+	GroupBy         []relationalGroup
+	Bucket          bucketState
 	BareKey         bool
-	Having          []RelationalFilter
-	OrderBy         []RelationalOrder
+	Having          []relationalFilter
+	OrderBy         []relationalOrder
 	Limit           *int64
 	Offset          *int64
 }
 
-func NewRelationalPlan() *RelationalPlan {
-	return &RelationalPlan{
-		Bucket: BucketNone,
+func newRelationalPlan() *relationalPlan {
+	return &relationalPlan{
+		Bucket: bucketNone,
 	}
 }

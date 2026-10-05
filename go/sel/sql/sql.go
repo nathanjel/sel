@@ -22,7 +22,7 @@ func Translate(program *sel.Program, dialect string, bindings *Bindings, options
 	if catalog == nil {
 		catalog = NewBindings(nil)
 	}
-	t := NewTranslator(dialect, catalog, options)
+	t := newTranslator(dialect, catalog, options)
 	return t.Translate(program.AST()), nil
 }
 
@@ -51,7 +51,7 @@ func TranslateStatement(program *sel.Program, dialect string, bindings *Bindings
 	if catalog == nil {
 		catalog = NewBindings(nil)
 	}
-	t := NewTranslator(dialect, catalog, options)
+	t := newTranslator(dialect, catalog, options)
 	return t.TranslateStatement(program.AST()), nil
 }
 
@@ -80,9 +80,4 @@ func MustTranslateStatement(program *sel.Program, dialect string, bindings *Bind
 		panic(err)
 	}
 	return frag
-}
-
-// Dialects returns the sorted list of supported target SQL dialect names.
-func Dialects() []string {
-	return Targets()
 }

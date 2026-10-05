@@ -12,11 +12,11 @@ import (
 )
 
 const (
-	MaxScale = 1000000
-	MaxPower = 100000
+	maxScale = 1000000
+	maxPower = 100000
 )
 
-func CheckSizedInt(d *decimal.Dec, name string, argNum int, limit int64, what string, pos Pos) int {
+func checkSizedInt(d *decimal.Dec, name string, argNum int, limit int64, what string, pos Pos) int {
 	if !decimal.IsInteger(d) {
 		fail("E_NOT_INT", fmt.Sprintf("%s argument %d must be a whole number", name, argNum), pos)
 	}
@@ -30,34 +30,34 @@ func CheckSizedInt(d *decimal.Dec, name string, argNum int, limit int64, what st
 	return int(n)
 }
 
-func EvalNode(node *Node, ctx *Context) *Value {
-	ctx.Depth++
-	if ctx.Depth > MAX_DEPTH {
-		ctx.Depth--
-		ctx.NoCopy = nil
+func evalNode(node *Node, ctx *Context) *Value {
+	ctx.depth++
+	if ctx.depth > maxDepth {
+		ctx.depth--
+		ctx.noCopy = nil
 		fail("E_DEPTH", "evaluation nested too deeply", node.Pos)
 	}
 
 	// Restore dynamic evaluation state on every exit, including a panic that
 	// a surrounding coalescing operator or join prefilter catches.
-	frames := ctx.Frames
+	frames := ctx.frames
 	completed := false
 	defer func() {
-		ctx.Depth--
-		ctx.Frames = frames
+		ctx.depth--
+		ctx.frames = frames
 		if !completed {
 			// A join's prefilter state is handed from a LINK to its parent on
 			// a normal return; on a panic that a `??` or a join probe catches,
 			// nothing will consume it, and the next unrelated LINK must not
 			// find it there.
-			ctx.JoinPrefilter = nil
-			ctx.JoinPrefilterReport = nil
-			ctx.NoCopy = nil
+			ctx.joinPrefilter = nil
+			ctx.joinPrefilterReport = nil
+			ctx.noCopy = nil
 		}
 	}()
 	var res *Value
-	if node.MathPlan != nil {
-		res = evalMathPlan(node.MathPlan, ctx)
+	if node.mathPlan != nil {
+		res = evalMathPlan(node.mathPlan, ctx)
 	} else {
 		res = dispatch(node, ctx)
 	}
@@ -68,10 +68,10 @@ func EvalNode(node *Node, ctx *Context) *Value {
 func dispatch(node *Node, ctx *Context) *Value {
 	switch node.T {
 	case NodeNum:
-		return &Value{Kind: KindText, strVal: node.S, decVal: node.Dec}
+		return &Value{kind: KindText, strVal: node.S, decVal: node.dec}
 
 	case NodeText:
-		return NewTextOwned(node.S)
+		return newTextOwned(node.S)
 
 	case NodeBool:
 		return NewBool(node.B)
@@ -80,7 +80,7 @@ func dispatch(node *Node, ctx *Context) *Value {
 		return NewNull()
 
 	case NodeVar:
-		v := ctx.Lookup(node.S)
+		v := ctx.lookup(node.S)
 		if v == nil {
 			fail("E_UNDEF_VAR", fmt.Sprintf("undefined variable %s", node.S), node.Pos)
 		}
@@ -90,31 +90,31 @@ func dispatch(node *Node, ctx *Context) *Value {
 		objNode := node.L
 		var obj *Value
 		if objNode.T == NodeVar {
-			obj = ctx.Lookup(objNode.S)
+			obj = ctx.lookup(objNode.S)
 			if obj == nil {
 				fail("E_UNDEF_VAR", fmt.Sprintf("undefined variable %s", objNode.S), objNode.Pos)
 			}
 		} else {
-			obj = EvalNode(objNode, ctx)
+			obj = evalNode(objNode, ctx)
 		}
 
 		literal := node.R.T == NodeText
 		var key string
 		if literal {
-			if node.SlotCache != nil {
-				if cache := node.SlotCache.Load(); cache != nil && obj.shape == cache.Shape {
+			if node.slotCache != nil {
+				if cache := node.slotCache.Load(); cache != nil && obj.shape == cache.Shape {
 					return obj.storage[cache.Slot]
 				}
 			}
 			key = node.R.S
 		} else {
-			key = EvalNode(node.R, ctx).AsText(node.R.Pos)
+			key = evalNode(node.R, ctx).AsText(node.R.Pos)
 		}
 
 		if obj.shape != nil {
-			if idx, ok := obj.shape.KeyMap[key]; ok {
-				if literal && node.SlotCache != nil {
-					storeSlot(node.SlotCache, obj.shape, idx)
+			if idx, ok := obj.shape.keyMap[key]; ok {
+				if literal && node.slotCache != nil {
+					storeSlot(node.slotCache, obj.shape, idx)
 				}
 				return obj.storage[idx]
 			}
@@ -130,7 +130,7 @@ func dispatch(node *Node, ctx *Context) *Value {
 	case NodeSeq:
 		var last *Value = NewNone()
 		for _, item := range node.Items {
-			last = EvalNode(item, ctx)
+			last = evalNode(item, ctx)
 		}
 		return last
 
@@ -147,9 +147,9 @@ func dispatch(node *Node, ctx *Context) *Value {
 		return evalAssign(node, ctx)
 
 	case NodeCall:
-		args := NewArgs(node, ctx)
+		args := newArgs(node, ctx)
 		if !node.Spec.Lazy {
-			if node.Shape != nil {
+			if node.shape != nil {
 				// A RECORD whose keys are all text literals: only the values
 				// are evaluated (GO-P14). The keys cannot fail or have effects.
 				for i := 1; i < len(node.Items); i += 2 {
@@ -172,15 +172,15 @@ func dispatch(node *Node, ctx *Context) *Value {
 func evalList(node *Node, ctx *Context) *Value {
 	var values []*Value
 	for _, item := range node.Items {
-		v := EvalNode(item, ctx)
+		v := evalNode(item, ctx)
 		// The children the list will hold, counted before any are copied
 		// (SPEC §6.4): A = (A, A) thirty times must end in E_RANGE, not memory.
-		if v.Kind == KindNone && v.Size() > 0 {
+		if v.kind == KindNone && v.Size() > 0 {
 			checkCollection(satAdd(int64(len(values)), int64(v.Size())), "the list", node.Pos)
 		} else {
 			checkCollection(int64(len(values))+1, "the list", node.Pos)
 		}
-		if v.Kind == KindNone && v.Size() > 0 {
+		if v.kind == KindNone && v.Size() > 0 {
 			if v.storage != nil {
 				for _, child := range v.storage {
 					values = append(values, child.CloneAt(2, node.Pos))
@@ -196,11 +196,11 @@ func evalList(node *Node, ctx *Context) *Value {
 			values = append(values, v.CloneAt(2, node.Pos))
 		}
 	}
-	return NewListOwned(values)
+	return newListOwned(values)
 }
 
 func evalUnary(node *Node, ctx *Context) *Value {
-	v := EvalNode(node.L, ctx)
+	v := evalNode(node.L, ctx)
 	if node.S == "NOT" {
 		return NewBool(!v.AsBool(node.L.Pos))
 	}
@@ -211,14 +211,14 @@ func evalBinary(node *Node, ctx *Context) *Value {
 	op := node.S
 
 	if op == "AND" || op == "OR" {
-		left := EvalNode(node.L, ctx).AsBool(node.L.Pos)
+		left := evalNode(node.L, ctx).AsBool(node.L.Pos)
 		if op == "AND" && !left {
 			return NewBool(false)
 		}
 		if op == "OR" && left {
 			return NewBool(true)
 		}
-		return NewBool(EvalNode(node.R, ctx).AsBool(node.R.Pos))
+		return NewBool(evalNode(node.R, ctx).AsBool(node.R.Pos))
 	}
 
 	if op == "??" || op == "???" {
@@ -231,10 +231,10 @@ func evalBinary(node *Node, ctx *Context) *Value {
 		pv, pmissing, handled := tryLiteralPath(node.L, ctx)
 		if handled {
 			if pmissing {
-				return EvalNode(node.R, ctx)
+				return evalNode(node.R, ctx)
 			}
 			if (op == "??" && pv.IsNull()) || (op == "???" && pv.IsVacuous()) {
-				return EvalNode(node.R, ctx)
+				return evalNode(node.R, ctx)
 			}
 			return pv
 		}
@@ -247,20 +247,20 @@ func evalBinary(node *Node, ctx *Context) *Value {
 					panic(r)
 				}
 			}()
-			l = EvalNode(node.L, ctx)
+			l = evalNode(node.L, ctx)
 			hasVal = true
 		}()
 		if !hasVal {
-			return EvalNode(node.R, ctx)
+			return evalNode(node.R, ctx)
 		}
 		if (op == "??" && l.IsNull()) || (op == "???" && l.IsVacuous()) {
-			return EvalNode(node.R, ctx)
+			return evalNode(node.R, ctx)
 		}
 		return l
 	}
 
-	l := EvalNode(node.L, ctx)
-	r := EvalNode(node.R, ctx)
+	l := evalNode(node.L, ctx)
+	r := evalNode(node.R, ctx)
 	lp, rp := node.L.Pos, node.R.Pos
 
 	switch op {
@@ -314,7 +314,7 @@ func evalBinary(node *Node, ctx *Context) *Value {
 		return NewBool(compareResult(op, decimal.Cmp(a, b), node.Pos))
 
 	case "$==":
-		if l.Kind == KindText && r.Kind == KindText && l.Size() == 0 && r.Size() == 0 {
+		if l.kind == KindText && r.kind == KindText && l.Size() == 0 && r.Size() == 0 {
 			return NewBool(l.Scalar() == r.Scalar())
 		}
 		a := l.AsBytes(lp)
@@ -322,7 +322,7 @@ func evalBinary(node *Node, ctx *Context) *Value {
 		return NewBool(bytes.Equal(a, b))
 
 	case "$!=":
-		if l.Kind == KindText && r.Kind == KindText && l.Size() == 0 && r.Size() == 0 {
+		if l.kind == KindText && r.kind == KindText && l.Size() == 0 && r.Size() == 0 {
 			return NewBool(l.Scalar() != r.Scalar())
 		}
 		a := l.AsBytes(lp)
@@ -379,20 +379,20 @@ func compareResult(op string, c int, pos Pos) bool {
 func concat(l, r *Value, lp, rp, at Pos) *Value {
 	lv := l.ScalarSource(lp)
 	rv := r.ScalarSource(rp)
-	if lv.Kind == KindBool {
+	if lv.kind == KindBool {
 		fail("E_NOT_TEXT", "cannot concatenate a boolean", lp)
 	}
-	if rv.Kind == KindBool {
+	if rv.kind == KindBool {
 		fail("E_NOT_TEXT", "cannot concatenate a boolean", rp)
 	}
-	if lv.Kind == KindText && rv.Kind == KindText {
+	if lv.kind == KindText && rv.kind == KindText {
 		ls, rs := lv.Scalar(), rv.Scalar()
 		// Measured before it is built (SPEC §6.4). Bytes bound code points from
 		// above, so the exact count is only needed when the bytes are past the cap.
 		if int64(len(ls))+int64(len(rs)) > maxTextLen {
 			checkTextLen(runeLen(ls)+runeLen(rs), "the result of &", at)
 		}
-		return NewTextOwned(ls + rs)
+		return newTextOwned(ls + rs)
 	}
 	a := l.AsBytes(lp)
 	b := r.AsBytes(rp)
@@ -400,7 +400,7 @@ func concat(l, r *Value, lp, rp, at Pos) *Value {
 	res := make([]byte, len(a)+len(b))
 	copy(res, a)
 	copy(res[len(a):], b)
-	return NewBinOwned(res)
+	return newBinOwned(res)
 }
 
 func isIn(needle, hay *Value) bool {
@@ -442,7 +442,7 @@ func bitwise(op string, a, b []byte, pos Pos) *Value {
 			out[i] = a[i] ^ b[i]
 		}
 	}
-	return NewBinOwned(out)
+	return newBinOwned(out)
 }
 
 var compoundOps = map[string]string{
@@ -458,7 +458,7 @@ func evalAssign(node *Node, ctx *Context) *Value {
 		// The stored value sits len(path) levels down (the variable plus each
 		// bracket), so its depth is counted from there: path plus value must fit
 		// the cap, and the error is reported at the target (SPEC §6.4).
-		rhs := EvalNode(node.R, ctx)
+		rhs := evalNode(node.R, ctx)
 		if len(path) == 1 && producesFreshValue(node.R) {
 			// A variable takes a result whose every node was built by the call
 			// that returned it (GO-P13): the copy would duplicate what nothing
@@ -474,7 +474,7 @@ func evalAssign(node *Node, ctx *Context) *Value {
 		if current == nil {
 			fail("E_UNDEF_VAR", fmt.Sprintf("%s needs an existing target", node.S), node.L.Pos)
 		}
-		rhs := EvalNode(node.R, ctx)
+		rhs := evalNode(node.R, ctx)
 		binOp := compoundOps[node.S]
 		tp, vp := node.L.Pos, node.R.Pos
 		if binOp == "&" {
@@ -517,7 +517,7 @@ func producesFreshValue(n *Node) bool {
 }
 
 func walkCreate(ctx *Context, path []string, upto int) *Value {
-	cur := ctx.Root
+	cur := ctx.root
 	for i := 0; i < upto; i++ {
 		nxt := cur.Get(path[i])
 		if nxt == nil {
@@ -537,10 +537,10 @@ func resolveTarget(target *Node, ctx *Context) []string {
 		n = n.L
 	}
 
-	if ctx.IsBound(n.S) {
+	if ctx.isBound(n.S) {
 		fail("E_BAD_ASSIGN", fmt.Sprintf("%s is an aggregate binder and cannot be assigned", n.S), target.Pos)
 	}
-	if len(chain)+1 > MAX_DEPTH {
+	if len(chain)+1 > maxDepth {
 		fail("E_DEPTH", "value nested too deeply", target.Pos)
 	}
 	path := []string{n.S}
@@ -548,12 +548,12 @@ func resolveTarget(target *Node, ctx *Context) []string {
 		return path
 	}
 
-	if ctx.Root.Get(n.S) == nil {
-		ctx.Root.Set(n.S, NewNone())
+	if ctx.root.Get(n.S) == nil {
+		ctx.root.Set(n.S, NewNone())
 	}
 
 	for i := 0; i < len(chain)-1; i++ {
-		k := EvalNode(chain[i], ctx).AsText(chain[i].Pos)
+		k := evalNode(chain[i], ctx).AsText(chain[i].Pos)
 		cur := walkCreate(ctx, path, len(path))
 		if cur.Get(k) == nil {
 			cur.Set(k, NewNone())
@@ -561,7 +561,7 @@ func resolveTarget(target *Node, ctx *Context) []string {
 		path = append(path, k)
 	}
 	last := chain[len(chain)-1]
-	path = append(path, EvalNode(last, ctx).AsText(last.Pos))
+	path = append(path, evalNode(last, ctx).AsText(last.Pos))
 	return path
 }
 
@@ -617,7 +617,7 @@ func init() {
 	}
 }
 
-func evalMathPlan(plan *MathPlan, ctx *Context) *Value {
+func evalMathPlan(plan *mathPlan, ctx *Context) *Value {
 	// Up to sixteen slots live in the frame (GO-P12; Mandelbrot's
 	// `zr * zr - zi * zi + cr` needs nine), in one of two buffers so that the
 	// common plan of a few operations clears only eight: its scratchpad never
@@ -648,7 +648,7 @@ func evalMathPlan(plan *MathPlan, ctx *Context) *Value {
 		step := &plan.Steps[si]
 		switch step.Op {
 		case "LOAD_VAR":
-			val := ctx.Lookup(step.Name)
+			val := ctx.lookup(step.Name)
 			if val == nil {
 				fail("E_UNDEF_VAR", fmt.Sprintf("undefined variable %s", step.Name), step.Pos)
 			}
@@ -658,7 +658,7 @@ func evalMathPlan(plan *MathPlan, ctx *Context) *Value {
 			slots[step.Dst] = mathSlot{d: step.ConstVal}
 
 		case "LOAD_LEAF":
-			val := EvalNode(step.LeafNode, ctx)
+			val := evalNode(step.LeafNode, ctx)
 			slots[step.Dst] = mathSlot{v: val, pos: step.LeafNode.Pos}
 
 		case "COERCE":
@@ -717,12 +717,12 @@ func evalMathPlan(plan *MathPlan, ctx *Context) *Value {
 
 		case "ROUND":
 			x := slots[step.Src1].dec()
-			scale := CheckSizedInt(slots[step.Src2].dec(), "ROUND", 2, MaxScale, "ROUND scale", step.AuxPos)
+			scale := checkSizedInt(slots[step.Src2].dec(), "ROUND", 2, maxScale, "ROUND scale", step.AuxPos)
 			slots[step.Dst] = mathSlot{d: decimal.Round(x, scale, step.Pos, fail)}
 
 		case "POWER":
 			x := slots[step.Src1].dec()
-			exp := CheckSizedInt(slots[step.Src2].dec(), "POWER", 2, MaxPower, "POWER exponent", step.AuxPos)
+			exp := checkSizedInt(slots[step.Src2].dec(), "POWER", 2, maxPower, "POWER exponent", step.AuxPos)
 			slots[step.Dst] = mathSlot{d: decimal.Power(x, exp, step.Pos, fail)}
 
 		case "MIN":
@@ -763,7 +763,7 @@ func tryLiteralPath(node *Node, ctx *Context) (v *Value, missing, handled bool) 
 	n := 0
 	cur := node
 	for cur.T == NodeIndex {
-		if cur.MathPlan != nil || cur.R == nil || cur.R.T != NodeText || n == len(chain) {
+		if cur.mathPlan != nil || cur.R == nil || cur.R.T != NodeText || n == len(chain) {
 			return nil, false, false
 		}
 		chain[n] = cur
@@ -776,29 +776,29 @@ func tryLiteralPath(node *Node, ctx *Context) (v *Value, missing, handled bool) 
 	if need == 0 {
 		need = 1
 	}
-	if cur.T != NodeVar || cur.MathPlan != nil || ctx.Depth+need > MAX_DEPTH {
+	if cur.T != NodeVar || cur.mathPlan != nil || ctx.depth+need > maxDepth {
 		return nil, false, false
 	}
-	obj := ctx.Lookup(cur.S)
+	obj := ctx.lookup(cur.S)
 	if obj == nil {
 		return nil, true, true
 	}
 	for i := n - 1; i >= 0; i-- {
 		ix := chain[i]
-		if ix.SlotCache != nil {
-			if cache := ix.SlotCache.Load(); cache != nil && obj.shape == cache.Shape {
+		if ix.slotCache != nil {
+			if cache := ix.slotCache.Load(); cache != nil && obj.shape == cache.Shape {
 				obj = obj.storage[cache.Slot]
 				continue
 			}
 		}
 		key := ix.R.S
 		if obj.shape != nil {
-			idx, ok := obj.shape.KeyMap[key]
+			idx, ok := obj.shape.keyMap[key]
 			if !ok {
 				return nil, true, true
 			}
-			if ix.SlotCache != nil {
-				storeSlot(ix.SlotCache, obj.shape, idx)
+			if ix.slotCache != nil {
+				storeSlot(ix.slotCache, obj.shape, idx)
 			}
 			obj = obj.storage[idx]
 			continue

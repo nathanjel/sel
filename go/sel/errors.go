@@ -9,12 +9,9 @@ import (
 	"github.com/nathanjel/sel/go/internal/utf8"
 )
 
-const (
-	MAX_DEPTH       = limits.MAX_DEPTH
-	MAX_INT_DIGITS  = limits.MAX_INT_DIGITS
-	MAX_FRAC_DIGITS = limits.MAX_FRAC_DIGITS
-	DIV_SCALE       = limits.DIV_SCALE
-)
+// maxDepth is MAX_DEPTH (spec/limits.json): the nesting the evaluator and the
+// value walkers allow.
+const maxDepth = limits.MAX_DEPTH
 
 // Pos represents a source position with 1-based line and column (in Unicode code points),
 // and 0-based byte offset.

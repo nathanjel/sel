@@ -19,12 +19,12 @@ func planAllocations(t *testing.T, expr string) float64 {
 		t.Fatal(err)
 	}
 	node := MustCompile(expr).PhysicalAST()
-	if node.MathPlan == nil {
+	if node.mathPlan == nil {
 		t.Fatalf("%s: no plan", expr)
 	}
-	ctx := NewContext(root)
-	EvalNode(node, ctx) // warm: registers and caches
-	return testing.AllocsPerRun(50, func() { EvalNode(node, ctx) })
+	ctx := newContext(root)
+	evalNode(node, ctx) // warm: registers and caches
+	return testing.AllocsPerRun(50, func() { evalNode(node, ctx) })
 }
 
 func TestMathPlanAllocationBudgets(t *testing.T) {
@@ -68,9 +68,9 @@ func exprAllocations(t *testing.T, expr string) float64 {
 		t.Fatal(err)
 	}
 	node := MustCompile(expr).PhysicalAST()
-	ctx := NewContext(root)
-	EvalNode(node, ctx) // warm
-	return testing.AllocsPerRun(50, func() { EvalNode(node, ctx) })
+	ctx := newContext(root)
+	evalNode(node, ctx) // warm
+	return testing.AllocsPerRun(50, func() { evalNode(node, ctx) })
 }
 
 // Mandelbrot's escape test while z is still small: the bit lengths cannot

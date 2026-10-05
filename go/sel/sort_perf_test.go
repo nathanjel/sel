@@ -30,8 +30,8 @@ func TestClassifiedSortKeyOrderMatchesCompareValues(t *testing.T) {
 		vals = append(vals, NewText(s))
 	}
 	vals = append(vals, NewInt(5), NewInt(-5), NewInt(0))
-	vals = append(vals, rec("a", "x", "b", 2), rec("a", 3, "b", 1), rec("a", "4"), NewListOwned([]*Value{NewInt(9), NewInt(1)}),
-		NewListOwned([]*Value{rec("q", "deep")}))
+	vals = append(vals, rec("a", "x", "b", 2), rec("a", 3, "b", 1), rec("a", "4"), newListOwned([]*Value{NewInt(9), NewInt(1)}),
+		newListOwned([]*Value{rec("q", "deep")}))
 	for i, a := range vals {
 		ka := classifySortKey(a)
 		for j, b := range vals {
@@ -53,7 +53,7 @@ func TestTopSelectionEqualsTheSortedPrefix(t *testing.T) {
 		for i := range items {
 			items[i] = rec("n", int(s.next()%12), "id", i, "t", fmt.Sprintf("x%02d", s.next()%30))
 		}
-		return ctxWith("L", NewListOwned(items), "M", NewListOwned(func() []*Value {
+		return ctxWith("L", newListOwned(items), "M", newListOwned(func() []*Value {
 			s := lcg(7)
 			out := make([]*Value, 240)
 			for i := range out {

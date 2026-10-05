@@ -20,6 +20,9 @@ var (
 	hostFuncs  = make(map[string]struct{})
 )
 
+// Define adds a builtin to the function table, as the shipped builtins are
+// added (examples/fn-simple and examples/fn-complex show both kinds). An
+// application's own functions are registered with RegisterFunction instead.
 func Define(spec *Spec) {
 	key := utf8.AsciiUpper(spec.Name)
 	registryMu.Lock()
@@ -97,7 +100,7 @@ func assertManifestCovered() {
 	}
 }
 
-func Lookup(name string) *Spec {
+func lookup(name string) *Spec {
 	assertManifestCovered()
 	key := utf8.AsciiUpper(name)
 	registryMu.RLock()
@@ -105,17 +108,21 @@ func Lookup(name string) *Spec {
 	return funcTable[key]
 }
 
+// BindingFormResult is the binding form of a call: each argument's scope and the names it binds.
+// For the SQL layer and the tools; see "The syntax tree" in the package documentation.
 type BindingFormResult struct {
 	Scopes []manifest.Scope
 	Binds  []string
 }
 
+// BindingForm decodes the binding form of a call from the builtin manifest.
+// For the SQL layer and the tools; see "The syntax tree" in the package documentation.
 func BindingForm(name string, args []*Node, spec *Spec) *BindingFormResult {
 	key := utf8.AsciiUpper(name)
 	forms, ok := manifest.BindingForms[key]
 	if !ok {
 		if spec == nil {
-			spec = Lookup(key)
+			spec = lookup(key)
 		}
 		if spec == nil || !spec.Binds {
 			return nil
@@ -204,6 +211,8 @@ func RegisterFunction(name string, min, max int, fn func(args *Args) *Value) {
 	hostFuncs[key] = struct{}{}
 }
 
+// HostArity is the argument range of a function registered with RegisterFunction, and false for any other name.
+// For the SQL layer and the tools; see "The syntax tree" in the package documentation.
 func HostArity(name string) (int, int, bool) {
 	key := utf8.AsciiUpper(name)
 	registryMu.RLock()

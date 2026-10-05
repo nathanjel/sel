@@ -187,7 +187,7 @@ func describe(v *sel.Value) string {
 	if v == nil {
 		return "none"
 	}
-	switch v.Kind {
+	switch v.Kind() {
 	case sel.KindText:
 		if v.Size() > 0 {
 			return fmt.Sprintf("tree %s", v.Dump())
@@ -247,7 +247,7 @@ func checkExpect(expect string, val *sel.Value, err *sel.SelError, at string) st
 
 	switch form {
 	case "text":
-		if val.Kind != sel.KindText || val.Size() > 0 {
+		if val.Kind() != sel.KindText || val.Size() > 0 {
 			return fmt.Sprintf("wanted text, got %s", describe(val))
 		}
 		unquoted, uErr := unescape(rest, at)
@@ -260,7 +260,7 @@ func checkExpect(expect string, val *sel.Value, err *sel.SelError, at string) st
 		return ""
 
 	case "num":
-		if val.Kind != sel.KindText || val.Size() > 0 {
+		if val.Kind() != sel.KindText || val.Size() > 0 {
 			return fmt.Sprintf("wanted a number, got %s", describe(val))
 		}
 		if val.Scalar() != rest {
@@ -269,7 +269,7 @@ func checkExpect(expect string, val *sel.Value, err *sel.SelError, at string) st
 		return ""
 
 	case "bin":
-		if val.Kind != sel.KindBin || val.Size() > 0 {
+		if val.Kind() != sel.KindBin || val.Size() > 0 {
 			return fmt.Sprintf("wanted binary, got %s", describe(val))
 		}
 		if val.Dump()[1:] != rest {
@@ -278,7 +278,7 @@ func checkExpect(expect string, val *sel.Value, err *sel.SelError, at string) st
 		return ""
 
 	case "bool":
-		if val.Kind != sel.KindBool || val.Size() > 0 {
+		if val.Kind() != sel.KindBool || val.Size() > 0 {
 			return fmt.Sprintf("wanted a boolean, got %s", describe(val))
 		}
 		got := "FALSE"
@@ -291,7 +291,7 @@ func checkExpect(expect string, val *sel.Value, err *sel.SelError, at string) st
 		return ""
 
 	case "none":
-		if val.Kind == sel.KindNone && val.Size() == 0 {
+		if val.Kind() == sel.KindNone && val.Size() == 0 {
 			return ""
 		}
 		return fmt.Sprintf("got %s", describe(val))

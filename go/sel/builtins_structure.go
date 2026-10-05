@@ -26,7 +26,7 @@ func init() {
 			for i, k := range keys {
 				items[i] = NewText(k)
 			}
-			return NewListOwned(items)
+			return newListOwned(items)
 		},
 	})
 
@@ -49,7 +49,7 @@ func init() {
 				// SPEC §3.4: LIST copies its arguments, like `,`.
 				items[i] = args.Val(i).CloneAt(2, args.Pos())
 			}
-			return NewListOwned(items)
+			return newListOwned(items)
 		},
 	})
 
@@ -72,7 +72,7 @@ func init() {
 					// SPEC §3.4: RECORD copies its values, like `,`.
 					values[i/2] = args.Val(i).CloneAt(2, args.Pos())
 				}
-				return NewShapedRecord(shape, values)
+				return newShapedRecord(shape, values)
 			}
 			keys := make([]string, count/2)
 			values := make([]*Value, count/2)
@@ -82,17 +82,17 @@ func init() {
 				values[i/2] = args.Val(i + 1).CloneAt(2, args.Pos())
 			}
 			shape := args.RecordShape()
-			if shape != nil && reflect.DeepEqual(shape.Keys, keys) {
-				return NewShapedRecord(shape, values)
+			if shape != nil && reflect.DeepEqual(shape.keys, keys) {
+				return newShapedRecord(shape, values)
 			}
-			if uShape := UniqueRecordShape(keys); uShape != nil {
-				return NewShapedRecord(uShape, values)
+			if uShape := uniqueRecordShape(keys); uShape != nil {
+				return newShapedRecord(uShape, values)
 			}
 			entries := make([]Entry, len(keys))
 			for i := range keys {
 				entries[i] = Entry{Key: keys[i], Val: values[i]}
 			}
-			return NewRecordFromEntries(entries)
+			return newRecordFromEntries(entries)
 		},
 	})
 
@@ -104,7 +104,7 @@ func init() {
 			val := args.Val(0)
 			count := int(args.NonNegInt(1))
 			if count == 0 || val.IsNull() {
-				return NewListOwned(nil)
+				return newListOwned(nil)
 			}
 			if val.isList && val.storage != nil {
 				if count > len(val.storage) {
@@ -121,7 +121,7 @@ func init() {
 			for i := 0; i < count; i++ {
 				items[i] = ents[i].Val
 			}
-			return NewListOwned(items)
+			return newListOwned(items)
 		},
 	})
 
@@ -133,7 +133,7 @@ func init() {
 			val := args.Val(0)
 			count := int(args.NonNegInt(1))
 			if val.IsNull() {
-				return NewListOwned(nil)
+				return newListOwned(nil)
 			}
 			if val.isList && val.storage != nil {
 				if count > len(val.storage) {
@@ -149,7 +149,7 @@ func init() {
 			for i := count; i < len(ents); i++ {
 				items[i-count] = ents[i].Val
 			}
-			return NewListOwned(items)
+			return newListOwned(items)
 		},
 	})
 
@@ -160,7 +160,7 @@ func init() {
 		Fn: func(args *Args, ctx *Context) *Value {
 			val := args.Val(0)
 			if val.IsNull() {
-				return NewListOwned(nil)
+				return newListOwned(nil)
 			}
 			numCols := args.Count() - 1
 			columns := make([]string, numCols)
@@ -174,7 +174,7 @@ func init() {
 				slots := make([]int, numCols)
 				allFound := true
 				for i, col := range columns {
-					slot, ok := sampleShape.KeyMap[col]
+					slot, ok := sampleShape.keyMap[col]
 					if !ok {
 						allFound = false
 						break
@@ -190,7 +190,7 @@ func init() {
 						}
 					}
 					if allUniform {
-						outShape := UniqueRecordShape(columns)
+						outShape := uniqueRecordShape(columns)
 						if outShape != nil {
 							outRows := make([]*Value, len(val.storage))
 							for rIdx, r := range val.storage {
@@ -198,9 +198,9 @@ func init() {
 								for cIdx, s := range slots {
 									rowVals[cIdx] = r.storage[s]
 								}
-								outRows[rIdx] = NewShapedRecord(outShape, rowVals)
+								outRows[rIdx] = newShapedRecord(outShape, rowVals)
 							}
-							return NewListOwned(outRows)
+							return newListOwned(outRows)
 						}
 					}
 				}
@@ -216,16 +216,16 @@ func init() {
 						rowEntries = append(rowEntries, Entry{Key: col, Val: row.Get(col)})
 					}
 				}
-				rows[i] = NewRecordFromEntries(rowEntries)
+				rows[i] = newRecordFromEntries(rowEntries)
 			}
-			return NewListOwned(rows)
+			return newListOwned(rows)
 		},
 	})
 
 	dedupeFn := func(args *Args, ctx *Context) *Value {
 		val := args.Val(0)
 		if val.IsNull() {
-			return NewListOwned(nil)
+			return newListOwned(nil)
 		}
 		ents := val.Elements()
 		buckets := make(map[uint64][]*Value)
@@ -246,7 +246,7 @@ func init() {
 				out = append(out, item)
 			}
 		}
-		return NewListOwned(out)
+		return newListOwned(out)
 	}
 
 	Define(&Spec{

@@ -78,13 +78,13 @@ func TestTextLiteralMatchesThePerCallScan(t *testing.T) {
 	for _, d := range []string{"mariadb", "mysql", "postgresql", "sqlite", "p28-multi", "no-such-dialect"} {
 		for i := 0; i < 3000; i++ {
 			s := randomText(rnd)
-			if want, got := refTextLiteral(d, s), TextLiteral(d, s); want != got {
+			if want, got := refTextLiteral(d, s), textLiteral(d, s); want != got {
 				t.Fatalf("%s %q: want %q got %q", d, s, want, got)
 			}
 		}
 	}
 	// The longest key wins where two share a prefix, and the output is not rescanned.
-	if got := TextLiteral("p28-multi", "abc ab a"); got != "'<abc> <ab> a'" {
+	if got := textLiteral("p28-multi", "abc ab a"); got != "'<abc> <ab> a'" {
 		t.Errorf("longest-first broken: %s", got)
 	}
 }
@@ -98,15 +98,15 @@ func TestTextLiteralSeesARegistrationAtOnce(t *testing.T) {
 		}}
 	}
 	DefineDialect("p28-redef", spec("1"))
-	if got := TextLiteral("p28-redef", "axb"); got != "'a1b'" {
+	if got := textLiteral("p28-redef", "axb"); got != "'a1b'" {
 		t.Fatalf("first registration: %s", got)
 	}
 	DefineDialect("p28-redef", spec("22")) // same parent: replaces the registration and the compiled escaper
-	if got := TextLiteral("p28-redef", "axb"); got != "'a22b'" {
+	if got := textLiteral("p28-redef", "axb"); got != "'a22b'" {
 		t.Fatalf("after re-registration: %s", got)
 	}
 	Reset()
-	if got := TextLiteral("p28-redef", "axb"); got != "'axb'" {
+	if got := textLiteral("p28-redef", "axb"); got != "'axb'" {
 		t.Fatalf("an unregistered dialect escapes nothing: %s", got)
 	}
 }
@@ -116,12 +116,12 @@ func TestTextLiteralSeesARegistrationAtOnce(t *testing.T) {
 func TestToNodeIsBuiltOnceAndStable(t *testing.T) {
 	prog := sel.MustCompile(`1 + 2 * 3 - 4`)
 	root := prog.AST()
-	var build func(n *sel.Node) *SNode
-	build = func(n *sel.Node) *SNode {
+	var build func(n *sel.Node) *sNode
+	build = func(n *sel.Node) *sNode {
 		if n == nil {
 			return nil
 		}
-		var kids []*SNode
+		var kids []*sNode
 		if n.L != nil {
 			kids = append(kids, build(n.L))
 		}
@@ -129,9 +129,9 @@ func TestToNodeIsBuiltOnceAndStable(t *testing.T) {
 			kids = append(kids, build(n.R))
 		}
 		if len(kids) == 0 {
-			return Leaf(n)
+			return leaf(n)
 		}
-		return Rewritten(n, kids)
+		return rewritten(n, kids)
 	}
 	s := build(root)
 	a := s.ToNode()

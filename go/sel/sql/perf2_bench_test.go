@@ -110,7 +110,7 @@ func bigContext(n int) *sel.Value {
 		})
 	}
 	ctx := sel.NewNone()
-	ctx.Set("BIG", sel.NewListOwned(items))
+	ctx.Set("BIG", sel.NewList(items))
 	ctx.Set("SMALL", sel.NewList([]*sel.Value{sel.NewInt(1), sel.NewInt(2), sel.NewInt(3)}))
 	return ctx
 }
@@ -120,7 +120,7 @@ func orderRows() *sel.Value {
 	for i := range items {
 		items[i] = sel.NewRecordFromEntries([]sel.Entry{{Key: "id", Val: sel.NewInt(int64(i + 3))}})
 	}
-	return sel.NewListOwned(items)
+	return sel.NewList(items)
 }
 
 const hybridSrc = `ORDERS .> FILTER(_["id"] > 2) .> MAP(_["id"] + COUNT(SMALL))`

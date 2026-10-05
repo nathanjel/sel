@@ -52,7 +52,7 @@ func init() {
 			b := args.Bytes(0)
 			s := string(b)
 			utf8.ValidateText(s, args.PosOf(0), fail)
-			return NewTextOwned(s)
+			return newTextOwned(s)
 		},
 	})
 
@@ -63,7 +63,7 @@ func init() {
 		Fn: func(args *Args, ctx *Context) *Value {
 			b := args.Bytes(0)
 			checkTextLen(satMul(int64(len(b)), 2), "TO_HEX's result", args.Pos())
-			return NewTextOwned(hex.EncodeToString(b))
+			return newTextOwned(hex.EncodeToString(b))
 		},
 	})
 
@@ -87,7 +87,7 @@ func init() {
 			if err != nil {
 				fail("E_BAD_ARG", err.Error(), pos)
 			}
-			return NewBinOwned(decoded)
+			return newBinOwned(decoded)
 		},
 	})
 
@@ -123,7 +123,7 @@ func init() {
 					out = append(out, '=')
 				}
 			}
-			return NewTextOwned(string(out))
+			return newTextOwned(string(out))
 		},
 	})
 
@@ -169,7 +169,7 @@ func init() {
 					out = append(out, byte(n&255))
 				}
 			}
-			return NewBinOwned(out)
+			return newBinOwned(out)
 		},
 	})
 
@@ -180,7 +180,7 @@ func init() {
 		Fn: func(args *Args, ctx *Context) *Value {
 			b := args.Bytes(0)
 			crc := crc32.ChecksumIEEE(b)
-			return NewTextOwned(fmt.Sprintf("%08x", crc))
+			return newTextOwned(fmt.Sprintf("%08x", crc))
 		},
 	})
 
@@ -196,10 +196,10 @@ func init() {
 			items := make([]*Value, len(b))
 			slab := make([]Value, len(b))
 			for i, v := range b {
-				slab[i] = Value{Kind: KindText, decVal: decimal.FromByte(v)}
+				slab[i] = Value{kind: KindText, decVal: decimal.FromByte(v)}
 				items[i] = &slab[i]
 			}
-			return NewListOwned(items)
+			return newListOwned(items)
 		},
 	})
 
@@ -212,7 +212,7 @@ func init() {
 			var items []*Value
 			if v.Size() > 0 {
 				items = v.Values()
-			} else if v.Kind == KindNone {
+			} else if v.kind == KindNone {
 				// An empty list (or NULL, which is the same value) is the empty BIN,
 				// so LTB(BTL(x)) returns x for every BIN x (SPEC §7.7).
 				items = nil
@@ -233,7 +233,7 @@ func init() {
 				}
 				out[i] = byte(n)
 			}
-			return NewBinOwned(out)
+			return newBinOwned(out)
 		},
 	})
 }

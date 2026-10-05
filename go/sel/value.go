@@ -5,14 +5,17 @@ package sel
 import (
 	"encoding/hex"
 	"fmt"
+	"math/big"
 	"strconv"
 	"strings"
 	"sync/atomic"
 
 	"github.com/nathanjel/sel/go/internal/decimal"
+	"github.com/nathanjel/sel/go/internal/limits"
 	"github.com/nathanjel/sel/go/internal/utf8"
 )
 
+// Kind is the kind of a value: SEL has four (spec §3), and a number is text.
 type Kind uint8
 
 const (
@@ -37,13 +40,14 @@ func (k Kind) String() string {
 	}
 }
 
+// Entry is one key and value of a record, in order.
 type Entry struct {
 	Key string
 	Val *Value
 }
 
 type Value struct {
-	Kind    Kind
+	kind    Kind
 	boolVal bool
 	strVal  string
 	binVal  []byte
@@ -76,7 +80,7 @@ type Value struct {
 }
 
 func (v *Value) Scalar() string {
-	if v.Kind == KindText && v.strVal == "" && v.decVal != nil {
+	if v.kind == KindText && v.strVal == "" && v.decVal != nil {
 		if p := v.strCache.Load(); p != nil {
 			return *p
 		}
@@ -88,56 +92,93 @@ func (v *Value) Scalar() string {
 }
 
 func NewNone() *Value {
-	return &Value{Kind: KindNone}
+	return &Value{kind: KindNone}
 }
 
 func NewNull() *Value {
-	return &Value{Kind: KindNone, isList: false}
+	return &Value{kind: KindNone, isList: false}
 }
 
 func NewText(s string) *Value {
 	utf8.ValidateText(s, Pos{}, fail)
-	return &Value{Kind: KindText, strVal: s}
+	return &Value{kind: KindText, strVal: s}
 }
 
-func NewTextOwned(s string) *Value {
-	return &Value{Kind: KindText, strVal: s}
+func newTextOwned(s string) *Value {
+	return &Value{kind: KindText, strVal: s}
 }
 
 func NewBin(b []byte) *Value {
 	cp := make([]byte, len(b))
 	copy(cp, b)
-	return &Value{Kind: KindBin, binVal: cp}
+	return &Value{kind: KindBin, binVal: cp}
 }
 
-func NewBinOwned(b []byte) *Value {
-	return &Value{Kind: KindBin, binVal: b}
+func newBinOwned(b []byte) *Value {
+	return &Value{kind: KindBin, binVal: b}
 }
 
 func NewBool(b bool) *Value {
-	return &Value{Kind: KindBool, boolVal: b}
+	return &Value{kind: KindBool, boolVal: b}
 }
 
+// NewNum builds a number from the module's internal decimal type.
+//
+// Deprecated: *decimal.Dec cannot be named outside this module, so the only use
+// NewNum ever had outside it was handing back what AsDecimal returned. Use
+// NewDecimal and Value.Decimal, or NewText with the number's text.
 func NewNum(d *decimal.Dec) *Value {
-	return &Value{Kind: KindText, decVal: d}
+	return &Value{kind: KindText, decVal: d}
 }
 
-func NewNumExact(s string, d *decimal.Dec) *Value {
-	return &Value{Kind: KindText, strVal: s, decVal: d}
+// Decimal is a number in SEL's decimal form: Digits × 10^-Scale, negative when
+// Neg — the form the other hosts' Value.num({neg, digits, scale}) take. Scale is
+// kept: 1.50 is {false, 150, 2}.
+type Decimal struct {
+	Neg    bool
+	Digits *big.Int // a whole number, not negative
+	Scale  int      // fraction digits, not negative
+}
+
+// NewDecimal builds a number from its decimal form. Nil or negative Digits, or a
+// negative Scale, panics with a *SelError E_BAD_ARG; a number past the digit caps
+// (more than MAX_INT_DIGITS integer or MAX_FRAC_DIGITS fraction digits) with
+// E_RANGE. Digits is copied, and a negative zero is zero.
+func NewDecimal(d Decimal) *Value {
+	if d.Digits == nil || d.Digits.Sign() < 0 || d.Scale < 0 {
+		fail("E_BAD_ARG", "not a decimal: Digits must be a whole number that is not negative, and Scale not negative", Pos{})
+	}
+	if d.Scale > limits.MAX_FRAC_DIGITS {
+		fail("E_RANGE", fmt.Sprintf("number has more than %d fractional digits", limits.MAX_FRAC_DIGITS), Pos{})
+	}
+	dec := decimal.Guard(decimal.Make(d.Neg, d.Digits, int32(d.Scale)), utf8.Pos{}, fail)
+	return &Value{kind: KindText, decVal: dec}
+}
+
+// Decimal reads the value as a number (as AsText reads it as text), in the
+// decimal form; Digits is the caller's own copy. It panics with a *SelError
+// E_NOT_NUM when the value is not a number.
+func (v *Value) Decimal(pos Pos) Decimal {
+	d := v.AsDecimal(pos)
+	return Decimal{Neg: d.Neg, Digits: new(big.Int).Set(d.Digits), Scale: int(d.Scale)}
+}
+
+func newNumExact(s string, d *decimal.Dec) *Value {
+	return &Value{kind: KindText, strVal: s, decVal: d}
 }
 
 func NewInt(n int64) *Value {
-	return &Value{Kind: KindText, decVal: decimal.FromInt(n)}
+	return &Value{kind: KindText, decVal: decimal.FromInt(n)}
 }
 
 func NewList(items []*Value) *Value {
 	cp := make([]*Value, len(items))
 	copy(cp, items)
-	return &Value{Kind: KindNone, isList: true, storage: cp}
+	return &Value{kind: KindNone, isList: true, storage: cp}
 }
 
-func NewListOwned(items []*Value) *Value {
-	return &Value{Kind: KindNone, isList: true, storage: items}
+func newListOwned(items []*Value) *Value {
+	return &Value{kind: KindNone, isList: true, storage: items}
 }
 
 func NewListWithKeys(items []*Value, keys []string) *Value {
@@ -150,14 +191,49 @@ func NewListWithKeys(items []*Value, keys []string) *Value {
 	copy(cp, items)
 	k := make([]string, len(keys))
 	copy(k, keys)
-	return &Value{Kind: KindNone, isList: true, storage: cp, listKeys: k}
+	return &Value{kind: KindNone, isList: true, storage: cp, listKeys: k}
 }
 
+// NewShapedRecord builds a record of the shape's keys holding these values, in
+// order; the slice is copied, the values are not (as NewList). A nil shape, a
+// count that is not the shape's or a nil value panics with a *SelError
+// E_BAD_ARG.
 func NewShapedRecord(shape *RecordShape, values []*Value) *Value {
-	return &Value{Kind: KindNone, shape: shape, storage: values}
+	if shape == nil || len(values) != len(shape.keys) {
+		fail("E_BAD_ARG", "a shaped record needs one value per key of its shape", Pos{})
+	}
+	for _, v := range values {
+		if v == nil {
+			fail("E_BAD_ARG", "a record value is nil", Pos{})
+		}
+	}
+	cp := make([]*Value, len(values))
+	copy(cp, values)
+	return newShapedRecord(shape, cp)
 }
 
+// newShapedRecord takes values as they are: the builtins' own constructor.
+func newShapedRecord(shape *RecordShape, values []*Value) *Value {
+	return &Value{kind: KindNone, shape: shape, storage: values}
+}
+
+// NewRecordFromEntries builds a record from key-value pairs in order; a key that
+// repeats keeps its first position and its last value, as Set does. A key that
+// is not valid UTF-8 panics with a *SelError E_UTF8 (as in Set), a nil value with
+// E_BAD_ARG.
 func NewRecordFromEntries(entries []Entry) *Value {
+	for _, e := range entries {
+		utf8.ValidateText(e.Key, Pos{}, fail)
+		if e.Val == nil {
+			fail("E_BAD_ARG", "a record value is nil", Pos{})
+		}
+	}
+	return newRecordFromEntries(entries)
+}
+
+// newRecordFromEntries is NewRecordFromEntries without the checks, for entries
+// the builtins built.
+func newRecordFromEntries(entries []Entry) *Value {
 	if len(entries) > 0 {
 		keys := make([]string, len(entries))
 		vals := make([]*Value, len(entries))
@@ -165,8 +241,8 @@ func NewRecordFromEntries(entries []Entry) *Value {
 			keys[i] = e.Key
 			vals[i] = e.Val
 		}
-		if shape := UniqueRecordShape(keys); shape != nil {
-			return NewShapedRecord(shape, vals)
+		if shape := uniqueRecordShape(keys); shape != nil {
+			return newShapedRecord(shape, vals)
 		}
 	}
 	v := NewNone()
@@ -176,22 +252,26 @@ func NewRecordFromEntries(entries []Entry) *Value {
 	return v
 }
 
+// Kind is the value's kind: KindNone (a record, a list, or nothing), KindText,
+// KindBin or KindBool. A number is text.
+func (v *Value) Kind() Kind { return v.kind }
+
 // Predicates
-func (v *Value) IsNone() bool { return v.Kind == KindNone }
-func (v *Value) IsNull() bool { return v.Kind == KindNone && v.Size() == 0 && !v.isList }
+func (v *Value) IsNone() bool { return v.kind == KindNone }
+func (v *Value) IsNull() bool { return v.kind == KindNone && v.Size() == 0 && !v.isList }
 func (v *Value) IsVacuous() bool {
-	if v.Kind == KindNone && v.Size() == 0 {
+	if v.kind == KindNone && v.Size() == 0 {
 		return true
 	}
-	if v.Kind == KindText && v.Size() == 0 {
+	if v.kind == KindText && v.Size() == 0 {
 		s := v.Scalar()
 		return strings.Trim(s, " \t\r\n") == ""
 	}
 	return false
 }
-func (v *Value) IsText() bool { return v.Kind == KindText }
-func (v *Value) IsBin() bool  { return v.Kind == KindBin }
-func (v *Value) IsBool() bool { return v.Kind == KindBool }
+func (v *Value) IsText() bool { return v.kind == KindText }
+func (v *Value) IsBin() bool  { return v.kind == KindBin }
+func (v *Value) IsBool() bool { return v.kind == KindBool }
 func (v *Value) IsList() bool { return v.isList }
 
 // Children
@@ -237,7 +317,7 @@ func (v *Value) listKeyPos(key string) int {
 
 func (v *Value) Has(key string) bool {
 	if v.shape != nil {
-		_, ok := v.shape.KeyMap[key]
+		_, ok := v.shape.keyMap[key]
 		return ok
 	}
 	if v.isList && v.storage != nil {
@@ -260,7 +340,7 @@ func (v *Value) Has(key string) bool {
 
 func (v *Value) Get(key string) *Value {
 	if v.shape != nil {
-		if idx, ok := v.shape.KeyMap[key]; ok {
+		if idx, ok := v.shape.keyMap[key]; ok {
 			return v.storage[idx]
 		}
 		return nil
@@ -296,7 +376,7 @@ func (v *Value) Set(key string, val *Value) *Value {
 	utf8.ValidateText(key, Pos{}, fail)
 
 	if v.shape != nil {
-		if idx, ok := v.shape.KeyMap[key]; ok {
+		if idx, ok := v.shape.keyMap[key]; ok {
 			v.storage[idx] = val
 			return v
 		}
@@ -407,8 +487,8 @@ func denseKeys(n int) []string {
 
 func (v *Value) Keys() []string {
 	if v.shape != nil {
-		res := make([]string, len(v.shape.Keys))
-		copy(res, v.shape.Keys)
+		res := make([]string, len(v.shape.keys))
+		copy(res, v.shape.keys)
 		return res
 	}
 	if v.isList && v.storage != nil {
@@ -441,8 +521,8 @@ func (v *Value) Values() []*Value {
 
 func (v *Value) Entries() []Entry {
 	if v.shape != nil {
-		res := make([]Entry, len(v.shape.Keys))
-		for i, k := range v.shape.Keys {
+		res := make([]Entry, len(v.shape.keys))
+		for i, k := range v.shape.keys {
 			res[i] = Entry{Key: k, Val: v.storage[i]}
 		}
 		return res
@@ -464,12 +544,12 @@ func (v *Value) Entries() []Entry {
 
 // Scalar Context (§3.2)
 func (v *Value) ScalarSource(pos Pos) *Value {
-	if v.Kind != KindNone {
+	if v.kind != KindNone {
 		return v
 	}
 	cur := v
 	guard := 0
-	for cur.Kind == KindNone {
+	for cur.kind == KindNone {
 		if cur.IsNull() {
 			fail("E_NULL", "value is NULL", pos)
 		}
@@ -491,10 +571,10 @@ func (v *Value) ScalarSource(pos Pos) *Value {
 
 func (v *Value) AsText(pos Pos) string {
 	s := v.ScalarSource(pos)
-	if s.Kind == KindText {
+	if s.kind == KindText {
 		return s.Scalar()
 	}
-	if s.Kind == KindBin {
+	if s.kind == KindBin {
 		fail("E_NOT_TEXT", "expected text, got binary (use FROM_UTF8)", pos)
 	}
 	fail("E_NOT_TEXT", "expected text, got boolean", pos)
@@ -503,10 +583,10 @@ func (v *Value) AsText(pos Pos) string {
 
 func (v *Value) AsBytes(pos Pos) []byte {
 	s := v.ScalarSource(pos)
-	if s.Kind == KindBin {
+	if s.kind == KindBin {
 		return s.binVal
 	}
-	if s.Kind == KindText {
+	if s.kind == KindText {
 		return []byte(s.Scalar())
 	}
 	fail("E_NOT_BIN", "expected binary or text, got boolean", pos)
@@ -515,17 +595,21 @@ func (v *Value) AsBytes(pos Pos) []byte {
 
 func (v *Value) AsBool(pos Pos) bool {
 	s := v.ScalarSource(pos)
-	if s.Kind == KindBool {
+	if s.kind == KindBool {
 		return s.boolVal
 	}
 	fail("E_NOT_BOOL", "expected a boolean — SEL has no truthiness", pos)
 	return false
 }
 
+// AsDecimal reads the value as a number, in the module's internal decimal type.
+//
+// Deprecated: *decimal.Dec cannot be named outside this module; use
+// Value.Decimal.
 func (v *Value) AsDecimal(pos Pos) *decimal.Dec {
 	s := v.ScalarSource(pos)
-	if s.Kind != KindText {
-		fail("E_NOT_NUM", fmt.Sprintf("expected a number, got %s", strings.ToLower(s.Kind.String())), pos)
+	if s.kind != KindText {
+		fail("E_NOT_NUM", fmt.Sprintf("expected a number, got %s", strings.ToLower(s.kind.String())), pos)
 	}
 	if s.decVal != nil {
 		return s.decVal
@@ -545,7 +629,7 @@ func (v *Value) AsDecimal(pos Pos) *decimal.Dec {
 type notNumeric struct{}
 
 func (v *Value) LooksNumeric() bool {
-	if v.Kind == KindNone && v.Size() == 0 {
+	if v.kind == KindNone && v.Size() == 0 {
 		return false
 	}
 	defer func() {
@@ -556,7 +640,7 @@ func (v *Value) LooksNumeric() bool {
 		}
 	}()
 	s := v.ScalarSource(Pos{})
-	if s.Kind != KindText {
+	if s.kind != KindText {
 		return false
 	}
 	if s.decVal != nil || s.decCache.Load() != nil {
@@ -578,11 +662,11 @@ func (v *Value) Clone() *Value {
 }
 
 func (v *Value) CloneAt(depth int, pos Pos) *Value {
-	if depth > MAX_DEPTH {
+	if depth > maxDepth {
 		fail("E_DEPTH", "value nested too deeply", pos)
 	}
 	out := &Value{
-		Kind:    v.Kind,
+		kind:    v.kind,
 		boolVal: v.boolVal,
 		strVal:  v.strVal,
 		isList:  v.isList,
@@ -625,13 +709,13 @@ func (v *Value) Eql(other *Value, pos Pos) bool {
 }
 
 func (v *Value) EqlAt(other *Value, depth int, pos Pos) bool {
-	if depth > MAX_DEPTH {
+	if depth > maxDepth {
 		fail("E_DEPTH", "value nested too deeply", pos)
 	}
-	if v.Kind != other.Kind {
+	if v.kind != other.kind {
 		return false
 	}
-	switch v.Kind {
+	switch v.kind {
 	case KindText:
 		if v.strVal == "" && other.strVal == "" && v.decVal != nil && other.decVal != nil {
 			if v.decVal.Neg != other.decVal.Neg || v.decVal.Scale != other.decVal.Scale || v.decVal.Digits.Cmp(other.decVal.Digits) != 0 {
@@ -708,11 +792,11 @@ func (v *Value) Dump() string {
 }
 
 func (v *Value) DumpAt(depth int) string {
-	if depth > MAX_DEPTH {
+	if depth > maxDepth {
 		fail("E_DEPTH", "value nested too deeply", Pos{})
 	}
 	var s string
-	switch v.Kind {
+	switch v.kind {
 	case KindNone:
 		s = "-"
 	case KindText:
@@ -751,11 +835,11 @@ func (v *Value) StructuralHash() uint64 {
 }
 
 func (v *Value) structuralHashAt(depth int) uint64 {
-	if depth > MAX_DEPTH {
+	if depth > maxDepth {
 		fail("E_DEPTH", "value nested too deeply", Pos{})
 	}
 	var h uint64
-	switch v.Kind {
+	switch v.kind {
 	case KindText:
 		h = fnvHash(v.Scalar()) ^ 1000003
 	case KindBool:
@@ -778,7 +862,7 @@ func (v *Value) structuralHashAt(depth int) uint64 {
 	// equal however they were built.
 	switch {
 	case v.shape != nil:
-		kh := v.shape.KeyHashes()
+		kh := v.shape.hashes()
 		for i, c := range v.storage {
 			h = (h * 1000003) ^ kh[i] ^ c.structuralHashAt(depth+1)
 		}
@@ -807,8 +891,8 @@ func (v *Value) structuralHashAt(depth int) uint64 {
 
 func (v *Value) Elements() []Entry {
 	if v.shape != nil {
-		out := make([]Entry, len(v.shape.Keys))
-		for i, k := range v.shape.Keys {
+		out := make([]Entry, len(v.shape.keys))
+		for i, k := range v.shape.keys {
 			out[i] = Entry{Key: k, Val: v.storage[i]}
 		}
 		return out
@@ -830,7 +914,7 @@ func (v *Value) Elements() []Entry {
 		copy(out, v.entries)
 		return out
 	}
-	if v.Kind != KindNone {
+	if v.kind != KindNone {
 		return []Entry{{Key: "1", Val: v}}
 	}
 	return nil

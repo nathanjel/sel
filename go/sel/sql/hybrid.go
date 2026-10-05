@@ -29,10 +29,6 @@ type HybridPlan struct {
 	SourceTables          []string        `json:"source_tables"`
 }
 
-func (p *HybridPlan) SqlQuery() *Fragment {
-	return p.SqlStatement
-}
-
 type DbRunner func(query string, params []*sel.Value) (*sel.Value, error)
 
 func copyAstNode(n *sel.Node) *sel.Node {
@@ -100,7 +96,7 @@ func containsUnsupportedMemo(node *sel.Node, dialect string, defs map[string]*se
 	if node.T == sel.NodeCall {
 		if !sqlSpecialCalls[node.S] {
 			entry := Entry(dialect, "funcs", utf8.AsciiUpper(node.S))
-			if entry == nil || entry == MISSING {
+			if entry == nil || entry == missingEntry {
 				return true
 			}
 			if rec, ok := entry.(*EntryRecord); ok {
@@ -300,10 +296,10 @@ func rowsAreNotTheValue(steps []*sel.Node, count int) bool {
 }
 
 func physicalSource(b *Binding) string {
-	if b.Relation.From.IsRaw {
-		return b.Relation.From.Raw
+	if b.relation.From.IsRaw {
+		return b.relation.From.Raw
 	}
-	return b.Relation.From.Table
+	return b.relation.From.Table
 }
 
 // sourceTables lists the physical sources a tree reads: a name that a binder or
@@ -325,7 +321,7 @@ func sourceTables(ast *sel.Node, bindings *Bindings) []string {
 			}
 			if bindings.Has(n.S) {
 				b := bindings.Get(n.S, n.Pos)
-				if b.Kind == BindingKindRelation {
+				if b.kind == bindingKindRelation {
 					table := physicalSource(b)
 					if !seen[table] {
 						seen[table] = true
@@ -614,7 +610,7 @@ func (h *helpersContext) wrap(node *sel.Node) *sel.Node {
 }
 
 func (h *helpersContext) tables(wrapped *sel.Node) []string {
-	normalized := Normalise(wrapped, h.names, h.constRoot).ToNode()
+	normalized := normalise(wrapped, h.names, h.constRoot).ToNode()
 	if normalized == nil {
 		normalized = wrapped
 	}
@@ -649,10 +645,10 @@ func tryLatestMember(source *sel.Node, steps []*sel.Node, dialect string, catalo
 		return nil
 	}
 	binding := catalog.Get(source.S, source.Pos)
-	if binding.Kind != BindingKindRelation {
+	if binding.kind != bindingKindRelation {
 		return nil
 	}
-	rel := binding.Relation
+	rel := binding.relation
 	if rel.UniqueKey == "" || rel.From.IsRaw || rel.Correlate != "" {
 		return nil
 	}
@@ -748,7 +744,7 @@ func tryLatestMember(source *sel.Node, steps []*sel.Node, dialect string, catalo
 		return nil
 	}
 
-	emit := NewEmit(dialect)
+	emit := newEmit(dialect)
 	input := "_sel_input"
 	groups := "_sel_latest"
 	fromTable := physicalSource(binding)
@@ -846,7 +842,7 @@ type mapRecordDetails struct {
 	explicit bool
 	binder   string
 	body     *sel.Node
-	pairs    []Pair[*sel.Node, *sel.Node]
+	pairs    []pair[*sel.Node, *sel.Node]
 }
 
 func getMapRecordDetails(step *sel.Node) *mapRecordDetails {
@@ -871,14 +867,14 @@ func getMapRecordDetails(step *sel.Node) *mapRecordDetails {
 		return nil
 	}
 	seen := make(map[string]bool)
-	var pairs []Pair[*sel.Node, *sel.Node]
+	var pairs []pair[*sel.Node, *sel.Node]
 	for i := 0; i < len(body.Items); i += 2 {
 		k := body.Items[i]
 		if k.T != sel.NodeText || seen[k.S] {
 			return nil
 		}
 		seen[k.S] = true
-		pairs = append(pairs, Pair[*sel.Node, *sel.Node]{Key: k, Val: body.Items[i+1]})
+		pairs = append(pairs, pair[*sel.Node, *sel.Node]{Key: k, Val: body.Items[i+1]})
 	}
 	return &mapRecordDetails{explicit: explicit, binder: binder, body: body, pairs: pairs}
 }
@@ -900,8 +896,8 @@ func tryPlanFallthrough(source *sel.Node, steps []*sel.Node, dialect string, cat
 		return nil
 	}
 
-	var pushable []Pair[*sel.Node, *sel.Node]
-	var custom []Pair[*sel.Node, *sel.Node]
+	var pushable []pair[*sel.Node, *sel.Node]
+	var custom []pair[*sel.Node, *sel.Node]
 	for _, pair := range details.pairs {
 		if containsUnsupportedSql(pair.Val, dialect, helpers.defs, make(map[string]bool)) {
 			custom = append(custom, pair)
@@ -1055,14 +1051,14 @@ func tryPlanFallthrough(source *sel.Node, steps []*sel.Node, dialect string, cat
 
 // PlanHybrid splits a relational pipeline at the longest SQL-translatable prefix.
 func PlanHybrid(program *sel.Program, dialect string, bindings *Bindings, options Options) *HybridPlan {
-	RequireTarget(dialect, sel.Pos{})
+	requireTarget(dialect, sel.Pos{})
 	checked := bindings
 	if checked == nil {
 		checked = NewBindings(nil)
 	}
 	checked.CheckAliases(sel.Pos{})
 
-	constNames, constRoot := Scope(checked)
+	constNames, constRoot := scope(checked)
 	identityBarrier := false
 	var earlyPureMemory bool
 	func() {
@@ -1077,8 +1073,8 @@ func PlanHybrid(program *sel.Program, dialect string, bindings *Bindings, option
 				}
 			}
 		}()
-		normalized := Normalise(program.AST(), constNames, constRoot)
-		identityBarrier = IdentityLossBeforeGrouping(normalized, nil)
+		normalized := normalise(program.AST(), constNames, constRoot)
+		identityBarrier = identityLossBeforeGrouping(normalized, nil)
 	}()
 	if earlyPureMemory {
 		return pureMemoryPlan(program, dialect, checked)
@@ -1089,7 +1085,7 @@ func PlanHybrid(program *sel.Program, dialect string, bindings *Bindings, option
 	defs := definitions(partsLeading)
 
 	isRelation := func(node *sel.Node) bool {
-		return node != nil && node.T == sel.NodeVar && checked.Has(node.S) && checked.Get(node.S, node.Pos).Kind == BindingKindRelation
+		return node != nil && node.T == sel.NodeVar && checked.Has(node.S) && checked.Get(node.S, node.Pos).kind == bindingKindRelation
 	}
 
 	unwoundSource, unwoundSteps := unwindThroughHelpers(partsResult, defs, literals)
@@ -1180,8 +1176,8 @@ func PlanHybrid(program *sel.Program, dialect string, bindings *Bindings, option
 						}
 					}
 				}()
-				norm := Normalise(prefixAst, constNames, constRoot)
-				if IdentityLossBeforeGrouping(norm, &NeededFields{All: true}) {
+				norm := normalise(prefixAst, constNames, constRoot)
+				if identityLossBeforeGrouping(norm, &neededFields{All: true}) {
 					skip = true
 				}
 			}()

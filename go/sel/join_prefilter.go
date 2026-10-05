@@ -6,27 +6,27 @@ import (
 	"github.com/nathanjel/sel/go/internal/utf8"
 )
 
-type JoinTotalReq struct {
+type joinTotalReq struct {
 	Name    string
 	Numeric bool
 }
 
-type JoinConjunct struct {
+type joinConjunct struct {
 	Node      *Node
 	Fields    map[string]bool
 	FieldOnly bool
-	Total     []JoinTotalReq
+	Total     []joinTotalReq
 	HasTotal  bool
 	Binder    string
 }
 
-type JoinStage struct {
+type joinStage struct {
 	Binder    string
-	Conjuncts []JoinConjunct
+	Conjuncts []joinConjunct
 	Above     int
 }
 
-type JoinSideFacts struct {
+type joinSideFacts struct {
 	Val      *Value
 	Keys     map[string]bool
 	Nullable bool
@@ -35,33 +35,33 @@ type JoinSideFacts struct {
 	Facts    map[string]bool
 }
 
-type JoinObligation struct {
+type joinObligation struct {
 	Key      *Node
 	RowNames map[string]bool
 	Outer    int
 }
 
-type JoinPrefilter struct {
-	Stages      []JoinStage
+type joinPrefilter struct {
+	Stages      []joinStage
 	Deep        bool
-	Above       []*JoinSideFacts
-	Obligations []JoinObligation
+	Above       []*joinSideFacts
+	Obligations []joinObligation
 }
 
-type JoinReport struct {
+type joinReport struct {
 	Applied map[*Node]bool
 	Errored bool
 	Dropped bool
 }
 
-type StageStop struct {
+type stageStop struct {
 	Stage    int
 	Conjunct int
 }
 
-type JoinApplied struct {
-	Conjunct *JoinConjunct
-	Stage    *JoinStage
+type joinApplied struct {
+	Conjunct *joinConjunct
+	Stage    *joinStage
 	Right    bool
 }
 
@@ -106,7 +106,7 @@ var numCompareOps = map[string]bool{
 	"==": true, "!=": true, "<": true, "<=": true, ">": true, ">=": true,
 }
 
-func leadingFieldConjuncts(body *Node, binder string) []JoinConjunct {
+func leadingFieldConjuncts(body *Node, binder string) []joinConjunct {
 	var conjuncts []*Node
 	curr := body
 	for curr != nil && curr.T == NodeBin && curr.S == "AND" {
@@ -125,9 +125,9 @@ func leadingFieldConjuncts(body *Node, binder string) []JoinConjunct {
 			n.R != nil && n.R.T == NodeText
 	}
 
-	var out []JoinConjunct
+	var out []joinConjunct
 	for _, c := range conjuncts {
-		entry := JoinConjunct{
+		entry := joinConjunct{
 			Node:   c,
 			Fields: make(map[string]bool),
 			Binder: binder,
@@ -179,7 +179,7 @@ func leadingFieldConjuncts(body *Node, binder string) []JoinConjunct {
 					entry.HasTotal = false
 					break
 				}
-				entry.Total = append(entry.Total, JoinTotalReq{Name: operand.R.S, Numeric: numeric})
+				entry.Total = append(entry.Total, joinTotalReq{Name: operand.R.S, Numeric: numeric})
 			}
 			if !entry.HasTotal {
 				entry.Total = nil
@@ -202,7 +202,7 @@ func joinReadSelf(node *Node, names map[string]bool, binder string) *Node {
 		return v
 	}
 	cp := copyNode(node)
-	cp.MathPlan = nil
+	cp.mathPlan = nil
 	cp.L = joinReadSelf(node.L, names, binder)
 	cp.R = joinReadSelf(node.R, names, binder)
 	for i, item := range node.Items {
@@ -224,7 +224,7 @@ func joinRowKeys(val *Value, bound []string) map[string]bool {
 					continue
 				}
 				shapes[item.shape] = true
-				for _, k := range item.shape.Keys {
+				for _, k := range item.shape.keys {
 					keys[utf8.AsciiUpper(k)] = true
 				}
 			} else {
@@ -248,8 +248,8 @@ func firstCollectionItem(val *Value) *Value {
 	return nil
 }
 
-func newJoinSideFacts(val *Value, keys map[string]bool, nullable bool, bound []string) *JoinSideFacts {
-	side := &JoinSideFacts{
+func newJoinSideFacts(val *Value, keys map[string]bool, nullable bool, bound []string) *joinSideFacts {
+	side := &joinSideFacts{
 		Val:      val,
 		Keys:     keys,
 		Nullable: nullable,
@@ -273,7 +273,7 @@ func newJoinSideFacts(val *Value, keys map[string]bool, nullable bool, bound []s
 	return side
 }
 
-func joinSideTotal(side *JoinSideFacts, name string, numeric bool) bool {
+func joinSideTotal(side *joinSideFacts, name string, numeric bool) bool {
 	if !side.First[utf8.AsciiUpper(name)] || side.Nullable {
 		return false
 	}
@@ -288,7 +288,7 @@ func joinSideTotal(side *JoinSideFacts, name string, numeric bool) bool {
 	vals := side.Val.Values()
 	for _, row := range vals {
 		v := row.Get(name)
-		if v == nil || v.Kind != KindText {
+		if v == nil || v.kind != KindText {
 			ok = false
 			break
 		}
@@ -303,7 +303,7 @@ func joinSideTotal(side *JoinSideFacts, name string, numeric bool) bool {
 	return ok
 }
 
-func joinSidePresent(side *JoinSideFacts, name string) bool {
+func joinSidePresent(side *joinSideFacts, name string) bool {
 	id := "P:" + name
 	if v, ok := side.Facts[id]; ok {
 		return v
@@ -320,7 +320,7 @@ func joinSidePresent(side *JoinSideFacts, name string) bool {
 	return ok
 }
 
-func joinSideAny(side *JoinSideFacts, name string) bool {
+func joinSideAny(side *joinSideFacts, name string) bool {
 	if !side.First[utf8.AsciiUpper(name)] || side.Nullable {
 		return false
 	}
@@ -342,10 +342,10 @@ func joinSideAny(side *JoinSideFacts, name string) bool {
 }
 
 func isNestedRecord(v *Value) bool {
-	return v.Kind == KindNone && !v.isList && len(v.storage) > 0
+	return v.kind == KindNone && !v.isList && len(v.storage) > 0
 }
 
-func joinKeysSafe(obligations []JoinObligation, left, right *JoinSideFacts, above []*JoinSideFacts) bool {
+func joinKeysSafe(obligations []joinObligation, left, right *joinSideFacts, above []*joinSideFacts) bool {
 	for _, ob := range obligations {
 		nBelow := 0
 		if len(above) >= ob.Outer {
@@ -365,7 +365,7 @@ func joinKeysSafe(obligations []JoinObligation, left, right *JoinSideFacts, abov
 				}
 				continue
 			}
-			var side *JoinSideFacts
+			var side *joinSideFacts
 			if right.Names[member] {
 				side = right
 			}
@@ -396,9 +396,9 @@ func joinKeysSafe(obligations []JoinObligation, left, right *JoinSideFacts, abov
 		}
 		if obj.T == NodeVar && ob.RowNames[obj.S] {
 			upper := utf8.AsciiUpper(field)
-			var owner *JoinSideFacts
+			var owner *joinSideFacts
 			owners := 0
-			consider := func(s *JoinSideFacts) {
+			consider := func(s *joinSideFacts) {
 				if s != nil && s.Keys[upper] {
 					owner = s
 					owners++
@@ -419,12 +419,12 @@ func joinKeysSafe(obligations []JoinObligation, left, right *JoinSideFacts, abov
 	return true
 }
 
-func joinTotality(reqs []JoinTotalReq, left, right *JoinSideFacts, above []*JoinSideFacts) bool {
+func joinTotality(reqs []joinTotalReq, left, right *joinSideFacts, above []*joinSideFacts) bool {
 	for _, req := range reqs {
 		key := utf8.AsciiUpper(req.Name)
-		var owner *JoinSideFacts
+		var owner *joinSideFacts
 		owners := 0
-		consider := func(s *JoinSideFacts) {
+		consider := func(s *joinSideFacts) {
 			if s != nil && s.Keys[key] {
 				owner = s
 				owners++
@@ -443,44 +443,44 @@ func joinTotality(reqs []JoinTotalReq, left, right *JoinSideFacts, above []*Join
 }
 
 func joinStageWalk(
-	stages []JoinStage,
-	ownedHere func(fields map[string]bool, stage JoinStage) bool,
-	totalHere func(reqs []JoinTotalReq, stage JoinStage) bool,
-	rightHere func(fields map[string]bool, stage JoinStage) bool,
-) ([]JoinApplied, *StageStop) {
-	var applied []JoinApplied
+	stages []joinStage,
+	ownedHere func(fields map[string]bool, stage joinStage) bool,
+	totalHere func(reqs []joinTotalReq, stage joinStage) bool,
+	rightHere func(fields map[string]bool, stage joinStage) bool,
+) ([]joinApplied, *stageStop) {
+	var applied []joinApplied
 	for si := range stages {
 		stage := &stages[si]
 		for ci := range stage.Conjuncts {
 			c := &stage.Conjuncts[ci]
 			if c.FieldOnly && ownedHere(c.Fields, *stage) {
-				applied = append(applied, JoinApplied{Conjunct: c, Stage: stage, Right: false})
+				applied = append(applied, joinApplied{Conjunct: c, Stage: stage, Right: false})
 				continue
 			}
 			if c.FieldOnly && rightHere(c.Fields, *stage) {
-				applied = append(applied, JoinApplied{Conjunct: c, Stage: stage, Right: true})
+				applied = append(applied, joinApplied{Conjunct: c, Stage: stage, Right: true})
 				continue
 			}
 			if c.HasTotal && totalHere(c.Total, *stage) {
 				continue
 			}
-			return applied, &StageStop{Stage: si, Conjunct: ci}
+			return applied, &stageStop{Stage: si, Conjunct: ci}
 		}
 	}
 	return applied, nil
 }
 
-func joinTruncateStages(stages []JoinStage, stop *StageStop) []JoinStage {
+func joinTruncateStages(stages []joinStage, stop *stageStop) []joinStage {
 	if stop == nil {
 		return stages
 	}
-	out := make([]JoinStage, stop.Stage)
+	out := make([]joinStage, stop.Stage)
 	copy(out, stages[:stop.Stage])
 	if stop.Conjunct > 0 {
-		partial := JoinStage{
+		partial := joinStage{
 			Binder:    stages[stop.Stage].Binder,
 			Above:     stages[stop.Stage].Above,
-			Conjuncts: make([]JoinConjunct, stop.Conjunct),
+			Conjuncts: make([]joinConjunct, stop.Conjunct),
 		}
 		copy(partial.Conjuncts, stages[stop.Stage].Conjuncts[:stop.Conjunct])
 		out = append(out, partial)

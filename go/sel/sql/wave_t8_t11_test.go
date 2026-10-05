@@ -370,16 +370,16 @@ func TestBindingNamesAreComparedUpperCased(t *testing.T) {
 
 func TestColumnBindingsFoldCollationAndPrefilter(t *testing.T) {
 	b := ColumnBinding("c", "t", KindText, false, false, false, "binary", "", false)
-	if !b.Column.Exact {
+	if !b.column.Exact {
 		t.Error(`collation="binary" did not make the column exact`)
 	}
 	b = ColumnBinding("c", "t", KindText, false, false, false, "sargable", "", false)
-	if !b.Column.Sargable {
+	if !b.column.Sargable {
 		t.Error(`collation="sargable" did not make the column sargable`)
 	}
 	b = ColumnBinding("c", "t", KindText, false, false, false, "", "", true)
-	if b.Column.Prefilter != "separate" {
-		t.Errorf("splitSargable did not imply the separate prefilter: %q", b.Column.Prefilter)
+	if b.column.Prefilter != "separate" {
+		t.Errorf("splitSargable did not imply the separate prefilter: %q", b.column.Prefilter)
 	}
 	if !refuses(func() { ColumnBinding("c", "t", KindText, false, false, false, "bogus", "", false) }) {
 		t.Error("an unknown collation was accepted")

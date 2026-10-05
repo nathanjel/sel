@@ -31,8 +31,8 @@ var pipelineOps = map[string]bool{
 	"LINK_LEFT":   true,
 }
 
-// IsPipelineOp reports whether a function name is one of the pipeline operators.
-func IsPipelineOp(name string) bool {
+// isPipelineOp reports whether a function name is one of the pipeline operators.
+func isPipelineOp(name string) bool {
 	return pipelineOps[name]
 }
 
@@ -52,7 +52,7 @@ func copyNode(n *Node) *Node {
 func UnwindPipeline(root *Node) (*Node, []*Node) {
 	var steps []*Node
 	curr := root
-	for curr != nil && curr.T == NodeCall && IsPipelineOp(curr.S) && len(curr.Items) > 0 {
+	for curr != nil && curr.T == NodeCall && isPipelineOp(curr.S) && len(curr.Items) > 0 {
 		steps = append(steps, curr)
 		curr = curr.Items[0]
 	}
@@ -84,7 +84,7 @@ func optBool(val bool, pos Pos) *Node {
 func optNum(val string, dec *decimal.Dec, pos Pos) *Node {
 	n := NewNode(NodeNum, pos)
 	n.S = val
-	n.Dec = dec
+	n.dec = dec
 	return n
 }
 
@@ -119,7 +119,7 @@ func optFold(node *Node) *Node {
 			return optBool(!node.L.B, node.Pos)
 		}
 		if node.S == "NEG" && node.L.T == NodeNum {
-			dec := node.L.Dec
+			dec := node.L.dec
 			if dec == nil {
 				dec = tryDec(func() *decimal.Dec {
 					return decimal.Parse(node.L.S, node.Pos, fail)
@@ -153,13 +153,13 @@ func optFold(node *Node) *Node {
 		if left.T == NodeNum && right.T == NodeNum {
 			switch node.S {
 			case "+", "-", "*", "/", "%":
-				decL := left.Dec
+				decL := left.dec
 				if decL == nil {
 					decL = tryDec(func() *decimal.Dec {
 						return decimal.Parse(left.S, node.Pos, fail)
 					})
 				}
-				decR := right.Dec
+				decR := right.dec
 				if decR == nil {
 					decR = tryDec(func() *decimal.Dec {
 						return decimal.Parse(right.S, node.Pos, fail)
@@ -187,13 +187,13 @@ func optFold(node *Node) *Node {
 					}
 				}
 			case "==", "!=", "<", "<=", ">", ">=":
-				decL := left.Dec
+				decL := left.dec
 				if decL == nil {
 					decL = tryDec(func() *decimal.Dec {
 						return decimal.Parse(left.S, node.Pos, fail)
 					})
 				}
-				decR := right.Dec
+				decR := right.dec
 				if decR == nil {
 					decR = tryDec(func() *decimal.Dec {
 						return decimal.Parse(right.S, node.Pos, fail)
@@ -495,7 +495,7 @@ func optNumericLiteral(node *Node) (int64, bool) {
 	if node == nil || node.T != NodeNum {
 		return 0, false
 	}
-	dec := node.Dec
+	dec := node.dec
 	if dec == nil {
 		dec = tryDec(func() *decimal.Dec {
 			return decimal.Parse(node.S, node.Pos, fail)
@@ -522,7 +522,7 @@ func optRenameVar(node *Node, oldName string, newName string) *Node {
 	cp := copyNode(node)
 	// A compiled plan names the old binder in its loads; the copy is renamed, so
 	// the plan is stale and the copy is evaluated as a tree (or planned again).
-	cp.MathPlan = nil
+	cp.mathPlan = nil
 	if cp.T == NodeVar && upperName(cp.S) == upperName(oldName) {
 		cp.S = newName
 	}
@@ -675,7 +675,7 @@ func optLogicalSteps(source *Node, current []*Node, logical bool) []*Node {
 				fused := copyNode(first)
 				fused.Pos = second.Pos
 				fused.S = topName
-				fused.Spec = Lookup(topName)
+				fused.Spec = lookup(topName)
 				fused.Items = append(fused.Items, second.Items[1])
 				next = append(next, fused)
 				i += 2
@@ -853,7 +853,7 @@ func optInmemorySteps(source *Node, steps []*Node) []*Node {
 			if i+1 < len(steps) {
 				nextStep = steps[i+1]
 			}
-			body.KeysUnobserved = optKeysRenumberedBy(nextStep)
+			body.keysUnobserved = optKeysRenumberedBy(nextStep)
 			cp.Items[len(cp.Items)-1] = body
 		}
 		rewritten[i] = cp
@@ -887,12 +887,12 @@ type emitResult struct {
 	raw bool
 }
 
-func compileMathPlan(root *Node) *MathPlan {
+func compileMathPlan(root *Node) *mathPlan {
 	if !isMathOp(root) {
 		return nil
 	}
 
-	plan := &MathPlan{}
+	plan := &mathPlan{}
 	var slotCount int
 	// Slots are 16-bit: a program that needs more (a 33,000-argument MAX) is
 	// not planned and runs the ordinary way, rather than wrapping around and
@@ -913,19 +913,19 @@ func compileMathPlan(root *Node) *MathPlan {
 		if !r.raw {
 			return r
 		}
-		plan.Steps = append(plan.Steps, MathStep{Op: "COERCE", Dst: r.slot, Src1: r.slot, Pos: pos})
+		plan.Steps = append(plan.Steps, mathStep{Op: "COERCE", Dst: r.slot, Src1: r.slot, Pos: pos})
 		return &emitResult{slot: r.slot}
 	}
 
 	var emit func(node *Node, depth int) *emitResult
 	emit = func(node *Node, depth int) *emitResult {
-		if node == nil || depth > MAX_DEPTH {
+		if node == nil || depth > maxDepth {
 			return nil
 		}
 
 		if node.T == NodeVar {
 			slot := allocSlot()
-			plan.Steps = append(plan.Steps, MathStep{
+			plan.Steps = append(plan.Steps, mathStep{
 				Op:   "LOAD_VAR",
 				Dst:  slot,
 				Name: node.S,
@@ -935,7 +935,7 @@ func compileMathPlan(root *Node) *MathPlan {
 		}
 
 		if node.T == NodeNum {
-			dec := node.Dec
+			dec := node.dec
 			if dec == nil {
 				dec = tryDec(func() *decimal.Dec {
 					return decimal.Parse(node.S, node.Pos, fail)
@@ -945,7 +945,7 @@ func compileMathPlan(root *Node) *MathPlan {
 				}
 			}
 			slot := allocSlot()
-			plan.Steps = append(plan.Steps, MathStep{
+			plan.Steps = append(plan.Steps, mathStep{
 				Op:       "LOAD_CONST",
 				Dst:      slot,
 				ConstVal: dec,
@@ -1001,7 +1001,7 @@ func compileMathPlan(root *Node) *MathPlan {
 			}
 
 			dst := allocSlot()
-			plan.Steps = append(plan.Steps, MathStep{
+			plan.Steps = append(plan.Steps, mathStep{
 				Op:   mathops.Operators[op],
 				Dst:  dst,
 				Src1: resL.slot,
@@ -1020,7 +1020,7 @@ func compileMathPlan(root *Node) *MathPlan {
 				return nil
 			}
 			dst := allocSlot()
-			plan.Steps = append(plan.Steps, MathStep{
+			plan.Steps = append(plan.Steps, mathStep{
 				Op:   mathops.Prefix[node.S],
 				Dst:  dst,
 				Src1: resX.slot,
@@ -1041,7 +1041,7 @@ func compileMathPlan(root *Node) *MathPlan {
 					return nil
 				}
 				dst := allocSlot()
-				plan.Steps = append(plan.Steps, MathStep{
+				plan.Steps = append(plan.Steps, mathStep{
 					Op:   bSpec.Op,
 					Dst:  dst,
 					Src1: resArg.slot,
@@ -1062,7 +1062,7 @@ func compileMathPlan(root *Node) *MathPlan {
 					return nil
 				}
 				dst := allocSlot()
-				step := MathStep{
+				step := mathStep{
 					Op:   bSpec.Op,
 					Dst:  dst,
 					Src1: res0.slot,
@@ -1095,7 +1095,7 @@ func compileMathPlan(root *Node) *MathPlan {
 				for k := 1; k < len(args); k++ {
 					resNext := resArgs[k]
 					dst := allocSlot()
-					plan.Steps = append(plan.Steps, MathStep{
+					plan.Steps = append(plan.Steps, mathStep{
 						Op:   bSpec.Op,
 						Dst:  dst,
 						Src1: currSlot,
@@ -1116,7 +1116,7 @@ func compileMathPlan(root *Node) *MathPlan {
 		}
 
 		slot := allocSlot()
-		plan.Steps = append(plan.Steps, MathStep{
+		plan.Steps = append(plan.Steps, mathStep{
 			Op:       "LOAD_LEAF",
 			Dst:      slot,
 			LeafNode: node,
@@ -1136,10 +1136,10 @@ func compileMathPlan(root *Node) *MathPlan {
 }
 
 func optTree(node *Node, physical bool, depth int, fold bool, inMath bool) *Node {
-	if node == nil || depth > MAX_DEPTH {
+	if node == nil || depth > maxDepth {
 		return node
 	}
-	if node.T == NodeCall && IsPipelineOp(node.S) && len(node.Items) > 0 {
+	if node.T == NodeCall && isPipelineOp(node.S) && len(node.Items) > 0 {
 		source, steps := UnwindPipeline(node)
 		optimizedSource := optTree(source, physical, depth+1, fold, false)
 		optimizedSteps := make([]*Node, len(steps))
@@ -1182,7 +1182,7 @@ func optTree(node *Node, physical bool, depth int, fold bool, inMath bool) *Node
 		plan := compileMathPlan(folded)
 		if plan != nil {
 			cpPlan := copyNode(folded)
-			cpPlan.MathPlan = plan
+			cpPlan.mathPlan = plan
 			return cpPlan
 		}
 	}
@@ -1190,7 +1190,7 @@ func optTree(node *Node, physical bool, depth int, fold bool, inMath bool) *Node
 }
 
 func optExceedsDepth(node *Node, depth int) bool {
-	if depth > MAX_DEPTH {
+	if depth > maxDepth {
 		return true
 	}
 	next := depth + 1
@@ -1220,12 +1220,8 @@ func OptimizeAstLogical(ast *Node) *Node {
 	return optRoot(ast, false)
 }
 
-// OptimizeAstInMemory runs physical in-memory optimizations (compiles math plan and marks keysUnobserved).
+// OptimizeAstInMemory applies the logical optimizations and the in-memory physical
+// ones (math plans, unobserved keys): the tree Program.Run evaluates.
 func OptimizeAstInMemory(ast *Node) *Node {
 	return optRoot(ast, true)
-}
-
-// OptimizeAST applies logical and in-memory physical optimizations.
-func OptimizeAST(ast *Node) *Node {
-	return OptimizeAstInMemory(ast)
 }

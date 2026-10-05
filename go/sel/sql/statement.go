@@ -22,18 +22,18 @@ func isPipelineOp(name string) bool {
 	return pipelineOpsSet[name]
 }
 
-type JoinedRowField struct {
+type joinedRowField struct {
 	Name  string
-	Spec  ColumnSpec
+	Spec  columnSpec
 	Table string
 }
 
-func joinedRowFields(plan *RelationalPlan) []JoinedRowField {
-	jr := BuildJoinRows(plan)
-	var out []JoinedRowField
+func joinedRowFields(plan *relationalPlan) []joinedRowField {
+	jr := buildJoinRows(plan)
+	var out []joinedRowField
 	for _, kv := range jr.Row.Promoted {
 		if !kv.Val.Optional {
-			out = append(out, JoinedRowField{
+			out = append(out, joinedRowField{
 				Name:  kv.Key,
 				Spec:  kv.Val.Spec,
 				Table: kv.Val.Table,
@@ -43,17 +43,17 @@ func joinedRowFields(plan *RelationalPlan) []JoinedRowField {
 	return out
 }
 
-func recordFields(node *SNode) []Pair[string, *SNode] {
+func recordFields(node *sNode) []pair[string, *sNode] {
 	args := node.Kids
 	if len(args)%2 != 0 {
-		Refuse("E_ARITY", "RECORD takes an even number of arguments", node.Pos)
+		refuse("E_ARITY", "RECORD takes an even number of arguments", node.Pos)
 	}
-	var fields []Pair[string, *SNode]
+	var fields []pair[string, *sNode]
 	for i := 0; i < len(args); i += 2 {
-		if args[i].T != SNodeText {
-			Refuse("E_BAD_ARG", "RECORD field names must be string literals", args[i].Pos)
+		if args[i].T != sNodeText {
+			refuse("E_BAD_ARG", "RECORD field names must be string literals", args[i].Pos)
 		}
-		fields = append(fields, Pair[string, *SNode]{Key: args[i].Str, Val: args[i+1]})
+		fields = append(fields, pair[string, *sNode]{Key: args[i].Str, Val: args[i+1]})
 	}
 	return fields
 }
@@ -61,12 +61,12 @@ func recordFields(node *SNode) []Pair[string, *SNode] {
 // checkAlias holds a name that came from a SEL text literal (a RECORD key, a
 // SELECT_COLS column) to what a binding's own names already meet: not empty, no
 // NUL. The SQL layer cannot spell either, so it says so at the literal.
-func (t *Translator) checkAlias(name string, pos Pos) {
+func (t *translator) checkAlias(name string, pos Pos) {
 	if name == "" {
-		Refuse("E_SQL_UNSUPPORTED", "an empty name cannot be a SQL identifier", pos)
+		refuse("E_SQL_UNSUPPORTED", "an empty name cannot be a SQL identifier", pos)
 	}
 	if strings.ContainsRune(name, 0) {
-		Refuse("E_SQL_UNSUPPORTED", "a name containing a NUL cannot be a SQL identifier; no dialect can quote it", pos)
+		refuse("E_SQL_UNSUPPORTED", "a name containing a NUL cannot be a SQL identifier; no dialect can quote it", pos)
 	}
 }
 
@@ -74,7 +74,7 @@ func (t *Translator) checkAlias(name string, pos Pos) {
 // and on PostgreSQL to its 63-byte identifier limit: the server truncates a
 // longer alias, so two keys sharing their first 63 bytes would name one column
 // and SEL's two record keys would become one.
-func (t *Translator) recordFields(node *SNode) []Pair[string, *SNode] {
+func (t *translator) recordFields(node *sNode) []pair[string, *sNode] {
 	fields := recordFields(node)
 	pg := false
 	for _, d := range Chain(t.dialect) {
@@ -92,7 +92,7 @@ func (t *Translator) recordFields(node *SNode) []Pair[string, *SNode] {
 				short = short[:63]
 			}
 			if prev, dup := seen[short]; dup && prev != f.Key {
-				Refuse("E_SQL_UNSUPPORTED",
+				refuse("E_SQL_UNSUPPORTED",
 					fmt.Sprintf("the RECORD key %q collides with an earlier key after PostgreSQL truncates identifiers to 63 bytes", f.Key), pos)
 			}
 			seen[short] = f.Key
@@ -103,7 +103,7 @@ func (t *Translator) recordFields(node *SNode) []Pair[string, *SNode] {
 
 // hasSort says whether the rows the plan reads were ordered by a SEL sort, in
 // this statement or in a derived table under it.
-func hasSort(plan *RelationalPlan) bool {
+func hasSort(plan *relationalPlan) bool {
 	for p := plan; p != nil; p = p.SourceSubquery {
 		if len(p.OrderBy) > 0 {
 			return true
@@ -119,36 +119,36 @@ func hasSort(plan *RelationalPlan) bool {
 // surviving an outer clause is not a translation of a stable sort. The planner
 // keeps the sort in SQL and the step in memory, where the order is exact
 // (docs/internals/sql-translation.md 12.1, "Order").
-func (t *Translator) requireOrderSurvives(plan *RelationalPlan, step string, pos Pos) {
+func (t *translator) requireOrderSurvives(plan *relationalPlan, step string, pos Pos) {
 	if plan.OrderLostByJoin && step != "BUCKET" {
-		Refuse("E_SQL_SHAPE",
+		refuse("E_SQL_SHAPE",
 			fmt.Sprintf("%s after a join would cut rows in an order the join does not keep from the sort before it", step), pos)
 	}
 	if step == "BUCKET" && (len(plan.OrderBy) > 0 || plan.OrderDropped) {
-		Refuse("E_SQL_SHAPE",
+		refuse("E_SQL_SHAPE",
 			fmt.Sprintf("%s after a sort would depend on a database keeping the sort's order through it, which SQL does not promise", step), pos)
 	}
 }
 
-func (t *Translator) planNeedsWrapBeforeMap(plan *RelationalPlan) bool {
+func (t *translator) planNeedsWrapBeforeMap(plan *relationalPlan) bool {
 	return plan.Projections != nil || plan.SelectCols != nil ||
 		plan.GroupBy != nil || plan.Distinct || plan.Limit != nil || plan.Offset != nil
 }
 
-func (t *Translator) planHasRowsAbove(plan *RelationalPlan) bool {
+func (t *translator) planHasRowsAbove(plan *relationalPlan) bool {
 	return plan.Projections != nil || plan.SelectCols != nil ||
 		plan.GroupBy != nil || plan.Distinct || plan.Limit != nil || plan.Offset != nil ||
 		len(plan.OrderBy) > 0
 }
 
-func (t *Translator) outputFieldNames(plan *RelationalPlan) []string {
+func (t *translator) outputFieldNames(plan *relationalPlan) []string {
 	var names []string
 	if plan.Projections != nil {
 		for i, projection := range plan.Projections {
 			if projection.Alias != nil {
 				names = append(names, *projection.Alias)
-			} else if projection.Node != nil && projection.Node.T == SNodeIndex &&
-				projection.Node.Idx() != nil && projection.Node.Idx().T == SNodeText {
+			} else if projection.Node != nil && projection.Node.T == sNodeIndex &&
+				projection.Node.Idx() != nil && projection.Node.Idx().T == sNodeText {
 				names = append(names, projection.Node.Idx().Str)
 			} else {
 				names = append(names, fmt.Sprintf("expr%d", i+1))
@@ -161,7 +161,7 @@ func (t *Translator) outputFieldNames(plan *RelationalPlan) []string {
 			names = append(names, f.Name)
 		}
 	} else if plan.SourceRelation != nil {
-		names = append(names, relationFieldNames(&plan.SourceRelation.Relation)...)
+		names = append(names, relationFieldNames(&plan.SourceRelation.relation)...)
 	}
 	var unique []string
 	seen := make(map[string]bool)
@@ -175,9 +175,9 @@ func (t *Translator) outputFieldNames(plan *RelationalPlan) []string {
 	return unique
 }
 
-func (t *Translator) outputFieldType(plan *RelationalPlan, name string) SqlKind {
+func (t *translator) outputFieldType(plan *relationalPlan, name string) SqlKind {
 	if plan.Projections != nil {
-		var projection *RelationalProjection
+		var projection *relationalProjection
 		for i := range plan.Projections {
 			p := &plan.Projections[i]
 			if p.Alias != nil && *p.Alias == name {
@@ -185,23 +185,23 @@ func (t *Translator) outputFieldType(plan *RelationalPlan, name string) SqlKind 
 				break
 			}
 		}
-		var n *SNode
+		var n *sNode
 		if projection != nil {
 			n = projection.Node
 		}
-		if n == nil || n.T != SNodeIndex || n.Obj() == nil || n.Obj().T != SNodeVar ||
-			n.Obj().Str != projection.Binder || n.Idx() == nil || n.Idx().T != SNodeText {
+		if n == nil || n.T != sNodeIndex || n.Obj() == nil || n.Obj().T != sNodeVar ||
+			n.Obj().Str != projection.Binder || n.Idx() == nil || n.Idx().T != sNodeText {
 			return KindUnknown
 		}
 		name = n.Idx().Str
 	}
-	var match *ColumnSpec
+	var match *columnSpec
 	if plan.SourceRelation != nil {
-		match = plan.SourceRelation.Relation.Field(utf8.AsciiUpper(name))
+		match = plan.SourceRelation.relation.Field(utf8.AsciiUpper(name))
 	}
 	for _, join := range plan.Joins {
 		if join.SourceRelation != nil {
-			if field := join.SourceRelation.Relation.Field(utf8.AsciiUpper(name)); field != nil {
+			if field := join.SourceRelation.relation.Field(utf8.AsciiUpper(name)); field != nil {
 				if match != nil {
 					return KindUnknown
 				}
@@ -215,11 +215,11 @@ func (t *Translator) outputFieldType(plan *RelationalPlan, name string) SqlKind 
 	return KindUnknown
 }
 
-func (t *Translator) outputCanonKind(plan *RelationalPlan, name string) *SqlKind {
+func (t *translator) outputCanonKind(plan *relationalPlan, name string) *SqlKind {
 	if plan.Projections == nil {
 		return nil
 	}
-	var projection *RelationalProjection
+	var projection *relationalProjection
 	for i := range plan.Projections {
 		p := &plan.Projections[i]
 		if p.Alias != nil && *p.Alias == name {
@@ -227,11 +227,11 @@ func (t *Translator) outputCanonKind(plan *RelationalPlan, name string) *SqlKind
 			break
 		}
 	}
-	var n *SNode
+	var n *sNode
 	if projection != nil {
 		n = projection.Node
 	}
-	if n == nil || n.T != SNodeCall || n.Str != "CANON" {
+	if n == nil || n.T != sNodeCall || n.Str != "CANON" {
 		return nil
 	}
 	entry := Entry(t.dialect, "funcs", "CANON")
@@ -242,7 +242,7 @@ func (t *Translator) outputCanonKind(plan *RelationalPlan, name string) *SqlKind
 	return nil
 }
 
-func (t *Translator) ensureDerived(plan *RelationalPlan, needed bool) *RelationalPlan {
+func (t *translator) ensureDerived(plan *relationalPlan, needed bool) *relationalPlan {
 	if !needed {
 		return plan
 	}
@@ -250,7 +250,7 @@ func (t *Translator) ensureDerived(plan *RelationalPlan, needed bool) *Relationa
 	alias := fmt.Sprintf("_sub%d", t.subqueryCounter)
 	inner := plan
 
-	derived := NewRelationalPlan()
+	derived := newRelationalPlan()
 	derived.SourceName = alias
 	derived.SourceTable = ""
 	derived.SourceAlias = alias
@@ -263,21 +263,21 @@ func (t *Translator) ensureDerived(plan *RelationalPlan, needed bool) *Relationa
 		rootName = inner.RootName
 	}
 	derived.RootName = rootName
-	if inner.Bucket != BucketNone {
-		derived.Bucket = BucketSealed
+	if inner.Bucket != bucketNone {
+		derived.Bucket = bucketSealed
 	}
 
 	var fieldEntries []FieldEntry
 	subquery := derived.SourceSubquery
 	for _, name := range t.outputFieldNames(subquery) {
-		var sourceField *ColumnSpec
+		var sourceField *columnSpec
 		if subquery.Projections == nil && subquery.SelectCols == nil {
 			if subquery.SourceRelation != nil {
-				sourceField = subquery.SourceRelation.Relation.Field(utf8.AsciiUpper(name))
+				sourceField = subquery.SourceRelation.relation.Field(utf8.AsciiUpper(name))
 			}
 			for i := 0; sourceField == nil && i < len(subquery.Joins); i++ {
 				if subquery.Joins[i].SourceRelation != nil {
-					sourceField = subquery.Joins[i].SourceRelation.Relation.Field(utf8.AsciiUpper(name))
+					sourceField = subquery.Joins[i].SourceRelation.relation.Field(utf8.AsciiUpper(name))
 				}
 			}
 		}
@@ -292,9 +292,9 @@ func (t *Translator) ensureDerived(plan *RelationalPlan, needed bool) *Relationa
 			canonical = true
 		}
 		b := ColumnBinding(colName, alias, colType, false, false, false, "", "", false)
-		b.Column.Canonical = canonical
+		b.column.Canonical = canonical
 		if sourceField != nil && sourceField.IsRaw {
-			b.Column.Unavailable = fmt.Sprintf("%s is a raw expression of the relation, and the derived table built by an earlier step does not carry it", name)
+			b.column.Unavailable = fmt.Sprintf("%s is a raw expression of the relation, and the derived table built by an earlier step does not carry it", name)
 		}
 		fieldEntries = append(fieldEntries, FieldEntry{Name: name, Binding: b})
 	}
@@ -303,22 +303,22 @@ func (t *Translator) ensureDerived(plan *RelationalPlan, needed bool) *Relationa
 	return derived
 }
 
-func (t *Translator) bucketProjection(plan *RelationalPlan, binder string, aggNode *SNode) {
+func (t *translator) bucketProjection(plan *relationalPlan, binder string, aggNode *sNode) {
 	if aggNode != nil {
-		if aggNode.T == SNodeCall && aggNode.Str == "RECORD" {
-			var projections []RelationalProjection
+		if aggNode.T == sNodeCall && aggNode.Str == "RECORD" {
+			var projections []relationalProjection
 			for _, kv := range t.recordFields(aggNode) {
 				actualNode := kv.Val
 				nodeBinder := binder
-				var groupKey *RelationalGroup
-				if kv.Val.T == SNodeVar && kv.Val.Str == "_K" && plan.GroupBy != nil && len(plan.GroupBy) == 1 {
+				var groupKey *relationalGroup
+				if kv.Val.T == sNodeVar && kv.Val.Str == "_K" && plan.GroupBy != nil && len(plan.GroupBy) == 1 {
 					actualNode = plan.GroupBy[0].Node
 					nodeBinder = plan.GroupBy[0].Binder
 					gk := plan.GroupBy[0]
 					groupKey = &gk
 				}
 				aliasCopy := kv.Key
-				projections = append(projections, RelationalProjection{
+				projections = append(projections, relationalProjection{
 					Alias:    &aliasCopy,
 					Binder:   nodeBinder,
 					Node:     actualNode,
@@ -327,7 +327,7 @@ func (t *Translator) bucketProjection(plan *RelationalPlan, binder string, aggNo
 			}
 			plan.Projections = projections
 		} else {
-			plan.Projections = []RelationalProjection{
+			plan.Projections = []relationalProjection{
 				{
 					Alias:  nil,
 					Binder: binder,
@@ -336,10 +336,10 @@ func (t *Translator) bucketProjection(plan *RelationalPlan, binder string, aggNo
 			}
 		}
 	} else {
-		var projections []RelationalProjection
+		var projections []relationalProjection
 		for i := range plan.GroupBy {
 			gb := plan.GroupBy[i]
-			projections = append(projections, RelationalProjection{
+			projections = append(projections, relationalProjection{
 				Alias:    gb.Alias,
 				Binder:   gb.Binder,
 				Node:     gb.Node,
@@ -351,19 +351,19 @@ func (t *Translator) bucketProjection(plan *RelationalPlan, binder string, aggNo
 	plan.SelectCols = nil
 }
 
-func (t *Translator) AnalyzePipeline(ast *SNode) *RelationalPlan {
-	if IdentityLossBeforeGrouping(ast, nil) {
-		Refuse("E_SQL_SHAPE", "grouping depends on a computed projection without identity preservation", ast.Pos)
+func (t *translator) AnalyzePipeline(ast *sNode) *relationalPlan {
+	if identityLossBeforeGrouping(ast, nil) {
+		refuse("E_SQL_SHAPE", "grouping depends on a computed projection without identity preservation", ast.Pos)
 	}
-	var steps []*SNode
+	var steps []*sNode
 	curr := ast
 
-	for curr != nil && curr.T == SNodeCall && isPipelineOp(curr.Str) && len(curr.Kids) > 0 {
+	for curr != nil && curr.T == sNodeCall && isPipelineOp(curr.Str) && len(curr.Kids) > 0 {
 		steps = append(steps, curr)
 		curr = curr.Kids[0]
 	}
 
-	if curr == nil || curr.T != SNodeVar {
+	if curr == nil || curr.T != sNodeVar {
 		return nil
 	}
 
@@ -372,23 +372,23 @@ func (t *Translator) AnalyzePipeline(ast *SNode) *RelationalPlan {
 	}
 
 	b := t.bindings.Get(curr.Str, curr.Pos)
-	if b.Kind != BindingKindRelation {
+	if b.kind != bindingKindRelation {
 		return nil
 	}
 
-	plan := NewRelationalPlan()
+	plan := newRelationalPlan()
 	plan.SourceName = curr.Str
 	root := curr.Str
 	plan.RootName = &root
 	plan.SourceRelation = b
-	plan.SourceFromRaw = b.Relation.From.IsRaw
-	if b.Relation.From.IsRaw {
-		plan.SourceTable = b.Relation.From.Raw
+	plan.SourceFromRaw = b.relation.From.IsRaw
+	if b.relation.From.IsRaw {
+		plan.SourceTable = b.relation.From.Raw
 	} else {
-		plan.SourceTable = b.Relation.From.Table
+		plan.SourceTable = b.relation.From.Table
 	}
-	plan.SourceAlias = b.Relation.Alias
-	plan.Correlate = b.Relation.Correlate
+	plan.SourceAlias = b.relation.Alias
+	plan.Correlate = b.relation.Correlate
 
 	// reverse steps to process from root to tip
 	for i, j := 0, len(steps)-1; i < j; i, j = i+1, j-1 {
@@ -399,15 +399,15 @@ func (t *Translator) AnalyzePipeline(ast *SNode) *RelationalPlan {
 		name := step.Str
 		args := step.Kids
 
-		overGroups := plan.Bucket == BucketOpen
-		if plan.Bucket == BucketOpen && name != "FILTER" && name != "MAP" {
-			plan.Bucket = BucketSealed
+		overGroups := plan.Bucket == bucketOpen
+		if plan.Bucket == bucketOpen && name != "FILTER" && name != "MAP" {
+			plan.Bucket = bucketSealed
 		}
 
 		switch name {
 		case "FILTER":
-			if plan.Bucket == BucketSealed {
-				Refuse("E_SQL_SHAPE",
+			if plan.Bucket == bucketSealed {
+				refuse("E_SQL_SHAPE",
 					"a FILTER over buckets must follow the BUCKET directly: SQL keeps a bucket's members only for the projection that ends the grouping",
 					step.Pos)
 			}
@@ -420,29 +420,29 @@ func (t *Translator) AnalyzePipeline(ast *SNode) *RelationalPlan {
 			plan = t.ensureDerived(plan, needDerived)
 
 			binder := "_"
-			var pred *SNode
+			var pred *sNode
 			if len(args) == 2 {
 				binder = "_"
 				pred = args[1]
 			} else if len(args) == 3 {
-				if !IsBinderName(args[1]) {
-					Refuse("E_SQL_SHAPE", "the binder of FILTER must be a bare name", args[1].Pos)
+				if !isBinderName(args[1]) {
+					refuse("E_SQL_SHAPE", "the binder of FILTER must be a bare name", args[1].Pos)
 				}
 				binder = args[1].Str
 				pred = args[2]
 			} else {
-				Refuse("E_ARITY", "FILTER takes 2 or 3 arguments", step.Pos)
+				refuse("E_ARITY", "FILTER takes 2 or 3 arguments", step.Pos)
 			}
 
 			if plan.GroupBy != nil {
-				plan.Having = append(plan.Having, RelationalFilter{
+				plan.Having = append(plan.Having, relationalFilter{
 					Binder:     binder,
 					Node:       pred,
 					Pos:        step.Pos,
 					OverGroups: overGroups,
 				})
 			} else {
-				plan.Filters = append(plan.Filters, RelationalFilter{
+				plan.Filters = append(plan.Filters, relationalFilter{
 					Binder: binder,
 					Node:   pred,
 					Pos:    step.Pos,
@@ -450,8 +450,8 @@ func (t *Translator) AnalyzePipeline(ast *SNode) *RelationalPlan {
 			}
 
 		case "BUCKET":
-			if plan.Bucket != BucketNone {
-				Refuse("E_SQL_SHAPE",
+			if plan.Bucket != bucketNone {
+				refuse("E_SQL_SHAPE",
 					"a BUCKET over buckets: SQL keeps a bucket's members only for the projection that ends the grouping",
 					step.Pos)
 			}
@@ -460,8 +460,8 @@ func (t *Translator) AnalyzePipeline(ast *SNode) *RelationalPlan {
 			plan = t.ensureDerived(plan, needDerived)
 
 			binder := "_"
-			var keyNode *SNode
-			var aggNode *SNode
+			var keyNode *sNode
+			var aggNode *sNode
 			if len(args) == 2 {
 				binder = "_"
 				keyNode = args[1]
@@ -470,38 +470,38 @@ func (t *Translator) AnalyzePipeline(ast *SNode) *RelationalPlan {
 				keyNode = args[1]
 				aggNode = args[2]
 			} else if len(args) == 4 {
-				if !IsBinderName(args[1]) {
-					Refuse("E_SQL_SHAPE", "the binder of BUCKET must be a bare name", args[1].Pos)
+				if !isBinderName(args[1]) {
+					refuse("E_SQL_SHAPE", "the binder of BUCKET must be a bare name", args[1].Pos)
 				}
 				binder = args[1].Str
 				keyNode = args[2]
 				aggNode = args[3]
 			} else {
-				Refuse("E_ARITY", "BUCKET takes 2 to 4 arguments", step.Pos)
+				refuse("E_ARITY", "BUCKET takes 2 to 4 arguments", step.Pos)
 			}
 
-			severalKeys := (keyNode.T == SNodeCall && (keyNode.Str == "LIST" || keyNode.Str == "RECORD")) ||
-				keyNode.T == SNodeList
+			severalKeys := (keyNode.T == sNodeCall && (keyNode.Str == "LIST" || keyNode.Str == "RECORD")) ||
+				keyNode.T == sNodeList
 			if aggNode == nil && severalKeys {
-				Refuse("E_SQL_SHAPE",
+				refuse("E_SQL_SHAPE",
 					"a bare BUCKET groups by one text or number key, as an index does; BUCKET(src, key, proj) groups by several",
 					keyNode.Pos)
 			}
 
-			var groupBy []RelationalGroup
-			if (keyNode.T == SNodeCall && keyNode.Str == "LIST") || keyNode.T == SNodeList {
+			var groupBy []relationalGroup
+			if (keyNode.T == sNodeCall && keyNode.Str == "LIST") || keyNode.T == sNodeList {
 				for _, kArg := range keyNode.Kids {
-					groupBy = append(groupBy, RelationalGroup{
+					groupBy = append(groupBy, relationalGroup{
 						Alias:  nil,
 						Binder: binder,
 						Node:   kArg,
 						Pos:    kArg.Pos,
 					})
 				}
-			} else if keyNode.T == SNodeCall && keyNode.Str == "RECORD" {
+			} else if keyNode.T == sNodeCall && keyNode.Str == "RECORD" {
 				for _, kv := range t.recordFields(keyNode) {
 					aliasCopy := kv.Key
-					groupBy = append(groupBy, RelationalGroup{
+					groupBy = append(groupBy, relationalGroup{
 						Alias:  &aliasCopy,
 						Binder: binder,
 						Node:   kv.Val,
@@ -509,7 +509,7 @@ func (t *Translator) AnalyzePipeline(ast *SNode) *RelationalPlan {
 					})
 				}
 			} else {
-				groupBy = append(groupBy, RelationalGroup{
+				groupBy = append(groupBy, relationalGroup{
 					Alias:  nil,
 					Binder: binder,
 					Node:   keyNode,
@@ -519,10 +519,10 @@ func (t *Translator) AnalyzePipeline(ast *SNode) *RelationalPlan {
 
 			plan.GroupBy = groupBy
 			if aggNode == nil {
-				plan.Bucket = BucketOpen
+				plan.Bucket = bucketOpen
 				plan.BareKey = true
 			} else {
-				plan.Bucket = BucketNone
+				plan.Bucket = bucketNone
 				plan.BareKey = false
 			}
 			t.bucketProjection(plan, binder, aggNode)
@@ -531,8 +531,8 @@ func (t *Translator) AnalyzePipeline(ast *SNode) *RelationalPlan {
 			needDerived := t.planNeedsWrapBeforeMap(plan)
 			plan = t.ensureDerived(plan, needDerived)
 
-			var items []*SNode
-			if len(args) == 2 && args[1].T == SNodeList {
+			var items []*sNode
+			if len(args) == 2 && args[1].T == sNodeList {
 				items = args[1].Kids
 			} else {
 				items = args[1:]
@@ -540,40 +540,40 @@ func (t *Translator) AnalyzePipeline(ast *SNode) *RelationalPlan {
 
 			var cols []string
 			for _, item := range items {
-				if item.T != SNodeText {
-					Refuse("E_BAD_ARG", "SELECT_COLS column names must be string literals", item.Pos)
+				if item.T != sNodeText {
+					refuse("E_BAD_ARG", "SELECT_COLS column names must be string literals", item.Pos)
 				}
 				col := item.Str
 				t.checkAlias(col, item.Pos)
 				uc := utf8.AsciiUpper(col)
 				matches := 0
-				if plan.SourceRelation != nil && plan.SourceRelation.Relation.Field(uc) != nil {
+				if plan.SourceRelation != nil && plan.SourceRelation.relation.Field(uc) != nil {
 					matches++
 				}
 				for _, join := range plan.Joins {
-					if join.SourceRelation != nil && join.SourceRelation.Relation.Field(uc) != nil {
+					if join.SourceRelation != nil && join.SourceRelation.relation.Field(uc) != nil {
 						matches++
 					}
 				}
 				if matches > 1 {
-					Refuse("E_SQL_SHAPE",
+					refuse("E_SQL_SHAPE",
 						fmt.Sprintf("column '%s' is ambiguous across joined tables; qualify with a table alias", col),
 						item.Pos)
 				}
-				if plan.SourceRelation != nil && len(plan.SourceRelation.Relation.Fields) > 0 && matches == 0 {
+				if plan.SourceRelation != nil && len(plan.SourceRelation.relation.Fields) > 0 && matches == 0 {
 					var declared []string
-					for k := range plan.SourceRelation.Relation.Fields {
+					for k := range plan.SourceRelation.relation.Fields {
 						declared = append(declared, k)
 					}
 					sort.Strings(declared)
-					Refuse("E_SQL_SHAPE",
+					refuse("E_SQL_SHAPE",
 						fmt.Sprintf("relation %s has no field '%s'; the relation declares %s",
 							plan.SourceName, col, strings.Join(declared, ", ")),
 						item.Pos)
 				}
 				if plan.SourceRelation != nil {
-					if f := plan.SourceRelation.Relation.Field(uc); f != nil && f.IsRaw {
-						Refuse("E_SQL_SHAPE",
+					if f := plan.SourceRelation.relation.Field(uc); f != nil && f.IsRaw {
+						refuse("E_SQL_SHAPE",
 							fmt.Sprintf("column '%s' is a raw expression of the relation, which has no column of that name to select", col),
 							item.Pos)
 					}
@@ -584,28 +584,28 @@ func (t *Translator) AnalyzePipeline(ast *SNode) *RelationalPlan {
 			plan.Projections = nil
 
 		case "MAP":
-			if plan.Bucket == BucketSealed {
-				Refuse("E_SQL_SHAPE",
+			if plan.Bucket == bucketSealed {
+				refuse("E_SQL_SHAPE",
 					"a MAP over buckets must follow the BUCKET, with at most a FILTER between: SQL keeps a bucket's members only for the projection that ends the grouping",
 					step.Pos)
 			}
 			binder := "_"
-			var expr *SNode
+			var expr *sNode
 			if len(args) == 2 {
 				binder = "_"
 				expr = args[1]
 			} else if len(args) == 3 {
-				if !IsBinderName(args[1]) {
-					Refuse("E_SQL_SHAPE", "the binder of MAP must be a bare name", args[1].Pos)
+				if !isBinderName(args[1]) {
+					refuse("E_SQL_SHAPE", "the binder of MAP must be a bare name", args[1].Pos)
 				}
 				binder = args[1].Str
 				expr = args[2]
 			} else {
-				Refuse("E_ARITY", "MAP takes 2 or 3 arguments", step.Pos)
+				refuse("E_ARITY", "MAP takes 2 or 3 arguments", step.Pos)
 			}
 
-			if plan.Bucket == BucketOpen {
-				plan.Bucket = BucketNone
+			if plan.Bucket == bucketOpen {
+				plan.Bucket = bucketNone
 				t.bucketProjection(plan, binder, expr)
 				continue
 			}
@@ -613,11 +613,11 @@ func (t *Translator) AnalyzePipeline(ast *SNode) *RelationalPlan {
 			needDerived := t.planNeedsWrapBeforeMap(plan)
 			plan = t.ensureDerived(plan, needDerived)
 
-			if expr.T == SNodeCall && expr.Str == "RECORD" {
-				var projections []RelationalProjection
+			if expr.T == sNodeCall && expr.Str == "RECORD" {
+				var projections []relationalProjection
 				for _, kv := range t.recordFields(expr) {
 					aliasCopy := kv.Key
-					projections = append(projections, RelationalProjection{
+					projections = append(projections, relationalProjection{
 						Alias:  &aliasCopy,
 						Binder: binder,
 						Node:   kv.Val,
@@ -625,7 +625,7 @@ func (t *Translator) AnalyzePipeline(ast *SNode) *RelationalPlan {
 				}
 				plan.Projections = projections
 			} else {
-				plan.Projections = []RelationalProjection{
+				plan.Projections = []relationalProjection{
 					{
 						Alias:  nil,
 						Binder: binder,
@@ -639,17 +639,17 @@ func (t *Translator) AnalyzePipeline(ast *SNode) *RelationalPlan {
 			needDerived := plan.Limit != nil || plan.Offset != nil
 			plan = t.ensureDerived(plan, needDerived)
 			if plan.Projections == nil && plan.SelectCols == nil {
-				Refuse("E_SQL_SHAPE", "DISTINCT requires an explicit typed projection", step.Pos)
+				refuse("E_SQL_SHAPE", "DISTINCT requires an explicit typed projection", step.Pos)
 			}
 			// DISTINCT keeps the FIRST element of each run in sorted order; SQL's `SELECT DISTINCT proj ... ORDER BY <column not in proj>` is refused by PostgreSQL (42P10) and MySQL 8 (3065) and answers with an unspecified representative row on MariaDB. A loud refusal is acceptable and a silent misordering is not, so the step stays in memory (CPP-C60).
 			if len(plan.OrderBy) > 0 {
-				Refuse("E_SQL_SHAPE", "DISTINCT after a sort keeps the first of each run in sorted order, which SELECT DISTINCT ... ORDER BY does not promise; run the DISTINCT in memory", step.Pos)
+				refuse("E_SQL_SHAPE", "DISTINCT after a sort keeps the first of each run in sorted order, which SELECT DISTINCT ... ORDER BY does not promise; run the DISTINCT in memory", step.Pos)
 			}
 			plan.Distinct = true
 
 		case "TAKE":
 			if len(args) != 2 {
-				Refuse("E_ARITY", "TAKE takes 2 arguments", step.Pos)
+				refuse("E_ARITY", "TAKE takes 2 arguments", step.Pos)
 			}
 			t.requireOrderSurvives(plan, "TAKE", step.Pos)
 			lim := t.evalIntParam(args[1], "TAKE")
@@ -661,7 +661,7 @@ func (t *Translator) AnalyzePipeline(ast *SNode) *RelationalPlan {
 
 		case "DROP":
 			if len(args) != 2 {
-				Refuse("E_ARITY", "DROP takes 2 arguments", step.Pos)
+				refuse("E_ARITY", "DROP takes 2 arguments", step.Pos)
 			}
 			t.requireOrderSurvives(plan, "DROP", step.Pos)
 			off := t.evalIntParam(args[1], "DROP")
@@ -693,7 +693,7 @@ func (t *Translator) AnalyzePipeline(ast *SNode) *RelationalPlan {
 			wraps := plan.Limit != nil || plan.Offset != nil ||
 				(plan.GroupBy == nil && (plan.Projections != nil || plan.SelectCols != nil || plan.Distinct))
 			if (wraps && len(plan.OrderBy) > 0 && plan.Limit == nil && plan.Offset == nil) || plan.OrderDropped {
-				Refuse("E_SQL_SHAPE", "a sort over a projection of sorted rows loses the earlier sort, which is its tie-break: a derived table does not keep an ORDER BY", step.Pos)
+				refuse("E_SQL_SHAPE", "a sort over a projection of sorted rows loses the earlier sort, which is its tie-break: a derived table does not keep an ORDER BY", step.Pos)
 			}
 			needDerived := plan.Limit != nil || plan.Offset != nil ||
 				(plan.GroupBy == nil && (plan.Projections != nil || plan.SelectCols != nil || plan.Distinct))
@@ -721,7 +721,7 @@ func (t *Translator) AnalyzePipeline(ast *SNode) *RelationalPlan {
 			// cannot pass through a JOIN carrying their sort. After the earlier steps'
 			// own refusals, which come first as written.
 			if plan.OrderDropped || (len(plan.OrderBy) > 0 && plan.Limit == nil && plan.Offset == nil) {
-				Refuse("E_SQL_SHAPE",
+				refuse("E_SQL_SHAPE",
 					fmt.Sprintf("a %s over sorted rows would return them in no order, where SEL has the left list's order", name),
 					step.Pos)
 			}
@@ -735,40 +735,40 @@ func (t *Translator) AnalyzePipeline(ast *SNode) *RelationalPlan {
 			}
 
 			if len(args) != 3 && len(args) != 5 {
-				Refuse("E_ARITY", fmt.Sprintf("%s takes 3 or 5 arguments", name), step.Pos)
+				refuse("E_ARITY", fmt.Sprintf("%s takes 3 or 5 arguments", name), step.Pos)
 			}
 			rightNode := args[1]
-			if rightNode.T != SNodeVar || !t.bindings.Has(rightNode.Str) {
-				Refuse("E_SQL_SHAPE", fmt.Sprintf("%s requires a bound relation as its right side", name), rightNode.Pos)
+			if rightNode.T != sNodeVar || !t.bindings.Has(rightNode.Str) {
+				refuse("E_SQL_SHAPE", fmt.Sprintf("%s requires a bound relation as its right side", name), rightNode.Pos)
 			}
 			rightBinding := t.bindings.Get(rightNode.Str, rightNode.Pos)
-			if rightBinding.Kind != BindingKindRelation {
-				Refuse("E_SQL_SHAPE", fmt.Sprintf("%s is not bound as a relation", rightNode.Str), rightNode.Pos)
+			if rightBinding.kind != bindingKindRelation {
+				refuse("E_SQL_SHAPE", fmt.Sprintf("%s is not bound as a relation", rightNode.Str), rightNode.Pos)
 			}
 
 			joinType := "INNER"
 			if name == "LINK_LEFT" {
 				joinType = "LEFT"
 			}
-			fromRaw := rightBinding.Relation.From.IsRaw
-			table := rightBinding.Relation.From.Table
+			fromRaw := rightBinding.relation.From.IsRaw
+			table := rightBinding.relation.From.Table
 			if fromRaw {
-				table = rightBinding.Relation.From.Raw
+				table = rightBinding.relation.From.Raw
 			}
 
-			join := RelationalJoin{
+			join := relationalJoin{
 				Type:           joinType,
 				SourceName:     rightNode.Str,
 				SourceRelation: rightBinding,
 				SourceFromRaw:  fromRaw,
 				SourceTable:    table,
-				SourceAlias:    rightBinding.Relation.Alias,
+				SourceAlias:    rightBinding.relation.Alias,
 				Pos:            step.Pos,
 			}
 
 			if len(args) == 5 {
-				if !IsBinderName(args[2]) || !IsBinderName(args[3]) {
-					Refuse("E_SQL_SHAPE", "join binders must be bare names", args[2].Pos)
+				if !isBinderName(args[2]) || !isBinderName(args[3]) {
+					refuse("E_SQL_SHAPE", "join binders must be bare names", args[2].Pos)
 				}
 				join.LeftNames = []string{args[2].Str}
 				join.RightNames = []string{args[3].Str}
@@ -791,7 +791,7 @@ func (t *Translator) AnalyzePipeline(ast *SNode) *RelationalPlan {
 
 			openAliases := []string{plan.SourceAlias}
 			if openAliases[0] == "" && plan.SourceRelation != nil {
-				openAliases[0] = relationAlias(&plan.SourceRelation.Relation)
+				openAliases[0] = relationAlias(&plan.SourceRelation.relation)
 			}
 			for _, j := range plan.Joins {
 				if j.SourceAlias != "" {
@@ -801,7 +801,7 @@ func (t *Translator) AnalyzePipeline(ast *SNode) *RelationalPlan {
 			mine := utf8.AsciiUpper(join.SourceAlias)
 			for _, a := range openAliases {
 				if utf8.AsciiUpper(a) == mine {
-					Refuse("E_SQL_SHAPE",
+					refuse("E_SQL_SHAPE",
 						fmt.Sprintf("%s would be joined under the table alias %s, which this statement already uses; bind the relation a second time under another alias", rightNode.Str, join.SourceAlias),
 						rightNode.Pos)
 				}
@@ -816,17 +816,17 @@ func (t *Translator) AnalyzePipeline(ast *SNode) *RelationalPlan {
 	// are the sorted list's. Refused at the last step (sql-translation 12.1: a sort's
 	// ORDER BY survives every step after it, or the plan is not SQL).
 	if plan.OrderDropped && len(steps) > 0 {
-		Refuse("E_SQL_SHAPE",
+		refuse("E_SQL_SHAPE",
 			"these rows come from a sorted derived table, which does not keep its order, and nothing after it sorts them again",
 			steps[len(steps)-1].Pos)
 	}
 	return plan
 }
 
-func (t *Translator) evalIntParam(n *SNode, op string) int64 {
+func (t *translator) evalIntParam(n *sNode, op string) int64 {
 	node := n.ToNode()
 	if node == nil {
-		Refuse("E_SQL_SHAPE", fmt.Sprintf("%s count cannot contain dynamic lists", op), n.Pos)
+		refuse("E_SQL_SHAPE", fmt.Sprintf("%s count cannot contain dynamic lists", op), n.Pos)
 	}
 	prog := sel.NewProgram("", node)
 	root := t.constRoot
@@ -835,10 +835,10 @@ func (t *Translator) evalIntParam(n *SNode, op string) int64 {
 	}
 	val, err := prog.Run(root)
 	if err != nil {
-		RefuseAsSel(err, n)
+		refuseAsSel(err, n)
 	}
 	if !val.LooksNumeric() || val.IsNull() {
-		Refuse("E_NOT_NUM", fmt.Sprintf("%s count must be a number", op), n.Pos)
+		refuse("E_NOT_NUM", fmt.Sprintf("%s count must be a number", op), n.Pos)
 	}
 	text := val.AsText(n.Pos)
 	neg := strings.HasPrefix(text, "-")
@@ -852,11 +852,11 @@ func (t *Translator) evalIntParam(n *SNode, op string) int64 {
 		whole, frac = text[:dot], text[dot+1:]
 	}
 	if strings.Trim(frac, "0") != "" {
-		Refuse("E_NOT_INT", fmt.Sprintf("%s count must be an integer", op), n.Pos)
+		refuse("E_NOT_INT", fmt.Sprintf("%s count must be an integer", op), n.Pos)
 	}
 	whole = strings.TrimLeft(whole, "0")
 	if neg && whole != "" {
-		Refuse("E_RANGE", fmt.Sprintf("%s count cannot be negative", op), n.Pos)
+		refuse("E_RANGE", fmt.Sprintf("%s count cannot be negative", op), n.Pos)
 	}
 	// Past what the servers take, a count is all of a list (TAKE) or none of it
 	// (DROP) in SEL: clamped, on every dialect, to what all of them accept
@@ -870,17 +870,17 @@ func (t *Translator) evalIntParam(n *SNode, op string) int64 {
 	}
 	num, err := strconv.ParseInt(whole, 10, 64)
 	if err != nil {
-		Refuse("E_RANGE", fmt.Sprintf("%s count is out of range", op), n.Pos)
+		refuse("E_RANGE", fmt.Sprintf("%s count is out of range", op), n.Pos)
 	}
 	return num
 }
 
-func (t *Translator) analyzeSortStep(step *SNode, plan *RelationalPlan) {
+func (t *translator) analyzeSortStep(step *sNode, plan *relationalPlan) {
 	name := step.Str
 	args := step.Kids
 	top := name == "TOP" || name == "TOP_DESC" || name == "TOP_BY"
 	if top && len(args) == 0 {
-		Refuse("E_ARITY", fmt.Sprintf("%s has an invalid sort form", name), step.Pos)
+		refuse("E_ARITY", fmt.Sprintf("%s has an invalid sort form", name), step.Pos)
 	}
 	count := len(args)
 	if top {
@@ -902,12 +902,12 @@ func (t *Translator) analyzeSortStep(step *SNode, plan *RelationalPlan) {
 			dir = "DESC"
 		}
 		if count == 1 {
-			if plan.SourceRelation != nil && plan.SourceRelation.Relation.Scalar != "" {
-				scalarCol := plan.SourceRelation.Relation.Scalar
-				varNode := Leaf(&sel.Node{T: sel.NodeVar, S: "_", Pos: step.Pos})
-				idxNode := Leaf(&sel.Node{T: sel.NodeText, S: scalarCol, Pos: step.Pos})
-				indexNode := Rewritten(&sel.Node{T: sel.NodeIndex, Pos: step.Pos}, []*SNode{varNode, idxNode})
-				plan.OrderBy = append(plan.OrderBy, RelationalOrder{
+			if plan.SourceRelation != nil && plan.SourceRelation.relation.Scalar != "" {
+				scalarCol := plan.SourceRelation.relation.Scalar
+				varNode := leaf(&sel.Node{T: sel.NodeVar, S: "_", Pos: step.Pos})
+				idxNode := leaf(&sel.Node{T: sel.NodeText, S: scalarCol, Pos: step.Pos})
+				indexNode := rewritten(&sel.Node{T: sel.NodeIndex, Pos: step.Pos}, []*sNode{varNode, idxNode})
+				plan.OrderBy = append(plan.OrderBy, relationalOrder{
 					Binder: "_",
 					Node:   indexNode,
 					Dir:    dir,
@@ -915,16 +915,16 @@ func (t *Translator) analyzeSortStep(step *SNode, plan *RelationalPlan) {
 				})
 				return
 			}
-			if plan.SourceRelation != nil && len(plan.SourceRelation.Relation.Fields) == 1 {
+			if plan.SourceRelation != nil && len(plan.SourceRelation.relation.Fields) == 1 {
 				var fieldName string
-				for k := range plan.SourceRelation.Relation.Fields {
+				for k := range plan.SourceRelation.relation.Fields {
 					fieldName = k
 					break
 				}
-				varNode := Leaf(&sel.Node{T: sel.NodeVar, S: "_", Pos: step.Pos})
-				idxNode := Leaf(&sel.Node{T: sel.NodeText, S: fieldName, Pos: step.Pos})
-				indexNode := Rewritten(&sel.Node{T: sel.NodeIndex, Pos: step.Pos}, []*SNode{varNode, idxNode})
-				plan.OrderBy = append(plan.OrderBy, RelationalOrder{
+				varNode := leaf(&sel.Node{T: sel.NodeVar, S: "_", Pos: step.Pos})
+				idxNode := leaf(&sel.Node{T: sel.NodeText, S: fieldName, Pos: step.Pos})
+				indexNode := rewritten(&sel.Node{T: sel.NodeIndex, Pos: step.Pos}, []*sNode{varNode, idxNode})
+				plan.OrderBy = append(plan.OrderBy, relationalOrder{
 					Binder: "_",
 					Node:   indexNode,
 					Dir:    dir,
@@ -932,33 +932,33 @@ func (t *Translator) analyzeSortStep(step *SNode, plan *RelationalPlan) {
 				})
 				return
 			}
-			Refuse("E_SQL_SHAPE", "SORT on a multi-field relation requires a key expression; use SORT_BY", step.Pos)
+			refuse("E_SQL_SHAPE", "SORT on a multi-field relation requires a key expression; use SORT_BY", step.Pos)
 		} else if count == 2 {
-			plan.OrderBy = append(plan.OrderBy, RelationalOrder{
+			plan.OrderBy = append(plan.OrderBy, relationalOrder{
 				Binder: "_",
 				Node:   args[1],
 				Dir:    dir,
 				Pos:    step.Pos,
 			})
 		} else if count == 3 {
-			if !IsBinderName(args[1]) {
-				Refuse("E_SQL_SHAPE", fmt.Sprintf("the binder of %s must be a bare name", name), args[1].Pos)
+			if !isBinderName(args[1]) {
+				refuse("E_SQL_SHAPE", fmt.Sprintf("the binder of %s must be a bare name", name), args[1].Pos)
 			}
-			plan.OrderBy = append(plan.OrderBy, RelationalOrder{
+			plan.OrderBy = append(plan.OrderBy, relationalOrder{
 				Binder: args[1].Str,
 				Node:   args[2],
 				Dir:    dir,
 				Pos:    step.Pos,
 			})
 		} else {
-			Refuse("E_ARITY", fmt.Sprintf("%s takes 1 to 3 arguments", name), step.Pos)
+			refuse("E_ARITY", fmt.Sprintf("%s takes 1 to 3 arguments", name), step.Pos)
 		}
 		return
 	}
 
 	// SORT_BY or TOP_BY
 	binder := "_"
-	var key *SNode
+	var key *sNode
 	dir := "ASC"
 	dirPos := step.Pos
 
@@ -967,38 +967,38 @@ func (t *Translator) analyzeSortStep(step *SNode, plan *RelationalPlan) {
 		key = args[1]
 		dir = "ASC"
 	} else if count == 3 {
-		if args[2].T == SNodeText {
+		if args[2].T == sNodeText {
 			binder = "_"
 			key = args[1]
 			dir = utf8.AsciiUpper(args[2].Str)
 			dirPos = args[2].Pos
-		} else if IsBinderName(args[1]) {
+		} else if isBinderName(args[1]) {
 			binder = args[1].Str
 			key = args[2]
 			dir = "ASC"
 		} else {
-			Refuse("E_BAD_ARG", "sort direction must be 'ASC' or 'DESC'", args[2].Pos)
+			refuse("E_BAD_ARG", "sort direction must be 'ASC' or 'DESC'", args[2].Pos)
 		}
 	} else if count == 4 {
-		if !IsBinderName(args[1]) {
-			Refuse("E_SQL_SHAPE", "the binder of SORT_BY must be a bare name", args[1].Pos)
+		if !isBinderName(args[1]) {
+			refuse("E_SQL_SHAPE", "the binder of SORT_BY must be a bare name", args[1].Pos)
 		}
 		binder = args[1].Str
 		key = args[2]
-		if args[3].T != SNodeText {
-			Refuse("E_BAD_ARG", "sort direction must be 'ASC' or 'DESC'", args[3].Pos)
+		if args[3].T != sNodeText {
+			refuse("E_BAD_ARG", "sort direction must be 'ASC' or 'DESC'", args[3].Pos)
 		}
 		dir = utf8.AsciiUpper(args[3].Str)
 		dirPos = args[3].Pos
 	} else {
-		Refuse("E_ARITY", "SORT_BY takes 2 to 4 arguments", step.Pos)
+		refuse("E_ARITY", "SORT_BY takes 2 to 4 arguments", step.Pos)
 	}
 
 	if dir != "ASC" && dir != "DESC" {
-		Refuse("E_BAD_ARG", "sort direction must be 'ASC' or 'DESC'", dirPos)
+		refuse("E_BAD_ARG", "sort direction must be 'ASC' or 'DESC'", dirPos)
 	}
 
-	plan.OrderBy = append(plan.OrderBy, RelationalOrder{
+	plan.OrderBy = append(plan.OrderBy, relationalOrder{
 		Binder: binder,
 		Node:   key,
 		Dir:    dir,
@@ -1006,26 +1006,26 @@ func (t *Translator) analyzeSortStep(step *SNode, plan *RelationalPlan) {
 	})
 }
 
-func (t *Translator) CompileStatement(plan *RelationalPlan) *Fragment {
-	checkAliasesProj := func(entries []RelationalProjection) {
+func (t *translator) CompileStatement(plan *relationalPlan) *Fragment {
+	checkAliasesProj := func(entries []relationalProjection) {
 		seen := make(map[string]bool)
 		for _, entry := range entries {
 			if entry.Alias != nil {
 				upper := utf8.AsciiUpper(*entry.Alias)
 				if seen[upper] {
-					Refuse("E_SQL_SHAPE", "duplicate or case-colliding RECORD fields require local evaluation", entry.Node.Pos)
+					refuse("E_SQL_SHAPE", "duplicate or case-colliding RECORD fields require local evaluation", entry.Node.Pos)
 				}
 				seen[upper] = true
 			}
 		}
 	}
-	checkAliasesGroup := func(entries []RelationalGroup) {
+	checkAliasesGroup := func(entries []relationalGroup) {
 		seen := make(map[string]bool)
 		for _, entry := range entries {
 			if entry.Alias != nil {
 				upper := utf8.AsciiUpper(*entry.Alias)
 				if seen[upper] {
-					Refuse("E_SQL_SHAPE", "duplicate or case-colliding RECORD fields require local evaluation", entry.Node.Pos)
+					refuse("E_SQL_SHAPE", "duplicate or case-colliding RECORD fields require local evaluation", entry.Node.Pos)
 				}
 				seen[upper] = true
 			}
@@ -1058,16 +1058,16 @@ func (t *Translator) CompileStatement(plan *RelationalPlan) *Fragment {
 		addSql("SELECT ")
 	}
 
-	var srcRel *RelationSpec
+	var srcRel *relationSpec
 	if plan.SourceRelation != nil {
-		srcRel = &plan.SourceRelation.Relation
+		srcRel = &plan.SourceRelation.relation
 	}
-	src := Source{
-		Shape:    SourceShapeRelation,
+	src := source{
+		Shape:    sourceShapeRelation,
 		Relation: srcRel,
 	}
 	for _, f := range plan.Filters {
-		src.Filters = append(src.Filters, SourceFilter{Binder: f.Binder, Node: f.Node})
+		src.Filters = append(src.Filters, sourceFilter{Binder: f.Binder, Node: f.Node})
 	}
 
 	// 1. SELECT list (Projections)
@@ -1092,7 +1092,7 @@ func (t *Translator) CompileStatement(plan *RelationalPlan) *Fragment {
 			}
 			if plan.Distinct {
 				if (pFrag.Kind == KindUnknown || pFrag.Kind == KindNum) && !pFrag.Canonical {
-					Refuse("E_SQL_SHAPE", "DISTINCT requires proven structural output identity", proj.Node.Pos)
+					refuse("E_SQL_SHAPE", "DISTINCT requires proven structural output identity", proj.Node.Pos)
 				}
 				pFrag = t.identityGroupKey(proj.Node, pFrag)
 			}
@@ -1109,15 +1109,15 @@ func (t *Translator) CompileStatement(plan *RelationalPlan) *Fragment {
 			}
 			first = false
 			owner := srcRel
-			var fSpec *ColumnSpec
+			var fSpec *columnSpec
 			if srcRel != nil {
 				fSpec = srcRel.Field(utf8.AsciiUpper(col))
 			}
 			for _, join := range plan.Joins {
 				if fSpec == nil && join.SourceRelation != nil {
-					fSpec = join.SourceRelation.Relation.Field(utf8.AsciiUpper(col))
+					fSpec = join.SourceRelation.relation.Field(utf8.AsciiUpper(col))
 					if fSpec != nil {
-						owner = &join.SourceRelation.Relation
+						owner = &join.SourceRelation.relation
 					}
 				}
 			}
@@ -1126,7 +1126,7 @@ func (t *Translator) CompileStatement(plan *RelationalPlan) *Fragment {
 				column = fSpec.Column
 			}
 			if plan.Distinct && (fSpec == nil || fSpec.Type == KindUnknown || fSpec.Type == KindNum) {
-				Refuse("E_SQL_SHAPE", "DISTINCT requires known output kinds", Pos{})
+				refuse("E_SQL_SHAPE", "DISTINCT requires known output kinds", Pos{})
 			}
 			var sqlStr string
 			if len(plan.Joins) == 0 && plan.SourceSubquery == nil {
@@ -1152,7 +1152,7 @@ func (t *Translator) CompileStatement(plan *RelationalPlan) *Fragment {
 		fields := joinedRowFields(plan)
 		if len(fields) == 0 {
 			last := plan.Joins[len(plan.Joins)-1]
-			Refuse("E_SQL_SHAPE",
+			refuse("E_SQL_SHAPE",
 				"the joined row has no field SQL can carry: every field is on both sides, and the binders are nested records",
 				last.Pos)
 		}
@@ -1253,7 +1253,7 @@ func (t *Translator) CompileStatement(plan *RelationalPlan) *Fragment {
 			first = false
 			gFrag := t.groupKey(src, gb, false)
 			if plan.BareKey && (gFrag.Kind == KindBool || gFrag.Kind == KindBin) {
-				Refuse("E_SQL_SHAPE",
+				refuse("E_SQL_SHAPE",
 					"a bare BUCKET groups by one text or number key, as an index does; SEL refuses a boolean or binary key (E_NOT_TEXT)",
 					gb.Pos)
 			}
@@ -1336,7 +1336,7 @@ func (t *Translator) CompileStatement(plan *RelationalPlan) *Fragment {
 // relationFieldNames lists a relation's fields in a fixed order: the order the
 // binding declared them in, or sorted names when it declared none. Ranging over
 // the Fields map gave a different select list on different runs (GO-C18).
-func relationFieldNames(rel *RelationSpec) []string {
+func relationFieldNames(rel *relationSpec) []string {
 	if len(rel.FieldOrder) > 0 {
 		seen := make(map[string]bool, len(rel.FieldOrder))
 		var out []string

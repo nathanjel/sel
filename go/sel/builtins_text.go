@@ -87,7 +87,7 @@ func pad(args *Args, left bool) *Value {
 	}
 	have := ustd.RuneCountInString(s)
 	if have >= width {
-		return NewTextOwned(s)
+		return newTextOwned(s)
 	}
 	checkTextLen(int64(width), args.Name()+"'s result", args.Pos())
 	need := width - have
@@ -101,9 +101,9 @@ func pad(args *Args, left bool) *Value {
 		padding = strings.Repeat(fill, need/fillLen) + fill[:runeOffset(fill, need%fillLen)]
 	}
 	if left {
-		return NewTextOwned(padding + s)
+		return newTextOwned(padding + s)
 	}
-	return NewTextOwned(s + padding)
+	return newTextOwned(s + padding)
 }
 
 // clampInt narrows a count to an int, saturating: a larger count than any text can
@@ -132,7 +132,7 @@ func init() {
 		Fn: func(args *Args, ctx *Context) *Value {
 			str := args.Text(0)
 			n := int(args.NonNegInt(1))
-			return NewTextOwned(sliceText(str, 0, runeOffset(str, n)))
+			return newTextOwned(sliceText(str, 0, runeOffset(str, n)))
 		},
 	})
 
@@ -143,7 +143,7 @@ func init() {
 		Fn: func(args *Args, ctx *Context) *Value {
 			str := args.Text(0)
 			n := int(args.NonNegInt(1))
-			return NewTextOwned(sliceText(str, runeOffsetFromEnd(str, n), len(str)))
+			return newTextOwned(sliceText(str, runeOffsetFromEnd(str, n), len(str)))
 		},
 	})
 
@@ -161,14 +161,14 @@ func init() {
 			// a start past the end is the empty text.
 			from := runeOffset(str, clampInt(start-1))
 			if from >= len(str) {
-				return NewTextOwned("")
+				return newTextOwned("")
 			}
 			if args.Count() == 2 {
-				return NewTextOwned(sliceText(str, from, len(str)))
+				return newTextOwned(sliceText(str, from, len(str)))
 			}
 			n := args.NonNegInt(2)
 			to := from + runeOffset(str[from:], clampInt(n))
-			return NewTextOwned(sliceText(str, from, to))
+			return newTextOwned(sliceText(str, from, to))
 		},
 	})
 
@@ -235,7 +235,7 @@ func init() {
 			}
 			// hay, needle and repl are valid text, and a replacement only swaps whole
 			// code points for whole code points: the result needs no second scan.
-			return NewTextOwned(strings.ReplaceAll(hay, needle, repl))
+			return newTextOwned(strings.ReplaceAll(hay, needle, repl))
 		},
 	})
 
@@ -253,9 +253,9 @@ func init() {
 			parts := strings.Split(hay, sep)
 			vals := make([]*Value, len(parts))
 			for i, p := range parts {
-				vals[i] = NewTextOwned(p) // a piece between two valid separators is valid
+				vals[i] = newTextOwned(p) // a piece between two valid separators is valid
 			}
-			return NewListOwned(vals)
+			return newListOwned(vals)
 		},
 	})
 
@@ -264,7 +264,7 @@ func init() {
 		Min:  1,
 		Max:  1,
 		Fn: func(args *Args, ctx *Context) *Value {
-			return NewTextOwned(trimText(args.Text(0), true, true))
+			return newTextOwned(trimText(args.Text(0), true, true))
 		},
 	})
 
@@ -273,7 +273,7 @@ func init() {
 		Min:  1,
 		Max:  1,
 		Fn: func(args *Args, ctx *Context) *Value {
-			return NewTextOwned(trimText(args.Text(0), true, false))
+			return newTextOwned(trimText(args.Text(0), true, false))
 		},
 	})
 
@@ -282,7 +282,7 @@ func init() {
 		Min:  1,
 		Max:  1,
 		Fn: func(args *Args, ctx *Context) *Value {
-			return NewTextOwned(trimText(args.Text(0), false, true))
+			return newTextOwned(trimText(args.Text(0), false, true))
 		},
 	})
 
@@ -291,7 +291,7 @@ func init() {
 		Min:  1,
 		Max:  1,
 		Fn: func(args *Args, ctx *Context) *Value {
-			return NewTextOwned(utf8.AsciiUpper(args.Text(0)))
+			return newTextOwned(utf8.AsciiUpper(args.Text(0)))
 		},
 	})
 
@@ -300,7 +300,7 @@ func init() {
 		Min:  1,
 		Max:  1,
 		Fn: func(args *Args, ctx *Context) *Value {
-			return NewTextOwned(utf8.AsciiLower(args.Text(0)))
+			return newTextOwned(utf8.AsciiLower(args.Text(0)))
 		},
 	})
 
@@ -322,7 +322,7 @@ func init() {
 				i -= w
 				sb.WriteRune(r)
 			}
-			return NewTextOwned(sb.String())
+			return newTextOwned(sb.String())
 		},
 	})
 
@@ -339,7 +339,7 @@ func init() {
 				return NewText("")
 			}
 			checkTextLen(satMul(runeLen(s), n), "REPEAT's result", args.Pos())
-			return NewTextOwned(strings.Repeat(s, int(n)))
+			return newTextOwned(strings.Repeat(s, int(n)))
 		},
 	})
 
@@ -370,7 +370,7 @@ func init() {
 			if n < 0 || n > 0x10FFFF || (0xD800 <= n && n <= 0xDFFF) {
 				fail("E_RANGE", fmt.Sprintf("%d is not an encodable code point", n), args.PosOf(0))
 			}
-			return NewTextOwned(string(rune(n)))
+			return newTextOwned(string(rune(n)))
 		},
 	})
 

@@ -78,10 +78,10 @@ func TestPerf2WorkloadChecksums(t *testing.T) {
 					items[i] = NewText("x" + items[i].Scalar())
 				}
 			}
-			return ctxWith("L", NewListOwned(items))
+			return ctxWith("L", newListOwned(items))
 		}},
 		{"p19 regex_mix", `JOIN(MAP(L, RFIND('(\d+)-(\d+)', _) & RREPLACE('-', "+", _)), ",")`, func() *Value {
-			return ctxWith("L", NewListOwned([]*Value{NewText("12-34"), NewText("é 5-6"), NewText("none"), NewText("")}))
+			return ctxWith("L", newListOwned([]*Value{NewText("12-34"), NewText("é 5-6"), NewText("none"), NewText("")}))
 		}},
 		{"p20 trim", `LEN(TRIM(T)) & "," & LEN(LTRIM(T)) & "," & LEN(RTRIM(T)) & "," & LEN(TRIM(S))`, strs},
 		{"p20 trim_empty", `LEN(TRIM(E)) & LEN(TRIM(" ")) & LEN(TRIM("\t\r\n"))`, strs},

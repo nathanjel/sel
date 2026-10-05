@@ -93,7 +93,7 @@ func TestManifestCoverageIsCheckedAtLoad(t *testing.T) {
 	var got interface{}
 	func() {
 		defer func() { got = recover() }()
-		Lookup("MAX")
+		lookup("MAX")
 	}()
 	msg, ok := got.(string)
 	if !ok || !strings.Contains(msg, "ABS") || !strings.Contains(msg, "no module defines it") {
@@ -102,7 +102,7 @@ func TestManifestCoverageIsCheckedAtLoad(t *testing.T) {
 	// It keeps refusing: a swallowed panic must not turn into silent success.
 	func() {
 		defer func() { got = recover() }()
-		Lookup("MAX")
+		lookup("MAX")
 	}()
 	if got == nil {
 		t.Fatal("the coverage refusal did not persist")
@@ -116,7 +116,7 @@ func TestEveryArgumentReaderRefusesAMissingArgument(t *testing.T) {
 		"Text":     func(a *Args) { a.Text(3) },
 		"Bytes":    func(a *Args) { a.Bytes(3) },
 		"Bool":     func(a *Args) { a.Bool(3) },
-		"Dec":      func(a *Args) { a.Dec(3) },
+		"Dec":      func(a *Args) { a.dec(3) },
 		"Int":      func(a *Args) { a.Int(3) },
 		"NonNeg":   func(a *Args) { a.NonNegInt(3) },
 		"Node":     func(a *Args) { a.Node(3) },

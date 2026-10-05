@@ -74,7 +74,7 @@ func convertJSONValue(val interface{}) *sel.Value {
 		for i, el := range v {
 			items[i] = convertJSONValue(el)
 		}
-		return sel.NewListOwned(items)
+		return sel.NewList(items)
 	case map[string]interface{}:
 		keys := make([]string, 0, len(v))
 		for k := range v {
@@ -135,7 +135,7 @@ func loadContext(datasetPath string) *sel.Value {
 					customerList[rIdx] = sel.NewShapedRecord(shape, rowVals)
 				}
 			}
-			rootEntries = append(rootEntries, sel.Entry{Key: tableName, Val: sel.NewListOwned(customerList)})
+			rootEntries = append(rootEntries, sel.Entry{Key: tableName, Val: sel.NewList(customerList)})
 		} else {
 			rowList := make([]*sel.Value, len(rows))
 			if len(rows) > 0 {
@@ -155,7 +155,7 @@ func loadContext(datasetPath string) *sel.Value {
 					rowList[rIdx] = sel.NewShapedRecord(shape, rowVals)
 				}
 			}
-			rootEntries = append(rootEntries, sel.Entry{Key: tableName, Val: sel.NewListOwned(rowList)})
+			rootEntries = append(rootEntries, sel.Entry{Key: tableName, Val: sel.NewList(rowList)})
 		}
 	}
 	return sel.NewRecordFromEntries(rootEntries)
@@ -169,7 +169,7 @@ func benchmarkValue(v *sel.Value) interface{} {
 		if v.IsList() {
 			return []interface{}{}
 		}
-		if v.Kind == sel.KindText || v.Kind == sel.KindBin || v.Kind == sel.KindBool {
+		if v.Kind() == sel.KindText || v.Kind() == sel.KindBin || v.Kind() == sel.KindBool {
 			return v.AsText(sel.Pos{})
 		}
 		return nil
@@ -185,7 +185,7 @@ func benchmarkValue(v *sel.Value) interface{} {
 	for _, entry := range v.Entries() {
 		out[entry.Key] = benchmarkValue(entry.Val)
 	}
-	if v.Kind == sel.KindText || v.Kind == sel.KindBin || v.Kind == sel.KindBool {
+	if v.Kind() == sel.KindText || v.Kind() == sel.KindBin || v.Kind() == sel.KindBool {
 		out["_"] = v.AsText(sel.Pos{})
 	}
 	return out

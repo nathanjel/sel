@@ -49,7 +49,7 @@ func (a *Args) offerNoCopy() {
 	if a.ctx == nil || a.call == nil || !noCopyAllowed(a.name, a.nodes) {
 		return
 	}
-	a.ctx.NoCopy = a.nodes[0]
+	a.ctx.noCopy = a.nodes[0]
 }
 
 // nodesCannotChangeValues reports that evaluating the subtree changes no value: it
@@ -81,13 +81,13 @@ func nodesCannotChangeValues(root *Node) bool {
 // copied, without building the copy: a FILTER that keeps its rows aliased must still
 // refuse exactly the rows it would have refused to copy (SPEC §6.4).
 func (v *Value) checkCopyDepth(depth int, pos Pos) {
-	if depth > MAX_DEPTH {
+	if depth > maxDepth {
 		fail("E_DEPTH", "value nested too deeply", pos)
 	}
 	// A leaf (the usual child of a row) needs only the depth test, which the level
 	// above has made for it: no call per field.
 	if len(v.storage) > 0 {
-		if depth+1 > MAX_DEPTH {
+		if depth+1 > maxDepth {
 			fail("E_DEPTH", "value nested too deeply", pos)
 		}
 		for _, child := range v.storage {
@@ -96,7 +96,7 @@ func (v *Value) checkCopyDepth(depth int, pos Pos) {
 			}
 		}
 	} else if len(v.entries) > 0 {
-		if depth+1 > MAX_DEPTH {
+		if depth+1 > maxDepth {
 			fail("E_DEPTH", "value nested too deeply", pos)
 		}
 		for _, e := range v.entries {

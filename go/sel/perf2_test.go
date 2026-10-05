@@ -246,38 +246,38 @@ func TestAssigningAFreshResultDoesNotAliasTheSource(t *testing.T) {
 }
 
 // GO-P14: UniqueRecordShape answers from the cache when it can, never wrongly: a
-// cached shape that was built from repeated keys (InternRecordShape is also called
+// cached shape that was built from repeated keys (internRecordShape is also called
 // directly) must not stand in for "unique".
 func TestUniqueRecordShapeSeesRepeatsWhateverIsCached(t *testing.T) {
 	dup := []string{"zq1", "zq2", "zq1"}
-	if InternRecordShape(dup) == nil {
-		t.Fatal("InternRecordShape refused")
+	if internRecordShape(dup) == nil {
+		t.Fatal("internRecordShape refused")
 	}
-	if UniqueRecordShape(dup) != nil {
+	if uniqueRecordShape(dup) != nil {
 		t.Fatal("a repeated key list was reported unique after being interned")
 	}
 	long := make([]string, 12)
 	for i := range long {
 		long[i] = "lk" + strconv.Itoa(i)
 	}
-	first := UniqueRecordShape(long)
-	if first == nil || UniqueRecordShape(long) != first {
+	first := uniqueRecordShape(long)
+	if first == nil || uniqueRecordShape(long) != first {
 		t.Fatal("distinct long key list not interned once")
 	}
 	long[11] = long[3]
-	if UniqueRecordShape(long) != nil {
+	if uniqueRecordShape(long) != nil {
 		t.Fatal("repeat among 12 keys not detected")
 	}
 	for _, keys := range [][]string{{"a", "a"}, {"a", "b", "a"}, {"a", "b", "c", "d", "e", "f", "g", "a"}} {
-		if UniqueRecordShape(keys) != nil {
+		if uniqueRecordShape(keys) != nil {
 			t.Fatalf("%v reported unique", keys)
 		}
 	}
-	if UniqueRecordShape(nil) == nil || UniqueRecordShape([]string{"only"}) == nil {
+	if uniqueRecordShape(nil) == nil || uniqueRecordShape([]string{"only"}) == nil {
 		t.Fatal("trivial unique lists refused")
 	}
 	// Boundaries between keys: "a" "bc" and "ab" "c" are different shapes.
-	if UniqueRecordShape([]string{"a", "bc"}) == UniqueRecordShape([]string{"ab", "c"}) {
+	if uniqueRecordShape([]string{"a", "bc"}) == uniqueRecordShape([]string{"ab", "c"}) {
 		t.Fatal("signature lost the key boundary")
 	}
 }
@@ -558,7 +558,7 @@ func TestRegexCacheKeysByFlagAndPattern(t *testing.T) {
 			{`RMATCH('k', "k", "i")`, "TRUE"},
 		} {
 			v, err := MustCompile(c.src).Run(NewNone())
-			if err != nil || v.Scalar() != c.want && !(c.want == "TRUE" && v.Kind == KindBool && v.AsBool(Pos{})) && !(c.want == "FALSE" && v.Kind == KindBool && !v.AsBool(Pos{})) {
+			if err != nil || v.Scalar() != c.want && !(c.want == "TRUE" && v.kind == KindBool && v.AsBool(Pos{})) && !(c.want == "FALSE" && v.kind == KindBool && !v.AsBool(Pos{})) {
 				t.Fatalf("round %d %s = %v %v, want %s", round, c.src, v, err, c.want)
 			}
 		}

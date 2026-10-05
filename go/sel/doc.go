@@ -35,6 +35,24 @@
 // RegisterFunction itself panics with a plain string for a name or an arity that
 // is not allowed, a programming error found at start-up.
 //
+// # Numbers
+//
+// A number is text: pass it with NewText("19.99") and read it with AsText. In the
+// decimal form other hosts take ({neg, digits, scale}) it is a [Decimal], built
+// with [NewDecimal] and read with [Value.Decimal]. NewNum and AsDecimal, which
+// took and returned the module's internal decimal type, are deprecated.
+//
+// # The syntax tree
+//
+// [Node], [NodeType] and its constants, [NewNode], [NewProgram], [Program.AST],
+// [Program.PhysicalAST], [UnwindPipeline], [BuildPipeline], [OptimizeAstLogical],
+// [OptimizeAstInMemory], [BindingForm], [HostArity], [ValidatePattern] and
+// [ValidatePatternFlags] are exported because the SQL layer
+// (github.com/nathanjel/sel/go/sel/sql) and the module's own tools read the
+// syntax tree, and Go has no narrower visibility between packages. They are not
+// part of the API this module keeps stable: an application compiles rules with
+// [Compile] and does not build or walk trees.
+//
 // # More
 //
 // The documentation, with every example in all seven languages:

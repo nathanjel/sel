@@ -19,7 +19,7 @@ func BenchmarkP22KeyScan(b *testing.B) {
 	for _, n := range []int{10000, 20000, 40000} {
 		n := n
 		ctx := func() *Value {
-			return ctxWith("O", intList(n, 4), "LN", NewListOwned([]*Value{
+			return ctxWith("O", intList(n, 4), "LN", newListOwned([]*Value{
 				rec("q", 1, "p", 2), rec("q", 3, "p", 4), rec("q", 5, "p", 6), rec("q", 7, "p", 8)}))
 		}
 		for _, c := range []perfCase{
@@ -109,7 +109,7 @@ func polymorphicRows(n, shapes int) *Value {
 			items[i] = rec("d", 1, "e", 2, "a", i)
 		}
 	}
-	return NewListOwned(items)
+	return newListOwned(items)
 }
 
 func BenchmarkP25SlotCache(b *testing.B) {
@@ -168,7 +168,7 @@ func BenchmarkP27Parse(b *testing.B) {
 // above are dominated by the mandatory clone of each element).
 func BenchmarkP26StructuralHash(b *testing.B) {
 	rows := joinRows(100000, 10, 5).Elements()
-	dense := NewListOwned([]*Value{NewInt(1), NewInt(2), NewInt(3), NewInt(4), NewInt(5), NewInt(6), NewInt(7), NewInt(8)})
+	dense := newListOwned([]*Value{NewInt(1), NewInt(2), NewInt(3), NewInt(4), NewInt(5), NewInt(6), NewInt(7), NewInt(8)})
 	var sink uint64
 	b.Run("records_100k", func(b *testing.B) {
 		b.ReportAllocs()

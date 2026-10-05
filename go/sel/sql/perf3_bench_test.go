@@ -29,7 +29,7 @@ func BenchmarkP28TextLiteral(b *testing.B) {
 			b.ReportAllocs()
 			for i := 0; i < b.N; i++ {
 				for j := 0; j < 10000; j++ {
-					_ = TextLiteral(d, "hello")
+					_ = textLiteral(d, "hello")
 				}
 			}
 		})
@@ -37,7 +37,7 @@ func BenchmarkP28TextLiteral(b *testing.B) {
 			b.ReportAllocs()
 			for i := 0; i < b.N; i++ {
 				for j := 0; j < 10000; j++ {
-					_ = TextLiteral(d, `it's a "x" \ y`)
+					_ = textLiteral(d, `it's a "x" \ y`)
 				}
 			}
 		})
@@ -49,7 +49,7 @@ func BenchmarkP28TextLiteral(b *testing.B) {
 			b.ReportAllocs()
 			b.SetBytes(int64(len(big)))
 			for i := 0; i < b.N; i++ {
-				_ = TextLiteral(d, big)
+				_ = textLiteral(d, big)
 			}
 		})
 	}
@@ -164,7 +164,7 @@ func TestPerf3SqlChecksums(t *testing.T) {
 	var lits []string
 	for _, d := range []string{"mariadb", "mysql", "postgresql", "sqlite"} {
 		for _, s := range texts {
-			lits = append(lits, TextLiteral(d, s))
+			lits = append(lits, textLiteral(d, s))
 		}
 	}
 	got := map[string]string{

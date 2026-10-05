@@ -14,16 +14,16 @@ import (
 
 func render(v *sel.Value) string {
 	if v.Size() == 0 {
-		if v.Kind == sel.KindText {
+		if v.Kind() == sel.KindText {
 			return v.Scalar()
 		}
-		if v.Kind == sel.KindBool {
+		if v.Kind() == sel.KindBool {
 			if v.AsBool(sel.Pos{}) {
 				return "TRUE"
 			}
 			return "FALSE"
 		}
-		if v.Kind == sel.KindBin {
+		if v.Kind() == sel.KindBin {
 			return "bin:" + v.Dump()[1:]
 		}
 	}
