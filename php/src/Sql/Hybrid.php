@@ -898,8 +898,8 @@ final class Hybrid
     // memory half of a plan, because that half is a program run() evaluates
     // and §12.1 promises it reports errors where run() would: run() evaluates
     // the READ of Y at the use site and reports `+`'s operand there, and it
-    // evaluates the definition once, before the pipeline, not once per row
-    //. So the planner does not inline. It plans
+    // evaluates the definition once, before the pipeline, not once per row.
+    // So the planner does not inline. It plans
     // the program as written, three ways:
     //
     //   * A helper that IS a literal -- after inlining earlier such helpers
@@ -1010,24 +1010,13 @@ final class Hybrid
             return $node;
         }
         if ($t === 'call') {
-            // Which arguments run inside the binder, and which are the binder's own
-            // NAME, is the manifest's decision (Registry::bindingForm), as in stage 1:
-            // reading it off the argument count alone missed the four- and
-            // five-argument forms, so a literal helper spelled like an explicit binder
+            // Stage 1's scoping, from the same walk: reading the binder slots off
+            // the argument count alone missed the four- and five-argument forms, so
+            // a literal helper spelled like an explicit binder
             // (`N = 5; ... SORT_BY(N, N["id"], "DESC")`) was inlined into the binder
             // slot and downgraded a pure SQL pipeline to memory.
-            $form = Registry::bindingForm($node['name'], $node['args']);
-            $inner = $form === null ? $bound : array_merge($bound, $form['binds'], ['_K']);
-            $args = [];
-            foreach ($node['args'] as $i => $arg) {
-                $scope = $form === null ? 'outer' : $form['scopes'][$i];
-                if ($scope === 'binder') {
-                    $args[] = $arg;
-                    continue;
-                }
-                $args[] = self::inlineLiterals($arg, $literals, $scope === 'inner' ? $inner : $bound);
-            }
-            $node['args'] = $args;
+            $node['args'] = Normalise::scopedArgs($node, $bound,
+                static fn (array $arg, array $sees): array => self::inlineLiterals($arg, $literals, $sees));
             return $node;
         }
         return $node;

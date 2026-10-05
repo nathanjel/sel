@@ -470,8 +470,7 @@ final class Map
             return;
         }
         // Marked checked only once every check below has passed: set first, the first
-        // translation threw and every later one silently used the mismatching guard
-        //.
+        // translation threw and every later one silently used the mismatching guard.
         $guard = self::lexical($dialect, 'numericGuard');
         if (!is_string($guard)) {
             self::$guardChecked[$dialect] = true;
