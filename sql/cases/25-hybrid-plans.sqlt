@@ -1867,3 +1867,35 @@ orders
 --- expect
 SELECT `o`.* FROM `orders` `o` LIMIT 3 OFFSET 2
 ===
+### name: plan.fold.text-concat-is-not-folded
+--- note
+A decision (the logical folds are the same in every host): the optimiser the planner runs folds arithmetic, comparisons, NEG, AND/OR/NOT and a constant IF, and does NOT fold `&` of two text literals, so the prefix carries the dialect's concatenation exactly as translate() renders it. PHP's evaluator folds `"a" & "b"` in its physical tree, a run-time saving no program can observe; it reached the SQL as 'ab' while every other host wrote CONCAT('a', 'b') -- the same rows, different bytes.
+--- dialect
+mariadb
+--- bindings
+{"ORDERS": {"kind": "relation", "from": "orders", "alias": "o", "fields": {"ID": {"table": "o", "column": "id", "type": "NUM"}, "NAME": {"table": "o", "column": "name", "type": "TEXT"}}}}
+--- source
+ORDERS .> FILTER(_["name"] $== ("a" & "b"))
+--- plan
+pure_sql
+--- tables
+orders
+--- expect
+SELECT `o`.* FROM `orders` `o` WHERE (CAST(`o`.`name` AS CHAR) COLLATE utf8mb4_nopad_bin = CAST(CONCAT('a', 'b') AS CHAR) COLLATE utf8mb4_nopad_bin)
+===
+### name: plan.fold.text-concat-is-not-folded-in-a-call
+--- note
+The same inside a function argument, on PostgreSQL's `||` spelling.
+--- dialect
+postgresql
+--- bindings
+{"ORDERS": {"kind": "relation", "from": "orders", "alias": "o", "fields": {"ID": {"table": "o", "column": "id", "type": "NUM"}, "NAME": {"table": "o", "column": "name", "type": "TEXT"}}}}
+--- source
+ORDERS .> FILTER(_["id"] > LEN("ab" & "cd"))
+--- plan
+pure_sql
+--- tables
+orders
+--- expect
+SELECT "o".* FROM "orders" "o" WHERE ("o"."id" > length(CAST((CAST('ab' AS TEXT) || CAST('cd' AS TEXT)) AS TEXT)))
+===

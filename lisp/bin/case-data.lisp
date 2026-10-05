@@ -11880,6 +11880,38 @@ ORDERS .> TAKE(1)"
    :register nil
    :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num)) (cons "NAME" (binding-column "name" "o" :text))) nil nil)))))
   (list
+   :name "plan.fold.text-concat-is-not-folded"
+   :at "25-hybrid-plans.sqlt:1870"
+   :dialect "mariadb"
+   :source "ORDERS .> FILTER(_[\"name\"] $== (\"a\" & \"b\"))"
+   :expect "SELECT `o`.* FROM `orders` `o` WHERE (CAST(`o`.`name` AS CHAR) COLLATE utf8mb4_nopad_bin = CAST(CONCAT('a', 'b') AS CHAR) COLLATE utf8mb4_nopad_bin)"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan "pure_sql"
+   :tables (list "orders")
+   :register nil
+   :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num)) (cons "NAME" (binding-column "name" "o" :text))) nil nil)))))
+  (list
+   :name "plan.fold.text-concat-is-not-folded-in-a-call"
+   :at "25-hybrid-plans.sqlt:1886"
+   :dialect "postgresql"
+   :source "ORDERS .> FILTER(_[\"id\"] > LEN(\"ab\" & \"cd\"))"
+   :expect "SELECT \"o\".* FROM \"orders\" \"o\" WHERE (\"o\".\"id\" > length(CAST((CAST('ab' AS TEXT) || CAST('cd' AS TEXT)) AS TEXT)))"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan "pure_sql"
+   :tables (list "orders")
+   :register nil
+   :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num)) (cons "NAME" (binding-column "name" "o" :text))) nil nil)))))
+  (list
    :name "link.row.is-the-promoted-fields"
    :at "26-links.sqlt:5"
    :dialect "mariadb"
@@ -19987,6 +20019,54 @@ ORDERS .> TAKE(1)"
    :tables :none
    :register nil
    :bindings (lambda () (list (cons "N" (binding-column "n" "k" :num)))))
+  (list
+   :name "stmt.take.negative-fraction.mariadb"
+   :at "49-kind-guarantees.sqlt:1169"
+   :dialect "mariadb"
+   :source "ITEMS .> TAKE(-1.5)"
+   :expect nil
+   :error "E_NOT_INT 1:15"
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "ID" (binding-column "id" "items" :num))) nil nil)))))
+  (list
+   :name "stmt.drop.negative-fraction.mariadb"
+   :at "49-kind-guarantees.sqlt:1184"
+   :dialect "mariadb"
+   :source "ITEMS .> DROP(-0.5)"
+   :expect nil
+   :error "E_NOT_INT 1:15"
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "ID" (binding-column "id" "items" :num))) nil nil)))))
+  (list
+   :name "stmt.top-by.negative-fraction.mariadb"
+   :at "49-kind-guarantees.sqlt:1199"
+   :dialect "mariadb"
+   :source "ITEMS .> TOP_BY(_[\"id\"], -2.5)"
+   :expect nil
+   :error "E_NOT_INT 1:26"
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list (cons "ID" (binding-column "id" "items" :num))) nil nil)))))
   (list
    :name "register.guard.refused-on-every-use-lacking-the-pattern"
    :at "50-rendering-and-registration.sqlt:9"
