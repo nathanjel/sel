@@ -2331,6 +2331,28 @@ the statement sent (or NIL)."
     (is (string= "-{\"1\"=t\"7\"}" (sel:value-dump (sel:evaluate "LIST(7)"))))
     (is (equal '("1") (sel:value-keys (sel:evaluate "LIST(8)"))))))
 
+(test every-raised-code-is-catalogued
+  ;; spec/limits.json's catalogue, rendered as +ERROR-CODES+, is the list of
+  ;; codes a host may raise; every code this host's sources raise with FAIL is in
+  ;; it (tools/check-error-codes.sh holds the five hosts to it from outside).
+  (let* ((root (asdf:system-source-directory :sel-lang))
+         (catalogue (mapcar #'first sel::+error-codes+))
+         (raised '()))
+    (dolist (file (directory (merge-pathnames "src/**/*.lisp" root)))
+      (let ((text (with-open-file (in file :external-format :utf-8)
+                    (let ((s (make-string (file-length in))))
+                      (subseq s 0 (read-sequence s in))))))
+        (loop with start = 0
+              for at = (search "(fail \"E_" text :start2 start)
+              while at
+              do (let* ((from (+ at 7))
+                        (to (position #\" text :start from)))
+                   (pushnew (subseq text from to) raised :test #'string=)
+                   (setf start to)))))
+    (is (< 10 (length raised)))
+    (is (null (set-difference raised catalogue :test #'string=))
+        "raised but not catalogued: ~a" (set-difference raised catalogue :test #'string=))))
+
 ;;; --- process-global caches under threads (spec §8.1) ---------------------------
 ;;;
 ;;; The record-shape table, the decimal caches, the regex cache, LINK's alias-plan

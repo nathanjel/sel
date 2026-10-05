@@ -328,15 +328,14 @@ left to the run."
 ;;; Each is accepted only where its own binding power reaches: NOT at 7 cannot
 ;;; appear inside a comparison operand, which is parsed at 9, so `a == NOT b`
 ;;; falls through to PARSE-PRIMARY -- which sees the bare identifier NOT and
-;;; raises E_RESERVED, the same error the transcribed parser gave, by a different
-;;; route. `-NOT x` is E_RESERVED for the same reason.
+;;; raises E_RESERVED. `-NOT x` is E_RESERVED for the same reason.
 ;;;
 ;;; This is the part that is not textbook. Folding prefix operators into
 ;;; PARSE-PRIMARY, where precedence climbing usually puts them, would make
 ;;; `NOT a == b` parse as `(NOT a) == b` and would break lim.parse-depth and
 ;;; lim.prefix-depth-does-not-shift-parens at the same time.
 ;;;
-;;; Counted, for the reason the two functions this replaced were counted: a
+;;; Counted against the nesting cap (spec §6.4) like every other recursion: a
 ;;; prefix operator recurses through neither PARSE-SEQUENCE nor PARSE-PRIMARY,
 ;;; and uncounted it reached the host's own stack limit instead of E_DEPTH --
 ;;; a segfault in the C++ host from a rule that is just `-` repeated. Entered
