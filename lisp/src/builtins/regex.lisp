@@ -997,8 +997,10 @@ subject this long is where it happens."
   (flet ((scan () (cl-ppcre:scan scanner subject :start start)))
     (cond (*regex-in-big-stack* (scan))
           ((> (length subject) +regex-big-stack-subject+) (call-in-big-stack #'scan))
+          ;; STORAGE-CONDITION, the standard class SBCL's stack exhaustion
+          ;; belongs to, as in CALL-IN-BIG-STACK: no internal SBCL symbol.
           (t (handler-case (scan)
-               (sb-kernel::control-stack-exhausted () (call-in-big-stack #'scan)))))))
+               (storage-condition () (call-in-big-stack #'scan)))))))
 
 (defstruct (rx (:constructor make-rx (scanner subject folded)))
   scanner
