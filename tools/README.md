@@ -1,8 +1,9 @@
 # The harness
 
-Five layers, run together by `tools/check.sh`. Everything here iterates
+The layers run together by `tools/check.sh`. Everything here iterates
 `tools/impls.sh` rather than naming hosts, so a new implementation joins by
-adding one entry there and providing the five entry points below.
+adding an arm to each role function there (`tools/check-registry.sh` fails until
+every role has one) and providing the entry points below.
 
 ```
 tools/check.sh              everything, side by side (SEL_JOBS, SEL_PHP_JOBS: see impls.sh)
@@ -12,6 +13,15 @@ tools/e2e.sh                one rule set through every host API
 tools/check-api.sh          the same API probes through every host binding
 tools/check-version.sh      every manifest declares the same version
 cd cpp && make asan         the C++ suite under the address and leak sanitizers
+tools/check-cli-source.sh   every `sel` CLI: source bytes and the CLI contract (docs/usage/repl.md)
+tools/check-corpus-bytes.sh every batch runner on byte fixtures (CR, CRLF, final blank line)
+tools/check-registry.sh     every roster configuration has an arm in every role of impls.sh
+tools/check-budgets.sh      output/work budgets refused cheaply, per host, under ceilings
+tools/check-sql-budgets.sh  translator work/depth budgets, per host, under ceilings
+tools/check-regex-resources.py   regex resource behaviour, per host, under ceilings
+tools/check-regex-ambiguity-diff.sh  every host's regex validator vs the reference
+tools/check-host-examples.sh     the six top-level host programs in examples/ run cleanly
+tools/check-ref-fragments.sh     the fn-* reference fragments run against their cases
 tools/fuzz.sh               seeded differential fuzzing, N-way
 tools/check-sql-map.sh      the dialect map, regenerated and diffed
 tools/check-sql-docs.sh     the design document quotes cases that run
@@ -73,6 +83,7 @@ rather than a comparison of the standard library with itself.
 | `check-decimal <oracle>` | an oracle file | `<impl>: N cases, M mismatches` | non-zero on any mismatch |
 | `sql [filter…]` | `sql/cases/*.sqlt` | `N passed, M failed` | non-zero on any failure; **0 and silent** for a host with no SQL layer |
 | `oracle [mode]` | `sql/oracle/*` | a per-mode agreement report | non-zero on any disagreement; **0 with a skip line** when no DSN is set |
+| `regex_verdict [i]` | one pattern per stdin line | `A` (accepted) or `R` (refused with `E_REGEX_SYNTAX`) per line | 0 |
 | `sqldoc [file.md…]` | `docs/internals/sql-translation.md`, `sql/cases/*.sqlt` | `N quote a case, M wrong` | non-zero on any mismatch, and on finding no blocks |
 
 The first five are required. `sql` and `oracle` are optional in the same way

@@ -79,8 +79,26 @@ report() {
 
 IMPLS="$(available_impls)"
 MISSING="$(missing_impls)"
+# The configurations of the default roster this run does not include. SEL_IMPLS
+# narrows a run on purpose, and that is a fine thing to do while iterating, but
+# a narrowed run is not the gate: it says what it left out at the top and in its
+# last line, so a documented partial roster cannot pass for the whole one.
+NOT_RUN=""
+for impl in $SEL_DEFAULT_IMPLS; do
+  case " $SEL_IMPLS " in *" $impl "*) ;; *) NOT_RUN="$NOT_RUN $impl" ;; esac
+done
+NOT_RUN="${NOT_RUN# }"
+
+# Lanes a caller may opt out of because they are slow, each named here and in
+# the last line when it is skipped.
+SKIPPED=""
+[ "${SEL_SKIP_SANITIZERS:-0}" = 1 ] && SKIPPED="$SKIPPED SEL_SKIP_SANITIZERS"
+[ "${SEL_SKIP_SQL_BUDGETS:-0}" = 1 ] && SKIPPED="$SKIPPED SEL_SKIP_SQL_BUDGETS"
+SKIPPED="${SKIPPED# }"
 
 echo "implementations: $IMPLS"
+[ -z "$NOT_RUN" ] || echo "NOT RUNNING (SEL_IMPLS narrows the default roster): $NOT_RUN"
+[ -z "$SKIPPED" ] || echo "opted out: $SKIPPED"
 echo "concurrency: $SEL_JOBS leaf commands, $SEL_PHP_JOBS of them php"
 
 # An incomplete roster must never reach "ALL GREEN". Every differential layer
@@ -90,7 +108,8 @@ echo "concurrency: $SEL_JOBS leaf commands, $SEL_PHP_JOBS of them php"
 # nothing with nothing.
 if [ -n "$MISSING" ]; then
   echo "MISSING: $MISSING — not built, or the runtime is missing"
-  echo "         build them (cd cpp && make; npm run build) or set SEL_IMPLS to say so"
+  echo "         build them (make -C cpp; make -C go; bash rust/build.sh; npm run build)"
+  echo "         or narrow SEL_IMPLS to say so"
   status=1
 fi
 
@@ -115,7 +134,7 @@ done
 
 for impl in $IMPLS; do
   case "$impl" in
-    js|js-bundle|php) continue ;;   # their host-local checks run below, after the SQL cases
+    js|js-bundle|js-bundle-min) continue ;;   # its host-local checks run below, after the SQL cases
   esac
   step "unit tests ($impl)" sel_slot impl_unit "$impl"
 done
@@ -139,7 +158,16 @@ done
 case " $IMPLS " in *" js "*) step "JS optimizer" sel_slot node tools/check-js-optimizer.mjs ;; esac
 case " $IMPLS " in *" php "*) step "PHP optimizer" sel_slot sel_php tools/check-php-optimizer.php ;; esac
 case " $IMPLS " in *" js "*) step "JS SQL unit" sel_slot node tools/check-js-sql.mjs ;; esac
+# The hybrid-parity corpus (sql/oracle/hybrid.json) against a real SQLite: the
+# JS and Python twins run in process, Lisp and Go through a driver. PHP runs it
+# as `sqlo hybrid` in the oracle lane. C++ and Rust have no SQLite binding in
+# their standard libraries and no driver yet; their hybrid planners are held to
+# the sqlt cases, sqlapi, and their own executed-plan unit tests
+# (cpp/tests/sql_unit.cpp, rust/tests/sql_hybrid.rs).
 case " $IMPLS " in *" lisp "*) step "Lisp hybrid parity (SQLite)" sel_slot python3 tools/check-hybrid-parity-driver.py lisp lisp/bin/hybrid-driver ;; esac
+case " $IMPLS " in *" go "*) step "Go hybrid parity (SQLite)" sel_slot python3 tools/check-hybrid-parity-go.py ;; esac
+case " $IMPLS " in *" js "*) step "JS hybrid parity (SQLite)" sel_slot node tools/check-hybrid-parity.mjs ;; esac
+case " $IMPLS " in *" python "*) step "Python hybrid parity (SQLite)" sel_slot env PYTHONPATH="$PWD/python" python3 tools/check-hybrid-parity.py ;; esac
 case " $IMPLS " in *" js "*) step "JS plain vs optimised" sel_slot node tools/check-eval-equivalence.mjs ;; esac
 case " $IMPLS " in *" php "*) step "PHP plain vs optimised" sel_slot sel_php tools/check-eval-equivalence.php ;; esac
 case " $IMPLS " in *" python "*) step "Python plain vs optimised" sel_slot env PYTHONPATH="$PWD/python" python3 tools/check-eval-equivalence.py ;; esac
@@ -150,7 +178,16 @@ case " $IMPLS " in *" js-bundle-min "*) step "JS minified runtime isolation" sel
 case " $IMPLS " in *" php "*) step "PHP runtime" sel_slot sel_php tools/check-php-runtime.php ;; esac
 case " $IMPLS " in *" php "*) step "PHP integration" sel_slot sel_php tools/check-php-integration.php ;; esac
 case " $IMPLS " in *" php "*) step "PHP 8.1 (oldest supported)" sel_slot tools/check-php-version.sh ;; esac
-case " $IMPLS " in *" cpp "*) step "C++ registry race (TSan)" sel_slot make -j4 -C cpp tsan-registry ;; esac
+# The three C++ race probes (the SQL layer, the regex cache, the host-function
+# table) under ThreadSanitizer, and the unit tests, the suite, the SQL cases and
+# the SQL unit under AddressSanitizer + UBSan -- the clone-site and no-cycle
+# invariants docs/contributing.md relies on. Each builds its own instrumented
+# copy of the library, so they are the slowest C++ steps; SEL_SKIP_SANITIZERS=1
+# opts out of both (and the last line says so).
+if [ "${SEL_SKIP_SANITIZERS:-0}" != 1 ]; then
+  case " $IMPLS " in *" cpp "*) step "C++ races (TSan)" sel_slot make -j4 -C cpp tsan tsan-regex tsan-registry ;; esac
+  case " $IMPLS " in *" cpp "*) step "C++ sanitizers (ASan, UBSan)" sel_slot make -j4 -C cpp asan ;; esac
+fi
 case " $IMPLS " in *" js "*) step "JS metadata" sel_slot node tools/metadata/js.mjs ;; esac
 case " $IMPLS " in *" php "*) step "PHP metadata" sel_slot sel_php tools/metadata/php.php ;; esac
 case " $IMPLS " in *" python "*) step "Python metadata" sel_slot python3 tools/metadata/python.py ;; esac
@@ -221,6 +258,15 @@ step "C++ package, as installed" sel_slot ./tools/check-cpp-package.sh
 case " $IMPLS " in *" rust "*) step "Rust package, as published" sel_slot ./tools/check-rust-package.sh ;; esac
 case " $IMPLS " in *" go "*) step "Go module, as published" sel_slot ./tools/check-go-module.sh ;; esac
 step "host API parity" ./tools/check-api.sh
+step "host registry complete" ./tools/check-registry.sh
+# What an operation may BUILD (SPEC §6.4) is refused cheaply, in a child process
+# with a time and memory ceiling, in every host; likewise translator work and
+# depth (docs/internals/sql-translation.md §7.4), and regex resource behaviour
+# (the cases conformance/28-regex-portability.selt cannot hold safely).
+step "output and work budgets" ./tools/check-budgets.sh
+[ "${SEL_SKIP_SQL_BUDGETS:-0}" = 1 ] || step "SQL translator budgets" ./tools/check-sql-budgets.sh
+step "regex resources" sel_slot python3 tools/check-regex-resources.py
+step "regex validator vs reference, every host" ./tools/check-regex-ambiguity-diff.sh
 step "CLI source bytes and contract" ./tools/check-cli-source.sh
 # Every batch runner reads a corpus as bytes and removes exactly one newline per
 # record: CR and CRLF fixtures, and final records with and without a blank line.
@@ -263,8 +309,10 @@ report
 
 echo
 echo "wall time: $(( $(date +%s) - started ))s"
-if [ "$status" -eq 0 ]; then
+if [ "$status" -eq 0 ] && [ -z "$NOT_RUN" ] && [ -z "$SKIPPED" ]; then
   echo "ALL GREEN — $IMPLS"
+elif [ "$status" -eq 0 ]; then
+  echo "GREEN, PARTIAL — $IMPLS${NOT_RUN:+; not run: $NOT_RUN}${SKIPPED:+; opted out: $SKIPPED}"
 else
   echo "FAILURES ABOVE"
 fi

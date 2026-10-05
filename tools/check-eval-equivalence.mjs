@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-// Plain AST versus optimised execution, over the whole conformance corpus (T04 /
-// T00-B). Every `.selt` source (with its setup) is run twice on fresh contexts:
+// Plain AST versus optimised execution, over the whole conformance corpus.
+// Every `.selt` source (with its setup) is run twice on fresh contexts:
 //
 //   plain      evalNode(program.ast)        the tree exactly as parsed
 //   physical   program.run()                what a caller gets: optimiser + math plans
@@ -17,9 +17,8 @@
 //   node tools/check-eval-equivalence.mjs [file.selt ...]
 //
 // Exit status is non-zero when any source differs; the differing sources are
-// listed with both answers. Not part of tools/check.sh until the known
-// divergences (docs/interim/2026-09-29/worklist/tests/04-evaluation.md) are
-// fixed; SEL_EVAL_EQUIVALENCE_ALLOW=<file of case names> lists exemptions.
+// listed with both answers. A gate lane of tools/check.sh ("JS plain vs
+// optimised"); SEL_EVAL_EQUIVALENCE_ALLOW=<file of case names> lists exemptions.
 
 import { readFileSync, readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';

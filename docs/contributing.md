@@ -908,21 +908,50 @@ tools/check.sh                 everything, side by side; the report in a fixed o
 ```
 
 The layers run concurrently under two bounds from `tools/impls.sh`: `SEL_JOBS`
-leaf commands at once (default half the hardware threads, rounded up) and
-`SEL_PHP_JOBS` PHP invocations among them (a quarter). Both are `flock` slots
-in one directory that every nested tool shares — a leaf takes a slot, a script
-that only queues leaves does not — so `SEL_JOBS=2 tools/check.sh` really is
-two processes, mutation runner included. A first Lisp step runs alone to warm
-ASDF's cache before the rest start.
+leaf commands at once (default three quarters of the hardware threads on an
+idle box, half on a busy one) and `SEL_PHP_JOBS` PHP invocations among them
+(half of `SEL_JOBS`). Both are `flock` slots in one directory that every nested
+tool shares — a leaf takes a slot, a script that only queues leaves does not —
+so `SEL_JOBS=2 tools/check.sh` really is two processes, mutation runner
+included. A first Lisp step runs alone to warm ASDF's cache before the rest
+start.
 
-C++ has to be built first, or it is skipped with a note:
+Every configuration of the default roster has to be built first; one that is
+not fails the run with `MISSING`:
 
 ```
-cd cpp && make            builds build/{sel,conformance,batch,e2e,api,ast,check-decimal,unit,sqlt,sqlunit,sqlfuzz,sqlreplay,...}
-cd cpp && make test       unit tests, then the suite
-lisp/bin/test             the Lisp unit tests
+make -C cpp                builds build/{sel,conformance,batch,e2e,api,ast,check-decimal,unit,sqlt,sqlunit,sqlfuzz,sqlreplay,...}
+make -C go                 go/build/*
+bash rust/build.sh         rust/build/*
+npm run build              dist/sel.mjs, dist/sel.min.mjs (js-bundle, js-bundle-min)
+cd cpp && make test        unit tests, then the suite
+lisp/bin/test              the Lisp unit tests
 PYTHONPATH=$PWD/python pytest python/tests    the Python unit tests
 ```
+
+`SEL_IMPLS` narrows a run, and a narrowed run says so: the gate prints the
+configurations of the default roster it is **not** running, and its last line
+is `GREEN, PARTIAL — …` rather than `ALL GREEN`. `SEL_EXTRA_IMPLS` adds to the
+roster instead of replacing it. Two slow lanes have opt-outs, which the last
+line also names: `SEL_SKIP_SANITIZERS=1` (the C++ TSan and ASan builds) and
+`SEL_SKIP_SQL_BUDGETS=1` (the translator budget lane).
+
+What the gate runs per host beyond the shared layers, and why a host is exempt
+where it is:
+
+| Lane | Hosts | Exempt, and why |
+|---|---|---|
+| plain vs optimised, whole conformance corpus | JS, PHP, Python (`tools/check-eval-equivalence.*`); C++ (`cpp/tests/unit.cpp`) and Go (`go/sel/eval_order_test.go`) in their unit lanes | Lisp: a fixed list of sources in `lisp/tests/unit.lisp`; Rust: only the FILTER/MAP elision probe in `rust/tests/filter_copy_elision.rs` — the plain walk is internal API there, and a whole-corpus probe is an open item for that host |
+| metadata (`tools/metadata/*`: value-shape caches, record churn) | JS, PHP, Python, Lisp, C++ | Go, Rust: no metadata probe; Rust's layout and allocation counts are pinned by `rust/tests/value_layout.rs` and `*_allocations.rs`, Go has no equivalent — an open item for those hosts |
+| hybrid parity on SQLite (`sql/oracle/hybrid.json`) | JS, Python (in process), Lisp, Go (driver), PHP (`sqlo hybrid`, oracle lane) | C++, Rust: no SQLite in the standard library and no driver yet; held by sqlt, sqlapi and their executed-plan unit tests |
+| regex validator vs reference (`tools/check-regex-ambiguity-diff.sh`) | every host with an `impl_regex_verdict` driver | the JS bundles carry `js/src`'s validator verbatim |
+| C++ sanitizers (`make tsan tsan-regex tsan-registry`, `make asan`) | C++ | — (`SEL_SKIP_SANITIZERS=1` opts out) |
+
+Manual by design, never run by the gate: `tools/stress.sh` (programs of several
+hundred thousand nodes, minutes per host), `tools/check-sql-limits.php` (PHP's
+own resource limits), the benchmarks under `tools/scale-test/` and
+`tools/commit-benchmark/`, and `tools/oracle-db.sh` on its own (the gate starts
+it).
 
 `python-wheel` is not in the default roster because it needs building first, the
 way C++ does. It runs the same suite through the *installed* package rather than
@@ -932,7 +961,7 @@ the source tree, which is the only layer that catches a packaging mistake:
 python3 -m build --outdir dist/python
 python3 -m venv python/.venv-wheel
 python/.venv-wheel/bin/pip install dist/python/*.whl
-SEL_IMPLS="python-wheel" tools/check.sh
+SEL_EXTRA_IMPLS=python-wheel tools/check.sh
 ```
 
 Individually, while iterating:
