@@ -328,21 +328,17 @@ SQL expression cannot do" (snode-pos node)))
      ;; DEPENDENCIES. A binder argument is a NAME, not a read of one, and stays
      ;; as written -- unless a definition about to be inlined under it reads a
      ;; name the binder would capture, in which case the binder is renamed first.
-     (let ((args (sel::node-items (setf node (hygienic-call node defs depth)))))
-       (multiple-value-bind (scopes binds)
-           (sel::binding-form (sel::node-s node) args (sel::node-spec node))
-         (let ((inner (append bound binds)))
-           (replace-items
-            node
-            (sel::keep-binding-form
-             (sel::node-s node) args
-             (loop for arg in args
-                   for scope in (or scopes (make-list (length args) :initial-element :outer))
-                   collect (case scope
-                             (:binder arg)
-                             (:inner (substitute-node arg defs inner depth))
-                             (t (substitute-node arg defs bound depth))))
-             (snode-pos node)))))))
+     (setf node (hygienic-call node defs depth))
+     (replace-items
+      node
+      (sel::keep-binding-form
+       (sel::node-s node) (sel::node-items node)
+       (sel::map-call-args-by-scope (arg scope inner) node bound
+         (case scope
+           (:binder arg)
+           (:inner (substitute-node arg defs inner depth))
+           (t (substitute-node arg defs bound depth))))
+       (snode-pos node))))
     (t node)))
 
 (defvar *metrics* nil
@@ -370,13 +366,8 @@ NAME is not a node the walk visits and is not counted (it is not a read)."
               ((:bin :index) (add (sel::node-l n)) (add (sel::node-r n)))
               (:list (dolist (i (sel::node-items n)) (add i)))
               (:call
-               (let ((args (sel::node-items n)))
-                 (multiple-value-bind (scopes binds)
-                     (sel::binding-form (sel::node-s n) args (sel::node-spec n))
-                   (declare (ignore binds))
-                   (loop for arg in args
-                         for scope in (or scopes (make-list (length args) :initial-element :outer))
-                         do (unless (eq scope :binder) (add arg))))))
+               (sel::map-call-args-by-scope (arg scope inner) n '()
+                 (unless (eq scope :binder) (add arg))))
               (t nil)))))
        (let ((m (cons size (1+ depth))))
          (when *metrics* (setf (gethash n *metrics*) m))
@@ -413,17 +404,11 @@ there is nothing to translate; the evaluator answers E_DEPTH for it" sel::+max-d
                  (:list (dolist (i (sel::node-items n)) (walk i bound)))
                  (:clist (dolist (c (clist-entries n)) (walk (cdr c) bound)))
                  (:call
-                  (let ((args (sel::node-items n)))
-                    (multiple-value-bind (scopes binds)
-                        (sel::binding-form (sel::node-s n) args (sel::node-spec n))
-                      (let ((inner (append bound binds)))
-                        (loop for arg in args
-                              for scope in (or scopes (make-list (length args)
-                                                                 :initial-element :outer))
-                              do (case scope
-                                   (:binder nil)
-                                   (:inner (walk arg inner))
-                                   (t (walk arg bound))))))))
+                  (sel::map-call-args-by-scope (arg scope inner) n bound
+                    (case scope
+                      (:binder nil)
+                      (:inner (walk arg inner))
+                      (t (walk arg bound)))))
                  (t nil))))
       (walk node bound))
     out))

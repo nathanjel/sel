@@ -79,17 +79,11 @@ table, and neither does `LIST(1) .> MAP(ORDERS, ORDERS)`."
                             do (walk (sel::node-r target) bound)
                                (setf target (sel::node-l target)))))
                    (:call
-                    (let ((args (sel::node-items n)))
-                      (multiple-value-bind (scopes binds)
-                          (sel::binding-form (sel::node-s n) args (sel::node-spec n))
-                        (let ((inner (append binds bound)))
-                          (loop for arg in args
-                                for scope in (or scopes (make-list (length args)
-                                                                   :initial-element :outer))
-                                do (case scope
-                                     (:binder nil)
-                                     (:inner (walk arg inner))
-                                     (t (walk arg bound))))))))
+                    (sel::map-call-args-by-scope (arg scope inner) n bound
+                      (case scope
+                        (:binder nil)
+                        (:inner (walk arg inner))
+                        (t (walk arg bound)))))
                    (t
                     (walk (sel::node-l n) bound)
                     (walk (sel::node-r n) bound)
@@ -191,22 +185,17 @@ same-named helper inside its body. Copies on the way down, never writes."
        ;; The binding form decides which argument is a binder NAME (never
        ;; inlined: it is not a read), which run inside the binder, and what they
        ;; bind -- for every arity, the four-argument SORT_BY and BUCKET included.
-       (let ((args (sel::node-items node)))
-         (multiple-value-bind (scopes binds)
-             (sel::binding-form (sel::node-s node) args (sel::node-spec node))
-           (let ((inner (append binds bound))
-                 (c (sel::copy-node node)))
-             (setf (sel::node-items c)
-                   (sel::keep-binding-form
-                    (sel::node-s node) args
-                    (loop for arg in args
-                          for scope in (or scopes (make-list (length args) :initial-element :outer))
-                          collect (case scope
-                                    (:binder arg)
-                                    (:inner (inline-child arg inner))
-                                    (t (inline-child arg bound))))
-                    (sel::node-pos node)))
-             c))))
+       (let ((c (sel::copy-node node)))
+         (setf (sel::node-items c)
+               (sel::keep-binding-form
+                (sel::node-s node) (sel::node-items node)
+                (sel::map-call-args-by-scope (arg scope inner) node bound
+                  (case scope
+                    (:binder arg)
+                    (:inner (inline-child arg inner))
+                    (t (inline-child arg bound))))
+                (sel::node-pos node)))
+         c))
       (t node))))
 
 (defun literal-helpers (leading)
@@ -475,9 +464,11 @@ rebinds the name is counted too, which can only refuse a split, never allow one)
              (walk-node-children node (lambda (c) (when (reads-key-p c) (setf found t))))
              found))))
 
-(defun step-reads-key-p (step)
-  "Whether a pipeline step's own arguments read `_K` (its first argument is its
-input, and is not looked at)."
+(defun step-mentions-key-p (step)
+  "Whether a pipeline step's own arguments mention `_K` at all (its first
+argument is its input, and is not looked at). Broader than the optimiser's
+SEL::STEP-READS-KEY-P on purpose: a split it wrongly refuses costs a pushdown,
+one it wrongly allows changes an answer."
   (some #'reads-key-p (rest (sel::node-items step))))
 
 (defun key-safe-boundary-p (prefix-steps cont-steps)
@@ -495,7 +486,7 @@ returns the kept rows under their keys, which is exactly what would be lost."
     (if (not (and tail (equal (sel::node-s tail) "FILTER")))
         t
         (dolist (step cont-steps nil)
-          (when (step-reads-key-p step) (return nil))
+          (when (step-mentions-key-p step) (return nil))
           (unless (equal (sel::node-s step) "FILTER") (return t))))))
 
 (defun can-raise-p (node)
@@ -687,7 +678,9 @@ BINDER means any name does -- a downstream step binds the row however it likes."
 (defun collect-field-references (node &optional (binder "_"))
   "Collects all field names accessed via BINDER['field'] in NODE, first seen
 first and compared exactly: SEL's record keys are case-sensitive, so name and
-Name are two fields. A null BINDER counts a read under any name."
+Name are two fields. A null BINDER counts a read under any name. Every child
+is walked, a matched read's included -- the MAP fall-through needs every
+column a custom pair may touch -- unlike the optimiser's COLLECT-FIELD-REFS."
   (let ((refs '()))
     (labels ((walk (n)
                (when (and n (sel::node-p n))

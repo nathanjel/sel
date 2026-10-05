@@ -220,6 +220,11 @@ that node, and a fused or reordered replacement must not move it."
     (values curr steps)))
 
 (defun collect-field-refs (node &optional (binder "_"))
+  "The field names NODE reads as BINDER[\"f\"] (or through `_`, `_1`, `_2`),
+for the logical rewrites. Its own walk on purpose: a matched read is not
+entered, names compare exactly, and a list or sequence is not looked into
+(the rewrites ask about one step's body). The hybrid planner's
+COLLECT-FIELD-REFERENCES answers a different question."
   (let ((refs '()))
     (labels ((walk (n)
                (when (and n (node-p n))
@@ -242,12 +247,17 @@ that node, and a fused or reordered replacement must not move it."
       (walk node))
     refs))
 
+(defun step-binder-and-body (step)
+  "The binder and body of a MAP or FILTER step (input, [binder,] body), as two
+values; the binder is `_` when the step names none."
+  (let ((args (node-items step)))
+    (if (= (length args) 3)
+        (values (node-s (second args)) (third args))
+        (values "_" (second args)))))
+
 (defun map-passthrough-fields (map-step)
   "Returns a list of field names that MAP passes through unchanged from input."
-  (let* ((args (node-items map-step))
-         (count (length args))
-         (binder (if (= count 3) (node-s (second args)) "_"))
-         (body (if (= count 3) (third args) (second args))))
+  (multiple-value-bind (binder body) (step-binder-and-body map-step)
     (when (and (eq (node-kind body) :call)
                (string= (node-s body) "RECORD"))
       (let ((items (node-items body))
@@ -266,10 +276,7 @@ that node, and a fused or reordered replacement must not move it."
 
 (defun map-has-computed-fields-p (map-step)
   "Returns T if MAP computes any field non-trivially (not just simple pass-through)."
-  (let* ((args (node-items map-step))
-         (count (length args))
-         (binder (if (= count 3) (node-s (second args)) "_"))
-         (body (if (= count 3) (third args) (second args))))
+  (multiple-value-bind (binder body) (step-binder-and-body map-step)
     (if (and (eq (node-kind body) :call)
              (string= (node-s body) "RECORD"))
         (let ((items (node-items body)))
@@ -311,7 +318,8 @@ them (MAP, SELECT_COLS, the sorts)."
 
 (defun step-reads-key-p (step)
   "Whether a step's own arguments (not its input) read _K: the keys a sort
-renumbers, so such a step keeps its place relative to one."
+renumbers, so such a step keeps its place relative to one. READS-VAR-P's
+reading of a read; the hybrid planner's STEP-MENTIONS-KEY-P counts every `_K`."
   (some (lambda (arg) (reads-var-p arg '("_K"))) (rest (node-items step))))
 
 (defun keys-renumbered-by-p (step)
@@ -361,15 +369,8 @@ argument folds."
           (equal (second (match-binding-form forms args))
                  (second (match-binding-form forms as-text)))))))
 
-(defun filter-body (filter-step)
-  "The binder and predicate of a FILTER step, as two values."
-  (let* ((args (node-items filter-step))
-         (count (length args)))
-    (values (if (= count 3) (node-s (second args)) "_")
-            (if (= count 3) (third args) (second args)))))
-
 (defun filter-fields (filter-step)
-  (multiple-value-bind (binder pred) (filter-body filter-step)
+  (multiple-value-bind (binder pred) (step-binder-and-body filter-step)
     (collect-field-refs pred binder)))
 
 (defun bare-name-p (node)
@@ -492,10 +493,7 @@ MAP RECORD(...) gave them -- a read of any other name would raise E_NO_KEY.")
 
 (defun map-cannot-raise-p (map-step logical)
   "Every field a MAP computes (or its whole body) cannot raise."
-  (let* ((args (node-items map-step))
-         (count (length args))
-         (binder (if (= count 3) (node-s (second args)) "_"))
-         (body (if (= count 3) (third args) (second args))))
+  (multiple-value-bind (binder body) (step-binder-and-body map-step)
     (if (and (eq (node-kind body) :call) (string= (node-s body) "RECORD"))
         (loop for (k-node v-node) on (node-items body) by #'cddr
               always (and (eq (node-kind k-node) :text) (cannot-raise-p v-node binder logical)))
@@ -574,7 +572,7 @@ everywhere else)."
       ((and s2 (string= n1 "MAP") (string= n2 "FILTER") (valid-filter-p s2)
             (let ((f-fields (filter-fields s2)))
               (and f-fields (fields-all-in-p f-fields (map-passthrough-fields s1))))
-            (not (multiple-value-bind (binder pred) (filter-body s2)
+            (not (multiple-value-bind (binder pred) (step-binder-and-body s2)
                    (reads-row-or-key-p pred binder)))
             (keys-renumbered-by-p s3)
             (map-cannot-raise-p s1 logical))
@@ -585,13 +583,13 @@ everywhere else)."
       ((and s2 (sort-step-p s1) (string= n2 "FILTER") (not (step-reads-key-p s2))
             (keys-renumbered-by-p s3)
             (multiple-value-bind (binder key) (sort-key s1) (cannot-raise-p key binder logical))
-            (or logical (multiple-value-bind (binder pred) (filter-body s2) (cannot-raise-p pred binder nil))))
+            (or logical (multiple-value-bind (binder pred) (step-binder-and-body s2) (cannot-raise-p pred binder nil))))
        (values (list s2 s1) 2))
       ;; FILTER pushdown through SELECT_COLS, under the same key guard.
       ((and s2 (string= n1 "SELECT_COLS") (string= n2 "FILTER") (valid-filter-p s2)
             (let ((f-fields (filter-fields s2)))
               (and f-fields (fields-all-in-p f-fields (select-cols-fields s1))))
-            (not (multiple-value-bind (binder pred) (filter-body s2)
+            (not (multiple-value-bind (binder pred) (step-binder-and-body s2)
                    (reads-row-or-key-p pred binder)))
             (keys-renumbered-by-p s3))
        (values (list s2 s1) 2))
@@ -618,17 +616,16 @@ everywhere else)."
       ;; FILTER. STEP-DEPTH knows the depth of each step as written.
       ((and s2 (string= n1 "FILTER") (string= n2 "FILTER")
             (valid-filter-p s1) (valid-filter-p s2)
-            (multiple-value-bind (binder pred) (filter-body s2) (predicate-cannot-raise-p pred binder logical))
+            (multiple-value-bind (binder pred) (step-binder-and-body s2) (predicate-cannot-raise-p pred binder logical))
             (let ((d (and step-depth (funcall step-depth s2))))
               (or (null d)
-                  (<= (+ d (bounded-depth (nth-value 1 (filter-body s2)) +max-depth+) 1)
+                  (<= (+ d (bounded-depth (nth-value 1 (step-binder-and-body s2)) +max-depth+) 1)
                       +max-depth+))))
        (let* ((args1 (node-items s1))
-              (args2 (node-items s2))
-              (b1 (if (= (length args1) 3) (node-s (second args1)) "_"))
-              (pred1 (if (= (length args1) 3) (third args1) (second args1)))
-              (b2 (if (= (length args2) 3) (node-s (second args2)) "_"))
-              (pred2 (if (= (length args2) 3) (third args2) (second args2)))
+              (b1 (nth-value 0 (step-binder-and-body s1)))
+              (pred1 (nth-value 1 (step-binder-and-body s1)))
+              (b2 (nth-value 0 (step-binder-and-body s2)))
+              (pred2 (nth-value 1 (step-binder-and-body s2)))
               (renamed-pred2 (if (string= b1 b2) pred2 (rename-var-in-node pred2 b2 b1)))
               (and-node (make-node :bin (node-pos pred1)))
               (fused (copy-node-shallow s1)))
@@ -648,9 +645,7 @@ everywhere else)."
       ;; list literal or constructor -- never as the first step over a source
       ;; that might be a scalar.
       ((and (string= n1 "FILTER") (valid-filter-p s1)
-            (let ((pred (if (= (length (node-items s1)) 3)
-                            (third (node-items s1))
-                            (second (node-items s1)))))
+            (let ((pred (nth-value 1 (step-binder-and-body s1))))
               (and pred (eq (node-kind pred) :bool) (node-b pred)))
             (or (plusp i) (source-is-list-p source))
             ;; Not as the only step: what is left must still carry the position a
@@ -668,8 +663,7 @@ with literal keys, else :UNKNOWN."
   (let ((shaper (find-if-not #'row-preserving-step-p steps-newest-first)))
     (cond ((null shaper) :relation)
           ((string= (node-s shaper) "MAP")
-           (let* ((args (node-items shaper))
-                  (body (if (= (length args) 3) (third args) (second args))))
+           (let ((body (nth-value 1 (step-binder-and-body shaper))))
              (if (and body (node-p body) (eq (node-kind body) :call) (string= (node-s body) "RECORD")
                       (loop for (k) on (node-items body) by #'cddr
                             always (and k (eq (node-kind k) :text))))

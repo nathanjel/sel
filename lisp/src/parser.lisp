@@ -592,6 +592,25 @@ layer's stage 1 both classify through here, so they cannot disagree."
                 do (push (node-s a) bound))
         (values scopes bound)))))
 
+(defmacro map-call-args-by-scope ((arg scope inner) call bound &body body)
+  "The list of BODY's values, one per argument ARG of the call node CALL, with
+SCOPE that argument's binding scope -- :OUTER, :BINDER or :INNER, by
+BINDING-FORM; every argument of a call that binds nothing is :OUTER -- and
+INNER the names in scope inside the call: BOUND plus those it binds. The one
+\"walk a call's arguments by binding scope\" every static walker shares; each
+says in BODY what it does with a binder, an inner and an outer argument."
+  (let ((scopes (gensym "SCOPES")) (binds (gensym "BINDS")) (rest (gensym "REST")))
+    `(multiple-value-bind (,scopes ,binds)
+         (binding-form (node-s ,call) (node-items ,call) (node-spec ,call))
+       (let ((,inner (append ,binds ,bound))
+             (,rest ,scopes))
+         (declare (ignorable ,inner))
+         (mapcar (lambda (,arg)
+                   (let ((,scope (if ,scopes (pop ,rest) :outer)))
+                     (declare (ignorable ,scope))
+                     ,@body))
+                 (node-items ,call))))))
+
 (defun keep-binding-form (name old-args new-args pos)
   "NEW-ARGS -- a binding call's arguments after a rewrite that inlined a helper
 into them -- made to select the form OLD-ARGS, the call as written, selects.
