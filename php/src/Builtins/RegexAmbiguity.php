@@ -87,7 +87,9 @@ final class RegexAmbiguity
         fail(
             'E_REGEX_SYNTAX',
             'the pattern can take exponential time to match (' . $why . ') — spec §7.8; '
-                . 'rewrite it so no input can be matched in two different ways by a loop',
+                . 'rewrite it so no input can be matched in two different ways by a loop'
+                // A refusal of the whole pattern: offset 0 (spec/errors.md, "Message conventions").
+                . ' (at offset 0 of /' . Regex::excerpt($this->pattern) . '/)',
             $this->pos,
         );
     }

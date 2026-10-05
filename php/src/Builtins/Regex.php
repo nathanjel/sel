@@ -22,6 +22,7 @@ use Sel\Utf8;
 use Sel\Value;
 
 use function Sel\fail;
+use function Sel\quote_text;
 
 final class Regex
 {
@@ -68,7 +69,7 @@ final class Regex
      * whole: at most 80 code points, cut between code points so the message
      * stays UTF-8.
      */
-    private static function excerpt(string $pattern): string
+    public static function excerpt(string $pattern): string
     {
         if (strlen($pattern) <= 80 || Utf8::length($pattern) <= 80) return $pattern;
         return substr($pattern, 0, Utf8::advance($pattern, 77)) . '...';
@@ -520,7 +521,7 @@ final class Regex
             $isRange = ($k + 2 < $m) && $atoms[$k + 1]['dash'];
             if ($a['esc']) {
                 if ($isRange) {
-                    self::bad('a class escape such as \\d cannot be a range endpoint', $pattern, $a['at'], $pos);
+                    self::bad('a class escape such as \\d cannot be a range endpoint', $pattern, $atoms[$k + 1]['at'], $pos);
                 }
                 $out .= $a['src'];
                 foreach ($a['ranges'] as $r) $ranges[] = $r;
@@ -529,10 +530,10 @@ final class Regex
             if ($isRange) {
                 $hiAtom = $atoms[$k + 2];
                 if ($hiAtom['esc']) {
-                    self::bad('a class escape such as \\d cannot be a range endpoint', $pattern, $hiAtom['at'], $pos);
+                    self::bad('a class escape such as \\d cannot be a range endpoint', $pattern, $atoms[$k + 1]['at'], $pos);
                 }
                 if ($hiAtom['cp'] < $a['cp']) {
-                    self::bad('range out of order in character class', $pattern, $a['at'] ?? $start, $pos);
+                    self::bad('range out of order in character class', $pattern, $atoms[$k + 1]['at'], $pos);
                 }
                 $out .= $a['src'] . '-' . $hiAtom['src'];
                 $ranges[] = [$a['cp'], $hiAtom['cp']];
@@ -832,12 +833,12 @@ final class Regex
             if ($ch === 'm' || $ch === 's') {
                 fail(
                     'E_BAD_ARG',
-                    'flag ' . json_encode($ch) . ' is not offered — SEL always matches . against any '
+                    'flag ' . quote_text($ch) . ' is not offered — SEL always matches . against any '
                         . 'character and anchors ^ $ to the whole subject',
                     $pos,
                 );
             }
-            fail('E_BAD_ARG', 'unknown regex flag ' . json_encode($ch), $pos);
+            fail('E_BAD_ARG', 'unknown regex flag ' . quote_text($ch), $pos);
         }
         return $ignoreCase;
     }

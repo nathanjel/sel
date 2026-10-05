@@ -36,6 +36,35 @@
          :col (if at (pos-col at) 0)
          :offset (if at (pos-offset at) 0)))
 
+(defun quote-text (s)
+  "S as a message quotes it (spec/errors.md, \"Message conventions\"): a JSON
+string literal with every non-ASCII code point as itself. ~S is not that -- it
+leaves control characters raw."
+  (with-output-to-string (out)
+    (write-char #\" out)
+    (loop for c across s
+          for k = (char-code c)
+          do (case k
+               (34 (write-string "\\\"" out))
+               (92 (write-string "\\\\" out))
+               (10 (write-string "\\n" out))
+               (13 (write-string "\\r" out))
+               (9 (write-string "\\t" out))
+               (8 (write-string "\\b" out))
+               (12 (write-string "\\f" out))
+               (t (if (< k 32)
+                      (format out "\\u~(~4,'0x~)" k)
+                      (write-char c out)))))
+    (write-char #\" out)))
+
+(defun describe-char (c)
+  "One source character as the lexer's refusal names it: quoted, and, outside
+printable ASCII, with its code point, so an invisible one shows."
+  (let ((k (char-code c)))
+    (if (<= #x21 k #x7e)
+        (quote-text (string c))
+        (format nil "~a (U+~4,'0X)" (quote-text (string c)) k))))
+
 ;;; spec/SPEC.md §6.4's three caps, which are one number. The parser's nesting,
 ;;; the evaluator's, and a value's -- each is a recursion over a structure the
 ;;; input can grow without bound, and each finds this host's own control stack

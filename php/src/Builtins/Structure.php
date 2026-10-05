@@ -19,6 +19,7 @@ use Sel\Utf8;
 use Sel\Value;
 
 use function Sel\fail;
+use function Sel\quote_text;
 
 /**
  * @phpstan-import-type EagerDecimal from Dec
@@ -366,13 +367,13 @@ final class Structure
                     $val = ($row->shape === $shape && $row->storage !== null)
                         ? ($row->storage[$slot] ?? null)
                         : $row->get($keyName);
-                    if ($val === null) fail('E_NO_KEY', 'no key ' . json_encode($keyName), $pos);
+                    if ($val === null) fail('E_NO_KEY', 'no key ' . quote_text((string) $keyName), $pos);
                     return self::canonicalJoinKey($val, $numeric);
                 };
             }
             return static function (Value $row) use ($keyName, $numeric, $pos): int|string|array|null {
                 $val = $row->get($keyName);
-                if ($val === null) fail('E_NO_KEY', 'no key ' . json_encode($keyName), $pos);
+                if ($val === null) fail('E_NO_KEY', 'no key ' . quote_text((string) $keyName), $pos);
                 return self::canonicalJoinKey($val, $numeric);
             };
         }
@@ -400,14 +401,14 @@ final class Structure
                             $sub = $row->storage[$tableSlot] ?? null;
                             if ($sub !== null && $sub->shape === $subShape && $sub->storage !== null) {
                                 $val = $sub->storage[$fieldSlot] ?? null;
-                                if ($val === null) fail('E_NO_KEY', 'no key ' . json_encode($fieldName), $fieldPos);
+                                if ($val === null) fail('E_NO_KEY', 'no key ' . quote_text((string) $fieldName), $fieldPos);
                                 return self::canonicalJoinKey($val, $numeric);
                             }
                         }
                         $sub = $row->get($tableName);
-                        if ($sub === null) fail('E_NO_KEY', 'no key ' . json_encode($tableName), $tablePos);
+                        if ($sub === null) fail('E_NO_KEY', 'no key ' . quote_text((string) $tableName), $tablePos);
                         $val = $sub->get($fieldName);
-                        if ($val === null) fail('E_NO_KEY', 'no key ' . json_encode($fieldName), $fieldPos);
+                        if ($val === null) fail('E_NO_KEY', 'no key ' . quote_text((string) $fieldName), $fieldPos);
                         return self::canonicalJoinKey($val, $numeric);
                     };
                 }
@@ -415,17 +416,17 @@ final class Structure
                     $sub = ($row->shape === $tableShape && $row->storage !== null)
                         ? ($row->storage[$tableSlot] ?? null)
                         : $row->get($tableName);
-                    if ($sub === null) fail('E_NO_KEY', 'no key ' . json_encode($tableName), $tablePos);
+                    if ($sub === null) fail('E_NO_KEY', 'no key ' . quote_text((string) $tableName), $tablePos);
                     $val = $sub->get($fieldName);
-                    if ($val === null) fail('E_NO_KEY', 'no key ' . json_encode($fieldName), $fieldPos);
+                    if ($val === null) fail('E_NO_KEY', 'no key ' . quote_text((string) $fieldName), $fieldPos);
                     return self::canonicalJoinKey($val, $numeric);
                 };
             }
             return static function (Value $row) use ($tableName, $fieldName, $numeric, $tablePos, $fieldPos): int|string|array|null {
                 $sub = $row->get($tableName);
-                if ($sub === null) fail('E_NO_KEY', 'no key ' . json_encode($tableName), $tablePos);
+                if ($sub === null) fail('E_NO_KEY', 'no key ' . quote_text((string) $tableName), $tablePos);
                 $val = $sub->get($fieldName);
-                if ($val === null) fail('E_NO_KEY', 'no key ' . json_encode($fieldName), $fieldPos);
+                if ($val === null) fail('E_NO_KEY', 'no key ' . quote_text((string) $fieldName), $fieldPos);
                 return self::canonicalJoinKey($val, $numeric);
             };
         }

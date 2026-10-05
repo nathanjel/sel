@@ -198,12 +198,12 @@ final class Evaluator
                         }
                         return $obj->storage[$index];
                     }
-                    fail('E_NO_KEY', 'no key ' . json_encode($key), $node['pos']);
+                    fail('E_NO_KEY', 'no key ' . quote_text((string) $key), $node['pos']);
                 }
 
                 $child = $obj->get($key);
                 if ($child === null) {
-                    fail('E_NO_KEY', 'no key ' . json_encode($key), $node['pos']);
+                    fail('E_NO_KEY', 'no key ' . quote_text((string) $key), $node['pos']);
                 }
                 return $child;
 

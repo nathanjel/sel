@@ -2628,7 +2628,8 @@ non-NIL results (each worker returns NIL when it saw nothing wrong)."
   ;; no prompt on a pipe; a whitespace-only line is skipped, an NBSP line is not
   (multiple-value-bind (out rc) (run-cli "printf 'A = 1\\n \\t\\r\\nA + 1\\n\\302\\240\\n' | lisp/bin/sel 2>&1")
     (is (eql rc 0))
-    (is (string= (format nil "1~%2~%E_SYNTAX at line 1 column 1: unexpected character \"~a\"" (code-char #xa0)) out)
+    ;; the code and position, not the message text (spec/errors.md)
+    (is (starts-with-p (format nil "1~%2~%E_SYNTAX at line 1 column 1: ") out)
         "~s" out)))
 
 ;;; --- performance round 1: the fast paths answer what the general ones do

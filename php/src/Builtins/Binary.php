@@ -11,6 +11,7 @@ use Sel\Utf8;
 use Sel\Value;
 
 use function Sel\fail;
+use function Sel\quote_text;
 
 final class Binary
 {
@@ -52,7 +53,7 @@ final class Binary
                     fail('E_BAD_ARG', 'FROM_HEX needs an even number of digits', $a->posOf(0));
                 }
                 if ($s !== '' && preg_match('/^[0-9a-fA-F]+$/D', $s) !== 1) {
-                    fail('E_BAD_ARG', 'FROM_HEX: ' . json_encode($s) . ' is not hex', $a->posOf(0));
+                    fail('E_BAD_ARG', 'FROM_HEX: ' . quote_text($s) . ' is not hex', $a->posOf(0));
                 }
                 return Value::bin($s === '' ? '' : (string) hex2bin($s));
             }]);
@@ -105,7 +106,7 @@ final class Binary
                             fail('E_BAD_ARG', 'misplaced base64 padding', $pos);
                         }
                         if (!isset($index[$ch])) {
-                            fail('E_BAD_ARG', 'invalid base64 character ' . json_encode($ch), $pos);
+                            fail('E_BAD_ARG', 'invalid base64 character ' . quote_text($ch), $pos);
                         }
                         $quad[] = $index[$ch];
                     }

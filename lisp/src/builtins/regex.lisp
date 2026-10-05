@@ -48,8 +48,14 @@
 (defun syntax-char-p (e) (find e "^$\\.*+?()[]{}|/"))
 
 (defun bad-regex (message pattern at pos)
+  "AT counts code points of PATTERN from 0; the pattern is quoted whole up to 80
+code points, past that its first 77 and `...' (spec/errors.md, \"Message
+conventions\")."
   (fail "E_REGEX_SYNTAX"
-        (format nil "~a (at offset ~d of /~a/)" message at pattern)
+        (format nil "~a (at offset ~d of /~a/)" message at
+                (if (> (length pattern) 80)
+                    (concatenate 'string (subseq pattern 0 77) "...")
+                    pattern))
         pos))
 
 (defun reject-escape (e pattern at pos)
@@ -360,6 +366,9 @@ capture some iteration need not set."
                (c (char p start))
                (atom nil) (kind :atom))
           (cond
+            ;; `(*VERB)`: refused at its `(`, before the `*` reads as a quantifier.
+            ((and (char= c #\() (< (1+ start) n) (char= (char p (1+ start)) #\*))
+             (bad-regex "PCRE verbs such as (*FAIL) are not portable" p start pos))
             ((char= c #\()
              (incf (rxp-groups r))
              (when (> (rxp-groups r) +regex-max-groups+)
@@ -394,8 +403,13 @@ capture some iteration need not set."
             (t (incf (rxp-i r)) (setf atom (list :atom))))
           ;; A quantifier binds to the atom just read.
           (loop
-            (let ((q (and (< (rxp-i r) n) (char p (rxp-i r))))
-                  (lo nil) (hi nil))
+            (let* ((qat (rxp-i r))      ; the quantifier, which a refusal names
+                   (q (and (< qat n) (char p qat)))
+                   (lo nil) (hi nil))
+              ;; A quantifier on a quantifier (`a**`, `a{2}*`, `a{2}{3}`): cl-ppcre
+              ;; accepts some of these and the other engines refuse them all.
+              (when (and (eq kind :rep) (find q "*+?{"))
+                (bad-regex "nothing to repeat" p qat pos))
               (case q
                 (#\* (setf lo 0 hi nil) (incf (rxp-i r)))
                 (#\+ (setf lo 1 hi nil) (incf (rxp-i r)))
@@ -411,8 +425,8 @@ capture some iteration need not set."
                 (t (return)))
               ;; a lazy `?`
               (when (and (< (rxp-i r) n) (char= (char p (rxp-i r)) #\?)) (incf (rxp-i r)))
-              (when (or (null hi) (> hi 1)) (rx-check-loop atom kind p start pos))
-              (when (and (eq kind :anchor)) (rx-check-loop atom kind p start pos))
+              (when (or (null hi) (> hi 1)) (rx-check-loop atom kind p qat pos))
+              (when (and (eq kind :anchor)) (rx-check-loop atom kind p qat pos))
               (setf atom (list :rep atom lo hi) kind :rep)))
           (push atom items))))
     (cond ((null items) (list :empty))
@@ -630,7 +644,9 @@ case mirror, U+212A with k/K and U+017F with s/S."
                        ((null lo) (setf rs (append set rs)))
                        ((and (< j n) (char= (char p j) #\-) (< (1+ j) n) (char/= (char p (1+ j)) #\]))
                         (multiple-value-bind (hi next2) (class-atom (1+ j))
-                          (when (or (null hi) (< hi lo)) (ax-reject "bad range in a class"))
+                          ;; A reversed range is refused at its `-` (J), like any construct.
+                          (when (or (null hi) (< hi lo))
+                            (bad-regex "a class range runs backwards" *ax-pattern* j *ax-pos*))
                           (push (cons lo hi) rs)
                           (setf j next2)))
                        (t (push (cons lo lo) rs)))))
@@ -865,10 +881,10 @@ neither are the letters whose case-folding lands on it. Returns ignore-case."
                ((char= ch #\i) (setf ignore-case t))
                ((or (char= ch #\m) (char= ch #\s))
                 (fail "E_BAD_ARG"
-                      (format nil "flag ~s is not offered — SEL always matches . against any character and anchors ^ $ to the whole subject"
-                              (string ch))
+                      (format nil "flag ~a is not offered — SEL always matches . against any character and anchors ^ $ to the whole subject"
+                              (quote-text (string ch)))
                       flag-pos))
-               (t (fail "E_BAD_ARG" (format nil "unknown regex flag ~s" (string ch)) flag-pos))))
+               (t (fail "E_BAD_ARG" (format nil "unknown regex flag ~a" (quote-text (string ch))) flag-pos))))
     ignore-case))
 
 (defun check-regex-pattern (pattern ignore-case flag-pos pat-pos)

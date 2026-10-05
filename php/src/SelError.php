@@ -80,3 +80,33 @@ function fail(string $code, string $message, ?array $pos = null): never
 {
     throw new SelError($code, $message, $pos);
 }
+
+/**
+ * A text as a message quotes it (spec/errors.md, "Message conventions"): a JSON
+ * string literal with every non-ASCII code point as itself. Only ASCII bytes are
+ * escaped, so the UTF-8 is walked byte by byte.
+ */
+function quote_text(string $s): string
+{
+    static $short = ["\"" => '\\"', '\\' => '\\\\', "\n" => '\\n', "\r" => '\\r', "\t" => '\\t',
+        "\x08" => '\\b', "\x0C" => '\\f'];
+    $out = '"';
+    $n = strlen($s);
+    for ($i = 0; $i < $n; $i++) {
+        $c = $s[$i];
+        if (isset($short[$c])) $out .= $short[$c];
+        elseif (ord($c) < 0x20) $out .= sprintf('\\u%04x', ord($c));
+        else $out .= $c;
+    }
+    return $out . '"';
+}
+
+/**
+ * One character of the source as the lexer's refusal names it: quoted, and, when
+ * it is not printable ASCII, its code point too, so an invisible one shows.
+ */
+function describe_char(string $c): string
+{
+    $cp = Utf8::ord($c);
+    return quote_text($c) . ($cp >= 0x21 && $cp <= 0x7E ? '' : sprintf(' (U+%04X)', $cp));
+}

@@ -332,7 +332,7 @@
                      (as-text (eval-node r ctx) (node-pos r))))
             (child (value-get obj key)))
        (or child
-           (fail "E_NO_KEY" (format nil "no key ~s" key) (node-pos node)))))
+           (fail "E_NO_KEY" (format nil "no key ~a" (quote-text key)) (node-pos node)))))
 
     (:seq
      (let ((last nil))
