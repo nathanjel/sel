@@ -90,12 +90,10 @@ writes its results into its own ignored `results/` directory or to stdout.
 | `tools/adversarial/` | the SQL-layer adversarial audit's scripts; `regressions.sh` re-asserts its findings |
 | `tools/stress.sh` | programs of several hundred thousand nodes through every host |
 
-**Historical, unmaintained:** `tools/perf/` (the per-item A/B scripts of closed
-performance worklists), `tools/benchmark-{cpp-value.cpp,js-decimal-guard.mjs,
-lisp-traversal.lisp,php-runtime.php}`, `tools/js-runtime/`, `tools/code-scan/`
-and `tools/cpp-collection/`. Nothing runs or references them; they are kept only
-as worked examples of an A/B measurement and are not updated when an API they
-call changes. Their results and decisions are in git history.
+The one-off A/B harnesses of closed performance worklists (`tools/perf/`, the
+`tools/benchmark-*` scripts other than Python's, `tools/js-runtime/`,
+`tools/code-scan/`, `tools/cpp-collection/`) were removed; their results and
+decisions are in git history.
 
 ---
 

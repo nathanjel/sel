@@ -77,7 +77,7 @@ final class Dec
 
     /**
      * The test hooks, behind one validated door: a test (tools/check-php-runtime.php,
-     * tools/check-decimal.php, tools/perf) sets some of them and gets every hook's
+     * tools/check-decimal.php) sets some of them and gets every hook's
      * previous value back, which it hands to testHooks() again to restore them.
      * None of them changes an answer; each picks which of two exact paths
      * computes it, or counts work. There is no reason to call this outside a test.

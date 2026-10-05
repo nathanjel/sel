@@ -5,7 +5,7 @@ package sel
 // seed and has a semantic checksum (TestWorkloadChecksums) so a speedup that
 // changes an answer fails a test, not a review.
 //
-//	tools/perf/go/bench.sh [pattern]     runs them, median of 5, with allocs
+//	cd go && go test ./sel ./internal/decimal -run '^$' -bench <pattern> -benchmem -count 5
 //
 // Heavy workloads are written to be run with -benchtime=1x.
 
