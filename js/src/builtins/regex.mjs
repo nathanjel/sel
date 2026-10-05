@@ -38,8 +38,17 @@ const CONTROL_ESCAPES = new Set(['n', 'r', 't', 'f']);
 // Exactly JS's u-mode identity escapes; PCRE accepts all of these too.
 const SYNTAX_CHARS = new Set(['^', '$', '\\', '.', '*', '+', '?', '(', ')', '[', ']', '{', '}', '|', '/']);
 
+// The detail every host writes alike (spec/errors.md, "Message conventions"): `at`
+// is a code point offset into the pattern, and a pattern longer than 80 code
+// points is quoted as its first 77 and "...".
 function bad(message, pattern, at, pos) {
-  fail('E_REGEX_SYNTAX', `${message} (at offset ${at} of /${pattern}/)`, pos);
+  fail('E_REGEX_SYNTAX', `${message} (at offset ${at} of /${clipPattern(pattern)}/)`, pos);
+}
+
+function clipPattern(pattern) {
+  if (pattern.length <= 80) return pattern;
+  const cps = Array.from(pattern);
+  return cps.length <= 80 ? pattern : cps.slice(0, 77).join('') + '...';
 }
 
 function rejectEscape(e, pattern, at, pos) {
@@ -72,7 +81,7 @@ function rejectEscape(e, pattern, at, pos) {
 // analysis reads, so callers pass it and caches are keyed by it.
 export function validate(pattern, pos, ignoreCase = false) {
   if (cpLength(pattern) > MAX_REGEX_PATTERN) {
-    bad(`pattern is longer than ${MAX_REGEX_PATTERN} code points`, pattern, MAX_REGEX_PATTERN, pos);
+    bad(`pattern is longer than ${MAX_REGEX_PATTERN} code points`, pattern, 0, pos);
   }
   const p = toCodePoints(pattern, pos).map((c) => fromCodePoints([c]));
   // The `i` fold is analysed only for an ASCII pattern (SPEC 7.8): a non-ASCII
@@ -166,7 +175,7 @@ function parseSequence(st, depth) {
       }
       if (atom.anchor) bad('a quantified anchor is not portable', pattern, start, pos);
       end = afterQuantifier(p, end, pattern, pos);
-      atom = { k: 'rep', node: atom, lo, hi, src: p.slice(start, end).join('') };
+      atom = { k: 'rep', node: atom, lo, hi, at: start, src: p.slice(start, end).join('') };
       st.i = end;
       const r = p[st.i];
       if (r === '*' || r === '+' || r === '?' || r === '{') bad('nothing to repeat', pattern, st.i, pos);
@@ -219,9 +228,9 @@ function checkTree(node, st) {
     if (n.k === 'rep') {
       if (isLoop(n)) {
         if (nullable(n.node)) {
-          bad('a loop whose body can match the empty string is not portable', st.pattern, 0, st.pos);
+          bad('a loop whose body can match the empty string is not portable', st.pattern, n.at, st.pos);
         }
-        checkCaptures(n.node, false, st);
+        checkCaptures(n.node, false, st, n.at);
       }
       stack.push(n.node);
     } else if (n.k === 'group') {
@@ -230,15 +239,16 @@ function checkTree(node, st) {
   }
 }
 
-function checkCaptures(node, optional, st) {
+// `at` is the offset of the loop's quantifier, which the refusal names.
+function checkCaptures(node, optional, st, at) {
   if (node.k === 'rep') {
-    checkCaptures(node.node, optional || node.lo === 0, st);
+    checkCaptures(node.node, optional || node.lo === 0, st, at);
   } else if (node.k === 'group') {
     if (node.capture && optional) {
-      bad('a capture inside a loop must take part in every iteration', st.pattern, 0, st.pos);
+      bad('a capture inside a loop must take part in every iteration', st.pattern, at, st.pos);
     }
     const inner = optional || node.alts.length > 1;
-    for (const seq of node.alts) for (const item of seq) checkCaptures(item, inner, st);
+    for (const seq of node.alts) for (const item of seq) checkCaptures(item, inner, st, at);
   }
 }
 

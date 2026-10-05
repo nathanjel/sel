@@ -12,7 +12,7 @@ from typing import Any, NoReturn
 
 from . import decimal as D
 from ._budget import MAX_POWER_EXPONENT, MAX_ROUND_SCALE, check_collection, check_sized_int, check_text
-from .errors import MAX_DEPTH, Pos, SelError, fail
+from .errors import MAX_DEPTH, Pos, SelError, fail, quote_text
 from .math_plan import MathPlan, OpCode
 from .parser import Node
 from .utf8 import bytes_compare
@@ -489,11 +489,11 @@ def _eval_index(node: Node, ctx: Context) -> Value:
             if literal:
                 node._cached_slot = (obj.shape, index)
             return obj.storage[index]
-        fail('E_NO_KEY', f'no key "{key}"', node.pos)
+        fail('E_NO_KEY', f'no key {quote_text(key)}', node.pos)
 
     child = obj.get(key)
     if child is None:
-        fail('E_NO_KEY', f'no key "{key}"', node.pos)
+        fail('E_NO_KEY', f'no key {quote_text(key)}', node.pos)
     return child
 
 

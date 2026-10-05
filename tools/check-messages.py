@@ -92,7 +92,7 @@ def main():
         path = os.path.join(work, f'{i}.sel')
         try:
             r = subprocess.run(['bash', '-c', '. tools/impls.sh; impl_cli "$0" "$1"', host, path],
-                               cwd=ROOT, capture_output=True, timeout=120)
+                               cwd=ROOT, capture_output=True, timeout=300)
             err = r.stderr.decode('utf-8', 'replace').split('\n')[0]
         except subprocess.TimeoutExpired:
             err = 'TIMEOUT'

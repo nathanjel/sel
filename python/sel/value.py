@@ -11,7 +11,7 @@ from itertools import islice
 from typing import Any, Iterator
 
 from . import decimal as D
-from .errors import MAX_DEPTH, Pos, SelError, fail
+from .errors import MAX_DEPTH, Pos, SelError, fail, quote_text
 from .utf8 import bytes_to_hex, encode_utf8, validate_text
 
 NONE = 'NONE'
@@ -424,7 +424,7 @@ class Value:
             return v
         parsed = D.parse(d)
         if parsed is None:
-            fail('E_NOT_NUM', f'not a number: {d!r}', None)
+            fail('E_NOT_NUM', f'not a number: {quote_text(d)}', None)
         v = Value(TEXT, None)
         v._dec_val = parsed
         return v
@@ -624,7 +624,7 @@ class Value:
             return v._dec_val
         d = D.parse(v.scalar, pos)
         if d is None:
-            fail('E_NOT_NUM', f'not a number: {v.scalar!r}', pos)
+            fail('E_NOT_NUM', f'not a number: {quote_text(v.scalar)}', pos)
         v._dec_val = d
         return d
 

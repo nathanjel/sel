@@ -16,7 +16,7 @@ from __future__ import annotations
 from bisect import bisect_right
 import re
 
-from .errors import Pos, fail
+from .errors import Pos, describe_char, fail
 from .utf8 import check_source
 
 OPERATORS = [
@@ -222,7 +222,7 @@ class Lexer:
                 i += len(op)
                 continue
 
-            fail('E_SYNTAX', f'unexpected character {c!r}', pos)
+            fail('E_SYNTAX', f'unexpected character {describe_char(c)}', pos)
 
     def emit_part(self, part: tuple, index: int, pos: Pos, out: list[Token],
                   stack: list[tuple]) -> None:
