@@ -479,7 +479,10 @@ NULL. VALUE-SET on a key that exists keeps its place."
                            (list (cons tbl-name row) (cons low row))
                            (list (cons tbl-name row))))
                 (new-children (append (value-children row) extra)))
-           (%value-with-children (value-kind row) (value-scalar row) new-children (value-is-list row)))))))
+           ;; The extended element is a record of the element's fields and the
+           ;; name keys: no scalar of its own, whatever the element's kind, and
+           ;; not a list once it has a name key (spec §7.4).
+           (%value-with-children :none nil new-children nil))))))
 
 (defconstant +join-scalar+ 0)
 (defconstant +join-null+ 1)
