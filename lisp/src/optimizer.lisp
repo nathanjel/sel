@@ -727,13 +727,12 @@ needs."
                       copy)
                     step)))
 
-(defun optimize-children (node physical depth in-math)
+(defun optimize-children (node physical depth)
   "A shallow copy of NODE with every child optimised. NODE itself is never
 written: the tree a Program owns is the caller's, the other four hosts copy on
 the way down, and this one wrote into its input until the cross-language review
 -- so a second RUN saw a tree the first had already rewritten, and the SQL
 planner saw one the evaluator had rewritten for itself."
-  (declare (ignore in-math))
   (let ((copy (copy-node-shallow node))
         (next-in-math (is-math-op-p node)))
     (case (node-kind node)
@@ -791,7 +790,7 @@ copy would only be a second object the translator has to recognise."
                                   (optimize-inmemory-pipeline-steps opt-source opt-steps)
                                   (optimize-logical-pipeline-steps opt-source opt-steps))
                               (node-pos node))))))
-    (t (let* ((copy (optimize-children node physical depth in-math))
+    (t (let* ((copy (optimize-children node physical depth))
               (folded (if *fold-constants* (fold-node copy) copy)))
          (when (and physical (not in-math) (is-math-op-p folded))
            (let ((plan (compile-math-plan folded)))

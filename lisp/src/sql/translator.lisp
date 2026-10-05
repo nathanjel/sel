@@ -1764,17 +1764,16 @@ has no scalar rendering" name)
           (values (sel::node-s (second args)) (third args)))
         (values "_" (second args)))))
 
-(defun value-node (tr v spec pos)
+(defun value-node (v spec pos)
   "Synthesise one AST node from one value child. A value binding holds values,
 not AST nodes, so nodes are manufactured -- deliberately cheaper than a fourth
 binder shape, and it inherits the quoting decision from DECLARED-KIND rather
 than restating it."
-  (declare (ignore tr))
   (cond
     ((plusp (sel:value-size v))
      (let ((cl (make-clist pos)))
        (setf (clist-entries cl)
-             (mapcar (lambda (cell) (cons (car cell) (value-node nil (cdr cell) spec pos)))
+             (mapcar (lambda (cell) (cons (car cell) (value-node (cdr cell) spec pos)))
                      (sel::%value-entries v)))
        cl))
     ((sel:value-bool-p v) (lit-node :bool "" (sel:as-bool v pos) pos))
@@ -1788,14 +1787,14 @@ bind it as a column, or convert it before translating" pos))
      (refuse "E_SQL_BINDING" "a value binding holds a NULL element, which has no SQL literal" pos))
     (t (lit-node (if (eq (getf spec :type) :num) :num :text) (sel:as-text v pos) nil pos))))
 
-(defun value-elements (tr spec pos)
+(defun value-elements (spec pos)
   (let ((v (getf spec :value)))
     (if (zerop (sel:value-size v))
         ;; A NONE with no children is genuinely empty -- what FILTER returns when
         ;; nothing matched. A scalar is a one-element list of itself.
-        (if (sel:value-none-p v) '() (list (cons "1" (binder-node (value-node tr v spec pos)))))
+        (if (sel:value-none-p v) '() (list (cons "1" (binder-node (value-node v spec pos)))))
         (mapcar (lambda (cell)
-                  (cons (car cell) (binder-node (value-node tr (cdr cell) spec pos))))
+                  (cons (car cell) (binder-node (value-node (cdr cell) spec pos))))
                 (sel::%value-entries v)))))
 
 (defun classify (tr src)
@@ -1880,7 +1879,7 @@ which is a map with one child per field; SQL has no way to iterate or count that
            (:value
             (let ((v (getf spec :value)))
               (return-from classify
-                (%source :static (value-elements tr spec (snode-pos src)) nil '()
+                (%source :static (value-elements spec (snode-pos src)) nil '()
                          ;; A scalar value gets the scalar rule; a list does not,
                          ;; and an empty NONE gets no elements and no scalar rule.
                          (and (zerop (sel:value-size v)) (not (sel:value-none-p v)))))))
@@ -2365,7 +2364,7 @@ projected column as a relation with that one field." (sel::node-s rhs) (length f
                (when (and (eq (binding-kind b) :value)
                           (plusp (sel:value-size (getf spec :value))))
                  (setf elements (mapcar (lambda (c) (binder-payload (cdr c)))
-                                        (value-elements tr spec (snode-pos rhs)))))))))
+                                        (value-elements spec (snode-pos rhs)))))))))
       ;; --- branch B: the scalar fallback
       (when (eq elements :none)
         (let* ((r (walk-node tr rhs))                 ; RIGHT operand rendered FIRST

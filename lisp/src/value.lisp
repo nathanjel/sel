@@ -108,8 +108,8 @@ compared pairwise, many through a hash table."
               formatted)
             nil))))
 
-(defun %make-value (kind scalar children &optional is-list shape storage dec-val)
-  (%make-value-raw kind scalar children (last children) (length children) nil is-list shape storage dec-val))
+(defun %make-value (kind scalar children &optional is-list)
+  (%make-value-raw kind scalar children (last children) (length children) nil is-list nil nil nil))
 
 (defun %make-shaped-value (shape storage)
   (%make-value-raw :none nil nil nil (record-shape-size shape) nil nil shape storage nil))
