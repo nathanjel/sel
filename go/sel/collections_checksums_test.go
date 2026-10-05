@@ -39,7 +39,7 @@ var perf2Checksums = map[string]string{
 	"p20 pad":        "t\"😀😀😀😀é|éabab|abc|xyx\"",
 }
 
-func TestPerf2WorkloadChecksums(t *testing.T) {
+func TestCollectionWorkloadChecksums(t *testing.T) {
 	ctxK := func() *Value { return ctxWith("L", intList(3000, 7)) }
 	ctxJ := func() *Value { return ctxWith("L", joinRows(2000, 10, 5), "R", joinRows(300, 10, 6)) }
 	strs := func() *Value {

@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-// GO-P21 workloads (the parity tests are in dec_p21_test.go).
+// GO-P21 workloads (the parity tests are in digit_bounds_test.go).
 
 // bigDec is the repunit 11…1 with the given number of digits (it survives doubling
 // without gaining a digit, so a benchmark can add it to itself at the cap).
@@ -39,7 +39,6 @@ func BenchmarkP21(b *testing.B) {
 		{"CmpBigScaleGap", func() { _ = Cmp(million, small2) }},
 	}
 	for _, c := range cases {
-		c := c
 		b.Run(c.name, func(b *testing.B) {
 			b.ReportAllocs()
 			for i := 0; i < b.N; i++ {

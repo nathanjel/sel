@@ -139,7 +139,6 @@ func TestNoCopyProgramsThatMutateStillSeeTheCopy(t *testing.T) {
 
 func TestNoCopyStillRefusesTheRowsTheCopyWouldRefuse(t *testing.T) {
 	for depth := 195; depth <= 202; depth++ {
-		depth := depth
 		ctx := func() *Value { return ctxWith("L", nestedRows(depth)) }
 		for _, src := range []string{`COUNT(FILTER(L, TRUE))`, `SUM(FILTER(L, TRUE), 1)`, `COUNT(MAP(FILTER(L, TRUE), 1))`} {
 			got := bothWays(t, src, ctx)

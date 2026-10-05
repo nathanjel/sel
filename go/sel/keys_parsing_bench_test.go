@@ -2,9 +2,9 @@ package sel
 
 // Round-3 workloads for the Go performance queue (GO-P21 … GO-P29),
 // docs/interim/2026-09-29/worklist/performance/go.md. Same conventions as the earlier
-// rounds: fixed seeds, n/2n/4n, semantic checksums in TestPerf3WorkloadChecksums
-// (perf3_checksums_test.go). GO-P21's decimal workloads are in
-// go/internal/decimal/dec_p21_bench_test.go and the SQL ones in go/sel/sql/perf3_bench_test.go.
+// rounds: fixed seeds, n/2n/4n, semantic checksums in TestKeysAndParsingWorkloadChecksums
+// (keys_parsing_checksums_test.go). GO-P21's decimal workloads are in
+// go/internal/decimal/digit_bounds_bench_test.go and the SQL ones in go/sel/sql/literals_bench_test.go.
 
 import (
 	"fmt"
@@ -17,7 +17,6 @@ import (
 func BenchmarkP22KeyScan(b *testing.B) {
 	bigBody := `SUM(LN, l, ((l["q"] + 1) * 2 - l["p"] + (l["q"] * 3) - (l["p"] + 7) + l["q"] * l["p"] - 11 + (l["p"] * 5) + (l["q"] - 2) * 4))`
 	for _, n := range []int{10000, 20000, 40000} {
-		n := n
 		ctx := func() *Value {
 			return ctxWith("O", intList(n, 4), "LN", newListOwned([]*Value{
 				rec("q", 1, "p", 2), rec("q", 3, "p", 4), rec("q", 5, "p", 6), rec("q", 7, "p", 8)}))
@@ -27,7 +26,6 @@ func BenchmarkP22KeyScan(b *testing.B) {
 			{"nested_big_body", `SUM(O, o, ` + bigBody + `)`, ctx},
 			{"flat_ctl", `SUM(O, o, o * 2)`, ctx},
 		} {
-			c := c
 			b.Run(fmt.Sprintf("%s/n=%d", c.name, n), func(b *testing.B) { benchCase(b, c) })
 		}
 	}
@@ -46,7 +44,6 @@ func binOf(n int) *Value {
 
 func BenchmarkP23TextBinary(b *testing.B) {
 	for _, n := range []int{1000000, 2000000, 4000000} {
-		n := n
 		ctxT := func() *Value {
 			return ctxWith("T", NewText(strings.Repeat("ab,c", n/4)), "B", binOf(n))
 		}
@@ -64,7 +61,6 @@ func BenchmarkP23TextBinary(b *testing.B) {
 		}
 	}
 	for _, n := range []int{250000, 500000, 1000000} {
-		n := n
 		c := perfCase{fmt.Sprintf("btl/n=%d", n), `COUNT(BTL(B))`, func() *Value { return ctxWith("B", binOf(n)) }}
 		b.Run(c.name, func(b *testing.B) { benchCase(b, c) })
 	}
@@ -81,7 +77,6 @@ func BenchmarkP24OneShot(b *testing.B) {
 		{"pipeline", `L .> FILTER(_ > 400000) .> MAP(_ * 2) .> COUNT()`},
 		{"if_and", `IF(A > 2 AND B < 20, C * 2, C)`},
 	} {
-		c := c
 		b.Run(c.name, func(b *testing.B) {
 			b.ReportAllocs()
 			for i := 0; i < b.N; i++ {
@@ -114,9 +109,7 @@ func polymorphicRows(n, shapes int) *Value {
 
 func BenchmarkP25SlotCache(b *testing.B) {
 	for _, n := range []int{100000, 200000, 400000} {
-		n := n
 		for _, shapes := range []int{1, 2, 4} {
-			shapes := shapes
 			c := perfCase{fmt.Sprintf("shapes=%d/n=%d", shapes, n), `SUM(L, _["a"])`,
 				func() *Value { return ctxWith("L", polymorphicRows(n, shapes)) }}
 			b.Run(c.name, func(b *testing.B) { benchCase(b, c) })
@@ -128,7 +121,6 @@ func BenchmarkP25SlotCache(b *testing.B) {
 
 func BenchmarkP26Hash(b *testing.B) {
 	for _, n := range []int{50000, 100000, 200000} {
-		n := n
 		ctx := func() *Value { return ctxWith("L", joinRows(n, 10, 5), "NUMS", intList(n, 3)) }
 		for _, c := range []perfCase{
 			{"distinct_records", `COUNT(DISTINCT(L))`, ctx},
@@ -136,7 +128,6 @@ func BenchmarkP26Hash(b *testing.B) {
 			{"bucket_key", `COUNT(BUCKET(L, _["k"]))`, ctx},
 			{"dedupe_records", `COUNT(DEDUPE(L))`, ctx},
 		} {
-			c := c
 			b.Run(fmt.Sprintf("%s/n=%d", c.name, n), func(b *testing.B) { benchCase(b, c) })
 		}
 	}
@@ -146,11 +137,9 @@ func BenchmarkP26Hash(b *testing.B) {
 
 func BenchmarkP27Parse(b *testing.B) {
 	for _, n := range []int{100000, 200000, 400000} {
-		n := n
 		chain := "1" + strings.Repeat("+1", n)
 		lits := "1" + strings.Repeat(" + 12.5", n/4)
 		for _, c := range []struct{ name, src string }{{"chain", chain}, {"literals", lits}} {
-			c := c
 			b.Run(fmt.Sprintf("%s/n=%d", c.name, n), func(b *testing.B) {
 				b.ReportAllocs()
 				b.SetBytes(int64(len(c.src)))

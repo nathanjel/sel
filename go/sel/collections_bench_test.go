@@ -2,8 +2,8 @@ package sel
 
 // Round-2 workloads for the Go performance queue (GO-P11 … GO-P20),
 // docs/interim/2026-09-29/worklist/performance/go.md. Same conventions as
-// perf_bench_test.go: fixed seeds, n/2n/4n, semantic checksums in
-// TestPerf2WorkloadChecksums (perf2_checksums_test.go).
+// workloads_bench_test.go: fixed seeds, n/2n/4n, semantic checksums in
+// TestCollectionWorkloadChecksums (collections_checksums_test.go).
 
 import (
 	"fmt"
@@ -15,7 +15,6 @@ import (
 
 func BenchmarkP11KeyedList(b *testing.B) {
 	for _, n := range []int{5000, 10000, 20000} {
-		n := n
 		for _, r := range []struct{ name, src string }{
 			{"get", `K = FILTER(L, _ > 400000); SUM(INDEXES(K), K[_])`},
 			{"has", `K = FILTER(L, _ > 400000); COUNT(FILTER(INDEXES(K), HAS(K, _)))`},
@@ -74,7 +73,6 @@ func BenchmarkP14Record(b *testing.B) {
 		benchCase(b, perfCase{"rl", `COUNT(MAP(L, RECORD("a", _["a"], "b", _["k"])))`, ctxR})
 	})
 	for _, n := range []int{10000, 20000} {
-		n := n
 		b.Run(fmt.Sprintf("link_table/n=%d", n), func(b *testing.B) {
 			benchCase(b, perfCase{"lt", `COUNT(LINK(L, R, _1["a"] == _2["a"]))`,
 				func() *Value { return ctxWith("L", joinRows(n, 1000, 1), "R", joinRows(n, 1000, 2)) }})
@@ -89,7 +87,6 @@ func BenchmarkP14Record(b *testing.B) {
 
 func BenchmarkP15Find(b *testing.B) {
 	for _, n := range []int{5000, 10000, 20000} {
-		n := n
 		b.Run(fmt.Sprintf("miss_tail/n=%d", n), func(b *testing.B) {
 			benchCase(b, perfCase{"f", `FIND(REPEAT("a", ` + fmt.Sprint(n) + `) & "b", REPEAT("a", ` + fmt.Sprint(2*n) + `))`,
 				func() *Value { return NewNone() }})
@@ -128,7 +125,6 @@ func BenchmarkP19RegexCall(b *testing.B) {
 
 func BenchmarkP20Text(b *testing.B) {
 	for _, n := range []int{2000000, 4000000, 8000000} {
-		n := n
 		ctx := func() *Value { return ctxWith("S", NewText(" "+strings.Repeat("a", n)+" ")) }
 		for _, r := range []struct{ name, src string }{
 			{"trim", `LEN(TRIM(S))`},

@@ -2,7 +2,7 @@ package sel
 
 // Durable benchmark workloads for the Go performance queue (GO-P1 … GO-P10),
 // docs/interim/2026-09-29/worklist/performance/go.md. Every workload uses a fixed
-// seed and has a semantic checksum (TestPerfWorkloadChecksums) so a speedup that
+// seed and has a semantic checksum (TestWorkloadChecksums) so a speedup that
 // changes an answer fails a test, not a review.
 //
 //	tools/perf/go/bench.sh [pattern]     runs them, median of 5, with allocs
@@ -135,7 +135,6 @@ func BenchmarkP2Sort(b *testing.B) {
 			{"text_by", `COUNT(SORT_BY(L, _["s"]))`, func() *Value { return ctxWith("L", textRows(n, 4)) }},
 			{"text_by_desc", `COUNT(SORT_BY(L, _["s"], "DESC"))`, func() *Value { return ctxWith("L", textRows(n, 4)) }},
 		} {
-			c := c
 			b.Run(fmt.Sprintf("%s/n=%d", c.name, n), func(b *testing.B) { benchCase(b, c) })
 		}
 	}
@@ -148,7 +147,6 @@ func BenchmarkP3Top(b *testing.B) {
 			{"top_by10", `COUNT(TOP_BY(L, _["n"], 10))`, func() *Value { return ctxWith("L", textRows(n, 4)) }},
 			{"top_desc10", `COUNT(TOP_DESC(NUMS, 10))`, func() *Value { return ctxWith("NUMS", intList(n, 3)) }},
 		} {
-			c := c
 			b.Run(fmt.Sprintf("%s/n=%d", c.name, n), func(b *testing.B) { benchCase(b, c) })
 		}
 	}
@@ -176,7 +174,6 @@ func BenchmarkP5Regex(b *testing.B) {
 			{"rfind_late", `RFIND('5,$', S)`, nil},
 			{"rgroups", `COUNT(RGROUPS('(\d+)-(\d+)', S))`, nil},
 		} {
-			c := c
 			c.ctx = func() *Value { return ctxWith("S", NewText(sub)) }
 			b.Run(fmt.Sprintf("%s/chars=%d", c.name, len(sub)), func(b *testing.B) { benchCase(b, c) })
 		}
@@ -187,7 +184,6 @@ func BenchmarkP5Regex(b *testing.B) {
 		{"short_rgroups", `COUNT(RGROUPS('(\d+)-(\d+)', "123-45"))`, func() *Value { return NewNone() }},
 		{"short_rreplace", `RREPLACE('-', "123-45", "+")`, func() *Value { return NewNone() }},
 	} {
-		c := c
 		b.Run(c.name, func(b *testing.B) { benchCase(b, c) })
 	}
 }
@@ -238,7 +234,6 @@ func BenchmarkP6Compile(b *testing.B) {
 
 func BenchmarkP7P8Interp(b *testing.B) {
 	for _, n := range []int{50000, 100000, 200000} {
-		n := n
 		ctx := func() *Value { return ctxWith("L", joinRows(n, 10, 5)) }
 		for _, c := range []perfCase{
 			{"coalesce_miss", `COUNT(MAP(L, _["zz"] ?? 1))`, ctx},
@@ -247,7 +242,6 @@ func BenchmarkP7P8Interp(b *testing.B) {
 			{"map_math", `SUM(L, _["a"] * 2 + _["c"] - 1)`, ctx},
 			{"map_if", `COUNT(MAP(L, IF(_["a"] > 4, 1, 2)))`, ctx},
 		} {
-			c := c
 			b.Run(fmt.Sprintf("%s/n=%d", c.name, n), func(b *testing.B) { benchCase(b, c) })
 		}
 	}
@@ -257,14 +251,12 @@ func BenchmarkP7P8Interp(b *testing.B) {
 
 func BenchmarkP9Arith(b *testing.B) {
 	for _, n := range []int{50000, 100000, 200000} {
-		n := n
 		ctx := func() *Value { return ctxWith("L", intList(n, 6)) }
 		for _, c := range []perfCase{
 			{"sum", `SUM(L, _)`, ctx},
 			{"sum_expr", `SUM(L, _ * 2 + 1)`, ctx},
 			{"max_div", `MAX(MAP(L, _ / 7))`, ctx},
 		} {
-			c := c
 			b.Run(fmt.Sprintf("%s/n=%d", c.name, n), func(b *testing.B) { benchCase(b, c) })
 		}
 	}
@@ -292,7 +284,7 @@ func BenchmarkP10BigNumeral(b *testing.B) {
 
 // Small-n answers for every workload above, recorded at the baseline (the tree
 // before the GO-P wave). A speedup must not change any of them.
-func TestPerfWorkloadChecksums(t *testing.T) {
+func TestWorkloadChecksums(t *testing.T) {
 	n := 600
 	ctxL := func() *Value { return ctxWith("L", joinRows(n, 10, 1), "R", joinRows(n, 10, 2)) }
 	cases := []struct {

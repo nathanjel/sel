@@ -1,7 +1,7 @@
 package sql
 
 // Round-3 SQL workloads (GO-P28), docs/interim/2026-09-29/worklist/performance/go.md.
-// TestPerf3SqlChecksums pins a digest of every rendered output and plan, recorded at
+// TestLiteralWorkloadChecksums pins a digest of every rendered output and plan, recorded at
 // the baseline, so a speedup that changes a byte fails a test.
 
 import (
@@ -24,7 +24,6 @@ func sumLiterals(n int) string {
 
 func BenchmarkP28TextLiteral(b *testing.B) {
 	for _, d := range []string{"mariadb", "postgresql", "sqlite"} {
-		d := d
 		b.Run("short/"+d, func(b *testing.B) {
 			b.ReportAllocs()
 			for i := 0; i < b.N; i++ {
@@ -44,7 +43,6 @@ func BenchmarkP28TextLiteral(b *testing.B) {
 	}
 	big := strings.Repeat("abcdefghij'klm\\no", 65000) // ~1.1 MB with escapes
 	for _, d := range []string{"mariadb", "postgresql"} {
-		d := d
 		b.Run("megabyte/"+d, func(b *testing.B) {
 			b.ReportAllocs()
 			b.SetBytes(int64(len(big)))
@@ -159,7 +157,7 @@ var perf3SqlChecksums = map[string]string{
 	"p28 sum_literals":   "b84f0d3563035ad9/511",
 }
 
-func TestPerf3SqlChecksums(t *testing.T) {
+func TestLiteralWorkloadChecksums(t *testing.T) {
 	texts := []string{"", "hello", `it's`, `a "q" b`, `back\slash`, "nl\nx\ty\r", "é😀ü", "nul\x00x", `'`, `''`, `\'`, strings.Repeat("ab'c\\", 200)}
 	var lits []string
 	for _, d := range []string{"mariadb", "mysql", "postgresql", "sqlite"} {

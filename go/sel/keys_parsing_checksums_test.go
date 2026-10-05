@@ -58,7 +58,7 @@ func eachOutcome(src string, ctx *Value) string {
 	return outcome(func() *Value { return MustEval(src, ctx) })
 }
 
-func TestPerf3WorkloadChecksums(t *testing.T) {
+func TestKeysAndParsingWorkloadChecksums(t *testing.T) {
 	ctxO := func() *Value {
 		return ctxWith("O", intList(40, 4), "LN", newListOwned([]*Value{
 			rec("q", 1, "p", 2), rec("q", 3, "p", 4), rec("q", 5, "p", 6), rec("q", 7, "p", 8)}))

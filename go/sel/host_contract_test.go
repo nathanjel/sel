@@ -126,7 +126,6 @@ func TestEveryArgumentReaderRefusesAMissingArgument(t *testing.T) {
 		"Negative": func(a *Args) { a.Val(-1) },
 	}
 	for name, read := range readers {
-		read := read
 		RegisterFunction("T12_RD_"+strings.ToUpper(name), 0, 1, func(a *Args) *Value {
 			read(a)
 			return NewNone()

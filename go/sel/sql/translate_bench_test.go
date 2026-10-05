@@ -1,7 +1,7 @@
 package sql
 
 // Round-2 SQL workloads (GO-P16 … GO-P18), docs/interim/2026-09-29/worklist/
-// performance/go.md. Fixed inputs; TestPerf2SqlChecksums pins a hash of every
+// performance/go.md. Fixed inputs; TestTranslateWorkloadChecksums pins a hash of every
 // rendered output so a speedup that changes a byte fails a test.
 
 import (
@@ -163,7 +163,7 @@ var perf2SqlChecksums = map[string]string{
 	"p18 hybrid_sum":     "100/5550/300",
 }
 
-func TestPerf2SqlChecksums(t *testing.T) {
+func TestTranslateWorkloadChecksums(t *testing.T) {
 	got := map[string]string{
 		"p16 predicates_30":  digest(translateRender(t, "mariadb", predicates(30))),
 		"p16 predicates_pg":  digest(translateRender(t, "postgresql", predicates(9))),

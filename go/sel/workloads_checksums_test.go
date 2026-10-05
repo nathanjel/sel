@@ -1,7 +1,7 @@
 package sel
 
 // Recorded at the pre-wave baseline (tree 223885e + working edits); see
-// TestPerfWorkloadChecksums in perf_bench_test.go.
+// TestWorkloadChecksums in workloads_bench_test.go.
 var perfChecksums = map[string]string{
 	"p1 eq":             "t\"35770\"",
 	"p1 eq_lt":          "t\"17867\"",
