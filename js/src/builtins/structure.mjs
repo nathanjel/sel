@@ -803,98 +803,133 @@ function totality(reqs, left, right, above) {
   return true;
 }
 
-function doLink(args, ctx, leftJoin) {
-  // Taken before anything else is evaluated, so a LINK nested in this one's
-  // sources cannot pick it up by accident; it is handed down on purpose below.
-  const prefilter = ctx.joinPrefilter;
-  ctx.joinPrefilter = null;
-  const count = args.count();             // 3 or 5: the manifest's arity rule, at compile time
-  // With conjuncts to pre-apply and a left source that is itself a join, the
-  // right source is evaluated first -- unobservable when both sources are
-  // pure -- so that the conjuncts still askable of the rows below can travel
-  // down to the join below, and from there to the base rows, where dropping
-  // a row saves every join above it.
-  let rightSide = null;
-  const leftNode = args.node(0);
-  const rightNode = args.node(1);
-  // The names each side's row is bound under (spec §7.4), worked out once and
-  // left to right: the five-argument form's binders, else a side given by name,
-  // else `_1`/`_2`. The keys a side contributes to the joined row include them:
-  // `_["products"]` after LINK(PRODUCTS, ...) is the right row, not a field of
-  // the left ones.
-  const b1 = count === 5 ? args.symbol(2) : (singleRelationName(leftNode) || '_1');
-  const b2 = count === 5 ? args.symbol(3) : (singleRelationName(rightNode) || '_2');
-  const b1Names = [b1, '_1'];
-  const b2Names = [b2, '_2'];
-  const predicate = args.node(count === 5 ? 4 : 2);
-  const equi = tryExtractEquiKeys(predicate, b1, b2);
-  const stages = prefilter ? prefilter.stages : [];
-  const deep = prefilter ? prefilter.deep : false;
-  const above = prefilter ? prefilter.above : [];
-  const obligations = prefilter ? prefilter.obligations : [];
+// One LINK call's state, carried from phase to phase: what the call was
+// given, its two sources, and what the pre-filter decided. Built once per
+// call, never per row; the per-row loops read what they need from it into
+// locals before they start, so the work per row stays in one small function.
+class LinkCall {
+  constructor(args, ctx, leftJoin, prefilter, b1, b2, equi) {
+    this.args = args;
+    this.ctx = ctx;
+    this.leftJoin = leftJoin;
+    this.prefilter = prefilter;
+    // The names each side's row is bound under (spec §7.4). The keys a side
+    // contributes to the joined row include them: `_["products"]` after
+    // LINK(PRODUCTS, ...) is the right row, not a field of the left ones.
+    this.b1 = b1;
+    this.b2 = b2;
+    this.b1Names = [b1, '_1'];
+    this.b2Names = [b2, '_2'];
+    this.equi = equi;
+    this.stages = prefilter ? prefilter.stages : [];
+    this.deep = prefilter ? prefilter.deep : false;
+    this.above = prefilter ? prefilter.above : [];
+    this.obligations = prefilter ? prefilter.obligations : [];
+    this.aboveKeysCache = new Map();
+    this.leftValue = null;
+    this.rightValue = null;
+    // The right side's facts: known before the left source runs when
+    // conjuncts were handed down, else gathered while the right keys are.
+    this.rightSide = null;
+    // What the join below reported: the conjuncts every row that came up
+    // has passed, and whether it dropped any row.
+    this.appliedBelow = null;
+    this.dropped = false;
+    // What settlePrefix decided: the conjuncts asked of each left row and of
+    // each right row, how many left ones precede the first right one, the
+    // binders the conjuncts read the row through, and which conjuncts this
+    // join applies (reported to the join above).
+    this.prefix = [];
+    this.rightPrefix = [];
+    this.leftBeforeRight = -1;
+    this.binders = [];
+    this.appliedIds = new Set();
+    // A conjunct raised on some row (which was kept).
+    this.errored = false;
+  }
+
   // The upper-cased keys of the joins between a stage's FILTER and this
   // join, per count of them.
-  const aboveKeysCache = new Map();
-  const aboveKeys = (stage) => {
-    let keys = aboveKeysCache.get(stage.above);
+  aboveKeys(stage) {
+    let keys = this.aboveKeysCache.get(stage.above);
     if (!keys) {
       keys = new Set();
-      for (const side of above.slice(0, stage.above)) for (const k of side.keys) keys.add(k);
-      aboveKeysCache.set(stage.above, keys);
+      for (const side of this.above.slice(0, stage.above)) for (const k of side.keys) keys.add(k);
+      this.aboveKeysCache.set(stage.above, keys);
     }
     return keys;
-  };
-  let leftValue;
-  let rightValue;
-  if (deep && stages.length && equi && leftNode && leftNode.t === 'call'
-      && (leftNode.name === 'LINK' || leftNode.name === 'LINK_LEFT' || leftNode.name === 'FILTER')
-      && pureSource(leftNode) && pureSource(rightNode)) {
-    try {
-      rightValue = args.val(1);
-    } catch (e) {
-      // The right source was evaluated first for the prefilter's sake, which is
-      // only unobservable while neither source raises (SPEC 7.4: as written, the
-      // left source runs first). The left source is pure too, so run it now,
-      // with nothing handed down: if it raises, ITS error is the one as written;
-      // if it does not, the right source's error stands.
-      if (e instanceof SelError) args.val(0);
-      throw e;
-    }
-    rightSide = new SideFacts(rightValue, rowKeys(rightValue, b2Names), leftJoin, b2Names);
-    // With the left rows unknown: a field no right side (here or above)
-    // carries is theirs; a conjunct on a right side's field is passed over
-    // only when total on that side alone. The join below repeats the walk
-    // with its own sides, and this one again once its left rows are known.
-    const ownedBelow = (fields, stage) => {
-      const upper = aboveKeys(stage);
-      for (const f of fields) if (rightSide.keys.has(f) || upper.has(f)) return false;
-      return true;
-    };
-    const totalBelow = (reqs, stage) => totality(reqs, null, rightSide, above.slice(0, stage.above));
-    const walk = stageWalk(stages, ownedBelow, totalBelow);
-    // Below this join, every stage has one more join above it: this one.
-    const handed = truncateStages(stages, walk.stop).map((stage) => ({ ...stage, above: stage.above + 1 }));
-    if (handed.length) {
-      // This join computes its left key on every row it receives; a row
-      // dropped below never arrives, so the key goes down as an obligation
-      // for the join that drops to prove (keysSafe).
-      const ownKey = { key: equi.left, rowNames: new Set([b1, asciiLower(b1), '_1', '_']), outer: above.length + 1 };
-      ctx.joinPrefilter = { stages: handed, deep: true, above: [rightSide, ...above],
-        obligations: [ownKey, ...obligations] };
-    }
-    try {
-      leftValue = args.val(0);
-    } finally {
-      ctx.joinPrefilter = null;
-    }
-  } else {
-    leftValue = args.val(0);
-    rightValue = args.val(1);
   }
-  // The join below, if it applied some of these conjuncts, says which ones
-  // every row that came up has passed; those are skipped here unless a row
-  // was kept on an error below, since such a row must reach the FILTER
-  // untouched and cannot be told apart from the others.
+
+  // A read through this join's right binder is the right element in every
+  // joined row -- the binder is bound last (spec §7.4) -- unless a join
+  // above rebinds it.
+  rightNames(stage) {
+    return new Set(stage.above === 0 ? [upperName(this.b2), '_2'] : [upperName(this.b2)]);
+  }
+}
+
+// Phase 1: the two sources. With conjuncts to pre-apply and a left source
+// that is itself a join, the right source is evaluated first -- unobservable
+// when both sources are pure -- so that the conjuncts still askable of the
+// rows below can travel down to the join below, and from there to the base
+// rows, where dropping a row saves every join above it.
+function evaluateSources(call, leftNode, rightNode) {
+  const { args, ctx, equi, stages, above } = call;
+  if (!(call.deep && stages.length && equi && leftNode && leftNode.t === 'call'
+      && (leftNode.name === 'LINK' || leftNode.name === 'LINK_LEFT' || leftNode.name === 'FILTER')
+      && pureSource(leftNode) && pureSource(rightNode))) {
+    call.leftValue = args.val(0);
+    call.rightValue = args.val(1);
+    return;
+  }
+  try {
+    call.rightValue = args.val(1);
+  } catch (e) {
+    // The right source was evaluated first for the prefilter's sake, which is
+    // only unobservable while neither source raises (SPEC 7.4: as written, the
+    // left source runs first). The left source is pure too, so run it now,
+    // with nothing handed down: if it raises, ITS error is the one as written;
+    // if it does not, the right source's error stands.
+    if (e instanceof SelError) args.val(0);
+    throw e;
+  }
+  const rightSide = new SideFacts(call.rightValue, rowKeys(call.rightValue, call.b2Names), call.leftJoin, call.b2Names);
+  call.rightSide = rightSide;
+  // With the left rows unknown: a field no right side (here or above)
+  // carries is theirs; a conjunct on a right side's field is passed over
+  // only when total on that side alone. The join below repeats the walk
+  // with its own sides, and this one again once its left rows are known.
+  const ownedBelow = (fields, stage) => {
+    const upper = call.aboveKeys(stage);
+    for (const f of fields) if (rightSide.keys.has(f) || upper.has(f)) return false;
+    return true;
+  };
+  const totalBelow = (reqs, stage) => totality(reqs, null, rightSide, above.slice(0, stage.above));
+  const walk = stageWalk(stages, ownedBelow, totalBelow);
+  // Below this join, every stage has one more join above it: this one.
+  const handed = truncateStages(stages, walk.stop).map((stage) => ({ ...stage, above: stage.above + 1 }));
+  if (handed.length) {
+    // This join computes its left key on every row it receives; a row
+    // dropped below never arrives, so the key goes down as an obligation
+    // for the join that drops to prove (keysSafe).
+    const b1 = call.b1;
+    const ownKey = { key: equi.left, rowNames: new Set([b1, asciiLower(b1), '_1', '_']), outer: above.length + 1 };
+    ctx.joinPrefilter = { stages: handed, deep: true, above: [rightSide, ...above],
+      obligations: [ownKey, ...call.obligations] };
+  }
+  try {
+    call.leftValue = args.val(0);
+  } finally {
+    ctx.joinPrefilter = null;
+  }
+}
+
+// Phase 2: what the join below reported. If it applied some of these
+// conjuncts, it says which ones every row that came up has passed; those are
+// skipped here unless a row was kept on an error below, since such a row must
+// reach the FILTER untouched and cannot be told apart from the others.
+function takeReportFromBelow(call) {
+  const ctx = call.ctx;
   let below = ctx.joinPrefilterReport;
   ctx.joinPrefilterReport = null;
   // Drops below that left this join no left rows: as written it may have had
@@ -902,13 +937,332 @@ function doLink(args, ctx, leftJoin) {
   // be) before it finds that no row survives. Only the rows as written can
   // say, so the left side -- pure, or nothing was handed down -- is
   // evaluated again without them, and this join runs as written.
-  if (below !== null && below.dropped && firstCollectionItem(leftValue) === null) {
-    leftValue = args.evalNode(args.node(0));
+  if (below !== null && below.dropped && firstCollectionItem(call.leftValue) === null) {
+    call.leftValue = call.args.evalNode(call.args.node(0));
     ctx.joinPrefilterReport = null;
     below = null;
   }
-  const appliedBelow = below !== null && !below.errored ? below.applied : new Set();
-  let dropped = below !== null && below.dropped;
+  call.appliedBelow = below !== null && !below.errored ? below.applied : new Set();
+  call.dropped = below !== null && below.dropped;
+}
+
+// Phase 3: the pre-filter, decided from the rows themselves (see stageWalk),
+// with both sides at hand. On a left row a conjunct evaluates FALSE the row
+// is dropped -- the joined rows it would have produced (or its null-extended
+// row, for LINK_LEFT) would all have been dropped by the same conjunct;
+// likewise a right row, whose joined rows are then not built. On an error the
+// row is KEPT: the full predicate runs over the joined rows afterwards and
+// raises there, in row order, or does not raise at all for a row that joins
+// nothing.
+//
+// A field no right side carries is the left rows' (a read through the left
+// binder's own name, `_["orders"]["year"]` on ORDERS rows, is the row itself,
+// spec §7.4); a right side's field may be passed over only when the conjunct
+// is total over this join's rows.
+function settlePrefix(call) {
+  const { b1, b2, above, rightSide, prefix } = call;
+  const leftSide = new SideFacts(call.leftValue, rowKeys(call.leftValue, call.b1Names), false, call.b1Names);
+  if (call.obligations.length && !keysSafe(call.obligations, leftSide, rightSide, above, leftSide.names)) return;
+  // A joined row carries a left element's field exactly as the element
+  // does whenever no right element has the name (§7.4, pair by pair) --
+  // and no row depends on another, so a drop below changes nothing above
+  // but the rows it drops.
+  const ownedHere = (fields, stage) => {
+    const upper = call.aboveKeys(stage);
+    for (const f of fields) if (rightSide.keys.has(f) || upper.has(f)) return false;
+    return true;
+  };
+  const totalHere = (reqs, stage) => totality(reqs, leftSide, rightSide, above.slice(0, stage.above));
+  // A read through the right binder is the right row unless the left binder
+  // has the same name; LINK_LEFT's null-extended rows are not right rows.
+  const rightHere = (!call.leftJoin && upperName(b1) !== upperName(b2))
+    ? (fields, stage) => {
+      const names = call.rightNames(stage);
+      const upper = call.aboveKeys(stage);
+      for (const f of fields) if (!names.has(f) || upper.has(f)) return false;
+      return true;
+    }
+    : null;
+  const selfNames = new Set([upperName(b1), '_1']);
+  for (const { c, stage, right } of stageWalk(call.stages, ownedHere, totalHere, rightHere).applied) {
+    call.appliedIds.add(c.node);
+    if (call.appliedBelow.has(c.node)) continue;
+    if (right) {
+      if (call.leftBeforeRight < 0) call.leftBeforeRight = prefix.length;
+      call.rightPrefix.push(readSelf(c.node, call.rightNames(stage), c.binder));
+      continue;
+    }
+    let node = c.node;
+    let readsSelf = false;
+    for (const f of c.fields) if (selfNames.has(f) && !leftSide.first.has(f)) readsSelf = true;
+    if (readsSelf) node = readSelf(node, selfNames, c.binder);
+    prefix.push(node);
+  }
+}
+
+// One row through the pre-filter's CONJUNCTS, the row bound under every
+// stage's binder in FRAME. 0: keep the row; 1: drop it; 2: keep it, a
+// conjunct raised on it.
+function linkVerdict(call, conjuncts, row, frame) {
+  const binders = call.binders;
+  for (let i = 0; i < binders.length; i++) frame.set(binders[i], row);
+  for (let i = 0; i < conjuncts.length; i++) {
+    const conjunct = conjuncts[i];
+    let keep;
+    try {
+      keep = call.args.evalNode(conjunct).asBool(conjunct.pos);
+    } catch (e) {
+      if (!(e instanceof SelError)) throw e;
+      call.errored = true;
+      return 2;
+    }
+    if (!keep) return 1;
+  }
+  return 0;
+}
+
+// Equi-join, phase 4a: every right row's key, into buckets in row order.
+// Also gathers the right side's keys for the pre-filter when they were not
+// known before the sources ran, and tells the projector whether every right
+// row is flat.
+function bucketRightRows(call, rightItems, project) {
+  const { args, ctx, b2, equi } = call;
+  const buckets = new Map();
+  const rightFacts = { firstLive: null, firstBad: null };
+  const gather = call.prefilter && call.rightSide === null ? { keys: new Set(), shapes: new Set() } : null;
+  const b2Lower = asciiLower(b2);
+  const frameRight = new Map([[b2, null], [b2Lower, null], ['_2', null]]);
+  // Read in order here, where they are close together, rather than
+  // scattered pair by pair in the projector.
+  const binderNames = new Set([...binderKeys(call.b1, '_1'), ...binderKeys(b2, '_2')]);
+  let rightFlat = true;
+  ctx.pushFrame(frameRight);
+  try {
+    for (let i = 0; i < rightItems.length; i++) {
+      const row = ensureRowTableAlias(rightItems[i], b2);
+      if (rightFlat && !flatRow(row, binderNames)) rightFlat = false;
+      frameRight.set(b2, row);
+      frameRight.set(b2Lower, row);
+      frameRight.set('_2', row);
+      const keyValue = args.evalNode(equi.right);
+      const key = canonicalJoinKey(keyValue, equi.numeric);
+      if (key !== null && rightFacts.firstLive === null) rightFacts.firstLive = keyValue;
+      if (key === JOIN_BAD && rightFacts.firstBad === null) rightFacts.firstBad = keyValue;
+      if (key !== null && key !== JOIN_BAD) {
+        const bucket = buckets.get(key) || [];
+        bucket.push(row);
+        buckets.set(key, bucket);
+      }
+      if (gather !== null) {
+        if (row.shape) {
+          if (!gather.shapes.has(row.shape)) {
+            gather.shapes.add(row.shape);
+            for (const k of row.shape.keys) gather.keys.add(upperName(k));
+          }
+        } else {
+          for (const k of row.keys()) gather.keys.add(upperName(k));
+        }
+      }
+    }
+  } finally {
+    ctx.popFrame();
+  }
+  project.rightFlat = rightFlat;
+  if (gather !== null) {
+    for (const k of call.b2Names) gather.keys.add(upperName(k));
+    call.rightSide = new SideFacts(call.rightValue, gather.keys, call.leftJoin, call.b2Names);
+  }
+  return { buckets, rightFacts };
+}
+
+// Equi-join, phase 4b: the right rows the right conjuncts reject, once each,
+// after every right key was computed. They stay in their buckets: a left row
+// still counts them towards the numbering, and one kept on an error joins
+// them.
+function rejectRightRows(call, buckets) {
+  const rejected = new Set();
+  const frame = new Map();
+  for (const binder of call.binders) frame.set(binder, null);
+  const before = call.errored;
+  call.errored = false;
+  call.ctx.pushFrame(frame);
+  try {
+    for (const bucket of buckets.values()) {
+      for (const row of bucket) if (linkVerdict(call, call.rightPrefix, row, frame) === 1) rejected.add(row);
+    }
+  } finally {
+    call.ctx.popFrame();
+  }
+  // With a right row kept on an error, a later left conjunct may not drop a
+  // left row: the joined row would have raised in the right conjunct first.
+  if (call.errored) call.prefix.length = call.leftBeforeRight;
+  call.errored = call.errored || before;
+  return rejected;
+}
+
+// Equi-join, phase 4c: every left row's key, looked up in the buckets, and
+// the joined rows built in order.
+//
+// A FILTER keeps its input's keys, so the rows dropped here still count
+// towards the numbering of the rows kept: the join key is computed first, as
+// it is for every row (and raises where it would have), the matches say how
+// many joined rows the dropped row stood for, and the kept rows are emitted
+// under the positions they would have had.
+function probeLeftRows(call, leftItems, buckets, rightFacts, rejected, project) {
+  const { args, ctx, b1, equi, prefix, leftJoin } = call;
+  const output = [];
+  // A join builds a collection: its rows are capped (SPEC 6.4), at the call.
+  const capRows = (n) => checkCollection(n, args.pos, `${args.name} result`);
+  const numbered = (prefix.length || rejected !== null) && !call.deep;
+  const keyed = numbered ? new Value(NONE, null, true) : null;
+  let position = 1;
+  let dropped = call.dropped;
+  // When the join key is a literal field of the row -- `_1["customer_id"]`
+  // -- the read can only raise for a row that lacks the field, so a row
+  // that HAS it may be rejected first and its key never computed. Only
+  // where nothing observes the numbering.
+  let fastField = null;
+  if (prefix.length && call.deep && equi.left.t === 'index' && equi.left.obj && equi.left.obj.t === 'var'
+      && equi.left.idx && equi.left.idx.t === 'text'
+      && [upperName(b1), '_1', '_'].includes(upperName(equi.left.obj.name))) {
+    fastField = equi.left.idx.v;
+  }
+  const b1Lower = asciiLower(b1);
+  const frameLeft = new Map([[b1, null], [b1Lower, null], ['_1', null], ['_', null]]);
+  for (const binder of call.binders) if (!frameLeft.has(binder)) frameLeft.set(binder, null);
+  ctx.pushFrame(frameLeft);
+  try {
+    for (let li = 0; li < leftItems.length; li++) {
+      const row = ensureRowTableAlias(leftItems[li], b1);
+      let asked = -1;
+      if (fastField !== null && row.get(fastField)) {
+        asked = linkVerdict(call, prefix, row, frameLeft);
+        if (asked === 1) {
+          // Dropped before its key was computed -- but the key is this very
+          // field, and a rejected one still raises in the join as written.
+          const fieldValue = row.get(fastField);
+          checkJoinPair(equi, canonicalJoinKey(fieldValue, equi.numeric), fieldValue, rightFacts);
+          dropped = true;
+          continue;
+        }
+      }
+      frameLeft.set(b1, row);
+      frameLeft.set(b1Lower, row);
+      frameLeft.set('_1', row);
+      frameLeft.set('_', row);
+      const keyValue = args.evalNode(equi.left);
+      const key = canonicalJoinKey(keyValue, equi.numeric);
+      checkJoinPair(equi, key, keyValue, rightFacts);
+      const matches = key === null ? null : buckets.get(key);
+      if (asked < 0) asked = prefix.length ? linkVerdict(call, prefix, row, frameLeft) : 0;
+      if (asked === 1) {
+        dropped = true;
+        if (numbered) position += matches ? matches.length : (leftJoin ? 1 : 0);
+        continue;
+      }
+      if (matches) {
+        // A left row kept on an error meets every right row: its joined
+        // rows raise in the FILTER, in order, where they would have.
+        const skip = rejected !== null && asked === 0 ? rejected : null;
+        for (let i = 0; i < matches.length; i++) {
+          if (skip === null || !skip.has(matches[i])) {
+            const joined = project(row, matches[i]);
+            if (keyed !== null) keyed.set(String(position), joined); else output.push(joined);
+            capRows(keyed !== null ? position : output.length);
+          } else {
+            dropped = true;
+          }
+          position++;
+        }
+      } else if (leftJoin) {
+        const joined = project(row, null);
+        if (keyed !== null) keyed.set(String(position), joined); else output.push(joined);
+        capRows(keyed !== null ? position : output.length);
+        position++;
+      }
+    }
+  } finally {
+    ctx.popFrame();
+  }
+  if (call.prefilter) ctx.joinPrefilterReport = { applied: call.appliedIds, errored: call.errored, dropped };
+  return keyed !== null ? keyed : Value.listOwned(output);
+}
+
+// The general join: the predicate over every pair, in order. No pre-filter
+// here: the numbering of the kept rows would need the count of matches of
+// every dropped row, which is the predicate scan the pre-filter exists to
+// avoid.
+function nestedLoopJoin(call, predicate, leftItems, rightItems, hasRight, project) {
+  const { args, ctx, b1, b2, leftJoin } = call;
+  const output = [];
+  const capRows = (n) => checkCollection(n, args.pos, `${args.name} result`);
+  const b1Lower = asciiLower(b1);
+  const b2Lower = asciiLower(b2);
+  const frame = new Map([
+    [b1, null], [b1Lower, null], ['_1', null], ['_', null],
+    [b2, null], [b2Lower, null], ['_2', null],
+  ]);
+  ctx.pushFrame(frame);
+  // A predicate that can change no value (no assignment, no host function) sees the
+  // same right rows for every left row, so they are aliased once, at the first left
+  // row, not once per pair. Anything else re-aliases per pair as before: a
+  // predicate's writes are visible to the pairs still to come.
+  const stable = !mayWrite(predicate);
+  let aliasedRights = null;
+  try {
+    for (let li = 0; li < leftItems.length; li++) {
+      const left = ensureRowTableAlias(leftItems[li], b1);
+      frame.set(b1, left);
+      frame.set(b1Lower, left);
+      frame.set('_1', left);
+      frame.set('_', left);
+      let matched = false;
+      if (hasRight) {
+        if (stable && aliasedRights === null) {
+          aliasedRights = [];
+          for (let i = 0; i < rightItems.length; i++) aliasedRights.push(ensureRowTableAlias(rightItems[i], b2));
+        }
+        for (let i = 0; i < rightItems.length; i++) {
+          const right = stable ? aliasedRights[i] : ensureRowTableAlias(rightItems[i], b2);
+          frame.set(b2, right);
+          frame.set(b2Lower, right);
+          frame.set('_2', right);
+          if (args.evalNode(predicate).asBool(predicate.pos)) {
+            matched = true;
+            output.push(project(left, right));
+            capRows(output.length);
+          }
+        }
+      }
+      if (leftJoin && !matched) { output.push(project(left, null)); capRows(output.length); }
+    }
+  } finally {
+    ctx.popFrame();
+  }
+  return Value.listOwned(output);
+}
+
+function doLink(args, ctx, leftJoin) {
+  // Taken before anything else is evaluated, so a LINK nested in this one's
+  // sources cannot pick it up by accident; it is handed down on purpose in
+  // evaluateSources.
+  const prefilter = ctx.joinPrefilter;
+  ctx.joinPrefilter = null;
+  const count = args.count();             // 3 or 5: the manifest's arity rule, at compile time
+  const leftNode = args.node(0);
+  const rightNode = args.node(1);
+  // The names each side's row is bound under (spec §7.4), worked out once and
+  // left to right: the five-argument form's binders, else a side given by name,
+  // else `_1`/`_2`.
+  const b1 = count === 5 ? args.symbol(2) : (singleRelationName(leftNode) || '_1');
+  const b2 = count === 5 ? args.symbol(3) : (singleRelationName(rightNode) || '_2');
+  const predicate = args.node(count === 5 ? 4 : 2);
+  const equi = tryExtractEquiKeys(predicate, b1, b2);
+  const call = new LinkCall(args, ctx, leftJoin, prefilter, b1, b2, equi);
+  evaluateSources(call, leftNode, rightNode);
+  takeReportFromBelow(call);
+  const leftValue = call.leftValue;
+  const rightValue = call.rightValue;
   if (leftValue.isNull()) return Value.listOwned([]);
 
   const firstLeft = firstCollectionItem(leftValue);
@@ -922,292 +1276,21 @@ function doLink(args, ctx, leftJoin) {
   let nullRight = leftJoin ? makeNullRecord(sampleRight, b2) : null;
   if (nullRight && nullRight.isNull()) nullRight = null;
   const project = makeJoinProjector(b1, b2, nullRight);
-  const output = [];
-  // A join builds a collection: its rows are capped (SPEC 6.4), at the call.
-  const capRows = (n) => checkCollection(n, args.pos, `${args.name} result`);
   // Each side is listed ONCE, here: the right side is walked again for every left
   // row, and a predicate that grows it must not give later left rows more rows.
   const leftItems = snapshotItems(leftValue);
   const rightItems = snapshotItems(rightValue);
-  const each = (value, callback) => {
-    const items = value === leftValue ? leftItems : value === rightValue ? rightItems : snapshotItems(value);
-    for (let i = 0; i < items.length; i++) callback(items[i]);
-  };
+  if (!equi || !sampleRight) return nestedLoopJoin(call, predicate, leftItems, rightItems, sampleRight !== null, project);
 
-  // The pre-filter, decided from the rows themselves (see stageWalk). On a
-  // left row a conjunct evaluates FALSE the row is dropped -- the joined rows
-  // it would have produced (or its null-extended row, for LINK_LEFT) would
-  // all have been dropped by the same conjunct; likewise a right row, whose
-  // joined rows are then not built. On an error the row is KEPT: the full
-  // predicate runs over the joined rows afterwards and raises there, in row
-  // order, or does not raise at all for a row that joins nothing.
-  const prefix = [];
-  const rightPrefix = [];
-  // How many left conjuncts come before the first right one: with a right
-  // row kept on an error, a later left conjunct may not drop a left row --
-  // the joined row would have raised in the right conjunct first.
-  let leftBeforeRight = -1;
-  let binders = [];
-  const appliedIds = new Set();
-  let errored = false;
-  const selfNames = new Set([upperName(b1), '_1']);
-  // A read through this join's right binder is the right element in every
-  // joined row -- the binder is bound last (spec §7.4) -- unless the left
-  // binder has the same name, or a join above rebinds it.
-  const rightNames = (stage) => new Set(stage.above === 0 ? [upperName(b2), '_2'] : [upperName(b2)]);
-  const rightHere = (!leftJoin && upperName(b1) !== upperName(b2))
-    ? (fields, stage) => {
-      const names = rightNames(stage);
-      const upper = aboveKeys(stage);
-      for (const f of fields) if (!names.has(f) || upper.has(f)) return false;
-      return true;
-    }
-    : null;
-  const settlePrefix = () => {
-    // With both sides at hand: a field no right side carries is the left
-    // rows' (a read through the left binder's own name, `_["orders"]["year"]`
-    // on ORDERS rows, is the row itself, spec §7.4); a right side's field may
-    // be passed over only when the conjunct is total over this join's rows.
-    const leftSide = new SideFacts(leftValue, rowKeys(leftValue, b1Names), false, b1Names);
-    if (obligations.length && !keysSafe(obligations, leftSide, rightSide, above, leftSide.names)) return;
-    // A joined row carries a left element's field exactly as the element
-    // does whenever no right element has the name (§7.4, pair by pair) --
-    // and no row depends on another, so a drop below changes nothing above
-    // but the rows it drops.
-    const ownedHere = (fields, stage) => {
-      const upper = aboveKeys(stage);
-      for (const f of fields) if (rightSide.keys.has(f) || upper.has(f)) return false;
-      return true;
-    };
-    const totalHere = (reqs, stage) => totality(reqs, leftSide, rightSide, above.slice(0, stage.above));
-    for (const { c, stage, right } of stageWalk(stages, ownedHere, totalHere, rightHere).applied) {
-      appliedIds.add(c.node);
-      if (appliedBelow.has(c.node)) continue;
-      if (right) {
-        if (leftBeforeRight < 0) leftBeforeRight = prefix.length;
-        rightPrefix.push(readSelf(c.node, rightNames(stage), c.binder));
-        continue;
-      }
-      let node = c.node;
-      let readsSelf = false;
-      for (const f of c.fields) if (selfNames.has(f) && !leftSide.first.has(f)) readsSelf = true;
-      if (readsSelf) node = readSelf(node, selfNames, c.binder);
-      prefix.push(node);
-    }
-  };
-  // 0: keep the row; 1: drop it; 2: keep it, a conjunct raised on it.
-  const verdict = (conjuncts, row, frame) => {
-    for (const binder of binders) frame.set(binder, row);
-    for (const conjunct of conjuncts) {
-      let keep;
-      try {
-        keep = args.evalNode(conjunct).asBool(conjunct.pos);
-      } catch (e) {
-        if (!(e instanceof SelError)) throw e;
-        errored = true;
-        return 2;
-      }
-      if (!keep) return 1;
-    }
-    return 0;
-  };
-
-  if (equi && sampleRight) {
-    const buckets = new Map();
-    const rightFacts = { firstLive: null, firstBad: null };
-    const gather = prefilter && rightSide === null ? { keys: new Set(), shapes: new Set() } : null;
-    const frameRight = new Map([[b2, null], [asciiLower(b2), null], ['_2', null]]);
-    // Read in order here, where they are close together, rather than
-    // scattered pair by pair in the projector.
-    const binderNames = new Set([...binderKeys(b1, '_1'), ...binderKeys(b2, '_2')]);
-    let rightFlat = true;
-    ctx.pushFrame(frameRight);
-    try {
-      each(rightValue, (item) => {
-        const row = ensureRowTableAlias(item, b2);
-        if (rightFlat && !flatRow(row, binderNames)) rightFlat = false;
-        frameRight.set(b2, row);
-        frameRight.set(asciiLower(b2), row);
-        frameRight.set('_2', row);
-        const keyValue = args.evalNode(equi.right);
-        const key = canonicalJoinKey(keyValue, equi.numeric);
-        if (key !== null && rightFacts.firstLive === null) rightFacts.firstLive = keyValue;
-        if (key === JOIN_BAD && rightFacts.firstBad === null) rightFacts.firstBad = keyValue;
-        if (key !== null && key !== JOIN_BAD) {
-          const bucket = buckets.get(key) || [];
-          bucket.push(row);
-          buckets.set(key, bucket);
-        }
-        if (gather !== null) {
-          if (row.shape) {
-            if (!gather.shapes.has(row.shape)) {
-              gather.shapes.add(row.shape);
-              for (const k of row.shape.keys) gather.keys.add(upperName(k));
-            }
-          } else {
-            for (const k of row.keys()) gather.keys.add(upperName(k));
-          }
-        }
-      });
-    } finally {
-      ctx.popFrame();
-    }
-    project.rightFlat = rightFlat;
-    if (prefilter) {
-      if (gather !== null) {
-        for (const k of b2Names) gather.keys.add(upperName(k));
-        rightSide = new SideFacts(rightValue, gather.keys, leftJoin, b2Names);
-      }
-      binders = stages.map((stage) => stage.binder);
-      settlePrefix();
-    }
-    // The right rows the right conjuncts reject, once each, after every
-    // right key was computed. They stay in their buckets: a left row still
-    // counts them towards the numbering, and one kept on an error joins them.
-    let rejected = null;
-    if (rightPrefix.length) {
-      rejected = new Set();
-      const frame = new Map();
-      for (const binder of binders) frame.set(binder, null);
-      const before = errored;
-      errored = false;
-      ctx.pushFrame(frame);
-      try {
-        for (const bucket of buckets.values()) {
-          for (const row of bucket) if (verdict(rightPrefix, row, frame) === 1) rejected.add(row);
-        }
-      } finally {
-        ctx.popFrame();
-      }
-      if (errored) prefix.length = leftBeforeRight;
-      errored = errored || before;
-    }
-
-    // A FILTER keeps its input's keys, so the rows dropped here still count
-    // towards the numbering of the rows kept: the join key is computed first,
-    // as it is for every row (and raises where it would have), the matches
-    // say how many joined rows the dropped row stood for, and the kept rows
-    // are emitted under the positions they would have had.
-    const numbered = (prefix.length || rejected !== null) && !deep;
-    const keyed = numbered ? new Value(NONE, null, true) : null;
-    let position = 1;
-    // When the join key is a literal field of the row -- `_1["customer_id"]`
-    // -- the read can only raise for a row that lacks the field, so a row
-    // that HAS it may be rejected first and its key never computed. Only
-    // where nothing observes the numbering.
-    let fastField = null;
-    if (prefix.length && deep && equi.left.t === 'index' && equi.left.obj && equi.left.obj.t === 'var'
-        && equi.left.idx && equi.left.idx.t === 'text'
-        && [upperName(b1), '_1', '_'].includes(upperName(equi.left.obj.name))) {
-      fastField = equi.left.idx.v;
-    }
-    const frameLeft = new Map([[b1, null], [asciiLower(b1), null], ['_1', null], ['_', null]]);
-    for (const binder of binders) if (!frameLeft.has(binder)) frameLeft.set(binder, null);
-    ctx.pushFrame(frameLeft);
-    try {
-      each(leftValue, (item) => {
-        const row = ensureRowTableAlias(item, b1);
-        let asked = -1;
-        if (fastField !== null && row.get(fastField)) {
-          asked = verdict(prefix, row, frameLeft);
-          if (asked === 1) {
-            // Dropped before its key was computed -- but the key is this very
-            // field, and a rejected one still raises in the join as written.
-            const fieldValue = row.get(fastField);
-            checkJoinPair(equi, canonicalJoinKey(fieldValue, equi.numeric), fieldValue, rightFacts);
-            dropped = true;
-            return;
-          }
-        }
-        frameLeft.set(b1, row);
-        frameLeft.set(asciiLower(b1), row);
-        frameLeft.set('_1', row);
-        frameLeft.set('_', row);
-        const keyValue = args.evalNode(equi.left);
-        const key = canonicalJoinKey(keyValue, equi.numeric);
-        checkJoinPair(equi, key, keyValue, rightFacts);
-        const matches = key === null ? null : buckets.get(key);
-        if (asked < 0) asked = prefix.length ? verdict(prefix, row, frameLeft) : 0;
-        if (asked === 1) {
-          dropped = true;
-          if (numbered) position += matches ? matches.length : (leftJoin ? 1 : 0);
-          return;
-        }
-        if (matches) {
-          // A left row kept on an error meets every right row: its joined
-          // rows raise in the FILTER, in order, where they would have.
-          const skip = rejected !== null && asked === 0 ? rejected : null;
-          for (let i = 0; i < matches.length; i++) {
-            if (skip === null || !skip.has(matches[i])) {
-              const joined = project(row, matches[i]);
-              if (keyed !== null) keyed.set(String(position), joined); else output.push(joined);
-              capRows(keyed !== null ? position : output.length);
-            } else {
-              dropped = true;
-            }
-            position++;
-          }
-        } else if (leftJoin) {
-          const joined = project(row, null);
-          if (keyed !== null) keyed.set(String(position), joined); else output.push(joined);
-              capRows(keyed !== null ? position : output.length);
-          position++;
-        }
-      });
-    } finally {
-      ctx.popFrame();
-    }
-    if (prefilter) ctx.joinPrefilterReport = { applied: appliedIds, errored, dropped };
-    if (keyed !== null) return keyed;
-  } else {
-    const frame = new Map([
-      [b1, null], [asciiLower(b1), null], ['_1', null], ['_', null],
-      [b2, null], [asciiLower(b2), null], ['_2', null],
-    ]);
-    ctx.pushFrame(frame);
-    // A predicate that can change no value (no assignment, no host function) sees the
-    // same right rows for every left row, so they are aliased once, at the first left
-    // row, not once per pair. Anything else re-aliases per pair as before: a
-    // predicate's writes are visible to the pairs still to come.
-    const stable = !mayWrite(predicate);
-    let aliasedRights = null;
-    try {
-      each(leftValue, (leftItem) => {
-        const left = ensureRowTableAlias(leftItem, b1);
-        frame.set(b1, left);
-        frame.set(asciiLower(b1), left);
-        frame.set('_1', left);
-        frame.set('_', left);
-        let matched = false;
-        const pair = (right) => {
-          frame.set(b2, right);
-          frame.set(asciiLower(b2), right);
-          frame.set('_2', right);
-          if (args.evalNode(predicate).asBool(predicate.pos)) {
-            matched = true;
-            output.push(project(left, right));
-            capRows(output.length);
-          }
-        };
-        if (sampleRight) {
-          if (stable) {
-            if (aliasedRights === null) {
-              aliasedRights = [];
-              each(rightValue, (rightItem) => { aliasedRights.push(ensureRowTableAlias(rightItem, b2)); });
-            }
-            for (let i = 0; i < aliasedRights.length; i++) pair(aliasedRights[i]);
-          } else {
-            each(rightValue, (rightItem) => pair(ensureRowTableAlias(rightItem, b2)));
-          }
-        }
-        if (leftJoin && !matched) { output.push(project(left, null)); capRows(output.length); }
-      });
-    } finally {
-      ctx.popFrame();
-    }
+  const { buckets, rightFacts } = bucketRightRows(call, rightItems, project);
+  if (prefilter) {
+    call.binders = call.stages.map((stage) => stage.binder);
+    settlePrefix(call);
   }
-  return Value.listOwned(output);
+  const rejected = call.rightPrefix.length ? rejectRightRows(call, buckets) : null;
+  return probeLeftRows(call, leftItems, buckets, rightFacts, rejected, project);
 }
+
 
 // Three or five arguments, refused at compile time like every E_ARITY (spec
 // §7.4); the rule is spec/builtins.json's and the registry installs it.
