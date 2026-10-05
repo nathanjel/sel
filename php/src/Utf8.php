@@ -227,29 +227,6 @@ final class Utf8
         return substr($s, $from, self::advance($s, $len, $from) - $from);
     }
 
-    /**
-     * Raises E_RANGE when a text or binary value would be longer than the cap
-     * (spec §6.4, MAX_TEXT_LEN), at the node that builds it. `$bytes` is the
-     * byte length, which bounds the code point length from above, so only a
-     * candidate over the cap pays for counting.
-     *
-     * @param array<string,mixed>|null $pos
-     */
-    public static function checkTextLen(int $bytes, ?array $pos, string $what, ?string $s = null, bool $isText = true): void
-    {
-        if ($bytes <= Limits::MAX_TEXT_LEN) return;
-        if ($isText && $s !== null && self::length($s) <= Limits::MAX_TEXT_LEN) return;
-        fail('E_RANGE', "{$what} would be longer than " . Limits::MAX_TEXT_LEN, $pos);
-    }
-
-    /** Raises E_RANGE when a collection an operation builds would have more children than the cap. @param array<string,mixed>|null $pos */
-    public static function checkCount(int $n, ?array $pos, string $what): void
-    {
-        if ($n > Limits::MAX_COLLECTION) {
-            fail('E_RANGE', "{$what} would have more than " . Limits::MAX_COLLECTION . ' elements', $pos);
-        }
-    }
-
     /** @return list<int> */
     public static function codePoints(string $s): array
     {

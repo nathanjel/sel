@@ -6,6 +6,7 @@ declare(strict_types=1);
 namespace Sel\Builtins;
 
 use Sel\Args;
+use Sel\Budget;
 use Sel\Context;
 use Sel\Dec;
 use Sel\Registry;
@@ -68,7 +69,7 @@ final class Core
         Registry::define(['name' => 'LIST', 'min' => 0, 'max' => PHP_INT_MAX,
             'fn' => static function (Args $a): Value {
                 $n = $a->count();
-                if ($n > \Sel\Limits::MAX_COLLECTION) \Sel\Utf8::checkCount($n, $a->pos, 'the list');
+                if ($n > \Sel\Limits::MAX_COLLECTION) Budget::checkCollection($n, $a->pos, 'the list');
                 $out = [];
                 for ($i = 0; $i < $n; $i++) {
                     $out[] = $a->val($i)->copyBelow(1, $a->pos);
@@ -80,7 +81,7 @@ final class Core
             'fn' => static function (Args $a): Value {
                 $n = $a->count();
                 if ($n === 0) return Value::none();
-                if ($n >> 1 > \Sel\Limits::MAX_COLLECTION) \Sel\Utf8::checkCount($n >> 1, $a->pos, 'the record');
+                if ($n >> 1 > \Sel\Limits::MAX_COLLECTION) Budget::checkCollection($n >> 1, $a->pos, 'the record');
                 if ($a->recordShape !== null) {
                     $values = [];
                     for ($i = 1; $i < $n; $i += 2) {
@@ -661,9 +662,7 @@ final class Core
                 if ($bytes > \Sel\Limits::MAX_TEXT_LEN) {
                     $cps = \Sel\Utf8::length($sep) * max(0, count($parts) - 1);
                     foreach ($parts as $part) $cps += \Sel\Utf8::length($part);
-                    if ($cps > \Sel\Limits::MAX_TEXT_LEN) {
-                        fail('E_RANGE', 'JOIN result would be longer than ' . \Sel\Limits::MAX_TEXT_LEN, $a->pos);
-                    }
+                    Budget::checkText($cps, $a->pos, 'the JOIN result');
                 }
                 return Value::text(implode($sep, $parts));
             }]);

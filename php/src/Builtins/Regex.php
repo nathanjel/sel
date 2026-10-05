@@ -13,6 +13,7 @@ declare(strict_types=1);
 namespace Sel\Builtins;
 
 use Sel\Args;
+use Sel\Budget;
 use Sel\Registry;
 use Sel\Utf8;
 use Sel\Value;
@@ -1135,9 +1136,7 @@ final class Regex
                     // with at most one cap's worth built, not after the fact.
                     $out .= $piece;
                     $built += $ascii ? strlen($piece) : \Sel\Utf8::length($piece);
-                    if ($built > \Sel\Limits::MAX_TEXT_LEN) {
-                        fail('E_RANGE', 'RREPLACE result would be longer than ' . \Sel\Limits::MAX_TEXT_LEN, $a->pos);
-                    }
+                    if ($built > \Sel\Limits::MAX_TEXT_LEN) Budget::checkText($built, $a->pos, 'the RREPLACE result');
                     $last = $start + strlen($matched);
                     if ($matched === '') {
                         // Resume one code point on; the code point is copied
@@ -1151,9 +1150,7 @@ final class Regex
                 }
                 $tail = substr($subject, $last);
                 $built += $ascii ? strlen($tail) : \Sel\Utf8::length($tail);
-                if ($built > \Sel\Limits::MAX_TEXT_LEN) {
-                    fail('E_RANGE', 'RREPLACE result would be longer than ' . \Sel\Limits::MAX_TEXT_LEN, $a->pos);
-                }
+                Budget::checkText($built, $a->pos, 'the RREPLACE result');
                 return Value::text($out . $tail);
             }]);
     }

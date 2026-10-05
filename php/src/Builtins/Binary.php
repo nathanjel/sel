@@ -4,6 +4,7 @@ declare(strict_types=1);
 namespace Sel\Builtins;
 
 use Sel\Args;
+use Sel\Budget;
 use Sel\Registry;
 use Sel\Utf8;
 use Sel\Value;
@@ -25,9 +26,7 @@ final class Binary
         Registry::define(['name' => 'TO_UTF8', 'min' => 1, 'max' => 1,
             'fn' => static function (Args $a): Value {
                 $b = $a->bytes(0);
-                if (strlen($b) > \Sel\Limits::MAX_TEXT_LEN) {
-                    fail('E_RANGE', 'TO_UTF8 result would be longer than ' . \Sel\Limits::MAX_TEXT_LEN, $a->pos);
-                }
+                Budget::checkText(strlen($b), $a->pos, 'the TO_UTF8 result');
                 return Value::bin($b);
             }]);
 
@@ -41,9 +40,7 @@ final class Binary
         Registry::define(['name' => 'TO_HEX', 'min' => 1, 'max' => 1,
             'fn' => static function (Args $a): Value {
                 $b = $a->bytes(0);
-                if (2 * strlen($b) > \Sel\Limits::MAX_TEXT_LEN) {
-                    fail('E_RANGE', 'TO_HEX result would be longer than ' . \Sel\Limits::MAX_TEXT_LEN, $a->pos);
-                }
+                Budget::checkText(2 * strlen($b), $a->pos, 'the TO_HEX result');
                 return Value::text(bin2hex($b));
             }]);
 
@@ -62,9 +59,7 @@ final class Binary
         Registry::define(['name' => 'ENCODE_BASE64', 'min' => 1, 'max' => 1,
             'fn' => static function (Args $a): Value {
                 $b = $a->bytes(0);
-                if (4 * intdiv(strlen($b) + 2, 3) > \Sel\Limits::MAX_TEXT_LEN) {
-                    fail('E_RANGE', 'ENCODE_BASE64 result would be longer than ' . \Sel\Limits::MAX_TEXT_LEN, $a->pos);
-                }
+                Budget::checkText(4 * intdiv(strlen($b) + 2, 3), $a->pos, 'the ENCODE_BASE64 result');
                 // The standard alphabet with padding: what the loop this replaces wrote.
                 return Value::text(base64_encode($b));
             }]);
@@ -140,7 +135,7 @@ final class Binary
         Registry::define(['name' => 'BTL', 'min' => 1, 'max' => 1,
             'fn' => static function (Args $a): Value {
                 $b = $a->bytes(0);
-                Utf8::checkCount(strlen($b), $a->pos, 'BTL result');
+                Budget::checkCollection(strlen($b), $a->pos, 'the BTL result');
                 $out = [];
                 if ($b !== '') {
                     foreach (unpack('C*', $b) as $byte) {

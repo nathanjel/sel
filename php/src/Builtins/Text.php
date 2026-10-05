@@ -8,6 +8,7 @@ declare(strict_types=1);
 namespace Sel\Builtins;
 
 use Sel\Args;
+use Sel\Budget;
 use Sel\Registry;
 use Sel\Utf8;
 use Sel\Value;
@@ -92,9 +93,7 @@ final class Text
                     $bytes = strlen($hay) + $count * (strlen($repl) - strlen($needle));
                     if ($bytes > \Sel\Limits::MAX_TEXT_LEN) {
                         $cps = Utf8::length($hay) + $count * (Utf8::length($repl) - Utf8::length($needle));
-                        if ($cps > \Sel\Limits::MAX_TEXT_LEN) {
-                            fail('E_RANGE', 'REPLACE result would be longer than ' . \Sel\Limits::MAX_TEXT_LEN, $a->pos);
-                        }
+                        Budget::checkText($cps, $a->pos, 'the REPLACE result');
                     }
                 }
                 return Value::textTrusted(str_replace($needle, $repl, $hay));
@@ -107,7 +106,7 @@ final class Text
                 if ($sep === '') {
                     fail('E_BAD_ARG', 'SPLIT separator must not be empty', $a->posOf(1));
                 }
-                Utf8::checkCount(substr_count($hay, $sep) + 1, $a->pos, 'SPLIT result');
+                Budget::checkCollection(substr_count($hay, $sep) + 1, $a->pos, 'the SPLIT result');
                 $parts = [];
                 foreach (explode($sep, $hay) as $part) {
                     $parts[] = Value::textTrusted($part);
@@ -145,9 +144,9 @@ final class Text
                 // An empty text repeated any number of times is empty: only a
                 // RESULT over the cap is refused, never a count as such.
                 if ($s === '' || $n === 0) return Value::text('');
-                if ($n > intdiv(\Sel\Limits::MAX_TEXT_LEN, Utf8::length($s))) {
-                    fail('E_RANGE', 'REPEAT result would be longer than ' . \Sel\Limits::MAX_TEXT_LEN, $a->pos);
-                }
+                // Divided before it is multiplied: n * cps could overflow a native int.
+                $cps = Utf8::length($s);
+                Budget::checkText($n > intdiv(\Sel\Limits::MAX_TEXT_LEN, $cps) ? PHP_INT_MAX : $n * $cps, $a->pos, 'the REPEAT result');
                 return Value::textTrusted(str_repeat($s, $n));
             }]);
 
@@ -207,9 +206,7 @@ final class Text
         if ($have >= $width) {
             return Value::textTrusted($s);
         }
-        if ($width > \Sel\Limits::MAX_TEXT_LEN) {
-            fail('E_RANGE', 'pad result would be longer than ' . \Sel\Limits::MAX_TEXT_LEN, $a->pos);
-        }
+        Budget::checkText($width, $a->pos, 'the pad result');
         $need = $width - $have;
         $fillLen = Utf8::length($fill);
         // Whole copies of the fill, then as much of one more as fits — cut at a

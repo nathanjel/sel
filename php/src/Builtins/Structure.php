@@ -1963,7 +1963,7 @@ final class JoinProjector
     {
         $this->emitted += $rows;
         if ($this->emitted > \Sel\Limits::MAX_COLLECTION) {
-            fail('E_RANGE', 'LINK would produce more than ' . \Sel\Limits::MAX_COLLECTION . ' rows', $this->limitPos);
+            \Sel\Budget::checkCollection($this->emitted, $this->limitPos, 'the LINK result');
         }
     }
 

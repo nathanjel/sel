@@ -279,7 +279,7 @@ final class Evaluator
             if ($v->kind === Value::NONE && $v->size() > 0) {
                 // Refused before the children are copied (spec §6.4): a list that
                 // flattens past the collection cap is not built.
-                Utf8::checkCount(count($out) + $v->size(), $node['pos'], 'the list');
+                Budget::checkCollection(count($out) + $v->size(), $node['pos'], 'the list');
                 foreach ($v->values() as $child) {
                     $out[] = $child->copyBelow(1, $node['pos']);
                 }
@@ -287,7 +287,7 @@ final class Evaluator
                 $out[] = $v->copyBelow(1, $node['pos']);
             }
         }
-        Utf8::checkCount(count($out), $node['pos'], 'the list');
+        if (count($out) > Limits::MAX_COLLECTION) Budget::checkCollection(count($out), $node['pos'], 'the list');
         return Value::list($out);
     }
 
@@ -415,17 +415,14 @@ final class Evaluator
             // The length is checked before the result is built (spec §6.4); the
             // byte length bounds the code point length, so only a candidate over
             // the cap is counted.
-            if (strlen($ls) + strlen($rs) > Limits::MAX_TEXT_LEN
-                && Utf8::length($ls) + Utf8::length($rs) > Limits::MAX_TEXT_LEN) {
-                fail('E_RANGE', 'concatenation would be longer than ' . Limits::MAX_TEXT_LEN, $opPos);
+            if (strlen($ls) + strlen($rs) > Limits::MAX_TEXT_LEN) {
+                Budget::checkText(Utf8::length($ls) + Utf8::length($rs), $opPos, 'the concatenation');
             }
             return Value::text($ls . $rs);
         }
         $lb = $l->asBytes($lp);
         $rb = $r->asBytes($rp);
-        if (strlen($lb) + strlen($rb) > Limits::MAX_TEXT_LEN) {
-            fail('E_RANGE', 'concatenation would be longer than ' . Limits::MAX_TEXT_LEN, $opPos);
-        }
+        Budget::checkText(strlen($lb) + strlen($rb), $opPos, 'the concatenation');
         return Value::bin($lb . $rb);
     }
 
