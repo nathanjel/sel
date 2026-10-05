@@ -32,10 +32,24 @@ const (
 	WhenText
 )
 
+// Role is what one argument of a form is (spec/builtins.md, "Binding forms").
+type Role uint8
+
+const (
+	RoleSource Role = iota
+	RoleOuter
+	RoleBinder
+	RoleBody
+	RoleKey
+	RoleProj
+	RolePred
+)
+
 type Form struct {
 	Name     string
 	Count    int
 	Scopes   []Scope
+	Roles    []Role
 	WhenArg  int
 	WhenKind WhenKind
 	Binds    []string
@@ -152,70 +166,173 @@ var Builtins = map[string]Entry{
 
 var BindingForms = map[string][]Form{
 	"ALL": {
-		{Name: "ALL", Count: 2, Scopes: []Scope{ScopeOuter, ScopeInner}, WhenArg: -1, WhenKind: WhenNone, Binds: []string{"_", "_K"}},
-		{Name: "ALL", Count: 3, Scopes: []Scope{ScopeOuter, ScopeBinder, ScopeInner}, WhenArg: -1, WhenKind: WhenNone, Binds: []string{"_K"}},
+		{Name: "ALL", Count: 2, Scopes: []Scope{ScopeOuter, ScopeInner}, Roles: []Role{RoleSource, RoleBody}, WhenArg: -1, WhenKind: WhenNone, Binds: []string{"_", "_K"}},
+		{Name: "ALL", Count: 3, Scopes: []Scope{ScopeOuter, ScopeBinder, ScopeInner}, Roles: []Role{RoleSource, RoleBinder, RoleBody}, WhenArg: -1, WhenKind: WhenNone, Binds: []string{"_K"}},
 	},
 	"ANY": {
-		{Name: "ANY", Count: 2, Scopes: []Scope{ScopeOuter, ScopeInner}, WhenArg: -1, WhenKind: WhenNone, Binds: []string{"_", "_K"}},
-		{Name: "ANY", Count: 3, Scopes: []Scope{ScopeOuter, ScopeBinder, ScopeInner}, WhenArg: -1, WhenKind: WhenNone, Binds: []string{"_K"}},
+		{Name: "ANY", Count: 2, Scopes: []Scope{ScopeOuter, ScopeInner}, Roles: []Role{RoleSource, RoleBody}, WhenArg: -1, WhenKind: WhenNone, Binds: []string{"_", "_K"}},
+		{Name: "ANY", Count: 3, Scopes: []Scope{ScopeOuter, ScopeBinder, ScopeInner}, Roles: []Role{RoleSource, RoleBinder, RoleBody}, WhenArg: -1, WhenKind: WhenNone, Binds: []string{"_K"}},
 	},
 	"BUCKET": {
-		{Name: "BUCKET", Count: 2, Scopes: []Scope{ScopeOuter, ScopeInner}, WhenArg: -1, WhenKind: WhenNone, Binds: []string{"_", "_K"}},
-		{Name: "BUCKET", Count: 3, Scopes: []Scope{ScopeOuter, ScopeInner, ScopeInner}, WhenArg: -1, WhenKind: WhenNone, Binds: []string{"_", "_K"}},
-		{Name: "BUCKET", Count: 4, Scopes: []Scope{ScopeOuter, ScopeBinder, ScopeInner, ScopeInner}, WhenArg: -1, WhenKind: WhenNone, Binds: []string{"_K"}},
+		{Name: "BUCKET", Count: 2, Scopes: []Scope{ScopeOuter, ScopeInner}, Roles: []Role{RoleSource, RoleKey}, WhenArg: -1, WhenKind: WhenNone, Binds: []string{"_", "_K"}},
+		{Name: "BUCKET", Count: 3, Scopes: []Scope{ScopeOuter, ScopeInner, ScopeInner}, Roles: []Role{RoleSource, RoleKey, RoleProj}, WhenArg: -1, WhenKind: WhenNone, Binds: []string{"_", "_K"}},
+		{Name: "BUCKET", Count: 4, Scopes: []Scope{ScopeOuter, ScopeBinder, ScopeInner, ScopeInner}, Roles: []Role{RoleSource, RoleBinder, RoleKey, RoleProj}, WhenArg: -1, WhenKind: WhenNone, Binds: []string{"_K"}},
 	},
 	"FILTER": {
-		{Name: "FILTER", Count: 2, Scopes: []Scope{ScopeOuter, ScopeInner}, WhenArg: -1, WhenKind: WhenNone, Binds: []string{"_", "_K"}},
-		{Name: "FILTER", Count: 3, Scopes: []Scope{ScopeOuter, ScopeBinder, ScopeInner}, WhenArg: -1, WhenKind: WhenNone, Binds: []string{"_K"}},
+		{Name: "FILTER", Count: 2, Scopes: []Scope{ScopeOuter, ScopeInner}, Roles: []Role{RoleSource, RoleBody}, WhenArg: -1, WhenKind: WhenNone, Binds: []string{"_", "_K"}},
+		{Name: "FILTER", Count: 3, Scopes: []Scope{ScopeOuter, ScopeBinder, ScopeInner}, Roles: []Role{RoleSource, RoleBinder, RoleBody}, WhenArg: -1, WhenKind: WhenNone, Binds: []string{"_K"}},
 	},
 	"LINK": {
-		{Name: "LINK", Count: 3, Scopes: []Scope{ScopeOuter, ScopeOuter, ScopeInner}, WhenArg: -1, WhenKind: WhenNone, Binds: []string{"_", "_1", "_2", "_K"}},
-		{Name: "LINK", Count: 5, Scopes: []Scope{ScopeOuter, ScopeOuter, ScopeBinder, ScopeBinder, ScopeInner}, WhenArg: -1, WhenKind: WhenNone, Binds: []string{"_", "_1", "_2", "_K"}},
+		{Name: "LINK", Count: 3, Scopes: []Scope{ScopeOuter, ScopeOuter, ScopeInner}, Roles: []Role{RoleSource, RoleSource, RolePred}, WhenArg: -1, WhenKind: WhenNone, Binds: []string{"_", "_1", "_2", "_K"}},
+		{Name: "LINK", Count: 5, Scopes: []Scope{ScopeOuter, ScopeOuter, ScopeBinder, ScopeBinder, ScopeInner}, Roles: []Role{RoleSource, RoleSource, RoleBinder, RoleBinder, RolePred}, WhenArg: -1, WhenKind: WhenNone, Binds: []string{"_", "_1", "_2", "_K"}},
 	},
 	"LINK_LEFT": {
-		{Name: "LINK_LEFT", Count: 3, Scopes: []Scope{ScopeOuter, ScopeOuter, ScopeInner}, WhenArg: -1, WhenKind: WhenNone, Binds: []string{"_", "_1", "_2", "_K"}},
-		{Name: "LINK_LEFT", Count: 5, Scopes: []Scope{ScopeOuter, ScopeOuter, ScopeBinder, ScopeBinder, ScopeInner}, WhenArg: -1, WhenKind: WhenNone, Binds: []string{"_", "_1", "_2", "_K"}},
+		{Name: "LINK_LEFT", Count: 3, Scopes: []Scope{ScopeOuter, ScopeOuter, ScopeInner}, Roles: []Role{RoleSource, RoleSource, RolePred}, WhenArg: -1, WhenKind: WhenNone, Binds: []string{"_", "_1", "_2", "_K"}},
+		{Name: "LINK_LEFT", Count: 5, Scopes: []Scope{ScopeOuter, ScopeOuter, ScopeBinder, ScopeBinder, ScopeInner}, Roles: []Role{RoleSource, RoleSource, RoleBinder, RoleBinder, RolePred}, WhenArg: -1, WhenKind: WhenNone, Binds: []string{"_", "_1", "_2", "_K"}},
 	},
 	"MAP": {
-		{Name: "MAP", Count: 2, Scopes: []Scope{ScopeOuter, ScopeInner}, WhenArg: -1, WhenKind: WhenNone, Binds: []string{"_", "_K"}},
-		{Name: "MAP", Count: 3, Scopes: []Scope{ScopeOuter, ScopeBinder, ScopeInner}, WhenArg: -1, WhenKind: WhenNone, Binds: []string{"_K"}},
+		{Name: "MAP", Count: 2, Scopes: []Scope{ScopeOuter, ScopeInner}, Roles: []Role{RoleSource, RoleBody}, WhenArg: -1, WhenKind: WhenNone, Binds: []string{"_", "_K"}},
+		{Name: "MAP", Count: 3, Scopes: []Scope{ScopeOuter, ScopeBinder, ScopeInner}, Roles: []Role{RoleSource, RoleBinder, RoleBody}, WhenArg: -1, WhenKind: WhenNone, Binds: []string{"_K"}},
 	},
 	"SORT": {
-		{Name: "SORT", Count: 1, Scopes: []Scope{ScopeOuter}, WhenArg: -1, WhenKind: WhenNone, Binds: []string{"_", "_K"}},
-		{Name: "SORT", Count: 2, Scopes: []Scope{ScopeOuter, ScopeInner}, WhenArg: -1, WhenKind: WhenNone, Binds: []string{"_", "_K"}},
-		{Name: "SORT", Count: 3, Scopes: []Scope{ScopeOuter, ScopeBinder, ScopeInner}, WhenArg: -1, WhenKind: WhenNone, Binds: []string{"_K"}},
+		{Name: "SORT", Count: 1, Scopes: []Scope{ScopeOuter}, Roles: []Role{RoleSource}, WhenArg: -1, WhenKind: WhenNone, Binds: []string{"_", "_K"}},
+		{Name: "SORT", Count: 2, Scopes: []Scope{ScopeOuter, ScopeInner}, Roles: []Role{RoleSource, RoleBody}, WhenArg: -1, WhenKind: WhenNone, Binds: []string{"_", "_K"}},
+		{Name: "SORT", Count: 3, Scopes: []Scope{ScopeOuter, ScopeBinder, ScopeInner}, Roles: []Role{RoleSource, RoleBinder, RoleBody}, WhenArg: -1, WhenKind: WhenNone, Binds: []string{"_K"}},
 	},
 	"SORT_BY": {
-		{Name: "SORT_BY", Count: 2, Scopes: []Scope{ScopeOuter, ScopeInner}, WhenArg: -1, WhenKind: WhenNone, Binds: []string{"_", "_K"}},
-		{Name: "SORT_BY", Count: 3, Scopes: []Scope{ScopeOuter, ScopeInner, ScopeOuter}, WhenArg: 2, WhenKind: WhenText, Binds: []string{"_", "_K"}},
-		{Name: "SORT_BY", Count: 3, Scopes: []Scope{ScopeOuter, ScopeBinder, ScopeInner}, WhenArg: 1, WhenKind: WhenName, Binds: []string{"_K"}},
-		{Name: "SORT_BY", Count: 3, Scopes: []Scope{ScopeOuter, ScopeInner, ScopeOuter}, WhenArg: -1, WhenKind: WhenNone, Binds: []string{"_", "_K"}},
-		{Name: "SORT_BY", Count: 4, Scopes: []Scope{ScopeOuter, ScopeBinder, ScopeInner, ScopeOuter}, WhenArg: -1, WhenKind: WhenNone, Binds: []string{"_K"}},
+		{Name: "SORT_BY", Count: 2, Scopes: []Scope{ScopeOuter, ScopeInner}, Roles: []Role{RoleSource, RoleKey}, WhenArg: -1, WhenKind: WhenNone, Binds: []string{"_", "_K"}},
+		{Name: "SORT_BY", Count: 3, Scopes: []Scope{ScopeOuter, ScopeInner, ScopeOuter}, Roles: []Role{RoleSource, RoleKey, RoleOuter}, WhenArg: 2, WhenKind: WhenText, Binds: []string{"_", "_K"}},
+		{Name: "SORT_BY", Count: 3, Scopes: []Scope{ScopeOuter, ScopeBinder, ScopeInner}, Roles: []Role{RoleSource, RoleBinder, RoleKey}, WhenArg: 1, WhenKind: WhenName, Binds: []string{"_K"}},
+		{Name: "SORT_BY", Count: 3, Scopes: []Scope{ScopeOuter, ScopeInner, ScopeOuter}, Roles: []Role{RoleSource, RoleKey, RoleOuter}, WhenArg: -1, WhenKind: WhenNone, Binds: []string{"_", "_K"}},
+		{Name: "SORT_BY", Count: 4, Scopes: []Scope{ScopeOuter, ScopeBinder, ScopeInner, ScopeOuter}, Roles: []Role{RoleSource, RoleBinder, RoleKey, RoleOuter}, WhenArg: -1, WhenKind: WhenNone, Binds: []string{"_K"}},
 	},
 	"SORT_DESC": {
-		{Name: "SORT_DESC", Count: 1, Scopes: []Scope{ScopeOuter}, WhenArg: -1, WhenKind: WhenNone, Binds: []string{"_", "_K"}},
-		{Name: "SORT_DESC", Count: 2, Scopes: []Scope{ScopeOuter, ScopeInner}, WhenArg: -1, WhenKind: WhenNone, Binds: []string{"_", "_K"}},
-		{Name: "SORT_DESC", Count: 3, Scopes: []Scope{ScopeOuter, ScopeBinder, ScopeInner}, WhenArg: -1, WhenKind: WhenNone, Binds: []string{"_K"}},
+		{Name: "SORT_DESC", Count: 1, Scopes: []Scope{ScopeOuter}, Roles: []Role{RoleSource}, WhenArg: -1, WhenKind: WhenNone, Binds: []string{"_", "_K"}},
+		{Name: "SORT_DESC", Count: 2, Scopes: []Scope{ScopeOuter, ScopeInner}, Roles: []Role{RoleSource, RoleBody}, WhenArg: -1, WhenKind: WhenNone, Binds: []string{"_", "_K"}},
+		{Name: "SORT_DESC", Count: 3, Scopes: []Scope{ScopeOuter, ScopeBinder, ScopeInner}, Roles: []Role{RoleSource, RoleBinder, RoleBody}, WhenArg: -1, WhenKind: WhenNone, Binds: []string{"_K"}},
 	},
 	"SUM": {
-		{Name: "SUM", Count: 2, Scopes: []Scope{ScopeOuter, ScopeInner}, WhenArg: -1, WhenKind: WhenNone, Binds: []string{"_", "_K"}},
-		{Name: "SUM", Count: 3, Scopes: []Scope{ScopeOuter, ScopeBinder, ScopeInner}, WhenArg: -1, WhenKind: WhenNone, Binds: []string{"_K"}},
+		{Name: "SUM", Count: 2, Scopes: []Scope{ScopeOuter, ScopeInner}, Roles: []Role{RoleSource, RoleBody}, WhenArg: -1, WhenKind: WhenNone, Binds: []string{"_", "_K"}},
+		{Name: "SUM", Count: 3, Scopes: []Scope{ScopeOuter, ScopeBinder, ScopeInner}, Roles: []Role{RoleSource, RoleBinder, RoleBody}, WhenArg: -1, WhenKind: WhenNone, Binds: []string{"_K"}},
 	},
 	"TOP": {
-		{Name: "TOP", Count: 2, Scopes: []Scope{ScopeOuter, ScopeOuter}, WhenArg: -1, WhenKind: WhenNone, Binds: []string{"_", "_K"}},
-		{Name: "TOP", Count: 3, Scopes: []Scope{ScopeOuter, ScopeInner, ScopeOuter}, WhenArg: -1, WhenKind: WhenNone, Binds: []string{"_", "_K"}},
-		{Name: "TOP", Count: 4, Scopes: []Scope{ScopeOuter, ScopeBinder, ScopeInner, ScopeOuter}, WhenArg: -1, WhenKind: WhenNone, Binds: []string{"_K"}},
+		{Name: "TOP", Count: 2, Scopes: []Scope{ScopeOuter, ScopeOuter}, Roles: []Role{RoleSource, RoleOuter}, WhenArg: -1, WhenKind: WhenNone, Binds: []string{"_", "_K"}},
+		{Name: "TOP", Count: 3, Scopes: []Scope{ScopeOuter, ScopeInner, ScopeOuter}, Roles: []Role{RoleSource, RoleBody, RoleOuter}, WhenArg: -1, WhenKind: WhenNone, Binds: []string{"_", "_K"}},
+		{Name: "TOP", Count: 4, Scopes: []Scope{ScopeOuter, ScopeBinder, ScopeInner, ScopeOuter}, Roles: []Role{RoleSource, RoleBinder, RoleBody, RoleOuter}, WhenArg: -1, WhenKind: WhenNone, Binds: []string{"_K"}},
 	},
 	"TOP_BY": {
-		{Name: "TOP_BY", Count: 3, Scopes: []Scope{ScopeOuter, ScopeInner, ScopeOuter}, WhenArg: -1, WhenKind: WhenNone, Binds: []string{"_", "_K"}},
-		{Name: "TOP_BY", Count: 4, Scopes: []Scope{ScopeOuter, ScopeInner, ScopeOuter, ScopeOuter}, WhenArg: 2, WhenKind: WhenText, Binds: []string{"_", "_K"}},
-		{Name: "TOP_BY", Count: 4, Scopes: []Scope{ScopeOuter, ScopeBinder, ScopeInner, ScopeOuter}, WhenArg: 1, WhenKind: WhenName, Binds: []string{"_K"}},
-		{Name: "TOP_BY", Count: 4, Scopes: []Scope{ScopeOuter, ScopeInner, ScopeOuter, ScopeOuter}, WhenArg: -1, WhenKind: WhenNone, Binds: []string{"_", "_K"}},
-		{Name: "TOP_BY", Count: 5, Scopes: []Scope{ScopeOuter, ScopeBinder, ScopeInner, ScopeOuter, ScopeOuter}, WhenArg: -1, WhenKind: WhenNone, Binds: []string{"_K"}},
+		{Name: "TOP_BY", Count: 3, Scopes: []Scope{ScopeOuter, ScopeInner, ScopeOuter}, Roles: []Role{RoleSource, RoleKey, RoleOuter}, WhenArg: -1, WhenKind: WhenNone, Binds: []string{"_", "_K"}},
+		{Name: "TOP_BY", Count: 4, Scopes: []Scope{ScopeOuter, ScopeInner, ScopeOuter, ScopeOuter}, Roles: []Role{RoleSource, RoleKey, RoleOuter, RoleOuter}, WhenArg: 2, WhenKind: WhenText, Binds: []string{"_", "_K"}},
+		{Name: "TOP_BY", Count: 4, Scopes: []Scope{ScopeOuter, ScopeBinder, ScopeInner, ScopeOuter}, Roles: []Role{RoleSource, RoleBinder, RoleKey, RoleOuter}, WhenArg: 1, WhenKind: WhenName, Binds: []string{"_K"}},
+		{Name: "TOP_BY", Count: 4, Scopes: []Scope{ScopeOuter, ScopeInner, ScopeOuter, ScopeOuter}, Roles: []Role{RoleSource, RoleKey, RoleOuter, RoleOuter}, WhenArg: -1, WhenKind: WhenNone, Binds: []string{"_", "_K"}},
+		{Name: "TOP_BY", Count: 5, Scopes: []Scope{ScopeOuter, ScopeBinder, ScopeInner, ScopeOuter, ScopeOuter}, Roles: []Role{RoleSource, RoleBinder, RoleKey, RoleOuter, RoleOuter}, WhenArg: -1, WhenKind: WhenNone, Binds: []string{"_K"}},
 	},
 	"TOP_DESC": {
-		{Name: "TOP_DESC", Count: 2, Scopes: []Scope{ScopeOuter, ScopeOuter}, WhenArg: -1, WhenKind: WhenNone, Binds: []string{"_", "_K"}},
-		{Name: "TOP_DESC", Count: 3, Scopes: []Scope{ScopeOuter, ScopeInner, ScopeOuter}, WhenArg: -1, WhenKind: WhenNone, Binds: []string{"_", "_K"}},
-		{Name: "TOP_DESC", Count: 4, Scopes: []Scope{ScopeOuter, ScopeBinder, ScopeInner, ScopeOuter}, WhenArg: -1, WhenKind: WhenNone, Binds: []string{"_K"}},
+		{Name: "TOP_DESC", Count: 2, Scopes: []Scope{ScopeOuter, ScopeOuter}, Roles: []Role{RoleSource, RoleOuter}, WhenArg: -1, WhenKind: WhenNone, Binds: []string{"_", "_K"}},
+		{Name: "TOP_DESC", Count: 3, Scopes: []Scope{ScopeOuter, ScopeInner, ScopeOuter}, Roles: []Role{RoleSource, RoleBody, RoleOuter}, WhenArg: -1, WhenKind: WhenNone, Binds: []string{"_", "_K"}},
+		{Name: "TOP_DESC", Count: 4, Scopes: []Scope{ScopeOuter, ScopeBinder, ScopeInner, ScopeOuter}, Roles: []Role{RoleSource, RoleBinder, RoleBody, RoleOuter}, WhenArg: -1, WhenKind: WhenNone, Binds: []string{"_K"}},
 	},
+}
+
+// Classification (spec/builtins.md): the pipeline steps (whether each keeps
+// its rows as they are, and whether it sorts), where each regex builtin takes
+// its pattern and its flags, how the SQL translators type a builtin's
+// arguments (numeric positions; whether a BIN or a BOOL argument is accepted),
+// and the builtins whose result is a list. Hosts classify through these
+// rather than keeping lists of their own.
+type PipelineStep struct {
+	KeepsRows bool
+	Sorts     bool
+}
+
+var PipelineSteps = map[string]PipelineStep{
+	"BUCKET": {KeepsRows: false, Sorts: false},
+	"DEDUPE": {KeepsRows: true, Sorts: false},
+	"DISTINCT": {KeepsRows: true, Sorts: false},
+	"DROP": {KeepsRows: true, Sorts: false},
+	"FILTER": {KeepsRows: true, Sorts: false},
+	"LINK": {KeepsRows: false, Sorts: false},
+	"LINK_LEFT": {KeepsRows: false, Sorts: false},
+	"MAP": {KeepsRows: false, Sorts: false},
+	"SELECT_COLS": {KeepsRows: false, Sorts: false},
+	"SORT": {KeepsRows: true, Sorts: true},
+	"SORT_BY": {KeepsRows: true, Sorts: true},
+	"SORT_DESC": {KeepsRows: true, Sorts: true},
+	"TAKE": {KeepsRows: true, Sorts: false},
+	"TOP": {KeepsRows: true, Sorts: true},
+	"TOP_BY": {KeepsRows: true, Sorts: true},
+	"TOP_DESC": {KeepsRows: true, Sorts: true},
+}
+
+type RegexCall struct {
+	Pattern int
+	Flags   int
+}
+
+var RegexCalls = map[string]RegexCall{
+	"RFIND": {Pattern: 0, Flags: 2},
+	"RGROUPS": {Pattern: 0, Flags: 2},
+	"RMATCH": {Pattern: 0, Flags: 2},
+	"RREPLACE": {Pattern: 0, Flags: 3},
+}
+
+// SQLArgs: NumericAll when every argument is a number, else the Numeric indexes.
+type SQLArgs struct {
+	NumericAll bool
+	Numeric    []int
+	Bin        bool
+	Bool       bool
+}
+
+var SQLArgTypes = map[string]SQLArgs{
+	"ABS": {NumericAll: false, Numeric: []int{0}, Bin: false, Bool: false},
+	"BLEN": {NumericAll: false, Numeric: nil, Bin: true, Bool: false},
+	"CANON": {NumericAll: false, Numeric: []int{0}, Bin: false, Bool: false},
+	"CEIL": {NumericAll: false, Numeric: []int{0}, Bin: false, Bool: false},
+	"CHAR": {NumericAll: false, Numeric: []int{0}, Bin: false, Bool: false},
+	"CRC32": {NumericAll: false, Numeric: nil, Bin: true, Bool: false},
+	"ENCODE_BASE64": {NumericAll: false, Numeric: nil, Bin: true, Bool: false},
+	"FIND": {NumericAll: false, Numeric: []int{2}, Bin: false, Bool: false},
+	"FLOOR": {NumericAll: false, Numeric: []int{0}, Bin: false, Bool: false},
+	"FROM_UTF8": {NumericAll: false, Numeric: nil, Bin: true, Bool: false},
+	"ISNUM": {NumericAll: false, Numeric: nil, Bin: true, Bool: true},
+	"LEFT": {NumericAll: false, Numeric: []int{1}, Bin: false, Bool: false},
+	"MAX": {NumericAll: true, Numeric: nil, Bin: false, Bool: false},
+	"MIN": {NumericAll: true, Numeric: nil, Bin: false, Bool: false},
+	"PADL": {NumericAll: false, Numeric: []int{1}, Bin: false, Bool: false},
+	"PADR": {NumericAll: false, Numeric: []int{1}, Bin: false, Bool: false},
+	"POWER": {NumericAll: false, Numeric: []int{0, 1}, Bin: false, Bool: false},
+	"REPEAT": {NumericAll: false, Numeric: []int{1}, Bin: false, Bool: false},
+	"RIGHT": {NumericAll: false, Numeric: []int{1}, Bin: false, Bool: false},
+	"ROUND": {NumericAll: false, Numeric: []int{0, 1}, Bin: false, Bool: false},
+	"SIGN": {NumericAll: false, Numeric: []int{0}, Bin: false, Bool: false},
+	"SUBSTR": {NumericAll: false, Numeric: []int{1, 2}, Bin: false, Bool: false},
+	"TO_HEX": {NumericAll: false, Numeric: nil, Bin: true, Bool: false},
+	"TO_UTF8": {NumericAll: false, Numeric: nil, Bin: true, Bool: false},
+	"TRUNC": {NumericAll: false, Numeric: []int{0}, Bin: false, Bool: false},
+}
+
+var YieldsList = map[string]bool{
+	"BTL": true,
+	"BUCKET": true,
+	"DEDUPE": true,
+	"DISTINCT": true,
+	"DROP": true,
+	"FILTER": true,
+	"INDEXES": true,
+	"LINK": true,
+	"LINK_LEFT": true,
+	"LIST": true,
+	"MAP": true,
+	"RECORD": true,
+	"RGROUPS": true,
+	"SELECT_COLS": true,
+	"SORT": true,
+	"SORT_BY": true,
+	"SORT_DESC": true,
+	"SPLIT": true,
+	"TAKE": true,
+	"TOP": true,
+	"TOP_BY": true,
+	"TOP_DESC": true,
 }

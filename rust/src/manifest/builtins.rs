@@ -29,11 +29,24 @@ pub enum WhenKind {
     Text,
 }
 
+/// What one argument of a form is (spec/builtins.md, "Binding forms").
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Role {
+    Source,
+    Outer,
+    Binder,
+    Body,
+    Key,
+    Proj,
+    Pred,
+}
+
 #[derive(Clone, Debug)]
 pub struct Form {
     pub name: &'static str,
     pub count: usize,
     pub scopes: &'static [Scope],
+    pub roles: &'static [Role],
     pub when_arg: Option<usize>,
     pub when_kind: WhenKind,
     pub binds: &'static [&'static str],
@@ -154,70 +167,215 @@ pub const BUILTINS: &[(&str, Entry)] = &[
 
 pub const BINDING_FORMS: &[(&str, &[Form])] = &[
     ("ALL", &[
-        Form { name: "ALL", count: 2, scopes: &[Scope::Outer, Scope::Inner], when_arg: None, when_kind: WhenKind::None, binds: &["_", "_K"] },
-        Form { name: "ALL", count: 3, scopes: &[Scope::Outer, Scope::Binder, Scope::Inner], when_arg: None, when_kind: WhenKind::None, binds: &["_K"] },
+        Form { name: "ALL", count: 2, scopes: &[Scope::Outer, Scope::Inner], roles: &[Role::Source, Role::Body], when_arg: None, when_kind: WhenKind::None, binds: &["_", "_K"] },
+        Form { name: "ALL", count: 3, scopes: &[Scope::Outer, Scope::Binder, Scope::Inner], roles: &[Role::Source, Role::Binder, Role::Body], when_arg: None, when_kind: WhenKind::None, binds: &["_K"] },
     ]),
     ("ANY", &[
-        Form { name: "ANY", count: 2, scopes: &[Scope::Outer, Scope::Inner], when_arg: None, when_kind: WhenKind::None, binds: &["_", "_K"] },
-        Form { name: "ANY", count: 3, scopes: &[Scope::Outer, Scope::Binder, Scope::Inner], when_arg: None, when_kind: WhenKind::None, binds: &["_K"] },
+        Form { name: "ANY", count: 2, scopes: &[Scope::Outer, Scope::Inner], roles: &[Role::Source, Role::Body], when_arg: None, when_kind: WhenKind::None, binds: &["_", "_K"] },
+        Form { name: "ANY", count: 3, scopes: &[Scope::Outer, Scope::Binder, Scope::Inner], roles: &[Role::Source, Role::Binder, Role::Body], when_arg: None, when_kind: WhenKind::None, binds: &["_K"] },
     ]),
     ("BUCKET", &[
-        Form { name: "BUCKET", count: 2, scopes: &[Scope::Outer, Scope::Inner], when_arg: None, when_kind: WhenKind::None, binds: &["_", "_K"] },
-        Form { name: "BUCKET", count: 3, scopes: &[Scope::Outer, Scope::Inner, Scope::Inner], when_arg: None, when_kind: WhenKind::None, binds: &["_", "_K"] },
-        Form { name: "BUCKET", count: 4, scopes: &[Scope::Outer, Scope::Binder, Scope::Inner, Scope::Inner], when_arg: None, when_kind: WhenKind::None, binds: &["_K"] },
+        Form { name: "BUCKET", count: 2, scopes: &[Scope::Outer, Scope::Inner], roles: &[Role::Source, Role::Key], when_arg: None, when_kind: WhenKind::None, binds: &["_", "_K"] },
+        Form { name: "BUCKET", count: 3, scopes: &[Scope::Outer, Scope::Inner, Scope::Inner], roles: &[Role::Source, Role::Key, Role::Proj], when_arg: None, when_kind: WhenKind::None, binds: &["_", "_K"] },
+        Form { name: "BUCKET", count: 4, scopes: &[Scope::Outer, Scope::Binder, Scope::Inner, Scope::Inner], roles: &[Role::Source, Role::Binder, Role::Key, Role::Proj], when_arg: None, when_kind: WhenKind::None, binds: &["_K"] },
     ]),
     ("FILTER", &[
-        Form { name: "FILTER", count: 2, scopes: &[Scope::Outer, Scope::Inner], when_arg: None, when_kind: WhenKind::None, binds: &["_", "_K"] },
-        Form { name: "FILTER", count: 3, scopes: &[Scope::Outer, Scope::Binder, Scope::Inner], when_arg: None, when_kind: WhenKind::None, binds: &["_K"] },
+        Form { name: "FILTER", count: 2, scopes: &[Scope::Outer, Scope::Inner], roles: &[Role::Source, Role::Body], when_arg: None, when_kind: WhenKind::None, binds: &["_", "_K"] },
+        Form { name: "FILTER", count: 3, scopes: &[Scope::Outer, Scope::Binder, Scope::Inner], roles: &[Role::Source, Role::Binder, Role::Body], when_arg: None, when_kind: WhenKind::None, binds: &["_K"] },
     ]),
     ("LINK", &[
-        Form { name: "LINK", count: 3, scopes: &[Scope::Outer, Scope::Outer, Scope::Inner], when_arg: None, when_kind: WhenKind::None, binds: &["_", "_1", "_2", "_K"] },
-        Form { name: "LINK", count: 5, scopes: &[Scope::Outer, Scope::Outer, Scope::Binder, Scope::Binder, Scope::Inner], when_arg: None, when_kind: WhenKind::None, binds: &["_", "_1", "_2", "_K"] },
+        Form { name: "LINK", count: 3, scopes: &[Scope::Outer, Scope::Outer, Scope::Inner], roles: &[Role::Source, Role::Source, Role::Pred], when_arg: None, when_kind: WhenKind::None, binds: &["_", "_1", "_2", "_K"] },
+        Form { name: "LINK", count: 5, scopes: &[Scope::Outer, Scope::Outer, Scope::Binder, Scope::Binder, Scope::Inner], roles: &[Role::Source, Role::Source, Role::Binder, Role::Binder, Role::Pred], when_arg: None, when_kind: WhenKind::None, binds: &["_", "_1", "_2", "_K"] },
     ]),
     ("LINK_LEFT", &[
-        Form { name: "LINK_LEFT", count: 3, scopes: &[Scope::Outer, Scope::Outer, Scope::Inner], when_arg: None, when_kind: WhenKind::None, binds: &["_", "_1", "_2", "_K"] },
-        Form { name: "LINK_LEFT", count: 5, scopes: &[Scope::Outer, Scope::Outer, Scope::Binder, Scope::Binder, Scope::Inner], when_arg: None, when_kind: WhenKind::None, binds: &["_", "_1", "_2", "_K"] },
+        Form { name: "LINK_LEFT", count: 3, scopes: &[Scope::Outer, Scope::Outer, Scope::Inner], roles: &[Role::Source, Role::Source, Role::Pred], when_arg: None, when_kind: WhenKind::None, binds: &["_", "_1", "_2", "_K"] },
+        Form { name: "LINK_LEFT", count: 5, scopes: &[Scope::Outer, Scope::Outer, Scope::Binder, Scope::Binder, Scope::Inner], roles: &[Role::Source, Role::Source, Role::Binder, Role::Binder, Role::Pred], when_arg: None, when_kind: WhenKind::None, binds: &["_", "_1", "_2", "_K"] },
     ]),
     ("MAP", &[
-        Form { name: "MAP", count: 2, scopes: &[Scope::Outer, Scope::Inner], when_arg: None, when_kind: WhenKind::None, binds: &["_", "_K"] },
-        Form { name: "MAP", count: 3, scopes: &[Scope::Outer, Scope::Binder, Scope::Inner], when_arg: None, when_kind: WhenKind::None, binds: &["_K"] },
+        Form { name: "MAP", count: 2, scopes: &[Scope::Outer, Scope::Inner], roles: &[Role::Source, Role::Body], when_arg: None, when_kind: WhenKind::None, binds: &["_", "_K"] },
+        Form { name: "MAP", count: 3, scopes: &[Scope::Outer, Scope::Binder, Scope::Inner], roles: &[Role::Source, Role::Binder, Role::Body], when_arg: None, when_kind: WhenKind::None, binds: &["_K"] },
     ]),
     ("SORT", &[
-        Form { name: "SORT", count: 1, scopes: &[Scope::Outer], when_arg: None, when_kind: WhenKind::None, binds: &["_", "_K"] },
-        Form { name: "SORT", count: 2, scopes: &[Scope::Outer, Scope::Inner], when_arg: None, when_kind: WhenKind::None, binds: &["_", "_K"] },
-        Form { name: "SORT", count: 3, scopes: &[Scope::Outer, Scope::Binder, Scope::Inner], when_arg: None, when_kind: WhenKind::None, binds: &["_K"] },
+        Form { name: "SORT", count: 1, scopes: &[Scope::Outer], roles: &[Role::Source], when_arg: None, when_kind: WhenKind::None, binds: &["_", "_K"] },
+        Form { name: "SORT", count: 2, scopes: &[Scope::Outer, Scope::Inner], roles: &[Role::Source, Role::Body], when_arg: None, when_kind: WhenKind::None, binds: &["_", "_K"] },
+        Form { name: "SORT", count: 3, scopes: &[Scope::Outer, Scope::Binder, Scope::Inner], roles: &[Role::Source, Role::Binder, Role::Body], when_arg: None, when_kind: WhenKind::None, binds: &["_K"] },
     ]),
     ("SORT_BY", &[
-        Form { name: "SORT_BY", count: 2, scopes: &[Scope::Outer, Scope::Inner], when_arg: None, when_kind: WhenKind::None, binds: &["_", "_K"] },
-        Form { name: "SORT_BY", count: 3, scopes: &[Scope::Outer, Scope::Inner, Scope::Outer], when_arg: Some(2), when_kind: WhenKind::Text, binds: &["_", "_K"] },
-        Form { name: "SORT_BY", count: 3, scopes: &[Scope::Outer, Scope::Binder, Scope::Inner], when_arg: Some(1), when_kind: WhenKind::Name, binds: &["_K"] },
-        Form { name: "SORT_BY", count: 3, scopes: &[Scope::Outer, Scope::Inner, Scope::Outer], when_arg: None, when_kind: WhenKind::None, binds: &["_", "_K"] },
-        Form { name: "SORT_BY", count: 4, scopes: &[Scope::Outer, Scope::Binder, Scope::Inner, Scope::Outer], when_arg: None, when_kind: WhenKind::None, binds: &["_K"] },
+        Form { name: "SORT_BY", count: 2, scopes: &[Scope::Outer, Scope::Inner], roles: &[Role::Source, Role::Key], when_arg: None, when_kind: WhenKind::None, binds: &["_", "_K"] },
+        Form { name: "SORT_BY", count: 3, scopes: &[Scope::Outer, Scope::Inner, Scope::Outer], roles: &[Role::Source, Role::Key, Role::Outer], when_arg: Some(2), when_kind: WhenKind::Text, binds: &["_", "_K"] },
+        Form { name: "SORT_BY", count: 3, scopes: &[Scope::Outer, Scope::Binder, Scope::Inner], roles: &[Role::Source, Role::Binder, Role::Key], when_arg: Some(1), when_kind: WhenKind::Name, binds: &["_K"] },
+        Form { name: "SORT_BY", count: 3, scopes: &[Scope::Outer, Scope::Inner, Scope::Outer], roles: &[Role::Source, Role::Key, Role::Outer], when_arg: None, when_kind: WhenKind::None, binds: &["_", "_K"] },
+        Form { name: "SORT_BY", count: 4, scopes: &[Scope::Outer, Scope::Binder, Scope::Inner, Scope::Outer], roles: &[Role::Source, Role::Binder, Role::Key, Role::Outer], when_arg: None, when_kind: WhenKind::None, binds: &["_K"] },
     ]),
     ("SORT_DESC", &[
-        Form { name: "SORT_DESC", count: 1, scopes: &[Scope::Outer], when_arg: None, when_kind: WhenKind::None, binds: &["_", "_K"] },
-        Form { name: "SORT_DESC", count: 2, scopes: &[Scope::Outer, Scope::Inner], when_arg: None, when_kind: WhenKind::None, binds: &["_", "_K"] },
-        Form { name: "SORT_DESC", count: 3, scopes: &[Scope::Outer, Scope::Binder, Scope::Inner], when_arg: None, when_kind: WhenKind::None, binds: &["_K"] },
+        Form { name: "SORT_DESC", count: 1, scopes: &[Scope::Outer], roles: &[Role::Source], when_arg: None, when_kind: WhenKind::None, binds: &["_", "_K"] },
+        Form { name: "SORT_DESC", count: 2, scopes: &[Scope::Outer, Scope::Inner], roles: &[Role::Source, Role::Body], when_arg: None, when_kind: WhenKind::None, binds: &["_", "_K"] },
+        Form { name: "SORT_DESC", count: 3, scopes: &[Scope::Outer, Scope::Binder, Scope::Inner], roles: &[Role::Source, Role::Binder, Role::Body], when_arg: None, when_kind: WhenKind::None, binds: &["_K"] },
     ]),
     ("SUM", &[
-        Form { name: "SUM", count: 2, scopes: &[Scope::Outer, Scope::Inner], when_arg: None, when_kind: WhenKind::None, binds: &["_", "_K"] },
-        Form { name: "SUM", count: 3, scopes: &[Scope::Outer, Scope::Binder, Scope::Inner], when_arg: None, when_kind: WhenKind::None, binds: &["_K"] },
+        Form { name: "SUM", count: 2, scopes: &[Scope::Outer, Scope::Inner], roles: &[Role::Source, Role::Body], when_arg: None, when_kind: WhenKind::None, binds: &["_", "_K"] },
+        Form { name: "SUM", count: 3, scopes: &[Scope::Outer, Scope::Binder, Scope::Inner], roles: &[Role::Source, Role::Binder, Role::Body], when_arg: None, when_kind: WhenKind::None, binds: &["_K"] },
     ]),
     ("TOP", &[
-        Form { name: "TOP", count: 2, scopes: &[Scope::Outer, Scope::Outer], when_arg: None, when_kind: WhenKind::None, binds: &["_", "_K"] },
-        Form { name: "TOP", count: 3, scopes: &[Scope::Outer, Scope::Inner, Scope::Outer], when_arg: None, when_kind: WhenKind::None, binds: &["_", "_K"] },
-        Form { name: "TOP", count: 4, scopes: &[Scope::Outer, Scope::Binder, Scope::Inner, Scope::Outer], when_arg: None, when_kind: WhenKind::None, binds: &["_K"] },
+        Form { name: "TOP", count: 2, scopes: &[Scope::Outer, Scope::Outer], roles: &[Role::Source, Role::Outer], when_arg: None, when_kind: WhenKind::None, binds: &["_", "_K"] },
+        Form { name: "TOP", count: 3, scopes: &[Scope::Outer, Scope::Inner, Scope::Outer], roles: &[Role::Source, Role::Body, Role::Outer], when_arg: None, when_kind: WhenKind::None, binds: &["_", "_K"] },
+        Form { name: "TOP", count: 4, scopes: &[Scope::Outer, Scope::Binder, Scope::Inner, Scope::Outer], roles: &[Role::Source, Role::Binder, Role::Body, Role::Outer], when_arg: None, when_kind: WhenKind::None, binds: &["_K"] },
     ]),
     ("TOP_BY", &[
-        Form { name: "TOP_BY", count: 3, scopes: &[Scope::Outer, Scope::Inner, Scope::Outer], when_arg: None, when_kind: WhenKind::None, binds: &["_", "_K"] },
-        Form { name: "TOP_BY", count: 4, scopes: &[Scope::Outer, Scope::Inner, Scope::Outer, Scope::Outer], when_arg: Some(2), when_kind: WhenKind::Text, binds: &["_", "_K"] },
-        Form { name: "TOP_BY", count: 4, scopes: &[Scope::Outer, Scope::Binder, Scope::Inner, Scope::Outer], when_arg: Some(1), when_kind: WhenKind::Name, binds: &["_K"] },
-        Form { name: "TOP_BY", count: 4, scopes: &[Scope::Outer, Scope::Inner, Scope::Outer, Scope::Outer], when_arg: None, when_kind: WhenKind::None, binds: &["_", "_K"] },
-        Form { name: "TOP_BY", count: 5, scopes: &[Scope::Outer, Scope::Binder, Scope::Inner, Scope::Outer, Scope::Outer], when_arg: None, when_kind: WhenKind::None, binds: &["_K"] },
+        Form { name: "TOP_BY", count: 3, scopes: &[Scope::Outer, Scope::Inner, Scope::Outer], roles: &[Role::Source, Role::Key, Role::Outer], when_arg: None, when_kind: WhenKind::None, binds: &["_", "_K"] },
+        Form { name: "TOP_BY", count: 4, scopes: &[Scope::Outer, Scope::Inner, Scope::Outer, Scope::Outer], roles: &[Role::Source, Role::Key, Role::Outer, Role::Outer], when_arg: Some(2), when_kind: WhenKind::Text, binds: &["_", "_K"] },
+        Form { name: "TOP_BY", count: 4, scopes: &[Scope::Outer, Scope::Binder, Scope::Inner, Scope::Outer], roles: &[Role::Source, Role::Binder, Role::Key, Role::Outer], when_arg: Some(1), when_kind: WhenKind::Name, binds: &["_K"] },
+        Form { name: "TOP_BY", count: 4, scopes: &[Scope::Outer, Scope::Inner, Scope::Outer, Scope::Outer], roles: &[Role::Source, Role::Key, Role::Outer, Role::Outer], when_arg: None, when_kind: WhenKind::None, binds: &["_", "_K"] },
+        Form { name: "TOP_BY", count: 5, scopes: &[Scope::Outer, Scope::Binder, Scope::Inner, Scope::Outer, Scope::Outer], roles: &[Role::Source, Role::Binder, Role::Key, Role::Outer, Role::Outer], when_arg: None, when_kind: WhenKind::None, binds: &["_K"] },
     ]),
     ("TOP_DESC", &[
-        Form { name: "TOP_DESC", count: 2, scopes: &[Scope::Outer, Scope::Outer], when_arg: None, when_kind: WhenKind::None, binds: &["_", "_K"] },
-        Form { name: "TOP_DESC", count: 3, scopes: &[Scope::Outer, Scope::Inner, Scope::Outer], when_arg: None, when_kind: WhenKind::None, binds: &["_", "_K"] },
-        Form { name: "TOP_DESC", count: 4, scopes: &[Scope::Outer, Scope::Binder, Scope::Inner, Scope::Outer], when_arg: None, when_kind: WhenKind::None, binds: &["_K"] },
+        Form { name: "TOP_DESC", count: 2, scopes: &[Scope::Outer, Scope::Outer], roles: &[Role::Source, Role::Outer], when_arg: None, when_kind: WhenKind::None, binds: &["_", "_K"] },
+        Form { name: "TOP_DESC", count: 3, scopes: &[Scope::Outer, Scope::Inner, Scope::Outer], roles: &[Role::Source, Role::Body, Role::Outer], when_arg: None, when_kind: WhenKind::None, binds: &["_", "_K"] },
+        Form { name: "TOP_DESC", count: 4, scopes: &[Scope::Outer, Scope::Binder, Scope::Inner, Scope::Outer], roles: &[Role::Source, Role::Binder, Role::Body, Role::Outer], when_arg: None, when_kind: WhenKind::None, binds: &["_K"] },
     ]),
 ];
+
+// Classification (spec/builtins.md): the pipeline steps (whether each keeps
+// its rows as they are, and whether it sorts), where each regex builtin takes
+// its pattern and its flags, how the SQL translators type a builtin's
+// arguments (numeric positions; whether a BIN or a BOOL argument is accepted),
+// and the builtins whose result is a list. Hosts classify through these
+// rather than keeping lists of their own.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct PipelineStep {
+    pub keeps_rows: bool,
+    pub sorts: bool,
+}
+
+pub const PIPELINE_STEPS: &[(&str, PipelineStep)] = &[
+    ("BUCKET", PipelineStep { keeps_rows: false, sorts: false }),
+    ("DEDUPE", PipelineStep { keeps_rows: true, sorts: false }),
+    ("DISTINCT", PipelineStep { keeps_rows: true, sorts: false }),
+    ("DROP", PipelineStep { keeps_rows: true, sorts: false }),
+    ("FILTER", PipelineStep { keeps_rows: true, sorts: false }),
+    ("LINK", PipelineStep { keeps_rows: false, sorts: false }),
+    ("LINK_LEFT", PipelineStep { keeps_rows: false, sorts: false }),
+    ("MAP", PipelineStep { keeps_rows: false, sorts: false }),
+    ("SELECT_COLS", PipelineStep { keeps_rows: false, sorts: false }),
+    ("SORT", PipelineStep { keeps_rows: true, sorts: true }),
+    ("SORT_BY", PipelineStep { keeps_rows: true, sorts: true }),
+    ("SORT_DESC", PipelineStep { keeps_rows: true, sorts: true }),
+    ("TAKE", PipelineStep { keeps_rows: true, sorts: false }),
+    ("TOP", PipelineStep { keeps_rows: true, sorts: true }),
+    ("TOP_BY", PipelineStep { keeps_rows: true, sorts: true }),
+    ("TOP_DESC", PipelineStep { keeps_rows: true, sorts: true }),
+];
+
+/// A pipeline step by name, as a match: no table walk per call.
+pub fn pipeline_step(name: &str) -> Option<PipelineStep> {
+    match name {
+        "BUCKET" => Some(PipelineStep { keeps_rows: false, sorts: false }),
+        "DEDUPE" => Some(PipelineStep { keeps_rows: true, sorts: false }),
+        "DISTINCT" => Some(PipelineStep { keeps_rows: true, sorts: false }),
+        "DROP" => Some(PipelineStep { keeps_rows: true, sorts: false }),
+        "FILTER" => Some(PipelineStep { keeps_rows: true, sorts: false }),
+        "LINK" => Some(PipelineStep { keeps_rows: false, sorts: false }),
+        "LINK_LEFT" => Some(PipelineStep { keeps_rows: false, sorts: false }),
+        "MAP" => Some(PipelineStep { keeps_rows: false, sorts: false }),
+        "SELECT_COLS" => Some(PipelineStep { keeps_rows: false, sorts: false }),
+        "SORT" => Some(PipelineStep { keeps_rows: true, sorts: true }),
+        "SORT_BY" => Some(PipelineStep { keeps_rows: true, sorts: true }),
+        "SORT_DESC" => Some(PipelineStep { keeps_rows: true, sorts: true }),
+        "TAKE" => Some(PipelineStep { keeps_rows: true, sorts: false }),
+        "TOP" => Some(PipelineStep { keeps_rows: true, sorts: true }),
+        "TOP_BY" => Some(PipelineStep { keeps_rows: true, sorts: true }),
+        "TOP_DESC" => Some(PipelineStep { keeps_rows: true, sorts: true }),
+        _ => None,
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct RegexCall {
+    pub pattern: usize,
+    pub flags: usize,
+}
+
+pub fn regex_call(name: &str) -> Option<RegexCall> {
+    match name {
+        "RFIND" => Some(RegexCall { pattern: 0, flags: 2 }),
+        "RGROUPS" => Some(RegexCall { pattern: 0, flags: 2 }),
+        "RMATCH" => Some(RegexCall { pattern: 0, flags: 2 }),
+        "RREPLACE" => Some(RegexCall { pattern: 0, flags: 3 }),
+        _ => None,
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum NumericArgs {
+    None,
+    All,
+    At(&'static [usize]),
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SqlArgs {
+    pub numeric: NumericArgs,
+    pub bin_arg: bool,
+    pub bool_arg: bool,
+}
+
+pub const SQL_ARGS: &[(&str, SqlArgs)] = &[
+    ("ABS", SqlArgs { numeric: NumericArgs::At(&[0]), bin_arg: false, bool_arg: false }),
+    ("BLEN", SqlArgs { numeric: NumericArgs::None, bin_arg: true, bool_arg: false }),
+    ("CANON", SqlArgs { numeric: NumericArgs::At(&[0]), bin_arg: false, bool_arg: false }),
+    ("CEIL", SqlArgs { numeric: NumericArgs::At(&[0]), bin_arg: false, bool_arg: false }),
+    ("CHAR", SqlArgs { numeric: NumericArgs::At(&[0]), bin_arg: false, bool_arg: false }),
+    ("CRC32", SqlArgs { numeric: NumericArgs::None, bin_arg: true, bool_arg: false }),
+    ("ENCODE_BASE64", SqlArgs { numeric: NumericArgs::None, bin_arg: true, bool_arg: false }),
+    ("FIND", SqlArgs { numeric: NumericArgs::At(&[2]), bin_arg: false, bool_arg: false }),
+    ("FLOOR", SqlArgs { numeric: NumericArgs::At(&[0]), bin_arg: false, bool_arg: false }),
+    ("FROM_UTF8", SqlArgs { numeric: NumericArgs::None, bin_arg: true, bool_arg: false }),
+    ("ISNUM", SqlArgs { numeric: NumericArgs::None, bin_arg: true, bool_arg: true }),
+    ("LEFT", SqlArgs { numeric: NumericArgs::At(&[1]), bin_arg: false, bool_arg: false }),
+    ("MAX", SqlArgs { numeric: NumericArgs::All, bin_arg: false, bool_arg: false }),
+    ("MIN", SqlArgs { numeric: NumericArgs::All, bin_arg: false, bool_arg: false }),
+    ("PADL", SqlArgs { numeric: NumericArgs::At(&[1]), bin_arg: false, bool_arg: false }),
+    ("PADR", SqlArgs { numeric: NumericArgs::At(&[1]), bin_arg: false, bool_arg: false }),
+    ("POWER", SqlArgs { numeric: NumericArgs::At(&[0, 1]), bin_arg: false, bool_arg: false }),
+    ("REPEAT", SqlArgs { numeric: NumericArgs::At(&[1]), bin_arg: false, bool_arg: false }),
+    ("RIGHT", SqlArgs { numeric: NumericArgs::At(&[1]), bin_arg: false, bool_arg: false }),
+    ("ROUND", SqlArgs { numeric: NumericArgs::At(&[0, 1]), bin_arg: false, bool_arg: false }),
+    ("SIGN", SqlArgs { numeric: NumericArgs::At(&[0]), bin_arg: false, bool_arg: false }),
+    ("SUBSTR", SqlArgs { numeric: NumericArgs::At(&[1, 2]), bin_arg: false, bool_arg: false }),
+    ("TO_HEX", SqlArgs { numeric: NumericArgs::None, bin_arg: true, bool_arg: false }),
+    ("TO_UTF8", SqlArgs { numeric: NumericArgs::None, bin_arg: true, bool_arg: false }),
+    ("TRUNC", SqlArgs { numeric: NumericArgs::At(&[0]), bin_arg: false, bool_arg: false }),
+];
+
+pub fn sql_args(name: &str) -> Option<SqlArgs> {
+    SQL_ARGS.iter().find(|(n, _)| *n == name).map(|(_, a)| *a)
+}
+
+pub const YIELDS_LIST: &[&str] = &[
+    "BTL",
+    "BUCKET",
+    "DEDUPE",
+    "DISTINCT",
+    "DROP",
+    "FILTER",
+    "INDEXES",
+    "LINK",
+    "LINK_LEFT",
+    "LIST",
+    "MAP",
+    "RECORD",
+    "RGROUPS",
+    "SELECT_COLS",
+    "SORT",
+    "SORT_BY",
+    "SORT_DESC",
+    "SPLIT",
+    "TAKE",
+    "TOP",
+    "TOP_BY",
+    "TOP_DESC",
+];
+
+pub fn yields_list(name: &str) -> bool {
+    YIELDS_LIST.contains(&name)
+}

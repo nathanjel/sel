@@ -138,4 +138,53 @@ guard says which form a count takes when two would fit.
 | `TOP_DESC` | source, body, outer |  | `_` `_K` |
 | `TOP_DESC` | source, binder, body, outer |  | `_K` |
 
+## Classification
+
+Facts the evaluator, optimiser, planners and translators classify builtins by.
+
+| Class | Builtins |
+|---|---|
+| pipeline steps (`.>` chains them; the first argument is the rows) | `BUCKET` `DEDUPE` `DISTINCT` `DROP` `FILTER` `LINK` `LINK_LEFT` `MAP` `SELECT_COLS` `SORT` `SORT_BY` `SORT_DESC` `TAKE` `TOP` `TOP_BY` `TOP_DESC` |
+| steps that keep their rows as they are (fewer, or reordered) | `DEDUPE` `DISTINCT` `DROP` `FILTER` `SORT` `SORT_BY` `SORT_DESC` `TAKE` `TOP` `TOP_BY` `TOP_DESC` |
+| steps that sort | `SORT` `SORT_BY` `SORT_DESC` `TOP` `TOP_BY` `TOP_DESC` |
+| result is a list | `BTL` `BUCKET` `DEDUPE` `DISTINCT` `DROP` `FILTER` `INDEXES` `LINK` `LINK_LEFT` `LIST` `MAP` `RECORD` `RGROUPS` `SELECT_COLS` `SORT` `SORT_BY` `SORT_DESC` `SPLIT` `TAKE` `TOP` `TOP_BY` `TOP_DESC` |
+
+| Regex builtin | Pattern argument | Flags argument |
+|---|---|---|
+| `RFIND` | 1 | 3 |
+| `RGROUPS` | 1 | 3 |
+| `RMATCH` | 1 | 3 |
+| `RREPLACE` | 1 | 4 |
+
+How the SQL translators type arguments (`sql`): which must be numbers, and
+which builtins take a BIN or a BOOL argument rather than refusing it.
+
+| Builtin | Numeric arguments | BIN accepted | BOOL accepted |
+|---|---|---|---|
+| `ABS` | 1 |  |  |
+| `BLEN` |  | yes |  |
+| `CANON` | 1 |  |  |
+| `CEIL` | 1 |  |  |
+| `CHAR` | 1 |  |  |
+| `CRC32` |  | yes |  |
+| `ENCODE_BASE64` |  | yes |  |
+| `FIND` | 3 |  |  |
+| `FLOOR` | 1 |  |  |
+| `FROM_UTF8` |  | yes |  |
+| `ISNUM` |  | yes | yes |
+| `LEFT` | 2 |  |  |
+| `MAX` | all |  |  |
+| `MIN` | all |  |  |
+| `PADL` | 2 |  |  |
+| `PADR` | 2 |  |  |
+| `POWER` | 1, 2 |  |  |
+| `REPEAT` | 2 |  |  |
+| `RIGHT` | 2 |  |  |
+| `ROUND` | 1, 2 |  |  |
+| `SIGN` | 1 |  |  |
+| `SUBSTR` | 2, 3 |  |  |
+| `TO_HEX` |  | yes |  |
+| `TO_UTF8` |  | yes |  |
+| `TRUNC` | 1 |  |  |
+
 78 builtins: 19 lazy, of which 14 bind; extra arity rules on `COND`, `LINK`, `LINK_LEFT`, `RECORD`.

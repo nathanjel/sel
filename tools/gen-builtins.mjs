@@ -49,7 +49,7 @@ function fail(msg) {
   process.exit(1);
 }
 
-const ENTRY_KEYS = new Set(['arity', 'lazy', 'binds', 'forms', 'signatures', 'spec']);
+const ENTRY_KEYS = new Set(['arity', 'lazy', 'binds', 'forms', 'pipeline', 'regex', 'sql', 'yieldsList', 'signatures', 'spec']);
 const ROLES = new Set(['source', 'outer', 'binder', 'body', 'key', 'proj', 'pred']);
 const INNER = new Set(['body', 'key', 'proj', 'pred']);
 const WHEN_KINDS = new Set(['name', 'text']);
@@ -140,6 +140,56 @@ function load() {
     } else if (e.binds) {
       fail(`${where('forms')}: a binding builtin declares its forms`);
     }
+    // Classification (spec/builtins.md, "Classification"): facts the evaluator,
+    // optimiser, planners and translators used to keep in lists of their own.
+    let pipeline = null;
+    if (e.pipeline !== undefined) {
+      const p = e.pipeline;
+      if (!p || typeof p !== 'object' || Object.keys(p).sort().join() !== 'keepsRows,sorts'
+        || typeof p.keepsRows !== 'boolean' || typeof p.sorts !== 'boolean') {
+        fail(`${where('pipeline')}: { keepsRows: bool, sorts: bool }`);
+      }
+      if (p.sorts && !p.keepsRows) fail(`${where('pipeline')}: a sort keeps its rows`);
+      if (a.min < 1) fail(`${where('pipeline')}: a step's first argument is the rows`);
+      if (e.yieldsList !== true) fail(`${where('yieldsList')}: a pipeline step yields a list`);
+      pipeline = { keepsRows: p.keepsRows, sorts: p.sorts };
+    }
+    let regex = null;
+    if (e.regex !== undefined) {
+      const r = e.regex;
+      const ok = (i) => Number.isInteger(i) && i >= 0 && (variadic || i < a.max);
+      if (!r || typeof r !== 'object' || Object.keys(r).sort().join() !== 'flags,pattern' || !ok(r.pattern) || !ok(r.flags)) {
+        fail(`${where('regex')}: { pattern, flags }, argument indexes`);
+      }
+      if (r.pattern >= a.min) fail(`${where('regex.pattern')}: the pattern is a required argument`);
+      if (r.flags < a.min || r.flags !== (variadic ? -1 : a.max - 1)) fail(`${where('regex.flags')}: the flags are the last, optional argument`);
+      if (e.lazy) fail(`${where('regex')}: a regex builtin is strict`);
+      regex = { pattern: r.pattern, flags: r.flags };
+    }
+    let sql = null;
+    if (e.sql !== undefined) {
+      const q = e.sql;
+      if (!q || typeof q !== 'object' || Object.keys(q).length === 0) fail(`${where('sql')}: a non-empty object`);
+      for (const k of Object.keys(q)) if (!['numericArgs', 'binArg', 'boolArg'].includes(k)) fail(`${where('sql.' + k)}: unknown key`);
+      if (e.lazy) fail(`${where('sql')}: only a strict builtin's arguments are typed`);
+      let numeric = null;
+      if (q.numericArgs !== undefined) {
+        if (q.numericArgs === 'all') {
+          if (!variadic) fail(`${where('sql.numericArgs')}: "all" is for a variadic builtin; list the indexes`);
+          numeric = 'all';
+        } else {
+          if (!Array.isArray(q.numericArgs) || q.numericArgs.length === 0) fail(`${where('sql.numericArgs')}: a list of indexes or "all"`);
+          q.numericArgs.forEach((i, k) => {
+            if (!Number.isInteger(i) || i < 0 || (!variadic && i >= a.max)) fail(`${where('sql.numericArgs')}: ${i} is not an argument index`);
+            if (k > 0 && i <= q.numericArgs[k - 1]) fail(`${where('sql.numericArgs')}: indexes ascend, no repeats`);
+          });
+          numeric = q.numericArgs;
+        }
+      }
+      for (const k of ['binArg', 'boolArg']) if (q[k] !== undefined && q[k] !== true) fail(`${where('sql.' + k)}: true or absent`);
+      sql = { numeric, bin: !!q.binArg, bool: !!q.boolArg };
+    }
+    if (e.yieldsList !== undefined && e.yieldsList !== true) fail(`${where('yieldsList')}: true or absent`);
     if (!Array.isArray(e.signatures) || e.signatures.length === 0) fail(`${where('signatures')}: at least one form`);
     for (const s of e.signatures) {
       if (typeof s !== 'string' || !s.startsWith(name + '(') || !s.endsWith(')')) {
@@ -151,6 +201,7 @@ function load() {
       name, min: a.min, max: variadic ? null : a.max,
       allowed: a.allowed ?? null, parity: a.parity ?? null, message: a.message ?? null,
       lazy: !!e.lazy, binds: !!e.binds, forms, signatures: e.signatures, spec: e.spec,
+      pipeline, regex, sql, yieldsList: !!e.yieldsList,
     });
   }
   return out;
@@ -163,6 +214,19 @@ function load() {
 // descriptive role names stay in the manifest and the docs.
 const scopeOf = (role) => (role === 'binder' ? 'binder' : INNER.has(role) ? 'inner' : 'outer');
 
+
+// The classification tables every host renders the same way (spec/builtins.md,
+// "Classification").
+function classificationComment(c) {
+  return [
+    `${c} Classification (spec/builtins.md): the pipeline steps (whether each keeps`,
+    `${c} its rows as they are, and whether it sorts), where each regex builtin takes`,
+    `${c} its pattern and its flags, how the SQL translators type a builtin's`,
+    `${c} arguments (numeric positions; whether a BIN or a BOOL argument is accepted),`,
+    `${c} and the builtins whose result is a list. Hosts classify through these`,
+    `${c} rather than keeping lists of their own.`,
+  ];
+}
 
 function renderJs(entries) {
   const lines = [
@@ -191,7 +255,18 @@ function renderJs(entries) {
     const fs = e.forms.map((f) => `{ scopes: [${f.roles.map((r) => jsStr(scopeOf(r))).join(', ')}], when: ${f.when ? `{ arg: ${f.when.arg}, is: ${jsStr(f.when.is)} }` : 'null'}, binds: [${f.binds.map(jsStr).join(', ')}] }`);
     lines.push(`  ${e.name}: [`, ...fs.map((s) => `    ${s},`), '  ],');
   }
-  lines.push('});', '');
+  lines.push('});', '', ...classificationComment('//'),
+    'export const PIPELINE_STEPS = Object.freeze({');
+  for (const e of entries) if (e.pipeline) lines.push(`  ${e.name}: Object.freeze({ keepsRows: ${e.pipeline.keepsRows}, sorts: ${e.pipeline.sorts} }),`);
+  lines.push('});', '', 'export const REGEX_CALLS = Object.freeze({');
+  for (const e of entries) if (e.regex) lines.push(`  ${e.name}: Object.freeze({ pattern: ${e.regex.pattern}, flags: ${e.regex.flags} }),`);
+  lines.push('});', '', 'export const SQL_ARGS = Object.freeze({');
+  for (const e of entries) {
+    if (!e.sql) continue;
+    const n = e.sql.numeric === null ? 'null' : e.sql.numeric === 'all' ? "'all'" : `Object.freeze([${e.sql.numeric.join(', ')}])`;
+    lines.push(`  ${e.name}: Object.freeze({ numeric: ${n}, bin: ${e.sql.bin}, bool: ${e.sql.bool} }),`);
+  }
+  lines.push('});', '', `export const YIELDS_LIST = Object.freeze(new Set([${entries.filter((e) => e.yieldsList).map((e) => jsStr(e.name)).join(', ')}]));`, '');
   return lines.join('\n');
 }
 
@@ -224,7 +299,22 @@ function renderPython(entries) {
     const fs = e.forms.map((f) => `((${f.roles.map((r) => pyStr(scopeOf(r))).join(', ')}${f.roles.length === 1 ? ',' : ''}), ${f.when ? `(${f.when.arg}, ${pyStr(f.when.is)})` : 'None'}, (${f.binds.map(pyStr).join(', ')}${f.binds.length === 1 ? ',' : ''}))`);
     lines.push(`    ${pyStr(e.name)}: (`, ...fs.map((s) => `        ${s},`), '    ),');
   }
-  lines.push('}', '');
+  lines.push('}', '', ...classificationComment('#'),
+    '# PIPELINE_STEPS: name -> (keeps_rows, sorts). REGEX_CALLS: name -> (pattern,',
+    "# flags). SQL_ARGS: name -> (numeric, bin, bool), numeric a tuple of indexes,",
+    "# 'all' or None.",
+    'PIPELINE_STEPS = {');
+  const pyb = (b) => (b ? 'True' : 'False');
+  for (const e of entries) if (e.pipeline) lines.push(`    ${pyStr(e.name)}: (${pyb(e.pipeline.keepsRows)}, ${pyb(e.pipeline.sorts)}),`);
+  lines.push('}', '', 'REGEX_CALLS = {');
+  for (const e of entries) if (e.regex) lines.push(`    ${pyStr(e.name)}: (${e.regex.pattern}, ${e.regex.flags}),`);
+  lines.push('}', '', 'SQL_ARGS = {');
+  for (const e of entries) {
+    if (!e.sql) continue;
+    const n = e.sql.numeric === null ? 'None' : e.sql.numeric === 'all' ? "'all'" : `(${e.sql.numeric.join(', ')}${e.sql.numeric.length === 1 ? ',' : ''})`;
+    lines.push(`    ${pyStr(e.name)}: (${n}, ${pyb(e.sql.bin)}, ${pyb(e.sql.bool)}),`);
+  }
+  lines.push('}', '', `YIELDS_LIST = frozenset((${entries.filter((e) => e.yieldsList).map((e) => pyStr(e.name)).join(', ')}))`, '');
   return lines.join('\n');
 }
 
@@ -268,6 +358,22 @@ function renderPhp(entries) {
     const fs = e.forms.map((f) => `[[${f.roles.map((r) => phpStr(scopeOf(r))).join(', ')}], ${f.when ? `[${f.when.arg}, ${phpStr(f.when.is)}]` : 'null'}, [${f.binds.map(phpStr).join(', ')}]]`);
     lines.push(`        ${phpStr(e.name)} => [`, ...fs.map((s) => `            ${s},`), '        ],');
   }
+  lines.push('    ];', '', ...classificationComment('    //'),
+    "    /** @var array<string, array{0:bool,1:bool}> name => [keepsRows, sorts] */",
+    '    public const PIPELINE_STEPS = [');
+  for (const e of entries) if (e.pipeline) lines.push(`        ${phpStr(e.name)} => [${e.pipeline.keepsRows}, ${e.pipeline.sorts}],`);
+  lines.push('    ];', '', "    /** @var array<string, array{0:int,1:int}> name => [pattern, flags] */", '    public const REGEX_CALLS = [');
+  for (const e of entries) if (e.regex) lines.push(`        ${phpStr(e.name)} => [${e.regex.pattern}, ${e.regex.flags}],`);
+  lines.push('    ];', '',
+    "    /** @var array<string, array{0:list<int>|string|null,1:bool,2:bool}> name => [numeric ('all', indexes or null), bin, bool] */",
+    '    public const SQL_ARGS = [');
+  for (const e of entries) {
+    if (!e.sql) continue;
+    const n = e.sql.numeric === null ? 'null' : e.sql.numeric === 'all' ? "'all'" : `[${e.sql.numeric.join(', ')}]`;
+    lines.push(`        ${phpStr(e.name)} => [${n}, ${e.sql.bin}, ${e.sql.bool}],`);
+  }
+  lines.push('    ];', '', '    /** @var array<string, true> */', '    public const YIELDS_LIST = [');
+  for (const e of entries) if (e.yieldsList) lines.push(`        ${phpStr(e.name)} => true,`);
   lines.push('    ];', '}', '');
   return lines.join('\n');
 }
@@ -346,7 +452,31 @@ function renderCpp(entries) {
       formCount++;
     }
   }
-  lines.push('};', '', `inline constexpr int FORM_COUNT = ${formCount};`, '', '}  // namespace sel_builtin_manifest', '');
+  lines.push('};', '', `inline constexpr int FORM_COUNT = ${formCount};`, '', ...classificationComment('//'),
+    'struct PipelineStep {', '  const char* name;', '  bool keeps_rows;', '  bool sorts;', '};', '',
+    'inline const PipelineStep PIPELINE_STEPS[] = {');
+  const steps = entries.filter((e) => e.pipeline);
+  for (const e of steps) lines.push(`  {${cppStr(e.name)}, ${e.pipeline.keepsRows}, ${e.pipeline.sorts}},`);
+  lines.push('};', '', `inline constexpr int PIPELINE_STEP_COUNT = ${steps.length};`, '',
+    'struct RegexCall {', '  const char* name;', '  int pattern;', '  int flags;', '};', '',
+    'inline const RegexCall REGEX_CALLS[] = {');
+  const rx = entries.filter((e) => e.regex);
+  for (const e of rx) lines.push(`  {${cppStr(e.name)}, ${e.regex.pattern}, ${e.regex.flags}},`);
+  lines.push('};', '', `inline constexpr int REGEX_CALL_COUNT = ${rx.length};`, '',
+    '// numeric_all: every argument is a number; otherwise numeric[0..numeric_count).',
+    'struct SqlArgs {', '  const char* name;', '  bool numeric_all;', '  int numeric[4];', '  int numeric_count;', '  bool bin;', '  bool boolean;', '};', '',
+    'inline const SqlArgs SQL_ARGS[] = {');
+  const sq = entries.filter((e) => e.sql);
+  for (const e of sq) {
+    const list = Array.isArray(e.sql.numeric) ? e.sql.numeric : [];
+    if (list.length > 4) fail(`${e.name}.sql.numericArgs: the C++ rendering holds four`);
+    const padded = [...list]; while (padded.length < 4) padded.push(-1);
+    lines.push(`  {${cppStr(e.name)}, ${e.sql.numeric === 'all'}, {${padded.join(', ')}}, ${list.length}, ${e.sql.bin}, ${e.sql.bool}},`);
+  }
+  lines.push('};', '', `inline constexpr int SQL_ARGS_COUNT = ${sq.length};`, '');
+  const yl = entries.filter((e) => e.yieldsList);
+  lines.push(`inline const char* const YIELDS_LIST[] = {${yl.map((e) => cppStr(e.name)).join(', ')}};`, '',
+    `inline constexpr int YIELDS_LIST_COUNT = ${yl.length};`, '', '}  // namespace sel_builtin_manifest', '');
   return lines.join('\n');
 }
 
@@ -386,7 +516,25 @@ function renderLisp(entries) {
     }
   }
   lines[lines.length - 1] += '))';
-  lines.push('');
+  lines.push('', ...classificationComment(';;;;'),
+    ';;;; *BUILTIN-PIPELINE-DATA*: (name keeps-rows sorts). *BUILTIN-REGEX-DATA*:',
+    ';;;; (name pattern flags). *BUILTIN-SQL-ARG-DATA*: (name numeric bin bool),',
+    ';;;; numeric a list of indexes, :ALL or NIL. *BUILTIN-YIELDS-LIST*: names.', '',
+    '(defparameter *builtin-pipeline-data*', "  '(");
+  const lb = (b) => (b ? 't' : 'nil');
+  for (const e of entries) if (e.pipeline) lines.push(`    (${lispStr(e.name)} ${lb(e.pipeline.keepsRows)} ${lb(e.pipeline.sorts)})`);
+  lines[lines.length - 1] += '))';
+  lines.push('', '(defparameter *builtin-regex-data*', "  '(");
+  for (const e of entries) if (e.regex) lines.push(`    (${lispStr(e.name)} ${e.regex.pattern} ${e.regex.flags})`);
+  lines[lines.length - 1] += '))';
+  lines.push('', '(defparameter *builtin-sql-arg-data*', "  '(");
+  for (const e of entries) {
+    if (!e.sql) continue;
+    const n = e.sql.numeric === null ? 'nil' : e.sql.numeric === 'all' ? ':all' : `(${e.sql.numeric.join(' ')})`;
+    lines.push(`    (${lispStr(e.name)} ${n} ${lb(e.sql.bin)} ${lb(e.sql.bool)})`);
+  }
+  lines[lines.length - 1] += '))';
+  lines.push('', `(defparameter *builtin-yields-list* '(${entries.filter((e) => e.yieldsList).map((e) => lispStr(e.name)).join(' ')}))`, '');
   return lines.join('\n');
 }
 
@@ -432,6 +580,24 @@ function renderDocs(entries) {
   const lazy = entries.filter((e) => e.lazy).length;
   const binds = entries.filter((e) => e.binds).length;
   const rules = entries.filter((e) => e.parity || e.allowed).map((e) => '`' + e.name + '`').join(', ');
+  const names = (pick) => entries.filter(pick).map((e) => '`' + e.name + '`').join(' ');
+  lines.push('', '## Classification', '',
+    'Facts the evaluator, optimiser, planners and translators classify builtins by.', '',
+    '| Class | Builtins |', '|---|---|',
+    `| pipeline steps (\`.>\` chains them; the first argument is the rows) | ${names((e) => e.pipeline)} |`,
+    `| steps that keep their rows as they are (fewer, or reordered) | ${names((e) => e.pipeline && e.pipeline.keepsRows)} |`,
+    `| steps that sort | ${names((e) => e.pipeline && e.pipeline.sorts)} |`,
+    `| result is a list | ${names((e) => e.yieldsList)} |`, '',
+    '| Regex builtin | Pattern argument | Flags argument |', '|---|---|---|');
+  for (const e of entries) if (e.regex) lines.push(`| \`${e.name}\` | ${e.regex.pattern + 1} | ${e.regex.flags + 1} |`);
+  lines.push('', 'How the SQL translators type arguments (`sql`): which must be numbers, and',
+    'which builtins take a BIN or a BOOL argument rather than refusing it.', '',
+    '| Builtin | Numeric arguments | BIN accepted | BOOL accepted |', '|---|---|---|---|');
+  for (const e of entries) {
+    if (!e.sql) continue;
+    const n = e.sql.numeric === null ? '' : e.sql.numeric === 'all' ? 'all' : e.sql.numeric.map((i) => i + 1).join(', ');
+    lines.push(`| \`${e.name}\` | ${n} | ${e.sql.bin ? 'yes' : ''} | ${e.sql.bool ? 'yes' : ''} |`);
+  }
   lines.push('', `${entries.length} builtins: ${lazy} lazy, of which ${binds} bind; extra arity rules on ${rules}.`, '');
   return lines.join('\n');
 }
@@ -472,10 +638,24 @@ function renderGo(entries) {
     '\tWhenText',
     ')',
     '',
+    '// Role is what one argument of a form is (spec/builtins.md, "Binding forms").',
+    'type Role uint8',
+    '',
+    'const (',
+    '\tRoleSource Role = iota',
+    '\tRoleOuter',
+    '\tRoleBinder',
+    '\tRoleBody',
+    '\tRoleKey',
+    '\tRoleProj',
+    '\tRolePred',
+    ')',
+    '',
     'type Form struct {',
     '\tName     string',
     '\tCount    int',
     '\tScopes   []Scope',
+    '\tRoles    []Role',
     '\tWhenArg  int',
     '\tWhenKind WhenKind',
     '\tBinds    []string',
@@ -514,10 +694,28 @@ function renderGo(entries) {
       const whenArg = f.when ? f.when.arg : -1;
       const whenKind = f.when ? (f.when.is === 'name' ? 'WhenName' : 'WhenText') : 'WhenNone';
       const binds = f.binds.map((b) => JSON.stringify(b)).join(', ');
-      lines.push(`\t\t{Name: "${e.name}", Count: ${f.roles.length}, Scopes: []Scope{${scopes.join(', ')}}, WhenArg: ${whenArg}, WhenKind: ${whenKind}, Binds: []string{${binds}}},`);
+      const roles = f.roles.map((r) => `Role${r[0].toUpperCase()}${r.slice(1)}`);
+      lines.push(`\t\t{Name: "${e.name}", Count: ${f.roles.length}, Scopes: []Scope{${scopes.join(', ')}}, Roles: []Role{${roles.join(', ')}}, WhenArg: ${whenArg}, WhenKind: ${whenKind}, Binds: []string{${binds}}},`);
     }
     lines.push('\t},');
   }
+  lines.push('}', '', ...classificationComment('//'),
+    'type PipelineStep struct {', '\tKeepsRows bool', '\tSorts     bool', '}', '',
+    'var PipelineSteps = map[string]PipelineStep{');
+  for (const e of entries) if (e.pipeline) lines.push(`\t"${e.name}": {KeepsRows: ${e.pipeline.keepsRows}, Sorts: ${e.pipeline.sorts}},`);
+  lines.push('}', '', 'type RegexCall struct {', '\tPattern int', '\tFlags   int', '}', '', 'var RegexCalls = map[string]RegexCall{');
+  for (const e of entries) if (e.regex) lines.push(`\t"${e.name}": {Pattern: ${e.regex.pattern}, Flags: ${e.regex.flags}},`);
+  lines.push('}', '',
+    '// SQLArgs: NumericAll when every argument is a number, else the Numeric indexes.',
+    'type SQLArgs struct {', '\tNumericAll bool', '\tNumeric    []int', '\tBin        bool', '\tBool       bool', '}', '',
+    'var SQLArgTypes = map[string]SQLArgs{');
+  for (const e of entries) {
+    if (!e.sql) continue;
+    const list = Array.isArray(e.sql.numeric) ? `[]int{${e.sql.numeric.join(', ')}}` : 'nil';
+    lines.push(`\t"${e.name}": {NumericAll: ${e.sql.numeric === 'all'}, Numeric: ${list}, Bin: ${e.sql.bin}, Bool: ${e.sql.bool}},`);
+  }
+  lines.push('}', '', 'var YieldsList = map[string]bool{');
+  for (const e of entries) if (e.yieldsList) lines.push(`\t"${e.name}": true,`);
   lines.push('}', '');
   return lines.join('\n');
 }
@@ -555,11 +753,24 @@ function renderRust(entries) {
     '    Text,',
     '}',
     '',
+    '/// What one argument of a form is (spec/builtins.md, "Binding forms").',
+    '#[derive(Clone, Copy, Debug, PartialEq, Eq)]',
+    'pub enum Role {',
+    '    Source,',
+    '    Outer,',
+    '    Binder,',
+    '    Body,',
+    '    Key,',
+    '    Proj,',
+    '    Pred,',
+    '}',
+    '',
     '#[derive(Clone, Debug)]',
     'pub struct Form {',
     '    pub name: &\'static str,',
     '    pub count: usize,',
     '    pub scopes: &\'static [Scope],',
+    '    pub roles: &\'static [Role],',
     '    pub when_arg: Option<usize>,',
     '    pub when_kind: WhenKind,',
     '    pub binds: &\'static [&\'static str],',
@@ -600,11 +811,36 @@ function renderRust(entries) {
       const whenArg = f.when ? `Some(${f.when.arg})` : 'None';
       const whenKind = f.when ? (f.when.is === 'name' ? 'WhenKind::Name' : 'WhenKind::Text') : 'WhenKind::None';
       const binds = f.binds.map((b) => JSON.stringify(b)).join(', ');
-      lines.push(`        Form { name: "${e.name}", count: ${f.roles.length}, scopes: &[${scopes.join(', ')}], when_arg: ${whenArg}, when_kind: ${whenKind}, binds: &[${binds}] },`);
+      const roles = f.roles.map((r) => `Role::${r[0].toUpperCase()}${r.slice(1)}`);
+      lines.push(`        Form { name: "${e.name}", count: ${f.roles.length}, scopes: &[${scopes.join(', ')}], roles: &[${roles.join(', ')}], when_arg: ${whenArg}, when_kind: ${whenKind}, binds: &[${binds}] },`);
     }
     lines.push('    ]),');
   }
-  lines.push('];', '');
+  lines.push('];', '', ...classificationComment('//'),
+    '#[derive(Clone, Copy, Debug, PartialEq, Eq)]', 'pub struct PipelineStep {', '    pub keeps_rows: bool,', '    pub sorts: bool,', '}', '',
+    'pub const PIPELINE_STEPS: &[(&str, PipelineStep)] = &[');
+  for (const e of entries) if (e.pipeline) lines.push(`    ("${e.name}", PipelineStep { keeps_rows: ${e.pipeline.keepsRows}, sorts: ${e.pipeline.sorts} }),`);
+  lines.push('];', '', '/// A pipeline step by name, as a match: no table walk per call.',
+    'pub fn pipeline_step(name: &str) -> Option<PipelineStep> {', '    match name {');
+  for (const e of entries) if (e.pipeline) lines.push(`        "${e.name}" => Some(PipelineStep { keeps_rows: ${e.pipeline.keepsRows}, sorts: ${e.pipeline.sorts} }),`);
+  lines.push('        _ => None,', '    }', '}', '',
+    '#[derive(Clone, Copy, Debug, PartialEq, Eq)]', 'pub struct RegexCall {', '    pub pattern: usize,', '    pub flags: usize,', '}', '',
+    'pub fn regex_call(name: &str) -> Option<RegexCall> {', '    match name {');
+  for (const e of entries) if (e.regex) lines.push(`        "${e.name}" => Some(RegexCall { pattern: ${e.regex.pattern}, flags: ${e.regex.flags} }),`);
+  lines.push('        _ => None,', '    }', '}', '',
+    '#[derive(Clone, Copy, Debug, PartialEq, Eq)]', 'pub enum NumericArgs {', '    None,', '    All,', "    At(&'static [usize]),", '}', '',
+    '#[derive(Clone, Copy, Debug, PartialEq, Eq)]', 'pub struct SqlArgs {', '    pub numeric: NumericArgs,', '    pub bin_arg: bool,', '    pub bool_arg: bool,', '}', '',
+    'pub const SQL_ARGS: &[(&str, SqlArgs)] = &[');
+  for (const e of entries) {
+    if (!e.sql) continue;
+    const n = e.sql.numeric === null ? 'NumericArgs::None' : e.sql.numeric === 'all' ? 'NumericArgs::All' : `NumericArgs::At(&[${e.sql.numeric.join(', ')}])`;
+    lines.push(`    ("${e.name}", SqlArgs { numeric: ${n}, bin_arg: ${e.sql.bin}, bool_arg: ${e.sql.bool} }),`);
+  }
+  lines.push('];', '', 'pub fn sql_args(name: &str) -> Option<SqlArgs> {',
+    '    SQL_ARGS.iter().find(|(n, _)| *n == name).map(|(_, a)| *a)', '}', '',
+    'pub const YIELDS_LIST: &[&str] = &[');
+  for (const e of entries) if (e.yieldsList) lines.push(`    "${e.name}",`);
+  lines.push('];', '', 'pub fn yields_list(name: &str) -> bool {', '    YIELDS_LIST.contains(&name)', '}', '');
   return lines.join('\n');
 }
 

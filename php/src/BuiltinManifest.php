@@ -171,4 +171,93 @@ final class BuiltinManifest
             [['outer', 'binder', 'inner', 'outer'], null, ['_K']],
         ],
     ];
+
+    // Classification (spec/builtins.md): the pipeline steps (whether each keeps
+    // its rows as they are, and whether it sorts), where each regex builtin takes
+    // its pattern and its flags, how the SQL translators type a builtin's
+    // arguments (numeric positions; whether a BIN or a BOOL argument is accepted),
+    // and the builtins whose result is a list. Hosts classify through these
+    // rather than keeping lists of their own.
+    /** @var array<string, array{0:bool,1:bool}> name => [keepsRows, sorts] */
+    public const PIPELINE_STEPS = [
+        'BUCKET' => [false, false],
+        'DEDUPE' => [true, false],
+        'DISTINCT' => [true, false],
+        'DROP' => [true, false],
+        'FILTER' => [true, false],
+        'LINK' => [false, false],
+        'LINK_LEFT' => [false, false],
+        'MAP' => [false, false],
+        'SELECT_COLS' => [false, false],
+        'SORT' => [true, true],
+        'SORT_BY' => [true, true],
+        'SORT_DESC' => [true, true],
+        'TAKE' => [true, false],
+        'TOP' => [true, true],
+        'TOP_BY' => [true, true],
+        'TOP_DESC' => [true, true],
+    ];
+
+    /** @var array<string, array{0:int,1:int}> name => [pattern, flags] */
+    public const REGEX_CALLS = [
+        'RFIND' => [0, 2],
+        'RGROUPS' => [0, 2],
+        'RMATCH' => [0, 2],
+        'RREPLACE' => [0, 3],
+    ];
+
+    /** @var array<string, array{0:list<int>|string|null,1:bool,2:bool}> name => [numeric ('all', indexes or null), bin, bool] */
+    public const SQL_ARGS = [
+        'ABS' => [[0], false, false],
+        'BLEN' => [null, true, false],
+        'CANON' => [[0], false, false],
+        'CEIL' => [[0], false, false],
+        'CHAR' => [[0], false, false],
+        'CRC32' => [null, true, false],
+        'ENCODE_BASE64' => [null, true, false],
+        'FIND' => [[2], false, false],
+        'FLOOR' => [[0], false, false],
+        'FROM_UTF8' => [null, true, false],
+        'ISNUM' => [null, true, true],
+        'LEFT' => [[1], false, false],
+        'MAX' => ['all', false, false],
+        'MIN' => ['all', false, false],
+        'PADL' => [[1], false, false],
+        'PADR' => [[1], false, false],
+        'POWER' => [[0, 1], false, false],
+        'REPEAT' => [[1], false, false],
+        'RIGHT' => [[1], false, false],
+        'ROUND' => [[0, 1], false, false],
+        'SIGN' => [[0], false, false],
+        'SUBSTR' => [[1, 2], false, false],
+        'TO_HEX' => [null, true, false],
+        'TO_UTF8' => [null, true, false],
+        'TRUNC' => [[0], false, false],
+    ];
+
+    /** @var array<string, true> */
+    public const YIELDS_LIST = [
+        'BTL' => true,
+        'BUCKET' => true,
+        'DEDUPE' => true,
+        'DISTINCT' => true,
+        'DROP' => true,
+        'FILTER' => true,
+        'INDEXES' => true,
+        'LINK' => true,
+        'LINK_LEFT' => true,
+        'LIST' => true,
+        'MAP' => true,
+        'RECORD' => true,
+        'RGROUPS' => true,
+        'SELECT_COLS' => true,
+        'SORT' => true,
+        'SORT_BY' => true,
+        'SORT_DESC' => true,
+        'SPLIT' => true,
+        'TAKE' => true,
+        'TOP' => true,
+        'TOP_BY' => true,
+        'TOP_DESC' => true,
+    ];
 }
