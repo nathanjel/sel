@@ -4,20 +4,12 @@
 
 (in-package #:sel-cli)
 
-(defvar *probes* '())
-(defvar *probe-n* 0)
-
-(defun say (name value)
-  (push (format nil "~2,'0d ~a = ~a" (incf *probe-n*) name value) *probes*))
-
-(defun yn (x) (if x "true" "false"))
-
 ;;; The kind values are keywords here; the report prints the spelling every host
 ;;; uses so the diff compares like with like.
 (defun kind-name (k) (string-upcase (symbol-name k)))
 
 (defun main ()
-  (setf *probes* '() *probe-n* 0)
+  (reset-probes)
 
   ;; --- kind constants and predicates
   (say "kind.const.none" (kind-name :none))
@@ -323,5 +315,5 @@
       (say "program.run.over-deep-host-value.key-error-first"
            (format nil "~a|~a" (at "RECORD(TRUE, V)") (at "RECORD(\"k\", V)")))))
 
-  (format t "~{~a~%~}" (reverse *probes*))
+  (print-probes)
   (sb-ext:exit :code 0))

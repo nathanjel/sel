@@ -33,6 +33,7 @@
   (:use #:common-lisp)
   (:export #:script-args #:read-text-file #:read-file-or-exit #:unreadable-file
            #:read-corpus #:escape-newlines #:render #:no-cases
+           #:reset-probes #:say #:yn #:print-probes
            #:starts-with #:trim-ws #:split-lines #:join-lines #:main))
 
 (in-package #:sel-cli)
@@ -155,3 +156,18 @@ bin:HEX, anything with children as its dump."
         (:bin (concatenate 'string "bin:" (subseq (sel:value-dump v) 1)))
         (t (sel:value-dump v)))
       (sel:value-dump v)))
+
+;;; --- the API parity probes (tools/api.mjs, tools/check-sqlapi.sh) -----------
+;;; One numbered "NN name = value" line per probe; the hosts' reports are diffed.
+
+(defvar *probes* '())
+(defvar *probe-n* 0)
+
+(defun reset-probes () (setf *probes* '() *probe-n* 0))
+
+(defun say (name value)
+  (push (format nil "~2,'0d ~a = ~a" (incf *probe-n*) name value) *probes*))
+
+(defun yn (x) (if x "true" "false"))
+
+(defun print-probes () (format t "~{~a~%~}" (reverse *probes*)))

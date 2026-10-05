@@ -14,17 +14,10 @@
 
 (defpackage #:sel-sqlapi
   (:use #:common-lisp #:sel.sql)
+  (:import-from #:sel-cli #:reset-probes #:say #:yn #:print-probes)
   (:export #:main))
 
 (in-package #:sel-sqlapi)
-
-(defvar *probes* '())
-(defvar *probe-n* 0)
-
-(defun say (name value)
-  (push (format nil "~2,'0d ~a = ~a" (incf *probe-n*) name value) *probes*))
-
-(defun yn (x) (if x "true" "false"))
 
 (defun probe-bindings ()
   (list (cons "ORDERS" (binding-relation "orders" "o"
@@ -152,7 +145,7 @@
          (refuses (translate (sel:compile-source "N + 1") "probe-badguard" named)))))
 
 (defun main ()
-  (setf *probes* '() *probe-n* 0)
+  (reset-probes)
   (probe "sql" "ORDERS .> FILTER(_[\"AMOUNT\"] > 10) .> MAP(RECORD(\"id\", _[\"ID\"], \"amount\", _[\"AMOUNT\"]))")
   (probe "hybrid" "ORDERS .> SORT_BY(_[\"AMOUNT\"]) .> FILTER(_K > 1)")
   (probe "memory" "A += 1; ORDERS .> TAKE(1)")
@@ -162,5 +155,5 @@
   (fragment-probe "abs.postgresql" "postgresql" "ABS(1.50)")
   (host-spelling-probes)
   (render-state-probes)
-  (format t "~{~a~%~}" (reverse *probes*))
+  (print-probes)
   (sb-ext:exit :code 0))
