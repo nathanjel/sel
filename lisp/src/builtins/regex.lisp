@@ -1006,13 +1006,20 @@ subject this long is where it happens."
   subject    ; the original, which everything is sliced from
   folded)    ; what is actually matched against; same length as SUBJECT
 
+(defun regex-flags (a flag-index)
+  "The flags argument at FLAG-INDEX and the position an error in it reports, as
+two values: \"\" at the call when the call has none. Evaluates the argument, so
+it is called where the evaluation order puts it."
+  (if (> (args-count a) flag-index)
+      (values (args-text a flag-index) (args-pos-of a flag-index))
+      (values "" (args-pos a))))
+
 (defun regex-args (a pat-index subj-index flag-index)
-  (let* ((pattern (args-text a pat-index))
-         (subject (args-text a subj-index))
-         (flags (if (> (args-count a) flag-index) (args-text a flag-index) ""))
-         (flag-pos (if (> (args-count a) flag-index)
-                       (args-pos-of a flag-index)
-                       (args-pos a))))
+  (multiple-value-bind (pattern subject flags flag-pos)
+      (let* ((pattern (args-text a pat-index))
+             (subject (args-text a subj-index)))
+        (multiple-value-bind (flags flag-pos) (regex-flags a flag-index)
+          (values pattern subject flags flag-pos)))
     (multiple-value-bind (scanner tail-scanner ignore-case)
         (compile-regex pattern flags flag-pos (args-pos-of a pat-index))
       (declare (ignore tail-scanner))   ; only RREPLACE continues a scan
@@ -1084,36 +1091,35 @@ subject this long is where it happens."
     (let* ((pattern (args-text a 0))
            (repl (args-text a 1))
            (subject (args-text a 2))
-           (flags (if (> (args-count a) 3) (args-text a 3) ""))
-           (flag-pos (if (> (args-count a) 3) (args-pos-of a 3) (args-pos a)))
            (at (args-pos-of a 1)))
-      (multiple-value-bind (scanner tail-scanner ignore-case)
-          (compile-regex pattern flags flag-pos (args-pos-of a 0))
-        (let ((folded (if ignore-case (fold-subject subject) subject)))
-          (call-with-regex-stack
-           (length folded)
-           (lambda ()
-             (%text
-              (with-output-to-string (out)
-                (let ((last 0)
-                      (from 0)
-                      (size 0)          ; what has been written so far, for the cap
-                      (n (length folded)))
-                  (loop
-                    (when (> from n) (return))
-                    (multiple-value-bind (start end reg-starts reg-ends)
-                        (regex-scan (if (zerop from) scanner (funcall tail-scanner))
-                                    folded :start from)
-                      (when (null start) (return))
-                      (let ((expansion (expand-replacement repl subject start end
-                                                           reg-starts reg-ends at)))
-                        ;; Refused as soon as the result would pass MAX_TEXT_LEN
-                        ;; (SPEC 6.4), before more of it is built.
-                        (incf size (+ (- start last) (length expansion)))
-                        (check-text-cap size (args-pos a))
-                        (write-string subject out :start last :end start)
-                        (write-string expansion out))
-                      (setf last end)
-                      ;; Advance a whole code point so a zero-width match cannot loop.
-                      (setf from (if (= start end) (1+ start) end))))
-                  (write-string (subseq subject (min last (length subject))) out)))))))))))
+      (multiple-value-bind (flags flag-pos) (regex-flags a (regex-flag-index "RREPLACE"))
+        (multiple-value-bind (scanner tail-scanner ignore-case)
+            (compile-regex pattern flags flag-pos (args-pos-of a 0))
+          (let ((folded (if ignore-case (fold-subject subject) subject)))
+            (call-with-regex-stack
+             (length folded)
+             (lambda ()
+               (%text
+                (with-output-to-string (out)
+                  (let ((last 0)
+                        (from 0)
+                        (size 0)          ; what has been written so far, for the cap
+                        (n (length folded)))
+                    (loop
+                      (when (> from n) (return))
+                      (multiple-value-bind (start end reg-starts reg-ends)
+                          (regex-scan (if (zerop from) scanner (funcall tail-scanner))
+                                      folded :start from)
+                        (when (null start) (return))
+                        (let ((expansion (expand-replacement repl subject start end
+                                                             reg-starts reg-ends at)))
+                          ;; Refused as soon as the result would pass MAX_TEXT_LEN
+                          ;; (SPEC 6.4), before more of it is built.
+                          (incf size (+ (- start last) (length expansion)))
+                          (check-text-cap size (args-pos a))
+                          (write-string subject out :start last :end start)
+                          (write-string expansion out))
+                        (setf last end)
+                        ;; Advance a whole code point so a zero-width match cannot loop.
+                        (setf from (if (= start end) (1+ start) end))))
+                    (write-string (subseq subject (min last (length subject))) out))))))))))))

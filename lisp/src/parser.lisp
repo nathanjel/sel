@@ -162,6 +162,13 @@ operand in ARGS. Every refusal reports the name token."
             (node-record-shape n) (prepare-record-shape n))
       n)))
 
+(defun regex-flag-index (name)
+  "The argument index of a regex builtin's flags -- its pattern is argument 0
+-- or NIL when NAME takes no regex. The one list of them: the compile-time
+pattern check here, the evaluator's builtins and the SQL translator read it."
+  (cond ((member name '("RMATCH" "RFIND" "RGROUPS") :test #'string=) 2)
+        ((string= name "RREPLACE") 3)))
+
 (defun check-literal-regex-pattern (spec args)
   "A regex call whose pattern is a text literal is checked when the program is
 compiled (SPEC 7.8), not when the call happens to run: `IF(FALSE, RMATCH('(?=a)',
@@ -169,15 +176,15 @@ s), 1)` is refused, so a rule's validity never depends on which branch its data
 takes. A literal flags argument is checked with it; any other flags argument is
 left to the run."
   (let ((name (spec-name spec)))
-    (when (member name '("RMATCH" "RFIND" "RREPLACE" "RGROUPS") :test #'string=)
-      (let* ((flag-index (if (string= name "RREPLACE") 3 2))
-             (pattern (first args))
+    (let ((flag-index (regex-flag-index name)))
+     (when flag-index
+      (let* ((pattern (first args))
              (flags (nth flag-index args)))
         (when (and pattern (eq (node-kind pattern) :text))
           (funcall 'regex-literal-check (node-s pattern)
                    (and flags (eq (node-kind flags) :text) (node-s flags))
                    (node-pos pattern)
-                   (if flags (node-pos flags) (node-pos pattern))))))))
+                   (if flags (node-pos flags) (node-pos pattern)))))))))
 
 (defun arity-text (spec)
   (let ((plural (if (= (spec-min spec) 1) "" "s")))
@@ -389,6 +396,23 @@ left to the run."
                    (setf node (parse-pipe-step p node)))))
     node))
 
+(defun parse-call-args (p)
+  "The arguments of a call whose `(` has just been consumed, through its `)`: a
+top-level `,` list is the argument list (a parenthesised one is one argument)."
+  (if (p-at-op p ")")
+      (progn (p-next p) '())
+      (let ((inner (parse-sequence p)))
+        (p-expect-op p ")")
+        (if (and (eq (node-kind inner) :list) (not (node-grouped inner)))
+            (node-items inner)
+            (list inner)))))
+
+(defun call-spec (name-tok)
+  "The spec of the function NAME-TOK names, or E_UNKNOWN_FUNC at it."
+  (or (registry-lookup-canonical (token-value name-tok))
+      (fail "E_UNKNOWN_FUNC" (format nil "unknown function ~a" (token-value name-tok))
+            (token-pos name-tok))))
+
 (defun parse-pipe-step (p left)
   (let ((tok (p-peek p)))
     (when (or (not (eq (token-type tok) :ident))
@@ -397,21 +421,11 @@ left to the run."
               (string= (token-value tok) "NULL"))
       (fail "E_SYNTAX" "right-hand side of .> must be a function call or function name"
             (token-pos tok)))
-    (let ((name-tok (p-next p))
-          (args '()))
-      (when (p-at-op p "(")
-        (p-next p)
-        (if (p-at-op p ")")
-            (p-next p)
-            (let ((inner (parse-sequence p)))
-              (p-expect-op p ")")
-              (setf args (if (and (eq (node-kind inner) :list) (not (node-grouped inner)))
-                             (node-items inner)
-                             (list inner))))))
-      (let ((spec (registry-lookup-canonical (token-value name-tok))))
-        (unless spec
-          (fail "E_UNKNOWN_FUNC" (format nil "unknown function ~a" (token-value name-tok))
-                (token-pos name-tok)))
+    (let* ((name-tok (p-next p))
+           (args (when (p-at-op p "(")
+                   (p-next p)
+                   (parse-call-args p))))
+      (let ((spec (call-spec name-tok)))
         (let ((has-placeholder nil)
               (new-args (copy-list args)))
           (when (and (not (spec-binds spec)) (>= (length args) (spec-min spec)))
@@ -500,19 +514,8 @@ left to the run."
 (defun parse-call (p)
   (let ((name-tok (p-next p)))
     (p-expect-op p "(")
-    (let ((args '()))
-      (if (p-at-op p ")")
-          (p-next p)
-          (let ((inner (parse-sequence p)))
-            (p-expect-op p ")")
-            (setf args (if (and (eq (node-kind inner) :list) (not (node-grouped inner)))
-                           (node-items inner)
-                           (list inner)))))
-      (let ((spec (registry-lookup-canonical (token-value name-tok))))
-        (unless spec
-          (fail "E_UNKNOWN_FUNC" (format nil "unknown function ~a" (token-value name-tok))
-                (token-pos name-tok)))
-        (finish-call name-tok spec args)))))
+    (let ((args (parse-call-args p)))
+      (finish-call name-tok (call-spec name-tok) args))))
 
 ;;; The target must be an identifier followed by zero or more index operations.
 (defun check-target (node op-tok)

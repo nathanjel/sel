@@ -51,8 +51,9 @@ text is not a number)."
     copy))
 
 (defun literal-bool (value pos)
+  "A :bool node holding VALUE at POS."
   (let ((res (make-node :bool pos)))
-    (setf (node-b res) value)
+    (setf (node-b res) (and value t))
     res))
 
 (defun fold-node (node)
@@ -64,9 +65,7 @@ text is not a number)."
              (op (node-s node)))
          (cond
            ((and (string= op "NOT") child (eq (node-kind child) :bool))
-            (let ((res (make-node :bool (node-pos node))))
-              (setf (node-b res) (not (node-b child)))
-              res))
+            (literal-bool (not (node-b child)) (node-pos node)))
            ;; Through the decimal core, as the other hosts and the evaluator:
            ;; -0 is 0, not "-0". A numeral the core refuses is left for the
            ;; evaluator, which owns that error.
@@ -95,9 +94,7 @@ text is not a number)."
               ((and l (eq (node-kind l) :bool) (null (node-b l))) (literal-bool nil (node-pos node)))
               ;; Literal bool AND bool
               ((and l r (eq (node-kind l) :bool) (eq (node-kind r) :bool))
-               (let ((res (make-node :bool (node-pos node))))
-                 (setf (node-b res) (and (node-b l) (node-b r)))
-                 res))
+               (literal-bool (and (node-b l) (node-b r)) (node-pos node)))
               (t node)))
 
            ((string= op "OR")
@@ -106,9 +103,7 @@ text is not a number)."
               ((and l (eq (node-kind l) :bool) (node-b l)) (literal-bool t (node-pos node)))
               ;; Literal bool OR bool
               ((and l r (eq (node-kind l) :bool) (eq (node-kind r) :bool))
-               (let ((res (make-node :bool (node-pos node))))
-                 (setf (node-b res) (or (node-b l) (node-b r)))
-                 res))
+               (literal-bool (or (node-b l) (node-b r)) (node-pos node)))
               (t node)))
 
            ;; Numeric arithmetic
@@ -144,9 +139,7 @@ text is not a number)."
                                     ((string= op "<=") (<= cmp 0))
                                     ((string= op ">")  (> cmp 0))
                                     ((string= op ">=") (>= cmp 0)))))
-                          (let ((res (make-node :bool pos)))
-                            (setf (node-b res) b)
-                            res))
+                          (literal-bool b pos))
                         node))
                 (error () node))))
 
@@ -163,9 +156,7 @@ text is not a number)."
                         ((string= op "$<=") (and (string<= sl sr) t))
                         ((string= op "$>")  (and (string> sl sr) t))
                         ((string= op "$>=") (and (string>= sl sr) t)))))
-              (let ((res (make-node :bool (node-pos node))))
-                (setf (node-b res) b)
-                res)))
+              (literal-bool b (node-pos node))))
 
            (t node))))
 

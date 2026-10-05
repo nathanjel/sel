@@ -38,9 +38,13 @@
 (defconstant +shape-cache-max-keys+ 256)
 (defconstant +shape-cache-max-chars+ 16384)
 
+(defconstant +index-cache-size+ 10000
+  "List positions 1..this have their key string (and, in aggregate.lisp, their
+text value) made once and shared.")
+
 (defvar *index-string-cache*
-  (let ((vec (make-array 10001 :initial-element nil)))
-    (loop for i from 1 to 10000
+  (let ((vec (make-array (1+ +index-cache-size+) :initial-element nil)))
+    (loop for i from 1 to +index-cache-size+
           do (setf (aref vec i) (format nil "~d" i)))
     vec)
   "The canonical key strings \"1\" .. \"10000\" of a list's positions, made once: a
@@ -51,7 +55,7 @@ key, hash and flatten.")
 (defun format-index-string (n)
   (declare (optimize (speed 3) (safety 1)))
   (declare (type fixnum n))
-  (if (and (<= 1 n) (<= n 10000))
+  (if (and (<= 1 n) (<= n +index-cache-size+))
       (svref (the simple-vector *index-string-cache*) n)
       (format nil "~d" n)))
 

@@ -58,8 +58,8 @@ mutation inside one is seen -- only the container is copied."
     c))
 
 (defvar *index-text-cache*
-  (let ((vec (make-array 10001 :initial-element nil)))
-    (loop for i from 1 to 10000
+  (let ((vec (make-array (1+ +index-cache-size+) :initial-element nil)))
+    (loop for i from 1 to +index-cache-size+
           do (setf (aref vec i) (%text (svref *index-string-cache* i))))
     vec))
 
@@ -67,7 +67,7 @@ mutation inside one is seen -- only the container is copied."
 (defun format-index-text (n)
   (declare (optimize (speed 3) (safety 1)))
   (declare (type fixnum n))
-  (if (and (<= 1 n) (<= n 10000))
+  (if (and (<= 1 n) (<= n +index-cache-size+))
       (svref (the simple-vector *index-text-cache*) n)
       (%text (format nil "~d" n))))
 

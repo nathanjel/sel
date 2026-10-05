@@ -211,6 +211,16 @@ column a\"b from ending the identifier early."
 
 ;;; --- templates ------------------------------------------------------------
 
+(defun refuse-no-numeric-guard (dialect pos)
+  "DIALECT has no numericGuard: an operand not declared NUM cannot be read as a
+number there. Says what the author can act on -- declaring the binding NUM --
+rather than naming the missing key."
+  (refuse "E_SQL_UNSUPPORTED"
+          (format nil "dialect ~a has no way to ask whether a value is a ~
+number, so an operand it has not been told is one cannot be read as one here; ~
+declare the binding NUM if the column really is numeric" dialect)
+          pos))
+
 (defun emit-numeric-operand (dialect f &optional pos)
   "An operand a numeric context will read as a number, made safe to read.
 
@@ -238,11 +248,7 @@ when SEL would not."
         (check-numeric-guard dialect)
         (let ((guard (dialect-lexical dialect "numericGuard")))
           (unless (stringp guard)
-            (refuse "E_SQL_UNSUPPORTED"
-                    (format nil "dialect ~a has no way to ask whether a value is a ~
-number, so an operand it has not been told is one cannot be read as one here; ~
-declare the binding NUM if the column really is numeric" dialect)
-                    pos))
+            (refuse-no-numeric-guard dialect pos))
           (%fragment (emit-fill dialect guard (list f) pos) :num dialect)))))
 
 (defun split-numeric-guard (dialect f &optional pos)
@@ -256,11 +262,7 @@ exactly where EMIT-NUMERIC-OPERAND does."
   (let ((guard (dialect-lexical dialect "numericGuard"))
         (head "CASE WHEN (") (mid ") THEN ") (tail " ELSE NULL END"))
     (unless (stringp guard)
-      (refuse "E_SQL_UNSUPPORTED"
-              (format nil "dialect ~a has no way to ask whether a value is a ~
-number, so an operand it has not been told is one cannot be read as one here; ~
-declare the binding NUM if the column really is numeric" dialect)
-              pos))
+      (refuse-no-numeric-guard dialect pos))
     (let ((m (search mid guard)))
       (unless (and m (eql 0 (search head guard))
                    (eql (- (length guard) (length tail)) (search tail guard :from-end t)))

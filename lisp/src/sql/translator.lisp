@@ -7,6 +7,33 @@
 
 (in-package #:sel.sql)
 
+;;; A group's SUM, and the all-or-nothing form a SUM over an UNKNOWN body takes
+;;; (docs/internals/sql-kinds.md 5a), spelled once: TRANSLATE-CALL fills them
+;;; with fragments and GUARDED-SUM-SKELETON rewrites a dialect's skeleton with
+;;; them.
+(defparameter +sum-template+ "COALESCE(SUM({body}), 0)")
+(defparameter +guarded-sum-template+
+  "CASE WHEN COUNT(*) = COUNT(CASE WHEN ({test}) THEN 1 END) THEN COALESCE(SUM({body}), 0) ELSE NULL END")
+
+(defun template-parts (template slots)
+  "TEMPLATE as a part list with each (SLOT . PARTS) of SLOTS spliced in at its
+one occurrence, in template order."
+  (let ((parts '()) (at 0))
+    (loop
+      (let ((next nil) (next-at nil))
+        (dolist (slot slots)
+          (let ((i (search (car slot) template :start2 at)))
+            (when (and i (or (null next-at) (< i next-at)))
+              (setf next slot next-at i))))
+        (unless next
+          (push (subseq template at) parts)
+          (return))
+        (push (subseq template at next-at) parts)
+        (dolist (p (cdr next)) (push p parts))
+        (setf at (+ next-at (length (car next))))))
+    (remove "" (nreverse parts) :test #'equal)))
+
+
 (defstruct (translator (:constructor %translator (dialect bindings strict)))
   (dialect "" :type string)
   (bindings nil)
@@ -594,14 +621,19 @@ text, but do not pretend SQL arithmetic preserved the evaluator's scale."
                      t nil nil)))
       (collated-key tr f)))
 
+(defun min-of (tr f kind &rest more)
+  "F wrapped in MIN(...), keeping its parameters and caveats; MORE are
+%FRAGMENT's remaining arguments."
+  (apply #'%fragment (append (list "MIN(") (fragment-parts f) (list ")"))
+         kind (translator-dialect tr) (fragment-params f) (fragment-param-kinds f)
+         (fragment-caveats f) more))
+
 (defun group-key (tr src gb &optional projected)
   "GB is a group-by entry (alias binder node pos)."
   (let* ((key (with-row tr src (second gb) (lambda () (walk-node tr (third gb)))))
          (identity (identity-group-key tr (third gb) key)))
     (if (and projected (eq (fragment-kind key) :num))
-        (%fragment (append (list "MIN(") (fragment-parts key) (list ")"))
-                   :num (translator-dialect tr) (fragment-params key)
-                   (fragment-param-kinds key) (fragment-caveats key))
+        (min-of tr key :num)
         identity)))
 
 (defun walk-in-env (tr b node)
@@ -641,16 +673,11 @@ text, but do not pretend SQL arithmetic preserved the evaluator's scale."
               (cond
                 ((eq (fragment-kind key) :num)
                  ;; Identity is textual; arithmetic/order over _K remain numeric.
-                 (let ((out (%fragment (append (list "MIN(") (fragment-parts key) (list ")"))
-                                       :num (translator-dialect tr) (fragment-params key)
-                                       (fragment-param-kinds key) (fragment-caveats key))))
+                 (let ((out (min-of tr key :num)))
                    (setf (fragment-canonical out) (fragment-canonical key))
                    out))
                 ((not (eq collated key))
-                 (let ((out (%fragment (append (list "MIN(") (fragment-parts collated) (list ")"))
-                                       :text (translator-dialect tr)
-                                       (fragment-params collated) (fragment-param-kinds collated)
-                                       (fragment-caveats collated) t nil nil)))
+                 (let ((out (min-of tr collated :text t nil nil)))
                    (setf (fragment-canonical out) (fragment-canonical key))
                    out))
                 (t collated)))))
@@ -1414,7 +1441,7 @@ and so which downstream guards fire."
   "Which funcs take a regex, and at which 0-based argument. All four name index
 0; the shape exists so a function taking a regex elsewhere is one entry rather
 than a code change."
-  (when (member name '("RMATCH" "RFIND" "RREPLACE" "RGROUPS") :test #'equal) 0))
+  (when (sel::regex-flag-index name) 0))
 
 (defun require-argument-kind (name f pos)
   (when (and (eq (fragment-kind f) :bool)
@@ -1477,7 +1504,7 @@ subset, so there is nothing to translate: ~a" name (sel:sel-error-message e))
             ;; template by argument count gave every three-argument call the
             ;; case-insensitive form.
             (inline-flags "(?s)")
-            (flag-at (if (equal name "RREPLACE") 3 2)))
+            (flag-at (sel::regex-flag-index name)))
         (when (>= flag-at (length args))
           (setf (nth at args) (lit-node :text (concatenate 'string inline-flags source)
                                         nil (snode-pos pat)))
@@ -1570,13 +1597,12 @@ whatever the arguments would have said or a `no mapping` for the call."
                          (not (is-constant body-node (translator-const-names tr))))
                     (multiple-value-bind (test cast)
                         (split-numeric-guard (translator-dialect tr) inner (snode-pos body-node))
-                      (%fragment (append (list "CASE WHEN COUNT(*) = COUNT(CASE WHEN (")
-                                         (fragment-parts test)
-                                         (list ") THEN 1 END) THEN COALESCE(SUM(")
-                                         (fragment-parts cast)
-                                         (list "), 0) ELSE NULL END"))
+                      (%fragment (template-parts +guarded-sum-template+
+                                                 (list (cons "{test}" (fragment-parts test))
+                                                       (cons "{body}" (fragment-parts cast))))
                                  :num (translator-dialect tr)))
-                    (%fragment (append (list "COALESCE(SUM(") (fragment-parts inner) (list "), 0)"))
+                    (%fragment (template-parts +sum-template+
+                                               (list (cons "{body}" (fragment-parts inner))))
                                :num (translator-dialect tr)))))))))
     ;; Each of these short-circuits before the next, and none reaches the funcs
     ;; table: the generator rejects a dialect document that lists one.
@@ -2088,11 +2114,10 @@ sql-kinds.md 5a): the sum is NULL unless EVERY element passes the numeric test.
 so guarding each element would let a refused element vanish. Returns the template
 with the body slot split into {test} and {body}, and the two fragments."
   (multiple-value-bind (test cast) (split-numeric-guard (translator-dialect tr) body pos)
-    (let ((old "COALESCE(SUM({body}), 0)"))
+    (let ((old +sum-template+))
       (unless (search old tpl)
         (bad "the sum skeleton has no ~a, so it cannot be guarded as a whole" old))
-      (values (replace-all tpl old
-                           "CASE WHEN COUNT(*) = COUNT(CASE WHEN ({test}) THEN 1 END) THEN COALESCE(SUM({body}), 0) ELSE NULL END")
+      (values (replace-all tpl old +guarded-sum-template+)
               test cast))))
 
 (defun relation-aggregate (tr name rel body n)
