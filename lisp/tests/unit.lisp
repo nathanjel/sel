@@ -2510,15 +2510,34 @@ non-NIL results (each worker returns NIL when it saw nothing wrong)."
     (sel::unregister-function "T12_PEEK")))
 
 (test cli-misuse-is-one-plain-diagnostic
-  (dolist (line '("lisp/bin/sel -e"
-                  "lisp/bin/sel --deps -e"
-                  "lisp/bin/sel /no/such/dir/no-such-file.sel"
-                  "lisp/bin/sel --no-such-flag"))
-    (multiple-value-bind (out rc) (run-cli line)
-      (is (member rc '(1 2)) "~a: exit ~a" line rc)
-      (is (starts-with-p "sel: " out) "~a: ~a" line out)
-      (is (not (search "Unhandled" out)) "~a: ~a" line out)
-      (is (not (search "SB-" out)) "~a: ~a" line out))))
+  ;; The CLI contract (docs/usage/repl.md): misuse exits 2, an unreadable file
+  ;; (missing or a directory) exits 1, each with one "sel: " line.
+  (dolist (case '(("lisp/bin/sel -e" 2 "sel: -e needs an expression")
+                  ("lisp/bin/sel --deps -e" 2 "sel: -e needs an expression")
+                  ("lisp/bin/sel --no-such-flag" 2 "sel: unknown option --no-such-flag")
+                  ("lisp/bin/sel -e 1 extra" 2 "sel: unexpected argument extra")
+                  ("lisp/bin/sel /no/such/dir/no-such-file.sel" 1 "sel: cannot read /no/such/dir/no-such-file.sel")
+                  ("lisp/bin/sel lisp/bin" 1 "sel: cannot read lisp/bin")))
+    (destructuring-bind (line want-rc want-out) case
+      (multiple-value-bind (out rc) (run-cli line)
+        (is (eql rc want-rc) "~a: exit ~a" line rc)
+        (is (string= want-out out) "~a: ~a" line out)))))
+
+(test cli-help-version-and-repl-on-a-pipe
+  (multiple-value-bind (out rc) (run-cli "lisp/bin/sel --help")
+    (is (eql rc 0))
+    (is (starts-with-p "usage: sel" out)))
+  (multiple-value-bind (out rc) (run-cli "lisp/bin/sel --version")
+    (is (eql rc 0))
+    (is (string= (format nil "sel ~a" (asdf:component-version (asdf:find-system "sel-lang"))) out)))
+  (multiple-value-bind (out rc) (run-cli "lisp/bin/sel --deps -e 1")
+    (is (eql rc 0))
+    (is (string= "" out)))
+  ;; no prompt on a pipe; a whitespace-only line is skipped, an NBSP line is not
+  (multiple-value-bind (out rc) (run-cli "printf 'A = 1\\n \\t\\r\\nA + 1\\n\\302\\240\\n' | lisp/bin/sel 2>&1")
+    (is (eql rc 0))
+    (is (string= (format nil "1~%2~%E_SYNTAX at line 1 column 1: unexpected character \"~a\"" (code-char #xa0)) out)
+        "~s" out)))
 
 ;;; --- performance round 1 (LISP-P1 .. P10): the fast paths answer what the general ones do
 
