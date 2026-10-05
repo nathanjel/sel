@@ -174,43 +174,62 @@ stops the walk and becomes the result."
       (make-list-value (nreverse out))))
   :lazy t :binds t)
 
+;;; FILTER over a join offers its conjuncts to the LINK, which tests what it
+;;; can on the rows it joins: this FILTER's first -- it runs before the FILTER
+;;; that handed the rest down -- then the handed ones. Deep drops, below the
+;;; join directly under this FILTER, change its keys, so they are allowed only
+;;; where nothing observes them (KEYS-UNOBSERVED, stamped by the physical
+;;; optimiser). A stage is (binder jconjs above): ABOVE counts the joins
+;;; between its FILTER and the join testing it. The two helpers run once per
+;;; FILTER call, and only over a join.
+
+(defun filter-offer-to-join (a ctx written handed)
+  "This FILTER's leading field conjuncts, put in CTX's prefilter together with
+the HANDED stages for the join below; returns them."
+  (let* ((binder (if (= (args-count a) 3) (args-symbol a 1) "_"))
+         (own (leading-field-conjuncts written binder))
+         ;; A first conjunct that is neither a field test nor total ends every
+         ;; walk before it starts: hand nothing, gather nothing.
+         (blocked (let ((c (first own)))
+                    (and c (not (jconj-field-only c)) (not (jconj-has-total c)))))
+         (stages (unless blocked
+                   (cons (list binder own 0)
+                         (and handed (join-prefilter-stages handed))))))
+    (when stages
+      (setf (context-join-prefilter ctx)
+            (make-join-prefilter :stages stages
+                                 :deep (if handed t (and (node-keys-unobserved written) t))
+                                 :above (and handed (join-prefilter-above handed))
+                                 :obligations (and handed (join-prefilter-obligations handed)))))
+    own))
+
+(defun filter-unapplied-body (own report)
+  "The conjuncts of OWN the join below did not apply (REPORT), joined by AND in
+the source's order; NIL when it applied them all."
+  (let ((rest (remove-if (lambda (c) (gethash (jconj-node c) (join-report-applied report))) own)))
+    (when rest
+      (let ((body (jconj-node (first rest))))
+        (dolist (c (rest rest) body)
+          (let ((and-node (make-node :bin (node-pos body))))
+            (setf (node-s and-node) "AND"
+                  (node-l and-node) body
+                  (node-r and-node) (jconj-node c)
+                  body and-node)))))))
+
 ;;; The one aggregate that preserves keys — a filtered list should still be
 ;;; addressable the way the original was.
 (define-builtin "FILTER" 2 3
   (lambda (a ctx)
    (block filter-body
-    ;; Over a join, the conjuncts are offered to the LINK, which tests what
-    ;; it can on the rows it joins (SEL-0052, SEL-0054): this FILTER's first
-    ;; -- it runs before the FILTER that handed the rest down -- then the
-    ;; handed ones. Deep drops, below the join directly under this FILTER,
-    ;; change its keys, so they are allowed only where nothing observes them
-    ;; (KEYS-UNOBSERVED, stamped by the physical optimiser). A stage is
-    ;; (binder jconjs above): ABOVE counts the joins between its FILTER and
-    ;; the join testing it.
     (let* ((pairs '())
            (written (args-node a (1- (args-count a))))
            (handed (prog1 (context-join-prefilter ctx) (setf (context-join-prefilter ctx) nil)))
            (src (args-node a 0))
            (src-fresh (node-fresh-p src))
-           (own nil)
-           (over-join nil))
-      (when (and src (eq (node-kind src) :call) (member (node-s src) '("LINK" "LINK_LEFT") :test #'string=))
-        (let ((binder (if (= (args-count a) 3) (args-symbol a 1) "_")))
-          (setf own (leading-field-conjuncts written binder)
-                over-join t)
-          ;; A first conjunct that is neither a field test nor total ends
-          ;; every walk before it starts: hand nothing, gather nothing.
-          (let* ((blocked (let ((c (first own)))
-                            (and c (not (jconj-field-only c)) (not (jconj-has-total c)))))
-                 (stages (unless blocked
-                           (cons (list binder own 0)
-                                 (and handed (join-prefilter-stages handed))))))
-            (when stages
-              (setf (context-join-prefilter ctx)
-                    (make-join-prefilter :stages stages
-                                         :deep (if handed t (and (node-keys-unobserved written) t))
-                                         :above (and handed (join-prefilter-above handed))
-                                         :obligations (and handed (join-prefilter-obligations handed))))))))
+           (over-join (and src (eq (node-kind src) :call)
+                           (member (node-s src) '("LINK" "LINK_LEFT") :test #'string=)
+                           t))
+           (own (when over-join (filter-offer-to-join a ctx written handed))))
       (unwind-protect (args-val a 0)
         (setf (context-join-prefilter ctx) nil))
       ;; The join's report -- which conjuncts every row that came up has
@@ -226,17 +245,10 @@ stops the walk and becomes the result."
              (body-override
                (when (and over-join report (not (join-report-errored report))
                           (some (lambda (c) (gethash (jconj-node c) (join-report-applied report))) own))
-                 (let ((rest (remove-if (lambda (c) (gethash (jconj-node c) (join-report-applied report))) own)))
-                   (when (null rest)
-                     (when handed (setf (context-join-prefilter-report ctx) report))
-                     (return-from filter-body (args-val a 0)))
-                   (let ((body (jconj-node (first rest))))
-                     (dolist (c (rest rest) body)
-                       (let ((and-node (make-node :bin (node-pos body))))
-                         (setf (node-s and-node) "AND"
-                               (node-l and-node) body
-                               (node-r and-node) (jconj-node c)
-                               body and-node))))))))
+                 (or (filter-unapplied-body own report)
+                     (progn
+                       (when handed (setf (context-join-prefilter-report ctx) report))
+                       (return-from filter-body (args-val a 0)))))))
         (when (and report handed)
           (setf (context-join-prefilter-report ctx) report))
         (aggregate-walk a ctx
