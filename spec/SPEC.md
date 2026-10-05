@@ -574,7 +574,7 @@ levels — the construct's own and the sequence inside it — while a prefix
 operator, an assignment and a `??` or `???` cost one. Those numbers are what
 `conformance/10-limits.selt` pins, at exact columns, and they are what makes
 `E_DEPTH` land in the same place on every host. The index bracket is the one
-that drifted: it recurses from outside the rule that counts, so four hosts
+that drifted: it recurses from outside the rule that counts, so most hosts
 charged it one level for five stack frames until it was counted separately.
 
 **Every construct that can nest is counted, including prefix operators.** A
@@ -616,9 +616,8 @@ first, in which case that error wins, as it does everywhere.
 **`dependencies()` is capped by the evaluation depth and raises the same
 `E_DEPTH` at the same node.** It walks the tree without evaluating it, so it is
 neither of the two depths above and was left uncounted in every host; `A+A+A…`
-repeated about fifty thousand times then reached each host's own stack —
-`RangeError` on JS, `RecursionError` on Python, an exhausted control stack on
-Lisp, and a segfault on C++ and PHP. That a program's dependencies cannot be
+repeated about fifty thousand times then reached the host's own stack —
+`RangeError` on JS, `RecursionError` on Python, a segfault on C++ and PHP. That a program's dependencies cannot be
 computed exactly when the program could not have been evaluated is the reason
 the two share a limit rather than each having one.
 
@@ -631,7 +630,7 @@ ever saw it, and the value it built could be nested past what those walks
 survive. Uncounted, the hosts disagreed about where: an uncaught
 `RecursionError` on Python at about a thousand levels, an uncaught `RangeError`
 on JS at about four thousand, a segfault on C++ at about sixty thousand, while
-PHP and Lisp still answered. The error is reported at the assignment target.
+the rest still answered. The error is reported at the assignment target.
 
 A value can also be nested past the cap through a host's own API, where there is
 no source and nothing to report a position against: building a value from the
@@ -744,7 +743,7 @@ way. How the nodes are counted is the translator's contract
 
 The text cap is what every host can hold in its widest representation within a few
 hundred megabytes — sixteen million code points is 64 MB as UTF-32 (Lisp), 32 MB as
-UTF-16 (JS) and at most 64 MB as UTF-8 (PHP, Python's compact strings, Go, C++) — and
+UTF-16 (JS) and at most 64 MB as UTF-8 (PHP, Python's compact strings, Go, Rust, C++) — and
 sixteen times the number cap above, so a rule can still build any legal number as
 text. The collection cap is the number cap's own figure: a million rows is more than a
 validation rule reads.
@@ -1382,11 +1381,12 @@ Value.isNone/isText/isBin/isBool/isNull        # kind predicates
 ```
 
 `fromNative`/`toNative` convert between a host's own maps and lists and a
-`Value`. C++ has neither, and deliberately: it has no native map or list to
-convert *from* — `Value.list` and `Value.set` are how a C++ program builds one,
-and a conversion from `std::map<std::string, std::variant<…>>` would be inventing
-a native type rather than accepting one. The other four hosts have an obvious
-candidate and all four have it.
+`Value`. C++, Go and Rust have neither, and deliberately: they have no native
+map or list of dynamic values to convert *from* — `Value.list` and `Value.set`
+are how such a program builds one, and a conversion from
+`std::map<std::string, std::variant<…>>` (or its Go and Rust counterparts) would
+be inventing a native type rather than accepting one. The other hosts have an
+obvious candidate, and each has the pair.
 
 `Program.ast` is the parse tree, and it is public because the SEL→SQL layer is
 the second thing that walks it. It is the one part of this list whose *shape* is
@@ -1458,8 +1458,9 @@ another order. Such a host offers an entry-list form (`entries`/`fromEntries`)
 that round-trips any order.
 
 **Branching on kind uses the predicates.** The kind *values* are a string in JS
-and Python, a class constant in PHP, an enum in C++ and a keyword in Lisp, so
-only a predicate can be written the same way in all five. The constants remain
+and Python, a class constant in PHP, an enum in C++ and Rust, a keyword in Lisp
+and a typed constant in Go, so only a predicate can be written the same way in
+every host. The constants remain
 available in each host for code that would rather switch than branch. Method
 names follow each host's convention — `isText` in JS and PHP, `is_text` in C++
 and Python, `value-text-p` in Lisp — and `tools/check-api.sh` runs the same
@@ -1502,9 +1503,10 @@ Sel.registerFunction(name, min, max, fn)       # before compiling a caller
 ```
 
 The spelling follows each host's convention: `registerFunction` in JS and
-PHP (`Sel::registerFunction`), `register_function` in Python and C++
-(`sel.register_function`, `sel::register_function`), `register-function` in
-Lisp.
+PHP (`Sel::registerFunction`), `register_function` in Python, C++ and Rust
+(`sel.register_function`, `sel::register_function`,
+`sel_lang::register_function`), `register-function` in Lisp, and
+`sel.RegisterFunction` in Go.
 
 - **Registration precedes compilation.** An unknown name is `E_UNKNOWN_FUNC`
   at parse time (§7.1), so a function must be registered before any program

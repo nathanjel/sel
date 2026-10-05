@@ -219,6 +219,7 @@ imports for each host, and [PACKAGING.md](PACKAGING.md) the registries.
 ## Checking it
 
 ```sh
+make -C cpp && make -C go && bash rust/build.sh && npm run build   # every host built first
 tools/check.sh          # every layer, every host; prints ALL GREEN or it isn't done
 ```
 

@@ -39,11 +39,13 @@ ROSTER_NOUNS = (r'(?:hosts?|implementations?|languages|parsers|lexers|readers|re
                 r'runners|evaluators|optimi[sz]ers|planners|translators|ports|hosts\'|host APIs)')
 COUNTED = [
     # "all five hosts", "the other four implementations", "the five readers"
-    re.compile(rf'\b(?:all|the other|the|other) {COUNT} {ROSTER_NOUNS}\b', re.I),
+    # ("the two hosts whose engine follows Perl" names a subset, not a roster)
+    re.compile(rf'\b(?:all|the other|the|other) (?:three|four|five|six) {ROSTER_NOUNS}\b', re.I),
     # "four hosts", "five languages" -- not two/three, which history uses
     re.compile(rf'\b(?:four|five|six) (?:hosts|languages|implementations)\b', re.I),
-    # "all five", "the other four" standing alone
-    re.compile(r'\ball (?:four|five|six)\b(?! (?:dialects?|servers|databases|SQL dialects|of the dialects|forms|kinds|steps|lanes|places|cases|layers)\b)', re.I),
+    # "all five", "the other four" standing alone ("all four" counts flags,
+    # steps and places too often to be refused)
+    re.compile(r'\ball (?:five|six)\b(?! (?:dialects?|servers|databases|SQL dialects|of the dialects|forms|kinds|steps|lanes|places|cases|layers)\b)', re.I),
     re.compile(r'\b(?:the )?other (?:four|five|six)\b(?! (?:dialects?|servers|databases|forms|kinds|lanes|places|cases)\b)', re.I),
     re.compile(r'\bboth hosts\b', re.I),
     re.compile(r'\b(?:fifth|sixth|seventh) (?:implementation|host)\b', re.I),

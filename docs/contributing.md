@@ -1,6 +1,6 @@
 # Contributing
 
-How to change SEL itself — a builtin, an operator, the optimiser, a sixth host —
+How to change SEL itself — a builtin, an operator, the optimiser, a new host —
 and what to watch out for while doing it. Extending SEL *from an application*,
 with host functions and SQL dialects of your own, needs none of this: see
 [Extending SEL](extending.md).
@@ -36,6 +36,8 @@ php/src/         implement
 cpp/sel.cpp      implement
 lisp/src/        implement
 python/sel/      implement
+go/sel/          implement
+rust/src/        implement
 tools/check.sh   all green, or it isn't done
 ```
 
@@ -50,40 +52,60 @@ No implementation is the reference. When they disagree, `spec/` and
 
 ## Where everything lives
 
-The hosts are deliberately structured the same, file for file, so they can be
-read side by side. C++ is one translation unit, so its column names the section
-comment (`// --- decimal`) rather than a file.
+The hosts share one layering, so they can be read side by side, but not one file
+layout: JS, Python and Lisp are file for file alike, C++ is one translation unit
+(its column names the section comment, `// --- decimal`, in `cpp/sel.cpp`), and
+PHP, Go and Rust group some layers differently. The table below is the actual
+map; keep it true when you move code.
 
-| Concern | JS | PHP | C++ (`cpp/sel.cpp`) | Lisp | Python |
-|---|---|---|---|---|---|
-| Errors | `js/src/errors.mjs` | `php/src/SelError.php` | `--- errors` | `lisp/src/errors.lisp` | `python/sel/errors.py` |
-| UTF-8 codec | `js/src/utf8.mjs` | `php/src/Utf8.php` | `--- utf8` | `lisp/src/utf8.lisp` | `python/sel/utf8.py` |
-| Exact decimal | `js/src/decimal.mjs` | `php/src/Dec.php` | `--- decimal` | `lisp/src/decimal.lisp` | `python/sel/decimal.py` |
-| The value | `js/src/value.mjs` | `php/src/Value.php` | `--- value` | `lisp/src/value.lisp` | `python/sel/value.py` |
-| Function table | `js/src/registry.mjs` | `php/src/Registry.php` | `--- registry` | `lisp/src/registry.lisp` | `python/sel/registry.py` |
-| Tokeniser | `js/src/lexer.mjs` | `php/src/Lexer.php` | `--- lexer` | `lisp/src/lexer.lisp` | `python/sel/lexer.py` |
-| Parser | `js/src/parser.mjs` | `php/src/Parser.php` | `--- parser` | `lisp/src/parser.lisp` | `python/sel/parser.py` |
-| Evaluator | `js/src/eval.mjs` | `php/src/Evaluator.php` | `--- eval` | `lisp/src/eval.lisp` | `python/sel/eval.py` |
-| Argument framework | `js/src/eval.mjs` (`Args`) | `php/src/Args.php` | `--- eval` (`Args`) | `lisp/src/eval.lisp` (`args-*`) | `python/sel/eval.py` (`Args`) |
-| Built-ins | `js/src/builtins/*.mjs` | `php/src/Builtins/*.php` | `--- builtins` | `lisp/src/builtins/*.lisp` | `python/sel/builtins/*.py` |
-| Host API | `js/src/sel.mjs` | `php/src/Sel.php` | `cpp/sel.hpp` | `lisp/src/sel.lisp` | `python/sel/__init__.py` |
+| Concern | JS | PHP | C++ (`cpp/sel.cpp`) | Lisp | Python | Go | Rust |
+|---|---|---|---|---|---|---|---|
+| Errors | `js/src/errors.mjs` | `php/src/SelError.php` | `--- errors` | `lisp/src/errors.lisp` | `python/sel/errors.py` | `go/sel/errors.go` | `rust/src/utf8.rs` (`SelError`) |
+| UTF-8 codec | `js/src/utf8.mjs` | `php/src/Utf8.php` | `--- utf8` | `lisp/src/utf8.lisp` | `python/sel/utf8.py` | `go/internal/utf8/` | `rust/src/utf8.rs`, `rust/src/text.rs` (`SelStr`) |
+| Exact decimal | `js/src/decimal.mjs` | `php/src/Dec.php` | `--- decimal` | `lisp/src/decimal.lisp` | `python/sel/decimal.py` | `go/internal/decimal/` | `rust/src/dec.rs`, `rust/src/large_dec.rs` |
+| The value | `js/src/value.mjs` | `php/src/Value.php` | `--- value` | `lisp/src/value.lisp` | `python/sel/value.py` | `go/sel/value.go`, `go/sel/shape.go` | `rust/src/value.rs`, `rust/src/shape.rs` |
+| Function table | `js/src/registry.mjs` | `php/src/Registry.php` | `--- registry` | `lisp/src/registry.lisp` | `python/sel/registry.py` | `go/sel/registry.go` | `rust/src/builtins/mod.rs` (`registry()`: one central table of `register_native` calls) |
+| Tokeniser | `js/src/lexer.mjs` | `php/src/Lexer.php` | `--- lexer` | `lisp/src/lexer.lisp` | `python/sel/lexer.py` | `go/sel/lexer.go` | `rust/src/parser.rs` (the lexer half) |
+| Parser | `js/src/parser.mjs` | `php/src/Parser.php` | `--- parser` | `lisp/src/parser.lisp` | `python/sel/parser.py` | `go/sel/parser.go` | `rust/src/parser.rs` |
+| Evaluator | `js/src/eval.mjs` | `php/src/Evaluator.php` | `--- eval` | `lisp/src/eval.lisp` | `python/sel/eval.py` | `go/sel/eval.go`, `go/sel/context.go` | `rust/src/eval.rs`, `rust/src/context.rs` |
+| Argument framework | `js/src/eval.mjs` (`Args`) | `php/src/Args.php` | `--- eval` (`Args`) | `lisp/src/eval.lisp` (`args-*`) | `python/sel/eval.py` (`Args`) | `go/sel/args.go` | `rust/src/args.rs` |
+| Built-ins | `js/src/builtins/*.mjs` | `php/src/Builtins/*.php` | `--- builtins` | `lisp/src/builtins/*.lisp` | `python/sel/builtins/*.py` | `go/sel/builtins_*.go` | `rust/src/builtins/*.rs` |
+| Regex validator | `js/src/builtins/regex*.mjs` | `php/src/Builtins/Regex*.php` | `--- regex` and after | `lisp/src/builtins/regex.lisp` | `python/sel/builtins/*regex*.py` | `go/sel/builtins_regex.go`, `regex_syntax.go`, `regex_emit.go`, `regex_ambiguity.go`, `regex_counter.go` | `rust/src/regex.rs`, `regex_ambiguity.rs`, `regex_counter.rs`, `builtins/regex_ops.rs` |
+| Joins (`LINK`) | `js/src/builtins/structure.mjs` | `php/src/Builtins/Structure.php` | `--- structure`, `--- the join pre-filter` | `lisp/src/builtins/structure.lisp` | `python/sel/builtins/structure.py` | `go/sel/join_plan.go`, `join_prefilter.go` | `rust/src/join_plan.rs`, `join_prefilter.rs` |
+| Optimiser | `js/src/optimizer.mjs` | `php/src/Optimizer.php` | `--- AST optimizer` | `lisp/src/optimizer.lisp` | `python/sel/optimizer.py` | `go/sel/optimizer.go` | `rust/src/optimizer.rs` |
+| Math plan | `js/src/math_plan.mjs` | `php/src/MathPlan.php` | `struct MathPlan`, `--- eval` | `lisp/src/math-plan.lisp` | `python/sel/math_plan.py` | `go/sel/optimizer.go` (`compileMathPlan`), `eval.go` (`evalMathPlan`), `plan_regs.go` | `rust/src/math_plan.rs` |
+| SQL layer | `js/src/sql/` | `php/src/Sql/` | `cpp/sel_sql*.{hpp,cpp}` | `lisp/src/sql/` | `python/sel/sql/` | `go/sel/sql/` | `rust/src/sql/` |
+| Host API | `js/src/sel.mjs` | `php/src/Sel.php` | `cpp/sel.hpp` | `lisp/src/sel.lisp` | `python/sel/__init__.py` | `go/sel/program.go`, `go/sel/doc.go` | `rust/src/lib.rs`, `rust/src/program.rs` |
 
-PHP has no autoloader; add any new file to `php/src/bootstrap.php`. JS built-ins
-are imported from `js/src/builtins/index.mjs` and Python's from
-`python/sel/builtins/__init__.py`. All three must happen before parsing, because
-unknown function names are a **compile-time** error.
+Where the built-ins are grouped differently: JS, Python and Lisp split them into
+`control`, `null`, `number`, `text`, `binary`, `regex`, `structure` and
+`aggregate`. PHP's `Core.php` holds control and the sorts and `DISTINCT`, and its
+`Structure.php` the `TOP` family, `BUCKET` and `DEDUPE`; its null functions are
+`NullOps.php`. Go has no null file (`COALESCE` and `IS_BLANK` are in
+`builtins_control.go`). Rust's `core.rs` is control and null, `math.rs` is
+numbers, and its aggregates are in `structure.rs`. Go and Rust keep join
+planning top-level, beside the evaluator, where the other hosts keep it with the
+structure built-ins.
 
-**All five parsers are precedence climbing**, and the table is true at the
-function level as well as the file level: `parse_program` → `parse_sequence` →
-`parse_list` → `parse_term` → `parse_prefix` → `parse_postfix` → `parse_primary`
-in every host, with the sixteen precedence levels of `spec/SPEC.md` §5 as a pair
-of lookup tables rather than sixteen functions. `python/sel/parser.py` was the
-pilot and its module docstring is the rationale; the other four were transcribed
-from it, one host at a time.
+PHP has no autoloader for the language; add any new file to
+`php/src/bootstrap.php`. JS built-ins are imported from
+`js/src/builtins/index.mjs`, Python's from `python/sel/builtins/__init__.py`, and
+Rust's are registered in `registry()` in `rust/src/builtins/mod.rs`; a Go file in
+package `sel` registers itself from its `init()`. All of this must happen before
+parsing, because unknown function names are a **compile-time** error.
 
-Nothing differs between the hosts now. All five parse by precedence climbing,
-and all five have the SEL→SQL layer; `docs/internals/sql-translation.md` is the design and
-`sql/cases/*.sqlt` grades every one of them against it.
+**Every parser is precedence climbing** over the same productions:
+`parse_program` → `parse_sequence` → `parse_list` → `parse_term` →
+`parse_prefix` → `parse_postfix` → `parse_primary`, spelled in each language's
+case (`parseTerm` in JS, PHP and Go, `parse-term` in Lisp), with the sixteen
+precedence levels of `spec/SPEC.md` §5 as a pair of lookup tables rather than
+sixteen functions. Rust's methods drop the prefix — `sequence`, `list`, `term`,
+`prefix`, `postfix`, `primary` (with `primary_inner`), entered through `parse` —
+and every host adds `parse_call` and `parse_pipe_step` for calls and `.>`
+steps. `python/sel/parser.py`'s module docstring is the rationale.
+
+Every host has the SEL→SQL layer; `docs/internals/sql-translation.md` is the
+design and `sql/cases/*.sqlt` grades every one of them against it.
 
 ---
 
@@ -100,7 +122,7 @@ and into `docs/reference/builtins.md`; commit the renderings with the entry
 then holds the definition to the manifest at startup — a min/max/lazy/binds
 that disagrees, or a manifest name no module defined, refuses to load — and
 installs the extra arity rule from it, so `COND`'s odd count is written once
-for five hosts; `tools/check-manifest.sh` then calls every builtin with every
+for every host; `tools/check-manifest.sh` then calls every builtin with every
 count around its range and every binding form with a distinct name in each
 slot, checking what each host accepts and what `dependencies()` reads against
 the manifest's own prediction — a table can say one thing and a host do
@@ -134,7 +156,7 @@ does not take, or a body it runs once per element. That is the property the AST
 calling convention exists to provide, and it is also where all the sharp edges
 are.
 
-Both lanes are worked below, end to end, in all five implementations. Neither
+Both lanes are worked below, end to end, in every host. Neither
 example is part of core SEL, so both can be lifted as-is.
 
 ---
@@ -183,7 +205,7 @@ many times. The smallest one in core is `IF` — which is why `IF` needs no synt
 
 The interesting half is a function that evaluates one body argument **once per
 element**, with a name bound to that element: an aggregate. Worked example,
-again in all five hosts with its cases, in
+again in every host with its cases, in
 **[examples/fn-complex/](../examples/fn-complex/)**:
 
 **`FIRST(list, body)`** — the first element for which `body` is `TRUE`, or TEXT
@@ -254,7 +276,7 @@ arityError: (n) => (n % 2 === 0
 
 A count check inside the function body is not the same thing: it runs only
 when the call is reached, so `IF(TRUE, 1, LINK(1, 1, 1, 1))` answered `1` in
-the four hosts that checked "3 or 5" in `doLink` and `E_ARITY` in the one that
+the hosts that checked "3 or 5" in `doLink` and `E_ARITY` in the one that
 declared it. For a shipped builtin the rule is now written in
 `spec/builtins.json` (`arity.allowed` or `arity.parity`, with its message) and
 installed by the registry; `conformance/11-arity.selt` pins the compile-time
@@ -310,8 +332,8 @@ value the caller passed are the same object.
 ## Adding an operator
 
 Genuinely more work than a function, and usually not worth it: an operator costs
-a precedence level, a grammar production, a spec change, and a line in two
-tokenisers, where a function costs one table entry. Add one only when the thing
+a precedence level, a grammar production, a spec change, and a line in every
+tokeniser, where a function costs one table entry. Add one only when the thing
 is *syntax* — used constantly and unreadable as a call.
 
 If you still want it, here is the whole checklist. Worked example: `//`, integer
@@ -329,12 +351,13 @@ its neighbours, associativity, and the failure modes.
 
 **4. Every tokeniser** — `OPERATORS` in `js/src/lexer.mjs`,
 `php/src/Lexer.php` and `python/sel/lexer.py`, `operators()` in `cpp/sel.cpp`,
-`+operators+` in `lisp/src/lexer.lisp`. Same list, same order, longest first.
+`+operators+` in `lisp/src/lexer.lisp`, `operators` in `go/sel/lexer.go`,
+`OPERATORS` in `rust/src/parser.rs`. Same list, same order, longest first.
 Getting this wrong makes `//` lex as two `/` tokens and the failure will look
 like a parser bug.
 
-**5. Every parser** — a row in a table, in all five, which is the whole point of
-the migration that finished:
+**5. Every parser** — a row in a table, in every host, which is the whole point
+of the migration that finished:
 
 ```python
 INFIX_OPS = { ..., '//': (BP_MUL, 'L'), ... }        # python
@@ -350,6 +373,12 @@ static const std::map<std::string, Infix> ops = { ..., {"//", {BP_MUL, 'L'}}, ..
 ```
 ```lisp
 (setf (gethash "//" m) (cons +bp-mul+ #\L))          ; lisp
+```
+```go
+var infixOps = map[string]infixEntry{ ..., "//": {bpMul, 'L'}, ... }   // go
+```
+```rust
+"*" | "/" | "//" | "%" => Some(InfixEntry { bp: BP_MUL, assoc: Assoc::Left }),   // rust: get_infix_op
 ```
 
 A *new* precedence level is a new `BP_` constant with the ones above it
@@ -376,7 +405,7 @@ because each produces *a valid parse of the wrong tree*:
   cannot answer for a real operator.
 
 **6. Every evaluator** — a branch in `evalBinary` / `eval_binary` /
-`eval-binary`. Use the operand's own position for type errors and the operator's
+`eval-binary` (Go `evalBinary`, Rust `eval_binary`). Use the operand's own position for type errors and the operator's
 for arithmetic ones:
 
 ```js
@@ -391,8 +420,8 @@ A **comparison** operator is the one case where the evaluator is two edits, not
 one: the branch in `evalBinary` hands off to `compareResult` /
 `compare_result` / `compare-result`, which turns a `-1 | 0 | 1` into a boolean
 and must learn the new operator too. Every host used to answer for an operator
-it did not name — `>=` in four of them, `FALSE` in JS — so forgetting this
-second edit produced wrong answers rather than an error. All five now refuse
+it did not name — `>=` in most of them, `FALSE` in JS — so forgetting this
+second edit produced wrong answers rather than an error. Every host now refuses
 with `E_SYNTAX unknown comparison operator`, which is what you will see if you
 skip it.
 
@@ -453,14 +482,14 @@ Every item here is a real divergence that was found in this codebase, not a
 hypothetical.
 
 The first group applies everywhere; the Python group at the end is separated only
-because that host is the newest and its traps are the least worn-in. Both hosts
-whose regex engine follows Perl — Lisp and Python — appear in both groups.
+because its traps are the least worn-in. The two hosts whose regex engine
+follows Perl — Lisp and Python — appear in both groups.
 
 ### Any host
 
 **Never use the host's regex flags naively.** PHP's `u` modifier turns on PCRE2's
 UCP, so `\d` matches Arabic-Indic digits and `\w` matches `é`; ECMAScript's `u`
-does not. Both hosts therefore *rewrite* `\d`, `\w`, `\s` into explicit ASCII
+does not. Every host therefore *rewrites* `\d`, `\w`, `\s` into explicit ASCII
 classes before compiling. `\b` had to be refused outright, because a word
 boundary is defined in terms of the engine's word characters and no rewrite fixes
 that. `\v` means "any vertical whitespace" in PCRE and U+000B in ECMAScript.
@@ -480,8 +509,8 @@ process joined `1.00` to `"1.00"` only *after* some other comparison had parsed
 the text. Strip trailing fraction zeros, fold negative zero, and build the key
 from the same helper whichever path produced the decimal
 (`rel.link.numeric-key-*` in `15-relational.selt`). The `_1`/`_2` binders are
-positions, not names: an unnamed argument is bound bare, and four hosts added a
-`_2` key holding the element to itself.
+positions, not names: an unnamed argument is bound bare, and most hosts once
+added a `_2` key holding the element to itself.
 
 **Never use the host's case mapping.** `strtoupper` is byte- and locale-based;
 `toUpperCase` and `string-upcase` are full Unicode; `std::toupper` is
@@ -551,7 +580,7 @@ invented a divergence.
 C++ is the host where this is easy to get wrong, because `Value` is a handle
 over a `shared_ptr` and copying it *looks* like a deep copy. It is not: use
 `clone()`. Up to and including 0.2.0 the C++ `Value` really did deep-copy on
-assignment, which made it disagree with the other four in six ways — three
+assignment, which made it disagree with the other hosts in six ways — three
 `E_NO_KEY`s where an index expression created the key its own base then read,
 an `E_NO_SCALAR` from a compound assignment reading its target across the
 right-hand side, a wrong tree from an aggregate binder that named a copy rather
@@ -688,7 +717,7 @@ check, as they copy, the only two facts that change a row — each left
 field nested record or not, each right field it takes a non-NULL scalar —
 never trusting a first element; a new fast path must keep both checks (or
 prove them, as the right-rows-all-flat pass does in JS, C++ and Lisp), and
-`tools/join-rows-oracle/run.sh` holds all five to a model of §7.4. Nothing here is visible in a
+`tools/join-rows-oracle/run.sh` holds every host to a model of §7.4. Nothing here is visible in a
 value; `conformance/15-relational.selt`'s `passed-over.*`, `early.*` and
 `as-written.*` cases pin the boundaries where a wrong proof would lose an
 error, and the gate's join-then-filter lane (`tools/join-filter-oracle/`)
@@ -761,9 +790,9 @@ while all 801 language cases were green. So, for any change to either:
   unwind the raw AST as if it were an expression: a helper assignment is a
   `seq`, and a `seq` is not a pipeline. And never plan stage 1's *tree*: it
   inlines every helper at its definition-site position, which is right for a
-  refusal message and wrong for a continuation (finding AJ: `Y = "x"; … + Y`
+  refusal message and wrong for a continuation (`Y = "x"; … + Y` was
   reported at the `"x"` in the memory half and at the `Y` from `run()`, in
-  all five hosts). And the planner is the *only* caller
+  every host). And the planner is the *only* caller
   of the optimiser in the SQL layer: `translate()` and `translate_statement()`
   run stage 1 alone, in every host, and the `.sqlt` runners check the two
   entry points against each other on every statement case. An optimiser
@@ -771,7 +800,7 @@ while all 801 language cases were green. So, for any change to either:
   three ways.
 - **One sweep.** The logical rewrites are one left-to-right pass over
   adjacent step pairs, rules tried in one fixed order at each position,
-  repeated to a fixed point — in all five hosts, including Lisp
+  repeated to a fixed point — in every host, including Lisp
   (`logical-step-pair`). Ordered per-rule passes reach a different fixed
   point (`SORT_BY .> TAKE` fused before the MAP/sort swap saw it), and the
   planner's SQL prefix is pinned byte for byte.
@@ -815,7 +844,7 @@ while all 801 language cases were green. So, for any change to either:
   position; a fold that would return a *child* must copy it and re-stamp it
   the same way, which is only exact for a leaf literal — `IF(TRUE, 1 / 0, 2)`
   is not folded, because the `/` inside has a column of its own. This is how
-  four hosts came to report `IF(TRUE, "x", 1) >= 1` at the `"x"` while C++,
+  most hosts came to report `IF(TRUE, "x", 1) >= 1` at the `"x"` while C++,
   whose IF arm never fired, reported the IF; the fuzzer compares positions,
   and so must any fold you add. A helper is the other way to move a position
   (see **Order**): inline only what is a literal, and at the read's position.
@@ -825,9 +854,9 @@ while all 801 language cases were green. So, for any change to either:
   `exceeds-depth-p` at the entry point, a bounded walk that counts as the
   evaluator counts (root at 1, a child one deeper, an assignment's target
   excluded). Folding a leaf at the boundary erased the `E_DEPTH` a chain of
-  201 additions raises in four hosts, and Lisp's optimiser raised it itself,
-  at its own count, on a branch the evaluator never visits (finding AF;
-  `lim.eval-depth-*` in `conformance/10-limits.selt`). An optimiser must
+  201 additions raises in the other hosts, and Lisp's optimiser raised it itself,
+  at its own count, on a branch the evaluator never visits
+  (`lim.eval-depth-*` in `conformance/10-limits.selt`). An optimiser must
   neither raise `E_DEPTH` nor make it disappear; not rewriting such a tree
   loses nothing, because it either raises or keeps its deep part where the
   evaluator never goes.
@@ -846,12 +875,12 @@ while all 801 language cases were green. So, for any change to either:
   `_K`. `keysRenumberedBy` / `keys_renumbered_by` / `opt_keys_renumbered_by`
   / `keys-renumbered-by-p` is the third guard: the swap is taken only when
   the step after the `FILTER` renumbers again without reading `_K`; at the
-  end of a pipeline, or before another `FILTER`, it is not (finding #33;
-  `rel.map.then-filter-*`, `rel.sort.then-filter-keeps-the-sorted-keys`,
+  end of a pipeline, or before another `FILTER`, it is not
+  (`rel.map.then-filter-*`, `rel.sort.then-filter-keeps-the-sorted-keys`,
   `rel.select-cols.then-filter-keeps-the-keys`). The SQL lane has no keys to
   keep, but the continuation runs the same rewritten tree, so the planner's
   optimiser is guarded the same way and a `MAP(…) .> FILTER(…)` tail is
-  rendered as a `WHERE` over the MAP's derived table. This is how five hosts agreed that `LIST(3, 1, 2) .>
+  rendered as a `WHERE` over the MAP's derived table. This is how most hosts agreed that `LIST(3, 1, 2) .>
   MAP(0 - _) .> SORT()` is `-1, -2, -3` while the unoptimised evaluator said
   `-3, -2, -1` — the fuzzer compares hosts, not lanes, so it never saw it.
 - **Binders.** A `LINK`'s binders are scoped to its predicate (spec §7.4);
@@ -860,15 +889,14 @@ while all 801 language cases were green. So, for any change to either:
   only a read *through the row* — `_["O"]["id"]` — to a side; a
   binder-qualified read is left where it is, to fail. It used to push
   `FILTER(O["id"] > 1)` into the `LINK`'s left source, where `O` is bound,
-  and answered rows for a program that raises (finding W2), while the same
+  and answered rows for a program that raises, while the same
   pipeline through a helper never took the rewrite. The translators keep the
   same scope: only `_` (and a step's own binder) after the join.
 - **Fuzz.** `tools/gen-programs.mjs` emits pipelines — `.>` chains of every
   step, the sorts' forms, `_K` after a renumbering step, bare and projected
   buckets, joins with and without named binders, helpers as sources — and
   chains at the depth cap, since every cross-host divergence the 2026-09-15
-  review found lived in a shape the generator could not produce (finding
-  #31). With `--sql` the pipelines read the relations every host's `sqlfuzz`
+  review found lived in a shape the generator could not produce. With `--sql` the pipelines read the relations every host's `sqlfuzz`
   runner binds (ORDERS, CUSTOMERS), and the runners print three lanes per
   program: `translate`, `translate_statement` and `plan_hybrid`. A new step
   or form belongs in the generator's `step()`; a new planner rule, in
@@ -926,6 +954,8 @@ npm run build              dist/sel.mjs, dist/sel.min.mjs (js-bundle, js-bundle-
 cd cpp && make test        unit tests, then the suite
 lisp/bin/test              the Lisp unit tests
 PYTHONPATH=$PWD/python pytest python/tests    the Python unit tests
+cd go && go test -race ./...                  the Go unit tests
+cd rust && cargo test --workspace             the Rust unit tests and allocation budgets
 ```
 
 `SEL_IMPLS` narrows a run, and a narrowed run says so: the gate prints the
@@ -933,7 +963,8 @@ configurations of the default roster it is **not** running, and its last line
 is `GREEN, PARTIAL — …` rather than `ALL GREEN`. `SEL_EXTRA_IMPLS` adds to the
 roster instead of replacing it. Two slow lanes have opt-outs, which the last
 line also names: `SEL_SKIP_SANITIZERS=1` (the C++ TSan and ASan builds) and
-`SEL_SKIP_SQL_BUDGETS=1` (the translator budget lane).
+`SEL_SKIP_SQL_BUDGETS=1` (the translator budget lane); so do
+`SEL_SKIP_DB_TESTS=1` and `SEL_SKIP_PYTHON_UNIT=1`.
 
 What the gate runs per host beyond the shared layers, and why a host is exempt
 where it is:
@@ -942,9 +973,11 @@ where it is:
 |---|---|---|
 | plain vs optimised, whole conformance corpus | JS, PHP, Python (`tools/check-eval-equivalence.*`); C++ (`cpp/tests/unit.cpp`) and Go (`go/sel/eval_order_test.go`) in their unit lanes | Lisp: a fixed list of sources in `lisp/tests/unit.lisp`; Rust: only the FILTER/MAP elision probe in `rust/tests/filter_copy_elision.rs` — the plain walk is internal API there, and a whole-corpus probe is an open item for that host |
 | metadata (`tools/metadata/*`: value-shape caches, record churn) | JS, PHP, Python, Lisp, C++ | Go, Rust: no metadata probe; Rust's layout and allocation counts are pinned by `rust/tests/value_layout.rs` and `*_allocations.rs`, Go has no equivalent — an open item for those hosts |
-| hybrid parity on SQLite (`sql/oracle/hybrid.json`) | JS, Python (in process), Lisp, Go (driver), PHP (`sqlo hybrid`, oracle lane) | C++, Rust: no SQLite in the standard library and no driver yet; held by sqlt, sqlapi and their executed-plan unit tests |
+| hybrid parity on SQLite (`sql/oracle/hybrid.json`, its `application` section included) | JS, Python (in process), Lisp, Go, Rust (driver), PHP (`sqlo hybrid`, oracle lane) | C++: no SQLite in the standard library and no driver yet; held by sqlt, sqlapi and its executed-plan unit tests |
+| reference builtin fragments (`examples/fn-*`) | JS, Python, PHP, Lisp (`tools/check-ref-fragments.sh`), Go (`check-go-fragments.sh`), Rust (`check-rust-fragments.sh`) | C++: its fragments compile only inside `sel.cpp` |
+| clippy, warnings denied | Rust (both crates) | skipped with a note where `cargo clippy` is not installed |
 | regex validator vs reference (`tools/check-regex-ambiguity-diff.sh`) | every host with an `impl_regex_verdict` driver | the JS bundles carry `js/src`'s validator verbatim |
-| C++ sanitizers (`make tsan tsan-regex tsan-registry`, `make asan`) | C++ | — (`SEL_SKIP_SANITIZERS=1` opts out) |
+| C++ sanitizers (`make tsan`, every race probe; `make asan`) | C++ | — (`SEL_SKIP_SANITIZERS=1` opts out) |
 
 Manual by design, never run by the gate: `tools/stress.sh` (programs of several
 hundred thousand nodes, minutes per host), `tools/check-sql-limits.php` (PHP's
@@ -971,6 +1004,8 @@ php  php/bin/conformance              the suite, PHP
 cpp/build/conformance                 the suite, C++
 lisp/bin/conformance                  the suite, Lisp
 PYTHONPATH=$PWD/python python3 python/bin/conformance.py   the suite, Python
+go/build/conformance                  the suite, Go
+rust/build/conformance                the suite, Rust
 node js/bin/conformance.mjs conformance/07-text.selt      one file
 tools/check-docs.sh                   the => examples in the docs
 tools/check-examples.sh               examples/, every host, byte-identical, = output.txt
@@ -1003,6 +1038,8 @@ php  php/bin/sel
 cpp/build/sel
 lisp/bin/sel
 PYTHONPATH=$PWD/python python3 -m sel
+go/build/sel
+rust/build/sel
 ```
 
 ## Writing documentation
@@ -1034,15 +1071,19 @@ and this page stay in the repository.
 
 ## Adding an implementation
 
-Register it in `tools/impls.sh` and give it the five entry points described in
-`tools/README.md` — a conformance runner, a corpus batch runner, an e2e driver,
-an API-parity probe and a decimal-oracle checker. Everything else in `tools/`
-iterates that list, so nothing else needs changing. The `.selt` and corpus
+Register it in `tools/impls.sh` — an arm in every role function there
+(`tools/check-registry.sh` fails until each has one) — and give it the entry
+points `tools/README.md` requires: a conformance runner, a corpus batch runner,
+an e2e driver, an API-parity probe and a decimal-oracle checker, then the SQL
+layer's runners. Everything else in `tools/` iterates that list, so nothing else
+needs changing — except the prose: add the host to the map above, to the
+commands in `CLAUDE.md` and in this page, and to the package description
+(`tools/check-roster.py` and `tools/check-version.sh` fail until you do). The `.selt` and corpus
 formats are line-oriented precisely so that a new port needs no parser beyond
 the one it is already writing.
 
-The Python host is the most recent one and was written from the JS sources; its
-commit is a reasonable template for the shape and order of the work. Port in
+Go and Rust are the most recent hosts; their history is a reasonable template for
+the shape and order of the work. Port in
 dependency order — errors, UTF-8, decimal, value, registry, lexer, parser,
 evaluator, built-ins, host API — and get `tools/check-decimal.sh` green before
 anything depends on the decimal core, because it is the slowest layer to debug
