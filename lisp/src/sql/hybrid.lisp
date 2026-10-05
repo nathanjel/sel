@@ -916,39 +916,71 @@ may read; WRAP puts a tree behind the assignments it depends on."
                          :pure-sql-p nil
                          :pure-memory-p nil)))))))))))))
 
-;;; The caller's context is never written to (JS-C60, PY-C51, CPP-C54), and was kept
-;;; safe by deep-copying all of it on every call: with a 300,000-element list in
-;;; the context a trivial plan cost about 127 ms (LISP-P10). A continuation with no
-;;; assignment in it cannot write through an alias, so it needs no copy; one that
-;;; calls something other than a shipped built-in (a host function could do
-;;; anything) gets the full copy, as before.
-(defun continuation-may-write-p (program)
-  (labels ((walk (n)
-             (and n (sel::node-p n)
-                  (or (eq (sel::node-kind n) :assign)
-                      (and (eq (sel::node-kind n) :call)
-                           (not (sel::shipped-call-p n)))
-                      (walk (sel::node-l n))
-                      (walk (sel::node-r n))
-                      (some #'walk (sel::node-items n))))))
-    (walk (sel::program-ast program))))
+;;; The caller's context is never written to. Deep-copying all of it on every
+;;; call cost about 127 ms for a trivial plan over a 300,000-element list, so the
+;;; continuation's effects decide what is copied, as in the JS and Python hosts:
+;;;   * a call to anything but a shipped builtin -- an application function may
+;;;     write into any value it is handed -- copies the whole context;
+;;;   * otherwise only the variables the continuation assigns into (the root
+;;;     name of each assignment target) are copied, into a new root that shares
+;;;     every other variable: an assignment is the only write, and it lands
+;;;     under its target's root name;
+;;;   * a continuation that does neither runs on the caller's value itself.
+(defun continuation-effects (program)
+  "(values assigned-roots calls-application-p) for PROGRAM's tree: the names at
+the root of every assignment target, and whether it calls any function the
+library does not ship. Iterative: a continuation can be a long flat chain."
+  (let ((roots '()) (app nil)
+        (stack (list (sel:program-ast program))))
+    (loop while stack
+          do (let ((n (pop stack)))
+               (when (and n (sel::node-p n))
+                 (case (sel::node-kind n)
+                   (:assign
+                    (let ((target (sel::node-l n)))
+                      (loop while (and target (sel::node-p target)
+                                       (eq (sel::node-kind target) :index))
+                            do (push (sel::node-r target) stack)
+                               (setf target (sel::node-l target)))
+                      (when (and target (sel::node-p target) (eq (sel::node-kind target) :var))
+                        (pushnew (sel::node-s target) roots :test #'string=)))
+                    (push (sel::node-r n) stack))
+                   (t
+                    (when (and (eq (sel::node-kind n) :call) (not (sel::shipped-call-p n)))
+                      (setf app t))
+                    (push (sel::node-l n) stack)
+                    (push (sel::node-r n) stack)
+                    (dolist (it (sel::node-items n)) (push it stack)))))))
+    (values roots app)))
+
+(defun continuation-root (program context &optional (effects (multiple-value-list
+                                                                (continuation-effects program))))
+  "A root the continuation may own: a full copy of CONTEXT when it calls an
+application function, else a new root sharing CONTEXT's variables but holding
+copies of the ones it assigns into. A context that is not a plain record of
+variables (a list, or one with a scalar) is copied whole. EFFECTS is
+CONTINUATION-EFFECTS' answer as a list, when the caller has it."
+  (destructuring-bind (roots app) effects
+    (if (or app
+            (not (eq (sel:value-kind context) :none))
+            (sel::value-is-list context))
+        (sel:value-copy context)
+        (let ((root (sel:make-none)))
+          (dolist (k (sel:value-keys context) root)
+            (let ((child (sel:value-get context k)))
+              (sel:value-set root k (if (member k roots :test #'string=)
+                                        (sel::value-copy-at child 2 nil)
+                                        child))))))))
 
 (defun context-for-continuation (program context)
   "A value the continuation may run on without the caller's tree ever being
-written: the context itself when PROGRAM cannot write; else a full copy."
-  (let ((value (if (sel:value-p context) context (sel:from-native context))))
-    (if (and (sel:value-p context) (continuation-may-write-p program))
-        (sel:value-copy value)
-        value)))
-
-(defun root-with-variable (context name value)
-  "A new root holding CONTEXT's variables (the same child values, not copies) and
-NAME bound to VALUE, so the caller's root is not given a variable it never had."
-  (let ((root (sel:make-none)))
-    (dolist (k (sel::value-keys context))
-      (sel:value-set root k (sel::value-get context k)))
-    (sel:value-set root name value)
-    root))
+written: the context itself when PROGRAM cannot write, else CONTINUATION-ROOT."
+  (if (not (sel:value-p context))
+      (sel:from-native context)
+      (let ((effects (multiple-value-list (continuation-effects program))))
+        (if (some #'identity effects)
+            (continuation-root program context effects)
+            context))))
 
 (defun execute-hybrid (plan db-runner &optional context)
   "Execute a HYBRID-PLAN using DB-RUNNER for SQL execution and SEL:RUN for in-memory continuation.
@@ -983,12 +1015,9 @@ list, which a driver could not bind as it was)."
        ;; copy, never to the caller's value.
        (let* ((rows (if (sel:value-p db-rows) db-rows (sel:from-native db-rows)))
               (cont-context
-                (cond ((null context)
-                       (let ((root (sel:make-none))) (sel:value-set root input-var rows) root))
-                      ((continuation-may-write-p cont-prog)
-                       (let ((root (context-for-continuation cont-prog context)))
-                         (sel:value-set root input-var rows)
-                         root))
-                      (t (root-with-variable (if (sel:value-p context) context (sel:from-native context))
-                                             input-var rows)))))
+                (let ((root (cond ((null context) (sel:make-none))
+                                  ((sel:value-p context) (continuation-root cont-prog context))
+                                  (t (sel:from-native context)))))
+                  (sel:value-set root input-var rows)
+                  root)))
          (sel:run cont-prog cont-context))))))

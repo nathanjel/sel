@@ -2779,8 +2779,29 @@ longer the leading equality."
     (is (string= "3" (sel:as-text (sel.sql:execute-hybrid writer runner ctx))))
     (is (string= "1" (sel:as-text (sel:value-get (sel:value-get ctx "BIG") "1"))))
     ;; the classification the optimisation rests on
-    (is (not (sel.sql::continuation-may-write-p (sel:compile-source "X .> FILTER(_ > 1)"))))
-    (is (sel.sql::continuation-may-write-p (sel:compile-source "A = 1; A")))))
+    (flet ((effects (src) (multiple-value-list (sel.sql::continuation-effects (sel:compile-source src)))))
+      (is (equal '(nil nil) (effects "X .> FILTER(_ > 1)")))
+      (is (equal '(("A") nil) (effects "A = 1; A")))
+      (is (equal '(("A") nil) (effects "A[B[1]] += 1; A")))
+      (sel:register-function "T_EFFECT_HOST" 1 1 (lambda (a) (sel:args-val a 0)))
+      (unwind-protect (is (equal '(nil t) (effects "MAP(L, T_EFFECT_HOST(_))")))
+        (sel::unregister-function "T_EFFECT_HOST")))))
+
+(test sql-hybrid-copies-only-the-variables-a-continuation-assigns
+  ;; Assigning one variable copies that one; a large variable it never writes
+  ;; is shared, not deep-copied. The caller's tree is untouched either way.
+  (let* ((plan (sel.sql:plan-hybrid (sel:compile-source "Q[\"k\"] = 2; COUNT(BIG) + Q[\"k\"]") "postgresql" nil))
+         (ctx (sel:make-none))
+         (big (sel:from-native (loop for i below 1000 collect i))))
+    (sel:value-set ctx "BIG" big)
+    (sel:value-set ctx "Q" (sel:from-native (list (cons "k" 1))))
+    (is (sel.sql:hybrid-plan-pure-memory-p plan))
+    (let ((root (sel.sql::context-for-continuation (sel.sql::hybrid-plan-continuation-program plan) ctx)))
+      (is (eq big (sel:value-get root "BIG")) "the unwritten variable was copied")
+      (is (not (eq (sel:value-get ctx "Q") (sel:value-get root "Q")))))
+    (is (string= "1002" (sel:as-text (sel.sql:execute-hybrid plan (lambda (&rest r) (declare (ignore r)) nil) ctx))))
+    (is (string= "1" (sel:as-text (sel:value-get (sel:value-get ctx "Q") "k"))))
+    (is (eq big (sel:value-get ctx "BIG")))))
 
 ;;; --- performance round 2 (LISP-P11 .. LISP-P20) --------------------------------
 
