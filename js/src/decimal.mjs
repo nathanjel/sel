@@ -246,7 +246,10 @@ export function isInteger(d) {
   return d.digits % pow10(d.scale) === 0n;
 }
 
-export function toSafeInt(d) {
+// The whole part as a JS number, with no range check: exact below 2^53 and
+// approximate above it, which is enough for a caller that compares it with a
+// cap far below that (a count, an index, a scale) before using it.
+export function truncToNumber(d) {
   const t = trunc(d);
   const v = Number(t.digits);
   return t.neg ? -v : v;

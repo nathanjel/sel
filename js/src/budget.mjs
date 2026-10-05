@@ -32,7 +32,7 @@ export const MAX_POWER = 100000;
 
 export function checkSizedInt(d, name, argNum, limit, what, pos) {
   if (!D.isInteger(d)) fail('E_NOT_INT', `${name} argument ${argNum} must be a whole number`, pos);
-  const n = D.toSafeInt(d);
+  const n = D.truncToNumber(d);
   if (n < 0) fail('E_RANGE', `${name} argument ${argNum} must not be negative`, pos);
   if (n > limit) fail('E_RANGE', `${what} ${n} exceeds the maximum of ${limit}`, pos);
   return n;

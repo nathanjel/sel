@@ -102,7 +102,7 @@ export class Args {
     if (!D.isInteger(d)) {
       fail('E_NOT_INT', `${this.name} argument ${i + 1} must be a whole number`, this.posOf(i));
     }
-    return D.toSafeInt(d);
+    return D.truncToNumber(d);
   }
 
   nonNegInt(i) {
@@ -200,7 +200,7 @@ function evalMathPlan(plan, ctx) {
       case OpCode.ABS:
         scratchpad[step.dst] = D.abs(asNum(scratchpad[step.src1], step.p1));
         break;
-      case OpCode.ABS_IDENTITY:
+      case OpCode.COERCE:
         scratchpad[step.dst] = asNum(scratchpad[step.src1], step.p1);
         break;
       case OpCode.SIGN: {

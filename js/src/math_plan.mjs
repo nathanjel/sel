@@ -22,7 +22,7 @@ export const OpCode = {
   MIN: 17,
   MAX: 18,
   // Not in the manifest: coerce one operand and pass it on (MIN(x), MAX(x)).
-  ABS_IDENTITY: 99,
+  COERCE: 99,
 };
 
 // The vocabulary -- which source nodes compile, to which operation, with how
@@ -53,13 +53,17 @@ export function compileMathPlan(root) {
   let slotCount = 0;
   const allocSlot = () => slotCount++;
 
+  // Emits `node` and answers { slot, constVal, coercePos }: where its result
+  // is, its decimal when it is a literal, and -- when the slot holds a value
+  // rather than a decimal (a variable, a non-arithmetic operand) -- the
+  // position the consuming step coerces it at; null when it is a decimal.
   function emit(node, depth) {
     if (depth > MAX_DEPTH) return null;
 
     if (node.t === 'var') {
       const slot = allocSlot();
       steps.push({ op: OpCode.LOAD_VAR, dst: slot, name: node.name, pos: node.pos });
-      return { slot, constVal: null, raw: node.pos };
+      return { slot, constVal: null, coercePos: node.pos };
     }
 
     if (node.t === 'num') {
@@ -73,7 +77,7 @@ export function compileMathPlan(root) {
       }
       const slot = allocSlot();
       steps.push({ op: OpCode.LOAD_CONST, dst: slot, constVal: dec, pos: node.pos });
-      return { slot, constVal: dec, raw: null };
+      return { slot, constVal: dec, coercePos: null };
     }
 
     if (node.t === 'bin' && MATH_BINARY_OPS.has(node.op)) {
@@ -90,7 +94,7 @@ export function compileMathPlan(root) {
       // coercion (SPEC 6.2: evaluate all operands, then coerce), so propagating
       // `x + 0` to a raw `x` would move the coercion -- and the moment the value
       // is read -- past whatever the rest of the expression evaluates.
-      const propagate = (res) => res.raw === null;
+      const propagate = (res) => res.coercePos === null;
       // Rule 1: x + 0 (scale == 0) -> resL
       if (op === '+' && propagate(resL) && resR.constVal && D.isZero(resR.constVal) && resR.constVal.scale === 0) {
         if (node.r.t === 'num' && steps.length && steps[steps.length - 1].dst === resR.slot) {
@@ -123,8 +127,8 @@ export function compileMathPlan(root) {
 
       const dst = allocSlot();
       const opCode = NATIVE[MATH_OPERATORS[op]];
-      steps.push({ op: opCode, dst, src1: resL.slot, src2: resR.slot, p1: resL.raw, p2: resR.raw, pos: node.pos });
-      return { slot: dst, constVal: null, raw: null };
+      steps.push({ op: opCode, dst, src1: resL.slot, src2: resR.slot, p1: resL.coercePos, p2: resR.coercePos, pos: node.pos });
+      return { slot: dst, constVal: null, coercePos: null };
     }
 
     if (node.t === 'un' && MATH_UNARY_OPS.has(node.op)) {
@@ -132,8 +136,8 @@ export function compileMathPlan(root) {
       const resX = emit(node.x, depth + 1);
       if (!resX) return null;
       const dst = allocSlot();
-      steps.push({ op: NATIVE[MATH_PREFIX[node.op]], dst, src1: resX.slot, p1: resX.raw, pos: node.pos });
-      return { slot: dst, constVal: null, raw: null };
+      steps.push({ op: NATIVE[MATH_PREFIX[node.op]], dst, src1: resX.slot, p1: resX.coercePos, pos: node.pos });
+      return { slot: dst, constVal: null, coercePos: null };
     }
 
     // Math builtins: operand count, fold and error positions from the manifest
@@ -147,8 +151,8 @@ export function compileMathPlan(root) {
         const resArg = emit(args[0], depth + 1);
         if (!resArg) return null;
         const dst = allocSlot();
-        steps.push({ op: opCode, dst, src1: resArg.slot, p1: resArg.raw, pos: node.pos });
-        return { slot: dst, constVal: null, raw: null };
+        steps.push({ op: opCode, dst, src1: resArg.slot, p1: resArg.coercePos, pos: node.pos });
+        return { slot: dst, constVal: null, coercePos: null };
       }
       if (arity === 2) {
         if (args.length !== 2) return null;
@@ -157,10 +161,10 @@ export function compileMathPlan(root) {
         const res1 = emit(args[1], depth + 1);
         if (!res1) return null;
         const dst = allocSlot();
-        const step = { op: opCode, dst, src1: res0.slot, src2: res1.slot, p1: res0.raw, p2: res1.raw, pos: node.pos };
+        const step = { op: opCode, dst, src1: res0.slot, src2: res1.slot, p1: res0.coercePos, p2: res1.coercePos, pos: node.pos };
         if (aux !== null) step.auxPos = args[aux].pos;
         steps.push(step);
-        return { slot: dst, constVal: null, raw: null };
+        return { slot: dst, constVal: null, coercePos: null };
       }
       // fold: one or more operands, combined pairwise left to right -- after
       // every operand has been evaluated (SPEC 6.2, 7.1), so a later operand's
@@ -175,15 +179,15 @@ export function compileMathPlan(root) {
       let curr = ops[0];
       for (let k = 1; k < ops.length; k++) {
         const dst = allocSlot();
-        steps.push({ op: opCode, dst, src1: curr.slot, src2: ops[k].slot, p1: curr.raw, p2: ops[k].raw, pos: node.pos });
-        curr = { slot: dst, constVal: null, raw: null };
+        steps.push({ op: opCode, dst, src1: curr.slot, src2: ops[k].slot, p1: curr.coercePos, p2: ops[k].coercePos, pos: node.pos });
+        curr = { slot: dst, constVal: null, coercePos: null };
       }
       if (ops.length === 1) {
         // A one-operand MIN/MAX is that operand, still coerced where the
         // plain tree coerces it.
         const dst = allocSlot();
-        steps.push({ op: OpCode.ABS_IDENTITY, dst, src1: curr.slot, p1: curr.raw, pos: node.pos });
-        curr = { slot: dst, constVal: null, raw: null };
+        steps.push({ op: OpCode.COERCE, dst, src1: curr.slot, p1: curr.coercePos, pos: node.pos });
+        curr = { slot: dst, constVal: null, coercePos: null };
       }
       return curr;
     }
@@ -196,7 +200,7 @@ export function compileMathPlan(root) {
 
     const slot = allocSlot();
     steps.push({ op: OpCode.LOAD_LEAF, dst: slot, leafNode: node, pos: node.pos });
-    return { slot, constVal: null, raw: node.pos };
+    return { slot, constVal: null, coercePos: node.pos };
   }
 
   const res = emit(root, 1);

@@ -174,7 +174,7 @@ define({
       if (!D.isInteger(d)) {
         fail('E_NOT_INT', `LTB element ${i + 1} must be a whole number`, args.posOf(0));
       }
-      const n = D.toSafeInt(d);
+      const n = D.truncToNumber(d);
       if (n < 0 || n > 255) {
         fail('E_RANGE', `LTB element ${i + 1} is not a byte value`, args.posOf(0));
       }

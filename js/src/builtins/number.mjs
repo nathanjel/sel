@@ -1,4 +1,3 @@
-import { fail } from '../errors.mjs';
 import * as D from '../decimal.mjs';
 import { Value } from '../value.mjs';
 import { define } from '../registry.mjs';
