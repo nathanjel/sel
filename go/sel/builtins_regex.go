@@ -76,9 +76,9 @@ func compileRegex(pattern, flags string, flagPos, patPos Pos) *compiledRegex {
 			continue
 		}
 		if ch == 'm' || ch == 's' || ch == 'M' || ch == 'S' {
-			fail("E_BAD_ARG", fmt.Sprintf("flag %q is not offered — SEL always matches . against any character and anchors ^ $ to the whole subject", string(ch)), flagPos)
+			fail("E_BAD_ARG", "flag "+quoteText(string(ch))+" is not offered — SEL always matches . against any character and anchors ^ $ to the whole subject", flagPos)
 		}
-		fail("E_BAD_ARG", fmt.Sprintf("unknown regex flag %q", string(ch)), flagPos)
+		fail("E_BAD_ARG", "unknown regex flag "+quoteText(string(ch)), flagPos)
 	}
 
 	if ignoreCase {

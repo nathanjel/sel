@@ -324,7 +324,7 @@ impl Lexer {
                 continue;
             }
 
-            return Err(SelError::syntax(format!("unexpected character {:?}", c), pos));
+            return Err(SelError::syntax(format!("unexpected character {}", crate::utf8::quote_char(c)), pos));
         }
         Ok(())
     }

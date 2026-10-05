@@ -106,12 +106,12 @@ fn eval_index(node: &Node, ctx: &mut Context) -> Result<Value, SelError> {
             }
             return Ok(inner.storage.as_ref().unwrap()[idx].clone());
         }
-        return Err(SelError::no_key(format!("no key {:?}", key), node.pos));
+        return Err(SelError::no_key(format!("no key {}", crate::utf8::quote_text(&key)), node.pos));
     }
     drop(inner);
 
     obj.get(&key)
-        .ok_or_else(|| SelError::no_key(format!("no key {:?}", key), node.pos))
+        .ok_or_else(|| SelError::no_key(format!("no key {}", crate::utf8::quote_text(&key)), node.pos))
 }
 
 #[inline(never)]

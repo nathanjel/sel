@@ -80,7 +80,7 @@ func init() {
 			for i := 0; i < len(s); i++ {
 				c := s[i]
 				if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')) {
-					fail("E_BAD_ARG", fmt.Sprintf("FROM_HEX: %q is not hex", s[i&^1:i&^1+2]), pos)
+					fail("E_BAD_ARG", "FROM_HEX: "+quoteText(s[i&^1:i&^1+2])+" is not hex", pos)
 				}
 			}
 			decoded, err := hex.DecodeString(s)
@@ -156,7 +156,9 @@ func init() {
 					}
 					v := b64Index[ch]
 					if v < 0 {
-						fail("E_BAD_ARG", fmt.Sprintf("invalid base64 character %q", ch), pos)
+						// The character, not the byte: at most four bytes hold its UTF-8.
+						bad := []rune(s[i+k : min(len(s), i+k+4)])[0]
+						fail("E_BAD_ARG", "invalid base64 character "+quoteText(string(bad)), pos)
 					}
 					quad[k] = int(v)
 				}

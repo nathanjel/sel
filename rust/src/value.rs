@@ -304,7 +304,7 @@ pub(crate) fn parse_text_decimal(text: &str, pos: Pos) -> Result<Dec, SelError> 
         if e.code == "E_RANGE" {
             e
         } else {
-            SelError::not_num(format!("not a number: {:?}", text), pos)
+            SelError::not_num(format!("not a number: {}", crate::utf8::quote_text(text)), pos)
         }
     })
 }

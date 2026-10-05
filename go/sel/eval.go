@@ -132,12 +132,12 @@ func dispatch(node *Node, ctx *Context) *Value {
 				}
 				return obj.storage[idx]
 			}
-			fail("E_NO_KEY", fmt.Sprintf("no key %q", key), node.Pos)
+			fail("E_NO_KEY", "no key "+quoteText(key), node.Pos)
 		}
 
 		child := obj.Get(key)
 		if child == nil {
-			fail("E_NO_KEY", fmt.Sprintf("no key %q", key), node.Pos)
+			fail("E_NO_KEY", "no key "+quoteText(key), node.Pos)
 		}
 		return child
 

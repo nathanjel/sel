@@ -634,7 +634,7 @@ func (v *Value) AsDecimal(pos Pos) *decimal.Dec {
 	}
 	d := decimal.Parse(s.strVal, utf8.Pos(pos), fail)
 	if d == nil {
-		fail("E_NOT_NUM", fmt.Sprintf("not a number: %q", s.strVal), pos)
+		fail("E_NOT_NUM", "not a number: "+quoteText(s.strVal), pos)
 	}
 	s.decCache.Store(d)
 	return d

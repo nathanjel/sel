@@ -157,7 +157,7 @@ func (p *parser) atEOF() bool {
 func (p *parser) expectOp(v string) token {
 	if !p.atOp(v) {
 		t := p.peek()
-		fail("E_SYNTAX", fmt.Sprintf("expected %q, got %s", v, describe(t)), t.Pos)
+		fail("E_SYNTAX", "expected "+quoteText(v)+", got "+describe(t), t.Pos)
 	}
 	return p.next()
 }
@@ -526,7 +526,7 @@ func describe(t token) string {
 	if t.Type == tokenNum {
 		return fmt.Sprintf("number %s", t.Value)
 	}
-	return fmt.Sprintf("%q", t.Value)
+	return quoteText(t.Value)
 }
 
 func checkTarget(node *Node, opTok token) {
