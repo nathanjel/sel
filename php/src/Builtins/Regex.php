@@ -50,6 +50,8 @@ final class Regex
     private const CACHE_MAX = 256;
     /** @var list<string>|null group definitions collected while emitting for the engine */
     private static ?array $defs = null;
+    /** Set while re-emitting a pattern PCRE found too large: see emitRep. */
+    private static bool $lowerAll = false;
 
     /** @param array<string,mixed>|null $pos */
     private static function bad(string $message, string $pattern, int $at, ?array $pos): void
@@ -604,7 +606,7 @@ final class Regex
             }
             if (!$x['cap'] && $hi === $lo && self::$defs !== null && !self::hasCapture($body)) {
                 $bodySrc = self::emit($body, true);
-                if ($lo * max(1, strlen($bodySrc)) > 20000) {
+                if ($lo * max(1, strlen($bodySrc)) > 20000 || (self::$lowerAll && $lo >= 2)) {
                     return self::counted($bodySrc, $lo);
                 }
             }
@@ -618,8 +620,47 @@ final class Regex
                 }
                 return '(?:' . $c . $q(0, $hi === null ? null : $hi - 1) . $lazy . '(' . $c . '))?' . $lazy;
             }
+            if (self::$lowerAll && $lo >= 2 && self::$defs !== null) {
+                // (G){lo,hi} is lo-1 iterations, then G{1,hi-lo+1}: the same
+                // iterations, mandatory ones first, the optional ones nested after
+                // them, in the same order of preference. Every capture in the body
+                // takes part in every iteration (spec §7.8), so the last iteration
+                // sets them all and the first lo-1 may be copies without captures,
+                // which counted() defines once instead of PCRE copying them.
+                // Used only when the plain form did not fit (compiled()).
+                $head = self::counted(self::emit(self::uncaptured($body), true), $lo - 1);
+                if ($hi === $lo) return $head . self::emit($x, true);
+                return $head . self::emit($x, true) . $q(1, $hi === null ? null : $hi - $lo + 1) . $lazy;
+            }
         }
         return self::emit($x, $compact) . $q($lo, $hi) . $lazy;
+    }
+
+    /**
+     * The tree with every capturing group made non-capturing.
+     *
+     * @param array<string,mixed> $node
+     * @return array<string,mixed>
+     */
+    private static function uncaptured(array $node): array
+    {
+        switch ($node['k']) {
+            case 'cat':
+                $node['items'] = array_map(self::uncaptured(...), $node['items']);
+                return $node;
+            case 'alt':
+                $node['br'] = array_map(self::uncaptured(...), $node['br']);
+                return $node;
+            case 'grp':
+                $node['cap'] = false;
+                $node['x'] = self::uncaptured($node['x']);
+                return $node;
+            case 'rep':
+                $node['x'] = self::uncaptured($node['x']);
+                return $node;
+            default:
+                return $node;
+        }
     }
 
     /** How many capturing groups the tree holds. @param array<string,mixed> $node */
@@ -837,29 +878,13 @@ final class Regex
 
         $tree = self::parse(Utf8::chars($pattern), $pattern, $patPos);
         RegexAmbiguity::check($tree, $ignoreCase, $pattern, $patPos);
-        self::$defs = [];
-        try {
-            $source = self::emit($tree, true);
-            if (self::$defs !== []) {
-                $source .= '(?(DEFINE)' . implode('', self::$defs) . ')';
-            }
-        } finally {
-            self::$defs = null;
-        }
-        $source = self::escapeDelimiter($source);
         $flags = '/usD' . ($ignoreCase ? 'i' : '');
-        $re = '/' . $source . $flags;
-
-        $message = null;
-        set_error_handler(static function (int $no, string $str) use (&$message): bool {
-            $message = $str;
-            return true;
-        });
-        try {
-            $ok = preg_match($re, '');
-        } finally {
-            restore_error_handler();
+        [$source, $ok, $message] = self::engineSource($tree, $flags, false);
+        if ($ok === false && $message !== null && str_contains($message, 'too large')) {
+            // Too large as written: lower every counted group (see emitRep).
+            [$source, $ok, $message] = self::engineSource($tree, $flags, true);
         }
+        $re = '/' . $source . $flags;
         $tooLarge = false;
         if ($ok === false) {
             // The validator has accepted the pattern, so PCRE refusing it is a
@@ -888,6 +913,40 @@ final class Regex
             // (?(DEFINE)…) groups (see counted()) whose numbers follow them.
             'groups' => self::countGroups($tree),
         ];
+    }
+
+    /**
+     * The tree as PCRE source, and whether PCRE compiles it (false, with its
+     * warning, when it does not).
+     *
+     * @param array<string,mixed> $tree
+     * @return array{0:string,1:int|false,2:?string}
+     */
+    private static function engineSource(array $tree, string $flags, bool $lowerAll): array
+    {
+        self::$defs = [];
+        self::$lowerAll = $lowerAll;
+        try {
+            $source = self::emit($tree, true);
+            if (self::$defs !== []) {
+                $source .= '(?(DEFINE)' . implode('', self::$defs) . ')';
+            }
+        } finally {
+            self::$defs = null;
+            self::$lowerAll = false;
+        }
+        $source = self::escapeDelimiter($source);
+        $message = null;
+        set_error_handler(static function (int $no, string $str) use (&$message): bool {
+            $message = $str;
+            return true;
+        });
+        try {
+            $ok = preg_match('/' . $source . $flags, '');
+        } finally {
+            restore_error_handler();
+        }
+        return [$source, $ok, $message];
     }
 
     /**
