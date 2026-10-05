@@ -339,18 +339,26 @@ later step, a list literal or a constructor is known not to be one."
 the evaluator reads (STEP-ARG-FOLDS-P).")
 
 (defun step-arg-folds-p (step index)
-  "The evaluator resolves the three-argument SORT_BY / TOP_BY form by shape
-(spec §7.3): a text literal in the third slot is the direction, otherwise a
-bare name in the second slot is the binder and the third slot is its key. A
-fold that hoists a text literal into that slot -- IF(TRUE, \"DESC\", \"ASC\")
--- would change the form, so the slot is walked without folding."
+  "Whether argument INDEX of a pipeline step may be constant-folded. The
+evaluator picks a binding call's form by the shape of its arguments (spec
+§7.3; the manifest's forms with a WHEN): a text literal in SORT_BY's third
+slot is the direction, otherwise a bare name in the second is the binder. A
+fold that hoists a text literal into such a slot -- IF(TRUE, \"DESC\", \"ASC\")
+-- would change the form, so that slot is walked without folding; any other
+argument folds."
   (let* ((args (node-items step))
-         (sort-count (cond ((string= (node-s step) "SORT_BY") (length args))
-                           ((string= (node-s step) "TOP_BY") (1- (length args)))
-                           (t 0))))
-    (not (and (= sort-count 3) (= index 2)
-              (eq (node-kind (second args)) :var)
-              (not (node-grouped (second args)))))))
+         (forms (binding-forms-named (node-s step))))
+    (or (notany (lambda (f) (let ((when (third f)))
+                              (and when (= (first when) index) (eq (second when) :text)
+                                   (= (length (second f)) (length args)))))
+                forms)
+        (let ((as-text (copy-list args))
+              (literal (make-node :text (node-pos (nth index args)))))
+          (setf (nth index as-text) literal)
+          ;; Safe when the roles stay: the form a text literal there selects
+          ;; reads the arguments the way the current one does.
+          (equal (second (match-binding-form forms args))
+                 (second (match-binding-form forms as-text)))))))
 
 (defun filter-body (filter-step)
   "The binder and predicate of a FILTER step, as two values."
@@ -367,34 +375,16 @@ fold that hoists a text literal into that slot -- IF(TRUE, \"DESC\", \"ASC\")
   (and node (node-p node) (eq (node-kind node) :var) (not (node-grouped node))))
 
 (defun sort-key (sort-step)
-  "The binder and key of a sort step, as two values; a keyless sort has no
-key. The forms are the evaluator's (spec §7.3)."
-  (let* ((args (node-items sort-step))
-         (count (length args))
-         (sname (node-s sort-step))
-         (binder "_")
-         (key nil))
-    (cond
-      ((member sname '("SORT" "SORT_DESC") :test #'string=)
-       (unless (= count 1)
-         (setf binder (if (and (= count 3) (bare-name-p (second args))) (node-s (second args)) "_")
-               key (if (= count 3) (third args) (second args)))))
-      ((member sname '("TOP" "TOP_DESC") :test #'string=)
-       ;; TOP(source, key, n) has three arguments and TOP(source, binder, key, n)
-       ;; has four; the count below excludes n.
-       (unless (= count 2)
-         (let ((sort-count (1- count)))
-           (setf binder (if (and (= sort-count 3) (bare-name-p (second args))) (node-s (second args)) "_")
-                 key (if (= sort-count 3) (third args) (second args))))))
-      ((member sname '("SORT_BY" "TOP_BY") :test #'string=)
-       (let ((sort-count (if (string= sname "TOP_BY") (1- count) count)))
-         (cond
-           ((or (= sort-count 2)
-                (and (= sort-count 3) (eq (node-kind (third args)) :text)))
-            (setf key (second args)))
-           ((and (> count 2) (bare-name-p (second args)))
-            (setf binder (node-s (second args)) key (third args)))))))
-    (values binder key)))
+  "The binder and key of a sort step (SORT, SORT_DESC, SORT_BY and the TOP
+family), as two values; a keyless sort has no key. Decoded as the evaluator
+decodes them, through the manifest's forms (CALL-FORM)."
+  (let ((args (node-items sort-step))
+        (name (node-s sort-step)))
+    (multiple-value-bind (b key)
+        (call-form (binding-forms-named name) args
+                   (member name '("TOP" "TOP_DESC" "TOP_BY") :test #'string=))
+      (values (if (and b (bare-name-p (nth b args))) (node-s (nth b args)) "_")
+              (and key (nth key args))))))
 
 (defun sort-fields (sort-step)
   (multiple-value-bind (binder key) (sort-key sort-step)

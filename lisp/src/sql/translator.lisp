@@ -2479,48 +2479,38 @@ SQL counterpart" (snode-pos e)))
                          (format nil "~a on a multi-field relation requires a key expression; use ~a"
                                  sort-name (if is-top "TOP_BY" "SORT_BY"))
                          pos)))))
-           ((= count 2)
-            (setf (relational-plan-order-by plan)
-                  (append (relational-plan-order-by plan)
-                          (list (list "_" (second args) dir pos)))))
-           ((= count 3)
-            (unless (is-binder-name (second args))
-              (refuse "E_SQL_SHAPE" (format nil "the binder of ~a must be a bare name" sort-name) (snode-pos (second args))))
-            (setf (relational-plan-order-by plan)
-                  (append (relational-plan-order-by plan)
-                          (list (list (sel::node-s (second args)) (third args) dir pos)))))
            (t
-            (refuse "E_ARITY" (format nil "~a takes ~a arguments" name (if is-top "2 to 4" "1 to 3")) pos)))))
+            ;; Two or three arguments (the manifest refused any other count):
+            ;; the key, after a binder when there are three.
+            (multiple-value-bind (b key) (sel::call-form (sel::binding-forms-named sort-name) args)
+              (when (and b (not (is-binder-name (nth b args))))
+                (refuse "E_SQL_SHAPE" (format nil "the binder of ~a must be a bare name" sort-name)
+                        (snode-pos (nth b args))))
+              (setf (relational-plan-order-by plan)
+                    (append (relational-plan-order-by plan)
+                            (list (list (if b (sel::node-s (nth b args)) "_") (nth key args) dir pos)))))))))
 
       ((equal sort-name "SORT_BY")
+       ;; The forms are the evaluator's (SEL::CALL-FORM over the manifest): a
+       ;; text literal in the third slot is the direction even after a bare
+       ;; name, a bare name there otherwise is the binder, and any other third
+       ;; argument is a direction SQL cannot compute -- refused, as the four-
+       ;; argument form refuses one.
        (let (binder key dir dir-pos)
-         (cond
-           ((= count 2)
-            (setf binder "_" key (second args) dir "ASC" dir-pos (snode-pos (second args))))
-           ((= count 3)
-            (let ((a1 (second args))
-                  (a2 (third args)))
-              (cond
-                ((and (not (clist-p a2)) (eq (snode-kind a2) :text))
-                 (setf binder "_" key a1 dir (sel::ascii-upcase (sel::node-s a2)) dir-pos (snode-pos a2)))
-                ((is-binder-name a1)
-                 (setf binder (sel::node-s a1) key a2 dir "ASC" dir-pos (snode-pos a2)))
-                (t
-                 ;; Neither form: the third slot is a direction the evaluator
-                 ;; would compute, and SQL cannot -- the four-argument form's
-                 ;; refusal.
-                 (refuse "E_BAD_ARG" "sort direction must be 'ASC' or 'DESC'" (snode-pos a2))))))
-           ((= count 4)
-            (unless (is-binder-name (second args))
-              (refuse "E_SQL_SHAPE" (format nil "the binder of ~a must be a bare name" sort-name) (snode-pos (second args))))
-            (unless (and (not (clist-p (fourth args))) (eq (snode-kind (fourth args)) :text))
-              (refuse "E_BAD_ARG" "sort direction must be 'ASC' or 'DESC'" (snode-pos (fourth args))))
-            (setf binder (sel::node-s (second args))
-                  key (third args)
-                  dir (sel::ascii-upcase (sel::node-s (fourth args)))
-                  dir-pos (snode-pos (fourth args))))
-           (t
-            (refuse "E_ARITY" (format nil "~a takes ~a arguments" name (if is-top "3 to 5" "2 to 4")) pos)))
+         (multiple-value-bind (b k k2 d) (sel::call-form (sel::binding-forms-named "SORT_BY") args)
+           (declare (ignore k2))
+           (when (and b (not (is-binder-name (nth b args))))
+             (refuse "E_SQL_SHAPE" (format nil "the binder of ~a must be a bare name" sort-name)
+                     (snode-pos (nth b args))))
+           (setf binder (if b (sel::node-s (nth b args)) "_")
+                 key (nth k args))
+           (if d
+               (let ((dn (nth d args)))
+                 (unless (and (not (clist-p dn)) (eq (snode-kind dn) :text))
+                   (refuse "E_BAD_ARG" "sort direction must be 'ASC' or 'DESC'" (snode-pos dn)))
+                 (setf dir (sel::ascii-upcase (sel::node-s dn))
+                       dir-pos (snode-pos dn)))
+               (setf dir "ASC" dir-pos (snode-pos key))))
          (unless (member dir '("ASC" "DESC") :test #'equal)
            (refuse "E_BAD_ARG" "sort direction must be 'ASC' or 'DESC'" dir-pos))
          (setf (relational-plan-order-by plan)
