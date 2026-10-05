@@ -73,14 +73,18 @@ pub fn validate_pattern_with_case(
     pos: Pos,
     ignore_case: bool,
 ) -> Result<String, SelError> {
-    let portable = validate_pattern_impl(pattern, pos, false)?;
-    let analysis = validate_pattern_impl(pattern, pos, true)?;
+    let (portable, analysis) = validate_pattern_impl(pattern, pos)?;
     crate::regex_ambiguity::analyse(&analysis, ignore_case)
         .map_err(|reason| bad_regex(reason, pattern, 0, pos))?;
     Ok(portable)
 }
 
-fn validate_pattern_impl(pattern: &str, pos: Pos, rust_classes: bool) -> Result<String, SelError> {
+/// Validates a pattern in one pass and renders it twice: the portable form
+/// (what the SQL layer and the messages quote) and the form this host's
+/// engine compiles, whose class members are `\x{..}` escapes (Rust reads
+/// nested classes and set operations inside `[...]`, which SEL does not).
+/// Every refusal is the same for both; only a class's text differs.
+fn validate_pattern_impl(pattern: &str, pos: Pos) -> Result<(String, String), SelError> {
     if pattern.chars().count() > crate::limits::MAX_REGEX_PATTERN {
         return Err(bad_regex(
             "pattern length exceeds the limit",
@@ -91,7 +95,7 @@ fn validate_pattern_impl(pattern: &str, pos: Pos, rust_classes: bool) -> Result<
     }
     let bytes = pattern.as_bytes();
     let n = bytes.len();
-    let mut out: Vec<u8> = Vec::with_capacity(n * 2);
+    let mut both = Rendered { portable: Vec::with_capacity(n * 2), engine: Vec::with_capacity(n * 2) };
     let mut i = 0;
 
     while i < n {
@@ -104,39 +108,39 @@ fn validate_pattern_impl(pattern: &str, pos: Pos, rust_classes: bool) -> Result<
             let e = bytes[i + 1] as char;
             match e {
                 'd' => {
-                    out.extend_from_slice(b"[0-9]");
+                    both.extend(b"[0-9]");
                     i += 2;
                     continue;
                 }
                 'D' => {
-                    out.extend_from_slice(b"[^0-9]");
+                    both.extend(b"[^0-9]");
                     i += 2;
                     continue;
                 }
                 'w' => {
-                    out.extend_from_slice(b"[0-9A-Za-z_]");
+                    both.extend(b"[0-9A-Za-z_]");
                     i += 2;
                     continue;
                 }
                 'W' => {
-                    out.extend_from_slice(b"[^0-9A-Za-z_]");
+                    both.extend(b"[^0-9A-Za-z_]");
                     i += 2;
                     continue;
                 }
                 's' => {
-                    out.extend_from_slice(b"[ \\t\\n\\r\\f\\x0b]");
+                    both.extend(b"[ \\t\\n\\r\\f\\x0b]");
                     i += 2;
                     continue;
                 }
                 'S' => {
-                    out.extend_from_slice(b"[^ \\t\\n\\r\\f\\x0b]");
+                    both.extend(b"[^ \\t\\n\\r\\f\\x0b]");
                     i += 2;
                     continue;
                 }
                 'n' | 'r' | 't' | 'f' | '^' | '$' | '\\' | '.' | '*' | '+' | '?' | '(' | ')'
                 | '[' | ']' | '{' | '}' | '|' | '/' => {
-                    out.push(b'\\');
-                    out.push(e as u8);
+                    both.push(b'\\');
+                    both.push(e as u8);
                     i += 2;
                     continue;
                 }
@@ -145,8 +149,9 @@ fn validate_pattern_impl(pattern: &str, pos: Pos, rust_classes: bool) -> Result<
         }
 
         if c == '[' {
-            let (text, nxt) = validate_class(pattern, bytes, i, pos, rust_classes)?;
-            out.extend_from_slice(text.as_bytes());
+            let (text, rust_text, nxt) = validate_class(pattern, bytes, i, pos)?;
+            both.portable.extend_from_slice(text.as_bytes());
+            both.engine.extend_from_slice(rust_text.as_bytes());
             i = nxt;
             continue;
         }
@@ -167,7 +172,7 @@ fn validate_pattern_impl(pattern: &str, pos: Pos, rust_classes: bool) -> Result<
                     '\0'
                 };
                 if nxt == ':' {
-                    out.extend_from_slice(b"(?:");
+                    both.extend(b"(?:");
                     i += 3;
                     continue;
                 }
@@ -184,7 +189,7 @@ fn validate_pattern_impl(pattern: &str, pos: Pos, rust_classes: bool) -> Result<
                     pos,
                 ));
             }
-            out.push(b'(');
+            both.push(b'(');
             i += 1;
             continue;
         }
@@ -192,14 +197,14 @@ fn validate_pattern_impl(pattern: &str, pos: Pos, rust_classes: bool) -> Result<
         if c == '{' {
             let brace_end = validate_braces(pattern, bytes, i, pos)?;
             let end = after_quantifier(pattern, bytes, brace_end, pos)?;
-            out.extend_from_slice(&bytes[i..end]);
+            both.extend(&bytes[i..end]);
             i = end;
             continue;
         }
 
         if c == '*' || c == '+' || c == '?' {
             let end = after_quantifier(pattern, bytes, i + 1, pos)?;
-            out.extend_from_slice(&bytes[i..end]);
+            both.extend(&bytes[i..end]);
             i = end;
             continue;
         }
@@ -211,12 +216,12 @@ fn validate_pattern_impl(pattern: &str, pos: Pos, rust_classes: bool) -> Result<
             return Err(bad_regex("unmatched ] — escape it as \\]", pattern, i, pos));
         }
 
-        out.push(bytes[i]);
+        both.push(bytes[i]);
         i += 1;
     }
 
-    let normalized =
-        String::from_utf8(out).map_err(|e| SelError::new("E_UTF8", e.to_string(), pos))?;
+    let utf8 = |bytes: Vec<u8>| String::from_utf8(bytes).map_err(|e| SelError::new("E_UTF8", e.to_string(), pos));
+    let (portable, engine) = (utf8(both.portable)?, utf8(both.engine)?);
     // The structure is checked on the pattern as written (every escape and class
     // in it is valid by now), so that a refusal's offset is into that pattern.
     StructureParser {
@@ -226,7 +231,24 @@ fn validate_pattern_impl(pattern: &str, pos: Pos, rust_classes: bool) -> Result<
         pos,
     }
     .parse()?;
-    Ok(normalized)
+    Ok((portable, engine))
+}
+
+// The two renderings validate_pattern_impl writes at once.
+struct Rendered {
+    portable: Vec<u8>,
+    engine: Vec<u8>,
+}
+
+impl Rendered {
+    fn push(&mut self, b: u8) {
+        self.portable.push(b);
+        self.engine.push(b);
+    }
+    fn extend(&mut self, bytes: &[u8]) {
+        self.portable.extend_from_slice(bytes);
+        self.engine.extend_from_slice(bytes);
+    }
 }
 
 fn after_quantifier(pattern: &str, bytes: &[u8], i: usize, pos: Pos) -> Result<usize, SelError> {
@@ -297,19 +319,21 @@ fn validate_braces(pattern: &str, bytes: &[u8], start: usize, pos: Pos) -> Resul
     Ok(i + 1)
 }
 
+// A class, validated once and rendered in both forms (portable, engine), and
+// the index past it.
 fn validate_class(
     pattern: &str,
     bytes: &[u8],
     start: usize,
     pos: Pos,
-    rust_classes: bool,
-) -> Result<(String, usize), SelError> {
+) -> Result<(String, String, usize), SelError> {
+    // One member: its portable text, its engine text, and the character it
+    // stands for (None for a class shorthand, which cannot bound a range).
     fn item(
         pattern: &str,
         i: &mut usize,
         pos: Pos,
-        rust_classes: bool,
-    ) -> Result<(String, Option<char>), SelError> {
+    ) -> Result<(String, String, Option<char>), SelError> {
         let bytes = pattern.as_bytes();
         let at = *i;
         let c = pattern[*i..].chars().next().unwrap();
@@ -338,7 +362,7 @@ fn validate_class(
                 _ => None,
             };
             if let Some(text) = expanded {
-                return Ok((text.into(), None));
+                return Ok((text.into(), text.into(), None));
             }
             let value = match e {
                 'n' => '\n',
@@ -349,41 +373,30 @@ fn validate_class(
                 | '}' | '|' | '/' => e,
                 _ => return Err(reject_escape(e, pattern, at, pos)),
             };
-            return Ok((
-                if rust_classes {
-                    format!("\\x{{{:x}}}", value as u32)
-                } else {
-                    format!("\\{}", e)
-                },
-                Some(value),
-            ));
+            return Ok((format!("\\{}", e), format!("\\x{{{:x}}}", value as u32), Some(value)));
         }
         // Escape every literal member: Rust additionally recognizes nested
         // classes and &&, --, ~~ set operations, which SEL does not.
-        Ok((
-            if rust_classes {
-                format!("\\x{{{:x}}}", c as u32)
-            } else {
-                c.to_string()
-            },
-            Some(c),
-        ))
+        Ok((c.to_string(), format!("\\x{{{:x}}}", c as u32), Some(c)))
     }
     let mut i = start + 1;
     let mut out = String::from("[");
+    let mut rx = String::from("[");
     if bytes.get(i) == Some(&b'^') {
         out.push('^');
+        rx.push('^');
         i += 1;
     }
     let mut count = 0;
     while i < bytes.len() && bytes[i] != b']' {
-        let (text, lo) = item(pattern, &mut i, pos, rust_classes)?;
+        let (text, rust_text, lo) = item(pattern, &mut i, pos)?;
         out.push_str(&text);
+        rx.push_str(&rust_text);
         count += 1;
         if bytes.get(i) == Some(&b'-') && bytes.get(i + 1).is_some_and(|&b| b != b']') {
             let dash = i;
             i += 1;
-            let (text, hi) = item(pattern, &mut i, pos, rust_classes)?;
+            let (text, rust_text, hi) = item(pattern, &mut i, pos)?;
             match (lo, hi) {
                 (Some(lo), Some(hi)) if lo <= hi => {}
                 _ => {
@@ -397,6 +410,8 @@ fn validate_class(
             }
             out.push('-');
             out.push_str(&text);
+            rx.push('-');
+            rx.push_str(&rust_text);
         }
     }
     if count == 0 || i == bytes.len() {
@@ -408,7 +423,8 @@ fn validate_class(
         ));
     }
     out.push(']');
-    Ok((out, i + 1))
+    rx.push(']');
+    Ok((out, rx, i + 1))
 }
 
 // Structural facts suffice for the portable loop rules. Keep syntax groups
@@ -705,7 +721,7 @@ pub fn compile_sel_regex(
         return Ok(compiled);
     }
 
-    let validated = validate_pattern_impl(pattern, pat_pos, true)?;
+    let (_, validated) = validate_pattern_impl(pattern, pat_pos)?;
     crate::regex_ambiguity::analyse(&validated, ignore_case)
         .map_err(|reason| bad_regex(reason, pattern, 0, pat_pos))?;
     let lowered = lower_anchors(&validated);
