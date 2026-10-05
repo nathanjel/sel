@@ -300,7 +300,7 @@ func doSort(args *Args, ctx *Context, forcedDir string) *Value {
 		}
 		// Collected once its key is computed (SPEC §3.4): a key that might write
 		// copies the element then, so a later key's write cannot reach it.
-		eager = !nodeIsPure(body)
+		eager = !subtreeIsPure(body)
 		indexed = make([]sortItem, len(ents))
 		for i, e := range ents {
 			frame[binder] = e.Val
@@ -429,7 +429,7 @@ func doTop(args *Args, ctx *Context, forcedDir string) *Value {
 	}
 
 	// Collected once its key is computed (SPEC §3.4); see doSort.
-	eager := body != nil && !nodeIsPure(body)
+	eager := body != nil && !subtreeIsPure(body)
 	items := make([]sortItem, len(ents))
 	for i, e := range ents {
 		var kVal *Value
@@ -539,7 +539,7 @@ func doBucket(args *Args, ctx *Context) *Value {
 	// A row is collected when its key is computed and it is grouped (SPEC §3.4):
 	// when the key or the projection might write, it is copied then, so neither a
 	// later key nor the projection can change a row already grouped.
-	eager := !nodeIsPure(keyNode) || (aggNode != nil && !nodeIsPure(aggNode))
+	eager := !subtreeIsPure(keyNode) || (aggNode != nil && !subtreeIsPure(aggNode))
 	rowLevels := 3
 	if aggNode != nil {
 		rowLevels = 2
@@ -1049,7 +1049,7 @@ func extractJoinEquiResidual(node *Node, b1, b2 string) (*joinEqui, []*Node) {
 		return nil, nil
 	}
 	equi := extractJoinEqui(node, b1, b2)
-	if equi == nil || !nodeIsPure(equi.leftExpr) || !nodeIsPure(equi.rightExpr) {
+	if equi == nil || !subtreeIsPure(equi.leftExpr) || !subtreeIsPure(equi.rightExpr) {
 		return nil, nil
 	}
 	rest := make([]*Node, len(rev))
@@ -1057,31 +1057,6 @@ func extractJoinEquiResidual(node *Node, b1, b2 string) (*joinEqui, []*Node) {
 		rest[len(rev)-1-i] = c
 	}
 	return equi, rest
-}
-
-// nodeIsPure: evaluating the expression twice, or not at all, cannot be observed:
-// no assignment anywhere, and no host function (which may have effects).
-func nodeIsPure(n *Node) bool {
-	if n == nil {
-		return true
-	}
-	switch n.T {
-	case NodeAssign:
-		return false
-	case NodeCall:
-		if isHostFunction(n.S) {
-			return false
-		}
-	}
-	if !nodeIsPure(n.L) || !nodeIsPure(n.R) {
-		return false
-	}
-	for _, it := range n.Items {
-		if !nodeIsPure(it) {
-			return false
-		}
-	}
-	return true
 }
 
 // plainJoinKey evaluates a key expression and returns its canonical key, or ok =
@@ -1706,7 +1681,7 @@ func doLink(args *Args, ctx *Context, leftJoin bool) *Value {
 	// Only for a predicate that cannot write: an assignment into Y acts on the
 	// alias record, and a shared record would carry it from one pair to the next.
 	var rightRows []*Value
-	hoistRight := nodeIsPure(predicate)
+	hoistRight := subtreeIsPure(predicate)
 	if hoistRight {
 		rightRows = make([]*Value, len(rightEnts))
 		for i, rEntry := range rightEnts {

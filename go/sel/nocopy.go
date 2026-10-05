@@ -1,7 +1,5 @@
 package sel
 
-import "github.com/nathanjel/sel/go/internal/manifest"
-
 // Copy elision for a FILTER that feeds straight into a consumer.
 //
 // SPEC §3.4: FILTER copies the rows it keeps, so its result shares nothing with its
@@ -31,11 +29,11 @@ func noCopyAllowed(consumer string, nodes []*Node) bool {
 		return false
 	}
 	n0 := nodes[0]
-	if n0 == nil || n0.T != NodeCall || n0.S != "FILTER" || !nodesCannotChangeValues(n0) {
+	if n0 == nil || n0.T != NodeCall || n0.S != "FILTER" || !subtreeIsPure(n0) {
 		return false
 	}
 	for _, other := range nodes[1:] {
-		if !nodesCannotChangeValues(other) {
+		if !subtreeIsPure(other) {
 			return false
 		}
 	}
@@ -50,31 +48,6 @@ func (a *Args) offerNoCopy() {
 		return
 	}
 	a.ctx.noCopy = a.nodes[0]
-}
-
-// nodesCannotChangeValues reports that evaluating the subtree changes no value: it
-// holds no assignment and calls only built-in functions. Iterative, because a flat
-// chain as long as the source is as deep as it is long.
-func nodesCannotChangeValues(root *Node) bool {
-	stack := []*Node{root}
-	for len(stack) > 0 {
-		n := stack[len(stack)-1]
-		stack = stack[:len(stack)-1]
-		if n == nil {
-			continue
-		}
-		switch n.T {
-		case NodeAssign:
-			return false
-		case NodeCall:
-			if _, builtin := manifest.Builtins[n.S]; !builtin {
-				return false
-			}
-		}
-		stack = append(stack, n.L, n.R)
-		stack = append(stack, n.Items...)
-	}
-	return true
 }
 
 // checkCopyDepth fails as CloneAt(depth) would for a value nested too deeply to be

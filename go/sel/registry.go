@@ -212,10 +212,45 @@ func HostArity(name string) (int, int, bool) {
 	return spec.Min, spec.Max, true
 }
 
-// isHostFunction reports whether name is an application-registered function
-// (which may have effects) rather than a builtin.
-func isHostFunction(name string) bool {
-	key := utf8.AsciiUpper(name)
-	_, inManifest := manifest.Builtins[key]
+// outsideManifest reports a function that is not one of SEL's shipped builtins
+// (spec/builtins.json): an application's (RegisterFunction) or one Define added.
+// Either may have effects, so it is what every "can this subtree change
+// anything?" question asks (subtreeIsPure). hostFuncs answers a narrower one,
+// "was this registered by the application?", for HostArity and RegisterFunction.
+func outsideManifest(name string) bool {
+	_, inManifest := manifest.Builtins[utf8.AsciiUpper(name)]
 	return !inManifest
+}
+
+// subtreeIsPure reports that evaluating the subtree twice, or not at all, cannot
+// be observed and changes no value: it holds no assignment and calls only
+// shipped builtins. Iterative, because a flat chain as long as the source can be
+// is as deep as it is long; the stack starts in a fixed buffer, so a small
+// subtree costs no allocation.
+func subtreeIsPure(root *Node) bool {
+	var buf [32]*Node
+	stack := append(buf[:0], root)
+	for len(stack) > 0 {
+		n := stack[len(stack)-1]
+		stack = stack[:len(stack)-1]
+		if n == nil {
+			continue
+		}
+		switch n.T {
+		case NodeAssign:
+			return false
+		case NodeCall:
+			if outsideManifest(n.S) {
+				return false
+			}
+		}
+		if n.L != nil {
+			stack = append(stack, n.L)
+		}
+		if n.R != nil {
+			stack = append(stack, n.R)
+		}
+		stack = append(stack, n.Items...)
+	}
+	return true
 }
