@@ -6,6 +6,11 @@
 // argument `i` checks under the i flag.
 //
 //   php php/bin/regex-verdict [i] < patterns.txt
+//
+// A MANUAL diagnostic: no gate step runs it. tools/check-regex-ambiguity-diff.py
+// compares every host's verdicts with tools/regex-ambiguity-ref.py when someone
+// changes the ambiguity analysis; the gate itself holds the hosts to the
+// generated conformance/28b-regex-ambiguity.selt instead.
 
 declare(strict_types=1);
 

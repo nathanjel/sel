@@ -42,7 +42,7 @@ representations; run it from either source tree. It is not part of timed runs.
 Correctness commands (timings are not collected while these run):
 
 ```sh
-php php/tests/a5.php
+php php/tests/value-layout.php
 php tools/check-php-runtime.php
 php tools/check-php-optimizer.php
 php tools/metadata/php.php
@@ -50,7 +50,7 @@ php php/bin/conformance
 php php/bin/sqlt
 python3 tools/decimal-oracle.py 4000 20260813 > /tmp/php-decimal-oracle.txt
 php tools/check-decimal.php /tmp/php-decimal-oracle.txt
-php -n -d extension=ctype php/tests/a5.php
+php -n -d extension=ctype php/tests/value-layout.php
 php -n -d extension=ctype tools/check-decimal.php /tmp/php-decimal-oracle.txt
 SEL_IMPLS='php cpp js' tools/fuzz.sh 4000 20260813
 SEL_IMPLS='php cpp js' tools/check-api.sh
