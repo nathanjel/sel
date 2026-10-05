@@ -12,26 +12,13 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/../src/bootstrap.php';
+require_once __DIR__ . '/harness.php';
 
 use Sel\Sel;
 use Sel\SelError;
 use Sel\Value;
 
-function show(Value $v): string
-{
-    if ($v->size() === 0) {
-        if ($v->kind === Value::TEXT) {
-            return (string) $v->scalar;
-        }
-        if ($v->kind === Value::BOOL) {
-            return $v->scalar ? 'TRUE' : 'FALSE';
-        }
-        if ($v->kind === Value::BIN) {
-            return 'bin:' . bin2hex((string) $v->scalar);
-        }
-    }
-    return $v->dump();
-}
+use function SelBin\show;
 
 function report(SelError $e): void
 {

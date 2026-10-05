@@ -6,6 +6,11 @@
 //   node tools/run-batch.mjs [--show] corpus.selc
 
 import { readFileSync } from 'node:fs';
+// The corpus reader and the rendering bin/sel uses (--show), shared with the
+// CLI and with js/bin/sqlfuzz.mjs rather than copied: duck-typed, so they serve
+// a bundle build as well as the source tree.
+import { readCorpus } from '../js/bin/read-input.mjs';
+import { show as render } from '../js/bin/show.mjs';
 // SEL_JS_ENTRY aims this runner at a different build of the implementation —
 // tools/impls.sh sets it to dist/sel.mjs so the bundle is held to the same
 // suite as the source. Dynamic import because the specifier is not a constant.
@@ -26,29 +31,6 @@ try {
   text = readFileSync(path, 'utf8');
 } catch (e) {
   refuse(2, `cannot read ${path}: ${e.code ?? e.message}`);
-}
-
-// A line beginning `### ` starts a record; everything after it is source until
-// the next marker. Five lines, in any language — that is the whole point.
-function readCorpus(text) {
-  const records = [];
-  let cur = null;
-  for (const line of text.split('\n')) {
-    if (line.startsWith('### ')) { cur = []; records.push(cur); continue; }
-    if (cur) cur.push(line);
-  }
-  return records.map((lines) => lines.join('\n').replace(/\n$/, ''));
-}
-
-// The rendering bin/sel uses, so a documentation example can be pasted into the
-// CLI and produce exactly what the documentation claims.
-function render(v) {
-  if (v.size() === 0) {
-    if (v.kind === 'TEXT') return v.scalar;
-    if (v.kind === 'BOOL') return v.scalar ? 'TRUE' : 'FALSE';
-    if (v.kind === 'BIN') return `bin:${v.dump().slice(1)}`;
-  }
-  return v.dump();
 }
 
 const programs = readCorpus(text);

@@ -11,27 +11,10 @@ import (
 	"os"
 	"strings"
 
+	"github.com/nathanjel/sel/go/internal/harness"
 	"github.com/nathanjel/sel/go/internal/version"
 	"github.com/nathanjel/sel/go/sel"
 )
-
-func show(v *sel.Value) string {
-	if v.Size() == 0 {
-		if v.Kind() == sel.KindText {
-			return v.Scalar()
-		}
-		if v.Kind() == sel.KindBool {
-			if v.AsBool(sel.Pos{}) {
-				return "TRUE"
-			}
-			return "FALSE"
-		}
-		if v.Kind() == sel.KindBin {
-			return "bin:" + v.Dump()[1:]
-		}
-	}
-	return v.Dump()
-}
 
 func report(e *sel.SelError) {
 	fmt.Fprintf(os.Stderr, "%s at line %d column %d: %s\n", e.Code, e.Line(), e.Col(), e.Message)
@@ -82,7 +65,7 @@ func run(source string, root *sel.Value, deps bool) (ok bool) {
 		report(err.(*sel.SelError))
 		return false
 	}
-	fmt.Println(show(val))
+	fmt.Println(harness.Show(val))
 	return true
 }
 

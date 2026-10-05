@@ -219,6 +219,15 @@ writes, and it is what `check-docs.sh` compares against. Any newline in a
 rendered value is escaped to `\n` so the one-line-per-program protocol holds even
 when a program returns multi-line text.
 
+Each host keeps ONE copy of that rendering, which its CLI and its batch runner
+both call, so the two cannot drift: `js/bin/show.mjs`, `php/bin/harness.php`,
+`cpp/bin/show.hpp`, `lisp/bin/boot.lisp` (`render`), `python/sel/_cli.py`
+(`show`), `go/internal/harness/show.go` and `rust/src/bin/show.rs` (which the
+harness crate compiles too). The corpus reader is likewise one per host
+(`js/bin/read-input.mjs`, `php/bin/harness.php`, `cpp/bin/read_file.hpp`,
+`lisp/bin/boot.lisp`, `python/bin/_harness.py`, `go/internal/harness`,
+`rust/dev/src/lib.rs`), shared by `batch` and `sqlfuzz`.
+
 A `!HOST` line is always a bug: it means the implementation crashed instead of
 raising a `SelError`.
 

@@ -12,7 +12,10 @@
 // exits 1 with `sel: cannot read <path>: ...`; an evaluation error exits 1 with
 // `E_CODE at line L column C: message`.
 
-use sel_lang::{compile, decode_utf8_source, function_names, Context, Kind, Pos, SelError, Value};
+mod show;
+
+use sel_lang::{compile, decode_utf8_source, function_names, Context, SelError, Value};
+use show::show;
 use std::ffi::OsString;
 use std::io::{self, BufRead, IsTerminal, Write};
 
@@ -24,28 +27,6 @@ usage: sel -e EXPR          evaluate EXPR and print the result
        sel                  read-eval-print loop on stdin
        sel --help | --version
 ";
-
-fn show(v: &Value) -> String {
-    if v.size() == 0 {
-        if v.kind() == Kind::Text {
-            return v.scalar();
-        }
-        if v.kind() == Kind::Bool {
-            return if v.as_bool(Pos::default()).unwrap_or(false) {
-                "TRUE".to_string()
-            } else {
-                "FALSE".to_string()
-            };
-        }
-        if v.kind() == Kind::Bin {
-            let d = v.dump().unwrap_or_default();
-            if !d.is_empty() {
-                return format!("bin:{}", &d[1..]);
-            }
-        }
-    }
-    v.dump().unwrap_or_default()
-}
 
 fn report(e: &SelError) {
     eprintln!("{} at line {} column {}: {}", e.code, e.pos.line, e.pos.col, e.message);

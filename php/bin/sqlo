@@ -30,6 +30,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/../src/Sql/bootstrap.php';
+require_once __DIR__ . '/harness.php';
 require_once __DIR__ . '/json-bindings.php';
 require_once __DIR__ . '/hybrid-parity.php';
 
@@ -42,6 +43,9 @@ use Sel\Sql\Map;
 use Sel\Sql\Sql;
 use Sel\Sql\SqlError;
 use Sel\Value;
+
+use function SelBin\exec_fixture;
+use function SelBin\read_corpus;
 
 const ORACLE = __DIR__ . '/../../sql/oracle';
 
@@ -489,11 +493,9 @@ function run_rows(PDO $pdo, string $dialect, bool $verbose, string $label = ''):
     // The driver owns the fixture. Reconstructing it every run is what stops the
     // check depending on a database somebody made at a shell once.
     //
-    // Comments come out before the split, not after: a statement preceded by a
-    // comment block otherwise arrives with the comment attached, and a "skip
-    // anything starting with --" rule then drops the statement with it. That is
-    // how this loaded nothing at all the first time, and it did not error — it
-    // reported nine rules disagreeing over zero rows.
+    // exec_fixture strips comments before the split; splitting first is how this
+    // loaded nothing at all the first time, and it did not error — it reported
+    // nine rules disagreeing over zero rows.
     // Per dialect: the DDL is the one thing in this file that cannot be
     // portable, because the type systems are what differ.
     $fixture = is_array($spec['fixture'])
@@ -503,16 +505,7 @@ function run_rows(PDO $pdo, string $dialect, bool $verbose, string $label = ''):
         echo "{$label}rows: no fixture for {$dialect}, skipped\n";
         return ['failed' => 0];
     }
-    $sql = (string) file_get_contents(ORACLE . '/' . $fixture);
-    $sql = preg_replace('/^\s*--.*$/m', '', $sql) ?? '';
-    $statements = 0;
-    foreach (explode(';', $sql) as $stmt) {
-        if (trim($stmt) !== '') {
-            $pdo->exec($stmt);
-            $statements++;
-        }
-    }
-    if ($statements === 0) {
+    if (exec_fixture($pdo, ORACLE . '/' . $fixture) === 0) {
         throw new RuntimeException("{$fixture} contained no statements");
     }
 
@@ -689,16 +682,7 @@ function run_statements(PDO $pdo, string $dialect, bool $verbose, string $label 
         echo "{$label}statements: no fixture for {$dialect}, skipped\n";
         return ['failed' => 0];
     }
-    $sql = (string) file_get_contents(ORACLE . '/' . $fixture);
-    $sql = preg_replace('/^\s*--.*$/m', '', $sql) ?? '';
-    $statements = 0;
-    foreach (explode(';', $sql) as $stmt) {
-        if (trim($stmt) !== '') {
-            $pdo->exec($stmt);
-            $statements++;
-        }
-    }
-    if ($statements === 0) {
+    if (exec_fixture($pdo, ORACLE . '/' . $fixture) === 0) {
         throw new RuntimeException("{$fixture} contained no statements");
     }
     $bindings = bindings_from_json($spec['bindings'], $label);
@@ -846,12 +830,7 @@ function run_cross(PDO $pdo, string $dialect, bool $verbose, string $label = '')
         echo "{$label}cross: no fixture for {$dialect}, skipped\n";
         return ['failed' => 0];
     }
-    $sql = preg_replace('/^\s*--.*$/m', '', (string) file_get_contents($fixture)) ?? '';
-    foreach (explode(';', $sql) as $stmt) {
-        if (trim($stmt) !== '') {
-            $pdo->exec($stmt);
-        }
-    }
+    exec_fixture($pdo, $fixture);
     $load = static function (string $query) use ($pdo): array {
         $rows = [];
         foreach ($pdo->query($query)->fetchAll(PDO::FETCH_ASSOC) as $r) {
@@ -863,21 +842,16 @@ function run_cross(PDO $pdo, string $dialect, bool $verbose, string $label = '')
         'ORDERS' => $load('SELECT id, customer_id, amount, name FROM orders ORDER BY id'),
         'CUSTOMERS' => $load('SELECT id, name FROM customers ORDER BY id'),
     ];
-    $programs = [];
+    // The corpus rule every host's sqlfuzz reads cross.selc by (exactly one
+    // trailing newline off each record), and the record names beside it.
+    $selc = (string) file_get_contents(ORACLE . '/cross.selc');
+    $programs = read_corpus($selc);
     $names = [];
-    $cur = null;
-    foreach (explode("\n", (string) file_get_contents(ORACLE . '/cross.selc')) as $line) {
+    foreach (explode("\n", $selc) as $line) {
         if (str_starts_with($line, '### ')) {
             $names[] = trim(substr($line, 4));
-            $programs[] = '';
-            $cur = count($programs) - 1;
-            continue;
-        }
-        if ($cur !== null) {
-            $programs[$cur] .= ($programs[$cur] === '' ? '' : "\n") . $line;
         }
     }
-    $programs = array_map(static fn ($p) => rtrim($p, "\n"), $programs);
 
     // The answers to check: PHP's in-process translation, then every host file.
     $bindings = [
@@ -1100,23 +1074,7 @@ function load_context(PDO $pdo, array $spec): array
  */
 function run_fuzz(PDO $pdo, string $dialect, string $corpus, bool $verbose, string $label = ''): array
 {
-    $programs = [];
-    $cur = null;
-    foreach (explode("\n", (string) file_get_contents($corpus)) as $line) {
-        if (str_starts_with($line, '### ')) {
-            if ($cur !== null) {
-                $programs[] = rtrim($cur, "\n");
-            }
-            $cur = '';
-            continue;
-        }
-        if ($cur !== null) {
-            $cur .= $line . "\n";
-        }
-    }
-    if ($cur !== null) {
-        $programs[] = rtrim($cur, "\n");
-    }
+    $programs = read_corpus((string) file_get_contents($corpus));
     if ($programs === []) {
         throw new RuntimeException("{$corpus} holds no programs");
     }

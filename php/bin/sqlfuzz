@@ -11,6 +11,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/../src/Sql/bootstrap.php';
+require_once __DIR__ . '/harness.php';
 
 use Sel\Sel;
 use Sel\SelError;
@@ -18,30 +19,8 @@ use Sel\Sql\Binding;
 use Sel\Sql\Sql;
 use Sel\Sql\SqlError;
 
-/** @return list<string> */
-function readCorpus(string $text): array
-{
-    $records = [];
-    $cur = null;
-    // explode on "\n" and remove exactly one trailing newline: a regex strip
-    // would take two, because PCRE's `$` also matches before a final newline.
-    foreach (explode("\n", $text) as $line) {
-        if (str_starts_with($line, '### ')) {
-            $records[] = [];
-            $cur = count($records) - 1;
-            continue;
-        }
-        if ($cur !== null) {
-            $records[$cur][] = $line;
-        }
-    }
-    $out = [];
-    foreach ($records as $lines) {
-        $joined = implode("\n", $lines);
-        $out[] = str_ends_with($joined, "\n") ? substr($joined, 0, -1) : $joined;
-    }
-    return $out;
-}
+use function SelBin\read_corpus;
+use function SelBin\read_file_or_exit;
 
 $path = $argv[1] ?? null;
 $dialect = $argv[2] ?? 'mariadb';
@@ -79,8 +58,15 @@ $attempt = static function (callable $fn): string {
         return '!HOST ' . get_class($e) . ': ' . $e->getMessage();
     }
 };
+// Exactly one trailing newline comes off each record; a CR anywhere is program
+// text. A path that cannot be read, or a corpus with no record, is a refusal.
+$corpus = read_corpus(read_file_or_exit($path));
+if ($corpus === []) {
+    fwrite(STDERR, "no programs in {$path}\n");
+    exit(1);
+}
 $lines = [];
-foreach (readCorpus((string) file_get_contents($path)) as $src) {
+foreach ($corpus as $src) {
     try {
         $program = Sel::compile($src);
     } catch (SelError $e) {

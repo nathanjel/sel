@@ -18,73 +18,18 @@ declare(strict_types=1);
 if (ini_get('memory_limit') !== '-1') ini_set('memory_limit', '1G');   // a caller's -d memory_limit=-1 stands
 
 require_once __DIR__ . '/../src/bootstrap.php';
+require_once __DIR__ . '/harness.php';
 
 use Sel\Sel;
 use Sel\SelError;
 use Sel\Utf8;
 use Sel\Value;
 
+use function SelBin\parse_selt;
+
+use const SelBin\WS;
+
 const SUITE = __DIR__ . '/../../conformance';
-
-// SEL's four whitespace characters. See conformance/README.md.
-const WS = " \t\r\n";
-
-/** @return list<array<string,mixed>> */
-function parse_selt(string $text, string $file): array
-{
-    $cases = [];
-    $cur = -1;
-    $section = null;
-    foreach (explode("\n", $text) as $idx => $line) {
-        $at = $file . ':' . ($idx + 1);
-        if (str_starts_with($line, '### ')) {
-            if (preg_match('/^###\s+name:\s*(\S+)\s*$/', $line, $m) !== 1) {
-                throw new RuntimeException("{$at}: malformed case header");
-            }
-            $cases[] = ['name' => $m[1], 'at' => $at, 'setup' => null, 'source' => null, 'expect' => null];
-            $cur = count($cases) - 1;
-            $section = null;
-            continue;
-        }
-        if ($line === '===') {
-            $cur = -1;
-            $section = null;
-            continue;
-        }
-        if (str_starts_with($line, '--- ')) {
-            if ($cur < 0) {
-                throw new RuntimeException("{$at}: section outside a case");
-            }
-            $section = trim(substr($line, 4), WS);
-            if (in_array($section, ['setup', 'source', 'expect'], true)) {
-                $cases[$cur][$section] = [];
-            } elseif ($section !== 'note') {
-                throw new RuntimeException("{$at}: unknown section {$section}");
-            }
-            continue;
-        }
-        if ($cur < 0 || $section === null || $section === 'note') {
-            continue;                              // header text, ignored
-        }
-        $cases[$cur][$section][] = $line;
-    }
-
-    foreach ($cases as &$c) {
-        if ($c['source'] === null) {
-            throw new RuntimeException("{$c['at']}: case {$c['name']} has no --- source");
-        }
-        if ($c['expect'] === null) {
-            throw new RuntimeException("{$c['at']}: case {$c['name']} has no --- expect");
-        }
-        // WS, not trim(): PHP's default set adds NUL and a vertical tab, which
-        // the other hosts' readers do not strip. Narrower than it needs to be
-        // today and the same width as everybody else, which is the point.
-        $c['setup'] = $c['setup'] === null ? null : trim(implode("\n", $c['setup']), WS);
-        $c['source'] = trim(implode("\n", $c['source']), WS);
-        $c['expect'] = trim(implode("\n", $c['expect']), WS);
-    }
-    return $cases;
-}
 
 function unescape_literal(string $lit, string $at): string
 {

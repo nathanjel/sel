@@ -11,7 +11,6 @@ position, and the final context dump must agree. Exit status is non-zero on any
 difference. A gate lane of tools/check.sh ("Python plain vs optimised").
 """
 import os
-import re
 import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -20,28 +19,16 @@ import sel                                   # noqa: E402
 from sel.eval import Context, eval_node      # noqa: E402
 from sel._stack import recursion_budget      # noqa: E402
 
-TRIM = ' \t\r\n'
+# The conformance runner's own reader, so this lane and the suite cannot read a
+# case differently. (python/bin after python/: `sel` stays the source tree's.)
+sys.path.insert(1, os.path.join(ROOT, 'python', 'bin'))
+from conformance import parse_selt           # noqa: E402
 
 
 def cases(path):
-    out, cur, sec = [], None, None
-    for line in open(path, encoding='utf-8', newline='').read().split('\n'):
-        if line.startswith('### '):
-            cur = {'name': re.search(r'name:\s*(\S+)', line).group(1), 'setup': None, 'source': []}
-            out.append(cur)
-            sec = None
-        elif line == '===':
-            cur, sec = None, None
-        elif line.startswith('--- '):
-            sec = line[4:].strip(TRIM)
-            if sec == 'setup' and cur is not None:
-                cur['setup'] = []
-        elif cur is not None and sec == 'source':
-            cur['source'].append(line)
-        elif cur is not None and sec == 'setup':
-            cur['setup'].append(line)
-    return [(c['name'], None if c['setup'] is None else '\n'.join(c['setup']).strip(TRIM),
-             '\n'.join(c['source']).strip(TRIM)) for c in out]
+    with open(path, 'rb') as fh:
+        text = fh.read().decode('utf-8')
+    return [(c['name'], c['setup'], c['source']) for c in parse_selt(text, path)]
 
 
 def observe(mode, program, root):

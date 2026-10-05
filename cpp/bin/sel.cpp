@@ -10,6 +10,7 @@
 
 #include "../sel.hpp"
 #include "read_file.hpp"
+#include "show.hpp"
 
 #include <iostream>
 #include <string>
@@ -33,6 +34,8 @@
 
 namespace {
 
+using selbin::show;
+
 constexpr const char* USAGE =
     "usage: sel [--deps] -e EXPR\n"
     "       sel [--deps] FILE\n"
@@ -44,15 +47,6 @@ constexpr const char* USAGE =
     "  --functions  print every function name\n"
     "  -h, --help   print this text\n"
     "  --version    print the version\n";
-
-std::string show(const sel::Value& v) {
-  if (v.size() == 0) {
-    if (v.kind() == sel::Kind::Text) return v.scalar();
-    if (v.kind() == sel::Kind::Bool) return v.boolean_scalar() ? "TRUE" : "FALSE";
-    if (v.kind() == sel::Kind::Bin) return "bin:" + v.dump().substr(1);
-  }
-  return v.dump();
-}
 
 void report(const sel::SelError& e) {
   std::cerr << e.code() << " at line " << e.line() << " column " << e.col() << ": " << e.message()

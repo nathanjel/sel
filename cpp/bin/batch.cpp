@@ -6,27 +6,15 @@
 
 #include "../sel.hpp"
 #include "read_file.hpp"
+// The rendering bin/sel uses (--show), so a documentation example can be
+// pasted into the CLI and produce exactly what the documentation claims.
+#include "show.hpp"
 
 #include <fstream>
 #include <iostream>
 #include <sstream>
 #include <string>
 #include <vector>
-
-namespace {
-
-// The rendering bin/sel uses, so a documentation example can be pasted into the
-// CLI and produce exactly what the documentation claims.
-std::string render(const sel::Value& v) {
-  if (v.size() == 0) {
-    if (v.kind() == sel::Kind::Text) return v.scalar();
-    if (v.kind() == sel::Kind::Bool) return v.boolean_scalar() ? "TRUE" : "FALSE";
-    if (v.kind() == sel::Kind::Bin) return "bin:" + v.dump().substr(1);
-  }
-  return v.dump();
-}
-
-}  // namespace
 
 int main(int argc, char** argv) {
   bool show = false;
@@ -53,7 +41,7 @@ int main(int argc, char** argv) {
   for (const std::string& src : corpus) {
     try {
       const sel::Value v = sel::compile(src).run();
-      lines.push_back(show ? render(v) : v.dump());
+      lines.push_back(show ? selbin::show(v) : v.dump());
     } catch (const sel::SelError& e) {
       lines.push_back(show ? "!" + e.code()
                            : "!" + e.code() + "@" + std::to_string(e.line()) + ":" +
