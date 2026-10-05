@@ -17,6 +17,7 @@ require_once __DIR__ . '/../src/Sql/bootstrap.php';
 use Sel\Sel;
 use Sel\SelError;
 use Sel\Value;
+use Sel\Sql\Fragment;
 use Sel\Sql\Map;
 use Sel\Sql\Sql;
 use Sel\Sql\SqlError;
@@ -59,6 +60,44 @@ const MIRROR_EXCEPTIONS = [
 ];
 
 /**
+ * The map entries the cases pinned so far, by dialect: pin($d, $e) records one,
+ * pin() answers them all.
+ *
+ * @return array<string, array<string,bool>>
+ */
+function pin(?string $dialect = null, ?string $entry = null): array
+{
+    static $pinned = [];
+    if ($dialect !== null && $entry !== null) {
+        $pinned[$dialect][$entry] = true;
+    }
+    return $pinned;
+}
+
+/** A translated fragment rendered the way a case's `--- as` asks. */
+function render_as(Fragment $frag, string $as, string $mode): string
+{
+    return match ($as) {
+        'condition' => $frag->asCondition($mode),
+        'statement' => $frag->asStatement($mode),
+        default => $frag->asValue($mode),
+    };
+}
+
+/**
+ * A case's `--- error`, `CODE` or `CODE line:col`, as [whole, code, line, col].
+ *
+ * @return array<int,string>
+ */
+function error_expectation(array $c): array
+{
+    if (preg_match('/^(\S+)(?:\s+(\d+):(\d+))?$/', $c['error'], $m) !== 1) {
+        throw new RuntimeException("{$c['at']}: malformed error expectation");
+    }
+    return $m;
+}
+
+/**
  * Every entry carrying a caveat must be pinned by a case.
  *
  * A caveat is the oracle being told not to fail on this entry, so the entry's
@@ -74,7 +113,7 @@ function caveat_pins(array $pinned): array
 {
     $out = [];
     foreach (Sql::dialects() as $dialect) {
-        foreach (['ops', 'funcs', 'skel'] as $section) {
+        foreach (Map::SECTIONS as $section) {
             foreach (Map::entries($dialect, $section) as $key => $entry) {
                 if (!is_array($entry) || !isset($entry['caveat'])) {
                     continue;
@@ -101,7 +140,7 @@ function mirror_parity(): array
 {
     $bad = [];
     foreach (MIRRORS as $left => $right) {
-        foreach (['ops', 'funcs', 'skel'] as $section) {
+        foreach (Map::SECTIONS as $section) {
             $l = Map::entries($left, $section);
             $r = Map::entries($right, $section);
             foreach (array_keys($l + $r) as $key) {
@@ -229,12 +268,10 @@ function run_plan_case(array $c): ?string
         if ($error === null) {
             return "expected {$c['error']}, got a " . classify_plan($plan) . ' plan';
         }
-        if (preg_match('/^(\S+)(?:\s+(\d+):(\d+))?$/', $c['error'], $m) !== 1) {
-            throw new RuntimeException("{$c['at']}: malformed error expectation");
-        }
+        $m = error_expectation($c);
         // The code alone: a plan refusal blames the bindings or the dialect,
         // not a node of the rule, so it carries no position, and the
-        // generator refuses a case that writes one (SEL-0046).
+        // generator refuses a case that writes one.
         if ($error->code !== $m[1]) {
             return "expected {$m[1]}, got {$error->code} ({$error->getMessage()})";
         }
@@ -325,11 +362,7 @@ function run_case(array $c): ?string
         $bindings = ($c['bindings'])();
         $program = Sel::compile($c['source']);
         $frag = Sql::translate($program, $dialect, $bindings, $options);
-        $sql = match ($as) {
-            'condition' => $frag->asCondition($mode),
-            'statement' => $frag->asStatement($mode),
-            default => $frag->asValue($mode),
-        };
+        $sql = render_as($frag, $as, $mode);
     } catch (SqlError $e) {
         $error = $e;
     } catch (SelError $e) {
@@ -342,7 +375,7 @@ function run_case(array $c): ?string
         // the string it emits is the only thing left holding it, and that is
         // only true if some case asserts the string. See caveat_pins().
         foreach (Map::traceOff() as $e) {
-            $GLOBALS['pinned'][$dialect][$e] = true;
+            pin($dialect, $e);
         }
     }
 
@@ -351,8 +384,7 @@ function run_case(array $c): ?string
     // SQL, or the same refusal at the same place, or the same kind of startup
     // error. A translator that keeps state between calls -- a dialect marked as
     // checked before it was checked, a parameter list that grows -- passes one
-    // translation and fails here (T10: JS-C24, PHP-C49, PY-C49, CPP-C36,
-    // LISP-C42, GO-C18).
+    // translation and fails here.
     if ($program !== null && $bindings !== null) {
         $describe = static fn (?string $s, ?SqlError $e, ?\Throwable $t): string => $t !== null
             ? get_class($t) . " ({$t->getMessage()})"
@@ -363,11 +395,7 @@ function run_case(array $c): ?string
             $thrown2 = null;
             try {
                 $frag2 = Sql::translate($program, $dialect, $bindings, $options);
-                $sql2 = match ($as) {
-                    'condition' => $frag2->asCondition($mode),
-                    'statement' => $frag2->asStatement($mode),
-                    default => $frag2->asValue($mode),
-                };
+                $sql2 = render_as($frag2, $as, $mode);
             } catch (SqlError $e) {
                 $error2 = $e;
             } catch (SelError $e) {
@@ -412,7 +440,7 @@ function run_case(array $c): ?string
     // the public full-delegation entry point, which must say exactly what
     // translate() says -- the same text, or the same refusal at the same
     // column. Two hosts ran the logical optimiser in that lane and three did
-    // not, and only a twin check can see it (review 2026-09-15 finding C).
+    // not, and only a twin check can see it.
     if ($as === 'statement' && $program !== null) {
         $twinSql = null;
         $twinError = null;
@@ -439,9 +467,7 @@ function run_case(array $c): ?string
         if ($error === null) {
             return "expected {$c['error']}, got " . var_export($sql, true);
         }
-        if (preg_match('/^(\S+)(?:\s+(\d+):(\d+))?$/', $c['error'], $m) !== 1) {
-            throw new RuntimeException("{$c['at']}: malformed error expectation");
-        }
+        $m = error_expectation($c);
         if ($error->code !== $m[1]) {
             return "expected {$m[1]}, got {$error->code} ({$error->getMessage()})";
         }
@@ -626,7 +652,7 @@ Map::defineDialect('ansi-probe', ['extends' => 'ansi', 'version' => '1', 'target
 // about the cases selected. Asserted only when every case ran; the parity check
 // below reads the shipped map, not the cases, so it runs either way.
 if ($filters === []) {
-    foreach (caveat_pins($GLOBALS['pinned'] ?? []) as $p) {
+    foreach (caveat_pins(pin()) as $p) {
         echo "UNPINNED {$p}\n";
         $suiteErrors++;
     }

@@ -30,7 +30,9 @@ namespace Sel\Sql;
 
 use Sel\Context;
 use Sel\Evaluator;
+use Sel\Limits;
 use Sel\SelError;
+use Sel\Utf8;
 use Sel\Value;
 
 final class Constants
@@ -62,7 +64,7 @@ final class Constants
 
     /**
      * Whether the node is an IF or COND whose every result is a text literal -- or,
-     * in turn, such a conditional (SEL-0057). SQL's CASE returns the literal it
+     * in turn, such a conditional. SQL's CASE returns the literal it
      * chose byte for byte, so its identity is SEL's; a number it can re-spell
      * (MariaDB types `CASE ... THEN 1 ELSE 1.0` as DECIMAL(2,1)), and a column or a
      * computation is not a literal at all. A two-argument IF's otherwise is "" (§7.2),
@@ -123,33 +125,64 @@ final class Constants
         return true;
     }
 
-    public static function identityLossBeforeGrouping(array $node, bool $needed = false): bool
+    /**
+     * Whether a step below a grouping loses the identity the grouping reads.
+     * `$needed` is what the steps above still need from a row: false at the top
+     * (nothing yet), a list of field names a projection must carry through, or
+     * true when the whole row is needed.
+     *
+     * @param array<string,mixed> $node
+     * @param bool|list<string> $needed
+     */
+    public static function identityLossBeforeGrouping(array $node, bool|array $needed = false): bool
     {
         while ($node['t'] === 'call' && !empty($node['args'])) {
-            if ($needed && ($node['name'] === 'MAP' || ($node['name'] === 'BUCKET' && count($node['args']) > 2))) {
-                $body = $node['args'][count($node['args']) - 1]; $values = [$body];
+            $name = $node['name'];
+            $args = $node['args'];
+            if ($needed && ($name === 'MAP' || ($name === 'BUCKET' && count($args) > 2))) {
+                $body = $args[count($args) - 1];
+                $values = [$body];
                 if (is_array($needed) && $body['t'] === 'call' && $body['name'] === 'RECORD') {
-                    $found = []; $values = [];
+                    $found = [];
+                    $values = [];
                     for ($i = 0; $i + 1 < count($body['args']); $i += 2) {
                         $k = $body['args'][$i];
-                        if ($k['t'] === 'text' && in_array($k['v'], $needed, true)) { $found[] = $k['v']; $values[] = $body['args'][$i + 1]; }
+                        if ($k['t'] === 'text' && in_array($k['v'], $needed, true)) {
+                            $found[] = $k['v'];
+                            $values[] = $body['args'][$i + 1];
+                        }
                     }
-                    foreach ($needed as $k) if (!in_array($k, $found, true)) return true;
+                    foreach ($needed as $k) {
+                        if (!in_array($k, $found, true)) {
+                            return true;
+                        }
+                    }
                 }
-                foreach ($values as $v) if (!self::identityProjection($v)) return true;
+                foreach ($values as $v) {
+                    if (!self::identityProjection($v)) {
+                        return true;
+                    }
+                }
                 $needed = [];
                 foreach ($values as $v) {
                     $fields = self::identityInputs($v);
-                    $needed = $needed === true || $fields === true ? true : array_values(array_unique([...$needed, ...$fields], SORT_STRING));
+                    $needed = $needed === true || $fields === true
+                        ? true
+                        : array_values(array_unique([...$needed, ...$fields], SORT_STRING));
                 }
             }
-            if ($node['name'] === 'BUCKET') $needed = self::identityInputs($node['args'][count($node['args']) === 4 ? 2 : 1]);
-            if (in_array($node['name'], ['DISTINCT', 'DEDUPE'], true)) $needed = true;
-            if (is_array($needed) && in_array($node['name'], ['LINK', 'LINK_LEFT'], true) && $node['args'][1]['t'] === 'var') {
-                $right = count($node['args']) === 5 ? $node['args'][3]['name'] : $node['args'][1]['name'];
-                $needed = array_values(array_filter($needed, fn ($k) => strtr($k, 'abcdefghijklmnopqrstuvwxyz', 'ABCDEFGHIJKLMNOPQRSTUVWXYZ') !== $right));
+            if ($name === 'BUCKET') {
+                $needed = self::identityInputs($args[count($args) === 4 ? 2 : 1]);
             }
-            $node = $node['args'][0];
+            if ($name === 'DISTINCT' || $name === 'DEDUPE') {
+                $needed = true;
+            }
+            if (is_array($needed) && ($name === 'LINK' || $name === 'LINK_LEFT') && $args[1]['t'] === 'var') {
+                $right = count($args) === 5 ? $args[3]['name'] : $args[1]['name'];
+                $needed = array_values(array_filter($needed,
+                    static fn ($k): bool => Utf8::upper((string) $k) !== $right));
+            }
+            $node = $args[0];
         }
         return false;
     }
@@ -410,7 +443,7 @@ final class Constants
         if ($e->code === 'E_DEPTH') {
             refuse('E_SQL_DEPTH',
                 'this expression nests deeper than SEL will evaluate ('
-                . \Sel\MAX_DEPTH . '), so there is nothing to translate; '
+                . Limits::MAX_DEPTH . '), so there is nothing to translate; '
                 . 'the evaluator answers E_DEPTH for it',
                 $e->line > 0
                     ? ['line' => $e->line, 'col' => $e->col, 'offset' => $e->offset]

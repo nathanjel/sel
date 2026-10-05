@@ -48,7 +48,7 @@ $dialect = $argv[2] ?? 'mariadb';
 // `statement`: only translateStatement's inline SQL; see js/bin/sqlfuzz.mjs.
 $mode = $argv[3] ?? 'all';
 if ($path === null) {
-    fwrite(STDERR, "usage: sqlfuzz corpus.selc [dialect]\n");
+    fwrite(STDERR, "usage: sqlfuzz corpus.selc [dialect] [all|statement]\n");
     exit(2);
 }
 
@@ -94,24 +94,17 @@ foreach (readCorpus((string) file_get_contents($path)) as $src) {
         $lines[] = $attempt(static fn () => Sql::translateStatement($program, $dialect, $bindings)->asStatement());
         continue;
     }
-    try {
-        // Three renderings; see js/bin/sqlfuzz.mjs for why.
-        $lines[] = implode(' || ', [
-            $attempt(static fn () => $render(Sql::translate($program, $dialect, $bindings))),
-            $attempt(static fn () => $render(Sql::translateStatement($program, $dialect, $bindings))),
-            $attempt(static function () use ($program, $dialect, $bindings): string {
-                $plan = Sql::planHybrid($program, $dialect, $bindings);
-                $kind = $plan->pureSql ? 'pure_sql' : ($plan->pureMemory ? 'pure_memory' : 'hybrid');
-                return $plan->sqlStatement ? "$kind " . $plan->sqlStatement->asStatement('params') : $kind;
-            }),
-        ]);
-    } catch (SqlError $e) {
-        $lines[] = "!{$e->code}@{$e->line}:{$e->col}";
-    } catch (SelError $e) {
-        $lines[] = "!SEL {$e->code}@{$e->line}:{$e->col}";
-    } catch (\Throwable $e) {
-        $lines[] = '!HOST ' . get_class($e) . ': ' . $e->getMessage();
-    }
+    // Three renderings; see js/bin/sqlfuzz.mjs for why. $attempt turns every
+    // outcome of each into its line, so nothing escapes to this loop.
+    $lines[] = implode(' || ', [
+        $attempt(static fn () => $render(Sql::translate($program, $dialect, $bindings))),
+        $attempt(static fn () => $render(Sql::translateStatement($program, $dialect, $bindings))),
+        $attempt(static function () use ($program, $dialect, $bindings): string {
+            $plan = Sql::planHybrid($program, $dialect, $bindings);
+            $kind = $plan->pureSql ? 'pure_sql' : ($plan->pureMemory ? 'pure_memory' : 'hybrid');
+            return $plan->sqlStatement ? "$kind " . $plan->sqlStatement->asStatement('params') : $kind;
+        }),
+    ]);
 }
 
 echo implode("\n", array_map(fn ($l) => str_replace("\n", '\\n', $l), $lines)), "\n";

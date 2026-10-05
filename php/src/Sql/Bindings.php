@@ -7,6 +7,7 @@ declare(strict_types=1);
 
 namespace Sel\Sql;
 
+use Sel\Utf8;
 
 final class Bindings
 {
@@ -35,7 +36,7 @@ final class Bindings
                     . '; build one with Binding::column(), ::columns(), ::relation(), '
                     . '::relationQuery(), ::raw() or ::value()');
             }
-            $key = \Sel\Utf8::upper((string) $name);
+            $key = Utf8::upper((string) $name);
             if (isset($this->map[$key])) {
                 throw new SqlError('E_SQL_BINDING',
                     "two bindings differ only by case ({$name}); SEL reads them as one name");
@@ -46,7 +47,7 @@ final class Bindings
 
     public function has(string $name): bool
     {
-        return isset($this->map[\Sel\Utf8::upper($name)]);
+        return isset($this->map[Utf8::upper($name)]);
     }
 
     /**
@@ -55,7 +56,7 @@ final class Bindings
      */
     public function get(string $name, ?array $pos = null): array
     {
-        $key = \Sel\Utf8::upper($name);
+        $key = Utf8::upper($name);
         if (!isset($this->map[$key])) {
             $known = array_keys($this->map);
             sort($known);
@@ -80,9 +81,10 @@ final class Bindings
      * in one expression would produce a subquery correlated to the wrong rows,
      * and the host chose the aliases, so the host can fix them.
      *
-     * @param array{line:int,col:int,offset:int}|null $pos
+     * The refusal blames no node of the rule: the aliases are the bindings'.
+     * (An alias is always a string here -- Binding::relation() checks it.)
      */
-    public function checkAliases(?array $pos = null): void
+    public function checkAliases(): void
     {
         $seen = [];
         foreach ($this->map as $name => $b) {
@@ -93,14 +95,6 @@ final class Bindings
             // TypeError — not a SqlError, so tryTranslate() did not catch it and
             // a host using the refusal-tolerant API got a fatal instead of null.
             $alias = $b['alias'] ?? null;
-            // Same class as the raw `from` above and missed by the same pass: an
-            // array alias reached `isset($seen[$alias])` and raised a TypeError,
-            // which tryTranslate() does not catch.
-            if ($alias !== null && !is_string($alias)) {
-                refuse('E_SQL_BINDING',
-                    "the relation binding for {$name} has an alias that is not a string",
-                    $pos);
-            }
             if ($alias === null) {
                 $alias = is_array($b['from'])
                     ? (string) ($b['from']['raw'] ?? '')
@@ -108,11 +102,11 @@ final class Bindings
             }
             // ASCII case-insensitively: SQLite (and, by platform, the MySQL family) reads `o`
             // and `O` as one alias, so two relations under them collide on the server.
-            $aliasKey = \Sel\Utf8::upper($alias);
+            $aliasKey = Utf8::upper($alias);
             if (isset($seen[$aliasKey])) {
                 refuse('E_SQL_BINDING',
                     "relations {$seen[$aliasKey]} and {$name} share the alias {$alias}; "
-                    . 'give each one its own', $pos);
+                    . 'give each one its own');
             }
             $seen[$aliasKey] = $name;
         }

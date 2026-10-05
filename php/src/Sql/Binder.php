@@ -1,10 +1,13 @@
 <?php
 // What an aggregate binder names for the duration of one element.
 //
-// Three shapes, matching the three iteration shapes of docs/internals/sql-translation.md
-// §7, plus one that exists only to carry a refusal — so that `_K` inside a
-// relation body fails saying rows have no key, rather than falling through to
-// the bindings map and being reported as an unbound variable.
+// One shape per thing a name can stand for inside an aggregate or a statement
+// (the constants below): an element of a static list, a column, a relation's
+// row -- the three iteration shapes of docs/internals/sql-translation.md §7 --
+// plus a group key, a bucket's members, a bucket's projected record, and NONE,
+// which exists only to carry a refusal: so that `_K` inside a relation body
+// fails saying rows have no key, rather than falling through to the bindings
+// map and being reported as an unbound variable.
 
 declare(strict_types=1);
 
@@ -94,7 +97,10 @@ final class Binder
         return new self(self::GROUP, $relation);
     }
 
-    /** @param array<string,mixed> $relation @param list<array<string,mixed>> $projections */
+    /**
+     * @param array<string,mixed> $relation
+     * @param list<array<string,mixed>> $projections
+     */
     public static function projected(array $relation, array $projections): self
     {
         return new self(self::PROJECTED, ['relation' => $relation, 'projections' => $projections]);

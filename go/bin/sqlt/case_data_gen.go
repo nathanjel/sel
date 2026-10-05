@@ -4872,36 +4872,31 @@ func c734Bind() map[string]*sql.Binding {
 
 func c735Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"ORDERS": bindRelation("orders", "o", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "CUSTOMER_ID", Binding: bindCol("customer_id", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "AMOUNT", Binding: bindCol("amount", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "NAME", Binding: bindCol("name", "o", sql.KindText, false, false, false, "")}}, "", "", ""),
-		"CUSTOMERS": bindRelation("customers", "c", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "c", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "NAME", Binding: bindCol("name", "c", sql.KindText, false, false, false, "")}}, "", "", ""),
+		"ORDERS": bindRelation("orders", "o", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "NAME", Binding: bindCol("name", "o", sql.KindText, false, false, false, "")}}, "", "", ""),
 	}
 }
 
 func c736Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"ORDERS": bindRelation("orders", "o", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "CUSTOMER_ID", Binding: bindCol("customer_id", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "AMOUNT", Binding: bindCol("amount", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "NAME", Binding: bindCol("name", "o", sql.KindText, false, false, false, "")}}, "", "", ""),
-		"CUSTOMERS": bindRelation("customers", "c", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "c", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "NAME", Binding: bindCol("name", "c", sql.KindText, false, false, false, "")}}, "", "", ""),
+		"ORDERS": bindRelation("orders", "o", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "NAME", Binding: bindCol("name", "o", sql.KindText, false, false, false, "")}}, "", "", ""),
 	}
 }
 
 func c737Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"ORDERS": bindRelation("orders", "o", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "CUSTOMER_ID", Binding: bindCol("customer_id", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "AMOUNT", Binding: bindCol("amount", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "NAME", Binding: bindCol("name", "o", sql.KindText, false, false, false, "")}}, "", "", ""),
-		"CUSTOMERS": bindRelation("customers", "c", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "c", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "NAME", Binding: bindCol("name", "c", sql.KindText, false, false, false, "")}}, "", "", ""),
+		"ORDERS": bindRelation("orders", "o", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "NAME", Binding: bindCol("name", "o", sql.KindText, false, false, false, "")}}, "", "", ""),
 	}
 }
 
 func c738Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"ORDERS": bindRelation("orders", "o", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "CUSTOMER_ID", Binding: bindCol("customer_id", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "AMOUNT", Binding: bindCol("amount", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "NAME", Binding: bindCol("name", "o", sql.KindText, false, false, false, "")}}, "", "", ""),
-		"CUSTOMERS": bindRelation("customers", "c", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "c", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "NAME", Binding: bindCol("name", "c", sql.KindText, false, false, false, "")}}, "", "", ""),
+		"ORDERS": bindRelation("orders", "o", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "o", sql.KindNum, false, false, false, "")}}, "", "", ""),
 	}
 }
 
 func c739Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"ORDERS": bindRelation("orders", "o", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "CUSTOMER_ID", Binding: bindCol("customer_id", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "AMOUNT", Binding: bindCol("amount", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "NAME", Binding: bindCol("name", "o", sql.KindText, false, false, false, "")}}, "", "", ""),
-		"CUSTOMERS": bindRelation("customers", "c", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "c", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "NAME", Binding: bindCol("name", "c", sql.KindText, false, false, false, "")}}, "", "", ""),
+		"ORDERS": bindRelation("orders", "o", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "o", sql.KindNum, false, false, false, "")}}, "", "", ""),
 	}
 }
 
@@ -4998,57 +4993,57 @@ func c752Bind() map[string]*sql.Binding {
 
 func c753Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
+		"ORDERS": bindRelation("orders", "o", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "CUSTOMER_ID", Binding: bindCol("customer_id", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "AMOUNT", Binding: bindCol("amount", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "NAME", Binding: bindCol("name", "o", sql.KindText, false, false, false, "")}}, "", "", ""),
+		"CUSTOMERS": bindRelation("customers", "c", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "c", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "NAME", Binding: bindCol("name", "c", sql.KindText, false, false, false, "")}}, "", "", ""),
+	}
+}
+
+func c754Bind() map[string]*sql.Binding {
+	return map[string]*sql.Binding{
+		"ORDERS": bindRelation("orders", "o", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "CUSTOMER_ID", Binding: bindCol("customer_id", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "AMOUNT", Binding: bindCol("amount", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "NAME", Binding: bindCol("name", "o", sql.KindText, false, false, false, "")}}, "", "", ""),
+		"CUSTOMERS": bindRelation("customers", "c", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "c", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "NAME", Binding: bindCol("name", "c", sql.KindText, false, false, false, "")}}, "", "", ""),
+	}
+}
+
+func c755Bind() map[string]*sql.Binding {
+	return map[string]*sql.Binding{
+		"ORDERS": bindRelation("orders", "o", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "CUSTOMER_ID", Binding: bindCol("customer_id", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "AMOUNT", Binding: bindCol("amount", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "NAME", Binding: bindCol("name", "o", sql.KindText, false, false, false, "")}}, "", "", ""),
+		"CUSTOMERS": bindRelation("customers", "c", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "c", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "NAME", Binding: bindCol("name", "c", sql.KindText, false, false, false, "")}}, "", "", ""),
+	}
+}
+
+func c756Bind() map[string]*sql.Binding {
+	return map[string]*sql.Binding{
+		"ORDERS": bindRelation("orders", "o", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "CUSTOMER_ID", Binding: bindCol("customer_id", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "AMOUNT", Binding: bindCol("amount", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "NAME", Binding: bindCol("name", "o", sql.KindText, false, false, false, "")}}, "", "", ""),
+		"CUSTOMERS": bindRelation("customers", "c", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "c", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "NAME", Binding: bindCol("name", "c", sql.KindText, false, false, false, "")}}, "", "", ""),
+	}
+}
+
+func c757Bind() map[string]*sql.Binding {
+	return map[string]*sql.Binding{
+		"ORDERS": bindRelation("orders", "o", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "CUSTOMER_ID", Binding: bindCol("customer_id", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "AMOUNT", Binding: bindCol("amount", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "NAME", Binding: bindCol("name", "o", sql.KindText, false, false, false, "")}}, "", "", ""),
+		"CUSTOMERS": bindRelation("customers", "c", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "c", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "NAME", Binding: bindCol("name", "c", sql.KindText, false, false, false, "")}}, "", "", ""),
+	}
+}
+
+func c758Bind() map[string]*sql.Binding {
+	return map[string]*sql.Binding{
 		"ORDERS": bindRelation("orders", "o", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "CUSTOMER_ID", Binding: bindCol("customer_id", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "AMOUNT", Binding: bindCol("amount", "", sql.KindNum, false, false, false, "")}}, "", "", ""),
 		"CUSTOMERS": bindRelation("customers", "c", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "NAME", Binding: bindCol("name", "", sql.KindText, false, false, false, "")}}, "", "", ""),
 	}
 }
 
-func c754Bind() map[string]*sql.Binding {
+func c759Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
 		"ORDERS": bindRelation("orders", "", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "CUSTOMER_ID", Binding: bindCol("customer_id", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "AMOUNT", Binding: bindCol("amount", "", sql.KindNum, false, false, false, "")}}, "", "", ""),
 		"CUSTOMERS": bindRelation("customers", "", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "NAME", Binding: bindCol("name", "", sql.KindText, false, false, false, "")}}, "", "", ""),
 	}
 }
 
-func c755Bind() map[string]*sql.Binding {
+func c760Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
 		"ORDERS": bindRelation("orders", "o", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "CUSTOMER_ID", Binding: bindCol("customer_id", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "AMOUNT", Binding: bindCol("amount", "", sql.KindNum, false, false, false, "")}}, "", "", ""),
 		"CUSTOMERS": bindRelation("customers", "c", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "NAME", Binding: bindCol("name", "", sql.KindText, false, false, false, "")}}, "", "", ""),
-	}
-}
-
-func c756Bind() map[string]*sql.Binding {
-	return map[string]*sql.Binding{
-		"R": bindRelation("r", "r", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "VAL", Binding: bindCol("val", "", sql.KindNum, false, false, false, "")}}, "", "", ""),
-		"S": bindRelation("s", "s", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "VAL", Binding: bindCol("val", "", sql.KindNum, false, false, false, "")}}, "", "", ""),
-	}
-}
-
-func c757Bind() map[string]*sql.Binding {
-	return map[string]*sql.Binding{
-		"R": bindRelation("r", "r", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "VAL", Binding: bindCol("val", "", sql.KindNum, false, false, false, "")}}, "", "", ""),
-		"S": bindRelation("s", "s", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "VAL", Binding: bindCol("val", "", sql.KindNum, false, false, false, "")}}, "", "", ""),
-	}
-}
-
-func c758Bind() map[string]*sql.Binding {
-	return map[string]*sql.Binding{
-		"R": bindRelation("r", "r", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "VAL", Binding: bindCol("val", "", sql.KindNum, false, false, false, "")}}, "", "", ""),
-		"S": bindRelation("s", "s", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "VAL", Binding: bindCol("val", "", sql.KindNum, false, false, false, "")}}, "", "", ""),
-	}
-}
-
-func c759Bind() map[string]*sql.Binding {
-	return map[string]*sql.Binding{
-		"R": bindRelation("r", "r", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "VAL", Binding: bindCol("val", "", sql.KindNum, false, false, false, "")}}, "", "", ""),
-		"S": bindRelation("s", "s", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "VAL", Binding: bindCol("val", "", sql.KindNum, false, false, false, "")}}, "", "", ""),
-	}
-}
-
-func c760Bind() map[string]*sql.Binding {
-	return map[string]*sql.Binding{
-		"R": bindRelation("r", "r", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "VAL", Binding: bindCol("val", "", sql.KindNum, false, false, false, "")}}, "", "", ""),
-		"S": bindRelation("s", "s", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "VAL", Binding: bindCol("val", "", sql.KindNum, false, false, false, "")}}, "", "", ""),
 	}
 }
 
@@ -5103,31 +5098,36 @@ func c767Bind() map[string]*sql.Binding {
 
 func c768Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"ITEMS": bindRelation("items", "", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "", sql.KindNum, false, false, false, "")}}, "", "", ""),
+		"R": bindRelation("r", "r", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "VAL", Binding: bindCol("val", "", sql.KindNum, false, false, false, "")}}, "", "", ""),
+		"S": bindRelation("s", "s", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "VAL", Binding: bindCol("val", "", sql.KindNum, false, false, false, "")}}, "", "", ""),
 	}
 }
 
 func c769Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"ITEMS": bindRelation("items", "", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "", sql.KindNum, false, false, false, "")}}, "", "", ""),
+		"R": bindRelation("r", "r", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "VAL", Binding: bindCol("val", "", sql.KindNum, false, false, false, "")}}, "", "", ""),
+		"S": bindRelation("s", "s", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "VAL", Binding: bindCol("val", "", sql.KindNum, false, false, false, "")}}, "", "", ""),
 	}
 }
 
 func c770Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"ITEMS": bindRelation("items", "", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "", sql.KindNum, false, false, false, "")}}, "", "", ""),
+		"R": bindRelation("r", "r", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "VAL", Binding: bindCol("val", "", sql.KindNum, false, false, false, "")}}, "", "", ""),
+		"S": bindRelation("s", "s", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "VAL", Binding: bindCol("val", "", sql.KindNum, false, false, false, "")}}, "", "", ""),
 	}
 }
 
 func c771Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"ITEMS": bindRelation("items", "", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "", sql.KindNum, false, false, false, "")}}, "", "", ""),
+		"R": bindRelation("r", "r", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "VAL", Binding: bindCol("val", "", sql.KindNum, false, false, false, "")}}, "", "", ""),
+		"S": bindRelation("s", "s", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "VAL", Binding: bindCol("val", "", sql.KindNum, false, false, false, "")}}, "", "", ""),
 	}
 }
 
 func c772Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"ITEMS": bindRelation("items", "", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "", sql.KindNum, false, false, false, "")}}, "", "", ""),
+		"R": bindRelation("r", "r", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "VAL", Binding: bindCol("val", "", sql.KindNum, false, false, false, "")}}, "", "", ""),
+		"S": bindRelation("s", "s", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "VAL", Binding: bindCol("val", "", sql.KindNum, false, false, false, "")}}, "", "", ""),
 	}
 }
 
@@ -5229,61 +5229,61 @@ func c788Bind() map[string]*sql.Binding {
 
 func c789Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"ITEMS": bindRelation("items", "", []sql.FieldEntry{}, "", "", ""),
+		"ITEMS": bindRelation("items", "", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "", sql.KindNum, false, false, false, "")}}, "", "", ""),
 	}
 }
 
 func c790Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"ITEMS": bindRelation("items", "", []sql.FieldEntry{}, "", "", ""),
+		"ITEMS": bindRelation("items", "", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "", sql.KindNum, false, false, false, "")}}, "", "", ""),
 	}
 }
 
 func c791Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"ITEMS": bindRelation("items", "", []sql.FieldEntry{}, "", "", ""),
+		"ITEMS": bindRelation("items", "", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "", sql.KindNum, false, false, false, "")}}, "", "", ""),
 	}
 }
 
 func c792Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"CAT": bindCol("cat", "", sql.KindText, false, true, false, ""),
+		"ITEMS": bindRelation("items", "", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "", sql.KindNum, false, false, false, "")}}, "", "", ""),
 	}
 }
 
 func c793Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"CAT": bindCol("cat", "", sql.KindText, false, true, false, ""),
+		"ITEMS": bindRelation("items", "", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "", sql.KindNum, false, false, false, "")}}, "", "", ""),
 	}
 }
 
 func c794Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"R": bindRelation("r", "", []sql.FieldEntry{sql.FieldEntry{Name: "CAT", Binding: bindCol("cat", "", sql.KindText, false, false, false, "")}}, "", "", ""),
+		"ITEMS": bindRelation("items", "", []sql.FieldEntry{}, "", "", ""),
 	}
 }
 
 func c795Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"CAT": bindCol("cat", "", sql.KindText, false, true, false, ""),
+		"ITEMS": bindRelation("items", "", []sql.FieldEntry{}, "", "", ""),
 	}
 }
 
 func c796Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"CAT": bindCol("cat", "", sql.KindText, false, true, false, ""),
+		"ITEMS": bindRelation("items", "", []sql.FieldEntry{}, "", "", ""),
 	}
 }
 
 func c797Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"R": bindRelation("r", "", []sql.FieldEntry{sql.FieldEntry{Name: "CAT", Binding: bindCol("cat", "", sql.KindText, false, false, false, "")}}, "", "", ""),
+		"CAT": bindCol("cat", "", sql.KindText, false, true, false, ""),
 	}
 }
 
 func c798Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"R": bindRelation("r", "", []sql.FieldEntry{sql.FieldEntry{Name: "CAT", Binding: bindCol("cat", "", sql.KindText, false, false, false, "")}}, "", "", ""),
+		"CAT": bindCol("cat", "", sql.KindText, false, true, false, ""),
 	}
 }
 
@@ -5295,13 +5295,13 @@ func c799Bind() map[string]*sql.Binding {
 
 func c800Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"R": bindRelation("r", "", []sql.FieldEntry{sql.FieldEntry{Name: "CAT", Binding: bindCol("cat", "", sql.KindText, false, false, false, "")}}, "", "", ""),
+		"CAT": bindCol("cat", "", sql.KindText, false, true, false, ""),
 	}
 }
 
 func c801Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"R": bindRelation("r", "", []sql.FieldEntry{sql.FieldEntry{Name: "CAT", Binding: bindCol("cat", "", sql.KindText, false, false, false, "")}}, "", "", ""),
+		"CAT": bindCol("cat", "", sql.KindText, false, true, false, ""),
 	}
 }
 
@@ -5499,59 +5499,59 @@ func c833Bind() map[string]*sql.Binding {
 
 func c834Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"PRODUCTS": bindRelation("products", "", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "SKU", Binding: bindCol("sku", "", sql.KindText, false, false, false, "")}, sql.FieldEntry{Name: "CATEGORY_ID", Binding: bindCol("category_id", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "IS_ACTIVE", Binding: bindCol("is_active", "", sql.KindNum, false, false, false, "")}}, "", "", ""),
-		"ORDER_ITEMS": bindRelation("order_items", "", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "PRODUCT_ID", Binding: bindCol("product_id", "", sql.KindNum, false, false, false, "")}}, "", "", ""),
+		"R": bindRelation("r", "", []sql.FieldEntry{sql.FieldEntry{Name: "CAT", Binding: bindCol("cat", "", sql.KindText, false, false, false, "")}}, "", "", ""),
 	}
 }
 
 func c835Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"PRODUCTS": bindRelation("products", "", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "SKU", Binding: bindCol("sku", "", sql.KindText, false, false, false, "")}, sql.FieldEntry{Name: "CATEGORY_ID", Binding: bindCol("category_id", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "IS_ACTIVE", Binding: bindCol("is_active", "", sql.KindNum, false, false, false, "")}}, "", "", ""),
-		"ORDER_ITEMS": bindRelation("order_items", "", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "PRODUCT_ID", Binding: bindCol("product_id", "", sql.KindNum, false, false, false, "")}}, "", "", ""),
+		"R": bindRelation("r", "", []sql.FieldEntry{sql.FieldEntry{Name: "CAT", Binding: bindCol("cat", "", sql.KindText, false, false, false, "")}}, "", "", ""),
 	}
 }
 
 func c836Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"PRODUCTS": bindRelation("products", "", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "SKU", Binding: bindCol("sku", "", sql.KindText, false, false, false, "")}, sql.FieldEntry{Name: "CATEGORY_ID", Binding: bindCol("category_id", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "IS_ACTIVE", Binding: bindCol("is_active", "", sql.KindNum, false, false, false, "")}}, "", "", ""),
-		"ORDER_ITEMS": bindRelation("order_items", "", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "PRODUCT_ID", Binding: bindCol("product_id", "", sql.KindNum, false, false, false, "")}}, "", "", ""),
+		"R": bindRelation("r", "", []sql.FieldEntry{sql.FieldEntry{Name: "CAT", Binding: bindCol("cat", "", sql.KindText, false, false, false, "")}}, "", "", ""),
 	}
 }
 
 func c837Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"PRODUCTS": bindRelation("products", "", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "SKU", Binding: bindCol("sku", "", sql.KindText, false, false, false, "")}, sql.FieldEntry{Name: "CATEGORY_ID", Binding: bindCol("category_id", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "IS_ACTIVE", Binding: bindCol("is_active", "", sql.KindNum, false, false, false, "")}}, "", "", ""),
-		"ORDER_ITEMS": bindRelation("order_items", "", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "PRODUCT_ID", Binding: bindCol("product_id", "", sql.KindNum, false, false, false, "")}}, "", "", ""),
+		"R": bindRelation("r", "", []sql.FieldEntry{sql.FieldEntry{Name: "CAT", Binding: bindCol("cat", "", sql.KindText, false, false, false, "")}}, "", "", ""),
 	}
 }
 
 func c838Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"R": bindRelation("r", "", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "FK", Binding: bindCol("fk", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "CAT", Binding: bindCol("cat", "", sql.KindText, false, false, false, "")}}, "", "", ""),
+		"R": bindRelation("r", "", []sql.FieldEntry{sql.FieldEntry{Name: "CAT", Binding: bindCol("cat", "", sql.KindText, false, false, false, "")}}, "", "", ""),
 	}
 }
 
 func c839Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"R": bindRelation("r", "", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "FK", Binding: bindCol("fk", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "CAT", Binding: bindCol("cat", "", sql.KindText, false, false, false, "")}}, "", "", ""),
+		"PRODUCTS": bindRelation("products", "", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "SKU", Binding: bindCol("sku", "", sql.KindText, false, false, false, "")}, sql.FieldEntry{Name: "CATEGORY_ID", Binding: bindCol("category_id", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "IS_ACTIVE", Binding: bindCol("is_active", "", sql.KindNum, false, false, false, "")}}, "", "", ""),
+		"ORDER_ITEMS": bindRelation("order_items", "", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "PRODUCT_ID", Binding: bindCol("product_id", "", sql.KindNum, false, false, false, "")}}, "", "", ""),
 	}
 }
 
 func c840Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"R": bindRelation("r", "", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "FK", Binding: bindCol("fk", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "CAT", Binding: bindCol("cat", "", sql.KindText, false, false, false, "")}}, "", "", ""),
+		"PRODUCTS": bindRelation("products", "", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "SKU", Binding: bindCol("sku", "", sql.KindText, false, false, false, "")}, sql.FieldEntry{Name: "CATEGORY_ID", Binding: bindCol("category_id", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "IS_ACTIVE", Binding: bindCol("is_active", "", sql.KindNum, false, false, false, "")}}, "", "", ""),
+		"ORDER_ITEMS": bindRelation("order_items", "", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "PRODUCT_ID", Binding: bindCol("product_id", "", sql.KindNum, false, false, false, "")}}, "", "", ""),
 	}
 }
 
 func c841Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"R": bindRelation("r", "", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "FK", Binding: bindCol("fk", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "CAT", Binding: bindCol("cat", "", sql.KindText, false, false, false, "")}}, "", "", ""),
+		"PRODUCTS": bindRelation("products", "", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "SKU", Binding: bindCol("sku", "", sql.KindText, false, false, false, "")}, sql.FieldEntry{Name: "CATEGORY_ID", Binding: bindCol("category_id", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "IS_ACTIVE", Binding: bindCol("is_active", "", sql.KindNum, false, false, false, "")}}, "", "", ""),
+		"ORDER_ITEMS": bindRelation("order_items", "", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "PRODUCT_ID", Binding: bindCol("product_id", "", sql.KindNum, false, false, false, "")}}, "", "", ""),
 	}
 }
 
 func c842Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"R": bindRelation("r", "", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "FK", Binding: bindCol("fk", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "CAT", Binding: bindCol("cat", "", sql.KindText, false, false, false, "")}}, "", "", ""),
+		"PRODUCTS": bindRelation("products", "", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "SKU", Binding: bindCol("sku", "", sql.KindText, false, false, false, "")}, sql.FieldEntry{Name: "CATEGORY_ID", Binding: bindCol("category_id", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "IS_ACTIVE", Binding: bindCol("is_active", "", sql.KindNum, false, false, false, "")}}, "", "", ""),
+		"ORDER_ITEMS": bindRelation("order_items", "", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "PRODUCT_ID", Binding: bindCol("product_id", "", sql.KindNum, false, false, false, "")}}, "", "", ""),
 	}
 }
 
@@ -5719,31 +5719,31 @@ func c869Bind() map[string]*sql.Binding {
 
 func c870Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"R": bindRelation("r", "", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "FK", Binding: bindCol("fk", "", sql.KindText, false, false, false, "")}}, "", "", "").WithUniqueKey("id"),
+		"R": bindRelation("r", "", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "FK", Binding: bindCol("fk", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "CAT", Binding: bindCol("cat", "", sql.KindText, false, false, false, "")}}, "", "", ""),
 	}
 }
 
 func c871Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"R": bindRelation("r", "", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "FK", Binding: bindCol("fk", "", sql.KindText, false, false, false, "")}}, "", "", "").WithUniqueKey("id"),
+		"R": bindRelation("r", "", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "FK", Binding: bindCol("fk", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "CAT", Binding: bindCol("cat", "", sql.KindText, false, false, false, "")}}, "", "", ""),
 	}
 }
 
 func c872Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"R": bindRelation("r", "", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "FK", Binding: bindCol("fk", "", sql.KindText, false, false, false, "")}}, "", "", "").WithUniqueKey("id"),
+		"R": bindRelation("r", "", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "FK", Binding: bindCol("fk", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "CAT", Binding: bindCol("cat", "", sql.KindText, false, false, false, "")}}, "", "", ""),
 	}
 }
 
 func c873Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"R": bindRelation("r", "", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "FK", Binding: bindCol("fk", "", sql.KindText, false, false, false, "")}}, "", "", "").WithUniqueKey("id"),
+		"R": bindRelation("r", "", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "FK", Binding: bindCol("fk", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "CAT", Binding: bindCol("cat", "", sql.KindText, false, false, false, "")}}, "", "", ""),
 	}
 }
 
 func c874Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"R": bindRelation("r", "", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "FK", Binding: bindCol("fk", "", sql.KindText, false, false, false, "")}}, "", "", "").WithUniqueKey("id"),
+		"R": bindRelation("r", "", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "FK", Binding: bindCol("fk", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "CAT", Binding: bindCol("cat", "", sql.KindText, false, false, false, "")}}, "", "", ""),
 	}
 }
 
@@ -5779,7 +5779,7 @@ func c879Bind() map[string]*sql.Binding {
 
 func c880Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"R": bindRelation("r", "", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "FK", Binding: bindCol("fk", "", sql.KindText, false, false, false, "")}}, "", "", ""),
+		"R": bindRelation("r", "", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "FK", Binding: bindCol("fk", "", sql.KindText, false, false, false, "")}}, "", "", "").WithUniqueKey("id"),
 	}
 }
 
@@ -5809,7 +5809,7 @@ func c884Bind() map[string]*sql.Binding {
 
 func c885Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"R": bindRelation("r", "", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "FK", Binding: bindCol("fk", "", sql.KindText, false, false, false, "")}}, "", "", "").WithUniqueKey("id"),
+		"R": bindRelation("r", "", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "FK", Binding: bindCol("fk", "", sql.KindText, false, false, false, "")}}, "", "", ""),
 	}
 }
 
@@ -5827,7 +5827,7 @@ func c887Bind() map[string]*sql.Binding {
 
 func c888Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"R": bindRelation("r", "", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "FK", Binding: bindCol("fk", "", sql.KindText, false, false, false, "")}}, "", "", ""),
+		"R": bindRelation("r", "", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "FK", Binding: bindCol("fk", "", sql.KindText, false, false, false, "")}}, "", "", "").WithUniqueKey("id"),
 	}
 }
 
@@ -5857,7 +5857,7 @@ func c892Bind() map[string]*sql.Binding {
 
 func c893Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"R": bindRelation("r", "", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "FK", Binding: bindCol("fk", "", sql.KindText, false, false, false, "")}}, "", "", "").WithUniqueKey("id"),
+		"R": bindRelation("r", "", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "FK", Binding: bindCol("fk", "", sql.KindText, false, false, false, "")}}, "", "", ""),
 	}
 }
 
@@ -5875,7 +5875,7 @@ func c895Bind() map[string]*sql.Binding {
 
 func c896Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"R": bindRelation("r", "", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "FK", Binding: bindCol("fk", "", sql.KindText, false, false, false, "")}}, "", "", ""),
+		"R": bindRelation("r", "", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "FK", Binding: bindCol("fk", "", sql.KindText, false, false, false, "")}}, "", "", "").WithUniqueKey("id"),
 	}
 }
 
@@ -5905,7 +5905,7 @@ func c900Bind() map[string]*sql.Binding {
 
 func c901Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"R": bindRelation("r", "", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "FK", Binding: bindCol("fk", "", sql.KindText, false, false, false, "")}}, "", "", "").WithUniqueKey("id"),
+		"R": bindRelation("r", "", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "FK", Binding: bindCol("fk", "", sql.KindText, false, false, false, "")}}, "", "", ""),
 	}
 }
 
@@ -5923,7 +5923,7 @@ func c903Bind() map[string]*sql.Binding {
 
 func c904Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"R": bindRelation("r", "", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "FK", Binding: bindCol("fk", "", sql.KindText, false, false, false, "")}}, "", "", ""),
+		"R": bindRelation("r", "", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "FK", Binding: bindCol("fk", "", sql.KindText, false, false, false, "")}}, "", "", "").WithUniqueKey("id"),
 	}
 }
 
@@ -5935,148 +5935,145 @@ func c905Bind() map[string]*sql.Binding {
 
 func c906Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"R": bindRelation("r", "", []sql.FieldEntry{sql.FieldEntry{Name: "CAT", Binding: bindCol("cat", "", sql.KindText, false, false, false, "")}}, "", "", ""),
+		"R": bindRelation("r", "", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "FK", Binding: bindCol("fk", "", sql.KindText, false, false, false, "")}}, "", "", "").WithUniqueKey("id"),
 	}
 }
 
 func c907Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"R": bindRelation("r", "", []sql.FieldEntry{sql.FieldEntry{Name: "CAT", Binding: bindCol("cat", "", sql.KindText, false, false, false, "")}}, "", "", ""),
+		"R": bindRelation("r", "", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "FK", Binding: bindCol("fk", "", sql.KindText, false, false, false, "")}}, "", "", "").WithUniqueKey("id"),
 	}
 }
 
 func c908Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"R": bindRelation("r", "", []sql.FieldEntry{sql.FieldEntry{Name: "CAT", Binding: bindCol("cat", "", sql.KindText, false, false, false, "")}}, "", "", ""),
+		"R": bindRelation("r", "", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "FK", Binding: bindCol("fk", "", sql.KindText, false, false, false, "")}}, "", "", "").WithUniqueKey("id"),
 	}
 }
 
 func c909Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"R": bindRelation("r", "", []sql.FieldEntry{sql.FieldEntry{Name: "V", Binding: bindCol("v", "", sql.KindNum, false, false, false, "")}}, "", "", ""),
+		"R": bindRelation("r", "", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "FK", Binding: bindCol("fk", "", sql.KindText, false, false, false, "")}}, "", "", ""),
 	}
 }
 
 func c910Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"R": bindRelation("r", "", []sql.FieldEntry{sql.FieldEntry{Name: "CAT", Binding: bindCol("cat", "", sql.KindUnknown, false, false, false, "")}}, "", "", ""),
+		"R": bindRelation("r", "", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "FK", Binding: bindCol("fk", "", sql.KindText, false, false, false, "")}}, "", "", "").WithUniqueKey("id"),
 	}
 }
 
 func c911Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"R": bindRelation("r", "", []sql.FieldEntry{sql.FieldEntry{Name: "V", Binding: bindCol("v", "", sql.KindNum, false, false, false, "")}}, "", "", ""),
+		"R": bindRelation("r", "", []sql.FieldEntry{sql.FieldEntry{Name: "CAT", Binding: bindCol("cat", "", sql.KindText, false, false, false, "")}}, "", "", ""),
 	}
 }
 
 func c912Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"R": bindRelation("r", "", []sql.FieldEntry{sql.FieldEntry{Name: "CAT", Binding: bindCol("cat", "", sql.KindUnknown, false, false, false, "")}}, "", "", ""),
+		"R": bindRelation("r", "", []sql.FieldEntry{sql.FieldEntry{Name: "CAT", Binding: bindCol("cat", "", sql.KindText, false, false, false, "")}}, "", "", ""),
 	}
 }
 
 func c913Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"R": bindRelation("r", "", []sql.FieldEntry{sql.FieldEntry{Name: "V", Binding: bindCol("v", "", sql.KindNum, false, false, false, "")}}, "", "", ""),
+		"R": bindRelation("r", "", []sql.FieldEntry{sql.FieldEntry{Name: "CAT", Binding: bindCol("cat", "", sql.KindText, false, false, false, "")}}, "", "", ""),
 	}
 }
 
 func c914Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"R": bindRelation("r", "", []sql.FieldEntry{sql.FieldEntry{Name: "CAT", Binding: bindCol("cat", "", sql.KindUnknown, false, false, false, "")}}, "", "", ""),
+		"R": bindRelation("r", "", []sql.FieldEntry{sql.FieldEntry{Name: "V", Binding: bindCol("v", "", sql.KindNum, false, false, false, "")}}, "", "", ""),
 	}
 }
 
 func c915Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"R": bindRelation("r", "", []sql.FieldEntry{sql.FieldEntry{Name: "V", Binding: bindCol("v", "", sql.KindNum, false, false, false, "")}}, "", "", ""),
+		"R": bindRelation("r", "", []sql.FieldEntry{sql.FieldEntry{Name: "CAT", Binding: bindCol("cat", "", sql.KindUnknown, false, false, false, "")}}, "", "", ""),
 	}
 }
 
 func c916Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"R": bindRelation("r", "", []sql.FieldEntry{sql.FieldEntry{Name: "CAT", Binding: bindCol("cat", "", sql.KindUnknown, false, false, false, "")}}, "", "", ""),
+		"R": bindRelation("r", "", []sql.FieldEntry{sql.FieldEntry{Name: "V", Binding: bindCol("v", "", sql.KindNum, false, false, false, "")}}, "", "", ""),
 	}
 }
 
 func c917Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"R": bindRelation("r", "", []sql.FieldEntry{sql.FieldEntry{Name: "V", Binding: bindCol("v", "", sql.KindNum, false, false, true, "")}}, "", "", ""),
+		"R": bindRelation("r", "", []sql.FieldEntry{sql.FieldEntry{Name: "CAT", Binding: bindCol("cat", "", sql.KindUnknown, false, false, false, "")}}, "", "", ""),
 	}
 }
 
 func c918Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"R": bindRelation("r", "", []sql.FieldEntry{sql.FieldEntry{Name: "V", Binding: bindRaw("v", sql.KindNum, false, false, false, "")}}, "", "", ""),
+		"R": bindRelation("r", "", []sql.FieldEntry{sql.FieldEntry{Name: "V", Binding: bindCol("v", "", sql.KindNum, false, false, false, "")}}, "", "", ""),
 	}
 }
 
 func c919Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"R": bindRelation("r", "", []sql.FieldEntry{sql.FieldEntry{Name: "V", Binding: bindCol("v", "", sql.KindNum, false, false, true, "")}}, "", "", ""),
+		"R": bindRelation("r", "", []sql.FieldEntry{sql.FieldEntry{Name: "CAT", Binding: bindCol("cat", "", sql.KindUnknown, false, false, false, "")}}, "", "", ""),
 	}
 }
 
 func c920Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"R": bindRelation("r", "", []sql.FieldEntry{sql.FieldEntry{Name: "V", Binding: bindRaw("v", sql.KindNum, false, false, false, "")}}, "", "", ""),
+		"R": bindRelation("r", "", []sql.FieldEntry{sql.FieldEntry{Name: "V", Binding: bindCol("v", "", sql.KindNum, false, false, false, "")}}, "", "", ""),
 	}
 }
 
 func c921Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"R": bindRelation("r", "", []sql.FieldEntry{sql.FieldEntry{Name: "V", Binding: bindCol("v", "", sql.KindNum, false, false, true, "")}}, "", "", ""),
+		"R": bindRelation("r", "", []sql.FieldEntry{sql.FieldEntry{Name: "CAT", Binding: bindCol("cat", "", sql.KindUnknown, false, false, false, "")}}, "", "", ""),
 	}
 }
 
 func c922Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"R": bindRelation("r", "", []sql.FieldEntry{sql.FieldEntry{Name: "V", Binding: bindRaw("v", sql.KindNum, false, false, false, "")}}, "", "", ""),
+		"R": bindRelation("r", "", []sql.FieldEntry{sql.FieldEntry{Name: "V", Binding: bindCol("v", "", sql.KindNum, false, false, true, "")}}, "", "", ""),
 	}
 }
 
 func c923Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"R": bindRelation("r", "", []sql.FieldEntry{sql.FieldEntry{Name: "V", Binding: bindCol("v", "", sql.KindNum, false, false, true, "")}}, "", "", ""),
+		"R": bindRelation("r", "", []sql.FieldEntry{sql.FieldEntry{Name: "V", Binding: bindRaw("v", sql.KindNum, false, false, false, "")}}, "", "", ""),
 	}
 }
 
 func c924Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"R": bindRelation("r", "", []sql.FieldEntry{sql.FieldEntry{Name: "V", Binding: bindRaw("v", sql.KindNum, false, false, false, "")}}, "", "", ""),
+		"R": bindRelation("r", "", []sql.FieldEntry{sql.FieldEntry{Name: "V", Binding: bindCol("v", "", sql.KindNum, false, false, true, "")}}, "", "", ""),
 	}
 }
 
 func c925Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"N": bindCol("n", "r", sql.KindNum, false, false, false, ""),
-		"T": bindCol("t", "r", sql.KindText, false, false, false, ""),
+		"R": bindRelation("r", "", []sql.FieldEntry{sql.FieldEntry{Name: "V", Binding: bindRaw("v", sql.KindNum, false, false, false, "")}}, "", "", ""),
 	}
 }
 
 func c926Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"N": bindCol("n", "r", sql.KindNum, false, false, false, ""),
-		"T": bindCol("t", "r", sql.KindText, false, false, false, ""),
+		"R": bindRelation("r", "", []sql.FieldEntry{sql.FieldEntry{Name: "V", Binding: bindCol("v", "", sql.KindNum, false, false, true, "")}}, "", "", ""),
 	}
 }
 
 func c927Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-
+		"R": bindRelation("r", "", []sql.FieldEntry{sql.FieldEntry{Name: "V", Binding: bindRaw("v", sql.KindNum, false, false, false, "")}}, "", "", ""),
 	}
 }
 
 func c928Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-
+		"R": bindRelation("r", "", []sql.FieldEntry{sql.FieldEntry{Name: "V", Binding: bindCol("v", "", sql.KindNum, false, false, true, "")}}, "", "", ""),
 	}
 }
 
 func c929Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"N": bindCol("n", "r", sql.KindNum, false, false, false, ""),
-		"T": bindCol("t", "r", sql.KindText, false, false, false, ""),
+		"R": bindRelation("r", "", []sql.FieldEntry{sql.FieldEntry{Name: "V", Binding: bindRaw("v", sql.KindNum, false, false, false, "")}}, "", "", ""),
 	}
 }
 
@@ -6160,27 +6157,10 @@ func c941Bind() map[string]*sql.Binding {
 	}
 }
 
-func c941Reg() {
-	sql.DefineDialect("ansi-probe", map[string]interface{}{
-			"extends": "ansi",
-			"version": "1",
-			"target": true,
-		})
-}
-
 func c942Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"N": bindCol("n", "r", sql.KindNum, false, false, false, ""),
-		"T": bindCol("t", "r", sql.KindText, false, false, false, ""),
-	}
-}
 
-func c942Reg() {
-	sql.DefineDialect("ansi-probe", map[string]interface{}{
-			"extends": "ansi",
-			"version": "1",
-			"target": true,
-		})
+	}
 }
 
 func c943Bind() map[string]*sql.Binding {
@@ -6191,37 +6171,57 @@ func c943Bind() map[string]*sql.Binding {
 
 func c944Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-
+		"N": bindCol("n", "r", sql.KindNum, false, false, false, ""),
+		"T": bindCol("t", "r", sql.KindText, false, false, false, ""),
 	}
 }
 
 func c945Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"R": bindRelation("r", "", []sql.FieldEntry{sql.FieldEntry{Name: "N", Binding: bindCol("n", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "T", Binding: bindCol("t", "", sql.KindText, false, false, false, "")}}, "", "", ""),
+		"N": bindCol("n", "r", sql.KindNum, false, false, false, ""),
+		"T": bindCol("t", "r", sql.KindText, false, false, false, ""),
 	}
 }
 
 func c946Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"R": bindRelation("r", "", []sql.FieldEntry{sql.FieldEntry{Name: "N", Binding: bindCol("n", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "T", Binding: bindCol("t", "", sql.KindText, false, false, false, "")}}, "", "", ""),
+		"N": bindCol("n", "r", sql.KindNum, false, false, false, ""),
+		"T": bindCol("t", "r", sql.KindText, false, false, false, ""),
 	}
+}
+
+func c946Reg() {
+	sql.DefineDialect("ansi-probe", map[string]interface{}{
+			"extends": "ansi",
+			"version": "1",
+			"target": true,
+		})
 }
 
 func c947Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"R": bindRelation("r", "", []sql.FieldEntry{sql.FieldEntry{Name: "N", Binding: bindCol("n", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "T", Binding: bindCol("t", "", sql.KindText, false, false, false, "")}}, "", "", ""),
+		"N": bindCol("n", "r", sql.KindNum, false, false, false, ""),
+		"T": bindCol("t", "r", sql.KindText, false, false, false, ""),
 	}
+}
+
+func c947Reg() {
+	sql.DefineDialect("ansi-probe", map[string]interface{}{
+			"extends": "ansi",
+			"version": "1",
+			"target": true,
+		})
 }
 
 func c948Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"R": bindRelation("r", "", []sql.FieldEntry{sql.FieldEntry{Name: "N", Binding: bindCol("n", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "T", Binding: bindCol("t", "", sql.KindText, false, false, false, "")}}, "", "", ""),
+
 	}
 }
 
 func c949Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"R": bindRelation("r", "", []sql.FieldEntry{sql.FieldEntry{Name: "N", Binding: bindCol("n", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "T", Binding: bindCol("t", "", sql.KindText, false, false, false, "")}}, "", "", ""),
+
 	}
 }
 
@@ -6261,14 +6261,6 @@ func c955Bind() map[string]*sql.Binding {
 	}
 }
 
-func c955Reg() {
-	sql.DefineDialect("ansi-probe", map[string]interface{}{
-			"extends": "ansi",
-			"version": "1",
-			"target": true,
-		})
-}
-
 func c956Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
 		"R": bindRelation("r", "", []sql.FieldEntry{sql.FieldEntry{Name: "N", Binding: bindCol("n", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "T", Binding: bindCol("t", "", sql.KindText, false, false, false, "")}}, "", "", ""),
@@ -6289,16 +6281,22 @@ func c958Bind() map[string]*sql.Binding {
 
 func c959Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"PRODUCTS": bindRelation("products", "", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "CATEGORY_ID", Binding: bindCol("category_id", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "IS_ACTIVE", Binding: bindCol("is_active", "", sql.KindNum, false, false, false, "")}}, "", "", ""),
-		"ORDER_ITEMS": bindRelation("order_items", "", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "PRODUCT_ID", Binding: bindCol("product_id", "", sql.KindNum, false, false, false, "")}}, "", "", ""),
+		"R": bindRelation("r", "", []sql.FieldEntry{sql.FieldEntry{Name: "N", Binding: bindCol("n", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "T", Binding: bindCol("t", "", sql.KindText, false, false, false, "")}}, "", "", ""),
 	}
 }
 
 func c960Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"PRODUCTS": bindRelation("products", "", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "CATEGORY_ID", Binding: bindCol("category_id", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "IS_ACTIVE", Binding: bindCol("is_active", "", sql.KindNum, false, false, false, "")}}, "", "", ""),
-		"ORDER_ITEMS": bindRelation("order_items", "", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "PRODUCT_ID", Binding: bindCol("product_id", "", sql.KindNum, false, false, false, "")}}, "", "", ""),
+		"R": bindRelation("r", "", []sql.FieldEntry{sql.FieldEntry{Name: "N", Binding: bindCol("n", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "T", Binding: bindCol("t", "", sql.KindText, false, false, false, "")}}, "", "", ""),
 	}
+}
+
+func c960Reg() {
+	sql.DefineDialect("ansi-probe", map[string]interface{}{
+			"extends": "ansi",
+			"version": "1",
+			"target": true,
+		})
 }
 
 func c961Bind() map[string]*sql.Binding {
@@ -6321,48 +6319,47 @@ func c963Bind() map[string]*sql.Binding {
 
 func c964Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"N": bindCol("n", "r", sql.KindNum, false, false, false, ""),
-		"T": bindCol("t", "r", sql.KindText, false, false, false, ""),
+		"PRODUCTS": bindRelation("products", "", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "CATEGORY_ID", Binding: bindCol("category_id", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "IS_ACTIVE", Binding: bindCol("is_active", "", sql.KindNum, false, false, false, "")}}, "", "", ""),
+		"ORDER_ITEMS": bindRelation("order_items", "", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "PRODUCT_ID", Binding: bindCol("product_id", "", sql.KindNum, false, false, false, "")}}, "", "", ""),
 	}
 }
 
 func c965Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"N": bindCol("n", "r", sql.KindNum, false, false, false, ""),
-		"T": bindCol("t", "r", sql.KindText, false, false, false, ""),
+		"PRODUCTS": bindRelation("products", "", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "CATEGORY_ID", Binding: bindCol("category_id", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "IS_ACTIVE", Binding: bindCol("is_active", "", sql.KindNum, false, false, false, "")}}, "", "", ""),
+		"ORDER_ITEMS": bindRelation("order_items", "", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "PRODUCT_ID", Binding: bindCol("product_id", "", sql.KindNum, false, false, false, "")}}, "", "", ""),
 	}
 }
 
 func c966Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"N": bindCol("n", "r", sql.KindNum, false, false, false, ""),
-		"T": bindCol("t", "r", sql.KindText, false, false, false, ""),
+		"R": bindRelation("r", "", []sql.FieldEntry{sql.FieldEntry{Name: "N", Binding: bindCol("n", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "T", Binding: bindCol("t", "", sql.KindText, false, false, false, "")}}, "", "", ""),
 	}
 }
 
 func c967Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"N": bindCol("n", "r", sql.KindNum, false, false, false, ""),
-		"T": bindCol("t", "r", sql.KindText, false, false, false, ""),
+		"R": bindRelation("r", "", []sql.FieldEntry{sql.FieldEntry{Name: "N", Binding: bindCol("n", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "T", Binding: bindCol("t", "", sql.KindText, false, false, false, "")}}, "", "", ""),
 	}
 }
 
 func c968Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"N": bindCol("n", "r", sql.KindNum, false, false, false, ""),
-		"T": bindCol("t", "r", sql.KindText, false, false, false, ""),
+		"R": bindRelation("r", "", []sql.FieldEntry{sql.FieldEntry{Name: "N", Binding: bindCol("n", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "T", Binding: bindCol("t", "", sql.KindText, false, false, false, "")}}, "", "", ""),
 	}
 }
 
 func c969Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-
+		"N": bindCol("n", "r", sql.KindNum, false, false, false, ""),
+		"T": bindCol("t", "r", sql.KindText, false, false, false, ""),
 	}
 }
 
 func c970Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-
+		"N": bindCol("n", "r", sql.KindNum, false, false, false, ""),
+		"T": bindCol("t", "r", sql.KindText, false, false, false, ""),
 	}
 }
 
@@ -6389,31 +6386,34 @@ func c973Bind() map[string]*sql.Binding {
 
 func c974Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"R": bindRelation("r", "", []sql.FieldEntry{sql.FieldEntry{Name: "N", Binding: bindCol("n", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "T", Binding: bindCol("t", "", sql.KindText, false, false, false, "")}}, "", "", ""),
+
 	}
 }
 
 func c975Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"R": bindRelation("r", "", []sql.FieldEntry{sql.FieldEntry{Name: "N", Binding: bindCol("n", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "T", Binding: bindCol("t", "", sql.KindText, false, false, false, "")}}, "", "", ""),
+
 	}
 }
 
 func c976Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"R": bindRelation("r", "", []sql.FieldEntry{sql.FieldEntry{Name: "N", Binding: bindCol("n", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "T", Binding: bindCol("t", "", sql.KindText, false, false, false, "")}}, "", "", ""),
+		"N": bindCol("n", "r", sql.KindNum, false, false, false, ""),
+		"T": bindCol("t", "r", sql.KindText, false, false, false, ""),
 	}
 }
 
 func c977Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"R": bindRelation("r", "", []sql.FieldEntry{sql.FieldEntry{Name: "N", Binding: bindCol("n", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "T", Binding: bindCol("t", "", sql.KindText, false, false, false, "")}}, "", "", ""),
+		"N": bindCol("n", "r", sql.KindNum, false, false, false, ""),
+		"T": bindCol("t", "r", sql.KindText, false, false, false, ""),
 	}
 }
 
 func c978Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"R": bindRelation("r", "", []sql.FieldEntry{sql.FieldEntry{Name: "N", Binding: bindCol("n", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "T", Binding: bindCol("t", "", sql.KindText, false, false, false, "")}}, "", "", ""),
+		"N": bindCol("n", "r", sql.KindNum, false, false, false, ""),
+		"T": bindCol("t", "r", sql.KindText, false, false, false, ""),
 	}
 }
 
@@ -6443,7 +6443,7 @@ func c982Bind() map[string]*sql.Binding {
 
 func c983Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"R": bindRelation("r", "", []sql.FieldEntry{sql.FieldEntry{Name: "N", Binding: bindCol("n", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "U", Binding: bindCol("u", "", sql.KindUnknown, false, false, false, "")}}, "", "", ""),
+		"R": bindRelation("r", "", []sql.FieldEntry{sql.FieldEntry{Name: "N", Binding: bindCol("n", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "T", Binding: bindCol("t", "", sql.KindText, false, false, false, "")}}, "", "", ""),
 	}
 }
 
@@ -6473,7 +6473,7 @@ func c987Bind() map[string]*sql.Binding {
 
 func c988Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"R": bindRelation("r", "", []sql.FieldEntry{sql.FieldEntry{Name: "N", Binding: bindCol("n", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "T", Binding: bindCol("t", "", sql.KindText, false, false, false, "")}}, "", "", ""),
+		"R": bindRelation("r", "", []sql.FieldEntry{sql.FieldEntry{Name: "N", Binding: bindCol("n", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "U", Binding: bindCol("u", "", sql.KindUnknown, false, false, false, "")}}, "", "", ""),
 	}
 }
 
@@ -6575,78 +6575,32 @@ func c1004Bind() map[string]*sql.Binding {
 
 func c1005Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"T": bindCol("title", "t", sql.KindText, false, false, false, ""),
+		"R": bindRelation("r", "", []sql.FieldEntry{sql.FieldEntry{Name: "N", Binding: bindCol("n", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "T", Binding: bindCol("t", "", sql.KindText, false, false, false, "")}}, "", "", ""),
 	}
-}
-
-func c1005Reg() {
-	sel.RegisterFunction("SLUG", 1, 1, func(args *sel.Args) *sel.Value { return sel.NewText("") })
-	sql.Define("postgresql", "funcs", "SLUG", map[string]interface{}{
-			"tpl": "slug({0})",
-			"ret": "TEXT",
-			"args": []string{"TEXT"},
-		})
 }
 
 func c1006Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-
+		"R": bindRelation("r", "", []sql.FieldEntry{sql.FieldEntry{Name: "N", Binding: bindCol("n", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "T", Binding: bindCol("t", "", sql.KindText, false, false, false, "")}}, "", "", ""),
 	}
-}
-
-func c1006Reg() {
-	sel.RegisterFunction("SLUG", 1, 1, func(args *sel.Args) *sel.Value { return sel.NewText("") })
-	sql.Define("postgresql", "funcs", "SLUG", map[string]interface{}{
-			"tpl": "slug({0})",
-			"ret": "TEXT",
-			"args": []string{"TEXT"},
-		})
 }
 
 func c1007Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"T": bindCol("title", "t", sql.KindText, false, false, false, ""),
+		"R": bindRelation("r", "", []sql.FieldEntry{sql.FieldEntry{Name: "N", Binding: bindCol("n", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "T", Binding: bindCol("t", "", sql.KindText, false, false, false, "")}}, "", "", ""),
 	}
-}
-
-func c1007Reg() {
-	sel.RegisterFunction("SLUG", 1, 1, func(args *sel.Args) *sel.Value { return sel.NewText("") })
-	sql.Define("postgresql", "funcs", "slug", map[string]interface{}{
-			"tpl": "slug({0})",
-			"ret": "TEXT",
-			"args": []string{"TEXT"},
-		})
 }
 
 func c1008Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"T": bindCol("title", "t", sql.KindText, false, false, false, ""),
+		"R": bindRelation("r", "", []sql.FieldEntry{sql.FieldEntry{Name: "N", Binding: bindCol("n", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "T", Binding: bindCol("t", "", sql.KindText, false, false, false, "")}}, "", "", ""),
 	}
-}
-
-func c1008Reg() {
-	sel.RegisterFunction("SLUG", 1, 1, func(args *sel.Args) *sel.Value { return sel.NewText("") })
-	sql.Define("postgresql", "funcs", "SLUG", map[string]interface{}{
-			"tpl": "slug({0})",
-			"ret": "TEXT",
-			"args": []string{"TEXT"},
-		})
-	sql.DefineDialect("pg-numbered", map[string]interface{}{
-			"extends": "postgresql",
-			"version": "15",
-			"target": true,
-			"lexical": map[string]interface{}{"placeholder": "${n}"},
-		})
 }
 
 func c1009Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"T": bindCol("title", "t", sql.KindText, false, false, false, ""),
+		"R": bindRelation("r", "", []sql.FieldEntry{sql.FieldEntry{Name: "N", Binding: bindCol("n", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "T", Binding: bindCol("t", "", sql.KindText, false, false, false, "")}}, "", "", ""),
 	}
-}
-
-func c1009Reg() {
-	sel.RegisterFunction("UNSPELLED", 1, 1, func(args *sel.Args) *sel.Value { return sel.NewText("") })
 }
 
 func c1010Bind() map[string]*sql.Binding {
@@ -6666,7 +6620,7 @@ func c1010Reg() {
 
 func c1011Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"T": bindCol("title", "t", sql.KindText, false, false, false, ""),
+
 	}
 }
 
@@ -6681,62 +6635,62 @@ func c1011Reg() {
 
 func c1012Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"PRICE": bindCol("price", "p", sql.KindNum, false, false, false, ""),
-		"COST": bindCol("cost", "p", sql.KindUnknown, false, false, false, ""),
+		"T": bindCol("title", "t", sql.KindText, false, false, false, ""),
 	}
 }
 
 func c1012Reg() {
-	sel.RegisterFunction("MARGIN_PCT", 2, 3, func(args *sel.Args) *sel.Value { return sel.NewText("") })
-	sql.Define("postgresql", "funcs", "MARGIN_PCT", map[string]interface{}{
-			"tpl": map[string]interface{}{"2": "margin_pct({0}, {1})", "3": "round(margin_pct({0}, {1}), {2})"},
-			"ret": "NUM",
-			"args": []string{"NUM", "NUM", "NUM"},
+	sel.RegisterFunction("SLUG", 1, 1, func(args *sel.Args) *sel.Value { return sel.NewText("") })
+	sql.Define("postgresql", "funcs", "slug", map[string]interface{}{
+			"tpl": "slug({0})",
+			"ret": "TEXT",
+			"args": []string{"TEXT"},
 		})
 }
 
 func c1013Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"PRICE": bindCol("price", "p", sql.KindNum, false, false, false, ""),
-		"COST": bindCol("cost", "p", sql.KindUnknown, false, false, false, ""),
+		"T": bindCol("title", "t", sql.KindText, false, false, false, ""),
 	}
 }
 
 func c1013Reg() {
-	sel.RegisterFunction("MARGIN_PCT", 2, 3, func(args *sel.Args) *sel.Value { return sel.NewText("") })
-	sql.Define("postgresql", "funcs", "MARGIN_PCT", map[string]interface{}{
-			"tpl": map[string]interface{}{"2": "margin_pct({0}, {1})", "3": "round(margin_pct({0}, {1}), {2})"},
-			"ret": "NUM",
-			"args": []string{"NUM", "NUM", "NUM"},
+	sel.RegisterFunction("SLUG", 1, 1, func(args *sel.Args) *sel.Value { return sel.NewText("") })
+	sql.Define("postgresql", "funcs", "SLUG", map[string]interface{}{
+			"tpl": "slug({0})",
+			"ret": "TEXT",
+			"args": []string{"TEXT"},
+		})
+	sql.DefineDialect("pg-numbered", map[string]interface{}{
+			"extends": "postgresql",
+			"version": "15",
+			"target": true,
+			"lexical": map[string]interface{}{"placeholder": "${n}"},
 		})
 }
 
 func c1014Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-
+		"T": bindCol("title", "t", sql.KindText, false, false, false, ""),
 	}
 }
 
 func c1014Reg() {
-	sel.RegisterFunction("ARITY_ONE", 1, 1, func(args *sel.Args) *sel.Value { return sel.NewText("") })
-	sql.Define("postgresql", "funcs", "ARITY_ONE", map[string]interface{}{
-			"tpl": map[string]interface{}{"2": "f({0}, {1})"},
-			"ret": "TEXT",
-		})
+	sel.RegisterFunction("UNSPELLED", 1, 1, func(args *sel.Args) *sel.Value { return sel.NewText("") })
 }
 
 func c1015Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-
+		"T": bindCol("title", "t", sql.KindText, false, false, false, ""),
 	}
 }
 
 func c1015Reg() {
-	sel.RegisterFunction("ARITY_TWO", 1, 2, func(args *sel.Args) *sel.Value { return sel.NewText("") })
-	sql.Define("postgresql", "funcs", "ARITY_TWO", map[string]interface{}{
-			"tpl": "f({*})",
+	sel.RegisterFunction("SLUG", 1, 1, func(args *sel.Args) *sel.Value { return sel.NewText("") })
+	sql.Define("postgresql", "funcs", "SLUG", map[string]interface{}{
+			"tpl": "slug({0})",
 			"ret": "TEXT",
-			"arity": [2]int{1, 3},
+			"args": []string{"TEXT"},
 		})
 }
 
@@ -6747,42 +6701,44 @@ func c1016Bind() map[string]*sql.Binding {
 }
 
 func c1016Reg() {
-	sel.RegisterFunction("ARITY_TWO", 1, 2, func(args *sel.Args) *sel.Value { return sel.NewText("") })
-	sql.Define("postgresql", "funcs", "ARITY_TWO", map[string]interface{}{
-			"tpl": "f({*})",
+	sel.RegisterFunction("SLUG", 1, 1, func(args *sel.Args) *sel.Value { return sel.NewText("") })
+	sql.Define("postgresql", "funcs", "SLUG", map[string]interface{}{
+			"tpl": "slug({0})",
 			"ret": "TEXT",
-			"arity": [2]int{1, 1},
+			"args": []string{"TEXT"},
 		})
 }
 
 func c1017Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"T": bindCol("title", "t", sql.KindText, false, false, false, ""),
+		"PRICE": bindCol("price", "p", sql.KindNum, false, false, false, ""),
+		"COST": bindCol("cost", "p", sql.KindUnknown, false, false, false, ""),
 	}
 }
 
 func c1017Reg() {
-	sel.RegisterFunction("REREG", 1, 1, func(args *sel.Args) *sel.Value { return sel.NewText("") })
-	sql.Define("postgresql", "funcs", "REREG", map[string]interface{}{
-			"tpl": "rereg({0})",
-			"ret": "TEXT",
+	sel.RegisterFunction("MARGIN_PCT", 2, 3, func(args *sel.Args) *sel.Value { return sel.NewText("") })
+	sql.Define("postgresql", "funcs", "MARGIN_PCT", map[string]interface{}{
+			"tpl": map[string]interface{}{"2": "margin_pct({0}, {1})", "3": "round(margin_pct({0}, {1}), {2})"},
+			"ret": "NUM",
+			"args": []string{"NUM", "NUM", "NUM"},
 		})
-	sel.RegisterFunction("REREG", 1, 2, func(args *sel.Args) *sel.Value { return sel.NewText("") })
 }
 
 func c1018Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"T": bindCol("title", "t", sql.KindText, false, false, false, ""),
+		"PRICE": bindCol("price", "p", sql.KindNum, false, false, false, ""),
+		"COST": bindCol("cost", "p", sql.KindUnknown, false, false, false, ""),
 	}
 }
 
 func c1018Reg() {
-	sel.RegisterFunction("REREG_SAME", 1, 1, func(args *sel.Args) *sel.Value { return sel.NewText("") })
-	sql.Define("postgresql", "funcs", "REREG_SAME", map[string]interface{}{
-			"tpl": "rereg({0})",
-			"ret": "TEXT",
+	sel.RegisterFunction("MARGIN_PCT", 2, 3, func(args *sel.Args) *sel.Value { return sel.NewText("") })
+	sql.Define("postgresql", "funcs", "MARGIN_PCT", map[string]interface{}{
+			"tpl": map[string]interface{}{"2": "margin_pct({0}, {1})", "3": "round(margin_pct({0}, {1}), {2})"},
+			"ret": "NUM",
+			"args": []string{"NUM", "NUM", "NUM"},
 		})
-	sel.RegisterFunction("REREG_SAME", 1, 1, func(args *sel.Args) *sel.Value { return sel.NewText("") })
 }
 
 func c1019Bind() map[string]*sql.Binding {
@@ -6792,8 +6748,9 @@ func c1019Bind() map[string]*sql.Binding {
 }
 
 func c1019Reg() {
-	sql.Define("postgresql", "funcs", "NEVER_REGISTERED_FN", map[string]interface{}{
-			"tpl": "f({0})",
+	sel.RegisterFunction("ARITY_ONE", 1, 1, func(args *sel.Args) *sel.Value { return sel.NewText("") })
+	sql.Define("postgresql", "funcs", "ARITY_ONE", map[string]interface{}{
+			"tpl": map[string]interface{}{"2": "f({0}, {1})"},
 			"ret": "TEXT",
 		})
 }
@@ -6805,70 +6762,69 @@ func c1020Bind() map[string]*sql.Binding {
 }
 
 func c1020Reg() {
-	sql.Define("postgresql", "funcs", "UPPER", map[string]interface{}{
-			"tpl": "UPPER({0})",
+	sel.RegisterFunction("ARITY_TWO", 1, 2, func(args *sel.Args) *sel.Value { return sel.NewText("") })
+	sql.Define("postgresql", "funcs", "ARITY_TWO", map[string]interface{}{
+			"tpl": "f({*})",
 			"ret": "TEXT",
-			"args": []string{"TEXT"},
+			"arity": [2]int{1, 3},
 		})
 }
 
 func c1021Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-
+		"T": bindCol("title", "t", sql.KindText, false, false, false, ""),
 	}
 }
 
 func c1021Reg() {
-	sel.RegisterFunction("KIND_BAD", 1, 1, func(args *sel.Args) *sel.Value { return sel.NewText("") })
-	sql.Define("postgresql", "funcs", "KIND_BAD", map[string]interface{}{
-			"tpl": "f({0})",
+	sel.RegisterFunction("ARITY_TWO", 1, 2, func(args *sel.Args) *sel.Value { return sel.NewText("") })
+	sql.Define("postgresql", "funcs", "ARITY_TWO", map[string]interface{}{
+			"tpl": "f({*})",
 			"ret": "TEXT",
-			"args": []string{"DATE"},
+			"arity": [2]int{1, 1},
 		})
 }
 
 func c1022Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-
+		"T": bindCol("title", "t", sql.KindText, false, false, false, ""),
 	}
 }
 
 func c1022Reg() {
-	sel.RegisterFunction("ARGS_LONG", 1, 1, func(args *sel.Args) *sel.Value { return sel.NewText("") })
-	sql.Define("postgresql", "funcs", "ARGS_LONG", map[string]interface{}{
-			"tpl": "f({0})",
+	sel.RegisterFunction("REREG", 1, 1, func(args *sel.Args) *sel.Value { return sel.NewText("") })
+	sql.Define("postgresql", "funcs", "REREG", map[string]interface{}{
+			"tpl": "rereg({0})",
 			"ret": "TEXT",
-			"args": []string{"TEXT", "TEXT"},
 		})
+	sel.RegisterFunction("REREG", 1, 2, func(args *sel.Args) *sel.Value { return sel.NewText("") })
 }
 
 func c1023Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-
+		"T": bindCol("title", "t", sql.KindText, false, false, false, ""),
 	}
 }
 
 func c1023Reg() {
-	sel.RegisterFunction("RET_LIST", 1, 1, func(args *sel.Args) *sel.Value { return sel.NewText("") })
-	sql.Define("postgresql", "funcs", "RET_LIST", map[string]interface{}{
-			"tpl": "f({0})",
-			"ret": "LIST",
+	sel.RegisterFunction("REREG_SAME", 1, 1, func(args *sel.Args) *sel.Value { return sel.NewText("") })
+	sql.Define("postgresql", "funcs", "REREG_SAME", map[string]interface{}{
+			"tpl": "rereg({0})",
+			"ret": "TEXT",
 		})
+	sel.RegisterFunction("REREG_SAME", 1, 1, func(args *sel.Args) *sel.Value { return sel.NewText("") })
 }
 
 func c1024Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"PRICE": bindCol("price", "p", sql.KindNum, false, false, false, ""),
-		"COST": bindCol("cost", "p", sql.KindUnknown, false, false, false, ""),
+
 	}
 }
 
 func c1024Reg() {
-	sel.RegisterFunction("MARGIN_PCT", 2, 3, func(args *sel.Args) *sel.Value { return sel.NewText("") })
-	sql.Define("postgresql", "funcs", "MARGIN_PCT", map[string]interface{}{
-			"tpl": map[string]interface{}{"2": "margin_pct({0}, {1})", "3": "round(margin_pct({0}, {1}), {2})"},
-			"ret": "NUM",
-			"args": []string{"NUM", "NUM", "NUM"},
+	sql.Define("postgresql", "funcs", "NEVER_REGISTERED_FN", map[string]interface{}{
+			"tpl": "f({0})",
+			"ret": "TEXT",
 		})
 }
 
@@ -6879,9 +6835,8 @@ func c1025Bind() map[string]*sql.Binding {
 }
 
 func c1025Reg() {
-	sel.RegisterFunction("SLUG", 1, 1, func(args *sel.Args) *sel.Value { return sel.NewText("") })
-	sql.Define("postgresql", "funcs", "SLUG", map[string]interface{}{
-			"tpl": "slug({0})",
+	sql.Define("postgresql", "funcs", "UPPER", map[string]interface{}{
+			"tpl": "UPPER({0})",
 			"ret": "TEXT",
 			"args": []string{"TEXT"},
 		})
@@ -6894,70 +6849,71 @@ func c1026Bind() map[string]*sql.Binding {
 }
 
 func c1026Reg() {
-	sel.RegisterFunction("FLAG_TEXT", 1, 1, func(args *sel.Args) *sel.Value { return sel.NewText("") })
-	sql.Define("postgresql", "funcs", "FLAG_TEXT", map[string]interface{}{
-			"tpl": "flag_text({0})",
+	sel.RegisterFunction("KIND_BAD", 1, 1, func(args *sel.Args) *sel.Value { return sel.NewText("") })
+	sql.Define("postgresql", "funcs", "KIND_BAD", map[string]interface{}{
+			"tpl": "f({0})",
 			"ret": "TEXT",
+			"args": []string{"DATE"},
 		})
 }
 
 func c1027Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"T": bindCol("title", "t", sql.KindText, false, false, false, ""),
+
 	}
 }
 
 func c1027Reg() {
-	sel.RegisterFunction("IS_OPEN", 1, 1, func(args *sel.Args) *sel.Value { return sel.NewText("") })
-	sql.Define("postgresql", "funcs", "IS_OPEN", map[string]interface{}{
-			"tpl": "is_open({0})",
-			"ret": "BOOL",
-			"args": []string{"BOOL"},
+	sel.RegisterFunction("ARGS_LONG", 1, 1, func(args *sel.Args) *sel.Value { return sel.NewText("") })
+	sql.Define("postgresql", "funcs", "ARGS_LONG", map[string]interface{}{
+			"tpl": "f({0})",
+			"ret": "TEXT",
+			"args": []string{"TEXT", "TEXT"},
 		})
 }
 
 func c1028Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"T": bindCol("title", "t", sql.KindText, false, false, false, ""),
+
 	}
 }
 
 func c1028Reg() {
-	sel.RegisterFunction("IS_OPEN", 1, 1, func(args *sel.Args) *sel.Value { return sel.NewText("") })
-	sql.Define("postgresql", "funcs", "IS_OPEN", map[string]interface{}{
-			"tpl": "is_open({0})",
-			"ret": "BOOL",
-			"args": []string{"BOOL"},
+	sel.RegisterFunction("RET_LIST", 1, 1, func(args *sel.Args) *sel.Value { return sel.NewText("") })
+	sql.Define("postgresql", "funcs", "RET_LIST", map[string]interface{}{
+			"tpl": "f({0})",
+			"ret": "LIST",
 		})
 }
 
 func c1029Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"TAGS": bindColumns([]*sql.Binding{bindCol("tag1", "o", sql.KindText, false, false, false, ""), bindCol("tag2", "o", sql.KindText, false, false, false, ""), bindCol("tag3", "o", sql.KindText, false, false, false, "")}),
+		"PRICE": bindCol("price", "p", sql.KindNum, false, false, false, ""),
+		"COST": bindCol("cost", "p", sql.KindUnknown, false, false, false, ""),
 	}
 }
 
 func c1029Reg() {
-	sel.RegisterFunction("HAS_TAG", 2, 2, func(args *sel.Args) *sel.Value { return sel.NewText("") })
-	sql.Define("postgresql", "funcs", "HAS_TAG", map[string]interface{}{
-			"tpl": "({1} = ANY(ARRAY[{0}]))",
-			"ret": "BOOL",
-			"args": []string{"LIST", "TEXT"},
+	sel.RegisterFunction("MARGIN_PCT", 2, 3, func(args *sel.Args) *sel.Value { return sel.NewText("") })
+	sql.Define("postgresql", "funcs", "MARGIN_PCT", map[string]interface{}{
+			"tpl": map[string]interface{}{"2": "margin_pct({0}, {1})", "3": "round(margin_pct({0}, {1}), {2})"},
+			"ret": "NUM",
+			"args": []string{"NUM", "NUM", "NUM"},
 		})
 }
 
 func c1030Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"TAG": bindCol("tag", "t", sql.KindText, false, false, false, ""),
+
 	}
 }
 
 func c1030Reg() {
-	sel.RegisterFunction("HAS_TAG", 2, 2, func(args *sel.Args) *sel.Value { return sel.NewText("") })
-	sql.Define("postgresql", "funcs", "HAS_TAG", map[string]interface{}{
-			"tpl": "({1} = ANY(ARRAY[{0}]))",
-			"ret": "BOOL",
-			"args": []string{"LIST", "TEXT"},
+	sel.RegisterFunction("SLUG", 1, 1, func(args *sel.Args) *sel.Value { return sel.NewText("") })
+	sql.Define("postgresql", "funcs", "SLUG", map[string]interface{}{
+			"tpl": "slug({0})",
+			"ret": "TEXT",
+			"args": []string{"TEXT"},
 		})
 }
 
@@ -6968,48 +6924,46 @@ func c1031Bind() map[string]*sql.Binding {
 }
 
 func c1031Reg() {
-	sel.RegisterFunction("HAS_TAG", 2, 2, func(args *sel.Args) *sel.Value { return sel.NewText("") })
-	sql.Define("postgresql", "funcs", "HAS_TAG", map[string]interface{}{
-			"tpl": "({1} = ANY(ARRAY[{0}]))",
-			"ret": "BOOL",
-			"args": []string{"LIST", "TEXT"},
+	sel.RegisterFunction("FLAG_TEXT", 1, 1, func(args *sel.Args) *sel.Value { return sel.NewText("") })
+	sql.Define("postgresql", "funcs", "FLAG_TEXT", map[string]interface{}{
+			"tpl": "flag_text({0})",
+			"ret": "TEXT",
 		})
 }
 
 func c1032Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"ALLOWED": bindValue(valueTree([]treeItem{{key: nil, val: sel.NewText("x")}, {key: nil, val: sel.NewText("y")}}), nil),
-		"TAG": bindCol("tag", "t", sql.KindText, false, false, false, ""),
+		"T": bindCol("title", "t", sql.KindText, false, false, false, ""),
 	}
 }
 
 func c1032Reg() {
-	sel.RegisterFunction("HAS_TAG", 2, 2, func(args *sel.Args) *sel.Value { return sel.NewText("") })
-	sql.Define("postgresql", "funcs", "HAS_TAG", map[string]interface{}{
-			"tpl": "({1} = ANY(ARRAY[{0}]))",
+	sel.RegisterFunction("IS_OPEN", 1, 1, func(args *sel.Args) *sel.Value { return sel.NewText("") })
+	sql.Define("postgresql", "funcs", "IS_OPEN", map[string]interface{}{
+			"tpl": "is_open({0})",
 			"ret": "BOOL",
-			"args": []string{"LIST", "TEXT"},
+			"args": []string{"BOOL"},
 		})
 }
 
 func c1033Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"TAG": bindCol("tag", "t", sql.KindText, false, false, false, ""),
+		"T": bindCol("title", "t", sql.KindText, false, false, false, ""),
 	}
 }
 
 func c1033Reg() {
-	sel.RegisterFunction("HAS_TAG", 2, 2, func(args *sel.Args) *sel.Value { return sel.NewText("") })
-	sql.Define("postgresql", "funcs", "HAS_TAG", map[string]interface{}{
-			"tpl": "({1} = ANY(ARRAY[{0}]))",
+	sel.RegisterFunction("IS_OPEN", 1, 1, func(args *sel.Args) *sel.Value { return sel.NewText("") })
+	sql.Define("postgresql", "funcs", "IS_OPEN", map[string]interface{}{
+			"tpl": "is_open({0})",
 			"ret": "BOOL",
-			"args": []string{"LIST", "TEXT"},
+			"args": []string{"BOOL"},
 		})
 }
 
 func c1034Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"ITEMS": bindRelation("items", "i", []sql.FieldEntry{sql.FieldEntry{Name: "sku", Binding: bindCol("sku", "i", sql.KindText, false, false, false, "")}}, "sku", "", ""),
+		"TAGS": bindColumns([]*sql.Binding{bindCol("tag1", "o", sql.KindText, false, false, false, ""), bindCol("tag2", "o", sql.KindText, false, false, false, ""), bindCol("tag3", "o", sql.KindText, false, false, false, "")}),
 	}
 }
 
@@ -7024,7 +6978,7 @@ func c1034Reg() {
 
 func c1035Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"NONE_ALLOWED": bindValue(valueTree([]treeItem{}), nil),
+		"TAG": bindCol("tag", "t", sql.KindText, false, false, false, ""),
 	}
 }
 
@@ -7039,7 +6993,7 @@ func c1035Reg() {
 
 func c1036Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"NESTED": bindValue(valueTree([]treeItem{{key: nil, val: valueTree([]treeItem{{key: nil, val: sel.NewText("a")}})}, {key: nil, val: sel.NewText("b")}}), nil),
+
 	}
 }
 
@@ -7054,7 +7008,8 @@ func c1036Reg() {
 
 func c1037Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-
+		"ALLOWED": bindValue(valueTree([]treeItem{{key: nil, val: sel.NewText("x")}, {key: nil, val: sel.NewText("y")}}), nil),
+		"TAG": bindCol("tag", "t", sql.KindText, false, false, false, ""),
 	}
 }
 
@@ -7069,41 +7024,86 @@ func c1037Reg() {
 
 func c1038Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-
+		"TAG": bindCol("tag", "t", sql.KindText, false, false, false, ""),
 	}
 }
 
 func c1038Reg() {
-	sel.RegisterFunction("SLUG", 1, 1, func(args *sel.Args) *sel.Value { return sel.NewText("") })
-	sql.Define("postgresql", "funcs", "SLUG", map[string]interface{}{
-			"tpl": "slug({0})",
-			"ret": "TEXT",
-			"args": []string{"TEXT"},
+	sel.RegisterFunction("HAS_TAG", 2, 2, func(args *sel.Args) *sel.Value { return sel.NewText("") })
+	sql.Define("postgresql", "funcs", "HAS_TAG", map[string]interface{}{
+			"tpl": "({1} = ANY(ARRAY[{0}]))",
+			"ret": "BOOL",
+			"args": []string{"LIST", "TEXT"},
 		})
 }
 
 func c1039Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"ARTICLES": bindRelation("articles", "a", []sql.FieldEntry{sql.FieldEntry{Name: "id", Binding: bindCol("id", "a", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "title", Binding: bindCol("title", "a", sql.KindText, false, false, false, "")}}, "", "", ""),
+		"ITEMS": bindRelation("items", "i", []sql.FieldEntry{sql.FieldEntry{Name: "sku", Binding: bindCol("sku", "i", sql.KindText, false, false, false, "")}}, "sku", "", ""),
 	}
 }
 
 func c1039Reg() {
-	sel.RegisterFunction("SLUG", 1, 1, func(args *sel.Args) *sel.Value { return sel.NewText("") })
-	sql.Define("postgresql", "funcs", "SLUG", map[string]interface{}{
-			"tpl": "slug({0})",
-			"ret": "TEXT",
-			"args": []string{"TEXT"},
+	sel.RegisterFunction("HAS_TAG", 2, 2, func(args *sel.Args) *sel.Value { return sel.NewText("") })
+	sql.Define("postgresql", "funcs", "HAS_TAG", map[string]interface{}{
+			"tpl": "({1} = ANY(ARRAY[{0}]))",
+			"ret": "BOOL",
+			"args": []string{"LIST", "TEXT"},
 		})
 }
 
 func c1040Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"ARTICLES": bindRelation("articles", "a", []sql.FieldEntry{sql.FieldEntry{Name: "id", Binding: bindCol("id", "a", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "title", Binding: bindCol("title", "a", sql.KindText, false, false, false, "")}}, "", "", ""),
+		"NONE_ALLOWED": bindValue(valueTree([]treeItem{}), nil),
 	}
 }
 
 func c1040Reg() {
+	sel.RegisterFunction("HAS_TAG", 2, 2, func(args *sel.Args) *sel.Value { return sel.NewText("") })
+	sql.Define("postgresql", "funcs", "HAS_TAG", map[string]interface{}{
+			"tpl": "({1} = ANY(ARRAY[{0}]))",
+			"ret": "BOOL",
+			"args": []string{"LIST", "TEXT"},
+		})
+}
+
+func c1041Bind() map[string]*sql.Binding {
+	return map[string]*sql.Binding{
+		"NESTED": bindValue(valueTree([]treeItem{{key: nil, val: valueTree([]treeItem{{key: nil, val: sel.NewText("a")}})}, {key: nil, val: sel.NewText("b")}}), nil),
+	}
+}
+
+func c1041Reg() {
+	sel.RegisterFunction("HAS_TAG", 2, 2, func(args *sel.Args) *sel.Value { return sel.NewText("") })
+	sql.Define("postgresql", "funcs", "HAS_TAG", map[string]interface{}{
+			"tpl": "({1} = ANY(ARRAY[{0}]))",
+			"ret": "BOOL",
+			"args": []string{"LIST", "TEXT"},
+		})
+}
+
+func c1042Bind() map[string]*sql.Binding {
+	return map[string]*sql.Binding{
+
+	}
+}
+
+func c1042Reg() {
+	sel.RegisterFunction("HAS_TAG", 2, 2, func(args *sel.Args) *sel.Value { return sel.NewText("") })
+	sql.Define("postgresql", "funcs", "HAS_TAG", map[string]interface{}{
+			"tpl": "({1} = ANY(ARRAY[{0}]))",
+			"ret": "BOOL",
+			"args": []string{"LIST", "TEXT"},
+		})
+}
+
+func c1043Bind() map[string]*sql.Binding {
+	return map[string]*sql.Binding{
+
+	}
+}
+
+func c1043Reg() {
 	sel.RegisterFunction("SLUG", 1, 1, func(args *sel.Args) *sel.Value { return sel.NewText("") })
 	sql.Define("postgresql", "funcs", "SLUG", map[string]interface{}{
 			"tpl": "slug({0})",
@@ -7112,59 +7112,44 @@ func c1040Reg() {
 		})
 }
 
-func c1041Bind() map[string]*sql.Binding {
+func c1044Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
 		"ARTICLES": bindRelation("articles", "a", []sql.FieldEntry{sql.FieldEntry{Name: "id", Binding: bindCol("id", "a", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "title", Binding: bindCol("title", "a", sql.KindText, false, false, false, "")}}, "", "", ""),
 	}
 }
 
-func c1041Reg() {
-	sel.RegisterFunction("UNSPELLED", 1, 1, func(args *sel.Args) *sel.Value { return sel.NewText("") })
-}
-
-func c1042Bind() map[string]*sql.Binding {
-	return map[string]*sql.Binding{
-		"R": bindRelation("r", "r", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "RV", Binding: bindCol("rv", "", sql.KindNum, false, false, false, "")}}, "", "", ""),
-		"S": bindRelation("s", "s", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "SV", Binding: bindCol("sv", "", sql.KindNum, false, false, false, "")}}, "", "", ""),
-		"T": bindRelation("t", "t", []sql.FieldEntry{sql.FieldEntry{Name: "TID", Binding: bindCol("tid", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "TV", Binding: bindCol("tv", "", sql.KindNum, false, false, false, "")}}, "", "", ""),
-		"U": bindRelation("u", "u", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "UV", Binding: bindCol("uv", "", sql.KindNum, false, false, false, "")}}, "", "", ""),
-	}
-}
-
-func c1043Bind() map[string]*sql.Binding {
-	return map[string]*sql.Binding{
-		"R": bindRelation("r", "r", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "RV", Binding: bindCol("rv", "", sql.KindNum, false, false, false, "")}}, "", "", ""),
-		"S": bindRelation("s", "s", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "SV", Binding: bindCol("sv", "", sql.KindNum, false, false, false, "")}}, "", "", ""),
-		"T": bindRelation("t", "t", []sql.FieldEntry{sql.FieldEntry{Name: "TID", Binding: bindCol("tid", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "TV", Binding: bindCol("tv", "", sql.KindNum, false, false, false, "")}}, "", "", ""),
-		"U": bindRelation("u", "u", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "UV", Binding: bindCol("uv", "", sql.KindNum, false, false, false, "")}}, "", "", ""),
-	}
-}
-
-func c1044Bind() map[string]*sql.Binding {
-	return map[string]*sql.Binding{
-		"R": bindRelation("r", "r", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "RV", Binding: bindCol("rv", "", sql.KindNum, false, false, false, "")}}, "", "", ""),
-		"S": bindRelation("s", "s", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "SV", Binding: bindCol("sv", "", sql.KindNum, false, false, false, "")}}, "", "", ""),
-		"T": bindRelation("t", "t", []sql.FieldEntry{sql.FieldEntry{Name: "TID", Binding: bindCol("tid", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "TV", Binding: bindCol("tv", "", sql.KindNum, false, false, false, "")}}, "", "", ""),
-		"U": bindRelation("u", "u", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "UV", Binding: bindCol("uv", "", sql.KindNum, false, false, false, "")}}, "", "", ""),
-	}
+func c1044Reg() {
+	sel.RegisterFunction("SLUG", 1, 1, func(args *sel.Args) *sel.Value { return sel.NewText("") })
+	sql.Define("postgresql", "funcs", "SLUG", map[string]interface{}{
+			"tpl": "slug({0})",
+			"ret": "TEXT",
+			"args": []string{"TEXT"},
+		})
 }
 
 func c1045Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"R": bindRelation("r", "r", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "RV", Binding: bindCol("rv", "", sql.KindNum, false, false, false, "")}}, "", "", ""),
-		"S": bindRelation("s", "s", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "SV", Binding: bindCol("sv", "", sql.KindNum, false, false, false, "")}}, "", "", ""),
-		"T": bindRelation("t", "t", []sql.FieldEntry{sql.FieldEntry{Name: "TID", Binding: bindCol("tid", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "TV", Binding: bindCol("tv", "", sql.KindNum, false, false, false, "")}}, "", "", ""),
-		"U": bindRelation("u", "u", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "UV", Binding: bindCol("uv", "", sql.KindNum, false, false, false, "")}}, "", "", ""),
+		"ARTICLES": bindRelation("articles", "a", []sql.FieldEntry{sql.FieldEntry{Name: "id", Binding: bindCol("id", "a", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "title", Binding: bindCol("title", "a", sql.KindText, false, false, false, "")}}, "", "", ""),
 	}
+}
+
+func c1045Reg() {
+	sel.RegisterFunction("SLUG", 1, 1, func(args *sel.Args) *sel.Value { return sel.NewText("") })
+	sql.Define("postgresql", "funcs", "SLUG", map[string]interface{}{
+			"tpl": "slug({0})",
+			"ret": "TEXT",
+			"args": []string{"TEXT"},
+		})
 }
 
 func c1046Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"R": bindRelation("r", "r", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "RV", Binding: bindCol("rv", "", sql.KindNum, false, false, false, "")}}, "", "", ""),
-		"S": bindRelation("s", "s", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "SV", Binding: bindCol("sv", "", sql.KindNum, false, false, false, "")}}, "", "", ""),
-		"T": bindRelation("t", "t", []sql.FieldEntry{sql.FieldEntry{Name: "TID", Binding: bindCol("tid", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "TV", Binding: bindCol("tv", "", sql.KindNum, false, false, false, "")}}, "", "", ""),
-		"U": bindRelation("u", "u", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "UV", Binding: bindCol("uv", "", sql.KindNum, false, false, false, "")}}, "", "", ""),
+		"ARTICLES": bindRelation("articles", "a", []sql.FieldEntry{sql.FieldEntry{Name: "id", Binding: bindCol("id", "a", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "title", Binding: bindCol("title", "a", sql.KindText, false, false, false, "")}}, "", "", ""),
 	}
+}
+
+func c1046Reg() {
+	sel.RegisterFunction("UNSPELLED", 1, 1, func(args *sel.Args) *sel.Value { return sel.NewText("") })
 }
 
 func c1047Bind() map[string]*sql.Binding {
@@ -7358,22 +7343,28 @@ func c1067Bind() map[string]*sql.Binding {
 
 func c1068Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"R": bindRelation("rtab", "ra", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "RV", Binding: bindCol("rv", "", sql.KindNum, false, false, false, "")}}, "", "", ""),
-		"S": bindRelation("stab", "sa", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "SV", Binding: bindCol("sv", "", sql.KindNum, false, false, false, "")}}, "", "", ""),
+		"R": bindRelation("r", "r", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "RV", Binding: bindCol("rv", "", sql.KindNum, false, false, false, "")}}, "", "", ""),
+		"S": bindRelation("s", "s", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "SV", Binding: bindCol("sv", "", sql.KindNum, false, false, false, "")}}, "", "", ""),
+		"T": bindRelation("t", "t", []sql.FieldEntry{sql.FieldEntry{Name: "TID", Binding: bindCol("tid", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "TV", Binding: bindCol("tv", "", sql.KindNum, false, false, false, "")}}, "", "", ""),
+		"U": bindRelation("u", "u", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "UV", Binding: bindCol("uv", "", sql.KindNum, false, false, false, "")}}, "", "", ""),
 	}
 }
 
 func c1069Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"R": bindRelation("rtab", "ra", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "RV", Binding: bindCol("rv", "", sql.KindNum, false, false, false, "")}}, "", "", ""),
-		"S": bindRelation("stab", "sa", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "SV", Binding: bindCol("sv", "", sql.KindNum, false, false, false, "")}}, "", "", ""),
+		"R": bindRelation("r", "r", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "RV", Binding: bindCol("rv", "", sql.KindNum, false, false, false, "")}}, "", "", ""),
+		"S": bindRelation("s", "s", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "SV", Binding: bindCol("sv", "", sql.KindNum, false, false, false, "")}}, "", "", ""),
+		"T": bindRelation("t", "t", []sql.FieldEntry{sql.FieldEntry{Name: "TID", Binding: bindCol("tid", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "TV", Binding: bindCol("tv", "", sql.KindNum, false, false, false, "")}}, "", "", ""),
+		"U": bindRelation("u", "u", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "UV", Binding: bindCol("uv", "", sql.KindNum, false, false, false, "")}}, "", "", ""),
 	}
 }
 
 func c1070Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"R": bindRelation("rtab", "ra", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "RV", Binding: bindCol("rv", "", sql.KindNum, false, false, false, "")}}, "", "", ""),
-		"S": bindRelation("stab", "sa", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "SV", Binding: bindCol("sv", "", sql.KindNum, false, false, false, "")}}, "", "", ""),
+		"R": bindRelation("r", "r", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "RV", Binding: bindCol("rv", "", sql.KindNum, false, false, false, "")}}, "", "", ""),
+		"S": bindRelation("s", "s", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "SV", Binding: bindCol("sv", "", sql.KindNum, false, false, false, "")}}, "", "", ""),
+		"T": bindRelation("t", "t", []sql.FieldEntry{sql.FieldEntry{Name: "TID", Binding: bindCol("tid", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "TV", Binding: bindCol("tv", "", sql.KindNum, false, false, false, "")}}, "", "", ""),
+		"U": bindRelation("u", "u", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "UV", Binding: bindCol("uv", "", sql.KindNum, false, false, false, "")}}, "", "", ""),
 	}
 }
 
@@ -7397,6 +7388,27 @@ func c1072Bind() map[string]*sql.Binding {
 
 func c1073Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
+		"R": bindRelation("rtab", "ra", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "RV", Binding: bindCol("rv", "", sql.KindNum, false, false, false, "")}}, "", "", ""),
+		"S": bindRelation("stab", "sa", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "SV", Binding: bindCol("sv", "", sql.KindNum, false, false, false, "")}}, "", "", ""),
+	}
+}
+
+func c1074Bind() map[string]*sql.Binding {
+	return map[string]*sql.Binding{
+		"R": bindRelation("rtab", "ra", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "RV", Binding: bindCol("rv", "", sql.KindNum, false, false, false, "")}}, "", "", ""),
+		"S": bindRelation("stab", "sa", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "SV", Binding: bindCol("sv", "", sql.KindNum, false, false, false, "")}}, "", "", ""),
+	}
+}
+
+func c1075Bind() map[string]*sql.Binding {
+	return map[string]*sql.Binding{
+		"R": bindRelation("rtab", "ra", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "RV", Binding: bindCol("rv", "", sql.KindNum, false, false, false, "")}}, "", "", ""),
+		"S": bindRelation("stab", "sa", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "SV", Binding: bindCol("sv", "", sql.KindNum, false, false, false, "")}}, "", "", ""),
+	}
+}
+
+func c1076Bind() map[string]*sql.Binding {
+	return map[string]*sql.Binding{
 		"R": bindRelation("r", "r", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "RV", Binding: bindCol("rv", "", sql.KindNum, false, false, false, "")}}, "", "", ""),
 		"S": bindRelation("s", "s", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "SV", Binding: bindCol("sv", "", sql.KindNum, false, false, false, "")}}, "", "", ""),
 		"T": bindRelation("t", "t", []sql.FieldEntry{sql.FieldEntry{Name: "TID", Binding: bindCol("tid", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "TV", Binding: bindCol("tv", "", sql.KindNum, false, false, false, "")}}, "", "", ""),
@@ -7404,43 +7416,21 @@ func c1073Bind() map[string]*sql.Binding {
 	}
 }
 
-func c1074Bind() map[string]*sql.Binding {
-	return map[string]*sql.Binding{
-		"ORDERS": bindRelation("orders", "o", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "CUSTOMER_ID", Binding: bindCol("customer_id", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "NAME", Binding: bindCol("name", "o", sql.KindText, false, false, false, "")}}, "", "", ""),
-		"CUSTOMERS": bindRelation("customers", "c", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "c", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "NAME", Binding: bindCol("name", "c", sql.KindText, false, false, false, "")}}, "", "", ""),
-		"PLAIN": bindRelation("plain", "", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "V", Binding: bindCol("v", "", sql.KindNum, false, false, false, "")}}, "", "", ""),
-	}
-}
-
-func c1075Bind() map[string]*sql.Binding {
-	return map[string]*sql.Binding{
-		"ORDERS": bindRelation("orders", "o", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "CUSTOMER_ID", Binding: bindCol("customer_id", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "NAME", Binding: bindCol("name", "o", sql.KindText, false, false, false, "")}}, "", "", ""),
-		"CUSTOMERS": bindRelation("customers", "c", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "c", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "NAME", Binding: bindCol("name", "c", sql.KindText, false, false, false, "")}}, "", "", ""),
-		"PLAIN": bindRelation("plain", "", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "V", Binding: bindCol("v", "", sql.KindNum, false, false, false, "")}}, "", "", ""),
-	}
-}
-
-func c1076Bind() map[string]*sql.Binding {
-	return map[string]*sql.Binding{
-		"ORDERS": bindRelation("orders", "o", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "CUSTOMER_ID", Binding: bindCol("customer_id", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "NAME", Binding: bindCol("name", "o", sql.KindText, false, false, false, "")}}, "", "", ""),
-		"CUSTOMERS": bindRelation("customers", "c", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "c", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "NAME", Binding: bindCol("name", "c", sql.KindText, false, false, false, "")}}, "", "", ""),
-		"PLAIN": bindRelation("plain", "", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "V", Binding: bindCol("v", "", sql.KindNum, false, false, false, "")}}, "", "", ""),
-	}
-}
-
 func c1077Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"ORDERS": bindRelation("orders", "o", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "CUSTOMER_ID", Binding: bindCol("customer_id", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "NAME", Binding: bindCol("name", "o", sql.KindText, false, false, false, "")}}, "", "", ""),
-		"CUSTOMERS": bindRelation("customers", "c", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "c", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "NAME", Binding: bindCol("name", "c", sql.KindText, false, false, false, "")}}, "", "", ""),
-		"PLAIN": bindRelation("plain", "", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "V", Binding: bindCol("v", "", sql.KindNum, false, false, false, "")}}, "", "", ""),
+		"R": bindRelation("r", "r", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "RV", Binding: bindCol("rv", "", sql.KindNum, false, false, false, "")}}, "", "", ""),
+		"S": bindRelation("s", "s", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "SV", Binding: bindCol("sv", "", sql.KindNum, false, false, false, "")}}, "", "", ""),
+		"T": bindRelation("t", "t", []sql.FieldEntry{sql.FieldEntry{Name: "TID", Binding: bindCol("tid", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "TV", Binding: bindCol("tv", "", sql.KindNum, false, false, false, "")}}, "", "", ""),
+		"U": bindRelation("u", "u", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "UV", Binding: bindCol("uv", "", sql.KindNum, false, false, false, "")}}, "", "", ""),
 	}
 }
 
 func c1078Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"ORDERS": bindRelation("orders", "o", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "CUSTOMER_ID", Binding: bindCol("customer_id", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "NAME", Binding: bindCol("name", "o", sql.KindText, false, false, false, "")}}, "", "", ""),
-		"CUSTOMERS": bindRelation("customers", "c", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "c", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "NAME", Binding: bindCol("name", "c", sql.KindText, false, false, false, "")}}, "", "", ""),
-		"PLAIN": bindRelation("plain", "", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "V", Binding: bindCol("v", "", sql.KindNum, false, false, false, "")}}, "", "", ""),
+		"R": bindRelation("r", "r", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "RV", Binding: bindCol("rv", "", sql.KindNum, false, false, false, "")}}, "", "", ""),
+		"S": bindRelation("s", "s", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "SV", Binding: bindCol("sv", "", sql.KindNum, false, false, false, "")}}, "", "", ""),
+		"T": bindRelation("t", "t", []sql.FieldEntry{sql.FieldEntry{Name: "TID", Binding: bindCol("tid", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "TV", Binding: bindCol("tv", "", sql.KindNum, false, false, false, "")}}, "", "", ""),
+		"U": bindRelation("u", "u", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "UV", Binding: bindCol("uv", "", sql.KindNum, false, false, false, "")}}, "", "", ""),
 	}
 }
 
@@ -7462,24 +7452,46 @@ func c1080Bind() map[string]*sql.Binding {
 
 func c1081Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"R": bindRelation("r", "r", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "RV", Binding: bindCol("rv", "", sql.KindNum, false, false, false, "")}}, "", "", ""),
-		"S": bindRelation("s", "s", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "SV", Binding: bindCol("sv", "", sql.KindNum, false, false, false, "")}}, "", "", ""),
-		"T": bindRelation("t", "t", []sql.FieldEntry{sql.FieldEntry{Name: "TID", Binding: bindCol("tid", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "TV", Binding: bindCol("tv", "", sql.KindNum, false, false, false, "")}}, "", "", ""),
-		"U": bindRelation("u", "u", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "UV", Binding: bindCol("uv", "", sql.KindNum, false, false, false, "")}}, "", "", ""),
+		"ORDERS": bindRelation("orders", "o", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "CUSTOMER_ID", Binding: bindCol("customer_id", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "NAME", Binding: bindCol("name", "o", sql.KindText, false, false, false, "")}}, "", "", ""),
+		"CUSTOMERS": bindRelation("customers", "c", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "c", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "NAME", Binding: bindCol("name", "c", sql.KindText, false, false, false, "")}}, "", "", ""),
+		"PLAIN": bindRelation("plain", "", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "V", Binding: bindCol("v", "", sql.KindNum, false, false, false, "")}}, "", "", ""),
 	}
 }
 
 func c1082Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"R": bindRelation("r", "r", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "RV", Binding: bindCol("rv", "", sql.KindNum, false, false, false, "")}}, "", "", ""),
-		"S": bindRelation("s", "s", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "SV", Binding: bindCol("sv", "", sql.KindNum, false, false, false, "")}}, "", "", ""),
-		"T": bindRelation("t", "t", []sql.FieldEntry{sql.FieldEntry{Name: "TID", Binding: bindCol("tid", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "TV", Binding: bindCol("tv", "", sql.KindNum, false, false, false, "")}}, "", "", ""),
-		"U": bindRelation("u", "u", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "UV", Binding: bindCol("uv", "", sql.KindNum, false, false, false, "")}}, "", "", ""),
+		"ORDERS": bindRelation("orders", "o", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "CUSTOMER_ID", Binding: bindCol("customer_id", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "NAME", Binding: bindCol("name", "o", sql.KindText, false, false, false, "")}}, "", "", ""),
+		"CUSTOMERS": bindRelation("customers", "c", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "c", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "NAME", Binding: bindCol("name", "c", sql.KindText, false, false, false, "")}}, "", "", ""),
+		"PLAIN": bindRelation("plain", "", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "V", Binding: bindCol("v", "", sql.KindNum, false, false, false, "")}}, "", "", ""),
 	}
 }
 
 func c1083Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
+		"ORDERS": bindRelation("orders", "o", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "CUSTOMER_ID", Binding: bindCol("customer_id", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "NAME", Binding: bindCol("name", "o", sql.KindText, false, false, false, "")}}, "", "", ""),
+		"CUSTOMERS": bindRelation("customers", "c", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "c", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "NAME", Binding: bindCol("name", "c", sql.KindText, false, false, false, "")}}, "", "", ""),
+		"PLAIN": bindRelation("plain", "", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "V", Binding: bindCol("v", "", sql.KindNum, false, false, false, "")}}, "", "", ""),
+	}
+}
+
+func c1084Bind() map[string]*sql.Binding {
+	return map[string]*sql.Binding{
+		"ORDERS": bindRelation("orders", "o", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "CUSTOMER_ID", Binding: bindCol("customer_id", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "NAME", Binding: bindCol("name", "o", sql.KindText, false, false, false, "")}}, "", "", ""),
+		"CUSTOMERS": bindRelation("customers", "c", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "c", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "NAME", Binding: bindCol("name", "c", sql.KindText, false, false, false, "")}}, "", "", ""),
+		"PLAIN": bindRelation("plain", "", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "V", Binding: bindCol("v", "", sql.KindNum, false, false, false, "")}}, "", "", ""),
+	}
+}
+
+func c1085Bind() map[string]*sql.Binding {
+	return map[string]*sql.Binding{
+		"ORDERS": bindRelation("orders", "o", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "CUSTOMER_ID", Binding: bindCol("customer_id", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "NAME", Binding: bindCol("name", "o", sql.KindText, false, false, false, "")}}, "", "", ""),
+		"CUSTOMERS": bindRelation("customers", "c", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "c", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "NAME", Binding: bindCol("name", "c", sql.KindText, false, false, false, "")}}, "", "", ""),
+		"PLAIN": bindRelation("plain", "", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "V", Binding: bindCol("v", "", sql.KindNum, false, false, false, "")}}, "", "", ""),
+	}
+}
+
+func c1086Bind() map[string]*sql.Binding {
+	return map[string]*sql.Binding{
 		"R": bindRelation("r", "r", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "RV", Binding: bindCol("rv", "", sql.KindNum, false, false, false, "")}}, "", "", ""),
 		"S": bindRelation("s", "s", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "SV", Binding: bindCol("sv", "", sql.KindNum, false, false, false, "")}}, "", "", ""),
 		"T": bindRelation("t", "t", []sql.FieldEntry{sql.FieldEntry{Name: "TID", Binding: bindCol("tid", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "TV", Binding: bindCol("tv", "", sql.KindNum, false, false, false, "")}}, "", "", ""),
@@ -7487,93 +7499,81 @@ func c1083Bind() map[string]*sql.Binding {
 	}
 }
 
-func c1084Bind() map[string]*sql.Binding {
-	return map[string]*sql.Binding{
-
-	}
-}
-
-func c1085Bind() map[string]*sql.Binding {
-	return map[string]*sql.Binding{
-
-	}
-}
-
-func c1086Bind() map[string]*sql.Binding {
-	return map[string]*sql.Binding{
-		"A": bindCol("a", "t", sql.KindNum, false, false, false, ""),
-	}
-}
-
 func c1087Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"A": bindCol("a", "t", sql.KindNum, false, false, false, ""),
+		"R": bindRelation("r", "r", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "RV", Binding: bindCol("rv", "", sql.KindNum, false, false, false, "")}}, "", "", ""),
+		"S": bindRelation("s", "s", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "SV", Binding: bindCol("sv", "", sql.KindNum, false, false, false, "")}}, "", "", ""),
+		"T": bindRelation("t", "t", []sql.FieldEntry{sql.FieldEntry{Name: "TID", Binding: bindCol("tid", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "TV", Binding: bindCol("tv", "", sql.KindNum, false, false, false, "")}}, "", "", ""),
+		"U": bindRelation("u", "u", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "UV", Binding: bindCol("uv", "", sql.KindNum, false, false, false, "")}}, "", "", ""),
 	}
 }
 
 func c1088Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"A": bindCol("a", "t", sql.KindNum, false, false, false, ""),
+		"R": bindRelation("r", "r", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "RV", Binding: bindCol("rv", "", sql.KindNum, false, false, false, "")}}, "", "", ""),
+		"S": bindRelation("s", "s", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "SV", Binding: bindCol("sv", "", sql.KindNum, false, false, false, "")}}, "", "", ""),
+		"T": bindRelation("t", "t", []sql.FieldEntry{sql.FieldEntry{Name: "TID", Binding: bindCol("tid", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "TV", Binding: bindCol("tv", "", sql.KindNum, false, false, false, "")}}, "", "", ""),
+		"U": bindRelation("u", "u", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "UV", Binding: bindCol("uv", "", sql.KindNum, false, false, false, "")}}, "", "", ""),
 	}
 }
 
 func c1089Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"A": bindCol("a", "t", sql.KindNum, false, false, false, ""),
+
 	}
 }
 
 func c1090Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"V": bindColumns([]*sql.Binding{bindCol("a", "x", sql.KindNum, false, false, false, ""), bindCol("b", "x", sql.KindNum, false, false, false, "")}),
+
 	}
 }
 
 func c1091Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"V": bindColumns([]*sql.Binding{bindCol("a", "x", sql.KindNum, false, false, false, ""), bindCol("b", "x", sql.KindNum, false, false, false, "")}),
+		"A": bindCol("a", "t", sql.KindNum, false, false, false, ""),
 	}
 }
 
 func c1092Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"V": bindColumns([]*sql.Binding{bindCol("a", "x", sql.KindNum, false, false, false, ""), bindCol("b", "x", sql.KindNum, false, false, false, "")}),
+		"A": bindCol("a", "t", sql.KindNum, false, false, false, ""),
 	}
 }
 
 func c1093Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"V": bindColumns([]*sql.Binding{bindCol("a", "x", sql.KindNum, false, false, false, ""), bindCol("b", "x", sql.KindNum, false, false, false, "")}),
+		"A": bindCol("a", "t", sql.KindNum, false, false, false, ""),
 	}
 }
 
 func c1094Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-
+		"A": bindCol("a", "t", sql.KindNum, false, false, false, ""),
 	}
 }
 
 func c1095Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-
+		"V": bindColumns([]*sql.Binding{bindCol("a", "x", sql.KindNum, false, false, false, ""), bindCol("b", "x", sql.KindNum, false, false, false, "")}),
 	}
 }
 
 func c1096Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-
+		"V": bindColumns([]*sql.Binding{bindCol("a", "x", sql.KindNum, false, false, false, ""), bindCol("b", "x", sql.KindNum, false, false, false, "")}),
 	}
 }
 
 func c1097Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-
+		"V": bindColumns([]*sql.Binding{bindCol("a", "x", sql.KindNum, false, false, false, ""), bindCol("b", "x", sql.KindNum, false, false, false, "")}),
 	}
 }
 
 func c1098Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-
+		"V": bindColumns([]*sql.Binding{bindCol("a", "x", sql.KindNum, false, false, false, ""), bindCol("b", "x", sql.KindNum, false, false, false, "")}),
 	}
 }
 
@@ -7585,185 +7585,183 @@ func c1099Bind() map[string]*sql.Binding {
 
 func c1100Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"X": bindCol("x", "t", sql.KindNum, false, false, false, ""),
+
 	}
 }
 
 func c1101Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"X": bindCol("x", "t", sql.KindNum, false, false, false, ""),
+
 	}
 }
 
 func c1102Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"X": bindCol("x", "t", sql.KindNum, false, false, false, ""),
+
 	}
 }
 
 func c1103Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"X": bindCol("x", "t", sql.KindNum, false, false, false, ""),
+
 	}
 }
 
 func c1104Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"V": bindColumns([]*sql.Binding{bindCol("a", "x", sql.KindNum, false, false, false, ""), bindCol("b", "x", sql.KindNum, false, false, false, "")}),
-		"X": bindCol("x", "t", sql.KindNum, false, false, false, ""),
+
 	}
 }
 
 func c1105Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"V": bindColumns([]*sql.Binding{bindCol("a", "x", sql.KindNum, false, false, false, ""), bindCol("b", "x", sql.KindNum, false, false, false, "")}),
 		"X": bindCol("x", "t", sql.KindNum, false, false, false, ""),
 	}
 }
 
 func c1106Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"V": bindColumns([]*sql.Binding{bindCol("a", "x", sql.KindNum, false, false, false, ""), bindCol("b", "x", sql.KindNum, false, false, false, "")}),
+		"X": bindCol("x", "t", sql.KindNum, false, false, false, ""),
 	}
 }
 
 func c1107Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-
+		"X": bindCol("x", "t", sql.KindNum, false, false, false, ""),
 	}
 }
 
 func c1108Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"V": bindColumns([]*sql.Binding{bindCol("a", "x", sql.KindNum, false, false, false, ""), bindCol("b", "x", sql.KindNum, false, false, false, "")}),
+		"X": bindCol("x", "t", sql.KindNum, false, false, false, ""),
 	}
 }
 
 func c1109Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"A": bindCol("a", "t", sql.KindNum, false, false, false, ""),
+		"V": bindColumns([]*sql.Binding{bindCol("a", "x", sql.KindNum, false, false, false, ""), bindCol("b", "x", sql.KindNum, false, false, false, "")}),
+		"X": bindCol("x", "t", sql.KindNum, false, false, false, ""),
 	}
 }
 
 func c1110Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"A": bindCol("a", "t", sql.KindNum, false, false, false, ""),
+		"V": bindColumns([]*sql.Binding{bindCol("a", "x", sql.KindNum, false, false, false, ""), bindCol("b", "x", sql.KindNum, false, false, false, "")}),
+		"X": bindCol("x", "t", sql.KindNum, false, false, false, ""),
 	}
 }
 
 func c1111Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"Y": bindCol("y", "t", sql.KindNum, false, false, false, ""),
+		"V": bindColumns([]*sql.Binding{bindCol("a", "x", sql.KindNum, false, false, false, ""), bindCol("b", "x", sql.KindNum, false, false, false, "")}),
 	}
 }
 
 func c1112Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"Y": bindCol("y", "t", sql.KindNum, false, false, false, ""),
+
 	}
 }
 
 func c1113Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"B": bindCol("b", "t", sql.KindNum, false, false, false, ""),
+		"V": bindColumns([]*sql.Binding{bindCol("a", "x", sql.KindNum, false, false, false, ""), bindCol("b", "x", sql.KindNum, false, false, false, "")}),
 	}
 }
 
 func c1114Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"B": bindCol("b", "t", sql.KindNum, false, false, false, ""),
+		"A": bindCol("a", "t", sql.KindNum, false, false, false, ""),
 	}
 }
 
 func c1115Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"V": bindValue(sel.NewText("5"), sqlKindPtr(sql.KindNum)),
-		"A": bindCol("a", "t", sql.KindUnknown, false, false, false, ""),
+		"A": bindCol("a", "t", sql.KindNum, false, false, false, ""),
 	}
 }
 
 func c1116Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"V": bindValue(sel.NewText("5"), sqlKindPtr(sql.KindNum)),
-		"A": bindCol("a", "t", sql.KindUnknown, false, false, false, ""),
+		"Y": bindCol("y", "t", sql.KindNum, false, false, false, ""),
 	}
 }
 
 func c1117Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"V": bindValue(sel.NewText("abc"), nil),
-		"A": bindCol("a", "t", sql.KindUnknown, false, false, false, ""),
+		"Y": bindCol("y", "t", sql.KindNum, false, false, false, ""),
 	}
 }
 
 func c1118Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"V": bindValue(sel.NewText("abc"), nil),
-		"A": bindCol("a", "t", sql.KindUnknown, false, false, false, ""),
+		"B": bindCol("b", "t", sql.KindNum, false, false, false, ""),
 	}
 }
 
 func c1119Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"R": bindRelation("r", "r", []sql.FieldEntry{sql.FieldEntry{Name: "QTY", Binding: bindCol("qty", "r", sql.KindNum, false, false, false, "")}}, "", "", ""),
-		"P": bindValue(sel.NewText("abc"), nil),
+		"B": bindCol("b", "t", sql.KindNum, false, false, false, ""),
 	}
 }
 
 func c1120Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"R": bindRelation("r", "r", []sql.FieldEntry{sql.FieldEntry{Name: "QTY", Binding: bindCol("qty", "r", sql.KindNum, false, false, false, "")}}, "", "", ""),
-		"P": bindValue(sel.NewText("abc"), nil),
+		"V": bindValue(sel.NewText("5"), sqlKindPtr(sql.KindNum)),
+		"A": bindCol("a", "t", sql.KindUnknown, false, false, false, ""),
 	}
 }
 
 func c1121Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-
+		"V": bindValue(sel.NewText("5"), sqlKindPtr(sql.KindNum)),
+		"A": bindCol("a", "t", sql.KindUnknown, false, false, false, ""),
 	}
 }
 
 func c1122Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-
+		"V": bindValue(sel.NewText("abc"), nil),
+		"A": bindCol("a", "t", sql.KindUnknown, false, false, false, ""),
 	}
 }
 
 func c1123Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-
+		"V": bindValue(sel.NewText("abc"), nil),
+		"A": bindCol("a", "t", sql.KindUnknown, false, false, false, ""),
 	}
 }
 
 func c1124Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-
+		"R": bindRelation("r", "r", []sql.FieldEntry{sql.FieldEntry{Name: "QTY", Binding: bindCol("qty", "r", sql.KindNum, false, false, false, "")}}, "", "", ""),
+		"P": bindValue(sel.NewText("abc"), nil),
 	}
 }
 
 func c1125Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"A": bindCol("a", "t", sql.KindNum, false, false, false, ""),
-		"B": bindCol("b", "t", sql.KindNum, false, false, false, ""),
+		"R": bindRelation("r", "r", []sql.FieldEntry{sql.FieldEntry{Name: "QTY", Binding: bindCol("qty", "r", sql.KindNum, false, false, false, "")}}, "", "", ""),
+		"P": bindValue(sel.NewText("abc"), nil),
 	}
 }
 
 func c1126Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"A": bindCol("a", "t", sql.KindNum, false, false, false, ""),
-		"B": bindCol("b", "t", sql.KindNum, false, false, false, ""),
+
 	}
 }
 
 func c1127Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"ORDERS": bindRelation("orders", "o", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "o", sql.KindNum, false, false, false, "")}}, "", "", ""),
+
 	}
 }
 
 func c1128Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"ORDERS": bindRelation("orders", "o", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "o", sql.KindNum, false, false, false, "")}}, "", "", ""),
+
 	}
 }
 
@@ -7775,31 +7773,33 @@ func c1129Bind() map[string]*sql.Binding {
 
 func c1130Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-
+		"A": bindCol("a", "t", sql.KindNum, false, false, false, ""),
+		"B": bindCol("b", "t", sql.KindNum, false, false, false, ""),
 	}
 }
 
 func c1131Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-
+		"A": bindCol("a", "t", sql.KindNum, false, false, false, ""),
+		"B": bindCol("b", "t", sql.KindNum, false, false, false, ""),
 	}
 }
 
 func c1132Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-
+		"ORDERS": bindRelation("orders", "o", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "o", sql.KindNum, false, false, false, "")}}, "", "", ""),
 	}
 }
 
 func c1133Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"A": bindCol("a", "t", sql.KindNum, false, false, false, ""),
+		"ORDERS": bindRelation("orders", "o", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "o", sql.KindNum, false, false, false, "")}}, "", "", ""),
 	}
 }
 
 func c1134Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"N": bindCol("n", "t", sql.KindNum, false, false, false, ""),
+
 	}
 }
 
@@ -7811,67 +7811,67 @@ func c1135Bind() map[string]*sql.Binding {
 
 func c1136Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"N": bindCol("n", "t", sql.KindNum, false, false, false, ""),
+
 	}
 }
 
 func c1137Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"N": bindCol("n", "t", sql.KindNum, false, false, false, ""),
+
 	}
 }
 
 func c1138Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-
+		"A": bindCol("a", "t", sql.KindNum, false, false, false, ""),
 	}
 }
 
 func c1139Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"A": bindCol("a", "t", sql.KindNum, false, false, false, ""),
+		"N": bindCol("n", "t", sql.KindNum, false, false, false, ""),
 	}
 }
 
 func c1140Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"N": bindCol("n", "t", sql.KindNum, false, false, false, ""),
+
 	}
 }
 
 func c1141Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"A": bindCol("a", "t", sql.KindNum, false, false, false, ""),
+		"N": bindCol("n", "t", sql.KindNum, false, false, false, ""),
 	}
 }
 
 func c1142Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"ITEMS": bindRelation("items", "i", []sql.FieldEntry{sql.FieldEntry{Name: "DEPT", Binding: bindCol("dept", "i", sql.KindText, false, false, false, "")}, sql.FieldEntry{Name: "QTY", Binding: bindCol("qty", "i", sql.KindNum, false, false, false, "")}}, "", "", ""),
+		"N": bindCol("n", "t", sql.KindNum, false, false, false, ""),
 	}
 }
 
 func c1143Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"ITEMS": bindRelation("items", "i", []sql.FieldEntry{sql.FieldEntry{Name: "DEPT", Binding: bindCol("dept", "i", sql.KindText, false, false, false, "")}, sql.FieldEntry{Name: "QTY", Binding: bindCol("qty", "i", sql.KindNum, false, false, false, "")}}, "", "", ""),
+
 	}
 }
 
 func c1144Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"ORDERS": bindRelation("orders", "o", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "o", sql.KindNum, false, false, false, "")}}, "", "", ""),
+		"A": bindCol("a", "t", sql.KindNum, false, false, false, ""),
 	}
 }
 
 func c1145Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"ORDERS": bindRelation("orders", "o", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "o", sql.KindNum, false, false, false, "")}}, "", "", ""),
+		"N": bindCol("n", "t", sql.KindNum, false, false, false, ""),
 	}
 }
 
 func c1146Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"ITEMS": bindRelation("items", "i", []sql.FieldEntry{sql.FieldEntry{Name: "DEPT", Binding: bindCol("dept", "i", sql.KindText, false, false, false, "")}, sql.FieldEntry{Name: "QTY", Binding: bindCol("qty", "i", sql.KindNum, false, false, false, "")}}, "", "", ""),
+		"A": bindCol("a", "t", sql.KindNum, false, false, false, ""),
 	}
 }
 
@@ -7889,13 +7889,13 @@ func c1148Bind() map[string]*sql.Binding {
 
 func c1149Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"ITEMS": bindRelation("items", "i", []sql.FieldEntry{sql.FieldEntry{Name: "DEPT", Binding: bindCol("dept", "i", sql.KindText, false, false, false, "")}, sql.FieldEntry{Name: "QTY", Binding: bindCol("qty", "i", sql.KindNum, false, false, false, "")}}, "", "", ""),
+		"ORDERS": bindRelation("orders", "o", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "o", sql.KindNum, false, false, false, "")}}, "", "", ""),
 	}
 }
 
 func c1150Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"ITEMS": bindRelation("items", "i", []sql.FieldEntry{sql.FieldEntry{Name: "DEPT", Binding: bindCol("dept", "i", sql.KindText, false, false, false, "")}, sql.FieldEntry{Name: "QTY", Binding: bindCol("qty", "i", sql.KindNum, false, false, false, "")}}, "", "", ""),
+		"ORDERS": bindRelation("orders", "o", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "o", sql.KindNum, false, false, false, "")}}, "", "", ""),
 	}
 }
 
@@ -7907,36 +7907,31 @@ func c1151Bind() map[string]*sql.Binding {
 
 func c1152Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"F": bindCol("f", "", sql.KindUnknown, false, false, false, ""),
-		"P": bindCol("p", "", sql.KindBool, false, false, false, ""),
+		"ITEMS": bindRelation("items", "i", []sql.FieldEntry{sql.FieldEntry{Name: "DEPT", Binding: bindCol("dept", "i", sql.KindText, false, false, false, "")}, sql.FieldEntry{Name: "QTY", Binding: bindCol("qty", "i", sql.KindNum, false, false, false, "")}}, "", "", ""),
 	}
 }
 
 func c1153Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"F": bindCol("f", "", sql.KindUnknown, false, false, false, ""),
-		"P": bindCol("p", "", sql.KindBool, false, false, false, ""),
+		"ITEMS": bindRelation("items", "i", []sql.FieldEntry{sql.FieldEntry{Name: "DEPT", Binding: bindCol("dept", "i", sql.KindText, false, false, false, "")}, sql.FieldEntry{Name: "QTY", Binding: bindCol("qty", "i", sql.KindNum, false, false, false, "")}}, "", "", ""),
 	}
 }
 
 func c1154Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"F": bindCol("f", "", sql.KindUnknown, false, false, false, ""),
-		"P": bindCol("p", "", sql.KindBool, false, false, false, ""),
+		"ITEMS": bindRelation("items", "i", []sql.FieldEntry{sql.FieldEntry{Name: "DEPT", Binding: bindCol("dept", "i", sql.KindText, false, false, false, "")}, sql.FieldEntry{Name: "QTY", Binding: bindCol("qty", "i", sql.KindNum, false, false, false, "")}}, "", "", ""),
 	}
 }
 
 func c1155Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"F": bindCol("f", "", sql.KindUnknown, false, false, false, ""),
-		"P": bindCol("p", "", sql.KindBool, false, false, false, ""),
+		"ITEMS": bindRelation("items", "i", []sql.FieldEntry{sql.FieldEntry{Name: "DEPT", Binding: bindCol("dept", "i", sql.KindText, false, false, false, "")}, sql.FieldEntry{Name: "QTY", Binding: bindCol("qty", "i", sql.KindNum, false, false, false, "")}}, "", "", ""),
 	}
 }
 
 func c1156Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"F": bindCol("f", "", sql.KindUnknown, false, false, false, ""),
-		"P": bindCol("p", "", sql.KindBool, false, false, false, ""),
+		"ITEMS": bindRelation("items", "i", []sql.FieldEntry{sql.FieldEntry{Name: "DEPT", Binding: bindCol("dept", "i", sql.KindText, false, false, false, "")}, sql.FieldEntry{Name: "QTY", Binding: bindCol("qty", "i", sql.KindNum, false, false, false, "")}}, "", "", ""),
 	}
 }
 
@@ -7963,55 +7958,50 @@ func c1159Bind() map[string]*sql.Binding {
 
 func c1160Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"F": bindCol("f", "", sql.KindBool, false, false, false, ""),
+		"F": bindCol("f", "", sql.KindUnknown, false, false, false, ""),
 		"P": bindCol("p", "", sql.KindBool, false, false, false, ""),
 	}
 }
 
 func c1161Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"F": bindCol("f", "", sql.KindBool, false, false, false, ""),
+		"F": bindCol("f", "", sql.KindUnknown, false, false, false, ""),
 		"P": bindCol("p", "", sql.KindBool, false, false, false, ""),
 	}
 }
 
 func c1162Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"U": bindCol("u", "", sql.KindUnknown, false, false, false, ""),
+		"F": bindCol("f", "", sql.KindUnknown, false, false, false, ""),
 		"P": bindCol("p", "", sql.KindBool, false, false, false, ""),
-		"N": bindCol("n", "", sql.KindNum, false, false, false, ""),
 	}
 }
 
 func c1163Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"U": bindCol("u", "", sql.KindUnknown, false, false, false, ""),
+		"F": bindCol("f", "", sql.KindUnknown, false, false, false, ""),
 		"P": bindCol("p", "", sql.KindBool, false, false, false, ""),
-		"N": bindCol("n", "", sql.KindNum, false, false, false, ""),
 	}
 }
 
 func c1164Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"U": bindCol("u", "", sql.KindUnknown, false, false, false, ""),
+		"F": bindCol("f", "", sql.KindUnknown, false, false, false, ""),
 		"P": bindCol("p", "", sql.KindBool, false, false, false, ""),
-		"N": bindCol("n", "", sql.KindNum, false, false, false, ""),
 	}
 }
 
 func c1165Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"U": bindCol("u", "", sql.KindUnknown, false, false, false, ""),
+		"F": bindCol("f", "", sql.KindBool, false, false, false, ""),
 		"P": bindCol("p", "", sql.KindBool, false, false, false, ""),
-		"N": bindCol("n", "", sql.KindNum, false, false, false, ""),
 	}
 }
 
 func c1166Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"U": bindCol("u", "", sql.KindUnknown, false, false, false, ""),
+		"F": bindCol("f", "", sql.KindBool, false, false, false, ""),
 		"P": bindCol("p", "", sql.KindBool, false, false, false, ""),
-		"N": bindCol("n", "", sql.KindNum, false, false, false, ""),
 	}
 }
 
@@ -8089,56 +8079,41 @@ func c1175Bind() map[string]*sql.Binding {
 
 func c1176Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"T": bindCol("t", "", sql.KindText, false, false, false, ""),
-		"T2": bindCol("t2", "", sql.KindText, false, false, false, ""),
-		"F": bindCol("f", "", sql.KindBool, false, false, false, ""),
-		"X": bindCol("x", "", sql.KindBin, false, false, false, ""),
-		"V": bindColumns([]*sql.Binding{bindCol("a", "", sql.KindText, false, false, false, ""), bindCol("b", "", sql.KindBool, false, false, false, "")}),
-		"W": bindColumns([]*sql.Binding{bindCol("a", "", sql.KindText, false, false, false, ""), bindCol("b", "", sql.KindBin, false, false, false, "")}),
+		"U": bindCol("u", "", sql.KindUnknown, false, false, false, ""),
+		"P": bindCol("p", "", sql.KindBool, false, false, false, ""),
+		"N": bindCol("n", "", sql.KindNum, false, false, false, ""),
 	}
 }
 
 func c1177Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"T": bindCol("t", "", sql.KindText, false, false, false, ""),
-		"T2": bindCol("t2", "", sql.KindText, false, false, false, ""),
-		"F": bindCol("f", "", sql.KindBool, false, false, false, ""),
-		"X": bindCol("x", "", sql.KindBin, false, false, false, ""),
-		"V": bindColumns([]*sql.Binding{bindCol("a", "", sql.KindText, false, false, false, ""), bindCol("b", "", sql.KindBool, false, false, false, "")}),
-		"W": bindColumns([]*sql.Binding{bindCol("a", "", sql.KindText, false, false, false, ""), bindCol("b", "", sql.KindBin, false, false, false, "")}),
+		"U": bindCol("u", "", sql.KindUnknown, false, false, false, ""),
+		"P": bindCol("p", "", sql.KindBool, false, false, false, ""),
+		"N": bindCol("n", "", sql.KindNum, false, false, false, ""),
 	}
 }
 
 func c1178Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"T": bindCol("t", "", sql.KindText, false, false, false, ""),
-		"T2": bindCol("t2", "", sql.KindText, false, false, false, ""),
-		"F": bindCol("f", "", sql.KindBool, false, false, false, ""),
-		"X": bindCol("x", "", sql.KindBin, false, false, false, ""),
-		"V": bindColumns([]*sql.Binding{bindCol("a", "", sql.KindText, false, false, false, ""), bindCol("b", "", sql.KindBool, false, false, false, "")}),
-		"W": bindColumns([]*sql.Binding{bindCol("a", "", sql.KindText, false, false, false, ""), bindCol("b", "", sql.KindBin, false, false, false, "")}),
+		"U": bindCol("u", "", sql.KindUnknown, false, false, false, ""),
+		"P": bindCol("p", "", sql.KindBool, false, false, false, ""),
+		"N": bindCol("n", "", sql.KindNum, false, false, false, ""),
 	}
 }
 
 func c1179Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"T": bindCol("t", "", sql.KindText, false, false, false, ""),
-		"T2": bindCol("t2", "", sql.KindText, false, false, false, ""),
-		"F": bindCol("f", "", sql.KindBool, false, false, false, ""),
-		"X": bindCol("x", "", sql.KindBin, false, false, false, ""),
-		"V": bindColumns([]*sql.Binding{bindCol("a", "", sql.KindText, false, false, false, ""), bindCol("b", "", sql.KindBool, false, false, false, "")}),
-		"W": bindColumns([]*sql.Binding{bindCol("a", "", sql.KindText, false, false, false, ""), bindCol("b", "", sql.KindBin, false, false, false, "")}),
+		"U": bindCol("u", "", sql.KindUnknown, false, false, false, ""),
+		"P": bindCol("p", "", sql.KindBool, false, false, false, ""),
+		"N": bindCol("n", "", sql.KindNum, false, false, false, ""),
 	}
 }
 
 func c1180Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"T": bindCol("t", "", sql.KindText, false, false, false, ""),
-		"T2": bindCol("t2", "", sql.KindText, false, false, false, ""),
-		"F": bindCol("f", "", sql.KindBool, false, false, false, ""),
-		"X": bindCol("x", "", sql.KindBin, false, false, false, ""),
-		"V": bindColumns([]*sql.Binding{bindCol("a", "", sql.KindText, false, false, false, ""), bindCol("b", "", sql.KindBool, false, false, false, "")}),
-		"W": bindColumns([]*sql.Binding{bindCol("a", "", sql.KindText, false, false, false, ""), bindCol("b", "", sql.KindBin, false, false, false, "")}),
+		"U": bindCol("u", "", sql.KindUnknown, false, false, false, ""),
+		"P": bindCol("p", "", sql.KindBool, false, false, false, ""),
+		"N": bindCol("n", "", sql.KindNum, false, false, false, ""),
 	}
 }
 
@@ -8199,42 +8174,79 @@ func c1185Bind() map[string]*sql.Binding {
 
 func c1186Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"O": bindRelation("orders", "o", []sql.FieldEntry{sql.FieldEntry{Name: "CAT", Binding: bindCol("cat", "o", sql.KindText, false, false, false, "")}, sql.FieldEntry{Name: "STATUS", Binding: bindCol("status", "o", sql.KindText, false, false, false, "")}, sql.FieldEntry{Name: "FLAG", Binding: bindCol("flag", "o", sql.KindBool, false, false, false, "")}}, "", "", ""),
+		"T": bindCol("t", "", sql.KindText, false, false, false, ""),
+		"T2": bindCol("t2", "", sql.KindText, false, false, false, ""),
+		"F": bindCol("f", "", sql.KindBool, false, false, false, ""),
+		"X": bindCol("x", "", sql.KindBin, false, false, false, ""),
+		"V": bindColumns([]*sql.Binding{bindCol("a", "", sql.KindText, false, false, false, ""), bindCol("b", "", sql.KindBool, false, false, false, "")}),
+		"W": bindColumns([]*sql.Binding{bindCol("a", "", sql.KindText, false, false, false, ""), bindCol("b", "", sql.KindBin, false, false, false, "")}),
 	}
 }
 
 func c1187Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"O": bindRelation("orders", "o", []sql.FieldEntry{sql.FieldEntry{Name: "CAT", Binding: bindCol("cat", "o", sql.KindText, false, false, false, "")}, sql.FieldEntry{Name: "STATUS", Binding: bindCol("status", "o", sql.KindText, false, false, false, "")}, sql.FieldEntry{Name: "FLAG", Binding: bindCol("flag", "o", sql.KindBool, false, false, false, "")}}, "", "", ""),
+		"T": bindCol("t", "", sql.KindText, false, false, false, ""),
+		"T2": bindCol("t2", "", sql.KindText, false, false, false, ""),
+		"F": bindCol("f", "", sql.KindBool, false, false, false, ""),
+		"X": bindCol("x", "", sql.KindBin, false, false, false, ""),
+		"V": bindColumns([]*sql.Binding{bindCol("a", "", sql.KindText, false, false, false, ""), bindCol("b", "", sql.KindBool, false, false, false, "")}),
+		"W": bindColumns([]*sql.Binding{bindCol("a", "", sql.KindText, false, false, false, ""), bindCol("b", "", sql.KindBin, false, false, false, "")}),
 	}
 }
 
 func c1188Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"O": bindRelation("orders", "o", []sql.FieldEntry{sql.FieldEntry{Name: "CAT", Binding: bindCol("cat", "o", sql.KindText, false, false, false, "")}, sql.FieldEntry{Name: "STATUS", Binding: bindCol("status", "o", sql.KindText, false, false, false, "")}, sql.FieldEntry{Name: "FLAG", Binding: bindCol("flag", "o", sql.KindBool, false, false, false, "")}}, "", "", ""),
+		"T": bindCol("t", "", sql.KindText, false, false, false, ""),
+		"T2": bindCol("t2", "", sql.KindText, false, false, false, ""),
+		"F": bindCol("f", "", sql.KindBool, false, false, false, ""),
+		"X": bindCol("x", "", sql.KindBin, false, false, false, ""),
+		"V": bindColumns([]*sql.Binding{bindCol("a", "", sql.KindText, false, false, false, ""), bindCol("b", "", sql.KindBool, false, false, false, "")}),
+		"W": bindColumns([]*sql.Binding{bindCol("a", "", sql.KindText, false, false, false, ""), bindCol("b", "", sql.KindBin, false, false, false, "")}),
 	}
 }
 
 func c1189Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"S": bindRelation("sk", "s", []sql.FieldEntry{sql.FieldEntry{Name: "SKU", Binding: bindCol("sku", "s", sql.KindText, false, false, false, "")}}, "SKU", "", ""),
+		"T": bindCol("t", "", sql.KindText, false, false, false, ""),
+		"T2": bindCol("t2", "", sql.KindText, false, false, false, ""),
 		"F": bindCol("f", "", sql.KindBool, false, false, false, ""),
 		"X": bindCol("x", "", sql.KindBin, false, false, false, ""),
-		"N": bindCol("n", "", sql.KindNum, false, false, false, ""),
+		"V": bindColumns([]*sql.Binding{bindCol("a", "", sql.KindText, false, false, false, ""), bindCol("b", "", sql.KindBool, false, false, false, "")}),
+		"W": bindColumns([]*sql.Binding{bindCol("a", "", sql.KindText, false, false, false, ""), bindCol("b", "", sql.KindBin, false, false, false, "")}),
 	}
 }
 
 func c1190Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"S": bindRelation("sk", "s", []sql.FieldEntry{sql.FieldEntry{Name: "SKU", Binding: bindCol("sku", "s", sql.KindText, false, false, false, "")}}, "SKU", "", ""),
+		"T": bindCol("t", "", sql.KindText, false, false, false, ""),
+		"T2": bindCol("t2", "", sql.KindText, false, false, false, ""),
 		"F": bindCol("f", "", sql.KindBool, false, false, false, ""),
 		"X": bindCol("x", "", sql.KindBin, false, false, false, ""),
-		"N": bindCol("n", "", sql.KindNum, false, false, false, ""),
+		"V": bindColumns([]*sql.Binding{bindCol("a", "", sql.KindText, false, false, false, ""), bindCol("b", "", sql.KindBool, false, false, false, "")}),
+		"W": bindColumns([]*sql.Binding{bindCol("a", "", sql.KindText, false, false, false, ""), bindCol("b", "", sql.KindBin, false, false, false, "")}),
 	}
 }
 
 func c1191Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
+		"O": bindRelation("orders", "o", []sql.FieldEntry{sql.FieldEntry{Name: "CAT", Binding: bindCol("cat", "o", sql.KindText, false, false, false, "")}, sql.FieldEntry{Name: "STATUS", Binding: bindCol("status", "o", sql.KindText, false, false, false, "")}, sql.FieldEntry{Name: "FLAG", Binding: bindCol("flag", "o", sql.KindBool, false, false, false, "")}}, "", "", ""),
+	}
+}
+
+func c1192Bind() map[string]*sql.Binding {
+	return map[string]*sql.Binding{
+		"O": bindRelation("orders", "o", []sql.FieldEntry{sql.FieldEntry{Name: "CAT", Binding: bindCol("cat", "o", sql.KindText, false, false, false, "")}, sql.FieldEntry{Name: "STATUS", Binding: bindCol("status", "o", sql.KindText, false, false, false, "")}, sql.FieldEntry{Name: "FLAG", Binding: bindCol("flag", "o", sql.KindBool, false, false, false, "")}}, "", "", ""),
+	}
+}
+
+func c1193Bind() map[string]*sql.Binding {
+	return map[string]*sql.Binding{
+		"O": bindRelation("orders", "o", []sql.FieldEntry{sql.FieldEntry{Name: "CAT", Binding: bindCol("cat", "o", sql.KindText, false, false, false, "")}, sql.FieldEntry{Name: "STATUS", Binding: bindCol("status", "o", sql.KindText, false, false, false, "")}, sql.FieldEntry{Name: "FLAG", Binding: bindCol("flag", "o", sql.KindBool, false, false, false, "")}}, "", "", ""),
+	}
+}
+
+func c1194Bind() map[string]*sql.Binding {
+	return map[string]*sql.Binding{
 		"S": bindRelation("sk", "s", []sql.FieldEntry{sql.FieldEntry{Name: "SKU", Binding: bindCol("sku", "s", sql.KindText, false, false, false, "")}}, "SKU", "", ""),
 		"F": bindCol("f", "", sql.KindBool, false, false, false, ""),
 		"X": bindCol("x", "", sql.KindBin, false, false, false, ""),
@@ -8242,47 +8254,35 @@ func c1191Bind() map[string]*sql.Binding {
 	}
 }
 
-func c1192Bind() map[string]*sql.Binding {
-	return map[string]*sql.Binding{
-		"T": bindCol("t", "", sql.KindText, true, false, false, ""),
-		"S": bindCol("s", "", sql.KindText, true, false, false, ""),
-	}
-}
-
-func c1193Bind() map[string]*sql.Binding {
-	return map[string]*sql.Binding{
-		"T": bindCol("t", "", sql.KindText, true, false, false, ""),
-		"S": bindCol("s", "", sql.KindText, true, false, false, ""),
-	}
-}
-
-func c1194Bind() map[string]*sql.Binding {
-	return map[string]*sql.Binding{
-		"ITEMS": bindRelation("items", "", []sql.FieldEntry{}, "", "", ""),
-	}
-}
-
 func c1195Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"ITEMS": bindRelation("items", "", []sql.FieldEntry{}, "", "", ""),
+		"S": bindRelation("sk", "s", []sql.FieldEntry{sql.FieldEntry{Name: "SKU", Binding: bindCol("sku", "s", sql.KindText, false, false, false, "")}}, "SKU", "", ""),
+		"F": bindCol("f", "", sql.KindBool, false, false, false, ""),
+		"X": bindCol("x", "", sql.KindBin, false, false, false, ""),
+		"N": bindCol("n", "", sql.KindNum, false, false, false, ""),
 	}
 }
 
 func c1196Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"ITEMS": bindRelation("items", "", []sql.FieldEntry{}, "", "", ""),
+		"S": bindRelation("sk", "s", []sql.FieldEntry{sql.FieldEntry{Name: "SKU", Binding: bindCol("sku", "s", sql.KindText, false, false, false, "")}}, "SKU", "", ""),
+		"F": bindCol("f", "", sql.KindBool, false, false, false, ""),
+		"X": bindCol("x", "", sql.KindBin, false, false, false, ""),
+		"N": bindCol("n", "", sql.KindNum, false, false, false, ""),
 	}
 }
 
 func c1197Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"ITEMS": bindRelation("items", "", []sql.FieldEntry{}, "", "", ""),
+		"T": bindCol("t", "", sql.KindText, true, false, false, ""),
+		"S": bindCol("s", "", sql.KindText, true, false, false, ""),
 	}
 }
 
 func c1198Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"ITEMS": bindRelation("items", "", []sql.FieldEntry{}, "", "", ""),
+		"T": bindCol("t", "", sql.KindText, true, false, false, ""),
+		"S": bindCol("s", "", sql.KindText, true, false, false, ""),
 	}
 }
 
@@ -8432,48 +8432,43 @@ func c1222Bind() map[string]*sql.Binding {
 
 func c1223Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"O": bindRelation("orders", "o", []sql.FieldEntry{sql.FieldEntry{Name: "CAT", Binding: bindCol("cat", "o", sql.KindText, false, false, false, "")}, sql.FieldEntry{Name: "MISC", Binding: bindCol("misc", "o", sql.KindUnknown, false, false, false, "")}}, "", "", ""),
+		"ITEMS": bindRelation("items", "", []sql.FieldEntry{}, "", "", ""),
 	}
 }
 
 func c1224Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"O": bindRelation("orders", "o", []sql.FieldEntry{sql.FieldEntry{Name: "CAT", Binding: bindCol("cat", "o", sql.KindText, false, false, false, "")}, sql.FieldEntry{Name: "MISC", Binding: bindCol("misc", "o", sql.KindUnknown, false, false, false, "")}}, "", "", ""),
+		"ITEMS": bindRelation("items", "", []sql.FieldEntry{}, "", "", ""),
 	}
 }
 
 func c1225Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"N": bindCol("n", "k", sql.KindNum, false, false, false, ""),
-		"T": bindCol("t", "k", sql.KindText, true, false, false, ""),
+		"ITEMS": bindRelation("items", "", []sql.FieldEntry{}, "", "", ""),
 	}
 }
 
 func c1226Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"N": bindCol("n", "k", sql.KindNum, false, false, false, ""),
-		"T": bindCol("t", "k", sql.KindText, true, false, false, ""),
+		"ITEMS": bindRelation("items", "", []sql.FieldEntry{}, "", "", ""),
 	}
 }
 
 func c1227Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"N": bindCol("n", "k", sql.KindNum, false, false, false, ""),
-		"T": bindCol("t", "k", sql.KindText, true, false, false, ""),
+		"ITEMS": bindRelation("items", "", []sql.FieldEntry{}, "", "", ""),
 	}
 }
 
 func c1228Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"N": bindCol("n", "k", sql.KindNum, false, false, false, ""),
-		"T": bindCol("t", "k", sql.KindText, true, false, false, ""),
+		"O": bindRelation("orders", "o", []sql.FieldEntry{sql.FieldEntry{Name: "CAT", Binding: bindCol("cat", "o", sql.KindText, false, false, false, "")}, sql.FieldEntry{Name: "MISC", Binding: bindCol("misc", "o", sql.KindUnknown, false, false, false, "")}}, "", "", ""),
 	}
 }
 
 func c1229Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"N": bindCol("n", "k", sql.KindNum, false, false, false, ""),
-		"T": bindCol("t", "k", sql.KindText, true, false, false, ""),
+		"O": bindRelation("orders", "o", []sql.FieldEntry{sql.FieldEntry{Name: "CAT", Binding: bindCol("cat", "o", sql.KindText, false, false, false, "")}, sql.FieldEntry{Name: "MISC", Binding: bindCol("misc", "o", sql.KindUnknown, false, false, false, "")}}, "", "", ""),
 	}
 }
 
@@ -8522,16 +8517,69 @@ func c1235Bind() map[string]*sql.Binding {
 func c1236Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
 		"N": bindCol("n", "k", sql.KindNum, false, false, false, ""),
+		"T": bindCol("t", "k", sql.KindText, true, false, false, ""),
 	}
 }
 
 func c1237Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
+		"N": bindCol("n", "k", sql.KindNum, false, false, false, ""),
+		"T": bindCol("t", "k", sql.KindText, true, false, false, ""),
+	}
+}
+
+func c1238Bind() map[string]*sql.Binding {
+	return map[string]*sql.Binding{
+		"N": bindCol("n", "k", sql.KindNum, false, false, false, ""),
+		"T": bindCol("t", "k", sql.KindText, true, false, false, ""),
+	}
+}
+
+func c1239Bind() map[string]*sql.Binding {
+	return map[string]*sql.Binding{
+		"N": bindCol("n", "k", sql.KindNum, false, false, false, ""),
+		"T": bindCol("t", "k", sql.KindText, true, false, false, ""),
+	}
+}
+
+func c1240Bind() map[string]*sql.Binding {
+	return map[string]*sql.Binding{
+		"N": bindCol("n", "k", sql.KindNum, false, false, false, ""),
+		"T": bindCol("t", "k", sql.KindText, true, false, false, ""),
+	}
+}
+
+func c1241Bind() map[string]*sql.Binding {
+	return map[string]*sql.Binding{
+		"N": bindCol("n", "k", sql.KindNum, false, false, false, ""),
+	}
+}
+
+func c1242Bind() map[string]*sql.Binding {
+	return map[string]*sql.Binding{
+		"ITEMS": bindRelation("items", "", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "items", sql.KindNum, false, false, false, "")}}, "", "", ""),
+	}
+}
+
+func c1243Bind() map[string]*sql.Binding {
+	return map[string]*sql.Binding{
+		"ITEMS": bindRelation("items", "", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "items", sql.KindNum, false, false, false, "")}}, "", "", ""),
+	}
+}
+
+func c1244Bind() map[string]*sql.Binding {
+	return map[string]*sql.Binding{
+		"ITEMS": bindRelation("items", "", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "items", sql.KindNum, false, false, false, "")}}, "", "", ""),
+	}
+}
+
+func c1245Bind() map[string]*sql.Binding {
+	return map[string]*sql.Binding{
 		"NAME": bindCol("name", "o", sql.KindText, false, false, false, ""),
 	}
 }
 
-func c1237Reg() {
+func c1245Reg() {
 	sql.DefineDialect("pgbad", map[string]interface{}{
 			"extends": "postgresql",
 			"version": "16",
@@ -8539,13 +8587,13 @@ func c1237Reg() {
 		})
 }
 
-func c1238Bind() map[string]*sql.Binding {
+func c1246Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
 		"X": bindCol("x", "o", sql.KindUnknown, false, false, false, ""),
 	}
 }
 
-func c1238Reg() {
+func c1246Reg() {
 	sql.DefineDialect("mdbad", map[string]interface{}{
 			"extends": "mariadb",
 			"version": "10.5",
@@ -8553,65 +8601,65 @@ func c1238Reg() {
 		})
 }
 
-func c1239Bind() map[string]*sql.Binding {
+func c1247Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
 		"NAME": bindCol("name", "o", sql.KindText, false, false, false, ""),
 	}
 }
 
-func c1239Reg() {
+func c1247Reg() {
 	sql.DefineDialect("pgok", map[string]interface{}{
 			"extends": "postgresql",
 			"version": "16",
 		})
 }
 
-func c1240Bind() map[string]*sql.Binding {
+func c1248Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
 		"NAME": bindCol("name", "o", sql.KindText, false, false, false, ""),
 	}
 }
 
-func c1240Reg() {
+func c1248Reg() {
 	sql.Define("mariadb", "funcs", "UPPER", map[string]interface{}{
 			"tpl": "F({0}, 'é ż ć 𝄞')",
 			"ret": "TEXT",
 		})
 }
 
-func c1241Bind() map[string]*sql.Binding {
+func c1249Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
 
 	}
 }
 
-func c1241Reg() {
+func c1249Reg() {
 	sql.Define("sqlite", "funcs", "UPPER", map[string]interface{}{
 			"tpl": "MY_CRC('zażółć', {0})",
 			"ret": "TEXT",
 		})
 }
 
-func c1242Bind() map[string]*sql.Binding {
+func c1250Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
 		"NAME": bindCol("name", "o", sql.KindText, false, false, false, ""),
 	}
 }
 
-func c1242Reg() {
+func c1250Reg() {
 	sql.Define("mariadb", "funcs", "UPPER", map[string]interface{}{
 			"tpl": "F({0}, {1:})",
 			"ret": "TEXT",
 		})
 }
 
-func c1243Bind() map[string]*sql.Binding {
+func c1251Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
 		"NAME": bindCol("name", "o", sql.KindText, false, false, false, ""),
 	}
 }
 
-func c1243Reg() {
+func c1251Reg() {
 	sql.DefineDialect("mdempty", map[string]interface{}{
 			"extends": "mariadb",
 			"version": "10.5",
@@ -8623,110 +8671,30 @@ func c1243Reg() {
 		})
 }
 
-func c1244Bind() map[string]*sql.Binding {
+func c1252Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
 		"R": bindRelation("r", "r", []sql.FieldEntry{sql.FieldEntry{Name: "A", Binding: bindCol("a", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "N", Binding: bindCol("n", "", sql.KindText, false, false, false, "")}}, "", "", ""),
 		"S": bindRelation("s", "s", []sql.FieldEntry{sql.FieldEntry{Name: "A", Binding: bindCol("a", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "M", Binding: bindCol("m", "", sql.KindText, false, false, false, "")}}, "", "", ""),
 	}
 }
 
-func c1245Bind() map[string]*sql.Binding {
+func c1253Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
 		"R": bindRelation("r", "r", []sql.FieldEntry{sql.FieldEntry{Name: "A", Binding: bindCol("a", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "N", Binding: bindCol("n", "", sql.KindText, false, false, false, "")}}, "", "", ""),
 		"S": bindRelation("s", "s", []sql.FieldEntry{sql.FieldEntry{Name: "A", Binding: bindCol("a", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "M", Binding: bindCol("m", "", sql.KindText, false, false, false, "")}}, "", "", ""),
 	}
 }
 
-func c1246Bind() map[string]*sql.Binding {
+func c1254Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
 		"ITEMS": bindRelation("items", "i", []sql.FieldEntry{sql.FieldEntry{Name: "PRICE", Binding: bindCol("price", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "QTY", Binding: bindCol("qty", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "NAME", Binding: bindCol("name", "", sql.KindText, false, false, false, "")}, sql.FieldEntry{Name: "SKU", Binding: bindCol("sku", "", sql.KindText, false, false, false, "")}}, "", "", ""),
 		"TAGS": bindRelation("tags", "t", []sql.FieldEntry{sql.FieldEntry{Name: "TAG", Binding: bindCol("tag", "", sql.KindText, false, false, false, "")}, sql.FieldEntry{Name: "W", Binding: bindCol("w", "", sql.KindNum, false, false, false, "")}}, "", "", ""),
 	}
 }
 
-func c1248Bind() map[string]*sql.Binding {
-	return map[string]*sql.Binding{
-		"C": bindCol("c", "o", sql.KindList, false, false, false, ""),
-	}
-}
-
-func c1249Bind() map[string]*sql.Binding {
-	return map[string]*sql.Binding{
-		"S": bindCol("s", "o", sql.KindText, false, false, false, ""),
-	}
-}
-
-func c1249Reg() {
-	sql.DefineDialect("my-nobs", map[string]interface{}{
-			"extends": "mariadb",
-			"version": "10.5",
-			"lexical": map[string]interface{}{"textEscape": map[string]interface{}{"\\": "\\\\"}},
-		})
-}
-
-func c1250Bind() map[string]*sql.Binding {
-	return map[string]*sql.Binding{
-
-	}
-}
-
-func c1250Reg() {
-	sql.DefineDialect("sqlite-noesc", map[string]interface{}{
-			"extends": "sqlite",
-			"version": "3.48",
-			"lexical": map[string]interface{}{"textEscape": map[string]interface{}{}},
-		})
-}
-
-func c1251Bind() map[string]*sql.Binding {
-	return map[string]*sql.Binding{
-
-	}
-}
-
-func c1251Reg() {
-	sql.DefineDialect("my-badbs", map[string]interface{}{
-			"extends": "mariadb",
-			"version": "10.5",
-			"lexical": map[string]interface{}{"textEscape": map[string]interface{}{"'": "\\'"}},
-		})
-}
-
-func c1252Bind() map[string]*sql.Binding {
-	return map[string]*sql.Binding{
-
-	}
-}
-
-func c1252Reg() {
-	sql.DefineDialect("dq", map[string]interface{}{
-			"extends": "ansi",
-			"version": "1",
-			"lexical": map[string]interface{}{"textQuote": "\""},
-		})
-}
-
-func c1253Bind() map[string]*sql.Binding {
-	return map[string]*sql.Binding{
-		"ITEMS": bindRelation("items", "i", []sql.FieldEntry{sql.FieldEntry{Name: "PRICE", Binding: bindCol("price", "", sql.KindNum, false, false, false, "")}}, "", "", ""),
-	}
-}
-
-func c1254Bind() map[string]*sql.Binding {
-	return map[string]*sql.Binding{
-		"ITEMS": bindRelation("items", "i", []sql.FieldEntry{sql.FieldEntry{Name: "PRICE", Binding: bindCol("price", "", sql.KindNum, false, false, false, "")}}, "", "", ""),
-	}
-}
-
-func c1255Bind() map[string]*sql.Binding {
-	return map[string]*sql.Binding{
-		"ITEMS": bindRelation("items", "i", []sql.FieldEntry{}, "", "", ""),
-	}
-}
-
 func c1256Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"ITEMS": bindRelation("items", "i", []sql.FieldEntry{sql.FieldEntry{Name: "PRICE", Binding: bindCol("price", "", sql.KindNum, false, false, false, "")}}, "", "", ""),
+		"C": bindCol("c", "o", sql.KindList, false, false, false, ""),
 	}
 }
 
@@ -8736,44 +8704,124 @@ func c1257Bind() map[string]*sql.Binding {
 	}
 }
 
+func c1257Reg() {
+	sql.DefineDialect("my-nobs", map[string]interface{}{
+			"extends": "mariadb",
+			"version": "10.5",
+			"lexical": map[string]interface{}{"textEscape": map[string]interface{}{"\\": "\\\\"}},
+		})
+}
+
 func c1258Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"ITEMS": bindRelation("items", "i", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "TOTAL", Binding: bindRaw("i.price * i.qty", sql.KindNum, false, false, false, "")}}, "", "", ""),
+
 	}
+}
+
+func c1258Reg() {
+	sql.DefineDialect("sqlite-noesc", map[string]interface{}{
+			"extends": "sqlite",
+			"version": "3.48",
+			"lexical": map[string]interface{}{"textEscape": map[string]interface{}{}},
+		})
 }
 
 func c1259Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
+
+	}
+}
+
+func c1259Reg() {
+	sql.DefineDialect("my-badbs", map[string]interface{}{
+			"extends": "mariadb",
+			"version": "10.5",
+			"lexical": map[string]interface{}{"textEscape": map[string]interface{}{"'": "\\'"}},
+		})
+}
+
+func c1260Bind() map[string]*sql.Binding {
+	return map[string]*sql.Binding{
+
+	}
+}
+
+func c1260Reg() {
+	sql.DefineDialect("dq", map[string]interface{}{
+			"extends": "ansi",
+			"version": "1",
+			"lexical": map[string]interface{}{"textQuote": "\""},
+		})
+}
+
+func c1261Bind() map[string]*sql.Binding {
+	return map[string]*sql.Binding{
+		"ITEMS": bindRelation("items", "i", []sql.FieldEntry{sql.FieldEntry{Name: "PRICE", Binding: bindCol("price", "", sql.KindNum, false, false, false, "")}}, "", "", ""),
+	}
+}
+
+func c1262Bind() map[string]*sql.Binding {
+	return map[string]*sql.Binding{
+		"ITEMS": bindRelation("items", "i", []sql.FieldEntry{sql.FieldEntry{Name: "PRICE", Binding: bindCol("price", "", sql.KindNum, false, false, false, "")}}, "", "", ""),
+	}
+}
+
+func c1263Bind() map[string]*sql.Binding {
+	return map[string]*sql.Binding{
+		"ITEMS": bindRelation("items", "i", []sql.FieldEntry{}, "", "", ""),
+	}
+}
+
+func c1264Bind() map[string]*sql.Binding {
+	return map[string]*sql.Binding{
+		"ITEMS": bindRelation("items", "i", []sql.FieldEntry{sql.FieldEntry{Name: "PRICE", Binding: bindCol("price", "", sql.KindNum, false, false, false, "")}}, "", "", ""),
+	}
+}
+
+func c1265Bind() map[string]*sql.Binding {
+	return map[string]*sql.Binding{
+		"S": bindCol("s", "o", sql.KindText, false, false, false, ""),
+	}
+}
+
+func c1266Bind() map[string]*sql.Binding {
+	return map[string]*sql.Binding{
 		"ITEMS": bindRelation("items", "i", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "TOTAL", Binding: bindRaw("i.price * i.qty", sql.KindNum, false, false, false, "")}}, "", "", ""),
 	}
 }
 
-func c1260Bind() map[string]*sql.Binding {
+func c1267Bind() map[string]*sql.Binding {
+	return map[string]*sql.Binding{
+		"ITEMS": bindRelation("items", "i", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "TOTAL", Binding: bindRaw("i.price * i.qty", sql.KindNum, false, false, false, "")}}, "", "", ""),
+	}
+}
+
+func c1268Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
 		"R": bindRelation("t", "t", []sql.FieldEntry{sql.FieldEntry{Name: "A", Binding: bindCol("x", "", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "a", Binding: bindCol("y", "", sql.KindNum, false, false, false, "")}}, "", "", ""),
 	}
 }
 
-func c1261Bind() map[string]*sql.Binding {
+func c1269Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
 		"x": bindCol("a", "o", sql.KindNum, false, false, false, ""),
 		"X": bindCol("b", "o", sql.KindNum, false, false, false, ""),
 	}
 }
 
-func c1262Bind() map[string]*sql.Binding {
+func c1270Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
 		"ITEMS": bindRelation("oi", "oi", []sql.FieldEntry{sql.FieldEntry{Name: "QTY", Binding: bindCol("qty", "oi", sql.KindNum, false, false, false, "")}}, "", "oi.a=o.id OR oi.b=o.id", ""),
 	}
 }
 
-func c1263Bind() map[string]*sql.Binding {
+func c1271Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
 
 	}
 }
 
-func c1263Reg() {
+func c1271Reg() {
 	sql.DefineDialect("my-ok", map[string]interface{}{
 			"extends": "mariadb",
 			"version": "10.5",
@@ -8781,13 +8829,13 @@ func c1263Reg() {
 		})
 }
 
-func c1264Bind() map[string]*sql.Binding {
+func c1272Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
 
 	}
 }
 
-func c1264Reg() {
+func c1272Reg() {
 	sql.DefineDialect("redef", map[string]interface{}{
 			"extends": "mariadb",
 			"version": "10.5",
@@ -8800,13 +8848,13 @@ func c1264Reg() {
 		})
 }
 
-func c1265Bind() map[string]*sql.Binding {
+func c1273Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
 
 	}
 }
 
-func c1265Reg() {
+func c1273Reg() {
 	sql.DefineDialect("redef2", map[string]interface{}{
 			"extends": "mariadb",
 			"version": "10.5",
@@ -8815,62 +8863,6 @@ func c1265Reg() {
 			"extends": "postgresql",
 			"version": "16",
 		})
-}
-
-func c1266Bind() map[string]*sql.Binding {
-	return map[string]*sql.Binding{
-		"ORDERS": bindRelation("orders", "o", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "CUSTOMER_ID", Binding: bindCol("customer_id", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "AMOUNT", Binding: bindCol("amount", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "NAME", Binding: bindCol("name", "o", sql.KindText, false, false, false, "")}}, "", "", ""),
-		"CUSTOMERS": bindRelation("customers", "c", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "c", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "NAME", Binding: bindCol("name", "c", sql.KindText, false, false, false, "")}}, "", "", ""),
-	}
-}
-
-func c1267Bind() map[string]*sql.Binding {
-	return map[string]*sql.Binding{
-		"ORDERS": bindRelation("orders", "o", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "CUSTOMER_ID", Binding: bindCol("customer_id", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "AMOUNT", Binding: bindCol("amount", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "NAME", Binding: bindCol("name", "o", sql.KindText, false, false, false, "")}}, "", "", ""),
-		"CUSTOMERS": bindRelation("customers", "c", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "c", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "NAME", Binding: bindCol("name", "c", sql.KindText, false, false, false, "")}}, "", "", ""),
-	}
-}
-
-func c1268Bind() map[string]*sql.Binding {
-	return map[string]*sql.Binding{
-		"ORDERS": bindRelation("orders", "o", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "CUSTOMER_ID", Binding: bindCol("customer_id", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "AMOUNT", Binding: bindCol("amount", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "NAME", Binding: bindCol("name", "o", sql.KindText, false, false, false, "")}}, "", "", ""),
-		"CUSTOMERS": bindRelation("customers", "c", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "c", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "NAME", Binding: bindCol("name", "c", sql.KindText, false, false, false, "")}}, "", "", ""),
-	}
-}
-
-func c1269Bind() map[string]*sql.Binding {
-	return map[string]*sql.Binding{
-		"ORDERS": bindRelation("orders", "o", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "CUSTOMER_ID", Binding: bindCol("customer_id", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "AMOUNT", Binding: bindCol("amount", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "NAME", Binding: bindCol("name", "o", sql.KindText, false, false, false, "")}}, "", "", ""),
-		"CUSTOMERS": bindRelation("customers", "c", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "c", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "NAME", Binding: bindCol("name", "c", sql.KindText, false, false, false, "")}}, "", "", ""),
-	}
-}
-
-func c1270Bind() map[string]*sql.Binding {
-	return map[string]*sql.Binding{
-		"ORDERS": bindRelation("orders", "o", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "CUSTOMER_ID", Binding: bindCol("customer_id", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "AMOUNT", Binding: bindCol("amount", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "NAME", Binding: bindCol("name", "o", sql.KindText, false, false, false, "")}}, "", "", ""),
-		"CUSTOMERS": bindRelation("customers", "c", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "c", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "NAME", Binding: bindCol("name", "c", sql.KindText, false, false, false, "")}}, "", "", ""),
-	}
-}
-
-func c1271Bind() map[string]*sql.Binding {
-	return map[string]*sql.Binding{
-		"ORDERS": bindRelation("orders", "o", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "CUSTOMER_ID", Binding: bindCol("customer_id", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "AMOUNT", Binding: bindCol("amount", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "NAME", Binding: bindCol("name", "o", sql.KindText, false, false, false, "")}}, "", "", ""),
-		"CUSTOMERS": bindRelation("customers", "c", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "c", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "NAME", Binding: bindCol("name", "c", sql.KindText, false, false, false, "")}}, "", "", ""),
-	}
-}
-
-func c1272Bind() map[string]*sql.Binding {
-	return map[string]*sql.Binding{
-		"ORDERS": bindRelation("orders", "o", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "CUSTOMER_ID", Binding: bindCol("customer_id", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "AMOUNT", Binding: bindCol("amount", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "NAME", Binding: bindCol("name", "o", sql.KindText, false, false, false, "")}}, "", "", ""),
-		"CUSTOMERS": bindRelation("customers", "c", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "c", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "NAME", Binding: bindCol("name", "c", sql.KindText, false, false, false, "")}}, "", "", ""),
-	}
-}
-
-func c1273Bind() map[string]*sql.Binding {
-	return map[string]*sql.Binding{
-		"ORDERS": bindRelation("orders", "o", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "CUSTOMER_ID", Binding: bindCol("customer_id", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "AMOUNT", Binding: bindCol("amount", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "NAME", Binding: bindCol("name", "o", sql.KindText, false, false, false, "")}}, "", "", ""),
-		"CUSTOMERS": bindRelation("customers", "c", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "c", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "NAME", Binding: bindCol("name", "c", sql.KindText, false, false, false, "")}}, "", "", ""),
-	}
 }
 
 func c1274Bind() map[string]*sql.Binding {
@@ -8917,76 +8909,132 @@ func c1279Bind() map[string]*sql.Binding {
 
 func c1280Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"ORDERS": bindRelation("orders", "o", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "NAME", Binding: bindCol("name", "o", sql.KindText, false, false, false, "")}}, "", "", ""),
+		"ORDERS": bindRelation("orders", "o", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "CUSTOMER_ID", Binding: bindCol("customer_id", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "AMOUNT", Binding: bindCol("amount", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "NAME", Binding: bindCol("name", "o", sql.KindText, false, false, false, "")}}, "", "", ""),
+		"CUSTOMERS": bindRelation("customers", "c", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "c", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "NAME", Binding: bindCol("name", "c", sql.KindText, false, false, false, "")}}, "", "", ""),
 	}
 }
 
 func c1281Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"ORDERS": bindRelation("orders", "o", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "NAME", Binding: bindCol("name", "o", sql.KindText, false, false, false, "")}}, "", "", ""),
+		"ORDERS": bindRelation("orders", "o", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "CUSTOMER_ID", Binding: bindCol("customer_id", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "AMOUNT", Binding: bindCol("amount", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "NAME", Binding: bindCol("name", "o", sql.KindText, false, false, false, "")}}, "", "", ""),
+		"CUSTOMERS": bindRelation("customers", "c", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "c", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "NAME", Binding: bindCol("name", "c", sql.KindText, false, false, false, "")}}, "", "", ""),
 	}
 }
 
 func c1282Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"ORDERS": bindRelation("orders", "o", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "NAME", Binding: bindCol("name", "o", sql.KindText, false, false, false, "")}}, "", "", ""),
+		"ORDERS": bindRelation("orders", "o", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "CUSTOMER_ID", Binding: bindCol("customer_id", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "AMOUNT", Binding: bindCol("amount", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "NAME", Binding: bindCol("name", "o", sql.KindText, false, false, false, "")}}, "", "", ""),
+		"CUSTOMERS": bindRelation("customers", "c", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "c", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "NAME", Binding: bindCol("name", "c", sql.KindText, false, false, false, "")}}, "", "", ""),
 	}
 }
 
 func c1283Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"ORDERS": bindRelation("orders", "o", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "NAME", Binding: bindCol("name", "o", sql.KindText, false, false, false, "")}}, "", "", ""),
+		"ORDERS": bindRelation("orders", "o", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "CUSTOMER_ID", Binding: bindCol("customer_id", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "AMOUNT", Binding: bindCol("amount", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "NAME", Binding: bindCol("name", "o", sql.KindText, false, false, false, "")}}, "", "", ""),
+		"CUSTOMERS": bindRelation("customers", "c", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "c", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "NAME", Binding: bindCol("name", "c", sql.KindText, false, false, false, "")}}, "", "", ""),
 	}
 }
 
 func c1284Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"ORDERS": bindRelation("orders", "o", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "NAME", Binding: bindCol("name", "o", sql.KindText, false, false, false, "")}}, "", "", ""),
+		"ORDERS": bindRelation("orders", "o", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "CUSTOMER_ID", Binding: bindCol("customer_id", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "AMOUNT", Binding: bindCol("amount", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "NAME", Binding: bindCol("name", "o", sql.KindText, false, false, false, "")}}, "", "", ""),
+		"CUSTOMERS": bindRelation("customers", "c", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "c", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "NAME", Binding: bindCol("name", "c", sql.KindText, false, false, false, "")}}, "", "", ""),
 	}
 }
 
 func c1285Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
 		"ORDERS": bindRelation("orders", "o", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "CUSTOMER_ID", Binding: bindCol("customer_id", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "AMOUNT", Binding: bindCol("amount", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "NAME", Binding: bindCol("name", "o", sql.KindText, false, false, false, "")}}, "", "", ""),
-		"CUSTOMERS": bindRelation("customers", "c", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "c", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "CNAME", Binding: bindCol("cname", "c", sql.KindText, false, false, false, "")}}, "", "", ""),
+		"CUSTOMERS": bindRelation("customers", "c", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "c", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "NAME", Binding: bindCol("name", "c", sql.KindText, false, false, false, "")}}, "", "", ""),
 	}
 }
 
 func c1286Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
 		"ORDERS": bindRelation("orders", "o", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "CUSTOMER_ID", Binding: bindCol("customer_id", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "AMOUNT", Binding: bindCol("amount", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "NAME", Binding: bindCol("name", "o", sql.KindText, false, false, false, "")}}, "", "", ""),
-		"CUSTOMERS": bindRelation("customers", "c", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "c", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "CNAME", Binding: bindCol("cname", "c", sql.KindText, false, false, false, "")}}, "", "", ""),
+		"CUSTOMERS": bindRelation("customers", "c", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "c", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "NAME", Binding: bindCol("name", "c", sql.KindText, false, false, false, "")}}, "", "", ""),
 	}
 }
 
 func c1287Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
 		"ORDERS": bindRelation("orders", "o", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "CUSTOMER_ID", Binding: bindCol("customer_id", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "AMOUNT", Binding: bindCol("amount", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "NAME", Binding: bindCol("name", "o", sql.KindText, false, false, false, "")}}, "", "", ""),
-		"CUSTOMERS": bindRelation("customers", "c", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "c", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "CNAME", Binding: bindCol("cname", "c", sql.KindText, false, false, false, "")}}, "", "", ""),
+		"CUSTOMERS": bindRelation("customers", "c", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "c", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "NAME", Binding: bindCol("name", "c", sql.KindText, false, false, false, "")}}, "", "", ""),
 	}
 }
 
 func c1288Bind() map[string]*sql.Binding {
+	return map[string]*sql.Binding{
+		"ORDERS": bindRelation("orders", "o", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "NAME", Binding: bindCol("name", "o", sql.KindText, false, false, false, "")}}, "", "", ""),
+	}
+}
+
+func c1289Bind() map[string]*sql.Binding {
+	return map[string]*sql.Binding{
+		"ORDERS": bindRelation("orders", "o", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "NAME", Binding: bindCol("name", "o", sql.KindText, false, false, false, "")}}, "", "", ""),
+	}
+}
+
+func c1290Bind() map[string]*sql.Binding {
+	return map[string]*sql.Binding{
+		"ORDERS": bindRelation("orders", "o", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "NAME", Binding: bindCol("name", "o", sql.KindText, false, false, false, "")}}, "", "", ""),
+	}
+}
+
+func c1291Bind() map[string]*sql.Binding {
+	return map[string]*sql.Binding{
+		"ORDERS": bindRelation("orders", "o", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "NAME", Binding: bindCol("name", "o", sql.KindText, false, false, false, "")}}, "", "", ""),
+	}
+}
+
+func c1292Bind() map[string]*sql.Binding {
+	return map[string]*sql.Binding{
+		"ORDERS": bindRelation("orders", "o", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "NAME", Binding: bindCol("name", "o", sql.KindText, false, false, false, "")}}, "", "", ""),
+	}
+}
+
+func c1293Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
 		"ORDERS": bindRelation("orders", "o", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "CUSTOMER_ID", Binding: bindCol("customer_id", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "AMOUNT", Binding: bindCol("amount", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "NAME", Binding: bindCol("name", "o", sql.KindText, false, false, false, "")}}, "", "", ""),
 		"CUSTOMERS": bindRelation("customers", "c", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "c", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "CNAME", Binding: bindCol("cname", "c", sql.KindText, false, false, false, "")}}, "", "", ""),
 	}
 }
 
-func c1289Bind() map[string]*sql.Binding {
+func c1294Bind() map[string]*sql.Binding {
+	return map[string]*sql.Binding{
+		"ORDERS": bindRelation("orders", "o", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "CUSTOMER_ID", Binding: bindCol("customer_id", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "AMOUNT", Binding: bindCol("amount", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "NAME", Binding: bindCol("name", "o", sql.KindText, false, false, false, "")}}, "", "", ""),
+		"CUSTOMERS": bindRelation("customers", "c", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "c", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "CNAME", Binding: bindCol("cname", "c", sql.KindText, false, false, false, "")}}, "", "", ""),
+	}
+}
+
+func c1295Bind() map[string]*sql.Binding {
+	return map[string]*sql.Binding{
+		"ORDERS": bindRelation("orders", "o", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "CUSTOMER_ID", Binding: bindCol("customer_id", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "AMOUNT", Binding: bindCol("amount", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "NAME", Binding: bindCol("name", "o", sql.KindText, false, false, false, "")}}, "", "", ""),
+		"CUSTOMERS": bindRelation("customers", "c", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "c", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "CNAME", Binding: bindCol("cname", "c", sql.KindText, false, false, false, "")}}, "", "", ""),
+	}
+}
+
+func c1296Bind() map[string]*sql.Binding {
+	return map[string]*sql.Binding{
+		"ORDERS": bindRelation("orders", "o", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "CUSTOMER_ID", Binding: bindCol("customer_id", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "AMOUNT", Binding: bindCol("amount", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "NAME", Binding: bindCol("name", "o", sql.KindText, false, false, false, "")}}, "", "", ""),
+		"CUSTOMERS": bindRelation("customers", "c", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "c", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "CNAME", Binding: bindCol("cname", "c", sql.KindText, false, false, false, "")}}, "", "", ""),
+	}
+}
+
+func c1297Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
 		"V1": bindValue(valueTree([]treeItem{{key: strPtr("1"), val: sel.NewText("a")}, {key: strPtr("2"), val: sel.NewNone()}}), nil),
 		"XT": bindCol("xt", "", sql.KindText, false, false, false, ""),
 	}
 }
 
-func c1290Bind() map[string]*sql.Binding {
+func c1298Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
 
 	}
 }
 
-func c1290Reg() {
+func c1298Reg() {
 	sql.DefineDialect("my-nl", map[string]interface{}{
 			"extends": "mariadb",
 			"version": "10.5",
@@ -8994,13 +9042,13 @@ func c1290Reg() {
 		})
 }
 
-func c1291Bind() map[string]*sql.Binding {
+func c1299Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
 
 	}
 }
 
-func c1291Reg() {
+func c1299Reg() {
 	sql.DefineDialect("ansi-x", map[string]interface{}{
 			"extends": "ansi",
 			"version": "2016",
@@ -9008,65 +9056,15 @@ func c1291Reg() {
 		})
 }
 
-func c1293Bind() map[string]*sql.Binding {
-	return map[string]*sql.Binding{
-		"XN": bindCol("xn", "", sql.KindNum, false, false, false, ""),
-	}
-}
-
-func c1294Bind() map[string]*sql.Binding {
-	return map[string]*sql.Binding{
-		"XN": bindCol("xn", "", sql.KindNum, false, false, false, ""),
-	}
-}
-
-func c1295Bind() map[string]*sql.Binding {
-	return map[string]*sql.Binding{
-		"XN": bindCol("xn", "", sql.KindNum, false, false, false, ""),
-	}
-}
-
-func c1296Bind() map[string]*sql.Binding {
-	return map[string]*sql.Binding{
-		"XB": bindCol("xb", "", sql.KindBool, false, false, false, ""),
-		"TS": bindRelation("ts", "ts", []sql.FieldEntry{sql.FieldEntry{Name: "V", Binding: bindCol("v", "ts", sql.KindText, false, false, false, "")}}, "V", "", ""),
-	}
-}
-
-func c1297Bind() map[string]*sql.Binding {
-	return map[string]*sql.Binding{
-		"XB": bindCol("xb", "", sql.KindBool, false, false, false, ""),
-	}
-}
-
-func c1298Bind() map[string]*sql.Binding {
-	return map[string]*sql.Binding{
-		"T": bindRelation("t", "t", []sql.FieldEntry{sql.FieldEntry{Name: "N", Binding: bindCol("n", "t", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "S", Binding: bindCol("s", "t", sql.KindText, false, false, false, "")}}, "", "", ""),
-	}
-}
-
-func c1299Bind() map[string]*sql.Binding {
-	return map[string]*sql.Binding{
-		"XC": bindCol("xc", "", sql.KindText, false, false, false, "bogus"),
-	}
-}
-
-func c1300Bind() map[string]*sql.Binding {
-	return map[string]*sql.Binding{
-		"ORDERS": bindRelation("orders", "o", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "AMOUNT", Binding: bindCol("amount", "o", sql.KindNum, false, false, false, "")}}, "", "", ""),
-	}
-}
-
 func c1301Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"ORDERS": bindRelation("orders", "o", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "AMOUNT", Binding: bindCol("amount", "o", sql.KindNum, false, false, false, "")}}, "", "", ""),
+		"XN": bindCol("xn", "", sql.KindNum, false, false, false, ""),
 	}
 }
 
 func c1302Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"A": bindRelation("a", "o", []sql.FieldEntry{sql.FieldEntry{Name: "X", Binding: bindCol("x", "o", sql.KindNum, false, false, false, "")}}, "", "", ""),
-		"B": bindRelation("b", "O", []sql.FieldEntry{sql.FieldEntry{Name: "X", Binding: bindCol("x", "O", sql.KindNum, false, false, false, "")}}, "", "", ""),
+		"XN": bindCol("xn", "", sql.KindNum, false, false, false, ""),
 	}
 }
 
@@ -9078,45 +9076,95 @@ func c1303Bind() map[string]*sql.Binding {
 
 func c1304Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"ORDERS": bindRelation("orders", "o", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "CUSTOMER_ID", Binding: bindCol("customer_id", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "AMOUNT", Binding: bindCol("amount", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "NAME", Binding: bindCol("name", "o", sql.KindText, false, false, false, "")}}, "", "", ""),
+		"XB": bindCol("xb", "", sql.KindBool, false, false, false, ""),
+		"TS": bindRelation("ts", "ts", []sql.FieldEntry{sql.FieldEntry{Name: "V", Binding: bindCol("v", "ts", sql.KindText, false, false, false, "")}}, "V", "", ""),
 	}
 }
 
 func c1305Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"ORDERS": bindRelation("orders", "o", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "CUSTOMER_ID", Binding: bindCol("customer_id", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "AMOUNT", Binding: bindCol("amount", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "NAME", Binding: bindCol("name", "o", sql.KindText, false, false, false, "")}}, "", "", ""),
-		"CUSTOMERS": bindRelation("customers", "c", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "c", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "CNAME", Binding: bindCol("cname", "c", sql.KindText, false, false, false, "")}}, "", "", ""),
+		"XB": bindCol("xb", "", sql.KindBool, false, false, false, ""),
 	}
 }
 
 func c1306Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"ORDERS": bindRelation("orders", "o", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "CUSTOMER_ID", Binding: bindCol("customer_id", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "AMOUNT", Binding: bindCol("amount", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "NAME", Binding: bindCol("name", "o", sql.KindText, false, false, false, "")}}, "", "", ""),
-		"CUSTOMERS": bindRelation("customers", "c", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "c", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "CNAME", Binding: bindCol("cname", "c", sql.KindText, false, false, false, "")}}, "", "", ""),
+		"T": bindRelation("t", "t", []sql.FieldEntry{sql.FieldEntry{Name: "N", Binding: bindCol("n", "t", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "S", Binding: bindCol("s", "t", sql.KindText, false, false, false, "")}}, "", "", ""),
 	}
 }
 
 func c1307Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"ORDERS": bindRelation("orders", "o", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "CUSTOMER_ID", Binding: bindCol("customer_id", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "AMOUNT", Binding: bindCol("amount", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "NAME", Binding: bindCol("name", "o", sql.KindText, false, false, false, "")}}, "", "", ""),
-		"CUSTOMERS": bindRelation("customers", "c", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "c", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "CNAME", Binding: bindCol("cname", "c", sql.KindText, false, false, false, "")}}, "", "", ""),
+		"XC": bindCol("xc", "", sql.KindText, false, false, false, "bogus"),
 	}
 }
 
 func c1308Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"ORDERS": bindRelation("orders", "o", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "CUSTOMER_ID", Binding: bindCol("customer_id", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "AMOUNT", Binding: bindCol("amount", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "NAME", Binding: bindCol("name", "o", sql.KindText, false, false, false, "")}}, "", "", ""),
-		"CUSTOMERS": bindRelation("customers", "c", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "c", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "CNAME", Binding: bindCol("cname", "c", sql.KindText, false, false, false, "")}}, "", "", ""),
+		"ORDERS": bindRelation("orders", "o", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "AMOUNT", Binding: bindCol("amount", "o", sql.KindNum, false, false, false, "")}}, "", "", ""),
 	}
 }
 
 func c1309Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
-		"ORDERS": bindRelation("orders", "o", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "CUSTOMER_ID", Binding: bindCol("customer_id", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "AMOUNT", Binding: bindCol("amount", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "NAME", Binding: bindCol("name", "o", sql.KindText, false, false, false, "")}}, "", "", ""),
+		"ORDERS": bindRelation("orders", "o", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "AMOUNT", Binding: bindCol("amount", "o", sql.KindNum, false, false, false, "")}}, "", "", ""),
 	}
 }
 
 func c1310Bind() map[string]*sql.Binding {
+	return map[string]*sql.Binding{
+		"A": bindRelation("a", "o", []sql.FieldEntry{sql.FieldEntry{Name: "X", Binding: bindCol("x", "o", sql.KindNum, false, false, false, "")}}, "", "", ""),
+		"B": bindRelation("b", "O", []sql.FieldEntry{sql.FieldEntry{Name: "X", Binding: bindCol("x", "O", sql.KindNum, false, false, false, "")}}, "", "", ""),
+	}
+}
+
+func c1311Bind() map[string]*sql.Binding {
+	return map[string]*sql.Binding{
+		"XN": bindCol("xn", "", sql.KindNum, false, false, false, ""),
+	}
+}
+
+func c1312Bind() map[string]*sql.Binding {
+	return map[string]*sql.Binding{
+		"ORDERS": bindRelation("orders", "o", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "CUSTOMER_ID", Binding: bindCol("customer_id", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "AMOUNT", Binding: bindCol("amount", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "NAME", Binding: bindCol("name", "o", sql.KindText, false, false, false, "")}}, "", "", ""),
+	}
+}
+
+func c1313Bind() map[string]*sql.Binding {
+	return map[string]*sql.Binding{
+		"ORDERS": bindRelation("orders", "o", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "CUSTOMER_ID", Binding: bindCol("customer_id", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "AMOUNT", Binding: bindCol("amount", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "NAME", Binding: bindCol("name", "o", sql.KindText, false, false, false, "")}}, "", "", ""),
+		"CUSTOMERS": bindRelation("customers", "c", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "c", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "CNAME", Binding: bindCol("cname", "c", sql.KindText, false, false, false, "")}}, "", "", ""),
+	}
+}
+
+func c1314Bind() map[string]*sql.Binding {
+	return map[string]*sql.Binding{
+		"ORDERS": bindRelation("orders", "o", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "CUSTOMER_ID", Binding: bindCol("customer_id", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "AMOUNT", Binding: bindCol("amount", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "NAME", Binding: bindCol("name", "o", sql.KindText, false, false, false, "")}}, "", "", ""),
+		"CUSTOMERS": bindRelation("customers", "c", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "c", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "CNAME", Binding: bindCol("cname", "c", sql.KindText, false, false, false, "")}}, "", "", ""),
+	}
+}
+
+func c1315Bind() map[string]*sql.Binding {
+	return map[string]*sql.Binding{
+		"ORDERS": bindRelation("orders", "o", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "CUSTOMER_ID", Binding: bindCol("customer_id", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "AMOUNT", Binding: bindCol("amount", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "NAME", Binding: bindCol("name", "o", sql.KindText, false, false, false, "")}}, "", "", ""),
+		"CUSTOMERS": bindRelation("customers", "c", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "c", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "CNAME", Binding: bindCol("cname", "c", sql.KindText, false, false, false, "")}}, "", "", ""),
+	}
+}
+
+func c1316Bind() map[string]*sql.Binding {
+	return map[string]*sql.Binding{
+		"ORDERS": bindRelation("orders", "o", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "CUSTOMER_ID", Binding: bindCol("customer_id", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "AMOUNT", Binding: bindCol("amount", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "NAME", Binding: bindCol("name", "o", sql.KindText, false, false, false, "")}}, "", "", ""),
+		"CUSTOMERS": bindRelation("customers", "c", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "c", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "CNAME", Binding: bindCol("cname", "c", sql.KindText, false, false, false, "")}}, "", "", ""),
+	}
+}
+
+func c1317Bind() map[string]*sql.Binding {
+	return map[string]*sql.Binding{
+		"ORDERS": bindRelation("orders", "o", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "CUSTOMER_ID", Binding: bindCol("customer_id", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "AMOUNT", Binding: bindCol("amount", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "NAME", Binding: bindCol("name", "o", sql.KindText, false, false, false, "")}}, "", "", ""),
+	}
+}
+
+func c1318Bind() map[string]*sql.Binding {
 	return map[string]*sql.Binding{
 		"ORDERS": bindRelation("orders", "o", []sql.FieldEntry{sql.FieldEntry{Name: "ID", Binding: bindCol("id", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "CUSTOMER_ID", Binding: bindCol("customer_id", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "AMOUNT", Binding: bindCol("amount", "o", sql.KindNum, false, false, false, "")}, sql.FieldEntry{Name: "NAME", Binding: bindCol("name", "o", sql.KindText, false, false, false, "")}}, "", "", ""),
 	}
@@ -21638,6 +21686,91 @@ var sqlCases = []SqlCase{
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
 	 BindingsFn: c734Bind},
+	{Name: "plan.helper.rebinds-relation-read-by-continuation",
+	 At: "25-hybrid-plans.sqlt:1854",
+	 Dialect: "mariadb",
+	 Source: "ORDERS = ORDERS .> DROP(2); ORDERS .> TAKE(3) .> MAP(RECORD(\"n\", COUNT(ORDERS), \"s\", COUNT(SPLIT(_[\"name\"], \"a\"))))",
+	 Expect: strPtr("SELECT `o`.* FROM `orders` `o` LIMIT 3 OFFSET 2"),
+	 Error: nil,
+	 Throws: nil,
+	 Params: nil,
+	 As: nil,
+	 Mode: nil,
+	 Strict: false,
+	 Plan: strPtr("hybrid"),
+	 HasTables: true,
+	 Tables: []string{"orders"},
+	 Unrepresentable: nil,
+	 RegisterFn: nil,
+	 BindingsFn: c735Bind},
+	{Name: "plan.fold.text-concat-is-not-folded",
+	 At: "25-hybrid-plans.sqlt:1870",
+	 Dialect: "mariadb",
+	 Source: "ORDERS .> FILTER(_[\"name\"] $== (\"a\" & \"b\"))",
+	 Expect: strPtr("SELECT `o`.* FROM `orders` `o` WHERE (CAST(`o`.`name` AS CHAR) COLLATE utf8mb4_nopad_bin = CAST(CONCAT('a', 'b') AS CHAR) COLLATE utf8mb4_nopad_bin)"),
+	 Error: nil,
+	 Throws: nil,
+	 Params: nil,
+	 As: nil,
+	 Mode: nil,
+	 Strict: false,
+	 Plan: strPtr("pure_sql"),
+	 HasTables: true,
+	 Tables: []string{"orders"},
+	 Unrepresentable: nil,
+	 RegisterFn: nil,
+	 BindingsFn: c736Bind},
+	{Name: "plan.fold.text-concat-is-not-folded-in-a-call",
+	 At: "25-hybrid-plans.sqlt:1886",
+	 Dialect: "postgresql",
+	 Source: "ORDERS .> FILTER(_[\"id\"] > LEN(\"ab\" & \"cd\"))",
+	 Expect: strPtr("SELECT \"o\".* FROM \"orders\" \"o\" WHERE (\"o\".\"id\" > length(CAST((CAST('ab' AS TEXT) || CAST('cd' AS TEXT)) AS TEXT)))"),
+	 Error: nil,
+	 Throws: nil,
+	 Params: nil,
+	 As: nil,
+	 Mode: nil,
+	 Strict: false,
+	 Plan: strPtr("pure_sql"),
+	 HasTables: true,
+	 Tables: []string{"orders"},
+	 Unrepresentable: nil,
+	 RegisterFn: nil,
+	 BindingsFn: c737Bind},
+	{Name: "plan.pure-sql.fusion-stops-at-the-depth-cap",
+	 At: "25-hybrid-plans.sqlt:1902",
+	 Dialect: "mariadb",
+	 Source: "ORDERS .> FILTER(_[\"id\"] > 1) .> FILTER(_[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] + _[\"id\"] < 9)",
+	 Expect: strPtr("SELECT `o`.* FROM `orders` `o` WHERE (`o`.`id` > 1) AND (((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((`o`.`id` + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) + `o`.`id`) < 9)"),
+	 Error: nil,
+	 Throws: nil,
+	 Params: nil,
+	 As: nil,
+	 Mode: nil,
+	 Strict: false,
+	 Plan: strPtr("pure_sql"),
+	 HasTables: true,
+	 Tables: []string{"orders"},
+	 Unrepresentable: nil,
+	 RegisterFn: nil,
+	 BindingsFn: c738Bind},
+	{Name: "plan.pure-memory.pipeline-longer-than-the-depth-cap",
+	 At: "25-hybrid-plans.sqlt:1918",
+	 Dialect: "mariadb",
+	 Source: "X0 = ORDERS; X1 = X0 .> DROP(0); X2 = X1 .> DROP(0); X3 = X2 .> DROP(0); X4 = X3 .> DROP(0); X5 = X4 .> DROP(0); X6 = X5 .> DROP(0); X7 = X6 .> DROP(0); X8 = X7 .> DROP(0); X9 = X8 .> DROP(0); X10 = X9 .> DROP(0); X11 = X10 .> DROP(0); X12 = X11 .> DROP(0); X13 = X12 .> DROP(0); X14 = X13 .> DROP(0); X15 = X14 .> DROP(0); X16 = X15 .> DROP(0); X17 = X16 .> DROP(0); X18 = X17 .> DROP(0); X19 = X18 .> DROP(0); X20 = X19 .> DROP(0); X21 = X20 .> DROP(0); X22 = X21 .> DROP(0); X23 = X22 .> DROP(0); X24 = X23 .> DROP(0); X25 = X24 .> DROP(0); X26 = X25 .> DROP(0); X27 = X26 .> DROP(0); X28 = X27 .> DROP(0); X29 = X28 .> DROP(0); X30 = X29 .> DROP(0); X31 = X30 .> DROP(0); X32 = X31 .> DROP(0); X33 = X32 .> DROP(0); X34 = X33 .> DROP(0); X35 = X34 .> DROP(0); X36 = X35 .> DROP(0); X37 = X36 .> DROP(0); X38 = X37 .> DROP(0); X39 = X38 .> DROP(0); X40 = X39 .> DROP(0); X41 = X40 .> DROP(0); X42 = X41 .> DROP(0); X43 = X42 .> DROP(0); X44 = X43 .> DROP(0); X45 = X44 .> DROP(0); X46 = X45 .> DROP(0); X47 = X46 .> DROP(0); X48 = X47 .> DROP(0); X49 = X48 .> DROP(0); X50 = X49 .> DROP(0); X51 = X50 .> DROP(0); X52 = X51 .> DROP(0); X53 = X52 .> DROP(0); X54 = X53 .> DROP(0); X55 = X54 .> DROP(0); X56 = X55 .> DROP(0); X57 = X56 .> DROP(0); X58 = X57 .> DROP(0); X59 = X58 .> DROP(0); X60 = X59 .> DROP(0); X61 = X60 .> DROP(0); X62 = X61 .> DROP(0); X63 = X62 .> DROP(0); X64 = X63 .> DROP(0); X65 = X64 .> DROP(0); X66 = X65 .> DROP(0); X67 = X66 .> DROP(0); X68 = X67 .> DROP(0); X69 = X68 .> DROP(0); X70 = X69 .> DROP(0); X71 = X70 .> DROP(0); X72 = X71 .> DROP(0); X73 = X72 .> DROP(0); X74 = X73 .> DROP(0); X75 = X74 .> DROP(0); X76 = X75 .> DROP(0); X77 = X76 .> DROP(0); X78 = X77 .> DROP(0); X79 = X78 .> DROP(0); X80 = X79 .> DROP(0); X81 = X80 .> DROP(0); X82 = X81 .> DROP(0); X83 = X82 .> DROP(0); X84 = X83 .> DROP(0); X85 = X84 .> DROP(0); X86 = X85 .> DROP(0); X87 = X86 .> DROP(0); X88 = X87 .> DROP(0); X89 = X88 .> DROP(0); X90 = X89 .> DROP(0); X91 = X90 .> DROP(0); X92 = X91 .> DROP(0); X93 = X92 .> DROP(0); X94 = X93 .> DROP(0); X95 = X94 .> DROP(0); X96 = X95 .> DROP(0); X97 = X96 .> DROP(0); X98 = X97 .> DROP(0); X99 = X98 .> DROP(0); X100 = X99 .> DROP(0); X101 = X100 .> DROP(0); X102 = X101 .> DROP(0); X103 = X102 .> DROP(0); X104 = X103 .> DROP(0); X105 = X104 .> DROP(0); X106 = X105 .> DROP(0); X107 = X106 .> DROP(0); X108 = X107 .> DROP(0); X109 = X108 .> DROP(0); X110 = X109 .> DROP(0); X111 = X110 .> DROP(0); X112 = X111 .> DROP(0); X113 = X112 .> DROP(0); X114 = X113 .> DROP(0); X115 = X114 .> DROP(0); X116 = X115 .> DROP(0); X117 = X116 .> DROP(0); X118 = X117 .> DROP(0); X119 = X118 .> DROP(0); X120 = X119 .> DROP(0); X121 = X120 .> DROP(0); X122 = X121 .> DROP(0); X123 = X122 .> DROP(0); X124 = X123 .> DROP(0); X125 = X124 .> DROP(0); X126 = X125 .> DROP(0); X127 = X126 .> DROP(0); X128 = X127 .> DROP(0); X129 = X128 .> DROP(0); X130 = X129 .> DROP(0); X131 = X130 .> DROP(0); X132 = X131 .> DROP(0); X133 = X132 .> DROP(0); X134 = X133 .> DROP(0); X135 = X134 .> DROP(0); X136 = X135 .> DROP(0); X137 = X136 .> DROP(0); X138 = X137 .> DROP(0); X139 = X138 .> DROP(0); X140 = X139 .> DROP(0); X141 = X140 .> DROP(0); X142 = X141 .> DROP(0); X143 = X142 .> DROP(0); X144 = X143 .> DROP(0); X145 = X144 .> DROP(0); X146 = X145 .> DROP(0); X147 = X146 .> DROP(0); X148 = X147 .> DROP(0); X149 = X148 .> DROP(0); X150 = X149 .> DROP(0); X151 = X150 .> DROP(0); X152 = X151 .> DROP(0); X153 = X152 .> DROP(0); X154 = X153 .> DROP(0); X155 = X154 .> DROP(0); X156 = X155 .> DROP(0); X157 = X156 .> DROP(0); X158 = X157 .> DROP(0); X159 = X158 .> DROP(0); X160 = X159 .> DROP(0); X161 = X160 .> DROP(0); X162 = X161 .> DROP(0); X163 = X162 .> DROP(0); X164 = X163 .> DROP(0); X165 = X164 .> DROP(0); X166 = X165 .> DROP(0); X167 = X166 .> DROP(0); X168 = X167 .> DROP(0); X169 = X168 .> DROP(0); X170 = X169 .> DROP(0); X171 = X170 .> DROP(0); X172 = X171 .> DROP(0); X173 = X172 .> DROP(0); X174 = X173 .> DROP(0); X175 = X174 .> DROP(0); X176 = X175 .> DROP(0); X177 = X176 .> DROP(0); X178 = X177 .> DROP(0); X179 = X178 .> DROP(0); X180 = X179 .> DROP(0); X181 = X180 .> DROP(0); X182 = X181 .> DROP(0); X183 = X182 .> DROP(0); X184 = X183 .> DROP(0); X185 = X184 .> DROP(0); X186 = X185 .> DROP(0); X187 = X186 .> DROP(0); X188 = X187 .> DROP(0); X189 = X188 .> DROP(0); X190 = X189 .> DROP(0); X191 = X190 .> DROP(0); X192 = X191 .> DROP(0); X193 = X192 .> DROP(0); X194 = X193 .> DROP(0); X195 = X194 .> DROP(0); X196 = X195 .> DROP(0); X197 = X196 .> DROP(0); X198 = X197 .> DROP(0); X199 = X198 .> DROP(0); X200 = X199 .> DROP(0); X200 .> TAKE(1)",
+	 Expect: nil,
+	 Error: nil,
+	 Throws: nil,
+	 Params: nil,
+	 As: nil,
+	 Mode: nil,
+	 Strict: false,
+	 Plan: strPtr("pure_memory"),
+	 HasTables: true,
+	 Tables: []string{"orders"},
+	 Unrepresentable: nil,
+	 RegisterFn: nil,
+	 BindingsFn: c739Bind},
 	{Name: "link.row.is-the-promoted-fields",
 	 At: "26-links.sqlt:5",
 	 Dialect: "mariadb",
@@ -21654,7 +21787,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c735Bind},
+	 BindingsFn: c740Bind},
 	{Name: "link.row.filter-on-a-promoted-field",
 	 At: "26-links.sqlt:25",
 	 Dialect: "mariadb",
@@ -21671,7 +21804,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c736Bind},
+	 BindingsFn: c741Bind},
 	{Name: "link.row.a-name-both-sides-have-is-refused",
 	 At: "26-links.sqlt:38",
 	 Dialect: "mariadb",
@@ -21688,7 +21821,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c737Bind},
+	 BindingsFn: c742Bind},
 	{Name: "link.row.select-cols-of-a-shared-name-is-refused",
 	 At: "26-links.sqlt:55",
 	 Dialect: "mariadb",
@@ -21705,7 +21838,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c738Bind},
+	 BindingsFn: c743Bind},
 	{Name: "link.row.a-named-binder-is-the-same-row",
 	 At: "26-links.sqlt:68",
 	 Dialect: "mariadb",
@@ -21722,7 +21855,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c739Bind},
+	 BindingsFn: c744Bind},
 	{Name: "link.row.a-named-binder-reads-a-promoted-field",
 	 At: "26-links.sqlt:86",
 	 Dialect: "mariadb",
@@ -21739,7 +21872,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c740Bind},
+	 BindingsFn: c745Bind},
 	{Name: "link.binders.left-binder-does-not-outlive-the-link",
 	 At: "26-links.sqlt:100",
 	 Dialect: "mariadb",
@@ -21756,7 +21889,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c741Bind},
+	 BindingsFn: c746Bind},
 	{Name: "link.binders.right-binder-does-not-outlive-the-link",
 	 At: "26-links.sqlt:118",
 	 Dialect: "mariadb",
@@ -21773,7 +21906,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c742Bind},
+	 BindingsFn: c747Bind},
 	{Name: "link.binders.positional-binder-does-not-outlive-the-link",
 	 At: "26-links.sqlt:131",
 	 Dialect: "mariadb",
@@ -21790,7 +21923,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c743Bind},
+	 BindingsFn: c748Bind},
 	{Name: "link.binders.map-of-a-binder-is-refused",
 	 At: "26-links.sqlt:144",
 	 Dialect: "mariadb",
@@ -21807,7 +21940,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c744Bind},
+	 BindingsFn: c749Bind},
 	{Name: "link.derived.projects-the-promoted-fields",
 	 At: "26-links.sqlt:157",
 	 Dialect: "sqlite",
@@ -21824,7 +21957,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c745Bind},
+	 BindingsFn: c750Bind},
 	{Name: "link.derived.a-shared-name-above-it-is-refused",
 	 At: "26-links.sqlt:174",
 	 Dialect: "sqlite",
@@ -21841,7 +21974,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c746Bind},
+	 BindingsFn: c751Bind},
 	{Name: "plan.link.unprojected-join-is-not-a-split-point",
 	 At: "26-links.sqlt:187",
 	 Dialect: "mariadb",
@@ -21858,7 +21991,7 @@ var sqlCases = []SqlCase{
 	 Tables: []string{"orders", "customers"},
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c747Bind},
+	 BindingsFn: c752Bind},
 	{Name: "plan.link.projection-closes-the-join",
 	 At: "26-links.sqlt:207",
 	 Dialect: "mariadb",
@@ -21875,7 +22008,7 @@ var sqlCases = []SqlCase{
 	 Tables: []string{"orders", "customers"},
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c748Bind},
+	 BindingsFn: c753Bind},
 	{Name: "plan.link.fall-through-over-a-join-projects-its-dependencies",
 	 At: "26-links.sqlt:223",
 	 Dialect: "sqlite",
@@ -21892,7 +22025,7 @@ var sqlCases = []SqlCase{
 	 Tables: []string{"orders", "customers"},
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c749Bind},
+	 BindingsFn: c754Bind},
 	{Name: "plan.link.select-cols-closes-the-join",
 	 At: "26-links.sqlt:242",
 	 Dialect: "mariadb",
@@ -21909,7 +22042,7 @@ var sqlCases = []SqlCase{
 	 Tables: []string{"orders", "customers"},
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c750Bind},
+	 BindingsFn: c755Bind},
 	{Name: "plan.link.projected-bucket-closes-the-join",
 	 At: "26-links.sqlt:258",
 	 Dialect: "mariadb",
@@ -21926,7 +22059,7 @@ var sqlCases = []SqlCase{
 	 Tables: []string{"orders", "customers"},
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c751Bind},
+	 BindingsFn: c756Bind},
 	{Name: "plan.link.a-binder-after-the-join-stays-in-memory",
 	 At: "26-links.sqlt:274",
 	 Dialect: "mariadb",
@@ -21943,7 +22076,7 @@ var sqlCases = []SqlCase{
 	 Tables: []string{"orders", "customers"},
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c752Bind},
+	 BindingsFn: c757Bind},
 	{Name: "link.qualify.fields-without-a-table-take-the-relation-alias",
 	 At: "26-links.sqlt:288",
 	 Dialect: "mariadb",
@@ -21960,7 +22093,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c753Bind},
+	 BindingsFn: c758Bind},
 	{Name: "link.qualify.the-table-name-without-an-alias-and-the-joined-side-by-position",
 	 At: "26-links.sqlt:310",
 	 Dialect: "mariadb",
@@ -21977,7 +22110,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c754Bind},
+	 BindingsFn: c759Bind},
 	{Name: "link.qualify.a-named-binder-is-the-same-row",
 	 At: "26-links.sqlt:326",
 	 Dialect: "mariadb",
@@ -21994,7 +22127,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c755Bind},
+	 BindingsFn: c760Bind},
 	{Name: "link.binder.left-name-reads-the-left-relation",
 	 At: "26-links.sqlt:340",
 	 Dialect: "sqlite",
@@ -22011,7 +22144,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c756Bind},
+	 BindingsFn: c761Bind},
 	{Name: "link.binder.right-name-reads-the-right-relation",
 	 At: "26-links.sqlt:358",
 	 Dialect: "sqlite",
@@ -22028,7 +22161,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c757Bind},
+	 BindingsFn: c762Bind},
 	{Name: "link.binder.both-names-in-one-projection",
 	 At: "26-links.sqlt:371",
 	 Dialect: "sqlite",
@@ -22045,7 +22178,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c758Bind},
+	 BindingsFn: c763Bind},
 	{Name: "link.binder.left-name-in-a-left-join",
 	 At: "26-links.sqlt:384",
 	 Dialect: "sqlite",
@@ -22062,7 +22195,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c759Bind},
+	 BindingsFn: c764Bind},
 	{Name: "link.binder.left-name-sides-swapped",
 	 At: "26-links.sqlt:397",
 	 Dialect: "sqlite",
@@ -22079,7 +22212,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c760Bind},
+	 BindingsFn: c765Bind},
 	{Name: "link.binder.left-name-in-a-filter",
 	 At: "26-links.sqlt:410",
 	 Dialect: "sqlite",
@@ -22096,7 +22229,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c761Bind},
+	 BindingsFn: c766Bind},
 	{Name: "link.binder.relation-names-read-their-relations",
 	 At: "26-links.sqlt:425",
 	 Dialect: "sqlite",
@@ -22113,7 +22246,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c762Bind},
+	 BindingsFn: c767Bind},
 	{Name: "link.binder.left-name-mariadb",
 	 At: "26-links.sqlt:440",
 	 Dialect: "mariadb",
@@ -22130,7 +22263,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c763Bind},
+	 BindingsFn: c768Bind},
 	{Name: "link.binder.eszett-is-not-the-ss-binder",
 	 At: "26-links.sqlt:453",
 	 Dialect: "sqlite",
@@ -22147,7 +22280,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c764Bind},
+	 BindingsFn: c769Bind},
 	{Name: "link.binder.long-s-is-not-an-s",
 	 At: "26-links.sqlt:470",
 	 Dialect: "sqlite",
@@ -22164,7 +22297,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c765Bind},
+	 BindingsFn: c770Bind},
 	{Name: "link.binder.a-field-the-relation-lacks-is-refused",
 	 At: "26-links.sqlt:484",
 	 Dialect: "sqlite",
@@ -22181,7 +22314,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c766Bind},
+	 BindingsFn: c771Bind},
 	{Name: "link.refusal.an-earlier-step-refuses-first",
 	 At: "26-links.sqlt:502",
 	 Dialect: "sqlite",
@@ -22198,7 +22331,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c767Bind},
+	 BindingsFn: c772Bind},
 	{Name: "stmt.slice.smaller.mariadb",
 	 At: "27-slices.sqlt:1",
 	 Dialect: "mariadb",
@@ -22215,7 +22348,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c768Bind},
+	 BindingsFn: c773Bind},
 	{Name: "stmt.slice.smaller.postgresql",
 	 At: "27-slices.sqlt:14",
 	 Dialect: "postgresql",
@@ -22232,7 +22365,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c769Bind},
+	 BindingsFn: c774Bind},
 	{Name: "stmt.slice.smaller.sqlite",
 	 At: "27-slices.sqlt:27",
 	 Dialect: "sqlite",
@@ -22249,7 +22382,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c770Bind},
+	 BindingsFn: c775Bind},
 	{Name: "stmt.slice.equal.mariadb",
 	 At: "27-slices.sqlt:40",
 	 Dialect: "mariadb",
@@ -22266,7 +22399,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c771Bind},
+	 BindingsFn: c776Bind},
 	{Name: "stmt.slice.equal.postgresql",
 	 At: "27-slices.sqlt:53",
 	 Dialect: "postgresql",
@@ -22283,7 +22416,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c772Bind},
+	 BindingsFn: c777Bind},
 	{Name: "stmt.slice.equal.sqlite",
 	 At: "27-slices.sqlt:66",
 	 Dialect: "sqlite",
@@ -22300,7 +22433,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c773Bind},
+	 BindingsFn: c778Bind},
 	{Name: "stmt.slice.larger.mariadb",
 	 At: "27-slices.sqlt:79",
 	 Dialect: "mariadb",
@@ -22317,7 +22450,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c774Bind},
+	 BindingsFn: c779Bind},
 	{Name: "stmt.slice.larger.postgresql",
 	 At: "27-slices.sqlt:92",
 	 Dialect: "postgresql",
@@ -22334,7 +22467,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c775Bind},
+	 BindingsFn: c780Bind},
 	{Name: "stmt.slice.larger.sqlite",
 	 At: "27-slices.sqlt:105",
 	 Dialect: "sqlite",
@@ -22351,7 +22484,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c776Bind},
+	 BindingsFn: c781Bind},
 	{Name: "stmt.slice.zero-take.mariadb",
 	 At: "27-slices.sqlt:118",
 	 Dialect: "mariadb",
@@ -22368,7 +22501,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c777Bind},
+	 BindingsFn: c782Bind},
 	{Name: "stmt.slice.zero-take.postgresql",
 	 At: "27-slices.sqlt:131",
 	 Dialect: "postgresql",
@@ -22385,7 +22518,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c778Bind},
+	 BindingsFn: c783Bind},
 	{Name: "stmt.slice.zero-take.sqlite",
 	 At: "27-slices.sqlt:144",
 	 Dialect: "sqlite",
@@ -22402,7 +22535,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c779Bind},
+	 BindingsFn: c784Bind},
 	{Name: "stmt.slice.zero-drop.mariadb",
 	 At: "27-slices.sqlt:157",
 	 Dialect: "mariadb",
@@ -22419,7 +22552,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c780Bind},
+	 BindingsFn: c785Bind},
 	{Name: "stmt.slice.zero-drop.postgresql",
 	 At: "27-slices.sqlt:170",
 	 Dialect: "postgresql",
@@ -22436,7 +22569,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c781Bind},
+	 BindingsFn: c786Bind},
 	{Name: "stmt.slice.zero-drop.sqlite",
 	 At: "27-slices.sqlt:183",
 	 Dialect: "sqlite",
@@ -22453,7 +22586,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c782Bind},
+	 BindingsFn: c787Bind},
 	{Name: "stmt.slice.mixed.mariadb",
 	 At: "27-slices.sqlt:196",
 	 Dialect: "mariadb",
@@ -22470,7 +22603,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c783Bind},
+	 BindingsFn: c788Bind},
 	{Name: "stmt.slice.mixed.postgresql",
 	 At: "27-slices.sqlt:209",
 	 Dialect: "postgresql",
@@ -22487,7 +22620,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c784Bind},
+	 BindingsFn: c789Bind},
 	{Name: "stmt.slice.mixed.sqlite",
 	 At: "27-slices.sqlt:222",
 	 Dialect: "sqlite",
@@ -22504,7 +22637,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c785Bind},
+	 BindingsFn: c790Bind},
 	{Name: "stmt.slice.drop-take.mariadb",
 	 At: "27-slices.sqlt:235",
 	 Dialect: "mariadb",
@@ -22521,7 +22654,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c786Bind},
+	 BindingsFn: c791Bind},
 	{Name: "stmt.slice.drop-take.postgresql",
 	 At: "27-slices.sqlt:248",
 	 Dialect: "postgresql",
@@ -22538,7 +22671,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c787Bind},
+	 BindingsFn: c792Bind},
 	{Name: "stmt.slice.drop-take.sqlite",
 	 At: "27-slices.sqlt:261",
 	 Dialect: "sqlite",
@@ -22555,7 +22688,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c788Bind},
+	 BindingsFn: c793Bind},
 	{Name: "stmt.slice.large-offsets.mariadb",
 	 At: "28-slice-overflow.sqlt:1",
 	 Dialect: "mariadb",
@@ -22572,7 +22705,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c789Bind},
+	 BindingsFn: c794Bind},
 	{Name: "stmt.slice.large-offsets.postgresql",
 	 At: "28-slice-overflow.sqlt:14",
 	 Dialect: "postgresql",
@@ -22589,7 +22722,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c790Bind},
+	 BindingsFn: c795Bind},
 	{Name: "stmt.slice.large-offsets.sqlite",
 	 At: "28-slice-overflow.sqlt:27",
 	 Dialect: "sqlite",
@@ -22606,7 +22739,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c791Bind},
+	 BindingsFn: c796Bind},
 	{Name: "bind.text-identity.sargable.mariadb",
 	 At: "29-text-identity.sqlt:1",
 	 Dialect: "mariadb",
@@ -22623,7 +22756,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c792Bind},
+	 BindingsFn: c797Bind},
 	{Name: "bind.text-identity.sargable-inequality.mariadb",
 	 At: "29-text-identity.sqlt:14",
 	 Dialect: "mariadb",
@@ -22640,7 +22773,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c793Bind},
+	 BindingsFn: c798Bind},
 	{Name: "stmt.text-identity.key-text-operation.mariadb",
 	 At: "29-text-identity.sqlt:27",
 	 Dialect: "mariadb",
@@ -22657,7 +22790,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c794Bind},
+	 BindingsFn: c799Bind},
 	{Name: "bind.text-identity.sargable.mysql",
 	 At: "29-text-identity.sqlt:42",
 	 Dialect: "mysql",
@@ -22674,7 +22807,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c795Bind},
+	 BindingsFn: c800Bind},
 	{Name: "bind.text-identity.sargable-inequality.mysql",
 	 At: "29-text-identity.sqlt:55",
 	 Dialect: "mysql",
@@ -22691,7 +22824,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c796Bind},
+	 BindingsFn: c801Bind},
 	{Name: "stmt.text-identity.key-text-operation.mysql",
 	 At: "29-text-identity.sqlt:68",
 	 Dialect: "mysql",
@@ -22708,7 +22841,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c797Bind},
+	 BindingsFn: c802Bind},
 	{Name: "stmt.text-identity.distinct-record.mariadb",
 	 At: "30-distinct-text.sqlt:1",
 	 Dialect: "mariadb",
@@ -22725,7 +22858,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c798Bind},
+	 BindingsFn: c803Bind},
 	{Name: "stmt.text-identity.distinct-columns.mariadb",
 	 At: "30-distinct-text.sqlt:16",
 	 Dialect: "mariadb",
@@ -22742,7 +22875,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c799Bind},
+	 BindingsFn: c804Bind},
 	{Name: "stmt.text-identity.distinct-record.mysql",
 	 At: "30-distinct-text.sqlt:31",
 	 Dialect: "mysql",
@@ -22759,7 +22892,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c800Bind},
+	 BindingsFn: c805Bind},
 	{Name: "stmt.text-identity.distinct-columns.mysql",
 	 At: "30-distinct-text.sqlt:46",
 	 Dialect: "mysql",
@@ -22776,7 +22909,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c801Bind},
+	 BindingsFn: c806Bind},
 	{Name: "stmt.distinct.open-schema.mariadb",
 	 At: "31-distinct-schema.sqlt:1",
 	 Dialect: "mariadb",
@@ -22793,7 +22926,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c802Bind},
+	 BindingsFn: c807Bind},
 	{Name: "stmt.distinct.open-schema.mysql",
 	 At: "31-distinct-schema.sqlt:14",
 	 Dialect: "mysql",
@@ -22810,7 +22943,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c803Bind},
+	 BindingsFn: c808Bind},
 	{Name: "stmt.distinct.open-schema.postgresql",
 	 At: "31-distinct-schema.sqlt:27",
 	 Dialect: "postgresql",
@@ -22827,7 +22960,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c804Bind},
+	 BindingsFn: c809Bind},
 	{Name: "stmt.distinct.open-schema.sqlite",
 	 At: "31-distinct-schema.sqlt:40",
 	 Dialect: "sqlite",
@@ -22844,7 +22977,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c805Bind},
+	 BindingsFn: c810Bind},
 	{Name: "stmt.group-identity.projected.mariadb",
 	 At: "32-numeric-group-identity.sqlt:1",
 	 Dialect: "mariadb",
@@ -22861,7 +22994,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c806Bind},
+	 BindingsFn: c811Bind},
 	{Name: "stmt.group-identity.bare-map.mariadb",
 	 At: "32-numeric-group-identity.sqlt:14",
 	 Dialect: "mariadb",
@@ -22878,7 +23011,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c807Bind},
+	 BindingsFn: c812Bind},
 	{Name: "stmt.group-identity.composite.mariadb",
 	 At: "32-numeric-group-identity.sqlt:27",
 	 Dialect: "mariadb",
@@ -22895,7 +23028,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c808Bind},
+	 BindingsFn: c813Bind},
 	{Name: "stmt.group-identity.projected.mysql",
 	 At: "32-numeric-group-identity.sqlt:40",
 	 Dialect: "mysql",
@@ -22912,7 +23045,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c809Bind},
+	 BindingsFn: c814Bind},
 	{Name: "stmt.group-identity.bare-map.mysql",
 	 At: "32-numeric-group-identity.sqlt:53",
 	 Dialect: "mysql",
@@ -22929,7 +23062,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c810Bind},
+	 BindingsFn: c815Bind},
 	{Name: "stmt.group-identity.composite.mysql",
 	 At: "32-numeric-group-identity.sqlt:66",
 	 Dialect: "mysql",
@@ -22946,7 +23079,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c811Bind},
+	 BindingsFn: c816Bind},
 	{Name: "stmt.group-identity.projected.postgresql",
 	 At: "32-numeric-group-identity.sqlt:79",
 	 Dialect: "postgresql",
@@ -22963,7 +23096,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c812Bind},
+	 BindingsFn: c817Bind},
 	{Name: "stmt.group-identity.bare-map.postgresql",
 	 At: "32-numeric-group-identity.sqlt:92",
 	 Dialect: "postgresql",
@@ -22980,7 +23113,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c813Bind},
+	 BindingsFn: c818Bind},
 	{Name: "stmt.group-identity.composite.postgresql",
 	 At: "32-numeric-group-identity.sqlt:105",
 	 Dialect: "postgresql",
@@ -22997,7 +23130,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c814Bind},
+	 BindingsFn: c819Bind},
 	{Name: "stmt.group-identity.projected.sqlite",
 	 At: "32-numeric-group-identity.sqlt:118",
 	 Dialect: "sqlite",
@@ -23014,7 +23147,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c815Bind},
+	 BindingsFn: c820Bind},
 	{Name: "stmt.group-identity.bare-map.sqlite",
 	 At: "32-numeric-group-identity.sqlt:131",
 	 Dialect: "sqlite",
@@ -23031,7 +23164,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c816Bind},
+	 BindingsFn: c821Bind},
 	{Name: "stmt.group-identity.composite.sqlite",
 	 At: "32-numeric-group-identity.sqlt:144",
 	 Dialect: "sqlite",
@@ -23048,7 +23181,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c817Bind},
+	 BindingsFn: c822Bind},
 	{Name: "stmt.group-identity.derived-computation.mariadb",
 	 At: "33-group-identity-continuation.sqlt:1",
 	 Dialect: "mariadb",
@@ -23065,7 +23198,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c818Bind},
+	 BindingsFn: c823Bind},
 	{Name: "plan.group-identity.derived-helper.mariadb",
 	 At: "33-group-identity-continuation.sqlt:14",
 	 Dialect: "mariadb",
@@ -23082,7 +23215,7 @@ var sqlCases = []SqlCase{
 	 Tables: []string{"r"},
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c819Bind},
+	 BindingsFn: c824Bind},
 	{Name: "stmt.group-identity.derived-computation.mysql",
 	 At: "33-group-identity-continuation.sqlt:27",
 	 Dialect: "mysql",
@@ -23099,7 +23232,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c820Bind},
+	 BindingsFn: c825Bind},
 	{Name: "plan.group-identity.derived-helper.mysql",
 	 At: "33-group-identity-continuation.sqlt:40",
 	 Dialect: "mysql",
@@ -23116,7 +23249,7 @@ var sqlCases = []SqlCase{
 	 Tables: []string{"r"},
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c821Bind},
+	 BindingsFn: c826Bind},
 	{Name: "stmt.group-identity.derived-computation.postgresql",
 	 At: "33-group-identity-continuation.sqlt:53",
 	 Dialect: "postgresql",
@@ -23133,7 +23266,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c822Bind},
+	 BindingsFn: c827Bind},
 	{Name: "plan.group-identity.derived-helper.postgresql",
 	 At: "33-group-identity-continuation.sqlt:66",
 	 Dialect: "postgresql",
@@ -23150,7 +23283,7 @@ var sqlCases = []SqlCase{
 	 Tables: []string{"r"},
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c823Bind},
+	 BindingsFn: c828Bind},
 	{Name: "stmt.group-identity.derived-computation.sqlite",
 	 At: "33-group-identity-continuation.sqlt:79",
 	 Dialect: "sqlite",
@@ -23167,7 +23300,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c824Bind},
+	 BindingsFn: c829Bind},
 	{Name: "plan.group-identity.derived-helper.sqlite",
 	 At: "33-group-identity-continuation.sqlt:92",
 	 Dialect: "sqlite",
@@ -23184,7 +23317,7 @@ var sqlCases = []SqlCase{
 	 Tables: []string{"r"},
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c825Bind},
+	 BindingsFn: c830Bind},
 	{Name: "plan.identity-barrier.retains-safe-prefix.mariadb",
 	 At: "34-safe-identity-prefix.sqlt:1",
 	 Dialect: "mariadb",
@@ -23201,7 +23334,7 @@ var sqlCases = []SqlCase{
 	 Tables: []string{"r"},
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c826Bind},
+	 BindingsFn: c831Bind},
 	{Name: "plan.identity-barrier.numeric-dedupe.mariadb",
 	 At: "34-safe-identity-prefix.sqlt:16",
 	 Dialect: "mariadb",
@@ -23218,7 +23351,7 @@ var sqlCases = []SqlCase{
 	 Tables: []string{"r"},
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c827Bind},
+	 BindingsFn: c832Bind},
 	{Name: "plan.identity-barrier.retains-safe-prefix.mysql",
 	 At: "34-safe-identity-prefix.sqlt:29",
 	 Dialect: "mysql",
@@ -23235,7 +23368,7 @@ var sqlCases = []SqlCase{
 	 Tables: []string{"r"},
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c828Bind},
+	 BindingsFn: c833Bind},
 	{Name: "plan.identity-barrier.numeric-dedupe.mysql",
 	 At: "34-safe-identity-prefix.sqlt:44",
 	 Dialect: "mysql",
@@ -23252,7 +23385,7 @@ var sqlCases = []SqlCase{
 	 Tables: []string{"r"},
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c829Bind},
+	 BindingsFn: c834Bind},
 	{Name: "plan.identity-barrier.retains-safe-prefix.postgresql",
 	 At: "34-safe-identity-prefix.sqlt:57",
 	 Dialect: "postgresql",
@@ -23269,7 +23402,7 @@ var sqlCases = []SqlCase{
 	 Tables: []string{"r"},
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c830Bind},
+	 BindingsFn: c835Bind},
 	{Name: "plan.identity-barrier.numeric-dedupe.postgresql",
 	 At: "34-safe-identity-prefix.sqlt:72",
 	 Dialect: "postgresql",
@@ -23286,7 +23419,7 @@ var sqlCases = []SqlCase{
 	 Tables: []string{"r"},
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c831Bind},
+	 BindingsFn: c836Bind},
 	{Name: "plan.identity-barrier.retains-safe-prefix.sqlite",
 	 At: "34-safe-identity-prefix.sqlt:85",
 	 Dialect: "sqlite",
@@ -23303,7 +23436,7 @@ var sqlCases = []SqlCase{
 	 Tables: []string{"r"},
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c832Bind},
+	 BindingsFn: c837Bind},
 	{Name: "plan.identity-barrier.numeric-dedupe.sqlite",
 	 At: "34-safe-identity-prefix.sqlt:100",
 	 Dialect: "sqlite",
@@ -23320,7 +23453,7 @@ var sqlCases = []SqlCase{
 	 Tables: []string{"r"},
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c833Bind},
+	 BindingsFn: c838Bind},
 	{Name: "plan.identity-barrier.text-literal-dedupe-after-a-join-splits-at-the-map.postgresql",
 	 At: "34-safe-identity-prefix.sqlt:113",
 	 Dialect: "postgresql",
@@ -23337,7 +23470,7 @@ var sqlCases = []SqlCase{
 	 Tables: []string{"products", "order_items"},
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c834Bind},
+	 BindingsFn: c839Bind},
 	{Name: "plan.identity-barrier.text-literal-dedupe-after-a-join-splits-at-the-map.mariadb",
 	 At: "34-safe-identity-prefix.sqlt:137",
 	 Dialect: "mariadb",
@@ -23354,7 +23487,7 @@ var sqlCases = []SqlCase{
 	 Tables: []string{"products", "order_items"},
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c835Bind},
+	 BindingsFn: c840Bind},
 	{Name: "plan.identity-barrier.column-dedupe-after-a-join-splits-at-the-map.postgresql",
 	 At: "34-safe-identity-prefix.sqlt:161",
 	 Dialect: "postgresql",
@@ -23371,7 +23504,7 @@ var sqlCases = []SqlCase{
 	 Tables: []string{"products", "order_items"},
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c836Bind},
+	 BindingsFn: c841Bind},
 	{Name: "plan.identity-barrier.column-dedupe-after-a-join-splits-at-the-map.mariadb",
 	 At: "34-safe-identity-prefix.sqlt:181",
 	 Dialect: "mariadb",
@@ -23388,7 +23521,7 @@ var sqlCases = []SqlCase{
 	 Tables: []string{"products", "order_items"},
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c837Bind},
+	 BindingsFn: c842Bind},
 	{Name: "stmt.record-collision.map.mariadb",
 	 At: "35-record-projection-collisions.sqlt:1",
 	 Dialect: "mariadb",
@@ -23405,7 +23538,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c838Bind},
+	 BindingsFn: c843Bind},
 	{Name: "stmt.record-collision.derived.mariadb",
 	 At: "35-record-projection-collisions.sqlt:14",
 	 Dialect: "mariadb",
@@ -23422,7 +23555,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c839Bind},
+	 BindingsFn: c844Bind},
 	{Name: "stmt.record-collision.case-collision.mariadb",
 	 At: "35-record-projection-collisions.sqlt:27",
 	 Dialect: "mariadb",
@@ -23439,7 +23572,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c840Bind},
+	 BindingsFn: c845Bind},
 	{Name: "stmt.record-collision.bucket.mariadb",
 	 At: "35-record-projection-collisions.sqlt:40",
 	 Dialect: "mariadb",
@@ -23456,7 +23589,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c841Bind},
+	 BindingsFn: c846Bind},
 	{Name: "stmt.record-collision.group-key.mariadb",
 	 At: "35-record-projection-collisions.sqlt:53",
 	 Dialect: "mariadb",
@@ -23473,7 +23606,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c842Bind},
+	 BindingsFn: c847Bind},
 	{Name: "plan.record-collision.mixed.mariadb",
 	 At: "35-record-projection-collisions.sqlt:66",
 	 Dialect: "mariadb",
@@ -23490,7 +23623,7 @@ var sqlCases = []SqlCase{
 	 Tables: []string{"r"},
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c843Bind},
+	 BindingsFn: c848Bind},
 	{Name: "plan.record-collision.mixed-reverse.mariadb",
 	 At: "35-record-projection-collisions.sqlt:79",
 	 Dialect: "mariadb",
@@ -23507,7 +23640,7 @@ var sqlCases = []SqlCase{
 	 Tables: []string{"r"},
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c844Bind},
+	 BindingsFn: c849Bind},
 	{Name: "plan.record-collision.safe-prefix.mariadb",
 	 At: "35-record-projection-collisions.sqlt:92",
 	 Dialect: "mariadb",
@@ -23524,7 +23657,7 @@ var sqlCases = []SqlCase{
 	 Tables: []string{"r"},
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c845Bind},
+	 BindingsFn: c850Bind},
 	{Name: "stmt.record-collision.map.mysql",
 	 At: "35-record-projection-collisions.sqlt:107",
 	 Dialect: "mysql",
@@ -23541,7 +23674,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c846Bind},
+	 BindingsFn: c851Bind},
 	{Name: "stmt.record-collision.derived.mysql",
 	 At: "35-record-projection-collisions.sqlt:120",
 	 Dialect: "mysql",
@@ -23558,7 +23691,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c847Bind},
+	 BindingsFn: c852Bind},
 	{Name: "stmt.record-collision.case-collision.mysql",
 	 At: "35-record-projection-collisions.sqlt:133",
 	 Dialect: "mysql",
@@ -23575,7 +23708,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c848Bind},
+	 BindingsFn: c853Bind},
 	{Name: "stmt.record-collision.bucket.mysql",
 	 At: "35-record-projection-collisions.sqlt:146",
 	 Dialect: "mysql",
@@ -23592,7 +23725,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c849Bind},
+	 BindingsFn: c854Bind},
 	{Name: "stmt.record-collision.group-key.mysql",
 	 At: "35-record-projection-collisions.sqlt:159",
 	 Dialect: "mysql",
@@ -23609,7 +23742,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c850Bind},
+	 BindingsFn: c855Bind},
 	{Name: "plan.record-collision.mixed.mysql",
 	 At: "35-record-projection-collisions.sqlt:172",
 	 Dialect: "mysql",
@@ -23626,7 +23759,7 @@ var sqlCases = []SqlCase{
 	 Tables: []string{"r"},
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c851Bind},
+	 BindingsFn: c856Bind},
 	{Name: "plan.record-collision.mixed-reverse.mysql",
 	 At: "35-record-projection-collisions.sqlt:185",
 	 Dialect: "mysql",
@@ -23643,7 +23776,7 @@ var sqlCases = []SqlCase{
 	 Tables: []string{"r"},
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c852Bind},
+	 BindingsFn: c857Bind},
 	{Name: "plan.record-collision.safe-prefix.mysql",
 	 At: "35-record-projection-collisions.sqlt:198",
 	 Dialect: "mysql",
@@ -23660,7 +23793,7 @@ var sqlCases = []SqlCase{
 	 Tables: []string{"r"},
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c853Bind},
+	 BindingsFn: c858Bind},
 	{Name: "stmt.record-collision.map.postgresql",
 	 At: "35-record-projection-collisions.sqlt:213",
 	 Dialect: "postgresql",
@@ -23677,7 +23810,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c854Bind},
+	 BindingsFn: c859Bind},
 	{Name: "stmt.record-collision.derived.postgresql",
 	 At: "35-record-projection-collisions.sqlt:226",
 	 Dialect: "postgresql",
@@ -23694,7 +23827,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c855Bind},
+	 BindingsFn: c860Bind},
 	{Name: "stmt.record-collision.case-collision.postgresql",
 	 At: "35-record-projection-collisions.sqlt:239",
 	 Dialect: "postgresql",
@@ -23711,7 +23844,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c856Bind},
+	 BindingsFn: c861Bind},
 	{Name: "stmt.record-collision.bucket.postgresql",
 	 At: "35-record-projection-collisions.sqlt:252",
 	 Dialect: "postgresql",
@@ -23728,7 +23861,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c857Bind},
+	 BindingsFn: c862Bind},
 	{Name: "stmt.record-collision.group-key.postgresql",
 	 At: "35-record-projection-collisions.sqlt:265",
 	 Dialect: "postgresql",
@@ -23745,7 +23878,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c858Bind},
+	 BindingsFn: c863Bind},
 	{Name: "plan.record-collision.mixed.postgresql",
 	 At: "35-record-projection-collisions.sqlt:278",
 	 Dialect: "postgresql",
@@ -23762,7 +23895,7 @@ var sqlCases = []SqlCase{
 	 Tables: []string{"r"},
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c859Bind},
+	 BindingsFn: c864Bind},
 	{Name: "plan.record-collision.mixed-reverse.postgresql",
 	 At: "35-record-projection-collisions.sqlt:291",
 	 Dialect: "postgresql",
@@ -23779,7 +23912,7 @@ var sqlCases = []SqlCase{
 	 Tables: []string{"r"},
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c860Bind},
+	 BindingsFn: c865Bind},
 	{Name: "plan.record-collision.safe-prefix.postgresql",
 	 At: "35-record-projection-collisions.sqlt:304",
 	 Dialect: "postgresql",
@@ -23796,7 +23929,7 @@ var sqlCases = []SqlCase{
 	 Tables: []string{"r"},
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c861Bind},
+	 BindingsFn: c866Bind},
 	{Name: "stmt.record-collision.map.sqlite",
 	 At: "35-record-projection-collisions.sqlt:319",
 	 Dialect: "sqlite",
@@ -23813,7 +23946,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c862Bind},
+	 BindingsFn: c867Bind},
 	{Name: "stmt.record-collision.derived.sqlite",
 	 At: "35-record-projection-collisions.sqlt:332",
 	 Dialect: "sqlite",
@@ -23830,7 +23963,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c863Bind},
+	 BindingsFn: c868Bind},
 	{Name: "stmt.record-collision.case-collision.sqlite",
 	 At: "35-record-projection-collisions.sqlt:345",
 	 Dialect: "sqlite",
@@ -23847,7 +23980,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c864Bind},
+	 BindingsFn: c869Bind},
 	{Name: "stmt.record-collision.bucket.sqlite",
 	 At: "35-record-projection-collisions.sqlt:358",
 	 Dialect: "sqlite",
@@ -23864,7 +23997,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c865Bind},
+	 BindingsFn: c870Bind},
 	{Name: "stmt.record-collision.group-key.sqlite",
 	 At: "35-record-projection-collisions.sqlt:371",
 	 Dialect: "sqlite",
@@ -23881,7 +24014,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c866Bind},
+	 BindingsFn: c871Bind},
 	{Name: "plan.record-collision.mixed.sqlite",
 	 At: "35-record-projection-collisions.sqlt:384",
 	 Dialect: "sqlite",
@@ -23898,7 +24031,7 @@ var sqlCases = []SqlCase{
 	 Tables: []string{"r"},
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c867Bind},
+	 BindingsFn: c872Bind},
 	{Name: "plan.record-collision.mixed-reverse.sqlite",
 	 At: "35-record-projection-collisions.sqlt:397",
 	 Dialect: "sqlite",
@@ -23915,7 +24048,7 @@ var sqlCases = []SqlCase{
 	 Tables: []string{"r"},
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c868Bind},
+	 BindingsFn: c873Bind},
 	{Name: "plan.record-collision.safe-prefix.sqlite",
 	 At: "35-record-projection-collisions.sqlt:410",
 	 Dialect: "sqlite",
@@ -23932,7 +24065,7 @@ var sqlCases = []SqlCase{
 	 Tables: []string{"r"},
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c869Bind},
+	 BindingsFn: c874Bind},
 	{Name: "plan.latest-member.unique-revision.mariadb",
 	 At: "36-latest-member.sqlt:1",
 	 Dialect: "mariadb",
@@ -23949,7 +24082,7 @@ var sqlCases = []SqlCase{
 	 Tables: []string{"r"},
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c870Bind},
+	 BindingsFn: c875Bind},
 	{Name: "plan.latest-member.unique-revision.mysql",
 	 At: "36-latest-member.sqlt:16",
 	 Dialect: "mysql",
@@ -23966,7 +24099,7 @@ var sqlCases = []SqlCase{
 	 Tables: []string{"r"},
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c871Bind},
+	 BindingsFn: c876Bind},
 	{Name: "plan.latest-member.unique-revision.postgresql",
 	 At: "36-latest-member.sqlt:31",
 	 Dialect: "postgresql",
@@ -23983,7 +24116,7 @@ var sqlCases = []SqlCase{
 	 Tables: []string{"r"},
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c872Bind},
+	 BindingsFn: c877Bind},
 	{Name: "plan.latest-member.unique-revision.sqlite",
 	 At: "36-latest-member.sqlt:46",
 	 Dialect: "sqlite",
@@ -24000,7 +24133,7 @@ var sqlCases = []SqlCase{
 	 Tables: []string{"r"},
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c873Bind},
+	 BindingsFn: c878Bind},
 	{Name: "plan.latest-member.fallback.zero.mariadb",
 	 At: "37-latest-member-fallback.sqlt:1",
 	 Dialect: "mariadb",
@@ -24017,7 +24150,7 @@ var sqlCases = []SqlCase{
 	 Tables: []string{"r"},
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c874Bind},
+	 BindingsFn: c879Bind},
 	{Name: "plan.latest-member.fallback.top-two.mariadb",
 	 At: "37-latest-member-fallback.sqlt:14",
 	 Dialect: "mariadb",
@@ -24034,7 +24167,7 @@ var sqlCases = []SqlCase{
 	 Tables: []string{"r"},
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c875Bind},
+	 BindingsFn: c880Bind},
 	{Name: "plan.latest-member.fallback.ascending.mariadb",
 	 At: "37-latest-member-fallback.sqlt:27",
 	 Dialect: "mariadb",
@@ -24051,7 +24184,7 @@ var sqlCases = []SqlCase{
 	 Tables: []string{"r"},
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c876Bind},
+	 BindingsFn: c881Bind},
 	{Name: "plan.latest-member.fallback.computed-revision.mariadb",
 	 At: "37-latest-member-fallback.sqlt:40",
 	 Dialect: "mariadb",
@@ -24068,7 +24201,7 @@ var sqlCases = []SqlCase{
 	 Tables: []string{"r"},
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c877Bind},
+	 BindingsFn: c882Bind},
 	{Name: "plan.latest-member.fallback.computed-partition.mariadb",
 	 At: "37-latest-member-fallback.sqlt:53",
 	 Dialect: "mariadb",
@@ -24085,7 +24218,7 @@ var sqlCases = []SqlCase{
 	 Tables: []string{"r"},
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c878Bind},
+	 BindingsFn: c883Bind},
 	{Name: "plan.latest-member.fallback.composite.mariadb",
 	 At: "37-latest-member-fallback.sqlt:66",
 	 Dialect: "mariadb",
@@ -24102,7 +24235,7 @@ var sqlCases = []SqlCase{
 	 Tables: []string{"r"},
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c879Bind},
+	 BindingsFn: c884Bind},
 	{Name: "plan.latest-member.fallback.no-proof.mariadb",
 	 At: "37-latest-member-fallback.sqlt:79",
 	 Dialect: "mariadb",
@@ -24119,7 +24252,7 @@ var sqlCases = []SqlCase{
 	 Tables: []string{"r"},
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c880Bind},
+	 BindingsFn: c885Bind},
 	{Name: "plan.latest-member.fallback.needs-members.mariadb",
 	 At: "37-latest-member-fallback.sqlt:92",
 	 Dialect: "mariadb",
@@ -24136,7 +24269,7 @@ var sqlCases = []SqlCase{
 	 Tables: []string{"r"},
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c881Bind},
+	 BindingsFn: c886Bind},
 	{Name: "plan.latest-member.fallback.zero.mysql",
 	 At: "37-latest-member-fallback.sqlt:105",
 	 Dialect: "mysql",
@@ -24153,7 +24286,7 @@ var sqlCases = []SqlCase{
 	 Tables: []string{"r"},
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c882Bind},
+	 BindingsFn: c887Bind},
 	{Name: "plan.latest-member.fallback.top-two.mysql",
 	 At: "37-latest-member-fallback.sqlt:118",
 	 Dialect: "mysql",
@@ -24170,7 +24303,7 @@ var sqlCases = []SqlCase{
 	 Tables: []string{"r"},
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c883Bind},
+	 BindingsFn: c888Bind},
 	{Name: "plan.latest-member.fallback.ascending.mysql",
 	 At: "37-latest-member-fallback.sqlt:131",
 	 Dialect: "mysql",
@@ -24187,7 +24320,7 @@ var sqlCases = []SqlCase{
 	 Tables: []string{"r"},
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c884Bind},
+	 BindingsFn: c889Bind},
 	{Name: "plan.latest-member.fallback.computed-revision.mysql",
 	 At: "37-latest-member-fallback.sqlt:144",
 	 Dialect: "mysql",
@@ -24204,7 +24337,7 @@ var sqlCases = []SqlCase{
 	 Tables: []string{"r"},
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c885Bind},
+	 BindingsFn: c890Bind},
 	{Name: "plan.latest-member.fallback.computed-partition.mysql",
 	 At: "37-latest-member-fallback.sqlt:157",
 	 Dialect: "mysql",
@@ -24221,7 +24354,7 @@ var sqlCases = []SqlCase{
 	 Tables: []string{"r"},
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c886Bind},
+	 BindingsFn: c891Bind},
 	{Name: "plan.latest-member.fallback.composite.mysql",
 	 At: "37-latest-member-fallback.sqlt:170",
 	 Dialect: "mysql",
@@ -24238,7 +24371,7 @@ var sqlCases = []SqlCase{
 	 Tables: []string{"r"},
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c887Bind},
+	 BindingsFn: c892Bind},
 	{Name: "plan.latest-member.fallback.no-proof.mysql",
 	 At: "37-latest-member-fallback.sqlt:183",
 	 Dialect: "mysql",
@@ -24255,7 +24388,7 @@ var sqlCases = []SqlCase{
 	 Tables: []string{"r"},
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c888Bind},
+	 BindingsFn: c893Bind},
 	{Name: "plan.latest-member.fallback.needs-members.mysql",
 	 At: "37-latest-member-fallback.sqlt:196",
 	 Dialect: "mysql",
@@ -24272,7 +24405,7 @@ var sqlCases = []SqlCase{
 	 Tables: []string{"r"},
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c889Bind},
+	 BindingsFn: c894Bind},
 	{Name: "plan.latest-member.fallback.zero.postgresql",
 	 At: "37-latest-member-fallback.sqlt:209",
 	 Dialect: "postgresql",
@@ -24289,7 +24422,7 @@ var sqlCases = []SqlCase{
 	 Tables: []string{"r"},
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c890Bind},
+	 BindingsFn: c895Bind},
 	{Name: "plan.latest-member.fallback.top-two.postgresql",
 	 At: "37-latest-member-fallback.sqlt:222",
 	 Dialect: "postgresql",
@@ -24306,7 +24439,7 @@ var sqlCases = []SqlCase{
 	 Tables: []string{"r"},
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c891Bind},
+	 BindingsFn: c896Bind},
 	{Name: "plan.latest-member.fallback.ascending.postgresql",
 	 At: "37-latest-member-fallback.sqlt:235",
 	 Dialect: "postgresql",
@@ -24323,7 +24456,7 @@ var sqlCases = []SqlCase{
 	 Tables: []string{"r"},
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c892Bind},
+	 BindingsFn: c897Bind},
 	{Name: "plan.latest-member.fallback.computed-revision.postgresql",
 	 At: "37-latest-member-fallback.sqlt:248",
 	 Dialect: "postgresql",
@@ -24340,7 +24473,7 @@ var sqlCases = []SqlCase{
 	 Tables: []string{"r"},
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c893Bind},
+	 BindingsFn: c898Bind},
 	{Name: "plan.latest-member.fallback.computed-partition.postgresql",
 	 At: "37-latest-member-fallback.sqlt:261",
 	 Dialect: "postgresql",
@@ -24357,7 +24490,7 @@ var sqlCases = []SqlCase{
 	 Tables: []string{"r"},
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c894Bind},
+	 BindingsFn: c899Bind},
 	{Name: "plan.latest-member.fallback.composite.postgresql",
 	 At: "37-latest-member-fallback.sqlt:274",
 	 Dialect: "postgresql",
@@ -24374,7 +24507,7 @@ var sqlCases = []SqlCase{
 	 Tables: []string{"r"},
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c895Bind},
+	 BindingsFn: c900Bind},
 	{Name: "plan.latest-member.fallback.no-proof.postgresql",
 	 At: "37-latest-member-fallback.sqlt:287",
 	 Dialect: "postgresql",
@@ -24391,7 +24524,7 @@ var sqlCases = []SqlCase{
 	 Tables: []string{"r"},
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c896Bind},
+	 BindingsFn: c901Bind},
 	{Name: "plan.latest-member.fallback.needs-members.postgresql",
 	 At: "37-latest-member-fallback.sqlt:300",
 	 Dialect: "postgresql",
@@ -24408,7 +24541,7 @@ var sqlCases = []SqlCase{
 	 Tables: []string{"r"},
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c897Bind},
+	 BindingsFn: c902Bind},
 	{Name: "plan.latest-member.fallback.zero.sqlite",
 	 At: "37-latest-member-fallback.sqlt:313",
 	 Dialect: "sqlite",
@@ -24425,7 +24558,7 @@ var sqlCases = []SqlCase{
 	 Tables: []string{"r"},
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c898Bind},
+	 BindingsFn: c903Bind},
 	{Name: "plan.latest-member.fallback.top-two.sqlite",
 	 At: "37-latest-member-fallback.sqlt:326",
 	 Dialect: "sqlite",
@@ -24442,7 +24575,7 @@ var sqlCases = []SqlCase{
 	 Tables: []string{"r"},
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c899Bind},
+	 BindingsFn: c904Bind},
 	{Name: "plan.latest-member.fallback.ascending.sqlite",
 	 At: "37-latest-member-fallback.sqlt:339",
 	 Dialect: "sqlite",
@@ -24459,7 +24592,7 @@ var sqlCases = []SqlCase{
 	 Tables: []string{"r"},
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c900Bind},
+	 BindingsFn: c905Bind},
 	{Name: "plan.latest-member.fallback.computed-revision.sqlite",
 	 At: "37-latest-member-fallback.sqlt:352",
 	 Dialect: "sqlite",
@@ -24476,7 +24609,7 @@ var sqlCases = []SqlCase{
 	 Tables: []string{"r"},
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c901Bind},
+	 BindingsFn: c906Bind},
 	{Name: "plan.latest-member.fallback.computed-partition.sqlite",
 	 At: "37-latest-member-fallback.sqlt:365",
 	 Dialect: "sqlite",
@@ -24493,7 +24626,7 @@ var sqlCases = []SqlCase{
 	 Tables: []string{"r"},
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c902Bind},
+	 BindingsFn: c907Bind},
 	{Name: "plan.latest-member.fallback.composite.sqlite",
 	 At: "37-latest-member-fallback.sqlt:378",
 	 Dialect: "sqlite",
@@ -24510,7 +24643,7 @@ var sqlCases = []SqlCase{
 	 Tables: []string{"r"},
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c903Bind},
+	 BindingsFn: c908Bind},
 	{Name: "plan.latest-member.fallback.no-proof.sqlite",
 	 At: "37-latest-member-fallback.sqlt:391",
 	 Dialect: "sqlite",
@@ -24527,7 +24660,7 @@ var sqlCases = []SqlCase{
 	 Tables: []string{"r"},
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c904Bind},
+	 BindingsFn: c909Bind},
 	{Name: "plan.latest-member.fallback.needs-members.sqlite",
 	 At: "37-latest-member-fallback.sqlt:404",
 	 Dialect: "sqlite",
@@ -24544,7 +24677,7 @@ var sqlCases = []SqlCase{
 	 Tables: []string{"r"},
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c905Bind},
+	 BindingsFn: c910Bind},
 	{Name: "stmt.text-identity.schema-collation.sqlite",
 	 At: "38-sqlite-schema-collation.sqlt:1",
 	 Dialect: "sqlite",
@@ -24561,7 +24694,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c906Bind},
+	 BindingsFn: c911Bind},
 	{Name: "stmt.text-identity.schema-distinct.sqlite",
 	 At: "38-sqlite-schema-collation.sqlt:18",
 	 Dialect: "sqlite",
@@ -24578,7 +24711,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c907Bind},
+	 BindingsFn: c912Bind},
 	{Name: "stmt.text-identity.derived-pass-through.sqlite",
 	 At: "39-derived-identity.sqlt:1",
 	 Dialect: "sqlite",
@@ -24595,7 +24728,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c908Bind},
+	 BindingsFn: c913Bind},
 	{Name: "stmt.numeric-identity.derived-pass-through.sqlite",
 	 At: "40-derived-numeric-and-unknown-identity.sqlt:1",
 	 Dialect: "sqlite",
@@ -24612,7 +24745,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c909Bind},
+	 BindingsFn: c914Bind},
 	{Name: "plan.group-identity.unknown-derived-prefix.sqlite",
 	 At: "40-derived-numeric-and-unknown-identity.sqlt:16",
 	 Dialect: "sqlite",
@@ -24629,7 +24762,7 @@ var sqlCases = []SqlCase{
 	 Tables: []string{"r"},
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c910Bind},
+	 BindingsFn: c915Bind},
 	{Name: "stmt.numeric-identity.derived-pass-through.postgresql",
 	 At: "40-derived-numeric-and-unknown-identity.sqlt:33",
 	 Dialect: "postgresql",
@@ -24646,7 +24779,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c911Bind},
+	 BindingsFn: c916Bind},
 	{Name: "plan.group-identity.unknown-derived-prefix.postgresql",
 	 At: "40-derived-numeric-and-unknown-identity.sqlt:48",
 	 Dialect: "postgresql",
@@ -24663,7 +24796,7 @@ var sqlCases = []SqlCase{
 	 Tables: []string{"r"},
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c912Bind},
+	 BindingsFn: c917Bind},
 	{Name: "stmt.numeric-identity.derived-pass-through.mariadb",
 	 At: "40-derived-numeric-and-unknown-identity.sqlt:65",
 	 Dialect: "mariadb",
@@ -24680,7 +24813,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c913Bind},
+	 BindingsFn: c918Bind},
 	{Name: "plan.group-identity.unknown-derived-prefix.mariadb",
 	 At: "40-derived-numeric-and-unknown-identity.sqlt:80",
 	 Dialect: "mariadb",
@@ -24697,7 +24830,7 @@ var sqlCases = []SqlCase{
 	 Tables: []string{"r"},
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c914Bind},
+	 BindingsFn: c919Bind},
 	{Name: "stmt.numeric-identity.derived-pass-through.mysql",
 	 At: "40-derived-numeric-and-unknown-identity.sqlt:97",
 	 Dialect: "mysql",
@@ -24714,7 +24847,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c915Bind},
+	 BindingsFn: c920Bind},
 	{Name: "plan.group-identity.unknown-derived-prefix.mysql",
 	 At: "40-derived-numeric-and-unknown-identity.sqlt:112",
 	 Dialect: "mysql",
@@ -24731,7 +24864,7 @@ var sqlCases = []SqlCase{
 	 Tables: []string{"r"},
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c916Bind},
+	 BindingsFn: c921Bind},
 	{Name: "plan.group-identity.guarded-derived-prefix.sqlite",
 	 At: "41-derived-type-proof-boundary.sqlt:1",
 	 Dialect: "sqlite",
@@ -24748,7 +24881,7 @@ var sqlCases = []SqlCase{
 	 Tables: []string{"r"},
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c917Bind},
+	 BindingsFn: c922Bind},
 	{Name: "plan.group-identity.raw-derived-prefix.sqlite",
 	 At: "41-derived-type-proof-boundary.sqlt:18",
 	 Dialect: "sqlite",
@@ -24765,7 +24898,7 @@ var sqlCases = []SqlCase{
 	 Tables: []string{"r"},
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c918Bind},
+	 BindingsFn: c923Bind},
 	{Name: "plan.group-identity.guarded-derived-prefix.postgresql",
 	 At: "41-derived-type-proof-boundary.sqlt:35",
 	 Dialect: "postgresql",
@@ -24782,7 +24915,7 @@ var sqlCases = []SqlCase{
 	 Tables: []string{"r"},
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c919Bind},
+	 BindingsFn: c924Bind},
 	{Name: "plan.group-identity.raw-derived-prefix.postgresql",
 	 At: "41-derived-type-proof-boundary.sqlt:52",
 	 Dialect: "postgresql",
@@ -24799,7 +24932,7 @@ var sqlCases = []SqlCase{
 	 Tables: []string{"r"},
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c920Bind},
+	 BindingsFn: c925Bind},
 	{Name: "plan.group-identity.guarded-derived-prefix.mariadb",
 	 At: "41-derived-type-proof-boundary.sqlt:69",
 	 Dialect: "mariadb",
@@ -24816,7 +24949,7 @@ var sqlCases = []SqlCase{
 	 Tables: []string{"r"},
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c921Bind},
+	 BindingsFn: c926Bind},
 	{Name: "plan.group-identity.raw-derived-prefix.mariadb",
 	 At: "41-derived-type-proof-boundary.sqlt:86",
 	 Dialect: "mariadb",
@@ -24833,7 +24966,7 @@ var sqlCases = []SqlCase{
 	 Tables: []string{"r"},
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c922Bind},
+	 BindingsFn: c927Bind},
 	{Name: "plan.group-identity.guarded-derived-prefix.mysql",
 	 At: "41-derived-type-proof-boundary.sqlt:103",
 	 Dialect: "mysql",
@@ -24850,7 +24983,7 @@ var sqlCases = []SqlCase{
 	 Tables: []string{"r"},
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c923Bind},
+	 BindingsFn: c928Bind},
 	{Name: "plan.group-identity.raw-derived-prefix.mysql",
 	 At: "41-derived-type-proof-boundary.sqlt:120",
 	 Dialect: "mysql",
@@ -24867,7 +25000,7 @@ var sqlCases = []SqlCase{
 	 Tables: []string{"r"},
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c924Bind},
+	 BindingsFn: c929Bind},
 	{Name: "func.canon.postgresql.num-column",
 	 At: "42-canon.sqlt:26",
 	 Dialect: "postgresql",
@@ -24884,7 +25017,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c925Bind},
+	 BindingsFn: c930Bind},
 	{Name: "func.canon.postgresql.text-column-is-guarded",
 	 At: "42-canon.sqlt:37",
 	 Dialect: "postgresql",
@@ -24901,7 +25034,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c926Bind},
+	 BindingsFn: c931Bind},
 	{Name: "func.canon.postgresql.constant",
 	 At: "42-canon.sqlt:50",
 	 Dialect: "postgresql",
@@ -24918,7 +25051,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c927Bind},
+	 BindingsFn: c932Bind},
 	{Name: "func.canon.postgresql.text-constant",
 	 At: "42-canon.sqlt:59",
 	 Dialect: "postgresql",
@@ -24935,7 +25068,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c928Bind},
+	 BindingsFn: c933Bind},
 	{Name: "func.canon.postgresql.exact-under-strict",
 	 At: "42-canon.sqlt:68",
 	 Dialect: "postgresql",
@@ -24952,7 +25085,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c929Bind},
+	 BindingsFn: c934Bind},
 	{Name: "func.canon.mariadb.num-column",
 	 At: "42-canon.sqlt:81",
 	 Dialect: "mariadb",
@@ -24969,7 +25102,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c930Bind},
+	 BindingsFn: c935Bind},
 	{Name: "func.canon.mariadb.text-column-is-guarded",
 	 At: "42-canon.sqlt:92",
 	 Dialect: "mariadb",
@@ -24986,7 +25119,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c931Bind},
+	 BindingsFn: c936Bind},
 	{Name: "func.canon.mariadb.constant",
 	 At: "42-canon.sqlt:103",
 	 Dialect: "mariadb",
@@ -25003,7 +25136,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c932Bind},
+	 BindingsFn: c937Bind},
 	{Name: "func.canon.mariadb.text-constant",
 	 At: "42-canon.sqlt:112",
 	 Dialect: "mariadb",
@@ -25020,7 +25153,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c933Bind},
+	 BindingsFn: c938Bind},
 	{Name: "func.canon.mariadb.exact-under-strict",
 	 At: "42-canon.sqlt:123",
 	 Dialect: "mariadb",
@@ -25037,7 +25170,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c934Bind},
+	 BindingsFn: c939Bind},
 	{Name: "func.canon.mariadb.guarded-text-is-scale-limited",
 	 At: "42-canon.sqlt:136",
 	 Dialect: "mariadb",
@@ -25054,7 +25187,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c935Bind},
+	 BindingsFn: c940Bind},
 	{Name: "func.canon.sqlite.num-column",
 	 At: "42-canon.sqlt:152",
 	 Dialect: "sqlite",
@@ -25071,7 +25204,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c936Bind},
+	 BindingsFn: c941Bind},
 	{Name: "func.canon.sqlite.constant",
 	 At: "42-canon.sqlt:163",
 	 Dialect: "sqlite",
@@ -25088,7 +25221,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c937Bind},
+	 BindingsFn: c942Bind},
 	{Name: "func.canon.sqlite.text-constant",
 	 At: "42-canon.sqlt:172",
 	 Dialect: "sqlite",
@@ -25105,7 +25238,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c938Bind},
+	 BindingsFn: c943Bind},
 	{Name: "func.canon.sqlite.text-column-is-refused",
 	 At: "42-canon.sqlt:181",
 	 Dialect: "sqlite",
@@ -25122,7 +25255,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c939Bind},
+	 BindingsFn: c944Bind},
 	{Name: "func.canon.sqlite.decimal-float-under-strict",
 	 At: "42-canon.sqlt:194",
 	 Dialect: "sqlite",
@@ -25139,7 +25272,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c940Bind},
+	 BindingsFn: c945Bind},
 	{Name: "func.canon.ansi.num-column",
 	 At: "42-canon.sqlt:207",
 	 Dialect: "ansi-probe",
@@ -25155,8 +25288,8 @@ var sqlCases = []SqlCase{
 	 HasTables: false,
 	 Tables: nil,
 	 Unrepresentable: nil,
-	 RegisterFn: c941Reg,
-	 BindingsFn: c941Bind},
+	 RegisterFn: c946Reg,
+	 BindingsFn: c946Bind},
 	{Name: "func.canon.ansi.text-column-is-refused",
 	 At: "42-canon.sqlt:220",
 	 Dialect: "ansi-probe",
@@ -25172,8 +25305,8 @@ var sqlCases = []SqlCase{
 	 HasTables: false,
 	 Tables: nil,
 	 Unrepresentable: nil,
-	 RegisterFn: c942Reg,
-	 BindingsFn: c942Bind},
+	 RegisterFn: c947Reg,
+	 BindingsFn: c947Bind},
 	{Name: "func.canon.not-a-number-is-refused",
 	 At: "42-canon.sqlt:233",
 	 Dialect: "mariadb",
@@ -25190,7 +25323,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c943Bind},
+	 BindingsFn: c948Bind},
 	{Name: "func.canon.bool-is-refused",
 	 At: "42-canon.sqlt:244",
 	 Dialect: "postgresql",
@@ -25207,7 +25340,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c944Bind},
+	 BindingsFn: c949Bind},
 	{Name: "canon.dedupe.postgresql",
 	 At: "42-canon.sqlt:255",
 	 Dialect: "postgresql",
@@ -25224,7 +25357,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c945Bind},
+	 BindingsFn: c950Bind},
 	{Name: "canon.dedupe.mariadb",
 	 At: "42-canon.sqlt:271",
 	 Dialect: "mariadb",
@@ -25241,7 +25374,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c946Bind},
+	 BindingsFn: c951Bind},
 	{Name: "canon.dedupe.sqlite",
 	 At: "42-canon.sqlt:284",
 	 Dialect: "sqlite",
@@ -25258,7 +25391,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c947Bind},
+	 BindingsFn: c952Bind},
 	{Name: "canon.dedupe.of-arithmetic.postgresql",
 	 At: "42-canon.sqlt:297",
 	 Dialect: "postgresql",
@@ -25275,7 +25408,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c948Bind},
+	 BindingsFn: c953Bind},
 	{Name: "canon.bucket.postgresql",
 	 At: "42-canon.sqlt:313",
 	 Dialect: "postgresql",
@@ -25292,7 +25425,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c949Bind},
+	 BindingsFn: c954Bind},
 	{Name: "canon.bucket.mariadb",
 	 At: "42-canon.sqlt:329",
 	 Dialect: "mariadb",
@@ -25309,7 +25442,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c950Bind},
+	 BindingsFn: c955Bind},
 	{Name: "canon.bucket.of-arithmetic.mariadb",
 	 At: "42-canon.sqlt:342",
 	 Dialect: "mariadb",
@@ -25326,7 +25459,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c951Bind},
+	 BindingsFn: c956Bind},
 	{Name: "canon.sort.postgresql",
 	 At: "42-canon.sqlt:355",
 	 Dialect: "postgresql",
@@ -25343,7 +25476,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c952Bind},
+	 BindingsFn: c957Bind},
 	{Name: "canon.sort.mariadb-is-refused",
 	 At: "42-canon.sqlt:372",
 	 Dialect: "mariadb",
@@ -25360,7 +25493,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c953Bind},
+	 BindingsFn: c958Bind},
 	{Name: "canon.sort.sqlite-is-refused",
 	 At: "42-canon.sqlt:389",
 	 Dialect: "sqlite",
@@ -25377,7 +25510,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c954Bind},
+	 BindingsFn: c959Bind},
 	{Name: "canon.sort.ansi-is-refused",
 	 At: "42-canon.sqlt:402",
 	 Dialect: "ansi-probe",
@@ -25393,8 +25526,8 @@ var sqlCases = []SqlCase{
 	 HasTables: false,
 	 Tables: nil,
 	 Unrepresentable: nil,
-	 RegisterFn: c955Reg,
-	 BindingsFn: c955Bind},
+	 RegisterFn: c960Reg,
+	 BindingsFn: c960Bind},
 	{Name: "canon.sort.through-a-derived-table.postgresql",
 	 At: "42-canon.sqlt:417",
 	 Dialect: "postgresql",
@@ -25411,7 +25544,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c956Bind},
+	 BindingsFn: c961Bind},
 	{Name: "canon.sort.through-a-derived-table.mariadb-is-refused",
 	 At: "42-canon.sqlt:432",
 	 Dialect: "mariadb",
@@ -25428,7 +25561,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c957Bind},
+	 BindingsFn: c962Bind},
 	{Name: "canon.sort.after-dedupe.postgresql",
 	 At: "42-canon.sqlt:448",
 	 Dialect: "postgresql",
@@ -25445,7 +25578,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c958Bind},
+	 BindingsFn: c963Bind},
 	{Name: "plan.canon.dedupe-after-a-join.postgresql",
 	 At: "42-canon.sqlt:466",
 	 Dialect: "postgresql",
@@ -25462,7 +25595,7 @@ var sqlCases = []SqlCase{
 	 Tables: []string{"products", "order_items"},
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c959Bind},
+	 BindingsFn: c964Bind},
 	{Name: "plan.canon.dedupe-after-a-join.mariadb",
 	 At: "42-canon.sqlt:487",
 	 Dialect: "mariadb",
@@ -25479,7 +25612,7 @@ var sqlCases = []SqlCase{
 	 Tables: []string{"products", "order_items"},
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c960Bind},
+	 BindingsFn: c965Bind},
 	{Name: "plan.canon.lets-the-identity-barrier-through.mariadb",
 	 At: "42-canon.sqlt:506",
 	 Dialect: "mariadb",
@@ -25496,7 +25629,7 @@ var sqlCases = []SqlCase{
 	 Tables: []string{"r"},
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c961Bind},
+	 BindingsFn: c966Bind},
 	{Name: "plan.canon.a-computed-field-upstream-is-no-barrier.mariadb",
 	 At: "42-canon.sqlt:521",
 	 Dialect: "mariadb",
@@ -25513,7 +25646,7 @@ var sqlCases = []SqlCase{
 	 Tables: []string{"r"},
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c962Bind},
+	 BindingsFn: c967Bind},
 	{Name: "plan.canon.the-same-without-it-stays-in-memory.mariadb",
 	 At: "42-canon.sqlt:540",
 	 Dialect: "mariadb",
@@ -25530,7 +25663,7 @@ var sqlCases = []SqlCase{
 	 Tables: []string{"r"},
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c963Bind},
+	 BindingsFn: c968Bind},
 	{Name: "scale.mariadb.guarded-text-is-translated",
 	 At: "43-scale-limit.sqlt:14",
 	 Dialect: "mariadb",
@@ -25547,7 +25680,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c964Bind},
+	 BindingsFn: c969Bind},
 	{Name: "scale.mariadb.guarded-text-is-refused-under-strict",
 	 At: "43-scale-limit.sqlt:27",
 	 Dialect: "mariadb",
@@ -25564,7 +25697,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c965Bind},
+	 BindingsFn: c970Bind},
 	{Name: "scale.mariadb.guarded-comparison-is-refused-under-strict",
 	 At: "43-scale-limit.sqlt:40",
 	 Dialect: "mariadb",
@@ -25581,7 +25714,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c966Bind},
+	 BindingsFn: c971Bind},
 	{Name: "scale.mariadb.guarded-function-argument-is-refused-under-strict",
 	 At: "43-scale-limit.sqlt:53",
 	 Dialect: "mariadb",
@@ -25598,7 +25731,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c967Bind},
+	 BindingsFn: c972Bind},
 	{Name: "scale.mariadb.a-declared-num-is-vouched-for",
 	 At: "43-scale-limit.sqlt:66",
 	 Dialect: "mariadb",
@@ -25615,7 +25748,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c968Bind},
+	 BindingsFn: c973Bind},
 	{Name: "scale.mariadb.a-constant-within-the-cap",
 	 At: "43-scale-limit.sqlt:79",
 	 Dialect: "mariadb",
@@ -25632,7 +25765,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c969Bind},
+	 BindingsFn: c974Bind},
 	{Name: "scale.mariadb.a-constant-past-the-cap-is-refused-under-strict",
 	 At: "43-scale-limit.sqlt:93",
 	 Dialect: "mariadb",
@@ -25649,7 +25782,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c970Bind},
+	 BindingsFn: c975Bind},
 	{Name: "scale.mariadb.a-declared-num-read-through-the-cast",
 	 At: "43-scale-limit.sqlt:106",
 	 Dialect: "mariadb",
@@ -25666,7 +25799,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c971Bind},
+	 BindingsFn: c976Bind},
 	{Name: "scale.mysql.the-same-cap",
 	 At: "43-scale-limit.sqlt:122",
 	 Dialect: "mysql",
@@ -25683,7 +25816,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c972Bind},
+	 BindingsFn: c977Bind},
 	{Name: "scale.postgresql.has-no-cap",
 	 At: "43-scale-limit.sqlt:135",
 	 Dialect: "postgresql",
@@ -25700,7 +25833,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c973Bind},
+	 BindingsFn: c978Bind},
 	{Name: "order.postgresql.text-key-is-translated",
 	 At: "44-text-order.sqlt:13",
 	 Dialect: "postgresql",
@@ -25717,7 +25850,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c974Bind},
+	 BindingsFn: c979Bind},
 	{Name: "order.postgresql.text-key-is-refused-under-strict",
 	 At: "44-text-order.sqlt:26",
 	 Dialect: "postgresql",
@@ -25734,7 +25867,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c975Bind},
+	 BindingsFn: c980Bind},
 	{Name: "order.postgresql.num-key-is-exact",
 	 At: "44-text-order.sqlt:41",
 	 Dialect: "postgresql",
@@ -25751,7 +25884,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c976Bind},
+	 BindingsFn: c981Bind},
 	{Name: "order.mariadb.text-key-is-translated",
 	 At: "44-text-order.sqlt:56",
 	 Dialect: "mariadb",
@@ -25768,7 +25901,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c977Bind},
+	 BindingsFn: c982Bind},
 	{Name: "order.mariadb.text-key-is-refused-under-strict",
 	 At: "44-text-order.sqlt:69",
 	 Dialect: "mariadb",
@@ -25785,7 +25918,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c978Bind},
+	 BindingsFn: c983Bind},
 	{Name: "order.mariadb.num-key-is-exact",
 	 At: "44-text-order.sqlt:84",
 	 Dialect: "mariadb",
@@ -25802,7 +25935,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c979Bind},
+	 BindingsFn: c984Bind},
 	{Name: "order.sqlite.text-key-is-translated",
 	 At: "44-text-order.sqlt:99",
 	 Dialect: "sqlite",
@@ -25819,7 +25952,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c980Bind},
+	 BindingsFn: c985Bind},
 	{Name: "order.sqlite.text-key-is-refused-under-strict",
 	 At: "44-text-order.sqlt:112",
 	 Dialect: "sqlite",
@@ -25836,7 +25969,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c981Bind},
+	 BindingsFn: c986Bind},
 	{Name: "order.sqlite.num-key-is-exact",
 	 At: "44-text-order.sqlt:127",
 	 Dialect: "sqlite",
@@ -25853,7 +25986,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c982Bind},
+	 BindingsFn: c987Bind},
 	{Name: "order.mariadb.untyped-key-is-refused-under-strict",
 	 At: "44-text-order.sqlt:140",
 	 Dialect: "mariadb",
@@ -25870,7 +26003,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c983Bind},
+	 BindingsFn: c988Bind},
 	{Name: "order.mariadb.computed-text-key-is-refused-under-strict",
 	 At: "44-text-order.sqlt:158",
 	 Dialect: "mariadb",
@@ -25887,7 +26020,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c984Bind},
+	 BindingsFn: c989Bind},
 	{Name: "order.mariadb.arithmetic-key-is-exact",
 	 At: "44-text-order.sqlt:176",
 	 Dialect: "mariadb",
@@ -25904,7 +26037,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c985Bind},
+	 BindingsFn: c990Bind},
 	{Name: "order.mariadb.a-text-group-key-is-refused-under-strict",
 	 At: "44-text-order.sqlt:191",
 	 Dialect: "mariadb",
@@ -25921,7 +26054,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c986Bind},
+	 BindingsFn: c991Bind},
 	{Name: "order.mariadb.a-numeric-group-key-is-exact",
 	 At: "44-text-order.sqlt:206",
 	 Dialect: "mariadb",
@@ -25938,7 +26071,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c987Bind},
+	 BindingsFn: c992Bind},
 	{Name: "plan.order.strict-sorts-text-in-memory.mariadb",
 	 At: "44-text-order.sqlt:221",
 	 Dialect: "mariadb",
@@ -25955,7 +26088,7 @@ var sqlCases = []SqlCase{
 	 Tables: []string{"r"},
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c988Bind},
+	 BindingsFn: c993Bind},
 	{Name: "textif.postgresql.dedupe",
 	 At: "45-text-literal-branches.sqlt:14",
 	 Dialect: "postgresql",
@@ -25972,7 +26105,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c989Bind},
+	 BindingsFn: c994Bind},
 	{Name: "textif.postgresql.cond",
 	 At: "45-text-literal-branches.sqlt:30",
 	 Dialect: "postgresql",
@@ -25989,7 +26122,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c990Bind},
+	 BindingsFn: c995Bind},
 	{Name: "textif.mariadb.dedupe",
 	 At: "45-text-literal-branches.sqlt:43",
 	 Dialect: "mariadb",
@@ -26006,7 +26139,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c991Bind},
+	 BindingsFn: c996Bind},
 	{Name: "textif.mariadb.cond",
 	 At: "45-text-literal-branches.sqlt:56",
 	 Dialect: "mariadb",
@@ -26023,7 +26156,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c992Bind},
+	 BindingsFn: c997Bind},
 	{Name: "textif.sqlite.dedupe",
 	 At: "45-text-literal-branches.sqlt:69",
 	 Dialect: "sqlite",
@@ -26040,7 +26173,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c993Bind},
+	 BindingsFn: c998Bind},
 	{Name: "textif.sqlite.cond",
 	 At: "45-text-literal-branches.sqlt:82",
 	 Dialect: "sqlite",
@@ -26057,7 +26190,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c994Bind},
+	 BindingsFn: c999Bind},
 	{Name: "textif.postgresql.nested",
 	 At: "45-text-literal-branches.sqlt:95",
 	 Dialect: "postgresql",
@@ -26074,7 +26207,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c995Bind},
+	 BindingsFn: c1000Bind},
 	{Name: "textif.postgresql.no-else",
 	 At: "45-text-literal-branches.sqlt:110",
 	 Dialect: "postgresql",
@@ -26091,7 +26224,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c996Bind},
+	 BindingsFn: c1001Bind},
 	{Name: "plan.textif.mariadb.bucket-after-a-map-splits-at-the-map",
 	 At: "45-text-literal-branches.sqlt:125",
 	 Dialect: "mariadb",
@@ -26108,7 +26241,7 @@ var sqlCases = []SqlCase{
 	 Tables: []string{"r"},
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c997Bind},
+	 BindingsFn: c1002Bind},
 	{Name: "plan.textif.postgresql.dedupe-is-one-statement",
 	 At: "45-text-literal-branches.sqlt:143",
 	 Dialect: "postgresql",
@@ -26125,7 +26258,7 @@ var sqlCases = []SqlCase{
 	 Tables: []string{"r"},
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c998Bind},
+	 BindingsFn: c1003Bind},
 	{Name: "plan.textif.postgresql.numeric-results-stay-local",
 	 At: "45-text-literal-branches.sqlt:158",
 	 Dialect: "postgresql",
@@ -26142,7 +26275,7 @@ var sqlCases = []SqlCase{
 	 Tables: []string{"r"},
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c999Bind},
+	 BindingsFn: c1004Bind},
 	{Name: "plan.textif.postgresql.a-column-result-stays-local",
 	 At: "45-text-literal-branches.sqlt:171",
 	 Dialect: "postgresql",
@@ -26159,7 +26292,7 @@ var sqlCases = []SqlCase{
 	 Tables: []string{"r"},
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1000Bind},
+	 BindingsFn: c1005Bind},
 	{Name: "plan.textif.mariadb.dedupe-is-one-statement",
 	 At: "45-text-literal-branches.sqlt:186",
 	 Dialect: "mariadb",
@@ -26176,7 +26309,7 @@ var sqlCases = []SqlCase{
 	 Tables: []string{"r"},
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1001Bind},
+	 BindingsFn: c1006Bind},
 	{Name: "plan.textif.mariadb.numeric-results-stay-local",
 	 At: "45-text-literal-branches.sqlt:201",
 	 Dialect: "mariadb",
@@ -26193,7 +26326,7 @@ var sqlCases = []SqlCase{
 	 Tables: []string{"r"},
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1002Bind},
+	 BindingsFn: c1007Bind},
 	{Name: "plan.textif.mariadb.a-column-result-stays-local",
 	 At: "45-text-literal-branches.sqlt:217",
 	 Dialect: "mariadb",
@@ -26210,7 +26343,7 @@ var sqlCases = []SqlCase{
 	 Tables: []string{"r"},
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1003Bind},
+	 BindingsFn: c1008Bind},
 	{Name: "plan.textif.postgresql.mixed-results-stay-local",
 	 At: "45-text-literal-branches.sqlt:230",
 	 Dialect: "postgresql",
@@ -26227,7 +26360,7 @@ var sqlCases = []SqlCase{
 	 Tables: []string{"r"},
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1004Bind},
+	 BindingsFn: c1009Bind},
 	{Name: "host.call.text-mapping",
 	 At: "46-host-functions.sqlt:11",
 	 Dialect: "postgresql",
@@ -26243,8 +26376,8 @@ var sqlCases = []SqlCase{
 	 HasTables: false,
 	 Tables: nil,
 	 Unrepresentable: nil,
-	 RegisterFn: c1005Reg,
-	 BindingsFn: c1005Bind},
+	 RegisterFn: c1010Reg,
+	 BindingsFn: c1010Bind},
 	{Name: "host.call.params-mode",
 	 At: "46-host-functions.sqlt:27",
 	 Dialect: "postgresql",
@@ -26260,8 +26393,8 @@ var sqlCases = []SqlCase{
 	 HasTables: false,
 	 Tables: nil,
 	 Unrepresentable: nil,
-	 RegisterFn: c1006Reg,
-	 BindingsFn: c1006Bind},
+	 RegisterFn: c1011Reg,
+	 BindingsFn: c1011Bind},
 	{Name: "host.call.key-is-case-insensitive",
 	 At: "46-host-functions.sqlt:45",
 	 Dialect: "postgresql",
@@ -26277,8 +26410,8 @@ var sqlCases = []SqlCase{
 	 HasTables: false,
 	 Tables: nil,
 	 Unrepresentable: nil,
-	 RegisterFn: c1007Reg,
-	 BindingsFn: c1007Bind},
+	 RegisterFn: c1012Reg,
+	 BindingsFn: c1012Bind},
 	{Name: "host.call.inherited-by-a-derived-dialect",
 	 At: "46-host-functions.sqlt:59",
 	 Dialect: "pg-numbered",
@@ -26294,8 +26427,8 @@ var sqlCases = []SqlCase{
 	 HasTables: false,
 	 Tables: nil,
 	 Unrepresentable: nil,
-	 RegisterFn: c1008Reg,
-	 BindingsFn: c1008Bind},
+	 RegisterFn: c1013Reg,
+	 BindingsFn: c1013Bind},
 	{Name: "host.refuse.no-spelling",
 	 At: "46-host-functions.sqlt:79",
 	 Dialect: "postgresql",
@@ -26311,8 +26444,8 @@ var sqlCases = []SqlCase{
 	 HasTables: false,
 	 Tables: nil,
 	 Unrepresentable: nil,
-	 RegisterFn: c1009Reg,
-	 BindingsFn: c1009Bind},
+	 RegisterFn: c1014Reg,
+	 BindingsFn: c1014Bind},
 	{Name: "host.refuse.not-this-dialect",
 	 At: "46-host-functions.sqlt:93",
 	 Dialect: "mariadb",
@@ -26328,8 +26461,8 @@ var sqlCases = []SqlCase{
 	 HasTables: false,
 	 Tables: nil,
 	 Unrepresentable: nil,
-	 RegisterFn: c1010Reg,
-	 BindingsFn: c1010Bind},
+	 RegisterFn: c1015Reg,
+	 BindingsFn: c1015Bind},
 	{Name: "host.refuse.strict",
 	 At: "46-host-functions.sqlt:107",
 	 Dialect: "postgresql",
@@ -26345,8 +26478,8 @@ var sqlCases = []SqlCase{
 	 HasTables: false,
 	 Tables: nil,
 	 Unrepresentable: nil,
-	 RegisterFn: c1011Reg,
-	 BindingsFn: c1011Bind},
+	 RegisterFn: c1016Reg,
+	 BindingsFn: c1016Bind},
 	{Name: "host.arity.keyed-two",
 	 At: "46-host-functions.sqlt:123",
 	 Dialect: "postgresql",
@@ -26362,8 +26495,8 @@ var sqlCases = []SqlCase{
 	 HasTables: false,
 	 Tables: nil,
 	 Unrepresentable: nil,
-	 RegisterFn: c1012Reg,
-	 BindingsFn: c1012Bind},
+	 RegisterFn: c1017Reg,
+	 BindingsFn: c1017Bind},
 	{Name: "host.arity.keyed-three",
 	 At: "46-host-functions.sqlt:137",
 	 Dialect: "postgresql",
@@ -26379,8 +26512,8 @@ var sqlCases = []SqlCase{
 	 HasTables: false,
 	 Tables: nil,
 	 Unrepresentable: nil,
-	 RegisterFn: c1013Reg,
-	 BindingsFn: c1013Bind},
+	 RegisterFn: c1018Reg,
+	 BindingsFn: c1018Bind},
 	{Name: "host.arity.template-count-out-of-range",
 	 At: "46-host-functions.sqlt:151",
 	 Dialect: "postgresql",
@@ -26396,8 +26529,8 @@ var sqlCases = []SqlCase{
 	 HasTables: false,
 	 Tables: nil,
 	 Unrepresentable: nil,
-	 RegisterFn: c1014Reg,
-	 BindingsFn: c1014Bind},
+	 RegisterFn: c1019Reg,
+	 BindingsFn: c1019Bind},
 	{Name: "host.arity.entry-may-not-widen",
 	 At: "46-host-functions.sqlt:163",
 	 Dialect: "postgresql",
@@ -26413,8 +26546,8 @@ var sqlCases = []SqlCase{
 	 HasTables: false,
 	 Tables: nil,
 	 Unrepresentable: nil,
-	 RegisterFn: c1015Reg,
-	 BindingsFn: c1015Bind},
+	 RegisterFn: c1020Reg,
+	 BindingsFn: c1020Bind},
 	{Name: "host.arity.entry-narrows",
 	 At: "46-host-functions.sqlt:175",
 	 Dialect: "postgresql",
@@ -26430,8 +26563,8 @@ var sqlCases = []SqlCase{
 	 HasTables: false,
 	 Tables: nil,
 	 Unrepresentable: nil,
-	 RegisterFn: c1016Reg,
-	 BindingsFn: c1016Bind},
+	 RegisterFn: c1021Reg,
+	 BindingsFn: c1021Bind},
 	{Name: "host.arity.reregistered-differently",
 	 At: "46-host-functions.sqlt:189",
 	 Dialect: "postgresql",
@@ -26447,8 +26580,8 @@ var sqlCases = []SqlCase{
 	 HasTables: false,
 	 Tables: nil,
 	 Unrepresentable: nil,
-	 RegisterFn: c1017Reg,
-	 BindingsFn: c1017Bind},
+	 RegisterFn: c1022Reg,
+	 BindingsFn: c1022Bind},
 	{Name: "host.arity.reregistered-same",
 	 At: "46-host-functions.sqlt:203",
 	 Dialect: "postgresql",
@@ -26464,8 +26597,8 @@ var sqlCases = []SqlCase{
 	 HasTables: false,
 	 Tables: nil,
 	 Unrepresentable: nil,
-	 RegisterFn: c1018Reg,
-	 BindingsFn: c1018Bind},
+	 RegisterFn: c1023Reg,
+	 BindingsFn: c1023Bind},
 	{Name: "host.register.function-first",
 	 At: "46-host-functions.sqlt:217",
 	 Dialect: "postgresql",
@@ -26481,8 +26614,8 @@ var sqlCases = []SqlCase{
 	 HasTables: false,
 	 Tables: nil,
 	 Unrepresentable: nil,
-	 RegisterFn: c1019Reg,
-	 BindingsFn: c1019Bind},
+	 RegisterFn: c1024Reg,
+	 BindingsFn: c1024Bind},
 	{Name: "host.register.args-on-a-builtin",
 	 At: "46-host-functions.sqlt:229",
 	 Dialect: "postgresql",
@@ -26498,8 +26631,8 @@ var sqlCases = []SqlCase{
 	 HasTables: false,
 	 Tables: nil,
 	 Unrepresentable: nil,
-	 RegisterFn: c1020Reg,
-	 BindingsFn: c1020Bind},
+	 RegisterFn: c1025Reg,
+	 BindingsFn: c1025Bind},
 	{Name: "host.register.args-unknown-kind",
 	 At: "46-host-functions.sqlt:241",
 	 Dialect: "postgresql",
@@ -26515,8 +26648,8 @@ var sqlCases = []SqlCase{
 	 HasTables: false,
 	 Tables: nil,
 	 Unrepresentable: nil,
-	 RegisterFn: c1021Reg,
-	 BindingsFn: c1021Bind},
+	 RegisterFn: c1026Reg,
+	 BindingsFn: c1026Bind},
 	{Name: "host.register.args-longer-than-max",
 	 At: "46-host-functions.sqlt:253",
 	 Dialect: "postgresql",
@@ -26532,8 +26665,8 @@ var sqlCases = []SqlCase{
 	 HasTables: false,
 	 Tables: nil,
 	 Unrepresentable: nil,
-	 RegisterFn: c1022Reg,
-	 BindingsFn: c1022Bind},
+	 RegisterFn: c1027Reg,
+	 BindingsFn: c1027Bind},
 	{Name: "host.register.ret-is-scalar",
 	 At: "46-host-functions.sqlt:265",
 	 Dialect: "postgresql",
@@ -26549,8 +26682,8 @@ var sqlCases = []SqlCase{
 	 HasTables: false,
 	 Tables: nil,
 	 Unrepresentable: nil,
-	 RegisterFn: c1023Reg,
-	 BindingsFn: c1023Bind},
+	 RegisterFn: c1028Reg,
+	 BindingsFn: c1028Bind},
 	{Name: "host.args.num-constant-checked",
 	 At: "46-host-functions.sqlt:277",
 	 Dialect: "postgresql",
@@ -26566,8 +26699,8 @@ var sqlCases = []SqlCase{
 	 HasTables: false,
 	 Tables: nil,
 	 Unrepresentable: nil,
-	 RegisterFn: c1024Reg,
-	 BindingsFn: c1024Bind},
+	 RegisterFn: c1029Reg,
+	 BindingsFn: c1029Bind},
 	{Name: "host.args.text-refuses-bool",
 	 At: "46-host-functions.sqlt:291",
 	 Dialect: "postgresql",
@@ -26583,8 +26716,8 @@ var sqlCases = []SqlCase{
 	 HasTables: false,
 	 Tables: nil,
 	 Unrepresentable: nil,
-	 RegisterFn: c1025Reg,
-	 BindingsFn: c1025Bind},
+	 RegisterFn: c1030Reg,
+	 BindingsFn: c1030Bind},
 	{Name: "host.args.any-takes-bool",
 	 At: "46-host-functions.sqlt:303",
 	 Dialect: "postgresql",
@@ -26600,8 +26733,8 @@ var sqlCases = []SqlCase{
 	 HasTables: false,
 	 Tables: nil,
 	 Unrepresentable: nil,
-	 RegisterFn: c1026Reg,
-	 BindingsFn: c1026Bind},
+	 RegisterFn: c1031Reg,
+	 BindingsFn: c1031Bind},
 	{Name: "host.args.bool-requires-bool",
 	 At: "46-host-functions.sqlt:315",
 	 Dialect: "postgresql",
@@ -26617,8 +26750,8 @@ var sqlCases = []SqlCase{
 	 HasTables: false,
 	 Tables: nil,
 	 Unrepresentable: nil,
-	 RegisterFn: c1027Reg,
-	 BindingsFn: c1027Bind},
+	 RegisterFn: c1032Reg,
+	 BindingsFn: c1032Bind},
 	{Name: "host.args.bool-result-is-a-condition",
 	 At: "46-host-functions.sqlt:329",
 	 Dialect: "postgresql",
@@ -26634,8 +26767,8 @@ var sqlCases = []SqlCase{
 	 HasTables: false,
 	 Tables: nil,
 	 Unrepresentable: nil,
-	 RegisterFn: c1028Reg,
-	 BindingsFn: c1028Bind},
+	 RegisterFn: c1033Reg,
+	 BindingsFn: c1033Bind},
 	{Name: "host.list.columns",
 	 At: "46-host-functions.sqlt:345",
 	 Dialect: "postgresql",
@@ -26651,8 +26784,8 @@ var sqlCases = []SqlCase{
 	 HasTables: false,
 	 Tables: nil,
 	 Unrepresentable: nil,
-	 RegisterFn: c1029Reg,
-	 BindingsFn: c1029Bind},
+	 RegisterFn: c1034Reg,
+	 BindingsFn: c1034Bind},
 	{Name: "host.list.literal",
 	 At: "46-host-functions.sqlt:361",
 	 Dialect: "postgresql",
@@ -26668,8 +26801,8 @@ var sqlCases = []SqlCase{
 	 HasTables: false,
 	 Tables: nil,
 	 Unrepresentable: nil,
-	 RegisterFn: c1030Reg,
-	 BindingsFn: c1030Bind},
+	 RegisterFn: c1035Reg,
+	 BindingsFn: c1035Bind},
 	{Name: "host.list.literal-params",
 	 At: "46-host-functions.sqlt:377",
 	 Dialect: "postgresql",
@@ -26685,8 +26818,8 @@ var sqlCases = []SqlCase{
 	 HasTables: false,
 	 Tables: nil,
 	 Unrepresentable: nil,
-	 RegisterFn: c1031Reg,
-	 BindingsFn: c1031Bind},
+	 RegisterFn: c1036Reg,
+	 BindingsFn: c1036Bind},
 	{Name: "host.list.value-binding",
 	 At: "46-host-functions.sqlt:395",
 	 Dialect: "postgresql",
@@ -26702,8 +26835,8 @@ var sqlCases = []SqlCase{
 	 HasTables: false,
 	 Tables: nil,
 	 Unrepresentable: nil,
-	 RegisterFn: c1032Reg,
-	 BindingsFn: c1032Bind},
+	 RegisterFn: c1037Reg,
+	 BindingsFn: c1037Bind},
 	{Name: "host.list.scalar-is-a-list-of-one",
 	 At: "46-host-functions.sqlt:411",
 	 Dialect: "postgresql",
@@ -26719,8 +26852,8 @@ var sqlCases = []SqlCase{
 	 HasTables: false,
 	 Tables: nil,
 	 Unrepresentable: nil,
-	 RegisterFn: c1033Reg,
-	 BindingsFn: c1033Bind},
+	 RegisterFn: c1038Reg,
+	 BindingsFn: c1038Bind},
 	{Name: "host.list.relation-refused",
 	 At: "46-host-functions.sqlt:427",
 	 Dialect: "postgresql",
@@ -26736,8 +26869,8 @@ var sqlCases = []SqlCase{
 	 HasTables: false,
 	 Tables: nil,
 	 Unrepresentable: nil,
-	 RegisterFn: c1034Reg,
-	 BindingsFn: c1034Bind},
+	 RegisterFn: c1039Reg,
+	 BindingsFn: c1039Bind},
 	{Name: "host.list.empty-refused",
 	 At: "46-host-functions.sqlt:443",
 	 Dialect: "postgresql",
@@ -26753,8 +26886,8 @@ var sqlCases = []SqlCase{
 	 HasTables: false,
 	 Tables: nil,
 	 Unrepresentable: nil,
-	 RegisterFn: c1035Reg,
-	 BindingsFn: c1035Bind},
+	 RegisterFn: c1040Reg,
+	 BindingsFn: c1040Bind},
 	{Name: "host.list.nested-refused",
 	 At: "46-host-functions.sqlt:459",
 	 Dialect: "postgresql",
@@ -26770,8 +26903,8 @@ var sqlCases = []SqlCase{
 	 HasTables: false,
 	 Tables: nil,
 	 Unrepresentable: nil,
-	 RegisterFn: c1036Reg,
-	 BindingsFn: c1036Bind},
+	 RegisterFn: c1041Reg,
+	 BindingsFn: c1041Bind},
 	{Name: "host.list.filtered-refused",
 	 At: "46-host-functions.sqlt:475",
 	 Dialect: "postgresql",
@@ -26787,8 +26920,8 @@ var sqlCases = []SqlCase{
 	 HasTables: false,
 	 Tables: nil,
 	 Unrepresentable: nil,
-	 RegisterFn: c1037Reg,
-	 BindingsFn: c1037Bind},
+	 RegisterFn: c1042Reg,
+	 BindingsFn: c1042Bind},
 	{Name: "host.list.outside-a-list-position",
 	 At: "46-host-functions.sqlt:489",
 	 Dialect: "postgresql",
@@ -26804,8 +26937,8 @@ var sqlCases = []SqlCase{
 	 HasTables: false,
 	 Tables: nil,
 	 Unrepresentable: nil,
-	 RegisterFn: c1038Reg,
-	 BindingsFn: c1038Bind},
+	 RegisterFn: c1043Reg,
+	 BindingsFn: c1043Bind},
 	{Name: "plan.host.spelled-map-is-sql",
 	 At: "46-host-functions.sqlt:501",
 	 Dialect: "postgresql",
@@ -26821,8 +26954,8 @@ var sqlCases = []SqlCase{
 	 HasTables: true,
 	 Tables: []string{"articles"},
 	 Unrepresentable: nil,
-	 RegisterFn: c1039Reg,
-	 BindingsFn: c1039Bind},
+	 RegisterFn: c1044Reg,
+	 BindingsFn: c1044Bind},
 	{Name: "plan.host.spelled-filter-is-sql",
 	 At: "46-host-functions.sqlt:519",
 	 Dialect: "postgresql",
@@ -26838,8 +26971,8 @@ var sqlCases = []SqlCase{
 	 HasTables: true,
 	 Tables: []string{"articles"},
 	 Unrepresentable: nil,
-	 RegisterFn: c1040Reg,
-	 BindingsFn: c1040Bind},
+	 RegisterFn: c1045Reg,
+	 BindingsFn: c1045Bind},
 	{Name: "plan.host.unspelled-stays-in-memory",
 	 At: "46-host-functions.sqlt:537",
 	 Dialect: "postgresql",
@@ -26855,8 +26988,8 @@ var sqlCases = []SqlCase{
 	 HasTables: true,
 	 Tables: []string{"articles"},
 	 Unrepresentable: nil,
-	 RegisterFn: c1041Reg,
-	 BindingsFn: c1041Bind},
+	 RegisterFn: c1046Reg,
+	 BindingsFn: c1046Bind},
 	{Name: "link.chain.shared-name-through-a-later-left-binder",
 	 At: "47-link-rows.sqlt:6",
 	 Dialect: "sqlite",
@@ -26873,7 +27006,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1042Bind},
+	 BindingsFn: c1047Bind},
 	{Name: "link.chain.left-only-field-through-a-later-left-binder",
 	 At: "47-link-rows.sqlt:27",
 	 Dialect: "sqlite",
@@ -26890,7 +27023,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1043Bind},
+	 BindingsFn: c1048Bind},
 	{Name: "link.chain.right-only-field-through-a-later-left-binder",
 	 At: "47-link-rows.sqlt:45",
 	 Dialect: "sqlite",
@@ -26907,7 +27040,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1044Bind},
+	 BindingsFn: c1049Bind},
 	{Name: "link.chain.nested-left-side",
 	 At: "47-link-rows.sqlt:64",
 	 Dialect: "sqlite",
@@ -26924,7 +27057,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1045Bind},
+	 BindingsFn: c1050Bind},
 	{Name: "link.chain.nested-right-side",
 	 At: "47-link-rows.sqlt:80",
 	 Dialect: "sqlite",
@@ -26941,7 +27074,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1046Bind},
+	 BindingsFn: c1051Bind},
 	{Name: "link.chain.source-name-is-not-a-later-binder",
 	 At: "47-link-rows.sqlt:96",
 	 Dialect: "sqlite",
@@ -26958,7 +27091,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1047Bind},
+	 BindingsFn: c1052Bind},
 	{Name: "link.chain.underscore-one-is-the-joined-row",
 	 At: "47-link-rows.sqlt:116",
 	 Dialect: "sqlite",
@@ -26975,7 +27108,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1048Bind},
+	 BindingsFn: c1053Bind},
 	{Name: "link.chain.after-a-left-join",
 	 At: "47-link-rows.sqlt:132",
 	 Dialect: "sqlite",
@@ -26992,7 +27125,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1049Bind},
+	 BindingsFn: c1054Bind},
 	{Name: "link.chain.second-join-left",
 	 At: "47-link-rows.sqlt:148",
 	 Dialect: "sqlite",
@@ -27009,7 +27142,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1050Bind},
+	 BindingsFn: c1055Bind},
 	{Name: "link.chain.reused-right-binder-name",
 	 At: "47-link-rows.sqlt:164",
 	 Dialect: "sqlite",
@@ -27026,7 +27159,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1051Bind},
+	 BindingsFn: c1056Bind},
 	{Name: "link.chain.reused-left-binder-name",
 	 At: "47-link-rows.sqlt:183",
 	 Dialect: "sqlite",
@@ -27043,7 +27176,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1052Bind},
+	 BindingsFn: c1057Bind},
 	{Name: "link.chain.stale-binder",
 	 At: "47-link-rows.sqlt:199",
 	 Dialect: "sqlite",
@@ -27060,7 +27193,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1053Bind},
+	 BindingsFn: c1058Bind},
 	{Name: "link.chain.map-reads-a-nested-joined-row",
 	 At: "47-link-rows.sqlt:217",
 	 Dialect: "sqlite",
@@ -27077,7 +27210,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1054Bind},
+	 BindingsFn: c1059Bind},
 	{Name: "link.chain.map-nested-shared-name",
 	 At: "47-link-rows.sqlt:233",
 	 Dialect: "sqlite",
@@ -27094,7 +27227,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1055Bind},
+	 BindingsFn: c1060Bind},
 	{Name: "link.chain.map-nested-right-only-field",
 	 At: "47-link-rows.sqlt:249",
 	 Dialect: "sqlite",
@@ -27111,7 +27244,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1056Bind},
+	 BindingsFn: c1061Bind},
 	{Name: "link.chain.three-relations",
 	 At: "47-link-rows.sqlt:265",
 	 Dialect: "sqlite",
@@ -27128,7 +27261,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1057Bind},
+	 BindingsFn: c1062Bind},
 	{Name: "link.chain.a-name-dropped-earlier-is-promoted-again",
 	 At: "47-link-rows.sqlt:281",
 	 Dialect: "sqlite",
@@ -27145,7 +27278,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1058Bind},
+	 BindingsFn: c1063Bind},
 	{Name: "link.chain.right-only-field-after-a-left-join",
 	 At: "47-link-rows.sqlt:300",
 	 Dialect: "sqlite",
@@ -27162,7 +27295,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1059Bind},
+	 BindingsFn: c1064Bind},
 	{Name: "link.qualifier.relation-name-after-a-five-argument-link",
 	 At: "47-link-rows.sqlt:319",
 	 Dialect: "sqlite",
@@ -27179,7 +27312,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1060Bind},
+	 BindingsFn: c1065Bind},
 	{Name: "link.qualifier.right-name-after-a-five-argument-link",
 	 At: "47-link-rows.sqlt:338",
 	 Dialect: "sqlite",
@@ -27196,7 +27329,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1061Bind},
+	 BindingsFn: c1066Bind},
 	{Name: "link.qualifier.relation-name-in-a-five-argument-predicate",
 	 At: "47-link-rows.sqlt:354",
 	 Dialect: "sqlite",
@@ -27213,7 +27346,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1062Bind},
+	 BindingsFn: c1067Bind},
 	{Name: "link.qualifier.right-name-in-a-five-argument-predicate",
 	 At: "47-link-rows.sqlt:372",
 	 Dialect: "sqlite",
@@ -27230,7 +27363,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1063Bind},
+	 BindingsFn: c1068Bind},
 	{Name: "link.qualifier.three-argument-name",
 	 At: "47-link-rows.sqlt:388",
 	 Dialect: "sqlite",
@@ -27247,7 +27380,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1064Bind},
+	 BindingsFn: c1069Bind},
 	{Name: "link.qualifier.three-argument-lowercase-name",
 	 At: "47-link-rows.sqlt:404",
 	 Dialect: "sqlite",
@@ -27264,7 +27397,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1065Bind},
+	 BindingsFn: c1070Bind},
 	{Name: "link.qualifier.binder-names-its-own-element",
 	 At: "47-link-rows.sqlt:420",
 	 Dialect: "sqlite",
@@ -27281,7 +27414,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1066Bind},
+	 BindingsFn: c1071Bind},
 	{Name: "link.qualifier.no-join",
 	 At: "47-link-rows.sqlt:439",
 	 Dialect: "sqlite",
@@ -27298,7 +27431,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1067Bind},
+	 BindingsFn: c1072Bind},
 	{Name: "link.qualifier.alias",
 	 At: "47-link-rows.sqlt:457",
 	 Dialect: "sqlite",
@@ -27315,7 +27448,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1068Bind},
+	 BindingsFn: c1073Bind},
 	{Name: "link.qualifier.table",
 	 At: "47-link-rows.sqlt:473",
 	 Dialect: "sqlite",
@@ -27332,7 +27465,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1069Bind},
+	 BindingsFn: c1074Bind},
 	{Name: "link.qualifier.alias-in-a-predicate",
 	 At: "47-link-rows.sqlt:490",
 	 Dialect: "sqlite",
@@ -27349,7 +27482,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1070Bind},
+	 BindingsFn: c1075Bind},
 	{Name: "link.left.right-only-promoted-read",
 	 At: "47-link-rows.sqlt:504",
 	 Dialect: "sqlite",
@@ -27366,7 +27499,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1071Bind},
+	 BindingsFn: c1076Bind},
 	{Name: "link.left.right-field-through-its-binder",
 	 At: "47-link-rows.sqlt:524",
 	 Dialect: "sqlite",
@@ -27383,7 +27516,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1072Bind},
+	 BindingsFn: c1077Bind},
 	{Name: "link.left.left-only-promoted-read",
 	 At: "47-link-rows.sqlt:542",
 	 Dialect: "sqlite",
@@ -27400,7 +27533,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1073Bind},
+	 BindingsFn: c1078Bind},
 	{Name: "link.twice.a-relation-joined-again-under-its-alias",
 	 At: "47-link-rows.sqlt:558",
 	 Dialect: "sqlite",
@@ -27417,7 +27550,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1074Bind},
+	 BindingsFn: c1079Bind},
 	{Name: "link.twice.a-self-join-under-the-alias",
 	 At: "47-link-rows.sqlt:577",
 	 Dialect: "sqlite",
@@ -27434,7 +27567,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1075Bind},
+	 BindingsFn: c1080Bind},
 	{Name: "link.twice.a-self-join-of-an-unaliased-relation",
 	 At: "47-link-rows.sqlt:591",
 	 Dialect: "sqlite",
@@ -27451,7 +27584,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1076Bind},
+	 BindingsFn: c1081Bind},
 	{Name: "link.twice.a-three-argument-self-join-of-an-unaliased-relation",
 	 At: "47-link-rows.sqlt:608",
 	 Dialect: "sqlite",
@@ -27468,7 +27601,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1077Bind},
+	 BindingsFn: c1082Bind},
 	{Name: "link.order.an-earlier-sort-key-refuses-before-the-join",
 	 At: "47-link-rows.sqlt:622",
 	 Dialect: "sqlite",
@@ -27485,7 +27618,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1078Bind},
+	 BindingsFn: c1083Bind},
 	{Name: "link.order.an-earlier-bucket-key-refuses-before-the-join",
 	 At: "47-link-rows.sqlt:641",
 	 Dialect: "sqlite",
@@ -27502,7 +27635,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1079Bind},
+	 BindingsFn: c1084Bind},
 	{Name: "link.twice.the-same-default-alias-twice",
 	 At: "47-link-rows.sqlt:658",
 	 Dialect: "sqlite",
@@ -27519,7 +27652,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1080Bind},
+	 BindingsFn: c1085Bind},
 	{Name: "link.plan.chain-read-the-row-lacks-stays-in-memory",
 	 At: "47-link-rows.sqlt:674",
 	 Dialect: "sqlite",
@@ -27536,7 +27669,7 @@ var sqlCases = []SqlCase{
 	 Tables: []string{"r", "s", "t"},
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1081Bind},
+	 BindingsFn: c1086Bind},
 	{Name: "link.plan.relation-name-after-a-five-argument-link-stays-in-memory",
 	 At: "47-link-rows.sqlt:695",
 	 Dialect: "sqlite",
@@ -27553,7 +27686,7 @@ var sqlCases = []SqlCase{
 	 Tables: []string{"r", "s"},
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1082Bind},
+	 BindingsFn: c1087Bind},
 	{Name: "link.plan.left-join-right-only-read-stays-in-memory",
 	 At: "47-link-rows.sqlt:712",
 	 Dialect: "sqlite",
@@ -27570,7 +27703,7 @@ var sqlCases = []SqlCase{
 	 Tables: []string{"r", "s"},
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1083Bind},
+	 BindingsFn: c1088Bind},
 	{Name: "agg.scope.outer-key-in-inner-list",
 	 At: "48-scope-and-slots.sqlt:11",
 	 Dialect: "mariadb",
@@ -27587,7 +27720,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1084Bind},
+	 BindingsFn: c1089Bind},
 	{Name: "agg.scope.outer-key-in-inner-list-control",
 	 At: "48-scope-and-slots.sqlt:24",
 	 Dialect: "mariadb",
@@ -27604,7 +27737,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1085Bind},
+	 BindingsFn: c1090Bind},
 	{Name: "agg.scope.element-named-like-inner-binder",
 	 At: "48-scope-and-slots.sqlt:37",
 	 Dialect: "mariadb",
@@ -27621,7 +27754,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1086Bind},
+	 BindingsFn: c1091Bind},
 	{Name: "agg.scope.element-named-like-inner-binder-control",
 	 At: "48-scope-and-slots.sqlt:50",
 	 Dialect: "mariadb",
@@ -27638,7 +27771,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1087Bind},
+	 BindingsFn: c1092Bind},
 	{Name: "agg.scope.default-binder-nested-static",
 	 At: "48-scope-and-slots.sqlt:63",
 	 Dialect: "mariadb",
@@ -27655,7 +27788,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1088Bind},
+	 BindingsFn: c1093Bind},
 	{Name: "agg.scope.default-binder-nested-static-control",
 	 At: "48-scope-and-slots.sqlt:76",
 	 Dialect: "mariadb",
@@ -27672,7 +27805,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1089Bind},
+	 BindingsFn: c1094Bind},
 	{Name: "agg.scope.default-binder-nested-columns",
 	 At: "48-scope-and-slots.sqlt:89",
 	 Dialect: "mariadb",
@@ -27689,7 +27822,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1090Bind},
+	 BindingsFn: c1095Bind},
 	{Name: "agg.scope.default-binder-nested-columns-control",
 	 At: "48-scope-and-slots.sqlt:102",
 	 Dialect: "mariadb",
@@ -27706,7 +27839,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1091Bind},
+	 BindingsFn: c1096Bind},
 	{Name: "agg.scope.one-name-for-list-element-and-binder",
 	 At: "48-scope-and-slots.sqlt:115",
 	 Dialect: "mariadb",
@@ -27723,7 +27856,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1092Bind},
+	 BindingsFn: c1097Bind},
 	{Name: "agg.scope.one-name-for-list-element-and-binder-control",
 	 At: "48-scope-and-slots.sqlt:128",
 	 Dialect: "mariadb",
@@ -27740,7 +27873,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1093Bind},
+	 BindingsFn: c1098Bind},
 	{Name: "agg.scope.outer-key-in-named-binder-body",
 	 At: "48-scope-and-slots.sqlt:141",
 	 Dialect: "mariadb",
@@ -27757,7 +27890,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1094Bind},
+	 BindingsFn: c1099Bind},
 	{Name: "agg.scope.outer-key-in-named-binder-body-control",
 	 At: "48-scope-and-slots.sqlt:154",
 	 Dialect: "mariadb",
@@ -27774,7 +27907,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1095Bind},
+	 BindingsFn: c1100Bind},
 	{Name: "agg.scope.outer-key-compared-in-inner-body",
 	 At: "48-scope-and-slots.sqlt:167",
 	 Dialect: "mariadb",
@@ -27791,7 +27924,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1096Bind},
+	 BindingsFn: c1101Bind},
 	{Name: "agg.scope.outer-key-compared-in-inner-body-control",
 	 At: "48-scope-and-slots.sqlt:180",
 	 Dialect: "mariadb",
@@ -27808,7 +27941,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1097Bind},
+	 BindingsFn: c1102Bind},
 	{Name: "agg.scope.outer-key-in-join-source",
 	 At: "48-scope-and-slots.sqlt:193",
 	 Dialect: "mariadb",
@@ -27825,7 +27958,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1098Bind},
+	 BindingsFn: c1103Bind},
 	{Name: "agg.scope.outer-key-in-join-source-control",
 	 At: "48-scope-and-slots.sqlt:206",
 	 Dialect: "mariadb",
@@ -27842,7 +27975,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1099Bind},
+	 BindingsFn: c1104Bind},
 	{Name: "agg.scope.binder-named-like-a-column-in-its-own-list",
 	 At: "48-scope-and-slots.sqlt:219",
 	 Dialect: "mariadb",
@@ -27859,7 +27992,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1100Bind},
+	 BindingsFn: c1105Bind},
 	{Name: "agg.scope.binder-named-like-a-column-in-its-own-list-control",
 	 At: "48-scope-and-slots.sqlt:232",
 	 Dialect: "mariadb",
@@ -27876,7 +28009,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1101Bind},
+	 BindingsFn: c1106Bind},
 	{Name: "agg.filter.binder-does-not-leak-into-body",
 	 At: "48-scope-and-slots.sqlt:245",
 	 Dialect: "mariadb",
@@ -27893,7 +28026,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1102Bind},
+	 BindingsFn: c1107Bind},
 	{Name: "agg.filter.binder-does-not-leak-into-body-control",
 	 At: "48-scope-and-slots.sqlt:258",
 	 Dialect: "mariadb",
@@ -27910,7 +28043,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1103Bind},
+	 BindingsFn: c1108Bind},
 	{Name: "agg.filter.binder-does-not-leak-into-body-columns",
 	 At: "48-scope-and-slots.sqlt:271",
 	 Dialect: "mariadb",
@@ -27927,7 +28060,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1104Bind},
+	 BindingsFn: c1109Bind},
 	{Name: "agg.filter.binder-does-not-leak-into-body-columns-control",
 	 At: "48-scope-and-slots.sqlt:284",
 	 Dialect: "mariadb",
@@ -27944,7 +28077,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1105Bind},
+	 BindingsFn: c1110Bind},
 	{Name: "agg.filter.binder-is-undefined-in-body",
 	 At: "48-scope-and-slots.sqlt:297",
 	 Dialect: "mariadb",
@@ -27961,7 +28094,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1106Bind},
+	 BindingsFn: c1111Bind},
 	{Name: "agg.filter.later-binder-is-undefined-in-earlier-predicate",
 	 At: "48-scope-and-slots.sqlt:310",
 	 Dialect: "mariadb",
@@ -27978,7 +28111,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1107Bind},
+	 BindingsFn: c1112Bind},
 	{Name: "agg.filter.outer-filter-binder-is-undefined-in-inner-predicate",
 	 At: "48-scope-and-slots.sqlt:323",
 	 Dialect: "mariadb",
@@ -27995,7 +28128,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1108Bind},
+	 BindingsFn: c1113Bind},
 	{Name: "norm.inline.def-not-captured-by-binder",
 	 At: "48-scope-and-slots.sqlt:336",
 	 Dialect: "mariadb",
@@ -28012,7 +28145,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1109Bind},
+	 BindingsFn: c1114Bind},
 	{Name: "norm.inline.def-not-captured-by-binder-control",
 	 At: "48-scope-and-slots.sqlt:349",
 	 Dialect: "mariadb",
@@ -28029,7 +28162,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1110Bind},
+	 BindingsFn: c1115Bind},
 	{Name: "norm.inline.def-not-captured-by-binder-arithmetic",
 	 At: "48-scope-and-slots.sqlt:362",
 	 Dialect: "mariadb",
@@ -28046,7 +28179,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1111Bind},
+	 BindingsFn: c1116Bind},
 	{Name: "norm.inline.def-not-captured-by-binder-arithmetic-control",
 	 At: "48-scope-and-slots.sqlt:375",
 	 Dialect: "mariadb",
@@ -28063,7 +28196,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1112Bind},
+	 BindingsFn: c1117Bind},
 	{Name: "norm.inline.binder-in-own-list-element",
 	 At: "48-scope-and-slots.sqlt:388",
 	 Dialect: "mariadb",
@@ -28080,7 +28213,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1113Bind},
+	 BindingsFn: c1118Bind},
 	{Name: "norm.inline.binder-in-own-list-element-control",
 	 At: "48-scope-and-slots.sqlt:401",
 	 Dialect: "mariadb",
@@ -28097,7 +28230,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1114Bind},
+	 BindingsFn: c1119Bind},
 	{Name: "const.binder-shadows-value-binding",
 	 At: "48-scope-and-slots.sqlt:414",
 	 Dialect: "mariadb",
@@ -28114,7 +28247,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1115Bind},
+	 BindingsFn: c1120Bind},
 	{Name: "const.binder-shadows-value-binding-control",
 	 At: "48-scope-and-slots.sqlt:427",
 	 Dialect: "mariadb",
@@ -28131,7 +28264,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1116Bind},
+	 BindingsFn: c1121Bind},
 	{Name: "const.binder-shadows-value-binding-that-would-fail",
 	 At: "48-scope-and-slots.sqlt:440",
 	 Dialect: "mariadb",
@@ -28148,7 +28281,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1117Bind},
+	 BindingsFn: c1122Bind},
 	{Name: "const.binder-shadows-value-binding-that-would-fail-control",
 	 At: "48-scope-and-slots.sqlt:453",
 	 Dialect: "mariadb",
@@ -28165,7 +28298,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1118Bind},
+	 BindingsFn: c1123Bind},
 	{Name: "const.binder-shadows-value-binding-over-relation",
 	 At: "48-scope-and-slots.sqlt:466",
 	 Dialect: "mariadb",
@@ -28182,7 +28315,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1119Bind},
+	 BindingsFn: c1124Bind},
 	{Name: "const.binder-shadows-value-binding-over-relation-control",
 	 At: "48-scope-and-slots.sqlt:479",
 	 Dialect: "mariadb",
@@ -28199,7 +28332,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1120Bind},
+	 BindingsFn: c1125Bind},
 	{Name: "assign.indexed.copy-is-not-alias",
 	 At: "48-scope-and-slots.sqlt:492",
 	 Dialect: "mariadb",
@@ -28216,7 +28349,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1121Bind},
+	 BindingsFn: c1126Bind},
 	{Name: "assign.indexed.copy-is-not-alias-control",
 	 At: "48-scope-and-slots.sqlt:505",
 	 Dialect: "mariadb",
@@ -28233,7 +28366,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1122Bind},
+	 BindingsFn: c1127Bind},
 	{Name: "assign.indexed.copy-is-not-alias-source-unchanged",
 	 At: "48-scope-and-slots.sqlt:518",
 	 Dialect: "mariadb",
@@ -28250,7 +28383,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1123Bind},
+	 BindingsFn: c1128Bind},
 	{Name: "assign.indexed.copy-is-not-alias-source-unchanged-control",
 	 At: "48-scope-and-slots.sqlt:531",
 	 Dialect: "mariadb",
@@ -28267,7 +28400,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1124Bind},
+	 BindingsFn: c1129Bind},
 	{Name: "assign.indexed.copy-is-not-alias-columns",
 	 At: "48-scope-and-slots.sqlt:544",
 	 Dialect: "mariadb",
@@ -28284,7 +28417,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1125Bind},
+	 BindingsFn: c1130Bind},
 	{Name: "assign.indexed.copy-is-not-alias-columns-control",
 	 At: "48-scope-and-slots.sqlt:557",
 	 Dialect: "mariadb",
@@ -28301,7 +28434,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1126Bind},
+	 BindingsFn: c1131Bind},
 	{Name: "plan.helper.rebinds-relation-once",
 	 At: "48-scope-and-slots.sqlt:570",
 	 Dialect: "mariadb",
@@ -28318,7 +28451,7 @@ var sqlCases = []SqlCase{
 	 Tables: []string{"orders"},
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1127Bind},
+	 BindingsFn: c1132Bind},
 	{Name: "plan.helper.rebinds-relation-once-control",
 	 At: "48-scope-and-slots.sqlt:587",
 	 Dialect: "mariadb",
@@ -28335,7 +28468,7 @@ var sqlCases = []SqlCase{
 	 Tables: []string{"orders"},
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1128Bind},
+	 BindingsFn: c1133Bind},
 	{Name: "agg.join.filtered-source-is-refused",
 	 At: "48-scope-and-slots.sqlt:604",
 	 Dialect: "mariadb",
@@ -28352,7 +28485,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1129Bind},
+	 BindingsFn: c1134Bind},
 	{Name: "agg.join.filtered-source-is-refused-constant-false",
 	 At: "48-scope-and-slots.sqlt:617",
 	 Dialect: "mariadb",
@@ -28369,7 +28502,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1130Bind},
+	 BindingsFn: c1135Bind},
 	{Name: "agg.filter.absorbed-into-any-control",
 	 At: "48-scope-and-slots.sqlt:630",
 	 Dialect: "mariadb",
@@ -28386,7 +28519,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1131Bind},
+	 BindingsFn: c1136Bind},
 	{Name: "agg.filter.absorbed-into-any-control-control",
 	 At: "48-scope-and-slots.sqlt:643",
 	 Dialect: "mariadb",
@@ -28403,7 +28536,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1132Bind},
+	 BindingsFn: c1137Bind},
 	{Name: "shape.binder.non-name-binder-is-refused",
 	 At: "48-scope-and-slots.sqlt:656",
 	 Dialect: "mariadb",
@@ -28420,7 +28553,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1133Bind},
+	 BindingsFn: c1138Bind},
 	{Name: "limit.inline-chain-past-the-depth-limit-over-a-column",
 	 At: "48-scope-and-slots.sqlt:669",
 	 Dialect: "mariadb",
@@ -28437,7 +28570,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1134Bind},
+	 BindingsFn: c1139Bind},
 	{Name: "limit.inline-chain-past-the-depth-limit-over-a-constant",
 	 At: "48-scope-and-slots.sqlt:682",
 	 Dialect: "mariadb",
@@ -28454,7 +28587,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1135Bind},
+	 BindingsFn: c1140Bind},
 	{Name: "limit.inline-chain-just-under-the-depth-limit",
 	 At: "48-scope-and-slots.sqlt:695",
 	 Dialect: "mariadb",
@@ -28471,7 +28604,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1136Bind},
+	 BindingsFn: c1141Bind},
 	{Name: "limit.size.doubling-helper-over-a-column",
 	 At: "48-scope-and-slots.sqlt:708",
 	 Dialect: "mariadb",
@@ -28488,7 +28621,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1137Bind},
+	 BindingsFn: c1142Bind},
 	{Name: "limit.size.doubling-helper-over-a-constant",
 	 At: "48-scope-and-slots.sqlt:721",
 	 Dialect: "mariadb",
@@ -28505,7 +28638,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1138Bind},
+	 BindingsFn: c1143Bind},
 	{Name: "limit.size.nested-aggregates-over-static-lists",
 	 At: "48-scope-and-slots.sqlt:734",
 	 Dialect: "mariadb",
@@ -28522,7 +28655,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1139Bind},
+	 BindingsFn: c1144Bind},
 	{Name: "limit.size.small-doubling-is-accepted",
 	 At: "48-scope-and-slots.sqlt:747",
 	 Dialect: "mariadb",
@@ -28539,7 +28672,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1140Bind},
+	 BindingsFn: c1145Bind},
 	{Name: "limit.size.small-nested-is-accepted",
 	 At: "48-scope-and-slots.sqlt:760",
 	 Dialect: "mariadb",
@@ -28556,7 +28689,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1141Bind},
+	 BindingsFn: c1146Bind},
 	{Name: "shape.binder.non-name-binder-in-map-statement",
 	 At: "48-scope-and-slots.sqlt:773",
 	 Dialect: "mariadb",
@@ -28573,7 +28706,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1142Bind},
+	 BindingsFn: c1147Bind},
 	{Name: "shape.binder.non-name-binder-in-bucket-projection-statement",
 	 At: "48-scope-and-slots.sqlt:788",
 	 Dialect: "mariadb",
@@ -28590,7 +28723,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1143Bind},
+	 BindingsFn: c1148Bind},
 	{Name: "plan.pure-memory.pipeline-past-the-depth-limit",
 	 At: "48-scope-and-slots.sqlt:803",
 	 Dialect: "mariadb",
@@ -28607,7 +28740,7 @@ var sqlCases = []SqlCase{
 	 Tables: []string{"orders"},
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1144Bind},
+	 BindingsFn: c1149Bind},
 	{Name: "plan.pure-sql.pipeline-under-the-depth-limit",
 	 At: "48-scope-and-slots.sqlt:818",
 	 Dialect: "mariadb",
@@ -28624,7 +28757,7 @@ var sqlCases = []SqlCase{
 	 Tables: []string{"orders"},
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1145Bind},
+	 BindingsFn: c1150Bind},
 	{Name: "bucket.sum.numeric-literal",
 	 At: "48-scope-and-slots.sqlt:835",
 	 Dialect: "mariadb",
@@ -28641,7 +28774,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1146Bind},
+	 BindingsFn: c1151Bind},
 	{Name: "bucket.sum.two-numeric-literals",
 	 At: "48-scope-and-slots.sqlt:850",
 	 Dialect: "mariadb",
@@ -28658,7 +28791,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1147Bind},
+	 BindingsFn: c1152Bind},
 	{Name: "bucket.sum.text-literal-in-if",
 	 At: "48-scope-and-slots.sqlt:865",
 	 Dialect: "mariadb",
@@ -28675,7 +28808,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1148Bind},
+	 BindingsFn: c1153Bind},
 	{Name: "bucket.sum.text-literal-in-if-params",
 	 At: "48-scope-and-slots.sqlt:880",
 	 Dialect: "mariadb",
@@ -28692,7 +28825,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1149Bind},
+	 BindingsFn: c1154Bind},
 	{Name: "bucket.sum.nested-if-two-text-slots",
 	 At: "48-scope-and-slots.sqlt:899",
 	 Dialect: "mariadb",
@@ -28709,7 +28842,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1150Bind},
+	 BindingsFn: c1155Bind},
 	{Name: "bucket.sum.nested-if-two-text-slots-params",
 	 At: "48-scope-and-slots.sqlt:914",
 	 Dialect: "mariadb",
@@ -28726,7 +28859,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1151Bind},
+	 BindingsFn: c1156Bind},
 	{Name: "warrant.bool.if-cannot-launder-an-undeclared-column",
 	 At: "49-kind-guarantees.sqlt:14",
 	 Dialect: "mariadb",
@@ -28743,7 +28876,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1152Bind},
+	 BindingsFn: c1157Bind},
 	{Name: "warrant.bool.if-cannot-launder-with-a-bool-condition",
 	 At: "49-kind-guarantees.sqlt:27",
 	 Dialect: "mariadb",
@@ -28760,7 +28893,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1153Bind},
+	 BindingsFn: c1158Bind},
 	{Name: "warrant.bool.coalesce-cannot-launder-an-undeclared-column",
 	 At: "49-kind-guarantees.sqlt:40",
 	 Dialect: "mariadb",
@@ -28777,7 +28910,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1154Bind},
+	 BindingsFn: c1159Bind},
 	{Name: "warrant.bool.vacuous-coalesce-cannot-launder-an-undeclared-column",
 	 At: "49-kind-guarantees.sqlt:53",
 	 Dialect: "mariadb",
@@ -28794,7 +28927,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1155Bind},
+	 BindingsFn: c1160Bind},
 	{Name: "warrant.bool.cond-cannot-launder-an-undeclared-column",
 	 At: "49-kind-guarantees.sqlt:66",
 	 Dialect: "mariadb",
@@ -28811,7 +28944,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1156Bind},
+	 BindingsFn: c1161Bind},
 	{Name: "warrant.bool.not-over-a-laundered-conditional",
 	 At: "49-kind-guarantees.sqlt:79",
 	 Dialect: "mariadb",
@@ -28828,7 +28961,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1157Bind},
+	 BindingsFn: c1162Bind},
 	{Name: "warrant.bool.if-cannot-launder-on-postgresql",
 	 At: "49-kind-guarantees.sqlt:92",
 	 Dialect: "postgresql",
@@ -28845,7 +28978,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1158Bind},
+	 BindingsFn: c1163Bind},
 	{Name: "warrant.bool.coalesce-cannot-launder-on-sqlite",
 	 At: "49-kind-guarantees.sqlt:105",
 	 Dialect: "sqlite",
@@ -28862,7 +28995,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1159Bind},
+	 BindingsFn: c1164Bind},
 	{Name: "warrant.bool.if-over-a-declared-bool-is-not-refused",
 	 At: "49-kind-guarantees.sqlt:118",
 	 Dialect: "mariadb",
@@ -28879,7 +29012,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1160Bind},
+	 BindingsFn: c1165Bind},
 	{Name: "warrant.bool.coalesce-over-a-declared-bool-is-not-refused",
 	 At: "49-kind-guarantees.sqlt:131",
 	 Dialect: "mariadb",
@@ -28896,7 +29029,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1161Bind},
+	 BindingsFn: c1166Bind},
 	{Name: "warrant.numeric.coalesce-over-an-undeclared-column-is-guarded",
 	 At: "49-kind-guarantees.sqlt:144",
 	 Dialect: "mariadb",
@@ -28913,7 +29046,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1162Bind},
+	 BindingsFn: c1167Bind},
 	{Name: "warrant.numeric.if-branch-unknown-is-guarded",
 	 At: "49-kind-guarantees.sqlt:157",
 	 Dialect: "mariadb",
@@ -28930,7 +29063,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1163Bind},
+	 BindingsFn: c1168Bind},
 	{Name: "warrant.numeric.coalesce-function-over-an-undeclared-column-is-guarded",
 	 At: "49-kind-guarantees.sqlt:170",
 	 Dialect: "mariadb",
@@ -28947,7 +29080,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1164Bind},
+	 BindingsFn: c1169Bind},
 	{Name: "warrant.numeric.abs-over-a-laundered-conditional",
 	 At: "49-kind-guarantees.sqlt:183",
 	 Dialect: "mariadb",
@@ -28964,7 +29097,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1165Bind},
+	 BindingsFn: c1170Bind},
 	{Name: "warrant.numeric.min-over-a-laundered-conditional",
 	 At: "49-kind-guarantees.sqlt:196",
 	 Dialect: "mariadb",
@@ -28981,7 +29114,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1166Bind},
+	 BindingsFn: c1171Bind},
 	{Name: "warrant.numeric.length-over-a-laundered-conditional",
 	 At: "49-kind-guarantees.sqlt:209",
 	 Dialect: "mariadb",
@@ -28998,7 +29131,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1167Bind},
+	 BindingsFn: c1172Bind},
 	{Name: "warrant.numeric.an-undeclared-branch-on-the-right-is-guarded",
 	 At: "49-kind-guarantees.sqlt:222",
 	 Dialect: "mariadb",
@@ -29015,7 +29148,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1168Bind},
+	 BindingsFn: c1173Bind},
 	{Name: "warrant.numeric.cond-branch-unknown-is-guarded",
 	 At: "49-kind-guarantees.sqlt:235",
 	 Dialect: "mariadb",
@@ -29032,7 +29165,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1169Bind},
+	 BindingsFn: c1174Bind},
 	{Name: "warrant.numeric.sqlite-refuses-a-laundered-coalesce",
 	 At: "49-kind-guarantees.sqlt:248",
 	 Dialect: "sqlite",
@@ -29049,7 +29182,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1170Bind},
+	 BindingsFn: c1175Bind},
 	{Name: "warrant.numeric.sqlite-refuses-a-laundered-if-branch",
 	 At: "49-kind-guarantees.sqlt:261",
 	 Dialect: "sqlite",
@@ -29066,7 +29199,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1171Bind},
+	 BindingsFn: c1176Bind},
 	{Name: "warrant.numeric.sqlite-refuses-a-laundered-abs",
 	 At: "49-kind-guarantees.sqlt:274",
 	 Dialect: "sqlite",
@@ -29083,7 +29216,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1172Bind},
+	 BindingsFn: c1177Bind},
 	{Name: "warrant.numeric.sqlite-refuses-a-laundered-vacuous-coalesce",
 	 At: "49-kind-guarantees.sqlt:287",
 	 Dialect: "sqlite",
@@ -29100,7 +29233,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1173Bind},
+	 BindingsFn: c1178Bind},
 	{Name: "warrant.numeric.declared-num-through-coalesce-is-not-guarded",
 	 At: "49-kind-guarantees.sqlt:300",
 	 Dialect: "mariadb",
@@ -29117,7 +29250,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1174Bind},
+	 BindingsFn: c1179Bind},
 	{Name: "warrant.numeric.declared-num-through-if-is-not-guarded",
 	 At: "49-kind-guarantees.sqlt:313",
 	 Dialect: "mariadb",
@@ -29134,7 +29267,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1175Bind},
+	 BindingsFn: c1180Bind},
 	{Name: "agg.join.bool-element-is-refused",
 	 At: "49-kind-guarantees.sqlt:326",
 	 Dialect: "mariadb",
@@ -29151,7 +29284,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1176Bind},
+	 BindingsFn: c1181Bind},
 	{Name: "agg.join.bool-first-element-is-refused",
 	 At: "49-kind-guarantees.sqlt:339",
 	 Dialect: "mariadb",
@@ -29168,7 +29301,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1177Bind},
+	 BindingsFn: c1182Bind},
 	{Name: "agg.join.bool-separator-is-refused",
 	 At: "49-kind-guarantees.sqlt:352",
 	 Dialect: "mariadb",
@@ -29185,7 +29318,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1178Bind},
+	 BindingsFn: c1183Bind},
 	{Name: "agg.join.bin-element-is-refused",
 	 At: "49-kind-guarantees.sqlt:365",
 	 Dialect: "mariadb",
@@ -29202,7 +29335,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1179Bind},
+	 BindingsFn: c1184Bind},
 	{Name: "agg.join.bin-separator-is-refused",
 	 At: "49-kind-guarantees.sqlt:378",
 	 Dialect: "mariadb",
@@ -29219,7 +29352,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1180Bind},
+	 BindingsFn: c1185Bind},
 	{Name: "agg.join.columns-binding-with-a-bool-is-refused",
 	 At: "49-kind-guarantees.sqlt:391",
 	 Dialect: "mariadb",
@@ -29236,7 +29369,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1181Bind},
+	 BindingsFn: c1186Bind},
 	{Name: "agg.join.columns-binding-with-a-bin-is-refused",
 	 At: "49-kind-guarantees.sqlt:404",
 	 Dialect: "mariadb",
@@ -29253,7 +29386,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1182Bind},
+	 BindingsFn: c1187Bind},
 	{Name: "agg.join.bool-element-is-refused-on-postgresql",
 	 At: "49-kind-guarantees.sqlt:417",
 	 Dialect: "postgresql",
@@ -29270,7 +29403,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1183Bind},
+	 BindingsFn: c1188Bind},
 	{Name: "agg.join.bool-element-is-refused-on-sqlite",
 	 At: "49-kind-guarantees.sqlt:430",
 	 Dialect: "sqlite",
@@ -29287,7 +29420,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1184Bind},
+	 BindingsFn: c1189Bind},
 	{Name: "agg.join.text-elements-still-translate",
 	 At: "49-kind-guarantees.sqlt:443",
 	 Dialect: "mariadb",
@@ -29304,7 +29437,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1185Bind},
+	 BindingsFn: c1190Bind},
 	{Name: "agg.bucket-sum.a-declared-text-field-is-refused",
 	 At: "49-kind-guarantees.sqlt:456",
 	 Dialect: "mariadb",
@@ -29321,7 +29454,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1186Bind},
+	 BindingsFn: c1191Bind},
 	{Name: "agg.bucket-sum.a-declared-bool-field-is-refused",
 	 At: "49-kind-guarantees.sqlt:471",
 	 Dialect: "mariadb",
@@ -29338,7 +29471,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1187Bind},
+	 BindingsFn: c1192Bind},
 	{Name: "agg.bucket-sum.a-constant-text-body-is-refused",
 	 At: "49-kind-guarantees.sqlt:486",
 	 Dialect: "mariadb",
@@ -29355,7 +29488,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1188Bind},
+	 BindingsFn: c1193Bind},
 	{Name: "agg.in-relation.bool-column-needle-is-refused",
 	 At: "49-kind-guarantees.sqlt:501",
 	 Dialect: "mariadb",
@@ -29372,7 +29505,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1189Bind},
+	 BindingsFn: c1194Bind},
 	{Name: "agg.in-relation.bool-literal-needle-is-refused",
 	 At: "49-kind-guarantees.sqlt:514",
 	 Dialect: "mariadb",
@@ -29389,7 +29522,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1190Bind},
+	 BindingsFn: c1195Bind},
 	{Name: "agg.in-relation.bin-column-needle-is-refused",
 	 At: "49-kind-guarantees.sqlt:527",
 	 Dialect: "mariadb",
@@ -29406,7 +29539,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1191Bind},
+	 BindingsFn: c1196Bind},
 	{Name: "bind.in.exact.numeric-literal-item-is-cast",
 	 At: "49-kind-guarantees.sqlt:540",
 	 Dialect: "mariadb",
@@ -29423,7 +29556,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1192Bind},
+	 BindingsFn: c1197Bind},
 	{Name: "bind.in.exact.numeric-literal-items-only",
 	 At: "49-kind-guarantees.sqlt:553",
 	 Dialect: "mariadb",
@@ -29440,7 +29573,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1193Bind},
+	 BindingsFn: c1198Bind},
 	{Name: "stmt.take.whole-number-with-scale.mariadb",
 	 At: "49-kind-guarantees.sqlt:566",
 	 Dialect: "mariadb",
@@ -29457,7 +29590,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1194Bind},
+	 BindingsFn: c1199Bind},
 	{Name: "stmt.take.zero-with-scale.mariadb",
 	 At: "49-kind-guarantees.sqlt:581",
 	 Dialect: "mariadb",
@@ -29474,7 +29607,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1195Bind},
+	 BindingsFn: c1200Bind},
 	{Name: "stmt.take.count-past-2^53.mariadb",
 	 At: "49-kind-guarantees.sqlt:596",
 	 Dialect: "mariadb",
@@ -29491,7 +29624,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1196Bind},
+	 BindingsFn: c1201Bind},
 	{Name: "stmt.take.int64-max.mariadb",
 	 At: "49-kind-guarantees.sqlt:611",
 	 Dialect: "mariadb",
@@ -29508,7 +29641,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1197Bind},
+	 BindingsFn: c1202Bind},
 	{Name: "stmt.take.whole-number-with-scale.postgresql",
 	 At: "49-kind-guarantees.sqlt:626",
 	 Dialect: "postgresql",
@@ -29525,7 +29658,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1198Bind},
+	 BindingsFn: c1203Bind},
 	{Name: "stmt.take.zero-with-scale.postgresql",
 	 At: "49-kind-guarantees.sqlt:641",
 	 Dialect: "postgresql",
@@ -29542,7 +29675,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1199Bind},
+	 BindingsFn: c1204Bind},
 	{Name: "stmt.take.count-past-2^53.postgresql",
 	 At: "49-kind-guarantees.sqlt:656",
 	 Dialect: "postgresql",
@@ -29559,7 +29692,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1200Bind},
+	 BindingsFn: c1205Bind},
 	{Name: "stmt.take.int64-max.postgresql",
 	 At: "49-kind-guarantees.sqlt:671",
 	 Dialect: "postgresql",
@@ -29576,7 +29709,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1201Bind},
+	 BindingsFn: c1206Bind},
 	{Name: "stmt.take.whole-number-with-scale.sqlite",
 	 At: "49-kind-guarantees.sqlt:686",
 	 Dialect: "sqlite",
@@ -29593,7 +29726,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1202Bind},
+	 BindingsFn: c1207Bind},
 	{Name: "stmt.take.zero-with-scale.sqlite",
 	 At: "49-kind-guarantees.sqlt:701",
 	 Dialect: "sqlite",
@@ -29610,7 +29743,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1203Bind},
+	 BindingsFn: c1208Bind},
 	{Name: "stmt.take.count-past-2^53.sqlite",
 	 At: "49-kind-guarantees.sqlt:716",
 	 Dialect: "sqlite",
@@ -29627,7 +29760,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1204Bind},
+	 BindingsFn: c1209Bind},
 	{Name: "stmt.take.int64-max.sqlite",
 	 At: "49-kind-guarantees.sqlt:731",
 	 Dialect: "sqlite",
@@ -29644,7 +29777,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1205Bind},
+	 BindingsFn: c1210Bind},
 	{Name: "stmt.drop.whole-number-with-scale.mariadb",
 	 At: "49-kind-guarantees.sqlt:746",
 	 Dialect: "mariadb",
@@ -29661,7 +29794,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1206Bind},
+	 BindingsFn: c1211Bind},
 	{Name: "stmt.drop.count-past-2^53.mariadb",
 	 At: "49-kind-guarantees.sqlt:761",
 	 Dialect: "mariadb",
@@ -29678,7 +29811,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1207Bind},
+	 BindingsFn: c1212Bind},
 	{Name: "stmt.drop.count-past-2^53.postgresql",
 	 At: "49-kind-guarantees.sqlt:776",
 	 Dialect: "postgresql",
@@ -29695,7 +29828,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1208Bind},
+	 BindingsFn: c1213Bind},
 	{Name: "stmt.drop.count-past-2^53.sqlite",
 	 At: "49-kind-guarantees.sqlt:791",
 	 Dialect: "sqlite",
@@ -29712,7 +29845,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1209Bind},
+	 BindingsFn: c1214Bind},
 	{Name: "stmt.take.count-past-int64-is-clamped.mariadb",
 	 At: "49-kind-guarantees.sqlt:806",
 	 Dialect: "mariadb",
@@ -29729,7 +29862,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1210Bind},
+	 BindingsFn: c1215Bind},
 	{Name: "stmt.take.count-2^63-is-clamped.mariadb",
 	 At: "49-kind-guarantees.sqlt:821",
 	 Dialect: "mariadb",
@@ -29746,7 +29879,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1211Bind},
+	 BindingsFn: c1216Bind},
 	{Name: "stmt.take.count-past-int64-is-clamped.postgresql",
 	 At: "49-kind-guarantees.sqlt:836",
 	 Dialect: "postgresql",
@@ -29763,7 +29896,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1212Bind},
+	 BindingsFn: c1217Bind},
 	{Name: "stmt.take.count-2^63-is-clamped.postgresql",
 	 At: "49-kind-guarantees.sqlt:851",
 	 Dialect: "postgresql",
@@ -29780,7 +29913,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1213Bind},
+	 BindingsFn: c1218Bind},
 	{Name: "stmt.take.count-past-int64-is-clamped.sqlite",
 	 At: "49-kind-guarantees.sqlt:866",
 	 Dialect: "sqlite",
@@ -29797,7 +29930,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1214Bind},
+	 BindingsFn: c1219Bind},
 	{Name: "stmt.take.count-2^63-is-clamped.sqlite",
 	 At: "49-kind-guarantees.sqlt:881",
 	 Dialect: "sqlite",
@@ -29814,7 +29947,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1215Bind},
+	 BindingsFn: c1220Bind},
 	{Name: "stmt.take.count-uint64-max-is-clamped.mariadb",
 	 At: "49-kind-guarantees.sqlt:896",
 	 Dialect: "mariadb",
@@ -29831,7 +29964,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1216Bind},
+	 BindingsFn: c1221Bind},
 	{Name: "stmt.drop.count-past-int64-is-clamped.mariadb",
 	 At: "49-kind-guarantees.sqlt:911",
 	 Dialect: "mariadb",
@@ -29848,7 +29981,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1217Bind},
+	 BindingsFn: c1222Bind},
 	{Name: "stmt.drop.count-past-int64-is-clamped.postgresql",
 	 At: "49-kind-guarantees.sqlt:926",
 	 Dialect: "postgresql",
@@ -29865,7 +29998,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1218Bind},
+	 BindingsFn: c1223Bind},
 	{Name: "stmt.drop.count-past-int64-is-clamped.sqlite",
 	 At: "49-kind-guarantees.sqlt:939",
 	 Dialect: "sqlite",
@@ -29882,7 +30015,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1219Bind},
+	 BindingsFn: c1224Bind},
 	{Name: "stmt.drop.merged-offset-past-int64-is-clamped.mariadb",
 	 At: "49-kind-guarantees.sqlt:952",
 	 Dialect: "mariadb",
@@ -29899,7 +30032,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1220Bind},
+	 BindingsFn: c1225Bind},
 	{Name: "stmt.drop.merged-offset-below-int64-is-exact.mariadb",
 	 At: "49-kind-guarantees.sqlt:967",
 	 Dialect: "mariadb",
@@ -29916,7 +30049,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1221Bind},
+	 BindingsFn: c1226Bind},
 	{Name: "stmt.take.then-take-past-int64-keeps-the-smaller.mariadb",
 	 At: "49-kind-guarantees.sqlt:982",
 	 Dialect: "mariadb",
@@ -29933,7 +30066,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1222Bind},
+	 BindingsFn: c1227Bind},
 	{Name: "agg.bucket-sum.an-undeclared-field-is-guarded-as-a-whole",
 	 At: "49-kind-guarantees.sqlt:997",
 	 Dialect: "mariadb",
@@ -29950,7 +30083,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1223Bind},
+	 BindingsFn: c1228Bind},
 	{Name: "agg.bucket-sum.an-undeclared-field-sqlite-refuses",
 	 At: "49-kind-guarantees.sqlt:1012",
 	 Dialect: "sqlite",
@@ -29967,7 +30100,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1224Bind},
+	 BindingsFn: c1229Bind},
 	{Name: "agg.fold.any.at-256-is-a-left-fold",
 	 At: "49-kind-guarantees.sqlt:1025",
 	 Dialect: "mariadb",
@@ -29984,7 +30117,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1225Bind},
+	 BindingsFn: c1230Bind},
 	{Name: "agg.fold.all.at-256-is-a-left-fold",
 	 At: "49-kind-guarantees.sqlt:1038",
 	 Dialect: "mariadb",
@@ -30001,7 +30134,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1226Bind},
+	 BindingsFn: c1231Bind},
 	{Name: "agg.fold.sum.at-256-is-a-left-fold",
 	 At: "49-kind-guarantees.sqlt:1049",
 	 Dialect: "mariadb",
@@ -30018,7 +30151,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1227Bind},
+	 BindingsFn: c1232Bind},
 	{Name: "agg.fold.in-list.at-256-is-a-left-fold",
 	 At: "49-kind-guarantees.sqlt:1060",
 	 Dialect: "mariadb",
@@ -30035,7 +30168,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1228Bind},
+	 BindingsFn: c1233Bind},
 	{Name: "agg.fold.any.at-257-is-balanced",
 	 At: "49-kind-guarantees.sqlt:1071",
 	 Dialect: "mariadb",
@@ -30052,7 +30185,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1229Bind},
+	 BindingsFn: c1234Bind},
 	{Name: "agg.fold.all.at-257-is-balanced",
 	 At: "49-kind-guarantees.sqlt:1084",
 	 Dialect: "mariadb",
@@ -30069,7 +30202,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1230Bind},
+	 BindingsFn: c1235Bind},
 	{Name: "agg.fold.sum.at-257-is-balanced",
 	 At: "49-kind-guarantees.sqlt:1095",
 	 Dialect: "mariadb",
@@ -30086,7 +30219,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1231Bind},
+	 BindingsFn: c1236Bind},
 	{Name: "agg.fold.in-list.at-257-is-balanced",
 	 At: "49-kind-guarantees.sqlt:1106",
 	 Dialect: "mariadb",
@@ -30103,7 +30236,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1232Bind},
+	 BindingsFn: c1237Bind},
 	{Name: "agg.fold.join.at-255-pieces-is-a-left-fold",
 	 At: "49-kind-guarantees.sqlt:1117",
 	 Dialect: "mariadb",
@@ -30120,7 +30253,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1233Bind},
+	 BindingsFn: c1238Bind},
 	{Name: "agg.fold.join.at-257-pieces-is-balanced",
 	 At: "49-kind-guarantees.sqlt:1130",
 	 Dialect: "mariadb",
@@ -30137,7 +30270,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1234Bind},
+	 BindingsFn: c1239Bind},
 	{Name: "agg.fold.any.at-600-splits-again",
 	 At: "49-kind-guarantees.sqlt:1143",
 	 Dialect: "mariadb",
@@ -30154,7 +30287,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1235Bind},
+	 BindingsFn: c1240Bind},
 	{Name: "agg.fold.any.at-257-on-sqlite",
 	 At: "49-kind-guarantees.sqlt:1156",
 	 Dialect: "sqlite",
@@ -30171,7 +30304,58 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1236Bind},
+	 BindingsFn: c1241Bind},
+	{Name: "stmt.take.negative-fraction.mariadb",
+	 At: "49-kind-guarantees.sqlt:1169",
+	 Dialect: "mariadb",
+	 Source: "ITEMS .> TAKE(-1.5)",
+	 Expect: nil,
+	 Error: strPtr("E_NOT_INT 1:15"),
+	 Throws: nil,
+	 Params: nil,
+	 As: strPtr("statement"),
+	 Mode: nil,
+	 Strict: false,
+	 Plan: nil,
+	 HasTables: false,
+	 Tables: nil,
+	 Unrepresentable: nil,
+	 RegisterFn: nil,
+	 BindingsFn: c1242Bind},
+	{Name: "stmt.drop.negative-fraction.mariadb",
+	 At: "49-kind-guarantees.sqlt:1184",
+	 Dialect: "mariadb",
+	 Source: "ITEMS .> DROP(-0.5)",
+	 Expect: nil,
+	 Error: strPtr("E_NOT_INT 1:15"),
+	 Throws: nil,
+	 Params: nil,
+	 As: strPtr("statement"),
+	 Mode: nil,
+	 Strict: false,
+	 Plan: nil,
+	 HasTables: false,
+	 Tables: nil,
+	 Unrepresentable: nil,
+	 RegisterFn: nil,
+	 BindingsFn: c1243Bind},
+	{Name: "stmt.top-by.negative-fraction.mariadb",
+	 At: "49-kind-guarantees.sqlt:1199",
+	 Dialect: "mariadb",
+	 Source: "ITEMS .> TOP_BY(_[\"id\"], -2.5)",
+	 Expect: nil,
+	 Error: strPtr("E_NOT_INT 1:26"),
+	 Throws: nil,
+	 Params: nil,
+	 As: strPtr("statement"),
+	 Mode: nil,
+	 Strict: false,
+	 Plan: nil,
+	 HasTables: false,
+	 Tables: nil,
+	 Unrepresentable: nil,
+	 RegisterFn: nil,
+	 BindingsFn: c1244Bind},
 	{Name: "register.guard.refused-on-every-use-lacking-the-pattern",
 	 At: "50-rendering-and-registration.sqlt:9",
 	 Dialect: "pgbad",
@@ -30187,8 +30371,8 @@ var sqlCases = []SqlCase{
 	 HasTables: false,
 	 Tables: nil,
 	 Unrepresentable: nil,
-	 RegisterFn: c1237Reg,
-	 BindingsFn: c1237Bind},
+	 RegisterFn: c1245Reg,
+	 BindingsFn: c1245Bind},
 	{Name: "register.guard.refused-on-every-use-wrong-pattern",
 	 At: "50-rendering-and-registration.sqlt:30",
 	 Dialect: "mdbad",
@@ -30204,8 +30388,8 @@ var sqlCases = []SqlCase{
 	 HasTables: false,
 	 Tables: nil,
 	 Unrepresentable: nil,
-	 RegisterFn: c1238Reg,
-	 BindingsFn: c1238Bind},
+	 RegisterFn: c1246Reg,
+	 BindingsFn: c1246Bind},
 	{Name: "register.guard.a-sound-guard-is-accepted-every-time",
 	 At: "50-rendering-and-registration.sqlt:46",
 	 Dialect: "pgok",
@@ -30221,8 +30405,8 @@ var sqlCases = []SqlCase{
 	 HasTables: false,
 	 Tables: nil,
 	 Unrepresentable: nil,
-	 RegisterFn: c1239Reg,
-	 BindingsFn: c1239Bind},
+	 RegisterFn: c1247Reg,
+	 BindingsFn: c1247Bind},
 	{Name: "register.template.non-ascii-bytes-are-kept",
 	 At: "50-rendering-and-registration.sqlt:62",
 	 Dialect: "mariadb",
@@ -30238,8 +30422,8 @@ var sqlCases = []SqlCase{
 	 HasTables: false,
 	 Tables: nil,
 	 Unrepresentable: nil,
-	 RegisterFn: c1240Reg,
-	 BindingsFn: c1240Bind},
+	 RegisterFn: c1248Reg,
+	 BindingsFn: c1248Bind},
 	{Name: "register.template.non-ascii-bytes-are-kept-in-a-literal-template",
 	 At: "50-rendering-and-registration.sqlt:79",
 	 Dialect: "sqlite",
@@ -30255,8 +30439,8 @@ var sqlCases = []SqlCase{
 	 HasTables: false,
 	 Tables: nil,
 	 Unrepresentable: nil,
-	 RegisterFn: c1241Reg,
-	 BindingsFn: c1241Bind},
+	 RegisterFn: c1249Reg,
+	 BindingsFn: c1249Bind},
 	{Name: "register.template.empty-tail-list-emits-nothing",
 	 At: "50-rendering-and-registration.sqlt:93",
 	 Dialect: "mariadb",
@@ -30272,8 +30456,8 @@ var sqlCases = []SqlCase{
 	 HasTables: false,
 	 Tables: nil,
 	 Unrepresentable: nil,
-	 RegisterFn: c1242Reg,
-	 BindingsFn: c1242Bind},
+	 RegisterFn: c1250Reg,
+	 BindingsFn: c1250Bind},
 	{Name: "register.template.empty-lexical-value-emits-nothing",
 	 At: "50-rendering-and-registration.sqlt:110",
 	 Dialect: "mdempty",
@@ -30289,8 +30473,8 @@ var sqlCases = []SqlCase{
 	 HasTables: false,
 	 Tables: nil,
 	 Unrepresentable: nil,
-	 RegisterFn: c1243Reg,
-	 BindingsFn: c1243Bind},
+	 RegisterFn: c1251Reg,
+	 BindingsFn: c1251Bind},
 	{Name: "mode.params.order-follows-the-statement-not-the-source",
 	 At: "50-rendering-and-registration.sqlt:128",
 	 Dialect: "mariadb",
@@ -30307,7 +30491,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1244Bind},
+	 BindingsFn: c1252Bind},
 	{Name: "mode.params.no-orphan-slot-through-sort-take-link",
 	 At: "50-rendering-and-registration.sqlt:152",
 	 Dialect: "mariadb",
@@ -30324,7 +30508,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1245Bind},
+	 BindingsFn: c1253Bind},
 	{Name: "stmt.derived.wrapped-columns-keep-a-fixed-order",
 	 At: "50-rendering-and-registration.sqlt:176",
 	 Dialect: "mariadb",
@@ -30341,7 +30525,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1246Bind},
+	 BindingsFn: c1254Bind},
 	{Name: "bind.column.statement-is-not-a-column-type",
 	 At: "50-rendering-and-registration.sqlt:196",
 	 Dialect: "mariadb",
@@ -30375,7 +30559,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1248Bind},
+	 BindingsFn: c1256Bind},
 	{Name: "register.dialect.text-escape-must-escape-the-quote",
 	 At: "50-rendering-and-registration.sqlt:222",
 	 Dialect: "my-nobs",
@@ -30391,8 +30575,8 @@ var sqlCases = []SqlCase{
 	 HasTables: false,
 	 Tables: nil,
 	 Unrepresentable: nil,
-	 RegisterFn: c1249Reg,
-	 BindingsFn: c1249Bind},
+	 RegisterFn: c1257Reg,
+	 BindingsFn: c1257Bind},
 	{Name: "register.dialect.empty-text-escape-is-refused",
 	 At: "50-rendering-and-registration.sqlt:239",
 	 Dialect: "sqlite-noesc",
@@ -30408,8 +30592,8 @@ var sqlCases = []SqlCase{
 	 HasTables: false,
 	 Tables: nil,
 	 Unrepresentable: nil,
-	 RegisterFn: c1250Reg,
-	 BindingsFn: c1250Bind},
+	 RegisterFn: c1258Reg,
+	 BindingsFn: c1258Bind},
 	{Name: "register.dialect.escape-character-must-escape-itself",
 	 At: "50-rendering-and-registration.sqlt:253",
 	 Dialect: "my-badbs",
@@ -30425,8 +30609,8 @@ var sqlCases = []SqlCase{
 	 HasTables: false,
 	 Tables: nil,
 	 Unrepresentable: nil,
-	 RegisterFn: c1251Reg,
-	 BindingsFn: c1251Bind},
+	 RegisterFn: c1259Reg,
+	 BindingsFn: c1259Bind},
 	{Name: "register.dialect.text-quote-must-differ-from-identifier-quote",
 	 At: "50-rendering-and-registration.sqlt:269",
 	 Dialect: "dq",
@@ -30442,8 +30626,8 @@ var sqlCases = []SqlCase{
 	 HasTables: false,
 	 Tables: nil,
 	 Unrepresentable: nil,
-	 RegisterFn: c1252Reg,
-	 BindingsFn: c1252Bind},
+	 RegisterFn: c1260Reg,
+	 BindingsFn: c1260Bind},
 	{Name: "alias.record-key-with-nul",
 	 At: "50-rendering-and-registration.sqlt:291",
 	 Dialect: "postgresql",
@@ -30460,7 +30644,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1253Bind},
+	 BindingsFn: c1261Bind},
 	{Name: "alias.record-key-empty",
 	 At: "50-rendering-and-registration.sqlt:306",
 	 Dialect: "postgresql",
@@ -30477,7 +30661,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1254Bind},
+	 BindingsFn: c1262Bind},
 	{Name: "alias.select-cols-name-with-nul",
 	 At: "50-rendering-and-registration.sqlt:321",
 	 Dialect: "postgresql",
@@ -30494,7 +30678,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1255Bind},
+	 BindingsFn: c1263Bind},
 	{Name: "alias.pg-truncated-aliases-collide",
 	 At: "50-rendering-and-registration.sqlt:336",
 	 Dialect: "postgresql",
@@ -30511,7 +30695,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1256Bind},
+	 BindingsFn: c1264Bind},
 	{Name: "lex.text.nul-is-refused-in-every-mode",
 	 At: "50-rendering-and-registration.sqlt:357",
 	 Dialect: "mariadb",
@@ -30528,7 +30712,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1257Bind},
+	 BindingsFn: c1265Bind},
 	{Name: "bind.raw-field.select-cols-refuses",
 	 At: "50-rendering-and-registration.sqlt:377",
 	 Dialect: "mariadb",
@@ -30545,7 +30729,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1258Bind},
+	 BindingsFn: c1266Bind},
 	{Name: "bind.raw-field.across-a-derived-table-refuses",
 	 At: "50-rendering-and-registration.sqlt:392",
 	 Dialect: "mariadb",
@@ -30562,7 +30746,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1259Bind},
+	 BindingsFn: c1267Bind},
 	{Name: "bind.relation.fields-differing-only-by-case",
 	 At: "50-rendering-and-registration.sqlt:411",
 	 Dialect: "mariadb",
@@ -30579,7 +30763,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1260Bind},
+	 BindingsFn: c1268Bind},
 	{Name: "bind.names-differing-only-by-case",
 	 At: "50-rendering-and-registration.sqlt:424",
 	 Dialect: "mariadb",
@@ -30596,7 +30780,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1261Bind},
+	 BindingsFn: c1269Bind},
 	{Name: "agg.correlate.is-parenthesised",
 	 At: "50-rendering-and-registration.sqlt:440",
 	 Dialect: "mariadb",
@@ -30613,7 +30797,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1262Bind},
+	 BindingsFn: c1270Bind},
 	{Name: "register.dialect.correct-pairing-is-accepted",
 	 At: "50-rendering-and-registration.sqlt:453",
 	 Dialect: "my-ok",
@@ -30629,8 +30813,8 @@ var sqlCases = []SqlCase{
 	 HasTables: false,
 	 Tables: nil,
 	 Unrepresentable: nil,
-	 RegisterFn: c1263Reg,
-	 BindingsFn: c1263Bind},
+	 RegisterFn: c1271Reg,
+	 BindingsFn: c1271Bind},
 	{Name: "register.dialect.redefinition-with-the-same-parent-replaces",
 	 At: "50-rendering-and-registration.sqlt:468",
 	 Dialect: "redef",
@@ -30646,8 +30830,8 @@ var sqlCases = []SqlCase{
 	 HasTables: false,
 	 Tables: nil,
 	 Unrepresentable: nil,
-	 RegisterFn: c1264Reg,
-	 BindingsFn: c1264Bind},
+	 RegisterFn: c1272Reg,
+	 BindingsFn: c1272Bind},
 	{Name: "register.dialect.redefinition-with-a-different-parent-is-refused",
 	 At: "50-rendering-and-registration.sqlt:483",
 	 Dialect: "redef2",
@@ -30663,8 +30847,8 @@ var sqlCases = []SqlCase{
 	 HasTables: false,
 	 Tables: nil,
 	 Unrepresentable: nil,
-	 RegisterFn: c1265Reg,
-	 BindingsFn: c1265Bind},
+	 RegisterFn: c1273Reg,
+	 BindingsFn: c1273Bind},
 	{Name: "plan.keys.filter-then-key-reader-is-not-a-split-point",
 	 At: "51-hybrid-parity.sqlt:24",
 	 Dialect: "mariadb",
@@ -30681,7 +30865,7 @@ var sqlCases = []SqlCase{
 	 Tables: []string{"orders"},
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1266Bind},
+	 BindingsFn: c1274Bind},
 	{Name: "plan.keys.filter-then-unsupported-filter-is-pure-memory",
 	 At: "51-hybrid-parity.sqlt:39",
 	 Dialect: "mariadb",
@@ -30698,7 +30882,7 @@ var sqlCases = []SqlCase{
 	 Tables: []string{"orders"},
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1267Bind},
+	 BindingsFn: c1275Bind},
 	{Name: "plan.keys.split-after-a-sort-may-end-in-a-filter",
 	 At: "51-hybrid-parity.sqlt:54",
 	 Dialect: "mariadb",
@@ -30715,7 +30899,7 @@ var sqlCases = []SqlCase{
 	 Tables: []string{"orders"},
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1268Bind},
+	 BindingsFn: c1276Bind},
 	{Name: "plan.keys.split-after-a-filter-then-a-sort-is-safe",
 	 At: "51-hybrid-parity.sqlt:71",
 	 Dialect: "mariadb",
@@ -30732,7 +30916,7 @@ var sqlCases = []SqlCase{
 	 Tables: []string{"orders"},
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1269Bind},
+	 BindingsFn: c1277Bind},
 	{Name: "plan.errors.take-behind-a-map-that-can-raise-stays-local",
 	 At: "51-hybrid-parity.sqlt:88",
 	 Dialect: "mariadb",
@@ -30749,7 +30933,7 @@ var sqlCases = []SqlCase{
 	 Tables: []string{"orders"},
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1270Bind},
+	 BindingsFn: c1278Bind},
 	{Name: "plan.errors.drop-behind-a-map-that-can-raise-stays-local",
 	 At: "51-hybrid-parity.sqlt:105",
 	 Dialect: "mariadb",
@@ -30766,7 +30950,7 @@ var sqlCases = []SqlCase{
 	 Tables: []string{"orders"},
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1271Bind},
+	 BindingsFn: c1279Bind},
 	{Name: "plan.errors.sort-and-take-behind-a-map-that-can-raise-stay-local",
 	 At: "51-hybrid-parity.sqlt:122",
 	 Dialect: "mariadb",
@@ -30783,7 +30967,7 @@ var sqlCases = []SqlCase{
 	 Tables: []string{"orders"},
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1272Bind},
+	 BindingsFn: c1280Bind},
 	{Name: "plan.errors.take-before-the-map-is-pushed",
 	 At: "51-hybrid-parity.sqlt:139",
 	 Dialect: "mariadb",
@@ -30800,7 +30984,7 @@ var sqlCases = []SqlCase{
 	 Tables: []string{"orders"},
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1273Bind},
+	 BindingsFn: c1281Bind},
 	{Name: "plan.binders.split-before-a-link-keeps-the-prefix-to-the-link",
 	 At: "51-hybrid-parity.sqlt:156",
 	 Dialect: "mariadb",
@@ -30817,7 +31001,7 @@ var sqlCases = []SqlCase{
 	 Tables: []string{"orders"},
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1274Bind},
+	 BindingsFn: c1282Bind},
 	{Name: "plan.binders.literal-helper-named-like-an-explicit-sort-binder",
 	 At: "51-hybrid-parity.sqlt:173",
 	 Dialect: "mariadb",
@@ -30834,7 +31018,7 @@ var sqlCases = []SqlCase{
 	 Tables: []string{"orders"},
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1275Bind},
+	 BindingsFn: c1283Bind},
 	{Name: "plan.tables.a-binder-named-like-a-relation-reads-nothing",
 	 At: "51-hybrid-parity.sqlt:190",
 	 Dialect: "mariadb",
@@ -30851,7 +31035,7 @@ var sqlCases = []SqlCase{
 	 Tables: []string{},
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1276Bind},
+	 BindingsFn: c1284Bind},
 	{Name: "plan.tables.a-map-binder-named-like-a-relation",
 	 At: "51-hybrid-parity.sqlt:205",
 	 Dialect: "mariadb",
@@ -30868,7 +31052,7 @@ var sqlCases = []SqlCase{
 	 Tables: []string{},
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1277Bind},
+	 BindingsFn: c1285Bind},
 	{Name: "plan.tables.an-assignment-target-named-like-a-relation",
 	 At: "51-hybrid-parity.sqlt:220",
 	 Dialect: "mariadb",
@@ -30885,7 +31069,7 @@ var sqlCases = []SqlCase{
 	 Tables: []string{},
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1278Bind},
+	 BindingsFn: c1286Bind},
 	{Name: "plan.tables.a-filter-binder-named-like-another-relation",
 	 At: "51-hybrid-parity.sqlt:235",
 	 Dialect: "mariadb",
@@ -30902,7 +31086,7 @@ var sqlCases = []SqlCase{
 	 Tables: []string{"orders"},
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1279Bind},
+	 BindingsFn: c1287Bind},
 	{Name: "stmt.order.the-order-rule-comes-before-a-bad-key",
 	 At: "51-hybrid-parity.sqlt:258",
 	 Dialect: "mariadb",
@@ -30919,7 +31103,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1280Bind},
+	 BindingsFn: c1288Bind},
 	{Name: "stmt.order.the-order-rule-comes-before-a-bare-row-key",
 	 At: "51-hybrid-parity.sqlt:273",
 	 Dialect: "mariadb",
@@ -30936,7 +31120,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1281Bind},
+	 BindingsFn: c1289Bind},
 	{Name: "stmt.order.bucket-after-a-sort-is-refused-at-the-step",
 	 At: "51-hybrid-parity.sqlt:288",
 	 Dialect: "mariadb",
@@ -30953,7 +31137,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1282Bind},
+	 BindingsFn: c1290Bind},
 	{Name: "stmt.order.bucket-after-two-sorts-is-refused-at-the-step",
 	 At: "51-hybrid-parity.sqlt:303",
 	 Dialect: "mariadb",
@@ -30970,7 +31154,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1283Bind},
+	 BindingsFn: c1291Bind},
 	{Name: "stmt.order.distinct-after-a-sort-is-refused-at-the-step",
 	 At: "51-hybrid-parity.sqlt:318",
 	 Dialect: "mariadb",
@@ -30987,7 +31171,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1284Bind},
+	 BindingsFn: c1292Bind},
 	{Name: "review.order.sort-over-a-projection-of-sorted-rows-is-refused",
 	 At: "52-audit-cases.sqlt:1",
 	 Dialect: "mariadb",
@@ -31004,7 +31188,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1285Bind},
+	 BindingsFn: c1293Bind},
 	{Name: "review.order.link-over-sorted-rows-is-refused",
 	 At: "52-audit-cases.sqlt:19",
 	 Dialect: "mariadb",
@@ -31021,7 +31205,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1286Bind},
+	 BindingsFn: c1294Bind},
 	{Name: "plan.hybrid.link-over-sorted-rows-joins-in-memory",
 	 At: "52-audit-cases.sqlt:36",
 	 Dialect: "mariadb",
@@ -31038,7 +31222,7 @@ var sqlCases = []SqlCase{
 	 Tables: []string{"orders"},
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1287Bind},
+	 BindingsFn: c1295Bind},
 	{Name: "plan.pure-memory.self-join-is-not-split",
 	 At: "52-audit-cases.sqlt:55",
 	 Dialect: "mariadb",
@@ -31055,7 +31239,7 @@ var sqlCases = []SqlCase{
 	 Tables: []string{"orders"},
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1288Bind},
+	 BindingsFn: c1296Bind},
 	{Name: "bind.value.null-element-is-refused",
 	 At: "52-audit-cases.sqlt:73",
 	 Dialect: "mariadb",
@@ -31072,7 +31256,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1289Bind},
+	 BindingsFn: c1297Bind},
 	{Name: "register.dialect.backslash-escape-must-double-the-backslash",
 	 At: "52-audit-cases.sqlt:87",
 	 Dialect: "my-nl",
@@ -31088,8 +31272,8 @@ var sqlCases = []SqlCase{
 	 HasTables: false,
 	 Tables: nil,
 	 Unrepresentable: nil,
-	 RegisterFn: c1290Reg,
-	 BindingsFn: c1290Bind},
+	 RegisterFn: c1298Reg,
+	 BindingsFn: c1298Bind},
 	{Name: "register.dialect.quote-escape-is-doubling-or-backslash",
 	 At: "52-audit-cases.sqlt:102",
 	 Dialect: "ansi-x",
@@ -31105,8 +31289,8 @@ var sqlCases = []SqlCase{
 	 HasTables: false,
 	 Tables: nil,
 	 Unrepresentable: nil,
-	 RegisterFn: c1291Reg,
-	 BindingsFn: c1291Bind},
+	 RegisterFn: c1299Reg,
+	 BindingsFn: c1299Bind},
 	{Name: "bind.type.statement-is-not-declarable",
 	 At: "52-audit-cases.sqlt:116",
 	 Dialect: "mariadb",
@@ -31140,7 +31324,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1293Bind},
+	 BindingsFn: c1301Bind},
 	{Name: "norm.depth.definition-past-four-times-the-depth-is-refused-at-the-assignment",
 	 At: "52-audit-cases.sqlt:144",
 	 Dialect: "mariadb",
@@ -31157,7 +31341,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1294Bind},
+	 BindingsFn: c1302Bind},
 	{Name: "norm.size.result-past-the-budget-is-refused-where-the-walk-stops",
 	 At: "52-audit-cases.sqlt:159",
 	 Dialect: "mariadb",
@@ -31174,7 +31358,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1295Bind},
+	 BindingsFn: c1303Bind},
 	{Name: "refuse.in-relation.boolean-needle-at-the-needle",
 	 At: "52-audit-cases.sqlt:173",
 	 Dialect: "mariadb",
@@ -31191,7 +31375,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1296Bind},
+	 BindingsFn: c1304Bind},
 	{Name: "refuse.binder.checked-at-the-call-not-in-stage-1",
 	 At: "52-audit-cases.sqlt:187",
 	 Dialect: "mariadb",
@@ -31208,7 +31392,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1297Bind},
+	 BindingsFn: c1305Bind},
 	{Name: "plan.pure-memory.key-read-after-a-filter-is-not-split",
 	 At: "52-audit-cases.sqlt:201",
 	 Dialect: "mariadb",
@@ -31225,7 +31409,7 @@ var sqlCases = []SqlCase{
 	 Tables: []string{"t"},
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1298Bind},
+	 BindingsFn: c1306Bind},
 	{Name: "bind.prefilter.unknown-spelling-is-refused",
 	 At: "52-audit-cases.sqlt:218",
 	 Dialect: "mariadb",
@@ -31242,7 +31426,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1299Bind},
+	 BindingsFn: c1307Bind},
 	{Name: "order.filter-after-sort-keeps-the-order",
 	 At: "52-audit-cases.sqlt:231",
 	 Dialect: "mariadb",
@@ -31259,7 +31443,7 @@ var sqlCases = []SqlCase{
 	 Tables: []string{"orders"},
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1300Bind},
+	 BindingsFn: c1308Bind},
 	{Name: "order.projection-then-filter-of-sorted-rows-is-refused",
 	 At: "52-audit-cases.sqlt:252",
 	 Dialect: "mariadb",
@@ -31276,7 +31460,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1301Bind},
+	 BindingsFn: c1309Bind},
 	{Name: "bind.alias.case-colliding-relation-aliases-are-refused",
 	 At: "52-audit-cases.sqlt:269",
 	 Dialect: "mariadb",
@@ -31293,7 +31477,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1302Bind},
+	 BindingsFn: c1310Bind},
 	{Name: "assign.empty-text-key-is-a-constant-index",
 	 At: "52-audit-cases.sqlt:285",
 	 Dialect: "mariadb",
@@ -31310,7 +31494,7 @@ var sqlCases = []SqlCase{
 	 Tables: nil,
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1303Bind},
+	 BindingsFn: c1311Bind},
 	{Name: "plan.order.sort-over-a-projection-of-sorted-rows-stays-in-memory",
 	 At: "52-audit-cases.sqlt:302",
 	 Dialect: "mariadb",
@@ -31327,7 +31511,7 @@ var sqlCases = []SqlCase{
 	 Tables: []string{"orders"},
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1304Bind},
+	 BindingsFn: c1312Bind},
 	{Name: "plan.order.limit-then-link-stays-in-memory",
 	 At: "52-audit-cases.sqlt:319",
 	 Dialect: "mariadb",
@@ -31344,7 +31528,7 @@ var sqlCases = []SqlCase{
 	 Tables: []string{"orders"},
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1305Bind},
+	 BindingsFn: c1313Bind},
 	{Name: "plan.order.link-left-over-sorted-rows-stays-in-memory",
 	 At: "52-audit-cases.sqlt:337",
 	 Dialect: "mariadb",
@@ -31361,7 +31545,7 @@ var sqlCases = []SqlCase{
 	 Tables: []string{"orders"},
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1306Bind},
+	 BindingsFn: c1314Bind},
 	{Name: "plan.order.projection-then-link-over-sorted-rows-stays-in-memory",
 	 At: "52-audit-cases.sqlt:355",
 	 Dialect: "mariadb",
@@ -31378,7 +31562,7 @@ var sqlCases = []SqlCase{
 	 Tables: []string{"orders"},
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1307Bind},
+	 BindingsFn: c1315Bind},
 	{Name: "plan.order.sort-filter-then-link-stays-in-memory",
 	 At: "52-audit-cases.sqlt:373",
 	 Dialect: "mariadb",
@@ -31395,7 +31579,7 @@ var sqlCases = []SqlCase{
 	 Tables: []string{"orders"},
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1308Bind},
+	 BindingsFn: c1316Bind},
 	{Name: "plan.keys.filter-filter-then-a-renumbering-step-splits-after-the-first",
 	 At: "52-audit-cases.sqlt:392",
 	 Dialect: "mariadb",
@@ -31412,7 +31596,7 @@ var sqlCases = []SqlCase{
 	 Tables: []string{"orders"},
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1309Bind},
+	 BindingsFn: c1317Bind},
 	{Name: "plan.keys.filter-filter-then-a-key-read-stays-in-memory",
 	 At: "52-audit-cases.sqlt:409",
 	 Dialect: "mariadb",
@@ -31429,5 +31613,5 @@ var sqlCases = []SqlCase{
 	 Tables: []string{"orders"},
 	 Unrepresentable: nil,
 	 RegisterFn: nil,
-	 BindingsFn: c1310Bind},
+	 BindingsFn: c1318Bind},
 }

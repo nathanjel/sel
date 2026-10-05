@@ -8,15 +8,21 @@
 // that PHP's array-valued AST cannot cheaply provide. Whole-expression refusal
 // is unaffected: nothing becomes characters until Fragment::asValue() is
 // called, so a kind failure still escapes with no partial output.
-//
-// Aggregates are stage 2 and land in M3. Until then this refuses them, which is
-// the same refusal path any untranslatable construct takes.
 
 declare(strict_types=1);
 
 namespace Sel\Sql;
 
+use Sel\BuiltinManifest;
+use Sel\Builtins\Regex;
+use Sel\Context;
+use Sel\Dec;
+use Sel\Evaluator;
+use Sel\Limits;
+use Sel\Optimizer;
 use Sel\Registry;
+use Sel\SelError;
+use Sel\Utf8;
 use Sel\Value;
 
 final class Translator
@@ -27,7 +33,7 @@ final class Translator
      * The optimiser's list, not a second copy: one vocabulary of pipeline
      * operators per host, or the planner and the translator drift apart.
      */
-    public const PIPELINE_OPS = \Sel\Optimizer::PIPELINE_OPS;
+    private const PIPELINE_OPS = Optimizer::PIPELINE_OPS;
 
     private string $dialect;
     private Emit $emit;
@@ -48,15 +54,30 @@ final class Translator
     private array $frames = [];
     /** @var array<string,bool> */
     private array $caveats = [];
-    /** Value-binding names that count as constant leaves; see Constants::scope. */
-    /** @var array<string,bool> */
+    /** @var array<string,bool> value-binding names that count as constant leaves; see Constants::scope */
     private array $constNames = [];
-    private ?\Sel\Context $constCtx = null;
+    private ?Context $constCtx = null;
     /** Walk depth, counted exactly as Evaluator counts evaluation nesting. */
     private int $depth = 0;
     private ?RelationalPlan $statementPlan = null;
-    private bool $inWhere = false;
     private int $subqueryCounter = 0;
+
+    /**
+     * Ranges of frame indices no name may resolve to: [from, to). A node written
+     * outside an aggregate -- a definition inlined by stage 1, an element of a
+     * static list -- is rendered inside that aggregate's frames, and would otherwise
+     * be captured by its binders. Frames pushed after the range was opened are
+     * above it and stay visible: they are the node's own.
+     *
+     * @var list<array{0:int,1:int}>
+     */
+    private array $hidden = [];
+
+    /** @var list<array{0:Binder,1:Binder}> the element and key binder of each open element/row frame */
+    private array $scopeStack = [];
+
+    /** Nodes dispatched so far in this translation (E_SQL_SIZE, docs 7.4). */
+    private int $nodes = 0;
 
     /** @param array<string,mixed> $options */
     public function __construct(string $dialect, Bindings $bindings, array $options = [])
@@ -105,7 +126,7 @@ final class Translator
      */
     private static function unambiguousBinderForm(string $name, int $count): ?array
     {
-        $forms = \Sel\BuiltinManifest::FORMS[\Sel\Utf8::upper($name)] ?? null;
+        $forms = BuiltinManifest::FORMS[Utf8::upper($name)] ?? null;
         if ($forms === null) {
             return null;
         }
@@ -134,9 +155,6 @@ final class Translator
      */
     private static function recordFields(array $node): array
     {
-        if (count($node['args']) % 2 !== 0) {
-            refuse('E_ARITY', 'RECORD takes an even number of arguments', $node['pos']);
-        }
         $fields = [];
         for ($i = 0; $i < count($node['args']); $i += 2) {
             $key = $node['args'][$i];
@@ -235,8 +253,8 @@ final class Translator
      *
      * The dead branch is not currently a wrong answer: MariaDB and PostgreSQL
      * were both asked, and both short-circuit `AND` and `CASE` rather than
-     * evaluating the arm they do not take. It is refused because §11.2's first
-     * row records that SQL does not promise that, and because a rule that
+     * evaluating the arm they do not take. It is refused because the first
+     * row of §11's table (no short-circuit) records that SQL does not promise that, and because a rule that
      * refuses one of two identical divisions is not a rule.
      *
      * The cost is one evaluation per constant compound node rather than one per
@@ -265,11 +283,11 @@ final class Translator
             return $this->hiding(0, fn (): Fragment => $this->node($n));
         }
         $this->chargeNodes(1);
-        if (++$this->depth > \Sel\MAX_DEPTH) {
+        if (++$this->depth > Limits::MAX_DEPTH) {
             $this->depth--;
             refuse('E_SQL_DEPTH',
                 'this expression nests deeper than SEL will evaluate ('
-                . \Sel\MAX_DEPTH . '), so there is nothing to translate; '
+                . Limits::MAX_DEPTH . '), so there is nothing to translate; '
                 . 'the evaluator answers E_DEPTH for it', $n['pos']);
         }
         try {
@@ -299,12 +317,7 @@ final class Translator
         $out = [];
         foreach ($pieces as $piece) {
             foreach (is_array($piece) ? $piece : [$piece] as $p) {
-                $last = count($out) - 1;
-                if (is_string($p) && $last >= 0 && is_string($out[$last])) {
-                    $out[$last] .= $p;
-                } else {
-                    $out[] = $p;
-                }
+                Emit::appendPart($out, $p);
             }
         }
         return $out;
@@ -346,7 +359,7 @@ final class Translator
         // at it, so no dialect has a portable spelling.
         if ($v->isText() && str_contains($v->asText(), "\0")) {
             refuse('E_SQL_UNSUPPORTED', 'a text value holding NUL cannot be sent to '
-                . 'any SQL server', $pos ?? ['line' => 1, 'col' => 1, 'offset' => 0]);
+                . 'any SQL server', $pos);
         }
         $this->params[] = $v;
         $this->paramKinds[] = $kind === 'UNKNOWN' || $kind === 'LIST' ? 'TEXT' : $kind;
@@ -515,17 +528,14 @@ final class Translator
     /** @param array<string,mixed> $idx */
     private function constantIndex(array $idx): string
     {
-        return match ($idx['t']) {
-            'num', 'text' => (string) $idx['v'],
-            default => refuse('E_SQL_SHAPE',
-                'an index must be a constant here: the column it names has to be '
-                . 'known before the query runs', $idx['pos']),
-        };
+        return Normalise::constantKey($idx) ?? refuse('E_SQL_SHAPE',
+            'an index must be a constant here: the column it names has to be '
+            . 'known before the query runs', $idx['pos']);
     }
 
     /**
      * An operand that is a constant TEXT holding a number, in an arithmetic position, is
-     * that number (PHP-C33): SEL computes with it exactly, and MariaDB and MySQL would
+     * that number: SEL computes with it exactly, and MariaDB and MySQL would
      * read the quoted string as a DOUBLE. It is translated as the numeric literal it
      * stands for. The text was translated first (its SQL kind is only known then), so
      * the slots it bound are taken back, or `params` mode would report a value bound
@@ -541,8 +551,8 @@ final class Translator
             return $f;
         }
         try {
-            $v = \Sel\Evaluator::evalNode($n, $this->constCtx ?? new \Sel\Context());
-        } catch (\Sel\SelError) {
+            $v = Evaluator::evalNode($n, $this->constCtx ?? new Context());
+        } catch (SelError) {
             return $f;           // refused by the constant check, with SEL's own code
         }
         if (!$v->isText() || !$v->looksNumeric()) {
@@ -550,7 +560,7 @@ final class Translator
         }
         $this->params = array_slice($this->params, 0, $mark);
         $this->paramKinds = array_slice($this->paramKinds, 0, $mark);
-        return $this->node(['t' => 'num', 'v' => \Sel\Dec::format($v->asDecimal($n['pos'])), 'pos' => $n['pos']]);
+        return $this->node(['t' => 'num', 'v' => Dec::format($v->asDecimal($n['pos'])), 'pos' => $n['pos']]);
     }
 
     /** @param array<string,mixed> $n */
@@ -698,7 +708,7 @@ final class Translator
             && $this->bindings->has($rhs['name'])) {
             $b = $this->bindings->get($rhs['name'], $rhs['pos']);
             if ($b['kind'] === 'relation') {
-                $scalar = isset($b['scalar']) ? \Sel\Utf8::upper((string) $b['scalar']) : null;
+                $scalar = isset($b['scalar']) ? Utf8::upper((string) $b['scalar']) : null;
                 if ($scalar === null || !isset($b['fields'][$scalar])) {
                     refuse('E_SQL_SHAPE',
                         "IN over {$rhs['name']} needs the binding to name a \"scalar\" "
@@ -722,7 +732,7 @@ final class Translator
                 // The needle and the column must be comparable kinds, as x IN (list)
                 // requires: a BOOL or BIN needle against a TEXT column would match rows
                 // whose text happens to be '1', 'true' or the same bytes, where SEL
-                // answers FALSE because the kinds differ (PY-C21).
+                // answers FALSE because the kinds differ.
                 // The skeleton first: a dialect that withdrew it answers with that, not
                 // with whatever the needle happens to be wrong about.
                 $skeleton = $this->skeleton('inRelation', $n['pos']);
@@ -827,7 +837,7 @@ final class Translator
      * @param list<Fragment> $parts
      * @param array{line:int,col:int,offset:int} $pos
      */
-    public function foldPairwise(string $op, array $parts, array $pos): Fragment
+    private function foldPairwise(string $op, array $parts, array $pos): Fragment
     {
         // The joining operators of an unrolled fold are nodes too (docs 7.4).
         $this->chargeNodes(max(0, count($parts) - 1));
@@ -880,7 +890,7 @@ final class Translator
         // The two aggregates over a bucket's members -- COUNT(g) is COUNT(*)
         // and SUM(g, [x,] body) is SUM over the grouped rows -- fire on the
         // GROUP binder alone: over a relation row, COUNT(_) is the row's number
-        // of fields in SEL (review 2026-09-15 finding X), and SEL has no
+        // of fields in SEL, and SEL has no
         // per-group MIN or MAX (finding J). The body binds the member row, as
         // the evaluator's walk does: `_` for the two-argument form, the name
         // given for the three-argument one.
@@ -900,18 +910,15 @@ final class Translator
                     $this->requireNumericConstant($bodyNode);
                     $inner = $this->requireNum($inner, $bodyNode['pos'], 'SUM');
                     // The body's own parts are spliced -- never joined into a string,
-                    // which replaced every literal in it by its slot number (PHP-C7).
+                    // which replaced every literal in it by its slot number.
                     if ($inner->kind === 'UNKNOWN') {
                         [$test, $cast] = $this->emit->numericGuardParts($inner, $bodyNode['pos']);
                         $this->scaleLimited($bodyNode['pos'], 'this operand is read as a number');
-                        $parts = self::joinParts(['CASE WHEN COUNT(*) = COUNT(CASE WHEN ', $test,
-                            ' THEN 1 END) THEN COALESCE(SUM(', $this->sumCast($test, $cast),
-                            '), 0) ELSE NULL END']);
+                        $parts = $this->allOrNothingSum($test, $cast);
                     } else {
                         $parts = self::joinParts(['COALESCE(SUM(', $inner->parts, '), 0)']);
                     }
-                    return new Fragment($parts, 'NUM', $this->dialect,
-                        $inner->params, $inner->paramKinds, $inner->caveats);
+                    return new Fragment($parts, 'NUM', $this->dialect);
                 }
             }
         }
@@ -1015,7 +1022,7 @@ final class Translator
         foreach ($n['args'] as $i => $arg) {
             $kind = $kinds[$i] ?? 'ANY';
             if ($kind === 'LIST') {
-                $args[] = $this->hostListArgument($name, $arg, $n);
+                $args[] = $this->hostListArgument($name, $arg);
                 continue;
             }
             $f = $this->node($arg);
@@ -1051,11 +1058,10 @@ final class Translator
      * joined with ', ' -- the template supplies the brackets.
      *
      * @param array<string,mixed> $arg
-     * @param array<string,mixed> $call
      */
-    private function hostListArgument(string $name, array $arg, array $call): Fragment
+    private function hostListArgument(string $name, array $arg): Fragment
     {
-        $src = $this->source($arg, $call);
+        $src = $this->source($arg);
         if ($src['shape'] === 'relation') {
             refuse('E_SQL_SHAPE',
                 "argument to {$name} is a relation, rows the query has not read "
@@ -1089,20 +1095,6 @@ final class Translator
     }
 
     /**
-     * The functions that read their argument as bytes, and the one that takes a
-     * BOOL.
-     *
-     * Both lists were measured rather than written: every name in
-     * `Registry::names()` was called with `TO_UTF8("a")` and with `TRUE`, and
-     * these are the ones SEL did not answer E_NOT_* for. Writing them by hand
-     * would be the second copy of SEL's argument rules that §11.4 exists to
-     * avoid — this is a cached measurement, and `sql/oracle/` re-measures it.
-     *
-     * COUNT, HAS and INDEXES also accept both and are absent because none of
-     * them reaches this path: the first two are folded before dispatch and the
-     * third is refused. BTL is absent for the same reason — it yields a list.
-     */
-    /**
      * The functions whose result has children, so the scalar rule does not
      * apply to them.
      *
@@ -1118,7 +1110,7 @@ final class Translator
     /**
      * The four text functions above, the constructors, and every pipeline
      * step -- the optimiser's vocabulary, so a new step is covered by being
-     * one (review 2026-09-15 finding X: COUNT(LIST(1, 2, 3)) was 0).
+     * one (COUNT(LIST(1, 2, 3)) was 0).
      */
     private static function yieldsList(string $name): bool
     {
@@ -1156,8 +1148,8 @@ final class Translator
         $plan = $this->statementPlan;
         if ($plan !== null) {
             if ($relation === $plan->sourceRelation
-                && ($name === null || in_array(\Sel\Utf8::upper($name), array_map(
-                    static fn ($item): string => \Sel\Utf8::upper((string) $item),
+                && ($name === null || in_array(Utf8::upper($name), array_map(
+                    static fn ($item): string => Utf8::upper((string) $item),
                     array_filter([$plan->sourceName, $plan->sourceAlias, ...array_merge([], ...array_map(
                         static fn ($join) => $join->leftNames, $plan->joins))], static fn ($item): bool => $item !== null)
                 ), true))) {
@@ -1167,8 +1159,8 @@ final class Translator
                 $names = [$join->sourceName, $join->sourceAlias, ...$join->rightNames, '_' . ($index + 2)];
                 $names = array_filter($names, static fn ($item): bool => $item !== null);
                 if ($relation === $join->sourceRelation
-                    && ($name === null || in_array(\Sel\Utf8::upper($name), array_map(
-                        static fn ($item): string => \Sel\Utf8::upper((string) $item), $names), true))) {
+                    && ($name === null || in_array(Utf8::upper($name), array_map(
+                        static fn ($item): string => Utf8::upper((string) $item), $names), true))) {
                     return $join->sourceAlias ?? self::relationAlias($relation);
                 }
             }
@@ -1236,7 +1228,7 @@ final class Translator
     /** @return array{spec:array<string,mixed>,table:string,qualify:bool,optional:bool}|null */
     private function rowFieldSpec(RowModel $row, string $key): ?array
     {
-        $u = \Sel\Utf8::upper($key);
+        $u = Utf8::upper($key);
         if ($row->side) {
             $spec = $row->relation['fields'][$u] ?? null;
             return $spec === null ? null
@@ -1265,7 +1257,7 @@ final class Translator
         }
         $f = $this->rowFieldSpec($row, $key);
         if ($f === null) {
-            if (!$row->side && isset($row->dropped[\Sel\Utf8::upper($key)])) {
+            if (!$row->side && isset($row->dropped[Utf8::upper($key)])) {
                 refuse('E_SQL_SHAPE', "field \"{$key}\" is ambiguous across joined relations", $n['pos']);
             }
             $known = array_map('strval', array_keys($row->side ? ($row->relation['fields'] ?? []) : $row->promoted));
@@ -1324,7 +1316,7 @@ final class Translator
                     continue;
                 }
                 foreach ($names as $name) {
-                    if (array_key_exists(\Sel\Utf8::upper($name), $el->relation['fields'] ?? [])) {
+                    if (array_key_exists(Utf8::upper($name), $el->relation['fields'] ?? [])) {
                         refuse('E_SQL_SHAPE', "{$name} names a LINK side that has a field of that name too, "
                             . 'which SEL binds instead of the row; rename the binder', $join->pos);
                     }
@@ -1340,8 +1332,8 @@ final class Translator
             foreach (['_2', ...$rightNames] as $k) {
                 $row->nested[$k] = $right;
             }
-            $leftKeys = array_fill_keys(array_map([\Sel\Utf8::class, 'upper'], self::rowKeys($leftEl)), true);
-            $rightKeys = array_fill_keys(array_map([\Sel\Utf8::class, 'upper'], self::rowKeys($right)), true);
+            $leftKeys = array_fill_keys(array_map([Utf8::class, 'upper'], self::rowKeys($leftEl)), true);
+            $rightKeys = array_fill_keys(array_map([Utf8::class, 'upper'], self::rowKeys($right)), true);
             foreach (self::scalarFields($leftEl) as [$u, $f]) {
                 if (isset($rightKeys[$u])) {
                     $row->dropped[$u] = true;
@@ -1387,7 +1379,7 @@ final class Translator
     {
         $out = [];
         foreach ($names as $name) {
-            foreach ([$name, \Sel\Utf8::lower($name)] as $k) {
+            foreach ([$name, Utf8::lower($name)] as $k) {
                 if (!in_array($k, $out, true)) {
                     $out[] = $k;
                 }
@@ -1435,6 +1427,20 @@ final class Translator
         return $out;
     }
 
+    /**
+     * The functions that read their argument as bytes, and the one that takes a
+     * BOOL.
+     *
+     * Both lists were measured rather than written: every name in
+     * `Registry::names()` was called with `TO_UTF8("a")` and with `TRUE`, and
+     * these are the ones SEL did not answer E_NOT_* for. Writing them by hand
+     * would be the second copy of SEL's argument rules that §11.4 exists to
+     * avoid — this is a cached measurement, and `sql/oracle/` re-measures it.
+     *
+     * COUNT, HAS and INDEXES also accept both and are absent because none of
+     * them reaches this path: the first two are folded before dispatch and the
+     * third is refused. BTL is absent for the same reason — it yields a list.
+     */
     private const BIN_ARGUMENT_OK = ['BLEN' => 0, 'CRC32' => 0, 'ENCODE_BASE64' => 0,
                                      'FROM_UTF8' => 0, 'ISNUM' => 0, 'TO_HEX' => 0,
                                      'TO_UTF8' => 0];
@@ -1538,8 +1544,8 @@ final class Translator
         // cannot be pushed down returns null rather than throwing. Found by the
         // fuzz lane, as a fatal error in the middle of a run.
         try {
-            $source = \Sel\Builtins\Regex::portableSource((string) $pat['v'], $pat['pos']);
-        } catch (\Sel\SelError $e) {
+            $source = Regex::portableSource((string) $pat['v'], $pat['pos']);
+        } catch (SelError $e) {
             refuse('E_SQL_UNSUPPORTED',
                 "{$n['name']}'s pattern is not in SEL's portable subset, so there is "
                 . "nothing to translate: {$e->getMessage()}", $pat['pos']);
@@ -1573,10 +1579,10 @@ final class Translator
         // E_BAD_ARG. An empty flag string is dropped so the two-argument
         // template applies.
         $text = (string) $flags['v'];
-        if ($text !== '' && \Sel\Utf8::lower($text) !== 'i') {
+        if ($text !== '' && Utf8::lower($text) !== 'i') {
             refuse('E_SQL_UNSUPPORTED',
                 "{$n['name']} accepts only the i flag here, and SEL accepts only i "
-                . 'at all; ' . \Sel\Value::quoteDump($text) . ' is not it',
+                . 'at all; ' . Value::quoteDump($text) . ' is not it',
                 $flags['pos']);
         }
         if ($text !== '') {
@@ -1584,7 +1590,7 @@ final class Translator
             // because case folding above ASCII is the one thing PCRE and
             // ECMAScript cannot be made to agree on. A translation that accepted
             // it would disagree with the host that refused it.
-            foreach (\Sel\Utf8::codePoints($source) as $cp) {
+            foreach (Utf8::codePoints($source) as $cp) {
                 if ($cp > 0x7f) {
                     refuse('E_SQL_UNSUPPORTED',
                         'the i flag needs an ASCII-only pattern, which SEL requires '
@@ -1658,30 +1664,13 @@ final class Translator
                                   'JOIN' => 'join'];
     private const AGG_FOLD = ['ALL' => 'AND', 'ANY' => 'OR', 'SUM' => '+'];
 
-    /**
-     * Ranges of frame indices no name may resolve to: [from, to). A node written
-     * outside an aggregate -- a definition inlined by stage 1, an element of a
-     * static list -- is rendered inside that aggregate's frames, and would otherwise
-     * be captured by its binders. Frames pushed after the range was opened are
-     * above it and stay visible: they are the node's own.
-     *
-     * @var list<array{0:int,1:int}>
-     */
-    private array $hidden = [];
-
-    /** @var list<array{0:Binder,1:Binder}> the element and key binder of each open element/row frame */
-    private array $scopeStack = [];
-
-    /** Nodes dispatched so far in this translation (E_SQL_SIZE, docs 7.4). */
-    private int $nodes = 0;
-
     private function chargeNodes(int $n): void
     {
         $this->nodes += $n;
-        if ($this->nodes > \Sel\Limits::MAX_SQL_NODES) {
+        if ($this->nodes > Limits::MAX_SQL_NODES) {
             refuse('E_SQL_SIZE',
                 'the expression this rule translates to has more than '
-                . \Sel\Limits::MAX_SQL_NODES . ' nodes; SEL evaluates it in linear '
+                . Limits::MAX_SQL_NODES . ' nodes; SEL evaluates it in linear '
                 . 'time, so it is evaluated the ordinary way');
         }
     }
@@ -1713,7 +1702,7 @@ final class Translator
 
     /**
      * The value-binding names that are still constants where the walk is: a binder
-     * of the same name is the element, not the binding (JS-C53).
+     * of the same name is the element, not the binding.
      *
      * @return array<string,bool>
      */
@@ -1767,24 +1756,26 @@ final class Translator
         return null;
     }
 
-    /** @param array<string,mixed> $n */
     /**
      * A group key, rendered as the GROUP BY expression itself -- wherever it
      * appears: the clause, the `_K` projection, a HAVING. A TEXT key is cast and
      * collated the way the `$` family compares text, because the evaluator
      * groups by the key's exact bytes and a case-insensitive collation would
-     * merge groups it keeps apart (review 2026-09-15 finding L; MariaDB's
+     * merge groups it keeps apart (MariaDB's
      * default merged 'A' and 'a'). The result is marked exact so a comparison
      * over it does not wrap it a second time -- MySQL's only_full_group_by
      * accepts a projected or compared key only as the identical expression.
      *
-     * @param array<string,mixed> $src @param array<string,mixed> $group
+     * @param array<string,mixed> $src
+     * @param array<string,mixed> $group
      */
     private function groupKey(array $src, array $group, bool $projected = false): Fragment
     {
         $key = $this->withRow($src, $group['binder'], fn (): Fragment => $this->node($group['node']));
         $identity = $this->identityGroupKey($group['node'], $key);
-        if ($projected && $key->kind === 'NUM') return new Fragment(array_merge(['MIN('], $key->parts, [')']), 'NUM', $this->dialect, $key->params, $key->paramKinds, $key->caveats);
+        if ($projected && $key->kind === 'NUM') {
+            return new Fragment(array_merge(['MIN('], $key->parts, [')']), 'NUM', $this->dialect);
+        }
         return $identity;
     }
 
@@ -1801,9 +1792,9 @@ final class Translator
             if (!in_array($node['t'], ['var', 'index', 'num'], true)) {
                 refuse('E_SQL_SHAPE', 'computed numeric group keys do not preserve SEL identity', $node['pos']);
             }
-            $numeric = new Fragment($f->parts, 'NUM', $this->dialect, $f->params, $f->paramKinds, $f->caveats);
+            $numeric = new Fragment($f->parts, 'NUM', $this->dialect);
             $w = $this->emit->textOperand($numeric);
-            return new Fragment($w->parts, 'TEXT', $this->dialect, $w->params, $w->paramKinds, $w->caveats, true, false, false);
+            return new Fragment($w->parts, 'TEXT', $this->dialect, exact: true);
         }
         return $this->collatedKey($f);
     }
@@ -1812,10 +1803,10 @@ final class Translator
      * A sort key, as SEL's sort compares it. SEL sorts numbers as numbers and
      * other text by its bytes -- and number-shaped TEXT as a number, which
      * SQL's ORDER BY cannot: it sorts a text key by its bytes throughout, so
-     * "10" comes before "9" (SEL-0060). A NUM key sorts as SEL sorts it. A
+     * "10" comes before "9". A NUM key sorts as SEL sorts it. A
      * canonical number the dialect can only carry as text is always a number
      * to SEL, so sorting it in SQL is simply wrong: refused, and the planner
-     * sorts in memory (SEL-0058). Any other TEXT or UNKNOWN key is sorted
+     * sorts in memory. Any other TEXT or UNKNOWN key is sorted
      * anyway, declared text-order, and refused under strict.
      *
      * @param array{line:int,col:int,offset:int} $pos
@@ -1847,7 +1838,7 @@ final class Translator
             return $f;
         }
         $wrapped = $this->emit->textOperand($f);
-        return new Fragment($wrapped->parts, 'TEXT', $this->dialect, $wrapped->params, $wrapped->paramKinds, $wrapped->caveats, true, false, false);
+        return new Fragment($wrapped->parts, 'TEXT', $this->dialect, exact: true);
     }
 
     private function fromBinder(Binder $b, array $n): Fragment
@@ -1870,7 +1861,7 @@ final class Translator
                 }
                 $collated = $this->identityGroupKey($group['node'], $key);
                 if ($key->kind === 'NUM') {
-                    $out = new Fragment(array_merge(['MIN('], $key->parts, [')']), 'NUM', $this->dialect, $key->params, $key->paramKinds, $key->caveats);
+                    $out = new Fragment(array_merge(['MIN('], $key->parts, [')']), 'NUM', $this->dialect);
                     $out->canonical = $key->canonical;
                     return $out;
                 }
@@ -1883,7 +1874,7 @@ final class Translator
                 // HAVING name.
                 // Nested _K projections need the same aggregate under ONLY_FULL_GROUP_BY.
                 if ($collated !== $key) {
-                    $out = new Fragment(array_merge(['MIN('], $collated->parts, [')']), 'TEXT', $this->dialect, $collated->params, $collated->paramKinds, $collated->caveats, true, false, false);
+                    $out = new Fragment(array_merge(['MIN('], $collated->parts, [')']), 'TEXT', $this->dialect, exact: true);
                     $out->canonical = $key->canonical;
                     return $out;
                 }
@@ -1895,12 +1886,10 @@ final class Translator
                     "{$n['name']} is the list of a bucket's members, which is not a value "
                     . 'SQL has; count it (COUNT), sum over it (SUM), or name the group key (_K)',
                     $n['pos']);
-                // no break: refuse throws
             case Binder::PROJECTED:
                 refuse('E_SQL_SHAPE',
                     "{$n['name']} is the record the projection built, which is a map in SEL "
                     . 'and not one value; name the field you mean', $n['pos']);
-                // no break: refuse throws
             case Binder::ROW:
                 $rel = $b->payload;
                 if ($b->model !== null && !$b->model->side) {
@@ -1921,7 +1910,7 @@ final class Translator
                         . count($rel['fields']) . ' fields, which is a map in SEL and '
                         . 'not one value; name the field you mean', $n['pos']);
                 }
-                $scalar = isset($rel['scalar']) ? \Sel\Utf8::upper((string) $rel['scalar']) : null;
+                $scalar = isset($rel['scalar']) ? Utf8::upper((string) $rel['scalar']) : null;
                 if ($scalar === null || !isset($rel['fields'][$scalar])) {
                     refuse('E_SQL_SHAPE',
                         "{$n['name']} names a row, and the relation does not say which "
@@ -1972,7 +1961,7 @@ final class Translator
             }
             if ($proj === null) {
                 foreach ($projections as $candidate) {
-                    if ($candidate['alias'] !== null && \Sel\Utf8::upper($candidate['alias']) === \Sel\Utf8::upper($key)) {
+                    if ($candidate['alias'] !== null && Utf8::upper($candidate['alias']) === Utf8::upper($key)) {
                         $proj = $candidate;
                         break;
                     }
@@ -2006,7 +1995,7 @@ final class Translator
             if ($b->model !== null) {
                 return $this->rowField($b->model, ['t' => 'var', 'name' => $name], $key, $n);
             }
-            $field = \Sel\Utf8::upper($key);
+            $field = Utf8::upper($key);
             if (!isset($b->payload['fields'][$field])) {
                 $known = array_keys($b->payload['fields']);
                 sort($known);
@@ -2075,14 +2064,13 @@ final class Translator
      * FILTER(FILTER(L, p1), p2) conjoins both predicates over L.
      *
      * @param array<string,mixed> $src
-     * @param array<string,mixed> $call
      * @return array<string,mixed>
      */
-    private function source(array $src, array $call): array
+    private function source(array $src): array
     {
         if ($src['t'] === 'call' && $src['name'] === 'FILTER') {
             [$fBinder, $fBody] = self::aggShape($src);
-            $inner = $this->source($src['args'][0], $call);
+            $inner = $this->source($src['args'][0]);
             $inner['filters'][] = ['binder' => $fBinder, 'body' => $fBody];
             return $inner;
         }
@@ -2119,8 +2107,8 @@ final class Translator
             if ($bound !== null) {
                 if ($bound->shape === Binder::NODE) {
                     return $bound->base === null
-                        ? $this->source($bound->payload, $call)
-                        : $this->hiding($bound->base, fn (): array => $this->source($bound->payload, $call));
+                        ? $this->source($bound->payload)
+                        : $this->hiding($bound->base, fn (): array => $this->source($bound->payload));
                 }
                 if ($bound->shape === Binder::NONE) {
                     refuse('E_SQL_SHAPE', (string) $bound->reason, $src['pos']);
@@ -2285,7 +2273,7 @@ final class Translator
         }
 
         [$binderName, $body] = self::aggShape($n);
-        $src = $this->source($n['args'][0], $n);
+        $src = $this->source($n['args'][0]);
 
         if ($src['shape'] === 'relation') {
             $rendered = $this->withRow($src, $binderName,
@@ -2295,7 +2283,7 @@ final class Translator
 
         $parts = [];
         foreach ($src['elements'] as $key => $elem) {
-            $parts[] = $this->withElement($src, $binderName, $elem, (string) $key, $n,
+            $parts[] = $this->withElement($binderName, $elem, (string) $key, $n,
                 fn (): Fragment => $this->aggBody($name, $body, $src, $n));
         }
         if ($parts === []) {
@@ -2367,10 +2355,9 @@ final class Translator
      * Every absorbed FILTER's binder is bound to the same element, which is what
      * makes absorption three lines rather than a substitution pass — see §7.5.
      *
-     * @param array<string,mixed> $src
      * @param array<string,mixed> $n
      */
-    private function withElement(array $src, string $binderName, Binder $elem,
+    private function withElement(string $binderName, Binder $elem,
                                  string $key, array $n, callable $render): Fragment
     {
         $kBinder = Binder::node(['t' => 'text', 'v' => $key, 'pos' => $n['pos']]);
@@ -2439,7 +2426,7 @@ final class Translator
         // `C["id"]` in a later step -- the joined row carries them as keys, not
         // as names. This frame used to bind `_1`, `_2`, the relations' names
         // and the right binder for every later step, so `FILTER(C["id"] > 1)`
-        // translated where `run()` fails (review 2026-09-15 finding W2).
+        // translated where `run()` fails.
         $this->frames[] = $frame;
         $this->scopeStack[] = [$row, $kBinder];
         try {
@@ -2454,7 +2441,7 @@ final class Translator
      * A LINK's predicate sees `_`/`_1` as its left element and `_2` as its
      * right, plus the names the LINK gives them (spec §7.4) and nothing else:
      * a relation's name outside those, its alias or its table is not a binder
-     * (review 2026-09-28 SQL-07), and the left element of a later LINK is the
+     *, and the left element of a later LINK is the
      * joined row so far, not the source (SQL-05).
      *
      * @param callable():Fragment $render
@@ -2517,7 +2504,8 @@ final class Translator
      * turns the whole sum into NULL. The MySQL family casts a non-number to 0 with a
      * warning, which the outer test already discards.
      *
-     * @param list<string|int> $test @param list<string|int> $cast
+     * @param list<string|int> $test
+     * @param list<string|int> $cast
      * @return list<string|int>
      */
     private function sumCast(array $test, array $cast): array
@@ -2526,6 +2514,21 @@ final class Translator
             return $cast;
         }
         return self::joinParts(['CASE WHEN ', $test, ' THEN ', $cast, ' ELSE NULL END']);
+    }
+
+    /**
+     * `COALESCE(SUM(body), 0)` for a body of unknown kind, all or nothing: NULL
+     * unless every element passes the numeric test. The one spelling, for a
+     * bucket's members and for a relation's rows.
+     *
+     * @param list<string|int> $test
+     * @param list<string|int> $cast
+     * @return list<string|int>
+     */
+    private function allOrNothingSum(array $test, array $cast): array
+    {
+        return self::joinParts(['CASE WHEN COUNT(*) = COUNT(CASE WHEN ', $test,
+            ' THEN 1 END) THEN COALESCE(SUM(', $this->sumCast($test, $cast), '), 0) ELSE NULL END']);
     }
 
     /**
@@ -2549,16 +2552,11 @@ final class Translator
                 "the sum skeleton of dialect {$this->dialect} is not built on {$needle}, so "
                 . 'it cannot be guarded as a whole', $n['pos']);
         }
-        $tpl = str_replace($needle,
-            'CASE WHEN COUNT(*) = COUNT(CASE WHEN {bodyTest} THEN 1 END) THEN '
-            . 'COALESCE(SUM({bodyCast}), 0) ELSE NULL END', $tpl);
+        $tpl = str_replace($needle, '{guardedSum}', $tpl);
         $slots = self::slots($this->relationSlots($rel), [
-            'bodyTest' => [new Fragment($test, 'UNKNOWN', $this->dialect, $body->params, $body->paramKinds)],
-            'bodyCast' => [new Fragment($this->sumCast($test, $cast), 'UNKNOWN', $this->dialect,
-                $body->params, $body->paramKinds)],
+            'guardedSum' => [new Fragment($this->allOrNothingSum($test, $cast), 'UNKNOWN', $this->dialect)],
         ]);
-        return new Fragment($this->fillNamed($tpl, $slots, $n['pos']), 'NUM', $this->dialect,
-            $body->params, $body->paramKinds, $body->caveats);
+        return new Fragment($this->fillNamed($tpl, $slots, $n['pos']), 'NUM', $this->dialect);
     }
 
     /**
@@ -2587,7 +2585,7 @@ final class Translator
     /** @param array<string,mixed> $n */
     private function count(array $n): Fragment
     {
-        $src = $this->source($n['args'][0], $n);
+        $src = $this->source($n['args'][0]);
 
         // COUNT is the number of children, so the scalar rule does not apply to
         // it: spec §7.4 says a value with no children counts 0, where §7.3's
@@ -2605,7 +2603,7 @@ final class Translator
             }
             $parts = [];
             foreach ($src['elements'] as $key => $elem) {
-                $parts[] = $this->withElement($src, '_', $elem, (string) $key, $n,
+                $parts[] = $this->withElement('_', $elem, (string) $key, $n,
                     fn (): Fragment => $this->aggBody('SUM', $body, $src, $n));
             }
             return $parts === []
@@ -2631,7 +2629,7 @@ final class Translator
                 . 'be known before the query runs', $n['args'][1]['pos']);
         }
         $key = (string) $n['args'][1]['v'];
-        $src = $this->source($n['args'][0], $n);
+        $src = $this->source($n['args'][0]);
         if ($src['filters'] !== []) {
             refuse('E_SQL_SHAPE',
                 'HAS over a FILTER would have to know at translation time which '
@@ -2664,7 +2662,7 @@ final class Translator
      */
     private function joinAggregate(array $n): Fragment
     {
-        $src = $this->source($n['args'][0], $n);
+        $src = $this->source($n['args'][0]);
         // FILTER yields a list; only ALL, ANY, SUM and COUNT absorb one (7.5), so a
         // JOIN over it has nothing to apply the predicate to. It used to be dropped.
         if ($src['filters'] !== []) {
@@ -2674,7 +2672,7 @@ final class Translator
         }
         if ($src['shape'] === 'relation') {
             $rel = $src['relation'];
-            $scalar = isset($rel['scalar']) ? \Sel\Utf8::upper((string) $rel['scalar']) : null;
+            $scalar = isset($rel['scalar']) ? Utf8::upper((string) $rel['scalar']) : null;
             if ($scalar === null || !isset($rel['fields'][$scalar])) {
                 refuse('E_SQL_SHAPE',
                     'JOIN over a relation needs the binding to name a "scalar" field',
@@ -2700,7 +2698,7 @@ final class Translator
                 $this->requireJoinText($sep, $n['args'][1]['pos']);
                 $parts[] = $sep;
             }
-            $part = $this->withElement($src, '_', $elem, (string) $key, $n,
+            $part = $this->withElement('_', $elem, (string) $key, $n,
                 fn (): Fragment => $this->fromBinder($elem, $n));
             $this->requireJoinText($part, $n['args'][0]['pos']);
             $parts[] = $part;
@@ -2923,11 +2921,15 @@ final class Translator
         if ($cls($l) === null || $cls($r) === null || $cls($l) === $cls($r)) {
             return;
         }
-        $other = $l->kind === 'BOOL' ? $r->kind : $l->kind;
-        refuse('E_SQL_SHAPE',
-            "{$op} compares a BOOL with a {$other}, which SEL answers FALSE for "
-            . 'every value because the kinds differ. SQL has no way to say that: '
-            . 'both sides cast to the same characters',
+        $what = "{$op} compares a {$l->kind} with a {$r->kind}";
+        refuse('E_SQL_SHAPE', $op[0] === '$'
+            // SEL reads a BIN and a TEXT here as bytes, and a BOOL is not an operand
+            // of the byte comparisons at all (E_NOT_BIN); SQL would cast both sides
+            // to characters, which says neither.
+            ? "{$what}, which SEL compares as bytes (or refuses, for a BOOL); "
+              . 'SQL has no way to say that: both sides cast to the same characters'
+            : "{$what}, which SEL answers FALSE for every value because the kinds "
+              . 'differ. SQL has no way to say that: both sides cast to the same characters',
             $pos);
     }
 
@@ -3084,7 +3086,7 @@ final class Translator
         if ($guarded !== $f) {
             // The guard reads the text as the dialect's numericCast type, and
             // where that type fixes a scale the data's digits past it are gone
-            // before anything else sees them (SEL-0059).
+            // before anything else sees them.
             $this->scaleLimited($n['pos'], 'this operand is read as a number');
         }
         return $guarded;
@@ -3215,7 +3217,7 @@ final class Translator
      *
      * @param array{line:int,col:int,offset:int} $pos
      */
-    private function requireBool(Fragment $f, array $pos, string $where): Fragment
+    private function requireBool(Fragment $f, ?array $pos, string $where): Fragment
     {
         if ($f->kind === 'BOOL') {
             return $f;
@@ -3229,19 +3231,10 @@ final class Translator
      * SUM's counterpart to requireBool. A declared TEXT body is refused here --
      * SUM adds its body up and text is not a number.
      *
-     * UNKNOWN passes, and passes UNGUARDED, which is the one place in the layer
-     * where that is still true and not yet defensible. It used to be justified
-     * the way requireBool's UNKNOWN was, "the database is the one that knows",
-     * and requireBool stopped believing that. The difference is only that
-     * nothing has been built here yet: a bare aggregate body reaches neither
-     * binary() nor unary(), so guardNumeric never sees it, and
-     * `SUM(ITEMS, _["QTY"])` over an undeclared field emits SUM(`qty`) while
-     * SEL raises E_NOT_NUM for a non-numeric element.
-     *
-     * That is the "bare aggregate body" row of docs/internals/sql-kinds.md §4, recorded
-     * there with the function arguments it belongs with. `_["QTY"] * 1` is the
-     * workaround: it is value-preserving in SEL and puts the operand through
-     * binary(), where the guard does see it.
+     * UNKNOWN passes here, and is guarded by the caller: an aggregate body goes
+     * through aggBody()'s guardNumeric, and a SUM over a relation through
+     * guardedRelationSum(), so a non-numeric element is NULL in SQL (and the
+     * whole SUM NULL) where SEL raises E_NOT_NUM -- docs/internals/sql-kinds.md §4.
      *
      * @param array{line:int,col:int,offset:int} $pos
      */
@@ -3327,29 +3320,18 @@ final class Translator
     private function fillNamed(string $tpl, array $slots, array $pos): array
     {
         $parts = [];
-        $push = static function (string $s) use (&$parts): void {
-            if ($s === '') {
-                return;
-            }
-            $n = count($parts);
-            if ($n > 0 && is_string($parts[$n - 1])) {
-                $parts[$n - 1] .= $s;
-            } else {
-                $parts[] = $s;
-            }
-        };
 
         $i = 0;
         $len = strlen($tpl);
         while ($i < $len) {
             if ($tpl[$i] !== '{') {
-                $push($tpl[$i]);
+                Emit::appendPart($parts, $tpl[$i]);
                 $i++;
                 continue;
             }
             $end = strpos($tpl, '}', $i);
             if ($end === false) {
-                $push(substr($tpl, $i));
+                Emit::appendPart($parts, substr($tpl, $i));
                 break;
             }
             $name = substr($tpl, $i + 1, $end - $i - 1);
@@ -3361,15 +3343,11 @@ final class Translator
             }
             foreach ($slots[$name] as $item) {
                 if (is_string($item)) {
-                    $push($item);
+                    Emit::appendPart($parts, $item);
                     continue;
                 }
                 foreach ($item->parts as $p) {
-                    if (is_string($p)) {
-                        $push($p);
-                    } else {
-                        $parts[] = $p;
-                    }
+                    Emit::appendPart($parts, $p);
                 }
             }
         }
@@ -3478,7 +3456,7 @@ final class Translator
         $relations = [$plan->sourceRelation];
         foreach ($plan->joins as $join) $relations[] = $join->sourceRelation;
         foreach ($relations as $rel) {
-            $field = $rel['fields'][\Sel\Utf8::upper($name)] ?? null;
+            $field = $rel['fields'][Utf8::upper($name)] ?? null;
             if ($field !== null) $matches[] = $field;
         }
         return count($matches) === 1 && !($matches[0]['guard'] ?? false) && !isset($matches[0]['raw'])
@@ -3513,17 +3491,17 @@ final class Translator
         foreach ($this->outputFieldNames($plan) as $name) {
             $sourceField = null;
             if ($plan->projections === null && $plan->selectCols === null) {
-                $sourceField = $plan->sourceRelation['fields'][\Sel\Utf8::upper($name)] ?? null;
+                $sourceField = $plan->sourceRelation['fields'][Utf8::upper($name)] ?? null;
                 if ($sourceField === null) {
                     foreach ($plan->joins as $join) {
-                        $sourceField = $join->sourceRelation['fields'][\Sel\Utf8::upper($name)] ?? null;
+                        $sourceField = $join->sourceRelation['fields'][Utf8::upper($name)] ?? null;
                         if ($sourceField !== null) {
                             break;
                         }
                     }
                 }
             }
-            $fields[\Sel\Utf8::upper($name)] = [
+            $fields[Utf8::upper($name)] = [
                 'kind' => 'column',
                 'column' => $sourceField['column'] ?? $name,
                 'table' => $alias,
@@ -3533,12 +3511,12 @@ final class Translator
                 // The derived table selects `alias.*`, and a raw expression is not a
                 // column of that table: reading it across the wrap is refused
                 // (sql/MAP.md 3.1), where it used to name a column that is not there.
-                $fields[\Sel\Utf8::upper($name)]['lostRaw'] = true;
+                $fields[Utf8::upper($name)]['lostRaw'] = true;
             }
             $canonKind = $this->outputCanonKind($plan, $name);
             if ($canonKind !== null) {
-                $fields[\Sel\Utf8::upper($name)]['type'] = $canonKind;
-                $fields[\Sel\Utf8::upper($name)]['canonical'] = true;
+                $fields[Utf8::upper($name)]['type'] = $canonKind;
+                $fields[Utf8::upper($name)]['canonical'] = true;
             }
         }
         $derived = new RelationalPlan();
@@ -3689,7 +3667,7 @@ final class Translator
     }
 
     /** @param array<string,mixed> $n */
-    public function analyzePipeline(array $n): ?RelationalPlan
+    private function analyzePipeline(array $n): ?RelationalPlan
     {
         if (Constants::identityLossBeforeGrouping($n)) {
             refuse('E_SQL_SHAPE', 'grouping depends on a computed projection without identity preservation', $n['pos']);
@@ -3697,9 +3675,6 @@ final class Translator
         $steps = [];
         $curr = $n;
         while ($curr['t'] === 'call' && in_array($curr['name'], self::PIPELINE_OPS, true)) {
-            if (empty($curr['args'])) {
-                break;
-            }
             $steps[] = $curr;
             $curr = $curr['args'][0];
         }
@@ -3733,7 +3708,6 @@ final class Translator
 
         foreach ($steps as $step) {
             $name = $step['name'];
-            $args = $step['args'];
 
             // A FILTER after an open bucket is a HAVING and a MAP is the
             // bucket's projection; anything else spends the members. Either
@@ -3744,394 +3718,17 @@ final class Translator
                 $plan->bucket = 'sealed';
             }
 
-            switch ($name) {
-                case 'FILTER':
-                    // A FILTER over a bare bucket whose members are spent: SQL
-                    // has only the keys left, and SEL's value is still a map of
-                    // groups.
-                    if ($plan->bucket === 'sealed') {
-                        refuse('E_SQL_SHAPE', "a FILTER over buckets must follow the BUCKET directly: SQL keeps a bucket's members only for the projection that ends the grouping", $step['pos']);
-                    }
-                    // A FILTER after a LIMIT or OFFSET is a WHERE over the rows
-                    // that survived them, grouped or not -- SEL applies the TAKE
-                    // first, and a HAVING would run before it. Otherwise a FILTER
-                    // directly after a grouping is its HAVING, and an ORDER BY in
-                    // between changes nothing (HAVING then ORDER BY is
-                    // sort-then-filter's rows).
-                    $plan = $this->ensureDerived($plan,
-                        $plan->limit !== null || $plan->offset !== null
-                        || ($plan->groupBy === null
-                            && ($plan->projections !== null || $plan->selectCols !== null
-                                || $plan->distinct)));
-                    // (A sort does NOT force the wrap: the WHERE goes in the same SELECT, beside the
-                    // ORDER BY, because a derived table does not keep an ORDER BY that has no LIMIT
-                    // beside it and the rows would come back in no order; a filter commutes with a
-                    // stable sort, so the rows and their order are the same.)
-                    if (count($args) === 2) {
-                        $binder = '_';
-                        $pred = $args[1];
-                    } elseif (count($args) === 3) {
-                        if (!Constants::isBinderName($args[1])) {
-                            refuse('E_SQL_SHAPE', 'the binder of FILTER must be a bare name', $args[1]['pos']);
-                        }
-                        $binder = $args[1]['name'];
-                        $pred = $args[2];
-                    } else {
-                        refuse('E_ARITY', 'FILTER takes 2 or 3 arguments', $step['pos']);
-                    }
-                    if ($plan->groupBy !== null) {
-                        $plan->having[] = [
-                            'binder' => $binder,
-                            'node' => $pred,
-                            'pos' => $step['pos'],
-                            'overGroups' => $overGroups,
-                        ];
-                    } else {
-                        $plan->filters[] = [
-                            'binder' => $binder,
-                            'node' => $pred,
-                            'pos' => $step['pos'],
-                        ];
-                    }
-                    break;
-
-                case 'BUCKET':
-                    // A bucket over a bare bucket's rows: SQL has only the keys
-                    // (open) or has spent the members (sealed); either way SEL's
-                    // value is a map of groups and re-grouping it is a different
-                    // program.
-                    if ($plan->bucket !== null) {
-                        refuse('E_SQL_SHAPE', "a BUCKET over buckets: SQL keeps a bucket's members only for the projection that ends the grouping", $step['pos']);
-                    }
-                    // Groups appear in order of their first member, and the members were
-                    // sorted: a GROUP BY returns its groups in no order at all, and the
-                    // ORDER BY beneath it is dropped by the servers. The sort cannot
-                    // survive, so the step is refused here, at the call and before its
-                    // arguments (the first refusal in source order), and a hybrid plan
-                    // keeps the sorted rows in SQL and groups them in memory.
-                    if ($plan->orderBy !== [] || $plan->orderDropped) {
-                        refuse('E_SQL_SHAPE', 'a BUCKET over sorted rows would return its groups in no order, '
-                            . 'where SEL has them in the order of their first member in the sorted list', $step['pos']);
-                    }
-                    $plan = $this->ensureDerived($plan, $this->planHasRowsAbove($plan));
-                    if (count($args) === 2) {
-                        $binder = '_';
-                        $keyNode = $args[1];
-                        $aggNode = null;
-                    } elseif (count($args) === 3) {
-                        $binder = '_';
-                        $keyNode = $args[1];
-                        $aggNode = $args[2];
-                    } elseif (count($args) === 4) {
-                        if (!Constants::isBinderName($args[1])) {
-                            refuse('E_SQL_SHAPE', 'the binder of BUCKET must be a bare name', $args[1]['pos']);
-                        }
-                        $binder = $args[1]['name'];
-                        $keyNode = $args[2];
-                        $aggNode = $args[3];
-                    } else {
-                        refuse('E_ARITY', 'BUCKET takes 2 to 4 arguments', $step['pos']);
-                    }
-
-                    // A bare bucket's key is an index key (spec §7.4): one text
-                    // or number. A list or record key is refused by the
-                    // evaluator, and the boolean and binary kinds are refused
-                    // below, once known.
-                    $severalKeys = ($keyNode['t'] === 'call' && in_array($keyNode['name'], ['LIST', 'RECORD'], true))
-                        || $keyNode['t'] === 'list';
-                    if ($aggNode === null && $severalKeys) {
-                        refuse('E_SQL_SHAPE', 'a bare BUCKET groups by one text or number key, as an index does; BUCKET(src, key, proj) groups by several', $keyNode['pos']);
-                    }
-                    $groupBy = [];
-                    if (($keyNode['t'] === 'call' && $keyNode['name'] === 'LIST') || $keyNode['t'] === 'list') {
-                        $listItems = $keyNode['t'] === 'list' ? $keyNode['items'] : $keyNode['args'];
-                        foreach ($listItems as $kArg) {
-                            $groupBy[] = [
-                                'alias' => null,
-                                'binder' => $binder,
-                                'node' => $kArg,
-                                'pos' => $kArg['pos'] ?? $step['pos'],
-                            ];
-                        }
-                    } elseif ($keyNode['t'] === 'call' && $keyNode['name'] === 'RECORD') {
-                        foreach ($this->recordFieldsChecked($keyNode) as [$alias, $value]) {
-                            $groupBy[] = [
-                                'alias' => $alias,
-                                'binder' => $binder,
-                                'node' => $value,
-                                'pos' => $value['pos'] ?? $step['pos'],
-                            ];
-                        }
-                    } else {
-                        $groupBy[] = [
-                            'alias' => null,
-                            'binder' => $binder,
-                            'node' => $keyNode,
-                            'pos' => $keyNode['pos'] ?? $step['pos'],
-                        ];
-                    }
-                    $plan->groupBy = $groupBy;
-
-                    $plan->bucket = $aggNode === null ? 'open' : null;
-                    $plan->bareKey = $aggNode === null;
-                    $this->bucketProjection($plan, $binder, $aggNode);
-                    break;
-
-                case 'SELECT_COLS':
-                    // The same rule as a MAP's: an ORDER BY alone does not wrap
-                    // (a derived table is where MariaDB drops an ORDER BY with
-                    // no LIMIT beside it), everything else above the rows does
-                    // (SEL-0048).
-                    $plan = $this->ensureDerived($plan, $this->planNeedsWrapBeforeMap($plan));
-                    $colArgs = array_slice($args, 1);
-                    if (count($colArgs) === 1 && $colArgs[0]['t'] === 'list') {
-                        $items = $colArgs[0]['items'];
-                    } else {
-                        $items = $colArgs;
-                    }
-                    $cols = [];
-                    foreach ($items as $item) {
-                        if ($item['t'] !== 'text') {
-                            refuse('E_BAD_ARG', 'SELECT_COLS column names must be string literals', $item['pos']);
-                        }
-                        $col = $item['v'];
-                        $this->checkAliasName($col, $item['pos']);
-                        $uc = \Sel\Utf8::upper($col);
-                        if (isset($plan->sourceRelation['fields'][$uc]['raw'])) {
-                            refuse('E_SQL_SHAPE', "field '{$col}' is a raw expression; SELECT_COLS "
-                                . 'would have to name it as a column, and it has none', $item['pos']);
-                        }
-                        $matches = isset($plan->sourceRelation['fields'][$uc]) ? 1 : 0;
-                        foreach ($plan->joins as $join) {
-                            if (isset($join->sourceRelation['fields'][$uc])) {
-                                $matches++;
-                            }
-                        }
-                        if ($matches > 1) {
-                            refuse('E_SQL_SHAPE', "column '{$col}' is ambiguous across joined tables; qualify with a table alias", $item['pos']);
-                        }
-                        if (!empty($plan->sourceRelation['fields']) && $matches === 0) {
-                            refuse('E_SQL_SHAPE',
-                                "relation {$plan->sourceName} has no field '{$col}'; the relation declares "
-                                . implode(', ', array_keys($plan->sourceRelation['fields'])), $item['pos']);
-                        }
-                        $cols[] = $col;
-                    }
-                    $plan->selectCols = $cols;
-                    $plan->projections = null;
-                    break;
-
-                case 'MAP':
-                    if ($plan->bucket === 'sealed') {
-                        refuse('E_SQL_SHAPE', 'a MAP over buckets must follow the BUCKET, with at most a '
-                            . 'FILTER between: SQL keeps a bucket\'s members only for the projection '
-                            . 'that ends the grouping', $step['pos']);
-                    }
-                    if (count($args) === 2) {
-                        $binder = '_';
-                        $expr = $args[1];
-                    } elseif (count($args) === 3) {
-                        if (!Constants::isBinderName($args[1])) {
-                            refuse('E_SQL_SHAPE', 'the binder of MAP must be a bare name', $args[1]['pos']);
-                        }
-                        $binder = $args[1]['name'];
-                        $expr = $args[2];
-                    } else {
-                        refuse('E_ARITY', 'MAP takes 2 or 3 arguments', $step['pos']);
-                    }
-                    // BUCKET(src, key) .> MAP(proj) is BUCKET(src, key, proj): the
-                    // MAP's body is evaluated once per group, so it is the bucket's
-                    // projection.
-                    if ($plan->bucket === 'open') {
-                        $plan->bucket = null;
-                        $this->bucketProjection($plan, $binder, $expr);
-                        break;
-                    }
-                    $plan = $this->ensureDerived($plan, $this->planNeedsWrapBeforeMap($plan));
-
-                    if ($expr['t'] === 'call' && $expr['name'] === 'RECORD') {
-                        $projections = [];
-                        foreach ($this->recordFieldsChecked($expr) as [$alias, $value]) {
-                            $projections[] = ['alias' => $alias, 'binder' => $binder, 'node' => $value];
-                        }
-                        $plan->projections = $projections;
-                    } else {
-                        $plan->projections = [
-                            [
-                                'alias' => null,
-                                'binder' => $binder,
-                                'node' => $expr,
-                            ]
-                        ];
-                    }
-                    $plan->selectCols = null;
-                    break;
-
-                case 'DISTINCT':
-                case 'DEDUPE':
-                    $plan = $this->ensureDerived($plan, $plan->limit !== null || $plan->offset !== null);
-                    if ($plan->projections === null && $plan->selectCols === null) {
-                        refuse('E_SQL_SHAPE', 'DISTINCT requires an explicit typed projection', $step['pos']);
-                    }
-                    // DISTINCT keeps the FIRST element of each run in sorted order; SQL's `SELECT DISTINCT proj ... ORDER BY <column not in proj>` is refused by PostgreSQL (42P10) and MySQL 8 (3065) and answers with an unspecified representative row on MariaDB. A loud refusal is acceptable and a silent misordering is not, so the step stays in memory (CPP-C60).
-                    if ($plan->orderBy !== []) {
-                        refuse('E_SQL_SHAPE', 'DISTINCT after a sort keeps the first of each run in sorted order, which SELECT DISTINCT ... ORDER BY does not promise; run the DISTINCT in memory', $step['pos']);
-                    }
-                    $plan->distinct = true;
-                    break;
-
-                case 'TAKE':
-                    if (count($args) !== 2) {
-                        refuse('E_ARITY', 'TAKE takes 2 arguments', $step['pos']);
-                    }
-                    $lim = $this->evalIntParam($args[1], 'TAKE');
-                    $plan->limit = $plan->limit === null ? $lim : min($plan->limit, $lim);
-                    break;
-
-                case 'DROP':
-                    if (count($args) !== 2) {
-                        refuse('E_ARITY', 'DROP takes 2 arguments', $step['pos']);
-                    }
-                    $off = $this->evalIntParam($args[1], 'DROP');
-                    // Consume the bounded slice; retain a SQL boundary for large sums.
-                    $skipped = $plan->limit === null ? $off : min($off, $plan->limit);
-                    // Offsets add saturating at the largest count (never wrapping into
-                    // a derived table): the merged offset is exact below it and clamped
-                    // at it, which every server takes (docs 11.6).
-                    if ($plan->limit !== null) $plan->limit -= $skipped;
-                    $have = $plan->offset ?? 0;
-                    $plan->offset = $have > PHP_INT_MAX - $skipped ? PHP_INT_MAX : $have + $skipped;
-                    break;
-
-                case 'SORT':
-                case 'SORT_DESC':
-                case 'SORT_BY':
-                case 'TOP':
-                case 'TOP_DESC':
-                case 'TOP_BY':
-                    // A sort after a LIMIT or OFFSET sorts the rows that
-                    // survived them, grouped or not, so those wrap; a sort over
-                    // a projection or a DISTINCT wraps so its key can name what
-                    // they produced. A sort after a sort does not wrap: the
-                    // sorts are stable, so the earlier one is the later one's
-                    // tie-breaker, and the later one's keys go FIRST in the
-                    // ORDER BY (review 2026-09-15 finding V).
-                    $wraps = $plan->limit !== null || $plan->offset !== null
-                        || ($plan->groupBy === null
-                            && ($plan->projections !== null || $plan->selectCols !== null
-                                || $plan->distinct));
-                    // Sorts are stable, so an earlier sort is the later one's tie-break; a
-                    // derived table with no LIMIT beside its ORDER BY does not keep it, and
-                    // its keys may not even be columns the outer level can name.
-                    if (($wraps && $plan->orderBy !== [] && $plan->limit === null && $plan->offset === null)
-                        || $plan->orderDropped) {
-                        refuse('E_SQL_SHAPE', 'a sort over a projection of sorted rows loses the earlier sort, '
-                            . 'which is its tie-break: a derived table does not keep an ORDER BY', $step['pos']);
-                    }
-                    $plan = $this->ensureDerived($plan, $wraps);
-                    $before = count($plan->orderBy);
-                    $this->analyzeSortStep($step, $plan);
-                    $added = array_slice($plan->orderBy, $before);
-                    foreach ($added as &$entry) {
-                        $entry['overGroups'] = $overGroups;
-                    }
-                    unset($entry);
-                    $plan->orderBy = array_merge($added, array_slice($plan->orderBy, 0, $before));
-                    break;
-
-                case 'LINK':
-                case 'LINK_LEFT':
-                    // The steps before the LINK refuse first, as written: their
-                    // keys (a sort's, a bucket's) are otherwise checked only
-                    // when the statement is rendered, after this LINK and the
-                    // steps after it were analysed, which reported a later
-                    // step's refusal where run() raises at the earlier one.
-                    // Lisp has done this since review 2026-09-25 SQL-03; the
-                    // widened SQL fuzzer found the other hosts did not (review
-                    // 2026-09-28 SQL-10). The result is discarded.
-                    if ($plan->orderBy !== [] || $plan->projections !== null
-                        || $plan->selectCols !== null || $plan->groupBy !== null) {
-                        // Rendered to be refused, then thrown away: the parameters it
-                        // bound go with it, or `params` holds values for slots the
-                        // statement never mentions (CPP-C57, LISP-C40).
-                        $keepParams = $this->params;
-                        $keepKinds = $this->paramKinds;
-                        $keepCaveats = $this->caveats;
-                        $keepNodes = $this->nodes;
-                        $this->compileStatement($plan);
-                        $this->params = $keepParams;
-                        $this->paramKinds = $keepKinds;
-                        $this->caveats = $keepCaveats;
-                        $this->nodes = $keepNodes;
-                    }
-                    // A join returns its rows in no order, and SEL's are the left list's:
-                    // rows sorted with no LIMIT beside the ORDER BY (which a derived table
-                    // drops) cannot pass through a JOIN carrying their sort. After the
-                    // earlier steps' own refusals, which come first as written.
-                    if ($plan->orderDropped
-                        || ($plan->orderBy !== [] && $plan->limit === null && $plan->offset === null)) {
-                        refuse('E_SQL_SHAPE', 'a ' . $name . ' over sorted rows would return them in no order, '
-                            . "where SEL has the left list's order", $step['pos']);
-                    }
-                    $plan = $this->ensureDerived($plan, $this->planHasRowsAbove($plan));
-                    if (count($args) !== 3 && count($args) !== 5) {
-                        refuse('E_ARITY', "{$name} takes 3 or 5 arguments", $step['pos']);
-                    }
-                    $rightNode = $args[1];
-                    if (($rightNode['t'] ?? null) !== 'var' || !$this->bindings->has($rightNode['name'])) {
-                        refuse('E_SQL_SHAPE', "{$name} requires a bound relation as its right side", $rightNode['pos']);
-                    }
-                    $right = $this->bindings->get($rightNode['name'], $rightNode['pos']);
-                    if (($right['kind'] ?? null) !== 'relation') {
-                        refuse('E_SQL_SHAPE', "{$rightNode['name']} is not bound as a relation", $rightNode['pos']);
-                    }
-                    $join = new JoinPlan();
-                    $join->type = $name === 'LINK_LEFT' ? 'LEFT' : 'INNER';
-                    $join->sourceName = $rightNode['name'];
-                    $join->sourceRelation = $right;
-                    $join->sourceTable = $right['from'];
-                    $join->sourceAlias = $right['alias'] ?? null;
-                    if (count($args) === 5) {
-                        if (!Constants::isBinderName($args[2]) || !Constants::isBinderName($args[3])) {
-                            refuse('E_SQL_SHAPE', 'join binders must be bare names', $args[2]['pos']);
-                        }
-                        $join->leftNames = [$args[2]['name']];
-                        $join->rightNames = [$args[3]['name']];
-                        $join->onPred = $args[4];
-                    } else {
-                        // The evaluator names a three-argument LINK's sides
-                        // after the variable their pipeline starts from,
-                        // unless an earlier LINK is in the way (spec §7.4).
-                        $join->leftNames = $plan->joins === [] && $plan->rootName !== null ? [$plan->rootName] : [];
-                        $join->rightNames = [$rightNode['name']];
-                        $join->onPred = $args[2];
-                    }
-                    // The SQL alias of a table the binding leaves unaliased:
-                    // the five-argument form's right binder, `_2` otherwise.
-                    // An alias, not a SEL name.
-                    if ($join->sourceAlias === null) {
-                        $join->sourceAlias = count($args) === 5 ? $join->rightNames[0] : '_2';
-                    }
-                    // One table alias per occurrence: a relation joined a
-                    // second time under an alias the statement already uses
-                    // (a self-join, or chaining back to an aliased relation)
-                    // rendered the alias twice, which the server rejects
-                    // (review 2026-09-28 SQL-09). The program stays in memory.
-                    $open = [$plan->sourceAlias ?? self::relationAlias($plan->sourceRelation)];
-                    foreach ($plan->joins as $j) {
-                        $open[] = $j->sourceAlias;
-                    }
-                    foreach ($open as $alias) {
-                        if (\Sel\Utf8::upper((string) $alias) === \Sel\Utf8::upper((string) $join->sourceAlias)) {
-                            refuse('E_SQL_SHAPE', "{$rightNode['name']} would be joined under the table alias "
-                                . "{$join->sourceAlias}, which this statement already uses; bind the relation "
-                                . 'a second time under another alias', $rightNode['pos']);
-                        }
-                    }
-                    $join->pos = $step['pos'];
-                    $plan->joins[] = $join;
-                    break;
-            }
+            $plan = match ($name) {
+                'FILTER' => $this->analyzeFilterStep($step, $plan, $overGroups),
+                'BUCKET' => $this->analyzeBucketStep($step, $plan),
+                'SELECT_COLS' => $this->analyzeSelectColsStep($step, $plan),
+                'MAP' => $this->analyzeMapStep($step, $plan),
+                'DISTINCT', 'DEDUPE' => $this->analyzeDistinctStep($step, $plan),
+                'TAKE' => $this->analyzeTakeStep($step, $plan),
+                'DROP' => $this->analyzeDropStep($step, $plan),
+                'SORT', 'SORT_DESC', 'SORT_BY', 'TOP', 'TOP_DESC', 'TOP_BY' => $this->analyzeSortingStep($step, $plan, $overGroups),
+                'LINK', 'LINK_LEFT' => $this->analyzeLinkStep($step, $plan),
+            };
         }
 
         // A derived table with no LIMIT beside its ORDER BY does not keep the order, and
@@ -4147,44 +3744,455 @@ final class Translator
     }
 
     /**
+     * A FILTER: a WHERE, or a HAVING after a grouping.
+     *
+     * @param array<string,mixed> $step
+     */
+    private function analyzeFilterStep(array $step, RelationalPlan $plan, bool $overGroups): RelationalPlan
+    {
+        $args = $step['args'];
+        // A FILTER over a bare bucket whose members are spent: SQL
+        // has only the keys left, and SEL's value is still a map of
+        // groups.
+        if ($plan->bucket === 'sealed') {
+            refuse('E_SQL_SHAPE', "a FILTER over buckets must follow the BUCKET directly: "
+                . "SQL keeps a bucket's members only for the projection that ends the grouping", $step['pos']);
+        }
+        // A FILTER after a LIMIT or OFFSET is a WHERE over the rows
+        // that survived them, grouped or not -- SEL applies the TAKE
+        // first, and a HAVING would run before it. Otherwise a FILTER
+        // directly after a grouping is its HAVING, and an ORDER BY in
+        // between changes nothing (HAVING then ORDER BY is
+        // sort-then-filter's rows).
+        $plan = $this->ensureDerived($plan,
+            $plan->limit !== null || $plan->offset !== null
+            || ($plan->groupBy === null
+                && ($plan->projections !== null || $plan->selectCols !== null
+                    || $plan->distinct)));
+        // (A sort does NOT force the wrap: the WHERE goes in the same SELECT, beside the
+        // ORDER BY, because a derived table does not keep an ORDER BY that has no LIMIT
+        // beside it and the rows would come back in no order; a filter commutes with a
+        // stable sort, so the rows and their order are the same.)
+        [$binder, $pred] = self::aggShape($step);
+        if ($plan->groupBy !== null) {
+            $plan->having[] = [
+                'binder' => $binder,
+                'node' => $pred,
+                'pos' => $step['pos'],
+                'overGroups' => $overGroups,
+            ];
+        } else {
+            $plan->filters[] = [
+                'binder' => $binder,
+                'node' => $pred,
+                'pos' => $step['pos'],
+            ];
+        }
+        return $plan;
+    }
+
+    /**
+     * A BUCKET: the GROUP BY, and its projection when it has one.
+     *
+     * @param array<string,mixed> $step
+     */
+    private function analyzeBucketStep(array $step, RelationalPlan $plan): RelationalPlan
+    {
+        $args = $step['args'];
+        // A bucket over a bare bucket's rows: SQL has only the keys
+        // (open) or has spent the members (sealed); either way SEL's
+        // value is a map of groups and re-grouping it is a different
+        // program.
+        if ($plan->bucket !== null) {
+            refuse('E_SQL_SHAPE', "a BUCKET over buckets: "
+                . "SQL keeps a bucket's members only for the projection that ends the grouping", $step['pos']);
+        }
+        // Groups appear in order of their first member, and the members were
+        // sorted: a GROUP BY returns its groups in no order at all, and the
+        // ORDER BY beneath it is dropped by the servers. The sort cannot
+        // survive, so the step is refused here, at the call and before its
+        // arguments (the first refusal in source order), and a hybrid plan
+        // keeps the sorted rows in SQL and groups them in memory.
+        if ($plan->orderBy !== [] || $plan->orderDropped) {
+            refuse('E_SQL_SHAPE', 'a BUCKET over sorted rows would return its groups in no order, '
+                . 'where SEL has them in the order of their first member in the sorted list', $step['pos']);
+        }
+        $plan = $this->ensureDerived($plan, $this->planHasRowsAbove($plan));
+        if (count($args) === 2) {
+            $binder = '_';
+            $keyNode = $args[1];
+            $aggNode = null;
+        } elseif (count($args) === 3) {
+            $binder = '_';
+            $keyNode = $args[1];
+            $aggNode = $args[2];
+        } else {                    // 4
+            if (!Constants::isBinderName($args[1])) {
+                refuse('E_SQL_SHAPE', 'the binder of BUCKET must be a bare name', $args[1]['pos']);
+            }
+            $binder = $args[1]['name'];
+            $keyNode = $args[2];
+            $aggNode = $args[3];
+        }
+
+        // A bare bucket's key is an index key (spec §7.4): one text
+        // or number. A list or record key is refused by the
+        // evaluator, and the boolean and binary kinds are refused
+        // below, once known.
+        $severalKeys = ($keyNode['t'] === 'call' && in_array($keyNode['name'], ['LIST', 'RECORD'], true))
+            || $keyNode['t'] === 'list';
+        if ($aggNode === null && $severalKeys) {
+            refuse('E_SQL_SHAPE', 'a bare BUCKET groups by one text or number key, as an index does; '
+                . 'BUCKET(src, key, proj) groups by several', $keyNode['pos']);
+        }
+        $groupBy = [];
+        if (($keyNode['t'] === 'call' && $keyNode['name'] === 'LIST') || $keyNode['t'] === 'list') {
+            $listItems = $keyNode['t'] === 'list' ? $keyNode['items'] : $keyNode['args'];
+            foreach ($listItems as $kArg) {
+                $groupBy[] = [
+                    'alias' => null,
+                    'binder' => $binder,
+                    'node' => $kArg,
+                    'pos' => $kArg['pos'] ?? $step['pos'],
+                ];
+            }
+        } elseif ($keyNode['t'] === 'call' && $keyNode['name'] === 'RECORD') {
+            foreach ($this->recordFieldsChecked($keyNode) as [$alias, $value]) {
+                $groupBy[] = [
+                    'alias' => $alias,
+                    'binder' => $binder,
+                    'node' => $value,
+                    'pos' => $value['pos'] ?? $step['pos'],
+                ];
+            }
+        } else {
+            $groupBy[] = [
+                'alias' => null,
+                'binder' => $binder,
+                'node' => $keyNode,
+                'pos' => $keyNode['pos'] ?? $step['pos'],
+            ];
+        }
+        $plan->groupBy = $groupBy;
+
+        $plan->bucket = $aggNode === null ? 'open' : null;
+        $plan->bareKey = $aggNode === null;
+        $this->bucketProjection($plan, $binder, $aggNode);
+        return $plan;
+    }
+
+    /**
+     * SELECT_COLS: the named columns of the rows.
+     *
+     * @param array<string,mixed> $step
+     */
+    private function analyzeSelectColsStep(array $step, RelationalPlan $plan): RelationalPlan
+    {
+        $args = $step['args'];
+        // The same rule as a MAP's: an ORDER BY alone does not wrap
+        // (a derived table is where MariaDB drops an ORDER BY with
+        // no LIMIT beside it), everything else above the rows does.
+        $plan = $this->ensureDerived($plan, $this->planNeedsWrapBeforeMap($plan));
+        $colArgs = array_slice($args, 1);
+        if (count($colArgs) === 1 && $colArgs[0]['t'] === 'list') {
+            $items = $colArgs[0]['items'];
+        } else {
+            $items = $colArgs;
+        }
+        $cols = [];
+        foreach ($items as $item) {
+            if ($item['t'] !== 'text') {
+                refuse('E_BAD_ARG', 'SELECT_COLS column names must be string literals', $item['pos']);
+            }
+            $col = $item['v'];
+            $this->checkAliasName($col, $item['pos']);
+            $uc = Utf8::upper($col);
+            if (isset($plan->sourceRelation['fields'][$uc]['raw'])) {
+                refuse('E_SQL_SHAPE', "field '{$col}' is a raw expression; SELECT_COLS "
+                    . 'would have to name it as a column, and it has none', $item['pos']);
+            }
+            $matches = isset($plan->sourceRelation['fields'][$uc]) ? 1 : 0;
+            foreach ($plan->joins as $join) {
+                if (isset($join->sourceRelation['fields'][$uc])) {
+                    $matches++;
+                }
+            }
+            if ($matches > 1) {
+                refuse('E_SQL_SHAPE', "column '{$col}' is ambiguous across joined tables; qualify with a table alias", $item['pos']);
+            }
+            if (!empty($plan->sourceRelation['fields']) && $matches === 0) {
+                refuse('E_SQL_SHAPE',
+                    "relation {$plan->sourceName} has no field '{$col}'; the relation declares "
+                    . implode(', ', array_keys($plan->sourceRelation['fields'])), $item['pos']);
+            }
+            $cols[] = $col;
+        }
+        $plan->selectCols = $cols;
+        $plan->projections = null;
+        return $plan;
+    }
+
+    /**
+     * A MAP: the projection, or an open bucket's projection.
+     *
+     * @param array<string,mixed> $step
+     */
+    private function analyzeMapStep(array $step, RelationalPlan $plan): RelationalPlan
+    {
+        if ($plan->bucket === 'sealed') {
+            refuse('E_SQL_SHAPE', 'a MAP over buckets must follow the BUCKET, with at most a '
+                . 'FILTER between: SQL keeps a bucket\'s members only for the projection '
+                . 'that ends the grouping', $step['pos']);
+        }
+        [$binder, $expr] = self::aggShape($step);
+        // BUCKET(src, key) .> MAP(proj) is BUCKET(src, key, proj): the
+        // MAP's body is evaluated once per group, so it is the bucket's
+        // projection.
+        if ($plan->bucket === 'open') {
+            $plan->bucket = null;
+            $this->bucketProjection($plan, $binder, $expr);
+            return $plan;
+        }
+        $plan = $this->ensureDerived($plan, $this->planNeedsWrapBeforeMap($plan));
+
+        if ($expr['t'] === 'call' && $expr['name'] === 'RECORD') {
+            $projections = [];
+            foreach ($this->recordFieldsChecked($expr) as [$alias, $value]) {
+                $projections[] = ['alias' => $alias, 'binder' => $binder, 'node' => $value];
+            }
+            $plan->projections = $projections;
+        } else {
+            $plan->projections = [
+                [
+                    'alias' => null,
+                    'binder' => $binder,
+                    'node' => $expr,
+                ]
+            ];
+        }
+        $plan->selectCols = null;
+        return $plan;
+    }
+
+    /**
+     * DISTINCT and DEDUPE: SELECT DISTINCT over a typed projection.
+     *
+     * @param array<string,mixed> $step
+     */
+    private function analyzeDistinctStep(array $step, RelationalPlan $plan): RelationalPlan
+    {
+        $plan = $this->ensureDerived($plan, $plan->limit !== null || $plan->offset !== null);
+        if ($plan->projections === null && $plan->selectCols === null) {
+            refuse('E_SQL_SHAPE', 'DISTINCT requires an explicit typed projection', $step['pos']);
+        }
+        // DISTINCT keeps the FIRST element of each run in sorted order; SQL's `SELECT
+        // DISTINCT proj ... ORDER BY <column not in proj>` is refused by PostgreSQL
+        // (42P10) and MySQL 8 (3065) and answers with an unspecified representative row on
+        // MariaDB. A loud refusal is acceptable and a silent misordering is not, so the
+        // step stays in memory.
+        if ($plan->orderBy !== []) {
+            refuse('E_SQL_SHAPE', 'DISTINCT after a sort keeps the first of each run in sorted order, '
+                . 'which SELECT DISTINCT ... ORDER BY does not promise; run the DISTINCT in memory', $step['pos']);
+        }
+        $plan->distinct = true;
+        return $plan;
+    }
+
+    /**
+     * TAKE: the LIMIT, the smaller of two.
+     *
+     * @param array<string,mixed> $step
+     */
+    private function analyzeTakeStep(array $step, RelationalPlan $plan): RelationalPlan
+    {
+        $args = $step['args'];
+        $lim = $this->evalIntParam($args[1], 'TAKE');
+        $plan->limit = $plan->limit === null ? $lim : min($plan->limit, $lim);
+        return $plan;
+    }
+
+    /**
+     * DROP: the OFFSET, merged.
+     *
+     * @param array<string,mixed> $step
+     */
+    private function analyzeDropStep(array $step, RelationalPlan $plan): RelationalPlan
+    {
+        $args = $step['args'];
+        $off = $this->evalIntParam($args[1], 'DROP');
+        // Consume the bounded slice; retain a SQL boundary for large sums.
+        $skipped = $plan->limit === null ? $off : min($off, $plan->limit);
+        // Offsets add saturating at the largest count (never wrapping into
+        // a derived table): the merged offset is exact below it and clamped
+        // at it, which every server takes (docs 11.6).
+        if ($plan->limit !== null) $plan->limit -= $skipped;
+        $have = $plan->offset ?? 0;
+        $plan->offset = $have > PHP_INT_MAX - $skipped ? PHP_INT_MAX : $have + $skipped;
+        return $plan;
+    }
+
+    /**
+     * The sorts and the TOPs: the ORDER BY, and a TOP's LIMIT.
+     *
+     * @param array<string,mixed> $step
+     */
+    private function analyzeSortingStep(array $step, RelationalPlan $plan, bool $overGroups): RelationalPlan
+    {
+        // A sort after a LIMIT or OFFSET sorts the rows that
+        // survived them, grouped or not, so those wrap; a sort over
+        // a projection or a DISTINCT wraps so its key can name what
+        // they produced. A sort after a sort does not wrap: the
+        // sorts are stable, so the earlier one is the later one's
+        // tie-breaker, and the later one's keys go FIRST in the
+        // ORDER BY.
+        $wraps = $plan->limit !== null || $plan->offset !== null
+            || ($plan->groupBy === null
+                && ($plan->projections !== null || $plan->selectCols !== null
+                    || $plan->distinct));
+        // Sorts are stable, so an earlier sort is the later one's tie-return $plan; a
+        // derived table with no LIMIT beside its ORDER BY does not keep it, and
+        // its keys may not even be columns the outer level can name.
+        if (($wraps && $plan->orderBy !== [] && $plan->limit === null && $plan->offset === null)
+            || $plan->orderDropped) {
+            refuse('E_SQL_SHAPE', 'a sort over a projection of sorted rows loses the earlier sort, '
+                . 'which is its tie-break: a derived table does not keep an ORDER BY', $step['pos']);
+        }
+        $plan = $this->ensureDerived($plan, $wraps);
+        $before = count($plan->orderBy);
+        $this->analyzeSortStep($step, $plan);
+        $added = array_slice($plan->orderBy, $before);
+        foreach ($added as &$entry) {
+            $entry['overGroups'] = $overGroups;
+        }
+        unset($entry);
+        $plan->orderBy = array_merge($added, array_slice($plan->orderBy, 0, $before));
+        return $plan;
+    }
+
+    /**
+     * LINK and LINK_LEFT: a JOIN.
+     *
+     * @param array<string,mixed> $step
+     */
+    private function analyzeLinkStep(array $step, RelationalPlan $plan): RelationalPlan
+    {
+        $name = $step['name'];
+        $args = $step['args'];
+        // The steps before the LINK refuse first, as written: their
+        // keys (a sort's, a bucket's) are otherwise checked only
+        // when the statement is rendered, after this LINK and the
+        // steps after it were analysed, which reported a later
+        // step's refusal where run() raises at the earlier one.
+        // The SQL fuzzer found hosts that did not; every host does
+        // now. The result is discarded.
+        if ($plan->orderBy !== [] || $plan->projections !== null
+            || $plan->selectCols !== null || $plan->groupBy !== null) {
+            // Rendered to be refused, then thrown away: the parameters it
+            // bound go with it, or `params` holds values for slots the
+            // statement never mentions.
+            $keepParams = $this->params;
+            $keepKinds = $this->paramKinds;
+            $keepCaveats = $this->caveats;
+            $keepNodes = $this->nodes;
+            $this->compileStatement($plan);
+            $this->params = $keepParams;
+            $this->paramKinds = $keepKinds;
+            $this->caveats = $keepCaveats;
+            $this->nodes = $keepNodes;
+        }
+        // A join returns its rows in no order, and SEL's are the left list's:
+        // rows sorted with no LIMIT beside the ORDER BY (which a derived table
+        // drops) cannot pass through a JOIN carrying their sort. After the
+        // earlier steps' own refusals, which come first as written.
+        if ($plan->orderDropped
+            || ($plan->orderBy !== [] && $plan->limit === null && $plan->offset === null)) {
+            refuse('E_SQL_SHAPE', 'a ' . $name . ' over sorted rows would return them in no order, '
+                . "where SEL has the left list's order", $step['pos']);
+        }
+        $plan = $this->ensureDerived($plan, $this->planHasRowsAbove($plan));
+        $rightNode = $args[1];
+        if (($rightNode['t'] ?? null) !== 'var' || !$this->bindings->has($rightNode['name'])) {
+            refuse('E_SQL_SHAPE', "{$name} requires a bound relation as its right side", $rightNode['pos']);
+        }
+        $right = $this->bindings->get($rightNode['name'], $rightNode['pos']);
+        if (($right['kind'] ?? null) !== 'relation') {
+            refuse('E_SQL_SHAPE', "{$rightNode['name']} is not bound as a relation", $rightNode['pos']);
+        }
+        $join = new JoinPlan();
+        $join->type = $name === 'LINK_LEFT' ? 'LEFT' : 'INNER';
+        $join->sourceName = $rightNode['name'];
+        $join->sourceRelation = $right;
+        $join->sourceTable = $right['from'];
+        $join->sourceAlias = $right['alias'] ?? null;
+        if (count($args) === 5) {
+            if (!Constants::isBinderName($args[2]) || !Constants::isBinderName($args[3])) {
+                refuse('E_SQL_SHAPE', 'join binders must be bare names', $args[2]['pos']);
+            }
+            $join->leftNames = [$args[2]['name']];
+            $join->rightNames = [$args[3]['name']];
+            $join->onPred = $args[4];
+        } else {
+            // The evaluator names a three-argument LINK's sides
+            // after the variable their pipeline starts from,
+            // unless an earlier LINK is in the way (spec §7.4).
+            $join->leftNames = $plan->joins === [] && $plan->rootName !== null ? [$plan->rootName] : [];
+            $join->rightNames = [$rightNode['name']];
+            $join->onPred = $args[2];
+        }
+        // The SQL alias of a table the binding leaves unaliased:
+        // the five-argument form's right binder, `_2` otherwise.
+        // An alias, not a SEL name.
+        if ($join->sourceAlias === null) {
+            $join->sourceAlias = count($args) === 5 ? $join->rightNames[0] : '_2';
+        }
+        // One table alias per occurrence: a relation joined a
+        // second time under an alias the statement already uses
+        // (a self-join, or chaining back to an aliased relation)
+        // rendered the alias twice, which the server rejects. The
+        // program stays in memory.
+        $open = [$plan->sourceAlias ?? self::relationAlias($plan->sourceRelation)];
+        foreach ($plan->joins as $j) {
+            $open[] = $j->sourceAlias;
+        }
+        foreach ($open as $alias) {
+            if (Utf8::upper((string) $alias) === Utf8::upper((string) $join->sourceAlias)) {
+                refuse('E_SQL_SHAPE', "{$rightNode['name']} would be joined under the table alias "
+                    . "{$join->sourceAlias}, which this statement already uses; bind the relation "
+                    . 'a second time under another alias', $rightNode['pos']);
+            }
+        }
+        $join->pos = $step['pos'];
+        $plan->joins[] = $join;
+        return $plan;
+    }
+
+    /**
      * @param array<string,mixed> $n
      */
     private function evalIntParam(array $n, string $op): int
     {
         try {
-            $val = \Sel\Evaluator::evalNode($n, $this->constCtx ?? new \Sel\Context());
-        } catch (\Sel\SelError $e) {
+            $val = Evaluator::evalNode($n, $this->constCtx ?? new Context());
+        } catch (SelError $e) {
             Constants::refuseAsSel($e, $n);
         }
         if (!$val->looksNumeric() || $val->isNull()) {
             refuse('E_NOT_NUM', "{$op} count must be a number", $n['pos']);
         }
         $d = $val->asDecimal($n['pos']);
-        if (\Sel\Dec::cmp($d, \Sel\Dec::zero()) < 0) {
+        // As SEL checks a count (SPEC 7.4): a real fraction is E_NOT_INT whatever its
+        // sign (`TAKE(-1.5)`), then a negative whole number is E_RANGE. A whole number
+        // written with a scale (`2.0`, `0.0`) is a count.
+        if (!Dec::isInteger($d)) {
+            refuse('E_NOT_INT', "{$op} count must be an integer", $n['pos']);
+        }
+        if (Dec::sign($d) < 0) {
             refuse('E_RANGE', "{$op} count cannot be negative", $n['pos']);
         }
-        // A whole number written with a scale (`2.0`, `0.0`) is a count: SEL accepts
-        // it, so the translator must not claim otherwise. Only a real fraction is
-        // E_NOT_INT (SPEC 7.4).
-        $digits = (string) $d['digits'];
-        $scale = (int) $d['scale'];
-        if ($scale > 0) {
-            $digits = str_pad($digits, $scale + 1, '0', STR_PAD_LEFT);
-            if (rtrim(substr($digits, -$scale), '0') !== '') {
-                refuse('E_NOT_INT', "{$op} count must be an integer", $n['pos']);
-            }
-            $digits = substr($digits, 0, -$scale);
-        }
-        $digits = ltrim($digits, '0');
         // Past the largest count every server takes, the count is that count: a table
         // with 2^63 rows does not exist, so the answer is unchanged (docs 11.6).
-        if ($digits === '') {
-            return 0;
-        }
-        if (strlen($digits) > 19 || (strlen($digits) === 19 && strcmp($digits, '9223372036854775807') > 0)) {
-            return PHP_INT_MAX;
-        }
-        return (int) $digits;
+        // Dec::toInt saturates at PHP_INT_MAX.
+        return Dec::toInt($d);
     }
 
     /**
@@ -4238,14 +4246,12 @@ final class Translator
             } elseif ($count === 2) {
                 $binder = '_';
                 $key = $args[1];
-            } elseif ($count === 3) {
+            } else {                            // 3: the manifest's arity
                 if (!Constants::isBinderName($args[1])) {
                     refuse('E_SQL_SHAPE', 'the binder of SORT must be a bare name', $args[1]['pos']);
                 }
                 $binder = $args[1]['name'];
                 $key = $args[2];
-            } else {
-                refuse('E_ARITY', "{$name} takes 1 to 3 arguments", $step['pos']);
             }
             $plan->orderBy[] = [
                 'binder' => $binder,
@@ -4265,7 +4271,7 @@ final class Translator
             if ($args[2]['t'] === 'text') {
                 $binder = '_';
                 $key = $args[1];
-                $dir = \Sel\Utf8::upper($args[2]['v']);
+                $dir = Utf8::upper($args[2]['v']);
             } elseif (Constants::isBinderName($args[1])) {
                 $binder = $args[1]['name'];
                 $key = $args[2];
@@ -4276,7 +4282,7 @@ final class Translator
                 // refusal.
                 refuse('E_BAD_ARG', "sort direction must be 'ASC' or 'DESC'", $args[2]['pos']);
             }
-        } elseif ($count === 4) {
+        } else {                                // 4: the manifest's arity
             if (!Constants::isBinderName($args[1])) {
                 refuse('E_SQL_SHAPE', 'the binder of SORT_BY must be a bare name', $args[1]['pos']);
             }
@@ -4285,9 +4291,7 @@ final class Translator
             if ($args[3]['t'] !== 'text') {
                 refuse('E_BAD_ARG', "sort direction must be 'ASC' or 'DESC'", $args[3]['pos']);
             }
-            $dir = \Sel\Utf8::upper($args[3]['v']);
-        } else {
-            refuse('E_ARITY', 'SORT_BY takes 2 to 4 arguments', $step['pos']);
+            $dir = Utf8::upper($args[3]['v']);
         }
 
         if ($dir !== 'ASC' && $dir !== 'DESC') {
@@ -4303,261 +4307,30 @@ final class Translator
         ];
     }
 
-    public function compileStatement(RelationalPlan $plan): Fragment
+    /**
+     * Render an analysed pipeline as one SELECT, clause by clause.
+     */
+    private function compileStatement(RelationalPlan $plan): Fragment
     {
-        // SQL aliases do not implement RECORD's last-write/evaluation contract.
-        foreach ([$plan->projections, $plan->groupBy] as $entries) {
-            $seen = [];
-            foreach ($entries ?? [] as $entry) {
-                if (($entry['alias'] ?? null) !== null) {
-                    $key = strtr($entry['alias'], 'abcdefghijklmnopqrstuvwxyz', 'ABCDEFGHIJKLMNOPQRSTUVWXYZ');
-                    if (isset($seen[$key])) refuse('E_SQL_SHAPE', 'duplicate or case-colliding RECORD fields require local evaluation', $entry['node']['pos']);
-                    $seen[$key] = true;
-                }
-            }
-        }
+        self::refuseCollidingAliases($plan);
         $previousPlan = $this->statementPlan;
         $this->statementPlan = $plan;
         try {
-            $parts = [];
-            $parts[] = $plan->distinct ? 'SELECT DISTINCT ' : 'SELECT ';
-
             $src = [
                 'relation' => $plan->sourceRelation,
                 'filters' => $plan->filters,
                 'pos' => null,
             ];
-
-            // 1. SELECT list (Projections)
-            if ($plan->projections !== null) {
-                $first = true;
-                foreach ($plan->projections as $proj) {
-                    if (!$first) {
-                        $parts[] = ', ';
-                    }
-                    $first = false;
-                    $pFrag = isset($proj['groupKey'])
-                        ? $this->groupKey($src, $proj['groupKey'], true)
-                        : ($plan->groupBy !== null
-                            ? $this->withGroup($src, $proj['binder'], fn (): Fragment => $this->node($proj['node']))
-                            : $this->withRow($src, $proj['binder'], fn (): Fragment => $this->node($proj['node'])));
-                    if ($plan->distinct) {
-                        if (in_array($pFrag->kind, ['UNKNOWN', 'NUM'], true) && !$pFrag->canonical) refuse('E_SQL_SHAPE', 'DISTINCT requires proven structural output identity', $proj['node']['pos']);
-                        $pFrag = $this->identityGroupKey($proj['node'], $pFrag);
-                    }
-                    foreach ($pFrag->parts as $p) {
-                        $parts[] = $p;
-                    }
-                    if ($proj['alias'] !== null) {
-                        $parts[] = ' AS ' . $this->emit->ident($proj['alias']);
-                    }
-                }
-            } elseif ($plan->selectCols !== null) {
-                $first = true;
-                foreach ($plan->selectCols as $col) {
-                    if (!$first) {
-                        $parts[] = ', ';
-                    }
-                    $first = false;
-                    $uc = \Sel\Utf8::upper($col);
-                    $fSpec = $plan->sourceRelation['fields'][$uc] ?? null;
-                    $owner = $plan->sourceRelation;
-                    if ($fSpec === null) {
-                        foreach ($plan->joins as $join) {
-                            if (isset($join->sourceRelation['fields'][$uc])) {
-                                $fSpec = $join->sourceRelation['fields'][$uc];
-                                $owner = $join->sourceRelation;
-                                break;
-                            }
-                        }
-                    }
-                    $table = $plan->joins !== []
-                        ? $this->relationTableAlias($owner)
-                        : ($fSpec['table'] ?? ($owner === $plan->sourceRelation
-                            ? $plan->sourceAlias : self::relationAlias($owner)));
-                    $column = $fSpec['column'] ?? $col;
-                    $sql = $this->emit->column($table, $column);
-                    if ($plan->distinct && in_array($fSpec['type'] ?? 'UNKNOWN', ['UNKNOWN', 'NUM'], true)) {
-                        refuse('E_SQL_SHAPE', 'DISTINCT requires known output kinds', null);
-                    }
-                    if ($plan->distinct && in_array($fSpec['type'] ?? null, ['TEXT', 'NUM'], true)) {
-                        $frag = $this->emit->textOperand(new Fragment([$sql], $fSpec['type'], $this->dialect));
-                        foreach ($frag->parts as $part) $parts[] = $part;
-                        $parts[] = ' AS ' . $this->emit->ident($column);
-                    } else $parts[] = $sql;
-                }
-            } elseif ($plan->joins !== []) {
-                // A joined row is its promoted fields (spec §7.4); see joinedRowFields.
-                $fields = $this->joinedRowFields($plan);
-                if ($fields === []) {
-                    $last = $plan->joins[count($plan->joins) - 1];
-                    refuse('E_SQL_SHAPE', 'the joined row has no field SQL can carry: every field '
-                        . 'is on both sides, and the binders are nested records', $last->pos ?? null);
-                }
-                $first = true;
-                foreach ($fields as $f) {
-                    if (!$first) {
-                        $parts[] = ', ';
-                    }
-                    $first = false;
-                    $parts[] = $this->emit->column($f['table'], $f['spec']['column'] ?? $f['name']);
-                }
-            } else {
-                if ($plan->sourceAlias !== null) {
-                    $parts[] = $this->emit->ident($plan->sourceAlias) . '.*';
-                } else {
-                    $parts[] = '*';
-                }
-            }
-
-            // 2. FROM clause
-            $parts[] = ' FROM ';
-            if ($plan->sourceSubquery !== null) {
-                $subquery = $this->compileStatement($plan->sourceSubquery);
-                $parts[] = '(';
-                foreach ($subquery->parts as $part) {
-                    $parts[] = $part;
-                }
-                $parts[] = ') ' . $this->emit->ident((string) $plan->sourceAlias);
-            } else {
-                $from = is_array($plan->sourceTable) && isset($plan->sourceTable['raw'])
-                    ? (string) $plan->sourceTable['raw']
-                    : $this->emit->ident((string) $plan->sourceTable);
-                if (!empty($plan->sourceAlias)) {
-                    $from .= ' ' . $this->emit->ident((string) $plan->sourceAlias);
-                }
-                $parts[] = $from;
-            }
-
-            foreach ($plan->joins as $join) {
-                $parts[] = $join->type === 'LEFT' ? ' LEFT JOIN ' : ' INNER JOIN ';
-                $right = is_array($join->sourceTable) && isset($join->sourceTable['raw'])
-                    ? (string) $join->sourceTable['raw']
-                    : $this->emit->ident((string) $join->sourceTable);
-                $parts[] = $right;
-                if ($join->sourceAlias !== null) {
-                    $parts[] = ' ' . $this->emit->ident($join->sourceAlias);
-                }
-                $parts[] = ' ON ';
-                $on = $this->withJoinBinders($plan, $join,
-                    fn (): Fragment => $this->requireBool(
-                        $this->node($join->onPred ?? ['t' => 'bool', 'v' => false, 'pos' => $join->pos]),
-                        $join->pos ?? ['line' => 1, 'col' => 1, 'offset' => 0], 'LINK'));
-                foreach ($on->parts as $part) {
-                    $parts[] = $part;
-                }
-            }
-
-            // 3. WHERE clause
-            $condParts = [];
-            if (!empty($plan->correlate)) {
-                $condParts[] = [$plan->correlate];
-            }
-            $this->inWhere = true;
-            try {
-                foreach ($plan->filters as $filter) {
-                    $cFrag = $this->withRow($src, $filter['binder'],
-                        fn (): Fragment => $this->requireBool($this->node($filter['node']), $filter['pos'], 'FILTER'));
-                    $condParts[] = $cFrag->parts;
-                }
-            } finally {
-                $this->inWhere = false;
-            }
-
-            if ($condParts !== []) {
-                $parts[] = ' WHERE ';
-                foreach ($condParts as $idx => $cp) {
-                    if ($idx > 0) {
-                        $parts[] = ' AND ';
-                    }
-                    foreach ($cp as $p) {
-                        $parts[] = $p;
-                    }
-                }
-            }
-
-            // 4. GROUP BY clause
-            if (!empty($plan->groupBy)) {
-                $parts[] = ' GROUP BY ';
-                $first = true;
-                foreach ($plan->groupBy as $gb) {
-                    if (!$first) {
-                        $parts[] = ', ';
-                    }
-                    $first = false;
-                    $gFrag = $this->groupKey($src, $gb);
-                    if ($plan->bareKey && ($gFrag->kind === 'BOOL' || $gFrag->kind === 'BIN')) {
-                        refuse('E_SQL_SHAPE', 'a bare BUCKET groups by one text or number key, as an index does; SEL refuses a boolean or binary key (E_NOT_TEXT)', $gb['pos']);
-                    }
-                    foreach ($gFrag->parts as $p) {
-                        $parts[] = $p;
-                    }
-                }
-            }
-
-            // 5. HAVING clause
-            if (!empty($plan->having)) {
-                $parts[] = ' HAVING ';
-                $hCondParts = [];
-                foreach ($plan->having as $hav) {
-                    $render = fn (): Fragment => $this->requireBool($this->node($hav['node']), $hav['pos'], 'FILTER');
-                    $hFrag = ($hav['overGroups'] ?? false)
-                        ? $this->withGroup($src, $hav['binder'], $render)
-                        : $this->withProjected($src, $hav['binder'], $render);
-                    $hCondParts[] = $hFrag->parts;
-                }
-                foreach ($hCondParts as $idx => $hp) {
-                    if ($idx > 0) {
-                        $parts[] = ' AND ';
-                    }
-                    foreach ($hp as $p) {
-                        $parts[] = $p;
-                    }
-                }
-            }
-
-            // 6. ORDER BY clause
-            if ($plan->orderBy !== []) {
-                $parts[] = ' ORDER BY ';
-                $first = true;
-                foreach ($plan->orderBy as $ord) {
-                    if (!$first) {
-                        $parts[] = ', ';
-                    }
-                    $first = false;
-                    // A TEXT sort key is collated like a group key: SEL sorts text
-                    // by its bytes, and a server's default collation would not.
-                    $render = fn (): Fragment => $this->node($ord['node']);
-                    $oFrag = $this->orderKey(($ord['overGroups'] ?? false)
-                        ? $this->withGroup($src, $ord['binder'], $render)
-                        : ($plan->groupBy !== null
-                            ? $this->withProjected($src, $ord['binder'], $render)
-                            : $this->withRow($src, $ord['binder'], $render)), $ord['node']['pos']);
-                    foreach ($oFrag->parts as $p) {
-                        $parts[] = $p;
-                    }
-                    $parts[] = ' ' . $ord['dir'];
-                }
-            }
-
-            // 7. LIMIT / OFFSET clause
-            $limit = $plan->limit;
-            $offset = $plan->offset;
-            if ($limit !== null && $offset !== null) {
-                $parts[] = " LIMIT {$limit} OFFSET {$offset}";
-            } elseif ($limit !== null) {
-                $parts[] = " LIMIT {$limit}";
-            } elseif ($offset !== null) {
-                $chain = Map::chain($this->dialect);
-                if (in_array('mariadb', $chain, true) || in_array('mysql', $chain, true) || in_array('mysql-family', $chain, true)) {
-                    $parts[] = " LIMIT 18446744073709551615 OFFSET {$offset}";
-                } elseif (in_array('sqlite', $chain, true)) {
-                    $parts[] = " LIMIT -1 OFFSET {$offset}";
-                } else {
-                    $parts[] = " OFFSET {$offset}";
-                }
-            }
-
+            $parts = array_merge(
+                [$plan->distinct ? 'SELECT DISTINCT ' : 'SELECT '],
+                $this->selectList($plan, $src),
+                $this->fromClause($plan),
+                $this->whereClause($plan, $src),
+                $this->groupByClause($plan, $src),
+                $this->havingClause($plan, $src),
+                $this->orderByClause($plan, $src),
+                $this->limitClause($plan),
+            );
             return new Fragment(
                 $parts,
                 'STATEMENT',
@@ -4569,6 +4342,283 @@ final class Translator
         } finally {
             $this->statementPlan = $previousPlan;
         }
+    }
+
+    /** SQL aliases do not implement RECORD's last-write/evaluation contract. */
+    private static function refuseCollidingAliases(RelationalPlan $plan): void
+    {
+        foreach ([$plan->projections, $plan->groupBy] as $entries) {
+            $seen = [];
+            foreach ($entries ?? [] as $entry) {
+                if (($entry['alias'] ?? null) !== null) {
+                    $key = Utf8::upper($entry['alias']);
+                    if (isset($seen[$key])) {
+                        refuse('E_SQL_SHAPE', 'duplicate or case-colliding RECORD fields require local evaluation',
+                            $entry['node']['pos']);
+                    }
+                    $seen[$key] = true;
+                }
+            }
+        }
+    }
+
+    /**
+     * Part lists joined by `$separator`, as one part list.
+     *
+     * @param list<list<string|int>> $lists
+     * @return list<string|int>
+     */
+    private static function joinPartLists(array $lists, string $separator): array
+    {
+        $out = [];
+        foreach ($lists as $i => $list) {
+            if ($i > 0) {
+                $out[] = $separator;
+            }
+            foreach ($list as $part) {
+                $out[] = $part;
+            }
+        }
+        return $out;
+    }
+
+    /**
+     * The SELECT list: the projections, the named columns, a joined row's
+     * promoted fields, or the source's every column.
+     *
+     * @param array<string,mixed> $src
+     * @return list<string|int>
+     */
+    private function selectList(RelationalPlan $plan, array $src): array
+    {
+        if ($plan->projections !== null) {
+            $items = [];
+            foreach ($plan->projections as $proj) {
+                $pFrag = isset($proj['groupKey'])
+                    ? $this->groupKey($src, $proj['groupKey'], true)
+                    : ($plan->groupBy !== null
+                        ? $this->withGroup($src, $proj['binder'], fn (): Fragment => $this->node($proj['node']))
+                        : $this->withRow($src, $proj['binder'], fn (): Fragment => $this->node($proj['node'])));
+                if ($plan->distinct) {
+                    if (in_array($pFrag->kind, ['UNKNOWN', 'NUM'], true) && !$pFrag->canonical) {
+                        refuse('E_SQL_SHAPE', 'DISTINCT requires proven structural output identity', $proj['node']['pos']);
+                    }
+                    $pFrag = $this->identityGroupKey($proj['node'], $pFrag);
+                }
+                $item = $pFrag->parts;
+                if ($proj['alias'] !== null) {
+                    $item[] = ' AS ' . $this->emit->ident($proj['alias']);
+                }
+                $items[] = $item;
+            }
+            return self::joinPartLists($items, ', ');
+        }
+        if ($plan->selectCols !== null) {
+            $items = [];
+            foreach ($plan->selectCols as $col) {
+                $uc = Utf8::upper($col);
+                $fSpec = $plan->sourceRelation['fields'][$uc] ?? null;
+                $owner = $plan->sourceRelation;
+                if ($fSpec === null) {
+                    foreach ($plan->joins as $join) {
+                        if (isset($join->sourceRelation['fields'][$uc])) {
+                            $fSpec = $join->sourceRelation['fields'][$uc];
+                            $owner = $join->sourceRelation;
+                            break;
+                        }
+                    }
+                }
+                $table = $plan->joins !== []
+                    ? $this->relationTableAlias($owner)
+                    : ($fSpec['table'] ?? ($owner === $plan->sourceRelation
+                        ? $plan->sourceAlias : self::relationAlias($owner)));
+                $column = $fSpec['column'] ?? $col;
+                $sql = $this->emit->column($table, $column);
+                if ($plan->distinct && in_array($fSpec['type'] ?? 'UNKNOWN', ['UNKNOWN', 'NUM'], true)) {
+                    refuse('E_SQL_SHAPE', 'DISTINCT requires known output kinds', null);
+                }
+                if ($plan->distinct && in_array($fSpec['type'] ?? null, ['TEXT', 'NUM'], true)) {
+                    $item = $this->emit->textOperand(new Fragment([$sql], $fSpec['type'], $this->dialect))->parts;
+                    $item[] = ' AS ' . $this->emit->ident($column);
+                } else {
+                    $item = [$sql];
+                }
+                $items[] = $item;
+            }
+            return self::joinPartLists($items, ', ');
+        }
+        if ($plan->joins !== []) {
+            // A joined row is its promoted fields (spec §7.4); see joinedRowFields.
+            $fields = $this->joinedRowFields($plan);
+            if ($fields === []) {
+                $last = $plan->joins[count($plan->joins) - 1];
+                refuse('E_SQL_SHAPE', 'the joined row has no field SQL can carry: every field '
+                    . 'is on both sides, and the binders are nested records', $last->pos ?? null);
+            }
+            return self::joinPartLists(array_map(
+                fn (array $f): array => [$this->emit->column($f['table'], $f['spec']['column'] ?? $f['name'])],
+                $fields), ', ');
+        }
+        return [$plan->sourceAlias !== null ? $this->emit->ident($plan->sourceAlias) . '.*' : '*'];
+    }
+
+    /**
+     * FROM: the source table or the derived table under it, then the JOINs.
+     *
+     * @return list<string|int>
+     */
+    private function fromClause(RelationalPlan $plan): array
+    {
+        $parts = [' FROM '];
+        if ($plan->sourceSubquery !== null) {
+            $parts[] = '(';
+            foreach ($this->compileStatement($plan->sourceSubquery)->parts as $part) {
+                $parts[] = $part;
+            }
+            $parts[] = ') ' . $this->emit->ident((string) $plan->sourceAlias);
+        } else {
+            $from = is_array($plan->sourceTable) && isset($plan->sourceTable['raw'])
+                ? (string) $plan->sourceTable['raw']
+                : $this->emit->ident((string) $plan->sourceTable);
+            if (!empty($plan->sourceAlias)) {
+                $from .= ' ' . $this->emit->ident((string) $plan->sourceAlias);
+            }
+            $parts[] = $from;
+        }
+        foreach ($plan->joins as $join) {
+            $parts[] = $join->type === 'LEFT' ? ' LEFT JOIN ' : ' INNER JOIN ';
+            $parts[] = is_array($join->sourceTable) && isset($join->sourceTable['raw'])
+                ? (string) $join->sourceTable['raw']
+                : $this->emit->ident((string) $join->sourceTable);
+            if ($join->sourceAlias !== null) {
+                $parts[] = ' ' . $this->emit->ident($join->sourceAlias);
+            }
+            $parts[] = ' ON ';
+            $on = $this->withJoinBinders($plan, $join,
+                fn (): Fragment => $this->requireBool(
+                    $this->node($join->onPred ?? ['t' => 'bool', 'v' => false, 'pos' => $join->pos]),
+                    $join->pos, 'LINK'));
+            foreach ($on->parts as $part) {
+                $parts[] = $part;
+            }
+        }
+        return $parts;
+    }
+
+    /**
+     * WHERE: the relation's correlate and the FILTERs, ANDed.
+     *
+     * @param array<string,mixed> $src
+     * @return list<string|int>
+     */
+    private function whereClause(RelationalPlan $plan, array $src): array
+    {
+        $conditions = [];
+        if (!empty($plan->correlate)) {
+            $conditions[] = [$plan->correlate];
+        }
+        foreach ($plan->filters as $filter) {
+            $conditions[] = $this->withRow($src, $filter['binder'],
+                fn (): Fragment => $this->requireBool($this->node($filter['node']), $filter['pos'], 'FILTER'))->parts;
+        }
+        return $conditions === [] ? [] : [' WHERE ', ...self::joinPartLists($conditions, ' AND ')];
+    }
+
+    /**
+     * GROUP BY: each key as groupKey renders it.
+     *
+     * @param array<string,mixed> $src
+     * @return list<string|int>
+     */
+    private function groupByClause(RelationalPlan $plan, array $src): array
+    {
+        if (empty($plan->groupBy)) {
+            return [];
+        }
+        $keys = [];
+        foreach ($plan->groupBy as $gb) {
+            $gFrag = $this->groupKey($src, $gb);
+            if ($plan->bareKey && ($gFrag->kind === 'BOOL' || $gFrag->kind === 'BIN')) {
+                refuse('E_SQL_SHAPE', 'a bare BUCKET groups by one text or number key, as an index does; '
+                    . 'SEL refuses a boolean or binary key (E_NOT_TEXT)', $gb['pos']);
+            }
+            $keys[] = $gFrag->parts;
+        }
+        return [' GROUP BY ', ...self::joinPartLists($keys, ', ')];
+    }
+
+    /**
+     * HAVING: the FILTERs after a grouping, over its groups or its projected
+     * record, ANDed.
+     *
+     * @param array<string,mixed> $src
+     * @return list<string|int>
+     */
+    private function havingClause(RelationalPlan $plan, array $src): array
+    {
+        if (empty($plan->having)) {
+            return [];
+        }
+        $conditions = [];
+        foreach ($plan->having as $hav) {
+            $render = fn (): Fragment => $this->requireBool($this->node($hav['node']), $hav['pos'], 'FILTER');
+            $conditions[] = (($hav['overGroups'] ?? false)
+                ? $this->withGroup($src, $hav['binder'], $render)
+                : $this->withProjected($src, $hav['binder'], $render))->parts;
+        }
+        return [' HAVING ', ...self::joinPartLists($conditions, ' AND ')];
+    }
+
+    /**
+     * ORDER BY: each key as orderKey renders it, then its direction.
+     *
+     * @param array<string,mixed> $src
+     * @return list<string|int>
+     */
+    private function orderByClause(RelationalPlan $plan, array $src): array
+    {
+        if ($plan->orderBy === []) {
+            return [];
+        }
+        $keys = [];
+        foreach ($plan->orderBy as $ord) {
+            // A TEXT sort key is collated like a group key: SEL sorts text
+            // by its bytes, and a server's default collation would not.
+            $render = fn (): Fragment => $this->node($ord['node']);
+            $oFrag = $this->orderKey(($ord['overGroups'] ?? false)
+                ? $this->withGroup($src, $ord['binder'], $render)
+                : ($plan->groupBy !== null
+                    ? $this->withProjected($src, $ord['binder'], $render)
+                    : $this->withRow($src, $ord['binder'], $render)), $ord['node']['pos']);
+            $keys[] = [...$oFrag->parts, ' ' . $ord['dir']];
+        }
+        return [' ORDER BY ', ...self::joinPartLists($keys, ', ')];
+    }
+
+    /**
+     * LIMIT and OFFSET. An OFFSET alone takes the dialect's spelling of "no
+     * limit" where the grammar requires a LIMIT before an OFFSET.
+     *
+     * @return list<string>
+     */
+    private function limitClause(RelationalPlan $plan): array
+    {
+        $limit = $plan->limit;
+        $offset = $plan->offset;
+        if ($limit !== null) {
+            return [$offset !== null ? " LIMIT {$limit} OFFSET {$offset}" : " LIMIT {$limit}"];
+        }
+        if ($offset === null) {
+            return [];
+        }
+        $chain = Map::chain($this->dialect);
+        if (in_array('mariadb', $chain, true) || in_array('mysql', $chain, true) || in_array('mysql-family', $chain, true)) {
+            return [" LIMIT 18446744073709551615 OFFSET {$offset}"];
+        }
+        if (in_array('sqlite', $chain, true)) {
+            return [" LIMIT -1 OFFSET {$offset}"];
+        }
+        return [" OFFSET {$offset}"];
     }
 
 }

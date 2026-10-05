@@ -48,7 +48,7 @@ check($dead['t'] === 'bool' && $dead['v'] === false, 'short-circuit literal fold
 $branch = Optimizer::optimize(Sel::compile('IF(TRUE, 2 + 3, 1 / 0)')->ast, true);
 check($branch['t'] === 'num' && $branch['v'] === '5', 'literal IF folding');
 
-// The physical tree never moves a FILTER across a LINK (spec §7.4; SEL-0054):
+// The physical tree never moves a FILTER across a LINK (spec §7.4):
 // a FILTER moved onto a side renumbered the joined rows, skipped the join
 // keys of the rows it dropped, and read relation names under explicit
 // binders. The join tests conjuncts itself, at run time, where it can prove
@@ -154,7 +154,7 @@ check($unfoldedVar['t'] === 'call' && $unfoldedVar['name'] === 'IF',
 // later step renumbers the rows again without reading `_K`: FILTER keeps its
 // input's keys and the three renumber (spec §7.3), so at the end of a
 // pipeline the swap would change the answer's keys. And only past a step that
-// cannot raise on the rows it drops (review 2026-09-25 SEM-07/SEM-08): on the
+// cannot raise on the rows it drops: on the
 // logical path a relation's field reads cannot, in memory they can (E_NO_KEY),
 // so these pushdowns are the logical path's.
 $mapFilterPush = optimized_steps(
@@ -357,7 +357,7 @@ foreach ([
     ['C = COUNT(ORDERS) + LABEL; ORDERS .> TAKE(2) .> MAP(_["id"] + C)', 'hybrid', 'E_NOT_NUM@1:21'],
     ['X = ORDERS .> TAKE(2); X .> MAP(COUNT(X) + _["id"] + "x")', 'hybrid', 'E_NOT_NUM@1:54'],
     ['Y = ABORT("x"); ORDERS .> TAKE(2) .> MAP(Y)', 'pure_memory', 'E_ABORT@1:11'],
-    // SEL-0047: a continuation on line 3 reports its error on line 3.
+    // A continuation on line 3 reports its error on line 3.
     ["X = ORDERS .> TAKE(2);\nX .> MAP(COUNT(X) + _[\"id\"]\n   + \"x\")", 'hybrid', 'E_NOT_NUM@3:6'],
 ] as [$source, $kind, $want]) {
     $program = Sel::compile($source);
@@ -402,8 +402,8 @@ foreach ([
   // guard, so nothing pushes down. A later step that renumbers again lets the
   // swap through.
   ['ORDERS .> MAP(r, RECORD("id", r["id"], "shout", REPEAT(r["name"], 2))) .> FILTER(s, s["id"] > 1)', 'pure_memory'],
-  // REPEAT can raise, so the FILTER stays behind the MAP (review 2026-09-25
-  // SEM-07) and nothing pushes down; a MAP that cannot raise lets it through.
+  // REPEAT can raise, so the FILTER stays behind the MAP and nothing pushes
+  // down; a MAP that cannot raise lets it through.
   ['ORDERS .> MAP(r, RECORD("id", r["id"], "shout", REPEAT(r["name"], 2))) .> FILTER(s, s["id"] > 1) .> TAKE(5)', 'pure_memory'],
   ['ORDERS .> MAP(r, RECORD("id", r["id"], "plus", r["amount"] + 1)) .> FILTER(s, s["id"] > 1) .> TAKE(5)', 'pure_sql'],
   ['ORDERS .> MAP(RECORD("Name", _["name"], "shout", REPEAT(_["name"], 2))) .> TAKE(2)', 'pure_memory'],
@@ -455,7 +455,7 @@ foreach ([
     check($seen['params'] === 't"hay-",t"needle"', "runner contract: bindings in placeholder order, got {$seen['params']}");
 }
 
-// --- T04: an optimisation is invisible (SPEC 6.2) --------------------------
+// --- an optimisation is invisible (SPEC 6.2) -------------------------------
 /** @return array{0:string,1:?int,2:?int} outcome of running SOURCE (plain tree vs optimised) */
 function outcome(string $source, bool $plain): array
 {
@@ -488,10 +488,121 @@ check(step_names(optimized_steps('LIST(3,1,2) .> SORT() .> TAKE(1.5)')) === ['SO
 // A bare variable or literal is not a predicate that cannot raise.
 check(step_names(optimized_steps('LIST(1,2) .> FILTER(_ > 0) .> FILTER(_)')) === ['FILTER', 'FILTER'], 'FILTER + FILTER(_) is not fused');
 check(step_names(optimized_steps('LIST(1,2) .> FILTER(_ > 0) .> FILTER(TRUE)')) === ['FILTER'], 'a TRUE predicate still disappears');
-// PHP-C14: the pipeline unwind is linear in the number of stages.
+// The pipeline unwind is linear in the number of stages.
 $t0 = microtime(true);
 $long = Sel::compile('LIST(1,2)' . str_repeat(' .> SORT', 150) . ' .> COUNT()');
 Optimizer::unwindPipeline($long->ast);
 check(microtime(true) - $t0 < 2.0, 'unwindPipeline is linear');
+
+// --- hybrid execution never writes the caller's context ------------------------------
+// The shared corpus (sql/oracle/hybrid.json, `programs` and `application`) on an
+// in-memory SQLite, so the gate holds PHP to it without a server; php/bin/sqlo
+// `hybrid` runs the same corpus on every server a DSN names.
+require_once __DIR__ . '/../php/bin/hybrid-parity.php';
+if (!extension_loaded('pdo_sqlite')) {
+    fwrite(STDERR, "FAIL the hybrid-parity corpus needs pdo_sqlite\n");
+    exit(1);
+}
+$parity = run_hybrid(new PDO('sqlite::memory:', null, null, [
+    PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+    PDO::ATTR_EMULATE_PREPARES => false,
+]), 'sqlite', false, 'sqlite (in memory) ');
+check($parity['failed'] === 0, 'the hybrid-parity corpus holds on SQLite');
+
+// What the corpus cannot say, ported from tools/check-js-sql.mjs: an application
+// function that writes its argument and then throws, one defined through the
+// lower-level Registry::define, one plan executed twice, and a Program whose whole
+// tree is replaced after its first execution.
+$aOf = static fn (\Sel\Value $ctx): string => $ctx->get('A')->get('k')->asText();
+$fresh = static fn (): \Sel\Value => \Sel\Value::fromNative(['A' => ['k' => '1']]);
+\Sel\Registry::registerFunction('PHP_POKE_ERR', 1, 1, static function ($args): \Sel\Value {
+    $args->val(0)->set('k', \Sel\Value::fromNative('99'));
+    throw new \RuntimeException('callback error');
+});
+$ctx = $fresh();
+$threw = false;
+try {
+    Sql::executeHybrid(Sql::planHybrid(Sel::compile('PHP_POKE_ERR(A)'), 'sqlite'), static fn () => [], $ctx);
+} catch (\RuntimeException) {
+    $threw = true;
+}
+check($threw && $aOf($ctx) === '1', 'an application function that writes and throws leaves the caller\'s context alone');
+
+\Sel\Registry::define(['name' => 'PHP_POKE_LOW', 'min' => 1, 'max' => 1,
+    'fn' => static function ($args): \Sel\Value {
+        $v = $args->val(0);
+        $v->set('k', \Sel\Value::fromNative('888'));
+        return $v;
+    }]);
+$ctx = $fresh();
+$res = Sql::executeHybrid(Sql::planHybrid(Sel::compile('PHP_POKE_LOW(A)'), 'sqlite'), static fn () => [], $ctx);
+check($res->get('k')->asText() === '888' && $aOf($ctx) === '1', 'a function from Registry::define is an application function too');
+
+hybrid_register_application_functions();
+$plan = Sql::planHybrid(Sel::compile('POKE(A)'), 'sqlite');
+$ctx1 = $fresh();
+$ctx2 = $fresh();
+Sql::executeHybrid($plan, static fn () => [], $ctx1);
+Sql::executeHybrid($plan, static fn () => [], $ctx2);
+check($aOf($ctx1) === '1' && $aOf($ctx2) === '1', 'one plan executed twice leaves both contexts alone');
+
+$program = Sel::compile('A');
+$plan = Sql::planHybrid($program, 'sqlite');
+$ctx = $fresh();
+check(Sql::executeHybrid($plan, static fn () => [], $ctx)->get('k')->asText() === '1', 'a read-only continuation answers');
+$program->ast = Sel::compile('POKE(A)')->ast;
+$res = Sql::executeHybrid($plan, static fn () => [], $ctx);
+check($res->get('k')->asText() === '9' && $aOf($ctx) === '1', 'a replaced tree is walked again: its application call copies the context');
+
+$ctx = $fresh();
+$res = Sql::executeHybrid(Sql::planHybrid(Sel::compile('A["k"] = "99"; A'), 'sqlite'), static fn () => [], $ctx);
+check($res->get('k')->asText() === '99' && $aOf($ctx) === '1', 'an assignment into a nested field leaves the caller\'s context alone');
+
+// --- Binding::column() and raw() refuse what JS and Python refuse ---------------------
+// The flags are checked in the body, with E_SQL_BINDING, not coerced by a typed
+// signature (`'yes'` was exact = true) or thrown as a TypeError a strict caller's
+// tryTranslate does not catch; `splitSargable` is the ninth argument, as in JS and
+// Python, where PHP dropped it.
+$refusal = static function (callable $make): ?string {
+    try {
+        $make();
+        return null;
+    } catch (\Sel\Sql\SqlError $e) {
+        return $e->code;
+    } catch (\Throwable $e) {
+        return get_class($e);
+    }
+};
+foreach ([
+    'column exact "yes"' => static fn () => Binding::column('c', null, 'NUM', 'yes'),
+    'column sargable 1' => static fn () => Binding::column('c', null, 'NUM', false, 1),
+    'column guard null' => static fn () => Binding::column('c', null, 'NUM', false, false, null),
+    'column collation 5' => static fn () => Binding::column('c', null, 'NUM', false, false, false, 5),
+    'column splitSargable "y"' => static fn () => Binding::column('c', null, 'NUM', false, false, false, null, null, 'y'),
+    'raw exact 1' => static fn () => Binding::raw('x', 'NUM', 1),
+    'raw collation []' => static fn () => Binding::raw('x', 'NUM', false, false, false, []),
+] as $why => $make) {
+    check($refusal($make) === 'E_SQL_BINDING', "Binding refuses {$why} with E_SQL_BINDING");
+}
+check(Binding::column('c', null, 'NUM', false, false, false, null, null, true)->spec['prefilter'] === 'separate',
+    'column() takes splitSargable');
+check(Binding::raw('x', 'NUM', false, false, false, null, null, true)->spec['prefilter'] === 'separate',
+    'raw() takes splitSargable');
+check(Binding::column('c', null, 'NUM', false, false, false, 'binary')->spec['exact'] === true,
+    'a collation string still folds into the flags');
+
+// --- Composer's autoload.files: the SQL layer is loaded on first use, not up front ------
+// What `composer require` gives an application: every file composer.json lists, in a
+// fresh process. Evaluating must not load the translator; naming a Sel\Sql class must.
+$composer = json_decode((string) file_get_contents(__DIR__ . '/../composer.json'), true);
+$requires = implode('', array_map(
+    static fn (string $f): string => 'require ' . var_export(realpath(__DIR__ . '/../' . $f), true) . ';',
+    $composer['autoload']['files']));
+$probe = $requires . ' echo \Sel\Sel::evaluate("1 + 1")->asText(), " ",'
+    . ' var_export(class_exists("Sel\\\\Sql\\\\Translator", false), true), " ",'
+    . ' \Sel\Sql\Sql::translate(\Sel\Sel::compile("X > 1"), "sqlite",'
+    . ' ["X" => \Sel\Sql\Binding::column("x", null, "NUM")])->asCondition();';
+$out = shell_exec(escapeshellarg(PHP_BINARY) . ' -r ' . escapeshellarg($probe) . ' 2>&1');
+check(trim((string) $out) === '2 false (CAST("x" AS NUMERIC) > CAST(\'1\' AS NUMERIC))', "composer's autoload.files load the SQL layer lazily: got " . trim((string) $out));
 
 echo "PHP optimizer checks: {$checks} passed\n";

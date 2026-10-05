@@ -92,7 +92,9 @@ function extract_blocks(string $file): array
                 continue;
             }
             $info = trim(substr($t, 3));
-            if (str_starts_with($info, 'sel-case')) {
+            // `sel-case NAME`: the word, then whitespace -- a `sel-cases` fence is
+            // some other language's block, not a case with the name "s".
+            if (preg_match('/^sel-case(?:\s|$)/', $info) === 1) {
                 $name = trim(substr($info, 8));
                 if ($name === '') {
                     throw new RuntimeException(
@@ -117,10 +119,11 @@ function extract_blocks(string $file): array
 
 $files = array_slice($argv, 1);
 if ($files === []) {
-    // Both documents that quote emitted SQL. SQL-KINDS.md was outside this list
-    // for its whole first life, and drifted the same way SQL-TRANSLATION.md §7
-    // did: it described `asCondition` wrapping an UNKNOWN fragment in IS TRUE,
-    // in the present tense, under a table saying that cell was closed. A
+    // Both documents that quote emitted SQL. docs/internals/sql-kinds.md was
+    // outside this list for its whole first life, and drifted the same way
+    // docs/internals/sql-translation.md §7 did: it described `asCondition`
+    // wrapping an UNKNOWN fragment in IS TRUE, in the present tense, under a
+    // table saying that cell was closed. A
     // document about what is BROKEN is the most drift-prone kind there is,
     // because it goes stale the moment somebody fixes the thing.
     $files = [

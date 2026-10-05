@@ -9,6 +9,7 @@ declare(strict_types=1);
 namespace Sel\Sql;
 
 use Sel\Registry;
+use Sel\Utf8;
 
 final class Map
 {
@@ -42,7 +43,7 @@ final class Map
     private static array $guardChecked = [];
 
     /**
-     * Per-dialect answers that only registration can change (PHP-P24): the
+     * Per-dialect answers that only registration can change: the
      * inheritance chain, each resolved lexical value, and the `textEscape` map in
      * the form strtr() takes. Translation asks for them several times per node.
      * Flushed by flushMemo(), which defineDialect() and reset() call at every
@@ -76,6 +77,9 @@ final class Map
 
     // --- registration -------------------------------------------------------
 
+    /** Every key defineDialect() accepts. sql/MAP.md §3 is the normative list. */
+    public const DIALECT_KEYS = ['extends', 'version', 'target', 'lexical'];
+
     /**
      * Declare a dialect. The usual reason is an older or newer server than the
      * shipped map assumes, which needs no special code because a version is
@@ -85,9 +89,6 @@ final class Map
      *
      * @param array{extends?:string, version?:string, target?:bool, lexical?:array<string,mixed>} $spec
      */
-    /** Every key defineDialect() accepts. sql/MAP.md §3 is the normative list. */
-    public const DIALECT_KEYS = ['extends', 'version', 'target', 'lexical'];
-
     public static function defineDialect(string $name, array $spec): void
     {
         // A name means one dialect. A shipped one cannot be registered again; one an
@@ -140,7 +141,7 @@ final class Map
         // by guessing and Python's int() raised a ValueError out of the first
         // translation that had a `since`. Refused here, at the line that wrote
         // it, so nothing downstream has to guess.
-        if (!is_string($version) || preg_match('/\A[0-9]+(\.[0-9]+)*\z/', $version) !== 1) {
+        if (!self::isDottedNumeric($version)) {
             throw new \LogicException("SQL dialect {$name} has version "
                 . var_export($version, true) . ', which is not dotted-numeric; '
                 . 'strip any suffix a server reports (11.8.8-MariaDB is 11.8.8)');
@@ -183,7 +184,6 @@ final class Map
             throw $e;
         }
         unset(self::$guardChecked[$name]);
-        self::flushMemo();
     }
 
     /**
@@ -266,7 +266,7 @@ final class Map
         // the translator looks up verbatim — upper-casing those stored a
         // registered skeleton under a key nothing ever reads, which made the
         // documented escape hatch silently dead.
-        $stored = $section === 'funcs' ? \Sel\Utf8::upper($key) : $key;
+        $stored = $section === 'funcs' ? Utf8::upper($key) : $key;
         self::$overlay[$dialect][$section][$stored] = $entry;
         $arity = $section === 'funcs' ? Registry::hostArity($stored) : null;
         if ($arity !== null) {
@@ -420,7 +420,7 @@ final class Map
     /**
      * `textEscape` as strtr() wants it: every key a string, every value a string.
      * strtr() with an array already tries the longest key first, so no sorting is
-     * needed (PHP-P24). Null when the dialect declares no escape map.
+     * needed. Null when the dialect declares no escape map.
      *
      * @return ?array<string,string>
      */
@@ -469,8 +469,7 @@ final class Map
             return;
         }
         // Marked checked only once every check below has passed: set first, the first
-        // translation threw and every later one silently used the mismatching guard
-        // (PHP-C49).
+        // translation threw and every later one silently used the mismatching guard.
         $guard = self::lexical($dialect, 'numericGuard');
         if (!is_string($guard)) {
             self::$guardChecked[$dialect] = true;
@@ -687,7 +686,7 @@ final class Map
         // `funcs` keys are SEL function names and case-insensitive; ops and skel
         // keys are looked up verbatim, which is why define() upper-cases only the
         // first. Registering `and` or `Case` used to be silently dead.
-        if ($section === 'funcs' && !isset($rules['funcArity'][\Sel\Utf8::upper($key)])
+        if ($section === 'funcs' && !isset($rules['funcArity'][Utf8::upper($key)])
             && Registry::hostArity($key) === null) {
             throw new \LogicException("{$key} is neither a SEL function this layer maps nor a "
                 . 'registered host function. A host function is registered '
@@ -743,12 +742,7 @@ final class Map
                         . ' — a typo would survive as literal text in every query');
                 }
             }
-            if (isset($entry['caveat'])
-                && !in_array($entry['caveat'], $rules['caveats'], true)) {
-                throw new \LogicException("{$where} declares the caveat "
-                    . var_export($entry['caveat'], true) . ', which is not on the '
-                    . 'closed list in sql/MAP.md §4.6');
-            }
+            self::checkCaveat($entry, $where);
             return;
         }
 
@@ -763,15 +757,8 @@ final class Map
                 . '; use one of ' . implode(', ', $rules['retKinds'])
                 . ', @concat or @unify:<n>[,<n>...]');
         }
-        if (isset($entry['caveat']) && !in_array($entry['caveat'], $rules['caveats'], true)) {
-            throw new \LogicException("{$where} declares the caveat "
-                . var_export($entry['caveat'], true) . ', which is not on the closed '
-                . 'list in sql/MAP.md §4.6; a caveat an application cannot branch on '
-                . 'is prose');
-        }
-        if (isset($entry['since'])
-            && (!is_string($entry['since'])
-                || preg_match('/\A[0-9]+(\.[0-9]+)*\z/', $entry['since']) !== 1)) {
+        self::checkCaveat($entry, $where);
+        if (isset($entry['since']) && !self::isDottedNumeric($entry['since'])) {
             throw new \LogicException("{$where} has a since that is not dotted-numeric");
         }
         if (isset($entry['arity'])) {
@@ -815,7 +802,7 @@ final class Map
             // range, and the list is refused for the reason it is actually wrong.
             [$min, $max] = $section === 'ops'
                 ? $rules['opArity'][$key]
-                : ($host ?? $rules['funcArity'][\Sel\Utf8::upper($key)]);
+                : ($host ?? $rules['funcArity'][Utf8::upper($key)]);
             if (isset($entry['arity'])) {
                 $min = max($min, $entry['arity'][0]);
                 $max = $max === null ? $entry['arity'][1]
@@ -859,8 +846,6 @@ final class Map
             if (!is_string($a)) {
                 throw new \LogicException("{$where} has args that are not a list of kinds");
             }
-        }
-        foreach ($args as $a) {
             if (!in_array($a, MapData::RULES['argKinds'], true)) {
                 throw new \LogicException("{$where} declares the argument kind "
                     . var_export($a, true) . '; use one of '
@@ -878,6 +863,28 @@ final class Map
         if (!in_array($section, self::SECTIONS, true)) {
             throw new \LogicException(
                 "unknown map section {$section}; use " . implode(', ', self::SECTIONS));
+        }
+    }
+
+    /** Whether `$v` is a dotted-numeric version (sql/MAP.md §4.5): `11.8`, never `11.8-MariaDB`. */
+    private static function isDottedNumeric($v): bool
+    {
+        return is_string($v) && preg_match('/\A[0-9]+(\.[0-9]+)*\z/', $v) === 1;
+    }
+
+    /**
+     * An entry's caveat, when it has one, must be on the closed list in
+     * sql/MAP.md §4.6: a caveat an application cannot branch on is prose.
+     *
+     * @param array<string,mixed> $entry
+     */
+    private static function checkCaveat(array $entry, string $where): void
+    {
+        if (isset($entry['caveat']) && !in_array($entry['caveat'], MapData::RULES['caveats'], true)) {
+            throw new \LogicException("{$where} declares the caveat "
+                . var_export($entry['caveat'], true) . ', which is not on the closed '
+                . 'list in sql/MAP.md §4.6; a caveat an application cannot branch on '
+                . 'is prose');
         }
     }
 

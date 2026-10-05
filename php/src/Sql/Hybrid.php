@@ -16,8 +16,13 @@ declare(strict_types=1);
 
 namespace Sel\Sql;
 
+use Sel\BuiltinManifest;
+use Sel\Limits;
 use Sel\Optimizer;
 use Sel\Program;
+use Sel\Registry;
+use Sel\SlotCache;
+use Sel\Utf8;
 use Sel\Value;
 
 final class HybridPlan
@@ -101,6 +106,11 @@ final class HybridPlan
 
 final class Hybrid
 {
+    /** Calls the translator renders itself rather than through the map's `funcs`. */
+    private const SQL_SPECIAL_CALLS = ['IF' => true, 'COND' => true, 'COALESCE' => true, 'COUNT' => true,
+                                       'SUM' => true, 'MIN' => true, 'MAX' => true,
+                                       'RECORD' => true, 'LIST' => true];
+
     /**
      * Build the maximal SQL prefix. A null SQL fragment is an ordinary
      * non-pushdown result; translator bugs and non-SQL exceptions still escape.
@@ -134,16 +144,15 @@ final class Hybrid
             && $catalog->has($node['name'])
             && ($catalog->get($node['name'], $node['pos'])['kind'] ?? null) === 'relation';
         $unwound = self::unwindThroughHelpers($result, $defs, $literals);
-        // A helper unwound through whose name is also the pipeline's source
-        // (`ORDERS = ORDERS .> DROP(2); ORDERS .> TAKE(3)`): its definition is now in
-        // the steps, and keeping the assignment in front of the tree as well applies
-        // it twice, since the tree still reads the name.
-        if (($unwound['source']['t'] ?? null) === 'var' && ($unwound['consumed'][$unwound['source']['name']] ?? false)) {
-            $sourceName = $unwound['source']['name'];
-            $leading = array_values(array_filter($leading,
-                static fn (array $st): bool => ($st['target']['t'] ?? null) !== 'var' || $st['target']['name'] !== $sourceName));
-        }
         if ($unwound['steps'] === [] || !$isRelation($unwound['source'])) {
+            return self::pureMemoryPlan($program, $dialect, $catalog);
+        }
+        // A pipeline this long, unwound through its helpers, is a tree deeper than
+        // the evaluator's cap whatever prefix is asked for, and every probe of a
+        // prefix costs a walk in proportion: more than MAX_DEPTH steps is a
+        // pure-memory plan (the cut-off every host states the same way,
+        // plan.pure-memory.pipeline-longer-than-the-depth-cap).
+        if (count($unwound['steps']) > Limits::MAX_DEPTH) {
             return self::pureMemoryPlan($program, $dialect, $catalog);
         }
         $optimized = Optimizer::optimize(
@@ -221,16 +230,6 @@ final class Hybrid
     }
 
     /**
-     * The continuation's pipeline over the rows the database returned. Its source is
-     * `_INPUT`, which is not the name SEL gives a joined row's left side: a LINK
-     * names it after the pipeline's source variable (SPEC 7.4), so when a LINK is in
-     * the continuation the rows are first assigned to the relation's own name.
-     *
-     * @param array<string,mixed> $source
-     * @param list<array<string,mixed>> $remaining
-     * @return array<string,mixed>
-     */
-    /**
      * Whether the continuation holds a 3-argument LINK whose joined row would name its
      * left side `_INPUT`: no LINK before it in the prefix (which has already named its
      * sides), and a LINK with three arguments (five name both sides). Spec 7.4; the
@@ -283,6 +282,16 @@ final class Hybrid
         return false;
     }
 
+    /**
+     * The continuation's pipeline over the rows the database returned. Its source is
+     * `_INPUT`, which is not the name SEL gives a joined row's left side: a LINK
+     * names it after the pipeline's source variable (SPEC 7.4), so when a LINK is in
+     * the continuation the rows are first assigned to the relation's own name.
+     *
+     * @param array<string,mixed> $source
+     * @param list<array<string,mixed>> $remaining
+     * @return array<string,mixed>
+     */
     private static function continuationPipeline(array $source, array $remaining, bool $nameLeft): array
     {
         $input = ['t' => 'var', 'name' => '_INPUT', 'pos' => $remaining[0]['pos']];
@@ -310,7 +319,7 @@ final class Hybrid
         ]);
     }
 
-    /** @param array<string,mixed> $ast @param array<string,mixed> $options */
+    /** @param array<string,mixed>|null $n */
     private static function latestFieldName(?array $n): ?string
     {
         return ($n['t'] ?? null) === 'index' && $n['obj']['t'] === 'var' && $n['obj']['name'] === '_'
@@ -330,9 +339,8 @@ final class Hybrid
         $body = count($ba) === 3 ? $ba[2] : null;
         $m = $steps[$at + 1] ?? null;
         if ($body === null && ($m['name'] ?? null) === 'MAP' && count($m['args']) === 2) $body = $m['args'][1];
-        $upper = static fn (string $s): string => strtr($s, 'abcdefghijklmnopqrstuvwxyz', 'ABCDEFGHIJKLMNOPQRSTUVWXYZ');
-        $pf = $rel['fields'][$upper($partition ?? '')] ?? [];
-        $rf = $rel['fields'][$upper($revision)] ?? [];
+        $pf = $rel['fields'][Utf8::upper($partition ?? '')] ?? [];
+        $rf = $rel['fields'][Utf8::upper($revision)] ?? [];
         if ($partition === null || ($body['t'] ?? null) !== 'call' || $body['name'] !== 'RECORD' || count($body['args']) !== 4
             || !in_array($pf['type'] ?? null, ['NUM', 'TEXT'], true) || ($rf['type'] ?? null) !== 'NUM'
             || ($pf['column'] ?? null) !== $partition || ($rf['column'] ?? null) !== $revision
@@ -360,8 +368,8 @@ final class Hybrid
         try {
             $emit = new Emit($dialect);
             $input = '_sel_input'; $groups = '_sel_latest';
-            while ($upper($input) === $upper($rel['from'])) $input .= '_';
-            while (in_array($upper($groups), [$upper($rel['from']), $upper($input)], true)) $groups .= '_';
+            while (Utf8::upper($input) === Utf8::upper($rel['from'])) $input .= '_';
+            while (in_array(Utf8::upper($groups), [Utf8::upper($rel['from']), Utf8::upper($input)], true)) $groups .= '_';
             [$qi, $qg, $qr, $qmax, $qfirst] = array_map(fn ($s) => $emit->ident($s), [$input, $groups, $revision, '_sel_revision', '_sel_first']);
             $key = $emit->textOperand(new Fragment([$emit->ident($partition)], $pf['type'], $dialect))->asValue();
             $parts = ["WITH {$qi} AS (", ...$sql->parts,
@@ -440,7 +448,7 @@ final class Hybrid
                 return;
             }
             if ($t === 'call') {
-                $form = \Sel\Registry::bindingForm($node['name'], $node['args']);
+                $form = Registry::bindingForm($node['name'], $node['args']);
                 $inner = $form === null ? $bound : array_merge($bound, $form['binds'], ['_K']);
                 foreach ($node['args'] as $i => $arg) {
                     $scope = $form === null ? 'outer' : $form['scopes'][$i];
@@ -533,7 +541,7 @@ final class Hybrid
      * then the right's, and a later sort keeps the earlier sort's order among its
      * ties, which is gone once a projection hid the earlier key. A prefix that ends
      * before that step is exact; one that includes it answers in another order
-     * (docs/internals/sql-translation.md 12.1, "Order"; PHP-C35).
+     * (docs/internals/sql-translation.md 12.1, "Order").
      *
      * @param list<array<string,mixed>> $steps
      */
@@ -560,7 +568,8 @@ final class Hybrid
      * `$defs` are the helper definitions: a read of one is as unsupported as
      * its definition, since the translator will inline it.
      *
-     * @param array<string,array<string,mixed>>|null $defs @param array<string,bool> $seen
+     * @param array<string,array<string,mixed>>|null $defs
+     * @param array<string,bool> $seen
      */
     private static function containsUnsupportedSql(?array $node, string $dialect,
                                                    ?array $defs = null, array $seen = []): bool
@@ -572,11 +581,8 @@ final class Hybrid
                 $seen + [$node['name'] => true]);
         }
         if (($node['t'] ?? null) === 'call') {
-            $special = ['IF' => true, 'COND' => true, 'COALESCE' => true, 'COUNT' => true,
-                        'SUM' => true, 'AVG' => true, 'MIN' => true, 'MAX' => true,
-                        'RECORD' => true, 'LIST' => true];
-            if (!isset($special[$node['name']])) {
-                $entry = Map::entry($dialect, 'funcs', \Sel\Utf8::upper($node['name']));
+            if (!isset(self::SQL_SPECIAL_CALLS[$node['name']])) {
+                $entry = Map::entry($dialect, 'funcs', Utf8::upper($node['name']));
                 if ($entry === Map::MISSING || $entry === null || is_string($entry)) return true;
             }
             foreach ($node['args'] ?? [] as $item) {
@@ -602,14 +608,14 @@ final class Hybrid
     // (`SORT_BY(s, s["name"])`).
     private static function fieldReferences(?array $node, ?string $binder = '_'): array
     {
-        $wanted = $binder === null ? null : array_map([\Sel\Utf8::class, 'upper'], [$binder, '_', '_1', '_2']);
+        $wanted = $binder === null ? null : array_map([Utf8::class, 'upper'], [$binder, '_', '_1', '_2']);
         $out = [];
         $seen = [];
         $visit = function (?array $item) use (&$visit, &$out, &$seen, $wanted): void {
             if ($item === null) return;
             if (($item['t'] ?? null) === 'index' && ($item['obj']['t'] ?? null) === 'var'
                 && ($item['idx']['t'] ?? null) === 'text'
-                && ($wanted === null || in_array(\Sel\Utf8::upper($item['obj']['name']), $wanted, true))) {
+                && ($wanted === null || in_array(Utf8::upper($item['obj']['name']), $wanted, true))) {
                 $key = (string) $item['idx']['v'];
                 if (!isset($seen[$key])) {
                     $seen[$key] = true;
@@ -660,7 +666,8 @@ final class Hybrid
      * reads `_K` before a renumbering step comes, and one does come (or the result
      * would BE the retained-key rows).
      *
-     * @param list<array<string,mixed>> $prefix @param list<array<string,mixed>> $remaining
+     * @param list<array<string,mixed>> $prefix
+     * @param list<array<string,mixed>> $remaining
      */
     private static function splitShowsKeys(array $prefix, array $remaining): bool
     {
@@ -681,10 +688,10 @@ final class Hybrid
      */
     private static function readsWholeRow(?array $node, string $binder): bool
     {
-        $wanted = array_map([\Sel\Utf8::class, 'upper'], [$binder, '_', '_1', '_2']);
+        $wanted = array_map([Utf8::class, 'upper'], [$binder, '_', '_1', '_2']);
         $visit = function (?array $item) use (&$visit, $wanted): bool {
             if ($item === null) return false;
-            if (($item['t'] ?? null) === 'var' && in_array(\Sel\Utf8::upper($item['name']), $wanted, true)) return true;
+            if (($item['t'] ?? null) === 'var' && in_array(Utf8::upper($item['name']), $wanted, true)) return true;
             if (($item['t'] ?? null) === 'index' && ($item['obj']['t'] ?? null) === 'var'
                 && ($item['idx']['t'] ?? null) === 'text') {
                 // A field read; the object is not a whole-row read.
@@ -710,7 +717,7 @@ final class Hybrid
         $value = $pair['value'];
         return ($value['t'] ?? null) === 'index' && ($value['obj']['t'] ?? null) === 'var'
             && ($value['idx']['t'] ?? null) === 'text'
-            && \Sel\Utf8::upper($value['obj']['name']) === \Sel\Utf8::upper($binder)
+            && Utf8::upper($value['obj']['name']) === Utf8::upper($binder)
             && (string) $value['idx']['v'] === (string) $pair['key']['v'];
     }
 
@@ -812,19 +819,19 @@ final class Hybrid
         foreach ($pushable as $pair) {
             if (self::isOwnFieldRead($pair, $details['binder'])) $own[] = (string) $pair['key']['v'];
         }
-        // "Case" here is ASCII case, as everywhere in SEL -- strtoupper is.
-        $projectedFolded = array_map([\Sel\Utf8::class, 'upper'], $projected);
+        // "Case" here is ASCII case, as everywhere in SEL -- Utf8::upper is.
+        $projectedFolded = array_map([Utf8::class, 'upper'], $projected);
         $dependencies = [];
         $dependenciesFolded = [];
         foreach ($custom as $pair) foreach (self::fieldReferences($pair['value'], $details['binder']) as $field) {
             if (in_array($field, $projected, true)) {
                 if (!in_array($field, $own, true)) return null;
-            } elseif (in_array(\Sel\Utf8::upper($field), $projectedFolded, true)) {
+            } elseif (in_array(Utf8::upper($field), $projectedFolded, true)) {
                 return null;
             } elseif (!in_array($field, $dependencies, true)) {
                 // Two dependencies must not differ only by case either.
-                if (in_array(\Sel\Utf8::upper($field), $dependenciesFolded, true)) return null;
-                $dependenciesFolded[] = \Sel\Utf8::upper($field);
+                if (in_array(Utf8::upper($field), $dependenciesFolded, true)) return null;
+                $dependenciesFolded[] = Utf8::upper($field);
                 $dependencies[] = $field;
             }
         }
@@ -837,7 +844,7 @@ final class Hybrid
             $key = ['t' => 'text', 'v' => $field, 'pos' => $steps[$mapIndex]['pos']];
             $obj = ['t' => 'var', 'name' => $details['binder'], 'pos' => $steps[$mapIndex]['pos']];
             $rewrittenArgs[] = $key;
-            $rewrittenArgs[] = ['t' => 'index', 'obj' => $obj, 'idx' => $key, 'pos' => $steps[$mapIndex]['pos'], 'slotCache' => new \Sel\SlotCache()];
+            $rewrittenArgs[] = ['t' => 'index', 'obj' => $obj, 'idx' => $key, 'pos' => $steps[$mapIndex]['pos'], 'slotCache' => new SlotCache()];
         }
         $record = $details['body'];
         $record['args'] = $rewrittenArgs;
@@ -860,7 +867,7 @@ final class Hybrid
             $continuationArgs[] = $pair['key'];
             if (isset($pushableAt[$i])) {
                 $obj = ['t' => 'var', 'name' => $details['binder'], 'pos' => $pair['value']['pos']];
-                $continuationArgs[] = ['t' => 'index', 'obj' => $obj, 'idx' => $pair['key'], 'pos' => $pair['value']['pos'], 'slotCache' => new \Sel\SlotCache()];
+                $continuationArgs[] = ['t' => 'index', 'obj' => $obj, 'idx' => $pair['key'], 'pos' => $pair['value']['pos'], 'slotCache' => new SlotCache()];
             } else {
                 $continuationArgs[] = $pair['value'];
             }
@@ -890,8 +897,8 @@ final class Hybrid
     // memory half of a plan, because that half is a program run() evaluates
     // and §12.1 promises it reports errors where run() would: run() evaluates
     // the READ of Y at the use site and reports `+`'s operand there, and it
-    // evaluates the definition once, before the pipeline, not once per row
-    // (review 2026-09-15 finding AJ). So the planner does not inline. It plans
+    // evaluates the definition once, before the pipeline, not once per row.
+    // So the planner does not inline. It plans
     // the program as written, three ways:
     //
     //   * A helper that IS a literal -- after inlining earlier such helpers
@@ -964,7 +971,8 @@ final class Hybrid
      * this copies on the way down and never writes into the caller's tree.
      *
      * @param array<string,mixed>|null $node
-     * @param array<string,array<string,mixed>> $literals @param list<string> $bound
+     * @param array<string,array<string,mixed>> $literals
+     * @param list<string> $bound
      */
     private static function inlineLiterals(?array $node, array $literals, array $bound = []): ?array
     {
@@ -1001,24 +1009,16 @@ final class Hybrid
             return $node;
         }
         if ($t === 'call') {
-            // Which arguments run inside the binder, and which are the binder's own
-            // NAME, is the manifest's decision (Registry::bindingForm), as in stage 1:
-            // reading it off the argument count alone missed the four- and
-            // five-argument forms, so a literal helper spelled like an explicit binder
+            // Stage 1's scoping, from the same walk: reading the binder slots off
+            // the argument count alone missed the four- and five-argument forms, so
+            // a literal helper spelled like an explicit binder
             // (`N = 5; ... SORT_BY(N, N["id"], "DESC")`) was inlined into the binder
             // slot and downgraded a pure SQL pipeline to memory.
-            $form = \Sel\Registry::bindingForm($node['name'], $node['args']);
-            $inner = $form === null ? $bound : array_merge($bound, $form['binds'], ['_K']);
-            $args = [];
-            foreach ($node['args'] as $i => $arg) {
-                $scope = $form === null ? 'outer' : $form['scopes'][$i];
-                if ($scope === 'binder') {
-                    $args[] = $arg;
-                    continue;
+            foreach (Normalise::argScopes($node, $bound) as $i => $sees) {
+                if ($sees !== null) {
+                    $node['args'][$i] = self::inlineLiterals($node['args'][$i], $literals, $sees);
                 }
-                $args[] = self::inlineLiterals($arg, $literals, $scope === 'inner' ? $inner : $bound);
             }
-            $node['args'] = $args;
             return $node;
         }
         return $node;
@@ -1029,7 +1029,8 @@ final class Hybrid
      * literal helpers are inlined into it and it is folded, when what is left
      * is a leaf.
      *
-     * @param list<array<string,mixed>> $leading @param array<string,mixed> $options
+     * @param list<array<string,mixed>> $leading
+     * @param array<string,mixed> $options
      * @return array<string,array<string,mixed>>
      */
     private static function literalHelpers(array $leading, array $options): array
@@ -1048,8 +1049,9 @@ final class Hybrid
      * source is a helper, that helper's definition unwound in turn.
      *
      * @param array<string,mixed> $result
-     * @param array<string,array<string,mixed>> $defs @param array<string,array<string,mixed>> $literals
-     * @return array{source:array<string,mixed>,steps:list<array<string,mixed>>,consumed:array<string,bool>}
+     * @param array<string,array<string,mixed>> $defs
+     * @param array<string,array<string,mixed>> $literals
+     * @return array{source:array<string,mixed>,steps:list<array<string,mixed>>}
      */
     private static function unwindThroughHelpers(array $result, array $defs, array $literals): array
     {
@@ -1057,15 +1059,23 @@ final class Hybrid
         $source = $unwound['source'];
         $steps = $unwound['steps'];
         $seen = [];
-        $consumed = [];
         while (($source['t'] ?? null) === 'var' && isset($defs[$source['name']]) && !isset($seen[$source['name']])) {
-            $consumed[$source['name']] = true;
             $seen[$source['name']] = true;
             $inner = Optimizer::unwindPipeline(self::inlineLiterals($defs[$source['name']], $literals));
             $source = $inner['source'];
             $steps = array_merge($inner['steps'], $steps);
         }
-        return ['source' => $source, 'steps' => $steps, 'consumed' => $consumed];
+        // The source the loop stopped at reads the catalogue's binding when its name
+        // is also a helper's (`ORDERS = ORDERS .> DROP(2); ORDERS .> TAKE(3)`): it is
+        // marked, so that wrapping the pipeline in its helpers again does not put the
+        // helper in front of the very read that was its own definition (DROP applied
+        // twice). A step that reads the name as a value is not marked, and still
+        // brings the helper along: in the continuation `COUNT(ORDERS)` is the helper's
+        // count, as in run() (plan.helper.rebinds-relation-read-by-continuation).
+        if (($source['t'] ?? null) === 'var' && isset($defs[$source['name']])) {
+            $source['binding'] = true;
+        }
+        return ['source' => $source, 'steps' => $steps];
     }
 
     /**
@@ -1073,14 +1083,17 @@ final class Hybrid
      * can only keep an assignment the tree does not need, never drop one it
      * does.
      *
-     * @param array<string,mixed>|null $node @param array<string,bool> $out
+     * @param array<string,mixed>|null $node
+     * @param array<string,bool> $out
      * @return array<string,bool>
      */
     private static function readNames(?array $node, array $out = []): array
     {
         if ($node === null) return $out;
         if (($node['t'] ?? null) === 'var') {
-            $out[$node['name']] = true;
+            // A read of the BINDING, reached by unwinding through a helper of the
+            // same name (unwindThroughHelpers), is not a read of that helper.
+            if (!($node['binding'] ?? false)) $out[$node['name']] = true;
             return $out;
         }
         foreach (['args', 'items'] as $key) foreach ($node[$key] ?? [] as $item) $out = self::readNames($item, $out);
@@ -1094,7 +1107,8 @@ final class Hybrid
      * The leading assignments `$node` depends on, in program order: those
      * whose name it reads, and those THEY read, transitively.
      *
-     * @param list<array<string,mixed>> $leading @param array<string,mixed> $node
+     * @param list<array<string,mixed>> $leading
+     * @param array<string,mixed> $node
      * @return list<array<string,mixed>>
      */
     private static function referencedAssignments(array $leading, array $node): array
@@ -1119,7 +1133,8 @@ final class Hybrid
      * -- a seq the translator's stage 1 inlines and the evaluator runs in
      * order -- or `$node` itself when it depends on none.
      *
-     * @param list<array<string,mixed>> $leading @param array<string,mixed> $node
+     * @param list<array<string,mixed>> $leading
+     * @param array<string,mixed> $node
      * @return array<string,mixed>
      */
     private static function withHelpers(array $leading, array $node): array
@@ -1129,38 +1144,58 @@ final class Hybrid
             : ['t' => 'seq', 'items' => array_merge($kept, [$node]), 'pos' => $kept[0]['pos']];
     }
 
-    /** @var \WeakMap<\Sel\Program, list<string>|false>|null */
+    /** The largest tree (in arrays walked) writableRoots keeps as a cache key. */
+    private const KEPT_TREE_NODES = 4096;
+
+    /** @var \WeakMap<Program, array{0:array<string,mixed>,1:list<string>|false}>|null */
     private static ?\WeakMap $writableRoots = null;
 
     /**
-     * The root a continuation runs on (PHP-P22): the caller's context is never
-     * written to, but copying all of it cost 5.5 us a row on every execution
-     * although a continuation usually assigns to a name or two. Only the top-level
-     * names the program assigns to are deep-copied; the rest are shared, and a
-     * program with no assignment to a name cannot write through a shared child.
-     * An assignment whose root cannot be read off the tree falls back to the
-     * whole-context copy.
+     * The root a continuation runs on: the caller's context is never written to
+     * (docs/internals/sql-translation.md §12.1), but copying all of it cost 5.5 us
+     * a row on every execution although a continuation usually assigns to a name
+     * or two. Only the top-level names the program assigns to are deep-copied;
+     * the rest are shared, and a program with no assignment to a name cannot
+     * write through a shared child -- unless it calls an application function
+     * (spec §8.1), which may write into the value it is handed, so such a program
+     * runs on a copy of the whole context, as one whose assignment root cannot be
+     * read off the tree does.
      */
-    private static function rootFor(?\Sel\Program $program, Value $context): Value
+    private static function rootFor(?Program $program, Value $context): Value
     {
         $names = $program === null ? null : self::writableRoots($program);
         return $names === null ? $context->copy() : $context->copyWritable($names);
     }
 
-    /** @return list<string>|null the top-level names a program assigns to, null when unsure */
-    private static function writableRoots(\Sel\Program $program): ?array
+    /**
+     * The top-level names a program assigns to, or null when the whole context
+     * must be copied: an assignment whose root is not a name, or a call of any
+     * function outside the builtin manifest. The answer is kept per Program and
+     * per tree: a caller may replace the whole $ast (Program::$ast), and the
+     * identity check below is what notices. Only a small tree is kept as the
+     * key: the cache's share of $ast would make Program::__destruct dismantle a
+     * copy and leave the original to PHP's recursive free, which a tree as deep
+     * as a long source does not survive. A larger tree is walked on every call,
+     * which costs what one evaluation of it costs at least.
+     *
+     * @return list<string>|null
+     */
+    private static function writableRoots(Program $program): ?array
     {
         self::$writableRoots ??= new \WeakMap();
-        if (isset(self::$writableRoots[$program])) {
-            $known = self::$writableRoots[$program];
-            return $known === false ? null : $known;      // false: the tree was not readable, copy it whole
+        $known = self::$writableRoots[$program] ?? null;
+        if ($known !== null && $known[0] === $program->ast) {
+            return $known[1] === false ? null : $known[1];
         }
         $names = [];
         $stack = [$program->ast];
         $ok = true;
+        $visited = 0;
         while ($stack !== [] && $ok) {
             $n = array_pop($stack);
-            if (($n['t'] ?? null) === 'assign') {
+            $visited++;
+            $t = $n['t'] ?? null;
+            if ($t === 'assign') {
                 $target = $n['target'] ?? null;
                 while (is_array($target) && ($target['t'] ?? null) === 'index') $target = $target['obj'] ?? null;
                 if (is_array($target) && ($target['t'] ?? null) === 'var' && is_string($target['name'] ?? null)) {
@@ -1168,13 +1203,17 @@ final class Hybrid
                 } else {
                     $ok = false;
                 }
+            } elseif ($t === 'call' && !isset(BuiltinManifest::BUILTINS[$n['name'] ?? ''])) {
+                $ok = false;
             }
             foreach ($n as $k => $child) {
-                if ($k !== 'pos' && is_array($child)) $stack[] = $child;
+                if ($k !== 'pos' && $k !== 'spec' && is_array($child)) $stack[] = $child;
             }
         }
         $result = $ok ? array_keys($names) : null;
-        self::$writableRoots[$program] = $result ?? false;
+        if ($visited <= self::KEPT_TREE_NODES) {
+            self::$writableRoots[$program] = [$program->ast, $result ?? false];
+        }
         return $result;
     }
 

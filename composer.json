@@ -23,14 +23,22 @@
     "source": "https://github.com/nathanjel/sel"
   },
   "require": {
-    "php": ">=8.1"
+    "php": ">=8.1",
+    "ext-ctype": "*"
+  },
+  "suggest": {
+    "ext-gmp": "Faster arithmetic on large decimals; without it the decimal core uses its own digit-string routines with the same results",
+    "ext-readline": "Needed by the `sel` REPL (sel with no arguments); `sel -e` and `sel FILE` work without it"
   },
   "autoload": {
     "files": [
       "php/src/bootstrap.php",
-      "php/src/Sql/bootstrap.php"
+      "php/src/Sql/autoload.php"
     ]
   },
+  "bin": [
+    "php/bin/sel"
+  ],
   "scripts": {
     "test": "php php/bin/conformance && php php/bin/sqlt",
     "check": "tools/check.sh"

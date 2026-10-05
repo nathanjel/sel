@@ -10,6 +10,10 @@ declare(strict_types=1);
 
 namespace Sel\Sql;
 
+use Sel\Context;
+use Sel\Limits;
+use Sel\Registry;
+
 final class Normalise
 {
     /**
@@ -32,10 +36,10 @@ final class Normalise
     {
         // Saturating: a chain of a hundred doublings must not overflow the counter.
         self::$size = min(self::$size + $nodes, 1 << 40);
-        if (self::$refusing && self::$size > \Sel\Limits::MAX_SQL_NODES) {
+        if (self::$refusing && self::$size > Limits::MAX_SQL_NODES) {
             refuse('E_SQL_SIZE',
                 'the expression this rule would translate to has more than '
-                . \Sel\Limits::MAX_SQL_NODES . ' nodes once its helpers are expanded, '
+                . Limits::MAX_SQL_NODES . ' nodes once its helpers are expanded, '
                 . 'though SEL evaluates it in linear time; it is evaluated the ordinary way');
         }
     }
@@ -46,7 +50,7 @@ final class Normalise
      * @return array<string,mixed>
      */
     public static function run(array $ast, array $constNames = [],
-                               ?\Sel\Context $ctx = null): array
+                               ?Context $ctx = null): array
     {
         $stmts = $ast['t'] === 'seq' ? $ast['items'] : [$ast];
         $result = array_pop($stmts);
@@ -79,8 +83,8 @@ final class Normalise
      * @param array<string, array<string,mixed>> $defs
      * @param array<string,bool> $constNames
      */
-    private static function record(array $s, array &$defs, array $constNames = [],
-                                   ?\Sel\Context $ctx = null, int $depth = 0): void
+    private static function record(array $s, array &$defs, array $constNames,
+                                   ?Context $ctx, int $depth): void
     {
         if ($s['t'] !== 'assign') {
             refuse('E_SQL_ASSIGN',
@@ -131,7 +135,7 @@ final class Normalise
         // constant subtree is checked wherever it appears; these were the two
         // places it did not appear by the time anything looked.
         $isConstant = Constants::isConstant($value, $constNames);
-        if ($valueSize <= \Sel\Limits::MAX_SQL_NODES && $isConstant) {
+        if ($valueSize <= Limits::MAX_SQL_NODES && $isConstant) {
             Constants::validate($value, $ctx);
         }
 
@@ -179,13 +183,40 @@ final class Normalise
     }
 
     /** The literal key an index expression names, or null when it is not one. */
-    private static function constantKey(array $idx): ?string
+    public static function constantKey(array $idx): ?string
     {
         return match ($idx['t']) {
             'num' => (string) $idx['v'],
             'text' => (string) $idx['v'],
             default => null,
         };
+    }
+
+    /**
+     * What each argument of a call sees: the names bound where it runs, or null
+     * for a binder argument, which is a name and not a read of one and stays as
+     * written. Which arguments a binding call runs inside the binder, and what
+     * they see (its binders and `_K`), is the manifest's decision
+     * (Registry::bindingForm), shared with dependencies(). The one scoping rule
+     * for every walk that substitutes by name: this stage and the hybrid
+     * planner's literal helpers.
+     *
+     * @param array<string,mixed> $node a call
+     * @param list<string> $bound the names bound around the call
+     * @return list<list<string>|null>
+     */
+    public static function argScopes(array $node, array $bound): array
+    {
+        $form = Registry::bindingForm($node['name'], $node['args']);
+        if ($form === null) {
+            return array_fill(0, count($node['args']), $bound);
+        }
+        $inner = array_merge($bound, $form['binds']);
+        $out = [];
+        foreach ($form['scopes'] as $scope) {
+            $out[] = $scope === 'binder' ? null : ($scope === 'inner' ? $inner : $bound);
+        }
+        return $out;
     }
 
     /**
@@ -208,10 +239,10 @@ final class Normalise
         // deepest expression this layer accepts was decided by the host: PHP
         // recursed as far as it liked and Python died of its own stack at around
         // 510 terms, which is an implementation accident rather than a decision.
-        if (++$depth > \Sel\MAX_DEPTH) {
+        if (++$depth > Limits::MAX_DEPTH) {
             refuse('E_SQL_DEPTH',
                 'this expression nests deeper than SEL will evaluate ('
-                . \Sel\MAX_DEPTH . '), so there is nothing to translate; '
+                . Limits::MAX_DEPTH . '), so there is nothing to translate; '
                 . 'the evaluator answers E_DEPTH for it', $node['pos']);
         }
         self::charge(1);
@@ -244,13 +275,11 @@ final class Normalise
                 refuse('E_SQL_ASSIGN',
                     'an assignment here would have to happen while the query runs, '
                     . 'and a SQL expression cannot assign', $node['pos']);
-                // no break — refuse() never returns
 
             case 'seq':
                 refuse('E_SQL_ASSIGN',
                     'a sequence here would evaluate and discard a value, which a '
                     . 'SQL expression cannot do', $node['pos']);
-                // no break
 
             case 'un':
                 $node['x'] = self::substitute($node['x'], $defs, $bound, $depth);
@@ -277,16 +306,10 @@ final class Normalise
                 return $node;
 
             case 'call':
-                // Which arguments a binding call runs inside the binder, and
-                // what they see, is the manifest's decision
-                // (Registry::bindingForm), shared with dependencies(). A binder
-                // argument is a name, not a read of one, and stays as written.
-                $form = \Sel\Registry::bindingForm($node['name'], $node['args']);
-                $inner = $form === null ? $bound : array_merge($bound, $form['binds']);
-                foreach ($node['args'] as $i => $arg) {
-                    $scope = $form === null ? 'outer' : $form['scopes'][$i];
-                    if ($scope === 'binder') continue;
-                    $node['args'][$i] = self::substitute($arg, $defs, $scope === 'inner' ? $inner : $bound, $depth);
+                foreach (self::argScopes($node, $bound) as $i => $sees) {
+                    if ($sees !== null) {
+                        $node['args'][$i] = self::substitute($node['args'][$i], $defs, $sees, $depth);
+                    }
                 }
                 return $node;
 
@@ -311,7 +334,7 @@ final class Normalise
      * Parenthesising changes nothing: the `grouped` flag decides whether a call
      * sees one argument or several, not whether `,` flattens.
      *
-     * What `clist` protects is not this. It is that rule 5 in the class comment
+     * What `clist` protects is not this. It is that indexed assignment
      * builds nesting out of `R[1] = …; R[2] = …`, and a `list` node would have
      * been renumbered flat by the time an aggregate iterated it. A `clist`
      * reaches an aggregate through a bare variable reference, never through a

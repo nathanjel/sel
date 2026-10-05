@@ -6,6 +6,7 @@ declare(strict_types=1);
 
 namespace Sel\Sql;
 
+use Sel\Dec;
 use Sel\Value;
 
 final class Emit
@@ -44,21 +45,21 @@ final class Emit
      * Getting this wrong is not cosmetic. Emitted bare, "5.00" $== "5" becomes
      * 5.00 = 5, which the database answers TRUE and SEL answers FALSE.
      *
-     * @param array{line:int,col:int,offset:int}|null $pos
+     * Its refusals carry no position: a literal is rendered from a fragment's
+     * parameter pool, after the tree that placed it is gone.
      */
-    public static function literal(string $dialect, Value $v, string $form = 'TEXT',
-                                   ?array $pos = null): string
+    public static function literal(string $dialect, Value $v, string $form = 'TEXT'): string
     {
         if ($form === 'BOOL' || $v->isBool()) {
-            return (string) Map::lexical($dialect, $v->asBool($pos) ? 'true' : 'false');
+            return (string) Map::lexical($dialect, $v->asBool() ? 'true' : 'false');
         }
         if ($form === 'BIN' || $v->isBin()) {
             $tpl = Map::lexical($dialect, 'binaryLiteral');
             if (!is_string($tpl)) {
                 refuse('E_SQL_UNSUPPORTED',
-                    "dialect {$dialect} has no binary literal syntax", $pos);
+                    "dialect {$dialect} has no binary literal syntax");
             }
-            return str_replace('{hex}', bin2hex($v->asBytes($pos)), $tpl);
+            return str_replace('{hex}', bin2hex($v->asBytes()), $tpl);
         }
         // A NONE value has no characters, and asking for them raises a
         // SelError -- which tryTranslate() does not catch, so a host using the
@@ -70,12 +71,12 @@ final class Emit
         if ($v->isNone()) {
             refuse('E_SQL_BINDING',
                 'a value binding holding no value cannot be a SQL literal; only an '
-                . 'aggregate can be given an empty binding', $pos);
+                . 'aggregate can be given an empty binding');
         }
         if ($form === 'NUM') {
-            return self::numericLiteral($dialect, $v, $pos);
+            return self::numericLiteral($dialect, $v);
         }
-        return self::textLiteral($dialect, $v->asText($pos));
+        return self::textLiteral($dialect, $v->asText());
     }
 
     /**
@@ -102,16 +103,16 @@ final class Emit
      * because scale is part of a SEL number (spec §4.1) and part of what SQL
      * DECIMAL arithmetic reads.
      */
-    private static function numericLiteral(string $dialect, Value $v, ?array $pos): string
+    private static function numericLiteral(string $dialect, Value $v): string
     {
-        $text = $v->asText($pos);
-        $d = \Sel\Dec::parse($text);
+        $text = $v->asText();
+        $d = Dec::parse($text);
         if ($d === null) {
             refuse('E_SQL_BINDING',
                 'a value bound as NUM must be a number, and '
-                . Value::quoteDump($text) . ' is not', $pos);
+                . Value::quoteDump($text) . ' is not');
         }
-        $n = \Sel\Dec::format($d);
+        $n = Dec::format($d);
 
         // How the dialect spells a number is the dialect's business, and one of
         // them has to spell it as text. SQLite has no exact decimal: 2.50 is a
@@ -202,16 +203,26 @@ final class Emit
         if ($f->kind === 'NUM' && !$f->guard) {
             return $f;
         }
+        $guard = $this->numericGuard('an operand it has not been told is one cannot be read as one here', $pos);
+        return new Fragment($this->fill($guard, [$f], $pos), 'NUM', $this->dialect);
+    }
+
+    /**
+     * The dialect's numericGuard template, checked, or a refusal saying what
+     * could not be done without one (`$without`).
+     *
+     * @param array{line:int,col:int,offset:int}|null $pos
+     */
+    private function numericGuard(string $without, ?array $pos): string
+    {
         Map::checkNumericGuard($this->dialect);
         $guard = $this->lex('numericGuard');
         if (!is_string($guard)) {
             refuse('E_SQL_UNSUPPORTED',
-                "dialect {$this->dialect} has no way to ask whether a value is a "
-                . 'number, so an operand it has not been told is one cannot be read '
-                . 'as one here; declare the binding NUM if the column really is '
-                . 'numeric', $pos);
+                "dialect {$this->dialect} has no way to ask whether a value is a number, so "
+                . "{$without}; declare the binding NUM if the column really is numeric", $pos);
         }
-        return new Fragment($this->fill($guard, [$f], $pos), 'NUM', $this->dialect);
+        return $guard;
     }
 
     /**
@@ -230,15 +241,7 @@ final class Emit
      */
     public function numericGuardParts(Fragment $f, ?array $pos = null): array
     {
-        Map::checkNumericGuard($this->dialect);
-        $guard = $this->lex('numericGuard');
-        if (!is_string($guard)) {
-            refuse('E_SQL_UNSUPPORTED',
-                "dialect {$this->dialect} has no way to ask whether a value is a "
-                . 'number, so a sum over an operand it has not been told is one '
-                . 'cannot be guarded here; declare the binding NUM if the column '
-                . 'really is numeric', $pos);
-        }
+        $guard = $this->numericGuard('a sum over an operand it has not been told is one cannot be guarded here', $pos);
         if (preg_match('/\ACASE WHEN (.*?) THEN (.*) ELSE NULL END\z/s', $guard, $m) !== 1) {
             refuse('E_SQL_UNSUPPORTED',
                 "the numericGuard of dialect {$this->dialect} is not CASE WHEN … THEN … ELSE "
@@ -304,6 +307,31 @@ final class Emit
     // --- templates ----------------------------------------------------------
 
     /**
+     * Append one part to a part list: a parameter slot as it is, text merged
+     * into a text part before it, and empty text not at all. The one spelling of
+     * it for every builder of part lists (fill, Translator::fillNamed and
+     * joinParts).
+     *
+     * @param list<string|int> $parts
+     */
+    public static function appendPart(array &$parts, string|int $part): void
+    {
+        if (is_int($part)) {
+            $parts[] = $part;
+            return;
+        }
+        if ($part === '') {
+            return;
+        }
+        $last = count($parts) - 1;
+        if ($last >= 0 && is_string($parts[$last])) {
+            $parts[$last] .= $part;
+        } else {
+            $parts[] = $part;
+        }
+    }
+
+    /**
      * Fill a template with already-rendered arguments, producing a part list.
      *
      * Splicing part lists rather than strings is the whole point: an argument
@@ -323,52 +351,35 @@ final class Emit
      * has already done that for the shipped map; this is for entries an
      * application registers at run time, which never pass through it.
      *
+     * `$expanding` is the set of lexical keys this call is already inside. A
+     * lexical value may reference another lexical key, and nothing stopped one
+     * from referencing itself: a dialect registering
+     * ['textCast' => 'X({textCast:0})'] recursed until the host died -- a
+     * RecursionError on Python, a RangeError on JS, a host crash through the
+     * public API either way, which is the failure every other guard in this
+     * layer exists to prevent. The cycle is refused rather than a depth capped,
+     * because the cycle is the actual mistake and a depth cap would need a
+     * number nobody can justify; with cycles refused the chain is bounded by the
+     * number of lexical keys a dialect has.
+     *
      * @param list<Fragment> $args
+     * @param array<string,bool> $expanding
      * @return list<string|int>
      */
-    // `$expanding` is the set of lexical keys this call is already inside. A
-    // lexical value may reference another lexical key, and nothing stopped one
-    // from referencing itself: a dialect registering
-    // ['textCast' => 'X({textCast:0})'] recursed until the host died -- a
-    // RecursionError on Python, a RangeError on JS, a host crash through the
-    // public API either way, which is the failure every other guard in this
-    // layer exists to prevent.
-    //
-    // The cycle is refused rather than a depth capped, because the cycle is the
-    // actual mistake and a depth cap would need a number nobody can justify.
-    // With cycles refused the chain is bounded by the number of lexical keys,
-    // which is fifteen.
-    //
-    // @param array<string,bool> $expanding
     public function fill(string $tpl, array $args, ?array $pos = null,
                          array $expanding = []): array
     {
         $parts = [];
-        $push = static function (string $s) use (&$parts): void {
-            if ($s === '') {
-                return;
-            }
-            $n = count($parts);
-            if ($n > 0 && is_string($parts[$n - 1])) {
-                $parts[$n - 1] .= $s;
-            } else {
-                $parts[] = $s;
-            }
-        };
-        $splice = function (Fragment $f) use (&$parts, $push): void {
+        $splice = static function (Fragment $f) use (&$parts): void {
             foreach ($f->parts as $p) {
-                if (is_string($p)) {
-                    $push($p);
-                } else {
-                    $parts[] = $p;          // absolute already; see the note above
-                }
+                self::appendPart($parts, $p);   // a slot is absolute already; see the note above
             }
         };
-        $join = function (array $subset) use ($splice, $push): void {
+        $join = function (array $subset) use ($splice, &$parts): void {
             $first = true;
             foreach ($subset as $f) {
                 if (!$first) {
-                    $push(', ');
+                    self::appendPart($parts, ', ');
                 }
                 $first = false;
                 $splice($f);
@@ -379,33 +390,33 @@ final class Emit
         $len = strlen($tpl);
         while ($i < $len) {
             if ($tpl[$i] === '{' && ($tpl[$i + 1] ?? '') === '{') {
-                $push('{');
+                self::appendPart($parts, '{');
                 $i += 2;
                 continue;
             }
             if ($tpl[$i] === '}' && ($tpl[$i + 1] ?? '') === '}') {
-                $push('}');
+                self::appendPart($parts, '}');
                 $i += 2;
                 continue;
             }
             if ($tpl[$i] !== '{') {
-                // Copy the whole run of ordinary characters at once (PHP-P23):
+                // Copy the whole run of ordinary characters at once:
                 // a template is mostly literal SQL, and pushing it one character
                 // at a time through the closure cost 6x the run copy. A lone `}`
                 // is a run of length zero and is pushed as itself.
                 $run = strcspn($tpl, '{}', $i);
                 if ($run === 0) {
-                    $push($tpl[$i]);
+                    self::appendPart($parts, $tpl[$i]);
                     $i++;
                 } else {
-                    $push(substr($tpl, $i, $run));
+                    self::appendPart($parts, substr($tpl, $i, $run));
                     $i += $run;
                 }
                 continue;
             }
             $end = strpos($tpl, '}', $i);
             if ($end === false) {
-                $push(substr($tpl, $i));
+                self::appendPart($parts, substr($tpl, $i));
                 break;
             }
             $slot = substr($tpl, $i + 1, $end - $i - 1);
@@ -439,16 +450,9 @@ final class Emit
                     . "lexical entry of dialect {$this->dialect}", $pos);
             }
             if ($arg === null || $arg === '') {
-                $push($val);
+                self::appendPart($parts, $val);
                 continue;
             }
-            // binaryCast converts a TEXT or NUM operand to bytes. An operand
-            // that is already BIN needs no conversion, and on PostgreSQL
-            // converting it is destructive: text::bytea parses its input as a
-            // bytea *literal*, where \\ is one backslash and \x41 is a byte, so
-            // the round trip changes the bytes or fails the query. Every other
-            // cast is idempotent and applied unconditionally, as before; this is
-            // the one whose input kind decides whether it means anything.
             if (isset($expanding[$key])) {
                 refuse('E_SQL_UNSUPPORTED',
                     "the {$key} lexical entry of dialect {$this->dialect} expands "
@@ -458,8 +462,15 @@ final class Emit
             $each = $arg === '*' ? array_map('strval', array_keys($args)) : [$arg];
             foreach ($each as $at => $one) {
                 if ($at > 0) {
-                    $push(', ');
+                    self::appendPart($parts, ', ');
                 }
+                // binaryCast converts a TEXT or NUM operand to bytes. An operand
+                // that is already BIN needs no conversion, and on PostgreSQL
+                // converting it is destructive: text::bytea parses its input as a
+                // bytea *literal*, where \\ is one backslash and \x41 is a byte, so
+                // the round trip changes the bytes or fails the query. Every other
+                // cast is idempotent and applied unconditionally, as before; this is
+                // the one whose input kind decides whether it means anything.
                 $castArg = $key === 'binaryCast' ? self::slotIndex($one) : null;
                 if ($castArg !== null && ($args[$castArg] ?? null) instanceof Fragment
                         && $args[$castArg]->kind === 'BIN') {
@@ -472,7 +483,7 @@ final class Emit
                     $pos, $deeper);
                 foreach ($sub as $p) {
                     if (is_string($p)) {
-                        $push($p);
+                        self::appendPart($parts, $p);
                     } else {
                         $parts[] = $p;
                     }

@@ -5,12 +5,12 @@
 //
 // The difference matters because a map entry is a claim about semantics and the
 // case suite only ever checks syntax. `CHAR({0} USING utf8mb4)` is the right
-// string and the wrong meaning; a case asserting it passes forever. See
-// docs/SQL-TESTING.md §3.
+// string and the wrong meaning; a case asserting it passes forever.
 //
-//     php/bin/sqlo [expressions|rows|coverage|all] [--dialect=mariadb] [--verbose]
+//     php/bin/sqlo [expressions|rows|statements|hybrid|cross|coverage|all|fuzz]
+//                  [--dialect=mariadb] [--verbose] [--corpus=FILE]
 //
-// `coverage` asks a different question from the other two: not "does this agree
+// `coverage` asks a different question from the others: not "does this agree
 // with a server" but "did anything ask?". It needs no database and runs anyway,
 // which matters — an entry nobody ever exercised is exactly the state a machine
 // with no database would otherwise leave unexamined.
@@ -31,6 +31,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/../src/Sql/bootstrap.php';
 require_once __DIR__ . '/json-bindings.php';
+require_once __DIR__ . '/hybrid-parity.php';
 
 use Sel\Dec;
 use Sel\Sel;
@@ -105,7 +106,7 @@ function parse_selo(string $text, string $file): array
         // dialect must refuse rather than translate. Before the translator
         // asked SEL about constant arguments this line could not have been
         // written: LEFT("abc", -1) translated cleanly into all four dialects
-        // and they answered '', '', 'ab' and 'abc'. See docs/SQL-TESTING.md §8.
+        // and they answered '', '', 'ab' and 'abc'.
         $rejects = null;
         if (str_starts_with($line, '!')) {
             if (preg_match('/^!(E_[A-Z_]+)\s+(\S.*)$/', $line, $m) !== 1) {
@@ -124,6 +125,17 @@ function parse_selo(string $text, string $file): array
 // --- comparison -------------------------------------------------------------
 
 /**
+ * The kind a fragment's answer is compared in. A canonical number (CANON,
+ * spec §7.6) promised its spelling, not only its value: compared as a decimal,
+ * a PostgreSQL CANON that answered 1.50 would pass as 1.5, and the spelling is
+ * the whole of what CANON is for.
+ */
+function comparison_kind(Fragment $frag): string
+{
+    return $frag->canonical ? 'TEXT' : $frag->kind;
+}
+
+/**
  * Compare what SEL answered with what the server answered, in the fragment's own
  * kind.
  *
@@ -135,17 +147,6 @@ function parse_selo(string $text, string $file): array
  *
  * Returns null when they agree, else a description of how they differ.
  */
-/**
- * The kind a fragment's answer is compared in. A canonical number (CANON,
- * spec §7.6) promised its spelling, not only its value: compared as a decimal,
- * a PostgreSQL CANON that answered 1.50 would pass as 1.5, and the spelling is
- * the whole of what CANON is for.
- */
-function comparison_kind(Fragment $frag): string
-{
-    return $frag->canonical ? 'TEXT' : $frag->kind;
-}
-
 function compare(Value $sel, $db, string $kind): ?string
 {
     if ($db === null) {
@@ -198,51 +199,8 @@ function compare(Value $sel, $db, string $kind): ?string
     }
 }
 
-/**
- * A server's number in a form Dec::parse accepts.
- *
- * SQLite prints a large REAL as `1.2345678901234567e+19`, and Dec::parse rejects
- * scientific notation because SEL has none. Without this the comparator would
- * answer "not both numbers" and report a DIFFER on every large-number
- * expression, which is a defect in the CHECK rather than in the translation --
- * the value may well be right, and if it is wrong the caveat is what should say
- * so, not a parse failure.
- *
- * The expansion is exact: it moves the point, it does not round. A value that
- * lost precision inside the server has already lost it, and that difference is
- * what decimal-float declares.
- */
-function plain_number(string $text): string
-{
-    if (preg_match('/^(-?)([0-9]+)(?:\.([0-9]+))?[eE]([-+]?[0-9]+)$/', $text, $m) !== 1) {
-        return $text;
-    }
-    [, $sign, $int, $frac, $exp] = $m + [3 => ''];
-    $digits = $int . $frac;
-    $point = strlen($int) + (int) $exp;
-    if ($point <= 0) {
-        return $sign . '0.' . str_repeat('0', -$point) . $digits;
-    }
-    if ($point >= strlen($digits)) {
-        return $sign . $digits . str_repeat('0', $point - strlen($digits));
-    }
-    return $sign . substr($digits, 0, $point) . '.' . substr($digits, $point);
-}
-
 // --- expressions ------------------------------------------------------------
 
-/**
- * Every expression, twice: once with literals inlined and once through native
- * prepared statements.
- *
- * Both renderings, because they fail differently. In `inline` mode a literal is
- * quoted at the position it belongs to, so a fragment whose parameter pool is in
- * the wrong order still emits the right string — an ordering defect is invisible.
- * Only `params` mode can show it, and only with emulation off: PDO's default
- * inlines client-side, and an emulated run passes whatever the binding order is.
- * That is not hypothetical, it is how 23 green comparisons hid the defect that
- * Fragment::bindings() now exists to prevent.
- */
 /**
  * Every caveat this dialect declares must have been seen doing its job.
  *
@@ -269,7 +227,7 @@ function caveat_symmetry(string $dialect, array $witnessed): array
     }
 
     $declared = [];
-    foreach (['ops', 'funcs', 'skel'] as $section) {
+    foreach (Map::SECTIONS as $section) {
         foreach (Map::entries($dialect, $section) as $key => $entry) {
             if (is_array($entry) && isset($entry['caveat'])) {
                 $declared[$entry['caveat']][] = "{$section}.{$key}";
@@ -297,6 +255,18 @@ function caveat_symmetry(string $dialect, array $witnessed): array
     return $out;
 }
 
+/**
+ * Every expression, twice: once with literals inlined and once through native
+ * prepared statements.
+ *
+ * Both renderings, because they fail differently. In `inline` mode a literal is
+ * quoted at the position it belongs to, so a fragment whose parameter pool is in
+ * the wrong order still emits the right string — an ordering defect is invisible.
+ * Only `params` mode can show it, and only with emulation off: PDO's default
+ * inlines client-side, and an emulated run passes whatever the binding order is.
+ * That is not hypothetical, it is how 23 green comparisons hid the defect that
+ * Fragment::bindings() now exists to prevent.
+ */
 function run_expressions(PDO $pdo, string $dialect, bool $verbose, string $label = ''): array
 {
     $cases = parse_selo((string) file_get_contents(ORACLE . '/expressions.selo'),
@@ -568,9 +538,9 @@ function run_rows(PDO $pdo, string $dialect, bool $verbose, string $label = ''):
         // asked, and saying so is the whole point of refusal. But it has to be
         // an outcome the corpus NAMED. Counting refusals silently made this
         // whole oracle unfailable: a translator that refused every rule scored
-        // "0 agree, 0 differ, 13 refused" and returned green, which is
-        // the retired SQL-TESTING analysis (git history)'s Class G in the one lane meant to be
-        // beyond it. `refuse` is per dialect because refusal is: the same rule
+        // "0 agree, 0 differ, 13 refused" and returned green: an unfailable check
+        // in the one lane meant to be beyond that. `refuse` is per dialect
+        // because refusal is: the same rule
         // translates on mariadb and cannot on sqlite, and that difference is
         // the thing worth asserting.
         $mustRefuse = $rule['refuse'][$dialect] ?? null;
@@ -706,7 +676,7 @@ function run_rows(PDO $pdo, string $dialect, bool $verbose, string $label = ''):
  *
  * This lane exists because the .sqlt strings cannot see a collation: every host
  * emitted the same GROUP BY `cat`, and MariaDB merged 'A' and 'a' into one group
- * where BUCKET keeps two (review 2026-09-15 finding L).
+ * where BUCKET keeps two.
  */
 function run_statements(PDO $pdo, string $dialect, bool $verbose, string $label = ''): array
 {
@@ -853,245 +823,8 @@ function run_statements(PDO $pdo, string $dialect, bool $verbose, string $label 
     return ['failed' => count($bad)];
 }
 
-// --- hybrid ------------------------------------------------------------------
-
 /**
- * The hybrid-parity lane (T11, sql/oracle/hybrid.json): a program is planned,
- * its SQL prefix is run on the server through executeHybrid's runner, and the
- * result must be what SEL answers for the whole program over the same rows.
- * See the note in hybrid.json for the contract this holds a plan to: the value
- * (keys included, except for a pure_sql ROWSET), the error (code and position,
- * or a pure_memory plan), the caller's context untouched, and no reliance on a
- * database's natural order.
- */
-function hybrid_normalise($x)
-{
-    if (is_array($x)) {
-        $out = [];
-        foreach ($x as $k => $v) {
-            $out[(string) $k] = hybrid_normalise($v);
-        }
-        return $out;
-    }
-    if (is_bool($x)) {
-        return $x ? 'TRUE' : 'FALSE';
-    }
-    if ($x === null) {
-        return 'NULL';
-    }
-    $text = (string) $x;
-    $d = Dec::parse(plain_number($text));
-    return $d !== null ? Dec::format($d) : $text;
-}
-
-/** @return array{0:string,1:mixed} ['ok', Value] or ['err', "CODE@line:col"] */
-function hybrid_outcome(callable $fn): array
-{
-    try {
-        $v = $fn();
-        return ['ok', $v instanceof Value ? $v : Value::fromNative($v)];
-    } catch (SelError $e) {
-        return ['err', $e->code . '@' . $e->line . ':' . $e->col];
-    } catch (SqlError $e) {
-        return ['err', 'SQL:' . $e->code];
-    } catch (Throwable $e) {
-        return ['err', 'HOST:' . get_class($e) . ': ' . substr($e->getMessage(), 0, 160)];
-    }
-}
-
-function hybrid_column(array $native, string $field): array
-{
-    $out = [];
-    foreach ($native as $row) {
-        $out[] = is_array($row) && array_key_exists($field, $row) ? hybrid_normalise($row[$field]) : '<absent>';
-    }
-    return $out;
-}
-
-function run_hybrid(PDO $pdo, string $dialect, bool $verbose, string $label = ''): array
-{
-    $spec = json_decode((string) file_get_contents(ORACLE . '/hybrid.json'), true);
-    if (!is_array($spec)) {
-        throw new RuntimeException('hybrid.json is not JSON');
-    }
-    $fixture = $spec['fixture'][$dialect] ?? null;
-    if ($fixture === null) {
-        echo "{$label}hybrid: no fixture for {$dialect}, skipped\n";
-        return ['failed' => 0];
-    }
-    $sql = preg_replace('/^\s*--.*$/m', '', (string) file_get_contents(ORACLE . '/' . $fixture)) ?? '';
-    $n = 0;
-    foreach (explode(';', $sql) as $stmt) {
-        if (trim($stmt) !== '') {
-            $pdo->exec($stmt);
-            $n++;
-        }
-    }
-    if ($n === 0) {
-        throw new RuntimeException("{$fixture} contained no statements");
-    }
-    $bindings = bindings_from_json($spec['bindings'], $label);
-
-    // The relations as SEL sees them: lists of records of TEXT, in id order.
-    $base = [];
-    foreach ($spec['relations'] as $name => $rel) {
-        $rows = [];
-        foreach ($pdo->query($rel['query'])->fetchAll(PDO::FETCH_ASSOC) as $r) {
-            $one = [];
-            foreach ($rel['columns'] as $col) {
-                $one[$col] = (string) $r[$col];
-            }
-            $rows[] = $one;
-        }
-        $base[$name] = $rows;
-    }
-
-    // What the runner hands executeHybrid back: the rowset the statement
-    // answers, every cell TEXT as in the context above, NULL kept.
-    $runner = static function (string $statement, array $bound) use ($pdo): array {
-        $stmt = $pdo->prepare($statement);
-        foreach ($bound as $i => $value) {
-            $native = $value->toNative();
-            $type = $native === null ? PDO::PARAM_NULL : (is_bool($native) ? PDO::PARAM_BOOL : PDO::PARAM_STR);
-            $stmt->bindValue($i + 1, $native, $type);
-        }
-        $stmt->execute();
-        $rows = [];
-        foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $r) {
-            $rows[] = array_map(static fn ($v) => $v === null ? null : (string) $v, $r);
-        }
-        return $rows;
-    };
-
-    $bad = [];
-    $ok = 0;
-    $skipped = 0;
-    $kinds = ['pure_sql' => 0, 'hybrid' => 0, 'pure_memory' => 0];
-    foreach ($spec['programs'] as $case) {
-        foreach ($spec['contexts'] as $ctxSpec) {
-            foreach ($case['requires'] ?? [] as $var) {
-                if (!array_key_exists($var, $ctxSpec['vars'])) {
-                    $skipped++;
-                    continue 2;
-                }
-            }
-            $name = $case['name'] . ' [' . $ctxSpec['name'] . ']';
-            $fresh = static fn () => array_merge($base, $ctxSpec['vars']);
-
-            $program = Sel::compile($case['sel']);
-            $direct = hybrid_outcome(static fn () => $program->run($fresh()));
-
-            // The corpus guard: what SEL itself must answer.
-            $exp = $case['expect'] ?? [];
-            $guard = null;
-            if (isset($exp['error'])) {
-                if ($direct[0] !== 'err' || !str_starts_with($direct[1], $exp['error'] . '@')) {
-                    $guard = "SEL answered " . json_encode($direct) . " where the corpus says {$exp['error']}";
-                }
-            } elseif ($direct[0] !== 'ok') {
-                $guard = 'SEL raised ' . json_encode($direct[1]);
-            } else {
-                foreach ($exp['fields'] ?? [] as $field => $want) {
-                    $got = hybrid_column($direct[1]->toNative(), $field);
-                    if ($got !== $want) {
-                        $guard = "run() column {$field} is " . json_encode($got) . ', the corpus says ' . json_encode($want);
-                    }
-                }
-                if (isset($exp['keys']) && array_map('strval', $direct[1]->keys()) !== $exp['keys']) {
-                    $guard = 'run() keys are ' . json_encode($direct[1]->keys()) . ', the corpus says ' . json_encode($exp['keys']);
-                }
-            }
-            if ($guard !== null) {
-                $bad[] = [$name, '', "CORPUS: {$guard}"];
-                continue;
-            }
-
-            $seen = null;
-            $plan = null;
-            try {
-                $plan = Sql::planHybrid($program, $dialect, $bindings);
-            } catch (Throwable $e) {
-                $bad[] = [$name, '', 'planHybrid raised ' . get_class($e) . ': ' . $e->getMessage()];
-                continue;
-            }
-            $kind = $plan->pureSql ? 'pure_sql' : ($plan->pureMemory ? 'pure_memory' : 'hybrid');
-            $kinds[$kind]++;
-            $statement = $plan->sqlStatement?->asStatement() ?? '-';
-
-            $callerContext = Value::fromNative($fresh());
-            $before = $callerContext->dump();
-            $exec = hybrid_outcome(static function () use ($plan, $runner, $callerContext, &$seen) {
-                return Sql::executeHybrid($plan, static function (string $sql, array $bound) use ($runner, &$seen) {
-                    $seen = $sql;
-                    return $runner($sql, $bound);
-                }, $callerContext);
-            });
-            $after = $callerContext->dump();
-
-            $why = null;
-            if ($direct[0] === 'err') {
-                if ($exec !== $direct) {
-                    $why = 'run() raises ' . json_encode($direct[1]) . ' and the executed ' . $kind . ' plan gives ' . json_encode($exec);
-                }
-            } elseif ($exec[0] === 'err') {
-                $why = "the executed {$kind} plan raises " . json_encode($exec[1]) . ' where run() answers';
-            } else {
-                // Keys are part of the value (spec 7.3) -- except that a pure_sql
-                // plan answers the database's rowset, numbered 1..n.
-                $want = hybrid_normalise($direct[1]->toNative());
-                $got = hybrid_normalise($exec[1]->toNative());
-                if ($kind === 'pure_sql') {
-                    $want = array_values($want);
-                    $got = array_values($got);
-                } else {
-                    $want = ['keys' => array_map('strval', $direct[1]->keys()), 'rows' => array_values($want)];
-                    $got = ['keys' => array_map('strval', $exec[1]->keys()), 'rows' => array_values($got)];
-                }
-                if ($want !== $got) {
-                    $why = 'run()=' . json_encode($want) . "\n        plan=" . json_encode($got);
-                }
-            }
-            if ($why === null && $before !== $after) {
-                $why = "executeHybrid changed the caller's context ({$kind} plan)";
-            }
-            if ($why !== null) {
-                $bad[] = [$name, "[{$kind}] {$statement}", $why];
-                continue;
-            }
-            $ok++;
-            if ($verbose) {
-                printf("  ok       %-64s %s\n", $name, $kind);
-            }
-        }
-    }
-
-    foreach ($spec['bounded'] ?? [] as $case) {
-        $program = Sel::compile($case['sel']);
-        $t0 = microtime(true);
-        try {
-            Sql::planHybrid($program, $dialect, $bindings);
-        } catch (Throwable $e) {
-            // a refusal is an answer; only the time is asserted
-        }
-        $ms = (microtime(true) - $t0) * 1000;
-        if ($ms > $case['max_ms']) {
-            $bad[] = [$case['name'], '', sprintf('planning took %.0f ms, the bound is %d', $ms, $case['max_ms'])];
-        } else {
-            $ok++;
-        }
-    }
-
-    foreach ($bad as [$name, $statement, $why]) {
-        printf("DIFFER  %s\n        %s\n        %s\n", $name, $statement, $why);
-    }
-    printf("{$label}hybrid: %d agree, %d differ (plans: %d pure_sql, %d hybrid, %d pure_memory; %d variants skipped)\n",
-        $ok, count($bad), $kinds['pure_sql'], $kinds['hybrid'], $kinds['pure_memory'], $skipped);
-    return ['failed' => count($bad)];
-}
-
-
-/**
- * Every host's translator against the same server (review 2026-09-25 TEST-03/04).
+ * Every host's translator against the same server.
  *
  * The statement oracle above runs PHP's translator only, so a defect every
  * translator shares — or one four of five share — passed it: a LINK's left
@@ -1601,7 +1334,7 @@ function run_coverage(string $dialect, bool $verbose, string $label = ''): array
     $missing = [];
     $supported = 0;
     $live = [];
-    foreach (['ops', 'funcs', 'skel'] as $section) {
+    foreach (Map::SECTIONS as $section) {
         foreach (Map::entries($dialect, $section) as $key => $entry) {
             if (!is_array($entry)) {
                 continue;                       // a refusal, or null

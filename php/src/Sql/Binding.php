@@ -22,6 +22,8 @@ declare(strict_types=1);
 
 namespace Sel\Sql;
 
+use Sel\Dec;
+use Sel\Utf8;
 use Sel\Value;
 
 final class Binding
@@ -30,7 +32,7 @@ final class Binding
     public function withUniqueKey($key): self
     {
         self::checkName('unique key', $key);
-        $upper = strtr($key, 'abcdefghijklmnopqrstuvwxyz', 'ABCDEFGHIJKLMNOPQRSTUVWXYZ');
+        $upper = Utf8::upper($key);
         if ($this->spec['kind'] !== 'relation' || !array_key_exists($upper, $this->spec['fields'])) {
             throw new SqlError('E_SQL_BINDING', 'a unique key must name a declared relation field');
         }
@@ -59,15 +61,14 @@ final class Binding
      * whether a value is a boolean; in an arithmetic or comparison operand it
      * is wrapped so a value SEL would refuse becomes NULL, at the cost of the
      * column's index. Declaring NUM is what buys the plain comparison back, and
-     * it is the only thing that does.
-     *
-     * Bare in exactly two places, both recorded in docs/internals/sql-kinds.md §4: a
-     * numeric function argument, and a bare aggregate body.
+     * it is the only thing that does. docs/internals/sql-kinds.md §4 records
+     * every position and what an UNKNOWN operand costs there.
      */
     public static function column($column, $table = null,
-                                  $type = 'UNKNOWN', bool $exact = false,
-                                  bool $sargable = false, bool $guard = false,
-                                  ?string $collation = null, $prefilter = null): self
+                                  $type = 'UNKNOWN', $exact = false,
+                                  $sargable = false, $guard = false,
+                                  $collation = null, $prefilter = null,
+                                  $splitSargable = false): self
     {
         self::checkName('column', $column);
         if ($table !== null) {
@@ -75,7 +76,7 @@ final class Binding
         }
         self::checkType($type);
         return new self(['kind' => 'column', 'column' => $column, 'table' => $table, 'type' => $type]
-            + self::columnFlags($exact, $sargable, $guard, $collation, $prefilter));
+            + self::columnFlags('a column binding', $exact, $sargable, $guard, $collation, $prefilter, $splitSargable));
     }
 
     /**
@@ -86,9 +87,10 @@ final class Binding
      * layer's -- which is exactly why it is a named constructor and not a key
      * somebody can leave in a map by accident.
      */
-    public static function raw($sql, $type = 'UNKNOWN', bool $exact = false,
-                               bool $sargable = false, bool $guard = false,
-                               ?string $collation = null, $prefilter = null): self
+    public static function raw($sql, $type = 'UNKNOWN', $exact = false,
+                               $sargable = false, $guard = false,
+                               $collation = null, $prefilter = null,
+                               $splitSargable = false): self
     {
         self::checkString('a raw column binding', $sql);
         if ($sql === '') {
@@ -96,22 +98,33 @@ final class Binding
         }
         self::checkType($type);
         return new self(['kind' => 'column', 'raw' => $sql, 'type' => $type]
-            + self::columnFlags($exact, $sargable, $guard, $collation, $prefilter));
+            + self::columnFlags('a raw column binding', $exact, $sargable, $guard, $collation, $prefilter, $splitSargable));
     }
 
     /**
-     * The flags column() and raw() share: a collation spelling folded into
-     * exact/sargable, then the prefilter.
+     * The flags column() and raw() share: the three flags checked, a collation
+     * spelling folded into exact/sargable, then the prefilter (`splitSargable`
+     * is the boolean spelling of prefilter 'separate'). Untyped parameters checked
+     * here, as everything else in this file is (see checkString): a typed `bool`
+     * coerced 'yes' to true for a loose caller and threw a TypeError, which
+     * tryTranslate does not catch, at a strict one. `$label` names the binding.
      *
      * @return array<string,mixed>
      */
-    private static function columnFlags(bool $exact, bool $sargable, bool $guard,
-                                        ?string $collation, $prefilter): array
+    private static function columnFlags(string $label, $exact, $sargable, $guard,
+                                        $collation, $prefilter, $splitSargable): array
     {
+        self::checkBool("{$label}'s exact flag", $exact);
+        self::checkBool("{$label}'s sargable flag", $sargable);
+        self::checkBool("{$label}'s guard flag", $guard);
+        self::checkBool("{$label}'s splitSargable flag", $splitSargable);
         if ($collation !== null) {
             [$cExact, $cSargable] = self::checkCollation($collation);
             $exact = $exact || $cExact;
             $sargable = $sargable || $cSargable;
+        }
+        if ($splitSargable && $prefilter === null) {
+            $prefilter = 'separate';
         }
         $pref = self::checkPrefilter($prefilter);
         $flags = ['exact' => $exact, 'sargable' => $sargable, 'guard' => $guard];
@@ -251,10 +264,9 @@ final class Binding
                 throw new SqlError('E_SQL_BINDING',
                     "the field {$name} of a relation binding must be a column binding");
             }
-            // strtoupper, which is ASCII-only in PHP and so matches
-            // sel.registry's ascii_upper on the Python side. str.upper()
-            // there would fold "ß" to "SS" and change the key's length.
-            $upper = \Sel\Utf8::upper((string) $name);
+            // ASCII-only upper-casing (Utf8::upper), as SEL's names are: a
+            // Unicode upper() would fold "ß" to "SS" and change the key's length.
+            $upper = Utf8::upper((string) $name);
             // SEL names are upper-cased, so two fields that differ only by ASCII case
             // are one name; silently keeping the last is a guess (sql/MAP.md 3.1).
             if (array_key_exists($upper, $out)) {
@@ -265,7 +277,7 @@ final class Binding
             $out[$upper] = $b->spec;
         }
         if ($scalar !== null) {
-            $key = \Sel\Utf8::upper($scalar);
+            $key = Utf8::upper($scalar);
             if (!isset($out[$key])) {
                 throw new SqlError('E_SQL_BINDING',
                     "a relation binding names {$scalar} as its scalar, which is not "
@@ -290,16 +302,6 @@ final class Binding
     }
 
     /**
-     * An identifier the application supplied has to survive being quoted.
-     *
-     * Emit::ident doubles the quote character and passes everything else
-     * through, which is right for every character but two. A NUL terminates the
-     * C string libpq and sqlite3 are handed, so `a\0b` is malformed SQL on all
-     * four servers rather than a column nobody has. An empty name quotes to `""`,
-     * which PostgreSQL rejects and the other three accept -- a divergence with
-     * no upside.
-     */
-    /**
      * Declared types are not enough, and this is the reason the checks are in
      * the body rather than in the signature.
      *
@@ -319,6 +321,26 @@ final class Binding
     }
 
     /** @param mixed $v */
+    private static function checkBool(string $what, $v): void
+    {
+        if (!is_bool($v)) {
+            throw new SqlError('E_SQL_BINDING',
+                "{$what} must be a boolean, and this is " . get_debug_type($v));
+        }
+    }
+
+    /**
+     * An identifier the application supplied has to survive being quoted.
+     *
+     * Emit::ident doubles the quote character and passes everything else
+     * through, which is right for every character but two. A NUL terminates the
+     * C string libpq and sqlite3 are handed, so `a\0b` is malformed SQL on all
+     * four servers rather than a column nobody has. An empty name quotes to `""`,
+     * which PostgreSQL rejects and the other three accept -- a divergence with
+     * no upside.
+     *
+     * @param mixed $v
+     */
     private static function checkName(string $what, $v): void
     {
         self::checkString("a binding's {$what}", $v);
@@ -337,7 +359,7 @@ final class Binding
         // What a column or value can hold: LIST and STATEMENT are what a whole
         // fragment can be, and a binding declared as one made the kind of a column
         // answer STATEMENT.
-        $allowed = ['NUM', 'TEXT', 'BOOL', 'BIN', 'UNKNOWN'];
+        $allowed = array_values(array_diff(Fragment::KINDS, ['LIST', 'STATEMENT']));
         if (!is_string($type) || !in_array($type, $allowed, true)) {
             throw new SqlError('E_SQL_BINDING',
                 'a binding has type ' . (is_string($type) ? $type : get_debug_type($type))
@@ -369,7 +391,7 @@ final class Binding
         // where the application supplied the string and the evaluator was handed
         // that same string. `"007"` translated to 7 while SEL kept "007".
         $text = $v->asText();
-        if (\Sel\Dec::format(\Sel\Dec::parse($text)) !== $text) {
+        if (Dec::format(Dec::parse($text)) !== $text) {
             throw new SqlError('E_SQL_BINDING',
                 "{$where} declares type NUM and is " . Value::quoteDump($text)
                 . ', which is not how SEL writes that number; a NUM binding is '
@@ -381,9 +403,13 @@ final class Binding
     /**
      * @return array{0: bool, 1: bool}
      */
-    private static function checkCollation(string $c): array
+    private static function checkCollation($c): array
     {
-        $lower = \Sel\Utf8::lower($c);
+        if (!is_string($c)) {
+            throw new SqlError('E_SQL_BINDING',
+                'collation must be a string, and this is ' . get_debug_type($c));
+        }
+        $lower = Utf8::lower($c);
         if ($lower === 'binary' || $lower === 'exact') {
             return [true, false];
         }
@@ -410,7 +436,7 @@ final class Binding
                 'a binding prefilter must be a string or boolean, and this is '
                 . get_debug_type($p));
         }
-        $lower = \Sel\Utf8::lower($p);
+        $lower = Utf8::lower($p);
         if ($lower === 'separate' || $lower === 'splitsargable' || $lower === 'split_sargable') {
             return 'separate';
         }
