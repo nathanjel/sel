@@ -38,8 +38,6 @@ const DEC_LEAF_DIGITS: usize = 19 * DEC_LEAF_WORDS;
 
 /// 10^19, the largest power of ten in a word.
 const TEN19: u64 = 10_000_000_000_000_000_000;
-/// 5^27, the largest power of five in a word.
-const FIVE27: u64 = 7_450_580_596_923_828_125;
 /// floor(log10(2) * 2^64).
 const LOG10_2_Q64: u128 = 5_553_023_288_523_357_132;
 /// Cached powers of five, in words, before the cache starts over.

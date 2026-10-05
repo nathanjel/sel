@@ -6,7 +6,7 @@ use sel_lang::sql::map::{
     entry, lexical, shipped_dialect_names, shipped_lexical_keys, shipped_section_keys, EntryRecord,
 };
 use sel_lang::sql::{
-    define, define_dialect, translate, version, Binding, Bindings, Options, SqlError, SqlKind,
+    define, define_dialect, translate, version, Binding, Bindings, Options, SqlKind,
 };
 use sel_lang::compile;
 

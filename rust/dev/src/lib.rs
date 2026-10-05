@@ -70,6 +70,18 @@ pub fn render(v: &Value) -> String {
     v.dump().unwrap_or_default()
 }
 
+/// An API probe's report line: `NN name = value`, numbered in order (the
+/// format tools/check-api.sh and tools/check-sqlapi.sh diff across hosts).
+pub fn say(counter: &mut usize, out: &mut Vec<String>, name: &str, value: &str) {
+    *counter += 1;
+    out.push(format!("{:02} {} = {}", counter, name, value));
+}
+
+/// A boolean as the probe reports spell it.
+pub fn b(x: bool) -> &'static str {
+    if x { "true" } else { "false" }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

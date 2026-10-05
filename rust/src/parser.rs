@@ -5,7 +5,7 @@ use crate::dec::{dec_format, dec_parse};
 use crate::limits::MAX_DEPTH;
 use crate::manifest::{lookup_builtin, Entry as BuiltinEntry};
 use crate::shape::{unique_record_shape, RecordShape};
-use crate::utf8::{to_code_points, Pos, SelError};
+use crate::utf8::{Pos, SelError};
 
 const OPERATORS: &[&str] = &[
     "???", "??",
@@ -21,10 +21,8 @@ const RESERVED: &[&str] = &[
     "EQL", "IN", "BAND", "BOR", "BXOR",
 ];
 
-#[allow(dead_code)]
-const BP_SEQ: u8 = 1;
-#[allow(dead_code)]
-const BP_LIST: u8 = 2;
+// Binding powers start at 3: a sequence (`;`) and a list (`,`) are parsed by
+// their own functions, not through this table.
 const BP_ASSIGN: u8 = 3;
 const BP_OR: u8 = 4;
 const BP_XOR: u8 = 5;
@@ -114,7 +112,7 @@ pub struct Lexer {
 
 impl Lexer {
     pub fn new(source: &str) -> Result<Self, SelError> {
-        let chars = to_code_points(source, Pos::default())?;
+        let chars: Vec<char> = source.chars().collect();
         let mut line_starts = vec![0];
         for (i, &ch) in chars.iter().enumerate() {
             if ch == '\n' {

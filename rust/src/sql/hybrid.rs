@@ -855,7 +855,7 @@ struct MapRecordDetails<'a> {
     pairs: Vec<(&'a Node, &'a Node)>,
 }
 
-fn get_map_record_details(step: &Node) -> Option<MapRecordDetails> {
+fn get_map_record_details(step: &Node) -> Option<MapRecordDetails<'_>> {
     if step.t != NodeType::Call || step.s != "MAP" {
         return None;
     }
@@ -929,7 +929,7 @@ fn try_plan_fallthrough(
         }
     }
 
-    let mut projected: Vec<String> = pushable.iter().map(|p| p.0.s.clone()).collect();
+    let projected: Vec<String> = pushable.iter().map(|p| p.0.s.clone()).collect();
 
     for i in (map_index + 1)..steps.len() {
         if !FALLTHROUGH_DOWNSTREAM_OPS.contains(&steps[i].s.as_str()) {

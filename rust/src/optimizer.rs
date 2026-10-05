@@ -347,11 +347,9 @@ fn opt_filter_predicate_cannot_raise(node: &Node, binder: &str, logical: bool) -
 struct OptMapInfo<'a> {
     binder: String,
     body: Option<&'a Node>,
-    #[allow(dead_code)]
-    explicit_binder: bool,
 }
 
-fn get_opt_map_info(step: &Node) -> OptMapInfo {
+fn get_opt_map_info(step: &Node) -> OptMapInfo<'_> {
     let args = &step.items;
     let explicit = args.len() == 3 && args[1].t == NodeType::Var && !args[1].grouped;
     let b = if explicit {
@@ -369,7 +367,6 @@ fn get_opt_map_info(step: &Node) -> OptMapInfo {
     OptMapInfo {
         binder: b,
         body,
-        explicit_binder: explicit,
     }
 }
 
@@ -380,7 +377,7 @@ struct OptFilterInfo<'a> {
     valid: bool,
 }
 
-fn get_opt_filter_info(step: &Node) -> OptFilterInfo {
+fn get_opt_filter_info(step: &Node) -> OptFilterInfo<'_> {
     let args = &step.items;
     let explicit = args.len() == 3 && args[1].t == NodeType::Var && !args[1].grouped;
     let b = if explicit {
@@ -409,7 +406,7 @@ struct OptSortInfo<'a> {
     key: Option<&'a Node>,
 }
 
-fn get_opt_sort_info(step: &Node) -> OptSortInfo {
+fn get_opt_sort_info(step: &Node) -> OptSortInfo<'_> {
     let args = &step.items;
     let count = args.len();
     let mut info = OptSortInfo {
@@ -928,8 +925,7 @@ pub fn opt_tree(node: &Node, physical: bool, depth: usize, fold: bool, in_math: 
         return build_pipeline(&optimized_source, &final_steps);
     }
 
-    let is_curr_math = is_math_op(node);
-    let next_in_math = is_curr_math;
+    let next_in_math = is_math_op(node);
 
     let mut cp = node.clone();
     if cp.t != NodeType::Assign {

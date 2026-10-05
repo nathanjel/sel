@@ -359,34 +359,8 @@ fn apply_binary(
             Ok(Value::num_trusted(dec_mod(&a, &b, opos)?))
         }
         "&" => concat(l, r, lp, rp, opos),
-        "==" | "!=" | "<" | "<=" | ">" | ">=" => {
-            let a = l.as_decimal(lp)?;
-            let b = r.as_decimal(rp)?;
-            let c = dec_cmp(&a, &b);
-            Ok(Value::bool(compare_result(op, c)))
-        }
-        "$==" => {
-            if l.is_text() && r.is_text() && l.size() == 0 && r.size() == 0 {
-                return Ok(Value::bool(l.scalar_str() == r.scalar_str()));
-            }
-            let a = l.as_bytes(lp)?;
-            let b = r.as_bytes(rp)?;
-            Ok(Value::bool(a == b))
-        }
-        "$!=" => {
-            if l.is_text() && r.is_text() && l.size() == 0 && r.size() == 0 {
-                return Ok(Value::bool(l.scalar_str() != r.scalar_str()));
-            }
-            let a = l.as_bytes(lp)?;
-            let b = r.as_bytes(rp)?;
-            Ok(Value::bool(a != b))
-        }
-        "$<" | "$<=" | "$>" | "$>=" => {
-            let a = l.as_bytes(lp)?;
-            let b = r.as_bytes(rp)?;
-            let c = a.cmp(&b);
-            Ok(Value::bool(compare_result(&op[1..], c)))
-        }
+        // No comparison reaches here: eval_binary hands every one to
+        // compare_nodes, and a compound assignment is only + - * / % &.
         "EQL" => {
             let eq = l.eql(r, 1, opos)?;
             Ok(Value::bool(eq))
@@ -639,18 +613,16 @@ fn source_first_call(node: &Node, spec: &Spec) -> bool {
     }
     // These lazy functions validate explicit binders before reading the source.
     // Leave an invalid binder on the ordinary call path so its error wins.
-    if spec.lazy {
-        let is_symbol = |i: usize| {
-            node.items
-                .get(i)
-                .is_some_and(|n| n.t == NodeType::Var && !n.grouped)
-        };
-        if matches!(node.s.as_str(), "MAP" | "FILTER") && node.items.len() == 3 {
-            return is_symbol(1);
-        }
-        if matches!(node.s.as_str(), "LINK" | "LINK_LEFT") && node.items.len() == 5 {
-            return is_symbol(2) && is_symbol(3);
-        }
+    let is_symbol = |i: usize| {
+        node.items
+            .get(i)
+            .is_some_and(|n| n.t == NodeType::Var && !n.grouped)
+    };
+    if matches!(node.s.as_str(), "MAP" | "FILTER") && node.items.len() == 3 {
+        return is_symbol(1);
+    }
+    if matches!(node.s.as_str(), "LINK" | "LINK_LEFT") && node.items.len() == 5 {
+        return is_symbol(2) && is_symbol(3);
     }
     true
 }

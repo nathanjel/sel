@@ -4,7 +4,7 @@ use crate::ast::{Node, NodeType};
 use crate::builtins::host_arity;
 use crate::limits::{MAX_DEPTH, MAX_SQL_NODES};
 use crate::regex::validate_pattern;
-use crate::utf8::{Pos, SelError};
+use crate::utf8::Pos;
 use crate::value::{Kind, Value};
 use crate::sql::binder::{Binder, BinderShape};
 use crate::sql::binding::{Binding, BindingKind, Bindings, ColumnSpec, RelationSpec};
@@ -20,10 +20,10 @@ use crate::sql::map::{
 use crate::sql::node::{CListEntry, SNode, SNodeType};
 use crate::sql::normalise::normalise;
 use crate::sql::relational_plan::{
-    RelationalGroup, RelationalJoin, RelationalOrder, RelationalPlan, RelationalProjection,
+    RelationalGroup, RelationalJoin, RelationalPlan, RelationalProjection,
 };
-use crate::sql::row_model::{build_join_rows, relation_alias, RowField, RowModel};
-use crate::sql::types::{Fragment, Mode, Part, SqlKind};
+use crate::sql::row_model::{build_join_rows, relation_alias, RowModel};
+use crate::sql::types::{Fragment, Part, SqlKind};
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Options {
@@ -1236,7 +1236,7 @@ impl Translator {
         let name = &n.str;
         let mut args: Vec<SNode> = n.kids.clone();
         if name == "IF" && args.len() == 2 {
-            let mut null_node = Node::new(NodeType::Text, n.pos);
+            let null_node = Node::new(NodeType::Text, n.pos);
             args.push(SNode::leaf(&null_node));
         }
         let branch_tpl = self.skeleton("caseBranch", n.pos)?;
@@ -1750,7 +1750,6 @@ impl Translator {
 
     pub fn with_element<F>(
         &mut self,
-        src: &Source,
         binder_name: &str,
         elem: Binder,
         key: &str,
@@ -2128,7 +2127,7 @@ impl Translator {
         for kv in &src.elements {
             let key = &kv.0;
             let elem = kv.1.clone();
-            parts.push(self.with_element(&src, binder_name, elem, key, n, |t| {
+            parts.push(self.with_element(binder_name, elem, key, n, |t| {
                 t.agg_body(name, body_node, &src, n)
             })?);
         }
@@ -2170,7 +2169,7 @@ impl Translator {
             for kv in &src.elements {
                 let key = &kv.0;
                 let elem = kv.1.clone();
-                parts.push(self.with_element(&src, "_", elem, key, n, |t| {
+                parts.push(self.with_element("_", elem, key, n, |t| {
                     t.agg_body("SUM", &body, &src, n)
                 })?);
             }
@@ -2291,7 +2290,7 @@ impl Translator {
                 parts.push(sep);
             }
             let held = elem.clone();
-            let element = self.with_element(&src, "_", held.clone(), key, n, |t| {
+            let element = self.with_element("_", held.clone(), key, n, |t| {
                 t.from_binder(&held, n)
             })?;
             self.require_join_text(&element, n.kids[0].pos)?;
@@ -2547,7 +2546,7 @@ impl Translator {
     pub fn fold_pairwise(
         &mut self,
         op: &str,
-        mut parts: Vec<Fragment>,
+        parts: Vec<Fragment>,
         pos: Pos,
     ) -> Result<Fragment, SqlError> {
         self.dispatched_nodes = self.dispatched_nodes.saturating_add(parts.len().saturating_sub(1));

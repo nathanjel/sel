@@ -1,5 +1,5 @@
 use crate::args::Args;
-use crate::utf8::{cap_collection, cap_text, is_sel_space, to_code_points, validate_text, SelError};
+use crate::utf8::{cap_collection, cap_text, is_sel_space, SelError};
 use crate::value::Value;
 
 fn trim_text(s: &str, left: bool, right: bool) -> String {
@@ -56,8 +56,7 @@ pub fn fn_len(args: &mut Args) -> Result<Value, SelError> {
         return Ok(Value::int(len as i64));
     }
     let s = scalar.as_text(pos)?;
-    let chars = to_code_points(&s, pos)?;
-    Ok(Value::int(chars.len() as i64))
+    Ok(Value::int(s.chars().count() as i64))
 }
 
 pub fn fn_left(args: &mut Args) -> Result<Value, SelError> {

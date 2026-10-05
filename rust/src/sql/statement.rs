@@ -15,7 +15,6 @@ use crate::sql::row_model::{build_join_rows, relation_alias};
 use crate::sql::translator::{Source, SourceFilter, SourceShape, Translator};
 use crate::sql::types::{Fragment, Part, SqlKind};
 use crate::utf8::Pos;
-use crate::value::Value;
 
 pub fn is_pipeline_op(name: &str) -> bool {
     matches!(
@@ -517,11 +516,12 @@ impl Translator {
             return Ok(());
         }
 
-        // SORT_BY or TOP_BY
-        let mut binder = "_";
+        // SORT_BY or TOP_BY. A text literal in the third place is a direction
+        // and wins over a bare name in the second (`text-direction-wins-over-
+        // bare-name`); otherwise a bare name there is the binder.
+        let binder;
         let key;
-        let mut dir = "ASC";
-        let mut dir_pos = step.pos;
+        let dir;
 
         if count == 2 {
             binder = "_";
@@ -538,7 +538,6 @@ impl Translator {
                 } else {
                     return refuse("E_BAD_ARG", "sort direction must be 'ASC' or 'DESC'", args[2].pos);
                 }
-                dir_pos = args[2].pos;
             } else if is_binder_name(Some(&args[1])) {
                 binder = &args[1].str;
                 key = &args[2];
@@ -578,17 +577,8 @@ impl Translator {
                     args[3].pos,
                 );
             }
-            dir_pos = args[3].pos;
         } else {
             return refuse("E_ARITY", "SORT_BY takes 2 to 4 arguments", step.pos);
-        }
-
-        if dir != "ASC" && dir != "DESC" {
-            return refuse(
-                "E_BAD_ARG",
-                "sort direction must be 'ASC' or 'DESC'",
-                dir_pos,
-            );
         }
 
         plan.order_by.push(RelationalOrder {

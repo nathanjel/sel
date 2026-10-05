@@ -9,8 +9,7 @@ use crate::args::Args;
 use crate::ast::{Node, NodeType};
 use crate::context::{Context, Frame};
 use crate::dec::{dec_add, dec_cmp, dec_format, Dec};
-use crate::eval::eval_node;
-use crate::join_plan::{is_left_nested, make_joined_row, JoinFlatTest, JoinProjector};
+use crate::join_plan::{JoinFlatTest, JoinProjector};
 use crate::join_prefilter::{
     join_keys_safe, join_pure_source, join_read_self, join_row_keys, join_stage_walk,
     join_totality, join_truncate_stages, leading_field_conjuncts, new_join_side_facts,
@@ -196,7 +195,7 @@ pub fn fn_dedupe(args: &mut Args) -> Result<Value, SelError> {
     let ents = val.elems();
     let mut buckets: HashMap<u64, Vec<Value>> = HashMap::new();
     let mut out = Vec::new();
-    for (ei, ev) in ents.vals.iter().enumerate() {
+    for ev in ents.vals.iter() {
         let item = ev.clone();
         let h = item.structural_hash()?;
         let bucket = buckets.entry(h).or_default();
@@ -402,7 +401,6 @@ fn filter_rows(args: &mut Args, plan: Box<FilterPlan>, source: Result<Value, Sel
     }
 
     let body_node: &Node = override_body.as_ref().unwrap_or(written);
-    let body_pos = body_node.pos;
     let needs_k = node_contains_var(body_node, "_K");
 
     if val.is_null() {

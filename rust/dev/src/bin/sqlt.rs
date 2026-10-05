@@ -10,15 +10,23 @@
 use std::collections::HashSet;
 use sel_lang::compile;
 use sel_lang::sql::{
-    plan_hybrid, reset, translate, translate_statement, Binding, Bindings, Fragment, HybridPlan,
+    plan_hybrid, reset, translate, translate_statement, Bindings, Fragment, HybridPlan,
     Mode, Options, Part, SqlError,
 };
 use sel_lang::{Program, Value};
 
+// Rendered by tools/gen-sql-cases.mjs, which writes every case's bindings
+// through a `let mut` whether or not that case inserts any.
 #[path = "sqlt/case_data.rs"]
+#[allow(unused_mut)]
 mod case_data;
 use case_data::{SqlCase, SQL_CASES};
 
+// `--- throws` names the start-up error class a refused registration raises,
+// spelt as PHP spells it (sql/cases/README.md). A configuration mistake is a
+// panic here, never a SqlError a caller could swallow; the one class the cases
+// name maps to that, as JS maps it to Error and Python to RuntimeError. Any
+// other name is a suite error, never a pass.
 fn throws_is_known(name: &str) -> bool {
     name == "LogicException"
 }

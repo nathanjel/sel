@@ -1,5 +1,5 @@
 use crate::args::Args;
-use crate::utf8::{cap_collection, cap_text, validate_text, SelError};
+use crate::utf8::{cap_collection, cap_text, SelError};
 use crate::value::Value;
 
 const B64_ALPHABET: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
@@ -17,8 +17,9 @@ pub fn fn_to_utf8(args: &mut Args) -> Result<Value, SelError> {
 pub fn fn_from_utf8(args: &mut Args) -> Result<Value, SelError> {
     let b = args.bytes(0)?;
     let pos = args.pos_at(0);
+    // from_utf8 refuses surrogates, overlongs and everything else that is not
+    // UTF-8: nothing is left to check once it accepts.
     let s = String::from_utf8(b).map_err(|_| SelError::new("E_UTF8", "invalid UTF-8", pos))?;
-    validate_text(&s, pos)?;
     Ok(Value::text_owned(s))
 }
 

@@ -2,28 +2,10 @@ use sel_lang::{
     compile, dec_parse, decode_utf8_source, evaluate, function_names, register_function, Context,
     Dec, Kind, Pos, SelError, Value,
 };
-
-
-fn say(counter: &mut usize, out: &mut Vec<String>, name: &str, value: &str) {
-    *counter += 1;
-    out.push(format!("{:02} {} = {}", counter, name, value));
-}
-
-fn b(x: bool) -> &'static str {
-    if x {
-        "true"
-    } else {
-        "false"
-    }
-}
+use sel_lang_dev::{b, say};
 
 fn kind_name(k: Kind) -> &'static str {
-    match k {
-        Kind::None => "NONE",
-        Kind::Text => "TEXT",
-        Kind::Bin => "BIN",
-        Kind::Bool => "BOOL",
-    }
+    k.as_str()
 }
 
 fn eval(src: &str) -> Value {
