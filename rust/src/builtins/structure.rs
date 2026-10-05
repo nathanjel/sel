@@ -26,6 +26,9 @@ use crate::value::{ListKeys, Entry, Kind, Value};
 // point -- invoke_call (eval.rs) truncates the frame stack to its own depth
 // after every builtin, error or not, so no early return pops by hand.
 
+// Whether a body mentions `name` (whether to bind `_K` per element).
+// Traversal policy: scope-blind, every child -- an over-approximation, which
+// only costs a frame slot.
 fn node_contains_var(node: &Node, name: &str) -> bool {
     if node.t == NodeType::Var {
         return node.s.eq_ignore_ascii_case(name);
@@ -978,7 +981,7 @@ struct BucketGroup {
 /// application's function (the host may do anything) -- one registered as a
 /// host function or not in the builtin manifest -- anywhere inside it. The one
 /// answer SORT/TOP keys and BUCKET keys both ask (recursion is bounded by
-/// the parse depth cap).
+/// the parse depth cap). Traversal policy: scope-blind, every child.
 fn may_write(node: &Node) -> bool {
     if node.t == NodeType::Assign {
         return true;

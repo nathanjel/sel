@@ -73,6 +73,14 @@ pub fn compile(source: &str) -> Result<Program, SelError> {
     Program::compile(source)
 }
 
+/// The variables a program reads from its context (spec §8).
+/// Traversal policy: scope-aware (binder slots are names; inner arguments see
+/// the form's names bound). Targets: index expressions are read, in order,
+/// before the right side; the root is read only by a compound assignment and
+/// is defined afterwards. A definition counts only where it is definite: not
+/// past a branch that may not run (IF, COND, COALESCE, a short-circuit's
+/// right side, GET/PATH's fallback, a body). Application calls are ordinary
+/// reads of their arguments. Bounded by the parse depth cap (E_DEPTH).
 fn collect_dependencies(
     node: &Node,
     bound: &HashSet<String>,
@@ -188,10 +196,9 @@ fn collect_dependencies(
             }
         }
         N::Call => {
-            let spec_binds = node.spec.as_ref().is_some_and(|s| s.binds);
-            if let Some(form) = crate::manifest::binding_form(&node.s, &node.items, spec_binds) {
+            if let Some(form) = crate::manifest::call_binding_form(node) {
                 let mut inner_bound = bound.clone();
-                inner_bound.extend(form.binds);
+                inner_bound.extend(form.binds.iter().cloned());
                 // Arguments are read in the order they are written, as every
                 // other host reads them. A body may run once per element or
                 // never, so what it assigns is not definite afterwards -- not
@@ -200,7 +207,7 @@ fn collect_dependencies(
                 // run turns out not to need; over-reporting is allowed, and the
                 // hosts agree on it.)
                 for (i, arg) in node.items.iter().enumerate() {
-                    match form.scopes[i] {
+                    match form.scope(i) {
                         Scope::Binder => {}
                         Scope::Inner => {
                             let mut body = defined.clone();

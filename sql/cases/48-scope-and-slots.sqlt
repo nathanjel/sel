@@ -929,3 +929,18 @@ SELECT CAST(`i`.`dept` AS CHAR) COLLATE utf8mb4_nopad_bin AS `k`, COALESCE(SUM(C
 --- params
 t"x", t"y"
 ===
+
+### name: plan.pure-memory.tables-read-in-an-assignment-target-index
+--- note
+An index expression of an assignment target runs before the store (SPEC §5.7), so a relation it reads is one of the program's physical sources, as the right side's are.
+--- dialect
+mariadb
+--- bindings
+{"ORDERS": {"kind": "relation", "from": "orders", "alias": "o", "fields": {"ID": {"kind": "column", "table": "o", "column": "id", "type": "NUM"}}}}
+--- source
+A = LIST(0); A[COUNT(ORDERS) - COUNT(ORDERS)] = 1; A
+--- plan
+pure_memory
+--- tables
+orders
+===

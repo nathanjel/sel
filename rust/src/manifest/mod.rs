@@ -22,6 +22,31 @@ pub struct BindingFormResult {
     pub binds: Vec<String>,
 }
 
+impl BindingFormResult {
+    /// The scope argument `i` is evaluated in.
+    pub fn scope(&self, i: usize) -> builtins::Scope {
+        self.scopes.get(i).copied().unwrap_or(builtins::Scope::Outer)
+    }
+}
+
+/// The scope argument `i` of a call is evaluated in, given the call's binding
+/// form: every argument of a call with none is outer.
+pub fn arg_scope(form: Option<&BindingFormResult>, i: usize) -> builtins::Scope {
+    form.map_or(builtins::Scope::Outer, |f| f.scope(i))
+}
+
+/// The binding form of a call node: the manifest's for a builtin, the generic
+/// shapes for an application's function registered as binding (its spec,
+/// else the registry's). The one classifier every scope-aware walker asks
+/// (crate::ast, "Traversal policies").
+pub fn call_binding_form(node: &crate::ast::Node) -> Option<BindingFormResult> {
+    let spec_binds = match &node.spec {
+        Some(spec) => spec.binds,
+        None => crate::builtins::lookup_spec(&node.s).is_some_and(|s| s.binds),
+    };
+    binding_form(&node.s, &node.items, spec_binds)
+}
+
 static FORMS_MAP: OnceLock<HashMap<&'static str, &'static [builtins::Form]>> = OnceLock::new();
 
 /// The forms of a builtin named at run time (canonical, upper case).

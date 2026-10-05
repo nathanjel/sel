@@ -404,6 +404,9 @@ fn opt_map_has_computed(step: &Node) -> bool {
     true
 }
 
+// The fields read as `binder["f"]` (or `_`, `_1`, `_2`). Traversal policy:
+// scope-blind -- a nested binder of the same name counts, which can only add
+// fields and so only refuses a rewrite.
 fn opt_field_refs(node: &Node, binder: &str) -> Vec<String> {
     let mut seen = HashSet::new();
     let mut refs = Vec::new();
@@ -436,6 +439,9 @@ fn opt_field_refs(node: &Node, binder: &str) -> Vec<String> {
     refs
 }
 
+// Whether `node` reads one of `names` other than as a field (`V["f"]`).
+// Traversal policy: scope-blind (a nested binder of the same name counts) and
+// targets included -- an over-approximation, which only refuses a rewrite.
 fn opt_reads_var(node: &Node, names: &[&str]) -> bool {
     let wanted: HashSet<String> = names.iter().map(|n| n.to_ascii_uppercase()).collect();
     let mut found = false;

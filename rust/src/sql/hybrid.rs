@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::ast::{Node, NodeType};
-use crate::manifest::{binding_form, builtins::Scope};
+use crate::manifest::builtins::Scope;
 use crate::optimizer::{build_pipeline, optimize_ast_logical, unwind_pipeline};
 use crate::program::Program;
 use crate::sql::binding::{Binding, BindingKind, Bindings};
@@ -264,6 +264,11 @@ pub(crate) fn free_names(ast: &Node, bound: &[String], out: &mut Vec<String>) {
 
 // `free_names` for a caller collecting over many trees: `found` mirrors `out`
 // and persists between calls, so n helpers cost O(n), not O(n^2).
+// Traversal policy: scope-aware (binder slots are names; inner arguments see
+// the form's names bound). Targets: index expressions, in order, then the
+// right side; the root is a write, bound for the rest of its sequence (no
+// definiteness: a name assigned earlier in a sequence is the helper's, as
+// stage 1 inlines it). Iterative: a tree may be as deep as its source is long.
 pub(crate) fn free_names_seen(ast: &Node, bound: &[String], out: &mut Vec<String>, found: &mut HashSet<String>) {
     enum Task<'a> { Visit(&'a Node), Bind(Vec<String>), Restore(usize) }
     let mut scope = bound.to_vec();
@@ -295,24 +300,30 @@ pub(crate) fn free_names_seen(ast: &Node, bound: &[String], out: &mut Vec<String
                 out.push(node.s.clone());
             }
         } else if node.t == NodeType::Assign {
+            // The target's index expressions, in order, then the right side
+            // (SPEC §5.7); the target's root is a write.
             if let Some(rhs) = node.r.as_deref() { pending.push(Task::Visit(rhs)); }
+            let mut keys = Vec::new();
+            let mut target = node.l.as_deref();
+            while let Some(t) = target.filter(|t| t.t == NodeType::Index) {
+                keys.extend(t.r.as_deref());
+                target = t.l.as_deref();
+            }
+            pending.extend(keys.into_iter().map(Task::Visit));
         } else if node.t == NodeType::Seq {
             pending.push(Task::Restore(scope.len()));
             for item in node.items.iter().rev() {
                 if item.t == NodeType::Assign {
-                    if let Some(target) = &item.l {
-                        if target.t == NodeType::Var {
-                            pending.push(Task::Bind(vec![target.s.clone()]));
-                        }
+                    if let Some(root) = assign_root(item) {
+                        pending.push(Task::Bind(vec![root.s.clone()]));
                     }
                 }
                 pending.push(Task::Visit(item));
             }
         } else if node.t == NodeType::Call {
-            let binds = crate::builtins::lookup_spec(&node.s).is_some_and(|s| s.binds);
-            let form = binding_form(&node.s, &node.items, binds);
+            let form = crate::manifest::call_binding_form(node);
             for (i, item) in node.items.iter().enumerate().rev() {
-                match form.as_ref().and_then(|f| f.scopes.get(i)).copied().unwrap_or(Scope::Outer) {
+                match crate::manifest::arg_scope(form.as_ref(), i) {
                     Scope::Binder => {},
                     Scope::Inner => {
                         pending.push(Task::Restore(scope.len()));
@@ -356,6 +367,7 @@ fn key_safe_boundary(steps: &[Node], count: usize) -> bool {
     false
 }
 
+// Traversal policy: a raw scan, scope-blind (see key_safe_boundary).
 fn mentions_key(node: &Node) -> bool {
     if node.t == NodeType::Var {
         return node.s == "_K";
@@ -376,16 +388,17 @@ fn statements(ast: &Node) -> (Vec<&Node>, &Node) {
     }
 }
 
-fn assigned_name(statement: &Node) -> String {
-    let mut target = statement.l.as_deref();
-    while let Some(t) = target {
-        if t.t == NodeType::Index {
-            target = t.l.as_deref();
-        } else {
-            break;
-        }
+// The variable an assignment writes: its target's root (`A` in `A["k"] = 1`).
+fn assign_root(statement: &Node) -> Option<&Node> {
+    let mut target = statement.l.as_deref()?;
+    while target.t == NodeType::Index {
+        target = target.l.as_deref()?;
     }
-    target.map(|t| t.s.clone()).unwrap_or_default()
+    Some(target).filter(|t| t.t == NodeType::Var)
+}
+
+fn assigned_name(statement: &Node) -> String {
+    assign_root(statement).map(|t| t.s.clone()).unwrap_or_default()
 }
 
 fn definitions(leading: &[&Node]) -> HashMap<String, Node> {
@@ -411,6 +424,9 @@ fn is_literal_type(t: NodeType) -> bool {
     )
 }
 
+// Traversal policy: scope-aware (binder slots kept; a name the form binds is
+// not a helper inside the arguments it scopes). Targets: only the right side
+// is rewritten -- a target names a variable, it does not read a helper.
 fn inline_literals(node: &Node, literals: &HashMap<String, Node>, bound: &[String]) -> Node {
     let t = node.t;
     if t == NodeType::Var {
@@ -458,13 +474,12 @@ fn inline_literals(node: &Node, literals: &HashMap<String, Node>, bound: &[Strin
         return cp;
     }
     if t == NodeType::Call {
-        let spec_binds = crate::builtins::lookup_spec(&node.s).is_some_and(|s| s.binds);
-        let form = binding_form(&node.s, &node.items, spec_binds);
+        let form = crate::manifest::call_binding_form(node);
         let mut inner = bound.to_vec();
         if let Some(ref f) = form { inner.extend(f.binds.iter().cloned()); }
         let mut cp = node.clone();
         cp.items = node.items.iter().enumerate().map(|(i, item)| {
-            match form.as_ref().and_then(|f| f.scopes.get(i)).copied().unwrap_or(Scope::Outer) {
+            match crate::manifest::arg_scope(form.as_ref(), i) {
                 Scope::Binder => item.clone(),
                 Scope::Inner => inline_literals(item, literals, &inner),
                 Scope::Outer => inline_literals(item, literals, bound),
@@ -526,6 +541,10 @@ fn unwind_through_helpers(
     (source, steps)
 }
 
+// Every variable `node` mentions, but a read of the binding that unwinding
+// marked (`sql_binding`). Traversal policy: scope-blind, binder slots and
+// targets included -- it picks the helpers a statement may need, where an
+// extra one costs nothing and a missed one is a wrong answer.
 fn read_names(node: &Node, out: &mut HashSet<String>) {
     if node.t == NodeType::Var {
         if !node.sql_binding { out.insert(node.s.clone()); }

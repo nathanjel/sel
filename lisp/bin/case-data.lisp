@@ -19024,6 +19024,22 @@ ORDERS .> TAKE(1)"
    :register nil
    :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" "i" (list (cons "DEPT" (binding-column "dept" "i" :text)) (cons "QTY" (binding-column "qty" "i" :num))) nil nil)))))
   (list
+   :name "plan.pure-memory.tables-read-in-an-assignment-target-index"
+   :at "48-scope-and-slots.sqlt:933"
+   :dialect "mariadb"
+   :source "A = LIST(0); A[COUNT(ORDERS) - COUNT(ORDERS)] = 1; A"
+   :expect nil
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan "pure_memory"
+   :tables (list "orders")
+   :register nil
+   :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num))) nil nil)))))
+  (list
    :name "warrant.bool.if-cannot-launder-an-undeclared-column"
    :at "49-kind-guarantees.sqlt:13"
    :dialect "mariadb"
