@@ -180,20 +180,38 @@ final class Translator
     {
         $fields = self::recordFields($node);
         $seen = [];
+        // A server that cuts an identifier to lexical.identifierBytes (PostgreSQL:
+        // 63) keeps the whole characters that fit (sql/MAP.md §3.1).
+        $limit = $this->identifierBytes();
         foreach ($fields as $i => [$alias]) {
             $pos = $node['args'][$i * 2]['pos'];
             $this->checkAliasName($alias, $pos);
-            if (in_array('postgresql', Map::chain($this->dialect), true)) {
-                $cut = substr($alias, 0, 63);
+            if ($limit !== null) {
+                $end = min($limit, strlen($alias));
+                while ($end > 0 && $end < strlen($alias) && (ord($alias[$end]) & 0xC0) === 0x80) {
+                    $end--;
+                }
+                $cut = substr($alias, 0, $end);
                 if (isset($seen[$cut]) && $seen[$cut] !== $alias) {
                     refuse('E_SQL_UNSUPPORTED',
-                        'two field names share their first 63 bytes, which PostgreSQL '
-                        . 'truncates to one column name', $pos);
+                        "two field names share their first {$limit} bytes, which dialect "
+                        . "{$this->dialect} truncates to one column name", $pos);
                 }
                 $seen[$cut] = $alias;
             }
         }
         return $fields;
+    }
+
+    /**
+     * lexical.identifierBytes as a count, or null where the dialect keeps every
+     * identifier whole: one to nine digits are the count, anything else
+     * (absent, withdrawn, malformed) is no limit, in every host (sql/MAP.md §3).
+     */
+    private function identifierBytes(): ?int
+    {
+        $v = $this->emit->lex('identifierBytes');
+        return is_string($v) && preg_match('/\A[0-9]{1,9}\z/', $v) === 1 ? (int) $v : null;
     }
 
     /** @param array{line:int,col:int,offset:int} $pos */
@@ -233,6 +251,23 @@ final class Translator
         }
 
         return $this->compileStatement($plan);
+    }
+
+    /**
+     * A statement spelled by one of the dialect's skeletons around an already
+     * translated one -- the hybrid planner's latestMember (sql/MAP.md §5.2).
+     * Refused as any skeleton is, and carrying its caveat beside the inner
+     * statement's. Not public API: Hybrid is its one caller.
+     *
+     * @internal
+     * @param array<string, list<Fragment|string>> $slots
+     * @param array{line:int,col:int,offset:int} $pos
+     */
+    public function wrapStatement(string $name, array $slots, Fragment $inner, array $pos): Fragment
+    {
+        $parts = $this->fillNamed($this->skeleton($name, $pos), $slots, $pos);
+        $caveats = array_values(array_unique([...$inner->caveats, ...array_keys($this->caveats)]));
+        return new Fragment($parts, 'STATEMENT', $this->dialect, $inner->params, $inner->paramKinds, $caveats);
     }
 
     // --- the walk -----------------------------------------------------------
@@ -914,7 +949,7 @@ final class Translator
                     if ($inner->kind === 'UNKNOWN') {
                         [$test, $cast] = $this->emit->numericGuardParts($inner, $bodyNode['pos']);
                         $this->scaleLimited($bodyNode['pos'], 'this operand is read as a number');
-                        $parts = $this->allOrNothingSum($test, $cast);
+                        $parts = $this->allOrNothingSum($test, $cast, $n['pos']);
                     } else {
                         $parts = self::joinParts(['COALESCE(SUM(', $inner->parts, '), 0)']);
                     }
@@ -2497,38 +2532,22 @@ final class Translator
     }
 
     /**
-     * The argument SUM adds up in the all-or-nothing form. PostgreSQL evaluates the
-     * cast of EVERY row before the enclosing CASE decides the sum is NULL, and its
-     * cast of 'x' to NUMERIC is an error, not a NULL: there the cast is guarded
-     * itself, so a row that is not a number reaches SUM as NULL and the outer test
-     * turns the whole sum into NULL. The MySQL family casts a non-number to 0 with a
-     * warning, which the outer test already discards.
-     *
-     * @param list<string|int> $test
-     * @param list<string|int> $cast
-     * @return list<string|int>
-     */
-    private function sumCast(array $test, array $cast): array
-    {
-        if (!in_array('postgresql', Map::chain($this->dialect), true)) {
-            return $cast;
-        }
-        return self::joinParts(['CASE WHEN ', $test, ' THEN ', $cast, ' ELSE NULL END']);
-    }
-
-    /**
      * `COALESCE(SUM(body), 0)` for a body of unknown kind, all or nothing: NULL
-     * unless every element passes the numeric test. The one spelling, for a
-     * bucket's members and for a relation's rows.
+     * unless every element passes the numeric test. The dialect's guardedSum
+     * skeleton (sql/MAP.md §5.1), for a bucket's members and for a relation's
+     * rows; it says whether the cast inside SUM needs a guard of its own.
      *
      * @param list<string|int> $test
      * @param list<string|int> $cast
+     * @param array{line:int,col:int,offset:int} $pos
      * @return list<string|int>
      */
-    private function allOrNothingSum(array $test, array $cast): array
+    private function allOrNothingSum(array $test, array $cast, array $pos): array
     {
-        return self::joinParts(['CASE WHEN COUNT(*) = COUNT(CASE WHEN ', $test,
-            ' THEN 1 END) THEN COALESCE(SUM(', $this->sumCast($test, $cast), '), 0) ELSE NULL END']);
+        return $this->fillNamed($this->skeleton('guardedSum', $pos), [
+            'test' => [new Fragment($test, 'BOOL', $this->dialect)],
+            'body' => [new Fragment($cast, 'NUM', $this->dialect)],
+        ], $pos);
     }
 
     /**
@@ -2554,7 +2573,7 @@ final class Translator
         }
         $tpl = str_replace($needle, '{guardedSum}', $tpl);
         $slots = self::slots($this->relationSlots($rel), [
-            'guardedSum' => [new Fragment($this->allOrNothingSum($test, $cast), 'UNKNOWN', $this->dialect)],
+            'guardedSum' => [new Fragment($this->allOrNothingSum($test, $cast, $n['pos']), 'UNKNOWN', $this->dialect)],
         ]);
         return new Fragment($this->fillNamed($tpl, $slots, $n['pos']), 'NUM', $this->dialect);
     }
@@ -3259,6 +3278,13 @@ final class Translator
         if (is_string($s)) {
             refuse('E_SQL_UNSUPPORTED',
                 "dialect {$this->dialect} cannot express {$name} — {$s}", $pos);
+        }
+        // A builder registered on `skel` has no template: rendering one emitted
+        // nothing, with a warning. Refused, as the other hosts refuse it.
+        if (isset($s['builder'])) {
+            refuse('E_SQL_UNSUPPORTED',
+                "the {$name} skeleton for {$this->dialect} is a builder, and a skeleton "
+                . 'is a template', $pos);
         }
         // A skeleton may carry a caveat, and until MariaDB's CASE needed one
         // nothing here read it — so `skel` was the one section whose entries
@@ -4008,6 +4034,7 @@ final class Translator
         $args = $step['args'];
         $lim = $this->evalIntParam($args[1], 'TAKE');
         $plan->limit = $plan->limit === null ? $lim : min($plan->limit, $lim);
+        $plan->limitPos = $step['pos'];
         return $plan;
     }
 
@@ -4028,6 +4055,7 @@ final class Translator
         if ($plan->limit !== null) $plan->limit -= $skipped;
         $have = $plan->offset ?? 0;
         $plan->offset = $have > PHP_INT_MAX - $skipped ? PHP_INT_MAX : $have + $skipped;
+        $plan->limitPos = $step['pos'];
         return $plan;
     }
 
@@ -4207,6 +4235,7 @@ final class Translator
         if ($isTop) {
             $limit = $this->evalIntParam($args[count($args) - 1], $name);
             $plan->limit = $plan->limit === null ? $limit : min($plan->limit, $limit);
+            $plan->limitPos = $step['pos'];
         }
 
         if (in_array($name, ['SORT', 'SORT_DESC', 'TOP', 'TOP_DESC'], true)) {
@@ -4596,8 +4625,10 @@ final class Translator
     }
 
     /**
-     * LIMIT and OFFSET. An OFFSET alone takes the dialect's spelling of "no
-     * limit" where the grammar requires a LIMIT before an OFFSET.
+     * LIMIT and OFFSET, spelled by the dialect's limit, limitOffset and
+     * offsetOnly skeletons (sql/MAP.md §5.1): an OFFSET alone takes the
+     * dialect's spelling of "no limit" where the grammar requires a LIMIT before
+     * an OFFSET. A refusal blames the last TAKE, TOP or DROP that shaped the clause.
      *
      * @return list<string>
      */
@@ -4605,20 +4636,14 @@ final class Translator
     {
         $limit = $plan->limit;
         $offset = $plan->offset;
-        if ($limit !== null) {
-            return [$offset !== null ? " LIMIT {$limit} OFFSET {$offset}" : " LIMIT {$limit}"];
-        }
-        if ($offset === null) {
+        if ($limit === null && $offset === null) {
             return [];
         }
-        $chain = Map::chain($this->dialect);
-        if (in_array('mariadb', $chain, true) || in_array('mysql', $chain, true) || in_array('mysql-family', $chain, true)) {
-            return [" LIMIT 18446744073709551615 OFFSET {$offset}"];
-        }
-        if (in_array('sqlite', $chain, true)) {
-            return [" LIMIT -1 OFFSET {$offset}"];
-        }
-        return [" OFFSET {$offset}"];
+        $key = $limit === null ? 'offsetOnly' : ($offset === null ? 'limit' : 'limitOffset');
+        $pos = $plan->limitPos ?? throw new \LogicException('a LIMIT or OFFSET no step set');
+        $parts = $this->fillNamed($this->skeleton($key, $pos),
+            ['limit' => [(string) $limit], 'offset' => [(string) $offset]], $pos);
+        return [' ' . implode('', $parts)];
     }
 
 }

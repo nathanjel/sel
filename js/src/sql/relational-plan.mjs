@@ -49,6 +49,9 @@ export class RelationalPlan {
     // Set on a derived table built over sorted rows with no LIMIT: its ORDER BY is gone.
     this.orderDropped = false;
     this.offset = null;
+    // The last TAKE, TOP or DROP that set limit or offset: where a dialect that
+    // cannot spell the clause refuses it (sql/MAP.md §5.1).
+    this.limitPos = null;
     // The translator's memo of the joined row model (Translator.joinRows),
     // keyed by the number of joins it covers; null until asked.
     this.joinRowsCache = null;

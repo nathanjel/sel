@@ -198,6 +198,21 @@ int main() {
   say("guard.reuse.after-reset",
       refuses([&] { Sql::translate(sel::compile("N + 1"), "probe-badguard", named); }));
 
+  // A builder registered on `skel` has no template to fill: the LIMIT it would
+  // spell is refused, so the TAKE stays in memory (sql/MAP.md §5).
+  Map::define_builder("mariadb", Section::Skel, "limit",
+                      std::make_shared<sel::sql::Builder>(
+                          [](sel::sql::Emit& emit, std::span<const Fragment>, sel::Pos) {
+                            return Fragment({{.sql = "LIMIT 1"}}, SqlKind::Text, emit.dialect());
+                          }));
+  {
+    sel::sql::HybridPlan plan = sel::sql::Sql::plan_hybrid(sel::compile("ORDERS .> TAKE(2)"),
+                                                           "mariadb", bindings, sel::sql::Options{});
+    say("skel.builder.plan", plan.pure_sql ? "pure_sql" : plan.pure_memory ? "pure_memory" : "hybrid");
+    say("skel.builder.statement", plan.sql_statement ? plan.sql_statement->as_statement() : "-");
+  }
+  Map::reset();
+
   std::cout << join(out, "\n") << "\n";
   return 0;
 }

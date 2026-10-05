@@ -1,0 +1,344 @@
+% Dialect facts the map states as data, and a dialect registered on a target
+% inherits (sql/MAP.md §3 identifierBytes, §5.1 limit/limitOffset/offsetOnly and
+% guardedSum, §5.2 latestMember). Every case registers a child: a fact keyed on a
+% dialect's NAME passes every shipped-dialect case and fails here, which is how all
+% seven hosts' OFFSET spelling and latest-member planner were found keyed on names.
+% The latest-member plan cases are in 36-latest-member.sqlt and
+% 37-latest-member-fallback.sqlt.
+
+### name: dialect.inherit.offset-only.mariadb-child
+--- note
+A DROP alone is MySQL-family grammar's LIMIT-less OFFSET, which it cannot spell: mysql-family's offsetOnly skeleton writes the largest BIGINT UNSIGNED as the limit, and a registered child of mariadb inherits it. Keyed on the dialect name, the child fell through to a bare OFFSET, a syntax error on the server.
+--- dialect
+mariadb-11.8
+--- register
+[{"dialect": "mariadb-11.8", "extends": "mariadb", "version": "11.8"}]
+--- bindings
+{"ITEMS": {"kind": "relation", "from": "items"}}
+--- as
+statement
+--- source
+ITEMS .> DROP(5)
+--- expect
+SELECT * FROM `items` LIMIT 18446744073709551615 OFFSET 5
+===
+
+### name: dialect.inherit.offset-only.postgresql-child
+--- dialect
+pg-child
+--- register
+[{"dialect": "pg-child", "extends": "postgresql", "version": "17"}]
+--- bindings
+{"ITEMS": {"kind": "relation", "from": "items"}}
+--- as
+statement
+--- source
+ITEMS .> DROP(5)
+--- expect
+SELECT * FROM "items" OFFSET 5
+===
+
+### name: dialect.inherit.offset-only.sqlite-child
+--- dialect
+sqlite-child
+--- register
+[{"dialect": "sqlite-child", "extends": "sqlite", "version": "3.45"}]
+--- bindings
+{"ITEMS": {"kind": "relation", "from": "items"}}
+--- as
+statement
+--- source
+ITEMS .> DROP(5)
+--- expect
+SELECT * FROM "items" LIMIT -1 OFFSET 5
+===
+
+### name: dialect.inherit.limit-offset.mariadb-child
+--- dialect
+mariadb-11.8
+--- register
+[{"dialect": "mariadb-11.8", "extends": "mariadb", "version": "11.8"}]
+--- bindings
+{"ITEMS": {"kind": "relation", "from": "items"}}
+--- as
+statement
+--- source
+ITEMS .> DROP(2) .> TAKE(3)
+--- expect
+SELECT * FROM `items` LIMIT 3 OFFSET 2
+===
+
+### name: dialect.ansi.offset-only-is-the-standard-spelling
+--- note
+ansi states SQL:2008: OFFSET n ROWS, which needs no limit. Every shipped target spells LIMIT in its own file, so only a dialect registered on ansi emits this.
+--- dialect
+ansi-probe
+--- register
+[{"dialect": "ansi-probe", "extends": "ansi", "version": "1", "target": true}]
+--- bindings
+{"ITEMS": {"kind": "relation", "from": "items"}}
+--- as
+statement
+--- source
+ITEMS .> DROP(5)
+--- expect
+SELECT * FROM "items" OFFSET 5 ROWS
+===
+
+### name: dialect.ansi.limit-is-fetch-first
+--- dialect
+ansi-probe
+--- register
+[{"dialect": "ansi-probe", "extends": "ansi", "version": "1", "target": true}]
+--- bindings
+{"ITEMS": {"kind": "relation", "from": "items"}}
+--- as
+statement
+--- source
+ITEMS .> TAKE(3)
+--- expect
+SELECT * FROM "items" FETCH FIRST 3 ROWS ONLY
+===
+
+### name: dialect.ansi.limit-and-offset
+--- dialect
+ansi-probe
+--- register
+[{"dialect": "ansi-probe", "extends": "ansi", "version": "1", "target": true}]
+--- bindings
+{"ITEMS": {"kind": "relation", "from": "items"}}
+--- as
+statement
+--- source
+ITEMS .> DROP(2) .> TAKE(3)
+--- expect
+SELECT * FROM "items" OFFSET 2 ROWS FETCH FIRST 3 ROWS ONLY
+===
+
+### name: dialect.register.offset-only-respelled
+--- note
+A deployment whose server accepts the standard spelling can say so with one define; the other two clause shapes keep the parent's.
+--- dialect
+mariadb-11.8
+--- register
+[{"dialect": "mariadb-11.8", "extends": "mariadb", "version": "11.8"},
+ {"define": ["mariadb-11.8", "skel", "offsetOnly", {"tpl": "OFFSET {offset} ROWS"}]}]
+--- bindings
+{"ITEMS": {"kind": "relation", "from": "items"}}
+--- as
+statement
+--- source
+ITEMS .> DROP(5)
+--- expect
+SELECT * FROM `items` OFFSET 5 ROWS
+===
+
+### name: dialect.register.offset-only-refused-blames-the-last-drop
+--- note
+A refused clause skeleton refuses the statement at the last TAKE, TOP or DROP that shaped the clause.
+--- dialect
+no-skip
+--- register
+[{"dialect": "no-skip", "extends": "sqlite"},
+ {"define": ["no-skip", "skel", "offsetOnly", "this server cannot skip rows without a limit"]}]
+--- bindings
+{"ITEMS": {"kind": "relation", "from": "items"}}
+--- as
+statement
+--- source
+ITEMS .> DROP(2) .> DROP(3)
+--- error
+E_SQL_UNSUPPORTED 1:21
+===
+
+### name: dialect.register.offset-only-refused-leaves-limit-offset
+--- note
+Refusing offsetOnly refuses only that shape: a DROP with a TAKE is limitOffset.
+--- dialect
+no-skip
+--- register
+[{"dialect": "no-skip", "extends": "sqlite"},
+ {"define": ["no-skip", "skel", "offsetOnly", "this server cannot skip rows without a limit"]}]
+--- bindings
+{"ITEMS": {"kind": "relation", "from": "items"}}
+--- as
+statement
+--- source
+ITEMS .> DROP(2) .> TAKE(3)
+--- expect
+SELECT * FROM "items" LIMIT 3 OFFSET 2
+===
+
+### name: dialect.register.limit-refused-blames-the-take
+--- dialect
+no-limit
+--- register
+[{"dialect": "no-limit", "extends": "postgresql"},
+ {"define": ["no-limit", "skel", "limit", null]}]
+--- bindings
+{"ITEMS": {"kind": "relation", "from": "items"}}
+--- as
+statement
+--- source
+ITEMS .> TAKE(3)
+--- error
+E_SQL_UNSUPPORTED 1:10
+===
+
+### name: alias.identifier-bytes.cut-at-a-character-boundary
+--- note
+PostgreSQL cuts an identifier to the whole characters that fit in 63 bytes: 62 a's and a two-byte é is cut to the 62 a's, which is the second key. Hosts that cut at byte 63 kept half of the é and emitted both aliases, one of which the server truncated onto the other.
+--- dialect
+postgresql
+--- bindings
+{"ITEMS": {"kind": "relation", "from": "items", "alias": "i", "fields": {"PRICE": {"column": "price", "type": "NUM"}}}}
+--- as
+statement
+--- source
+ITEMS .> MAP(RECORD("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaé", _["PRICE"], "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", _["PRICE"]))
+--- error
+E_SQL_UNSUPPORTED 1:100
+===
+
+### name: alias.identifier-bytes.straddling-characters-with-different-lead-bytes
+--- note
+Both keys are cut to the 62 a's; a byte cut left C3 on one and E2 on the other and called them different.
+--- dialect
+postgresql
+--- bindings
+{"ITEMS": {"kind": "relation", "from": "items", "alias": "i", "fields": {"PRICE": {"column": "price", "type": "NUM"}}}}
+--- as
+statement
+--- source
+ITEMS .> MAP(RECORD("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaé", _["PRICE"], "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa€", _["PRICE"]))
+--- error
+E_SQL_UNSUPPORTED 1:100
+===
+
+### name: alias.identifier-bytes.declared-by-a-registered-dialect
+--- note
+identifierBytes is a lexical key, so a dialect registered anywhere can declare the limit its server has.
+--- dialect
+short-names
+--- register
+[{"dialect": "short-names", "extends": "mariadb", "lexical": {"identifierBytes": "4"}}]
+--- bindings
+{"ITEMS": {"kind": "relation", "from": "items", "alias": "i", "fields": {"PRICE": {"column": "price", "type": "NUM"}}}}
+--- as
+statement
+--- source
+ITEMS .> MAP(RECORD("abcdX", _["PRICE"], "abcdY", _["PRICE"]))
+--- error
+E_SQL_UNSUPPORTED 1:42
+===
+
+### name: alias.identifier-bytes.withdrawn-by-a-child
+--- note
+null withdraws a lexical key (sql/MAP.md §2): a child of postgresql for a server that keeps long names whole emits both aliases.
+--- dialect
+pg-long
+--- register
+[{"dialect": "pg-long", "extends": "postgresql", "lexical": {"identifierBytes": null}}]
+--- bindings
+{"ITEMS": {"kind": "relation", "from": "items", "alias": "i", "fields": {"PRICE": {"column": "price", "type": "NUM"}}}}
+--- as
+statement
+--- source
+ITEMS .> MAP(RECORD("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaX1", _["PRICE"], "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaX2", _["PRICE"]))
+--- expect
+SELECT "price" AS "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaX1", "price" AS "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaX2" FROM "items" "i"
+===
+
+### name: agg.guarded-sum.inherited.postgresql-child
+--- note
+guardedSum (sql/MAP.md §5.1): ansi guards the cast inside SUM as well, because standard SQL raises casting a non-number and the server casts every row before the outer CASE decides; postgresql inherits that, and so does its registered child.
+--- dialect
+pg-child
+--- register
+[{"dialect": "pg-child", "extends": "postgresql", "version": "17"}]
+--- bindings
+{"ITEMS": {"kind": "relation", "from": "oi", "alias": "oi", "fields": {"QTY": {"table": "oi", "column": "qty"}}, "correlate": "\"oi\".\"o\"=\"o\".\"id\""}}
+--- source
+SUM(ITEMS, _["QTY"])
+--- expect
+(SELECT CASE WHEN COUNT(*) = COUNT(CASE WHEN (CAST("oi"."qty" AS TEXT) ~ '^-?[0-9]+(\.[0-9]+)?$') THEN 1 END) THEN COALESCE(SUM(CASE WHEN (CAST("oi"."qty" AS TEXT) ~ '^-?[0-9]+(\.[0-9]+)?$') THEN CAST("oi"."qty" AS NUMERIC) ELSE NULL END), 0) ELSE NULL END FROM "oi" "oi" WHERE ("oi"."o"="o"."id"))
+===
+
+### name: agg.guarded-sum.inherited.postgresql-child-bucket
+--- dialect
+pg-child
+--- register
+[{"dialect": "pg-child", "extends": "postgresql", "version": "17"}]
+--- bindings
+{"O": {"kind": "relation", "from": "orders", "alias": "o", "fields": {"CAT": {"table": "o", "column": "cat", "type": "TEXT"}, "MISC": {"table": "o", "column": "misc"}}}}
+--- as
+statement
+--- source
+O .> BUCKET(_["CAT"], RECORD("s", SUM(_, _["MISC"])))
+--- expect
+SELECT CASE WHEN COUNT(*) = COUNT(CASE WHEN (CAST("o"."misc" AS TEXT) ~ '^-?[0-9]+(\.[0-9]+)?$') THEN 1 END) THEN COALESCE(SUM(CASE WHEN (CAST("o"."misc" AS TEXT) ~ '^-?[0-9]+(\.[0-9]+)?$') THEN CAST("o"."misc" AS NUMERIC) ELSE NULL END), 0) ELSE NULL END AS "s" FROM "orders" "o" GROUP BY CAST("o"."cat" AS TEXT) COLLATE "C"
+===
+
+### name: agg.guarded-sum.inherited.mariadb-child-bucket
+--- note
+mysql-family casts a non-number to 0 with a warning, so its guardedSum leaves the cast inside SUM bare.
+--- dialect
+mariadb-11.8
+--- register
+[{"dialect": "mariadb-11.8", "extends": "mariadb", "version": "11.8"}]
+--- bindings
+{"O": {"kind": "relation", "from": "orders", "alias": "o", "fields": {"CAT": {"table": "o", "column": "cat", "type": "TEXT"}, "MISC": {"table": "o", "column": "misc"}}}}
+--- as
+statement
+--- source
+O .> BUCKET(_["CAT"], RECORD("s", SUM(_, _["MISC"])))
+--- expect
+SELECT CASE WHEN COUNT(*) = COUNT(CASE WHEN (`o`.`misc` REGEXP '\\A-?[0-9]+(\\.[0-9]+)?\\z') THEN 1 END) THEN COALESCE(SUM(CAST(`o`.`misc` AS DECIMAL(65,10))), 0) ELSE NULL END AS `s` FROM `orders` `o` GROUP BY CAST(`o`.`cat` AS CHAR) COLLATE utf8mb4_nopad_bin
+===
+
+### name: agg.guarded-sum.refused-at-the-sum
+--- note
+A dialect that refuses guardedSum refuses an undeclared SUM body at the SUM call; a body declared NUM needs no guard and still translates.
+--- dialect
+mariadb-11.8
+--- register
+[{"dialect": "mariadb-11.8", "extends": "mariadb", "version": "11.8"},
+ {"define": ["mariadb-11.8", "skel", "guardedSum", "this deployment does not read undeclared columns as numbers"]}]
+--- bindings
+{"ITEMS": {"kind": "relation", "from": "oi", "alias": "oi", "fields": {"QTY": {"table": "oi", "column": "qty"}}, "correlate": "\"oi\".\"o\"=\"o\".\"id\""}}
+--- source
+SUM(ITEMS, _["QTY"])
+--- error
+E_SQL_UNSUPPORTED 1:1
+===
+
+### name: agg.guarded-sum.refused-at-the-bucket-sum
+--- dialect
+mariadb-11.8
+--- register
+[{"dialect": "mariadb-11.8", "extends": "mariadb", "version": "11.8"},
+ {"define": ["mariadb-11.8", "skel", "guardedSum", "this deployment does not read undeclared columns as numbers"]}]
+--- bindings
+{"O": {"kind": "relation", "from": "orders", "alias": "o", "fields": {"CAT": {"table": "o", "column": "cat", "type": "TEXT"}, "MISC": {"table": "o", "column": "misc"}}}}
+--- as
+statement
+--- source
+O .> BUCKET(_["CAT"], RECORD("s", SUM(_, _["MISC"])))
+--- error
+E_SQL_UNSUPPORTED 1:35
+===
+
+### name: alias.identifier-bytes.duplicate-keys-are-a-duplicate
+--- note
+Two equal keys longer than the limit are a duplicate field, which the planner refuses for its own reason (E_SQL_SHAPE at the later value); the truncation check compares only names that differ. Rust refused them as a truncation collision.
+--- dialect
+postgresql
+--- bindings
+{"ITEMS": {"kind": "relation", "from": "items", "alias": "i", "fields": {"PRICE": {"column": "price", "type": "NUM"}}}}
+--- as
+statement
+--- source
+ITEMS .> MAP(RECORD("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", _["PRICE"], "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", _["PRICE"]))
+--- error
+E_SQL_SHAPE 1:182
+===

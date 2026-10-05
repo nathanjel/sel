@@ -292,6 +292,21 @@ int replay_register() {
   Map::define("ansi~replay", Section::Skel,
               "join", EntrySpec::withdraw("LISTAGG is SQL:2016 and is spelled differently by every server that has it"));
   ++calls;
+  Map::define("ansi~replay", Section::Skel,
+              "guardedSum", EntrySpec::skeleton("CASE WHEN COUNT(*) = COUNT(CASE WHEN {test} THEN 1 END) THEN COALESCE(SUM(CASE WHEN {test} THEN {body} ELSE NULL END), 0) ELSE NULL END"));
+  ++calls;
+  Map::define("ansi~replay", Section::Skel,
+              "limit", EntrySpec::skeleton("FETCH FIRST {limit} ROWS ONLY"));
+  ++calls;
+  Map::define("ansi~replay", Section::Skel,
+              "limitOffset", EntrySpec::skeleton("OFFSET {offset} ROWS FETCH FIRST {limit} ROWS ONLY"));
+  ++calls;
+  Map::define("ansi~replay", Section::Skel,
+              "offsetOnly", EntrySpec::skeleton("OFFSET {offset} ROWS"));
+  ++calls;
+  Map::define("ansi~replay", Section::Skel,
+              "latestMember", EntrySpec::skeleton("WITH {input} AS ({prefix}), {groups} AS (SELECT MAX({rev}) AS {maxRev}, MIN({rev}) AS {firstRev} FROM {input} GROUP BY {key}) SELECT {input}.* FROM {input} JOIN {groups} ON {input}.{rev} = {groups}.{maxRev} ORDER BY {groups}.{firstRev} ASC"));
+  ++calls;
   Map::define_dialect("mysql-family~replay",
                       DialectSpec::extending("ansi~replay").version("0").target(false).lexical("identQuote", "`").lexical("identEscape", "``").lexical("textQuote", "'").lexical_escapes("textEscape", {{"'", "''"}, {"\\", "\\\\"}}).lexical("textCollate", " COLLATE utf8mb4_nopad_bin").lexical("textCharset", "utf8mb4").lexical("numericCast", "CAST({0} AS DECIMAL(65,10))").lexical("numericGuard", "CASE WHEN ({0} REGEXP '\\\\A-?[0-9]+(\\\\.[0-9]+)?\\\\z') THEN CAST({0} AS DECIMAL(65,10)) ELSE NULL END").lexical("numericCastScale", "10").lexical("binaryCast", "CAST({0} AS BINARY)").lexical("textCast", "CAST({0} AS CHAR)").lexical("sargablePrefilter", "true"));
   ++calls;
@@ -442,11 +457,23 @@ int replay_register() {
   Map::define("mysql-family~replay", Section::Skel,
               "join", EntrySpec::withdraw("GROUP_CONCAT does not specify an order without an ORDER BY, and a relation binding has no key to order by; SEL's JOIN concatenates in insertion order"));
   ++calls;
+  Map::define("mysql-family~replay", Section::Skel,
+              "guardedSum", EntrySpec::skeleton("CASE WHEN COUNT(*) = COUNT(CASE WHEN {test} THEN 1 END) THEN COALESCE(SUM({body}), 0) ELSE NULL END"));
+  ++calls;
+  Map::define("mysql-family~replay", Section::Skel,
+              "limit", EntrySpec::skeleton("LIMIT {limit}"));
+  ++calls;
+  Map::define("mysql-family~replay", Section::Skel,
+              "limitOffset", EntrySpec::skeleton("LIMIT {limit} OFFSET {offset}"));
+  ++calls;
+  Map::define("mysql-family~replay", Section::Skel,
+              "offsetOnly", EntrySpec::skeleton("LIMIT 18446744073709551615 OFFSET {offset}"));
+  ++calls;
   Map::define_dialect("mysql~replay",
                       DialectSpec::extending("mysql-family~replay").version("8.4").target(true).lexical("textCollate", " COLLATE utf8mb4_0900_bin"));
   ++calls;
   Map::define_dialect("postgresql~replay",
-                      DialectSpec::extending("ansi~replay").version("15").target(true).lexical("identQuote", "\"").lexical("identEscape", "\"\"").lexical("textQuote", "'").lexical_escapes("textEscape", {{"'", "''"}}).lexical("true", "TRUE").lexical("false", "FALSE").lexical("binaryLiteral", "'\\x{hex}'::bytea").lexical("numericLiteral", "{0}").lexical("textCollate", " COLLATE \"C\"").lexical("textCast", "CAST({0} AS TEXT)").lexical("numericCast", "CAST({0} AS NUMERIC)").lexical("numericGuard", "CASE WHEN ({textCast:0} ~ '^-?[0-9]+(\\.[0-9]+)?$') THEN CAST({0} AS NUMERIC) ELSE NULL END").lexical("binaryCast", "convert_to(CAST({0} AS TEXT), 'UTF8')").lexical("isTrue", "(({0}) IS TRUE)").lexical("isNotTrue", "(({0}) IS NOT TRUE)").lexical("placeholder", "?"));
+                      DialectSpec::extending("ansi~replay").version("15").target(true).lexical("identQuote", "\"").lexical("identEscape", "\"\"").lexical("textQuote", "'").lexical_escapes("textEscape", {{"'", "''"}}).lexical("true", "TRUE").lexical("false", "FALSE").lexical("binaryLiteral", "'\\x{hex}'::bytea").lexical("numericLiteral", "{0}").lexical("textCollate", " COLLATE \"C\"").lexical("textCast", "CAST({0} AS TEXT)").lexical("numericCast", "CAST({0} AS NUMERIC)").lexical("numericGuard", "CASE WHEN ({textCast:0} ~ '^-?[0-9]+(\\.[0-9]+)?$') THEN CAST({0} AS NUMERIC) ELSE NULL END").lexical("binaryCast", "convert_to(CAST({0} AS TEXT), 'UTF8')").lexical("isTrue", "(({0}) IS TRUE)").lexical("isNotTrue", "(({0}) IS NOT TRUE)").lexical("placeholder", "?").lexical("identifierBytes", "63"));
   ++calls;
   Map::define("postgresql~replay", Section::Ops,
               "+", EntrySpec::tpl("({numericCast:0} + {numericCast:1})", "NUM"));
@@ -597,6 +624,15 @@ int replay_register() {
   ++calls;
   Map::define("postgresql~replay", Section::Funcs,
               "IS_PRESENT", EntrySpec::tpl("(({textCast:0} IS NOT NULL) AND (btrim({textCast:0}, E' \\t\\r\\n') <> ''))", "BOOL"));
+  ++calls;
+  Map::define("postgresql~replay", Section::Skel,
+              "limit", EntrySpec::skeleton("LIMIT {limit}"));
+  ++calls;
+  Map::define("postgresql~replay", Section::Skel,
+              "limitOffset", EntrySpec::skeleton("LIMIT {limit} OFFSET {offset}"));
+  ++calls;
+  Map::define("postgresql~replay", Section::Skel,
+              "offsetOnly", EntrySpec::skeleton("OFFSET {offset}"));
   ++calls;
   Map::define_dialect("sqlite~replay",
                       DialectSpec::extending("ansi~replay").version("3.35").target(true).lexical("identQuote", "\"").lexical("identEscape", "\"\"").lexical("textQuote", "'").lexical_escapes("textEscape", {{"'", "''"}}).lexical("true", "1").lexical("false", "0").lexical("binaryLiteral", "x'{hex}'").lexical("numericLiteral", "'{0}'").lexical("textCollate", " COLLATE BINARY").lexical("textCast", "CAST({0} AS TEXT)").lexical("numericCast", "CAST({0} AS NUMERIC)").lexical("binaryCast", "CAST({0} AS BLOB)").lexical("isTrue", "(({0}) IS TRUE)").lexical("isNotTrue", "(({0}) IS NOT TRUE)").lexical("placeholder", "?"));
@@ -777,6 +813,15 @@ int replay_register() {
   ++calls;
   Map::define("sqlite~replay", Section::Funcs,
               "IS_PRESENT", EntrySpec::tpl("(({0} IS NOT NULL) AND (trim({0}, ' ' || char(9) || char(13) || char(10)) <> ''))", "BOOL"));
+  ++calls;
+  Map::define("sqlite~replay", Section::Skel,
+              "limit", EntrySpec::skeleton("LIMIT {limit}"));
+  ++calls;
+  Map::define("sqlite~replay", Section::Skel,
+              "limitOffset", EntrySpec::skeleton("LIMIT {limit} OFFSET {offset}"));
+  ++calls;
+  Map::define("sqlite~replay", Section::Skel,
+              "offsetOnly", EntrySpec::skeleton("LIMIT -1 OFFSET {offset}"));
   ++calls;
   Map::define_dialect("mariadb~replay",
                       DialectSpec::extending("mysql-family~replay").version("10.5").target(true));

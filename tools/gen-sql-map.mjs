@@ -97,7 +97,7 @@ const LEXICAL_KEYS = [
   'identQuote', 'identEscape', 'textQuote', 'textEscape', 'true', 'false',
   'binaryLiteral', 'numericLiteral', 'textCollate', 'textCharset', 'textCast',
   'numericCast', 'binaryCast', 'isTrue', 'isNotTrue', 'placeholder',
-  'numericGuard', 'sargablePrefilter', 'numericCastScale',
+  'numericGuard', 'sargablePrefilter', 'numericCastScale', 'identifierBytes',
 ];
 // Keys a target may leave undeclared, where the absence is itself the answer.
 //
@@ -113,13 +113,16 @@ const LEXICAL_KEYS = [
 // numericCastScale is the other: it is the number of fractional digits the
 // dialect's numericCast and numericGuard keep, and a dialect whose casts keep
 // every digit has no such number to declare (sql/MAP.md §3).
-const OPTIONAL_LEXICAL = new Set(['numericGuard', 'numericCastScale']);
+//
+// identifierBytes likewise: a server that keeps an identifier whole has no
+// length at which it cuts one.
+const OPTIONAL_LEXICAL = new Set(['numericGuard', 'numericCastScale', 'identifierBytes']);
 
 // Substitutable in a template. textEscape is an object and binaryLiteral is
 // filled by the renderer, so neither is spliceable.
 const LEXICAL_TEMPLATE_KEYS = LEXICAL_KEYS.filter(
   (k) => k !== 'textEscape' && k !== 'binaryLiteral' && k !== 'sargablePrefilter'
-    && k !== 'numericCastScale',
+    && k !== 'numericCastScale' && k !== 'identifierBytes',
 );
 
 // sql/MAP.md §4.3. A variants object may use only the names its family defines.
@@ -144,6 +147,11 @@ const SKEL_SLOTS = {
   prefilter: ['from', 'corr', 'body'],
   join: ['from', 'corr', 'body', 'sep'],
   inRelation: ['needle', 'from', 'corr', 'body'],
+  guardedSum: ['test', 'body'],
+  limit: ['limit'],
+  limitOffset: ['limit', 'offset'],
+  offsetOnly: ['offset'],
+  latestMember: ['input', 'prefix', 'groups', 'rev', 'maxRev', 'firstRev', 'key'],
 };
 
 // The type each lexical key must have. sql/MAP.md §3.
@@ -165,6 +173,7 @@ const LEXICAL_TYPES = {
   textCast: 'string', numericCast: 'string', binaryCast: 'string',
   isTrue: 'string', isNotTrue: 'string', placeholder: 'string',
   numericGuard: 'string', sargablePrefilter: 'string', numericCastScale: 'string',
+  identifierBytes: 'string',
 };
 
 /**
@@ -569,6 +578,14 @@ function validate(flat) {
                   + 'declare the scale the cast imposes');
   } else if (fixed.size === 0 && cap !== undefined && cap !== null) {
     fail(dialect, 'declares lexical.numericCastScale but its casts fix no scale');
+  }
+
+  // A count of bytes, read by every host the same way (sql/MAP.md §3): one to
+  // nine digits, not zero. A host reads anything else as "no limit", so a
+  // shipped value that is not one would silently switch the check off.
+  const ib = lexical.identifierBytes;
+  if (ib !== undefined && ib !== null && !/^[1-9][0-9]{0,8}$/.test(ib)) {
+    fail(dialect, `lexical.identifierBytes "${ib}" is not a count of bytes (1 to 999999999)`);
   }
 
   for (const [k, e] of Object.entries(flat.ops)) checkEntry(e, k, 'ops', dialect, lexical);

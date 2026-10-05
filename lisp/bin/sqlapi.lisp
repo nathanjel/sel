@@ -144,6 +144,22 @@
     (say "guard.reuse.after-reset"
          (refuses (translate (sel:compile-source "N + 1") "probe-badguard" named)))))
 
+(defun skel-builder-probes ()
+  "A builder registered on `skel` has no template to fill: the LIMIT it would
+spell is refused, so the TAKE stays in memory (sql/MAP.md §5)."
+  (define-builder "mariadb" :skel "limit"
+                  (lambda (dialect args pos)
+                    (declare (ignore args pos))
+                    (sel.sql::%fragment (list "LIMIT 1") :text dialect)))
+  (let ((plan (plan-hybrid (sel:compile-source "ORDERS .> TAKE(2)") "mariadb" (probe-bindings))))
+    (say "skel.builder.plan"
+         (cond ((hybrid-plan-pure-sql-p plan) "pure_sql")
+               ((hybrid-plan-pure-memory-p plan) "pure_memory")
+               (t "hybrid")))
+    (say "skel.builder.statement"
+         (if (hybrid-plan-sql-statement plan) (as-statement (hybrid-plan-sql-statement plan)) "-")))
+  (map-reset))
+
 (defun main ()
   (reset-probes)
   (probe "sql" "ORDERS .> FILTER(_[\"AMOUNT\"] > 10) .> MAP(RECORD(\"id\", _[\"ID\"], \"amount\", _[\"AMOUNT\"]))")
@@ -155,5 +171,6 @@
   (fragment-probe "abs.postgresql" "postgresql" "ABS(1.50)")
   (host-spelling-probes)
   (render-state-probes)
+  (skel-builder-probes)
   (print-probes)
   (sb-ext:exit :code 0))

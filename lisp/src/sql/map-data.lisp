@@ -130,7 +130,12 @@
      ("count" :tpl "(SELECT COUNT(*) FROM {from} WHERE {corr})")
      ("inRelation" :tpl "(({needle} IN (SELECT {body} FROM {from} WHERE {corr})) IS TRUE)")
      ("prefilter" :tpl "EXISTS (SELECT 1 FROM {from} WHERE {corr} AND {body})")
-     ("join" . "LISTAGG is SQL:2016 and is spelled differently by every server that has it")))
+     ("join" . "LISTAGG is SQL:2016 and is spelled differently by every server that has it")
+     ("guardedSum" :tpl "CASE WHEN COUNT(*) = COUNT(CASE WHEN {test} THEN 1 END) THEN COALESCE(SUM(CASE WHEN {test} THEN {body} ELSE NULL END), 0) ELSE NULL END")
+     ("limit" :tpl "FETCH FIRST {limit} ROWS ONLY")
+     ("limitOffset" :tpl "OFFSET {offset} ROWS FETCH FIRST {limit} ROWS ONLY")
+     ("offsetOnly" :tpl "OFFSET {offset} ROWS")
+     ("latestMember" :tpl "WITH {input} AS ({prefix}), {groups} AS (SELECT MAX({rev}) AS {maxRev}, MIN({rev}) AS {firstRev} FROM {input} GROUP BY {key}) SELECT {input}.* FROM {input} JOIN {groups} ON {input}.{rev} = {groups}.{maxRev} ORDER BY {groups}.{firstRev} ASC")))
   ("mariadb"
    :extends "mysql-family"
    :version "10.5"
@@ -246,7 +251,12 @@
      ("count" :tpl "(SELECT COUNT(*) FROM {from} WHERE {corr})")
      ("inRelation" :tpl "(({needle} IN (SELECT {body} FROM {from} WHERE {corr})) IS TRUE)")
      ("prefilter" :tpl "EXISTS (SELECT 1 FROM {from} WHERE {corr} AND {body})")
-     ("join" . "GROUP_CONCAT does not specify an order without an ORDER BY, and a relation binding has no key to order by; SEL's JOIN concatenates in insertion order")))
+     ("join" . "GROUP_CONCAT does not specify an order without an ORDER BY, and a relation binding has no key to order by; SEL's JOIN concatenates in insertion order")
+     ("guardedSum" :tpl "CASE WHEN COUNT(*) = COUNT(CASE WHEN {test} THEN 1 END) THEN COALESCE(SUM({body}), 0) ELSE NULL END")
+     ("limit" :tpl "LIMIT {limit}")
+     ("limitOffset" :tpl "LIMIT {limit} OFFSET {offset}")
+     ("offsetOnly" :tpl "LIMIT 18446744073709551615 OFFSET {offset}")
+     ("latestMember" :tpl "WITH {input} AS ({prefix}), {groups} AS (SELECT MAX({rev}) AS {maxRev}, MIN({rev}) AS {firstRev} FROM {input} GROUP BY {key}) SELECT {input}.* FROM {input} JOIN {groups} ON {input}.{rev} = {groups}.{maxRev} ORDER BY {groups}.{firstRev} ASC")))
   ("mysql"
    :extends "mysql-family"
    :version "8.4"
@@ -362,7 +372,12 @@
      ("count" :tpl "(SELECT COUNT(*) FROM {from} WHERE {corr})")
      ("inRelation" :tpl "(({needle} IN (SELECT {body} FROM {from} WHERE {corr})) IS TRUE)")
      ("prefilter" :tpl "EXISTS (SELECT 1 FROM {from} WHERE {corr} AND {body})")
-     ("join" . "GROUP_CONCAT does not specify an order without an ORDER BY, and a relation binding has no key to order by; SEL's JOIN concatenates in insertion order")))
+     ("join" . "GROUP_CONCAT does not specify an order without an ORDER BY, and a relation binding has no key to order by; SEL's JOIN concatenates in insertion order")
+     ("guardedSum" :tpl "CASE WHEN COUNT(*) = COUNT(CASE WHEN {test} THEN 1 END) THEN COALESCE(SUM({body}), 0) ELSE NULL END")
+     ("limit" :tpl "LIMIT {limit}")
+     ("limitOffset" :tpl "LIMIT {limit} OFFSET {offset}")
+     ("offsetOnly" :tpl "LIMIT 18446744073709551615 OFFSET {offset}")
+     ("latestMember" :tpl "WITH {input} AS ({prefix}), {groups} AS (SELECT MAX({rev}) AS {maxRev}, MIN({rev}) AS {firstRev} FROM {input} GROUP BY {key}) SELECT {input}.* FROM {input} JOIN {groups} ON {input}.{rev} = {groups}.{maxRev} ORDER BY {groups}.{firstRev} ASC")))
   ("mysql-family"
    :extends "ansi"
    :version "0"
@@ -478,7 +493,12 @@
      ("count" :tpl "(SELECT COUNT(*) FROM {from} WHERE {corr})")
      ("inRelation" :tpl "(({needle} IN (SELECT {body} FROM {from} WHERE {corr})) IS TRUE)")
      ("prefilter" :tpl "EXISTS (SELECT 1 FROM {from} WHERE {corr} AND {body})")
-     ("join" . "GROUP_CONCAT does not specify an order without an ORDER BY, and a relation binding has no key to order by; SEL's JOIN concatenates in insertion order")))
+     ("join" . "GROUP_CONCAT does not specify an order without an ORDER BY, and a relation binding has no key to order by; SEL's JOIN concatenates in insertion order")
+     ("guardedSum" :tpl "CASE WHEN COUNT(*) = COUNT(CASE WHEN {test} THEN 1 END) THEN COALESCE(SUM({body}), 0) ELSE NULL END")
+     ("limit" :tpl "LIMIT {limit}")
+     ("limitOffset" :tpl "LIMIT {limit} OFFSET {offset}")
+     ("offsetOnly" :tpl "LIMIT 18446744073709551615 OFFSET {offset}")
+     ("latestMember" :tpl "WITH {input} AS ({prefix}), {groups} AS (SELECT MAX({rev}) AS {maxRev}, MIN({rev}) AS {firstRev} FROM {input} GROUP BY {key}) SELECT {input}.* FROM {input} JOIN {groups} ON {input}.{rev} = {groups}.{maxRev} ORDER BY {groups}.{firstRev} ASC")))
   ("postgresql"
    :extends "ansi"
    :version "15"
@@ -501,7 +521,8 @@
      ("placeholder" . "?")
      ("textCast" . "CAST({0} AS TEXT)")
      ("sargablePrefilter" . "false")
-     ("numericGuard" . "CASE WHEN ({textCast:0} ~ '^-?[0-9]+(\\.[0-9]+)?$') THEN CAST({0} AS NUMERIC) ELSE NULL END"))
+     ("numericGuard" . "CASE WHEN ({textCast:0} ~ '^-?[0-9]+(\\.[0-9]+)?$') THEN CAST({0} AS NUMERIC) ELSE NULL END")
+     ("identifierBytes" . "63"))
    :ops (
      ("+" :tpl "({numericCast:0} + {numericCast:1})" :ret "NUM")
      ("-" :tpl "({numericCast:0} - {numericCast:1})" :ret "NUM")
@@ -593,7 +614,12 @@
      ("count" :tpl "(SELECT COUNT(*) FROM {from} WHERE {corr})")
      ("inRelation" :tpl "(({needle} IN (SELECT {body} FROM {from} WHERE {corr})) IS TRUE)")
      ("prefilter" :tpl "EXISTS (SELECT 1 FROM {from} WHERE {corr} AND {body})")
-     ("join" . "LISTAGG is SQL:2016 and is spelled differently by every server that has it")))
+     ("join" . "LISTAGG is SQL:2016 and is spelled differently by every server that has it")
+     ("guardedSum" :tpl "CASE WHEN COUNT(*) = COUNT(CASE WHEN {test} THEN 1 END) THEN COALESCE(SUM(CASE WHEN {test} THEN {body} ELSE NULL END), 0) ELSE NULL END")
+     ("limit" :tpl "LIMIT {limit}")
+     ("limitOffset" :tpl "LIMIT {limit} OFFSET {offset}")
+     ("offsetOnly" :tpl "OFFSET {offset}")
+     ("latestMember" :tpl "WITH {input} AS ({prefix}), {groups} AS (SELECT MAX({rev}) AS {maxRev}, MIN({rev}) AS {firstRev} FROM {input} GROUP BY {key}) SELECT {input}.* FROM {input} JOIN {groups} ON {input}.{rev} = {groups}.{maxRev} ORDER BY {groups}.{firstRev} ASC")))
   ("sqlite"
    :extends "ansi"
    :version "3.35"
@@ -707,7 +733,12 @@
      ("count" :tpl "(SELECT COUNT(*) FROM {from} WHERE {corr})")
      ("inRelation" :tpl "(({needle} IN (SELECT {body} FROM {from} WHERE {corr})) IS TRUE)")
      ("prefilter" :tpl "EXISTS (SELECT 1 FROM {from} WHERE {corr} AND {body})")
-     ("join" . "LISTAGG is SQL:2016 and is spelled differently by every server that has it"))))
+     ("join" . "LISTAGG is SQL:2016 and is spelled differently by every server that has it")
+     ("guardedSum" :tpl "CASE WHEN COUNT(*) = COUNT(CASE WHEN {test} THEN 1 END) THEN COALESCE(SUM(CASE WHEN {test} THEN {body} ELSE NULL END), 0) ELSE NULL END")
+     ("limit" :tpl "LIMIT {limit}")
+     ("limitOffset" :tpl "LIMIT {limit} OFFSET {offset}")
+     ("offsetOnly" :tpl "LIMIT -1 OFFSET {offset}")
+     ("latestMember" :tpl "WITH {input} AS ({prefix}), {groups} AS (SELECT MAX({rev}) AS {maxRev}, MIN({rev}) AS {firstRev} FROM {input} GROUP BY {key}) SELECT {input}.* FROM {input} JOIN {groups} ON {input}.{rev} = {groups}.{maxRev} ORDER BY {groups}.{firstRev} ASC"))))
   "Every shipped dialect, flattened.")
 
 (defparameter +rules+
@@ -718,8 +749,8 @@
    :op-arity (("!=" 2 . 2) ("$!=" 2 . 2) ("$<" 2 . 2) ("$<=" 2 . 2) ("$==" 2 . 2) ("$>" 2 . 2) ("$>=" 2 . 2) ("%" 2 . 2) ("&" 2 . 2) ("*" 2 . 2) ("+" 2 . 2) ("-" 2 . 2) ("/" 2 . 2) ("<" 2 . 2) ("<=" 2 . 2) ("==" 2 . 2) (">" 2 . 2) (">=" 2 . 2) ("??" 2 . 2) ("???" 2 . 2) ("AND" 2 . 2) ("BAND" 2 . 2) ("BOR" 2 . 2) ("BXOR" 2 . 2) ("EQL" 2 . 2) ("IN" 1 . nil) ("NEG" 1 . 1) ("NOT" 1 . 1) ("OR" 2 . 2) ("XOR" 2 . 2))
    :func-arity (("ABS" 1 . 1) ("BACKWARDS" 1 . 1) ("BLEN" 1 . 1) ("BTL" 1 . 1) ("BUCKET" 2 . 4) ("CANON" 1 . 1) ("CEIL" 1 . 1) ("CHAR" 1 . 1) ("COALESCE" 1 . nil) ("CODE" 1 . 1) ("CRC32" 1 . 1) ("DECODE_BASE64" 1 . 1) ("DEDUPE" 1 . 1) ("DISTINCT" 1 . 1) ("DROP" 2 . 2) ("ENCODE_BASE64" 1 . 1) ("FIND" 2 . 3) ("FLOOR" 1 . 1) ("FROM_HEX" 1 . 1) ("FROM_UTF8" 1 . 1) ("GET" 2 . 3) ("ISNUM" 1 . 1) ("IS_BLANK" 1 . 1) ("IS_NOT_NULL" 1 . 1) ("IS_NULL" 1 . 1) ("IS_PRESENT" 1 . 1) ("LEFT" 2 . 2) ("LEN" 1 . 1) ("LINK" 3 . 5) ("LINK_LEFT" 3 . 5) ("LIST" 0 . nil) ("LOWER" 1 . 1) ("LTB" 1 . 1) ("LTRIM" 1 . 1) ("MAX" 1 . nil) ("MIN" 1 . nil) ("PADL" 3 . 3) ("PADR" 3 . 3) ("PATH" 2 . 3) ("POWER" 2 . 2) ("RECORD" 0 . nil) ("REPEAT" 2 . 2) ("REPLACE" 3 . 3) ("RFIND" 2 . 3) ("RGROUPS" 2 . 3) ("RIGHT" 2 . 2) ("RMATCH" 2 . 3) ("ROUND" 2 . 2) ("RREPLACE" 3 . 4) ("RTRIM" 1 . 1) ("SELECT_COLS" 2 . nil) ("SIGN" 1 . 1) ("SORT" 1 . 3) ("SORT_BY" 2 . 4) ("SORT_DESC" 1 . 3) ("SPLIT" 2 . 2) ("SUBSTR" 2 . 3) ("TAKE" 2 . 2) ("TOP" 2 . 4) ("TOP_BY" 3 . 5) ("TOP_DESC" 2 . 4) ("TO_HEX" 1 . 1) ("TO_UTF8" 1 . 1) ("TRIM" 1 . 1) ("TRUNC" 1 . 1) ("UPPER" 1 . 1))
    :variants (("==" "num" "coerce") ("!=" "num" "coerce") ("<" "num" "coerce") ("<=" "num" "coerce") (">" "num" "coerce") (">=" "num" "coerce") ("$==" "text") ("$!=" "text") ("$<" "text") ("$<=" "text") ("$>" "text") ("$>=" "text") ("EQL" "text") ("IN" "scalar") ("&" "text" "bin"))
-   :skel-slots (("case" "branches" "else") ("caseBranch" "cond" "then") ("all" "from" "corr" "body") ("any" "from" "corr" "body") ("sum" "from" "corr" "body") ("count" "from" "corr") ("prefilter" "from" "corr" "body") ("join" "from" "corr" "body" "sep") ("inRelation" "needle" "from" "corr" "body"))
-   :lexical-types (("identQuote" . :string) ("identEscape" . :string) ("textQuote" . :string) ("textEscape" . :map) ("true" . :string) ("false" . :string) ("binaryLiteral" . :string) ("numericLiteral" . :string) ("textCollate" . :string) ("textCharset" . :string) ("textCast" . :string) ("numericCast" . :string) ("binaryCast" . :string) ("isTrue" . :string) ("isNotTrue" . :string) ("placeholder" . :string) ("numericGuard" . :string) ("sargablePrefilter" . :string) ("numericCastScale" . :string)))
+   :skel-slots (("case" "branches" "else") ("caseBranch" "cond" "then") ("all" "from" "corr" "body") ("any" "from" "corr" "body") ("sum" "from" "corr" "body") ("count" "from" "corr") ("prefilter" "from" "corr" "body") ("join" "from" "corr" "body" "sep") ("inRelation" "needle" "from" "corr" "body") ("guardedSum" "test" "body") ("limit" "limit") ("limitOffset" "limit" "offset") ("offsetOnly" "offset") ("latestMember" "input" "prefix" "groups" "rev" "maxRev" "firstRev" "key"))
+   :lexical-types (("identQuote" . :string) ("identEscape" . :string) ("textQuote" . :string) ("textEscape" . :map) ("true" . :string) ("false" . :string) ("binaryLiteral" . :string) ("numericLiteral" . :string) ("textCollate" . :string) ("textCharset" . :string) ("textCast" . :string) ("numericCast" . :string) ("binaryCast" . :string) ("isTrue" . :string) ("isNotTrue" . :string) ("placeholder" . :string) ("numericGuard" . :string) ("sargablePrefilter" . :string) ("numericCastScale" . :string) ("identifierBytes" . :string)))
   "The map's own vocabulary, so DEFINE-ENTRY can enforce at registration time
 what tools/gen-sql-map.mjs enforces at generation time. Emitted rather than
 retyped in each host: every divergence a cross-host review found in runtime

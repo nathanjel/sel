@@ -102,6 +102,9 @@ pub struct RelationalPlan {
     pub order_by: Vec<RelationalOrder>,
     pub limit: Option<i64>,
     pub offset: Option<i64>,
+    // The last TAKE, TOP or DROP that set limit or offset: where a dialect that
+    // cannot spell the clause refuses it (sql/MAP.md §5.1).
+    pub limit_pos: Pos,
     // Set on a derived table built over sorted rows with no LIMIT: its ORDER BY is gone.
     pub order_dropped: bool,
 }

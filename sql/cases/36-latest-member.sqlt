@@ -57,3 +57,75 @@ r
 --- expect
 WITH "_sel_input" AS (SELECT * FROM "r" WHERE 1), "_sel_latest" AS (SELECT MAX("id") AS "_sel_revision", MIN("id") AS "_sel_first" FROM "_sel_input" GROUP BY CAST("fk" AS TEXT) COLLATE BINARY) SELECT "_sel_input".* FROM "_sel_input" JOIN "_sel_latest" ON "_sel_input"."id" = "_sel_latest"."_sel_revision" ORDER BY "_sel_latest"."_sel_first" ASC
 ===
+
+### name: plan.latest-member.inherited.mariadb-child
+--- note
+The plan is the latestMember skeleton (sql/MAP.md §5.2), which ansi states and every target inherits, so a registered child of a target takes the plan too. Every planner used to allow mariadb, mysql, postgresql and sqlite by exact name, and the child silently lost it.
+--- dialect
+mariadb-11.8
+--- register
+[{"dialect": "mariadb-11.8", "extends": "mariadb", "version": "11.8"}]
+--- bindings
+{"R":{"kind":"relation","from":"r","uniqueKey":"id","fields":{"ID":{"kind":"column","column":"id","type":"NUM"},"FK":{"kind":"column","column":"fk","type":"TEXT"}}}}
+--- source
+R .> BUCKET(_["fk"]) .> MAP(RECORD("entity", _K, "latest", TOP_BY(_, _["id"], "DESC", 1)))
+--- plan
+hybrid
+--- tables
+r
+--- expect
+WITH `_sel_input` AS (SELECT * FROM `r` WHERE TRUE), `_sel_latest` AS (SELECT MAX(`id`) AS `_sel_revision`, MIN(`id`) AS `_sel_first` FROM `_sel_input` GROUP BY CAST(`fk` AS CHAR) COLLATE utf8mb4_nopad_bin) SELECT `_sel_input`.* FROM `_sel_input` JOIN `_sel_latest` ON `_sel_input`.`id` = `_sel_latest`.`_sel_revision` ORDER BY `_sel_latest`.`_sel_first` ASC
+===
+
+### name: plan.latest-member.inherited.postgresql-child
+--- dialect
+pg-child
+--- register
+[{"dialect": "pg-child", "extends": "postgresql", "version": "17"}]
+--- bindings
+{"R":{"kind":"relation","from":"r","uniqueKey":"id","fields":{"ID":{"kind":"column","column":"id","type":"NUM"},"FK":{"kind":"column","column":"fk","type":"TEXT"}}}}
+--- source
+R .> BUCKET(_["fk"]) .> MAP(RECORD("entity", _K, "latest", TOP_BY(_, _["id"], "DESC", 1)))
+--- plan
+hybrid
+--- tables
+r
+--- expect
+WITH "_sel_input" AS (SELECT * FROM "r" WHERE TRUE), "_sel_latest" AS (SELECT MAX("id") AS "_sel_revision", MIN("id") AS "_sel_first" FROM "_sel_input" GROUP BY CAST("fk" AS TEXT) COLLATE "C") SELECT "_sel_input".* FROM "_sel_input" JOIN "_sel_latest" ON "_sel_input"."id" = "_sel_latest"."_sel_revision" ORDER BY "_sel_latest"."_sel_first" ASC
+===
+
+### name: plan.latest-member.inherited.sqlite-child
+--- dialect
+sqlite-child
+--- register
+[{"dialect": "sqlite-child", "extends": "sqlite", "version": "3.45"}]
+--- bindings
+{"R":{"kind":"relation","from":"r","uniqueKey":"id","fields":{"ID":{"kind":"column","column":"id","type":"NUM"},"FK":{"kind":"column","column":"fk","type":"TEXT"}}}}
+--- source
+R .> BUCKET(_["fk"]) .> MAP(RECORD("entity", _K, "latest", TOP_BY(_, _["id"], "DESC", 1)))
+--- plan
+hybrid
+--- tables
+r
+--- expect
+WITH "_sel_input" AS (SELECT * FROM "r" WHERE 1), "_sel_latest" AS (SELECT MAX("id") AS "_sel_revision", MIN("id") AS "_sel_first" FROM "_sel_input" GROUP BY CAST("fk" AS TEXT) COLLATE BINARY) SELECT "_sel_input".* FROM "_sel_input" JOIN "_sel_latest" ON "_sel_input"."id" = "_sel_latest"."_sel_revision" ORDER BY "_sel_latest"."_sel_first" ASC
+===
+
+### name: plan.latest-member.inherited.ansi-child
+--- note
+Every clause of the statement is SQL:1999, so ansi spells it and a dialect registered on ansi inherits the plan.
+--- dialect
+ansi-probe
+--- register
+[{"dialect": "ansi-probe", "extends": "ansi", "version": "1", "target": true}]
+--- bindings
+{"R":{"kind":"relation","from":"r","uniqueKey":"id","fields":{"ID":{"kind":"column","column":"id","type":"NUM"},"FK":{"kind":"column","column":"fk","type":"TEXT"}}}}
+--- source
+R .> BUCKET(_["fk"]) .> MAP(RECORD("entity", _K, "latest", TOP_BY(_, _["id"], "DESC", 1)))
+--- plan
+hybrid
+--- tables
+r
+--- expect
+WITH "_sel_input" AS (SELECT * FROM "r" WHERE TRUE), "_sel_latest" AS (SELECT MAX("id") AS "_sel_revision", MIN("id") AS "_sel_first" FROM "_sel_input" GROUP BY CAST("fk" AS CHARACTER VARYING) COLLATE UCS_BASIC) SELECT "_sel_input".* FROM "_sel_input" JOIN "_sel_latest" ON "_sel_input"."id" = "_sel_latest"."_sel_revision" ORDER BY "_sel_latest"."_sel_first" ASC
+===

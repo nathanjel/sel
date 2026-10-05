@@ -387,6 +387,16 @@ def lexical(dialect: str, key: str) -> Any:
     return None
 
 
+def _identifier_bytes(dialect: str) -> int | None:
+    """``lexical.identifierBytes`` as a count, or None where the dialect keeps
+    every identifier whole: one to nine ASCII digits are the count, anything else
+    (absent, withdrawn, malformed) is no limit, in every host (sql/MAP.md §3)."""
+    v = lexical(dialect, 'identifierBytes')
+    if isinstance(v, str) and 1 <= len(v) <= 9 and all('0' <= c <= '9' for c in v):
+        return int(v)
+    return None
+
+
 def entry(dialect: str, section: str, key: str) -> Any:
     """One entry, or MISSING.
 

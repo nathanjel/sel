@@ -256,8 +256,10 @@ when SEL would not."
 (docs/internals/sql-kinds.md 5a): the TEST that asks whether F is a number, and
 the CAST that reads it as one. Both are cut out of the dialect's own numericGuard
 template -- `CASE WHEN (<test>) THEN <cast> ELSE NULL END` -- so there is one
-spelling of each and a dialect that changes it changes both forms. Refuses
-exactly where EMIT-NUMERIC-OPERAND does."
+spelling of each and a dialect that changes it changes both forms. The TEST keeps
+its parentheses. Refuses exactly where EMIT-NUMERIC-OPERAND does; whether the
+cast inside the SUM needs a guard of its own is the dialect's guardedSum skeleton
+(sql/MAP.md §5.1)."
   (check-numeric-guard dialect)
   (let ((guard (dialect-lexical dialect "numericGuard"))
         (head "CASE WHEN (") (mid ") THEN ") (tail " ELSE NULL END"))
@@ -268,19 +270,12 @@ exactly where EMIT-NUMERIC-OPERAND does."
                    (eql (- (length guard) (length tail)) (search tail guard :from-end t)))
         (bad "dialect ~a's numericGuard is not CASE WHEN (<test>) THEN <cast> ELSE NULL END, ~
 so it cannot be split into the halves an aggregate needs" dialect))
-      (values (%fragment (emit-fill dialect (subseq guard (length head) m) (list f) pos)
+      (values (%fragment (emit-fill dialect (subseq guard (1- (length head)) (1+ m)) (list f) pos)
                          :bool dialect)
-              (if (member "postgresql" (dialect-chain dialect) :test #'equal)
-                  ;; PostgreSQL evaluates the cast for EVERY row before the
-                  ;; enclosing CASE chooses, and casting 'x' to NUMERIC is an error
-                  ;; there (22P02), not NULL: the SUM adds up the GUARDED cast, and
-                  ;; the outer test discards the sum exactly as before
-                  ;; (warrant.sum.unknown-body-is-guarded-as-a-whole.postgresql).
-                  (%fragment (emit-fill dialect guard (list f) pos) :num dialect)
-                  (%fragment (emit-fill dialect
-                                        (subseq guard (+ m (length mid)) (- (length guard) (length tail)))
-                                        (list f) pos)
-                             :num dialect))))))
+              (%fragment (emit-fill dialect
+                                    (subseq guard (+ m (length mid)) (- (length guard) (length tail)))
+                                    (list f) pos)
+                         :num dialect)))))
 
 (defun emit-text-operand (dialect f)
   "An operand of a byte comparison: cast to a character type, then given the

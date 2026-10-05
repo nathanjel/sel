@@ -341,6 +341,22 @@ void check_program_name(const std::string& name, Pos pos) {
 // projection, a bucket's key, a MAP's projection -- and each used to walk the
 // pairs itself.
 namespace {
+// lexical.identifierBytes as a count, or nullopt where the dialect keeps every
+// identifier whole: one to nine ASCII digits are the count, anything else
+// (absent, withdrawn, malformed) is no limit, in every host (sql/MAP.md §3).
+std::optional<std::size_t> identifier_bytes(const std::string& dialect) {
+  const Lexical* lx = Map::lexical(dialect, "identifierBytes");
+  if (!lx || lx->kind != LexKind::Text || lx->text.empty() || lx->text.size() > 9) {
+    return std::nullopt;
+  }
+  std::size_t n = 0;
+  for (const char c : lx->text) {
+    if (c < '0' || c > '9') return std::nullopt;
+    n = n * 10 + static_cast<std::size_t>(c - '0');
+  }
+  return n;
+}
+
 std::vector<std::pair<std::string, SNodePtr>> record_fields(const SNodePtr& node,
                                                                     const std::string& dialect) {
   const auto& args = node->kids();
@@ -355,20 +371,26 @@ std::vector<std::pair<std::string, SNodePtr>> record_fields(const SNodePtr& node
     check_program_name(args[i]->s(), args[i]->pos());
     fields.emplace_back(args[i]->s(), args[i + 1]);
   }
-  // PostgreSQL truncates an identifier to 63 bytes, so two aliases whose first
-  // 63 bytes agree name ONE column and SEL's two record keys become one.
-  const auto chain = Map::chain(dialect);
-  if (std::find(chain.begin(), chain.end(), std::string_view("postgresql")) != chain.end()) {
+  // A server that cuts an identifier to lexical.identifierBytes (PostgreSQL: 63)
+  // keeps the whole characters that fit, so two aliases that agree on what it
+  // keeps name ONE column and SEL's two record keys become one (sql/MAP.md §3.1).
+  if (const auto limit = identifier_bytes(dialect)) {
+    const auto cut = [&limit](const std::string& s) {
+      std::size_t end = std::min(*limit, s.size());
+      while (end > 0 && end < s.size() && (static_cast<unsigned char>(s[end]) & 0xC0) == 0x80) {
+        --end;
+      }
+      return std::string_view(s).substr(0, end);
+    };
     for (std::size_t i = 0; i < fields.size(); ++i) {
       for (std::size_t j = 0; j < i; ++j) {
         const std::string& a = fields[j].first;
         const std::string& b = fields[i].first;
-        if (a != b && (a.size() > 63 || b.size() > 63) &&
-            a.substr(0, 63) == b.substr(0, 63)) {
+        if (a != b && cut(a) == cut(b)) {
           refuse("E_SQL_UNSUPPORTED",
                  "the record keys '" + a.substr(0, 20) + "...' and '" + b.substr(0, 20) +
-                     "...' share their first 63 bytes, and PostgreSQL truncates an "
-                     "identifier there, so they would name one column",
+                     "...' share their first " + std::to_string(*limit) + " bytes, and dialect " +
+                     dialect + " truncates an identifier there, so they would name one column",
                  args[2 * i]->pos());
         }
       }
@@ -1765,6 +1787,17 @@ std::string Translator::skeleton(const std::string& name, Pos pos) {
   return std::string(s->one);
 }
 
+Fragment Translator::wrap_statement(const std::string& name, const SlotMap& slots,
+                                    const Fragment& inner, Pos pos) {
+  std::vector<Fragment::Part> parts = fill_named(skeleton(name, pos), slots, pos);
+  std::vector<std::string> caveats = inner.caveats();
+  for (const auto& c : caveats_) {
+    if (std::find(caveats.begin(), caveats.end(), c) == caveats.end()) caveats.push_back(c);
+  }
+  return Fragment(std::move(parts), SqlKind::Statement, dialect_, inner.params(),
+                  inner.param_kinds(), std::move(caveats));
+}
+
 std::vector<Fragment::Part> Translator::fill_named(std::string_view tpl,
                                                    const SlotMap& slots, Pos pos) {
   std::vector<Fragment::Part> parts;
@@ -2267,7 +2300,7 @@ Fragment Translator::call(const SNodePtr& n) {
         // E_NOT_NUM for "x"), and only then is its KIND asked about.
         require_numeric_constant(*body_node);
         require_num(inner, body_node->pos(), "SUM");
-        if (inner.kind() == SqlKind::Unknown) return sum_whole(inner, body_node->pos());
+        if (inner.kind() == SqlKind::Unknown) return sum_whole(inner, body_node->pos(), n->pos());
         // Parts, not their SQL: a literal in the body is a parameter slot with no
         // text of its own, and concatenating `.sql` dropped it.
         std::vector<Fragment::Part> p;
@@ -2891,8 +2924,10 @@ Fragment Translator::agg_body(const std::string& name, const SNodePtr& body,
 // element guard is not enough, because SUM skips NULL and the layer's own
 // COALESCE(SUM(..), 0) turns "nothing left" into 0, so 'x' and '9' would sum to
 // 9 where SEL raises E_NOT_NUM. SQLite and ANSI cannot ask the question and
-// refuse.
-Fragment Translator::sum_whole(const Fragment& body, Pos pos) {
+// refuse (at pos, the body). The expression is the dialect's guardedSum skeleton
+// (sql/MAP.md §5.1), refused at sum_pos, the SUM; it says whether the cast inside
+// SUM needs a guard of its own.
+Fragment Translator::sum_whole(const Fragment& body, Pos pos, Pos sum_pos) {
   // Refuses where the dialect has no numeric guard, with that guard's own words.
   (void)emit_.numeric_operand(body, pos);
   const Fragment one[] = {body};
@@ -2903,23 +2938,10 @@ Fragment Translator::sum_whole(const Fragment& body, Pos pos) {
            "dialect " + dialect_ + " has no numericCast to read an operand as a number",
            pos);
   }
-  std::vector<Fragment::Part> parts;
-  const auto text = [&parts](std::string s) { parts.push_back({false, std::move(s)}); };
-  text("CASE WHEN COUNT(*) = COUNT(CASE WHEN ");
-  for (const auto& pt : test.parts()) parts.push_back(pt);
-  text(" THEN 1 END) THEN COALESCE(SUM(");
-  // PostgreSQL evaluates the cast for EVERY row before the enclosing CASE
-  // chooses, and casting 'x' to NUMERIC is an error there, not a NULL; so on
-  // PostgreSQL the SUM adds the GUARDED cast, and the outer test discards the sum
-  // exactly as before (sql-kinds.md §5a). The MySQL family casts to NULL.
-  const auto chain = Map::chain(dialect_);
-  if (std::find(chain.begin(), chain.end(), std::string_view("postgresql")) != chain.end()) {
-    for (const auto& pt : emit_.numeric_operand(body, pos).parts()) parts.push_back(pt);
-  } else {
-    for (const auto& pt : emit_.fill(cast->text, one, pos)) parts.push_back(pt);
-  }
-  text("), 0) ELSE NULL END");
-  return Fragment(std::move(parts), SqlKind::Num, dialect_);
+  const Fragment read(emit_.fill(cast->text, one, pos), SqlKind::Num, dialect_);
+  const std::string tpl = skeleton("guardedSum", sum_pos);
+  return Fragment(fill_named(tpl, SlotMap{{"test", {Slot{test}}}, {"body", {Slot{read}}}}, sum_pos),
+                  SqlKind::Num, dialect_);
 }
 
 Fragment Translator::relation_aggregate(const std::string& name,
@@ -2939,7 +2961,7 @@ Fragment Translator::relation_aggregate(const std::string& name,
     }
     skel.replace(at, item.size(), "{sumwhole}");
     SlotMap slots = merge_slots(
-        relation_slots(rel), SlotMap{{"sumwhole", {Slot{sum_whole(body, n.pos())}}}});
+        relation_slots(rel), SlotMap{{"sumwhole", {Slot{sum_whole(body, n.pos(), n.pos())}}}});
     return Fragment(fill_named(skel, slots, n.pos()), agg_returns(name), dialect_);
   }
   const bool is_separate = (rel.prefilter && *rel.prefilter == "separate") ||
@@ -3637,6 +3659,7 @@ std::optional<RelationalPlan> Translator::analyze_pipeline(const SNodePtr& ast) 
       }
       int64_t lim = eval_int_param(args[1], "TAKE");
       plan.limit = !plan.limit.has_value() ? lim : std::min(*plan.limit, lim);
+      plan.limit_pos = step->pos();
     } else if (name == "DROP") {
       if (args.size() != 2) {
         unreachable_arity("DROP");
@@ -3650,6 +3673,7 @@ std::optional<RelationalPlan> Translator::analyze_pipeline(const SNodePtr& ast) 
       const int64_t have = plan.offset.value_or(0);
       constexpr int64_t kMax = 9223372036854775807LL;
       plan.offset = have > kMax - skipped ? kMax : have + skipped;
+      plan.limit_pos = step->pos();
     } else if (name == "SORT" || name == "SORT_DESC" || name == "SORT_BY" ||
                name == "TOP" || name == "TOP_DESC" || name == "TOP_BY") {
       // A sort after a LIMIT or OFFSET sorts the rows that survived them,
@@ -3846,6 +3870,7 @@ void Translator::analyze_sort_step(const SNodePtr& step, RelationalPlan& plan) {
   if (top) {
     const int64_t limit = eval_int_param(args.back(), name);
     plan.limit = !plan.limit.has_value() ? limit : std::min(*plan.limit, limit);
+    plan.limit_pos = step->pos();
   }
 
   // The form is the evaluator's (sort_form): read off the call as written, not
@@ -4147,23 +4172,18 @@ Fragment Translator::compile_statement(const RelationalPlan& plan) {
     }
   }
 
-  // 7. LIMIT / OFFSET clause
-  if (plan.limit && plan.offset) {
-    add_sql(" LIMIT " + std::to_string(*plan.limit) + " OFFSET " + std::to_string(*plan.offset));
-  } else if (plan.limit) {
-    add_sql(" LIMIT " + std::to_string(*plan.limit));
-  } else if (plan.offset) {
-    auto chain = Map::chain(dialect_);
-    auto has_target = [&](std::string_view t) {
-      return std::find(chain.begin(), chain.end(), t) != chain.end();
-    };
-    if (has_target("mariadb") || has_target("mysql") || has_target("mysql-family")) {
-      add_sql(" LIMIT 18446744073709551615 OFFSET " + std::to_string(*plan.offset));
-    } else if (has_target("sqlite")) {
-      add_sql(" LIMIT -1 OFFSET " + std::to_string(*plan.offset));
-    } else {
-      add_sql(" OFFSET " + std::to_string(*plan.offset));
+  // 7. LIMIT / OFFSET clause: the dialect's limit, limitOffset and offsetOnly
+  // skeletons (sql/MAP.md §5.1); a refusal blames the last TAKE, TOP or DROP.
+  if (plan.limit || plan.offset) {
+    const char* key = !plan.limit ? "offsetOnly" : !plan.offset ? "limit" : "limitOffset";
+    SlotMap counts;
+    if (plan.limit) counts.push_back({"limit", {Slot{std::to_string(*plan.limit)}}});
+    if (plan.offset) counts.push_back({"offset", {Slot{std::to_string(*plan.offset)}}});
+    std::string clause = " ";
+    for (const auto& pt : fill_named(skeleton(key, plan.limit_pos), counts, plan.limit_pos)) {
+      clause += pt.sql;
     }
+    add_sql(std::move(clause));
   }
 
   Fragment out(parts, SqlKind::Statement, dialect_);

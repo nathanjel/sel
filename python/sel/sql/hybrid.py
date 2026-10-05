@@ -810,8 +810,10 @@ def _keep_left_name(remaining: list[Node], prefix: list[Node], source: Node) -> 
 
 
 def _try_latest_member(source, steps, dialect, catalog, opts, helpers):
-    """A schema-proven unique TOP 1, not an arbitrary bare-bucket split."""
-    if dialect not in ('mariadb', 'mysql', 'postgresql', 'sqlite'):
+    """A schema-proven unique TOP 1, not an arbitrary bare-bucket split. The
+    statement is the dialect's latestMember skeleton (sql/MAP.md §5.2); a dialect
+    that refuses it keeps the grouping in memory."""
+    if not isinstance(sqlmap.entry(dialect, 'skel', 'latestMember'), dict):
         return None
     rel = catalog.get(source.name, source.pos)
     revision = rel.get('unique_key')
@@ -865,12 +867,13 @@ def _try_latest_member(source, steps, dialect, catalog, opts, helpers):
             groups_name += '_'
         qi, qg, qr, qmax, qfirst = map(emit.ident, [input_name, groups_name, revision, '_sel_revision', '_sel_first'])
         key = emit.text_operand(Fragment([emit.ident(partition)], pf['type'], dialect)).as_value()
-        parts = [f'WITH {qi} AS (', *sql.parts,
-                 f'), {qg} AS (SELECT MAX({qr}) AS {qmax}, MIN({qr}) AS {qfirst} FROM {qi} GROUP BY {key}) '
-                 f'SELECT {qi}.* FROM {qi} JOIN {qg} ON {qi}.{qr} = {qg}.{qmax} ORDER BY {qg}.{qfirst} ASC']
+        statement = Translator(dialect, catalog, opts)._wrap_statement('latestMember', {
+            'input': [qi], 'prefix': [sql], 'groups': [qg], 'rev': [qr],
+            'maxRev': [qmax], 'firstRev': [qfirst], 'key': [key],
+        }, sql, source.pos)
         continuation = helpers.wrap(build_pipeline(Node('var', steps[at].pos, name='_INPUT'), steps[at:]))
         return HybridPlan(dialect=dialect,
-                          sql_statement=Fragment(parts, 'STATEMENT', dialect, sql.params, sql.param_kinds, sql.caveats),
+                          sql_statement=statement,
                           sql_prefix_ast=prefix, continuation_ast=continuation,
                           continuation_program=Program('', continuation), source_tables=[rel['from']],
                           selected_member={'partition_key': partition, 'revision_key': revision})

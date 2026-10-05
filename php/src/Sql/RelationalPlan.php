@@ -145,6 +145,13 @@ final class RelationalPlan
 
     public ?int $limit = null;
     public ?int $offset = null;
+    /**
+     * The last TAKE, TOP or DROP that set limit or offset: where a dialect that
+     * cannot spell the clause refuses it (sql/MAP.md §5.1).
+     *
+     * @var array{line:int,col:int,offset:int}|null
+     */
+    public ?array $limitPos = null;
 
     /**
      * Translator::joinRows, cached per number of joins.

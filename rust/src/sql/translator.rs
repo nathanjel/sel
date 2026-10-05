@@ -14,7 +14,7 @@ use crate::sql::constants::{
 use crate::sql::emit::Emit;
 use crate::sql::errors::{refuse, SqlError};
 use crate::sql::map::{
-    chain, entry, host_spelling_arity, require_target, version, version_at_least, EntryKind,
+    entry, host_spelling_arity, require_target, version, version_at_least, EntryKind,
     EntryRecord, TemplateValue,
 };
 use crate::sql::node::{SNode, SNodeType};
@@ -1391,7 +1391,7 @@ impl Translator {
                             t.require_numeric_constant(body_node)?;
                             let rendered = t.node(body_node)?;
                             let rendered = t.require_num(rendered, body_node.pos, "SUM")?;
-                            t.guard_sum(rendered, body_node, true)
+                            t.guard_sum(rendered, body_node, true, n.pos)
                         })?;
                         if inner.whole_sum { return Ok(inner); }
                         let mut parts = vec![Part::Sql("COALESCE(SUM(".into())];
@@ -1992,12 +1992,16 @@ impl Translator {
             }
         }
         if name == "SUM" {
-            q = self.guard_sum(q, body, src.shape == SourceShape::Relation)?;
+            q = self.guard_sum(q, body, src.shape == SourceShape::Relation, n.pos)?;
         }
         Ok(q)
     }
 
-    fn guard_sum(&mut self, q: Fragment, body: &SNode, whole: bool) -> Result<Fragment, SqlError> {
+    /// SUM over an undeclared body, all or nothing (docs/internals/sql-kinds.md
+    /// 5a): the dialect's guardedSum skeleton (sql/MAP.md §5.1), refused at the
+    /// SUM, `sum_pos`. The skeleton says whether the cast inside SUM needs a
+    /// guard of its own.
+    fn guard_sum(&mut self, q: Fragment, body: &SNode, whole: bool, sum_pos: Pos) -> Result<Fragment, SqlError> {
         if q.kind != SqlKind::Unknown || self.is_constant_here(body) {
             return Ok(q);
         }
@@ -2012,19 +2016,13 @@ impl Translator {
         };
         self.scale_limited(body.pos, "this operand is read as a number")?;
         let test = self.emit.fill(test_tpl, &[&q], body.pos, None)?;
-        // PostgreSQL evaluates aggregate inputs before the outer CASE, so
-        // invalid text must be protected at the cast as well as at the sum.
-        let cast_template = if chain(&self.dialect).iter().any(|d| d == "postgresql") {
-            guard.as_str()
-        } else {
-            cast_tpl
-        };
-        let cast = self.emit.fill(cast_template, &[&q], body.pos, None)?;
-        let mut parts = vec![Part::Sql("CASE WHEN COUNT(*) = COUNT(CASE WHEN ".into())];
-        parts.extend(test);
-        parts.push(Part::Sql(" THEN 1 END) THEN COALESCE(SUM(".into()));
-        parts.extend(cast);
-        parts.push(Part::Sql("), 0) ELSE NULL END".into()));
+        let cast = self.emit.fill(cast_tpl, &[&q], body.pos, None)?;
+        let slots: SlotMap = vec![
+            ("test".into(), vec![Slot::Frag(Fragment::new(test, SqlKind::Bool, &self.dialect, Vec::new(), Vec::new(), Vec::new()))]),
+            ("body".into(), vec![Slot::Frag(Fragment::new(cast, SqlKind::Num, &self.dialect, Vec::new(), Vec::new(), Vec::new()))]),
+        ];
+        let tpl = self.skeleton("guardedSum", sum_pos)?;
+        let parts = self.fill_named(&tpl, &slots, sum_pos)?;
         let mut out = Fragment::new(parts, SqlKind::Num, &self.dialect, Vec::new(), Vec::new(), Vec::new());
         out.whole_sum = true;
         Ok(out)

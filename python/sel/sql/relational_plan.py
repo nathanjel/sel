@@ -57,6 +57,9 @@ class RelationalPlan:
         self.order_by: list[dict[str, Any]] = []
         self.limit: int | None = None
         self.offset: int | None = None
+        # The last TAKE, TOP or DROP that set limit or offset: where a dialect
+        # that cannot spell the clause refuses it (sql/MAP.md §5.1).
+        self.limit_pos: Any = None
         # The translator's joined-row models (Translator._join_rows), cached
         # per number of joins.
         self.join_rows_cache: dict[str, Any] | None = None

@@ -508,8 +508,11 @@ step must not hide a row whose evaluation would have."
   "Aggregate/join-back for a unique descending TOP 1, with local reshaping."
   (handler-case
       (block candidate
-        (unless (member dialect '("mariadb" "mysql" "postgresql" "sqlite") :test #'equal)
-          (return-from candidate nil))
+        ;; The statement is the dialect's latestMember skeleton (sql/MAP.md
+        ;; §5.2); a dialect that refuses it keeps the grouping in memory.
+        (multiple-value-bind (skel found) (dialect-entry dialect :skel "latestMember")
+          (unless (and found (consp skel) (stringp (getf skel :tpl)))
+            (return-from candidate nil)))
         (let* ((rel (binding-spec (bindings-get bindings (sel::node-s source))))
                (revision (getf rel :unique-key))
                (at (position "BUCKET" steps :key #'sel::node-s :test #'equal)))
@@ -558,18 +561,24 @@ step must not hide a row whose evaluation would have."
               (let* ((from (getf rel :from))
                      (input (unclashing-name "_sel_input" (list from)))
                      (groups (unclashing-name "_sel_latest" (list from input)))
+                     (tr (%translator dialect (make-bindings '()) (and (getf options :strict) t)))
                      (parts (latest-member-statement-parts
-                             dialect sql input groups revision
+                             tr sql input groups revision
                              (as-value (emit-text-operand
                                         dialect (%fragment (list (emit-ident dialect partition))
-                                                           (getf pf :type) dialect)))))
+                                                           (getf pf :type) dialect)))
+                             (sel::node-pos source)))
                      (cont (funcall wrap (sel::build-pipeline-ast
                                           (binding-read-var "_INPUT" (sel::node-pos bucket))
                                           (subseq steps at)))))
                 (make-hybrid-plan
                  :dialect dialect
                  :sql-statement (%fragment parts :statement dialect (fragment-params sql)
-                                           (fragment-param-kinds sql) (fragment-caveats sql))
+                                           (fragment-param-kinds sql)
+                                           (remove-duplicates
+                                            (append (fragment-caveats sql)
+                                                    (reverse (translator-caveats tr)))
+                                            :test #'equal :from-end t))
                  :sql-prefix-ast prefix
                  :continuation-ast cont
                  :continuation-program (sel::%make-program "" cont)
@@ -586,19 +595,22 @@ case-insensitively, as a table name compares, the rest exactly)."
           do (setf name (concatenate 'string name "_")))
     name))
 
-(defun latest-member-statement-parts (dialect sql input groups revision partition-sql)
-  "The latest-member statement around the prefix SQL: the prefix as CTE INPUT,
-each partition's highest REVISION (and its first position) as CTE GROUPS, and
-the input rows joined back to them, in first-seen partition order."
-  (let ((qi (emit-ident dialect input)) (qg (emit-ident dialect groups))
-        (qr (emit-ident dialect revision)) (qmax (emit-ident dialect "_sel_revision"))
-        (qfirst (emit-ident dialect "_sel_first")))
-    (append (list (format nil "WITH ~a AS (" qi))
-            (fragment-parts sql)
-            (list (format nil "), ~a AS (SELECT MAX(~a) AS ~a, MIN(~a) AS ~a FROM ~a GROUP BY ~a) ~
-                               SELECT ~a.* FROM ~a JOIN ~a ON ~a.~a = ~a.~a ORDER BY ~a.~a ASC"
-                          qg qr qmax qr qfirst qi partition-sql
-                          qi qi qg qi qr qg qmax qg qfirst)))))
+(defun latest-member-statement-parts (tr sql input groups revision partition-sql pos)
+  "The latest-member statement around the prefix SQL, as the dialect's
+latestMember skeleton spells it (sql/MAP.md §5.2): the prefix as CTE INPUT, each
+partition's highest REVISION (and its first position) as CTE GROUPS, and the
+input rows joined back to them, in first-seen partition order. A refusal, or a
+caveat under strict, signals through TR's own skeleton lookup."
+  (let ((dialect (translator-dialect tr)))
+    (fill-named tr (skeleton tr "latestMember" pos)
+                (list (list "input" (emit-ident dialect input))
+                      (list "prefix" sql)
+                      (list "groups" (emit-ident dialect groups))
+                      (list "rev" (emit-ident dialect revision))
+                      (list "maxRev" (emit-ident dialect "_sel_revision"))
+                      (list "firstRev" (emit-ident dialect "_sel_first"))
+                      (list "key" partition-sql))
+                pos)))
 
 (defun bucket-rows-are-keys-p (steps)
   "Whether the SQL rows for STEPS are a bucket's KEYS rather than the value SEL

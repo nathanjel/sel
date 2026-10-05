@@ -238,6 +238,9 @@ struct RelationalPlan {
   std::vector<RelationalOrder> order_by;
   std::optional<std::int64_t> limit;
   std::optional<std::int64_t> offset;
+  // The last TAKE, TOP or DROP that set limit or offset: where a dialect that
+  // cannot spell the clause refuses it (sql/MAP.md §5.1).
+  Pos limit_pos;
 };
 
 class Translator {
@@ -249,6 +252,19 @@ class Translator {
 
   Fragment translate(const NodePtr& ast);
   Fragment translate_statement(const NodePtr& ast);
+
+  // --- skeletons. A skeleton's placeholders are NAMED, not numbered, and the
+  // grammar is deliberately NOT Emit::fill's: no {{ }} escapes, no {*} or {n:},
+  // no lexical expansion, no numeric slot grammar. Each difference is a
+  // behaviour a shared implementation would change.
+  using Slot = std::variant<std::string, Fragment>;
+  using SlotMap = std::vector<std::pair<std::string, std::vector<Slot>>>;
+
+  // A statement spelled by one of the dialect's skeletons around an already
+  // translated one -- the hybrid planner's latestMember (sql/MAP.md §5.2).
+  // Refused as any skeleton is; its caveat joins the inner statement's.
+  Fragment wrap_statement(const std::string& name, const SlotMap& slots,
+                          const Fragment& inner, Pos pos);
 
  private:
   // What both entry points do before they differ; see the definition.
@@ -338,13 +354,6 @@ class Translator {
                      const std::string& key, const SNode& n);
   std::string relation_table_alias(const RelationSpec& rel);
 
-  // --- skeletons. A skeleton's placeholders are NAMED, not numbered, and the
-  // grammar is deliberately NOT Emit::fill's: no {{ }} escapes, no {*} or {n:},
-  // no lexical expansion, no numeric slot grammar. Each difference is a
-  // behaviour a shared implementation would change.
-  using Slot = std::variant<std::string, Fragment>;
-  using SlotMap = std::vector<std::pair<std::string, std::vector<Slot>>>;
-
   Fragment conditional(const SNode& n);
   SNodePtr rewrite_regex(const SNodePtr& n);
   void require_argument_kind(const std::string& name, const Fragment& f, Pos pos);
@@ -385,7 +394,7 @@ class Translator {
                           const std::function<Fragment()>& render);
   Fragment with_row(const Source& src, const std::string& binder_name,
                     const std::function<Fragment()>& render);
-  Fragment sum_whole(const Fragment& body, Pos pos);
+  Fragment sum_whole(const Fragment& body, Pos pos, Pos sum_pos);
   Fragment relation_aggregate(const std::string& name, const RelationSpec& rel,
                               const Fragment& body, const SNode& n);
   Fragment count(const SNode& n);

@@ -18,6 +18,7 @@
 #include "sel_sql_node.hpp"
 #include "sel_sql_stage1.hpp"
 #include "sel_sql_emit.hpp"
+#include "sel_sql_translator.hpp"
 
 #include <algorithm>
 #include <map>
@@ -871,7 +872,10 @@ std::optional<std::string> latest_field_name(const NodePtr& n) {
 std::optional<HybridPlan> try_latest_member(const NodePtr& source, const std::vector<NodePtr>& steps,
                                             const std::string& dialect, const Bindings& catalog,
                                             const Options& opts, const Helpers& helpers) {
-  if (dialect != "mariadb" && dialect != "mysql" && dialect != "postgresql" && dialect != "sqlite") {
+  // The statement is the dialect's latestMember skeleton (sql/MAP.md §5.2); a
+  // dialect that refuses it keeps the grouping in memory.
+  const Entry* skeleton = Map::entry(dialect, Section::Skel, "latestMember");
+  if (!skeleton || skeleton->kind != EntryKind::Template) {
     return std::nullopt;
   }
   const auto& rel = catalog.get(source->s, source->pos).as_relation();
@@ -960,22 +964,22 @@ std::optional<HybridPlan> try_latest_member(const NodePtr& source, const std::ve
     const auto qfirst = emit.ident("_sel_first");
     auto key =
         emit.text_operand(Fragment({{false, emit.ident(*partition), 0}}, pf->type, dialect)).as_value();
-    std::vector<Fragment::Part> parts{{false, "WITH " + qi + " AS (", 0}};
-    parts.insert(parts.end(), sql->parts().begin(), sql->parts().end());
-    parts.push_back({false,
-                     "), " + qg + " AS (SELECT MAX(" + qr + ") AS " + qmax + ", MIN(" + qr + ") AS " +
-                         qfirst + " FROM " + qi + " GROUP BY " + key + ") SELECT " + qi + ".* FROM " +
-                         qi + " JOIN " + qg + " ON " + qi + "." + qr + " = " + qg + "." + qmax +
-                         " ORDER BY " + qg + "." + qfirst + " ASC",
-                     0});
+    // The translator's own skeleton lookup: a refusal, or a caveat under strict,
+    // is a SqlError, and the caveat otherwise joins the statement's.
+    using Slot = Translator::Slot;
+    Fragment statement = Translator(dialect, catalog, opts).wrap_statement(
+        "latestMember",
+        {{"input", {Slot{qi}}}, {"prefix", {Slot{*sql}}}, {"groups", {Slot{qg}}},
+         {"rev", {Slot{qr}}}, {"maxRev", {Slot{qmax}}}, {"firstRev", {Slot{qfirst}}},
+         {"key", {Slot{key}}}},
+        *sql, source->pos);
     const std::vector<NodePtr> remaining(it, steps.end());
     const auto continuation =
         helpers.wrap(build_pipeline(var_node("_INPUT", steps[at]->pos), remaining));
     HybridPlan plan;
     plan.dialect = dialect;
     plan.is_hybrid = true;
-    plan.sql_statement = Fragment(parts, SqlKind::Statement, dialect, sql->params(),
-                                  sql->param_kinds(), sql->caveats());
+    plan.sql_statement = std::move(statement);
     plan.sql_prefix_ast = prefix;
     plan.continuation_ast = continuation;
     plan.continuation_program = Program("", continuation);

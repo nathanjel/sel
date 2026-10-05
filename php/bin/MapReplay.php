@@ -336,6 +336,21 @@ final class MapReplay
                     'tpl' => 'EXISTS (SELECT 1 FROM {from} WHERE {corr} AND {body})',
                 ],
                 'join' => 'LISTAGG is SQL:2016 and is spelled differently by every server that has it',
+                'guardedSum' => [
+                    'tpl' => 'CASE WHEN COUNT(*) = COUNT(CASE WHEN {test} THEN 1 END) THEN COALESCE(SUM(CASE WHEN {test} THEN {body} ELSE NULL END), 0) ELSE NULL END',
+                ],
+                'limit' => [
+                    'tpl' => 'FETCH FIRST {limit} ROWS ONLY',
+                ],
+                'limitOffset' => [
+                    'tpl' => 'OFFSET {offset} ROWS FETCH FIRST {limit} ROWS ONLY',
+                ],
+                'offsetOnly' => [
+                    'tpl' => 'OFFSET {offset} ROWS',
+                ],
+                'latestMember' => [
+                    'tpl' => 'WITH {input} AS ({prefix}), {groups} AS (SELECT MAX({rev}) AS {maxRev}, MIN({rev}) AS {firstRev} FROM {input} GROUP BY {key}) SELECT {input}.* FROM {input} JOIN {groups} ON {input}.{rev} = {groups}.{maxRev} ORDER BY {groups}.{firstRev} ASC',
+                ],
             ],
             'notes' => [
                 'purpose' => 'ansi is a base, never a target. It carries the operator spellings every server agrees on so that four dialect documents do not repeat them, and it refuses — with a reason — everything whose spelling is a per-server decision. A leaf that inherits a refusal from here has simply not been told what its server does.',
@@ -346,6 +361,9 @@ final class MapReplay
                 'text-comparison-operands' => 'The $ family, EQL and IN templates are plain comparisons because the translator applies textCast and textCollate to their operands before filling them. The rule is applied in three places — two-operand comparisons, IN over a list, and the inRelation skeleton — and only one of those is a two-operand template, so putting it in the template would have meant writing it twice more in code anyway.',
                 'IN' => 'IN over a literal list is lowered to a chain of EQL comparisons rather than to SQL\'s IN. Casting each element inside a variadic template is not expressible, and casting only the needle is wrong: CAST(3.0 AS CHAR) COLLATE utf8mb4_bin IN (3) is 1 on MariaDB 11.8 because the numeric right-hand side pulls the comparison back to numbers. The cast has already cost the index that SQL\'s IN would have used, so the chain gives up nothing that the correctness fix had not already spent.',
                 'inRelation-folds-null' => 'The IS TRUE is the same fold `all` and `any` carry, and this skeleton was the one relation skeleton without it even though §7.3\'s own table lists it beside them. A NULL among the subquery\'s rows makes `x IN (…)` answer NULL when nothing matches, and NOT NULL is NULL, so the WHERE dropped the row: NOT("flag" IN NOTES) selected one order where SEL selects three. Worse inside an aggregate body -- the `all` skeleton\'s own fold cannot rescue a NULL that originates INSIDE it, so it read as "this row failed" and ALL answered FALSE where SEL says TRUE. SEL\'s IN is the one operator that tolerates a NONE rather than raising E_NO_SCALAR, which is why there is a SEL answer to disagree with at all.',
+                'guardedSum' => 'SUM over a body nobody declared NUM is all or nothing (docs/internals/sql-kinds.md 5a): NULL unless every row passes the dialect\'s numeric test. The cast inside SUM is guarded by the same test because standard SQL raises an exception (22018) when it casts text that is not a number, and the server evaluates that cast for every row before the outer CASE can discard the sum. A dialect whose cast of a non-number yields a value instead of an error may drop the inner guard, and says so in its own file.',
+                'limit-offset' => 'The standard spells a row limit FETCH FIRST n ROWS ONLY and a skip OFFSET n ROWS (SQL:2008), in that order after ORDER BY. No shipped target uses that spelling, and each says LIMIT in its own file, so this is what a dialect registered on ansi inherits, not what any shipped one emits. offsetOnly is the one spelling the targets disagree on: the grammar of the MySQL family and SQLite has no OFFSET without a LIMIT, so each writes its own \'no limit\'.',
+                'latestMember' => 'The latest-member hybrid plan (docs/internals/sql-translation.md §12.1): a CTE over the pushed-down prefix, the highest and lowest revision per partition, and the rows holding the highest. Every clause is SQL:1999, so a dialect inherits the plan unless it refuses this skeleton: a server with no WITH (MySQL before 8.0, for one) gives it a reason string, and the planner leaves the grouping to memory.',
             ],
         ],
         [
@@ -586,6 +604,18 @@ final class MapReplay
             ],
             'skel' => [
                 'join' => 'GROUP_CONCAT does not specify an order without an ORDER BY, and a relation binding has no key to order by; SEL\'s JOIN concatenates in insertion order',
+                'guardedSum' => [
+                    'tpl' => 'CASE WHEN COUNT(*) = COUNT(CASE WHEN {test} THEN 1 END) THEN COALESCE(SUM({body}), 0) ELSE NULL END',
+                ],
+                'limit' => [
+                    'tpl' => 'LIMIT {limit}',
+                ],
+                'limitOffset' => [
+                    'tpl' => 'LIMIT {limit} OFFSET {offset}',
+                ],
+                'offsetOnly' => [
+                    'tpl' => 'LIMIT 18446744073709551615 OFFSET {offset}',
+                ],
             ],
             'notes' => [
                 'purpose' => 'The spellings MariaDB and MySQL agree on. Neither is a parent of the other: MariaDB is the reference this project tests against, and a reference dialect should not inherit from one nobody has exercised. Version-gated entries belong in the leaves, since `since` is compared against the target\'s version.',
@@ -609,6 +639,8 @@ final class MapReplay
                 'isnum-anchor' => '\\A and \\z rather than ^ and $, and that is the same ICU behaviour the regex-caveat note below describes, reached through a template instead of a user\'s pattern. $ matches before a trailing newline, so ISNUM("12\\n") was 1 on both servers and FALSE in SEL -- a value that is not a number answering that it is, which is the wrong direction for a validation rule to be wrong in. The note\'s stated excuse for living with it on RMATCH -- that rewriting needs a literal pattern -- does not apply here, because this pattern IS a literal. MariaDB and MySQL disagree with each other on \\r as well (0 and 1), so the anchor was hiding a leaf divergence too. PostgreSQL\'s ARE anchors at end-of-string and needed no change.',
                 'rounding-is-exact-here' => 'ROUND used to declare rounding-mode and does not need it. The operands reach it through numericCast, so they are DECIMAL, and MySQL and MariaDB both round DECIMAL half away from zero -- which is what SEL does. Probed rather than reasoned about: ROUND(-2.5,0) is -3, ROUND(2.5,0) is 3, ROUND(0.5,0) is 1, ROUND(-0.5,0) is -1 and ROUND(2.675,2) is 2.68 on both servers, all agreeing with SEL. The caveat was declared for the FLOAT behaviour, which the cast means these operands never have. Removing it is a coverage gain: a caveat exempts every expression touching that entry from the exactness check, so this one was silencing every ROUND in the corpus.',
                 'text-identity' => 'Text comparisons and grouped/sorted TEXT keys require NO PAD as well as binary identity. The family uses MariaDB utf8mb4_nopad_bin; mysql overrides textCollate with utf8mb4_0900_bin. Both preserve VARCHAR trailing spaces without converting projected keys or regex subjects to binary strings. utf8mb4_bin was case-sensitive but PAD SPACE and silently merged a with a followed by a space (F2). Verified on MariaDB 11.8.8 and MySQL 8.4.11.',
+                'guardedSum' => 'Unlike the standard, the MySQL family casts a value that is not a number to 0 with a warning rather than raising, so the cast inside SUM needs no guard of its own: the outer COUNT test already turns such a sum into NULL.',
+                'offsetOnly' => 'MySQL\'s grammar has no OFFSET without a LIMIT, and its documentation\'s own answer is the largest BIGINT UNSIGNED as the limit.',
             ],
         ],
         [
@@ -653,6 +685,7 @@ final class MapReplay
                 'isTrue' => '(({0}) IS TRUE)',
                 'isNotTrue' => '(({0}) IS NOT TRUE)',
                 'placeholder' => '?',
+                'identifierBytes' => '63',
             ],
             'ops' => [
                 '+' => [
@@ -872,6 +905,17 @@ final class MapReplay
                     'ret' => 'BOOL',
                 ],
             ],
+            'skel' => [
+                'limit' => [
+                    'tpl' => 'LIMIT {limit}',
+                ],
+                'limitOffset' => [
+                    'tpl' => 'LIMIT {limit} OFFSET {offset}',
+                ],
+                'offsetOnly' => [
+                    'tpl' => 'OFFSET {offset}',
+                ],
+            ],
             'notes' => [
                 'purpose' => 'PostgreSQL 15 or later. 15 is where regexp_instr arrived, which RFIND needs; everything else here works further back.',
                 'closest-so-far' => 'PostgreSQL is the closest match to SEL of the three servers, and the interesting part is which caveats it does NOT need. Verified on 17.11: `%` on numeric is exact (5.5 % 2 is 1.5, where SQLite says 1.0); round() is half away from zero (round(2.5,0) is 3 and round(-2.5,0) is -3, where MySQL needs rounding-mode); least() does not rescale its result (least(17, 123.456) is 17, where MySQL gives 17.000 and needs numeric-scale); and 1/0 RAISES rather than answering NULL, which is what SEL does. So mysql-family\'s rounding-mode and numeric-scale and SQLite\'s modulo-integer and decimal-float are all absent here, and only the divergences that are really there are declared.',
@@ -890,6 +934,8 @@ final class MapReplay
                 'arithmetic-operands' => 'Every arithmetic operand is cast, not just division\'s. SEL numbers are TEXT values, so a TEXT-kind fragment that happens to read as a number is a legal operand -- `x * BACKWARDS(y)` is arithmetic in SEL -- and PostgreSQL answers `operator does not exist: numeric * text`. The cast also puts the two sides on the same footing as SEL: a TEXT operand that does NOT read as a number raises here, exactly as SEL\'s E_NOT_NUM does, instead of quietly becoming 0 the way SQLite would.',
                 'concat-casts-both-operands' => 'Both operands, not one. PostgreSQL\'s || resolves through the text || anynonarray overload, so a concatenation with at least one TEXT operand worked and every corpus line had one. Two computed numbers have no overload at all: 2.50 & 2.50 emitted (2.50 || 2.50) and the server answered 42883 operator does not exist: numeric || numeric. That is a translation reporting success for a query that cannot run, and concatenating two computed numbers is an ordinary thing for a rule to do. The bin variant is left alone: bytea || bytea is a real operator.',
                 'to-utf8-uses-the-lexical' => 'TO_UTF8 spelled the old double cast out inline rather than referring to binaryCast, so fixing the lexical fixed BLEN, TO_HEX, ENCODE_BASE64 and FROM_UTF8 and left this one wrong -- FROM_UTF8(TO_UTF8(\'\\\\\')) still came back one backslash instead of two, because the bytes were already damaged before FROM_UTF8 saw them. There is exactly one spelling of "take this to bytes" in a dialect and this is it.',
+                'identifierBytes' => 'PostgreSQL keeps the first NAMEDATALEN - 1 = 63 bytes of an identifier, cut at a character boundary, and silently drops the rest, so two aliases that agree on those bytes name one column (sql/MAP.md §3.1).',
+                'limit-offset' => 'PostgreSQL also accepts the standard OFFSET … ROWS FETCH FIRST … ROWS ONLY that ansi spells; LIMIT is kept because it is what this dialect has always emitted.',
             ],
         ],
         [
@@ -1166,6 +1212,17 @@ final class MapReplay
                     'ret' => 'BOOL',
                 ],
             ],
+            'skel' => [
+                'limit' => [
+                    'tpl' => 'LIMIT {limit}',
+                ],
+                'limitOffset' => [
+                    'tpl' => 'LIMIT {limit} OFFSET {offset}',
+                ],
+                'offsetOnly' => [
+                    'tpl' => 'LIMIT -1 OFFSET {offset}',
+                ],
+            ],
             'notes' => [
                 'purpose' => 'SQLite 3.35 or later. 3.35 is where the math functions can be built in, which ceil, floor, trunc, sign and pow all need (SQLITE_ENABLE_MATH_FUNCTIONS); a build without them refuses at run time rather than here, which is the one thing this document cannot check for you.',
                 'two-directions' => 'This dialect is the map earning its keep in both directions. SQLite matches SEL more closely than MariaDB does in four places, so four things MariaDB needs a caveat or a refusal for are plain entries here: comparison is case-sensitive by default, upper() and lower() are ASCII-only exactly as SEL specifies, unicode() and char() are real code points, and length() counts code points. It matches SEL much less closely in one, and that one is arithmetic.',
@@ -1182,6 +1239,7 @@ final class MapReplay
                 'not-caveatable' => 'Two divergences cannot be expressed as a caveat because they are about failure rather than value. 1/0 is NULL here and E_DIV_ZERO in SEL, and CAST(\'abc\' AS NUMERIC) is 0 here where SEL raises E_NOT_NUM. A rule that would ERROR in SEL may quietly EVALUATE in SQLite. See §11 of docs/internals/sql-translation.md.',
                 'right' => 'substr(X, -N) alone is wrong for N = 0: -0 is 0, and substr(X, 0) behaves like substr(X, 1), so RIGHT("a", 0) answered "a" where SEL says "". The explicit length pins it. Found by the fuzz lane on sqlite\'s first run.',
                 'comparison-is-exact-to-int64' => 'And why the six numeric comparisons carry decimal-float even though their templates look exact. CAST(text AS NUMERIC) yields an INTEGER while the value fits in int64 and a REAL once it does not, so comparison is exact through 19 digits and float at 20: CAST(\'99999999999999999999\' AS NUMERIC) = CAST(\'99999999999999999998\' AS NUMERIC) is 1, and SEL says FALSE. Probed digit by digit rather than reasoned about. The byte comparisons -- $==, $<, and the rest -- are separate entries with no cast and stay exact, and so does IN, which uses textCast. The cost is that the oracle stops failing the build on sqlite comparison; mysql-family and postgresql still do, which is the four-dialect corpus paying for the caveat.',
+                'offsetOnly' => 'SQLite\'s grammar has no OFFSET without a LIMIT; a negative LIMIT is its documented \'no limit\'.',
             ],
         ],
         [

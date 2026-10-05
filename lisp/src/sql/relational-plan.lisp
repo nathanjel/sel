@@ -52,6 +52,9 @@
   (order-by '() :type list)
   (limit nil)
   (offset nil)
+  ;; The last TAKE, TOP or DROP that set LIMIT or OFFSET: where a dialect that
+  ;; cannot spell the clause refuses it (sql/MAP.md §5.1).
+  (limit-pos nil)
   ;; JOIN-ROWS' models of the joined rows, as (JOIN-COUNT . ROWS).
   (join-rows-cache nil))
 

@@ -336,5 +336,25 @@ fn main() {
         translate(&compile("N + 1").unwrap_or_else(|e| std::panic::panic_any(e)), "probe-badguard", Some(&named), Options::default()).unwrap_or_else(|e| std::panic::panic_any(e));
     }));
 
+    // A builder registered on `skel` has no template to fill: the LIMIT it would
+    // spell is refused, so the TAKE stays in memory (sql/MAP.md §5).
+    {
+        let builder: BuilderFn = Arc::new(|emit: &Emit, _args: &[Fragment], _pos: Pos| -> Result<Fragment, SqlError> {
+            Ok(Fragment::new(vec![Part::Sql("LIMIT 1".to_string())], SqlKind::Text, emit.dialect(),
+                Vec::new(), Vec::new(), Vec::new()))
+        });
+        define_builder("mariadb", "skel", "limit", builder);
+        let program = compile("ORDERS .> TAKE(2)").unwrap_or_else(|e| std::panic::panic_any(e));
+        let plan: HybridPlan = plan_hybrid(&program, "mariadb", Some(&bindings), Options::default());
+        let kind = if plan.pure_sql { "pure_sql" } else if plan.pure_memory { "pure_memory" } else { "hybrid" };
+        say(&mut counter, &mut out, "skel.builder.plan", kind);
+        let stmt = match &plan.sql_statement {
+            Some(f) => f.as_statement(Mode::Inline).unwrap_or("-".to_string()),
+            None => "-".to_string(),
+        };
+        say(&mut counter, &mut out, "skel.builder.statement", &stmt);
+        reset();
+    }
+
     println!("{}", out.join("\n"));
 }

@@ -194,6 +194,16 @@ class Translator:
         with _recursion_budget():
             return self._translate(ast)
 
+    def _wrap_statement(self, name: str, slots: dict[str, list[Any]], inner: Fragment,
+                        pos: Pos) -> Fragment:
+        """A statement spelled by one of the dialect's skeletons around an already
+        translated one -- the hybrid planner's latestMember (sql/MAP.md §5.2).
+        Refused as any skeleton is, and carrying its caveat beside the inner
+        statement's."""
+        parts = self._fill_named(self._skeleton(name, pos), slots, pos)
+        caveats = list(dict.fromkeys([*inner.caveats, *self.caveats]))
+        return Fragment(parts, 'STATEMENT', self.dialect, inner.params, inner.param_kinds, caveats)
+
     def _translate(self, ast: Node) -> Fragment:
         norm, plan = self._begin(ast)
         if plan is not None:
@@ -237,18 +247,24 @@ class Translator:
 
     def _check_alias(self, name: str, pos: Pos, seen: dict[str, str]) -> None:
         """An output name that comes from a SEL text literal is held to the rules a
-        binding's own names meet: not empty, no NUL, and on PostgreSQL not the same
-        as another in its first 63 bytes, because the server truncates both to one
-        name (sql/MAP.md §3.1)."""
+        binding's own names meet: not empty, no NUL, and where the dialect declares
+        ``identifierBytes`` (PostgreSQL: 63) not the same as another once both are
+        cut to the whole characters that fit, because the server truncates both to
+        one name (sql/MAP.md §3.1)."""
         if name == '' or '\0' in name:
             refuse('E_SQL_UNSUPPORTED',
                    'an output column name must not be empty or contain a NUL', pos)
-        if 'postgresql' in _map.chain(self.dialect):
-            short = name.encode('utf-8')[:63]
+        limit = _map._identifier_bytes(self.dialect)
+        if limit is not None:
+            raw = name.encode('utf-8')
+            end = min(limit, len(raw))
+            while 0 < end < len(raw) and (raw[end] & 0xC0) == 0x80:
+                end -= 1
+            short = raw[:end]
             if short in seen and seen[short] != name:
                 refuse('E_SQL_UNSUPPORTED',
                        f'{name[:20]}... and {seen[short][:20]}... are the same name to '
-                       'PostgreSQL, which keeps 63 bytes of an identifier', pos)
+                       f'dialect {self.dialect}, which keeps {limit} bytes of an identifier', pos)
             seen[short] = name
 
     # --- the walk ------------------------------------------------------------
@@ -970,7 +986,7 @@ class Translator:
                         self._require_numeric_constant(body_node)
                     else:
                         inner = self._require_num(inner, body_node.pos, 'SUM')
-                    inner = self._guard_sum(inner, body_node, True)
+                    inner = self._guard_sum(inner, body_node, True, n.pos)
                     if inner.whole_sum:
                         return inner
                     return Fragment(['COALESCE(SUM(', *inner.parts, '), 0)'], 'NUM', self.dialect)
@@ -1704,7 +1720,7 @@ class Translator:
             else:
                 q = self._apply('ops', 'AND', [p, q], n.pos)
         if name == 'SUM':
-            q = self._guard_sum(q, body, src.get('shape') == 'relation')
+            q = self._guard_sum(q, body, src.get('shape') == 'relation', n.pos)
         return q
 
     def _in_filter_scope(self, f: dict[str, Any], render: Callable[[], Fragment]) -> Fragment:
@@ -1722,7 +1738,7 @@ class Translator:
         finally:
             self.frames = saved
 
-    def _guard_sum(self, q: Fragment, body: Node, whole: bool) -> Fragment:
+    def _guard_sum(self, q: Fragment, body: Node, whole: bool, pos: Pos) -> Fragment:
         """A SUM body nobody has vouched for is read as a number (docs/internals/
         sql-kinds.md §5a).
 
@@ -1731,25 +1747,19 @@ class Translator:
         relation or a group the server's SUM *skips* NULL, and this translator's own
         ``COALESCE(SUM(...), 0)`` turns an all-NULL sum into 0, so guarding each
         element would make a refused element vanish; the guard is all or nothing:
-        every element must pass, or the value is NULL."""
+        every element must pass, or the value is NULL. The dialect's ``guardedSum``
+        skeleton spells it (sql/MAP.md §5.1), and refuses at the SUM, ``pos``."""
         if q.kind != 'UNKNOWN' or _constants.is_constant(body, self._consts()):
             return q
         if not whole:
             return self._guard_numeric(q, body)
         test_tpl, cast_tpl = self._guard_halves(body.pos)
         self._scale_limited(body.pos, 'this operand is read as a number')
-        test = self.emit.fill(test_tpl, [q], body.pos)
-        if 'postgresql' in _map.chain(self.dialect):
-            # PostgreSQL evaluates the cast for every row before the enclosing CASE
-            # chooses, and casting 'x' to NUMERIC is an error there (22P02), not a
-            # NULL: the SUM adds up the GUARDED cast, and the outer test discards
-            # the sum exactly as before (docs/internals/sql-kinds.md §5a).
-            cast = self.emit.fill(f'CASE WHEN {test_tpl} THEN {cast_tpl} ELSE NULL END', [q], body.pos)
-        else:
-            cast = self.emit.fill(cast_tpl, [q], body.pos)
-        out = Fragment(['CASE WHEN COUNT(*) = COUNT(CASE WHEN ', *test,
-                        ' THEN 1 END) THEN COALESCE(SUM(', *cast,
-                        '), 0) ELSE NULL END'], 'NUM', self.dialect)
+        test = Fragment(self.emit.fill(test_tpl, [q], body.pos), 'BOOL', self.dialect)
+        cast = Fragment(self.emit.fill(cast_tpl, [q], body.pos), 'NUM', self.dialect)
+        out = Fragment(self._fill_named(self._skeleton('guardedSum', pos),
+                                        {'test': [test], 'body': [cast]}, pos),
+                       'NUM', self.dialect)
         out.whole_sum = True
         return out
 
@@ -2319,6 +2329,12 @@ class Translator:
         if isinstance(s, str):
             refuse('E_SQL_UNSUPPORTED',
                    f'dialect {self.dialect} cannot express {name} — {s}', pos)
+        # A builder registered on `skel` has no template: rendering one was a
+        # KeyError escaping as a crash. Refused, as the other hosts refuse it.
+        if s.get('builder') is not None:
+            refuse('E_SQL_UNSUPPORTED',
+                   f'the {name} skeleton for {self.dialect} is a builder, and a skeleton '
+                   'is a template', pos)
         # A skeleton may carry a caveat, and until MariaDB's CASE needed one
         # nothing here read it -- so `skel` was the one section whose entries could
         # declare an inexactness that never reached Fragment.caveats and that
@@ -2757,6 +2773,7 @@ class Translator:
             elif name == 'TAKE':
                 limit = self._eval_int_param(args[1], 'TAKE')
                 plan.limit = limit if plan.limit is None else min(plan.limit, limit)
+                plan.limit_pos = step.pos
 
             elif name == 'DROP':
                 offset = self._eval_int_param(args[1], 'DROP')
@@ -2766,6 +2783,7 @@ class Translator:
                 if plan.limit is not None:
                     plan.limit -= skipped
                 plan.offset = min((plan.offset or 0) + skipped, INT64_MAX)
+                plan.limit_pos = step.pos
 
             elif name in ('SORT', 'SORT_DESC', 'SORT_BY', 'TOP', 'TOP_DESC', 'TOP_BY'):
                 # A sort after a LIMIT or OFFSET sorts the rows that survived
@@ -2882,6 +2900,7 @@ class Translator:
         if name in ('TOP', 'TOP_DESC', 'TOP_BY'):
             limit = self._eval_int_param(args[-1], name)
             plan.limit = limit if plan.limit is None else min(plan.limit, limit)
+            plan.limit_pos = step.pos
 
         # The form, decoded as the evaluator decodes it (registry.sort_form): a
         # text-literal direction wins over a bare name in the binder slot.
@@ -3087,18 +3106,15 @@ class Translator:
                     parts.extend(fragment.parts)
                     parts.append(' ' + order['dir'])
 
-            if plan.limit is not None and plan.offset is not None:
-                parts.append(f' LIMIT {plan.limit} OFFSET {plan.offset}')
-            elif plan.limit is not None:
-                parts.append(f' LIMIT {plan.limit}')
-            elif plan.offset is not None:
-                chain = _map.chain(self.dialect)
-                if any(d in chain for d in ('mariadb', 'mysql', 'mysql-family')):
-                    parts.append(f' LIMIT 18446744073709551615 OFFSET {plan.offset}')
-                elif 'sqlite' in chain:
-                    parts.append(f' LIMIT -1 OFFSET {plan.offset}')
-                else:
-                    parts.append(f' OFFSET {plan.offset}')
+            # The dialect's limit, limitOffset and offsetOnly skeletons
+            # (sql/MAP.md §5.1); a refusal blames the last TAKE, TOP or DROP.
+            if plan.limit is not None or plan.offset is not None:
+                key = ('offsetOnly' if plan.limit is None
+                       else 'limit' if plan.offset is None else 'limitOffset')
+                clause = self._fill_named(self._skeleton(key, plan.limit_pos),
+                                          {'limit': [str(plan.limit)], 'offset': [str(plan.offset)]},
+                                          plan.limit_pos)
+                parts.append(' ' + ''.join(clause))
 
             return Fragment(parts, 'STATEMENT', self.dialect, self.params,
                             self.param_kinds, list(self.caveats))

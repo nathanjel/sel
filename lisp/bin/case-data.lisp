@@ -14152,6 +14152,74 @@ ORDERS .> TAKE(1)"
    :register nil
    :bindings (lambda () (list (cons "R" (sel.sql:binding-with-unique-key (binding-relation "r" nil (list (cons "ID" (binding-column "id" nil :num)) (cons "FK" (binding-column "fk" nil :text))) nil nil) "id")))))
   (list
+   :name "plan.latest-member.inherited.mariadb-child"
+   :at "36-latest-member.sqlt:61"
+   :dialect "mariadb-11.8"
+   :source "R .> BUCKET(_[\"fk\"]) .> MAP(RECORD(\"entity\", _K, \"latest\", TOP_BY(_, _[\"id\"], \"DESC\", 1)))"
+   :expect "WITH `_sel_input` AS (SELECT * FROM `r` WHERE TRUE), `_sel_latest` AS (SELECT MAX(`id`) AS `_sel_revision`, MIN(`id`) AS `_sel_first` FROM `_sel_input` GROUP BY CAST(`fk` AS CHAR) COLLATE utf8mb4_nopad_bin) SELECT `_sel_input`.* FROM `_sel_input` JOIN `_sel_latest` ON `_sel_input`.`id` = `_sel_latest`.`_sel_revision` ORDER BY `_sel_latest`.`_sel_first` ASC"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan "hybrid"
+   :tables (list "r")
+   :register (lambda ()
+      (define-dialect "mariadb-11.8" (list :extends "mariadb" :version "11.8")))
+   :bindings (lambda () (list (cons "R" (sel.sql:binding-with-unique-key (binding-relation "r" nil (list (cons "ID" (binding-column "id" nil :num)) (cons "FK" (binding-column "fk" nil :text))) nil nil) "id")))))
+  (list
+   :name "plan.latest-member.inherited.postgresql-child"
+   :at "36-latest-member.sqlt:80"
+   :dialect "pg-child"
+   :source "R .> BUCKET(_[\"fk\"]) .> MAP(RECORD(\"entity\", _K, \"latest\", TOP_BY(_, _[\"id\"], \"DESC\", 1)))"
+   :expect "WITH \"_sel_input\" AS (SELECT * FROM \"r\" WHERE TRUE), \"_sel_latest\" AS (SELECT MAX(\"id\") AS \"_sel_revision\", MIN(\"id\") AS \"_sel_first\" FROM \"_sel_input\" GROUP BY CAST(\"fk\" AS TEXT) COLLATE \"C\") SELECT \"_sel_input\".* FROM \"_sel_input\" JOIN \"_sel_latest\" ON \"_sel_input\".\"id\" = \"_sel_latest\".\"_sel_revision\" ORDER BY \"_sel_latest\".\"_sel_first\" ASC"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan "hybrid"
+   :tables (list "r")
+   :register (lambda ()
+      (define-dialect "pg-child" (list :extends "postgresql" :version "17")))
+   :bindings (lambda () (list (cons "R" (sel.sql:binding-with-unique-key (binding-relation "r" nil (list (cons "ID" (binding-column "id" nil :num)) (cons "FK" (binding-column "fk" nil :text))) nil nil) "id")))))
+  (list
+   :name "plan.latest-member.inherited.sqlite-child"
+   :at "36-latest-member.sqlt:97"
+   :dialect "sqlite-child"
+   :source "R .> BUCKET(_[\"fk\"]) .> MAP(RECORD(\"entity\", _K, \"latest\", TOP_BY(_, _[\"id\"], \"DESC\", 1)))"
+   :expect "WITH \"_sel_input\" AS (SELECT * FROM \"r\" WHERE 1), \"_sel_latest\" AS (SELECT MAX(\"id\") AS \"_sel_revision\", MIN(\"id\") AS \"_sel_first\" FROM \"_sel_input\" GROUP BY CAST(\"fk\" AS TEXT) COLLATE BINARY) SELECT \"_sel_input\".* FROM \"_sel_input\" JOIN \"_sel_latest\" ON \"_sel_input\".\"id\" = \"_sel_latest\".\"_sel_revision\" ORDER BY \"_sel_latest\".\"_sel_first\" ASC"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan "hybrid"
+   :tables (list "r")
+   :register (lambda ()
+      (define-dialect "sqlite-child" (list :extends "sqlite" :version "3.45")))
+   :bindings (lambda () (list (cons "R" (sel.sql:binding-with-unique-key (binding-relation "r" nil (list (cons "ID" (binding-column "id" nil :num)) (cons "FK" (binding-column "fk" nil :text))) nil nil) "id")))))
+  (list
+   :name "plan.latest-member.inherited.ansi-child"
+   :at "36-latest-member.sqlt:114"
+   :dialect "ansi-probe"
+   :source "R .> BUCKET(_[\"fk\"]) .> MAP(RECORD(\"entity\", _K, \"latest\", TOP_BY(_, _[\"id\"], \"DESC\", 1)))"
+   :expect "WITH \"_sel_input\" AS (SELECT * FROM \"r\" WHERE TRUE), \"_sel_latest\" AS (SELECT MAX(\"id\") AS \"_sel_revision\", MIN(\"id\") AS \"_sel_first\" FROM \"_sel_input\" GROUP BY CAST(\"fk\" AS CHARACTER VARYING) COLLATE UCS_BASIC) SELECT \"_sel_input\".* FROM \"_sel_input\" JOIN \"_sel_latest\" ON \"_sel_input\".\"id\" = \"_sel_latest\".\"_sel_revision\" ORDER BY \"_sel_latest\".\"_sel_first\" ASC"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan "hybrid"
+   :tables (list "r")
+   :register (lambda ()
+      (define-dialect "ansi-probe" (list :extends "ansi" :version "1" :target t)))
+   :bindings (lambda () (list (cons "R" (sel.sql:binding-with-unique-key (binding-relation "r" nil (list (cons "ID" (binding-column "id" nil :num)) (cons "FK" (binding-column "fk" nil :text))) nil nil) "id")))))
+  (list
    :name "plan.latest-member.fallback.zero.mariadb"
    :at "37-latest-member-fallback.sqlt:1"
    :dialect "mariadb"
@@ -14662,6 +14730,24 @@ ORDERS .> TAKE(1)"
    :plan "pure_memory"
    :tables (list "r")
    :register nil
+   :bindings (lambda () (list (cons "R" (sel.sql:binding-with-unique-key (binding-relation "r" nil (list (cons "ID" (binding-column "id" nil :num)) (cons "FK" (binding-column "fk" nil :text))) nil nil) "id")))))
+  (list
+   :name "plan.latest-member.fallback.refused-by-the-dialect"
+   :at "37-latest-member-fallback.sqlt:417"
+   :dialect "old-mysql"
+   :source "R .> BUCKET(_[\"fk\"]) .> MAP(RECORD(\"entity\", _K, \"latest\", TOP_BY(_, _[\"id\"], \"DESC\", 1)))"
+   :expect nil
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan "pure_memory"
+   :tables (list "r")
+   :register (lambda ()
+      (define-dialect "old-mysql" (list :extends "mysql" :version "5.7"))
+      (define-entry "old-mysql" :skel "latestMember" "MySQL before 8.0 has no WITH"))
    :bindings (lambda () (list (cons "R" (sel.sql:binding-with-unique-key (binding-relation "r" nil (list (cons "ID" (binding-column "id" nil :num)) (cons "FK" (binding-column "fk" nil :text))) nil nil) "id")))))
   (list
    :name "stmt.text-identity.schema-collation.sqlite"
@@ -21319,4 +21405,364 @@ ORDERS .> TAKE(1)"
    :plan "pure_memory"
    :tables (list "orders")
    :register nil
-   :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num)) (cons "CUSTOMER_ID" (binding-column "customer_id" "o" :num)) (cons "AMOUNT" (binding-column "amount" "o" :num)) (cons "NAME" (binding-column "name" "o" :text))) nil nil)))))))
+   :bindings (lambda () (list (cons "ORDERS" (binding-relation "orders" "o" (list (cons "ID" (binding-column "id" "o" :num)) (cons "CUSTOMER_ID" (binding-column "customer_id" "o" :num)) (cons "AMOUNT" (binding-column "amount" "o" :num)) (cons "NAME" (binding-column "name" "o" :text))) nil nil)))))
+  (list
+   :name "dialect.inherit.offset-only.mariadb-child"
+   :at "53-dialect-inheritance.sqlt:9"
+   :dialect "mariadb-11.8"
+   :source "ITEMS .> DROP(5)"
+   :expect "SELECT * FROM `items` LIMIT 18446744073709551615 OFFSET 5"
+   :error nil
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register (lambda ()
+      (define-dialect "mariadb-11.8" (list :extends "mariadb" :version "11.8")))
+   :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list ) nil nil)))))
+  (list
+   :name "dialect.inherit.offset-only.postgresql-child"
+   :at "53-dialect-inheritance.sqlt:26"
+   :dialect "pg-child"
+   :source "ITEMS .> DROP(5)"
+   :expect "SELECT * FROM \"items\" OFFSET 5"
+   :error nil
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register (lambda ()
+      (define-dialect "pg-child" (list :extends "postgresql" :version "17")))
+   :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list ) nil nil)))))
+  (list
+   :name "dialect.inherit.offset-only.sqlite-child"
+   :at "53-dialect-inheritance.sqlt:41"
+   :dialect "sqlite-child"
+   :source "ITEMS .> DROP(5)"
+   :expect "SELECT * FROM \"items\" LIMIT -1 OFFSET 5"
+   :error nil
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register (lambda ()
+      (define-dialect "sqlite-child" (list :extends "sqlite" :version "3.45")))
+   :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list ) nil nil)))))
+  (list
+   :name "dialect.inherit.limit-offset.mariadb-child"
+   :at "53-dialect-inheritance.sqlt:56"
+   :dialect "mariadb-11.8"
+   :source "ITEMS .> DROP(2) .> TAKE(3)"
+   :expect "SELECT * FROM `items` LIMIT 3 OFFSET 2"
+   :error nil
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register (lambda ()
+      (define-dialect "mariadb-11.8" (list :extends "mariadb" :version "11.8")))
+   :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list ) nil nil)))))
+  (list
+   :name "dialect.ansi.offset-only-is-the-standard-spelling"
+   :at "53-dialect-inheritance.sqlt:71"
+   :dialect "ansi-probe"
+   :source "ITEMS .> DROP(5)"
+   :expect "SELECT * FROM \"items\" OFFSET 5 ROWS"
+   :error nil
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register (lambda ()
+      (define-dialect "ansi-probe" (list :extends "ansi" :version "1" :target t)))
+   :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list ) nil nil)))))
+  (list
+   :name "dialect.ansi.limit-is-fetch-first"
+   :at "53-dialect-inheritance.sqlt:88"
+   :dialect "ansi-probe"
+   :source "ITEMS .> TAKE(3)"
+   :expect "SELECT * FROM \"items\" FETCH FIRST 3 ROWS ONLY"
+   :error nil
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register (lambda ()
+      (define-dialect "ansi-probe" (list :extends "ansi" :version "1" :target t)))
+   :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list ) nil nil)))))
+  (list
+   :name "dialect.ansi.limit-and-offset"
+   :at "53-dialect-inheritance.sqlt:103"
+   :dialect "ansi-probe"
+   :source "ITEMS .> DROP(2) .> TAKE(3)"
+   :expect "SELECT * FROM \"items\" OFFSET 2 ROWS FETCH FIRST 3 ROWS ONLY"
+   :error nil
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register (lambda ()
+      (define-dialect "ansi-probe" (list :extends "ansi" :version "1" :target t)))
+   :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list ) nil nil)))))
+  (list
+   :name "dialect.register.offset-only-respelled"
+   :at "53-dialect-inheritance.sqlt:118"
+   :dialect "mariadb-11.8"
+   :source "ITEMS .> DROP(5)"
+   :expect "SELECT * FROM `items` OFFSET 5 ROWS"
+   :error nil
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register (lambda ()
+      (define-dialect "mariadb-11.8" (list :extends "mariadb" :version "11.8"))
+      (define-entry "mariadb-11.8" :skel "offsetOnly" (list :tpl "OFFSET {offset} ROWS")))
+   :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list ) nil nil)))))
+  (list
+   :name "dialect.register.offset-only-refused-blames-the-last-drop"
+   :at "53-dialect-inheritance.sqlt:136"
+   :dialect "no-skip"
+   :source "ITEMS .> DROP(2) .> DROP(3)"
+   :expect nil
+   :error "E_SQL_UNSUPPORTED 1:21"
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register (lambda ()
+      (define-dialect "no-skip" (list :extends "sqlite"))
+      (define-entry "no-skip" :skel "offsetOnly" "this server cannot skip rows without a limit"))
+   :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list ) nil nil)))))
+  (list
+   :name "dialect.register.offset-only-refused-leaves-limit-offset"
+   :at "53-dialect-inheritance.sqlt:154"
+   :dialect "no-skip"
+   :source "ITEMS .> DROP(2) .> TAKE(3)"
+   :expect "SELECT * FROM \"items\" LIMIT 3 OFFSET 2"
+   :error nil
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register (lambda ()
+      (define-dialect "no-skip" (list :extends "sqlite"))
+      (define-entry "no-skip" :skel "offsetOnly" "this server cannot skip rows without a limit"))
+   :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list ) nil nil)))))
+  (list
+   :name "dialect.register.limit-refused-blames-the-take"
+   :at "53-dialect-inheritance.sqlt:172"
+   :dialect "no-limit"
+   :source "ITEMS .> TAKE(3)"
+   :expect nil
+   :error "E_SQL_UNSUPPORTED 1:10"
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register (lambda ()
+      (define-dialect "no-limit" (list :extends "postgresql"))
+      (define-entry "no-limit" :skel "limit" nil))
+   :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" nil (list ) nil nil)))))
+  (list
+   :name "alias.identifier-bytes.cut-at-a-character-boundary"
+   :at "53-dialect-inheritance.sqlt:188"
+   :dialect "postgresql"
+   :source "ITEMS .> MAP(RECORD(\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaé\", _[\"PRICE\"], \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\", _[\"PRICE\"]))"
+   :expect nil
+   :error "E_SQL_UNSUPPORTED 1:100"
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" "i" (list (cons "PRICE" (binding-column "price" nil :num))) nil nil)))))
+  (list
+   :name "alias.identifier-bytes.straddling-characters-with-different-lead-bytes"
+   :at "53-dialect-inheritance.sqlt:203"
+   :dialect "postgresql"
+   :source "ITEMS .> MAP(RECORD(\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaé\", _[\"PRICE\"], \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa€\", _[\"PRICE\"]))"
+   :expect nil
+   :error "E_SQL_UNSUPPORTED 1:100"
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" "i" (list (cons "PRICE" (binding-column "price" nil :num))) nil nil)))))
+  (list
+   :name "alias.identifier-bytes.declared-by-a-registered-dialect"
+   :at "53-dialect-inheritance.sqlt:218"
+   :dialect "short-names"
+   :source "ITEMS .> MAP(RECORD(\"abcdX\", _[\"PRICE\"], \"abcdY\", _[\"PRICE\"]))"
+   :expect nil
+   :error "E_SQL_UNSUPPORTED 1:42"
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register (lambda ()
+      (define-dialect "short-names" (list :extends "mariadb" :lexical (list (cons "identifierBytes" "4")))))
+   :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" "i" (list (cons "PRICE" (binding-column "price" nil :num))) nil nil)))))
+  (list
+   :name "alias.identifier-bytes.withdrawn-by-a-child"
+   :at "53-dialect-inheritance.sqlt:235"
+   :dialect "pg-long"
+   :source "ITEMS .> MAP(RECORD(\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaX1\", _[\"PRICE\"], \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaX2\", _[\"PRICE\"]))"
+   :expect "SELECT \"price\" AS \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaX1\", \"price\" AS \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaX2\" FROM \"items\" \"i\""
+   :error nil
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register (lambda ()
+      (define-dialect "pg-long" (list :extends "postgresql" :lexical (list (cons "identifierBytes" nil)))))
+   :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" "i" (list (cons "PRICE" (binding-column "price" nil :num))) nil nil)))))
+  (list
+   :name "agg.guarded-sum.inherited.postgresql-child"
+   :at "53-dialect-inheritance.sqlt:252"
+   :dialect "pg-child"
+   :source "SUM(ITEMS, _[\"QTY\"])"
+   :expect "(SELECT CASE WHEN COUNT(*) = COUNT(CASE WHEN (CAST(\"oi\".\"qty\" AS TEXT) ~ '^-?[0-9]+(\\.[0-9]+)?$') THEN 1 END) THEN COALESCE(SUM(CASE WHEN (CAST(\"oi\".\"qty\" AS TEXT) ~ '^-?[0-9]+(\\.[0-9]+)?$') THEN CAST(\"oi\".\"qty\" AS NUMERIC) ELSE NULL END), 0) ELSE NULL END FROM \"oi\" \"oi\" WHERE (\"oi\".\"o\"=\"o\".\"id\"))"
+   :error nil
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register (lambda ()
+      (define-dialect "pg-child" (list :extends "postgresql" :version "17")))
+   :bindings (lambda () (list (cons "ITEMS" (binding-relation "oi" "oi" (list (cons "QTY" (binding-column "qty" "oi" :unknown))) nil "\"oi\".\"o\"=\"o\".\"id\"")))))
+  (list
+   :name "agg.guarded-sum.inherited.postgresql-child-bucket"
+   :at "53-dialect-inheritance.sqlt:267"
+   :dialect "pg-child"
+   :source "O .> BUCKET(_[\"CAT\"], RECORD(\"s\", SUM(_, _[\"MISC\"])))"
+   :expect "SELECT CASE WHEN COUNT(*) = COUNT(CASE WHEN (CAST(\"o\".\"misc\" AS TEXT) ~ '^-?[0-9]+(\\.[0-9]+)?$') THEN 1 END) THEN COALESCE(SUM(CASE WHEN (CAST(\"o\".\"misc\" AS TEXT) ~ '^-?[0-9]+(\\.[0-9]+)?$') THEN CAST(\"o\".\"misc\" AS NUMERIC) ELSE NULL END), 0) ELSE NULL END AS \"s\" FROM \"orders\" \"o\" GROUP BY CAST(\"o\".\"cat\" AS TEXT) COLLATE \"C\""
+   :error nil
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register (lambda ()
+      (define-dialect "pg-child" (list :extends "postgresql" :version "17")))
+   :bindings (lambda () (list (cons "O" (binding-relation "orders" "o" (list (cons "CAT" (binding-column "cat" "o" :text)) (cons "MISC" (binding-column "misc" "o" :unknown))) nil nil)))))
+  (list
+   :name "agg.guarded-sum.inherited.mariadb-child-bucket"
+   :at "53-dialect-inheritance.sqlt:282"
+   :dialect "mariadb-11.8"
+   :source "O .> BUCKET(_[\"CAT\"], RECORD(\"s\", SUM(_, _[\"MISC\"])))"
+   :expect "SELECT CASE WHEN COUNT(*) = COUNT(CASE WHEN (`o`.`misc` REGEXP '\\\\A-?[0-9]+(\\\\.[0-9]+)?\\\\z') THEN 1 END) THEN COALESCE(SUM(CAST(`o`.`misc` AS DECIMAL(65,10))), 0) ELSE NULL END AS `s` FROM `orders` `o` GROUP BY CAST(`o`.`cat` AS CHAR) COLLATE utf8mb4_nopad_bin"
+   :error nil
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register (lambda ()
+      (define-dialect "mariadb-11.8" (list :extends "mariadb" :version "11.8")))
+   :bindings (lambda () (list (cons "O" (binding-relation "orders" "o" (list (cons "CAT" (binding-column "cat" "o" :text)) (cons "MISC" (binding-column "misc" "o" :unknown))) nil nil)))))
+  (list
+   :name "agg.guarded-sum.refused-at-the-sum"
+   :at "53-dialect-inheritance.sqlt:299"
+   :dialect "mariadb-11.8"
+   :source "SUM(ITEMS, _[\"QTY\"])"
+   :expect nil
+   :error "E_SQL_UNSUPPORTED 1:1"
+   :throws nil
+   :params nil
+   :as nil
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register (lambda ()
+      (define-dialect "mariadb-11.8" (list :extends "mariadb" :version "11.8"))
+      (define-entry "mariadb-11.8" :skel "guardedSum" "this deployment does not read undeclared columns as numbers"))
+   :bindings (lambda () (list (cons "ITEMS" (binding-relation "oi" "oi" (list (cons "QTY" (binding-column "qty" "oi" :unknown))) nil "\"oi\".\"o\"=\"o\".\"id\"")))))
+  (list
+   :name "agg.guarded-sum.refused-at-the-bucket-sum"
+   :at "53-dialect-inheritance.sqlt:315"
+   :dialect "mariadb-11.8"
+   :source "O .> BUCKET(_[\"CAT\"], RECORD(\"s\", SUM(_, _[\"MISC\"])))"
+   :expect nil
+   :error "E_SQL_UNSUPPORTED 1:35"
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register (lambda ()
+      (define-dialect "mariadb-11.8" (list :extends "mariadb" :version "11.8"))
+      (define-entry "mariadb-11.8" :skel "guardedSum" "this deployment does not read undeclared columns as numbers"))
+   :bindings (lambda () (list (cons "O" (binding-relation "orders" "o" (list (cons "CAT" (binding-column "cat" "o" :text)) (cons "MISC" (binding-column "misc" "o" :unknown))) nil nil)))))
+  (list
+   :name "alias.identifier-bytes.duplicate-keys-are-a-duplicate"
+   :at "53-dialect-inheritance.sqlt:331"
+   :dialect "postgresql"
+   :source "ITEMS .> MAP(RECORD(\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\", _[\"PRICE\"], \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\", _[\"PRICE\"]))"
+   :expect nil
+   :error "E_SQL_SHAPE 1:182"
+   :throws nil
+   :params nil
+   :as "statement"
+   :mode nil
+   :strict nil
+   :plan nil
+   :tables :none
+   :register nil
+   :bindings (lambda () (list (cons "ITEMS" (binding-relation "items" "i" (list (cons "PRICE" (binding-column "price" nil :num))) nil nil)))))))

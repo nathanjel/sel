@@ -222,22 +222,24 @@ export class Translator {
     }
   }
 
-  // PostgreSQL cuts an identifier to 63 bytes: two record keys that differ only
-  // past that are one column there and two keys in SEL.
+  // A server that cuts an identifier to lexical.identifierBytes (PostgreSQL:
+  // 63) keeps the whole characters that fit: two record keys that differ only
+  // past that are one column there and two keys in SEL (sql/MAP.md §3.1).
   checkTruncation(seen, name, pos) {
-    if (!map.chain(this.dialect).includes('postgresql')) return;
+    const limit = identifierBytes(this.dialect);
+    if (limit === null) return;
     let bytes = 0;
     let cut = '';
     for (const ch of name) {
       const n = cpUtf8Length(ch.codePointAt(0));
-      if (bytes + n > 63) break;
+      if (bytes + n > limit) break;
       bytes += n;
       cut += ch;
     }
     if (seen.has(cut) && seen.get(cut) !== name) {
       refuse('E_SQL_UNSUPPORTED',
-        'two names that differ only after PostgreSQL\'s 63-byte identifier limit would '
-        + 'become one column alias', pos);
+        `two names that differ only after dialect ${this.dialect}'s ${limit}-byte `
+        + 'identifier limit would become one column alias', pos);
     }
     seen.set(cut, name);
   }
@@ -1039,7 +1041,7 @@ export class Translator {
           this.requireNumericConstant(bodyNode);
           inner = this.requireNum(inner, bodyNode.pos, 'SUM');
           inner = this.sumBody(inner, bodyNode, true);
-          if (inner.sumTest) return this.sumOverRows(inner);
+          if (inner.sumTest) return this.sumOverRows(inner, n.pos);
           return new Fragment(['COALESCE(SUM(', ...inner.parts, '), 0)'], 'NUM', this.dialect,
             inner.params, inner.paramKinds, inner.caveats);
         }
@@ -1883,12 +1885,10 @@ export class Translator {
           `dialect ${this.dialect}'s sum skeleton has a shape a guarded SUM cannot `
           + 'be built from', n.pos);
       }
-      const guarded = tpl.replace(sumExpr,
-        'CASE WHEN COUNT(*) = COUNT(CASE WHEN {test} THEN 1 END) THEN '
-        + `${sumExpr} ELSE NULL END`);
+      const guarded = tpl.replace(sumExpr, () => this.skeleton('guardedSum', n.pos));
       return new Fragment(
         this.fillNamed(guarded,
-          slots(this.relationSlots(rel), { body: [this.sumCast(body)], test: [body.sumTest] }), n.pos),
+          slots(this.relationSlots(rel), { body: [body], test: [body.sumTest] }), n.pos),
         AGG_RETURNS[name], this.dialect);
     }
     return new Fragment(
@@ -2273,23 +2273,13 @@ export class Translator {
     return cast;
   }
 
-  // The argument SUM adds up in the all-or-nothing form. PostgreSQL evaluates the
-  // cast of EVERY row before the enclosing CASE decides the sum is NULL, and its
-  // cast of 'x' to NUMERIC is an error, not a NULL: there the cast is guarded
-  // itself, so a row that is not a number reaches SUM as NULL and the outer test
-  // turns the whole sum into NULL. The MySQL family casts a non-number to 0 with a
-  // warning, which the outer test already discards (docs/internals/sql-kinds.md 5a).
-  sumCast(body) {
-    if (!map.chain(this.dialect).includes('postgresql')) return body;
-    return new Fragment(['CASE WHEN ', ...body.sumTest.parts, ' THEN ', ...body.parts,
-      ' ELSE NULL END'], body.kind, this.dialect);
-  }
-
-  // The SUM select-list expression for a body that carries a `sumTest`.
-  sumOverRows(body) {
-    return new Fragment(['CASE WHEN COUNT(*) = COUNT(CASE WHEN ', ...body.sumTest.parts,
-      ' THEN 1 END) THEN COALESCE(SUM(', ...this.sumCast(body).parts, '), 0) ELSE NULL END'],
-    'NUM', this.dialect);
+  // The SUM select-list expression for a body that carries a `sumTest`: the
+  // dialect's guardedSum skeleton (sql/MAP.md §5.1), which says whether the cast
+  // inside SUM needs a guard of its own (docs/internals/sql-kinds.md 5a).
+  sumOverRows(body, pos) {
+    return new Fragment(
+      this.fillNamed(this.skeleton('guardedSum', pos), { body: [body], test: [body.sumTest] }, pos),
+      'NUM', this.dialect);
   }
 
   // SUM's counterpart to requireBool, and it parts company with it on UNKNOWN.
@@ -2315,6 +2305,12 @@ export class Translator {
     if (typeof s === 'string') {
       refuse('E_SQL_UNSUPPORTED',
         `dialect ${this.dialect} cannot express ${name} — ${s}`, pos);
+    }
+    // A builder registered on `skel` has no template: rendering one spelled
+    // `undefined` into the SQL. Refused, as the other hosts refuse it.
+    if ((s.builder ?? null) !== null) {
+      refuse('E_SQL_UNSUPPORTED',
+        `the ${name} skeleton for ${this.dialect} is a builder, and a skeleton is a template`, pos);
     }
     // A skeleton may carry a caveat, and until MariaDB's CASE needed one nothing
     // here read it — so `skel` was the one section whose entries could declare an
@@ -2877,6 +2873,7 @@ export class Translator {
     const { args } = step;
     const lim = this.evalIntParam(args[1], 'TAKE');
     plan.limit = plan.limit === null || lim < plan.limit ? lim : plan.limit;
+    plan.limitPos = step.pos;
     return plan;
   }
 
@@ -2890,6 +2887,7 @@ export class Translator {
     if (plan.limit !== null) plan.limit -= skipped;
     const merged = (plan.offset ?? 0n) + skipped;
     plan.offset = merged > INT64_MAX ? INT64_MAX : merged;
+    plan.limitPos = step.pos;
     return plan;
   }
 
@@ -3012,6 +3010,7 @@ export class Translator {
     if (isTop) {
       const limit = this.evalIntParam(args[args.length - 1], name);
       plan.limit = plan.limit === null || limit < plan.limit ? limit : plan.limit;
+      plan.limitPos = step.pos;
     }
     // The form, as the evaluator decodes it (registry.argRoles): the key, its
     // binder, and for SORT_BY/TOP_BY the direction slot after the key when the
@@ -3274,24 +3273,17 @@ export class Translator {
     }
   }
 
-  // LIMIT / OFFSET, with each dialect's spelling of "no limit" for an OFFSET alone.
+  // LIMIT / OFFSET, spelled by the dialect's limit, limitOffset and offsetOnly
+  // skeletons (sql/MAP.md §5.1) -- offsetOnly is where the servers differ, each
+  // with its own spelling of "no limit". A refusal blames the last TAKE, TOP or
+  // DROP that shaped the clause.
   renderLimit(plan, parts) {
     const limit = plan.limit;
     const offset = plan.offset;
-    if (limit !== null && offset !== null) {
-      parts.push(` LIMIT ${limit} OFFSET ${offset}`);
-    } else if (limit !== null) {
-      parts.push(` LIMIT ${limit}`);
-    } else if (offset !== null) {
-      const chain = map.chain(this.dialect);
-      if (chain.includes('mariadb') || chain.includes('mysql') || chain.includes('mysql-family')) {
-        parts.push(` LIMIT 18446744073709551615 OFFSET ${offset}`);
-      } else if (chain.includes('sqlite')) {
-        parts.push(` LIMIT -1 OFFSET ${offset}`);
-      } else {
-        parts.push(` OFFSET ${offset}`);
-      }
-    }
+    if (limit === null && offset === null) return;
+    const key = limit === null ? 'offsetOnly' : offset === null ? 'limit' : 'limitOffset';
+    const counts = { limit: [limit === null ? '' : String(limit)], offset: [offset === null ? '' : String(offset)] };
+    parts.push(' ' + this.fillNamed(this.skeleton(key, plan.limitPos), counts, plan.limitPos).join(''));
   }
 }
 
@@ -3317,6 +3309,14 @@ function aggShape(n, roles = argRoles(n.name, n.args, null)) {
 }
 
 // A binder's keys: its name and that name's ASCII lowercase (spec §7.4).
+// lexical.identifierBytes as a count, or null where the dialect keeps every
+// identifier whole: one to nine digits are the count, anything else (absent,
+// withdrawn, malformed) is no limit, in every host (sql/MAP.md §3).
+function identifierBytes(dialect) {
+  const v = map.lexical(dialect, 'identifierBytes');
+  return typeof v === 'string' && /^[0-9]{1,9}$/.test(v) ? Number(v) : null;
+}
+
 function binderKeys(names) {
   const out = [];
   for (const name of names) {

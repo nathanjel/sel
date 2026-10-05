@@ -9,7 +9,7 @@ use crate::sql::constants::scope as const_scope;
 use crate::sql::emit::Emit;
 use crate::sql::map::{entry, require_target, EntryKind};
 use crate::sql::normalise::normalise;
-use crate::sql::translator::{Options, Translator};
+use crate::sql::translator::{Options, Slot, SlotMap, Translator};
 use crate::sql::types::{Fragment, Mode, Part, SqlKind};
 use crate::utf8::{Pos, SelError};
 use crate::value::Value;
@@ -623,8 +623,9 @@ fn try_latest_member(
     opts: Options,
     helpers: &HelpersContext,
 ) -> Option<HybridPlan> {
-    if dialect != "mariadb" && dialect != "mysql" && dialect != "postgresql" && dialect != "sqlite"
-    {
+    // The statement is the dialect's latestMember skeleton (sql/MAP.md §5.2); a
+    // dialect that refuses it keeps the grouping in memory.
+    if !entry(dialect, "skel", "latestMember").is_some_and(|e| e.kind == EntryKind::Template) {
         return None;
     }
     if !catalog.has(&source.s) {
@@ -768,12 +769,26 @@ fn try_latest_member(
         .ok()?;
     let key_str = key_frag.as_value(Mode::Inline).ok()?;
 
-    let mut parts = vec![Part::Sql(format!("WITH {} AS (", qi))];
-    parts.extend(sql.parts.clone());
-    parts.push(Part::Sql(format!(
-        "), {} AS (SELECT MAX({}) AS {}, MIN({}) AS {} FROM {} GROUP BY {}) SELECT {}.* FROM {} JOIN {} ON {}.{} = {}.{} ORDER BY {}.{} ASC",
-        qg, qr, qmax, qr, qfirst, qi, key_str, qi, qi, qg, qi, qr, qg, qmax, qg, qfirst
-    )));
+    // The translator's own skeleton lookup: a refusal, or a caveat under strict,
+    // leaves the grouping in memory, and the caveat otherwise joins the statement's.
+    let mut tr = Translator::new(dialect, None, opts);
+    let tpl = tr.skeleton("latestMember", source.pos).ok()?;
+    let slots: SlotMap = vec![
+        ("input".into(), vec![Slot::Str(qi)]),
+        ("prefix".into(), vec![Slot::Frag(sql.clone())]),
+        ("groups".into(), vec![Slot::Str(qg)]),
+        ("rev".into(), vec![Slot::Str(qr)]),
+        ("maxRev".into(), vec![Slot::Str(qmax)]),
+        ("firstRev".into(), vec![Slot::Str(qfirst)]),
+        ("key".into(), vec![Slot::Str(key_str)]),
+    ];
+    let parts = tr.fill_named(&tpl, &slots, source.pos).ok()?;
+    let mut caveats = sql.caveats.clone();
+    for c in &tr.caveats {
+        if !caveats.contains(c) {
+            caveats.push(c.clone());
+        }
+    }
 
     let remaining = &steps[at..];
     let continuation = helpers.wrap(&build_pipeline(&var_node("_INPUT", steps[at].pos), remaining));
@@ -786,7 +801,7 @@ fn try_latest_member(
             dialect,
             sql.params,
             sql.param_kinds,
-            sql.caveats,
+            caveats,
         )),
         sql_prefix_ast: Some(prefix),
         continuation_ast: Some(continuation),

@@ -187,6 +187,7 @@ key. Every key below must resolve for a `target` dialect; the generator checks.
 | `isTrue` / `isNotTrue` | string | templates folding SQL's third truth value into two |
 | `placeholder` | string | `params`-mode placeholder; `{n}` is the 1-based ordinal, absent for positional `?` |
 | `sargablePrefilter` | string | `"true"` if the engine requires a coarse equality prefilter on sargable text equality (`col = 'val' AND ...`), `"false"` where bare equality is exact |
+| `identifierBytes` | digit string, **optional** | the longest identifier, in UTF-8 bytes, the server keeps: it cuts a longer one to the whole characters that fit and drops the rest, so two program-supplied names that agree on that prefix are refused (§3.1). `postgresql` declares `63`; a dialect that keeps identifiers whole leaves it undeclared. A host reads one to nine digits as the count and anything else as no limit; the generator accepts only `1` to `999999999` |
 
 Four of these are load-bearing rather than cosmetic:
 
@@ -272,8 +273,13 @@ lets the oracle stop checking it; this holds for every text literal).
 **What a program may name.** An alias or column that comes from a SEL text
 literal — a `RECORD` key, a `SELECT_COLS` name — is held to the rules a binding's
 own names already meet: it is not empty and holds no NUL, else `E_SQL_UNSUPPORTED`
-at the literal; on PostgreSQL two aliases whose first 63 bytes agree are also
-refused, because the server truncates them to one name. A TEXT value holding NUL
+at the literal; on a dialect that declares `identifierBytes` (PostgreSQL: 63) two
+aliases that agree once each is cut to the whole characters fitting in that many
+bytes are also refused, at the later one, because the server truncates them to one
+name. The cut is at a character boundary, as the server's is: `"a"×62 & "é"` is cut
+to the 62 `a`s, so it collides with `"a"×62` itself. It is a lexical key rather than
+a test for `postgresql` so that a dialect registered on `postgresql` inherits it and
+one registered elsewhere can declare it. A TEXT value holding NUL
 is refused in **every** mode, `E_SQL_UNSUPPORTED` at the literal (PostgreSQL cannot
 hold it and a C-string client truncates at it). Binding names that differ only by
 ASCII case (two bindings, or two fields of one relation) are the same SEL name and
@@ -721,6 +727,11 @@ mode is a refusal reason emitted into a query as SQL.
 | `join` | `{from}`, `{corr}`, `{body}`, `{sep}` | `JOIN` |
 | `inRelation` | `{needle}`, `{from}`, `{corr}`, `{body}` | `x IN relation` |
 | `prefilter` | `{from}`, `{corr}`, `{body}` | Sibling `EXISTS` precondition for separate relation prefilters |
+| `guardedSum` | `{test}`, `{body}` | the all-or-nothing `SUM` of a body nobody declared `NUM` (§5.1) |
+| `limit` | `{limit}` | a statement's row limit (`TAKE`, `TOP`), after its `ORDER BY` |
+| `limitOffset` | `{limit}`, `{offset}` | a limit and a skip (`TAKE` with `DROP`) |
+| `offsetOnly` | `{offset}` | a skip with no limit (`DROP` alone) |
+| `latestMember` | `{input}`, `{prefix}`, `{groups}`, `{rev}`, `{maxRev}`, `{firstRev}`, `{key}` | the hybrid planner's latest-member statement (§5.2) |
 
 ```jsonc
 "all":  { "tpl": "NOT EXISTS (SELECT 1 FROM {from} WHERE {corr} AND ({body}) IS NOT TRUE)" },
@@ -745,6 +756,50 @@ application expression, and a top-level `OR` in it must not change the meaning o
 the `AND` the template puts after it (`WHERE (a = o.id OR b = o.id) AND …`) — or
 with `lexical.true`, unparenthesised, when the binding omits one; an uncorrelated relation is a subquery over the whole table,
 which is legal and occasionally what you want.
+
+### 5.1 Statement clauses and the guarded `SUM`
+
+`limit`, `limitOffset` and `offsetOnly` spell the end of a pipeline statement;
+the host prepends one space. `ansi` states the standard — `FETCH FIRST {limit}
+ROWS ONLY`, `OFFSET {offset} ROWS` — and every shipped target says `LIMIT` in its
+own file. `offsetOnly` is where the targets really differ, because neither the
+MySQL family's grammar nor SQLite's has an `OFFSET` without a `LIMIT`:
+
+| Dialect | `offsetOnly` |
+|---|---|
+| `ansi` | `OFFSET {offset} ROWS` |
+| `mysql-family` | `LIMIT 18446744073709551615 OFFSET {offset}` |
+| `postgresql` | `OFFSET {offset}` |
+| `sqlite` | `LIMIT -1 OFFSET {offset}` |
+
+A dialect registered on any of them inherits its parent's spelling. A refusal
+refuses the statement `E_SQL_UNSUPPORTED` at the last `TAKE`, `TOP` or `DROP` that
+shaped the clause.
+
+`guardedSum` is the select-list expression of a `SUM` whose body is read through
+the dialect's `numericGuard` (docs/internals/sql-kinds.md §5a): `{test}` is the
+guard's test and `{body}` its cast, both filled with the operand. A group's `SUM`
+is this expression; a relation's is the `sum` skeleton with its
+`COALESCE(SUM({body}), 0)` replaced by it, so a `sum` skeleton that does not
+contain that text cannot be guarded and is refused. `ansi` guards the cast *inside*
+`SUM` as well, because standard SQL raises an exception casting text that is not a
+number and the server casts every row before the outer `CASE` decides;
+`mysql-family`, whose cast answers 0 with a warning, leaves it bare. A refusal
+refuses at the `SUM` call.
+
+### 5.2 `latestMember` is a capability as well as a shape
+
+The latest-member plan (docs/internals/sql-translation.md §12.1) is the one
+skeleton the hybrid planner fills rather than the translator. `{prefix}` is the
+pushed-down statement, `{input}` and `{groups}` the two CTE names, `{rev}`,
+`{maxRev}` and `{firstRev}` the revision column and its two aggregate aliases, and
+`{key}` the partition key as a text operand. `ansi` spells it in SQL:1999, so every
+dialect inherits the plan — a registered `mariadb-11.8` as much as `mariadb`.
+
+A dialect that refuses it (a string, or `null`) loses only the strategy: the
+planner leaves the grouping to memory, as it does for every program the strategy
+does not fit, and nothing is raised. A caveat on it reaches the statement's
+caveats, and under `strict` the planner does not take the strategy.
 
 ---
 
@@ -772,8 +827,10 @@ defend against a malformed map:
    the chain is acyclic, at most eight deep, and reaches `ansi`.
 2. Every `target` dialect resolves every `lexical` key in §3, except
    `numericGuard`, which is optional because two of the four targets cannot
-   express it. Nothing else may be optional: a dialect that cannot quote an
-   identifier is not a dialect.
+   express it, and `numericCastScale` and `identifierBytes`, whose absence means
+   "no such limit". Nothing else may be optional: a dialect that cannot quote an
+   identifier is not a dialect. `identifierBytes`, where declared, is a count of
+   one to nine digits.
 3. Every entry is an object, a string, or `null`; every object has exactly one of
    `tpl`/`variants` and a valid `ret`.
 4. Every `{n}` in a template is within the entry's effective arity, and that
