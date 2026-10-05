@@ -11,16 +11,16 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 . tools/impls.sh
+. tools/parity-lib.sh
 
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 
-pids=()
-for impl in $(available_impls); do
-  sel_slot impl_sqlapi "$impl" > "$WORK/$impl.txt" &
-  pids+=($!)
-done
-sel_wait "${pids[@]}" || { echo "an SQL API probe exited non-zero" >&2; exit 1; }
+# A driver that dies is named and fails the run, and the hosts that answered are
+# still compared, as in tools/check-api.sh.
+status=0
+# shellcheck disable=SC2046
+parity_run sqlapi "$WORK" $(available_impls) || status=1
 
 IMPLS=""
 for impl in $(available_impls); do
@@ -33,15 +33,11 @@ if [ "$(echo "$IMPLS" | wc -w)" -lt 2 ]; then
 fi
 REF="${IMPLS%% *}"
 
-status=0
-for impl in $IMPLS; do
-  [ "$impl" = "$REF" ] && continue
-  if ! diff -u "$WORK/$REF.txt" "$WORK/$impl.txt" > "$WORK/$impl.diff"; then
-    echo "SQL API MISMATCH between $REF and $impl (--- $REF, +++ $impl):"
-    cat "$WORK/$impl.diff"
-    status=1
-  fi
-done
+# Matched by probe name (tools/check-api-compare.py), so a reordered driver
+# cannot shift every comparison after it.
+# shellcheck disable=SC2086
+python3 tools/check-api-compare.py --label "SQL API" "$WORK" - "$REF" $IMPLS > "$WORK/compare.txt" || status=1
+grep -q 'CHECK FAILED' "$WORK/compare.txt" && cat "$WORK/compare.txt"
 # Agreement alone passes a defect every host shares -- the canonical flag was
 # dropped by every host's top-level translate at once, and parity was green.
 # These lines are the contract's values, pinned (SEL-0058). The render.* and
@@ -64,7 +60,5 @@ for want in 'fragment.canon.postgresql.kind = NUM' 'fragment.canon.postgresql.ca
     status=1
   fi
 done
-if [ "$status" -eq 0 ]; then
-  echo "$(wc -l < "$WORK/$REF.txt") SQL API probes, $IMPLS agree on every one"
-fi
+[ "$status" -eq 0 ] && cat "$WORK/compare.txt"
 exit "$status"

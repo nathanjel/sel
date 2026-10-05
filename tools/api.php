@@ -1,8 +1,8 @@
 #!/usr/bin/env php
 <?php
 // API parity probe — PHP. See tools/api.mjs for what this is and why.
-// The four drivers must stay in the same order with the same probe names; the
-// diff between their reports is the whole mechanism.
+// Every driver prints the same probe NAMES; tools/check-api-compare.py matches
+// them by name, so order and numbering are each driver's own.
 
 declare(strict_types=1);
 require_once __DIR__ . '/../php/src/bootstrap.php';

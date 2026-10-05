@@ -15,8 +15,8 @@
 // harness.
 //
 // A probe belongs here when it is part of the host contract in spec/SPEC.md §8.
-// Keep every driver in the same order with the same names; the diff is the
-// whole mechanism.
+// Every driver prints the same probe NAMES; tools/check-api-compare.py matches
+// them by name, so order and numbering are each driver's own.
 
 const { compile, evaluate, Value, SelError, functionNames, registerFunction, NONE, TEXT, BIN, BOOL } =
   await import(process.env.SEL_JS_ENTRY ?? '../js/src/sel.mjs');
