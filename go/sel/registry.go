@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"regexp"
 	"sort"
+	"strings"
 	"sync"
 
 	"github.com/nathanjel/sel/go/internal/manifest"
@@ -51,23 +52,12 @@ func Define(spec *Spec) {
 			wrong = append(wrong, "an arity rule of its own, which the manifest owns")
 		}
 		if len(wrong) > 0 {
-			panic(fmt.Sprintf("SEL function %s disagrees with spec/builtins.json: %s", key, stringsJoin(wrong, "; ")))
+			panic(fmt.Sprintf("SEL function %s disagrees with spec/builtins.json: %s", key, strings.Join(wrong, "; ")))
 		}
 		spec.ArityError = m.ArityError
 	}
 
 	funcTable[key] = spec
-}
-
-func stringsJoin(elems []string, sep string) string {
-	if len(elems) == 0 {
-		return ""
-	}
-	s := elems[0]
-	for _, e := range elems[1:] {
-		s += sep + e
-	}
-	return s
 }
 
 // The manifest (spec/builtins.json) names every built-in; each is defined by some
@@ -92,7 +82,7 @@ func assertManifestCovered() {
 		}
 		if len(missing) > 0 {
 			sort.Strings(missing)
-			manifestMissing = fmt.Sprintf("spec/builtins.json names %s but no module defines it", stringsJoin(missing, ", "))
+			manifestMissing = fmt.Sprintf("spec/builtins.json names %s but no module defines it", strings.Join(missing, ", "))
 		}
 	})
 	if manifestMissing != "" {

@@ -169,22 +169,13 @@ func scalarFields(row *rowModel) []pair[string, rowField] {
 	}
 	var out []pair[string, rowField]
 	if row.Relation != nil {
-		if len(row.Relation.FieldOrder) > 0 {
-			for _, u := range row.Relation.FieldOrder {
-				if spec, ok := row.Relation.Fields[u]; ok {
-					out = append(out, pair[string, rowField]{
-						Key: u,
-						Val: rowField{Spec: spec, Table: row.Table, Qualify: row.Qualify, Optional: false},
-					})
-				}
-			}
-		} else {
-			for u, spec := range row.Relation.Fields {
-				out = append(out, pair[string, rowField]{
-					Key: u,
-					Val: rowField{Spec: spec, Table: row.Table, Qualify: row.Qualify, Optional: false},
-				})
-			}
+		// In declared order, as relationFieldNames gives it: ranging over the
+		// Fields map gave a different order each run.
+		for _, u := range relationFieldNames(row.Relation) {
+			out = append(out, pair[string, rowField]{
+				Key: u,
+				Val: rowField{Spec: row.Relation.Fields[u], Table: row.Table, Qualify: row.Qualify, Optional: false},
+			})
 		}
 	}
 	return out

@@ -467,22 +467,11 @@ func escapeValue(e rune) rune {
 
 // ---- analyses on the tree ---------------------------------------------------
 
-func satAddLen(a, b int64) int64 {
-	if a+b > regexSat {
-		return regexSat
-	}
-	return a + b
-}
+// satAddLen and satMulLen are sizecaps' saturating sum and product, saturating
+// at regexSat (2^40), the analysis' "unbounded".
+func satAddLen(a, b int64) int64 { return min(satAdd(a, b), regexSat) }
 
-func satMulLen(a, b int64) int64 {
-	if a == 0 || b == 0 {
-		return 0
-	}
-	if a > regexSat/b {
-		return regexSat
-	}
-	return a * b
-}
+func satMulLen(a, b int64) int64 { return min(satMul(a, b), regexSat) }
 
 // analyse fills nullable, minLen and hasCap bottom-up.
 func analyse(n *reNode) {

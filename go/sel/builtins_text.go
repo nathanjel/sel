@@ -10,9 +10,8 @@ import (
 	"github.com/nathanjel/sel/go/internal/utf8"
 )
 
-func isSelSpace(r rune) bool {
-	return r == ' ' || r == '\t' || r == '\r' || r == '\n'
-}
+// isSelSpace is SEL's whitespace (spec §2): the lexer's isSpace.
+func isSelSpace(r rune) bool { return isSpace(r) }
 
 // Code-point indexing without a []rune round trip. Text is valid UTF-8,
 // so a byte offset is found by walking boundaries; ASCII bytes take the one-step
@@ -121,7 +120,7 @@ func init() {
 		Min:  1,
 		Max:  1,
 		Fn: func(args *Args, ctx *Context) *Value {
-			return NewInt(int64(len([]rune(args.Text(0)))))
+			return NewInt(runeLen(args.Text(0)))
 		},
 	})
 

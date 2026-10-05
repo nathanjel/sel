@@ -16,14 +16,26 @@ const (
 	maxPower = 100000
 )
 
-func checkSizedInt(d *decimal.Dec, name string, argNum int, limit int64, what string, pos Pos) int {
+// wholeArgument is argument argNum of name read as a whole number (E_NOT_INT
+// otherwise); nonNegativeArgument refuses one below zero (E_RANGE). Args.Int,
+// Args.NonNegInt and checkSizedInt, which a math plan uses with no Args, share
+// them.
+func wholeArgument(d *decimal.Dec, name string, argNum int, pos Pos) int64 {
 	if !decimal.IsInteger(d) {
 		fail("E_NOT_INT", fmt.Sprintf("%s argument %d must be a whole number", name, argNum), pos)
 	}
-	n := decimal.ToSafeInt(d)
+	return decimal.ToSafeInt(d)
+}
+
+func nonNegativeArgument(n int64, name string, argNum int, pos Pos) {
 	if n < 0 {
 		fail("E_RANGE", fmt.Sprintf("%s argument %d must not be negative", name, argNum), pos)
 	}
+}
+
+func checkSizedInt(d *decimal.Dec, name string, argNum int, limit int64, what string, pos Pos) int {
+	n := wholeArgument(d, name, argNum, pos)
+	nonNegativeArgument(n, name, argNum, pos)
 	if n > limit {
 		fail("E_RANGE", fmt.Sprintf("%s %d exceeds the maximum of %d", what, n, limit), pos)
 	}

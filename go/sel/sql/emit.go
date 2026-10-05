@@ -196,7 +196,13 @@ func (e *Emit) NumericOperand(f *Fragment, pos Pos) *Fragment {
 		refuse("E_SQL_UNSUPPORTED", fmt.Sprintf("dialect %s has no way to ask whether a value is a number, so an operand it has not been told is one cannot be read as one here; declare the binding NUM if the column really is numeric", e.dialect), pos)
 	}
 	parts := e.Fill(guard, []*Fragment{f}, pos, nil)
-	res := NewFragment(parts, KindNum, e.dialect, f.Params, f.ParamKinds, f.Caveats)
+	return rewrap(f, parts, KindNum, e.dialect)
+}
+
+// rewrap is f's SQL replaced by parts of the given kind, its parameters and
+// everything known about it kept.
+func rewrap(f *Fragment, parts []Part, kind SqlKind, dialect string) *Fragment {
+	res := NewFragment(parts, kind, dialect, f.Params, f.ParamKinds, f.Caveats)
 	res.ExactCollation = f.ExactCollation
 	res.Sargable = f.Sargable
 	res.Guard = f.Guard
@@ -225,14 +231,7 @@ func (e *Emit) TextOperand(f *Fragment) *Fragment {
 		parts = append(parts, Part{Sql: collate})
 	}
 
-	res := NewFragment(parts, KindText, e.dialect, f.Params, f.ParamKinds, f.Caveats)
-	res.ExactCollation = f.ExactCollation
-	res.Sargable = f.Sargable
-	res.Guard = f.Guard
-	res.Prefilter = f.Prefilter
-	res.SeparatePrefilter = f.SeparatePrefilter
-	res.Canonical = f.Canonical
-	return res
+	return rewrap(f, parts, KindText, e.dialect)
 }
 
 func (e *Emit) Ident(name string) string {

@@ -101,18 +101,12 @@ func (a *Args) dec(i int) *decimal.Dec {
 }
 
 func (a *Args) Int(i int) int64 {
-	d := a.dec(i)
-	if !decimal.IsInteger(d) {
-		fail("E_NOT_INT", fmt.Sprintf("%s argument %d must be a whole number", a.name, i+1), a.PosOf(i))
-	}
-	return decimal.ToSafeInt(d)
+	return wholeArgument(a.dec(i), a.name, i+1, a.PosOf(i))
 }
 
 func (a *Args) NonNegInt(i int) int64 {
 	n := a.Int(i)
-	if n < 0 {
-		fail("E_RANGE", fmt.Sprintf("%s argument %d must not be negative", a.name, i+1), a.PosOf(i))
-	}
+	nonNegativeArgument(n, a.name, i+1, a.PosOf(i))
 	return n
 }
 

@@ -444,17 +444,22 @@ func validate(n *sNode, root *sel.Value) {
 	n.valid = true
 }
 
-func validateNode(n *sNode, root *sel.Value) {
+// evalConstant runs a constant subtree as written (no optimiser) over root, or
+// over NULL when root is nil; ok is false for a subtree with no plain-tree form.
+func evalConstant(n *sNode, root *sel.Value) (val *sel.Value, ok bool, err error) {
 	node := n.ToNode()
 	if node == nil {
-		return
+		return nil, false, nil
 	}
-	prog := sel.NewProgram("", node)
 	if root == nil {
 		root = sel.NewNull()
 	}
-	_, err := prog.RunAsWritten(root)
-	if err != nil {
+	val, err = sel.NewProgram("", node).RunAsWritten(root)
+	return val, true, err
+}
+
+func validateNode(n *sNode, root *sel.Value) {
+	if _, _, err := evalConstant(n, root); err != nil {
 		refuseAsSel(err, n)
 	}
 }
@@ -468,15 +473,10 @@ func requireNumeric(n *sNode, root *sel.Value) {
 }
 
 func requireNumericNode(n *sNode, root *sel.Value) {
-	node := n.ToNode()
-	if node == nil {
+	val, ok, err := evalConstant(n, root)
+	if !ok {
 		return
 	}
-	prog := sel.NewProgram("", node)
-	if root == nil {
-		root = sel.NewNull()
-	}
-	val, err := prog.RunAsWritten(root)
 	if err != nil {
 		refuseAsSel(err, n)
 	}
@@ -494,15 +494,8 @@ func requireNumericNode(n *sNode, root *sel.Value) {
 // (`'0.1' + '0.2' = 0.3` is false there), so the translator spells it as the exact
 // numeric literal it stands for.
 func numericTextConstant(n *sNode, root *sel.Value) (text string, ok bool) {
-	node := n.ToNode()
-	if node == nil {
-		return "", false
-	}
-	if root == nil {
-		root = sel.NewNull()
-	}
-	val, err := sel.NewProgram("", node).RunAsWritten(root)
-	if err != nil {
+	val, ok, err := evalConstant(n, root)
+	if !ok || err != nil {
 		return "", false
 	}
 	if !val.IsText() || !val.LooksNumeric() {
@@ -518,15 +511,10 @@ func numericTextConstant(n *sNode, root *sel.Value) (text string, ok bool) {
 }
 
 func constantScale(n *sNode, root *sel.Value) int {
-	node := n.ToNode()
-	if node == nil {
+	val, ok, err := evalConstant(n, root)
+	if !ok {
 		return 0
 	}
-	prog := sel.NewProgram("", node)
-	if root == nil {
-		root = sel.NewNull()
-	}
-	val, err := prog.RunAsWritten(root)
 	if err != nil {
 		refuseAsSel(err, n)
 	}
