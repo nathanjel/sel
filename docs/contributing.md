@@ -310,8 +310,8 @@ value the caller passed are the same object.
 ## Adding an operator
 
 Genuinely more work than a function, and usually not worth it: an operator costs
-a precedence level, a grammar production, a spec change, and a line in two
-tokenisers, where a function costs one table entry. Add one only when the thing
+a precedence level, a grammar production, a spec change, a lexicon entry and an
+evaluator branch in every host, where a function costs one table entry. Add one only when the thing
 is *syntax* — used constantly and unreadable as a call.
 
 If you still want it, here is the whole checklist. Worked example: `//`, integer
@@ -327,57 +327,44 @@ semantics, including which kinds it accepts and which error it raises.
 **3. Conformance cases** — in `03-operators.selt`, covering precedence against
 its neighbours, associativity, and the failure modes.
 
-**4. Every tokeniser** — `OPERATORS` in `js/src/lexer.mjs`,
-`php/src/Lexer.php` and `python/sel/lexer.py`, `operators()` in `cpp/sel.cpp`,
-`+operators+` in `lisp/src/lexer.lisp`. Same list, same order, longest first.
-Getting this wrong makes `//` lex as two `/` tokens and the failure will look
-like a parser bug.
+**4. `spec/lexicon.json`** — the token, in its level's `operators` (or a new
+level, in §5's row order), with its family: `{ "family": "arith" }` for `//`
+in the `MUL` level. Then `node tools/gen-lexicon.mjs`. That one edit is every
+host's tokeniser (its `SYMBOLS` list, longest first — the generator sorts it,
+so `//` cannot end up after `/`) and every parser's binding-power table (the
+seven parsers build their `infix` tables from the rendering), and the
+generator refuses to render while steps 1 and 2 say something else: it checks
+the grammar's token block, reserved words, `assign_op` and `compare_op`, and
+every row of §5's table. A **word** operator is reserved there too
+(`reserved`), so no lexer can go on accepting it as a variable name. A *new*
+level is a new entry in `levels`; every binding power above it moves up by
+one in all seven hosts at once. Format: `spec/lexicon.md`.
 
-**5. Every parser** — a row in a table, in all five, which is the whole point of
-the migration that finished:
+**5. Nothing per parser** — but know what the table means, because a wrong
+row is a valid parse of the wrong tree, which no compiler catches:
 
-```python
-INFIX_OPS = { ..., '//': (BP_MUL, 'L'), ... }        # python
-```
-```js
-const INFIX_OPS = new Map([ ..., ['//', [BP_MUL, 'L']], ... ]);   // js
-```
-```php
-private const INFIX_OPS = [ ..., '//' => [self::BP_MUL, 'L'], ... ];   // php
-```
-```cpp
-static const std::map<std::string, Infix> ops = { ..., {"//", {BP_MUL, 'L'}}, ... };
-```
-```lisp
-(setf (gethash "//" m) (cons +bp-mul+ #\L))          ; lisp
-```
-
-A *new* precedence level is a new `BP_` constant with the ones above it
-renumbered — no new function, and nothing to wire into a chain. A **word**
-operator goes in the second table (`INFIX_WORDS`), because words lex as
-identifiers and symbols as ops, so they cannot share a key space.
-
-Three things the tables get wrong quietly, none of which the compiler catches,
-because each produces *a valid parse of the wrong tree*:
-
-- **Associativity is three-valued.** `L` parses its right side at `bp + 1`, `R`
-  at `bp` — that is what makes it right-associative — and `N` at `bp + 1` and
-  then rejects a second operator at the same level. A comparison is `N`, and its
-  `E_SYNTAX` is reported at the **second** operator.
-- **A prefix operator is not a primary.** `NOT` binds at 7 and unary `-` at 15,
-  and `parse_prefix` accepts each only when the caller's `min_bp` reaches it.
-  Putting them in `parse_primary`, where textbook precedence climbing puts them,
-  makes `NOT a == b` parse as `(NOT a) == b` and breaks two of the depth pins at
-  the same time.
-- **The list keys are compared as strings.** Lisp's table needs
-  `:test #'equal`; with the default `eql` no operator ever matches and every
-  program is a syntax error at its own first operator. JS uses a `Map` rather
-  than an object so that a token spelled like a name on `Object.prototype`
-  cannot answer for a real operator.
+- **Associativity is three-valued.** `left` parses its right side at `bp + 1`,
+  `right` at `bp` — that is what makes it right-associative — and `none` at
+  `bp + 1` and then rejects a second operator at the same level. A comparison
+  is `none`, and its `E_SYNTAX` is reported at the **second** operator.
+- **A prefix operator is not a primary.** `NOT` binds at 7 and unary `-` at
+  16, and `parse_prefix` accepts each only when the caller's `min_bp` reaches
+  it. Putting them in `parse_primary`, where textbook precedence climbing puts
+  them, makes `NOT a == b` parse as `(NOT a) == b` and breaks two of the depth
+  pins at the same time.
+- **The family is what the rest of the host reads.** The evaluator's compound
+  assignments, the constant folder, the optimiser's "cannot raise" and
+  predicate checks, the join pre-filter, the dependency walker (`shortCircuit`:
+  the right side may never run) and the SQL translators all classify an
+  operator through its lexicon record, not through lists of their own. A new
+  comparison needs its `relation`; a new short-circuit operator needs
+  `shortCircuit`.
 
 **6. Every evaluator** — a branch in `evalBinary` / `eval_binary` /
-`eval-binary`. Use the operand's own position for type errors and the operator's
-for arithmetic ones:
+`eval-binary`. Each host's opcode table is checked against the lexicon when it
+loads, so a host that lacks the branch refuses to start rather than answering
+for an operator it does not know. Use the operand's own position for type
+errors and the operator's for arithmetic ones:
 
 ```js
 case '//': return Value.num(D.trunc(D.div(l.asDecimal(lp), r.asDecimal(rp), node.pos)));
@@ -407,8 +394,8 @@ differential coverage.
 doc checker will then run in every host.
 
 Reserved **words** (`AND`, `EQL`, …) are lexed as identifiers and handled in the
-parser, so they also need adding to the reserved list in every lexer, or they
-stay usable as variable names.
+parser; the lexicon's `reserved` list (step 4) is what makes them unusable as
+variable names in every lexer.
 
 ---
 
