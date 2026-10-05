@@ -85,8 +85,10 @@ def encode_utf8(s: str, pos: Pos | None = None) -> bytes:
     try:
         return s.encode('utf-8')
     except UnicodeEncodeError:
+        # Only a lone surrogate fails to encode, and to_code_points raises
+        # E_UTF8 at it; no replacement character is ever produced.
         to_code_points(s, pos)
-        return s.encode('utf-8', errors='replace')
+        raise
 
 
 def decode_utf8(data: bytes, pos: Pos | None = None) -> str:

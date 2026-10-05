@@ -63,6 +63,9 @@ COMPARE_WORDS = frozenset(['EQL', 'IN'])
 
 # spec/SPEC.md §5, as a table. Higher binds tighter. The gaps are the levels
 # that are not infix: 16 is postfix/primary, 15 is unary minus, 7 is NOT.
+# BP_SEQ and BP_LIST are read by nothing: `;` and `,` are parsed by their own
+# functions (parse_sequence, parse_list), not by the climbing loop. Kept so the
+# table is the whole of §5.
 BP_SEQ = 1        # ;
 BP_LIST = 2       # ,
 BP_ASSIGN = 3     # = += -= *= /= %= &=   (right associative)

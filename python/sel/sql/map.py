@@ -72,7 +72,6 @@ def define_dialect(name: str, spec: dict[str, Any]) -> None:
     Raises RuntimeError, not SqlError: a malformed registration is a mistake in
     the application's startup, and ``try_translate`` must not swallow it.
     """
-    replacing = False
     if exists(name):
         # The same name under the same parent replaces the application's own
         # earlier registration (a start-up that runs twice, a test that resets);
@@ -83,7 +82,6 @@ def define_dialect(name: str, spec: dict[str, Any]) -> None:
         if previous is None or 'extends' not in spec or previous['extends'] != spec['extends']:
             raise RuntimeError(
                 f'SQL dialect {name} is already defined; a name means one dialect')
-        replacing = True
 
     # The keys a dialect declaration carries, and nothing else. `ops`, `funcs`
     # and `skel` are NOT among them -- they are defined one entry at a time with
@@ -154,10 +152,8 @@ def define_dialect(name: str, spec: dict[str, Any]) -> None:
         else:
             _extra[name] = before
         raise
-    if replacing:
-        _guard_checked.discard(name)
-    # A new dialect can inherit a guard memo taken before it existed only by name;
-    # a replaced parent chain is handled by dropping the whole memo.
+    # A new dialect can inherit a guard memo taken before it existed only by name,
+    # and a replaced one invalidates its own and its children's: drop the whole memo.
     _guard_checked.clear()
 
 

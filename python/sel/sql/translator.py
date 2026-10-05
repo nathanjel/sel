@@ -133,7 +133,7 @@ INT64_MAX = 9223372036854775807
 # The key of a frame's own element, under a name no SEL program can spell.
 ELEM = '\0elem'
 BALANCED_FOLD = 256
-_REGEX_AT = {'RMATCH': 0, 'RFIND': 0, 'RREPLACE': 0, 'RGROUPS': 0}
+_REGEX_CALLS = frozenset(('RMATCH', 'RFIND', 'RREPLACE', 'RGROUPS'))   # pattern is argument 0
 
 
 def _lit_node(t: str, v: Any, pos: Pos) -> Node:
@@ -1143,10 +1143,10 @@ class Translator:
         Both the pattern and the flags must be literals: a pattern read from a
         column cannot be rewritten, and the flag selects the template.
         """
-        if n.name not in _REGEX_AT:
+        if n.name not in _REGEX_CALLS:
             return n
-        at = _REGEX_AT[n.name]
-        pat = n.args[at] if at < len(n.args) else None
+        at = 0
+        pat = n.args[at] if n.args else None
         if pat is None or pat.t != 'text':
             refuse('E_SQL_UNSUPPORTED',
                    f'{n.name} needs a literal pattern here: SEL rewrites \\d, \\w and '
@@ -1184,7 +1184,7 @@ class Translator:
         args = list(n.args)
         if flag_at >= len(args):
             args[at] = _lit_node('text', inline + source, args[at].pos)
-            return _replace(n, args=args)
+            return n.replaced(args=args)
         flags = args[flag_at]
         if flags.t != 'text':
             refuse('E_SQL_UNSUPPORTED',
@@ -1220,7 +1220,7 @@ class Translator:
             inline = '(?si)'
         args[at] = _lit_node('text', inline + source, args[at].pos)
         del args[flag_at]                    # folded into the pattern
-        return _replace(n, args=args)
+        return n.replaced(args=args)
 
     def _conditional(self, n: Node) -> Fragment:
         """IF and COND are the same construct: condition/result pairs and a
@@ -3162,10 +3162,6 @@ class Translator:
 
 
 # --- module-level helpers ----------------------------------------------------
-
-def _replace(n: Node, **kw) -> Node:
-    return n.replaced(**kw)
-
 
 def _static_source(elements: dict[str, Binder], scalar_rule: bool = False) -> dict[str, Any]:
     return {'shape': 'static', 'elements': elements, 'filters': [],

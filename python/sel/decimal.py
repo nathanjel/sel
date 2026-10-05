@@ -28,7 +28,6 @@ str() is the conversion being guarded.
 from __future__ import annotations
 
 import re
-import sys
 
 from .errors import Pos, fail
 

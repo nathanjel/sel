@@ -9,7 +9,7 @@ from ..lexer import ascii_upper
 from ..registry import INF, define
 from .aggregate import _SCALAR_FRESH_CALLS
 from ..parser import Node
-from ..value import NONE, TEXT, Value, elements, iter_elements, iter_values, structural_hash, _record_shape
+from ..value import NONE, TEXT, Value, elements, iter_values, structural_hash, _record_shape
 
 
 def _upper_name(s):
@@ -18,18 +18,6 @@ def _upper_name(s):
     names collide in joined rows. The builtin is kept for the all-ASCII names
     that are nearly every name."""
     return s.upper() if s.isascii() else ascii_upper(s)
-
-
-def iter_collection_items(value):
-    """Yield collection values without building ``(key, value)`` tuples.
-
-    ``elements`` is the public/key-preserving helper.  LINK's nested-loop and
-    hash-join paths only need the values, so using it there would allocate a
-    complete entry list for every probe (and again for every nested-loop left
-    row).  This mirrors Lisp's FOR-EACH-COLLECTION-ITEM and keeps the common
-    shaped/list path on the flat storage directly.
-    """
-    yield from iter_values(value)
 
 
 def first_collection_item(value):
@@ -808,7 +796,7 @@ def _row_fact(value, name, kind):
     """Whether every row of VALUE carries the field NAME (as written) as text
     (a number is text), or, for kind NUM, as a number; for kind ANY, as any
     non-null scalar (what a promoted join key needs)."""
-    for row in iter_collection_items(value):
+    for row in iter_values(value):
         v = row.get(name)
         if kind == 'ANY':
             if v is None or v.is_null() or is_nested_record(v):
@@ -856,7 +844,7 @@ class _SideFacts:
             if first is not None and all(row.shape is first for row in storage):
                 fact = name in first.key_map
             else:
-                rows = list(iter_collection_items(self.value))
+                rows = list(iter_values(self.value))
                 fact = bool(rows) and all(row.get(name) is not None for row in rows)
             self._facts[(name, 'PRESENT')] = fact
         return fact
@@ -911,7 +899,7 @@ def _keys_safe(obligations, left, right, above, left_names):
                 continue
             # A member carried inside the left rows (a relation joined below
             # them): read it on every left row.
-            for row in iter_collection_items(left.value):
+            for row in iter_values(left.value):
                 inner = row.get(member)
                 if inner is None or inner.get(field) is None:
                     return False
@@ -973,7 +961,7 @@ def _row_keys(value, bound=()):
         if first is not None and all(row.shape is first for row in storage):
             return {_upper_name(k) for k in first.keys} | {_upper_name(b) for b in bound}
     keys = _KeySet()
-    for row in iter_collection_items(value):
+    for row in iter_values(value):
         keys.add(row)
     return keys.keys | {_upper_name(b) for b in bound}
 
@@ -1044,7 +1032,7 @@ def _link(args, ctx, left_join):
             return not (fields & right_side.keys) and not (fields & above_keys(stage))
         def total_below(reqs, stage):
             return _totality(reqs, None, right_side, above[:stage[2]])
-        _applied, stop = _stage_walk(stages, owned_below, total_below)
+        _, stop = _stage_walk(stages, owned_below, total_below)
         # Below this join, every stage has one more join above it: this one.
         handed = [(b, c, n + 1) for b, c, n in _truncate_stages(stages, stop)]
         if handed:
@@ -1092,8 +1080,8 @@ def _link(args, ctx, left_join):
     # Each side is listed ONCE, here (SPEC 7.3 snapshot): the right side is walked
     # again for every left row, and a predicate that grows or replaces a side must
     # neither extend the walk nor change the rows later left rows see.
-    left_items = list(iter_collection_items(left_value))
-    right_items = list(iter_collection_items(right_value))
+    left_items = list(iter_values(left_value))
+    right_items = list(iter_values(right_value))
     first_left = first_collection_item(left_value)
     first_right = first_collection_item(right_value)
     if first_left is None or first_right is None:

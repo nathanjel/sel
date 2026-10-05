@@ -7,7 +7,6 @@ across calls, and what must not raise a foreign exception.
 """
 import pytest
 
-import sel
 from sel import Value, compile
 from sel.sql import Binding, Sql, SqlError, map as sqlmap
 

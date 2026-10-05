@@ -3,7 +3,6 @@ once per element, which is the same move IF makes, repeated.
 """
 
 import heapq
-from functools import cmp_to_key
 
 from .. import decimal as D
 from .._budget import check_text
@@ -562,7 +561,7 @@ def do_sort(args, ctx, forced_dir):
         if not ents:
             return Value._list_owned([])
         direction = forced_dir or 'ASC'
-        indexed = [{'item': item, 'key': item, 'idx': idx} for idx, (_, item) in enumerate(ents)]
+        indexed = [{'item': item, 'key': item} for _, item in ents]
     else:
         if count == 2:
             binder = '_'
@@ -612,13 +611,13 @@ def do_sort(args, ctx, forced_dir):
         eager = _may_write(body)
         ctx.push_frame(frame)
         try:
-            for idx, (k, item) in enumerate(ents):
+            for k, item in ents:
                 frame[binder] = item
                 if with_k:
                     frame['_K'] = Value.text(k)
                 key_value = args.eval_node(body)
                 indexed.append({'item': item.clone(args.pos, 2) if eager else item,
-                                'key': key_value, 'idx': idx, 'owned': eager})
+                                'key': key_value, 'owned': eager})
         finally:
             ctx.pop_frame()
 

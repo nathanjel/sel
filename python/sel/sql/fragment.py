@@ -185,9 +185,6 @@ class Fragment:
                 # would not: it is a creation number, and a reordering template
                 # emits creation numbers out of order.
                 out.append(_emit.placeholder(self.dialect, nth))
-            elif mode == 'debug':
+            else:                        # 'debug': the mode was checked above
                 out.append(f'~{nth}~')
-            else:
-                raise RuntimeError(
-                    f'unknown render mode {mode}; use inline, params or debug')
         return ''.join(out)
