@@ -21,6 +21,10 @@ use crate::utf8::{cap_collection, cap_text, Pos, SelError};
 use crate::text::SelStr;
 use crate::value::{ListKeys, Entry, Kind, Value};
 
+// Frames: an aggregate pushes its binder frame and may leave by `?` at any
+// point -- invoke_call (eval.rs) truncates the frame stack to its own depth
+// after every builtin, error or not, so no early return pops by hand.
+
 fn node_contains_var(node: &Node, name: &str) -> bool {
     match node.t {
         NodeType::Var => node.s.eq_ignore_ascii_case(name),
@@ -245,7 +249,7 @@ pub fn fn_map(args: &mut Args) -> Result<Value, SelError> {
     let ents = val.elems();
     let mut out = Vec::with_capacity(ents.len());
 
-    let mut frame = HashMap::new();
+    let mut frame = Frame::new();
     frame.insert(binder.clone(), Value::none());
     if needs_k {
         frame.insert("_K".to_string(), Value::none());
@@ -259,26 +263,14 @@ pub fn fn_map(args: &mut Args) -> Result<Value, SelError> {
                 f.set("_K", Value::text_owned(ents.key(ei)));
             }
         }
-        let res = match args.eval_node(&body_node) {
-            Ok(v) => v,
-            Err(err) => {
-                args.ctx.pop_frame();
-                return Err(err);
-            }
-        };
+        let res = args.eval_node(&body_node)?;
         let collected = if fresh_record {
             // MAP adds a copy-depth level even when its allocation is elided.
             res.check_copy_depth(2, args.pos()).map(|()| res)
         } else {
             res.deep_copy(2, args.pos())
         };
-        match collected {
-            Ok(value) => out.push(value),
-            Err(error) => {
-                args.ctx.pop_frame();
-                return Err(error);
-            }
-        }
+        out.push(collected?);
     }
     args.ctx.pop_frame();
 
@@ -412,7 +404,7 @@ fn filter_rows(args: &mut Args, plan: Box<FilterPlan>, source: Result<Value, Sel
     // Source slots of the kept children: their keys are the output's keys.
     let mut kept: Vec<usize> = Vec::new();
 
-    let mut frame = HashMap::new();
+    let mut frame = Frame::new();
     frame.insert(binder.clone(), Value::none());
     if needs_k {
         frame.insert("_K".to_string(), Value::none());
@@ -426,13 +418,7 @@ fn filter_rows(args: &mut Args, plan: Box<FilterPlan>, source: Result<Value, Sel
         }
         // body_pos is body_node's own position: eval_bool is exactly
         // eval_node(..).as_bool(body_pos), without the boolean's value cell.
-        let keep = match crate::eval::eval_bool(body_node, args.ctx) {
-            Ok(b) => b,
-            Err(err) => {
-                args.ctx.pop_frame();
-                return Err(err);
-            }
-        };
+        let keep = crate::eval::eval_bool(body_node, args.ctx)?;
         if keep {
             if args.borrowed_filter {
                 item.check_copy_depth(2, args.pos())?;
@@ -478,7 +464,7 @@ pub fn fn_all(args: &mut Args) -> Result<Value, SelError> {
     }
 
     let ents = val.elems();
-    let mut frame = HashMap::new();
+    let mut frame = Frame::new();
     frame.insert(binder.clone(), Value::none());
     if needs_k {
         frame.insert("_K".to_string(), Value::none());
@@ -492,24 +478,9 @@ pub fn fn_all(args: &mut Args) -> Result<Value, SelError> {
                 f.set("_K", Value::text_owned(ents.key(ei)));
             }
         }
-        let res = match args.eval_node(&body_node) {
-            Ok(v) => v,
-            Err(err) => {
-                args.ctx.pop_frame();
-                return Err(err);
-            }
-        };
-        match res.as_bool(body_pos) {
-            Ok(b) => {
-                if !b {
-                    args.ctx.pop_frame();
-                    return Ok(Value::bool(false));
-                }
-            }
-            Err(err) => {
-                args.ctx.pop_frame();
-                return Err(err);
-            }
+        let res = args.eval_node(&body_node)?;
+        if !res.as_bool(body_pos)? {
+            return Ok(Value::bool(false));
         }
     }
     args.ctx.pop_frame();
@@ -533,7 +504,7 @@ pub fn fn_any(args: &mut Args) -> Result<Value, SelError> {
     }
 
     let ents = val.elems();
-    let mut frame = HashMap::new();
+    let mut frame = Frame::new();
     frame.insert(binder.clone(), Value::none());
     if needs_k {
         frame.insert("_K".to_string(), Value::none());
@@ -547,24 +518,9 @@ pub fn fn_any(args: &mut Args) -> Result<Value, SelError> {
                 f.set("_K", Value::text_owned(ents.key(ei)));
             }
         }
-        let res = match args.eval_node(&body_node) {
-            Ok(v) => v,
-            Err(err) => {
-                args.ctx.pop_frame();
-                return Err(err);
-            }
-        };
-        match res.as_bool(body_pos) {
-            Ok(b) => {
-                if b {
-                    args.ctx.pop_frame();
-                    return Ok(Value::bool(true));
-                }
-            }
-            Err(err) => {
-                args.ctx.pop_frame();
-                return Err(err);
-            }
+        let res = args.eval_node(&body_node)?;
+        if res.as_bool(body_pos)? {
+            return Ok(Value::bool(true));
         }
     }
     args.ctx.pop_frame();
@@ -601,7 +557,7 @@ pub fn fn_sum(args: &mut Args) -> Result<Value, SelError> {
 
     let ents = val.elems();
     let mut total = Dec::zero();
-    let mut frame = HashMap::new();
+    let mut frame = Frame::new();
     frame.insert(binder.clone(), Value::none());
     if needs_k {
         frame.insert("_K".to_string(), Value::none());
@@ -615,27 +571,9 @@ pub fn fn_sum(args: &mut Args) -> Result<Value, SelError> {
                 f.set("_K", Value::text_owned(ents.key(ei)));
             }
         }
-        let v = match args.eval_node(&body_node) {
-            Ok(v) => v,
-            Err(err) => {
-                args.ctx.pop_frame();
-                return Err(err);
-            }
-        };
-        let d = match v.as_decimal(body_pos) {
-            Ok(d) => d,
-            Err(err) => {
-                args.ctx.pop_frame();
-                return Err(err);
-            }
-        };
-        match dec_add(&total, &d, args.pos()) {
-            Ok(t) => total = t,
-            Err(err) => {
-                args.ctx.pop_frame();
-                return Err(err);
-            }
-        }
+        let v = args.eval_node(&body_node)?;
+        let d = v.as_decimal(body_pos)?;
+        total = dec_add(&total, &d, args.pos())?;
     }
     args.ctx.pop_frame();
     Ok(Value::num_trusted(total))
@@ -792,7 +730,7 @@ fn do_sort(args: &mut Args, forced_dir: Option<&str>) -> Result<Value, SelError>
     } else {
         let body = body_opt.unwrap();
         let needs_k = node_contains_var(&body, "_K");
-        let mut frame = HashMap::new();
+        let mut frame = Frame::new();
         frame.insert(binder.clone(), Value::none());
         if needs_k {
             frame.insert("_K".to_string(), Value::none());
@@ -1031,7 +969,7 @@ fn do_top(args: &mut Args, forced_dir: Option<&str>) -> Result<Value, SelError> 
     let eager = body_opt.as_ref().is_some_and(top_key_may_write);
 
     let needs_k = body_opt.as_ref().is_some_and(|b| node_contains_var(b, "_K"));
-    let mut frame = HashMap::new();
+    let mut frame = Frame::new();
     if !binder.is_empty() {
         frame.insert(binder.clone(), Value::none());
     }
@@ -1046,25 +984,10 @@ fn do_top(args: &mut Args, forced_dir: Option<&str>) -> Result<Value, SelError> 
     }
     for (ei, ev) in ents.vals.iter().enumerate() {
         let item = if eager {
-            match ev.deep_copy(2, args.pos()) {
-                Ok(c) => c,
-                Err(err) => {
-                    if framed {
-                        args.ctx.pop_frame();
-                    }
-                    return Err(err);
-                }
-            }
+            ev.deep_copy(2, args.pos())?
         } else {
-            match ev.check_copy_depth(2, args.pos()) {
-                Ok(()) => ev.clone(),
-                Err(err) => {
-                    if framed {
-                        args.ctx.pop_frame();
-                    }
-                    return Err(err);
-                }
-            }
+            ev.check_copy_depth(2, args.pos())?;
+            ev.clone()
         };
 
         let k_val = if !framed {
@@ -1074,13 +997,7 @@ fn do_top(args: &mut Args, forced_dir: Option<&str>) -> Result<Value, SelError> 
             if needs_k {
                 args.ctx.bind("_K", Value::text_owned(ents.key(ei)));
             }
-            match args.eval_node(body_opt.as_ref().unwrap()) {
-                Ok(k) => k,
-                Err(err) => {
-                    args.ctx.pop_frame();
-                    return Err(err);
-                }
-            }
+            args.eval_node(body_opt.as_ref().unwrap())?
         };
         indexed.push(SortItem {
             item,
@@ -1195,7 +1112,7 @@ pub fn fn_bucket(args: &mut Args) -> Result<Value, SelError> {
     }
 
     let needs_k = node_contains_var(&key_node, "_K");
-    let mut frame = HashMap::new();
+    let mut frame = Frame::new();
     frame.insert(binder.clone(), Value::none());
     if needs_k {
         frame.insert("_K".to_string(), Value::none());
@@ -1224,10 +1141,8 @@ pub fn fn_bucket(args: &mut Args) -> Result<Value, SelError> {
         let key_str = if agg_node_opt.is_none() {
             if group_key.kind() == Kind::None {
                 if group_key.is_null() {
-                    args.ctx.pop_frame();
                     return Err(SelError::null("value is NULL", key_node.pos));
                 }
-                args.ctx.pop_frame();
                 return Err(SelError::not_text(
                     "a bucket key must be text or a number, got a list or record",
                     key_node.pos,
@@ -1238,13 +1153,7 @@ pub fn fn_bucket(args: &mut Args) -> Result<Value, SelError> {
             String::new()
         };
         let item = if eager {
-            match ev.deep_copy(row_depth, args.pos()) {
-                Ok(copy) => copy,
-                Err(err) => {
-                    args.ctx.pop_frame();
-                    return Err(err);
-                }
-            }
+            ev.deep_copy(row_depth, args.pos())?
         } else {
             ev.clone()
         };
@@ -1304,7 +1213,7 @@ pub fn fn_bucket(args: &mut Args) -> Result<Value, SelError> {
 
     let agg_node = agg_node_opt.unwrap();
     let mut out = Vec::with_capacity(groups.len());
-    let mut agg_frame = HashMap::new();
+    let mut agg_frame = Frame::new();
     agg_frame.insert(binder.clone(), Value::none());
     agg_frame.insert("_K".to_string(), Value::none());
     args.ctx.push_frame(agg_frame);
@@ -1872,7 +1781,7 @@ fn link_body<'a>(
 
     if let Some(ref equi) = equi_opt {
         if !right_ents.is_empty() {
-            let mut r_frame = HashMap::new();
+            let mut r_frame = Frame::new();
             r_frame.insert(b2.clone(), Value::none());
             r_frame.insert("_2".to_string(), Value::none());
             let lower_b2 = b2.to_ascii_lowercase();
@@ -2178,7 +2087,7 @@ fn link_body<'a>(
 
     // Nested-loop fallback join
     let mut output = Vec::new();
-    let mut frame = HashMap::new();
+    let mut frame = Frame::new();
     let lower_b1 = b1.to_ascii_lowercase();
     let lower_b2 = b2.to_ascii_lowercase();
     frame.insert(b1.clone(), Value::none());

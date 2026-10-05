@@ -77,7 +77,7 @@ fn join_prefilter_facts_read_rows_in_place() {
     // Budgets (allocations, bytes): lower them when a change earns it, never
     // raise them. Reading the rows by copying their handles out cost four
     // more allocations and 4 x 8 bytes per row (944/106551, 5714/745343).
-    for ((got_n, got_bytes), (n, bytes)) in [(small, (940, 103_351)), (large, (5_710, 713_343))] {
+    for ((got_n, got_bytes), (n, bytes)) in [(small, (939, 102_083)), (large, (5_709, 712_075))] {
         assert!(got_n <= n, "{got_n} allocations > budget {n}");
         assert!(got_bytes <= bytes, "{got_bytes} bytes > budget {bytes}");
     }
