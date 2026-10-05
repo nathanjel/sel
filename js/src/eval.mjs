@@ -247,7 +247,7 @@ function evalMathPlan(plan, ctx) {
       }
     }
   }
-  // A slot a step computed is a decimal the guard has already passed (JS-P24); anything
+  // A slot a step computed is a decimal the guard has already passed; anything
   // else keeps the checked constructor, and its refusal.
   const out = scratchpad[plan.outputSlot];
   return out instanceof Value ? Value.num(out) : Value.numOwned(out);
@@ -367,7 +367,7 @@ function evalBinary(node, ctx) {
   const l = evalNode(node.l, ctx);
   const rn = node.r;
   // A numeric literal on the right of an arithmetic or numeric-comparison operator is
-  // read as its decimal: no Value is built for it (JS-P23). What evalNode would have
+  // read as its decimal: no Value is built for it. What evalNode would have
   // done for it is kept -- the depth check, after the left side ran -- and nothing
   // else can happen to a literal.
   const rdec = (rn.t === 'num' && rn.dec !== undefined && NUMERIC_BINARY.has(op)) ? rn.dec : null;

@@ -170,7 +170,7 @@ export function scope(bindings) {
 //
 // The answer for a node depends only on the node and on `bound`, and the translator asks
 // it again at every level of a nest (is this node constant? is its parent? its
-// grandparent?), which made a deep constant expression quadratic (JS-P4). The answers
+// grandparent?), which made a deep constant expression quadratic. The answers
 // are kept per `bound` map, which the translator builds once and never changes.
 const CONSTANT_MEMO = new WeakMap();
 
@@ -233,7 +233,7 @@ function constantCall(n, bound) {
 //
 // validate() runs at every constant node on the way up, and each run used to evaluate the
 // whole subtree again, so `LEN(REPEAT("x", 20000)) + ... + ...` k levels deep evaluated the
-// REPEAT k times over (quadratic; JS-P4). A node that evaluated without error has a value
+// REPEAT k times over (quadratic). A node that evaluated without error has a value
 // that cannot change: constants hold no frame, no assignment and no host state. So the
 // value is kept on the translation's context, and the next evaluation up the tree runs on
 // a copy of its node in which every already-evaluated descendant is replaced by its value
@@ -336,7 +336,7 @@ export function requireNumeric(n, ctx = null) {
 
 // The canonical spelling of a constant that is TEXT holding a number, or null when it
 // is anything else (or SEL refuses it: the operand's own translation reports that).
-// PHP-C33: in arithmetic SEL computes with such a text exactly, and MariaDB and MySQL
+// In arithmetic SEL computes with such a text exactly, and MariaDB and MySQL
 // would convert the quoted string to DOUBLE (`'0.1' + '0.2' = 0.3` is false there), so
 // the translator spells it as the exact numeric literal it stands for.
 export function numericTextConstant(n, ctx = null) {

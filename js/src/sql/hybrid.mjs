@@ -189,7 +189,7 @@ function bucketRowsAreKeys(steps) {
 // promoted fields alone. A MAP, a SELECT_COLS or a projected BUCKET after the
 // LINK makes the rows exact again -- what they compute is over the promoted
 // fields, or is refused -- so a prefix whose LINK nothing has projected is
-// not a split point and not a full pushdown (finding Y, lanes): its
+// not a split point and not a full pushdown: its
 // continuation would read `_["C"]` where the database sent nothing.
 function joinRowsLackBinders(steps) {
   let joined = false;
@@ -209,7 +209,7 @@ function joinRowsLackBinders(steps) {
 // gone once a projection hid the earlier key. A LIMIT beside the earlier ORDER BY
 // decides which rows survive, not any of this. A prefix that ends before that step
 // is exact; one that includes it answers in another order
-// (docs/internals/sql-translation.md 12.1, "Order"; PHP-C35).
+// (docs/internals/sql-translation.md 12.1, "Order").
 const ORDER_SORTS = new Set(['SORT', 'SORT_DESC', 'SORT_BY', 'TOP', 'TOP_DESC', 'TOP_BY']);
 function orderIsLost(steps) {
   let sorted = false;
@@ -523,7 +523,7 @@ function tryPlanFallthrough(source, steps, dialect, catalog, options, helpers) {
 // plan, because that half is a program run() evaluates and §12.1 promises it
 // reports errors where run() would: run() evaluates the READ of Y at the use
 // site and reports `+`'s operand there, and it evaluates the definition once,
-// before the pipeline, not once per row (review 2026-09-15 finding AJ). So
+// before the pipeline, not once per row. So
 // the planner does not inline. It plans the program as written, three ways:
 //
 //   * A helper that IS a literal -- after inlining earlier such helpers and
@@ -631,7 +631,8 @@ function unwindThroughHelpers(result, defs, literals) {
   // The source the loop stopped at reads the catalogue's binding when its name is
   // also a helper's (the helper was written `ORDERS = ORDERS .> DROP(2)`): mark
   // it, so wrapping the pipeline in the helpers again does not inline the helper
-  // into the very read that was its own definition (PHP-C34 -- DROP twice).
+  // into the very read that was its own definition (DROP twice; the shape
+  // sql/cases/48-scope-and-slots.sqlt pins).
   if (source && source.t === 'var' && defs.has(source.name)) {
     source = { ...source, binding: true };
   }
@@ -884,7 +885,7 @@ export function planHybrid(program, dialect, bindings = null, options = null) {
     const remaining = steps.slice(count);
     // A 3-argument LINK names the two sides of the row it builds after the variables it
     // joined: the left side is the pipeline's own source variable, wherever in the
-    // continuation the LINK falls (spec 7.4; PHP-C9). The rows are therefore fed to the
+    // continuation the LINK falls (spec 7.4). The rows are therefore fed to the
     // continuation under that name, or the joined row would carry the left side under
     // `_INPUT` where run() has it under ORDERS. A step that also READS that name (a
     // self-join `ORDERS .> TAKE(4) .> LINK(ORDERS, ...)`) would find the truncated rows

@@ -163,7 +163,7 @@ function substitute(node, defs, bound, depth = 0) {
     // A read is a value, not a reference (spec §3.4): a keyed list read here is
     // what it holds NOW, so a later `R[2] = 6` must not reach a `X = R` written
     // before it, nor a write through X reach R. The entries' values are
-    // immutable nodes, so copying the list of entries is a copy (GO-C4).
+    // immutable nodes, so copying the list of entries is a copy.
     return def.t === 'clist' ? new CList(def.pos, def.entries.map(([k, v]) => [k, v])) : def;
   }
 
@@ -214,7 +214,7 @@ function substitute(node, defs, bound, depth = 0) {
     // free name in it means what it meant at the assignment: `X2 = A; ALL((5, 6),
     // A, X2 > 0)` must read the column A in X2, not the element. Renaming the
     // binder, and every read of it in the body that is still its own, leaves no
-    // name for the inlined text to be captured by (JS-C26).
+    // name for the inlined text to be captured by.
     let args = node.args;
     let binds = form ? form.binds : [];
     if (form) {

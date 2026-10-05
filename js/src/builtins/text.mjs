@@ -12,7 +12,7 @@ const cps = (s) => toCodePoints(s, null);
 
 // A text with no surrogate has one UTF-16 unit per code point, so every position, length
 // and slice below is the native one; the code point arrays are only for text that has an
-// astral character (JS-P5). A Value's text is well formed, so a surrogate in it is half of
+// astral character. A Value's text is well formed, so a surrogate in it is half of
 // a valid pair.
 const ANY_SURROGATE = /[\uD800-\uDFFF]/;
 const plain = (s) => !ANY_SURROGATE.test(s);
@@ -88,7 +88,7 @@ define({
     }
     if (needle === '') fail('E_BAD_ARG', 'FIND needle must not be empty', args.posOf(0));
     // The engine's indexOf is exact on well-formed UTF-16: a needle cannot begin with half
-    // of a pair, so it can only match at a code point boundary (JS-P6, the old loop was
+    // of a pair, so it can only match at a code point boundary (the old loop was
     // O(n*m) over number arrays). Only a haystack with astral characters needs its offsets
     // converted, once each way.
     if (plain(hay)) return Value.int(hay.indexOf(needle, from) + 1);

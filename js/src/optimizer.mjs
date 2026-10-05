@@ -227,8 +227,7 @@ function mapPassthroughs(step) {
 // Whether evaluating NODE for one row can raise -- conservatively: a rewrite
 // that moves a FILTER in front of a step, runs a step on fewer rows, or fuses
 // two FILTERs changes which rows reach what, so it may only pass over
-// expressions that cannot raise on any of them (spec §7.3; review 2026-09-25
-// SEM-07/SEM-08). Literals, _K and the binder itself never raise. On the
+// expressions that cannot raise on any of them (spec §7.3). Literals, _K and the binder itself never raise. On the
 // logical path the rows are a bound relation's, which always carry their
 // typed columns, so a field read through the binder cannot raise either, nor
 // a comparison, AND/OR/NOT or + - * over such reads; `/` and `%` (E_DIV_ZERO),

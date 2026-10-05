@@ -1,7 +1,6 @@
 #!/usr/bin/env node
 // JS SQL layer: regression checks that are about the host, not the shared corpus
-// (sql/cases holds the portable ones). T08-T11 of the 2026-09-29 review:
-// bounded work on hostile programs, no host exception where an answer is owed,
+// (sql/cases holds the portable ones): bounded work on hostile programs, no host exception where an answer is owed,
 // and hybrid execution that never writes the caller's context.
 //
 //     node tools/check-js-sql.mjs
@@ -116,7 +115,7 @@ const R = { ORDERS: Binding.relation('orders', 'o', { ID: Binding.column('id', '
     outcome(() => map.defineDialect('mariadb', { extends: null, version: '11' })).error instanceof Error);
 }
 
-// --- text literals: the regex pass and the per-character scan agree (JS-P25) ------
+// --- text literals: the regex pass and the per-character scan agree ------
 {
   const { map } = sql;
   const { textLiteral } = await import('../js/src/sql/emit.mjs');
@@ -155,7 +154,7 @@ const R = { ORDERS: Binding.relation('orders', 'o', { ID: Binding.column('id', '
     before === naive('js-esc', long) && after.includes('x\\%y') && textLiteral('js-esc', long) === before);
 }
 
-// --- the dialect chain is cached, frozen, and follows registrations (JS-P26) -------
+// --- the dialect chain is cached, frozen, and follows registrations -------
 {
   const { map } = sql;
   check('chain(mariadb) is self first, then up to ansi', JSON.stringify(map.chain('mariadb')) === '["mariadb","mysql-family","ansi"]',

@@ -7,7 +7,7 @@ import { define, isHostFunction } from '../registry.mjs';
 import { bytesCompare, compareText } from '../utf8.mjs';
 import { fail, SelError } from '../errors.mjs';
 import { cpLength, checkText, MAX_TEXT_LEN } from '../budget.mjs';
-// The direction and field names fold ASCII-only (review 2026-09-25 SEM-05):
+// The direction and field names fold ASCII-only:
 // toUpperCase took "deſc" for DESC.
 import { asciiUpper } from '../lexer.mjs';
 
@@ -173,7 +173,7 @@ define({
     // returned by reference -- `MAP(X, _)` -- must not stay live in X. A body that
     // BUILDS its result (a RECORD or LIST, which copied its own arguments, or
     // arithmetic, which computes a new number) returns a value nothing else refers
-    // to, so the copy would only duplicate it (0.9.2 comparison, JS-REG-1).
+    // to, so the copy would only duplicate it.
     walk(args, ctx, (r, _k, _i, body) => {
       out.push(buildsItsResult(body) ? r : r.cloneAt(2, args.pos));
       return undefined;

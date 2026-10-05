@@ -8,7 +8,7 @@ import { checkCollection } from '../budget.mjs';
 
 // Names compare ASCII-case-insensitively (spec §2, §7.4): only a-z move.
 // toUpperCase folds "ß" to "SS" and "ſ" to "S", which made distinct field names
-// collide in joined rows (review 2026-09-25 SEM-04). The native call is kept for
+// collide in joined rows. The native call is kept for
 // the all-ASCII names that are nearly every name.
 const NON_ASCII = /[^\x00-\x7f]/;
 function upperName(s) { return NON_ASCII.test(s) ? asciiUpper(s) : s.toUpperCase(); }
@@ -222,7 +222,7 @@ function singleRelationName(node) {
 // uses -- so a BIN matches the TEXT of its bytes and a list its scalar. NULL is
 // never compared (null). A value the coercion rejects is JOIN_BAD rather than
 // "no match": the pair it meets must raise, as the comparison would
-// (raiseJoinComparison). Review 2026-09-25 SEM-06.
+// (raiseJoinComparison).
 const JOIN_BAD = Symbol('join-bad');
 function canonicalJoinKey(value, numeric) {
   if (!value || value.isNull()) return null;
@@ -234,7 +234,7 @@ function canonicalJoinKey(value, numeric) {
     if (d.digits === 0n) return '0';
     // Format once, then trim the zeros off the TEXT: dividing the BigInt by ten a
     // zero at a time was quadratic in the number of trailing zeros, and a
-    // fraction may have a million digits (JS-C15).
+    // fraction may have a million digits.
     let text = D.format(d);
     if (d.scale > 0) {
       let end = text.length;
@@ -1210,7 +1210,7 @@ function doLink(args, ctx, leftJoin) {
     ctx.pushFrame(frame);
     // A predicate that can change no value (no assignment, no host function) sees the
     // same right rows for every left row, so they are aliased once, at the first left
-    // row, not once per pair (JS-P22). Anything else re-aliases per pair as before: a
+    // row, not once per pair. Anything else re-aliases per pair as before: a
     // predicate's writes are visible to the pairs still to come.
     const stable = isPureNode(predicate);
     let aliasedRights = null;

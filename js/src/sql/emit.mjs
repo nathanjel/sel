@@ -131,7 +131,7 @@ function numericLiteral(dialect, v, pos) {
 
 // A text past this many characters is escaped by one regex pass built from the dialect's
 // rules; shorter text keeps the per-character scan, which beats building the signature
-// that keeps the regex honest (JS-P25).
+// that keeps the regex honest.
 const ESCAPE_SCAN_MAX = 64;
 const ESCAPE_PLANS = new WeakMap();
 

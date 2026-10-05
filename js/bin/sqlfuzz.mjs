@@ -45,7 +45,7 @@ const attempt = (fn) => {
 
 // A third argument `statement` prints only translateStatement's inline SQL (or
 // `!CODE@line:col`), one line per program: what php/bin/sqlo's cross-host
-// statement oracle executes against a real server (review 2026-09-25 TEST-04),
+// statement oracle executes against a real server,
 // so every host's translator -- not only PHP's -- is asked whether its SQL
 // means what SEL means.
 const [path, dialect = 'mariadb', mode = 'all'] = process.argv.slice(2);

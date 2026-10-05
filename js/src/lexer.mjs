@@ -64,7 +64,7 @@ class Lexer {
       if (this.chars[i] === '\n') this.lineStarts.push(i + 1);
     }
     // Lexing moves forward, so the line of the last position asked for is nearly
-    // always the line of the next one: start there (JS-P2).
+    // always the line of the next one: start there.
     this.lastLine = 0;
   }
 

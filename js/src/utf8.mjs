@@ -52,7 +52,7 @@ export function toCodePoints(str, pos) {
 }
 
 export function fromCodePoints(cps) {
-  // Short arrays are the common case and need no slice (JS-P27).
+  // Short arrays are the common case and need no slice.
   const n = cps.length;
   if (n === 0) return '';
   if (n <= 4096) return String.fromCodePoint.apply(null, cps);
@@ -70,7 +70,7 @@ export function encodeUtf8(str, pos) {
   // Two passes over the code units: the first measures the result and finds an unpaired
   // surrogate (handed to toCodePoints, which raises E_UTF8 with the same message and
   // position as ever), the second writes into a buffer of exactly that size. This was a
-  // code point array, an array of bytes and a copy of it (JS-P7).
+  // code point array, an array of bytes and a copy of it.
   const n = str.length;
   let size = 0;
   for (let i = 0; i < n; i++) {
@@ -127,7 +127,7 @@ export function decodeSource(bytes) {
 export function decodeUtf8(bytes, pos) {
   // Code units are collected and turned into a string in blocks; the code points decoded
   // so far are only needed to place an error when the text being decoded is the program
-  // source, and are rebuilt from the output then (JS-P7).
+  // source, and are rebuilt from the output then.
   let flushed = '';
   const units = [];
   const n = bytes.length;
@@ -202,7 +202,7 @@ export function bytesEqual(a, b) {
 
 // Text order is UTF-8 byte order, which is code point order. UTF-16 unit order is the
 // same order except where a surrogate meets U+E000..U+FFFF, so two strings with no
-// surrogate in either compare natively (a fast path the engine optimises; JS-P8), and
+// surrogate in either compare natively (a fast path the engine optimises), and
 // anything else compares as encoded bytes.
 const ANY_SURROGATE = /[\uD800-\uDFFF]/;
 export function compareText(a, b) {

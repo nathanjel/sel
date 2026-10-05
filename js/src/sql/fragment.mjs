@@ -148,7 +148,7 @@ export class Fragment {
   #join(mode) {
     // The mode is checked before anything is rendered: it used to be looked at
     // only when a slot was reached, so `asValue('bogus')` on a fragment with no
-    // parameter quietly answered as inline (PHP-C57, PY-C46).
+    // parameter quietly answered as inline.
     if (mode !== 'inline' && mode !== 'params' && mode !== 'debug') {
       throw new Error(`unknown render mode ${mode}; use inline, params or debug`);
     }

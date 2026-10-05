@@ -62,7 +62,7 @@ export function pow10(k) {
     if (k <= POW10_CACHE_MAX_EXPONENT) {
       // The oldest entries go, one at a time, until the new one fits: emptying the whole
       // table sent two operands at scales 600k and 500k back to a 40 ms recomputation on
-      // every operation (JS-P28).
+      // every operation.
       while (POW10_CACHE.size > 0
              && (POW10_CACHE.size >= POW10_CACHE_ENTRIES || pow10Weight + k > POW10_CACHE_DIGITS)) {
         const oldest = POW10_CACHE.keys().next().value;
@@ -139,7 +139,7 @@ const NUM_RE = /^-?[0-9]+(\.[0-9]+)?$/;
 export function parse(text, pos) {
   if (typeof text !== 'string') return null;
   // Up to 15 characters cannot hold more than 15 digits, which a double holds exactly and
-  // which is nowhere near a cap: one pass over the code units, one BigInt (JS-P10). Anything
+  // which is nowhere near a cap: one pass over the code units, one BigInt. Anything
   // longer, and anything this pass does not recognise as a plain numeral, takes the general
   // path below, which is also where every refusal is decided.
   if (text.length <= 15) {

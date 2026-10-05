@@ -68,8 +68,7 @@ const AGG_FOLD = { ALL: 'AND', ANY: 'OR', SUM: '+' };
 // new step is covered by being one. Every one is already refused by the
 // dialect documents; the point of the list is that source() used to reach
 // its scalar fallback without ever consulting the map, so COUNT and HAS
-// folded to 0 and FALSE instead (review 2026-09-15 finding X: COUNT(LIST(1,
-// 2, 3)) was 0).
+// folded to 0 and FALSE instead (COUNT(LIST(1, 2, 3)) was 0).
 const YIELDS_LIST = ['BTL', 'INDEXES', 'RGROUPS', 'SPLIT', 'LIST', 'RECORD',
   ...OPTIMIZER_PIPELINE_OPS];
 
@@ -177,7 +176,7 @@ export class Translator {
     [this.constNames, this.constCtx] = constants.scope(this.bindings);
     // Stage 1 and nothing else: the translator renders the tree it is handed.
     // Two hosts ran the logical optimiser here and three did not, so the same
-    // program rendered different SQL per host (review 2026-09-15 finding C).
+    // program rendered different SQL per host.
     // The planner is the one place that optimises before translating, and
     // it does so in every host.
     const norm = normalise.run(ast, this.constNames, this.constCtx);
@@ -415,8 +414,7 @@ export class Translator {
   // appears: the clause, the `_K` projection, a HAVING. A TEXT key is cast and
   // collated the way the `$` family compares text, because the evaluator
   // groups by the key's exact bytes and a case-insensitive collation would
-  // merge groups it keeps apart (review 2026-09-15 finding L; MariaDB's
-  // default merged 'A' and 'a'). The result is marked exact so a comparison
+  // merge groups it keeps apart (MariaDB's default merged 'A' and 'a'). The result is marked exact so a comparison
   // over it does not wrap it a second time -- MySQL's only_full_group_by
   // accepts a projected or compared key only as the identical expression.
   groupKey(src, gb, projected = false) {
@@ -728,7 +726,7 @@ export class Translator {
   }
 
   // An operand that is a constant TEXT holding a number, in an arithmetic position, is
-  // that number (PHP-C33): SEL computes with it exactly, and MariaDB and MySQL would
+  // that number: SEL computes with it exactly, and MariaDB and MySQL would
   // read the quoted string as a DOUBLE. It is translated as the numeric literal it
   // stands for. The text was translated first (its SQL kind is only known then), so
   // the slots it bound are taken back, or `params` mode would report a value bound
@@ -1014,8 +1012,8 @@ export class Translator {
     // The two aggregates over a bucket's members -- COUNT(g) is COUNT(*) and
     // SUM(g, [x,] body) is SUM over the grouped rows -- fire on the GROUP
     // binder alone: over a relation row, COUNT(_) is the row's number of
-    // fields in SEL (review 2026-09-15 finding X), and SEL has no per-group
-    // MIN or MAX (finding J). The body binds the member row, as the
+    // fields in SEL, and SEL has no per-group
+    // MIN or MAX. The body binds the member row, as the
     // evaluator's walk does: `_` for the two-argument form, the name given
     // for the three-argument one.
     if (this.statementPlan !== null) {
@@ -1031,7 +1029,7 @@ export class Translator {
           const src = { relation: group.payload, filters: [], pos: n.pos };
           // The body keeps its parameter slots: its parts are strings AND slot
           // numbers, and joining them as text wrote a slot number where the
-          // literal was (PHP-C7: `SUM(x * 2)` became `SUM(x * 1)`).
+          // literal was (`SUM(x * 2)` became `SUM(x * 1)`).
           let inner = this.withRow(src, hasCustomBinder ? n.args[1].name : '_',
             () => this.node(bodyNode));
           this.requireNumericConstant(bodyNode);
@@ -1067,7 +1065,7 @@ export class Translator {
     for (let i = 0; i < n.args.length; i++) {
       const arg = n.args[i];
       // MIN and MAX compare their arguments as numbers: a numeric text constant is the
-      // number, as in arithmetic (PHP-C33).
+      // number, as in arithmetic.
       let f = name === 'MIN' || name === 'MAX' ? this.arithmeticOperand(arg) : this.node(arg);
       if (f.kind === 'LIST') {
         refuse('E_SQL_SHAPE',
@@ -1089,7 +1087,7 @@ export class Translator {
   // A binder position holds a name (the manifest's 'binder' scope). Anything else
   // is refused here, at that expression, whatever the call is later refused for:
   // the statement forms reached it through a nil in some hosts and a different
-  // code in others (GO-C2).
+  // code in others.
   requireNamedBinders(n) {
     const form = bindingForm(n.name, n.args, n.spec);
     if (form === null) return;
@@ -1674,7 +1672,7 @@ export class Translator {
     }
     if (v.isNone()) {
       // A NULL element: SEL's asText would raise E_NULL, a SelError that
-      // tryTranslate does not catch (JS-C54b). It is a binding problem, and a
+      // tryTranslate does not catch. It is a binding problem, and a
       // refusal.
       refuse('E_SQL_BINDING',
         'a value binding holds a NULL element, which has no SQL literal', pos);
@@ -1828,7 +1826,7 @@ export class Translator {
     // a later step -- the joined row carries them as keys, not as names. This
     // frame used to bind `_1`, `_2`, the relations' names and the right
     // binder for every later step, so `FILTER(C["id"] > 1)` translated where
-    // `run()` fails (review 2026-09-15 finding W2).
+    // `run()` fails.
     this.frames.push(frame);
     try {
       return render();
@@ -1839,9 +1837,9 @@ export class Translator {
 
   // A LINK's predicate sees `_`/`_1` as its left element and `_2` as its
   // right, plus the names the LINK gives them (spec §7.4) and nothing else:
-  // a relation's name outside those, its alias or its table is not a binder
-  // (review 2026-09-28 SQL-07), and the left element of a later LINK is the
-  // joined row so far, not the source (SQL-05).
+  // a relation's name outside those, its alias or its table is not a binder,
+  // and the left element of a later LINK is the joined row so far, not the
+  // source.
   withJoinBinders(plan, join, render) {
     const step = this.joinRows(plan).steps[plan.joins.indexOf(join)];
     const left = Binder.row(plan.sourceRelation);
@@ -2415,7 +2413,7 @@ export class Translator {
   // over the derived table is refused where `run()` raises. `SELECT o.*` was
   // the row before: the left table's columns, which a continuation read where
   // SEL has no key, and which made a derived table over a join name columns
-  // it did not have (finding Y, lanes).
+  // it did not have.
   joinedRowFields(plan) {
     // A field an unmatched LINK_LEFT row lacks is not a column of the row.
     return [...this.joinRows(plan).row.promoted.entries()].filter(([, f]) => !f.optional)
@@ -2498,8 +2496,7 @@ export class Translator {
   // its members, which only COUNT and SUM read (call()) -- and `_K` is the
   // group key, when there is one key to be it. This is the one place `_K`
   // is a group key: before the bucket it is a source row's position, after
-  // the projection the projected row's, and SQL has neither (review
-  // 2026-09-15 finding K).
+  // the projection the projected row's, and SQL has neither.
   withGroup(src, binderName, render) {
     const groupBy = this.statementPlan?.groupBy ?? null;
     const kBinder = groupBy !== null && groupBy.length === 1
@@ -2680,7 +2677,7 @@ export class Translator {
           // sorted: a GROUP BY returns its groups in no order at all, and the
           // ORDER BY beneath it is dropped by the servers. The sort cannot
           // survive, so the plan is refused here and a hybrid plan keeps the
-          // sorted rows in SQL and groups them in memory (JS-C59).
+          // sorted rows in SQL and groups them in memory.
           if (plan.orderBy.length > 0 || plan.orderDropped) {
             refuse('E_SQL_SHAPE',
               'a BUCKET over sorted rows would return its groups in no order, where SEL '
@@ -2845,7 +2842,7 @@ export class Translator {
           if (plan.projections === null && plan.selectCols === null) {
             refuse('E_SQL_SHAPE', 'DISTINCT requires an explicit typed projection', step.pos);
           }
-          // DISTINCT keeps the FIRST element of each run in sorted order; SQL's `SELECT DISTINCT proj ... ORDER BY <column not in proj>` is refused by PostgreSQL (42P10) and MySQL 8 (3065) and answers with an unspecified representative row on MariaDB. A loud refusal is acceptable and a silent misordering is not, so the step stays in memory (CPP-C60).
+          // DISTINCT keeps the FIRST element of each run in sorted order; SQL's `SELECT DISTINCT proj ... ORDER BY <column not in proj>` is refused by PostgreSQL (42P10) and MySQL 8 (3065) and answers with an unspecified representative row on MariaDB. A loud refusal is acceptable and a silent misordering is not, so the step stays in memory.
           if (plan.orderBy.length > 0) {
             refuse('E_SQL_SHAPE', 'DISTINCT after a sort keeps the first of each run in sorted order, which SELECT DISTINCT ... ORDER BY does not promise; run the DISTINCT in memory', step.pos);
           }
@@ -2880,7 +2877,7 @@ export class Translator {
           // DISTINCT wraps so its key can name what they produced. A sort
           // after a sort does not wrap: the sorts are stable, so the earlier
           // one is the later one's tie-breaker, and the later one's keys go
-          // FIRST in the ORDER BY (review 2026-09-15 finding V).
+          // FIRST in the ORDER BY.
           plan = this.ensureDerived(plan, (candidate) => {
             const wraps = candidate.limit !== null || candidate.offset !== null
               || (candidate.groupBy === null && Boolean(candidate.projections || candidate.selectCols
@@ -2912,9 +2909,8 @@ export class Translator {
           // sort's, a bucket's) are otherwise checked only when the statement
           // is rendered, after this LINK and the steps after it were analysed,
           // which reported a later step's refusal where run() raises at the
-          // earlier one. Lisp has done this since review 2026-09-25 SQL-03;
-          // the widened SQL fuzzer found the other hosts did not (review
-          // 2026-09-28 SQL-10).
+          // earlier one. Lisp did this first; the widened SQL fuzzer found
+          // the other hosts did not.
           if (plan.orderBy.length || plan.projections || plan.selectCols || plan.groupBy) {
             // Rendered for its refusals only and discarded: the slots it bound go
             // with it, or `params` mode reports a value bound that no placeholder
@@ -2969,8 +2965,8 @@ export class Translator {
           if (join.sourceAlias === null) join.sourceAlias = args.length === 5 ? join.rightNames[0] : '_2';
           // One table alias per occurrence: a relation joined a second time
           // under the alias it already has (a self-join, or a chain back to it)
-          // rendered the alias twice, which the server rejects as ambiguous
-          // (review 2026-09-28 SQL-09). The program stays in memory.
+          // rendered the alias twice, which the server rejects as ambiguous.
+          // The program stays in memory.
           {
             const open = [plan.sourceAlias ?? relationAlias(plan.sourceRelation), ...plan.joins.map((j) => j.sourceAlias)];
             if (open.some((alias) => asciiUpper(String(alias)) === asciiUpper(String(join.sourceAlias)))) {

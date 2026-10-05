@@ -268,7 +268,7 @@ function quotedRuns(tpl) {
 export function checkNumericGuard(dialect) {
   if (guardChecked.has(dialect)) return;
   // Marked as checked only AFTER it has passed. Marking first made the first use
-  // raise and every later one emit the SQL the check had refused (JS-C24).
+  // raise and every later one emit the SQL the check had refused.
   const guard = lexical(dialect, 'numericGuard');
   if (typeof guard !== 'string') { guardChecked.add(dialect); return; }
   const isnum = entry(dialect, 'funcs', 'ISNUM');
@@ -332,7 +332,7 @@ export function requireTarget(dialect, pos = null) {
 
 // Self first, then extends, up to ansi.
 //
-// Built once per dialect and handed back frozen (JS-P26): every lexical() and
+// Built once per dialect and handed back frozen: every lexical() and
 // entry() lookup asks, and rebuilding the array each time was a tenth of a
 // translation's own time. A registration or a reset is what can change an answer,
 // and both empty the cache.
