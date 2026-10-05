@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"github.com/nathanjel/sel/go/internal/utf8"
+	"github.com/nathanjel/sel/go/internal/vocab"
 )
 
 type joinTotalReq struct {
@@ -98,14 +99,6 @@ func joinPureSource(node *Node) bool {
 	}
 }
 
-var textCompareOps = map[string]bool{
-	"$==": true, "$!=": true, "$<": true, "$<=": true, "$>": true, "$>=": true,
-}
-
-var numCompareOps = map[string]bool{
-	"==": true, "!=": true, "<": true, "<=": true, ">": true, ">=": true,
-}
-
 func leadingFieldConjuncts(body *Node, binder string) []joinConjunct {
 	var conjuncts []*Node
 	curr := body
@@ -164,8 +157,8 @@ func leadingFieldConjuncts(body *Node, binder string) []joinConjunct {
 			entry.Fields = nil
 		}
 
-		if c != nil && c.T == NodeBin && (textCompareOps[c.S] || numCompareOps[c.S]) {
-			numeric := numCompareOps[c.S]
+		if c != nil && c.T == NodeBin && (vocab.IsTextComparison(c.S) || vocab.IsNumericComparison(c.S)) {
+			numeric := vocab.IsNumericComparison(c.S)
 			entry.HasTotal = true
 			for _, operand := range []*Node{c.L, c.R} {
 				if operand != nil && (operand.T == NodeNum || operand.T == NodeText) {

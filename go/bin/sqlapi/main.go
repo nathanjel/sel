@@ -4,28 +4,19 @@ package main
 
 import (
 	"fmt"
+	"os"
 	"strings"
 
+	"github.com/nathanjel/sel/go/internal/harness"
 	"github.com/nathanjel/sel/go/sel"
 	"github.com/nathanjel/sel/go/sel/sql"
 )
 
-var (
-	out     []string
-	counter int
-)
+var probes harness.Probes
 
-func say(name, value string) {
-	counter++
-	out = append(out, fmt.Sprintf("%02d %s = %s", counter, name, value))
-}
+func say(name, value string) { probes.Say(name, value) }
 
-func b(v bool) string {
-	if v {
-		return "true"
-	}
-	return "false"
-}
+var b = harness.Bool
 
 func attempt(fn func()) string {
 	var res string
@@ -255,5 +246,5 @@ func main() {
 		sql.MustTranslate(sel.MustCompile("N + 1"), "probe-badguard", named, sql.Options{})
 	}))
 
-	fmt.Println(strings.Join(out, "\n"))
+	os.Stdout.WriteString(probes.Text())
 }

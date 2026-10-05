@@ -3,50 +3,21 @@
 package sel
 
 import (
-	"bytes"
 	"math"
 	"math/big"
 	"strings"
 
 	"github.com/nathanjel/sel/go/internal/decimal"
 	"github.com/nathanjel/sel/go/internal/mathops"
+	"github.com/nathanjel/sel/go/internal/vocab"
 )
-
-var pipelineOps = map[string]bool{
-	"FILTER":      true,
-	"BUCKET":      true,
-	"SELECT_COLS": true,
-	"MAP":         true,
-	"DISTINCT":    true,
-	"DEDUPE":      true,
-	"TAKE":        true,
-	"DROP":        true,
-	"SORT":        true,
-	"SORT_DESC":   true,
-	"SORT_BY":     true,
-	"TOP":         true,
-	"TOP_DESC":    true,
-	"TOP_BY":      true,
-	"LINK":        true,
-	"LINK_LEFT":   true,
-}
 
 // isPipelineOp reports whether a function name is one of the pipeline operators.
 func isPipelineOp(name string) bool {
-	return pipelineOps[name]
+	return vocab.IsPipelineOp(name)
 }
 
-func copyNode(n *Node) *Node {
-	if n == nil {
-		return nil
-	}
-	cp := *n
-	if n.Items != nil {
-		cp.Items = make([]*Node, len(n.Items))
-		copy(cp.Items, n.Items)
-	}
-	return &cp
-}
+func copyNode(n *Node) *Node { return n.Copy() }
 
 // UnwindPipeline decomposes a nested pipeline call into its base source and sequence of steps.
 func UnwindPipeline(root *Node) (*Node, []*Node) {
@@ -196,45 +167,14 @@ func optFold(node *Node) *Node {
 				}
 				if decL != nil && decR != nil {
 					c := decimal.Cmp(decL, decR)
-					var b bool
-					switch node.S {
-					case "==":
-						b = (c == 0)
-					case "!=":
-						b = (c != 0)
-					case "<":
-						b = (c < 0)
-					case "<=":
-						b = (c <= 0)
-					case ">":
-						b = (c > 0)
-					case ">=":
-						b = (c >= 0)
-					}
-					return optBool(b, node.Pos)
+					return optBool(compareResult(node.S, c, node.Pos), node.Pos)
 				}
 			}
 		}
 		if left.T == NodeText && right.T == NodeText {
-			switch node.S {
-			case "$==", "$!=", "$<", "$<=", "$>", "$>=":
-				c := bytes.Compare([]byte(left.S), []byte(right.S))
-				var b bool
-				switch node.S {
-				case "$==":
-					b = (c == 0)
-				case "$!=":
-					b = (c != 0)
-				case "$<":
-					b = (c < 0)
-				case "$<=":
-					b = (c <= 0)
-				case "$>":
-					b = (c > 0)
-				case "$>=":
-					b = (c >= 0)
-				}
-				return optBool(b, node.Pos)
+			if vocab.IsTextComparison(node.S) {
+				c := strings.Compare(left.S, right.S) // UTF-8 bytes: code point order
+				return optBool(compareResult(node.S[1:], c, node.Pos), node.Pos)
 			}
 		}
 		return node

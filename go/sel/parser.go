@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/nathanjel/sel/go/internal/decimal"
+	"github.com/nathanjel/sel/go/internal/vocab"
 )
 
 // Binding power levels (spec/SPEC.md §5). Higher binds tighter.
@@ -478,10 +479,7 @@ func finishCall(nameTok token, spec *Spec, args []*Node) *Node {
 			// The ambiguity analysis folds case under `i`, so a literal flag is
 			// part of what is checked. A non-ASCII pattern under `i` is E_BAD_ARG
 			// when the call runs (compileRegex), not a syntax question here.
-			flagAt := 2
-			if spec.Name == "RREPLACE" {
-				flagAt = 3
-			}
+			flagAt, _ := vocab.RegexFlagsAt(spec.Name)
 			ic := len(args) > flagAt && args[flagAt].T == NodeText && strings.Contains(args[flagAt].S, "i")
 			if ic {
 				for _, r := range args[0].S {

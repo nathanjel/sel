@@ -57,3 +57,27 @@ func SplitCorpus(text string) []string {
 	}
 	return out
 }
+
+// Probes collects the numbered lines an API parity probe prints
+// (go/bin/api, go/bin/sqlapi; tools/check-api.sh compares them across hosts).
+type Probes struct {
+	lines []string
+}
+
+// Say records one probe: "NN name = value", numbered from 01.
+func (p *Probes) Say(name, value string) {
+	p.lines = append(p.lines, fmt.Sprintf("%02d %s = %s", len(p.lines)+1, name, value))
+}
+
+// Text is every probe line, each ended by a newline.
+func (p *Probes) Text() string {
+	return strings.Join(p.lines, "\n") + "\n"
+}
+
+// Bool is a probe's spelling of a bool.
+func Bool(v bool) string {
+	if v {
+		return "true"
+	}
+	return "false"
+}

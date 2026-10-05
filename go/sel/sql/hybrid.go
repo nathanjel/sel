@@ -32,18 +32,6 @@ type HybridPlan struct {
 
 type DbRunner func(query string, params []*sel.Value) (*sel.Value, error)
 
-func copyAstNode(n *sel.Node) *sel.Node {
-	if n == nil {
-		return nil
-	}
-	cp := *n
-	if n.Items != nil {
-		cp.Items = make([]*sel.Node, len(n.Items))
-		copy(cp.Items, n.Items)
-	}
-	return &cp
-}
-
 func varNode(name string, pos Pos) *sel.Node {
 	n := sel.NewNode(sel.NodeVar, pos)
 	n.S = name
@@ -418,7 +406,7 @@ func inlineLiterals(node *sel.Node, literals map[string]*sel.Node, bound []strin
 		if containsString(bound, node.S) || literals[node.S] == nil {
 			return node
 		}
-		cp := copyAstNode(literals[node.S])
+		cp := literals[node.S].Copy()
 		cp.Pos = node.Pos
 		return cp
 	}
@@ -429,18 +417,18 @@ func inlineLiterals(node *sel.Node, literals map[string]*sel.Node, bound []strin
 		return inlineLiterals(child, literals, scope)
 	}
 	if t == sel.NodeUn {
-		cp := copyAstNode(node)
+		cp := node.Copy()
 		cp.L = inlineChild(node.L, bound)
 		return cp
 	}
 	if t == sel.NodeBin || t == sel.NodeIndex {
-		cp := copyAstNode(node)
+		cp := node.Copy()
 		cp.L = inlineChild(node.L, bound)
 		cp.R = inlineChild(node.R, bound)
 		return cp
 	}
 	if t == sel.NodeList || t == sel.NodeSeq {
-		cp := copyAstNode(node)
+		cp := node.Copy()
 		cp.Items = make([]*sel.Node, len(node.Items))
 		for i, item := range node.Items {
 			cp.Items[i] = inlineChild(item, bound)
@@ -448,7 +436,7 @@ func inlineLiterals(node *sel.Node, literals map[string]*sel.Node, bound []strin
 		return cp
 	}
 	if t == sel.NodeAssign {
-		cp := copyAstNode(node)
+		cp := node.Copy()
 		cp.R = inlineChild(node.R, bound)
 		return cp
 	}
@@ -462,7 +450,7 @@ func inlineLiterals(node *sel.Node, literals map[string]*sel.Node, bound []strin
 		if form != nil {
 			inner = append(inner, form.Binds...)
 		}
-		cp := copyAstNode(node)
+		cp := node.Copy()
 		cp.Items = make([]*sel.Node, len(node.Items))
 		for i, item := range node.Items {
 			scope := bound
@@ -513,7 +501,7 @@ func unwindThroughHelpers(result *sel.Node, defs map[string]*sel.Node, literals 
 		steps = append(innerSteps, steps...)
 	}
 	if source != nil && source.T == sel.NodeVar && defs[source.S] != nil {
-		source = copyAstNode(source)
+		source = source.Copy()
 		source.BindingRead = true
 	}
 	return source, steps
@@ -977,7 +965,7 @@ func tryPlanFallthrough(source *sel.Node, steps []*sel.Node, dialect string, cat
 		}
 	}
 
-	rewrittenRecord := copyAstNode(details.body)
+	rewrittenRecord := details.body.Copy()
 	rewrittenRecord.Items = nil
 	for _, pair := range pushable {
 		rewrittenRecord.Items = append(rewrittenRecord.Items, pair.Key, pair.Val)
@@ -987,7 +975,7 @@ func tryPlanFallthrough(source *sel.Node, steps []*sel.Node, dialect string, cat
 		rewrittenRecord.Items = append(rewrittenRecord.Items, k, indexNode(varNode(details.binder, mapStep.Pos), k, mapStep.Pos))
 	}
 
-	rewrittenMap := copyAstNode(mapStep)
+	rewrittenMap := mapStep.Copy()
 	rewrittenMap.Items = []*sel.Node{mapStep.Items[0]}
 	if details.explicit {
 		rewrittenMap.Items = append(rewrittenMap.Items, mapStep.Items[1])
@@ -1009,7 +997,7 @@ func tryPlanFallthrough(source *sel.Node, steps []*sel.Node, dialect string, cat
 		return nil
 	}
 
-	continuationRecord := copyAstNode(details.body)
+	continuationRecord := details.body.Copy()
 	continuationRecord.Items = nil
 	for _, pair := range details.pairs {
 		continuationRecord.Items = append(continuationRecord.Items, pair.Key)
@@ -1027,7 +1015,7 @@ func tryPlanFallthrough(source *sel.Node, steps []*sel.Node, dialect string, cat
 		}
 	}
 
-	continuationMap := copyAstNode(mapStep)
+	continuationMap := mapStep.Copy()
 	continuationMap.Items = []*sel.Node{varNode("_INPUT", mapStep.Pos)}
 	if details.explicit {
 		continuationMap.Items = append(continuationMap.Items, mapStep.Items[1])

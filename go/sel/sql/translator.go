@@ -10,6 +10,7 @@ import (
 	"github.com/nathanjel/sel/go/internal/limits"
 	"github.com/nathanjel/sel/go/internal/manifest"
 	"github.com/nathanjel/sel/go/internal/utf8"
+	"github.com/nathanjel/sel/go/internal/vocab"
 	"github.com/nathanjel/sel/go/sel"
 )
 
@@ -162,27 +163,6 @@ func declaredKind(b *Binding, v *sel.Value) SqlKind {
 	return KindText
 }
 
-func constScope(bindings *Bindings) (map[string]bool, *sel.Value) {
-	names := make(map[string]bool)
-	root := sel.NewNone()
-	if bindings == nil {
-		return names, root
-	}
-	for _, name := range bindings.Names() {
-		b := bindings.Get(name, Pos{})
-		if b.kind != bindingKindValue {
-			continue
-		}
-		v := b.val
-		if v == nil || v.IsNone() || v.Size() > 0 {
-			continue
-		}
-		names[name] = true
-		root.Set(name, v)
-	}
-	return names, root
-}
-
 func litNode(t sel.NodeType, s string, b bool, pos Pos) *sel.Node {
 	return &sel.Node{
 		T:   t,
@@ -204,7 +184,7 @@ func (t *translator) Begin(ast *sel.Node) begun {
 	t.nodes = 0
 	t.subqueryCounter = 0
 
-	constNames, constRoot := constScope(t.bindings)
+	constNames, constRoot := scope(t.bindings)
 	t.constNames = constNames
 	t.constRoot = constRoot
 
@@ -1055,21 +1035,19 @@ func (t *translator) coerceScaleLimits(operands []*sNode) {
 }
 
 var (
-	numericOpsSet      = map[string]bool{"==": true, "!=": true, "<": true, "<=": true, ">": true, ">=": true}
-	textualOpsSet      = map[string]bool{"$==": true, "$!=": true, "$<": true, "$<=": true, "$>": true, "$>=": true, "EQL": true}
 	byteComparisonsSet = map[string]bool{"$==": true, "$!=": true, "$<": true, "$<=": true, "$>": true, "$>=": true, "EQL": true, "IN": true}
 	arithmeticOpsSet   = map[string]bool{"+": true, "-": true, "*": true, "/": true, "%": true}
 )
 
 func (t *translator) variantFor(op string, args []*Fragment) *string {
-	if numericOpsSet[op] {
+	if vocab.IsNumericComparison(op) {
 		v := "coerce"
 		if args[0].Kind == KindNum && args[1].Kind == KindNum {
 			v = "num"
 		}
 		return &v
 	}
-	if textualOpsSet[op] {
+	if vocab.IsTextComparison(op) || op == "EQL" {
 		v := "text"
 		return &v
 	}
@@ -1270,7 +1248,7 @@ func (t *translator) binary(n *sNode) *Fragment {
 		l = t.requireBool(l, n.L().Pos, op)
 		r = t.requireBool(r, n.R().Pos, op)
 	}
-	if arithmeticOpsSet[op] || numericOpsSet[op] {
+	if arithmeticOpsSet[op] || vocab.IsNumericComparison(op) {
 		t.requireNotBool(l, n.L().Pos, op)
 		t.requireNotBool(r, n.R().Pos, op)
 		t.requireNumericConstant(n.L())
@@ -1709,8 +1687,8 @@ func (t *translator) requireArgumentKind(name string, f *Fragment, pos Pos) {
 }
 
 func regexAt(name string) *int {
-	if name == "RMATCH" || name == "RFIND" || name == "RREPLACE" || name == "RGROUPS" {
-		zero := 0
+	if _, ok := vocab.RegexFlagsAt(name); ok {
+		zero := 0 // the pattern
 		return &zero
 	}
 	return nil
@@ -1747,10 +1725,7 @@ func (t *translator) rewriteRegex(n *sNode) *sNode {
 	}
 
 	inlineFlags := "(?s)"
-	flagAt := 2
-	if n.Str == "RREPLACE" {
-		flagAt = 3
-	}
+	flagAt, _ := vocab.RegexFlagsAt(n.Str)
 	if flagAt >= len(args) {
 		args[patAt] = leaf(litNode(sel.NodeText, inlineFlags+source, false, pat.Pos))
 		return rewritten(n.Origin, args)

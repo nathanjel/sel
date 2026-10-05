@@ -8,29 +8,21 @@ import (
 	"os"
 	"strings"
 
+	"github.com/nathanjel/sel/go/internal/harness"
 	"github.com/nathanjel/sel/go/sel"
 )
 
-var out []string
-var counter int
+var probes harness.Probes
+
+func say(name, value string) { probes.Say(name, value) }
+
+var b = harness.Bool
 
 // numFromStr is the other hosts' Value.num("1.50"): Go has no number-from-text
 // constructor (a number is its text), so the text is read as a number and the
 // decimal form built from it, through the public API alone.
 func numFromStr(s string) *sel.Value {
 	return sel.NewDecimal(sel.NewText(s).Decimal(sel.Pos{}))
-}
-
-func say(name, value string) {
-	counter++
-	out = append(out, fmt.Sprintf("%02d %s = %s", counter, name, value))
-}
-
-func b(v bool) string {
-	if v {
-		return "true"
-	}
-	return "false"
 }
 
 func repeat(unit string, n int) string {
@@ -532,5 +524,5 @@ func main() {
 		say("program.run.over-deep-host-value.key-error-first", at("RECORD(TRUE, V)")+"|"+at("RECORD(\"k\", V)"))
 	}
 
-	os.Stdout.WriteString(strings.Join(out, "\n") + "\n")
+	os.Stdout.WriteString(probes.Text())
 }

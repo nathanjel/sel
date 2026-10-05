@@ -125,6 +125,21 @@ type Node struct {
 
 // NewNode makes a node of type t.
 // For the SQL layer and the tools; see "The syntax tree" in the package documentation.
+// Copy is a shallow copy of the node: its own Items slice, the same children
+// (and the same slot-cache holder, which is safe to share).
+// For the SQL layer and the tools; see "The syntax tree" in the package documentation.
+func (n *Node) Copy() *Node {
+	if n == nil {
+		return nil
+	}
+	cp := *n
+	if n.Items != nil {
+		cp.Items = make([]*Node, len(n.Items))
+		copy(cp.Items, n.Items)
+	}
+	return &cp
+}
+
 func NewNode(t NodeType, pos Pos) *Node {
 	n := &Node{T: t, Pos: pos}
 	if t == NodeIndex {

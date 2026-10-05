@@ -8,18 +8,12 @@ import (
 	"strings"
 
 	"github.com/nathanjel/sel/go/internal/utf8"
+	"github.com/nathanjel/sel/go/internal/vocab"
 	"github.com/nathanjel/sel/go/sel"
 )
 
-var pipelineOpsSet = map[string]bool{
-	"FILTER": true, "BUCKET": true, "SELECT_COLS": true, "MAP": true,
-	"DISTINCT": true, "DEDUPE": true, "TAKE": true, "DROP": true,
-	"SORT": true, "SORT_DESC": true, "SORT_BY": true, "TOP": true,
-	"TOP_DESC": true, "TOP_BY": true, "LINK": true, "LINK_LEFT": true,
-}
-
 func isPipelineOp(name string) bool {
-	return pipelineOpsSet[name]
+	return vocab.IsPipelineOp(name)
 }
 
 type joinedRowField struct {

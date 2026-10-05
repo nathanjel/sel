@@ -45,7 +45,7 @@
 //
 // # The syntax tree
 //
-// [Node], [NodeType] and its constants, [NewNode], [NewProgram], [Program.AST],
+// [Node], [NodeType] and its constants, [NewNode], [Node.Copy], [NewProgram], [Program.AST],
 // [Program.PhysicalAST], [UnwindPipeline], [BuildPipeline], [OptimizeAstLogical],
 // [OptimizeAstInMemory], [BindingForm], [HostArity], [ValidatePattern] and
 // [ValidatePatternFlags] are exported because the SQL layer
