@@ -642,26 +642,23 @@ pub fn compile_sel_regex(
 ) -> Result<CompiledRegex, SelError> {
     let mut ignore_case = false;
     for ch in flags.chars() {
-        let f = ch;
-        if f == 'i' {
+        if ch == 'i' {
             ignore_case = true;
             continue;
         }
-        if f == 'm' || f == 's' {
+        // Quoted as a string, as the other hosts' messages quote it ("x").
+        let quoted = format!("{:?}", ch.to_string());
+        if ch == 'm' || ch == 's' {
             return Err(SelError::new(
                 "E_BAD_ARG",
                 format!(
-                    "flag {:?} is not offered — SEL always matches . against any character and anchors ^ $ to the whole subject",
-                    ch
+                    "flag {} is not offered — SEL always matches . against any character and anchors ^ $ to the whole subject",
+                    quoted
                 ),
                 flag_pos,
             ));
         }
-        return Err(SelError::new(
-            "E_BAD_ARG",
-            format!("unknown regex flag {:?}", ch),
-            flag_pos,
-        ));
+        return Err(SelError::new("E_BAD_ARG", format!("unknown regex flag {}", quoted), flag_pos));
     }
 
     if ignore_case {
