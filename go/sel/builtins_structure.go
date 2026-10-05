@@ -44,6 +44,7 @@ func init() {
 		Min:  0,
 		Max:  -1,
 		Fn: func(args *Args, ctx *Context) *Value {
+			checkCollection(int64(args.Count()), "LIST's result", args.Pos())
 			items := make([]*Value, args.Count())
 			for i := 0; i < args.Count(); i++ {
 				// SPEC §3.4: LIST copies its arguments, like `,`.
@@ -62,6 +63,7 @@ func init() {
 			if count == 0 {
 				return NewNone()
 			}
+			checkCollection(int64(count/2), "RECORD's result", args.Pos())
 			if shape := args.RecordShape(); shape != nil {
 				// Every key is a distinct text literal (the parser prepared the
 				// shape): the keys cannot fail or have effects, and dispatch has
