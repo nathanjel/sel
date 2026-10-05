@@ -64,7 +64,7 @@ func indexNode(obj *sel.Node, idx *sel.Node, pos Pos) *sel.Node {
 
 var sqlSpecialCalls = map[string]bool{
 	"IF": true, "COND": true, "COALESCE": true, "COUNT": true, "SUM": true,
-	"AVG": true, "MIN": true, "MAX": true, "RECORD": true, "LIST": true,
+	"MIN": true, "MAX": true, "RECORD": true, "LIST": true,
 }
 
 func containsUnsupportedSql(node *sel.Node, dialect string, defs map[string]*sel.Node, seen map[string]bool) bool {
