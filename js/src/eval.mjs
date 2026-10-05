@@ -7,9 +7,8 @@ import { fail, MAX_DEPTH } from './errors.mjs';
 import * as D from './decimal.mjs';
 import { Value, NONE, TEXT, BOOL } from './value.mjs';
 import { bytesCompare, compareText, encodeUtf8 } from './utf8.mjs';
-import { cpLength, checkText, checkCollection, MAX_TEXT_LEN } from './budget.mjs';
+import { cpLength, checkText, checkCollection, MAX_TEXT_LEN, checkSizedInt, MAX_SCALE, MAX_POWER } from './budget.mjs';
 import { OpCode } from './math_plan.mjs';
-import { checkSizedInt, MAX_SCALE, MAX_POWER } from './builtins/number.mjs';
 
 // Exported so the SQL translator can say "as deep as the evaluator counts"
 // rather than repeating 200, the same way python/sel/sql does.

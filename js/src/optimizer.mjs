@@ -6,6 +6,7 @@ import * as D from './decimal.mjs';
 import { lookup, argRoles, textSelectsForm } from './registry.mjs';
 import { childNodes, fieldReads, readsName, mapChildren, mentionsKey } from './ast.mjs';
 import { MAX_DEPTH } from './errors.mjs';
+import { recordShape } from './value.mjs';
 import { compileMathPlan, isMathOp } from './math_plan.mjs';
 
 const PIPELINE_OPS = new Set([
@@ -557,7 +558,23 @@ function optimizeTree(node, physical, depth = 1, options = {}, inMath = false) {
     const plan = compileMathPlan(folded);
     if (plan) folded.mathPlan = plan;
   }
+  if (physical && folded.t === 'call' && folded.name === 'RECORD') folded.recordShape = recordShapeOf(folded.args);
   return folded;
+}
+
+// The shape a RECORD call builds when its keys are distinct text literals --
+// known once its arguments are folded -- interned, so every record it builds
+// shares it and shape-keyed caches hit. Null otherwise: the call then builds
+// its record from the keys it evaluates, and checks a prepared shape against
+// them anyway (structure.mjs, recordWithShape).
+function recordShapeOf(args) {
+  if (args.length === 0 || args.length % 2) return null;
+  const keys = [];
+  for (let i = 0; i < args.length; i += 2) {
+    if (args[i].t !== 'text') return null;
+    keys.push(args[i].v);
+  }
+  return new Set(keys).size === keys.length ? recordShape(keys) : null;
 }
 
 // Whether any node of the tree lies past the evaluator's depth cap, counted

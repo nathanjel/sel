@@ -9,6 +9,7 @@
 // too large: `REPEAT("", 10^30)` is "".
 
 import { fail } from './errors.mjs';
+import * as D from './decimal.mjs';
 import { MAX_TEXT_LEN, MAX_COLLECTION } from './_limits.mjs';
 
 // Code points in a JS string. Text is well formed (E_UTF8 rejects a lone
@@ -19,6 +20,21 @@ export function cpLength(s) {
     const c = s.charCodeAt(i);
     if (c >= 0xd800 && c <= 0xdbff) { n--; i++; }
   }
+  return n;
+}
+
+// The size arguments of ROUND (a scale) and POWER (an exponent), §6.4: without
+// a cap, a size argument nobody meant to write takes down the host instead of
+// failing as a rule error. Checked by the builtins and by the evaluator's math
+// plan alike, which is why they live here and not with the builtins.
+export const MAX_SCALE = 1000000;
+export const MAX_POWER = 100000;
+
+export function checkSizedInt(d, name, argNum, limit, what, pos) {
+  if (!D.isInteger(d)) fail('E_NOT_INT', `${name} argument ${argNum} must be a whole number`, pos);
+  const n = D.toSafeInt(d);
+  if (n < 0) fail('E_RANGE', `${name} argument ${argNum} must not be negative`, pos);
+  if (n > limit) fail('E_RANGE', `${what} ${n} exceeds the maximum of ${limit}`, pos);
   return n;
 }
 

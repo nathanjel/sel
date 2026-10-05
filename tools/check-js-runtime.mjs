@@ -5,7 +5,7 @@ import { resolve } from 'node:path';
 import { compile, Value } from '../js/src/sel.mjs';
 import { parse } from '../js/src/parser.mjs';
 import { evalNode, Context } from '../js/src/eval.mjs';
-import { optimizeAstLogical, unwindPipeline } from '../js/src/optimizer.mjs';
+import { optimizeAstLogical, optimizeAstInMemory, unwindPipeline } from '../js/src/optimizer.mjs';
 import { decodeSource, fromCodePoints, toCodePoints } from '../js/src/utf8.mjs';
 import { structuralHash, RecordShape } from '../js/src/value.mjs';
 import * as DEC from '../js/src/decimal.mjs';
@@ -48,9 +48,11 @@ for (const entry of entries) {
   }
 }
 
+// The in-memory optimiser prepares a RECORD's shape ('prepared'); the plain
+// parse has none ('generic'); a shape that does not match the keys the call
+// evaluates ('stale') must be noticed and not used.
 function outcome(source, input, layout) {
-  const ast = parse(source);
-  if (layout === 'generic') ast.recordShape = null;
+  const ast = layout === 'prepared' ? optimizeAstInMemory(parse(source)) : parse(source);
   if (layout === 'stale') ast.recordShape = new RecordShape(['wrong', 'layout']);
   const root = Value.fromNative(input);
   try {
