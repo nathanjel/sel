@@ -8,7 +8,7 @@ use crate::text::SelStr;
 use std::borrow::Cow;
 use crate::limits::MAX_DEPTH;
 use crate::shape::{parse_list_slot, unique_record_shape, RecordShape};
-use crate::utf8::{validate_text, Pos, SelError};
+use crate::utf8::{Pos, SelError};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Kind {
@@ -64,12 +64,7 @@ impl ListKeys {
         match self {
             ListKeys::Index(ix) => {
                 // Only a canonical positive integer names a position.
-                let b = key.as_bytes();
-                if b.is_empty() || b.len() > 10 || b[0] == b'0' || !b.iter().all(|c| c.is_ascii_digit()) {
-                    return None;
-                }
-                let n: u64 = key.parse().ok()?;
-                let n = u32::try_from(n).ok()?;
+                let n = u32::try_from(crate::utf8::canonical_index(key, 10)?).ok()?;
                 ix.binary_search(&n).ok()
             }
             ListKeys::Text(t) => t.iter().position(|k| k == key),
@@ -152,7 +147,7 @@ impl Elems {
 }
 
 #[derive(Clone, Debug)]
-pub struct Value(pub Rc<RefCell<ValueInner>>);
+pub struct Value(pub(crate) Rc<RefCell<ValueInner>>);
 
 // One value. Scalars and shaped records -- nearly every value a program
 // handles -- use only the inline fields; what few values need (BIN bytes, an
@@ -175,7 +170,7 @@ pub struct ValueInner {
 /// two u64 halves. An i128 field would make every cell 16-byte aligned and
 /// `Option<Dec>` 48 bytes; this is 32, and the cell 8-byte aligned. A large
 /// mantissa is the `Dec`'s own shared one: unpacking and copying a cell share
-/// it rather than copy it (item 1).
+/// it rather than copy it.
 #[derive(Clone, Debug)]
 pub struct CellDec {
     lo: u64,
@@ -217,6 +212,8 @@ struct Rare {
 }
 
 impl ValueInner {
+    /// An empty cell of `kind`: the constructors name only what differs.
+    #[inline]
     fn blank(kind: Kind) -> Self {
         ValueInner {
             kind,
@@ -309,25 +306,30 @@ pub(crate) fn parse_text_decimal(text: &str, pos: Pos) -> Result<Dec, SelError> 
 }
 
 impl Value {
+    /// A read-only view of the value's cell, for this repository's tests and
+    /// benchmarks (which count representations); not part of the API.
+    #[doc(hidden)]
+    pub fn inner(&self) -> std::cell::Ref<'_, ValueInner> {
+        self.0.borrow()
+    }
+
+    #[inline]
+    fn cell(inner: ValueInner) -> Self {
+        Self(Rc::new(RefCell::new(inner)))
+    }
+
     pub fn none() -> Self {
-        Self(Rc::new(RefCell::new(ValueInner {
-            kind: Kind::None,
-            bool_val: false,
-            str_val: SelStr::EMPTY,
-            dec_val: None,
-            shape: None,
-            storage: None,
-            is_list: false,
-            ext: None,
-        })))
+        Self::cell(ValueInner::blank(Kind::None))
     }
 
     pub fn null() -> Self {
         Self::none()
     }
 
-    pub fn text(s: &str, pos: Pos) -> Result<Self, SelError> {
-        validate_text(s, pos)?;
+    /// A TEXT value. Never an error today -- a `&str` is valid UTF-8, so there
+    /// is nothing left to check -- but kept fallible, as text from elsewhere
+    /// (bytes, a host's own strings) is in the other hosts.
+    pub fn text(s: &str, _pos: Pos) -> Result<Self, SelError> {
         Ok(Self::text_owned(s.to_string()))
     }
 
@@ -337,16 +339,10 @@ impl Value {
 
     /// A TEXT value from text already validated (a literal, a copy).
     pub fn text_sel(s: SelStr) -> Self {
-        Self(Rc::new(RefCell::new(ValueInner {
-            kind: Kind::Text,
-            bool_val: false,
+        Self::cell(ValueInner {
             str_val: s,
-            dec_val: None,
-            shape: None,
-            storage: None,
-            is_list: false,
-            ext: None,
-        })))
+            ..ValueInner::blank(Kind::Text)
+        })
     }
 
     pub fn bin(b: &[u8]) -> Self {
@@ -354,29 +350,17 @@ impl Value {
     }
 
     pub fn bin_owned(b: Vec<u8>) -> Self {
-        Self(Rc::new(RefCell::new(ValueInner {
-            kind: Kind::Bin,
-            bool_val: false,
-            str_val: SelStr::EMPTY,
+        Self::cell(ValueInner {
             ext: Some(Box::new(Rare { bin_val: b, ..Default::default() })),
-            dec_val: None,
-            shape: None,
-            storage: None,
-            is_list: false,
-        })))
+            ..ValueInner::blank(Kind::Bin)
+        })
     }
 
     pub fn bool(b: bool) -> Self {
-        Self(Rc::new(RefCell::new(ValueInner {
-            kind: Kind::Bool,
+        Self::cell(ValueInner {
             bool_val: b,
-            str_val: SelStr::EMPTY,
-            dec_val: None,
-            shape: None,
-            storage: None,
-            is_list: false,
-            ext: None,
-        })))
+            ..ValueInner::blank(Kind::Bool)
+        })
     }
 
     /// A number from a host-built decimal. The sign lives in `neg` and a
@@ -393,16 +377,10 @@ impl Value {
 
     /// A number the evaluator produced: already canonical and within caps.
     pub(crate) fn num_trusted(d: Dec) -> Self {
-        Self(Rc::new(RefCell::new(ValueInner {
-            kind: Kind::Text,
-            bool_val: false,
-            str_val: SelStr::EMPTY,
+        Self::cell(ValueInner {
             dec_val: Some(CellDec::pack(d)),
-            shape: None,
-            storage: None,
-            is_list: false,
-            ext: None,
-        })))
+            ..ValueInner::blank(Kind::Text)
+        })
     }
 
     pub fn num_exact(s: String, d: Dec) -> Self {
@@ -411,16 +389,11 @@ impl Value {
 
     /// A number literal: its source spelling and its parsed value.
     pub fn num_exact_sel(s: SelStr, d: Dec) -> Self {
-        Self(Rc::new(RefCell::new(ValueInner {
-            kind: Kind::Text,
-            bool_val: false,
+        Self::cell(ValueInner {
             str_val: s,
             dec_val: Some(CellDec::pack(d)),
-            shape: None,
-            storage: None,
-            is_list: false,
-            ext: None,
-        })))
+            ..ValueInner::blank(Kind::Text)
+        })
     }
 
     pub fn int(n: i64) -> Self {
@@ -428,20 +401,11 @@ impl Value {
     }
 
     pub fn list(items: Vec<Value>) -> Self {
-        Self(Rc::new(RefCell::new(ValueInner {
-            kind: Kind::None,
-            bool_val: false,
-            str_val: SelStr::EMPTY,
-            dec_val: None,
-            shape: None,
+        Self::cell(ValueInner {
             storage: Some(items),
             is_list: true,
-            ext: None,
-        })))
-    }
-
-    pub fn list_owned(items: Vec<Value>) -> Self {
-        Self::list(items)
+            ..ValueInner::blank(Kind::None)
+        })
     }
 
     pub fn list_with_keys(items: Vec<Value>, keys: Vec<String>) -> Self {
@@ -449,29 +413,20 @@ impl Value {
     }
 
     pub fn list_with_list_keys(items: Vec<Value>, keys: ListKeys) -> Self {
-        Self(Rc::new(RefCell::new(ValueInner {
-            kind: Kind::None,
-            bool_val: false,
-            str_val: SelStr::EMPTY,
-            dec_val: None,
-            shape: None,
+        Self::cell(ValueInner {
             storage: Some(items),
             is_list: true,
             ext: Some(Box::new(Rare { list_keys: Some(keys), ..Default::default() })),
-        })))
+            ..ValueInner::blank(Kind::None)
+        })
     }
 
     pub fn shaped_record(shape: Arc<RecordShape>, values: Vec<Value>) -> Self {
-        Self(Rc::new(RefCell::new(ValueInner {
-            kind: Kind::None,
-            bool_val: false,
-            str_val: SelStr::EMPTY,
-            dec_val: None,
+        Self::cell(ValueInner {
             shape: Some(shape),
             storage: Some(values),
-            is_list: false,
-            ext: None,
-        })))
+            ..ValueInner::blank(Kind::None)
+        })
     }
 
     pub fn record_from_entries(entries: Vec<Entry>) -> Self {
@@ -509,7 +464,7 @@ impl Value {
         }
         if inner.kind == Kind::Text && inner.size() == 0 {
             drop(inner);
-            return self.scalar_str().trim().is_empty();
+            return crate::utf8::is_sel_blank(&self.scalar_str());
         }
         false
     }
@@ -612,8 +567,10 @@ impl Value {
         None
     }
 
-    pub fn set(&self, key: &str, val: Value, pos: Pos) -> Result<(), SelError> {
-        validate_text(key, pos)?;
+    /// Stores `val` under `key`, replacing what was there. It cannot fail
+    /// today (any `&str` is a valid key); the Result and the position are the
+    /// signature every host's `set` shares.
+    pub fn set(&self, key: &str, val: Value, _pos: Pos) -> Result<(), SelError> {
         let mut inner = self.0.borrow_mut();
 
         if inner.shape.is_some() {
@@ -626,7 +583,7 @@ impl Value {
             let shape = inner.shape.take().unwrap();
             let storage = inner.storage.take().unwrap();
             let mut entries = Vec::with_capacity(shape.keys.len() + 1);
-            for (k, v) in shape.keys.iter().zip(storage.into_iter()) {
+            for (k, v) in shape.keys.iter().zip(storage) {
                 entries.push(Entry {
                     key: k.clone(),
                     val: v,
@@ -650,7 +607,7 @@ impl Value {
             let list_keys = inner.take_list_keys();
             let mut entries = Vec::with_capacity(storage.len() + 1);
             if let Some(lk) = list_keys {
-                for (k, v) in lk.to_strings().into_iter().zip(storage.into_iter()) {
+                for (k, v) in lk.to_strings().into_iter().zip(storage) {
                     entries.push(Entry { key: k, val: v });
                 }
             } else {
@@ -709,6 +666,27 @@ impl Value {
             return (1..=len).map(|i| i.to_string()).collect();
         }
         inner.entries().iter().map(|e| e.key.clone()).collect()
+    }
+
+    /// Whether `pred` holds for every child, in order, stopping at the first
+    /// that fails -- `values()` without copying the handles out first. The
+    /// children are read while this value is borrowed, so `pred` must not
+    /// write to it (reading children, or writing them, is fine).
+    pub(crate) fn all_children(&self, mut pred: impl FnMut(&Value) -> bool) -> bool {
+        let inner = self.0.borrow();
+        match inner.storage {
+            Some(ref storage) => storage.iter().all(&mut pred),
+            None => inner.entries().iter().all(|e| pred(&e.val)),
+        }
+    }
+
+    /// The first child, if any, without copying the rest.
+    pub(crate) fn first_child(&self) -> Option<Value> {
+        let inner = self.0.borrow();
+        match inner.storage {
+            Some(ref storage) => storage.first().cloned(),
+            None => inner.entries().first().map(|e| e.val.clone()),
+        }
     }
 
     pub fn values(&self) -> Vec<Value> {
@@ -900,7 +878,7 @@ impl Value {
         let s = self.scalar_source(pos)?;
         if s.kind() != Kind::Text {
             return Err(SelError::not_num(
-                format!("expected a number, got {}", s.kind().as_str().to_lowercase()),
+                format!("expected a number, got {}", s.kind().as_str().to_ascii_lowercase()),
                 pos,
             ));
         }
@@ -1088,14 +1066,7 @@ impl Value {
             Kind::Text => {
                 format!("t{}", quote_dump(&inner.text_cow()))
             }
-            Kind::Bin => {
-                let mut hex_str = String::with_capacity(inner.bin().len() * 2);
-                for &b in inner.bin() {
-                    use std::fmt::Write;
-                    let _ = write!(hex_str, "{:02x}", b);
-                }
-                format!("b{}", hex_str)
-            }
+            Kind::Bin => format!("b{}", crate::utf8::hex_lower(inner.bin())),
             Kind::Bool => {
                 if inner.bool_val {
                     "TRUE".to_string()

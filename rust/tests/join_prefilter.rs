@@ -5,7 +5,8 @@
 use sel_lang::context::Context;
 use sel_lang::eval::eval_node;
 use sel_lang::join_prefilter::{leading_field_conjuncts, JoinPrefilter, JoinReport, JoinStage};
-use sel_lang::{compile, evaluate, Node, NodeType, Pos, SelError, Value};
+use sel_lang::ast::{Node, NodeType};
+use sel_lang::{compile, evaluate, Pos, SelError, Value};
 
 const DATA: &str = r#"ORDERS = LIST(
   RECORD("id", 1, "cid", 1, "status", "B", "amount", "x"),
@@ -133,7 +134,7 @@ fn the_link_applies_the_handed_conjunct_and_keeps_the_written_keys() {
     let joined = eval_node(&filter.items[0], &mut ctx).unwrap();
     assert!(ctx.join_prefilter.is_none());
     let report: JoinReport = ctx.join_prefilter_report.take().expect("the LINK reports what it applied");
-    assert!(report.applied.contains_key(&own[0].id));
+    assert!(report.applied.contains(&own[0].id));
     assert!(report.dropped && !report.errored);
     // Rows 2 and 3 of the join survive, under their own positions.
     assert_eq!(joined.keys(), vec!["2".to_string(), "3".to_string()]);

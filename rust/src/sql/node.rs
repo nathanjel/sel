@@ -1,3 +1,4 @@
+use std::rc::Rc;
 use std::sync::Arc;
 
 use crate::ast::{Node, NodeType};
@@ -77,23 +78,24 @@ impl SNodeType {
 }
 
 #[derive(Clone, Debug)]
-pub struct CListEntry {
-    pub key: String,
-    pub val: Box<SNode>,
-}
-
-#[derive(Clone, Debug)]
 pub struct SNode {
     pub t: SNodeType,
     pub pos: Pos,
-    pub origin: Option<Arc<Node>>,
+    /// The SEL node this one stands for. A leaf keeps the node whole (it is
+    /// what to_node() gives back); a node rebuilt from kids keeps only its own
+    /// fields (Node::head), never a second copy of the subtree.
+    pub origin: Option<Rc<Node>>,
     pub str: String,
     pub bool_val: bool,
     pub grouped: bool,
     pub spec: Option<Arc<Spec>>,
     pub kids: Vec<SNode>,
+    /// A CList's keys, one per kid, in order.
     pub keys: Vec<String>,
-    pub entries: Vec<CListEntry>,
+    /// Stage 1 put this here in place of a helper's name: it was not written
+    /// at this position. A form decided "off the call as written" (a sort's
+    /// text-literal direction) must not take an inlined literal for one.
+    pub inlined: bool,
 }
 
 impl SNode {
@@ -106,14 +108,14 @@ impl SNode {
         Self {
             t: SNodeType::from_node_type(n.t),
             pos: n.pos,
-            origin: Some(Arc::new(n.clone())),
+            origin: Some(Rc::new(n.clone())),
             str: n.s.clone(),
             bool_val: n.b,
             grouped: n.grouped,
             spec,
             kids: Vec::new(),
             keys: Vec::new(),
-            entries: Vec::new(),
+            inlined: false,
         }
     }
 
@@ -126,14 +128,14 @@ impl SNode {
         Self {
             t: SNodeType::from_node_type(shape.t),
             pos: shape.pos,
-            origin: Some(Arc::new(shape.clone())),
+            origin: Some(Rc::new(shape.head())),
             str: shape.s.clone(),
             bool_val: shape.b,
             grouped: shape.grouped,
             spec,
             kids,
             keys: Vec::new(),
-            entries: Vec::new(),
+            inlined: false,
         }
     }
 
@@ -148,43 +150,30 @@ impl SNode {
             spec: None,
             kids: Vec::new(),
             keys: Vec::new(),
-            entries: Vec::new(),
+            inlined: false,
         }
     }
 
     pub fn append(&mut self, key: impl Into<String>, val: SNode) {
-        let k = key.into();
-        self.keys.push(k.clone());
-        self.kids.push(val.clone());
-        self.entries.push(CListEntry {
-            key: k,
-            val: Box::new(val),
-        });
+        self.keys.push(key.into());
+        self.kids.push(val);
     }
 
-    pub fn clist(pos: Pos, entries: Vec<CListEntry>) -> Self {
-        let mut keys = Vec::with_capacity(entries.len());
-        let mut kids = Vec::with_capacity(entries.len());
-        for e in &entries {
-            keys.push(e.key.clone());
-            kids.push((*e.val).clone());
+    pub fn clist(pos: Pos, entries: Vec<(String, SNode)>) -> Self {
+        let mut node = Self::new_clist(pos);
+        for (key, val) in entries {
+            node.append(key, val);
         }
-        Self {
-            t: SNodeType::CList,
-            pos,
-            origin: None,
-            str: String::new(),
-            bool_val: false,
-            grouped: false,
-            spec: None,
-            kids,
-            keys,
-            entries,
-        }
+        node
     }
 
     pub fn l(&self) -> Option<&SNode> {
-        self.kids.get(0)
+        self.kids.first()
+    }
+
+    /// A text literal as written at this position (not a helper inlined here).
+    pub fn is_written_text(&self) -> bool {
+        self.t == SNodeType::Text && !self.inlined
     }
 
     pub fn r(&self) -> Option<&SNode> {
@@ -236,11 +225,11 @@ impl SNode {
 
         match self.t {
             SNodeType::Un => {
-                let child = self.kids.get(0)?.to_node()?;
+                let child = self.kids.first()?.to_node()?;
                 copy_node.l = Some(Box::new(child));
             }
             SNodeType::Bin | SNodeType::Index | SNodeType::Assign => {
-                let l = self.kids.get(0)?.to_node()?;
+                let l = self.kids.first()?.to_node()?;
                 let r = self.kids.get(1)?.to_node()?;
                 copy_node.l = Some(Box::new(l));
                 copy_node.r = Some(Box::new(r));

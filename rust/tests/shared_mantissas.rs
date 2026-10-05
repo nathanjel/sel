@@ -1,4 +1,4 @@
-//! A large mantissa may be shared between numbers (item 1): reading a number,
+//! A large mantissa may be shared between numbers: reading a number,
 //! copying it and passing it between plan steps must never let one holder see
 //! another's arithmetic. Every expectation is the exact answer, computed by
 //! tools/decimal-oracle-exact.py when the test was written. The cases mix the

@@ -1,9 +1,8 @@
 #![cfg(feature = "sql")]
 //! Scenario 1 (tools/scale-test) on the 1x dataset: the answer, and how many
 //! heap allocations one run makes. Allocation counts are deterministic, so
-//! this is the regression net for the value-representation work in
-//! docs/interim/2026-09-29/rust-performance-plan.md: lower the budgets as the
-//! phases land, never raise them.
+//! this is the regression net for the value representation: lower the budgets
+//! when a change earns it, never raise them.
 use sel_lang::{compile, Entry, Value};
 use serde_json::Value as Json;
 use std::alloc::{GlobalAlloc, Layout, System};
@@ -50,7 +49,7 @@ fn repo() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..")
 }
 
-// The fixture loads exactly as rust/src/bin/scale_bench.rs loads it: numbers as
+// The fixture loads exactly as rust/dev/src/bin/scale_bench.rs (the scale-bench binary) loads it: numbers as
 // text, and read straight from the parser, not through serde_json::Value, which
 // sorts object keys -- a SEL record keeps the order the file gives.
 struct Fixture(Value);
@@ -128,9 +127,12 @@ const EXPECTED: [(&str, &str, &str); 10] = [
 //     in invoke_call's eager evaluation too
 //   phase 1 dropped             107,002                 875          13,098,593
 //     (no measurable time gain in paired runs; Args stays smaller)
-const MAX_ALLOCATIONS: usize = 107_002;
+//   aggregate frames built as     106,976                 875          12,952,089
+//     Frames, join sides read
+//     in place (SEL-R076, R087)
+const MAX_ALLOCATIONS: usize = 106_976;
 const MAX_SMALL: usize = 875;
-const MAX_BYTES: usize = 13_098_593;
+const MAX_BYTES: usize = 12_952_089;
 
 #[test]
 fn scenario1_answer_and_allocation_budget() {

@@ -38,8 +38,6 @@ const DEC_LEAF_DIGITS: usize = 19 * DEC_LEAF_WORDS;
 
 /// 10^19, the largest power of ten in a word.
 const TEN19: u64 = 10_000_000_000_000_000_000;
-/// 5^27, the largest power of five in a word.
-const FIVE27: u64 = 7_450_580_596_923_828_125;
 /// floor(log10(2) * 2^64).
 const LOG10_2_Q64: u128 = 5_553_023_288_523_357_132;
 /// Cached powers of five, in words, before the cache starts over.
@@ -450,7 +448,7 @@ fn mul_nat(a: &[u64], b: &[u64]) -> Vec<u64> {
     }
     // A square costs about half a product: MUL of a value by an equal one
     // (zr * zr, reading the same variable twice) takes that road. Both reads
-    // share one mantissa (item 1), so the pointer decides before the words.
+    // share one mantissa, so the pointer decides before the words.
     if a.len() == b.len() && (std::ptr::eq(a.as_ptr(), b.as_ptr()) || a == b) {
         return sqr_nat(a);
     }
@@ -996,6 +994,7 @@ impl LargeDec {
             trailing_decimal_zeros(&self.words, cap)
         }
     }
+    #[cfg(test)]
     pub fn last_digit(&self) -> u32 {
         rem_1(&self.words, 10) as u32
     }
@@ -1004,11 +1003,6 @@ impl LargeDec {
     }
     pub fn mul_pow10(&self, exponent: usize) -> Self {
         Self { words: mul_pow10_nat(&self.words, exponent) }
-    }
-    pub fn mul_pow10_assign(&mut self, exponent: usize) {
-        if exponent != 0 && !self.is_zero() {
-            self.words = mul_pow10_nat(&self.words, exponent);
-        }
     }
     pub fn div_pow10(&self, exponent: usize) -> (Self, Self) {
         let (q, r) = divmod_pow10(&self.words, exponent);
@@ -1041,6 +1035,7 @@ impl LargeDec {
     pub fn mul(&self, rhs: &Self) -> Self {
         Self { words: mul_nat(&self.words, &rhs.words) }
     }
+    #[cfg(test)]
     pub fn div_small_assign(&mut self, divisor: u32) -> u32 {
         assert_ne!(divisor, 0);
         let r = div_1(&mut self.words, divisor as u64);

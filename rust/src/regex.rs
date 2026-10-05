@@ -642,26 +642,23 @@ pub fn compile_sel_regex(
 ) -> Result<CompiledRegex, SelError> {
     let mut ignore_case = false;
     for ch in flags.chars() {
-        let f = ch;
-        if f == 'i' {
+        if ch == 'i' {
             ignore_case = true;
             continue;
         }
-        if f == 'm' || f == 's' {
+        // Quoted as a string, as the other hosts' messages quote it ("x").
+        let quoted = format!("{:?}", ch.to_string());
+        if ch == 'm' || ch == 's' {
             return Err(SelError::new(
                 "E_BAD_ARG",
                 format!(
-                    "flag {:?} is not offered — SEL always matches . against any character and anchors ^ $ to the whole subject",
-                    ch
+                    "flag {} is not offered — SEL always matches . against any character and anchors ^ $ to the whole subject",
+                    quoted
                 ),
                 flag_pos,
             ));
         }
-        return Err(SelError::new(
-            "E_BAD_ARG",
-            format!("unknown regex flag {:?}", ch),
-            flag_pos,
-        ));
+        return Err(SelError::new("E_BAD_ARG", format!("unknown regex flag {}", quoted), flag_pos));
     }
 
     if ignore_case {
@@ -743,11 +740,9 @@ pub struct RegexMatch {
     pub groups: Vec<(Option<usize>, Option<usize>)>,
 }
 
-pub fn find_matches(
-    cr: &CompiledRegex,
-    _orig_chars: &[char],
-    search_chars: &[char],
-) -> Vec<RegexMatch> {
+/// Every match of `cr` in `search_chars` (the subject as matched: case-folded
+/// under `i`), as code-point spans of the subject.
+pub fn find_matches(cr: &CompiledRegex, search_chars: &[char]) -> Vec<RegexMatch> {
     let search_str: String = search_chars.iter().collect();
 
     // Map byte offsets to code point offsets
@@ -878,7 +873,7 @@ mod tests {
         let cr = compile_sel_regex("^(abcdefghij){60000}$", "", pos, pos).unwrap();
         assert!(cr.fallback.is_some());
         let subject: Vec<_> = "abcdefghij".repeat(60000).chars().collect();
-        let matches = find_matches(&cr, &subject, &subject);
+        let matches = find_matches(&cr, &subject);
         assert_eq!(matches.len(), 1);
         assert_eq!(
             matches[0].groups,
@@ -905,7 +900,7 @@ mod tests {
             } else {
                 orig.clone()
             };
-            let matches = find_matches(&cr, &orig, &search);
+            let matches = find_matches(&cr, &search);
             assert_eq!(
                 matches
                     .iter()
@@ -1000,13 +995,13 @@ mod tests {
         let pos = Pos::default();
         let cr = compile_sel_regex("a*", "", pos, pos).unwrap();
         let chars: Vec<_> = "żaac".chars().collect();
-        let spans: Vec<_> = find_matches(&cr, &chars, &chars)
+        let spans: Vec<_> = find_matches(&cr, &chars)
             .iter()
             .map(|m| (m.start_cp, m.end_cp))
             .collect();
         assert_eq!(spans, [(0, 0), (1, 3), (3, 3), (4, 4)]);
         let cr = compile_sel_regex("^|$", "", pos, pos).unwrap();
-        let spans: Vec<_> = find_matches(&cr, &chars, &chars)
+        let spans: Vec<_> = find_matches(&cr, &chars)
             .iter()
             .map(|m| (m.start_cp, m.end_cp))
             .collect();

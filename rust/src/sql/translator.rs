@@ -1,10 +1,10 @@
-use std::collections::HashMap;
+use std::collections::HashSet;
 
 use crate::ast::{Node, NodeType};
 use crate::builtins::host_arity;
 use crate::limits::{MAX_DEPTH, MAX_SQL_NODES};
 use crate::regex::validate_pattern;
-use crate::utf8::{Pos, SelError};
+use crate::utf8::Pos;
 use crate::value::{Kind, Value};
 use crate::sql::binder::{Binder, BinderShape};
 use crate::sql::binding::{Binding, BindingKind, Bindings, ColumnSpec, RelationSpec};
@@ -17,13 +17,13 @@ use crate::sql::map::{
     chain, entry, host_spelling_arity, require_target, version, version_at_least, EntryKind,
     EntryRecord, TemplateValue,
 };
-use crate::sql::node::{CListEntry, SNode, SNodeType};
+use crate::sql::node::{SNode, SNodeType};
 use crate::sql::normalise::normalise;
 use crate::sql::relational_plan::{
-    RelationalGroup, RelationalJoin, RelationalOrder, RelationalPlan, RelationalProjection,
+    RelationalGroup, RelationalJoin, RelationalPlan, RelationalProjection,
 };
-use crate::sql::row_model::{build_join_rows, relation_alias, RowField, RowModel};
-use crate::sql::types::{Fragment, Mode, Part, SqlKind};
+use crate::sql::row_model::{build_join_rows, relation_alias, RowModel};
+use crate::sql::types::{Fragment, Part, SqlKind};
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Options {
@@ -67,21 +67,21 @@ pub struct Source {
 }
 
 pub struct Translator {
-    pub dialect: String,
-    pub emit: Emit,
-    pub bindings: Bindings,
-    pub strict: bool,
-    pub params: Vec<Value>,
-    pub param_kinds: Vec<SqlKind>,
-    pub caveats: Vec<String>,
-    pub frames: Vec<Vec<(String, Binder)>>,
-    pub const_names: HashMap<String, bool>,
-    pub const_root: Value,
-    pub depth: usize,
-    pub dispatched_nodes: usize,
-    pub statement_plan: Option<RelationalPlan>,
-    pub in_where: bool,
-    pub subquery_counter: usize,
+    pub(crate) dialect: String,
+    pub(crate) emit: Emit,
+    pub(crate) bindings: Bindings,
+    pub(crate) strict: bool,
+    pub(crate) params: Vec<Value>,
+    pub(crate) param_kinds: Vec<SqlKind>,
+    pub(crate) caveats: Vec<String>,
+    pub(crate) frames: Vec<Vec<(String, Binder)>>,
+    pub(crate) const_names: HashSet<String>,
+    pub(crate) const_root: Value,
+    pub(crate) depth: usize,
+    pub(crate) dispatched_nodes: usize,
+    pub(crate) statement_plan: Option<RelationalPlan>,
+    pub(crate) in_where: bool,
+    pub(crate) subquery_counter: usize,
 }
 
 impl Translator {
@@ -96,7 +96,7 @@ impl Translator {
             param_kinds: Vec::new(),
             caveats: Vec::new(),
             frames: Vec::new(),
-            const_names: HashMap::new(),
+            const_names: HashSet::new(),
             const_root: Value::null(),
             depth: 0,
             dispatched_nodes: 0,
@@ -387,7 +387,7 @@ impl Translator {
                 let i = list_key(&key);
                 let cols = b.columns.as_ref().unwrap();
                 let count = cols.len();
-                if i.map_or(true, |idx| idx == 0 || idx > count) {
+                if i.is_none_or(|idx| idx == 0 || idx > count) {
                     return refuse(
                         "E_SQL_BINDING",
                         format!("{}[{}] is outside that binding's {} column(s)", obj.str, key, count),
@@ -609,7 +609,7 @@ impl Translator {
         let f = match row.row_field_spec(key) {
             Some(f) => f,
             None => {
-                if !row.side && *row.dropped.get(&key.to_ascii_uppercase()).unwrap_or(&false) {
+                if !row.side && row.dropped.contains(&key.to_ascii_uppercase()) {
                     return refuse(
                         "E_SQL_SHAPE",
                         format!("field {:?} is ambiguous across joined relations", key),
@@ -664,7 +664,7 @@ impl Translator {
 
     fn scoped_node(&self, node: SNode) -> Binder {
         let mut binder = Binder::node(node);
-        binder.scope = Some(std::sync::Arc::new(self.frames.clone()));
+        binder.scope = Some(std::rc::Rc::new(self.frames.clone()));
         binder
     }
 
@@ -826,7 +826,7 @@ impl Translator {
             if proj.is_none() {
                 let key_upper = key.to_ascii_uppercase();
                 for p in projections {
-                    if p.alias.as_ref().map_or(false, |a| a.to_ascii_uppercase() == key_upper) {
+                    if p.alias.as_ref().is_some_and(|a| a.to_ascii_uppercase() == key_upper) {
                         proj = Some(p);
                         break;
                     }
@@ -1051,8 +1051,8 @@ impl Translator {
             require_comparable_kinds(&l, &r, op, n.pos)?;
             let l_exact = l.exact;
             let r_exact = r.exact;
-            let l_lit = n.l().map_or(false, |k| k.t == SNodeType::Text);
-            let r_lit = n.r().map_or(false, |k| k.t == SNodeType::Text);
+            let l_lit = n.l().is_some_and(|k| k.t == SNodeType::Text);
+            let r_lit = n.r().is_some_and(|k| k.t == SNodeType::Text);
             let sargable_prefilter = self
                 .emit
                 .lex("sargablePrefilter")
@@ -1184,7 +1184,7 @@ impl Translator {
             has_elements = true;
         } else if rhs_is_free_var && self.bindings.has(&rhs.str) {
             let b = self.bindings.get(&rhs.str, rhs.pos)?;
-            if b.kind == BindingKind::Value && b.val.as_ref().map_or(false, |v| v.size() > 0) {
+            if b.kind == BindingKind::Value && b.val.as_ref().is_some_and(|v| v.size() > 0) {
                 let elems = self.value_elements(b, rhs.pos)?;
                 elements = elems.into_iter().map(|e| e.1.node.unwrap()).collect();
                 has_elements = true;
@@ -1236,7 +1236,7 @@ impl Translator {
         let name = &n.str;
         let mut args: Vec<SNode> = n.kids.clone();
         if name == "IF" && args.len() == 2 {
-            let mut null_node = Node::new(NodeType::Text, n.pos);
+            let null_node = Node::new(NodeType::Text, n.pos);
             args.push(SNode::leaf(&null_node));
         }
         let branch_tpl = self.skeleton("caseBranch", n.pos)?;
@@ -1291,7 +1291,7 @@ impl Translator {
     }
 
     pub fn case_when(
-        &self,
+        &mut self,
         cond: &Fragment,
         then: &Fragment,
         els: &Fragment,
@@ -1301,8 +1301,9 @@ impl Translator {
             ("cond".to_string(), vec![Slot::Frag(cond.clone())]),
             ("then".to_string(), vec![Slot::Frag(then.clone())]),
         ];
-        let mut t_mut = Translator::new(&self.dialect, None, Options { strict: self.strict });
-        let branch_tpl = t_mut.skeleton("caseBranch", pos)?;
+        // The skeletons through this translator, so a caveat a dialect attaches
+        // to `case`/`caseBranch` is recorded on the translation.
+        let branch_tpl = self.skeleton("caseBranch", pos)?;
         let branch = Fragment::new(
             self.fill_named(&branch_tpl, &branch_slots, pos)?,
             SqlKind::Unknown,
@@ -1312,7 +1313,7 @@ impl Translator {
             Vec::new(),
         );
 
-        let case_tpl = t_mut.skeleton("case", pos)?;
+        let case_tpl = self.skeleton("case", pos)?;
         let slots = vec![
             ("branches".to_string(), vec![Slot::Frag(branch)]),
             ("else".to_string(), vec![Slot::Frag(els.clone())]),
@@ -1332,8 +1333,7 @@ impl Translator {
     }
 
     // A binder position holds a name (the manifest's 'binder' scope). Anything else
-    // is refused here, at that expression, whatever the call is later refused for
-    // (GO-C2).
+    // is refused here, at that expression, whatever the call is later refused for.
     fn require_named_binders(&self, n: &SNode) -> Result<(), SqlError> {
         let shapes: Vec<Node> = n
             .kids
@@ -1345,7 +1345,7 @@ impl Translator {
                 shape
             })
             .collect();
-        let spec_binds = n.spec.as_ref().map_or(false, |s| s.binds);
+        let spec_binds = n.spec.as_ref().is_some_and(|s| s.binds);
         if let Some(form) = crate::manifest::binding_form(&n.str, &shapes, spec_binds) {
             for (i, scope) in form.scopes.iter().enumerate() {
                 if *scope == crate::manifest::builtins::Scope::Binder && !is_binder_name(n.kids.get(i)) {
@@ -1377,9 +1377,9 @@ impl Translator {
                         ));
                     }
                     if name == "SUM" && n.kids.len() >= 2 {
-                        let has_custom = n.kids.len() == 3 && is_binder_name(n.kids.get(1));
-                        let body_node = if has_custom { &n.kids[2] } else { &n.kids[1] };
-                        let binder_name = if has_custom { &n.kids[1].str } else { "_" };
+                        // A binder slot that is not a bare name is refused, as
+                        // everywhere: SEL raises E_EXPECT_SYMBOL for it.
+                        let (binder_name, body_node) = agg_shape(n)?;
                         let src = Source {
                             shape: SourceShape::Relation,
                             elements: Vec::new(),
@@ -1685,7 +1685,7 @@ impl Translator {
                         );
                     }
                     BinderShape::Row => {
-                        if bound.relation.as_ref().map_or(false, |r| r.fields.len() > 1) {
+                        if bound.relation.as_ref().is_some_and(|r| r.fields.len() > 1) {
                             return refuse(
                                 "E_SQL_SHAPE",
                                 format!(
@@ -1750,7 +1750,6 @@ impl Translator {
 
     pub fn with_element<F>(
         &mut self,
-        src: &Source,
         binder_name: &str,
         elem: Binder,
         key: &str,
@@ -1915,7 +1914,7 @@ impl Translator {
         let jr = build_join_rows(plan)?;
         let mut join_idx = None;
         for (i, j) in plan.joins.iter().enumerate() {
-            if j as *const RelationalJoin == join as *const RelationalJoin {
+            if std::ptr::eq(j, join) {
                 join_idx = Some(i);
                 break;
             }
@@ -2128,7 +2127,7 @@ impl Translator {
         for kv in &src.elements {
             let key = &kv.0;
             let elem = kv.1.clone();
-            parts.push(self.with_element(&src, binder_name, elem, key, n, |t| {
+            parts.push(self.with_element(binder_name, elem, key, n, |t| {
                 t.agg_body(name, body_node, &src, n)
             })?);
         }
@@ -2145,7 +2144,7 @@ impl Translator {
         if parts.len() == 1 {
             return Ok(parts.remove(0));
         }
-        self.fold_pairwise(&agg_fold(name), parts, n.pos)
+        self.fold_pairwise(agg_fold(name), parts, n.pos)
     }
 
     fn count(&mut self, n: &SNode) -> Result<Fragment, SqlError> {
@@ -2170,7 +2169,7 @@ impl Translator {
             for kv in &src.elements {
                 let key = &kv.0;
                 let elem = kv.1.clone();
-                parts.push(self.with_element(&src, "_", elem, key, n, |t| {
+                parts.push(self.with_element("_", elem, key, n, |t| {
                     t.agg_body("SUM", &body, &src, n)
                 })?);
             }
@@ -2291,7 +2290,7 @@ impl Translator {
                 parts.push(sep);
             }
             let held = elem.clone();
-            let element = self.with_element(&src, "_", held.clone(), key, n, |t| {
+            let element = self.with_element("_", held.clone(), key, n, |t| {
                 t.from_binder(&held, n)
             })?;
             self.require_join_text(&element, n.kids[0].pos)?;
@@ -2547,7 +2546,7 @@ impl Translator {
     pub fn fold_pairwise(
         &mut self,
         op: &str,
-        mut parts: Vec<Fragment>,
+        parts: Vec<Fragment>,
         pos: Pos,
     ) -> Result<Fragment, SqlError> {
         self.dispatched_nodes = self.dispatched_nodes.saturating_add(parts.len().saturating_sub(1));
@@ -2563,7 +2562,7 @@ impl Translator {
 
     fn fold_parts(&mut self, op: &str, mut parts: Vec<Fragment>, pos: Pos) -> Result<Fragment, SqlError> {
         if parts.len() > 256 {
-            let right = parts.split_off((parts.len() + 1) / 2);
+            let right = parts.split_off(parts.len().div_ceil(2));
             let left = self.fold_parts(op, parts, pos)?;
             let right = self.fold_parts(op, right, pos)?;
             let variant = self.variant_for(op, &[&left, &right]);
@@ -2629,15 +2628,7 @@ impl Translator {
                     } else {
                         None
                     }
-                } else if let Some(star) = m.get("*") {
-                    if !star.is_empty() {
-                        Some(star)
-                    } else {
-                        None
-                    }
-                } else {
-                    None
-                };
+                } else { m.get("*").filter(|&star| !star.is_empty()) };
                 if let Some(c) = chosen {
                     return Ok(c.clone());
                 }
@@ -2691,10 +2682,7 @@ impl Translator {
         if v.size() > 0 {
             let mut entries = Vec::new();
             for e in v.entries() {
-                entries.push(CListEntry {
-                    key: e.key.clone(),
-                    val: Box::new(self.value_node(&e.val, b, pos)?),
-                });
+                entries.push((e.key.clone(), self.value_node(&e.val, b, pos)?));
             }
             return Ok(SNode::clist(pos, entries));
         }
@@ -2712,7 +2700,7 @@ impl Translator {
         }
         if v.is_none() {
             // A NULL element: SEL's as_text would raise E_NULL. It is a binding
-            // problem, and a refusal (JS-C54b).
+            // problem, and a refusal.
             return refuse(
                 "E_SQL_BINDING",
                 "a value binding holds a NULL element, which has no SQL literal",
@@ -2758,7 +2746,7 @@ impl Translator {
         };
         let mut args = n.kids.clone();
         let pat = args.get(pat_at);
-        if pat.map_or(true, |p| p.t != SNodeType::Text) {
+        if pat.is_none_or(|p| p.t != SNodeType::Text) {
             let p_pos = pat.map_or(n.pos, |p| p.pos);
             return refuse(
                 "E_SQL_UNSUPPORTED",
@@ -3009,6 +2997,8 @@ pub fn merge_slots(a: &mut SlotMap, b: SlotMap) {
     for kv_b in b {
         for kv_a in a.iter() {
             if kv_a.0 == kv_b.0 {
+                // An invariant of the translator (its sources never share a
+                // slot), not something a program or dialect can do: a bug.
                 panic!("two sources both supply the skeleton slot {{{}}}; one would silently shadow the other", kv_b.0);
             }
         }
@@ -3024,19 +3014,7 @@ fn same_relation(a: &RelationSpec, b: &RelationSpec) -> bool {
 }
 
 pub fn list_key(k: &str) -> Option<usize> {
-    if k.is_empty() || k.len() > 9 {
-        return None;
-    }
-    let b = k.as_bytes();
-    if b[0] < b'1' || b[0] > b'9' {
-        return None;
-    }
-    for &c in b {
-        if c < b'0' || c > b'9' {
-            return None;
-        }
-    }
-    k.parse::<usize>().ok()
+    crate::utf8::canonical_index(k, 9)
 }
 
 pub fn child_of<'a>(n: &'a SNode, key: &str) -> Option<&'a SNode> {
@@ -3098,7 +3076,7 @@ fn agg_fold(name: &str) -> &'static str {
 }
 
 fn agg_skeleton(name: &str) -> String {
-    name.to_lowercase()
+    name.to_ascii_lowercase()
 }
 
 fn agg_returns(name: &str) -> SqlKind {
@@ -3218,18 +3196,18 @@ fn require_comparable_kinds(l: &Fragment, r: &Fragment, op: &str, pos: Pos) -> R
     if cl.is_none() || cr.is_none() || cl == cr {
         return Ok(());
     }
-    let mut other = l.kind;
-    if l.kind == SqlKind::Bool {
-        other = r.kind;
-    }
-    refuse(
-        "E_SQL_SHAPE",
-        format!(
-            "{} compares a BOOL with a {}, which SEL answers FALSE for every value because the kinds differ. SQL has no way to say that: both sides cast to the same characters",
-            op, other
-        ),
-        pos,
-    )
+    // Both kinds as they are: a BIN and a TEXT reach here too, and were
+    // reported as "a BOOL with a BIN".
+    let what = format!("{} compares a {} with a {}", op, l.kind, r.kind);
+    let message = if op.starts_with('$') {
+        // SEL reads a BIN and a TEXT here as bytes, and a BOOL is no operand
+        // of the byte comparisons (E_NOT_BIN); SQL would cast both sides to
+        // characters, which says neither.
+        format!("{what}, which SEL compares as bytes (or refuses, for a BOOL); SQL has no way to say that: both sides cast to the same characters")
+    } else {
+        format!("{what}, which SEL answers FALSE for every value because the kinds differ. SQL has no way to say that: both sides cast to the same characters")
+    };
+    refuse("E_SQL_SHAPE", message, pos)
 }
 
 pub fn unify(fs: &[Fragment], pos: Pos) -> Result<SqlKind, SqlError> {
@@ -3269,8 +3247,7 @@ fn ret_kind(entry: &EntryRecord, args: &[&Fragment], pos: Pos) -> Result<SqlKind
         }
         return Ok(SqlKind::Text);
     }
-    if ret.starts_with("@unify:") {
-        let rest = &ret[7..];
+    if let Some(rest) = ret.strip_prefix("@unify:") {
         let mut pick = Vec::new();
         for piece in rest.split(',') {
             if let Ok(idx) = piece.parse::<usize>() {

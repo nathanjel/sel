@@ -1,9 +1,7 @@
 use std::collections::HashSet;
 
 use crate::ast::{Node, NodeType};
-use crate::dec::{
-    dec_add, dec_cmp, dec_div, dec_format, dec_mod, dec_mul, dec_negate, dec_parse, dec_sub, Dec,
-};
+use crate::dec::{dec_cmp, dec_format, dec_negate, dec_parse, Dec};
 use crate::limits::MAX_DEPTH;
 use crate::math_plan::{compile_math_plan, is_math_op};
 use crate::utf8::Pos;
@@ -48,24 +46,12 @@ fn clone_step_with_source(step: &Node, source: Node) -> Node {
     let mut items = Vec::with_capacity(step.items.len().max(1));
     items.push(source);
     items.extend(step.items.iter().skip(1).cloned());
-    Node {
-        t: step.t,
-        pos: step.pos,
-        s: step.s.clone(),
-        b: step.b,
-        grouped: step.grouped,
-        sql_binding: step.sql_binding,
-        l: step.l.clone(),
-        r: step.r.clone(),
-        items,
-        dec: step.dec.clone(),
-        shape: step.shape.clone(),
-        slot_cache: step.slot_cache.clone(),
-        math_plan: step.math_plan.clone(),
-        keys_unobserved: step.keys_unobserved,
-        borrowed_filter: step.borrowed_filter,
-        spec: step.spec.clone(),
-    }
+    // Node implements Drop, so no struct update: fill the head in.
+    let mut out = step.head();
+    out.l = step.l.clone();
+    out.r = step.r.clone();
+    out.items = items;
+    out
 }
 
 pub fn build_pipeline(source: &Node, steps: &[Node]) -> Node {
@@ -141,58 +127,25 @@ pub fn opt_fold(node: &Node) -> Node {
                 let dec_l = l.dec.clone().or_else(|| dec_parse(&l.s, node.pos).ok());
                 let dec_r = r.dec.clone().or_else(|| dec_parse(&r.s, node.pos).ok());
                 if let (Some(dl), Some(dr)) = (dec_l, dec_r) {
+                    // The evaluator's own dispatch: a fold answers what a run
+                    // would (an error leaves the node for the run to raise).
                     match node.s.as_str() {
-                        "+" => {
-                            if let Ok(res) = dec_add(&dl, &dr, node.pos) {
+                        op @ ("+" | "-" | "*" | "/" | "%") => {
+                            if let Ok(res) = crate::eval::arith(op, &dl, &dr, node.pos) {
                                 return opt_num(dec_format(&res), res, node.pos);
                             }
                         }
-                        "-" => {
-                            if let Ok(res) = dec_sub(&dl, &dr, node.pos) {
-                                return opt_num(dec_format(&res), res, node.pos);
-                            }
-                        }
-                        "*" => {
-                            if let Ok(res) = dec_mul(&dl, &dr, node.pos) {
-                                return opt_num(dec_format(&res), res, node.pos);
-                            }
-                        }
-                        "/" => {
-                            if let Ok(res) = dec_div(&dl, &dr, node.pos) {
-                                return opt_num(dec_format(&res), res, node.pos);
-                            }
-                        }
-                        "%" => {
-                            if let Ok(res) = dec_mod(&dl, &dr, node.pos) {
-                                return opt_num(dec_format(&res), res, node.pos);
-                            }
-                        }
-                        "==" | "!=" | "<" | "<=" | ">" | ">=" => {
-                            let c = dec_cmp(&dl, &dr);
-                            let b = match node.s.as_str() {
-                                "==" => c.is_eq(),
-                                "!=" => c.is_ne(),
-                                "<" => c.is_lt(),
-                                "<=" => c.is_le(),
-                                ">" => c.is_gt(),
-                                ">=" => c.is_ge(),
-                                _ => false,
-                            };
-                            return opt_bool(b, node.pos);
+                        op @ ("==" | "!=" | "<" | "<=" | ">" | ">=") => {
+                            return opt_bool(crate::eval::compare_result(op, dec_cmp(&dl, &dr)), node.pos);
                         }
                         _ => {}
                     }
                 }
             }
             if l.t == NodeType::Text && r.t == NodeType::Text {
-                match node.s.as_str() {
-                    "$==" => return opt_bool(l.s == r.s, node.pos),
-                    "$!=" => return opt_bool(l.s != r.s, node.pos),
-                    "$<" => return opt_bool(l.s < r.s, node.pos),
-                    "$<=" => return opt_bool(l.s <= r.s, node.pos),
-                    "$>" => return opt_bool(l.s > r.s, node.pos),
-                    "$>=" => return opt_bool(l.s >= r.s, node.pos),
-                    _ => {}
+                // Byte order: a &str compares by its UTF-8 bytes.
+                if let Some(op @ ("==" | "!=" | "<" | "<=" | ">" | ">=")) = node.s.strip_prefix('$') {
+                    return opt_bool(crate::eval::compare_result(op, l.s.as_bytes().cmp(r.s.as_bytes())), node.pos);
                 }
             }
         }
@@ -277,7 +230,7 @@ fn opt_numeric_literal(node: &Node) -> Option<i64> {
 }
 
 fn opt_positive_literal(node: &Node) -> bool {
-    opt_numeric_literal(node).map_or(false, |n| n >= 1)
+    opt_numeric_literal(node).is_some_and(|n| n >= 1)
 }
 
 fn opt_rename_var(node: &Node, old_name: &str, new_name: &str) -> Node {
@@ -307,10 +260,10 @@ fn opt_cannot_raise(node: &Node, binder: &str, logical: bool) -> bool {
         }
         NodeType::Index => {
             logical
-                && node.l.as_ref().map_or(false, |l| {
+                && node.l.as_ref().is_some_and(|l| {
                     l.t == NodeType::Var && l.s.eq_ignore_ascii_case(binder)
                 })
-                && node.r.as_ref().map_or(false, |r| r.t == NodeType::Text)
+                && node.r.as_ref().is_some_and(|r| r.t == NodeType::Text)
         }
         NodeType::Bin => {
             if !logical {
@@ -324,13 +277,13 @@ fn opt_cannot_raise(node: &Node, binder: &str, logical: bool) -> bool {
                     | "AND" | "OR" | "+" | "-" | "*"
             );
             is_safe
-                && node.l.as_ref().map_or(true, |l| opt_cannot_raise(l, binder, logical))
-                && node.r.as_ref().map_or(true, |r| opt_cannot_raise(r, binder, logical))
+                && node.l.as_ref().is_none_or(|l| opt_cannot_raise(l, binder, logical))
+                && node.r.as_ref().is_none_or(|r| opt_cannot_raise(r, binder, logical))
         }
         NodeType::Un => {
             logical
                 && node.s == "NOT"
-                && node.l.as_ref().map_or(true, |l| opt_cannot_raise(l, binder, logical))
+                && node.l.as_ref().is_none_or(|l| opt_cannot_raise(l, binder, logical))
         }
         _ => false,
     }
@@ -347,11 +300,9 @@ fn opt_filter_predicate_cannot_raise(node: &Node, binder: &str, logical: bool) -
 struct OptMapInfo<'a> {
     binder: String,
     body: Option<&'a Node>,
-    #[allow(dead_code)]
-    explicit_binder: bool,
 }
 
-fn get_opt_map_info(step: &Node) -> OptMapInfo {
+fn get_opt_map_info(step: &Node) -> OptMapInfo<'_> {
     let args = &step.items;
     let explicit = args.len() == 3 && args[1].t == NodeType::Var && !args[1].grouped;
     let b = if explicit {
@@ -369,7 +320,6 @@ fn get_opt_map_info(step: &Node) -> OptMapInfo {
     OptMapInfo {
         binder: b,
         body,
-        explicit_binder: explicit,
     }
 }
 
@@ -380,7 +330,7 @@ struct OptFilterInfo<'a> {
     valid: bool,
 }
 
-fn get_opt_filter_info(step: &Node) -> OptFilterInfo {
+fn get_opt_filter_info(step: &Node) -> OptFilterInfo<'_> {
     let args = &step.items;
     let explicit = args.len() == 3 && args[1].t == NodeType::Var && !args[1].grouped;
     let b = if explicit {
@@ -407,47 +357,53 @@ fn get_opt_filter_info(step: &Node) -> OptFilterInfo {
 struct OptSortInfo<'a> {
     binder: String,
     key: Option<&'a Node>,
+    /// The form is one a rewrite may reason about: its binder slot (if any) is
+    /// a bare name and its direction (if any) a text literal. A computed
+    /// direction runs per call and a non-name binder raises E_EXPECT_SYMBOL,
+    /// so a step with either is never moved.
+    valid: bool,
 }
 
-fn get_opt_sort_info(step: &Node) -> OptSortInfo {
+fn get_opt_sort_info(step: &Node) -> OptSortInfo<'_> {
     let args = &step.items;
     let count = args.len();
-    let mut info = OptSortInfo {
-        binder: "_".to_string(),
-        key: None,
-    };
+    let is_name = |i: usize| args.get(i).is_some_and(|a| a.t == NodeType::Var && !a.grouped);
+    let is_text = |i: usize| args.get(i).is_some_and(|a| a.t == NodeType::Text);
+    let mut info = OptSortInfo { binder: "_".to_string(), key: None, valid: true };
     let s = step.s.as_str();
-    if s == "SORT" || s == "SORT_DESC" {
-        if count == 1 {
-            return info;
-        }
-        if count == 3 && args[1].t == NodeType::Var && !args[1].grouped {
-            info.binder = args[1].s.clone();
-            info.key = args.get(2);
-        } else {
-            info.key = args.get(1);
-        }
-    } else if s == "TOP" || s == "TOP_DESC" {
-        if count == 2 {
-            return info;
-        }
-        let sort_count = count - 1;
-        if sort_count == 3 && args[1].t == NodeType::Var && !args[1].grouped {
-            info.binder = args[1].s.clone();
-            info.key = args.get(2);
-        } else {
-            info.key = args.get(1);
+    // TOP* carry the limit last; what precedes it is the sort's own form.
+    let sort_count = if s.starts_with("TOP") { count.saturating_sub(1) } else { count };
+    if s == "SORT" || s == "SORT_DESC" || s == "TOP" || s == "TOP_DESC" {
+        match sort_count {
+            2 => info.key = args.get(1),
+            3 => {
+                info.valid = is_name(1);
+                info.binder = args[1].s.clone();
+                info.key = args.get(2);
+            }
+            _ => {}
         }
     } else if s == "SORT_BY" || s == "TOP_BY" {
-        let mut sort_count = count;
-        if s == "TOP_BY" {
-            sort_count = count.saturating_sub(1);
-        }
-        if sort_count == 2 || (sort_count == 3 && args.get(2).map_or(false, |a| a.t == NodeType::Text)) {
-            info.key = args.get(1);
-        } else if count > 2 && args[1].t == NodeType::Var && !args[1].grouped {
-            info.binder = args[1].s.clone();
-            info.key = args.get(2);
+        match sort_count {
+            2 => info.key = args.get(1),
+            // A text literal in the third place is a direction and wins over a
+            // bare name in the second; otherwise a bare name is the binder, and
+            // anything else leaves a computed direction.
+            3 if is_text(2) => info.key = args.get(1),
+            3 if is_name(1) => {
+                info.binder = args[1].s.clone();
+                info.key = args.get(2);
+            }
+            3 => {
+                info.key = args.get(1);
+                info.valid = false;
+            }
+            4 => {
+                info.valid = is_name(1) && is_text(3);
+                info.binder = args[1].s.clone();
+                info.key = args.get(2);
+            }
+            _ => {}
         }
     }
     info
@@ -519,11 +475,10 @@ fn opt_field_refs(node: &Node, binder: &str) -> Vec<String> {
                 if l.t == NodeType::Var && r.t == NodeType::Text {
                     let v = l.s.to_ascii_uppercase();
                     let b = binder.to_ascii_uppercase();
-                    if binder.is_empty() || v == b || v == "_" || v == "_1" || v == "_2" {
-                        if seen.insert(r.s.clone()) {
+                    if (binder.is_empty() || v == b || v == "_" || v == "_1" || v == "_2")
+                        && seen.insert(r.s.clone()) {
                             refs.push(r.s.clone());
                         }
-                    }
                 }
             }
         }
@@ -726,8 +681,9 @@ fn opt_logical_steps(source: &Node, mut current: Vec<Node>, logical: bool) -> Ve
                 {
                     let sort_info = get_opt_sort_info(first);
                     let filter_info = get_opt_filter_info(s2);
-                    let sort_safe = sort_info.key.map_or(true, |k| opt_cannot_raise(k, &sort_info.binder, logical));
-                    let filter_safe = logical || filter_info.predicate.map_or(true, |p| opt_cannot_raise(p, &filter_info.binder, false));
+                    let sort_safe = sort_info.valid
+                        && sort_info.key.is_none_or(|k| opt_cannot_raise(k, &sort_info.binder, logical));
+                    let filter_safe = logical || filter_info.predicate.is_none_or(|p| opt_cannot_raise(p, &filter_info.binder, false));
                     if sort_safe && filter_safe {
                         next.push(s2.clone());
                         next.push(first.clone());
@@ -768,7 +724,7 @@ fn opt_logical_steps(source: &Node, mut current: Vec<Node>, logical: bool) -> Ve
                     && opt_map_has_computed(first)
                 {
                     let sort = get_opt_sort_info(s2);
-                    if let Some(key) = sort.key {
+                    if let Some(key) = sort.key.filter(|_| sort.valid) {
                         let refs = opt_field_refs(key, &sort.binder);
                         let passes = opt_map_passthroughs(first);
                         let pass_set: HashSet<String> = passes.into_iter().collect();
@@ -793,7 +749,14 @@ fn opt_logical_steps(source: &Node, mut current: Vec<Node>, logical: bool) -> Ve
                     let right = get_opt_filter_info(s2);
                     if left.valid && right.valid {
                         if let (Some(l_pred), Some(r_pred)) = (left.predicate, right.predicate) {
-                            if opt_filter_predicate_cannot_raise(r_pred, &right.binder, logical) {
+                            // Fused, the second predicate sits one level deeper
+                            // than it did: under the AND that joins them. A fused
+                            // pair must spend what the two stages spent (SPEC
+                            // 6.4), so one that reaches the cap that way stays a
+                            // second FILTER.
+                            let fits = s2.step_depth == 0
+                                || s2.step_depth as usize + bounded_depth(r_pred, MAX_DEPTH) < MAX_DEPTH;
+                            if fits && opt_filter_predicate_cannot_raise(r_pred, &right.binder, logical) {
                                 let right_pred = if !left.binder.eq_ignore_ascii_case(&right.binder) {
                                     opt_rename_var(r_pred, &right.binder, &left.binder)
                                 } else {
@@ -873,8 +836,8 @@ fn read_only_expression(node: &Node) -> bool {
         "ROUND" | "CEIL" | "FLOOR" | "TRUNC" | "POWER" | "MIN" | "MAX") {
         return false;
     }
-    node.l.as_ref().map_or(true, |n| read_only_expression(n))
-        && node.r.as_ref().map_or(true, |n| read_only_expression(n))
+    node.l.as_ref().is_none_or(|n| read_only_expression(n))
+        && node.r.as_ref().is_none_or(|n| read_only_expression(n))
         && node.items.iter().all(read_only_expression)
 }
 
@@ -889,12 +852,28 @@ fn opt_inmemory_steps(source: &Node, steps: Vec<Node>) -> Vec<Node> {
             let next_step = if i + 1 < len { Some(&steps[i + 1]) } else { None };
             cp.items[last_idx].keys_unobserved = opt_keys_renumbered_by(next_step);
             cp.borrowed_filter = read_only_expression(&cp.items[last_idx])
-                && next_step.map_or(false, |next| matches!(next.s.as_str(), "MAP" | "FILTER")
-                    && next.items.last().map_or(false, read_only_expression));
+                && next_step.is_some_and(|next| matches!(next.s.as_str(), "MAP" | "FILTER")
+                    && next.items.last().is_some_and(read_only_expression));
         }
         rewritten.push(cp);
     }
     rewritten
+}
+
+/// How deep an expression goes, its root counted as 1, never more than `cap` +
+/// 1: the walk stops there, so it is bounded whatever the expression's size.
+fn bounded_depth(root: &Node, cap: usize) -> usize {
+    let mut deepest = 0;
+    let mut level = vec![root];
+    while !level.is_empty() && deepest <= cap {
+        deepest += 1;
+        let mut next = Vec::new();
+        for node in level {
+            next.extend(node.children());
+        }
+        level = next;
+    }
+    deepest
 }
 
 pub fn opt_tree(node: &Node, physical: bool, depth: usize, fold: bool, in_math: bool) -> Node {
@@ -906,15 +885,18 @@ pub fn opt_tree(node: &Node, physical: bool, depth: usize, fold: bool, in_math: 
         let (source, steps) = unwind_pipeline(node);
         let optimized_source = opt_tree(source, physical, depth + 1, fold, false);
         let mut optimized_steps = Vec::with_capacity(steps.len());
-        for step in steps {
+        let count = steps.len();
+        for (index, step) in steps.into_iter().enumerate() {
             // Rewrites inspect stage arguments, never the old input. Reconnect
             // the optimized source only after all stage rewrites complete.
             let mut cp = clone_step_with_source(
                 step,
                 Node::new(NodeType::Null, step.items[0].pos),
             );
+            // Where it stands as written: the outermost step is this node.
+            cp.step_depth = (depth + (count - 1 - index)).min(u16::MAX as usize) as u16;
             for i in 1..cp.items.len() {
-                let fold_arg = fold && opt_step_arg_folds(&step, i);
+                let fold_arg = fold && opt_step_arg_folds(step, i);
                 cp.items[i] = opt_tree(&cp.items[i], physical, depth + 1, fold_arg, false);
             }
             optimized_steps.push(cp);
@@ -928,8 +910,7 @@ pub fn opt_tree(node: &Node, physical: bool, depth: usize, fold: bool, in_math: 
         return build_pipeline(&optimized_source, &final_steps);
     }
 
-    let is_curr_math = is_math_op(node);
-    let next_in_math = is_curr_math;
+    let next_in_math = is_math_op(node);
 
     let mut cp = node.clone();
     if cp.t != NodeType::Assign {
@@ -969,6 +950,3 @@ pub fn optimize_ast_logical(ast: &Node) -> Node {
     opt_tree(ast, false, 1, true, false)
 }
 
-pub fn optimize_ast_in_memory(ast: &Node) -> Node {
-    opt_tree(ast, true, 1, true, false)
-}

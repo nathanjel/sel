@@ -27,9 +27,58 @@ pub struct SlotCache {
     pub slot: usize,
 }
 
+/// A math-plan operation, resolved once when the plan is compiled from the
+/// symbolic names of spec/math-ops.json (the interpreter matches on this,
+/// never on a string).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum OpCode {
+    LoadVar,
+    LoadConst,
+    LoadLeaf,
+    Add,
+    Sub,
+    Mul,
+    Div,
+    Mod,
+    Neg,
+    Abs,
+    Sign,
+    Ceil,
+    Floor,
+    Trunc,
+    Round,
+    Power,
+    Min,
+    Max,
+}
+
+impl OpCode {
+    /// The code for one of the manifest's operations (`math_ops::OPS`).
+    pub fn from_name(name: &str) -> Option<Self> {
+        Some(match name {
+            "ADD" => Self::Add,
+            "SUB" => Self::Sub,
+            "MUL" => Self::Mul,
+            "DIV" => Self::Div,
+            "MOD" => Self::Mod,
+            "NEG" => Self::Neg,
+            "ABS" => Self::Abs,
+            "SIGN" => Self::Sign,
+            "CEIL" => Self::Ceil,
+            "FLOOR" => Self::Floor,
+            "TRUNC" => Self::Trunc,
+            "ROUND" => Self::Round,
+            "POWER" => Self::Power,
+            "MIN" => Self::Min,
+            "MAX" => Self::Max,
+            _ => return None,
+        })
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct MathStep {
-    pub op: &'static str,
+    pub op: OpCode,
     pub dst: u16,
     pub src1: u16,
     pub src2: u16,
@@ -38,6 +87,24 @@ pub struct MathStep {
     pub name: String,
     pub const_val: Option<Dec>,
     pub leaf_node: Option<Box<Node>>,
+}
+
+impl MathStep {
+    /// A step with only its operation, destination and position set: the
+    /// emitter fills in what each operation reads.
+    pub(crate) fn new(op: OpCode, dst: u16, pos: Pos) -> Self {
+        Self {
+            op,
+            dst,
+            src1: 0,
+            src2: 0,
+            pos,
+            aux_pos: Pos::default(),
+            name: String::new(),
+            const_val: None,
+            leaf_node: None,
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -68,6 +135,10 @@ pub struct Node {
     pub math_plan: Option<MathPlan>,
     pub keys_unobserved: bool,
     pub borrowed_filter: bool,
+    /// Optimiser only: where a pipeline step stands in the tree as written (the
+    /// outermost step is the call itself), for rewrites that would deepen a
+    /// subtree -- FILTER fusion. 0 when unknown.
+    pub step_depth: u16,
     pub spec: Option<Arc<crate::builtins::Spec>>,
 }
 
@@ -89,15 +160,25 @@ impl Node {
             math_plan: None,
             keys_unobserved: false,
             borrowed_filter: false,
+            step_depth: 0,
             spec: None,
         }
     }
 }
 
-impl Clone for Node {
-    fn clone(&self) -> Self {
-        fn head(n: &Node) -> Node {
-            Node {
+impl Node {
+    /// Every child, in evaluation order: `l`, `r`, then `items`. The walkers
+    /// that treat all children alike use this; one that must not (a binder
+    /// slot, an assignment target, a call's arguments by scope) says so where
+    /// it walks.
+    pub(crate) fn children(&self) -> impl Iterator<Item = &Node> {
+        self.l.as_deref().into_iter().chain(self.r.as_deref()).chain(self.items.iter())
+    }
+
+    /// This node's own fields, without its children (`l`, `r`, `items`).
+    pub(crate) fn head(&self) -> Node {
+        let n = self;
+        Node {
                 t: n.t,
                 pos: n.pos,
                 s: n.s.clone(),
@@ -113,8 +194,16 @@ impl Clone for Node {
                 math_plan: n.math_plan.clone(),
                 keys_unobserved: n.keys_unobserved,
                 borrowed_filter: n.borrowed_filter,
+                step_depth: n.step_depth,
                 spec: n.spec.clone(),
             }
+    }
+}
+
+impl Clone for Node {
+    fn clone(&self) -> Self {
+        fn head(n: &Node) -> Node {
+            n.head()
         }
         if self.l.is_none() && self.r.is_none() && self.items.is_empty() {
             return head(self);

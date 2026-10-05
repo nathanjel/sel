@@ -1,5 +1,4 @@
-//! The sizes the performance work relies on (docs/interim/2026-09-29/
-//! rust-performance-plan.md). A value cell is allocated for every scalar a
+//! The sizes the performance work relies on. A value cell is allocated for every scalar a
 //! program touches; `Args` sits on the evaluator's recursive path.
 use std::mem::size_of;
 

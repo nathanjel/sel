@@ -8,14 +8,13 @@ use crate::sql::errors::{refuse, SqlError};
 use crate::sql::map::{chain, entry, EntryKind};
 use crate::sql::node::{SNode, SNodeType};
 use crate::sql::relational_plan::{
-    BucketState, RelationalFilter, RelationalGroup, RelationalJoin, RelationalOrder,
-    RelationalPlan, RelationalProjection,
+    BucketState, JoinType, RelationalFilter, RelationalGroup, RelationalJoin, RelationalOrder,
+    RelationalPlan, RelationalProjection, SortDirection,
 };
 use crate::sql::row_model::{build_join_rows, relation_alias};
 use crate::sql::translator::{Source, SourceFilter, SourceShape, Translator};
 use crate::sql::types::{Fragment, Part, SqlKind};
 use crate::utf8::Pos;
-use crate::value::Value;
 
 pub fn is_pipeline_op(name: &str) -> bool {
     matches!(
@@ -79,7 +78,7 @@ pub fn record_fields(node: &SNode, dialect: &str) -> Result<Vec<(String, SNode)>
             let mut end = key.len().min(63);
             while !args[i].str.is_char_boundary(end) { end -= 1; }
             let prefix = key[..end].to_vec();
-            if prefixes.insert(prefix, key.len() > 63).map_or(false, |was_long| was_long || key.len() > 63) {
+            if prefixes.insert(prefix, key.len() > 63).is_some_and(|was_long| was_long || key.len() > 63) {
                 return refuse("E_SQL_UNSUPPORTED", "record aliases collide after PostgreSQL identifier truncation", args[i].pos);
             }
         }
@@ -293,12 +292,10 @@ impl Translator {
                 col_type = canon_kind;
                 canonical = true;
             }
-            let mut b = Binding::column(
-                &col_name, &alias, col_type, false, false, false, "", "", false,
-            );
+            let mut b = Binding::column_with(&col_name, &alias, col_type, Default::default());
             if let Some(ref mut c) = b.column {
                 c.canonical = canonical;
-                c.unavailable = source_field.map_or(false, |f| f.is_raw || f.unavailable);
+                c.unavailable = source_field.is_some_and(|f| f.is_raw || f.unavailable);
             }
             field_entries.push(FieldEntry::new(name, b));
         }
@@ -431,9 +428,9 @@ impl Translator {
 
         if name == "SORT" || name == "SORT_DESC" || name == "TOP" || name == "TOP_DESC" {
             let dir = if name == "SORT_DESC" || name == "TOP_DESC" {
-                "DESC"
+                SortDirection::Desc
             } else {
-                "ASC"
+                SortDirection::Asc
             };
             if count == 1 {
                 if let Some(ref src_rel) = plan.source_relation {
@@ -451,7 +448,7 @@ impl Translator {
                             plan.order_by.push(RelationalOrder {
                                 binder: "_".to_string(),
                                 node: index_snode,
-                                dir: dir.to_string(),
+                                dir,
                                 pos: step.pos,
                                 over_groups: false,
                             });
@@ -471,7 +468,7 @@ impl Translator {
                             plan.order_by.push(RelationalOrder {
                                 binder: "_".to_string(),
                                 node: index_snode,
-                                dir: dir.to_string(),
+                                dir,
                                 pos: step.pos,
                                 over_groups: false,
                             });
@@ -488,7 +485,7 @@ impl Translator {
                 plan.order_by.push(RelationalOrder {
                     binder: "_".to_string(),
                     node: args[1].clone(),
-                    dir: dir.to_string(),
+                    dir,
                     pos: step.pos,
                     over_groups: false,
                 });
@@ -503,7 +500,7 @@ impl Translator {
                 plan.order_by.push(RelationalOrder {
                     binder: args[1].str.clone(),
                     node: args[2].clone(),
-                    dir: dir.to_string(),
+                    dir,
                     pos: step.pos,
                     over_groups: false,
                 });
@@ -517,32 +514,35 @@ impl Translator {
             return Ok(());
         }
 
-        // SORT_BY or TOP_BY
-        let mut binder = "_";
+        // SORT_BY or TOP_BY. A text literal in the third place is a direction
+        // and wins over a bare name in the second (`text-direction-wins-over-
+        // bare-name`); otherwise a bare name there is the binder.
+        let binder;
         let key;
-        let mut dir = "ASC";
-        let mut dir_pos = step.pos;
+        let dir;
 
         if count == 2 {
             binder = "_";
             key = &args[1];
-            dir = "ASC";
+            dir = SortDirection::Asc;
         } else if count == 3 {
-            if args[2].t == SNodeType::Text {
+            // Decided off the call as written: a helper inlined into the third
+            // slot is that slot's name, so the second is the binder and the
+            // helper the key (stmt.order-by.helper-in-the-key-slot-...).
+            if args[2].is_written_text() {
                 binder = "_";
                 key = &args[1];
                 if args[2].str.eq_ignore_ascii_case("ASC") {
-                    dir = "ASC";
+                    dir = SortDirection::Asc;
                 } else if args[2].str.eq_ignore_ascii_case("DESC") {
-                    dir = "DESC";
+                    dir = SortDirection::Desc;
                 } else {
                     return refuse("E_BAD_ARG", "sort direction must be 'ASC' or 'DESC'", args[2].pos);
                 }
-                dir_pos = args[2].pos;
             } else if is_binder_name(Some(&args[1])) {
                 binder = &args[1].str;
                 key = &args[2];
-                dir = "ASC";
+                dir = SortDirection::Asc;
             } else {
                 return refuse(
                     "E_BAD_ARG",
@@ -560,7 +560,7 @@ impl Translator {
             }
             binder = &args[1].str;
             key = &args[2];
-            if args[3].t != SNodeType::Text {
+            if !args[3].is_written_text() {
                 return refuse(
                     "E_BAD_ARG",
                     "sort direction must be 'ASC' or 'DESC'",
@@ -568,9 +568,9 @@ impl Translator {
                 );
             }
             if args[3].str.eq_ignore_ascii_case("ASC") {
-                dir = "ASC";
+                dir = SortDirection::Asc;
             } else if args[3].str.eq_ignore_ascii_case("DESC") {
-                dir = "DESC";
+                dir = SortDirection::Desc;
             } else {
                 return refuse(
                     "E_BAD_ARG",
@@ -578,23 +578,14 @@ impl Translator {
                     args[3].pos,
                 );
             }
-            dir_pos = args[3].pos;
         } else {
             return refuse("E_ARITY", "SORT_BY takes 2 to 4 arguments", step.pos);
-        }
-
-        if dir != "ASC" && dir != "DESC" {
-            return refuse(
-                "E_BAD_ARG",
-                "sort direction must be 'ASC' or 'DESC'",
-                dir_pos,
-            );
         }
 
         plan.order_by.push(RelationalOrder {
             binder: binder.to_string(),
             node: key.clone(),
-            dir: dir.to_string(),
+            dir,
             pos: step.pos,
             over_groups: false,
         });
@@ -723,7 +714,7 @@ impl Translator {
                         );
                     }
                     // Groups appear in order of their first member, and the members were
-                    // sorted: a GROUP BY returns its groups in no order (JS-C59).
+                    // sorted: a GROUP BY returns its groups in no order.
                     if !plan.order_by.is_empty() || plan.order_dropped {
                         return refuse(
                             "E_SQL_SHAPE",
@@ -959,7 +950,7 @@ impl Translator {
                     // DISTINCT keeps the FIRST element of each run in sorted order; SQL's
                     // `SELECT DISTINCT proj ... ORDER BY <column not in proj>` is refused by
                     // PostgreSQL and MySQL 8 and answers an unspecified representative row on
-                    // MariaDB, so the step stays in memory (CPP-C60).
+                    // MariaDB, so the step stays in memory.
                     if !plan.order_by.is_empty() {
                         return refuse(
                             "E_SQL_SHAPE",
@@ -1078,11 +1069,7 @@ impl Translator {
                         );
                     }
 
-                    let join_type = if name == "LINK_LEFT" {
-                        "LEFT"
-                    } else {
-                        "INNER"
-                    };
+                    let join_type = if name == "LINK_LEFT" { JoinType::Left } else { JoinType::Inner };
                     let rel_spec = right_binding.relation.as_ref().unwrap();
                     let from_raw = rel_spec.from.is_raw;
                     let table = if from_raw {
@@ -1092,7 +1079,7 @@ impl Translator {
                     };
 
                     let mut join = RelationalJoin {
-                        join_type: join_type.to_string(),
+                        join_type,
                         source_name: right_node.str.clone(),
                         source_relation: Some(right_binding.clone()),
                         source_from_raw: from_raw,
@@ -1425,7 +1412,7 @@ impl Translator {
 
         // Joins
         for join in &plan.joins {
-            if join.join_type == "LEFT" {
+            if join.join_type == JoinType::Left {
                 parts.push(Part::Sql(" LEFT JOIN ".to_string()));
             } else {
                 parts.push(Part::Sql(" INNER JOIN ".to_string()));
@@ -1540,7 +1527,7 @@ impl Translator {
                 };
                 let o_frag = self.order_key(raw_frag, pos)?;
                 parts.extend(o_frag.parts);
-                parts.push(Part::Sql(format!(" {}", ord.dir)));
+                parts.push(Part::Sql(format!(" {}", ord.dir.as_sql())));
             }
         }
 

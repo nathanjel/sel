@@ -1,29 +1,11 @@
 use sel_lang::{
     compile, dec_parse, decode_utf8_source, evaluate, function_names, register_function, Context,
-    Kind, Pos, SelError, Value,
+    Dec, Kind, Pos, SelError, Value,
 };
-
-
-fn say(counter: &mut usize, out: &mut Vec<String>, name: &str, value: &str) {
-    *counter += 1;
-    out.push(format!("{:02} {} = {}", counter, name, value));
-}
-
-fn b(x: bool) -> &'static str {
-    if x {
-        "true"
-    } else {
-        "false"
-    }
-}
+use sel_lang_dev::{b, say};
 
 fn kind_name(k: Kind) -> &'static str {
-    match k {
-        Kind::None => "NONE",
-        Kind::Text => "TEXT",
-        Kind::Bin => "BIN",
-        Kind::Bool => "BOOL",
-    }
+    k.as_str()
 }
 
 fn eval(src: &str) -> Value {
@@ -155,13 +137,11 @@ fn main() {
             if spec.2 > 1000000 {
                 return Err(SelError::range("fractional digits exceed limit", Pos::default()));
             }
-            let mut d = dec_parse(spec.1, Pos::default())?;
-            d.scale = spec.2 as u32;
-            d.neg = spec.0;
-            if spec.1 == "0" {
-                d.neg = false;
-            }
-            Value::num(d)
+            // The parts as an application might hand them over, unnormalised:
+            // Value::num must defend against them.
+            let d = dec_parse(spec.1, Pos::default())?;
+            let neg = spec.0 && spec.1 != "0";
+            Value::num(Dec::from_raw_parts(neg, spec.2 as u32, d.repr().clone()))
         };
 
         let probe_fraccap = || num_from_dec((false, "1", 1000001));
@@ -173,7 +153,7 @@ fn main() {
             Ok(())
         };
         let probe_malformed = || -> Result<(), SelError> {
-            let items = vec![Value::text_owned("1".to_string())];
+            let items = [Value::text_owned("1".to_string())];
             let keys: Vec<String> = vec![];
             if items.len() != keys.len() {
                 return Err(SelError::new("E_BAD_ARG", "key and value counts must match", Pos::default()));

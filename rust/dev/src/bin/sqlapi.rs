@@ -4,26 +4,14 @@
 
 use std::sync::Arc;
 
-use sel_lang::sql::binding::{Binding, Bindings, FieldEntry};
-use sel_lang::sql::emit::Emit;
-use sel_lang::sql::types::{Fragment, Mode, Part, SqlKind};
-use sel_lang::sql::{self, define, define_builder, define_dialect, plan_hybrid, reset, translate, BuilderFn, HybridPlan, Options, SqlError};
+use sel_lang::sql::{
+    define, define_builder, define_dialect, plan_hybrid, reset, translate, Binding, Bindings,
+    BuilderFn, Emit, FieldEntry, Fragment, HybridPlan, Mode, Options, Part, SqlError, SqlKind,
+};
 use sel_lang::{compile, evaluate, register_function, Pos, SelError, Value};
+use sel_lang_dev::{b, say};
 
-fn say(counter: &mut usize, out: &mut Vec<String>, name: &str, value: &str) {
-    *counter += 1;
-    out.push(format!("{:02} {} = {}", counter, name, value));
-}
-
-fn b(x: bool) -> &'static str {
-    if x { "true" } else { "false" }
-}
-
-fn join(parts: &[String], sep: &str) -> String {
-    parts.join(sep)
-}
-
-fn attempt(f: impl FnOnce() -> ()) -> String {
+fn attempt(f: impl FnOnce()) -> String {
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(f));
     match result {
         Ok(()) => "accepted".to_string(),
@@ -39,7 +27,7 @@ fn attempt(f: impl FnOnce() -> ()) -> String {
     }
 }
 
-fn refuses(f: impl FnOnce() -> ()) -> String {
+fn refuses(f: impl FnOnce()) -> String {
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(f));
     match result {
         Ok(()) => "accepted".to_string(),
@@ -94,7 +82,7 @@ fn main() {
     };
 
     // --- plan_hybrid probes ---
-    let mut probe = |label: &str, source: &str, counter: &mut usize, out: &mut Vec<String>| {
+    let probe = |label: &str, source: &str, counter: &mut usize, out: &mut Vec<String>| {
         let program = compile(source).unwrap_or_else(|e| std::panic::panic_any(e));
         let plan: HybridPlan = plan_hybrid(&program, "mariadb", Some(&bindings), Options::default());
 
@@ -146,7 +134,7 @@ fn main() {
     probe("memory", "A += 1; ORDERS .> TAKE(1)", &mut counter, &mut out);
 
     // --- fragment probes ---
-    let mut fragment_probe = |label: &str, dialect: &str, source: &str, counter: &mut usize, out: &mut Vec<String>| {
+    let fragment_probe = |label: &str, dialect: &str, source: &str, counter: &mut usize, out: &mut Vec<String>| {
         let program = compile(source).unwrap_or_else(|e| std::panic::panic_any(e));
         let f = translate(&program, dialect, Some(&bindings), Options::default()).unwrap_or_else(|e| std::panic::panic_any(e));
         say(counter, out, &format!("fragment.{}.kind", label), f.kind.as_str());
@@ -181,7 +169,7 @@ fn main() {
     }));
 
     // Register the host function, then define its SQL spelling
-    register_function("HSLUG", 1, 1, local_slug);
+    register_function("HSLUG", 1, 1, local_slug).expect("HSLUG registers");
     {
         let spec = serde_json::json!({"tpl": "slug({0})", "ret": "TEXT", "args": ["TEXT"]});
         define("postgresql", "funcs", "HSLUG", &spec);
@@ -198,7 +186,7 @@ fn main() {
             &compile("HSLUG(T)").unwrap_or_else(|e| std::panic::panic_any(e)),
             "postgresql",
             Some(&host),
-            Options { strict: true, ..Options::default() },
+            Options { strict: true },
         ).unwrap_or_else(|e| std::panic::panic_any(e));
     }));
 
@@ -215,7 +203,8 @@ fn main() {
     // LIST argument
     register_function("HHAS", 2, 2, |_a: &mut sel_lang::Args| -> Result<Value, SelError> {
         Ok(Value::bool(false))
-    });
+    })
+    .expect("HHAS registers");
     {
         let spec = serde_json::json!({"tpl": "({1} = ANY(ARRAY[{0}]))", "ret": "BOOL", "args": ["LIST", "TEXT"]});
         define("postgresql", "funcs", "HHAS", &spec);
@@ -234,7 +223,8 @@ fn main() {
     // Builder
     register_function("HWRAP", 1, 1, |a: &mut sel_lang::Args| -> Result<Value, SelError> {
         Ok(a.val(0)?.clone())
-    });
+    })
+    .expect("HWRAP registers");
     {
         let builder: BuilderFn = Arc::new(|emit: &Emit, args: &[Fragment], _pos: Pos| -> Result<Fragment, SqlError> {
             let mut parts: Vec<Part> = vec![Part::Sql("wrap(".to_string())];
@@ -260,13 +250,13 @@ fn main() {
             .unwrap_or_else(|e| std::panic::panic_any(e)));
 
     // Re-register HSLUG with wider arity [1,2] — SQL should refuse because arity mismatch
-    register_function("HSLUG", 1, 2, local_slug);
+    register_function("HSLUG", 1, 2, local_slug).expect("HSLUG re-registers");
     say(&mut counter, &mut out, "host.spell.reregistered-arity", &attempt(|| {
         translate(&compile("HSLUG(T)").unwrap_or_else(|e| std::panic::panic_any(e)), "postgresql", Some(&host), Options::default()).unwrap_or_else(|e| std::panic::panic_any(e));
     }));
 
     // Restore original arity [1,1]
-    register_function("HSLUG", 1, 1, local_slug);
+    register_function("HSLUG", 1, 1, local_slug).expect("HSLUG re-registers");
     say(&mut counter, &mut out, "host.spell.arity-restored", &attempt(|| {
         translate(&compile("HSLUG(T)").unwrap_or_else(|e| std::panic::panic_any(e)), "postgresql", Some(&host), Options::default()).unwrap_or_else(|e| std::panic::panic_any(e));
     }));

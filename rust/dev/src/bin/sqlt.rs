@@ -1,23 +1,32 @@
 // The SEL->SQL conformance suite for the Rust host.
 //
-// Run from the repository root:
+// The cases are compiled in (sqlt/case_data.rs, rendered from sql/cases/ by
+// tools/gen-sql-cases.mjs), so it runs from anywhere; rust/build.sh builds it:
 //
-//     cargo run --release --bin sqlt                 every case
-//     cargo run --release --bin sqlt bind. agg.      only cases whose name contains one of these
-//     cargo run --release --bin sqlt -- --names      what this host loaded, and stop
+//     rust/build/sqlt                 every case
+//     rust/build/sqlt bind. agg.      only cases whose name contains one of these
+//     rust/build/sqlt --names         what this host loaded, and stop
 
 use std::collections::HashSet;
 use sel_lang::compile;
 use sel_lang::sql::{
-    plan_hybrid, reset, translate, translate_statement, Binding, Bindings, Fragment, HybridPlan,
+    plan_hybrid, reset, translate, translate_statement, Bindings, Fragment, HybridPlan,
     Mode, Options, Part, SqlError,
 };
 use sel_lang::{Program, Value};
 
+// Rendered by tools/gen-sql-cases.mjs, which writes every case's bindings
+// through a `let mut` whether or not that case inserts any.
 #[path = "sqlt/case_data.rs"]
+#[allow(unused_mut, clippy::all)]
 mod case_data;
 use case_data::{SqlCase, SQL_CASES};
 
+// `--- throws` names the start-up error class a refused registration raises,
+// spelt as PHP spells it (sql/cases/README.md). A configuration mistake is a
+// panic here, never a SqlError a caller could swallow; the one class the cases
+// name maps to that, as JS maps it to Error and Python to RuntimeError. Any
+// other name is a suite error, never a pass.
 fn throws_is_known(name: &str) -> bool {
     name == "LogicException"
 }
@@ -131,10 +140,7 @@ fn run_plan_case(
             Err(e) => return Err(format!("the source did not compile: {}", e)),
         };
 
-        let opts = Options {
-            strict: c.strict,
-            ..Default::default()
-        };
+        let opts = Options { strict: c.strict };
 
         Ok(plan_hybrid(&prog, dialect, Some(&binds), opts))
     }));
@@ -294,10 +300,7 @@ fn run_case(
     let mut prog: Option<Program> = None;
     let mut binds = Bindings::default();
 
-    let opts = Options {
-        strict: c.strict,
-        ..Default::default()
-    };
+    let opts = Options { strict: c.strict };
 
     let old_hook = std::panic::take_hook();
     std::panic::set_hook(Box::new(|_| {}));
@@ -397,8 +400,7 @@ fn run_case(
         return (None, Some(format!("{}: unexpected throw: {}", c.at, thrown_what)));
     }
 
-    if as_mode == "statement" && prog.is_some() {
-        let p = prog.as_ref().unwrap();
+    if let (true, Some(p)) = (as_mode == "statement", prog.as_ref()) {
         let mut twin_has_error = false;
         let mut twin_sql = String::new();
         let mut twin_err: Option<SqlError> = None;
@@ -655,6 +657,11 @@ fn main() {
         passed, mirrored, compile_refused, failures.len(), suite_errors
     );
 
+    if passed + failures.len() + suite_errors == 0 {
+        // A filter that matched nothing ran nothing, which is not a pass.
+        eprintln!("no cases were run: no case name contains {}", args.join(" or "));
+        std::process::exit(1);
+    }
     if !failures.is_empty() || suite_errors > 0 {
         std::process::exit(1);
     }

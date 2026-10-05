@@ -1,5 +1,7 @@
 use sel_lang::builtins::{Spec, SpecFn};
-use sel_lang::{compile, eval_node, Context, Node, NodeType, Pos, Value};
+use sel_lang::ast::{Node, NodeType};
+use sel_lang::eval::eval_node;
+use sel_lang::{compile, Context, Pos, Value};
 use std::sync::Arc;
 
 // Same native functions and lazy flags, with host wrappers that deliberately

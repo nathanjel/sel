@@ -1,5 +1,5 @@
-use std::collections::HashMap;
-use std::sync::{Arc, OnceLock, RwLock};
+use std::collections::{HashMap, HashSet};
+use std::sync::{Arc, LazyLock, OnceLock, RwLock};
 use regex::Regex;
 
 use crate::builtins::host_arity;
@@ -100,12 +100,18 @@ pub struct RulesData {
     pub template_keys: Vec<String>,
 }
 
-static SHIPPED_DIALECTS: OnceLock<HashMap<String, DialectRecord>> = OnceLock::new();
-static SHIPPED_RULES: OnceLock<RulesData> = OnceLock::new();
+/// The shipped map and its rules, parsed once (both from the one pair of
+/// JSON blobs, so one initialiser).
+static SHIPPED: OnceLock<(HashMap<String, DialectRecord>, RulesData)> = OnceLock::new();
+
+static DOTTED_VERSION: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^[0-9]+(\.[0-9]+)*$").unwrap());
+static TEMPLATE_SLOT: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\{([^}]*)\}").unwrap());
+static UNIFY_RET: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^@unify:[0-9]+(,[0-9]+)*$").unwrap());
+static ARITY_TEMPLATE_KEY: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^(0|[1-9][0-9]{0,2})$").unwrap());
 
 static EXTRA: OnceLock<RwLock<HashMap<String, DialectRecord>>> = OnceLock::new();
 static OVERLAY: OnceLock<RwLock<HashMap<String, HashMap<String, HashMap<String, EntryRecord>>>>> = OnceLock::new();
-static GUARD_CHECKED: OnceLock<RwLock<HashMap<String, bool>>> = OnceLock::new();
+static GUARD_CHECKED: OnceLock<RwLock<HashSet<String>>> = OnceLock::new();
 static HOST_ARITIES: OnceLock<RwLock<HashMap<String, HashMap<String, [usize; 2]>>>> = OnceLock::new();
 
 fn extra_store() -> &'static RwLock<HashMap<String, DialectRecord>> {
@@ -116,8 +122,8 @@ fn overlay_store() -> &'static RwLock<HashMap<String, HashMap<String, HashMap<St
     OVERLAY.get_or_init(|| RwLock::new(HashMap::new()))
 }
 
-fn guard_checked_store() -> &'static RwLock<HashMap<String, bool>> {
-    GUARD_CHECKED.get_or_init(|| RwLock::new(HashMap::new()))
+fn guard_checked_store() -> &'static RwLock<HashSet<String>> {
+    GUARD_CHECKED.get_or_init(|| RwLock::new(HashSet::new()))
 }
 
 fn host_arities_store() -> &'static RwLock<HashMap<String, HashMap<String, [usize; 2]>>> {
@@ -147,7 +153,7 @@ fn init_shipped() -> (HashMap<String, DialectRecord>, RulesData) {
     if let Some(func_arity) = raw_rules.get("funcArity").and_then(|v| v.as_object()) {
         for (k, arr) in func_arity {
             if let Some(a) = arr.as_array() {
-                let lo = a.get(0).and_then(|v| v.as_u64()).map(|n| n as usize);
+                let lo = a.first().and_then(|v| v.as_u64()).map(|n| n as usize);
                 let hi = a.get(1).and_then(|v| v.as_u64()).map(|n| n as usize);
                 rules.func_arity.insert(k.clone(), [lo, hi]);
             }
@@ -234,14 +240,7 @@ fn init_shipped() -> (HashMap<String, DialectRecord>, RulesData) {
 }
 
 fn ensure_init() -> (&'static HashMap<String, DialectRecord>, &'static RulesData) {
-    let d = SHIPPED_DIALECTS.get_or_init(|| {
-        let (dialects, _) = init_shipped();
-        dialects
-    });
-    let r = SHIPPED_RULES.get_or_init(|| {
-        let (_, rules) = init_shipped();
-        rules
-    });
+    let (d, r) = SHIPPED.get_or_init(init_shipped);
     (d, r)
 }
 
@@ -434,18 +433,18 @@ pub fn shipped_section_keys(dialect: &str, section: &str) -> Vec<String> {
 
 pub fn targets() -> Vec<String> {
     let (shipped, _) = ensure_init();
-    let mut set = HashMap::new();
+    let mut set = HashSet::new();
     for (d, r) in shipped {
         if r.target {
-            set.insert(d.clone(), true);
+            set.insert(d.clone());
         }
     }
     for (d, r) in extra_store().read().unwrap().iter() {
         if r.target {
-            set.insert(d.clone(), true);
+            set.insert(d.clone());
         }
     }
-    let mut out: Vec<String> = set.into_keys().collect();
+    let mut out: Vec<String> = set.into_iter().collect();
     out.sort();
     out
 }
@@ -476,11 +475,11 @@ pub fn require_target(dialect: &str, pos: Pos) -> Result<(), SqlError> {
 pub fn chain(dialect: &str) -> Vec<String> {
     ensure_init();
     let mut out = Vec::new();
-    let mut seen = HashMap::new();
+    let mut seen = HashSet::new();
     let mut cur = dialect.to_string();
 
-    while !cur.is_empty() && exists(&cur) && !seen.contains_key(&cur) {
-        seen.insert(cur.clone(), true);
+    while !cur.is_empty() && exists(&cur) && !seen.contains(&cur) {
+        seen.insert(cur.clone());
         out.push(cur.clone());
         match with_record(&cur, |r| r.extends.clone()).flatten() {
             Some(ext) => cur = ext,
@@ -623,9 +622,7 @@ pub fn define_dialect(name: &str, spec: &serde_json::Value) {
             }
         }
     };
-
-    let dotted_re = Regex::new(r"^[0-9]+(\.[0-9]+)*$").unwrap();
-    if !dotted_re.is_match(&version) {
+    if !DOTTED_VERSION.is_match(&version) {
         panic!(
             "SQL dialect {} has version {:?}, which is not dotted-numeric; strip any suffix a server reports (11.8.8-MariaDB is 11.8.8)",
             name, version
@@ -817,10 +814,16 @@ fn quoted_runs(tpl: &str) -> Vec<String> {
     out
 }
 
+/// Holds a dialect's numericGuard to its funcs.ISNUM, once, at its first use.
+/// A disagreement is a mistake in the application's dialect, not a rule that
+/// cannot be translated: it panics (the start-up error other hosts raise as a
+/// LogicException/Error, `register.guard.*` in 50-rendering-and-
+/// registration.sqlt), on every use until fixed, rather than return a
+/// SqlError that try_translate would swallow.
 pub fn check_numeric_guard(dialect: &str) {
     {
         let gc = guard_checked_store().read().unwrap();
-        if *gc.get(dialect).unwrap_or(&false) {
+        if gc.contains(dialect) {
             return;
         }
     }
@@ -858,14 +861,14 @@ pub fn check_numeric_guard(dialect: &str) {
     }
 
     let got_runs = quoted_runs(&guard);
-    let mut got_set = HashMap::new();
+    let mut got_set = HashSet::new();
     for g in got_runs {
-        got_set.insert(g, true);
+        got_set.insert(g);
     }
 
     let mut missing = Vec::new();
     for w in want {
-        if !got_set.contains_key(&w) {
+        if !got_set.contains(&w) {
             missing.push(format!("'{}'", w));
         }
     }
@@ -876,7 +879,7 @@ pub fn check_numeric_guard(dialect: &str) {
             missing.join(", ")
         );
     }
-    guard_checked_store().write().unwrap().insert(dialect.to_string(), true);
+    guard_checked_store().write().unwrap().insert(dialect.to_string());
 }
 
 fn check_lexical(key: &str, v: &serde_json::Value, where_str: &str) {
@@ -934,13 +937,12 @@ fn check_key(section: &str, key: &str) {
                 key
             );
         }
-    } else if section == "skel" {
-        if !rules.skel_slots.contains_key(key) {
+    } else if section == "skel"
+        && !rules.skel_slots.contains_key(key) {
             let mut known: Vec<String> = rules.skel_slots.keys().cloned().collect();
             known.sort();
             panic!("{} is not a skeleton; known ones are {}", key, known.join(", "));
         }
-    }
 }
 
 fn check_entry(section: &str, key: &str, e: &serde_json::Value) {
@@ -982,8 +984,7 @@ fn check_entry(section: &str, key: &str, e: &serde_json::Value) {
             Some(slots) => slots,
             None => panic!("unknown skel: {}", key),
         };
-        let slot_re = Regex::new(r"\{([^}]*)\}").unwrap();
-        for cap in slot_re.captures_iter(tpl_val) {
+        for cap in TEMPLATE_SLOT.captures_iter(tpl_val) {
             let slot_name = &cap[1];
             if !allowed.iter().any(|a| a == slot_name) {
                 panic!(
@@ -1013,9 +1014,7 @@ fn check_entry(section: &str, key: &str, e: &serde_json::Value) {
         Some(s) => s,
         None => panic!("{} has ret null; use one of {}, @concat or @unify:<n>[,<n>...]", where_str, rules.ret_kinds.join(", ")),
     };
-
-    let unify_re = Regex::new(r"^@unify:[0-9]+(,[0-9]+)*$").unwrap();
-    if !rules.ret_kinds.iter().any(|r| r == ret_val) && ret_val != "@concat" && !unify_re.is_match(ret_val) {
+    if !rules.ret_kinds.iter().any(|r| r == ret_val) && ret_val != "@concat" && !UNIFY_RET.is_match(ret_val) {
         panic!("{} has ret {:?}; use one of {}, @concat or @unify:<n>[,<n>...]", where_str, ret_val, rules.ret_kinds.join(", "));
     }
 
@@ -1027,10 +1026,8 @@ fn check_entry(section: &str, key: &str, e: &serde_json::Value) {
             );
         }
     }
-
-    let dotted_re = Regex::new(r"^[0-9]+(\.[0-9]+)*$").unwrap();
     if let Some(since) = m.get("since").and_then(|v| v.as_str()) {
-        if !dotted_re.is_match(since) {
+        if !DOTTED_VERSION.is_match(since) {
             panic!("{} has a since that is not dotted-numeric", where_str);
         }
     }
@@ -1110,21 +1107,19 @@ fn check_entry(section: &str, key: &str, e: &serde_json::Value) {
                 if ea[0] > lo {
                     lo = ea[0];
                 }
-                if hi.map_or(true, |h| ea[1] < h) {
+                if hi.is_none_or(|h| ea[1] < h) {
                     hi = Some(ea[1]);
                 }
             }
-
-            let tpl_key_re = Regex::new(r"^(0|[1-9][0-9]{0,2})$").unwrap();
             for n in tpl_map.keys() {
                 if n == "*" {
                     continue;
                 }
-                if !tpl_key_re.is_match(n) {
+                if !ARITY_TEMPLATE_KEY.is_match(n) {
                     panic!("{} keys a template by {:?}; an arity-keyed template uses a count or *", where_str, n);
                 }
                 let c: usize = n.parse().unwrap();
-                if c < lo || hi.map_or(false, |h| c > h) {
+                if c < lo || hi.is_some_and(|h| c > h) {
                     let hi_str = hi.map(|h| h.to_string()).unwrap_or_else(|| "any".to_string());
                     panic!(
                         "{} keys a template by {}, and {} takes {} to {} argument(s), so that template could never be chosen",
@@ -1166,7 +1161,7 @@ fn check_args(key: &str, args_val: &serde_json::Value, host: Option<(usize, usiz
 }
 
 fn check_section(section: &str) {
-    if !SECTIONS.iter().any(|s| *s == section) {
+    if !SECTIONS.contains(&section) {
         panic!("unknown map section {}; use {}", section, SECTIONS.join(", "));
     }
 }

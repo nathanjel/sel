@@ -5,7 +5,7 @@ use crate::dec::{dec_format, dec_parse};
 use crate::limits::MAX_DEPTH;
 use crate::manifest::{lookup_builtin, Entry as BuiltinEntry};
 use crate::shape::{unique_record_shape, RecordShape};
-use crate::utf8::{to_code_points, Pos, SelError};
+use crate::utf8::{Pos, SelError};
 
 const OPERATORS: &[&str] = &[
     "???", "??",
@@ -21,10 +21,8 @@ const RESERVED: &[&str] = &[
     "EQL", "IN", "BAND", "BOR", "BXOR",
 ];
 
-#[allow(dead_code)]
-const BP_SEQ: u8 = 1;
-#[allow(dead_code)]
-const BP_LIST: u8 = 2;
+// Binding powers start at 3: a sequence (`;`) and a list (`,`) are parsed by
+// their own functions, not through this table.
 const BP_ASSIGN: u8 = 3;
 const BP_OR: u8 = 4;
 const BP_XOR: u8 = 5;
@@ -114,7 +112,7 @@ pub struct Lexer {
 
 impl Lexer {
     pub fn new(source: &str) -> Result<Self, SelError> {
-        let chars = to_code_points(source, Pos::default())?;
+        let chars: Vec<char> = source.chars().collect();
         let mut line_starts = vec![0];
         for (i, &ch) in chars.iter().enumerate() {
             if ch == '\n' {
@@ -134,7 +132,7 @@ impl Lexer {
         let mut lo = 0;
         let mut hi = self.line_starts.len() - 1;
         while lo < hi {
-            let mid = (lo + hi + 1) / 2;
+            let mid = (lo + hi).div_ceil(2);
             if self.line_starts[mid] <= offset {
                 lo = mid;
             } else {
@@ -227,7 +225,7 @@ impl Lexer {
         while i < to {
             let c = self.chars[i];
 
-            if c == ' ' || c == '\t' || c == '\r' || c == '\n' {
+            if crate::utf8::is_sel_space(c) {
                 i += 1;
                 continue;
             }
@@ -332,23 +330,10 @@ impl Lexer {
     }
 
     fn match_operator(&self, i: usize, to: usize) -> Option<&'static str> {
-        for &op in OPERATORS {
-            let op_chars: Vec<char> = op.chars().collect();
-            if i + op_chars.len() > to {
-                continue;
-            }
-            let mut matches = true;
-            for (k, &rc) in op_chars.iter().enumerate() {
-                if self.chars[i + k] != rc {
-                    matches = false;
-                    break;
-                }
-            }
-            if matches {
-                return Some(op);
-            }
-        }
-        None
+        // Every operator is ASCII, so its bytes are its characters.
+        OPERATORS.iter().copied().find(|op| {
+            i + op.len() <= to && op.bytes().enumerate().all(|(k, b)| self.chars[i + k] == b as char)
+        })
     }
 
     fn lex_raw(&self, start: usize, to: usize, out: &mut Vec<Token>) -> Result<usize, SelError> {
@@ -651,18 +636,6 @@ impl Parser {
             ));
         }
         Ok(*node)
-    }
-
-    pub fn parse_sequence(&mut self) -> Result<Node, SelError> {
-        self.sequence().map(|n| *n)
-    }
-
-    pub fn parse_list(&mut self) -> Result<Node, SelError> {
-        self.list().map(|n| *n)
-    }
-
-    pub fn parse_term(&mut self, min_bp: u8) -> Result<Node, SelError> {
-        self.term(min_bp).map(|n| *n)
     }
 
     // The recursive descent below passes nodes boxed. A `Node` is over 200
@@ -1111,7 +1084,7 @@ fn finish_call(name_tok: Token, spec: &FunctionSpec, args: Vec<Node>) -> PResult
         if let Some(pattern) = args.first().filter(|a| a.t == NodeType::Text) {
             let flag_at = if spec.name() == "RREPLACE" { 3 } else { 2 };
             let ignore_case = pattern.s.is_ascii() && args.get(flag_at)
-                .map_or(false, |a| a.t == NodeType::Text && a.s.contains('i'));
+                .is_some_and(|a| a.t == NodeType::Text && a.s.contains('i'));
             crate::regex::validate_pattern_with_case(&pattern.s, pattern.pos, ignore_case)?;
         }
     }

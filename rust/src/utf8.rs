@@ -2,6 +2,50 @@
 
 use std::fmt;
 
+/// SEL whitespace (SPEC §2.2): space, TAB, CR and LF, and nothing else. Never
+/// `char::is_whitespace` or `str::trim`, which follow Unicode White_Space and
+/// would also take NBSP, VT, FF, U+3000 and the rest.
+pub(crate) fn is_sel_space(c: char) -> bool {
+    matches!(c, ' ' | '\t' | '\r' | '\n')
+}
+
+/// The value of a canonical positive integer key -- ASCII digits, no leading
+/// zero, at most `max_digits` of them -- the only spelling that names a list
+/// position. Anything else (an empty key, "01", "+1", a non-ASCII digit) is
+/// no position at all.
+#[inline]
+pub(crate) fn canonical_index(key: &str, max_digits: usize) -> Option<usize> {
+    let bytes = key.as_bytes();
+    if bytes.is_empty() || bytes.len() > max_digits || !(b'1'..=b'9').contains(&bytes[0]) {
+        return None;
+    }
+    let mut val = 0usize;
+    for &b in bytes {
+        if !b.is_ascii_digit() {
+            return None;
+        }
+        val = val * 10 + (b - b'0') as usize;
+    }
+    Some(val)
+}
+
+/// Bytes as lower-case hex, two digits each: TO_HEX and the `b…` dump.
+pub(crate) fn hex_lower(bytes: &[u8]) -> String {
+    const DIGITS: &[u8; 16] = b"0123456789abcdef";
+    let mut out = String::with_capacity(bytes.len() * 2);
+    for &b in bytes {
+        out.push(DIGITS[(b >> 4) as usize] as char);
+        out.push(DIGITS[(b & 15) as usize] as char);
+    }
+    out
+}
+
+/// True when `s` holds nothing but SEL whitespace (the empty text included):
+/// the "blank" of `IS_BLANK` and `???`.
+pub(crate) fn is_sel_blank(s: &str) -> bool {
+    s.bytes().all(|b| matches!(b, b' ' | b'\t' | b'\r' | b'\n'))
+}
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Pos {
     pub line: usize,
@@ -94,21 +138,9 @@ impl fmt::Display for SelError {
 
 impl std::error::Error for SelError {}
 
-pub fn validate_text(s: &str, pos: Pos) -> Result<(), SelError> {
-    for c in s.chars() {
-        let u = c as u32;
-        if (0xD800..=0xDFFF).contains(&u) {
-            let which = if u <= 0xDBFF { "high" } else { "low" };
-            return Err(SelError::new("E_UTF8", format!("unpaired {} surrogate", which), pos));
-        }
-    }
-    Ok(())
-}
-
-pub fn to_code_points(s: &str, pos: Pos) -> Result<Vec<char>, SelError> {
-    validate_text(s, pos)?;
-    Ok(s.chars().collect())
-}
+// There is no validate_text: a &str is valid UTF-8 by construction, and so
+// holds no surrogate code point -- text arriving as bytes is checked where it
+// is decoded (decode_utf8_source, FROM_UTF8), and nowhere else needs to look.
 
 pub fn decode_utf8_source(data: &[u8]) -> Result<String, SelError> {
     let mut cps = Vec::with_capacity(data.len());
@@ -186,82 +218,6 @@ pub fn decode_utf8_source(data: &[u8]) -> Result<String, SelError> {
         i += need + 1;
     }
     Ok(cps.into_iter().collect())
-}
-
-pub fn decode_utf8(data: &[u8], pos: Pos) -> Result<String, SelError> {
-    match std::str::from_utf8(data) {
-        Ok(s) => {
-            validate_text(s, pos)?;
-            Ok(s.to_string())
-        }
-        Err(_) => Err(decode_utf8_diagnostic(data, pos)),
-    }
-}
-
-pub fn decode_utf8_diagnostic(data: &[u8], pos: Pos) -> SelError {
-    let n = data.len();
-    let mut i = 0;
-    while i < n {
-        let b = data[i];
-        if b < 0x80 {
-            i += 1;
-            continue;
-        }
-        let (need, lo, hi) = if (0xC2..=0xDF).contains(&b) {
-            (1, 0x80, 0xBF)
-        } else if b == 0xE0 {
-            (2, 0xA0, 0xBF) // reject overlong 3-byte
-        } else if (0xE1..=0xEC).contains(&b) {
-            (2, 0x80, 0xBF)
-        } else if b == 0xED {
-            (2, 0x80, 0x9F) // reject surrogates
-        } else if (0xEE..=0xEF).contains(&b) {
-            (2, 0x80, 0xBF)
-        } else if b == 0xF0 {
-            (3, 0x90, 0xBF) // reject overlong 4-byte
-        } else if (0xF1..=0xF3).contains(&b) {
-            (3, 0x80, 0xBF)
-        } else if b == 0xF4 {
-            (3, 0x80, 0x8F) // cap at U+10FFFF
-        } else {
-            return SelError::new(
-                "E_UTF8",
-                format!("invalid start byte 0x{:x} at byte {}", b, i),
-                pos,
-            );
-        };
-
-        if i + need >= n {
-            return SelError::new(
-                "E_UTF8",
-                format!("truncated sequence at byte {}", i),
-                pos,
-            );
-        }
-        for k in 1..=need {
-            let c = data[i + k];
-            let lo_k = if k == 1 { lo } else { 0x80 };
-            let hi_k = if k == 1 { hi } else { 0xBF };
-            if c < lo_k || c > hi_k {
-                return SelError::new(
-                    "E_UTF8",
-                    format!("invalid continuation byte at byte {}", i + k),
-                    pos,
-                );
-            }
-        }
-        i += need + 1;
-    }
-    SelError::new("E_UTF8", "invalid UTF-8 byte sequence", pos)
-}
-
-pub fn bytes_to_hex(data: &[u8]) -> String {
-    let mut s = String::with_capacity(data.len() * 2);
-    for &b in data {
-        use std::fmt::Write;
-        write!(&mut s, "{:02x}", b).unwrap();
-    }
-    s
 }
 
 pub fn cap_text(n: u128, pos: Pos) -> Result<(), SelError> {

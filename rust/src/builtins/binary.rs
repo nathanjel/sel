@@ -1,5 +1,5 @@
 use crate::args::Args;
-use crate::utf8::{cap_collection, cap_text, validate_text, SelError};
+use crate::utf8::{cap_collection, cap_text, SelError};
 use crate::value::Value;
 
 const B64_ALPHABET: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
@@ -17,20 +17,16 @@ pub fn fn_to_utf8(args: &mut Args) -> Result<Value, SelError> {
 pub fn fn_from_utf8(args: &mut Args) -> Result<Value, SelError> {
     let b = args.bytes(0)?;
     let pos = args.pos_at(0);
+    // from_utf8 refuses surrogates, overlongs and everything else that is not
+    // UTF-8: nothing is left to check once it accepts.
     let s = String::from_utf8(b).map_err(|_| SelError::new("E_UTF8", "invalid UTF-8", pos))?;
-    validate_text(&s, pos)?;
     Ok(Value::text_owned(s))
 }
 
 pub fn fn_to_hex(args: &mut Args) -> Result<Value, SelError> {
     let b = args.bytes(0)?;
     cap_text((b.len() as u128) * 2, args.pos())?;
-    let mut out = String::with_capacity(b.len() * 2);
-    for byte in b {
-        use std::fmt::Write;
-        let _ = write!(out, "{:02x}", byte);
-    }
-    Ok(Value::text_owned(out))
+    Ok(Value::text_owned(crate::utf8::hex_lower(&b)))
 }
 
 pub fn fn_from_hex(args: &mut Args) -> Result<Value, SelError> {
@@ -56,8 +52,8 @@ pub fn fn_from_hex(args: &mut Args) -> Result<Value, SelError> {
 
 pub fn fn_encode_base64(args: &mut Args) -> Result<Value, SelError> {
     let b = args.bytes(0)?;
-    cap_text(((b.len() as u128 + 2) / 3) * 4, args.pos())?;
-    let mut out = Vec::with_capacity((b.len() + 2) / 3 * 4);
+    cap_text((b.len() as u128).div_ceil(3) * 4, args.pos())?;
+    let mut out = Vec::with_capacity(b.len().div_ceil(3) * 4);
     let mut i = 0;
     while i < b.len() {
         let b0 = b[i] as u32;
@@ -140,7 +136,7 @@ pub fn fn_decode_base64(args: &mut Args) -> Result<Value, SelError> {
     Ok(Value::bin_owned(out))
 }
 
-// CRC32 table
+// CRC-32 (IEEE 802.3, reflected), bit by bit: no table.
 fn crc32_ieee(data: &[u8]) -> u32 {
     let mut crc: u32 = 0xFFFF_FFFF;
     for &b in data {
@@ -163,7 +159,7 @@ pub fn fn_btl(args: &mut Args) -> Result<Value, SelError> {
     let b = args.bytes(0)?;
     cap_collection(b.len() as u128, args.pos())?;
     let items = b.into_iter().map(|byte| Value::int(byte as i64)).collect();
-    Ok(Value::list_owned(items))
+    Ok(Value::list(items))
 }
 
 pub fn fn_ltb(args: &mut Args) -> Result<Value, SelError> {

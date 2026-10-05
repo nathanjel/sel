@@ -4,28 +4,8 @@ use sel_lang::sql::{
 };
 use sel_lang::{compile, SelError};
 use std::collections::HashMap;
+use sel_lang_dev::{read_corpus, read_text};
 use std::io::{self, Write};
-
-fn read_corpus(text: &str) -> Vec<String> {
-    let mut records: Vec<Vec<&str>> = Vec::new();
-    for line in text.split('\n') {
-        if line.starts_with("### ") {
-            records.push(Vec::new());
-        } else if let Some(record) = records.last_mut() {
-            record.push(line);
-        }
-    }
-    records
-        .into_iter()
-        .map(|lines| {
-            let mut source = lines.join("\n");
-            if source.ends_with('\n') {
-                source.pop();
-            }
-            source
-        })
-        .collect()
-}
 
 fn bindings() -> Bindings {
     let column =
@@ -119,10 +99,14 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         .get(2)
         .map(|s| s.to_string_lossy())
         .unwrap_or("all".into());
-    let text = String::from_utf8(std::fs::read(path)?)?;
+    let text = read_text(path)?;
+    let corpus = read_corpus(&text);
+    if corpus.is_empty() {
+        return Err(format!("{}: no records", std::path::Path::new(path).display()).into());
+    }
     let bindings = bindings();
     let mut out = io::BufWriter::new(io::stdout().lock());
-    for source in read_corpus(&text) {
+    for source in corpus {
         let program = match compile(&source) {
             Ok(program) => program,
             Err(_) => {

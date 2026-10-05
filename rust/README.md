@@ -60,15 +60,33 @@ stable `code` (`E_NOT_NUM`, `E_ABORT`, …) and the `pos` of the node that faile
 
 ## Notes for Rust
 
-- A `Program` is neither `Send` nor `Sync`, and `run` takes `&mut self`: compile
-  one per thread (it is cheap), or keep it in a `thread_local!`. A host function
-  (`register_function`) must be `Send + Sync + 'static`, so it cannot capture a
-  compiled program or a `Value`.
-- The SQL layer's configuration calls — `sql::define`, `define_dialect`,
-  `define_builder`, the `Binding` constructors and `plan_hybrid` — panic with a
-  `SqlError` on a bad argument rather than return one. `sql::define` takes a
+- Sharing across threads: a `Program` is `Send` but not `Sync`, and `run` takes
+  `&mut self`. Move a compiled program to the thread that runs it, or give each
+  thread its own -- `program.clone()` before spawning, or compile one per thread
+  (it is cheap), or keep one in a `thread_local!`. A `Value` (and so a context,
+  a result, a `Context`) is neither `Send` nor `Sync`: it lives and dies on the
+  thread that made it, so hand other threads its text (`dump()`, `as_text()`)
+  instead. A host function (`register_function`) must be `Send + Sync +
+  'static`, so it cannot capture a compiled program or a `Value`; registering
+  while other threads compile and run is safe. The crate holds itself to all of
+  this with compile-time probes.
+- The API is what [docs.rs](https://docs.rs/sel-lang) shows: the crate root,
+  `sql`, `limits` and `text::SelStr`. The other modules are public only so the
+  repository's own tests and harness can reach them, are hidden from the
+  documentation, and may change in any release.
+- The SQL layer's configuration calls panic on a bad argument rather than
+  return an error, in two kinds. A `Binding` constructor, or `plan_hybrid` given
+  bindings it cannot use, panics with a `SqlError` (`E_SQL_BINDING`,
+  `E_SQL_DIALECT`, …), as `translate` would return it. A map registration that
+  is a programming mistake — `sql::define`, `define_dialect` or
+  `define_builder` given a malformed entry, or a dialect whose `numericGuard`
+  disagrees with its `ISNUM`, found at its first use — panics with a plain
+  message: it is the start-up error the other hosts raise as a non-SQL exception,
+  which no "could not translate" path may swallow. `sql::define` takes a
   `serde_json::Value`, re-exported as `sel_lang::sql::serde_json`.
-- `Binding::column` takes all nine of its fields positionally.
+- `Binding::column` and `Binding::raw` take their options positionally (as the
+  other hosts' bindings do); `Binding::column_with` and `raw_with` take the
+  same options by name, as a `sql::ColumnOptions` with a `Default`.
 - Stack use is bounded: compiling or evaluating a program nested past the
   language's depth cap (200) answers `E_DEPTH` on a 256 KiB stack in a release
   build.

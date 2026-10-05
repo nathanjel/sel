@@ -35,9 +35,49 @@ pub struct HybridPlan {
     pub source_tables: Vec<String>,
 }
 
+/// What a plan is: the three flags `pure_sql`, `pure_memory` and `is_hybrid`
+/// (the fields the documentation names in every host) as one value.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PlanKind {
+    /// The whole pipeline is one SQL statement.
+    PureSql,
+    /// A SQL prefix, then a continuation in memory.
+    Hybrid,
+    /// Nothing goes to the database.
+    PureMemory,
+}
+
 impl HybridPlan {
     pub fn sql_query(&self) -> Option<&Fragment> {
         self.sql_statement.as_ref()
+    }
+
+    /// A plan of `kind` with nothing planned yet: the planner's paths name
+    /// only what they fill in.
+    fn of_kind(kind: PlanKind, dialect: &str) -> Self {
+        HybridPlan {
+            selected_member: None,
+            dialect: dialect.to_string(),
+            sql_statement: None,
+            sql_prefix_ast: None,
+            continuation_ast: None,
+            continuation_program: None,
+            continuation_source_var: "_INPUT".to_string(),
+            is_hybrid: kind == PlanKind::Hybrid,
+            pure_sql: kind == PlanKind::PureSql,
+            pure_memory: kind == PlanKind::PureMemory,
+            source_tables: Vec::new(),
+        }
+    }
+
+    pub fn kind(&self) -> PlanKind {
+        if self.pure_sql {
+            PlanKind::PureSql
+        } else if self.pure_memory {
+            PlanKind::PureMemory
+        } else {
+            PlanKind::Hybrid
+        }
     }
 }
 
@@ -73,22 +113,31 @@ fn index_node(obj: Node, idx: Node, pos: Pos) -> Node {
 fn sql_special_calls(name: &str) -> bool {
     matches!(
         name,
-        "IF" | "COND" | "COALESCE" | "COUNT" | "SUM" | "AVG" | "MIN" | "MAX" | "RECORD" | "LIST"
+        "IF" | "COND" | "COALESCE" | "COUNT" | "SUM" | "MIN" | "MAX" | "RECORD" | "LIST"
     )
 }
 
+/// Whether `node` needs something the dialect cannot express. A call's
+/// arguments are walked once, by the call branch; a helper's verdict is
+/// remembered in `memo`, so `H1 = H0 + H0` does not walk `H0` twice per
+/// level. Both walks were otherwise exponential in nesting.
 fn contains_unsupported_sql(
     node: &Node,
     dialect: &str,
     defs: &HashMap<String, Node>,
     seen: &mut HashSet<String>,
+    memo: &mut HashMap<String, bool>,
 ) -> bool {
     if node.t == NodeType::Var {
         if let Some(def) = defs.get(&node.s) {
             if !seen.contains(&node.s) {
+                if let Some(&verdict) = memo.get(&node.s) {
+                    return verdict;
+                }
                 seen.insert(node.s.clone());
-                let res = contains_unsupported_sql(def, dialect, defs, seen);
+                let res = contains_unsupported_sql(def, dialect, defs, seen, memo);
                 seen.remove(&node.s);
+                memo.insert(node.s.clone(), res);
                 return res;
             }
         }
@@ -106,28 +155,21 @@ fn contains_unsupported_sql(
                 }
             }
         }
-        for item in &node.items {
-            if contains_unsupported_sql(item, dialect, defs, seen) {
-                return true;
-            }
-        }
+        // A call's operands are its items and nothing else: walking on into
+        // the generic walk below would visit them again at every level.
+        return node.items.iter().any(|item| contains_unsupported_sql(item, dialect, defs, seen, memo));
     }
     if let Some(ref l) = node.l {
-        if contains_unsupported_sql(l, dialect, defs, seen) {
+        if contains_unsupported_sql(l, dialect, defs, seen, memo) {
             return true;
         }
     }
     if let Some(ref r) = node.r {
-        if contains_unsupported_sql(r, dialect, defs, seen) {
+        if contains_unsupported_sql(r, dialect, defs, seen, memo) {
             return true;
         }
     }
-    for item in &node.items {
-        if contains_unsupported_sql(item, dialect, defs, seen) {
-            return true;
-        }
-    }
-    false
+    node.items.iter().any(|item| contains_unsupported_sql(item, dialect, defs, seen, memo))
 }
 
 fn bucket_rows_are_keys(steps: &[Node], count: usize) -> bool {
@@ -168,7 +210,7 @@ fn join_rows_lack_binders(steps: &[Node], count: usize) -> bool {
 // earlier sort's order among its ties, which is gone once a projection hid
 // the earlier key. A LIMIT beside the earlier ORDER BY decides which rows
 // survive, not any of this. A prefix that ends before that step is exact
-// (docs/internals/sql-translation.md 12.1, "Order"; PHP-C35).
+// (docs/internals/sql-translation.md 12.1, "Order").
 fn order_is_lost(steps: &[Node], count: usize) -> bool {
     const ORDER_SORTS: [&str; 6] = ["SORT", "SORT_DESC", "SORT_BY", "TOP", "TOP_DESC", "TOP_BY"];
     let mut sorted = false;
@@ -404,7 +446,7 @@ fn inline_literals(node: &Node, literals: &HashMap<String, Node>, bound: &[Strin
         return cp;
     }
     if t == NodeType::Call {
-        let spec_binds = crate::builtins::lookup_spec(&node.s).map_or(false, |s| s.binds);
+        let spec_binds = crate::builtins::lookup_spec(&node.s).is_some_and(|s| s.binds);
         let form = binding_form(&node.s, &node.items, spec_binds);
         let mut inner = bound.to_vec();
         if let Some(ref f) = form { inner.extend(f.binds.iter().cloned()); }
@@ -535,7 +577,7 @@ struct HelpersContext<'a> {
     leading: &'a [&'a Node],
     defs: &'a HashMap<String, Node>,
     bindings: &'a Bindings,
-    names: &'a HashMap<String, bool>,
+    names: &'a HashSet<String>,
     const_root: &'a Value,
 }
 
@@ -555,17 +597,10 @@ impl<'a> HelpersContext<'a> {
 
 fn pure_memory_plan(program: &Program, dialect: &str, bindings: &Bindings) -> HybridPlan {
     HybridPlan {
-        selected_member: None,
-        dialect: dialect.to_string(),
-        sql_statement: None,
-        sql_prefix_ast: None,
         continuation_ast: Some(program.ast().clone()),
         continuation_program: Some(program.clone()),
-        continuation_source_var: "_INPUT".to_string(),
-        is_hybrid: false,
-        pure_sql: false,
-        pure_memory: true,
         source_tables: source_tables(program.ast(), bindings),
+        ..HybridPlan::of_kind(PlanKind::PureMemory, dialect)
     }
 }
 
@@ -745,10 +780,6 @@ fn try_latest_member(
     let continuation_prog = Program::new("", continuation.clone());
 
     Some(HybridPlan {
-        dialect: dialect.to_string(),
-        is_hybrid: true,
-        pure_sql: false,
-        pure_memory: false,
         sql_statement: Some(Fragment::new(
             parts,
             SqlKind::Statement,
@@ -760,12 +791,12 @@ fn try_latest_member(
         sql_prefix_ast: Some(prefix),
         continuation_ast: Some(continuation),
         continuation_program: Some(continuation_prog),
-        continuation_source_var: "_INPUT".to_string(),
         source_tables: vec![from_table],
         selected_member: Some(SelectedMember {
             partition_key: partition,
             revision_key: revision.clone(),
         }),
+        ..HybridPlan::of_kind(PlanKind::Hybrid, dialect)
     })
 }
 
@@ -853,7 +884,7 @@ struct MapRecordDetails<'a> {
     pairs: Vec<(&'a Node, &'a Node)>,
 }
 
-fn get_map_record_details(step: &Node) -> Option<MapRecordDetails> {
+fn get_map_record_details(step: &Node) -> Option<MapRecordDetails<'_>> {
     if step.t != NodeType::Call || step.s != "MAP" {
         return None;
     }
@@ -909,9 +940,10 @@ fn try_plan_fallthrough(
 
     let mut pushable = Vec::new();
     let mut custom = Vec::new();
+    let mut memo = HashMap::new();
     for pair in &details.pairs {
         let mut seen = HashSet::new();
-        if contains_unsupported_sql(pair.1, dialect, helpers.defs, &mut seen) {
+        if contains_unsupported_sql(pair.1, dialect, helpers.defs, &mut seen, &mut memo) {
             custom.push(*pair);
         } else {
             pushable.push(*pair);
@@ -926,7 +958,7 @@ fn try_plan_fallthrough(
         }
     }
 
-    let mut projected: Vec<String> = pushable.iter().map(|p| p.0.s.clone()).collect();
+    let projected: Vec<String> = pushable.iter().map(|p| p.0.s.clone()).collect();
 
     for i in (map_index + 1)..steps.len() {
         if !FALLTHROUGH_DOWNSTREAM_OPS.contains(&steps[i].s.as_str()) {
@@ -1038,17 +1070,12 @@ fn try_plan_fallthrough(
     let continuation_prog = Program::new("", continuation_ast.clone());
 
     Some(HybridPlan {
-        dialect: dialect.to_string(),
-        is_hybrid: true,
-        pure_sql: false,
-        pure_memory: false,
         sql_statement: Some(sql),
         sql_prefix_ast: Some(rewritten_ast.clone()),
         continuation_ast: Some(continuation_ast),
         continuation_program: Some(continuation_prog),
-        continuation_source_var: "_INPUT".to_string(),
         source_tables: helpers.tables(&rewritten_ast),
-        selected_member: None,
+        ..HybridPlan::of_kind(PlanKind::Hybrid, dialect)
     })
 }
 
@@ -1105,6 +1132,14 @@ pub fn plan_hybrid(
     if unwound_steps.is_empty() || !is_relation(&unwound_source) {
         return pure_memory_plan(program, dialect, checked);
     }
+    // A pipeline this long, unwound through its helpers, is a tree deeper than
+    // the evaluator's cap whatever prefix is asked for, and every probe of a
+    // prefix costs a walk in proportion: more than MAX_DEPTH steps, counted as
+    // written (before the optimiser drops any), is a pure-memory plan in every
+    // host (plan.pure-memory.pipeline-longer-than-the-depth-cap).
+    if unwound_steps.len() > crate::limits::MAX_DEPTH {
+        return pure_memory_plan(program, dialect, checked);
+    }
 
     let optimized = optimize_ast_logical(&build_pipeline(&unwound_source, &unwound_steps));
     let (source_ref, steps_ref) = unwind_pipeline(&optimized);
@@ -1131,17 +1166,10 @@ pub fn plan_hybrid(
     }
     if let Some(sql) = full_sql {
         return HybridPlan {
-            dialect: dialect.to_string(),
             sql_statement: Some(sql),
             sql_prefix_ast: Some(full_ast.clone()),
-            continuation_ast: None,
-            continuation_program: None,
-            pure_sql: true,
-            is_hybrid: false,
-            pure_memory: false,
-            continuation_source_var: "_INPUT".to_string(),
             source_tables: helpers.tables(&full_ast),
-            selected_member: None,
+            ..HybridPlan::of_kind(PlanKind::PureSql, dialect)
         };
     }
 
@@ -1187,14 +1215,14 @@ pub fn plan_hybrid(
         let remaining = &steps[count..];
         // A 3-argument LINK names the two sides of the row it builds after the
         // variables it joined: the left side is the pipeline's own source
-        // variable, wherever in the continuation the LINK falls (spec 7.4;
-        // PHP-C9, GO-C22). The rows are fed to the continuation under that name,
+        // variable, wherever in the continuation the LINK falls (spec 7.4).
+        // The rows are fed to the continuation under that name,
         // or the joined row would carry the left side under `_INPUT`. A step that
         // also READS that name (a self-join) would find the truncated rows where
         // run() finds the whole relation: that split is not made. A LINK in the
         // prefix has already named its sides.
         let is_link = |step: &Node| step.s == "LINK" || step.s == "LINK_LEFT";
-        let needs_rebind = !steps[..count].iter().any(|step| is_link(step))
+        let needs_rebind = !steps[..count].iter().any(&is_link)
             && remaining.iter().any(|step| is_link(step) && step.items.len() == 3);
         if needs_rebind {
             let reads_source = source.t != NodeType::Var
@@ -1215,21 +1243,70 @@ pub fn plan_hybrid(
         let continuation_prog = Program::new("", continuation_ast.clone());
 
         return HybridPlan {
-            dialect: dialect.to_string(),
             sql_statement: Some(sql),
             sql_prefix_ast: Some(prefix_ast.clone()),
             continuation_ast: Some(continuation_ast),
             continuation_program: Some(continuation_prog),
             continuation_source_var: feed,
-            is_hybrid: true,
-            pure_sql: false,
-            pure_memory: false,
             source_tables: helpers.tables(&prefix_ast),
-            selected_member: None,
+            ..HybridPlan::of_kind(PlanKind::Hybrid, dialect)
         };
     }
 
     pure_memory_plan(program, dialect, checked)
+}
+
+/// The context a continuation runs in: never the caller's own (C4 -- hybrid
+/// execution does not write the caller's context). A fresh root holds the
+/// caller's variables; the ones the continuation writes into through a path
+/// (`X["k"] = ...`, anywhere in it) are deep copies, the rest are the caller's
+/// own values, shared, since nothing else in a builtin-only program writes. A
+/// program that calls an application function (one the manifest does not
+/// list) could write anything it is handed, so it gets a deep copy of the
+/// whole context, as does a root that is not a plain record.
+fn continuation_root(caller: &Value, program: &Node) -> Result<Value, SelError> {
+    let mut assigned = HashSet::new();
+    let mut calls_application = false;
+    writes_of(program, &mut assigned, &mut calls_application);
+    if calls_application || caller.is_list() || caller.kind() != crate::value::Kind::None {
+        return caller.deep_copy(1, Pos::default());
+    }
+    let entries = caller
+        .entries()
+        .into_iter()
+        .map(|e| {
+            let val = if assigned.contains(&e.key) { e.val.deep_copy(2, Pos::default())? } else { e.val };
+            Ok(crate::value::Entry { key: e.key, val })
+        })
+        .collect::<Result<Vec<_>, SelError>>()?;
+    Ok(Value::record_from_entries(entries))
+}
+
+/// The root names `node` assigns to, and whether it calls an application
+/// function. Iterative: a continuation may be as deep as the cap allows.
+fn writes_of(node: &Node, assigned: &mut HashSet<String>, calls_application: &mut bool) {
+    let mut pending = vec![node];
+    while let Some(n) = pending.pop() {
+        match n.t {
+            // `X = ...` (and `X += ...`) only rebinds X in the root, which is
+            // the continuation's own; a path target writes INTO X's value, which
+            // is the caller's unless copied. (A stored value is always a copy,
+            // so `X = A; X["k"] = 1` never reaches A.)
+            NodeType::Assign if n.l.as_deref().is_some_and(|t| t.t == NodeType::Index) => {
+                let mut target = n.l.as_deref();
+                while let Some(t) = target {
+                    if t.t == NodeType::Var {
+                        assigned.insert(t.s.clone());
+                        break;
+                    }
+                    target = t.l.as_deref();
+                }
+            }
+            NodeType::Call if crate::manifest::lookup_builtin(&n.s).is_none() => *calls_application = true,
+            _ => {}
+        }
+        pending.extend(n.children());
+    }
 }
 
 pub fn execute_hybrid<F>(
@@ -1246,7 +1323,7 @@ where
             .clone()
             .ok_or_else(|| SelError::new("E_BAD_ARG", "pure-memory hybrid plan has no continuation program", Pos::default()))?;
         let ctx = match context {
-            Some(c) => c.deep_copy(1, Pos::default())?,
+            Some(c) => continuation_root(c, prog.ast())?,
             None => Value::null(),
         };
         return prog.run(Some(ctx));
@@ -1288,8 +1365,8 @@ where
         .ok_or_else(|| SelError::new("E_BAD_ARG", "hybrid plan has no continuation program", Pos::default()))?;
     let cont_ctx = match context {
         // is_none() is true of every list and record (their kind is None): the test
-        // for "no context" is is_null(), or the caller's whole context is dropped (GO-C5).
-        Some(c) if !c.is_null() => c.deep_copy(1, Pos::default())?,
+        // for "no context" is is_null(), or the caller's whole context is dropped.
+        Some(c) if !c.is_null() => continuation_root(c, prog.ast())?,
         _ => Value::record_from_entries(Vec::new()),
     };
     cont_ctx.set(&plan.continuation_source_var, rows, Pos::default())?;

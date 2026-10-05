@@ -2,11 +2,18 @@
 
 The published crate is `..` (`sel-lang`): the library and the `sel` CLI. This
 workspace member holds what the repository's gate runs against it — the
-conformance and corpus runners, the SQL case and replay runners, the decimal
-oracle's checker, the API probes, the SQL fuzzer, the scale benchmark — and the
-worked examples (`../../examples/*/rust.rs`) and benchmark hosts
-(`../../tools/*/*.rs`). They use only `sel_lang`'s public API, as an application
-would. The `usage` feature brings the database drivers the LIVE examples need.
+conformance and corpus runners, the SQL case and replay runners (`sqlt`,
+`sqlreplay`), the decimal oracle's checker (`check-decimal`), the API probes, the
+SQL fuzzer, the hybrid-parity driver (`hybrid-driver`, for
+tools/check-hybrid-parity-driver.py), the scale benchmark (`scale-bench`) — and
+the worked examples (`../../examples/*/rust.rs`) and benchmark hosts
+(`../../tools/*/*.rs`). `src/lib.rs` is what they share: the corpus and case-file
+readers and the CLI rendering. They use `sel_lang`'s public API, as an
+application would, and reach into the crate's hidden internals modules only
+where a probe has to (the replay's map lookups, the benchmark's representation
+count). The `usage` feature brings the database drivers the LIVE examples need.
+`tools/check-rust-fragments.sh` compiles the reference fragments
+(`examples/fn-*/rust.rs`) into a copy of the crate and runs their cases.
 
 ## Shared gates
 
@@ -35,17 +42,6 @@ cargo test --manifest-path rust/Cargo.toml --workspace
 cargo test --manifest-path rust/Cargo.toml --no-default-features
 bash rust/tests/build_integration.sh
 ```
-
-## Host API notes
-
-- `Value::num(Dec)` checks what a host hands it: the sign is folded into `neg`, a
-  zero is never negative, and the digit caps apply (`E_RANGE`).
-- A host function's `Args` accessors (`val`, the typed readers, `node`, `pos_of`,
-  `symbol`, `is_symbol`) answer `E_BAD_ARG` for an index past the call's
-  arguments; none of them panics.
-- The CLI reads source files as bytes and reports invalid UTF-8 as `E_UTF8` with
-  a source position. On Unix, source paths may contain non-UTF-8 bytes;
-  expression arguments still must be valid UTF-8.
 
 ## Host API notes
 

@@ -19,7 +19,7 @@ fn main() {
     let file = match File::open(&args[1]) {
         Ok(f) => f,
         Err(e) => {
-            eprintln!("failed to open {}: {}", args[1], e);
+            eprintln!("cannot read {}: {}", args[1], e);
             process::exit(2);
         }
     };
@@ -129,6 +129,10 @@ fn main() {
         println!("  ... and {} more", mismatches - failures.len());
     }
 
+    if total_cases == 0 {
+        eprintln!("no cases were run: {} holds none", args[1]);
+        process::exit(1);
+    }
     if mismatches > 0 {
         process::exit(1);
     }

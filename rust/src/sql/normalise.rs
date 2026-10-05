@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use crate::ast::{Node, NodeType};
 use crate::limits::{MAX_DEPTH, MAX_SQL_NODES};
@@ -12,7 +12,7 @@ use crate::sql::node::{SNode, SNodeType};
 
 pub fn normalise(
     ast: &Node,
-    const_names: Option<&HashMap<String, bool>>,
+    const_names: Option<&HashSet<String>>,
     root: Option<&Value>,
 ) -> Result<SNode, SqlError> {
     // Alpha-rename explicit binders before helper substitution. Names that were
@@ -26,7 +26,7 @@ pub fn normalise(
             }
         }
     }
-    if let Some(names) = const_names { captures.extend(names.keys().cloned()); }
+    if let Some(names) = const_names { captures.extend(names.iter().cloned()); }
     let hygienic;
     let ast = if captures.is_empty() { ast } else {
         hygienic = rename_binders(ast, &captures, &HashMap::new(), &mut 0);
@@ -143,7 +143,7 @@ fn rename_binders(node: &Node, captures: &[String], renames: &HashMap<String, St
         return out;
     }
     if node.t == NodeType::Call {
-        let binds = crate::builtins::lookup_spec(&node.s).map_or(false, |s| s.binds);
+        let binds = crate::builtins::lookup_spec(&node.s).is_some_and(|s| s.binds);
         let form = binding_form(&node.s, &node.items, binds);
         let mut inner = renames.clone();
         if let Some(ref f) = form {
@@ -179,7 +179,7 @@ fn record_stmt(
     s: &Node,
     defs: &mut HashMap<String, SNode>,
     sizes: &mut HashMap<String, Meas>,
-    const_names: Option<&HashMap<String, bool>>,
+    const_names: Option<&HashSet<String>>,
     root: Option<&Value>,
     depth: usize,
 ) -> Result<(), SqlError> {
@@ -277,8 +277,8 @@ fn record_stmt(
             s.pos,
         );
     }
-    for entry in &clist.entries {
-        if entry.key == key {
+    for existing in &clist.keys {
+        if *existing == key {
             return refuse(
                 "E_SQL_ASSIGN",
                 format!("{}[{}] is assigned more than once", name, key),
@@ -294,8 +294,8 @@ fn record_stmt(
     Ok(())
 }
 
-// A literal index names a constant key -- including "" (GO-C40): an empty
-// text literal is a key like any other.
+// A literal index names a constant key -- including "": an empty text
+// literal is a key like any other.
 fn constant_key(idx: &Node) -> Option<String> {
     if idx.t == NodeType::Num || idx.t == NodeType::Text {
         Some(idx.s.clone())
@@ -333,7 +333,9 @@ fn substitute_node(
                 // it is made.
                 let meas = st.sizes.get(&node.s).copied().unwrap_or(Meas::LEAF);
                 st.charge(meas.size, node.pos)?;
-                return Ok((def.clone(), Meas { fail: None, ..meas }));
+                let mut copy = def.clone();
+                copy.inlined = true;
+                return Ok((copy, Meas { fail: None, ..meas }));
             }
             Ok((SNode::leaf(node), Meas::LEAF))
         }
@@ -365,7 +367,7 @@ fn substitute_node(
             Ok((SNode::rewritten(node, items), m))
         }
         NodeType::Call => {
-            let spec_binds = crate::builtins::lookup_spec(&node.s).map_or(false, |s| s.binds);
+            let spec_binds = crate::builtins::lookup_spec(&node.s).is_some_and(|s| s.binds);
             let form = binding_form(&node.s, &node.items, spec_binds);
             let mut inner = bound.to_vec();
             if let Some(ref f) = form {

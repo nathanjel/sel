@@ -3,12 +3,13 @@
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::LazyLock;
 use regex::Regex;
 use sel_lang::{compile, Pos, SelError, Value, Kind};
+use sel_lang_dev::{read_text, trim_section as trim_ws};
 
-fn trim_ws(s: &str) -> &str {
-    s.trim_matches(|c: char| c.is_whitespace())
-}
+static HEADER: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^###\s+name:\s*(\S+)\s*$").unwrap());
+static ERROR_EXPECT: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^(\S+)(?:\s+at\s+(\d+):(\d+))?$").unwrap());
 
 #[derive(Debug, Clone)]
 struct TestCase {
@@ -20,7 +21,6 @@ struct TestCase {
 }
 
 fn parse_selt(text: &str, file: &str) -> Result<Vec<TestCase>, String> {
-    let header_regex = Regex::new(r"^###\s+name:\s*(\S+)\s*$").unwrap();
     let mut cases = Vec::new();
     let mut cur: Option<TestCase> = None;
     let mut section = "";
@@ -28,10 +28,12 @@ fn parse_selt(text: &str, file: &str) -> Result<Vec<TestCase>, String> {
     let mut source_lines = Vec::new();
     let mut expect_lines = Vec::new();
 
-    for (idx, line) in text.lines().enumerate() {
+    // Split on LF only: a CR is case content (conformance/README.md), and
+    // str::lines() would drop one before every LF.
+    for (idx, line) in text.split('\n').enumerate() {
         let at = format!("{}:{}", file, idx + 1);
         if line.starts_with("### ") {
-            if let Some(caps) = header_regex.captures(line) {
+            if let Some(caps) = HEADER.captures(line) {
                 if let Some(mut c) = cur.take() {
                     c.setup = trim_ws(&setup_lines.join("\n")).to_string();
                     c.source = trim_ws(&source_lines.join("\n")).to_string();
@@ -71,7 +73,7 @@ fn parse_selt(text: &str, file: &str) -> Result<Vec<TestCase>, String> {
             if cur.is_none() {
                 return Err(format!("{}: section outside a case", at));
             }
-            let s = trim_ws(&line[4..]);
+            let s = trim_ws(line.strip_prefix("--- ").unwrap_or(line));
             if s != "setup" && s != "source" && s != "expect" && s != "note" {
                 return Err(format!("{}: unknown section {}", at, s));
             }
@@ -178,11 +180,9 @@ fn json_quote(s: &str) -> String {
 }
 
 fn describe(v: &Value) -> String {
-    let inner = v.0.borrow();
-    if inner.kind == Kind::None && inner.size() == 0 {
+    if v.kind() == Kind::None && v.size() == 0 {
         return "none".to_string();
     }
-    drop(inner);
     if v.size() > 0 {
         return format!("tree {}", v.dump().unwrap_or_default());
     }
@@ -190,12 +190,7 @@ fn describe(v: &Value) -> String {
         Kind::Text => format!("text {}", json_quote(&v.scalar())),
         Kind::Bin => {
             let d = v.dump().unwrap_or_default();
-            let b = if d.starts_with('b') || d.starts_with('B') || d.starts_with('x') || d.starts_with('X') {
-                &d[1..]
-            } else {
-                &d
-            };
-            format!("bin {}", b)
+            format!("bin {}", d.strip_prefix('b').unwrap_or(&d))
         }
         Kind::Bool => format!("bool {}", v.dump().unwrap_or_default()),
         _ => "none".to_string(),
@@ -203,21 +198,20 @@ fn describe(v: &Value) -> String {
 }
 
 fn check_expect(expect: &str, val: Option<&Value>, err: Option<&SelError>, at: &str) -> String {
-    let err_regex = Regex::new(r"^(\S+)(?:\s+at\s+(\d+):(\d+))?$").unwrap();
     let (form, rest) = match expect.find(' ') {
         Some(idx) => (&expect[..idx], expect[idx + 1..].trim()),
         None => (expect, ""),
     };
 
     if form == "error" {
-        if val.is_some() {
-            return format!("expected {}, got value {}", expect, describe(val.unwrap()));
+        if let Some(v) = val {
+            return format!("expected {}, got value {}", expect, describe(v));
         }
         let err = match err {
             Some(e) => e,
             None => return format!("expected {}, got no error and no value", expect),
         };
-        let caps = match err_regex.captures(rest) {
+        let caps = match ERROR_EXPECT.captures(rest) {
             Some(c) => c,
             None => return format!("{}: malformed error expectation", at),
         };
@@ -272,12 +266,7 @@ fn check_expect(expect: &str, val: Option<&Value>, err: Option<&SelError>, at: &
                 return format!("wanted binary, got {}", describe(val));
             }
             let d = val.dump().unwrap_or_default();
-            let b = if d.starts_with('b') || d.starts_with('B') || d.starts_with('x') || d.starts_with('X') {
-                &d[1..]
-            } else {
-                &d
-            };
-            if b != rest {
+            if d.strip_prefix('b').unwrap_or(&d) != rest {
                 return format!("got {}", describe(val));
             }
             String::new()
@@ -361,16 +350,15 @@ fn main() {
     let mut files = Vec::new();
 
     if !args.is_empty() {
+        // Named files only (contract C3): a missing path or a directory is
+        // `cannot read <path>`, never an empty run. With no arguments the
+        // runner reads the whole conformance/ directory.
         for arg in &args {
-            let p = Path::new(arg);
-            if p.exists() {
-                add_path(p, &mut files);
-            } else if let Ok(abs) = fs::canonicalize(p) {
-                add_path(&abs, &mut files);
-            } else {
-                eprintln!("error resolving {}: No such file or directory", arg);
+            if let Err(e) = read_text(arg) {
+                eprintln!("{}", e);
                 std::process::exit(1);
             }
+            files.push(PathBuf::from(arg));
         }
     } else {
         let mut root = PathBuf::from("conformance");
@@ -394,10 +382,10 @@ fn main() {
 
     for path in &files {
         let shortname = path.file_name().and_then(|s| s.to_str()).unwrap_or("").to_string();
-        let data = match fs::read_to_string(path) {
+        let data = match read_text(path) {
             Ok(d) => d,
             Err(e) => {
-                suite_errors.push(format!("{}: read error: {}", path.display(), e));
+                suite_errors.push(e);
                 continue;
             }
         };
@@ -448,6 +436,12 @@ fn main() {
     }
 
     println!("\n{} passed, {} failed, {} suite errors", n_pass, failures.len(), suite_errors.len());
+    if n_pass + failures.len() == 0 {
+        // A run that executed nothing proves nothing: an empty file or a
+        // directory without .selt files is a failure, not a pass.
+        eprintln!("no cases were run");
+        std::process::exit(1);
+    }
     if !failures.is_empty() || !suite_errors.is_empty() {
         std::process::exit(1);
     }

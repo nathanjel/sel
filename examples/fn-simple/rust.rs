@@ -1,6 +1,7 @@
 // Goes in the matching rust/src/builtins/*.rs, and its define() line in
 // registry() in rust/src/builtins/mod.rs. Not a runnable file: this fragment
 // compiles only in place.
+// tools/check-rust-fragments.sh puts it there and runs cases.selt.
 // EXAMPLE-BEGIN
 pub fn fn_ord_suffix(args: &mut Args) -> Result<Value, SelError> {
     let n = args.non_neg_int(0)?;

@@ -1125,6 +1125,33 @@ A=LIST(RECORD("k",TO_UTF8("a"))); B=LIST(RECORD("k",TO_UTF8("a"))); COUNT(LINK(A
 num 1
 ===
 
+### name: rel.link.equi.non-utf8-bin-keys-match-byte-for-byte
+--- note
+BIN keys under $== join exactly when their bytes are equal, and a BIN key
+equals a text key exactly when the bytes are the text's UTF-8. Bytes that are
+not UTF-8 must not be keyed through a lossy decode: x"ff", x"fe" and x"c3" all
+decode to U+FFFD, whose UTF-8 is x"efbfbd", yet none of the three equals
+another, x"efbfbd" or the text "\u{FFFD}"; only x"efbfbd" equals that text.
+--- source
+A=LIST(RECORD("k",FROM_HEX("ff")), RECORD("k",FROM_HEX("fe")), RECORD("k",FROM_HEX("c3")), RECORD("k",FROM_HEX("efbfbd"))); B=LIST(RECORD("k",FROM_HEX("fe")), RECORD("k","\u{FFFD}"), RECORD("k",FROM_HEX("c3ff")), RECORD("k",FROM_HEX("ff"))); A .> LINK(B, _1["k"] $== _2["k"]) .> MAP(TO_HEX(_["_1"]["k"]) & "=" & TO_HEX(_["_2"]["k"]))
+--- expect
+tree -{"1"=t"ff=ff", "2"=t"fe=fe", "3"=t"efbfbd=efbfbd"}
+===
+
+### name: rel.link.equi.non-utf8-bin-keys-match-byte-for-byte-control
+--- source
+A=LIST(RECORD("k",FROM_HEX("ff")), RECORD("k",FROM_HEX("fe")), RECORD("k",FROM_HEX("c3")), RECORD("k",FROM_HEX("efbfbd"))); B=LIST(RECORD("k",FROM_HEX("fe")), RECORD("k","\u{FFFD}"), RECORD("k",FROM_HEX("c3ff")), RECORD("k",FROM_HEX("ff"))); A .> LINK(B, IF(_1["k"] $== _2["k"], TRUE, FALSE)) .> MAP(TO_HEX(_["_1"]["k"]) & "=" & TO_HEX(_["_2"]["k"]))
+--- expect
+tree -{"1"=t"ff=ff", "2"=t"fe=fe", "3"=t"efbfbd=efbfbd"}
+===
+
+### name: rel.link.equi.distinct-non-utf8-bin-keys-do-not-match
+--- source
+COUNT(LINK(LIST(RECORD("k", FROM_HEX("ff"))), LIST(RECORD("k", FROM_HEX("fe"))), A, B, A["k"] $== B["k"]))
+--- expect
+num 0
+===
+
 ### name: rel.link-left.equi.bin-matches-text
 --- source
 A=LIST(RECORD("k",TO_UTF8("a"))); B=LIST(RECORD("k","a")); A .> LINK_LEFT(B, _1["k"] $== _2["k"]) .> MAP(_["_2"]["k"])

@@ -1,10 +1,6 @@
 use crate::args::Args;
-use crate::utf8::{cap_collection, cap_text, to_code_points, validate_text, SelError};
+use crate::utf8::{cap_collection, cap_text, is_sel_space, SelError};
 use crate::value::Value;
-
-fn is_sel_space(c: char) -> bool {
-    c == ' ' || c == '\t' || c == '\r' || c == '\n'
-}
 
 fn trim_text(s: &str, left: bool, right: bool) -> String {
     let chars: Vec<char> = s.chars().collect();
@@ -44,9 +40,9 @@ fn pad(args: &mut Args, left: bool) -> Result<Value, SelError> {
         padding.push(fill_chars[i % fill_chars.len()]);
     }
     let res: String = if left {
-        padding.into_iter().chain(s_chars.into_iter()).collect()
+        padding.into_iter().chain(s_chars).collect()
     } else {
-        s_chars.into_iter().chain(padding.into_iter()).collect()
+        s_chars.into_iter().chain(padding).collect()
     };
     Value::text(&res, args.pos())
 }
@@ -60,8 +56,7 @@ pub fn fn_len(args: &mut Args) -> Result<Value, SelError> {
         return Ok(Value::int(len as i64));
     }
     let s = scalar.as_text(pos)?;
-    let chars = to_code_points(&s, pos)?;
-    Ok(Value::int(chars.len() as i64))
+    Ok(Value::int(s.chars().count() as i64))
 }
 
 pub fn fn_left(args: &mut Args) -> Result<Value, SelError> {
@@ -179,7 +174,7 @@ pub fn fn_split(args: &mut Args) -> Result<Value, SelError> {
         i += pos + sep.len();
     }
     parts.push(Value::text_owned(hay[i..].to_string()));
-    Ok(Value::list_owned(parts))
+    Ok(Value::list(parts))
 }
 
 pub fn fn_trim(args: &mut Args) -> Result<Value, SelError> {

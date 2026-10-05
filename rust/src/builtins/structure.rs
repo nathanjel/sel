@@ -9,8 +9,7 @@ use crate::args::Args;
 use crate::ast::{Node, NodeType};
 use crate::context::{Context, Frame};
 use crate::dec::{dec_add, dec_cmp, dec_format, Dec};
-use crate::eval::eval_node;
-use crate::join_plan::{is_left_nested, make_joined_row, JoinFlatTest, JoinProjector};
+use crate::join_plan::{JoinFlatTest, JoinProjector};
 use crate::join_prefilter::{
     join_keys_safe, join_pure_source, join_read_self, join_row_keys, join_stage_walk,
     join_totality, join_truncate_stages, leading_field_conjuncts, new_join_side_facts,
@@ -22,26 +21,15 @@ use crate::utf8::{cap_collection, cap_text, Pos, SelError};
 use crate::text::SelStr;
 use crate::value::{ListKeys, Entry, Kind, Value};
 
+// Frames: an aggregate pushes its binder frame and may leave by `?` at any
+// point -- invoke_call (eval.rs) truncates the frame stack to its own depth
+// after every builtin, error or not, so no early return pops by hand.
+
 fn node_contains_var(node: &Node, name: &str) -> bool {
-    match node.t {
-        NodeType::Var => node.s.eq_ignore_ascii_case(name),
-        NodeType::Index => {
-            node.l.as_ref().map_or(false, |l| node_contains_var(l, name))
-                || node.r.as_ref().map_or(false, |r| node_contains_var(r, name))
-        }
-        NodeType::Call => node.items.iter().any(|a| node_contains_var(a, name)),
-        NodeType::Bin => {
-            node.l.as_ref().map_or(false, |l| node_contains_var(l, name))
-                || node.r.as_ref().map_or(false, |r| node_contains_var(r, name))
-        }
-        NodeType::Un => node.l.as_ref().map_or(false, |l| node_contains_var(l, name)),
-        NodeType::Assign => {
-            node.l.as_ref().map_or(false, |l| node_contains_var(l, name))
-                || node.r.as_ref().map_or(false, |r| node_contains_var(r, name))
-        }
-        NodeType::Seq | NodeType::List => node.items.iter().any(|item| node_contains_var(item, name)),
-        _ => false,
+    if node.t == NodeType::Var {
+        return node.s.eq_ignore_ascii_case(name);
     }
+    node.children().any(|child| node_contains_var(child, name))
 }
 
 pub fn fn_count(args: &mut Args) -> Result<Value, SelError> {
@@ -51,7 +39,7 @@ pub fn fn_count(args: &mut Args) -> Result<Value, SelError> {
 pub fn fn_indexes(args: &mut Args) -> Result<Value, SelError> {
     let keys = args.val(0)?.keys();
     let items = keys.into_iter().map(Value::text_owned).collect();
-    Ok(Value::list_owned(items))
+    Ok(Value::list(items))
 }
 
 pub fn fn_has(args: &mut Args) -> Result<Value, SelError> {
@@ -67,7 +55,7 @@ pub fn fn_list(args: &mut Args) -> Result<Value, SelError> {
     for i in 0..count {
         items.push(args.val(i)?.deep_copy(2, args.pos())?);
     }
-    Ok(Value::list_owned(items))
+    Ok(Value::list(items))
 }
 
 pub fn fn_record(args: &mut Args) -> Result<Value, SelError> {
@@ -106,7 +94,7 @@ pub fn fn_record(args: &mut Args) -> Result<Value, SelError> {
     }
     let entries = keys
         .into_iter()
-        .zip(values.into_iter())
+        .zip(values)
         .map(|(k, v)| Entry { key: k, val: v })
         .collect();
     Ok(Value::record_from_entries(entries))
@@ -116,7 +104,7 @@ pub fn fn_take(args: &mut Args) -> Result<Value, SelError> {
     let val = args.val(0)?;
     let count = args.non_neg_int(1)? as usize;
     if count == 0 || val.is_null() {
-        return Ok(Value::list_owned(Vec::new()));
+        return Ok(Value::list(Vec::new()));
     }
     let is_dense_list = {
         let inner = val.0.borrow();
@@ -126,19 +114,19 @@ pub fn fn_take(args: &mut Args) -> Result<Value, SelError> {
         let inner = val.0.borrow();
         let storage = inner.storage.as_ref().unwrap();
         let take_n = count.min(storage.len());
-        return Ok(Value::list_owned(storage[..take_n].to_vec()));
+        return Ok(Value::list(storage[..take_n].to_vec()));
     }
     let ents = val.elems();
     let take_n = count.min(ents.len());
     let items = ents.vals[..take_n].to_vec();
-    Ok(Value::list_owned(items))
+    Ok(Value::list(items))
 }
 
 pub fn fn_drop(args: &mut Args) -> Result<Value, SelError> {
     let val = args.val(0)?;
     let count = args.non_neg_int(1)? as usize;
     if val.is_null() {
-        return Ok(Value::list_owned(Vec::new()));
+        return Ok(Value::list(Vec::new()));
     }
     let is_dense_list = {
         let inner = val.0.borrow();
@@ -148,22 +136,22 @@ pub fn fn_drop(args: &mut Args) -> Result<Value, SelError> {
         let inner = val.0.borrow();
         let storage = inner.storage.as_ref().unwrap();
         if count >= storage.len() {
-            return Ok(Value::list_owned(Vec::new()));
+            return Ok(Value::list(Vec::new()));
         }
-        return Ok(Value::list_owned(storage[count..].to_vec()));
+        return Ok(Value::list(storage[count..].to_vec()));
     }
     let ents = val.elems();
     if count >= ents.len() {
-        return Ok(Value::list_owned(Vec::new()));
+        return Ok(Value::list(Vec::new()));
     }
     let items = ents.vals[count..].to_vec();
-    Ok(Value::list_owned(items))
+    Ok(Value::list(items))
 }
 
 pub fn fn_select_cols(args: &mut Args) -> Result<Value, SelError> {
     let val = args.val(0)?;
     if val.is_null() {
-        return Ok(Value::list_owned(Vec::new()));
+        return Ok(Value::list(Vec::new()));
     }
     let num_cols = args.count() - 1;
     let mut columns = Vec::with_capacity(num_cols);
@@ -185,18 +173,18 @@ pub fn fn_select_cols(args: &mut Args) -> Result<Value, SelError> {
         }
         rows.push(Value::record_from_entries(row_entries));
     }
-    Ok(Value::list_owned(rows))
+    Ok(Value::list(rows))
 }
 
 pub fn fn_dedupe(args: &mut Args) -> Result<Value, SelError> {
     let val = args.val(0)?;
     if val.is_null() {
-        return Ok(Value::list_owned(Vec::new()));
+        return Ok(Value::list(Vec::new()));
     }
     let ents = val.elems();
     let mut buckets: HashMap<u64, Vec<Value>> = HashMap::new();
     let mut out = Vec::new();
-    for (ei, ev) in ents.vals.iter().enumerate() {
+    for ev in ents.vals.iter() {
         let item = ev.clone();
         let h = item.structural_hash()?;
         let bucket = buckets.entry(h).or_default();
@@ -212,7 +200,7 @@ pub fn fn_dedupe(args: &mut Args) -> Result<Value, SelError> {
             out.push(item);
         }
     }
-    Ok(Value::list_owned(out))
+    Ok(Value::list(out))
 }
 
 pub fn fn_distinct(args: &mut Args) -> Result<Value, SelError> {
@@ -240,13 +228,13 @@ pub fn fn_map(args: &mut Args) -> Result<Value, SelError> {
 
     let val = args.val(0)?;
     if val.is_null() {
-        return Ok(Value::list_owned(Vec::new()));
+        return Ok(Value::list(Vec::new()));
     }
 
     let ents = val.elems();
     let mut out = Vec::with_capacity(ents.len());
 
-    let mut frame = HashMap::new();
+    let mut frame = Frame::new();
     frame.insert(binder.clone(), Value::none());
     if needs_k {
         frame.insert("_K".to_string(), Value::none());
@@ -260,30 +248,18 @@ pub fn fn_map(args: &mut Args) -> Result<Value, SelError> {
                 f.set("_K", Value::text_owned(ents.key(ei)));
             }
         }
-        let res = match args.eval_node(&body_node) {
-            Ok(v) => v,
-            Err(err) => {
-                args.ctx.pop_frame();
-                return Err(err);
-            }
-        };
+        let res = args.eval_node(&body_node)?;
         let collected = if fresh_record {
             // MAP adds a copy-depth level even when its allocation is elided.
             res.check_copy_depth(2, args.pos()).map(|()| res)
         } else {
             res.deep_copy(2, args.pos())
         };
-        match collected {
-            Ok(value) => out.push(value),
-            Err(error) => {
-                args.ctx.pop_frame();
-                return Err(error);
-            }
-        }
+        out.push(collected?);
     }
     args.ctx.pop_frame();
 
-    Ok(Value::list_owned(out))
+    Ok(Value::list(out))
 }
 
 // What a FILTER knows before its source runs. Its source is read in
@@ -375,7 +351,7 @@ fn filter_rows(args: &mut Args, plan: Box<FilterPlan>, source: Result<Value, Sel
     if over_join {
         if let Some(ref r) = report {
             if !r.errored {
-                let rest: Vec<&JoinConjunct> = own.iter().filter(|c| !r.applied.contains_key(&c.id)).collect();
+                let rest: Vec<&JoinConjunct> = own.iter().filter(|c| !r.applied.contains(&c.id)).collect();
                 if rest.len() < own.len() {
                     if rest.is_empty() {
                         all_applied = true;
@@ -402,11 +378,10 @@ fn filter_rows(args: &mut Args, plan: Box<FilterPlan>, source: Result<Value, Sel
     }
 
     let body_node: &Node = override_body.as_ref().unwrap_or(written);
-    let body_pos = body_node.pos;
     let needs_k = node_contains_var(body_node, "_K");
 
     if val.is_null() {
-        return Ok(Value::list_owned(Vec::new()));
+        return Ok(Value::list(Vec::new()));
     }
 
     let ents = val.elems();
@@ -414,7 +389,7 @@ fn filter_rows(args: &mut Args, plan: Box<FilterPlan>, source: Result<Value, Sel
     // Source slots of the kept children: their keys are the output's keys.
     let mut kept: Vec<usize> = Vec::new();
 
-    let mut frame = HashMap::new();
+    let mut frame = Frame::new();
     frame.insert(binder.clone(), Value::none());
     if needs_k {
         frame.insert("_K".to_string(), Value::none());
@@ -428,13 +403,7 @@ fn filter_rows(args: &mut Args, plan: Box<FilterPlan>, source: Result<Value, Sel
         }
         // body_pos is body_node's own position: eval_bool is exactly
         // eval_node(..).as_bool(body_pos), without the boolean's value cell.
-        let keep = match crate::eval::eval_bool(&body_node, args.ctx) {
-            Ok(b) => b,
-            Err(err) => {
-                args.ctx.pop_frame();
-                return Err(err);
-            }
-        };
+        let keep = crate::eval::eval_bool(body_node, args.ctx)?;
         if keep {
             if args.borrowed_filter {
                 item.check_copy_depth(2, args.pos())?;
@@ -453,7 +422,7 @@ fn filter_rows(args: &mut Args, plan: Box<FilterPlan>, source: Result<Value, Sel
     // the source was numbered so; positions stay numbers, not text.
     let all_kept = kept.len() == ents.len();
     if all_kept && (0..ents.len()).all(|i| ents.keyed_by_position(i)) {
-        return Ok(Value::list_owned(storage));
+        return Ok(Value::list(storage));
     }
     let positions: Option<Vec<u32>> = kept.iter().map(|&i| ents.index_key(i)).collect();
     let keys = match positions {
@@ -480,7 +449,7 @@ pub fn fn_all(args: &mut Args) -> Result<Value, SelError> {
     }
 
     let ents = val.elems();
-    let mut frame = HashMap::new();
+    let mut frame = Frame::new();
     frame.insert(binder.clone(), Value::none());
     if needs_k {
         frame.insert("_K".to_string(), Value::none());
@@ -494,24 +463,9 @@ pub fn fn_all(args: &mut Args) -> Result<Value, SelError> {
                 f.set("_K", Value::text_owned(ents.key(ei)));
             }
         }
-        let res = match args.eval_node(&body_node) {
-            Ok(v) => v,
-            Err(err) => {
-                args.ctx.pop_frame();
-                return Err(err);
-            }
-        };
-        match res.as_bool(body_pos) {
-            Ok(b) => {
-                if !b {
-                    args.ctx.pop_frame();
-                    return Ok(Value::bool(false));
-                }
-            }
-            Err(err) => {
-                args.ctx.pop_frame();
-                return Err(err);
-            }
+        let res = args.eval_node(&body_node)?;
+        if !res.as_bool(body_pos)? {
+            return Ok(Value::bool(false));
         }
     }
     args.ctx.pop_frame();
@@ -535,7 +489,7 @@ pub fn fn_any(args: &mut Args) -> Result<Value, SelError> {
     }
 
     let ents = val.elems();
-    let mut frame = HashMap::new();
+    let mut frame = Frame::new();
     frame.insert(binder.clone(), Value::none());
     if needs_k {
         frame.insert("_K".to_string(), Value::none());
@@ -549,24 +503,9 @@ pub fn fn_any(args: &mut Args) -> Result<Value, SelError> {
                 f.set("_K", Value::text_owned(ents.key(ei)));
             }
         }
-        let res = match args.eval_node(&body_node) {
-            Ok(v) => v,
-            Err(err) => {
-                args.ctx.pop_frame();
-                return Err(err);
-            }
-        };
-        match res.as_bool(body_pos) {
-            Ok(b) => {
-                if b {
-                    args.ctx.pop_frame();
-                    return Ok(Value::bool(true));
-                }
-            }
-            Err(err) => {
-                args.ctx.pop_frame();
-                return Err(err);
-            }
+        let res = args.eval_node(&body_node)?;
+        if res.as_bool(body_pos)? {
+            return Ok(Value::bool(true));
         }
     }
     args.ctx.pop_frame();
@@ -603,7 +542,7 @@ pub fn fn_sum(args: &mut Args) -> Result<Value, SelError> {
 
     let ents = val.elems();
     let mut total = Dec::zero();
-    let mut frame = HashMap::new();
+    let mut frame = Frame::new();
     frame.insert(binder.clone(), Value::none());
     if needs_k {
         frame.insert("_K".to_string(), Value::none());
@@ -617,27 +556,9 @@ pub fn fn_sum(args: &mut Args) -> Result<Value, SelError> {
                 f.set("_K", Value::text_owned(ents.key(ei)));
             }
         }
-        let v = match args.eval_node(&body_node) {
-            Ok(v) => v,
-            Err(err) => {
-                args.ctx.pop_frame();
-                return Err(err);
-            }
-        };
-        let d = match v.as_decimal(body_pos) {
-            Ok(d) => d,
-            Err(err) => {
-                args.ctx.pop_frame();
-                return Err(err);
-            }
-        };
-        match dec_add(&total, &d, args.pos()) {
-            Ok(t) => total = t,
-            Err(err) => {
-                args.ctx.pop_frame();
-                return Err(err);
-            }
-        }
+        let v = args.eval_node(&body_node)?;
+        let d = v.as_decimal(body_pos)?;
+        total = dec_add(&total, &d, args.pos())?;
     }
     args.ctx.pop_frame();
     Ok(Value::num_trusted(total))
@@ -738,30 +659,33 @@ fn do_sort(args: &mut Args, forced_dir: Option<&str>) -> Result<Value, SelError>
     let mut direction = forced_dir.unwrap_or("ASC").to_string();
 
     let mut binder = "_".to_string();
-    let mut body_opt: Option<Node> = None;
+    // The call's nodes, borrowed apart from `args`: the key is read from
+    // them, never cloned per call.
+    let nodes = args.nodes;
+    let mut body_opt: Option<&Node> = None;
 
     if count == 1 {
         // no binder, no body
     } else if count == 2 {
-        body_opt = Some(args.node_at(1).clone());
+        body_opt = Some(&nodes[1]);
     } else if count == 3 {
         if forced_dir.is_some() {
             binder = args.symbol(1)?;
-            body_opt = Some(args.node_at(2).clone());
+            body_opt = Some(&nodes[2]);
         } else if args.node_at(2).t == NodeType::Text {
-            body_opt = Some(args.node_at(1).clone());
+            body_opt = Some(&nodes[1]);
             direction = args.text(2)?.to_ascii_uppercase();
         } else if args.is_symbol_at(1) {
             binder = args.symbol(1)?;
-            body_opt = Some(args.node_at(2).clone());
+            body_opt = Some(&nodes[2]);
             direction = "ASC".to_string();
         } else {
-            body_opt = Some(args.node_at(1).clone());
+            body_opt = Some(&nodes[1]);
             direction = args.text(2)?.to_ascii_uppercase();
         }
     } else {
         binder = args.symbol(1)?;
-        body_opt = Some(args.node_at(2).clone());
+        body_opt = Some(&nodes[2]);
         direction = args.text(3)?.to_ascii_uppercase();
     }
 
@@ -775,11 +699,11 @@ fn do_sort(args: &mut Args, forced_dir: Option<&str>) -> Result<Value, SelError>
     }
 
     if val.is_null() {
-        return Ok(Value::list_owned(Vec::new()));
+        return Ok(Value::list(Vec::new()));
     }
     let ents = val.elems();
     if ents.is_empty() {
-        return Ok(Value::list_owned(Vec::new()));
+        return Ok(Value::list(Vec::new()));
     }
 
     let mut indexed = Vec::with_capacity(ents.len());
@@ -793,8 +717,8 @@ fn do_sort(args: &mut Args, forced_dir: Option<&str>) -> Result<Value, SelError>
         }
     } else {
         let body = body_opt.unwrap();
-        let needs_k = node_contains_var(&body, "_K");
-        let mut frame = HashMap::new();
+        let needs_k = node_contains_var(body, "_K");
+        let mut frame = Frame::new();
         frame.insert(binder.clone(), Value::none());
         if needs_k {
             frame.insert("_K".to_string(), Value::none());
@@ -806,7 +730,7 @@ fn do_sort(args: &mut Args, forced_dir: Option<&str>) -> Result<Value, SelError>
             if needs_k {
                 args.ctx.bind("_K", Value::text_owned(ents.key(ei)));
             }
-            let k_val = args.eval_node(&body)?;
+            let k_val = args.eval_node(body)?;
             indexed.push(SortItem {
                 item: ev.clone().deep_copy(2, args.pos())?,
                 key: k_val,
@@ -831,7 +755,7 @@ fn do_sort(args: &mut Args, forced_dir: Option<&str>) -> Result<Value, SelError>
     });
 
     let out = indexed.into_iter().map(|x| x.item).collect();
-    Ok(Value::list_owned(out))
+    Ok(Value::list(out))
 }
 
 pub fn fn_sort(args: &mut Args) -> Result<Value, SelError> {
@@ -844,56 +768,6 @@ pub fn fn_sort_desc(args: &mut Args) -> Result<Value, SelError> {
 
 pub fn fn_sort_by(args: &mut Args) -> Result<Value, SelError> {
     do_sort(args, None)
-}
-
-fn is_builtin_name(name: &str) -> bool {
-    let mut buf = [0u8; 64];
-    if name.len() <= 64 {
-        for (i, b) in name.bytes().enumerate() {
-            buf[i] = b.to_ascii_uppercase();
-        }
-        if let Ok(s) = std::str::from_utf8(&buf[..name.len()]) {
-            return crate::manifest::lookup_builtin(s).is_some();
-        }
-    }
-    crate::manifest::lookup_builtin(&name.to_ascii_uppercase()).is_some()
-}
-
-/// Whether evaluating `root` might write: an assignment or any call
-/// not listed in the generated builtin manifest. Iterative AST walk
-/// using a fixed stack to avoid heap allocation.
-fn top_key_may_write(root: &Node) -> bool {
-    let mut stack: [&Node; 64] = [root; 64];
-    let mut len = 1;
-    while len > 0 {
-        len -= 1;
-        let node = stack[len];
-        if node.t == NodeType::Assign {
-            return true;
-        }
-        if node.t == NodeType::Call {
-            if !is_builtin_name(&node.s) {
-                return true;
-            }
-        }
-        let push_cnt = (node.l.is_some() as usize) + (node.r.is_some() as usize) + node.items.len();
-        if len + push_cnt > stack.len() {
-            return true;
-        }
-        if let Some(l) = &node.l {
-            stack[len] = l;
-            len += 1;
-        }
-        if let Some(r) = &node.r {
-            stack[len] = r;
-            len += 1;
-        }
-        for item in &node.items {
-            stack[len] = item;
-            len += 1;
-        }
-    }
-    false
 }
 
 #[cfg(test)]
@@ -986,30 +860,33 @@ fn do_top(args: &mut Args, forced_dir: Option<&str>) -> Result<Value, SelError> 
 
     let sort_count = args.count() - 1;
     let mut binder = "_".to_string();
-    let mut body_opt: Option<Node> = None;
+    // The call's nodes, borrowed apart from `args`: the key is read from
+    // them, never cloned per call.
+    let nodes = args.nodes;
+    let mut body_opt: Option<&Node> = None;
     let mut direction = forced_dir.unwrap_or("ASC").to_string();
 
     if sort_count == 1 {
         binder = String::new();
     } else if sort_count == 2 {
-        body_opt = Some(args.node_at(1).clone());
+        body_opt = Some(&nodes[1]);
     } else if sort_count == 3 {
         if forced_dir.is_some() {
             binder = args.symbol(1)?;
-            body_opt = Some(args.node_at(2).clone());
+            body_opt = Some(&nodes[2]);
         } else if args.node_at(2).t == NodeType::Text {
-            body_opt = Some(args.node_at(1).clone());
+            body_opt = Some(&nodes[1]);
             direction = args.text(2)?.to_ascii_uppercase();
         } else if args.is_symbol_at(1) {
             binder = args.symbol(1)?;
-            body_opt = Some(args.node_at(2).clone());
+            body_opt = Some(&nodes[2]);
         } else {
-            body_opt = Some(args.node_at(1).clone());
+            body_opt = Some(&nodes[1]);
             direction = args.text(2)?.to_ascii_uppercase();
         }
     } else if sort_count == 4 {
         binder = args.symbol(1)?;
-        body_opt = Some(args.node_at(2).clone());
+        body_opt = Some(&nodes[2]);
         direction = args.text(3)?.to_ascii_uppercase();
     }
 
@@ -1023,18 +900,18 @@ fn do_top(args: &mut Args, forced_dir: Option<&str>) -> Result<Value, SelError> 
     }
 
     if limit == 0 || val.is_null() {
-        return Ok(Value::list_owned(Vec::new()));
+        return Ok(Value::list(Vec::new()));
     }
 
     let ents = val.elems();
     if ents.is_empty() {
-        return Ok(Value::list_owned(Vec::new()));
+        return Ok(Value::list(Vec::new()));
     }
 
-    let eager = body_opt.as_ref().is_some_and(top_key_may_write);
+    let eager = body_opt.is_some_and(may_write);
 
-    let needs_k = body_opt.as_ref().map_or(false, |b| node_contains_var(b, "_K"));
-    let mut frame = HashMap::new();
+    let needs_k = body_opt.as_ref().is_some_and(|b| node_contains_var(b, "_K"));
+    let mut frame = Frame::new();
     if !binder.is_empty() {
         frame.insert(binder.clone(), Value::none());
     }
@@ -1049,25 +926,10 @@ fn do_top(args: &mut Args, forced_dir: Option<&str>) -> Result<Value, SelError> 
     }
     for (ei, ev) in ents.vals.iter().enumerate() {
         let item = if eager {
-            match ev.deep_copy(2, args.pos()) {
-                Ok(c) => c,
-                Err(err) => {
-                    if framed {
-                        args.ctx.pop_frame();
-                    }
-                    return Err(err);
-                }
-            }
+            ev.deep_copy(2, args.pos())?
         } else {
-            match ev.check_copy_depth(2, args.pos()) {
-                Ok(()) => ev.clone(),
-                Err(err) => {
-                    if framed {
-                        args.ctx.pop_frame();
-                    }
-                    return Err(err);
-                }
-            }
+            ev.check_copy_depth(2, args.pos())?;
+            ev.clone()
         };
 
         let k_val = if !framed {
@@ -1077,13 +939,7 @@ fn do_top(args: &mut Args, forced_dir: Option<&str>) -> Result<Value, SelError> 
             if needs_k {
                 args.ctx.bind("_K", Value::text_owned(ents.key(ei)));
             }
-            match args.eval_node(body_opt.as_ref().unwrap()) {
-                Ok(k) => k,
-                Err(err) => {
-                    args.ctx.pop_frame();
-                    return Err(err);
-                }
-            }
+            args.eval_node(body_opt.as_ref().unwrap())?
         };
         indexed.push(SortItem {
             item,
@@ -1127,7 +983,7 @@ fn do_top(args: &mut Args, forced_dir: Option<&str>) -> Result<Value, SelError> 
         }
         out
     };
-    Ok(Value::list_owned(out))
+    Ok(Value::list(out))
 }
 
 
@@ -1149,8 +1005,11 @@ struct BucketGroup {
     rows: Vec<Value>,
 }
 
-/// Whether evaluating `node` might write a variable: an assignment, or a host
-/// function call (the host may do anything), anywhere inside it.
+/// Whether evaluating `node` might write: an assignment, or a call of an
+/// application's function (the host may do anything) -- one registered as a
+/// host function or not in the builtin manifest -- anywhere inside it. The one
+/// answer SORT/TOP keys and BUCKET keys both ask (recursion is bounded by
+/// the parse depth cap).
 fn may_write(node: &Node) -> bool {
     if node.t == NodeType::Assign {
         return true;
@@ -1161,23 +1020,21 @@ fn may_write(node: &Node) -> bool {
             None => crate::builtins::lookup_spec(&node.s)
                 .is_some_and(|spec| matches!(spec.func, crate::builtins::SpecFn::Host(_))),
         };
-        if host {
+        if host || crate::manifest::lookup_builtin(&node.s).is_none() {
             return true;
         }
     }
-    node.l.as_deref().is_some_and(may_write)
-        || node.r.as_deref().is_some_and(may_write)
-        || node.items.iter().any(may_write)
+    node.children().any(may_write)
 }
 
 pub fn fn_bucket(args: &mut Args) -> Result<Value, SelError> {
     let val = args.val(0)?;
     if val.is_null() {
-        return Ok(Value::list_owned(Vec::new()));
+        return Ok(Value::list(Vec::new()));
     }
     let ents = val.elems();
     if ents.is_empty() {
-        return Ok(Value::list_owned(Vec::new()));
+        return Ok(Value::list(Vec::new()));
     }
 
     let count = args.count();
@@ -1198,7 +1055,7 @@ pub fn fn_bucket(args: &mut Args) -> Result<Value, SelError> {
     }
 
     let needs_k = node_contains_var(&key_node, "_K");
-    let mut frame = HashMap::new();
+    let mut frame = Frame::new();
     frame.insert(binder.clone(), Value::none());
     if needs_k {
         frame.insert("_K".to_string(), Value::none());
@@ -1227,10 +1084,8 @@ pub fn fn_bucket(args: &mut Args) -> Result<Value, SelError> {
         let key_str = if agg_node_opt.is_none() {
             if group_key.kind() == Kind::None {
                 if group_key.is_null() {
-                    args.ctx.pop_frame();
                     return Err(SelError::null("value is NULL", key_node.pos));
                 }
-                args.ctx.pop_frame();
                 return Err(SelError::not_text(
                     "a bucket key must be text or a number, got a list or record",
                     key_node.pos,
@@ -1241,13 +1096,7 @@ pub fn fn_bucket(args: &mut Args) -> Result<Value, SelError> {
             String::new()
         };
         let item = if eager {
-            match ev.deep_copy(row_depth, args.pos()) {
-                Ok(copy) => copy,
-                Err(err) => {
-                    args.ctx.pop_frame();
-                    return Err(err);
-                }
-            }
+            ev.deep_copy(row_depth, args.pos())?
         } else {
             ev.clone()
         };
@@ -1300,28 +1149,28 @@ pub fn fn_bucket(args: &mut Args) -> Result<Value, SelError> {
                 }
                 rows_copy
             };
-            out.set(&g.key_str, Value::list_owned(rows), Pos::default())?;
+            out.set(&g.key_str, Value::list(rows), Pos::default())?;
         }
         return Ok(out);
     }
 
     let agg_node = agg_node_opt.unwrap();
     let mut out = Vec::with_capacity(groups.len());
-    let mut agg_frame = HashMap::new();
+    let mut agg_frame = Frame::new();
     agg_frame.insert(binder.clone(), Value::none());
     agg_frame.insert("_K".to_string(), Value::none());
     args.ctx.push_frame(agg_frame);
 
     for g in groups {
         if let Some(f) = args.ctx.frames.last_mut() {
-            f.set(&binder, Value::list_owned(g.rows));
+            f.set(&binder, Value::list(g.rows));
             f.set("_K", g.key);
         }
         out.push(args.eval_node(&agg_node)?.deep_copy(2, args.pos())?);
     }
     args.ctx.pop_frame();
 
-    Ok(Value::list_owned(out))
+    Ok(Value::list(out))
 }
 
 fn single_relation_name(node: &Node) -> String {
@@ -1422,57 +1271,59 @@ fn make_null_record(sample: Option<&Value>, table_name: &str) -> Value {
     Value::record_from_entries(entries)
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum JoinKeyType {
-    Null,
-    Bad,
-    Int64,
-    Dec,
-    Str,
-}
-
+/// An equi-join bucket key: two keys are equal exactly when the join's
+/// operator calls the operands equal, because a bucket hit is never
+/// re-checked against the predicate.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-struct JoinKey {
-    k_type: usize, // 0: null, 1: bad, 2: int64, 3: str
-    int_val: i64,
-    str_val: SelStr,
+enum JoinKey {
+    /// A NULL operand, which joins nothing.
+    Null,
+    /// An operand the operator refuses; it raises once the pair is live.
+    Bad,
+    /// `==`: a number that fits an i64 once its fraction zeros are dropped.
+    Int(i64),
+    /// `==`: any other number, by its scale-trimmed text.
+    Dec(SelStr),
+    /// `$==`: text, or BIN whose bytes are UTF-8, by those bytes.
+    Text(SelStr),
+    /// `$==`: BIN whose bytes are not UTF-8 -- equal to no text, and to
+    /// another BIN only byte for byte (never through a lossy decode).
+    Bytes(Rc<[u8]>),
 }
 
 fn canonical_join_key(v: &Value, numeric: bool) -> (JoinKey, Option<Value>) {
     if v.is_null() {
-        return (JoinKey { k_type: 0, int_val: 0, str_val: SelStr::EMPTY }, None);
+        return (JoinKey::Null, None);
     }
     if numeric {
         let d = match v.as_decimal(Pos::default()) {
             Ok(d) => d,
-            Err(_) => {
-                return (JoinKey { k_type: 1, int_val: 0, str_val: SelStr::EMPTY }, Some(v.clone()));
-            }
+            Err(_) => return (JoinKey::Bad, Some(v.clone())),
         };
         if d.is_integer() {
             if let Some(n) = d.to_i64() {
-                return (JoinKey { k_type: 2, int_val: n, str_val: SelStr::EMPTY }, None);
+                return (JoinKey::Int(n), None);
             }
         }
         let trimmed = crate::dec::dec_trim_scale(&d);
         if trimmed.is_integer() {
             if let Some(n) = trimmed.to_i64() {
-                return (JoinKey { k_type: 2, int_val: n, str_val: SelStr::EMPTY }, None);
+                return (JoinKey::Int(n), None);
             }
         }
-        return (JoinKey { k_type: 3, int_val: 0, str_val: SelStr::from(dec_format(&trimmed)) }, None);
+        return (JoinKey::Dec(SelStr::from(dec_format(&trimmed))), None);
     }
 
     // Text keys by their text, shared rather than copied.
     if let Ok(s) = v.as_text_str(Pos::default()) {
-        return (JoinKey { k_type: 3, int_val: 0, str_val: s }, None);
+        return (JoinKey::Text(s), None);
     }
     match v.as_bytes(Pos::default()) {
-        Ok(b) => {
-            let s = SelStr::from(String::from_utf8_lossy(&b).as_ref());
-            (JoinKey { k_type: 3, int_val: 0, str_val: s }, None)
-        }
-        Err(_) => (JoinKey { k_type: 1, int_val: 0, str_val: SelStr::EMPTY }, Some(v.clone())),
+        Ok(b) => match std::str::from_utf8(&b) {
+            Ok(s) => (JoinKey::Text(SelStr::from(s)), None),
+            Err(_) => (JoinKey::Bytes(Rc::from(b.as_ref())), None),
+        },
+        Err(_) => (JoinKey::Bad, Some(v.clone())),
     }
 }
 
@@ -1483,22 +1334,22 @@ struct JoinEqui<'a> {
     swapped: bool,
 }
 
-fn expr_depends_only_on(node: &Node, allowed: &HashMap<String, bool>) -> bool {
+fn expr_depends_only_on(node: &Node, allowed: &HashSet<String>) -> bool {
     match node.t {
-        NodeType::Var => allowed.contains_key(&node.s.to_ascii_uppercase()),
+        NodeType::Var => allowed.contains(&node.s.to_ascii_uppercase()),
         NodeType::Index => {
-            node.l.as_ref().map_or(true, |l| expr_depends_only_on(l, allowed))
-                && node.r.as_ref().map_or(true, |r| expr_depends_only_on(r, allowed))
+            node.l.as_ref().is_none_or(|l| expr_depends_only_on(l, allowed))
+                && node.r.as_ref().is_none_or(|r| expr_depends_only_on(r, allowed))
         }
         NodeType::Call => node.items.iter().all(|a| expr_depends_only_on(a, allowed)),
         NodeType::Bin => {
-            node.l.as_ref().map_or(true, |l| expr_depends_only_on(l, allowed))
-                && node.r.as_ref().map_or(true, |r| expr_depends_only_on(r, allowed))
+            node.l.as_ref().is_none_or(|l| expr_depends_only_on(l, allowed))
+                && node.r.as_ref().is_none_or(|r| expr_depends_only_on(r, allowed))
         }
-        NodeType::Un => node.l.as_ref().map_or(true, |l| expr_depends_only_on(l, allowed)),
+        NodeType::Un => node.l.as_ref().is_none_or(|l| expr_depends_only_on(l, allowed)),
         NodeType::Assign => {
-            node.l.as_ref().map_or(true, |l| expr_depends_only_on(l, allowed))
-                && node.r.as_ref().map_or(true, |r| expr_depends_only_on(r, allowed))
+            node.l.as_ref().is_none_or(|l| expr_depends_only_on(l, allowed))
+                && node.r.as_ref().is_none_or(|r| expr_depends_only_on(r, allowed))
         }
         NodeType::Seq | NodeType::List => node.items.iter().all(|item| expr_depends_only_on(item, allowed)),
         _ => true,
@@ -1512,14 +1363,14 @@ fn extract_join_equi<'a>(node: &'a Node, b1: &str, b2: &str) -> Option<JoinEqui<
     if b1.eq_ignore_ascii_case(b2) {
         return None;
     }
-    let mut left_names = HashMap::new();
-    left_names.insert(b1.to_ascii_uppercase(), true);
-    left_names.insert("_1".to_string(), true);
-    left_names.insert("_".to_string(), true);
+    let mut left_names = HashSet::new();
+    left_names.insert(b1.to_ascii_uppercase());
+    left_names.insert("_1".to_string());
+    left_names.insert("_".to_string());
 
-    let mut right_names = HashMap::new();
-    right_names.insert(b2.to_ascii_uppercase(), true);
-    right_names.insert("_2".to_string(), true);
+    let mut right_names = HashSet::new();
+    right_names.insert(b2.to_ascii_uppercase());
+    right_names.insert("_2".to_string());
 
     let l = node.l.as_ref()?;
     let r = node.r.as_ref()?;
@@ -1555,10 +1406,10 @@ fn check_join_pair(
     l_bad: Option<&Value>,
     facts: &JoinFacts,
 ) -> Result<(), SelError> {
-    if key.k_type == 0 || !facts.live {
+    if *key == JoinKey::Null || !facts.live {
         return Ok(());
     }
-    if key.k_type == 1 {
+    if *key == JoinKey::Bad {
         if equi.swapped && facts.live_bad.is_some() {
             coerce_join_operand(equi.numeric, facts.live_bad.as_ref().unwrap(), equi.right_expr.pos)?;
         }
@@ -1595,24 +1446,32 @@ fn join_set_row(ctx: &mut Context, names: &[String], row: &Value) {
     }
 }
 
-/// A pre-applied conjunct list on the row bound in the innermost frame:
-/// 0 keep, 1 drop, 2 keep because a conjunct raised (the FILTER decides).
-fn join_verdict(args: &mut Args, conjuncts: &[Node], errored: &mut bool) -> u8 {
+/// What a pre-applied conjunct list says of the row bound in the innermost
+/// frame.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Verdict {
+    Keep,
+    Drop,
+    /// A conjunct raised: the row is kept, and the FILTER decides.
+    KeepOnError,
+}
+
+fn join_verdict(args: &mut Args, conjuncts: &[Node], errored: &mut bool) -> Verdict {
     for conjunct in conjuncts {
         match crate::eval::eval_bool(conjunct, args.ctx) {
             Err(_) => {
                 *errored = true;
-                return 2;
+                return Verdict::KeepOnError;
             }
-            Ok(false) => return 1,
+            Ok(false) => return Verdict::Drop,
             Ok(true) => {}
         }
     }
-    0
+    Verdict::Keep
 }
 
-fn fields_all(fields: &HashMap<String, bool>, mut pred: impl FnMut(&str) -> bool) -> bool {
-    fields.keys().all(|f| pred(f))
+fn fields_all(fields: &HashSet<String>, mut pred: impl FnMut(&str) -> bool) -> bool {
+    fields.iter().all(|f| pred(f))
 }
 
 // A join's state between the phases of `do_link`. The phases that evaluate
@@ -1713,7 +1572,7 @@ fn link_head<'a>(args: &mut Args<'a>, left_join: bool) -> Result<Box<LinkState<'
     let mut above_keys: Vec<HashSet<String>> = vec![HashSet::new()];
     for side in &above {
         let mut next = above_keys.last().unwrap().clone();
-        next.extend(side.keys.keys().cloned());
+        next.extend(side.keys.iter().cloned());
         above_keys.push(next);
     }
     let equi_opt = extract_join_equi(predicate_node, &b1, &b2);
@@ -1755,14 +1614,14 @@ fn link_hand_down(args: &mut Args, st: &mut LinkState, right_first: Value) {
     ));
     let stop = {
         let st: &LinkState = st;
-        let owned_by_left = |fields: &HashMap<String, bool>, stage: &JoinStage| {
+        let owned_by_left = |fields: &HashSet<String>, stage: &JoinStage| {
             let upper = st.above_keys_of(stage);
-            fields_all(fields, |f| !rs.keys.contains_key(f) && !upper.contains(f))
+            fields_all(fields, |f| !rs.keys.contains(f) && !upper.contains(f))
         };
         let total_below = |reqs: &[JoinTotalReq], stage: &JoinStage| {
             join_totality(reqs, None, &rs, st.above_of(stage))
         };
-        let nothing_right = |_: &HashMap<String, bool>, _: &JoinStage| false;
+        let nothing_right = |_: &HashSet<String>, _: &JoinStage| false;
         join_stage_walk(&st.stages, &owned_by_left, &total_below, &nothing_right).1
     };
     let mut handed = join_truncate_stages(&st.stages, stop.as_ref());
@@ -1773,11 +1632,11 @@ fn link_hand_down(args: &mut Args, st: &mut LinkState, right_first: Value) {
         let mut sides = Vec::with_capacity(st.above.len() + 1);
         sides.push(rs.clone());
         sides.extend(st.above.iter().cloned());
-        let mut row_names = HashMap::new();
-        row_names.insert(st.b1.clone(), true);
-        row_names.insert(st.b1.to_ascii_lowercase(), true);
-        row_names.insert("_1".to_string(), true);
-        row_names.insert("_".to_string(), true);
+        let mut row_names = HashSet::new();
+        row_names.insert(st.b1.clone());
+        row_names.insert(st.b1.to_ascii_lowercase());
+        row_names.insert("_1".to_string());
+        row_names.insert("_".to_string());
         // This join computes its left key on every row it receives; a row
         // dropped below never arrives, so the key goes down as an
         // obligation for the join that drops to prove.
@@ -1831,21 +1690,21 @@ fn link_body<'a>(
     // Drops below that left this join no left rows: as written it may have
     // had some, and then it computes every right key before it finds that
     // no row survives. The left side is evaluated again, as written.
-    if below.as_ref().is_some_and(|b| b.dropped) && (left_val.is_null() || left_val.elems().len() == 0) {
+    if below.as_ref().is_some_and(|b| b.dropped) && (left_val.is_null() || left_val.elems().is_empty()) {
         left_val = args.eval_node(left_node)?;
         args.ctx.join_prefilter_report = None;
         below = None;
     }
 
     if left_val.is_null() {
-        return Ok(Value::list_owned(Vec::new()));
+        return Ok(Value::list(Vec::new()));
     }
 
     let left_ents = left_val.elems().vals;
     let right_ents = right_val.elems().vals;
 
     if left_ents.is_empty() || (right_ents.is_empty() && !left_join) {
-        return Ok(Value::list_owned(Vec::new()));
+        return Ok(Value::list(Vec::new()));
     }
 
     let mut left_alias = RowAlias::new(&b1);
@@ -1865,7 +1724,7 @@ fn link_body<'a>(
 
     if let Some(ref equi) = equi_opt {
         if !right_ents.is_empty() {
-            let mut r_frame = HashMap::new();
+            let mut r_frame = Frame::new();
             r_frame.insert(b2.clone(), Value::none());
             r_frame.insert("_2".to_string(), Value::none());
             let lower_b2 = b2.to_ascii_lowercase();
@@ -1896,8 +1755,8 @@ fn link_body<'a>(
                 }
                 let key_val = args.eval_node(equi.right_expr)?;
                 let (k, bad_val) = canonical_join_key(&key_val, equi.numeric);
-                if k.k_type != 0 {
-                    if k.k_type == 1 {
+                if k != JoinKey::Null {
+                    if k == JoinKey::Bad {
                         if !facts.live {
                             facts.live_bad = bad_val.clone();
                         }
@@ -1921,7 +1780,7 @@ fn link_body<'a>(
             let mut left_before_right: Option<usize> = None;
             let mut binders: Vec<String> = Vec::new();
             let mut report = JoinReport {
-                applied: HashMap::new(),
+                applied: HashSet::new(),
                 errored: false,
                 dropped: below.as_ref().is_some_and(|b| b.dropped),
             };
@@ -1932,10 +1791,10 @@ fn link_body<'a>(
             // in every joined row, unless the left binder has the same name,
             // or a join above rebinds it.
             let right_names = |stage_above: usize| {
-                let mut names = HashMap::new();
-                names.insert(upper_b2.clone(), true);
+                let mut names = HashSet::new();
+                names.insert(upper_b2.clone());
                 if stage_above == 0 {
-                    names.insert("_2".to_string(), true);
+                    names.insert("_2".to_string());
                 }
                 names
             };
@@ -1959,31 +1818,31 @@ fn link_body<'a>(
                     &b1_names,
                 );
                 let safe = obligations.is_empty() || join_keys_safe(&obligations, &left_side, &rs, &above);
-                let mut self_names = HashMap::new();
-                self_names.insert(upper_b1.clone(), true);
-                self_names.insert("_1".to_string(), true);
+                let mut self_names = HashSet::new();
+                self_names.insert(upper_b1.clone());
+                self_names.insert("_1".to_string());
                 if safe {
-                    let owned_here = |fields: &HashMap<String, bool>, stage: &JoinStage| {
+                    let owned_here = |fields: &HashSet<String>, stage: &JoinStage| {
                         let upper = above_keys_of(stage);
-                        fields_all(fields, |f| !rs.keys.contains_key(f) && !upper.contains(f))
+                        fields_all(fields, |f| !rs.keys.contains(f) && !upper.contains(f))
                     };
                     let total_here = |reqs: &[JoinTotalReq], stage: &JoinStage| {
                         join_totality(reqs, Some(&left_side), &rs, above_of(stage))
                     };
-                    let right_here = |fields: &HashMap<String, bool>, stage: &JoinStage| {
+                    let right_here = |fields: &HashSet<String>, stage: &JoinStage| {
                         if !right_ok {
                             return false;
                         }
                         let names = right_names(stage.above);
                         let upper = above_keys_of(stage);
-                        fields_all(fields, |f| names.contains_key(f) && !upper.contains(f))
+                        fields_all(fields, |f| names.contains(f) && !upper.contains(f))
                     };
                     let (walk_applied, _) = join_stage_walk(&stages, &owned_here, &total_here, &right_here);
                     for applied in walk_applied {
                         let c = applied.conjunct;
-                        report.applied.insert(c.id, true);
+                        report.applied.insert(c.id);
                         if let Some(ref b) = below {
-                            if !b.errored && b.applied.contains_key(&c.id) {
+                            if !b.errored && b.applied.contains(&c.id) {
                                 continue;
                             }
                         }
@@ -1996,8 +1855,8 @@ fn link_body<'a>(
                         }
                         let reads_self = c
                             .fields
-                            .keys()
-                            .any(|f| self_names.contains_key(f) && !left_side.first.contains_key(f));
+                            .iter()
+                            .any(|f| self_names.contains(f) && !left_side.first.contains(f));
                         if reads_self {
                             prefix.push(join_read_self(&c.node, &self_names, &c.binder));
                         } else {
@@ -2021,7 +1880,7 @@ fn link_body<'a>(
                 for rows in buckets.values_mut() {
                     for (row, rejected) in rows.iter_mut() {
                         join_set_row(args.ctx, &binders, row);
-                        if join_verdict(args, &right_prefix, &mut report.errored) == 1 {
+                        if join_verdict(args, &right_prefix, &mut report.errored) == Verdict::Drop {
                             *rejected = true;
                         }
                     }
@@ -2079,12 +1938,12 @@ fn link_body<'a>(
 
             for l_entry in left_ents {
                 let left = left_alias.apply(l_entry);
-                let mut asked: i8 = -1;
+                let mut asked: Option<Verdict> = None;
                 if let Some(ref ff) = fast_field {
                     if left.has(ff) {
                         join_set_row(args.ctx, &row_slots, &left);
-                        asked = join_verdict(args, &prefix, &mut report.errored) as i8;
-                        if asked == 1 {
+                        asked = Some(join_verdict(args, &prefix, &mut report.errored));
+                        if asked == Some(Verdict::Drop) {
                             // Dropped before its key was computed -- but the
                             // key is this very field, and a rejected one
                             // still raises in the join as written.
@@ -2103,15 +1962,13 @@ fn link_body<'a>(
                 check_join_pair(equi, &lk, l_bad.as_ref(), &facts)?;
                 let r_rows = buckets.get(&lk);
 
-                if asked < 0 {
-                    asked = if prefix.is_empty() {
-                        0
-                    } else {
-                        join_verdict(args, &prefix, &mut report.errored) as i8
-                    };
-                }
+                let asked = match asked {
+                    Some(verdict) => verdict,
+                    None if prefix.is_empty() => Verdict::Keep,
+                    None => join_verdict(args, &prefix, &mut report.errored),
+                };
 
-                if asked == 1 {
+                if asked == Verdict::Drop {
                     dropped = true;
                     if numbered {
                         if let Some(rows) = r_rows {
@@ -2126,7 +1983,7 @@ fn link_body<'a>(
                 if let Some(rows) = r_rows {
                     // A left row kept on an error meets every right row: its
                     // joined rows raise in the FILTER, in order.
-                    let skip = rejecting && asked == 0;
+                    let skip = rejecting && asked == Verdict::Keep;
                     for (right, rejected) in rows {
                         if skip && *rejected {
                             dropped = true;
@@ -2159,13 +2016,13 @@ fn link_body<'a>(
             if numbered && dropped && !output.is_empty() {
                 return Ok(Value::list_with_list_keys(output, ListKeys::Index(positions.into())));
             }
-            return Ok(Value::list_owned(output));
+            return Ok(Value::list(output));
         }
     }
 
     if has_prefilter {
         args.ctx.join_prefilter_report = Some(JoinReport {
-            applied: HashMap::new(),
+            applied: HashSet::new(),
             errored: false,
             dropped: below.as_ref().is_some_and(|b| b.dropped),
         });
@@ -2173,7 +2030,7 @@ fn link_body<'a>(
 
     // Nested-loop fallback join
     let mut output = Vec::new();
-    let mut frame = HashMap::new();
+    let mut frame = Frame::new();
     let lower_b1 = b1.to_ascii_lowercase();
     let lower_b2 = b2.to_ascii_lowercase();
     frame.insert(b1.clone(), Value::none());
@@ -2221,7 +2078,7 @@ fn link_body<'a>(
     }
     args.ctx.pop_frame();
 
-    Ok(Value::list_owned(output))
+    Ok(Value::list(output))
 }
 
 pub fn fn_link(args: &mut Args) -> Result<Value, SelError> {

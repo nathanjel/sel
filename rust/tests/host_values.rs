@@ -11,19 +11,19 @@ fn run_with(x: Value, source: &str) -> String {
 #[test]
 fn host_decimals_are_canonicalised_at_the_boundary() {
     // The sign belongs in `neg`; a negative mantissa is folded into it.
-    let flipped = Value::num(Dec { neg: false, scale: 0, repr: DecRepr::Small(-5) }).unwrap();
+    let flipped = Value::num(Dec::from_raw_parts(false, 0, DecRepr::Small(-5))).unwrap();
     assert_eq!(run_with(flipped.clone(), "X == -5"), "TRUE");
     assert_eq!(run_with(flipped, "X + 1"), "t\"-4\"");
     // A zero is never negative, in either representation.
-    let neg_zero = Value::num(Dec { neg: true, scale: 2, repr: DecRepr::Small(0) }).unwrap();
+    let neg_zero = Value::num(Dec::from_raw_parts(true, 2, DecRepr::Small(0))).unwrap();
     assert_eq!(neg_zero.dump().unwrap(), "t\"0.00\"");
-    let large_zero = Dec { neg: true, scale: 0, repr: DecRepr::Large(LargeDec::from(0u128).into()) };
+    let large_zero = Dec::from_raw_parts(true, 0, DecRepr::Large(LargeDec::from(0u128).into()));
     assert_eq!(Value::num(large_zero).unwrap().dump().unwrap(), "t\"0\"");
 }
 
 #[test]
 fn host_decimals_obey_the_digit_caps() {
-    let too_wide = Dec { neg: false, scale: 1_000_001, repr: DecRepr::Small(1) };
+    let too_wide = Dec::from_raw_parts(false, 1_000_001, DecRepr::Small(1));
     assert_eq!(Value::num(too_wide).unwrap_err().code, "E_RANGE");
 }
 

@@ -79,23 +79,5 @@ pub fn unique_record_shape(keys: &[String]) -> Option<Arc<RecordShape>> {
 }
 
 pub fn parse_list_slot(key: &str, len: usize) -> Option<usize> {
-    if key.is_empty() || key.len() > 9 {
-        return None;
-    }
-    let bytes = key.as_bytes();
-    if bytes[0] < b'1' || bytes[0] > b'9' {
-        return None;
-    }
-    let mut val = (bytes[0] - b'0') as usize;
-    for &b in &bytes[1..] {
-        if !(b'0'..=b'9').contains(&b) {
-            return None;
-        }
-        val = val * 10 + (b - b'0') as usize;
-    }
-    if val <= len {
-        Some(val - 1)
-    } else {
-        None
-    }
+    crate::utf8::canonical_index(key, 9).filter(|&val| val <= len).map(|val| val - 1)
 }

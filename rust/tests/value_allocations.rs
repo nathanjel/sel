@@ -1,5 +1,5 @@
 //! Exact allocation budgets for the operations the value-representation work
-//! made cheap (docs/interim/2026-09-29/rust-performance-plan.md §5). Each
+//! made cheap. Each
 //! count is what the operation must cost; a regression shows up here first.
 use sel_lang::{compile, Context, Pos, Value};
 use std::alloc::{GlobalAlloc, Layout, System};
@@ -118,9 +118,9 @@ fn a_filter_predicate_allocates_nothing_per_row() {
     );
 }
 
-// --- Item 1: a large mantissa is shared, never copied -------------------------
+// --- A large mantissa is shared, never copied ---------------------------------
 // Reading, copying and passing a number between plan steps must not copy its
-// mantissa (docs/interim/2026-09-29/rust-completion-audit.md). The operands are
+// mantissa. The operands are
 // past i128 (so `Large`) but far below the Karatsuba thresholds, and share one
 // scale, so no alignment or thread-local power cache disturbs the counts.
 // Lower these budgets when the code gets cheaper; never raise them.
@@ -150,7 +150,7 @@ fn a_large_number_reads_without_copying() {
     // A computed number: its decimal is the cell's own.
     let computed = large(ZR);
     let (n, d) = count(|| computed.as_decimal(pos).unwrap());
-    assert!(matches!(d.repr, sel_lang::dec::DecRepr::Large(_)));
+    assert!(matches!(d.repr(), sel_lang::dec::DecRepr::Large(_)));
     assert_eq!(n, 0, "reading a computed large number");
     // A parsed number: the first read parses and keeps the decimal; later
     // reads are the computed case.
