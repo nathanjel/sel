@@ -31,11 +31,12 @@ export class Fragment {
   caveats: string[];
   /** COLLATION exactness, a different thing from isExact(): this TEXT SQL
    *  already compares bytes the way SEL does -- a column bound with
-   *  `exact: true` (a binary collation), or text the translator has already
-   *  put under one -- so a comparison needs no COLLATE wrap. It says nothing
-   *  about caveats: a fragment can be `exact` and carry caveats, or carry none
-   *  and not be `exact`. */
-  exact: boolean;
+   *  `exact: true` (a binary collation), or text already put under one -- so a
+   *  comparison needs no COLLATE wrap. A builder (map.defineBuilder) may set
+   *  it on the fragment it returns. It is composition state: false on what
+   *  translate() returns, and it says nothing about caveats. (Named `exact`
+   *  before 0.11.) */
+  exactCollation: boolean;
   // A number in its canonical form (spec §7.6 CANON).
   canonical: boolean;
 
@@ -46,7 +47,7 @@ export class Fragment {
     params?: Value[] | null,
     paramKinds?: SqlKind[] | null,
     caveats?: string[] | null,
-    exact?: boolean,
+    exactCollation?: boolean,
     sargable?: boolean,
     guard?: boolean
   );
@@ -56,7 +57,7 @@ export class Fragment {
   asStatement(mode?: RenderMode): string;
   bindings(): Value[];
   /** TRANSLATION exactness: true when `caveats` is empty, so the SQL answers
-   *  as SEL does for every row. Not the `exact` collation flag above. */
+   *  as SEL does for every row. Not the exactCollation flag above. */
   isExact(): boolean;
 }
 

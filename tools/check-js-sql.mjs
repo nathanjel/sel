@@ -327,6 +327,30 @@ const R = { ORDERS: Binding.relation('orders', 'o', { ID: Binding.column('id', '
   check('ast replace: ctx unchanged after replacement', ctx.get('A').get('k').asText() === '1');
 }
 
+// The two exactnesses a Fragment carries are different questions.
+// exactCollation: this TEXT already compares bytes, so no COLLATE wrap -- set
+// by an `exact` binding or by a builder; isExact(): no caveat was recorded.
+{
+  const cond = (src, b) => Sql.translate(compile(src), 'mariadb', b);
+  const exactCol = cond('N $== "a"', { N: Binding.column('name', null, 'TEXT', true) });
+  const plainCol = cond('N $== "a"', { N: Binding.column('name', null, 'TEXT') });
+  check('exact binding: compared without a collation', exactCol.asValue() === "(`name` = 'a')", exactCol.asValue());
+  check('plain binding: compared under the binary collation', /COLLATE utf8mb4_nopad_bin/.test(plainCol.asValue()), plainCol.asValue());
+  check('collation exactness is not caveat exactness: both translations are isExact()',
+    exactCol.isExact() && plainCol.isExact());
+  const division = cond('1 / 3', {});
+  check('a caveat makes isExact() false', !division.isExact() && division.caveats.includes('division-scale'));
+  check('a returned fragment carries no collation state', exactCol.exactCollation === false);
+  registerFunction('JS_BYTES_NAME', 0, 0, () => Value.text(''));
+  sql.map.defineBuilder('mariadb', 'funcs', 'JS_BYTES_NAME',
+    () => new sql.Fragment(['`name`'], 'TEXT', 'mariadb', [], [], [], true));
+  const built = cond('JS_BYTES_NAME() $== "a"', {});
+  check('a builder\'s exactCollation fragment skips the collation, and its caveat still makes it inexact',
+    built.asValue() === "(`name` = 'a')" && !built.isExact() && built.caveats.includes('host-function'),
+    `${built.asValue()} ${built.caveats}`);
+  sql.map.reset();
+}
+
 // A Bindings instance is accepted wherever a plain map of bindings is: by
 // translate and translateStatement as by planHybrid (and by Python's twins).
 {

@@ -463,7 +463,7 @@ export class Translator {
   }
 
   collatedKey(frag) {
-    if (frag.kind !== 'TEXT' || frag.exact) return frag;
+    if (frag.kind !== 'TEXT' || frag.exactCollation) return frag;
     const wrapped = this.emit.textOperand(frag);
     return new Fragment(wrapped.parts, 'TEXT', this.dialect, wrapped.params, wrapped.paramKinds,
       wrapped.caveats, true, false, false);
@@ -805,8 +805,8 @@ export class Translator {
       // MySQL whenever either side was not valid UTF-8, where SEL answers FALSE.
       // The corpus had exactly one BIN value, 7ac3a9, which is valid UTF-8 and
       // could not show it.
-      const lExact = Boolean(l.exact);
-      const rExact = Boolean(r.exact);
+      const lExact = Boolean(l.exactCollation);
+      const rExact = Boolean(r.exactCollation);
       const lLit = (n.l.t === 'text');
       const rLit = (n.r.t === 'text');
       if ((lExact && (rExact || rLit)) || (rExact && lLit)) {
@@ -950,7 +950,7 @@ export class Translator {
       // spliced N times: splicing one Fragment twice puts the same slot number in
       // the output twice while `params` holds one entry.
       const raw = this.node(n.l);
-      const isExact = Boolean(raw.exact);
+      const isExact = Boolean(raw.exactCollation);
       const needle = isExact ? raw : this.emit.textOperand(raw);
       const f = this.node(e);
       if (f.kind === 'LIST') {

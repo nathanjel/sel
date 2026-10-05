@@ -37,7 +37,7 @@ const INTERNAL = {
     instance: ['children', 'shape', 'storage', 'asTextOrBytes', 'tryDecimal', 'shallowRoot',
       'checkDepthAt'],
   },
-  // The translator's own composition state; `exact` (the collation meaning) is declared.
+  // The translator's own composition state; exactCollation is declared.
   Fragment: { instance: ['sargable', 'guard', 'prefilter', 'separatePrefilter', 'sumTest'] },
   // Helpers the translator calls through the same module.
   map: { members: ['checkNumericGuard', 'hostSpellingArity', 'requireTarget', 'versionAtLeast'] },

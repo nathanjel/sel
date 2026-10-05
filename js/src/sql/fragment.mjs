@@ -15,7 +15,7 @@ export const KINDS = ['NUM', 'TEXT', 'BOOL', 'BIN', 'UNKNOWN', 'LIST', 'STATEMEN
 // be confused about where a literal ends, whatever the literal contains, and
 // that is the class of bug this shape exists to make unreachable.
 export class Fragment {
-  constructor(parts, kind, dialect, params = null, paramKinds = null, caveats = null, exact = false, sargable = false, guard = false) {
+  constructor(parts, kind, dialect, params = null, paramKinds = null, caveats = null, exactCollation = false, sargable = false, guard = false) {
     this.parts = parts;
     this.kind = kind;
     this.dialect = dialect;
@@ -25,7 +25,13 @@ export class Fragment {
     // cannot be derived — see emit.literal.
     this.paramKinds = paramKinds ?? [];
     this.caveats = caveats ?? [];
-    this.exact = Boolean(exact);
+    // COLLATION exactness: this TEXT already compares bytes as SEL does (a
+    // column bound `exact`, or text already put under a binary collation), so
+    // a comparison needs no COLLATE wrap. Composition state, read while the
+    // tree is rendered; it is unrelated to isExact(), which is the absence of
+    // caveats, and is false on what translate() returns. It was named `exact`,
+    // which read as the same question.
+    this.exactCollation = Boolean(exactCollation);
     this.sargable = Boolean(sargable);
     this.guard = Boolean(guard);
     this.prefilter = null;
@@ -133,7 +139,8 @@ export class Fragment {
     return kind === 'NUM' || kind === 'BOOL' || kind === 'BIN';
   }
 
-  // True when nothing about this translation is inexact.
+  // TRANSLATION exactness: true when nothing about this translation is
+  // inexact, i.e. no caveat was recorded. Not the exactCollation flag above.
   isExact() {
     return this.caveats.length === 0;
   }

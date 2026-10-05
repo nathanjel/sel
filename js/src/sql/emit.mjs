@@ -270,7 +270,7 @@ export class Emit {
   // operand comparisons, IN over a list, and the inRelation skeleton — and only
   // one of those is a two-operand template.
   textOperand(f) {
-    if (f.exact) return f;
+    if (f.exactCollation) return f;
     const cast = this.lex('textCast');
     const collate = String(this.lex('textCollate') ?? '');
     let parts = f.parts;
