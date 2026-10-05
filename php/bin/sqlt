@@ -113,7 +113,7 @@ function caveat_pins(array $pinned): array
 {
     $out = [];
     foreach (Sql::dialects() as $dialect) {
-        foreach (['ops', 'funcs', 'skel'] as $section) {
+        foreach (Map::SECTIONS as $section) {
             foreach (Map::entries($dialect, $section) as $key => $entry) {
                 if (!is_array($entry) || !isset($entry['caveat'])) {
                     continue;
@@ -140,7 +140,7 @@ function mirror_parity(): array
 {
     $bad = [];
     foreach (MIRRORS as $left => $right) {
-        foreach (['ops', 'funcs', 'skel'] as $section) {
+        foreach (Map::SECTIONS as $section) {
             $l = Map::entries($left, $section);
             $r = Map::entries($right, $section);
             foreach (array_keys($l + $r) as $key) {

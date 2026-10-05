@@ -33,7 +33,7 @@ foreach (MapReplay::raw() as $doc) {
         'lexical' => $doc['lexical'] ?? [],
     ]);
     $calls++;
-    foreach (['ops', 'funcs', 'skel'] as $section) {
+    foreach (Map::SECTIONS as $section) {
         foreach (($doc[$section] ?? []) as $key => $entry) {
             Map::define($doc['dialect'] . SUF, $section, (string) $key, $entry);
             $calls++;
@@ -63,7 +63,7 @@ foreach (MapData::DIALECTS as $name => $flat) {
             $problems[] = "{$name}.lexical.{$key}";
         }
     }
-    foreach (['ops', 'funcs', 'skel'] as $section) {
+    foreach (Map::SECTIONS as $section) {
         foreach (array_keys($flat[$section] ?? []) as $key) {
             $compared++;
             if (!same(Map::entry($name, $section, (string) $key),

@@ -80,9 +80,10 @@ final class Bindings
      * in one expression would produce a subquery correlated to the wrong rows,
      * and the host chose the aliases, so the host can fix them.
      *
-     * @param array{line:int,col:int,offset:int}|null $pos
+     * The refusal blames no node of the rule: the aliases are the bindings'.
+     * (An alias is always a string here -- Binding::relation() checks it.)
      */
-    public function checkAliases(?array $pos = null): void
+    public function checkAliases(): void
     {
         $seen = [];
         foreach ($this->map as $name => $b) {
@@ -93,14 +94,6 @@ final class Bindings
             // TypeError — not a SqlError, so tryTranslate() did not catch it and
             // a host using the refusal-tolerant API got a fatal instead of null.
             $alias = $b['alias'] ?? null;
-            // Same class as the raw `from` above and missed by the same pass: an
-            // array alias reached `isset($seen[$alias])` and raised a TypeError,
-            // which tryTranslate() does not catch.
-            if ($alias !== null && !is_string($alias)) {
-                refuse('E_SQL_BINDING',
-                    "the relation binding for {$name} has an alias that is not a string",
-                    $pos);
-            }
             if ($alias === null) {
                 $alias = is_array($b['from'])
                     ? (string) ($b['from']['raw'] ?? '')
@@ -112,7 +105,7 @@ final class Bindings
             if (isset($seen[$aliasKey])) {
                 refuse('E_SQL_BINDING',
                     "relations {$seen[$aliasKey]} and {$name} share the alias {$alias}; "
-                    . 'give each one its own', $pos);
+                    . 'give each one its own');
             }
             $seen[$aliasKey] = $name;
         }

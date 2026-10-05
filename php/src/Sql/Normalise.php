@@ -79,8 +79,8 @@ final class Normalise
      * @param array<string, array<string,mixed>> $defs
      * @param array<string,bool> $constNames
      */
-    private static function record(array $s, array &$defs, array $constNames = [],
-                                   ?\Sel\Context $ctx = null, int $depth = 0): void
+    private static function record(array $s, array &$defs, array $constNames,
+                                   ?\Sel\Context $ctx, int $depth): void
     {
         if ($s['t'] !== 'assign') {
             refuse('E_SQL_ASSIGN',

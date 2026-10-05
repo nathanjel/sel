@@ -44,21 +44,21 @@ final class Emit
      * Getting this wrong is not cosmetic. Emitted bare, "5.00" $== "5" becomes
      * 5.00 = 5, which the database answers TRUE and SEL answers FALSE.
      *
-     * @param array{line:int,col:int,offset:int}|null $pos
+     * Its refusals carry no position: a literal is rendered from a fragment's
+     * parameter pool, after the tree that placed it is gone.
      */
-    public static function literal(string $dialect, Value $v, string $form = 'TEXT',
-                                   ?array $pos = null): string
+    public static function literal(string $dialect, Value $v, string $form = 'TEXT'): string
     {
         if ($form === 'BOOL' || $v->isBool()) {
-            return (string) Map::lexical($dialect, $v->asBool($pos) ? 'true' : 'false');
+            return (string) Map::lexical($dialect, $v->asBool() ? 'true' : 'false');
         }
         if ($form === 'BIN' || $v->isBin()) {
             $tpl = Map::lexical($dialect, 'binaryLiteral');
             if (!is_string($tpl)) {
                 refuse('E_SQL_UNSUPPORTED',
-                    "dialect {$dialect} has no binary literal syntax", $pos);
+                    "dialect {$dialect} has no binary literal syntax");
             }
-            return str_replace('{hex}', bin2hex($v->asBytes($pos)), $tpl);
+            return str_replace('{hex}', bin2hex($v->asBytes()), $tpl);
         }
         // A NONE value has no characters, and asking for them raises a
         // SelError -- which tryTranslate() does not catch, so a host using the
@@ -70,12 +70,12 @@ final class Emit
         if ($v->isNone()) {
             refuse('E_SQL_BINDING',
                 'a value binding holding no value cannot be a SQL literal; only an '
-                . 'aggregate can be given an empty binding', $pos);
+                . 'aggregate can be given an empty binding');
         }
         if ($form === 'NUM') {
-            return self::numericLiteral($dialect, $v, $pos);
+            return self::numericLiteral($dialect, $v);
         }
-        return self::textLiteral($dialect, $v->asText($pos));
+        return self::textLiteral($dialect, $v->asText());
     }
 
     /**
@@ -102,14 +102,14 @@ final class Emit
      * because scale is part of a SEL number (spec §4.1) and part of what SQL
      * DECIMAL arithmetic reads.
      */
-    private static function numericLiteral(string $dialect, Value $v, ?array $pos): string
+    private static function numericLiteral(string $dialect, Value $v): string
     {
-        $text = $v->asText($pos);
+        $text = $v->asText();
         $d = \Sel\Dec::parse($text);
         if ($d === null) {
             refuse('E_SQL_BINDING',
                 'a value bound as NUM must be a number, and '
-                . Value::quoteDump($text) . ' is not', $pos);
+                . Value::quoteDump($text) . ' is not');
         }
         $n = \Sel\Dec::format($d);
 

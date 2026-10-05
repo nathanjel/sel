@@ -27,7 +27,7 @@ final class Translator
      * The optimiser's list, not a second copy: one vocabulary of pipeline
      * operators per host, or the planner and the translator drift apart.
      */
-    public const PIPELINE_OPS = \Sel\Optimizer::PIPELINE_OPS;
+    private const PIPELINE_OPS = \Sel\Optimizer::PIPELINE_OPS;
 
     private string $dialect;
     private Emit $emit;
@@ -842,7 +842,7 @@ final class Translator
      * @param list<Fragment> $parts
      * @param array{line:int,col:int,offset:int} $pos
      */
-    public function foldPairwise(string $op, array $parts, array $pos): Fragment
+    private function foldPairwise(string $op, array $parts, array $pos): Fragment
     {
         // The joining operators of an unrolled fold are nodes too (docs 7.4).
         $this->chargeNodes(max(0, count($parts) - 1));
@@ -1029,7 +1029,7 @@ final class Translator
         foreach ($n['args'] as $i => $arg) {
             $kind = $kinds[$i] ?? 'ANY';
             if ($kind === 'LIST') {
-                $args[] = $this->hostListArgument($name, $arg, $n);
+                $args[] = $this->hostListArgument($name, $arg);
                 continue;
             }
             $f = $this->node($arg);
@@ -1067,9 +1067,9 @@ final class Translator
      * @param array<string,mixed> $arg
      * @param array<string,mixed> $call
      */
-    private function hostListArgument(string $name, array $arg, array $call): Fragment
+    private function hostListArgument(string $name, array $arg): Fragment
     {
-        $src = $this->source($arg, $call);
+        $src = $this->source($arg);
         if ($src['shape'] === 'relation') {
             refuse('E_SQL_SHAPE',
                 "argument to {$name} is a relation, rows the query has not read "
@@ -2077,11 +2077,11 @@ final class Translator
      * @param array<string,mixed> $call
      * @return array<string,mixed>
      */
-    private function source(array $src, array $call): array
+    private function source(array $src): array
     {
         if ($src['t'] === 'call' && $src['name'] === 'FILTER') {
             [$fBinder, $fBody] = self::aggShape($src);
-            $inner = $this->source($src['args'][0], $call);
+            $inner = $this->source($src['args'][0]);
             $inner['filters'][] = ['binder' => $fBinder, 'body' => $fBody];
             return $inner;
         }
@@ -2118,8 +2118,8 @@ final class Translator
             if ($bound !== null) {
                 if ($bound->shape === Binder::NODE) {
                     return $bound->base === null
-                        ? $this->source($bound->payload, $call)
-                        : $this->hiding($bound->base, fn (): array => $this->source($bound->payload, $call));
+                        ? $this->source($bound->payload)
+                        : $this->hiding($bound->base, fn (): array => $this->source($bound->payload));
                 }
                 if ($bound->shape === Binder::NONE) {
                     refuse('E_SQL_SHAPE', (string) $bound->reason, $src['pos']);
@@ -2284,7 +2284,7 @@ final class Translator
         }
 
         [$binderName, $body] = self::aggShape($n);
-        $src = $this->source($n['args'][0], $n);
+        $src = $this->source($n['args'][0]);
 
         if ($src['shape'] === 'relation') {
             $rendered = $this->withRow($src, $binderName,
@@ -2294,7 +2294,7 @@ final class Translator
 
         $parts = [];
         foreach ($src['elements'] as $key => $elem) {
-            $parts[] = $this->withElement($src, $binderName, $elem, (string) $key, $n,
+            $parts[] = $this->withElement($binderName, $elem, (string) $key, $n,
                 fn (): Fragment => $this->aggBody($name, $body, $src, $n));
         }
         if ($parts === []) {
@@ -2369,7 +2369,7 @@ final class Translator
      * @param array<string,mixed> $src
      * @param array<string,mixed> $n
      */
-    private function withElement(array $src, string $binderName, Binder $elem,
+    private function withElement(string $binderName, Binder $elem,
                                  string $key, array $n, callable $render): Fragment
     {
         $kBinder = Binder::node(['t' => 'text', 'v' => $key, 'pos' => $n['pos']]);
@@ -2584,7 +2584,7 @@ final class Translator
     /** @param array<string,mixed> $n */
     private function count(array $n): Fragment
     {
-        $src = $this->source($n['args'][0], $n);
+        $src = $this->source($n['args'][0]);
 
         // COUNT is the number of children, so the scalar rule does not apply to
         // it: spec §7.4 says a value with no children counts 0, where §7.3's
@@ -2602,7 +2602,7 @@ final class Translator
             }
             $parts = [];
             foreach ($src['elements'] as $key => $elem) {
-                $parts[] = $this->withElement($src, '_', $elem, (string) $key, $n,
+                $parts[] = $this->withElement('_', $elem, (string) $key, $n,
                     fn (): Fragment => $this->aggBody('SUM', $body, $src, $n));
             }
             return $parts === []
@@ -2628,7 +2628,7 @@ final class Translator
                 . 'be known before the query runs', $n['args'][1]['pos']);
         }
         $key = (string) $n['args'][1]['v'];
-        $src = $this->source($n['args'][0], $n);
+        $src = $this->source($n['args'][0]);
         if ($src['filters'] !== []) {
             refuse('E_SQL_SHAPE',
                 'HAS over a FILTER would have to know at translation time which '
@@ -2661,7 +2661,7 @@ final class Translator
      */
     private function joinAggregate(array $n): Fragment
     {
-        $src = $this->source($n['args'][0], $n);
+        $src = $this->source($n['args'][0]);
         // FILTER yields a list; only ALL, ANY, SUM and COUNT absorb one (7.5), so a
         // JOIN over it has nothing to apply the predicate to. It used to be dropped.
         if ($src['filters'] !== []) {
@@ -2697,7 +2697,7 @@ final class Translator
                 $this->requireJoinText($sep, $n['args'][1]['pos']);
                 $parts[] = $sep;
             }
-            $part = $this->withElement($src, '_', $elem, (string) $key, $n,
+            $part = $this->withElement('_', $elem, (string) $key, $n,
                 fn (): Fragment => $this->fromBinder($elem, $n));
             $this->requireJoinText($part, $n['args'][0]['pos']);
             $parts[] = $part;
@@ -3690,7 +3690,7 @@ final class Translator
     }
 
     /** @param array<string,mixed> $n */
-    public function analyzePipeline(array $n): ?RelationalPlan
+    private function analyzePipeline(array $n): ?RelationalPlan
     {
         if (Constants::identityLossBeforeGrouping($n)) {
             refuse('E_SQL_SHAPE', 'grouping depends on a computed projection without identity preservation', $n['pos']);
@@ -4300,7 +4300,7 @@ final class Translator
         ];
     }
 
-    public function compileStatement(RelationalPlan $plan): Fragment
+    private function compileStatement(RelationalPlan $plan): Fragment
     {
         // SQL aliases do not implement RECORD's last-write/evaluation contract.
         foreach ([$plan->projections, $plan->groupBy] as $entries) {

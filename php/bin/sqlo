@@ -239,7 +239,7 @@ function caveat_symmetry(string $dialect, array $witnessed): array
     }
 
     $declared = [];
-    foreach (['ops', 'funcs', 'skel'] as $section) {
+    foreach (Map::SECTIONS as $section) {
         foreach (Map::entries($dialect, $section) as $key => $entry) {
             if (is_array($entry) && isset($entry['caveat'])) {
                 $declared[$entry['caveat']][] = "{$section}.{$key}";
@@ -1334,7 +1334,7 @@ function run_coverage(string $dialect, bool $verbose, string $label = ''): array
     $missing = [];
     $supported = 0;
     $live = [];
-    foreach (['ops', 'funcs', 'skel'] as $section) {
+    foreach (Map::SECTIONS as $section) {
         foreach (Map::entries($dialect, $section) as $key => $entry) {
             if (!is_array($entry)) {
                 continue;                       // a refusal, or null
