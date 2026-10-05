@@ -45,6 +45,7 @@
      (:file "registry")
      (:file "builtin-manifest")
      (:file "math-ops")
+     (:file "lexicon")
      (:file "lexer")
      (:file "parser")
      (:file "math-plan")

@@ -462,8 +462,8 @@ Where each package manager stands:
 | plain CMake / copy the files | n/a | vendored |
 
 The vendored copy is the default everywhere, on purpose. It is what keeps "copy
-`sel.hpp`, `sel_ast.hpp`, the generated `sel_limits.hpp`, `sel_math_ops.hpp` and
-`sel_builtin_manifest.hpp`, `sel.cpp`, `sel_optimizer.cpp` (which `sel.cpp`
+`sel.hpp`, `sel_ast.hpp`, the generated `sel_limits.hpp`, `sel_math_ops.hpp`,
+`sel_lexicon.hpp` and `sel_builtin_manifest.hpp`, `sel.cpp`, `sel_optimizer.cpp` (which `sel.cpp`
 includes) and `third_party/srell/`, and compile `sel.cpp`" true
 — and, with `sel_sql*.{hpp,cpp}` added, the same for the SQL layer — it is the only
 option for Conan, and it removes any chance of a resolver quietly selecting a

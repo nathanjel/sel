@@ -2,8 +2,8 @@
 #
 # Three ways to consume this, in increasing order of ceremony:
 #
-#   1. Copy sel.hpp, sel_ast.hpp, the three generated headers sel_limits.hpp,
-#      sel_math_ops.hpp and sel_builtin_manifest.hpp, sel.cpp and
+#   1. Copy sel.hpp, sel_ast.hpp, the four generated headers sel_limits.hpp,
+#      sel_math_ops.hpp, sel_lexicon.hpp and sel_builtin_manifest.hpp, sel.cpp and
 #      third_party/srell/ into your project and compile sel.cpp. Nothing here
 #      is needed, and you include only sel.hpp. This remains the primary story.
 #      For SEL->SQL as well, add sel_sql.hpp, sel_sql_emit.hpp, sel_sql_map.hpp,

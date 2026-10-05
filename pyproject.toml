@@ -96,6 +96,7 @@ include = [
     "/docs/usage/in-memory.md",
     "/docs/reference/builtins.md",
     "/docs/reference/limits.md",
+    "/docs/reference/lexicon.md",
     "/spec/",
     "/conformance/",
     "/examples/order-validation.sel",

@@ -48,7 +48,7 @@ class SelConan(ConanFile):
         # until 0.9.1, and the package did not compile.
         # tools/check-cpp-package.sh builds from exactly this list.
         for pattern in ("CMakeLists.txt", "sel.hpp", "sel_ast.hpp", "sel_limits.hpp",
-                        "sel_math_ops.hpp", "sel_builtin_manifest.hpp", "sel.cpp",
+                        "sel_math_ops.hpp", "sel_lexicon.hpp", "sel_builtin_manifest.hpp", "sel.cpp",
                         "sel_sql*.hpp", "sel_sql*.cpp", "third_party/*"):
             copy(self, pattern, self.recipe_folder, self.export_sources_folder)
         copy(self, "LICENSE",

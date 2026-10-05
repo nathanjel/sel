@@ -15,8 +15,8 @@
 # tools/check.sh says which of them it runs, and anything it does not run is a
 # manual check to make before a release (docs/contributing.md).
 #
-# The drop-in is sel.hpp + sel.cpp + sel_ast.hpp + the three generated headers
-# (sel_limits.hpp, sel_math_ops.hpp, sel_builtin_manifest.hpp) +
+# The drop-in is sel.hpp + sel.cpp + sel_ast.hpp + the four generated headers
+# (sel_limits.hpp, sel_math_ops.hpp, sel_lexicon.hpp, sel_builtin_manifest.hpp) +
 # third_party/srell/. Everything under bin/ and tests/ is this repository's
 # harness, not part of what you copy. sel_ast.hpp and the generated headers are
 # internal -- you include sel.hpp -- but sel.cpp needs them beside it.
@@ -107,7 +107,7 @@ $(BUILD)/metadata: ../tools/metadata/cpp.cpp sel.hpp $(BUILD)/sel.o | $(BUILD)
 
 # What a build that includes or links the evaluator depends on, for the first
 # build (later ones also read the .d files).
-CORE_DEPS := sel.cpp sel.hpp sel_ast.hpp sel_limits.hpp sel_builtin_manifest.hpp sel_math_ops.hpp
+CORE_DEPS := sel.cpp sel.hpp sel_ast.hpp sel_limits.hpp sel_builtin_manifest.hpp sel_math_ops.hpp sel_lexicon.hpp
 
 $(BUILD)/sel.o: $(CORE_DEPS) | $(BUILD)
 	$(CXX) $(CXXFLAGS) $(DEPFLAGS) -c -o $@ sel.cpp
@@ -147,7 +147,7 @@ $(BUILD)/db.o: ../examples/lib/db.cpp ../examples/lib/db.hpp sel.hpp sel_sql.hpp
 $(addprefix $(BUILD)/example-,$(DB_EXAMPLES)): $(BUILD)/example-%: ../examples/%/cpp.cpp ../examples/lib/db.hpp sel.hpp sel_sql.hpp $(BUILD)/db.o $(SQL_OBJS) $(BUILD)/sel.o | $(BUILD)
 	$(CXX) $(CXXFLAGS) $(DEPFLAGS) -o $@ $< $(BUILD)/db.o $(SQL_OBJS) $(BUILD)/sel.o $(DB_LIBS)
 
-$(SQL_OBJS): $(BUILD)/%.o: %.cpp $(SQL_HDRS) sel.hpp sel_limits.hpp sel_builtin_manifest.hpp | $(BUILD)
+$(SQL_OBJS): $(BUILD)/%.o: %.cpp $(SQL_HDRS) sel.hpp sel_limits.hpp sel_builtin_manifest.hpp sel_lexicon.hpp | $(BUILD)
 	$(CXX) $(CXXFLAGS) $(DEPFLAGS) -c -o $@ $<
 
 $(addprefix $(BUILD)/,sqlmap sqlfuzz sqlapi): $(BUILD)/%: bin/%.cpp bin/read_file.hpp $(SQL_HDRS) sel.hpp $(SQL_OBJS) $(BUILD)/sel.o | $(BUILD)
@@ -216,7 +216,7 @@ $(ASAN_DIR):
 $(ASAN_DIR)/sel.o: $(CORE_DEPS) | $(ASAN_DIR)
 	$(CXX) $(ASAN_FLAGS) $(DEPFLAGS) -c -o $@ $<
 
-$(ASAN_SQL_OBJS): $(ASAN_DIR)/%.o: %.cpp $(SQL_HDRS) sel.hpp sel_limits.hpp sel_builtin_manifest.hpp | $(ASAN_DIR)
+$(ASAN_SQL_OBJS): $(ASAN_DIR)/%.o: %.cpp $(SQL_HDRS) sel.hpp sel_limits.hpp sel_builtin_manifest.hpp sel_lexicon.hpp | $(ASAN_DIR)
 	$(CXX) $(ASAN_FLAGS) $(DEPFLAGS) -c -o $@ $<
 
 $(ASAN_DIR)/case_data.o: bin/case_data.cpp bin/case_data.hpp $(SQL_HDRS) sel.hpp | $(ASAN_DIR)

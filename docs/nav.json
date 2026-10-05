@@ -76,6 +76,7 @@
           "title": "Builtin index"
         },
         "docs/reference/limits.md",
+        "docs/reference/lexicon.md",
         {
           "page": "spec/SPEC.md",
           "title": "Specification"

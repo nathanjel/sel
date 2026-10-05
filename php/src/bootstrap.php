@@ -14,6 +14,7 @@ require_once __DIR__ . '/Ast.php';
 require_once __DIR__ . '/Dec.php';
 require_once __DIR__ . '/Value.php';
 require_once __DIR__ . '/BuiltinManifest.php';
+require_once __DIR__ . '/Lexicon.php';
 require_once __DIR__ . '/Registry.php';
 require_once __DIR__ . '/MathOps.php';
 require_once __DIR__ . '/MathPlan.php';

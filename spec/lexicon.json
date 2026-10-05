@@ -1,0 +1,79 @@
+{
+  "$comment": "The lexicon: reserved words, operator tokens, precedence, associativity and what each operator is. Restates spec/grammar.md and spec/SPEC.md §5 (which stay normative; tools/gen-lexicon.mjs refuses to render when they disagree). Format in spec/lexicon.md. Rendered into every host by tools/gen-lexicon.mjs; each host's lexer and parser read the rendering, and its evaluator, optimiser and translators classify operators through it.",
+  "reserved": ["TRUE", "FALSE", "NULL", "AND", "OR", "NOT", "XOR", "EQL", "IN", "BAND", "BOR", "BXOR"],
+  "punctuation": ["(", ")", "]"],
+  "families": {
+    "arith":        { "spec": "§5.1", "title": "Arithmetic" },
+    "concat":       { "spec": "§5.2", "title": "Concatenation" },
+    "text-compare": { "spec": "§5.3", "title": "Text comparison (bytewise)" },
+    "deep-compare": { "spec": "§5.4", "title": "Deep comparison" },
+    "coalesce":     { "spec": "§5.5", "title": "Coalescing" },
+    "logic":        { "spec": "§5.6", "title": "Logic" },
+    "bitwise":      { "spec": "§5.7", "title": "Bitwise" },
+    "assign":       { "spec": "§5.8", "title": "Assignment" },
+    "sequence":     { "spec": "§5.8", "title": "Sequence" },
+    "list":         { "spec": "§5.9", "title": "List building" },
+    "compare":      { "spec": "§4.5", "title": "Numeric comparison" },
+    "postfix":      { "spec": "§5.10", "title": "Indexing and forward pipeline" }
+  },
+  "levels": [
+    { "name": "POSTFIX", "fixity": "postfix", "operators": {
+        "[":  { "family": "postfix", "node": "index" },
+        ".>": { "family": "postfix", "node": "pipe" } } },
+    { "name": "NEG", "fixity": "prefix", "operators": {
+        "-": { "family": "arith", "name": "NEG" } } },
+    { "name": "MUL", "fixity": "infix", "assoc": "left", "operators": {
+        "*": { "family": "arith" },
+        "/": { "family": "arith" },
+        "%": { "family": "arith" } } },
+    { "name": "ADD", "fixity": "infix", "assoc": "left", "operators": {
+        "+": { "family": "arith" },
+        "-": { "family": "arith" } } },
+    { "name": "CONCAT", "fixity": "infix", "assoc": "left", "operators": {
+        "&": { "family": "concat" } } },
+    { "name": "BAND", "fixity": "infix", "assoc": "left", "operators": {
+        "BAND": { "family": "bitwise" } } },
+    { "name": "BXOR", "fixity": "infix", "assoc": "left", "operators": {
+        "BXOR": { "family": "bitwise" } } },
+    { "name": "BOR", "fixity": "infix", "assoc": "left", "operators": {
+        "BOR": { "family": "bitwise" } } },
+    { "name": "COALESCE", "fixity": "infix", "assoc": "right", "operators": {
+        "??":  { "family": "coalesce", "shortCircuit": true },
+        "???": { "family": "coalesce", "shortCircuit": true } } },
+    { "name": "COMPARE", "fixity": "infix", "assoc": "none", "operators": {
+        "==":  { "family": "compare", "relation": "eq" },
+        "!=":  { "family": "compare", "relation": "ne" },
+        "<":   { "family": "compare", "relation": "lt" },
+        "<=":  { "family": "compare", "relation": "le" },
+        ">":   { "family": "compare", "relation": "gt" },
+        ">=":  { "family": "compare", "relation": "ge" },
+        "$==": { "family": "text-compare", "relation": "eq" },
+        "$!=": { "family": "text-compare", "relation": "ne" },
+        "$<":  { "family": "text-compare", "relation": "lt" },
+        "$<=": { "family": "text-compare", "relation": "le" },
+        "$>":  { "family": "text-compare", "relation": "gt" },
+        "$>=": { "family": "text-compare", "relation": "ge" },
+        "EQL": { "family": "deep-compare" },
+        "IN":  { "family": "deep-compare" } } },
+    { "name": "NOT", "fixity": "prefix", "operators": {
+        "NOT": { "family": "logic", "name": "NOT" } } },
+    { "name": "AND", "fixity": "infix", "assoc": "left", "operators": {
+        "AND": { "family": "logic", "shortCircuit": true } } },
+    { "name": "XOR", "fixity": "infix", "assoc": "left", "operators": {
+        "XOR": { "family": "logic" } } },
+    { "name": "OR", "fixity": "infix", "assoc": "left", "operators": {
+        "OR": { "family": "logic", "shortCircuit": true } } },
+    { "name": "ASSIGN", "fixity": "infix", "assoc": "right", "operators": {
+        "=":  { "family": "assign" },
+        "+=": { "family": "assign", "compound": "+" },
+        "-=": { "family": "assign", "compound": "-" },
+        "*=": { "family": "assign", "compound": "*" },
+        "/=": { "family": "assign", "compound": "/" },
+        "%=": { "family": "assign", "compound": "%" },
+        "&=": { "family": "assign", "compound": "&" } } },
+    { "name": "LIST", "fixity": "infix", "assoc": "left", "operators": {
+        ",": { "family": "list" } } },
+    { "name": "SEQ", "fixity": "infix", "assoc": "left", "operators": {
+        ";": { "family": "sequence" } } }
+  ]
+}
