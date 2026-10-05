@@ -12,12 +12,20 @@
 
 import { readFileSync } from 'node:fs';
 import { createInterface } from 'node:readline';
-import { compile, Value, SelError, functionNames } from '../src/sel.mjs';
+// SEL_JS_ENTRY aims the evaluator at a different build of the implementation:
+// tools/impls.sh sets it to dist/sel.mjs (or .min.mjs) so the js-bundle
+// configurations run the CLI contract and --deps against the bundle, not this
+// tree. decodeSource only turns the input file's bytes into text, the same in
+// either build, so it stays a source import.
+const { compile, Value, SelError, functionNames } =
+  await import(process.env.SEL_JS_ENTRY ?? '../src/sel.mjs');
 import { decodeSource } from '../src/utf8.mjs';
+import { SelError as SourceSelError } from '../src/errors.mjs';
 import { show } from './show.mjs';
 
 function report(e) {
-  if (!(e instanceof SelError)) throw e;
+  // decodeSource's E_UTF8 is this tree's SelError even when SEL_JS_ENTRY names a bundle.
+  if (!(e instanceof SelError || e instanceof SourceSelError)) throw e;
   process.stderr.write(`${e.code} at line ${e.line} column ${e.col}: ${e.message}\n`);
 }
 
