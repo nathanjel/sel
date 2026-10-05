@@ -36,7 +36,8 @@ for row in [{'QTY': '3', 'PRICE': '19.99'}, {'QTY': '1', 'PRICE': '5.00'}]:
 # from_native takes scalars, lists and nested dicts. Pass money as *strings*: a
 # Python float is a double and has already lost the exactness SEL preserves.
 # from_native refuses a float outright rather than guess a decimal form for it,
-# so this is enforced at the boundary and not left to discipline.
+# so this is enforced at the boundary and not left to discipline. The refusal
+# is a SelError with code E_BAD_ARG, as in every host (SPEC 8).
 
 print('3. structured context')
 order = Value.from_native({
@@ -52,8 +53,10 @@ print('   0.1+0.2:  ', evaluate('0.10 + 0.20').as_text(), '  (Python says', 0.1 
 
 try:
     Value.from_native({'PRICE': 19.99})
-except TypeError as e:
-    print('   floats:   ', e)
+except SelError as e:
+    if e.code != 'E_BAD_ARG':
+        raise
+    print('   floats:   ', e.code, '-', e.message)
 
 # 4 - reading results back ----------------------------------------------------
 # A result is a Value. Use as_text/as_bool/as_decimal for scalars, or walk it.
