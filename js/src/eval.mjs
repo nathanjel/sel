@@ -407,6 +407,11 @@ function evalBinary(node, ctx) {
 
 const NUMERIC_BINARY = new Set(['+', '-', '*', '/', '%', '==', '!=', '<', '<=', '>', '>=']);
 
+// Each arithmetic operator's decimal operation: compound assignment and the
+// optimiser's constant folding dispatch through it. (evalBinary and the math
+// plan keep their own switch, on the hot path, over the same five.)
+export const ARITHMETIC = Object.freeze({ '+': D.add, '-': D.sub, '*': D.mul, '/': D.div, '%': D.mod });
+
 // The six comparisons, and nothing else.
 //
 // This switch had no default, so an operator it did not name fell off the end
@@ -415,7 +420,7 @@ const NUMERIC_BINARY = new Set(['+', '-', '*', '/', '%', '==', '!=', '<', '<=', 
 // and reported nothing. Unreachable today, since the caller only reaches this
 // with the six, and that is the point of saying so out loud rather than
 // answering.
-function compareResult(op, c, pos) {
+export function compareResult(op, c, pos) {
   switch (op) {
     case '==': return c === 0;
     case '!=': return c !== 0;
@@ -498,12 +503,7 @@ function evalAssign(node, ctx) {
       value = concat(current, rhs, tp, vp, node.pos);
     } else {
       const a = current.asDecimal(tp), b = rhs.asDecimal(vp);
-      const r = binOp === '+' ? D.add(a, b, node.pos)
-        : binOp === '-' ? D.sub(a, b, node.pos)
-          : binOp === '*' ? D.mul(a, b, node.pos)
-            : binOp === '/' ? D.div(a, b, node.pos)
-              : D.mod(a, b, node.pos);
-      value = Value.numOwned(r);
+      value = Value.numOwned(ARITHMETIC[binOp](a, b, node.pos));
     }
   }
 

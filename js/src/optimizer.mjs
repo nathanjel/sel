@@ -7,6 +7,8 @@ import { lookup, argRoles, textSelectsForm } from './registry.mjs';
 import { childNodes, fieldReads, readsName, mapChildren, mentionsKey } from './ast.mjs';
 import { MAX_DEPTH } from './errors.mjs';
 import { recordShape } from './value.mjs';
+import { compareText } from './utf8.mjs';
+import { ARITHMETIC, compareResult } from './eval.mjs';
 import { compileMathPlan, isMathOp } from './math_plan.mjs';
 
 const PIPELINE_OPS = new Set([
@@ -59,14 +61,6 @@ export const LITERAL_TYPES = new Set(['num', 'text', 'bool', 'null']);
 function isLiteral(node) { return node != null && LITERAL_TYPES.has(node.t); }
 function hoistLiteral(child, pos) { return { ...child, pos }; }
 
-function textCompare(a, b) {
-  const aa = new TextEncoder().encode(a);
-  const bb = new TextEncoder().encode(b);
-  const n = Math.min(aa.length, bb.length);
-  for (let i = 0; i < n; i++) if (aa[i] !== bb[i]) return aa[i] < bb[i] ? -1 : 1;
-  return aa.length - bb.length;
-}
-
 function fold(node) {
   if (!node) return node;
   if (node.t === 'un' && node.x) {
@@ -90,31 +84,19 @@ function fold(node) {
       try {
         const left = D.parse(node.l.v, node.pos);
         const right = D.parse(node.r.v, node.pos);
-        const result = node.op === '+' ? D.add(left, right, node.pos)
-          : node.op === '-' ? D.sub(left, right, node.pos)
-            : node.op === '*' ? D.mul(left, right, node.pos)
-              : node.op === '/' ? D.div(left, right, node.pos)
-                : D.mod(left, right, node.pos);
-        return literalNum(D.format(result), node.pos);
+        return literalNum(D.format(ARITHMETIC[node.op](left, right, node.pos)), node.pos);
       } catch (_) { return node; }
     }
     if (node.l.t === 'num' && node.r.t === 'num'
         && ['==', '!=', '<', '<=', '>', '>='].includes(node.op)) {
       try {
         const c = D.cmp(D.parse(node.l.v, node.pos), D.parse(node.r.v, node.pos));
-        const value = node.op === '==' ? c === 0 : node.op === '!=' ? c !== 0
-          : node.op === '<' ? c < 0 : node.op === '<=' ? c <= 0
-            : node.op === '>' ? c > 0 : c >= 0;
-        return literalBool(value, node.pos);
+        return literalBool(compareResult(node.op, c, node.pos), node.pos);
       } catch (_) { return node; }
     }
     if (node.l.t === 'text' && node.r.t === 'text'
         && ['$==', '$!=', '$<', '$<=', '$>', '$>='].includes(node.op)) {
-      const c = textCompare(node.l.v, node.r.v);
-      const value = node.op === '$==' ? c === 0 : node.op === '$!=' ? c !== 0
-        : node.op === '$<' ? c < 0 : node.op === '$<=' ? c <= 0
-          : node.op === '$>' ? c > 0 : c >= 0;
-      return literalBool(value, node.pos);
+      return literalBool(compareResult(node.op.slice(1), compareText(node.l.v, node.r.v), node.pos), node.pos);
     }
     return node;
   }
