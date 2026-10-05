@@ -427,6 +427,147 @@ std::string_view section_name(Section s) {
 
 // --- registration ------------------------------------------------------------
 
+namespace {
+
+// A dialect's lexical settings as DialectSpec holds them: key, kind, text,
+// escapes.
+using LexicalSpec = std::tuple<std::string, LexKind, std::string, std::vector<std::pair<std::string, std::string>>>;
+
+// sql/MAP.md §3.1: textQuote, textEscape and identQuote are a SET. What each
+// is AFTER inheritance is what an inline literal is rendered with, so a
+// dialect that changes one without the others is refused here, before any
+// literal exists to be injected through. OWN_LEXICAL is what the dialect
+// sets itself; PARENT, null for a root, is what it inherits the rest from.
+void check_text_syntax(const std::vector<LexicalSpec>& own_lexical, const std::string* parent,
+                       const std::string& where) {
+  const auto own = [&](std::string_view key) -> const LexicalSpec* {
+    for (const auto& l : own_lexical) if (std::get<0>(l) == key) return &l;
+    return nullptr;
+  };
+  const auto text_of = [&](std::string_view key) -> std::optional<std::string> {
+    if (const auto* l = own(key)) {
+      if (std::get<1>(*l) == LexKind::Text) return std::get<2>(*l);
+      return std::nullopt;
+    }
+    if (!parent) return std::nullopt;
+    if (const Lexical* lx = Map::lexical(*parent, key)) {
+      if (lx->kind == LexKind::Text) return std::string(lx->text);
+    }
+    return std::nullopt;
+  };
+  std::vector<std::pair<std::string, std::string>> escapes;
+  bool escapes_known = false;
+  if (const auto* l = own("textEscape")) {
+    if (std::get<1>(*l) == LexKind::Escapes) { escapes = std::get<3>(*l); escapes_known = true; }
+  } else if (parent) {
+    if (const Lexical* lx = Map::lexical(*parent, "textEscape")) {
+      for (const Escape& e : lx->escapes) escapes.emplace_back(std::string(e.from), std::string(e.to));
+      escapes_known = true;
+    }
+  }
+  const std::optional<std::string> quote = text_of("textQuote");
+  const std::optional<std::string> ident = text_of("identQuote");
+  // Only when the dialect says something about the set: a root with no text
+  // syntax at all has no literals to make injectable.
+  const bool touches = own("textQuote") || own("textEscape") || own("identQuote");
+  if (touches && quote) {
+    std::size_t cps = 0;
+    for (unsigned char c : *quote) if ((c & 0xC0) != 0x80) ++cps;
+    if (cps != 1) {
+      bad(where + " sets textQuote to \"" + *quote + "\"; a quote is exactly one character");
+    }
+    if (ident && *ident == *quote) {
+      bad(where + " makes textQuote equal identQuote (" + *quote +
+          "), so a text literal reads as a quoted identifier");
+    }
+    for (const auto& [from, to] : escapes) {
+      (void)to;
+      if (from.empty()) bad(where + " has a textEscape entry with an empty key");
+    }
+    const auto entry_for = [&](const std::string& from) -> const std::string* {
+      for (const auto& [f, t] : escapes) if (f == from) return &t;
+      return nullptr;
+    };
+    const std::string* q = escapes_known ? entry_for(*quote) : nullptr;
+    if (!q) {
+      bad(where + " has no textEscape entry for its textQuote (" + *quote +
+          "), so a quote inside a text literal would end it");
+    }
+    // The only escape character a SQL server has is the backslash, so the quote is
+    // kept inside the literal by doubling it or by a backslash before it
+    // (sql/MAP.md 3.1) and nothing else.
+    if (*q != *quote + *quote && *q != "\\" + *quote) {
+      bad(where + " escapes textQuote as \"" + *q + "\", which neither doubles it "
+          "nor is a backslash followed by it; a quote in the data would end the literal");
+    }
+    // A value that introduces a backslash escape presupposes a server that reads
+    // backslashes, so a backslash in the data must be doubled too, or it swallows
+    // the character after it.
+    bool uses_backslash = false;
+    for (const auto& [f, t] : escapes) { (void)f; if (!t.empty() && t[0] == '\\') uses_backslash = true; }
+    if (uses_backslash) {
+      const std::string* bs = entry_for("\\");
+      if (!bs || *bs != "\\\\") {
+        bad(where + " has a textEscape that uses a backslash escape but does not "
+            "double the backslash itself");
+      }
+    }
+  }
+}
+
+// The registration's own copy of a dialect: every string it holds, and the
+// views the map's lookups hand out into them.
+std::unique_ptr<OwnedDialect> own_dialect(const std::string& name, std::string extends, std::string version,
+                                          bool target, const std::vector<LexicalSpec>& lexical) {
+  auto owned = std::make_unique<OwnedDialect>();
+  owned->name = name;
+  owned->extends = std::move(extends);
+  owned->version = std::move(version);
+  owned->target = target;
+
+  // Strings to their final size first, views second. See the note on the type.
+  std::size_t escape_count = 0;
+  for (const auto& [key, kind, text, escapes] : lexical) {
+    (void)key; (void)kind; (void)text;
+    escape_count += escapes.size();
+  }
+  owned->lex_keys.reserve(lexical.size());
+  owned->lex_texts.reserve(lexical.size());
+  owned->escape_from.reserve(escape_count);
+  owned->escape_to.reserve(escape_count);
+  for (const auto& [key, kind, text, escapes] : lexical) {
+    (void)kind;
+    owned->lex_keys.push_back(key);
+    owned->lex_texts.push_back(text);
+    for (const auto& [from, to] : escapes) {
+      owned->escape_from.push_back(from);
+      owned->escape_to.push_back(to);
+    }
+  }
+  owned->escapes.reserve(escape_count);
+  for (std::size_t i = 0; i < escape_count; ++i) {
+    owned->escapes.push_back(Escape{owned->escape_from[i], owned->escape_to[i]});
+  }
+  owned->lexical.reserve(lexical.size());
+  std::size_t at = 0;
+  for (std::size_t i = 0; i < lexical.size(); ++i) {
+    const auto& [key, kind, text, escapes] = lexical[i];
+    (void)key; (void)text;
+    Lexical lx{};
+    lx.key = owned->lex_keys[i];
+    lx.kind = kind;
+    lx.text = owned->lex_texts[i];
+    if (kind == LexKind::Escapes) {
+      lx.escapes = std::span<const Escape>(owned->escapes).subspan(at, escapes.size());
+      at += escapes.size();
+    }
+    owned->lexical.push_back(lx);
+  }
+  return owned;
+}
+
+}  // namespace
+
 void Map::define_dialect(const std::string& name, const DialectSpec& spec) {
   // A dialect name means one dialect. Re-registering a REGISTERED name under the
   // same parent replaces the earlier registration (a start-up script that runs
@@ -475,132 +616,10 @@ void Map::define_dialect(const std::string& name, const DialectSpec& spec) {
     check_lexical(key, kind, text, where);
   }
 
-  // sql/MAP.md §3.1: textQuote, textEscape and identQuote are a SET. What each
-  // is AFTER inheritance is what an inline literal is rendered with, so a
-  // dialect that changes one without the others is refused here, before any
-  // literal exists to be injected through.
-  {
-    const auto own = [&](std::string_view key) -> const std::tuple<std::string, LexKind, std::string,
-                                                     std::vector<std::pair<std::string, std::string>>>* {
-      for (const auto& l : spec.lexical_) if (std::get<0>(l) == key) return &l;
-      return nullptr;
-    };
-    const auto text_of = [&](std::string_view key) -> std::optional<std::string> {
-      if (const auto* l = own(key)) {
-        if (std::get<1>(*l) == LexKind::Text) return std::get<2>(*l);
-        return std::nullopt;
-      }
-      if (spec.root_) return std::nullopt;
-      if (const Lexical* lx = Map::lexical(spec.extends_, key)) {
-        if (lx->kind == LexKind::Text) return std::string(lx->text);
-      }
-      return std::nullopt;
-    };
-    std::vector<std::pair<std::string, std::string>> escapes;
-    bool escapes_known = false;
-    if (const auto* l = own("textEscape")) {
-      if (std::get<1>(*l) == LexKind::Escapes) { escapes = std::get<3>(*l); escapes_known = true; }
-    } else if (!spec.root_) {
-      if (const Lexical* lx = Map::lexical(spec.extends_, "textEscape")) {
-        for (const Escape& e : lx->escapes) escapes.emplace_back(std::string(e.from), std::string(e.to));
-        escapes_known = true;
-      }
-    }
-    const std::optional<std::string> quote = text_of("textQuote");
-    const std::optional<std::string> ident = text_of("identQuote");
-    // Only when the dialect says something about the set: a root with no text
-    // syntax at all has no literals to make injectable.
-    const bool touches = own("textQuote") || own("textEscape") || own("identQuote");
-    if (touches && quote) {
-      std::size_t cps = 0;
-      for (unsigned char c : *quote) if ((c & 0xC0) != 0x80) ++cps;
-      if (cps != 1) {
-        bad(where + " sets textQuote to \"" + *quote + "\"; a quote is exactly one character");
-      }
-      if (ident && *ident == *quote) {
-        bad(where + " makes textQuote equal identQuote (" + *quote +
-            "), so a text literal reads as a quoted identifier");
-      }
-      for (const auto& [from, to] : escapes) {
-        (void)to;
-        if (from.empty()) bad(where + " has a textEscape entry with an empty key");
-      }
-      const auto entry_for = [&](const std::string& from) -> const std::string* {
-        for (const auto& [f, t] : escapes) if (f == from) return &t;
-        return nullptr;
-      };
-      const std::string* q = escapes_known ? entry_for(*quote) : nullptr;
-      if (!q) {
-        bad(where + " has no textEscape entry for its textQuote (" + *quote +
-            "), so a quote inside a text literal would end it");
-      }
-      // The only escape character a SQL server has is the backslash, so the quote is
-      // kept inside the literal by doubling it or by a backslash before it
-      // (sql/MAP.md 3.1) and nothing else.
-      if (*q != *quote + *quote && *q != "\\" + *quote) {
-        bad(where + " escapes textQuote as \"" + *q + "\", which neither doubles it "
-            "nor is a backslash followed by it; a quote in the data would end the literal");
-      }
-      // A value that introduces a backslash escape presupposes a server that reads
-      // backslashes, so a backslash in the data must be doubled too, or it swallows
-      // the character after it.
-      bool uses_backslash = false;
-      for (const auto& [f, t] : escapes) { (void)f; if (!t.empty() && t[0] == '\\') uses_backslash = true; }
-      if (uses_backslash) {
-        const std::string* bs = entry_for("\\");
-        if (!bs || *bs != "\\\\") {
-          bad(where + " has a textEscape that uses a backslash escape but does not "
-              "double the backslash itself");
-        }
-      }
-    }
-  }
+  check_text_syntax(spec.lexical_, spec.root_ ? nullptr : &spec.extends_, where);
 
-  auto owned = std::make_unique<OwnedDialect>();
-  owned->name = name;
-  owned->extends = spec.root_ ? std::string{} : spec.extends_;
-  owned->version = std::move(version);
-  owned->target = spec.target_ ? *spec.target_ : true;
-
-  // Strings to their final size first, views second. See the note on the type.
-  std::size_t escape_count = 0;
-  for (const auto& [key, kind, text, escapes] : spec.lexical_) {
-    (void)key; (void)kind; (void)text;
-    escape_count += escapes.size();
-  }
-  owned->lex_keys.reserve(spec.lexical_.size());
-  owned->lex_texts.reserve(spec.lexical_.size());
-  owned->escape_from.reserve(escape_count);
-  owned->escape_to.reserve(escape_count);
-  for (const auto& [key, kind, text, escapes] : spec.lexical_) {
-    (void)kind;
-    owned->lex_keys.push_back(key);
-    owned->lex_texts.push_back(text);
-    for (const auto& [from, to] : escapes) {
-      owned->escape_from.push_back(from);
-      owned->escape_to.push_back(to);
-    }
-  }
-  owned->escapes.reserve(escape_count);
-  for (std::size_t i = 0; i < escape_count; ++i) {
-    owned->escapes.push_back(Escape{owned->escape_from[i], owned->escape_to[i]});
-  }
-  owned->lexical.reserve(spec.lexical_.size());
-  std::size_t at = 0;
-  for (std::size_t i = 0; i < spec.lexical_.size(); ++i) {
-    const auto& [key, kind, text, escapes] = spec.lexical_[i];
-    (void)key; (void)text;
-    Lexical lx{};
-    lx.key = owned->lex_keys[i];
-    lx.kind = kind;
-    lx.text = owned->lex_texts[i];
-    if (kind == LexKind::Escapes) {
-      lx.escapes = std::span<const Escape>(owned->escapes).subspan(at, escapes.size());
-      at += escapes.size();
-    }
-    owned->lexical.push_back(lx);
-  }
-
+  auto owned = own_dialect(name, spec.root_ ? std::string{} : spec.extends_, std::move(version),
+                           spec.target_ ? *spec.target_ : true, spec.lexical_);
   OwnedDialect* raw = owned.get();
   reg().dialect_arena.push_back(std::move(owned));
   if (replacing) {
