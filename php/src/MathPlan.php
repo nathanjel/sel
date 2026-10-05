@@ -120,39 +120,31 @@ final class MathPlan
                 if (!isset($node['l'], $node['r'])) return null;
                 $resL = $emit($node['l'], $depth + 1);
                 if ($resL === null) return null;
+                $lastOfL = count($steps) - 1;
                 $resR = $emit($node['r'], $depth + 1);
                 if ($resR === null) return null;
 
                 $op = $node['op'];
+                $zero = static fn (array $r): bool =>
+                    $r['constVal'] !== null && Dec::isZero($r['constVal']) && $r['constVal']['scale'] === 0;
+                $one = static fn (array $r): bool => $r['constVal'] !== null && !$r['constVal']['neg']
+                    && $r['constVal']['digits'] === '1' && $r['constVal']['scale'] === 0;
+                // A literal operand the rule drops leaves its LOAD_CONST as a dead
+                // step: remove it (it is the last step of that operand's code).
+                $dropConst = static function (array $operand, array $res, int $at) use (&$steps): void {
+                    if (($operand['t'] ?? null) === 'num' && isset($steps[$at]) && $steps[$at]['dst'] === $res['slot']) {
+                        array_splice($steps, $at, 1);
+                    }
+                };
 
-                // Copy propagation:
-                // Rule 1: x + 0 (scale == 0) -> resL
-                if ($op === '+' && $resR['constVal'] !== null && Dec::isZero($resR['constVal']) && $resR['constVal']['scale'] === 0) {
-                    if (($node['r']['t'] ?? null) === 'num' && !empty($steps) && $steps[count($steps) - 1]['dst'] === $resR['slot']) {
-                        array_pop($steps);
-                    }
+                // Copy propagation, scale 0 only (`x + 0.0` keeps x's scale up):
+                // x + 0, x - 0 and x * 1 are x; 0 + x and 1 * x are x.
+                if (($op === '+' || $op === '-') && $zero($resR) || $op === '*' && $one($resR)) {
+                    $dropConst($node['r'], $resR, count($steps) - 1);
                     return $resL;
                 }
-                // Rule 2: 0 + x (scale == 0) -> resR
-                if ($op === '+' && $resL['constVal'] !== null && Dec::isZero($resL['constVal']) && $resL['constVal']['scale'] === 0) {
-                    return $resR;
-                }
-                // Rule 3: x - 0 (scale == 0) -> resL
-                if ($op === '-' && $resR['constVal'] !== null && Dec::isZero($resR['constVal']) && $resR['constVal']['scale'] === 0) {
-                    if (($node['r']['t'] ?? null) === 'num' && !empty($steps) && $steps[count($steps) - 1]['dst'] === $resR['slot']) {
-                        array_pop($steps);
-                    }
-                    return $resL;
-                }
-                // Rule 4: x * 1 (scale == 0) -> resL
-                if ($op === '*' && $resR['constVal'] !== null && !$resR['constVal']['neg'] && $resR['constVal']['digits'] === '1' && $resR['constVal']['scale'] === 0) {
-                    if (($node['r']['t'] ?? null) === 'num' && !empty($steps) && $steps[count($steps) - 1]['dst'] === $resR['slot']) {
-                        array_pop($steps);
-                    }
-                    return $resL;
-                }
-                // Rule 5: 1 * x (scale == 0) -> resR
-                if ($op === '*' && $resL['constVal'] !== null && !$resL['constVal']['neg'] && $resL['constVal']['digits'] === '1' && $resL['constVal']['scale'] === 0) {
+                if ($op === '+' && $zero($resL) || $op === '*' && $one($resL)) {
+                    $dropConst($node['l'], $resL, $lastOfL);
                     return $resR;
                 }
 

@@ -1143,7 +1143,7 @@ final class Regex
                         // through by the next substr.
                         if ($start >= $len) break;
                         $b = ord($subject[$start]);
-                        $at = $start + ($b < 0x80 ? 1 : ($b < 0xE0 ? 2 : ($b < 0xF0 ? 3 : 4)));
+                        $at = $start + Utf8::LEAD_LENGTH[$b >> 4];
                     } else {
                         $at = $last;
                     }

@@ -72,18 +72,8 @@ final class RecordShape
         }
         if (self::$instrumentation) self::$stats['new_shapes']++;
         // A shape is built once per key sequence, so this is where its keys are
-        // checked: text, distinct (spec §8; review 2026-09-28 HOST-12, HOST-18).
-        $seen = [];
-        foreach ($keys as $key) {
-            if (!is_string($key)) {
-                fail('E_BAD_ARG', 'a key must be a string, not ' . gettype($key), null);
-            }
-            Value::checkKey($key);
-            if (isset($seen[$key])) {
-                fail('E_BAD_ARG', 'a record shape cannot hold the key ' . json_encode($key) . ' twice', null);
-            }
-            $seen[$key] = true;
-        }
+        // checked: text, distinct (spec §8).
+        Value::checkDistinctKeys($keys, 'a record shape');
         $shape = new self($keys);
         if (count($keys) <= self::CACHE_MAX_KEYS &&
             array_sum(array_map('strlen', $keys)) <= self::CACHE_MAX_BYTES) {
@@ -297,7 +287,6 @@ final class Value
         return new self(self::TEXT, $s);
     }
 
-    /** A key entering from host code (spec §8): valid UTF-8, like every text. */
     /** @param mixed $x */
     private static function describe($x): string
     {
@@ -310,9 +299,35 @@ final class Value
         fail('E_BAD_ARG', "Value::{$ctor} takes {$wants}, not " . self::describe($got), null);
     }
 
+    /** A key entering from host code (spec §8): valid UTF-8, like every text. */
     public static function checkKey(string $key): void
     {
         self::checkText($key);
+    }
+
+    /** @param mixed $key */
+    private static function keyNotString($key): never
+    {
+        fail('E_BAD_ARG', 'a key must be a string, not ' . gettype($key), null);
+    }
+
+    /**
+     * Keys a host hands in for a list or a record shape: strings, valid UTF-8,
+     * each once (spec §8).
+     *
+     * @param array<mixed> $keys
+     */
+    public static function checkDistinctKeys(array $keys, string $what): void
+    {
+        $seen = [];
+        foreach ($keys as $key) {
+            if (!is_string($key)) self::keyNotString($key);
+            self::checkText($key);
+            if (isset($seen[$key])) {
+                fail('E_BAD_ARG', "{$what} cannot hold the key " . json_encode($key) . ' twice', null);
+            }
+            $seen[$key] = true;
+        }
     }
 
     /**
@@ -437,17 +452,7 @@ final class Value
             if (count($keys) !== count($values)) {
                 fail('E_BAD_ARG', count($keys) . ' key(s) and ' . count($values) . ' value(s) do not pair up', null);
             }
-            $seen = [];
-            foreach ($keys as $key) {
-                if (!is_string($key)) {
-                    fail('E_BAD_ARG', 'a key must be a string, not ' . gettype($key), null);
-                }
-                self::checkText($key);
-                if (isset($seen[$key])) {
-                    fail('E_BAD_ARG', 'list key ' . json_encode($key) . ' is given twice', null);
-                }
-                $seen[$key] = true;
-            }
+            self::checkDistinctKeys($keys, 'a list');
         }
         $v = new self(self::NONE, null, true);
         // Keep PHP's packed representation when the caller already supplied a
@@ -511,19 +516,11 @@ final class Value
         if ($keys === []) {
             return self::none();
         }
-        $seen = [];
-        $unique = true;
         foreach ($keys as $key) {
-            if (!is_string($key)) {
-                fail('E_BAD_ARG', 'a key must be a string, not ' . gettype($key), null);
-            }
-            if (array_key_exists($key, $seen)) {
-                $unique = false;
-                break;
-            }
-            $seen[$key] = true;
+            if (!is_string($key)) self::keyNotString($key);
         }
-        if ($unique) {
+        // Distinct keys share a shape; a repeated key is set again, last wins.
+        if (count(array_flip($keys)) === count($keys)) {
             return self::fromShape(RecordShape::intern($keys), $values);
         }
         $v = self::none();
@@ -687,9 +684,7 @@ final class Value
         }
         if ($this->isList && $this->storage !== null) {
             if ($this->listKeys !== null) {
-                if ($this->listKeyMap === null) {
-                    $this->listKeyMap = array_flip($this->listKeys);
-                }
+                $this->listKeyMap ??= array_flip($this->listKeys);
                 return isset($this->listKeyMap[$key]);
             }
             $index = self::listIndex($key, count($this->storage));
@@ -706,9 +701,7 @@ final class Value
         }
         if ($this->isList && $this->storage !== null) {
             if ($this->listKeys !== null) {
-                if ($this->listKeyMap === null) {
-                    $this->listKeyMap = array_flip($this->listKeys);
-                }
+                $this->listKeyMap ??= array_flip($this->listKeys);
                 $index = $this->listKeyMap[$key] ?? null;
                 return $index === null ? null : $this->storage[$index];
             }
@@ -830,44 +823,44 @@ final class Value
                 $this->storage[$index] = $value;
                 return $this;
             }
-            $this->children = [];
-            foreach ($this->entries() as [$existingKey, $existingValue]) {
-                $this->children[$existingKey] = $existingValue;
-            }
-            $this->shape = null;
-            $this->storage = null;
+            $this->demote();
         } elseif ($this->isList && $this->storage !== null) {
             if ($this->listKeys !== null) {
-                if ($this->listKeyMap === null) {
-                    $this->listKeyMap = array_flip($this->listKeys);
-                }
+                $this->listKeyMap ??= array_flip($this->listKeys);
                 $index = $this->listKeyMap[$key] ?? null;
                 if ($index !== null) {
                     $this->storage[$index] = $value;
                     return $this;
                 }
-                $this->children = [];
-                foreach ($this->entries() as [$existingKey, $existingValue]) {
-                    $this->children[$existingKey] = $existingValue;
-                }
-                $this->storage = null;
-                $this->listKeys = null;
-                $this->listKeyMap = null;
+                $this->demote();
             } else {
                 $index = self::listIndex($key, count($this->storage));
                 if ($index >= 0) {
                     $this->storage[$index] = $value;
                     return $this;
                 }
-                $this->children = [];
-                foreach ($this->entries() as [$existingKey, $existingValue]) {
-                    $this->children[$existingKey] = $existingValue;
-                }
-                $this->storage = null;
+                $this->demote();
             }
         }
         $this->children[$key] = $value;
         return $this;
+    }
+
+    /**
+     * A shaped record or a packed list about to take a key its layout cannot
+     * hold becomes an ordinary children map, entries in order.
+     */
+    private function demote(): void
+    {
+        $children = [];
+        foreach ($this->entries() as [$key, $value]) {
+            $children[$key] = $value;
+        }
+        $this->children = $children;
+        $this->shape = null;
+        $this->storage = null;
+        $this->listKeys = null;
+        $this->listKeyMap = null;
     }
 
     private static function listIndex(string $key, int $length): int
@@ -1137,16 +1130,22 @@ final class Value
         // to be -- every bucket confirms with eql(). It cannot equal the digest of
         // a container, which is sixteen hex digits and has no ':'.
         if ($this->size() === 0) {
-            $scalar = match ($this->kind) {
-                self::NONE => '',
-                self::TEXT, self::BIN => (string) $this->getScalar(),
-                self::BOOL => $this->scalar ? '1' : '0',
-            };
-            return $this->kind . ':' . strlen($scalar) . ':' . $scalar;
+            return $this->scalarHashPart();
         }
         $hash = hash_init('xxh3');
         $this->updateStructuralHash($hash, 1);
         return hash_final($hash);
+    }
+
+    /** The kind, length and scalar, unambiguously: `TEXT:2:ab`. */
+    private function scalarHashPart(): string
+    {
+        $scalar = match ($this->kind) {
+            self::NONE => '',
+            self::TEXT, self::BIN => (string) $this->getScalar(),
+            self::BOOL => $this->scalar ? '1' : '0',
+        };
+        return $this->kind . ':' . strlen($scalar) . ':' . $scalar;
     }
 
     private function updateStructuralHash(\HashContext $hash, int $depth): void
@@ -1156,12 +1155,7 @@ final class Value
         }
         // Hash logical scalar/children only: eqlAt ignores the storage layout
         // and list marker. Packed storage may also carry a host-set scalar.
-        $scalar = match ($this->kind) {
-            self::NONE => '',
-            self::TEXT, self::BIN => (string) $this->getScalar(),
-            self::BOOL => $this->scalar ? '1' : '0',
-        };
-        hash_update($hash, $this->kind . ':' . strlen($scalar) . ':' . $scalar . ';');
+        hash_update($hash, $this->scalarHashPart() . ';');
         if ($this->shape !== null) {
             $storage = $this->storage;
             $nextDepth = $depth + 1;

@@ -13,6 +13,12 @@ namespace Sel;
 final class Utf8
 {
     /**
+     * The length of a code point's encoding, by its lead byte's high nibble
+     * (`LEAD_LENGTH[$byte >> 4]`), for walking text already known to be valid.
+     */
+    public const LEAD_LENGTH = [1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2, 3, 4];
+
+    /**
      * Strict validation: rejects overlong forms, surrogates, values above
      * U+10FFFF and truncated sequences. No replacement characters, ever.
      *
@@ -143,7 +149,7 @@ final class Utf8
     {
         // ASCII: one byte per code point, split in C (PHP-P1/P9). The empty
         // guard is for PHP < 8.2, where str_split('') is [''].
-        if (!preg_match('/[\x80-\xff]/', $s)) {
+        if (self::isAscii($s)) {
             return $s === '' ? [] : str_split($s);
         }
         $out = [];
@@ -151,7 +157,7 @@ final class Utf8
         $i = 0;
         while ($i < $n) {
             $c = ord($s[$i]);
-            $len = $c < 0x80 ? 1 : ($c < 0xe0 ? 2 : ($c < 0xf0 ? 3 : 4));
+            $len = self::LEAD_LENGTH[$c >> 4];
             $out[] = substr($s, $i, $len);
             $i += $len;
         }
@@ -213,7 +219,7 @@ final class Utf8
         $i = $from;
         while ($cps > 0 && $i < $n) {
             $c = ord($s[$i]);
-            $i += $c < 0x80 ? 1 : ($c < 0xe0 ? 2 : ($c < 0xf0 ? 3 : 4));
+            $i += self::LEAD_LENGTH[$c >> 4];
             $cps--;
         }
         return min($i, $n);
@@ -280,7 +286,7 @@ final class Utf8
         $i = 0;
         while ($i < $byteOffset) {
             $c = ord($s[$i]);
-            $i += $c < 0x80 ? 1 : ($c < 0xe0 ? 2 : ($c < 0xf0 ? 3 : 4));
+            $i += self::LEAD_LENGTH[$c >> 4];
             $count++;
         }
         return $count;
