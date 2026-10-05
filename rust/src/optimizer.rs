@@ -904,9 +904,7 @@ fn bounded_depth(root: &Node, cap: usize) -> usize {
         deepest += 1;
         let mut next = Vec::new();
         for node in level {
-            next.extend(node.items.iter());
-            next.extend(node.l.as_deref());
-            next.extend(node.r.as_deref());
+            next.extend(node.children());
         }
         level = next;
     }

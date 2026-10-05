@@ -167,6 +167,14 @@ impl Node {
 }
 
 impl Node {
+    /// Every child, in evaluation order: `l`, `r`, then `items`. The walkers
+    /// that treat all children alike use this; one that must not (a binder
+    /// slot, an assignment target, a call's arguments by scope) says so where
+    /// it walks.
+    pub(crate) fn children(&self) -> impl Iterator<Item = &Node> {
+        self.l.as_deref().into_iter().chain(self.r.as_deref()).chain(self.items.iter())
+    }
+
     /// This node's own fields, without its children (`l`, `r`, `items`).
     pub(crate) fn head(&self) -> Node {
         let n = self;

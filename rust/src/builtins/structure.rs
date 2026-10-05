@@ -26,25 +26,10 @@ use crate::value::{ListKeys, Entry, Kind, Value};
 // after every builtin, error or not, so no early return pops by hand.
 
 fn node_contains_var(node: &Node, name: &str) -> bool {
-    match node.t {
-        NodeType::Var => node.s.eq_ignore_ascii_case(name),
-        NodeType::Index => {
-            node.l.as_ref().is_some_and(|l| node_contains_var(l, name))
-                || node.r.as_ref().is_some_and(|r| node_contains_var(r, name))
-        }
-        NodeType::Call => node.items.iter().any(|a| node_contains_var(a, name)),
-        NodeType::Bin => {
-            node.l.as_ref().is_some_and(|l| node_contains_var(l, name))
-                || node.r.as_ref().is_some_and(|r| node_contains_var(r, name))
-        }
-        NodeType::Un => node.l.as_ref().is_some_and(|l| node_contains_var(l, name)),
-        NodeType::Assign => {
-            node.l.as_ref().is_some_and(|l| node_contains_var(l, name))
-                || node.r.as_ref().is_some_and(|r| node_contains_var(r, name))
-        }
-        NodeType::Seq | NodeType::List => node.items.iter().any(|item| node_contains_var(item, name)),
-        _ => false,
+    if node.t == NodeType::Var {
+        return node.s.eq_ignore_ascii_case(name);
     }
+    node.children().any(|child| node_contains_var(child, name))
 }
 
 pub fn fn_count(args: &mut Args) -> Result<Value, SelError> {
@@ -785,55 +770,6 @@ pub fn fn_sort_by(args: &mut Args) -> Result<Value, SelError> {
     do_sort(args, None)
 }
 
-fn is_builtin_name(name: &str) -> bool {
-    let mut buf = [0u8; 64];
-    if name.len() <= 64 {
-        for (i, b) in name.bytes().enumerate() {
-            buf[i] = b.to_ascii_uppercase();
-        }
-        if let Ok(s) = std::str::from_utf8(&buf[..name.len()]) {
-            return crate::manifest::lookup_builtin(s).is_some();
-        }
-    }
-    crate::manifest::lookup_builtin(&name.to_ascii_uppercase()).is_some()
-}
-
-/// Whether evaluating `root` might write: an assignment or any call
-/// not listed in the generated builtin manifest. Iterative AST walk
-/// using a fixed stack to avoid heap allocation.
-fn top_key_may_write(root: &Node) -> bool {
-    let mut stack: [&Node; 64] = [root; 64];
-    let mut len = 1;
-    while len > 0 {
-        len -= 1;
-        let node = stack[len];
-        if node.t == NodeType::Assign {
-            return true;
-        }
-        if node.t == NodeType::Call
-            && !is_builtin_name(&node.s) {
-                return true;
-            }
-        let push_cnt = (node.l.is_some() as usize) + (node.r.is_some() as usize) + node.items.len();
-        if len + push_cnt > stack.len() {
-            return true;
-        }
-        if let Some(l) = &node.l {
-            stack[len] = l;
-            len += 1;
-        }
-        if let Some(r) = &node.r {
-            stack[len] = r;
-            len += 1;
-        }
-        for item in &node.items {
-            stack[len] = item;
-            len += 1;
-        }
-    }
-    false
-}
-
 #[cfg(test)]
 thread_local! {
     pub(crate) static TOP_COMPARISON_COUNT: Cell<usize> = const { Cell::new(0) };
@@ -972,7 +908,7 @@ fn do_top(args: &mut Args, forced_dir: Option<&str>) -> Result<Value, SelError> 
         return Ok(Value::list(Vec::new()));
     }
 
-    let eager = body_opt.is_some_and(top_key_may_write);
+    let eager = body_opt.is_some_and(may_write);
 
     let needs_k = body_opt.as_ref().is_some_and(|b| node_contains_var(b, "_K"));
     let mut frame = Frame::new();
@@ -1069,8 +1005,11 @@ struct BucketGroup {
     rows: Vec<Value>,
 }
 
-/// Whether evaluating `node` might write a variable: an assignment, or a host
-/// function call (the host may do anything), anywhere inside it.
+/// Whether evaluating `node` might write: an assignment, or a call of an
+/// application's function (the host may do anything) -- one registered as a
+/// host function or not in the builtin manifest -- anywhere inside it. The one
+/// answer SORT/TOP keys and BUCKET keys both ask (recursion is bounded by
+/// the parse depth cap).
 fn may_write(node: &Node) -> bool {
     if node.t == NodeType::Assign {
         return true;
@@ -1081,13 +1020,11 @@ fn may_write(node: &Node) -> bool {
             None => crate::builtins::lookup_spec(&node.s)
                 .is_some_and(|spec| matches!(spec.func, crate::builtins::SpecFn::Host(_))),
         };
-        if host {
+        if host || crate::manifest::lookup_builtin(&node.s).is_none() {
             return true;
         }
     }
-    node.l.as_deref().is_some_and(may_write)
-        || node.r.as_deref().is_some_and(may_write)
-        || node.items.iter().any(may_write)
+    node.children().any(may_write)
 }
 
 pub fn fn_bucket(args: &mut Args) -> Result<Value, SelError> {

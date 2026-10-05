@@ -1305,9 +1305,7 @@ fn writes_of(node: &Node, assigned: &mut HashSet<String>, calls_application: &mu
             NodeType::Call if crate::manifest::lookup_builtin(&n.s).is_none() => *calls_application = true,
             _ => {}
         }
-        pending.extend(n.l.as_deref());
-        pending.extend(n.r.as_deref());
-        pending.extend(n.items.iter());
+        pending.extend(n.children());
     }
 }
 
