@@ -79,15 +79,6 @@ Value isolated_context(const Value& context, const Node& ast) {
   return out;
 }
 
-std::shared_ptr<Node> copy_node(const NodePtr& node) {
-  if (!node) return nullptr;
-  auto copy = std::make_shared<Node>(*node);
-  copy->l = node->l;
-  copy->r = node->r;
-  copy->items = node->items;
-  return copy;
-}
-
 NodePtr text_node(std::string value, Pos pos) {
   auto node = std::make_shared<Node>();
   node->t = NT::Text;
@@ -234,6 +225,10 @@ bool contains_unsupported_sql(const NodePtr& node, const std::string& dialect,
 // compared exactly: SEL's record keys are case-sensitive, so `name` and `Name`
 // are two fields. An empty `binder` means a read under ANY name counts -- a
 // downstream step binds the row however it likes (`SORT_BY(s, s["name"])`).
+// Not the optimiser's opt_field_refs, deliberately: that one answers a set
+// (sorted) for one binder, and this one's order is the order the dependency
+// columns are projected in, and it has the any-name mode. Both walk l, r and
+// items, the target of an assignment included.
 void collect_field_references(const NodePtr& node, const std::string& binder,
                               std::vector<std::string>& out) {
   if (!node) return;
@@ -265,7 +260,9 @@ bool fallthrough_downstream(const std::string& name) {
 
 // Whether `node` reads the row itself -- the binder outside an index with a
 // text key, as in `GET(_, "name")` or `COUNT(_)` -- which no projected column
-// can stand in for.
+// can stand in for. The optimiser's opt_reads_row_or_key asks a different
+// question (it also counts `_K`, which a projection does not change), so the
+// two stay apart.
 bool reads_whole_row(const NodePtr& node, const std::string& binder) {
   if (!node) return false;
   if (node->t == NT::Var) {

@@ -105,6 +105,14 @@ struct Node {
 
 using NodePtr = std::shared_ptr<const Node>;
 
+// A shallow copy of `node` that a rewrite may change: the fields are its own,
+// the children are shared (the tree is immutable, so sharing them is safe). The
+// one copy the optimiser and the SQL planner both make.
+inline std::shared_ptr<Node> copy_node(const NodePtr& node) {
+  if (!node) return nullptr;
+  return std::make_shared<Node>(*node);
+}
+
 // ASCII case, for SEL names, option words and keywords, and for UPPER/LOWER
 // (ASCII by decision): A-Z and a-z and nothing else, whatever the locale.
 // std::toupper/tolower follow the C locale -- an application that calls

@@ -9694,15 +9694,6 @@ bool is_pipeline_op(std::string_view name) {
 
 namespace {
 
-std::shared_ptr<Node> opt_copy(const NodePtr& node) {
-  if (!node) return nullptr;
-  auto copy = std::make_shared<Node>(*node);
-  copy->l = node->l;
-  copy->r = node->r;
-  copy->items = node->items;
-  return copy;
-}
-
 NodePtr opt_bool(bool value, Pos pos) {
   auto node = std::make_shared<Node>();
   node->t = NT::Bool;
@@ -9737,7 +9728,7 @@ bool opt_is_literal(const NodePtr& node) {
 }
 
 NodePtr opt_hoist_literal(const NodePtr& child, Pos pos) {
-  auto copy = opt_copy(child);
+  auto copy = copy_node(child);
   copy->pos = pos;
   return copy;
 }
@@ -9760,7 +9751,7 @@ NodePtr build_pipeline(NodePtr source, const std::vector<NodePtr>& steps, const 
   NodePtr current = std::move(source);
   for (std::size_t k = 0; k < steps.size(); k++) {
     const NodePtr& step = steps[k];
-    auto next = opt_copy(step);
+    auto next = copy_node(step);
     next->items.clear();
     next->items.push_back(current);
     next->items.insert(next->items.end(), step->items.begin() + 1, step->items.end());
@@ -10047,7 +10038,7 @@ NodePtr opt_combine_and(const std::vector<NodePtr>& nodes, Pos pos = {}) {
 
 NodePtr opt_rename_var(const NodePtr& node, const std::string& old_name, const std::string& new_name) {
   if (!node) return nullptr;
-  auto copy = opt_copy(node);
+  auto copy = copy_node(node);
   if (copy->t == NT::Var && ascii_upper(copy->s) == ascii_upper(old_name)) copy->s = new_name;
   if (copy->l) copy->l = opt_rename_var(copy->l, old_name, new_name);
   if (copy->r) copy->r = opt_rename_var(copy->r, old_name, new_name);
@@ -10201,7 +10192,7 @@ std::vector<NodePtr> opt_logical_steps(const NodePtr& source, std::vector<NodePt
         const auto left = opt_numeric_literal(first->items[1]);
         const auto right = opt_numeric_literal((*second)->items[1]);
         if (left && right) {
-          auto merged = opt_copy(first);
+          auto merged = copy_node(first);
           merged->pos = (*second)->pos;   // the merged step is the result of the later one
           merged->items = {first->items[0], opt_num(std::to_string(std::min(*left, *right)), (*second)->items[1]->pos)};
           next.push_back(std::move(merged));
@@ -10215,7 +10206,7 @@ std::vector<NodePtr> opt_logical_steps(const NodePtr& source, std::vector<NodePt
         const auto left = opt_numeric_literal(first->items[1]);
         const auto right = opt_numeric_literal((*second)->items[1]);
         if (left && right && *left <= std::numeric_limits<long long>::max() - *right) {
-          auto merged = opt_copy(first);
+          auto merged = copy_node(first);
           merged->pos = (*second)->pos;
           merged->items = {first->items[0], opt_num(std::to_string(*left + *right), (*second)->items[1]->pos)};
           next.push_back(std::move(merged));
@@ -10232,7 +10223,7 @@ std::vector<NodePtr> opt_logical_steps(const NodePtr& source, std::vector<NodePt
           (first->s == "SORT" || first->s == "SORT_DESC" || first->s == "SORT_BY") &&
           opt_numeric_literal((*second)->items[1]).value_or(0) >= 1) {
         const std::string top_name = first->s == "SORT" ? "TOP" : first->s == "SORT_DESC" ? "TOP_DESC" : "TOP_BY";
-        auto fused = opt_copy(first);
+        auto fused = copy_node(first);
         fused->pos = (*second)->pos;
         fused->s = top_name;
         fused->spec = registry_lookup(top_name);
@@ -10327,7 +10318,7 @@ std::vector<NodePtr> opt_logical_steps(const NodePtr& source, std::vector<NodePt
           const NodePtr right_pred = ascii_upper(left.binder) == ascii_upper(right.binder)
               ? right.predicate : opt_rename_var(right.predicate, right.binder, left.binder);
           const NodePtr predicate = opt_combine_and({left.predicate, right_pred}, left.predicate->pos);
-          auto merged = opt_copy(first);
+          auto merged = copy_node(first);
           merged->pos = (*second)->pos;
           merged->items = left.explicit_binder
               ? std::vector<NodePtr>{first->items[0], first->items[1], predicate}
@@ -10377,9 +10368,9 @@ std::vector<NodePtr> opt_inmemory_steps(const NodePtr& source, std::vector<NodeP
   std::vector<NodePtr> rewritten;
   rewritten.reserve(steps.size());
   for (std::size_t i = 0; i < steps.size(); ++i) {
-    auto copy = opt_copy(steps[i]);
+    auto copy = copy_node(steps[i]);
     if (copy->s == "FILTER" && !copy->items.empty()) {
-      auto body = opt_copy(copy->items.back());
+      auto body = copy_node(copy->items.back());
       body->keys_unobserved = opt_keys_renumbered_by(i + 1 < steps.size() ? &steps[i + 1] : nullptr);
       // The next step is where what this FILTER keeps is copied: a MAP copies what
       // it collects, a FILTER keeps (and copies) its elements. When neither body
@@ -10679,7 +10670,7 @@ NodePtr opt_tree(const NodePtr& node, bool physical, const std::set<std::string>
     OptStepDepths step_depths;
     for (std::size_t index = 0; index < steps.size(); ++index) {
       const NodePtr& step = steps[index];
-      auto copy = opt_copy(step);
+      auto copy = copy_node(step);
       step_depths[copy.get()] = depth + static_cast<int>(steps.size() - 1 - index);
       copy->items.clear();
       copy->items.push_back(step->items[0]);
@@ -10709,7 +10700,7 @@ NodePtr opt_tree(const NodePtr& node, bool physical, const std::set<std::string>
   const bool is_curr_math = is_math_op(*node);
   const bool next_in_math = is_curr_math;
 
-  auto copy = opt_copy(node);
+  auto copy = copy_node(node);
   // An assignment's target is walked iteratively by the evaluator (spec 6.4:
   // a chain of index brackets, not a nesting) and is never charged or folded
   // there, so it is left as written here too, as the other hosts leave it;
@@ -10721,7 +10712,7 @@ NodePtr opt_tree(const NodePtr& node, bool physical, const std::set<std::string>
   if (physical && !in_math && is_math_op(*folded)) {
     auto plan = opt_compile_math_plan(folded);
     if (plan) {
-      auto copy_with_plan = opt_copy(folded);
+      auto copy_with_plan = copy_node(folded);
       copy_with_plan->math_plan = std::move(plan);
       return copy_with_plan;
     }
