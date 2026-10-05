@@ -994,8 +994,8 @@ def _link(args, ctx, left_join):
     # The keys a side contributes to the joined row include the names its
     # row is bound under: `_["products"]` after LINK(PRODUCTS, ...) is the
     # right row, not a field of the left ones.
-    b2_names = (args.symbol(3), '_2') if count == 5 else (single_relation_name(right_node) or '_2', '_2')
-    b1_names = (args.symbol(2), '_1') if count == 5 else (single_relation_name(left_node) or '_1', '_1')
+    b2_names = (jb2, '_2')
+    b1_names = (jb1, '_1')
     # The upper-cased keys of the joins between a stage's FILTER and this
     # join, per count of them.
     above_keys_cache = {}
@@ -1063,15 +1063,7 @@ def _link(args, ctx, left_join):
         below = None
     applied_below = below[0] if (below is not None and not below[1]) else set()
     dropped = [below is not None and below[2]]
-    b1, b2 = '_1', '_2'
-    if count == 3:
-        b1 = single_relation_name(args.node(0)) or b1
-        b2 = single_relation_name(args.node(1)) or b2
-        predicate = args.node(2)
-    else:
-        b1 = args.symbol(2)
-        b2 = args.symbol(3)
-        predicate = args.node(4)
+    b1, b2, predicate = jb1, jb2, jpred      # the binders and predicate, read above
     if left_value.is_null():
         return Value._list_owned([])
 
@@ -1096,7 +1088,7 @@ def _link(args, ctx, left_join):
     if null_right is not None and null_right.is_null():
         null_right = None
     project, project_many = make_join_projector(b1, b2, null_right)
-    equi = try_extract_equi_keys(predicate, b1, b2)
+    equi = jequi
     output = []
 
     # The pre-filter, decided at run time from the rows themselves. A leading

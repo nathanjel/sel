@@ -11,19 +11,10 @@ import os
 import re
 import sys
 
-# Prefer an *installed* sel over the source tree, so the python-wheel
-# implementation in tools/impls.sh actually exercises the built package rather
-# than silently re-testing python/sel through a path insert. Falls back to the
-# source tree when nothing is installed, which is how the plain `python`
-# implementation and a bare checkout run.
-try:
-    import sel as _sel_probe                                    # noqa: F401
-except ImportError:
-    sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
+from _harness import none_ran, read_text  # first: it makes `sel` importable
 
 from sel import SelError, Value, compile as sel_compile   # noqa: E402
 
-from _harness import none_ran, read_text                    # noqa: E402
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 SUITE = os.path.abspath(os.path.join(HERE, '..', '..', 'conformance'))

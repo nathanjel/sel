@@ -12,18 +12,9 @@ value-text-p. Keep the drivers in the same order with the same names; the diff
 is the whole mechanism.
 """
 
-import os
 import sys
 
-# Prefer an *installed* sel over the source tree, so the python-wheel
-# implementation in tools/impls.sh actually exercises the built package rather
-# than silently re-testing python/sel through a path insert. Falls back to the
-# source tree when nothing is installed, which is how the plain `python`
-# implementation and a bare checkout run.
-try:
-    import sel as _sel_probe                                    # noqa: F401
-except ImportError:
-    sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
+import _harness  # noqa: F401 - first: it makes `sel` importable (the probe)
 
 from sel import (BIN, BOOL, NONE, TEXT, SelError, Value,      # noqa: E402
                  compile as sel_compile, evaluate, function_names)

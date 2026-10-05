@@ -32,7 +32,7 @@ from . import map as _map
 from . import normalise as _normalise
 from .binder import Binder
 from .bindings import Bindings
-from .emit import Emit
+from .emit import Emit, push_text, splice_parts
 from .errors import refuse
 from .fragment import Fragment
 from .relational_plan import JoinPlan, RelationalPlan
@@ -1027,7 +1027,7 @@ class Translator:
         """
         name = n.name
         entry = _map.entry(self.dialect, 'funcs', name)
-        if entry is _map.MISSING or entry == _map.MISSING or entry is None:
+        if _map.absent(entry):
             refuse('E_SQL_UNSUPPORTED',
                    f'{name} is a host function with no SQL spelling in dialect '
                    f'{self.dialect}; register one with the map, or evaluate it here', n.pos)
@@ -2094,7 +2094,7 @@ class Translator:
         entry = _map.entry(self.dialect, section, key)
         what = f'the {key} operator' if section == 'ops' else key
 
-        if entry is _map.MISSING or entry == _map.MISSING or entry is None:
+        if _map.absent(entry):
             refuse('E_SQL_UNSUPPORTED',
                    f'{what} has no mapping in dialect {self.dialect}', pos)
         if isinstance(entry, str):
@@ -2313,7 +2313,7 @@ class Translator:
 
     def _skeleton(self, name: str, pos: Pos) -> str:
         s = _map.entry(self.dialect, 'skel', name)
-        if s is _map.MISSING or s == _map.MISSING or s is None:
+        if _map.absent(s):
             refuse('E_SQL_UNSUPPORTED',
                    f'dialect {self.dialect} has no {name} skeleton', pos)
         if isinstance(s, str):
@@ -2335,25 +2335,16 @@ class Translator:
     def _fill_named(self, tpl: str, slots: dict[str, list[Any]], pos: Pos) -> list[Any]:
         """Fill a skeleton, whose placeholders are named rather than numbered."""
         parts: list[Any] = []
-
-        def push(s: str) -> None:
-            if s == '':
-                return
-            if parts and isinstance(parts[-1], str):
-                parts[-1] += s
-            else:
-                parts.append(s)
-
         i = 0
         n_tpl = len(tpl)
         while i < n_tpl:
             if tpl[i] != '{':
-                push(tpl[i])
+                push_text(parts, tpl[i])
                 i += 1
                 continue
             end = tpl.find('}', i)
             if end == -1:
-                push(tpl[i:])
+                push_text(parts, tpl[i:])
                 break
             name = tpl[i + 1:end]
             i = end + 1
@@ -2363,13 +2354,9 @@ class Translator:
                        'is not one of its slots', pos)
             for item in slots[name]:
                 if isinstance(item, str):
-                    push(item)
-                    continue
-                for p in item.parts:
-                    if isinstance(p, str):
-                        push(p)
-                    else:
-                        parts.append(p)
+                    push_text(parts, item)
+                else:
+                    splice_parts(parts, item)
         return parts
 
     # --- Relational Pipeline Statement Compilation --------------------------

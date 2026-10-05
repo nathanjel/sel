@@ -14,18 +14,12 @@ import os
 import sys
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
-# The source tree is added only when `sel` is not already importable, so running
-# this under the wheel's interpreter grades the WHEEL. Same probe as sqlt.
-try:
-    import sel as _probe                                            # noqa: F401
-except ImportError:
-    sys.path.insert(0, os.path.join(_HERE, '..'))
+from _harness import none_ran, read_corpus, read_text, usage  # first: it makes `sel` importable
 
 import sel                                                          # noqa: E402
 from sel.errors import SelError                                     # noqa: E402
 from sel.sql import Binding, Sql, SqlError                          # noqa: E402
 
-from _harness import none_ran, read_corpus, read_text, usage  # noqa: E402
 
 # The relations the corpus's pipelines read (tools/gen-programs.mjs --sql), the
 # same in every host's runner: two tables, a NUM join key, a TEXT field whose

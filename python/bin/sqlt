@@ -38,13 +38,7 @@ _HERE = os.path.dirname(os.path.abspath(__file__))
 # case_data.py is generated beside this script and is runner tooling, not part
 # of the package, so its directory is always added.
 sys.path.insert(0, _HERE)
-# The source tree is added only when `sel` is not already importable, so running
-# this under the wheel's interpreter grades the WHEEL rather than silently
-# shadowing it with python/sel/. Same probe as python/bin/conformance.py.
-try:
-    import sel as _sel_probe                                        # noqa: F401
-except ImportError:
-    sys.path.insert(1, os.path.join(_HERE, '..'))
+import _harness  # noqa: F401 - first: it makes `sel` importable (the probe)
 
 
 class SuiteError(Exception):

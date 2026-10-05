@@ -10,13 +10,9 @@ variable, the physical source tables and the selected member. The probe NAMES
 are the contract and the VALUES are compared; each host spells its accessors
 its own way (SEL-0044).
 """
-import os
 import sys
 
-try:
-    import sel as _probe                                            # noqa: F401
-except ImportError:
-    sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
+import _harness  # noqa: F401 - first: it makes `sel` importable (the probe)
 
 import sel                                                          # noqa: E402
 from sel.sql import Binding, Sql                                    # noqa: E402

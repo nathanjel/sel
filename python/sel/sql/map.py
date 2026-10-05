@@ -412,6 +412,12 @@ def entry(dialect: str, section: str, key: str) -> Any:
     return MISSING
 
 
+def absent(entry: Any) -> bool:
+    """Whether what entry() answered is no entry at all: MISSING, or a null a
+    registration stored. A str entry is a refusal reason, not an absence."""
+    return entry is None or entry == MISSING
+
+
 _DOTTED = re.compile(r'[0-9]+(\.[0-9]+)*')
 _TPL_KEY = re.compile(r'0|[1-9][0-9]{0,2}')
 _UNIFY = re.compile(r'@unify:[0-9]+(,[0-9]+)*')
@@ -486,6 +492,13 @@ def _check_key(section: str, key: str) -> None:
                            + ', '.join(RULES['skelSlots']))
 
 
+def _check_caveat(entry: dict[str, Any], where: str) -> None:
+    if entry.get('caveat') is not None and entry['caveat'] not in RULES['caveats']:
+        raise RuntimeError(f'{where} declares the caveat {entry["caveat"]!r}, which is '
+                           'not on the closed list in sql/MAP.md §4.6; a caveat an '
+                           'application cannot branch on is prose')
+
+
 def _check_entry(section: str, key: str, entry: Any) -> None:
     where = f'the {section} entry for {key}'
     # A string is a refusal carrying its reason; None is a refusal without one.
@@ -516,9 +529,7 @@ def _check_entry(section: str, key: str, entry: Any) -> None:
                 raise RuntimeError(f'{where} uses the slot {{{slot}}}; {key} has '
                                    + ', '.join(allowed) + ' — a typo would survive '
                                    'as literal text in every query')
-        if entry.get('caveat') is not None and entry['caveat'] not in RULES['caveats']:
-            raise RuntimeError(f'{where} declares the caveat {entry["caveat"]!r}, which '
-                               'is not on the closed list in sql/MAP.md §4.6')
+        _check_caveat(entry, where)
         return
 
     if ('tpl' in entry) == ('variants' in entry):
@@ -529,10 +540,7 @@ def _check_entry(section: str, key: str, entry: Any) -> None:
         raise RuntimeError(f'{where} has ret {ret!r}; use one of '
                            + ', '.join(RULES['retKinds'])
                            + ', @concat or @unify:<n>[,<n>...]')
-    if entry.get('caveat') is not None and entry['caveat'] not in RULES['caveats']:
-        raise RuntimeError(f'{where} declares the caveat {entry["caveat"]!r}, which is '
-                           'not on the closed list in sql/MAP.md §4.6; a caveat an '
-                           'application cannot branch on is prose')
+    _check_caveat(entry, where)
     since = entry.get('since')
     if since is not None and (not isinstance(since, str) or not _DOTTED.fullmatch(since)):
         raise RuntimeError(f'{where} has a since that is not dotted-numeric')

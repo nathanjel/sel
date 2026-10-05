@@ -6,36 +6,14 @@ format and the line format are specified in tools/README.md.
     python3 python/bin/batch.py [--show] corpus.selc
 """
 
-import os
 import sys
 
-# Prefer an *installed* sel over the source tree, so the python-wheel
-# implementation in tools/impls.sh actually exercises the built package rather
-# than silently re-testing python/sel through a path insert. Falls back to the
-# source tree when nothing is installed, which is how the plain `python`
-# implementation and a bare checkout run.
-try:
-    import sel as _sel_probe                                    # noqa: F401
-except ImportError:
-    sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
+from _harness import none_ran, read_corpus, read_text, usage  # first: it makes `sel` importable
 
 from sel import SelError, Value, compile as sel_compile   # noqa: E402
-
-from _harness import none_ran, read_corpus, read_text, usage  # noqa: E402
-
-
-def render(v):
-    """The rendering bin/sel uses, so a documentation example can be pasted into
-    the CLI and produce exactly what the documentation claims.
-    """
-    if v.size() == 0:
-        if v.kind == 'TEXT':
-            return v.scalar
-        if v.kind == 'BOOL':
-            return 'TRUE' if v.scalar else 'FALSE'
-        if v.kind == 'BIN':
-            return f'bin:{v.dump()[1:]}'
-    return v.dump()
+# --show renders as bin/sel does, so a documentation example can be pasted into
+# the CLI and produce exactly what the documentation claims.
+from sel._cli import show as render                        # noqa: E402
 
 
 def main():

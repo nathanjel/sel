@@ -8,23 +8,12 @@ stdlib `decimal` module and sel.decimal shares no code with it — see the modul
 docstring in sel/decimal.py for why that separation is load-bearing.
 """
 
-import os
 import sys
 
-# Prefer an *installed* sel over the source tree, so the python-wheel
-# implementation in tools/impls.sh actually exercises the built package rather
-# than silently re-testing python/sel through a path insert. Falls back to the
-# source tree when nothing is installed, which is how the plain `python`
-# implementation and a bare checkout run.
-try:
-    import sel as _sel_probe                                    # noqa: F401
-except ImportError:
-    sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
+from _harness import none_ran, read_text, usage  # first: it makes `sel` importable
 
 from sel import decimal as D          # noqa: E402
 from sel.errors import SelError       # noqa: E402
-
-from _harness import none_ran, read_text, usage  # noqa: E402
 
 
 def main() -> int:

@@ -302,7 +302,7 @@ def _contains_unsupported_sql(node: Node | None, dialect: str,
     if node.t == 'call':
         if node.name not in SQL_SPECIAL_CALLS:
             entry = sqlmap.entry(dialect, 'funcs', ascii_upper(node.name))
-            if entry == sqlmap.MISSING or entry is None or isinstance(entry, str):
+            if sqlmap.absent(entry) or isinstance(entry, str):
                 return True
         return any(_contains_unsupported_sql(item, dialect, defs, seen)
                    for item in node.args)

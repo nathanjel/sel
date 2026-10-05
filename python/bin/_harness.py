@@ -1,5 +1,5 @@
-"""What the Python runners in this directory share: how a file is read, and how
-a corpus is cut into records. Imported by its bare name (a script's own
+"""What the Python runners in this directory share: where `sel` is imported
+from, how a file is read, and how a corpus is cut into records. Imported by its bare name (a script's own
 directory is first on sys.path), so it works the same under the source tree and
 under the wheel's interpreter.
 
@@ -19,7 +19,19 @@ The rules are tools/README.md's, and every host's runners follow them:
 
 from __future__ import annotations
 
+import os
 import sys
+
+# Every runner imports this module before `sel`. An *installed* sel is preferred
+# over the source tree, so the python-wheel implementation in tools/impls.sh
+# grades the built package rather than silently re-testing python/sel through a
+# path insert; the source tree is the fallback when nothing is installed, which
+# is how the plain `python` implementation and a bare checkout run. (Index 1:
+# the script's own directory stays first, for the generated case data.)
+try:
+    import sel  # noqa: F401
+except ImportError:
+    sys.path.insert(1, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
 
 
 def read_text(path: str) -> str:
