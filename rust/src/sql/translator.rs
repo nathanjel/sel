@@ -3196,18 +3196,18 @@ fn require_comparable_kinds(l: &Fragment, r: &Fragment, op: &str, pos: Pos) -> R
     if cl.is_none() || cr.is_none() || cl == cr {
         return Ok(());
     }
-    let mut other = l.kind;
-    if l.kind == SqlKind::Bool {
-        other = r.kind;
-    }
-    refuse(
-        "E_SQL_SHAPE",
-        format!(
-            "{} compares a BOOL with a {}, which SEL answers FALSE for every value because the kinds differ. SQL has no way to say that: both sides cast to the same characters",
-            op, other
-        ),
-        pos,
-    )
+    // Both kinds as they are: a BIN and a TEXT reach here too, and were
+    // reported as "a BOOL with a BIN".
+    let what = format!("{} compares a {} with a {}", op, l.kind, r.kind);
+    let message = if op.starts_with('$') {
+        // SEL reads a BIN and a TEXT here as bytes, and a BOOL is no operand
+        // of the byte comparisons (E_NOT_BIN); SQL would cast both sides to
+        // characters, which says neither.
+        format!("{what}, which SEL compares as bytes (or refuses, for a BOOL); SQL has no way to say that: both sides cast to the same characters")
+    } else {
+        format!("{what}, which SEL answers FALSE for every value because the kinds differ. SQL has no way to say that: both sides cast to the same characters")
+    };
+    refuse("E_SQL_SHAPE", message, pos)
 }
 
 pub fn unify(fs: &[Fragment], pos: Pos) -> Result<SqlKind, SqlError> {
