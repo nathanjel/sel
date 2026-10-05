@@ -78,10 +78,8 @@ final class Structure
         if ($value->kind === Value::NONE && $value->size() === 0) {
             return null;
         }
-        if ($value->isList && $value->storage !== null && $value->storage !== []) {
-            return $value->storage[0];
-        }
-        if ($value->shape !== null && $value->storage !== null && $value->storage !== []) {
+        // Only a list or a shaped record has storage (Value's invariant).
+        if ($value->storage !== null && $value->storage !== []) {
             return $value->storage[0];
         }
         if ($value->size() > 0 && $value->children !== null) {
