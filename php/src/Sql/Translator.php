@@ -2923,11 +2923,15 @@ final class Translator
         if ($cls($l) === null || $cls($r) === null || $cls($l) === $cls($r)) {
             return;
         }
-        $other = $l->kind === 'BOOL' ? $r->kind : $l->kind;
-        refuse('E_SQL_SHAPE',
-            "{$op} compares a BOOL with a {$other}, which SEL answers FALSE for "
-            . 'every value because the kinds differ. SQL has no way to say that: '
-            . 'both sides cast to the same characters',
+        $what = "{$op} compares a {$l->kind} with a {$r->kind}";
+        refuse('E_SQL_SHAPE', $op[0] === '$'
+            // SEL reads a BIN and a TEXT here as bytes, and a BOOL is not an operand
+            // of the byte comparisons at all (E_NOT_BIN); SQL would cast both sides
+            // to characters, which says neither.
+            ? "{$what}, which SEL compares as bytes (or refuses, for a BOOL); "
+              . 'SQL has no way to say that: both sides cast to the same characters'
+            : "{$what}, which SEL answers FALSE for every value because the kinds "
+              . 'differ. SQL has no way to say that: both sides cast to the same characters',
             $pos);
     }
 
