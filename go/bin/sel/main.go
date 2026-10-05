@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 
 	"github.com/nathanjel/sel/go/internal/version"
 	"github.com/nathanjel/sel/go/sel"
@@ -176,6 +177,9 @@ func main() {
 		// ReadString has no line-length limit (a bufio.Scanner stops at 64 KB),
 		// and a last line without a newline is still a line.
 		line, err := in.ReadString('\n')
+		// The line without its terminator: an error at the end of `1 +` is at
+		// line 1, not at the start of a line 2 that the newline would open.
+		line = strings.TrimSuffix(strings.TrimSuffix(line, "\n"), "\r")
 		if line != "" && !blank(line) {
 			run(line, root, deps)
 		}

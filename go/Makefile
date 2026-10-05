@@ -8,7 +8,7 @@
 GO ?= go
 BUILD ?= build
 
-BINARIES := conformance batch e2e sel api check-decimal sqlapi sqlreplay sqlt sqlfuzz mandelbrot scale-bench hybridparity regexverdict
+BINARIES := conformance batch e2e sel api check-decimal sqlapi sqlreplay sqlt sqlfuzz mandelbrot scale-bench hybrid-driver regex-verdict
 
 TARGETS := $(addprefix $(BUILD)/,$(BINARIES))
 

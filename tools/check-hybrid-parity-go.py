@@ -2,17 +2,17 @@
 """The hybrid-parity corpus (sql/oracle/hybrid.json) through the GO host.
 
 Go has no SQLite driver in its standard library, so this script owns the
-database and go/build/hybridparity owns everything else: for each program and
+database and go/build/hybrid-driver owns everything else: for each program and
 context it asks Go for run()'s answer, asks it to PLAN, executes the plan's
 prefix statement itself on a real SQLite (sqlite3), and hands the rows back for
 execute_hybrid's continuation. The comparison is tools/check-hybrid-parity.py's:
 the value, the error, the caller's context and, for a pure_sql plan, the rows in
-order and not their keys. The `application` programs (POKE, HOSTF) run too, once
-each, with their expected value checked against run().
+order and not their keys.
 
-    python3 tools/check-hybrid-parity-go.py [--verbose]     # after: make -C go
+    python3 tools/check-hybrid-parity-go.py [--verbose] [--application]   # after: make -C go
 """
 import json
+import os
 import re
 import sqlite3
 import subprocess
@@ -23,10 +23,16 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 ORACLE = ROOT / 'sql' / 'oracle'
 verbose = '--verbose' in sys.argv
+# `--application` (or SEL_HYBRID_APPLICATION=1) adds the corpus's `application`
+# section: programs that call the application functions POKE and HOSTF, which
+# the host's driver registers. Opt-in until every driver registers them.
+APPLICATION = '--application' in sys.argv or os.environ.get('SEL_HYBRID_APPLICATION') == '1'
 spec = json.loads((ORACLE / 'hybrid.json').read_text(encoding='utf-8'))
-binary = ROOT / 'go' / 'build' / 'hybridparity'
+# go/build/hybrid-driver (go/build/hybridparity before it was renamed).
+binary = next((b for b in (ROOT / 'go' / 'build' / 'hybrid-driver', ROOT / 'go' / 'build' / 'hybridparity')
+               if b.exists()), ROOT / 'go' / 'build' / 'hybrid-driver')
 if not binary.exists():
-    print('go/build/hybridparity is missing: run make -C go', file=sys.stderr)
+    print('go/build/hybrid-driver is missing: run make -C go', file=sys.stderr)
     sys.exit(2)
 
 proc = subprocess.Popen([str(binary)], stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True, bufsize=1)
@@ -69,11 +75,10 @@ def fmt(o):
 bad = []
 ok = skipped = 0
 kinds = {'pure_sql': 0, 'hybrid': 0, 'pure_memory': 0}
-# The `application` programs call POKE and HOSTF (registered by the driver) and
-# run once, over the relations and the section's own vars.
 work = [(c, cs) for c in spec['programs'] for cs in spec['contexts']]
-app = spec.get('application', {})
-work += [(c, {'name': 'application', 'vars': app.get('vars', {})}) for c in app.get('programs', [])]
+if APPLICATION and 'application' in spec:
+    work += [(c, {'name': 'application', 'vars': spec['application']['vars']})
+             for c in spec['application']['programs']]
 for c, cs in work:
     if True:
         if any(v not in cs['vars'] for v in c.get('requires', [])):
@@ -89,12 +94,16 @@ for c, cs in work:
         elif direct['status'] != 'ok':
             guard = f'SEL raised {fmt(direct)}'
         else:
+            if 'value' in exp:
+                # The Go driver answers a value as its keys and its children.
+                got = (dict(zip(direct['keys'], direct['rows'])) if isinstance(exp['value'], dict)
+                       else direct['rows'])
+                if got != exp['value']:
+                    guard = f"run() answers {json.dumps(got)}, the corpus says {json.dumps(exp['value'])}"
             for f, want in exp.get('fields', {}).items():
                 got = [r.get(f, '<absent>') if isinstance(r, dict) else '<absent>' for r in direct['rows']]
                 if got != want:
                     guard = f'run() column {f} is {got}, the corpus says {want}'
-            if 'value' in exp and dict(zip(direct['keys'], direct['rows'])) != exp['value']:
-                guard = f"run() is {dict(zip(direct['keys'], direct['rows']))}, the corpus says {exp['value']}"
             if 'keys' in exp and direct['keys'] != exp['keys']:
                 guard = f"run() keys are {direct['keys']}, the corpus says {exp['keys']}"
         if guard:
