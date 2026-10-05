@@ -99,15 +99,10 @@ func hoistLiteral(child *Node, pos Pos) *Node {
 }
 
 func tryDec(fn func() *decimal.Dec) (res *decimal.Dec) {
-	defer func() {
-		if r := recover(); r != nil {
-			if !isSelPanic(r) {
-				panic(r)
-			}
-			res = nil
-		}
-	}()
-	return fn()
+	if catchSel(func() { res = fn() }) != nil {
+		return nil
+	}
+	return res
 }
 
 func optFold(node *Node) *Node {

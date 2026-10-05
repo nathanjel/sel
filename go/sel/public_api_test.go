@@ -2,6 +2,7 @@ package sel_test
 
 import (
 	"math/big"
+	"strings"
 	"testing"
 
 	"github.com/nathanjel/sel/go/sel"
@@ -97,5 +98,16 @@ func TestPublicConstructorsBuildOrdinaryValues(t *testing.T) {
 		if v.Kind() != k {
 			t.Errorf("%s: Kind() = %v, want %v", v.Dump(), v.Kind(), k)
 		}
+	}
+}
+
+// Dependencies of a program too deep to walk panics with E_DEPTH, as documented.
+func TestDependenciesPanicsWithASelError(t *testing.T) {
+	p, err := sel.Compile(strings.Repeat("A+", 299) + "A")
+	if err != nil {
+		t.Skipf("the program no longer compiles: %v", err)
+	}
+	if code := panicCode(t, func() { p.Dependencies() }); code != "E_DEPTH" {
+		t.Fatalf("got %q, want E_DEPTH", code)
 	}
 }

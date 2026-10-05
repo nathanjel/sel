@@ -26,9 +26,10 @@
 //
 // Everything else reports a failure by panicking with a *[SelError], the way an
 // index out of range does: the accessors of a value ([Value.AsText],
-// [Value.AsBool], [Value.AsDecimal], …) when it is not of that kind, and the
+// [Value.AsBool], [Value.Decimal], …) when it is not of that kind, the
 // constructors and [Value.Set] when given what SEL refuses (invalid UTF-8, keys
-// and values that do not pair up). Code that reads results it does not control —
+// and values that do not pair up), and [Program.Dependencies] for a program
+// nested too deeply to walk (E_DEPTH). Code that reads results it does not control —
 // a rule that might answer TRUE where text was expected — recovers that panic.
 // Inside a host function ([RegisterFunction]) panicking is the way to fail: call
 // [Fail], or let an [Args] reader do it, and Run returns the error.

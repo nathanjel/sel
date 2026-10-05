@@ -53,7 +53,6 @@ func Fail(code string, message string, pos Pos) {
 	})
 }
 
-// fail raises a SelError by panic. Recovered at top-level API boundaries.
 // isSelPanic reports whether a recovered value is a SEL error. Every probe that
 // swallows a failure ("does this coerce?", "can this be folded?") swallows only
 // that: a Go runtime error (nil dereference, index out of range) recovered by a
@@ -63,6 +62,25 @@ func isSelPanic(r any) bool {
 	return ok
 }
 
+// catchSel runs f and returns the *SelError it panics with, or nil; any other
+// panic continues (isSelPanic). It is the one spelling of "turn a SEL failure
+// into a value"; the per-row join probes inline the same recover, with
+// isSelPanic, to stay free of a call per row.
+func catchSel(f func()) (err *SelError) {
+	defer func() {
+		if r := recover(); r != nil {
+			se, ok := r.(*SelError)
+			if !ok {
+				panic(r)
+			}
+			err = se
+		}
+	}()
+	f()
+	return nil
+}
+
+// fail raises a SelError by panic, recovered at the API boundaries (catchSel).
 func fail(code string, message string, pos Pos) {
 	Fail(code, message, pos)
 }

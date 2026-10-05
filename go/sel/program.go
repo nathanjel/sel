@@ -29,17 +29,11 @@ func NewProgram(source string, ast *Node) *Program {
 	}
 }
 
-func Compile(source string) (prog *Program, err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			if se, ok := r.(*SelError); ok {
-				err = se
-				return
-			}
-			panic(r)
-		}
-	}()
-	ast := parse(source)
+func Compile(source string) (*Program, error) {
+	var ast *Node
+	if se := catchSel(func() { ast = parse(source) }); se != nil {
+		return nil, se
+	}
 	return NewProgram(source, ast), nil
 }
 
@@ -88,28 +82,27 @@ func (p *Program) RunAsWritten(ctx *Value) (result *Value, err error) {
 // runTree evaluates one tree of this program on a fresh context: the given one, or
 // the physical tree when target is nil (built inside the recovered region, as Run
 // always did, so a panic out of the optimizer is still reported as an error).
-func (p *Program) runTree(target *Node, ctx *Value) (result *Value, err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			if se, ok := r.(*SelError); ok {
-				err = se
-				return
-			}
-			panic(r)
+func (p *Program) runTree(target *Node, ctx *Value) (*Value, error) {
+	var result *Value
+	if se := catchSel(func() {
+		c := newContext(ctx)
+		if target == nil {
+			target = p.PhysicalAST()
 		}
-	}()
-	c := newContext(ctx)
-	if target == nil {
-		target = p.PhysicalAST()
+		result = evalNode(target, c)
+	}); se != nil {
+		return nil, se
 	}
-	return evalNode(target, c), nil
+	return result, nil
 }
 
 // Dependencies returns the variables the program reads before it has definitely
 // assigned them (SPEC 8). The walk follows evaluation order and carries the set of
 // names definitely assigned so far; an assignment counts as definite only if it runs
 // whatever the data: never inside the right side of AND/OR/??/??? or in an aggregate
-// body, and inside IF/COND only when every branch makes it.
+// body, and inside IF/COND only when every branch makes it. A program nested
+// deeper than MAX_DEPTH compiles but cannot be walked: Dependencies then panics
+// with a *SelError E_DEPTH, as the value accessors panic (package documentation).
 func (p *Program) Dependencies() []string {
 	reads := make(map[string]bool)
 	bound := make(map[string]bool)

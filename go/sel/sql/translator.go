@@ -1740,19 +1740,13 @@ func (t *translator) rewriteRegex(n *sNode) *sNode {
 	}
 
 	var source string
-	func() {
-		defer func() {
-			if r := recover(); r != nil {
-				if se, ok := r.(*sel.SelError); ok {
-					refuse("E_SQL_UNSUPPORTED",
-						fmt.Sprintf("%s's pattern is not in SEL's portable subset, so there is nothing to translate: %s", n.Str, se.Message),
-						pat.Pos)
-				}
-				panic(r)
-			}
-		}()
-		source = sel.ValidatePattern(pat.Str, pat.Pos)
-	}()
+	if refusal, se := catch(func() { source = sel.ValidatePattern(pat.Str, pat.Pos) }); se != nil {
+		refuse("E_SQL_UNSUPPORTED",
+			fmt.Sprintf("%s's pattern is not in SEL's portable subset, so there is nothing to translate: %s", n.Str, se.Message),
+			pat.Pos)
+	} else if refusal != nil {
+		panic(refusal)
+	}
 
 	inlineFlags := "(?s)"
 	flagAt := 2

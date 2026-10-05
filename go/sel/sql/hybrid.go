@@ -1060,23 +1060,14 @@ func PlanHybrid(program *sel.Program, dialect string, bindings *Bindings, option
 
 	constNames, constRoot := scope(checked)
 	identityBarrier := false
-	var earlyPureMemory bool
-	func() {
-		defer func() {
-			if r := recover(); r != nil {
-				if _, ok := r.(*SqlError); ok {
-					earlyPureMemory = true
-				} else if _, ok := r.(SqlError); ok {
-					earlyPureMemory = true
-				} else {
-					panic(r)
-				}
-			}
-		}()
+	refusal, selErr := catch(func() {
 		normalized := normalise(program.AST(), constNames, constRoot)
 		identityBarrier = identityLossBeforeGrouping(normalized, nil)
-	}()
-	if earlyPureMemory {
+	})
+	if selErr != nil {
+		panic(selErr)
+	}
+	if refusal != nil {
 		return pureMemoryPlan(program, dialect, checked)
 	}
 
@@ -1162,25 +1153,15 @@ func PlanHybrid(program *sel.Program, dialect string, bindings *Bindings, option
 		}
 		prefixAst := helpers.wrap(sel.BuildPipeline(source, steps[:count]))
 		if identityBarrier {
+			// A refusal or a SEL error skips this split (catch lets a Go
+			// runtime panic, a bug, surface).
 			skip := false
-			func() {
-				defer func() {
-					if r := recover(); r != nil {
-						// Only a refusal (SqlError) or a SEL error skips this
-						// split; a Go runtime panic is a bug and must surface.
-						switch r.(type) {
-						case *SqlError, SqlError, *sel.SelError:
-							skip = true
-						default:
-							panic(r)
-						}
-					}
-				}()
+			if refusal, selErr := catch(func() {
 				norm := normalise(prefixAst, constNames, constRoot)
-				if identityLossBeforeGrouping(norm, &neededFields{All: true}) {
-					skip = true
-				}
-			}()
+				skip = identityLossBeforeGrouping(norm, &neededFields{All: true})
+			}); refusal != nil || selErr != nil {
+				skip = true
+			}
 			if skip {
 				continue
 			}

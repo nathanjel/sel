@@ -480,17 +480,11 @@ func requireNumericNode(n *sNode, root *sel.Value) {
 	if err != nil {
 		refuseAsSel(err, n)
 	}
-	func() {
-		defer func() {
-			if r := recover(); r != nil {
-				if selErr, ok := r.(*sel.SelError); ok {
-					refuseAsSel(selErr, n)
-				}
-				panic(r)
-			}
-		}()
-		val.Decimal(n.Pos)
-	}()
+	if refusal, selErr := catch(func() { val.Decimal(n.Pos) }); selErr != nil {
+		refuseAsSel(selErr, n)
+	} else if refusal != nil {
+		panic(refusal)
+	}
 }
 
 // numericTextConstant is the canonical spelling of a constant that is TEXT holding a
@@ -507,15 +501,6 @@ func numericTextConstant(n *sNode, root *sel.Value) (text string, ok bool) {
 	if root == nil {
 		root = sel.NewNull()
 	}
-	defer func() {
-		if r := recover(); r != nil {
-			if _, isSel := r.(*sel.SelError); isSel {
-				text, ok = "", false
-				return
-			}
-			panic(r)
-		}
-	}()
 	val, err := sel.NewProgram("", node).RunAsWritten(root)
 	if err != nil {
 		return "", false
@@ -523,7 +508,12 @@ func numericTextConstant(n *sNode, root *sel.Value) (text string, ok bool) {
 	if !val.IsText() || !val.LooksNumeric() {
 		return "", false
 	}
-	d := val.Decimal(n.Pos)
+	var d sel.Decimal
+	if refusal, selErr := catch(func() { d = val.Decimal(n.Pos) }); refusal != nil {
+		panic(refusal)
+	} else if selErr != nil {
+		return "", false
+	}
 	return decimal.Format(decimal.Make(d.Neg, d.Digits, int32(d.Scale))), true
 }
 
