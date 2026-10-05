@@ -1180,16 +1180,19 @@ void require_comparable_kinds(const Fragment& l, const Fragment& r,
   const std::optional<EqlClass> cl = eql_class(l.kind());
   const std::optional<EqlClass> cr = eql_class(r.kind());
   if (!cl || !cr || *cl == *cr) return;
-  // `other` is computed as if l were always the BOOL side, so a TEXT-vs-BIN
-  // mismatch says "compares a BOOL with a TEXT". A defect in the message, kept:
-  // codes are contract and messages are not, and rewording it here would be the
-  // only host that did.
-  const SqlKind other = l.kind() == SqlKind::Bool ? r.kind() : l.kind();
+  // Both real kinds, and what SEL actually does with them (the same words in
+  // every host; codes are contract, messages are not).
+  const std::string what = op + " compares a " + std::string(kind_name(l.kind())) + " with a " +
+                           std::string(kind_name(r.kind()));
   refuse("E_SQL_SHAPE",
-         op + " compares a BOOL with a " + std::string(kind_name(other)) +
-             ", which SEL answers FALSE for every value because the kinds "
-             "differ. SQL has no way to say that: both sides cast to the same "
-             "characters",
+         op[0] == '$'
+             // SEL reads a BIN and a TEXT here as bytes, and a BOOL is not an
+             // operand of the byte comparisons at all (E_NOT_BIN); SQL would cast
+             // both sides to characters, which says neither.
+             ? what + ", which SEL compares as bytes (or refuses, for a BOOL); SQL has no way to "
+                      "say that: both sides cast to the same characters"
+             : what + ", which SEL answers FALSE for every value because the kinds differ. SQL "
+                      "has no way to say that: both sides cast to the same characters",
          pos);
 }
 
