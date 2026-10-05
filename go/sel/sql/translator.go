@@ -380,10 +380,8 @@ func (t *translator) variable(n *sNode) *Fragment {
 }
 
 func (t *translator) columnRef(c columnSpec) *Fragment {
-	sqlStr := c.Table
-	if c.IsRaw {
-		sqlStr = c.Raw
-	} else {
+	sqlStr := c.Raw
+	if !c.IsRaw {
 		sqlStr = t.emit.Column(c.Table, c.Column)
 	}
 	f := &Fragment{
@@ -1028,26 +1026,26 @@ func (t *translator) numericCastScale() *int32 {
 }
 
 func (t *translator) scaleLimited(pos Pos, what string) {
-	cap := t.numericCastScale()
-	if cap == nil {
+	limit := t.numericCastScale()
+	if limit == nil {
 		return
 	}
 	if t.strict {
 		refuse("E_SQL_UNSUPPORTED",
-			fmt.Sprintf("%s through a DECIMAL that keeps %d fractional digits, and a value with more loses them on %s (scale-limit); strict mode refuses that", what, *cap, t.dialect),
+			fmt.Sprintf("%s through a DECIMAL that keeps %d fractional digits, and a value with more loses them on %s (scale-limit); strict mode refuses that", what, *limit, t.dialect),
 			pos)
 	}
 	t.addCaveat("scale-limit")
 }
 
 func (t *translator) coerceScaleLimits(operands []*sNode) {
-	cap := t.numericCastScale()
-	if cap == nil {
+	limit := t.numericCastScale()
+	if limit == nil {
 		return
 	}
 	for _, operand := range operands {
 		if isConstant(operand, t.constNames) {
-			if constantScale(operand, t.constRoot) > int(*cap) {
+			if constantScale(operand, t.constRoot) > int(*limit) {
 				t.scaleLimited(operand.Pos, "this constant is read as a number")
 			}
 		} else {

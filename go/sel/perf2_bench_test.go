@@ -11,8 +11,6 @@ import (
 	"testing"
 )
 
-func asciiText(n int) *Value { return NewText(strings.Repeat("a", n)) }
-
 // --- GO-P11: keyed lists (FILTER result with drops) ------------------------------
 
 func BenchmarkP11KeyedList(b *testing.B) {

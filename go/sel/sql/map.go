@@ -713,8 +713,8 @@ func Define(dialect, section, key string, entry interface{}) {
 
 	var arity *[2]int
 	if section == "funcs" {
-		if min, max, ok := sel.HostArity(k); ok {
-			arity = &[2]int{min, max}
+		if lo, hi, ok := sel.HostArity(k); ok {
+			arity = &[2]int{lo, hi}
 		}
 	}
 	if arity != nil {
@@ -940,8 +940,8 @@ func checkEntry(section, key string, e interface{}) {
 
 	var host *[2]int
 	if section == "funcs" {
-		if min, max, ok := sel.HostArity(key); ok {
-			host = &[2]int{min, max}
+		if lo, hi, ok := sel.HostArity(key); ok {
+			host = &[2]int{lo, hi}
 		}
 	}
 

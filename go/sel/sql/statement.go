@@ -1243,7 +1243,7 @@ func (t *translator) CompileStatement(plan *relationalPlan) *Fragment {
 	}
 
 	// 4. GROUP BY clause
-	if plan.GroupBy != nil && len(plan.GroupBy) > 0 {
+	if len(plan.GroupBy) > 0 {
 		addSql(" GROUP BY ")
 		first := true
 		for _, gb := range plan.GroupBy {

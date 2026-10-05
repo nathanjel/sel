@@ -1,7 +1,6 @@
 package decimal
 
 import (
-	"fmt"
 	"math/big"
 	"strings"
 	"testing"
@@ -83,7 +82,7 @@ func TestNegateAndAbsLeaveTheOperandAlone(t *testing.T) {
 		if Format(d) != before {
 			t.Errorf("%s changed to %s", before, Format(d))
 		}
-		wantNeg := fmt.Sprint(before)
+		var wantNeg string
 		if before == "0" {
 			wantNeg = "0"
 		} else if strings.HasPrefix(before, "-") {

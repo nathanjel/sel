@@ -128,7 +128,7 @@ func dispatch(node *Node, ctx *Context) *Value {
 		return child
 
 	case NodeSeq:
-		var last *Value = NewNone()
+		last := NewNone()
 		for _, item := range node.Items {
 			last = evalNode(item, ctx)
 		}

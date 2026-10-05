@@ -1,5 +1,5 @@
-// Native UTF-8 conversion with SEL diagnostics on invalid input.
-
+// Package utf8 is SEL's UTF-8 codec (spec/SPEC.md §2): validation with SEL's
+// diagnostics, code point counts and ASCII case for names.
 package utf8
 
 import (

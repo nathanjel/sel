@@ -1,5 +1,5 @@
-// Exact decimal arithmetic. See spec/SPEC.md §4.
-
+// Package decimal is SEL's exact decimal arithmetic (spec/SPEC.md §4): a
+// sign, a big.Int magnitude and a scale, with the digit caps of §6.4.
 package decimal
 
 import (
@@ -467,7 +467,7 @@ func aligned(a, b *Dec) (*big.Int, *big.Int, int32) {
 	return scaledA, b.Digits, b.Scale
 }
 
-// Add, Sub and Mul return a Dec of their own; the arithmetic, and its sign,
+// Add returns a+b as a Dec of its own (as Sub and Mul do); the arithmetic, and its sign,
 // scale and E_RANGE rules, is AddInto's, SubInto's and MulInto's (reg.go), which
 // a math plan also uses to keep intermediates in registers (item 1).
 func Add(a, b *Dec, pos Pos, fail FailFunc) *Dec {

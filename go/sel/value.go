@@ -163,10 +163,6 @@ func (v *Value) Decimal(pos Pos) Decimal {
 	return Decimal{Neg: d.Neg, Digits: new(big.Int).Set(d.Digits), Scale: int(d.Scale)}
 }
 
-func newNumExact(s string, d *decimal.Dec) *Value {
-	return &Value{kind: KindText, strVal: s, decVal: d}
-}
-
 func NewInt(n int64) *Value {
 	return &Value{kind: KindText, decVal: decimal.FromInt(n)}
 }
@@ -257,6 +253,8 @@ func newRecordFromEntries(entries []Entry) *Value {
 func (v *Value) Kind() Kind { return v.kind }
 
 // Predicates
+
+// IsNone reports a value of kind NONE: a record, a list, or nothing.
 func (v *Value) IsNone() bool { return v.kind == KindNone }
 func (v *Value) IsNull() bool { return v.kind == KindNone && v.Size() == 0 && !v.isList }
 func (v *Value) IsVacuous() bool {
@@ -275,6 +273,8 @@ func (v *Value) IsBool() bool { return v.kind == KindBool }
 func (v *Value) IsList() bool { return v.isList }
 
 // Children
+
+// Size is the number of children.
 func (v *Value) Size() int {
 	if v.storage != nil {
 		return len(v.storage)
@@ -551,6 +551,10 @@ func (v *Value) Entries() []Entry {
 }
 
 // Scalar Context (§3.2)
+
+// ScalarSource is the value that stands for v in scalar context (§3.2): v when
+// it is not NONE, otherwise its first child, followed down; E_NULL for NULL
+// and E_NO_SCALAR for a childless NONE.
 func (v *Value) ScalarSource(pos Pos) *Value {
 	if v.kind != KindNone {
 		return v
@@ -665,6 +669,8 @@ func (v *Value) LooksNumeric() bool {
 }
 
 // Cloning (§3.4, §5.7)
+
+// Clone is a deep copy (§3.4): what an assignment stores.
 func (v *Value) Clone() *Value {
 	return v.CloneAt(1, Pos{})
 }
@@ -712,6 +718,9 @@ func (v *Value) CloneAt(depth int, pos Pos) *Value {
 }
 
 // Equality (§5.4)
+
+// Eql is structural equality (§5.4): the same kind, the same scalar, the same
+// children in the same order. Text is compared as written: "5.00" is not "5".
 func (v *Value) Eql(other *Value, pos Pos) bool {
 	return v.EqlAt(other, 1, pos)
 }

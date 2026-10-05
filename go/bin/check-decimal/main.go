@@ -27,7 +27,7 @@ func main() {
 	}
 
 	failFn := func(code string, msg string, pos utf8.Pos) {
-		panic(&sel.SelError{Code: code, Message: msg, Pos: sel.Pos{Line: pos.Line, Col: pos.Col, Offset: pos.Offset}})
+		panic(&sel.SelError{Code: code, Message: msg, Pos: sel.Pos(pos)})
 	}
 
 	var failures []string
