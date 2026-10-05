@@ -7,82 +7,15 @@ use crate::manifest::{lookup_builtin, Entry as BuiltinEntry};
 use crate::shape::{unique_record_shape, RecordShape};
 use crate::utf8::{Pos, SelError};
 
-const OPERATORS: &[&str] = &[
-    "???", "??",
-    "$==", "$!=", "$<=", "$>=",
-    "$<", "$>", "==", "!=", "<=", ">=", "+=", "-=", "*=", "/=", "%=", "&=",
-    ".>",
-    "+", "-", "*", "/", "%", "&", "=", "<", ">", "(", ")", "[", "]", ",", ";",
-];
-
-const RESERVED: &[&str] = &[
-    "TRUE", "FALSE", "NULL",
-    "AND", "OR", "NOT", "XOR",
-    "EQL", "IN", "BAND", "BOR", "BXOR",
-];
-
-// Binding powers start at 3: a sequence (`;`) and a list (`,`) are parsed by
-// their own functions, not through this table.
-const BP_ASSIGN: u8 = 3;
-const BP_OR: u8 = 4;
-const BP_XOR: u8 = 5;
-const BP_AND: u8 = 6;
-const BP_NOT: u8 = 7;
-const BP_COMPARE: u8 = 8;
-const BP_COALESCE: u8 = 9;
-const BP_BOR: u8 = 10;
-const BP_BXOR: u8 = 11;
-const BP_BAND: u8 = 12;
-const BP_CONCAT: u8 = 13;
-const BP_ADD: u8 = 14;
-const BP_MUL: u8 = 15;
-const BP_NEG: u8 = 16;
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Assoc {
-    Left,
-    Right,
-    NonAssoc,
-}
-
-#[derive(Clone, Copy, Debug)]
-struct InfixEntry {
-    bp: u8,
-    assoc: Assoc,
-}
-
-fn get_infix_op(op: &str) -> Option<InfixEntry> {
-    match op {
-        "??" | "???" => Some(InfixEntry { bp: BP_COALESCE, assoc: Assoc::Right }),
-        "&" => Some(InfixEntry { bp: BP_CONCAT, assoc: Assoc::Left }),
-        "+" | "-" => Some(InfixEntry { bp: BP_ADD, assoc: Assoc::Left }),
-        "*" | "/" | "%" => Some(InfixEntry { bp: BP_MUL, assoc: Assoc::Left }),
-        "=" | "+=" | "-=" | "*=" | "/=" | "%=" | "&=" => Some(InfixEntry { bp: BP_ASSIGN, assoc: Assoc::Right }),
-        "==" | "!=" | "<" | "<=" | ">" | ">="
-        | "$==" | "$!=" | "$<" | "$<=" | "$>" | "$>=" => Some(InfixEntry { bp: BP_COMPARE, assoc: Assoc::NonAssoc }),
-        _ => None,
-    }
-}
-
-fn get_infix_word(word: &str) -> Option<InfixEntry> {
-    match word {
-        "OR" => Some(InfixEntry { bp: BP_OR, assoc: Assoc::Left }),
-        "XOR" => Some(InfixEntry { bp: BP_XOR, assoc: Assoc::Left }),
-        "AND" => Some(InfixEntry { bp: BP_AND, assoc: Assoc::Left }),
-        "BOR" => Some(InfixEntry { bp: BP_BOR, assoc: Assoc::Left }),
-        "BXOR" => Some(InfixEntry { bp: BP_BXOR, assoc: Assoc::Left }),
-        "BAND" => Some(InfixEntry { bp: BP_BAND, assoc: Assoc::Left }),
-        "EQL" | "IN" => Some(InfixEntry { bp: BP_COMPARE, assoc: Assoc::NonAssoc }),
-        _ => None,
-    }
-}
-
-fn is_assign_op(op: &str) -> bool {
-    matches!(op, "=" | "+=" | "-=" | "*=" | "/=" | "%=" | "&=")
-}
+// The token list, the reserved words, the binding powers and every infix and
+// prefix operator come from the lexicon rendering (spec/lexicon.json, rendered
+// by tools/gen-lexicon.mjs into crate::lexicon): this parser keeps no
+// vocabulary of its own. SYMBOLS is longest first, which is all maximal munch
+// needs; the lookups are generated matches.
+use crate::lexicon::{Assoc, Family, Op, BP_ASSIGN};
 
 fn is_reserved(word: &str) -> bool {
-    RESERVED.contains(&word)
+    crate::ops::is_reserved(word)
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -331,7 +264,7 @@ impl Lexer {
 
     fn match_operator(&self, i: usize, to: usize) -> Option<&'static str> {
         // Every operator is ASCII, so its bytes are its characters.
-        OPERATORS.iter().copied().find(|op| {
+        crate::lexicon::SYMBOLS.iter().copied().find(|op| {
             i + op.len() <= to && op.bytes().enumerate().all(|(k, b)| self.chars[i + k] == b as char)
         })
     }
@@ -677,28 +610,41 @@ impl Parser {
         Ok(collect_node(NodeType::List, first, rest))
     }
 
-    fn infix_entry(t: &Token) -> Option<InfixEntry> {
-        if t.t == TokenType::Op {
-            return get_infix_op(&t.val);
-        }
-        if t.t == TokenType::Ident {
-            return get_infix_word(&t.val);
-        }
-        None
+    // An operator the climbing loop binds: an infix operator that builds a
+    // binary or an assignment node (`,` and `;` are the N-ary loops above).
+    // Word operators lex as identifiers and symbols as ops, so the token type
+    // picks the lookup.
+    fn infix_entry(t: &Token) -> Option<&'static Op> {
+        let op = match t.t {
+            TokenType::Op => crate::lexicon::infix_symbol(&t.val),
+            TokenType::Ident => crate::lexicon::infix_word(&t.val),
+            _ => None,
+        };
+        op.filter(|o| o.node == "bin" || o.node == "assign")
+    }
+
+    // A prefix operator, by the same token-type rule.
+    fn prefix_entry(t: &Token) -> Option<&'static Op> {
+        let word = match t.t {
+            TokenType::Op => false,
+            TokenType::Ident => true,
+            _ => return None,
+        };
+        crate::lexicon::prefix(&t.val).filter(|o| o.word == word)
     }
 
     fn term(&mut self, min_bp: u8) -> PResult {
         let mut left = self.prefix(min_bp)?;
 
         loop {
-            let (bp, assoc) = match Self::infix_entry(self.peek()) {
-                Some(e) if e.bp >= min_bp => (e.bp, e.assoc),
+            let (bp, assoc, family) = match Self::infix_entry(self.peek()) {
+                Some(e) if e.bp >= min_bp => (e.bp, e.assoc, e.family),
                 _ => return Ok(left),
             };
 
             let t = self.next();
 
-            if is_assign_op(&t.val) {
+            if family == Family::Assign {
                 check_target(&left, &t)?;
                 self.enter(t.pos)?;
                 let value = self.term(bp)?;
@@ -707,7 +653,7 @@ impl Parser {
                 continue;
             }
 
-            if assoc == Assoc::Right {
+            if assoc == Some(Assoc::Right) {
                 self.enter(t.pos)?;
                 let right = self.term(bp)?;
                 self.leave();
@@ -715,11 +661,11 @@ impl Parser {
                 continue;
             }
 
-            if assoc == Assoc::NonAssoc {
+            if assoc == Some(Assoc::NonAssoc) {
                 let right = self.term(bp + 1)?;
                 let after = self.peek();
                 if let Some(after_entry) = Self::infix_entry(after) {
-                    if after_entry.assoc == Assoc::NonAssoc {
+                    if after_entry.assoc == Some(Assoc::NonAssoc) {
                         return Err(SelError::syntax(
                             format!(
                                 "comparison operators do not chain \u{2014} parenthesise, as in (a {} b) AND (b {} c)",
@@ -741,20 +687,15 @@ impl Parser {
     fn prefix(&mut self, min_bp: u8) -> PResult {
         let t = self.peek();
 
-        if t.t == TokenType::Ident && t.val == "NOT" && min_bp <= BP_NOT {
-            let op_tok = self.next();
-            self.enter(op_tok.pos)?;
-            let x = self.term(BP_NOT)?;
-            self.leave();
-            return Ok(unary_node(op_tok.pos, "NOT", x));
-        }
-
-        if t.t == TokenType::Op && t.val == "-" && min_bp <= BP_NEG {
-            let op_tok = self.next();
-            self.enter(op_tok.pos)?;
-            let x = self.term(BP_NEG)?;
-            self.leave();
-            return Ok(unary_node(op_tok.pos, "NEG", x));
+        // NOT and unary minus, each only where its own binding power reaches.
+        if let Some(p) = Self::prefix_entry(t) {
+            if min_bp <= p.bp {
+                let op_tok = self.next();
+                self.enter(op_tok.pos)?;
+                let x = self.term(p.bp)?;
+                self.leave();
+                return Ok(unary_node(op_tok.pos, p.name.expect("a prefix operator names its node"), x));
+            }
         }
 
         self.postfix()

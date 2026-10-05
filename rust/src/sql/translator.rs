@@ -1025,7 +1025,7 @@ impl Translator {
             self.node(n.r().unwrap())?
         };
 
-        if op == "AND" || op == "OR" || op == "XOR" {
+        if crate::ops::is_logic(op) {
             l = self.require_bool(l, n.l().unwrap().pos, op)?;
             r = self.require_bool(r, n.r().unwrap().pos, op)?;
         }
@@ -1037,7 +1037,7 @@ impl Translator {
             l = self.guard_numeric(l, n.l().unwrap())?;
             r = self.guard_numeric(r, n.r().unwrap())?;
         }
-        if op == "&" || (op.len() > 1 && op.starts_with('$')) {
+        if crate::ops::is_concat(op) || crate::ops::is_text_comparison(op) {
             self.require_not_bool_operand(&l, n.l().unwrap().pos, op)?;
             self.require_not_bool_operand(&r, n.r().unwrap().pos, op)?;
         }
@@ -3158,20 +3158,24 @@ pub fn is_pipeline_op(name: &str) -> bool {
     )
 }
 
+// The operator families, from the lexicon (crate::ops).
 fn is_numeric_op(op: &str) -> bool {
-    matches!(op, "==" | "!=" | "<" | "<=" | ">" | ">=")
+    crate::ops::is_numeric_comparison(op)
 }
 
+// The comparisons that take the dialect's "text" variant: the byte
+// comparisons and EQL (IN goes through in_operator, which applies EQL).
 fn is_textual_op(op: &str) -> bool {
-    matches!(op, "$==" | "$!=" | "$<" | "$<=" | "$>" | "$>=" | "EQL")
+    crate::ops::is_text_comparison(op) || op == "EQL"
 }
 
+// The comparisons that read their operands as bytes (§5.3, §5.4).
 fn is_byte_comparison(op: &str) -> bool {
-    matches!(op, "$==" | "$!=" | "$<" | "$<=" | "$>" | "$>=" | "EQL" | "IN")
+    crate::ops::is_text_comparison(op) || crate::ops::is_deep_comparison(op)
 }
 
 fn is_arithmetic_op(op: &str) -> bool {
-    matches!(op, "+" | "-" | "*" | "/" | "%")
+    crate::ops::is_arithmetic(op)
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]

@@ -1357,9 +1357,14 @@ fn expr_depends_only_on(node: &Node, allowed: &HashSet<String>) -> bool {
 }
 
 fn extract_join_equi<'a>(node: &'a Node, b1: &str, b2: &str) -> Option<JoinEqui<'a>> {
-    if node.t != NodeType::Bin || (node.s != "==" && node.s != "$==") {
+    // An equality of either comparison family (`==` or `$==`).
+    if node.t != NodeType::Bin
+        || !crate::ops::is_comparison(&node.s)
+        || crate::ops::relation(&node.s) != Some(crate::lexicon::Relation::Eq)
+    {
         return None;
     }
+    let numeric = crate::ops::is_numeric_comparison(&node.s);
     if b1.eq_ignore_ascii_case(b2) {
         return None;
     }
@@ -1379,7 +1384,7 @@ fn extract_join_equi<'a>(node: &'a Node, b1: &str, b2: &str) -> Option<JoinEqui<
         return Some(JoinEqui {
             left_expr: l,
             right_expr: r,
-            numeric: node.s == "==",
+            numeric,
             swapped: false,
         });
     }
@@ -1387,7 +1392,7 @@ fn extract_join_equi<'a>(node: &'a Node, b1: &str, b2: &str) -> Option<JoinEqui<
         return Some(JoinEqui {
             left_expr: r,
             right_expr: l,
-            numeric: node.s == "==",
+            numeric,
             swapped: true,
         });
     }

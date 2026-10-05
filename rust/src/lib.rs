@@ -70,6 +70,7 @@ pub mod manifest;
 pub mod math_ops;
 #[doc(hidden)]
 pub mod math_plan;
+mod ops;
 #[doc(hidden)]
 pub mod optimizer;
 #[doc(hidden)]

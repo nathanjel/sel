@@ -125,7 +125,7 @@ fn collect_dependencies(
         }
         N::Index | N::Bin => {
             collect_dependencies(node.l.as_ref().unwrap(), bound, reads, defined, depth + 1)?;
-            if node.t == N::Bin && matches!(node.s.as_str(), "AND" | "OR" | "??" | "???") {
+            if node.t == N::Bin && crate::ops::is_short_circuit(&node.s) {
                 // The right operand may never run. Its reads still count.
                 let mut branch = defined.clone();
                 collect_dependencies(

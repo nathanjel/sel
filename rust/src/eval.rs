@@ -3,6 +3,7 @@ use crate::ast::{Node, NodeType, SlotCache};
 use crate::builtins::{lookup_spec, BuiltinFn, Spec, SpecFn};
 use crate::context::Context;
 use crate::dec::{dec_add, dec_cmp, dec_div, dec_mod, dec_mul, dec_negate, dec_sub, Dec};
+use crate::lexicon::{Family, Relation};
 use crate::limits::MAX_DEPTH;
 use crate::math_plan::eval_math_plan;
 use crate::utf8::{cap_collection, cap_text, Pos, SelError};
@@ -190,7 +191,7 @@ fn eval_binary(node: &Node, ctx: &mut Context) -> Result<Value, SelError> {
         }
     }
 
-    if is_comparison(op) {
+    if crate::ops::is_comparison(op) {
         return compare_nodes(op, l_node, r_node, ctx).map(Value::bool);
     }
 
@@ -200,13 +201,6 @@ fn eval_binary(node: &Node, ctx: &mut Context) -> Result<Value, SelError> {
     let rp = r_node.pos;
 
     apply_binary(op, &l, &r, lp, rp, node.pos)
-}
-
-fn is_comparison(op: &str) -> bool {
-    matches!(
-        op,
-        "==" | "!=" | "<" | "<=" | ">" | ">=" | "$==" | "$!=" | "$<" | "$<=" | "$>" | "$>="
-    )
 }
 
 /// A comparison operand. A literal is only read by a comparison and never
@@ -261,13 +255,16 @@ fn compare_nodes(op: &str, l_node: &Node, r_node: &Node, ctx: &mut Context) -> R
     let l = Operand::of(l_node, ctx)?;
     let r = Operand::of(r_node, ctx)?;
     let (lp, rp) = (l_node.pos, r_node.pos);
-    match op {
-        "==" | "!=" | "<" | "<=" | ">" | ">=" => {
+    // Callers pass only the two comparison families (ops::is_comparison).
+    let info = crate::ops::binary(op).expect("a comparison operator");
+    let rel = info.relation.expect("a comparison has a relation");
+    match (info.family, rel) {
+        (Family::Compare, _) => {
             let a = l.decimal(lp)?;
             let b = r.decimal(rp)?;
-            Ok(compare_result(op, dec_cmp(&a, &b)))
+            Ok(crate::ops::holds(rel, dec_cmp(&a, &b)))
         }
-        "$==" | "$!=" => {
+        (_, Relation::Eq | Relation::Ne) => {
             let equal = match (l.plain_text(), r.plain_text()) {
                 (Some(a), Some(b)) => a == b,
                 _ => {
@@ -276,12 +273,12 @@ fn compare_nodes(op: &str, l_node: &Node, r_node: &Node, ctx: &mut Context) -> R
                     a == b
                 }
             };
-            Ok(if op == "$==" { equal } else { !equal })
+            Ok(if rel == Relation::Eq { equal } else { !equal })
         }
         _ => {
             let a = l.bytes(lp)?;
             let b = r.bytes(rp)?;
-            Ok(compare_result(&op[1..], a.cmp(&b)))
+            Ok(crate::ops::holds(rel, a.cmp(&b)))
         }
     }
 }
@@ -292,7 +289,7 @@ fn compare_nodes(op: &str, l_node: &Node, r_node: &Node, ctx: &mut Context) -> R
 pub(crate) fn eval_bool(node: &Node, ctx: &mut Context) -> Result<bool, SelError> {
     let direct = node.t == NodeType::Bin
         && node.math_plan.is_none()
-        && (node.s == "AND" || node.s == "OR" || is_comparison(&node.s));
+        && (node.s == "AND" || node.s == "OR" || crate::ops::is_comparison(&node.s));
     if !direct {
         return eval_node(node, ctx)?.as_bool(node.pos);
     }
@@ -374,20 +371,6 @@ pub(crate) fn arith(op: &str, a: &Dec, b: &Dec, pos: Pos) -> Result<Dec, SelErro
         "/" => dec_div(a, b, pos),
         "%" => dec_mod(a, b, pos),
         _ => unreachable!("arith on {op}"),
-    }
-}
-
-/// Whether an ordering satisfies a comparison operator (`==` … `>=`; the
-/// byte comparisons pass their operator without the `$`).
-pub(crate) fn compare_result(op: &str, c: std::cmp::Ordering) -> bool {
-    match op {
-        "==" => c.is_eq(),
-        "!=" => c.is_ne(),
-        "<" => c.is_lt(),
-        "<=" => c.is_le(),
-        ">" => c.is_gt(),
-        ">=" => c.is_ge(),
-        _ => false,
     }
 }
 
@@ -494,10 +477,7 @@ fn eval_assign(node: &Node, ctx: &mut Context) -> Result<Value, SelError> {
             SelError::undef_var(format!("{} needs an existing target", node.s), l_node.pos)
         })?;
         let rhs = eval_node(r_node, ctx)?;
-        let op = node
-            .s
-            .strip_suffix('=')
-            .expect("assignment operator suffix");
+        let op = crate::ops::compound(&node.s).expect("a compound assignment operator");
         apply_binary(op, &current, &rhs, l_node.pos, r_node.pos, node.pos)?
     };
 
