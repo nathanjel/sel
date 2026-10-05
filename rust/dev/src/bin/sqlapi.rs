@@ -11,7 +11,7 @@ use sel_lang::sql::{
 use sel_lang::{compile, evaluate, register_function, Pos, SelError, Value};
 use sel_lang_dev::{b, say};
 
-fn attempt(f: impl FnOnce() -> ()) -> String {
+fn attempt(f: impl FnOnce()) -> String {
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(f));
     match result {
         Ok(()) => "accepted".to_string(),
@@ -27,7 +27,7 @@ fn attempt(f: impl FnOnce() -> ()) -> String {
     }
 }
 
-fn refuses(f: impl FnOnce() -> ()) -> String {
+fn refuses(f: impl FnOnce()) -> String {
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(f));
     match result {
         Ok(()) => "accepted".to_string(),
@@ -186,7 +186,7 @@ fn main() {
             &compile("HSLUG(T)").unwrap_or_else(|e| std::panic::panic_any(e)),
             "postgresql",
             Some(&host),
-            Options { strict: true, ..Options::default() },
+            Options { strict: true },
         ).unwrap_or_else(|e| std::panic::panic_any(e));
     }));
 

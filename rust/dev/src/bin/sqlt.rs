@@ -18,7 +18,7 @@ use sel_lang::{Program, Value};
 // Rendered by tools/gen-sql-cases.mjs, which writes every case's bindings
 // through a `let mut` whether or not that case inserts any.
 #[path = "sqlt/case_data.rs"]
-#[allow(unused_mut)]
+#[allow(unused_mut, clippy::all)]
 mod case_data;
 use case_data::{SqlCase, SQL_CASES};
 
@@ -140,10 +140,7 @@ fn run_plan_case(
             Err(e) => return Err(format!("the source did not compile: {}", e)),
         };
 
-        let opts = Options {
-            strict: c.strict,
-            ..Default::default()
-        };
+        let opts = Options { strict: c.strict };
 
         Ok(plan_hybrid(&prog, dialect, Some(&binds), opts))
     }));
@@ -303,10 +300,7 @@ fn run_case(
     let mut prog: Option<Program> = None;
     let mut binds = Bindings::default();
 
-    let opts = Options {
-        strict: c.strict,
-        ..Default::default()
-    };
+    let opts = Options { strict: c.strict };
 
     let old_hook = std::panic::take_hook();
     std::panic::set_hook(Box::new(|_| {}));
@@ -406,8 +400,7 @@ fn run_case(
         return (None, Some(format!("{}: unexpected throw: {}", c.at, thrown_what)));
     }
 
-    if as_mode == "statement" && prog.is_some() {
-        let p = prog.as_ref().unwrap();
+    if let (true, Some(p)) = (as_mode == "statement", prog.as_ref()) {
         let mut twin_has_error = false;
         let mut twin_sql = String::new();
         let mut twin_err: Option<SqlError> = None;

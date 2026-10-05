@@ -406,7 +406,7 @@ fn inline_literals(node: &Node, literals: &HashMap<String, Node>, bound: &[Strin
         return cp;
     }
     if t == NodeType::Call {
-        let spec_binds = crate::builtins::lookup_spec(&node.s).map_or(false, |s| s.binds);
+        let spec_binds = crate::builtins::lookup_spec(&node.s).is_some_and(|s| s.binds);
         let form = binding_form(&node.s, &node.items, spec_binds);
         let mut inner = bound.to_vec();
         if let Some(ref f) = form { inner.extend(f.binds.iter().cloned()); }
@@ -1205,7 +1205,7 @@ pub fn plan_hybrid(
         // run() finds the whole relation: that split is not made. A LINK in the
         // prefix has already named its sides.
         let is_link = |step: &Node| step.s == "LINK" || step.s == "LINK_LEFT";
-        let needs_rebind = !steps[..count].iter().any(|step| is_link(step))
+        let needs_rebind = !steps[..count].iter().any(&is_link)
             && remaining.iter().any(|step| is_link(step) && step.items.len() == 3);
         if needs_rebind {
             let reads_source = source.t != NodeType::Var

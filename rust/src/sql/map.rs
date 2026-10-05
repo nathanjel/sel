@@ -153,7 +153,7 @@ fn init_shipped() -> (HashMap<String, DialectRecord>, RulesData) {
     if let Some(func_arity) = raw_rules.get("funcArity").and_then(|v| v.as_object()) {
         for (k, arr) in func_arity {
             if let Some(a) = arr.as_array() {
-                let lo = a.get(0).and_then(|v| v.as_u64()).map(|n| n as usize);
+                let lo = a.first().and_then(|v| v.as_u64()).map(|n| n as usize);
                 let hi = a.get(1).and_then(|v| v.as_u64()).map(|n| n as usize);
                 rules.func_arity.insert(k.clone(), [lo, hi]);
             }
@@ -937,13 +937,12 @@ fn check_key(section: &str, key: &str) {
                 key
             );
         }
-    } else if section == "skel" {
-        if !rules.skel_slots.contains_key(key) {
+    } else if section == "skel"
+        && !rules.skel_slots.contains_key(key) {
             let mut known: Vec<String> = rules.skel_slots.keys().cloned().collect();
             known.sort();
             panic!("{} is not a skeleton; known ones are {}", key, known.join(", "));
         }
-    }
 }
 
 fn check_entry(section: &str, key: &str, e: &serde_json::Value) {
@@ -1108,7 +1107,7 @@ fn check_entry(section: &str, key: &str, e: &serde_json::Value) {
                 if ea[0] > lo {
                     lo = ea[0];
                 }
-                if hi.map_or(true, |h| ea[1] < h) {
+                if hi.is_none_or(|h| ea[1] < h) {
                     hi = Some(ea[1]);
                 }
             }
@@ -1120,7 +1119,7 @@ fn check_entry(section: &str, key: &str, e: &serde_json::Value) {
                     panic!("{} keys a template by {:?}; an arity-keyed template uses a count or *", where_str, n);
                 }
                 let c: usize = n.parse().unwrap();
-                if c < lo || hi.map_or(false, |h| c > h) {
+                if c < lo || hi.is_some_and(|h| c > h) {
                     let hi_str = hi.map(|h| h.to_string()).unwrap_or_else(|| "any".to_string());
                     panic!(
                         "{} keys a template by {}, and {} takes {} to {} argument(s), so that template could never be chosen",
@@ -1162,7 +1161,7 @@ fn check_args(key: &str, args_val: &serde_json::Value, host: Option<(usize, usiz
 }
 
 fn check_section(section: &str) {
-    if !SECTIONS.iter().any(|s| *s == section) {
+    if !SECTIONS.contains(&section) {
         panic!("unknown map section {}; use {}", section, SECTIONS.join(", "));
     }
 }

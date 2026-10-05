@@ -588,7 +588,7 @@ impl Value {
             let shape = inner.shape.take().unwrap();
             let storage = inner.storage.take().unwrap();
             let mut entries = Vec::with_capacity(shape.keys.len() + 1);
-            for (k, v) in shape.keys.iter().zip(storage.into_iter()) {
+            for (k, v) in shape.keys.iter().zip(storage) {
                 entries.push(Entry {
                     key: k.clone(),
                     val: v,
@@ -612,7 +612,7 @@ impl Value {
             let list_keys = inner.take_list_keys();
             let mut entries = Vec::with_capacity(storage.len() + 1);
             if let Some(lk) = list_keys {
-                for (k, v) in lk.to_strings().into_iter().zip(storage.into_iter()) {
+                for (k, v) in lk.to_strings().into_iter().zip(storage) {
                     entries.push(Entry { key: k, val: v });
                 }
             } else {

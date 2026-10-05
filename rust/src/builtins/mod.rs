@@ -116,7 +116,7 @@ fn define(
 /// define()d beside it -- not only what the manifest lists.
 fn is_builtin(key: &str) -> bool {
     lookup_builtin(key).is_some()
-        || registry().read().unwrap().get(key).map_or(false, |s| matches!(s.func, SpecFn::Native(_)))
+        || registry().read().unwrap().get(key).is_some_and(|s| matches!(s.func, SpecFn::Native(_)))
 }
 
 fn registry() -> &'static RwLock<HashMap<String, Arc<Spec>>> {
@@ -254,8 +254,8 @@ where
     F: Fn(&mut Args) -> Result<Value, SelError> + Send + Sync + 'static,
 {
     let bytes = name.as_bytes();
-    let is_ascii_letter = |b: u8| (b'a'..=b'z').contains(&b) || (b'A'..=b'Z').contains(&b);
-    let is_ident = |b: u8| is_ascii_letter(b) || (b'0'..=b'9').contains(&b) || b == b'_';
+    let is_ascii_letter = |b: u8| b.is_ascii_lowercase() || b.is_ascii_uppercase();
+    let is_ident = |b: u8| is_ascii_letter(b) || b.is_ascii_digit() || b == b'_';
     if bytes.is_empty() || !is_ascii_letter(bytes[0]) || !bytes.iter().all(|&b| is_ident(b)) {
         return Err(SelError::new(
             "E_BAD_ARG",

@@ -86,7 +86,7 @@ fn plan_within(source: String, bindings: fn() -> Bindings) -> bool {
 
 #[test]
 fn fallthrough_planning_is_linear_in_call_and_helper_nesting() {
-    sel_lang::register_function("HYBRID_NEST_HOST", 1, 1, |args| Ok(args.val(0)?)).unwrap();
+    sel_lang::register_function("HYBRID_NEST_HOST", 1, 1, |args| args.val(0)).unwrap();
     fn bindings() -> Bindings { Bindings::new(Some(HashMap::from([("ITEMS".into(), Binding::relation(
         "items", "i", vec![
             FieldEntry::new("X", Binding::column("x", "i", SqlKind::Num, false, false, false, "", "", false)),

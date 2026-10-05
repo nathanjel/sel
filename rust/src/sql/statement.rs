@@ -78,7 +78,7 @@ pub fn record_fields(node: &SNode, dialect: &str) -> Result<Vec<(String, SNode)>
             let mut end = key.len().min(63);
             while !args[i].str.is_char_boundary(end) { end -= 1; }
             let prefix = key[..end].to_vec();
-            if prefixes.insert(prefix, key.len() > 63).map_or(false, |was_long| was_long || key.len() > 63) {
+            if prefixes.insert(prefix, key.len() > 63).is_some_and(|was_long| was_long || key.len() > 63) {
                 return refuse("E_SQL_UNSUPPORTED", "record aliases collide after PostgreSQL identifier truncation", args[i].pos);
             }
         }
@@ -295,7 +295,7 @@ impl Translator {
             let mut b = Binding::column_with(&col_name, &alias, col_type, Default::default());
             if let Some(ref mut c) = b.column {
                 c.canonical = canonical;
-                c.unavailable = source_field.map_or(false, |f| f.is_raw || f.unavailable);
+                c.unavailable = source_field.is_some_and(|f| f.is_raw || f.unavailable);
             }
             field_entries.push(FieldEntry::new(name, b));
         }

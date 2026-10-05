@@ -133,12 +133,11 @@ pub fn make_joined_row(
 
     let left_entries = left.entries();
     for e in &left_entries {
-        if join_category(&e.val) == JOIN_NESTED {
-            if !slot.contains_key(&e.key) {
+        if join_category(&e.val) == JOIN_NESTED
+            && !slot.contains_key(&e.key) {
                 slot.insert(e.key.clone(), entries.len());
                 entries.push(Entry { key: e.key.clone(), val: e.val.clone() });
             }
-        }
     }
 
     for name in binder_keys(b1, "_1") {
@@ -179,12 +178,11 @@ pub fn make_joined_row(
     }
 
     for e in &left_entries {
-        if join_category(&e.val) != JOIN_NESTED && !right_names.contains_key(&e.key.to_ascii_uppercase()) {
-            if !slot.contains_key(&e.key) {
+        if join_category(&e.val) != JOIN_NESTED && !right_names.contains_key(&e.key.to_ascii_uppercase())
+            && !slot.contains_key(&e.key) {
                 slot.insert(e.key.clone(), entries.len());
                 entries.push(Entry { key: e.key.clone(), val: e.val.clone() });
             }
-        }
     }
 
     if right.is_some() {
@@ -193,12 +191,11 @@ pub fn make_joined_row(
             left_names.insert(e.key.to_ascii_uppercase(), true);
         }
         for e in &right_entries {
-            if join_category(&e.val) == JOIN_SCALAR && !left_names.contains_key(&e.key.to_ascii_uppercase()) {
-                if !slot.contains_key(&e.key) {
+            if join_category(&e.val) == JOIN_SCALAR && !left_names.contains_key(&e.key.to_ascii_uppercase())
+                && !slot.contains_key(&e.key) {
                     slot.insert(e.key.clone(), entries.len());
                     entries.push(Entry { key: e.key.clone(), val: e.val.clone() });
                 }
-            }
         }
     }
 
@@ -329,8 +326,8 @@ pub fn compile_join_plan(
     let l_storage = left_inner.storage.as_ref().unwrap();
 
     for (i, k) in l_keys.iter().enumerate() {
-        if is_left_nested(&l_storage[i]) {
-            if !slot_map.contains_key(k) {
+        if is_left_nested(&l_storage[i])
+            && !slot_map.contains_key(k) {
                 slot_map.insert(k.clone(), keys.len());
                 keys.push(k.clone());
                 slots.push(JoinPlanSlot {
@@ -338,7 +335,6 @@ pub fn compile_join_plan(
                     slot: i,
                 });
             }
-        }
     }
 
     for name in binder_keys(b1, "_1") {
@@ -380,8 +376,8 @@ pub fn compile_join_plan(
     }
 
     for (i, k) in l_keys.iter().enumerate() {
-        if !is_left_nested(&l_storage[i]) && !right_names.contains_key(&k.to_ascii_uppercase()) {
-            if !slot_map.contains_key(k) {
+        if !is_left_nested(&l_storage[i]) && !right_names.contains_key(&k.to_ascii_uppercase())
+            && !slot_map.contains_key(k) {
                 slot_map.insert(k.clone(), keys.len());
                 keys.push(k.clone());
                 slots.push(JoinPlanSlot {
@@ -389,7 +385,6 @@ pub fn compile_join_plan(
                     slot: i,
                 });
             }
-        }
     }
 
     if matched {
@@ -402,8 +397,7 @@ pub fn compile_join_plan(
             let item_inner = r_storage[j].0.borrow();
             if (item_inner.kind != Kind::None || item_inner.is_list)
                 && !left_names.contains_key(&k.to_ascii_uppercase())
-            {
-                if !slot_map.contains_key(k) {
+                && !slot_map.contains_key(k) {
                     slot_map.insert(k.clone(), keys.len());
                     keys.push(k.clone());
                     slots.push(JoinPlanSlot {
@@ -411,7 +405,6 @@ pub fn compile_join_plan(
                         slot: j,
                     });
                 }
-            }
         }
     }
 

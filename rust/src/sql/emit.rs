@@ -23,7 +23,7 @@ fn parse_slot_num(s: &str) -> Option<usize> {
         return None;
     }
     for &c in b {
-        if c < b'0' || c > b'9' {
+        if !c.is_ascii_digit() {
             return None;
         }
     }
@@ -31,8 +31,8 @@ fn parse_slot_num(s: &str) -> Option<usize> {
 }
 
 pub fn format_literal(dialect: &str, v: Option<&Value>, form: SqlKind, pos: Pos) -> Result<String, SqlError> {
-    if form == SqlKind::Bool || v.map_or(false, |val| val.kind() == Kind::Bool) {
-        let is_true = v.map_or(false, |val| val.as_bool(pos).unwrap_or(false));
+    if form == SqlKind::Bool || v.is_some_and(|val| val.kind() == Kind::Bool) {
+        let is_true = v.is_some_and(|val| val.as_bool(pos).unwrap_or(false));
         let key = if is_true { "true" } else { "false" };
         if let Some(lex) = lexical(dialect, key) {
             if let Some(s) = lex.as_str() {
@@ -42,13 +42,13 @@ pub fn format_literal(dialect: &str, v: Option<&Value>, form: SqlKind, pos: Pos)
         return Ok(key.to_string());
     }
 
-    if form == SqlKind::Bin || v.map_or(false, |val| val.kind() == Kind::Bin) {
+    if form == SqlKind::Bin || v.is_some_and(|val| val.kind() == Kind::Bin) {
         let tpl_val = lexical(dialect, "binaryLiteral");
         let tpl = match tpl_val.as_ref().and_then(|v| v.as_str()) {
             Some(s) if !s.is_empty() => s,
             _ => return refuse("E_SQL_UNSUPPORTED", format!("dialect {} has no binary literal syntax", dialect), pos),
         };
-        let bytes = v.map_or_else(|| Vec::new(), |val| val.as_bytes(pos).unwrap_or_default());
+        let bytes = v.map_or_else(Vec::new, |val| val.as_bytes(pos).unwrap_or_default());
         let hex_str: String = bytes.iter().map(|b| format!("{:02x}", b)).collect();
         return Ok(fill_slot(tpl, "{hex}", &hex_str));
     }
@@ -113,7 +113,7 @@ pub fn text_literal(dialect: &str, text: &str) -> String {
         if let Some(m) = esc.as_object() {
             let mut keys: Vec<String> = m.keys().cloned().collect();
             // Sort by descending length so multi-character escapes match first
-            keys.sort_by(|a, b| b.len().cmp(&a.len()));
+            keys.sort_by_key(|k| std::cmp::Reverse(k.len()));
 
             let mut buf = String::new();
             let mut i = 0;
@@ -392,8 +392,7 @@ impl Emit {
                 continue;
             }
 
-            if slot.ends_with(':') {
-                let frm_str = &slot[..slot.len() - 1];
+            if let Some(frm_str) = slot.strip_suffix(':') {
                 if let Some(frm) = parse_slot_num(frm_str) {
                     if frm < args.len() {
                         join_sub(&mut parts, &args[frm..]);
@@ -439,7 +438,7 @@ impl Emit {
                 continue;
             }
 
-            if expanding.map_or(false, |e| *e.get(key).unwrap_or(&false)) {
+            if expanding.is_some_and(|e| *e.get(key).unwrap_or(&false)) {
                 return refuse(
                     "E_SQL_UNSUPPORTED",
                     format!(

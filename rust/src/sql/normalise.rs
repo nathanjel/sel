@@ -143,7 +143,7 @@ fn rename_binders(node: &Node, captures: &[String], renames: &HashMap<String, St
         return out;
     }
     if node.t == NodeType::Call {
-        let binds = crate::builtins::lookup_spec(&node.s).map_or(false, |s| s.binds);
+        let binds = crate::builtins::lookup_spec(&node.s).is_some_and(|s| s.binds);
         let form = binding_form(&node.s, &node.items, binds);
         let mut inner = renames.clone();
         if let Some(ref f) = form {
@@ -365,7 +365,7 @@ fn substitute_node(
             Ok((SNode::rewritten(node, items), m))
         }
         NodeType::Call => {
-            let spec_binds = crate::builtins::lookup_spec(&node.s).map_or(false, |s| s.binds);
+            let spec_binds = crate::builtins::lookup_spec(&node.s).is_some_and(|s| s.binds);
             let form = binding_form(&node.s, &node.items, spec_binds);
             let mut inner = bound.to_vec();
             if let Some(ref f) = form {

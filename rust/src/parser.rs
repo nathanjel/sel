@@ -132,7 +132,7 @@ impl Lexer {
         let mut lo = 0;
         let mut hi = self.line_starts.len() - 1;
         while lo < hi {
-            let mid = (lo + hi + 1) / 2;
+            let mid = (lo + hi).div_ceil(2);
             if self.line_starts[mid] <= offset {
                 lo = mid;
             } else {
@@ -1084,7 +1084,7 @@ fn finish_call(name_tok: Token, spec: &FunctionSpec, args: Vec<Node>) -> PResult
         if let Some(pattern) = args.first().filter(|a| a.t == NodeType::Text) {
             let flag_at = if spec.name() == "RREPLACE" { 3 } else { 2 };
             let ignore_case = pattern.s.is_ascii() && args.get(flag_at)
-                .map_or(false, |a| a.t == NodeType::Text && a.s.contains('i'));
+                .is_some_and(|a| a.t == NodeType::Text && a.s.contains('i'));
             crate::regex::validate_pattern_with_case(&pattern.s, pattern.pos, ignore_case)?;
         }
     }

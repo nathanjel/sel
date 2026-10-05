@@ -265,7 +265,7 @@ fn opt_numeric_literal(node: &Node) -> Option<i64> {
 }
 
 fn opt_positive_literal(node: &Node) -> bool {
-    opt_numeric_literal(node).map_or(false, |n| n >= 1)
+    opt_numeric_literal(node).is_some_and(|n| n >= 1)
 }
 
 fn opt_rename_var(node: &Node, old_name: &str, new_name: &str) -> Node {
@@ -295,10 +295,10 @@ fn opt_cannot_raise(node: &Node, binder: &str, logical: bool) -> bool {
         }
         NodeType::Index => {
             logical
-                && node.l.as_ref().map_or(false, |l| {
+                && node.l.as_ref().is_some_and(|l| {
                     l.t == NodeType::Var && l.s.eq_ignore_ascii_case(binder)
                 })
-                && node.r.as_ref().map_or(false, |r| r.t == NodeType::Text)
+                && node.r.as_ref().is_some_and(|r| r.t == NodeType::Text)
         }
         NodeType::Bin => {
             if !logical {
@@ -312,13 +312,13 @@ fn opt_cannot_raise(node: &Node, binder: &str, logical: bool) -> bool {
                     | "AND" | "OR" | "+" | "-" | "*"
             );
             is_safe
-                && node.l.as_ref().map_or(true, |l| opt_cannot_raise(l, binder, logical))
-                && node.r.as_ref().map_or(true, |r| opt_cannot_raise(r, binder, logical))
+                && node.l.as_ref().is_none_or(|l| opt_cannot_raise(l, binder, logical))
+                && node.r.as_ref().is_none_or(|r| opt_cannot_raise(r, binder, logical))
         }
         NodeType::Un => {
             logical
                 && node.s == "NOT"
-                && node.l.as_ref().map_or(true, |l| opt_cannot_raise(l, binder, logical))
+                && node.l.as_ref().is_none_or(|l| opt_cannot_raise(l, binder, logical))
         }
         _ => false,
     }
@@ -402,8 +402,8 @@ struct OptSortInfo<'a> {
 fn get_opt_sort_info(step: &Node) -> OptSortInfo<'_> {
     let args = &step.items;
     let count = args.len();
-    let is_name = |i: usize| args.get(i).map_or(false, |a| a.t == NodeType::Var && !a.grouped);
-    let is_text = |i: usize| args.get(i).map_or(false, |a| a.t == NodeType::Text);
+    let is_name = |i: usize| args.get(i).is_some_and(|a| a.t == NodeType::Var && !a.grouped);
+    let is_text = |i: usize| args.get(i).is_some_and(|a| a.t == NodeType::Text);
     let mut info = OptSortInfo { binder: "_".to_string(), key: None, valid: true };
     let s = step.s.as_str();
     // TOP* carry the limit last; what precedes it is the sort's own form.
@@ -510,11 +510,10 @@ fn opt_field_refs(node: &Node, binder: &str) -> Vec<String> {
                 if l.t == NodeType::Var && r.t == NodeType::Text {
                     let v = l.s.to_ascii_uppercase();
                     let b = binder.to_ascii_uppercase();
-                    if binder.is_empty() || v == b || v == "_" || v == "_1" || v == "_2" {
-                        if seen.insert(r.s.clone()) {
+                    if (binder.is_empty() || v == b || v == "_" || v == "_1" || v == "_2")
+                        && seen.insert(r.s.clone()) {
                             refs.push(r.s.clone());
                         }
-                    }
                 }
             }
         }
@@ -718,8 +717,8 @@ fn opt_logical_steps(source: &Node, mut current: Vec<Node>, logical: bool) -> Ve
                     let sort_info = get_opt_sort_info(first);
                     let filter_info = get_opt_filter_info(s2);
                     let sort_safe = sort_info.valid
-                        && sort_info.key.map_or(true, |k| opt_cannot_raise(k, &sort_info.binder, logical));
-                    let filter_safe = logical || filter_info.predicate.map_or(true, |p| opt_cannot_raise(p, &filter_info.binder, false));
+                        && sort_info.key.is_none_or(|k| opt_cannot_raise(k, &sort_info.binder, logical));
+                    let filter_safe = logical || filter_info.predicate.is_none_or(|p| opt_cannot_raise(p, &filter_info.binder, false));
                     if sort_safe && filter_safe {
                         next.push(s2.clone());
                         next.push(first.clone());
@@ -872,8 +871,8 @@ fn read_only_expression(node: &Node) -> bool {
         "ROUND" | "CEIL" | "FLOOR" | "TRUNC" | "POWER" | "MIN" | "MAX") {
         return false;
     }
-    node.l.as_ref().map_or(true, |n| read_only_expression(n))
-        && node.r.as_ref().map_or(true, |n| read_only_expression(n))
+    node.l.as_ref().is_none_or(|n| read_only_expression(n))
+        && node.r.as_ref().is_none_or(|n| read_only_expression(n))
         && node.items.iter().all(read_only_expression)
 }
 
@@ -888,8 +887,8 @@ fn opt_inmemory_steps(source: &Node, steps: Vec<Node>) -> Vec<Node> {
             let next_step = if i + 1 < len { Some(&steps[i + 1]) } else { None };
             cp.items[last_idx].keys_unobserved = opt_keys_renumbered_by(next_step);
             cp.borrowed_filter = read_only_expression(&cp.items[last_idx])
-                && next_step.map_or(false, |next| matches!(next.s.as_str(), "MAP" | "FILTER")
-                    && next.items.last().map_or(false, read_only_expression));
+                && next_step.is_some_and(|next| matches!(next.s.as_str(), "MAP" | "FILTER")
+                    && next.items.last().is_some_and(read_only_expression));
         }
         rewritten.push(cp);
     }
@@ -934,7 +933,7 @@ pub fn opt_tree(node: &Node, physical: bool, depth: usize, fold: bool, in_math: 
             // Where it stands as written: the outermost step is this node.
             cp.step_depth = (depth + (count - 1 - index)).min(u16::MAX as usize) as u16;
             for i in 1..cp.items.len() {
-                let fold_arg = fold && opt_step_arg_folds(&step, i);
+                let fold_arg = fold && opt_step_arg_folds(step, i);
                 cp.items[i] = opt_tree(&cp.items[i], physical, depth + 1, fold_arg, false);
             }
             optimized_steps.push(cp);

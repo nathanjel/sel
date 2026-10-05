@@ -25,18 +25,18 @@ fn node_contains_var(node: &Node, name: &str) -> bool {
     match node.t {
         NodeType::Var => node.s.eq_ignore_ascii_case(name),
         NodeType::Index => {
-            node.l.as_ref().map_or(false, |l| node_contains_var(l, name))
-                || node.r.as_ref().map_or(false, |r| node_contains_var(r, name))
+            node.l.as_ref().is_some_and(|l| node_contains_var(l, name))
+                || node.r.as_ref().is_some_and(|r| node_contains_var(r, name))
         }
         NodeType::Call => node.items.iter().any(|a| node_contains_var(a, name)),
         NodeType::Bin => {
-            node.l.as_ref().map_or(false, |l| node_contains_var(l, name))
-                || node.r.as_ref().map_or(false, |r| node_contains_var(r, name))
+            node.l.as_ref().is_some_and(|l| node_contains_var(l, name))
+                || node.r.as_ref().is_some_and(|r| node_contains_var(r, name))
         }
-        NodeType::Un => node.l.as_ref().map_or(false, |l| node_contains_var(l, name)),
+        NodeType::Un => node.l.as_ref().is_some_and(|l| node_contains_var(l, name)),
         NodeType::Assign => {
-            node.l.as_ref().map_or(false, |l| node_contains_var(l, name))
-                || node.r.as_ref().map_or(false, |r| node_contains_var(r, name))
+            node.l.as_ref().is_some_and(|l| node_contains_var(l, name))
+                || node.r.as_ref().is_some_and(|r| node_contains_var(r, name))
         }
         NodeType::Seq | NodeType::List => node.items.iter().any(|item| node_contains_var(item, name)),
         _ => false,
@@ -105,7 +105,7 @@ pub fn fn_record(args: &mut Args) -> Result<Value, SelError> {
     }
     let entries = keys
         .into_iter()
-        .zip(values.into_iter())
+        .zip(values)
         .map(|(k, v)| Entry { key: k, val: v })
         .collect();
     Ok(Value::record_from_entries(entries))
@@ -426,7 +426,7 @@ fn filter_rows(args: &mut Args, plan: Box<FilterPlan>, source: Result<Value, Sel
         }
         // body_pos is body_node's own position: eval_bool is exactly
         // eval_node(..).as_bool(body_pos), without the boolean's value cell.
-        let keep = match crate::eval::eval_bool(&body_node, args.ctx) {
+        let keep = match crate::eval::eval_bool(body_node, args.ctx) {
             Ok(b) => b,
             Err(err) => {
                 args.ctx.pop_frame();
@@ -869,11 +869,10 @@ fn top_key_may_write(root: &Node) -> bool {
         if node.t == NodeType::Assign {
             return true;
         }
-        if node.t == NodeType::Call {
-            if !is_builtin_name(&node.s) {
+        if node.t == NodeType::Call
+            && !is_builtin_name(&node.s) {
                 return true;
             }
-        }
         let push_cnt = (node.l.is_some() as usize) + (node.r.is_some() as usize) + node.items.len();
         if len + push_cnt > stack.len() {
             return true;
@@ -1031,7 +1030,7 @@ fn do_top(args: &mut Args, forced_dir: Option<&str>) -> Result<Value, SelError> 
 
     let eager = body_opt.as_ref().is_some_and(top_key_may_write);
 
-    let needs_k = body_opt.as_ref().map_or(false, |b| node_contains_var(b, "_K"));
+    let needs_k = body_opt.as_ref().is_some_and(|b| node_contains_var(b, "_K"));
     let mut frame = HashMap::new();
     if !binder.is_empty() {
         frame.insert(binder.clone(), Value::none());
@@ -1487,18 +1486,18 @@ fn expr_depends_only_on(node: &Node, allowed: &HashMap<String, bool>) -> bool {
     match node.t {
         NodeType::Var => allowed.contains_key(&node.s.to_ascii_uppercase()),
         NodeType::Index => {
-            node.l.as_ref().map_or(true, |l| expr_depends_only_on(l, allowed))
-                && node.r.as_ref().map_or(true, |r| expr_depends_only_on(r, allowed))
+            node.l.as_ref().is_none_or(|l| expr_depends_only_on(l, allowed))
+                && node.r.as_ref().is_none_or(|r| expr_depends_only_on(r, allowed))
         }
         NodeType::Call => node.items.iter().all(|a| expr_depends_only_on(a, allowed)),
         NodeType::Bin => {
-            node.l.as_ref().map_or(true, |l| expr_depends_only_on(l, allowed))
-                && node.r.as_ref().map_or(true, |r| expr_depends_only_on(r, allowed))
+            node.l.as_ref().is_none_or(|l| expr_depends_only_on(l, allowed))
+                && node.r.as_ref().is_none_or(|r| expr_depends_only_on(r, allowed))
         }
-        NodeType::Un => node.l.as_ref().map_or(true, |l| expr_depends_only_on(l, allowed)),
+        NodeType::Un => node.l.as_ref().is_none_or(|l| expr_depends_only_on(l, allowed)),
         NodeType::Assign => {
-            node.l.as_ref().map_or(true, |l| expr_depends_only_on(l, allowed))
-                && node.r.as_ref().map_or(true, |r| expr_depends_only_on(r, allowed))
+            node.l.as_ref().is_none_or(|l| expr_depends_only_on(l, allowed))
+                && node.r.as_ref().is_none_or(|r| expr_depends_only_on(r, allowed))
         }
         NodeType::Seq | NodeType::List => node.items.iter().all(|item| expr_depends_only_on(item, allowed)),
         _ => true,
@@ -1831,7 +1830,7 @@ fn link_body<'a>(
     // Drops below that left this join no left rows: as written it may have
     // had some, and then it computes every right key before it finds that
     // no row survives. The left side is evaluated again, as written.
-    if below.as_ref().is_some_and(|b| b.dropped) && (left_val.is_null() || left_val.elems().len() == 0) {
+    if below.as_ref().is_some_and(|b| b.dropped) && (left_val.is_null() || left_val.elems().is_empty()) {
         left_val = args.eval_node(left_node)?;
         args.ctx.join_prefilter_report = None;
         below = None;

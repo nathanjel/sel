@@ -20,6 +20,31 @@
 // Sync: move it to a thread, or compile (or clone) one per thread. The probes
 // below hold the crate to that; README.md says the same to its users.
 
+// Clippy runs clean (`cargo clippy -p sel-lang`). These lints are allowed on
+// purpose, crate-wide:
+// - unnecessary_unwrap, needless_range_loop, needless_late_init,
+//   collapsible_match: the shapes they flag are transcriptions of the other
+//   hosts' code (the "same shape in every host" rule) or index loops over
+//   parallel arrays, kept readable side by side rather than idiomatic;
+// - type_complexity: the planner's tuple types are spelt where they are used;
+// - result_large_err: the regex counter's error is cold and built once;
+// - enum_variant_names, len_without_is_empty, new_without_default: internal
+//   types whose names and API mirror the other hosts';
+// - boxed_local: the box keeps a recursive frame small (the evaluator must
+//   reach E_DEPTH on a small stack).
+#![allow(
+    clippy::unnecessary_unwrap,
+    clippy::needless_range_loop,
+    clippy::needless_late_init,
+    clippy::collapsible_match,
+    clippy::type_complexity,
+    clippy::result_large_err,
+    clippy::enum_variant_names,
+    clippy::len_without_is_empty,
+    clippy::new_without_default,
+    clippy::boxed_local
+)]
+
 #[doc(hidden)]
 pub mod args;
 #[doc(hidden)]

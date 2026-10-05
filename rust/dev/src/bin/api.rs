@@ -153,7 +153,7 @@ fn main() {
             Ok(())
         };
         let probe_malformed = || -> Result<(), SelError> {
-            let items = vec![Value::text_owned("1".to_string())];
+            let items = [Value::text_owned("1".to_string())];
             let keys: Vec<String> = vec![];
             if items.len() != keys.len() {
                 return Err(SelError::new("E_BAD_ARG", "key and value counts must match", Pos::default()));

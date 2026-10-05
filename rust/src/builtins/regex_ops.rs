@@ -101,7 +101,7 @@ pub fn fn_rreplace(args: &mut Args) -> Result<Value, SelError> {
 
     let mut out = String::new();
     let mut last = 0;
-    for (m, exp) in matches.iter().zip(expanded_pieces.into_iter()) {
+    for (m, exp) in matches.iter().zip(expanded_pieces) {
         let prefix: String = orig_chars[last..m.start_cp].iter().collect();
         out.push_str(&prefix);
         out.push_str(&exp);

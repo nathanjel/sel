@@ -57,8 +57,8 @@ pub fn fn_from_hex(args: &mut Args) -> Result<Value, SelError> {
 
 pub fn fn_encode_base64(args: &mut Args) -> Result<Value, SelError> {
     let b = args.bytes(0)?;
-    cap_text(((b.len() as u128 + 2) / 3) * 4, args.pos())?;
-    let mut out = Vec::with_capacity((b.len() + 2) / 3 * 4);
+    cap_text((b.len() as u128).div_ceil(3) * 4, args.pos())?;
+    let mut out = Vec::with_capacity(b.len().div_ceil(3) * 4);
     let mut i = 0;
     while i < b.len() {
         let b0 = b[i] as u32;

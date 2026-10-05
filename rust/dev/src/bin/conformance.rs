@@ -73,7 +73,7 @@ fn parse_selt(text: &str, file: &str) -> Result<Vec<TestCase>, String> {
             if cur.is_none() {
                 return Err(format!("{}: section outside a case", at));
             }
-            let s = trim_ws(&line[4..]);
+            let s = trim_ws(line.strip_prefix("--- ").unwrap_or(line));
             if s != "setup" && s != "source" && s != "expect" && s != "note" {
                 return Err(format!("{}: unknown section {}", at, s));
             }
@@ -204,8 +204,8 @@ fn check_expect(expect: &str, val: Option<&Value>, err: Option<&SelError>, at: &
     };
 
     if form == "error" {
-        if val.is_some() {
-            return format!("expected {}, got value {}", expect, describe(val.unwrap()));
+        if let Some(v) = val {
+            return format!("expected {}, got value {}", expect, describe(v));
         }
         let err = match err {
             Some(e) => e,

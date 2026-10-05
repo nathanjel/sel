@@ -161,7 +161,7 @@ impl SNode {
     }
 
     pub fn l(&self) -> Option<&SNode> {
-        self.kids.get(0)
+        self.kids.first()
     }
 
     pub fn r(&self) -> Option<&SNode> {
@@ -213,11 +213,11 @@ impl SNode {
 
         match self.t {
             SNodeType::Un => {
-                let child = self.kids.get(0)?.to_node()?;
+                let child = self.kids.first()?.to_node()?;
                 copy_node.l = Some(Box::new(child));
             }
             SNodeType::Bin | SNodeType::Index | SNodeType::Assign => {
-                let l = self.kids.get(0)?.to_node()?;
+                let l = self.kids.first()?.to_node()?;
                 let r = self.kids.get(1)?.to_node()?;
                 copy_node.l = Some(Box::new(l));
                 copy_node.r = Some(Box::new(r));

@@ -148,7 +148,7 @@ pub fn identity_inputs(node: Option<&SNode>, depth: usize) -> NeededFields {
         }
         SNodeType::Index => {
             let idx = n.idx();
-            if idx.map_or(true, |i| i.t != SNodeType::Text) {
+            if idx.is_none_or(|i| i.t != SNodeType::Text) {
                 return NeededFields { all: true, fields: HashMap::new() };
             }
             if let Some(obj) = n.obj() {
@@ -285,7 +285,7 @@ pub fn identity_loss_before_grouping(mut node: Option<&SNode>, mut needed: Neede
             needed = NeededFields { all: false, fields: filtered };
         }
 
-        node = n.kids.get(0);
+        node = n.kids.first();
     }
     false
 }
@@ -297,7 +297,7 @@ pub fn is_constant(n: Option<&SNode>, bound: Option<&HashMap<String, bool>>) -> 
     };
     match node.t {
         SNodeType::Num | SNodeType::Text | SNodeType::Bool => true,
-        SNodeType::Var => bound.map_or(false, |b| *b.get(&node.str).unwrap_or(&false)),
+        SNodeType::Var => bound.is_some_and(|b| *b.get(&node.str).unwrap_or(&false)),
         SNodeType::Un => is_constant(node.l(), bound),
         SNodeType::Bin => is_constant(node.l(), bound) && is_constant(node.r(), bound),
         SNodeType::Index => is_constant(node.obj(), bound) && is_constant(node.idx(), bound),
@@ -317,8 +317,8 @@ pub fn is_constant(n: Option<&SNode>, bound: Option<&HashMap<String, bool>>) -> 
 
 fn constant_call(n: &SNode, bound: Option<&HashMap<String, bool>>) -> bool {
     let args = &n.kids;
-    let binds = n.spec.as_ref().map_or(false, |s| s.binds)
-        || lookup_builtin(&n.str).map_or(false, |e| e.binds);
+    let binds = n.spec.as_ref().is_some_and(|s| s.binds)
+        || lookup_builtin(&n.str).is_some_and(|e| e.binds);
 
     if !binds {
         for a in args {
@@ -329,7 +329,7 @@ fn constant_call(n: &SNode, bound: Option<&HashMap<String, bool>>) -> bool {
         return true;
     }
 
-    if args.is_empty() || !is_constant(args.get(0), bound) {
+    if args.is_empty() || !is_constant(args.first(), bound) {
         return false;
     }
 

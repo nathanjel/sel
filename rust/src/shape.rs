@@ -88,7 +88,7 @@ pub fn parse_list_slot(key: &str, len: usize) -> Option<usize> {
     }
     let mut val = (bytes[0] - b'0') as usize;
     for &b in &bytes[1..] {
-        if !(b'0'..=b'9').contains(&b) {
+        if !b.is_ascii_digit() {
             return None;
         }
         val = val * 10 + (b - b'0') as usize;

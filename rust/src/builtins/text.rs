@@ -40,9 +40,9 @@ fn pad(args: &mut Args, left: bool) -> Result<Value, SelError> {
         padding.push(fill_chars[i % fill_chars.len()]);
     }
     let res: String = if left {
-        padding.into_iter().chain(s_chars.into_iter()).collect()
+        padding.into_iter().chain(s_chars).collect()
     } else {
-        s_chars.into_iter().chain(padding.into_iter()).collect()
+        s_chars.into_iter().chain(padding).collect()
     };
     Value::text(&res, args.pos())
 }

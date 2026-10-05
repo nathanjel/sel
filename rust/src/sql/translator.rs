@@ -387,7 +387,7 @@ impl Translator {
                 let i = list_key(&key);
                 let cols = b.columns.as_ref().unwrap();
                 let count = cols.len();
-                if i.map_or(true, |idx| idx == 0 || idx > count) {
+                if i.is_none_or(|idx| idx == 0 || idx > count) {
                     return refuse(
                         "E_SQL_BINDING",
                         format!("{}[{}] is outside that binding's {} column(s)", obj.str, key, count),
@@ -826,7 +826,7 @@ impl Translator {
             if proj.is_none() {
                 let key_upper = key.to_ascii_uppercase();
                 for p in projections {
-                    if p.alias.as_ref().map_or(false, |a| a.to_ascii_uppercase() == key_upper) {
+                    if p.alias.as_ref().is_some_and(|a| a.to_ascii_uppercase() == key_upper) {
                         proj = Some(p);
                         break;
                     }
@@ -1051,8 +1051,8 @@ impl Translator {
             require_comparable_kinds(&l, &r, op, n.pos)?;
             let l_exact = l.exact;
             let r_exact = r.exact;
-            let l_lit = n.l().map_or(false, |k| k.t == SNodeType::Text);
-            let r_lit = n.r().map_or(false, |k| k.t == SNodeType::Text);
+            let l_lit = n.l().is_some_and(|k| k.t == SNodeType::Text);
+            let r_lit = n.r().is_some_and(|k| k.t == SNodeType::Text);
             let sargable_prefilter = self
                 .emit
                 .lex("sargablePrefilter")
@@ -1184,7 +1184,7 @@ impl Translator {
             has_elements = true;
         } else if rhs_is_free_var && self.bindings.has(&rhs.str) {
             let b = self.bindings.get(&rhs.str, rhs.pos)?;
-            if b.kind == BindingKind::Value && b.val.as_ref().map_or(false, |v| v.size() > 0) {
+            if b.kind == BindingKind::Value && b.val.as_ref().is_some_and(|v| v.size() > 0) {
                 let elems = self.value_elements(b, rhs.pos)?;
                 elements = elems.into_iter().map(|e| e.1.node.unwrap()).collect();
                 has_elements = true;
@@ -1345,7 +1345,7 @@ impl Translator {
                 shape
             })
             .collect();
-        let spec_binds = n.spec.as_ref().map_or(false, |s| s.binds);
+        let spec_binds = n.spec.as_ref().is_some_and(|s| s.binds);
         if let Some(form) = crate::manifest::binding_form(&n.str, &shapes, spec_binds) {
             for (i, scope) in form.scopes.iter().enumerate() {
                 if *scope == crate::manifest::builtins::Scope::Binder && !is_binder_name(n.kids.get(i)) {
@@ -1685,7 +1685,7 @@ impl Translator {
                         );
                     }
                     BinderShape::Row => {
-                        if bound.relation.as_ref().map_or(false, |r| r.fields.len() > 1) {
+                        if bound.relation.as_ref().is_some_and(|r| r.fields.len() > 1) {
                             return refuse(
                                 "E_SQL_SHAPE",
                                 format!(
@@ -1914,7 +1914,7 @@ impl Translator {
         let jr = build_join_rows(plan)?;
         let mut join_idx = None;
         for (i, j) in plan.joins.iter().enumerate() {
-            if j as *const RelationalJoin == join as *const RelationalJoin {
+            if std::ptr::eq(j, join) {
                 join_idx = Some(i);
                 break;
             }
@@ -2144,7 +2144,7 @@ impl Translator {
         if parts.len() == 1 {
             return Ok(parts.remove(0));
         }
-        self.fold_pairwise(&agg_fold(name), parts, n.pos)
+        self.fold_pairwise(agg_fold(name), parts, n.pos)
     }
 
     fn count(&mut self, n: &SNode) -> Result<Fragment, SqlError> {
@@ -2562,7 +2562,7 @@ impl Translator {
 
     fn fold_parts(&mut self, op: &str, mut parts: Vec<Fragment>, pos: Pos) -> Result<Fragment, SqlError> {
         if parts.len() > 256 {
-            let right = parts.split_off((parts.len() + 1) / 2);
+            let right = parts.split_off(parts.len().div_ceil(2));
             let left = self.fold_parts(op, parts, pos)?;
             let right = self.fold_parts(op, right, pos)?;
             let variant = self.variant_for(op, &[&left, &right]);
@@ -2628,15 +2628,7 @@ impl Translator {
                     } else {
                         None
                     }
-                } else if let Some(star) = m.get("*") {
-                    if !star.is_empty() {
-                        Some(star)
-                    } else {
-                        None
-                    }
-                } else {
-                    None
-                };
+                } else { m.get("*").filter(|&star| !star.is_empty()) };
                 if let Some(c) = chosen {
                     return Ok(c.clone());
                 }
@@ -2754,7 +2746,7 @@ impl Translator {
         };
         let mut args = n.kids.clone();
         let pat = args.get(pat_at);
-        if pat.map_or(true, |p| p.t != SNodeType::Text) {
+        if pat.is_none_or(|p| p.t != SNodeType::Text) {
             let p_pos = pat.map_or(n.pos, |p| p.pos);
             return refuse(
                 "E_SQL_UNSUPPORTED",
@@ -3030,7 +3022,7 @@ pub fn list_key(k: &str) -> Option<usize> {
         return None;
     }
     for &c in b {
-        if c < b'0' || c > b'9' {
+        if !c.is_ascii_digit() {
             return None;
         }
     }
@@ -3267,8 +3259,7 @@ fn ret_kind(entry: &EntryRecord, args: &[&Fragment], pos: Pos) -> Result<SqlKind
         }
         return Ok(SqlKind::Text);
     }
-    if ret.starts_with("@unify:") {
-        let rest = &ret[7..];
+    if let Some(rest) = ret.strip_prefix("@unify:") {
         let mut pick = Vec::new();
         for piece in rest.split(',') {
             if let Ok(idx) = piece.parse::<usize>() {

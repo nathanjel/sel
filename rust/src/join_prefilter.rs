@@ -90,10 +90,10 @@ pub fn join_pure_source(node: &Node) -> bool {
     match node.t {
         NodeType::Var | NodeType::Num | NodeType::Text | NodeType::Bool | NodeType::Null => true,
         NodeType::Index | NodeType::Bin => {
-            node.l.as_ref().map_or(true, |l| join_pure_source(l))
-                && node.r.as_ref().map_or(true, |r| join_pure_source(r))
+            node.l.as_ref().is_none_or(|l| join_pure_source(l))
+                && node.r.as_ref().is_none_or(|r| join_pure_source(r))
         }
-        NodeType::Un => node.l.as_ref().map_or(true, |l| join_pure_source(l)),
+        NodeType::Un => node.l.as_ref().is_none_or(|l| join_pure_source(l)),
         NodeType::List => node.items.iter().all(join_pure_source),
         NodeType::Call => {
             // A host's own function may do anything (JS, Python): only the
@@ -163,18 +163,18 @@ pub fn leading_field_conjuncts(body: &Node, binder: &str) -> Vec<JoinConjunct> {
                     if let Some(ref l) = n.l {
                         if l.t == NodeType::Index {
                             return reads_only_fields(l, fields, bare_read)
-                                && n.r.as_ref().map_or(true, |r| reads_only_fields(r, fields, bare_read));
+                                && n.r.as_ref().is_none_or(|r| reads_only_fields(r, fields, bare_read));
                         }
                     }
                     false
                 }
                 NodeType::Num | NodeType::Text | NodeType::Bool => true,
                 NodeType::Bin => {
-                    n.l.as_ref().map_or(true, |l| reads_only_fields(l, fields, bare_read))
-                        && n.r.as_ref().map_or(true, |r| reads_only_fields(r, fields, bare_read))
+                    n.l.as_ref().is_none_or(|l| reads_only_fields(l, fields, bare_read))
+                        && n.r.as_ref().is_none_or(|r| reads_only_fields(r, fields, bare_read))
                 }
                 NodeType::Un => {
-                    n.l.as_ref().map_or(true, |l| reads_only_fields(l, fields, bare_read))
+                    n.l.as_ref().is_none_or(|l| reads_only_fields(l, fields, bare_read))
                 }
                 _ => false,
             }
