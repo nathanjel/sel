@@ -12,9 +12,9 @@
 //
 // The visible difference here is that Go, like C++ and Rust, has no untyped map
 // to hand over as bindings: a Bindings is built from a map of typed bindings,
-// and TryTranslate answers nil when it declines. sql.ColumnBinding takes every
-// column option positionally, so the helper below names the three this file
-// uses and passes the defaults. Translate returns its refusal as an error,
+// and TryTranslate answers nil when it declines. sql.Column names the column's
+// options in a sql.ColumnOptions, and the helper below passes the zero value:
+// no flags, collation or prefilter. Translate returns its refusal as an error,
 // always a *sql.SqlError; rendering a fragment (AsCondition, AsValue) panics
 // with one, as a Value's accessors panic with a *sel.SelError.
 
@@ -31,7 +31,7 @@ import (
 
 // A column binding with no flags, collation or prefilter; "" is "no table".
 func col(column, table string, kind sql.SqlKind) *sql.Binding {
-	return sql.ColumnBinding(column, table, kind, false, false, false, "", "", false)
+	return sql.Column(column, table, kind, sql.ColumnOptions{})
 }
 
 // check stops the example on an error a well-formed program never has.
