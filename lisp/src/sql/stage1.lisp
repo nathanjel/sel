@@ -328,7 +328,7 @@ SQL expression cannot do" (snode-pos node)))
      ;; DEPENDENCIES. A binder argument is a NAME, not a read of one, and stays
      ;; as written -- unless a definition about to be inlined under it reads a
      ;; name the binder would capture, in which case the binder is renamed first.
-     (let ((args (sel::node-items (setf node (hygienic-call node defs bound depth)))))
+     (let ((args (sel::node-items (setf node (hygienic-call node defs depth)))))
        (multiple-value-bind (scopes binds)
            (sel::binding-form (sel::node-s node) args (sel::node-spec node))
          (let ((inner (append bound binds)))
@@ -431,7 +431,7 @@ there is nothing to translate; the evaluator answers E_DEPTH for it" sel::+max-d
   "A name no program can write: it contains a character the lexer never yields."
   (format nil "~a~c~d" name (code-char 1) (incf *fresh-binder-counter*)))
 
-(defun hygienic-call (node defs bound depth)
+(defun hygienic-call (node defs depth)
   "Rename the explicit binder of a binding call when it would CAPTURE a name free
 in a definition about to be inlined into its scope. `X = A; ALL(L, A, X > 0)` must
 read the column A in the body, and inlining X as the bare name A would make it

@@ -12,7 +12,18 @@
 ;;;; code point layer. That holds on SBCL, CCL, ECL and CLISP; it would not hold
 ;;;; on an implementation with UTF-16 strings.
 
+;;; The hot files are compiled at (speed 3), and SBCL explains every optimisation
+;;; it could not make in a compiler NOTE -- several hundred per build, among which
+;;; a real WARNING was easy to miss. Notes are muffled while these systems
+;;; compile, and only then (no global proclamation reaches the caller's code);
+;;; warnings and style warnings still print, and lisp/bin/check-load fails on a
+;;; warning.
+(defun call-muffling-compiler-notes (thunk)
+  (handler-bind (#+sbcl (sb-ext:compiler-note #'muffle-warning))
+    (funcall thunk)))
+
 (defsystem "sel-lang"
+  :around-compile call-muffling-compiler-notes
   :description "SEL — a small expression language that evaluates identically on every host"
   :author "Marcin Gałczyński"
   :license "MIT"
@@ -57,6 +68,7 @@
 ;;; evaluator should not carry the dialect map. `(ql:quickload :sel-lang/sql)`
 ;;; brings in both.
 (defsystem "sel-lang/sql"
+  :around-compile call-muffling-compiler-notes
   :description "SEL -> SQL translation"
   :author "Marcin Gałczyński"
   :license "MIT"

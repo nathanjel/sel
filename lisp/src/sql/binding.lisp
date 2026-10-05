@@ -122,6 +122,12 @@ EXACT/SARGABLE, then the prefilter."
     (when pref (setf (getf spec :prefilter) pref))
     spec))
 
+#+sbcl
+;; The constructors' positional-then-keyword lambda lists are their public API
+;; (docs/usage/sql*.md); SBCL's style warning about the mix is muffled for them
+;; alone and restored below.
+(declaim (sb-ext:muffle-conditions sb-kernel:&optional-and-&key-in-lambda-list))
+
 (defun binding-column (column &optional table (type :unknown) &key exact sargable guard collation prefilter split-sargable)
   "One column, optionally qualified by a table, optionally typed.
 
@@ -218,6 +224,10 @@ subquery back to the outer row."
     (refuse "E_SQL_BINDING" "a relation query cannot be empty"))
   (when alias (check-name "alias" alias))
   (%make-relation query t alias fields scalar correlate (or prefilter (when split-sargable "separate"))))
+
+
+#+sbcl
+(declaim (sb-ext:unmuffle-conditions sb-kernel:&optional-and-&key-in-lambda-list))
 
 (defun binding-with-unique-key (b key)
   "Return a binding with a caller-proven single-column, non-null unique key."

@@ -1926,7 +1926,7 @@ resolves to the key -- which is what the evaluator does."
   (let ((cell (assoc name frame :test #'equal)))
     (if cell (progn (setf (cdr cell) b) frame) (append frame (list (cons name b))))))
 
-(defun with-element (tr src binder-name elem key n render)
+(defun with-element (tr binder-name elem key n render)
   (let ((frame '()))
     (setf frame (frame-set frame binder-name elem))
     ;; `_K` names a TEXT literal of the element's key, which becomes a parameter
@@ -2148,7 +2148,7 @@ can only be the thing another aggregate iterates" name)
                                           (lambda () (agg-body tr name body src n nil binder-name)))
                                 n)))
         (let ((parts (loop for cell in (source-elements src)
-                           collect (with-element tr src binder-name (cdr cell) (car cell) n
+                           collect (with-element tr binder-name (cdr cell) (car cell) n
                                                  (lambda () (agg-body tr name body src n t binder-name))))))
           (cond
             ;; Spec §7.3's empty cases.
@@ -2180,7 +2180,7 @@ can only be the thing another aggregate iterates" name)
                                           (lambda () (agg-body tr "SUM" body src n nil "_")))
                                 n)))
         (let ((parts (loop for cell in (source-elements src)
-                           collect (with-element tr src "_" (cdr cell) (car cell) n
+                           collect (with-element tr "_" (cdr cell) (car cell) n
                                                  (lambda () (agg-body tr "SUM" body src n nil "_"))))))
           (return-from translate-count
             (cond ((null parts) (make-literal tr (sel:make-num "0") :num))
@@ -2279,7 +2279,7 @@ absorb one, and dropping it would join elements SEL leaves out"
         (when parts (push (require-joinable (walk-node tr sep-node) (snode-pos sep-node)) parts))
         (let ((held (cdr cell)))
           (push (require-joinable
-                 (with-element tr src "_" held (car cell) n
+                 (with-element tr "_" held (car cell) n
                                (lambda () (from-binder tr held n)))
                  (snode-pos n))
                 parts)))

@@ -721,7 +721,9 @@ b\"c\\d")))
         ;; DE: disc 25 -> 10 + 50 = 60 (>50: 1 row); disc 10 -> 10 + 20 = 30 (<=50)
         (is (= 2 (sel:value-size res)))
         (is-true (or (string= "US" (sel:as-text (sel:value-get r1 "country")))
-                     (string= "DE" (sel:as-text (sel:value-get r1 "country")))))))))
+                     (string= "DE" (sel:as-text (sel:value-get r1 "country")))))
+        (is (string/= (sel:as-text (sel:value-get r1 "country"))
+                      (sel:as-text (sel:value-get r2 "country"))))))))
 
 (test deep-14-stage-pipeline
   (let* ((cats (sel.sql:binding-relation "categories" "categories"

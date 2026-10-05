@@ -55,4 +55,8 @@
 (format t "~&clean ASDF load of sel-lang, sel-lang/sql and sel-lang/tests: ok~
            ~[~:;, ~:*~d style warning~:p~]~%"
         (length *style-warnings*))
-(dolist (w (reverse *style-warnings*)) (format t "  style: ~a~%" w))
+;; Listed on request: three are SBCL's note that a macro compiled in this image
+;; is defined again when its fasl loads, which only a compile-and-load in one
+;; process produces.
+(when (sb-ext:posix-getenv "SEL_LOAD_VERBOSE")
+  (dolist (w (reverse *style-warnings*)) (format t "  style: ~a~%" w)))
