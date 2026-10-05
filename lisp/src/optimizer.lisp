@@ -164,10 +164,11 @@ text is not a number)."
                    (b (cond
                         ((string= op "$==") (string= sl sr))
                         ((string= op "$!=") (string/= sl sr))
-                        ((string= op "$<")  (string< sl sr))
-                        ((string= op "$<=") (string<= sl sr))
-                        ((string= op "$>")  (string> sl sr))
-                        ((string= op "$>=") (string>= sl sr)))))
+                        ;; STRING< and kin answer a mismatch index; a boolean here.
+                        ((string= op "$<")  (and (string< sl sr) t))
+                        ((string= op "$<=") (and (string<= sl sr) t))
+                        ((string= op "$>")  (and (string> sl sr) t))
+                        ((string= op "$>=") (and (string>= sl sr) t)))))
               (let ((res (make-node :bool (node-pos node))))
                 (setf (node-b res) b)
                 res)))

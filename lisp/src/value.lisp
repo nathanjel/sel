@@ -292,7 +292,7 @@ kept in step with the limit by hand.")
     ((and (eq (value-kind v) :text) (zerop (value-size v)))
      (let ((s (value-scalar v)))
        (or (zerop (length s))
-           (every (lambda (c) (member c '(#\Space #\Tab #\Return #\Newline))) s))))
+           (every #'ascii-space-p s))))
     (t nil)))
 
 (defun value-text-p (v)

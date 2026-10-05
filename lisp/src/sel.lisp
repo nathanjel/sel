@@ -238,7 +238,7 @@ plain ERROR, not a SEL-ERROR. Registering a host function's name again replaces
 it. Safe beside other threads compiling and running programs."
   (unless (function-name-p name)
     (error "SEL function name must be ASCII letters, digits and _, starting with a letter: ~s" name))
-  (let ((upper (string-upcase name)))
+  (let ((upper (ascii-upcase name)))
     (when (reservedp upper)
       (error "~a is a reserved word" upper))
     (unless (and (integerp min) (integerp max) (<= 0 min max))

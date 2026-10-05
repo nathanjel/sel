@@ -1,5 +1,10 @@
 (in-package #:sel)
 
+;;; Binder and table names compare ASCII-case-insensitively (spec §2, §7.4):
+;;; this file folds them with ASCII-DOWNCASE and ASCII-EQUAL (utf8.lisp), never
+;;; CL's STRING-DOWNCASE / STRING-EQUAL, which SBCL applies to every 1:1 Unicode
+;;; case pair -- "é" and "É" once collided in joined rows.
+
 ;;; A scalar with no children behaves as a one-element list containing itself,
 ;;; consistent with scalar context (§3.2). A NONE with no children is genuinely
 ;;; empty — that is what FILTER returns when nothing matched, and ALL over it
@@ -176,7 +181,7 @@ only an alist record walks its entries."
                (when (and n (node-p n))
                  (case (node-kind n)
                    (:var
-                    (unless (member (node-s n) allowed-binders :test #'string-equal)
+                    (unless (member (node-s n) allowed-binders :test #'ascii-equal)
                       (setf all-ok nil)))
                    (:index
                     (walk (node-l n))
@@ -211,12 +216,12 @@ when the operator's left operand reads the right side."
              (node-p pred-node)
              (eq (node-kind pred-node) :bin)
              (member (node-s pred-node) '("==" "$==") :test #'string=)
-             (not (string-equal b1 b2)))
+             (not (ascii-equal b1 b2)))
     (let ((l (node-l pred-node))
           (r (node-r pred-node))
           (is-numeric (string= (node-s pred-node) "=="))
-          (b1-names (list b1 (string-downcase b1) "_1" "_"))
-          (b2-names (list b2 (string-downcase b2) "_2")))
+          (b1-names (list b1 (ascii-downcase b1) "_1" "_"))
+          (b2-names (list b2 (ascii-downcase b2) "_2")))
       (cond
         ((and (expr-depends-only-on l b1-names)
               (expr-depends-only-on r b2-names))
@@ -282,9 +287,6 @@ zero -- quadratic in the zeros, 20 s for a key with 100,000 of them."
               (map 'string #'code-char bytes)))
       (sel-error () (cons :bad val)))))
 
-;; Names compare ASCII-case-insensitively (spec §2, §7.4): this file folds them
-;; with ASCII-UPCASE, never STRING-UPCASE, which SBCL applies to every 1:1 Unicode
-;; case pair -- "é" and "É" collided in joined rows.
 (defun join-key-bad-p (key) (and (consp key) (eq (car key) :bad)))
 
 ;; What the left keys are checked against: whether any right key is live (not
@@ -361,9 +363,9 @@ join is not of this shape or any key is not a live, good one."
           (handler-case
               (let ((table (make-hash-table :test #'equal))
                     (left-keys (make-array (length items1)))
-                    (b1-cell (cons b1 nil)) (b1-low (cons (string-downcase b1) nil))
+                    (b1-cell (cons b1 nil)) (b1-low (cons (ascii-downcase b1) nil))
                     (b1-1 (cons "_1" nil)) (b1-_ (cons "_" nil))
-                    (b2-cell (cons b2 nil)) (b2-low (cons (string-downcase b2) nil))
+                    (b2-cell (cons b2 nil)) (b2-low (cons (ascii-downcase b2) nil))
                     (b2-2 (cons "_2" nil)))
                 (flet ((live-key (expr)
                          (let ((key (extract-join-key (args-eval a expr) is-numeric)))
@@ -398,7 +400,7 @@ NULL. VALUE-SET on a key that exists keeps its place."
       (dolist (k (%value-keys sample-row))
         (value-set null-rec k (make-none))))
     (when (and (null sample-row) tbl-name (not (positional-binder-p tbl-name)))
-      (let ((low (string-downcase tbl-name)))
+      (let ((low (ascii-downcase tbl-name)))
         (unless (value-has null-rec tbl-name) (value-set null-rec tbl-name (make-none)))
         (when (and (string/= tbl-name low) (not (value-has null-rec low)))
           (value-set null-rec low (make-none)))))
@@ -451,7 +453,7 @@ NULL. VALUE-SET on a key that exists keeps its place."
            (multiple-value-bind (new-shape is-diff old-len)
                (if cached
                    (values (first cached) (second cached) (third cached))
-                   (let* ((low (string-downcase tbl-name))
+                   (let* ((low (ascii-downcase tbl-name))
                           ;; The lowercase only where the element lacks it.
                           (diff (and (string/= tbl-name low)
                                      (not (gethash low (record-shape-key-map old-shape)))))
@@ -475,7 +477,7 @@ NULL. VALUE-SET on a key that exists keeps its place."
                  (setf (svref new-storage (1+ old-len)) row))
                (%make-shaped-value new-shape new-storage)))))
         (t
-         (let* ((low (string-downcase tbl-name))
+         (let* ((low (ascii-downcase tbl-name))
                 (diff (and (string/= tbl-name low) (not (value-has row low))))
                 (extra (if diff
                            (list (cons tbl-name row) (cons low row))
@@ -500,7 +502,7 @@ scalar that is NULL is not promoted."
         (t +join-null+)))
 
 (defun join-binder-keys (name positional)
-  (let ((low (string-downcase name)))
+  (let ((low (ascii-downcase name)))
     (append (list name)
             (when (string/= low name) (list low))
             (when (string/= name positional) (list positional)))))
@@ -981,7 +983,7 @@ once), plus the names the row is bound under in the joined row."
     (make-join-side :value value :keys keys :first first-keys :nullable nullable
                     :names (loop for b in bound
                                  unless (member b '("_1" "_2" "_") :test #'string=)
-                                   append (list b (string-downcase b))))))
+                                   append (list b (ascii-downcase b))))))
 
 (defun join-side-fact (side id compute)
   (multiple-value-bind (fact found) (gethash id (join-side-facts side))
@@ -1148,7 +1150,7 @@ carry is promoted from neither, spec §7.4)."
                      :stages handed :deep t :above (cons right-side above)
                      :obligations (cons (make-join-obligation
                                          :key jequi-left
-                                         :row-names (list jb1 (string-downcase jb1) "_1" "_")
+                                         :row-names (list jb1 (ascii-downcase jb1) "_1" "_")
                                          :outer (1+ (length above)))
                                         obligations))))))
         (unwind-protect (args-val a 0)
@@ -1238,7 +1240,7 @@ carry is promoted from neither, spec §7.4)."
                   (let ((ht (make-hash-table :test #'equal))
                         (right-facts (make-join-right-facts))
                         (b2-cell (cons b2 nil))
-                        (b2-low-cell (cons (string-downcase b2) nil))
+                        (b2-low-cell (cons (ascii-downcase b2) nil))
                         (b2-2-cell (cons "_2" nil)))
                     ;; Build phase on right relation with reusable frame. The
                     ;; rows are read in order here, where they are close
@@ -1295,7 +1297,7 @@ carry is promoted from neither, spec §7.4)."
                                           (if (zerop (third stage))
                                               (list (ascii-upcase b2) "_2")
                                               (list (ascii-upcase b2)))))
-                           (right-here (unless (or is-left (string-equal b1 b2))
+                           (right-here (unless (or is-left (ascii-equal b1 b2))
                                          (lambda (fields stage)
                                            (let ((names (funcall right-names stage))
                                                  (upper (funcall above-keys stage)))
@@ -1356,7 +1358,7 @@ carry is promoted from neither, spec §7.4)."
                                                       (list (ascii-upcase b1) "_1" "_") :test #'string=)
                                               (node-s (node-r left-expr))))
                              (b1-cell (cons b1 nil))
-                             (b1-low-cell (cons (string-downcase b1) nil))
+                             (b1-low-cell (cons (ascii-downcase b1) nil))
                              (b1-1-cell (cons "_1" nil))
                              (b1-_-cell (cons "_" nil))
                              (frame1 (list b1-cell b1-low-cell b1-1-cell b1-_-cell))
@@ -1413,7 +1415,7 @@ carry is promoted from neither, spec §7.4)."
                           ;; extended: a row it drops is never extended.
                           (let ((raw (and prefix
                                           (every (lambda (c) (join-raw-safe-p c binders (ascii-upcase b1))) prefix)
-                                          (or (null fast-field) (string-not-equal fast-field b1)))))
+                                          (or (null fast-field) (not (ascii-equal fast-field b1))))))
                           (ctx-push-frame ctx frame1)
                           (unwind-protect
                                (for-each-collection-item (item1 val1)
@@ -1478,11 +1480,11 @@ carry is promoted from neither, spec §7.4)."
                               (setf out (append (mapcar #'cdr keyed) out)))))))
                   ;; --- NESTED LOOP FALLBACK ---
                   (let ((b1-cell (cons b1 nil))
-                        (b1-low-cell (cons (string-downcase b1) nil))
+                        (b1-low-cell (cons (ascii-downcase b1) nil))
                         (b1-1-cell (cons "_1" nil))
                         (b1-_-cell (cons "_" nil))
                         (b2-cell (cons b2 nil))
-                        (b2-low-cell (cons (string-downcase b2) nil))
+                        (b2-low-cell (cons (ascii-downcase b2) nil))
                         (b2-2-cell (cons "_2" nil)))
                     (let ((frame (list b1-cell b1-low-cell b1-1-cell b1-_-cell
                                        b2-cell b2-low-cell b2-2-cell)))

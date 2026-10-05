@@ -544,11 +544,11 @@ left to the run."
     (unless (and cache (eq (car cache) *builtin-form-data*))
       (let ((h (make-hash-table :test 'equal)))
         (dolist (f *builtin-form-data*)
-          (push f (gethash (string-upcase (first f)) h)))
+          (push f (gethash (ascii-upcase (first f)) h)))
         (maphash (lambda (k v) (setf (gethash k h) (nreverse v))) h)
         (setf cache (cons *builtin-form-data* h)
               *binding-forms-index* cache)))
-    (gethash (string-upcase name) (cdr cache))))
+    (gethash (ascii-upcase name) (cdr cache))))
 
 (defun form-when-holds-p (when args)
   "Whether the argument a manifest form's WHEN names -- (index :name) or (index

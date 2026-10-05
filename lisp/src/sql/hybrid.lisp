@@ -674,8 +674,8 @@ SEL would have produced for it, whatever the translator says about it."
   "Whether NAME binds the row: BINDER, or one of the implicit names. A null
 BINDER means any name does -- a downstream step binds the row however it likes."
   (or (null binder)
-      (string-equal name binder) (string-equal name "_")
-      (string-equal name "_1") (string-equal name "_2")))
+      (sel::ascii-equal name binder) (sel::ascii-equal name "_")
+      (sel::ascii-equal name "_1") (sel::ascii-equal name "_2")))
 
 (defun field-read-p (n)
   "Whether N is BINDER['field']: an index whose object is a var and whose key is text."
@@ -752,7 +752,7 @@ key, as in GET(_, \"name\") or COUNT(_) -- which no projected column can stand i
   "Whether a pushable pair is the plain field read BINDER[key] of its own key,
 so that a dependency of the same name may share its column."
   (and (field-read-p value-node)
-       (string-equal (sel::node-s (sel::node-l value-node)) binder)
+       (sel::ascii-equal (sel::node-s (sel::node-l value-node)) binder)
        (string= (sel::node-s (sel::node-r value-node)) (sel::node-s key-node))))
 
 (defun make-field-read (binder field pos)

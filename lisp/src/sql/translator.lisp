@@ -342,9 +342,6 @@ order the evaluator promotes them, DROPPED the upcased names both sides had."
 when QUALIFY, and OPTIONAL when an unmatched LINK_LEFT row lacks it."
   spec table qualify optional)
 
-(defun ascii-downcase-name (s)
-  (map 'string (lambda (c) (if (char<= #\A c #\Z) (code-char (+ (char-code c) 32)) c)) s))
-
 (defun alist-put (alist key value)
   "ALIST with KEY set to VALUE: in place of an existing entry, else appended --
 the insertion order a JS Map keeps."
@@ -356,7 +353,7 @@ the insertion order a JS Map keeps."
   "A binder's keys: its name and that name's ASCII lowercase (spec §7.4)."
   (let ((out '()))
     (dolist (name names (nreverse out))
-      (dolist (k (list name (ascii-downcase-name name)))
+      (dolist (k (list name (sel::ascii-downcase name)))
         (pushnew k out :test #'equal)))))
 
 (defun row-with-names (row names)

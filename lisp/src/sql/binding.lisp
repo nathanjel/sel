@@ -88,7 +88,7 @@ canonical, so pass it as text or drop the leading zeros" where text)))))
 
 (defun check-prefilter (p)
   (when p
-    (let ((c (string-downcase (string p))))
+    (let ((c (sel::ascii-downcase (string p))))
       (cond
         ((or (string= c "separate") (string= c "splitsargable") (string= c "split_sargable") (string= c "t") (string= c "true"))
          "separate")
@@ -100,7 +100,7 @@ canonical, so pass it as text or drop the leading zeros" where text)))))
   "What a COLLATION spelling asks for, as (VALUES EXACT SARGABLE), refusing any
 other spelling. One body for BINDING-COLUMN and BINDING-RAW, as
 _check_collation is in the Python host."
-  (let ((c (string-downcase (string collation))))
+  (let ((c (sel::ascii-downcase (string collation))))
     (cond
       ((or (string= c "binary") (string= c "exact")) (values t nil))
       ((or (string= c "sargable") (string= c "prefilter")) (values nil t))

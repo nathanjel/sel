@@ -11,6 +11,10 @@
 
 (defpackage #:sel.sql
   (:use #:common-lisp)
+  ;; CL's DIGIT-CHAR-P accepts every Unicode decimal digit, and every numeral
+  ;; grammar in this layer is ASCII by specification (without it LIST-KEY
+  ;; once answered element 13 for "1٣").
+  (:import-from #:sel #:ascii-digit-p)
   (:export
    ;; Errors
    #:sql-error

@@ -103,14 +103,11 @@ signalling — LEFT and SUBSTR are specified to return fewer characters."
         (push (%text (subseq hay i)) parts)
         (make-list-value (nreverse parts))))))
 
-(defun sel-space-char-p (c)
-  (member (char-code c) '(#x20 #x09 #x0d #x0a)))
-
 (defun trim-text (s left right)
   (let ((a 0)
         (b (length s)))
-    (when left (loop while (and (< a b) (sel-space-char-p (char s a))) do (incf a)))
-    (when right (loop while (and (> b a) (sel-space-char-p (char s (1- b)))) do (decf b)))
+    (when left (loop while (and (< a b) (ascii-space-p (char s a))) do (incf a)))
+    (when right (loop while (and (> b a) (ascii-space-p (char s (1- b)))) do (decf b)))
     (subseq s a b)))
 
 (define-builtin "TRIM" 1 1
@@ -123,19 +120,10 @@ signalling — LEFT and SUBSTR are specified to return fewer characters."
 ;;; ASCII only, deliberately. CL's STRING-UPCASE applies full Unicode case
 ;;; mapping, which cannot be reconciled with the other hosts without shipping a
 ;;; case table; guessing would break the invariant silently rather than loudly.
-(defun ascii-case (s up)
-  (map 'string
-       (lambda (c)
-         (let ((n (char-code c)))
-           (cond ((and up (<= 97 n 122)) (code-char (- n 32)))
-                 ((and (not up) (<= 65 n 90)) (code-char (+ n 32)))
-                 (t c))))
-       s))
-
 (define-builtin "UPPER" 1 1
-  (lambda (a ctx) (declare (ignore ctx)) (%text (ascii-case (args-text a 0) t))))
+  (lambda (a ctx) (declare (ignore ctx)) (%text (ascii-upcase (args-text a 0)))))
 (define-builtin "LOWER" 1 1
-  (lambda (a ctx) (declare (ignore ctx)) (%text (ascii-case (args-text a 0) nil))))
+  (lambda (a ctx) (declare (ignore ctx)) (%text (ascii-downcase (args-text a 0)))))
 
 (define-builtin "BACKWARDS" 1 1
   (lambda (a ctx) (declare (ignore ctx)) (%text (reverse (args-text a 0)))))

@@ -143,9 +143,30 @@ then a STRING-DOWNCASE over the result, cost 0.48 s per MB."
 ;;; which is why spec/SPEC.md §7.8 expands \d to [0-9]. The differential fuzzer
 ;;; found it here too.
 
-(declaim (inline ascii-digit-p ascii-digit-value ascii-hex-value))
+(declaim (inline ascii-digit-p ascii-space-p ascii-digit-value ascii-hex-value))
 
 (defun ascii-digit-p (c) (char<= #\0 c #\9))
+
+;;; SEL whitespace (spec §2.2): space, TAB, CR, LF -- never CL's or Unicode's.
+(defun ascii-space-p (c)
+  (or (char= c #\Space) (char= c #\Tab) (char= c #\Return) (char= c #\Newline)))
+
+;;; Case folding of SEL names and options is ASCII-only (spec §2.3): CL's
+;;; STRING-UPCASE / STRING-EQUAL apply every 1:1 Unicode case pair (SBCL maps
+;;; U+017F to S), so names never go through them.
+(defun ascii-upcase (s)
+  (map 'string (lambda (c) (if (char<= #\a c #\z) (code-char (- (char-code c) 32)) c)) s))
+
+(defun ascii-downcase (s)
+  (map 'string (lambda (c) (if (char<= #\A c #\Z) (code-char (+ (char-code c) 32)) c)) s))
+
+(defun ascii-char-fold (c)
+  (if (char<= #\A c #\Z) (code-char (+ (char-code c) 32)) c))
+
+(defun ascii-equal (a b)
+  "A and B equal but for ASCII case."
+  (and (= (length a) (length b))
+       (every (lambda (x y) (char= (ascii-char-fold x) (ascii-char-fold y))) a b)))
 
 (defun ascii-digit-value (c)
   (when (char<= #\0 c #\9) (- (char-code c) 48)))

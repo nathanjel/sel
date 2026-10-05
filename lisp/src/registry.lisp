@@ -67,7 +67,7 @@ loads (examples/fn-*/lisp.lisp show where a new one goes). An application adds
 functions with REGISTER-FUNCTION, or REGISTER-BUILTIN for lazy and binding
 forms; a DEFINE-BUILTIN after the library has loaded is an application's
 function like theirs, never a shipped one."
-  (let* ((upper (string-upcase name))
+  (let* ((upper (ascii-upcase name))
          (max (or max min))
          (entry (manifest-entry upper)))
     (when entry
@@ -122,7 +122,7 @@ ships (`COUNT` cannot become 42 for the whole process). Anything else signals a
 plain ERROR. OVERWRITE NIL also refuses the name of an earlier registration."
   (unless (function-name-p name)
     (error "SEL function name must be ASCII letters, digits and _, starting with a letter: ~s" name))
-  (let ((upper (string-upcase name))
+  (let ((upper (ascii-upcase name))
         (max (or max min)))
     (when (reservedp upper)
       (error "~a is a reserved word" upper))
@@ -143,7 +143,7 @@ plain ERROR. OVERWRITE NIL also refuses the name of an earlier registration."
 (defun unregister-function (name)
   "Remove an application's function (never a shipped one). Internal: the unit
 tests use it to leave the process as they found it."
-  (let ((upper (string-upcase name)))
+  (let ((upper (ascii-upcase name)))
     (sb-thread:with-mutex (*registry-lock*)
       (let ((old (gethash upper *registry*)))
         (when (and old (not (spec-shipped old)))
@@ -151,7 +151,7 @@ tests use it to leave the process as they found it."
           (remhash upper *host-functions*))))))
 
 (defun registry-lookup (name)
-  (gethash (string-upcase name) *registry*))
+  (gethash (ascii-upcase name) *registry*))
 
 (declaim (inline registry-lookup-canonical))
 (defun registry-lookup-canonical (name)
